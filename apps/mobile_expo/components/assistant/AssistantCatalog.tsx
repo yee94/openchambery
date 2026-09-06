@@ -4,14 +4,18 @@ import {
   ActivityIndicator,
   Pressable,
   RefreshControl,
-  ScrollView,
   StyleSheet,
   View as RNView,
 } from 'react-native';
+import Animated from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { AssistantCard } from '@/components/assistant/AssistantCard';
 import { AssistantDeleteConfirm } from '@/components/assistant/AssistantDeleteConfirm';
+import {
+  MobileTabPageHeader,
+  useCollapsingTabHeader,
+} from '@/components/chrome/MobileTabPageHeader';
 import { Text, View, useThemeColor } from '@/components/Themed';
 import { useColorScheme } from '@/components/useColorScheme';
 import Colors from '@/constants/Colors';
@@ -20,11 +24,18 @@ import { getAssistantPresentation } from '@/lib/assistantPresentation';
 import type { AssistantDTO } from '@/lib/assistantsApi';
 import { t } from '@/lib/i18n';
 
+/** Cap --oc-mobile-surface-radius. */
+const SURFACE_RADIUS = 24;
+
 function openAssistantsSettings(router: ReturnType<typeof useRouter>, params?: Record<string, string>) {
   router.push({
     pathname: '/(tabs)/settings',
     params: { slug: 'assistants', ...params },
   });
+}
+
+function cardSurface(dark: boolean): string {
+  return dark ? '#171717' : '#ffffff';
 }
 
 export function AssistantCatalog() {
@@ -35,11 +46,13 @@ export function AssistantCatalog() {
   const tint = Colors[scheme].tint;
   const text = useThemeColor({}, 'text');
   const muted = dark ? 'rgba(250,250,250,0.55)' : 'rgba(24,24,27,0.55)';
-  const surface = dark ? '#141414' : '#ffffff';
+  const background = useThemeColor({}, 'background');
+  const surface = cardSurface(dark);
   const catalog = useAssistantsCatalog();
   const [deleteTarget, setDeleteTarget] = useState<AssistantDTO | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const { scrollY, onScroll, listTopPad } = useCollapsingTabHeader();
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -83,16 +96,33 @@ export function AssistantCatalog() {
 
   const title = t('assistants.title');
   const refreshControl = (
-    <RefreshControl refreshing={refreshing} onRefresh={() => void onRefresh()} tintColor={tint} />
+    <RefreshControl
+      refreshing={refreshing}
+      onRefresh={() => void onRefresh()}
+      tintColor={tint}
+      progressViewOffset={listTopPad}
+    />
+  );
+
+  const scrollBody = (children: React.ReactNode) => (
+    <Animated.ScrollView
+      onScroll={onScroll}
+      scrollEventThrottle={16}
+      contentContainerStyle={[
+        styles.scroll,
+        { paddingTop: listTopPad, paddingBottom: insets.bottom + 88 },
+      ]}
+      refreshControl={refreshControl}
+    >
+      {children}
+    </Animated.ScrollView>
   );
 
   if (catalog.status === 'idle' || catalog.status === 'loading') {
     return (
-      <View style={styles.root}>
-        <RNView style={[styles.header, { paddingTop: insets.top + 8 }]}>
-          <Text style={styles.title}>{title}</Text>
-        </RNView>
-        <RNView style={[styles.stateCard, { backgroundColor: surface }]}>
+      <View style={[styles.root, { backgroundColor: background }]}>
+        <MobileTabPageHeader title={title} scrollY={scrollY} />
+        <RNView style={[styles.stateCard, { backgroundColor: surface, marginTop: listTopPad, marginHorizontal: 16 }]}>
           <ActivityIndicator color={tint} />
           <Text style={[styles.stateBody, { color: muted }]}>{t('assistants.state.unavailable')}</Text>
         </RNView>
@@ -102,12 +132,9 @@ export function AssistantCatalog() {
 
   if (catalog.status === 'disabled') {
     return (
-      <View style={styles.root}>
-        <ScrollView
-          contentContainerStyle={[styles.scroll, { paddingTop: insets.top + 8, paddingBottom: insets.bottom + 24 }]}
-          refreshControl={refreshControl}
-        >
-          <Text style={styles.title}>{title}</Text>
+      <View style={[styles.root, { backgroundColor: background }]}>
+        <MobileTabPageHeader title={title} scrollY={scrollY} />
+        {scrollBody(
           <RNView style={[styles.guideCard, { backgroundColor: surface }]}>
             <Text style={styles.guideTitle}>{t('assistants.guide.disabledTitle')}</Text>
             <Text style={[styles.guideBody, { color: muted }]}>
@@ -125,27 +152,22 @@ export function AssistantCatalog() {
                 <Text style={styles.primaryBtnLabel}>{t('assistants.guide.enableAction')}</Text>
               )}
             </Pressable>
-            {catalog.error ? (
-              <Text style={styles.errorText}>{catalog.error}</Text>
-            ) : null}
+            {catalog.error ? <Text style={styles.errorText}>{catalog.error}</Text> : null}
             <Text style={[styles.shareTitle, { color: text }]}>{t('assistants.guide.shareTitle')}</Text>
             <Text style={[styles.guideBody, { color: muted }]}>
               {t('assistants.guide.share.pick.description')}
             </Text>
-          </RNView>
-        </ScrollView>
+          </RNView>,
+        )}
       </View>
     );
   }
 
   if (catalog.status === 'empty') {
     return (
-      <View style={styles.root}>
-        <ScrollView
-          contentContainerStyle={[styles.scroll, { paddingTop: insets.top + 8, paddingBottom: insets.bottom + 24 }]}
-          refreshControl={refreshControl}
-        >
-          <Text style={styles.title}>{title}</Text>
+      <View style={[styles.root, { backgroundColor: background }]}>
+        <MobileTabPageHeader title={title} scrollY={scrollY} />
+        {scrollBody(
           <RNView style={[styles.stateCard, { backgroundColor: surface }]}>
             <Text style={styles.guideTitle}>{t('assistants.onboarding.title')}</Text>
             <Text style={[styles.guideBody, { color: muted }]}>
@@ -158,8 +180,8 @@ export function AssistantCatalog() {
             >
               <Text style={styles.primaryBtnLabel}>{t('assistants.onboarding.action')}</Text>
             </Pressable>
-          </RNView>
-        </ScrollView>
+          </RNView>,
+        )}
       </View>
     );
   }
@@ -176,12 +198,9 @@ export function AssistantCatalog() {
           ? catalog.error
           : t('assistants.state.instanceDisabledDescription');
     return (
-      <View style={styles.root}>
-        <ScrollView
-          contentContainerStyle={[styles.scroll, { paddingTop: insets.top + 8, paddingBottom: insets.bottom + 24 }]}
-          refreshControl={refreshControl}
-        >
-          <Text style={styles.title}>{title}</Text>
+      <View style={[styles.root, { backgroundColor: background }]}>
+        <MobileTabPageHeader title={title} scrollY={scrollY} />
+        {scrollBody(
           <RNView style={[styles.stateCard, { backgroundColor: surface }]}>
             <Text style={styles.guideTitle}>{heading}</Text>
             <Text style={[styles.guideBody, { color: muted }]}>{detail}</Text>
@@ -190,10 +209,10 @@ export function AssistantCatalog() {
               onPress={() => void onRefresh()}
               style={[styles.secondaryBtn, { borderColor: muted }]}
             >
-              <Text style={{ color: text }}>{t('mobile.sessions.index.retry')}</Text>
+              <Text style={{ color: tint, fontWeight: '600' }}>{t('mobile.sessions.index.retry')}</Text>
             </Pressable>
-          </RNView>
-        </ScrollView>
+          </RNView>,
+        )}
       </View>
     );
   }
@@ -203,29 +222,28 @@ export function AssistantCatalog() {
     : '';
 
   return (
-    <View style={styles.root}>
-      <ScrollView
-        contentContainerStyle={[styles.scroll, { paddingTop: insets.top + 8, paddingBottom: insets.bottom + 24 }]}
-        refreshControl={refreshControl}
-      >
-        <Text style={styles.title}>{title}</Text>
-        <RNView style={styles.list} accessibilityRole="list">
-          {catalog.assistants.map((assistant) => (
-            <AssistantCard
-              key={assistant.id}
-              assistant={assistant}
-              dark={dark}
-              muted={muted}
-              surface={surface}
-              opening={catalog.openingId === assistant.id}
-              onOpen={() => void handleOpen(assistant)}
-              onEdit={() => handleEdit(assistant)}
-              onDelete={() => setDeleteTarget(assistant)}
-            />
-          ))}
-        </RNView>
-        {catalog.error ? <Text style={styles.errorText}>{catalog.error}</Text> : null}
-      </ScrollView>
+    <View style={[styles.root, { backgroundColor: background }]}>
+      <MobileTabPageHeader title={title} scrollY={scrollY} />
+      {scrollBody(
+        <>
+          <RNView style={styles.list} accessibilityRole="list">
+            {catalog.assistants.map((assistant) => (
+              <AssistantCard
+                key={assistant.id}
+                assistant={assistant}
+                dark={dark}
+                muted={muted}
+                surface={surface}
+                opening={catalog.openingId === assistant.id}
+                onOpen={() => void handleOpen(assistant)}
+                onEdit={() => handleEdit(assistant)}
+                onDelete={() => setDeleteTarget(assistant)}
+              />
+            ))}
+          </RNView>
+          {catalog.error ? <Text style={styles.errorText}>{catalog.error}</Text> : null}
+        </>,
+      )}
 
       <AssistantDeleteConfirm
         visible={deleteTarget !== null}
@@ -245,33 +263,33 @@ const styles = StyleSheet.create({
   root: {
     flex: 1,
   },
-  header: {
-    paddingHorizontal: 20,
-    paddingBottom: 8,
-  },
   scroll: {
     paddingHorizontal: 16,
     gap: 14,
   },
-  title: {
-    fontSize: 28,
-    fontWeight: '700',
-    letterSpacing: -0.4,
-    marginBottom: 4,
-  },
   list: {
-    gap: 10,
+    gap: 14,
   },
   stateCard: {
-    borderRadius: 18,
+    borderRadius: SURFACE_RADIUS,
     padding: 20,
     gap: 12,
     alignItems: 'flex-start',
+    shadowColor: '#000',
+    shadowOpacity: 0.06,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 2,
   },
   guideCard: {
-    borderRadius: 18,
+    borderRadius: SURFACE_RADIUS,
     padding: 20,
     gap: 12,
+    shadowColor: '#000',
+    shadowOpacity: 0.06,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 2,
   },
   guideTitle: {
     fontSize: 18,
@@ -293,7 +311,7 @@ const styles = StyleSheet.create({
   primaryBtn: {
     marginTop: 8,
     minHeight: 48,
-    borderRadius: 12,
+    borderRadius: 14,
     alignItems: 'center',
     justifyContent: 'center',
     alignSelf: 'stretch',
@@ -307,7 +325,7 @@ const styles = StyleSheet.create({
   secondaryBtn: {
     marginTop: 4,
     minHeight: 40,
-    borderRadius: 10,
+    borderRadius: 12,
     borderWidth: StyleSheet.hairlineWidth,
     paddingHorizontal: 14,
     alignItems: 'center',

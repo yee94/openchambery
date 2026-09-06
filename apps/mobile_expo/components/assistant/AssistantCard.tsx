@@ -26,6 +26,9 @@ type Props = {
 };
 
 const LONG_PRESS_MS = 420;
+/** Cap --oc-mobile-surface-radius / assistant card shell. */
+const SURFACE_RADIUS = 24;
+const AVATAR = 40;
 
 export function AssistantCard({
   assistant,
@@ -112,7 +115,7 @@ export function AssistantCard({
           style={[
             styles.avatar,
             presentation.avatarEmoji ? styles.avatarEmoji : styles.avatarVisual,
-            { backgroundColor: dark ? '#262626' : '#f4f4f5' },
+            { backgroundColor: dark ? 'rgba(255,255,255,0.08)' : 'rgba(24,24,27,0.06)' },
           ]}
         >
           <Text style={styles.avatarText}>
@@ -176,17 +179,22 @@ export function AssistantCard({
 const styles = StyleSheet.create({
   card: {
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     gap: 12,
-    borderRadius: 16,
-    paddingHorizontal: 14,
-    paddingVertical: 14,
-    minHeight: 72,
+    borderRadius: SURFACE_RADIUS,
+    paddingHorizontal: 16,
+    paddingVertical: 16,
+    minHeight: 112,
+    shadowColor: '#000',
+    shadowOpacity: 0.06,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 2,
   },
   avatar: {
-    width: 40,
-    height: 40,
-    borderRadius: 12,
+    width: AVATAR,
+    height: AVATAR,
+    borderRadius: AVATAR / 2,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -199,7 +207,8 @@ const styles = StyleSheet.create({
   content: {
     flex: 1,
     minWidth: 0,
-    gap: 4,
+    gap: 6,
+    paddingTop: 2,
   },
   header: {
     flexDirection: 'row',
@@ -210,6 +219,7 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 16,
     fontWeight: '600',
+    letterSpacing: -0.2,
   },
   mode: {
     fontSize: 12,

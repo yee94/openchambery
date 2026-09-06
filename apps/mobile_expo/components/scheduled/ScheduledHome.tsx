@@ -1,3 +1,4 @@
+import { SymbolView } from 'expo-symbols';
 import { useRouter } from 'expo-router';
 import React, { useEffect, useMemo, useState } from 'react';
 import {
@@ -6,16 +7,20 @@ import {
   Modal,
   Pressable,
   RefreshControl,
-  ScrollView,
   StyleSheet,
-  TextInput,
   View as RNView,
 } from 'react-native';
+import Animated from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import {
+  MobileTabPageHeader,
+  useCollapsingTabHeader,
+} from '@/components/chrome/MobileTabPageHeader';
 import { ScheduledTaskEditor } from '@/components/scheduled/ScheduledTaskEditor';
 import { Text, useThemeColor } from '@/components/Themed';
 import { useColorScheme } from '@/components/useColorScheme';
+import Colors from '@/constants/Colors';
 import { useConnection } from '@/context/ConnectionContext';
 import { useScheduledWorkspace } from '@/hooks/useScheduledWorkspace';
 import { t } from '@/lib/i18n';
@@ -28,44 +33,94 @@ import {
 import type { GlobalScheduledTask, ScheduledTaskRun } from '@/lib/scheduledTasksApi';
 import type { ScheduledTaskCardModel } from '@/lib/scheduledModel';
 
+/** Cap --oc-mobile-surface-radius (1.5rem). */
+const SURFACE_RADIUS = 24;
+/** Cap segmented item height (2.5rem). */
+const SEGMENT_ITEM_H = 40;
+const SEGMENT_PAD = 4;
+const OVERFLOW_HIT = 36;
+
+function floatSurface(dark: boolean): string {
+  return dark ? 'rgba(38,38,44,0.72)' : 'rgba(255,255,255,0.82)';
+}
+
+function cardSurface(dark: boolean): string {
+  return dark ? '#171717' : '#ffffff';
+}
+
+type SegmentSymbol = React.ComponentProps<typeof SymbolView>['name'];
+
 function Segmented({
   options,
   value,
   onChange,
   grow,
+  trailing,
 }: {
-  options: { id: string; label: string }[];
+  options: { id: string; label: string; symbol?: SegmentSymbol }[];
   value: string;
   onChange: (id: string) => void;
   grow?: boolean;
+  trailing?: React.ReactNode;
 }) {
   const dark = useColorScheme() === 'dark';
   const text = useThemeColor({}, 'text');
-  const track = dark ? 'rgba(38,38,44,0.9)' : 'rgba(228,228,231,0.95)';
-  const pill = dark ? 'rgba(63,63,70,0.95)' : '#ffffff';
+  const muted = useThemeColor({}, 'muted');
+  const track = floatSurface(dark);
+  const pill = dark ? 'rgba(63,63,70,0.95)' : 'rgba(255,255,255,0.96)';
+  const itemRadius = Math.max(0, SURFACE_RADIUS - SEGMENT_PAD);
+
   return (
-    <RNView style={[styles.segmentTrack, { backgroundColor: track }, grow && { flex: 1 }]}>
-      {options.map((opt) => {
-        const selected = opt.id === value;
-        return (
-          <Pressable
-            key={opt.id}
-            onPress={() => onChange(opt.id)}
-            style={[styles.segmentItem, selected && { backgroundColor: pill }]}
-          >
-            <Text
-              style={{
-                color: text,
-                fontSize: 13,
-                fontWeight: selected ? '700' : '500',
-              }}
-              numberOfLines={1}
+    <RNView
+      style={[
+        styles.segmentTrack,
+        {
+          backgroundColor: track,
+          borderRadius: SURFACE_RADIUS,
+          padding: SEGMENT_PAD,
+        },
+        grow && { flex: 1 },
+      ]}
+    >
+      <RNView style={styles.segmentGroup}>
+        {options.map((opt) => {
+          const selected = opt.id === value;
+          const color = selected ? text : muted;
+          return (
+            <Pressable
+              key={opt.id}
+              onPress={() => onChange(opt.id)}
+              accessibilityRole="button"
+              accessibilityState={{ selected }}
+              style={[
+                styles.segmentItem,
+                {
+                  height: SEGMENT_ITEM_H,
+                  borderRadius: itemRadius,
+                },
+                selected && { backgroundColor: pill },
+              ]}
             >
-              {opt.label}
-            </Text>
-          </Pressable>
-        );
-      })}
+              <RNView style={styles.segmentLabel}>
+                {opt.symbol ? (
+                  <SymbolView name={opt.symbol} tintColor={color} size={15} />
+                ) : null}
+                <Text
+                  style={{
+                    color,
+                    fontSize: 13,
+                    fontWeight: selected ? '700' : '500',
+                  }}
+                  numberOfLines={1}
+                >
+                  {opt.label}
+                </Text>
+              </RNView>
+            </Pressable>
+          );
+        })}
+      </RNView>
+      {trailing}
     </RNView>
   );
 }
@@ -78,11 +133,7 @@ function statusColor(tone: ReturnType<typeof statusTone>, enabled: boolean): str
   return '#64748b';
 }
 
-function StatusDisc({
-  card,
-}: {
-  card: ScheduledTaskCardModel;
-}) {
+function StatusDisc({ card }: { card: ScheduledTaskCardModel }) {
   const color = statusColor(card.statusTone, card.enabled);
   const glyph = !card.enabled ? '❚❚' : card.status === 'running' ? '↻' : card.status === 'error' ? '!' : '✓';
   return (
@@ -97,7 +148,6 @@ function TaskCard({
   muted,
   text,
   surface,
-  border,
   busy,
   onPress,
   onMore,
@@ -106,7 +156,6 @@ function TaskCard({
   muted: string;
   text: string;
   surface: string;
-  border: string;
   busy: boolean;
   onPress: () => void;
   onMore: () => void;
@@ -119,7 +168,6 @@ function TaskCard({
         styles.card,
         {
           backgroundColor: surface,
-          borderColor: border,
           opacity: card.enabled ? 1 : 0.72,
         },
       ]}
@@ -144,7 +192,7 @@ function TaskCard({
           taskName: card.name,
         })}
       >
-        <Text style={{ color: muted, fontSize: 20, fontWeight: '700' }}>···</Text>
+        <Text style={{ color: muted, fontSize: 18, fontWeight: '700', letterSpacing: 1 }}>···</Text>
       </Pressable>
     </Pressable>
   );
@@ -156,7 +204,6 @@ function RunCard({
   muted,
   text,
   surface,
-  border,
   onOpen,
 }: {
   run: ScheduledTaskRun;
@@ -164,7 +211,6 @@ function RunCard({
   muted: string;
   text: string;
   surface: string;
-  border: string;
   onOpen: () => void;
 }) {
   const tone = statusTone(run.status);
@@ -176,7 +222,7 @@ function RunCard({
   return (
     <Pressable
       onPress={canOpen ? onOpen : undefined}
-      style={[styles.card, { backgroundColor: surface, borderColor: border }]}
+      style={[styles.card, { backgroundColor: surface }]}
     >
       <RNView style={[styles.statusDisc, { backgroundColor: `${color}22`, borderColor: `${color}55` }]}>
         <Text style={{ color, fontSize: 12, fontWeight: '700' }}>
@@ -211,15 +257,17 @@ export function ScheduledHome() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const { state } = useConnection();
-  const dark = useColorScheme() === 'dark';
+  const scheme = useColorScheme();
+  const dark = scheme === 'dark';
+  const tint = Colors[scheme].tint;
   const text = useThemeColor({}, 'text');
   const muted = useThemeColor({}, 'muted');
   const background = useThemeColor({}, 'background');
-  const surface = dark ? '#171717' : '#ffffff';
-  const border = dark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)';
+  const surface = cardSurface(dark);
   const ws = useScheduledWorkspace();
   const [menuEntry, setMenuEntry] = useState<GlobalScheduledTask | null>(null);
   const [nowMs, setNowMs] = useState(() => Date.now());
+  const { scrollY, onScroll, listTopPad } = useCollapsingTabHeader();
 
   useEffect(() => {
     if (ws.view !== 'history') return;
@@ -238,8 +286,20 @@ export function ScheduledHome() {
 
   const viewOptions = useMemo(
     () => [
-      { id: 'tasks', label: t('sessions.scheduledTasks.workspace.views.tasks') },
-      { id: 'history', label: t('sessions.scheduledTasks.workspace.views.history') },
+      {
+        id: 'tasks',
+        label: t('sessions.scheduledTasks.workspace.views.tasks'),
+        symbol: { ios: 'checklist', android: 'checklist', web: 'checklist' } as const,
+      },
+      {
+        id: 'history',
+        label: t('sessions.scheduledTasks.workspace.views.history'),
+        symbol: {
+          ios: 'clock.arrow.circlepath',
+          android: 'history',
+          web: 'history',
+        } as const,
+      },
     ],
     [],
   );
@@ -260,11 +320,20 @@ export function ScheduledHome() {
     );
   }
 
+  const addBtnRadius = Math.max(0, SURFACE_RADIUS - SEGMENT_PAD);
+
   return (
     <RNView style={[styles.root, { backgroundColor: background }]}>
-      <ScrollView
+      <MobileTabPageHeader
+        title={t('sessions.scheduledTasks.dialog.title')}
+        scrollY={scrollY}
+      />
+
+      <Animated.ScrollView
+        onScroll={onScroll}
+        scrollEventThrottle={16}
         contentContainerStyle={{
-          paddingTop: insets.top + 8,
+          paddingTop: listTopPad,
           paddingHorizontal: 16,
           paddingBottom: insets.bottom + 88,
         }}
@@ -275,13 +344,11 @@ export function ScheduledHome() {
               void ws.refresh();
               if (ws.view === 'history') void ws.refreshRuns(true);
             }}
+            tintColor={tint}
+            progressViewOffset={listTopPad}
           />
         }
       >
-        <Text style={[styles.pageTitle, { color: text }]}>
-          {t('sessions.scheduledTasks.dialog.title')}
-        </Text>
-
         <Segmented
           options={viewOptions}
           value={ws.view}
@@ -289,40 +356,36 @@ export function ScheduledHome() {
         />
 
         {ws.view === 'tasks' ? (
-          <RNView style={styles.filterRow}>
-            <Segmented
-              options={filterOptions}
-              value={ws.filter}
-              onChange={(id) => ws.setFilter(id as 'all' | 'active' | 'paused')}
-              grow
-            />
-            <Pressable
-              onPress={ws.openCreate}
-              style={[styles.addBtn, { backgroundColor: dark ? '#e4e4e7' : '#18181b' }]}
-              accessibilityLabel={t('sessions.scheduledTasks.dialog.actions.newTask')}
-            >
-              <Text style={{ color: dark ? '#18181b' : '#fafafa', fontSize: 22, fontWeight: '600' }}>
-                +
-              </Text>
-            </Pressable>
-          </RNView>
-        ) : null}
-
-        {ws.view === 'tasks' ? (
-          <TextInput
-            value={ws.search}
-            onChangeText={ws.setSearch}
-            placeholder={t('sessions.scheduledTasks.workspace.search.placeholder')}
-            placeholderTextColor={muted}
-            style={[
-              styles.search,
-              { backgroundColor: surface, color: text, borderColor: border },
-            ]}
+          <Segmented
+            options={filterOptions}
+            value={ws.filter}
+            onChange={(id) => ws.setFilter(id as 'all' | 'active' | 'paused')}
+            trailing={
+              <Pressable
+                onPress={ws.openCreate}
+                style={[
+                  styles.addBtn,
+                  {
+                    width: SEGMENT_ITEM_H,
+                    height: SEGMENT_ITEM_H,
+                    borderRadius: addBtnRadius,
+                    backgroundColor: dark ? '#e4e4e7' : '#18181b',
+                  },
+                ]}
+                accessibilityLabel={t('sessions.scheduledTasks.dialog.actions.newTask')}
+              >
+                <Text style={{ color: dark ? '#18181b' : '#fafafa', fontSize: 22, fontWeight: '600' }}>
+                  +
+                </Text>
+              </Pressable>
+            }
           />
         ) : null}
 
+        {/* Cap mobile tab has no search field — keep IA aligned with mobile_schedules.png */}
+
         {ws.view === 'history' && ws.historyFilterLabel ? (
-          <RNView style={[styles.historyFilter, { backgroundColor: surface, borderColor: border }]}>
+          <RNView style={[styles.historyFilter, { backgroundColor: surface }]}>
             <Text style={{ color: text, flex: 1, fontWeight: '600' }} numberOfLines={1}>
               {ws.historyFilterLabel}
             </Text>
@@ -343,24 +406,24 @@ export function ScheduledHome() {
         {ws.view === 'tasks' ? (
           ws.status === 'loading' && ws.cards.length === 0 ? (
             <RNView style={styles.rowCenter}>
-              <ActivityIndicator />
+              <ActivityIndicator color={tint} />
               <Text style={{ color: muted, marginLeft: 8 }}>
                 {t('sessions.scheduledTasks.dialog.loading')}
               </Text>
             </RNView>
           ) : ws.status === 'error' ? (
-            <RNView style={[styles.empty, { borderColor: border }]}>
+            <RNView style={[styles.empty, { borderColor: muted }]}>
               <Text style={{ color: text, fontWeight: '600' }}>
                 {ws.error || t('sessions.scheduledTasks.dialog.toast.loadFailed')}
               </Text>
               <Pressable onPress={() => void ws.refresh()} style={{ marginTop: 10 }}>
-                <Text style={{ color: text, fontWeight: '700' }}>
+                <Text style={{ color: tint, fontWeight: '700' }}>
                   {t('sessions.scheduledTasks.history.retry')}
                 </Text>
               </Pressable>
             </RNView>
           ) : ws.cards.length === 0 ? (
-            <RNView style={[styles.empty, { borderColor: border }]}>
+            <RNView style={[styles.empty, { borderColor: muted }]}>
               <Text style={{ color: muted }}>
                 {ws.tasks.length > 0
                   ? t('sessions.scheduledTasks.workspace.search.noResults')
@@ -381,7 +444,6 @@ export function ScheduledHome() {
                     muted={muted}
                     text={text}
                     surface={surface}
-                    border={border}
                     busy={ws.mutatingKey === card.identityKey}
                     onPress={() => ws.openEdit(entry)}
                     onMore={() => setMenuEntry(entry)}
@@ -392,25 +454,25 @@ export function ScheduledHome() {
           )
         ) : ws.runsLoading && ws.runs.length === 0 ? (
           <RNView style={styles.rowCenter}>
-            <ActivityIndicator />
+            <ActivityIndicator color={tint} />
             <Text style={{ color: muted, marginLeft: 8 }}>
               {t('sessions.scheduledTasks.history.loading')}
             </Text>
           </RNView>
         ) : ws.runsError && ws.runs.length === 0 ? (
-          <RNView style={[styles.empty, { borderColor: border }]}>
+          <RNView style={[styles.empty, { borderColor: muted }]}>
             <Text style={{ color: text, fontWeight: '600' }}>
               {t('sessions.scheduledTasks.history.error.title')}
             </Text>
             <Text style={{ color: muted, marginTop: 4 }}>{ws.runsError}</Text>
             <Pressable onPress={() => void ws.refreshRuns(true)} style={{ marginTop: 10 }}>
-              <Text style={{ color: text, fontWeight: '700' }}>
+              <Text style={{ color: tint, fontWeight: '700' }}>
                 {t('sessions.scheduledTasks.history.retry')}
               </Text>
             </Pressable>
           </RNView>
         ) : ws.runs.length === 0 ? (
-          <RNView style={[styles.empty, { borderColor: border }]}>
+          <RNView style={[styles.empty, { borderColor: muted }]}>
             <Text style={{ color: text, fontWeight: '600' }}>
               {t('sessions.scheduledTasks.history.empty.title')}
             </Text>
@@ -428,7 +490,6 @@ export function ScheduledHome() {
                 muted={muted}
                 text={text}
                 surface={surface}
-                border={border}
                 onOpen={() => {
                   if (run.sessionId) {
                     router.push(`/chat/${encodeURIComponent(run.sessionId)}`);
@@ -439,7 +500,7 @@ export function ScheduledHome() {
             {!ws.runsComplete ? (
               <Pressable
                 onPress={() => void ws.loadMoreRuns()}
-                style={[styles.loadMore, { borderColor: border }]}
+                style={[styles.loadMore, { borderColor: muted }]}
                 disabled={ws.runsLoading}
               >
                 <Text style={{ color: text, fontWeight: '600' }}>
@@ -451,7 +512,7 @@ export function ScheduledHome() {
             ) : null}
           </RNView>
         )}
-      </ScrollView>
+      </Animated.ScrollView>
 
       <Modal
         visible={menuEntry != null}
@@ -579,58 +640,68 @@ function MenuItem({
 const styles = StyleSheet.create({
   root: { flex: 1 },
   centered: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  pageTitle: { fontSize: 34, fontWeight: '800', letterSpacing: -0.5, marginBottom: 14 },
   segmentTrack: {
     flexDirection: 'row',
-    borderRadius: 14,
-    padding: 4,
-    gap: 4,
+    alignItems: 'center',
+    gap: SEGMENT_PAD,
     marginBottom: 12,
+    shadowColor: '#000',
+    shadowOpacity: 0.06,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 2,
+  },
+  segmentGroup: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: SEGMENT_PAD,
+    minWidth: 0,
   },
   segmentItem: {
     flex: 1,
-    minHeight: 36,
-    borderRadius: 11,
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: 8,
   },
-  filterRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 12 },
+  segmentLabel: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
   addBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  search: {
-    borderWidth: StyleSheet.hairlineWidth,
-    borderRadius: 12,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    marginBottom: 12,
-    fontSize: 15,
+    flexShrink: 0,
   },
   historyFilter: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderRadius: 12,
+    borderRadius: 16,
     paddingHorizontal: 12,
     paddingVertical: 10,
     marginBottom: 12,
+    shadowColor: '#000',
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 3 },
+    elevation: 1,
   },
   warn: { fontSize: 12, marginBottom: 10 },
-  list: { gap: 14 },
+  list: { gap: 16, marginTop: 8 },
   card: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
-    borderRadius: 18,
-    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: SURFACE_RADIUS,
     paddingHorizontal: 14,
     paddingVertical: 14,
+    shadowColor: '#000',
+    shadowOpacity: 0.06,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 2,
   },
   statusDisc: {
     width: 34,
@@ -641,16 +712,22 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   cardBody: { flex: 1, minWidth: 0 },
-  cardTitle: { fontSize: 16, fontWeight: '700' },
+  cardTitle: { fontSize: 16, fontWeight: '700', letterSpacing: -0.2 },
   cardMeta: { fontSize: 12, marginTop: 4, lineHeight: 16 },
-  moreBtn: { paddingHorizontal: 4, paddingVertical: 4 },
+  moreBtn: {
+    width: OVERFLOW_HIT,
+    height: OVERFLOW_HIT,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   runTitleRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 8 },
   empty: {
     borderWidth: StyleSheet.hairlineWidth,
     borderStyle: 'dashed',
-    borderRadius: 16,
+    borderRadius: SURFACE_RADIUS,
     padding: 20,
     alignItems: 'center',
+    marginTop: 8,
   },
   rowCenter: { flexDirection: 'row', alignItems: 'center', paddingVertical: 20 },
   loadMore: {
