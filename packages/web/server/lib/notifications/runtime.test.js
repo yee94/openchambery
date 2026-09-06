@@ -232,6 +232,28 @@ describe('notification trigger live activity end', () => {
     expect(sendApnsToAllUiSessions).toHaveBeenCalledTimes(1);
   });
 
+  it('does not patch live activity titles for child sessions', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse({
+      id: 'ses_child',
+      parentID: 'ses_parent',
+      metadata: {},
+    })));
+    const { runtime, sendLiveActivityEnd } = createRuntime();
+    await runtime.maybeSendPushForTrigger({
+      type: 'session.updated',
+      properties: {
+        directory: '/repo',
+        info: {
+          id: 'ses_child',
+          sessionID: 'ses_child',
+          parentID: 'ses_parent',
+          title: 'Fixer',
+        },
+      },
+    });
+    expect(sendLiveActivityEnd).not.toHaveBeenCalled();
+  });
+
   it('suppresses live activity end for child and small-model sessions', async () => {
     const fetchMock = vi.fn(async (url) => {
       if (String(url).includes('ses_child')) {

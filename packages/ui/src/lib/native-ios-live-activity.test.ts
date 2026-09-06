@@ -527,10 +527,22 @@ describe('buildNativeLiveActivityCatalog', () => {
         { id: 'ses_b', title: `${'Long '.repeat(40)}title`, parentID: null },
       ],
     });
-    expect(catalog.map((item) => item.sessionId)).toEqual(['ses_a', 'ses_b', 'ses_unknown']);
+    expect(catalog.map((item) => item.sessionId)).toEqual(['ses_a', 'ses_b']);
     expect(catalog.find((item) => item.sessionId === 'ses_b')?.statusType).toBe('retry');
     expect(catalog.find((item) => item.sessionId === 'ses_b')?.title.endsWith('…')).toBe(true);
     expect(catalog.find((item) => item.sessionId === 'ses_b')?.title.length).toBeLessThanOrEqual(80);
+  });
+
+  test('does not promote a running child or unknown id into the catalog', () => {
+    const catalog = buildNativeLiveActivityCatalog({
+      runningIds: new Set(['ses_child', 'ses_unknown']),
+      statuses: { ses_child: { type: 'busy' }, ses_unknown: { type: 'busy' } },
+      sessions: [
+        { id: 'ses_a', title: 'Alpha', parentID: null },
+        { id: 'ses_child', title: 'Fixer', parentID: 'ses_a' },
+      ],
+    });
+    expect(catalog).toEqual([]);
   });
 });
 
@@ -640,6 +652,28 @@ describe('reduceNativeLiveActivity catalog', () => {
     expect(payload.payload.items).toEqual([
       expect.objectContaining({ sessionId: 'ses_a', title: 'Fix live activity titles', status: 'retry' }),
     ]);
+  });
+
+  test('drops child session rows so Live Activity matches the sidebar', () => {
+    const started = reduceNativeLiveActivity(
+      createInitialNativeLiveActivityState(),
+      observeCatalog(
+        [
+          catalogItem({ sessionId: 'ses_a', title: 'Alpha', statusType: 'retry' }),
+          catalogItem({ sessionId: 'ses_child', title: 'Fixer', statusType: 'retry' }),
+        ],
+        { now: 80 },
+      ),
+    );
+    const cleaned = reduceNativeLiveActivity(started.state, observeCatalog(
+      [catalogItem({ sessionId: 'ses_a', title: 'Alpha', statusType: 'retry' })],
+      { now: 120, rootSessionIds: new Set(['ses_a']) },
+    ));
+    const payload = cleaned.commands[0];
+    expect(payload?.type).toBe('update');
+    if (payload?.type !== 'update') return;
+    expect(payload.payload.items?.map((item) => item.sessionId)).toEqual(['ses_a']);
+    expect(cleaned.state.items.map((item) => item.sessionId)).toEqual(['ses_a']);
   });
 });
 
