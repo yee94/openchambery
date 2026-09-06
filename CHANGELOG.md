@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.19.7-beta.20] - 2026-09-06
+
+### 助手
+
+- 手机对话正文补上顶部导航栏高度的留白，滚到顶不会钻进标题栏。
+- 设置里只保留模型选择，不再选 Agent。
+
 ## [1.19.7-beta.19] - 2026-09-06
 
 ### 移动端

@@ -102,12 +102,15 @@ describe('Assistant UI product contract', () => {
     expect(view).not.toContain('activeProjectId');
     expect(settings).toContain('draft.workspacePath ?? selected?.managedWorkspacePath ?? null');
     expect(settings).toContain('useScopedProvidersQuery(catalogDirectory, { enabled: true })');
-    expect(settings).toContain('useScopedAgentsQuery(catalogDirectory, { enabled: true })');
+    expect(settings).not.toContain('useScopedAgentsQuery');
+    expect(settings).not.toContain('AgentSelector');
+    expect(settings).not.toContain('itemId="assistants.agent"');
     expect(settings).not.toContain('itemId="assistants.mode"');
     expect(settings).not.toContain("patchDraft('mode', mode)");
     expect(settings).not.toContain('activeProjectId');
     const search = await read('../../lib/settings/search.ts');
     expect(search).not.toContain("id: 'assistants.mode'");
+    expect(search).not.toContain("id: 'assistants.agent'");
   });
 
   test('removes skill roots from settings, requests, DTOs, search, and locale keys', async () => {
@@ -775,6 +778,10 @@ describe('Assistant UI product contract', () => {
     expect(mobileStyles).toContain('var(--oc-safe-area-top, 0px) +');
     expect(mobileStyles).toContain('calc(var(--oc-safe-area-top, 0px) + 35%)');
     expect(view).toContain('overlay');
+    expect(view).toContain('overlayHeader={isMobileSurface}');
+    const conversation = await read('AssistantConversationSurface.tsx');
+    expect(conversation).toContain('overlayHeader');
+    expect(conversation).toContain('pt-[calc(max(0.625rem,var(--oc-safe-area-top,0px))+var(--oc-mobile-detail-navigation-height)+1.25rem)]');
     expect(mobileStyles).toContain('--oc-mobile-header-fade');
     expect(mobileStyles).toContain('var(--surface-background) 85%');
     expect(mobileStyles.match(/var\(--oc-mobile-header-fade\)/g)?.length).toBeGreaterThanOrEqual(4);

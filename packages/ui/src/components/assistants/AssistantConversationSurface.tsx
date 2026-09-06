@@ -58,6 +58,7 @@ type AssistantConversationSurfaceProps = {
   assistant: AssistantDTO
   warning?: string | null
   active: boolean
+  overlayHeader?: boolean
 }
 
 /**
@@ -74,6 +75,7 @@ export const AssistantConversationSurface: React.FC<AssistantConversationSurface
   assistant,
   warning,
   active,
+  overlayHeader = false,
 }) => {
   const { t } = useI18n()
   const isMobile = useUIStore((state) => state.isMobile)
@@ -241,7 +243,12 @@ export const AssistantConversationSurface: React.FC<AssistantConversationSurface
     <div className="flex min-h-0 flex-1 flex-col bg-background">
       <div
         ref={scrollerRef}
-        className="min-h-0 flex-1 overflow-y-auto px-4 pt-5 pb-9 sm:px-8 sm:pt-7 sm:pb-12"
+        className={cn(
+          'min-h-0 flex-1 overflow-y-auto px-4 pb-9 sm:px-8 sm:pb-12',
+          overlayHeader
+            ? 'pt-[calc(max(0.625rem,var(--oc-safe-area-top,0px))+var(--oc-mobile-detail-navigation-height)+1.25rem)]'
+            : 'pt-5 sm:pt-7',
+        )}
         data-assistant-contact-transcript=""
       >
         {warning ? (
