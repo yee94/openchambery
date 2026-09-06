@@ -51,6 +51,24 @@ export const isSkillGroupTool = (toolName: unknown): boolean => {
     return normalizeToolName(toolName) === 'skill';
 };
 
+// Task stays a standalone row (child-session chrome). Question stays visible
+// because it waits on the user. Everything else that is not explore/skill
+// is a used-class process tool (edit / command / other).
+export const isUsedGroupTool = (toolName: unknown): boolean => {
+    const name = normalizeToolName(toolName);
+    if (!name) return false;
+    if (CONTEXT_GROUP_TOOL_NAMES.has(name)) return false;
+    if (name === 'skill' || STANDALONE_TOOL_NAMES.has(name) || name === 'question') {
+        return false;
+    }
+    return true;
+};
+
+/** Consecutive explore + used tools share one process fold. */
+export const isProcessGroupTool = (toolName: unknown): boolean => {
+    return isContextGroupTool(toolName) || isUsedGroupTool(toolName);
+};
+
 export const isToolPartSettled = (part: unknown): boolean => {
     if (!part || typeof part !== 'object') return false;
 

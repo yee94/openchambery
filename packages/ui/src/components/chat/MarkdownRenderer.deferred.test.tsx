@@ -17,6 +17,7 @@ describe('deferred Markdown rendering', () => {
         );
 
         expect(markup).toContain('data-markdown-hydration="deferred"');
+        expect(markup).toContain('data-markdown-ready="false"');
         expect(markup).toContain('data-markdown-placeholder="skeleton"');
         expect(markup).toContain('data-markdown-size-spacer="true"');
         expect(markup).toContain('class="invisible block whitespace-pre-wrap"');

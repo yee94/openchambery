@@ -1,29 +1,35 @@
-import { readFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { describe, expect, test, vi } from 'vitest';
 
 import {
   applyNativeLiveActivityCommand,
+  applyNativeLiveActivityTokenCommands,
+  buildNativeLiveActivityCatalog,
   createInitialNativeLiveActivityState,
+  createInitialNativeLiveActivityTokenState,
   evaluateNativeIosLiveActivityAvailability,
   mapNativeLiveActivityPhase,
   NATIVE_LIVE_ACTIVITY_BUSY_START_MS,
   NATIVE_LIVE_ACTIVITY_COMMAND_RETRY_MS,
   NATIVE_LIVE_ACTIVITY_COMPLETE_DISMISSAL_SECONDS,
   NATIVE_LIVE_ACTIVITY_ERROR_DISMISSAL_SECONDS,
+  NATIVE_LIVE_ACTIVITY_ID,
+  NATIVE_LIVE_ACTIVITY_ITEM_LIMIT,
   nextNativeLiveActivityEventVersion,
+  parseNativeLiveActivityPushTokenEvent,
   reduceNativeLiveActivity,
+  reduceNativeLiveActivityToken,
   rollbackNativeLiveActivityState,
   runNativeLiveActivityStep,
+  runNativeLiveActivityTokenStep,
   shouldScheduleNativeLiveActivityRetry,
   toNativeLiveActivityTimestamp,
+  type NativeLiveActivityCatalogItem,
   type NativeLiveActivityObservation,
   type NativeLiveActivityPlugin,
   type NativeLiveActivityState,
+  type NativeLiveActivityTokenContext,
+  type NativeLiveActivityTokenState,
 } from './native-ios-live-activity';
-
-const here = dirname(fileURLToPath(import.meta.url));
 
 const observe = (
   overrides: Partial<NativeLiveActivityObservation> = {},
@@ -53,6 +59,7 @@ const plugin = (): NativeLiveActivityPlugin => ({
   start: vi.fn(async () => ({ activityId: 'act_1' })),
   update: vi.fn(async () => undefined),
   end: vi.fn(async () => undefined),
+  addListener: vi.fn(async () => ({ remove: async () => undefined })),
 });
 
 describe('native iOS Live Activity availability', () => {
@@ -92,18 +99,6 @@ describe('native iOS Live Activity availability', () => {
       platform: 'ios',
       pluginAvailable: false,
     })).toBe(false);
-    expect(evaluateNativeIosLiveActivityAvailability({
-      isCapacitor: true,
-      platform: 'ios',
-      pluginAvailable: true,
-      nativeUiEnabled: false,
-    })).toBe(false);
-    expect(evaluateNativeIosLiveActivityAvailability({
-      isCapacitor: true,
-      platform: 'ios',
-      pluginAvailable: true,
-      nativeUiEnabled: true,
-    })).toBe(true);
   });
 });
 
@@ -504,6 +499,150 @@ describe('reduceNativeLiveActivity', () => {
   });
 });
 
+const catalogItem = (
+  overrides: Partial<NativeLiveActivityCatalogItem> & Pick<NativeLiveActivityCatalogItem, 'sessionId'>,
+): NativeLiveActivityCatalogItem => ({
+  title: overrides.title ?? overrides.sessionId,
+  statusType: overrides.statusType ?? 'busy',
+  ...overrides,
+});
+
+const observeCatalog = (
+  catalog: NativeLiveActivityCatalogItem[],
+  overrides: Partial<NativeLiveActivityObservation> = {},
+) => observe({ catalog, sessionId: NATIVE_LIVE_ACTIVITY_ID, ...overrides });
+
+describe('buildNativeLiveActivityCatalog', () => {
+  test('skips child sessions, keeps top-level running order, and truncates titles', () => {
+    const catalog = buildNativeLiveActivityCatalog({
+      runningIds: new Set(['ses_child', 'ses_b', 'ses_a', 'ses_unknown']),
+      statuses: {
+        ses_a: { type: 'busy' },
+        ses_b: { type: 'retry' },
+        ses_child: { type: 'busy' },
+      },
+      sessions: [
+        { id: 'ses_a', title: 'Alpha', parentID: null },
+        { id: 'ses_child', title: 'Child', parentID: 'ses_a' },
+        { id: 'ses_b', title: `${'Long '.repeat(40)}title`, parentID: null },
+      ],
+    });
+    expect(catalog.map((item) => item.sessionId)).toEqual(['ses_a', 'ses_b', 'ses_unknown']);
+    expect(catalog.find((item) => item.sessionId === 'ses_b')?.statusType).toBe('retry');
+    expect(catalog.find((item) => item.sessionId === 'ses_b')?.title.endsWith('…')).toBe(true);
+    expect(catalog.find((item) => item.sessionId === 'ses_b')?.title.length).toBeLessThanOrEqual(80);
+  });
+});
+
+describe('reduceNativeLiveActivity catalog', () => {
+  test('waits 5s then starts one activity with every working session', () => {
+    const waiting = reduceNativeLiveActivity(
+      createInitialNativeLiveActivityState(),
+      observeCatalog([catalogItem({ sessionId: 'ses_a' }), catalogItem({ sessionId: 'ses_b', title: 'Beta' })], { now: 100 }),
+    );
+    expect(waiting.commands).toEqual([{ type: 'wait', delayMs: NATIVE_LIVE_ACTIVITY_BUSY_START_MS }]);
+    expect(waiting.state.started).toBe(false);
+    expect(waiting.state.items).toHaveLength(2);
+
+    const startedAtNow = 100 + NATIVE_LIVE_ACTIVITY_BUSY_START_MS;
+    const started = reduceNativeLiveActivity(waiting.state, observeCatalog(
+      [catalogItem({ sessionId: 'ses_a' }), catalogItem({ sessionId: 'ses_b', title: 'Beta' })],
+      { now: startedAtNow },
+    ));
+    expect(started.commands[0]).toMatchObject({
+      type: 'start',
+      payload: {
+        sessionId: NATIVE_LIVE_ACTIVITY_ID,
+        status: 'working',
+        workingCount: 2,
+      },
+    });
+    const payload = started.commands[0];
+    expect(payload?.type).toBe('start');
+    if (payload?.type !== 'start') return;
+    expect(payload.payload.items?.map((item) => item.sessionId)).toEqual(['ses_a', 'ses_b']);
+    expect(started.state.started).toBe(true);
+  });
+
+  test('keeps completed rows while another session is working', () => {
+    const started = reduceNativeLiveActivity(
+      createInitialNativeLiveActivityState(),
+      observeCatalog(
+        [
+          catalogItem({ sessionId: 'ses_a', statusType: 'retry' }),
+          catalogItem({ sessionId: 'ses_b', statusType: 'retry' }),
+        ],
+        { now: 80 },
+      ),
+    );
+    const updated = reduceNativeLiveActivity(started.state, observeCatalog(
+      [catalogItem({ sessionId: 'ses_b' })],
+      { now: 20_000 },
+    ));
+    expect(updated.commands[0]).toMatchObject({ type: 'update', payload: { workingCount: 1 } });
+    const payload = updated.commands[0];
+    expect(payload?.type).toBe('update');
+    if (payload?.type !== 'update') return;
+    expect(payload.payload.items).toEqual([
+      expect.objectContaining({ sessionId: 'ses_a', status: 'complete', endedAt: 20_000 }),
+      expect.objectContaining({ sessionId: 'ses_b', status: 'working' }),
+    ]);
+    expect(updated.state.started).toBe(true);
+  });
+
+  test('ends only after the last working session completes', () => {
+    const started = reduceNativeLiveActivity(
+      createInitialNativeLiveActivityState(),
+      observeCatalog([catalogItem({ sessionId: 'ses_a', statusType: 'retry' })], { now: 80 }),
+    );
+    const ended = reduceNativeLiveActivity(started.state, observeCatalog([], { now: 20_000 }));
+    expect(ended.commands[0]).toMatchObject({
+      type: 'end',
+      payload: {
+        sessionId: NATIVE_LIVE_ACTIVITY_ID,
+        status: 'complete',
+        workingCount: 0,
+        dismissalSeconds: NATIVE_LIVE_ACTIVITY_COMPLETE_DISMISSAL_SECONDS,
+      },
+    });
+    expect(ended.state.started).toBe(false);
+  });
+
+  test(`caps the list at ${NATIVE_LIVE_ACTIVITY_ITEM_LIMIT} working sessions`, () => {
+    const catalog = Array.from({ length: 6 }, (_, index) => catalogItem({
+      sessionId: `ses_${index}`,
+      title: `Session ${index}`,
+    }));
+    const started = reduceNativeLiveActivity(
+      createInitialNativeLiveActivityState(),
+      observeCatalog(catalog.map((item) => ({ ...item, statusType: 'retry' })), { now: 80 }),
+    );
+    const payload = started.commands[0];
+    expect(payload?.type).toBe('start');
+    if (payload?.type !== 'start') return;
+    expect(payload.payload.items).toHaveLength(NATIVE_LIVE_ACTIVITY_ITEM_LIMIT);
+    expect(payload.payload.workingCount).toBe(NATIVE_LIVE_ACTIVITY_ITEM_LIMIT);
+  });
+
+  test('pushes a renamed session title onto a running live activity', () => {
+    const started = reduceNativeLiveActivity(
+      createInitialNativeLiveActivityState(),
+      observeCatalog([catalogItem({ sessionId: 'ses_a', statusType: 'retry', title: 'New session' })], { now: 80 }),
+    );
+    const renamed = reduceNativeLiveActivity(started.state, observeCatalog(
+      [catalogItem({ sessionId: 'ses_a', statusType: 'retry', title: 'Fix live activity titles' })],
+      { now: 120 },
+    ));
+    expect(renamed.commands[0]).toMatchObject({ type: 'update' });
+    const payload = renamed.commands[0];
+    expect(payload?.type).toBe('update');
+    if (payload?.type !== 'update') return;
+    expect(payload.payload.items).toEqual([
+      expect.objectContaining({ sessionId: 'ses_a', title: 'Fix live activity titles', status: 'retry' }),
+    ]);
+  });
+});
+
 describe('applyNativeLiveActivityCommand', () => {
   test('does not call the plugin when unavailable (web/electron/vscode/Android zero-call)', async () => {
     const native = plugin();
@@ -563,6 +702,39 @@ describe('applyNativeLiveActivityCommand', () => {
       status: 'working',
       eventVersion: 1,
       updatedAt: toNativeLiveActivityTimestamp(1_700_000_012_000),
+    });
+    await applyNativeLiveActivityCommand(true, native, {
+      type: 'update',
+      payload: {
+        sessionId: NATIVE_LIVE_ACTIVITY_ID,
+        startedAt: 1_700_000_000_000,
+        status: 'working',
+        eventVersion: 4,
+        updatedAt: 1_700_000_012_000,
+        title: 'Alpha',
+        workingCount: 1,
+        items: [{
+          sessionId: 'ses_a',
+          title: 'Alpha',
+          status: 'working',
+          startedAt: 1_700_000_000_000,
+        }],
+      },
+    });
+    expect(native.update).toHaveBeenCalledWith({
+      sessionId: NATIVE_LIVE_ACTIVITY_ID,
+      startedAt: toNativeLiveActivityTimestamp(1_700_000_000_000),
+      status: 'working',
+      eventVersion: 4,
+      updatedAt: toNativeLiveActivityTimestamp(1_700_000_012_000),
+      title: 'Alpha',
+      workingCount: 1,
+      items: [{
+        sessionId: 'ses_a',
+        title: 'Alpha',
+        status: 'working',
+        startedAt: toNativeLiveActivityTimestamp(1_700_000_000_000),
+      }],
     });
     await applyNativeLiveActivityCommand(true, native, {
       type: 'end',
@@ -745,30 +917,222 @@ describe('native Live Activity command failure', () => {
   });
 });
 
-describe('useNativeLiveActivity wiring', () => {
-  test('uses the narrow live status and bootstrap:false permission/question hooks', () => {
-    const hook = readFileSync(join(here, '../apps/useNativeLiveActivity.ts'), 'utf-8');
-    const syncContext = readFileSync(join(here, '../sync/sync-context.tsx'), 'utf-8');
-    expect(syncContext).toContain('export function useSessionErrorAt');
-    expect(syncContext).toContain('state.session_error_at?.[sessionID] !== previous.session_error_at?.[sessionID]');
-    expect(hook).toContain('useLiveSessionStatus');
-    expect(hook).toContain('useSessionErrorAt');
-    expect(hook).toContain('hasSessionError');
-    expect(hook).toContain('errorAt');
-    expect(hook).toContain('useSessionPermissions');
-    expect(hook).toContain('useSessionQuestions');
-    expect(hook).toContain("{ bootstrap: false }");
-    expect(hook).toContain('getCurrentSessionId');
-    expect(hook).toContain('result.superseded');
-    expect(hook).not.toContain('useCallback');
-    expect(hook).toContain('useEvent');
-    expect(hook).not.toContain('useSessionMessages');
-    expect(hook).not.toContain('message.part');
-    expect(hook).toContain('runNativeLiveActivityStep');
-    expect(hook).toContain('epochRef');
-    expect(hook).not.toContain('applyNativeLiveActivityCommand(true, plugin, command).catch(() => undefined)');
-    const app = readFileSync(join(here, '../apps/MobileApp.tsx'), 'utf-8');
-    expect(app).toContain('useNativeLiveActivity');
-    expect(app).toContain('sessionId: currentSessionId');
+describe('native Live Activity token registration', () => {
+  const context = (
+    overrides: Partial<NativeLiveActivityTokenContext> = {},
+  ): NativeLiveActivityTokenContext => ({
+    selectedSessionId: 'ses_a',
+    runtimeIdentity: 'runtime-a',
+    connected: true,
+    enabled: true,
+    ...overrides,
+  });
+
+  const snapshot = (token = 'token-a', activityId = 'act_1', sessionId = 'ses_a') => ({
+    activityId,
+    sessionId,
+    token,
+  });
+
+  const accepted = (
+    token = 'token-a',
+    activityId = 'act_1',
+    sessionId = 'ses_a',
+  ): NativeLiveActivityTokenState => ({
+    desired: snapshot(token, activityId, sessionId),
+    registered: { ...snapshot(token, activityId, sessionId), runtimeIdentity: 'runtime-a' },
+  });
+
+  const apis = (mode: 'ok' | 'fail' = 'ok') => {
+    const calls: string[] = [];
+    return {
+      calls,
+      register: vi.fn(async (payload: { token: string }) => {
+        calls.push(`register:${payload.token}`);
+        return mode === 'ok' ? { ok: true as const } : null;
+      }),
+      unregister: vi.fn(async (payload: { token: string }) => {
+        calls.push(`unregister:${payload.token}`);
+        return mode === 'ok' ? { ok: true as const } : null;
+      }),
+    };
+  };
+
+  test('ignores malformed and stale pushToken events', () => {
+    expect(parseNativeLiveActivityPushTokenEvent(null)).toBeNull();
+    expect(parseNativeLiveActivityPushTokenEvent({ activityId: '', sessionId: 'ses_a', token: 't' })).toBeNull();
+    expect(parseNativeLiveActivityPushTokenEvent({
+      activityId: 'act_1',
+      sessionId: 'ses_a',
+      token: 'token-a',
+    })).toEqual(snapshot());
+
+    const stale = reduceNativeLiveActivityToken(
+      createInitialNativeLiveActivityTokenState(),
+      context(),
+      { type: 'pushToken', activityId: 'act_1', sessionId: 'ses_b', token: 'token-a' },
+    );
+    expect(stale.commands).toEqual([]);
+    expect(stale.state.desired).toBeNull();
+  });
+
+  test('registers a token for the selected session and is idempotent by token/activityId', () => {
+    const first = reduceNativeLiveActivityToken(
+      createInitialNativeLiveActivityTokenState(),
+      context(),
+      { type: 'pushToken', ...snapshot() },
+    );
+    expect(first.commands).toEqual([{
+      type: 'register',
+      payload: snapshot(),
+      runtimeIdentity: 'runtime-a',
+    }]);
+
+    const again = reduceNativeLiveActivityToken(
+      accepted(),
+      context(),
+      { type: 'pushToken', ...snapshot() },
+    );
+    expect(again.commands).toEqual([]);
+    expect(again.state.desired).toEqual(snapshot());
+  });
+
+  test('rotates tokens by registering the new token then unregistering the old', async () => {
+    const { calls, register, unregister } = apis();
+    const next = await runNativeLiveActivityTokenStep({
+      state: accepted('token-a'),
+      context: context(),
+      action: { type: 'pushToken', ...snapshot('token-b') },
+      register,
+      unregister,
+    });
+    expect(calls).toEqual(['register:token-b', 'unregister:token-a']);
+    expect(next.desired?.token).toBe('token-b');
+    expect(next.registered?.token).toBe('token-b');
+    expect(next.registered?.runtimeIdentity).toBe('runtime-a');
+  });
+
+  test('keeps the desired token when register fails and retries on reconnect', async () => {
+    const failed = apis('fail');
+    const afterFail = await runNativeLiveActivityTokenStep({
+      state: createInitialNativeLiveActivityTokenState(),
+      context: context(),
+      action: { type: 'pushToken', ...snapshot() },
+      register: failed.register,
+      unregister: failed.unregister,
+    });
+    expect(failed.calls).toEqual(['register:token-a']);
+    expect(afterFail.desired).toEqual(snapshot());
+    expect(afterFail.registered).toBeNull();
+
+    const disconnected = reduceNativeLiveActivityToken(afterFail, context({ connected: false }), { type: 'sync' });
+    expect(disconnected.commands).toEqual([]);
+    expect(disconnected.state.desired).toEqual(snapshot());
+
+    const retry = apis();
+    const afterRetry = await runNativeLiveActivityTokenStep({
+      state: afterFail,
+      context: context(),
+      action: { type: 'sync' },
+      register: retry.register,
+      unregister: retry.unregister,
+    });
+    expect(retry.calls).toEqual(['register:token-a']);
+    expect(afterRetry.registered?.token).toBe('token-a');
+  });
+
+  test('unregisters on session switch and ignores later stale events', async () => {
+    const { calls, register, unregister } = apis();
+    const switched = await runNativeLiveActivityTokenStep({
+      state: accepted(),
+      context: context({ selectedSessionId: 'ses_b' }),
+      action: { type: 'sync' },
+      register,
+      unregister,
+    });
+    expect(calls).toEqual(['unregister:token-a']);
+    expect(switched.desired).toBeNull();
+    expect(switched.registered).toBeNull();
+
+    const stale = reduceNativeLiveActivityToken(
+      switched,
+      context({ selectedSessionId: 'ses_b' }),
+      { type: 'pushToken', ...snapshot() },
+    );
+    expect(stale.commands).toEqual([]);
+    expect(stale.state.desired).toBeNull();
+  });
+
+  test('clears a successful unregister and retains registered state when unregister fails', async () => {
+    const failed = apis('fail');
+    const afterFail = await runNativeLiveActivityTokenStep({
+      state: accepted(),
+      context: context(),
+      action: { type: 'localEndSucceeded' },
+      register: failed.register,
+      unregister: failed.unregister,
+    });
+    expect(failed.calls).toEqual(['unregister:token-a']);
+    expect(afterFail.desired).toBeNull();
+    expect(afterFail.registered?.token).toBe('token-a');
+
+    const retry = apis();
+    const afterRetry = await runNativeLiveActivityTokenStep({
+      state: afterFail,
+      context: context(),
+      action: { type: 'sync' },
+      register: retry.register,
+      unregister: retry.unregister,
+    });
+    expect(retry.calls).toEqual(['unregister:token-a']);
+    expect(afterRetry.registered).toBeNull();
+  });
+
+  test('re-registers on a new runtime without sending the previous runtime token to the new endpoint', async () => {
+    const { calls, register, unregister } = apis();
+    const next = await runNativeLiveActivityTokenStep({
+      state: accepted(),
+      context: context({ runtimeIdentity: 'runtime-b' }),
+      action: { type: 'sync' },
+      register,
+      unregister,
+    });
+    expect(calls).toEqual(['register:token-a']);
+    expect(unregister).not.toHaveBeenCalled();
+    expect(next.registered?.runtimeIdentity).toBe('runtime-b');
+  });
+
+  test('drops a foreign-runtime token without sending it to the new endpoint', async () => {
+    const { calls, register, unregister } = apis();
+    const next = await runNativeLiveActivityTokenStep({
+      state: accepted(),
+      context: context({ runtimeIdentity: 'runtime-b' }),
+      action: { type: 'dispose' },
+      register,
+      unregister,
+    });
+    expect(calls).toEqual([]);
+    expect(next.desired).toBeNull();
+    expect(next.registered).toBeNull();
+  });
+
+  test('does not send an old-runtime unregister after the endpoint has already switched', async () => {
+    const { register, unregister } = apis();
+    const reduced = reduceNativeLiveActivityToken(accepted(), context(), { type: 'localEndSucceeded' });
+    expect(reduced.commands).toEqual([{
+      type: 'unregister',
+      payload: { token: 'token-a' },
+      runtimeIdentity: 'runtime-a',
+    }]);
+    const next = await applyNativeLiveActivityTokenCommands({
+      state: reduced.state,
+      commands: reduced.commands,
+      getRuntimeIdentity: () => 'runtime-b',
+      register,
+      unregister,
+    });
+    expect(unregister).not.toHaveBeenCalled();
+    expect(register).not.toHaveBeenCalled();
+    expect(next.registered).toBeNull();
   });
 });

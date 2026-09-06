@@ -454,6 +454,42 @@ describe('MessageList history virtualization handle state', () => {
     });
 });
 
+describe('runtime default list engine', () => {
+    test('TanStack is the default; LegendList is opt-in via oc:legend-timeline=1', () => {
+        const storeSource = readFileSync(join(here, '..', '..', 'stores', 'useFeatureFlagsStore.ts'), 'utf8');
+        const legendStart = storeSource.indexOf('export const readLegendTimelineEnabled');
+        const markstreamStart = storeSource.indexOf('export const readMarkstreamReactEnabled');
+        expect(legendStart).toBeGreaterThan(-1);
+        expect(markstreamStart).toBeGreaterThan(legendStart);
+        const legendSlice = storeSource.slice(legendStart, markstreamStart);
+        expect(legendSlice).toContain('readExactOneFlag');
+        expect(legendSlice).not.toContain("!== '0'");
+    });
+});
+
+describe('cold-start markdown pin reveal', () => {
+    test('LegendList and TanStack both hide until seeded markdown reports ready', () => {
+        const messageListSource = readFileSync(join(here, 'MessageList.tsx'), 'utf8');
+        const timelineSource = readFileSync(join(here, 'TimelineList.tsx'), 'utf8');
+        expect(messageListSource).toContain('useMarkdownPinReveal');
+        expect(messageListSource).toContain('setPinRevealGeneration((current) => current + 1)');
+        expect(messageListSource).toContain('pinRevealGeneration={pinRevealGeneration}');
+        expect(timelineSource).toContain('useMarkdownPinReveal');
+        expect(timelineSource).toContain('mergeMarkdownPinRevealStyle(style, pinHidden)');
+        expect(timelineSource).toContain('resolveMarkdownPinRevealKeys');
+    });
+});
+
+describe('batched virtualizer resize writes', () => {
+    test('TanStack resizeItem and LegendList row measure share the microtask batch helper', () => {
+        const messageListSource = readFileSync(join(here, 'MessageList.tsx'), 'utf8');
+        const timelineSource = readFileSync(join(here, 'TimelineList.tsx'), 'utf8');
+        expect(messageListSource).toContain('installBatchedResizeItem(tanstackVirtualizer)');
+        expect(timelineSource).toContain('createSharedElementSizeBatch');
+        expect(timelineSource).not.toContain('const height = node.offsetHeight');
+    });
+});
+
 describe('column-width virtualizer invalidation', () => {
     test('ignores the first observation and sub-pixel wobble, then invalidates a real column shrink', () => {
         expect(shouldInvalidateVirtualizerMeasurementsOnColumnResize(null, 800)).toBe(false);

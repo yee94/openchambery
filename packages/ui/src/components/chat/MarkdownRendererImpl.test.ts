@@ -16,6 +16,7 @@ const markdownRendererSource = readFileSync(join(sourceDirectory, 'MarkdownRende
 // cannot be loaded here; assert on its source the way the binary-reference
 // suite below does.
 const markdownCoreSource = readFileSync(join(sourceDirectory, 'markdown', 'markdownCore.ts'), 'utf-8');
+const markdownParsePipelineSource = readFileSync(join(sourceDirectory, 'markdown', 'markdownParsePipeline.ts'), 'utf-8');
 const messageListSource = readFileSync(join(sourceDirectory, 'MessageList.tsx'), 'utf-8');
 const decorateSource = readFileSync(join(sourceDirectory, 'markdown', 'decorate.ts'), 'utf-8');
 const autoFollowSource = readFileSync(
@@ -126,6 +127,8 @@ describe('isLikelyFileReferencePath', () => {
     test('keeps extension-bearing source paths and known extensionless files', () => {
         expect(isLikelyFileReferencePath('src/consumer.ts')).toBe(true);
         expect(isLikelyFileReferencePath('.omo/notepads/run/learnings.md')).toBe(true);
+        expect(isLikelyFileReferencePath('/Users/dev/Downloads/report.html')).toBe(true);
+        expect(isLikelyFileReferencePath('preview.htm')).toBe(true);
         expect(isLikelyFileReferencePath('Dockerfile')).toBe(true);
         expect(isLikelyFileReferencePath('.gitignore')).toBe(true);
     });
@@ -136,13 +139,15 @@ describe('stream completion reuses the streamed DOM', () => {
         // Collapsing a finished message back into one whole-document block
         // misses every per-block cache entry and re-morphs the entire message
         // in a single commit, which reads as a full-message flash.
-        expect(markdownCoreSource).toContain("const tailMode: MarkdownBlock['mode'] = live ? 'live' : 'full';");
-        expect(markdownCoreSource).toContain("mode: isLast ? tailMode : 'full',");
+        expect(markdownParsePipelineSource).toContain("const tailMode: MarkdownBlock['mode'] = live ? 'live' : 'full';");
+        expect(markdownParsePipelineSource).toContain("mode: isLast ? tailMode : 'full',");
+        expect(markdownCoreSource).toContain('parseMarkdownInWorker');
+        expect(markdownCoreSource).toContain('shouldUseMainThreadMarkdownParse');
     });
 
     test('dollar math is lexed through the currency-safe matcher', () => {
-        expect(markdownCoreSource).toContain('matchDollarMath');
-        expect(markdownCoreSource).toContain('dollarMathExtension');
+        expect(markdownParsePipelineSource).toContain('matchDollarMath');
+        expect(markdownParsePipelineSource).toContain('dollarMathExtension');
     });
 
     test('the non-streaming render yields on a time budget, not once per block', () => {
@@ -151,6 +156,12 @@ describe('stream completion reuses the streamed DOM', () => {
 
     test('first paint lays down one element per async render block', () => {
         expect(markdownRendererSource).toContain('for (const html of renderMarkdownSyncBlocks(text))');
+    });
+
+    test('open fences upgrade through the Shiki line worker and prefix-diff', () => {
+        expect(markdownRendererSource).toContain('shouldPreserveStreamingFence');
+        expect(markdownRendererSource).toContain('upgradeStreamingFenceHighlight');
+        expect(markdownRendererSource).toContain('highlightLinesInWorker');
     });
 
     test('decorated code blocks do not depend on the line-number defer flag', () => {
@@ -265,6 +276,36 @@ describe('forced layout while scrolling', () => {
     });
 });
 
+describe('file reference annotation', () => {
+    test('wraps path tokens during decorate so morphdom owns the underline structure', () => {
+        expect(decorateSource).toContain('wrapMarkdownFileReferenceTokens(root)');
+        expect(markdownRendererSource).toContain('copyPreservedFileLinkAttributes(fromEl, toEl)');
+
+        const annotateStart = markdownRendererSource.indexOf('const annotateFileLinks = () => {');
+        const annotateEnd = markdownRendererSource.indexOf('const openFileReference', annotateStart);
+        const annotate = markdownRendererSource.slice(annotateStart, annotateEnd);
+
+        expect(annotateStart).toBeGreaterThan(-1);
+        expect(annotate).not.toContain('unwrapBlockCodePathTokens');
+        expect(annotate).not.toContain('wrapBlockCodePathTokens');
+        expect(annotate).not.toContain('wrapParagraphPathTokens');
+    });
+
+    test('opens image file paths in the shared image preview', () => {
+        expect(markdownRendererSource).toContain('isImageFile(resolved.resolvedPath) && onShowPopup');
+        expect(markdownRendererSource).toContain("tool: 'image-preview'");
+        expect(markdownRendererSource).toContain('url: resolved.resolvedPath');
+    });
+});
+
+describe('html file references', () => {
+    test('opens html paths in preview instead of the runtime editor', () => {
+        expect(markdownRendererSource).toContain('isHtmlFile(resolved.resolvedPath)');
+        expect(markdownRendererSource).toContain("viewerMode: 'preview'");
+        expect(markdownRendererSource).toContain('preferRuntimeEditor && editor && !htmlPreview');
+    });
+});
+
 describe('binary file references', () => {
     test('routes binary links through the desktop path opener before the context preview', () => {
         const binaryHandlingStart = markdownRendererSource.indexOf("sourceElement.getAttribute('data-openchamber-file-binary') === 'true'");
@@ -273,7 +314,8 @@ describe('binary file references', () => {
         expect(binaryHandlingStart).toBeGreaterThan(-1);
         const binaryHandling = markdownRendererSource.slice(binaryHandlingStart, contextPreviewStart);
         expect(binaryHandling).toContain('!isImageFile(resolved.resolvedPath)');
+        expect(binaryHandling).toContain('!isHtmlFile(resolved.resolvedPath)');
         expect(binaryHandling).toContain('await openDesktopPath(resolved.resolvedPath)');
-        expect(markdownRendererSource).toContain('isMobileSurface && info.isBinary && !isImageFile(latestResolved.resolvedPath)');
+        expect(markdownRendererSource).toContain('!isHtmlFile(latestResolved.resolvedPath)');
     });
 });

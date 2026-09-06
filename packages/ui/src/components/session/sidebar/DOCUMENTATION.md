@@ -3,24 +3,31 @@
 ## Refactor result
 
 - `SessionSidebar.tsx` now acts mainly as orchestration; core logic moved to focused hooks/components.
-- Sidebar is now a single multi-project tree: an optional `pinned` top section,
-  then projects, then worktrees/archived groups, then sessions. Pinned sessions
-  render only in the top section and are excluded from project groups.
-  Mobile projects home uses the same contract: `derivePinnedSessions` for the
-  global pinned group, `listInProgressHomeSessions` for the unlabeled
-  in-progress/unread group below it, `createSessionOwnershipIndex` for
-  session→project assignment, and `buildSessionTree(..., { omitPinnedSessions: true })` so
-  pinned roots leave project/worktree lists. Running and unread sessions still
-  remain in their project groups.
+- Sidebar is now a single multi-project tree: an optional pinned + in-progress
+  top section, then projects, then worktrees/archived groups, then sessions.
+  Pinned sessions render only in the top section and are excluded from project
+  groups. The shared `pinnedSessions.ts` module owns both top-section helpers:
+  `derivePinnedSessions` for the pinned group and `listInProgressHomeSessions`
+  for the unlabeled in-progress/unread group below it. Running and unread
+  sessions still remain in their project groups — the in-progress rows are an
+  additional lift, not a move. Mobile projects home uses the same contract
+  together with `createSessionOwnershipIndex` for session→project assignment
+  and `buildSessionTree(..., { omitPinnedSessions: true })` so
+  pinned roots leave project/worktree lists.
   Parent/child attachment always runs on the full session list first; pinned
   roots are omitted from project groups only after children attach. Pinned rows
   stay flat (no expand chevron, no nested subagents). Children of pinned parents
   stay hidden only while the parent is pinned; unpinning restores the normal
   parent/child tree under Projects.
-- The Pinned section renders every pinned session and supports header collapse.
-   Mobile home retitles that card to pinned/in-progress and adds unlabeled
-   running and unread rows below the pinned group.
-   Expanded project/worktree
+  Top-section hover cards resolve project and branch from session ownership
+  (`resolveTopSectionSecondaryMeta`) because pinned roots are omitted from the
+  project-tree meta index.
+- The top section renders every pinned session plus unlabeled running and
+  top-level-unread rows, and supports header collapse. Its title becomes
+  pinned/in-progress when the in-progress group is non-empty. Web, desktop,
+  VS Code, and mobile home share this contract; VS Code still has no global
+  pinned group but does show the in-progress rows in this top section.
+  Expanded project/worktree
    groups reveal 3 sessions by default from the already-fetched 20-session page;
    Show more reveals cached rows before loading the next 20-session page on demand.
    Once expanded past the default page, Show fewer is available alongside Show more
@@ -35,7 +42,7 @@
 - Project/worktree Show more first reveals already-fetched rows, then fetches the next 20-session page for its own directory at the local boundary.
 - The mobile session tree shows 20 root sessions by default for projects without worktrees. Projects with worktrees show 5 sessions per root/worktree bucket by default; Show more and Show fewer use that bucket's default page size. Collapsing and reopening a project or worktree preserves its revealed session count until Show fewer is selected or the sessions surface closes.
 - Mobile project, worktree, and session rows expose their matching sidebar actions through a touch-sized bottom action panel after a 500ms long press. Scrolling movement and pointer cancellation abort the gesture, and the triggering click is consumed. Dedicated mobile and the responsive Web sessions sheet share the same hold controller; Web session rows retain their desktop context menu, while project and worktree context menus open the touch action panel.
-- Project rows retain the persisted project-registry order while session and worktree data hydrates. A successfully sent message promotes its owning project to the top, advancing both the registry order and the persisted manual order so the default manual sort keeps the promoted project first; ordinary activity and selection do not reorder the structural project tree. The promoted/dragged order is PUT to the server settings `projects` array, which is the cross-runtime order contract: settings sync rebases the local manual order onto the server order, so desktop, web, and mobile render the same project order.
+- Project rows retain the persisted project-registry order while session and worktree data hydrates. A successfully sent message promotes its owning project to the top of the registry only; the persisted manual drag order is left alone so manual sort does not jump on send. Ordinary activity and selection do not reorder the structural project tree. Drag reorders write both the registry and `manualProjectOrder` and PUT the registry to server settings; settings sync adopts the incoming registry and prunes removed ids from the local manual order without rebasing that drag order onto the server array.
 - The Projects section header no longer shows a global syncing accessory. While a
   project's session directories are fetching, that project's folder icon swaps to a
   spinner. The expanded body shows localized "Loading sessions…" only when there is
@@ -121,7 +128,9 @@
   persistent session index has confirmed that it has at least one child.
   Pinned rows stay flat: no subsession chevron and no nested children.
 - Session rows are single-line (no inline timestamp); details (title, relative time, folder/project,
-  branch) open in an immediate floating hover card. A shared `TooltipProvider`
+  branch) open in an immediate floating hover card. Top-section (pinned / in-progress) rows
+  always populate that project and branch from ownership, not from the omitted project-tree index.
+  A shared `TooltipProvider`
   (`delay=0`, `closeDelay=150`, `timeout=600`) groups row tips so adjacent handoff
   is instant; per-row tooltips do not nest their own Provider. Pointer click keeps
   focus for Enter-to-rename, but row `mouseleave` blurs so `:focus-within` does not
@@ -143,7 +152,7 @@
   opacity/padding transition) when hover/always-visible row actions take that edge.
 - Archived groups are collapsed by default and support bulk deletion at group/folder level.
 - Session rows support compact inline dates in minimal mode and simplified metadata in default mode.
-- Session-row visual selection is published through a narrow row-only Focus store before authoritative navigation. Focus includes the render scope (`pinned` or `project`) plus session/project identity, so duplicate representations never both receive the Active background or satisfy the wrong paint barrier.
+- Session-row visual selection is published through a narrow row-only Focus store before authoritative navigation. Focus includes the render scope (`pinned` or `project`) plus session/project identity, so duplicate representations never both receive the Active background or satisfy the wrong paint barrier. On desktop, focusing a session smooth-scrolls that row to about one-third down the sidebar viewport (`scrollFocusedSessionRow.ts`); mobile keeps `block: 'nearest'`. Reduced-motion users get an instant jump.
 - Previous/next-session navigation consumes ordered snapshots published from the rendered sidebar model and cycles one combined ring: visible pinned rows first, then the logically visible project rows in sidebar order, wrapping across both sections. Rows hidden by pinned/project/group/folder collapse or the group's Show more boundary are excluded, while always-visible (busy/retry + current viewing) rows retained beyond that boundary remain keyboard targets.
 - Global Mod+1…9 navigation numbers the first nine logically visible session rows from top to bottom across Pinned and the expanded project tree. Container headers never consume a number; duplicate Pinned/Project representations remain distinct Focus rows. Holding the platform primary modifier for 500ms reveals compact shortcut chips only on those rows; each chip occupies only its intrinsic width and replaces row quick actions until release. Releasing the modifier, window blur, or page hide clears the hints immediately.
 - Every session navigation announces a monotonic intent revision. A later sidebar, keyboard, deep-link, or switcher intent invalidates an older pending sidebar commit, including ABA sequences such as A -> B -> A.
@@ -159,6 +168,7 @@
 - VS Code uses the **same grouped project tree** as web/desktop (project headers + folders + pinned-first ordering), not a separate flat list. Each open VS Code workspace folder is a project header.
 - VS Code groups strictly **by open workspace**: `useSessionGrouping` funnels every non-archived session into the project's root group and emits **no per-worktree subgroups** (worktrees aren't registered in VS Code). `getSessionsForProject` buckets sessions to a workspace by exact directory match, so only sessions whose directory is an open workspace folder appear.
 - VS Code passes `hideDirectoryControls` (clean workspace headers, no worktree/close chrome) and no longer passes `showOnlyMainWorkspace`/`sharedSessionsOnly`. Folders and pinning therefore work natively, scoped to the workspace root.
+- VS Code still renders no global pinned group and no leading New Session/Scheduled/Assistants buttons, but does render the shared top section's unlabeled in-progress rows (busy/retry or top-level unread) above the project tree.
 
 ## File summaries
 
@@ -170,7 +180,7 @@
 - `SessionSidebar.tsx` desktop brand header: When a logo/wordmark is configured, Electron renders brand + search above `SidebarProjectsList` (`shrink-0`, outside the scroll region). Empty brand config reserves no row and leaves search in the titlebar. Sidebar brand text is transport-scoped in localStorage (`useSidebarBrandStore` via `createRuntimeScopedJSONStorage`) so packaged multi-window local and remote hosts do not share a wordmark.
 - `SidebarTopBar.tsx`: Desktop titlebar strip with preserved window-drag regions beneath the persistent titlebar controls.
 - `SidebarDisplayModeMenu.tsx`: Project collapse/expand overflow menu; rendered in the Projects section title row beside the add-project action.
-- `SidebarPinnedSessions.tsx`: Global top section renderer for pinned sessions.
+- `SidebarPinnedSessions.tsx`: Global top-section renderer for pinned sessions plus the unlabeled in-progress/unread rows below them.
 - `SidebarFooter.tsx`: Static footer with icon-only settings and shortcuts actions, plus optional update button.
 - `SidebarProjectsList.tsx`: Main scrollable tree renderer for projects, root sessions, worktrees/groups, and empty/search states.
 - `SessionGroupSection.tsx`: Renders a single worktree/archived group, collapse/expand, folder subtree, and group-level controls.

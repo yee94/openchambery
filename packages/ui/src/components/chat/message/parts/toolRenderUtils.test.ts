@@ -3,10 +3,12 @@ import { describe, expect, test } from 'bun:test';
 import {
     isContextGroupTool,
     isExpandableTool,
+    isProcessGroupTool,
     isSkillGroupTool,
     isStaticTool,
     isToolPartActive,
     isToolPartSettled,
+    isUsedGroupTool,
 } from './toolRenderUtils';
 
 describe('tool rendering classification', () => {
@@ -43,6 +45,23 @@ describe('tool rendering classification', () => {
         expect(isContextGroupTool('skill')).toBe(false);
         expect(isContextGroupTool('bash')).toBe(false);
         expect(isContextGroupTool('edit')).toBe(false);
+    });
+
+    test('marks explore and used tools as one process-group class', () => {
+        expect(isProcessGroupTool('read')).toBe(true);
+        expect(isProcessGroupTool('grep')).toBe(true);
+        expect(isProcessGroupTool('edit')).toBe(true);
+        expect(isProcessGroupTool('bash')).toBe(true);
+        expect(isProcessGroupTool('websearch')).toBe(true);
+        expect(isUsedGroupTool('edit')).toBe(true);
+        expect(isUsedGroupTool('bash')).toBe(true);
+        expect(isUsedGroupTool('read')).toBe(false);
+        expect(isProcessGroupTool('skill')).toBe(false);
+        expect(isProcessGroupTool('task')).toBe(false);
+        expect(isProcessGroupTool('question')).toBe(false);
+        expect(isUsedGroupTool('skill')).toBe(false);
+        expect(isUsedGroupTool('task')).toBe(false);
+        expect(isUsedGroupTool('question')).toBe(false);
     });
 
     test('marks skill tools as skill-group members', () => {

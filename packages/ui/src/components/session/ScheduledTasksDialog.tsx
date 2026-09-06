@@ -1659,7 +1659,7 @@ export function ScheduledTasksWorkspace({
           ref={isMobileTab ? mobileNavigationSurfaceRef : undefined}
           className={cn(
             isMobileTab
-              ? 'fixed inset-0 z-50 flex h-[100dvh] w-full min-w-0 max-w-full flex-col overflow-hidden bg-background [contain:layout_paint]'
+              ? 'oc-mobile-scheduled-editor-overlay flex w-full min-w-0 max-w-full flex-col overflow-hidden bg-background [contain:layout_paint]'
               : 'contents',
           )}
         >

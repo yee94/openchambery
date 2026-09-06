@@ -2,9 +2,14 @@
 // client, and the /api/openchamber/relay/* management routes.
 //
 // Config lives in the server settings file as `settings.privateRelay =
-// { enabled, relayUrl }` (same storage precedent as tunnels/notifications).
-// Routes are registered with the other OpenChamber feature routes, before the
-// generic OpenCode proxy, and are covered by the same global UI auth gate.
+// { enabled, relayUrl, extraRelayUrls }` (same storage precedent as
+// tunnels/notifications). `relayUrl` is the PRIMARY endpoint (push
+// registration, default pairing candidate); `extraRelayUrls` are additional
+// endpoints ("multi-relay"): the host dials every configured endpoint at once
+// with the SAME identity, so one server is reachable via several domains and
+// clients treat serverId + relayUrl pairs as distinct instances. Routes are
+// registered with the other OpenChamber feature routes, before the generic
+// OpenCode proxy, and are covered by the same global UI auth gate.
 //
 // Host gate: only the Electron desktop runtime or an SSH-managed remote server
 // may run a relay host (OPENCHAMBER_RUNTIME=desktop | ssh-remote).
@@ -78,6 +83,23 @@ const normalizeRelayUrl = (value) => {
   return canonicalizeRelayUrl(value) ?? DEFAULT_RELAY_URL;
 };
 
+// Additional relay endpoints ("multi-relay"): one host identity may dial
+// several relays at once so the same server is reachable (and pairable) via
+// multiple domains. Canonicalized, de-duplicated; the primary endpoint is
+// excluded by the caller (readConfig) because it lives in its own field.
+const normalizeExtraRelayUrls = (value) => {
+  if (!Array.isArray(value)) return [];
+  const seen = new Set();
+  const result = [];
+  for (const entry of value) {
+    const canonical = canonicalizeRelayUrl(entry);
+    if (!canonical || seen.has(canonical)) continue;
+    seen.add(canonical);
+    result.push(canonical);
+  }
+  return result;
+};
+
 // A deployment can pin the relay endpoint via env (e.g. a self-hosted relay on
 // your own Cloudflare account/domain). When set and valid it overrides the
 // stored setting entirely, so the host connection, the pairing offer, and the
@@ -123,11 +145,18 @@ export const createRelayService = ({
   canHostRelay = () => isRelayHostRuntime(),
   logger = console,
   onRelayUrlChanged = null,
+  // Owner gate for endpoint-management routes (`/relay/endpoints`): only a UI
+  // session or the local desktop shell may add/remove relay endpoints. Optional
+  // dependency; when absent the route refuses everything.
+  isOwnerRequest = async (_req, _res) => false,
 }) => {
   const identityRuntime = createRelayIdentityRuntime({ crypto, readSettingsFromDiskMigrated, writeSettingsToDisk, readSettingsStrict });
 
-  let hostClient = null;
+  // One host-control connection per relay endpoint; all share the machine's
+  // single relay identity (same serverId) and one host claim.
+  const hostClients = new Map();
   let status = { state: 'disabled', lastError: null, connectedClients: 0 };
+  const endpointStatuses = new Map();
   // Re-checks the claim while enabled: a standby instance takes over when the
   // claimant dies; a running host stands down when another process claims.
   let claimWatchTimer = null;
@@ -154,9 +183,16 @@ export const createRelayService = ({
     const settings = await readSettingsFromDiskMigrated();
     const stored = settings?.privateRelay;
     const override = envRelayUrlOverride();
+    const primary = resolveEffectiveRelayUrl({ settings });
+    const extras = normalizeExtraRelayUrls(stored?.extraRelayUrls).filter((url) => url !== primary);
     return {
       enabled: stored?.enabled === true,
-      relayUrl: resolveEffectiveRelayUrl({ settings }),
+      relayUrl: primary,
+      // Additional relay endpoints (multi-relay): the same host identity dials
+      // every endpoint simultaneously, so one server is reachable via several
+      // domains. The primary stays authoritative for push and default pairing.
+      extraRelayUrls: extras,
+      relayUrls: [primary, ...extras],
       // True when the endpoint is pinned by OPENCHAMBER_RELAY_URL (a self-hosted
       // relay); the stored setting is ignored while it is set.
       relayUrlLocked: override !== null,
@@ -174,16 +210,40 @@ export const createRelayService = ({
 
   const writeConfig = async (config) => {
     const settings = await readSettingsFromDiskMigrated();
+    const primary = normalizeRelayUrl(config.relayUrl);
+    const extras = normalizeExtraRelayUrls(config.extraRelayUrls).filter((url) => url !== primary);
     await writeSettingsToDisk({
       ...settings,
-      privateRelay: { enabled: config.enabled === true, relayUrl: normalizeRelayUrl(config.relayUrl) },
+      privateRelay: { enabled: config.enabled === true, relayUrl: primary, extraRelayUrls: extras },
     });
   };
 
-  const stopHostClient = () => {
-    if (!hostClient) return;
-    hostClient.stop();
-    hostClient = null;
+  const stopHostClient = (relayUrl) => {
+    const client = hostClients.get(relayUrl);
+    if (!client) return;
+    client.stop();
+    hostClients.delete(relayUrl);
+    endpointStatuses.delete(relayUrl);
+  };
+
+  const stopAllHostClients = () => {
+    for (const relayUrl of Array.from(hostClients.keys())) {
+      stopHostClient(relayUrl);
+    }
+  };
+
+  const aggregateStatus = () => {
+    if (hostClients.size === 0) return status;
+    const states = Array.from(endpointStatuses.values());
+    const state = states.some((entry) => entry.state === 'connected')
+      ? 'connected'
+      : states.some((entry) => entry.state === 'connecting') ? 'connecting' : 'error';
+    const lastError = states.map((entry) => entry.lastError).find(Boolean) ?? null;
+    return { state, lastError, connectedClients: states.reduce((sum, entry) => sum + entry.connectedClients, 0) };
+  };
+
+  const refreshStatusFromEndpoints = () => {
+    status = aggregateStatus();
   };
 
   const standbyStatus = (holderPid) => ({
@@ -197,23 +257,24 @@ export const createRelayService = ({
   //   - running → another live process claimed → stand down (stop, standby).
   // This back-off is what actually ends the mutual-eviction fight: the loser
   // must STOP reconnecting, otherwise both keep replacing each other forever.
-  const ensureClaimWatch = (relayUrl) => {
+  const ensureClaimWatch = () => {
     if (!hostLock || claimWatchTimer) return;
     claimWatchTimer = setInterval(() => {
       void (async () => {
         try {
-          if (hostClient) {
+          if (hostClients.size > 0) {
             if (!hostLock.holdsClaim() && hostLock.liveClaimantPid() !== null) {
               logger.warn('[Relay] host claim taken by another local instance — standing down');
               const holder = hostLock.liveClaimantPid();
-              stopHostClient();
+              stopAllHostClients();
               status = standbyStatus(holder);
             }
             return;
           }
           if (status.state === 'standby' && hostLock.tryClaim()) {
             logger.warn('[Relay] host claim is free — taking over the relay host');
-            await start(relayUrl);
+            const config = await readConfig();
+            await start(config.relayUrls);
           }
         } catch (error) {
           logger.warn(`[Relay] claim watch failed: ${error?.message ?? error}`);
@@ -229,37 +290,49 @@ export const createRelayService = ({
     claimWatchTimer = null;
   };
 
-  const start = async (relayUrl, { claim = 'try' } = {}) => {
+  // `relayUrls` may be a single canonical endpoint or the full list; each
+  // endpoint gets its own host-control connection (skipped when already up).
+  const start = async (relayUrls, { claim = 'try' } = {}) => {
     if (!hostAllowed()) {
       refuseHost();
       return;
     }
-    if (hostClient) return;
+    const endpoints = (Array.isArray(relayUrls) ? relayUrls : [relayUrls])
+      .map((url) => canonicalizeRelayUrl(url))
+      .filter((url, index, list) => url && list.indexOf(url) === index);
+    if (endpoints.length === 0) return;
+    const pending = endpoints.filter((url) => !hostClients.has(url));
+    if (pending.length === 0) return;
     if (hostLock) {
       const claimed = claim === 'force' ? hostLock.forceClaim() : hostLock.tryClaim();
       if (!claimed) {
         status = standbyStatus(hostLock.liveClaimantPid());
-        ensureClaimWatch(relayUrl);
+        ensureClaimWatch();
         return;
       }
     }
     const identity = await identityRuntime.getRelayIdentity();
-    hostClient = startRelayHost({
-      relayUrl,
-      identity,
-      getLocalPort,
-      logger,
-      onStatus: (next) => {
-        status = next;
-      },
-    });
-    status = hostClient.getStatus();
-    ensureClaimWatch(relayUrl);
+    for (const relayUrl of pending) {
+      const hostClient = startRelayHost({
+        relayUrl,
+        identity,
+        getLocalPort,
+        logger,
+        onStatus: (next) => {
+          endpointStatuses.set(relayUrl, next);
+          refreshStatusFromEndpoints();
+        },
+      });
+      hostClients.set(relayUrl, hostClient);
+      endpointStatuses.set(relayUrl, hostClient.getStatus());
+    }
+    refreshStatusFromEndpoints();
+    ensureClaimWatch();
   };
 
   const stop = () => {
     stopClaimWatch();
-    stopHostClient();
+    stopAllHostClients();
     if (hostLock) hostLock.release();
     status = { state: 'disabled', lastError: null, connectedClients: 0 };
   };
@@ -268,7 +341,7 @@ export const createRelayService = ({
     try {
       const config = await readConfig();
       if (config.enabled) {
-        await start(config.relayUrl);
+        await start(config.relayUrls);
       }
     } catch (error) {
       logger.warn(`[Relay] startup failed: ${error?.message ?? error}`);
@@ -293,16 +366,16 @@ export const createRelayService = ({
       const demand = await hasRelayDemand();
       const config = await readConfig();
       if (demand) {
-        if (!config.enabled) await writeConfig({ enabled: true, relayUrl: config.relayUrl });
-        if (!hostClient) {
+        if (!config.enabled) await writeConfig({ enabled: true, relayUrl: config.relayUrl, extraRelayUrls: config.extraRelayUrls });
+        if (hostClients.size === 0) {
           const next = await readConfig();
-          await start(next.relayUrl);
+          await start(next.relayUrls);
         }
       } else if (config.enabled && !isDesktopRelayHostRuntime()) {
         // Sticky opt-in on ssh-remote (and any future non-desktop host runtime).
-        if (!hostClient) await start(config.relayUrl);
+        if (hostClients.size === 0) await start(config.relayUrls);
       } else {
-        if (config.enabled) await writeConfig({ enabled: false, relayUrl: config.relayUrl });
+        if (config.enabled) await writeConfig({ enabled: false, relayUrl: config.relayUrl, extraRelayUrls: config.extraRelayUrls });
         stop();
       }
     } catch (error) {
@@ -334,19 +407,35 @@ export const createRelayService = ({
     }
     const config = await readConfig();
     const identity = await identityRuntime.getRelayIdentity();
-    const live = hostClient ? hostClient.getStatus() : status;
+    // `status` is the aggregate across endpoints (kept fresh by each host
+    // client's onStatus callback), or the disabled/standby marker when none.
+    const live = status;
+    const endpoints = config.relayUrls.map((relayUrl) => {
+      const client = hostClients.get(relayUrl);
+      const entry = client ? client.getStatus() : endpointStatuses.get(relayUrl);
+      return {
+        relayUrl,
+        state: client ? (entry?.state ?? 'connecting') : 'disabled',
+        connectedClients: entry?.connectedClients ?? 0,
+        ...(entry?.lastError ? { lastError: entry.lastError } : {}),
+      };
+    });
     return {
       enabled: config.enabled,
       hostAllowed: true,
-      // Without a host client the service is either off or standing by while
+      // Without host clients the service is either off or standing by while
       // another local process owns the machine's relay host claim.
-      state: hostClient ? live.state : (status.state === 'standby' ? 'standby' : 'disabled'),
+      state: hostClients.size > 0 ? live.state : (status.state === 'standby' ? 'standby' : 'disabled'),
       serverId: identity.serverId,
       // Public E2EE trust anchor. Desktop SSH attach uses this to persist a
       // multi-transport host (local-forward + relay) without a pairing round-trip.
       hostEncPubJwk: identity.hostEncPubJwk,
       connectedClients: live.connectedClients,
+      // Primary endpoint (push + default pairing); `relayUrls`/`endpoints` carry
+      // the full multi-relay picture.
       relayUrl: config.relayUrl,
+      relayUrls: config.relayUrls,
+      endpoints,
       relayUrlLocked: config.relayUrlLocked,
       ...(live.lastError ? { lastError: live.lastError } : {}),
     };
@@ -358,12 +447,11 @@ export const createRelayService = ({
   // tunnel like any other candidate. Returns null when the host relay is off, so
   // callers only advertise relay when it is actually reachable. Priority is high
   // (tried after LAN/tunnel) since the relay path is the last-resort transport.
-  const buildPairingCandidate = async () => {
-    const config = await readConfig();
+  const buildPairingCandidate = async (relayUrl) => {
     const identity = await identityRuntime.getRelayIdentity();
     return {
       type: 'relay',
-      relayUrl: config.relayUrl,
+      relayUrl,
       serverId: identity.serverId,
       hostEncPubJwk: identity.hostEncPubJwk,
       priority: 30,
@@ -374,17 +462,36 @@ export const createRelayService = ({
     if (!hostAllowed()) return null;
     const config = await readConfig();
     if (!config.enabled) return null;
-    return buildPairingCandidate();
+    return buildPairingCandidate(config.relayUrl);
   };
 
-  // Enable the relay host on demand and return its pairing candidate. Creating a
-  // relay pairing link IS the demand signal, so the relay turns itself on here
-  // rather than requiring a separate manual toggle. Idempotent: a no-op when the
-  // relay is already enabled and running.
+  // Candidates for every configured endpoint, used by the connection-candidates
+  // refresh so already-paired devices learn the full reachable endpoint set.
+  const getPairingCandidates = async () => {
+    if (!hostAllowed()) return [];
+    const config = await readConfig();
+    if (!config.enabled) return [];
+    const identity = await identityRuntime.getRelayIdentity();
+    return config.relayUrls.map((relayUrl) => ({
+      type: 'relay',
+      relayUrl,
+      serverId: identity.serverId,
+      hostEncPubJwk: identity.hostEncPubJwk,
+      priority: 30,
+    }));
+  };
+
+  // Enable the relay host on demand and return the pairing candidate for one
+  // endpoint. Creating a relay pairing link IS the demand signal, so the relay
+  // turns itself on here rather than requiring a separate manual toggle.
+  // Idempotent for an endpoint that already exists; a NEW endpoint (owner
+  // request only) is APPENDED as an additional relay rather than replacing the
+  // primary, so devices already paired over the old endpoint keep working.
   const ensureEnabledForPairing = async (requestedRelayUrl) => {
     assertHostAllowed();
     const config = await readConfig();
-    let relayUrl = config.relayUrl;
+    let targetUrl = config.relayUrl;
+    let extraRelayUrls = config.extraRelayUrls;
     if (!config.relayUrlLocked && requestedRelayUrl !== undefined) {
       const canonical = canonicalizeRelayUrl(requestedRelayUrl);
       if (!canonical) {
@@ -392,33 +499,32 @@ export const createRelayService = ({
         error.statusCode = 400;
         throw error;
       }
-      relayUrl = canonical;
+      if (canonical === config.relayUrl || config.extraRelayUrls.includes(canonical)) {
+        // Existing endpoint: pair over it without touching the endpoint set.
+        targetUrl = canonical;
+      } else {
+        // New endpoint: append as an additional relay (multi-relay). The
+        // primary is never replaced here — use /relay/enable for that.
+        extraRelayUrls = [...config.extraRelayUrls, canonical];
+        targetUrl = canonical;
+      }
     }
 
-    const endpointChanged = relayUrl !== config.relayUrl;
-    if (!config.enabled || endpointChanged) {
-      await writeConfig({ enabled: true, relayUrl });
+    const endpointsChanged = extraRelayUrls.join('\n') !== config.extraRelayUrls.join('\n');
+    if (!config.enabled || endpointsChanged) {
+      await writeConfig({ enabled: true, relayUrl: config.relayUrl, extraRelayUrls });
     }
     const next = await readConfig();
     if (next.relayUrl !== config.relayUrl) {
       await notifyRelayUrlChanged();
     }
-    if (endpointChanged) {
-      // One Host identity can have only one live Relay control connection. A
-      // custom endpoint therefore becomes the authoritative transport before
-      // its pairing candidate is returned. Stop also clears a standby claim
-      // watcher whose retry closure still targets the previous endpoint.
-      stop();
-    }
-    if (!hostClient) {
-      const next = await readConfig();
-      // Force-claim: creating a pairing link is explicit user intent — the
-      // instance the user is pairing against MUST be the one devices reach,
-      // even if another local process currently holds the machine's claim
-      // (its claim watcher sees the takeover and stands down).
-      await start(next.relayUrl, { claim: 'force' });
-    }
-    return buildPairingCandidate();
+    // Force-claim: creating a pairing link is explicit user intent — the
+    // instance the user is pairing against MUST be the one devices reach,
+    // even if another local process currently holds the machine's claim
+    // (its claim watcher sees the takeover and stands down). Also brings up
+    // any endpoint that is configured but not live yet.
+    await start(next.relayUrls, { claim: 'force' });
+    return buildPairingCandidate(targetUrl);
   };
 
   const registerRoutes = (app) => {
@@ -446,14 +552,16 @@ export const createRelayService = ({
           }
           relayUrl = canonical;
         }
-        await writeConfig({ enabled: true, relayUrl });
+        await writeConfig({ enabled: true, relayUrl, extraRelayUrls: current.extraRelayUrls });
         const next = await readConfig();
         if (next.relayUrl !== current.relayUrl) {
           await notifyRelayUrlChanged();
         }
-        if (hostClient) stop();
+        // The primary endpoint changed: drop the old control connection before
+        // re-establishing (the extras keep their connections).
+        if (next.relayUrl !== current.relayUrl) stopHostClient(current.relayUrl);
         // Explicit user action: take the machine's host claim like pairing does.
-        await start(relayUrl, { claim: 'force' });
+        await start(next.relayUrls, { claim: 'force' });
         res.json(await getStatus());
       } catch (error) {
         const statusCode = Number.isInteger(error?.statusCode) ? error.statusCode : 500;
@@ -467,11 +575,54 @@ export const createRelayService = ({
           return res.status(403).json({ error: RELAY_HOST_DESKTOP_ONLY_MESSAGE });
         }
         const current = await readConfig();
-        await writeConfig({ enabled: false, relayUrl: current.relayUrl });
+        await writeConfig({ enabled: false, relayUrl: current.relayUrl, extraRelayUrls: current.extraRelayUrls });
         stop();
         res.json(await getStatus());
       } catch (error) {
         res.status(500).json({ error: error?.message ?? 'Failed to disable relay' });
+      }
+    });
+
+    // Manage the ADDITIONAL relay endpoints (multi-relay). Body:
+    //   { relayUrls: string[] } — full replacement list of extra endpoints
+    //     (primary excluded; an empty array removes every extra endpoint).
+    // Owner-only: a UI session or the local desktop shell. Paired remote
+    // clients never add or remove a host's relay endpoints — the same boundary
+    // that keeps them from re-pointing the primary.
+    app.post('/api/openchamber/relay/endpoints', express.json({ limit: '16kb' }), async (req, res) => {
+      try {
+        if (!hostAllowed()) {
+          return res.status(403).json({ error: RELAY_HOST_DESKTOP_ONLY_MESSAGE });
+        }
+        if (!Array.isArray(req.body?.relayUrls)) {
+          return res.status(400).json({ error: 'relayUrls must be an array of ws:// or wss:// endpoints' });
+        }
+        for (const entry of req.body.relayUrls) {
+          if (canonicalizeRelayUrl(entry) === null) {
+            return res.status(400).json({ error: 'Relay URL must use ws:// or wss://' });
+          }
+        }
+        if (!(await isOwnerRequest(req, res))) {
+          return res.status(403).json({ error: 'Only the owner UI session can manage relay endpoints' });
+        }
+        const current = await readConfig();
+        const primary = current.relayUrl;
+        const requested = normalizeExtraRelayUrls(req.body.relayUrls).filter((url) => url !== primary);
+        if (!current.enabled) {
+          // Nothing is hosted yet: just persist; the next pairing/demand cycle
+          // brings the endpoints up.
+          await writeConfig({ enabled: false, relayUrl: primary, extraRelayUrls: requested });
+          return res.json(await getStatus());
+        }
+        await writeConfig({ enabled: true, relayUrl: primary, extraRelayUrls: requested });
+        // Incremental lifecycle: stop removed endpoints, start added ones.
+        for (const removed of current.extraRelayUrls.filter((url) => !requested.includes(url))) {
+          stopHostClient(removed);
+        }
+        await start([primary, ...requested], { claim: 'force' });
+        res.json(await getStatus());
+      } catch (error) {
+        res.status(500).json({ error: error?.message ?? 'Failed to update relay endpoints' });
       }
     });
 
@@ -485,6 +636,7 @@ export const createRelayService = ({
     getStatus,
     getServerId,
     getPairingCandidate,
+    getPairingCandidates,
     ensureEnabledForPairing,
   };
 };

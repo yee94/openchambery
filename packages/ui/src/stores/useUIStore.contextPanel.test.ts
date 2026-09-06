@@ -9,6 +9,8 @@ beforeEach(() => {
     contextPanelsOpenBeforeRightSidebarCollapse: [],
     isRightSidebarOpen: false,
     rightSidebarTab: 'git',
+    pendingFileFocusPath: null,
+    pendingFileViewerMode: null,
   });
 });
 
@@ -51,6 +53,22 @@ describe('useUIStore context panel tabs', () => {
 
     const cleared = useUIStore.getState().contextPanelByDirectory[directory]?.tabs[0];
     expect(cleared?.fileNotice).toBe(null);
+  });
+
+  test('opens an html file with a pending preview viewer mode', () => {
+    const directory = '/repo';
+
+    useUIStore.getState().openContextFile(directory, '/repo/ignore/report.html', {
+      viewerMode: 'preview',
+    });
+
+    expect(useUIStore.getState().pendingFileViewerMode).toBe('preview');
+    expect(useUIStore.getState().pendingFileFocusPath).toBe('/repo/ignore/report.html');
+
+    useUIStore.getState().openContextFile(directory, '/repo/src/a.ts');
+
+    expect(useUIStore.getState().pendingFileViewerMode).toBe(null);
+    expect(useUIStore.getState().pendingFileFocusPath).toBe('/repo/src/a.ts');
   });
 
   test('keeps a clicked tool patch transient and clears it for regular diff navigation', () => {

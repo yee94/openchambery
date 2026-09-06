@@ -49,6 +49,7 @@ import { FusionIcon } from '@/components/icons/FusionIcon';
 import { SessionBusyIndicator } from '@/components/session/SessionBusyIndicator';
 import { Kbd } from '@/components/ui/kbd';
 import { RuntimeAPIContext } from '@/contexts/runtimeAPIContext';
+import { scrollFocusedSessionRowIntoView } from './scrollFocusedSessionRow';
 import { notifySidebarVisualSelectionCommitted, useSidebarVisualSelectionStore } from './sidebarVisualSelection';
 import {
   getSessionFocusKey,
@@ -368,7 +369,9 @@ function SessionNodeItemComponent(props: Props): React.ReactNode {
     ? 'group-hover:opacity-100 group-hover:pointer-events-auto'
     : 'group-hover:opacity-100 group-hover:pointer-events-auto group-focus-within:opacity-100 group-focus-within:pointer-events-auto';
   const showOpenInEditorAction = isVSCode;
-  const showQuickUnpinAction = renderContext === 'pinned';
+  // Pinned-scope rows also host unlabeled in-progress sessions; only truly
+  // pinned rows swap the quick action to unpin.
+  const showQuickUnpinAction = renderContext === 'pinned' && pinnedSessionIds.has(node.session.id);
   const showQuickPinAction = !showQuickUnpinAction && !archivedBucket && !mobileVariant;
   // Match typography-ui-label (~14px) so action icons align with the title text.
   const actionButtonSizeClass = 'h-5 w-5';
@@ -471,11 +474,19 @@ function SessionNodeItemComponent(props: Props): React.ReactNode {
     React.useMemo(() => (state: { focus: SessionFocusIdentity | null }) => isSessionFocusEqual(state.focus, rowFocus), [rowFocus]),
   );
   React.useLayoutEffect(() => {
-    if (isActive) {
-      rowElementRef.current?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
-      notifySidebarVisualSelectionCommitted(rowFocus);
+    if (!isActive) {
+      return;
     }
-  }, [isActive, rowFocus]);
+    const row = rowElementRef.current;
+    if (row) {
+      if (mobileVariant) {
+        row.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+      } else {
+        scrollFocusedSessionRowIntoView(row);
+      }
+    }
+    notifySidebarVisualSelectionCommitted(rowFocus);
+  }, [isActive, mobileVariant, rowFocus]);
   const sessionTitle = resolvedSession.title || t('sessions.sidebar.session.untitled');
   const sessionChangeCounts = formatSessionChangeCounts(readSessionChangeSummary(resolvedSession));
   const titleRefreshMetadata = (resolvedSession as Session & {

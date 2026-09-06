@@ -18,6 +18,30 @@
     var(--surface-background) 85%,
     transparent
   );
+  /* Glass tokens live on :root so slash catalogs and other overlays still
+     resolve a fill when they are not under .oc-mobile-floating-shell.
+     An undefined --oc-mobile-glass-fill paints a hole. */
+  --oc-mobile-glass-fill: rgb(255 255 255 / 0.68);
+  --oc-mobile-glass-highlight: rgb(255 255 255 / 0.6);
+  --oc-mobile-glass-blur: 20px;
+  --oc-mobile-glass-saturate: 1.25;
+  --oc-mobile-glass-shadow:
+    0 0 2px rgb(0 0 0 / 0.05),
+    0 0 12px rgb(0 0 0 / 0.06),
+    0 8px 20px -6px rgb(0 0 0 / 0.12),
+    inset 0 1px 0 var(--oc-mobile-glass-highlight);
+}
+
+.dark {
+  --oc-mobile-glass-fill: rgb(38 38 44 / 0.66);
+  --oc-mobile-glass-highlight: rgb(255 255 255 / 0.18);
+  --oc-mobile-glass-blur: 20px;
+  --oc-mobile-glass-saturate: 1.2;
+  --oc-mobile-glass-shadow:
+    0 0 2px rgb(0 0 0 / 0.3),
+    0 0 12px rgb(0 0 0 / 0.28),
+    0 8px 20px -6px rgb(0 0 0 / 0.4),
+    inset 0 1px 0 var(--oc-mobile-glass-highlight);
 }
 
 /* Projects home floating material. Project capsule, session container, and
@@ -208,6 +232,45 @@
   );
 }
 
+/*
+ * In-tab scheduled editor: stay inside the tab (not a shell secondary page).
+ * Web dock remains interactive; the overlay paints below it (z-index 30 < 40)
+ * and the save capsule sits above the retained dock. Native iOS dock is hidden
+ * while editing (`tabBarCovered`), so the overlay can go edge-to-edge.
+ */
+.oc-mobile-scheduled-editor-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+}
+
+:root.oc-native-ios-tab-bar .oc-mobile-scheduled-editor-overlay {
+  z-index: 50;
+}
+
+.oc-mobile-scheduled-editor-body {
+  padding-bottom: calc(
+    var(--oc-mobile-dock-height) + 2.5rem +
+    var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px))
+  );
+}
+
+:root:not(.oc-native-ios-tab-bar)
+  .oc-mobile-floating-bottom-bar-frame[data-scheduled-editor-footer] {
+  padding-bottom: calc(
+    var(--oc-mobile-dock-height) +
+    max(1.25rem, var(--oc-safe-area-bottom-visual, 0px)) +
+    0.75rem
+  );
+}
+
+:root:not(.oc-native-ios-tab-bar) .oc-mobile-scheduled-editor-body {
+  padding-bottom: calc(
+    (var(--oc-mobile-dock-height) * 2) + 3.25rem +
+    var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px))
+  );
+}
+
 .oc-mobile-floating-bottom-bar {
   pointer-events: auto;
   display: flex;
@@ -372,6 +435,25 @@
 
 .dark .oc-mobile-overlay-surface--translucent {
   background: color-mix(in srgb, var(--surface-elevated) 48%, transparent);
+}
+
+/* Composer `/` `@` `#` catalogs: keep overlay elevation/blur, but a much
+   thinner fill than --translucent (48%). A heavy wash hides the frost. */
+.oc-composer-autocomplete-surface {
+  background: color-mix(in srgb, var(--surface-elevated) 22%, transparent);
+}
+
+.dark .oc-composer-autocomplete-surface {
+  background: color-mix(in srgb, var(--surface-elevated) 22%, transparent);
+}
+
+.oc-composer-autocomplete-row {
+  margin-inline: 0.375rem;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.oc-composer-autocomplete-row:active {
+  background: var(--oc-mobile-press-fill);
 }
 
 .oc-mobile-round-control {
@@ -1994,7 +2076,9 @@ button.oc-mobile-worktree-label-trigger:active,
   .oc-mobile-glass-surface,
   .oc-mobile-floating-surface,
   .oc-mobile-floating-action,
-  .oc-mobile-glass-control {
+  .oc-mobile-glass-control,
+  .oc-composer-autocomplete-surface,
+  .oc-mobile-overlay-surface {
     background: var(--surface-elevated);
     -webkit-backdrop-filter: none;
     backdrop-filter: none;
@@ -2835,6 +2919,14 @@ button.oc-mobile-worktree-label-trigger:active,
     pointer-events: none;
   }
 
+  /* HTML file preview paints edge-to-edge; hide the home-indicator overlay for
+     the active (non-inert) sheet preview or fullscreen preview surface. Mode /
+     close / multi-instance restore via structural :has — no root class toggle. */
+  :root:has([data-mobile-overlay-active="true"]:not([inert]) [data-mobile-html-preview="true"]) body::after,
+  :root:has([data-mobile-html-fullscreen="true"]) body::after {
+    opacity: 0;
+  }
+
   /* Fallback for browsers without rgba(from ...) support */
   @supports not (color: rgba(from white r g b / 0.5)) {
     :root.device-mobile:not(.desktop-runtime) body::after,
@@ -3040,6 +3132,14 @@ button.oc-mobile-worktree-label-trigger:active,
       var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px))
     )
   ) !important;
+}
+
+/* HTML preview in a sheet must reach the physical bottom. The surface owns the
+   default safe pad; a child negative margin cannot paint through body overflow
+   clip. Zero pad only while an active (non-inert) sheet hosts html preview. */
+[data-mobile-overlay-active="true"]:not([inert]) [data-oc-motion-id]:has([data-mobile-html-preview="true"]),
+:root.oc-capacitor-app [data-mobile-overlay-active="true"]:not([inert]) .pwa-overlay-panel[data-oc-motion-id]:has([data-mobile-html-preview="true"]) {
+  padding-bottom: 0 !important;
 }
 
 :root.oc-capacitor-app .pwa-overlay-panel .pwa-overlay-scroll {
@@ -3353,21 +3453,37 @@ button.oc-mobile-worktree-label-trigger:active,
   margin-inline: auto;
   align-items: flex-end;
   overflow: visible;
-  contain: layout;
 }
 
 /* Stagger the exchange so progress 0.5 never shows both layers at once:
-   0→0.5 only exits the expanded card; 0.5→1 only rises the compact pill. */
+   0→0.5 only exits the expanded card; 0.5→1 only rises the compact pill.
+   Rest must stay transform:none / no will-change: identity translate3d and
+   will-change:transform create a containing block that stops slash-catalog
+   backdrop-filter from frosting the transcript. */
 .oc-mobile-composer-expanded-layer {
   position: relative;
   z-index: 20;
+  transform: none;
+  opacity: calc(1 - min(1, var(--oc-mobile-composer-swap) * 2));
+}
+
+.oc-chat-composer-swap-scope:is(
+  [data-oc-composer-swap-phase="tracking"],
+  [data-oc-composer-swap-phase="snapping"]
+) .oc-mobile-composer-motion-viewport {
+  contain: layout;
+}
+
+.oc-chat-composer-swap-scope:is(
+  [data-oc-composer-swap-phase="tracking"],
+  [data-oc-composer-swap-phase="snapping"]
+) .oc-mobile-composer-expanded-layer {
+  will-change: transform, opacity;
   transform: translate3d(
     0,
     calc(min(1, var(--oc-mobile-composer-swap) * 2) * 110%),
     0
   );
-  opacity: calc(1 - min(1, var(--oc-mobile-composer-swap) * 2));
-  will-change: transform, opacity;
 }
 
 .oc-mobile-composer-compact-layer {

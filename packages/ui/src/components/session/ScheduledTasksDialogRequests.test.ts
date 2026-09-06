@@ -219,7 +219,7 @@ describe('ScheduledTasksDialog queries', () => {
     expect(workspaceContent).not.toContain("overscroll-none pb-[max(1rem,env(safe-area-inset-bottom))] pt-5");
     // History mobile-tab: tablist has no mb-3 so only page-gap separates tab→list.
     expect(workspaceContent).toContain("(workspaceView === 'tasks' || historyTaskFilter || !isMobileTab) && 'mb-3'");
-    expect(editorContent).toContain('overflow-y-auto overflow-x-hidden px-[var(--oc-mobile-page-inline-inset)] pb-[calc(var(--oc-mobile-dock-height)+2.5rem');
+    expect(editorContent).toContain('oc-mobile-scheduled-editor-body min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-[var(--oc-mobile-page-inline-inset)] pt-4');
     expect(editorContent).not.toContain('<div className="px-3 pb-5 pt-4">');
   });
 
@@ -259,8 +259,8 @@ describe('ScheduledTasksDialog queries', () => {
     expect(workspaceContent).toContain('registerEditorBackHandler?: (handler: (() => boolean) | null) => void');
     expect(workspaceContent).toContain("onEditorActiveChange?.(editorMode !== 'closed')");
     expect(workspaceContent).toContain('underlayRef: mobileNavigationUnderlayRef');
-    // Editor push stays fixed; list underlay is in-flow so tabpanel owns scroll + hidden scrollbar.
-    expect(workspaceContent).toContain("'fixed inset-0 z-50 flex h-[100dvh]");
+    // Editor push stays in-tab (below the web dock); list underlay is in-flow so tabpanel owns scroll.
+    expect(workspaceContent).toContain("'oc-mobile-scheduled-editor-overlay flex w-full min-w-0 max-w-full flex-col overflow-hidden bg-background [contain:layout_paint]'");
     expect(workspaceContent).toContain("? 'flex w-full min-w-0 flex-col gap-[var(--oc-mobile-page-gap)]'");
     expect(workspaceContent).not.toContain('fixed inset-0 z-20 flex h-[100dvh]');
     expect(workspaceContent).not.toContain("isMobileTab\n            ? 'fixed inset-0 z-20");
@@ -277,20 +277,24 @@ describe('ScheduledTasksDialog queries', () => {
     expect(mobileAppContent).toContain("window.dispatchEvent(new Event('oc:scheduled-tasks-close-request'));");
   });
 
-  test('keeps the scheduled root and dock mounted behind its pinned editor footer', async () => {
+  test('keeps the scheduled root tab and web dock interactive under the in-tab editor', async () => {
     const directory = dirname(fileURLToPath(import.meta.url));
-    const [editorContent, phoneShellContent, tabRootContent, scheduledTabContent, mobileSurfaceContent, mobileTabBarContent] = await Promise.all([
+    const [editorContent, phoneShellContent, tabRootContent, scheduledTabContent, mobileSurfaceContent, mobileTabBarContent, mobileStyles] = await Promise.all([
       readFile(join(directory, 'ScheduledTaskEditorDialog.tsx'), 'utf8'),
       readFile(join(directory, '../../mobile/MobilePhoneShell.tsx'), 'utf8'),
       readFile(join(directory, '../../mobile/MobileTabsRoot.tsx'), 'utf8'),
       readFile(join(directory, '../../mobile/scheduled/MobileScheduledTab.tsx'), 'utf8'),
       readFile(join(directory, '../../mobile/MobileSurface.tsx'), 'utf8'),
       readFile(join(directory, '../../mobile/MobileTabBar.tsx'), 'utf8'),
+      readFile(join(directory, '../../styles/mobile.css'), 'utf8'),
     ]);
     expect(phoneShellContent).toContain('tabBarCovered={scheduledEditorActive}');
     expect(tabRootContent).toContain('showTabBar?: boolean;');
     expect(tabRootContent).toContain('data-mobile-navigation-dock-underlay="true"');
-    expect(tabRootContent).toContain('inert={topSecondaryPage || tabBarCovered || nativeTabBarAdopted ? true : undefined}');
+    expect(tabRootContent).toContain('inert={topSecondaryPage || nativeTabBarAdopted ? true : undefined}');
+    expect(tabRootContent).not.toContain('inert={topSecondaryPage || tabBarCovered || nativeTabBarAdopted ? true : undefined}');
+    expect(mobileStyles).toContain('.oc-mobile-scheduled-editor-overlay');
+    expect(mobileStyles).toContain(':root:not(.oc-native-ios-tab-bar)\n  .oc-mobile-floating-bottom-bar-frame[data-scheduled-editor-footer]');
     expect(tabRootContent).toContain('<MobileTabBar activeTab={selectedTab}');
     expect(tabRootContent).not.toContain(') : showTabBar ? (');
     expect(tabRootContent).toContain('data-mobile-navigation-underlay="true"');
@@ -305,11 +309,10 @@ describe('ScheduledTasksDialog queries', () => {
       ?.split('if (isMobile)')[0] ?? '';
     expect(mobileTabEditorContent).toContain('<MobileDetailNavigation\n          sticky');
     expect(mobileTabEditorContent).toContain('<section className="flex h-full min-h-0 flex-col bg-background"');
-    expect(mobileTabEditorContent).toContain('min-h-0 flex-1 overflow-y-auto overflow-x-hidden');
+    expect(mobileTabEditorContent).toContain('oc-mobile-scheduled-editor-body min-h-0 flex-1 overflow-y-auto overflow-x-hidden');
     expect(mobileTabEditorContent).toContain('data-scheduled-editor-footer=""');
     expect(mobileTabEditorContent).toContain('<MobileFloatingBottomBar\n          as="footer"');
     expect(mobileTabEditorContent).toContain('className="z-[60]"');
-    expect(mobileTabEditorContent).toContain('pb-[calc(var(--oc-mobile-dock-height)+2.5rem');
     expect(mobileTabEditorContent).not.toContain('<ScrollShadow');
     expect(mobileSurfaceContent).toContain("variant?: 'navigation' | 'actions'");
     expect(mobileSurfaceContent).toContain("'oc-mobile-floating-bottom-bar'");

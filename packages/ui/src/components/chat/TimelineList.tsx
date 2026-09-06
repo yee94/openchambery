@@ -60,6 +60,9 @@ import {
     writeMarkdownHydrationRestore,
     type MarkdownHydrationScrollDirection,
 } from './lib/markdownHydrationWindow';
+import { mergeMarkdownPinRevealStyle, resolveMarkdownPinRevealKeys } from './lib/markdownPinReveal';
+import { createSharedElementSizeBatch } from './lib/batchResizeUpdates';
+import { useMarkdownPinReveal } from './hooks/useMarkdownPinReveal';
 import {
     captureTimelineAnchorArm,
     measureTimelineAnchorDrift,
@@ -299,6 +302,11 @@ export type TimelineListProps<TEntry extends TimelineRowEntry> = {
      * maintenance stood down while the transcript is still untouched.
      */
     historyAnchorToken?: number;
+    /**
+     * Bumped by jump-to-latest so an already-revealed session hides again until
+     * the seed-window Markdown rows report ready. Session open uses `timelineCacheKey`.
+     */
+    pinRevealGeneration?: number;
     /** Drives the animated variant of end maintenance. */
     sessionIsWorking?: boolean;
     onIsAtEndChange?: (isAtEnd: boolean, showScrollButton?: boolean) => void;
@@ -327,7 +335,10 @@ type TimelineRowProps<TEntry extends TimelineRowEntry> = {
     entry: TEntry;
     index: number;
     renderEntryRef: React.RefObject<TimelineListProps<TEntry>['renderEntry']>;
-    onMeasuredSizeRef: React.RefObject<(key: string, size: { height: number; width: number }) => void>;
+    sizeObserverRef: React.RefObject<{
+        observe: (element: Element) => void;
+        unobserve: (element: Element) => void;
+    } | null>;
 };
 
 /**
@@ -340,23 +351,17 @@ const TimelineRow = <TEntry extends TimelineRowEntry>({
     entry,
     index,
     renderEntryRef,
-    onMeasuredSizeRef,
+    sizeObserverRef,
 }: TimelineRowProps<TEntry>) => {
     const hydratedKeys = React.useContext(TimelineHydrationContext);
     const rootRef = React.useRef<HTMLDivElement>(null);
     React.useLayoutEffect(() => {
         const node = rootRef.current;
-        if (!node || typeof ResizeObserver === 'undefined') return;
-        const notify = () => {
-            const height = node.offsetHeight;
-            const width = node.offsetWidth;
-            if (height > 0) onMeasuredSizeRef.current?.(entry.key, { height, width });
-        };
-        const observer = new ResizeObserver(notify);
+        const observer = sizeObserverRef.current;
+        if (!node || !observer) return;
         observer.observe(node);
-        notify();
-        return () => observer.disconnect();
-    }, [entry.key, onMeasuredSizeRef]);
+        return () => observer.unobserve(node);
+    }, [entry.key, sizeObserverRef]);
     return (
         <div
             ref={rootRef}
@@ -384,6 +389,7 @@ const TimelineListInner = <TEntry extends TimelineRowEntry>({
     onAnchoredTurnParkReleased,
     followEnabled = true,
     historyAnchorToken = 0,
+    pinRevealGeneration = 0,
     sessionIsWorking = false,
     onIsAtEndChange,
     onScroll,
@@ -764,6 +770,23 @@ const TimelineListInner = <TEntry extends TimelineRowEntry>({
         [hydratedMarkdownEntryKeys, entryKeys],
     );
 
+    // Freeze the seed window per session / jump so later preload releases
+    // cannot keep the pin hidden waiting on off-screen history.
+    const pinRevealKeys = React.useMemo(
+        () => resolveMarkdownPinRevealKeys({ entryKeys }),
+        // Last identity + length cover a jump that landed on a different tail.
+        // eslint-disable-next-line react-hooks/exhaustive-deps -- pinRevealGeneration + tail
+        [timelineCacheKey, pinRevealGeneration, entryKeys.length, entryKeys[entryKeys.length - 1]],
+    );
+    const pinHidden = useMarkdownPinReveal({
+        scopeKey: timelineCacheKey,
+        generation: pinRevealGeneration,
+        root: scrollElement,
+        relevantKeys: pinRevealKeys,
+        enabled: entryKeys.length > 0,
+    });
+    const listStyle = mergeMarkdownPinRevealStyle(style, pinHidden);
+
     React.useEffect(() => {
         setHydratedMarkdownEntryKeys((current) => pruneMarkdownHydratedKeys(current, entryKeys));
     }, [entryKeys]);
@@ -1001,6 +1024,19 @@ const TimelineListInner = <TEntry extends TimelineRowEntry>({
     });
     const onMeasuredSizeRef = React.useRef(handleMeasuredSize);
     onMeasuredSizeRef.current = handleMeasuredSize;
+    const sizeObserver = React.useMemo(() => createSharedElementSizeBatch((sizes) => {
+        for (const [element, size] of sizes) {
+            const key = element instanceof HTMLElement ? element.dataset.turnEntry : undefined;
+            if (key && size.height > 0) {
+                onMeasuredSizeRef.current(key, size);
+            }
+        }
+    }), []);
+    const sizeObserverRef = React.useRef(sizeObserver);
+    sizeObserverRef.current = sizeObserver;
+    React.useEffect(() => () => {
+        sizeObserver.disconnect();
+    }, [sizeObserver]);
 
     // A render-phase factory, not an event handler: the list calls this while
     // building rows. Everything dynamic reaches a row through the refs it
@@ -1026,7 +1062,7 @@ const TimelineListInner = <TEntry extends TimelineRowEntry>({
                 entry={item}
                 index={index}
                 renderEntryRef={renderEntryRef}
-                onMeasuredSizeRef={onMeasuredSizeRef}
+                sizeObserverRef={sizeObserverRef}
             />
         );
     }, []);
@@ -1277,7 +1313,7 @@ const TimelineListInner = <TEntry extends TimelineRowEntry>({
                 ListHeaderComponent={measuredHeader as React.ReactElement | null | undefined}
                 ListFooterComponent={measuredFooter as React.ReactElement | null | undefined}
                 className={className}
-                style={style}
+                style={listStyle}
                 contentContainerClassName={contentContainerClassName}
                 contentContainerStyle={contentContainerStyle}
             />

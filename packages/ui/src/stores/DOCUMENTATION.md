@@ -95,6 +95,17 @@ Examples:
 
 These stores coordinate visible app state, navigation, selected tabs, dialogs, and lightweight feature flags.
 
+`useFeatureFlagsStore` owns lightweight localStorage A/B flags. TanStack Virtual
+is the chat list runtime default (`legendTimelineEnabled` is true only when
+`localStorage.oc:legend-timeline === '1'`). LegendList / TimelineList stay
+opt-in. On this experiment branch, assistant Markdown defaults to
+`markstream-react` (`markstreamReactEnabled` is false only when
+`localStorage.oc:markstream-react === '0'`). Set that key to `0` to fall back
+to marked + Shiki + morphdom. User, tool, and other `SimpleMarkdownRenderer`
+surfaces stay on the current path. Markstream node virtualization
+(`maxLiveNodes`) is inside the Markdown bubble only; the chat list engine
+is unchanged.
+
 `useSidebarBrandStore` persists the sidebar wordmark. Packaged Electron multi-window
 shares one UI origin while each window may bind a different API host, so the store
 uses transport-scoped localStorage (`createRuntimeScopedJSONStorage` in
@@ -223,12 +234,12 @@ OpenChamber-host id, so two mobile relay instances that share the UI origin
 keep independent project lists and order. LAN⇄relay for the same device
 reuses the same bucket. Relay instances never fall back to the old
 API-URL or unscoped `projects` keys. `resetForRuntimeSwitch` reloads the
-new instance's list, active project, and manual order. The server settings
-`projects` array order is the cross-runtime order contract (mobile renders
-it directly): drag reorders and activity promotions are PUT to it, and
-`synchronizeFromSettings` rebases the local manual order onto the incoming
-server order whenever the project list changes, so every runtime renders
-the same order.
+new instance's list, active project, and manual order. Drag reorders write
+both the registry and `manualProjectOrder` (and PUT the registry to server
+settings). Activity promotions only advance the registry so a user-set
+manual sort is not clobbered by a successful send. `synchronizeFromSettings`
+adopts the incoming registry and drops removed ids from the local manual
+order, but does not rebase that drag order onto the server projects array.
 
 `useSessionDisplayStore` (`projectSortOrder`) and `useMobileSessionTreeStore`
 use the same instance-scoped persist helper and rehydrate when `runtimeKey`

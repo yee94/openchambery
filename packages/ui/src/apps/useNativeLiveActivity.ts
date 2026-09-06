@@ -1,65 +1,161 @@
-import { useEffect, useRef } from 'react';
+import type { PluginListenerHandle } from '@capacitor/core';
 import { useEvent } from '@reactuses/core';
+import { useEffect, useMemo, useRef } from 'react';
 
-import { useIosNativeUiEnabled } from '@/lib/iosNativeUi';
+import { collectRunningSessionIds } from '@/components/session/sidebar/hooks/useAlwaysVisibleSessionIds';
+import { getRegisteredRuntimeAPIs } from '@/contexts/runtimeAPIRegistry';
 import {
+  applyNativeLiveActivityTokenCommands,
+  buildNativeLiveActivityCatalog,
   canUseNativeIosLiveActivity,
   createInitialNativeLiveActivityState,
+  createInitialNativeLiveActivityTokenState,
   getNativeIosLiveActivityPlugin,
+  NATIVE_LIVE_ACTIVITY_ID,
+  NATIVE_LIVE_ACTIVITY_TITLE_MAX,
+  parseNativeLiveActivityPushTokenEvent,
+  reduceNativeLiveActivityToken,
   runNativeLiveActivityStep,
+  toNativeLiveActivityTimestamp,
   type NativeLiveActivityObservation,
   type NativeLiveActivityState,
+  type NativeLiveActivityTokenAction,
+  type NativeLiveActivityTokenState,
 } from '@/lib/native-ios-live-activity';
+import { getRuntimeTransportIdentity, subscribeRuntimeEndpointChanged } from '@/lib/runtime-switch';
 import { useConfigStore } from '@/stores/useConfigStore';
-import {
-  useLiveSessionStatus,
-  useSessionErrorAt,
-  useSessionPermissions,
-  useSessionQuestions,
-} from '@/sync/sync-context';
+import { useGlobalSessionsStore } from '@/stores/useGlobalSessionsStore';
+import { useGlobalSessionStatusStore } from '@/sync/global-session-status';
+import { useAllSessionStatuses } from '@/sync/sync-context';
 
-export type UseNativeLiveActivityArgs = {
-  sessionId: string | null | undefined;
-  directory?: string | null;
-};
+const EMPTY_STATUS_BY_ID = new Map<string, { status: 'busy' | 'retry'; directory: string }>();
+const EMPTY_SESSIONS: readonly { id: string; title?: string | null; parentID?: string | null }[] = [];
 
 /**
- * Drives the Capacitor iOS Live Activity for the MobileApp's current session.
+ * Drives the Capacitor iOS Live Activity for every live working session.
  * Plugin calls are no-ops on web / Electron / VS Code / Android.
  */
-export function useNativeLiveActivity(args: UseNativeLiveActivityArgs): void {
-  const nativeUiEnabled = useIosNativeUiEnabled();
-  const available = nativeUiEnabled && canUseNativeIosLiveActivity();
+export function useNativeLiveActivity(): void {
+  const available = canUseNativeIosLiveActivity();
   const connected = useConfigStore((state) => state.isConnected);
-  const sessionId = available ? (args.sessionId ?? '') : '';
-  const directory = available ? (args.directory ?? undefined) : undefined;
-  const status = useLiveSessionStatus(sessionId);
-  const errorAt = useSessionErrorAt(sessionId, directory);
-  const permissions = useSessionPermissions(sessionId, directory, { bootstrap: false });
-  const questions = useSessionQuestions(sessionId, directory, { bootstrap: false });
+  const liveStatuses = useAllSessionStatuses({ enabled: available });
+  const fallbackStatuses = useGlobalSessionStatusStore((state) => (
+    available ? state.statusById : EMPTY_STATUS_BY_ID
+  ));
+  const sessions = useGlobalSessionsStore((state) => (
+    available ? state.activeSessions : EMPTY_SESSIONS
+  ));
+  const runningIds = useMemo(
+    () => (available ? collectRunningSessionIds(liveStatuses, fallbackStatuses) : new Set<string>()),
+    [available, fallbackStatuses, liveStatuses],
+  );
+  const catalog = useMemo(
+    () => (available ? buildNativeLiveActivityCatalog({
+      runningIds,
+      statuses: liveStatuses,
+      sessions,
+    }) : []),
+    [available, liveStatuses, runningIds, sessions],
+  );
+  const sessionTitles = useMemo(() => {
+    if (!available) return {};
+    const titles: Record<string, string> = {};
+    for (const session of sessions) {
+      const parentID = (session as { parentID?: string | null }).parentID;
+      if (typeof parentID === 'string' && parentID.length > 0) continue;
+      const title = typeof session.title === 'string' ? session.title.trim() : '';
+      if (!title) continue;
+      titles[session.id] = title.length <= NATIVE_LIVE_ACTIVITY_TITLE_MAX
+        ? title
+        : `${title.slice(0, NATIVE_LIVE_ACTIVITY_TITLE_MAX - 1)}…`;
+    }
+    return titles;
+  }, [available, sessions]);
+  const catalogSignature = useMemo(
+    () => [
+      catalog.map((item) => `${item.sessionId}\0${item.title}\0${item.statusType ?? ''}`).join('\n'),
+      Object.entries(sessionTitles).map(([id, title]) => `${id}\0${title}`).join('\n'),
+    ].join('\n---\n'),
+    [catalog, sessionTitles],
+  );
   const stateRef = useRef<NativeLiveActivityState>(createInitialNativeLiveActivityState());
+  const tokenStateRef = useRef<NativeLiveActivityTokenState>(createInitialNativeLiveActivityTokenState());
   const supportedRef = useRef<boolean | null>(null);
   const epochRef = useRef(0);
   const chainRef = useRef(Promise.resolve());
-
-  const hasPendingPermissions = permissions.length > 0;
-  const hasPendingQuestions = questions.length > 0;
-  const hasSessionError = errorAt !== undefined;
-  const statusType = status?.type;
+  const tokenChainRef = useRef(Promise.resolve());
+  const pushTokenHandleRef = useRef<PluginListenerHandle | null>(null);
 
   const observe = useEvent((): NativeLiveActivityObservation => ({
-    sessionId: args.sessionId ?? null,
-    statusType,
-    hasPendingPermissions,
-    hasPendingQuestions,
-    hasSessionError,
-    errorAt,
+    sessionId: NATIVE_LIVE_ACTIVITY_ID,
+    statusType: undefined,
+    hasPendingPermissions: false,
+    hasPendingQuestions: false,
+    hasSessionError: false,
     now: Date.now(),
     connected,
+    catalog,
+    sessionTitles,
   }));
 
+  const dispatchTokenAction = useEvent((action: NativeLiveActivityTokenAction): void => {
+    tokenChainRef.current = tokenChainRef.current.then(async () => {
+      const reduced = reduceNativeLiveActivityToken(tokenStateRef.current, {
+        selectedSessionId: NATIVE_LIVE_ACTIVITY_ID,
+        runtimeIdentity: getRuntimeTransportIdentity(),
+        connected,
+        enabled: available,
+      }, action);
+      tokenStateRef.current = reduced.state;
+      if (reduced.commands.length === 0) return;
+      tokenStateRef.current = await applyNativeLiveActivityTokenCommands({
+        state: tokenStateRef.current,
+        commands: reduced.commands,
+        getRuntimeIdentity: getRuntimeTransportIdentity,
+        register: (payload) => getRegisteredRuntimeAPIs()?.push?.registerLiveActivityToken?.({
+          ...payload,
+          items: stateRef.current.items.map((item) => {
+            const next = {
+              sessionId: item.sessionId,
+              title: item.title,
+              status: item.status,
+              startedAt: toNativeLiveActivityTimestamp(item.startedAt),
+            };
+            return item.endedAt !== undefined
+              ? { ...next, endedAt: toNativeLiveActivityTimestamp(item.endedAt) }
+              : next;
+          }),
+        }) ?? Promise.resolve(null),
+        unregister: (payload) => getRegisteredRuntimeAPIs()?.push?.unregisterLiveActivityToken?.(payload) ?? Promise.resolve(null),
+      });
+    }).catch(() => undefined);
+  });
+
+  const handlePushToken = useEvent((payload: unknown): void => {
+    const parsed = parseNativeLiveActivityPushTokenEvent(payload);
+    if (!parsed) return;
+    dispatchTokenAction({ type: 'pushToken', ...parsed, sessionId: NATIVE_LIVE_ACTIVITY_ID });
+  });
+
   useEffect(() => {
-    if (!available) return;
+    dispatchTokenAction({ type: available ? 'sync' : 'dispose' });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- available/connected are the real inputs; dispatchTokenAction is useEvent-stable and must not control this effect.
+  }, [available, connected]);
+
+  useEffect(
+    () => subscribeRuntimeEndpointChanged(() => {
+      dispatchTokenAction({ type: 'sync' });
+    }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- subscribe once on mount; dispatchTokenAction is useEvent-stable and must not control this effect.
+    [],
+  );
+
+  useEffect(() => {
+    if (!available) {
+      void pushTokenHandleRef.current?.remove();
+      pushTokenHandleRef.current = null;
+      return;
+    }
 
     let cancelled = false;
     let timer: ReturnType<typeof setTimeout> | null = null;
@@ -80,6 +176,7 @@ export function useNativeLiveActivity(args: UseNativeLiveActivityArgs): void {
         }
 
         const observation = observe();
+        const previousStarted = stateRef.current.started;
         const result = await runNativeLiveActivityStep({
           available: true,
           plugin,
@@ -87,11 +184,34 @@ export function useNativeLiveActivity(args: UseNativeLiveActivityArgs): void {
           observation,
           epoch,
           getCurrentEpoch: () => epochRef.current,
-          getCurrentSessionId: () => observe().sessionId,
           retryCount,
         });
         if (cancelled || epochRef.current !== epoch || result.superseded) return;
         stateRef.current = result.state;
+        if (previousStarted && !result.state.started) {
+          dispatchTokenAction({ type: 'localEndSucceeded' });
+        } else if (result.state.started) {
+          const desired = tokenStateRef.current.desired;
+          if (desired) {
+            void getRegisteredRuntimeAPIs()?.push?.registerLiveActivityToken?.({
+              activityId: desired.activityId,
+              sessionId: NATIVE_LIVE_ACTIVITY_ID,
+              token: desired.token,
+              items: result.state.items.map((item) => {
+                const next = {
+                  sessionId: item.sessionId,
+                  title: item.title,
+                  status: item.status,
+                  startedAt: toNativeLiveActivityTimestamp(item.startedAt),
+                };
+                if (item.endedAt !== undefined) {
+                  return { ...next, endedAt: toNativeLiveActivityTimestamp(item.endedAt) };
+                }
+                return next;
+              }),
+            });
+          }
+        }
         if (result.retry) retryCount += 1;
         else retryCount = 0;
         if (result.delayMs != null) {
@@ -102,21 +222,44 @@ export function useNativeLiveActivity(args: UseNativeLiveActivityArgs): void {
       }).catch(() => undefined);
     };
 
-    run();
+    chainRef.current = chainRef.current.then(async () => {
+      if (cancelled || epochRef.current !== epoch) return;
+      if (pushTokenHandleRef.current) return;
+      try {
+        const handle = await plugin.addListener('pushToken', (payload) => {
+          handlePushToken(payload);
+        });
+        if (cancelled) {
+          await handle.remove();
+          return;
+        }
+        pushTokenHandleRef.current = handle;
+      } catch {
+        return;
+      }
+    }).then(() => {
+      if (!cancelled && epochRef.current === epoch) run();
+    }).catch(() => undefined);
 
     return () => {
       cancelled = true;
       if (epochRef.current === epoch) epochRef.current += 1;
       if (timer !== null) clearTimeout(timer);
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- catalog/connection identity is the real input; observe/handlePushToken/dispatchTokenAction are useEvent-stable and must not control this effect.
   }, [
     available,
-    args.sessionId,
     connected,
-    statusType,
-    hasPendingPermissions,
-    hasPendingQuestions,
-    hasSessionError,
-    errorAt,
+    catalogSignature,
   ]);
+
+  useEffect(
+    () => () => {
+      void pushTokenHandleRef.current?.remove();
+      pushTokenHandleRef.current = null;
+      dispatchTokenAction({ type: 'dispose' });
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- unmount cleanup only; dispatchTokenAction is useEvent-stable and must not control this effect.
+    [],
+  );
 }

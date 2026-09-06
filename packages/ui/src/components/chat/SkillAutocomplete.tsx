@@ -10,7 +10,10 @@ import { cn } from '@/lib/utils';
 import { useInstalledSkillsQuery } from '@/queries/installedSkillsQueries';
 import { useUIStore } from '@/stores/useUIStore';
 import { ScrollableOverlay } from '@/components/ui/ScrollableOverlay';
-import { useMobileAutocompleteMaxHeight } from './useMobileAutocompleteMaxHeight';
+import { ComposerAutocompleteLayer } from './ComposerAutocompleteLayer';
+import {
+  composerAutocompleteRowClassName,
+} from './composerAutocompleteChrome';
 
 export interface SkillInfo {
   name: string;
@@ -43,7 +46,6 @@ export const SkillAutocomplete = React.forwardRef<SkillAutocompleteHandle, Skill
 }, ref) => {
   const containerRef = React.useRef<HTMLDivElement | null>(null);
   const isMobile = useUIStore((state) => state.isMobile);
-  const mobileMaxHeight = useMobileAutocompleteMaxHeight(containerRef, isMobile);
   const [selectedIndex, setSelectedIndex] = React.useState(0);
   const selectedIndexRef = React.useRef(0);
   const keyboardNavigationRef = React.useRef(false);
@@ -147,7 +149,7 @@ export const SkillAutocomplete = React.forwardRef<SkillAutocompleteHandle, Skill
           className={cn(
             'flex gap-2 px-3 py-1.5 cursor-pointer rounded-lg typography-ui-label',
             isMobile ? 'items-center' : 'items-start',
-          index === selectedIndex && 'bg-interactive-selection'
+            composerAutocompleteRowClassName(isMobile, index === selectedIndex),
         )}
         onClick={() => onSkillSelect(skill)}
         onMouseMove={() => {
@@ -181,10 +183,11 @@ export const SkillAutocomplete = React.forwardRef<SkillAutocompleteHandle, Skill
   };
 
   return (
-    <div
+    <ComposerAutocompleteLayer
       ref={containerRef}
-      className="absolute z-[100] min-w-0 w-full max-w-[450px] max-h-60 bg-background border-2 border-border/60 rounded-xl shadow-none bottom-full mb-2 left-0 flex flex-col"
-      style={mobileMaxHeight !== undefined ? { ...style, maxHeight: mobileMaxHeight } : style}
+      isMobile={isMobile}
+      className="max-w-[450px] max-h-60"
+      style={style}
     >
       <ScrollableOverlay preventOverscroll outerClassName="flex-1 min-h-0" className="px-0 pb-2">
         {filteredSkills.length ? (
@@ -202,7 +205,7 @@ export const SkillAutocomplete = React.forwardRef<SkillAutocompleteHandle, Skill
           ↑↓ navigate • Enter select • Esc close
         </div>
       )}
-    </div>
+    </ComposerAutocompleteLayer>
   );
 });
 

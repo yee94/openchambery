@@ -37,46 +37,19 @@ describe('useProjectsStore moveProjectToTop', () => {
     expect(useProjectsStore.getState().projects).toBe(initial);
   });
 
-  test('advances manual order alongside the registry so manual sorting keeps the promoted project first', () => {
+  test('leaves manual drag order alone so activity does not reset a user-set sort', () => {
     useProjectsStore.setState({
       manualProjectOrder: ['alpha', 'beta', 'gamma'],
     });
 
     useProjectsStore.getState().moveProjectToTop('gamma');
 
-    expect(useProjectsStore.getState().manualProjectOrder).toEqual(['gamma', 'alpha', 'beta']);
+    expect(useProjectsStore.getState().manualProjectOrder).toEqual(['alpha', 'beta', 'gamma']);
     expect(useProjectsStore.getState().projects.map((project) => project.id)).toEqual([
       'gamma',
       'alpha',
       'beta',
     ]);
-  });
-
-  test('prepends a project missing from manual order so new activity outranks untouched projects', () => {
-    useProjectsStore.setState({
-      projects: [
-        { id: 'alpha', path: '/workspace/alpha', label: 'Alpha' },
-        { id: 'beta', path: '/workspace/beta', label: 'Beta' },
-        { id: 'delta', path: '/workspace/delta', label: 'Delta' },
-      ],
-      manualProjectOrder: ['alpha', 'beta'],
-    });
-
-    useProjectsStore.getState().moveProjectToTop('delta');
-
-    expect(useProjectsStore.getState().manualProjectOrder).toEqual(['delta', 'alpha', 'beta']);
-  });
-
-  test('updates manual order without touching the registry when the project is already first', () => {
-    const initial = useProjectsStore.getState().projects;
-    useProjectsStore.setState({
-      manualProjectOrder: ['beta', 'alpha', 'gamma'],
-    });
-
-    useProjectsStore.getState().moveProjectToTop('alpha');
-
-    expect(useProjectsStore.getState().projects).toBe(initial);
-    expect(useProjectsStore.getState().manualProjectOrder).toEqual(['alpha', 'beta', 'gamma']);
   });
 });
 
@@ -132,7 +105,7 @@ describe('useProjectsStore instance-scoped order', () => {
 });
 
 describe('useProjectsStore synchronizeFromSettings', () => {
-  test('rebases the manual order onto the server projects order so cross-runtime drags and promotions apply locally', () => {
+  test('keeps the local manual order when the server only reorders projects', () => {
     const alpha = createProjectIdFromPath('/workspace/alpha');
     const beta = createProjectIdFromPath('/workspace/beta');
     const gamma = createProjectIdFromPath('/workspace/gamma');
@@ -155,7 +128,31 @@ describe('useProjectsStore synchronizeFromSettings', () => {
     });
 
     expect(useProjectsStore.getState().projects.map((project) => project.id)).toEqual([gamma, alpha, beta]);
-    expect(useProjectsStore.getState().manualProjectOrder).toEqual([gamma, alpha, beta]);
+    expect(useProjectsStore.getState().manualProjectOrder).toEqual([alpha, beta, gamma]);
+  });
+
+  test('drops removed project ids from manual order without reordering survivors', () => {
+    const alpha = createProjectIdFromPath('/workspace/alpha');
+    const beta = createProjectIdFromPath('/workspace/beta');
+    const gamma = createProjectIdFromPath('/workspace/gamma');
+    useProjectsStore.setState({
+      projects: [
+        { id: alpha, path: '/workspace/alpha', label: 'Alpha' },
+        { id: beta, path: '/workspace/beta', label: 'Beta' },
+        { id: gamma, path: '/workspace/gamma', label: 'Gamma' },
+      ],
+      activeProjectId: beta,
+      manualProjectOrder: [gamma, alpha, beta],
+    });
+
+    useProjectsStore.getState().synchronizeFromSettings({
+      projects: [
+        { id: alpha, path: '/workspace/alpha', label: 'Alpha' },
+        { id: beta, path: '/workspace/beta', label: 'Beta' },
+      ],
+    });
+
+    expect(useProjectsStore.getState().manualProjectOrder).toEqual([alpha, beta]);
   });
 
   test('keeps the local manual order when only the active project changed', () => {

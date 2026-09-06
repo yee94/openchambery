@@ -131,6 +131,20 @@ const LEGACY_DEFAULT_NOTIFICATION_TEMPLATES = {
   subtask: { title: 'Subtask complete', message: '{last_message}' },
 } as const;
 
+const STOCK_NOTIFICATION_TEMPLATES = {
+  completion: { title: 'Task completed', message: '{session_name}' },
+  error: { title: 'Something went wrong', message: '{session_name}' },
+  question: { title: 'Needs your answer', message: '{session_name}' },
+  subtask: { title: 'Task completed', message: '{session_name}' },
+} as const;
+
+const OLD_SERVER_NOTIFICATION_TEMPLATES = {
+  completion: { title: '{agent_name} is ready', message: '{model_name} completed the task' },
+  error: { title: 'Tool error', message: '{last_message}' },
+  question: { title: 'Input needed', message: '{last_message}' },
+  subtask: { title: '{agent_name} is ready', message: '{model_name} completed the task' },
+} as const;
+
 const EMPTY_NOTIFICATION_TEMPLATES = {
   completion: { title: '', message: '' },
   error: { title: '', message: '' },
@@ -151,11 +165,16 @@ const isLegacyDefaultTemplates = (value: unknown): boolean => {
     return false;
   }
   const candidate = value as Record<string, { title: string; message: string } | undefined>;
+  const matches = (stock: typeof LEGACY_DEFAULT_NOTIFICATION_TEMPLATES) => (
+    isSameTemplateValue(candidate.completion, stock.completion)
+    && isSameTemplateValue(candidate.error, stock.error)
+    && isSameTemplateValue(candidate.question, stock.question)
+    && isSameTemplateValue(candidate.subtask, stock.subtask)
+  );
   return (
-    isSameTemplateValue(candidate.completion, LEGACY_DEFAULT_NOTIFICATION_TEMPLATES.completion)
-    && isSameTemplateValue(candidate.error, LEGACY_DEFAULT_NOTIFICATION_TEMPLATES.error)
-    && isSameTemplateValue(candidate.question, LEGACY_DEFAULT_NOTIFICATION_TEMPLATES.question)
-    && isSameTemplateValue(candidate.subtask, LEGACY_DEFAULT_NOTIFICATION_TEMPLATES.subtask)
+    matches(LEGACY_DEFAULT_NOTIFICATION_TEMPLATES)
+    || matches(STOCK_NOTIFICATION_TEMPLATES)
+    || matches(OLD_SERVER_NOTIFICATION_TEMPLATES)
   );
 };
 
@@ -731,6 +750,7 @@ interface UIStore {
   pendingDiagramFile: string | null;
   pendingFileNavigation: PendingFileNavigation | null;
   pendingFileFocusPath: string | null;
+  pendingFileViewerMode: 'preview' | 'edit' | null;
   isMobile: boolean;
   isCommandPaletteOpen: boolean;
   isHelpDialogOpen: boolean;
@@ -873,7 +893,7 @@ interface UIStore {
   openContextDiff: (directory: string, filePath: string, staged?: boolean, scope?: PendingDiffScope | null, targetLine?: number, turnMessageId?: string | null, sessionId?: string | null) => void;
   openContextToolDiff: (directory: string, filePath: string, patches: ReadonlyArray<{ path: string; patch: string }>, targetLine?: number, turnMessageId?: string | null, sessionId?: string | null) => void;
   openContextFileDiff: (directory: string, filePath: string, staged?: boolean, scope?: PendingDiffScope | null) => void;
-  openContextFile: (directory: string, filePath: string, options?: { fileNotice?: ContextPanelFileNotice | null }) => void;
+  openContextFile: (directory: string, filePath: string, options?: { fileNotice?: ContextPanelFileNotice | null; viewerMode?: 'preview' | 'edit' }) => void;
   openContextFileAtLine: (directory: string, filePath: string, line: number, column?: number) => void;
   openContextOverview: (directory: string) => void;
   openContextPreview: (directory: string, url: string) => void;
@@ -902,6 +922,7 @@ interface UIStore {
   setPendingDiagramFile: (filePath: string | null) => void;
   setPendingFileNavigation: (navigation: PendingFileNavigation | null) => void;
   setPendingFileFocusPath: (path: string | null) => void;
+  setPendingFileViewerMode: (mode: 'preview' | 'edit' | null) => void;
   navigateToDiff: (filePath: string, staged?: boolean, scope?: PendingDiffScope | null, targetLine?: number) => void;
   consumePendingDiffFile: () => string | null;
   navigateToDiagram: (filePath: string) => void;
@@ -1068,6 +1089,7 @@ export const useUIStore = create<UIStore>()(
         pendingDiagramFile: null,
         pendingFileNavigation: null,
         pendingFileFocusPath: null,
+        pendingFileViewerMode: null,
         isMobile: false,
         isCommandPaletteOpen: false,
         isHelpDialogOpen: false,
@@ -1492,6 +1514,7 @@ export const useUIStore = create<UIStore>()(
           });
           get().setPendingFileFocusPath(normalizedFilePath);
           get().setPendingFileNavigation(null);
+          get().setPendingFileViewerMode(options?.viewerMode ?? null);
         },
 
         openContextFileAtLine: (directory, filePath, line, column) => {
@@ -1877,6 +1900,10 @@ export const useUIStore = create<UIStore>()(
 
         setPendingFileFocusPath: (path) => {
           set({ pendingFileFocusPath: path });
+        },
+
+        setPendingFileViewerMode: (mode) => {
+          set({ pendingFileViewerMode: mode });
         },
 
         navigateToDiff: (filePath, staged = false, scope = null, targetLine) => {

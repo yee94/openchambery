@@ -803,6 +803,23 @@ export interface ApnsTokenPayload {
   locale?: string;
 }
 
+export interface LiveActivityTokenPayload {
+  activityId: string;
+  sessionId: string;
+  token: string;
+  items?: Array<{
+    sessionId: string;
+    title: string;
+    status: string;
+    startedAt: number;
+    endedAt?: number;
+  }>;
+}
+
+export interface LiveActivityTokenUnregisterPayload {
+  token: string;
+}
+
 export interface PushAPI {
   getVapidPublicKey(): Promise<{ publicKey: string } | null>;
   subscribe(payload: PushSubscribePayload): Promise<{ ok: true } | null>;
@@ -811,6 +828,9 @@ export interface PushAPI {
   /** Register a native iOS APNs device token (Capacitor mobile app only). */
   registerApnsToken(payload: ApnsTokenPayload): Promise<{ ok: true } | null>;
   unregisterApnsToken(payload: ApnsTokenPayload): Promise<{ ok: true } | null>;
+  /** Register an iOS Live Activity push token (Capacitor iOS only; other runtimes no-op). */
+  registerLiveActivityToken(payload: LiveActivityTokenPayload): Promise<{ ok: true } | null>;
+  unregisterLiveActivityToken(payload: LiveActivityTokenUnregisterPayload): Promise<{ ok: true } | null>;
 }
 
 /** Capacitor mobile app only; optional elsewhere. Capgo-style self-hosted OTA. */
@@ -1237,11 +1257,14 @@ export interface ClientAuthAPI {
   cancelPairing(id: string): Promise<{ cancelled: boolean }>;
   // Direct transports the server can be reached on, for the create-device dialog.
   // LAN reflects the server's actual bind, independent of the UI origin.
+  // `relayUrls` lists every configured relay endpoint (primary first,
+  // multi-relay); `relayUrl` is the primary, kept for compatibility.
   getPairingTransports(): Promise<{
     local: string | null;
     lan: string | null;
     relayAvailable: boolean;
     relayUrl?: string;
+    relayUrls?: string[];
     relayUrlLocked?: boolean;
   }>;
 }

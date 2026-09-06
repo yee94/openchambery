@@ -1,6 +1,8 @@
 import { describe, expect, test } from 'bun:test';
 import {
+  computeMobileAutocompleteFixedBox,
   computeMobileAutocompleteMaxHeight,
+  MOBILE_AUTOCOMPLETE_GAP_PX,
   MOBILE_AUTOCOMPLETE_MIN_HEIGHT,
   MOBILE_AUTOCOMPLETE_VIEWPORT_HEIGHT_RATIO,
 } from '../useMobileAutocompleteMaxHeight';
@@ -70,5 +72,26 @@ describe('computeMobileAutocompleteMaxHeight', () => {
       viewportHeight: 100,
     });
     expect(next).toBe(40);
+  });
+});
+
+describe('computeMobileAutocompleteFixedBox', () => {
+  test('anchors the panel above the composer in viewport-fixed coordinates', () => {
+    const box = computeMobileAutocompleteFixedBox({
+      composerTop: 600,
+      composerLeft: 16,
+      composerWidth: 360,
+      visibleBottom: 800,
+      boundaryTop: 100,
+      viewportHeight: 700,
+    });
+    expect(box.left).toBe(16);
+    expect(box.width).toBe(360);
+    expect(box.bottom).toBe(800 - (600 - MOBILE_AUTOCOMPLETE_GAP_PX));
+    expect(box.maxHeight).toBe(computeMobileAutocompleteMaxHeight({
+      popupBottom: 600 - MOBILE_AUTOCOMPLETE_GAP_PX,
+      boundaryTop: 100,
+      viewportHeight: 700,
+    }));
   });
 });

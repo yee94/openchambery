@@ -2842,10 +2842,7 @@ const MobileShell: React.FC<{
   const currentSessionDirectory = useSessionUIStore(currentSessionDirectorySelector);
   const parentSessionTarget = useParentSessionTarget(currentSessionId, currentSessionDirectory || currentDirectory || undefined);
   const currentSessionStatus = useLiveSessionStatus(currentSessionId ?? '');
-  useNativeLiveActivity({
-    sessionId: currentSessionId,
-    directory: currentSessionDirectory || currentDirectory,
-  });
+  useNativeLiveActivity();
   const isSessionBusy = currentSessionStatus?.type === 'busy' || currentSessionStatus?.type === 'retry';
   const refreshCurrentTranscript = useEvent(() => {
     const sessionID = currentSessionId;

@@ -11,7 +11,7 @@ export const createNotificationTriggerRuntime = (deps) => {
     broadcastUiNotification,
     sendPushToAllUiSessions,
     sendApnsToAllUiSessions,
-    isAnyInteractiveClientVisible,
+    sendLiveActivityEnd,
     buildOpenCodeUrl,
     getOpenCodeAuthHeaders,
   } = deps;
@@ -67,25 +67,17 @@ export const createNotificationTriggerRuntime = (deps) => {
   };
 
   // Fan a notification out to every delivery channel: browser web-push (full templated
-  // payload) and native iOS APNs (generic model-based text). Both share the dedup tag and
-  // `requireNoSse` focus gate; a failure in one channel must not block the other.
-  const fanoutPush = (payload, options) => {
-    // Presence-aware routing: if any interactive (non-mobile) client — desktop/web/vscode — is
-    // currently visible, it already shows the in-app notification, so skip the native push to the
-    // phone. Gated on the desktop's visibility (reliable), never the phone's own. When we skip we
-    // also skip toApnsGenericPayload, so the badge isn't incremented for an undelivered push.
-    const interactiveVisible = isAnyInteractiveClientVisible?.() === true;
-    return Promise.all([
-      Promise.resolve(sendPushToAllUiSessions?.(payload, options)).catch((error) => {
-        console.warn('[Push] web-push fanout failed:', error?.message ?? error);
-      }),
-      interactiveVisible
-        ? Promise.resolve()
-        : Promise.resolve(sendApnsToAllUiSessions?.(toApnsGenericPayload(payload), options)).catch((error) => {
-            console.warn('[APNs] fanout failed:', error?.message ?? error);
-          }),
-    ]);
-  };
+  // payload) and native iOS APNs (generic model-based text). Both share the dedup tag;
+  // a failure in one channel must not block the other. Visibility on any other client
+  // never suppresses delivery — every subscribed surface gets the push.
+  const fanoutPush = (payload, options) => Promise.all([
+    Promise.resolve(sendPushToAllUiSessions?.(payload, options)).catch((error) => {
+      console.warn('[Push] web-push fanout failed:', error?.message ?? error);
+    }),
+    Promise.resolve(sendApnsToAllUiSessions?.(toApnsGenericPayload(payload), options)).catch((error) => {
+      console.warn('[APNs] fanout failed:', error?.message ?? error);
+    }),
+  ]);
 
   let getIsWindowFocused = typeof deps.getIsWindowFocused === 'function'
     ? deps.getIsWindowFocused
@@ -281,40 +273,6 @@ export const createNotificationTriggerRuntime = (deps) => {
     return trimmed.length > 0 ? trimmed : undefined;
   };
 
-  const formatMode = (raw) => {
-    const value = typeof raw === 'string' ? raw.trim() : '';
-    const normalized = value.length > 0 ? value : 'agent';
-    return normalized
-      .split(/[-_\s]+/)
-      .filter(Boolean)
-      .map((token) => token.charAt(0).toUpperCase() + token.slice(1))
-      .join(' ');
-  };
-
-  const formatModelId = (raw) => {
-    const value = typeof raw === 'string' ? raw.trim() : '';
-    if (!value) {
-      return 'Assistant';
-    }
-
-    const tokens = value.split(/[-_]+/).filter(Boolean);
-    const result = [];
-    for (let i = 0; i < tokens.length; i += 1) {
-      const current = tokens[i];
-      const next = tokens[i + 1];
-      if (/^\d+$/.test(current) && next && /^\d+$/.test(next)) {
-        result.push(`${current}.${next}`);
-        i += 1;
-        continue;
-      }
-      result.push(current);
-    }
-
-    return result
-      .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-      .join(' ');
-  };
-
   // A session with an ACTIVE goal suppresses per-turn ready notifications;
   // the session-goal runtime sends its own notification when the goal
   // settles. Fetch failures fall through to normal notification behavior.
@@ -346,6 +304,16 @@ export const createNotificationTriggerRuntime = (deps) => {
 
     const sessionId = extractSessionIdFromPayload(payload);
     const notificationDirectory = extractDirectoryFromPayload(payload);
+    if ((payload.type === 'session.updated' || payload.type === 'session.created') && sessionId) {
+      const title = payload.properties?.info?.title;
+      if (typeof title === 'string' && title.trim()) {
+        try {
+          await sendLiveActivityEnd?.({ sessionId, title: title.trim() });
+        } catch (error) {
+          console.warn('[Live Activity] title update failed:', error?.message ?? error);
+        }
+      }
+    }
     if ((payload.type === 'session.idle' || payload.type === 'session.error') && sessionId) {
       const error = payload.properties?.error;
       const errorText = typeof error?.message === 'string'
@@ -369,13 +337,23 @@ export const createNotificationTriggerRuntime = (deps) => {
 
     if (payload.type === 'message.updated') {
       const info = payload.properties?.info;
-      if (
+      const isAssistantTerminal = Boolean(
         sessionId
         && info?.role === 'assistant'
-        && (info?.finish === 'stop' || info?.finish === 'error')
-        && await shouldSkipSystemSessionNotification(sessionId, notificationDirectory)
-      ) {
+        && (info?.finish === 'stop' || info?.finish === 'error'),
+      );
+      if (isAssistantTerminal && await shouldSkipSystemSessionNotification(sessionId, notificationDirectory)) {
         return;
+      }
+      if (isAssistantTerminal) {
+        try {
+          await sendLiveActivityEnd?.({
+            sessionId,
+            status: info.finish === 'error' ? 'error' : 'complete',
+          });
+        } catch (error) {
+          console.warn('[Live Activity] end failed:', error?.message ?? error);
+        }
       }
       if (info?.role === 'assistant' && info?.finish === 'stop' && sessionId) {
         const settings = await readSettingsFromDisk();
@@ -402,13 +380,13 @@ export const createNotificationTriggerRuntime = (deps) => {
         }
         lastReadyNotificationAt.set(sessionId, now);
 
-        let title = `${formatMode(info?.mode)} agent is ready`;
-        let body = `${formatModelId(info?.modelID)} completed the task`;
+        let title = 'Task completed';
+        let body = '';
         let sessionName = '';
 
         try {
           const templates = settings.notificationTemplates || {};
-          const completionTemplate = templates.completion || { title: '{agent_name} is ready', message: '{model_name} completed the task' };
+          const completionTemplate = templates.completion || { title: 'Task completed', message: '{session_name}' };
 
           const variables = await buildTemplateVariables(payload, sessionId);
           sessionName = typeof variables.session_name === 'string' ? variables.session_name : sessionName;
@@ -428,8 +406,10 @@ export const createNotificationTriggerRuntime = (deps) => {
           const resolvedBody = resolveNotificationTemplate(completionTemplate.message, variables);
           if (resolvedTitle) title = resolvedTitle;
           if (shouldApplyResolvedTemplateMessage(completionTemplate.message, resolvedBody, variables)) body = resolvedBody;
+          if (!body) body = sessionName || resolvedBody || 'Session';
         } catch (error) {
           console.warn('[Notification] Template resolution failed, using defaults:', error?.message || error);
+          if (!body) body = sessionName || 'Session';
         }
 
         if (settings.nativeNotificationsEnabled) {
@@ -490,12 +470,8 @@ export const createNotificationTriggerRuntime = (deps) => {
         const header = typeof firstQuestion?.header === 'string' ? firstQuestion.header.trim() : '';
         const questionText = typeof firstQuestion?.question === 'string' ? firstQuestion.question.trim() : '';
 
-        let title = /plan\s*mode/i.test(header)
-          ? 'Switch to plan mode'
-          : /build\s*agent/i.test(header)
-            ? 'Switch to build mode'
-            : header || 'Input needed';
-        let body = questionText || 'Agent is waiting for your response';
+        let title = 'Needs your answer';
+        let body = '';
         let sessionName = '';
 
         try {
@@ -504,14 +480,16 @@ export const createNotificationTriggerRuntime = (deps) => {
           variables.last_message = questionText || header || '';
 
           const templates = settings.notificationTemplates || {};
-          const questionTemplate = templates.question || { title: 'Input needed', message: '{last_message}' };
+          const questionTemplate = templates.question || { title: 'Needs your answer', message: '{session_name}' };
 
           const resolvedTitle = resolveNotificationTemplate(questionTemplate.title, variables);
           const resolvedBody = resolveNotificationTemplate(questionTemplate.message, variables);
           if (resolvedTitle) title = resolvedTitle;
           if (shouldApplyResolvedTemplateMessage(questionTemplate.message, resolvedBody, variables)) body = resolvedBody;
+          if (!body) body = sessionName || resolvedBody || 'Session';
         } catch (error) {
           console.warn('[Notification] Question template resolution failed, using defaults:', error?.message || error);
+          if (!body) body = sessionName || 'Session';
         }
 
         if (settings.nativeNotificationsEnabled) {
@@ -616,8 +594,8 @@ export const createNotificationTriggerRuntime = (deps) => {
           ? sessionTitle.trim()
           : permissionText || 'Agent is waiting for your approval';
 
-        let title = 'Permission required';
-        let body = fallbackMessage;
+        let title = 'Needs permission';
+        let body = '';
         let sessionName = '';
 
         try {
@@ -626,14 +604,14 @@ export const createNotificationTriggerRuntime = (deps) => {
           variables.last_message = fallbackMessage;
 
           const templates = settings.notificationTemplates || {};
-          const questionTemplate = templates.question || { title: 'Permission required', message: '{last_message}' };
+          const questionTemplate = templates.question || { title: 'Needs permission', message: '{session_name}' };
 
-          const resolvedTitle = resolveNotificationTemplate(questionTemplate.title, variables);
           const resolvedBody = resolveNotificationTemplate(questionTemplate.message, variables);
-          if (resolvedTitle) title = resolvedTitle;
           if (shouldApplyResolvedTemplateMessage(questionTemplate.message, resolvedBody, variables)) body = resolvedBody;
+          if (!body) body = sessionName || fallbackMessage || 'Session';
         } catch (error) {
           console.warn('[Notification] Permission template resolution failed, using defaults:', error?.message || error);
+          if (!body) body = sessionName || fallbackMessage || 'Session';
         }
 
         if (settings.nativeNotificationsEnabled) {

@@ -29,6 +29,41 @@ registered them — so a leaked device token alone can't be used to push.
    not application plaintext. Layer 1 (`openchamber-relay`) never sees these secrets.
 5. Tapping a push deep-links to its session via the forwarded `sessionId`.
 
+## Live Activity (update / end)
+
+ActivityKit has issued **update/end push tokens** for an Activity that is
+**already started on-device** since **iOS 16.1**. **Push-to-start** (creating an
+Activity from APNs while the app is not running) is **iOS 17.2+** and is not
+part of this Host path.
+
+The native app registers a Live Activity token with **its own server**
+(`POST /api/push/live-activity-token`: `token`, `activityId`, `sessionId`).
+Those tokens are stored separately from alert APNs device tokens (same
+`apns-tokens.json` file, `version` 2 `liveActivityTokensBySession`; v1 alert
+data remains readable) and are never used for banner push. The Host binds them
+on the relay at `POST /v1/push/register-live-activity-token` with
+`{ token, platform: "ios", kind: "liveactivity", publicKeyJwk, ts, sig }` signed
+over `${ts}.${token}.${platform}.${kind}`. Unregister uses
+`/v1/push/unregister-live-activity-token` with the same signature, and only the
+owning UI session may delete a local token.
+
+On top-level session **completion** or **error** (child sessions and small-model
+system sessions suppressed; independent of ordinary notification settings and UI
+visibility) the Host calls `sendLiveActivityEnd`. Relay send is
+`POST /v1/push/live-activity` with `{ tokens, event, contentState,
+dismissalDate?, staleDate?, publicKeyJwk, ts, sig }` signed over
+`${ts}.${sortedTokens}.${event}.${status}.${eventVersion}.${updatedAt}.${endedAt}.${dismissalDate}.${staleDate}`.
+Direct mode uses HTTP/2 token auth, `apns-topic: ${bundleId}.push-type.liveactivity`,
+`apns-push-type: liveactivity`, and no alert.
+
+The APNs / relay payload **must not** carry `sessionId` or user/session content.
+`contentState` is only `{ status, eventVersion, updatedAt, endedAt }`.
+`complete` uses a 15-minute dismissal and `error` a 60-minute dismissal (same as
+native). `staleDate = updatedAt + 20min` is for **update** events only. After a
+successfully accepted `end`, the Host clears the local Activity tokens for those
+devices. A Live Activity failure does not drop alert tokens or block ordinary
+push. Do not log Live Activity tokens or session ids.
+
 ## Foreground suppression
 
 APNs is **not** gated on UI visibility. A backgrounded WKWebView can't reliably report "hidden"
@@ -81,8 +116,8 @@ is server-global, so every device token of a server sees the same badge.
 
 Host (`apns-runtime.js`):
 - `OPENCHAMBER_PUSH_RELAY_URL` (explicit send-URL override), `OPENCHAMBER_APNS_ENVIRONMENT`
-  (`sandbox` default / `production` for TestFlight and App Store). The signing keypair is
-  auto-generated — nothing to set.
+  (`production` default for TestFlight/App Store builds; set `sandbox` for Xcode development
+  builds). The signing keypair is auto-generated — nothing to set.
 - Direct fallback: `OPENCHAMBER_APNS_KEY_ID`, `OPENCHAMBER_APNS_TEAM_ID`, `OPENCHAMBER_APNS_P8`
   (or `_P8_PATH`), `OPENCHAMBER_APNS_BUNDLE_ID`, `OPENCHAMBER_PUSH_RELAY_DISABLED=true`.
 
@@ -101,8 +136,8 @@ device tokens, or signatures.
 2. Give those values only to the Push process (environment or Docker secret). Do not put the
    `.p8` on Layer 1 or on each OpenChamber Host when using Relay mode.
 3. Xcode: confirm the Push Notifications capability; Clean Build Folder; run on device.
-   Development builds use APNs `sandbox`. TestFlight and App Store Hosts set
-   `OPENCHAMBER_APNS_ENVIRONMENT=production`.
+   Hosts default to APNs `production` (TestFlight/App Store tokens). Xcode development
+   builds (sandbox tokens) need `OPENCHAMBER_APNS_ENVIRONMENT=sandbox`.
 
 ## Security posture
 
