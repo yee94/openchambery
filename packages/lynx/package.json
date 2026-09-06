@@ -1,0 +1,15 @@
+{
+  "name": "@openchamber/lynx",
+  "version": "1.19.7-beta.7",
+  "private": true,
+  "type": "module",
+  "description": "Lynx mobile client layer: connect, pairing v2, and session-index data path",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "type-check": "tsc --noEmit",
+    "lint": "eslint \"./src/**/*.ts\" --config ../../eslint.config.js"
+  }
+}

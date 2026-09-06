@@ -136,8 +136,8 @@ The author of a chat/list/navigation slice owns a harness that can run without a
 | **List prepend** | Load-older keeps the same turn under the finger (`maintainVisibleContentPosition`) | `TimelineList.tsx` contract tests |
 | **Streaming grow** | `maintainScrollAtEnd` while pinned; no follow when user scrolled away | LegendList flags, not a watchdog timer |
 | **IME occupancy** | Collapsed composer height published; queue/Changes do not jump on keyboard | Cap occupancy CSS variables — re-specify in Lynx units |
-| **Connect race** | LAN headstart then relay; relay-only skips the wait | `mobileConnections.ts` |
-| **Instance switch** | Query/runtime identity cleared; no token leak across servers | ui-api-decoupling |
+| **Connect race** | LAN headstart then relay; relay-only skips the wait | `packages/lynx/src/connection/probe.test.ts` (Lynx) / `mobileConnections.ts` (Cap) |
+| **Instance switch** | Query/runtime identity cleared; no token leak across servers | `packages/lynx/src/session-index/store.test.ts` + ui-api-decoupling |
 
 ### How to run them without a user
 
