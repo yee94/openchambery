@@ -64,7 +64,7 @@ Chat timeline + Settings tab home on `cursor/lynx-chat-settings-local` (PR into 
 | LegendList-semantics timeline | `TimelineList.tsx` | `src/chat/listSemantics.ts` + `LynxTimelineList`: one `<list>`, `recycle-items={false}`, `initialScrollAtEnd` / `maintainScrollAtEnd` / `maintainVisibleContentPosition`, load-older **button** only (bounce forbidden). TanStack 1.18 forbidden. |
 | Send / Stop / queue hooks | ChatInput + queue | `src/chat/composerActions.ts` + `sessionApi.ts` → official `POST /session/:id/prompt_async`, `POST /session/:id/abort`, `GET /session/:id/message`. No runtime → explicit `no-runtime` failure (never fake-success). |
 | Chat pushed page chrome | `MobileChatScreen.tsx` | `LynxChatScreen` header + timeline + composer actions. Markdown cards / Files / Changes / MCP sheets / IME FLIP **not** in this slice. |
-| Settings search + 21 slug rows | `MOBILE_SETTINGS_PAGE_SLUGS`, `SettingsView` | `src/settings/metadata.ts` + `SettingsTab`: search, Cap group order, all 21 rows, in-tab push. Bodies are **labeled stubs**; `voice` is list-only-until-routes. No `iosNativeUi` toggle. |
+| Settings search + 21 slug rows | `MOBILE_SETTINGS_PAGE_SLUGS`, `SettingsView` | `src/settings/metadata.ts` + `SettingsTab`: search, Cap group order, all 21 rows, in-tab push. Bodies are **labeled stubs** in early slices; tip `voice` is **代码接上** status + model download/delete (no invented ASR). No `iosNativeUi` toggle. |
 
 **CI绿:** lynx-ci live on tip. Local Vitest also. Not 真机过.
 **真机过:** not executed.
@@ -93,7 +93,7 @@ Slice on `cursor/lynx-settings-ci-local` (PR into `work/lynx-native`). Package V
 
 | Item | Cap/web source | Lynx note |
 |---|---|---|
-| Settings page bodies (21 slugs) | SettingsView + settings blob + catalogs | Wired GET/PUT: instances, appearance (flexoki ids), chat, notifications hooks, sessions, gitmoji, about (Lynx version ≠ instance). List endpoints: providers/agents/mcp/plugins/skills/commands/magic-prompts/snippets/usage/assistants/projects. Editors labeled stubs (no fake-success). Voice list-only-until-routes. No iosNativeUi. |
+| Settings page bodies (21 slugs) | SettingsView + settings blob + catalogs | Wired GET/PUT: instances, appearance (flexoki ids), chat, notifications hooks, sessions, gitmoji, about (Lynx version ≠ instance). List endpoints: providers/agents/mcp/plugins/skills/commands/magic-prompts/snippets/usage/assistants/projects. Editors labeled stubs (no fake-success). Tip `voice` = status + model download/delete UI (no invented ASR). No iosNativeUi. |
 | Connect welcome / instances UI | MobileApp welcome + MobileInstancesSurface | Splash while auto-connect; instance list add/delete/password unlock; paste pairing link. QR camera labeled stub (host-owned). No Bonjour. |
 | Projects MobileTabPageHeader | `MobileTabPageHeader.tsx` | Sticky translucent collapsing title + trailing glass search chip + primary +. Collapse math in `tabPageHeader.ts`. iOS glass via GlassChrome; Android blur-radius only. |
 | CI skeleton | — | `.github/workflows/lynx-ci.yml` (**live** on tip; template also under `packages/lynx/ci/`) on PR → `work/lynx-native`: type-check + vitest + rspeedy. Documented that APK/iOS sim need Mac/Android runners. |
@@ -210,7 +210,7 @@ Seeded from the inventory. Grouped so a slice can pick a coherent vertical.
 
 | Item | Cap/web source | Lynx note |
 |---|---|---|
-| Lynx rspeedy bundle + signed host apps | `packages/lynx` scaffold | **Live** `.github/workflows/lynx-ci.yml` + `lynx-mobile-ci.yml` on tip (lynx-ci green; Android sideload APK green; prerelease `lynx-v2-debug-30b1c12`). iOS IPA / CocoaPods resolve still missing. Sideload `applicationId` = `com.yee94.openchamber.lynx.debug`. First-paint cream + globalProps 代码接上 — **not** 真机过. |
+| Lynx rspeedy bundle + signed host apps | `packages/lynx` scaffold | **Live** `.github/workflows/lynx-ci.yml` + `lynx-mobile-ci.yml` on tip (lynx-ci green; Android sideload APK green; prerelease `lynx-v2-debug-1a5c899`). iOS IPA / CocoaPods resolve still missing. Sideload `applicationId` = `com.yee94.openchamber.lynx.debug`. First-paint cream + globalProps 代码接上 — **not** 真机过. |
 | ~~Connect / splash while auto-connect resolves~~ | `MobileApp.tsx` welcome | **代码接上** ConnectWelcome splash + welcome; host LynxView chrome still thin |
 | ~~Instance list, add, delete, password unlock~~ | `mobileConnections.ts` | **代码接上** instances UI on welcome + settings/instances |
 | QR + pairing-link redeem v2 | `mobileQrScan.ts` | Link parse + redeem exist; **camera plugin** is host-owned |
@@ -281,7 +281,7 @@ Seeded from the inventory. Grouped so a slice can pick a coherent vertical.
 
 | Item | Cap/web source | Caution |
 |---|---|---|
-| Settings `voice` + dictation + TTS | `VoiceSettings.tsx`, `/api/dictation/*` | Port the **existing** routes or omit the page. Do not invent ASR. |
+| ~~Settings `voice` + dictation + TTS~~ | `VoiceSettings.tsx`, `/api/dictation/*` | **代码接上** status + STT/TTS model download/delete UI (`VoiceBody` + `/api/dictation/*`). Mic/WS ASR stays host-bound — do not invent ASR. |
 
 ---
 
@@ -340,8 +340,9 @@ First implementation slice after this doc gate (order is deliberate: connect →
 28. ~~**Changes revert glass + Cap confirm + pull-if-behind on #59 tip**~~ — 代码接上 in `cursor/lynx-revert-confirm-pull-local`. GlassChrome searchChip revert (↩) like stage +/−; Cap Dialog confirm before revert (Cap does **not** confirm commit&push); Cap commit→fetch→pull-if-behind(rebase)→push-if-ahead. Remaining: host-only / 真机 / Pierre / WKWebView; product NOT DONE.
 29. ~~**Centered Cap Dialog revert confirm on #60 tip**~~ — 代码接上 in `cursor/lynx-centered-confirm-dialog-local`. Replace elevated-in-sheet confirm card with Cap Dialog spirit (**scrim + centered max-w-md panel**); keep RevertGlassChip + pull-if-behind. Remaining: host-only / 真机 / Pierre / WKWebView; product NOT DONE.
 30. ~~**Dialog shell portal + destructive tokens + Cap arrow-go-back glyph on #61 tip**~~ — 代码接上 in `cursor/lynx-dialog-portal-theme-local`. Mount `LynxCenteredDialog` at **shell-root portal** (full-screen overlay, Cap DialogPortal spirit) — not nested absolute inside Changes relative; destructive uses `status.error` / `status.onError` (Cap `--destructive-foreground`, never `#fff`); RevertGlassChip glyph = Cap Icon `arrow-go-back` unicode ↩. Remaining: host-only / 真机 / Pierre / WKWebView; product NOT DONE.
-31. ~~**Android first-paint / black-screen mitigation + live CI honesty**~~ — 代码接上 (PR #65 + docs follow-up): Flexoki-light `cssVar` fallbacks, cream `windowBackground`, HostActivity MATCH_PARENT + ViewFactory `globalProps` (safe-area stubs), ConnectWelcome hard splash colors; `.github/workflows/lynx-ci.yml` + `lynx-mobile-ci.yml` **live** (lynx-ci green; Android sideload APK green; prerelease `lynx-v2-debug-30b1c12`). **Not** 真机过. Follow-ons on tip: #67 TextDecoder polyfill, #68 root page + hard splash text, #69 drop explicit `<page>` (Android BehaviorController). First-paint stack Linux JS closed; remaining ConnectWelcome paint = emulator/host. Product NOT DONE / 三关未齐 / not EXHAUSTED.
-32. ~~**Cap phone overflow new-session → draft**~~ — 代码接上 in `cursor/lynx-overflow-new-session-local`. Cap `MobileApp` overflow first item `new-session` opens draft; Lynx overflow previously started at Files. Wire `onOpenDraft` → shell `openDraft` / `LynxDraftComposer`. Docs honesty: tip APK `lynx-v2-debug-30b1c12` (was stale `09b3853`); note #67–#69. Remaining: host-only / 真机 / Pierre / WKWebView / Mode B; product NOT DONE.
+31. ~~**Android first-paint / black-screen mitigation + live CI honesty**~~ — 代码接上 (PR #65 + docs follow-up): Flexoki-light `cssVar` fallbacks, cream `windowBackground`, HostActivity MATCH_PARENT + ViewFactory `globalProps` (safe-area stubs), ConnectWelcome hard splash colors; `.github/workflows/lynx-ci.yml` + `lynx-mobile-ci.yml` **live** (lynx-ci green; Android sideload APK green; prerelease `lynx-v2-debug-1a5c899`). **Not** 真机过. Follow-ons on tip: #67 TextDecoder polyfill, #68 root page + hard splash text, #69 drop explicit `<page>` (Android BehaviorController). First-paint stack Linux JS closed; remaining ConnectWelcome paint = emulator/host. Product NOT DONE / 三关未齐 / not EXHAUSTED.
+32. ~~**Cap phone overflow new-session → draft**~~ — 代码接上 in `cursor/lynx-overflow-new-session-local`. Cap `MobileApp` overflow first item `new-session` opens draft; Lynx overflow previously started at Files. Wire `onOpenDraft` → shell `openDraft` / `LynxDraftComposer`. Docs honesty: tip APK `lynx-v2-debug-1a5c899` (was stale `09b3853`); note #67–#69. Remaining: host-only / 真机 / Pierre / WKWebView / Mode B; product NOT DONE.
+33. ~~**Settings Voice model download/delete UI**~~ — 代码接上 in `cursor/lynx-voice-models-download-local`. Cap `VoiceSettings` STT model rows + optional Kokoro `ttsModels` via existing `/api/dictation/status` + `POST/DELETE …/models/:id`; `VoiceBody` download/progress/delete; no invented ASR/mic/WS. Docs honesty: tip APK `lynx-v2-debug-1a5c899`. Remaining: host-only / 真机 / Pierre / WKWebView / Mode B / iOS IPA; product NOT DONE.
 
 Do not invent ASR / Bonjour / Capgo / TanStack 1.18. Share / Live Activity / widgets stay later.
 
@@ -414,7 +415,7 @@ A row moves here only after 代码接上 + CI绿 and a **written** device log (d
 | `snippets` | 代码接上 (list + editor) | list + PATCH/DELETE `/api/config/snippets/:name` |
 | `skills.installed` | 代码接上 (list + editor) | list + PATCH/DELETE `/api/config/skills/:name` |
 | `usage` | 代码接上 (list) | per-provider `/api/quota/:id`; one failure stays on that row |
-| `voice` | 代码接上 (wired status/models via `/api/dictation/*`) | Status + model download/delete only; mic/WS ASR host-bound — no invented ASR |
+| `voice` | 代码接上 (status + model download/delete UI via `/api/dictation/*`) | Cap STT model rows + optional Kokoro `ttsModels`; mic/WS ASR host-bound — no invented ASR |
 | `about` | 代码接上 (wired + diagnostics export) | Lynx client version **separate** from `/api/system/info`; `openchamber.client-diagnostics.v1` export |
 
 ---
@@ -611,19 +612,19 @@ Slice on `cursor/lynx-dialog-portal-theme-local` (base PR#61 tip `7a4c7b6a8`; PR
 
 ## Remaining (honest — not EXHAUSTED)
 
-**Product NOT DONE / 三关未齐 / not EXHAUSTED.** Linux Cap product rows continue to close on tip `30b1c12` + follow-ons (connect/settings/chat/projects/changes + Android first-paint #65–#69 + Cap phone overflow **new-session** in Next #32). Independent Cap skim (2026-09-07): found Cap phone overflow `new-session` → draft still missing on tip — **not** host-only; closed in #32. Remaining Cap-parity polish is thin; **host binders / HTML WKWebView / Pierre `@pierre/diffs` (honest DOM blocker — not ported) / Live Activity / iOS IPA / 真机** still block EXHAUSTED. **Do not** mark landed under 三关. 真机残差: **empty** (no written device log).
+**Product NOT DONE / 三关未齐 / not EXHAUSTED.** Linux Cap product rows continue to close on tip `1a5c899` + follow-ons (connect/settings/chat/projects/changes + Android first-paint #65–#69 + Cap phone overflow **new-session** in Next #32 + Voice model download/delete UI in Next #33). Independent Cap skim (2026-09-07): found Cap phone overflow `new-session` → draft still missing on tip — **not** host-only; closed in #32. Voice model rows closed in #33. Remaining Cap-parity polish is thin; **host binders / HTML WKWebView / Pierre `@pierre/diffs` (honest DOM blocker — not ported) / Live Activity / iOS IPA / 真机** still block EXHAUSTED. **Do not** mark landed under 三关. 真机残差: **empty** (no written device log).
 
 ### 代码接上 prior slice (`cursor/lynx-closable-missing-local` / PR#48)
 
 | Item | Notes |
 |---|---|
 | Host Xcode/Gradle scaffold + bridge stubs | `packages/lynx/host/**` + README run steps; SDK pods/AAR still unresolved on Linux |
-| `.github/workflows/lynx-ci.yml` + `lynx-mobile-ci.yml` | **Live** on tip (lynx-ci green; Android sideload APK green; prerelease `lynx-v2-debug-30b1c12`). Template copy under `packages/lynx/ci/` remains for reference. |
+| `.github/workflows/lynx-ci.yml` + `lynx-mobile-ci.yml` | **Live** on tip (lynx-ci green; Android sideload APK green; prerelease `lynx-v2-debug-1a5c899`). Template copy under `packages/lynx/ci/` remains for reference. |
 | Projects DirectoryExplorer | `/api/fs/home` + `/api/fs/list` + settings `projects[]` add |
 | 扫一扫 / 切换实例 chrome | Camera adapter honest `unavailable`; instances → secondary nav |
 | Composer `/` `@` agent/model | Cap commands/agents/magic-prompts + `/api/config/providers` models |
 | Assistant continuous/stateless admission | `POST …/assistants/:id/messages` — no invented ASR |
-| Settings Voice | `/api/dictation/status` (+ model download/delete helpers); mic/WS host-bound |
+| Settings Voice | `/api/dictation/status` + model download/delete **UI** (Next #33); mic/WS host-bound |
 | About diagnostics export | `openchamber.client-diagnostics.v1` local ring buffer |
 | `openchamber-asset://` hooks | TS + iOS/Android stub resolvers |
 | Predictive / edge-back contract | JS policy + host stubs + wiring notes |
@@ -753,7 +754,7 @@ Slice on `cursor/lynx-dialog-portal-theme-local` (base PR#61 tip `7a4c7b6a8`; PR
 | Android cream windowBackground | `themes.xml` / `colors.xml` `lynx_window_background` `#fffdf4`; nav bar softened (not pure black void) |
 | HostActivity + ViewFactory globalProps | MATCH_PARENT LynxView; `globalProps` (platform android, chromeOwner Mode A, locale, safe-area stubs) → `updateGlobalProps` + `TemplateData`; App reads `lynx.__globalProps` |
 | ConnectWelcome first paint | Hard Flexoki cream/ink splash colors + splash log line; not 真机过 |
-| Live CI | `.github/workflows/lynx-ci.yml` + `lynx-mobile-ci.yml` live; lynx-ci green; Android sideload APK green; prerelease `lynx-v2-debug-30b1c12` |
+| Live CI | `.github/workflows/lynx-ci.yml` + `lynx-mobile-ci.yml` live; lynx-ci green; Android sideload APK green; prerelease `lynx-v2-debug-1a5c899` |
 | Cap Linux JS skim (at #31) | Claimed no further tiny holes; independent skim found Cap phone overflow `new-session` → closed in Next #32 |
 | Docs honesty | NOT DONE / 三关未齐 / not EXHAUSTED / 真机残差 empty / no 真机过 claim |
 
@@ -763,7 +764,17 @@ Slice on `cursor/lynx-dialog-portal-theme-local` (base PR#61 tip `7a4c7b6a8`; PR
 |---|---|
 | Cap phone overflow new-session | First overflow item → shell `openDraft` / `LynxDraftComposer` (Cap `mobile.menu.newSession`) |
 | Overflow order | Cap phone: new-session · Files · Changes · MCP · refresh (no Capgo update; no iPad Settings) |
-| Docs honesty | Tip SHA / APK `lynx-v2-debug-30b1c12`; Next #31 notes #67 TextDecoder / #68 page+splash / #69 no-explicit-page |
+| Docs honesty | Tip SHA / APK `lynx-v2-debug-1a5c899`; Next #31 notes #67 TextDecoder / #68 page+splash / #69 no-explicit-page |
+| Docs honesty | NOT DONE / 三关未齐 / not EXHAUSTED / 真机残差 empty / no 真机过 claim |
+
+### 代码接上 this slice (`cursor/lynx-voice-models-download-local` / Next #33)
+
+| Item | Notes |
+|---|---|
+| Voice model rows | Cap STT list from status `models` + Download/progress/Delete via existing helpers |
+| Kokoro TTS row | When `ttsModels` includes `kokoro-en-v0_19`, show Local TTS row (same routes) |
+| No invented ASR | Policy banner + `LYNX_DICTATION_VOICE_POLICY`; mic/WS host-bound |
+| Docs honesty | Tip SHA / APK `lynx-v2-debug-1a5c899` (was stale `30b1c12`); Voice missing struck; Next #33 |
 | Docs honesty | NOT DONE / 三关未齐 / not EXHAUSTED / 真机残差 empty / no 真机过 claim |
 
 ### Still missing / host-only / 真机
