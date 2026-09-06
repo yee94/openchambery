@@ -19,10 +19,21 @@ Lynx app skeleton **does not exist**. This board is seeded honestly from `docs/l
 
 | Item | Notes |
 |---|---|
-| Branch `work/lynx-native` from `b444b0316` | Docs gate only |
+| Branch `work/lynx-native` from `b444b0316` | Docs gate |
 | This documentation set | `docs/lynx-feature-inventory.md`, `docs/lynx-pitfalls.md`, `docs/lynx-gap-board.md`, `docs/lynx-acceptance.md`, `docs/lynx-ia-ui.md` |
 
-Nothing else is landed. There is no Lynx package, no host app, no CI workflow, no list, no connect screen.
+## Scaffold (shell / host / glass — not 真机过)
+
+These rows are **代码接上** for the scaffold contracts only (no OpenChamber HTTP). Package Vitest + `tsc` are the CI for this claim. They are **not** shipped.
+
+| Item | Notes |
+|---|---|
+| Lynx app package | `packages/lynx` (`@openchamber/lynx`). Workspace Vitest project. No rspeedy/APK/IPA job yet. |
+| Host Tab/Nav embedding decision | **Locked:** Mode B iOS 26 host `UITabBar`; Mode A older iOS + Android. Mode C forbidden. `src/host/embedding.ts` + `host/ios/` + `host/android/`. |
+| Four-tab dock IA | Projects / Assistant / Scheduled / Settings. Chat is a pushed secondary page; dock hidden. Root bodies are **labeled stubs**. |
+| Lynx 3.8 glass mapping | iOS `glass` → `UIGlassEffect`, `glass-container` → `UIGlassContainerEffect`, plus `glass-style` / `glass-interactive` / `glass-tint-color` / `spacing`. Android: `blur-radius` 降级. |
+
+真机过: **not executed** (environment: Linux cloud agent; no Xcode/adb device).
 
 ---
 
@@ -34,14 +45,14 @@ Seeded from the inventory. Grouped so a slice can pick a coherent vertical.
 
 | Item | Cap/web source | Lynx note |
 |---|---|---|
-| Lynx app package (iOS + Android) | `packages/mobile` | New tree; do not wrap WKWebView |
+| Lynx rspeedy bundle + signed host apps | `packages/lynx` scaffold | Package exists; CocoaPods/Gradle Lynx SDK and APK/IPA CI still missing |
 | Connect / splash while auto-connect resolves | `MobileApp.tsx` welcome | Real `GET /health` + session |
 | Instance list, add, delete, password unlock | `mobileConnections.ts` | Persist **full** LAN+relay candidate set |
 | QR + pairing-link redeem v2 | `mobileQrScan.ts` | No invented redeem API |
 | `openchamber://` parse + apply | `deepLinks.ts` | Same intent union |
 | Secure store (Keychain / Keystore) | Capacitor secure storage | Never log tokens |
-| Four-tab dock | `mobileTabs.ts` | Chat is **pushed**, not a tab |
-| Host Tab/Nav embedding decision | README § tab bar | See `docs/lynx-ia-ui.md` — do not auto-skin twice |
+| Four-tab **product** content (session-index, catalogs) | `mobileTabs.ts` | Shell IA stubs landed; data is missing |
+| Host Tab/Nav **binary** (linked Lynx SDK) | `packages/lynx/host/*` | Strategy + sources landed; not an Xcode/Gradle project yet |
 
 ### Projects (chat list)
 
@@ -132,9 +143,9 @@ Glass-container fusion (`spacing`, `glass-interactive`, `glass-tint-color`) is *
 
 First implementation slice after this doc gate (order is deliberate: connect → shell → list engine → one real transcript).
 
-1. **Host app skeleton** (iOS + Android) that can load a Lynx page. Decide embedding (`docs/lynx-ia-ui.md`) **before** drawing a dock.
+1. ~~Host app skeleton + embedding decision~~ — scaffold in `packages/lynx` (this slice). Remaining: link Lynx SDK, rspeedy bundle, device host.
 2. **Connect + instance persistence** against a real server (LAN candidate, then relay). No demo hosts.
-3. **Four-tab shell** with chat as a pushed page. System Tab/Nav if host-owned; Lynx dock only if Lynx owns chrome.
+3. ~~Four-tab shell IA~~ — navigation stubs landed. Remaining: real tab bodies.
 4. **Projects home** from session-index (failure ≠ empty).
 5. **LegendList-semantics chat list** + send/stop on official APIs. This is the quality gate; do not prototype TanStack-style split lists “just to see pixels”.
 6. **Settings home + slug map** (all 21 rows visible; bodies may still be stubs **labeled stubs**, never fake-success).

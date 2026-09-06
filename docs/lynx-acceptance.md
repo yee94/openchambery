@@ -183,7 +183,7 @@ Acceptance implications:
 - Secondary pages (chat, assistant conversation, instances, settings detail) hide host tab chrome the same way Cap hides `OpenChamberTabBar` (`packages/mobile/README.md`).
 - Sheets/overlays are not tab items and not push pages.
 
-Write the chosen mode at the top of the host app README when the skeleton lands. Until then the gap board treats embedding as **missing**.
+Chosen mode is written at the top of `packages/lynx/README.md` (Mode B iOS 26 host chrome; Mode A older iOS + Android). Gap board: scaffold landed; device host still missing.
 
 ---
 

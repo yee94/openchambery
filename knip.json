@@ -65,6 +65,15 @@
         "scripts/**/*.{js,cjs,mjs}"
       ]
     },
+    "packages/lynx": {
+      "entry": [
+        "src/index.tsx",
+        "src/**/*.{test,spec}.{ts,tsx}"
+      ],
+      "project": [
+        "src/**/*.{ts,tsx}"
+      ]
+    },
     "packages/vscode": {
       "entry": [
         "src/**/*.{test,spec}.{js,cjs,mjs,ts,tsx}",
