@@ -9,6 +9,7 @@ export default defineConfig({
       'packages/vscode',
       'packages/electron',
       'packages/mobile',
+      'packages/lynx',
       'packages/relay-server',
       'deploy/update-service',
     ],

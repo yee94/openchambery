@@ -116,7 +116,9 @@ Capacitor today: WebView paints `MobileTabBar`; optional iOS 26 native overlay w
 | Chat | Lynx push inside the same view | Host push or hide-tab + Lynx chat page |
 | Risk | Reimplementing iOS 26 tab physics | Two `LynxView`s and engine reuse (`LynxViewGroup`) |
 
-**Recommendation for slice 1:** Mode B on iOS 26 (host `UITabBarController`, Lynx content), Mode A-style Lynx capsule on older iOS and Android if the host cannot offer an equivalent. Chat is always a push that hides the dock. Revisit after 真机过 — do not “try both” in one binary.
+**Slice 1 lock (landed on `packages/lynx`):** Mode B on iOS 26 (host `UITabBarController`, Lynx content), Mode A-style Lynx capsule on older iOS and Android. Chat is always a push that hides the dock. Do not “try both” in one binary. Revisit only after 真机过.
+
+Code: `packages/lynx/src/host/embedding.ts`. Host README: `packages/lynx/README.md` (decision is at the top). Native mirrors: `packages/lynx/host/ios/`, `packages/lynx/host/android/`.
 
 Full-page auto skin of glass chrome is **allowed only in Mode A**. In Mode B it is an IA bug (double dock).
 

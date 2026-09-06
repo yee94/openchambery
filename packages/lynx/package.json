@@ -1,0 +1,13 @@
+{
+  "name": "@openchamber/lynx",
+  "version": "1.19.7-beta.7",
+  "private": true,
+  "type": "module",
+  "description": "Lynx native mobile shell for OpenChamber (work/lynx-native). Not a Capacitor WebView and not a Capgo/Finder product.",
+  "scripts": {
+    "build": "tsc --noEmit",
+    "type-check": "tsc --noEmit",
+    "test": "vitest run",
+    "lint": "eslint \"./src/**/*.{ts,tsx}\" --config ../../eslint.config.js --ignore-pattern dist"
+  }
+}
