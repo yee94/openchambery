@@ -617,6 +617,8 @@ export function LynxChatScreen({
         kind={sheet}
         directory={directory}
         runtimeFetch={runtimeFetch}
+        host={host}
+        fullPageAutoGlassSkin={fullPageAutoGlassSkin}
         onBack={() => {
           setSheet(null);
           onSheetClosed?.();

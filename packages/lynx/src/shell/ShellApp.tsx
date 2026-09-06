@@ -327,6 +327,8 @@ export function LynxShellApp({
             kind={chatSheet}
             directory={sheetDirectory}
             runtimeFetch={runtimeFetch}
+            host={host}
+            fullPageAutoGlassSkin={fullPageAutoGlassSkin}
             onBack={() => setChatSheet(null)}
           />
         ) : chatRoute ? (

@@ -48,9 +48,14 @@ describe('Lynx PierreDiff portable text', () => {
     expect(plan.stats.insertions).toBeGreaterThan(0);
   });
 
-  test('line tokens stay on existing semantic palette', () => {
-    expect(lynxPierreDiffLineToken('add')).toBe('primary.base');
-    expect(lynxPierreDiffLineToken('del')).toBe('surface.mutedForeground');
+  test('line tokens distinguish add/del from hunk/muted (Cap status colors)', () => {
+    expect(lynxPierreDiffLineToken('add')).toBe('status.success');
+    expect(lynxPierreDiffLineToken('del')).toBe('status.error');
+    expect(lynxPierreDiffLineToken('hunk')).toBe('surface.mutedForeground');
+    expect(lynxPierreDiffLineToken('meta')).toBe('surface.mutedForeground');
+    expect(lynxPierreDiffLineToken('empty')).toBe('surface.mutedForeground');
     expect(lynxPierreDiffLineToken('context')).toBe('surface.foreground');
+    // del must not collapse onto hunk/muted
+    expect(lynxPierreDiffLineToken('del')).not.toBe(lynxPierreDiffLineToken('hunk'));
   });
 });

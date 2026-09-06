@@ -1,9 +1,12 @@
 import { useEffect, useState } from 'react';
 
+import { GlassChrome } from '../glass/GlassChrome';
+import type { LynxHostGlobalProps } from '../host/embedding';
 import { lynxT } from '../i18n/catalog';
 import { LynxInput, LynxScrollView, LynxText, LynxView } from '../lynx-elements';
 import type { LynxRuntimeFetch } from '../runtime/fetch';
 import { loadMcpCatalog, type LynxCatalogItem } from '../settings/catalogs';
+import { LYNX_COLLAPSING_ACTION_SIZE } from '../shell/tabPageHeader';
 import { cssVar } from '../theme/tokens';
 import {
   commitLynxGitChanges,
@@ -30,6 +33,9 @@ export type ChatSheetProps = {
   directory: string | null;
   runtimeFetch: LynxRuntimeFetch | null;
   onBack: () => void;
+  /** Optional host for Changes stage/unstage GlassChrome searchChip (outside transcript). */
+  host?: LynxHostGlobalProps | null;
+  fullPageAutoGlassSkin?: boolean;
 };
 
 /**
@@ -42,6 +48,8 @@ export function LynxChatSheet({
   directory,
   runtimeFetch,
   onBack,
+  host = null,
+  fullPageAutoGlassSkin = true,
 }: ChatSheetProps) {
   const titleKey = kind === 'files'
     ? 'lynx.chat.menu.files'
@@ -74,7 +82,13 @@ export function LynxChatSheet({
       {kind === 'files' ? (
         <FilesSheetBody locale={locale} directory={directory} runtimeFetch={runtimeFetch} />
       ) : kind === 'changes' ? (
-        <ChangesSheetBody locale={locale} directory={directory} runtimeFetch={runtimeFetch} />
+        <ChangesSheetBody
+          locale={locale}
+          directory={directory}
+          runtimeFetch={runtimeFetch}
+          host={host}
+          fullPageAutoGlassSkin={fullPageAutoGlassSkin}
+        />
       ) : (
         <McpSheetBody locale={locale} directory={directory} runtimeFetch={runtimeFetch} />
       )}
@@ -235,10 +249,14 @@ function ChangesSheetBody({
   locale,
   directory,
   runtimeFetch,
+  host,
+  fullPageAutoGlassSkin,
 }: {
   locale: string;
   directory: string | null;
   runtimeFetch: LynxRuntimeFetch | null;
+  host: LynxHostGlobalProps | null;
+  fullPageAutoGlassSkin: boolean;
 }) {
   const [entries, setEntries] = useState<LynxGitChangeEntry[] | null>(null);
   const [branch, setBranch] = useState<string | null>(null);
@@ -380,11 +398,6 @@ function ChangesSheetBody({
   };
 
   if (diffEntry) {
-    const statsLabel = diffPlan
-      ? lynxT(locale, 'lynx.chat.sheet.changes.diffStats')
-        .replace('{insertions}', String(diffPlan.stats.insertions))
-        .replace('{deletions}', String(diffPlan.stats.deletions))
-      : null;
     return (
       <LynxScrollView style={{ flexGrow: 1, padding: '0 16px 24px' }}>
         <LynxView
@@ -402,10 +415,15 @@ function ChangesSheetBody({
         {diffBusy ? <Banner text={lynxT(locale, 'lynx.settings.loading')} muted /> : null}
         {diffNote ? <Banner text={diffNote} muted /> : null}
         {diffPlan ? <Banner text={diffPlan.note} muted /> : null}
-        {statsLabel && diffPlan?.hasTextPreview ? (
-          <LynxText style={{ color: cssVar('surface.mutedForeground'), fontSize: '12px', marginBottom: '8px' }}>
-            {statsLabel}
-          </LynxText>
+        {diffPlan?.hasTextPreview ? (
+          <LynxView style={{ flexDirection: 'row', marginBottom: '8px' }}>
+            <LynxText style={{ color: cssVar('status.success'), fontSize: '12px', marginRight: '10px' }}>
+              +{diffPlan.stats.insertions}
+            </LynxText>
+            <LynxText style={{ color: cssVar('status.error'), fontSize: '12px' }}>
+              -{diffPlan.stats.deletions}
+            </LynxText>
+          </LynxView>
         ) : null}
         {diffPlan?.lines.map((line, index) => (
           <LynxText
@@ -492,10 +510,13 @@ function ChangesSheetBody({
                 {entry.staged ? ' · staged' : ''}
               </LynxText>
             </LynxView>
-            <ActionChip
+            <StageGlassChip
+              symbol={entry.staged ? '-' : '+'}
               label={entry.staged
                 ? lynxT(locale, 'lynx.chat.sheet.changes.unstage')
                 : lynxT(locale, 'lynx.chat.sheet.changes.stage')}
+              host={host}
+              fullPageAutoGlassSkin={fullPageAutoGlassSkin}
               onTap={() => { if (!actionBusy) void runStageToggle(entry); }}
             />
           </LynxView>
@@ -517,6 +538,79 @@ function ActionChip({ label, onTap }: { label: string; onTap: () => void }) {
         {label}
       </LynxText>
     </LynxView>
+  );
+}
+
+/**
+ * Cap ChangeRow +/− stage control as GlassChrome `searchChip` (outside transcript
+ * glass rules). Falls back to a plain chip when host is absent.
+ */
+function StageGlassChip({
+  symbol,
+  label,
+  host,
+  fullPageAutoGlassSkin,
+  onTap,
+}: {
+  symbol: '+' | '-';
+  label: string;
+  host: LynxHostGlobalProps | null;
+  fullPageAutoGlassSkin: boolean;
+  onTap: () => void;
+}) {
+  const size = Math.round(LYNX_COLLAPSING_ACTION_SIZE * 0.8); // searchChip-sized, Cap size-6 spirit
+  const inner = (
+    <LynxView
+      bindtap={onTap}
+      accessibility-role="button"
+      accessibility-label={label}
+      style={{
+        width: '100%',
+        height: '100%',
+        alignItems: 'center',
+        justifyContent: 'center',
+      }}
+    >
+      <LynxText
+        style={{
+          color: cssVar('surface.foreground'),
+          fontWeight: '700',
+          fontSize: '16px',
+        }}
+      >
+        {symbol}
+      </LynxText>
+    </LynxView>
+  );
+
+  const chipStyle: Record<string, string | number | undefined> = {
+    width: `${size}px`,
+    height: `${size}px`,
+    borderRadius: `${size / 2}px`,
+    marginLeft: '8px',
+    flexShrink: 0,
+    alignItems: 'center',
+    justifyContent: 'center',
+  };
+
+  if (!host) {
+    return (
+      <LynxView style={{ ...chipStyle, backgroundColor: cssVar('surface.elevated') }}>
+        {inner}
+      </LynxView>
+    );
+  }
+
+  return (
+    <GlassChrome
+      surface="searchChip"
+      host={host}
+      fullPageAutoGlassSkin={fullPageAutoGlassSkin}
+      style={chipStyle}
+      accessibilityLabel={label}
+    >
+      {inner}
+    </GlassChrome>
   );
 }
 

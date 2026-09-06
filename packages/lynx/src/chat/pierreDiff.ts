@@ -135,14 +135,19 @@ export const LYNX_PIERRE_DIFF_STUB_NOTES = [
   'Do not invent a Lynx Pierre CSS runtime or DOM iframe.',
 ] as const;
 
-/** Semantic color hint for portable lines — existing Lynx tokens only. */
+/**
+ * Cap-like portable line colors (ChangeRow A/D spirit) — not Pierre CSS.
+ * add → status.success (green); del → status.error (red); hunk/meta stay muted
+ * so deletions are distinguishable from hunk headers.
+ */
 export const lynxPierreDiffLineToken = (
   kind: LynxPierreDiffLineKind,
-): 'primary.base' | 'surface.mutedForeground' | 'surface.foreground' => {
+): 'status.success' | 'status.error' | 'surface.mutedForeground' | 'surface.foreground' => {
   switch (kind) {
     case 'add':
-      return 'primary.base';
+      return 'status.success';
     case 'del':
+      return 'status.error';
     case 'hunk':
     case 'meta':
     case 'empty':

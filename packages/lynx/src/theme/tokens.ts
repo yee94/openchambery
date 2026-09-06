@@ -18,11 +18,16 @@ export type LynxSemanticToken =
   | 'interactive.selection'
   | 'interactive.selectionForeground'
   | 'primary.base'
-  | 'primary.foreground';
+  | 'primary.foreground'
+  /** Cap ChangeRow / portable diff — green additions (`--status-success`). */
+  | 'status.success'
+  /** Cap ChangeRow / portable diff — red deletions (`--status-error`). */
+  | 'status.error';
 
 /**
  * CSS-variable names the Lynx page should consume. Values come from the
- * Flexoki theme JSON in `@openchamber/ui` — do not invent a Lynx palette.
+ * Flexoki / Cap theme CSS vars in `@openchamber/ui` — do not invent a Lynx palette.
+ * `status.success` / `status.error` are Cap ChangeRow A/D + portable diff add/del colors.
  */
 export const LYNX_TOKEN_CSS_VARS: Record<LynxSemanticToken, string> = {
   'surface.background': '--surface-background',
@@ -34,6 +39,8 @@ export const LYNX_TOKEN_CSS_VARS: Record<LynxSemanticToken, string> = {
   'interactive.selectionForeground': '--interactive-selection-foreground',
   'primary.base': '--primary',
   'primary.foreground': '--primary-foreground',
+  'status.success': '--status-success',
+  'status.error': '--status-error',
 };
 
 export function themeVariantForId(themeId: LynxThemeId): 'light' | 'dark' {
