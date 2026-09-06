@@ -88,7 +88,7 @@ const isTransientMessagesFailure = (result, error) => {
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const promptAdmitted = (result) => !result?.error && (result?.response?.status === 204 || result?.status === 204 || result?.data !== undefined || result?.response?.ok === true);
 
-export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, getOpenCodeAuthHeaders, getServerId = async () => null, getAllowedRoots = () => [], listProjects = async () => [], listScheduledTasks = null, sessionIndexService = null, upsertScheduledTask = null, syncScheduledTaskProject = null, globalEventHub = null, onRevisionTip = null, onContactTurnEvent = null, clock = () => Date.now(), setIntervalFn = setInterval, clearIntervalFn = clearInterval, setImmediateFn = setImmediate, reconcileIntervalMs = 60_000, clientFactory, createChatCompletion = null, runContactTurn = defaultRunContactTurn, listWorktrees = defaultListWorktrees } = {}) => {
+export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, getOpenCodeAuthHeaders, getServerId = async () => null, getAllowedRoots = () => [], listProjects = async () => [], listScheduledTasks = null, sessionIndexService = null, upsertScheduledTask = null, syncScheduledTaskProject = null, globalEventHub = null, onRevisionTip = null, onContactTurnEvent = null, onContactTurnComplete = null, clock = () => Date.now(), setIntervalFn = setInterval, clearIntervalFn = clearInterval, setImmediateFn = setImmediate, reconcileIntervalMs = 60_000, clientFactory, createChatCompletion = null, runContactTurn = defaultRunContactTurn, listWorktrees = defaultListWorktrees } = {}) => {
   if (!dbPath || !dataDir) return null;
   const Database = require('better-sqlite3');
   fs.mkdirSync(path.dirname(dbPath), { recursive: true });
@@ -719,6 +719,23 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
       throw error;
     }
   };
+  const notifyContactTurn = ({ assistantID, name, turnID, status, body }) => {
+    if (typeof onContactTurnComplete !== 'function' || closed) return;
+    try {
+      const result = onContactTurnComplete({
+        assistantID,
+        name,
+        turnID,
+        status,
+        body: typeof body === 'string' ? body : '',
+      });
+      if (result && typeof result.then === 'function') {
+        result.catch(() => { /* Notification fanout must not fail the turn. */ });
+      }
+    } catch {
+      // Notification fanout must not fail the turn.
+    }
+  };
   const emitContactTurnEvent = (type, properties) => {
     if (typeof onContactTurnEvent !== 'function' || closed) return;
     const payload = { type, properties: { ...properties, occurredAt: properties?.occurredAt ?? now() } };
@@ -1107,6 +1124,13 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
               status: 'error',
               error: detail,
             });
+            notifyContactTurn({
+              assistantID: row.assistant_id,
+              name: assistantSnapshot.name,
+              turnID,
+              status: 'error',
+              body: detail,
+            });
             resolveContactTurnSettlement(messageID, { status: 'error', error: detail });
             return;
           }
@@ -1134,6 +1158,14 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
             turnID,
             status: 'complete',
           });
+          const spoken = bubbles.filter((text) => typeof text === 'string' && text.trim() && !text.startsWith('oc.settle.'));
+          notifyContactTurn({
+            assistantID: row.assistant_id,
+            name: assistantSnapshot.name,
+            turnID,
+            status: 'complete',
+            body: spoken.join('\n') || cards[0]?.title || '',
+          });
           resolveContactTurnSettlement(messageID, { status: 'complete' });
         } catch (error) {
           const detail = typeof error?.message === 'string' && error.message.trim()
@@ -1146,6 +1178,13 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
             status: 'error',
             error: detail,
             ...(statusCode !== detail ? { code: statusCode } : {}),
+          });
+          notifyContactTurn({
+            assistantID: row.assistant_id,
+            name: assistantSnapshot.name,
+            turnID,
+            status: 'error',
+            body: detail,
           });
           resolveContactTurnSettlement(messageID, { status: 'error', error: detail, code: statusCode });
         }

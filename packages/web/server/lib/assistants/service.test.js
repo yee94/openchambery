@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { createRequire } from 'node:module';
 import { createAssistantsService } from './service.js';
 import { assistantContractFixtures } from './contracts.js';
@@ -1649,6 +1649,27 @@ describe('assistants service', () => {
     expect(sent.admitted).toBe(true);
     const roles = service.contactMessages(recipient.id).messages.map((message) => message.role);
     expect(roles).toEqual(['peer', 'user', 'assistant']);
+    service.close();
+  });
+
+  it('notifies like a contact SMS when a contact turn completes', async () => {
+    const onContactTurnComplete = vi.fn();
+    const service = setup(root(), {}, {
+      onContactTurnComplete,
+      runContactTurn: async () => ({ text: '我去找一下', bubbles: ['我去找一下', 'Opened a coding session.'] }),
+    });
+    const assistant = service.createAssistant({ ...assistantInput, name: '大小白' });
+    await settleSend(service, assistant.id, {
+      messageID: 'notify_1',
+      parts: [{ type: 'text', text: 'hi' }],
+    });
+    expect(onContactTurnComplete).toHaveBeenCalledWith({
+      assistantID: assistant.id,
+      name: '大小白',
+      turnID: 'notify_1',
+      status: 'complete',
+      body: '我去找一下\nOpened a coding session.',
+    });
     service.close();
   });
 

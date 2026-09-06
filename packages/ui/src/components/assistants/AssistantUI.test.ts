@@ -867,7 +867,7 @@ describe('Assistant UI product contract', () => {
     expect(surface).toContain("surface.kind === 'secondary' ? surface.resources?.busy ?? false : primaryDraftBusy");
   });
 
-  test('shows a Grok-Bot working dot on list and conversation avatars, not an Activity banner', async () => {
+  test('shows a Grok-Bot working dot on the assistant list only while a contact turn is loading', async () => {
     const [view, conversation, avatar, working, card, mobileTab, generate] = await Promise.all([
       read('AssistantView.tsx'),
       read('AssistantConversationSurface.tsx'),
@@ -883,10 +883,14 @@ describe('Assistant UI product contract', () => {
     expect(avatar).toContain('bg-[var(--status-success)]');
     expect(avatar).toContain('absolute right-0 bottom-0 size-2');
     expect(working).toContain('isAssistantWorking');
-    expect(working).toContain('serverWorking');
+    expect(working).not.toContain('serverWorking');
+    expect(working).not.toContain('assignedSessionIDs');
     expect(view).toContain('<AssistantWorkingAvatar');
-    expect(view).toContain('useAssistantWorking');
+    expect(view).toContain('useAssistantWorking(assistantID)');
+    expect(view).not.toContain('working={selectedWorking}');
     expect(conversation).toContain('<AssistantWorkingAvatar');
+    expect(conversation).not.toContain('working={!isPeer && working}');
+    expect(conversation).not.toContain('useAssistantWorking');
     expect(conversation).toContain('oc.settle.complete');
     expect(conversation).not.toContain('<Activity');
     expect(mobileTab).toContain('<AssistantWorkingAvatar');

@@ -1,5 +1,5 @@
 import { Agent } from '@earendil-works/pi-agent-core';
-import { splitContactBubbles } from './bubbles.js';
+import { isContactSpokenPreamble, splitContactBubbles } from './bubbles.js';
 import {
   confirmBubbleAfterContactReset,
   contactTurnHasSuccessfulReset,
@@ -65,6 +65,7 @@ function createAssistantMessageEventStream() {
 export const CONTACT_SYSTEM_PROMPT = [
   "You are OpenChamber's in-app assistant — a personable contact, not a coding agent.",
   'Reply in short chat bubbles: a few sentences each, separated by a blank line.',
+  'Talk like a person in the user\'s language. One short spoken bubble at a time — never a wall of paragraphs.',
   'Never write chain-of-thought, plans, tool names, or English narration of what you will do. The user never sees thinking.',
   'Do not expose tool traces, Activity, or editor actions.',
   'Do not run bash, edit, read, or write.',
@@ -219,6 +220,7 @@ export function createContactStreamFn(createChatCompletion, {
   onTextDelta = null,
   onBubbleDelta = null,
   globalEventHub = null,
+  bubbleGapMs = 0,
 } = {}) {
   return (model, context) => {
     const stream = createAssistantMessageEventStream();
@@ -292,21 +294,41 @@ export function createContactStreamFn(createChatCompletion, {
             name: parsed.toolCall.name,
             arguments: parsed.toolCall.arguments,
           };
-          // Pre-tool chatText is planning. Never show it; wait for the tool confirm.
+          const spoken = isContactSpokenPreamble(parsed.chatText) ? parsed.chatText.trim() : '';
+          const content = spoken
+            ? [{ type: 'text', text: spoken }, toolCall]
+            : [toolCall];
           const partial = {
-            ...assistantMessage(model, '', 'toolUse'),
-            content: [toolCall],
+            ...assistantMessage(model, spoken, 'toolUse'),
+            content,
           };
+          if (spoken) bubbleTracker.finish([spoken]);
           stream.push({ type: 'start', partial });
-          stream.push({ type: 'toolcall_start', contentIndex: 0, partial });
-          stream.push({ type: 'toolcall_delta', contentIndex: 0, delta: JSON.stringify(toolCall.arguments), partial });
-          stream.push({ type: 'toolcall_end', contentIndex: 0, toolCall, partial });
+          if (spoken) {
+            stream.push({ type: 'text_start', contentIndex: 0, partial });
+            stream.push({ type: 'text_delta', contentIndex: 0, delta: spoken, partial });
+            stream.push({ type: 'text_end', contentIndex: 0, content: spoken, partial });
+          }
+          const toolIndex = spoken ? 1 : 0;
+          stream.push({ type: 'toolcall_start', contentIndex: toolIndex, partial });
+          stream.push({ type: 'toolcall_delta', contentIndex: toolIndex, delta: JSON.stringify(toolCall.arguments), partial });
+          stream.push({ type: 'toolcall_end', contentIndex: toolIndex, toolCall, partial });
           stream.push({ type: 'done', reason: 'toolUse', message: partial });
           stream.end(partial);
           return;
         }
         const chatText = stripContactToolFences(text);
-        bubbleTracker.finish(splitContactBubbles(chatText));
+        const replyBubbles = splitContactBubbles(chatText);
+        if (bubbleGapMs > 0 && replyBubbles.length > 1) {
+          for (let index = 0; index < replyBubbles.length; index += 1) {
+            onBubbleDelta?.(index, replyBubbles[index], true);
+            if (index < replyBubbles.length - 1) {
+              await new Promise((resolve) => setTimeout(resolve, bubbleGapMs));
+            }
+          }
+        } else {
+          bubbleTracker.finish(replyBubbles);
+        }
         const partial = assistantMessage(model, chatText, 'stop');
         stream.push({ type: 'start', partial });
         stream.push({ type: 'text_start', contentIndex: 0, partial });
@@ -330,16 +352,29 @@ const userMessageText = (message) => {
   return (message?.content || []).map((part) => (typeof part?.text === 'string' ? part.text : '')).join('');
 };
 
+const assistantTextParts = (message) => (Array.isArray(message?.content) ? message.content : [])
+  .filter((part) => part?.type === 'text' && typeof part.text === 'string')
+  .map((part) => part.text)
+  .join('');
+
+const extractSpokenPreamble = (messages) => {
+  for (const message of Array.isArray(messages) ? messages : []) {
+    if (message?.role !== 'assistant') continue;
+    const parts = Array.isArray(message.content) ? message.content : [];
+    if (!parts.some((part) => part?.type === 'toolCall')) continue;
+    const text = assistantTextParts(message).trim();
+    if (isContactSpokenPreamble(text)) return text;
+  }
+  return '';
+};
+
 const extractAssistantText = (messages) => {
   for (let index = messages.length - 1; index >= 0; index -= 1) {
     const message = messages[index];
     if (message?.role !== 'assistant') continue;
     const parts = Array.isArray(message.content) ? message.content : [];
     if (parts.some((part) => part?.type === 'toolCall')) continue;
-    const text = parts
-      .filter((part) => part?.type === 'text' && typeof part.text === 'string')
-      .map((part) => part.text)
-      .join('');
+    const text = assistantTextParts(message);
     if (text.trim()) return text;
     if (message.errorMessage) {
       const error = new Error(message.errorMessage);
@@ -382,10 +417,14 @@ const extractContactTurnOutcome = (messages, retried) => {
   const slice = list.slice(start);
   const cards = extractContactCardsFromMessages(slice);
   const hasTool = contactTurnHasToolResult(slice);
-  const text = hasTool
+  const spoken = extractSpokenPreamble(slice);
+  const confirm = hasTool
     ? (extractToolResultText(slice) || extractAssistantText(slice))
     : extractAssistantText(slice);
-  return { text, cards, hasTool };
+  const parts = [];
+  if (spoken) parts.push(spoken);
+  if (confirm && confirm !== spoken) parts.push(confirm);
+  return { text: parts.join('\n\n'), cards, hasTool };
 };
 
 /**
@@ -454,6 +493,7 @@ export async function runContactTurn({
       onTextDelta,
       onBubbleDelta,
       globalEventHub,
+      bubbleGapMs: 280,
     }),
   });
 

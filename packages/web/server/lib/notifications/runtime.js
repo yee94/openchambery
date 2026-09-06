@@ -693,6 +693,57 @@ export const createNotificationTriggerRuntime = (deps) => {
     );
   };
 
+  const contactNotificationTitle = (name) => {
+    if (typeof name !== 'string' || !name.trim()) return 'Assistant';
+    const stripped = name.replace(/^(?:\p{Extended_Pictographic}|\p{Regional_Indicator}|[\uFE0F\u200D])+\s*/u, '').trim();
+    return stripped || name.trim();
+  };
+
+  const sendContactTurnNotification = async ({ assistantID, name, body, status } = {}) => {
+    if (typeof assistantID !== 'string' || !assistantID.trim()) return;
+    const settings = await readSettingsFromDisk();
+    if (settings.notifyOnCompletion === false) return;
+
+    const title = contactNotificationTitle(name);
+    const rawBody = typeof body === 'string' ? body : '';
+    let text = '';
+    try {
+      text = await prepareNotificationLastMessage({ message: rawBody, settings });
+    } catch {
+      text = '';
+    }
+    if (!text) text = status === 'error' ? 'Something went wrong' : 'New message';
+    const tag = `contact-${assistantID.trim()}`;
+
+    if (settings.nativeNotificationsEnabled) {
+      const notificationPayload = {
+        title,
+        body: text,
+        tag,
+        kind: 'ready',
+        assistantID: assistantID.trim(),
+        requireHidden: false,
+      };
+      const desktopNotificationDelivered = emitDesktopNotification(notificationPayload);
+      broadcastUiNotification(notificationPayload, { desktopNotificationDelivered });
+    }
+
+    await fanoutPush(
+      {
+        title,
+        body: text,
+        tag,
+        data: {
+          url: `/?assistant=${encodeURIComponent(assistantID.trim())}`,
+          assistantID: assistantID.trim(),
+          sessionName: title,
+          type: 'ready',
+        },
+      },
+      { requireNoSse: true },
+    );
+  };
+
   return {
     maybeSendPushForTrigger,
     setAutoAcceptSession,
@@ -700,5 +751,6 @@ export const createNotificationTriggerRuntime = (deps) => {
     setGetIsSessionAutoAccepting,
     clearPendingPushBadge,
     sendGoalSettlePush,
+    sendContactTurnNotification,
   };
 };

@@ -1,5 +1,4 @@
 import { create } from 'zustand'
-import { useAllSessionStatuses } from '@/sync/sync-context'
 
 type AssistantContactWorkingState = {
   workingByID: Record<string, boolean>
@@ -13,31 +12,15 @@ export const useAssistantContactWorkingStore = create<AssistantContactWorkingSta
   })),
 }))
 
-const sessionInFlight = (type: string | undefined) => type === 'busy' || type === 'retry'
-
 export const isAssistantWorking = ({
   sending = false,
   processing = false,
-  serverWorking = false,
-  assignedSessionIDs = [],
-  statuses = {},
 }: {
   sending?: boolean
   processing?: boolean
-  serverWorking?: boolean
-  assignedSessionIDs?: string[]
-  statuses?: Record<string, { type?: string } | undefined>
-}) => {
-  if (sending || processing || serverWorking) return true
-  return assignedSessionIDs.some((sessionID) => sessionInFlight(statuses[sessionID]?.type))
-}
+}) => sending || processing
 
-export const useAssistantWorking = (
-  assistantID: string,
-  assignedSessionIDs: string[] = [],
-  serverWorking = false,
-) => {
+export const useAssistantWorking = (assistantID: string) => {
   const contactWorking = useAssistantContactWorkingStore((state) => Boolean(state.workingByID[assistantID]))
-  const statuses = useAllSessionStatuses()
-  return isAssistantWorking({ processing: contactWorking, serverWorking, assignedSessionIDs, statuses })
+  return isAssistantWorking({ processing: contactWorking })
 }
