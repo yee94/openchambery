@@ -68,6 +68,7 @@
     "packages/lynx": {
       "entry": [
         "src/index.tsx",
+        "src/index.ts",
         "src/contracts.ts",
         "src/**/*.{test,spec}.{ts,tsx}"
       ],

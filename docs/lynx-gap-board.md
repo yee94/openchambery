@@ -35,6 +35,24 @@ These rows are **代码接上** for the scaffold contracts only (no OpenChamber 
 
 真机过: **not executed** (environment: Linux cloud agent; no Xcode/adb device).
 
+
+## 代码接上 (connect client — not landed under 三关)
+
+Client library modules under `packages/lynx` (`src/connection/`, `src/pairing/`, `src/session-index/`, `src/deep-links/`). No host LynxView splash UI, no track CI.
+
+| Item | Cap/web source | Lynx note |
+|---|---|---|
+| Pairing v2 parse + paste/QR payload | `connectionPayload.ts`, `mobileQrScan.ts` | v1 rejected. Camera scan is host-owned. No Nearby / Bonjour. |
+| `openchamber://` parse + build | `deepLinks.ts` | Same intent union. Apply/navigation is still host. |
+| Connect / auto-connect / password / redeem | `mobileConnections.ts` | Real `GET /health`, `GET|POST /auth/session`, `POST /api/client-auth/pairing/redeem`. Persists full LAN+relay candidate set. Token in injected secure store — never logged, never in metadata. |
+| Connect race harness | `mobileConnections.ts` | Unit: relay-only skips the 1.5s LAN headstart (`src/connection/probe.test.ts`). |
+| Session-index GET / pin / lookup | `session-index-api.ts` | `GET /api/openchamber/session-index`. Failure ≠ empty. Runtime-key cache. |
+| Projects home data path | `useMobileProjectsHomeModel.ts` | `projectSessionIndexHome` + `createSessionIndexHomeBindings`. No pixel polish. |
+
+**CI绿:** missing (no Lynx Android/iOS workflow yet). Local Vitest `@openchamber/lynx` is not track CI.
+
+**真机过:** not executed (environment: Linux cloud VM; no Xcode, no adb, no physical device).
+
 ---
 
 ## Missing
@@ -46,12 +64,12 @@ Seeded from the inventory. Grouped so a slice can pick a coherent vertical.
 | Item | Cap/web source | Lynx note |
 |---|---|---|
 | Lynx rspeedy bundle + signed host apps | `packages/lynx` scaffold | Package exists; CocoaPods/Gradle Lynx SDK and APK/IPA CI still missing |
-| Connect / splash while auto-connect resolves | `MobileApp.tsx` welcome | Real `GET /health` + session |
-| Instance list, add, delete, password unlock | `mobileConnections.ts` | Persist **full** LAN+relay candidate set |
-| QR + pairing-link redeem v2 | `mobileQrScan.ts` | No invented redeem API |
-| `openchamber://` parse + apply | `deepLinks.ts` | Same intent union |
-| Secure store (Keychain / Keystore) | Capacitor secure storage | Never log tokens |
-| Four-tab **product** content (session-index, catalogs) | `mobileTabs.ts` | Shell IA stubs landed; data is missing |
+| Connect / splash while auto-connect resolves | `MobileApp.tsx` welcome | Client auto-connect exists in `packages/lynx`; **welcome UI + host splash** still missing |
+| Instance list, add, delete, password unlock | `mobileConnections.ts` | Client CRUD + password unlock exist; **Instances UI** still missing |
+| QR + pairing-link redeem v2 | `mobileQrScan.ts` | Link parse + redeem exist; **camera plugin** is host-owned |
+| `openchamber://` parse + apply | `deepLinks.ts` | Parse/build exist; **apply / navigation** still missing |
+| Secure store (Keychain / Keystore) | Capacitor secure storage | Injected adapter only — **native Keychain/Keystore wiring** still missing |
+| Four-tab **product** content (session-index, catalogs) | `mobileTabs.ts` | Shell IA stubs landed; session-index data path exists; pixel bodies still missing |
 | Host Tab/Nav **binary** (linked Lynx SDK) | `packages/lynx/host/*` | Strategy + sources landed; not an Xcode/Gradle project yet |
 
 ### Projects (chat list)
@@ -65,7 +83,7 @@ Seeded from the inventory. Grouped so a slice can pick a coherent vertical.
 | New-session draft page | `kind: 'draft'` |
 | Add project directory explorer | `DirectoryExplorerDialog` |
 | Header 扫一扫 / 切换实例 | `MobileProjectsHome` |
-| Session index as data source | `GET /api/openchamber/session-index` (server) |
+| Session index as data source | `GET /api/openchamber/session-index` (server) | Client + home projection in `packages/lynx`; **Projects UI** still missing |
 
 ### Chat
 
@@ -143,10 +161,10 @@ Glass-container fusion (`spacing`, `glass-interactive`, `glass-tint-color`) is *
 
 First implementation slice after this doc gate (order is deliberate: connect → shell → list engine → one real transcript).
 
-1. ~~Host app skeleton + embedding decision~~ — scaffold in `packages/lynx` (this slice). Remaining: link Lynx SDK, rspeedy bundle, device host.
-2. **Connect + instance persistence** against a real server (LAN candidate, then relay). No demo hosts.
+1. ~~Host app skeleton + embedding decision~~ — scaffold in `packages/lynx`. Remaining: link Lynx SDK, rspeedy bundle, device host; wire HTTP/Keychain/relay adapters.
+2. ~~Connect + instance persistence client~~ — 代码接上 in `packages/lynx`. Remaining: welcome/instances UI, native secure store, and a real server 真机 pass (LAN then relay). No demo hosts. No Bonjour.
 3. ~~Four-tab shell IA~~ — navigation stubs landed. Remaining: real tab bodies.
-4. **Projects home** from session-index (failure ≠ empty).
+4. ~~Projects home data path~~ — session-index bindings in `packages/lynx`. Remaining: Projects UI (failure ≠ empty).
 5. **LegendList-semantics chat list** + send/stop on official APIs. This is the quality gate; do not prototype TanStack-style split lists “just to see pixels”.
 6. **Settings home + slug map** (all 21 rows visible; bodies may still be stubs **labeled stubs**, never fake-success).
 7. **CI** that builds Android debug APK + iOS simulator. Linux analyze alone is never “CI绿”.

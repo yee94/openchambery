@@ -1,6 +1,11 @@
 # OpenChamber Lynx (`@openchamber/lynx`)
 
-Independent track: **`work/lynx-native`**. Do **not** merge to `main`. This is the native Lynx client skeleton for the Capacitor `MobileApp` product surface — not Expo, not Flutter, not a Capgo app store, not Finder.
+Independent track: **`work/lynx-native`**. Do **not** merge to `main`. This is the native Lynx client for the Capacitor `MobileApp` product surface — not Expo, not Flutter, not a Capgo app store, not Finder.
+
+This package owns both:
+
+1. **Shell / host / glass scaffold** (four-root dock IA, embedding modes, Lynx 3.8 `<blur-view>`).
+2. **Connect / pairing v2 / session-index** TypeScript client (same OpenChamber routes Capacitor mobile uses).
 
 ## Host embedding (slice 1 lock)
 
@@ -17,15 +22,40 @@ Rules:
 1. Chat is a **pushed** secondary page. It is never a fifth dock item. The dock / host tab bar **hides** on chat, draft, assistant conversation, and instances.
 2. Do not ship Mode C (Capacitor WebView dock + optional native overlay). Lynx does not need `openchamber.iosNativeUi`.
 3. A binary that draws both a host `UITabBar` **and** a Lynx floating dock has failed IA.
-4. Connect / pairing, LegendList messages, Settings editors, FCM, and full CI matrices are **other tracks**.
+4. LegendList messages, Settings editors, FCM, and full CI matrices are **other tracks**.
 
 Code: `src/host/embedding.ts`. Native mirrors: `host/ios/`, `host/android/`.
+
+## Connect / pairing / session-index
+
+TypeScript client layer (not pixel UI). Maps to Cap/UI routes under `packages/ui` + `packages/mobile`.
+
+- Pairing v2 parse (`openchamber://connect?v=2&p=…`). Legacy v1 links are rejected.
+- `openchamber://` intent parse/build (same union as `packages/ui/src/apps/deepLinks.ts`).
+- Saved-instance persistence: ordered LAN + relay **candidates**, token in an injected secure store.
+- Connect / auto-connect / password unlock / pairing redeem on a **reachable** candidate (`GET /health`, `GET|POST /auth/session`, `POST /api/client-auth/pairing/redeem`).
+- Session-index GET / pin / lookup keyed by runtime identity, with failure ≠ empty.
+- Projects-home projection (API/types, not UI polish).
+
+Does **not** own: Nearby / Bonjour, native ASR, FCM/APNs registration, E2EE relay tunnel implementation (inject `openRelayTunnel`), chat LegendList, Settings editors, CI.
+
+### Adapters the host must inject
+
+| Adapter | Cap counterpart |
+|---|---|
+| `http.request` | CapacitorHttp then fetch |
+| `secureStore` | Keychain / Keystore (`@aparajita/capacitor-secure-storage`) |
+| `metadataStore` | localStorage `openchamber.mobile.connections.v1` |
+| `openRelayTunnel` | `createRelayTunnelClient` (optional until relay lands) |
+| `getDevicePlatform` | Capacitor `ios` / `android` |
+
+Do not log tokens, pairing secrets, or bearer headers. See `DOCUMENTATION.md`.
 
 ## Package layout
 
 ```text
 packages/lynx/
-  src/                 Lynx page + shell + glass + tests
+  src/                 Lynx page + shell + glass + connect + tests
   host/ios/            UIKit embedding strategy (Lynx SDK not linked yet)
   host/android/        Mode A host activity (Lynx SDK not linked yet)
   lynx.config.ts       Intended Rspeedy 3.8+ bundle notes
@@ -39,7 +69,7 @@ Install identity when a binary exists later: `com.yee94.openchamber` / `.debug`.
 
 Four roots only: **Projects**, **Assistant**, **Scheduled**, **Settings**. Labels reuse `mobile.tabs.*`.
 
-Secondary kinds (`chat` / `draft` / `assistant` / `instances`) push above the dock. Root tab content in this slice is a **labeled stub** — not connected to OpenChamber APIs.
+Secondary kinds (`chat` / `draft` / `assistant` / `instances`) push above the dock. Root tab content in this slice is a **labeled stub** — not wired to pixel UI yet (session-index data path exists under `src/session-index/`).
 
 Chat list engine, when that track lands, is **1.19 LegendList** semantics. This package must not introduce the 1.18 TanStack Virtual split.
 
@@ -71,6 +101,6 @@ Rspeedy bundle + iOS simulator + Android APK CI are **not** in this slice.
 
 | Gate | This slice |
 |---|---|
-| 代码接上 | Shell / embedding / glass contracts only. No server routes. |
+| 代码接上 | Shell / embedding / glass contracts + connect/pairing/session-index client. Host must still inject HTTP + Keychain + (later) relay tunnel. |
 | CI绿 | Package typecheck + Vitest. No APK/IPA job yet. |
 | 真机过 | **not executed** (Linux cloud agent; no Xcode/adb device) |
