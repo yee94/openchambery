@@ -4,6 +4,15 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.19.7-beta.21] - 2026-09-07
+
+### 助手
+
+- 推送只给导航栏里已经显示的会话，subagent 完成不再推。
+- 助理发消息按联系人通知：标题是昵称，正文是原话，点开进该对话。
+- 还在干活时，三点会一直跟在消息下面，不再只在没字时出现。
+- 助理和同伴气泡支持 Markdown。
+
 ## [1.19.7-beta.20] - 2026-09-06
 
 ### 助手
