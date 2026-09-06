@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.19.7-beta.6] - 2026-09-06
+
+### 会话
+
+- Markstream 仍默认渲染助手正文，但关掉文档内节点虚拟化（`max-live-nodes=0`，同时关闭 batch / smooth / defer），只留 TanStack 管会话列表高度。关闭 Markstream：`localStorage.setItem('oc:markstream-react','0')` 后刷新。
+
 ## [1.19.7-beta.5] - 2026-09-05
 
 ### 会话
