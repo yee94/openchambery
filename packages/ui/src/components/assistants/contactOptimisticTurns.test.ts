@@ -102,7 +102,12 @@ describe('contactOptimisticTurns', () => {
       ],
     })
     const merged = mergeContactTranscript([serverMessage('oc_contact_local', 'hello')], [], 'asst_1', previews)
-    expect(merged.slice(1).map((message) => message.text)).toEqual(['Hello', 'Next'])
+    expect(merged.slice(1).map((message) => ({ text: message.text, status: message.status }))).toEqual([
+      { text: 'Hello', status: 'complete' },
+      { text: 'Next', status: 'streaming' },
+      { text: '', status: 'admitted' },
+    ])
+    expect(merged[merged.length - 1]?.messageID).toBe('oc_contact_local:preview:admitted')
 
     const authoritativeAssistant: AssistantContactMessage = {
       ...serverMessage('assistant_bubble_1', 'Hello'),
@@ -114,6 +119,10 @@ describe('contactOptimisticTurns', () => {
       assistantID: 'asst_1', turnID: 'oc_contact_local', status: 'complete', occurredAt: 47,
     })
     expect(contactTurnPreviewWorking(complete)).toBe(false)
+    expect(mergeContactTranscript([serverMessage('oc_contact_local', 'hello')], [], 'asst_1', complete).slice(1).map((message) => message.status)).toEqual([
+      'complete',
+      'streaming',
+    ])
     expect(reconcileContactTurnPreviews(complete, [authoritativeAssistant])).toEqual([])
   })
 

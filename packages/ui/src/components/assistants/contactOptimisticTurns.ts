@@ -95,11 +95,12 @@ const previewMessages = (
   const bubbles = preview.bubbles
     .filter((bubble) => !authoritativeBubbleIndexes.has(bubble.bubbleIndex))
     .map((bubble, index) => previewMessage(preview, bubble, ordinal + index, bubble.done ? 'complete' : 'streaming'));
-  if (preview.status === 'admitted' && preview.bubbles.length === 0 && authoritativeBubbleIndexes.size === 0) {
-    return [previewMessage(preview, null, ordinal, 'admitted')];
-  }
   if (preview.status === 'failed') {
     return [...bubbles, previewMessage(preview, null, ordinal + bubbles.length, 'failed')];
+  }
+  // Working placeholder stays after any spoken bubbles until the turn ends.
+  if (preview.status === 'admitted' || preview.status === 'streaming') {
+    return [...bubbles, previewMessage(preview, null, ordinal + bubbles.length, 'admitted')];
   }
   return bubbles;
 };

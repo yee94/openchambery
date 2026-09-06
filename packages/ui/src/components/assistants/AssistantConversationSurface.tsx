@@ -1,6 +1,7 @@
 import React from 'react'
 import { useEvent } from '@reactuses/core'
 import { ChatPromptComposer, type ChatPromptAttachment } from '@/components/chat/ChatPromptComposer'
+import { MarkdownRenderer } from '@/components/chat/MarkdownRenderer'
 import { Icon } from '@/components/icon/Icon'
 import { useI18n } from '@/lib/i18n'
 import { subscribeOpenchamberEvents, type OpenChamberEvent } from '@/lib/openchamberEvents'
@@ -63,7 +64,8 @@ type AssistantConversationSurfaceProps = {
 
 /**
  * Grok-like contact transcript. Renders OpenChamber-owned bubbles and
- * first-class session cards — not ChatContainer, Activity, or markdown links.
+ * first-class session cards — not ChatContainer or Activity. Assistant/peer
+ * text goes through MarkdownRenderer (markstream by default).
  *
  * Cards are assistant-emitted UI (assign_session, create_assistant,
  * schedule_task; later watch/PR). The composer is a message box — not slash
@@ -385,12 +387,15 @@ export const AssistantConversationSurface: React.FC<AssistantConversationSurface
                         )
                       }
                       if (part.type === 'text' && (part.text.trim() || message.status === 'streaming')) {
+                        const settleKey = SETTLE_TEXT[part.text]
+                        const useMarkdown = !isUser && !settleKey
                         return (
                           <div
                             key={`${message.messageID}:text:${index}`}
                             aria-label={isPeer ? t('assistants.contact.peer.aria', { name: senderName }) : undefined}
                             className={cn(
-                              'whitespace-pre-wrap break-words rounded-[1.35rem] px-4 py-2.5 typography-ui leading-6',
+                              'break-words rounded-[1.35rem] px-4 py-2.5 typography-ui leading-6',
+                              useMarkdown ? 'min-w-0' : 'whitespace-pre-wrap',
                               isUser
                                 ? 'rounded-[1.15rem] rounded-br-lg bg-[var(--primary-base)]/90 text-[var(--primary-foreground)]'
                                 : isPeer
@@ -398,7 +403,17 @@ export const AssistantConversationSurface: React.FC<AssistantConversationSurface
                                   : cn('bg-[var(--surface-muted)] text-foreground', sameAssistantRun && 'rounded-tl-lg'),
                             )}
                           >
-                            {SETTLE_TEXT[part.text] ? t(SETTLE_TEXT[part.text]) : part.text}
+                            {useMarkdown ? (
+                              <MarkdownRenderer
+                                content={part.text}
+                                messageId={message.messageID}
+                                isAnimated={false}
+                                isStreaming={message.status === 'streaming'}
+                                variant="assistant"
+                                enableFileReferences={false}
+                                className="w-auto max-w-full"
+                              />
+                            ) : settleKey ? t(settleKey) : part.text}
                             {message.status === 'streaming' && index === message.parts.length - 1 ? (
                               <span
                                 aria-hidden

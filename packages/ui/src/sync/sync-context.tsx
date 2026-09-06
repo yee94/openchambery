@@ -625,6 +625,7 @@ type UiNotificationPayload = {
   tag?: unknown
   kind?: unknown
   sessionId?: unknown
+  assistantID?: unknown
   directory?: unknown
   requireHidden?: unknown
   desktopNotificationDelivered?: unknown
@@ -663,6 +664,7 @@ const handleUiNotificationEvent = (payload: Event, fallbackDirectory: string): b
     tag: asOptionalString(notification.tag),
     kind: asOptionalString(notification.kind),
     sessionId: asOptionalString(notification.sessionId),
+    assistantID: asOptionalString(notification.assistantID),
     directory: asOptionalString(notification.directory) ?? (fallbackDirectory && fallbackDirectory !== "global" ? fallbackDirectory : undefined),
     requireHidden: notification.requireHidden === true,
   }).catch((error) => {

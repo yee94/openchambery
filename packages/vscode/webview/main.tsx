@@ -1783,6 +1783,15 @@ window.addEventListener('openchamber:vscode-notification-event', (event) => {
     const requireHidden = settings.notificationMode !== 'always';
     const session = await opencodeClient.getSession(sessionId, getNotificationDirectory(record)).catch(() => undefined);
     if (!session || session.parentID) return;
+    const openchamber = (session as { metadata?: { openchamber?: {
+      assistant?: { assistantID?: string };
+      assigned?: { from?: string };
+      scheduledTask?: { taskID?: string };
+      smallModel?: { purpose?: string };
+    } } }).metadata?.openchamber;
+    if (openchamber?.smallModel?.purpose) return;
+    if (openchamber?.scheduledTask?.taskID) return;
+    if (openchamber?.assistant?.assistantID && openchamber?.assigned?.from !== 'contact') return;
     const messageId = getPayloadString(info?.id);
     const error = properties.error;
     const errorMessage = getPayloadString(
