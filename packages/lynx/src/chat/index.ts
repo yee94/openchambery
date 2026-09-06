@@ -162,3 +162,17 @@ export {
   type LynxComposerInGlassActionToken,
 } from './composerActionsLayout';
 export { LynxComposerActionsInGlass } from './ComposerActionsInGlass';
+export { LynxComposerPickerSheets } from './ComposerPickerSheets';
+export {
+  LYNX_COMPOSER_PICKER_SHEETS,
+  LYNX_COMPOSER_PICKER_WIRING_NOTES,
+  loadLynxAgentPickerItems,
+  loadLynxModelPickerItems,
+  applyLynxAgentPickerSelection,
+  applyLynxModelPickerSelection,
+  parseLynxModelPickerId,
+  filterLynxComposerPickerItems,
+  type LynxComposerPickerKind,
+  type LynxComposerPickerItem,
+  type LynxComposerPickerLoadResult,
+} from './composerPicker';

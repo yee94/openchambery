@@ -14,6 +14,12 @@ import {
 import { LynxComposerAutocompleteList } from './ComposerAutocompleteList';
 import { LynxComposerActionsInGlass } from './ComposerActionsInGlass';
 import { LynxComposerGlassCard } from './ComposerGlassCard';
+import { LynxComposerPickerSheets } from './ComposerPickerSheets';
+import {
+  applyLynxAgentPickerSelection,
+  applyLynxModelPickerSelection,
+  type LynxComposerPickerKind,
+} from './composerPicker';
 import type { LynxHostGlobalProps } from '../host/embedding';
 import {
   createLynxComposerActions,
@@ -167,6 +173,8 @@ export function LynxChatScreen({
   const [contextDisplay, setContextDisplay] = useState<LynxContextDisplay>(null);
   const [contextLimit, setContextLimit] = useState(0);
   const [attachError, setAttachError] = useState<string | null>(null);
+  const [composerModel, setComposerModel] = useState<LynxComposerModel>(model);
+  const [pickerKind, setPickerKind] = useState<LynxComposerPickerKind | null>(null);
   const [pinReveal, setPinReveal] = useState<LynxMarkdownPinRevealState>(() =>
     createLynxMarkdownPinRevealState(sessionId),
   );
@@ -185,16 +193,20 @@ export function LynxChatScreen({
     [runtimeFetch],
   );
 
+  useEffect(() => {
+    setComposerModel(model);
+  }, [sessionId, model.providerID, model.modelID, model.agent, model.variant]);
+
   const composer: LynxComposerActions = useMemo(
     () => createLynxComposerActions({
       sessionId,
       directory,
-      model,
+      model: composerModel,
       sessionApi,
       sessionIsWorking: () => timelineRef.current.sessionIsWorking,
       followUpBehavior: 'queue',
     }),
-    [sessionId, directory, model, sessionApi],
+    [sessionId, directory, composerModel, sessionApi],
   );
   const composerRef = useRef(composer);
   composerRef.current = composer;
@@ -258,7 +270,7 @@ export function LynxChatScreen({
       const result = await fetchLynxModelContextLimit(runtimeFetch, {
         directory,
         modelRef,
-        fallbackModel: { providerID: model.providerID, modelID: model.modelID },
+        fallbackModel: { providerID: composerModel.providerID, modelID: composerModel.modelID },
       });
       if (cancelled) return;
       if (result.status === 'ok' && result.limit) {
@@ -270,7 +282,7 @@ export function LynxChatScreen({
     return () => {
       cancelled = true;
     };
-  }, [runtimeFetch, directory, messagesForContext, model.providerID, model.modelID]);
+  }, [runtimeFetch, directory, messagesForContext, composerModel.providerID, composerModel.modelID]);
 
   // Cap markdown pin-reveal: arm on session open; Lynx rows stamp ready immediately
   // in this slice (no deferred markdown worker), then reveal after a microtask /
@@ -617,6 +629,7 @@ export function LynxChatScreen({
     <LynxView
       style={{
         flexGrow: 1,
+        position: 'relative',
         backgroundColor: cssVar('surface.background'),
       }}
       accessibility-label={lynxT(locale, 'mobile.nav.secondaryPageAria')}
@@ -775,18 +788,14 @@ export function LynxChatScreen({
                     variant="card"
                     sessionIsWorking={timeline.sessionIsWorking}
                     queueCount={queueCount}
-                    agentLabel={lynxT(locale, 'lynx.chat.composer.mentionHint')}
-                    modelLabel={model.modelID}
+                    agentLabel={composerModel.agent || lynxT(locale, 'lynx.chat.composer.mentionHint')}
+                    modelLabel={composerModel.modelID}
                     onAttach={() => { void onAttach(); }}
                     onSend={() => { void onSend(); }}
                     onStop={() => { void onStop(); }}
                     onQueue={() => { void onQueue(); }}
-                    onAgent={() => {
-                      setDraft((prev) => (prev.includes('@') ? prev : `${prev}@`));
-                    }}
-                    onModel={() => {
-                      setComposerCatalogHint(lynxT(locale, 'lynx.chat.composer.modelHint'));
-                    }}
+                    onAgent={() => { setPickerKind('agent'); }}
+                    onModel={() => { setPickerKind('model'); }}
                   />
                 </>
               ) : (
@@ -847,6 +856,20 @@ export function LynxChatScreen({
                 </LynxView>
               )}
             </LynxComposerGlassCard>
+            <LynxComposerPickerSheets
+              locale={locale}
+              kind={pickerKind}
+              runtimeFetch={runtimeFetch ?? null}
+              directory={directory}
+              selection={composerModel}
+              onClose={() => setPickerKind(null)}
+              onSelectAgent={(agentName) => {
+                setComposerModel((prev) => applyLynxAgentPickerSelection(prev, agentName));
+              }}
+              onSelectModel={(next) => {
+                setComposerModel((prev) => applyLynxModelPickerSelection(prev, next));
+              }}
+            />
             {actionError ? (
               <LynxText style={{ color: cssVar('surface.mutedForeground'), fontSize: '12px', marginTop: '6px' }}>
                 {actionError}

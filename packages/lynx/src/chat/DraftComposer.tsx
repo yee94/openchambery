@@ -6,7 +6,9 @@ import type { LynxRuntimeFetch } from '../runtime/fetch';
 import { cssVar } from '../theme/tokens';
 import { createLynxSession } from '../projects/sessionActions';
 import { LynxComposerAutocompleteList } from './ComposerAutocompleteList';
+import { LynxComposerActionsInGlass } from './ComposerActionsInGlass';
 import { LynxComposerGlassCard } from './ComposerGlassCard';
+import { LynxComposerPickerSheets } from './ComposerPickerSheets';
 import type { LynxHostGlobalProps } from '../host/embedding';
 import {
   applyLynxComposerSuggestion,
@@ -15,6 +17,11 @@ import {
   suggestionsForTrigger,
   type LynxComposerSuggestion,
 } from './composerCatalog';
+import {
+  applyLynxAgentPickerSelection,
+  applyLynxModelPickerSelection,
+  type LynxComposerPickerKind,
+} from './composerPicker';
 import { promptAsync, type LynxPromptAsyncResult } from './sessionApi';
 
 export type LynxDraftComposerModel = {
@@ -115,6 +122,8 @@ export function LynxDraftComposer({
   const [error, setError] = useState<string | null>(null);
   const [composerSuggestions, setComposerSuggestions] = useState<LynxComposerSuggestion[]>([]);
   const [composerCatalogHint, setComposerCatalogHint] = useState<string | null>(null);
+  const [composerModel, setComposerModel] = useState<LynxDraftComposerModel>(model);
+  const [pickerKind, setPickerKind] = useState<LynxComposerPickerKind | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -148,7 +157,7 @@ export function LynxDraftComposer({
         runtimeFetch,
         text: draft,
         directory,
-        model,
+        model: composerModel,
       });
       setBusy(false);
       if (result.status === 'ok') {
@@ -172,6 +181,7 @@ export function LynxDraftComposer({
     <LynxView
       style={{
         flexGrow: 1,
+        position: 'relative',
         backgroundColor: cssVar('surface.background'),
       }}
       accessibility-label={lynxT(locale, 'mobile.nav.secondaryPageAria')}
@@ -226,53 +236,95 @@ export function LynxDraftComposer({
         <LynxComposerGlassCard
           host={host}
           fullPageAutoGlassSkin={fullPageAutoGlassSkin}
-          variant="pill"
+          variant={draft.trim().length > 0 ? 'card' : 'pill'}
         >
-          {/* Cap collapsed pill order inside glass: + · input · Send (no actions outside). */}
-          <LynxView
-            data-lynx-composer-actions-in-glass="true"
-            data-lynx-composer-actions-variant="pill"
-            data-lynx-composer-actions-order="attach,input,sendOrStop"
-            style={{ flexDirection: 'row', alignItems: 'center' }}
-          >
+          {draft.trim().length > 0 ? (
+            <>
+              <LynxInput
+                value={draft}
+                placeholder={lynxT(locale, 'lynx.chat.composer.placeholder')}
+                bindinput={(event) => setDraft(event.detail?.value ?? '')}
+                style={{ color: cssVar('surface.foreground') }}
+              />
+              <LynxComposerActionsInGlass
+                locale={locale}
+                variant="card"
+                sessionIsWorking={busy}
+                agentLabel={composerModel.agent || lynxT(locale, 'lynx.chat.composer.mentionHint')}
+                modelLabel={composerModel.modelID}
+                onAttach={() => {
+                  setError('no-host: media pick unavailable');
+                }}
+                onSend={send}
+                onStop={send}
+                onAgent={() => { setPickerKind('agent'); }}
+                onModel={() => { setPickerKind('model'); }}
+              />
+            </>
+          ) : (
             <LynxView
-              bindtap={() => {
-                setError('no-host: media pick unavailable');
-              }}
-              accessibility-role="button"
-              accessibility-label={lynxT(locale, 'lynx.chat.composer.attach')}
-              data-lynx-composer-action="attach"
-              style={{ padding: '6px 8px' }}
+              data-lynx-composer-actions-in-glass="true"
+              data-lynx-composer-actions-variant="pill"
+              data-lynx-composer-actions-order="attach,input,sendOrStop"
+              style={{ flexDirection: 'row', alignItems: 'center' }}
             >
-              <LynxText style={{ color: cssVar('surface.mutedForeground'), fontWeight: '600' }}>
-                +
-              </LynxText>
+              <LynxView
+                bindtap={() => {
+                  setError('no-host: media pick unavailable');
+                }}
+                accessibility-role="button"
+                accessibility-label={lynxT(locale, 'lynx.chat.composer.attach')}
+                data-lynx-composer-action="attach"
+                style={{ padding: '6px 8px' }}
+              >
+                <LynxText style={{ color: cssVar('surface.mutedForeground'), fontWeight: '600' }}>
+                  +
+                </LynxText>
+              </LynxView>
+              <LynxInput
+                value={draft}
+                placeholder={lynxT(locale, 'lynx.chat.composer.placeholder')}
+                bindinput={(event) => setDraft(event.detail?.value ?? '')}
+                style={{ flexGrow: 1, color: cssVar('surface.foreground') }}
+              />
+              <LynxView
+                bindtap={send}
+                accessibility-role="button"
+                accessibility-label={lynxT(locale, 'lynx.chat.composer.send')}
+                data-lynx-composer-action="sendOrStop"
+                style={{
+                  marginLeft: '8px',
+                  padding: '8px 12px',
+                  borderRadius: '10px',
+                  backgroundColor: cssVar('primary.base'),
+                  opacity: busy ? 0.6 : 1,
+                }}
+              >
+                <LynxText style={{ color: '#fff', fontWeight: '600' }}>
+                  {busy ? lynxT(locale, 'lynx.draft.busy') : lynxT(locale, 'lynx.chat.composer.send')}
+                </LynxText>
+              </LynxView>
             </LynxView>
-            <LynxInput
-              value={draft}
-              placeholder={lynxT(locale, 'lynx.chat.composer.placeholder')}
-              bindinput={(event) => setDraft(event.detail?.value ?? '')}
-              style={{ flexGrow: 1, color: cssVar('surface.foreground') }}
-            />
-            <LynxView
-              bindtap={send}
-              accessibility-role="button"
-              accessibility-label={lynxT(locale, 'lynx.chat.composer.send')}
-              data-lynx-composer-action="sendOrStop"
-              style={{
-                marginLeft: '8px',
-                padding: '8px 12px',
-                borderRadius: '10px',
-                backgroundColor: cssVar('primary.base'),
-                opacity: busy ? 0.6 : 1,
-              }}
-            >
-              <LynxText style={{ color: '#fff', fontWeight: '600' }}>
-                {busy ? lynxT(locale, 'lynx.draft.busy') : lynxT(locale, 'lynx.chat.composer.send')}
-              </LynxText>
-            </LynxView>
-          </LynxView>
+          )}
         </LynxComposerGlassCard>
+        <LynxComposerPickerSheets
+          locale={locale}
+          kind={pickerKind}
+          runtimeFetch={runtimeFetch ?? null}
+          directory={directory}
+          selection={{
+            providerID: composerModel.providerID,
+            modelID: composerModel.modelID,
+            agent: composerModel.agent,
+          }}
+          onClose={() => setPickerKind(null)}
+          onSelectAgent={(agentName) => {
+            setComposerModel((prev) => applyLynxAgentPickerSelection(prev, agentName));
+          }}
+          onSelectModel={(next) => {
+            setComposerModel((prev) => applyLynxModelPickerSelection(prev, next));
+          }}
+        />
       </LynxView>
     </LynxView>
   );

@@ -373,3 +373,25 @@ export {
 export type { LynxGitIdentityProfile } from './settings/gitIdentities';
 
 export { LynxComposerAutocompleteList } from './chat/ComposerAutocompleteList';
+
+export {
+  LYNX_COMPOSER_PICKER_SHEETS,
+  LYNX_COMPOSER_PICKER_WIRING_NOTES,
+  loadLynxAgentPickerItems,
+  loadLynxModelPickerItems,
+  applyLynxAgentPickerSelection,
+  applyLynxModelPickerSelection,
+  parseLynxModelPickerId,
+  filterLynxComposerPickerItems,
+} from './chat/composerPicker';
+export { LynxComposerPickerSheets } from './chat/ComposerPickerSheets';
+export {
+  LYNX_COMPOSER_ACTIONS_IN_GLASS,
+  LYNX_COMPOSER_ACTIONS_IN_GLASS_WIRING_NOTES,
+  resolveLynxComposerInGlassActionOrder,
+} from './chat/composerActionsLayout';
+export { LynxComposerActionsInGlass } from './chat/ComposerActionsInGlass';
+export {
+  LynxComposerGlassCard,
+  composerGlassSurfaceForVariant,
+} from './chat/ComposerGlassCard';
