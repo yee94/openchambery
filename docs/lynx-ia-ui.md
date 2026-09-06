@@ -172,7 +172,7 @@ Android降级 (see gap board): `blur-radius` + theme surface, never a fake `UIGl
 | Autocomplete list | **ABOVE** the glass composer card as a **sibling** overlay (card width, ~8pt gap) — **never** inside `UIGlassEffect.contentView` / composer `GlassChrome` children (`forbidInsideGlassContentView`). Cap burned: UILabel titles invisible under vibrancy + taps eaten. Lynx: `LynxComposerAutocompleteList` + optional per-row `searchChip` GlassChrome **in the sibling tree only**. Not occupancy. |
 | Chat transcript | **No glass** |
 | Settings list | **No glass** on rows |
-| Sheets | Cap MobileResizableSheet spirit: half-height bottom sheet + grabber + vertical dismiss (`LynxMobileResizableSheet`). Optional glass grabber, not a glass page. Not full-screen opaque. |
+| Sheets | Cap MobileResizableSheet spirit: Cap-aligned **0.72 / 0.98** (~72dvh / ~98dvh) bottom sheet + grabber + vertical dismiss (`LynxMobileResizableSheet`). Optional glass grabber, not a glass page. Not full-screen opaque. |
 
 ### Theme
 
@@ -192,7 +192,7 @@ Cap iOS (when native UI is on):
 
 Lynx must keep that **behavior** (order, occupancy, IME). The WebView FLIP path is forbidden (`docs/lynx-pitfalls.md`).
 
-Lynx wiring (**代码接上**, not 真机过): Attach / Send / Stop / Queue live **inside** `LynxComposerGlassCard` (`LynxComposerActionsInGlass` + `composerActionsLayout.ts`). Cap order: collapsed pill `+`·input·Send/Stop; expanded card `+`·spacer·Agent·model·Send/Stop (± Queue while working). Expanded **Agent · model** open Cap `MobileResizableSheet`-spirit **half-height** bottom sheets (`LynxMobileResizableSheet` + `LynxComposerPickerSheets`) with grabber + scrim/vertical dismiss — **not** full-screen `surface.background`. Lists `GET /api/agent` and `/api/config/providers`; selection updates the composer session model used by `prompt_async`. Draft expands to the same card + pickers when the draft is non-empty; when Draft is busy, **Stop aborts** (materialize + `abortSession`) — never re-send. Sheets stay **outside** glass contentView.
+Lynx wiring (**代码接上**, not 真机过): Attach / Send / Stop / Queue live **inside** `LynxComposerGlassCard` (`LynxComposerActionsInGlass` + `composerActionsLayout.ts`). Cap order: collapsed pill `+`·input·Send/Stop; expanded card `+`·spacer·Agent·model·Send/Stop (± Queue while working). Expanded **Agent · model** open Cap `MobileResizableSheet`-spirit Cap **0.72/0.98** bottom sheets (`LynxMobileResizableSheet` + `LynxComposerPickerSheets`) with grabber + scrim/vertical dismiss — **not** full-screen `surface.background`. Lists `GET /api/agent` and `/api/config/providers`; selection updates the composer session model used by `prompt_async`. Draft expands to the same card + pickers when the draft is non-empty; when Draft is busy, **Stop aborts** (materialize + `abortSession`) — never re-send. Sheets stay **outside** glass contentView. Changes sheet: portable unified-diff line kinds + stage/unstage (`POST /api/git/stage|unstage`); Cap PierreDiffViewer runtime still stub. Projects long-press rename → `PATCH /session/:id`.
 
 Autocomplete / `/` `@` command list: sit **ABOVE** glass composer (sibling), never inside glass `contentView`. See `packages/lynx/src/chat/composerAutocompleteLayout.ts` + Cap `OpenChamberComposerAutocomplete.swift`. Composer surface: `LynxComposerGlassCard` (Chat + Draft) — Linux JS wiring only; host Mode B overlay / 真机 glass paint / drag feel still residual. Product **NOT DONE**.
 

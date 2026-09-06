@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 
 import type { LynxHostGlobalProps } from '../../host/embedding';
 import { lynxT, tabLabel } from '../../i18n/catalog';
-import { LynxScrollView, LynxText, LynxView } from '../../lynx-elements';
+import { LynxInput, LynxScrollView, LynxText, LynxView } from '../../lynx-elements';
 import {
   buildLynxSessionMenuItems,
   type LynxMenuItem,
@@ -10,6 +10,7 @@ import {
 import {
   archiveLynxSession,
   deleteLynxSession,
+  renameLynxSession,
   toggleLynxSessionPin,
 } from '../../projects/sessionActions';
 import { filterLynxProjectsHomeForSearch } from '../../projects/search';
@@ -287,6 +288,7 @@ export function ProjectsHome({
   const [actionSession, setActionSession] = useState<LynxHomeSessionRow | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [actionBusy, setActionBusy] = useState(false);
+  const [renameDraft, setRenameDraft] = useState<string | null>(null);
   const [explorerOpen, setExplorerOpen] = useState(false);
   const [chromeNote, setChromeNote] = useState<string | null>(null);
   const searchQuery = searchQueryProp ?? internalQuery;
@@ -345,6 +347,10 @@ export function ProjectsHome({
           onSessionMutated?.();
           void bindings?.refresh?.();
         })();
+      },
+      onRename: () => {
+        setActionError(null);
+        setRenameDraft(actionSession.title);
       },
       onArchive: () => {
         setActionBusy(true);
@@ -619,39 +625,97 @@ export function ProjectsHome({
               {actionError}
             </LynxText>
           ) : null}
-          {sessionMenuItems.map((item) => (
-            <LynxView
-              key={item.id}
-              bindtap={() => {
-                if (actionBusy || item.disabled) return;
-                item.onClick();
-              }}
-              style={{
-                padding: '12px 0',
-                opacity: actionBusy || item.disabled ? 0.6 : 1,
-                marginTop: item.separated ? '8px' : '0px',
-              }}
-            >
-              <LynxText style={{
-                color: item.destructive ? cssVar('surface.mutedForeground') : cssVar('primary.base'),
-                fontSize: '15px',
-              }}
+          {renameDraft !== null ? (
+            <LynxView style={{ marginBottom: '8px' }}>
+              <LynxInput
+                value={renameDraft}
+                placeholder={lynxT(locale, 'lynx.projects.menu.renamePlaceholder')}
+                bindinput={(event) => setRenameDraft(event.detail?.value ?? '')}
+                style={{ color: cssVar('surface.foreground'), fontSize: '15px', marginBottom: '8px' }}
+              />
+              <LynxView
+                bindtap={() => {
+                  if (actionBusy) return;
+                  const title = renameDraft.trim();
+                  if (!title) {
+                    setActionError('session title required');
+                    return;
+                  }
+                  setActionBusy(true);
+                  setActionError(null);
+                  void (async () => {
+                    const result = await renameLynxSession(runtimeFetch, {
+                      sessionId: actionSession.id,
+                      title,
+                      directory: actionSession.directory,
+                    });
+                    setActionBusy(false);
+                    if (result.status !== 'ok') {
+                      setActionError(result.status === 'no-runtime' ? 'no-runtime' : result.error);
+                      return;
+                    }
+                    setRenameDraft(null);
+                    setActionSession(null);
+                    onSessionMutated?.();
+                    void bindings?.refresh?.();
+                  })();
+                }}
+                style={{ padding: '12px 0', opacity: actionBusy ? 0.6 : 1 }}
               >
-                {lynxT(locale, item.labelKey as 'lynx.projects.menu.pin')}
-              </LynxText>
+                <LynxText style={{ color: cssVar('primary.base'), fontSize: '15px' }}>
+                  {lynxT(locale, 'lynx.projects.menu.renameSave')}
+                </LynxText>
+              </LynxView>
+              <LynxView
+                bindtap={() => {
+                  setRenameDraft(null);
+                  setActionError(null);
+                }}
+                style={{ padding: '12px 0' }}
+              >
+                <LynxText style={{ color: cssVar('surface.mutedForeground') }}>
+                  {lynxT(locale, 'lynx.projects.menu.cancel')}
+                </LynxText>
+              </LynxView>
             </LynxView>
-          ))}
-          <LynxView
-            bindtap={() => {
-              setActionSession(null);
-              setActionError(null);
-            }}
-            style={{ padding: '12px 0', marginTop: '4px' }}
-          >
-            <LynxText style={{ color: cssVar('surface.mutedForeground') }}>
-              {lynxT(locale, 'lynx.projects.menu.cancel')}
-            </LynxText>
-          </LynxView>
+          ) : (
+            <>
+              {sessionMenuItems.map((item) => (
+                <LynxView
+                  key={item.id}
+                  bindtap={() => {
+                    if (actionBusy || item.disabled) return;
+                    item.onClick();
+                  }}
+                  style={{
+                    padding: '12px 0',
+                    opacity: actionBusy || item.disabled ? 0.6 : 1,
+                    marginTop: item.separated ? '8px' : '0px',
+                  }}
+                >
+                  <LynxText style={{
+                    color: item.destructive ? cssVar('surface.mutedForeground') : cssVar('primary.base'),
+                    fontSize: '15px',
+                  }}
+                  >
+                    {lynxT(locale, item.labelKey as 'lynx.projects.menu.pin')}
+                  </LynxText>
+                </LynxView>
+              ))}
+              <LynxView
+                bindtap={() => {
+                  setActionSession(null);
+                  setActionError(null);
+                  setRenameDraft(null);
+                }}
+                style={{ padding: '12px 0', marginTop: '4px' }}
+              >
+                <LynxText style={{ color: cssVar('surface.mutedForeground') }}>
+                  {lynxT(locale, 'lynx.projects.menu.cancel')}
+                </LynxText>
+              </LynxView>
+            </>
+          )}
         </LynxView>
       ) : null}
     </LynxView>

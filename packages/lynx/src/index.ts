@@ -192,6 +192,8 @@ export {
   loadLynxGitFileDiff,
   commitLynxGitChanges,
   syncLynxGit,
+  stageLynxGitFiles,
+  unstageLynxGitFiles,
 } from './chat/changesSurface';
 export { listLynxDirectory, readLynxFile } from './chat/filesSurface';
 export {
@@ -355,6 +357,10 @@ export {
 } from './chat/htmlPreview';
 export {
   planLynxPierreDiff,
+  parseLynxUnifiedDiffLines,
+  summarizeLynxDiffStats,
+  buildLynxOriginalModifiedPreview,
+  lynxPierreDiffLineToken,
   LYNX_PIERRE_DIFF_STUB_NOTES,
 } from './chat/pierreDiff';
 export {

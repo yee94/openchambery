@@ -299,3 +299,43 @@ export const syncLynxGit = async (
   if (options?.branch) body.branch = options.branch;
   return postGitJson(runtimeFetch, `/api/git/${action}`, trimmedDir, body, options);
 };
+
+/**
+ * Cap `POST /api/git/stage` — MobileChangesSurface moveChangePaths('stage').
+ * Body: `{ paths: string[] }`. Failure ≠ fake-success.
+ */
+export const stageLynxGitFiles = async (
+  runtimeFetch: LynxRuntimeFetch | null | undefined,
+  directory: string | null | undefined,
+  paths: readonly string[],
+  options?: { signal?: AbortSignal },
+): Promise<LynxGitMutationResult> => {
+  if (!runtimeFetch) return { status: 'no-runtime' };
+  const trimmedDir = directory?.trim();
+  if (!trimmedDir) return { status: 'no-directory' };
+  const cleaned = paths.map((p) => p.trim()).filter(Boolean);
+  if (cleaned.length === 0) {
+    return { status: 'failed', error: new Error('path is required to stage git changes') };
+  }
+  return postGitJson(runtimeFetch, '/api/git/stage', trimmedDir, { paths: cleaned }, options);
+};
+
+/**
+ * Cap `POST /api/git/unstage` — MobileChangesSurface moveChangePaths('unstage').
+ * Body: `{ paths: string[] }`. Failure ≠ fake-success.
+ */
+export const unstageLynxGitFiles = async (
+  runtimeFetch: LynxRuntimeFetch | null | undefined,
+  directory: string | null | undefined,
+  paths: readonly string[],
+  options?: { signal?: AbortSignal },
+): Promise<LynxGitMutationResult> => {
+  if (!runtimeFetch) return { status: 'no-runtime' };
+  const trimmedDir = directory?.trim();
+  if (!trimmedDir) return { status: 'no-directory' };
+  const cleaned = paths.map((p) => p.trim()).filter(Boolean);
+  if (cleaned.length === 0) {
+    return { status: 'failed', error: new Error('path is required to unstage git changes') };
+  }
+  return postGitJson(runtimeFetch, '/api/git/unstage', trimmedDir, { paths: cleaned }, options);
+};

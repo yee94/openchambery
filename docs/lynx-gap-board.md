@@ -227,7 +227,7 @@ Seeded from the inventory. Grouped so a slice can pick a coherent vertical.
 | ~~Session rows, search, pin / in-progress~~ | `useMobileProjectsHomeModel.ts` | **代码接上** search + pin/busy cues |
 | ~~`项目 · 分支` subtitle~~ | `formatHomeSessionSubtitle` | **代码接上** |
 | ~~Collapsing MobileTabPageHeader~~ | `MobileTabPageHeader.tsx` | **代码接上** glass search + primary + |
-| ~~Swipe / long-press actions~~ | `sessionMenuModel.ts` | **代码接上** long-press sheet → pin/archive/delete real APIs |
+| ~~Swipe / long-press actions~~ | `sessionMenuModel.ts` | **代码接上** long-press sheet → pin/archive/delete/**rename** real APIs |
 | ~~New-session draft page~~ | `kind: 'draft'` | **代码接上** draft composer body materializes POST /session |
 | ~~Add project directory explorer~~ | `DirectoryExplorerDialog` | **代码接上** in PR#48 (`DirectoryExplorer` + settings projects add) |
 | ~~Header 扫一扫 / 切换实例~~ | `MobileProjectsHome` | **代码接上** chrome; camera host still unavailable until binder |
@@ -245,7 +245,7 @@ Seeded from the inventory. Grouped so a slice can pick a coherent vertical.
 | ~~Activity / sorted / collapsed~~ | chat DOCUMENTATION | **代码接上** collapsed Activity disclosure (detail rows hidden until expand) |
 | ~~Load-older button (no scroll auto-load)~~ | timeline controller | **代码接上** button + bounce forbid + prepend-settle gate + pin-reveal polish |
 | ~~Nested child session stack + predecessor~~ | `mobileNavigation.ts` | **代码接上** reconcile + predecessor chrome; host underlay pixel polish still thin |
-| ~~Files / Changes / turn-diff sheets~~ | `MobileFilesSurface`, `MobileChangesSurface` | **代码接上** list + text preview + file/turn diff + commit/fetch/pull/push. HTML preview = labeled text stub until host WKWebView; PierreDiff = text stub. |
+| ~~Files / Changes / turn-diff sheets~~ | `MobileFilesSurface`, `MobileChangesSurface` | **代码接上** list + text preview + file/turn diff + commit/fetch/pull/push + **stage/unstage**. HTML preview = labeled text stub until host WKWebView; PierreDiff = portable text (runtime stub). |
 | ~~MCP sheet~~ | `mobile-mcp` | **代码接上** overflow + `/api/config/mcp` list |
 | ~~Context usage~~ | `mobileContextUsage.ts` | **代码接上** header chip + Cap `/api/config/providers` limit |
 | | ~~Composer attachments, `/` `@`, agent/model~~ | composer DOCUMENTATION | Attach + `/` `@` catalogs **代码接上** (Chat + Draft); autocomplete **above glass**; GlassChrome + in-glass Attach/Send/Stop/Queue **代码接上**; Cap Agent·model **picker sheets** (`/api/agent` + `/api/config/providers` → prompt_async selection) **代码接上**; host Mode B overlay / 真机 still thin |
@@ -332,6 +332,8 @@ First implementation slice after this doc gate (order is deliberate: connect →
 20. ~~**composer actions in glass: Attach/Send/Stop/Queue inside LynxComposerGlassCard (Cap pill/card order); autocomplete stays ABOVE**~~ — 代码接上 in `cursor/lynx-composer-actions-in-glass-local`. Remaining: Mode B host overlay / live UIGlassEffect / 真机; product NOT DONE.
 21. ~~**composer Agent·model picker sheets: Cap MobileResizableSheet spirit; `/api/agent` + providers catalog; selection → prompt_async**~~ — 代码接上 in `cursor/lynx-agent-model-picker-local`. Remaining: Mode B host overlay / live UIGlassEffect / 真机; product NOT DONE.
 22. ~~**resizable picker sheets + Draft Stop abort: half-height grabber sheet (not full-screen surface.background); Draft busy Stop aborts**~~ — 代码接上 in `cursor/lynx-resizable-picker-sheets-local`. Remaining: Mode B host overlay / live UIGlassEffect / 真机 drag feel; product NOT DONE.
+23. ~~**Cap sheet height snaps 72/98dvh: LynxMobileResizableSheet half 0.72 / expanded 0.98 (was 50%/92%)**~~ — 代码接上 in `cursor/lynx-sheet-height-cap-local` (PR #55). Remaining: Mode B host overlay / live UIGlassEffect / 真机 drag feel; product NOT DONE.
+24. ~~**linux closable after #55: portable text diff + Cap stage/unstage + Projects rename wiring + docs hygiene**~~ — 代码接上 in `cursor/lynx-linux-closable-after-55-local`. Remaining: host-only / 真机 (Pierre runtime, WKWebView, Keychain, camera, IME, Mode B); product NOT DONE.
 
 Do not invent ASR / Bonjour / Capgo / TanStack 1.18. Share / Live Activity / widgets stay later.
 
@@ -428,7 +430,7 @@ Slice on `cursor/lynx-linux-gaps-local` (PR into `work/lynx-native`). Package Vi
 | DraftComposer `/` `@` catalogs | ChatScreen composerCatalog | Same load/detect/suggest/apply path as chat |
 | Settings git identities | Cap GitIdentity* `/api/git/identities` | List/create/update/delete + global read; never fake-success |
 | Files HTML preview | `MobileFilesSurface` iframe | Cap-like source/preview toggle; preview = honest host WebView stub + text source |
-| PierreDiff polish | `PierreDiffViewer` | Thin unified-text stub note — Cap viewer not ported |
+| PierreDiff polish | `PierreDiffViewer` | Portable line-kind/stats text 代码接上; Cap `@pierre/diffs` viewer still stub |
 
 **CI绿:** Linux lynx-ci template only. Local Vitest `@openchamber/lynx` only.
 **真机过:** not executed (environment: Linux cloud VM).
@@ -472,7 +474,7 @@ Slice on `cursor/lynx-resizable-picker-sheets-local` (PR into `work/lynx-native`
 
 | Item | Cap/web source | Lynx note |
 |---|---|---|
-| Half-height MobileResizableSheet | Cap `MobileResizableSheet` + snap grabber | `LynxMobileResizableSheet`: grabber, ~50% bottom sheet, scrim + vertical-drag dismiss — **replaces** full-screen `surface.background` picker overlay |
+| Half-height MobileResizableSheet | Cap `MobileResizableSheet` + snap grabber | `LynxMobileResizableSheet`: grabber, Cap-aligned **0.72 / 0.98** (~72%/98% / 72dvh/98dvh) bottom sheet, scrim + vertical-drag dismiss — **replaces** full-screen `surface.background` picker overlay |
 | Picker + explorer reuse | Agent/model pickers; DirectoryExplorer | Composer pickers mount on shared sheet; DirectoryExplorer reused cheaply |
 | Draft busy Stop = abort | Cap Chat composerActions.stop / `POST …/abort` | When Draft `busy`, Stop aborts materialize + `abortSession` — never re-send |
 | Glass / autocomplete | Cap autocomplete sibling | Triggers stay in-glass; sheets outside; autocomplete ABOVE glass |
@@ -495,9 +497,25 @@ Slice on `cursor/lynx-composer-glass-local` (PR into `work/lynx-native`). Packag
 
 ---
 
+## 代码接上 (linux closable after #55: portable diff + stage/unstage + rename — not landed under 三关)
+
+Slice on `cursor/lynx-linux-closable-after-55-local` (PR into `work/lynx-native`). Package Vitest + `tsc` + rspeedy. 真机过: not executed. Product **NOT DONE**.
+
+| Item | Cap/web source | Lynx note |
+|---|---|---|
+| Cap sheet height docs hygiene | `MobileResizableSheet` 72/98dvh | Next #23 for PR#55; replace stale ~50%/92% with **0.72 / 0.98** |
+| Portable text diff | Cap Changes + PierreDiffViewer data | `parseLynxUnifiedDiffLines` / stats / line tokens in Changes detail — **not** `@pierre/diffs` runtime |
+| Stage / unstage | `stageGitFiles` / `unstageGitFiles` → `POST /api/git/stage\|unstage` | Changes row chips; failure ≠ fake-success |
+| Projects rename | Cap session menu rename → `PATCH /session/:id` | Long-press → draft input → `renameLynxSession` |
+
+**CI绿:** missing (no Lynx Android/iOS workflow). Local Vitest `@openchamber/lynx` + `tsc` + rspeedy only.
+**真机过:** not executed (Linux cloud VM). Host Mode B / Pierre runtime / WKWebView / Keychain / camera / IME still residual.
+
+---
+
 ## Remaining (honest — not EXHAUSTED)
 
-**Product NOT DONE.** Linux-doable Cap product rows continue to close. **Do not** mark the Lynx JS surface EXHAUSTED while host binders / HTML WebView / PierreDiff / Live Activity still need work.
+**Product NOT DONE.** Linux-doable Cap **product** rows for this track are largely closed (connect/settings/chat/projects/changes wiring). Remaining Cap-parity polish is thin; **host binders / HTML WKWebView / Pierre `@pierre/diffs` runtime / Live Activity / SDK link / 真机** still block EXHAUSTED. **Do not** mark landed under 三关.
 
 ### 代码接上 prior slice (`cursor/lynx-closable-missing-local` / PR#48)
 
@@ -552,14 +570,30 @@ Slice on `cursor/lynx-composer-glass-local` (PR into `work/lynx-native`). Packag
 | Glass / autocomplete | Triggers stay in-glass; sheets + autocomplete stay outside / ABOVE glass |
 | Docs honesty | ia-ui + gap-board mark 代码接上 / not 真机过 / NOT DONE |
 
-### 代码接上 this slice (`cursor/lynx-resizable-picker-sheets-local`)
+### 代码接上 prior slice (`cursor/lynx-resizable-picker-sheets-local`)
 
 | Item | Notes |
 |---|---|
-| Half-height resizable sheet | `LynxMobileResizableSheet`: grabber, ~50% bottom sheet, scrim + vertical-drag dismiss — not full-screen `surface.background` |
+| Half-height resizable sheet | `LynxMobileResizableSheet`: grabber, Cap **0.72 / 0.98** (~72dvh / ~98dvh) bottom sheet, scrim + vertical-drag dismiss — not full-screen `surface.background` |
 | Picker / explorer reuse | Agent·model pickers + DirectoryExplorer mount on shared sheet |
 | Draft busy Stop = abort | Stop aborts materialize / `abortSession` (Chat composerActions alignment) — never re-send |
 | Glass / autocomplete | Triggers in-glass; sheets outside; autocomplete ABOVE glass |
+| Docs honesty | ia-ui + gap-board mark 代码接上 / not 真机过 / NOT DONE |
+
+### 代码接上 prior slice (`cursor/lynx-sheet-height-cap-local` / PR#55)
+
+| Item | Notes |
+|---|---|
+| Cap sheet height snaps | half **0.72** / expanded **0.98** (~72dvh / ~98dvh); grabber / dismiss / outside-glass unchanged |
+| Docs honesty | Next #23; stale ~50%/92% notes replaced; NOT DONE / 三关未齐 |
+
+### 代码接上 this slice (`cursor/lynx-linux-closable-after-55-local`)
+
+| Item | Notes |
+|---|---|
+| Portable text diff | Unified line kinds + insertions/deletions stats + semantic line colors in Changes detail; Cap `@pierre/diffs` remains stub |
+| Cap stage / unstage | `POST /api/git/stage` + `/api/git/unstage` on Changes rows; failure ≠ fake-success |
+| Projects session rename | Long-press → rename draft → `PATCH /session/:id` (`renameLynxSession`) |
 | Docs honesty | ia-ui + gap-board mark 代码接上 / not 真机过 / NOT DONE |
 
 ### Still missing / host-only / 真机
@@ -570,7 +604,7 @@ Slice on `cursor/lynx-composer-glass-local` (PR into `work/lynx-native`). Packag
 | Real QR camera / AVCapture / CameraX | Adapter + chrome 代码接上; binder returns unavailable until host |
 | OAuth system browser open | Cap routes + host stubs 代码接上; ASWebAuthenticationSession / Custom Tabs 真机 |
 | Host WKWebView / WebView HTML preview sheet | Text stub only — no invent Lynx DOM iframe |
-| PierreDiff interactive viewer | Unified text stub; Cap Pierre runtime CSS not ported |
+| PierreDiff interactive viewer | Portable text lines/stats 代码接上; Cap `@pierre/diffs` / PIERRE_RUNTIME_BASE_CSS not ported |
 | Composer glass / actions / pickers 真机 / Mode B host overlay | GlassCard + in-glass actions + half-height resizable Agent·model sheets JS 代码接上; live UIGlassEffect + host Mode B overlay / drag feel still 真机 |
 | IME keyboard binding + occupancy 真机 | Contract + inset publisher stubs 代码接上; LynxView IME must be host-bound |
 | Edge-swipe / Predictive Back pan arena 真机 | Contract + stubs 代码接上; native gesture ownership still host |

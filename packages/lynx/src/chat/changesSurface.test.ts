@@ -45,7 +45,9 @@ describe('loadLynxGitStatus', () => {
 import {
   commitLynxGitChanges,
   loadLynxGitFileDiff,
+  stageLynxGitFiles,
   syncLynxGit,
+  unstageLynxGitFiles,
 } from './changesSurface';
 
 describe('loadLynxGitFileDiff', () => {
@@ -122,5 +124,38 @@ describe('commitLynxGitChanges / syncLynxGit', () => {
     const runtimeFetch = async () => ({ ok: true, status: 200, json: async () => ({}) });
     const result = await commitLynxGitChanges(runtimeFetch, '/repo', '  ');
     expect(result.status).toBe('failed');
+  });
+});
+
+describe('stageLynxGitFiles / unstageLynxGitFiles', () => {
+  test('stage posts Cap /api/git/stage with paths', async () => {
+    const calls: Array<{ path: string; body: string | undefined }> = [];
+    const runtimeFetch = async (path: string, init?: { body?: string }) => {
+      calls.push({ path, body: init?.body });
+      return { ok: true, status: 200, json: async () => ({ success: true }) };
+    };
+    const result = await stageLynxGitFiles(runtimeFetch, '/repo', ['a.ts', ' b.ts ']);
+    expect(result).toEqual({ status: 'ok' });
+    expect(calls[0]?.path).toContain('/api/git/stage?');
+    expect(JSON.parse(calls[0]!.body!)).toEqual({ paths: ['a.ts', 'b.ts'] });
+  });
+
+  test('unstage posts Cap /api/git/unstage with paths', async () => {
+    const calls: Array<{ path: string; body: string | undefined }> = [];
+    const runtimeFetch = async (path: string, init?: { body?: string }) => {
+      calls.push({ path, body: init?.body });
+      return { ok: true, status: 200, json: async () => ({ success: true }) };
+    };
+    expect(await unstageLynxGitFiles(runtimeFetch, '/repo', ['a.ts'])).toEqual({ status: 'ok' });
+    expect(calls[0]?.path).toContain('/api/git/unstage?');
+    expect(JSON.parse(calls[0]!.body!)).toEqual({ paths: ['a.ts'] });
+  });
+
+  test('empty paths / no-runtime / no-directory never fake-success', async () => {
+    expect(await stageLynxGitFiles(null, '/repo', ['a.ts'])).toEqual({ status: 'no-runtime' });
+    const runtimeFetch = async () => ({ ok: true, status: 200, json: async () => ({}) });
+    expect(await stageLynxGitFiles(runtimeFetch, ' ', ['a.ts'])).toEqual({ status: 'no-directory' });
+    const empty = await stageLynxGitFiles(runtimeFetch, '/repo', ['  ']);
+    expect(empty.status).toBe('failed');
   });
 });

@@ -145,7 +145,13 @@ export {
 } from './composerAutocompleteLayout';
 export { LYNX_COMPOSER_AUTOCOMPLETE_ABOVE_GLASS } from './imeOccupancy';
 export { planLynxHtmlPreview, isLynxHtmlPath } from './htmlPreview';
-export { planLynxPierreDiff } from './pierreDiff';
+export {
+  planLynxPierreDiff,
+  parseLynxUnifiedDiffLines,
+  summarizeLynxDiffStats,
+  buildLynxOriginalModifiedPreview,
+  lynxPierreDiffLineToken,
+} from './pierreDiff';
 
 export { LynxComposerAutocompleteList } from './ComposerAutocompleteList';
 export {

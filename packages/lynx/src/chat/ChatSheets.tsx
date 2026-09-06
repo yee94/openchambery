@@ -9,13 +9,19 @@ import {
   commitLynxGitChanges,
   loadLynxGitFileDiff,
   loadLynxGitStatus,
+  stageLynxGitFiles,
   syncLynxGit,
+  unstageLynxGitFiles,
   type LynxGitChangeEntry,
   type LynxGitSyncAction,
 } from './changesSurface';
 import { listLynxDirectory, readLynxFile, type LynxFsEntry } from './filesSurface';
 import { isLynxHtmlPath, planLynxHtmlPreview } from './htmlPreview';
-import { planLynxPierreDiff } from './pierreDiff';
+import {
+  lynxPierreDiffLineToken,
+  planLynxPierreDiff,
+  type LynxPierreDiffPlan,
+} from './pierreDiff';
 import type { LynxChatSheetKind } from './overflowMenu';
 
 export type ChatSheetProps = {
@@ -239,7 +245,7 @@ function ChangesSheetBody({
   const [status, setStatus] = useState<'loading' | 'ok' | 'failed' | 'no-runtime' | 'no-directory'>('loading');
   const [error, setError] = useState<string | null>(null);
   const [diffEntry, setDiffEntry] = useState<LynxGitChangeEntry | null>(null);
-  const [diffText, setDiffText] = useState<string | null>(null);
+  const [diffPlan, setDiffPlan] = useState<LynxPierreDiffPlan | null>(null);
   const [diffNote, setDiffNote] = useState<string | null>(null);
   const [diffBusy, setDiffBusy] = useState(false);
   const [commitMessage, setCommitMessage] = useState('');
@@ -271,7 +277,7 @@ function ChangesSheetBody({
 
   const openDiff = async (entry: LynxGitChangeEntry) => {
     setDiffEntry(entry);
-    setDiffText(null);
+    setDiffPlan(null);
     setDiffNote(null);
     setDiffBusy(true);
     const result = await loadLynxGitFileDiff(runtimeFetch, directory, entry.path, {
@@ -280,23 +286,16 @@ function ChangesSheetBody({
     setDiffBusy(false);
     if (result.status === 'ok') {
       if (result.isBinary) {
+        setDiffPlan(planLynxPierreDiff({ binary: true }));
         setDiffNote(lynxT(locale, 'lynx.chat.sheet.changes.binary'));
         return;
       }
-      const unified = result.unifiedDiff?.trim();
-      if (unified) {
-        setDiffText(unified);
-      } else {
-        setDiffText(
-          [
-            `--- a/${entry.path}`,
-            `+++ b/${entry.path}`,
-            '@@ preview @@',
-            ...result.original.split('\n').map((line) => `-${line}`),
-            ...result.modified.split('\n').map((line) => `+${line}`),
-          ].join('\n'),
-        );
-      }
+      setDiffPlan(planLynxPierreDiff({
+        unifiedDiff: result.unifiedDiff,
+        original: result.original,
+        modified: result.modified,
+        path: entry.path,
+      }));
       return;
     }
     if (result.status === 'no-runtime') {
@@ -304,6 +303,32 @@ function ChangesSheetBody({
       return;
     }
     setDiffNote(result.status === 'failed' ? result.error.message : lynxT(locale, 'lynx.chat.sheet.changes.diffFailed'));
+  };
+
+  const runStageToggle = async (entry: LynxGitChangeEntry) => {
+    setActionBusy(true);
+    setActionNote(null);
+    const result = entry.staged
+      ? await unstageLynxGitFiles(runtimeFetch, directory, [entry.path])
+      : await stageLynxGitFiles(runtimeFetch, directory, [entry.path]);
+    setActionBusy(false);
+    if (result.status === 'ok') {
+      setActionNote(lynxT(
+        locale,
+        entry.staged ? 'lynx.chat.sheet.changes.unstageOk' : 'lynx.chat.sheet.changes.stageOk',
+      ));
+      setReloadNonce((n) => n + 1);
+      return;
+    }
+    if (result.status === 'no-runtime') {
+      setActionNote(lynxT(locale, 'lynx.settings.noRuntime'));
+      return;
+    }
+    if (result.status === 'no-directory') {
+      setActionNote(lynxT(locale, 'lynx.chat.sheet.noDirectory'));
+      return;
+    }
+    setActionNote(result.error.message);
   };
 
   const runCommit = async () => {
@@ -355,10 +380,15 @@ function ChangesSheetBody({
   };
 
   if (diffEntry) {
+    const statsLabel = diffPlan
+      ? lynxT(locale, 'lynx.chat.sheet.changes.diffStats')
+        .replace('{insertions}', String(diffPlan.stats.insertions))
+        .replace('{deletions}', String(diffPlan.stats.deletions))
+      : null;
     return (
       <LynxScrollView style={{ flexGrow: 1, padding: '0 16px 24px' }}>
         <LynxView
-          bindtap={() => { setDiffEntry(null); setDiffText(null); setDiffNote(null); }}
+          bindtap={() => { setDiffEntry(null); setDiffPlan(null); setDiffNote(null); }}
           style={{ padding: '8px 0' }}
         >
           <LynxText style={{ color: cssVar('primary.base') }}>
@@ -371,12 +401,23 @@ function ChangesSheetBody({
         </LynxText>
         {diffBusy ? <Banner text={lynxT(locale, 'lynx.settings.loading')} muted /> : null}
         {diffNote ? <Banner text={diffNote} muted /> : null}
-        <Banner text={planLynxPierreDiff({ unifiedDiff: diffText }).note} muted />
-        {diffText !== null ? (
-          <LynxText style={{ color: cssVar('surface.foreground'), fontSize: '12px' }}>
-            {diffText}
+        {diffPlan ? <Banner text={diffPlan.note} muted /> : null}
+        {statsLabel && diffPlan?.hasTextPreview ? (
+          <LynxText style={{ color: cssVar('surface.mutedForeground'), fontSize: '12px', marginBottom: '8px' }}>
+            {statsLabel}
           </LynxText>
         ) : null}
+        {diffPlan?.lines.map((line, index) => (
+          <LynxText
+            key={`${index}:${line.kind}`}
+            style={{
+              color: cssVar(lynxPierreDiffLineToken(line.kind)),
+              fontSize: '12px',
+            }}
+          >
+            {line.text.length ? line.text : ' '}
+          </LynxText>
+        ))}
       </LynxScrollView>
     );
   }
@@ -439,14 +480,24 @@ function ChangesSheetBody({
         entries.map((entry) => (
           <LynxView
             key={`${entry.staged ? 's' : 'u'}:${entry.path}`}
-            style={{ padding: '10px 0' }}
-            bindtap={() => { void openDiff(entry); }}
+            style={{ padding: '10px 0', flexDirection: 'row', alignItems: 'center' }}
           >
-            <LynxText style={{ color: cssVar('surface.foreground') }}>{entry.path}</LynxText>
-            <LynxText style={{ color: cssVar('surface.mutedForeground'), fontSize: '12px' }}>
-              {entry.status}
-              {entry.staged ? ' · staged' : ''}
-            </LynxText>
+            <LynxView
+              style={{ flexGrow: 1 }}
+              bindtap={() => { void openDiff(entry); }}
+            >
+              <LynxText style={{ color: cssVar('surface.foreground') }}>{entry.path}</LynxText>
+              <LynxText style={{ color: cssVar('surface.mutedForeground'), fontSize: '12px' }}>
+                {entry.status}
+                {entry.staged ? ' · staged' : ''}
+              </LynxText>
+            </LynxView>
+            <ActionChip
+              label={entry.staged
+                ? lynxT(locale, 'lynx.chat.sheet.changes.unstage')
+                : lynxT(locale, 'lynx.chat.sheet.changes.stage')}
+              onTap={() => { if (!actionBusy) void runStageToggle(entry); }}
+            />
           </LynxView>
         ))
       )}
