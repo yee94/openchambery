@@ -11,6 +11,15 @@ import {
   extractDirectoryFromRequest,
   isDirectoryTurnAdmissionPath,
 } from './instance-recovery-runtime.js';
+import {
+  createReasoningOutboundFilter,
+  createSseBlockSplitter,
+  filterSseBlock,
+  projectMessagesPayloadForReasoning,
+  readIncludeReasoningFromUrl,
+  readIncludeReasoningQuery,
+  stripIncludeReasoningParam,
+} from '../event-stream/reasoning-projection.js';
 
 export const createDirectoryQueryCanonicalizer = ({ realpath, ...cacheOptions } = {}) => {
   const realpathCache = createRealpathCache({ fallbackOnError: true, realpath, ...cacheOptions });
@@ -379,6 +388,14 @@ export const registerOpenCodeProxy = (app, deps) => {
     let connectTimedOut = false;
     let writeQueue = Promise.resolve(true);
     const sseBoundary = createSseBoundaryTracker();
+    const requestUrl = typeof req.originalUrl === 'string' && req.originalUrl.length > 0
+      ? req.originalUrl
+      : (typeof req.url === 'string' ? req.url : '');
+    // OpenChamber projection control — never forwarded to OpenCode.
+    const includeReasoning = readIncludeReasoningQuery(req.query)
+      && readIncludeReasoningFromUrl(requestUrl);
+    const reasoningFilter = includeReasoning ? null : createReasoningOutboundFilter();
+    const sseSplitter = includeReasoning ? null : createSseBlockSplitter();
 
     req.on('close', closeUpstream);
 
@@ -400,10 +417,9 @@ export const registerOpenCodeProxy = (app, deps) => {
     };
 
     try {
-      const requestUrl = typeof req.originalUrl === 'string' && req.originalUrl.length > 0
-        ? req.originalUrl
-        : (typeof req.url === 'string' ? req.url : '');
-      const upstreamPath = requestUrl.startsWith('/api') ? requestUrl.slice(4) || '/' : requestUrl;
+      // Strip includeReasoning before building the upstream OpenCode path.
+      const strippedUrl = stripIncludeReasoningParam(requestUrl);
+      const upstreamPath = strippedUrl.startsWith('/api') ? strippedUrl.slice(4) || '/' : strippedUrl;
       const headers = normalizeForwardedDirectoryHeaders(
         collectForwardProxyHeaders(req.headers, getOpenCodeAuthHeaders())
       );
@@ -495,10 +511,40 @@ export const registerOpenCodeProxy = (app, deps) => {
         }
         if (value && value.length > 0) {
           resetStallTimer();
-          sseBoundary.observe(value);
-          const canContinue = await enqueueSseWrite(value);
-          if (!canContinue) {
-            break;
+          if (includeReasoning) {
+            // Enabled path: byte-identical passthrough (existing behavior).
+            sseBoundary.observe(value);
+            const canContinue = await enqueueSseWrite(value);
+            if (!canContinue) {
+              break;
+            }
+          } else {
+            // Disabled path: parse SSE blocks, drop reasoning, re-serialize.
+            // Preserves id/event lines and GlobalEvent wrap when unchanged drop-only.
+            const blocks = sseSplitter.push(value);
+            let canContinue = true;
+            for (const block of blocks) {
+              const filtered = filterSseBlock(block, reasoningFilter);
+              if (!filtered) {
+                continue;
+              }
+              sseBoundary.observe(filtered);
+              canContinue = await enqueueSseWrite(filtered);
+              if (!canContinue) break;
+            }
+            if (!canContinue) {
+              break;
+            }
+          }
+        }
+      }
+
+      if (!includeReasoning && sseSplitter) {
+        for (const block of sseSplitter.finish()) {
+          const filtered = filterSseBlock(block, reasoningFilter);
+          if (filtered) {
+            sseBoundary.observe(filtered);
+            await enqueueSseWrite(filtered);
           }
         }
       }
@@ -524,6 +570,7 @@ export const registerOpenCodeProxy = (app, deps) => {
     } finally {
       clearConnectTimer();
       clearStallTimer();
+      reasoningFilter?.dispose?.();
       if (heartbeatTimer) {
         clearTimeout(heartbeatTimer);
         heartbeatTimer = null;
@@ -584,7 +631,7 @@ export const registerOpenCodeProxy = (app, deps) => {
 
   const forwardSanitizedSessionListRequest = async (req, res, next, logLabel) => {
     try {
-      const upstreamPath = await getRequestUpstreamPath(req);
+      const upstreamPath = stripIncludeReasoningParam(await getRequestUpstreamPath(req));
       const result = await fetchSessionListPayload(upstreamPath, { req });
 
       res.status(result.upstream.status);
@@ -609,6 +656,47 @@ export const registerOpenCodeProxy = (app, deps) => {
         return;
       }
       console.error(`[proxy] OpenCode ${logLabel} proxy error:`, error?.message ?? error);
+      if (!res.headersSent) {
+        res.status(503).json({ error: 'OpenCode service unavailable' });
+        return;
+      }
+      next(error);
+    }
+  };
+
+  /**
+   * Official session.messages list (`GET /api/session/:id/message`).
+   * When includeReasoning=false, strip reasoning parts from the JSON body.
+   * includeReasoning is never forwarded upstream.
+   */
+  const forwardSessionMessagesListRequest = async (req, res, next) => {
+    try {
+      const includeReasoning = readIncludeReasoningQuery(req.query);
+      const upstreamPath = stripIncludeReasoningParam(await getRequestUpstreamPath(req));
+      const result = await fetchSessionListPayload(upstreamPath, { req });
+
+      res.status(result.upstream.status);
+      applyForwardProxyResponseHeaders(result.upstream.headers, res);
+
+      if (!result.isJson) {
+        res.setHeader('content-type', result.contentType);
+        res.end(result.bodyText);
+        return;
+      }
+
+      if (result.parseError || result.payload == null) {
+        res.setHeader('content-type', result.contentType);
+        res.end(result.bodyText);
+        return;
+      }
+
+      res.setHeader('content-type', result.contentType);
+      res.json(projectMessagesPayloadForReasoning(result.payload, includeReasoning));
+    } catch (error) {
+      if (isAbortError(error)) {
+        return;
+      }
+      console.error('[proxy] OpenCode session.messages proxy error:', error?.message ?? error);
       if (!res.headersSent) {
         res.status(503).json({ error: 'OpenCode service unavailable' });
         return;
@@ -774,6 +862,12 @@ export const registerOpenCodeProxy = (app, deps) => {
 
   app.get('/api/session', (req, res, next) => {
     return forwardSanitizedSessionListRequest(req, res, next, 'session.list');
+  });
+
+  // Official session.messages list (not exact message — that is owned by
+  // session-turn-pages and registered before this proxy).
+  app.get('/api/session/:sessionID/message', (req, res, next) => {
+    return forwardSessionMessagesListRequest(req, res, next);
   });
 
   app.get('/api/global/event', forwardSseRequest);

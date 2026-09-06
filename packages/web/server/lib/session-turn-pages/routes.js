@@ -1,6 +1,10 @@
 import { createOpencodeClient } from '@opencode-ai/sdk/v2';
 import { projectMessageSummaryDiffCounts } from '../event-stream/diff-summary.js';
 import {
+  projectMessagesPayloadForReasoning,
+  readIncludeReasoningQuery,
+} from '../event-stream/reasoning-projection.js';
+import {
   createSessionChangesService,
 } from './changes.service.js';
 import {
@@ -509,8 +513,14 @@ export const registerSessionTurnPageRoutes = (app, dependencies = {}) => {
         return res.status(mapped.status).json(mapped.body);
       }
 
+      const includeReasoning = readIncludeReasoningQuery(req.query);
+      const records = projectMessagesPayloadForReasoning(
+        projectMessageDiffSummaries(Array.isArray(result.records) ? result.records : []),
+        includeReasoning,
+      );
+
       return res.status(200).json({
-        records: projectMessageDiffSummaries(Array.isArray(result.records) ? result.records : []),
+        records,
         anchorFound: result.anchorFound === true,
         capturedHeadMessageID: result.capturedHeadMessageID ?? null,
         latestHeadMessageID: result.latestHeadMessageID ?? null,
@@ -599,8 +609,14 @@ export const registerSessionTurnPageRoutes = (app, dependencies = {}) => {
 
       // Turn-page responses (first packet and prepend) share slim-v1.
       // Reconcile stays on the other route and keeps full parts.
+      // includeReasoning=false drops type=reasoning parts after slim projection.
+      const includeReasoning = readIncludeReasoningQuery(req.query);
+      const records = projectMessagesPayloadForReasoning(
+        projectSlimParts(result.records),
+        includeReasoning,
+      );
       return res.status(200).json({
-        records: projectSlimParts(result.records),
+        records,
         turnCount: result.turnCount,
         cursor: result.cursor ?? null,
         complete: result.complete === true,
@@ -652,7 +668,10 @@ export const registerSessionTurnPageRoutes = (app, dependencies = {}) => {
         directory,
         signal: timed.signal,
       });
-      return res.status(200).json(projectExactMessagePayload(payload));
+      const includeReasoning = readIncludeReasoningQuery(req.query);
+      return res.status(200).json(
+        projectMessagesPayloadForReasoning(projectExactMessagePayload(payload), includeReasoning),
+      );
     } catch (error) {
       if (error?.name === 'AbortError' || error?.code === 'aborted') {
         if (!res.headersSent) {

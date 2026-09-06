@@ -22,9 +22,13 @@ export function createGlobalMessageStreamWsBridge({
 }) {
   const clients = new Set();
   const clientLastEventIds = new Map();
+  const clientReasoningFilters = new Map();
   const readyClients = new Set();
 
   const removeClient = (socket) => {
+    const filter = clientReasoningFilters.get(socket);
+    filter?.dispose?.();
+    clientReasoningFilters.delete(socket);
     clients.delete(socket);
     clientLastEventIds.delete(socket);
     readyClients.delete(socket);
@@ -32,10 +36,12 @@ export function createGlobalMessageStreamWsBridge({
   };
 
   const replayEvents = (socket, requestedLastEventId) => {
+    const reasoningFilter = clientReasoningFilters.get(socket);
     for (const entry of globalHub.replayAfter(requestedLastEventId)) {
       const sent = sendMessageStreamWsEvent(socket, entry.payload, {
         directory: entry.directory,
         eventId: entry.eventId,
+        reasoningFilter,
       });
       if (!sent) {
         removeClient(socket);
@@ -104,6 +110,7 @@ export function createGlobalMessageStreamWsBridge({
       const sent = sendMessageStreamWsEvent(socket, payload, {
         directory,
         eventId,
+        reasoningFilter: clientReasoningFilters.get(socket),
       });
       if (!sent) {
         removeClient(socket);
@@ -115,7 +122,10 @@ export function createGlobalMessageStreamWsBridge({
         if (!readyClients.has(socket)) {
           continue;
         }
-        const sent = sendMessageStreamWsEvent(socket, syntheticPayload, { directory: 'global' });
+        const sent = sendMessageStreamWsEvent(socket, syntheticPayload, {
+          directory: 'global',
+          reasoningFilter: clientReasoningFilters.get(socket),
+        });
         if (!sent) {
           removeClient(socket);
         }
@@ -168,7 +178,7 @@ export function createGlobalMessageStreamWsBridge({
     }
   });
 
-  const accept = (socket, { requestedLastEventId = '' } = {}) => {
+  const accept = (socket, { requestedLastEventId = '', reasoningFilter = null } = {}) => {
     const pingInterval = setInterval(() => {
       if (socket.readyState !== 1) {
         return;
@@ -185,7 +195,10 @@ export function createGlobalMessageStreamWsBridge({
         return;
       }
 
-      sendMessageStreamWsEvent(socket, { type: 'openchamber:heartbeat', timestamp: Date.now() }, { directory: 'global' });
+      sendMessageStreamWsEvent(socket, { type: 'openchamber:heartbeat', timestamp: Date.now() }, {
+        directory: 'global',
+        reasoningFilter: clientReasoningFilters.get(socket),
+      });
     }, heartbeatIntervalMs);
 
     socket.on('close', () => {
@@ -201,6 +214,9 @@ export function createGlobalMessageStreamWsBridge({
 
     clients.add(socket);
     clientLastEventIds.set(socket, requestedLastEventId);
+    if (reasoningFilter) {
+      clientReasoningFilters.set(socket, reasoningFilter);
+    }
     globalHub.start();
     if (globalHub.isConnected()) {
       markReady(socket, requestedLastEventId);

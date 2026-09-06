@@ -1008,7 +1008,7 @@ describe('assistants service', () => {
 
   it('injects registered projects into the contact turn and assigns after a name match', async () => {
     const directory = root();
-    const project = path.join(directory, 'openchamber-yee');
+    const project = path.join(directory, 'sample-app');
     fs.mkdirSync(project, { recursive: true });
     const creates = [];
     const harness = [];

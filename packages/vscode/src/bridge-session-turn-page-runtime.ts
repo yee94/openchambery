@@ -11,6 +11,10 @@
 
 import type { BridgeContext, BridgeResponse } from './bridge';
 import {
+  projectMessagesPayloadForReasoning,
+  shouldIncludeReasoning,
+} from './reasoning-projection';
+import {
   createSessionTurnPageService,
   projectSlimParts,
   type SessionTurnPageFetchInput,
@@ -70,6 +74,8 @@ type TurnPagePayload = {
   turns?: unknown;
   scanLimit?: unknown;
   before?: unknown;
+  /** OpenChamber projection control — strict string `'false'` strips reasoning parts. */
+  includeReasoning?: unknown;
 };
 
 const parsePositiveInt = (value: unknown): number | null => {
@@ -309,12 +315,16 @@ export async function handleSessionTurnPageBridgeMessage(
     }
 
     // Turn-page responses (first packet and prepend) share slim-v1.
+    // includeReasoning=false drops type=reasoning parts after slim projection.
+    const includeReasoning = shouldIncludeReasoning(body.includeReasoning);
+    const slimRecords = projectSlimParts(result.records);
+    const records = projectMessagesPayloadForReasoning(slimRecords, includeReasoning);
     return {
       id,
       type,
       success: true,
       data: {
-        records: projectSlimParts(result.records),
+        records,
         turnCount: result.turnCount,
         cursor: result.cursor ?? null,
         complete: result.complete === true,

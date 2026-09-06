@@ -89,8 +89,8 @@ const AssistantListItem: React.FC<AssistantListItemProps> = ({
   onSelect,
   onEdit,
   onDelete,
-  assignedSessionIDs = [],
-  serverWorking = false,
+  // assignedSessionIDs / serverWorking remain public props for callers; live
+  // working state comes from useAssistantWorking(assistantID).
 }) => {
   const working = useAssistantWorking(assistantID);
   const [menuOpen, setMenuOpen] = React.useState(false);

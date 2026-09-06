@@ -192,4 +192,135 @@ describe('VS Code exact message GET L1 projection', () => {
       globalThis.fetch = originalFetch;
     }
   });
+
+  test('drops reasoning parts on exact GET when includeReasoning=false and keeps tokens.reasoning', async () => {
+    const originalFetch = globalThis.fetch;
+    let fetchUrl = '';
+    try {
+      globalThis.fetch = (async (input: Parameters<typeof fetch>[0]) => {
+        fetchUrl = String(input);
+        return new Response(JSON.stringify({
+          info: {
+            id: 'msg_1',
+            role: 'assistant',
+            tokens: { input: 1, output: 2, reasoning: 42 },
+          },
+          parts: [
+            { id: 'p_r', type: 'reasoning', text: 'secret chain' },
+            { id: 'p_t', type: 'text', text: 'hello' },
+          ],
+        }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        });
+      }) as typeof fetch;
+
+      const response = await handleProxyBridgeMessage(
+        {
+          id: 'exact_reason_1',
+          type: 'api:proxy',
+          payload: {
+            method: 'GET',
+            path: '/session/ses_1/message/msg_1?directory=/repo&includeReasoning=false',
+          },
+        },
+        ctx,
+        deps,
+      );
+
+      assert.equal(response?.success, true);
+      assert.equal(new URL(fetchUrl).searchParams.has('includeReasoning'), false);
+      const body = JSON.parse((response?.data as { bodyText?: string }).bodyText ?? '') as {
+        info: { tokens: { reasoning: number } };
+        parts: Array<{ type: string; text?: string }>;
+      };
+      assert.equal(body.info.tokens.reasoning, 42);
+      assert.deepEqual(body.parts, [{ id: 'p_t', type: 'text', text: 'hello' }]);
+      assert.equal(JSON.stringify(body).includes('secret chain'), false);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+});
+
+describe('VS Code session.messages list reasoning projection', () => {
+  test('strips reasoning parts on list GET when includeReasoning=false', async () => {
+    const originalFetch = globalThis.fetch;
+    let fetchUrl = '';
+    try {
+      globalThis.fetch = (async (input: Parameters<typeof fetch>[0]) => {
+        fetchUrl = String(input);
+        return new Response(JSON.stringify([
+          {
+            info: { id: 'm1', tokens: { reasoning: 3 } },
+            parts: [
+              { type: 'reasoning', text: 'hidden' },
+              { type: 'text', text: 'visible' },
+            ],
+          },
+        ]), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        });
+      }) as typeof fetch;
+
+      const response = await handleProxyBridgeMessage(
+        {
+          id: 'list_1',
+          type: 'api:proxy',
+          payload: {
+            method: 'GET',
+            path: '/session/ses_1/message?directory=/repo&includeReasoning=false',
+          },
+        },
+        ctx,
+        deps,
+      );
+
+      assert.equal(response?.success, true);
+      assert.equal(new URL(fetchUrl).searchParams.has('includeReasoning'), false);
+      const body = JSON.parse((response?.data as { bodyText?: string }).bodyText ?? '') as Array<{
+        info: { tokens: { reasoning: number } };
+        parts: unknown[];
+      }>;
+      assert.equal(body[0].info.tokens.reasoning, 3);
+      assert.deepEqual(body[0].parts, [{ type: 'text', text: 'visible' }]);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  test('keeps reasoning parts on list GET by default', async () => {
+    const originalFetch = globalThis.fetch;
+    try {
+      const payload = [
+        {
+          info: { id: 'm1' },
+          parts: [
+            { type: 'reasoning', text: 'keep' },
+            { type: 'text', text: 'ok' },
+          ],
+        },
+      ];
+      globalThis.fetch = (async () => new Response(JSON.stringify(payload), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      })) as typeof fetch;
+
+      const response = await handleProxyBridgeMessage(
+        {
+          id: 'list_2',
+          type: 'api:proxy',
+          payload: { method: 'GET', path: '/session/ses_1/message?directory=/repo' },
+        },
+        ctx,
+        deps,
+      );
+
+      const bodyText = (response?.data as { bodyText?: string }).bodyText ?? '';
+      assert.equal(bodyText.includes('keep'), true);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
 });

@@ -147,8 +147,8 @@ function MobileAssistantCard({
   onOpen,
   onEdit,
   onDelete,
-  assignedSessionIDs = [],
-  serverWorking = false,
+  // assignedSessionIDs / serverWorking remain public props for callers; live
+  // working state comes from useAssistantWorking(assistantID).
 }: MobileAssistantCardProps) {
   const working = useAssistantWorking(assistantID);
   const [menuOpen, setMenuOpen] = React.useState(false);

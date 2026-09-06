@@ -132,12 +132,12 @@ describe('contact tool protocol', () => {
   });
 
   it('fuzzy-matches project labels like openchamber yee / openchamer yee', () => {
-    const project = { id: 'p1', path: '/Users/me/Code/openchamber-yee', label: 'OpenChamber Yee' };
+    const project = { id: 'p1', path: '/Users/me/Code/sample-app', label: 'OpenChamber Yee' };
     expect(matchesProjectQuery(project, 'openchamber yee')).toBe(true);
     expect(matchesProjectQuery(project, 'openchamer yee')).toBe(true);
     expect(matchesProjectQuery(project, 'missing')).toBe(false);
     expect(filterRegisteredProjects([project, { id: 'p2', path: '/other' }], 'openchamber')).toEqual([
-      { id: 'p1', path: '/Users/me/Code/openchamber-yee', label: 'OpenChamber Yee' },
+      { id: 'p1', path: '/Users/me/Code/sample-app', label: 'OpenChamber Yee' },
     ]);
     expect(formatRegisteredProjectsPrompt([project])).toContain('OpenChamber Yee');
     expect(formatRegisteredProjectsPrompt([project])).toContain('never say you cannot see registered projects');
@@ -276,12 +276,12 @@ describe('createContactTools', () => {
   it('lists projects and sessions and surfaces list_sessions failure', async () => {
     const tools = createContactTools({
       listProjects: async () => [
-        { id: 'proj_yee', path: '/repo/openchamber-yee', label: 'OpenChamber Yee' },
+        { id: 'proj_yee', path: '/repo/sample-app', label: 'OpenChamber Yee' },
         { id: 'proj_other', path: '/repo/other', label: 'Other' },
       ],
       listSessions: async () => ({
         sessions: [
-          { sessionID: 'ses_1', title: 'Login fix', directory: '/repo/openchamber-yee', updatedAt: 2 },
+          { sessionID: 'ses_1', title: 'Login fix', directory: '/repo/sample-app', updatedAt: 2 },
         ],
         truncated: false,
       }),
@@ -290,10 +290,10 @@ describe('createContactTools', () => {
       query: 'openchamer yee',
     });
     expect(listed.details.projects).toEqual([
-      { id: 'proj_yee', path: '/repo/openchamber-yee', label: 'OpenChamber Yee' },
+      { id: 'proj_yee', path: '/repo/sample-app', label: 'OpenChamber Yee' },
     ]);
     const sessions = await tools.find((tool) => tool.name === LIST_SESSIONS_TOOL_NAME).execute('call_s', {
-      projectPath: '/repo/openchamber-yee',
+      projectPath: '/repo/sample-app',
     });
     expect(sessions.details.sessions).toEqual([
       expect.objectContaining({ sessionID: 'ses_1', title: 'Login fix' }),

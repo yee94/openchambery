@@ -120,6 +120,49 @@ describe('registerSessionTurnPageRoutes', () => {
     expect(res.body.records).toHaveLength(2);
   });
 
+  it('drops reasoning parts when includeReasoning=false and keeps tokens.reasoning', async () => {
+    const loadPage = vi.fn(async () => ({
+      ok: true,
+      records: [{
+        info: {
+          id: 'msg_a1',
+          role: 'assistant',
+          tokens: { input: 1, output: 2, reasoning: 42 },
+        },
+        parts: [
+          { id: 'r1', type: 'reasoning', text: 'private' },
+          { id: 't1', type: 'text', text: 'answer' },
+        ],
+      }],
+      turnCount: 0,
+      cursor: null,
+      complete: true,
+    }));
+    const { app, route } = registry();
+    registerSessionTurnPageRoutes(app, { sessionTurnPageService: { loadPage } });
+
+    const stripped = response();
+    await route('GET', ROUTE)({
+      params: { sessionID: 'ses_1' },
+      query: { includeReasoning: 'false' },
+      headers: {},
+    }, stripped);
+    expect(stripped.statusCode).toBe(200);
+    expect(stripped.body.records[0].parts).toEqual([
+      expect.objectContaining({ id: 't1', type: 'text', text: 'answer' }),
+    ]);
+    expect(stripped.body.records[0].info.tokens.reasoning).toBe(42);
+    expect(JSON.stringify(stripped.body)).not.toContain('private');
+
+    const kept = response();
+    await route('GET', ROUTE)({
+      params: { sessionID: 'ses_1' },
+      query: {},
+      headers: {},
+    }, kept);
+    expect(kept.body.records[0].parts.some((part) => part.type === 'reasoning')).toBe(true);
+  });
+
   it('maps upstream service errors to an upstream HTTP status', async () => {
     const loadPage = vi.fn(async () => ({
       ok: false,

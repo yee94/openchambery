@@ -377,7 +377,8 @@ When adding or changing Host HTTP APIs that mobile/desktop clients reach over Pr
 - `registerOpenCodeProxy(app, dependencies)`: registers OpenCode proxy routes and middleware.
 - `resolveSessionTurnAdmissionRequest(req)`: extracts the directory/session scope for client POST turn endpoints so queue automatic admission can be invalidated without delaying the proxied request.
 - Owns:
-  - SSE forwarders: `GET /api/global/event`, `GET /api/event`
+  - SSE forwarders: `GET /api/global/event`, `GET /api/event` (optional `includeReasoning=false` parse-filters reasoning events on the Host send path; param never forwarded upstream; enabled path remains byte passthrough)
+  - Official session.messages list: `GET /api/session/:sessionID/message` (optional `includeReasoning=false` strips reasoning parts; exact message GET is owned by session-turn-pages)
   - Session message forwarder: `POST /api/session/:sessionId/message`
   - Generic `/api/*` forwarding with hop-by-hop header filtering
   - Windows `/session` merge fallback path behavior

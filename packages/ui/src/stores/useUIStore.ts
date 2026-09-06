@@ -15,6 +15,7 @@ import type { DraftStarterRef } from '@/lib/draftStarters';
 import { DEFAULT_MONO_FONT, DEFAULT_UI_FONT, type MonoFontOption, type UiFontOption } from '@/lib/fontOptions';
 import { getStoredMobileKeyboardMode, type MobileKeyboardMode } from '@/lib/mobileKeyboardMode';
 import { getRuntimeKey } from '@/lib/runtime-switch';
+import { setIncludeReasoningProjection } from '@/lib/reasoning-projection-client';
 
 /** Main column tab. Product exclusive primaries: chat(session) | schedule | assistant. */
 export type MainTab = 'chat' | 'git' | 'diff' | 'terminal' | 'files' | 'diagram' | 'schedule' | 'assistant';
@@ -160,12 +161,20 @@ const isSameTemplateValue = (
   return a.title === b.title && a.message === b.message;
 };
 
+/** Structural stock shape so legacy / stock / old-server literals share one matcher. */
+type NotificationTemplateStock = {
+  completion: { title: string; message: string };
+  error: { title: string; message: string };
+  question: { title: string; message: string };
+  subtask: { title: string; message: string };
+};
+
 const isLegacyDefaultTemplates = (value: unknown): boolean => {
   if (!value || typeof value !== 'object') {
     return false;
   }
   const candidate = value as Record<string, { title: string; message: string } | undefined>;
-  const matches = (stock: typeof LEGACY_DEFAULT_NOTIFICATION_TEMPLATES) => (
+  const matches = (stock: NotificationTemplateStock) => (
     isSameTemplateValue(candidate.completion, stock.completion)
     && isSameTemplateValue(candidate.error, stock.error)
     && isSameTemplateValue(candidate.question, stock.question)
@@ -2067,6 +2076,9 @@ export const useUIStore = create<UIStore>()(
 
         setShowReasoningTraces: (value) => {
           set({ showReasoningTraces: value });
+          // Keep the leaf projection flag in lockstep before the next message
+          // request (runtime-fetch / event-pipeline / transcript adapter).
+          setIncludeReasoningProjection(value);
         },
 
         setSessionTitleRefreshEnabled: (value) => {
@@ -2931,3 +2943,20 @@ export const useUIStore = create<UIStore>()(
     }
   )
 );
+
+// Keep the leaf reasoning-projection flag aligned with the store for the
+// entire app lifetime (module init + persist hydrate + setter). runtime-fetch
+// and event-pipeline read the leaf module with no store import cycle.
+setIncludeReasoningProjection(useUIStore.getState().showReasoningTraces);
+const uiStorePersist = useUIStore.persist as {
+  onFinishHydration?: (cb: () => void) => (() => void) | void;
+  hasHydrated?: () => boolean;
+} | undefined;
+if (uiStorePersist?.hasHydrated?.()) {
+  setIncludeReasoningProjection(useUIStore.getState().showReasoningTraces);
+}
+if (typeof uiStorePersist?.onFinishHydration === 'function') {
+  uiStorePersist.onFinishHydration(() => {
+    setIncludeReasoningProjection(useUIStore.getState().showReasoningTraces);
+  });
+}

@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.19.7-beta.26] - 2026-09-07
+
+### 性能
+
+- 关闭「显示推理轨迹」后，服务端在发送前剔除推理正文与增量，减少直连、Relay 和 VS Code 的传输及前端处理开销。
+- 切换推理显示时同步刷新会话数据；关闭期间跳过推理缓存与补全，重新开启后恢复完整内容。
+- VS Code 在长时间思考期间保留轻量心跳，保持事件连接稳定。
+
 ## [1.19.7-beta.25] - 2026-09-07
 
 ### 会话

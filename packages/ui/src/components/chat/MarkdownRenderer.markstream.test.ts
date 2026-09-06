@@ -56,11 +56,13 @@ describe('markstream-react trial path', () => {
     const fileRefs = readFileSync(join(here, 'markstream/markstreamFileReferences.tsx'), 'utf8');
     expect(source).toContain('MarkstreamFileReferenceProvider');
     expect(source).toContain('enableFileReferences && !isStreaming');
-    expect(source).toContain('ensureMarkstreamFileReferenceComponents');
+    // Registration runs on markstreamFileReferences module load (import Provider).
+    expect(source).toContain("from './markstream/markstreamFileReferences'");
     expect(fileRefs).toContain('splitParagraphPathTokens');
     expect(fileRefs).toContain("setCustomComponents({");
     expect(fileRefs).toContain('text: MarkstreamTextNode');
     expect(fileRefs).toContain('inline_code: MarkstreamInlineCodeNode');
+    expect(fileRefs).toContain('ensureMarkstreamFileReferenceComponents()');
     expect(fileRefs).not.toContain('MutationObserver');
     expect(fileRefs).not.toContain('wrapMarkdownFileReferenceTokens');
   });
