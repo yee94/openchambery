@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.19.7-beta.9] - 2026-09-06
+
+### 移动端
+
+- iOS Live Activity 只显示导航栏里的主会话，不再把子 Agent 算进去。
+
 ## [1.19.7-beta.7] - 2026-09-06
 
 ### 移动端
