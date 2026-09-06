@@ -286,6 +286,18 @@ export const accountGoalTokenSpend = ({ messages, goal }) => {
   return { tokensUsed, lastAccountedMessageID };
 };
 
+let assignedSessionSettle = null;
+
+export const setAssignedSessionSettleHandler = (handler) => {
+  assignedSessionSettle = typeof handler === 'function' ? handler : null;
+};
+
+const contactStatusFromGoal = (status) => {
+  if (status === 'complete' || status === 'budgetLimited') return 'complete';
+  if (status === 'blocked') return 'error';
+  return null;
+};
+
 export const createSessionGoalRuntime = ({
   buildOpenCodeUrl,
   getOpenCodeAuthHeaders,
@@ -399,6 +411,14 @@ export const createSessionGoalRuntime = ({
         emitGoalNotification({ sessionId, directory, status, goal: written });
       } catch (error) {
         console.warn('[session-goal] notification failed:', error?.message || error);
+      }
+    }
+    const contactStatus = contactStatusFromGoal(status);
+    if (contactStatus && typeof assignedSessionSettle === 'function') {
+      try {
+        assignedSessionSettle({ sessionId, directory, status: contactStatus });
+      } catch (error) {
+        console.warn('[session-goal] assigned session settle failed:', error?.message || error);
       }
     }
   };

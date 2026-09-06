@@ -3,6 +3,8 @@ import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
 let runtimeKey = 'runtime-a';
 let runtimeGeneration = 1;
 let fetchCalls: string[] = [];
+let lastFetchInit: RequestInit | undefined;
+let contactSendBehavior: 'ok' | 'timeout' | 'upstream' = 'ok';
 let barrierRelease: (() => void) | null = null;
 let barrierPromise: Promise<void> = Promise.resolve();
 
@@ -18,12 +20,29 @@ mock.module('@/lib/session-startup-barrier', () => ({
 }));
 
 mock.module('@/lib/runtime-fetch', () => ({
-  runtimeFetch: async (path: string) => {
+  runtimeFetch: async (path: string, init?: RequestInit) => {
     fetchCalls.push(path);
+    lastFetchInit = init;
     if (path.includes('/session/ensure')) {
       return new Response(JSON.stringify({ sessionID: 'ses_1', directory: '/workspace', sessionGeneration: 1 }), { status: 200 });
     }
     if (path.includes('/messages')) {
+      if (init?.method === 'POST') {
+        if (contactSendBehavior === 'timeout') {
+          throw new DOMException('The operation was aborted.', 'TimeoutError');
+        }
+        if (contactSendBehavior === 'upstream') {
+          return new Response(JSON.stringify({
+            error: 'upstream_error',
+            message: 'OpenCode LLM generate timed out after 90000ms',
+          }), { status: 502 });
+        }
+        return new Response(JSON.stringify({
+          admitted: true,
+          messageID: 'oc_contact_1',
+          binding: { sessionID: null, directory: '/workspace', sessionGeneration: 0 },
+        }), { status: 200 });
+      }
       return new Response(JSON.stringify({ entries: [], nextCursor: null, complete: true }), { status: 200 });
     }
     return new Response(JSON.stringify({ error: 'unexpected' }), { status: 500 });
@@ -45,8 +64,11 @@ mock.module('@/lib/openchamberEvents', () => ({
 
 const {
   assistantHistoryInfiniteQueryOptions,
+  CONTACT_SEND_TIMEOUT_MS,
   ensureAssistantSession,
+  mapContactSendFailure,
   retainAssistantHistoryPlaceholder,
+  sendAssistantContactMessage,
 } = await import('./assistantQueries');
 
 const holdBarrier = () => {
@@ -65,6 +87,8 @@ describe('Assistant history and ensure startup gate', () => {
     runtimeKey = 'runtime-a';
     runtimeGeneration = 1;
     fetchCalls = [];
+    lastFetchInit = undefined;
+    contactSendBehavior = 'ok';
     barrierRelease = null;
     barrierPromise = Promise.resolve();
   });
@@ -164,6 +188,9 @@ describe('Assistant query contract', () => {
     expect(source).toContain('payload: { messageID, parts, source }');
     expect(source).toContain('{ sessionID: binding.sessionID, sessionGeneration: binding.sessionGeneration, messageID, parts, source }');
     expect(source).toContain('waitForSessionStartupBarrier');
+    expect(source).toContain('/contact/messages');
+    expect(source).toContain('/contact/cards');
+    expect(source).toContain('/contact/dm');
   });
 
   test('keys paged Assistant history by transport, Assistant, and binding', async () => {
@@ -291,5 +318,72 @@ describe('Assistant query contract', () => {
     expect(refresh).toContain('invalidateQueries({ queryKey: key.snapshot(transport), exact: true })');
     expect(refresh).toContain('fetchQuery(assistantSnapshotQueryOptions(transport))');
     expect(refresh.match(/assertCurrent\(transport, generation\)/g)).toHaveLength(2);
+  });
+});
+
+describe('contact send abort', () => {
+  beforeEach(() => {
+    fetchCalls = [];
+    lastFetchInit = undefined;
+    contactSendBehavior = 'ok';
+  });
+
+  test('aborts the contact POST slightly above the 90s generate timeout and maps abort to generate_timeout', async () => {
+    const { readFile } = await import('node:fs/promises');
+    const { dirname, join } = await import('node:path');
+    const { fileURLToPath } = await import('node:url');
+    const { AssistantAPIError } = await import('./assistantDTO');
+    const source = await readFile(join(dirname(fileURLToPath(import.meta.url)), 'assistantQueries.ts'), 'utf8');
+    expect(CONTACT_SEND_TIMEOUT_MS).toBe(95_000);
+    expect(source).toContain('AbortSignal.timeout(CONTACT_SEND_TIMEOUT_MS)');
+    expect(source).toContain('mapContactSendFailure(error)');
+    try {
+      mapContactSendFailure(new DOMException('The operation was aborted.', 'TimeoutError'));
+      throw new Error('expected generate_timeout');
+    } catch (error) {
+      expect(error instanceof AssistantAPIError).toBe(true);
+      expect(error instanceof AssistantAPIError ? error.code : '').toBe('generate_timeout');
+      expect(error instanceof AssistantAPIError ? error.status : 0).toBe(408);
+    }
+    try {
+      mapContactSendFailure(new AssistantAPIError('upstream_error', 502, undefined, 'OpenCode LLM generate timed out after 90000ms'));
+      throw new Error('expected upstream_error');
+    } catch (error) {
+      expect(error instanceof AssistantAPIError).toBe(true);
+      expect(error instanceof AssistantAPIError ? error.code : '').toBe('upstream_error');
+      expect(error instanceof AssistantAPIError ? error.message : '').toBe('OpenCode LLM generate timed out after 90000ms');
+    }
+  });
+
+  test('contact POST carries the 95s AbortSignal and maps stall abort to generate_timeout', async () => {
+    const { AssistantAPIError } = await import('./assistantDTO');
+    const admitted = await sendAssistantContactMessage('asst_1', 'oc_contact_1', { text: 'hi' });
+    expect(admitted).toEqual({
+      admitted: true,
+      messageID: 'oc_contact_1',
+      binding: { sessionID: null, directory: '/workspace', sessionGeneration: 0 },
+    });
+    expect(lastFetchInit?.signal instanceof AbortSignal).toBe(true);
+    expect(lastFetchInit?.method).toBe('POST');
+
+    contactSendBehavior = 'timeout';
+    try {
+      await sendAssistantContactMessage('asst_1', 'oc_contact_1', { text: 'hi' });
+      throw new Error('expected generate_timeout');
+    } catch (error) {
+      expect(error instanceof AssistantAPIError).toBe(true);
+      expect(error instanceof AssistantAPIError ? error.code : '').toBe('generate_timeout');
+      expect(error instanceof AssistantAPIError ? error.status : 0).toBe(408);
+    }
+
+    contactSendBehavior = 'upstream';
+    try {
+      await sendAssistantContactMessage('asst_1', 'oc_contact_1', { text: 'hi' });
+      throw new Error('expected upstream_error');
+    } catch (error) {
+      expect(error instanceof AssistantAPIError).toBe(true);
+      expect(error instanceof AssistantAPIError ? error.code : '').toBe('upstream_error');
+      expect(error instanceof AssistantAPIError ? error.message : '').toBe('OpenCode LLM generate timed out after 90000ms');
+    }
   });
 });

@@ -14,4 +14,9 @@ describe('SessionNodeItem session menu', () => {
     expect(source).toContain('sync.refreshSessionTranscript')
     expect(source).toContain('isStreaming || isTranscriptRefreshing')
   })
+
+  test('shows session change counts next to the title when summary has them', () => {
+    expect(source).toContain('formatSessionChangeCounts(readSessionChangeSummary(resolvedSession))')
+    expect(source).toContain('sessionChangeCounts')
+  })
 })

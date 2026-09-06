@@ -97,14 +97,17 @@ describe('Assistant UI product contract', () => {
       read('AssistantView.tsx'),
       read('../sections/assistants/AssistantsSettingsPage.tsx'),
     ]);
-    expect(view).toContain('useScopedProvidersQuery(directory || null');
-    expect(view).toContain('useScopedAgentsQuery(directory || null');
+    expect(view).not.toContain('useScopedProvidersQuery');
+    expect(view).not.toContain('useScopedAgentsQuery');
+    expect(view).not.toContain('activeProjectId');
     expect(settings).toContain('draft.workspacePath ?? selected?.managedWorkspacePath ?? null');
     expect(settings).toContain('useScopedProvidersQuery(catalogDirectory, { enabled: true })');
     expect(settings).toContain('useScopedAgentsQuery(catalogDirectory, { enabled: true })');
-    expect(settings).toContain('itemId="assistants.mode"');
-    expect(settings).toContain("patchDraft('mode', mode)");
+    expect(settings).not.toContain('itemId="assistants.mode"');
+    expect(settings).not.toContain("patchDraft('mode', mode)");
     expect(settings).not.toContain('activeProjectId');
+    const search = await read('../../lib/settings/search.ts');
+    expect(search).not.toContain("id: 'assistants.mode'");
   });
 
   test('removes skill roots from settings, requests, DTOs, search, and locale keys', async () => {
@@ -163,6 +166,7 @@ describe('Assistant UI product contract', () => {
       mobileStyles.indexOf('.oc-mobile-assistant-avatar {'),
       mobileStyles.indexOf('.oc-mobile-assistant-content > *'),
     );
+    expect(avatarStyles).toContain('overflow: visible');
     expect(avatarStyles).toContain('border-radius: 999px');
     expect(avatarStyles).toContain(':is(img, svg)');
     expect(avatarStyles).toContain('object-fit: cover');
@@ -176,7 +180,7 @@ describe('Assistant UI product contract', () => {
     expect(avatarStyles).toContain('padding: 1px');
   });
 
-  test('gives mobile Assistant cards room for mode and bounded prompt details', async () => {
+  test('gives mobile Assistant cards room for model and bounded prompt details', async () => {
     const [mobileTab, mobileStyles] = await Promise.all([
       read('../../mobile/assistant/MobileAssistantTab.tsx'),
       read('../../styles/mobile.css'),
@@ -186,7 +190,9 @@ describe('Assistant UI product contract', () => {
     expect(mobileTab).toContain('oc-mobile-assistant-mode');
     expect(mobileTab).toContain('oc-mobile-assistant-summary');
     expect(mobileTab).not.toContain('name="arrow-right-s"');
-    expect(mobileTab).toContain('{modeLabel}');
+    expect(mobileTab).toContain('{subtitle}');
+    expect(mobileTab).not.toContain("t('assistants.mode.continuous')");
+    expect(mobileTab).not.toContain("t('assistants.mode.stateless')");
     expect(mobileTab).toContain('{summary}');
     const cardStyles = mobileStyles.slice(
       mobileStyles.indexOf('.oc-mobile-assistant-catalog {'),
@@ -213,6 +219,8 @@ describe('Assistant UI product contract', () => {
     expect(mobileTab).toContain("t('assistants.guide.enableAction')");
     expect(mobileTab).toContain("t('assistants.guide.shareTitle')");
     expect(mobileTab).toContain('instanceDisabled && !unavailable');
+    expect(mobileTab).toContain("aria-label={t('common.loading')}");
+    expect(mobileTab).not.toContain("aria-label={t('assistants.state.unavailable')}");
     expect(mobileTab).toContain('snapshot.data.assistants.length === 0');
     expect(mobileTab).toContain('requestCreate();');
     expect(mobileTab).toContain("t('assistants.onboarding.action')");
@@ -268,28 +276,128 @@ describe('Assistant UI product contract', () => {
     expect(english).not.toContain('assistants.menu.configure');
   });
 
-  test('hosts the shared ChatContainer shell instead of a forked transcript tree', async () => {
-    const [view, conversation, chatContainer, chatInput, promptComposer, host] = await Promise.all([
+  test('hosts a contact transcript with session cards and peer DMs, not ChatContainer', async () => {
+    const [view, conversation, card, assistantCard, scheduleCard, chatContainer, chatInput, promptComposer, host, english] = await Promise.all([
       read('AssistantView.tsx'),
       read('AssistantConversationSurface.tsx'),
+      read('AssistantSessionCard.tsx'),
+      read('AssistantAssistantCard.tsx'),
+      read('AssistantScheduleCard.tsx'),
       read('../chat/ChatContainer.tsx'),
       read('../chat/ChatInput.tsx'),
       read('../chat/ChatPromptComposer.tsx'),
       read('../chat/chatContainerHost.ts'),
+      read('../../lib/i18n/messages/en.settings.ts'),
     ]);
-    expect(view).not.toContain('<Textarea');
     expect(view).not.toContain('SimpleMarkdownRenderer');
     expect(view).not.toContain('assistants.topics');
     expect(view).toContain('<AssistantConversationSurface');
-    expect(conversation).toContain('<ChatContainer autoOpenDraft={false} host={host} />');
-    expect(conversation).toContain('composerSurface: surface');
-    expect(conversation).toContain('onRevertMessage');
+    expect(view).not.toContain('ensureAssistantSession');
+    expect(conversation).not.toContain('<ChatContainer');
     expect(conversation).not.toContain('<MessageList');
     expect(conversation).not.toContain('<QuestionCard');
     expect(conversation).not.toContain('<PermissionCard');
     expect(conversation).not.toContain('<StatusRowContainer');
     expect(conversation).not.toContain('<TimelineDialog');
     expect(conversation).not.toContain('<ChatInput');
+    expect(conversation).toContain('<ChatPromptComposer');
+    expect(conversation).toContain('layout="inline"');
+    expect(conversation).toContain('data-assistant-contact-composer');
+    expect(conversation).toContain('data-assistant-contact-composer-surface');
+    expect(conversation).toContain('sendLabel={t(\'assistants.contact.send\')}');
+    expect(conversation).toContain('pending={false}');
+    expect(conversation).not.toContain('pending={sending}');
+    expect(conversation).toContain('beginContactComposerSubmit');
+    expect(conversation).toContain('createContactSendGate');
+    expect(conversation).toContain('markContactOptimisticFailed');
+    expect(conversation).toContain('contactSendErrorMessage');
+    expect(conversation).toContain("t('assistants.contact.timedOut')");
+    expect(conversation.indexOf("setDraft('')")).toBeLessThan(conversation.indexOf('await sendAssistantContactMessage'));
+    expect(conversation.indexOf('begun.turn')).toBeLessThan(conversation.indexOf('await sendAssistantContactMessage'));
+    expect(conversation).toContain('sendGate.release()');
+    expect(conversation).toContain('data-assistant-contact-turn-status');
+    expect(conversation).toContain('isMobile={isMobile}');
+    expect(conversation).toContain('oc-mobile-composer-surface');
+    expect(conversation).toContain('chat-input-column');
+    expect(conversation).toContain("borderRadius: '1.5rem'");
+    expect(conversation).toContain('bottom-safe-area oc-mobile-composer');
+    expect(conversation).toContain("event.preventDefault()");
+    expect(conversation).toContain("'aria-label': t('assistants.contact.placeholder'");
+    expect(conversation).toContain('onAddFiles');
+    expect(conversation).toContain('fileAccept="*/*"');
+    expect(conversation).toContain('onPaste={handlePaste}');
+    expect(conversation).toContain('onDrop={handleDrop}');
+    expect(conversation).toContain('data-assistant-contact-image');
+    expect(conversation).toContain('data-assistant-contact-file');
+    expect(conversation).not.toContain('leftControls');
+    expect(conversation).not.toContain('footerContent');
+    expect(conversation).not.toContain('<MemoModelControls');
+    expect(conversation).not.toContain('<CommandAutocomplete');
+    expect(conversation).not.toContain('<Button');
+    expect(conversation).not.toContain('<Textarea');
+    expect(conversation).toContain('<AssistantSessionCard');
+    expect(conversation).toContain('<AssistantAssistantCard');
+    expect(conversation).toContain('<AssistantScheduleCard');
+    expect(conversation).not.toContain('<Activity');
+    expect(conversation).not.toContain('thinkingLevel');
+    expect(conversation).toContain("data-assistant-contact-role={message.role}");
+    expect(conversation).toContain("message.role === 'peer'");
+    expect(conversation).not.toContain('deliverAssistantContactDm');
+    expect(conversation).not.toContain('appendAssistantContactCard');
+    expect(conversation).not.toContain('parseContactComposerInput');
+    expect(conversation).not.toContain('assistants.contact.composerHint');
+    expect(conversation).not.toContain('/card <sessionID>');
+    expect(conversation).not.toContain('/dm <assistantID>');
+    expect(english).not.toContain('/card <sessionID>');
+    expect(english).not.toContain('/dm <assistantID>');
+    expect(english).not.toContain('Card: /card');
+    expect(english).not.toContain('Message another assistant');
+    expect(english).toContain('Message {name}…');
+    expect(conversation).not.toContain('EventSource');
+    expect(conversation).not.toContain('text/event-stream');
+    expect(conversation).not.toContain('stream: true');
+    expect(conversation).not.toContain('activeStreamingMessageId');
+    expect(card).toContain('openSessionWithFeedback');
+    expect(card).toContain('phoneShell: isPhoneShell');
+    expect(card).toContain('card.sessionID');
+    expect(card).toContain('card.branch');
+    expect(card).toContain('<article');
+    expect(card).toContain('data-assistant-contact-card="session"');
+    expect(card).toContain('role="button"');
+    expect(card).toContain('onClick={openSession}');
+    expect(card).toContain('CONTACT_SESSION_CARD_COVER_CLASS');
+    expect(await read('contactCardChrome.ts')).toContain('w-fit max-w-[15rem]');
+    expect(await read('contactCardChrome.ts')).toContain('w-fit max-w-[20rem]');
+    expect(await read('contactCardChrome.ts')).toContain('rounded-2xl');
+    expect(card).toContain('readSessionChangeSummary');
+    expect(card).toContain('directoryName(directory)');
+    expect(card).toContain('relative inline-block size-6');
+    expect(card).toContain('absolute right-0 bottom-0');
+    expect(card).not.toContain('<Button');
+    expect(card).not.toContain('assistants.contact.card.session.open');
+    expect(card).toContain('statusChipClass');
+    expect(assistantCard).toContain('openAssistant(card.assistantID)');
+    expect(assistantCard).toContain('data-assistant-contact-card="assistant"');
+    expect(assistantCard).toContain('role="button"');
+    expect(assistantCard).toContain('onClick={openContact}');
+    expect(assistantCard).toContain('CONTACT_CARD_COVER_CLASS');
+    expect(assistantCard).toContain('relative inline-block size-6');
+    expect(assistantCard).not.toContain('<Button');
+    expect(assistantCard).not.toContain('assistants.contact.card.assistant.open');
+    expect(scheduleCard).toContain("setActiveMainTab('schedule')");
+    expect(scheduleCard).toContain('setScheduledTasksDialogOpen(true)');
+    expect(scheduleCard).toContain('data-assistant-contact-card="schedule"');
+    expect(scheduleCard).toContain('role="button"');
+    expect(scheduleCard).toContain('onClick={openSchedule}');
+    expect(scheduleCard).toContain('CONTACT_CARD_COVER_CLASS');
+    expect(scheduleCard).toContain('relative inline-block size-6');
+    expect(scheduleCard).not.toContain('<Button');
+    expect(scheduleCard).not.toContain('assistants.contact.card.schedule.open');
+    expect(english).not.toContain('assistants.contact.card.assistant.open');
+    expect(english).not.toContain('assistants.contact.card.schedule.open');
+    expect(english).not.toContain('assistants.contact.card.session.open');
+    expect(english).not.toContain("'Open contact'");
+    expect(english).not.toContain("'Open schedule'");
     expect(host).toContain('export type ChatContainerHost');
     expect(host).toContain('composerSurface: ChatInputSurface');
     expect(chatContainer).toContain('if (props.host)');
@@ -331,80 +439,140 @@ describe('Assistant UI product contract', () => {
     expect(chatInput).toContain('? { messageID: draftMessageID }');
   });
 
-  test('loads Assistant history through the binding-scoped paged host', async () => {
-    const [conversation, chatContainer, hostedHistory, messageList] = await Promise.all([
+  test('reuses ChatPromptComposer send/focus chrome as a contact message box', async () => {
+    const [conversation, promptComposer, surface] = await Promise.all([
       read('AssistantConversationSurface.tsx'),
-      read('../chat/ChatContainer.tsx'),
-      read('../chat/hostedSessionHistory.ts'),
-      read('../chat/MessageList.tsx'),
+      read('../chat/ChatPromptComposer.tsx'),
+      read('../chat/ChatComposerSurface.tsx'),
     ]);
-    expect(conversation).toContain('useAssistantHistoryInfiniteQuery');
-    expect(conversation).toContain('assistantHistory:');
-    expect(conversation).toContain('fetchPrevious: fetchPreviousHistory');
-    expect(conversation).toContain('historyQuery.isLoading || historyQuery.isFetchingNextPage');
-    expect(conversation).toContain('historyQuery.isError || (historyQuery.isSuccess && !historyQuery.hasNextPage)');
-    expect(chatContainer).toContain('await fetchTranscriptPreviousPage(effectiveSessionDirectory, sessionId)');
-    expect(chatContainer).toContain('await assistantHistory.fetchPrevious()');
-    expect(chatContainer).toContain('// Only page assistant-owned archives after live pagination is authoritative-complete.');
-    expect(chatContainer).toContain('historyPrefix.length === 0');
-    expect(hostedHistory).not.toContain('ensureSessionRenderable');
-    expect(hostedHistory).not.toContain('fetchMessagesForSession');
-    expect(messageList).toContain('compose: false');
-    expect(messageList).toContain('openTimeline: false');
+    expect(conversation).toContain('<ChatPromptComposer');
+    expect(conversation).not.toContain('<ChatInput');
+    expect(conversation).toContain('onAddFiles');
+    expect(conversation).toContain('fileAccept="*/*"');
+    expect(conversation).not.toContain('onStop');
+    expect(conversation).not.toContain('thinkingLevel');
+    expect(promptComposer).toContain('data-composer-send="true"');
+    expect(promptComposer).toContain('data-composer-circle={sendReady ? \'true\' : undefined}');
+    expect(promptComposer).toContain('data-composer-circle="true"');
+    expect(promptComposer).toContain('<SendCircleIcon');
+    expect(promptComposer).toContain('spinning={pending}');
+    expect(promptComposer).toContain("name={pending ? 'loader-4' : 'send-plane-2'}");
+    expect(promptComposer).toContain('const defaultRightControls = inline ? inlineRightControls : stackedRightControls');
+    expect(promptComposer).toContain('disabled={disabled || pending || !hasContent}');
+    expect(promptComposer).toContain('disabled={disabled || (pending && disableInputWhilePending)}');
+    expect(promptComposer).toContain("data-chat-input=\"true\"");
+    expect(promptComposer).toContain('isIMECompositionEvent');
+    expect(surface).toContain("borderRadius: 'var(--radius-xl)'");
+    expect(surface).toContain("backgroundColor: 'var(--surface-subtle)'");
+    expect(surface).toContain('focus-within:ring-primary/50');
+    expect(conversation).toContain("borderRadius: '1.5rem'");
+    expect(conversation).toContain('layout="inline"');
+    expect(promptComposer).toContain("layout = 'stacked'");
+    expect(promptComposer).toContain("layout === 'inline'");
+    expect(promptComposer).toContain('data-composer-inline-send="true"');
+    expect(promptComposer).toContain('data-composer-inline-attach="true"');
+    expect(promptComposer).toContain('data-chat-prompt-file-attachments="true"');
+    expect(promptComposer).toContain("fileAccept = 'image/*'");
+    expect(promptComposer).toContain('data-composer-layout={layout}');
+    expect(promptComposer).toContain('min-h-12 flex-row');
+    expect(promptComposer).toContain("inlineAlignEnd ? 'items-end' : 'items-center'");
+    expect(promptComposer.indexOf('data-composer-inline-attach="true"')).toBeLessThan(
+      promptComposer.indexOf('data-composer-input-shell="true"'),
+    );
+    expect(promptComposer.indexOf('data-composer-input-shell="true"')).toBeLessThan(
+      promptComposer.indexOf('data-composer-inline-send="true"'),
+    );
+    expect(promptComposer).toContain('max-h-32 px-3 py-[14px] leading-5');
+    expect(promptComposer).toContain("inlineAlignEnd ? 'min-h-12' : 'h-12 min-h-12'");
+    expect(promptComposer).toContain("fillContainer={inline ? false : textareaProps?.fillContainer}");
+    expect(promptComposer).toContain("inline && !inlineAlignEnd && 'flex h-12 items-center'");
+    expect(promptComposer).not.toContain('min-h-8 max-h-32 self-center px-3 py-2 leading-5');
+    expect(promptComposer).toContain('flex h-12 shrink-0 items-center pr-1.5');
   });
 
-  test('builds an isolated secondary surface with committed selection and Assistant backend routes', async () => {
-    const [view, backend, queries] = await Promise.all([
+  test('keeps /card and /dm out of every locale dictionary — cards are assistant-emitted', async () => {
+    const { readdir } = await import('node:fs/promises');
+    const messagesDir = join(directory, '../../lib/i18n/messages');
+    const files = (await readdir(messagesDir)).filter((name) => name.endsWith('.ts'));
+    expect(files.length).toBeGreaterThan(8);
+    const sources = await Promise.all(files.map((name) => read(`../../lib/i18n/messages/${name}`)));
+    for (const source of sources) {
+      expect(source).not.toContain('assistants.contact.composerHint');
+      expect(source).not.toContain('/card <sessionID>');
+      expect(source).not.toContain('/dm <assistantID>');
+      expect(source).not.toContain('Card: /card');
+      expect(source).not.toContain('Message another assistant');
+    }
+  });
+
+  test('requires contact attach keys in every locale and keeps slash commands out', async () => {
+    const { readdir } = await import('node:fs/promises');
+    const messagesDir = join(directory, '../../lib/i18n/messages');
+    const files = (await readdir(messagesDir)).filter((name) => name.endsWith('.settings.ts'));
+    expect(files.length).toBeGreaterThan(8);
+    const sources = await Promise.all(files.map((name) => read(`../../lib/i18n/messages/${name}`)));
+    for (const source of sources) {
+      expect(source).toContain("'assistants.contact.addFiles'");
+      expect(source).toContain("'assistants.contact.removeAttachment'");
+      expect(source).toContain("'assistants.contact.attachment.image'");
+      expect(source).toContain("'assistants.contact.attachment.file'");
+      expect(source).toContain("'assistants.contact.timedOut'");
+    }
+    const zh = sources[files.indexOf('zh-CN.settings.ts')];
+    expect(zh).toContain('添加文件');
+    expect(zh).not.toContain("'assistants.contact.addFiles': 'Attach files'");
+  });
+
+  test('loads the OpenChamber contact transcript instead of OpenCode session history', async () => {
+    const [conversation, queries] = await Promise.all([
+      read('AssistantConversationSurface.tsx'),
+      read('../../queries/assistantQueries.ts'),
+    ]);
+    expect(conversation).toContain('useAssistantContactMessagesQuery');
+    expect(conversation).toContain('sendAssistantContactMessage');
+    expect(conversation).toContain('{ parts: begun.parts }');
+    expect(conversation).not.toContain('appendAssistantContactCard');
+    expect(conversation).not.toContain('parseContactComposerInput');
+    expect(queries).toContain('/contact/messages');
+    expect(queries).toContain("type: 'file'");
+    expect(queries).toContain('/contact/cards');
+    expect(queries).toContain('/contact/dm');
+  });
+
+  test('keeps Settings selection backend and contact send routes separate from OpenCode promptAsync', async () => {
+    const [view, conversation, backend, queries] = await Promise.all([
       read('AssistantView.tsx'),
+      read('AssistantConversationSurface.tsx'),
       read('assistantSelectionBackend.ts'),
       read('../../queries/assistantQueries.ts'),
     ]);
-    expect(view).toContain('commitAssistantSelection(identity, desired');
-    expect(view).toContain('ensureSnapshot: (snapshotSignal) => fetchAssistantSnapshot(snapshotSignal)');
     expect(backend).toContain('dependencies.assertAuthoritative();');
     expect(backend).toContain('await dependencies.ensureSnapshot(dependencies.signal)');
     expect(backend).toContain('await dependencies.updateAssistant(latest');
     expect(backend).toContain('enabled: current.enabled');
     expect(backend).toContain('workspacePath: current.workspacePath');
     expect(backend).toContain("new AssistantAPIError('revision_conflict', 409)");
-    expect(view).toContain('AssistantSelectionCoordinator');
-    expect(view).toContain('readSnapshot: () => readAssistantSnapshot(undefined, identity.transportIdentity)');
     expect(backend).toContain('dependencies.readSnapshot()?.assistants.find');
-    expect(view).toContain("kind: 'secondary'");
-    expect(view).toContain("deliveryTarget: { kind: 'assistant', assistantID: assistant.id }");
-    expect(view).toContain('surfaceDraftKey');
-    expect(view).toContain('sendQueued: async');
-    expect(view).toContain('abortAssistantSession');
-    expect(view).toContain("command.name !== 'fork'");
-    expect(view).toContain("command.name !== 'thread'");
-    expect(view).toContain("assistant-server-queue-required");
-    expect(view).toContain("status?.type === 'busy' ? 'busy' : status?.type === 'retry' ? 'retry' : 'idle'");
-    expect(view).not.toContain("status ? 'idle' : 'unknown'");
-    expect(view).toContain("ascendingIdAfter('msg', floor)");
-    expect(view).toContain('getSyncMessages(binding.sessionID, binding.directory)');
-    expect(view).not.toContain('sendAssistantMessage(assistant.id, binding, createUuid()');
-    expect(view).toContain('createPendingUserMessagePresentation');
-    expect(view).toContain('removePendingMessages(assistant.id, [messageID])');
+    expect(view).not.toContain('ensureAssistantSession');
     expect(view).not.toContain('fetchMessagesForSession');
+    expect(conversation).toContain('sendAssistantContactMessage');
+    expect(conversation).not.toContain('promptAsync');
     expect(queries).toContain('applyAssistant(result, transport)');
     expect(queries.indexOf('applyAssistant(result, transport)')).toBeLessThan(queries.indexOf('return result; }', queries.indexOf('export const updateAssistant')));
   });
 
-  test('keeps assistant delivery complete and uses standard session capabilities', async () => {
-    const [view, conversation] = await Promise.all([
+  test('keeps assistant delivery on the contact transcript and session-card click-through', async () => {
+    const [view, conversation, card] = await Promise.all([
       read('AssistantView.tsx'),
       read('AssistantConversationSurface.tsx'),
+      read('AssistantSessionCard.tsx'),
     ]);
-    expect(view).toContain('part.attachments ?? []');
-    expect(view).toContain("text === undefined ? [] : [{ type: 'text' as const, text }]");
-    expect(view).toContain("...(part.synthetic === true ? { synthetic: true as const } : {})");
-    expect(view).toContain('...(parts ?? []).flatMap');
-    expect(conversation).toContain('PRIMARY_SESSION_SURFACE_CAPABILITIES');
-    expect(conversation).toContain('navigateSession');
-    expect(conversation).not.toContain('navigateNestedSession: false');
-    expect(conversation).toContain('openContextPanelTab');
-    expect(conversation).toContain("mode === 'session'");
-    expect(view).toContain('<ContextPanel directory={directory || null} />');
+    expect(conversation).toContain('sendAssistantContactMessage');
+    expect(conversation).not.toContain('appendAssistantContactCard');
+    expect(conversation).toContain('<AssistantSessionCard');
+    expect(card).toContain('openSessionWithFeedback');
+    expect(card).toContain('useMobileAppActions');
+    expect(view).not.toContain('<ContextPanel');
   });
 
   test('keeps nested subagent navigation on archived assistant history rows', async () => {
@@ -417,64 +585,30 @@ describe('Assistant UI product contract', () => {
     expect(historySurface).not.toContain('navigateNestedSession: false');
   });
 
-  test('disables edit/revert for stateless Assistants and opens source sessions in their own workspace', async () => {
-    const [conversation, sessionSurface, messageBody, view, chatMessage] = await Promise.all([
+  test('opens session cards through the existing session route on phone and desktop', async () => {
+    const card = await read('AssistantSessionCard.tsx');
+    expect(card).toContain('openSessionWithFeedback');
+    expect(card).toContain('useMobileAppActions');
+    expect(card).toContain('const isPhoneShell = Boolean(mobileActions && !isIPadApp())');
+    expect(card).toContain('phoneShell: isPhoneShell');
+    expect(card).toContain('switchToChat: true');
+    expect(card).toContain('findSessionById');
+    expect(card).toContain('useGlobalSessionStatus');
+  });
+
+  test('keeps primary-chat source-session and edit callbacks on ChatContainer, not the contact transcript', async () => {
+    const [conversation, sessionSurface, messageBody, chatMessage] = await Promise.all([
       read('AssistantConversationSurface.tsx'),
       read('../chat/SessionSurfaceContext.tsx'),
       read('../chat/message/MessageBody.tsx'),
-      read('AssistantView.tsx'),
       read('../chat/ChatMessage.tsx'),
     ]);
-    expect(conversation).toContain("const mutateSession = assistant.mode === 'continuous'");
-    expect(conversation).toContain('mutateSession,');
-    expect(conversation).toContain('openSourceSession');
-    expect(conversation).toContain('openSessionWithFeedback(targetSessionID, targetDirectory');
-    expect(conversation).toContain("notifySessionOpenFailed(targetSessionID, 'missing-directory')");
-    // Phone shell = dedicated MobileApp context (Capacitor + hosted H5), not Capacitor alone.
-    expect(conversation).toContain('useMobileAppActions');
-    expect(conversation).toContain('const isPhoneShell = Boolean(mobileActions && !isIPadApp())');
-    expect(conversation).toContain('phoneShell: isPhoneShell');
-    expect(conversation).not.toContain('isCapacitorApp() && !isIPadApp()');
-    expect(conversation).toContain("targetSessionID === sessionID");
-    expect(conversation).toContain('historyDirectories.get(targetSessionID)');
-    expect(conversation).toContain('expectedDirectory !== targetDirectory');
+    expect(conversation).not.toContain('openSourceSession');
+    expect(conversation).not.toContain('onEditMessage');
     expect(sessionSurface).toContain('openSourceSession?: (sessionId: string, directory: string) => void');
-    expect(sessionSurface).toContain('openSourceSession: Boolean(surface.openSourceSession)');
     expect(sessionSurface).toContain('onEditMessage?: (messageId: string, snapshot: SessionSurfaceMessageEditSnapshot) => Promise<void>');
     expect(messageBody).toContain("t('chat.messageBody.actions.openSourceSession')");
-    expect(messageBody).toContain('sessionId={sessionId}');
-    expect(messageBody).toContain('name="target"');
-    // ChatMessage prefers surface edit callback over primary staged edit store.
     expect(chatMessage).toContain('sessionSurface.onEditMessage');
-    expect(chatMessage).toContain('editMessagePreservingChanges(sessionId, message.info.id, snapshot)');
-    // Continuous only; stateless never injects onEditMessage.
-    expect(view).toContain("onEditMessage={assistant.mode === 'continuous' ? editAssistantMessage : undefined}");
-    expect(view).toContain("assistant.mode !== 'continuous'");
-    expect(view).toContain('stageMessageEdit(sessionID, messageID, snapshot, { directory, draftKey })');
-    expect(view).toContain('createAssistantStagedMessageEditRegistry');
-    expect(view).toContain('stagedMessageEditRegistryRef');
-    expect(view).toContain('Delivery always follows the');
-    // Continuous stage uses stageExclusive (scope transport+assistant) not bare register overwrite.
-    expect(view).toContain('stageExclusive');
-    expect(view).toContain('assistantStagedScopeOf');
-    expect(view).toContain('rollbackAndClearIfBindingMismatch');
-    expect(view).toContain('rollbackAllBestEffort');
-    expect(view).toContain('excludeTransport');
-    expect(view).toContain('projectRootAttachmentViews');
-    expect(view).toContain('hydrateDraftAttachments(draftKey)');
-    expect(view).toContain('draftAttachmentMetadataIdentity');
-    expect(view).toContain('mergeSyntheticPartsByPartID');
-    // Binding invalidation uses async helper (not identity-only clearIfBindingMismatch).
-    expect(view).not.toContain('clearIfBindingMismatch');
-    // new/compact clear staged only after remote success
-    expect(view).toContain('const next = await newAssistantSession(assistant.id)');
-    expect(view).toContain('await clearStagedMessageEdit(assistant.id)');
-    expect(view).toContain('clearExclusive');
-    const newIdx = view.indexOf('const next = await newAssistantSession(assistant.id)');
-    const clearAfterNew = view.indexOf('await clearStagedMessageEdit(assistant.id)', newIdx);
-    expect(clearAfterNew).toBeGreaterThan(newIdx);
-    expect(view).toContain('sendAssistantMessage(assistant.id, binding, messageID');
-    expect(conversation).toContain('onEditMessage');
   });
 
   test('keeps compiled Assistant queue delivery and timeline reads scoped to the Assistant binding', async () => {
@@ -497,10 +631,10 @@ describe('Assistant UI product contract', () => {
     expect(chatInput).toContain('const sessionIsRunning = sessionPhase === \'busy\' || sessionPhase === \'retry\'');
     expect(chatInput).toContain('(sessionIsRunning || autoReviewRunning)');
     expect(queueServer).toContain("deliveryTarget.kind === 'assistant' && !deliveryParts");
-    expect(conversation).toContain('const directory = assistant.effectiveWorkspacePath;');
-    expect(conversation).toContain('flattenAssistantHistoryPages(historyQuery.data?.pages ?? [])');
-    expect(conversation).toContain('directory,');
-    expect(conversation).toContain('onRevertMessage');
+    expect(conversation).toContain('sendAssistantContactMessage');
+    expect(conversation).not.toContain('assistant.effectiveWorkspacePath');
+    expect(conversation).not.toContain('flattenAssistantHistoryPages');
+    expect(conversation).not.toContain('onRevertMessage');
     expect(chatContainer).toContain('sessionID={currentSessionId ?? undefined}');
     expect(chatContainer).toContain('directory={effectiveSessionDirectory}');
     expect(chatContainer).toContain('onRevertMessage={onRevertMessage}');
@@ -518,9 +652,13 @@ describe('Assistant UI product contract', () => {
       read('AssistantView.tsx'),
       read('AssistantConversationSurface.tsx'),
     ]);
-    expect(conversation).toContain('<ChatContainer autoOpenDraft={false} host={host} />');
+    expect(conversation).not.toContain('<ChatContainer');
     expect(conversation).not.toContain('chat-content-max-width');
     expect(conversation).not.toContain('inputClassName=');
+    expect(conversation).toContain("bg-[var(--primary-base)] text-[var(--primary-foreground)]");
+    expect(conversation).toContain('border border-dashed border-border bg-[var(--surface-muted)]');
+    expect(conversation).toContain('border border-border/60 bg-[var(--surface-muted)] text-foreground');
+    expect(conversation).not.toContain("'bg-[var(--surface-elevated)] text-foreground'");
     expect(view).toContain('bg-[var(--surface-elevated)]');
     expect(view).toContain('border-border/50');
     expect(view).toContain('border-l border-border/60');
@@ -581,37 +719,22 @@ describe('Assistant UI product contract', () => {
     expect(settings).toContain('setWelcomeOpen(true)');
   });
 
-  test('derives assistant activity from scoped OpenCode sync state and refreshes its admitted binding', async () => {
+  test('keeps primary Chat activity on ChatContainer while Assistant uses the contact transcript', async () => {
     const [view, conversation, chatContainer, statusRow] = await Promise.all([
       read('AssistantView.tsx'),
       read('AssistantConversationSurface.tsx'),
       read('../chat/ChatContainer.tsx'),
       read('../chat/StatusRowContainer.tsx'),
     ]);
-    expect(view).toContain('reconcileAdmittedAssistantBinding({');
-    expect(view).toContain('rebindPendingMessage(assistant.id, messageID, result.binding.sessionID)');
-    expect(view).toContain('isCurrent: () => pendingRefreshEpochRef.current === refreshEpoch');
-    expect(view).not.toContain('expire: () => removePendingMessages');
-    expect(view).toContain('const next = await newAssistantSession(assistant.id)');
-    expect(view).toContain('await refreshBinding(next, { force: true })');
-    expect(view).toContain('const result = await compactAssistantSession(assistant.id, binding)');
-    expect(view).toContain('await refreshBinding(result.binding, { force: true })');
-    expect(view).toContain("...(options?.force ? { force: true } : {})");
-    expect(view).toContain('const hasMessages = messages.length > 0;');
-    expect(view).toContain('useSessionStatus(sessionID, directory || undefined)');
-    expect(view).not.toContain('loading={Boolean(messages.length === 0 && (messageLoad?.status === \'loading\'');
-    expect(conversation).toContain('<ChatContainer autoOpenDraft={false} host={host} />');
+    expect(view).not.toContain('ensureAssistantSession');
+    expect(conversation).not.toContain('<ChatContainer');
+    expect(conversation).toContain('useAssistantContactMessagesQuery');
     expect(chatContainer).toContain('activeStreamingMessageId={streamingMessageId}');
     expect(chatContainer).toContain('activeStreamingPhase={activeStreamingPhase}');
     expect(chatContainer).toContain('<StatusRowContainer');
     expect(statusRow).toContain('useAssistantStatus(currentSessionId, currentSessionDirectory)');
     expect(statusRow).toContain('isTurnSettled={working.isTurnSettled}');
     expect(statusRow).toContain('surface.sessionId ?? primarySessionId');
-    expect(view).toContain('if (active && assistantID && !sessionID) void ensureAssistantSession(assistantID)');
-    // Active binding with a sessionID force-materializes via refreshBinding (TranscriptRepository).
-    expect(view).toContain('if (!active || !assistantID || !sessionID || !directory || sessionGeneration === undefined) return;');
-    expect(view).toContain('{ sessionID, directory, sessionGeneration },');
-    expect(view).toContain('[active, assistantID, directory, refreshBinding, sessionGeneration, sessionID]');
   });
 
   test('returns from Assistant on Android back', async () => {
@@ -626,25 +749,23 @@ describe('Assistant UI product contract', () => {
     const view = await read('AssistantView.tsx');
     expect(view).toContain("snapshotQuery.isError ? t('assistants.state.staleSnapshot')");
     expect(view).toContain('truncate typography-ui-label font-medium');
-    expect(view).toContain("assistants.conversation.statelessHint");
+    expect(view).toContain("assistants.conversation.contactHint");
     expect(view).toContain('typography-micro leading-none text-muted-foreground/70');
     expect(view).toContain('presentation.displayName || assistant.name');
   });
 
-  test('stitches paged Assistant history into the shared ChatContainer host', async () => {
+  test('persists contact history, session cards, and peer DMs outside ChatContainer', async () => {
     const [surface, host, chat] = await Promise.all([
       read('AssistantConversationSurface.tsx'),
       read('../chat/chatContainerHost.ts'),
       read('../chat/ChatContainer.tsx'),
     ]);
+    expect(surface).toContain('useAssistantContactMessagesQuery');
+    expect(surface).toContain('<AssistantSessionCard');
+    expect(surface).toContain("message.role === 'peer'");
+    expect(surface).not.toContain('useAssistantHistoryInfiniteQuery');
     expect(host).toContain('assistantHistory?: {');
-    expect(surface).toContain('useAssistantHistoryInfiniteQuery');
-    expect(surface).toContain('assistantHistory: {');
-    expect(surface).toContain('pendingUserMessages,');
-    expect(host).toContain('onPendingUserMessagesMaterialized?:');
     expect(chat).toContain('stitchHostedSessionHistory');
-    expect(chat).toContain('mergePendingUserMessagePresentations');
-    expect(chat).toContain('createAssistantSessionDivider');
   });
 
   test('scopes historical message actions to their source workspace', async () => {
@@ -660,8 +781,8 @@ describe('Assistant UI product contract', () => {
     expect(list).toContain('mutateSession: false');
     expect(list).toContain('forkSession: false');
     expect(list).toContain('SessionSurfaceContext.Provider');
-    expect(surface).toContain('historyDirectories.get(targetSessionID)');
-    expect(surface).toContain('expectedDirectory !== targetDirectory');
+    expect(surface).toContain('<AssistantSessionCard');
+    expect(surface).not.toContain('historyDirectories.get(targetSessionID)');
   });
 
   test('filters Assistant agent catalogs through the shared composer visibility helper', async () => {
@@ -673,9 +794,7 @@ describe('Assistant UI product contract', () => {
     ]);
     expect(catalog).toContain('export const resolveComposerVisibleAgents');
     expect(catalog).toContain('filterVisibleAgents');
-    expect(view).toContain("import { resolveComposerVisibleAgents } from '@/components/chat/chatComposerCatalog'");
-    expect(view).toContain('agents: visibleAgents');
-    expect(view).toContain('getCycledPrimaryAgentName(visibleAgents');
+    expect(view).not.toContain('resolveComposerVisibleAgents');
     expect(chatInput).toContain("import { resolveComposerVisibleAgents } from './chatComposerCatalog'");
     expect(chatInput).toContain('setActiveChatInputSurface(surface)');
     expect(shortcuts).toContain('isChatComposerMainTab(activeMainTab)');
@@ -689,10 +808,42 @@ describe('Assistant UI product contract', () => {
       read('AssistantView.tsx'),
       read('../chat/chatInputSurface.ts'),
     ]);
-    expect(view).toContain('busy: false');
     expect(view).not.toContain('busy: selectionSaving');
+    expect(view).not.toContain('kind: \'secondary\'');
     expect(surface).toContain('resolveChatInputDraftBusy');
     expect(surface).toContain("surface.kind === 'secondary' ? surface.resources?.busy ?? false : primaryDraftBusy");
+  });
+
+  test('shows a Grok-Bot working dot on list and conversation avatars, not an Activity banner', async () => {
+    const [view, conversation, avatar, working, card, mobileTab, generate] = await Promise.all([
+      read('AssistantView.tsx'),
+      read('AssistantConversationSurface.tsx'),
+      read('AssistantWorkingAvatar.tsx'),
+      read('assistantWorking.ts'),
+      read('AssistantSessionCard.tsx'),
+      read('../../mobile/assistant/MobileAssistantTab.tsx'),
+      read('../../../../web/server/lib/llm/generate.js'),
+    ]);
+    expect(avatar).toContain('data-assistant-working-dot');
+    expect(avatar).toContain('data-assistant-working-avatar');
+    expect(avatar).toContain('relative inline-block shrink-0 align-middle');
+    expect(avatar).toContain('bg-[var(--status-success)]');
+    expect(avatar).toContain('absolute right-0 bottom-0 size-2');
+    expect(working).toContain('isAssistantWorking');
+    expect(working).toContain('serverWorking');
+    expect(view).toContain('<AssistantWorkingAvatar');
+    expect(view).toContain('useAssistantWorking');
+    expect(conversation).toContain('<AssistantWorkingAvatar');
+    expect(conversation).toContain('oc.settle.complete');
+    expect(conversation).not.toContain('<Activity');
+    expect(mobileTab).toContain('<AssistantWorkingAvatar');
+    expect(card).toContain("persisted === 'error' || persisted === 'question' || persisted === 'complete'");
+    expect(card).toContain("if (liveType === 'idle') return 'complete'");
+    expect(generate).toContain('client.session.promptAsync');
+    expect(generate).not.toContain('client.session.prompt(');
+    expect(generate).toContain('V2 session.prompt only forwards');
+    expect(generate).toContain('isJsonContentType');
+    expect(generate).toContain('looksLikeJsonObject');
   });
 
 });

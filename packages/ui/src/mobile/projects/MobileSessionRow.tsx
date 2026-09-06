@@ -46,6 +46,8 @@ export type MobileSessionRowModel = {
   kind?: 'session' | 'pagination';
   title: string;
   subtitle?: string;
+  /** Compact `+12 −3` from session.summary when those counts exist. */
+  changes?: string;
   activityLabel?: string;
   unread?: boolean;
   pinned?: boolean;
@@ -405,6 +407,11 @@ export function MobileSessionRow({
               <span className={cn('oc-mobile-session-title truncate', session.unread ? 'font-semibold' : 'font-medium')}>
                 {highlightQuery ? renderHighlightedText(session.title, highlightQuery) : session.title}
               </span>
+              {session.changes ? (
+                <span className="oc-mobile-session-changes shrink-0 tabular-nums text-muted-foreground">
+                  {session.changes}
+                </span>
+              ) : null}
               {session.archived ? <Icon name="archive" className="size-3 shrink-0 text-muted-foreground" aria-hidden /> : null}
             </span>
             {session.subtitle ? (
