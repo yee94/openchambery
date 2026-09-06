@@ -236,6 +236,8 @@ export type LynxMessageKey =
   | 'lynx.draft.body'
   | 'lynx.draft.empty'
   | 'lynx.draft.busy'
+  | 'lynx.shell.chat.predecessor'
+  | 'lynx.chat.live.label'
 
 type LynxDictionary = Record<LynxMessageKey, string>;
 
@@ -455,7 +457,9 @@ const en: LynxDictionary = {
   'lynx.draft.title': 'New session',
   'lynx.draft.body': 'Write a first message. Send creates a real OpenCode session (POST /session) then prompts — never a fake chat id.',
   'lynx.draft.empty': 'Enter a message to start.',
-  'lynx.draft.busy': 'Creating…'
+  'lynx.draft.busy': 'Creating…',
+  'lynx.shell.chat.predecessor': 'Parent session',
+  'lynx.chat.live.label': 'Live',
 
 };
 
@@ -675,7 +679,9 @@ const es: LynxDictionary = {
   'lynx.draft.title': 'New session',
   'lynx.draft.body': 'Write a first message. Send creates a real OpenCode session (POST /session) then prompts — never a fake chat id.',
   'lynx.draft.empty': 'Enter a message to start.',
-  'lynx.draft.busy': 'Creating…'
+  'lynx.draft.busy': 'Creating…',
+  'lynx.shell.chat.predecessor': 'Sesión padre',
+  'lynx.chat.live.label': 'En vivo',
 
 };
 
@@ -895,7 +901,9 @@ const fr: LynxDictionary = {
   'lynx.draft.title': 'New session',
   'lynx.draft.body': 'Write a first message. Send creates a real OpenCode session (POST /session) then prompts — never a fake chat id.',
   'lynx.draft.empty': 'Enter a message to start.',
-  'lynx.draft.busy': 'Creating…'
+  'lynx.draft.busy': 'Creating…',
+  'lynx.shell.chat.predecessor': 'Session parente',
+  'lynx.chat.live.label': 'Direct',
 
 };
 
@@ -1115,7 +1123,9 @@ const ja: LynxDictionary = {
   'lynx.draft.title': 'New session',
   'lynx.draft.body': 'Write a first message. Send creates a real OpenCode session (POST /session) then prompts — never a fake chat id.',
   'lynx.draft.empty': 'Enter a message to start.',
-  'lynx.draft.busy': 'Creating…'
+  'lynx.draft.busy': 'Creating…',
+  'lynx.shell.chat.predecessor': '親セッション',
+  'lynx.chat.live.label': 'ライブ',
 
 };
 
@@ -1335,7 +1345,9 @@ const ko: LynxDictionary = {
   'lynx.draft.title': 'New session',
   'lynx.draft.body': 'Write a first message. Send creates a real OpenCode session (POST /session) then prompts — never a fake chat id.',
   'lynx.draft.empty': 'Enter a message to start.',
-  'lynx.draft.busy': 'Creating…'
+  'lynx.draft.busy': 'Creating…',
+  'lynx.shell.chat.predecessor': '상위 세션',
+  'lynx.chat.live.label': '라이브',
 
 };
 
@@ -1555,7 +1567,9 @@ const pl: LynxDictionary = {
   'lynx.draft.title': 'New session',
   'lynx.draft.body': 'Write a first message. Send creates a real OpenCode session (POST /session) then prompts — never a fake chat id.',
   'lynx.draft.empty': 'Enter a message to start.',
-  'lynx.draft.busy': 'Creating…'
+  'lynx.draft.busy': 'Creating…',
+  'lynx.shell.chat.predecessor': 'Sesja nadrzędna',
+  'lynx.chat.live.label': 'Na żywo',
 
 };
 
@@ -1775,7 +1789,9 @@ const ptBR: LynxDictionary = {
   'lynx.draft.title': 'New session',
   'lynx.draft.body': 'Write a first message. Send creates a real OpenCode session (POST /session) then prompts — never a fake chat id.',
   'lynx.draft.empty': 'Enter a message to start.',
-  'lynx.draft.busy': 'Creating…'
+  'lynx.draft.busy': 'Creating…',
+  'lynx.shell.chat.predecessor': 'Sessão pai',
+  'lynx.chat.live.label': 'Ao vivo',
 
 };
 
@@ -1995,7 +2011,9 @@ const uk: LynxDictionary = {
   'lynx.draft.title': 'New session',
   'lynx.draft.body': 'Write a first message. Send creates a real OpenCode session (POST /session) then prompts — never a fake chat id.',
   'lynx.draft.empty': 'Enter a message to start.',
-  'lynx.draft.busy': 'Creating…'
+  'lynx.draft.busy': 'Creating…',
+  'lynx.shell.chat.predecessor': 'Батьківська сесія',
+  'lynx.chat.live.label': 'Наживо',
 
 };
 
@@ -2215,7 +2233,9 @@ const zhCN: LynxDictionary = {
   'lynx.draft.title': 'New session',
   'lynx.draft.body': 'Write a first message. Send creates a real OpenCode session (POST /session) then prompts — never a fake chat id.',
   'lynx.draft.empty': 'Enter a message to start.',
-  'lynx.draft.busy': 'Creating…'
+  'lynx.draft.busy': 'Creating…',
+  'lynx.shell.chat.predecessor': '父会话',
+  'lynx.chat.live.label': '实时',
 
 };
 
@@ -2435,7 +2455,9 @@ const zhTW: LynxDictionary = {
   'lynx.draft.title': 'New session',
   'lynx.draft.body': 'Write a first message. Send creates a real OpenCode session (POST /session) then prompts — never a fake chat id.',
   'lynx.draft.empty': 'Enter a message to start.',
-  'lynx.draft.busy': 'Creating…'
+  'lynx.draft.busy': 'Creating…',
+  'lynx.shell.chat.predecessor': '父工作階段',
+  'lynx.chat.live.label': '即時',
 
 };
 

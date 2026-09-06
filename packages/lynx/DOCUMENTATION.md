@@ -11,7 +11,7 @@ Lynx native phone shell + connect client for the `work/lynx-native` track.
 - Lynx 3.8 `<blur-view>` glass mapping and Android blur downgrade (`src/glass/`)
 - Lynx-local catalog for dock / stub copy (`src/i18n/`)
 - Mobile settings **search + 21 slug rows + push stubs** (`src/settings/`)
-- Chat LegendList-semantics timeline + send/stop/queue hooks (`src/chat/`)
+- Chat LegendList-semantics timeline + send/stop/queue + Cap global-event SSE live tail (`src/chat/`)
 - Native host embedding sources (`host/ios/`, `host/android/`)
 
 ### Connect / pairing / session-index
@@ -29,6 +29,7 @@ Product behavior copied from Capacitor + shared UI (`packages/ui/src/apps/mobile
 | Session by id | `GET /api/openchamber/session-index/session/:id` | `lookupSessionIndexById` |
 | Pin / unpin | `POST` / `DELETE` `…/session/:id/pin` | `pinSession` / `unpinSession` |
 | Official OpenCode session prompt/abort/messages | `@opencode-ai/sdk/v2` `/session/:id/{prompt_async,abort,message}` | `src/chat/sessionApi.ts` |
+| Cap global event live tail | `/api/global/event` SSE (WS `/api/global/event/ws`) | `src/chat/liveEvents.ts` + `liveTail.ts` — same LegendList, no overlay |
 | Session create / archive / delete | `POST/PATCH/DELETE /session` | `src/projects/sessionActions.ts` |
 | Question / permission pending | `GET/POST /question`, `/permission` | `src/chat/pendingCards.ts` |
 
@@ -36,7 +37,7 @@ Do not invent `/api/nearby/redeem` or Bonjour browse.
 
 ## Does not own
 
-- SSE live tail / native IME / HTML iframe Files preview / PierreDiff polish
+- Native IME host binding (contract documented; host wires keyboard) / HTML iframe Files preview / PierreDiff polish
 - Push token mint (host) / Live Activity / Capgo / QR camera / Keychain wiring
 - Capacitor `packages/mobile` and shared React `packages/ui` runtimes
 - Nearby / Bonjour browse

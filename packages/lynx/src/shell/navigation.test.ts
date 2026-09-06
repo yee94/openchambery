@@ -6,6 +6,8 @@ import { describe, expect, test } from 'vitest';
 import {
   INITIAL_LYNX_NAVIGATION_STATE,
   isDockHidden,
+  lynxChatStackWindow,
+  reconcileLynxChatPredecessor,
   reduceLynxNavigation,
   resolveLynxSecondaryBackDecision,
 } from './navigation';
@@ -81,6 +83,29 @@ describe('Lynx four-root dock IA', () => {
       action: 'popChatSession',
       parent: { id: 'parent', directory: null },
     });
+  });
+
+  test('reconciles deep-linked child with authoritative parent predecessor', () => {
+    const childOnly = [
+      { key: 'chat-primary', sessionId: 'child', directory: '/repo' },
+    ];
+    const reconciled = reconcileLynxChatPredecessor(childOnly, {
+      key: 'chat-parent',
+      sessionId: 'parent',
+      directory: '/repo',
+    });
+    expect(reconciled.map((route) => route.sessionId)).toEqual(['parent', 'child']);
+    expect(lynxChatStackWindow(reconciled).predecessor?.sessionId).toBe('parent');
+
+    const viaReducer = reduceLynxNavigation(
+      {
+        activeTab: 'projects',
+        secondary: { kind: 'chat', routes: childOnly },
+      },
+      { type: 'reconcileChatParent', sessionId: 'parent', directory: '/repo' },
+    );
+    expect(viaReducer.secondary?.kind === 'chat' && viaReducer.secondary.routes.map((r) => r.sessionId))
+      .toEqual(['parent', 'child']);
   });
 
   test('draft / assistant / instances are secondary pages, not tabs', () => {

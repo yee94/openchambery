@@ -59,6 +59,12 @@ export type LynxHttpResponse = {
   json: () => Promise<unknown>;
   /** Optional — Cap `/api/fs/read` returns text/plain; host/http clients should provide this. */
   text?: () => Promise<string>;
+  /**
+   * Optional incremental body for Cap global-event SSE (`text/event-stream`).
+   * Direct `createFetchHttpClient` exposes `fetch` body; relay tunnels may omit
+   * until the host provides a streaming bridge — live tail fails honestly then.
+   */
+  body?: ReadableStream<Uint8Array> | null;
 };
 
 export type LynxRequestInit = {

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { lynxT } from '../i18n/catalog';
 import { LynxInput, LynxText, LynxView } from '../lynx-elements';
@@ -28,6 +28,13 @@ import { fetchSessionMessages } from './sessionApi';
 import { LynxTimelineList } from './TimelineList';
 import { LynxPermissionCard, LynxQuestionCard } from './TurnCards';
 import {
+  createLynxSseOpenFromRuntimeFetch,
+  subscribeLynxLiveTail,
+  type LynxLiveTailConnectionState,
+} from './liveTail';
+import { resolveLynxComposerOccupancyInset } from './imeOccupancy';
+import type { LynxChatRoute } from '../shell/navigation';
+import {
   applyInitialFailure,
   applyInitialPage,
   applyOlderPage,
@@ -51,6 +58,11 @@ export type LynxChatScreenProps = {
   /** Deep-link / host can open a sheet immediately. */
   initialSheet?: LynxChatSheetKind | null;
   onSheetClosed?: () => void;
+  /**
+   * Cap nested child stack: immediate predecessor route for underlay chrome.
+   * Back pops to this session (ShellApp uses resolveLynxSecondaryBackDecision).
+   */
+  predecessor?: LynxChatRoute | null;
 };
 
 const DEFAULT_MODEL: LynxComposerModel = {
@@ -60,6 +72,8 @@ const DEFAULT_MODEL: LynxComposerModel = {
 
 /**
  * Pushed chat page: header + LegendList timeline + composer send/stop/queue.
+ * Live Cap `/api/global/event` SSE folds into the same list (no overlay).
+ * IME occupancy is collapsed-foot only — host binds native IME (no WebView FLIP).
  * Overflow menu opens Files/Changes/MCP sheets backed by Cap list endpoints.
  */
 export function LynxChatScreen({
@@ -72,6 +86,7 @@ export function LynxChatScreen({
   title,
   initialSheet = null,
   onSheetClosed,
+  predecessor = null,
 }: LynxChatScreenProps) {
   const [timeline, setTimeline] = useState<LynxTimelineState>(() =>
     createEmptyTimelineState(sessionId, directory),
@@ -85,6 +100,9 @@ export function LynxChatScreen({
   const [permissions, setPermissions] = useState<LynxPermissionRequest[]>([]);
   const [cardBusy, setCardBusy] = useState(false);
   const [cardError, setCardError] = useState<string | null>(null);
+  const [liveConnection, setLiveConnection] = useState<LynxLiveTailConnectionState>('idle');
+  const timelineRef = useRef(timeline);
+  timelineRef.current = timeline;
 
   const sessionApi = useMemo(
     () => (runtimeFetch ? { runtimeFetch } : null),
@@ -97,11 +115,15 @@ export function LynxChatScreen({
       directory,
       model,
       sessionApi,
-      sessionIsWorking: () => timeline.sessionIsWorking,
+      sessionIsWorking: () => timelineRef.current.sessionIsWorking,
       followUpBehavior: 'queue',
     }),
-    [sessionId, directory, model, sessionApi, timeline.sessionIsWorking],
+    [sessionId, directory, model, sessionApi],
   );
+  const composerRef = useRef(composer);
+  composerRef.current = composer;
+
+  const occupancyInset = resolveLynxComposerOccupancyInset();
 
   const reloadTranscript = useCallback(() => {
     if (!runtimeFetch) {
@@ -178,6 +200,49 @@ export function LynxChatScreen({
       cancelled = true;
     };
   }, [sessionId, directory, runtimeFetch, initialSheet, reloadPendingCards]);
+
+  // Cap global-event SSE live tail → same LegendList (no overlay).
+  useEffect(() => {
+    if (!runtimeFetch) {
+      setLiveConnection('idle');
+      return;
+    }
+    const controller = new AbortController();
+    const openStream = createLynxSseOpenFromRuntimeFetch(runtimeFetch);
+    void subscribeLynxLiveTail({
+      sessionId,
+      directory,
+      openStream,
+      signal: controller.signal,
+      getTimeline: () => timelineRef.current,
+      setTimeline: (next) => {
+        timelineRef.current = next;
+        setTimeline(next);
+      },
+      onEffect: (effect) => {
+        if (effect.type === 'connection') {
+          setLiveConnection(effect.state);
+          return;
+        }
+        if (effect.type === 'flush-queue') {
+          void (async () => {
+            const result = await composerRef.current.flushQueue();
+            if (result.status === 'ok') {
+              setQueueCount(composerRef.current.getQueue().length);
+              setTimeline((state) => setSessionWorking(state, true));
+            }
+          })();
+          return;
+        }
+        if (effect.type === 'reload-pending-cards') {
+          reloadPendingCards();
+        }
+      },
+    });
+    return () => {
+      controller.abort();
+    };
+  }, [runtimeFetch, sessionId, directory, reloadPendingCards]);
 
   const onLoadOlder = useCallback(() => {
     if (!runtimeFetch) {
@@ -343,6 +408,25 @@ export function LynxChatScreen({
         </LynxView>
       </LynxView>
 
+      {predecessor ? (
+        <LynxView
+          style={{ padding: '0 16px 8px', flexDirection: 'row', alignItems: 'center' }}
+          bindtap={onBack}
+          accessibility-role="button"
+          accessibility-label={lynxT(locale, 'lynx.shell.chat.predecessor')}
+        >
+          <LynxText style={{ color: cssVar('surface.mutedForeground'), fontSize: '12px' }}>
+            {lynxT(locale, 'lynx.shell.chat.predecessor')}: {predecessor.sessionId}
+          </LynxText>
+        </LynxView>
+      ) : null}
+
+      {liveConnection !== 'idle' ? (
+        <LynxText style={{ padding: '0 16px 6px', color: cssVar('surface.mutedForeground'), fontSize: '11px' }}>
+          {lynxT(locale, 'lynx.chat.live.label')}: {liveConnection}
+        </LynxText>
+      ) : null}
+
       {menuOpen ? (
         <LynxView
           style={{
@@ -378,7 +462,7 @@ export function LynxChatScreen({
         state={timeline}
         onLoadOlder={onLoadOlder}
         footer={(
-          <LynxView style={{ padding: '12px 16px' }}>
+          <LynxView style={{ padding: '12px 16px', paddingBottom: `${12 + occupancyInset}px` }}>
             {questions.map((question) => (
               <LynxQuestionCard
                 key={question.id}

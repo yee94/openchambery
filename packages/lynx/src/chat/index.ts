@@ -75,3 +75,28 @@ export {
 } from './pendingCards';
 export { LynxTurnCard, LynxQuestionCard, LynxPermissionCard } from './TurnCards';
 export { LynxDraftComposer, materializeLynxDraftSession } from './DraftComposer';
+
+export {
+  normalizeLynxOpenCodeEvent,
+  parseLynxSseDataLine,
+  projectLynxLiveEvent,
+  pushLynxSseText,
+  createLynxSseParseState,
+  LYNX_GLOBAL_EVENT_SSE_PATH,
+  LYNX_GLOBAL_EVENT_WS_PATH,
+  type LynxNormalizedEvent,
+  type LynxLiveTimelinePatch,
+} from './liveEvents';
+export {
+  applyLynxLivePatch,
+  applyNormalizedEventToTimeline,
+  createLynxSseOpenFromRuntimeFetch,
+  subscribeLynxLiveTail,
+  type LynxLiveTailConnectionState,
+  type LynxEventStreamOpen,
+} from './liveTail';
+export {
+  LYNX_COMPOSER_OCCUPANCY_HEIGHT,
+  LYNX_IME_OCCUPANCY_CONTRACT,
+  resolveLynxComposerOccupancyInset,
+} from './imeOccupancy';

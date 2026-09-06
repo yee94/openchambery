@@ -37,7 +37,7 @@ TypeScript client layer (not pixel UI). Maps to Cap/UI routes under `packages/ui
 - Session-index GET / pin / lookup keyed by runtime identity, with failure ≠ empty.
 - Projects-home projection (API/types, not UI polish).
 
-Does **not** own: Nearby / Bonjour, native ASR, FCM/APNs registration, E2EE relay tunnel implementation (inject `openRelayTunnel`), rich chat cards / SSE, Settings **editors**, CI.
+Does **not** own: Nearby / Bonjour, native ASR, FCM/APNs registration, E2EE relay tunnel implementation (inject `openRelayTunnel`), host IME keyboard binding / Keychain/QR, Settings OAuth browser host.
 
 ### Adapters the host must inject
 

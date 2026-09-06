@@ -170,6 +170,21 @@ Slice on `cursor/lynx-cards-swipe-harness-local` (PR into `work/lynx-native`). P
 **真机过:** not executed.
 
 ---
+
+## 代码接上 (SSE live tail + IME contract + nested chat stack — not landed under 三关)
+
+Slice on `cursor/lynx-sse-live-local` (PR into `work/lynx-native`). Package Vitest + `tsc` + rspeedy. CI workflow remains template at `packages/lynx/ci/lynx-ci.yml` — **not claimed live**. 真机过: not executed.
+
+| Item | Cap/web source | Lynx note |
+|---|---|---|
+| Chat SSE / event live tail | `event-pipeline.ts` `/api/global/event` (+ WS) | Parse Cap/OpenCode envelopes; fold `message.*` / `session.status` into the **same** LegendList (`liveEvents.ts` / `liveTail.ts`). No TanStack / no live overlay. Abort/working + queue flush on idle. Direct fetch exposes `body` stream; relay without stream fails honestly. |
+| IME / composer occupancy contract | pitfalls §3, native composer README | Documented in `imeOccupancy.ts` + acceptance: host binds IME; occupancy = collapsed height only; no WebView FLIP. |
+| Nested child session stack / predecessor | `mobileNavigation.ts` | `reconcileLynxChatPredecessor` + stack window chrome; ShellApp back pops predecessor (Cap decision). |
+
+**CI绿:** Linux lynx-ci template only. Local Vitest `@openchamber/lynx` only.
+**真机过:** not executed.
+
+---
 ## Missing
 
 Seeded from the inventory. Grouped so a slice can pick a coherent vertical.
@@ -206,17 +221,18 @@ Seeded from the inventory. Grouped so a slice can pick a coherent vertical.
 | Item | Cap/web source | Lynx note |
 |---|---|---|
 | ~~**LegendList-semantics timeline**~~ | `TimelineList.tsx` | **代码接上** list semantics + LynxTimelineList + **rich turn cards** (Activity / Q&P) |
+| ~~SSE / event live tail~~ | `event-pipeline.ts` | **代码接上** Cap `/api/global/event` SSE fold into same list; WS host inject still thin |
 | Chat header / overflow | `MobileChatScreen.tsx` | Header + Files/Changes/MCP overflow **代码接上**; rich actions still thin |
 | ~~Send / Stop / queue / abort~~ | ChatInput + queue | **代码接上** hooks + official routes; composer text input host binding still thin |
 | ~~Questions / permissions~~ | chat cards | **代码接上** pending `/question`+`/permission` cards + reply |
 | ~~Activity / sorted / collapsed~~ | chat DOCUMENTATION | **代码接上** collapsed Activity disclosure (detail rows hidden until expand) |
 | ~~Load-older button (no scroll auto-load)~~ | timeline controller | **代码接上** button + bounce forbid tests |
-| Nested child session stack + predecessor | `mobileNavigation.ts` | |
+| ~~Nested child session stack + predecessor~~ | `mobileNavigation.ts` | **代码接上** reconcile + predecessor chrome; host underlay pixel polish still thin |
 | ~~Files / Changes / turn-diff sheets~~ | `MobileFilesSurface`, `MobileChangesSurface` | **代码接上** list + text preview + file/turn diff + commit/fetch/pull/push. HTML iframe / PierreDiff polish still thin. |
 | ~~MCP sheet~~ | `mobile-mcp` | **代码接上** overflow + `/api/config/mcp` list |
 | Context usage | `mobileContextUsage.ts` | |
 | Composer attachments, `/` `@`, agent/model | composer DOCUMENTATION | |
-| Native-quality IME (not WebView FLIP) | pitfalls §3 | |
+| Native-quality IME (not WebView FLIP) | pitfalls §3 | **Contract 代码接上** (`imeOccupancy.ts`); host keyboard binding / 真机 still missing |
 | Session swipe (composer only) | `useEdgeSwipeSessionSwitch.ts` | |
 
 ### Assistant / Scheduled / Settings
@@ -279,9 +295,9 @@ First implementation slice after this doc gate (order is deliberate: connect →
 
 1. ~~Host app skeleton + embedding decision~~ — scaffold in `packages/lynx`. Remaining: link Lynx SDK, rspeedy bundle, device host; wire HTTP/Keychain/relay adapters.
 2. ~~Connect + instance persistence client~~ — 代码接上 in `packages/lynx`. Remaining: welcome/instances UI, native secure store, and a real server 真机 pass (LAN then relay). No demo hosts. No Bonjour.
-3. ~~Four-tab shell IA~~ — navigation + Projects/Assistant/Scheduled tab bodies 代码接上. Remaining: pixel polish / SSE / IME.
+3. ~~Four-tab shell IA~~ — navigation + Projects/Assistant/Scheduled tab bodies 代码接上. Remaining: pixel polish / host IME.
 4. ~~Projects home data path + UI~~ — session-index bindings + ProjectsHome UI in `packages/lynx` (failure ≠ empty). Remaining: directory explorer / 扫一扫 / instance switch chrome.
-5. ~~**LegendList-semantics chat list** + send/stop on official APIs~~ — 代码接上 in `packages/lynx/src/chat`. Remaining: SSE live tail, native IME.
+5. ~~**LegendList-semantics chat list** + send/stop on official APIs~~ — 代码接上 in `packages/lynx/src/chat`. SSE live tail 代码接上; native IME host binding still missing.
 6. ~~**Settings home + slug map**~~ — 代码接上 search + 21 rows. Bodies: wired/list/stub in settings-ci slice. Remaining: rich entity editors.
 7. ~~**Assistant catalog + Scheduled list/history**~~ — 代码接上 snapshot/list/history hooks. Remaining: admission flows.
 8. ~~**Connect welcome + instances UI**~~ — 代码接上 splash/list/paste. Remaining: host QR camera + Keychain wiring + 真机.
@@ -290,7 +306,8 @@ First implementation slice after this doc gate (order is deliberate: connect →
 11. ~~**gap-close: summary-ai / behavior / scheduled editor / assistant ensure / chat Files·Changes stubs**~~ — 代码接上 in `cursor/lynx-gap-close-local`.
 12. ~~**editors + Files/Changes/MCP lists + deep-link apply**~~ — 代码接上 in `cursor/lynx-editors-sheets-local`.
 13. ~~**diff/preview + commit/sync + provider auth + push/share hooks**~~ — 代码接上 in `cursor/lynx-diff-push-share-local`. Remaining: host Keychain/QR/browser OAuth open, 真机.
-14. ~~**rich turn cards + swipe menu + share welcome + draft + list harness**~~ — 代码接上 in `cursor/lynx-cards-swipe-harness-local`. Remaining: SSE live tail, native IME, host Keychain/QR, 真机.
+14. ~~**rich turn cards + swipe menu + share welcome + draft + list harness**~~ — 代码接上 in `cursor/lynx-cards-swipe-harness-local`.
+15. ~~**SSE live tail + IME occupancy contract + nested chat predecessor**~~ — 代码接上 in `cursor/lynx-sse-live-local`. Remaining: host IME binding / Keychain/QR, relay streaming body, 真机.
 
 Do not start Share / Live Activity / widgets / Capgo / voice invention in slice 1.
 

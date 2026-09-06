@@ -233,3 +233,13 @@ export {
   projectLynxActivity,
 } from './chat/messageParts';
 export { materializeLynxDraftSession } from './chat/DraftComposer';
+export {
+  normalizeLynxOpenCodeEvent,
+  projectLynxLiveEvent,
+  LYNX_GLOBAL_EVENT_SSE_PATH,
+  applyLynxLivePatch,
+  createLynxSseOpenFromRuntimeFetch,
+  subscribeLynxLiveTail,
+  LYNX_IME_OCCUPANCY_CONTRACT,
+  resolveLynxComposerOccupancyInset,
+} from './chat';

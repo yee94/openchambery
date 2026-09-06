@@ -19,6 +19,7 @@ export const createFetchHttpClient = (): LynxHttpClient => ({
         status: response.status,
         json: () => response.json() as Promise<unknown>,
         text: () => response.text(),
+        body: response.body,
       };
     } catch {
       return null;

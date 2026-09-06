@@ -80,6 +80,31 @@ export function replaceLynxChatRoute(
   return [{ ...route, key: current?.key ?? route.key }];
 }
 
+
+export function reconcileLynxChatPredecessor(
+  routes: readonly LynxChatRoute[],
+  parent: LynxChatRoute,
+): LynxChatRoute[] {
+  const top = routes.at(-1);
+  if (!top || top.sessionId === parent.sessionId) return [...routes];
+  const predecessor = routes.at(-2);
+  if (predecessor?.sessionId === parent.sessionId) {
+    if (predecessor.directory === parent.directory) return [...routes];
+    return [...routes.slice(0, -2), parent, top];
+  }
+  if (routes.length === 1) return [parent, top];
+  return [...routes];
+}
+
+/** Cap phone stack: top chat + immediate predecessor for underlay chrome. */
+export function lynxChatStackWindow(
+  routes: readonly LynxChatRoute[],
+): { top: LynxChatRoute | null; predecessor: LynxChatRoute | null } {
+  const top = routes.at(-1) ?? null;
+  const predecessor = routes.length > 1 ? routes.at(-2) ?? null : null;
+  return { top, predecessor };
+}
+
 export function resolveLynxSecondaryBackDecision(input: {
   secondary: LynxSecondaryState | null;
   parentSessionTarget: LynxParentSessionTarget | null;
@@ -110,6 +135,7 @@ export type LynxNavigationAction =
     }
   | { type: 'openInstances' }
   | { type: 'closeSecondary' }
+  | { type: 'reconcileChatParent'; sessionId: string; directory?: string | null }
   | { type: 'reset' };
 
 function createChatRoute(
@@ -180,6 +206,16 @@ export function reduceLynxNavigation(
       };
     case 'openInstances':
       return { ...state, secondary: { kind: 'instances' } };
+    case 'reconcileChatParent': {
+      if (state.secondary?.kind !== 'chat') return state;
+      const parent = createChatRoute(
+        action.sessionId,
+        action.directory ?? null,
+        'chat-parent',
+      );
+      const routes = reconcileLynxChatPredecessor(state.secondary.routes, parent);
+      return { ...state, secondary: { kind: 'chat', routes } };
+    }
     case 'closeSecondary':
       return state.secondary ? { ...state, secondary: null } : state;
     case 'reset':

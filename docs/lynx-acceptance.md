@@ -237,3 +237,10 @@ Chosen mode is written at the top of `packages/lynx/README.md` (Mode B iOS 26 ho
 - **Draft composer:** secondary `kind: 'draft'` body materializes via `POST /session` then `prompt_async` — never a fake chat id.
 - **List perf harness:** `src/harness/listPerfHarness.ts` records synthetic streaming cadence and prepend-anchor retention. Cap cadence notes (`20/64` default, `100/128` Android from `streamingRenderCadence.ts`) are documented anchors — **`deviceMeasured: false`**; no invented 真机 p95.
 - 真机过: **not executed** (Linux cloud agent).
+
+## Notes — SSE live tail / IME contract / nested stack (2026-09-06)
+
+- **SSE live tail:** Cap `/api/global/event` (SSE; WS sibling `/api/global/event/ws`). Lynx parses Cap/OpenCode envelopes (`liveEvents.ts`) and folds matching `message.*` / `session.status` into the **same** LegendList timeline — no TanStack split, no separate live overlay. Idle → queue flush + pending-card reload.
+- **IME occupancy:** `imeOccupancy.ts` locks host-binds-IME, collapsed-height-only occupancy, Chinese composition passthrough, list-footer inset. **No** WebView FLIP / ImeSyncBridge. Host keyboard wiring still required for 真机过.
+- **Nested child stack:** Cap `reconcileMobileChatPredecessor` + back pop mirrored (`reconcileLynxChatPredecessor`, ShellApp back decision). Predecessor chrome labeled on chat header.
+- 真机过: **not executed** (Linux cloud agent).

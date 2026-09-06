@@ -25,7 +25,9 @@ import { cssVar } from '../theme/tokens';
 import { LynxDock } from './Dock';
 import {
   INITIAL_LYNX_NAVIGATION_STATE,
+  lynxChatStackWindow,
   reduceLynxNavigation,
+  resolveLynxSecondaryBackDecision,
   type LynxNavigationState,
 } from './navigation';
 import { AssistantTab } from './screens/AssistantTab';
@@ -150,7 +152,16 @@ export function LynxShellApp({
   };
 
   const closeSecondary = () => {
-    setNavigation((state) => reduceLynxNavigation(state, { type: 'closeSecondary' }));
+    setNavigation((state) => {
+      const decision = resolveLynxSecondaryBackDecision({
+        secondary: state.secondary,
+        parentSessionTarget: null,
+      });
+      if (decision.action === 'popChatSession') {
+        return reduceLynxNavigation(state, { type: 'popChat' });
+      }
+      return reduceLynxNavigation(state, { type: 'closeSecondary' });
+    });
   };
 
   const openSession = (session: LynxHomeSessionRow) => {
@@ -291,7 +302,10 @@ export function LynxShellApp({
   };
 
   const secondary = navigation.secondary;
-  const chatRoute = secondary?.kind === 'chat' ? secondary.routes.at(-1) : null;
+  const chatRoutes = secondary?.kind === 'chat' ? secondary.routes : [];
+  const chatWindow = lynxChatStackWindow(chatRoutes);
+  const chatRoute = chatWindow.top;
+  const chatPredecessor = chatWindow.predecessor;
   const assistantRoute = secondary?.kind === 'assistant' ? secondary : null;
   const sheetDirectory = chatRoute?.directory
     ?? (assistantRoute?.sessionId ? assistantRoute.directory : null)
@@ -327,6 +341,7 @@ export function LynxShellApp({
             runtimeFetch={runtimeFetch}
             initialSheet={chatSheet}
             onSheetClosed={() => setChatSheet(null)}
+            predecessor={chatPredecessor}
           />
         ) : assistantRoute?.sessionId ? (
           <LynxChatScreen
