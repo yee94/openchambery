@@ -2081,26 +2081,17 @@ button.oc-mobile-worktree-label-trigger:active,
   height: 0;
 }
 
-/* Mobile notifications use the shared glass blur, but a denser fill than
-   dock/control glass so the frost reads without turning the banner airy.
-   Collapsed rear cards recede toward the page canvas. Sonner owns the 5%
-   scale / 0.5rem offset; each exposed edge gets only a short contact shadow. */
+/* Mobile notifications reuse dock glass fill (rgba, ~66–68%) so frost can
+   actually sample the page. Opaque elevated mixes hide backdrop-filter.
+   WebKit also refuses to blur through a transformed ancestor — Sonner
+   centers the toaster with translateX(-50%), so mobile drops that
+   transform and centers with inset/width instead. Collapsed rear cards
+   keep the same glass fill; short contact shadows and Sonner's 5% scale
+   / 0.5rem offset carry the stack. */
 :root:is(.device-mobile, .device-tablet, .mobile-pointer):not(.desktop-runtime) {
-  --oc-toast-background: color-mix(
-    in srgb,
-    var(--surface-elevated, var(--card)) 90%,
-    transparent
-  );
-  --oc-toast-background-rear-near: color-mix(
-    in srgb,
-    var(--surface-elevated, var(--card)) 82%,
-    var(--surface-background, var(--background))
-  );
-  --oc-toast-background-rear-far: color-mix(
-    in srgb,
-    var(--surface-elevated, var(--card)) 70%,
-    var(--surface-background, var(--background))
-  );
+  --oc-toast-background: var(--oc-mobile-glass-fill);
+  --oc-toast-background-rear-near: var(--oc-mobile-glass-fill);
+  --oc-toast-background-rear-far: var(--oc-mobile-glass-fill);
   --oc-toast-shadow: 0 5px 12px -9px
     color-mix(
       in srgb,
@@ -2124,21 +2115,6 @@ button.oc-mobile-worktree-label-trigger:active,
 :root.dark:is(.device-mobile, .device-tablet, .mobile-pointer):not(
     .desktop-runtime
   ) {
-  --oc-toast-background: color-mix(
-    in srgb,
-    var(--surface-elevated, var(--card)) 88%,
-    transparent
-  );
-  --oc-toast-background-rear-near: color-mix(
-    in srgb,
-    var(--surface-elevated, var(--card)) 80%,
-    var(--surface-background, var(--background))
-  );
-  --oc-toast-background-rear-far: color-mix(
-    in srgb,
-    var(--surface-elevated, var(--card)) 68%,
-    var(--surface-background, var(--background))
-  );
   --oc-toast-shadow: 0 5px 12px -9px
     color-mix(
       in srgb,
@@ -2162,10 +2138,23 @@ button.oc-mobile-worktree-label-trigger:active,
 :root:is(.device-mobile, .device-tablet, .mobile-pointer):not(.desktop-runtime)
   [data-sonner-toaster] {
   --gap: 0.5rem !important;
+  --normal-bg: var(--oc-toast-background);
+  --success-bg: var(--oc-toast-background);
+  --error-bg: var(--oc-toast-background);
+  --warning-bg: var(--oc-toast-background);
+  --info-bg: var(--oc-toast-background);
   --oc-toast-action-background: transparent;
   --oc-toast-action-foreground: var(--primary-base);
   --oc-toast-cancel-background: transparent;
   --oc-toast-cancel-foreground: var(--muted-foreground);
+}
+
+:root:is(.device-mobile, .device-tablet, .mobile-pointer):not(.desktop-runtime)
+  [data-sonner-toaster][data-x-position="center"] {
+  left: 50% !important;
+  width: min(var(--width), calc(100vw - 2rem)) !important;
+  margin-left: calc(min(var(--width), calc(100vw - 2rem)) * -0.5) !important;
+  transform: none !important;
 }
 
 :root:is(.device-mobile, .device-tablet, .mobile-pointer):not(.desktop-runtime)
@@ -2176,6 +2165,7 @@ button.oc-mobile-worktree-label-trigger:active,
   border: 0 !important;
   border-radius: var(--radius-xl) !important;
   background: var(--oc-toast-background) !important;
+  background-color: var(--oc-toast-background) !important;
   -webkit-backdrop-filter:
     blur(var(--oc-mobile-glass-blur))
     saturate(var(--oc-mobile-glass-saturate));
