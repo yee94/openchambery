@@ -1,10 +1,9 @@
 name: Expo Mobile CI
 
-# Automatic static checks on the independent Expo track. Does not replace
-# Capacitor `.github/workflows/mobile-ci.yml` on main.
-#
-# Lint + typecheck only. This workflow does not build an iOS Simulator app
-# or an Android APK and must not be cited as a green device build.
+# Track 9 — static checks + side-by-side Android debug APK on work/expo-native.
+# Does not replace Capacitor mobile-ci.yml on main.
+# Does not claim iOS Simulator / device walks. iOS simulator residual: macos
+# runner + CocoaPods + Track 8 native modules not wired in this workflow yet.
 on:
   push:
     branches:
@@ -12,17 +11,25 @@ on:
   workflow_dispatch:
     inputs:
       reason:
-        description: Optional note for this on-demand Expo lint/typecheck
+        description: Optional note for this on-demand Expo CI run
         required: false
         type: string
+      publish_prerelease:
+        description: Create GitHub prerelease with APK (tag expo-v2-debug-<sha7>)
+        required: false
+        type: boolean
+        default: true
 
 concurrency:
   group: expo-mobile-ci-work-expo-native
   cancel-in-progress: true
 
+permissions:
+  contents: read
+
 jobs:
-  lint-typecheck:
-    name: Lint and typecheck
+  lint-typecheck-test:
+    name: Lint, typecheck, unit tests
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -44,3 +51,116 @@ jobs:
 
       - name: Typecheck
         run: npm run typecheck
+
+      - name: Unit tests
+        run: npm test
+
+  android-debug-apk:
+    name: Android debug APK
+    runs-on: ubuntu-latest
+    needs: lint-typecheck-test
+    defaults:
+      run:
+        working-directory: apps/mobile_expo
+    outputs:
+      apk_name: ${{ steps.apk_meta.outputs.apk_name }}
+      sha7: ${{ steps.apk_meta.outputs.sha7 }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: apps/mobile_expo/package-lock.json
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install JS deps
+        run: npm ci
+
+      - name: Prebuild Android CNG
+        run: npx expo prebuild --platform android --non-interactive
+
+      - name: Verify debug applicationIdSuffix
+        run: |
+          set -euo pipefail
+          gradle_file=android/app/build.gradle
+          test -f "$gradle_file"
+          grep -q 'applicationIdSuffix ".debug"' "$gradle_file"
+          grep -q 'OpenChamber Expo' "$gradle_file" || grep -q 'OpenChamber Expo' android/app/src/main/res/values/strings.xml
+          echo "OK: debug side-by-side identity present"
+
+      - name: Assemble debug APK
+        working-directory: apps/mobile_expo/android
+        run: ./gradlew assembleDebug --no-daemon
+
+      - name: Locate APK
+        id: apk_meta
+        working-directory: apps/mobile_expo
+        run: |
+          set -euo pipefail
+          apk=$(find android/app/build/outputs/apk/debug -name '*.apk' | head -n 1)
+          test -n "$apk"
+          test -f "$apk"
+          sha7=$(echo "${GITHUB_SHA}" | cut -c1-7)
+          out="openchamber-expo-debug-${sha7}.apk"
+          cp "$apk" "$out"
+          echo "apk_path=$out" >> "$GITHUB_OUTPUT"
+          echo "apk_name=$out" >> "$GITHUB_OUTPUT"
+          echo "sha7=$sha7" >> "$GITHUB_OUTPUT"
+          ls -lh "$out"
+
+      - name: Upload Android debug APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: openchamber-expo-android-debug-apk
+          path: apps/mobile_expo/${{ steps.apk_meta.outputs.apk_name }}
+          if-no-files-found: error
+          retention-days: 14
+
+  publish-prerelease:
+    name: Prerelease debug APK
+    runs-on: ubuntu-latest
+    needs: android-debug-apk
+    if: >
+      github.event_name == 'push' ||
+      (github.event_name == 'workflow_dispatch' && inputs.publish_prerelease != false)
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download APK artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: openchamber-expo-android-debug-apk
+          path: dist
+
+      - name: Create GitHub prerelease (not latest)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SHA7: ${{ needs.android-debug-apk.outputs.sha7 }}
+          APK_NAME: ${{ needs.android-debug-apk.outputs.apk_name }}
+        run: |
+          set -euo pipefail
+          tag="expo-v2-debug-${SHA7}"
+          apk="dist/${APK_NAME}"
+          test -f "$apk"
+          if gh release view "$tag" --repo "${{ github.repository }}" >/dev/null 2>&1; then
+            echo "Release $tag already exists; uploading APK with --clobber"
+            gh release upload "$tag" "$apk" --clobber --repo "${{ github.repository }}"
+          else
+            gh release create "$tag" "$apk" \
+              --repo "${{ github.repository }}" \
+              --prerelease \
+              --title "OpenChamber Expo debug ${SHA7}" \
+              --notes "Track 9 side-by-side debug APK for work/expo-native @ $GITHUB_SHA. applicationId com.yee94.openchamber.debug, label OpenChamber Expo. Debug keystore. Reuses Cap google-services.json. Not /releases/latest. Artifact: $APK_NAME"
+          fi
+          echo "Prerelease URL: https://github.com/${{ github.repository }}/releases/tag/$tag"
