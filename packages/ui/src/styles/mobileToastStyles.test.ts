@@ -14,15 +14,18 @@ describe('mobile toast visual contract', () => {
       /--oc-toast-shadow:\s*0 5px 12px -9px\s*color-mix\([\s\S]*?var\(--surface-foreground, var\(--foreground\)\) 30%/,
     );
     expect(mobileCss).toMatch(
-      /--oc-toast-background-rear-near:\s*color-mix\([\s\S]*?var\(--surface-elevated, var\(--card\)\) 86%/,
+      /--oc-toast-background:\s*color-mix\([\s\S]*?var\(--surface-elevated, var\(--card\)\) 90%/,
     );
     expect(mobileCss).toMatch(
-      /--oc-toast-background-rear-far:\s*color-mix\([\s\S]*?var\(--surface-elevated, var\(--card\)\) 72%/,
+      /--oc-toast-background-rear-near:\s*color-mix\([\s\S]*?var\(--surface-elevated, var\(--card\)\) 82%/,
+    );
+    expect(mobileCss).toMatch(
+      /--oc-toast-background-rear-far:\s*color-mix\([\s\S]*?var\(--surface-elevated, var\(--card\)\) 70%/,
     );
     expect(mobileCss).toContain('--oc-toast-shadow-rear-near: 0 3px 7px -5px');
     expect(mobileCss).toContain('--oc-toast-shadow-rear-far: 0 2px 5px -4px');
     expect(mobileCss).toMatch(
-      /:root\.dark:is\([\s\S]*?--oc-toast-background:\s*color-mix\([\s\S]*?var\(--surface-foreground, var\(--foreground\)\) 7%[\s\S]*?--oc-toast-background-rear-near:\s*color-mix\([\s\S]*?\) 4%[\s\S]*?--oc-toast-background-rear-far:\s*color-mix\([\s\S]*?\) 1%[\s\S]*?--oc-toast-shadow:\s*0 5px 12px -9px[\s\S]*?var\(--surface-background, var\(--background\)\) 76%[\s\S]*?--oc-toast-shadow-rear-near:\s*0 3px 7px -5px[\s\S]*?\) 62%[\s\S]*?--oc-toast-shadow-rear-far:\s*0 2px 5px -4px[\s\S]*?\) 48%/,
+      /:root\.dark:is\([\s\S]*?--oc-toast-background:\s*color-mix\([\s\S]*?var\(--surface-elevated, var\(--card\)\) 88%[\s\S]*?--oc-toast-background-rear-near:\s*color-mix\([\s\S]*?\) 80%[\s\S]*?--oc-toast-background-rear-far:\s*color-mix\([\s\S]*?\) 68%[\s\S]*?--oc-toast-shadow:\s*0 5px 12px -9px[\s\S]*?var\(--surface-background, var\(--background\)\) 76%[\s\S]*?--oc-toast-shadow-rear-near:\s*0 3px 7px -5px[\s\S]*?\) 62%[\s\S]*?--oc-toast-shadow-rear-far:\s*0 2px 5px -4px[\s\S]*?\) 48%/,
     );
     expect(mobileCss).toMatch(
       /data-front="false"\]\[data-index="1"\][^{]*\{[\s\S]*?--oc-toast-shadow: var\(--oc-toast-shadow-rear-near\);[\s\S]*?background: var\(--oc-toast-background-rear-near\) !important;/,
@@ -44,6 +47,9 @@ describe('mobile toast visual contract', () => {
     expect(sonnerSource).toContain('var(--oc-toast-action-background,var(--primary-base))');
     expect(mobileCss).toContain('--oc-toast-action-foreground: var(--primary-base);');
     expect(mobileCss).toMatch(/data-sonner-toast\]\[data-styled="true"\][^{]*\{[\s\S]*?padding: 0\.5rem 0\.625rem !important;/);
+    expect(mobileCss).toMatch(
+      /data-sonner-toast\]\[data-styled="true"\][^{]*\{[\s\S]*?backdrop-filter:\s*blur\(var\(--oc-mobile-glass-blur\)\)\s*saturate\(var\(--oc-mobile-glass-saturate\)\);/,
+    );
     expect(mobileCss).toMatch(/\[data-button\][^{]*\{[\s\S]*?min-height: 36px;[\s\S]*?background: transparent !important;/);
     expect(mobileCss).toMatch(/prefers-reduced-transparency:[\s\S]*?data-sonner-toast\]\[data-styled="true"\][^{]*\{[\s\S]*?background: var\(--surface-elevated, var\(--card\)\) !important;/);
   });

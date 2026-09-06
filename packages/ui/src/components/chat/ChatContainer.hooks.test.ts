@@ -207,11 +207,14 @@ describe('ChatContainer source contracts', () => {
         const footer = source.slice(footerStart, footSpacer);
         expect(footer).not.toContain('StatusRowContainer');
         expect(source).toContain('<StatusRowContainer />');
-        // Classic path: only after a transcript shell exists — empty+busy must
-        // not orphan WorkingPlaceholder over a blank viewport.
-        expect(source).toContain('renderedMessages.length > 0 ? (');
-        const statusGate = source.indexOf('renderedMessages.length > 0 ? (');
-        expect(source.slice(statusGate, statusGate + 180)).toContain('<StatusRowContainer />');
+        // Classic path: shell-gated status mounts through MessageList.liveStatusSlot
+        // (inside the pin-reveal root), not as a sibling after MessageList.
+        expect(source).toContain('liveStatusSlot={');
+        const statusGate = source.indexOf('liveStatusSlot={');
+        const liveStatusSlot = source.slice(statusGate, source.indexOf('/>', statusGate + 80) + 2);
+        expect(liveStatusSlot).toContain('renderedMessages.length > 0');
+        expect(liveStatusSlot).toContain('<StatusRowContainer />');
+        expect(source).not.toMatch(/<\/MessageList>\s*\{\/\* No transcript shell/);
     });
 
     test('composer send re-arms legend follow so a mid-history send can park', () => {
@@ -271,6 +274,19 @@ describe('ChatContainer source contracts', () => {
         expect(handoffSource).toContain('messageId: selectedSession.draftPendingMessageId');
         expect(handoffSource).toContain('selectedRetainedPendingMessages.some(');
         expect(handoffSource).not.toContain('requestAnimationFrame');
+    });
+
+    test('establishing draft paints the pending row without the markdown pin-reveal hide', () => {
+        const establishingDraftShell = source.slice(
+            source.indexOf('if ((draftSubmitting || draftEstablishing) && draftPendingMessage)'),
+            source.indexOf('if (draftSubmitting || draftEstablishing)'),
+        );
+        expect(establishingDraftShell).toContain('initialPinRevealComplete');
+        const revealStart = source.indexOf('const initialPinRevealComplete = Boolean(');
+        expect(revealStart).toBeGreaterThan(-1);
+        const revealBody = source.slice(revealStart, source.indexOf(');', revealStart) + 2);
+        expect(revealBody).toContain('committedDraftHandoffMessageId');
+        expect(revealBody).toContain('retainedPendingUserMessages.length > 0');
     });
 
     test('legend scroller dataset restores the transcript scroll-shadow mask', () => {

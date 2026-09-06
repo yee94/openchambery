@@ -4,6 +4,24 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.19.7-beta.16] - 2026-09-06
+
+### 助手
+
+- 列表头像里的 emoji 居中更稳（不再被 `block` 冲掉 flex）。
+- 手机与桌面助手列表不再显示 provider/model 小胶囊，只保留名字与 prompt。
+
+### 会话
+
+- 通用 busy、还没有具体工具/推理/正文时，不再单独亮「正在思考 / 工作中」状态条。
+- 冷启动 / 跳到最新时，Working 状态跟 transcript 同一 pin-reveal 根，避免列表还隐藏时状态先露出来。
+- 助手模型头与 Agent badge 不再被过度截断，长名称可读性更好。
+
+### 移动端
+
+- `/` `@` `#` 补全层 portal 到 `document.body`，键盘弹起时不再被 IME 压到屏幕下沿。
+- 补全面板高度跟随键盘动画帧更新，小屏 Android 更稳。
+
 ## [1.19.7-beta.15] - 2026-09-06
 
 ### 会话

@@ -67,7 +67,6 @@ type AssistantListItemProps = {
   assistantID: string;
   displayName: string;
   avatarEmoji?: string;
-  subtitle: string;
   selected: boolean;
   enabled: boolean;
   editLabel: string;
@@ -83,7 +82,6 @@ const AssistantListItem: React.FC<AssistantListItemProps> = ({
   assistantID,
   displayName,
   avatarEmoji,
-  subtitle,
   selected,
   enabled,
   editLabel,
@@ -132,9 +130,6 @@ const AssistantListItem: React.FC<AssistantListItemProps> = ({
         <AssistantWorkingAvatar name={assistantID} emoji={avatarEmoji} size={24} label={displayName} working={working} />
         <span className="min-w-0 flex-1">
           <span className="block truncate typography-ui-label font-medium">{displayName}</span>
-          <span className="mt-0.5 block truncate typography-micro text-muted-foreground">
-            {subtitle}
-          </span>
         </span>
       </ContextMenuTrigger>
       <ContextMenuContent className="min-w-[10rem]">
@@ -257,7 +252,6 @@ export const AssistantView: React.FC<AssistantViewProps> = ({ activeOverride, on
                     assistantID={item.id}
                     displayName={itemPresentation.displayName}
                     avatarEmoji={itemPresentation.avatarEmoji ?? undefined}
-                    subtitle={[item.providerID, item.modelID].filter(Boolean).join('/') || item.defaultPrompt.trim()}
                     selected={selected}
                     enabled={item.enabled}
                     editLabel={t('assistants.menu.edit')}

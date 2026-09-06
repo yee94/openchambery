@@ -42,7 +42,7 @@ describe('composerAutocompleteChrome', () => {
       /@media \(prefers-reduced-transparency: reduce\) \{[\s\S]*\.oc-mobile-overlay-surface/,
     );
     expect(layerSource).toContain('createPortal');
-    expect(layerSource).toContain('oc-chat-composer-swap-scope');
+    expect(layerSource).toContain('document.body');
     expect(layerSource).toContain('fixed inset-0');
   });
 });

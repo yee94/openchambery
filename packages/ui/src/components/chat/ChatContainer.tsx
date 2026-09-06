@@ -676,6 +676,17 @@ const ChatViewport = React.memo(({
                             scrollToBottom={scrollToBottom}
                             scrollRef={scrollRef}
                             directory={directory}
+                            liveStatusSlot={
+                                // No shell → no status. Mount inside MessageList's pin-reveal
+                                // root so cold-open cannot orphan the label over a hidden transcript.
+                                renderedMessages.length > 0
+                                    ? (
+                                        <div className="mb-1">
+                                            {transcriptStatusRow ?? <StatusRowContainer />}
+                                        </div>
+                                    )
+                                    : null
+                            }
                         />
                         {(sessionQuestions.length > 0 || sessionPermissions.length > 0) && (
                             <div>
@@ -687,15 +698,6 @@ const ChatViewport = React.memo(({
                                 ))}
                             </div>
                         )}
-
-                        {/* No transcript shell: busy status alone is unstable empty chrome
-                            (same idea as ProgressiveGroup hiding a zero-row Working header).
-                            Do not paint "thinking XmYs" over a blank viewport. */}
-                        {renderedMessages.length > 0 ? (
-                            <div className="mb-1">
-                                {transcriptStatusRow ?? <StatusRowContainer />}
-                            </div>
-                        ) : null}
 
                         {/* The chrome reservation itself comes from
                             `.chat-scroll-foot-inset` padding on this content
@@ -967,7 +969,7 @@ const ChatContainerContent: React.FC<ChatContainerContentProps> = ({
     ) ?? EMPTY_PENDING_USER_MESSAGES;
     const initialPinRevealComplete = Boolean(
         committedDraftHandoffMessageId
-        && retainedPendingUserMessages.some((message) => message.info.id === committedDraftHandoffMessageId),
+        || retainedPendingUserMessages.length > 0,
     );
     const clearRetainedPendingUserMessages = useSessionUIStore((state) => state.clearRetainedPendingUserMessages);
     const pendingUserMessages = React.useMemo(() => {
@@ -2030,6 +2032,7 @@ const ChatContainerContent: React.FC<ChatContainerContentProps> = ({
 						scrollRef={scrollRef}
 						messageListRef={messageListRef}
 						pendingRevealWork={false}
+						initialPinRevealComplete
 						renderedMessages={[draftPendingMessage]}
 						isLoadingOlder={false}
 						sessionIsWorking

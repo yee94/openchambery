@@ -39,6 +39,14 @@ export const StatusRowContainer: React.FC = React.memo(() => {
         && typeof abortPromptExpiresAt === 'number'
         && abortPromptExpiresAt > Date.now(),
     );
+    // Busy with no concrete part (tool / reasoning / text / editing) is the same
+    // unstable empty chrome as a zero-row live ProgressiveGroup header — hide the
+    // orphan "thinking / working" label until activity actually has a row.
+    const showAssistantStatus = working.isWaitingForPermission
+        || Boolean(working.retryInfo)
+        || wasAborted
+        || working.wasAborted
+        || !working.isGenericStatus;
 
     return (
         <StatusRow
@@ -52,7 +60,7 @@ export const StatusRowContainer: React.FC = React.memo(() => {
             turnStartedAt={working.turnStartedAt}
             isTurnSettled={working.isTurnSettled}
             showAbortPrompt={showAbortPrompt}
-            showAssistantStatus
+            showAssistantStatus={showAssistantStatus}
             showTodos={false}
             agentName={currentAgentName}
         />
