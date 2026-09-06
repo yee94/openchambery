@@ -48,7 +48,7 @@ type AssistantConversationSurfaceProps = {
 /**
  * Grok-like contact transcript. Renders OpenChamber-owned bubbles and
  * first-class session cards on main's LegendList + MarkdownRenderer path —
- * not ChatContainer, Activity, thinking, StickToBottom, Virtua, or TanStack Virtual.
+ * not ChatContainer, Activity, or thinking chrome.
  *
  * Cards are assistant-emitted UI (assign_session, create_assistant,
  * schedule_task; later watch/PR). The composer is a message box — not slash

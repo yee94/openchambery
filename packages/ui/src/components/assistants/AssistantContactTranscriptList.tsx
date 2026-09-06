@@ -123,6 +123,7 @@ const AssistantContactRow: React.FC<{
                 {settleKey ? t(settleKey) : (
                   <MarkdownRenderer
                     content={part.text}
+                    messageId={`${message.messageID}:text:${index}`}
                     variant="assistant"
                     enableFileReferences={false}
                   />

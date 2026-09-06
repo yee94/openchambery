@@ -562,13 +562,14 @@ describe('Assistant UI product contract', () => {
     expect(transcriptList).toContain('maintainVisibleContentPosition');
     expect(transcriptList).toContain('initialScrollAtEnd');
     expect(transcriptList).toContain('<MarkdownRenderer');
+    expect(transcriptList).toContain('messageId={`${message.messageID}:text:${index}`}');
     expect(transcriptList).toContain('variant="assistant"');
     expect(transcriptList).toContain('enableFileReferences={false}');
     expect(transcriptList).toContain('<MarkdownHydrationProvider enabled');
     expect(transcriptList).toContain("t('chat.history.loadOlder')");
-    expect(contact).not.toContain('StickToBottom');
-    expect(contact).not.toContain('virtua');
-    expect(contact).not.toContain('@tanstack/react-virtual');
+    expect(contact).not.toMatch(/from ['"]use-stick-to-bottom['"]/);
+    expect(contact).not.toMatch(/from ['"]virtua['"]/);
+    expect(contact).not.toMatch(/from ['"]@tanstack\/react-virtual['"]/);
     expect(contact).not.toContain('useTanstackVirtualizer');
     expect(contact).not.toContain('<TimelineList');
     expect(contact).not.toContain('<MessageList');
