@@ -1,0 +1,9 @@
+{
+  "platforms": ["apple", "android"],
+  "apple": {
+    "modules": ["OpenChamberSystemShellModule"]
+  },
+  "android": {
+    "modules": ["com.yee94.openchamber.shell.OpenChamberSystemShellModule"]
+  }
+}

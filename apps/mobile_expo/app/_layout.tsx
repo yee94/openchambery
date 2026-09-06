@@ -1,11 +1,14 @@
 import { DarkTheme, Stack, ThemeProvider, useRouter, useSegments } from 'expo-router';
 import { useFonts } from 'expo-font';
 import * as SplashScreen from 'expo-splash-screen';
-import { useEffect } from 'react';
+import { useCallback, useEffect } from 'react';
 import 'react-native-reanimated';
 
 import { SplashConnecting } from '@/components/connect/SplashConnecting';
 import { ConnectionProvider, useConnection } from '@/context/ConnectionContext';
+import { useDeepLinkNavigation } from '@/hooks/useDeepLinkNavigation';
+import { usePushRegistration } from '@/hooks/usePushRegistration';
+import { useShareInbox } from '@/hooks/useShareInbox';
 
 export { ErrorBoundary } from 'expo-router';
 
@@ -45,6 +48,20 @@ function RootLayoutNav() {
   const { state } = useConnection();
   const segments = useSegments();
   const router = useRouter();
+
+  const openSession = useCallback(
+    (sessionId: string) => {
+      router.push(`/chat/${encodeURIComponent(sessionId)}`);
+    },
+    [router],
+  );
+
+  useDeepLinkNavigation();
+  usePushRegistration({
+    enabled: state.phase === 'connected',
+    onOpenSession: openSession,
+  });
+  useShareInbox({ enabled: state.phase === 'connected' });
 
   useEffect(() => {
     if (state.phase === 'booting' || state.phase === 'connecting') return;

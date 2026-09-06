@@ -188,9 +188,14 @@ export const completeProviderOAuth = async (
   }
 };
 
-/** Cap external-browser OAuth path via expo-web-browser. */
+/** Cap external-browser OAuth path via expo-web-browser — http(s) only. */
 export const openExternalOAuthUrl = async (url: string): Promise<void> => {
   if (!url.trim()) throw new ProvidersApiError('missing_oauth_url');
-  const WebBrowser = await import('expo-web-browser');
-  await WebBrowser.openBrowserAsync(url.trim());
+  const { openExternalBrowser, ExternalBrowserError } = await import('@/lib/systemShell/externalBrowser');
+  try {
+    await openExternalBrowser(url);
+  } catch (error) {
+    if (error instanceof ExternalBrowserError) throw new ProvidersApiError('missing_oauth_url');
+    throw error;
+  }
 };

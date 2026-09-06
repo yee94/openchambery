@@ -110,6 +110,11 @@ export const queueMcpOAuthPending = async (
 
 export const openMcpOAuthUrl = async (url: string): Promise<void> => {
   if (!url.trim()) throw new McpApiError('missing_oauth_url');
-  const WebBrowser = await import('expo-web-browser');
-  await WebBrowser.openBrowserAsync(url.trim());
+  const { openExternalBrowser, ExternalBrowserError } = await import('@/lib/systemShell/externalBrowser');
+  try {
+    await openExternalBrowser(url);
+  } catch (error) {
+    if (error instanceof ExternalBrowserError) throw new McpApiError('missing_oauth_url');
+    throw error;
+  }
 };

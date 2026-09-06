@@ -99,9 +99,9 @@ Push, share inbox, Live Activity, WidgetKit/NSE, external browser, HEIC / picker
 
 | Row | Status | Notes |
 |---|---|---|
-| Track (CODE) | **missing** | No native modules yet. Native is always-on by contract |
-| CI green | missing | |
-| 真机过 | missing | |
+| Track (CODE) | **code landed** | iOS: Expo `NativeTabs` (real `UITabBar`) + `expo-glass-effect` (`UIGlassEffect`) composer; local `openchamber-system-shell` module for Live Activity / App Group share inbox / virtual assets + config plugin (`group.com.yee94.openchamber`, Live Activities, Android SEND intents). Push: `expo-notifications` → `POST /api/push/apns-token` + visibility heartbeat; tap/deep link `openchamber://session/{id}`. Haptics via `expo-haptics`; OAuth external browser http(s) only. Android: Material dock + solid composer (honest degrade, not fake glass); Live Activity no-op. Unit tests for deep links / share parsers / http(s) guard / Live Activity validators. |
+| CI green | missing | Local vitest+lint+typecheck; Actions tip not claimed |
+| 真机过 | missing | Device residuals: iOS Share Extension target UI (inbox/App Group store landed), WidgetKit Live Activity UI surface (ActivityKit API landed), APNs/FCM on physical device, HEIC pick on device. Do not mark from Linux VM |
 
 ### 9. CI + side-by-side debug prerelease
 
@@ -135,8 +135,8 @@ These are not feature tracks. Stub chrome must not be copied into tracks 1–8 a
 | Session index Projects home + `项目 · 分支` | **code landed** | Expo Projects home on `work/expo-native`; 真机过 still open |
 | Chat LegendList + Send/Stop | **code landed** | LegendList contract (not 1.18 TanStack); draft materialize; WS/SSE/poll fallback |
 | Settings home + `MOBILE_SETTINGS_PAGE_SLUGS` | **code landed** | Omit Voice; assistants CRUD forms included |
-| Native iOS chrome (`UIGlassEffect` / `UITabBar` / Live Activity) | not started | Always on; no `iosNativeUi` toggle |
-| Android honest degrade | not started | No fake glass |
+| Native iOS chrome (`UIGlassEffect` / `UITabBar` / Live Activity) | **code landed** | NativeTabs + expo-glass-effect + local Live Activity module; WidgetKit UI / Share Extension target still 真机过 |
+| Android honest degrade | **code landed** | Material NativeTabs + solid composer; Live Activity no-op |
 | Performance harness (LegendList long-context) | **code landed** | `lib/__tests__/chatTranscript.perf.test.ts` (250 turns / 500 msgs); CI Actions not claimed |
 | Prerelease debug APK (`applicationIdSuffix .debug`, label **OpenChamber Expo**) | not started | Side-by-side vs release Cap. Direct-link prerelease later |
 | Signed release workflow | not started | Existing secret names only |
