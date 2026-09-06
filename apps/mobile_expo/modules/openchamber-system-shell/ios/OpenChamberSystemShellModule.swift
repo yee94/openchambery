@@ -58,6 +58,15 @@ public class OpenChamberSystemShellModule: Module {
       try OpenChamberExpoShareStore.release(operationID)
     }
 
+    // Android-only drafts; iOS Share Extension commits envelopes with exact targets.
+    AsyncFunction("listShareDrafts") { () -> [String: Any] in
+      ["drafts": []]
+    }
+
+    AsyncFunction("cancelShareDraft") { (_: String) in
+      // no-op on iOS
+    }
+
     AsyncFunction("createVirtualAsset") { (assetId: String, mime: String) -> [String: Any] in
       let url = try OpenChamberExpoVirtualAsset.create(assetId: assetId, mime: mime)
       return ["assetId": assetId, "url": url]

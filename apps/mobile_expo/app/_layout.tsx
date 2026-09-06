@@ -10,6 +10,7 @@ import { useDeepLinkNavigation } from '@/hooks/useDeepLinkNavigation';
 import { usePushRegistration } from '@/hooks/usePushRegistration';
 import { useHomeAttention } from '@/hooks/useHomeAttention';
 import { dispatchMarkSessionViewed } from '@/lib/homeAttention';
+import { ShareRecipientPicker } from '@/components/assistant/ShareRecipientPicker';
 import { useShareInbox } from '@/hooks/useShareInbox';
 import { t } from '@/lib/i18n';
 
@@ -65,7 +66,10 @@ function RootLayoutNav() {
     enabled: state.phase === 'connected',
     onOpenSession: openSession,
   });
-  useShareInbox({ enabled: state.phase === 'connected' });
+  const shareInbox = useShareInbox({
+    enabled: state.phase === 'connected',
+    onOpenSession: openSession,
+  });
   // Home unread/running — keep subscribed while connected (not only on Projects tab).
   useHomeAttention({ enabled: state.phase === 'connected' });
 
@@ -92,6 +96,13 @@ function RootLayoutNav() {
 
   return (
     <ThemeProvider value={DarkTheme}>
+      <ShareRecipientPicker
+        draft={shareInbox.recipientDraft}
+        entries={shareInbox.recipientEntries}
+        busy={shareInbox.recipientBusy}
+        onSelect={shareInbox.selectRecipient}
+        onCancel={shareInbox.cancelRecipient}
+      />
       <Stack>
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
         <Stack.Screen

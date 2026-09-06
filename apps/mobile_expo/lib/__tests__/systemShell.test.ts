@@ -9,6 +9,7 @@ import {
 } from '../systemShell/liveActivity';
 import {
   parseShareCatalogEntry,
+  parseShareDraft,
   parseShareEnvelope,
   resolveShareTarget,
 } from '../systemShell/share';
@@ -115,5 +116,20 @@ describe('share', () => {
     });
     expect(env?.operationID).toBe('op1');
     expect(parseShareEnvelope({ version: 2 })).toBeNull();
+  });
+
+  it('parses android share drafts (unassigned recipient)', () => {
+    const draft = parseShareDraft({
+      version: 1,
+      draftID: 'd1',
+      text: 'note',
+      attachments: [],
+      source: 'android-share',
+      createdAt: 1,
+      expiresAt: 2,
+    });
+    expect(draft?.draftID).toBe('d1');
+    expect(draft?.assistantID).toBeUndefined();
+    expect(parseShareDraft({ version: 1, draftID: 'x', source: 'ios-share' })).toBeNull();
   });
 });

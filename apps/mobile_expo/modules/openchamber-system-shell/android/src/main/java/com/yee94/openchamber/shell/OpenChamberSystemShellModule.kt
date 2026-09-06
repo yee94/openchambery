@@ -77,6 +77,24 @@ class OpenChamberSystemShellModule : Module() {
       File(shareInboxDir(), operationID).deleteRecursively()
     }
 
+    AsyncFunction("listShareDrafts") {
+      val dir = shareDraftsDir()
+      val drafts = dir.listFiles()?.filter { it.extension == "json" }?.mapNotNull { file ->
+        try {
+          val obj = JSONObject(file.readText())
+          obj.keys().asSequence().associateWith { key -> obj.get(key) }
+        } catch (_: Exception) {
+          null
+        }
+      }?.sortedBy { (it["createdAt"] as? Number)?.toLong() ?: 0L } ?: emptyList()
+      mapOf("drafts" to drafts)
+    }
+
+    AsyncFunction("cancelShareDraft") { draftID: String ->
+      File(shareDraftsDir(), "$draftID.json").delete()
+      File(shareDraftsDir(), draftID).deleteRecursively()
+    }
+
     AsyncFunction("createVirtualAsset") { assetId: String, mime: String ->
       val ext = when {
         mime.contains("png") -> "png"

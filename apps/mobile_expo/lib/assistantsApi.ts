@@ -308,3 +308,134 @@ export const updateAssistant = async (
   }
   return parseAssistantDTO(await response.json());
 };
+
+export type AssistantShareSource = 'ios-share' | 'android-share';
+
+export type AssistantSharePart =
+  | { type: 'text'; text: string; synthetic?: boolean }
+  | { type: 'file'; mime: string; url: string };
+
+export type ShareOperation = {
+  operationID: string;
+  assistantID: string;
+  sessionID: string | null;
+  messageID: string | null;
+  state: 'submitting' | 'running' | 'completed' | 'failed' | 'unresolved';
+  phase: string;
+  attempt: number;
+  leaseExpiresAt: number | null;
+  errorCode: string | null;
+};
+
+export class AssistantShareOperationError extends AssistantsApiError {
+  readonly operation: ShareOperation;
+
+  constructor(code: string, status: number, operation: ShareOperation) {
+    super(code, status);
+    this.name = 'AssistantShareOperationError';
+    this.operation = operation;
+  }
+}
+
+const SHARE_STATES = ['submitting', 'running', 'completed', 'failed', 'unresolved'] as const;
+
+export const parseShareOperation = (payload: unknown): ShareOperation => {
+  const value = asRecord(payload) ?? invalid('share_operation');
+  const state = value.state;
+  if (typeof state !== 'string' || !(SHARE_STATES as readonly string[]).includes(state)) {
+    return invalid('share_operation');
+  }
+  return {
+    operationID: requireString(value.operationID, 'share_operation'),
+    assistantID: requireString(value.assistantID, 'share_operation'),
+    sessionID: requireNullableString(value.sessionID, 'share_operation'),
+    messageID: requireNullableString(value.messageID, 'share_operation'),
+    state: state as ShareOperation['state'],
+    phase: requireString(value.phase, 'share_operation'),
+    attempt: requireNumber(value.attempt, 'share_operation'),
+    leaseExpiresAt: requireNullableNumber(value.leaseExpiresAt, 'share_operation'),
+    errorCode: requireNullableString(value.errorCode, 'share_operation'),
+  };
+};
+
+/** POST /api/openchamber/assistants/:id/share */
+export const sendAssistantShare = async (
+  active: ActiveRuntime,
+  assistantID: string,
+  operationID: string,
+  messageID: string,
+  parts: AssistantSharePart[],
+  source: AssistantShareSource,
+  options?: { signal?: AbortSignal },
+): Promise<ShareOperation> => {
+  const response = await openchamberFetch(
+    active,
+    `/api/openchamber/assistants/${encodeURIComponent(assistantID)}/share`,
+    jsonInit(
+      'POST',
+      { operationID, payload: { messageID, parts, source } },
+      options?.signal,
+    ),
+  );
+  if (!response.ok) {
+    throw new AssistantsApiError(await readErrorCode(response), response.status);
+  }
+  return parseShareOperation(await response.json());
+};
+
+/** GET /api/openchamber/assistants/share-operations/:operationID */
+export const fetchAssistantShareOperation = async (
+  active: ActiveRuntime,
+  operationID: string,
+  options?: { signal?: AbortSignal },
+): Promise<ShareOperation> => {
+  const response = await openchamberFetch(
+    active,
+    `/api/openchamber/assistants/share-operations/${encodeURIComponent(operationID)}`,
+    { method: 'GET', signal: options?.signal },
+  );
+  if (!response.ok) {
+    throw new AssistantsApiError(await readErrorCode(response), response.status);
+  }
+  return parseShareOperation(await response.json());
+};
+
+/** Poll share operation until completed / failed / unresolved (Cap waitForAssistantShare). */
+export const waitForAssistantShare = async (
+  active: ActiveRuntime,
+  operation: ShareOperation,
+  options?: {
+    signal?: AbortSignal;
+    maxAttempts?: number;
+    delayMs?: number;
+    sleep?: (ms: number) => Promise<void>;
+    isCurrent?: () => boolean;
+  },
+): Promise<ShareOperation> => {
+  const maxAttempts = options?.maxAttempts ?? 60;
+  const delayMs = options?.delayMs ?? 750;
+  const sleep =
+    options?.sleep ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
+  let current = operation;
+  for (
+    let attempt = 0;
+    attempt < maxAttempts && (current.state === 'running' || current.state === 'submitting');
+    attempt += 1
+  ) {
+    if (options?.isCurrent && !options.isCurrent()) {
+      throw new AssistantShareOperationError('runtime_stale', 408, current);
+    }
+    await sleep(delayMs);
+    current = await fetchAssistantShareOperation(active, current.operationID, {
+      signal: options?.signal,
+    });
+  }
+  if (options?.isCurrent && !options.isCurrent()) {
+    throw new AssistantShareOperationError('runtime_stale', 408, current);
+  }
+  if (current.state === 'completed') return current;
+  if (current.state === 'failed') {
+    throw new AssistantShareOperationError(current.errorCode ?? 'share_failed', 400, current);
+  }
+  throw new AssistantShareOperationError('share_unresolved', 408, current);
+};

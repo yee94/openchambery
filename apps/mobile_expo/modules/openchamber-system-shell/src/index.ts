@@ -54,6 +54,27 @@ export type ShareEnvelope = {
   consumedAt?: number;
 };
 
+export type ShareDraft = {
+  version: 1;
+  draftID: string;
+  serverInstanceID?: string;
+  assistantID?: string;
+  name?: string;
+  avatarSeed?: string;
+  serverLabel?: string;
+  connectionKey?: string;
+  text?: string;
+  attachments: {
+    stagedPath: string;
+    originalName: string;
+    mime: string;
+    byteSize: number;
+  }[];
+  source: 'android-share';
+  createdAt: number;
+  expiresAt: number;
+};
+
 type SystemShellNativeModule = NativeModule & {
   isLiveActivitySupported(): Promise<{ supported: boolean }>;
   startLiveActivity(request: LiveActivityRequest): Promise<{ activityId?: string }>;
@@ -63,6 +84,8 @@ type SystemShellNativeModule = NativeModule & {
   listPendingShares(): Promise<{ envelopes: ShareEnvelope[] }>;
   ackShare(operationID: string): Promise<void>;
   releaseShareFiles(operationID: string): Promise<void>;
+  listShareDrafts(): Promise<{ drafts: ShareDraft[] }>;
+  cancelShareDraft(draftID: string): Promise<void>;
   createVirtualAsset(assetId: string, mime: string): Promise<{ assetId: string; url: string }>;
   appendVirtualAsset(assetId: string, chunkBase64: string): Promise<void>;
   finishVirtualAsset(assetId: string): Promise<{ url: string }>;
@@ -140,6 +163,13 @@ export const shareNative = {
   },
   async releaseFiles(operationID: string) {
     await getNative()?.releaseShareFiles(operationID);
+  },
+  async listDrafts(): Promise<ShareDraft[]> {
+    const result = await getNative()?.listShareDrafts?.();
+    return result?.drafts ?? [];
+  },
+  async cancelDraft(draftID: string) {
+    await getNative()?.cancelShareDraft?.(draftID);
   },
 };
 

@@ -69,7 +69,7 @@ Catalog, enable guide, pushed conversation, share-in (exact instance+assistant).
 
 | Row | Status | Notes |
 |---|---|---|
-| Track (CODE) | **code landed** | Live `GET /api/openchamber/assistants/snapshot` + capability; enable via `PUT .../assistants/settings`; tap opens bound `sessionID` or `POST .../session/new` into Chat; empty → onboarding → Settings `slug=assistants` create; long-press edit/delete (delete confirm + official DELETE). Unit tests green locally. **Still open CODE:** share-in drain → `POST .../assistants/{id}/share` + recipient picker (App Group inbox store landed in Track 8; Share Extension target UI = device residual). Full Settings assistants CRUD is Track 7. |
+| Track (CODE) | **code landed** | Live `GET /api/openchamber/assistants/snapshot` + capability; enable via `PUT .../assistants/settings`; tap opens bound `sessionID` or `POST .../session/new` into Chat; empty → onboarding → Settings `slug=assistants` create; long-press edit/delete (delete confirm + official DELETE). **Share-in (CODE):** publish App Group catalog (exact instance+assistant, no silent default); drain inbox → durable outbox → `POST /api/openchamber/assistants/{id}/share` + share-operations poll → ack/releaseFiles; Android unassigned-draft `ShareRecipientPicker` → assign → same share API (native listShareDrafts/cancelShareDraft wired; Share Extension / SEND receiver UI = device residual). Unit tests green locally. Full Settings assistants CRUD is Track 7. |
 | CI green | **CI green** @ `8d0043d1` | Expo Mobile CI lint+typecheck+vitest covers `apps/mobile_expo` — https://github.com/yee94/openchambery/actions/runs/34019907976. Tip docs SHA `4e6fd48e` (docs-only after product proof `8d0043d1`). |
 | 真机过 | missing | Do not mark from Linux VM |
 
