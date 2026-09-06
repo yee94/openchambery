@@ -109,9 +109,9 @@ Lint/typecheck/vitest, Android debug APK job, `applicationIdSuffix .debug`, labe
 
 | Row | Status | Notes |
 |---|---|---|
-| Lint / typecheck / unit tests workflow | **CI green** (lint+typecheck @ `bd88c4f5`) | Actions https://github.com/yee94/openchambery/actions/runs/34019497519 green for install/lint/typecheck after lockfile fix. Expanded workflow (vitest + Android APK + prerelease) is committed locally as `5ebe4bb2` but **blocked** from push: OAuth app lacks `workflow` scope. Vitest green locally (100). |
-| Device binary jobs | **in progress** (workflow not on remote yet) | Expanded job exists locally (`5ebe4bb2`); remote still old lint/typecheck-only workflow until `workflow` scope push. iOS simulator residual. |
-| Debug APK + prerelease link | **code landed** (plugin + app.json on tip); CI publish pending | `withAndroidDebugSideBySide` + Cap `googleServicesFile` on `bd88c4f5`. APK/prerelease Actions jobs await workflow file push (`workflow` scope). |
+| Lint / typecheck / unit tests workflow | **CI green** @ `8d0043d1` | Expanded workflow pushed @ `329b6ae0` (`ci(expo): Track 9 vitest + Android debug APK + prerelease`). Tip run https://github.com/yee94/openchambery/actions/runs/34019907976 — Lint/typecheck/unit tests **green**. Prior tip `329b6ae0` run 34019688824 failed only on Android assemble (namespace). |
+| Device binary jobs | **CI green** (Android); iOS residual | Android debug APK job **green** on tip (~16m). Artifact `openchamber-expo-android-debug-apk` on run 34019907976. iOS simulator residual: macos runner + CocoaPods + Track 8 native modules not wired. |
+| Debug APK + prerelease link | **CI green** | Prerelease tag `expo-v2-debug-8d0043d` — https://github.com/yee94/openchambery/releases/tag/expo-v2-debug-8d0043d (APK asset `openchamber-expo-debug-8d0043d.apk`). `contents: write` on publish job OK. Namespace fix for `openchamber-system-shell` @ `8d0043d1`. |
 | 真机过 | missing | |
 
 ## Bootstrap / process rows
@@ -137,11 +137,11 @@ These are not feature tracks. Stub chrome must not be copied into tracks 1–8 a
 | Settings home + `MOBILE_SETTINGS_PAGE_SLUGS` | **code landed** | Omit Voice; assistants CRUD forms included |
 | Native iOS chrome (`UIGlassEffect` / `UITabBar` / Live Activity) | **code landed** | NativeTabs + expo-glass-effect + local Live Activity module; WidgetKit UI / Share Extension target still 真机过 |
 | Android honest degrade | **code landed** | Material NativeTabs + solid composer; Live Activity no-op |
-| Performance harness (LegendList long-context) | **code landed** | `lib/__tests__/chatTranscript.perf.test.ts` (250 turns / 500 msgs); CI Actions not claimed |
-| Prerelease debug APK (`applicationIdSuffix .debug`, label **OpenChamber Expo**) | **code landed** (workflow) | Side-by-side vs Cap release. Tag `expo-v2-debug-<sha7>` prerelease; Actions result pending |
+| Performance harness (LegendList long-context) | **code landed** | `lib/__tests__/chatTranscript.perf.test.ts` (250 turns / 500 msgs); covered by Expo Mobile CI unit tests on tip |
+| Prerelease debug APK (`applicationIdSuffix .debug`, label **OpenChamber Expo**) | **CI green** @ `8d0043d1` | https://github.com/yee94/openchambery/releases/tag/expo-v2-debug-8d0043d — side-by-side debug APK published (not `/releases/latest`) |
 | Signed release workflow | not started | Existing secret names only; debug keystore for Track 9 |
-| CI lint / typecheck on `work/expo-native` | **CI green** @ `bd88c4f5` | https://github.com/yee94/openchambery/actions/runs/34019497519. Vitest job awaits workflow push. |
-| Android debug CI binary | **in progress** | Workflow YAML ready locally; push blocked without GitHub `workflow` OAuth scope |
+| CI lint / typecheck on `work/expo-native` | **CI green** @ `8d0043d1` | https://github.com/yee94/openchambery/actions/runs/34019907976 (lint+typecheck+vitest) |
+| Android debug CI binary | **CI green** @ `8d0043d1` | Run 34019907976 Android job green; artifact + prerelease linked above. First expanded push `329b6ae0` failed assemble (missing module namespace) — fixed on tip. |
 | iOS Simulator CI binary | residual | Not wired — macos runner + pods + Track 8 native modules |
 | Capgo / EAS-as-ship-path | will-not-port | |
 | `openchamber.iosNativeUi` toggle | will-not-port | |
