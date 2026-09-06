@@ -40,6 +40,74 @@
 .oc-markstream-host .markstream-react .inline-code {
   background: var(--syntax-background, var(--surface-muted));
   color: var(--syntax-foreground, var(--surface-foreground));
+  font-family: var(--font-mono);
+  font-size: var(--text-code);
+}
+
+/* Library lists use pl-[calc(13/8*1em)] plus li.pl-1.5 / my-2, which sits
+   wider and airier than OpenChamber's 18px/19px outside-marker rhythm. */
+.oc-markstream-host .markstream-react ul,
+.oc-markstream-host .markstream-react ol {
+  margin: 0 0 0.625rem 0;
+}
+
+.oc-markstream-host .markstream-react ul {
+  padding-left: 18px;
+  list-style-type: disc;
+  list-style-position: outside;
+}
+
+.oc-markstream-host .markstream-react ol {
+  padding-left: 19px;
+  list-style-type: decimal;
+  list-style-position: outside;
+}
+
+.oc-markstream-host .markstream-react li,
+.oc-markstream-host .markstream-react .list-item {
+  display: list-item;
+  margin: 4px 0;
+  padding-left: 1px;
+  line-height: var(--markdown-list-line-height, var(--markdown-body-line-height, 1.625));
+}
+
+.oc-markstream-host .markstream-react li > .paragraph-node,
+.oc-markstream-host .markstream-react .list-item > .paragraph-node {
+  display: inline;
+  margin: 0;
+}
+
+.oc-markstream-host .markstream-react li ul,
+.oc-markstream-host .markstream-react li ol {
+  margin-top: 0.25rem;
+  margin-bottom: 0.25rem;
+}
+
+/* Library inline code is text-[85%]; fenced blocks inline fontSize:12px.
+   Both ignore --text-code (settings / dpt scale). Tool markdown stays inherit. */
+.oc-markstream-host .markstream-react code,
+.oc-markstream-host .markstream-react pre {
+  font-family: var(--font-mono);
+  font-size: var(--text-code);
+}
+
+.oc-markstream-host .markstream-react .code-block-content,
+.oc-markstream-host .markstream-react .code-block-render pre,
+.oc-markstream-host .markstream-react .code-block-content .shiki,
+.oc-markstream-host .markstream-react .code-fallback-plain,
+.oc-markstream-host .markstream-react .code-fallback-plain > code {
+  font-size: var(--text-code) !important;
+}
+
+.oc-markstream-host.markdown-tool .markstream-react .inline-code,
+.oc-markstream-host.markdown-tool .markstream-react code,
+.oc-markstream-host.markdown-tool .markstream-react pre,
+.oc-markstream-host.markdown-tool .markstream-react .code-block-content,
+.oc-markstream-host.markdown-tool .markstream-react .code-block-render pre,
+.oc-markstream-host.markdown-tool .markstream-react .code-block-content .shiki,
+.oc-markstream-host.markdown-tool .markstream-react .code-fallback-plain,
+.oc-markstream-host.markdown-tool .markstream-react .code-fallback-plain > code {
+  font-size: inherit !important;
 }
 
 .oc-markstream-host.markdown-reasoning .markstream-react {
