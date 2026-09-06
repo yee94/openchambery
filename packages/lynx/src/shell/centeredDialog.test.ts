@@ -11,6 +11,8 @@ import {
 describe('Lynx Cap centered Dialog spirit', () => {
   test('is centered modal, not bottom sheet or elevated-in-sheet card', () => {
     expect(LYNX_CENTERED_DIALOG.placement).toBe('centered-modal');
+    expect(LYNX_CENTERED_DIALOG.mountPoint).toBe('shell-root-portal');
+    expect(LYNX_CENTERED_DIALOG.nestedInRelativeSheet).toBe(false);
     expect(LYNX_CENTERED_DIALOG.bottomSheet).toBe(false);
     expect(LYNX_CENTERED_DIALOG.elevatedInSheetCard).toBe(false);
     expect(LYNX_CENTERED_DIALOG.insideGlassContentView).toBe(false);

@@ -1,6 +1,7 @@
 /**
  * Cap Dialog / DialogContent spirit — scrim + centered panel modal.
  * Overlay only; never nest under GlassChrome. Not MobileResizableSheet.
+ * Mount via LynxDialogPortal at shell root (full-screen), not Changes relative.
  */
 import type { ReactNode } from 'react';
 
@@ -142,7 +143,7 @@ export function LynxCenteredDialog({
 export type LynxCenteredDialogActionProps = {
   label: string;
   onTap: () => void;
-  /** Cap destructive button spirit (status.error). */
+  /** Cap destructive: status.error fill + status.onError text (not `#fff`). */
   destructive?: boolean;
   disabled?: boolean;
 };
@@ -172,7 +173,7 @@ export function LynxCenteredDialogAction({
     >
       <LynxText
         style={{
-          color: destructive ? '#fff' : cssVar('surface.foreground'),
+          color: destructive ? cssVar('status.onError') : cssVar('surface.foreground'),
           fontWeight: '600',
           fontSize: '13px',
         }}

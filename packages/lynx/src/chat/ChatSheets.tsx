@@ -30,9 +30,11 @@ import {
   LynxCenteredDialog,
   LynxCenteredDialogAction,
 } from '../shell/CenteredDialog';
+import { LynxDialogPortal } from '../shell/DialogPortal';
 import { listLynxDirectory, readLynxFile, type LynxFsEntry } from './filesSurface';
 import { isLynxHtmlPath, planLynxHtmlPreview } from './htmlPreview';
 import {
+  LYNX_CAP_ARROW_GO_BACK_GLYPH,
   LYNX_CHANGE_ROW_SPACING,
   lynxChangeStatusCode,
   lynxChangeStatusToken,
@@ -577,7 +579,7 @@ function ChangesSheetBody({
   }
 
   return (
-    <LynxView style={{ flexGrow: 1, position: 'relative' }}>
+    <LynxView style={{ flexGrow: 1 }}>
     <LynxScrollView style={{ flexGrow: 1, padding: '0 16px 24px' }}>
       <LynxText style={{ color: cssVar('surface.mutedForeground'), fontSize: '12px', marginBottom: '8px' }}>
         {directory}
@@ -721,45 +723,48 @@ function ChangesSheetBody({
         })
       )}
     </LynxScrollView>
-      <LynxCenteredDialog
-        locale={locale}
-        open={pendingRevert != null}
-        title={lynxT(locale, 'lynx.chat.sheet.changes.revertConfirmTitle')}
-        description={lynxT(locale, 'lynx.chat.sheet.changes.revertConfirmDescription')}
-        ariaLabel={lynxT(locale, 'lynx.chat.sheet.changes.revertConfirmTitle')}
-        busy={actionBusy}
-        onClose={() => { if (!actionBusy) dismissRevertConfirm(); }}
-        footer={(
-          <>
-            <LynxCenteredDialogAction
-              label={lynxT(locale, 'lynx.chat.sheet.changes.cancel')}
-              disabled={actionBusy}
-              onTap={() => { dismissRevertConfirm(); }}
-            />
-            <LynxCenteredDialogAction
-              label={actionBusy
-                ? lynxT(locale, 'lynx.chat.sheet.changes.reverting')
-                : lynxT(locale, 'lynx.chat.sheet.changes.revertConfirmAction')}
-              destructive
-              disabled={actionBusy}
-              onTap={() => { confirmRevert(); }}
-            />
-          </>
-        )}
-      >
-        {pendingRevert ? (
-          <LynxText
-            style={{
-              color: cssVar('surface.foreground'),
-              fontSize: '12px',
-              marginBottom: '8px',
-              fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
-            }}
+      {/* Cap DialogPortal spirit — shell-root full-screen overlay, not nested absolute. */}
+      <LynxDialogPortal>
+        {pendingRevert != null ? (
+          <LynxCenteredDialog
+            locale={locale}
+            open
+            title={lynxT(locale, 'lynx.chat.sheet.changes.revertConfirmTitle')}
+            description={lynxT(locale, 'lynx.chat.sheet.changes.revertConfirmDescription')}
+            ariaLabel={lynxT(locale, 'lynx.chat.sheet.changes.revertConfirmTitle')}
+            busy={actionBusy}
+            onClose={() => { if (!actionBusy) dismissRevertConfirm(); }}
+            footer={(
+              <>
+                <LynxCenteredDialogAction
+                  label={lynxT(locale, 'lynx.chat.sheet.changes.cancel')}
+                  disabled={actionBusy}
+                  onTap={() => { dismissRevertConfirm(); }}
+                />
+                <LynxCenteredDialogAction
+                  label={actionBusy
+                    ? lynxT(locale, 'lynx.chat.sheet.changes.reverting')
+                    : lynxT(locale, 'lynx.chat.sheet.changes.revertConfirmAction')}
+                  destructive
+                  disabled={actionBusy}
+                  onTap={() => { confirmRevert(); }}
+                />
+              </>
+            )}
           >
-            {pendingRevert.path}
-          </LynxText>
+            <LynxText
+              style={{
+                color: cssVar('surface.foreground'),
+                fontSize: '12px',
+                marginBottom: '8px',
+                fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
+              }}
+            >
+              {pendingRevert.path}
+            </LynxText>
+          </LynxCenteredDialog>
         ) : null}
-      </LynxCenteredDialog>
+      </LynxDialogPortal>
     </LynxView>
   );
 }
@@ -854,8 +859,9 @@ function StageGlassChip({
 }
 
 /**
- * Cap ChangeRow revert control — GlassChrome `searchChip` size-6 like stage +/−
- * (arrow-go-back spirit via ↩), not plain ActionChip text.
+ * Cap ChangeRow revert control — GlassChrome `searchChip` size-6 like stage +/−.
+ * Glyph = Cap Icon `arrow-go-back` unicode stand-in (↩ / U+21A9); Cap SVG sprite
+ * needs DOM and is unavailable on Lynx — do not invent brand icons.
  */
 function RevertGlassChip({
   label,
@@ -888,7 +894,7 @@ function RevertGlassChip({
           fontSize: '14px',
         }}
       >
-        ↩
+        {LYNX_CAP_ARROW_GO_BACK_GLYPH}
       </LynxText>
     </LynxView>
   );

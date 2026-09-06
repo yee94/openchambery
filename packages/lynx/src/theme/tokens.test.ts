@@ -10,6 +10,11 @@ describe('Lynx semantic tokens', () => {
     expect(cssVar('status.error')).toBe('var(--status-error)');
   });
 
+  test('exposes Cap on-error (destructive-foreground) for solid error fills', () => {
+    expect(LYNX_TOKEN_CSS_VARS['status.onError']).toBe('--destructive-foreground');
+    expect(cssVar('status.onError')).toBe('var(--destructive-foreground)');
+  });
+
   test('every semantic token maps to a Cap CSS var', () => {
     const keys = Object.keys(LYNX_TOKEN_CSS_VARS) as LynxSemanticToken[];
     expect(keys.length).toBeGreaterThanOrEqual(11);

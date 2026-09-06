@@ -4,8 +4,8 @@
  * Cap `Dialog` / `DialogContent`: fixed scrim (`bg-black/50`) + flex-centered
  * panel (`max-w-md`, `rounded-xl`, `p-6`) — not MobileResizableSheet half-card
  * and not an elevated-in-scroll card.
- * Lynx: absolute inset scrim + centered panel; dismiss on scrim when allowed.
- * Keep outside GlassChrome contentView.
+ * Lynx: absolute inset scrim + centered panel via shell-root portal; dismiss on scrim when allowed.
+ * Keep outside GlassChrome contentView. Do not nest under Changes relative.
  */
 
 /** Cap DialogContent `max-w-md` (28rem). */
@@ -23,10 +23,14 @@ export const LYNX_CENTERED_DIALOG_SCRIM = 'rgba(0,0,0,0.5)';
 
 export const LYNX_CENTERED_DIALOG = {
   placement: 'centered-modal' as const,
+  /** Cap DialogPortal spirit — shell-root host, not nested sheet relative. */
+  mountPoint: 'shell-root-portal' as const,
   /** Distinguishes from MobileResizableSheet bottom half-card. */
   bottomSheet: false as const,
   /** Distinguishes from elevated-in-scroll / in-sheet cards. */
   elevatedInSheetCard: false as const,
+  /** Must not nest absolute under Changes position:relative. */
+  nestedInRelativeSheet: false as const,
   maxWidthPx: LYNX_CENTERED_DIALOG_MAX_WIDTH_PX,
   radiusPx: LYNX_CENTERED_DIALOG_RADIUS_PX,
   panelPaddingPx: LYNX_CENTERED_DIALOG_PANEL_PADDING_PX,
@@ -48,8 +52,10 @@ export const shouldAllowLynxCenteredDialogDismiss = (busy: boolean): boolean => 
 
 export const LYNX_CENTERED_DIALOG_NOTES = [
   'Cap Dialog spirit: dimmed scrim + flex-centered panel (max-w-md / rounded-xl) — not half-sheet card.',
+  'Mount at shell-root portal (full-screen overlay) — not nested absolute inside Changes relative container.',
   'Not MobileResizableSheet (bottom ~72/98%) and not elevated-in-scroll confirm card.',
   'Scrim tap dismisses when not busy; Cancel always available when not busy.',
+  'Destructive footer: status.error fill + status.onError text (Cap --destructive-foreground; never #fff).',
   'Reuse for destructive confirms (Changes revert). Cap does not confirm commit&push.',
   'Keep outside GlassChrome contentView. Linux JS wiring — 真机 residual. NOT DONE.',
 ] as const;

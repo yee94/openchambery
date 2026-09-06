@@ -84,6 +84,14 @@ export const LYNX_PIERRE_DIFF_STUB_NOTES = LYNX_PIERRE_DIFF_BLOCKERS;
  * - trailing `auto-cols-[1.5rem]` → 24px columns, no extra marginLeft
  * - status code `w-3.5` → 14px
  */
+/**
+ * Cap Icon name `arrow-go-back` (packages/ui/.../icon/sprite.ts).
+ * Cap SVG sprite needs DOM `<symbol>` — unavailable on Lynx/rspeedy.
+ * Unicode LEFTWARDS ARROW WITH HOOK is the Cap-mapped stand-in (not an invented brand).
+ */
+export const LYNX_CAP_ARROW_GO_BACK_ICON = 'arrow-go-back' as const;
+export const LYNX_CAP_ARROW_GO_BACK_GLYPH = '\u21A9'; // ↩
+
 export const LYNX_CHANGE_ROW_SPACING = {
   actionSizePx: 24,
   contentGapPx: 6,

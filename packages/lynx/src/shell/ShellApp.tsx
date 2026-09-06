@@ -23,6 +23,7 @@ import type { LynxHomeSessionRow } from '../session-index/homeModel';
 import type { createSessionIndexHomeBindings } from '../session-index/store';
 import { cssVar } from '../theme/tokens';
 import { LynxDock } from './Dock';
+import { LynxShellDialogPortalProvider } from './DialogPortal';
 import {
   INITIAL_LYNX_NAVIGATION_STATE,
   lynxChatStackWindow,
@@ -317,9 +318,11 @@ export function LynxShellApp({
       auto-height
       style={{
         flexGrow: 1,
+        position: 'relative',
         backgroundColor: cssVar('surface.background'),
       }}
     >
+      <LynxShellDialogPortalProvider>
       <LynxView style={{ flexGrow: 1 }}>
         {showDetachedSheet && chatSheet ? (
           <LynxChatSheet
@@ -437,6 +440,7 @@ export function LynxShellApp({
         visible={dockVisible}
         onTabSelected={selectTab}
       />
+      </LynxShellDialogPortalProvider>
     </LynxPage>
   );
 }

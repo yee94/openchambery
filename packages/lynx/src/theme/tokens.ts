@@ -22,12 +22,15 @@ export type LynxSemanticToken =
   /** Cap ChangeRow / portable diff — green additions (`--status-success`). */
   | 'status.success'
   /** Cap ChangeRow / portable diff — red deletions (`--status-error`). */
-  | 'status.error';
+  | 'status.error'
+  /** Cap text on solid error / destructive fill (`--destructive-foreground`). */
+  | 'status.onError';
 
 /**
  * CSS-variable names the Lynx page should consume. Values come from the
  * Flexoki / Cap theme CSS vars in `@openchamber/ui` — do not invent a Lynx palette.
  * `status.success` / `status.error` are Cap ChangeRow A/D + portable diff add/del colors.
+ * `status.onError` is Cap `--destructive-foreground` for text on solid error fills (never hardcode `#fff`).
  */
 export const LYNX_TOKEN_CSS_VARS: Record<LynxSemanticToken, string> = {
   'surface.background': '--surface-background',
@@ -41,6 +44,7 @@ export const LYNX_TOKEN_CSS_VARS: Record<LynxSemanticToken, string> = {
   'primary.foreground': '--primary-foreground',
   'status.success': '--status-success',
   'status.error': '--status-error',
+  'status.onError': '--destructive-foreground',
 };
 
 export function themeVariantForId(themeId: LynxThemeId): 'light' | 'dark' {

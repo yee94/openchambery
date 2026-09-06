@@ -1,6 +1,8 @@
 import { describe, expect, test } from 'vitest';
 
 import {
+  LYNX_CAP_ARROW_GO_BACK_GLYPH,
+  LYNX_CAP_ARROW_GO_BACK_ICON,
   LYNX_CHANGE_ROW_SPACING,
   LYNX_PIERRE_DIFF_BLOCKERS,
   buildLynxOriginalModifiedPreview,
@@ -95,5 +97,13 @@ describe('Lynx PierreDiff portable text', () => {
     expect(lynxChangeStatusToken('A')).toBe('status.success');
     expect(lynxChangeStatusToken('D')).toBe('status.error');
     expect(lynxChangeStatusToken('?')).toBe('primary.base');
+  });
+});
+
+describe('Cap ChangeRow arrow-go-back glyph', () => {
+  test('uses Cap icon name + unicode stand-in (no invented brand)', () => {
+    expect(LYNX_CAP_ARROW_GO_BACK_ICON).toBe('arrow-go-back');
+    expect(LYNX_CAP_ARROW_GO_BACK_GLYPH).toBe('\u21A9');
+    expect(LYNX_CAP_ARROW_GO_BACK_GLYPH).toBe('↩');
   });
 });

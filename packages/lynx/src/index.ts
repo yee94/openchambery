@@ -374,6 +374,8 @@ export {
   resolveLynxPierreDiffFeature,
   lynxChangeStatusCode,
   lynxChangeStatusToken,
+  LYNX_CAP_ARROW_GO_BACK_GLYPH,
+  LYNX_CAP_ARROW_GO_BACK_ICON,
   LYNX_CHANGE_ROW_SPACING,
   LYNX_PIERRE_DIFF_BLOCKERS,
   LYNX_PIERRE_DIFF_STUB_NOTES,
@@ -423,3 +425,11 @@ export {
   shouldAllowLynxCenteredDialogDismiss,
 } from './shell/centeredDialog';
 export { LynxCenteredDialog, LynxCenteredDialogAction } from './shell/CenteredDialog';
+export {
+  LYNX_SHELL_DIALOG_PORTAL,
+  LYNX_SHELL_DIALOG_PORTAL_NOTES,
+} from './shell/dialogPortal';
+export {
+  LynxDialogPortal,
+  LynxShellDialogPortalProvider,
+} from './shell/DialogPortal';

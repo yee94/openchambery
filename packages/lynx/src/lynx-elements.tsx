@@ -33,6 +33,9 @@ export type LynxViewProps = {
   'data-lynx-resizable-sheet-snap'?: string;
   'data-lynx-centered-dialog'?: string;
   'data-lynx-centered-dialog-placement'?: string;
+  'data-lynx-dialog-portal'?: string;
+  'data-lynx-dialog-portal-mount'?: string;
+  'data-lynx-dialog-portal-placement'?: string;
   'data-mobile-html-preview'?: string;
   bindtouchstart?: (event: { detail?: unknown }) => void;
   bindtouchmove?: (event: { detail?: unknown }) => void;
