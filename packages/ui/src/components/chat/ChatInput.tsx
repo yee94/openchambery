@@ -1211,6 +1211,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
     const setNewSessionDraftTarget = useSessionUIStore((s) => s.setNewSessionDraftTarget);
     const availableWorktreesByProject = useSessionUIStore((s) => s.availableWorktreesByProject);
     const abortPromptSessionId = useSessionUIStore((s) => s.abortPromptSessionId);
+    const abortPromptExpiresAt = useSessionUIStore((s) => s.abortPromptExpiresAt);
     const clearAbortPrompt = useSessionUIStore((s) => s.clearAbortPrompt);
     const consumePendingInputText = useInputStore((s) => s.consumePendingInputText);
     const pendingPresetSubmit = useInputStore((s) => s.pendingPresetSubmit);
@@ -7199,6 +7200,13 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
                 >
                 <MemoStatusRow
                     showAbortStatus={showAbortStatus}
+                    showAbortPrompt={Boolean(
+                        isDesktopExpanded
+                        && currentSessionId
+                        && abortPromptSessionId === currentSessionId
+                        && typeof abortPromptExpiresAt === 'number'
+                        && abortPromptExpiresAt > Date.now()
+                    )}
                     showAssistantStatus={false}
                     showTodos
                     leftAccessory={newSessionDraftOpen || !hasPendingChanges ? null : <PendingChangesBar />}
