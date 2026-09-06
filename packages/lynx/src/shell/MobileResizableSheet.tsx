@@ -22,7 +22,7 @@ export type LynxMobileResizableSheetProps = {
   ariaLabel: string;
   onClose: () => void;
   children: ReactNode;
-  /** Default half (50%). */
+  /** Default half (~72dvh Cap-aligned). */
   initiallyExpanded?: boolean;
 };
 

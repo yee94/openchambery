@@ -3,12 +3,12 @@
  *
  * Cap: bottom sheet @ ~72dvh collapsed / ~98dvh expanded, snap grabber,
  * vertical dismiss past threshold, scrim close.
- * Lynx: half-height default, expandable, grabber + scrim + vertical-drag spirit
+ * Lynx: Cap-aligned half (~72%) / expanded (~98%), grabber + scrim + vertical-drag spirit
  * (touch on grabber). Not nested under GlassChrome contentView.
  */
 
-export const LYNX_MOBILE_SHEET_HALF_HEIGHT_FRACTION = 0.5;
-export const LYNX_MOBILE_SHEET_EXPANDED_HEIGHT_FRACTION = 0.92;
+export const LYNX_MOBILE_SHEET_HALF_HEIGHT_FRACTION = 0.72;
+export const LYNX_MOBILE_SHEET_EXPANDED_HEIGHT_FRACTION = 0.98;
 /** Cap `DEFAULT_DISMISS_THRESHOLD_PX` spirit. */
 export const LYNX_MOBILE_SHEET_DISMISS_THRESHOLD_PX = 64;
 
@@ -51,7 +51,7 @@ export const shouldDismissLynxMobileSheetDrag = (
 ): boolean => deltaY >= thresholdPx;
 
 export const LYNX_MOBILE_RESIZABLE_SHEET_NOTES = [
-  'Bottom half-height sheet with grabber — not full-screen surface.background.',
+  'Bottom Cap-aligned sheet (~72% / ~98%) with grabber — not full-screen surface.background.',
   'Scrim tap + vertical drag-down on grabber dismiss (Cap MobileResizableSheet spirit).',
   'Grabber tap toggles half ↔ expanded; close control always available.',
   'Reuse for Agent/model pickers and other cheap overlays (e.g. DirectoryExplorer).',
