@@ -169,7 +169,7 @@ Android降级 (see gap board): `blur-radius` + theme surface, never a fake `UIGl
 | Root dock | `glass` or host `UITabBar` (Mode B). Selected glyph uses theme `--primary` |
 | Search chip / header buttons | Small `glass` chips; do not cream-fill |
 | Composer collapsed pill / expanded card | `glass` + `glass-interactive` on iOS 26; older iOS `blur-effect="light"` / `dark` following theme |
-| Autocomplete list | Above the card, **not** inside the glass `contentView` if taps fail (Cap native list sat above glass for that reason) |
+| Autocomplete list | **ABOVE** the glass composer card as a **sibling** overlay (card width, ~8pt gap) — **never** inside `UIGlassEffect.contentView` / GlassChrome children. Cap burned: UILabel titles invisible under vibrancy + taps eaten. Lynx: `data-lynx-autocomplete-placement="above-glass-composer"` + `LynxComposerAutocompleteList`. Not occupancy. |
 | Chat transcript | **No glass** |
 | Settings list | **No glass** on rows |
 | Sheets | System sheet first; optional glass grabber, not a glass page |
@@ -191,6 +191,8 @@ Cap iOS (when native UI is on):
 - Scroll-to-bottom is a glass control above Send after ~80px travel; **not** part of occupancy
 
 Lynx must keep that **behavior** (order, occupancy, IME). The WebView FLIP path is forbidden (`docs/lynx-pitfalls.md`).
+
+Autocomplete / `/` `@` command list: sit **ABOVE** glass composer (sibling), never inside glass `contentView`. See `packages/lynx/src/chat/composerAutocompleteLayout.ts` + Cap `OpenChamberComposerAutocomplete.swift`.
 
 Android: native/Lynx textarea + host IME inset. No `39dvh` guess.
 

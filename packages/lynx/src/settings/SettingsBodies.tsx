@@ -41,6 +41,13 @@ import {
   exportLynxDiagnostics,
   type LynxDiagnosticsRecorder,
 } from './diagnostics';
+import {
+  createLynxGitIdentity,
+  deleteLynxGitIdentity,
+  loadLynxGitIdentities,
+  updateLynxGitIdentity,
+  type LynxGitIdentityProfile,
+} from './gitIdentities';
 
 export type SettingsBodyContext = {
   locale: string;
@@ -782,9 +789,159 @@ function InstancesBody({ ctx }: { ctx: SettingsBodyContext }) {
 
 function GitBody({ ctx }: { ctx: SettingsBodyContext }) {
   const { settings, error, status, patch } = useSettingsBlob(ctx.runtimeFetch);
-  if (status === 'no-runtime') return <Banner text={lynxT(ctx.locale, 'lynx.settings.noRuntime')} muted />;
+  const [profiles, setProfiles] = useState<LynxGitIdentityProfile[]>([]);
+  const [globalIdentity, setGlobalIdentity] = useState<LynxGitIdentityProfile | null>(null);
+  const [idStatus, setIdStatus] = useState<'loading' | 'ok' | 'failed' | 'no-runtime'>('loading');
+  const [idError, setIdError] = useState<string | null>(null);
+  const [editing, setEditing] = useState<LynxGitIdentityProfile | null>(null);
+  const [creating, setCreating] = useState(false);
+  const [draftName, setDraftName] = useState('');
+  const [draftUser, setDraftUser] = useState('');
+  const [draftEmail, setDraftEmail] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  const reloadIdentities = async () => {
+    const result = await loadLynxGitIdentities(ctx.runtimeFetch);
+    if (result.status === 'ok') {
+      setProfiles(result.profiles);
+      setGlobalIdentity(result.global);
+      setIdStatus('ok');
+      setIdError(null);
+      return;
+    }
+    if (result.status === 'no-runtime') {
+      setIdStatus('no-runtime');
+      setProfiles([]);
+      setGlobalIdentity(null);
+      return;
+    }
+    setIdStatus('failed');
+    setIdError(result.error.message);
+    setProfiles([]);
+  };
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      const result = await loadLynxGitIdentities(ctx.runtimeFetch);
+      if (cancelled) return;
+      if (result.status === 'ok') {
+        setProfiles(result.profiles);
+        setGlobalIdentity(result.global);
+        setIdStatus('ok');
+        return;
+      }
+      if (result.status === 'no-runtime') {
+        setIdStatus('no-runtime');
+        return;
+      }
+      setIdStatus('failed');
+      setIdError(result.error.message);
+    })();
+    return () => { cancelled = true; };
+  }, [ctx.runtimeFetch]);
+
+  if (status === 'no-runtime' || idStatus === 'no-runtime') {
+    return <Banner text={lynxT(ctx.locale, 'lynx.settings.noRuntime')} muted />;
+  }
   if (status === 'failed') return <Banner text={error || lynxT(ctx.locale, 'lynx.settings.loadFailed')} />;
-  if (status === 'loading' || !settings) return <Banner text={lynxT(ctx.locale, 'lynx.settings.loading')} muted />;
+  if (status === 'loading' || !settings || idStatus === 'loading') {
+    return <Banner text={lynxT(ctx.locale, 'lynx.settings.loading')} muted />;
+  }
+
+  const openCreate = () => {
+    setCreating(true);
+    setEditing(null);
+    setDraftName('');
+    setDraftUser('');
+    setDraftEmail('');
+  };
+  const openEdit = (profile: LynxGitIdentityProfile) => {
+    if (profile.id === 'global') return;
+    setCreating(false);
+    setEditing(profile);
+    setDraftName(profile.name);
+    setDraftUser(profile.userName);
+    setDraftEmail(profile.userEmail);
+  };
+  const cancelEditor = () => {
+    setCreating(false);
+    setEditing(null);
+  };
+  const saveEditor = () => {
+    if (busy) return;
+    setBusy(true);
+    void (async () => {
+      const payload = {
+        name: draftName.trim(),
+        userName: draftUser.trim(),
+        userEmail: draftEmail.trim(),
+        authType: 'ssh' as const,
+      };
+      const result = editing
+        ? await updateLynxGitIdentity(ctx.runtimeFetch, editing.id, payload)
+        : await createLynxGitIdentity(ctx.runtimeFetch, payload);
+      setBusy(false);
+      if (result.status !== 'ok') {
+        setIdError(result.status === 'failed' ? result.error.message : lynxT(ctx.locale, 'lynx.settings.noRuntime'));
+        return;
+      }
+      cancelEditor();
+      await reloadIdentities();
+    })();
+  };
+  const removeProfile = (id: string) => {
+    if (busy || id === 'global') return;
+    setBusy(true);
+    void (async () => {
+      const result = await deleteLynxGitIdentity(ctx.runtimeFetch, id);
+      setBusy(false);
+      if (result.status !== 'ok') {
+        setIdError(result.status === 'failed' ? result.error.message : lynxT(ctx.locale, 'lynx.settings.noRuntime'));
+        return;
+      }
+      if (editing?.id === id) cancelEditor();
+      await reloadIdentities();
+    })();
+  };
+
+  if (creating || editing) {
+    return (
+      <LynxView>
+        <LynxView bindtap={cancelEditor} style={{ padding: '8px 0' }}>
+          <LynxText style={{ color: cssVar('primary.base') }}>{lynxT(ctx.locale, 'lynx.shell.back')}</LynxText>
+        </LynxView>
+        <LynxText style={{ color: cssVar('surface.foreground'), fontWeight: '600', marginBottom: '8px' }}>
+          {editing ? lynxT(ctx.locale, 'lynx.settings.git.identityEdit') : lynxT(ctx.locale, 'lynx.settings.git.identityCreate')}
+        </LynxText>
+        <LynxInput
+          value={draftName}
+          placeholder={lynxT(ctx.locale, 'lynx.settings.git.identityName')}
+          bindinput={(event) => setDraftName(event.detail?.value ?? '')}
+          style={{ color: cssVar('surface.foreground'), marginBottom: '8px' }}
+        />
+        <LynxInput
+          value={draftUser}
+          placeholder={lynxT(ctx.locale, 'lynx.settings.git.identityUser')}
+          bindinput={(event) => setDraftUser(event.detail?.value ?? '')}
+          style={{ color: cssVar('surface.foreground'), marginBottom: '8px' }}
+        />
+        <LynxInput
+          value={draftEmail}
+          placeholder={lynxT(ctx.locale, 'lynx.settings.git.identityEmail')}
+          bindinput={(event) => setDraftEmail(event.detail?.value ?? '')}
+          style={{ color: cssVar('surface.foreground'), marginBottom: '8px' }}
+        />
+        {idError ? <Banner text={idError} /> : null}
+        <LynxView bindtap={saveEditor} style={{ padding: '10px 0', opacity: busy ? 0.6 : 1 }}>
+          <LynxText style={{ color: cssVar('primary.base'), fontWeight: '600' }}>
+            {lynxT(ctx.locale, 'lynx.settings.git.identitySave')}
+          </LynxText>
+        </LynxView>
+      </LynxView>
+    );
+  }
+
   return (
     <LynxView>
       <ToggleRow
@@ -794,7 +951,45 @@ function GitBody({ ctx }: { ctx: SettingsBodyContext }) {
           void patch({ gitmojiEnabled: !settings.gitmojiEnabled });
         }}
       />
-      <Banner text={lynxT(ctx.locale, 'lynx.settings.editor.stub')} muted />
+      <LynxText style={{ color: cssVar('surface.foreground'), fontWeight: '600', margin: '12px 0 8px' }}>
+        {lynxT(ctx.locale, 'lynx.settings.git.identities')}
+      </LynxText>
+      {idStatus === 'failed' ? <Banner text={idError || lynxT(ctx.locale, 'lynx.settings.loadFailed')} /> : null}
+      {globalIdentity ? (
+        <LynxView style={{ padding: '8px 0', borderBottomWidth: '1px', borderBottomColor: cssVar('surface.elevated') }}>
+          <LynxText style={{ color: cssVar('surface.foreground') }}>{globalIdentity.name}</LynxText>
+          <LynxText style={{ color: cssVar('surface.mutedForeground'), fontSize: '12px' }}>
+            {globalIdentity.userName} · {globalIdentity.userEmail}
+          </LynxText>
+        </LynxView>
+      ) : null}
+      {profiles.length === 0 && idStatus === 'ok' ? (
+        <Banner text={lynxT(ctx.locale, 'lynx.settings.git.identityEmpty')} muted />
+      ) : null}
+      {profiles.map((profile) => (
+        <LynxView
+          key={profile.id}
+          style={{ padding: '8px 0', borderBottomWidth: '1px', borderBottomColor: cssVar('surface.elevated') }}
+        >
+          <LynxView bindtap={() => openEdit(profile)}>
+            <LynxText style={{ color: cssVar('surface.foreground') }}>{profile.name}</LynxText>
+            <LynxText style={{ color: cssVar('surface.mutedForeground'), fontSize: '12px' }}>
+              {profile.userName} · {profile.userEmail}
+              {profile.authType ? ` · ${profile.authType}` : ''}
+            </LynxText>
+          </LynxView>
+          <LynxView bindtap={() => removeProfile(profile.id)} style={{ paddingTop: '4px' }}>
+            <LynxText style={{ color: cssVar('surface.mutedForeground'), fontSize: '12px' }}>
+              {lynxT(ctx.locale, 'lynx.settings.git.identityDelete')}
+            </LynxText>
+          </LynxView>
+        </LynxView>
+      ))}
+      <LynxView bindtap={openCreate} style={{ padding: '12px 0' }}>
+        <LynxText style={{ color: cssVar('primary.base'), fontWeight: '600' }}>
+          {lynxT(ctx.locale, 'lynx.settings.git.identityCreate')}
+        </LynxText>
+      </LynxView>
     </LynxView>
   );
 }

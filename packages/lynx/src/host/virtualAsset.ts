@@ -88,3 +88,48 @@ export const createLynxVirtualAssetAdapter = (): LynxVirtualAssetAdapter => {
     }),
   };
 };
+
+/**
+ * Host scheme-handler registration contract (Cap WKURLSchemeHandler /
+ * Android WebResourceResponse interceptors). LynxView resource providers
+ * should register before first paint.
+ */
+export const LYNX_VIRTUAL_ASSET_SCHEME_HANDLER_NOTES = [
+  'iOS: register WKURLSchemeHandler / Lynx resource provider for openchamber-asset.',
+  'Android: intercept openchamber-asset:// with streaming WebResourceResponse / Lynx provider.',
+  'Headers: X-Content-Type-Options: nosniff; one reader per asset (second beginRead rejected).',
+  'URL shape: openchamber-asset://v/{assetId} — no host path, credentials, or filesystem location.',
+] as const;
+
+export type LynxVirtualAssetSchemeHandlerBinder = {
+  register: () => Promise<void> | void;
+  unregister?: () => Promise<void> | void;
+};
+
+export type LynxVirtualAssetSchemeRegistry = {
+  inject: (binder: LynxVirtualAssetSchemeHandlerBinder | null) => void;
+  isRegistered: () => boolean;
+  register: () => Promise<{ status: 'ok' } | { status: 'unavailable'; reason: 'no-host' } | { status: 'failed'; error: string }>;
+};
+
+export const createLynxVirtualAssetSchemeRegistry = (): LynxVirtualAssetSchemeRegistry => {
+  let binder: LynxVirtualAssetSchemeHandlerBinder | null = null;
+  let registered = false;
+  return {
+    inject: (next) => {
+      binder = next;
+      if (!next) registered = false;
+    },
+    isRegistered: () => registered && binder !== null,
+    register: async () => {
+      if (!binder) return { status: 'unavailable', reason: 'no-host' };
+      try {
+        await binder.register();
+        registered = true;
+        return { status: 'ok' };
+      } catch (error) {
+        return { status: 'failed', error: error instanceof Error ? error.message : String(error) };
+      }
+    },
+  };
+};

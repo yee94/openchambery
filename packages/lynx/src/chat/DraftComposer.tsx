@@ -1,10 +1,18 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 
 import { lynxT } from '../i18n/catalog';
 import { LynxInput, LynxText, LynxView } from '../lynx-elements';
 import type { LynxRuntimeFetch } from '../runtime/fetch';
 import { cssVar } from '../theme/tokens';
 import { createLynxSession } from '../projects/sessionActions';
+import { LynxComposerAutocompleteList } from './ComposerAutocompleteList';
+import {
+  applyLynxComposerSuggestion,
+  detectLynxComposerTrigger,
+  loadLynxComposerCatalogs,
+  suggestionsForTrigger,
+  type LynxComposerSuggestion,
+} from './composerCatalog';
 import { promptAsync, type LynxPromptAsyncResult } from './sessionApi';
 
 export type LynxDraftComposerModel = {
@@ -22,6 +30,7 @@ export type LynxDraftMaterializeResult =
 /**
  * Cap new-session draft secondary: composer body that materializes a real
  * OpenCode session on send (POST /session → prompt_async), then hands off to Chat.
+ * `/` `@` catalogs match ChatScreen (same Cap list endpoints).
  */
 export async function materializeLynxDraftSession(input: {
   runtimeFetch: LynxRuntimeFetch | null | undefined;
@@ -96,6 +105,31 @@ export function LynxDraftComposer({
   const [draft, setDraft] = useState(initialText);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [composerSuggestions, setComposerSuggestions] = useState<LynxComposerSuggestion[]>([]);
+  const [composerCatalogHint, setComposerCatalogHint] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      const bundle = await loadLynxComposerCatalogs(runtimeFetch, { directory });
+      if (cancelled) return;
+      const { trigger, query } = detectLynxComposerTrigger(draft);
+      if (trigger === 'none') {
+        setComposerSuggestions([]);
+        setComposerCatalogHint(null);
+        return;
+      }
+      setComposerCatalogHint(
+        trigger === 'slash'
+          ? lynxT(locale, 'lynx.chat.composer.slashHint')
+          : trigger === 'mention'
+            ? lynxT(locale, 'lynx.chat.composer.mentionHint')
+            : lynxT(locale, 'lynx.chat.composer.modelHint'),
+      );
+      setComposerSuggestions(suggestionsForTrigger(bundle, trigger, query));
+    })();
+    return () => { cancelled = true; };
+  }, [draft, runtimeFetch, directory, locale]);
 
   const send = () => {
     if (busy) return;
@@ -170,31 +204,47 @@ export function LynxDraftComposer({
           padding: '12px 16px',
           borderTopWidth: '1px',
           borderTopColor: cssVar('surface.elevated'),
-          flexDirection: 'row',
-          alignItems: 'center',
         }}
       >
-        <LynxInput
-          value={draft}
-          placeholder={lynxT(locale, 'lynx.chat.composer.placeholder')}
-          bindinput={(event) => setDraft(event.detail?.value ?? '')}
-          style={{ flexGrow: 1, color: cssVar('surface.foreground') }}
+        {/* Autocomplete ABOVE glass composer — sibling, not contentView child */}
+        <LynxComposerAutocompleteList
+          locale={locale}
+          hint={composerCatalogHint}
+          suggestions={composerSuggestions}
+          onSelect={(suggestion) => setDraft((prev) => applyLynxComposerSuggestion(prev, suggestion))}
         />
         <LynxView
-          bindtap={send}
-          accessibility-role="button"
-          accessibility-label={lynxT(locale, 'lynx.chat.composer.send')}
+          data-lynx-glass-composer="true"
           style={{
-            marginLeft: '12px',
-            padding: '8px 12px',
-            borderRadius: '10px',
-            backgroundColor: cssVar('primary.base'),
-            opacity: busy ? 0.6 : 1,
+            flexDirection: 'row',
+            alignItems: 'center',
+            padding: '10px 12px',
+            borderRadius: '12px',
+            backgroundColor: cssVar('surface.elevated'),
           }}
         >
-          <LynxText style={{ color: '#fff', fontWeight: '600' }}>
-            {busy ? lynxT(locale, 'lynx.draft.busy') : lynxT(locale, 'lynx.chat.composer.send')}
-          </LynxText>
+          <LynxInput
+            value={draft}
+            placeholder={lynxT(locale, 'lynx.chat.composer.placeholder')}
+            bindinput={(event) => setDraft(event.detail?.value ?? '')}
+            style={{ flexGrow: 1, color: cssVar('surface.foreground') }}
+          />
+          <LynxView
+            bindtap={send}
+            accessibility-role="button"
+            accessibility-label={lynxT(locale, 'lynx.chat.composer.send')}
+            style={{
+              marginLeft: '12px',
+              padding: '8px 12px',
+              borderRadius: '10px',
+              backgroundColor: cssVar('primary.base'),
+              opacity: busy ? 0.6 : 1,
+            }}
+          >
+            <LynxText style={{ color: '#fff', fontWeight: '600' }}>
+              {busy ? lynxT(locale, 'lynx.draft.busy') : lynxT(locale, 'lynx.chat.composer.send')}
+            </LynxText>
+          </LynxView>
         </LynxView>
       </LynxView>
     </LynxView>

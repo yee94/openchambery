@@ -79,3 +79,10 @@ export const LYNX_IME_OCCUPANCY_CONTRACT: LynxImeOccupancyContract = {
   chineseCompositionPassthrough: true,
   listFooterCarriesInset: true,
 };
+
+/**
+ * Autocomplete / `/` `@` command list placement (Cap lesson).
+ * Must sit ABOVE the glass composer as a sibling — never inside
+ * UIGlassEffect.contentView. See composerAutocompleteLayout.ts.
+ */
+export const LYNX_COMPOSER_AUTOCOMPLETE_ABOVE_GLASS = true as const;
