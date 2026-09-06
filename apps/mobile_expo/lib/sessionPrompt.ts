@@ -72,6 +72,13 @@ export const createSession = async (
   };
 };
 
+export type PromptFilePart = {
+  type: 'file';
+  mime: string;
+  url: string;
+  filename?: string;
+};
+
 export type PromptAsyncInput = {
   sessionId: string;
   text: string;
@@ -79,6 +86,8 @@ export type PromptAsyncInput = {
   messageId?: string;
   agent?: string;
   model?: { providerID: string; modelID: string };
+  /** Cap file:// parts after PUT /api/fs/prompt-attachments/:id */
+  fileParts?: PromptFilePart[];
 };
 
 /** POST /api/session/:id/prompt_async */
@@ -89,15 +98,33 @@ export const promptAsync = async (
   const sessionId = input.sessionId.trim();
   if (!sessionId) throw new SessionPromptError('prompt_async: sessionId required');
   const text = input.text.trim();
-  if (!text) throw new SessionPromptError('prompt_async: empty text');
+  const hasFiles = (input.fileParts?.length ?? 0) > 0;
+  if (!text && !hasFiles) throw new SessionPromptError('prompt_async: empty text');
 
   const params = new URLSearchParams();
   if (input.directory) params.set('directory', input.directory);
   const qs = params.toString();
   const path = `/api/session/${encodeURIComponent(sessionId)}/prompt_async${qs ? `?${qs}` : ''}`;
 
+  const parts: Array<Record<string, unknown>> = [];
+  const fileParts = input.fileParts ?? [];
+  for (const file of fileParts) {
+    parts.push({
+      type: 'file',
+      mime: file.mime,
+      url: file.url,
+      ...(file.filename ? { filename: file.filename } : {}),
+    });
+  }
+  // Cap citation style: path refs before user text when attachments present.
+  const textWithCitations =
+    fileParts.length > 0
+      ? `${fileParts.map((file) => `[${file.url.replace(/^file:\/\//, '')}]`).join(' ')} ${text}`.trim()
+      : text;
+  parts.push({ type: 'text', text: textWithCitations });
+
   const body: Record<string, unknown> = {
-    parts: [{ type: 'text', text }],
+    parts,
   };
   if (input.messageId) body.messageID = input.messageId;
   if (input.agent) body.agent = input.agent;
@@ -170,6 +197,7 @@ export const materializeDraftAndPrompt = async (
     directory?: string | null;
     title?: string;
     messageId?: string;
+    fileParts?: PromptFilePart[];
   },
 ): Promise<CreatedSession> => {
   const session = await createSession(active, {
@@ -181,6 +209,7 @@ export const materializeDraftAndPrompt = async (
     text: input.text,
     directory: input.directory ?? session.directory,
     messageId: input.messageId,
+    fileParts: input.fileParts,
   });
   return session;
 };

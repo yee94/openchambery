@@ -78,4 +78,39 @@ describe('sessionPrompt', () => {
       SessionPromptError,
     );
   });
+
+
+  it('prompt_async includes uploaded file parts', async () => {
+    let body: unknown = null;
+    vi.stubGlobal('fetch', (async (_input: RequestInfo | URL, init?: RequestInit) => {
+      body = init?.body ? JSON.parse(String(init.body)) : null;
+      return new Response('true', { status: 200 });
+    }) as typeof fetch);
+
+    await promptAsync(activeDirect(), {
+      sessionId: 'ses_1',
+      text: 'what is this',
+      fileParts: [
+        {
+          type: 'file',
+          mime: 'image/png',
+          url: 'file:///data/openchamber/prompt-attachments/ab/uploaded.bin',
+          filename: 'photo.png',
+        },
+      ],
+    });
+
+    expect(body).toMatchObject({
+      parts: [
+        {
+          type: 'file',
+          mime: 'image/png',
+          url: 'file:///data/openchamber/prompt-attachments/ab/uploaded.bin',
+        },
+        { type: 'text' },
+      ],
+    });
+    vi.unstubAllGlobals();
+  });
+
 });

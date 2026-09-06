@@ -24,6 +24,16 @@ export type TranscriptStructure = {
   structureEpoch: number;
 };
 
+export type TranscriptUsageMeta = {
+  tokens?: {
+    input?: unknown;
+    output?: unknown;
+    reasoning?: unknown;
+    cache?: { read?: unknown; write?: unknown };
+  };
+  model?: { providerID?: string; modelID?: string };
+};
+
 export type TranscriptState = {
   structure: TranscriptStructure;
   /** Completed / baseline text by id. */
@@ -32,6 +42,8 @@ export type TranscriptState = {
   createdAt: Record<string, number>;
   /** Parts by message id — tools/reasoning update without structure rebuild when ids stable. */
   parts: Record<string, ChatMessagePart[]>;
+  /** Cap message.info tokens/model for context-usage ring. */
+  usage: Record<string, TranscriptUsageMeta>;
   /** Live streaming tail — updated independently of structure. */
   live: { messageId: string; text: string } | null;
   busy: boolean;
@@ -68,6 +80,7 @@ export const createEmptyTranscript = (): TranscriptState => ({
   roles: {},
   createdAt: {},
   parts: {},
+  usage: {},
   live: null,
   busy: false,
 });
@@ -86,6 +99,13 @@ export type TranscriptController = {
   setBusy: (busy: boolean) => void;
   /** Rows for the list — live text substituted without changing structure ids. */
   getRows: () => TranscriptRow[];
+  /** Message usage meta for context ring (Cap mobileContextUsage). */
+  getUsageMessages: () => Array<{
+    id: string;
+    role?: string;
+    tokens?: TranscriptUsageMeta['tokens'];
+    model?: TranscriptUsageMeta['model'];
+  }>;
   subscribe: (listener: () => void) => () => void;
 };
 
@@ -107,12 +127,32 @@ export const createTranscriptController = (): TranscriptController => {
     emit();
   };
 
+  const readUsageMeta = (info: ChatMessageRecord['info']): TranscriptUsageMeta => {
+    const meta: TranscriptUsageMeta = {};
+    const tokens = info.tokens;
+    if (tokens && typeof tokens === 'object') {
+      meta.tokens = tokens as TranscriptUsageMeta['tokens'];
+    }
+    const model = info.model;
+    if (model && typeof model === 'object') {
+      const row = model as { providerID?: unknown; modelID?: unknown };
+      if (typeof row.providerID === 'string' || typeof row.modelID === 'string') {
+        meta.model = {
+          providerID: typeof row.providerID === 'string' ? row.providerID : undefined,
+          modelID: typeof row.modelID === 'string' ? row.modelID : undefined,
+        };
+      }
+    }
+    return meta;
+  };
+
   const recordsToMaps = (records: ChatMessageRecord[]) => {
     const ids: string[] = [];
     const texts: Record<string, string> = {};
     const roles: Record<string, TranscriptRow['role']> = {};
     const createdAt: Record<string, number> = {};
     const parts: Record<string, ChatMessagePart[]> = {};
+    const usage: Record<string, TranscriptUsageMeta> = {};
     for (const record of records) {
       const id = record.info.id;
       ids.push(id);
@@ -121,8 +161,9 @@ export const createTranscriptController = (): TranscriptController => {
       const created = record.info.time?.created;
       createdAt[id] = typeof created === 'number' ? created : 0;
       parts[id] = record.parts ?? [];
+      usage[id] = readUsageMeta(record.info);
     }
-    return { ids, texts, roles, createdAt, parts };
+    return { ids, texts, roles, createdAt, parts, usage };
   };
 
   const sameIds = (a: string[], b: string[]) =>
@@ -151,6 +192,7 @@ export const createTranscriptController = (): TranscriptController => {
         roles: mapped.roles,
         createdAt: mapped.createdAt,
         parts: mapped.parts,
+        usage: mapped.usage,
         live: null,
         busy: state.busy,
       });
@@ -165,6 +207,7 @@ export const createTranscriptController = (): TranscriptController => {
           roles: { ...state.roles, ...mapped.roles },
           createdAt: { ...state.createdAt, ...mapped.createdAt },
           parts: mapped.parts,
+          usage: { ...state.usage, ...mapped.usage },
         });
         return;
       }
@@ -178,6 +221,7 @@ export const createTranscriptController = (): TranscriptController => {
         roles: mapped.roles,
         createdAt: mapped.createdAt,
         parts: mapped.parts,
+        usage: mapped.usage,
         live: state.live,
         busy: state.busy,
       });
@@ -199,6 +243,7 @@ export const createTranscriptController = (): TranscriptController => {
             ...state.parts,
             [messageId]: state.parts[messageId] ?? [{ type: 'text', text: '' }],
           },
+          usage: { ...state.usage, [messageId]: state.usage[messageId] ?? {} },
           live: { messageId, text },
           busy: true,
         });
@@ -257,6 +302,7 @@ export const createTranscriptController = (): TranscriptController => {
           roles: { ...state.roles, [messageId]: role },
           createdAt: { ...state.createdAt, [messageId]: Date.now() },
           parts: { ...state.parts, [messageId]: nextParts },
+          usage: { ...state.usage, [messageId]: state.usage[messageId] ?? {} },
           live: state.live,
           busy: true,
         });
@@ -281,6 +327,7 @@ export const createTranscriptController = (): TranscriptController => {
         roles: { ...state.roles, [messageId]: 'user' },
         createdAt: { ...state.createdAt, [messageId]: Date.now() },
         parts: { ...state.parts, [messageId]: [{ type: 'text', text }] },
+        usage: { ...state.usage, [messageId]: {} },
         live: state.live,
         busy: true,
       });
@@ -309,6 +356,15 @@ export const createTranscriptController = (): TranscriptController => {
           parts: rowParts,
         };
       });
+    },
+    getUsageMessages: () => {
+      const { structure, roles, usage } = state;
+      return structure.ids.map((id) => ({
+        id,
+        role: roles[id],
+        tokens: usage[id]?.tokens,
+        model: usage[id]?.model,
+      }));
     },
     subscribe: (listener) => {
       listeners.add(listener);

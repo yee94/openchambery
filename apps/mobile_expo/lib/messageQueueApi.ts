@@ -244,3 +244,80 @@ export const removeQueueItem = async (
     );
   }
 };
+
+export type ReorderQueueScopeInput = {
+  scopeID: string;
+  requestID: string;
+  expectedRevision: number;
+  queueItemIDs: string[];
+};
+
+/** PUT /api/openchamber/message-queue/scopes/:id/order — Cap reorder without DnD. */
+export const reorderQueueScope = async (
+  active: ActiveRuntime,
+  input: ReorderQueueScopeInput,
+  options?: { signal?: AbortSignal },
+): Promise<{ revision: number }> => {
+  const response = await openchamberFetch(
+    active,
+    `/api/openchamber/message-queue/scopes/${encodeURIComponent(input.scopeID)}/order`,
+    {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+      body: JSON.stringify({
+        requestID: input.requestID,
+        expectedRevision: input.expectedRevision,
+        queueItemIDs: input.queueItemIDs,
+      }),
+      signal: options?.signal,
+    },
+  );
+  if (!response.ok) {
+    throw new MessageQueueApiError(
+      `message-queue reorder failed (${response.status})`,
+      response.status,
+    );
+  }
+  const payload = asRecord(await response.json());
+  return { revision: typeof payload?.revision === 'number' ? payload.revision : 0 };
+};
+
+export type EditQueueItemInput = {
+  queueItemID: string;
+  requestID: string;
+  expectedRevision: number;
+  expectedRowVersion: number;
+  content: string;
+};
+
+/** PATCH /api/openchamber/message-queue/items/:id — Cap editTextQueueItem content subset. */
+export const editQueueItemContent = async (
+  active: ActiveRuntime,
+  input: EditQueueItemInput,
+  options?: { signal?: AbortSignal },
+): Promise<{ revision: number }> => {
+  const response = await openchamberFetch(
+    active,
+    `/api/openchamber/message-queue/items/${encodeURIComponent(input.queueItemID)}`,
+    {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+      body: JSON.stringify({
+        requestID: input.requestID,
+        expectedRevision: input.expectedRevision,
+        expectedRowVersion: input.expectedRowVersion,
+        item: { content: input.content },
+      }),
+      signal: options?.signal,
+    },
+  );
+  if (!response.ok) {
+    throw new MessageQueueApiError(
+      `message-queue edit failed (${response.status})`,
+      response.status,
+    );
+  }
+  const payload = asRecord(await response.json());
+  return { revision: typeof payload?.revision === 'number' ? payload.revision : 0 };
+};
+

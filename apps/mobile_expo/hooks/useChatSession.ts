@@ -25,11 +25,26 @@ import {
 } from '@/lib/sessionPrompt';
 import {
   admitTextQueueItem,
+  editQueueItemContent,
   loadSessionQueueChips,
   removeQueueItem,
+  reorderQueueScope,
   type MessageQueueChipItem,
   MessageQueueApiError,
 } from '@/lib/messageQueueApi';
+import {
+  uploadStagedAttachment,
+  type StagedPromptAttachment,
+  PromptAttachmentUploadError,
+} from '@/lib/promptAttachmentUpload';
+import {
+  buildMobileContextDisplay,
+  getLatestAssistantTotalTokens,
+  getLatestUserMessageModel,
+  resolveContextLimitFromCatalog,
+  type MobileContextDisplay,
+} from '@/lib/contextUsage';
+import { loadProviderCatalog } from '@/lib/providerCatalogApi';
 import {
   resolveStreamingRenderCadence,
   StreamingMarkdownPacer,
@@ -56,7 +71,14 @@ export type ChatSessionView = {
   /** Server message-queue chips for this session (Cap QueuedMessageChips subset). */
   queueItems: MessageQueueChipItem[];
   queueRevision: number;
+  queueScopeId: string | null;
+  directory: string | null;
   removeQueued: (item: MessageQueueChipItem) => Promise<void>;
+  reorderQueued: (orderedIds: string[]) => Promise<void>;
+  editQueued: (item: MessageQueueChipItem, content: string) => Promise<void>;
+  attachments: StagedPromptAttachment[];
+  setAttachments: (next: StagedPromptAttachment[]) => void;
+  contextDisplay: MobileContextDisplay | null;
 };
 
 const platformCadence = (): StreamingPlatform => {
@@ -87,7 +109,13 @@ export function useChatSession(routeSessionId: string | undefined): ChatSessionV
   const [transport, setTransport] = useState<EventTransportKind | null>(null);
   const [queueItems, setQueueItems] = useState<MessageQueueChipItem[]>([]);
   const [queueRevision, setQueueRevision] = useState(0);
+  const [queueScopeId, setQueueScopeId] = useState<string | null>(null);
+  const [directory, setDirectory] = useState<string | null>(null);
+  const [attachments, setAttachments] = useState<StagedPromptAttachment[]>([]);
+  const [contextDisplay, setContextDisplay] = useState<MobileContextDisplay | null>(null);
+  const [providerCatalog, setProviderCatalog] = useState<unknown>(null);
   const queueRevisionRef = useRef(0);
+  const queueScopeIdRef = useRef<string | null>(null);
 
   const transcriptRef = useRef(createTranscriptController());
   const requestId = useRef(0);
@@ -160,6 +188,8 @@ export function useChatSession(routeSessionId: string | undefined): ChatSessionV
       setQueueItems([]);
       setQueueRevision(0);
       queueRevisionRef.current = 0;
+      setQueueScopeId(null);
+      queueScopeIdRef.current = null;
       return;
     }
     try {
@@ -171,7 +201,12 @@ export function useChatSession(routeSessionId: string | undefined): ChatSessionV
       setQueueItems(scope.items);
       setQueueRevision(scope.revision);
       queueRevisionRef.current = scope.revision;
-      if (scope.directory) directoryRef.current = scope.directory;
+      setQueueScopeId(scope.scopeID);
+      queueScopeIdRef.current = scope.scopeID;
+      if (scope.directory) {
+        directoryRef.current = scope.directory;
+        setDirectory(scope.directory);
+      }
     } catch {
       // Queue is additive chrome — do not fail the chat surface.
     }
@@ -232,11 +267,12 @@ export function useChatSession(routeSessionId: string | undefined): ChatSessionV
       return;
     }
     const text = draft.trim();
-    if (!text) return;
+    const pendingAttachments = attachments.slice();
+    if (!text && pendingAttachments.length === 0) return;
 
-    // Cap: when session is busy and we know directory, admit to server message-queue.
-    // Without directory, fall through to prompt_async (server may reject; do not invent path).
-    if (sessionId && busy && directoryRef.current) {
+    // Cap: when session is busy and we know directory, admit text-only to server queue.
+    // Attachments on busy path still need prompt_async after upload (queue admit is text subset).
+    if (sessionId && busy && directoryRef.current && pendingAttachments.length === 0) {
       const directory = directoryRef.current;
       setDraft('');
       try {
@@ -266,18 +302,32 @@ export function useChatSession(routeSessionId: string | undefined): ChatSessionV
     }
 
     const localUserId = nextLocalId('local_user');
-    transcriptRef.current.appendLocalUser(localUserId, text);
+    transcriptRef.current.appendLocalUser(localUserId, text || '(attachment)');
     setDraft('');
+    setAttachments([]);
     transcriptRef.current.setBusy(true);
     syncFromController();
 
     try {
+      const fileParts = [];
+      for (const staged of pendingAttachments) {
+        const uploaded = await uploadStagedAttachment(active, staged);
+        fileParts.push({
+          type: 'file' as const,
+          mime: uploaded.mime,
+          url: uploaded.url,
+          filename: staged.filename,
+        });
+      }
+
       if (!sessionId) {
         const created = await materializeDraftAndPrompt(active, {
           text,
           directory: directoryRef.current,
+          fileParts,
         });
         directoryRef.current = created.directory ?? directoryRef.current;
+        if (created.directory) setDirectory(created.directory);
         setSessionId(created.id);
         // Replace draft route with real session id (keep stack).
         router.replace(`/chat/${encodeURIComponent(created.id)}`);
@@ -287,19 +337,24 @@ export function useChatSession(routeSessionId: string | undefined): ChatSessionV
         sessionId,
         text,
         directory: directoryRef.current,
+        fileParts,
       });
     } catch (err) {
       const message =
-        err instanceof SessionPromptError
+        err instanceof PromptAttachmentUploadError
           ? err.message
-          : err instanceof Error
+          : err instanceof SessionPromptError
             ? err.message
-            : 'send failed';
+            : err instanceof Error
+              ? err.message
+              : 'send failed';
       setError(message);
+      setAttachments(pendingAttachments);
+      setDraft(text);
       transcriptRef.current.setBusy(false);
       syncFromController();
     }
-  }, [active, busy, draft, refreshQueue, router, sessionId, syncFromController]);
+  }, [active, attachments, busy, draft, refreshQueue, router, sessionId, syncFromController]);
 
   const removeQueued = useCallback(
     async (item: MessageQueueChipItem) => {
@@ -326,6 +381,59 @@ export function useChatSession(routeSessionId: string | undefined): ChatSessionV
     [active, refreshQueue, sessionId],
   );
 
+  const reorderQueued = useCallback(
+    async (orderedIds: string[]) => {
+      if (!active || !queueScopeIdRef.current) return;
+      try {
+        const stamp = `${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+        await reorderQueueScope(active, {
+          scopeID: queueScopeIdRef.current,
+          requestID: `ord_${stamp}`,
+          expectedRevision: queueRevisionRef.current,
+          queueItemIDs: orderedIds,
+        });
+        await refreshQueue();
+      } catch (err) {
+        const message =
+          err instanceof MessageQueueApiError
+            ? err.message
+            : err instanceof Error
+              ? err.message
+              : 'queue reorder failed';
+        setError(message);
+      }
+    },
+    [active, refreshQueue],
+  );
+
+  const editQueued = useCallback(
+    async (item: MessageQueueChipItem, content: string) => {
+      if (!active) return;
+      const next = content.trim();
+      if (!next) return;
+      try {
+        const stamp = `${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+        await editQueueItemContent(active, {
+          queueItemID: item.queueItemID,
+          requestID: `ed_${stamp}`,
+          expectedRevision: queueRevisionRef.current,
+          expectedRowVersion: item.rowVersion,
+          content: next,
+        });
+        await refreshQueue();
+      } catch (err) {
+        const message =
+          err instanceof MessageQueueApiError
+            ? err.message
+            : err instanceof Error
+              ? err.message
+              : 'queue edit failed';
+        setError(message);
+      }
+    },
+    [active, refreshQueue],
+  );
+
   const stop = useCallback(async () => {
     if (!active || !sessionId) return;
     try {
@@ -346,6 +454,51 @@ export function useChatSession(routeSessionId: string | undefined): ChatSessionV
     }
   }, [active, sessionId, syncFromController]);
 
+  // Context usage ring — Cap MobileContextProgressButton data subset.
+  useEffect(() => {
+    if (!active || !sessionId) {
+      setContextDisplay(null);
+      return;
+    }
+    let cancelled = false;
+    const run = async () => {
+      try {
+        if (!providerCatalog) {
+          const catalog = await loadProviderCatalog(active, directoryRef.current);
+          if (cancelled) return;
+          setProviderCatalog(catalog);
+        }
+      } catch {
+        // Catalog optional — ring hides without limit.
+      }
+    };
+    void run();
+    return () => {
+      cancelled = true;
+    };
+  }, [active, sessionId, providerCatalog]);
+
+  useEffect(() => {
+    if (!sessionId) {
+      setContextDisplay(null);
+      return;
+    }
+    const usageMessages = transcriptRef.current.getUsageMessages();
+    const totalTokens = getLatestAssistantTotalTokens(
+      usageMessages,
+      (messageId) => transcriptRef.current.getState().parts[messageId],
+    );
+    const model = getLatestUserMessageModel(usageMessages);
+    const contextLimit = resolveContextLimitFromCatalog(providerCatalog, model);
+    setContextDisplay(
+      buildMobileContextDisplay({
+        totalTokens,
+        contextLimit,
+        isDraft: !sessionId,
+      }),
+    );
+  }, [rows, structureEpoch, sessionId, providerCatalog]);
+
   return useMemo(
     () => ({
       sessionId,
@@ -363,16 +516,29 @@ export function useChatSession(routeSessionId: string | undefined): ChatSessionV
       refresh,
       queueItems,
       queueRevision,
+      queueScopeId,
+      directory,
       removeQueued,
+      reorderQueued,
+      editQueued,
+      attachments,
+      setAttachments,
+      contextDisplay,
     }),
     [
+      attachments,
       busy,
+      contextDisplay,
+      directory,
       draft,
+      editQueued,
       error,
       queueItems,
       queueRevision,
+      queueScopeId,
       refresh,
       removeQueued,
+      reorderQueued,
       rows,
       send,
       sessionId,
