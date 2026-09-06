@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.19.7-beta.12] - 2026-09-06
+
+### 会话
+
+- Markstream 助手正文里真实存在的文件路径可以点开预览（图片 / HTML / 文件），结算后第一次渲染就划线，不再等 DOM 出来再包一层。
+
 ## [1.19.7-beta.11] - 2026-09-06
 
 ### 会话
