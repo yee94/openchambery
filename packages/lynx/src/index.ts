@@ -146,3 +146,34 @@ export {
 } from './scheduled';
 export { filterLynxProjectsHomeForSearch } from './projects';
 export type { LynxHomeWorktreeGroup } from './session-index/homeModel';
+
+export {
+  loadLynxSettings,
+  saveLynxSettings,
+  loadLynxSystemInfo,
+  appearancePatchFromThemeChoice,
+  LYNX_APPEARANCE_THEME_IDS,
+  type LynxSettingsBlob,
+} from './settings/api';
+export {
+  loadProvidersCatalog,
+  loadAgentsCatalog,
+  loadMcpCatalog,
+  loadPluginsCatalog,
+  loadInstalledSkillsCatalog,
+  loadCommandsCatalog,
+  loadMagicPromptsCatalog,
+  loadSnippetsCatalog,
+  loadUsageRows,
+  catalogLoaderForSlug,
+} from './settings/catalogs';
+export {
+  computeLynxTitleCollapseProgress,
+  LYNX_TITLE_COLLAPSE_DISTANCE,
+} from './shell/tabPageHeader';
+export {
+  resolveLynxConnectGate,
+  nextAutoConnectPhase,
+  type LynxAutoConnectPhase,
+} from './connect/autoConnectPhase';
+export { parsePastedPairingLink } from './connect/pairingPaste';

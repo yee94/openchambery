@@ -1,0 +1,65 @@
+# Lynx track CI — PRs into work/lynx-native only.
+# Linux jobs: packages/lynx type-check + vitest + rspeedy build.
+# APK / iOS simulator jobs need Mac/Android runners and are intentionally
+# documented stubs here — do not claim 真机过 from this workflow.
+name: lynx-ci
+
+on:
+  pull_request:
+    branches:
+      - work/lynx-native
+    paths:
+      - 'packages/lynx/**'
+      - '.github/workflows/lynx-ci.yml'
+      - 'docs/lynx-*.md'
+      - 'package.json'
+      - 'bun.lock'
+      - 'vitest.config.ts'
+      - 'vitest.shared.ts'
+  push:
+    branches:
+      - work/lynx-native
+    paths:
+      - 'packages/lynx/**'
+      - '.github/workflows/lynx-ci.yml'
+
+concurrency:
+  group: lynx-ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lynx-linux:
+    name: lynx type-check + vitest + rspeedy
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
+
+      - name: Install workspace
+        run: bun install --frozen-lockfile
+
+      - name: Type-check @openchamber/lynx
+        run: bun run --cwd packages/lynx type-check
+
+      - name: Vitest @openchamber/lynx
+        run: bun run --cwd packages/lynx test
+
+      - name: Rspeedy build (Lynx bundle)
+        run: bun run --cwd packages/lynx build:rspeedy
+
+  # --- Native binary jobs (documented; not claimed green without runners) ---
+  # APK assembleDebug and iOS simulator builds require Android SDK / Xcode
+  # Mac runners. Until those runners exist on this track, keep the jobs
+  # omitted rather than skipped-green theater. Do not tick 真机过 from CI.
+  #
+  # Planned (not enabled):
+  # - lynx-android-apk: runs-on [self-hosted, android] → assembleDebug
+  # - lynx-ios-sim: runs-on macos-14 → xcodebuild -sdk iphonesimulator
+  #
+  # Capacitor mobile-ci.yml remaining green on main is unrelated to Lynx.

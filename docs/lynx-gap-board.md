@@ -86,6 +86,22 @@ Tab bodies on `cursor/lynx-tabs-home-local` (PR into `work/lynx-native`). Packag
 **真机过:** not executed.
 
 ---
+
+## 代码接上 (settings bodies + connect welcome + Projects header + CI skeleton — not landed under 三关)
+
+Slice on `cursor/lynx-settings-ci-local` (PR into `work/lynx-native`). Package Vitest + `tsc` + rspeedy build via `packages/lynx/ci/lynx-ci.yml` → install as `.github/workflows/lynx-ci.yml` (needs `workflow` token scope) (Linux). APK/iOS sim jobs need Mac/Android runners — **not claimed**. 真机过: not executed.
+
+| Item | Cap/web source | Lynx note |
+|---|---|---|
+| Settings page bodies (21 slugs) | SettingsView + settings blob + catalogs | Wired GET/PUT: instances, appearance (flexoki ids), chat, notifications hooks, sessions, gitmoji, about (Lynx version ≠ instance). List endpoints: providers/agents/mcp/plugins/skills/commands/magic-prompts/snippets/usage/assistants/projects. Editors labeled stubs (no fake-success). Voice list-only-until-routes. No iosNativeUi. |
+| Connect welcome / instances UI | MobileApp welcome + MobileInstancesSurface | Splash while auto-connect; instance list add/delete/password unlock; paste pairing link. QR camera labeled stub (host-owned). No Bonjour. |
+| Projects MobileTabPageHeader | `MobileTabPageHeader.tsx` | Sticky translucent collapsing title + trailing glass search chip + primary +. Collapse math in `tabPageHeader.ts`. iOS glass via GlassChrome; Android blur-radius only. |
+| CI skeleton | — | `packages/lynx/ci/lynx-ci.yml` → install as `.github/workflows/lynx-ci.yml` (needs `workflow` token scope) on PR → `work/lynx-native`: type-check + vitest + rspeedy. Documented that APK/iOS sim need Mac/Android runners. |
+
+**CI绿:** Linux lynx-ci skeleton only — not full APK/iOS. Not 真机过.
+**真机过:** not executed (environment: Linux cloud VM).
+
+---
 ## Missing
 
 Seeded from the inventory. Grouped so a slice can pick a coherent vertical.
@@ -95,8 +111,8 @@ Seeded from the inventory. Grouped so a slice can pick a coherent vertical.
 | Item | Cap/web source | Lynx note |
 |---|---|---|
 | Lynx rspeedy bundle + signed host apps | `packages/lynx` scaffold | Package exists; CocoaPods/Gradle Lynx SDK and APK/IPA CI still missing |
-| Connect / splash while auto-connect resolves | `MobileApp.tsx` welcome | Client auto-connect exists in `packages/lynx`; **welcome UI + host splash** still missing |
-| Instance list, add, delete, password unlock | `mobileConnections.ts` | Client CRUD + password unlock exist; **Instances UI** still missing |
+| ~~Connect / splash while auto-connect resolves~~ | `MobileApp.tsx` welcome | **代码接上** ConnectWelcome splash + welcome; host LynxView chrome still thin |
+| ~~Instance list, add, delete, password unlock~~ | `mobileConnections.ts` | **代码接上** instances UI on welcome + settings/instances |
 | QR + pairing-link redeem v2 | `mobileQrScan.ts` | Link parse + redeem exist; **camera plugin** is host-owned |
 | `openchamber://` parse + apply | `deepLinks.ts` | Parse/build exist; **apply / navigation** still missing |
 | Secure store (Keychain / Keystore) | Capacitor secure storage | Injected adapter only — **native Keychain/Keystore wiring** still missing |
@@ -110,6 +126,7 @@ Seeded from the inventory. Grouped so a slice can pick a coherent vertical.
 | ~~Project cards + worktree groups~~ | `MobileProjectsHome.tsx` | **代码接上** in `ProjectsHome` (worktree groups from session-index + optional parent map) |
 | ~~Session rows, search, pin / in-progress~~ | `useMobileProjectsHomeModel.ts` | **代码接上** search + pin/busy cues |
 | ~~`项目 · 分支` subtitle~~ | `formatHomeSessionSubtitle` | **代码接上** |
+| ~~Collapsing MobileTabPageHeader~~ | `MobileTabPageHeader.tsx` | **代码接上** glass search + primary + |
 | Swipe / long-press actions | `sessionMenuModel.ts` | |
 | New-session draft page | `kind: 'draft'` | Draft secondary push landed; composer body still stub |
 | Add project directory explorer | `DirectoryExplorerDialog` | |
@@ -197,9 +214,11 @@ First implementation slice after this doc gate (order is deliberate: connect →
 3. ~~Four-tab shell IA~~ — navigation + Projects/Assistant/Scheduled tab bodies 代码接上. Remaining: swipe menus, draft composer body, share welcome.
 4. ~~Projects home data path + UI~~ — session-index bindings + ProjectsHome UI in `packages/lynx` (failure ≠ empty). Remaining: directory explorer / 扫一扫 / instance switch chrome.
 5. ~~**LegendList-semantics chat list** + send/stop on official APIs~~ — 代码接上 in `packages/lynx/src/chat`. Remaining: rich turn cards, SSE live tail, Files/Changes, native IME.
-6. ~~**Settings home + slug map**~~ — 代码接上 search + 21 rows + labeled stub bodies. Remaining: real GET/PUT editors per slug.
+6. ~~**Settings home + slug map**~~ — 代码接上 search + 21 rows. Bodies: wired/list/stub in settings-ci slice. Remaining: rich entity editors.
 7. ~~**Assistant catalog + Scheduled list/history**~~ — 代码接上 snapshot/list/history hooks. Remaining: editor chrome, share welcome, admission flows.
-8. **CI** that builds Android debug APK + iOS simulator. Linux analyze alone is never “CI绿”.
+8. ~~**Connect welcome + instances UI**~~ — 代码接上 splash/list/paste. Remaining: host QR camera + Keychain wiring + 真机.
+9. ~~**Projects MobileTabPageHeader**~~ — 代码接上 collapsing header + glass search + primary +. Remaining: pixel polish / menu.
+10. ~~**CI skeleton (Linux)**~~ — `packages/lynx/ci/lynx-ci.yml` → install as `.github/workflows/lynx-ci.yml` (needs `workflow` token scope) type-check + vitest + rspeedy. Remaining: Android APK + iOS sim runners (do not claim 真机过).
 
 Do not start Share / Live Activity / widgets / Capgo / voice invention in slice 1.
 
@@ -253,27 +272,27 @@ A row moves here only after 代码接上 + CI绿 and a **written** device log (d
 
 | Slug | Status | First honest body |
 |---|---|---|
-| `instances` | 代码接上 (row + labeled stub body) | List + add + QR; persist v2 `relayUrl` |
-| `appearance` | 代码接上 (row + labeled stub body) | Language + theme (`flexoki-*` ids). No `iosNativeUi` toggle |
-| `chat` | 代码接上 (row + labeled stub body) | Real GET/PUT `/api/config/settings` chat fields |
-| `notifications` | 代码接上 (row + labeled stub body) | Toggles + APNs/FCM register |
-| `sessions` | 代码接上 (row + labeled stub body) | Defaults + retention from settings blob |
+| `instances` | 代码接上 (wired body) | List + add/delete + paste pairing + password unlock; QR camera stub |
+| `appearance` | 代码接上 (wired GET/PUT) | Theme mode + `flexoki-*` ids. No `iosNativeUi` toggle |
+| `chat` | 代码接上 (wired GET/PUT) | Reasoning / queue / follow-up via `/api/config/settings` |
+| `notifications` | 代码接上 (wired hooks) | Toggles via settings blob; APNs/FCM register host-owned |
+| `sessions` | 代码接上 (wired GET/PUT) | Auto-delete + retention from settings blob |
 | `summary-ai` | 代码接上 (row + labeled stub body) | Settings blob + `/api/small-model` |
-| `projects` | 代码接上 (row + labeled stub body) | `projects[]` from settings blob |
-| `git` | 代码接上 (row + labeled stub body) | gitmoji / identities |
-| `providers` | 代码接上 (row + labeled stub body) | `/api/config/catalog/providers` (failure ≠ empty) |
-| `agents` | 代码接上 (row + labeled stub body) | `GET /api/agent` |
-| `assistants` | 代码接上 (row + labeled stub body) | `/api/openchamber/assistants/snapshot` |
+| `projects` | 代码接上 (list) | `projects[]` from settings blob; editor stub |
+| `git` | 代码接上 (wired gitmoji + stub editor) | gitmoji toggle; identities editor stub |
+| `providers` | 代码接上 (list) | `/api/config/catalog/providers` (failure ≠ empty); editor stub |
+| `agents` | 代码接上 (list) | `GET /api/agent` (failure ≠ empty); editor stub |
+| `assistants` | 代码接上 (list) | assistants snapshot list; editor stub |
 | `behavior` | 代码接上 (row + labeled stub body) | agents.md + response style |
-| `commands` | 代码接上 (row + labeled stub body) | commands metadata catalog |
-| `mcp` | 代码接上 (row + labeled stub body) | `GET /api/config/mcp` |
-| `plugins` | 代码接上 (row + labeled stub body) | `GET /api/config/plugins` |
-| `magic-prompts` | 代码接上 (row + labeled stub body) | `/api/magic-prompts` |
-| `snippets` | 代码接上 (row + labeled stub body) | `/api/config/snippets` |
-| `skills.installed` | 代码接上 (row + labeled stub body) | `/api/config/skills?summary=true` |
-| `usage` | 代码接上 (row + labeled stub body) | per-provider quota; one failure stays on that row |
+| `commands` | 代码接上 (list) | commands metadata catalog; editor stub |
+| `mcp` | 代码接上 (list) | `GET /api/config/mcp`; editor stub |
+| `plugins` | 代码接上 (list) | `GET /api/config/plugins`; editor stub |
+| `magic-prompts` | 代码接上 (list) | `/api/magic-prompts`; editor stub |
+| `snippets` | 代码接上 (list) | `/api/config/snippets`; editor stub |
+| `skills.installed` | 代码接上 (list) | `/api/config/skills?summary=true`; editor stub |
+| `usage` | 代码接上 (list) | per-provider `/api/quota/:id`; one failure stays on that row |
 | `voice` | 代码接上 (row; body list-only-until-routes) | Do not stub a fake mic; port existing /api/dictation or keep list-only |
-| `about` | 代码接上 (row + labeled stub body) | Native Lynx version **separate** from instance versions |
+| `about` | 代码接上 (wired) | Lynx client version **separate** from `/api/system/info` instance version |
 
 ---
 

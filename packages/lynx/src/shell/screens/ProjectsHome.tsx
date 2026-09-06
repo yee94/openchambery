@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 
+import type { LynxHostGlobalProps } from '../../host/embedding';
 import { lynxT, tabLabel } from '../../i18n/catalog';
 import { LynxScrollView, LynxText, LynxView } from '../../lynx-elements';
 import { filterLynxProjectsHomeForSearch } from '../../projects/search';
@@ -13,6 +14,8 @@ import {
 } from '../../session-index/homeModel';
 import type { SessionIndexState } from '../../session-index/types';
 import { cssVar } from '../../theme/tokens';
+import { LynxTabPageHeader } from '../TabPageHeader';
+import { computeLynxTitleCollapseProgress } from '../tabPageHeader';
 
 export type ProjectsHomeBindings = {
   subscribe: (listener: () => void) => () => void;
@@ -23,6 +26,9 @@ export type ProjectsHomeBindings = {
 
 export type ProjectsHomeProps = {
   locale: string;
+  host: LynxHostGlobalProps;
+  fullPageAutoGlassSkin?: boolean;
+  collapseProgress?: number;
   /** Session-index home bindings from connect (#36). Null → labeled no-runtime. */
   bindings?: ProjectsHomeBindings | null;
   homeOptions?: ProjectSessionIndexHomeOptions;
@@ -224,6 +230,9 @@ function ProjectCard({
  */
 export function ProjectsHome({
   locale,
+  host,
+  fullPageAutoGlassSkin = true,
+  collapseProgress,
   bindings = null,
   homeOptions,
   searchQuery: searchQueryProp,
@@ -235,6 +244,8 @@ export function ProjectsHome({
 }: ProjectsHomeProps) {
   const indexState = useSessionIndexState(bindings, indexStateOverride);
   const [internalQuery, setInternalQuery] = useState('');
+  const [searchOpen, setSearchOpen] = useState(Boolean(searchQueryProp));
+  const [headerProgress, setHeaderProgress] = useState(0);
   const [projectExpanded, setProjectExpanded] = useState<Record<string, boolean>>({});
   const [worktreeExpanded, setWorktreeExpanded] = useState<Record<string, boolean>>({});
   const searchQuery = searchQueryProp ?? internalQuery;
@@ -263,61 +274,47 @@ export function ProjectsHome({
   const showLoading = indexState.status === 'loading' || indexState.status === 'idle';
   const noRuntime = !bindings && !modelOverride && !indexStateOverride;
 
+  const progress = collapseProgress ?? headerProgress;
+
   return (
-    <LynxScrollView
+    <LynxView
       style={{
         flexGrow: 1,
-        padding: '24px 16px',
         backgroundColor: cssVar('surface.background'),
       }}
     >
-      <LynxView
-        style={{
-          flexDirection: 'row',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          marginBottom: '12px',
+      <LynxTabPageHeader
+        title={tabLabel(locale, 'projects')}
+        locale={locale}
+        host={host}
+        fullPageAutoGlassSkin={fullPageAutoGlassSkin}
+        collapseProgress={progress}
+        searchOpen={searchOpen || Boolean(searchQuery)}
+        searchQuery={searchQuery}
+        onToggleSearch={() => {
+          setSearchOpen((open) => {
+            const next = !open;
+            if (!next) setSearchQuery('');
+            return next;
+          });
         }}
-      >
-        <LynxText
-          style={{
-            fontSize: '28px',
-            fontWeight: '700',
-            color: cssVar('surface.foreground'),
-          }}
-        >
-          {tabLabel(locale, 'projects')}
-        </LynxText>
-        {onOpenDraft ? (
-          <LynxView
-            bindtap={onOpenDraft}
-            accessibility-role="button"
-            accessibility-label={lynxT(locale, 'lynx.projects.newDraft')}
-          >
-            <LynxText style={{ color: cssVar('primary.base'), fontWeight: '600' }}>
-              {lynxT(locale, 'lynx.projects.newDraft')}
-            </LynxText>
-          </LynxView>
-        ) : null}
-      </LynxView>
+        onSearchQueryChange={setSearchQuery}
+        onPrimaryAction={onOpenDraft}
+        primaryAccessibilityLabel={lynxT(locale, 'lynx.projects.newDraft')}
+        searchAccessibilityLabel={lynxT(locale, 'lynx.projects.searchAria')}
+        searchClearAccessibilityLabel={lynxT(locale, 'lynx.projects.clearSearchAria')}
+      />
 
-      <LynxView
+      <LynxScrollView
         style={{
-          marginBottom: '16px',
-          padding: '10px 12px',
-          borderRadius: '12px',
-          backgroundColor: cssVar('surface.elevated'),
+          flexGrow: 1,
+          padding: '0 16px 24px',
+        }}
+        bindtap={() => {
+          // Harness: tapping body does not change collapse; host bindscroll drives it.
+          setHeaderProgress(computeLynxTitleCollapseProgress({ scrollTop: progress * 48 }));
         }}
       >
-        <LynxText
-          style={{ color: searchQuery ? cssVar('surface.foreground') : cssVar('surface.mutedForeground') }}
-          bindtap={() => {
-            if (!searchQuery) setSearchQuery('');
-          }}
-        >
-          {searchQuery || lynxT(locale, 'lynx.projects.search.placeholder')}
-        </LynxText>
-      </LynxView>
 
       {noRuntime ? (
         <LynxText style={{ color: cssVar('surface.mutedForeground'), marginBottom: '12px' }}>
@@ -409,6 +406,7 @@ export function ProjectsHome({
           onOpenSession={onOpenSession}
         />
       ))}
-    </LynxScrollView>
+      </LynxScrollView>
+    </LynxView>
   );
 }

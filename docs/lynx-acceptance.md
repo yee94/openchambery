@@ -221,3 +221,11 @@ Chosen mode is written at the top of `packages/lynx/README.md` (Mode B iOS 26 ho
 - `docs/lynx-gap-board.md` — where each row sits
 - `docs/lynx-ia-ui.md` — glass + embedding
 - `docs/performance/session-switch-2026-07-11.md` — how this repo already writes gates
+
+## Notes — settings / connect / header / CI (2026-09-06)
+
+- Settings slug DoD: wired pages use real `/api/config/settings` or list endpoints; catalog editors stay labeled stubs (never fake-success). Voice remains list-only-until-routes. No `iosNativeUi`.
+- Connect welcome: splash while `autoConnectLastInstance` resolves; paste pairing v2; QR camera host stub.
+- Projects header: Cap `MobileTabPageHeader` collapse contract (`--oc-mobile-title-collapse` spirit) with Lynx glass search chip + primary +.
+- CI: `packages/lynx/ci/lynx-ci.yml` → install as `.github/workflows/lynx-ci.yml` (needs `workflow` token scope) is Linux type-check + vitest + rspeedy only. APK/iOS simulator jobs need Mac/Android runners — **do not claim 真机过** from this workflow.
+

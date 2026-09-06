@@ -18,6 +18,12 @@ export type LynxSettingsPageGroup =
 
 export type LynxSettingsPageKind = 'single' | 'split';
 
+export type LynxSettingsBodyKind =
+  | 'wired'
+  | 'list'
+  | 'stub'
+  | 'list-only-until-routes';
+
 export type LynxSettingsPageMeta = {
   slug: LynxMobileSettingsSlug;
   title: string;
@@ -25,7 +31,7 @@ export type LynxSettingsPageMeta = {
   kind: LynxSettingsPageKind;
   keywords: readonly string[];
   /** Body wiring status for this slice. */
-  body: 'stub' | 'list-only-until-routes';
+  body: LynxSettingsBodyKind;
 };
 
 export const LYNX_SETTINGS_PAGE_GROUP_ORDER: readonly LynxSettingsPageGroup[] = [
@@ -57,7 +63,7 @@ export const LYNX_SETTINGS_PAGE_METADATA: readonly LynxSettingsPageMeta[] = [
     group: 'connection',
     kind: 'single',
     keywords: ['instance', 'instances', 'server', 'connection', 'switch'],
-    body: 'stub',
+    body: 'wired',
   },
   {
     slug: 'appearance',
@@ -65,7 +71,7 @@ export const LYNX_SETTINGS_PAGE_METADATA: readonly LynxSettingsPageMeta[] = [
     group: 'personalization',
     kind: 'single',
     keywords: ['theme', 'font', 'spacing', 'padding', 'corner radius', 'radius', 'language'],
-    body: 'stub',
+    body: 'wired',
   },
   {
     slug: 'chat',
@@ -73,7 +79,7 @@ export const LYNX_SETTINGS_PAGE_METADATA: readonly LynxSettingsPageMeta[] = [
     group: 'personalization',
     kind: 'single',
     keywords: ['tools', 'diff', 'reasoning', 'draft', 'queue', 'output'],
-    body: 'stub',
+    body: 'wired',
   },
   {
     slug: 'notifications',
@@ -81,7 +87,7 @@ export const LYNX_SETTINGS_PAGE_METADATA: readonly LynxSettingsPageMeta[] = [
     group: 'personalization',
     kind: 'single',
     keywords: ['alerts', 'native', 'summary', 'summarization'],
-    body: 'stub',
+    body: 'wired',
   },
   {
     slug: 'sessions',
@@ -89,7 +95,7 @@ export const LYNX_SETTINGS_PAGE_METADATA: readonly LynxSettingsPageMeta[] = [
     group: 'personalization',
     kind: 'single',
     keywords: ['defaults', 'default agent', 'default model', 'retention', 'memory'],
-    body: 'stub',
+    body: 'wired',
   },
   {
     slug: 'summary-ai',
@@ -105,7 +111,7 @@ export const LYNX_SETTINGS_PAGE_METADATA: readonly LynxSettingsPageMeta[] = [
     group: 'workspace',
     kind: 'split',
     keywords: ['project', 'projects', 'worktree', 'repo', 'directory'],
-    body: 'stub',
+    body: 'list',
   },
   {
     slug: 'git',
@@ -113,7 +119,7 @@ export const LYNX_SETTINGS_PAGE_METADATA: readonly LynxSettingsPageMeta[] = [
     group: 'workspace',
     kind: 'single',
     keywords: ['git', 'identity', 'identities', 'gitmoji', 'commit'],
-    body: 'stub',
+    body: 'wired',
   },
   {
     slug: 'providers',
@@ -121,7 +127,7 @@ export const LYNX_SETTINGS_PAGE_METADATA: readonly LynxSettingsPageMeta[] = [
     group: 'opencode',
     kind: 'split',
     keywords: ['provider', 'providers', 'models', 'api key', 'credentials'],
-    body: 'stub',
+    body: 'list',
   },
   {
     slug: 'agents',
@@ -129,7 +135,7 @@ export const LYNX_SETTINGS_PAGE_METADATA: readonly LynxSettingsPageMeta[] = [
     group: 'opencode',
     kind: 'split',
     keywords: ['agent', 'agents', 'prompts', 'tools', 'permissions'],
-    body: 'stub',
+    body: 'list',
   },
   {
     slug: 'assistants',
@@ -137,7 +143,7 @@ export const LYNX_SETTINGS_PAGE_METADATA: readonly LynxSettingsPageMeta[] = [
     group: 'opencode',
     kind: 'split',
     keywords: ['assistant', 'assistants', 'sharing'],
-    body: 'stub',
+    body: 'list',
   },
   {
     slug: 'behavior',
@@ -153,7 +159,7 @@ export const LYNX_SETTINGS_PAGE_METADATA: readonly LynxSettingsPageMeta[] = [
     group: 'opencode',
     kind: 'split',
     keywords: ['command', 'commands', 'slash', 'macros'],
-    body: 'stub',
+    body: 'list',
   },
   {
     slug: 'mcp',
@@ -161,7 +167,7 @@ export const LYNX_SETTINGS_PAGE_METADATA: readonly LynxSettingsPageMeta[] = [
     group: 'opencode',
     kind: 'split',
     keywords: ['mcp', 'model context protocol', 'servers', 'tools'],
-    body: 'stub',
+    body: 'list',
   },
   {
     slug: 'plugins',
@@ -169,7 +175,7 @@ export const LYNX_SETTINGS_PAGE_METADATA: readonly LynxSettingsPageMeta[] = [
     group: 'opencode',
     kind: 'split',
     keywords: ['plugin', 'plugins', 'extensions'],
-    body: 'stub',
+    body: 'list',
   },
   {
     slug: 'magic-prompts',
@@ -177,7 +183,7 @@ export const LYNX_SETTINGS_PAGE_METADATA: readonly LynxSettingsPageMeta[] = [
     group: 'content',
     kind: 'split',
     keywords: ['prompts', 'templates', 'git', 'review', 'commit'],
-    body: 'stub',
+    body: 'list',
   },
   {
     slug: 'snippets',
@@ -185,7 +191,7 @@ export const LYNX_SETTINGS_PAGE_METADATA: readonly LynxSettingsPageMeta[] = [
     group: 'content',
     kind: 'split',
     keywords: ['prompt', 'templates', 'multi-run'],
-    body: 'stub',
+    body: 'list',
   },
   {
     slug: 'skills.installed',
@@ -193,7 +199,7 @@ export const LYNX_SETTINGS_PAGE_METADATA: readonly LynxSettingsPageMeta[] = [
     group: 'content',
     kind: 'split',
     keywords: ['skill', 'skills', 'instructions', 'install'],
-    body: 'stub',
+    body: 'list',
   },
   {
     slug: 'usage',
@@ -201,7 +207,7 @@ export const LYNX_SETTINGS_PAGE_METADATA: readonly LynxSettingsPageMeta[] = [
     group: 'system',
     kind: 'split',
     keywords: ['quota', 'billing', 'tokens', 'usage', 'limits'],
-    body: 'stub',
+    body: 'list',
   },
   {
     slug: 'voice',
@@ -217,7 +223,7 @@ export const LYNX_SETTINGS_PAGE_METADATA: readonly LynxSettingsPageMeta[] = [
     group: 'system',
     kind: 'single',
     keywords: ['about', 'version', 'updates', 'release', 'changelog'],
-    body: 'stub',
+    body: 'wired',
   },
 ] as const;
 

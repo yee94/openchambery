@@ -23,6 +23,10 @@ describe('Lynx settings metadata', () => {
     ]);
     expect(LYNX_SETTINGS_PAGE_GROUP_ORDER[0]).toBe('connection');
     expect(getLynxSettingsPageMeta('voice')?.body).toBe('list-only-until-routes');
+    expect(getLynxSettingsPageMeta('appearance')?.body).toBe('wired');
+    expect(getLynxSettingsPageMeta('providers')?.body).toBe('list');
+    expect(getLynxSettingsPageMeta('about')?.body).toBe('wired');
+    expect(getLynxSettingsPageMeta('behavior')?.body).toBe('stub');
     expect(LYNX_FORBIDDEN_SETTINGS_TOGGLES).toContain('iosNativeUi');
   });
 

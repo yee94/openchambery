@@ -3,25 +3,23 @@ import { LynxScrollView, LynxText, LynxView } from '../lynx-elements';
 import { cssVar } from '../theme/tokens';
 import { getLynxSettingsPageMeta } from './metadata';
 import type { LynxMobileSettingsSlug } from './slugs';
+import { renderLynxSettingsBody, type SettingsBodyContext } from './SettingsBodies';
 
 export type LynxSettingsPageProps = {
   locale: string;
   slug: LynxMobileSettingsSlug;
   onBack: () => void;
+  bodyContext: SettingsBodyContext;
 };
 
 /**
- * Pushed settings page. Bodies are labeled stubs (voice: list-only-until-routes).
+ * Pushed settings page. Bodies are wired / list / labeled stubs per metadata.
  * Never fake-success. No iosNativeUi toggle.
  */
-export function LynxSettingsPage({ locale, slug, onBack }: LynxSettingsPageProps) {
+export function LynxSettingsPage({ locale, slug, onBack, bodyContext }: LynxSettingsPageProps) {
   const meta = getLynxSettingsPageMeta(slug);
   const title = meta?.title ?? slug;
   const bodyPolicy = meta?.body ?? 'stub';
-
-  const bodyCopy = bodyPolicy === 'list-only-until-routes'
-    ? lynxT(locale, 'lynx.settings.voice.listOnly')
-    : lynxT(locale, 'lynx.settings.page.stub');
 
   return (
     <LynxView
@@ -57,9 +55,7 @@ export function LynxSettingsPage({ locale, slug, onBack }: LynxSettingsPageProps
         >
           {slug} · {meta?.kind ?? 'single'} · {bodyPolicy}
         </LynxText>
-        <LynxText style={{ color: cssVar('surface.foreground') }}>
-          {bodyCopy}
-        </LynxText>
+        {renderLynxSettingsBody(slug, bodyPolicy, bodyContext)}
       </LynxScrollView>
     </LynxView>
   );

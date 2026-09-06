@@ -1,6 +1,6 @@
 /**
  * Mobile Settings tab slugs. Must stay equal to Cap `MOBILE_SETTINGS_PAGE_SLUGS`.
- * Bodies are stubs in this slice — labeled, never fake-success.
+ * Bodies are wired / list / stub per metadata — never fake-success.
  */
 export const LYNX_MOBILE_SETTINGS_PAGE_SLUGS = [
   'instances',

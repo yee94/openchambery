@@ -6,6 +6,9 @@ import { shouldPaintLynxDock, type LynxHostGlobalProps } from '../host/embedding
 import { lynxT } from '../i18n/catalog';
 import { LynxPage, LynxText, LynxView } from '../lynx-elements';
 import type { LynxRuntimeFetch } from '../runtime/fetch';
+import type { LynxConnectionClient } from '../connection/client';
+import type { LynxSavedConnection } from '../connection/types';
+import type { SettingsBodyContext } from '../settings/SettingsBodies';
 import type { LynxHomeSessionRow } from '../session-index/homeModel';
 import type { createSessionIndexHomeBindings } from '../session-index/store';
 import { cssVar } from '../theme/tokens';
@@ -29,13 +32,21 @@ export type LynxShellAppProps = {
   runtimeFetch?: LynxRuntimeFetch | null;
   /** Session-index home bindings from connect (#36). */
   sessionIndexBindings?: ProjectsHomeBindings | ReturnType<typeof createSessionIndexHomeBindings> | null;
+  connectionClient?: LynxConnectionClient | null;
+  connections?: LynxSavedConnection[];
+  onConnectionsChange?: (connections: LynxSavedConnection[]) => void;
+  onConnected?: () => void;
+  lynxClientVersion?: string;
 };
 
 function RootTab({
   tab,
   locale,
+  host,
+  fullPageAutoGlassSkin,
   runtimeFetch,
   sessionIndexBindings,
+  settingsBodyContext,
   onOpenSession,
   onOpenDraft,
   onOpenAssistantConversation,
@@ -44,8 +55,11 @@ function RootTab({
 }: {
   tab: LynxTabId;
   locale: string;
+  host: LynxHostGlobalProps;
+  fullPageAutoGlassSkin: boolean;
   runtimeFetch: LynxRuntimeFetch | null;
   sessionIndexBindings: ProjectsHomeBindings | null;
+  settingsBodyContext: SettingsBodyContext;
   onOpenSession: (session: LynxHomeSessionRow) => void;
   onOpenDraft: () => void;
   onOpenAssistantConversation: (assistant: LynxAssistantDTO) => void;
@@ -57,6 +71,8 @@ function RootTab({
       return (
         <ProjectsHome
           locale={locale}
+          host={host}
+          fullPageAutoGlassSkin={fullPageAutoGlassSkin}
           bindings={sessionIndexBindings}
           onOpenSession={onOpenSession}
           onOpenDraft={onOpenDraft}
@@ -82,7 +98,7 @@ function RootTab({
         />
       );
     case 'settings':
-      return <SettingsTab locale={locale} />;
+      return <SettingsTab locale={locale} bodyContext={settingsBodyContext} />;
   }
 }
 
@@ -91,6 +107,11 @@ export function LynxShellApp({
   initialState = INITIAL_LYNX_NAVIGATION_STATE,
   runtimeFetch = null,
   sessionIndexBindings = null,
+  connectionClient = null,
+  connections = [],
+  onConnectionsChange,
+  onConnected,
+  lynxClientVersion = '1.19.7-beta.7',
 }: LynxShellAppProps) {
   const [navigation, setNavigation] = useState(initialState);
   const [assistantNeedsSessionNote, setAssistantNeedsSessionNote] = useState<string | null>(null);
@@ -149,6 +170,16 @@ export function LynxShellApp({
       directory: assistant.effectiveWorkspacePath,
       title: assistant.name,
     }));
+  };
+
+  const settingsBodyContext: SettingsBodyContext = {
+    locale: host.locale,
+    runtimeFetch,
+    lynxClientVersion,
+    connectionClient,
+    connections,
+    onConnectionsChange,
+    onConnected,
   };
 
   const secondary = navigation.secondary;
@@ -219,8 +250,11 @@ export function LynxShellApp({
           <RootTab
             tab={navigation.activeTab}
             locale={host.locale}
+            host={host}
+            fullPageAutoGlassSkin={fullPageAutoGlassSkin}
             runtimeFetch={runtimeFetch}
             sessionIndexBindings={sessionIndexBindings}
+            settingsBodyContext={settingsBodyContext}
             onOpenSession={openSession}
             onOpenDraft={openDraft}
             onOpenAssistantConversation={openAssistantConversation}

@@ -9,6 +9,7 @@ import {
   type LynxSettingsPageMeta,
 } from '../../settings/metadata';
 import { LynxSettingsPage } from '../../settings/SettingsPage';
+import type { SettingsBodyContext } from '../../settings/SettingsBodies';
 import type { LynxMobileSettingsSlug } from '../../settings/slugs';
 import { cssVar } from '../../theme/tokens';
 
@@ -32,15 +33,12 @@ function SettingsSearchField({
     >
       <LynxText
         style={{ color: value ? cssVar('surface.foreground') : cssVar('surface.mutedForeground') }}
-        // Host text-input binding lands with Lynx input element; search state is
-        // driven by tests / future input bind. Tap cycles are not required here.
         bindtap={() => {
           if (!value) onChange('');
         }}
       >
         {value || lynxT(locale, 'lynx.settings.search.placeholder')}
       </LynxText>
-      {/* Hidden harness hook: id used by unit tests via props, not DOM query. */}
       <LynxView
         id="lynx-settings-search"
         bindtap={() => onChange(value)}
@@ -75,7 +73,7 @@ function SettingsRow({
           {page.title}
         </LynxText>
         <LynxText style={{ color: cssVar('surface.mutedForeground'), fontSize: '12px' }}>
-          {page.slug}
+          {page.slug} · {page.body}
         </LynxText>
       </LynxView>
       <LynxText style={{ color: cssVar('surface.mutedForeground') }}>›</LynxText>
@@ -89,11 +87,12 @@ function SettingsRow({
  */
 export function SettingsTab({
   locale,
+  bodyContext,
   searchQuery: searchQueryProp,
   onSearchQueryChange,
 }: {
   locale: string;
-  /** Optional controlled search (tests / host). */
+  bodyContext: SettingsBodyContext;
   searchQuery?: string;
   onSearchQueryChange?: (value: string) => void;
 }) {
@@ -114,6 +113,7 @@ export function SettingsTab({
         locale={locale}
         slug={activeSlug}
         onBack={() => setActiveSlug(null)}
+        bodyContext={bodyContext}
       />
     );
   }
