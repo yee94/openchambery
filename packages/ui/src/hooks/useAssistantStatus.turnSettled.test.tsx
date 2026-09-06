@@ -127,6 +127,7 @@ describe('useAssistantStatus turn settle', () => {
     const working = await renderWorking();
     expect(working.isTurnSettled).toBe(false);
     expect(working.isWorking).toBe(true);
+    expect(working.canAbort).toBe(true);
     expect(working.statusText).toBe('chat.assistantStatus.sendingMessage');
   });
 });

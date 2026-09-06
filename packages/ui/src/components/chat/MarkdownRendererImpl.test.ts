@@ -19,6 +19,7 @@ const markdownCoreSource = readFileSync(join(sourceDirectory, 'markdown', 'markd
 const markdownParsePipelineSource = readFileSync(join(sourceDirectory, 'markdown', 'markdownParsePipeline.ts'), 'utf-8');
 const messageListSource = readFileSync(join(sourceDirectory, 'MessageList.tsx'), 'utf-8');
 const decorateSource = readFileSync(join(sourceDirectory, 'markdown', 'decorate.ts'), 'utf-8');
+const fileReferenceActionsSource = readFileSync(join(sourceDirectory, 'fileReferenceActions.ts'), 'utf-8');
 const autoFollowSource = readFileSync(
     join(sourceDirectory, '..', '..', 'hooks', 'useChatAutoFollow.ts'),
     'utf-8',
@@ -292,30 +293,31 @@ describe('file reference annotation', () => {
     });
 
     test('opens image file paths in the shared image preview', () => {
-        expect(markdownRendererSource).toContain('isImageFile(resolved.resolvedPath) && onShowPopup');
-        expect(markdownRendererSource).toContain("tool: 'image-preview'");
-        expect(markdownRendererSource).toContain('url: resolved.resolvedPath');
+        expect(fileReferenceActionsSource).toContain('isImageFile(resolved.resolvedPath) && options.onShowPopup');
+        expect(fileReferenceActionsSource).toContain("tool: 'image-preview'");
+        expect(fileReferenceActionsSource).toContain('url: resolved.resolvedPath');
     });
 });
 
 describe('html file references', () => {
     test('opens html paths in preview instead of the runtime editor', () => {
-        expect(markdownRendererSource).toContain('isHtmlFile(resolved.resolvedPath)');
-        expect(markdownRendererSource).toContain("viewerMode: 'preview'");
-        expect(markdownRendererSource).toContain('preferRuntimeEditor && editor && !htmlPreview');
+        expect(fileReferenceActionsSource).toContain('isHtmlFile(resolved.resolvedPath)');
+        expect(fileReferenceActionsSource).toContain("viewerMode: 'preview'");
+        expect(fileReferenceActionsSource).toContain('options.preferRuntimeEditor && options.editor && !htmlPreview');
     });
 });
 
 describe('binary file references', () => {
     test('routes binary links through the desktop path opener before the context preview', () => {
-        const binaryHandlingStart = markdownRendererSource.indexOf("sourceElement.getAttribute('data-openchamber-file-binary') === 'true'");
-        const contextPreviewStart = markdownRendererSource.indexOf('const contextDirectory = getContextDirectory', binaryHandlingStart);
+        const binaryHandlingStart = fileReferenceActionsSource.indexOf('(isBinary || isApplicationBundle)');
+        const contextPreviewStart = fileReferenceActionsSource.indexOf('const contextDirectory = getContextDirectory', binaryHandlingStart);
 
         expect(binaryHandlingStart).toBeGreaterThan(-1);
-        const binaryHandling = markdownRendererSource.slice(binaryHandlingStart, contextPreviewStart);
+        const binaryHandling = fileReferenceActionsSource.slice(binaryHandlingStart, contextPreviewStart);
         expect(binaryHandling).toContain('!isImageFile(resolved.resolvedPath)');
         expect(binaryHandling).toContain('!isHtmlFile(resolved.resolvedPath)');
         expect(binaryHandling).toContain('await openDesktopPath(resolved.resolvedPath)');
-        expect(markdownRendererSource).toContain('!isHtmlFile(latestResolved.resolvedPath)');
+        expect(fileReferenceActionsSource).toContain('isMobileSurface');
+        expect(fileReferenceActionsSource).toContain('!isHtmlFile(resolvedPath)');
     });
 });

@@ -1,7 +1,8 @@
 import { afterEach, describe, expect, test, vi } from 'vitest';
 
-const { openExternalUrl } = vi.hoisted(() => ({
+const { openExternalUrl, openFileReferenceFromElement } = vi.hoisted(() => ({
   openExternalUrl: vi.fn(async () => true),
+  openFileReferenceFromElement: vi.fn(async () => undefined),
 }));
 
 vi.mock('@/lib/url', async () => {
@@ -12,7 +13,11 @@ vi.mock('@/lib/url', async () => {
   };
 });
 
-import { handleMarkstreamPointerEvent } from './markstreamInteractions';
+vi.mock('../fileReferenceActions', () => ({
+  openFileReferenceFromElement,
+}));
+
+import { handleMarkstreamFileReferenceKeyDown, handleMarkstreamPointerEvent } from './markstreamInteractions';
 
 const click = (target: EventTarget, currentTarget: EventTarget): MouseEvent => {
   const event = new MouseEvent('click', { bubbles: true, button: 0 });
@@ -23,6 +28,7 @@ const click = (target: EventTarget, currentTarget: EventTarget): MouseEvent => {
 
 afterEach(() => {
   openExternalUrl.mockClear();
+  openFileReferenceFromElement.mockClear();
 });
 
 describe('handleMarkstreamPointerEvent', () => {
@@ -63,5 +69,36 @@ describe('handleMarkstreamPointerEvent', () => {
         index: 0,
       },
     });
+  });
+
+  test('opens annotated file path tokens through the shared file-reference opener', () => {
+    const fileReference = {
+      effectiveDirectory: '/tmp',
+    };
+    const root = document.createElement('div');
+    const token = document.createElement('span');
+    token.textContent = '/tmp/report.html';
+    token.setAttribute('data-openchamber-file-link', 'true');
+    token.setAttribute('data-openchamber-file-ref', '/tmp/report.html');
+    token.setAttribute('data-openchamber-file-path', '/tmp/report.html');
+    root.append(token);
+
+    handleMarkstreamPointerEvent(click(token, root), { fileReference });
+
+    expect(openFileReferenceFromElement).toHaveBeenCalledWith(token, fileReference);
+    expect(openExternalUrl).not.toHaveBeenCalled();
+  });
+
+  test('opens annotated file path tokens from the keyboard', () => {
+    const fileReference = {
+      effectiveDirectory: '/tmp',
+    };
+    const token = document.createElement('span');
+    token.setAttribute('data-openchamber-file-link', 'true');
+    const event = new KeyboardEvent('keydown', { key: 'Enter', bubbles: true });
+    Object.defineProperty(event, 'target', { value: token });
+
+    handleMarkstreamFileReferenceKeyDown(event, { fileReference });
+    expect(openFileReferenceFromElement).toHaveBeenCalledWith(token, fileReference);
   });
 });
