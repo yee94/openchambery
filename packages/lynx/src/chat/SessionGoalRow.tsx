@@ -35,6 +35,8 @@ export type LynxSessionGoalRowProps = {
   sessionIsWorking?: boolean;
   /** Refresh tick from parent (e.g. after live events). */
   refreshKey?: number | string;
+  /** Cap row tap → open SessionGoalDialog manage. */
+  onOpenManage?: () => void;
 };
 
 export function LynxSessionGoalRow({
@@ -44,6 +46,7 @@ export function LynxSessionGoalRow({
   runtimeFetch = null,
   sessionIsWorking = false,
   refreshKey = 0,
+  onOpenManage,
 }: LynxSessionGoalRowProps) {
   const [goal, setGoal] = useState<LynxSessionGoalPayload | null>(null);
   const [objectiveContent, setObjectiveContent] = useState<string | null>(null);
@@ -148,17 +151,30 @@ export function LynxSessionGoalRow({
       >
         ◎
       </LynxText>
-      <LynxText
+      <LynxView
+        bindtap={() => { onOpenManage?.(); }}
+        accessibility-role={onOpenManage ? 'button' : undefined}
+        accessibility-label={onOpenManage ? lynxT(locale, 'lynx.chat.goal.dialog.titleManage') : undefined}
         style={{
           flexGrow: 1,
           flexShrink: 1,
-          color: cssVar('surface.foreground'),
-          fontSize: '12px',
-          lineHeight: '18px',
+          flexDirection: 'row',
+          alignItems: 'center',
+          minWidth: '0',
         }}
       >
-        {title}
-      </LynxText>
+        <LynxText
+          style={{
+            flexGrow: 1,
+            flexShrink: 1,
+            color: cssVar('surface.foreground'),
+            fontSize: '12px',
+            lineHeight: '18px',
+          }}
+        >
+          {title}
+        </LynxText>
+      </LynxView>
       <LynxText style={{ color: cssVar('surface.mutedForeground'), fontSize: '11px', flexShrink: 0 }}>
         {showEvaluating
           ? lynxT(locale, 'lynx.chat.goal.status.evaluating')
