@@ -68,6 +68,14 @@ interface UseChatTimelineControllerOptions {
     endHistoryViewportPreservation: () => void;
     isPinned: boolean;
     showScrollButton: boolean;
+    /**
+     * Mounted mobile surface flag from ChatContainer (`useUIStore.isMobile`).
+     * Must match the load-older button gate so scroll / upward-intent / short-
+     * viewport auto-fill cannot disagree with button visibility when width /
+     * pointer `isMobileSurfaceRuntime()` probes misclassify the WebView.
+     * Cache capacity, keeper, and momentum paths still use the runtime probe.
+     */
+    isMobile: boolean;
     /** Active desktop transcript only (not expanded-input). Mobile stays false. */
     autoFillEnabled?: boolean;
     /**
@@ -640,9 +648,17 @@ export const useChatTimelineController = ({
     endHistoryViewportPreservation,
     isPinned,
     showScrollButton,
+    isMobile,
     autoFillEnabled = false,
     onWillLoadEarlier,
 }: UseChatTimelineControllerOptions): UseChatTimelineControllerResult => {
+    // Render-sync: auto-fill queryFn / busy retries may run after a mode flip
+    // scheduled them while still desktop. Re-read before any real fetch.
+    const isMobileRef = React.useRef(isMobile);
+    const autoFillEnabledRef = React.useRef(autoFillEnabled);
+    isMobileRef.current = isMobile;
+    autoFillEnabledRef.current = autoFillEnabled;
+
     const previousTurnWindowModelRef = React.useRef<TurnWindowModel | null>(null);
     const previousMessagesRef = React.useRef<ChatMessageEntry[] | null>(null);
     const turnWindowModel = React.useMemo(() => {
@@ -1536,7 +1552,7 @@ export const useChatTimelineController = ({
     const oldestMessageId = messages[0]?.info?.id ?? null;
     const autoFillGate = shouldAutoFillEarlierHistory({
         enabled: autoFillEnabled,
-        isMobile: isMobileSurfaceRuntime(),
+        isMobile,
         sessionReady: Boolean(sessionId),
         messageReady: messages.length > 0 || Boolean(historyMeta),
         historyLoading: historySignals.historyLoading,
@@ -1575,6 +1591,13 @@ export const useChatTimelineController = ({
         refetchOnWindowFocus: false,
         refetchOnReconnect: false,
         queryFn: async (): Promise<{ status: 'grew' | 'blocked' | 'skip' | 'tall' }> => {
+            // Mode / enablement can flip while a busy retry is already scheduled.
+            // Stop before any real fetch so mobile/manual does not inherit desktop
+            // auto-fill work.
+            if (!autoFillEnabledRef.current || isMobileRef.current) {
+                return { status: 'skip' };
+            }
+
             const targetSessionId = sessionIdRef.current;
             if (!targetSessionId) return { status: 'skip' };
 
@@ -1655,7 +1678,7 @@ export const useChatTimelineController = ({
         if (!container) return;
         if (!shouldLoadEarlierHistory({
             source,
-            isMobile: isMobileSurfaceRuntime(),
+            isMobile: isMobileRef.current,
             isPinned: isPinnedRef.current,
             scrollTop: container.scrollTop,
             clientHeight: container.clientHeight,

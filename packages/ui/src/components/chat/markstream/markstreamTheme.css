@@ -1,0 +1,164 @@
+/* Keep library resets and generated utilities below OpenChamber utilities,
+   including when this lazy stylesheet is loaded before the main CSS. */
+@layer theme, base, components, utilities;
+@import 'markstream-react/index.css' layer(components);
+
+/* Theme Markstream to OpenChamber tokens. Markstream CSS is scoped under
+   `.markstream-react`; these overrides only apply on the experimental path. */
+
+.oc-markstream-host {
+  color: var(--surface-foreground);
+}
+
+/* The transcript owns visibility and row measurements. The library's
+   content-visibility:auto still substitutes an intrinsic height offscreen
+   even with its node window disabled. On iOS, scrolling then changes settled
+   bubble heights and moves the reading position in both chat and assistants. */
+.oc-markstream-host .markstream-react.markdown-renderer {
+  content-visibility: visible;
+  contain-intrinsic-size: none;
+}
+
+.oc-markstream-host .markstream-react {
+  color: inherit;
+  font-family: var(--font-sans);
+  font-size: inherit;
+  line-height: var(--markdown-body-line-height, 1.625);
+  /* The library's --border is bare HSL channels. Nested legacy cards consume
+     a complete color in Tailwind border-border/80 and border-border/70;
+     invalid color-mix values otherwise resolve to currentColor (black in light).
+     Keep the shared token's format at this boundary, including dark mode. */
+  --border: var(--interactive-border);
+  --foreground: inherit;
+  --muted-foreground: var(--surface-muted-foreground);
+  --link-color: var(--markdown-link, var(--primary));
+  --blockquote-border-color: var(--interactive-border);
+  --hr-border-color: var(--surface-subtle);
+  --table-border: var(--interactive-border);
+  --footnote-border: var(--surface-subtle);
+  --code-bg: var(--syntax-background, var(--surface-muted));
+  --code-fg: var(--syntax-foreground, var(--surface-foreground));
+  --code-border: var(--interactive-border);
+  --code-header-bg: var(--surface-muted);
+  --code-action-fg: var(--surface-muted-foreground);
+  --code-action-hover-bg: var(--interactive-hover);
+  --code-action-hover-fg: var(--surface-foreground);
+  --code-line-number: var(--surface-muted-foreground);
+}
+
+.oc-markstream-host .markstream-react a,
+.oc-markstream-host .markstream-react .link-node {
+  color: var(--markdown-link, var(--primary));
+}
+
+.oc-markstream-host .markstream-react a:hover,
+.oc-markstream-host .markstream-react .link-node:hover {
+  color: var(--markdown-link-hover, var(--primary));
+}
+
+.oc-markstream-host .markstream-react .inline-code {
+  background: var(--syntax-background, var(--surface-muted));
+  color: var(--syntax-foreground, var(--surface-foreground));
+  font-family: var(--font-mono);
+  font-size: var(--text-code);
+}
+
+/* Library lists use pl-[calc(13/8*1em)] plus li.pl-1.5 / my-2, which sits
+   wider and airier than OpenChamber's 18px/19px outside-marker rhythm. */
+.oc-markstream-host .markstream-react ul,
+.oc-markstream-host .markstream-react ol {
+  margin: 0 0 0.625rem 0;
+}
+
+.oc-markstream-host .markstream-react ul {
+  padding-left: 18px;
+  list-style-type: disc;
+  list-style-position: outside;
+}
+
+.oc-markstream-host .markstream-react ol {
+  padding-left: 19px;
+  list-style-type: decimal;
+  list-style-position: outside;
+}
+
+.oc-markstream-host .markstream-react li,
+.oc-markstream-host .markstream-react .list-item {
+  display: list-item;
+  margin: 4px 0;
+  padding-left: 1px;
+  line-height: var(--markdown-list-line-height, var(--markdown-body-line-height, 1.625));
+}
+
+.oc-markstream-host .markstream-react li > .paragraph-node,
+.oc-markstream-host .markstream-react .list-item > .paragraph-node {
+  display: inline;
+  margin: 0;
+}
+
+.oc-markstream-host .markstream-react li ul,
+.oc-markstream-host .markstream-react li ol {
+  margin-top: 0.25rem;
+  margin-bottom: 0.25rem;
+}
+
+/* Library inline code is text-[85%]; fenced blocks inline fontSize:12px.
+   Both ignore --text-code (settings / dpt scale). Tool markdown stays inherit. */
+.oc-markstream-host .markstream-react code,
+.oc-markstream-host .markstream-react pre {
+  font-family: var(--font-mono);
+  font-size: var(--text-code);
+}
+
+.oc-markstream-host .markstream-react .code-block-content,
+.oc-markstream-host .markstream-react .code-block-render pre,
+.oc-markstream-host .markstream-react .code-block-content .shiki,
+.oc-markstream-host .markstream-react .code-fallback-plain,
+.oc-markstream-host .markstream-react .code-fallback-plain > code {
+  font-size: var(--text-code) !important;
+}
+
+.oc-markstream-host.markdown-tool .markstream-react .inline-code,
+.oc-markstream-host.markdown-tool .markstream-react code,
+.oc-markstream-host.markdown-tool .markstream-react pre,
+.oc-markstream-host.markdown-tool .markstream-react .code-block-content,
+.oc-markstream-host.markdown-tool .markstream-react .code-block-render pre,
+.oc-markstream-host.markdown-tool .markstream-react .code-block-content .shiki,
+.oc-markstream-host.markdown-tool .markstream-react .code-fallback-plain,
+.oc-markstream-host.markdown-tool .markstream-react .code-fallback-plain > code {
+  font-size: inherit !important;
+}
+
+.oc-markstream-host.markdown-reasoning .markstream-react {
+  color: var(--surface-muted-foreground);
+}
+
+/* Library .paragraph-node is 1.25em top+bottom (:where, usually beaten by
+   .markdown-content p). Keep OpenChamber paragraph rhythm and drop the last
+   slot's trailing margin so the Running fold / thinking row stay tight. */
+.oc-markstream-host .markstream-react .paragraph-node {
+  margin: 0 0 var(--markdown-paragraph-spacing) 0;
+}
+
+.oc-markstream-host .markstream-react > .node-slot:last-of-type .paragraph-node {
+  margin-bottom: 0;
+}
+
+/* Library image nodes leave intrinsic pixel width unconstrained, which can
+   grow the assistant bubble. Match decorate.ts MARKDOWN_IMAGE_CLASS
+   (`max-w-full`) plus placeholder containment (`h-auto`, `object-contain`). */
+.oc-markstream-host .markstream-react,
+.oc-markstream-host .markstream-react .node-slot,
+.oc-markstream-host .markstream-react .image-node {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.oc-markstream-host .markstream-react img:not([data-md-link-favicon='true']),
+.oc-markstream-host .markstream-react .image-node__img {
+  display: block;
+  max-width: 100%;
+  width: auto;
+  height: auto;
+  object-fit: contain;
+}

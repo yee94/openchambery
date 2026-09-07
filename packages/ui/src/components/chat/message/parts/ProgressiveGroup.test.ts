@@ -9,6 +9,7 @@ const formatActivityDurationSource = readFileSync(join(__dirname, 'formatActivit
 const messageBodySource = readFileSync(join(__dirname, '../MessageBody.tsx'), 'utf-8');
 const messageListSource = readFileSync(join(__dirname, '../../MessageList.tsx'), 'utf-8');
 const turnItemSource = readFileSync(join(__dirname, '../../components/TurnItem.tsx'), 'utf-8');
+const turnAssistantHeaderSource = readFileSync(join(__dirname, '../../components/TurnAssistantHeader.tsx'), 'utf-8');
 const messageDictionaryDirectory = join(__dirname, '../../../../lib/i18n/messages');
 const messageDictionaryFiles = ['en.ts', 'es.ts', 'fr.ts', 'ja.ts', 'ko.ts', 'pl.ts', 'pt-BR.ts', 'uk.ts', 'zh-CN.ts', 'zh-TW.ts'];
 
@@ -19,7 +20,7 @@ describe('progressive activity presentation', () => {
         expect(progressiveGroupSource).toContain('animateTailText={false}');
     });
 
-    test('consecutive skills collapse into a Skill group; other static tools stay one-call rows; context tools collapse into Explored groups; used tools collapse into Used groups', () => {
+    test('consecutive skills collapse into a Skill group; other static tools stay one-call rows; explore and used tools share one process fold', () => {
         // consecutive 2+ skill calls collapse into one SkillToolGroup
         expect(progressiveGroupSource).toContain('if (isSkillGroupTool(toolName))');
         expect(progressiveGroupSource).toContain('collectConsecutiveSkillTools');
@@ -32,33 +33,34 @@ describe('progressive activity presentation', () => {
         expect(messageBodySource).toContain('collectConsecutiveSkillTools');
         // other non-context static tools: one call per tool-static-group row
         expect(progressiveGroupSource).toContain("rows.push({ type: 'tool-static-group', toolName, activities: [activity] });");
-        // context tools (read/glob/grep/list): consecutive collapse via collectConsecutiveContextTools
-        expect(progressiveGroupSource).toContain('if (isContextGroupTool(toolName))');
-        expect(progressiveGroupSource).toContain('collectConsecutiveContextTools');
+        // explore + used tools (read/glob/grep/list/edit/bash/custom): one process fold
+        expect(progressiveGroupSource).toContain('if (isProcessGroupTool(toolName))');
+        expect(progressiveGroupSource).toContain('collectConsecutiveProcessTools');
         expect(progressiveGroupSource).toContain("type: 'tool-context-group'");
-        expect(progressiveGroupSource).toContain('hasContextExploreSuccessor');
+        expect(progressiveGroupSource).toContain('hasProcessSuccessor');
         expect(progressiveGroupSource).toContain('hasFollowingOtherType');
         expect(progressiveGroupSource).toContain('case \'tool-context-group\':');
         expect(progressiveGroupSource).toContain('<ContextToolGroup');
         expect(progressiveGroupSource).toContain('isTurnLive={isActive}');
         expect(progressiveGroupSource).toContain('hasFollowingOtherType={row.hasFollowingOtherType}');
-        // used tools (edit/write/bash/custom): consecutive collapse via collectConsecutiveUsedTools
-        expect(progressiveGroupSource).toContain('if (isUsedGroupTool(toolName))');
-        expect(progressiveGroupSource).toContain('collectConsecutiveUsedTools');
-        expect(progressiveGroupSource).toContain("type: 'tool-used-group'");
-        expect(progressiveGroupSource).toContain('hasUsedRunSuccessor');
-        expect(progressiveGroupSource).toContain("case 'tool-used-group':");
-        expect(progressiveGroupSource).toContain('<UsedToolGroup');
-        expect(messageBodySource).toContain('isUsedGroupTool');
-        expect(messageBodySource).toContain('UsedToolGroup');
-        expect(messageBodySource).toContain('collectConsecutiveUsedTools');
-        expect(messageBodySource).toContain('hasUsedRunSuccessor');
+        const contextToolGroupSource = readFileSync(join(__dirname, 'ContextToolGroup.tsx'), 'utf-8');
+        expect(contextToolGroupSource).toContain("t('chat.usedGroup.running')");
+        expect(contextToolGroupSource).toContain("t('chat.usedGroup.used')");
+        expect(contextToolGroupSource).not.toContain("t('chat.contextGroup.exploring')");
+        expect(contextToolGroupSource).not.toContain("t('chat.contextGroup.explored')");
+        expect(progressiveGroupSource).not.toContain('<UsedToolGroup');
+        expect(progressiveGroupSource).not.toContain("type: 'tool-used-group'");
+        expect(messageBodySource).toContain('isProcessGroupTool');
+        expect(messageBodySource).toContain('collectConsecutiveProcessTools');
+        expect(messageBodySource).toContain('hasProcessSuccessor');
+        expect(messageBodySource).not.toContain('UsedToolGroup');
+        expect(messageBodySource).not.toContain('collectConsecutiveUsedTools');
+        expect(messageBodySource).not.toContain('hasUsedRunSuccessor');
         // MessageBody flat path mirrors the same grouping
         expect(messageBodySource).toContain('isContextGroupTool');
         expect(messageBodySource).toContain('ContextToolGroup');
-        expect(messageBodySource).toContain('hasContextExploreSuccessor');
         expect(messageBodySource).toContain('isTurnLive={effectiveStreamPhase !== \'completed\'}');
-        expect(messageBodySource).toContain('hasFollowingOtherType={hasContextExploreSuccessor');
+        expect(messageBodySource).toContain('hasFollowingOtherType={hasProcessSuccessor');
         // Do not revive multi-target chip merge
         expect(progressiveGroupSource).not.toContain('const activities = [activity];');
         expect(progressiveGroupSource).not.toContain('if (nextToolName !== toolName || !isStaticTool(nextToolName))');
@@ -182,11 +184,13 @@ describe('progressive activity presentation', () => {
         expect(progressiveGroupSource).toContain("import { formatActivityDuration } from './formatActivityDuration'");
     });
 
-    test('idle Processed chrome restores pb-8 after header demotion', () => {
+    test('keeps grouped lifecycle spacing on the turn and standalone spacing on the message', () => {
         const chatMessageSource = readFileSync(join(__dirname, '../../ChatMessage.tsx'), 'utf-8');
+        expect(turnItemSource).toContain("className={`relative w-full ${preserveActiveTurnGap ? 'pb-1' : 'pb-8'}`}");
+        expect(turnItemSource).toContain("${isMobile ? (stickyUserHeader ? 'pt-4' : 'pt-0') : 'pt-6'} pb-0");
+        expect(chatMessageSource).toContain("isFollowedByAssistant || turnOwnsAssistantHeader ? 'pb-0'");
         expect(chatMessageSource).toContain('shouldTightenWorkingBottomGap({');
         expect(chatMessageSource).toContain('headerCompletionDisposition: turnGroupingContext?.completionDisposition');
-        expect(chatMessageSource).not.toContain('const tightenWorkingBottomGap = turnGroupingContext?.isWorking === true || isInActiveTurn;');
     });
 
     test('uses one full-width disclosure with identical title geometry in both states', () => {
@@ -231,6 +235,10 @@ describe('progressive activity presentation', () => {
     });
 
     test('shows compaction status from the turn before assistant activity exists', () => {
+        const compactionLayoutSource = turnItemSource.slice(
+            turnItemSource.indexOf('{showCompactionStatus ? ('),
+            turnItemSource.indexOf('<TurnAssistantBlock'),
+        );
         expect(messageListSource).toContain('showCompactionStatus={shouldShowCompactionStatus({');
         expect(messageListSource).toContain('export const shouldShowCompactionStatus = (input: {');
         expect(messageListSource).toContain("if (input.chatRenderMode !== 'sorted')");
@@ -248,11 +256,13 @@ describe('progressive activity presentation', () => {
         expect(turnItemSource).toContain('completionDisposition={turn.completionDisposition}');
         expect(turnItemSource).toContain('durationMs={turn.durationMs}');
         expect(turnItemSource).toContain('onToggle={onToggleActivity}');
+        expect(compactionLayoutSource).toContain("${isMobile ? 'pt-4' : 'pt-6'} pb-0");
         expect(messageListSource).toContain('onToggleActivity={handleToggleTurnGroup}');
         expect(progressiveGroupSource).not.toContain('role="status"');
         expect(turnItemSource.indexOf('{showCompactionStatus ? (')).toBeLessThan(turnItemSource.indexOf('<TurnAssistantBlock'));
-        expect(turnItemSource.indexOf('{pendingAssistantHeader ? (')).toBeLessThan(turnItemSource.indexOf('{showCompactionStatus ? ('));
-        expect(turnItemSource).toContain('<MessageHeader');
+        expect(turnItemSource.indexOf('{pendingAssistantHeader || assistantHeaderMessage ? (')).toBeLessThan(turnItemSource.indexOf('{showCompactionStatus ? ('));
+        expect(turnItemSource).toContain('<TurnAssistantHeader');
+        expect(turnAssistantHeaderSource).toContain('<MessageHeader');
         expect(messageListSource).toContain('pendingAssistantHeader={pendingAssistantHeader}');
         expect(messageListSource).toContain('hasActiveStreamingMessage: Boolean(activeStreamingMessageId)');
     });

@@ -13,10 +13,9 @@ import { useDirectoryShowHidden } from '@/lib/directoryShowHidden';
 import { useFilesViewShowGitignored } from '@/lib/filesViewShowGitignored';
 import { useI18n } from '@/lib/i18n';
 import { useUIStore } from '@/stores/useUIStore';
-import { useMobileAutocompleteMaxHeight } from './useMobileAutocompleteMaxHeight';
+import { ComposerAutocompleteLayer } from './ComposerAutocompleteLayer';
 import {
   composerAutocompleteRowClassName,
-  composerAutocompleteSurfaceClassName,
 } from './composerAutocompleteChrome';
 import { useSessionUIStore } from '@/sync/session-ui-store';
 import { useGlobalSessionsStore } from '@/stores/useGlobalSessionsStore';
@@ -110,7 +109,6 @@ export const FileMentionAutocomplete = React.forwardRef<FileMentionHandle, FileM
     touchSelectionControllerRef.current = createMentionTouchSelectionController();
   }
   const isMobile = useUIStore((state) => state.isMobile);
-  const mobileMaxHeight = useMobileAutocompleteMaxHeight(containerRef, isMobile);
   const normalizedSearchQuery = (searchQuery ?? '').trim();
   const recentFiles = React.useMemo(() => {
     if (!projectRoot || !projectTabs) {
@@ -460,10 +458,11 @@ export const FileMentionAutocomplete = React.forwardRef<FileMentionHandle, FileM
   );
 
   return (
-      <div
+      <ComposerAutocompleteLayer
         ref={containerRef}
-        className={composerAutocompleteSurfaceClassName(isMobile, 'max-w-[640px] max-h-64')}
-        style={mobileMaxHeight !== undefined ? { ...style, maxHeight: mobileMaxHeight } : style}
+        isMobile={isMobile}
+        className="max-w-[640px] max-h-64"
+        style={style}
       >
         <ScrollableOverlay preventOverscroll outerClassName="flex-1 min-h-0" className="px-0">
           <div className="pb-2">
@@ -662,6 +661,6 @@ export const FileMentionAutocomplete = React.forwardRef<FileMentionHandle, FileM
             {t('chat.autocomplete.keyboardHint')}
           </div>
         )}
-    </div>
+    </ComposerAutocompleteLayer>
   );
 });

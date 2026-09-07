@@ -47,9 +47,10 @@ This module provides notification message preparation utilities for the web serv
 - Returned API:
   - `maybeSendPushForTrigger(payload)`
 - Owns:
-  - top-level completion/question/permission trigger routing; completion is the sole task-status notification and child sessions plus small-model system sessions (`metadata.openchamber.smallModel.purpose`) are suppressed
-  - top-level completion/error Live Activity `end` (`sendLiveActivityEnd`), independent of ordinary push settings and UI visibility, with the same child/small-model suppression; duplicate terminal events are idempotent at the token store
-  - session meta cache for child-session and small-model suppression
+  - top-level completion/question/permission trigger routing; completion is the sole task-status notification. Ordinary push is limited to sidebar-visible root sessions. Child/subagent sessions, Assistant bindings (`openchamber.assistant.assistantID` unless `assigned.from === 'contact'`), scheduled-task sessions, small-model system sessions (`metadata.openchamber.smallModel.purpose`), LLM gateway throwaway sessions (`metadata.openchamber.llm.purpose`), and `smartfetch-secondary` titles are suppressed. Contact-assigned workers stay visible and still notify.
+  - contact-turn notifications (`sendContactTurnNotification`) are a separate SMS-style path: title is the assistant nickname, body is the spoken message text, on desktop / UI SSE / web-push / APNs. APNs does **not** rewrite these into the generic "Task completed" scenario title.
+  - top-level completion/error Live Activity `end` (`sendLiveActivityEnd`), independent of ordinary push settings and UI visibility, with the same hidden-session suppression; duplicate terminal events are idempotent at the token store
+  - session meta cache for sidebar-visibility suppression
   - template resolution and fallback behavior
   - native notification fanout and web push payload fanout
   - push always fans out to every subscribed surface; another client's visibility never suppresses delivery
@@ -79,7 +80,7 @@ This module provides notification message preparation utilities for the web serv
   - `sendApnsToAllUiSessions(payload)` — localizes scenario titles per stored token locale (`apns-titles.js`), groups tokens by locale, then signs + sends (no UI-visibility gate; iOS suppresses the foreground banner). Before a relay send, each token is checked against the in-memory registration success cache for the current register URL; cache hits skip `/v1/push/register-token`, misses are registered with bounded concurrency, and only successfully bound tokens are sent. Switching Relay/Push URL clears that cache so the next send re-binds persisted tokens to the new origin. No-ops with a single warning when APNs is unconfigured. Drops tokens on `410` / `BadDeviceToken` / `Unregistered`. Never sends Live Activity tokens.
   - `reRegisterAllTokens()` — binds every persisted device token to the current Push origin (same success cache and URL-switch invalidation as send).
   - `resolveApnsConfig()`
-- Configuration (env first, then `settings.apnsConfig`): `OPENCHAMBER_PUSH_RELAY_URL` (optional send-URL override), `OPENCHAMBER_PUSH_RELAY_DISABLED`, `OPENCHAMBER_APNS_KEY_ID`, `OPENCHAMBER_APNS_TEAM_ID`, `OPENCHAMBER_APNS_P8` (PEM contents; literal `\n` accepted) or `OPENCHAMBER_APNS_P8_PATH`, `OPENCHAMBER_APNS_BUNDLE_ID` (default `com.yee94.openchamber`), `OPENCHAMBER_APNS_ENVIRONMENT` (`sandbox` default, or `production` for TestFlight and App Store).
+- Configuration (env first, then `settings.apnsConfig`): `OPENCHAMBER_PUSH_RELAY_URL` (optional send-URL override), `OPENCHAMBER_PUSH_RELAY_DISABLED`, `OPENCHAMBER_APNS_KEY_ID`, `OPENCHAMBER_APNS_TEAM_ID`, `OPENCHAMBER_APNS_P8` (PEM contents; literal `\n` accepted) or `OPENCHAMBER_APNS_P8_PATH`, `OPENCHAMBER_APNS_BUNDLE_ID` (default `com.yee94.openchamber`), `OPENCHAMBER_APNS_ENVIRONMENT` (`production` default for TestFlight/App Store builds; set `sandbox` explicitly for Xcode development builds).
 
 ### Emitter runtime API (emitter-runtime.js)
 - `createNotificationEmitterRuntime(dependencies)`: creates runtime for unified notification emission channels.

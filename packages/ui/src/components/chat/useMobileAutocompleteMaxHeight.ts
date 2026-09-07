@@ -8,7 +8,55 @@ import React from 'react';
 export const MOBILE_AUTOCOMPLETE_VIEWPORT_HEIGHT_RATIO = 0.4;
 /** Soft floor used only when the chat-header budget already has room for it. */
 export const MOBILE_AUTOCOMPLETE_MIN_HEIGHT = 120;
-const MOBILE_AUTOCOMPLETE_GAP_PX = 8;
+export const MOBILE_AUTOCOMPLETE_GAP_PX = 8;
+
+export type MobileAutocompleteFixedBox = {
+  left: number;
+  width: number;
+  bottom: number;
+  maxHeight: number;
+};
+
+/**
+ * Viewport-fixed box for the slash catalog, anchored above the composer.
+ *
+ * `fixedContainingBottom` is the bottom edge of the `position: fixed`
+ * containing block in the same client coordinate space as `composerTop`
+ * (normally `window.innerHeight` when the panel is body-portaled). It must
+ * NOT be the visual-viewport bottom: when the IME shrinks `visualViewport`,
+ * using that bottom for CSS `bottom` parks the panel under the keyboard.
+ *
+ * `visibleBottom` still clamps the anchor into the on-screen band so a
+ * partially covered composer cannot push the panel off-screen.
+ */
+export const computeMobileAutocompleteFixedBox = (args: {
+  composerTop: number;
+  composerLeft: number;
+  composerWidth: number;
+  /** Bottom of the fixed containing block (layout/client coords). */
+  fixedContainingBottom: number;
+  /** Bottom of the visible band (visualViewport top + height). */
+  visibleBottom: number;
+  boundaryTop: number;
+  viewportHeight: number;
+  gap?: number;
+}): MobileAutocompleteFixedBox => {
+  const gap = args.gap ?? MOBILE_AUTOCOMPLETE_GAP_PX;
+  // Prefer the composer top, but never anchor below the visible band — on
+  // small Android screens the IME can cover the un-lifted card for a frame.
+  const popupBottom = Math.min(args.composerTop - gap, args.visibleBottom - gap);
+  return {
+    left: args.composerLeft,
+    width: args.composerWidth,
+    bottom: Math.max(0, args.fixedContainingBottom - popupBottom),
+    maxHeight: computeMobileAutocompleteMaxHeight({
+      popupBottom,
+      boundaryTop: args.boundaryTop,
+      viewportHeight: args.viewportHeight,
+      gap,
+    }),
+  };
+};
 
 /**
  * Pure height clamp for mobile autocomplete popups anchored above the
@@ -107,15 +155,103 @@ export const useMobileAutocompleteMaxHeight = (
         measure();
         window.addEventListener('resize', measure);
         window.addEventListener('oc:keyboard-settled', measure);
+        window.addEventListener('oc:keyboard-anim', measure);
         window.visualViewport?.addEventListener('resize', measure);
         window.visualViewport?.addEventListener('scroll', measure);
         return () => {
             window.removeEventListener('resize', measure);
             window.removeEventListener('oc:keyboard-settled', measure);
+            window.removeEventListener('oc:keyboard-anim', measure);
             window.visualViewport?.removeEventListener('resize', measure);
             window.visualViewport?.removeEventListener('scroll', measure);
         };
     });
 
     return enabled ? maxHeight : undefined;
+};
+
+/**
+ * Phone slash catalogs must be `position: fixed` against the layout viewport
+ * (body portal). `absolute` inside the composer cannot backdrop-filter the
+ * transcript on iOS — WebKit only frosts within that ancestor — and Capacitor
+ * keeps `will-change: transform` on `.oc-mobile-composer`, which traps fixed
+ * descendants. `probeRef` stays in the composer; its parent is the card.
+ */
+export const useMobileAutocompleteFixedBox = (
+    probeRef: React.RefObject<HTMLElement | null>,
+    enabled: boolean,
+): MobileAutocompleteFixedBox | undefined => {
+    const [box, setBox] = React.useState<MobileAutocompleteFixedBox | undefined>(undefined);
+
+    React.useLayoutEffect(() => {
+        if (!enabled) {
+            setBox(undefined);
+            return;
+        }
+        let animFrame = 0;
+        let settleTimer = 0;
+        const measure = () => {
+            const origin = probeRef.current?.parentElement;
+            if (!origin) return;
+            const rect = origin.getBoundingClientRect();
+            const visualViewport = window.visualViewport;
+            const visualTop = visualViewport?.offsetTop ?? 0;
+            const viewportHeight = visualViewport?.height ?? window.innerHeight;
+            // Layout/client bottom of the fixed containing block. Body-portaled
+            // `position: fixed` resolves against the layout viewport, so CSS
+            // `bottom` must be measured from `innerHeight` — not the visual
+            // viewport bottom (that shrinks under the IME and parks the panel
+            // behind the keyboard on small Android screens).
+            const fixedContainingBottom = window.innerHeight;
+            const visibleBottom = visualTop + viewportHeight;
+            const boundaryTop = resolveMobileAutocompleteBoundaryTop(origin, visualTop) ?? visualTop;
+            const next = computeMobileAutocompleteFixedBox({
+                composerTop: rect.top,
+                composerLeft: rect.left,
+                composerWidth: rect.width,
+                fixedContainingBottom,
+                visibleBottom,
+                boundaryTop,
+                viewportHeight,
+            });
+            setBox((prev) => (
+                prev
+                && prev.left === next.left
+                && prev.width === next.width
+                && prev.bottom === next.bottom
+                && prev.maxHeight === next.maxHeight
+                    ? prev
+                    : next
+            ));
+        };
+        // Android FLIP lifts the composer with a short transform; keyboard-
+        // settled fires when the lift *starts*, so re-measure once the
+        // transform has had a frame to apply and again after the show easing.
+        const measureAfterLift = () => {
+            measure();
+            if (animFrame) window.cancelAnimationFrame(animFrame);
+            if (settleTimer) window.clearTimeout(settleTimer);
+            animFrame = window.requestAnimationFrame(() => {
+                measure();
+                settleTimer = window.setTimeout(measure, 220);
+            });
+        };
+        measure();
+        window.addEventListener('resize', measure);
+        window.addEventListener('oc:keyboard-settled', measureAfterLift);
+        window.addEventListener('oc:keyboard-anim', measureAfterLift);
+        window.visualViewport?.addEventListener('resize', measure);
+        window.visualViewport?.addEventListener('scroll', measure);
+        return () => {
+            if (animFrame) window.cancelAnimationFrame(animFrame);
+            if (settleTimer) window.clearTimeout(settleTimer);
+            window.removeEventListener('resize', measure);
+            window.removeEventListener('oc:keyboard-settled', measureAfterLift);
+            window.removeEventListener('oc:keyboard-anim', measureAfterLift);
+            window.visualViewport?.removeEventListener('resize', measure);
+            window.visualViewport?.removeEventListener('scroll', measure);
+        };
+    }, [enabled]);
+
+    return enabled ? box : undefined;
 };

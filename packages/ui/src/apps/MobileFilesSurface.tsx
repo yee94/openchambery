@@ -662,14 +662,6 @@ const MobileFileDetail: React.FC<{
     setHtmlFullscreen(false);
   }, [path]);
 
-  React.useEffect(() => {
-    if (!html || htmlViewMode !== 'preview') return;
-    document.documentElement.classList.add('oc-html-file-preview-open');
-    return () => {
-      document.documentElement.classList.remove('oc-html-file-preview-open');
-    };
-  }, [html, htmlViewMode]);
-
   const toggleHtmlViewMode = useEvent(() => {
     onHtmlViewModeChange(htmlViewMode === 'preview' ? 'source' : 'preview');
   });
@@ -712,9 +704,11 @@ const MobileFileDetail: React.FC<{
   const htmlViewer = html ? (
     <div
       ref={htmlFullscreenSurfaceRef}
+      data-mobile-html-preview={htmlViewMode === 'preview' && !htmlFullscreen ? 'true' : undefined}
+      data-mobile-html-fullscreen={htmlViewMode === 'preview' && htmlFullscreen ? 'true' : undefined}
       className={htmlFullscreen
         ? 'fixed inset-0 z-[80] flex flex-col bg-background text-foreground'
-        : 'mb-[calc(-1*max(0.5rem,var(--oc-app-bottom-safe,0px),var(--oc-safe-area-bottom,env(safe-area-inset-bottom,0px))))] flex min-h-0 flex-1 flex-col overflow-hidden bg-background'}
+        : 'flex min-h-0 flex-1 flex-col overflow-hidden bg-background'}
     >
       {htmlFullscreen ? (
         <header className="flex shrink-0 items-center gap-2 border-b border-border/50 px-3 pb-2 pt-[max(0.5rem,env(safe-area-inset-top))]">

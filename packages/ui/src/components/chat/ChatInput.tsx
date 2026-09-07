@@ -1226,6 +1226,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
     const setNewSessionDraftTarget = useSessionUIStore((s) => s.setNewSessionDraftTarget);
     const availableWorktreesByProject = useSessionUIStore((s) => s.availableWorktreesByProject);
     const abortPromptSessionId = useSessionUIStore((s) => s.abortPromptSessionId);
+    const abortPromptExpiresAt = useSessionUIStore((s) => s.abortPromptExpiresAt);
     const clearAbortPrompt = useSessionUIStore((s) => s.clearAbortPrompt);
     const consumePendingInputText = useInputStore((s) => s.consumePendingInputText);
     const pendingPresetSubmit = useInputStore((s) => s.pendingPresetSubmit);
@@ -5932,7 +5933,13 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
 
     const footerGapClass = 'gap-x-1.5 gap-y-0';
     const isVSCode = isVSCodeRuntime();
-    const showDraftTargetSelectors = surface.kind === 'primary' && surfaceHasNewDraft && !isVSCode;
+    // Establishing reuses ChatInput under an `invisible` foot for geometry only.
+    // `.oc-mobile-composer-reveal { visibility: visible }` would otherwise punch
+    // project/branch chips through that hide — drop the selectors until claim.
+    const showDraftTargetSelectors = surface.kind === 'primary'
+        && surfaceHasNewDraft
+        && !isVSCode
+        && !draftBusy;
 
     const selectedDraftProject = React.useMemo(() => {
         const explicit = newSessionDraft?.selectedProjectId
@@ -7277,6 +7284,13 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
                 >
                 <MemoStatusRow
                     showAbortStatus={showAbortStatus}
+                    showAbortPrompt={Boolean(
+                        isDesktopExpanded
+                        && currentSessionId
+                        && abortPromptSessionId === currentSessionId
+                        && typeof abortPromptExpiresAt === 'number'
+                        && abortPromptExpiresAt > Date.now()
+                    )}
                     showAssistantStatus={false}
                     showTodos
                     leftAccessory={newSessionDraftOpen || !hasPendingChanges ? null : <PendingChangesBar />}

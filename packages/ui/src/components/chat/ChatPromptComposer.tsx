@@ -1,4 +1,5 @@
 import React from 'react';
+import { useEvent, useResizeObserver } from '@reactuses/core';
 import { isIMECompositionEvent } from '@/lib/ime';
 import { cn } from '@/lib/utils';
 import { Icon } from '@/components/icon/Icon';
@@ -27,6 +28,8 @@ type ChatPromptComposerProps = Omit<React.ComponentProps<typeof ChatComposerSurf
   onRemoveAttachment?: (id: string) => void;
   addFilesLabel?: string;
   removeAttachmentLabel?: string;
+  /** Default image/* keeps Chat stacked picker image-only. Contact passes all MIME types. */
+  fileAccept?: string;
   sendLabel?: string;
   stopLabel?: string;
   hint?: React.ReactNode;
@@ -49,6 +52,8 @@ type ChatPromptComposerProps = Omit<React.ComponentProps<typeof ChatComposerSurf
   inputSectionClassName?: string;
   autoResize?: boolean;
   disableInputWhilePending?: boolean;
+  /** stacked = Chat textarea + footer band. inline = attach left, textarea, send right. */
+  layout?: 'stacked' | 'inline';
   children?: React.ReactNode;
 };
 
@@ -87,6 +92,7 @@ export const ChatPromptComposer: React.FC<ChatPromptComposerProps> = ({
   onRemoveAttachment,
   addFilesLabel,
   removeAttachmentLabel,
+  fileAccept = 'image/*',
   sendLabel,
   stopLabel,
   hint,
@@ -109,24 +115,39 @@ export const ChatPromptComposer: React.FC<ChatPromptComposerProps> = ({
   inputSectionClassName,
   autoResize = true,
   disableInputWhilePending = true,
+  layout = 'stacked',
   children,
   className,
   expanded = false,
   ...surfaceProps
 }) => {
+  const inline = layout === 'inline';
+  const [inlineGrown, setInlineGrown] = React.useState(false);
+  const inlineAlignEnd = attachments.length > 0 || inlineGrown;
   const localInputRef = React.useRef<HTMLTextAreaElement | null>(null);
   const fileInputRef = React.useRef<HTMLInputElement>(null);
 
-  React.useLayoutEffect(() => {
-    if (!autoResize || expanded || textareaProps?.fillContainer) return;
+  const resizeTextarea = useEvent(() => {
+    if (!autoResize || expanded || textareaProps?.fillContainer) {
+      if (inline) setInlineGrown(false);
+      return;
+    }
     const textarea = localInputRef.current;
     if (!textarea) return;
     textarea.style.height = 'auto';
     const maxHeight = Number.parseFloat(window.getComputedStyle(textarea).maxHeight);
-    const nextHeight = Number.isFinite(maxHeight) ? Math.min(textarea.scrollHeight, maxHeight) : textarea.scrollHeight;
+    const contentHeight = inline ? Math.max(textarea.scrollHeight, 48) : textarea.scrollHeight;
+    const nextHeight = Number.isFinite(maxHeight) ? Math.min(contentHeight, maxHeight) : contentHeight;
     textarea.style.height = `${nextHeight}px`;
-    textarea.style.overflowY = Number.isFinite(maxHeight) && textarea.scrollHeight > maxHeight ? 'auto' : 'hidden';
-  }, [autoResize, expanded, textareaProps?.fillContainer, value]);
+    textarea.style.overflowY = Number.isFinite(maxHeight) && contentHeight > maxHeight ? 'auto' : 'hidden';
+    const nextInlineGrown = nextHeight > 48;
+    if (inline) setInlineGrown((current) => current === nextInlineGrown ? current : nextInlineGrown);
+  });
+
+  React.useLayoutEffect(() => {
+    resizeTextarea();
+  }, [autoResize, expanded, inline, textareaProps?.fillContainer, value]);
+  useResizeObserver(inline && autoResize && !expanded && !textareaProps?.fillContainer ? localInputRef : null, resizeTextarea);
 
   const handleKeyDown = (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
     textareaProps?.onKeyDown?.(event);
@@ -144,9 +165,10 @@ export const ChatPromptComposer: React.FC<ChatPromptComposerProps> = ({
 
   const hasContent = value.trim().length > 0 || attachments.length > 0;
   const imageAttachments = attachments.filter((attachment) => attachment.mime.startsWith('image/'));
+  const fileAttachments = attachments.filter((attachment) => !attachment.mime.startsWith('image/'));
   const defaultLeftControls = onAddFiles ? (
     <>
-      <input ref={fileInputRef} type="file" accept="image/*" multiple className="hidden" onChange={handleFileChange} />
+      <input ref={fileInputRef} type="file" accept={fileAccept} multiple className="hidden" onChange={handleFileChange} />
       <button
         type="button"
         className="flex size-8 shrink-0 items-center justify-center rounded-md text-foreground outline-none hover:bg-[var(--interactive-hover)] disabled:cursor-not-allowed disabled:opacity-40"
@@ -159,7 +181,8 @@ export const ChatPromptComposer: React.FC<ChatPromptComposerProps> = ({
     </>
   ) : null;
   const sendReady = !disabled && !pending && hasContent;
-  const defaultRightControls = pending && onStop ? (
+  const circleGlyphClass = isMobile ? 'size-6' : 'size-full';
+  const stackedRightControls = pending && onStop ? (
     <button
       type="button"
       data-composer-stop="true"
@@ -167,7 +190,7 @@ export const ChatPromptComposer: React.FC<ChatPromptComposerProps> = ({
       onClick={onStop}
       aria-label={stopLabel}
     >
-      <StopIcon className={isMobile ? 'size-6' : 'size-full'} />
+      <StopIcon className={circleGlyphClass} />
     </button>
   ) : (
     <button
@@ -184,12 +207,40 @@ export const ChatPromptComposer: React.FC<ChatPromptComposerProps> = ({
       aria-label={sendLabel}
     >
       {sendReady ? (
-        <SendCircleIcon className={isMobile ? 'size-6' : 'size-full'} />
+        <SendCircleIcon className={circleGlyphClass} />
       ) : (
         <Icon name={pending ? 'loader-4' : 'send-plane-2'} className={cn('size-4', pending && 'animate-spin')} />
       )}
     </button>
   );
+  const inlineRightControls = pending && onStop ? (
+    <button
+      type="button"
+      data-composer-stop="true"
+      className="flex size-8 shrink-0 items-center justify-center rounded-full outline-none hover:opacity-80"
+      onClick={onStop}
+      aria-label={stopLabel}
+    >
+      <StopIcon className={circleGlyphClass} />
+    </button>
+  ) : (
+    <button
+      type="submit"
+      data-composer-send="true"
+      data-composer-circle="true"
+      className={cn(
+        'flex size-8 shrink-0 items-center justify-center rounded-full outline-none',
+        sendReady ? 'hover:opacity-80' : 'cursor-not-allowed opacity-30',
+      )}
+      disabled={disabled || pending || !hasContent}
+      aria-busy={pending || undefined}
+      aria-label={sendLabel}
+    >
+      <SendCircleIcon className={circleGlyphClass} spinning={pending} />
+    </button>
+  );
+  const defaultRightControls = inline ? inlineRightControls : stackedRightControls;
+  const inlineLeftControls = leftControls !== undefined ? leftControls : defaultLeftControls;
 
   return (
     <ChatComposerSurface className={className} expanded={expanded} {...surfaceProps}>
@@ -202,9 +253,28 @@ export const ChatPromptComposer: React.FC<ChatPromptComposerProps> = ({
           is CSS-only (same DOM node) rather than a remounting conditional tree. */}
       <div
         data-composer-content="true"
-        className={cn('relative flex min-h-0 flex-col', expanded && 'flex-1', contentClassName)}
+        data-composer-layout={layout}
+        className={cn(
+          'relative flex min-h-0',
+          inline ? cn('min-h-12 flex-row', inlineAlignEnd ? 'items-end' : 'items-center') : 'flex-col',
+          expanded && 'flex-1',
+          contentClassName,
+        )}
       >
-        <div className={cn('overflow-hidden', expanded && 'flex min-h-0 flex-1 flex-col', inputSectionClassName)}>
+        {inline && inlineLeftControls ? (
+          <div
+            className="flex h-12 shrink-0 items-center pl-1.5"
+            data-composer-inline-attach="true"
+          >
+            {inlineLeftControls}
+          </div>
+        ) : null}
+        <div className={cn(
+          'overflow-hidden',
+          inline && 'min-w-0 flex-1',
+          expanded && 'flex min-h-0 flex-1 flex-col',
+          inputSectionClassName,
+        )}>
           {inputHeader}
           {attachmentContent}
           {imageAttachments.length > 0 ? (
@@ -226,7 +296,37 @@ export const ChatPromptComposer: React.FC<ChatPromptComposerProps> = ({
               ))}
             </div>
           ) : null}
-          <div className={cn('relative overflow-hidden', expanded && 'flex min-h-0 flex-1 flex-col')} data-composer-input-shell="true">
+          {fileAttachments.length > 0 ? (
+            <div className="flex flex-wrap gap-2 px-3 pt-3" data-chat-prompt-file-attachments="true">
+              {fileAttachments.map((attachment) => (
+                <div
+                  key={attachment.id}
+                  className="relative flex max-w-[12rem] items-center gap-1.5 rounded-lg border border-border bg-[var(--surface-elevated)] px-2 py-1"
+                >
+                  <Icon name="file-text" className="size-3.5 shrink-0 text-muted-foreground" />
+                  <span className="min-w-0 truncate typography-micro">{attachment.name}</span>
+                  {onRemoveAttachment ? (
+                    <button
+                      type="button"
+                      className="flex size-5 shrink-0 items-center justify-center rounded-full text-muted-foreground hover:bg-[var(--interactive-hover)]"
+                      onClick={() => onRemoveAttachment(attachment.id)}
+                      aria-label={removeAttachmentLabel}
+                    >
+                      <Icon name="close" className="size-3" />
+                    </button>
+                  ) : null}
+                </div>
+              ))}
+            </div>
+          ) : null}
+          <div
+            className={cn(
+              'relative overflow-hidden',
+              inline && 'flex min-h-12 items-end',
+              expanded && 'flex min-h-0 flex-1 flex-col',
+            )}
+            data-composer-input-shell="true"
+          >
             {highlightedContent ? (
               <div
                 ref={highlightRef}
@@ -240,6 +340,7 @@ export const ChatPromptComposer: React.FC<ChatPromptComposerProps> = ({
             <ChatPromptTextarea
               {...textareaProps}
               simple
+              fillContainer={inline ? false : textareaProps?.fillContainer}
               ref={(node) => {
                 localInputRef.current = node;
                 setRef(inputRef, node);
@@ -251,9 +352,17 @@ export const ChatPromptComposer: React.FC<ChatPromptComposerProps> = ({
               disabled={disabled || (pending && disableInputWhilePending)}
               placeholder={placeholder}
               enterKeyHint={isMobile ? 'send' : textareaProps?.enterKeyHint}
-              outerClassName={cn('ring-0 bg-transparent shadow-none hover:bg-transparent focus-within:ring-0', expanded && 'min-h-0 flex-1', inputOuterClassName)}
+              outerClassName={cn(
+                'ring-0 bg-transparent shadow-none hover:bg-transparent focus-within:ring-0',
+                inline && 'flex-none',
+                expanded && 'min-h-0 flex-1',
+                inputOuterClassName,
+              )}
               className={cn(
-                'relative z-10 min-h-[52px] max-h-40 resize-none overflow-y-hidden appearance-none rounded-b-none border-0 bg-transparent px-3 pb-2 pt-4 typography-markdown hover:border-transparent md:typography-ui-label',
+                'relative z-10 resize-none overflow-y-hidden appearance-none border-0 bg-transparent typography-markdown hover:border-transparent md:typography-ui-label',
+                inline
+                  ? 'min-h-12 max-h-32 px-3 py-3 leading-6'
+                  : 'min-h-[52px] max-h-40 rounded-b-none px-3 pb-2 pt-4',
                 textLayoutClassName,
                 inputClassName,
                 highlightedContent && 'text-transparent caret-[var(--surface-foreground)]',
@@ -263,18 +372,28 @@ export const ChatPromptComposer: React.FC<ChatPromptComposerProps> = ({
             />
           </div>
         </div>
-        <ChatPromptFooter
-          className={footerClassName}
-          style={footerStyle}
-        >
-          {footerContent ?? (
-            <>
-              <div className="flex items-center gap-1.5">{leftControls ?? defaultLeftControls}</div>
-              {hint ? <div className="min-w-0 flex-1 truncate typography-micro text-muted-foreground">{hint}</div> : <div className="flex-1" />}
-              <div className="flex items-center gap-1.5">{rightControls ?? defaultRightControls}</div>
-            </>
-          )}
-        </ChatPromptFooter>
+        {inline ? (
+          <div
+            className={cn('flex h-12 shrink-0 items-center pr-1.5', footerClassName)}
+            style={footerStyle}
+            data-composer-inline-send="true"
+          >
+            {rightControls ?? defaultRightControls}
+          </div>
+        ) : (
+          <ChatPromptFooter
+            className={footerClassName}
+            style={footerStyle}
+          >
+            {footerContent ?? (
+              <>
+                <div className="flex items-center gap-1.5">{leftControls ?? defaultLeftControls}</div>
+                {hint ? <div className="min-w-0 flex-1 truncate typography-micro text-muted-foreground">{hint}</div> : <div className="flex-1" />}
+                <div className="flex items-center gap-1.5">{rightControls ?? defaultRightControls}</div>
+              </>
+            )}
+          </ChatPromptFooter>
+        )}
       </div>
     </ChatComposerSurface>
   );

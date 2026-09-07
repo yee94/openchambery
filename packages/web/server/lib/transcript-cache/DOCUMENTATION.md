@@ -49,8 +49,8 @@ proxy, on the existing UI-password / CORS path. Prefix:
 
 | Method | Path | Action |
 |---|---|---|
-| `GET` | `/session` | Read a scoped timeline (`transport`, `generation`, `directory`, `sessionID` query) |
-| `GET` | `/message` | Read one message (scope query + `messageID`) |
+| `GET` | `/session` | Read a scoped timeline (`transport`, `generation`, `directory`, `sessionID` query). Optional `includeReasoning=false` (strict) strips `type=reasoning` parts on the response only. |
+| `GET` | `/message` | Read one message (scope query + `messageID`). Same `includeReasoning` projection as session read. |
 | `PUT` | `/message` | Upsert a settled message (`{ scope, info, parts }`) |
 | `DELETE` | `/message` | Remove one message (`{ scope, messageID }`) |
 | `DELETE` | `/session` | Clear one scope |

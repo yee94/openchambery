@@ -1,6 +1,9 @@
 import { makeOpenCodeV2Client } from '../opencode/v2-client.js';
-import { createOpencodeClient } from '@opencode-ai/sdk/v2';
 import { projectMessageSummaryDiffCounts } from '../event-stream/diff-summary.js';
+import {
+  projectMessagesPayloadForReasoning,
+  readIncludeReasoningQuery,
+} from '../event-stream/reasoning-projection.js';
 import {
   createSessionChangesService,
 } from './changes.service.js';
@@ -313,7 +316,7 @@ const createV2FetchPage = ({ buildOpenCodeUrl, getOpenCodeAuthHeaders, logger })
 const createSdkClient = ({ buildOpenCodeUrl, getOpenCodeAuthHeaders }) => {
   const baseUrl = buildOpenCodeUrl('/', '').replace(/\/$/, '');
   const headers = typeof getOpenCodeAuthHeaders === 'function' ? getOpenCodeAuthHeaders() : {};
-  return createOpencodeClient({ baseUrl, headers });
+  return makeOpenCodeV2Client({ baseUrl, authHeaders: headers });
 };
 
 const throwUpstream = (logger, label) => {
@@ -323,52 +326,50 @@ const throwUpstream = (logger, label) => {
   throw error;
 };
 
+const getHttpStatus = (error) => {
+  const candidates = [error?.cause?.status, error?.status, error?.response?.status];
+  for (const value of candidates) {
+    if (Number.isFinite(value)) return value;
+  }
+  return undefined;
+};
+
 
 const createSdkFetchMessage = ({ buildOpenCodeUrl, getOpenCodeAuthHeaders, logger }) => {
-  return async ({ sessionID, messageID, directory, signal }) => {
+  return async ({ sessionID, messageID, signal }) => {
     const client = createSdkClient({ buildOpenCodeUrl, getOpenCodeAuthHeaders });
-    const result = await client.session.message({
-      sessionID,
-      messageID,
-      ...(typeof directory === 'string' && directory.length > 0 ? { directory } : {}),
-    }, { signal });
-
-    if (result?.error) {
-      const status = result?.response?.status;
-      if (status === 404) {
-        const error = new Error('not_found');
-        error.code = 'not_found';
-        throw error;
+    let result;
+    try {
+      result = await client.session.message({ sessionID, messageID }, { signal });
+    } catch (error) {
+      if (getHttpStatus(error) === 404) {
+        const notFound = new Error('not_found');
+        notFound.code = 'not_found';
+        throw notFound;
       }
       throwUpstream(logger, '[session-turn-pages] session.message SDK error');
     }
 
-    const data = result?.data;
+    const data = result?.data ?? result;
     if (!data || typeof data !== 'object' || Array.isArray(data)) {
       throwUpstream(logger, '[session-turn-pages] session.message malformed payload');
     }
-    return data;
+    return projectSessionMessage(data);
   };
 };
 
 const createSdkFetchDiff = ({ buildOpenCodeUrl, getOpenCodeAuthHeaders, logger }) => {
   return async ({ sessionID, messageID, directory, signal }) => {
-    const client = createSdkClient({ buildOpenCodeUrl, getOpenCodeAuthHeaders });
-    const result = await client.session.diff({
-      sessionID,
-      messageID,
-      ...(typeof directory === 'string' && directory.length > 0 ? { directory } : {}),
-    }, { signal });
-
-    if (result?.error) {
-      throwUpstream(logger, '[session-changes] session.diff SDK error');
+    const payload = await createSdkFetchMessage({
+      buildOpenCodeUrl,
+      getOpenCodeAuthHeaders,
+      logger,
+    })({ sessionID, messageID, directory, signal });
+    const diffs = payload?.info?.summary?.diffs;
+    if (!Array.isArray(diffs)) {
+      throwUpstream(logger, '[session-changes] session.message summary.diffs malformed payload');
     }
-
-    const data = result?.data;
-    if (!Array.isArray(data)) {
-      throwUpstream(logger, '[session-changes] session.diff malformed payload');
-    }
-    return data;
+    return diffs;
   };
 };
 
@@ -576,8 +577,14 @@ export const registerSessionTurnPageRoutes = (app, dependencies = {}) => {
         return res.status(mapped.status).json(mapped.body);
       }
 
+      const includeReasoning = readIncludeReasoningQuery(req.query);
+      const records = projectMessagesPayloadForReasoning(
+        projectMessageDiffSummaries(Array.isArray(result.records) ? result.records : []),
+        includeReasoning,
+      );
+
       return res.status(200).json({
-        records: projectMessageDiffSummaries(projectRecords(result.records)),
+        records: projectRecords(records),
         anchorFound: result.anchorFound === true,
         capturedHeadMessageID: result.capturedHeadMessageID ?? null,
         latestHeadMessageID: result.latestHeadMessageID ?? null,
@@ -666,8 +673,14 @@ export const registerSessionTurnPageRoutes = (app, dependencies = {}) => {
 
       // Turn-page responses (first packet and prepend) share slim-v1.
       // Reconcile stays on the other route and keeps full parts.
+      // includeReasoning=false drops type=reasoning parts after slim projection.
+      const includeReasoning = readIncludeReasoningQuery(req.query);
+      const records = projectMessagesPayloadForReasoning(
+        projectSlimParts(result.records),
+        includeReasoning,
+      );
       return res.status(200).json({
-        records: projectSlimParts(projectRecords(result.records)),
+        records: projectRecords(records),
         turnCount: result.turnCount,
         cursor: result.cursor ?? null,
         complete: result.complete === true,
@@ -719,7 +732,10 @@ export const registerSessionTurnPageRoutes = (app, dependencies = {}) => {
         directory,
         signal: timed.signal,
       });
-      return res.status(200).json(projectExactMessagePayload(payload));
+      const includeReasoning = readIncludeReasoningQuery(req.query);
+      return res.status(200).json(
+        projectMessagesPayloadForReasoning(projectExactMessagePayload(payload), includeReasoning),
+      );
     } catch (error) {
       if (error?.name === 'AbortError' || error?.code === 'aborted') {
         if (!res.headersSent) {

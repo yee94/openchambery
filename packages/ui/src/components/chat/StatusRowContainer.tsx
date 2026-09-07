@@ -39,6 +39,15 @@ export const StatusRowContainer: React.FC = React.memo(() => {
         && typeof abortPromptExpiresAt === 'number'
         && abortPromptExpiresAt > Date.now(),
     );
+    // Keep the WorkingPlaceholder mounted through generic busy (no tool /
+    // reasoning / text part yet). First-prompt claim otherwise blanks the slot
+    // under the model header while Stop is still armed. Concrete parts replace
+    // the generic phrase in place; settled turns drop the row via isWorking.
+    const showAssistantStatus = working.isWaitingForPermission
+        || Boolean(working.retryInfo)
+        || wasAborted
+        || working.wasAborted
+        || working.isWorking;
 
     return (
         <StatusRow
@@ -52,7 +61,7 @@ export const StatusRowContainer: React.FC = React.memo(() => {
             turnStartedAt={working.turnStartedAt}
             isTurnSettled={working.isTurnSettled}
             showAbortPrompt={showAbortPrompt}
-            showAssistantStatus
+            showAssistantStatus={showAssistantStatus}
             showTodos={false}
             agentName={currentAgentName}
         />

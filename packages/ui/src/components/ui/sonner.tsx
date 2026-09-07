@@ -3,12 +3,40 @@
 import * as React from "react"
 import { Toaster as Sonner } from "sonner"
 import type { ToasterProps } from "sonner"
+import { Icon } from "@/components/icon/Icon"
 
 const SHADOW_DARK =
-  "inset 0 1px 0 0 rgba(255,255,255,0.12), inset 0 0 0 1px rgba(255,255,255,0.08), 0 0 0 1px rgba(0,0,0,0.36), 0 1px 1px -0.5px rgba(0,0,0,0.22), 0 3px 3px -1.5px rgba(0,0,0,0.20), 0 6px 6px -3px rgba(0,0,0,0.16)"
+  "var(--oc-toast-shadow, inset 0 1px 0 0 rgba(255,255,255,0.12), inset 0 0 0 1px rgba(255,255,255,0.08), 0 0 0 1px rgba(0,0,0,0.36), 0 1px 1px -0.5px rgba(0,0,0,0.22), 0 3px 3px -1.5px rgba(0,0,0,0.20), 0 6px 6px -3px rgba(0,0,0,0.16))"
 
 const SHADOW_LIGHT =
-  "inset 0 1px 0 0 rgba(255,255,255,0.8), inset 0 0 0 1px rgba(0,0,0,0.04), 0 0 0 1px rgba(0,0,0,0.10), 0 1px 2px -0.5px rgba(0,0,0,0.08), 0 4px 8px -2px rgba(0,0,0,0.08), 0 12px 20px -4px rgba(0,0,0,0.08)"
+  "var(--oc-toast-shadow, inset 0 1px 0 0 rgba(255,255,255,0.8), inset 0 0 0 1px rgba(0,0,0,0.04), 0 0 0 1px rgba(0,0,0,0.10), 0 1px 2px -0.5px rgba(0,0,0,0.08), 0 4px 8px -2px rgba(0,0,0,0.08), 0 12px 20px -4px rgba(0,0,0,0.08))"
+
+const TOAST_ICONS = {
+  success: (
+    <>
+      <Icon name="checkbox-circle-fill" className="oc-toast-status-icon-desktop size-5" />
+      <Icon name="check" className="oc-toast-status-icon-mobile hidden size-[18px]" />
+    </>
+  ),
+  info: (
+    <>
+      <Icon name="information-fill" className="oc-toast-status-icon-desktop size-5" />
+      <Icon name="information" className="oc-toast-status-icon-mobile hidden size-[18px]" />
+    </>
+  ),
+  warning: (
+    <>
+      <Icon name="alert-fill" className="oc-toast-status-icon-desktop size-5" />
+      <Icon name="error-warning" className="oc-toast-status-icon-mobile hidden size-[18px]" />
+    </>
+  ),
+  error: (
+    <>
+      <Icon name="error-warning-fill" className="oc-toast-status-icon-desktop size-5" />
+      <Icon name="alert" className="oc-toast-status-icon-mobile hidden size-[18px]" />
+    </>
+  ),
+}
 
 function useIsDarkTheme() {
   const getIsDark = () =>
@@ -86,6 +114,7 @@ const Toaster = ({ ...props }: ToasterProps) => {
       theme={isDark ? "dark" : "light"}
       className="toaster group"
       closeButton={false}
+      icons={TOAST_ICONS}
       toastOptions={{
         classNames: {
           toast:
@@ -94,9 +123,9 @@ const Toaster = ({ ...props }: ToasterProps) => {
           title: "typography-ui-label !font-medium !text-foreground",
           description: "typography-meta !text-muted-foreground !mt-0.5",
           actionButton:
-            "!ms-0 !me-0 !shrink-0 !rounded-[var(--radius-md)] !bg-[var(--primary-base)] !text-[var(--primary-foreground)] hover:!opacity-85 !px-2 !py-1 typography-meta !font-medium transition-opacity",
+            "!ms-0 !me-0 !shrink-0 !rounded-[var(--radius-md)] !bg-[var(--oc-toast-action-background,var(--primary-base))] !text-[var(--oc-toast-action-foreground,var(--primary-foreground))] hover:!opacity-85 !px-2 !py-1 typography-meta !font-medium transition-opacity",
           cancelButton:
-            "!ms-0 !me-0 !shrink-0 !rounded-[var(--radius-md)] !bg-[var(--interactive-hover)] !text-foreground hover:!bg-[var(--interactive-active)] !px-2 !py-1 typography-meta !font-medium transition-colors",
+            "!ms-0 !me-0 !shrink-0 !rounded-[var(--radius-md)] !bg-[var(--oc-toast-cancel-background,var(--interactive-hover))] !text-[var(--oc-toast-cancel-foreground,var(--foreground))] hover:!bg-[var(--interactive-active)] !px-2 !py-1 typography-meta !font-medium transition-colors",
           closeButton:
             "!rounded-[var(--radius-md)] !bg-[var(--interactive-hover)] !text-foreground hover:!bg-[var(--interactive-active)]",
           icon: "!shrink-0 !text-muted-foreground",
@@ -107,24 +136,24 @@ const Toaster = ({ ...props }: ToasterProps) => {
         },
         style: {
           borderRadius: "var(--radius-xl)",
-          backgroundColor: "var(--surface-elevated)",
+          backgroundColor: "var(--oc-toast-background, var(--surface-elevated))",
         },
       }}
       style={
         {
-          "--normal-bg": "var(--surface-elevated)",
+          "--normal-bg": "var(--oc-toast-background, var(--surface-elevated))",
           "--normal-text": "var(--foreground)",
           "--normal-border": "transparent",
-          "--error-bg": "var(--surface-elevated)",
+          "--error-bg": "var(--oc-toast-background, var(--surface-elevated))",
           "--error-text": "var(--foreground)",
           "--error-border": "transparent",
-          "--success-bg": "var(--surface-elevated)",
+          "--success-bg": "var(--oc-toast-background, var(--surface-elevated))",
           "--success-text": "var(--foreground)",
           "--success-border": "transparent",
-          "--warning-bg": "var(--surface-elevated)",
+          "--warning-bg": "var(--oc-toast-background, var(--surface-elevated))",
           "--warning-text": "var(--foreground)",
           "--warning-border": "transparent",
-          "--info-bg": "var(--surface-elevated)",
+          "--info-bg": "var(--oc-toast-background, var(--surface-elevated))",
           "--info-text": "var(--foreground)",
           "--info-border": "transparent",
         } as React.CSSProperties

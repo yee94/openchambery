@@ -71,12 +71,17 @@ jobs:
           restore-keys: |
             opencode-cli-${{ runner.os }}-arm64-
 
+      - name: Import Developer ID certificate
+        env:
+          CSC_LINK: ${{ secrets.CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+        run: bash packages/electron/scripts/import-developer-id-keychain.sh
+
       - name: Build Electron app (arm64)
         working-directory: packages/electron
         env:
           ELECTRON_BUILDER_ARCH: arm64
-          CSC_LINK: ${{ secrets.CSC_LINK }}
-          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+          CSC_IDENTITY_AUTO_DISCOVERY: "true"
           APPLE_API_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
           APPLE_API_ISSUER: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
         run: |

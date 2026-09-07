@@ -21,6 +21,10 @@ import type { QueryClient } from "@tanstack/react-query"
 import { queryClient as defaultQueryClient } from "@/lib/queryRuntime"
 import { opencodeClient } from "@/lib/opencode/client"
 import {
+  getIncludeReasoningProjection,
+  getReasoningProjectionRevision,
+} from "@/lib/reasoning-projection-client"
+import {
   getRuntimeGeneration,
   getRuntimeTransportIdentity,
 } from "@/lib/runtime-switch"
@@ -292,6 +296,13 @@ export type QueryTranscriptRepository = TranscriptRepository & {
   /** Purge all transcript families for a transport generation (runtime switch). */
   purgeGeneration: (transport: string, generation: number) => void
   /**
+   * Clear in-memory transcript projection for the current runtime generation
+   * when `showReasoningTraces` toggles. Cancels controllers/flights and Query
+   * families, keeps listeners/subscriptions, and never clears durable disk data
+   * so a later re-open can full-seed again.
+   */
+  resetReasoningProjection: () => void
+  /**
    * Fetch the exact Host snapshot for one message and merge it through
    * `materialize-snapshots`. Concurrent calls for the same identity share one flight.
    */
@@ -321,10 +332,19 @@ export function createQueryTranscriptRepository(
   const cacheUnsubs = new Map<string, () => void>()
   /** Per-scope release for repository subscribe → active registry retain. */
   const listenerRetainReleases = new Map<string, () => void>()
-  /** Narrow projection caches for reference stability. */
+  /**
+   * Narrow projection caches for reference stability.
+   * `cachedFrom` is the immutable InfiniteData reference last projected; the
+   * same canonical object is projected once for every reader until purge /
+   * destroy clears the entry or Query replaces the data reference. notify only
+   * fans out listeners — it does not drop a still-valid projection.
+   */
   const projectionCache = new Map<
     string,
     {
+      /** Authoritative SessionTranscriptData identity last projected (undefined = empty). */
+      cachedFrom?: SessionTranscriptData | undefined
+      hasTranscriptCache?: boolean
       transcript?: TranscriptData
       pagination?: TranscriptPagination
       messages: Map<string, Message | undefined>
@@ -375,7 +395,7 @@ export function createQueryTranscriptRepository(
   ) => {
     const key = scopeKey(identity)
     if (p0Painted.has(key)) return
-    const transcript = toTranscriptData(readData(scope), identity.sessionID)
+    const transcript = projectTranscript(scope)
     if (!evaluateTranscriptP0Satisfied(transcript) && !p0Latches.has(key)) return
     p0Painted.add(key)
     recordTranscriptDiagnostics(snapshotTranscriptDiagnostics({
@@ -481,8 +501,10 @@ export function createQueryTranscriptRepository(
   const notify = (scope: TranscriptScope) => {
     const identity = resolveScopeIdentity(scope, deps)
     const key = scopeKey(identity)
-    // Invalidate projection cache so next read rebuilds with sharing.
-    projectionCache.delete(key)
+    // Do not drop projection entries here. `projectTranscript` reuses when
+    // `cachedFrom ===` the immutable Query data identity; deleting on every
+    // query event + manual notify forced duplicate projectFlat work for the
+    // same canonical snapshot. Purge/destroy/reset still clear the map.
     const set = listeners.get(key)
     if (!set || set.size === 0) return
     for (const listener of set) listener(scope)
@@ -616,6 +638,28 @@ export function createQueryTranscriptRepository(
     return next
   }
 
+  const projectTranscript = (scope: TranscriptScope): TranscriptData => {
+    const identity = resolveScopeIdentity(scope, deps)
+    const key = scopeKey(identity)
+    const raw = readData(scope)
+    const cache = getProjection(key)
+    if (cache.hasTranscriptCache && cache.cachedFrom === raw && cache.transcript) {
+      return cache.transcript
+    }
+    // Canonical identity changed (or first build): drop derived message/parts
+    // slots so readers rebind against the new projection.
+    if (cache.cachedFrom !== raw) {
+      cache.messages.clear()
+      cache.parts.clear()
+      cache.pagination = undefined
+    }
+    const data = toTranscriptData(raw, identity.sessionID)
+    const shared = shareTranscript(key, data)
+    cache.cachedFrom = raw
+    cache.hasTranscriptCache = true
+    return shared
+  }
+
   const messageStateKey = (
     identity: ReturnType<typeof resolveScopeIdentity>,
     messageID: string,
@@ -689,6 +733,8 @@ export function createQueryTranscriptRepository(
     parts: readonly Part[] | undefined,
   ) => {
     if (!durableQueue) return
+    // Closed projection must never write filtered snapshots as full durable rows.
+    if (!getIncludeReasoningProjection()) return
     void durableQueue.persistSettled(toTranscriptDurableScope(identity), info, parts ?? [])
   }
 
@@ -699,6 +745,9 @@ export function createQueryTranscriptRepository(
     result: TranscriptCommandResult,
   ) => {
     if (!durableQueue || suppressDurableWrite > 0) return
+    // Bypass durable writes while reasoning is projected off so filtered Query
+    // snapshots never replace full on-disk records used on re-open.
+    if (!getIncludeReasoningProjection()) return
     if (!result.applied || !result.changed) return
     const durableScope = toTranscriptDurableScope(identity)
     if (command.type === "remove-message") {
@@ -708,7 +757,7 @@ export function createQueryTranscriptRepository(
     if (command.type === "reset") {
       void durableQueue.clearSession(durableScope)
       if (command.page) {
-        const transcript = toTranscriptData(readData(scope), identity.sessionID)
+        const transcript = projectTranscript(scope)
         for (const record of command.page.records) {
           const info = transcript.messagesByID[record.info.id] ?? record.info
           persistSettledRecord(
@@ -729,7 +778,7 @@ export function createQueryTranscriptRepository(
     }
     if (command.type === "sse-event" || command.type === "sse-event-batch") {
       const events = command.type === "sse-event" ? [command.event] : command.events
-      const transcript = toTranscriptData(readData(scope), identity.sessionID)
+      const transcript = projectTranscript(scope)
       for (const event of events) {
         const action = transcriptDurableSseAction(event)
         if (action.action === "remove") {
@@ -744,7 +793,7 @@ export function createQueryTranscriptRepository(
       return
     }
     if (command.type === "http-page" || command.type === "materialize-snapshots") {
-      const transcript = toTranscriptData(readData(scope), identity.sessionID)
+      const transcript = projectTranscript(scope)
       const records = command.type === "http-page" ? command.page.records : command.records
       for (const record of records) {
         const info = transcript.messagesByID[record.info.id]
@@ -837,12 +886,16 @@ export function createQueryTranscriptRepository(
     const flightKey = scopeKey(captured)
     const existing = authorityTailInflight.get(flightKey)
     if (existing) return existing
+    const capturedProjectionRevision = getReasoningProjectionRevision()
     const run = (async () => {
       const startedAt = Date.now()
       authorityFlights.set(flightKey, { status: "loading" })
       try {
         const page = await fetchAuthorityTail(captured)
-        if (!liveIdentityMatches(captured)) {
+        if (
+          !liveIdentityMatches(captured)
+          || getReasoningProjectionRevision() !== capturedProjectionRevision
+        ) {
           authorityFlights.delete(flightKey)
           return repository.getTranscript(scope)
         }
@@ -896,7 +949,7 @@ export function createQueryTranscriptRepository(
           source: "network",
           purpose: "initial",
           durationMs: Date.now() - startedAt,
-          transcript: toTranscriptData(readData(scope), captured.sessionID),
+          transcript: projectTranscript(scope),
           request: repository.getRequestState?.(scope),
           hydration: repository.getHydrationState?.(scope),
           error,
@@ -917,13 +970,17 @@ export function createQueryTranscriptRepository(
     const flightKey = scopeKey(captured)
     const existing = authorityTailInflight.get(flightKey)
     if (existing) return existing
+    const capturedProjectionRevision = getReasoningProjectionRevision()
     const run = (async () => {
       const startedAt = Date.now()
       const capturedLiveRevision = repository.getTranscript(scope).liveRevision
       authorityFlights.set(flightKey, { status: "loading" })
       try {
         const page = await fetchAuthorityTail(captured, { fresh: true })
-        if (!liveIdentityMatches(captured)) {
+        if (
+          !liveIdentityMatches(captured)
+          || getReasoningProjectionRevision() !== capturedProjectionRevision
+        ) {
           authorityFlights.delete(flightKey)
           return repository.getTranscript(scope)
         }
@@ -974,7 +1031,7 @@ export function createQueryTranscriptRepository(
           source: "network",
           purpose: "reconcile-page",
           durationMs: Date.now() - startedAt,
-          transcript: toTranscriptData(readData(scope), captured.sessionID),
+          transcript: projectTranscript(scope),
           request: repository.getRequestState?.(scope),
           hydration: repository.getHydrationState?.(scope),
           error,
@@ -998,10 +1055,7 @@ export function createQueryTranscriptRepository(
 
   const repository: QueryTranscriptRepository = {
     getTranscript(scope) {
-      const identity = resolveScopeIdentity(scope, deps)
-      const key = scopeKey(identity)
-      const data = toTranscriptData(readData(scope), identity.sessionID)
-      return shareTranscript(key, data)
+      return projectTranscript(scope)
     },
 
     getPagination(scope) {
@@ -1128,6 +1182,7 @@ export function createQueryTranscriptRepository(
 
     async materializeMessage(scope, messageID) {
       const captured = resolveScopeIdentity(scope, deps)
+      const capturedProjectionRevision = getReasoningProjectionRevision()
       const flightKey = messageStateKey(captured, messageID)
       const materializeDiffBefore = tryCaptureTranscriptCanonicalSnapshot(() =>
         repository.getTranscript(scope),
@@ -1201,7 +1256,10 @@ export function createQueryTranscriptRepository(
                 return { data: { info: projected.info, parts: [...(projected.parts ?? [])] } }
               },
             })
-            if (!liveIdentityMatches(captured)) {
+            if (
+              !liveIdentityMatches(captured)
+              || getReasoningProjectionRevision() !== capturedProjectionRevision
+            ) {
               messageStates.delete(flightKey)
               return repository.getTranscript(scope)
             }
@@ -1220,7 +1278,10 @@ export function createQueryTranscriptRepository(
             notify(scope)
             return repository.getTranscript(scope)
           } catch (error) {
-            if (!liveIdentityMatches(captured)) {
+            if (
+              !liveIdentityMatches(captured)
+              || getReasoningProjectionRevision() !== capturedProjectionRevision
+            ) {
               messageStates.delete(flightKey)
               return repository.getTranscript(scope)
             }
@@ -1397,15 +1458,16 @@ export function createQueryTranscriptRepository(
       })()
       scheduleDurableAfterApply(scope, identity, command, result)
       if (result.applied) {
+        // Lazy suppliers: disabled / SSE noise / unchanged batches never project.
         recordTranscriptCommandDiagnostics({
           directory: identity.directory,
           sessionID: identity.sessionID,
           transport: identity.transport,
           generation: identity.generation,
           command,
-          transcript: toTranscriptData(readData(scope), identity.sessionID),
-          request: repository.getRequestState?.(scope),
-          hydration: repository.getHydrationState?.(scope),
+          transcript: () => repository.getTranscript(scope),
+          request: () => repository.getRequestState?.(scope),
+          hydration: () => repository.getHydrationState?.(scope),
           error: result.error,
           changed: result.changed,
         })
@@ -1446,14 +1508,25 @@ export function createQueryTranscriptRepository(
 
     async ensureInitial(scope) {
       const captured = resolveScopeIdentity(scope, deps)
+      const capturedProjectionRevision = getReasoningProjectionRevision()
       const flightKey = scopeKey(captured)
       if (durableQueue) await durableQueue.wait(toTranscriptDurableScope(captured))
+      if (getReasoningProjectionRevision() !== capturedProjectionRevision) {
+        return repository.getTranscript(scope)
+      }
 
       const canonicalEmpty = readData(scope) === undefined
-      if (canonicalEmpty && deps.durableStore) {
+      // Closed projection skips durable seed so full on-disk reasoning never
+      // paints while Host is already filtering. Re-open uses the normal path.
+      if (canonicalEmpty && deps.durableStore && getIncludeReasoningProjection()) {
         try {
           const session = await deps.durableStore.readSession(toTranscriptDurableScope(captured))
-          if (liveIdentityMatches(captured) && readData(scope) === undefined && session.records.length > 0) {
+          if (
+            liveIdentityMatches(captured)
+            && getReasoningProjectionRevision() === capturedProjectionRevision
+            && readData(scope) === undefined
+            && session.records.length > 0
+          ) {
             suppressDurableWrite += 1
             try {
               repository.apply(scope, {
@@ -1489,6 +1562,9 @@ export function createQueryTranscriptRepository(
             error,
           }))
         }
+      }
+      if (getReasoningProjectionRevision() !== capturedProjectionRevision) {
+        return repository.getTranscript(scope)
       }
 
       // Seeded (or still-unknown) canonical must not go through the InfiniteQuery
@@ -1548,6 +1624,9 @@ export function createQueryTranscriptRepository(
       try {
         await controller.ensureInitial()
       } catch (error) {
+        if (getReasoningProjectionRevision() !== capturedProjectionRevision) {
+          return repository.getTranscript(scope)
+        }
         recordTranscriptDiagnostics(snapshotTranscriptDiagnostics({
           kind: "request-error",
           sessionID: captured.sessionID,
@@ -1557,12 +1636,22 @@ export function createQueryTranscriptRepository(
           source: hadCanonical ? "query-cache" : "network",
           purpose: "initial",
           durationMs: Date.now() - startedAt,
-          transcript: toTranscriptData(readData(scope), captured.sessionID),
+          transcript: projectTranscript(scope),
           request: repository.getRequestState?.(scope),
           hydration: repository.getHydrationState?.(scope),
           error,
         }))
         throw error
+      }
+      if (getReasoningProjectionRevision() !== capturedProjectionRevision) {
+        // Only wipe when this controller is still the live one — a newer
+        // ensure after reset owns the key and must keep its filtered pages.
+        if (controllers.get(flightKey) === controller) {
+          cacheBudget.purgeSession(toCacheScope(scope))
+          projectionCache.delete(flightKey)
+          notify(scope)
+        }
+        return repository.getTranscript(scope)
       }
       authorityFlights.delete(flightKey)
       if (!hadCanonical) {
@@ -1660,6 +1749,7 @@ export function createQueryTranscriptRepository(
         )
       }
       const identity = resolveScopeIdentity(scope, deps)
+      const capturedProjectionRevision = getReasoningProjectionRevision()
       const refreshDiffBefore = tryCaptureTranscriptCanonicalSnapshot(() =>
         repository.getTranscript(scope),
       )
@@ -1670,6 +1760,9 @@ export function createQueryTranscriptRepository(
         limit: deps.initialLimit ?? getInitialSessionTurnLimit(),
         signal: new AbortController().signal,
       })
+      if (getReasoningProjectionRevision() !== capturedProjectionRevision) {
+        return repository.getTranscript(scope)
+      }
       const liveRevision = repository.getTranscript(scope).liveRevision
       repository.apply(scope, {
         type: "http-page",
@@ -1783,6 +1876,60 @@ export function createQueryTranscriptRepository(
       clearHydration(key)
       cacheBudget.purgeSession(toCacheScope(scope))
       notify(scope)
+    },
+
+    /**
+     * Reasoning-projection toggle: clear Query + in-memory projection for the
+     * live runtime generation, cancel async flights, keep listeners/retains,
+     * and leave durable disk intact for a later full seed on re-open.
+     */
+    resetReasoningProjection() {
+      const transport = (deps.probe?.getTransport ?? getRuntimeTransportIdentity)()
+      const generation = (deps.probe?.getGeneration ?? getRuntimeGeneration)()
+      const prefix = `${transport}\n${generation}\n`
+      const scopeKeys = new Set<string>()
+      for (const key of controllers.keys()) {
+        if (key.startsWith(prefix)) scopeKeys.add(key)
+      }
+      for (const key of projectionCache.keys()) {
+        if (key.startsWith(prefix)) scopeKeys.add(key)
+      }
+      for (const key of listeners.keys()) {
+        if (key.startsWith(prefix)) scopeKeys.add(key)
+      }
+      for (const key of scopeKeys) {
+        const existing = controllers.get(key)
+        if (existing) {
+          existing.destroy()
+          controllers.delete(key)
+        }
+        projectionCache.delete(key)
+        const parts = key.split("\n")
+        if (parts.length >= 4) {
+          const scope: TranscriptScope = {
+            transport: parts[0]!,
+            generation: Number(parts[1]),
+            directory: parts[2]!,
+            sessionID: parts[3]!,
+          }
+          cacheBudget.purgeSession(toCacheScope(scope))
+          // Emit so subscribed UI rebinds to empty projection before re-ensure.
+          notify(scope)
+        }
+      }
+      clearMessageMaterialization(prefix)
+      clearDurableSeededExact(prefix)
+      clearHydration(prefix)
+      for (const key of [...authorityFlights.keys()]) {
+        if (key.startsWith(prefix)) authorityFlights.delete(key)
+      }
+      for (const key of [...authorityTailInflight.keys()]) {
+        if (key.startsWith(prefix)) authorityTailInflight.delete(key)
+      }
+      for (const key of [...seededAuthorityPending]) {
+        if (key.startsWith(prefix)) seededAuthorityPending.delete(key)
+      }
+      // listeners / cacheUnsubs / listenerRetainReleases / durableQueue stay.
     },
 
     /** Purge every transcript family under a transport generation (runtime switch). */

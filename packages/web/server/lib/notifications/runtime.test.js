@@ -175,6 +175,202 @@ describe('notification trigger runtime smallModel suppression', () => {
     expect(emitDesktopNotification).toHaveBeenCalledTimes(1);
     expect(sendPushToAllUiSessions).toHaveBeenCalledTimes(1);
   });
+
+  it('skips ready notifications for child sessions', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse({
+      id: 'ses_child',
+      parentID: 'ses_parent',
+      title: 'Fixer',
+      metadata: {},
+    })));
+    const { runtime, emitDesktopNotification, sendPushToAllUiSessions } = createRuntime();
+    await runtime.maybeSendPushForTrigger(completionPayload('ses_child'));
+    expect(emitDesktopNotification).not.toHaveBeenCalled();
+    expect(sendPushToAllUiSessions).not.toHaveBeenCalled();
+  });
+
+  it('skips ready notifications for Assistant binding sessions', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse({
+      id: 'ses_binding',
+      parentID: null,
+      title: '大小白',
+      metadata: { openchamber: { assistant: { assistantID: 'asst_1', name: '大小白' } } },
+    })));
+    const { runtime, emitDesktopNotification, sendPushToAllUiSessions } = createRuntime();
+    await runtime.maybeSendPushForTrigger(completionPayload('ses_binding'));
+    expect(emitDesktopNotification).not.toHaveBeenCalled();
+    expect(sendPushToAllUiSessions).not.toHaveBeenCalled();
+  });
+
+  it('skips ready notifications for scheduled-task sessions', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse({
+      id: 'ses_sched',
+      parentID: null,
+      title: 'Nightly',
+      metadata: { openchamber: { scheduledTask: { taskID: 'task_1' } } },
+    })));
+    const { runtime, emitDesktopNotification, sendPushToAllUiSessions } = createRuntime();
+    await runtime.maybeSendPushForTrigger(completionPayload('ses_sched'));
+    expect(emitDesktopNotification).not.toHaveBeenCalled();
+    expect(sendPushToAllUiSessions).not.toHaveBeenCalled();
+  });
+
+  it('still notifies contact-assigned worker sessions that appear in the sidebar', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse({
+      id: 'ses_worker',
+      parentID: null,
+      title: 'Assigned work',
+      metadata: { openchamber: { assigned: { from: 'contact', assistantID: 'asst_1', name: '大小白' } } },
+    })));
+    const { runtime, emitDesktopNotification, sendPushToAllUiSessions } = createRuntime();
+    await runtime.maybeSendPushForTrigger(completionPayload('ses_worker'));
+    expect(emitDesktopNotification).toHaveBeenCalledTimes(1);
+    expect(sendPushToAllUiSessions).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('notification trigger runtime llm system-session suppression', () => {
+  const llmSessionResponse = (purpose = 'chat-completions') => jsonResponse({
+    id: 'ses_llm',
+    parentID: null,
+    title: '[openchamber-llm] generate',
+    metadata: { openchamber: { llm: { purpose } } },
+  });
+
+  const expectAllOutletsSilent = ({
+    emitDesktopNotification,
+    broadcastUiNotification,
+    sendPushToAllUiSessions,
+    sendApnsToAllUiSessions,
+    sendLiveActivityEnd,
+  }) => {
+    expect(emitDesktopNotification).not.toHaveBeenCalled();
+    expect(broadcastUiNotification).not.toHaveBeenCalled();
+    expect(sendPushToAllUiSessions).not.toHaveBeenCalled();
+    expect(sendApnsToAllUiSessions).not.toHaveBeenCalled();
+    expect(sendLiveActivityEnd).not.toHaveBeenCalled();
+  };
+
+  it('skips ready notifications for llm sessions fetched by id', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => llmSessionResponse()));
+    const outlets = createRuntime();
+    await outlets.runtime.maybeSendPushForTrigger(completionPayload('ses_llm'));
+    expectAllOutletsSilent(outlets);
+  });
+
+  it('skips ready notifications synthesized from session.idle for llm sessions', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => llmSessionResponse()));
+    const outlets = createRuntime();
+    await outlets.runtime.maybeSendPushForTrigger({
+      type: 'session.idle',
+      properties: {
+        directory: '/repo',
+        sessionID: 'ses_llm',
+      },
+    });
+    expectAllOutletsSilent(outlets);
+  });
+
+  it('skips error notifications and live-activity end for llm sessions', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => llmSessionResponse()));
+    const outlets = createRuntime();
+    await outlets.runtime.maybeSendPushForTrigger({
+      type: 'session.error',
+      properties: {
+        directory: '/repo',
+        sessionID: 'ses_llm',
+        error: 'boom',
+      },
+    });
+    expectAllOutletsSilent(outlets);
+  });
+
+  it('skips question notifications for llm sessions', async () => {
+    vi.useFakeTimers();
+    vi.stubGlobal('fetch', vi.fn(async () => llmSessionResponse()));
+    const outlets = createRuntime();
+    await outlets.runtime.maybeSendPushForTrigger({
+      type: 'question.asked',
+      properties: {
+        directory: '/repo',
+        sessionID: 'ses_llm',
+        questions: [{ header: 'Input needed', question: 'Continue?' }],
+      },
+    });
+    await vi.runAllTimersAsync();
+    expectAllOutletsSilent(outlets);
+  });
+
+  it('skips permission notifications for llm sessions', async () => {
+    vi.useFakeTimers();
+    vi.stubGlobal('fetch', vi.fn(async () => llmSessionResponse()));
+    const outlets = createRuntime();
+    await outlets.runtime.maybeSendPushForTrigger({
+      type: 'permission.asked',
+      properties: {
+        directory: '/repo',
+        sessionID: 'ses_llm',
+        id: 'perm_llm',
+        permission: 'edit',
+      },
+    });
+    await vi.runAllTimersAsync();
+    expectAllOutletsSilent(outlets);
+  });
+
+  it('uses session.updated event cache so later idle stays suppressed without llm on fetch', async () => {
+    const fetchMock = vi.fn(async () => jsonResponse({
+      id: 'ses_llm',
+      parentID: null,
+      title: 'Ordinary after strip',
+      metadata: {},
+    }));
+    vi.stubGlobal('fetch', fetchMock);
+    const outlets = createRuntime();
+    await outlets.runtime.maybeSendPushForTrigger({
+      type: 'session.updated',
+      properties: {
+        directory: '/repo',
+        info: {
+          id: 'ses_llm',
+          sessionID: 'ses_llm',
+          parentID: null,
+          title: '[openchamber-llm] generate',
+          metadata: { openchamber: { llm: { purpose: 'chat-completions' } } },
+        },
+      },
+    });
+    await outlets.runtime.maybeSendPushForTrigger({
+      type: 'session.idle',
+      properties: {
+        directory: '/repo',
+        sessionID: 'ses_llm',
+      },
+    });
+    expect(fetchMock).not.toHaveBeenCalled();
+    expectAllOutletsSilent(outlets);
+  });
+
+  it('does not treat empty llm.purpose as a hidden system session', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse({
+      id: 'ses_llm_empty',
+      parentID: null,
+      title: 'Looks like llm',
+      metadata: { openchamber: { llm: { purpose: '' } } },
+    })));
+    const {
+      runtime,
+      emitDesktopNotification,
+      sendPushToAllUiSessions,
+      sendApnsToAllUiSessions,
+      sendLiveActivityEnd,
+    } = createRuntime();
+    await runtime.maybeSendPushForTrigger(completionPayload('ses_llm_empty'));
+    expect(emitDesktopNotification).toHaveBeenCalledTimes(1);
+    expect(sendPushToAllUiSessions).toHaveBeenCalledTimes(1);
+    expect(sendApnsToAllUiSessions).toHaveBeenCalledTimes(1);
+    expect(sendLiveActivityEnd).toHaveBeenCalledWith({ sessionId: 'ses_llm_empty', status: 'complete' });
+  });
 });
 
 const rootSessionResponse = () => jsonResponse({
@@ -197,6 +393,54 @@ const completionPayload = (sessionId = 'ses_root', finish = 'stop') => ({
       modelID: 'gpt',
     },
   },
+});
+
+describe('contact turn notifications', () => {
+  it('sends an SMS-style title and body when a contact turn completes', async () => {
+    const { runtime, emitDesktopNotification, broadcastUiNotification, sendPushToAllUiSessions, sendApnsToAllUiSessions } = createRuntime();
+    await runtime.sendContactTurnNotification({
+      assistantID: 'asst_1',
+      name: '大小白',
+      body: '我去找一下',
+      status: 'complete',
+    });
+    expect(emitDesktopNotification).toHaveBeenCalledWith(expect.objectContaining({
+      title: '大小白',
+      body: '我去找一下',
+      tag: 'contact-asst_1',
+      kind: 'contact',
+      assistantID: 'asst_1',
+    }));
+    expect(broadcastUiNotification).toHaveBeenCalled();
+    expect(sendPushToAllUiSessions).toHaveBeenCalledWith(expect.objectContaining({
+      title: '大小白',
+      body: '我去找一下',
+      data: expect.objectContaining({ assistantID: 'asst_1', type: 'contact', url: '/assistant/asst_1' }),
+    }), expect.objectContaining({ requireNoSse: true, preserveAlert: true }));
+    expect(sendApnsToAllUiSessions).toHaveBeenCalledWith(expect.objectContaining({
+      title: '大小白',
+      body: '我去找一下',
+      data: expect.objectContaining({
+        assistantID: 'asst_1',
+        url: 'openchamber://assistant/asst_1',
+      }),
+    }), expect.objectContaining({ preserveAlert: true }));
+    expect(sendApnsToAllUiSessions.mock.calls[0][0].type).toBeUndefined();
+  });
+
+  it('skips contact notifications when completion notices are disabled', async () => {
+    const { runtime, emitDesktopNotification, sendPushToAllUiSessions } = createRuntime({
+      readSettingsFromDisk: vi.fn(async () => ({ ...defaultSettings, notifyOnCompletion: false })),
+    });
+    await runtime.sendContactTurnNotification({
+      assistantID: 'asst_1',
+      name: '大小白',
+      body: 'hi',
+      status: 'complete',
+    });
+    expect(emitDesktopNotification).not.toHaveBeenCalled();
+    expect(sendPushToAllUiSessions).not.toHaveBeenCalled();
+  });
 });
 
 describe('notification trigger live activity end', () => {
@@ -230,6 +474,28 @@ describe('notification trigger live activity end', () => {
     expect(sendLiveActivityEnd).toHaveBeenCalledWith({ sessionId: 'ses_root', status: 'complete' });
     expect(sendPushToAllUiSessions).toHaveBeenCalledTimes(1);
     expect(sendApnsToAllUiSessions).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not patch live activity titles for child sessions', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse({
+      id: 'ses_child',
+      parentID: 'ses_parent',
+      metadata: {},
+    })));
+    const { runtime, sendLiveActivityEnd } = createRuntime();
+    await runtime.maybeSendPushForTrigger({
+      type: 'session.updated',
+      properties: {
+        directory: '/repo',
+        info: {
+          id: 'ses_child',
+          sessionID: 'ses_child',
+          parentID: 'ses_parent',
+          title: 'Fixer',
+        },
+      },
+    });
+    expect(sendLiveActivityEnd).not.toHaveBeenCalled();
   });
 
   it('suppresses live activity end for child and small-model sessions', async () => {

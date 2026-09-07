@@ -45,4 +45,14 @@ describe('MessageHeader', () => {
       /:root\.mobile-pointer:not\(\.desktop-runtime\) \.typography-(markdown|code|ui-header|ui-label|meta|micro)[\s\S]{0,240}font-size:\s*unset/,
     );
   });
+
+  test('keeps the agent badge next to the model name on the left', () => {
+    const html = renderHeader(false);
+    expect(html).toContain('GLM-5.3');
+    expect(html).toContain('agent-badge');
+    expect(html).toContain('Orchestrator');
+    expect(html).toContain('flex items-center gap-2');
+    expect(html).not.toContain('max-w-[45%]');
+    expect(html).not.toMatch(/inline-flex min-w-0 flex-1 items-center gap-1\.5/);
+  });
 });

@@ -649,6 +649,8 @@ interface MessageListProps {
     sessionKey: string;
     virtualizerKey?: string;
     disableStaging?: boolean;
+    /** The current pending seed already painted in the draft transcript shell. */
+    initialPinRevealComplete?: boolean;
     messages: ChatMessageEntry[];
     sessionIsWorking?: boolean;
     activeStreamingMessageId?: string | null;
@@ -674,6 +676,12 @@ interface MessageListProps {
      */
     headerSlot?: React.ReactNode;
     footerSlot?: React.ReactNode;
+    /**
+     * Classic (TanStack) path only. Rendered after the streaming tail **inside**
+     * the markdown pin-reveal root so cold-open / jump-to-latest cannot leave a
+     * visible WorkingPlaceholder while the transcript is still `visibility: hidden`.
+     */
+    liveStatusSlot?: React.ReactNode;
     timelineScrollClassName?: string;
     timelineScrollStyle?: React.CSSProperties;
     timelineScrollDataset?: Record<string, string>;
@@ -778,6 +786,7 @@ interface MessageRowProps {
     nextMessage?: ChatMessageEntry;
     turnGroupingContext?: TurnGroupingContext;
     assistantHeaderMessageId?: string;
+    turnOwnsAssistantHeader?: boolean;
     isInActiveTurn?: boolean;
     activeStreamingPhase?: StreamPhase | null;
     animateUserOnMount?: boolean;
@@ -794,6 +803,7 @@ const MessageRow = React.memo<MessageRowProps>(({
     nextMessage,
     turnGroupingContext,
     assistantHeaderMessageId,
+    turnOwnsAssistantHeader,
     isInActiveTurn,
     activeStreamingPhase,
     animateUserOnMount,
@@ -836,6 +846,7 @@ const MessageRow = React.memo<MessageRowProps>(({
             scrollToBottom={scrollToBottom}
             turnGroupingContext={turnGroupingContext}
             assistantHeaderMessageId={assistantHeaderMessageId}
+            turnOwnsAssistantHeader={turnOwnsAssistantHeader}
             isInActiveTurn={isInActiveTurn}
             activeStreamingPhase={activeStreamingPhase}
             reviewTransferDirection={reviewTransferDirection}
@@ -859,6 +870,7 @@ const MessageRow = React.memo<MessageRowProps>(({
         && prev.scrollToBottom === next.scrollToBottom
         && areRelevantTurnGroupingContextsEqual(prevTurn, nextTurn, prev.message.info.id, resolveMessageRole(prev.message) === 'user')
         && prev.assistantHeaderMessageId === next.assistantHeaderMessageId
+        && prev.turnOwnsAssistantHeader === next.turnOwnsAssistantHeader
         && prev.isInActiveTurn === next.isInActiveTurn
         && prev.activeStreamingPhase === next.activeStreamingPhase
         && prev.reviewTransferDirection === next.reviewTransferDirection
@@ -910,6 +922,25 @@ const TurnBlock = React.memo(({
     activeStreamingPhase,
     reviewTransferDirection,
 }: TurnBlockProps) => {
+    const liveTurnLifecycleRef = React.useRef<string | null>(null);
+    if (
+        liveTurnLifecycleRef.current === turn.turnId
+        && !isLastTurn
+        && turn.completionDisposition !== 'active'
+    ) {
+        liveTurnLifecycleRef.current = null;
+    } else if (
+        turn.completionDisposition === 'active'
+        && isLastTurn
+        && sessionIsWorking
+    ) {
+        liveTurnLifecycleRef.current = turn.turnId;
+    }
+    const preserveActiveTurnGap = liveTurnLifecycleRef.current === turn.turnId;
+    const pendingHeaderStateRef = React.useRef({ turnId: turn.turnId, shown: false });
+    if (pendingHeaderStateRef.current.turnId !== turn.turnId) {
+        pendingHeaderStateRef.current = { turnId: turn.turnId, shown: false };
+    }
     const storedTurnUiState = turnUiStates.get(turn.turnId);
     // Gate raw message-active through presentation so only the live last turn
     // while the session is working defaults open; idle/historical actives settle.
@@ -1176,6 +1207,7 @@ const TurnBlock = React.memo(({
                 nextMessage={nextMessage}
                 turnGroupingContext={turnGroupingContext}
                 assistantHeaderMessageId={assistantHeaderMessageId}
+                turnOwnsAssistantHeader={isAssistantMessage}
                 isInActiveTurn={Boolean(streamingAssistantMessageId) && message.info.id === streamingAssistantMessageId}
                 activeStreamingPhase={message.info.id === streamingAssistantMessageId ? activeStreamingPhase : null}
                 reviewTransferDirection={reviewTransferDirection}
@@ -1199,13 +1231,17 @@ const TurnBlock = React.memo(({
     }, [turn, visibleAssistantMessages]);
 
     const pendingAssistantHeader = React.useMemo(() => {
-        if (!shouldShowPendingAssistantHeader({
+        const shouldStartPendingHeader = shouldShowPendingAssistantHeader({
             isLastTurn,
             sessionIsWorking,
             hasAssistantMessages: turn.assistantMessages.length > 0,
             activityPresentationKind: turn.activityPresentationKind,
             hasActiveStreamingMessage: Boolean(activeStreamingMessageId),
-        })) {
+        });
+        if (shouldStartPendingHeader || turn.assistantMessages.length > 0) {
+            pendingHeaderStateRef.current.shown = true;
+        }
+        if (!pendingHeaderStateRef.current.shown || turn.activityPresentationKind === 'compaction') {
             return null;
         }
         return resolvePendingAssistantHeader(readUserMessageHeaderIdentity(turn.userMessage.info));
@@ -1233,6 +1269,9 @@ const TurnBlock = React.memo(({
                 sessionIsWorking,
             })}
             pendingAssistantHeader={pendingAssistantHeader}
+            assistantHeaderMessage={visibleAssistantMessages[0]}
+            assistantHeaderIsInActiveTurn={visibleAssistantMessages[0]?.info.id === streamingAssistantMessageId}
+            preserveActiveTurnGap={preserveActiveTurnGap}
             stickyUserHeader={stickyUserHeader}
             renderMessage={renderMessage}
         />
@@ -2102,6 +2141,7 @@ type LegendTimelineHostProps = {
     followEnabled?: boolean;
     historyAnchorToken?: number;
     pinRevealGeneration?: number;
+    initialPinRevealComplete?: boolean;
     onIsAtEndChange?: (isAtEnd: boolean, showScrollButton?: boolean) => void;
     anchoredUserMessageId?: string | null;
     onAnchoredTurnParkReleased?: (reserveId: string) => void;
@@ -2140,6 +2180,7 @@ const LegendTimelineHost: React.FC<LegendTimelineHostProps> = ({
     followEnabled = true,
     historyAnchorToken,
     pinRevealGeneration = 0,
+    initialPinRevealComplete = false,
     onIsAtEndChange,
     anchoredUserMessageId = null,
     onAnchoredTurnParkReleased,
@@ -2288,6 +2329,7 @@ const LegendTimelineHost: React.FC<LegendTimelineHostProps> = ({
                 followEnabled={followEnabled}
                 historyAnchorToken={historyAnchorToken}
                 pinRevealGeneration={pinRevealGeneration}
+                initialPinRevealComplete={initialPinRevealComplete}
                 anchoredEndSpace={anchoredEndSpace}
                 onAnchoredTurnParkReleased={onAnchoredTurnParkReleased}
                 sessionIsWorking={sessionIsWorking}
@@ -2322,6 +2364,7 @@ const MessageList = React.forwardRef<MessageListHandle, MessageListProps>(({
     directory,
     headerSlot,
     footerSlot,
+    liveStatusSlot,
     timelineScrollClassName,
     timelineScrollStyle,
     timelineScrollDataset,
@@ -2330,6 +2373,7 @@ const MessageList = React.forwardRef<MessageListHandle, MessageListProps>(({
     timelineHistoryAnchorToken,
     timelineOnIsAtEndChange,
     enableSendPark = true,
+    initialPinRevealComplete = false,
 }, ref) => {
     streamPerfCount('ui.message_list.render');
     const { sessionKey: domainSessionKey, virtualizerKey: resolvedVirtualizerKey } = resolveMessageListKeys(sessionKey, virtualizerKey);
@@ -2623,6 +2667,7 @@ const MessageList = React.forwardRef<MessageListHandle, MessageListProps>(({
         root: tanstackPinRoot,
         relevantKeys: tanstackPinKeys,
         enabled: !legendTimelineEnabled && allEntries.length > 0,
+        initiallyRevealed: initialPinRevealComplete,
     });
     const tanstackPinStyle = mergeMarkdownPinRevealStyle(undefined, tanstackPinHidden);
 
@@ -3045,6 +3090,7 @@ const MessageList = React.forwardRef<MessageListHandle, MessageListProps>(({
                 followEnabled={timelineFollowEnabled}
                 historyAnchorToken={timelineHistoryAnchorToken}
                 pinRevealGeneration={pinRevealGeneration}
+                initialPinRevealComplete={initialPinRevealComplete}
                 onIsAtEndChange={timelineOnIsAtEndChange}
                 anchoredUserMessageId={nextAnchorId}
                 onAnchoredTurnParkReleased={onAnchoredTurnParkReleased}
@@ -3115,6 +3161,9 @@ const MessageList = React.forwardRef<MessageListHandle, MessageListProps>(({
                             activeStreamingPhase={activeStreamingPhase}
                             reviewTransferDirection={reviewTransferDirection}
                         />
+                        {/* Inside pin-reveal root: cold-open must not leave a
+                            visible status label over a still-hidden transcript. */}
+                        {liveStatusSlot}
                     </div>
                 </FadeInDisabledProvider>
 

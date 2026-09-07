@@ -2,6 +2,8 @@
 
 Owning module for global CSS under `packages/ui/src/styles/`, including touch-mode adaptations in `mobile.css`.
 
+The first-prompt establishing draft joins the main chat and hydrating overlay-foot contract. The idle draft keeps the in-flow Composer contract.
+
 ## `isMobile` vs `mobile-pointer` (do not confuse)
 
 OpenChamber has **two independent mobile signals**. Layout bugs that "look fine in DevTools inspect but wrong on device" almost always come from mixing them.
@@ -92,7 +94,7 @@ Then let the component own the real compact size via Tailwind (`h-7 w-3`, etc.).
 
 ## Floating glass (mobile)
 
-Shared classes (`.oc-mobile-floating-surface`, `.oc-mobile-glass-control`, dock, `.oc-composer-autocomplete-surface`, etc.) use translucent fills plus `backdrop-filter` on **all** mobile shells, including Capacitor Android. Do **not** reintroduce an Android-only “opaque fill + no blur” blanket; that is a full-platform downgrade, not progressive enhancement. Composer `/` `@` `#` catalogs on web/Android mobile use `.oc-composer-autocomplete-surface` with `.oc-composer-autocomplete-row:active` press fill — not a persisted selected slab. That catalog sits inside the composer swap layer, so blur cannot sample the transcript; the surface uses a `color-mix` of `--surface-elevated` as the base fill (same lesson as `.oc-mobile-overlay-surface`) instead of shell-scoped `--oc-mobile-glass-fill`, which paints a hole when the token is missing.
+Shared classes (`.oc-mobile-floating-surface`, `.oc-mobile-glass-control`, dock, `.oc-composer-autocomplete-surface`, etc.) use translucent fills plus `backdrop-filter` on **all** mobile shells, including Capacitor Android. Do **not** reintroduce an Android-only “opaque fill + no blur” blanket; that is a full-platform downgrade, not progressive enhancement. Composer `/` `@` `#` catalogs on web/Android mobile reuse overlay glass blur inside a body-portaled `fixed inset-0` host (`ComposerAutocompleteLayer`). CSS `bottom` is measured from the layout viewport (`window.innerHeight`), not the visual-viewport bottom — when the IME shrinks `visualViewport`, the latter parks the panel under the keyboard on small Android screens. `.oc-composer-autocomplete-surface` drops the fill to a 22% elevated mix so the frost can read through. iOS WebKit cannot backdrop-filter the transcript from an `absolute` child of the composer card. Rows still use `.oc-composer-autocomplete-row:active` press fill — not a persisted selected slab.
 
 Legitimate glass fallbacks:
 
@@ -105,6 +107,10 @@ Legitimate glass fallbacks:
 Android System WebView should be Chromium **111+** for `color-mix()` and reliable translucency (`packages/mobile/HANDOFF.md`).
 
 Phone conversation headers (session chat and Assistant) share `--oc-mobile-header-fade` for the overlay/collapsing gradient (`color-mix` of `--surface-background` at 85%). Change that token when the fade strength should shift; do not restyle one surface with a local mix.
+
+## Mobile notifications
+
+`sonner.tsx` keeps the desktop toast recipe as its fallback. Mobile-capable web, hosted-mobile, Capacitor, and tablet roots override `--oc-toast-background` / `--oc-toast-shadow` in `mobile.css`; desktop runtimes remain on the desktop recipe. Mobile toasts reuse `--oc-mobile-glass-fill` plus `--oc-mobile-glass-blur` / `--oc-mobile-glass-saturate` so frost can sample the page (opaque elevated mixes hide the blur). The toaster must not use `transform` on iOS/WebKit: a transformed ancestor prevents `backdrop-filter` from sampling content behind it, so mobile centers with `left` / negative margin instead of Sonner's `translateX(-50%)`. Collapsed rear cards keep the same glass fill; short contact shadows and Sonner's native 5% scale / `0.5rem` offset separate the stack. Linear sprite status icons and text-style actions keep the existing 36px touch floor. Reduced-transparency mode uses the opaque elevated surface.
 
 ## Layout chrome dividers
 
@@ -150,8 +156,17 @@ Under `mobile-pointer`, `mobile.css` rewrites generic `.overflow-hidden` to `ove
 | `[data-composer-content="true"] .overflow-hidden` | Input column clipper |
 | `[data-composer-input-shell="true"]` and its `.overflow-hidden` child | Highlight overlay + textarea host |
 | `[data-attachment-preview="true"]` | 40px image chip above the composer; must not become a scrollport |
+| `[data-message-image-slot="true"]` | Square photo in a user/assistant bubble; must clip to `rounded-lg` |
+| `[data-user-message-bubble="true"]` | Mobile-only radius clip; desktop inline actions use `translate-x-5` and must not be clipped |
+| `[data-user-message-clamp="true"]` | Truncated long user text wrapper; hides sibling file thumbs so they cannot sit under the clamp |
+| `[data-user-message-collapse="true"]` | `line-clamp-10` box with a 10-line max-height so WebKit cannot grow past the clamp |
+| `[data-agent-avatar]` / `[data-assistant-working-avatar] .overflow-hidden` / `.oc-mobile-assistant-avatar .overflow-hidden` | Assistant/agent faces stay clippers; the generic rewrite painted a scrollbar thumb on the 40px circle |
 
-If those become scrollports, a short mention shows **two** scrollbars (parent + textarea) instead of growing the card. The expanded `.oc-mobile-composer-surface` uses `min-height: min-content`. Its motion viewport and reveal keep popup overflow available.
+Transcript code/result cards use `overflow-clip`. The compatibility opt-out targets only `[data-component="markdown-code"].overflow-hidden` and `[data-component="generated-json-result"].overflow-hidden`, with both axes set to `clip`. Descendant scroll surfaces retain their own overflow contract. `[data-md-code-body]` uses `overflow-y: hidden`; its wrap-state utility owns X (`auto` for unwrapped code, `hidden` for wrapped code). Legacy `[data-markdown="code-block-body"]` retains `auto/hidden`, and table scroll surfaces remain independent. Markdown loading overlays and the bounded subagent-notification preview also use `overflow-clip`.
+
+The iOS Safari CSS/gesture evidence and its application-level limits are recorded in [ios-overflow-validation.md](./ios-overflow-validation.md).
+
+If those become scrollports, a short mention shows **two** scrollbars (parent + textarea) instead of growing the card. The expanded `.oc-mobile-composer-surface` uses `min-height: min-content`. Its motion viewport and reveal keep popup overflow available. New in-transcript clip shells should prefer Tailwind `overflow-clip` (see LatticeOrb / ProgressiveGroup / decorate code cards) so they never match the rewrite.
 
 The main chat and hydrating branches attach `.oc-chat-composer-swap-scope` and an overlay Composer foot only while React `isMobile` is true. Draft, empty, history-error, desktop, and disabled surfaces keep the in-flow expanded Composer. In-flow feet pin `--oc-mobile-composer-swap: 0` and hide `.oc-mobile-composer-compact-layer`, because opening a new chat from a session reuses ChatContainer's root node and can leak the session's inline compact swap onto the draft page — the pill then paints "Tap to type" with `pointer-events: none` and the real textarea is gone. Native iOS in-flow feet add `padding-bottom: calc(var(--oc-native-composer-height) - 8px)` so project / branch stay above the pill (overlay pages already reserve that hole via absolute docking). The hook also `clearComposerSwap`s the previous scope when it unmounts or detaches. The Hook publishes `--oc-mobile-composer-swap` plus phase and rest attributes: upward scroll starts tracking immediately (~40px → follow half that only exits the expanded card); finishing ≥0.5 auto-snaps so the compact pill rises, otherwise idle snaps back over 240ms. A brief post-compact settle suppresses return-follow for momentum only; it is not a permanent latch, and snaps are interruptible so repeat cycles keep working. The complete card and queue / changes / todos descend as one expanded layer while an independent 80% glass preview rises from below; the real textarea remains in the expanded layer. Layers are staggered so progress 0.5 never paints both at once. The fixed `--oc-chat-foot-inset: calc(8rem + safe-area)` preserves transcript geometry, and motion uses transforms and opacity without JavaScript measurement or padding mutation. Capacitor iOS primary chat can replace the web textarea/pill with `OpenChamberComposer` (process-owned: conceal immediately on leave, teardown after the remount window, do not rebuild across phone-page remounts); `:root.oc-native-ios-composer` hides those layers and the web scroll-to-bottom controls, keeps swap tracking for fade-only motion, and retargets `--oc-chat-foot-inset` at collapsed `--oc-native-composer-height` plus `--oc-native-composer-accessory` without writing `--oc-chat-foot-inset` from JS. **Both foot-inset declarations live on the root and differ only by `.oc-native-ios-composer`.** The web default used to be scope-qualified (`:root.mobile-pointer:not(.desktop-runtime) .oc-chat-composer-swap-scope`, 0-4-0) while the native override is a plain root-class selector (0-3-0), so the default out-specified it and native iOS silently kept the 8rem web reservation — the transcript reserved less than the pill plus its queued-message accessory actually occupied, and the newest message sat under the queue card. A root declaration also means no consumer resolves an undefined inset when React `isMobile` disagrees with `mobile-pointer`. `mobileComposerOverflow.test.ts` resolves the property through `getComputedStyle` on both class shapes rather than asserting selector text, so a re-qualified selector fails on the value it produces. Changes / TODO / queue stay absolutely docked to the overlay just above the pill (8px settle toward the pill) and fade with `--oc-native-composer-dock` (distance from the live edge; default hidden until published; approaching stays hidden until the true bottom). The queue card hides `data-oc-queue-composer-overlap` and uses matching vertical padding because the native pill no longer covers that tail. Swap rest is not the fade source: a downward reveal can expand the composer hundreds of px from the bottom, and those rows have no background veil. Native scroll-to-bottom stays on the overlay, appears after ~80px of upward travel, and is excluded from published occupancy. Native height is the collapsed pill occupancy (not the keyboard-raised frame) so CSS must not add safe-area again. Keyboard hide still clears leftover `--oc-kb-layout` / `oc-keyboard-open` even while composer FLIP is skipped. A tap on the compact preview restores expansion and focuses the textarea. The compact layer reuses the mobile glass control recipe (`--oc-mobile-glass-fill`, `--oc-mobile-glass-shadow` with its top inset highlight, and glass blur/saturate) shared with the bottom Tab dock and settings search field. Focus, dictation, and native keyboard pin expansion; reduced motion makes snapping immediate, and reduced transparency keeps an opaque elevated fill while preserving the glass shadow.
 
@@ -184,6 +199,17 @@ turn the overlay on (textarea becomes `text-transparent`); a fixed-px
 overlay against a `--dpt`-scaled field looks like the font suddenly grew
 and puts the caret in the wrong place.
 
+## HTML file preview edge-to-edge
+
+Sheet surfaces reserve bottom safe padding by default (`MobileWindowMotionRecipe` + Capacitor `.pwa-overlay-panel`). HTML preview must paint to the physical bottom without a child negative margin (overflow-hidden body clips it into a light band).
+
+| Marker | Owner | Effect |
+|---|---|---|
+| `data-mobile-html-preview="true"` | `MobileFilesSurface` sheet HTML viewer (preview mode only) | Active non-inert `[data-oc-motion-id]:has(...)` zeros `padding-bottom` |
+| `data-mobile-html-fullscreen="true"` | Fullscreen HTML preview portal | Hides home-indicator `body::after` via `:has` |
+
+`body::after` opacity uses structural `:has([data-mobile-overlay-active="true"]:not([inert]) [data-mobile-html-preview="true"])` and `:has([data-mobile-html-fullscreen="true"])` — not a root class toggle — so mode switches and multi-instance close restore automatically. Source mode keeps the default safe pad.
+
 ## Related owners
 
 - Detection / root classes: `packages/ui/src/lib/device.ts`
@@ -192,3 +218,4 @@ and puts the caret in the wrong place.
 - Design-system components: `packages/ui/src/styles/design-system.css` (`.oc-segmented-selected-pill`)
 - Queued message chip layout: `packages/ui/src/components/chat/QueuedMessageChips.tsx` (root class `oc-composer-queue`)
 - Mobile shell early `isMobile`: `packages/ui/src/apps/renderMobileApp.tsx`
+- HTML preview markers / sheet overscroll: `packages/ui/src/apps/MobileFilesSurface.tsx`, `packages/ui/src/components/ui/iframeSheetOverscroll.ts`

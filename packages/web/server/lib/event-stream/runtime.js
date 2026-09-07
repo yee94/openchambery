@@ -11,6 +11,10 @@ import { createGlobalMessageStreamHub } from './global-hub.js';
 import { createGlobalMessageStreamWsBridge } from './global-ws-bridge.js';
 import { acceptDirectoryMessageStreamWsConnection } from './directory-ws-bridge.js';
 import {
+  createReasoningOutboundFilter,
+  shouldIncludeReasoning,
+} from './reasoning-projection.js';
+import {
   DEFAULT_UPSTREAM_RECONNECT_DELAY_MS,
   DEFAULT_UPSTREAM_STALL_TIMEOUT_MS,
 } from './upstream-reader.js';
@@ -95,10 +99,15 @@ export function createMessageStreamWsRuntime({
     const isGlobalStream = pathname === MESSAGE_STREAM_GLOBAL_WS_PATH;
     const requestedLastEventId = requestUrl.searchParams.get('lastEventId')?.trim() || '';
     const requestedDirectory = requestUrl.searchParams.get('directory')?.trim() || '';
+    // OpenChamber projection only — never forwarded to OpenCode upstream URLs.
+    // Default (include) path keeps reasoningFilter null for zero send-path overhead.
+    const includeReasoning = shouldIncludeReasoning(requestUrl.searchParams.get('includeReasoning'));
+    const reasoningFilter = includeReasoning ? null : createReasoningOutboundFilter();
 
     if (isGlobalStream) {
       globalBridge.accept(socket, {
         requestedLastEventId,
+        reasoningFilter,
       });
       return;
     }
@@ -107,6 +116,7 @@ export function createMessageStreamWsRuntime({
       socket,
       requestedLastEventId,
       requestedDirectory,
+      reasoningFilter,
       buildOpenCodeUrl,
       getOpenCodeAuthHeaders,
       processForwardedEventPayload,

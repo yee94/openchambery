@@ -45,6 +45,15 @@ describe('ChatContainer source contracts', () => {
         expect(source).toContain('const showLoadOlderButton = resolveMobileLoadOlderVisibility({');
         expect(source).toContain('isMobile,');
         expect(source).not.toContain('const showLoadOlderButton = isMobileSurfaceRuntime()');
+        // Controller scroll/auto-fill must share that same mounted flag so the
+        // button cannot show while auto-load still follows a disagreeing probe.
+        const timelineCallStart = source.indexOf('const timelineController = useChatTimelineController({');
+        const timelineCallEnd = source.indexOf('});', timelineCallStart);
+        expect(timelineCallStart).toBeGreaterThan(-1);
+        const timelineCall = source.slice(timelineCallStart, timelineCallEnd);
+        expect(timelineCall).toContain('isMobile,');
+        // Comment may mention the probe; the option value must not call it.
+        expect(timelineCall).not.toMatch(/isMobile:\s*isMobileSurfaceRuntime\s*\(/);
     });
 
     test('load-error retry reloads the transcript and enters the hydrating skeleton', () => {
@@ -207,6 +216,14 @@ describe('ChatContainer source contracts', () => {
         const footer = source.slice(footerStart, footSpacer);
         expect(footer).not.toContain('StatusRowContainer');
         expect(source).toContain('<StatusRowContainer />');
+        // Classic path: shell-gated status mounts through MessageList.liveStatusSlot
+        // (inside the pin-reveal root), not as a sibling after MessageList.
+        expect(source).toContain('liveStatusSlot={');
+        const statusGate = source.indexOf('liveStatusSlot={');
+        const liveStatusSlot = source.slice(statusGate, source.indexOf('/>', statusGate + 80) + 2);
+        expect(liveStatusSlot).toContain('renderedMessages.length > 0');
+        expect(liveStatusSlot).toContain('<StatusRowContainer />');
+        expect(source).not.toMatch(/<\/MessageList>\s*\{\/\* No transcript shell/);
     });
 
     test('composer send re-arms legend follow so a mid-history send can park', () => {
@@ -233,11 +250,52 @@ describe('ChatContainer source contracts', () => {
         expect(source).not.toContain('const readOnlyPromptBanner = parentSessionTarget ? (');
     });
 
-    test('desktop composer keeps a page-background fade above the input', () => {
+    test('desktop composer keeps a page-background fade above each transcript-style input', () => {
         expect(source).toContain('const DesktopComposerEdgeFade');
         expect(source).toContain('bg-gradient-to-t from-[var(--surface-background)] to-transparent');
         expect(source).toContain('{!isMobile && !isDesktopExpandedInput ? <DesktopComposerEdgeFade /> : null}');
-        expect(source.match(/<DesktopComposerEdgeFade \/>/g)).toHaveLength(2);
+        const establishingDraftShell = source.slice(
+            source.indexOf('if ((draftSubmitting || draftEstablishing) && draftPendingMessage)'),
+            source.indexOf('if (draftSubmitting || draftEstablishing)'),
+        );
+        const hydratingShell = source.slice(
+            source.indexOf('if (isSessionHydrating)', source.indexOf('if (draftSubmitting || draftEstablishing)')),
+            source.indexOf('if (renderedViewportMessages.length === 0 && !sessionIsWorking)'),
+        );
+        const transcriptShell = source.slice(
+            source.lastIndexOf("<div ref={composerSwapScopeRef} className={cn('relative flex flex-col h-full bg-background'"),
+            source.indexOf('const MemoizedChatContainerContent'),
+        );
+        for (const shell of [establishingDraftShell, hydratingShell, transcriptShell]) {
+            expect(shell.match(/<DesktopComposerEdgeFade \/>/g)).toHaveLength(1);
+        }
+        expect(source.match(/<DesktopComposerEdgeFade \/>/g)).toHaveLength(3);
+    });
+
+    test('draft handoff commits a local identity in layout and scopes immediate reveal to its retained row', () => {
+        const handoffStart = source.indexOf('const committedDraftPendingRef');
+        const handoffEnd = source.indexOf('const selectedSessionView', handoffStart);
+        const handoffSource = source.slice(handoffStart, handoffEnd);
+        expect(handoffStart).toBeGreaterThan(-1);
+        expect(handoffSource).toContain('useIsomorphicLayoutEffect(() => {');
+        expect(handoffSource).toContain('committedDraftPendingRef.current = {');
+        expect(handoffSource).toContain('identity: draftPendingIdentity');
+        expect(handoffSource).toContain('messageId: selectedSession.draftPendingMessageId');
+        expect(handoffSource).toContain('selectedRetainedPendingMessages.some(');
+        expect(handoffSource).not.toContain('requestAnimationFrame');
+    });
+
+    test('establishing draft paints the pending row without the markdown pin-reveal hide', () => {
+        const establishingDraftShell = source.slice(
+            source.indexOf('if ((draftSubmitting || draftEstablishing) && draftPendingMessage)'),
+            source.indexOf('if (draftSubmitting || draftEstablishing)'),
+        );
+        expect(establishingDraftShell).toContain('initialPinRevealComplete');
+        const revealStart = source.indexOf('const initialPinRevealComplete = Boolean(');
+        expect(revealStart).toBeGreaterThan(-1);
+        const revealBody = source.slice(revealStart, source.indexOf(');', revealStart) + 2);
+        expect(revealBody).toContain('committedDraftHandoffMessageId');
+        expect(revealBody).toContain('retainedPendingUserMessages.length > 0');
     });
 
     test('legend scroller dataset restores the transcript scroll-shadow mask', () => {
@@ -252,5 +310,18 @@ describe('ChatContainer source contracts', () => {
         expect(timelineSource).toContain('resolvePublishedViewportMetrics');
         expect(timelineSource).toContain('useResizeObserver(');
         expect(timelineSource).not.toContain('[messages, sessionId, isLoadingOlder, scrollRef]');
+    });
+
+    test('inactive surfaces freeze message records and gate the stall watchdog', () => {
+        // Phone predecessor keeps DOM/snapshot but must not poll or stream-subscribe.
+        expect(source).toContain('enabled: active,');
+        expect(source).toContain('shouldArmTranscriptStallWatchdog');
+        expect(source).toContain('resetTranscriptStallStateForInactive');
+        const stallEffect = source.slice(
+            source.indexOf('shouldArmTranscriptStallWatchdog({'),
+            source.indexOf('TRANSCRIPT_STALL_POLL_MS);') + 'TRANSCRIPT_STALL_POLL_MS);'.length,
+        );
+        expect(stallEffect).toContain('active,');
+        expect(stallEffect).toContain('sessionIsWorking');
     });
 });

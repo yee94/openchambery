@@ -42,6 +42,8 @@ export function deepLinkToNavigationIntent(
       return null;
     case 'connect':
       return { type: 'connect' };
+    case 'assistant':
+      return { type: 'assistant', assistantId: intent.assistantId };
     case 'open-project':
     case 'sessions':
     case 'status':

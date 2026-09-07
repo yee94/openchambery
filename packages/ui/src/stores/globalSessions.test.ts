@@ -127,6 +127,10 @@ describe('listGlobalSessionPages', () => {
       metadata: { openchamber: { smallModel: { purpose: 'session-title' } } },
     } as never)).toBe(false)
     expect(isVisibleGlobalSession({
+      title: '[openchamber-llm] generate',
+      metadata: { openchamber: { llm: { purpose: 'chat-completions' } } },
+    } as never)).toBe(false)
+    expect(isVisibleGlobalSession({
       title: '[Assistant] Looks system',
       metadata: { openchamber: { assistant: { name: 'no-id' } } },
     } as never)).toBe(true)
@@ -135,10 +139,27 @@ describe('listGlobalSessionPages', () => {
       metadata: { openchamber: { smallModel: { purpose: '' } } },
     } as never)).toBe(true)
     expect(isVisibleGlobalSession({
+      title: 'Looks like llm',
+      metadata: { openchamber: { llm: { purpose: '' } } },
+    } as never)).toBe(true)
+    expect(isVisibleGlobalSession({
       title: 'Ordinary chat',
       metadata: { openchamber: { kind: 'review' } },
     } as never)).toBe(true)
     expect(isVisibleGlobalSession({ title: 'smartfetch-secondary' } as never)).toBe(false)
+    expect(isVisibleGlobalSession({
+      title: 'Login',
+      metadata: { openchamber: { assigned: { from: 'contact', assistantID: 'assistant_1' } } },
+    } as never)).toBe(true)
+    expect(isVisibleGlobalSession({
+      title: 'Login',
+      metadata: {
+        openchamber: {
+          assistant: { assistantID: 'assistant_1', name: 'Ops' },
+          assigned: { from: 'contact' },
+        },
+      },
+    } as never)).toBe(true)
   })
 
   test('hides subagent sessions with a parentID from the sidebar catalog', () => {

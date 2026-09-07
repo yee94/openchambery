@@ -35,9 +35,10 @@ throttle (`TITLE_THROTTLE_MS`) when a refresh is armed.
   3. On fire:
     - Skip when Settings → Chat → session title refresh is off.
     - Skip system-owned sessions whose metadata carries a non-empty
-      `openchamber.assistant.assistantID`, `openchamber.scheduledTask.taskID`, or
-      `openchamber.smallModel.purpose`
-      (fixed Assistant / scheduled / small-model titles must not be rewritten). Early
+      `openchamber.assistant.assistantID`, `openchamber.scheduledTask.taskID`,
+      `openchamber.smallModel.purpose`, or `openchamber.llm.purpose`
+      (fixed Assistant / scheduled / small-model / LLM gateway titles must not be
+      rewritten). Early
       `session.created` and smart-title request extraction skip the same
       metadata when present so timers are not armed.
     - Skip sub-agent sessions (`parentID`), multi-run/fusion structural titles,

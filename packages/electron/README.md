@@ -168,7 +168,7 @@ Packaged desktop apps check updates through `openchamber-update.vercel.app` usin
 The `Release` GitHub Actions workflow runs for `v*` tags or by manual dispatch. Before starting a release:
 
 1. Run `bun run version:bump -- <version>` and update the matching `CHANGELOG.md` section.
-2. Set `CSC_LINK`, `CSC_KEY_PASSWORD`, `APP_STORE_CONNECT_PRIVATE_KEY_BASE64`, `APP_STORE_CONNECT_KEY_ID`, and `APP_STORE_CONNECT_ISSUER_ID` for signed and notarized macOS desktop builds.
+2. Set `CSC_LINK`, `CSC_KEY_PASSWORD`, `APP_STORE_CONNECT_PRIVATE_KEY_BASE64`, `APP_STORE_CONNECT_KEY_ID`, and `APP_STORE_CONNECT_ISSUER_ID` for signed and notarized macOS desktop builds. CI imports the Developer ID p12 into a temp keychain and leaves `CSC_LINK` unset for electron-builder, so macos-26 does not hit `SecKeychainUnlock` with the p12 password.
 3. Configure `NPM_TOKEN` so the release workflow can publish `@openchambery/web` and `@openchambery/relay-server` to npm. iOS signing secrets are required for the TestFlight upload that runs with the formal release workflow.
 4. For a desktop-only release, manually dispatch the workflow with scope `desktop` (the default). Pushing tag `v<version>` retains the full-release behavior.
 

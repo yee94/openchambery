@@ -95,10 +95,16 @@ Examples:
 
 These stores coordinate visible app state, navigation, selected tabs, dialogs, and lightweight feature flags.
 
-`useFeatureFlagsStore` owns the chat list engine flag. TanStack Virtual is the
-runtime default (`legendTimelineEnabled` is true only when
+`useFeatureFlagsStore` owns lightweight localStorage A/B flags. TanStack Virtual
+is the chat list runtime default (`legendTimelineEnabled` is true only when
 `localStorage.oc:legend-timeline === '1'`). LegendList / TimelineList stay
-opt-in.
+opt-in. On this experiment branch, assistant Markdown defaults to
+`markstream-react` (`markstreamReactEnabled` is false only when
+`localStorage.oc:markstream-react === '0'`). Set that key to `0` to fall back
+to marked + Shiki + morphdom. User, tool, and other `SimpleMarkdownRenderer`
+surfaces stay on the current path. Markstream in-bubble node virtualization
+is off (`maxLiveNodes=0` plus batch/smooth/defer off) so TanStack remains the
+only MessageList height owner.
 
 `useSidebarBrandStore` persists the sidebar wordmark. Packaged Electron multi-window
 shares one UI origin while each window may bind a different API host, so the store
@@ -270,12 +276,12 @@ pages, but membership is re-cut by `time.archived` before they enter
 timestamp is truthy (`0` and missing stay active). Duplicate ids collapse to one
 row. Directory active/archived refreshes and live upserts share the same field.
 List labels are a fetch hint, not the archive contract; this does not add
-requests. `isVisibleGlobalSession` (shared with live aggregate and event
-reducers) excludes SmartFetch temporary titles, any session with a non-empty
-`parentID` (subagents never belong in the root catalog; they load only on
+  requests. `isVisibleGlobalSession` (shared with live aggregate and event
+  reducers) excludes SmartFetch temporary titles, any session with a non-empty
+  `parentID` (subagents never belong in the root catalog; they load only on
   parent expand), and system-owned sessions whose metadata carries a non-empty
-  `openchamber.assistant.assistantID`, `openchamber.scheduledTask.taskID`, or
-  `openchamber.smallModel.purpose`;
+  `openchamber.assistant.assistantID`, `openchamber.scheduledTask.taskID`,
+  `openchamber.smallModel.purpose`, or `openchamber.llm.purpose`;
   title prefixes are not ownership signals.
 `fullCatalogSessionIds` and `fullCatalogGeneration` update only after
 one complete active+archived catalog result; retention cleanup consumes that snapshot.

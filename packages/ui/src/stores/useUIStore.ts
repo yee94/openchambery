@@ -15,6 +15,7 @@ import type { DraftStarterRef } from '@/lib/draftStarters';
 import { DEFAULT_MONO_FONT, DEFAULT_UI_FONT, type MonoFontOption, type UiFontOption } from '@/lib/fontOptions';
 import { getStoredMobileKeyboardMode, type MobileKeyboardMode } from '@/lib/mobileKeyboardMode';
 import { getRuntimeKey } from '@/lib/runtime-switch';
+import { setIncludeReasoningProjection } from '@/lib/reasoning-projection-client';
 
 /** Main column tab. Product exclusive primaries: chat(session) | schedule | assistant. */
 export type MainTab = 'chat' | 'git' | 'diff' | 'terminal' | 'files' | 'diagram' | 'schedule' | 'assistant';
@@ -131,6 +132,20 @@ const LEGACY_DEFAULT_NOTIFICATION_TEMPLATES = {
   subtask: { title: 'Subtask complete', message: '{last_message}' },
 } as const;
 
+const STOCK_NOTIFICATION_TEMPLATES = {
+  completion: { title: 'Task completed', message: '{session_name}' },
+  error: { title: 'Something went wrong', message: '{session_name}' },
+  question: { title: 'Needs your answer', message: '{session_name}' },
+  subtask: { title: 'Task completed', message: '{session_name}' },
+} as const;
+
+const OLD_SERVER_NOTIFICATION_TEMPLATES = {
+  completion: { title: '{agent_name} is ready', message: '{model_name} completed the task' },
+  error: { title: 'Tool error', message: '{last_message}' },
+  question: { title: 'Input needed', message: '{last_message}' },
+  subtask: { title: '{agent_name} is ready', message: '{model_name} completed the task' },
+} as const;
+
 const EMPTY_NOTIFICATION_TEMPLATES = {
   completion: { title: '', message: '' },
   error: { title: '', message: '' },
@@ -146,16 +161,29 @@ const isSameTemplateValue = (
   return a.title === b.title && a.message === b.message;
 };
 
+/** Structural stock shape so legacy / stock / old-server literals share one matcher. */
+type NotificationTemplateStock = {
+  completion: { title: string; message: string };
+  error: { title: string; message: string };
+  question: { title: string; message: string };
+  subtask: { title: string; message: string };
+};
+
 const isLegacyDefaultTemplates = (value: unknown): boolean => {
   if (!value || typeof value !== 'object') {
     return false;
   }
   const candidate = value as Record<string, { title: string; message: string } | undefined>;
+  const matches = (stock: NotificationTemplateStock) => (
+    isSameTemplateValue(candidate.completion, stock.completion)
+    && isSameTemplateValue(candidate.error, stock.error)
+    && isSameTemplateValue(candidate.question, stock.question)
+    && isSameTemplateValue(candidate.subtask, stock.subtask)
+  );
   return (
-    isSameTemplateValue(candidate.completion, LEGACY_DEFAULT_NOTIFICATION_TEMPLATES.completion)
-    && isSameTemplateValue(candidate.error, LEGACY_DEFAULT_NOTIFICATION_TEMPLATES.error)
-    && isSameTemplateValue(candidate.question, LEGACY_DEFAULT_NOTIFICATION_TEMPLATES.question)
-    && isSameTemplateValue(candidate.subtask, LEGACY_DEFAULT_NOTIFICATION_TEMPLATES.subtask)
+    matches(LEGACY_DEFAULT_NOTIFICATION_TEMPLATES)
+    || matches(STOCK_NOTIFICATION_TEMPLATES)
+    || matches(OLD_SERVER_NOTIFICATION_TEMPLATES)
   );
 };
 
@@ -2048,6 +2076,9 @@ export const useUIStore = create<UIStore>()(
 
         setShowReasoningTraces: (value) => {
           set({ showReasoningTraces: value });
+          // Keep the leaf projection flag in lockstep before the next message
+          // request (runtime-fetch / event-pipeline / transcript adapter).
+          setIncludeReasoningProjection(value);
         },
 
         setSessionTitleRefreshEnabled: (value) => {
@@ -2912,3 +2943,20 @@ export const useUIStore = create<UIStore>()(
     }
   )
 );
+
+// Keep the leaf reasoning-projection flag aligned with the store for the
+// entire app lifetime (module init + persist hydrate + setter). runtime-fetch
+// and event-pipeline read the leaf module with no store import cycle.
+setIncludeReasoningProjection(useUIStore.getState().showReasoningTraces);
+const uiStorePersist = useUIStore.persist as {
+  onFinishHydration?: (cb: () => void) => (() => void) | void;
+  hasHydrated?: () => boolean;
+} | undefined;
+if (uiStorePersist?.hasHydrated?.()) {
+  setIncludeReasoningProjection(useUIStore.getState().showReasoningTraces);
+}
+if (typeof uiStorePersist?.onFinishHydration === 'function') {
+  uiStorePersist.onFinishHydration(() => {
+    setIncludeReasoningProjection(useUIStore.getState().showReasoningTraces);
+  });
+}

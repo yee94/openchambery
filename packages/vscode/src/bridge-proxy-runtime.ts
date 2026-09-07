@@ -1,5 +1,10 @@
 import type { BridgeContext, BridgeResponse } from './bridge';
 import { waitForApiUrl } from './opencode-ready';
+import {
+  projectMessagesPayloadForReasoning,
+  readIncludeReasoningFromUrl,
+  stripIncludeReasoningParam,
+} from './reasoning-projection';
 import { projectExactMessagePayload } from './session-turn-page-runtime';
 
 type BridgeMessageInput = {
@@ -53,6 +58,43 @@ const isSseProxyPath = (requestPath: string): boolean => {
     return parsed.pathname === '/event' || parsed.pathname === '/global/event';
   } catch {
     return requestPath === '/event' || requestPath === '/global/event';
+  }
+};
+
+/** Exact GET /session/:id/message/:messageID (optional query). */
+const isExactSessionMessagePath = (requestPath: string): boolean =>
+  /^\/session\/[^/]+\/message\/[^/]+(?:\?.*)?$/.test(requestPath);
+
+/**
+ * Official session.messages list GET /session/:id/message (no messageID segment).
+ * Matches path or path?query; rejects exact message paths.
+ */
+const isSessionMessagesListPath = (requestPath: string): boolean => {
+  try {
+    const parsed = new URL(requestPath, 'https://openchamber.invalid');
+    return /^\/session\/[^/]+\/message\/?$/.test(parsed.pathname);
+  } catch {
+    return /^\/session\/[^/]+\/message(?:\?.*)?$/.test(requestPath)
+      && !isExactSessionMessagePath(requestPath);
+  }
+};
+
+/**
+ * Project JSON bodyText for reasoning strip when includeReasoning=false.
+ * Identity when include is enabled or body is not JSON.
+ */
+const maybeProjectReasoningBodyText = (
+  bodyText: string,
+  includeReasoning: boolean,
+): string => {
+  if (includeReasoning) return bodyText;
+  try {
+    const parsed = JSON.parse(bodyText) as unknown;
+    const projected = projectMessagesPayloadForReasoning(parsed, false);
+    if (projected === parsed) return bodyText;
+    return JSON.stringify(projected);
+  } catch {
+    return bodyText;
   }
 };
 
@@ -165,8 +207,12 @@ export async function handleProxyBridgeMessage(
         return { id, type, success: true, data };
       }
 
+      // OpenChamber projection control — never forwarded to OpenCode.
+      const includeReasoning = readIncludeReasoningFromUrl(normalizedPath);
+      const upstreamPath = stripIncludeReasoningParam(normalizedPath);
+
       const base = `${apiUrl.replace(/\/+$/, '')}/`;
-      const targetUrl = new URL(normalizedPath.replace(/^\/+/, ''), base).toString();
+      const targetUrl = new URL(upstreamPath.replace(/^\/+/, ''), base).toString();
       const requestHeaders: Record<string, string> = {
         ...deps.sanitizeForwardHeaders(headers),
         ...ctx?.manager?.getOpenCodeAuthHeaders(),
@@ -181,8 +227,11 @@ export async function handleProxyBridgeMessage(
       // single OpenCode process serves them once. The shared fetch carries no
       // AbortController (api:proxy:abort can't cancel these reads), so one
       // caller aborting can't strand the others.
+      // Coalesce key uses the stripped upstream URL so includeReasoning variants
+      // of the same OpenCode read still share one fetch; projection is applied
+      // per-caller after the shared response.
       const coalesceKey =
-        normalizedMethod === 'GET' && COALESCE_READ_PATH.test(normalizedPath) ? `GET ${targetUrl}` : null;
+        normalizedMethod === 'GET' && COALESCE_READ_PATH.test(upstreamPath) ? `GET ${targetUrl}` : null;
       if (coalesceKey) {
         const existing = READ_COALESCE.get(coalesceKey);
         if (existing) {
@@ -212,32 +261,48 @@ export async function handleProxyBridgeMessage(
           deps,
         );
 
-        // Exact GET /session/:id/message/:messageID must L1-project
-        // summary.diffs → thin file list + diffCount/hasDiffs before the payload
-        // enters the webview. Full parts behavior is preserved.
         if (
           normalizedMethod === 'GET'
-          && /^\/session\/[^/]+\/message\/[^/]+(?:\?.*)?$/.test(normalizedPath)
           && typeof data.bodyText === 'string'
           && data.status >= 200
           && data.status < 300
         ) {
-          try {
-            const parsed = JSON.parse(data.bodyText) as unknown;
-            const projected = projectExactMessagePayload(parsed);
-            if (projected !== parsed) {
+          // Exact GET /session/:id/message/:messageID must L1-project
+          // summary.diffs → thin file list + diffCount/hasDiffs before the payload
+          // enters the webview. includeReasoning=false then drops reasoning parts.
+          if (isExactSessionMessagePath(normalizedPath)) {
+            try {
+              const parsed = JSON.parse(data.bodyText) as unknown;
+              const l1 = projectExactMessagePayload(parsed);
+              const projected = projectMessagesPayloadForReasoning(l1, includeReasoning);
+              if (projected !== parsed) {
+                return {
+                  id,
+                  type,
+                  success: true,
+                  data: {
+                    ...data,
+                    bodyText: JSON.stringify(projected),
+                  },
+                };
+              }
+            } catch {
+              // Malformed JSON — pass through unchanged.
+            }
+          } else if (isSessionMessagesListPath(normalizedPath) && !includeReasoning) {
+            // Official session.messages list: strip reasoning parts only.
+            const bodyText = maybeProjectReasoningBodyText(data.bodyText, false);
+            if (bodyText !== data.bodyText) {
               return {
                 id,
                 type,
                 success: true,
                 data: {
                   ...data,
-                  bodyText: JSON.stringify(projected),
+                  bodyText,
                 },
               };
             }
-          } catch {
-            // Malformed JSON — pass through unchanged.
           }
         }
 

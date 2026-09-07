@@ -2,8 +2,9 @@
  * Webview local route for GET `/api/openchamber/sessions/:id/messages`.
  *
  * Identify this OpenChamber-owned path ahead of the generic OpenCode proxy,
- * parse query (directory, before, turns, optional scanLimit), dispatch
- * `api:session-turn-page` bridge, and return unified turn-page JSON.
+ * parse query (directory, before, turns, optional scanLimit, optional
+ * includeReasoning), dispatch `api:session-turn-page` bridge, and return
+ * unified turn-page JSON.
  *
  * `scanLimit` is optional client override only; when omitted the Extension Host
  * applies `_inner_scanLimit`. Non-GET → 405; illegal query → 400.
@@ -67,6 +68,8 @@ export type SessionTurnPageQuerySuccess = {
   before?: string;
   turns: number;
   scanLimit?: number;
+  /** Raw query value; Host treats only strict `'false'` as disabled. */
+  includeReasoning?: string;
 };
 
 export type SessionTurnPageQueryFailure = {
@@ -128,6 +131,12 @@ export const parseSessionTurnPageQuery = (
   const directory =
     typeof directoryRaw === 'string' && directoryRaw.length > 0 ? directoryRaw : undefined;
 
+  // OpenChamber projection control — pass raw string so Host applies strict 'false' only.
+  // Omit when absent so default include behavior is preserved.
+  const includeReasoningRaw = searchParams.get('includeReasoning');
+  const includeReasoning =
+    typeof includeReasoningRaw === 'string' ? includeReasoningRaw : undefined;
+
   return {
     ok: true,
     sessionID,
@@ -135,6 +144,7 @@ export const parseSessionTurnPageQuery = (
     before,
     turns: turnsResult.value,
     ...(scanLimit !== undefined ? { scanLimit } : {}),
+    ...(includeReasoning !== undefined ? { includeReasoning } : {}),
   };
 };
 
@@ -173,8 +183,11 @@ export const handleSessionTurnPageRoute = async (
       sessionID: parsed.sessionID,
       directory: parsed.directory,
       turns: parsed.turns,
-      scanLimit: parsed.scanLimit,
-      before: parsed.before,
+      ...(parsed.scanLimit !== undefined ? { scanLimit: parsed.scanLimit } : {}),
+      ...(parsed.before !== undefined ? { before: parsed.before } : {}),
+      ...(parsed.includeReasoning !== undefined
+        ? { includeReasoning: parsed.includeReasoning }
+        : {}),
     });
 
     return jsonResponse(data, 200);

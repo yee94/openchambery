@@ -8,6 +8,14 @@ import { createTokenStore } from './store.js';
 const WINDOW_MS = 60_000;
 const STOP_DEADLINE_MS = 5_500;
 
+const liveActivitySignMessage = (ts, tokens, event, contentState, dismissalDate, staleDate) => {
+  let message = `${ts}.${tokens.join(',')}.${event}.${contentState.status}.${contentState.eventVersion}.${contentState.updatedAt}.${contentState.endedAt ?? ''}.${dismissalDate ?? ''}.${staleDate ?? ''}`;
+  if (contentState.title !== undefined || contentState.workingCount !== undefined || contentState.items !== undefined) {
+    message += `.${contentState.title ?? ''}.${contentState.workingCount ?? ''}.${JSON.stringify(contentState.items ?? [])}`;
+  }
+  return message;
+};
+
 const sendJson = (response, status, payload, method = 'GET') => {
   if (response.writableEnded) return;
   response.setHeader('cache-control', 'no-store');
@@ -161,7 +169,7 @@ export const createPushRelayHandler = (options = {}) => {
   const handleLiveActivity = async (parsed) => {
     const sorted = [...parsed.tokens].sort();
     const contentState = parsed.contentState;
-    const message = `${parsed.ts}.${sorted.join(',')}.${parsed.event}.${contentState.status}.${contentState.eventVersion}.${contentState.updatedAt}.${contentState.endedAt ?? ''}.${parsed.dismissalDate ?? ''}.${parsed.staleDate ?? ''}`;
+    const message = liveActivitySignMessage(parsed.ts, sorted, parsed.event, contentState, parsed.dismissalDate, parsed.staleDate);
     const authError = authenticate(parsed.publicKeyJwk, message, parsed.sig, parsed.ts);
     if (authError) return { status: 401, body: { error: authError } };
     const serverId = deriveServerId(parsed.publicKeyJwk);
