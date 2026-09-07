@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.19.8-beta.10] - 2026-09-08
+
+### 会话
+
+- 修复 Markstream 里 language=text 的围栏代码块（ASCII 树、纯文本）空白：语言键与段落节点键冲突时改走 OpenChamber 代码卡片。
+
 ## [1.19.8-beta.9] - 2026-09-08
 
 ### 通知
