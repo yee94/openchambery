@@ -45,6 +45,15 @@ describe('ChatContainer source contracts', () => {
         expect(source).toContain('const showLoadOlderButton = resolveMobileLoadOlderVisibility({');
         expect(source).toContain('isMobile,');
         expect(source).not.toContain('const showLoadOlderButton = isMobileSurfaceRuntime()');
+        // Controller scroll/auto-fill must share that same mounted flag so the
+        // button cannot show while auto-load still follows a disagreeing probe.
+        const timelineCallStart = source.indexOf('const timelineController = useChatTimelineController({');
+        const timelineCallEnd = source.indexOf('});', timelineCallStart);
+        expect(timelineCallStart).toBeGreaterThan(-1);
+        const timelineCall = source.slice(timelineCallStart, timelineCallEnd);
+        expect(timelineCall).toContain('isMobile,');
+        // Comment may mention the probe; the option value must not call it.
+        expect(timelineCall).not.toMatch(/isMobile:\s*isMobileSurfaceRuntime\s*\(/);
     });
 
     test('load-error retry reloads the transcript and enters the hydrating skeleton', () => {

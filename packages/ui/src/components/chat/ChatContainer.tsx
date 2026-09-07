@@ -1621,6 +1621,8 @@ const ChatContainerContent: React.FC<ChatContainerContentProps> = ({
         endHistoryViewportPreservation,
         isPinned: legendTimelineEnabled ? legendIsAtEnd : isPinned,
         showScrollButton: legendTimelineEnabled ? legendShowScrollButton : showScrollButton,
+        // Same mounted flag as showLoadOlderButton — not isMobileSurfaceRuntime().
+        isMobile,
         // Only the active desktop transcript auto-fills short first paint;
         // expanded-input and mobile keep explicit load paths only.
         autoFillEnabled: active && !isDesktopExpandedInput,

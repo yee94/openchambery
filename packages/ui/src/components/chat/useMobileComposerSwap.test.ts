@@ -9,9 +9,12 @@ import {
 import {
     COMPOSER_SWAP_CSS_VAR,
     COMPOSER_SWAP_SNAP_MS,
+    COMPOSER_SWAP_USER_SCROLL_WINDOW_MS,
     NATIVE_COMPOSER_DOCK_CSS_VAR,
 } from './mobileComposerSwap';
 import { useMobileComposerSwap } from './useMobileComposerSwap';
+
+(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
 const SCROLL_HEIGHT = 1000;
 const CLIENT_HEIGHT = 600;
@@ -42,15 +45,18 @@ describe('useMobileComposerSwap gesture commit', () => {
     let scopeEl: HTMLElement;
     let scrollRef: React.RefObject<HTMLElement | null>;
     let scopeRef: React.RefObject<HTMLElement | null>;
+    let activeTouches: Map<number, { clientX: number; clientY: number }>;
 
     beforeEach(() => {
         vi.useFakeTimers({
-            toFake: ['setTimeout', 'clearTimeout'],
+            toFake: ['setTimeout', 'clearTimeout', 'Date'],
         });
+        vi.setSystemTime(new Date('2026-09-07T00:00:00.000Z'));
         container = document.createElement('div');
         document.body.appendChild(container);
         scrollEl = document.createElement('div');
         scopeEl = document.createElement('div');
+        activeTouches = new Map();
         scrollHeight = SCROLL_HEIGHT;
         Object.defineProperty(scrollEl, 'scrollHeight', {
             configurable: true,
@@ -100,9 +106,47 @@ describe('useMobileComposerSwap gesture commit', () => {
         });
     };
 
-    const fireTouch = async (type: 'touchstart' | 'touchend') => {
+    const fireTouch = async (
+        type: 'touchstart' | 'touchmove' | 'touchend' | 'touchcancel',
+        clientY: number,
+        identifier = 1,
+        clientX = 24,
+    ) => {
         await act(async () => {
-            scrollEl.dispatchEvent(new Event(type));
+            if (type === 'touchstart' || type === 'touchmove') {
+                activeTouches.set(identifier, { clientX, clientY });
+            } else {
+                activeTouches.delete(identifier);
+            }
+            const createTouch = (
+                touchIdentifier: number,
+                touchClientX: number,
+                touchClientY: number,
+            ) => new Touch({
+                identifier: touchIdentifier,
+                target: scrollEl,
+                clientX: touchClientX,
+                clientY: touchClientY,
+                screenX: touchClientX,
+                screenY: touchClientY,
+                pageX: touchClientX,
+                pageY: touchClientY,
+            });
+            const touches = Array.from(activeTouches, ([touchIdentifier, point]) => (
+                createTouch(touchIdentifier, point.clientX, point.clientY)
+            ));
+            const event = new TouchEvent(type, {
+                bubbles: true,
+                cancelable: true,
+                touches,
+                targetTouches: touches,
+                changedTouches: [createTouch(identifier, clientX, clientY)],
+            });
+            Object.defineProperty(event, 'timeStamp', {
+                configurable: true,
+                value: Date.now(),
+            });
+            scrollEl.dispatchEvent(event);
         });
     };
 
@@ -121,10 +165,16 @@ describe('useMobileComposerSwap gesture commit', () => {
         });
     };
 
+    const beginSwipe = async (fromY = 520, toY = 420, identifier = 1) => {
+        await fireTouch('touchstart', fromY, identifier);
+        await advance(16);
+        await fireTouch('touchmove', toY, identifier);
+    };
+
     test('held finger never commits — flash regression', async () => {
         await mount();
 
-        await fireTouch('touchstart');
+        await beginSwipe();
         await fireScroll(30);
         expect(readSwap(scopeEl)).toMatchObject({
             phase: 'tracking',
@@ -150,12 +200,12 @@ describe('useMobileComposerSwap gesture commit', () => {
     test('lift commits by progress threshold then settles', async () => {
         await mount();
 
-        await fireTouch('touchstart');
+        await beginSwipe();
         await fireScroll(30);
         expect(readSwap(scopeEl).phase).toBe('tracking');
         expect(Number(readSwap(scopeEl).progress)).toBeCloseTo(0.375);
 
-        await fireTouch('touchend');
+        await fireTouch('touchend', 420);
         await advance(120);
         expect(readSwap(scopeEl)).toMatchObject({
             phase: 'snapping',
@@ -172,7 +222,7 @@ describe('useMobileComposerSwap gesture commit', () => {
     test('full follow lands compact at rest without snapping', async () => {
         await mount();
 
-        await fireTouch('touchstart');
+        await beginSwipe();
         await fireScroll(100);
         expect(readSwap(scopeEl)).toMatchObject({
             phase: 'rest',
@@ -184,7 +234,7 @@ describe('useMobileComposerSwap gesture commit', () => {
         expect(readSwap(scopeEl).phase).toBe('tracking');
         expect(Number(readSwap(scopeEl).progress)).toBeCloseTo(0.125);
 
-        await fireTouch('touchend');
+        await fireTouch('touchend', 420);
         await advance(120);
         expect(readSwap(scopeEl)).toMatchObject({
             phase: 'snapping',
@@ -233,27 +283,80 @@ describe('useMobileComposerSwap gesture commit', () => {
 
         // Not vacuous: the same scroller, with the same geometry, still
         // collapses the moment a finger is behind the motion.
-        await fireTouch('touchstart');
+        await beginSwipe();
         await fireScroll(300);
         expect(readSwap(scopeEl)).toMatchObject({ rest: 'compact', progress: '1' });
+    });
+
+    test('a held tap or horizontal touch leaves program geometry unable to move compact', async () => {
+        await mount();
+
+        await beginSwipe();
+        await fireScroll(300);
+        await fireTouch('touchend', 420);
+        expect(readSwap(scopeEl)).toMatchObject({ phase: 'rest', rest: 'compact', progress: '1' });
+
+        await fireTouch('touchstart', 520);
+        await advance(COMPOSER_SWAP_USER_SCROLL_WINDOW_MS + 20);
+        await fireScroll(260);
+        expect(readSwap(scopeEl)).toMatchObject({ phase: 'rest', rest: 'compact', progress: '1' });
+
+        await fireTouch('touchmove', 510, 1, 140);
+        await fireScroll(220);
+        expect(readSwap(scopeEl)).toMatchObject({ phase: 'rest', rest: 'compact', progress: '1' });
+
+        await fireTouch('touchend', 510, 1, 140);
+        await fireScroll(180);
+        expect(readSwap(scopeEl)).toMatchObject({ phase: 'rest', rest: 'compact', progress: '1' });
+    });
+
+    test('touch cancellation clears claimed intent before later geometry frames', async () => {
+        await mount();
+
+        await beginSwipe();
+        await fireScroll(300);
+        await fireTouch('touchend', 420);
+
+        await fireTouch('touchstart', 520);
+        await fireTouch('touchmove', 420);
+        await fireTouch('touchcancel', 420);
+        await fireScroll(260);
+        expect(readSwap(scopeEl)).toMatchObject({ phase: 'rest', rest: 'compact', progress: '1' });
     });
 
     test('travel toward the bottom reveals the composer far from the live edge', async () => {
         await mount();
 
-        await fireTouch('touchstart');
+        await beginSwipe();
         await fireScroll(300);
-        expect(readSwap(scopeEl)).toMatchObject({ rest: 'compact', progress: '1' });
+        expect(readSwap(scopeEl)).toEqual({
+            phase: 'rest',
+            rest: 'compact',
+            progress: '1',
+        });
+        await fireTouch('touchend', 420);
 
         // One short downward step stays below the reveal threshold.
         await fireScroll(280);
-        expect(readSwap(scopeEl).rest).toBe('compact');
+        expect(readSwap(scopeEl)).toEqual({
+            phase: 'rest',
+            rest: 'compact',
+            progress: '1',
+        });
 
         // Travel accumulates across events, so a slow scroll qualifies too.
         await fireScroll(270);
-        expect(readSwap(scopeEl)).toMatchObject({ phase: 'snapping', rest: 'expanded' });
+        expect(readSwap(scopeEl)).toEqual({
+            phase: 'snapping',
+            rest: 'expanded',
+            progress: '0',
+        });
         await advance(COMPOSER_SWAP_SNAP_MS);
-        expect(readSwap(scopeEl)).toMatchObject({ phase: 'rest', rest: 'expanded' });
+        expect(readSwap(scopeEl)).toEqual({
+            phase: 'rest',
+            rest: 'expanded',
+            progress: '0',
+        });
 
         // Later events of the same gesture are still far from the bottom; the
         // reveal has to survive them instead of collapsing on absolute distance.
@@ -272,10 +375,26 @@ describe('useMobileComposerSwap gesture commit', () => {
         expect(readSwap(scopeEl).rest).toBe('compact');
     });
 
+    test('direction reversals restart reveal travel from the latest turn', async () => {
+        await mount();
+
+        await beginSwipe();
+        await fireScroll(300);
+        await fireScroll(285);
+        expect(readSwap(scopeEl).rest).toBe('compact');
+
+        await fireScroll(310);
+        await fireScroll(295);
+        expect(readSwap(scopeEl).rest).toBe('compact');
+
+        await fireScroll(284);
+        expect(readSwap(scopeEl)).toMatchObject({ phase: 'snapping', rest: 'expanded' });
+    });
+
     test('iOS top rubber-band spring-back is not downward travel', async () => {
         await mount();
 
-        await fireTouch('touchstart');
+        await beginSwipe();
         await fireScroll(300);
         expect(readSwap(scopeEl).rest).toBe('compact');
 
@@ -302,7 +421,7 @@ describe('useMobileComposerSwap gesture commit', () => {
         // attribute is the real end.
         const parkOffset = SCROLL_HEIGHT - CLIENT_HEIGHT - 200;
         scrollEl.setAttribute(TIMELINE_PARK_END_ATTRIBUTE, String(parkOffset));
-        await fireTouch('touchstart');
+        await beginSwipe();
         await fireScrollTop(parkOffset);
         expect(readDock(scopeEl)).toMatchObject({ rest: 'bottom', progress: '0' });
         expect(readSwap(scopeEl).rest).not.toBe('compact');
@@ -314,7 +433,7 @@ describe('useMobileComposerSwap gesture commit', () => {
     test('the transcript re-anchoring a prepend never moves the composer', async () => {
         await mount();
 
-        await fireTouch('touchstart');
+        await beginSwipe();
         await fireScroll(300);
         expect(readSwap(scopeEl).rest).toBe('compact');
 
@@ -326,31 +445,120 @@ describe('useMobileComposerSwap gesture commit', () => {
         await fireScroll(300);
         expect(readSwap(scopeEl).rest).toBe('compact');
 
-        // Not vacuous: the same two frames, with no re-anchoring in flight,
-        // still read as travel toward the bottom and reveal the composer.
+        // The released anchor cleared the previous swipe. A fresh vertical move
+        // takes ownership immediately and can reveal from the corrected baseline.
         scrollEl.removeAttribute(TIMELINE_ANCHORING_ATTRIBUTE);
-        await fireScroll(2300);
-        await fireScroll(300);
+        await fireTouch('touchmove', 380);
+        await fireScroll(270);
         expect(readSwap(scopeEl).rest).toBe('expanded');
+    });
+
+    test('load-older tap cannot turn released anchor compensation into a composer reveal', async () => {
+        await mount();
+
+        await beginSwipe();
+        await fireScroll(300);
+        expect(readSwap(scopeEl)).toEqual({
+            phase: 'rest',
+            rest: 'compact',
+            progress: '1',
+        });
+        await fireTouch('touchend', 420);
+
+        await advance(16);
+        await fireTouch('touchstart', 48);
+        await advance(16);
+        await fireTouch('touchend', 48);
+        const loadTapEndedAt = Date.now();
+
+        scrollEl.setAttribute(TIMELINE_ANCHORING_ATTRIBUTE, 'true');
+        scrollHeight += 2000;
+        await fireScroll(2300);
+        expect(readSwap(scopeEl)).toEqual({
+            phase: 'rest',
+            rest: 'compact',
+            progress: '1',
+        });
+
+        scrollEl.removeAttribute(TIMELINE_ANCHORING_ATTRIBUTE);
+        await advance(16);
+        expect(Date.now() - loadTapEndedAt).toBeLessThan(COMPOSER_SWAP_USER_SCROLL_WINDOW_MS);
+        await fireScroll(300);
+        expect.soft(readSwap(scopeEl)).toEqual({
+            phase: 'rest',
+            rest: 'compact',
+            progress: '1',
+        });
+        await advance(COMPOSER_SWAP_SNAP_MS);
+        expect(readSwap(scopeEl)).toEqual({
+            phase: 'rest',
+            rest: 'compact',
+            progress: '1',
+        });
     });
 
     test('multi-touch counts until the last finger lifts', async () => {
         await mount();
 
-        await fireTouch('touchstart');
-        await fireTouch('touchstart');
+        await fireTouch('touchstart', 520, 1);
+        await fireTouch('touchstart', 500, 2);
+        await advance(16);
+        await fireTouch('touchmove', 420, 1);
         await fireScroll(30);
         expect(readSwap(scopeEl).phase).toBe('tracking');
 
-        await fireTouch('touchend');
+        await fireTouch('touchend', 420, 1);
         await advance(500);
         expect(readSwap(scopeEl).phase).toBe('tracking');
 
-        await fireTouch('touchend');
+        await fireTouch('touchend', 500, 2);
         await advance(120);
         expect(readSwap(scopeEl)).toMatchObject({
             phase: 'snapping',
             rest: 'expanded',
         });
+    });
+
+    test('non-user frames preserve tracking while its existing idle timer commits', async () => {
+        await mount();
+
+        await beginSwipe();
+        await fireScroll(30);
+        await fireTouch('touchend', 420);
+        await advance(60);
+
+        scrollEl.setAttribute(TIMELINE_ANCHORING_ATTRIBUTE, 'true');
+        await fireScroll(300);
+        scrollEl.removeAttribute(TIMELINE_ANCHORING_ATTRIBUTE);
+        await fireScroll(20);
+        await act(async () => {
+            scrollEl.dispatchEvent(new Event('scrollend'));
+        });
+        expect(readSwap(scopeEl)).toMatchObject({
+            phase: 'tracking',
+            rest: 'expanded',
+            progress: '0.375',
+        });
+
+        await advance(60);
+        expect(readSwap(scopeEl)).toMatchObject({ phase: 'snapping', rest: 'expanded' });
+    });
+
+    test('a non-user size frame preserves snapping and its original settle timer', async () => {
+        await mount();
+
+        await beginSwipe();
+        await fireScroll(60);
+        await fireTouch('touchend', 420);
+        await advance(120);
+        expect(readSwap(scopeEl)).toMatchObject({ phase: 'snapping', rest: 'compact' });
+
+        await advance(COMPOSER_SWAP_SNAP_MS / 2);
+        scrollHeight += 200;
+        await fireScroll(0);
+        expect(readSwap(scopeEl)).toMatchObject({ phase: 'snapping', rest: 'compact' });
+
+        await advance(COMPOSER_SWAP_SNAP_MS / 2);
+        expect(readSwap(scopeEl)).toMatchObject({ phase: 'rest', rest: 'compact', progress: '1' });
     });
 });
