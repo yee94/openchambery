@@ -405,6 +405,9 @@ describe('Assistant UI product contract', () => {
     expect(conversation).toContain('onDrop={handleDrop}');
     expect(conversation).toContain('data-assistant-contact-image');
     expect(conversation).toContain('data-assistant-contact-file');
+    expect(conversation).toContain('data-assistant-contact-text');
+    expect(conversation).toContain('[overflow-wrap:anywhere]');
+    expect(conversation).toContain('overflow-x-hidden overflow-y-auto');
     expect(conversation).not.toContain('leftControls');
     expect(conversation).not.toContain('footerContent');
     expect(conversation).not.toContain('<MemoModelControls');

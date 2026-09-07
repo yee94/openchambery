@@ -2,7 +2,7 @@
 
 ## Acceptance criteria
 
-The Assistant conversation is a Grok-like **contact**, not an OpenCode coding agent. Primary Chat still owns LegendList / Activity / tools. Assistant must not wrap `ChatContainer` as its transcript. Server-side contact turns may run pi `read` / `write` / `edit` / `bash` in the assistant workspace and load merged `.agents`/`.claude` skills; the contact UI still does not render tool traces.
+The Assistant conversation is a Grok-like **contact**, not an OpenCode coding agent. Primary Chat still owns LegendList / Activity / tools. Assistant must not wrap `ChatContainer` as its transcript. Server-side contact turns may run pi `read` / `write` / `edit` / `bash` in the assistant workspace and load merged `.agents`/`.claude` skills; the contact UI still does not render tool traces. Contact bubbles wrap unbreakable tokens (`overflow-wrap: anywhere`); the transcript scroller is `overflow-x-hidden` so a long path cannot grow the page sideways.
 
 **Session cards (this PR)**
 
