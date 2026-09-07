@@ -1,10 +1,9 @@
 /**
- * Cap QueuedMessageChips helpers for Lynx — local composerActions queue.
+ * Cap QueuedMessageChips helpers for Lynx — composerActions queue chips.
  *
- * Cap also has server `/api/openchamber/message-queue` + DnD-kit reorder.
- * Lynx uses the existing local queue (composerActions) and portable up/down
- * reorder (no @dnd-kit). Server message-queue is deferred until a Lynx
- * runtime path exists — do not invent TanStack mutation flights here.
+ * Prefer Cap server `/api/openchamber/message-queue` via messageQueueServer
+ * when runtimeFetch can reach it; otherwise local composerActions queue.
+ * Portable ↑/↓ reorder (no @dnd-kit / no TanStack mutation flights).
  */
 import type { LynxQueuedPrompt } from './composerActions';
 
