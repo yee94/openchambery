@@ -19,7 +19,6 @@ import {
 } from './markstream/markstreamHostContext';
 import { MARKSTREAM_CHAT_STREAM_PERFORMANCE } from './markstream/markstreamPerformance';
 import type { ToolPopupContent } from './message/types';
-import 'markstream-react/index.css';
 import './markstream/markstreamTheme.css';
 
 // text / inline_code / link / code_block overrides register once here.

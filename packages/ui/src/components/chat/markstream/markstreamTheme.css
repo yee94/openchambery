@@ -1,3 +1,8 @@
+/* Keep library resets and generated utilities below OpenChamber utilities,
+   including when this lazy stylesheet is loaded before the main CSS. */
+@layer theme, base, components, utilities;
+@import 'markstream-react/index.css' layer(components);
+
 /* Theme Markstream to OpenChamber tokens. Markstream CSS is scoped under
    `.markstream-react`; these overrides only apply on the experimental path. */
 
@@ -10,6 +15,11 @@
   font-family: var(--font-sans);
   font-size: inherit;
   line-height: var(--markdown-body-line-height, 1.625);
+  /* The library's --border is bare HSL channels. Nested legacy cards consume
+     a complete color in Tailwind border-border/80 and border-border/70;
+     invalid color-mix values otherwise resolve to currentColor (black in light).
+     Keep the shared token's format at this boundary, including dark mode. */
+  --border: var(--interactive-border);
   --foreground: inherit;
   --muted-foreground: var(--surface-muted-foreground);
   --link-color: var(--markdown-link, var(--primary));
