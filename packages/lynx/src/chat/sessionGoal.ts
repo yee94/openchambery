@@ -1,8 +1,8 @@
 /**
  * Cap SessionGoalRow helpers for Lynx.
  * Goal payload lives on session.metadata.openchamber.goal (Cap sessionGoalMetadata).
- * Pause/resume patches session metadata via GET + PATCH /session/:id.
- * Never fake-success when runtime/HTTP is missing.
+ * Pause/resume/set/clear patch session metadata via GET + PATCH /session/:id.
+ * Objective file via Cap /api/goals/objective/:id. Never fake-success when runtime/HTTP is missing.
  */
 import type { LynxRuntimeFetch } from '../runtime/fetch';
 
@@ -323,6 +323,258 @@ export async function setLynxSessionGoalStatus(
       };
     }
     return { status: 'ok' };
+  } catch (error) {
+    return {
+      status: 'failed',
+      error: error instanceof Error ? error.message : String(error),
+      httpStatus: 0,
+    };
+  }
+}
+
+
+export type LynxSetSessionGoalInput = {
+  objective: string;
+  tokenBudget: number | null;
+};
+
+export type LynxSessionGoalWriteResult =
+  | { status: 'ok'; goal: LynxSessionGoalPayload }
+  | { status: 'no-runtime' }
+  | { status: 'unavailable'; error: string }
+  | { status: 'failed'; error: string; httpStatus: number };
+
+const createLynxGoalId = (): string =>
+  `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
+
+const TRIM_MARKER =
+  '\n\n[… objective trimmed for the auditor — the full text was delivered in the chat message …]\n\n';
+
+/**
+ * Cap fitObjective fallback (no Cap distill small-model on Lynx) — head+tail
+ * excerpt when over the auditor limit. Never pretends distillation succeeded.
+ */
+export function fitLynxGoalObjective(raw: string): string {
+  if (raw.length <= SESSION_GOAL_OBJECTIVE_CHAR_LIMIT) return raw;
+  const half = Math.max(0, Math.floor((SESSION_GOAL_OBJECTIVE_CHAR_LIMIT - TRIM_MARKER.length) / 2));
+  return `${raw.slice(0, half)}${TRIM_MARKER}${raw.slice(-half)}`;
+}
+
+/** Cap PUT /api/goals/objective/:id — false when route/runtime missing (inline fallback). */
+async function writeLynxObjectiveFile(
+  runtimeFetch: LynxRuntimeFetch,
+  sessionId: string,
+  content: string,
+): Promise<boolean> {
+  try {
+    const response = await runtimeFetch(`/api/goals/objective/${encodeURIComponent(sessionId)}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ content }),
+    });
+    if (response.status === 0) return false;
+    return response.ok;
+  } catch {
+    return false;
+  }
+}
+
+/** Cap DELETE /api/goals/objective/:id — best-effort; clear still requires metadata PATCH. */
+function deleteLynxObjectiveFile(
+  runtimeFetch: LynxRuntimeFetch,
+  sessionId: string,
+): void {
+  void runtimeFetch(`/api/goals/objective/${encodeURIComponent(sessionId)}`, { method: 'DELETE' })
+    .catch(() => undefined);
+}
+
+/**
+ * Cap setSessionGoal — GET session + optional objective PUT + PATCH metadata.openchamber.goal.
+ * Create (fresh id) or edit in place when existing id matches and not complete.
+ * Never fake-success when runtime/HTTP is missing.
+ */
+export async function setLynxSessionGoal(
+  runtimeFetch: LynxRuntimeFetch | null | undefined,
+  input: {
+    sessionId: string;
+    directory?: string | null;
+    objective: string;
+    tokenBudget: number | null;
+    existing?: LynxSessionGoalPayload | null;
+  },
+): Promise<LynxSessionGoalWriteResult> {
+  if (!runtimeFetch) return { status: 'no-runtime' };
+  const sessionId = input.sessionId.trim();
+  if (!sessionId) {
+    return { status: 'failed', error: 'session id required', httpStatus: 0 };
+  }
+  const rawObjective = input.objective.trim();
+  if (!rawObjective) {
+    return { status: 'failed', error: 'Goal objective must not be empty', httpStatus: 0 };
+  }
+  const objective = fitLynxGoalObjective(rawObjective);
+  const tokenBudget = typeof input.tokenBudget === 'number'
+    && Number.isFinite(input.tokenBudget)
+    && input.tokenBudget > 0
+    ? Math.floor(input.tokenBudget)
+    : null;
+
+  try {
+    const getResponse = await runtimeFetch(
+      `/session/${encodeURIComponent(sessionId)}${directoryQuery(input.directory)}`,
+    );
+    if (getResponse.status === 0) return { status: 'no-runtime' };
+    if (!getResponse.ok) {
+      return {
+        status: 'failed',
+        error: `session.get failed (${getResponse.status})`,
+        httpStatus: getResponse.status,
+      };
+    }
+    const session = await getResponse.json().catch(() => null);
+    if (!isRecord(session)) {
+      return { status: 'unavailable', error: 'session payload missing' };
+    }
+
+    const objectiveFile = await writeLynxObjectiveFile(runtimeFetch, sessionId, objective);
+    const metadata = isRecord(session.metadata) ? { ...session.metadata } : {};
+    const openchamber = isRecord(metadata.openchamber)
+      ? { ...metadata.openchamber }
+      : {};
+    const currentGoal = isRecord(openchamber.goal) ? { ...openchamber.goal } : null;
+    const existing = input.existing ?? null;
+    const now = Date.now();
+
+    let nextGoal: Record<string, unknown>;
+    if (
+      existing
+      && currentGoal
+      && typeof currentGoal.id === 'string'
+      && currentGoal.id === existing.id
+      && existing.status !== 'complete'
+    ) {
+      nextGoal = {
+        ...currentGoal,
+        objective: objectiveFile ? '' : objective,
+        objectiveFile,
+        tokenBudget,
+        status: 'active',
+        statusReason: 'resumed',
+        blockedStreak: 0,
+        updatedAt: now,
+      };
+    } else {
+      nextGoal = {
+        id: createLynxGoalId(),
+        objective: objectiveFile ? '' : objective,
+        objectiveFile,
+        status: 'active',
+        tokenBudget,
+        tokensUsed: 0,
+        turnsUsed: 0,
+        blockedStreak: 0,
+        note: '',
+        statusReason: '',
+        lastAccountedMessageID: '',
+        createdAt: now,
+        updatedAt: now,
+      };
+    }
+    openchamber.goal = nextGoal;
+    metadata.openchamber = openchamber;
+
+    const patchResponse = await runtimeFetch(
+      `/session/${encodeURIComponent(sessionId)}${directoryQuery(input.directory)}`,
+      {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ metadata }),
+      },
+    );
+    if (patchResponse.status === 0) return { status: 'no-runtime' };
+    if (!patchResponse.ok) {
+      return {
+        status: 'failed',
+        error: `session.patch goal failed (${patchResponse.status})`,
+        httpStatus: patchResponse.status,
+      };
+    }
+    const parsed = parseLynxSessionGoal({ metadata });
+    if (!parsed) {
+      return { status: 'unavailable', error: 'goal payload missing after patch' };
+    }
+    return { status: 'ok', goal: parsed };
+  } catch (error) {
+    return {
+      status: 'failed',
+      error: error instanceof Error ? error.message : String(error),
+      httpStatus: 0,
+    };
+  }
+}
+
+/**
+ * Cap clearSessionGoal — GET + PATCH remove metadata.openchamber.goal + DELETE objective file.
+ * Never fake-success. Caller may abort when the cleared goal was active.
+ */
+export async function clearLynxSessionGoal(
+  runtimeFetch: LynxRuntimeFetch | null | undefined,
+  input: {
+    sessionId: string;
+    directory?: string | null;
+  },
+): Promise<LynxSessionGoalStatusResult & { wasActive?: boolean }> {
+  if (!runtimeFetch) return { status: 'no-runtime' };
+  const sessionId = input.sessionId.trim();
+  if (!sessionId) {
+    return { status: 'failed', error: 'session id required', httpStatus: 0 };
+  }
+  try {
+    const getResponse = await runtimeFetch(
+      `/session/${encodeURIComponent(sessionId)}${directoryQuery(input.directory)}`,
+    );
+    if (getResponse.status === 0) return { status: 'no-runtime' };
+    if (!getResponse.ok) {
+      return {
+        status: 'failed',
+        error: `session.get failed (${getResponse.status})`,
+        httpStatus: getResponse.status,
+      };
+    }
+    const session = await getResponse.json().catch(() => null);
+    if (!isRecord(session)) {
+      return { status: 'unavailable', error: 'session payload missing' };
+    }
+    const metadata = isRecord(session.metadata) ? { ...session.metadata } : {};
+    const openchamber = isRecord(metadata.openchamber)
+      ? { ...metadata.openchamber }
+      : {};
+    const currentGoal = isRecord(openchamber.goal) ? openchamber.goal : null;
+    if (!currentGoal) {
+      return { status: 'unavailable', error: 'no session goal on metadata' };
+    }
+    const wasActive = currentGoal.status === 'active';
+    delete openchamber.goal;
+    metadata.openchamber = openchamber;
+
+    const patchResponse = await runtimeFetch(
+      `/session/${encodeURIComponent(sessionId)}${directoryQuery(input.directory)}`,
+      {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ metadata }),
+      },
+    );
+    if (patchResponse.status === 0) return { status: 'no-runtime' };
+    if (!patchResponse.ok) {
+      return {
+        status: 'failed',
+        error: `session.patch clear goal failed (${patchResponse.status})`,
+        httpStatus: patchResponse.status,
+      };
+    }
+    deleteLynxObjectiveFile(runtimeFetch, sessionId);
+    return { status: 'ok', wasActive };
   } catch (error) {
     return {
       status: 'failed',

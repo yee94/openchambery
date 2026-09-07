@@ -1,6 +1,8 @@
 import { describe, expect, test } from 'vitest';
 
 import {
+  clearLynxSessionGoal,
+  fitLynxGoalObjective,
   formatLynxGoalDuration,
   formatLynxGoalTokens,
   lynxGoalElapsedMs,
@@ -8,6 +10,8 @@ import {
   lynxGoalTitleText,
   lynxGoalTokensLabel,
   parseLynxSessionGoal,
+  SESSION_GOAL_OBJECTIVE_CHAR_LIMIT,
+  setLynxSessionGoal,
   setLynxSessionGoalStatus,
   type LynxSessionGoalPayload,
 } from './sessionGoal';
@@ -156,5 +160,140 @@ describe('setLynxSessionGoalStatus', () => {
       sessionId: 'ses_1',
       nextStatus: 'active',
     })).toMatchObject({ status: 'unavailable' });
+  });
+});
+
+describe('fitLynxGoalObjective', () => {
+  test('passes through under limit', () => {
+    expect(fitLynxGoalObjective('short')).toBe('short');
+  });
+
+  test('head+tail trims over limit without fake distill', () => {
+    const raw = 'A'.repeat(SESSION_GOAL_OBJECTIVE_CHAR_LIMIT + 200);
+    const fitted = fitLynxGoalObjective(raw);
+    expect(fitted.length).toBeLessThanOrEqual(SESSION_GOAL_OBJECTIVE_CHAR_LIMIT);
+    expect(fitted.startsWith('A')).toBe(true);
+    expect(fitted.endsWith('A')).toBe(true);
+    expect(fitted.includes('objective trimmed')).toBe(true);
+  });
+});
+
+describe('setLynxSessionGoal', () => {
+  test('no-runtime never fake-succeeds', async () => {
+    expect(await setLynxSessionGoal(null, {
+      sessionId: 'ses_1',
+      objective: 'Ship it',
+      tokenBudget: null,
+    })).toEqual({ status: 'no-runtime' });
+  });
+
+  test('rejects empty objective', async () => {
+    const runtimeFetch = async () => ({ ok: true, status: 200, json: async () => ({}) });
+    expect(await setLynxSessionGoal(runtimeFetch, {
+      sessionId: 'ses_1',
+      objective: '   ',
+      tokenBudget: null,
+    })).toMatchObject({ status: 'failed' });
+  });
+
+  test('creates goal via GET + optional objective PUT + PATCH', async () => {
+    const calls: Array<{ path: string; method?: string; body?: string }> = [];
+    const runtimeFetch = async (path: string, init?: { method?: string; body?: string; headers?: Record<string, string> }) => {
+      calls.push({ path, method: init?.method, body: init?.body });
+      if (path.includes('/api/goals/objective/')) {
+        return { ok: true, status: 200, json: async () => ({}) };
+      }
+      if (!init?.method || init.method === 'GET') {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({ id: 'ses_1', metadata: {} }),
+        };
+      }
+      return { ok: true, status: 200, json: async () => ({}) };
+    };
+
+    const result = await setLynxSessionGoal(runtimeFetch, {
+      sessionId: 'ses_1',
+      directory: '/repo',
+      objective: 'Ship dialog',
+      tokenBudget: 50_000,
+    });
+    expect(result.status).toBe('ok');
+    if (result.status !== 'ok') return;
+    expect(result.goal.objectiveFile).toBe(true);
+    expect(result.goal.status).toBe('active');
+    expect(result.goal.tokenBudget).toBe(50_000);
+    expect(calls.some((c) => c.path.includes('/api/goals/objective/') && c.method === 'PUT')).toBe(true);
+    expect(calls.some((c) => c.method === 'PATCH')).toBe(true);
+    const patch = calls.find((c) => c.method === 'PATCH');
+    const body = JSON.parse(patch!.body!);
+    expect(body.metadata.openchamber.goal.objectiveFile).toBe(true);
+    expect(body.metadata.openchamber.goal.objective).toBe('');
+  });
+
+  test('falls back to inline objective when PUT fails', async () => {
+    const runtimeFetch = async (path: string, init?: { method?: string; body?: string }) => {
+      if (path.includes('/api/goals/objective/')) {
+        return { ok: false, status: 404, json: async () => ({}) };
+      }
+      if (!init?.method || init.method === 'GET') {
+        return { ok: true, status: 200, json: async () => ({ id: 'ses_1', metadata: {} }) };
+      }
+      return { ok: true, status: 200, json: async () => ({}) };
+    };
+    const result = await setLynxSessionGoal(runtimeFetch, {
+      sessionId: 'ses_1',
+      objective: 'Inline goal',
+      tokenBudget: null,
+    });
+    expect(result.status).toBe('ok');
+    if (result.status !== 'ok') return;
+    expect(result.goal.objectiveFile).toBe(false);
+    expect(result.goal.objective).toBe('Inline goal');
+  });
+});
+
+describe('clearLynxSessionGoal', () => {
+  test('no-runtime never fake-succeeds', async () => {
+    expect(await clearLynxSessionGoal(null, { sessionId: 'ses_1' })).toEqual({ status: 'no-runtime' });
+  });
+
+  test('patches away goal and deletes objective file', async () => {
+    const calls: Array<{ path: string; method?: string; body?: string }> = [];
+    const runtimeFetch = async (path: string, init?: { method?: string; body?: string }) => {
+      calls.push({ path, method: init?.method, body: init?.body });
+      if (path.includes('/api/goals/objective/')) {
+        return { ok: true, status: 200, json: async () => ({}) };
+      }
+      if (!init?.method || init.method === 'GET') {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            id: 'ses_1',
+            metadata: {
+              openchamber: {
+                goal: {
+                  id: 'g1',
+                  objective: 'Ship',
+                  status: 'active',
+                  tokensUsed: 0,
+                  createdAt: 1,
+                  updatedAt: 1,
+                },
+              },
+            },
+          }),
+        };
+      }
+      return { ok: true, status: 200, json: async () => ({}) };
+    };
+    const result = await clearLynxSessionGoal(runtimeFetch, { sessionId: 'ses_1' });
+    expect(result).toMatchObject({ status: 'ok', wasActive: true });
+    const patch = calls.find((c) => c.method === 'PATCH');
+    const body = JSON.parse(patch!.body!);
+    expect(body.metadata.openchamber.goal).toBeUndefined();
+    expect(calls.some((c) => c.path.includes('/api/goals/objective/') && c.method === 'DELETE')).toBe(true);
   });
 });

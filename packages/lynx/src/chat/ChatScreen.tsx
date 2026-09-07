@@ -15,6 +15,10 @@ import { LynxComposerAutocompleteList } from './ComposerAutocompleteList';
 import { LynxComposerActionsInGlass } from './ComposerActionsInGlass';
 import { LynxComposerGlassCard } from './ComposerGlassCard';
 import { LynxQueuedMessageChips } from './QueuedMessageChips';
+import {
+  LynxSessionGoalCreateEntry,
+  LynxSessionGoalDialog,
+} from './SessionGoalDialog';
 import { LynxSessionGoalRow } from './SessionGoalRow';
 import { LynxSessionStatusBar } from './SessionStatusBar';
 import {
@@ -25,7 +29,7 @@ import {
   moveLynxQueueChip,
   toLynxQueueChipItems,
 } from './queuedMessageChips';
-import { fetchLynxSessionGoal } from './sessionGoal';
+import { fetchLynxSessionGoal, setLynxSessionGoal } from './sessionGoal';
 import { LynxComposerPickerSheets } from './ComposerPickerSheets';
 import {
   applyLynxAgentPickerSelection,
@@ -213,6 +217,9 @@ export function LynxChatScreen({
   const [hasSessionGoal, setHasSessionGoal] = useState(false);
   const [sendingQueueIds, setSendingQueueIds] = useState<ReadonlySet<string>>(() => new Set());
   const [goalRefreshKey, setGoalRefreshKey] = useState(0);
+  const [goalDialogOpen, setGoalDialogOpen] = useState(false);
+  /** Cap /goal arm — next successful send becomes objective; never auto-sends. */
+  const [goalArmed, setGoalArmed] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [changesDirtyBadge, setChangesDirtyBadge] = useState<number | null>(null);
 
@@ -297,6 +304,8 @@ export function LynxChatScreen({
   useEffect(() => {
     syncQueueFromComposer();
     setSendingQueueIds(new Set());
+    setGoalArmed(false);
+    setGoalDialogOpen(false);
   }, [composer, syncQueueFromComposer]);
 
 
@@ -723,6 +732,7 @@ export function LynxChatScreen({
   const onSend = useCallback(async () => {
     setActionError(null);
     const text = draft;
+    const armed = goalArmed;
     const result = await composer.send(text);
     if (result.status !== 'ok') {
       setActionError(`${result.reason}: ${result.error}`);
@@ -730,7 +740,26 @@ export function LynxChatScreen({
     }
     setDraft('');
     setTimeline((state) => setSessionWorking(state, true));
-  }, [composer, draft]);
+    // Cap /goal arm: after a successful send, create the goal from the message.
+    // Arm never auto-sends — user pressed Send.
+    if (armed) {
+      setGoalArmed(false);
+      const goalResult = await setLynxSessionGoal(runtimeFetch, {
+        sessionId,
+        directory,
+        objective: text,
+        tokenBudget: null,
+      });
+      if (goalResult.status !== 'ok') {
+        setActionError(
+          goalResult.status === 'no-runtime'
+            ? lynxT(locale, 'lynx.chat.goal.unavailable')
+            : lynxT(locale, 'lynx.chat.goal.actionFailed'),
+        );
+      }
+      setGoalRefreshKey((n) => n + 1);
+    }
+  }, [composer, draft, goalArmed, runtimeFetch, sessionId, directory, locale]);
 
   const onStop = useCallback(async () => {
     setActionError(null);
@@ -1053,8 +1082,16 @@ export function LynxChatScreen({
                   runtimeFetch={runtimeFetch}
                   sessionIsWorking={timeline.sessionIsWorking}
                   refreshKey={goalRefreshKey}
+                  onOpenManage={() => setGoalDialogOpen(true)}
                 />
-              ) : null}
+              ) : (
+                <LynxSessionGoalCreateEntry
+                  locale={locale}
+                  armed={goalArmed}
+                  onOpenCreate={() => setGoalDialogOpen(true)}
+                  onToggleArm={() => setGoalArmed((value) => !value)}
+                />
+              )}
             />
             <LynxComposerGlassCard
               host={host}
@@ -1194,6 +1231,15 @@ export function LynxChatScreen({
               onSelectModel={(next) => {
                 setComposerModel((prev) => applyLynxModelPickerSelection(prev, next));
               }}
+            />
+            <LynxSessionGoalDialog
+              locale={locale}
+              open={goalDialogOpen}
+              sessionId={sessionId}
+              directory={directory}
+              runtimeFetch={runtimeFetch}
+              onOpenChange={setGoalDialogOpen}
+              onChanged={() => setGoalRefreshKey((n) => n + 1)}
             />
             {actionError ? (
               <LynxText style={{ color: cssVar('surface.mutedForeground'), fontSize: '12px', marginTop: '6px' }}>
