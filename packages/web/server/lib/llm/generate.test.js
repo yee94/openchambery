@@ -78,6 +78,7 @@ describe('generateOpenCodeText', () => {
 
     expect(create).toHaveBeenCalledWith(expect.objectContaining({
       title: expect.stringContaining('[openchamber-llm]'),
+      metadata: { openchamber: { llm: { purpose: 'chat-completions' } } },
     }), expect.anything())
     expect(update).toHaveBeenCalled()
     expect(promptAsync).toHaveBeenCalledWith(expect.objectContaining({

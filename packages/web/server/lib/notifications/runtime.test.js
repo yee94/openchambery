@@ -229,6 +229,150 @@ describe('notification trigger runtime smallModel suppression', () => {
   });
 });
 
+describe('notification trigger runtime llm system-session suppression', () => {
+  const llmSessionResponse = (purpose = 'chat-completions') => jsonResponse({
+    id: 'ses_llm',
+    parentID: null,
+    title: '[openchamber-llm] generate',
+    metadata: { openchamber: { llm: { purpose } } },
+  });
+
+  const expectAllOutletsSilent = ({
+    emitDesktopNotification,
+    broadcastUiNotification,
+    sendPushToAllUiSessions,
+    sendApnsToAllUiSessions,
+    sendLiveActivityEnd,
+  }) => {
+    expect(emitDesktopNotification).not.toHaveBeenCalled();
+    expect(broadcastUiNotification).not.toHaveBeenCalled();
+    expect(sendPushToAllUiSessions).not.toHaveBeenCalled();
+    expect(sendApnsToAllUiSessions).not.toHaveBeenCalled();
+    expect(sendLiveActivityEnd).not.toHaveBeenCalled();
+  };
+
+  it('skips ready notifications for llm sessions fetched by id', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => llmSessionResponse()));
+    const outlets = createRuntime();
+    await outlets.runtime.maybeSendPushForTrigger(completionPayload('ses_llm'));
+    expectAllOutletsSilent(outlets);
+  });
+
+  it('skips ready notifications synthesized from session.idle for llm sessions', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => llmSessionResponse()));
+    const outlets = createRuntime();
+    await outlets.runtime.maybeSendPushForTrigger({
+      type: 'session.idle',
+      properties: {
+        directory: '/repo',
+        sessionID: 'ses_llm',
+      },
+    });
+    expectAllOutletsSilent(outlets);
+  });
+
+  it('skips error notifications and live-activity end for llm sessions', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => llmSessionResponse()));
+    const outlets = createRuntime();
+    await outlets.runtime.maybeSendPushForTrigger({
+      type: 'session.error',
+      properties: {
+        directory: '/repo',
+        sessionID: 'ses_llm',
+        error: 'boom',
+      },
+    });
+    expectAllOutletsSilent(outlets);
+  });
+
+  it('skips question notifications for llm sessions', async () => {
+    vi.useFakeTimers();
+    vi.stubGlobal('fetch', vi.fn(async () => llmSessionResponse()));
+    const outlets = createRuntime();
+    await outlets.runtime.maybeSendPushForTrigger({
+      type: 'question.asked',
+      properties: {
+        directory: '/repo',
+        sessionID: 'ses_llm',
+        questions: [{ header: 'Input needed', question: 'Continue?' }],
+      },
+    });
+    await vi.runAllTimersAsync();
+    expectAllOutletsSilent(outlets);
+  });
+
+  it('skips permission notifications for llm sessions', async () => {
+    vi.useFakeTimers();
+    vi.stubGlobal('fetch', vi.fn(async () => llmSessionResponse()));
+    const outlets = createRuntime();
+    await outlets.runtime.maybeSendPushForTrigger({
+      type: 'permission.asked',
+      properties: {
+        directory: '/repo',
+        sessionID: 'ses_llm',
+        id: 'perm_llm',
+        permission: 'edit',
+      },
+    });
+    await vi.runAllTimersAsync();
+    expectAllOutletsSilent(outlets);
+  });
+
+  it('uses session.updated event cache so later idle stays suppressed without llm on fetch', async () => {
+    const fetchMock = vi.fn(async () => jsonResponse({
+      id: 'ses_llm',
+      parentID: null,
+      title: 'Ordinary after strip',
+      metadata: {},
+    }));
+    vi.stubGlobal('fetch', fetchMock);
+    const outlets = createRuntime();
+    await outlets.runtime.maybeSendPushForTrigger({
+      type: 'session.updated',
+      properties: {
+        directory: '/repo',
+        info: {
+          id: 'ses_llm',
+          sessionID: 'ses_llm',
+          parentID: null,
+          title: '[openchamber-llm] generate',
+          metadata: { openchamber: { llm: { purpose: 'chat-completions' } } },
+        },
+      },
+    });
+    await outlets.runtime.maybeSendPushForTrigger({
+      type: 'session.idle',
+      properties: {
+        directory: '/repo',
+        sessionID: 'ses_llm',
+      },
+    });
+    expect(fetchMock).not.toHaveBeenCalled();
+    expectAllOutletsSilent(outlets);
+  });
+
+  it('does not treat empty llm.purpose as a hidden system session', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse({
+      id: 'ses_llm_empty',
+      parentID: null,
+      title: 'Looks like llm',
+      metadata: { openchamber: { llm: { purpose: '' } } },
+    })));
+    const {
+      runtime,
+      emitDesktopNotification,
+      sendPushToAllUiSessions,
+      sendApnsToAllUiSessions,
+      sendLiveActivityEnd,
+    } = createRuntime();
+    await runtime.maybeSendPushForTrigger(completionPayload('ses_llm_empty'));
+    expect(emitDesktopNotification).toHaveBeenCalledTimes(1);
+    expect(sendPushToAllUiSessions).toHaveBeenCalledTimes(1);
+    expect(sendApnsToAllUiSessions).toHaveBeenCalledTimes(1);
+    expect(sendLiveActivityEnd).toHaveBeenCalledWith({ sessionId: 'ses_llm_empty', status: 'complete' });
+  });
+});
+
 const rootSessionResponse = () => jsonResponse({
   id: 'ses_root',
   parentID: null,

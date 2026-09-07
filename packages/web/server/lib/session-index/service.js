@@ -20,6 +20,7 @@ const isSystemSession = (session) => {
   if (nonEmptySystemID(openchamber.assistant?.assistantID) && !isContactAssignedSession(openchamber)) return true;
   if (nonEmptySystemID(openchamber.scheduledTask?.taskID)) return true;
   if (nonEmptySystemID(openchamber.smallModel?.purpose)) return true;
+  if (nonEmptySystemID(openchamber.llm?.purpose)) return true;
   return false;
 };
 

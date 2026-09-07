@@ -167,6 +167,7 @@ export const isSystemOwnedSession = (sessionOrInfo) => {
   if (typeof openchamber.assistant?.assistantID === 'string' && openchamber.assistant.assistantID) return true;
   if (typeof openchamber.scheduledTask?.taskID === 'string' && openchamber.scheduledTask.taskID) return true;
   if (typeof openchamber.smallModel?.purpose === 'string' && openchamber.smallModel.purpose) return true;
+  if (typeof openchamber.llm?.purpose === 'string' && openchamber.llm.purpose) return true;
   return false;
 };
 

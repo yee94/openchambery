@@ -166,6 +166,24 @@ Keep `bridge.ts` as a thin orchestration layer that delegates message handling t
   - Includes session activity snapshot bridge handler used by webview parity routes (`/api/session-activity`).
   - Includes Zen utility model parity handler used by shared notification settings (`/api/zen/models`).
 
+## Webview local notification gate
+
+Ordinary VS Code native notifications are decided in the webview
+(`webview/main.tsx` listening for `openchamber:vscode-notification-event`), not
+on the Extension Host. Session eligibility is pure logic in
+`webview/notificationSessionFilter.ts` (`shouldSkipVSCodeNotificationSession`):
+
+- Skip missing sessions and any session with a non-empty `parentID` (child /
+  subagent).
+- Skip system-owned sessions by authoritative OpenChamber metadata only:
+  non-empty `smallModel.purpose`, non-empty `llm.purpose` (LLM gateway
+  throwaways), non-empty `scheduledTask.taskID`, and non-empty
+  `assistant.assistantID` unless `assigned.from === 'contact'`.
+- Contact-assigned worker sessions stay eligible and still notify.
+- Empty `smallModel.purpose` / `llm.purpose` strings do **not** hide a session
+  (same contract as Host `notifications/runtime.js` and UI
+  `globalSessions.isSystemOwnedSession`).
+
 ## Extension guideline
 
 The VS Code webview returns `501 { code: 'unavailable' }` for the message-queue

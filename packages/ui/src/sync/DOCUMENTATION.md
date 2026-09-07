@@ -139,8 +139,9 @@ them before `session.deleted` arrives. The same title blacklist is shared with
 `useGlobalSessionsStore` and the server session index. System sessions are also
   hidden from ordinary active/archived lists by authoritative metadata only: a
   non-empty `metadata.openchamber.assistant.assistantID`,
-  `metadata.openchamber.scheduledTask.taskID`, or
-  `metadata.openchamber.smallModel.purpose`. Sessions with a non-empty
+  `metadata.openchamber.scheduledTask.taskID`,
+  `metadata.openchamber.smallModel.purpose`, or
+  `metadata.openchamber.llm.purpose`. Sessions with a non-empty
   `parentID` are also excluded from the root catalog (`isVisibleGlobalSession`
   and `aggregateLiveSessions`); they never promote to sidebar roots when the
   parent is missing, archived, or system-owned. Title prefixes never participate

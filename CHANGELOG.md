@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.19.8-beta.9] - 2026-09-08
+
+### 通知
+
+- 过滤内部 LLM 网关会话（如 `[openchamber-llm] generate`）的完成/提问/权限推送，避免侧栏不可见会话仍推到 iOS、桌面、Web 与 VS Code。
+
 ## [1.19.8] - 2026-09-07
 
 汇总 1.19.8-beta.1 ~ 1.19.8-beta.8。
