@@ -54,17 +54,53 @@ describe('markstream-react trial path', () => {
   test('Markstream wraps file path tokens during React render instead of after DOM commit', () => {
     const source = readFileSync(join(here, 'MarkstreamRendererImpl.tsx'), 'utf8');
     const fileRefs = readFileSync(join(here, 'markstream/markstreamFileReferences.tsx'), 'utf8');
+    const custom = readFileSync(join(here, 'markstream/markstreamCustomComponents.ts'), 'utf8');
     expect(source).toContain('MarkstreamFileReferenceProvider');
     expect(source).toContain('enableFileReferences && !isStreaming');
-    // Registration runs on markstreamFileReferences module load (import Provider).
-    expect(source).toContain("from './markstream/markstreamFileReferences'");
+    // One-shot registration owns text/inline_code/link/code_block (partial maps would wipe each other).
+    expect(source).toContain("from './markstream/markstreamCustomComponents'");
+    expect(source).toContain('ensureMarkstreamCustomComponents()');
     expect(fileRefs).toContain('splitParagraphPathTokens');
-    expect(fileRefs).toContain("setCustomComponents({");
-    expect(fileRefs).toContain('text: MarkstreamTextNode');
-    expect(fileRefs).toContain('inline_code: MarkstreamInlineCodeNode');
-    expect(fileRefs).toContain('ensureMarkstreamFileReferenceComponents()');
+    expect(fileRefs).toContain('export function MarkstreamTextNode');
+    expect(fileRefs).toContain('export function MarkstreamInlineCodeNode');
+    expect(fileRefs).not.toContain('setCustomComponents');
     expect(fileRefs).not.toContain('MutationObserver');
     expect(fileRefs).not.toContain('wrapMarkdownFileReferenceTokens');
+    expect(custom).toContain("setCustomComponents({");
+    expect(custom).toContain('text: MarkstreamTextNode');
+    expect(custom).toContain('inline_code: MarkstreamInlineCodeNode');
+    expect(custom).toContain('code_block:');
+    expect(custom).toContain('withMarkstreamComponentDisplay(MarkstreamCodeBlockNode');
+  });
+
+  test('Markstream fenced code_block delegates to MarkdownRendererImpl chrome', () => {
+    const source = readFileSync(join(here, 'MarkstreamRendererImpl.tsx'), 'utf8');
+    const codeBlock = readFileSync(join(here, 'markstream/markstreamCodeBlock.tsx'), 'utf8');
+    expect(source).toContain('MarkstreamHostContext.Provider');
+    expect(source).not.toContain('codeBlockOptions');
+    // Host already aligns library codeBlockStream with isStreaming; adapter does
+    // not treat the library default as a proven blank root cause.
+    expect(source).toContain('codeBlockStream={isStreaming}');
+    expect(codeBlock).toContain('host.isStreaming');
+    expect(codeBlock).not.toContain('props.stream');
+    expect(codeBlock).toContain('markstreamCodeBlockMessageId');
+    expect(codeBlock).toContain('partId: host.part?.id');
+    expect(codeBlock).toContain('indexKey: props.indexKey');
+    const messageIdHelper = readFileSync(join(here, 'markstream/markstreamCodeBlockMessageId.ts'), 'utf8');
+    expect(messageIdHelper).toContain('export const markstreamCodeBlockMessageId');
+    expect(messageIdHelper).toContain('part-${input.partId}');
+    const fence = readFileSync(join(here, 'markstream/markstreamCodeBlockFence.ts'), 'utf8');
+    expect(codeBlock).toContain("from '../MarkdownRendererImpl'");
+    expect(codeBlock).toContain('MarkdownRenderer');
+    expect(codeBlock).toContain('fenceMarkdownFromCodeBlockNode');
+    expect(codeBlock).toContain('data-oc-markstream-code="markdown-impl"');
+    expect(codeBlock).not.toContain("from '../MarkdownRenderer'");
+    expect(fence).toContain('export const fenceMarkdownFromCodeBlockNode');
+    expect(fence).toContain('isUsableCodeBlockFenceRaw');
+    expect(fence).toContain('pickCodeBlockFenceMarker');
+    // language may trim; raw must not (open-fence trailing whitespace is significant).
+    expect(fence).not.toContain('node.raw.trim()');
+    expect(fence).not.toMatch(/\braw\.trim\s*\(/);
   });
 
   test('Markstream lists and code match the previous OpenChamber markdown rhythm', () => {

@@ -3,7 +3,6 @@ import {
   InlineCodeNode,
   LinkNode,
   TextNode,
-  setCustomComponents,
   type NodeComponentProps,
 } from 'markstream-react';
 import type { EditorAPI } from '@/lib/api/types';
@@ -41,24 +40,6 @@ const DISABLED_FILE_REFERENCE_CONTEXT: MarkstreamFileReferenceContextValue = {
 const MarkstreamFileReferenceContext = React.createContext<MarkstreamFileReferenceContextValue>(
   DISABLED_FILE_REFERENCE_CONTEXT,
 );
-
-let fileReferenceComponentsRegistered = false;
-
-/** Registers Markstream node overrides once (module load / first Provider). */
-const ensureMarkstreamFileReferenceComponents = (): void => {
-  if (fileReferenceComponentsRegistered) {
-    return;
-  }
-  fileReferenceComponentsRegistered = true;
-  setCustomComponents({
-    text: MarkstreamTextNode,
-    inline_code: MarkstreamInlineCodeNode,
-    link: MarkstreamLinkNode,
-  });
-};
-
-// Side-effect registration when this module is imported (Provider or host).
-ensureMarkstreamFileReferenceComponents();
 
 export const MarkstreamFileReferenceProvider: React.FC<{
   enabled: boolean;
@@ -156,7 +137,7 @@ const FileReferenceToken: React.FC<{
   );
 };
 
-function MarkstreamTextNode(props: NodeComponentProps<{ type: 'text'; content: string; center?: boolean }>) {
+export function MarkstreamTextNode(props: NodeComponentProps<{ type: 'text'; content: string; center?: boolean }>) {
   const ctx = React.useContext(MarkstreamFileReferenceContext);
   const content = props.node.content ?? '';
   if (!ctx.enabled || ctx.insideLink) {
@@ -178,7 +159,7 @@ function MarkstreamTextNode(props: NodeComponentProps<{ type: 'text'; content: s
   );
 }
 
-function MarkstreamInlineCodeNode(props: NodeComponentProps<{ type: 'inline_code'; code: string }>) {
+export function MarkstreamInlineCodeNode(props: NodeComponentProps<{ type: 'inline_code'; code: string }>) {
   const ctx = React.useContext(MarkstreamFileReferenceContext);
   const code = props.node.code ?? '';
   if (!ctx.enabled || !isLikelyFilePath(code)) {
@@ -192,7 +173,7 @@ function MarkstreamInlineCodeNode(props: NodeComponentProps<{ type: 'inline_code
   );
 }
 
-function MarkstreamLinkNode(props: React.ComponentProps<typeof LinkNode>) {
+export function MarkstreamLinkNode(props: React.ComponentProps<typeof LinkNode>) {
   const ctx = React.useContext(MarkstreamFileReferenceContext);
   const href = props.node.href ?? '';
   const fileHref = ctx.enabled && isLikelyFilePath(href);

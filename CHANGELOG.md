@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.19.8-beta.4] - 2026-09-07
+
+### 会话
+
+- Markstream 正文里的代码块改回原有 compact 代码卡片（marked + Shiki + morphdom）；切换会话后代码内容不再空白。
+
 ## [1.19.8-beta.3] - 2026-09-07
 
 ### 移动端

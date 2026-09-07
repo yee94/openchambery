@@ -12,14 +12,20 @@ import {
   handleMarkstreamPointerEvent,
 } from './markstream/markstreamInteractions';
 import { MarkstreamFileReferenceProvider } from './markstream/markstreamFileReferences';
+import { ensureMarkstreamCustomComponents } from './markstream/markstreamCustomComponents';
+import {
+  MarkstreamHostContext,
+  type MarkstreamMarkdownVariant,
+} from './markstream/markstreamHostContext';
 import { MARKSTREAM_CHAT_STREAM_PERFORMANCE } from './markstream/markstreamPerformance';
 import type { ToolPopupContent } from './message/types';
 import 'markstream-react/index.css';
 import './markstream/markstreamTheme.css';
 
-// File-reference node overrides register on markstreamFileReferences module load.
+// text / inline_code / link / code_block overrides register once here.
+ensureMarkstreamCustomComponents();
 
-type MarkdownVariant = 'assistant' | 'reasoning' | 'tool';
+type MarkdownVariant = MarkstreamMarkdownVariant;
 
 interface MarkstreamRendererProps {
   content: string;
@@ -42,16 +48,13 @@ const markdownContentClassName = (variant: MarkdownVariant): string =>
       ? 'markdown-content markdown-reasoning oc-markstream-host'
       : 'markdown-content leading-relaxed oc-markstream-host';
 
-const MARKSTREAM_CODE_BLOCK_OPTIONS = {
-  overflow: 'wrap',
-} as const;
-
 const MarkstreamRendererImpl: React.FC<MarkstreamRendererProps> = ({
   content,
   part,
   messageId,
   className,
   isStreaming = false,
+  disableStreamAnimation = false,
   variant = 'assistant',
   onShowPopup,
   enableFileReferences = true,
@@ -73,6 +76,24 @@ const MarkstreamRendererImpl: React.FC<MarkstreamRendererProps> = ({
       onShowPopup,
     }
     : undefined;
+
+  const hostContext = React.useMemo(() => ({
+    messageId,
+    part,
+    isStreaming,
+    disableStreamAnimation,
+    variant,
+    onShowPopup,
+    enableFileReferences,
+  }), [
+    messageId,
+    part,
+    isStreaming,
+    disableStreamAnimation,
+    variant,
+    onShowPopup,
+    enableFileReferences,
+  ]);
 
   const enabledRef = React.useRef(recordHeight);
   enabledRef.current = recordHeight;
@@ -108,24 +129,28 @@ const MarkstreamRendererImpl: React.FC<MarkstreamRendererProps> = ({
       data-oc-markdown-engine="markstream"
       data-oc-markstream-virtual="off"
     >
-      <MarkstreamFileReferenceProvider
-        enabled={fileReferencesEnabled}
-        effectiveDirectory={effectiveDirectory}
-        editor={editor}
-        preferRuntimeEditor={runtime.isVSCode}
-        onShowPopup={onShowPopup}
-        content={content}
-      >
-        <MarkdownRender
+      <MarkstreamHostContext.Provider value={hostContext}>
+        <MarkstreamFileReferenceProvider
+          enabled={fileReferencesEnabled}
+          effectiveDirectory={effectiveDirectory}
+          editor={editor}
+          preferRuntimeEditor={runtime.isVSCode}
+          onShowPopup={onShowPopup}
           content={content}
-          customId={customId}
-          final={!isStreaming}
-          isDark={isDark}
-          codeBlockOptions={MARKSTREAM_CODE_BLOCK_OPTIONS}
-          codeBlockStream={isStreaming}
-          {...MARKSTREAM_CHAT_STREAM_PERFORMANCE}
-        />
-      </MarkstreamFileReferenceProvider>
+        >
+          <MarkdownRender
+            content={content}
+            customId={customId}
+            final={!isStreaming}
+            isDark={isDark}
+            // Keep library stream flag aligned with the host. code_block is overridden
+            // (MarkstreamCodeBlockNode gates on host.isStreaming + node.loading); residual
+            // library paths may still read codeBlockStream.
+            codeBlockStream={isStreaming}
+            {...MARKSTREAM_CHAT_STREAM_PERFORMANCE}
+          />
+        </MarkstreamFileReferenceProvider>
+      </MarkstreamHostContext.Provider>
     </div>
   );
 };
