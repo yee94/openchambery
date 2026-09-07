@@ -31,11 +31,13 @@ export const isSystemOwnedSession = (
         assigned?: { from?: unknown };
         scheduledTask?: { taskID?: unknown };
         smallModel?: { purpose?: unknown };
+        llm?: { purpose?: unknown };
     };
     if (record.assigned?.from === 'contact') return false;
     if (nonEmptySystemID(record.assistant?.assistantID)) return true;
     if (nonEmptySystemID(record.scheduledTask?.taskID)) return true;
     if (nonEmptySystemID(record.smallModel?.purpose)) return true;
+    if (nonEmptySystemID(record.llm?.purpose)) return true;
     return false;
 };
 

@@ -185,6 +185,9 @@ export const createNotificationTriggerRuntime = (deps) => {
       smallModelPurpose: meta.smallModelPurpose !== undefined
         ? meta.smallModelPurpose
         : (previous?.smallModelPurpose ?? null),
+      llmPurpose: meta.llmPurpose !== undefined
+        ? meta.llmPurpose
+        : (previous?.llmPurpose ?? null),
       assistantID: meta.assistantID !== undefined ? meta.assistantID : (previous?.assistantID ?? null),
       assignedFrom: meta.assignedFrom !== undefined ? meta.assignedFrom : (previous?.assignedFrom ?? null),
       scheduledTaskID: meta.scheduledTaskID !== undefined
@@ -202,6 +205,9 @@ export const createNotificationTriggerRuntime = (deps) => {
       : null;
     return {
       smallModelPurpose: normalizeSmallModelPurpose(openchamber?.smallModel?.purpose),
+      // Throwaway LLM gateway sessions (`metadata.openchamber.llm.purpose`) share
+      // the same sidebar-hidden contract as small-model system sessions.
+      llmPurpose: normalizeSmallModelPurpose(openchamber?.llm?.purpose),
       assistantID: nonEmptySystemID(openchamber?.assistant?.assistantID)
         ? openchamber.assistant.assistantID
         : null,
@@ -292,6 +298,7 @@ export const createNotificationTriggerRuntime = (deps) => {
     if (!meta) return false;
     if (typeof meta.parentID === 'string' && meta.parentID.length > 0) return true;
     if (typeof meta.smallModelPurpose === 'string' && meta.smallModelPurpose.length > 0) return true;
+    if (typeof meta.llmPurpose === 'string' && meta.llmPurpose.length > 0) return true;
     if (typeof meta.assistantID === 'string' && meta.assistantID.length > 0 && meta.assignedFrom !== 'contact') {
       return true;
     }
@@ -302,8 +309,8 @@ export const createNotificationTriggerRuntime = (deps) => {
 
   // Only sessions that can appear as sidebar roots get ordinary push. Child /
   // subagent sessions, archived Assistant bindings, scheduled-task sessions,
-  // small-model system sessions, and SmartFetch secondaries are excluded.
-  // Contact-assigned worker sessions stay visible and still notify.
+  // small-model / LLM gateway system sessions, and SmartFetch secondaries are
+  // excluded. Contact-assigned worker sessions stay visible and still notify.
   const shouldSkipSystemSessionNotification = async (sessionId, directory) => {
     const meta = await fetchSessionMeta(sessionId, directory);
     return isHiddenFromNavSession(meta);

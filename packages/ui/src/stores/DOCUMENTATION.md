@@ -276,12 +276,12 @@ pages, but membership is re-cut by `time.archived` before they enter
 timestamp is truthy (`0` and missing stay active). Duplicate ids collapse to one
 row. Directory active/archived refreshes and live upserts share the same field.
 List labels are a fetch hint, not the archive contract; this does not add
-requests. `isVisibleGlobalSession` (shared with live aggregate and event
-reducers) excludes SmartFetch temporary titles, any session with a non-empty
-`parentID` (subagents never belong in the root catalog; they load only on
+  requests. `isVisibleGlobalSession` (shared with live aggregate and event
+  reducers) excludes SmartFetch temporary titles, any session with a non-empty
+  `parentID` (subagents never belong in the root catalog; they load only on
   parent expand), and system-owned sessions whose metadata carries a non-empty
-  `openchamber.assistant.assistantID`, `openchamber.scheduledTask.taskID`, or
-  `openchamber.smallModel.purpose`;
+  `openchamber.assistant.assistantID`, `openchamber.scheduledTask.taskID`,
+  `openchamber.smallModel.purpose`, or `openchamber.llm.purpose`;
   title prefixes are not ownership signals.
 `fullCatalogSessionIds` and `fullCatalogGeneration` update only after
 one complete active+archived catalog result; retention cleanup consumes that snapshot.

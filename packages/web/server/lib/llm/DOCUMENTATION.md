@@ -41,10 +41,15 @@ The 1.18.4 client exposes `GET /provider`, `GET /config/providers`, and
    Non-vision models (for example deepseek-v4-flash) keep the `[image: …]`
    description and any text-file bytes, and skip image data URLs so generate
    cannot stall on unsupported vision parts. Non-image
-   text files are also inlined into the flattened prompt. Wait for idle via
-   `session.status` + `session.messages`, then delete the session. This is a
-    text generator only — never the contact transcript and never a coding
-    SessionPrompt loop. Upstream `info.error.message` is forwarded on 502.
+    text files are also inlined into the flattened prompt. Wait for idle via
+    `session.status` + `session.messages`, then delete the session. Throwaway
+    sessions are created with
+    `metadata.openchamber.llm.purpose = 'chat-completions'` (and archived
+    immediately) so sidebar visibility, session-index, session-title, and
+    notification/push fanout treat them as system-owned — same contract as
+    non-empty `smallModel.purpose`. This is a text generator only — never the
+    contact transcript and never a coding SessionPrompt loop. Upstream
+    `info.error.message` is forwarded on 502.
 
 ### Internal token callback (in-process only)
 
