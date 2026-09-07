@@ -277,5 +277,13 @@ Chosen mode is written at the top of `packages/lynx/README.md` (Mode B iOS 26 ho
 - Tip APK: `lynx-v2-debug-905c42e` (work/lynx-native @ `905c42ef`). Do not invent a newer APK SHA until mobile-ci rebuilds.
 - Queue chips: Cap `QueuedMessageChips` spirit above composer glass; Lynx local `composerActions` queue with remove / send-now / portable ↑/↓ reorder. Cap `@dnd-kit` + server `/api/openchamber/message-queue` deferred (documented).
 - SessionGoal strip: Cap `SessionGoalRow` — status/objective/elapsed/tokens + pause/resume via GET+PATCH session metadata; objective file route when present; never fake-success.
-- MobileSessionStatusBar: Cap file present but deferred (scope) — Remaining follow-up.
+- MobileSessionStatusBar: deferred in #38; slim strip landed in Next #39 (full Cap sheet still deferred).
 - Product **NOT DONE** / 三关未齐 / not EXHAUSTED / 真机残差 empty / no 真机过 claim.
+
+## Notes — MobileSessionStatusBar slim strip (Next #39 / 2026-09-08)
+
+- Tip APK: `lynx-v2-debug-ca32a72` (work/lynx-native @ `ca32a72c`; release exists). Do not invent a newer APK SHA until mobile-ci rebuilds.
+- Slim strip only: related session chips + Cap busy/working indicator above composer with SessionGoal + queue chips. Full Cap `MobileSessionStatusBar.tsx` (~1900 lines) sheet chrome deferred.
+- Helpers: Cap filter / preserve-active-project resolvers + session-index related list; shell chip → openChat; "All" → Projects home analogue.
+- Product **NOT DONE** / 三关未齐 / not EXHAUSTED / 真机残差 empty / no 真机过 claim.
+
