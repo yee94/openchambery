@@ -30,9 +30,12 @@ import { LynxChatSheet } from './ChatSheets';
 import {
   LYNX_CHAT_OVERFLOW_ITEMS,
   chatSheetFromOverflowId,
+  dirtyChangeBadgeFromGitStatus,
+  withOverflowDirtyBadge,
   type LynxChatOverflowItemId,
   type LynxChatSheetKind,
 } from './overflowMenu';
+import { loadLynxGitStatus } from './changesSurface';
 import type { LynxPermissionRequest, LynxQuestionRequest } from './messageParts';
 import {
   fetchLynxPendingCards,
@@ -170,6 +173,18 @@ export function LynxChatScreen({
   const [actionError, setActionError] = useState<string | null>(null);
   const [queueCount, setQueueCount] = useState(0);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [changesDirtyBadge, setChangesDirtyBadge] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (!menuOpen) return;
+    let cancelled = false;
+    void (async () => {
+      const result = await loadLynxGitStatus(runtimeFetch, directory);
+      if (cancelled) return;
+      setChangesDirtyBadge(dirtyChangeBadgeFromGitStatus(result));
+    })();
+    return () => { cancelled = true; };
+  }, [menuOpen, runtimeFetch, directory]);
   const [sheet, setSheet] = useState<LynxChatSheetKind | null>(initialSheet);
   const [questions, setQuestions] = useState<LynxQuestionRequest[]>([]);
   const [permissions, setPermissions] = useState<LynxPermissionRequest[]>([]);
@@ -716,16 +731,21 @@ export function LynxChatScreen({
             backgroundColor: cssVar('surface.elevated'),
           }}
         >
-          {LYNX_CHAT_OVERFLOW_ITEMS.map((item) => (
+          {withOverflowDirtyBadge(LYNX_CHAT_OVERFLOW_ITEMS, changesDirtyBadge).map((item) => (
             <LynxView
               key={item.id}
               bindtap={() => onOverflowSelect(item.id)}
-              style={{ padding: '10px 0' }}
+              style={{ padding: '10px 0', flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}
             >
               <LynxText style={{ color: cssVar('surface.foreground') }}>
                 {lynxT(locale, item.labelKey)}
                 {item.stubSheet ? ` · ${lynxT(locale, 'lynx.chat.menu.stubHint')}` : ''}
               </LynxText>
+              {item.id === 'changes' && item.badge != null && item.badge > 0 ? (
+                <LynxText style={{ color: cssVar('primary.base'), fontSize: '12px', fontWeight: '600' }}>
+                  {item.badge}
+                </LynxText>
+              ) : null}
             </LynxView>
           ))}
         </LynxView>

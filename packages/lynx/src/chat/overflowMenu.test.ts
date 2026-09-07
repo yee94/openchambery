@@ -3,6 +3,8 @@ import { describe, expect, test } from 'vitest';
 import {
   LYNX_CHAT_OVERFLOW_ITEMS,
   chatSheetFromOverflowId,
+  dirtyChangeBadgeFromGitStatus,
+  withOverflowDirtyBadge,
 } from './overflowMenu';
 
 describe('Lynx chat overflow menu', () => {
@@ -27,5 +29,44 @@ describe('Lynx chat overflow menu', () => {
     expect(chatSheetFromOverflowId('mcp')).toBe('mcp');
     expect(chatSheetFromOverflowId('refreshTranscript')).toBeNull();
     expect(chatSheetFromOverflowId('newSession')).toBeNull();
+  });
+
+  test('Changes dirty badge from git status entry count (no fake on failure)', () => {
+    expect(dirtyChangeBadgeFromGitStatus(null)).toBeNull();
+    expect(dirtyChangeBadgeFromGitStatus({ status: 'no-runtime' })).toBeNull();
+    expect(dirtyChangeBadgeFromGitStatus({ status: 'no-directory' })).toBeNull();
+    expect(dirtyChangeBadgeFromGitStatus({
+      status: 'failed',
+      error: new Error('boom'),
+    })).toBeNull();
+    expect(dirtyChangeBadgeFromGitStatus({
+      status: 'ok',
+      directory: '/tmp/p',
+      branch: 'main',
+      entries: [],
+      diffStats: {},
+      ahead: 0,
+      behind: 0,
+      tracking: null,
+    })).toBe(0);
+    expect(dirtyChangeBadgeFromGitStatus({
+      status: 'ok',
+      directory: '/tmp/p',
+      branch: 'main',
+      entries: [
+        { path: 'a.ts', status: 'M', staged: false },
+        { path: 'b.ts', status: 'A', staged: true },
+      ],
+      diffStats: {},
+      ahead: 0,
+      behind: 0,
+      tracking: null,
+    })).toBe(2);
+
+    const withBadge = withOverflowDirtyBadge(LYNX_CHAT_OVERFLOW_ITEMS, 3);
+    expect(withBadge.find((i) => i.id === 'changes')?.badge).toBe(3);
+    const noFake = withOverflowDirtyBadge(LYNX_CHAT_OVERFLOW_ITEMS, null);
+    expect(noFake.find((i) => i.id === 'changes')?.badge).toBeNull();
+    expect(noFake.find((i) => i.id === 'files')?.badge).toBeUndefined();
   });
 });

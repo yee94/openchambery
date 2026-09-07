@@ -313,8 +313,13 @@ export {
   deleteLynxDictationModel,
   parseLynxDictationModels,
   mutateLynxDictationModelThenRefresh,
+  selectLynxSttLocalModel,
+  setLynxDictationEnabled,
+  sanitizeLynxSttLocalModel,
   LYNX_DICTATION_VOICE_POLICY,
   LYNX_LOCAL_TTS_MODEL_ID,
+  LYNX_LOCAL_STT_MODEL_IDS,
+  LYNX_DEFAULT_STT_LOCAL_MODEL,
 } from './settings/dictation';
 export {
   createLynxDiagnosticsRecorder,

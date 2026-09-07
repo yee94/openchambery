@@ -3,11 +3,16 @@ import { describe, expect, test } from 'vitest';
 import {
   deleteLynxDictationModel,
   loadLynxDictationStatus,
+  LYNX_DEFAULT_STT_LOCAL_MODEL,
   LYNX_DICTATION_VOICE_POLICY,
+  LYNX_LOCAL_STT_MODEL_IDS,
   LYNX_LOCAL_TTS_MODEL_ID,
   mutateLynxDictationModelThenRefresh,
   parseLynxDictationModels,
   requestLynxDictationModelDownload,
+  sanitizeLynxSttLocalModel,
+  selectLynxSttLocalModel,
+  setLynxDictationEnabled,
 } from './dictation';
 
 describe('dictation settings (no invented ASR)', () => {
@@ -170,6 +175,82 @@ describe('dictation settings (no invented ASR)', () => {
     );
     expect(mutation.status).toBe('failed');
     expect(status.status).toBe('ok');
+  });
+
+
+  test('status with localModel matches Cap ComposerDictation query', async () => {
+    const result = await loadLynxDictationStatus(async (path) => {
+      expect(path).toBe('/api/dictation/status?provider=local&localModel=whisper-tiny-int8');
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({ ready: true, models: [] }),
+        text: async () => '',
+      } as never;
+    }, { provider: 'local', localModel: 'whisper-tiny-int8' });
+    expect(result.status).toBe('ok');
+  });
+
+  test('sanitize falls back to Cap default STT model', () => {
+    expect(sanitizeLynxSttLocalModel(undefined)).toBe(LYNX_DEFAULT_STT_LOCAL_MODEL);
+    expect(sanitizeLynxSttLocalModel('nope')).toBe(LYNX_DEFAULT_STT_LOCAL_MODEL);
+    expect(sanitizeLynxSttLocalModel('whisper-base-int8')).toBe('whisper-base-int8');
+    expect(LYNX_LOCAL_STT_MODEL_IDS).toContain('parakeet-tdt-0.6b-v2-int8');
+  });
+
+  test('select STT model → PUT settings + status refresh with localModel', async () => {
+    const calls: Array<{ path: string; method?: string; body?: string }> = [];
+    const fetch = async (path: string, init?: { method?: string; body?: string }) => {
+      calls.push({ path, method: init?.method, body: init?.body });
+      if (path === '/api/config/settings' && init?.method === 'PUT') {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => JSON.parse(init.body || '{}'),
+          text: async () => '',
+        } as never;
+      }
+      if (path.startsWith('/api/dictation/status')) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({ ready: true, models: [] }),
+          text: async () => '',
+        } as never;
+      }
+      throw new Error(`unexpected ${path}`);
+    };
+    const { save, status } = await selectLynxSttLocalModel(fetch, 'whisper-tiny-int8');
+    expect(save.status).toBe('ok');
+    expect(status.status).toBe('ok');
+    expect(calls).toEqual([
+      {
+        path: '/api/config/settings',
+        method: 'PUT',
+        body: JSON.stringify({ sttLocalModel: 'whisper-tiny-int8' }),
+      },
+      {
+        path: '/api/dictation/status?provider=local&localModel=whisper-tiny-int8',
+        method: 'GET',
+        body: undefined,
+      },
+    ]);
+  });
+
+  test('dictationEnabled toggle → PUT settings (honest, no fake-success)', async () => {
+    const save = await setLynxDictationEnabled(async (path, init) => {
+      expect(path).toBe('/api/config/settings');
+      expect(init?.method).toBe('PUT');
+      expect(JSON.parse(init?.body || '{}')).toEqual({ dictationEnabled: true });
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({ dictationEnabled: true }),
+        text: async () => '',
+      } as never;
+    }, true);
+    expect(save.status).toBe('ok');
+    expect(await setLynxDictationEnabled(null, false)).toEqual({ status: 'no-runtime' });
   });
 
   test('policy forbids invented ASR', () => {

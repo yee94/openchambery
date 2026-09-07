@@ -4,6 +4,7 @@
  * WS `/api/dictation/ws` stays host/mic-bound and is intentionally not claimed here.
  */
 import type { LynxRuntimeFetch } from '../runtime/fetch';
+import { saveLynxSettings, type LynxSettingsSaveResult } from './api';
 
 export type LynxDictationStatusResult =
   | { status: 'ok'; payload: Record<string, unknown> }
@@ -29,6 +30,59 @@ export type LynxDictationModelState = {
 
 /** Cap local Kokoro TTS model id (`VoiceSettings.tsx` LOCAL_TTS_MODEL_ID). */
 export const LYNX_LOCAL_TTS_MODEL_ID = 'kokoro-en-v0_19' as const;
+
+/** Cap `VoiceSettings.tsx` LOCAL_STT_MODELS ids — selection only; no invented ASR. */
+export const LYNX_LOCAL_STT_MODEL_IDS = [
+  'parakeet-tdt-0.6b-v2-int8',
+  'parakeet-tdt-0.6b-v3-int8',
+  'whisper-base-int8',
+  'whisper-tiny-int8',
+] as const;
+
+export type LynxLocalSttModelId = (typeof LYNX_LOCAL_STT_MODEL_IDS)[number];
+
+/** Cap `useConfigStore` default when unset. */
+export const LYNX_DEFAULT_STT_LOCAL_MODEL: LynxLocalSttModelId = 'parakeet-tdt-0.6b-v2-int8';
+
+export const sanitizeLynxSttLocalModel = (raw: unknown): LynxLocalSttModelId => {
+  if (typeof raw === 'string' && (LYNX_LOCAL_STT_MODEL_IDS as readonly string[]).includes(raw)) {
+    return raw as LynxLocalSttModelId;
+  }
+  return LYNX_DEFAULT_STT_LOCAL_MODEL;
+};
+
+/**
+ * Cap `setSttLocalModel` → `updateDesktopSettings` → PUT `/api/config/settings`,
+ * then refresh dictation status with `localModel` (ComposerDictation query spirit).
+ */
+export const selectLynxSttLocalModel = async (
+  runtimeFetch: LynxRuntimeFetch | null | undefined,
+  modelId: string,
+  options?: { signal?: AbortSignal },
+): Promise<{
+  save: LynxSettingsSaveResult;
+  status: LynxDictationStatusResult;
+}> => {
+  const id = sanitizeLynxSttLocalModel(modelId);
+  const save = await saveLynxSettings(runtimeFetch, { sttLocalModel: id }, options);
+  const status = await loadLynxDictationStatus(runtimeFetch, {
+    provider: 'local',
+    localModel: id,
+    signal: options?.signal,
+  });
+  return { save, status };
+};
+
+/**
+ * Cap `setDictationEnabled` → PUT settings blob. Optional VoiceBody toggle.
+ */
+export const setLynxDictationEnabled = async (
+  runtimeFetch: LynxRuntimeFetch | null | undefined,
+  enabled: boolean,
+  options?: { signal?: AbortSignal },
+): Promise<LynxSettingsSaveResult> => (
+  saveLynxSettings(runtimeFetch, { dictationEnabled: enabled }, options)
+);
 
 const asRecord = (data: unknown): Record<string, unknown> => (
   data && typeof data === 'object' && !Array.isArray(data)
@@ -196,7 +250,7 @@ export const mutateLynxDictationModelThenRefresh = async (
   runtimeFetch: LynxRuntimeFetch | null | undefined,
   modelId: string,
   action: 'download' | 'delete',
-  options?: { signal?: AbortSignal },
+  options?: { signal?: AbortSignal; localModel?: string },
 ): Promise<{
   mutation: LynxDictationModelMutationResult;
   status: LynxDictationStatusResult;
@@ -206,6 +260,7 @@ export const mutateLynxDictationModelThenRefresh = async (
     : await deleteLynxDictationModel(runtimeFetch, modelId, options);
   const status = await loadLynxDictationStatus(runtimeFetch, {
     provider: 'local',
+    localModel: options?.localModel,
     signal: options?.signal,
   });
   return { mutation, status };
