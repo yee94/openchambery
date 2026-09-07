@@ -63,6 +63,59 @@ const TWO_SAME_LANG = [
   'const second = 2',
   '```',
 ].join('\n');
+// Real chat regression: ```text ASCII trees went blank because markstream-react
+// looks up language overrides in the same map as the AST `text` node key.
+const TEXT_ASCII_TREE_A = [
+  '```text',
+  'Trace / 一次小微请求',
+  '|',
+  '+-- ServerRun A',
+  '|   +-- LLM #1',
+  '|   +-- invokeMethod [toolCall_1]',
+  '|   +-- Subagent / dispatching-hint',
+  '|   |   +-- LLM',
+  '|   +-- Think',
+  '|   |',
+  '|   |   [toolCall_1 结果回填，复用 Run A]',
+  '|   |',
+  '|   +-- LLM #2',
+  '|   +-- invokeMethod [toolCall_2]',
+  '|   +-- Abort [连接关闭，记录一次]',
+  '|',
+  '+-- ClientRun / toolCall_1',
+  '|   +-- client/tools_call',
+  '|   +-- tool_call_routed',
+  '|   +-- 终态：ERROR / timeout.client',
+  '|',
+  '+-- ClientRun / toolCall_2',
+  '    +-- 终态：cancelled / 结束等待',
+  '```',
+].join('\n');
+const TEXT_ASCII_TREE_B = [
+  '```text',
+  'Trace / 一轮用户请求',
+  '|',
+  '+-- ServerRun A [首次 HTTP]',
+  '|   +-- LLM',
+  '|',
+  '+-- ServerRun B [回填 HTTP，续跑]',
+  '|   +-- LLM',
+  '|',
+  '+-- ServerRun C',
+  '|   +-- LLM',
+  '|',
+  '+-- ClientRun',
+  '    +-- 终态',
+  '```',
+].join('\n');
+const TWO_TEXT_ASCII_TREES = `${TEXT_ASCII_TREE_A}\n\n${TEXT_ASCII_TREE_B}`;
+const TEXT_ASCII_TREE_UNCLOSED = [
+  '```text',
+  'Trace / 一次小微请求',
+  '|',
+  '+-- ServerRun A',
+  '|   +-- LLM #1',
+].join('\n');
 
 describe('MarkstreamRenderer fenced code blocks (OpenChamber chrome)', () => {
   let container: HTMLElement;
@@ -116,6 +169,19 @@ describe('MarkstreamRenderer fenced code blocks (OpenChamber chrome)', () => {
   const codeHostIds = () =>
     Array.from(container.querySelectorAll('[data-oc-markstream-code-id]'))
       .map((node) => node.getAttribute('data-oc-markstream-code-id') ?? '');
+
+  /** Nested MarkdownRendererImpl morph + worker highlight can lag large fences. */
+  const waitForCodeText = async (
+    predicate: (text: string) => boolean,
+    { timeoutMs = 1500, stepMs = 50 }: { timeoutMs?: number; stepMs?: number } = {},
+  ) => {
+    const deadline = Date.now() + timeoutMs;
+    while (Date.now() < deadline) {
+      if (predicate(codeText())) return codeText();
+      await flush(stepMs);
+    }
+    return codeText();
+  };
 
   test('uses OpenChamber markdown-code chrome, not markstream default toolbar, and keeps source text', async () => {
     await render({ content: `Before\n\n${FENCE}\n\nAfter` });
@@ -235,5 +301,63 @@ describe('MarkstreamRenderer fenced code blocks (OpenChamber chrome)', () => {
     const text = allCodeText();
     expect(text).toContain('const first = 1');
     expect(text).toContain('const second = 2');
+  });
+
+  test('```text ASCII tree keeps spaces, pipes, Chinese, and OpenChamber chrome', async () => {
+    await render({ content: TEXT_ASCII_TREE_A, messageId: 'msg-text-ascii' });
+    await flush(200);
+
+    expect(container.querySelector('[data-oc-markstream-code="markdown-impl"]')).toBeTruthy();
+    expect(container.querySelector('[data-component="markdown-code"]')).toBeTruthy();
+    expect(container.querySelector('.code-block-header')).toBeNull();
+
+    const text = codeText();
+    expect(text).toContain('Trace / 一次小微请求');
+    expect(text).toContain('+-- ServerRun A');
+    expect(text).toContain('|   +-- LLM #1');
+    expect(text).toContain('[toolCall_1 结果回填，复用 Run A]');
+    expect(text).toContain('终态：ERROR / timeout.client');
+    expect(text).toContain('终态：cancelled / 结束等待');
+    // Leading indent spaces on tree branches must survive (not collapse to empty).
+    expect(text).toMatch(/\|\s{3}\+-- LLM #1/);
+    expect(text).not.toMatch(/^\s*$/);
+  });
+
+  test('two ```text ASCII trees keep both bodies with distinct host ids', async () => {
+    await render({ content: TWO_TEXT_ASCII_TREES, messageId: 'msg-dual-text-ascii' });
+    await flush(240);
+
+    const ids = codeHostIds();
+    expect(ids.length).toBeGreaterThanOrEqual(2);
+    expect(new Set(ids).size).toBe(ids.length);
+
+    const text = allCodeText();
+    expect(text).toContain('Trace / 一次小微请求');
+    expect(text).toContain('Trace / 一轮用户请求');
+    expect(text).toContain('ServerRun B [回填 HTTP，续跑]');
+    expect(text).toContain('+-- ClientRun / toolCall_2');
+    expect(text).toContain('+-- ServerRun C');
+  });
+
+  test('streaming ```text fence keeps body through close', async () => {
+    await render({ content: TEXT_ASCII_TREE_UNCLOSED, isStreaming: true, messageId: 'msg-text-stream' });
+    let text = await waitForCodeText((value) => value.includes('+-- ServerRun A'));
+    expect(text).toContain('Trace / 一次小微请求');
+    expect(text).toContain('+-- ServerRun A');
+
+    await render({ content: TEXT_ASCII_TREE_A, isStreaming: true, messageId: 'msg-text-stream' });
+    text = await waitForCodeText((value) => value.includes('+-- ClientRun / toolCall_2'));
+    expect(text).toContain('+-- ClientRun / toolCall_2');
+    expect(text).toContain('终态：cancelled / 结束等待');
+
+    await render({ content: TEXT_ASCII_TREE_A, isStreaming: false, messageId: 'msg-text-stream' });
+    const settled = await waitForCodeText((value) => (
+      value.includes('终态：cancelled / 结束等待')
+      && /\|\s{3}\+-- LLM #2/.test(value)
+    ));
+    expect(settled).toContain('Trace / 一次小微请求');
+    expect(settled).toContain('|   |   [toolCall_1 结果回填，复用 Run A]');
+    expect(settled).toContain('终态：cancelled / 结束等待');
+    expect(settled).toMatch(/\|\s{3}\+-- LLM #2/);
   });
 });
