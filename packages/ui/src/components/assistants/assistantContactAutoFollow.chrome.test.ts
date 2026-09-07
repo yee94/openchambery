@@ -33,7 +33,7 @@ afterAll(() => {
 })
 
 describe('Assistant contact auto-follow in Chrome', () => {
-  test.skipIf(!chromeAvailable)('keeps one owner across user intent and native ResizeObserver growth', async () => {
+  test.skipIf(!chromeAvailable).each(['existing ownership', 'touch', 'scrollbar', 'DOM', 'cumulative', 'late-scrollbar', 'late-wheel', 'late-touch-pointer', 'late-previous-touch'] as const)('%s', async (scenario) => {
     const root = evidenceRoot()
     evidenceDirs.push(root)
     const work = mkdtempSync(join(root, 'assistant-contact-scroll-'))
@@ -99,6 +99,42 @@ window.addEventListener('unhandledrejection', (event) => {
       expect(ready, 'browser harness API became ready').toBe(true)
       const initial = await page.evaluate<Measure>(`${api}.measure()`)
       expect(initial.top).toBe(initial.maxTop)
+
+      if (scenario !== 'existing ownership') {
+        const race = await page.evaluate<{
+          beforeGrowth: Measure
+          afterGrowth: Measure
+          afterDelivery: Measure
+          afterLateGrowth: Measure
+          scrollEventsBeforeGrowth: number
+          scrollEventsAfterGrowth: number
+          scrollEventsAfterDelivery: number
+        }>(`${api}.slightTouchBeforeLayout('${scenario}')`)
+        console.info('[assistant contact delayed native scroll evidence]', { scenario, ...race })
+        const expectedTop = scenario === 'cumulative' ? 600 : 599
+        expect(race.beforeGrowth.top).toBe(expectedTop)
+        expect(race.beforeGrowth.writes).toBe(0)
+        expect(race.scrollEventsBeforeGrowth).toBe(0)
+        expect(race.scrollEventsAfterGrowth).toBe(0)
+        if (scenario === 'cumulative') expect(race.scrollEventsAfterDelivery).toBe(0)
+        else expect(race.scrollEventsAfterDelivery).toBeGreaterThan(0)
+        expect.soft({ top: race.afterGrowth.top, writes: race.afterGrowth.writes }, 'before native scroll delivery')
+          .toEqual({ top: expectedTop, writes: 0 })
+        expect.soft({ top: race.afterDelivery.top, writes: race.afterDelivery.writes }, 'after native scroll delivery')
+          .toEqual({ top: expectedTop, writes: 0 })
+        expect.soft({ top: race.afterLateGrowth.top, writes: race.afterLateGrowth.writes }, 'growth after native scroll delivery')
+          .toEqual({ top: expectedTop, writes: 0 })
+        if (scenario.startsWith('late-')) {
+          expect(race.afterDelivery.maxTop - race.afterDelivery.top).toBe(1)
+          expect(race.afterLateGrowth.maxTop).toBe(660)
+        }
+        const resumed = await page.evaluate<Measure>(`${api}.resumeAtBottomWithTouch()`)
+        expect(resumed.top).toBe(660)
+        const growth = await page.evaluate<Measure>(`${api}.patch({ height: 920, revision: 2 })`)
+        expect({ top: growth.top, writes: growth.writes }).toEqual({ top: 720, writes: 1 })
+        console.info('[assistant contact resumed evidence]', { scenario, resumed, growth })
+        return
+      }
 
       await page.evaluate<void>(`${api}.resetWrites()`)
       const switched = await page.evaluate<Measure>(`${api}.patch({ assistantID: 'assistant-b' })`)

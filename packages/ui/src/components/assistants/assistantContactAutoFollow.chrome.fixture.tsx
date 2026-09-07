@@ -26,6 +26,15 @@ type HarnessAPI = {
   resumeAtBottomWithTouch: () => HarnessMeasure
   resetWrites: () => void
   measure: () => HarnessMeasure
+  slightTouchBeforeLayout: (input: 'touch' | 'scrollbar' | 'DOM' | 'cumulative' | 'late-scrollbar' | 'late-wheel' | 'late-touch-pointer' | 'late-previous-touch') => Promise<{
+    beforeGrowth: HarnessMeasure
+    afterGrowth: HarnessMeasure
+    afterDelivery: HarnessMeasure
+    afterLateGrowth: HarnessMeasure
+    scrollEventsBeforeGrowth: number
+    scrollEventsAfterGrowth: number
+    scrollEventsAfterDelivery: number
+  }>
 }
 
 declare global {
@@ -134,6 +143,58 @@ const dispatchTouch = (type: string, clientY?: number) => {
 
 window.assistantContactAutoFollowHarness = {
   patch,
+  slightTouchBeforeLayout: async (input) => {
+    await patch({ assistantID: 'delayed-scroll', revision: 0, height: 800 })
+    let scrollEvents = 0
+    const recordScroll = () => { scrollEvents += 1 }
+    scroller.addEventListener('scroll', recordScroll)
+    try {
+      const lateGrowth = input.startsWith('late-')
+      if (input === 'late-wheel') scroller.dispatchEvent(new WheelEvent('wheel', { bubbles: true, deltaY: 40 }))
+      if (input === 'late-previous-touch') {
+        dispatchTouch('touchstart', 200)
+        dispatchTouch('touchmove', 190)
+        dispatchTouch('touchend')
+      }
+      if (input === 'late-scrollbar' || input === 'late-touch-pointer') {
+        scroller.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, pointerType: input === 'late-scrollbar' ? 'mouse' : 'touch' }))
+      }
+      if (lateGrowth) {
+        dispatchTouch('touchstart', 100)
+        dispatchTouch('touchmove', 101)
+      }
+      if (input === 'touch' || input === 'cumulative') dispatchTouch('touchstart', 100)
+      if (input === 'scrollbar') scroller.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, pointerType: 'mouse' }))
+      for (let step = 1; step <= (input === 'cumulative' ? 3 : 1); step += 1) {
+        if (input === 'touch' || input === 'cumulative') dispatchTouch('touchmove', 100 + step)
+        // The native setter schedules browser scroll delivery for a later rendering step.
+        if (input !== 'cumulative') scroller.scrollTop -= 1
+      }
+      // Exclude fixture-owned movement from the Hook write budget.
+      writes = 0
+      const beforeGrowth = measure()
+      const scrollEventsBeforeGrowth = scrollEvents
+      flushSync(() => updateState?.({ revision: 1, height: lateGrowth ? 800 : 860 }))
+      const afterGrowth = measure()
+      const scrollEventsAfterGrowth = scrollEvents
+      await settle()
+      const afterDelivery = measure()
+      const scrollEventsAfterDelivery = scrollEvents
+      if (lateGrowth) await patch({ revision: 2, height: 860 })
+      return {
+        beforeGrowth,
+        afterGrowth,
+        afterDelivery,
+        afterLateGrowth: measure(),
+        scrollEventsBeforeGrowth,
+        scrollEventsAfterGrowth,
+        scrollEventsAfterDelivery,
+      }
+    } finally {
+      dispatchTouch('touchend')
+      scroller.removeEventListener('scroll', recordScroll)
+    }
+  },
   releaseAt: (top) => {
     scroller.dispatchEvent(new WheelEvent('wheel', { bubbles: true, deltaY: -60 }))
     scroller.scrollTop = top
