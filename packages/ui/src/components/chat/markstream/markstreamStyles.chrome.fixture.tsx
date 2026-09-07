@@ -87,4 +87,38 @@ const replay = async (dark: boolean, frame: 'A' | 'B' = 'A', sameIds = false) =>
   return { legacy: measure('legacy'), nested: measure('nested'), global: styleOf(document.getElementById('global-probe')!) };
 };
 
-Object.assign(window, { markstreamStyleReplay: replay });
+const scrollReplay = async () => {
+  flushSync(() => root.render(
+    <I18nProvider>
+      <div id="scroll-replay" style={{ height: 600, overflowY: 'auto', overflowAnchor: 'none', padding: '0 16px' }}>
+        {Array.from({ length: 12 }, (_, index) => (
+          <MarkstreamRenderer
+            key={index}
+            messageId={`scroll-${index}`}
+            enableFileReferences={false}
+            content={Array.from({ length: 3 + (index % 4) * 5 }, (_, paragraph) =>
+              `Section ${index + 1}, paragraph ${paragraph + 1}: Scrolling must preserve settled content geometry.`,
+            ).join('\n\n')}
+          />
+        ))}
+      </div>
+    </I18nProvider>,
+  ));
+  await new Promise((resolve) => setTimeout(resolve, 300));
+  const scroller = document.getElementById('scroll-replay')!;
+  const initialHeight = scroller.scrollHeight;
+  const heights: number[] = [];
+  const visibility = Array.from(scroller.querySelectorAll('.markdown-renderer'), (element) =>
+    getComputedStyle(element).contentVisibility,
+  );
+  // Cold forward travel then reverse travel must not substitute an estimate
+  // for a settled message. Exercise the real renderer and imported CSS.
+  for (const top of [150, 600, 1200, 2400, 3600, 4800, 3600, 2400, 1200, 600, 0]) {
+    scroller.scrollTop = top;
+    await new Promise((resolve) => setTimeout(resolve, 80));
+    heights.push(scroller.scrollHeight);
+  }
+  return { initialHeight, heights, visibility };
+};
+
+Object.assign(window, { markstreamStyleReplay: replay, markstreamScrollReplay: scrollReplay });

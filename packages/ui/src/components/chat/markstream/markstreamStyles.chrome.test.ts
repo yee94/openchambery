@@ -172,6 +172,12 @@ describe('Markstream nested legacy code card Chromium styles', () => {
         expect(back.nested.codeId).toBe(a.nested.codeId);
         expect(back.nested.card).toEqual(a.nested.card);
       }
+      const scroll = await page.evaluate<{ initialHeight: number; heights: number[]; visibility: string[] }>(
+        'window.markstreamScrollReplay()',
+      );
+      writeFileSync(join(work, 'scroll-geometry.json'), JSON.stringify(scroll, null, 2));
+      expect(scroll.visibility).toEqual(Array(12).fill('visible'));
+      expect(scroll.heights).toEqual(Array(scroll.heights.length).fill(scroll.initialHeight));
     } finally {
       await session.close();
       await new Promise<void>((done, reject) => server.close((error) => error ? reject(error) : done()));
