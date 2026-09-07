@@ -205,3 +205,26 @@ export {
   type LynxComposerPickerItem,
   type LynxComposerPickerLoadResult,
 } from './composerPicker';
+
+export {
+  lynxQueuedMessagePreviewLine,
+  reorderLynxQueueChips,
+  moveLynxQueueChip,
+  canRemoveLynxQueueChip,
+  canSendNowLynxQueueChip,
+  toLynxQueueChipItems,
+  shouldShowLynxQueueShell,
+  type LynxQueueChipItem,
+} from './queuedMessageChips';
+export { LynxQueuedMessageChips } from './QueuedMessageChips';
+export {
+  parseLynxSessionGoal,
+  formatLynxGoalTokens,
+  formatLynxGoalDuration,
+  lynxGoalPauseResumeAction,
+  fetchLynxSessionGoal,
+  setLynxSessionGoalStatus,
+  type LynxSessionGoalPayload,
+  type LynxSessionGoalStatus,
+} from './sessionGoal';
+export { LynxSessionGoalRow } from './SessionGoalRow';

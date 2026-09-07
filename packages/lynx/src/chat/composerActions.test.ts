@@ -59,3 +59,53 @@ describe('Lynx composer send/stop/queue', () => {
     expect(calls.some((c) => c.includes('/abort'))).toBe(true);
   });
 });
+
+describe('Lynx queue chip remove / sendNow / reorder', () => {
+  const make = () => {
+    const calls: string[] = [];
+    const runtimeFetch = async (path: string, init?: { method?: string }) => {
+      calls.push(`${init?.method ?? 'GET'} ${path}`);
+      if (path.includes('prompt_async')) {
+        return { ok: true, status: 204, json: async () => true };
+      }
+      return { ok: false, status: 404, json: async () => ({}) };
+    };
+    let working = false;
+    let n = 0;
+    const actions = createLynxComposerActions({
+      sessionId: 'ses_1',
+      model: { providerID: 'anthropic', modelID: 'claude' },
+      sessionApi: { runtimeFetch },
+      sessionIsWorking: () => working,
+      createId: () => `q${++n}`,
+    });
+    return { actions, calls, setWorking: (v: boolean) => { working = v; } };
+  };
+
+  test('remove / reorder / sendNow on local queue', async () => {
+    const { actions, setWorking } = make();
+    expect(await actions.queue('one')).toMatchObject({ status: 'ok', queuedId: 'q1' });
+    expect(await actions.queue('two')).toMatchObject({ status: 'ok', queuedId: 'q2' });
+    expect(await actions.queue('three')).toMatchObject({ status: 'ok', queuedId: 'q3' });
+    expect(actions.reorderQueue('q3', 'q1')).toMatchObject({ status: 'ok' });
+    expect(actions.getQueue().map((q) => q.id)).toEqual(['q3', 'q1', 'q2']);
+    expect(actions.removeFromQueue('q1')).toMatchObject({ status: 'ok' });
+    expect(actions.getQueue().map((q) => q.id)).toEqual(['q3', 'q2']);
+
+    setWorking(true);
+    expect(await actions.sendNow('q3')).toMatchObject({ status: 'failed', reason: 'busy-steer-required' });
+    setWorking(false);
+    expect(await actions.sendNow('q3')).toMatchObject({ status: 'ok' });
+    expect(actions.getQueue().map((q) => q.id)).toEqual(['q2']);
+  });
+
+  test('chip ops without runtime fail honestly', () => {
+    const actions = createLynxComposerActions({
+      sessionId: 'ses_1',
+      model: { providerID: 'a', modelID: 'b' },
+      sessionApi: null,
+    });
+    expect(actions.removeFromQueue('x')).toMatchObject({ status: 'failed', reason: 'no-runtime' });
+    expect(actions.reorderQueue('a', 'b')).toMatchObject({ status: 'failed', reason: 'no-runtime' });
+  });
+});
