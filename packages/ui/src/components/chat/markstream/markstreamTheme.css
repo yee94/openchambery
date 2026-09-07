@@ -10,6 +10,15 @@
   color: var(--surface-foreground);
 }
 
+/* The transcript owns visibility and row measurements. The library's
+   content-visibility:auto still substitutes an intrinsic height offscreen
+   even with its node window disabled. On iOS, scrolling then changes settled
+   bubble heights and moves the reading position in both chat and assistants. */
+.oc-markstream-host .markstream-react.markdown-renderer {
+  content-visibility: visible;
+  contain-intrinsic-size: none;
+}
+
 .oc-markstream-host .markstream-react {
   color: inherit;
   font-family: var(--font-sans);

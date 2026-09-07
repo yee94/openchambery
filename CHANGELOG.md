@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.19.8-beta.7] - 2026-09-07
+
+### 会话与助手
+
+- 修复 iOS 上阅读 Markstream 正文时突然向上跳动：屏外消息保持实际高度，滚动时不再切换为估算高度；同时覆盖普通会话和助手对话。
+
 ## [1.19.8-beta.6] - 2026-09-07
 
 ### 会话
