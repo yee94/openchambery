@@ -80,8 +80,9 @@ export const useAssistantContactAutoFollow = ({
   const [contentNode, setContentNode] = React.useState<HTMLDivElement | null>(null)
   const followingRef = React.useRef(true)
   const activeIdentityRef = React.useRef<string | null>(null)
+  const baselineNodeRef = React.useRef<HTMLDivElement | null>(null)
   const lastScrollTopRef = React.useRef(0)
-  const touchLastYRef = React.useRef<number | null>(null)
+  const touchRef = React.useRef<{ x: number; y: number; deltaX: number; deltaY: number } | null>(null)
   const userIntentRef = React.useRef<{ direction: ScrollDirection; expiresAt: number } | null>(null)
   const activeRef = React.useRef(active)
   activeRef.current = active
@@ -100,6 +101,13 @@ export const useAssistantContactAutoFollow = ({
     const element = scrollNodeRef.current
     if (!element) return false
     const geometry = readScrollGeometry(element)
+    // A shrinking scroll range can clamp the browser to its new maximum.
+    const previousTop = Math.min(lastScrollTopRef.current, Math.max(0, geometry.scrollHeight - geometry.clientHeight))
+    if (geometry.scrollTop < previousTop - 0.5) {
+      followingRef.current = false
+      lastScrollTopRef.current = geometry.scrollTop
+      return false
+    }
     if (isAtBottom(geometry)) {
       lastScrollTopRef.current = geometry.scrollTop
       return false
@@ -135,7 +143,8 @@ export const useAssistantContactAutoFollow = ({
     const element = scrollNodeRef.current
     if (!element) return
     const geometry = readScrollGeometry(element)
-    const previousTop = lastScrollTopRef.current
+    const movedDown = geometry.scrollTop > lastScrollTopRef.current
+    const previousTop = Math.min(lastScrollTopRef.current, Math.max(0, geometry.scrollHeight - geometry.clientHeight))
     lastScrollTopRef.current = geometry.scrollTop
 
     if (followingRef.current) {
@@ -144,7 +153,7 @@ export const useAssistantContactAutoFollow = ({
     }
 
     const intent = currentUserIntent()
-    if (isAtBottom(geometry) && (intent === 'down' || intent === 'scrollbar')) {
+    if (movedDown && isAtBottom(geometry) && (intent === 'down' || intent === 'scrollbar')) {
       followingRef.current = true
     }
   })
@@ -163,35 +172,40 @@ export const useAssistantContactAutoFollow = ({
   })
 
   const handleTouchStart = useEvent((event: TouchEvent) => {
+    userIntentRef.current = null
     const touch = event.touches.item(0)
-    touchLastYRef.current = touch ? touch.clientY : null
+    touchRef.current = touch ? { x: touch.clientX, y: touch.clientY, deltaX: 0, deltaY: 0 } : null
   })
 
   const handleTouchMove = useEvent((event: TouchEvent) => {
     const element = scrollNodeRef.current
     const touch = event.touches.item(0)
     if (!element || !touch) {
-      touchLastYRef.current = null
+      touchRef.current = null
       return
     }
-    const previousY = touchLastYRef.current
-    touchLastYRef.current = touch.clientY
-    if (previousY === null) return
-    const fingerDelta = touch.clientY - previousY
+    const previous = touchRef.current
+    if (!previous) return
+    const stepY = touch.clientY - previous.y
+    const reversed = stepY * previous.deltaY < 0
+    const deltaX = (reversed ? 0 : previous.deltaX) + touch.clientX - previous.x
+    const fingerDelta = (reversed ? 0 : previous.deltaY) + stepY
+    touchRef.current = { x: touch.clientX, y: touch.clientY, deltaX, deltaY: fingerDelta }
+    if (Math.abs(deltaX) >= Math.abs(fingerDelta)) return
+    if (fingerDelta > 0 && nestedScrollableCanConsumeUp(element, event.target)
+      || fingerDelta < 0 && nestedScrollableCanConsumeDown(element, event.target)) {
+      touchRef.current.deltaX = 0
+      touchRef.current.deltaY = 0
+      return
+    }
+    rememberUserIntent(fingerDelta > 0 ? 'up' : 'down')
     if (fingerDelta > TOUCH_FINGER_DOWN_THRESHOLD) {
-      if (nestedScrollableCanConsumeUp(element, event.target)) return
-      rememberUserIntent('up')
       releaseFollow()
-      return
-    }
-    if (fingerDelta < -TOUCH_FINGER_DOWN_THRESHOLD) {
-      if (nestedScrollableCanConsumeDown(element, event.target)) return
-      rememberUserIntent('down')
     }
   })
 
   const handleTouchEnd = useEvent(() => {
-    touchLastYRef.current = null
+    touchRef.current = null
   })
 
   const handleKeyDown = useEvent((event: KeyboardEvent) => {
@@ -205,21 +219,22 @@ export const useAssistantContactAutoFollow = ({
 
   const handlePointerDown = useEvent((event: PointerEvent) => {
     const element = scrollNodeRef.current
-    if (event.target !== element) return
+    if (event.pointerType !== 'mouse' || event.target !== element) return
     rememberUserIntent('scrollbar')
   })
 
   React.useLayoutEffect(() => {
     const identity = active ? assistantID : null
-    if (activeIdentityRef.current !== identity) {
+    const element = scrollNodeRef.current
+    if (activeIdentityRef.current !== identity || baselineNodeRef.current !== element) {
       activeIdentityRef.current = identity
+      baselineNodeRef.current = element
       followingRef.current = true
       userIntentRef.current = null
-      touchLastYRef.current = null
+      touchRef.current = null
+      lastScrollTopRef.current = element?.scrollTop ?? 0
     }
     if (!active) return
-    const element = scrollNodeRef.current
-    lastScrollTopRef.current = element?.scrollTop ?? 0
     pinToBottom()
     // eslint-disable-next-line react-hooks/exhaustive-deps -- these values own rerun semantics; useEvent keeps the writer current.
   }, [active, assistantID, contentRevision, scrollNode])

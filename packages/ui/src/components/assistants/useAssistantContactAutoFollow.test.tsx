@@ -49,9 +49,10 @@ type ProbeProps = {
   assistantID: string
   revision: number
   geometry: Geometry
+  nodeKey?: string
 }
 
-const Probe: React.FC<ProbeProps> = ({ active, assistantID, revision, geometry }) => {
+const Probe: React.FC<ProbeProps> = ({ active, assistantID, revision, geometry, nodeKey }) => {
   const { scrollRef, contentRef } = useAssistantContactAutoFollow({
     active,
     assistantID,
@@ -76,7 +77,7 @@ const Probe: React.FC<ProbeProps> = ({ active, assistantID, revision, geometry }
   }, [geometry, scrollRef])
 
   return (
-    <div ref={attachScroller} data-test-scroller="">
+    <div key={nodeKey} ref={attachScroller} data-test-scroller="">
       <div ref={contentRef} data-test-content="">
         <div data-test-nested="" />
       </div>
@@ -126,17 +127,171 @@ const wheel = (target: Element, deltaY: number) => {
   target.dispatchEvent(new WheelEvent('wheel', { bubbles: true, deltaY }))
 }
 
-const touch = (target: Element, type: string, clientY?: number) => {
+const touch = (target: Element, type: string, clientY?: number, clientX = 20) => {
   const event = new Event(type, { bubbles: true })
   Object.defineProperty(event, 'touches', {
     value: {
-      item: (index: number) => index === 0 && clientY !== undefined ? { clientY } : null,
+      item: (index: number) => index === 0 && clientY !== undefined ? { clientY, clientX } : null,
     },
   })
   target.dispatchEvent(event)
 }
 
 describe('useAssistantContactAutoFollow', () => {
+  test.each(['scrollbar', 'wheel', 'previous touch', 'touch pointer'] as const)(
+    'keeps 599 with zero writes through no-growth layout, late scroll and growth after %s intent', async (input) => {
+      const geometry: Geometry = { top: 600, height: 900, client: 300, writes: 0 }
+      const probe = await mountProbe({ active: true, assistantID: 'a', revision: 0, geometry })
+      if (input === 'wheel') wheel(probe.scroller, 40)
+      else if (input === 'previous touch') {
+        touch(probe.scroller, 'touchstart', 200)
+        touch(probe.scroller, 'touchmove', 190)
+        touch(probe.scroller, 'touchend')
+      } else probe.scroller.dispatchEvent(new PointerEvent('pointerdown', {
+        bubbles: true, pointerType: input === 'scrollbar' ? 'mouse' : 'touch',
+      }))
+      touch(probe.scroller, 'touchstart', 100)
+      touch(probe.scroller, 'touchmove', 101)
+      geometry.top = 599
+      await probe.render({ revision: 1 })
+      expect({ top: geometry.top, writes: geometry.writes }).toEqual({ top: 599, writes: 0 })
+      probe.scroller.dispatchEvent(new Event('scroll'))
+      geometry.height = 960
+      await probe.render({ revision: 2 })
+      TestResizeObserver.emit(probe.content)
+      expect({ top: geometry.top, writes: geometry.writes }).toEqual({ top: 599, writes: 0 })
+    },
+  )
+
+  test.each(['up', 'zero', 'touch reversal'] as const)('requires real downward movement to resume after %s movement near bottom', async (input) => {
+    const geometry: Geometry = { top: 600, height: 900, client: 300, writes: 0 }
+    const probe = await mountProbe({ active: true, assistantID: 'a', revision: 0, geometry })
+    wheel(probe.scroller, -1)
+    if (input === 'touch reversal') {
+      touch(probe.scroller, 'touchstart', 100)
+      touch(probe.scroller, 'touchmove', 90)
+      touch(probe.scroller, 'touchmove', 91)
+    } else wheel(probe.scroller, 1)
+    geometry.top = input === 'zero' ? 600 : 599
+    probe.scroller.dispatchEvent(new Event('scroll'))
+    geometry.height = 960
+    await probe.render({ revision: 1 })
+    expect({ top: geometry.top, writes: geometry.writes }).toEqual({ top: input === 'zero' ? 600 : 599, writes: 0 })
+  })
+
+  test.each(['wheel', 'keyboard', 'scrollbar'] as const)('resumes on real downward arrival within bottom tolerance (%s)', async (input) => {
+    const geometry: Geometry = { top: 600, height: 900, client: 300, writes: 0 }
+    const probe = await mountProbe({ active: true, assistantID: 'a', revision: 0, geometry })
+    if (input === 'scrollbar') probe.scroller.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, pointerType: 'mouse' }))
+    else wheel(probe.scroller, -1)
+    geometry.top = 598
+    probe.scroller.dispatchEvent(new Event('scroll'))
+    geometry.top = 597
+    probe.scroller.dispatchEvent(new Event('scroll'))
+    geometry.height = 920
+    await probe.render({ revision: 1 })
+    expect({ top: geometry.top, writes: geometry.writes }).toEqual({ top: 597, writes: 0 })
+    if (input === 'wheel') wheel(probe.scroller, 40)
+    if (input === 'keyboard') probe.scroller.dispatchEvent(new KeyboardEvent('keydown', { key: 'End', bubbles: true }))
+    geometry.top = 619
+    probe.scroller.dispatchEvent(new Event('scroll'))
+    geometry.height = 960
+    await probe.render({ revision: 2 })
+    expect({ top: geometry.top, writes: geometry.writes }).toEqual({ top: 660, writes: 1 })
+  })
+
+  test.each(['touchstart', 'slight reversal', 'touch pointer', 'pen pointer'] as const)('requires current gesture direction on positive scroll delivery (%s)', async (input) => {
+    const geometry: Geometry = { top: 600, height: 900, client: 300, writes: 0 }
+    const probe = await mountProbe({ active: true, assistantID: 'a', revision: 0, geometry })
+    wheel(probe.scroller, -1)
+    geometry.top = 598
+    probe.scroller.dispatchEvent(new Event('scroll'))
+    if (input === 'touch pointer' || input === 'pen pointer') {
+      probe.scroller.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, pointerType: input === 'touch pointer' ? 'touch' : 'pen' }))
+    } else {
+      wheel(probe.scroller, 1)
+      touch(probe.scroller, 'touchstart', 100)
+      if (input === 'slight reversal') {
+        touch(probe.scroller, 'touchmove', 90)
+        touch(probe.scroller, 'touchmove', 91)
+      }
+    }
+    geometry.top = 599
+    probe.scroller.dispatchEvent(new Event('scroll'))
+    geometry.height = 960
+    await probe.render({ revision: 1 })
+    expect({ top: geometry.top, writes: geometry.writes }).toEqual({ top: 599, writes: 0 })
+  })
+
+  test.each([
+    ['layout', 'touch'], ['observer', 'touch'],
+    ['layout', 'scrollbar'], ['observer', 'scrollbar'],
+    ['layout', 'DOM'], ['observer', 'DOM'],
+  ] as const)('preserves a single 1px pending upward move before %s growth (%s)', async (source, input) => {
+    const geometry: Geometry = { top: 600, height: 900, client: 300, writes: 0 }
+    const probe = await mountProbe({ active: true, assistantID: 'a', revision: 0, geometry })
+    if (input === 'touch') {
+      touch(probe.scroller, 'touchstart', 100)
+      touch(probe.scroller, 'touchmove', 101)
+    } else if (input === 'scrollbar') {
+      probe.scroller.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, pointerType: 'mouse' }))
+    }
+    geometry.top = 599
+    geometry.height = 960
+    if (source === 'layout') await probe.render({ revision: 1 })
+    else TestResizeObserver.emit(probe.content)
+    expect.soft({ top: geometry.top, writes: geometry.writes }).toEqual({ top: 599, writes: 0 })
+    probe.scroller.dispatchEvent(new Event('scroll'))
+    geometry.height = 980
+    await probe.render({ revision: 2 })
+    TestResizeObserver.emit(probe.content)
+    expect({ top: geometry.top, writes: geometry.writes }).toEqual({ top: 599, writes: 0 })
+  })
+
+  test.each(['layout', 'observer'] as const)(
+    'preserves a slight upward scroll when %s growth precedes native scroll delivery',
+    async (growthSource) => {
+      const geometry: Geometry = { top: 600, height: 900, client: 300, writes: 0 }
+      const probe = await mountProbe({ active: true, assistantID: 'a', revision: 0, geometry })
+      expect({ top: geometry.top, writes: geometry.writes }).toEqual({ top: 600, writes: 0 })
+
+      touch(probe.scroller, 'touchstart', 100)
+      for (let step = 1; step <= 3; step += 1) {
+        touch(probe.scroller, 'touchmove', 100 + step)
+        // Model browser-owned movement through the backing geometry; the setter counts Hook writes.
+        geometry.top -= 1
+      }
+      expect({ top: probe.scroller.scrollTop, writes: geometry.writes }).toEqual({ top: 597, writes: 0 })
+
+      // Keep scroll delivery pending until the competing growth path has run.
+      geometry.height = 960
+      if (growthSource === 'layout') await probe.render({ revision: 1 })
+      else TestResizeObserver.emit(probe.content)
+      expect.soft({ top: geometry.top, writes: geometry.writes }, 'before native scroll delivery')
+        .toEqual({ top: 597, writes: 0 })
+
+      probe.scroller.dispatchEvent(new Event('scroll'))
+      expect.soft({ top: geometry.top, writes: geometry.writes }, 'after delayed scroll delivery')
+        .toEqual({ top: 597, writes: 0 })
+    },
+  )
+
+  test('releases cumulative 1px upward touch intent before any DOM scroll movement', async () => {
+    const geometry: Geometry = { top: 600, height: 900, client: 300, writes: 0 }
+    const probe = await mountProbe({ active: true, assistantID: 'a', revision: 0, geometry })
+
+    touch(probe.scroller, 'touchstart', 100)
+    for (let step = 1; step <= 3; step += 1) {
+      touch(probe.scroller, 'touchmove', 100 + step)
+    }
+    expect({ top: geometry.top, writes: geometry.writes }).toEqual({ top: 600, writes: 0 })
+
+    // Growth exposes release through observable writes while native movement is still pending.
+    geometry.height = 960
+    TestResizeObserver.emit(probe.content)
+    expect({ top: geometry.top, writes: geometry.writes }).toEqual({ top: 600, writes: 0 })
+  })
+
   test('pins the initial view and writes only when growth creates bottom distance', async () => {
     const geometry: Geometry = { top: 0, height: 900, client: 300, writes: 0 }
     const probe = await mountProbe({ active: true, assistantID: 'a', revision: 0, geometry })
@@ -154,6 +309,83 @@ describe('useAssistantContactAutoFollow', () => {
     await probe.render({ revision: 3 })
     expect(geometry.top).toBe(660)
     expect(geometry.writes).toBe(1)
+  })
+
+  test.each(['horizontal', 'reversal', 'nested'] as const)('keeps follow through %s small touch samples', async (input) => {
+    const geometry: Geometry = { top: 600, height: 900, client: 300, writes: 0 }
+    const probe = await mountProbe({ active: true, assistantID: 'a', revision: 0, geometry })
+    const target = input === 'nested' ? probe.nested : probe.scroller
+    if (input === 'nested') Object.defineProperties(target, {
+      clientHeight: { value: 100 }, scrollHeight: { value: 500 }, scrollTop: { value: 30, writable: true },
+    })
+    touch(target, 'touchstart', 100)
+    if (input === 'reversal') {
+      for (const y of [101, 102, 101, 102, 103]) touch(target, 'touchmove', y)
+    } else {
+      for (let step = 1; step <= 4; step += 1) touch(target, 'touchmove', 100 + step, input === 'horizontal' ? 20 + step * 4 : 20)
+    }
+    geometry.height = 960
+    await probe.render({ revision: 1 })
+    expect({ top: geometry.top, writes: geometry.writes }).toEqual({ top: 660, writes: 1 })
+    if (input === 'nested') {
+      target.scrollTop = 0
+      touch(target, 'touchmove', 105)
+      geometry.height = 980
+      TestResizeObserver.emit(probe.content)
+      expect(geometry.top).toBe(680)
+      for (const y of [106, 107]) touch(target, 'touchmove', y)
+      geometry.writes = 0
+      geometry.height = 1000
+      TestResizeObserver.emit(probe.content)
+      expect({ top: geometry.top, writes: geometry.writes }).toEqual({ top: 680, writes: 0 })
+    }
+  })
+
+  test('resumes through cumulative downward samples after a direction reversal', async () => {
+    const geometry: Geometry = { top: 600, height: 900, client: 300, writes: 0 }
+    const probe = await mountProbe({ active: true, assistantID: 'a', revision: 0, geometry })
+    touch(probe.scroller, 'touchstart', 100)
+    for (const y of [101, 102, 103]) touch(probe.scroller, 'touchmove', y)
+    geometry.top = 500
+    probe.scroller.dispatchEvent(new Event('scroll'))
+    for (const y of [102, 101, 100]) touch(probe.scroller, 'touchmove', y)
+    touch(probe.scroller, 'touchend')
+    geometry.top = 600
+    probe.scroller.dispatchEvent(new Event('scroll'))
+    geometry.height = 960
+    TestResizeObserver.emit(probe.content)
+    expect({ top: geometry.top, writes: geometry.writes }).toEqual({ top: 660, writes: 1 })
+  })
+
+  test.each(['shrink', 'viewport'] as const)('keeps follow after browser clamp from %s with early and late scroll delivery', async (change) => {
+    const geometry: Geometry = { top: 600, height: 900, client: 300, writes: 0 }
+    const probe = await mountProbe({ active: true, assistantID: 'a', revision: 0, geometry })
+    for (const early of [true, false]) {
+      if (change === 'shrink') geometry.height -= 60
+      else geometry.client += 60
+      geometry.top = geometry.height - geometry.client
+      if (early) probe.scroller.dispatchEvent(new Event('scroll'))
+      TestResizeObserver.emit(probe.content)
+      await probe.render({ revision: early ? 1 : 3 })
+      if (!early) probe.scroller.dispatchEvent(new Event('scroll'))
+      expect(geometry.writes).toBe(0)
+      geometry.height += 80
+      await probe.render({ revision: early ? 2 : 4 })
+      expect({ top: geometry.top, writes: geometry.writes }).toEqual({ top: geometry.height - geometry.client, writes: 1 })
+      geometry.writes = 0
+    }
+  })
+
+  test('checks pending movement even on a no-op frame and resets on a replacement node', async () => {
+    const geometry: Geometry = { top: 600, height: 900, client: 300, writes: 0 }
+    const probe = await mountProbe({ active: true, assistantID: 'a', revision: 0, geometry })
+    geometry.top = 599
+    await probe.render({ revision: 1 })
+    geometry.height = 960
+    TestResizeObserver.emit(probe.content)
+    expect({ top: geometry.top, writes: geometry.writes }).toEqual({ top: 599, writes: 0 })
+    await probe.render({ nodeKey: 'replacement' })
+    expect({ top: geometry.top, writes: geometry.writes }).toEqual({ top: 660, writes: 1 })
   })
 
   test('preserves a released reading position through stream bursts and programmatic bottom moves', async () => {

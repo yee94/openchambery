@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.19.8-beta.5] - 2026-09-07
+
+### 会话
+
+- Markstream 正文渲染与旧版代码卡片样式隔离，避免样式串扰影响代码内容。
+
+### 助手
+
+- 修复联系人在轻微上滑后仍被流式/异步增长拉回底部：小幅上滑与原生滚动交付的竞争下保持阅读位置，只有手动回到底部才恢复跟随。
+
 ## [1.19.8-beta.4] - 2026-09-07
 
 ### 会话
