@@ -4,14 +4,14 @@
  * Progress 0 = expanded, 1 = compact. Motion is paint-only (transform/opacity).
  *
  * Model:
- * - Any upward scroll from expanded starts tracking immediately (no dead zone).
+ * - User-owned upward scroll from expanded starts tracking immediately.
  * - Follow maps the full FULL_RANGE px to progress 0…1 so a held drag never
  *   parks at the 0.5 handoff where both layers are invisible.
  * - While a finger is down the machine only follows; commit happens after the
  *   gesture ends (touchend / scrollend / scroll idle) and picks the final form
  *   from progress vs the commit threshold.
- * - After a compact snap, the hook may suppress return-follow briefly so iOS
- *   momentum cannot bounce straight back — that is NOT a permanent latch.
+ * - After a compact snap, the hook may suppress return-follow briefly while iOS
+ *   momentum settles; later vertical gesture intent releases that suppression.
  * - Distance alone cannot decide the compact→expanded direction once the
  *   composer may be expanded far from the bottom, so the hook supplies travel
  *   direction: `towardBottom` reveals from outside the follow band, and
@@ -36,11 +36,9 @@ export const COMPOSER_SWAP_COMPACT_SETTLE_MS = 320;
  */
 export const COMPOSER_SWAP_REVEAL_TRAVEL_PX = 24;
 /**
- * Scroll geometry only carries user intent within this long of a touch. Content
- * growth and the list's own animated end maintenance move the end away from the
- * viewport for many frames with no gesture behind them; without this window the
- * transcript would collapse the composer on its own streaming output. Sized to
- * outlast fling momentum after the finger lifts.
+ * Vertical touchmove intent carries into scroll geometry for this long after
+ * lift-off. The hook isolates content/viewport size changes and anchoring frames
+ * from this window. Sized to outlast fling momentum after the finger lifts.
  */
 export const COMPOSER_SWAP_USER_SCROLL_WINDOW_MS = 1200;
 export const COMPOSER_SWAP_CSS_VAR = '--oc-mobile-composer-swap';
@@ -160,8 +158,8 @@ const followFromCompact = (distanceFromBottom: number): number => {
  * Apply scroll. `suppressReturn` is a short post-compact settle window from the
  * hook — not a permanent latch — so repeat expand↔compact cycles keep working.
  *
- * Snapping can be interrupted: a new scroll target cancels the in-flight snap
- * so the machine cannot stick in `snapping` across later gestures.
+ * User-owned scrolling can interrupt an in-flight snap. Program-owned frames
+ * preserve the current phase and leave timer completion in charge.
  */
 export const applyComposerSwapScroll = (
     state: ComposerSwapState,
@@ -174,13 +172,14 @@ export const applyComposerSwapScroll = (
         holdExpanded?: boolean;
         /**
          * False when the geometry moved without a gesture behind it (streaming
-         * growth, the list gliding back to the end). Such frames may not start
-         * a collapse; arriving at the true bottom still expands.
+         * growth, the list gliding back to the end). Such frames preserve the
+         * exact current swap state.
          */
         userDriven?: boolean;
     } = {},
 ): ComposerSwapState => {
     if (state.pinned) return state;
+    if (options.userDriven === false) return state;
 
     const distance = Math.max(0, distanceFromBottom);
     const base = state.phase === 'snapping'
@@ -207,7 +206,7 @@ export const applyComposerSwapScroll = (
         // gesture at all: the tail appends, the end jumps away from the viewport
         // and the list glides back over several frames — every one of those
         // frames reads as a large distance and used to flash the composer shut.
-        if (options.holdExpanded || options.userDriven === false) {
+        if (options.holdExpanded) {
             return settle(base, {
                 phase: 'rest',
                 rest: 'expanded',

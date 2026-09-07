@@ -503,6 +503,28 @@ describe('useChatTimelineController source contracts', () => {
         expect(source).not.toMatch(/useEffect\s*\(\s*\(\)\s*=>\s*\{[\s\S]*?shouldAutoFillEarlierHistory/);
     });
 
+    test('scroll / upward-intent / auto-fill gates use required isMobile option, not runtime probe', () => {
+        // Same mounted flag as ChatContainer's load-older button. Runtime probe
+        // remains for cache/keeper/momentum only.
+        expect(source).toContain('isMobile: boolean');
+        expect(source).toContain('isMobileRef.current = isMobile');
+        expect(source).toContain('autoFillEnabledRef.current = autoFillEnabled');
+        expect(source).toContain('isMobile: isMobileRef.current');
+        // Gate render path uses the option directly.
+        expect(source).toMatch(/shouldAutoFillEarlierHistory\(\{[\s\S]*?isMobile,/);
+        // queryFn must re-check before real fetch so busy retries stop on flip.
+        expect(source).toContain('if (!autoFillEnabledRef.current || isMobileRef.current)');
+        // History-load decisions must not call the probe (cache/keeper still may).
+        const decideStart = source.indexOf('const decideAndLoadEarlier = useEvent');
+        const decideEnd = source.indexOf('const handleHistoryScroll = useEvent', decideStart);
+        expect(decideStart).toBeGreaterThan(-1);
+        expect(source.slice(decideStart, decideEnd)).not.toContain('isMobileSurfaceRuntime()');
+        const autoFillStart = source.indexOf('const autoFillGate = shouldAutoFillEarlierHistory');
+        const autoFillEnd = source.indexOf('const decideAndLoadEarlier = useEvent', autoFillStart);
+        expect(autoFillStart).toBeGreaterThan(-1);
+        expect(source.slice(autoFillStart, autoFillEnd)).not.toContain('isMobileSurfaceRuntime()');
+    });
+
     test('has-more-above-turns never falls back to !complete (unknown ≠ loadable)', () => {
         expect(source).toContain('export const resolveHasMoreAboveTurns');
         expect(source).toContain('return historyMeta.canLoadEarlier;');

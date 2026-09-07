@@ -42,6 +42,7 @@ import { AssistantScheduleCard } from './AssistantScheduleCard'
 import { AssistantSessionCard } from './AssistantSessionCard'
 import { AssistantWorkingAvatar } from './AssistantWorkingAvatar'
 import { useAssistantContactWorkingStore } from './assistantWorking'
+import { useAssistantContactAutoFollow } from './useAssistantContactAutoFollow'
 import {
   filesFromClipboard,
   filesFromDrop,
@@ -104,7 +105,6 @@ export const AssistantConversationSurface: React.FC<AssistantConversationSurface
   const sendGate = React.useMemo(() => createContactSendGate(), [])
   const settledTurnIDsRef = React.useRef(new Set<string>())
   const setContactWorking = useAssistantContactWorkingStore((state) => state.setWorking)
-  const scrollerRef = React.useRef<HTMLDivElement | null>(null)
   const messages = contactQuery.data?.messages ?? EMPTY_CONTACT_MESSAGES
   const scopedOptimisticTurns = scopeContactOptimisticTurns(optimisticTurns, assistant.id)
   const scopedTurnPreviews = scopeContactTurnPreviews(turnPreviews, assistant.id)
@@ -115,6 +115,11 @@ export const AssistantConversationSurface: React.FC<AssistantConversationSurface
     total + preview.bubbles.reduce((bubbleTotal, bubble) => bubbleTotal + bubble.text.length, 0)
   ), 0)
   const previewByTurnID = new Map(scopedTurnPreviews.map((preview) => [preview.turnID, preview]))
+  const { scrollRef, contentRef } = useAssistantContactAutoFollow({
+    active,
+    assistantID: assistant.id,
+    contentRevision: `${transcript.length}:${streamingTextLength}`,
+  })
 
   React.useEffect(() => {
     setSendError(null)
@@ -160,13 +165,8 @@ export const AssistantConversationSurface: React.FC<AssistantConversationSurface
   React.useEffect(() => {
     if (!active) return
     return subscribeOpenchamberEvents(handleContactEvent)
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- active and Assistant identity own subscription lifecycle; useEvent keeps the handler current.
   }, [active, assistant.id])
-
-  React.useEffect(() => {
-    const node = scrollerRef.current
-    if (!node) return
-    node.scrollTop = node.scrollHeight
-  }, [streamingTextLength, transcript.length])
 
   const addFiles = useEvent(async (files: ArrayLike<File> | null) => {
     const result = await readContactComposerFiles(files)
@@ -244,7 +244,7 @@ export const AssistantConversationSurface: React.FC<AssistantConversationSurface
   return (
     <div className="flex min-h-0 flex-1 flex-col bg-background">
       <div
-        ref={scrollerRef}
+        ref={scrollRef}
         className={cn(
           'min-h-0 flex-1 overflow-x-hidden overflow-y-auto px-4 pb-9 sm:px-8 sm:pb-12',
           overlayHeader
@@ -257,7 +257,7 @@ export const AssistantConversationSurface: React.FC<AssistantConversationSurface
           <p className="mb-3 typography-micro text-[var(--status-warning)]">{warning}</p>
         ) : null}
         {loadFailed ? (
-          <div className="mx-auto flex h-full min-h-56 max-w-xs flex-col items-center justify-center pb-16 text-center" data-assistant-contact-error="">
+          <div ref={contentRef} className="mx-auto flex h-full min-h-56 max-w-xs flex-col items-center justify-center pb-16 text-center" data-assistant-contact-error="">
             <div className="relative">
               <AssistantWorkingAvatar
                 name={assistant.id}
@@ -273,7 +273,7 @@ export const AssistantConversationSurface: React.FC<AssistantConversationSurface
             <p className="mt-1.5 typography-ui leading-6 text-muted-foreground">{t('assistants.contact.loadFailed')}</p>
           </div>
         ) : empty ? (
-          <div className="mx-auto flex h-full min-h-56 max-w-sm flex-col items-center justify-center pb-16 text-center" data-assistant-contact-empty="">
+          <div ref={contentRef} className="mx-auto flex h-full min-h-56 max-w-sm flex-col items-center justify-center pb-16 text-center" data-assistant-contact-empty="">
             <AssistantWorkingAvatar
               name={assistant.id}
               emoji={presentation.avatarEmoji}
@@ -285,7 +285,7 @@ export const AssistantConversationSurface: React.FC<AssistantConversationSurface
             <p className="mt-2 max-w-xs typography-ui leading-6 text-muted-foreground/80">{t('assistants.contact.empty')}</p>
           </div>
         ) : (
-          <div className="mx-auto flex w-full max-w-[42rem] flex-col">
+          <div ref={contentRef} className="mx-auto flex w-full max-w-[42rem] flex-col">
             {transcript.map((message, messageIndex) => {
               const previousMessage = messageIndex > 0 ? transcript[messageIndex - 1] : null
               const isUser = message.role === 'user'
