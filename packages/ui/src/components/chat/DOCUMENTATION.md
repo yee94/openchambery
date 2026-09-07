@@ -12,6 +12,8 @@ Sorted compaction turns use the turn-owned Activity visual language with a dedic
 
 `ChatInput` owns the complete composer DOM for primary chat and explicit chat surfaces. `chatInputSurface.ts` defines a discriminated primary/secondary contract with stable surface and draft identity, active state, session and directory, selection flush/capture, scoped model/agent/variant catalog readiness, typed backend operations, command policy, activity, delivery target, and scoped composer resources. Selection values carry provider, model, agent, and variant; catalogs carry variants for that selected model plus their readiness state. Secondary model controls and mobile agent cycling consume the surface catalog, keeping workspace catalogs isolated from global configuration.
 
+Global keyboard shortcut dropdown gating distinguishes popup presence from inline listboxes. Select popups use `data-slot="select-content"`; the prompt navigator rail and Assistant list only own keys targeted inside their listbox. With Composer focus, the visible prompt rail allows double-Escape abort. An explicitly opened prompt navigator panel consumes the first Escape to close, then a fresh double Escape can abort. `useKeyboardShortcuts.escape.test.tsx` exercises the real shortcut Hook and prompt rail across a session switch.
+
 Desktop model/agent pickers cancel Base UI `trigger-hover` dismiss (`searchableSelectorDismiss.ts`): keyboard/imperative opens are not click-like, so filter typing that shrinks the list under the cursor (or IME candidate pointer leave) must not close the popup. Esc, outside press, item select, and controlled close still dismiss.
 
 ### Closed-work shells and bounded Intl formatters

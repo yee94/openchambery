@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.19.9-beta.1] - 2026-09-08
+
+### 会话
+
+- 修复切到带右侧消息导航的会话后，输入框里连按两次 ESC 无法中止生成。
+
 ## [1.19.9] - 2026-09-08
 
 汇总 1.19.8-beta.9 ~ 1.19.8-beta.10。

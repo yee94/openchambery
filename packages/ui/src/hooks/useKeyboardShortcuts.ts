@@ -253,8 +253,10 @@ export const useKeyboardShortcuts = () => {
     };
 
     const hasOpenDropdown = () => {
+      // Inline listboxes (prompt rail, Assistant list) only own keys targeted
+      // inside them. Select popups carry data-slot="select-content".
       const openDropdowns = document.querySelectorAll<HTMLElement>(
-        '[data-slot="dropdown-menu-content"], [data-slot="select-content"], [role="listbox"], [role="menu"], [data-radix-popper-content-wrapper]'
+        '[data-slot="dropdown-menu-content"], [data-slot="select-content"], [role="menu"], [data-radix-popper-content-wrapper]'
       );
       return Array.from(openDropdowns).some((element) => element.getClientRects().length > 0);
     };
