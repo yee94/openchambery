@@ -34,6 +34,10 @@ export type LynxSettingsBlob = {
   responseStyleEnabled?: boolean;
   responseStylePreset?: string;
   responseStyleCustomInstructions?: string;
+  /** Cap VoiceSettings / useConfigStore — local STT model id. */
+  sttLocalModel?: string;
+  /** Cap VoiceSettings optional dictation enable. */
+  dictationEnabled?: boolean;
   [key: string]: unknown;
 };
 

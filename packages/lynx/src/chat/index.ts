@@ -53,8 +53,11 @@ export { LynxChatScreen } from './ChatScreen';
 export {
   LYNX_CHAT_OVERFLOW_ITEMS,
   chatSheetFromOverflowId,
+  dirtyChangeBadgeFromGitStatus,
+  withOverflowDirtyBadge,
   type LynxChatOverflowItem,
   type LynxChatOverflowItemId,
+  type LynxChatOverflowItemWithBadge,
   type LynxChatSheetKind,
 } from './overflowMenu';
 
