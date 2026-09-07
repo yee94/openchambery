@@ -228,3 +228,22 @@ export {
   type LynxSessionGoalStatus,
 } from './sessionGoal';
 export { LynxSessionGoalRow } from './SessionGoalRow';
+
+export {
+  LYNX_PINNED_SESSION_FILTER_ID,
+  shouldPreserveActiveProjectOnSessionOpen,
+  resolveMobileSessionSheetDefaultFilter,
+  normalizeLynxSessionStatusType,
+  isLynxSessionStatusWorking,
+  countLynxRunningSessions,
+  shouldShowLynxSessionBusyIndicator,
+  shouldShowLynxSessionStatusBar,
+  buildLynxSessionStatusBarItems,
+  relatedSessionsFromSessionIndex,
+  mergeLynxStatusBarRelated,
+  type LynxSessionStatusType,
+  type LynxSessionStatusBarItem,
+  type LynxSessionStatusBarRelatedInput,
+} from './sessionStatusBar';
+export { LynxSessionStatusBar } from './SessionStatusBar';
+

@@ -1,10 +1,11 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 
 import { ensureAssistantSession } from '../assistants/api';
 import { LynxShareBridge } from '../assistants/ShareBridge';
 import { createLynxShareInbox, type LynxShareInbox } from '../assistants/shareInbox';
 import type { LynxAssistantDTO } from '../assistants/types';
 import { LynxChatScreen } from '../chat/ChatScreen';
+import { relatedSessionsFromSessionIndex } from '../chat/sessionStatusBar';
 import { LynxDraftComposer } from '../chat/DraftComposer';
 import { LynxChatSheet } from '../chat/ChatSheets';
 import type { LynxChatSheetKind } from '../chat/overflowMenu';
@@ -322,6 +323,56 @@ export function LynxShellApp({
     ?? null;
   const showDetachedSheet = Boolean(chatSheet) && !chatRoute && !assistantRoute?.sessionId;
 
+  // Cap MobileSessionStatusBar related list — session-index snapshot when connected.
+  const [sessionIndexState, setSessionIndexState] = useState(() => sessionIndexBindings?.getSnapshot() ?? null);
+  useEffect(() => {
+    if (!sessionIndexBindings) {
+      setSessionIndexState(null);
+      return;
+    }
+    setSessionIndexState(sessionIndexBindings.getSnapshot());
+    return sessionIndexBindings.subscribe(() => {
+      setSessionIndexState(sessionIndexBindings.getSnapshot());
+    });
+  }, [sessionIndexBindings]);
+
+  const statusBarSessionId = chatRoute?.sessionId ?? assistantRoute?.sessionId ?? null;
+  const statusBarDirectory = chatRoute?.directory
+    ?? (assistantRoute?.sessionId ? assistantRoute.directory : null)
+    ?? null;
+  const relatedSessions = useMemo(() => {
+    if (!statusBarSessionId) return [];
+    return relatedSessionsFromSessionIndex({
+      snapshot: sessionIndexState?.snapshot ?? null,
+      currentSessionId: statusBarSessionId,
+      directory: statusBarDirectory,
+    });
+  }, [sessionIndexState, statusBarDirectory, statusBarSessionId]);
+  const orderedSessionIds = useMemo(
+    () => relatedSessions.map((session) => session.id),
+    [relatedSessions],
+  );
+
+  const selectRelatedSession = (sessionId: string) => {
+    const hit = relatedSessions.find((session) => session.id === sessionId);
+    setNavigation((state) => reduceLynxNavigation(state, {
+      type: 'openChat',
+      sessionId,
+      directory: hit?.directory ?? statusBarDirectory,
+    }));
+  };
+
+  /** Cap sessions sheet analogue on Lynx = Projects home (full Cap sheet deferred). */
+  const openSessionsSheet = () => {
+    setChatSheet(null);
+    setNavigation((state) => {
+      let next = reduceLynxNavigation(state, { type: 'closeSecondary' });
+      next = reduceLynxNavigation(next, { type: 'setActiveTab', tab: 'projects' });
+      return next;
+    });
+  };
+
+
   // Outer root <page> lives in App — keep shell content as <view> to avoid nested pages.
   return (
     <LynxView
@@ -361,6 +412,11 @@ export function LynxShellApp({
             onSheetClosed={() => setChatSheet(null)}
             onOpenDraft={openDraft}
             predecessor={chatPredecessor}
+            orderedSessionIds={orderedSessionIds}
+            relatedSessions={relatedSessions}
+            onSelectRelatedSession={selectRelatedSession}
+            onSessionSwipe={(_direction, targetId) => selectRelatedSession(targetId)}
+            onOpenSessionsSheet={openSessionsSheet}
           />
         ) : assistantRoute?.sessionId ? (
           <LynxChatScreen
@@ -378,6 +434,11 @@ export function LynxShellApp({
             initialSheet={chatSheet}
             onSheetClosed={() => setChatSheet(null)}
             onOpenDraft={openDraft}
+            orderedSessionIds={orderedSessionIds}
+            relatedSessions={relatedSessions}
+            onSelectRelatedSession={selectRelatedSession}
+            onSessionSwipe={(_direction, targetId) => selectRelatedSession(targetId)}
+            onOpenSessionsSheet={openSessionsSheet}
           />
         ) : secondary?.kind === 'draft' ? (
           <LynxDraftComposer

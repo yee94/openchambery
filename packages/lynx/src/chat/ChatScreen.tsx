@@ -16,6 +16,11 @@ import { LynxComposerActionsInGlass } from './ComposerActionsInGlass';
 import { LynxComposerGlassCard } from './ComposerGlassCard';
 import { LynxQueuedMessageChips } from './QueuedMessageChips';
 import { LynxSessionGoalRow } from './SessionGoalRow';
+import { LynxSessionStatusBar } from './SessionStatusBar';
+import {
+  mergeLynxStatusBarRelated,
+  type LynxSessionStatusBarRelatedInput,
+} from './sessionStatusBar';
 import {
   moveLynxQueueChip,
   toLynxQueueChipItems,
@@ -142,6 +147,18 @@ export type LynxChatScreenProps = {
   /** Called when edge-swipe commits a session switch. */
   onSessionSwipe?: (direction: 'prev' | 'next', targetId: string) => void;
   /**
+   * Related sessions for Cap MobileSessionStatusBar slim strip (titles/status).
+   * Merged with orderedSessionIds; shell usually fills from session-index.
+   */
+  relatedSessions?: readonly LynxSessionStatusBarRelatedInput[];
+  /** Tap a non-current chip — shell should openChat / replace secondary. */
+  onSelectRelatedSession?: (sessionId: string) => void;
+  /**
+   * Cap opens the full sessions sheet from chrome. Honest stub — only when
+   * shell/host provides a real handler (Projects home is the Lynx analogue).
+   */
+  onOpenSessionsSheet?: () => void;
+  /**
    * Host/shell fills this ref with the edge-swipe dispatch so native pan can
    * feed events. Composer-surface ownership still enforced inside the machine.
    */
@@ -180,6 +197,9 @@ export function LynxChatScreen({
   orderedSessionIds = [],
   onSessionSwipe,
   edgeSwipeDispatchRef,
+  relatedSessions = [],
+  onSelectRelatedSession,
+  onOpenSessionsSheet,
 }: LynxChatScreenProps) {
   const [timeline, setTimeline] = useState<LynxTimelineState>(() =>
     createEmptyTimelineState(sessionId, directory),
@@ -1002,6 +1022,21 @@ export function LynxChatScreen({
               onSelect={(suggestion) => setDraft((prev) => applyLynxComposerSuggestion(prev, suggestion))}
               host={host}
               fullPageAutoGlassSkin={fullPageAutoGlassSkin}
+            />
+            <LynxSessionStatusBar
+              locale={locale}
+              sessionId={sessionId}
+              related={mergeLynxStatusBarRelated({
+                orderedSessionIds,
+                related: relatedSessions,
+                currentSessionId: sessionId,
+              })}
+              sessionIsWorking={timeline.sessionIsWorking}
+              onSelectSession={(id) => {
+                if (id === sessionId) return;
+                onSelectRelatedSession?.(id);
+              }}
+              onOpenSessionsSheet={onOpenSessionsSheet}
             />
             <LynxQueuedMessageChips
               locale={locale}

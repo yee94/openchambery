@@ -42,6 +42,18 @@ export type LynxViewProps = {
   bindtouchstart?: (event: { detail?: unknown }) => void;
   bindtouchmove?: (event: { detail?: unknown }) => void;
   bindtouchend?: (event: { detail?: unknown }) => void;
+  'data-lynx-session-status-bar'?: string;
+  'data-lynx-session-status-chip'?: string;
+  'data-lynx-session-status-current'?: string;
+  'data-lynx-session-status-type'?: string;
+  'data-lynx-session-status-unread'?: string;
+  'data-lynx-session-busy-indicator'?: string;
+  'data-lynx-session-status-running-count'?: string;
+  'data-lynx-session-status-open-sheet'?: string;
+  'data-lynx-queue-chips'?: string;
+  'data-lynx-queue-chip'?: string;
+  'data-oc-queue-card'?: string;
+  'data-lynx-session-goal-row'?: string;
   bindtouchcancel?: (event: { detail?: unknown }) => void;
 };
 
