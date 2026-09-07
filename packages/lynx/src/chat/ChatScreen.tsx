@@ -14,6 +14,13 @@ import {
 import { LynxComposerAutocompleteList } from './ComposerAutocompleteList';
 import { LynxComposerActionsInGlass } from './ComposerActionsInGlass';
 import { LynxComposerGlassCard } from './ComposerGlassCard';
+import { LynxQueuedMessageChips } from './QueuedMessageChips';
+import { LynxSessionGoalRow } from './SessionGoalRow';
+import {
+  moveLynxQueueChip,
+  toLynxQueueChipItems,
+} from './queuedMessageChips';
+import { fetchLynxSessionGoal } from './sessionGoal';
 import { LynxComposerPickerSheets } from './ComposerPickerSheets';
 import {
   applyLynxAgentPickerSelection,
@@ -25,6 +32,7 @@ import {
   createLynxComposerActions,
   type LynxComposerActions,
   type LynxComposerModel,
+  type LynxQueuedPrompt,
 } from './composerActions';
 import { LynxChatSheet } from './ChatSheets';
 import {
@@ -181,6 +189,10 @@ export function LynxChatScreen({
   const [composerCatalogHint, setComposerCatalogHint] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [queueCount, setQueueCount] = useState(0);
+  const [queueSnapshot, setQueueSnapshot] = useState<readonly LynxQueuedPrompt[]>([]);
+  const [hasSessionGoal, setHasSessionGoal] = useState(false);
+  const [sendingQueueIds, setSendingQueueIds] = useState<ReadonlySet<string>>(() => new Set());
+  const [goalRefreshKey, setGoalRefreshKey] = useState(0);
   const [menuOpen, setMenuOpen] = useState(false);
   const [changesDirtyBadge, setChangesDirtyBadge] = useState<number | null>(null);
 
@@ -245,6 +257,28 @@ export function LynxChatScreen({
   );
   const composerRef = useRef(composer);
   composerRef.current = composer;
+
+  const syncQueueFromComposer = useCallback(() => {
+    const queue = composerRef.current.getQueue();
+    setQueueCount(queue.length);
+    setQueueSnapshot(queue);
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      const result = await fetchLynxSessionGoal(runtimeFetch, { sessionId, directory });
+      if (cancelled) return;
+      setHasSessionGoal(result.status === 'ok' && Boolean(result.goal));
+    })();
+    return () => { cancelled = true; };
+  }, [runtimeFetch, sessionId, directory, goalRefreshKey]);
+
+  useEffect(() => {
+    syncQueueFromComposer();
+    setSendingQueueIds(new Set());
+  }, [composer, syncQueueFromComposer]);
+
 
   useEffect(() => {
     let cancelled = false;
@@ -617,8 +651,9 @@ export function LynxChatScreen({
           void (async () => {
             const result = await composerRef.current.flushQueue();
             if (result.status === 'ok') {
-              setQueueCount(composerRef.current.getQueue().length);
+              syncQueueFromComposer();
               setTimeline((state) => setSessionWorking(state, true));
+              setGoalRefreshKey((n) => n + 1);
             }
           })();
           return;
@@ -695,9 +730,57 @@ export function LynxChatScreen({
       return;
     }
     setDraft('');
-    setQueueCount(composer.getQueue().length);
-  }, [composer, draft]);
+    syncQueueFromComposer();
+  }, [composer, draft, syncQueueFromComposer]);
 
+  const onQueueRemove = useCallback((id: string) => {
+    setActionError(null);
+    const result = composer.removeFromQueue(id);
+    if (result.status !== 'ok') {
+      setActionError(`${result.reason}: ${result.error}`);
+      return;
+    }
+    syncQueueFromComposer();
+  }, [composer, syncQueueFromComposer]);
+
+  const onQueueSendNow = useCallback(async (id: string) => {
+    setActionError(null);
+    setSendingQueueIds((prev) => {
+      const next = new Set(prev);
+      next.add(id);
+      return next;
+    });
+    const result = await composer.sendNow(id);
+    setSendingQueueIds((prev) => {
+      const next = new Set(prev);
+      next.delete(id);
+      return next;
+    });
+    if (result.status !== 'ok') {
+      setActionError(`${result.reason}: ${result.error}`);
+      syncQueueFromComposer();
+      return;
+    }
+    syncQueueFromComposer();
+    setTimeline((state) => setSessionWorking(state, true));
+    setGoalRefreshKey((n) => n + 1);
+  }, [composer, syncQueueFromComposer]);
+
+  const onQueueMove = useCallback((id: string, direction: 'up' | 'down') => {
+    const current = composer.getQueue();
+    const reordered = moveLynxQueueChip([...current], id, direction);
+    if (reordered.every((item, index) => item.id === current[index]?.id)) return;
+    const from = current.findIndex((item) => item.id === id);
+    const to = direction === 'up' ? from - 1 : from + 1;
+    const over = current[to];
+    if (!over) return;
+    const result = composer.reorderQueue(id, over.id);
+    if (result.status !== 'ok') {
+      setActionError(`${result.reason}: ${result.error}`);
+      return;
+    }
+    syncQueueFromComposer();
+  }, [composer, syncQueueFromComposer]);
 
   const onQuestionReply = useCallback(async (requestId: string, answers: string[][]) => {
     setCardBusy(true);
@@ -919,6 +1002,24 @@ export function LynxChatScreen({
               onSelect={(suggestion) => setDraft((prev) => applyLynxComposerSuggestion(prev, suggestion))}
               host={host}
               fullPageAutoGlassSkin={fullPageAutoGlassSkin}
+            />
+            <LynxQueuedMessageChips
+              locale={locale}
+              items={toLynxQueueChipItems(queueSnapshot, sendingQueueIds)}
+              sessionIsWorking={timeline.sessionIsWorking}
+              onRemove={onQueueRemove}
+              onSendNow={(id) => { void onQueueSendNow(id); }}
+              onMove={onQueueMove}
+              trailing={hasSessionGoal ? (
+                <LynxSessionGoalRow
+                  locale={locale}
+                  sessionId={sessionId}
+                  directory={directory}
+                  runtimeFetch={runtimeFetch}
+                  sessionIsWorking={timeline.sessionIsWorking}
+                  refreshKey={goalRefreshKey}
+                />
+              ) : null}
             />
             <LynxComposerGlassCard
               host={host}
