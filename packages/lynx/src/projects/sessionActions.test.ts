@@ -2,10 +2,14 @@ import { describe, expect, test } from 'vitest';
 
 import {
   archiveLynxSession,
+  copyLynxText,
   createLynxSession,
   deleteLynxSession,
+  fetchLynxSessionShareUrl,
   renameLynxSession,
+  shareLynxSession,
   toggleLynxSessionPin,
+  unshareLynxSession,
 } from './sessionActions';
 
 describe('Lynx session menu actions', () => {
@@ -51,5 +55,55 @@ describe('Lynx session menu actions', () => {
     expect(await toggleLynxSessionPin(runtimeFetch, { sessionId: 'ses_1', pinned: true })).toEqual({ status: 'ok' });
     expect(calls[0]?.method).toBe('POST');
     expect(calls[1]?.method).toBe('DELETE');
+  });
+});
+
+describe('Lynx session share / unshare', () => {
+  test('share posts OpenCode /session/:id/share and returns url', async () => {
+    const calls: Array<{ path: string; method?: string }> = [];
+    const runtimeFetch = async (path: string, init?: { method?: string }) => {
+      calls.push({ path, method: init?.method });
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({ id: 'ses_1', share: { url: 'https://share.example/a' } }),
+      };
+    };
+    expect(await shareLynxSession(runtimeFetch, { sessionId: 'ses_1', directory: '/repo' })).toEqual({
+      status: 'ok',
+      shareUrl: 'https://share.example/a',
+    });
+    expect(calls[0]).toEqual({ path: '/session/ses_1/share?directory=%2Frepo', method: 'POST' });
+    expect(await unshareLynxSession(runtimeFetch, { sessionId: 'ses_1', directory: '/repo' })).toEqual({
+      status: 'ok',
+    });
+    expect(calls[1]).toEqual({ path: '/session/ses_1/share?directory=%2Frepo', method: 'DELETE' });
+  });
+
+  test('share/unshare never fake-success on HTTP failure', async () => {
+    expect(await shareLynxSession(null, { sessionId: 'ses_1' })).toEqual({ status: 'no-runtime' });
+    const fail = await shareLynxSession(async () => ({ ok: false, status: 500, json: async () => ({}) }), {
+      sessionId: 'ses_1',
+    });
+    expect(fail.status).toBe('failed');
+    const unshareFail = await unshareLynxSession(async () => ({ ok: false, status: 404, json: async () => ({}) }), {
+      sessionId: 'ses_1',
+    });
+    expect(unshareFail.status).toBe('failed');
+  });
+
+  test('fetch share url via GET /session/:id', async () => {
+    const result = await fetchLynxSessionShareUrl(async () => ({
+      ok: true,
+      status: 200,
+      json: async () => ({ data: { share: { url: 'https://share.example/b' } } }),
+    }), { sessionId: 'ses_1' });
+    expect(result).toEqual({ status: 'ok', shareUrl: 'https://share.example/b' });
+  });
+
+  test('copyLynxText reports unavailable without clipboard', async () => {
+    const result = await copyLynxText('https://share.example/a');
+    expect(result.status === 'ok' || result.status === 'unavailable').toBe(true);
+    expect(await copyLynxText('')).toMatchObject({ status: 'unavailable' });
   });
 });

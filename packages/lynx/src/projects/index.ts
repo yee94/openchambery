@@ -12,7 +12,20 @@ export {
   renameLynxSession,
   toggleLynxSessionPin,
   createLynxSession,
+  shareLynxSession,
+  unshareLynxSession,
+  fetchLynxSessionShareUrl,
+  copyLynxText,
 } from './sessionActions';
+export {
+  syncLynxProjectSessions,
+  probeLynxGitRepository,
+  updateLynxProjectLabel,
+  closeLynxProject,
+  createLynxWorktree,
+  deleteLynxWorktree,
+  inferLynxProjectIsGit,
+} from './projectActions';
 
 export {
   loadLynxFsHome,

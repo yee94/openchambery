@@ -206,3 +206,137 @@ export async function createLynxSession(
     };
   }
 }
+
+export type LynxSessionShareResult =
+  | { status: 'ok'; shareUrl: string | null }
+  | { status: 'no-runtime' }
+  | { status: 'failed'; error: string; httpStatus: number };
+
+const parseShareUrl = (payload: unknown): string | null => {
+  if (!payload || typeof payload !== 'object') return null;
+  const root = payload as Record<string, unknown>;
+  const record = root.data && typeof root.data === 'object'
+    ? root.data as Record<string, unknown>
+    : root;
+  const share = record.share;
+  if (!share || typeof share !== 'object') return null;
+  const url = (share as Record<string, unknown>).url;
+  return typeof url === 'string' && url.trim() ? url.trim() : null;
+};
+
+/** Cap/OpenCode `POST /session/:id/share`. Never fake-success. */
+export async function shareLynxSession(
+  runtimeFetch: LynxRuntimeFetch | null | undefined,
+  input: { sessionId: string; directory?: string | null },
+): Promise<LynxSessionShareResult> {
+  if (!runtimeFetch) return { status: 'no-runtime' };
+  try {
+    const sessionId = ensureId(input.sessionId);
+    const response = await runtimeFetch(
+      `/session/${encodeURIComponent(sessionId)}/share${directoryQuery(input.directory)}`,
+      { method: 'POST' },
+    );
+    if (response.status === 0) return { status: 'no-runtime' };
+    if (!response.ok) {
+      return {
+        status: 'failed',
+        error: `session.share failed (${response.status})`,
+        httpStatus: response.status,
+      };
+    }
+    const payload = await response.json().catch(() => null);
+    return { status: 'ok', shareUrl: parseShareUrl(payload) };
+  } catch (error) {
+    return {
+      status: 'failed',
+      error: error instanceof Error ? error.message : String(error),
+      httpStatus: 0,
+    };
+  }
+}
+
+/** Cap/OpenCode `DELETE /session/:id/share`. Never fake-success. */
+export async function unshareLynxSession(
+  runtimeFetch: LynxRuntimeFetch | null | undefined,
+  input: { sessionId: string; directory?: string | null },
+): Promise<LynxSessionMutationResult> {
+  if (!runtimeFetch) return { status: 'no-runtime' };
+  try {
+    const sessionId = ensureId(input.sessionId);
+    const response = await runtimeFetch(
+      `/session/${encodeURIComponent(sessionId)}/share${directoryQuery(input.directory)}`,
+      { method: 'DELETE' },
+    );
+    if (response.status === 0) return { status: 'no-runtime' };
+    if (!response.ok) {
+      return {
+        status: 'failed',
+        error: `session.unshare failed (${response.status})`,
+        httpStatus: response.status,
+      };
+    }
+    return { status: 'ok' };
+  } catch (error) {
+    return {
+      status: 'failed',
+      error: error instanceof Error ? error.message : String(error),
+      httpStatus: 0,
+    };
+  }
+}
+
+/** Best-effort read of share URL via GET `/session/:id` (OpenCode Session.share). */
+export async function fetchLynxSessionShareUrl(
+  runtimeFetch: LynxRuntimeFetch | null | undefined,
+  input: { sessionId: string; directory?: string | null },
+): Promise<LynxSessionShareResult> {
+  if (!runtimeFetch) return { status: 'no-runtime' };
+  try {
+    const sessionId = ensureId(input.sessionId);
+    const response = await runtimeFetch(
+      `/session/${encodeURIComponent(sessionId)}${directoryQuery(input.directory)}`,
+      { method: 'GET' },
+    );
+    if (response.status === 0) return { status: 'no-runtime' };
+    if (!response.ok) {
+      return {
+        status: 'failed',
+        error: `session.get failed (${response.status})`,
+        httpStatus: response.status,
+      };
+    }
+    const payload = await response.json().catch(() => null);
+    return { status: 'ok', shareUrl: parseShareUrl(payload) };
+  } catch (error) {
+    return {
+      status: 'failed',
+      error: error instanceof Error ? error.message : String(error),
+      httpStatus: 0,
+    };
+  }
+}
+
+export type LynxCopyTextResult =
+  | { status: 'ok'; method: 'clipboard' }
+  | { status: 'unavailable'; error: string };
+
+/** Honest clipboard copy — Lynx has no Cap clipboard plugin; navigator may be absent. */
+export async function copyLynxText(text: string): Promise<LynxCopyTextResult> {
+  const value = text.trim();
+  if (!value) return { status: 'unavailable', error: 'empty text' };
+  const nav = typeof globalThis !== 'undefined'
+    ? (globalThis as { navigator?: { clipboard?: { writeText?: (v: string) => Promise<void> } } }).navigator
+    : undefined;
+  if (nav?.clipboard?.writeText) {
+    try {
+      await nav.clipboard.writeText(value);
+      return { status: 'ok', method: 'clipboard' };
+    } catch (error) {
+      return {
+        status: 'unavailable',
+        error: error instanceof Error ? error.message : String(error),
+      };
+    }
+  }
+  return { status: 'unavailable', error: 'clipboard unavailable on this host' };
+}

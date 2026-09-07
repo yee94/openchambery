@@ -4,15 +4,30 @@ import type { LynxHostGlobalProps } from '../../host/embedding';
 import { lynxT, tabLabel } from '../../i18n/catalog';
 import { LynxInput, LynxScrollView, LynxText, LynxView } from '../../lynx-elements';
 import {
+  buildLynxProjectMenuItems,
   buildLynxSessionMenuItems,
+  buildLynxWorktreeMenuItems,
   type LynxMenuItem,
 } from '../../projects/sessionMenuModel';
 import {
   archiveLynxSession,
+  copyLynxText,
   deleteLynxSession,
+  fetchLynxSessionShareUrl,
   renameLynxSession,
+  shareLynxSession,
   toggleLynxSessionPin,
+  unshareLynxSession,
 } from '../../projects/sessionActions';
+import {
+  closeLynxProject,
+  createLynxWorktree,
+  deleteLynxWorktree,
+  inferLynxProjectIsGit,
+  probeLynxGitRepository,
+  syncLynxProjectSessions,
+  updateLynxProjectLabel,
+} from '../../projects/projectActions';
 import { filterLynxProjectsHomeForSearch } from '../../projects/search';
 import type { LynxRuntimeFetch } from '../../runtime/fetch';
 import {
@@ -29,6 +44,8 @@ import { DirectoryExplorerSheet } from '../../projects/DirectoryExplorerSheet';
 import type { LynxCameraAdapter } from '../../host/camera';
 import { LynxTabPageHeader } from '../TabPageHeader';
 import { computeLynxTitleCollapseProgress } from '../tabPageHeader';
+import { LynxCenteredDialog, LynxCenteredDialogAction } from '../CenteredDialog';
+import { LynxDialogPortal } from '../DialogPortal';
 
 export type ProjectsHomeBindings = {
   subscribe: (listener: () => void) => () => void;
@@ -49,9 +66,10 @@ export type ProjectsHomeProps = {
   searchQuery?: string;
   onSearchQueryChange?: (value: string) => void;
   onOpenSession?: (session: LynxHomeSessionRow) => void;
-  onOpenDraft?: () => void;
+  /** Cap draft for directory — project/worktree newSession passes path. */
+  onOpenDraft?: (directory?: string | null) => void;
   onTogglePin?: (session: LynxHomeSessionRow) => void;
-  /** Connect runtime for pin/archive/delete. Null → actions report no-runtime. */
+  /** Connect runtime for pin/archive/delete/share. Null → actions report no-runtime. */
   runtimeFetch?: LynxRuntimeFetch | null;
   /** After a mutating menu action succeeds, refresh session-index. */
   onSessionMutated?: () => void;
@@ -64,6 +82,11 @@ export type ProjectsHomeProps = {
   onOpenInstances?: () => void;
   onScanResult?: (message: string) => void;
 };
+
+type ActionTarget =
+  | { kind: 'session'; session: LynxHomeSessionRow }
+  | { kind: 'project'; project: LynxHomeProject; gitRepository: boolean }
+  | { kind: 'worktree'; project: LynxHomeProject; worktree: LynxHomeWorktreeGroup };
 
 function useSessionIndexState(
   bindings: ProjectsHomeBindings | null | undefined,
@@ -153,17 +176,20 @@ function WorktreeGroup({
   onToggle,
   onOpenSession,
   onSessionLongPress,
+  onWorktreeLongPress,
 }: {
   worktree: LynxHomeWorktreeGroup;
   expanded: boolean;
   onToggle: () => void;
   onOpenSession?: (session: LynxHomeSessionRow) => void;
   onSessionLongPress?: (session: LynxHomeSessionRow) => void;
+  onWorktreeLongPress?: (worktree: LynxHomeWorktreeGroup) => void;
 }) {
   return (
     <LynxView style={{ marginTop: '8px' }}>
       <LynxView
         bindtap={onToggle}
+        bindlongpress={() => onWorktreeLongPress?.(worktree)}
         accessibility-role="button"
         accessibility-label={worktree.name}
         style={{
@@ -203,6 +229,8 @@ function ProjectCard({
   onToggleWorktree,
   onOpenSession,
   onSessionLongPress,
+  onProjectLongPress,
+  onWorktreeLongPress,
 }: {
   project: LynxHomeProject;
   expanded: boolean;
@@ -211,6 +239,8 @@ function ProjectCard({
   onToggleWorktree: (worktreeId: string) => void;
   onOpenSession?: (session: LynxHomeSessionRow) => void;
   onSessionLongPress?: (session: LynxHomeSessionRow) => void;
+  onProjectLongPress?: (project: LynxHomeProject) => void;
+  onWorktreeLongPress?: (project: LynxHomeProject, worktree: LynxHomeWorktreeGroup) => void;
 }) {
   return (
     <LynxView
@@ -223,6 +253,7 @@ function ProjectCard({
     >
       <LynxView
         bindtap={onToggle}
+        bindlongpress={() => onProjectLongPress?.(project)}
         accessibility-role="button"
         accessibility-label={project.label}
         style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}
@@ -248,6 +279,7 @@ function ProjectCard({
             onToggle={() => onToggleWorktree(worktree.id)}
             onOpenSession={onOpenSession}
             onSessionLongPress={onSessionLongPress}
+            onWorktreeLongPress={(wt) => onWorktreeLongPress?.(project, wt)}
           />
         ))
         : null}
@@ -258,6 +290,7 @@ function ProjectCard({
 /**
  * Projects home: session-index cards + worktree groups + search + pin/busy cues.
  * failure ≠ empty — failed refresh keeps previous snapshot and shows an error banner.
+ * Next #37: Cap-parity session share + project/worktree action sheets.
  */
 export function ProjectsHome({
   locale,
@@ -285,10 +318,20 @@ export function ProjectsHome({
   const [headerProgress, setHeaderProgress] = useState(0);
   const [projectExpanded, setProjectExpanded] = useState<Record<string, boolean>>({});
   const [worktreeExpanded, setWorktreeExpanded] = useState<Record<string, boolean>>({});
-  const [actionSession, setActionSession] = useState<LynxHomeSessionRow | null>(null);
+  const [actionTarget, setActionTarget] = useState<ActionTarget | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [actionBusy, setActionBusy] = useState(false);
   const [renameDraft, setRenameDraft] = useState<string | null>(null);
+  const [shareUrlBySessionId, setShareUrlBySessionId] = useState<Record<string, string>>({});
+  const [closingProject, setClosingProject] = useState<LynxHomeProject | null>(null);
+  const [editingProject, setEditingProject] = useState<LynxHomeProject | null>(null);
+  const [editLabelDraft, setEditLabelDraft] = useState('');
+  const [newWorktreeProject, setNewWorktreeProject] = useState<LynxHomeProject | null>(null);
+  const [newWorktreeName, setNewWorktreeName] = useState('');
+  const [worktreeToDelete, setWorktreeToDelete] = useState<{
+    project: LynxHomeProject;
+    worktree: LynxHomeWorktreeGroup;
+  } | null>(null);
   const [explorerOpen, setExplorerOpen] = useState(false);
   const [chromeNote, setChromeNote] = useState<string | null>(null);
   const searchQuery = searchQueryProp ?? internalQuery;
@@ -319,78 +362,298 @@ export function ProjectsHome({
 
   const progress = collapseProgress ?? headerProgress;
 
-  const sessionMenuItems: LynxMenuItem[] = actionSession
-    ? buildLynxSessionMenuItems({
-      pinned: actionSession.pinned,
-      shared: false,
-      onTogglePin: () => {
-        setActionBusy(true);
-        setActionError(null);
-        void (async () => {
-          if (onTogglePin) {
-            onTogglePin(actionSession);
+  const closeActionSheet = () => {
+    setActionTarget(null);
+    setActionError(null);
+    setRenameDraft(null);
+    setActionBusy(false);
+  };
+
+  const refreshAfterMutation = () => {
+    onSessionMutated?.();
+    void bindings?.refresh?.();
+  };
+
+  const openSessionActions = (session: LynxHomeSessionRow) => {
+    setActionError(null);
+    setRenameDraft(null);
+    setActionTarget({ kind: 'session', session });
+    void (async () => {
+      if (shareUrlBySessionId[session.id]) return;
+      const result = await fetchLynxSessionShareUrl(runtimeFetch, {
+        sessionId: session.id,
+        directory: session.directory,
+      });
+      if (result.status === 'ok' && result.shareUrl) {
+        setShareUrlBySessionId((map) => ({ ...map, [session.id]: result.shareUrl! }));
+      }
+    })();
+  };
+
+  const openProjectActions = (project: LynxHomeProject) => {
+    setActionError(null);
+    setRenameDraft(null);
+    const inferred = inferLynxProjectIsGit(project);
+    setActionTarget({ kind: 'project', project, gitRepository: inferred });
+    void (async () => {
+      const probe = await probeLynxGitRepository(runtimeFetch, project.path);
+      if (probe.status === 'ok') {
+        setActionTarget((current) => (
+          current?.kind === 'project' && current.project.id === project.id
+            ? { ...current, gitRepository: probe.isGitRepository }
+            : current
+        ));
+      }
+    })();
+  };
+
+  const openWorktreeActions = (project: LynxHomeProject, worktree: LynxHomeWorktreeGroup) => {
+    setActionError(null);
+    setRenameDraft(null);
+    setActionTarget({ kind: 'worktree', project, worktree });
+  };
+
+  const sessionMenuItems: LynxMenuItem[] = actionTarget?.kind === 'session'
+    ? (() => {
+      const actionSession = actionTarget.session;
+      const shareUrl = shareUrlBySessionId[actionSession.id] ?? null;
+      const shared = Boolean(shareUrl);
+      return buildLynxSessionMenuItems({
+        pinned: actionSession.pinned,
+        shared,
+        onTogglePin: () => {
+          setActionBusy(true);
+          setActionError(null);
+          void (async () => {
+            if (onTogglePin) {
+              onTogglePin(actionSession);
+              setActionBusy(false);
+              closeActionSheet();
+              refreshAfterMutation();
+              return;
+            }
+            const result = await toggleLynxSessionPin(runtimeFetch, {
+              sessionId: actionSession.id,
+              pinned: actionSession.pinned,
+            });
             setActionBusy(false);
-            setActionSession(null);
-            onSessionMutated?.();
-            return;
-          }
-          const result = await toggleLynxSessionPin(runtimeFetch, {
-            sessionId: actionSession.id,
-            pinned: actionSession.pinned,
-          });
-          setActionBusy(false);
-          if (result.status !== 'ok') {
-            setActionError(result.status === 'no-runtime' ? 'no-runtime' : result.error);
-            return;
-          }
-          setActionSession(null);
-          onSessionMutated?.();
-          void bindings?.refresh?.();
-        })();
+            if (result.status !== 'ok') {
+              setActionError(result.status === 'no-runtime' ? 'no-runtime' : result.error);
+              return;
+            }
+            closeActionSheet();
+            refreshAfterMutation();
+          })();
+        },
+        onRename: () => {
+          setActionError(null);
+          setRenameDraft(actionSession.title);
+        },
+        onShare: () => {
+          setActionBusy(true);
+          setActionError(null);
+          void (async () => {
+            const result = await shareLynxSession(runtimeFetch, {
+              sessionId: actionSession.id,
+              directory: actionSession.directory,
+            });
+            setActionBusy(false);
+            if (result.status !== 'ok') {
+              setActionError(
+                result.status === 'no-runtime'
+                  ? 'no-runtime'
+                  : (result.error || lynxT(locale, 'lynx.projects.share.error')),
+              );
+              return;
+            }
+            if (result.shareUrl) {
+              setShareUrlBySessionId((map) => ({ ...map, [actionSession.id]: result.shareUrl! }));
+            } else {
+              // Cap requires share.url — treat missing url as failure (never fake-success).
+              setActionError(lynxT(locale, 'lynx.projects.share.error'));
+              return;
+            }
+            setChromeNote(lynxT(locale, 'lynx.projects.share.success'));
+            closeActionSheet();
+            refreshAfterMutation();
+          })();
+        },
+        onCopyLink: () => {
+          setActionBusy(true);
+          setActionError(null);
+          void (async () => {
+            const url = shareUrl;
+            if (!url) {
+              setActionBusy(false);
+              setActionError(lynxT(locale, 'lynx.projects.copyLink.unavailable'));
+              return;
+            }
+            const copied = await copyLynxText(url);
+            setActionBusy(false);
+            if (copied.status !== 'ok') {
+              setActionError(lynxT(locale, 'lynx.projects.copyLink.unavailable'));
+              setChromeNote(url);
+              return;
+            }
+            setChromeNote(lynxT(locale, 'lynx.projects.copyLink.ok'));
+            closeActionSheet();
+          })();
+        },
+        onUnshare: () => {
+          setActionBusy(true);
+          setActionError(null);
+          void (async () => {
+            const result = await unshareLynxSession(runtimeFetch, {
+              sessionId: actionSession.id,
+              directory: actionSession.directory,
+            });
+            setActionBusy(false);
+            if (result.status !== 'ok') {
+              setActionError(
+                result.status === 'no-runtime'
+                  ? 'no-runtime'
+                  : (result.error || lynxT(locale, 'lynx.projects.unshare.error')),
+              );
+              return;
+            }
+            setShareUrlBySessionId((map) => {
+              const next = { ...map };
+              delete next[actionSession.id];
+              return next;
+            });
+            setChromeNote(lynxT(locale, 'lynx.projects.unshare.success'));
+            closeActionSheet();
+            refreshAfterMutation();
+          })();
+        },
+        onArchive: () => {
+          setActionBusy(true);
+          setActionError(null);
+          void (async () => {
+            const result = await archiveLynxSession(runtimeFetch, {
+              sessionId: actionSession.id,
+              directory: actionSession.directory,
+            });
+            setActionBusy(false);
+            if (result.status !== 'ok') {
+              setActionError(result.status === 'no-runtime' ? 'no-runtime' : result.error);
+              return;
+            }
+            closeActionSheet();
+            refreshAfterMutation();
+          })();
+        },
+        onDelete: () => {
+          setActionBusy(true);
+          setActionError(null);
+          void (async () => {
+            const result = await deleteLynxSession(runtimeFetch, {
+              sessionId: actionSession.id,
+              directory: actionSession.directory,
+            });
+            setActionBusy(false);
+            if (result.status !== 'ok') {
+              setActionError(result.status === 'no-runtime' ? 'no-runtime' : result.error);
+              return;
+            }
+            closeActionSheet();
+            refreshAfterMutation();
+          })();
+        },
+      });
+    })()
+    : [];
+
+  const projectMenuItems: LynxMenuItem[] = actionTarget?.kind === 'project'
+    ? buildLynxProjectMenuItems({
+      gitRepository: actionTarget.gitRepository,
+      onNewSession: () => {
+        const directory = actionTarget.project.path;
+        closeActionSheet();
+        onOpenDraft?.(directory);
       },
-      onRename: () => {
-        setActionError(null);
-        setRenameDraft(actionSession.title);
+      onNewWorktree: () => {
+        setNewWorktreeProject(actionTarget.project);
+        setNewWorktreeName('');
+        closeActionSheet();
       },
-      onArchive: () => {
+      onSyncSessions: () => {
         setActionBusy(true);
         setActionError(null);
         void (async () => {
-          const result = await archiveLynxSession(runtimeFetch, {
-            sessionId: actionSession.id,
-            directory: actionSession.directory,
-          });
+          const directories = [
+            actionTarget.project.path,
+            ...actionTarget.project.worktrees.map((worktree) => worktree.path),
+          ];
+          const result = await syncLynxProjectSessions(runtimeFetch, directories);
           setActionBusy(false);
-          if (result.status !== 'ok') {
-            setActionError(result.status === 'no-runtime' ? 'no-runtime' : result.error);
+          if (result.status === 'ok') {
+            setChromeNote(lynxT(locale, 'lynx.projects.sync.ok'));
+            closeActionSheet();
+            refreshAfterMutation();
             return;
           }
-          setActionSession(null);
-          onSessionMutated?.();
-          void bindings?.refresh?.();
+          if (result.status === 'unsupported') {
+            setActionError(lynxT(locale, 'lynx.projects.sync.failed') + ' (unsupported)');
+            return;
+          }
+          setActionError(
+            result.status === 'no-runtime'
+              ? 'no-runtime'
+              : (result.error || lynxT(locale, 'lynx.projects.sync.failed')),
+          );
         })();
       },
-      onDelete: () => {
-        setActionBusy(true);
-        setActionError(null);
-        void (async () => {
-          const result = await deleteLynxSession(runtimeFetch, {
-            sessionId: actionSession.id,
-            directory: actionSession.directory,
-          });
-          setActionBusy(false);
-          if (result.status !== 'ok') {
-            setActionError(result.status === 'no-runtime' ? 'no-runtime' : result.error);
-            return;
-          }
-          setActionSession(null);
-          onSessionMutated?.();
-          void bindings?.refresh?.();
-        })();
+      onEditProject: () => {
+        setEditingProject(actionTarget.project);
+        setEditLabelDraft(actionTarget.project.label);
+        closeActionSheet();
+      },
+      onCloseProject: () => {
+        setClosingProject(actionTarget.project);
+        closeActionSheet();
       },
     })
     : [];
 
+  const worktreeMenuItems: LynxMenuItem[] = actionTarget?.kind === 'worktree'
+    ? buildLynxWorktreeMenuItems({
+      onNewSession: () => {
+        const directory = actionTarget.worktree.path;
+        closeActionSheet();
+        onOpenDraft?.(directory);
+      },
+      onDeleteWorktree: actionTarget.worktree.kind === 'worktree'
+        ? () => {
+          setWorktreeToDelete({
+            project: actionTarget.project,
+            worktree: actionTarget.worktree,
+          });
+          closeActionSheet();
+        }
+        : undefined,
+    })
+    : [];
+
+  const sheetItems = actionTarget?.kind === 'session'
+    ? sessionMenuItems
+    : actionTarget?.kind === 'project'
+      ? projectMenuItems
+      : worktreeMenuItems;
+
+  const sheetTitle = actionTarget?.kind === 'session'
+    ? actionTarget.session.title
+    : actionTarget?.kind === 'project'
+      ? actionTarget.project.label
+      : actionTarget?.kind === 'worktree'
+        ? actionTarget.worktree.name
+        : '';
+
+  const sheetAria = actionTarget?.kind === 'project'
+    ? lynxT(locale, 'lynx.projects.menu.projectTitle')
+    : actionTarget?.kind === 'worktree'
+      ? lynxT(locale, 'lynx.projects.menu.worktreeTitle')
+      : lynxT(locale, 'lynx.projects.menu.title');
 
   return (
     <LynxView
@@ -415,7 +678,7 @@ export function ProjectsHome({
           });
         }}
         onSearchQueryChange={setSearchQuery}
-        onPrimaryAction={onOpenDraft}
+        onPrimaryAction={() => onOpenDraft?.()}
         primaryAccessibilityLabel={lynxT(locale, 'lynx.projects.newDraft')}
         searchAccessibilityLabel={lynxT(locale, 'lynx.projects.searchAria')}
         searchClearAccessibilityLabel={lynxT(locale, 'lynx.projects.clearSearchAria')}
@@ -497,7 +760,6 @@ export function ProjectsHome({
           padding: '0 16px 24px',
         }}
         bindtap={() => {
-          // Harness: tapping body does not change collapse; host bindscroll drives it.
           setHeaderProgress(computeLynxTitleCollapseProgress({ scrollTop: progress * 48 }));
         }}
       >
@@ -550,7 +812,7 @@ export function ProjectsHome({
               key={session.id}
               session={session}
               onOpen={onOpenSession}
-              onLongPress={setActionSession}
+              onLongPress={openSessionActions}
               cue="pin"
             />
           ))}
@@ -567,7 +829,7 @@ export function ProjectsHome({
               key={session.id}
               session={session}
               onOpen={onOpenSession}
-              onLongPress={setActionSession}
+              onLongPress={openSessionActions}
               cue="busy"
             />
           ))}
@@ -602,12 +864,14 @@ export function ProjectsHome({
             [worktreeId]: !(map[worktreeId] ?? true),
           }))}
           onOpenSession={onOpenSession}
-          onSessionLongPress={setActionSession}
+          onSessionLongPress={openSessionActions}
+          onProjectLongPress={openProjectActions}
+          onWorktreeLongPress={openWorktreeActions}
         />
       ))}
       </LynxScrollView>
 
-      {actionSession ? (
+      {actionTarget ? (
         <LynxView
           style={{
             padding: '16px',
@@ -615,17 +879,17 @@ export function ProjectsHome({
             borderTopLeftRadius: '16px',
             borderTopRightRadius: '16px',
           }}
-          accessibility-label={lynxT(locale, 'lynx.projects.menu.title')}
+          accessibility-label={sheetAria}
         >
           <LynxText style={{ color: cssVar('surface.foreground'), fontWeight: '700', marginBottom: '8px' }}>
-            {actionSession.title}
+            {sheetTitle}
           </LynxText>
           {actionError ? (
-            <LynxText style={{ color: cssVar('surface.mutedForeground'), fontSize: '12px', marginBottom: '8px' }}>
+            <LynxText style={{ color: cssVar('status.error'), fontSize: '12px', marginBottom: '8px' }}>
               {actionError}
             </LynxText>
           ) : null}
-          {renameDraft !== null ? (
+          {renameDraft !== null && actionTarget.kind === 'session' ? (
             <LynxView style={{ marginBottom: '8px' }}>
               <LynxInput
                 value={renameDraft}
@@ -645,19 +909,17 @@ export function ProjectsHome({
                   setActionError(null);
                   void (async () => {
                     const result = await renameLynxSession(runtimeFetch, {
-                      sessionId: actionSession.id,
+                      sessionId: actionTarget.session.id,
                       title,
-                      directory: actionSession.directory,
+                      directory: actionTarget.session.directory,
                     });
                     setActionBusy(false);
                     if (result.status !== 'ok') {
                       setActionError(result.status === 'no-runtime' ? 'no-runtime' : result.error);
                       return;
                     }
-                    setRenameDraft(null);
-                    setActionSession(null);
-                    onSessionMutated?.();
-                    void bindings?.refresh?.();
+                    closeActionSheet();
+                    refreshAfterMutation();
                   })();
                 }}
                 style={{ padding: '12px 0', opacity: actionBusy ? 0.6 : 1 }}
@@ -680,7 +942,7 @@ export function ProjectsHome({
             </LynxView>
           ) : (
             <>
-              {sessionMenuItems.map((item) => (
+              {sheetItems.map((item) => (
                 <LynxView
                   key={item.id}
                   bindtap={() => {
@@ -694,7 +956,7 @@ export function ProjectsHome({
                   }}
                 >
                   <LynxText style={{
-                    color: item.destructive ? cssVar('surface.mutedForeground') : cssVar('primary.base'),
+                    color: item.destructive ? cssVar('status.error') : cssVar('primary.base'),
                     fontSize: '15px',
                   }}
                   >
@@ -703,11 +965,7 @@ export function ProjectsHome({
                 </LynxView>
               ))}
               <LynxView
-                bindtap={() => {
-                  setActionSession(null);
-                  setActionError(null);
-                  setRenameDraft(null);
-                }}
+                bindtap={closeActionSheet}
                 style={{ padding: '12px 0', marginTop: '4px' }}
               >
                 <LynxText style={{ color: cssVar('surface.mutedForeground') }}>
@@ -718,6 +976,275 @@ export function ProjectsHome({
           )}
         </LynxView>
       ) : null}
+
+      {editingProject ? (
+        <LynxView
+          style={{
+            padding: '16px',
+            backgroundColor: cssVar('surface.elevated'),
+            borderTopLeftRadius: '16px',
+            borderTopRightRadius: '16px',
+          }}
+          accessibility-label={lynxT(locale, 'lynx.projects.edit.title')}
+        >
+          <LynxText style={{ color: cssVar('surface.foreground'), fontWeight: '700', marginBottom: '8px' }}>
+            {lynxT(locale, 'lynx.projects.edit.title')}
+          </LynxText>
+          <LynxText style={{ color: cssVar('surface.mutedForeground'), fontSize: '12px', marginBottom: '8px' }}>
+            {editingProject.path}
+          </LynxText>
+          {actionError ? (
+            <LynxText style={{ color: cssVar('status.error'), fontSize: '12px', marginBottom: '8px' }}>
+              {actionError}
+            </LynxText>
+          ) : null}
+          <LynxInput
+            value={editLabelDraft}
+            placeholder={lynxT(locale, 'lynx.projects.edit.label')}
+            bindinput={(event) => setEditLabelDraft(event.detail?.value ?? '')}
+            style={{ color: cssVar('surface.foreground'), fontSize: '15px', marginBottom: '8px' }}
+          />
+          <LynxView
+            bindtap={() => {
+              if (actionBusy) return;
+              setActionBusy(true);
+              setActionError(null);
+              void (async () => {
+                const result = await updateLynxProjectLabel(runtimeFetch, {
+                  projectId: editingProject.id,
+                  path: editingProject.path,
+                  label: editLabelDraft,
+                });
+                setActionBusy(false);
+                if (result.status === 'ok') {
+                  setEditingProject(null);
+                  setEditLabelDraft('');
+                  refreshAfterMutation();
+                  return;
+                }
+                if (result.status === 'unavailable') {
+                  setActionError(lynxT(locale, 'lynx.projects.edit.unavailable'));
+                  return;
+                }
+                setActionError(result.status === 'no-runtime' ? 'no-runtime' : result.error);
+              })();
+            }}
+            style={{ padding: '12px 0', opacity: actionBusy ? 0.6 : 1 }}
+          >
+            <LynxText style={{ color: cssVar('primary.base'), fontSize: '15px' }}>
+              {lynxT(locale, 'lynx.projects.edit.save')}
+            </LynxText>
+          </LynxView>
+          <LynxView
+            bindtap={() => {
+              setEditingProject(null);
+              setEditLabelDraft('');
+              setActionError(null);
+            }}
+            style={{ padding: '12px 0' }}
+          >
+            <LynxText style={{ color: cssVar('surface.mutedForeground') }}>
+              {lynxT(locale, 'lynx.projects.menu.cancel')}
+            </LynxText>
+          </LynxView>
+        </LynxView>
+      ) : null}
+
+      {newWorktreeProject ? (
+        <LynxView
+          style={{
+            padding: '16px',
+            backgroundColor: cssVar('surface.elevated'),
+            borderTopLeftRadius: '16px',
+            borderTopRightRadius: '16px',
+          }}
+          accessibility-label={lynxT(locale, 'lynx.projects.worktree.createTitle')}
+        >
+          <LynxText style={{ color: cssVar('surface.foreground'), fontWeight: '700', marginBottom: '8px' }}>
+            {lynxT(locale, 'lynx.projects.worktree.createTitle')}
+          </LynxText>
+          {actionError ? (
+            <LynxText style={{ color: cssVar('status.error'), fontSize: '12px', marginBottom: '8px' }}>
+              {actionError}
+            </LynxText>
+          ) : null}
+          <LynxInput
+            value={newWorktreeName}
+            placeholder={lynxT(locale, 'lynx.projects.worktree.namePlaceholder')}
+            bindinput={(event) => setNewWorktreeName(event.detail?.value ?? '')}
+            style={{ color: cssVar('surface.foreground'), fontSize: '15px', marginBottom: '8px' }}
+          />
+          <LynxView
+            bindtap={() => {
+              if (actionBusy) return;
+              setActionBusy(true);
+              setActionError(null);
+              void (async () => {
+                const result = await createLynxWorktree(runtimeFetch, {
+                  projectDirectory: newWorktreeProject.path,
+                  branchName: newWorktreeName,
+                  worktreeName: newWorktreeName,
+                });
+                setActionBusy(false);
+                if (result.status === 'ok') {
+                  const path = result.path;
+                  setNewWorktreeProject(null);
+                  setNewWorktreeName('');
+                  refreshAfterMutation();
+                  onOpenDraft?.(path);
+                  return;
+                }
+                if (result.status === 'unavailable') {
+                  setActionError(lynxT(locale, 'lynx.projects.worktree.createUnavailable'));
+                  return;
+                }
+                setActionError(result.status === 'no-runtime' ? 'no-runtime' : result.error);
+              })();
+            }}
+            style={{ padding: '12px 0', opacity: actionBusy ? 0.6 : 1 }}
+          >
+            <LynxText style={{ color: cssVar('primary.base'), fontSize: '15px' }}>
+              {lynxT(locale, 'lynx.projects.worktree.create')}
+            </LynxText>
+          </LynxView>
+          <LynxView
+            bindtap={() => {
+              setNewWorktreeProject(null);
+              setNewWorktreeName('');
+              setActionError(null);
+            }}
+            style={{ padding: '12px 0' }}
+          >
+            <LynxText style={{ color: cssVar('surface.mutedForeground') }}>
+              {lynxT(locale, 'lynx.projects.menu.cancel')}
+            </LynxText>
+          </LynxView>
+        </LynxView>
+      ) : null}
+
+      <LynxDialogPortal>
+        {closingProject ? (
+          <LynxCenteredDialog
+            locale={locale}
+            open
+            title={lynxT(locale, 'lynx.projects.closeConfirmTitle')}
+            description={lynxT(locale, 'lynx.projects.closeConfirmDescription')}
+            ariaLabel={lynxT(locale, 'lynx.projects.closeConfirmTitle')}
+            busy={actionBusy}
+            onClose={() => { if (!actionBusy) setClosingProject(null); }}
+            footer={(
+              <>
+                <LynxCenteredDialogAction
+                  label={lynxT(locale, 'lynx.projects.menu.cancel')}
+                  disabled={actionBusy}
+                  onTap={() => { setClosingProject(null); }}
+                />
+                <LynxCenteredDialogAction
+                  label={lynxT(locale, 'lynx.projects.closeConfirmAction')}
+                  destructive
+                  disabled={actionBusy}
+                  onTap={() => {
+                    if (!closingProject || actionBusy) return;
+                    setActionBusy(true);
+                    void (async () => {
+                      const result = await closeLynxProject(runtimeFetch, {
+                        projectId: closingProject.id,
+                        path: closingProject.path,
+                      });
+                      setActionBusy(false);
+                      if (result.status === 'ok') {
+                        setClosingProject(null);
+                        refreshAfterMutation();
+                        return;
+                      }
+                      setChromeNote(
+                        result.status === 'unavailable'
+                          ? result.reason
+                          : result.status === 'no-runtime'
+                            ? 'no-runtime'
+                            : result.error,
+                      );
+                      setClosingProject(null);
+                    })();
+                  }}
+                />
+              </>
+            )}
+          >
+            <LynxText
+              style={{
+                color: cssVar('surface.foreground'),
+                fontSize: '12px',
+                marginBottom: '8px',
+                fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
+              }}
+            >
+              {closingProject.label}
+            </LynxText>
+          </LynxCenteredDialog>
+        ) : null}
+
+        {worktreeToDelete ? (
+          <LynxCenteredDialog
+            locale={locale}
+            open
+            title={lynxT(locale, 'lynx.projects.worktree.deleteConfirmTitle')}
+            description={lynxT(locale, 'lynx.projects.worktree.deleteConfirmDescription')}
+            ariaLabel={lynxT(locale, 'lynx.projects.worktree.deleteConfirmTitle')}
+            busy={actionBusy}
+            onClose={() => { if (!actionBusy) setWorktreeToDelete(null); }}
+            footer={(
+              <>
+                <LynxCenteredDialogAction
+                  label={lynxT(locale, 'lynx.projects.menu.cancel')}
+                  disabled={actionBusy}
+                  onTap={() => { setWorktreeToDelete(null); }}
+                />
+                <LynxCenteredDialogAction
+                  label={lynxT(locale, 'lynx.projects.worktree.deleteConfirmAction')}
+                  destructive
+                  disabled={actionBusy}
+                  onTap={() => {
+                    if (!worktreeToDelete || actionBusy) return;
+                    setActionBusy(true);
+                    void (async () => {
+                      const result = await deleteLynxWorktree(runtimeFetch, {
+                        projectDirectory: worktreeToDelete.project.path,
+                        worktreeDirectory: worktreeToDelete.worktree.path,
+                      });
+                      setActionBusy(false);
+                      if (result.status === 'ok') {
+                        setWorktreeToDelete(null);
+                        refreshAfterMutation();
+                        return;
+                      }
+                      setChromeNote(
+                        result.status === 'unavailable'
+                          ? lynxT(locale, 'lynx.projects.worktree.deleteUnavailable')
+                          : result.status === 'no-runtime'
+                            ? 'no-runtime'
+                            : result.error,
+                      );
+                      setWorktreeToDelete(null);
+                    })();
+                  }}
+                />
+              </>
+            )}
+          >
+            <LynxText
+              style={{
+                color: cssVar('surface.foreground'),
+                fontSize: '12px',
+                marginBottom: '8px',
+                fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
+              }}
+            >
+              {worktreeToDelete.worktree.path}
+            </LynxText>
+          </LynxCenteredDialog>
+        ) : null}
+      </LynxDialogPortal>
     </LynxView>
   );
 }

@@ -237,10 +237,23 @@ export { LynxShareBridge } from './assistants/ShareBridge';
 
 export {
   buildLynxSessionMenuItems,
+  buildLynxProjectMenuItems,
+  buildLynxWorktreeMenuItems,
   archiveLynxSession,
   deleteLynxSession,
   createLynxSession,
   toggleLynxSessionPin,
+  shareLynxSession,
+  unshareLynxSession,
+  fetchLynxSessionShareUrl,
+  copyLynxText,
+  syncLynxProjectSessions,
+  probeLynxGitRepository,
+  updateLynxProjectLabel,
+  closeLynxProject,
+  createLynxWorktree,
+  deleteLynxWorktree,
+  inferLynxProjectIsGit,
 } from './projects';
 export {
   createLynxShareWelcomeStore,
