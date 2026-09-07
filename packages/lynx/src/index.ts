@@ -219,8 +219,21 @@ export {
   LYNX_FCM_APPLICATION_IDS,
   LYNX_FCM_LEGACY_NAMESPACE,
 } from './host/pushRegistration';
-export { createLynxShareInbox } from './assistants/shareInbox';
-export type { LynxShareEnvelope, LynxShareInbox } from './assistants/shareInbox';
+export { createLynxShareInbox, assignedLynxShareDraftToEnvelope } from './assistants/shareInbox';
+export type { LynxShareEnvelope, LynxShareInbox, LynxShareAttachment } from './assistants/shareInbox';
+export {
+  isAssignedLynxShareDraft,
+  assignLynxShareDraftRecipient,
+  buildLynxShareCatalogEntries,
+  sortLynxShareRecipientEntries,
+} from './assistants/shareDraft';
+export type {
+  LynxShareDraft,
+  AssignedLynxShareDraft,
+  LynxShareCatalogEntry,
+} from './assistants/shareDraft';
+export { LynxShareRecipientPicker } from './assistants/ShareRecipientPicker';
+export { LynxShareBridge } from './assistants/ShareBridge';
 
 export {
   buildLynxSessionMenuItems,

@@ -259,3 +259,9 @@ Chosen mode is written at the top of `packages/lynx/README.md` (Mode B iOS 26 ho
 - Auto-accept: Cap `GET /api/permission-auto-accept` + `PUT …/sessions/:id` + nearest-ancestor lineage; Chat + Draft composer toggles; client auto-replies `once` when enabled; failed reply keeps the card (never fake-success). Cap server runtime remains authoritative.
 - Product **NOT DONE** / 三关未齐 / not EXHAUSTED / 真机残差 empty / no 真机过 claim.
 
+## Notes — Cap share-recipient picker (Next #36 / 2026-09-07)
+
+- Tip / prerelease APK: `lynx-v2-debug-93b4355` (base tip `93b43558`); do not invent a newer APK SHA until mobile-ci rebuilds.
+- JS picker: Cap `MobileShareRecipientPicker` full-page overlay (never a sheet) + `NativeShareDraft` Partial target + bridge unassigned→picker / assigned→POST share; cancel drops without inventing success; never silent-default Assistant.
+- Host-only (separate): iOS Share Extension / Android `ShareReceiverActivity` — not claimed by this Linux-closable JS slice.
+- Product **NOT DONE** / 三关未齐 / not EXHAUSTED / 真机残差 empty / no 真机过 claim.

@@ -345,6 +345,9 @@ First implementation slice after this doc gate (order is deliberate: connect →
 33. ~~**Settings Voice model download/delete UI**~~ — 代码接上 in `cursor/lynx-voice-models-download-local`. Cap `VoiceSettings` STT model rows + optional Kokoro `ttsModels` via existing `/api/dictation/status` + `POST/DELETE …/models/:id`; `VoiceBody` download/progress/delete; no invented ASR/mic/WS. Docs honesty: tip APK was `lynx-v2-debug-1a5c899` at merge; current tip `lynx-v2-debug-b170e47`. Remaining: host-only / 真机 / Pierre / WKWebView / Mode B / iOS IPA; product NOT DONE.
 34. ~~**Voice STT model select + Overflow Changes dirty badge**~~ — 代码接上 in `cursor/lynx-voice-select-dirty-badge-local`. Cap `LocalModelPicker` / `setSttLocalModel` → PUT `sttLocalModel` (+ optional `dictationEnabled`); pass `localModel` into status; preview/browser TTS/say labeled unavailable; Cap `dirtyChangeCount` badge on Changes overflow from git status entry count (no fake on failure). Docs honesty: tip APK `lynx-v2-debug-b170e47`. Remaining: host-only / 真机 / Pierre / WKWebView / Mode B / iOS IPA; product NOT DONE.
 
+35. ~~**PermissionCard metadata + permission auto-accept**~~ — 代码接上 in `cursor/lynx-permission-metadata-auto-accept-local` (PR #73). Cap PermissionCard metadata plain text + GET/PUT permission-auto-accept. Remaining: host-only / 真机 / Pierre / WKWebView / Mode B / iOS IPA; product NOT DONE.
+36. ~~**Cap share-recipient picker**~~ — 代码接上 in `cursor/lynx-share-recipient-picker-local`. Cap `MobileShareRecipientPicker` full-page overlay (never a sheet) + `NativeShareDraft` Partial target + `MobileShareBridge` unassigned→picker / assigned→dispatch; never silent-default Assistant. Host Share extension / `ShareReceiverActivity` stay host-only. Docs honesty: tip APK `lynx-v2-debug-93b4355`; product NOT DONE / 三关未齐 / not EXHAUSTED; 真机残差 empty.
+
 Do not invent ASR / Bonjour / Capgo / TanStack 1.18. Share / Live Activity / widgets stay later.
 
 ---
@@ -613,7 +616,7 @@ Slice on `cursor/lynx-dialog-portal-theme-local` (base PR#61 tip `7a4c7b6a8`; PR
 
 ## Remaining (honest — not EXHAUSTED)
 
-**Product NOT DONE / 三关未齐 / not EXHAUSTED.** Linux Cap product rows continue to close on tip `b170e47` + follow-ons (connect/settings/chat/projects/changes + Android first-paint #65–#69 + Cap phone overflow **new-session** in Next #32 + Voice model download/delete UI in Next #33 + Voice STT select + Changes dirty badge in Next #34 + PermissionCard metadata + permission auto-accept in Next #35). Permission metadata + auto-accept closed in #35. Remaining Cap-parity polish is thin (e.g. share-recipient picker still Linux-closable); **host binders / HTML WKWebView / Pierre `@pierre/diffs` (honest DOM blocker — not ported) / Live Activity / iOS IPA / 真机** still block EXHAUSTED. **Do not** mark landed under 三关. 真机残差: **empty** (no written device log). APK may still be `lynx-v2-debug-b170e47` until mobile-ci rebuilds — do not invent APK SHA.
+**Product NOT DONE / 三关未齐 / not EXHAUSTED.** Linux Cap product rows continue to close on tip `93b43558` + follow-ons (connect/settings/chat/projects/changes + Android first-paint #65–#69 + Cap phone overflow **new-session** in Next #32 + Voice model download/delete UI in Next #33 + Voice STT select + Changes dirty badge in Next #34 + PermissionCard metadata + permission auto-accept in Next #35 + Cap share-recipient picker in Next #36). Permission metadata + auto-accept closed in #35; share-recipient picker JS 代码接上 in #36. Remaining Cap-parity polish is thin; **host binders / HTML WKWebView / Pierre `@pierre/diffs` (honest DOM blocker — not ported) / Live Activity / iOS IPA / Share extension + ShareReceiverActivity / 真机** still block EXHAUSTED. **Do not** mark landed under 三关. 真机残差: **empty** (no written device log). Tip APK: `lynx-v2-debug-93b4355` — do not invent a newer APK SHA until mobile-ci rebuilds.
 
 ### 代码接上 prior slice (`cursor/lynx-closable-missing-local` / PR#48)
 
@@ -800,6 +803,18 @@ Slice on `cursor/lynx-dialog-portal-theme-local` (base PR#61 tip `7a4c7b6a8`; PR
 | Docs honesty | Tip SHA on this PR head; APK may still `lynx-v2-debug-b170e47` until mobile-ci — do not invent APK SHA; Next #35 |
 | Docs honesty | NOT DONE / 三关未齐 / not EXHAUSTED / 真机残差 empty / no 真机过 claim |
 
+### 代码接上 this slice (`cursor/lynx-share-recipient-picker-local` / Next #36)
+
+| Item | Notes |
+|---|---|
+| Share draft Partial target | Cap `NativeShareDraft` + `isAssignedNativeShareDraft`; Lynx `shareDraft.ts` — never silent-default |
+| Full-page recipient picker | Cap `MobileShareRecipientPicker` → `LynxShareRecipientPicker` via shell DialogPortal (**full-page overlay, never a sheet**); plain Lynx views (no react-dom Dialog) |
+| Bridge wiring | Cap `MobileShareBridge` spirit: unassigned → picker; assigned → `dispatchAssignedDraft` → POST `…/assistants/:id/share`; cancel drops/acks without inventing success |
+| Shell mount | `LynxShareBridge` inside `LynxShellDialogPortalProvider`; host injects drafts via `shareInbox.acceptDraft` |
+| Host-only (separate) | iOS Share Extension / Android `ShareReceiverActivity` stay host-only — not claimed by this JS picker |
+| Docs honesty | Tip APK `lynx-v2-debug-93b4355`; Next #36 |
+| Docs honesty | NOT DONE / 三关未齐 / not EXHAUSTED / 真机残差 empty / no 真机过 claim |
+
 ### Still missing / host-only / 真机
 
 | Remaining | Why |
@@ -813,7 +828,7 @@ Slice on `cursor/lynx-dialog-portal-theme-local` (base PR#61 tip `7a4c7b6a8`; PR
 | IME keyboard binding + occupancy 真机 | Contract + inset publisher stubs 代码接上; LynxView IME must be host-bound |
 | Edge-swipe / Predictive Back pan arena 真机 | Contract + stubs 代码接上; native gesture ownership still host |
 | Haptics / HEIC / media pick / APNs·FCM token mint | Adapters 代码接上; native plugins still host |
-| Share extension / Android share receiver | Inbox accepts payloads; extensions are native |
+| Share extension / Android `ShareReceiverActivity` | **Host-only** (separate from Next #36 JS full-page picker). Inbox + recipient picker 代码接上; native extension/receiver still host |
 | Live Activity / Widgets / Control Center | iOS-only host — later |
 | Android sideload APK + lynx-ci | **Live** on tip (`lynx-mobile-ci` assembleRelease + prerelease `lynx-v2-debug-*`; lynx-ci green). First-paint cream/globalProps 代码接上 — **not** 真机过. |
 | iOS IPA / CocoaPods Lynx resolve | Still missing on Linux; Mac/device required |

@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react';
 
 import { ensureAssistantSession } from '../assistants/api';
+import { LynxShareBridge } from '../assistants/ShareBridge';
+import { createLynxShareInbox, type LynxShareInbox } from '../assistants/shareInbox';
 import type { LynxAssistantDTO } from '../assistants/types';
 import { LynxChatScreen } from '../chat/ChatScreen';
 import { LynxDraftComposer } from '../chat/DraftComposer';
@@ -50,6 +52,8 @@ export type LynxShellAppProps = {
   onConnectionsChange?: (connections: LynxSavedConnection[]) => void;
   onConnected?: () => void;
   lynxClientVersion?: string;
+  /** Cap MobileShareBridge inbox — host injects Android share drafts here. */
+  shareInbox?: LynxShareInbox;
 };
 
 function RootTab({
@@ -128,8 +132,10 @@ export function LynxShellApp({
   onConnectionsChange,
   onConnected,
   lynxClientVersion = '1.19.7-beta.7',
+  shareInbox: shareInboxProp,
 }: LynxShellAppProps) {
   const [navigation, setNavigation] = useState(initialState);
+  const [shareInbox] = useState(() => shareInboxProp ?? createLynxShareInbox());
   const [assistantNeedsSessionNote, setAssistantNeedsSessionNote] = useState<string | null>(null);
   const [settingsInitialSlug, setSettingsInitialSlug] = useState<LynxMobileSettingsSlug | null>(null);
   const [chatSheet, setChatSheet] = useState<LynxChatSheetKind | null>(null);
@@ -443,6 +449,22 @@ export function LynxShellApp({
         activeTab={navigation.activeTab}
         visible={dockVisible}
         onTabSelected={selectTab}
+      />
+      <LynxShareBridge
+        locale={host.locale}
+        runtimeFetch={runtimeFetch}
+        inbox={shareInbox}
+        connectionKey={connections[0]?.id ?? ''}
+        serverLabel={connections[0]?.label ?? 'OpenChamber'}
+        onDelivered={(assistantID) => {
+          setNavigation((state) => reduceLynxNavigation(state, {
+            type: 'openAssistant',
+            assistantId: assistantID,
+            sessionId: null,
+            directory: null,
+            title: assistantID,
+          }));
+        }}
       />
       </LynxShellDialogPortalProvider>
     </LynxView>
