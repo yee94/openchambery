@@ -61,9 +61,16 @@ describe('Lynx message parts / turn cards', () => {
       sessionID: 'ses',
       permission: 'edit',
       patterns: ['src/**'],
+      metadata: { file_path: 'src/a.ts', changes: '@@ -1 +1 @@' },
       always: ['edit'],
     });
     expect(permission?.permission).toBe('edit');
+    expect(permission?.metadata).toEqual({ file_path: 'src/a.ts', changes: '@@ -1 +1 @@' });
+    expect(parseLynxPermissionRequest({
+      id: 'p2',
+      sessionID: 'ses',
+      permission: 'bash',
+    })?.metadata).toEqual({});
     expect(parseLynxPermissionRequest({ id: 'p', sessionID: 'ses' })).toBeNull();
   });
 

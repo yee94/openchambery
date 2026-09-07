@@ -10,6 +10,10 @@ import {
   type LynxQuestionRequest,
 } from './messageParts';
 import type { LynxPermissionReply } from './pendingCards';
+import {
+  formatLynxPermissionMetadataLines,
+  getLynxPermissionToolDisplayName,
+} from './permissionMetadata';
 
 function FileChip({ part }: { part: Extract<LynxMessagePart, { type: 'file' }> }) {
   return (
@@ -205,6 +209,12 @@ export function LynxPermissionCard({
     { reply: 'always', labelKey: 'lynx.chat.permission.always' },
     { reply: 'reject', labelKey: 'lynx.chat.permission.reject' },
   ];
+  const displayTool = getLynxPermissionToolDisplayName(permission.permission);
+  const metadataLines = formatLynxPermissionMetadataLines({
+    permission: permission.permission,
+    metadata: permission.metadata,
+  });
+  const patternPreview = permission.patterns.slice(0, 3);
   return (
     <LynxView
       style={{
@@ -219,9 +229,41 @@ export function LynxPermissionCard({
         {lynxT(locale, 'lynx.chat.permission.title')}
       </LynxText>
       <LynxText style={{ color: cssVar('surface.mutedForeground'), fontSize: '13px', marginTop: '6px' }}>
-        {permission.permission}
-        {permission.patterns.length > 0 ? ` · ${permission.patterns.slice(0, 3).join(', ')}` : ''}
+        {displayTool}
+        {patternPreview.length > 0 ? ` · ${patternPreview.join(', ')}` : ''}
       </LynxText>
+      {permission.patterns.length > 0 ? (
+        <LynxView style={{ marginTop: '8px' }}>
+          <LynxText style={{ color: cssVar('surface.mutedForeground'), fontSize: '11px', marginBottom: '4px' }}>
+            {lynxT(locale, 'lynx.chat.permission.patterns')}
+          </LynxText>
+          {permission.patterns.map((pattern, index) => (
+            <LynxText
+              key={`${pattern}-${index}`}
+              style={{ color: cssVar('surface.foreground'), fontSize: '12px', marginTop: index > 0 ? '2px' : '0' }}
+            >
+              {pattern}
+            </LynxText>
+          ))}
+        </LynxView>
+      ) : null}
+      {metadataLines.length > 0 ? (
+        <LynxView style={{ marginTop: '8px' }}>
+          <LynxText style={{ color: cssVar('surface.mutedForeground'), fontSize: '11px', marginBottom: '4px' }}>
+            {lynxT(locale, 'lynx.chat.permission.details')}
+          </LynxText>
+          {metadataLines.map((line) => (
+            <LynxView key={`${line.label}:${line.value.slice(0, 24)}`} style={{ marginTop: '4px' }}>
+              <LynxText style={{ color: cssVar('surface.mutedForeground'), fontSize: '11px', fontWeight: '600' }}>
+                {line.label}
+              </LynxText>
+              <LynxText style={{ color: cssVar('surface.foreground'), fontSize: '12px' }}>
+                {line.value}
+              </LynxText>
+            </LynxView>
+          ))}
+        </LynxView>
+      ) : null}
       <LynxView style={{ flexDirection: 'row', marginTop: '10px' }}>
         {actions.map((action) => (
           <LynxView

@@ -7,6 +7,11 @@ import { cssVar } from '../theme/tokens';
 import { createLynxSession } from '../projects/sessionActions';
 import { LynxComposerAutocompleteList } from './ComposerAutocompleteList';
 import { LynxComposerActionsInGlass } from './ComposerActionsInGlass';
+import {
+  setLynxSessionPermissionAutoAccept,
+  toggleLynxPermissionAutoAccept,
+  type LynxPermissionAutoAcceptSnapshotResult,
+} from './permissionAutoAccept';
 import { LynxComposerGlassCard } from './ComposerGlassCard';
 import { LynxComposerPickerSheets } from './ComposerPickerSheets';
 import type { LynxHostGlobalProps } from '../host/embedding';
@@ -134,6 +139,7 @@ export function LynxDraftComposer({
   const [draft, setDraft] = useState(initialText);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [draftPermissionAutoAcceptEnabled, setDraftPermissionAutoAcceptEnabled] = useState(false);
   const [composerSuggestions, setComposerSuggestions] = useState<LynxComposerSuggestion[]>([]);
   const [composerCatalogHint, setComposerCatalogHint] = useState<string | null>(null);
   const [composerModel, setComposerModel] = useState<LynxDraftComposerModel>(model);
@@ -180,6 +186,21 @@ export function LynxDraftComposer({
         signal: controller.signal,
         onSessionCreated: (session) => {
           createdSessionRef.current = session;
+          // Cap finalizeDraftSession: apply draft auto-accept after POST /session.
+          if (draftPermissionAutoAcceptEnabled) {
+            void setLynxSessionPermissionAutoAccept(runtimeFetch, {
+              sessionId: session.sessionId,
+              enabled: true,
+              directory: session.directory,
+            }).then((apply: LynxPermissionAutoAcceptSnapshotResult) => {
+              if (apply.status !== 'ok') {
+                console.warn(
+                  'Failed to apply draft permission auto-accept to new session:',
+                  apply.status === 'failed' ? apply.error : apply.status,
+                );
+              }
+            });
+          }
         },
       });
       if (controller.signal.aborted || result.status === 'aborted') {
@@ -298,6 +319,21 @@ export function LynxDraftComposer({
                 sessionIsWorking={busy}
                 agentLabel={composerModel.agent || lynxT(locale, 'lynx.chat.composer.mentionHint')}
                 modelLabel={composerModel.modelID}
+                permissionAutoAccept={{
+                  enabled: draftPermissionAutoAcceptEnabled,
+                  onToggle: () => {
+                    toggleLynxPermissionAutoAccept({
+                      permissionScopeSessionId: null,
+                      newSessionDraftOpen: true,
+                      draftPermissionAutoAcceptEnabled,
+                      permissionAutoAcceptEnabled: false,
+                      setDraftPermissionAutoAcceptEnabled,
+                      setSessionAutoAccept: async () => undefined,
+                      onOpenSessionFirst: () => undefined,
+                      onToggleFailed: () => undefined,
+                    });
+                  },
+                }}
                 onAttach={() => {
                   setError('no-host: media pick unavailable');
                 }}
@@ -325,6 +361,45 @@ export function LynxDraftComposer({
               >
                 <LynxText style={{ color: cssVar('surface.mutedForeground'), fontWeight: '600' }}>
                   +
+                </LynxText>
+              </LynxView>
+              <LynxView
+                bindtap={() => {
+                  toggleLynxPermissionAutoAccept({
+                    permissionScopeSessionId: null,
+                    newSessionDraftOpen: true,
+                    draftPermissionAutoAcceptEnabled,
+                    permissionAutoAcceptEnabled: false,
+                    setDraftPermissionAutoAcceptEnabled,
+                    setSessionAutoAccept: async () => undefined,
+                    onOpenSessionFirst: () => undefined,
+                    onToggleFailed: () => undefined,
+                  });
+                }}
+                accessibility-role="button"
+                accessibility-label={lynxT(
+                  locale,
+                  draftPermissionAutoAcceptEnabled
+                    ? 'lynx.chat.permissionAutoAccept.disable'
+                    : 'lynx.chat.permissionAutoAccept.enable',
+                )}
+                data-lynx-composer-action="permissionAutoAccept"
+                style={{ padding: '6px 8px' }}
+              >
+                <LynxText style={{
+                  color: draftPermissionAutoAcceptEnabled
+                    ? cssVar('primary.base')
+                    : cssVar('surface.mutedForeground'),
+                  fontSize: '12px',
+                  fontWeight: '600',
+                }}
+                >
+                  {lynxT(
+                    locale,
+                    draftPermissionAutoAcceptEnabled
+                      ? 'lynx.chat.permissionAutoAccept.on'
+                      : 'lynx.chat.permissionAutoAccept.off',
+                  )}
                 </LynxText>
               </LynxView>
               <LynxInput

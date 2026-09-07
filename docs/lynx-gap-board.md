@@ -613,7 +613,7 @@ Slice on `cursor/lynx-dialog-portal-theme-local` (base PR#61 tip `7a4c7b6a8`; PR
 
 ## Remaining (honest — not EXHAUSTED)
 
-**Product NOT DONE / 三关未齐 / not EXHAUSTED.** Linux Cap product rows continue to close on tip `b170e47` + follow-ons (connect/settings/chat/projects/changes + Android first-paint #65–#69 + Cap phone overflow **new-session** in Next #32 + Voice model download/delete UI in Next #33 + Voice STT select + Changes dirty badge in Next #34). Voice STT select + dirty badge closed in #34. Remaining Cap-parity polish is thin; **host binders / HTML WKWebView / Pierre `@pierre/diffs` (honest DOM blocker — not ported) / Live Activity / iOS IPA / 真机** still block EXHAUSTED. **Do not** mark landed under 三关. 真机残差: **empty** (no written device log).
+**Product NOT DONE / 三关未齐 / not EXHAUSTED.** Linux Cap product rows continue to close on tip `b170e47` + follow-ons (connect/settings/chat/projects/changes + Android first-paint #65–#69 + Cap phone overflow **new-session** in Next #32 + Voice model download/delete UI in Next #33 + Voice STT select + Changes dirty badge in Next #34 + PermissionCard metadata + permission auto-accept in Next #35). Permission metadata + auto-accept closed in #35. Remaining Cap-parity polish is thin (e.g. share-recipient picker still Linux-closable); **host binders / HTML WKWebView / Pierre `@pierre/diffs` (honest DOM blocker — not ported) / Live Activity / iOS IPA / 真机** still block EXHAUSTED. **Do not** mark landed under 三关. 真机残差: **empty** (no written device log). APK may still be `lynx-v2-debug-b170e47` until mobile-ci rebuilds — do not invent APK SHA.
 
 ### 代码接上 prior slice (`cursor/lynx-closable-missing-local` / PR#48)
 
@@ -789,6 +789,15 @@ Slice on `cursor/lynx-dialog-portal-theme-local` (base PR#61 tip `7a4c7b6a8`; PR
 | Preview / browser TTS / say | Labeled unavailable — no invented audio |
 | Overflow Changes dirty badge | Cap `dirtyChangeCount` from git status `entries.length` when ok; no-runtime/failure → no fake badge |
 | Docs honesty | Tip SHA / APK `lynx-v2-debug-b170e47` (was stale `1a5c899`); Next #34 |
+| Docs honesty | NOT DONE / 三关未齐 / not EXHAUSTED / 真机残差 empty / no 真机过 claim |
+
+### 代码接上 this slice (`cursor/lynx-permission-metadata-auto-accept-local` / Next #35)
+
+| Item | Notes |
+|---|---|
+| PermissionCard metadata | Cap `PermissionCard` + `types/permission.ts` `metadata`; Lynx `formatLynxPermissionMetadataLines` → plain text bash/edit/write/webfetch/generic (no DOM/react-dom/WorkerHighlightedCode) |
+| Permission auto-accept | Cap `GET/PUT /api/permission-auto-accept` + lineage `lynxAutoRespondsPermission` + composer/draft toggle + client auto-reply `once` when enabled; failure ≠ fake-success (server runtime remains authoritative) |
+| Docs honesty | Tip SHA on this PR head; APK may still `lynx-v2-debug-b170e47` until mobile-ci — do not invent APK SHA; Next #35 |
 | Docs honesty | NOT DONE / 三关未齐 / not EXHAUSTED / 真机残差 empty / no 真机过 claim |
 
 ### Still missing / host-only / 真机

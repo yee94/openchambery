@@ -252,3 +252,10 @@ Chosen mode is written at the top of `packages/lynx/README.md` (Mode B iOS 26 ho
 - Overflow Changes: Cap `dirtyChangeCount` from git status entry count when ok; no-runtime/failure → no fake badge.
 - Product **NOT DONE** / 三关未齐 / not EXHAUSTED / 真机残差 empty / no 真机过 claim.
 
+## Notes — PermissionCard metadata + permission auto-accept (Next #35 / 2026-09-07)
+
+- Tip / prerelease APK: may still be `lynx-v2-debug-b170e47` until mobile-ci rebuilds — do not invent APK SHA.
+- Permission metadata: Cap `metadata: Record<string, unknown>` parsed on pending `/permission`; LynxPermissionCard renders Cap bash/edit/write/webfetch/generic tool content as **plain Lynx text** (no WorkerHighlightedCode / DiffPreview DOM).
+- Auto-accept: Cap `GET /api/permission-auto-accept` + `PUT …/sessions/:id` + nearest-ancestor lineage; Chat + Draft composer toggles; client auto-replies `once` when enabled; failed reply keeps the card (never fake-success). Cap server runtime remains authoritative.
+- Product **NOT DONE** / 三关未齐 / not EXHAUSTED / 真机残差 empty / no 真机过 claim.
+

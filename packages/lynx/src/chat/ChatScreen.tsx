@@ -44,6 +44,15 @@ import {
   replyLynxQuestion,
   type LynxPermissionReply,
 } from './pendingCards';
+import {
+  autoReplyLynxPermissionsWhenEnabled,
+  fetchLynxPermissionAutoAccept,
+  lynxAutoRespondsPermission,
+  setLynxSessionPermissionAutoAccept,
+  shouldShowLynxPermissionAutoAcceptControl,
+  toggleLynxPermissionAutoAccept,
+  type LynxPermissionAutoAcceptMap,
+} from './permissionAutoAccept';
 import { fetchSessionMessages } from './sessionApi';
 import { LynxTimelineList } from './TimelineList';
 import { LynxPermissionCard, LynxQuestionCard } from './TurnCards';
@@ -190,6 +199,9 @@ export function LynxChatScreen({
   const [permissions, setPermissions] = useState<LynxPermissionRequest[]>([]);
   const [cardBusy, setCardBusy] = useState(false);
   const [cardError, setCardError] = useState<string | null>(null);
+  const [permissionAutoAccept, setPermissionAutoAccept] = useState<LynxPermissionAutoAcceptMap>({});
+  const [permissionAutoAcceptSaving, setPermissionAutoAcceptSaving] = useState(false);
+  const [permissionAutoAcceptError, setPermissionAutoAcceptError] = useState<string | null>(null);
   const [liveConnection, setLiveConnection] = useState<LynxLiveTailConnectionState>('idle');
   const [contextDisplay, setContextDisplay] = useState<LynxContextDisplay>(null);
   const [contextLimit, setContextLimit] = useState(0);
@@ -201,6 +213,8 @@ export function LynxChatScreen({
   );
   const timelineRef = useRef(timeline);
   timelineRef.current = timeline;
+  const permissionAutoAcceptRef = useRef(permissionAutoAccept);
+  permissionAutoAcceptRef.current = permissionAutoAccept;
   const edgeSwipeRef = useRef<LynxEdgeSwipeMachine | null>(null);
   const orderedSessionIdsRef = useRef(orderedSessionIds);
   orderedSessionIdsRef.current = orderedSessionIds;
@@ -427,13 +441,117 @@ export function LynxChatScreen({
       const result = await fetchLynxPendingCards(runtimeFetch, { directory, sessionId });
       if (result.status === 'ok') {
         setQuestions(result.questions);
-        setPermissions(result.permissions);
-        setCardError(null);
+        // Cap client auto-reply when policy enabled (server also reconciles).
+        // Failed replies stay visible — never fake-success.
+        const { remaining, failures } = await autoReplyLynxPermissionsWhenEnabled({
+          runtimeFetch,
+          permissions: result.permissions,
+          autoAccept: permissionAutoAcceptRef.current,
+          sessions: [{ id: sessionId }],
+          directory,
+        });
+        setPermissions(remaining);
+        if (failures.length > 0) {
+          setCardError(failures.map((f) => f.error).join('; '));
+        } else {
+          setCardError(null);
+        }
       } else if (result.status === 'failed') {
         setCardError(result.error);
       }
     })();
   }, [runtimeFetch, directory, sessionId]);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!runtimeFetch) {
+      setPermissionAutoAccept({});
+      setPermissionAutoAcceptError(null);
+      return;
+    }
+    void (async () => {
+      const result = await fetchLynxPermissionAutoAccept(runtimeFetch);
+      if (cancelled) return;
+      if (result.status === 'ok') {
+        setPermissionAutoAccept(result.sessions);
+        setPermissionAutoAcceptError(null);
+      } else if (result.status === 'failed') {
+        setPermissionAutoAcceptError(result.error);
+      } else {
+        setPermissionAutoAcceptError('no-runtime');
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [runtimeFetch, sessionId]);
+
+  const permissionAutoAcceptEnabled = useMemo(
+    () => lynxAutoRespondsPermission({
+      autoAccept: permissionAutoAccept,
+      sessions: [{ id: sessionId }],
+      sessionID: sessionId,
+    }),
+    [permissionAutoAccept, sessionId],
+  );
+
+  const showPermissionAutoAcceptControl = shouldShowLynxPermissionAutoAcceptControl(
+    [],
+    composerModel.agent,
+  );
+
+  const onTogglePermissionAutoAccept = useCallback(() => {
+    toggleLynxPermissionAutoAccept({
+      permissionScopeSessionId: sessionId,
+      newSessionDraftOpen: false,
+      draftPermissionAutoAcceptEnabled: false,
+      permissionAutoAcceptEnabled,
+      setDraftPermissionAutoAcceptEnabled: () => undefined,
+      setSessionAutoAccept: async (id, enabled) => {
+        setPermissionAutoAcceptSaving(true);
+        setPermissionAutoAcceptError(null);
+        try {
+          const result = await setLynxSessionPermissionAutoAccept(runtimeFetch, {
+            sessionId: id,
+            enabled,
+            directory,
+          });
+          if (result.status !== 'ok') {
+            const error = result.status === 'no-runtime' ? 'no-runtime' : result.error;
+            setPermissionAutoAcceptError(error);
+            throw new Error(error);
+          }
+          setPermissionAutoAccept(result.sessions);
+          if (enabled) reloadPendingCards();
+        } finally {
+          setPermissionAutoAcceptSaving(false);
+        }
+      },
+      onOpenSessionFirst: () => undefined,
+      onToggleFailed: () => {
+        setPermissionAutoAcceptError(lynxT(locale, 'lynx.chat.permissionAutoAccept.failed'));
+      },
+    });
+  }, [
+    sessionId,
+    permissionAutoAcceptEnabled,
+    runtimeFetch,
+    directory,
+    locale,
+    reloadPendingCards,
+  ]);
+
+  const permissionAutoAcceptChrome = showPermissionAutoAcceptControl
+    ? {
+      enabled: permissionAutoAcceptEnabled,
+      saving: permissionAutoAcceptSaving,
+      onToggle: onTogglePermissionAutoAccept,
+    }
+    : null;
+
+  // When policy hydrates or flips on, reconcile pending without resetting timeline.
+  useEffect(() => {
+    if (!permissionAutoAcceptEnabled || !runtimeFetch) return;
+    reloadPendingCards();
+  }, [permissionAutoAcceptEnabled, runtimeFetch, reloadPendingCards]);
 
   useEffect(() => {
     let cancelled = false;
@@ -788,6 +906,11 @@ export function LynxChatScreen({
                 {cardError}
               </LynxText>
             ) : null}
+            {permissionAutoAcceptError ? (
+              <LynxText style={{ color: cssVar('surface.mutedForeground'), fontSize: '12px', marginBottom: '8px' }}>
+                {permissionAutoAcceptError}
+              </LynxText>
+            ) : null}
             {/* Autocomplete ABOVE glass composer — never inside blur-view/contentView */}
             <LynxComposerAutocompleteList
               locale={locale}
@@ -822,6 +945,7 @@ export function LynxChatScreen({
                     queueCount={queueCount}
                     agentLabel={composerModel.agent || lynxT(locale, 'lynx.chat.composer.mentionHint')}
                     modelLabel={composerModel.modelID}
+                    permissionAutoAccept={permissionAutoAcceptChrome}
                     onAttach={() => { void onAttach(); }}
                     onSend={() => { void onSend(); }}
                     onStop={() => { void onStop(); }}
@@ -849,6 +973,39 @@ export function LynxChatScreen({
                       +
                     </LynxText>
                   </LynxView>
+                  {permissionAutoAcceptChrome ? (
+                    <LynxView
+                      bindtap={() => {
+                        if (permissionAutoAcceptChrome.saving) return;
+                        permissionAutoAcceptChrome.onToggle();
+                      }}
+                      accessibility-role="button"
+                      accessibility-label={lynxT(
+                        locale,
+                        permissionAutoAcceptChrome.enabled
+                          ? 'lynx.chat.permissionAutoAccept.disable'
+                          : 'lynx.chat.permissionAutoAccept.enable',
+                      )}
+                      data-lynx-composer-action="permissionAutoAccept"
+                      style={{ padding: '6px 8px', opacity: permissionAutoAcceptChrome.saving ? 0.6 : 1 }}
+                    >
+                      <LynxText style={{
+                        color: permissionAutoAcceptChrome.enabled
+                          ? cssVar('primary.base')
+                          : cssVar('surface.mutedForeground'),
+                        fontSize: '12px',
+                        fontWeight: '600',
+                      }}
+                      >
+                        {lynxT(
+                          locale,
+                          permissionAutoAcceptChrome.enabled
+                            ? 'lynx.chat.permissionAutoAccept.on'
+                            : 'lynx.chat.permissionAutoAccept.off',
+                        )}
+                      </LynxText>
+                    </LynxView>
+                  ) : null}
                   <LynxInput
                     value={draft}
                     placeholder={lynxT(locale, 'lynx.chat.composer.placeholder')}
