@@ -90,6 +90,8 @@ describe('contact tool protocol', () => {
     ]);
     expect(detectRequestedContactTools('每天 18:00 排一个 ping 定时任务', tools)).toEqual([SCHEDULE_TASK_TOOL_NAME]);
     expect(detectRequestedContactTools('建会话写一个文件', tools)).toEqual([ASSIGN_SESSION_TOOL_NAME]);
+    expect(detectRequestedContactTools('写一个文件', tools)).toEqual([]);
+    expect(detectRequestedContactTools('pwd', tools)).toEqual([]);
     expect(detectRequestedContactTools('给 PeerQA 说一声 hello-from-assistant 写好了', tools)).toEqual([
       MESSAGE_ASSISTANT_TOOL_NAME,
     ]);
@@ -103,9 +105,16 @@ describe('contact tool protocol', () => {
     expect(detectRequestedContactTools('不要开编码 session', tools)).toEqual([]);
   });
 
-  it('ignores bash/edit tool fences', () => {
-    const text = '```openchamber-tool\n{"name":"bash","arguments":{"command":"ls"}}\n```';
-    expect(parseContactToolCalls(text, ['bash', ASSIGN_SESSION_TOOL_NAME]).toolCall).toBeNull();
+  it('parses bash fences when the pi coding tools are allowed', () => {
+    const text = '```openchamber-tool\n{"name":"bash","arguments":{"command":"pwd"}}\n```';
+    expect(parseContactToolCalls(text, ['bash', ASSIGN_SESSION_TOOL_NAME]).toolCall).toEqual({
+      name: 'bash',
+      arguments: { command: 'pwd' },
+    });
+    expect(parseContactToolCalls(
+      '```openchamber-tool\n{"name":"glob","arguments":{"pattern":"*"}}\n```',
+      ['glob', 'bash'],
+    ).toolCall).toBeNull();
   });
 
   it('tells DeepSeek to call tools from natural language, not slash commands', () => {

@@ -1,3 +1,6 @@
+import fs from 'node:fs'
+import os from 'node:os'
+import path from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
 import {
   CREATE_ASSISTANT_TOOL_NAME,
@@ -9,6 +12,7 @@ import {
   createContactTools,
 } from './contact-tools.js'
 import { createContactStreamFn, runContactTurn } from './harness.js'
+import { PI_CODING_TOOL_NAMES } from './pi-tools.js'
 
 describe('createContactStreamFn', () => {
   it('forwards completion text as pi-ai text events', async () => {
@@ -230,6 +234,92 @@ describe('runContactTurn', () => {
     })
     expect(result.bubbles).toEqual(['Hey.', 'I can open that session.'])
     expect(prompt).toHaveBeenCalled()
+  })
+
+  it('applies workspace, defaultPrompt, pi tools, and merged .agents/.claude skills', async () => {
+    const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'oc-assistant-ws-'))
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), 'oc-assistant-home-'))
+    const skill = path.join(workspace, '.agents', 'skills', 'project-skill')
+    const claude = path.join(workspace, '.claude', 'skills', 'claude-skill')
+    const globalAgents = path.join(home, '.agents', 'skills', 'global-skill')
+    fs.mkdirSync(skill, { recursive: true })
+    fs.mkdirSync(claude, { recursive: true })
+    fs.mkdirSync(globalAgents, { recursive: true })
+    fs.writeFileSync(path.join(skill, 'SKILL.md'), '---\nname: project-skill\ndescription: Project skill\n---\nDo the project thing\n')
+    fs.writeFileSync(path.join(claude, 'SKILL.md'), '---\nname: claude-skill\ndescription: Claude project skill\n---\nDo the claude thing\n')
+    fs.writeFileSync(path.join(globalAgents, 'SKILL.md'), '---\nname: global-skill\ndescription: Global agents skill\n---\nDo the global thing\n')
+    function AgentImpl(options) {
+      expect(options.initialState.thinkingLevel).toBe('off')
+      expect(options.initialState.tools.map((tool) => tool.name)).toEqual([...PI_CODING_TOOL_NAMES])
+      expect(options.initialState.systemPrompt).toContain(workspace)
+      expect(options.initialState.systemPrompt).toContain('Be terse.')
+      expect(options.initialState.systemPrompt).toContain('project-skill')
+      expect(options.initialState.systemPrompt).toContain('claude-skill')
+      expect(options.initialState.systemPrompt).toContain('global-skill')
+      expect(options.initialState.systemPrompt).toContain('Never say you have no terminal')
+      this.state = { ...options.initialState, messages: [{ role: 'assistant', content: [{ type: 'text', text: 'Ready.' }] }] }
+      this.prompt = async () => {}
+    }
+    try {
+      const result = await runContactTurn({
+        assistant: {
+          providerID: 'openai',
+          modelID: 'gpt-5.2',
+          defaultPrompt: 'Be terse.',
+          effectiveWorkspacePath: workspace,
+        },
+        history: [],
+        userText: 'pwd',
+        createChatCompletion: vi.fn(),
+        skillHomeDir: home,
+        AgentImpl,
+      })
+      expect(result.bubbles).toEqual(['Ready.'])
+    } finally {
+      fs.rmSync(workspace, { recursive: true, force: true })
+      fs.rmSync(home, { recursive: true, force: true })
+    }
+  })
+
+  it('executes bash pwd in the assistant workspace', async () => {
+    const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'oc-assistant-pwd-'))
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), 'oc-assistant-pwd-home-'))
+    let calls = 0
+    const createChatCompletion = vi.fn(async ({ body }) => {
+      calls += 1
+      if (calls === 1) {
+        return {
+          completion: {
+            choices: [{
+              message: { content: '```openchamber-tool\n{"name":"bash","arguments":{"command":"pwd"}}\n```' },
+            }],
+          },
+        }
+      }
+      const last = body.messages.at(-1)
+      const content = typeof last?.content === 'string' ? last.content : ''
+      return { completion: { choices: [{ message: { content: content || 'done' } }] } }
+    })
+    try {
+      const result = await runContactTurn({
+        assistant: {
+          providerID: 'openai',
+          modelID: 'gpt-5.2',
+          defaultPrompt: '',
+          effectiveWorkspacePath: workspace,
+        },
+        history: [],
+        userText: 'pwd',
+        createChatCompletion,
+        skillHomeDir: home,
+      })
+      const text = result.bubbles.join('\n')
+      const resolved = fs.realpathSync(workspace)
+      expect(text.includes(workspace) || text.includes(resolved)).toBe(true)
+    } finally {
+      fs.rmSync(workspace, { recursive: true, force: true })
+      fs.rmSync(home, { recursive: true, force: true })
+    }
   })
 
   it('attaches OpenChamber tools only and collects session cards from tool results', async () => {
