@@ -119,7 +119,7 @@ export function createLynxComposerActions(
     serverScope = null;
   };
 
-  const refreshServerScope = async (): Promise<LynxComposerActionResult> => {
+  const refreshServerScope = async (): Promise<'server' | 'local' | LynxComposerActionResult> => {
     const api = requireApi();
     if ('status' in api) return api;
     const result = await fetchLynxMessageQueueScopeForSession(api.runtimeFetch, {
@@ -129,7 +129,7 @@ export function createLynxComposerActions(
     if (result.status !== 'ok') {
       if (isLynxMessageQueueUnavailable(result)) {
         useLocalQueue();
-        return { status: 'ok' };
+        return 'local';
       }
       return {
         status: 'failed',
@@ -138,7 +138,7 @@ export function createLynxComposerActions(
       };
     }
     applyServerScope(result.value);
-    return { status: 'ok' };
+    return 'server';
   };
 
   const ensureQueueBackend = async (): Promise<'server' | 'local' | LynxComposerActionResult> => {
@@ -150,15 +150,17 @@ export function createLynxComposerActions(
     }
     if (queueMode === 'server') return 'server';
     if (queueMode === 'local') return 'local';
-    const probed = await refreshServerScope();
-    if (probed.status !== 'ok') return probed;
-    return queueMode === 'server' ? 'server' : 'local';
+    return refreshServerScope();
   };
 
   const reloadKnownScope = async (): Promise<LynxComposerActionResult> => {
     const api = requireApi();
     if ('status' in api) return api;
-    if (!serverScope) return refreshServerScope();
+    if (!serverScope) {
+      const probed = await refreshServerScope();
+      if (typeof probed === 'string') return { status: 'ok' };
+      return probed;
+    }
     const result = await fetchLynxMessageQueueScope(api.runtimeFetch, serverScope.scopeID, {
       offset: 0,
       limit: 8,
