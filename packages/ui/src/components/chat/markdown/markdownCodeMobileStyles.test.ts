@@ -12,6 +12,8 @@ import {
 const directory = dirname(fileURLToPath(import.meta.url));
 const indexCss = readFileSync(join(directory, '../../../index.css'), 'utf8');
 const mobileCss = readFileSync(join(directory, '../../../styles/mobile.css'), 'utf8');
+const decorateSource = readFileSync(join(directory, 'decorate.ts'), 'utf8');
+const injected = new Set<HTMLElement>();
 
 const context: DecorateContext = {
   labels: {
@@ -37,6 +39,9 @@ const context: DecorateContext = {
 
 afterEach(() => {
   vi.restoreAllMocks();
+  for (const node of injected) node.remove();
+  injected.clear();
+  document.documentElement.className = '';
 });
 
 describe('mobile Markdown code block layout', () => {
@@ -58,6 +63,60 @@ describe('mobile Markdown code block layout', () => {
     expect(wrapper?.querySelector('code')?.textContent).toBe(source);
     expect(wrapper?.querySelector('[data-md-action="copy-code"]')).not.toBeNull();
     expect(wrapper?.querySelector('[data-md-action="toggle-code-wrap"]')?.getAttribute('aria-pressed')).toBe('true');
+  });
+
+  test('code cards clip without becoming overflow-hidden scrollport targets', () => {
+    // LatticeOrb / ProgressiveGroup already document that mobile.css rewrites
+    // .overflow-hidden → overflow-y:auto. Code cards sit inside every transcript
+    // scroller (assistant contact + primary chat) and must not match that rewrite.
+    expect(decorateSource).toContain("'my-4 group overflow-clip rounded-2xl border border-border/80 bg-[var(--surface-elevated)]'");
+    expect(decorateSource).not.toMatch(
+      /data-component['"]\s*,\s*['"]markdown-code['"][\s\S]{0,200}overflow-hidden rounded-2xl/,
+    );
+    expect(mobileCss).toContain('[data-component="markdown-code"]');
+    expect(mobileCss).toContain('[data-md-code-body]');
+    expect(mobileCss).not.toContain('.markdown-content .overflow-hidden');
+  });
+
+  test('mobile-pointer cascade keeps code cards as clippers and bodies as x-only scrollports', () => {
+    document.documentElement.classList.add('mobile-pointer');
+    const style = document.createElement('style');
+    style.textContent = `
+      .overflow-hidden { overflow: hidden; }
+      /* happy-dom needs explicit longhands for the Tailwind shorthand. */
+      .overflow-clip { overflow: clip; overflow-x: clip; overflow-y: clip; }
+      .overflow-x-auto { overflow-x: auto; }
+      .overflow-x-hidden { overflow-x: hidden; }
+    ${mobileCss}`;
+    document.head.appendChild(style);
+    injected.add(style);
+
+    const host = document.createElement('div');
+    host.innerHTML = `
+      <div class="markdown-content">
+        <div data-component="markdown-code" class="overflow-hidden" data-testid="legacy-card"></div>
+        <div data-component="markdown-code" class="overflow-clip" data-testid="clip-card"></div>
+        <div data-md-code-body class="overflow-x-auto" data-testid="body"></div>
+        <div data-md-code-body class="overflow-x-hidden" data-testid="wrapped-body"></div>
+        <div data-component="generated-json-result" class="overflow-clip" data-testid="json-card"></div>
+        <div class="overflow-hidden" style="max-height: 80px" data-testid="nested-scroll"></div>
+      </div>
+      <div class="overflow-hidden" data-testid="page-column"></div>
+    `;
+    document.body.appendChild(host);
+    injected.add(host);
+
+    // Regression baseline: bare overflow-hidden still becomes a page scrollport.
+    expect(getComputedStyle(host.querySelector('[data-testid="page-column"]')!).overflowY).toBe('auto');
+    // Named card shells retain clip semantics, including the legacy class.
+    expect(getComputedStyle(host.querySelector('[data-testid="legacy-card"]')!).overflowY).toBe('clip');
+    expect(getComputedStyle(host.querySelector('[data-testid="clip-card"]')!).overflowY).toBe('clip');
+    expect(getComputedStyle(host.querySelector('[data-testid="json-card"]')!).overflowY).toBe('clip');
+    expect(getComputedStyle(host.querySelector('[data-testid="nested-scroll"]')!).overflowY).toBe('auto');
+    expect(getComputedStyle(host.querySelector('[data-testid="body"]')!).overflowX).toBe('auto');
+    expect(getComputedStyle(host.querySelector('[data-testid="body"]')!).overflowY).toBe('hidden');
+    expect(getComputedStyle(host.querySelector('[data-testid="wrapped-body"]')!).overflowX).toBe('hidden');
+    expect(getComputedStyle(host.querySelector('[data-testid="wrapped-body"]')!).overflowY).toBe('hidden');
   });
 
   test('applies the compact line-height token only to iOS WebKit mobile and Capacitor code blocks', () => {

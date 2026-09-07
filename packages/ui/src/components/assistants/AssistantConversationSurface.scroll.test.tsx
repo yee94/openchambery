@@ -143,6 +143,13 @@ afterEach(async () => {
 });
 
 describe('AssistantConversationSurface scroll ownership', () => {
+  test('matches primary chat overflow-anchor and overscroll containment', async () => {
+    const { scroller } = await mountSurface();
+    expect(scroller.style.overflowAnchor).toBe('none');
+    expect(scroller.style.overscrollBehavior).toBe('contain');
+    expect(scroller.style.overscrollBehaviorY).toBe('contain');
+  });
+
   test('keeps the user reading position while a contact reply streams', async () => {
     const { scroller } = await mountSurface();
     let scrollTop = 120;

@@ -555,7 +555,7 @@ const SubagentNotificationCard: React.FC<{ notification: SubagentNotification }>
                     </span>
                 </div>
                 {notification.body ? (
-                    <div className="typography-meta mt-1 max-h-16 overflow-hidden text-muted-foreground [&_.markdown-content>*:first-child]:mt-0 [&_.markdown-content>*:last-child]:mb-0">
+                    <div className="typography-meta mt-1 max-h-16 overflow-clip text-muted-foreground [&_.markdown-content>*:first-child]:mt-0 [&_.markdown-content>*:last-child]:mb-0">
                         <SimpleMarkdownRenderer
                             content={notification.body}
                             variant="tool"

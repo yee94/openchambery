@@ -91,7 +91,7 @@ export const MarkdownLoadingPlaceholder: React.FC<{
         <div
           aria-hidden="true"
           className={cn(
-            'pointer-events-none absolute inset-0 flex w-full flex-col gap-2 overflow-hidden py-1',
+            'pointer-events-none absolute inset-0 flex w-full flex-col gap-2 overflow-clip py-1',
             animated && 'motion-safe:animate-pulse',
           )}
           data-markdown-placeholder="skeleton"
