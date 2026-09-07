@@ -77,6 +77,20 @@ export {
   replyLynxPermission,
 } from './pendingCards';
 export { LynxTurnCard, LynxQuestionCard, LynxPermissionCard } from './TurnCards';
+export {
+  formatLynxPermissionMetadataLines,
+  formatLynxPermissionMetadataText,
+  getLynxPermissionToolDisplayName,
+  getLynxPermissionToolKind,
+} from './permissionMetadata';
+export {
+  autoReplyLynxPermissionsWhenEnabled,
+  fetchLynxPermissionAutoAccept,
+  lynxAutoRespondsPermission,
+  setLynxSessionPermissionAutoAccept,
+  shouldShowLynxPermissionAutoAcceptControl,
+  toggleLynxPermissionAutoAccept,
+} from './permissionAutoAccept';
 export { LynxDraftComposer, materializeLynxDraftSession } from './DraftComposer';
 
 export {

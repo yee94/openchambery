@@ -257,6 +257,8 @@ export type LynxPermissionRequest = {
   sessionID: string;
   permission: string;
   patterns: string[];
+  /** Cap types/permission.ts — tool content (bash/edit/write/webfetch/generic). */
+  metadata: Record<string, unknown>;
   always: string[];
 };
 
@@ -299,5 +301,8 @@ export function parseLynxPermissionRequest(raw: unknown): LynxPermissionRequest 
   const always = Array.isArray(record.always)
     ? record.always.filter((p): p is string => typeof p === 'string')
     : [];
-  return { id, sessionID, permission, patterns, always };
+  const metadata = record.metadata && typeof record.metadata === 'object' && !Array.isArray(record.metadata)
+    ? record.metadata as Record<string, unknown>
+    : {};
+  return { id, sessionID, permission, patterns, metadata, always };
 }

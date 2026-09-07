@@ -12,6 +12,13 @@ import {
   type LynxComposerActionsChromeVariant,
 } from './composerActionsLayout';
 
+export type LynxPermissionAutoAcceptChrome = {
+  enabled: boolean;
+  saving?: boolean;
+  visible?: boolean;
+  onToggle: () => void;
+};
+
 export type LynxComposerActionsInGlassProps = {
   locale: string;
   variant: LynxComposerActionsChromeVariant;
@@ -21,6 +28,8 @@ export type LynxComposerActionsInGlassProps = {
   agentLabel?: string | null;
   /** Model chip text (Cap bitmap name). */
   modelLabel?: string | null;
+  /** Cap PermissionAutoAcceptButton — additive; does not change Cap action order tokens. */
+  permissionAutoAccept?: LynxPermissionAutoAcceptChrome | null;
   onAttach: () => void;
   onSend: () => void;
   onStop: () => void;
@@ -45,6 +54,7 @@ export function LynxComposerActionsInGlass({
   queueCount = 0,
   agentLabel,
   modelLabel,
+  permissionAutoAccept,
   onAttach,
   onSend,
   onStop,
@@ -84,6 +94,43 @@ export function LynxComposerActionsInGlass({
     </LynxView>
   );
 
+  const showAutoAccept = permissionAutoAccept && permissionAutoAccept.visible !== false;
+  const autoAcceptChip = showAutoAccept ? (
+    <LynxView
+      key="permission-auto-accept"
+      bindtap={() => {
+        if (permissionAutoAccept.saving) return;
+        permissionAutoAccept.onToggle();
+      }}
+      accessibility-role="button"
+      accessibility-label={lynxT(
+        locale,
+        permissionAutoAccept.enabled
+          ? 'lynx.chat.permissionAutoAccept.disable'
+          : 'lynx.chat.permissionAutoAccept.enable',
+      )}
+      data-lynx-composer-action="permissionAutoAccept"
+      style={{
+        ...actionPadStyle(),
+        opacity: permissionAutoAccept.saving ? 0.6 : 1,
+      }}
+    >
+      <LynxText style={{
+        color: permissionAutoAccept.enabled ? cssVar('primary.base') : cssVar('surface.mutedForeground'),
+        fontSize: '12px',
+        fontWeight: '600',
+      }}
+      >
+        {lynxT(
+          locale,
+          permissionAutoAccept.enabled
+            ? 'lynx.chat.permissionAutoAccept.on'
+            : 'lynx.chat.permissionAutoAccept.off',
+        )}
+      </LynxText>
+    </LynxView>
+  ) : null;
+
   return (
     <LynxView
       data-lynx-composer-actions-in-glass="true"
@@ -95,6 +142,7 @@ export function LynxComposerActionsInGlass({
         marginTop: variant === 'card' ? '8px' : '0',
       }}
     >
+      {autoAcceptChip}
       {order.map((token) => {
         if (token === 'attach') {
           return (
