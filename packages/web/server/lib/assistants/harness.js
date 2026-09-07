@@ -14,6 +14,12 @@ import {
   parseContactToolCalls,
   stripContactToolFences,
 } from './contact-tools.js';
+import {
+  createPiCodingRuntime,
+  formatPiCodingPrompt,
+  isPiCodingToolName,
+  resolveAssistantCwd,
+} from './pi-tools.js';
 
 function createAssistantMessageEventStream() {
   const events = [];
@@ -63,17 +69,16 @@ function createAssistantMessageEventStream() {
 }
 
 export const CONTACT_SYSTEM_PROMPT = [
-  "You are OpenChamber's in-app assistant — a personable contact, not a coding agent.",
+  "You are OpenChamber's in-app assistant — a personable contact who can also work in the user's configured project directory.",
   'Reply in short chat bubbles: a few sentences each, separated by a blank line.',
   'Talk like a person in the user\'s language. One short spoken bubble at a time — never a wall of paragraphs.',
   'Never write chain-of-thought, plans, tool names, or English narration of what you will do. The user never sees thinking.',
   'Do not expose tool traces, Activity, or editor actions.',
-  'Do not run bash, edit, read, or write.',
+  'You have bash, read, write, and edit in the working directory. Use them for pwd, files, and shell. Never say you have no terminal or cannot read files. Ignore any temporary generator workspace in the environment.',
   'Understand natural language in any language, including Chinese: 开新对话 means new_conversation, 找项目 means list_projects, 现有对话 means list_sessions, 建助理 means create_assistant, 建会话 / 开个新会话 means assign_session, 排定时任务 means schedule_task, 给 X 说一声 means message_assistant, 发卡片 means emit a card via those tools — never ask the user to type /card or /dm.',
   'You receive the registered project catalog every turn. You CAN see those projects. Look them up yourself (fuzzy match label/name/path). Never say you cannot see the registered project list. Never ask for a raw filesystem path when a name matches. If the catalog is empty, tell the user to add a project in Settings.',
-  'To open coding work: match the project, optionally list_sessions for existing chats, then assign_session with projectPath or sessionID.',
+  'File and shell work in this working directory uses read, write, edit, and bash. To open a separate Chat coding session: match the project, optionally list_sessions for existing chats, then assign_session with projectPath or sessionID.',
   'A reply without the tool call does nothing. Never say 已创建, created, scheduled, or opened unless the tool already returned success.',
-  'Assign coding work with assign_session so a real Chat session does the work.',
 ].join(' ');
 
 const emptyUsage = () => ({
@@ -418,9 +423,13 @@ const extractContactTurnOutcome = (messages, retried) => {
   const cards = extractContactCardsFromMessages(slice);
   const hasTool = contactTurnHasToolResult(slice);
   const spoken = extractSpokenPreamble(slice);
-  const confirm = hasTool
-    ? (extractToolResultText(slice) || extractAssistantText(slice))
-    : extractAssistantText(slice);
+  const lastToolName = [...slice].reverse().find((message) => message?.role === 'toolResult')?.toolName;
+  const coding = isPiCodingToolName(lastToolName);
+  const toolText = extractToolResultText(slice);
+  const assistant = extractAssistantText(slice);
+  const confirm = hasTool && !coding
+    ? (toolText || assistant)
+    : (assistant || (coding ? toolText : ''));
   const parts = [];
   if (spoken) parts.push(spoken);
   if (confirm && confirm !== spoken) parts.push(confirm);
@@ -428,9 +437,10 @@ const extractContactTurnOutcome = (messages, retried) => {
 };
 
 /**
- * Thin OpenChamber contact harness: pi-agent-core Agent + OpenChamber API
- * tools only + thinkingLevel off. Transcript in, completions via streamFn,
- * bubbles and session cards out. Never bash/edit/read/write.
+ * Thin OpenChamber contact harness: pi-agent-core Agent + thinkingLevel off.
+ * Attaches pi read/write/edit/bash in the assistant workspace plus OpenChamber
+ * API tools. Transcript in, completions via streamFn, bubbles and session
+ * cards out.
  *
  * Assigned-session settle reuses the assistants event hub plus session-goal
  * `emitGoalNotification` — read-only into the contact transcript.
@@ -446,106 +456,120 @@ export async function runContactTurn({
   onTextDelta = null,
   onBubbleDelta = null,
   globalEventHub = null,
+  skillHomeDir,
   AgentImpl = Agent,
 }) {
   const providerID = assistant.providerID;
   const modelID = assistant.modelID;
+  const cwd = resolveAssistantCwd(assistant);
   const contactTools = Array.isArray(tools)
-    ? tools.filter((tool) => tool && typeof tool.name === 'string' && !['bash', 'edit', 'read', 'write'].includes(tool.name))
+    ? tools.filter((tool) => tool && typeof tool.name === 'string' && !isPiCodingToolName(tool.name))
     : [];
-  const systemPrompt = [
-    CONTACT_SYSTEM_PROMPT,
-    formatRegisteredProjectsPrompt(projects),
-    formatContactToolsPrompt(contactTools),
-    assistant.defaultPrompt,
-  ].filter((value) => typeof value === 'string' && value.trim()).join('\n\n');
-  const model = createContactModel(providerID, modelID);
-  // streamFn receives the model; completions needs providerID/modelID.
-  model.name = `${providerID}/${modelID}`;
+  let runtime = null;
+  try {
+    if (cwd) runtime = await createPiCodingRuntime(cwd, { homeDir: skillHomeDir });
+    const codingTools = Array.isArray(runtime?.tools) ? runtime.tools : [];
+    const systemPrompt = [
+      CONTACT_SYSTEM_PROMPT,
+      formatPiCodingPrompt({ cwd: runtime?.cwd, skillsPrompt: runtime?.skillsPrompt }),
+      formatRegisteredProjectsPrompt(projects),
+      formatContactToolsPrompt(contactTools),
+      assistant.defaultPrompt,
+    ].filter((value) => typeof value === 'string' && value.trim()).join('\n\n');
+    const model = createContactModel(providerID, modelID);
+    // streamFn receives the model; completions needs providerID/modelID.
+    model.name = `${providerID}/${modelID}`;
 
-  const pendingFileParts = [
-    ...(Array.isArray(history) ? history.flatMap((message) => completionFileParts(message.parts)) : []),
-    ...completionFileParts(userParts),
-  ];
-  const prior = Array.isArray(history)
-    ? history.map((message) => (
-      message.role === 'assistant'
-        ? { role: 'assistant', content: [{ type: 'text', text: message.content }], api: model.api, provider: model.provider, model: model.id, usage: emptyUsage(), stopReason: 'stop', timestamp: Date.now() }
-        : {
-          role: 'user',
-          content: message.content,
-          ...(completionFileParts(message.parts).length > 0 ? { parts: completionFileParts(message.parts) } : {}),
-          timestamp: Date.now(),
-        }
-    ))
-    : [];
+    const pendingFileParts = [
+      ...(Array.isArray(history) ? history.flatMap((message) => completionFileParts(message.parts)) : []),
+      ...completionFileParts(userParts),
+    ];
+    const prior = Array.isArray(history)
+      ? history.map((message) => (
+        message.role === 'assistant'
+          ? { role: 'assistant', content: [{ type: 'text', text: message.content }], api: model.api, provider: model.provider, model: model.id, usage: emptyUsage(), stopReason: 'stop', timestamp: Date.now() }
+          : {
+            role: 'user',
+            content: message.content,
+            ...(completionFileParts(message.parts).length > 0 ? { parts: completionFileParts(message.parts) } : {}),
+            timestamp: Date.now(),
+          }
+      ))
+      : [];
 
-  const agent = new AgentImpl({
-    initialState: {
-      systemPrompt,
-      model,
-      thinkingLevel: 'off',
-      tools: contactTools,
-      messages: prior,
-    },
-    streamFn: createContactStreamFn(createChatCompletion, {
-      pendingFileParts,
-      onTextDelta,
-      onBubbleDelta,
-      globalEventHub,
-      bubbleGapMs: 280,
-    }),
-  });
+    const agent = new AgentImpl({
+      initialState: {
+        systemPrompt,
+        model,
+        thinkingLevel: 'off',
+        tools: [...codingTools, ...contactTools],
+        messages: prior,
+      },
+      streamFn: createContactStreamFn(createChatCompletion, {
+        pendingFileParts,
+        onTextDelta,
+        onBubbleDelta,
+        globalEventHub,
+        bubbleGapMs: 280,
+      }),
+    });
 
-  await agent.prompt(userText);
-  if (agent.state.errorMessage) {
-    const error = new Error(agent.state.errorMessage);
-    error.code = 'upstream_error';
-    throw error;
-  }
-  const requested = detectRequestedContactTools(userText, contactTools.map((tool) => tool.name));
-  let retried = false;
-  if (requested.length > 0 && !contactTurnHasToolResult(agent.state.messages)) {
-    retried = true;
-    await agent.prompt(MISSED_FENCE_RETRY_USER_TEXT);
+    await agent.prompt(userText);
     if (agent.state.errorMessage) {
       const error = new Error(agent.state.errorMessage);
       error.code = 'upstream_error';
       throw error;
     }
-  }
-  if (requested.length > 0 && !contactTurnHasToolResult(agent.state.messages)) {
+    const requested = detectRequestedContactTools(userText, contactTools.map((tool) => tool.name));
+    let retried = false;
+    if (requested.length > 0 && !contactTurnHasToolResult(agent.state.messages)) {
+      retried = true;
+      await agent.prompt(MISSED_FENCE_RETRY_USER_TEXT);
+      if (agent.state.errorMessage) {
+        const error = new Error(agent.state.errorMessage);
+        error.code = 'upstream_error';
+        throw error;
+      }
+    }
+    if (requested.length > 0 && !contactTurnHasToolResult(agent.state.messages)) {
+      return {
+        text: MISSED_TOOL_FAILURE_BUBBLE,
+        bubbles: [MISSED_TOOL_FAILURE_BUBBLE],
+        cards: [],
+        thinkingLevel: agent.state.thinkingLevel,
+        tools: [...agent.state.tools],
+      };
+    }
+    const outcome = extractContactTurnOutcome(agent.state.messages, retried);
+    const text = stripContactToolFences(outcome.text);
+    if (contactTurnHasSuccessfulReset(agent.state.messages)) {
+      const bubbles = confirmBubbleAfterContactReset(splitContactBubbles(text));
+      return {
+        text: bubbles[0] || NEW_CONVERSATION_CONFIRM_BUBBLE,
+        bubbles,
+        cards: [],
+        reset: true,
+        thinkingLevel: agent.state.thinkingLevel,
+        tools: [...agent.state.tools],
+      };
+    }
+    if (!text.trim() && outcome.cards.length === 0) {
+      const error = new Error('Assistant returned no text');
+      error.code = 'upstream_error';
+      throw error;
+    }
     return {
-      text: MISSED_TOOL_FAILURE_BUBBLE,
-      bubbles: [MISSED_TOOL_FAILURE_BUBBLE],
-      cards: [],
+      text,
+      bubbles: splitContactBubbles(text),
+      cards: outcome.cards,
       thinkingLevel: agent.state.thinkingLevel,
       tools: [...agent.state.tools],
     };
+  } finally {
+    try {
+      await runtime?.close?.();
+    } catch {
+      // Workspace shell cleanup must not mask the turn result.
+    }
   }
-  const outcome = extractContactTurnOutcome(agent.state.messages, retried);
-  const text = stripContactToolFences(outcome.text);
-  if (contactTurnHasSuccessfulReset(agent.state.messages)) {
-    const bubbles = confirmBubbleAfterContactReset(splitContactBubbles(text));
-    return {
-      text: bubbles[0] || NEW_CONVERSATION_CONFIRM_BUBBLE,
-      bubbles,
-      cards: [],
-      reset: true,
-      thinkingLevel: agent.state.thinkingLevel,
-      tools: [...agent.state.tools],
-    };
-  }
-  if (!text.trim() && outcome.cards.length === 0) {
-    const error = new Error('Assistant returned no text');
-    error.code = 'upstream_error';
-    throw error;
-  }
-  return {
-    text,
-    bubbles: splitContactBubbles(text),
-    cards: outcome.cards,
-    thinkingLevel: agent.state.thinkingLevel,
-    tools: [...agent.state.tools],
-  };
 }

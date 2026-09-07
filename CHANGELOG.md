@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.19.7-beta.27] - 2026-09-07
+
+### 助手
+
+- 联系人助手在设定的工作目录里具备 pi 的 read / write / edit / bash，可以直接看文件、改文件、跑命令，不再只能当调度员。
+- 工作目录和提示词会进到 pi；技能合并 `~/.claude/skills`、`~/.agents/skills` 以及项目下的 `.claude/skills` 与 `.agents/skills`（同名以项目为准）。
+
 ## [1.19.7] - 2026-09-07
 
 汇总 1.19.7-beta.1 ~ 1.19.7-beta.26。

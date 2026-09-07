@@ -1,5 +1,6 @@
 import { AssignError, PROJECT_REQUIRED_MESSAGE } from './assign.js';
 import { createAssistantCardPart, createScheduleCardPart, createSessionCardPart } from './cards.js';
+import { isPiCodingToolName } from './pi-tools.js';
 
 const typeboxString = (description) => {
   const schema = { type: 'string', description };
@@ -34,7 +35,7 @@ export const NEW_CONVERSATION_CONFIRM_BUBBLE = 'Started a new conversation. Prev
 const LIST_SESSIONS_LIMIT_DEFAULT = 20;
 const LIST_SESSIONS_LIMIT_MAX = 50;
 
-const DENIED_CODING_TOOLS = new Set(['bash', 'edit', 'read', 'write', 'glob', 'grep', 'shell']);
+const DENIED_CODING_TOOLS = new Set(['glob', 'grep', 'shell', 'find', 'ls', 'powershell']);
 
 const FENCE = new RegExp(`\`\`\`${CONTACT_TOOL_FENCE}\\s*([\\s\\S]*?)\`\`\``, 'u');
 export const MISSED_FENCE_RETRY_USER_TEXT = 'emit the fence now, do not claim success.';
@@ -42,7 +43,7 @@ export const MISSED_TOOL_FAILURE_BUBBLE = 'I could not complete that. No tool ra
 
 const CREATE_ASSISTANT_INTENT = /建助理|新建[^。\n!]{0,24}助理|创建[^。\n!]{0,24}助理|加一个助理|create (?:an |a new )?assistant|new assistant/iu;
 const SCHEDULE_TASK_INTENT = /排定时任务|排个?定时任务|定时任务|schedule (?:a )?(?:daily )?(?:task|ping)|scheduled task|排个?(?:每日)?(?:任务|ping)/iu;
-const ASSIGN_SESSION_INTENT = /建会话|开会话|开(?:一个)?(?:编码\s*)?(?:session|会话)|open (?:a )?(?:coding )?session|assign_session|write a file|写(?:一个)?文件/giu;
+const ASSIGN_SESSION_INTENT = /建会话|开会话|开(?:一个)?(?:编码\s*)?(?:session|会话)|open (?:a )?(?:coding )?session|assign_session/giu;
 const MESSAGE_ASSISTANT_INTENT = /给[^。\n]{1,40}说(?:一声)?|跟[^。\n]{1,24}说(?:一声)?|告诉(?!我)[^。\n]{1,40}|说一声|message (?:the )?(?:assistant|peer)|(?:tell|message)\s+[A-Za-z0-9._-]+|send (?:a )?message to/iu;
 const NEW_CONVERSATION_INTENT = /开新对话|新对话|清空(?:聊天|对话)|clear chat|new conversation|start over/iu;
 const LIST_PROJECTS_INTENT = /找项目|查项目|看看项目|有哪些项目|项目列表|list projects|find project|registered project|which project/iu;
@@ -387,7 +388,9 @@ export function resolvePeerAssistant(params = {}, assistants = [], currentAssist
 }
 
 export function formatContactToolsPrompt(tools) {
-  const list = Array.isArray(tools) ? tools.filter((tool) => tool?.name && !DENIED_CODING_TOOLS.has(tool.name)) : [];
+  const list = Array.isArray(tools)
+    ? tools.filter((tool) => tool?.name && !DENIED_CODING_TOOLS.has(tool.name) && !isPiCodingToolName(tool.name))
+    : [];
   if (list.length === 0) return '';
   return [
     'The user talks in natural language (including Chinese). Never ask them to type slash commands.',
@@ -395,7 +398,7 @@ export function formatContactToolsPrompt(tools) {
     'When they want to find a registered project (找项目 / list projects / "openchamber yee"), call list_projects or use the Registered projects block already in context.',
     'When they want existing conversations in a project (现有对话 / list sessions), call list_sessions.',
     'When they want another assistant (建助理 / create an assistant), call create_assistant.',
-    'When they want coding work or a Chat session (建会话 / open a session / write a file / 开个新会话), call assign_session after matching the project.',
+    'When they want a separate Chat coding session (建会话 / open a session / 开个新会话), call assign_session after matching the project. File and shell work in this assistant\'s working directory uses read, write, edit, and bash — not assign_session.',
     'When they want a scheduled task (排定时任务 / schedule daily ping), call schedule_task.',
     'When they want to tell another assistant (给 PeerQA 说一声 / message PeerQA), call message_assistant.',
     `Call exactly one tool per reply by emitting one fenced JSON block:`,
