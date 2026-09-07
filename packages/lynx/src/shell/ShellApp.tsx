@@ -79,7 +79,7 @@ function RootTab({
   sessionIndexBindings: ProjectsHomeBindings | null;
   settingsBodyContext: SettingsBodyContext;
   onOpenSession: (session: LynxHomeSessionRow) => void;
-  onOpenDraft: () => void;
+  onOpenDraft: (directory?: string | null) => void;
   onOpenAssistantConversation: (assistant: LynxAssistantDTO) => void;
   onOpenAssistantNeedsSession: (assistant: LynxAssistantDTO) => void;
   onOpenScheduledRun: (sessionId: string, directory: string | null) => void;
@@ -179,8 +179,11 @@ export function LynxShellApp({
     }));
   };
 
-  const openDraft = () => {
-    setNavigation((state) => reduceLynxNavigation(state, { type: 'openDraft' }));
+  const openDraft = (directory?: string | null) => {
+    setNavigation((state) => reduceLynxNavigation(state, {
+      type: 'openDraft',
+      directory: directory ?? null,
+    }));
   };
 
   const openAssistantConversation = (assistant: LynxAssistantDTO) => {

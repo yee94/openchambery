@@ -347,6 +347,7 @@ First implementation slice after this doc gate (order is deliberate: connect →
 
 35. ~~**PermissionCard metadata + permission auto-accept**~~ — 代码接上 in `cursor/lynx-permission-metadata-auto-accept-local` (PR #73). Cap PermissionCard metadata plain text + GET/PUT permission-auto-accept. Remaining: host-only / 真机 / Pierre / WKWebView / Mode B / iOS IPA; product NOT DONE.
 36. ~~**Cap share-recipient picker**~~ — 代码接上 in `cursor/lynx-share-recipient-picker-local`. Cap `MobileShareRecipientPicker` full-page overlay (never a sheet) + `NativeShareDraft` Partial target + `MobileShareBridge` unassigned→picker / assigned→dispatch; never silent-default Assistant. Host Share extension / `ShareReceiverActivity` stay host-only. Docs honesty: tip APK `lynx-v2-debug-93b4355`; product NOT DONE / 三关未齐 / not EXHAUSTED; 真机残差 empty.
+37. ~~**Projects home project/worktree menus + session share**~~ — 代码接上 in `cursor/lynx-projects-menus-share-local`. Wire `buildLynxProjectMenuItems` / `buildLynxWorktreeMenuItems` + session share/copyLink/unshare against Cap/OpenCode `POST|DELETE /session/:id/share`; Linux-closable newSession/syncSessions/edit/closeProject/newWorktree/deleteWorktree (honest unavailable when HTTP missing). Docs honesty: tip APK `lynx-v2-debug-0b470a2`; product NOT DONE / 三关未齐 / not EXHAUSTED; 真机残差 empty.
 
 Do not invent ASR / Bonjour / Capgo / TanStack 1.18. Share / Live Activity / widgets stay later.
 
@@ -616,7 +617,7 @@ Slice on `cursor/lynx-dialog-portal-theme-local` (base PR#61 tip `7a4c7b6a8`; PR
 
 ## Remaining (honest — not EXHAUSTED)
 
-**Product NOT DONE / 三关未齐 / not EXHAUSTED.** Linux Cap product rows continue to close on tip `93b43558` + follow-ons (connect/settings/chat/projects/changes + Android first-paint #65–#69 + Cap phone overflow **new-session** in Next #32 + Voice model download/delete UI in Next #33 + Voice STT select + Changes dirty badge in Next #34 + PermissionCard metadata + permission auto-accept in Next #35 + Cap share-recipient picker in Next #36). Permission metadata + auto-accept closed in #35; share-recipient picker JS 代码接上 in #36. Remaining Cap-parity polish is thin; **host binders / HTML WKWebView / Pierre `@pierre/diffs` (honest DOM blocker — not ported) / Live Activity / iOS IPA / Share extension + ShareReceiverActivity / 真机** still block EXHAUSTED. **Do not** mark landed under 三关. 真机残差: **empty** (no written device log). Tip APK: `lynx-v2-debug-93b4355` — do not invent a newer APK SHA until mobile-ci rebuilds.
+**Product NOT DONE / 三关未齐 / not EXHAUSTED.** Linux Cap product rows continue to close on tip `0b470a21` + follow-ons (connect/settings/chat/projects/changes + Android first-paint #65–#69 + Cap phone overflow **new-session** in Next #32 + Voice model download/delete UI in Next #33 + Voice STT select + Changes dirty badge in Next #34 + PermissionCard metadata + permission auto-accept in Next #35 + Cap share-recipient picker in Next #36 + Projects menus/share in Next #37). Permission metadata + auto-accept closed in #35; share-recipient picker JS 代码接上 in #36; Projects menus/share 代码接上 in #37. Remaining Cap-parity polish is thin; **host binders / HTML WKWebView / Pierre `@pierre/diffs` (honest DOM blocker — not ported) / Live Activity / iOS IPA / Share extension + ShareReceiverActivity / clipboard host / 真机** still block EXHAUSTED. **Do not** mark landed under 三关. 真机残差: **empty** (no written device log). Tip APK: `lynx-v2-debug-0b470a2` — do not invent a newer APK SHA until mobile-ci rebuilds.
 
 ### 代码接上 prior slice (`cursor/lynx-closable-missing-local` / PR#48)
 
@@ -815,6 +816,19 @@ Slice on `cursor/lynx-dialog-portal-theme-local` (base PR#61 tip `7a4c7b6a8`; PR
 | Docs honesty | Tip APK `lynx-v2-debug-93b4355`; Next #36 |
 | Docs honesty | NOT DONE / 三关未齐 / not EXHAUSTED / 真机残差 empty / no 真机过 claim |
 
+### 代码接上 this slice (`cursor/lynx-projects-menus-share-local` / Next #37)
+
+| Item | Notes |
+|---|---|
+| Project / worktree menus | Cap `MobileRowActionsSheet` spirit via `buildLynxProjectMenuItems` / `buildLynxWorktreeMenuItems` long-press on ProjectsHome cards |
+| Session share / copy / unshare | Cap/OpenCode `POST|DELETE /session/:id/share`; never fake-success without `share.url`; copy uses navigator.clipboard when present else labeled unavailable |
+| newSession | Project/worktree → `openDraft({ directory })` / DraftComposer materialize in that directory |
+| syncSessions | Cap-style `POST /api/openchamber/session-index/sync` for project dirs; honest failure/unsupported |
+| edit / closeProject | Settings `projects[]` meta via `/api/config/settings`; close confirm via `LynxCenteredDialog` portal; labeled unavailable when not in settings |
+| newWorktree / deleteWorktree | Cap `/api/git/worktrees` create/delete; confirm delete via centered dialog; labeled unavailable on 404/501 |
+| Docs honesty | Tip APK `lynx-v2-debug-0b470a2`; Next #37 |
+| Docs honesty | NOT DONE / 三关未齐 / not EXHAUSTED / 真机残差 empty / no 真机过 claim |
+
 ### Still missing / host-only / 真机
 
 | Remaining | Why |
@@ -829,6 +843,7 @@ Slice on `cursor/lynx-dialog-portal-theme-local` (base PR#61 tip `7a4c7b6a8`; PR
 | Edge-swipe / Predictive Back pan arena 真机 | Contract + stubs 代码接上; native gesture ownership still host |
 | Haptics / HEIC / media pick / APNs·FCM token mint | Adapters 代码接上; native plugins still host |
 | Share extension / Android `ShareReceiverActivity` | **Host-only** (separate from Next #36 JS full-page picker). Inbox + recipient picker 代码接上; native extension/receiver still host |
+| Native clipboard binder | Next #37 copyLink uses `navigator.clipboard` when present; otherwise labeled unavailable — host clipboard plugin still host-only |
 | Live Activity / Widgets / Control Center | iOS-only host — later |
 | Android sideload APK + lynx-ci | **Live** on tip (`lynx-mobile-ci` assembleRelease + prerelease `lynx-v2-debug-*`; lynx-ci green). First-paint cream/globalProps 代码接上 — **not** 真机过. |
 | iOS IPA / CocoaPods Lynx resolve | Still missing on Linux; Mac/device required |

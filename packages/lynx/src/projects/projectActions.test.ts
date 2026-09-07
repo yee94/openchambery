@@ -1,0 +1,133 @@
+import { describe, expect, test } from 'vitest';
+
+import {
+  closeLynxProject,
+  createLynxWorktree,
+  deleteLynxWorktree,
+  inferLynxProjectIsGit,
+  probeLynxGitRepository,
+  syncLynxProjectSessions,
+  updateLynxProjectLabel,
+} from './projectActions';
+
+describe('Lynx project / worktree actions', () => {
+  test('sync posts Cap session-index/sync directories', async () => {
+    const calls: Array<{ path: string; method?: string; body?: string }> = [];
+    const runtimeFetch = async (path: string, init?: { method?: string; body?: string }) => {
+      calls.push({ path, method: init?.method, body: init?.body });
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({ available: true, directories: [], revision: 1, sync: {
+          active: false, completed: 1, total: 1, pendingDirectories: [], completedDirectories: ['/repo'], failedDirectories: [],
+        }, pinnedSessionIds: [] }),
+      };
+    };
+    const result = await syncLynxProjectSessions(runtimeFetch, ['/repo', '/repo-wt', '/repo']);
+    expect(result.status).toBe('ok');
+    expect(calls[0]).toMatchObject({ path: '/api/openchamber/session-index/sync', method: 'POST' });
+    expect(JSON.parse(calls[0]!.body!)).toEqual({ directories: ['/repo', '/repo-wt'] });
+  });
+
+  test('sync unsupported / no-runtime are honest', async () => {
+    expect(await syncLynxProjectSessions(null, ['/repo'])).toEqual({ status: 'no-runtime' });
+    const unsupported = await syncLynxProjectSessions(async () => ({
+      ok: false,
+      status: 501,
+      json: async () => ({}),
+    }), ['/repo']);
+    expect(unsupported.status).toBe('unsupported');
+  });
+
+  test('probe git check hits Cap /api/git/check', async () => {
+    const runtimeFetch = async (path: string) => {
+      expect(path).toBe('/api/git/check?directory=%2Frepo');
+      return { ok: true, status: 200, json: async () => ({ isGitRepository: true }) };
+    };
+    expect(await probeLynxGitRepository(runtimeFetch, '/repo')).toEqual({
+      status: 'ok',
+      isGitRepository: true,
+    });
+    expect(await probeLynxGitRepository(async () => ({
+      ok: false,
+      status: 501,
+      json: async () => ({}),
+    }), '/repo')).toMatchObject({ status: 'unavailable' });
+  });
+
+  test('update/close project use settings projects[]', async () => {
+    let projects: Array<Record<string, unknown>> = [
+      { id: 'proj_1', path: '/repo', name: 'Old', label: 'Old' },
+    ];
+    const runtimeFetch = async (path: string, init?: { method?: string; body?: string }) => {
+      if (path.includes('/api/config/settings') && (!init?.method || init.method === 'GET')) {
+        return { ok: true, status: 200, json: async () => ({ projects }) };
+      }
+      if (path.includes('/api/config/settings') && init?.method === 'PUT') {
+        const body = JSON.parse(init.body || '{}') as { projects?: Array<Record<string, unknown>> };
+        projects = body.projects ?? projects;
+        return { ok: true, status: 200, json: async () => ({ projects }) };
+      }
+      return { ok: false, status: 500, json: async () => ({}) };
+    };
+    expect(await updateLynxProjectLabel(runtimeFetch, {
+      projectId: 'proj_1',
+      path: '/repo',
+      label: 'New',
+    })).toEqual({ status: 'ok' });
+    expect(projects[0]?.label).toBe('New');
+    expect(await closeLynxProject(runtimeFetch, { projectId: 'proj_1', path: '/repo' }))
+      .toEqual({ status: 'ok' });
+    expect(projects).toEqual([]);
+  });
+
+  test('create/delete worktree hit Cap /api/git/worktrees', async () => {
+    const calls: Array<{ path: string; method?: string; body?: string }> = [];
+    const runtimeFetch = async (path: string, init?: { method?: string; body?: string }) => {
+      calls.push({ path, method: init?.method, body: init?.body });
+      if (init?.method === 'POST') {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({ path: '/repo-wt', branch: 'feature', name: 'feature' }),
+        };
+      }
+      return { ok: true, status: 200, json: async () => ({ success: true }) };
+    };
+    expect(await createLynxWorktree(runtimeFetch, {
+      projectDirectory: '/repo',
+      branchName: 'feature',
+    })).toEqual({
+      status: 'ok',
+      path: '/repo-wt',
+      branch: 'feature',
+      name: 'feature',
+    });
+    expect(calls[0]?.path).toContain('/api/git/worktrees?directory=%2Frepo');
+    expect(await deleteLynxWorktree(runtimeFetch, {
+      projectDirectory: '/repo',
+      worktreeDirectory: '/repo-wt',
+    })).toEqual({ status: 'ok' });
+    expect(JSON.parse(calls[1]!.body!)).toEqual({
+      directory: '/repo-wt',
+      deleteLocalBranch: false,
+    });
+    expect(await createLynxWorktree(async () => ({
+      ok: false,
+      status: 501,
+      json: async () => ({}),
+    }), { projectDirectory: '/repo', branchName: 'x' })).toMatchObject({ status: 'unavailable' });
+  });
+
+  test('inferLynxProjectIsGit uses worktree groups', () => {
+    expect(inferLynxProjectIsGit({
+      worktrees: [{ kind: 'main', branch: 'main' }],
+    })).toBe(true);
+    expect(inferLynxProjectIsGit({
+      worktrees: [{ kind: 'main' }],
+    })).toBe(false);
+    expect(inferLynxProjectIsGit({
+      worktrees: [{ kind: 'worktree' }],
+    })).toBe(true);
+  });
+});

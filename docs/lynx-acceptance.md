@@ -265,3 +265,9 @@ Chosen mode is written at the top of `packages/lynx/README.md` (Mode B iOS 26 ho
 - JS picker: Cap `MobileShareRecipientPicker` full-page overlay (never a sheet) + `NativeShareDraft` Partial target + bridge unassigned→picker / assigned→POST share; cancel drops without inventing success; never silent-default Assistant.
 - Host-only (separate): iOS Share Extension / Android `ShareReceiverActivity` — not claimed by this Linux-closable JS slice.
 - Product **NOT DONE** / 三关未齐 / not EXHAUSTED / 真机残差 empty / no 真机过 claim.
+
+## Notes — Projects menus + session share (Next #37 / 2026-09-07)
+
+- Tip APK: `lynx-v2-debug-0b470a2` (work/lynx-native @ `0b470a21`). Do not invent a newer APK SHA until mobile-ci rebuilds.
+- ProjectsHome wires Cap-parity project/worktree long-press menus + session share/copyLink/unshare against OpenCode `/session/:id/share`. Linux-closable newSession/sync/edit/close/worktree use real Cap HTTP when reachable; otherwise labeled unavailable (no fake-success).
+- Product **NOT DONE** / 三关未齐 / not EXHAUSTED / 真机残差 empty / no 真机过 claim.
