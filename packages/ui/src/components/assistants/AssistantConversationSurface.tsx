@@ -246,7 +246,7 @@ export const AssistantConversationSurface: React.FC<AssistantConversationSurface
       <div
         ref={scrollerRef}
         className={cn(
-          'min-h-0 flex-1 overflow-y-auto px-4 pb-9 sm:px-8 sm:pb-12',
+          'min-h-0 flex-1 overflow-x-hidden overflow-y-auto px-4 pb-9 sm:px-8 sm:pb-12',
           overlayHeader
             ? 'pt-[calc(max(0.625rem,var(--oc-safe-area-top,0px))+var(--oc-mobile-detail-navigation-height)+1.25rem)]'
             : 'pt-5 sm:pt-7',
@@ -393,9 +393,10 @@ export const AssistantConversationSurface: React.FC<AssistantConversationSurface
                           <div
                             key={`${message.messageID}:text:${index}`}
                             aria-label={isPeer ? t('assistants.contact.peer.aria', { name: senderName }) : undefined}
+                            data-assistant-contact-text=""
                             className={cn(
-                              'break-words rounded-[1.35rem] px-4 py-2.5 typography-ui leading-6',
-                              useMarkdown ? 'min-w-0' : 'whitespace-pre-wrap',
+                              'min-w-0 max-w-full [overflow-wrap:anywhere] rounded-[1.35rem] px-4 py-2.5 typography-ui leading-6',
+                              useMarkdown ? null : 'whitespace-pre-wrap',
                               isUser
                                 ? 'rounded-[1.15rem] rounded-br-lg bg-[var(--primary-base)]/90 text-[var(--primary-foreground)]'
                                 : isPeer
@@ -411,7 +412,7 @@ export const AssistantConversationSurface: React.FC<AssistantConversationSurface
                                 isStreaming={message.status === 'streaming'}
                                 variant="assistant"
                                 enableFileReferences={false}
-                                className="w-auto max-w-full"
+                                className="w-full min-w-0 [overflow-wrap:anywhere]"
                               />
                             ) : settleKey ? t(settleKey) : part.text}
                             {message.status === 'streaming' && index === message.parts.length - 1 ? (

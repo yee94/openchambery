@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.19.8-beta.2] - 2026-09-07
+
+### 助手
+
+- 联系人气泡里超长路径会折行，不再把整页撑出横向滚动。
+
 ## [1.19.8-beta.1] - 2026-09-07
 
 ### 助手
