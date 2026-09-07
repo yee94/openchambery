@@ -344,8 +344,11 @@ const decorateCodeBlocks = (root: HTMLElement, ctx: DecorateContext): void => {
 
     const wrapper = document.createElement('div');
     wrapper.setAttribute('data-component', 'markdown-code');
+    // overflow-clip (not overflow-hidden): mobile.css rewrites .overflow-hidden
+    // → overflow-y:auto, which turns every code card into a nested iOS/Android
+    // scrollport inside the transcript and fights the parent finger scroll.
     wrapper.className =
-      'my-4 group overflow-hidden rounded-2xl border border-border/80 bg-[var(--surface-elevated)]';
+      'my-4 group overflow-clip rounded-2xl border border-border/80 bg-[var(--surface-elevated)]';
 
     const header = document.createElement('div');
     header.className = 'flex items-center justify-between border-b border-border/70 px-3 py-1.5';

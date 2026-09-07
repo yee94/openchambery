@@ -2749,6 +2749,15 @@ button.oc-mobile-worktree-label-trigger:active,
     overflow-y: hidden !important;
   }
 
+  /* Legacy code/result card classes retain the same clip semantics as current
+     overflow-clip shells. Descendant scroll surfaces own their overflow. */
+  :root.mobile-pointer:not(.desktop-runtime) [data-component="markdown-code"].overflow-hidden,
+  :root.mobile-pointer:not(.desktop-runtime) [data-component="generated-json-result"].overflow-hidden {
+    overflow: clip !important;
+    overflow-x: clip !important;
+    overflow-y: clip !important;
+  }
+
   /* Attachment thumbs are 40px clip frames. The generic 36px touch min
      inflates the close control past the chip and, with the overflow
      rewrite, paints a scrollbar on the thumbnail. */
@@ -2761,11 +2770,21 @@ button.oc-mobile-worktree-label-trigger:active,
     min-width: 0 !important;
   }
 
-  /* Keep markdown code blocks horizontally scrollable on mobile. */
+  /* Keep markdown code blocks horizontally scrollable on mobile.
+     decorate.ts stamps data-md-code-body; legacy Streamdown used
+     data-markdown="code-block-body". The current body class owns wrap-mode X
+     overflow; both bodies keep vertical overflow hidden. */
   :root.mobile-pointer:not(.desktop-runtime)
     .markdown-content
     [data-markdown="code-block-body"] {
     overflow-x: auto !important;
+    overflow-y: hidden !important;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  :root.mobile-pointer:not(.desktop-runtime)
+    .markdown-content
+    [data-md-code-body] {
     overflow-y: hidden !important;
     -webkit-overflow-scrolling: touch;
   }

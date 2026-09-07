@@ -251,6 +251,10 @@ export const AssistantConversationSurface: React.FC<AssistantConversationSurface
             ? 'pt-[calc(max(0.625rem,var(--oc-safe-area-top,0px))+var(--oc-mobile-detail-navigation-height)+1.25rem)]'
             : 'pt-5 sm:pt-7',
         )}
+        // Match primary chat: disable native scroll anchoring so async Markdown
+        // / image growth cannot yank the viewport mid-gesture, and contain
+        // overscroll so rubber-band stays on this scroller.
+        style={{ overflowAnchor: 'none', overscrollBehavior: 'contain', overscrollBehaviorY: 'contain' }}
         data-assistant-contact-transcript=""
       >
         {warning ? (

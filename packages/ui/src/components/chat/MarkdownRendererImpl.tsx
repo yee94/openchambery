@@ -1375,7 +1375,8 @@ const MarkdownRendererImpl: React.FC<MarkdownRendererProps> = ({
         <div
           className={cn(
             markdownContentClassName(variant),
-            'pointer-events-none absolute inset-0 overflow-hidden',
+            // overflow-clip: mobile.css turns .overflow-hidden into a scrollport.
+            'pointer-events-none absolute inset-0 overflow-clip',
           )}
         >
           <MarkdownLoadingPlaceholder content={pacedText} />
@@ -1501,7 +1502,8 @@ const SimpleMarkdownRendererImpl: React.FC<{
         <div
           className={cn(
             markdownContentClassName(variant),
-            'pointer-events-none absolute inset-0 overflow-hidden',
+            // overflow-clip: mobile.css turns .overflow-hidden into a scrollport.
+            'pointer-events-none absolute inset-0 overflow-clip',
           )}
         >
           <MarkdownLoadingPlaceholder content={renderedContent} />
