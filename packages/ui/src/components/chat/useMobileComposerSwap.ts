@@ -32,6 +32,13 @@ const readScrollGeometry = (el: HTMLElement) => ({
     clientHeight: el.clientHeight,
 });
 
+type TouchGesturePoint = {
+    startX: number;
+    startY: number;
+    currentX: number;
+    currentY: number;
+};
+
 const isKeyboardPinned = (): boolean => {
     const root = document.documentElement;
     return root.classList.contains('oc-keyboard-open')
@@ -63,10 +70,16 @@ export const useMobileComposerSwap = (args: {
     const compactSettleArmedRef = React.useRef(false);
     /** Active touches on the scroller; commits wait for the finger to lift. */
     const touchActiveRef = React.useRef(0);
-    /** Last moment a finger was on the scroller — see the user-scroll window. */
+    /** Active touch positions, rebased whenever program anchoring owns geometry. */
+    const touchPointsRef = React.useRef(new Map<number, TouchGesturePoint>());
+    /** A vertical touchmove claimed the current gesture and its momentum. */
+    const verticalTouchIntentRef = React.useRef(false);
+    /** Last moment claimed touch motion could hand off to momentum. */
     const lastTouchAtRef = React.useRef(0);
     /** Previous distance from the bottom, so scrolls carry a direction. */
     const lastDistanceRef = React.useRef<number | null>(null);
+    /** Previous dimensions separate size-driven geometry from scroll travel. */
+    const lastGeometryRef = React.useRef<ReturnType<typeof readScrollGeometry> | null>(null);
     /** Travel since the last direction change, accumulated in each direction. */
     const downwardTravelRef = React.useRef(0);
     const upwardTravelRef = React.useRef(0);
@@ -139,17 +152,77 @@ export const useMobileComposerSwap = (args: {
         armSnapDone();
     });
 
-    const handleTouchMove = useEvent(() => {
-        if (!enabledRef.current) return;
-        lastTouchAtRef.current = Date.now();
+    const rebaseTouchIntent = useEvent(() => {
+        verticalTouchIntentRef.current = false;
+        lastTouchAtRef.current = 0;
+        for (const point of touchPointsRef.current.values()) {
+            point.startX = point.currentX;
+            point.startY = point.currentY;
+        }
     });
 
-    const handleTouchStart = useEvent(() => {
+    const handleTouchMove = useEvent((event: TouchEvent) => {
         if (!enabledRef.current) return;
+        let hasVerticalMove = false;
+        for (let index = 0; index < event.changedTouches.length; index += 1) {
+            const touch = event.changedTouches[index];
+            if (!touch) continue;
+            const point = touchPointsRef.current.get(touch.identifier);
+            if (!point) {
+                touchPointsRef.current.set(touch.identifier, {
+                    startX: touch.clientX,
+                    startY: touch.clientY,
+                    currentX: touch.clientX,
+                    currentY: touch.clientY,
+                });
+                continue;
+            }
+            point.currentX = touch.clientX;
+            point.currentY = touch.clientY;
+            const horizontalTravel = Math.abs(point.currentX - point.startX);
+            const verticalTravel = Math.abs(point.currentY - point.startY);
+            if (verticalTravel > 0 && verticalTravel > horizontalTravel) {
+                hasVerticalMove = true;
+            }
+        }
+        if (!hasVerticalMove && !verticalTouchIntentRef.current) return;
+        verticalTouchIntentRef.current = true;
         lastTouchAtRef.current = Date.now();
-        touchActiveRef.current += 1;
-        // A held finger owns the gesture; pending idle commits from prior
-        // touch-less scrolls (wheel/trackpad/programmatic) must not fire now.
+        compactSettleArmedRef.current = false;
+        compactSettleUntilRef.current = 0;
+    });
+
+    const handleTouchStart = useEvent((event: TouchEvent) => {
+        if (!enabledRef.current) return;
+        const startsGesture = touchActiveRef.current === 0;
+        if (startsGesture) {
+            touchPointsRef.current.clear();
+            rebaseTouchIntent();
+            downwardTravelRef.current = 0;
+            upwardTravelRef.current = 0;
+            const scrollEl = args.scrollRef.current;
+            if (scrollEl) {
+                const geometry = readScrollGeometry(scrollEl);
+                lastGeometryRef.current = geometry;
+                lastDistanceRef.current = resolveScrollDistanceFromLiveEdge(
+                    geometry,
+                    readTimelineParkEndOffset(scrollEl),
+                );
+            }
+        }
+        for (let index = 0; index < event.changedTouches.length; index += 1) {
+            const touch = event.changedTouches[index];
+            if (!touch) continue;
+            touchPointsRef.current.set(touch.identifier, {
+                startX: touch.clientX,
+                startY: touch.clientY,
+                currentX: touch.clientX,
+                currentY: touch.clientY,
+            });
+        }
+        touchActiveRef.current = touchPointsRef.current.size;
+        // A held finger owns the commit lifecycle, so an earlier idle commit
+        // waits even while this gesture is still deciding its axis.
         clearTimer(idleTimerRef);
     });
 
@@ -165,7 +238,9 @@ export const useMobileComposerSwap = (args: {
             readTimelineParkEndOffset(scrollEl),
         );
         const previousDistance = lastDistanceRef.current;
+        const previousGeometry = lastGeometryRef.current;
         lastDistanceRef.current = distance;
+        lastGeometryRef.current = geometry;
 
         // A history prepend is absorbed by the list, not the user: it grows the
         // content and moves the scroll position to match, and the correction
@@ -178,6 +253,7 @@ export const useMobileComposerSwap = (args: {
         if (scrollEl.hasAttribute(TIMELINE_ANCHORING_ATTRIBUTE)) {
             downwardTravelRef.current = 0;
             upwardTravelRef.current = 0;
+            rebaseTouchIntent();
             return;
         }
 
@@ -192,8 +268,13 @@ export const useMobileComposerSwap = (args: {
         // The transcript scrolls for two very different reasons on this path:
         // the user dragging, and the list following its own streaming growth.
         // Only the former may move the composer.
-        const userDriven = touchActiveRef.current > 0
-            || Date.now() - lastTouchAtRef.current <= COMPOSER_SWAP_USER_SCROLL_WINDOW_MS;
+        const gestureOwnsScroll = verticalTouchIntentRef.current
+            && (touchActiveRef.current > 0
+                || Date.now() - lastTouchAtRef.current <= COMPOSER_SWAP_USER_SCROLL_WINDOW_MS);
+        const sizeChanged = previousGeometry !== null
+            && (previousGeometry.scrollHeight !== geometry.scrollHeight
+                || previousGeometry.clientHeight !== geometry.clientHeight);
+        const userDriven = gestureOwnsScroll && !sizeChanged;
 
         // Direction comes from the change in distance rather than scrollTop:
         // history prepends move scrollTop and scrollHeight together, and tail
@@ -219,15 +300,16 @@ export const useMobileComposerSwap = (args: {
                 holdExpandedRef.current = false;
             }
         }
-        if (distance <= COMPOSER_SWAP_NOISE_PX) {
+        if (userDriven && distance <= COMPOSER_SWAP_NOISE_PX) {
             holdExpandedRef.current = false;
         }
 
-        let next = applyComposerSwapPin(stateRef.current, pinned);
+        const previousState = stateRef.current;
+        let next = applyComposerSwapPin(previousState, pinned);
         if (!pinned) {
             const wasCompact = next.rest === 'compact';
             next = applyComposerSwapScroll(next, distance, {
-                suppressReturn: resolveSuppressReturn(distance),
+                suppressReturn: userDriven && resolveSuppressReturn(distance),
                 towardBottom: downwardTravelRef.current >= COMPOSER_SWAP_REVEAL_TRAVEL_PX,
                 holdExpanded: holdExpandedRef.current,
                 userDriven,
@@ -238,12 +320,20 @@ export const useMobileComposerSwap = (args: {
             }
         }
         replaceState(next);
+        if (!userDriven) return;
         clearTimer(idleTimerRef);
         // A scroll-driven reveal snaps from inside the scroll handler, so the
         // settle timer has to be armed here too or the phase would never rest.
         if (next.phase === 'snapping') {
-            armSnapDone();
+            if (previousState.phase !== 'snapping'
+                || previousState.rest !== next.rest
+                || previousState.progress !== next.progress) {
+                armSnapDone();
+            }
             return;
+        }
+        if (previousState.phase === 'snapping') {
+            clearTimer(snapTimerRef);
         }
         if (next.phase === 'tracking' && touchActiveRef.current === 0) {
             idleTimerRef.current = window.setTimeout(() => {
@@ -254,14 +344,27 @@ export const useMobileComposerSwap = (args: {
     });
 
     const handleScrollEnd = useEvent(() => {
+        const gestureOwnsScroll = verticalTouchIntentRef.current
+            && (touchActiveRef.current > 0
+                || Date.now() - lastTouchAtRef.current <= COMPOSER_SWAP_USER_SCROLL_WINDOW_MS);
+        if (!gestureOwnsScroll) return;
         commitIdle();
     });
 
-    const handleTouchEnd = useEvent(() => {
+    const finishTouch = useEvent((event: TouchEvent, allowMomentum: boolean) => {
         if (!enabledRef.current) return;
-        lastTouchAtRef.current = Date.now();
-        touchActiveRef.current = Math.max(0, touchActiveRef.current - 1);
+        for (let index = 0; index < event.changedTouches.length; index += 1) {
+            const touch = event.changedTouches[index];
+            if (touch) touchPointsRef.current.delete(touch.identifier);
+        }
+        touchActiveRef.current = touchPointsRef.current.size;
         if (touchActiveRef.current > 0) return;
+        touchPointsRef.current.clear();
+        if (allowMomentum && verticalTouchIntentRef.current) {
+            lastTouchAtRef.current = Date.now();
+        } else {
+            rebaseTouchIntent();
+        }
         // iOS often omits scrollend; arm the same idle commit after the finger
         // lifts. Momentum scroll events keep deferring it until quiescence.
         if (stateRef.current.phase !== 'tracking') return;
@@ -270,6 +373,14 @@ export const useMobileComposerSwap = (args: {
             idleTimerRef.current = null;
             commitIdle();
         }, COMPOSER_SWAP_IDLE_MS);
+    });
+
+    const handleTouchEnd = useEvent((event: TouchEvent) => {
+        finishTouch(event, true);
+    });
+
+    const handleTouchCancel = useEvent((event: TouchEvent) => {
+        finishTouch(event, false);
     });
 
     const armExpandFocusShield = useEvent(() => {
@@ -320,8 +431,11 @@ export const useMobileComposerSwap = (args: {
         compactSettleArmedRef.current = false;
         compactSettleUntilRef.current = 0;
         touchActiveRef.current = 0;
+        touchPointsRef.current.clear();
+        verticalTouchIntentRef.current = false;
         lastTouchAtRef.current = 0;
         lastDistanceRef.current = null;
+        lastGeometryRef.current = null;
         downwardTravelRef.current = 0;
         upwardTravelRef.current = 0;
         holdExpandedRef.current = false;
@@ -349,7 +463,7 @@ export const useMobileComposerSwap = (args: {
     useEventListener('touchstart', handleTouchStart, scrollTarget, passive);
     useEventListener('touchmove', handleTouchMove, scrollTarget, passive);
     useEventListener('touchend', handleTouchEnd, scrollTarget, passive);
-    useEventListener('touchcancel', handleTouchEnd, scrollTarget, passive);
+    useEventListener('touchcancel', handleTouchCancel, scrollTarget, passive);
     useEventListener('pointerdown', handleCompactActivate, scopeTarget);
     useEventListener('focusin', syncPin, scopeTarget);
     useEventListener('focusout', syncPin, scopeTarget);

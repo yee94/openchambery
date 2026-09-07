@@ -1,4 +1,7 @@
 import { describe, expect, test, vi } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import React from 'react';
 import { renderToString } from 'react-dom/server';
 
@@ -15,6 +18,11 @@ vi.mock('@/sync/sync-context', () => ({
   useSessionPermissions: () => [],
   useSessionQuestions: () => [],
 }));
+
+const homeSource = readFileSync(
+  join(dirname(fileURLToPath(import.meta.url)), 'MobileProjectsHome.tsx'),
+  'utf8',
+);
 
 const noop = () => undefined;
 
@@ -64,6 +72,14 @@ const props: MobileProjectsHomeProps = {
   onArchiveSession: noop,
   onOpenSessionActions: noop,
 };
+
+describe('MobileProjectsHome session row isolation', () => {
+  test('live rows and session lists use default React.memo against parent identity churn', () => {
+    expect(homeSource).toContain('const MobileLiveSessionRow = React.memo(MobileLiveSessionRowImpl)');
+    expect(homeSource).toContain('const SessionList = React.memo(SessionListImpl)');
+    expect(homeSource).not.toContain('areMobileSessionRowPropsEqual');
+  });
+});
 
 describe('MobileProjectsHome workspace groups', () => {
   test('renders one global pinned project card before projects', () => {

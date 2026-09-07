@@ -11,6 +11,7 @@ import { toast } from '@/components/ui';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Icon } from "@/components/icon/Icon";
+import { formatSessionChangeCounts, readSessionChangeSummary } from '@/lib/sessionChangeSummary';
 import { buildExportFilename, downloadAsMarkdown, formatSessionAsMarkdown, getExportRevealLabelKey, revealExportedMarkdown, saveAsMarkdownDesktop } from '@/lib/exportSession';
 import type { ChildSessionExport } from '@/lib/exportSession';
 import {
@@ -49,6 +50,7 @@ import { FusionIcon } from '@/components/icons/FusionIcon';
 import { SessionBusyIndicator } from '@/components/session/SessionBusyIndicator';
 import { Kbd } from '@/components/ui/kbd';
 import { RuntimeAPIContext } from '@/contexts/runtimeAPIContext';
+import { scrollFocusedSessionRowIntoView } from './scrollFocusedSessionRow';
 import { notifySidebarVisualSelectionCommitted, useSidebarVisualSelectionStore } from './sidebarVisualSelection';
 import {
   getSessionFocusKey,
@@ -473,12 +475,21 @@ function SessionNodeItemComponent(props: Props): React.ReactNode {
     React.useMemo(() => (state: { focus: SessionFocusIdentity | null }) => isSessionFocusEqual(state.focus, rowFocus), [rowFocus]),
   );
   React.useLayoutEffect(() => {
-    if (isActive) {
-      rowElementRef.current?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
-      notifySidebarVisualSelectionCommitted(rowFocus);
+    if (!isActive) {
+      return;
     }
-  }, [isActive, rowFocus]);
+    const row = rowElementRef.current;
+    if (row) {
+      if (mobileVariant) {
+        row.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+      } else {
+        scrollFocusedSessionRowIntoView(row);
+      }
+    }
+    notifySidebarVisualSelectionCommitted(rowFocus);
+  }, [isActive, mobileVariant, rowFocus]);
   const sessionTitle = resolvedSession.title || t('sessions.sidebar.session.untitled');
+  const sessionChangeCounts = formatSessionChangeCounts(readSessionChangeSummary(resolvedSession));
   const titleRefreshMetadata = (resolvedSession as Session & {
     metadata?: {
       openchamber?: {
@@ -1308,6 +1319,11 @@ function SessionNodeItemComponent(props: Props): React.ReactNode {
                       >
                         {renderHighlightedText(sessionTitle, normalizedSessionSearchQuery)}
                       </div>
+                      {sessionChangeCounts ? (
+                        <span className="shrink-0 typography-micro tabular-nums text-muted-foreground">
+                          {sessionChangeCounts}
+                        </span>
+                      ) : null}
                       {isAssistantSession ? <Icon name="ai-agent" className="size-3 shrink-0 text-muted-foreground" aria-label="Assistant" /> : null}
                       {pendingPermissionCount > 0 ? (
                         <span className="inline-flex items-center gap-1 rounded bg-destructive/10 px-1 py-0.5 text-[0.7rem] text-destructive flex-shrink-0" title={t('sessions.sidebar.session.status.permissionRequired')} aria-label={t('sessions.sidebar.session.status.permissionRequired')}>

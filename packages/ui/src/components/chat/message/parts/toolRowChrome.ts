@@ -25,6 +25,14 @@ export const getToolRowBlockClass = (isMobile: boolean): string => (
   `flow-root ${isMobile ? 'py-1' : 'py-1.5'}`
 );
 
+/**
+ * Expanded Used / Skill fold list. Same 4px / 6px mobile–desktop step as
+ * `getToolRowBlockClass` so nested rows stay slightly tighter on mobile.
+ */
+export const getToolGroupExpandedListClass = (isMobile: boolean): string => (
+  `relative ml-2 flex flex-col pl-3 ${isMobile ? 'gap-1 pt-1' : 'gap-1.5 pt-1.5'}`
+);
+
 /** Hover wash — same formula as sidebar `SIDEBAR_ROW_HOVER_CLASS`. */
 export const TOOL_ROW_CHIP_HOVER_CLASS =
   'hover:bg-[color-mix(in_srgb,var(--surface-foreground)_6%,transparent)]';

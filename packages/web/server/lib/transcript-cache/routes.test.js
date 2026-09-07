@@ -114,6 +114,38 @@ describe('transcript cache routes', () => {
     expect(transcriptCacheService.readMessage).toHaveBeenCalledWith(SCOPE, 'msg_user');
   });
 
+  it('strips reasoning parts on read when includeReasoning=false', async () => {
+    const { app, route } = registry();
+    const record = {
+      messageID: 'msg_a',
+      info: { id: 'msg_a', tokens: { reasoning: 5 } },
+      parts: [
+        { id: 'r', type: 'reasoning', text: 'hidden' },
+        { id: 't', type: 'text', text: 'ok' },
+      ],
+    };
+    const transcriptCacheService = {
+      readSession: vi.fn(() => ({ scope: SCOPE, records: [record], byteSize: 99 })),
+      readMessage: vi.fn(() => record),
+    };
+    registerTranscriptCacheRoutes(app, { transcriptCacheService });
+
+    const session = await invoke(route('GET', `${prefix}/session`), {
+      query: { ...SCOPE, generation: '1', includeReasoning: 'false' },
+    });
+    expect(session.statusCode).toBe(200);
+    expect(session.body.records[0].parts).toEqual([{ id: 't', type: 'text', text: 'ok' }]);
+    expect(session.body.records[0].info.tokens.reasoning).toBe(5);
+    expect(JSON.stringify(session.body)).not.toContain('hidden');
+    // Stored record must stay intact for later full reads.
+    expect(record.parts).toHaveLength(2);
+
+    const message = await invoke(route('GET', `${prefix}/message`), {
+      query: { ...SCOPE, messageID: 'msg_a', includeReasoning: 'false' },
+    });
+    expect(message.body.record.parts).toEqual([{ id: 't', type: 'text', text: 'ok' }]);
+  });
+
   it('returns 404 when a message is missing', async () => {
     const { app, route } = registry();
     registerTranscriptCacheRoutes(app, {

@@ -10,9 +10,11 @@ This module contains the OpenChamber message-stream WebSocket protocol and runti
 - `packages/web/server/lib/event-stream/directory-ws-bridge.js`: browser-facing per-directory WS bridge that owns one scoped upstream reader per connection.
 - `packages/web/server/lib/event-stream/protocol.js`: path constants, SSE envelope parsing, and WebSocket frame serialization helpers.
 - `packages/web/server/lib/event-stream/diff-summary.js`: pure outbound FileDiff helpers. L1 message/session `summary.diffs` keep a slim file list `{ file, status?, additions, deletions }` plus additive `diffCount`/`hasDiffs` (never patch/before/after/from/to). `session.diff` event frames still keep file/status/additions/deletions and drop patch bodies. `summarizeFileDiff(s)` remains for explicit L2-style file lists.
+- `packages/web/server/lib/event-stream/reasoning-projection.js`: OpenChamber outbound reasoning projection (`includeReasoning=false`). Shared pure snapshot helpers + per-connection stateful stream filter for HTTP parts, WS send/replay, and SSE proxy parse-filter paths. Never mutates hub/replay objects; never forwards the query param to OpenCode.
 - `packages/web/server/lib/event-stream/upstream-reader.js`: reusable upstream SSE reader with event-id tracking, stall recovery, and reconnect handling.
 - `packages/web/server/lib/event-stream/runtime.js`: thin WebSocket server runtime for upgrade handling and path dispatch to the global/directory bridges.
 - `packages/web/server/lib/event-stream/protocol.test.js`: unit tests for protocol helpers.
+- `packages/web/server/lib/event-stream/reasoning-projection.test.js`: unit + 10k-delta performance guards for reasoning projection.
 - `packages/web/server/lib/event-stream/upstream-reader.test.js`: unit tests for upstream SSE reader behavior.
 - `packages/web/server/lib/event-stream/runtime.test.js`: unit tests for runtime-side broadcaster behavior.
 
@@ -26,7 +28,14 @@ The following APIs are exported by their owning modules. `event-stream/index.js`
 - `MESSAGE_STREAM_WS_HEARTBEAT_INTERVAL_MS`: heartbeat interval for browser-facing WS connections.
 - `parseSseEventEnvelope(block)`: parses an SSE block into `{ eventId, directory, payload }`.
 - `sendMessageStreamWsFrame(socket, payload)`: serializes and sends a JSON WS frame.
-- `sendMessageStreamWsEvent(socket, payload, options)`: sends an event frame with optional `eventId` and `directory`. Outbound `session.diff` keeps file/status/additions/deletions only (no full patch bodies). Message/session `summary.diffs` are L1-projected to a slim file list plus additive `diffCount`/`hasDiffs` (patch bodies never leave the host).
+- `sendMessageStreamWsEvent(socket, payload, options)`: sends an event frame with optional `eventId`, `directory`, and per-connection `reasoningFilter`. Outbound `session.diff` keeps file/status/additions/deletions only (no full patch bodies). Message/session `summary.diffs` are L1-projected to a slim file list plus additive `diffCount`/`hasDiffs` (patch bodies never leave the host). When `reasoningFilter.projectEvent` returns `null`, the frame is dropped (still counts as a successful send so slow-client tracking is unchanged).
+
+### Reasoning projection helpers (`reasoning-projection.js`)
+Import from the module file (not the event-stream barrel). Public surface:
+- `shouldIncludeReasoning` / `readIncludeReasoningQuery` / `readIncludeReasoningFromUrl` / `stripIncludeReasoningParam`
+- `projectMessagesPayloadForReasoning` / `projectMessagesPayloadWithoutReasoning` — array / `{ records }` / `{ record }` / `{ parts }` only
+- `createReasoningOutboundFilter` — per-connection stream filter (version-suffix-aware type match; preserves original `type` on kept events)
+- `filterSseBlock` / `createSseBlockSplitter` — SSE disabled path (CR-safe chunk boundaries)
 
 ### Runtime helpers
 - `createGlobalMessageStreamHub(...)`: creates a shared `/global/event` upstream SSE hub with event/status subscribers and bounded event-id replay.
@@ -45,6 +54,7 @@ The following APIs are exported by their owning modules. `event-stream/index.js`
 - The web server creates one shared global message-stream hub. OpenCode watcher side effects and global WS clients subscribe to that hub, so there is one upstream `/global/event` SSE reader for both server-side processing and browser fan-out.
 - The global hub keeps a bounded replay buffer keyed by SSE `eventId` so reconnecting browser clients can receive buffered events after their requested `Last-Event-ID`.
 - Outbound FileDiff payloads are summarized before hub fan-out/replay and again at WS send, so Relay never carries full patch frames larger than 64KB.
+- **Reasoning projection (`includeReasoning=false`)**: per HTTP request or WS/SSE connection. The shared hub and internal subscribers always see full upstream events. Filtering runs only at the browser send boundary (live fan-out **and** replay) and on the direct SSE proxy parse path. HTTP turn-page / reconcile / exact message / official `session.messages` list / transcript-cache reads apply the same part strip. `tokens.reasoning` totals stay. The query param is OpenChamber-only and is stripped before OpenCode upstream calls.
 - Global WS reconnect protocol is **replay events → ready barrier**. On initial connect and on each first-ready for a client, the bridge synchronously sends any `replayAfter(lastEventId)` frames first, then emits `{ type: 'ready', scope: 'global' }`. Clients must not start HTTP compensation until they observe ready, so buffered history can merge first.
 - Directory WS clients still attach one upstream `/event?directory=...` SSE reader per connection because directory streams are scoped.
 - If an upstream SSE connection delays response headers or an attached stream stalls, the reader aborts that upstream fetch and reconnects upstream with `Last-Event-ID`, keeping the browser WS alive when recovery is fast.
@@ -66,6 +76,7 @@ The following APIs are exported by their owning modules. `event-stream/index.js`
 
 ## Testing
 - Run `vitest run packages/web/server/lib/event-stream/protocol.test.js`
+- Run `vitest run packages/web/server/lib/event-stream/reasoning-projection.test.js`
 - Run `vitest run packages/web/server/lib/event-stream/upstream-reader.test.js`
 - Run `vitest run packages/web/server/lib/event-stream/runtime.test.js`
 - Run repo validation before finalizing: `bun run type-check`, `bun run lint`, `bun run build`

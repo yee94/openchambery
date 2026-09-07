@@ -53,7 +53,7 @@ export const isSkillGroupTool = (toolName: unknown): boolean => {
 
 // Task stays a standalone row (child-session chrome). Question stays visible
 // because it waits on the user. Everything else that is not explore/skill
-// collapses into the Used / 运行了 fold.
+// is a used-class process tool (edit / command / other).
 export const isUsedGroupTool = (toolName: unknown): boolean => {
     const name = normalizeToolName(toolName);
     if (!name) return false;
@@ -62,6 +62,11 @@ export const isUsedGroupTool = (toolName: unknown): boolean => {
         return false;
     }
     return true;
+};
+
+/** Consecutive explore + used tools share one process fold. */
+export const isProcessGroupTool = (toolName: unknown): boolean => {
+    return isContextGroupTool(toolName) || isUsedGroupTool(toolName);
 };
 
 export const isToolPartSettled = (part: unknown): boolean => {

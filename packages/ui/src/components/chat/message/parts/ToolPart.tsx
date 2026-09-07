@@ -2748,12 +2748,14 @@ const ToolPartContent: React.FC<ToolPartProps> = ({
                                         TOOL_ROW_DESCRIPTION_CLASS,
                                         taskBusy && 'animate-text-shimmer',
                                     )}
-                                    style={{
-                                        color: 'var(--tools-description)',
-                                        ...(taskBusy
-                                            ? { ['--oc-text-shimmer-base' as string]: 'var(--tools-description)' }
-                                            : { opacity: 0.8 }),
-                                    }}
+                                    style={
+                                        taskBusy
+                                            ? {
+                                                // Same sweep as WorkingPlaceholder / thinking labels.
+                                                ['--oc-text-shimmer-base' as string]: 'var(--surface-muted-foreground)',
+                                            }
+                                            : { color: 'var(--tools-description)', opacity: 0.8 }
+                                    }
                                     title={justificationText}
                                 >
                                     {justificationText}

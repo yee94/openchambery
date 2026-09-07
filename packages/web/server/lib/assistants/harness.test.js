@@ -1,0 +1,697 @@
+import fs from 'node:fs'
+import os from 'node:os'
+import path from 'node:path'
+import { describe, expect, it, vi } from 'vitest'
+import {
+  CREATE_ASSISTANT_TOOL_NAME,
+  MESSAGE_ASSISTANT_TOOL_NAME,
+  MISSED_FENCE_RETRY_USER_TEXT,
+  MISSED_TOOL_FAILURE_BUBBLE,
+  NEW_CONVERSATION_CONFIRM_BUBBLE,
+  NEW_CONVERSATION_TOOL_NAME,
+  createContactTools,
+} from './contact-tools.js'
+import { createContactStreamFn, runContactTurn } from './harness.js'
+import { PI_CODING_TOOL_NAMES } from './pi-tools.js'
+
+describe('createContactStreamFn', () => {
+  it('forwards completion text as pi-ai text events', async () => {
+    const createChatCompletion = vi.fn(async () => ({
+      completion: { choices: [{ message: { content: 'Hi' } }] },
+    }))
+    const streamFn = createContactStreamFn(createChatCompletion)
+    const events = []
+    const stream = streamFn(
+      { name: 'openai/gpt-5.2', id: 'gpt-5.2', provider: 'openchamber', api: 'openai-completions' },
+      { messages: [{ role: 'user', content: 'hello', timestamp: 1 }] },
+    )
+    for await (const event of stream) events.push(event)
+    expect(createChatCompletion).toHaveBeenCalledWith(expect.objectContaining({
+      body: expect.objectContaining({
+        model: expect.any(String),
+        messages: expect.any(Array),
+      }),
+    }))
+    expect(createChatCompletion.mock.calls[0][0].body.stream).toBeUndefined()
+    expect(events.some((event) => event.type === 'text_delta' && event.delta === 'Hi')).toBe(true)
+    expect(events.at(-1).type).toBe('done')
+    expect(typeof stream.result).toBe('function')
+    await expect(stream.result()).resolves.toMatchObject({ stopReason: 'stop' })
+  })
+
+  it('forwards contact file parts on the last user completion message', async () => {
+    const createChatCompletion = vi.fn(async () => ({
+      completion: { choices: [{ message: { content: 'saw the image' } }] },
+    }))
+    const image = { type: 'file', mime: 'image/png', url: 'data:image/png;base64,aa', filename: 'shot.png' }
+    const file = { type: 'file', mime: 'text/plain', url: 'data:text/plain;base64,eA==', filename: 'notes.txt' }
+    const streamFn = createContactStreamFn(createChatCompletion, { pendingFileParts: [image, file] })
+    const stream = streamFn(
+      { name: 'openai/gpt-5.2', id: 'gpt-5.2', provider: 'openchamber', api: 'openai-completions' },
+      { messages: [{ role: 'user', content: 'look', timestamp: 1 }] },
+    )
+    for await (const event of stream) void event
+    expect(createChatCompletion.mock.calls[0][0].body.messages.at(-1)).toEqual({
+      role: 'user',
+      content: 'look',
+      parts: [image, file],
+    })
+  })
+
+  it('keeps thinking off and never installs bash/edit/read/write when sending attachments', async () => {
+    const prompt = vi.fn(async function prompt() {
+      this.state.messages = [{
+        role: 'assistant',
+        content: [{ type: 'text', text: 'Got it.' }],
+      }]
+    })
+    function AgentImpl(options) {
+      expect(options.initialState.thinkingLevel).toBe('off')
+      expect(options.initialState.tools).toEqual([])
+      this.state = { ...options.initialState, messages: [] }
+      this.prompt = prompt
+    }
+    const result = await runContactTurn({
+      assistant: { providerID: 'openai', modelID: 'gpt-5.2', defaultPrompt: '' },
+      history: [],
+      userText: '[attachment]',
+      userParts: [{ type: 'file', mime: 'image/png', url: 'data:image/png;base64,aa', filename: 'shot.png' }],
+      createChatCompletion: vi.fn(),
+      AgentImpl,
+    })
+    expect(result.thinkingLevel).toBe('off')
+    expect(result.tools).toEqual([])
+    expect(prompt).toHaveBeenCalledWith('[attachment]')
+  })
+
+  it('replays an assign_session fence as a toolUse burst, not token SSE', async () => {
+    const createChatCompletion = vi.fn(async () => ({
+      completion: {
+        choices: [{
+          message: {
+            content: 'On it.\n\n```openchamber-tool\n{"name":"assign_session","arguments":{"prompt":"Fix login"}}\n```',
+          },
+        }],
+      },
+    }))
+    const streamFn = createContactStreamFn(createChatCompletion)
+    const events = []
+    const stream = streamFn(
+      { name: 'openai/gpt-5.2', id: 'gpt-5.2', provider: 'openchamber', api: 'openai-completions' },
+      {
+        messages: [{ role: 'user', content: 'assign login', timestamp: 1 }],
+        tools: [{ name: 'assign_session' }],
+      },
+    )
+    for await (const event of stream) events.push(event)
+    expect(events.some((event) => event.type === 'toolcall_end' && event.toolCall?.name === 'assign_session')).toBe(true)
+    expect(events.at(-1)).toMatchObject({ type: 'done', reason: 'toolUse' })
+    expect(createChatCompletion.mock.calls[0][0].body.stream).toBeUndefined()
+  })
+
+  it('replays a bare {name, arguments} object as a toolUse burst', async () => {
+    const createChatCompletion = vi.fn(async () => ({
+      completion: {
+        choices: [{
+          message: {
+            content: '好的 {"name":"create_assistant","arguments":{"name":"FlowNL"}}',
+          },
+        }],
+      },
+    }))
+    const streamFn = createContactStreamFn(createChatCompletion)
+    const events = []
+    const stream = streamFn(
+      { name: 'opencode-go/deepseek-v4-flash', id: 'deepseek-v4-flash', provider: 'openchamber', api: 'openai-completions' },
+      {
+        messages: [{ role: 'user', content: '新建助理 FlowNL', timestamp: 1 }],
+        tools: [{ name: 'create_assistant' }],
+      },
+    )
+    for await (const event of stream) events.push(event)
+    expect(events.some((event) => event.type === 'toolcall_end' && event.toolCall?.name === 'create_assistant')).toBe(true)
+    expect(events.at(-1)).toMatchObject({ type: 'done', reason: 'toolUse' })
+  })
+
+  it('passes onTextDelta and globalEventHub into createChatCompletion and forwards real deltas', async () => {
+    const deltas = []
+    const bubbleDeltas = []
+    const hub = { subscribeEvent: vi.fn() }
+    const createChatCompletion = vi.fn(async ({ onTextDelta }) => {
+      onTextDelta?.('Hello')
+      onTextDelta?.(' world')
+      return { completion: { choices: [{ message: { content: 'Hello world' } }] } }
+    })
+    const streamFn = createContactStreamFn(createChatCompletion, {
+      onTextDelta: (delta) => deltas.push(delta),
+      onBubbleDelta: (index, delta, done) => bubbleDeltas.push({ index, delta, done }),
+      globalEventHub: hub,
+    })
+    const stream = streamFn(
+      { name: 'openai/gpt-5.2', id: 'gpt-5.2', provider: 'openchamber', api: 'openai-completions' },
+      { messages: [{ role: 'user', content: 'hi', timestamp: 1 }] },
+    )
+    for await (const event of stream) void event
+    expect(createChatCompletion.mock.calls[0][0].globalEventHub).toBe(hub)
+    expect(typeof createChatCompletion.mock.calls[0][0].onTextDelta).toBe('function')
+    expect(deltas).toEqual(['Hello', ' world'])
+    expect(bubbleDeltas.some((item) => item.done === false)).toBe(false)
+    expect(bubbleDeltas).toEqual([{ index: 0, delta: 'Hello world', done: true }])
+  })
+
+  it('stops bubble deltas at a fence start and does not leak tool JSON', async () => {
+    const bubbleDeltas = []
+    const createChatCompletion = vi.fn(async ({ onTextDelta }) => {
+      onTextDelta?.('On it.\n\n')
+      onTextDelta?.('```openchamber-tool\n{"name":"assign_session","arguments":{"prompt":"x"}}\n```')
+      return {
+        completion: {
+          choices: [{
+            message: {
+              content: 'On it.\n\n```openchamber-tool\n{"name":"assign_session","arguments":{"prompt":"x"}}\n```',
+            },
+          }],
+        },
+      }
+    })
+    const streamFn = createContactStreamFn(createChatCompletion, {
+      onBubbleDelta: (index, delta, done) => bubbleDeltas.push({ index, delta, done }),
+    })
+    const stream = streamFn(
+      { name: 'openai/gpt-5.2', id: 'gpt-5.2', provider: 'openchamber', api: 'openai-completions' },
+      {
+        messages: [{ role: 'user', content: 'assign', timestamp: 1 }],
+        tools: [{ name: 'assign_session' }],
+      },
+    )
+    for await (const event of stream) void event
+    const leaked = bubbleDeltas.some((item) => item.delta.includes('openchamber-tool') || item.delta.includes('assign_session'))
+    expect(leaked).toBe(false)
+    expect(bubbleDeltas).toEqual([{ index: 0, delta: 'On it.', done: true }])
+  })
+
+  it('emits final stripped bubbles as done:true once when no live deltas arrive', async () => {
+    const bubbleDeltas = []
+    const createChatCompletion = vi.fn(async () => ({
+      completion: { choices: [{ message: { content: 'One.\n\nTwo.' } }] },
+    }))
+    const streamFn = createContactStreamFn(createChatCompletion, {
+      onBubbleDelta: (index, delta, done) => bubbleDeltas.push({ index, delta, done }),
+    })
+    const stream = streamFn(
+      { name: 'openai/gpt-5.2', id: 'gpt-5.2', provider: 'openchamber', api: 'openai-completions' },
+      { messages: [{ role: 'user', content: 'hi', timestamp: 1 }] },
+    )
+    for await (const event of stream) void event
+    expect(bubbleDeltas).toEqual([
+      { index: 0, delta: 'One.', done: true },
+      { index: 1, delta: 'Two.', done: true },
+    ])
+  })
+})
+
+describe('runContactTurn', () => {
+  it('runs pi-agent-core with thinking off and no tools by default', async () => {
+    const prompt = vi.fn(async function prompt() {
+      this.state.messages = [{
+        role: 'assistant',
+        content: [{ type: 'text', text: 'Hey.\n\nI can open that session.' }],
+      }]
+    })
+    function AgentImpl(options) {
+      expect(options.initialState.thinkingLevel).toBe('off')
+      expect(options.initialState.tools).toEqual([])
+      this.state = { ...options.initialState, messages: [] }
+      this.prompt = prompt
+    }
+
+    const result = await runContactTurn({
+      assistant: { providerID: 'openai', modelID: 'gpt-5.2', defaultPrompt: '' },
+      history: [],
+      userText: 'open login',
+      createChatCompletion: vi.fn(),
+      AgentImpl,
+    })
+    expect(result.bubbles).toEqual(['Hey.', 'I can open that session.'])
+    expect(prompt).toHaveBeenCalled()
+  })
+
+  it('applies workspace, defaultPrompt, pi tools, and merged .agents/.claude skills', async () => {
+    const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'oc-assistant-ws-'))
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), 'oc-assistant-home-'))
+    const skill = path.join(workspace, '.agents', 'skills', 'project-skill')
+    const claude = path.join(workspace, '.claude', 'skills', 'claude-skill')
+    const globalAgents = path.join(home, '.agents', 'skills', 'global-skill')
+    fs.mkdirSync(skill, { recursive: true })
+    fs.mkdirSync(claude, { recursive: true })
+    fs.mkdirSync(globalAgents, { recursive: true })
+    fs.writeFileSync(path.join(skill, 'SKILL.md'), '---\nname: project-skill\ndescription: Project skill\n---\nDo the project thing\n')
+    fs.writeFileSync(path.join(claude, 'SKILL.md'), '---\nname: claude-skill\ndescription: Claude project skill\n---\nDo the claude thing\n')
+    fs.writeFileSync(path.join(globalAgents, 'SKILL.md'), '---\nname: global-skill\ndescription: Global agents skill\n---\nDo the global thing\n')
+    function AgentImpl(options) {
+      expect(options.initialState.thinkingLevel).toBe('off')
+      expect(options.initialState.tools.map((tool) => tool.name)).toEqual([...PI_CODING_TOOL_NAMES])
+      expect(options.initialState.systemPrompt).toContain(workspace)
+      expect(options.initialState.systemPrompt).toContain('Be terse.')
+      expect(options.initialState.systemPrompt).toContain('project-skill')
+      expect(options.initialState.systemPrompt).toContain('claude-skill')
+      expect(options.initialState.systemPrompt).toContain('global-skill')
+      expect(options.initialState.systemPrompt).toContain('Never say you have no terminal')
+      this.state = { ...options.initialState, messages: [{ role: 'assistant', content: [{ type: 'text', text: 'Ready.' }] }] }
+      this.prompt = async () => {}
+    }
+    try {
+      const result = await runContactTurn({
+        assistant: {
+          providerID: 'openai',
+          modelID: 'gpt-5.2',
+          defaultPrompt: 'Be terse.',
+          effectiveWorkspacePath: workspace,
+        },
+        history: [],
+        userText: 'pwd',
+        createChatCompletion: vi.fn(),
+        skillHomeDir: home,
+        AgentImpl,
+      })
+      expect(result.bubbles).toEqual(['Ready.'])
+    } finally {
+      fs.rmSync(workspace, { recursive: true, force: true })
+      fs.rmSync(home, { recursive: true, force: true })
+    }
+  })
+
+  it('executes bash pwd in the assistant workspace', async () => {
+    const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'oc-assistant-pwd-'))
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), 'oc-assistant-pwd-home-'))
+    let calls = 0
+    const createChatCompletion = vi.fn(async ({ body }) => {
+      calls += 1
+      if (calls === 1) {
+        return {
+          completion: {
+            choices: [{
+              message: { content: '```openchamber-tool\n{"name":"bash","arguments":{"command":"pwd"}}\n```' },
+            }],
+          },
+        }
+      }
+      const last = body.messages.at(-1)
+      const content = typeof last?.content === 'string' ? last.content : ''
+      return { completion: { choices: [{ message: { content: content || 'done' } }] } }
+    })
+    try {
+      const result = await runContactTurn({
+        assistant: {
+          providerID: 'openai',
+          modelID: 'gpt-5.2',
+          defaultPrompt: '',
+          effectiveWorkspacePath: workspace,
+        },
+        history: [],
+        userText: 'pwd',
+        createChatCompletion,
+        skillHomeDir: home,
+      })
+      const text = result.bubbles.join('\n')
+      const resolved = fs.realpathSync(workspace)
+      expect(text.includes(workspace) || text.includes(resolved)).toBe(true)
+    } finally {
+      fs.rmSync(workspace, { recursive: true, force: true })
+      fs.rmSync(home, { recursive: true, force: true })
+    }
+  })
+
+  it('attaches OpenChamber tools only and collects session cards from tool results', async () => {
+    const assignTool = {
+      name: 'assign_session',
+      label: 'Assign session',
+      description: 'Open a worker session',
+      parameters: {},
+      execute: vi.fn(),
+    }
+    function AgentImpl(options) {
+      expect(options.initialState.thinkingLevel).toBe('off')
+      expect(options.initialState.tools.map((tool) => tool.name)).toEqual(['assign_session'])
+      expect(options.initialState.tools.some((tool) => ['bash', 'edit', 'read', 'write'].includes(tool.name))).toBe(false)
+      expect(options.initialState.systemPrompt).toContain('assign_session')
+      expect(options.initialState.systemPrompt).toContain('create_assistant')
+      expect(options.initialState.systemPrompt).toContain('message_assistant')
+      expect(options.initialState.systemPrompt).toContain('new_conversation')
+      expect(options.initialState.systemPrompt).toContain('list_projects')
+      expect(options.initialState.systemPrompt).toContain('list_sessions')
+      expect(options.initialState.systemPrompt).toContain('建助理')
+      expect(options.initialState.systemPrompt).toContain('开新对话')
+      expect(options.initialState.systemPrompt).toContain('说一声')
+      expect(options.initialState.systemPrompt).toContain('A reply without the tool call does nothing')
+      expect(options.initialState.systemPrompt).toContain('已创建')
+      expect(options.initialState.systemPrompt).toContain('cannot see the registered project list')
+      this.state = { ...options.initialState, messages: [] }
+      this.prompt = async () => {
+        this.state.messages = [
+          { role: 'assistant', content: [{ type: 'text', text: 'Opening that.' }] },
+          {
+            role: 'toolResult',
+            toolName: 'assign_session',
+            content: [{ type: 'text', text: 'opened' }],
+            details: {
+              card: {
+                type: 'card',
+                cardType: 'session',
+                sessionID: 'ses_1',
+                directory: '/repo',
+                title: 'Login',
+                status: 'busy',
+              },
+            },
+          },
+        ]
+      }
+    }
+
+    const result = await runContactTurn({
+      assistant: { providerID: 'openai', modelID: 'gpt-5.2', defaultPrompt: '' },
+      history: [],
+      userText: 'assign login',
+      createChatCompletion: vi.fn(),
+      tools: [assignTool, { name: 'bash', execute: vi.fn() }],
+      projects: [{ id: 'proj_yee', path: '/repo/sample-app', label: 'OpenChamber Yee' }],
+      AgentImpl,
+    })
+    expect(result.bubbles).toEqual(['opened'])
+    expect(result.cards).toEqual([expect.objectContaining({ sessionID: 'ses_1', cardType: 'session' })])
+    expect(result.thinkingLevel).toBe('off')
+  })
+
+  it('does not persist pre-tool planning as contact bubbles', async () => {
+    function AgentImpl(options) {
+      this.state = { ...options.initialState, messages: [] }
+      this.prompt = async () => {
+        this.state.messages = [
+          {
+            role: 'assistant',
+            content: [
+              { type: 'text', text: 'Let me think — I should match openchamber yee and call assign_session.' },
+              { type: 'toolCall', id: 'call_1', name: 'assign_session', arguments: { prompt: 'x', projectPath: '/repo' } },
+            ],
+          },
+          {
+            role: 'toolResult',
+            toolName: 'assign_session',
+            content: [{ type: 'text', text: 'Opened a coding session.' }],
+            details: {
+              card: {
+                type: 'card',
+                cardType: 'session',
+                sessionID: 'ses_plan',
+                directory: '/repo',
+                title: 'Work',
+                status: 'busy',
+              },
+            },
+          },
+        ]
+      }
+    }
+    const result = await runContactTurn({
+      assistant: { providerID: 'openai', modelID: 'gpt-5.2', defaultPrompt: '' },
+      history: [],
+      userText: 'assign login',
+      createChatCompletion: vi.fn(),
+      tools: [{ name: 'assign_session', execute: vi.fn() }],
+      AgentImpl,
+    })
+    expect(result.bubbles.join('\n')).not.toMatch(/Let me think|assign_session/)
+    expect(result.bubbles).toEqual(['Opened a coding session.'])
+    expect(result.cards).toEqual([expect.objectContaining({ sessionID: 'ses_plan' })])
+  })
+
+  it('keeps a short spoken preamble then the tool confirm', async () => {
+    function AgentImpl(options) {
+      this.state = { ...options.initialState, messages: [] }
+      this.prompt = async () => {
+        this.state.messages = [
+          {
+            role: 'assistant',
+            content: [
+              { type: 'text', text: '我去找一下' },
+              { type: 'toolCall', id: 'call_1', name: 'assign_session', arguments: { prompt: 'x' } },
+            ],
+          },
+          {
+            role: 'toolResult',
+            toolName: 'assign_session',
+            content: [{ type: 'text', text: 'Opened a coding session.' }],
+            details: {
+              card: {
+                type: 'card',
+                cardType: 'session',
+                sessionID: 'ses_speak',
+                directory: '/repo',
+                title: 'Work',
+                status: 'busy',
+              },
+            },
+          },
+        ]
+      }
+    }
+    const result = await runContactTurn({
+      assistant: { providerID: 'openai', modelID: 'gpt-5.2', defaultPrompt: '' },
+      history: [],
+      userText: 'assign login',
+      createChatCompletion: vi.fn(),
+      tools: [{ name: 'assign_session', execute: vi.fn() }],
+      AgentImpl,
+    })
+    expect(result.bubbles).toEqual(['我去找一下', 'Opened a coding session.'])
+    expect(result.cards).toEqual([expect.objectContaining({ sessionID: 'ses_speak' })])
+  })
+
+  it('injects the registered projects catalog into the system prompt every turn', async () => {
+    function AgentImpl(options) {
+      expect(options.initialState.systemPrompt).toContain('Registered projects')
+      expect(options.initialState.systemPrompt).toContain('OpenChamber Yee')
+      expect(options.initialState.systemPrompt).toContain('/repo/sample-app')
+      expect(options.initialState.systemPrompt).toContain('never say you cannot see registered projects')
+      this.state = { ...options.initialState, messages: [{ role: 'assistant', content: [{ type: 'text', text: 'Found it.' }] }] }
+      this.prompt = async () => {}
+    }
+    const result = await runContactTurn({
+      assistant: { providerID: 'openai', modelID: 'gpt-5.2', defaultPrompt: '' },
+      history: [],
+      userText: '找 openchamber yee',
+      createChatCompletion: vi.fn(),
+      projects: [{ id: 'proj_yee', path: '/repo/sample-app', label: 'OpenChamber Yee' }],
+      AgentImpl,
+    })
+    expect(result.bubbles).toEqual(['Found it.'])
+  })
+
+  it('retries a missed fence once and then executes create_assistant', async () => {
+    const createAssistant = vi.fn(async (input) => ({
+      id: 'asst_flow',
+      name: input.name,
+      providerID: input.providerID,
+      modelID: input.modelID,
+      mode: 'continuous',
+    }))
+    const tools = createContactTools({
+      createAssistant,
+      currentAssistant: { providerID: 'opencode-go', modelID: 'deepseek-v4-flash' },
+    })
+    const prompts = []
+    function AgentImpl(options) {
+      expect(options.initialState.thinkingLevel).toBe('off')
+      expect(options.initialState.tools.some((tool) => ['bash', 'edit', 'read', 'write'].includes(tool.name))).toBe(false)
+      this.state = { ...options.initialState, messages: [] }
+      this.prompt = async (text) => {
+        prompts.push(text)
+        this.state.messages.push({ role: 'user', content: text, timestamp: Date.now() })
+        if (text === MISSED_FENCE_RETRY_USER_TEXT) {
+          const tool = this.state.tools.find((item) => item.name === CREATE_ASSISTANT_TOOL_NAME)
+          const result = await tool.execute('call_retry', { name: 'FlowNL', model: 'opencode-go/deepseek-v4-flash' })
+          this.state.messages.push(
+            { role: 'assistant', content: [{ type: 'text', text: '' }] },
+            {
+              role: 'toolResult',
+              toolName: CREATE_ASSISTANT_TOOL_NAME,
+              content: result.content,
+              details: result.details,
+            },
+          )
+          return
+        }
+        this.state.messages.push({
+          role: 'assistant',
+          content: [{ type: 'text', text: '好的，我来直接创建这个助理，不开编码会话。' }],
+        })
+      }
+    }
+
+    const result = await runContactTurn({
+      assistant: { providerID: 'opencode-go', modelID: 'deepseek-v4-flash', defaultPrompt: '' },
+      history: [],
+      userText: '帮我新建一个助理，名叫 FlowNL，不要开编码 session',
+      createChatCompletion: vi.fn(),
+      tools,
+      AgentImpl,
+    })
+    expect(prompts).toEqual([
+      '帮我新建一个助理，名叫 FlowNL，不要开编码 session',
+      MISSED_FENCE_RETRY_USER_TEXT,
+    ])
+    expect(createAssistant).toHaveBeenCalledWith({
+      name: 'FlowNL',
+      providerID: 'opencode-go',
+      modelID: 'deepseek-v4-flash',
+      mode: 'continuous',
+    })
+    expect(result.cards).toEqual([expect.objectContaining({
+      cardType: 'assistant',
+      name: 'FlowNL',
+      assistantID: 'asst_flow',
+    })])
+    expect(result.bubbles.join('')).not.toContain('好的，我来直接创建')
+    expect(result.bubbles.join('')).toContain('Created assistant FlowNL')
+    expect(result.thinkingLevel).toBe('off')
+  })
+
+  it('does not fake a card when the missed-fence retry still has no tool', async () => {
+    const createAssistant = vi.fn()
+    const tools = createContactTools({
+      createAssistant,
+      currentAssistant: { providerID: 'opencode-go', modelID: 'deepseek-v4-flash' },
+    })
+    const prompts = []
+    function AgentImpl(options) {
+      this.state = { ...options.initialState, messages: [] }
+      this.prompt = async (text) => {
+        prompts.push(text)
+        this.state.messages.push(
+          { role: 'user', content: text, timestamp: Date.now() },
+          { role: 'assistant', content: [{ type: 'text', text: '好的，已创建。' }] },
+        )
+      }
+    }
+
+    const result = await runContactTurn({
+      assistant: { providerID: 'opencode-go', modelID: 'deepseek-v4-flash', defaultPrompt: '' },
+      history: [],
+      userText: '帮我新建一个助理，名叫 FlowNL',
+      createChatCompletion: vi.fn(),
+      tools,
+      AgentImpl,
+    })
+    expect(prompts).toEqual([
+      '帮我新建一个助理，名叫 FlowNL',
+      MISSED_FENCE_RETRY_USER_TEXT,
+    ])
+    expect(createAssistant).not.toHaveBeenCalled()
+    expect(result.cards).toEqual([])
+    expect(result.bubbles).toEqual([MISSED_TOOL_FAILURE_BUBBLE])
+    expect(result.bubbles.join('')).not.toContain('已创建')
+  })
+
+  it('retries a missed fence once and then executes message_assistant', async () => {
+    const deliverPeerMessage = vi.fn(async (input) => ({
+      admitted: true,
+      role: 'peer',
+      toAssistantID: input.toAssistantID,
+    }))
+    const tools = createContactTools({
+      deliverPeerMessage,
+      listAssistants: async () => [{ id: 'asst_peer', name: 'PeerQA' }],
+      currentAssistant: { id: 'asst_host', name: 'DeepSeekQA', providerID: 'opencode-go', modelID: 'deepseek-v4-flash' },
+    })
+    const prompts = []
+    function AgentImpl(options) {
+      this.state = { ...options.initialState, messages: [] }
+      this.prompt = async (text) => {
+        prompts.push(text)
+        this.state.messages.push({ role: 'user', content: text, timestamp: Date.now() })
+        if (text === MISSED_FENCE_RETRY_USER_TEXT) {
+          const tool = this.state.tools.find((item) => item.name === MESSAGE_ASSISTANT_TOOL_NAME)
+          const result = await tool.execute('call_retry', { to: 'PeerQA', text: 'hello-from-assistant 写好了' })
+          this.state.messages.push(
+            { role: 'assistant', content: [{ type: 'text', text: '' }] },
+            {
+              role: 'toolResult',
+              toolName: MESSAGE_ASSISTANT_TOOL_NAME,
+              content: result.content,
+              details: result.details,
+            },
+          )
+          return
+        }
+        this.state.messages.push({
+          role: 'assistant',
+          content: [{ type: 'text', text: '好的，我去说一声。' }],
+        })
+      }
+    }
+
+    const result = await runContactTurn({
+      assistant: { providerID: 'opencode-go', modelID: 'deepseek-v4-flash', defaultPrompt: '' },
+      history: [],
+      userText: '给 PeerQA 说一声 hello-from-assistant 写好了',
+      createChatCompletion: vi.fn(),
+      tools,
+      AgentImpl,
+    })
+    expect(prompts).toEqual([
+      '给 PeerQA 说一声 hello-from-assistant 写好了',
+      MISSED_FENCE_RETRY_USER_TEXT,
+    ])
+    expect(deliverPeerMessage).toHaveBeenCalledWith({
+      toAssistantID: 'asst_peer',
+      text: 'hello-from-assistant 写好了',
+    })
+    expect(result.cards).toEqual([])
+    expect(result.bubbles.join('')).toContain('Sent to PeerQA')
+    expect(result.bubbles.join('')).not.toContain('好的，我去说一声')
+  })
+
+  it('keeps only the new_conversation confirm and drops leftover attachment text', async () => {
+    const resetContact = vi.fn(async () => ({ reset: true }))
+    const tools = createContactTools({ resetContact })
+    function AgentImpl(options) {
+      this.state = { ...options.initialState, messages: options.initialState.messages }
+      this.prompt = async () => {
+        const tool = this.state.tools.find((item) => item.name === NEW_CONVERSATION_TOOL_NAME)
+        const result = await tool.execute('call_reset', {})
+        this.state.messages = [
+          ...this.state.messages,
+          {
+            role: 'assistant',
+            content: [{ type: 'text', text: 'I still see your dot.png and note.txt from earlier.' }],
+          },
+          {
+            role: 'toolResult',
+            toolName: NEW_CONVERSATION_TOOL_NAME,
+            content: result.content,
+            details: result.details,
+          },
+        ]
+      }
+    }
+
+    const result = await runContactTurn({
+      assistant: { providerID: 'opencode-go', modelID: 'deepseek-v4-flash', defaultPrompt: '' },
+      history: [
+        { role: 'user', content: 'look', parts: [{ type: 'file', mime: 'image/png', url: 'data:image/png;base64,aa', filename: 'dot.png' }] },
+        { role: 'assistant', content: 'got the image' },
+      ],
+      userText: '开新对话',
+      createChatCompletion: vi.fn(),
+      tools,
+      AgentImpl,
+    })
+    expect(resetContact).toHaveBeenCalledTimes(1)
+    expect(result.reset).toBe(true)
+    expect(result.cards).toEqual([])
+    expect(result.bubbles).toEqual([NEW_CONVERSATION_CONFIRM_BUBBLE])
+    expect(result.bubbles.join('')).not.toContain('dot.png')
+    expect(result.bubbles.join('')).not.toContain('note.txt')
+  })
+})

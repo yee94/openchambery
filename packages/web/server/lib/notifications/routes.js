@@ -219,7 +219,7 @@ export const registerNotificationRoutes = (app, dependencies) => {
     }
 
     if (typeof addOrUpdateLiveActivityToken === 'function') {
-      await addOrUpdateLiveActivityToken(uiToken, token, activityId, sessionId);
+      await addOrUpdateLiveActivityToken(uiToken, token, activityId, sessionId, req.body?.items);
     }
     return res.json({ ok: true });
   });

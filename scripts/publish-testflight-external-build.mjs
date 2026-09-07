@@ -127,9 +127,17 @@ async function addBuildToExternalGroup(buildId) {
 
 async function removeOldExternalGroupBuilds(currentBuildId) {
   const result = await api(
-    `/v1/betaGroups/${betaGroupId}/builds?${query({ sort: '-uploadedDate', limit: '200' })}`,
+    `/v1/betaGroups/${betaGroupId}/builds?${query({
+      limit: '200',
+      'fields[builds]': 'uploadedDate,version',
+    })}`,
   );
-  const builds = assertSuccess(result, 'List external TestFlight group builds')?.data ?? [];
+  const builds = (assertSuccess(result, 'List external TestFlight group builds')?.data ?? []).slice()
+    .sort((left, right) => {
+      const leftUploaded = Date.parse(left.attributes?.uploadedDate ?? 0);
+      const rightUploaded = Date.parse(right.attributes?.uploadedDate ?? 0);
+      return rightUploaded - leftUploaded;
+    });
   const retained = new Set([
     currentBuildId,
     ...builds.slice(0, EXTERNAL_GROUP_BUILD_RETENTION).map((build) => build.id),
@@ -147,10 +155,20 @@ async function removeOldExternalGroupBuilds(currentBuildId) {
   return removable.length;
 }
 
+function reviewErrorText(result) {
+  if (!Array.isArray(result.body?.errors)) return '';
+  return result.body.errors.map((error) => `${error.detail ?? ''} ${error.title ?? ''}`).join(' ');
+}
+
 function isSubmissionLimitReached(result) {
   return result.response.status === 422
-    && Array.isArray(result.body?.errors)
-    && result.body.errors.some((error) => `${error.detail ?? ''} ${error.title ?? ''}`.includes('Submission limit has been reached'));
+    && reviewErrorText(result).includes('Submission limit has been reached');
+}
+
+function isTrainAlreadyInReview(result) {
+  if (result.response.status !== 422) return false;
+  const text = reviewErrorText(result);
+  return text.includes('already in beta review') || text.includes('same train');
 }
 
 async function submitBetaReview(build) {
@@ -168,6 +186,7 @@ async function submitBetaReview(build) {
     }),
   });
   if (isSubmissionLimitReached(result)) return 'deferred-submission-limit';
+  if (isTrainAlreadyInReview(result)) return 'deferred-train-in-review';
   assertSuccess(result, 'Submit build for Beta App Review');
   return 'submitted';
 }

@@ -23,6 +23,9 @@ const toNotificationPayload = (value: unknown): NotificationPayload | null => {
     title: typeof properties.title === 'string' ? properties.title : undefined,
     body: typeof properties.body === 'string' ? properties.body : undefined,
     tag: typeof properties.tag === 'string' ? properties.tag : undefined,
+    requireHidden: properties.requireHidden === true
+      ? true
+      : properties.requireHidden === false ? false : undefined,
   };
 };
 
@@ -45,10 +48,11 @@ export const useWebNotificationStream = (options?: { enabled?: boolean }) => {
 
       const settings = useUIStore.getState();
       if (!settings.nativeNotificationsEnabled) return;
-      if (settings.notificationMode !== 'always' && isFocused()) return;
 
       const payload = toNotificationPayload(data);
       if (!payload) return;
+      const hideWhenFocused = payload.requireHidden ?? (settings.notificationMode !== 'always');
+      if (hideWhenFocused && isFocused()) return;
 
       const apis = getRegisteredRuntimeAPIs();
       void apis?.notifications?.notifyAgentCompletion(payload);

@@ -1,169 +1,503 @@
-import React from 'react';
-import { ChatContainer } from '@/components/chat/ChatContainer';
-import { flattenAssistantHistoryPages } from '@/components/chat/hostedSessionHistory';
-import type { ChatContainerHost } from '@/components/chat/chatContainerHost';
-import type { ChatInputSecondarySurface } from '@/components/chat/chatInputSurface';
-import { PRIMARY_SESSION_SURFACE_CAPABILITIES, type SessionSurfaceMessageEditSnapshot } from '@/components/chat/SessionSurfaceContext';
-import type { AssistantDTO } from '@/queries/assistantQueries';
-import { useAssistantHistoryInfiniteQuery } from '@/queries/assistantQueries';
-import { useEvent } from '@reactuses/core';
-import { useMobileAppActions } from '@/apps/mobileAppContext';
-import { useDeviceInfo } from '@/lib/device';
-import { isVSCodeRuntime } from '@/lib/desktop';
-import { isIPadApp } from '@/lib/platform';
-import { useI18n } from '@/lib/i18n';
-import type { PendingUserMessagePresentation } from '@/sync/session-ui-store';
-import { useUIStore } from '@/stores/useUIStore';
+import React from 'react'
+import { useEvent } from '@reactuses/core'
+import { ChatPromptComposer, type ChatPromptAttachment } from '@/components/chat/ChatPromptComposer'
+import { MarkdownRenderer } from '@/components/chat/MarkdownRenderer'
+import { Icon } from '@/components/icon/Icon'
+import { useI18n } from '@/lib/i18n'
+import { subscribeOpenchamberEvents, type OpenChamberEvent } from '@/lib/openchamberEvents'
+import { createUuid } from '@/lib/uuid'
+import { cn } from '@/lib/utils'
+import { donateNativeAssistantInteraction } from '@/apps/MobileShareBridge'
+import { useUIStore } from '@/stores/useUIStore'
 import {
-  notifySessionOpenFailed,
-  openSessionWithFeedback,
-} from '@/sync/openSessionWithFeedback';
-import { resolveAssistantNestedOpenMode } from './assistantNestedSession';
+  sendAssistantContactMessage,
+  useAssistantCapabilityQuery,
+  useAssistantContactMessagesQuery,
+  useAssistantSnapshotQuery,
+  type AssistantDTO,
+} from '@/queries/assistantQueries'
+import { getAssistantPresentation } from './assistantPresentation'
+import {
+  admitContactTurnPreview,
+  applyContactBubbleDelta,
+  beginContactComposerSubmit,
+  contactOptimisticSending,
+  contactTurnPreviewWorking,
+  contactSendErrorMessage,
+  createContactSendGate,
+  EMPTY_CONTACT_MESSAGES,
+  endContactTurnPreview,
+  markContactOptimisticAdmitted,
+  markContactOptimisticFailed,
+  mergeContactTranscript,
+  reconcileContactOptimisticTurns,
+  reconcileContactTurnPreviews,
+  scopeContactOptimisticTurns,
+  scopeContactTurnPreviews,
+  type ContactOptimisticTurn,
+  type ContactTurnPreview,
+} from './contactOptimisticTurns'
+import { AssistantAssistantCard } from './AssistantAssistantCard'
+import { AssistantScheduleCard } from './AssistantScheduleCard'
+import { AssistantSessionCard } from './AssistantSessionCard'
+import { AssistantWorkingAvatar } from './AssistantWorkingAvatar'
+import { useAssistantContactWorkingStore } from './assistantWorking'
+import { useAssistantContactAutoFollow } from './useAssistantContactAutoFollow'
+import {
+  filesFromClipboard,
+  filesFromDrop,
+  mergeContactComposerAttachments,
+  readContactComposerFiles,
+} from './contactComposerAttachments'
+
+const SETTLE_TEXT: Record<string, 'assistants.contact.settle.complete' | 'assistants.contact.settle.error' | 'assistants.contact.settle.question'> = {
+  'oc.settle.complete': 'assistants.contact.settle.complete',
+  'oc.settle.error': 'assistants.contact.settle.error',
+  'oc.settle.question': 'assistants.contact.settle.question',
+}
 
 type AssistantConversationSurfaceProps = {
-  assistant: AssistantDTO;
-  sessionID: string;
-  warning?: string | null;
-  surface: ChatInputSecondarySurface;
-  onRevertMessage: (messageId: string) => Promise<void>;
-  onEditMessage?: (messageId: string, snapshot: SessionSurfaceMessageEditSnapshot) => Promise<void>;
-  pendingUserMessages: readonly PendingUserMessagePresentation[];
-  onPendingUserMessagesMaterialized: (messageIDs: readonly string[]) => void;
-};
+  assistant: AssistantDTO
+  warning?: string | null
+  active: boolean
+  overlayHeader?: boolean
+}
 
 /**
- * Assistant transcript + composer host.
- * Renders the shared ChatContainer shell (MessageList, StatusRow, Q/P cards,
- * timeline, auto-follow) with an injected secondary composer surface. Assistant
- * keeps list/selection/binding ownership in AssistantView; it does not fork the
- * session transcript rendering tree.
+ * Grok-like contact transcript. Renders OpenChamber-owned bubbles and
+ * first-class session cards — not ChatContainer or Activity. Assistant/peer
+ * text goes through MarkdownRenderer (markstream by default).
+ *
+ * Cards are assistant-emitted UI (assign_session, create_assistant,
+ * schedule_task; later watch/PR). The composer is a message box — not slash
+ * commands. Peer DMs arrive from the harness/API. TODO(watch/summon): inbound
+ * unsolicited user pushes and full summon-to-work MUST use this transcript.
+ * Do not invent a second inbox.
  */
 export const AssistantConversationSurface: React.FC<AssistantConversationSurfaceProps> = ({
   assistant,
-  sessionID,
   warning,
-  surface,
-  onRevertMessage,
-  onEditMessage,
-  pendingUserMessages,
-  onPendingUserMessagesMaterialized,
+  active,
+  overlayHeader = false,
 }) => {
-  const { t } = useI18n();
-  const { isMobile } = useDeviceInfo();
-  const directory = assistant.effectiveWorkspacePath;
-  const historyQuery = useAssistantHistoryInfiniteQuery(
-    assistant.id,
-    { sessionID, sessionGeneration: assistant.sessionGeneration },
-    surface.active,
-  );
-  const historyEntries = React.useMemo(
-    () => flattenAssistantHistoryPages(historyQuery.data?.pages ?? []),
-    [historyQuery.data?.pages],
-  );
-  const historyDirectories = React.useMemo(() => {
-    const directories = new Map<string, string | null>();
-    for (const entry of historyEntries) {
-      const previous = directories.get(entry.sessionID);
-      directories.set(entry.sessionID, previous === undefined || previous === entry.directory ? entry.directory : null);
+  const { t } = useI18n()
+  const isMobile = useUIStore((state) => state.isMobile)
+  const capabilityQuery = useAssistantCapabilityQuery()
+  const snapshotQuery = useAssistantSnapshotQuery()
+  const contactQuery = useAssistantContactMessagesQuery(assistant.id, active)
+  const presentation = getAssistantPresentation(assistant.name)
+  const displayName = presentation.displayName || assistant.name
+  const peerName = (fromAssistantID: string | null, fromAssistantName: string | null) => {
+    const live = fromAssistantID
+      ? snapshotQuery.data?.assistants.find((item) => item.id === fromAssistantID)
+      : undefined
+    if (live) {
+      const livePresentation = getAssistantPresentation(live.name)
+      return livePresentation.displayName || live.name
     }
-    return directories;
-  }, [historyEntries]);
-  const fetchPreviousHistory = useEvent(async () => {
-    if (historyQuery.hasNextPage || historyQuery.isFetchNextPageError) {
-      await historyQuery.fetchNextPage();
-    }
-  });
-  // Stateless turns cannot rewrite history; keep continuous Assistants mutable.
-  const mutateSession = assistant.mode === 'continuous';
-  // Dedicated MobileApp (Capacitor phone + hosted H5 phone shell) owns chat as a
-  // secondary route. Detect it the same way ChatContainer does — not Capacitor alone.
-  const mobileActions = useMobileAppActions();
-  const isPhoneShell = Boolean(mobileActions && !isIPadApp());
-  const openLinkedSession = useEvent((targetSessionID: string, targetDirectory: string) => {
-    openSessionWithFeedback(targetSessionID, targetDirectory, {
-      phoneShell: isPhoneShell,
-      switchToChat: true,
-    });
-  });
-  const openSourceSession = useEvent((targetSessionID: string, targetDirectory: string) => {
-    const expectedDirectory = targetSessionID === sessionID ? directory : historyDirectories.get(targetSessionID);
-    // History entry must carry a stable workspace path. If missing or conflicting,
-    // fail visibly — never open under the wrong current project cwd.
-    if (!expectedDirectory || expectedDirectory !== targetDirectory) {
-      notifySessionOpenFailed(targetSessionID, 'missing-directory');
-      return;
-    }
-    // Leave the Assistant surface and continue the underlying OpenCode session in Chat.
-    // Phone shell (native or hosted H5): secondary chat route owns mounting.
-    openLinkedSession(targetSessionID, targetDirectory);
-  });
-  const navigateSession = useEvent((targetSessionID: string, targetDirectory: string) => {
-    const sessionId = targetSessionID.trim();
-    const targetDirectoryValue = targetDirectory.trim();
-    if (!sessionId) {
-      notifySessionOpenFailed(targetSessionID, 'missing-session-id');
-      return;
-    }
-    if (!targetDirectoryValue) {
-      notifySessionOpenFailed(sessionId, 'missing-directory');
-      return;
-    }
-    const mode = resolveAssistantNestedOpenMode({
-      isPhoneShell,
-      isMobile,
-      isIPad: isIPadApp(),
-      isVSCode: isVSCodeRuntime(),
-    });
-    if (mode === 'session') {
-      openLinkedSession(sessionId, targetDirectoryValue);
-      return;
-    }
-    useUIStore.getState().openContextPanelTab(targetDirectoryValue, {
-      mode: 'chat',
-      dedupeKey: `session:${sessionId}`,
-      label: t('contextPanel.mode.chat'),
-      readOnly: true,
-    });
-  });
-  const sessionSurface = React.useMemo(() => ({
-    kind: 'embedded' as const,
-    surfaceId: surface.surfaceID,
-    sessionId: sessionID,
-    directory,
-    active: surface.active,
-    capabilities: {
-      ...PRIMARY_SESSION_SURFACE_CAPABILITIES,
-      forkSession: false,
-      mutateSession,
-    },
-    navigateSession,
-    onRevertMessage,
-    // Continuous Assistants stage edits into surfaceDraftKey; history segments are read-only via MessageList.
-    ...(onEditMessage ? { onEditMessage } : {}),
-    openSourceSession,
-  }), [directory, mutateSession, navigateSession, onEditMessage, onRevertMessage, openSourceSession, sessionID, surface.active, surface.surfaceID]);
+    return fromAssistantName || t('assistants.contact.peer.unknown')
+  }
+  const [draft, setDraft] = React.useState('')
+  const [attachments, setAttachments] = React.useState<ChatPromptAttachment[]>([])
+  const [optimisticTurns, setOptimisticTurns] = React.useState<ContactOptimisticTurn[]>([])
+  const [turnPreviews, setTurnPreviews] = React.useState<ContactTurnPreview[]>([])
+  const [sendError, setSendError] = React.useState<string | null>(null)
+  const sendGate = React.useMemo(() => createContactSendGate(), [])
+  const settledTurnIDsRef = React.useRef(new Set<string>())
+  const setContactWorking = useAssistantContactWorkingStore((state) => state.setWorking)
+  const messages = contactQuery.data?.messages ?? EMPTY_CONTACT_MESSAGES
+  const scopedOptimisticTurns = scopeContactOptimisticTurns(optimisticTurns, assistant.id)
+  const scopedTurnPreviews = scopeContactTurnPreviews(turnPreviews, assistant.id)
+  const transcript = mergeContactTranscript(messages, scopedOptimisticTurns, assistant.id, scopedTurnPreviews)
+  const sending = contactOptimisticSending(scopedOptimisticTurns)
+  const processing = contactTurnPreviewWorking(scopedTurnPreviews)
+  const streamingTextLength = scopedTurnPreviews.reduce((total, preview) => (
+    total + preview.bubbles.reduce((bubbleTotal, bubble) => bubbleTotal + bubble.text.length, 0)
+  ), 0)
+  const previewByTurnID = new Map(scopedTurnPreviews.map((preview) => [preview.turnID, preview]))
+  const { scrollRef, contentRef } = useAssistantContactAutoFollow({
+    active,
+    assistantID: assistant.id,
+    contentRevision: `${transcript.length}:${streamingTextLength}`,
+  })
 
-  // Terminal error: stop load-older from spinning forever. Background refetches
-  // must not flip loading (near-top controller). Only initial/next-page fetches load.
-  const historyComplete = historyQuery.isError || (historyQuery.isSuccess && !historyQuery.hasNextPage);
-  const historyLoading = historyQuery.isLoading || historyQuery.isFetchingNextPage;
+  React.useEffect(() => {
+    setSendError(null)
+    settledTurnIDsRef.current.clear()
+    setOptimisticTurns((current) => scopeContactOptimisticTurns(current, assistant.id))
+    setTurnPreviews((current) => scopeContactTurnPreviews(current, assistant.id))
+  }, [assistant.id])
 
-  const host = React.useMemo<ChatContainerHost>(() => ({
-    sessionId: sessionID,
-    directory,
-    composerSurface: surface,
-    sessionSurface,
-    warning,
-    pendingUserMessages,
-    onPendingUserMessagesMaterialized,
-    assistantHistory: {
-      entries: historyEntries,
-      complete: historyComplete,
-      loading: historyLoading,
-      fetchPrevious: fetchPreviousHistory,
-    },
-    onRevertMessage,
-  }), [directory, fetchPreviousHistory, historyComplete, historyEntries, historyLoading, onPendingUserMessagesMaterialized, onRevertMessage, pendingUserMessages, sessionID, sessionSurface, surface, warning]);
+  React.useEffect(() => {
+    setOptimisticTurns((current) => reconcileContactOptimisticTurns(current, messages))
+    setTurnPreviews((current) => reconcileContactTurnPreviews(current, messages))
+  }, [messages])
 
-  return <ChatContainer autoOpenDraft={false} host={host} />;
-};
+  React.useEffect(() => {
+    setContactWorking(assistant.id, sending || processing)
+  }, [assistant.id, processing, sending, setContactWorking])
+
+  React.useEffect(() => {
+    const id = assistant.id
+    return () => {
+      setContactWorking(id, false)
+    }
+  }, [assistant.id, setContactWorking])
+
+  const handleContactEvent = useEvent((event: OpenChamberEvent) => {
+    if (!('assistantID' in event) || event.assistantID !== assistant.id) return
+    if (event.type === 'contact-turn-start') {
+      if (settledTurnIDsRef.current.has(event.turnID)) return
+      setTurnPreviews((current) => admitContactTurnPreview(current, event.assistantID, event.turnID, event.occurredAt))
+      return
+    }
+    if (event.type === 'contact-bubble-delta') {
+      if (settledTurnIDsRef.current.has(event.turnID)) return
+      setTurnPreviews((current) => applyContactBubbleDelta(current, event))
+      return
+    }
+    if (event.type === 'contact-turn-end') {
+      settledTurnIDsRef.current.add(event.turnID)
+      setTurnPreviews((current) => reconcileContactTurnPreviews(endContactTurnPreview(current, event), messages))
+    }
+  })
+
+  React.useEffect(() => {
+    if (!active) return
+    return subscribeOpenchamberEvents(handleContactEvent)
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- active and Assistant identity own subscription lifecycle; useEvent keeps the handler current.
+  }, [active, assistant.id])
+
+  const addFiles = useEvent(async (files: ArrayLike<File> | null) => {
+    const result = await readContactComposerFiles(files)
+    if (result.skippedTooLarge > 0) {
+      setSendError(t('assistants.contact.attachment.tooLarge'))
+    }
+    if (result.attachments.length === 0) return
+    setAttachments((current) => mergeContactComposerAttachments(current, result.attachments))
+  })
+  const handlePaste = useEvent((event: React.ClipboardEvent) => {
+    const files = filesFromClipboard(event.clipboardData)
+    if (files.length === 0) return
+    event.preventDefault()
+    void addFiles(files)
+  })
+  const handleDragOver = useEvent((event: React.DragEvent) => {
+    if (!Array.from(event.dataTransfer?.types ?? []).includes('Files')) return
+    event.preventDefault()
+    event.dataTransfer.dropEffect = 'copy'
+  })
+  const handleDrop = useEvent((event: React.DragEvent) => {
+    const files = filesFromDrop(event.dataTransfer)
+    if (files.length === 0) return
+    event.preventDefault()
+    void addFiles(files)
+  })
+  const submit = useEvent(async () => {
+    const text = draft
+    const staged = attachments
+    const sentAssistantID = assistant.id
+    const begun = beginContactComposerSubmit({
+      gate: sendGate,
+      sending: contactOptimisticSending(scopedOptimisticTurns),
+      text,
+      attachments: staged,
+      assistantID: sentAssistantID,
+      createMessageID: () => `oc_contact_${createUuid()}`,
+    })
+    if (!begun.ok) return
+    setOptimisticTurns((current) => [...current, begun.turn])
+    setDraft('')
+    setAttachments([])
+    setSendError(null)
+    try {
+      await sendAssistantContactMessage(sentAssistantID, begun.messageID, { parts: begun.parts })
+      setOptimisticTurns((current) => markContactOptimisticAdmitted(current, begun.messageID))
+      if (!settledTurnIDsRef.current.has(begun.messageID)) {
+        setTurnPreviews((current) => admitContactTurnPreview(current, sentAssistantID, begun.messageID))
+      }
+      if (capabilityQuery.data?.serverInstanceID) {
+        void donateNativeAssistantInteraction({
+          serverInstanceID: capabilityQuery.data.serverInstanceID,
+          assistantID: sentAssistantID,
+          name: displayName,
+          avatarSeed: sentAssistantID,
+          ...(presentation.avatarEmoji ? { avatarEmoji: presentation.avatarEmoji } : {}),
+        }).catch(() => undefined)
+      }
+    } catch (error) {
+      const detail = contactSendErrorMessage(error, {
+        noProvider: t('assistants.contact.noProvider'),
+        sendFailed: t('assistants.contact.sendFailed'),
+        timedOut: t('assistants.contact.timedOut'),
+      })
+      setOptimisticTurns((current) => markContactOptimisticFailed(current, begun.messageID, detail))
+    } finally {
+      sendGate.release()
+    }
+  })
+
+  const loadFailed = contactQuery.isError && transcript.length === 0
+  const empty = contactQuery.isSuccess && transcript.length === 0
+  const optimisticByID = new Map(scopedOptimisticTurns.map((turn) => [turn.messageID, turn]))
+
+  return (
+    <div className="flex min-h-0 flex-1 flex-col bg-background">
+      <div
+        ref={scrollRef}
+        className={cn(
+          'min-h-0 flex-1 overflow-x-hidden overflow-y-auto px-4 pb-9 sm:px-8 sm:pb-12',
+          overlayHeader
+            ? 'pt-[calc(max(0.625rem,var(--oc-safe-area-top,0px))+var(--oc-mobile-detail-navigation-height)+1.25rem)]'
+            : 'pt-5 sm:pt-7',
+        )}
+        // Match primary chat: disable native scroll anchoring so async Markdown
+        // / image growth cannot yank the viewport mid-gesture, and contain
+        // overscroll so rubber-band stays on this scroller.
+        style={{ overflowAnchor: 'none', overscrollBehavior: 'contain', overscrollBehaviorY: 'contain' }}
+        data-assistant-contact-transcript=""
+      >
+        {warning ? (
+          <p className="mb-3 typography-micro text-[var(--status-warning)]">{warning}</p>
+        ) : null}
+        {loadFailed ? (
+          <div ref={contentRef} className="mx-auto flex h-full min-h-56 max-w-xs flex-col items-center justify-center pb-16 text-center" data-assistant-contact-error="">
+            <div className="relative">
+              <AssistantWorkingAvatar
+                name={assistant.id}
+                emoji={presentation.avatarEmoji}
+                size={44}
+                label={displayName}
+              />
+              <span aria-hidden className="absolute -right-1 -bottom-1 flex size-5 items-center justify-center rounded-full bg-[var(--surface-elevated)] text-[var(--status-error)] ring-2 ring-background">
+                <Icon name="error-warning" className="size-3" />
+              </span>
+            </div>
+            <p className="mt-4 typography-ui-label font-medium text-foreground">{displayName}</p>
+            <p className="mt-1.5 typography-ui leading-6 text-muted-foreground">{t('assistants.contact.loadFailed')}</p>
+          </div>
+        ) : empty ? (
+          <div ref={contentRef} className="mx-auto flex h-full min-h-56 max-w-sm flex-col items-center justify-center pb-16 text-center" data-assistant-contact-empty="">
+            <AssistantWorkingAvatar
+              name={assistant.id}
+              emoji={presentation.avatarEmoji}
+              size={48}
+              label={displayName}
+              className="opacity-90"
+            />
+            <p className="mt-5 typography-ui-header font-medium tracking-[-0.01em] text-foreground">{t('assistants.conversation.emptyTitle', { name: displayName })}</p>
+            <p className="mt-2 max-w-xs typography-ui leading-6 text-muted-foreground/80">{t('assistants.contact.empty')}</p>
+          </div>
+        ) : (
+          <div ref={contentRef} className="mx-auto flex w-full max-w-[42rem] flex-col">
+            {transcript.map((message, messageIndex) => {
+              const previousMessage = messageIndex > 0 ? transcript[messageIndex - 1] : null
+              const isUser = message.role === 'user'
+              const isPeer = message.role === 'peer'
+              const sameAssistantRun = message.role === 'assistant'
+                && previousMessage?.role === 'assistant'
+                && previousMessage.turnID === message.turnID
+              const startsTurn = previousMessage?.turnID !== message.turnID
+              const showAvatar = !isUser && (isPeer || !sameAssistantRun)
+              const senderName = isPeer ? peerName(message.fromAssistantID, message.fromAssistantName) : displayName
+              const sender = isPeer && message.fromAssistantID
+                ? snapshotQuery.data?.assistants.find((item) => item.id === message.fromAssistantID)
+                : assistant
+              const senderPresentation = sender ? getAssistantPresentation(sender.name) : null
+              const optimistic = optimisticByID.get(message.messageID)
+              const preview = previewByTurnID.get(message.turnID)
+              const processingRow = message.status === 'admitted' && message.messageID.endsWith(':preview:admitted')
+              const failedPreviewRow = message.status === 'failed' && message.messageID.endsWith(':preview:failed')
+              return (
+                <div
+                  key={message.messageID}
+                  className={cn(
+                    'flex w-full',
+                    isUser ? 'justify-end' : 'justify-start',
+                    startsTurn ? 'mt-6 first:mt-0' : sameAssistantRun ? 'mt-1.5' : 'mt-3',
+                  )}
+                  data-assistant-contact-role={message.role}
+                  data-assistant-contact-turn-status={optimistic?.status ?? message.status}
+                  data-assistant-contact-run-start={message.role === 'assistant' && !sameAssistantRun ? '' : undefined}
+                >
+                  {!isUser ? (
+                    <div className="mr-2.5 flex w-8 shrink-0 justify-center pt-0.5">
+                      {showAvatar ? (
+                        <AssistantWorkingAvatar
+                          name={sender?.id || message.fromAssistantID || assistant.id}
+                          emoji={senderPresentation?.avatarEmoji}
+                          size={28}
+                          label={senderName}
+                        />
+                      ) : (
+                        <span className="size-7" aria-hidden />
+                      )}
+                    </div>
+                  ) : null}
+                  <div className={cn(
+                    'flex min-w-0 flex-col gap-1.5',
+                    isUser ? 'max-w-[min(82%,30rem)] items-end' : 'max-w-[min(84%,34rem)] items-start',
+                  )}>
+                    {isPeer ? (
+                      <span className="mb-0.5 px-1 typography-micro text-muted-foreground/75">
+                        {t('assistants.contact.peer.from', { name: senderName })}
+                      </span>
+                    ) : null}
+                    {processingRow ? (
+                      <div
+                        role="status"
+                        aria-label={t('assistants.contact.processing')}
+                        className="inline-flex w-fit items-center gap-1 rounded-full bg-[var(--surface-muted)] px-3.5 py-2.5 text-muted-foreground/70"
+                        data-assistant-contact-processing=""
+                      >
+                        <span aria-hidden className="size-1.5 animate-pulse rounded-full bg-current [animation-delay:-0.45s] [animation-duration:1.4s] motion-reduce:animate-none" />
+                        <span aria-hidden className="size-1.5 animate-pulse rounded-full bg-current [animation-delay:-0.22s] [animation-duration:1.4s] motion-reduce:animate-none" />
+                        <span aria-hidden className="size-1.5 animate-pulse rounded-full bg-current [animation-duration:1.4s] motion-reduce:animate-none" />
+                      </div>
+                    ) : null}
+                    {message.parts.map((part, index) => {
+                      if (part.type === 'card' && part.cardType === 'session') {
+                        return <AssistantSessionCard key={`${message.messageID}:card:${index}`} card={part} />
+                      }
+                      if (part.type === 'card' && part.cardType === 'assistant') {
+                        return <AssistantAssistantCard key={`${message.messageID}:card:${index}`} card={part} />
+                      }
+                      if (part.type === 'card' && part.cardType === 'schedule') {
+                        return <AssistantScheduleCard key={`${message.messageID}:card:${index}`} card={part} />
+                      }
+                      if (part.type === 'file' && part.mime.startsWith('image/') && part.url) {
+                        return (
+                          <img
+                            key={`${message.messageID}:file:${index}`}
+                            src={part.url}
+                            alt={part.filename || t('assistants.contact.attachment.image')}
+                            className="max-h-72 max-w-full rounded-[1.35rem] border border-border/40 object-contain"
+                            data-assistant-contact-image=""
+                          />
+                        )
+                      }
+                      if (part.type === 'file') {
+                        return (
+                          <div
+                            key={`${message.messageID}:file:${index}`}
+                            className="flex max-w-full items-center gap-2.5 rounded-[1.25rem] bg-[var(--surface-muted)] px-3.5 py-2.5 ring-1 ring-inset ring-[var(--surface-subtle)]"
+                            data-assistant-contact-file=""
+                          >
+                            <Icon name="file-text" className="size-4 shrink-0 text-muted-foreground" />
+                            <span className="min-w-0 truncate typography-ui">
+                              {part.filename || t('assistants.contact.attachment.file')}
+                            </span>
+                          </div>
+                        )
+                      }
+                      if (part.type === 'text' && (part.text.trim() || message.status === 'streaming')) {
+                        const settleKey = SETTLE_TEXT[part.text]
+                        const useMarkdown = !isUser && !settleKey
+                        return (
+                          <div
+                            key={`${message.messageID}:text:${index}`}
+                            aria-label={isPeer ? t('assistants.contact.peer.aria', { name: senderName }) : undefined}
+                            data-assistant-contact-text=""
+                            className={cn(
+                              'min-w-0 max-w-full [overflow-wrap:anywhere] rounded-[1.35rem] px-4 py-2.5 typography-ui leading-6',
+                              useMarkdown ? null : 'whitespace-pre-wrap',
+                              isUser
+                                ? 'rounded-[1.15rem] rounded-br-lg bg-[var(--primary-base)]/90 text-[var(--primary-foreground)]'
+                                : isPeer
+                                  ? 'rounded-[1.25rem] border border-dashed border-border/50 bg-[var(--surface-muted)]/70 text-foreground'
+                                  : cn('bg-[var(--surface-muted)] text-foreground', sameAssistantRun && 'rounded-tl-lg'),
+                            )}
+                          >
+                            {useMarkdown ? (
+                              <MarkdownRenderer
+                                content={part.text}
+                                messageId={message.messageID}
+                                isAnimated={false}
+                                isStreaming={message.status === 'streaming'}
+                                variant="assistant"
+                                enableFileReferences={false}
+                                className="w-full min-w-0 [overflow-wrap:anywhere]"
+                              />
+                            ) : settleKey ? t(settleKey) : part.text}
+                            {message.status === 'streaming' && index === message.parts.length - 1 ? (
+                              <span
+                                aria-hidden
+                                className="ml-0.5 inline-block h-[1em] w-px translate-y-[0.12em] animate-pulse bg-current opacity-45 [animation-duration:1.1s] motion-reduce:animate-none"
+                                data-assistant-contact-streaming-caret=""
+                              />
+                            ) : null}
+                          </div>
+                        )
+                      }
+                      return null
+                    })}
+                    {optimistic?.status === 'sending' ? (
+                      <p className="px-1 typography-micro text-muted-foreground/75">{t('assistants.contact.sending')}</p>
+                    ) : null}
+                    {optimistic?.status === 'failed' ? (
+                      <p className="px-1 typography-micro text-[var(--status-error)]">{optimistic.error || t('assistants.contact.sendFailed')}</p>
+                    ) : null}
+                    {failedPreviewRow ? (
+                      <p className="px-1 typography-micro text-[var(--status-error)]">{preview?.error || t('assistants.contact.sendFailed')}</p>
+                    ) : null}
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        )}
+      </div>
+      <footer
+        className="relative z-10 shrink-0 bg-background pt-1"
+        data-assistant-contact-composer=""
+      >
+        {sendError ? (
+          <p className="chat-input-column mb-2 typography-micro text-[var(--status-error)]">{sendError}</p>
+        ) : null}
+        <form
+          className={cn('relative w-full pt-1.5 pb-4', isMobile && 'bottom-safe-area oc-mobile-composer')}
+          onSubmit={(event) => {
+            event.preventDefault()
+            void submit()
+          }}
+          onDragOver={handleDragOver}
+          onDrop={handleDrop}
+        >
+          <div className="chat-input-column relative overflow-visible">
+            <ChatPromptComposer
+              layout="inline"
+              value={draft}
+              attachments={attachments}
+              pending={false}
+              isMobile={isMobile}
+              placeholder={t('assistants.contact.placeholder', { name: displayName })}
+              sendLabel={t('assistants.contact.send')}
+              addFilesLabel={t('assistants.contact.addFiles')}
+              removeAttachmentLabel={t('assistants.contact.removeAttachment')}
+              fileAccept="*/*"
+              onChange={(value) => setDraft(value)}
+              onSubmit={() => {
+                void submit()
+              }}
+              onAddFiles={(files) => {
+                void addFiles(files)
+              }}
+              onRemoveAttachment={(id) => {
+                setAttachments((current) => current.filter((attachment) => attachment.id !== id))
+              }}
+              onPaste={handlePaste}
+              onDragOver={handleDragOver}
+              onDrop={handleDrop}
+              className={cn('relative z-10', isMobile && 'oc-mobile-composer-surface')}
+              style={{ borderRadius: '1.5rem' }}
+              data-assistant-contact-composer-surface=""
+              textareaProps={{
+                'aria-label': t('assistants.contact.placeholder', { name: displayName }),
+              }}
+            />
+          </div>
+        </form>
+      </footer>
+    </div>
+  )
+}

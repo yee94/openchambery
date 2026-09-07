@@ -481,7 +481,7 @@ export function useAssistantStatus(
                 statusText: t('chat.assistantStatus.sendingMessage'),
                 isGenericStatus: false,
                 isWaitingForPermission: false,
-                canAbort: false,
+                canAbort: true,
                 activePartType: undefined,
                 activeToolName: undefined,
                 isComplete: false,

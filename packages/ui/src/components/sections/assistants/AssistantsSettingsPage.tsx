@@ -6,8 +6,8 @@ import { AssistantShareWelcome } from '@/components/assistants/AssistantShareWel
 import { getAssistantPresentation } from '@/components/assistants/assistantPresentation';
 import { AgentAvatar } from '@/components/chat/AgentAvatar';
 import { Icon } from '@/components/icon/Icon';
+import type { IconName } from '@/components/icon/icons';
 import { ModelSelector } from '@/components/sections/agents/ModelSelector';
-import { AgentSelector } from '@/components/sections/commands/AgentSelector';
 import { SettingsSidebarItem } from '@/components/sections/shared/SettingsSidebarItem';
 import { SettingsSidebarLayout } from '@/components/sections/shared/SettingsSidebarLayout';
 import { SettingsField, SettingsGroup, SettingsRow, SettingsToggleRow } from '@/components/sections/shared/SettingsGroup';
@@ -18,7 +18,9 @@ import { ScrollableOverlay } from '@/components/ui/ScrollableOverlay';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 import { useI18n } from '@/lib/i18n';
+import { parseModelIdentifier } from '@/lib/modelIdentifier';
 import type { ProjectEntry } from '@/lib/api/types';
+import type { GlobalScheduledTask, ScheduledTask, ScheduledTaskStatus } from '@/lib/scheduledTasksApi';
 import {
   createAssistant,
   deleteAssistant,
@@ -26,27 +28,64 @@ import {
   setAssistantsEnabled,
   updateAssistant,
   useAssistantCapabilityQuery,
+  useAssistantContactMessagesQuery,
+  useAssistantScheduledTasksQuery,
   useAssistantSnapshotQuery,
+  useGlobalScheduledTasksQuery,
   type AssistantDTO,
   type AssistantDraft,
+  type AssistantScheduledTaskEntry,
 } from '@/queries/assistantQueries';
 import { useAssistantUIStore } from '@/stores/useAssistantUIStore';
 import { useProjectsStore } from '@/stores/useProjectsStore';
-import { useScopedAgentsQuery, useScopedProvidersQuery } from '@/queries/agentQueries';
+import { useConfigStore } from '@/stores/useConfigStore';
+import { useUIStore } from '@/stores/useUIStore';
+import { useScopedProvidersQuery } from '@/queries/agentQueries';
 
 const MANAGED_WORKSPACE_VALUE = '__managed_workspace__';
 const LEGACY_WORKSPACE_VALUE = '__current_workspace__';
 
-const emptyDraft = (): AssistantDraft => ({
-  enabled: true,
-  name: '',
-  defaultPrompt: '',
-  workspacePath: null,
-  providerID: '',
-  modelID: '',
-  agent: null,
-  mode: 'continuous',
-});
+const DEFAULT_ASSISTANT_NAME = '默认助理';
+
+/** Resolves an initial provider and model for default assistant creation. */
+const resolveDefaultAssistantModel = (): { providerID: string; modelID: string } | null => {
+  const configState = useConfigStore.getState();
+  const settingsDefaultModel = configState.settingsDefaultModel;
+  if (settingsDefaultModel) {
+    const parsed = parseModelIdentifier(settingsDefaultModel);
+    if (parsed?.providerId && parsed?.modelId) {
+      return { providerID: parsed.providerId, modelID: parsed.modelId };
+    }
+  }
+  if (configState.currentProviderId && configState.currentModelId) {
+    return { providerID: configState.currentProviderId, modelID: configState.currentModelId };
+  }
+  const providers = configState.providers;
+  for (const provider of providers) {
+    const models = provider.models;
+    if (Array.isArray(models) && models.length > 0) {
+      const firstModel = models[0] as { id?: string };
+      if (firstModel?.id) {
+        return { providerID: provider.id, modelID: firstModel.id };
+      }
+    }
+  }
+  return null;
+};
+
+const emptyDraft = (defaultName = ''): AssistantDraft => {
+  const defaultModel = resolveDefaultAssistantModel();
+  return {
+    enabled: true,
+    name: defaultName,
+    defaultPrompt: '',
+    workspacePath: null,
+    providerID: defaultModel?.providerID ?? '',
+    modelID: defaultModel?.modelID ?? '',
+    agent: null,
+    mode: 'continuous',
+  };
+};
 
 const draftFromAssistant = (assistant: AssistantDTO): AssistantDraft => ({
   enabled: assistant.enabled,
@@ -62,6 +101,196 @@ const draftFromAssistant = (assistant: AssistantDTO): AssistantDraft => ({
 const projectName = (project: ProjectEntry): string => (
   project.label?.trim() || project.path.replace(/[\\/]+$/, '').split(/[\\/]/).filter(Boolean).at(-1) || project.path
 );
+
+const scheduleTimes = (task: ScheduledTask): string[] => {
+  const raw = Array.isArray(task.schedule.times)
+    ? task.schedule.times
+    : (task.schedule.time ? [task.schedule.time] : []);
+  return Array.from(new Set(raw.filter((value) => /^([01]\d|2[0-3]):([0-5]\d)$/.test(value)))).sort((a, b) => a.localeCompare(b));
+};
+
+const isRecord = (value: unknown): value is Record<string, unknown> => Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+const isScheduledTask = (value: unknown): value is ScheduledTask => {
+  if (!isRecord(value) || !isRecord(value.schedule) || !isRecord(value.execution) || !isRecord(value.state)) return false;
+  const timesValid = value.schedule.times === undefined
+    || (Array.isArray(value.schedule.times) && value.schedule.times.every((time) => typeof time === 'string'));
+  const weekdaysValid = value.schedule.weekdays === undefined
+    || (Array.isArray(value.schedule.weekdays) && value.schedule.weekdays.every((day) => typeof day === 'number'));
+  const statusValid = value.state.lastStatus === undefined
+    || value.state.lastStatus === 'idle'
+    || value.state.lastStatus === 'running'
+    || value.state.lastStatus === 'success'
+    || value.state.lastStatus === 'error';
+  return typeof value.id === 'string'
+    && typeof value.name === 'string'
+    && typeof value.enabled === 'boolean'
+    && (value.schedule.kind === 'daily' || value.schedule.kind === 'weekly' || value.schedule.kind === 'once' || value.schedule.kind === 'cron')
+    && timesValid
+    && weekdaysValid
+    && statusValid
+    && typeof value.execution.prompt === 'string'
+    && typeof value.execution.providerID === 'string'
+    && typeof value.execution.modelID === 'string';
+};
+
+const formatScheduledTask = (task: ScheduledTask, t: ReturnType<typeof useI18n>['t']): string => {
+  const times = scheduleTimes(task).join(', ') || '—';
+  const weekday = (value: number) => {
+    if (value === 0) return t('sessions.scheduledTasks.dialog.schedule.weekdayShort.sun');
+    if (value === 1) return t('sessions.scheduledTasks.dialog.schedule.weekdayShort.mon');
+    if (value === 2) return t('sessions.scheduledTasks.dialog.schedule.weekdayShort.tue');
+    if (value === 3) return t('sessions.scheduledTasks.dialog.schedule.weekdayShort.wed');
+    if (value === 4) return t('sessions.scheduledTasks.dialog.schedule.weekdayShort.thu');
+    if (value === 5) return t('sessions.scheduledTasks.dialog.schedule.weekdayShort.fri');
+    if (value === 6) return t('sessions.scheduledTasks.dialog.schedule.weekdayShort.sat');
+    return t('sessions.scheduledTasks.dialog.schedule.weekdayShort.unknown');
+  };
+  if (task.schedule.kind === 'daily') {
+    return task.schedule.timezone
+      ? t('sessions.scheduledTasks.dialog.schedule.dailyWithTimezone', { time: times, timezone: task.schedule.timezone })
+      : t('sessions.scheduledTasks.dialog.schedule.daily', { time: times });
+  }
+  if (task.schedule.kind === 'weekly') {
+    const days = (task.schedule.weekdays ?? []).map(weekday).join(', ');
+    return task.schedule.timezone
+      ? t('sessions.scheduledTasks.dialog.schedule.weeklyWithTimezone', { days, time: times, timezone: task.schedule.timezone })
+      : t('sessions.scheduledTasks.dialog.schedule.weekly', { days, time: times });
+  }
+  if (task.schedule.kind === 'once') {
+    const date = task.schedule.date?.trim() || t('sessions.scheduledTasks.dialog.schedule.unknownDate');
+    const time = task.schedule.time?.trim() || '—';
+    return task.schedule.timezone
+      ? t('sessions.scheduledTasks.dialog.schedule.onceWithTimezone', { date, time, timezone: task.schedule.timezone })
+      : t('sessions.scheduledTasks.dialog.schedule.once', { date, time });
+  }
+  return task.schedule.timezone
+    ? t('sessions.scheduledTasks.dialog.schedule.cronWithTimezone', { cron: task.schedule.cron ?? '', timezone: task.schedule.timezone })
+    : t('sessions.scheduledTasks.dialog.schedule.cron', { cron: task.schedule.cron ?? '' });
+};
+
+type ScheduledTaskVisualStatus = ScheduledTaskStatus | 'paused';
+const SCHEDULE_STATUS_META: Record<ScheduledTaskVisualStatus, { icon: IconName; className: string }> = {
+  paused: { icon: 'pause', className: 'text-muted-foreground' },
+  idle: { icon: 'pulse', className: 'text-muted-foreground' },
+  running: { icon: 'loader-4', className: 'text-[var(--status-warning)]' },
+  success: { icon: 'checkbox-circle', className: 'text-[var(--status-success)]' },
+  error: { icon: 'error-warning', className: 'text-[var(--status-error)]' },
+};
+
+const scheduledTaskIdentity = (entry: Pick<GlobalScheduledTask, 'projectId' | 'task'>) => `${entry.projectId}:${entry.task.id}`;
+
+const AssistantScheduledTasksGroup: React.FC<{ assistantID: string }> = ({ assistantID }) => {
+  const { t } = useI18n();
+  const scheduledTasksQuery = useAssistantScheduledTasksQuery(assistantID);
+  const fallbackEnabled = scheduledTasksQuery.isError;
+  const contactQuery = useAssistantContactMessagesQuery(assistantID, fallbackEnabled);
+  const globalTasksQuery = useGlobalScheduledTasksQuery(fallbackEnabled);
+  const fallbackIdentities = new Set<string>();
+  for (const message of contactQuery.data?.messages ?? []) {
+    for (const card of message.cards) {
+      if (card.cardType === 'schedule') fallbackIdentities.add(`${card.projectID}:${card.taskID}`);
+    }
+  }
+  const mappedTasks: GlobalScheduledTask[] = (scheduledTasksQuery.data?.tasks ?? []).flatMap((entry: AssistantScheduledTaskEntry) => (
+    isScheduledTask(entry.task) ? [{ projectId: entry.projectID, task: entry.task }] : []
+  ));
+  const hasUnresolvedMappedTask = Boolean(scheduledTasksQuery.data?.tasks.some((entry: AssistantScheduledTaskEntry) => !isScheduledTask(entry.task)));
+  const fallbackTasks = (globalTasksQuery.data?.tasks ?? []).filter((entry: GlobalScheduledTask) => fallbackIdentities.has(scheduledTaskIdentity(entry)));
+  const tasks = [...(scheduledTasksQuery.data ? mappedTasks : (fallbackEnabled ? fallbackTasks : []))].sort((left, right) => {
+    if (left.task.enabled !== right.task.enabled) return left.task.enabled ? -1 : 1;
+    return left.task.name.localeCompare(right.task.name);
+  });
+  const failedFallbackProject = (globalTasksQuery.data?.failedProjectIds ?? []).some((projectID: string) => (
+    Array.from(fallbackIdentities).some((identity) => identity.startsWith(`${projectID}:`))
+  ));
+  const loading = scheduledTasksQuery.isPending
+    || (fallbackEnabled && (contactQuery.isPending || globalTasksQuery.isPending));
+  const hasLoadError = scheduledTasksQuery.isError
+    || contactQuery.isError
+    || globalTasksQuery.isError
+    || failedFallbackProject
+    || hasUnresolvedMappedTask;
+  const openScheduledTasks = useEvent(() => {
+    useUIStore.getState().setActiveMainTab('schedule');
+    useUIStore.getState().setScheduledTasksDialogOpen(true);
+  });
+  const retry = useEvent(() => {
+    void scheduledTasksQuery.refetch();
+    if (fallbackEnabled) {
+      void contactQuery.refetch();
+      void globalTasksQuery.refetch();
+    }
+  });
+
+  return (
+    <SettingsGroup label={t('assistants.settings.scheduledTasks.title')} ariaLabel={t('assistants.settings.scheduledTasks.title')}>
+      {loading && tasks.length === 0 ? (
+        <SettingsRow label={t('common.loading')}>
+          <Icon name="loader-4" className="size-4 animate-spin text-muted-foreground" />
+        </SettingsRow>
+      ) : null}
+      {tasks.map((entry) => {
+        const status: ScheduledTaskVisualStatus = entry.task.enabled ? (entry.task.state?.lastStatus ?? 'idle') : 'paused';
+        const statusMeta = SCHEDULE_STATUS_META[status];
+        const statusLabel = status === 'paused'
+          ? t('sessions.scheduledTasks.dialog.taskToggle.paused')
+          : status === 'running'
+            ? t('sessions.scheduledTasks.dialog.status.running')
+            : status === 'success'
+              ? t('sessions.scheduledTasks.dialog.status.success')
+              : status === 'error'
+                ? t('sessions.scheduledTasks.dialog.status.error')
+                : t('sessions.scheduledTasks.dialog.status.idle');
+        return (
+          <SettingsRow
+            key={scheduledTaskIdentity(entry)}
+            className="group relative cursor-pointer transition-colors hover:bg-interactive-hover"
+            label={(
+              <span className="flex min-w-0 items-center gap-3">
+                <span className="flex size-7 shrink-0 items-center justify-center rounded-lg bg-[var(--surface-muted)] text-muted-foreground">
+                  <Icon name="calendar" className="size-3.5" />
+                </span>
+                <span className="min-w-0">
+                  <span className="block truncate typography-ui-label font-medium text-foreground">{entry.task.name}</span>
+                  <span className="mt-0.5 block typography-micro truncate text-muted-foreground">{formatScheduledTask(entry.task, t)}</span>
+                </span>
+              </span>
+            )}
+            controlClassName="min-w-fit"
+          >
+            <span className="flex items-center gap-2 text-muted-foreground">
+              <span className={`inline-flex items-center gap-1.5 typography-micro ${statusMeta.className}`}>
+                <Icon name={statusMeta.icon} className={`size-3.5 ${status === 'running' ? 'animate-spin' : ''}`} />
+                {statusLabel}
+              </span>
+              <Icon name="arrow-right-s" className="size-4" />
+            </span>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="absolute inset-0 z-10 h-auto w-auto rounded-none bg-transparent p-0 hover:bg-transparent focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--interactive-focus-ring)]"
+              onClick={openScheduledTasks}
+              aria-label={t('assistants.settings.scheduledTasks.open', { name: entry.task.name })}
+            >
+              <span className="sr-only">{t('assistants.settings.scheduledTasks.open', { name: entry.task.name })}</span>
+            </Button>
+          </SettingsRow>
+        );
+      })}
+      {hasLoadError ? (
+        <SettingsRow label={t('assistants.settings.scheduledTasks.loadError')}>
+          <Button variant="outline" size="sm" onClick={retry}>{t('assistants.actions.retry')}</Button>
+        </SettingsRow>
+      ) : null}
+      {!loading && !hasLoadError && tasks.length === 0 ? (
+        <SettingsRow label={t('assistants.settings.scheduledTasks.empty')}>
+          <Icon name="calendar" className="size-4 text-muted-foreground" />
+        </SettingsRow>
+      ) : null}
+    </SettingsGroup>
+  );
+};
 
 const WorkspaceOption = ({ name, path, icon = 'folder' }: { name: string; path?: string; icon?: 'folder' | 'cloud' | 'history' }) => (
   <span className="flex min-w-0 items-center gap-2">
@@ -104,6 +333,24 @@ export const AssistantsSettingsSidebar: React.FC<{ onItemSelect?: () => void }> 
     if (!snapshot) return;
     try {
       await setAssistantsEnabled(enabled, snapshot.revision);
+      // When enabling with an empty catalog, seed the default assistant so the user
+      // immediately has an active contact ready without manual onboarding.
+      if (enabled && snapshot.assistants.length === 0) {
+        const defaultModel = resolveDefaultAssistantModel();
+        if (defaultModel) {
+          const created = await createAssistant({
+            enabled: true,
+            name: DEFAULT_ASSISTANT_NAME,
+            defaultPrompt: '',
+            workspacePath: null,
+            providerID: defaultModel.providerID,
+            modelID: defaultModel.modelID,
+            agent: null,
+            mode: 'continuous',
+          });
+          selectSettingsAssistant(created.id);
+        }
+      }
     } catch {
       toast.error(t('assistants.settings.toast.toggleFailed'));
     }
@@ -174,7 +421,7 @@ export const AssistantsSettingsSidebar: React.FC<{ onItemSelect?: () => void }> 
                 selectSettingsAssistant(assistant.id);
                 onItemSelect?.();
               }}
-              icon={<AgentAvatar name={assistant.id} emoji={presentation.avatarEmoji} size={24} label={presentation.displayName || assistant.name} />}
+              icon={<AgentAvatar name={assistant.id} emoji={presentation.avatarEmoji} size={24} label={presentation.displayName || assistant.name} shape="circle" />}
             />
           );
         }) : (
@@ -211,9 +458,7 @@ export const AssistantsSettingsPage: React.FC<AssistantsSettingsPageProps> = ({ 
   const draftPresentation = getAssistantPresentation(draft.name);
   const catalogDirectory = draft.workspacePath ?? selected?.managedWorkspacePath ?? null;
   const providersQuery = useScopedProvidersQuery(catalogDirectory, { enabled: true });
-  const agentsQuery = useScopedAgentsQuery(catalogDirectory, { enabled: true });
   const catalogProviders = providersQuery.data ?? [];
-  const catalogAgents = agentsQuery.data ?? [];
 
   React.useEffect(() => {
     if (selected) setDraft(draftFromAssistant(selected));
@@ -228,9 +473,9 @@ export const AssistantsSettingsPage: React.FC<AssistantsSettingsPageProps> = ({ 
   React.useEffect(() => {
     if (selectedID !== 'new' || createRequestRevision <= handledCreateRequestRef.current) return;
     handledCreateRequestRef.current = createRequestRevision;
-    setDraft(emptyDraft());
+    setDraft(emptyDraft(!snapshot?.assistants.length ? DEFAULT_ASSISTANT_NAME : ''));
     window.requestAnimationFrame(() => document.getElementById('assistant-name')?.focus());
-  }, [createRequestRevision, selectedID]);
+  }, [createRequestRevision, selectedID, snapshot?.assistants.length]);
 
   React.useEffect(() => {
     if (snapshotQuery.isSuccess && capabilityQuery.data?.serverInstanceID && defaultShareAssistant?.serverInstanceID === capabilityQuery.data.serverInstanceID
@@ -338,10 +583,12 @@ export const AssistantsSettingsPage: React.FC<AssistantsSettingsPageProps> = ({ 
         {selectedID ? (
           <>
             <div className="mb-4 flex items-center gap-3">
-              <AgentAvatar name={selected?.id ?? 'new'} emoji={draftPresentation.avatarEmoji} size={38} label={draftPresentation.displayName || draft.name || t('assistants.settings.create')} />
+              <AgentAvatar name={selected?.id ?? 'new'} emoji={draftPresentation.avatarEmoji} size={38} label={draftPresentation.displayName || draft.name || t('assistants.settings.create')} shape="circle" />
               <div className="min-w-0 flex-1">
                 <h2 className="truncate typography-ui-header font-semibold text-foreground">{selected ? selectedPresentation?.displayName : t('assistants.settings.create')}</h2>
-                <p className="mt-0.5 typography-micro leading-none text-muted-foreground/70">{draft.mode === 'continuous' ? t('assistants.mode.continuous') : t('assistants.mode.stateless')}</p>
+                {draft.providerID && draft.modelID ? (
+                  <p className="mt-0.5 typography-micro leading-none text-muted-foreground/70">{`${draft.providerID}/${draft.modelID}`}</p>
+                ) : null}
               </div>
               {selected ? <Button variant="ghost" size="sm" onClick={remove} disabled={saving} className="text-[var(--status-error)]"><Icon name="delete-bin" className="size-4" />{t('assistants.settings.delete')}</Button> : null}
             </div>
@@ -382,22 +629,6 @@ export const AssistantsSettingsPage: React.FC<AssistantsSettingsPageProps> = ({ 
                 <SettingsRow itemId="assistants.model" label={t('assistants.settings.model')}>
                   <ModelSelector providerId={draft.providerID} modelId={draft.modelID} providers={catalogProviders} onChange={(providerID, modelID) => setDraft((current) => ({ ...current, providerID, modelID }))} className="oc-settings-inline-value" />
                 </SettingsRow>
-                <SettingsRow itemId="assistants.agent" label={t('assistants.settings.agent')}>
-                  <AgentSelector agentName={draft.agent ?? ''} agents={catalogAgents} onChange={(agent) => patchDraft('agent', agent || null)} className="oc-settings-inline-value" />
-                </SettingsRow>
-                <SettingsRow
-                  itemId="assistants.mode"
-                  label={t('assistants.settings.mode')}
-                  description={draft.mode === 'stateless' ? t('assistants.conversation.statelessHint') : t('assistants.conversation.continuousHint')}
-                >
-                  <div className="flex min-w-0 flex-wrap justify-end gap-2">
-                    <div className="flex flex-wrap gap-2">
-                      {(['continuous', 'stateless'] as const).map((mode) => (
-                        <Button key={mode} variant="chip" size="xs" aria-pressed={draft.mode === mode} onClick={() => patchDraft('mode', mode)}>{mode === 'continuous' ? t('assistants.mode.continuous') : t('assistants.mode.stateless')}</Button>
-                      ))}
-                    </div>
-                  </div>
-                </SettingsRow>
             </SettingsGroup>
 
             <SettingsField
@@ -429,13 +660,15 @@ export const AssistantsSettingsPage: React.FC<AssistantsSettingsPageProps> = ({ 
                 </Select>
             </SettingsField>
 
+            {selected ? <AssistantScheduledTasksGroup assistantID={selected.id} /> : null}
+
             <div className="flex justify-end">
               <Button onClick={save} disabled={saving}>{saving ? <Icon name="loader-4" className="size-4 animate-spin" /> : null}{t('assistants.settings.save')}</Button>
             </div>
           </>
         ) : (
           <div className="flex min-h-80 flex-col items-center justify-center gap-3 px-6 text-center text-muted-foreground">
-            <AgentAvatar name="assistants-empty" size={44} />
+            <AgentAvatar name="assistants-empty" size={44} shape="circle" />
             <p className="typography-ui">{t('assistants.settings.empty')}</p>
             <Button data-settings-item="assistants.create" size="sm" onClick={startCreate}><Icon name="add" className="size-4" />{t('assistants.settings.create')}</Button>
           </div>

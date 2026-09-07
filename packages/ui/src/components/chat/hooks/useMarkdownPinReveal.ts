@@ -15,6 +15,8 @@ export type UseMarkdownPinRevealInput = {
     root: HTMLElement | null;
     relevantKeys: readonly string[];
     enabled?: boolean;
+    /** This surface committed the same seed window in the preceding handoff shell. */
+    initiallyRevealed?: boolean;
 };
 
 /**
@@ -29,11 +31,12 @@ export const useMarkdownPinReveal = ({
     root,
     relevantKeys,
     enabled = true,
+    initiallyRevealed = false,
 }: UseMarkdownPinRevealInput): boolean => {
     const revealKey = `${scopeKey}:${generation}`;
     const [armedKey, setArmedKey] = React.useState(revealKey);
-    const [hidden, setHidden] = React.useState(enabled);
-    const revealedScopesRef = React.useRef(new Set<string>());
+    const [hidden, setHidden] = React.useState(enabled && !initiallyRevealed);
+    const revealedScopesRef = React.useRef(new Set<string>(initiallyRevealed ? [scopeKey] : []));
 
     if (enabled && armedKey !== revealKey) {
         const reason: MarkdownPinRevealReason = generation > 0 && armedKey.startsWith(`${scopeKey}:`)

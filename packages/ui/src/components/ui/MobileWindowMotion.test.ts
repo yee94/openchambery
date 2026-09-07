@@ -90,7 +90,11 @@ describe('MobileWindowMotion recipe', () => {
     expect(mobileSheetSnapHandleSource).toContain('min-h-8 cursor-ns-resize touch-none justify-center pt-2.5');
     expect(mobileSessionStatusBarSource).toContain("reservedTargetSelector: '[data-mobile-sheet-snap-handle]'");
     expect(mobileSessionStatusBarSource).toContain("'h-[98dvh] max-h-[98dvh]' : 'h-[72dvh] max-h-[98dvh]'");
-    expect(mobileSessionStatusBarSource).toContain('onExitComplete={sessionSheetSnap.reset}');
+    // onExitComplete must reset snap and clear sheetPresent (last-open retained until exit ends).
+    expect(mobileSessionStatusBarSource).toContain('onExitComplete={handleSheetExitComplete}');
+    expect(mobileSessionStatusBarSource).toMatch(
+      /const handleSheetExitComplete = useEvent\(\(\) => \{\s*sessionSheetSnap\.reset\(\);\s*setSheetPresent\(false\);\s*\}\);/,
+    );
     expect(mobileWindowMotionSource).toContain('if (!activeRef.current) return;');
   });
 
@@ -138,7 +142,8 @@ describe('MobileWindowMotion recipe', () => {
     expect(mobileModelPickerPanelSource).toContain('data-mobile-sheet-no-dismiss=""');
     expect(mobileModelPickerPanelSource).toContain('onPointerUp={(event) => {');
     expect(mobileModelPickerPanelSource).toContain('event.currentTarget.focus({ preventScroll: true })');
-    expect(mobileModelPickerPanelSource).toContain('type="text"\n                            value={query}');
+    // Whitespace-tolerant: Body split may change indent; contract is type=text + bound query.
+    expect(mobileModelPickerPanelSource).toMatch(/type="text"\s+value=\{query\}/);
     expect(mobileModelPickerPanelSource).not.toContain('type="search"');
     expect(mobileModelPickerPanelSource).toContain('from \'@/components/ui/matchingPress\'');
     expect(mobileModelPickerPanelSource).toContain('onClickCapture');

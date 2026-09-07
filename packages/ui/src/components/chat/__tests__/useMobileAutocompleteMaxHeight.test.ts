@@ -1,6 +1,8 @@
 import { describe, expect, test } from 'bun:test';
 import {
+  computeMobileAutocompleteFixedBox,
   computeMobileAutocompleteMaxHeight,
+  MOBILE_AUTOCOMPLETE_GAP_PX,
   MOBILE_AUTOCOMPLETE_MIN_HEIGHT,
   MOBILE_AUTOCOMPLETE_VIEWPORT_HEIGHT_RATIO,
 } from '../useMobileAutocompleteMaxHeight';
@@ -70,5 +72,73 @@ describe('computeMobileAutocompleteMaxHeight', () => {
       viewportHeight: 100,
     });
     expect(next).toBe(40);
+  });
+});
+
+describe('computeMobileAutocompleteFixedBox', () => {
+  test('anchors the panel above the composer from the layout fixed bottom', () => {
+    const box = computeMobileAutocompleteFixedBox({
+      composerTop: 600,
+      composerLeft: 16,
+      composerWidth: 360,
+      fixedContainingBottom: 800,
+      visibleBottom: 800,
+      boundaryTop: 100,
+      viewportHeight: 700,
+    });
+    expect(box.left).toBe(16);
+    expect(box.width).toBe(360);
+    expect(box.bottom).toBe(800 - (600 - MOBILE_AUTOCOMPLETE_GAP_PX));
+    expect(box.maxHeight).toBe(computeMobileAutocompleteMaxHeight({
+      popupBottom: 600 - MOBILE_AUTOCOMPLETE_GAP_PX,
+      boundaryTop: 100,
+      viewportHeight: 700,
+    }));
+  });
+
+  test('does not use the shrunk visual bottom for CSS bottom (Android IME)', () => {
+    // Layout viewport still 800px tall; visual viewport shrinks to 500 above the IME.
+    // Composer sits at y=400 (above the keyboard). Using visibleBottom for CSS
+    // bottom would yield ~108 and park the panel under the keyboard.
+    const box = computeMobileAutocompleteFixedBox({
+      composerTop: 400,
+      composerLeft: 12,
+      composerWidth: 340,
+      fixedContainingBottom: 800,
+      visibleBottom: 500,
+      boundaryTop: 96,
+      viewportHeight: 500,
+    });
+    const popupBottom = 400 - MOBILE_AUTOCOMPLETE_GAP_PX;
+    expect(box.bottom).toBe(800 - popupBottom);
+    expect(box.bottom).toBeGreaterThan(800 - 500);
+    expect(box.maxHeight).toBe(computeMobileAutocompleteMaxHeight({
+      popupBottom,
+      boundaryTop: 96,
+      viewportHeight: 500,
+    }));
+  });
+
+  test('clamps the anchor into the visible band when the composer is covered', () => {
+    // Composer still at layout y=700 while the visible band ends at 500 (IME up,
+    // lift not applied yet). Anchor to the visible bottom so the panel stays
+    // selectable above the keyboard instead of bottom:0 under it.
+    const box = computeMobileAutocompleteFixedBox({
+      composerTop: 700,
+      composerLeft: 12,
+      composerWidth: 340,
+      fixedContainingBottom: 800,
+      visibleBottom: 500,
+      boundaryTop: 96,
+      viewportHeight: 500,
+    });
+    const popupBottom = 500 - MOBILE_AUTOCOMPLETE_GAP_PX;
+    expect(box.bottom).toBe(800 - popupBottom);
+    expect(box.maxHeight).toBe(computeMobileAutocompleteMaxHeight({
+      popupBottom,
+      boundaryTop: 96,
+      viewportHeight: 500,
+    }));
+    expect(box.maxHeight).toBeGreaterThan(0);
   });
 });

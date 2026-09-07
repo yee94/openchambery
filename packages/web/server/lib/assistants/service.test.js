@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { createRequire } from 'node:module';
 import { createAssistantsService } from './service.js';
 import { assistantContractFixtures } from './contracts.js';
@@ -56,12 +56,18 @@ const createV2Client = (overrides = {}) => {
 // Behavioral tests enable the global switch after boot; pass enabled:false to assert the fresh-install default.
 const setup = (directory = root(), client = {}, options = {}) => {
   const { enabled = true, ...serviceOptions } = options;
-  const service = createAssistantsService({ dbPath: path.join(directory, 'assistants.sqlite'), dataDir: directory, getAllowedRoots: () => [directory], buildOpenCodeUrl: () => 'http://127.0.0.1:1', getOpenCodeAuthHeaders: () => ({}), clientFactory: () => createV2Client(client), ...serviceOptions });
+  const service = createAssistantsService({ dbPath: path.join(directory, 'assistants.sqlite'), dataDir: directory, getAllowedRoots: () => [directory], buildOpenCodeUrl: () => 'http://127.0.0.1:1', getOpenCodeAuthHeaders: () => ({}), clientFactory: () => createV2Client(client), runContactTurn: serviceOptions.runContactTurn ?? (async ({ userText }) => ({ text: `reply:${userText}`, bubbles: [`reply:${userText}`] })), ...serviceOptions });
   if (enabled) {
     const snapshot = service.snapshot();
     if (!snapshot.enabled) service.setEnabled({ enabled: true, expectedRevision: snapshot.revision });
   }
   return service;
+};
+/** Wait for the async contact turn after 202 admission (not part of the HTTP body). */
+const settleSend = async (service, assistantID, body) => {
+  const sent = await service.send(assistantID, body);
+  const settled = await service.whenContactTurnSettled(sent.messageID);
+  return { ...sent, settled };
 };
 const assistantInput = { name: 'A', providerID: 'p', modelID: 'm' };
 
@@ -110,23 +116,202 @@ describe('assistants service', () => {
     const service = setup(); const assistant = service.createAssistant(assistantInput); const current = await service.ensure(assistant.id); const next = await service.createNew(assistant.id); expect(next.sessionGeneration).toBe(current.sessionGeneration + 1); await expect(service.compact(assistant.id, current)).rejects.toMatchObject({ code: 'revision_conflict' }); expect(await service.compact(assistant.id, next)).toMatchObject({ binding: next, summarized: true }); service.close();
   });
 
-  it('keeps ordinary composer history out of SQLite and restores a 404 binding', async () => {
-    let gets = 0; let prompts = 0; const directory = root(); const service = setup(directory, { create: async () => ({ data: { id: `ses_${gets + 1}` } }), get: async () => (++gets === 1 ? { data: { id: 'ses_1' } } : { error: { status: 404 } }), prompt: async () => (++prompts === 1 ? { error: { status: 404 } } : { data: { info: { id: 'msg_2' } } }) }); const assistant = service.createAssistant(assistantInput); const current = await service.ensure(assistant.id); const sent = await service.send(assistant.id, { ...current, messageID: 'client_1', parts: [{ type: 'text', text: 'hello' }] }); expect(sent.binding.sessionGeneration).toBe(2); const db = new (require('better-sqlite3'))(path.join(directory, 'assistants.sqlite')); expect(db.prepare('SELECT COUNT(*) AS count FROM assistant_turn').get().count).toBe(0); db.close(); service.close();
+  it('stores composer turns in the OpenChamber contact transcript, not OpenCode session history', async () => {
+    const directory = root();
+    const service = setup(directory, {}, {
+      runContactTurn: async ({ userText }) => ({ text: `ok ${userText}`, bubbles: [`ok ${userText}`] }),
+    });
+    const assistant = service.createAssistant(assistantInput);
+    const current = await service.ensure(assistant.id);
+    const sent = await service.send(assistant.id, { ...current, messageID: 'client_1', parts: [{ type: 'text', text: 'hello' }] });
+    expect(sent).toEqual({ binding: current, messageID: 'client_1', admitted: true });
+    // Admission resolves before the async turn persists assistant bubbles.
+    expect(service.contactMessages(assistant.id, { limit: 50 }).messages.map((message) => ({ role: message.role, text: message.text }))).toEqual([
+      { role: 'user', text: 'hello' },
+    ]);
+    await service.whenContactTurnSettled('client_1');
+    const page = service.contactMessages(assistant.id, { limit: 50 });
+    expect(page.complete).toBe(true);
+    expect(page.messages.map((message) => ({ role: message.role, text: message.text }))).toEqual([
+      { role: 'user', text: 'hello' },
+      { role: 'assistant', text: 'ok hello' },
+    ]);
+    const db = new (require('better-sqlite3'))(path.join(directory, 'assistants.sqlite'));
+    expect(db.prepare('SELECT COUNT(*) AS count FROM assistant_turn').get().count).toBe(0);
+    db.close();
+    service.close();
+  });
+
+  it('new_conversation clears contact history without calling OpenCode session/new', async () => {
+    const directory = root();
+    let creates = 0;
+    let lastHistory = null;
+    const service = setup(directory, {
+      create: async () => ({ data: { id: `ses_${++creates}` } }),
+    }, {
+      runContactTurn: async ({ history, userText, tools }) => {
+        lastHistory = history;
+        if (userText === '开新对话') {
+          const tool = tools.find((item) => item.name === 'new_conversation');
+          const result = await tool.execute('reset_1', {});
+          return { text: result.content[0].text, bubbles: [result.content[0].text] };
+        }
+        return { text: `reply:${userText}`, bubbles: [`reply:${userText}`] };
+      },
+    });
+    const assistant = service.createAssistant(assistantInput);
+    await service.ensure(assistant.id);
+    expect(creates).toBe(1);
+    await settleSend(service, assistant.id, { messageID: 'old_1', parts: [{ type: 'text', text: 'remember this secret' }] });
+    await settleSend(service, assistant.id, { messageID: 'old_2', parts: [{ type: 'text', text: 'and this too' }] });
+    expect(lastHistory.some((item) => item.content.includes('remember this secret'))).toBe(true);
+    const reset = await settleSend(service, assistant.id, { messageID: 'reset_1', parts: [{ type: 'text', text: '开新对话' }] });
+    expect(reset).toMatchObject({ admitted: true, messageID: 'reset_1' });
+    expect(creates).toBe(1);
+    const page = service.contactMessages(assistant.id, { limit: 50 });
+    expect(page.messages.map((message) => ({ role: message.role, text: message.text }))).toEqual([
+      { role: 'user', text: '开新对话' },
+      { role: 'assistant', text: 'Started a new conversation. Previous contact messages are cleared.' },
+    ]);
+    await settleSend(service, assistant.id, { messageID: 'fresh_1', parts: [{ type: 'text', text: 'what did I say before?' }] });
+    expect(lastHistory.map((item) => item.content)).toEqual([
+      '开新对话',
+      'Started a new conversation. Previous contact messages are cleared.',
+    ]);
+    expect(lastHistory.some((item) => item.content.includes('remember this secret'))).toBe(false);
+    service.close();
+  });
+
+  it('discards leftover pre-reset model text after new_conversation', async () => {
+    const directory = root();
+    const service = setup(directory, {}, {
+      runContactTurn: async ({ userText, tools }) => {
+        if (userText === '开新对话') {
+          await tools.find((item) => item.name === 'new_conversation').execute('reset_leftover', {});
+          return {
+            text: 'Started a new conversation. Previous contact messages are cleared.\n\nI still see your dot.png and note.txt.',
+            bubbles: [
+              'Started a new conversation. Previous contact messages are cleared.',
+              'I still see your dot.png and note.txt.',
+              'Those attachments are still in context.',
+            ],
+            cards: [{ type: 'card', cardType: 'session', sessionID: 'ses_stale', directory: '/repo', title: 'Old', status: 'busy' }],
+          };
+        }
+        return { text: `reply:${userText}`, bubbles: [`reply:${userText}`] };
+      },
+    });
+    const assistant = service.createAssistant(assistantInput);
+    await settleSend(service, assistant.id, {
+      messageID: 'attach_1',
+      parts: [
+        { type: 'text', text: 'look at these' },
+        { type: 'file', mime: 'image/png', url: 'data:image/png;base64,aa', filename: 'dot.png' },
+        { type: 'file', mime: 'text/plain', url: 'data:text/plain;base64,eA==', filename: 'note.txt' },
+      ],
+    });
+    await settleSend(service, assistant.id, { messageID: 'reset_leftover', parts: [{ type: 'text', text: '开新对话' }] });
+    const page = service.contactMessages(assistant.id, { limit: 50 });
+    expect(page.messages.map((message) => ({ role: message.role, text: message.text }))).toEqual([
+      { role: 'user', text: '开新对话' },
+      { role: 'assistant', text: 'Started a new conversation. Previous contact messages are cleared.' },
+    ]);
+    expect(page.messages.some((message) => message.text.includes('dot.png') || message.text.includes('note.txt'))).toBe(false);
+    expect(page.messages.some((message) => message.cards?.length > 0)).toBe(false);
+    service.close();
+  });
+
+  it('resetContact empties the transcript for a fresh UI refetch without createNew', async () => {
+    const directory = root();
+    let creates = 0;
+    const service = setup(directory, {
+      create: async () => ({ data: { id: `ses_${++creates}` } }),
+    });
+    const assistant = service.createAssistant(assistantInput);
+    await service.ensure(assistant.id);
+    await settleSend(service, assistant.id, { messageID: 'keep_1', parts: [{ type: 'text', text: 'hello' }] });
+    expect(service.contactMessages(assistant.id, { limit: 50 }).messages.length).toBeGreaterThan(0);
+    expect(service.resetContact(assistant.id)).toEqual({ assistantID: assistant.id, reset: true });
+    expect(creates).toBe(1);
+    expect(service.contactMessages(assistant.id, { limit: 50 })).toMatchObject({
+      messages: [],
+      complete: true,
+    });
+    service.close();
+  });
+
+  it('persists mixed text+image+file parts and forwards them to the contact harness', async () => {
+    const directory = root();
+    let harness;
+    const image = { type: 'file', mime: 'image/png', url: 'data:image/png;base64,aa', filename: 'shot.png' };
+    const file = { type: 'file', mime: 'text/plain', url: 'data:text/plain;base64,eA==', filename: 'notes.txt' };
+    const service = setup(directory, {}, {
+      runContactTurn: async (input) => {
+        harness = input;
+        return { text: 'saw it', bubbles: ['saw it'] };
+      },
+    });
+    const assistant = service.createAssistant(assistantInput);
+    await settleSend(service, assistant.id, {
+      messageID: 'mixed_1',
+      parts: [{ type: 'text', text: 'look' }, image, file],
+    });
+    expect(harness.userText).toBe('look');
+    expect(harness.userParts).toEqual([{ type: 'text', text: 'look' }, image, file]);
+    expect(service.contactMessages(assistant.id, { limit: 50 }).messages[0]).toMatchObject({
+      role: 'user',
+      text: 'look',
+      parts: [{ type: 'text', text: 'look' }, image, file],
+    });
+    service.close();
+    const restarted = setup(directory, {}, {
+      runContactTurn: async () => ({ text: 'again', bubbles: ['again'] }),
+    });
+    expect(restarted.contactMessages(assistant.id, { limit: 50 }).messages[0].parts).toEqual([
+      { type: 'text', text: 'look' },
+      image,
+      file,
+    ]);
+    restarted.close();
+  });
+
+  it('admits a file-only contact send and stores the file part without a fake text row', async () => {
+    const image = { type: 'file', mime: 'image/png', url: 'data:image/png;base64,aa', filename: 'shot.png' };
+    let harness;
+    const service = setup(root(), {}, {
+      runContactTurn: async (input) => {
+        harness = input;
+        return { text: 'got the image', bubbles: ['got the image'] };
+      },
+    });
+    const assistant = service.createAssistant(assistantInput);
+    await settleSend(service, assistant.id, { messageID: 'file_only_1', parts: [image] });
+    expect(harness.userText).toBe('[attachment]');
+    expect(harness.userParts).toEqual([image]);
+    const user = service.contactMessages(assistant.id).messages.find((message) => message.role === 'user');
+    expect(user.parts).toEqual([image]);
+    expect(user.text).toBe('');
+    service.close();
   });
 
   it('returns the frozen compact and message admission DTO field sets', async () => {
     const service = setup(root(), { prompt: async () => ({ response: { status: 204 } }) }); const assistant = service.createAssistant(assistantInput); const current = await service.ensure(assistant.id);
     expect(await service.compact(assistant.id, current)).toEqual({ binding: current, summarized: true });
-    expect(await service.send(assistant.id, { ...current, messageID: 'client_204', parts: [{ type: 'text', text: 'hello' }] })).toEqual({ binding: current, messageID: 'client_204', admitted: true });
+    expect(await settleSend(service, assistant.id, { ...current, messageID: 'client_204', parts: [{ type: 'text', text: 'hello' }] })).toMatchObject({ binding: current, messageID: 'client_204', admitted: true });
     expect(Object.keys(assistantContractFixtures.assistant)).toContain('managedWorkspacePath'); expect(Object.keys(assistantContractFixtures.assistant)).not.toContain('skillRoots'); expect(Object.keys(assistantContractFixtures.compactResponse).sort()).toEqual(['binding', 'summarized']); expect(Object.keys(assistantContractFixtures.messageAdmission).sort()).toEqual(['admitted', 'binding', 'messageID']); service.close();
   });
 
   it('admits 33-part direct messages and 129-part shares', async () => {
     const prompts = []; const service = setup(root(), { prompt: async (input) => { prompts.push(input); return { response: { status: 204 } }; } }); const assistant = service.createAssistant(assistantInput); const binding = await service.ensure(assistant.id);
     const directParts = Array.from({ length: 33 }, (_, index) => ({ type: 'text', text: String(index) })); const shareParts = Array.from({ length: 129 }, (_, index) => ({ type: 'text', text: String(index) }));
-    await service.send(assistant.id, { ...binding, messageID: 'parts-33', parts: directParts }); await service.share(assistant.id, { operationID: 'parts-129', payload: { messageID: 'share-parts-129', parts: shareParts } });
+    await settleSend(service, assistant.id, { ...binding, messageID: 'parts-33', parts: directParts }); await service.share(assistant.id, { operationID: 'parts-129', payload: { messageID: 'share-parts-129', parts: shareParts } });
     const deliveryTarget = service.captureQueueDeliveryTarget({ assistantID: assistant.id, scope: { sessionID: binding.sessionID, directory: binding.directory } }); await service.sendWithCapturedConfig({ deliveryTarget, messageID: 'delivery-parts-129', parts: shareParts });
-    expect(prompts.map((prompt) => prompt.text.split('\n').length)).toEqual([33, 129, 129]); expect(prompts.every((prompt) => prompt.delivery === 'steer' && prompt.id)).toBe(true); service.close();
+    // Composer send is the contact harness (no promptAsync). Share + queued
+    // delivery still use the legacy OpenCode path; assign uses promptAsync on
+    // a dedicated worker session instead.
+    expect(prompts.map((prompt) => prompt.text.split('\n').length)).toEqual([129, 129]);
+    expect(prompts.every((prompt) => prompt.delivery === 'steer' && prompt.id)).toBe(true);
+    service.close();
   });
 
   it('rejects 130-part direct messages and shares before claim', async () => {
@@ -212,8 +397,9 @@ describe('assistants service', () => {
     const assistant = service.createAssistant({ ...assistantInput, variant: 'fast' });
     expect(assistant.variant).toBe('fast');
     const binding = await service.ensure(assistant.id);
-    await service.send(assistant.id, { ...binding, messageID: 'variant-message', parts: [{ type: 'text', text: 'message' }] });
+    await settleSend(service, assistant.id, { ...binding, messageID: 'variant-message', parts: [{ type: 'text', text: 'message' }] });
     await service.share(assistant.id, { operationID: 'variant-share', payload: { messageID: 'variant-share-message', parts: [{ type: 'text', text: 'share' }] } });
+    // Composer send is the contact harness. Share still captures the OpenCode variant.
     expect(prompts).toEqual(expect.arrayContaining([expect.objectContaining({ delivery: 'steer' })]));
     expect(models).toEqual(expect.arrayContaining([expect.objectContaining({ model: expect.objectContaining({ id: 'm', providerID: 'p', variant: 'fast' }) })]));
     expect(await service.updateAssistant(assistant.id, { expectedRevision: 1, variant: null })).toMatchObject({ variant: null });
@@ -258,8 +444,8 @@ describe('assistants service', () => {
   });
 
   it('uses the workspace directory for OpenCode skill discovery without catalog injection', async () => {
-    const directory = root(); const workspace = path.join(directory, 'workspace'); const skill = path.join(workspace, '.agents', 'skills', 'project-skill'); fs.mkdirSync(skill, { recursive: true }); fs.writeFileSync(path.join(skill, 'SKILL.md'), '---\nname: project-skill\ndescription: Project skill\n---\nInstructions'); let created; let prompt; const instructions = []; const service = setup(directory, { create: async (input) => { created = input; return { id: 'ses_workspace' }; }, prompt: async (input) => { prompt = input; return { id: 'inbox_1', type: 'user' }; }, putInstruction: async (input) => { instructions.push(input); } }); const assistant = service.createAssistant({ ...assistantInput, workspacePath: workspace, defaultPrompt: 'Base prompt' }); const current = await service.ensure(assistant.id);
-    await service.send(assistant.id, { ...current, messageID: 'client_skill', parts: [{ type: 'text', text: 'hello' }] }); expect(created.location.directory).toBe(fs.realpathSync(workspace)); expect(prompt.sessionID).toBe(current.sessionID); expect(prompt.text).toBe('hello'); expect(prompt.delivery).toBe('steer'); expect(instructions).toEqual([expect.objectContaining({ sessionID: current.sessionID, key: 'system', value: 'Base prompt' })]); expect(instructions[0].value).not.toContain('project-skill'); service.close();
+    const directory = root(); const workspace = path.join(directory, 'workspace'); const skill = path.join(workspace, '.agents', 'skills', 'project-skill'); fs.mkdirSync(skill, { recursive: true }); fs.writeFileSync(path.join(skill, 'SKILL.md'), '---\nname: project-skill\ndescription: Project skill\n---\nInstructions'); let created; let harness; const service = setup(directory, { create: async (input) => { created = input; return { data: { id: 'ses_workspace' } }; }, promptAsync: async () => ({ response: { status: 204 } }) }, { runContactTurn: async (input) => { harness = input; return { text: 'ok', bubbles: ['ok'] }; } }); const assistant = service.createAssistant({ ...assistantInput, workspacePath: workspace, defaultPrompt: 'Base prompt' }); const current = await service.ensure(assistant.id);
+    await settleSend(service, assistant.id, { ...current, messageID: 'client_skill', parts: [{ type: 'text', text: 'hello' }] }); expect(created.location.directory).toBe(fs.realpathSync(workspace)); expect(harness.assistant.defaultPrompt).toBe('Base prompt'); expect(harness.assistant.defaultPrompt).not.toContain('project-skill'); service.close();
   });
 
   it('rejects retired skillRoots input', async () => {
@@ -289,44 +475,47 @@ describe('assistants service', () => {
     service.close();
   });
 
-  it('creates a fresh OpenCode session for every stateless composer send', async () => {
-    let creates = 0; const prompts = [];
-    const service = setup(root(), { create: async () => ({ data: { id: `ses_${++creates}` } }), prompt: async (input) => { prompts.push(input); return { response: { status: 204 } }; } });
+  it('keeps contact composer sends off the OpenCode session binding', async () => {
+    let creates = 0;
+    const service = setup(root(), { create: async () => ({ data: { id: `ses_${++creates}` } }) });
     const assistant = service.createAssistant({ ...assistantInput, mode: 'stateless' });
     const first = await service.ensure(assistant.id);
-    const sent = await service.send(assistant.id, { ...first, messageID: 'stateless-1', parts: [{ type: 'text', text: 'one' }] });
-    expect(sent.binding.sessionID).not.toBe(first.sessionID);
-    expect(sent.binding.sessionGeneration).toBe(first.sessionGeneration + 1);
-    expect(prompts[0]?.sessionID).toBe(sent.binding.sessionID);
-    const second = await service.send(assistant.id, { ...sent.binding, messageID: 'stateless-2', parts: [{ type: 'text', text: 'two' }] });
-    expect(second.binding.sessionID).not.toBe(sent.binding.sessionID);
-    expect(second.binding.sessionGeneration).toBe(sent.binding.sessionGeneration + 1);
-    expect(prompts.map((prompt) => prompt.sessionID)).toEqual([sent.binding.sessionID, second.binding.sessionID]);
-    expect(service.snapshot().assistants[0].historySessionIDs).toEqual([first.sessionID, sent.binding.sessionID]);
+    const sent = await settleSend(service, assistant.id, { ...first, messageID: 'stateless-1', parts: [{ type: 'text', text: 'one' }] });
+    expect(sent.binding.sessionID).toBe(first.sessionID);
+    const second = await settleSend(service, assistant.id, { ...sent.binding, messageID: 'stateless-2', parts: [{ type: 'text', text: 'two' }] });
+    expect(second.binding.sessionID).toBe(first.sessionID);
+    expect(creates).toBe(1);
+    expect(service.contactMessages(assistant.id).messages.map((message) => message.text)).toEqual([
+      'one', 'reply:one', 'two', 'reply:two',
+    ]);
     service.close();
   });
 
-  it('persists every stateless admission in Assistant SQLite before OpenCode history is available', async () => {
-    let creates = 0; const directory = root(); const tips = [];
-    const service = setup(directory, {
-      create: async () => ({ data: { id: `ses_${++creates}` } }),
-      prompt: async () => ({ response: { status: 204 } }),
-      messages: async ({ sessionID }) => ({ data: [{ info: { id: sessionID === 'ses_2' ? 'msg_stateless_1' : 'msg_stateless_2', sessionID, role: 'user', time: { created: 1 } }, parts: [{ id: 'prt', sessionID, messageID: sessionID === 'ses_2' ? 'msg_stateless_1' : 'msg_stateless_2', type: 'text', text: sessionID === 'ses_2' ? 'one' : 'two' }] }] }),
-    }, { onRevisionTip: (tip) => tips.push(tip) });
+  it('persists every contact admission in Assistant SQLite before a restart', async () => {
+    const directory = root(); const tips = [];
+    const service = setup(directory, {}, { onRevisionTip: (tip) => tips.push(tip) });
     const assistant = service.createAssistant({ ...assistantInput, mode: 'stateless' });
-    const initial = await service.ensure(assistant.id);
-    const first = await service.send(assistant.id, { ...initial, messageID: 'msg_stateless_1', parts: [{ type: 'text', text: 'one' }] });
-    const second = await service.send(assistant.id, { ...first.binding, messageID: 'msg_stateless_2', parts: [{ type: 'text', text: 'two' }] });
-    const db = new (require('better-sqlite3'))(path.join(directory, 'assistants.sqlite'));
-    // Ticket 11: only bindings / operations persist — never message bodies.
-    expect(db.prepare('SELECT COUNT(*) AS count FROM assistant_message_mirror').get().count).toBe(0);
-    expect(db.prepare('SELECT COUNT(*) AS count FROM assistant_session_history').get().count).toBeGreaterThan(0);
-    db.close();
-    const page = await service.historicalMessages(assistant.id, { limit: 10 });
-    expect(new Set(page.entries.map((entry) => entry.info.id))).toEqual(new Set(['msg_stateless_1', 'msg_stateless_2']));
+    await settleSend(service, assistant.id, { messageID: 'msg_stateless_1', parts: [{ type: 'text', text: 'one' }] });
+    await settleSend(service, assistant.id, { messageID: 'msg_stateless_2', parts: [{ type: 'text', text: 'two' }] });
+    const page = service.contactMessages(assistant.id, { limit: 10 });
+    expect(page.messages.map((message) => [message.messageID, message.text])).toEqual([
+      ['msg_stateless_1', 'one'],
+      ['msg_stateless_1:bubble:1', 'reply:one'],
+      ['msg_stateless_2', 'two'],
+      ['msg_stateless_2:bubble:1', 'reply:two'],
+    ]);
     await new Promise((resolve) => setImmediate(resolve));
     expect(tips.at(-1)?.revision).toBe(service.snapshot().revision);
     service.close();
+
+    const restarted = setup(directory);
+    expect(restarted.contactMessages(assistant.id, { limit: 10 }).messages.map((message) => message.messageID)).toEqual([
+      'msg_stateless_1',
+      'msg_stateless_1:bubble:1',
+      'msg_stateless_2',
+      'msg_stateless_2:bubble:1',
+    ]);
+    restarted.close();
   });
 
 
@@ -370,14 +559,14 @@ describe('assistants service', () => {
   });
 
   it('keeps continuous composer sends on the same binding', async () => {
-    let creates = 0; const prompts = [];
-    const service = setup(root(), { create: async () => ({ data: { id: `ses_${++creates}` } }), prompt: async (input) => { prompts.push(input); return { response: { status: 204 } }; } });
+    let creates = 0;
+    const service = setup(root(), { create: async () => ({ data: { id: `ses_${++creates}` } }) });
     const assistant = service.createAssistant({ ...assistantInput, mode: 'continuous' });
     const binding = await service.ensure(assistant.id);
-    const sent = await service.send(assistant.id, { ...binding, messageID: 'continuous-1', parts: [{ type: 'text', text: 'hello' }] });
+    const sent = await settleSend(service, assistant.id, { ...binding, messageID: 'continuous-1', parts: [{ type: 'text', text: 'hello' }] });
     expect(sent.binding).toEqual(binding);
-    expect(prompts[0]?.sessionID).toBe(binding.sessionID);
     expect(creates).toBe(1);
+    expect(service.contactMessages(assistant.id).messages.map((message) => message.text)).toEqual(['hello', 'reply:hello']);
     service.close();
   });
 
@@ -627,13 +816,23 @@ describe('assistants service', () => {
     const assistant = service.createAssistant({ ...assistantInput, mode: 'stateless' });
     const initial = await service.ensure(assistant.id);
     expect(initial.sessionID).toBe('ses_1');
-    // Stateless send replaces the binding: execution lives on a fresh session.
-    const first = await service.send(assistant.id, { ...initial, messageID: 'msg_user_1', parts: [{ type: 'text', text: 'one' }] });
+    // Contact send no longer replaces the OpenCode binding. Queued/share
+    // delivery still creates a fresh stateless execution session.
+    const scope = { sessionID: `assistant:${assistant.id}`, directory: initial.directory };
+    const first = await service.sendWithCapturedConfig({
+      deliveryTarget: service.captureQueueDeliveryTarget({ assistantID: assistant.id, scope }),
+      messageID: 'msg_user_1',
+      parts: [{ type: 'text', text: 'one' }],
+    });
     expect(first.binding.sessionID).toBe('ses_2');
     service.processEvent({ type: 'message.updated', properties: { info: { id: 'msg_user_1', sessionID: first.binding.sessionID, role: 'user', time: { created: 10 } } } });
     service.processEvent({ type: 'message.updated', properties: { info: { id: 'msg_reply_1', sessionID: first.binding.sessionID, role: 'assistant', time: { created: 20 } } } });
     service.processEvent({ type: 'message.part.updated', properties: { sessionID: first.binding.sessionID, part: { id: 'part_reply_1', sessionID: first.binding.sessionID, messageID: 'msg_reply_1', type: 'text', text: 'reply-one' } } });
-    await service.send(assistant.id, { ...first.binding, messageID: 'msg_user_2', parts: [{ type: 'text', text: 'two' }] });
+    await service.sendWithCapturedConfig({
+      deliveryTarget: service.captureQueueDeliveryTarget({ assistantID: assistant.id, scope }),
+      messageID: 'msg_user_2',
+      parts: [{ type: 'text', text: 'two' }],
+    });
     const page = await service.historicalMessages(assistant.id, { limit: 10 });
     expect(page.entries.map((entry) => [entry.sessionID, entry.info.id, entry.info.role])).toEqual(expect.arrayContaining([
       [first.binding.sessionID, 'msg_user_1', 'user'],
@@ -698,6 +897,929 @@ describe('assistants service', () => {
     service.close();
   });
 
+  it('assigns a registered project session and persists the session card', async () => {
+    const directory = root();
+    const project = path.join(directory, 'app');
+    fs.mkdirSync(project, { recursive: true });
+    const creates = [];
+    const prompts = [];
+    const archives = [];
+    const service = setup(directory, {
+      create: async (input) => {
+        creates.push(input);
+        return { data: { id: `ses_${creates.length}` } };
+      },
+      promptAsync: async (input) => {
+        prompts.push(input);
+        return { response: { status: 204 } };
+      },
+      update: async (input) => {
+        archives.push(input);
+        return { data: { id: input.sessionID } };
+      },
+    }, {
+      runContactTurn: async ({ tools, userText }) => {
+        const assign = tools.find((tool) => tool.name === 'assign_session');
+        const result = await assign.execute('call_1', { prompt: userText, projectPath: project, title: 'Login' });
+        return {
+          text: 'Opened the login session.',
+          bubbles: ['Opened the login session.'],
+          cards: result.details.card ? [result.details.card] : [],
+          tools,
+        };
+      },
+    });
+    const assistant = service.createAssistant(assistantInput);
+    const sent = await settleSend(service, assistant.id, {
+      messageID: 'client_assign',
+      parts: [{ type: 'text', text: 'Fix login' }],
+    });
+    expect(sent.admitted).toBe(true);
+    expect(creates).toEqual([expect.objectContaining({
+      location: { directory: fs.realpathSync(project) },
+      title: 'Login',
+    })]);
+    expect(creates[0].title).not.toMatch(/^\[Assistant\]/);
+    expect(prompts).toEqual([expect.objectContaining({
+      sessionID: 'ses_1',
+      text: 'Fix login',
+      delivery: 'steer',
+    })]);
+    expect(archives).toEqual([]);
+    const page = service.contactMessages(assistant.id);
+    expect(page.messages.map((message) => message.role)).toEqual(['user', 'assistant', 'assistant']);
+    expect(page.messages.some((message) => message.role === 'peer')).toBe(false);
+    expect(page.messages.at(-1).parts[0]).toMatchObject({
+      type: 'card',
+      cardType: 'session',
+      sessionID: 'ses_1',
+      directory: fs.realpathSync(project),
+      title: 'Login',
+    });
+    service.close();
+  });
+
+  it('creates another assistant from create_assistant and persists the assistant card', async () => {
+    const directory = root();
+    const service = setup(directory, {}, {
+      runContactTurn: async ({ tools }) => {
+        const create = tools.find((tool) => tool.name === 'create_assistant');
+        const result = await create.execute('call_1', { name: 'FlowQA', model: 'opencode-go/deepseek-v4-flash' });
+        return {
+          text: 'Created FlowQA.',
+          bubbles: ['Created FlowQA.'],
+          cards: result.details.card ? [result.details.card] : [],
+          tools,
+        };
+      },
+    });
+    const host = service.createAssistant(assistantInput);
+    await settleSend(service, host.id, {
+      messageID: 'client_create_assistant',
+      parts: [{ type: 'text', text: '建一个助理叫 FlowQA，模型 opencode-go/deepseek-v4-flash' }],
+    });
+    const created = service.snapshot().assistants.find((item) => item.name === 'FlowQA');
+    expect(created).toMatchObject({
+      name: 'FlowQA',
+      providerID: 'opencode-go',
+      modelID: 'deepseek-v4-flash',
+      mode: 'continuous',
+    });
+    const page = service.contactMessages(host.id);
+    expect(page.messages.some((message) => message.parts.some((part) => (
+      part.type === 'card' && part.cardType === 'assistant' && part.name === 'FlowQA' && part.assistantID === created.id
+    )))).toBe(true);
+    service.close();
+  });
+
+  it('creates a scheduled task from schedule_task and persists the schedule card', async () => {
+    const directory = root();
+    const upserts = [];
+    const service = setup(directory, {}, {
+      listProjects: async () => [{ id: 'proj_app', path: directory }],
+      upsertScheduledTask: async (projectID, task) => {
+        upserts.push({ projectID, task });
+        return {
+          created: true,
+          task: {
+            id: 'task_ping',
+            name: task.name,
+            schedule: task.schedule,
+            execution: task.execution,
+          },
+          tasks: [],
+        };
+      },
+      syncScheduledTaskProject: async () => true,
+      runContactTurn: async ({ tools }) => {
+        const schedule = tools.find((tool) => tool.name === 'schedule_task');
+        const result = await schedule.execute('call_1', {
+          name: 'Daily ping',
+          prompt: 'ping',
+          time: '18:00',
+          timezone: 'Asia/Shanghai',
+        });
+        return {
+          text: 'Scheduled the ping.',
+          bubbles: ['Scheduled the ping.'],
+          cards: result.details.card ? [result.details.card] : [],
+          tools,
+        };
+      },
+    });
+    const host = service.createAssistant(assistantInput);
+    await settleSend(service, host.id, {
+      messageID: 'client_schedule',
+      parts: [{ type: 'text', text: '每天 18:00 Asia/Shanghai 排一个 ping 定时任务' }],
+    });
+    expect(upserts).toEqual([expect.objectContaining({
+      projectID: 'proj_app',
+      task: expect.objectContaining({
+        name: 'Daily ping',
+        enabled: true,
+        schedule: expect.objectContaining({
+          kind: 'daily',
+          time: '18:00',
+          timezone: 'Asia/Shanghai',
+        }),
+        execution: expect.objectContaining({
+          prompt: 'ping',
+          providerID: 'p',
+          modelID: 'm',
+        }),
+      }),
+    })]);
+    const page = service.contactMessages(host.id);
+    expect(page.messages.some((message) => message.parts.some((part) => (
+      part.type === 'card' && part.cardType === 'schedule' && part.taskID === 'task_ping' && part.time === '18:00'
+    )))).toBe(true);
+    expect(service.snapshot().assistants[0].assignedSessionIDs).toEqual([]);
+    const owned = await service.listAssistantScheduledTasks(host.id);
+    expect(owned.tasks).toEqual([expect.objectContaining({
+      assistantID: host.id,
+      projectID: 'proj_app',
+      taskID: 'task_ping',
+      task: null,
+    })]);
+    service.close();
+  });
+
+  it('injects registered projects into the contact turn and assigns after a name match', async () => {
+    const directory = root();
+    const project = path.join(directory, 'sample-app');
+    fs.mkdirSync(project, { recursive: true });
+    const creates = [];
+    const harness = [];
+    const service = setup(directory, {
+      create: async (input) => {
+        creates.push(input);
+        return { data: { id: 'ses_named' } };
+      },
+      promptAsync: async () => ({ response: { status: 204 } }),
+    }, {
+      listProjects: async () => [{ id: 'proj_yee', path: project, label: 'OpenChamber Yee' }],
+      getAllowedRoots: () => [project, directory],
+      runContactTurn: async (input) => {
+        harness.push(input);
+        expect(input.projects).toEqual([
+          { id: 'proj_yee', path: project, label: 'OpenChamber Yee' },
+        ]);
+        expect(input.tools.map((tool) => tool.name)).toEqual(expect.arrayContaining([
+          'list_projects',
+          'list_sessions',
+          'assign_session',
+        ]));
+        const listed = await input.tools.find((tool) => tool.name === 'list_projects').execute('call_p', {
+          query: 'openchamer yee',
+        });
+        expect(listed.details.projects).toEqual([
+          { id: 'proj_yee', path: project, label: 'OpenChamber Yee' },
+        ]);
+        const assign = input.tools.find((tool) => tool.name === 'assign_session');
+        const result = await assign.execute('call_a', {
+          prompt: 'Start coding',
+          projectPath: listed.details.projects[0].path,
+          title: 'Yee work',
+        });
+        return {
+          text: 'Opened on OpenChamber Yee.',
+          bubbles: ['Opened on OpenChamber Yee.'],
+          cards: result.details.card ? [result.details.card] : [],
+        };
+      },
+    });
+    const assistant = service.createAssistant(assistantInput);
+    await settleSend(service, assistant.id, {
+      messageID: 'client_named_project',
+      parts: [{ type: 'text', text: '你看看 openchamer yee 项目，在那里开个新会话' }],
+    });
+    expect(harness).toHaveLength(1);
+    expect(creates[0]).toMatchObject({
+      location: { directory: fs.realpathSync(project) },
+      title: 'Yee work',
+    });
+    service.close();
+  });
+
+  it('list_sessions failure is not an empty success', async () => {
+    const directory = root();
+    const service = setup(directory, {}, {
+      listProjects: async () => [{ id: 'proj_app', path: directory, label: 'App' }],
+      sessionIndexService: {
+        snapshot: () => {
+          throw new Error('index down');
+        },
+      },
+      runContactTurn: async ({ tools }) => {
+        const list = tools.find((tool) => tool.name === 'list_sessions');
+        const result = await list.execute('call_s', { projectPath: directory });
+        return {
+          text: result.content[0].text,
+          bubbles: [result.content[0].text],
+          cards: [],
+          details: result.details,
+        };
+      },
+    });
+    const assistant = service.createAssistant(assistantInput);
+    await settleSend(service, assistant.id, {
+      messageID: 'client_list_sessions_fail',
+      parts: [{ type: 'text', text: '现有对话' }],
+    });
+    const page = service.contactMessages(assistant.id);
+    expect(page.messages.at(-1).text).toContain('index down');
+    service.close();
+  });
+
+  it('lists sessions from the session index for a project', async () => {
+    const directory = root();
+    const service = setup(directory, {}, {
+      listProjects: async () => [{ id: 'proj_app', path: directory, label: 'App' }],
+      sessionIndexService: {
+        snapshot: () => ({
+          directories: [
+            {
+              directory,
+              sessions: [
+                { id: 'ses_old', title: 'Old', time: { updated: 1 } },
+                { id: 'ses_new', title: 'Login work', time: { updated: 9 } },
+              ],
+            },
+            {
+              directory: path.join(directory, 'other'),
+              sessions: [{ id: 'ses_other', title: 'Other', time: { updated: 20 } }],
+            },
+          ],
+        }),
+      },
+      runContactTurn: async ({ tools }) => {
+        const list = tools.find((tool) => tool.name === 'list_sessions');
+        const result = await list.execute('call_s', { projectPath: directory, query: 'login' });
+        return {
+          text: result.content[0].text,
+          bubbles: [result.content[0].text],
+          cards: [],
+          details: result.details,
+        };
+      },
+    });
+    const assistant = service.createAssistant(assistantInput);
+    await settleSend(service, assistant.id, {
+      messageID: 'client_list_sessions_ok',
+      parts: [{ type: 'text', text: '现有对话 login' }],
+    });
+    const page = service.contactMessages(assistant.id);
+    expect(page.messages.at(-1).text).toContain('ses_new');
+    expect(page.messages.at(-1).text).not.toContain('ses_other');
+    service.close();
+  });
+
+  it('keeps assistant scheduled-task mapping when live project lookup fails', async () => {
+    const directory = root();
+    let failLive = false;
+    const service = setup(directory, {}, {
+      listProjects: async () => {
+        if (failLive) throw new Error('projects unavailable');
+        return [{ id: 'proj_app', path: directory, label: 'App' }];
+      },
+      listScheduledTasks: async () => {
+        if (failLive) throw new Error('tasks unavailable');
+        return [{ id: 'task_ping', name: 'Daily ping', enabled: true }];
+      },
+      upsertScheduledTask: async (_projectID, task) => ({
+        created: true,
+        task: { id: 'task_ping', name: task.name, schedule: task.schedule, execution: task.execution },
+        tasks: [],
+      }),
+      runContactTurn: async ({ tools }) => {
+        const schedule = tools.find((tool) => tool.name === 'schedule_task');
+        const result = await schedule.execute('call_1', {
+          name: 'Daily ping',
+          prompt: 'ping',
+          time: '18:00',
+          timezone: 'Asia/Shanghai',
+        });
+        return {
+          text: 'Scheduled.',
+          bubbles: ['Scheduled.'],
+          cards: result.details.card ? [result.details.card] : [],
+        };
+      },
+    });
+    const host = service.createAssistant(assistantInput);
+    await settleSend(service, host.id, {
+      messageID: 'client_schedule_map',
+      parts: [{ type: 'text', text: '排定时任务' }],
+    });
+    const live = await service.listAssistantScheduledTasks(host.id);
+    expect(live.tasks[0]).toMatchObject({
+      taskID: 'task_ping',
+      projectLabel: 'App',
+      task: expect.objectContaining({ id: 'task_ping', name: 'Daily ping' }),
+    });
+    failLive = true;
+    const kept = await service.listAssistantScheduledTasks(host.id);
+    expect(kept.tasks).toEqual([expect.objectContaining({
+      taskID: 'task_ping',
+      projectID: 'proj_app',
+      projectPath: null,
+      projectLabel: null,
+      task: null,
+    })]);
+    service.close();
+  });
+
+  it('appends assistant and schedule cards without creating session watches', () => {
+    const directory = root();
+    const service = setup(directory);
+    const assistant = service.createAssistant(assistantInput);
+    service.appendContactCard(assistant.id, {
+      cardType: 'assistant',
+      assistantID: 'asst_flow',
+      name: 'FlowQA',
+      providerID: 'opencode-go',
+      modelID: 'deepseek-v4-flash',
+      mode: 'continuous',
+    });
+    service.appendContactCard(assistant.id, {
+      cardType: 'schedule',
+      taskID: 'task_ping',
+      projectID: 'proj_app',
+      name: 'Daily ping',
+      kind: 'daily',
+      time: '18:00',
+      timezone: 'Asia/Shanghai',
+      prompt: 'ping',
+    });
+    expect(service.snapshot().assistants[0].assignedSessionIDs).toEqual([]);
+    expect(service.snapshot().assistants[0].working).toBe(false);
+    const page = service.contactMessages(assistant.id);
+    expect(page.messages.map((message) => message.parts[0]?.cardType)).toEqual(['assistant', 'schedule']);
+    service.close();
+  });
+
+  it('fails assign clearly when no project is registered and does not use assistant-workspaces', async () => {
+    const directory = root();
+    const creates = [];
+    const prompts = [];
+    const service = setup(directory, {
+      create: async (input) => {
+        creates.push(input);
+        return { data: { id: 'ses_should_not' } };
+      },
+      promptAsync: async (input) => {
+        prompts.push(input);
+        return { response: { status: 204 } };
+      },
+    }, {
+      getAllowedRoots: () => [],
+      runContactTurn: async ({ tools }) => {
+        const assign = tools.find((tool) => tool.name === 'assign_session');
+        const result = await assign.execute('call_1', { prompt: 'Fix login' });
+        return {
+          text: result.content[0].text,
+          bubbles: [result.content[0].text],
+          cards: result.details.card ? [result.details.card] : [],
+          tools,
+        };
+      },
+    });
+    const assistant = service.createAssistant(assistantInput);
+    await settleSend(service, assistant.id, {
+      messageID: 'client_no_project',
+      parts: [{ type: 'text', text: 'Fix login' }],
+    });
+    expect(creates).toEqual([]);
+    expect(prompts).toEqual([]);
+    const page = service.contactMessages(assistant.id);
+    expect(page.messages.some((message) => message.parts.some((part) => part.type === 'card'))).toBe(false);
+    expect(page.messages.at(-1).text).toContain('Add a project in Settings');
+    expect(page.messages.at(-1).text).toContain('assistant-workspaces');
+    expect(page.messages.some((message) => message.role === 'peer')).toBe(false);
+    service.close();
+  });
+
+  it('subscribes assigned sessions so idle updates the card, appends a settle message, and clears working', () => {
+    const directory = root();
+    const service = setup(directory);
+    const assistant = service.createAssistant(assistantInput);
+    service.appendContactCard(assistant.id, {
+      cardType: 'session',
+      sessionID: 'ses_work',
+      directory,
+      title: 'Login',
+      status: 'busy',
+    });
+    expect(service.snapshot().assistants[0]).toMatchObject({
+      assignedSessionIDs: ['ses_work'],
+      working: true,
+    });
+    expect(service.processEvent({ type: 'session.idle', properties: { sessionID: 'ses_work' } })).toBe(true);
+    const page = service.contactMessages(assistant.id);
+    expect(page.messages.find((message) => message.parts.some((part) => part.type === 'card'))?.parts[0]).toMatchObject({
+      type: 'card',
+      cardType: 'session',
+      sessionID: 'ses_work',
+      status: 'complete',
+    });
+    expect(page.messages.filter((message) => message.text === 'oc.settle.complete')).toHaveLength(1);
+    expect(service.snapshot().assistants[0]).toMatchObject({
+      assignedSessionIDs: [],
+      working: false,
+    });
+    expect(service.processEvent({ type: 'session.idle', properties: { sessionID: 'ses_work' } })).toBe(false);
+    expect(service.contactMessages(assistant.id).messages.filter((message) => message.text === 'oc.settle.complete')).toHaveLength(1);
+    service.close();
+  });
+
+  it('reconciles a missed assigned-session idle on boot and the 60s timer', async () => {
+    const directory = root();
+    const first = setup(directory);
+    const assistant = first.createAssistant(assistantInput);
+    first.appendContactCard(assistant.id, {
+      cardType: 'session',
+      sessionID: 'ses_missed',
+      directory,
+      title: 'Login',
+      status: 'busy',
+    });
+    expect(first.snapshot().assistants[0]).toMatchObject({
+      assignedSessionIDs: ['ses_missed'],
+      working: true,
+    });
+    first.close();
+
+    let tick;
+    const service = setup(directory, {
+      get: async ({ sessionID }) => (
+        sessionID === 'ses_missed' || sessionID === 'ses_timer'
+          ? { data: { id: sessionID, status: { type: 'idle' } } }
+          : { data: { id: sessionID } }
+      ),
+      messages: async ({ sessionID }) => (
+        sessionID === 'ses_missed' || sessionID === 'ses_timer'
+          ? { data: [{ info: { id: `msg_${sessionID}`, role: 'assistant', time: { completed: 1 } } }] }
+          : { data: [] }
+      ),
+    }, {
+      setIntervalFn: (fn) => {
+        tick = fn;
+        return 1;
+      },
+    });
+    await service.reconcile();
+    let page = service.contactMessages(assistant.id);
+    expect(page.messages.find((message) => message.parts.some((part) => part.type === 'card'))?.parts[0].status).toBe('complete');
+    expect(page.messages.filter((message) => message.text === 'oc.settle.complete')).toHaveLength(1);
+    expect(service.snapshot().assistants[0]).toMatchObject({
+      assignedSessionIDs: [],
+      working: false,
+    });
+
+    service.appendContactCard(assistant.id, {
+      cardType: 'session',
+      sessionID: 'ses_timer',
+      directory,
+      title: 'Follow-up',
+      status: 'busy',
+    });
+    expect(service.snapshot().assistants[0].working).toBe(true);
+    await tick();
+    page = service.contactMessages(assistant.id);
+    expect(page.messages.find((message) => message.parts.some((part) => part.type === 'card' && part.sessionID === 'ses_timer'))?.parts[0].status).toBe('complete');
+    expect(page.messages.filter((message) => message.text === 'oc.settle.complete')).toHaveLength(2);
+    expect(service.snapshot().assistants[0].working).toBe(false);
+    service.close();
+  });
+
+  it('reconciles a missing assigned session as complete and an assistant error as failed', async () => {
+    const directory = root();
+    const service = setup(directory, {
+      get: async ({ sessionID }) => {
+        if (sessionID === 'ses_gone') return { error: { status: 404 } };
+        if (sessionID === 'ses_fail') return { data: { id: 'ses_fail' } };
+        return { data: { id: sessionID } };
+      },
+      messages: async ({ sessionID }) => {
+        if (sessionID === 'ses_fail') return { data: [{ info: { id: 'msg_fail', role: 'assistant', error: { message: 'boom' } } }] };
+        return { data: [] };
+      },
+    });
+    const assistant = service.createAssistant(assistantInput);
+    service.appendContactCard(assistant.id, {
+      cardType: 'session',
+      sessionID: 'ses_gone',
+      directory,
+      title: 'Gone',
+      status: 'busy',
+    });
+    service.appendContactCard(assistant.id, {
+      cardType: 'session',
+      sessionID: 'ses_fail',
+      directory,
+      title: 'Fail',
+      status: 'busy',
+    });
+    await service.reconcile();
+    const cards = service.contactMessages(assistant.id).messages
+      .filter((message) => message.parts.some((part) => part.type === 'card'))
+      .map((message) => message.parts[0]);
+    expect(cards.find((card) => card.sessionID === 'ses_gone')?.status).toBe('complete');
+    expect(cards.find((card) => card.sessionID === 'ses_fail')?.status).toBe('error');
+    const texts = service.contactMessages(assistant.id).messages.map((message) => message.text);
+    expect(texts.filter((text) => text === 'oc.settle.complete')).toHaveLength(1);
+    expect(texts.filter((text) => text === 'oc.settle.error')).toHaveLength(1);
+    expect(service.snapshot().assistants[0]).toMatchObject({
+      assignedSessionIDs: [],
+      working: false,
+    });
+    await service.reconcile();
+    expect(service.contactMessages(assistant.id).messages.filter((message) => message.text === 'oc.settle.complete')).toHaveLength(1);
+    expect(service.contactMessages(assistant.id).messages.filter((message) => message.text === 'oc.settle.error')).toHaveLength(1);
+    service.close();
+  });
+
+  it('does not settle in-flight watches on fetch failure or while the session is still running', async () => {
+    const directory = root();
+    const service = setup(directory, {
+      get: async ({ sessionID }) => {
+        if (sessionID === 'ses_down') throw new Error('network');
+        if (sessionID === 'ses_busy') return { data: { id: 'ses_busy', status: { type: 'busy' } } };
+        if (sessionID === 'ses_idle') return { data: { id: 'ses_idle', status: { type: 'idle' } } };
+        return { data: { id: sessionID } };
+      },
+      messages: async ({ sessionID }) => {
+        if (sessionID === 'ses_idle') return { data: [{ info: { id: 'msg_idle', role: 'assistant', time: { completed: 1 } } }] };
+        if (sessionID === 'ses_busy') return { data: [{ info: { id: 'msg_busy', role: 'assistant' } }] };
+        throw new Error('should not settle from messages after get failure');
+      },
+    });
+    const assistant = service.createAssistant(assistantInput);
+    service.appendContactCard(assistant.id, {
+      cardType: 'session',
+      sessionID: 'ses_down',
+      directory,
+      title: 'Down',
+      status: 'busy',
+    });
+    service.appendContactCard(assistant.id, {
+      cardType: 'session',
+      sessionID: 'ses_busy',
+      directory,
+      title: 'Busy',
+      status: 'busy',
+    });
+    service.appendContactCard(assistant.id, {
+      cardType: 'session',
+      sessionID: 'ses_idle',
+      directory,
+      title: 'Idle',
+      status: 'busy',
+    });
+    await service.reconcile();
+    const cards = Object.fromEntries(service.contactMessages(assistant.id).messages
+      .filter((message) => message.parts.some((part) => part.type === 'card'))
+      .map((message) => [message.parts[0].sessionID, message.parts[0].status]));
+    expect(cards).toMatchObject({
+      ses_down: 'busy',
+      ses_busy: 'busy',
+      ses_idle: 'complete',
+    });
+    expect(service.contactMessages(assistant.id).messages.filter((message) => message.text === 'oc.settle.complete')).toHaveLength(1);
+    expect(service.snapshot().assistants[0].assignedSessionIDs.sort()).toEqual(['ses_busy', 'ses_down']);
+    expect(service.snapshot().assistants[0].working).toBe(true);
+    service.close();
+  });
+
+  it('does not rewrite a reconciled session.error as complete on a later idle poll', async () => {
+    const directory = root();
+    let idle = false;
+    const service = setup(directory, {
+      get: async ({ sessionID }) => (
+        sessionID === 'ses_err'
+          ? { data: idle ? { id: 'ses_err', status: { type: 'idle' } } : { id: 'ses_err', error: { message: 'boom' } } }
+          : { data: { id: sessionID } }
+      ),
+      messages: async () => ({ data: [{ info: { id: 'msg_err', role: 'assistant', time: { completed: 1 } } }] }),
+    });
+    const assistant = service.createAssistant(assistantInput);
+    service.appendContactCard(assistant.id, {
+      cardType: 'session',
+      sessionID: 'ses_err',
+      directory,
+      title: 'Err',
+      status: 'busy',
+    });
+    await service.reconcile();
+    expect(service.contactMessages(assistant.id).messages.find((message) => message.parts.some((part) => part.type === 'card'))?.parts[0].status).toBe('error');
+    expect(service.contactMessages(assistant.id).messages.some((message) => message.text === 'oc.settle.error')).toBe(true);
+    idle = true;
+    await service.reconcile();
+    expect(service.contactMessages(assistant.id).messages.find((message) => message.parts.some((part) => part.type === 'card'))?.parts[0].status).toBe('error');
+    expect(service.contactMessages(assistant.id).messages.some((message) => message.text === 'oc.settle.complete')).toBe(false);
+    expect(service.snapshot().assistants[0]).toMatchObject({
+      assignedSessionIDs: [],
+      working: false,
+    });
+    service.close();
+  });
+
+  it('accepts a session-goal settle into the same card without mutating the worker', () => {
+    const directory = root();
+    const service = setup(directory);
+    const assistant = service.createAssistant(assistantInput);
+    service.appendContactCard(assistant.id, {
+      cardType: 'session',
+      sessionID: 'ses_goal',
+      directory,
+      title: 'Login',
+      status: 'busy',
+    });
+    expect(service.reportAssignedSessionSettle('ses_goal', 'complete')).toBe(true);
+    const page = service.contactMessages(assistant.id);
+    expect(page.messages.find((message) => message.parts.some((part) => part.type === 'card'))?.parts[0].status).toBe('complete');
+    expect(page.messages.some((message) => message.text === 'oc.settle.complete')).toBe(true);
+    expect(service.snapshot().assistants[0].working).toBe(false);
+    service.close();
+  });
+
+  it('maps question and error onto the same card and does not rewrite error as complete', () => {
+    const directory = root();
+    const service = setup(directory);
+    const assistant = service.createAssistant(assistantInput);
+    service.appendContactCard(assistant.id, {
+      cardType: 'session',
+      sessionID: 'ses_ask',
+      directory,
+      title: 'Login',
+      status: 'busy',
+    });
+    expect(service.processEvent({ type: 'question.asked', properties: { sessionID: 'ses_ask' } })).toBe(true);
+    let page = service.contactMessages(assistant.id);
+    expect(page.messages.find((message) => message.parts.some((part) => part.type === 'card'))?.parts[0].status).toBe('question');
+    expect(page.messages.some((message) => message.text === 'oc.settle.question')).toBe(true);
+    expect(service.snapshot().assistants[0]).toMatchObject({
+      assignedSessionIDs: ['ses_ask'],
+      working: false,
+    });
+    expect(service.processEvent({ type: 'session.error', properties: { sessionID: 'ses_ask' } })).toBe(true);
+    page = service.contactMessages(assistant.id);
+    expect(page.messages.find((message) => message.parts.some((part) => part.type === 'card'))?.parts[0].status).toBe('error');
+    expect(page.messages.some((message) => message.text === 'oc.settle.error')).toBe(true);
+    expect(service.processEvent({ type: 'session.idle', properties: { sessionID: 'ses_ask' } })).toBe(false);
+    expect(service.processEvent({ type: 'session.status', properties: { sessionID: 'ses_ask', status: { type: 'idle' } } })).toBe(false);
+    page = service.contactMessages(assistant.id);
+    expect(page.messages.find((message) => message.parts.some((part) => part.type === 'card'))?.parts[0].status).toBe('error');
+    expect(page.messages.some((message) => message.text === 'oc.settle.complete')).toBe(false);
+    expect(service.snapshot().assistants[0]).toMatchObject({
+      assignedSessionIDs: [],
+      working: false,
+    });
+    service.close();
+  });
+
+  it('persists a session card in the contact transcript across reload', () => {
+    const directory = root();
+    const service = setup(directory);
+    const assistant = service.createAssistant(assistantInput);
+    const inserted = service.appendContactCard(assistant.id, {
+      cardType: 'session',
+      sessionID: 'ses_real',
+      directory,
+      title: 'Fix login',
+      status: 'idle',
+    });
+    expect(inserted.card).toMatchObject({
+      type: 'card',
+      cardType: 'session',
+      sessionID: 'ses_real',
+      title: 'Fix login',
+    });
+    const page = service.contactMessages(assistant.id);
+    expect(page.messages).toHaveLength(1);
+    expect(page.messages[0].parts[0]).toMatchObject({
+      type: 'card',
+      cardType: 'session',
+      sessionID: 'ses_real',
+      title: 'Fix login',
+    });
+    service.close();
+  });
+
+  it('sends a read-only peer message from message_assistant without promptAsync', async () => {
+    const prompts = [];
+    const directory = root();
+    const service = setup(directory, { promptAsync: async (input) => { prompts.push(input); return { response: { status: 204 } }; } }, {
+      runContactTurn: async ({ tools }) => {
+        const message = tools.find((tool) => tool.name === 'message_assistant');
+        const result = await message.execute('call_1', { to: 'PeerQA', text: 'hello-from-assistant 写好了' });
+        return {
+          text: result.content[0].text,
+          bubbles: [result.content[0].text],
+          cards: [],
+          tools,
+        };
+      },
+    });
+    const sender = service.createAssistant({ ...assistantInput, name: 'DeepSeekQA' });
+    const recipient = service.createAssistant({ ...assistantInput, name: 'PeerQA' });
+    await settleSend(service, sender.id, {
+      messageID: 'client_message_assistant',
+      parts: [{ type: 'text', text: '给 PeerQA 说一声 hello-from-assistant 写好了' }],
+    });
+    expect(prompts).toEqual([]);
+    expect(service.contactMessages(recipient.id).messages).toEqual([expect.objectContaining({
+      role: 'peer',
+      fromAssistantID: sender.id,
+      fromAssistantName: 'DeepSeekQA',
+      text: 'hello-from-assistant 写好了',
+    })]);
+    const senderPage = service.contactMessages(sender.id);
+    expect(senderPage.messages.some((message) => message.role === 'user')).toBe(true);
+    expect(senderPage.messages.some((message) => message.text.includes('Sent to PeerQA'))).toBe(true);
+    expect(senderPage.messages.some((message) => message.parts.some((part) => part.type === 'card'))).toBe(false);
+    service.close();
+  });
+
+  it('delivers a read-only peer DM into the recipient contact transcript without OpenCode', async () => {
+    const prompts = [];
+    const directory = root();
+    const service = setup(directory, { promptAsync: async (input) => { prompts.push(input); return { response: { status: 204 } }; } });
+    const sender = service.createAssistant({ ...assistantInput, name: 'Sender' });
+    const recipient = service.createAssistant({ ...assistantInput, name: 'Recipient' });
+    const delivered = service.deliverPeerMessage(sender.id, {
+      toAssistantID: recipient.id,
+      text: 'Can you watch the login session?',
+    });
+    expect(delivered).toMatchObject({
+      admitted: true,
+      role: 'peer',
+      fromAssistantID: sender.id,
+      fromAssistantName: 'Sender',
+      toAssistantID: recipient.id,
+    });
+    expect(prompts).toEqual([]);
+    const page = service.contactMessages(recipient.id);
+    expect(page.messages).toHaveLength(1);
+    expect(page.messages[0]).toMatchObject({
+      role: 'peer',
+      fromAssistantID: sender.id,
+      fromAssistantName: 'Sender',
+      text: 'Can you watch the login session?',
+    });
+    expect(service.contactMessages(sender.id).messages).toEqual([]);
+    service.close();
+  });
+
+  it('rejects self-DMs and never treats peer inbox rows as composer turns', async () => {
+    const service = setup();
+    const sender = service.createAssistant({ ...assistantInput, name: 'Sender' });
+    const recipient = service.createAssistant({ ...assistantInput, name: 'Recipient' });
+    expect(() => service.deliverPeerMessage(sender.id, {
+      toAssistantID: sender.id,
+      text: 'loop',
+    })).toThrow('validation_error');
+    service.deliverPeerMessage(sender.id, { toAssistantID: recipient.id, text: 'ping' });
+    const sent = await settleSend(service, recipient.id, {
+      messageID: 'after-peer',
+      parts: [{ type: 'text', text: 'hello' }],
+    });
+    expect(sent.admitted).toBe(true);
+    const roles = service.contactMessages(recipient.id).messages.map((message) => message.role);
+    expect(roles).toEqual(['peer', 'user', 'assistant']);
+    service.close();
+  });
+
+  it('notifies like a contact SMS when a contact turn completes', async () => {
+    const onContactTurnComplete = vi.fn();
+    const service = setup(root(), {}, {
+      onContactTurnComplete,
+      runContactTurn: async () => ({ text: '我去找一下', bubbles: ['我去找一下', 'Opened a coding session.'] }),
+    });
+    const assistant = service.createAssistant({ ...assistantInput, name: '大小白' });
+    await settleSend(service, assistant.id, {
+      messageID: 'notify_1',
+      parts: [{ type: 'text', text: 'hi' }],
+    });
+    expect(onContactTurnComplete).toHaveBeenCalledWith({
+      assistantID: assistant.id,
+      name: '大小白',
+      turnID: 'notify_1',
+      status: 'complete',
+      body: '我去找一下\nOpened a coding session.',
+    });
+    service.close();
+  });
+
+  it('broadcasts contact-turn-start/end and bubble-delta without re-inserting the user row', async () => {
+    const events = [];
+    const directory = root();
+    const service = setup(directory, {}, {
+      onContactTurnEvent: (event) => events.push(event),
+      runContactTurn: async ({ userText, onBubbleDelta }) => {
+        if (typeof onBubbleDelta === 'function') {
+          onBubbleDelta(0, `stream:${userText}`, false);
+          onBubbleDelta(0, '', true);
+        }
+        return { text: `stream:${userText}`, bubbles: [`stream:${userText}`] };
+      },
+    });
+    const assistant = service.createAssistant(assistantInput);
+    const sent = await service.send(assistant.id, {
+      messageID: 'turn_stream_1',
+      parts: [{ type: 'text', text: 'hi' }],
+    });
+    expect(sent).toEqual({
+      binding: expect.objectContaining({ sessionID: null, sessionGeneration: 0 }),
+      messageID: 'turn_stream_1',
+      admitted: true,
+    });
+    expect(sent).not.toHaveProperty('settled');
+    const settled = await service.whenContactTurnSettled('turn_stream_1');
+    expect(settled).toMatchObject({ status: 'complete' });
+    await new Promise((resolve) => setImmediate(resolve));
+    const types = events.map((event) => event.type);
+    expect(types[0]).toBe('openchamber:contact-turn-start');
+    expect(events[0].properties).toMatchObject({
+      assistantID: assistant.id,
+      turnID: 'turn_stream_1',
+      messageID: 'turn_stream_1',
+      occurredAt: expect.any(Number),
+    });
+    expect(events.some((event) => (
+      event.type === 'openchamber:contact-bubble-delta'
+      && event.properties?.bubbleIndex === 0
+      && event.properties?.delta === 'stream:hi'
+      && event.properties?.done === false
+    ))).toBe(true);
+    expect(types.at(-1)).toBe('openchamber:contact-turn-end');
+    expect(events.at(-1).properties).toMatchObject({
+      assistantID: assistant.id,
+      turnID: 'turn_stream_1',
+      status: 'complete',
+      occurredAt: expect.any(Number),
+    });
+    const page = service.contactMessages(assistant.id);
+    expect(page.messages.map((message) => message.messageID)).toEqual([
+      'turn_stream_1',
+      'turn_stream_1:bubble:1',
+    ]);
+    const db = new (require('better-sqlite3'))(path.join(directory, 'assistants.sqlite'));
+    expect(db.prepare('SELECT COUNT(*) AS count FROM assistant_contact_message WHERE message_id=?').get('turn_stream_1').count).toBe(1);
+    db.close();
+    service.close();
+  });
+
+  it('admits the user then broadcasts turn-end error when the harness fails', async () => {
+    const events = [];
+    const service = setup(root(), {}, {
+      onContactTurnEvent: (event) => events.push(event),
+      runContactTurn: async () => {
+        const error = new Error('No connected model');
+        error.code = 'no_provider';
+        throw error;
+      },
+    });
+    const assistant = service.createAssistant(assistantInput);
+    const sent = await service.send(assistant.id, {
+      messageID: 'client_no_provider',
+      parts: [{ type: 'text', text: 'hello' }],
+    });
+    expect(sent).toMatchObject({ admitted: true, messageID: 'client_no_provider' });
+    expect(service.contactMessages(assistant.id).messages.map((message) => message.role)).toEqual(['user']);
+    const settled = await service.whenContactTurnSettled('client_no_provider');
+    expect(settled).toMatchObject({ status: 'error', code: 'no_provider' });
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(events.some((event) => event.type === 'openchamber:contact-turn-start')).toBe(true);
+    expect(events.some((event) => (
+      event.type === 'openchamber:contact-turn-end'
+      && event.properties?.status === 'error'
+      && event.properties?.turnID === 'client_no_provider'
+    ))).toBe(true);
+    // User row stays; no assistant bubble on failure.
+    expect(service.contactMessages(assistant.id).messages.map((message) => message.role)).toEqual(['user']);
+    service.close();
+  });
 
   it('deletes message/part/backfill mirrors when an assistant is removed', async () => {
     const directory = root(); let creates = 0;

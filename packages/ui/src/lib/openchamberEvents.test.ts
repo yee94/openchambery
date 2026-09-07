@@ -63,6 +63,49 @@ describe('parseOpenchamberEventEnvelope', () => {
     })).toEqual({ type: 'assistants-changed', revision: 8, occurredAt: 21 });
   });
 
+  test('parses contact turn streaming envelopes without revision watermarks', () => {
+    expect(parseOpenchamberEventEnvelope({
+      type: 'openchamber:contact-turn-start',
+      properties: { assistantID: 'asst_1', turnID: 'oc_contact_1', messageID: 'oc_contact_1', occurredAt: 30, revision: 99 },
+    })).toEqual({
+      type: 'contact-turn-start',
+      assistantID: 'asst_1',
+      turnID: 'oc_contact_1',
+      messageID: 'oc_contact_1',
+      occurredAt: 30,
+    });
+    expect(parseOpenchamberEventEnvelope({
+      type: 'openchamber:contact-bubble-delta',
+      properties: { assistantID: 'asst_1', turnID: 'oc_contact_1', bubbleIndex: 0, delta: 'Hello', done: false, occurredAt: 31, revision: 100 },
+    })).toEqual({
+      type: 'contact-bubble-delta',
+      assistantID: 'asst_1',
+      turnID: 'oc_contact_1',
+      bubbleIndex: 0,
+      delta: 'Hello',
+      done: false,
+      occurredAt: 31,
+    });
+    expect(parseOpenchamberEventEnvelope({
+      type: 'openchamber:contact-turn-end',
+      properties: { assistantID: 'asst_1', turnID: 'oc_contact_1', status: 'error', error: 'upstream failed', occurredAt: 32, revision: 101 },
+    })).toEqual({
+      type: 'contact-turn-end',
+      assistantID: 'asst_1',
+      turnID: 'oc_contact_1',
+      status: 'error',
+      error: 'upstream failed',
+      occurredAt: 32,
+    });
+  });
+
+  test('rejects malformed contact turn streaming envelopes', () => {
+    expect(parseOpenchamberEventEnvelope({ type: 'openchamber:contact-turn-start', properties: { assistantID: 'asst_1', turnID: 'turn_1', messageID: 'message_2', occurredAt: 1 } })).toBeNull();
+    expect(parseOpenchamberEventEnvelope({ type: 'openchamber:contact-bubble-delta', properties: { assistantID: 'asst_1', turnID: 'turn_1', bubbleIndex: -1, delta: 'x', done: false, occurredAt: 1 } })).toBeNull();
+    expect(parseOpenchamberEventEnvelope({ type: 'openchamber:contact-bubble-delta', properties: { assistantID: 'asst_1', turnID: 'turn_1', bubbleIndex: 0, delta: 'x', done: 'yes', occurredAt: 1 } })).toBeNull();
+    expect(parseOpenchamberEventEnvelope({ type: 'openchamber:contact-turn-end', properties: { assistantID: 'asst_1', turnID: 'turn_1', status: 'running', occurredAt: 1 } })).toBeNull();
+  });
+
   test('rejects malformed session-index and message-queue tip payloads', () => {
     expect(parseOpenchamberEventEnvelope({ type: 'openchamber:session-index-changed', properties: { revision: -1, occurredAt: 1 } })).toBeNull();
     expect(parseOpenchamberEventEnvelope({ type: 'openchamber:session-index-changed', properties: { revision: 1 } })).toBeNull();

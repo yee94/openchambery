@@ -307,6 +307,8 @@ export type TimelineListProps<TEntry extends TimelineRowEntry> = {
      * the seed-window Markdown rows report ready. Session open uses `timelineCacheKey`.
      */
     pinRevealGeneration?: number;
+    /** The initial seed already painted in a predecessor transcript shell. */
+    initialPinRevealComplete?: boolean;
     /** Drives the animated variant of end maintenance. */
     sessionIsWorking?: boolean;
     onIsAtEndChange?: (isAtEnd: boolean, showScrollButton?: boolean) => void;
@@ -390,6 +392,7 @@ const TimelineListInner = <TEntry extends TimelineRowEntry>({
     followEnabled = true,
     historyAnchorToken = 0,
     pinRevealGeneration = 0,
+    initialPinRevealComplete = false,
     sessionIsWorking = false,
     onIsAtEndChange,
     onScroll,
@@ -784,6 +787,7 @@ const TimelineListInner = <TEntry extends TimelineRowEntry>({
         root: scrollElement,
         relevantKeys: pinRevealKeys,
         enabled: entryKeys.length > 0,
+        initiallyRevealed: initialPinRevealComplete,
     });
     const listStyle = mergeMarkdownPinRevealStyle(style, pinHidden);
 

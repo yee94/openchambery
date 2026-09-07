@@ -140,12 +140,15 @@ const UserTextPart: React.FC<UserTextPartProps> = ({ part, messageId, agentMenti
         const el = textRef.current;
         if (!el) return;
 
+        // Latch true while collapsed. Hiding images/files after the first
+        // overflow measurement must not flip this back (that loops hide/show).
         const checkTruncation = () => {
-            if (collapsibleUserMessages && !isExpanded) {
-                setIsTruncated(el.scrollHeight > el.clientHeight);
+            if (collapsibleUserMessages && !isExpanded && el.scrollHeight > el.clientHeight) {
+                setIsTruncated(true);
             }
         };
 
+        setIsTruncated(false);
         checkTruncation();
 
         const resizeObserver = new ResizeObserver(checkTruncation);
@@ -336,8 +339,14 @@ const UserTextPart: React.FC<UserTextPartProps> = ({ part, messageId, agentMenti
         return null;
     }
 
+    const clampOverflow = isCollapsed && isTruncated;
+
     return (
-        <div className="relative" key={part.id || `${messageId}-user-text`}>
+        <div
+            className="relative"
+            key={part.id || `${messageId}-user-text`}
+            data-user-message-clamp={clampOverflow ? 'true' : undefined}
+        >
             {collapsibleUserMessages && isExpanded && (
                 <button
                     type="button"
@@ -356,6 +365,7 @@ const UserTextPart: React.FC<UserTextPartProps> = ({ part, messageId, agentMenti
                     isCollapsed && "line-clamp-10",
                     collapsibleUserMessages && isTruncated && !isExpanded && "cursor-pointer"
                 )}
+                data-user-message-collapse={isCollapsed ? 'true' : undefined}
                 ref={textRef}
                 onClick={handleClick}
             >

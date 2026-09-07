@@ -23,6 +23,14 @@ describe('parseDeepLink (OpenCode-aligned)', () => {
     expect(parseDeepLink('openchamber://connect?v=1&server=https%3A%2F%2Fexample.com&token=secret')).toBeNull();
   });
 
+  test('parses assistant conversation links', () => {
+    expect(parseDeepLink('openchamber://assistant/asst_1')).toEqual({
+      type: 'assistant',
+      assistantId: 'asst_1',
+    });
+    expect(parseDeepLink('openchamber://assistant')).toBeNull();
+  });
+
   test('parses new-session with directory query like OpenCode', () => {
     expect(parseDeepLink('openchamber://new-session?directory=/tmp/demo')).toEqual({
       type: 'new-session',
@@ -75,6 +83,10 @@ describe('parseDeepLink (OpenCode-aligned)', () => {
 describe('buildDeepLink (OpenCode-aligned)', () => {
   test('rebuilds a canonical v2 connect link', () => {
     expect(buildDeepLink({ type: 'connect', pairing })).toBe(encodePairingConnectionPayload(pairing));
+  });
+
+  test('emits assistant/<id>', () => {
+    expect(buildDeepLink({ type: 'assistant', assistantId: 'asst_1' })).toBe('openchamber://assistant/asst_1');
   });
 
   test('emits new-session?directory= for external openers', () => {

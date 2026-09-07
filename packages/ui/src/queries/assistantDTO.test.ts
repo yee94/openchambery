@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 // @ts-expect-error The server contract fixture is JavaScript and shared across the package boundary.
 import { assistantContractFixtures } from '../../../web/server/lib/assistants/contracts.js';
-import { AssistantAPIError, parseAssistantCapabilityDTO, parseAssistantHistoryPage, parseCompactResponse, parseMessageAdmission, parseSessionBinding, parseShareOperation, parseAssistantSnapshotDTO } from './assistantDTO';
+import { AssistantAPIError, parseAssistantCapabilityDTO, parseAssistantContactPage, parseAssistantContactPeerAdmission, parseAssistantHistoryPage, parseCompactResponse, parseMessageAdmission, parseSessionBinding, parseShareOperation, parseAssistantSnapshotDTO } from './assistantDTO';
 describe('Assistant DTO parsing', () => {
   test('parses server contract fixtures across the web and UI boundary', () => {
     const serverBindingFixture = assistantContractFixtures.sessionBinding;
@@ -18,6 +18,8 @@ describe('Assistant DTO parsing', () => {
     expect(snapshot.assistants[0]?.mode).toBe('continuous');
     expect(snapshot.assistants[0]?.historySessionIDs).toEqual(['ses-0']);
     expect(snapshot.assistants[0]?.historySessionCount).toBe(1);
+    expect(snapshot.assistants[0]?.assignedSessionIDs).toEqual([]);
+    expect(snapshot.assistants[0]?.working).toBe(false);
     expect('skillRoots' in snapshot.assistants[0]).toBe(false);
     expect(binding.directory).toBe('/workspace');
     expect(compact.binding.sessionID).toBe('ses_fixture');
@@ -54,5 +56,106 @@ describe('Assistant DTO parsing', () => {
     expect(() => parseAssistantHistoryPage({ entries: [{ sessionID: 'ses_1', directory: '/workspace-a', info, parts: [{ ...part, sessionID: 'ses_2' }] }], nextCursor: null, complete: true })).toThrow(AssistantAPIError);
     expect(() => parseAssistantHistoryPage({ entries: [{ sessionID: 'ses_1', directory: '/workspace-a', info, parts: [{ ...part, messageID: 'msg_2' }] }], nextCursor: null, complete: true })).toThrow(AssistantAPIError);
     expect(() => parseAssistantSnapshotDTO({ revision: 1, enabled: true, assistants: [{ ...assistantContractFixtures.assistant, historySessionIDs: ['ses_1'], historySessionCount: 0 }] })).toThrow(AssistantAPIError);
+  });
+  test('parses contact pages with session cards and peer DMs', () => {
+    const page = parseAssistantContactPage({
+      complete: true,
+      nextCursor: null,
+      messages: [{
+        messageID: 'peer_1',
+        assistantID: 'asst_b',
+        role: 'peer',
+        turnID: 'peer_1',
+        bubbleIndex: 0,
+        createdAt: 1,
+        ordinal: 1,
+        status: 'complete',
+        fromAssistantID: 'asst_a',
+        fromAssistantName: 'Sender',
+        parts: [
+          { type: 'text', text: 'watch this' },
+          { type: 'card', cardType: 'session', sessionID: 'ses_1', directory: '/repo', title: 'Login', status: 'idle' },
+        ],
+        text: 'watch this',
+        cards: [],
+      }],
+    });
+    expect(page.messages[0]?.role).toBe('peer');
+    expect(page.messages[0]?.fromAssistantID).toBe('asst_a');
+    expect(page.messages[0]?.cards[0]).toEqual({
+      type: 'card',
+      cardType: 'session',
+      sessionID: 'ses_1',
+      directory: '/repo',
+      title: 'Login',
+      status: 'idle',
+      branch: null,
+    });
+    expect(parseAssistantContactPeerAdmission({
+      messageID: 'peer_1',
+      admitted: true,
+      role: 'peer',
+      fromAssistantID: 'asst_a',
+      fromAssistantName: 'Sender',
+      toAssistantID: 'asst_b',
+    }).toAssistantID).toBe('asst_b');
+  });
+  test('parses assistant and schedule contact cards', () => {
+    const page = parseAssistantContactPage({
+      complete: true,
+      nextCursor: null,
+      messages: [{
+        messageID: 'card_1',
+        assistantID: 'asst_host',
+        role: 'assistant',
+        turnID: 'card_1',
+        bubbleIndex: 0,
+        createdAt: 1,
+        ordinal: 1,
+        status: 'complete',
+        fromAssistantID: null,
+        fromAssistantName: null,
+        parts: [
+          { type: 'card', cardType: 'assistant', assistantID: 'asst_flow', name: 'FlowQA', providerID: 'opencode-go', modelID: 'deepseek-v4-flash', mode: 'continuous' },
+          { type: 'card', cardType: 'schedule', taskID: 'task_1', projectID: 'proj_1', name: 'Daily ping', kind: 'daily', time: '18:00', timezone: 'Asia/Shanghai', prompt: 'ping' },
+        ],
+        text: '',
+        cards: [],
+      }],
+    });
+    expect(page.messages[0]?.cards).toEqual([
+      { type: 'card', cardType: 'assistant', assistantID: 'asst_flow', name: 'FlowQA', providerID: 'opencode-go', modelID: 'deepseek-v4-flash', mode: 'continuous' },
+      { type: 'card', cardType: 'schedule', taskID: 'task_1', projectID: 'proj_1', name: 'Daily ping', kind: 'daily', time: '18:00', timezone: 'Asia/Shanghai', prompt: 'ping' },
+    ]);
+  });
+  test('parses contact file and image parts', () => {
+    const page = parseAssistantContactPage({
+      complete: true,
+      nextCursor: null,
+      messages: [{
+        messageID: 'user_1',
+        assistantID: 'asst_host',
+        role: 'user',
+        turnID: 'user_1',
+        bubbleIndex: 0,
+        createdAt: 1,
+        ordinal: 1,
+        status: 'complete',
+        fromAssistantID: null,
+        fromAssistantName: null,
+        parts: [
+          { type: 'text', text: 'look' },
+          { type: 'file', mime: 'image/png', url: 'data:image/png;base64,aa', filename: 'shot.png' },
+          { type: 'file', mime: 'text/plain', url: 'data:text/plain;base64,eA==', filename: 'notes.txt' },
+        ],
+        text: 'look',
+        cards: [],
+      }],
+    });
+    expect(page.messages[0]?.parts).toEqual([
+      { type: 'text', text: 'look' },
+      { type: 'file', mime: 'image/png', url: 'data:image/png;base64,aa', filename: 'shot.png' },
+      { type: 'file', mime: 'text/plain', url: 'data:text/plain;base64,eA==', filename: 'notes.txt' },
+    ]);
   });
 });

@@ -17,6 +17,7 @@ export function acceptDirectoryMessageStreamWsConnection({
   socket,
   requestedLastEventId,
   requestedDirectory,
+  reasoningFilter = null,
   buildOpenCodeUrl,
   getOpenCodeAuthHeaders,
   processForwardedEventPayload,
@@ -37,6 +38,7 @@ export function acceptDirectoryMessageStreamWsConnection({
       controller.abort();
     }
     reader?.stop();
+    reasoningFilter?.dispose?.();
     wsClients.delete(socket);
   };
 
@@ -56,7 +58,10 @@ export function acceptDirectoryMessageStreamWsConnection({
       return;
     }
 
-    sendMessageStreamWsEvent(socket, { type: 'openchamber:heartbeat', timestamp: Date.now() }, { directory: 'global' });
+    sendMessageStreamWsEvent(socket, { type: 'openchamber:heartbeat', timestamp: Date.now() }, {
+      directory: 'global',
+      reasoningFilter,
+    });
   }, heartbeatIntervalMs);
 
   socket.on('close', () => {
@@ -77,10 +82,14 @@ export function acceptDirectoryMessageStreamWsConnection({
       sendMessageStreamWsEvent(socket, payload, {
         directory,
         eventId: typeof envelope?.eventId === 'string' && envelope.eventId.length > 0 ? envelope.eventId : undefined,
+        reasoningFilter,
       });
 
       processForwardedEventPayload(payload, (syntheticPayload) => {
-        sendMessageStreamWsEvent(socket, syntheticPayload, { directory: 'global' });
+        sendMessageStreamWsEvent(socket, syntheticPayload, {
+          directory: 'global',
+          reasoningFilter,
+        });
       });
     };
 

@@ -7,7 +7,9 @@ import { renderToString } from 'react-dom/server';
 
 import { I18nProvider } from '@/lib/i18n';
 
-import { MobileSessionRow } from './MobileSessionRow';
+import {
+  MobileSessionRow,
+} from './MobileSessionRow';
 import {
   resolveMobileSessionIndicator,
   type MobileSessionIndicator,
@@ -142,6 +144,17 @@ describe('resolveMobileSessionIndicator', () => {
   });
 });
 
+describe('MobileSessionRow memo contract', () => {
+  test('MobileSessionRow uses default React.memo (no custom comparer)', () => {
+    const source = readFileSync(
+      join(dirname(fileURLToPath(import.meta.url)), 'MobileSessionRow.tsx'),
+      'utf8',
+    );
+    expect(source).toContain('export const MobileSessionRow = React.memo(MobileSessionRowImpl)');
+    expect(source).not.toContain('areMobileSessionRowPropsEqual');
+  });
+});
+
 describe('MobileSessionRow status placement', () => {
   test('does not persist selected or JS pressed backgrounds on the row', () => {
     const source = readFileSync(
@@ -191,6 +204,23 @@ describe('MobileSessionRow status placement', () => {
     expect(html).not.toContain('Expand subsessions');
     expect(html).not.toContain('Collapse subsessions');
     expect(html).not.toContain('#oc-arrow-down-s');
+  });
+
+  test('shows session change counts next to the title when provided', () => {
+    const html = renderToString(
+      <I18nProvider>
+        <MobileSessionRow
+          session={{ id: 'session-1', title: 'Login', changes: '+12 −3' }}
+          onSelect={noop}
+          onPin={noop}
+          onArchive={noop}
+          onOpenActions={noop}
+        />
+      </I18nProvider>,
+    );
+    expect(html).toContain('oc-mobile-session-changes');
+    expect(html).toContain('+12 −3');
+    expect(html.indexOf('Login')).toBeLessThan(html.indexOf('+12 −3'));
   });
 
   test('wraps keyword matches in mark when highlightQuery is set', () => {

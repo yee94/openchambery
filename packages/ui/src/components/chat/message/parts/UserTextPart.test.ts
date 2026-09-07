@@ -8,6 +8,23 @@ import { prepareUserMarkdownContent, SKILL_TOKEN_PATTERN } from './userTextPartC
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const messageBodySource = readFileSync(join(__dirname, '../MessageBody.tsx'), 'utf-8');
 
+describe('collapsed user message overflow clip', () => {
+    test('marks the clamp wrapper so CSS can clip WebKit line-clamp paint overflow', () => {
+        const source = readFileSync(join(__dirname, './UserTextPart.tsx'), 'utf-8');
+        expect(source).toContain("data-user-message-clamp={clampOverflow ? 'true' : undefined}");
+        expect(source).toContain("data-user-message-collapse={isCollapsed ? 'true' : undefined}");
+        expect(source).toContain('el.scrollHeight > el.clientHeight');
+        expect(source).toContain('setIsTruncated(true)');
+        expect(source).toContain('setIsTruncated(false)');
+    });
+
+    test('user body and bubble expose clip hooks for collapsed files and radius', () => {
+        expect(messageBodySource).toContain('data-user-message-body="true"');
+        const chatMessageSource = readFileSync(join(__dirname, '../../ChatMessage.tsx'), 'utf-8');
+        expect(chatMessageSource).toContain('data-user-message-bubble="true"');
+    });
+});
+
 describe('mobile primary subtask prompt', () => {
     test('omits the collapsible prompt disclosure from the primary chat surface', () => {
         expect(messageBodySource).toContain(

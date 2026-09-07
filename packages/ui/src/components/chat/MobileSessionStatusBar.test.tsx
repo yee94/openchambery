@@ -206,6 +206,26 @@ describe('MobileSessionStatusBar project correction on session open', () => {
   });
 });
 
+describe('MobileSessionStatusBar closed-sheet list gate', () => {
+  test('groups sessions while open and retains last open list through exit presence', () => {
+    expect(statusBarSource).toContain('useSessionGrouping(\n    sessions,\n    sessionStatus,\n    open,\n    sheetPresent,');
+    expect(statusBarSource).toContain('buildMobileSessionStatusList');
+    expect(statusBarSource).toContain('if (!sheetPresent || !selectedProject) return [];');
+    expect(statusBarSource).toContain('if (!sheetPresent) return sortedSessions;');
+    expect(statusBarSource).toContain('handleSheetExitComplete');
+    expect(statusBarSource).toContain('setSheetPresent(false)');
+  });
+
+  test('pinned-filter presence uses the raw catalog so closed enrichment skip cannot clear it', () => {
+    expect(statusBarSource).toContain(
+      'sessions.some((session) => pinnedSessionIds.has(session.id))',
+    );
+    expect(statusBarSource).not.toContain(
+      'sortedSessions.some((session) => pinnedSessionIds.has(session.id))',
+    );
+  });
+});
+
 describe('MobileSessionStatusBar phone navigation contracts', () => {
   test('worktree session rows share the root list inset instead of a nested indent', () => {
     expect(statusBarSource).toContain('// Worktree sessions share the root list inset so titles align with');

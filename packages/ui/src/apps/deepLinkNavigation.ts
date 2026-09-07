@@ -3,6 +3,7 @@ import React from 'react';
 import { isCapacitorApp, isIPadApp } from '@/lib/platform';
 import type { PairingConnectionPayload } from '@/lib/connectionPayload';
 import { useMobileNavigationStore } from '@/mobile/useMobileNavigationStore';
+import { openAssistant } from '@/stores/useAssistantUIStore';
 import { useSessionUIStore } from '@/sync/session-ui-store';
 import { useUIStore } from '@/stores/useUIStore';
 
@@ -59,6 +60,17 @@ const execute = (intent: DeepLinkIntent): boolean => {
         return true;
       }
       void useSessionUIStore.getState().setCurrentSession(intent.sessionId, intent.directory ?? null);
+      return true;
+    }
+
+    case 'assistant': {
+      if (!isIPadApp()) {
+        const navigation = useMobileNavigationStore.getState();
+        navigation.setActiveTab('assistant');
+        navigation.openAssistant(intent.assistantId);
+        return true;
+      }
+      openAssistant(intent.assistantId);
       return true;
     }
 
@@ -133,6 +145,7 @@ const execute = (intent: DeepLinkIntent): boolean => {
       handlers.openSettings(intent.section);
       return true;
   }
+  return false;
 };
 
 const flush = (): void => {
@@ -256,6 +269,11 @@ export const useDeepLinkSource = (options: { ready: boolean }): InitialDeepLinkK
           const url = typeof data?.url === 'string' ? data.url : typeof data?.deeplink === 'string' ? data.deeplink : undefined;
           if (url) {
             applyDeepLinkUrl(url);
+            return;
+          }
+          const assistantId = typeof data?.assistantID === 'string' ? data.assistantID.trim() : '';
+          if (assistantId) {
+            applyDeepLinkIntent({ type: 'assistant', assistantId });
             return;
           }
           const sessionId = typeof data?.sessionId === 'string' ? data.sessionId : undefined;

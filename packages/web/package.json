@@ -1,6 +1,6 @@
 {
   "name": "@openchambery/web",
-  "version": "1.19.5-beta.12",
+  "version": "1.19.10-beta.1",
   "private": false,
   "type": "module",
   "main": "./server/index.js",
@@ -25,6 +25,7 @@
   },
   "dependencies": {
     "@clack/prompts": "^1.1.0",
+    "@earendil-works/pi-agent-core": "0.84.4",
     "@octokit/rest": "^22.0.1",
     "@opencode-ai/client": "0.0.0-next-17444",
     "@simplewebauthn/server": "13.3.1",

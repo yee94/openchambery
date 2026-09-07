@@ -1,5 +1,9 @@
 import express from 'express';
 
+import {
+  projectMessagesPayloadForReasoning,
+  readIncludeReasoningQuery,
+} from '../event-stream/reasoning-projection.js';
 import { hasPreviewProxyCredential } from '../opencode/core-routes.js';
 import {
   TranscriptCacheValidationError,
@@ -57,7 +61,9 @@ export const registerTranscriptCacheRoutes = (app, { transcriptCacheService } = 
   app.get(`${TRANSCRIPT_CACHE_ROUTE_PREFIX}/session`, rejectPreviewProxyCredential((req, res) => {
     if (!transcriptCacheService) return unsupported(res);
     try {
-      res.json({ available: true, ...transcriptCacheService.readSession(scopeFromQuery(req.query)) });
+      const includeReasoning = readIncludeReasoningQuery(req.query);
+      const body = { available: true, ...transcriptCacheService.readSession(scopeFromQuery(req.query)) };
+      res.json(projectMessagesPayloadForReasoning(body, includeReasoning));
     } catch (error) {
       sendError(res, error);
     }
@@ -66,12 +72,13 @@ export const registerTranscriptCacheRoutes = (app, { transcriptCacheService } = 
   app.get(`${TRANSCRIPT_CACHE_ROUTE_PREFIX}/message`, rejectPreviewProxyCredential((req, res) => {
     if (!transcriptCacheService) return unsupported(res);
     try {
+      const includeReasoning = readIncludeReasoningQuery(req.query);
       const record = transcriptCacheService.readMessage(
         scopeFromQuery(req.query),
         parseTranscriptCacheMessageID(req.query?.messageID),
       );
       if (!record) return res.status(404).json({ error: 'message_not_found' });
-      res.json({ available: true, record });
+      res.json(projectMessagesPayloadForReasoning({ available: true, record }, includeReasoning));
     } catch (error) {
       sendError(res, error);
     }

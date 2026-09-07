@@ -36,11 +36,11 @@ export const readUserMessageHeaderIdentity = (info: unknown): UserMessageHeaderI
         providerID?: unknown;
         modelID?: unknown;
         variant?: unknown;
-        model?: { variant?: unknown };
+        model?: { variant?: unknown; providerID?: unknown; modelID?: unknown };
     };
     const agentName = readTrimmedString(record.mode) ?? readTrimmedString(record.agent);
-    const providerId = readTrimmedString(record.providerID);
-    const modelId = readTrimmedString(record.modelID);
+    const providerId = readTrimmedString(record.providerID) ?? readTrimmedString(record.model?.providerID);
+    const modelId = readTrimmedString(record.modelID) ?? readTrimmedString(record.model?.modelID);
     const variant = readTrimmedString(record.model?.variant) ?? readTrimmedString(record.variant);
 
     if (!agentName && !providerId && !modelId && !variant) {

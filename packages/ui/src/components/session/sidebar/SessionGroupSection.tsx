@@ -803,7 +803,7 @@ function SessionGroupSectionBase(props: Props): React.ReactNode {
     if (!virtualizerReady || !shortcutTargetSessionId || shortcutVirtualIndex === null) {
       return;
     }
-    // A mounted SessionNodeItem owns the final scrollIntoView + focus commit.
+    // A mounted SessionNodeItem owns the final 1/3 smooth scroll + focus commit.
     // Only move the virtual window when that row does not exist in the DOM yet.
     if (sessionVirtualizer.getVirtualItems().some((item) => item.index === shortcutVirtualIndex)) {
       return;

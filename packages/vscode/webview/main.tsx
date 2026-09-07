@@ -11,6 +11,7 @@ import {
   handleSessionTurnChangesRoute,
   isSessionTurnChangesRoute,
 } from './sessionTurnChangesRoute';
+import { shouldSkipVSCodeNotificationSession } from './notificationSessionFilter';
 import { getSettingsBridgeMessageType, isSettingsBootstrapRequest } from '../src/settings-bootstrap-runtime';
 import type { RuntimeAPIs } from '@openchamber/ui/lib/api/types';
 import { opencodeClient } from '@openchamber/ui/lib/opencode/client';
@@ -1782,7 +1783,11 @@ window.addEventListener('openchamber:vscode-notification-event', (event) => {
     }
     const requireHidden = settings.notificationMode !== 'always';
     const session = await opencodeClient.getSession(sessionId, getNotificationDirectory(record)).catch(() => undefined);
-    if (!session || session.parentID) return;
+    // Ordinary VS Code native notifications only for sidebar-visible roots:
+    // suppress child/subagent, small-model, LLM gateway throwaway
+    // (`metadata.openchamber.llm.purpose`), scheduled-task, and Assistant
+    // bindings; contact-assigned workers stay eligible.
+    if (shouldSkipVSCodeNotificationSession(session)) return;
     const messageId = getPayloadString(info?.id);
     const error = properties.error;
     const errorMessage = getPayloadString(

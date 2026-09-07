@@ -7,10 +7,9 @@ import { ScrollableOverlay } from '@/components/ui/ScrollableOverlay';
 import { Icon } from '@/components/icon/Icon';
 import { useI18n } from '@/lib/i18n';
 import type { Snippet } from '@/types/snippet';
-import { useMobileAutocompleteMaxHeight } from './useMobileAutocompleteMaxHeight';
+import { ComposerAutocompleteLayer } from './ComposerAutocompleteLayer';
 import {
   composerAutocompleteRowClassName,
-  composerAutocompleteSurfaceClassName,
 } from './composerAutocompleteChrome';
 
 export interface SnippetAutocompleteHandle {
@@ -37,7 +36,6 @@ export const SnippetAutocomplete = React.forwardRef<SnippetAutocompleteHandle, S
   const { t } = useI18n();
   const containerRef = React.useRef<HTMLDivElement | null>(null);
   const isMobile = useUIStore((state) => state.isMobile);
-  const mobileMaxHeight = useMobileAutocompleteMaxHeight(containerRef, isMobile);
   const [selectedIndex, setSelectedIndex] = React.useState(0);
   const selectedIndexRef = React.useRef(0);
   const [filteredSnippets, setFilteredSnippets] = React.useState<Snippet[]>([]);
@@ -143,7 +141,7 @@ export const SnippetAutocomplete = React.forwardRef<SnippetAutocompleteHandle, S
   }), [chooseSnippet, filteredSnippets, onClose, openNewSnippetSettings]);
 
   return (
-    <div ref={containerRef} className={composerAutocompleteSurfaceClassName(isMobile, 'max-w-[450px] max-h-60')} style={mobileMaxHeight !== undefined ? { ...style, maxHeight: mobileMaxHeight } : style}>
+    <ComposerAutocompleteLayer ref={containerRef} isMobile={isMobile} className="max-w-[450px] max-h-60" style={style}>
       <ScrollableOverlay preventOverscroll outerClassName="flex-1 min-h-0" className="px-0 pb-2">
         <div
           ref={(el) => { itemRefs.current[0] = el; }}
@@ -179,7 +177,7 @@ export const SnippetAutocomplete = React.forwardRef<SnippetAutocompleteHandle, S
       {!isMobile && (
         <div className="px-3 pt-1 pb-1.5 border-t typography-meta text-muted-foreground">{t('chat.snippetAutocomplete.footer')}</div>
       )}
-    </div>
+    </ComposerAutocompleteLayer>
   );
 });
 

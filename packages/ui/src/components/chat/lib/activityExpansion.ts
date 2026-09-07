@@ -118,12 +118,9 @@ export const resolveTurnSettledForPresentation = (input: {
 };
 
 /**
- * Last-assistant bottom padding: live work uses `pb-1` so StatusRow sits
- * under the last tool; idle Processed rows keep the between-turns `pb-8`.
- * `isInActiveTurn` stays true
- * after an abnormal settle whenever `time.completed` never lands (the
- * incomplete-assistant fallback in MessageList), so it cannot own the
- * tighten by itself once header chrome has already demoted to Processed.
+ * Standalone assistant bottom padding follows its current presentation. Grouped
+ * turns keep this spacing on TurnItem so their shared header/body geometry has
+ * one owner.
  */
 export const shouldTightenWorkingBottomGap = (input: {
   isWorking: boolean;

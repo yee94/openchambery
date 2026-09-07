@@ -264,6 +264,46 @@ describe('mobileComposerSwap', () => {
         });
     });
 
+    test('non-user compensation entering the compact follow band stays fully compact', () => {
+        const compact = applyComposerSwapSnapDone(
+            applyComposerSwapForce(createComposerSwapState(), 'compact'),
+        );
+
+        expect(applyComposerSwapScroll(compact, COMPOSER_SWAP_FOLLOW_RANGE_PX, {
+            userDriven: false,
+        })).toEqual({
+            phase: 'rest',
+            rest: 'compact',
+            progress: 1,
+            pinned: false,
+        });
+    });
+
+    test('non-user compensation reaching the bottom stays fully compact', () => {
+        const compact = applyComposerSwapSnapDone(
+            applyComposerSwapForce(createComposerSwapState(), 'compact'),
+        );
+
+        expect(applyComposerSwapScroll(compact, 0, { userDriven: false })).toEqual({
+            phase: 'rest',
+            rest: 'compact',
+            progress: 1,
+            pinned: false,
+        });
+    });
+
+    test('non-user frames preserve tracking and snapping exactly', () => {
+        const tracking = applyComposerSwapScroll(createComposerSwapState(), 30, {
+            userDriven: true,
+        });
+        expect(tracking.phase).toBe('tracking');
+        expect(applyComposerSwapScroll(tracking, 70, { userDriven: false })).toBe(tracking);
+
+        const snapping = applyComposerSwapCommit(tracking);
+        expect(snapping.phase).toBe('snapping');
+        expect(applyComposerSwapScroll(snapping, 0, { userDriven: false })).toBe(snapping);
+    });
+
     test('inside the follow band the tuned proportional return is unchanged', () => {
         const compact = applyComposerSwapSnapDone(
             applyComposerSwapForce(createComposerSwapState(), 'compact'),

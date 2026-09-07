@@ -47,9 +47,20 @@ export const createNotificationTriggerRuntime = (deps) => {
     return pendingPushTags.size;
   };
 
+  const stringifyApnsData = (data) => {
+    if (!data || typeof data !== 'object') return undefined;
+    const next = {};
+    for (const [key, value] of Object.entries(data)) {
+      if (typeof value !== 'string' || value.length === 0) continue;
+      next[key] = value;
+    }
+    return Object.keys(next).length > 0 ? next : undefined;
+  };
+
   // Generic notification for native push (per the mobile design): a fixed, scenario-based
   // title + the session name as the body. No model/project/message content crosses the relay.
   // Title strings are localized per device token locale inside sendApnsToAllUiSessions.
+  // Contact turns opt out via preserveAlert — those keep nickname + spoken text.
   const toApnsGenericPayload = (payload) => {
     const data = payload?.data && typeof payload.data === 'object' ? payload.data : {};
     const sessionName = typeof data.sessionName === 'string' && data.sessionName.trim().length > 0
@@ -66,15 +77,39 @@ export const createNotificationTriggerRuntime = (deps) => {
     };
   };
 
+  const toApnsContactPayload = (payload) => {
+    const data = payload?.data && typeof payload.data === 'object' ? payload.data : {};
+    const title = typeof payload?.title === 'string' && payload.title.trim()
+      ? payload.title.trim()
+      : 'Assistant';
+    const body = typeof payload?.body === 'string' ? payload.body : '';
+    return {
+      title,
+      body,
+      badge: trackPushAndCountBadge(typeof payload?.tag === 'string' ? payload.tag : undefined),
+      tag: payload?.tag,
+      data: stringifyApnsData({
+        assistantID: data.assistantID,
+        url: typeof data.assistantID === 'string' && data.assistantID.trim()
+          ? `openchamber://assistant/${encodeURIComponent(data.assistantID.trim())}`
+          : (typeof data.url === 'string' ? data.url : undefined),
+      }),
+    };
+  };
+
   // Fan a notification out to every delivery channel: browser web-push (full templated
-  // payload) and native iOS APNs (generic model-based text). Both share the dedup tag;
-  // a failure in one channel must not block the other. Visibility on any other client
-  // never suppresses delivery — every subscribed surface gets the push.
-  const fanoutPush = (payload, options) => Promise.all([
+  // payload) and native iOS APNs (generic model-based text, unless preserveAlert).
+  // Both share the dedup tag; a failure in one channel must not block the other.
+  // Visibility on any other client never suppresses delivery — every subscribed
+  // surface gets the push.
+  const fanoutPush = (payload, options = {}) => Promise.all([
     Promise.resolve(sendPushToAllUiSessions?.(payload, options)).catch((error) => {
       console.warn('[Push] web-push fanout failed:', error?.message ?? error);
     }),
-    Promise.resolve(sendApnsToAllUiSessions?.(toApnsGenericPayload(payload), options)).catch((error) => {
+    Promise.resolve(sendApnsToAllUiSessions?.(
+      options.preserveAlert === true ? toApnsContactPayload(payload) : toApnsGenericPayload(payload),
+      options,
+    )).catch((error) => {
       console.warn('[APNs] fanout failed:', error?.message ?? error);
     }),
   ]);
@@ -97,6 +132,8 @@ export const createNotificationTriggerRuntime = (deps) => {
 
   const sessionMetaCache = new Map();
   const SESSION_META_CACHE_TTL_MS = 60 * 1000;
+  const HIDDEN_SESSION_TITLES = new Set(['smartfetch-secondary']);
+  const nonEmptySystemID = (value) => typeof value === 'string' && value.length > 0;
 
   // Sessions where the client has enabled Permission Auto-Accept. Mirrored
   // from the client-side permissionStore via POST /api/notifications/auto-accept
@@ -148,32 +185,53 @@ export const createNotificationTriggerRuntime = (deps) => {
       smallModelPurpose: meta.smallModelPurpose !== undefined
         ? meta.smallModelPurpose
         : (previous?.smallModelPurpose ?? null),
+      llmPurpose: meta.llmPurpose !== undefined
+        ? meta.llmPurpose
+        : (previous?.llmPurpose ?? null),
+      assistantID: meta.assistantID !== undefined ? meta.assistantID : (previous?.assistantID ?? null),
+      assignedFrom: meta.assignedFrom !== undefined ? meta.assignedFrom : (previous?.assignedFrom ?? null),
+      scheduledTaskID: meta.scheduledTaskID !== undefined
+        ? meta.scheduledTaskID
+        : (previous?.scheduledTaskID ?? null),
+      title: meta.title !== undefined ? meta.title : (previous?.title ?? null),
+      complete: meta.complete === true || previous?.complete === true,
       at: Date.now(),
     });
   };
 
-  const getParentIdFromPayload = (payload) => {
-    if (!payload || typeof payload !== 'object') return undefined;
-    if (payload.type !== 'session.created' && payload.type !== 'session.updated') return undefined;
-    return normalizeParentID(payload.properties?.info?.parentID);
-  };
-
-  const getSmallModelPurposeFromPayload = (payload) => {
-    if (!payload || typeof payload !== 'object') return undefined;
-    if (payload.type !== 'session.created' && payload.type !== 'session.updated') return undefined;
-    return normalizeSmallModelPurpose(payload.properties?.info?.metadata?.openchamber?.smallModel?.purpose);
+  const metaFromOpenchamber = (openchamber, extras = {}) => {
+    const assignedFrom = typeof openchamber?.assigned?.from === 'string'
+      ? openchamber.assigned.from
+      : null;
+    return {
+      smallModelPurpose: normalizeSmallModelPurpose(openchamber?.smallModel?.purpose),
+      // Throwaway LLM gateway sessions (`metadata.openchamber.llm.purpose`) share
+      // the same sidebar-hidden contract as small-model system sessions.
+      llmPurpose: normalizeSmallModelPurpose(openchamber?.llm?.purpose),
+      assistantID: nonEmptySystemID(openchamber?.assistant?.assistantID)
+        ? openchamber.assistant.assistantID
+        : null,
+      assignedFrom,
+      scheduledTaskID: nonEmptySystemID(openchamber?.scheduledTask?.taskID)
+        ? openchamber.scheduledTask.taskID
+        : null,
+      ...extras,
+    };
   };
 
   const maybeCacheSessionMetaFromPayload = (payload) => {
+    if (!payload || typeof payload !== 'object') return;
+    if (payload.type !== 'session.created' && payload.type !== 'session.updated') return;
+    const info = payload.properties?.info;
+    if (!info || typeof info !== 'object') return;
     const sessionId = extractSessionIdFromPayload(payload);
     if (typeof sessionId !== 'string' || sessionId.length === 0) return;
     const directory = extractDirectoryFromPayload(payload);
-    const parentID = getParentIdFromPayload(payload);
-    const smallModelPurpose = getSmallModelPurposeFromPayload(payload);
-    if (parentID === undefined && smallModelPurpose === undefined) return;
     setCachedSessionMeta(sessionId, directory, {
-      ...(parentID !== undefined ? { parentID } : {}),
-      ...(smallModelPurpose !== undefined ? { smallModelPurpose } : {}),
+      parentID: normalizeParentID(info.parentID),
+      title: typeof info.title === 'string' ? info.title : null,
+      complete: true,
+      ...metaFromOpenchamber(info.metadata?.openchamber),
     });
   };
 
@@ -181,7 +239,7 @@ export const createNotificationTriggerRuntime = (deps) => {
     if (!sessionId) return undefined;
 
     const cached = getCachedSessionMeta(sessionId, directory);
-    if (cached !== undefined) return cached;
+    if (cached?.complete) return cached;
 
     try {
       const base = buildOpenCodeUrl(`/session/${encodeURIComponent(sessionId)}`, '');
@@ -195,21 +253,23 @@ export const createNotificationTriggerRuntime = (deps) => {
         signal: AbortSignal.timeout(2000),
       });
       if (!response.ok) {
-        return undefined;
+        return cached;
       }
       const session = await response.json().catch(() => null);
       if (!session || typeof session !== 'object') {
-        return undefined;
+        return cached;
       }
 
       const meta = {
         parentID: normalizeParentID(session.parentID),
-        smallModelPurpose: normalizeSmallModelPurpose(session.metadata?.openchamber?.smallModel?.purpose),
+        title: typeof session.title === 'string' ? session.title : null,
+        complete: true,
+        ...metaFromOpenchamber(session.metadata?.openchamber),
       };
       setCachedSessionMeta(sessionId, directory, meta);
-      return meta;
+      return getCachedSessionMeta(sessionId, directory) ?? meta;
     } catch {
-      return undefined;
+      return cached;
     }
   };
 
@@ -234,20 +294,26 @@ export const createNotificationTriggerRuntime = (deps) => {
     return false;
   };
 
-  const isSubtaskSession = async (sessionId, directory) => {
-    const parentID = await fetchSessionParentId(sessionId, directory);
-    return typeof parentID === 'string' && parentID.length > 0;
-  };
-
-  const isSmallModelSession = async (sessionId, directory) => {
-    const meta = await fetchSessionMeta(sessionId, directory);
-    return typeof meta?.smallModelPurpose === 'string' && meta.smallModelPurpose.length > 0;
-  };
-
-  const shouldSkipSystemSessionNotification = async (sessionId, directory) => {
-    if (await isSubtaskSession(sessionId, directory)) return true;
-    if (await isSmallModelSession(sessionId, directory)) return true;
+  const isHiddenFromNavSession = (meta) => {
+    if (!meta) return false;
+    if (typeof meta.parentID === 'string' && meta.parentID.length > 0) return true;
+    if (typeof meta.smallModelPurpose === 'string' && meta.smallModelPurpose.length > 0) return true;
+    if (typeof meta.llmPurpose === 'string' && meta.llmPurpose.length > 0) return true;
+    if (typeof meta.assistantID === 'string' && meta.assistantID.length > 0 && meta.assignedFrom !== 'contact') {
+      return true;
+    }
+    if (typeof meta.scheduledTaskID === 'string' && meta.scheduledTaskID.length > 0) return true;
+    if (typeof meta.title === 'string' && HIDDEN_SESSION_TITLES.has(meta.title)) return true;
     return false;
+  };
+
+  // Only sessions that can appear as sidebar roots get ordinary push. Child /
+  // subagent sessions, archived Assistant bindings, scheduled-task sessions,
+  // small-model / LLM gateway system sessions, and SmartFetch secondaries are
+  // excluded. Contact-assigned worker sessions stay visible and still notify.
+  const shouldSkipSystemSessionNotification = async (sessionId, directory) => {
+    const meta = await fetchSessionMeta(sessionId, directory);
+    return isHiddenFromNavSession(meta);
   };
 
   const extractSessionIdFromPayload = (payload) => {
@@ -271,40 +337,6 @@ export const createNotificationTriggerRuntime = (deps) => {
     if (typeof directory !== 'string') return undefined;
     const trimmed = directory.trim();
     return trimmed.length > 0 ? trimmed : undefined;
-  };
-
-  const formatMode = (raw) => {
-    const value = typeof raw === 'string' ? raw.trim() : '';
-    const normalized = value.length > 0 ? value : 'agent';
-    return normalized
-      .split(/[-_\s]+/)
-      .filter(Boolean)
-      .map((token) => token.charAt(0).toUpperCase() + token.slice(1))
-      .join(' ');
-  };
-
-  const formatModelId = (raw) => {
-    const value = typeof raw === 'string' ? raw.trim() : '';
-    if (!value) {
-      return 'Assistant';
-    }
-
-    const tokens = value.split(/[-_]+/).filter(Boolean);
-    const result = [];
-    for (let i = 0; i < tokens.length; i += 1) {
-      const current = tokens[i];
-      const next = tokens[i + 1];
-      if (/^\d+$/.test(current) && next && /^\d+$/.test(next)) {
-        result.push(`${current}.${next}`);
-        i += 1;
-        continue;
-      }
-      result.push(current);
-    }
-
-    return result
-      .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-      .join(' ');
   };
 
   // A session with an ACTIVE goal suppresses per-turn ready notifications;
@@ -338,6 +370,20 @@ export const createNotificationTriggerRuntime = (deps) => {
 
     const sessionId = extractSessionIdFromPayload(payload);
     const notificationDirectory = extractDirectoryFromPayload(payload);
+    if ((payload.type === 'session.updated' || payload.type === 'session.created') && sessionId) {
+      const title = payload.properties?.info?.title;
+      if (
+        typeof title === 'string'
+        && title.trim()
+        && !(await shouldSkipSystemSessionNotification(sessionId, notificationDirectory))
+      ) {
+        try {
+          await sendLiveActivityEnd?.({ sessionId, title: title.trim() });
+        } catch (error) {
+          console.warn('[Live Activity] title update failed:', error?.message ?? error);
+        }
+      }
+    }
     if ((payload.type === 'session.idle' || payload.type === 'session.error') && sessionId) {
       const error = payload.properties?.error;
       const errorText = typeof error?.message === 'string'
@@ -404,13 +450,13 @@ export const createNotificationTriggerRuntime = (deps) => {
         }
         lastReadyNotificationAt.set(sessionId, now);
 
-        let title = `${formatMode(info?.mode)} agent is ready`;
-        let body = `${formatModelId(info?.modelID)} completed the task`;
+        let title = 'Task completed';
+        let body = '';
         let sessionName = '';
 
         try {
           const templates = settings.notificationTemplates || {};
-          const completionTemplate = templates.completion || { title: '{agent_name} is ready', message: '{model_name} completed the task' };
+          const completionTemplate = templates.completion || { title: 'Task completed', message: '{session_name}' };
 
           const variables = await buildTemplateVariables(payload, sessionId);
           sessionName = typeof variables.session_name === 'string' ? variables.session_name : sessionName;
@@ -430,8 +476,10 @@ export const createNotificationTriggerRuntime = (deps) => {
           const resolvedBody = resolveNotificationTemplate(completionTemplate.message, variables);
           if (resolvedTitle) title = resolvedTitle;
           if (shouldApplyResolvedTemplateMessage(completionTemplate.message, resolvedBody, variables)) body = resolvedBody;
+          if (!body) body = sessionName || resolvedBody || 'Session';
         } catch (error) {
           console.warn('[Notification] Template resolution failed, using defaults:', error?.message || error);
+          if (!body) body = sessionName || 'Session';
         }
 
         if (settings.nativeNotificationsEnabled) {
@@ -492,12 +540,8 @@ export const createNotificationTriggerRuntime = (deps) => {
         const header = typeof firstQuestion?.header === 'string' ? firstQuestion.header.trim() : '';
         const questionText = typeof firstQuestion?.question === 'string' ? firstQuestion.question.trim() : '';
 
-        let title = /plan\s*mode/i.test(header)
-          ? 'Switch to plan mode'
-          : /build\s*agent/i.test(header)
-            ? 'Switch to build mode'
-            : header || 'Input needed';
-        let body = questionText || 'Agent is waiting for your response';
+        let title = 'Needs your answer';
+        let body = '';
         let sessionName = '';
 
         try {
@@ -506,14 +550,16 @@ export const createNotificationTriggerRuntime = (deps) => {
           variables.last_message = questionText || header || '';
 
           const templates = settings.notificationTemplates || {};
-          const questionTemplate = templates.question || { title: 'Input needed', message: '{last_message}' };
+          const questionTemplate = templates.question || { title: 'Needs your answer', message: '{session_name}' };
 
           const resolvedTitle = resolveNotificationTemplate(questionTemplate.title, variables);
           const resolvedBody = resolveNotificationTemplate(questionTemplate.message, variables);
           if (resolvedTitle) title = resolvedTitle;
           if (shouldApplyResolvedTemplateMessage(questionTemplate.message, resolvedBody, variables)) body = resolvedBody;
+          if (!body) body = sessionName || resolvedBody || 'Session';
         } catch (error) {
           console.warn('[Notification] Question template resolution failed, using defaults:', error?.message || error);
+          if (!body) body = sessionName || 'Session';
         }
 
         if (settings.nativeNotificationsEnabled) {
@@ -618,8 +664,8 @@ export const createNotificationTriggerRuntime = (deps) => {
           ? sessionTitle.trim()
           : permissionText || 'Agent is waiting for your approval';
 
-        let title = 'Permission required';
-        let body = fallbackMessage;
+        let title = 'Needs permission';
+        let body = '';
         let sessionName = '';
 
         try {
@@ -628,14 +674,14 @@ export const createNotificationTriggerRuntime = (deps) => {
           variables.last_message = fallbackMessage;
 
           const templates = settings.notificationTemplates || {};
-          const questionTemplate = templates.question || { title: 'Permission required', message: '{last_message}' };
+          const questionTemplate = templates.question || { title: 'Needs permission', message: '{session_name}' };
 
-          const resolvedTitle = resolveNotificationTemplate(questionTemplate.title, variables);
           const resolvedBody = resolveNotificationTemplate(questionTemplate.message, variables);
-          if (resolvedTitle) title = resolvedTitle;
           if (shouldApplyResolvedTemplateMessage(questionTemplate.message, resolvedBody, variables)) body = resolvedBody;
+          if (!body) body = sessionName || fallbackMessage || 'Session';
         } catch (error) {
           console.warn('[Notification] Permission template resolution failed, using defaults:', error?.message || error);
+          if (!body) body = sessionName || fallbackMessage || 'Session';
         }
 
         if (settings.nativeNotificationsEnabled) {
@@ -713,6 +759,57 @@ export const createNotificationTriggerRuntime = (deps) => {
     );
   };
 
+  const contactNotificationTitle = (name) => {
+    if (typeof name !== 'string' || !name.trim()) return 'Assistant';
+    const stripped = name.replace(/^(?:\p{Extended_Pictographic}|\p{Regional_Indicator}|[\uFE0F\u200D])+\s*/u, '').trim();
+    return stripped || name.trim();
+  };
+
+  const sendContactTurnNotification = async ({ assistantID, name, body, status } = {}) => {
+    if (typeof assistantID !== 'string' || !assistantID.trim()) return;
+    const settings = await readSettingsFromDisk();
+    if (settings.notifyOnCompletion === false) return;
+
+    const title = contactNotificationTitle(name);
+    const rawBody = typeof body === 'string' ? body : '';
+    let text = '';
+    try {
+      text = await prepareNotificationLastMessage({ message: rawBody, settings });
+    } catch {
+      text = '';
+    }
+    if (!text) text = status === 'error' ? 'Something went wrong' : 'New message';
+    const tag = `contact-${assistantID.trim()}`;
+
+    if (settings.nativeNotificationsEnabled) {
+      const notificationPayload = {
+        title,
+        body: text,
+        tag,
+        kind: 'contact',
+        assistantID: assistantID.trim(),
+        requireHidden: false,
+      };
+      const desktopNotificationDelivered = emitDesktopNotification(notificationPayload);
+      broadcastUiNotification(notificationPayload, { desktopNotificationDelivered });
+    }
+
+    const assistantPath = `/assistant/${encodeURIComponent(assistantID.trim())}`;
+    await fanoutPush(
+      {
+        title,
+        body: text,
+        tag,
+        data: {
+          url: assistantPath,
+          assistantID: assistantID.trim(),
+          type: 'contact',
+        },
+      },
+      { requireNoSse: true, preserveAlert: true },
+    );
+  };
+
   return {
     maybeSendPushForTrigger,
     setAutoAcceptSession,
@@ -720,5 +817,6 @@ export const createNotificationTriggerRuntime = (deps) => {
     setGetIsSessionAutoAccepting,
     clearPendingPushBadge,
     sendGoalSettlePush,
+    sendContactTurnNotification,
   };
 };

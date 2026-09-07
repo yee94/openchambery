@@ -160,6 +160,35 @@ describe('handleSessionTurnPageRoute', () => {
     });
   });
 
+  test('forwards includeReasoning query to bridge payload when present', async () => {
+    const { handleSessionTurnPageRoute } = await loadRoute();
+    const { calls, sendBridgeMessage } = createBridgeRecorder(async () => ({
+      records: [],
+      cursor: null,
+      complete: true,
+      turnCount: 0,
+    }));
+
+    const response = await handleSessionTurnPageRoute({
+      method: 'GET',
+      pathname: '/api/openchamber/sessions/ses_1/messages',
+      searchParams: new URLSearchParams({
+        directory: '/repo',
+        turns: '3',
+        includeReasoning: 'false',
+      }),
+      sendBridgeMessage,
+    });
+
+    expect(response.status).toBe(200);
+    expect(calls[0]?.payload).toEqual({
+      sessionID: 'ses_1',
+      directory: '/repo',
+      turns: 3,
+      includeReasoning: 'false',
+    });
+  });
+
   test('non-GET methods return 405', async () => {
     const { handleSessionTurnPageRoute } = await loadRoute();
     const { calls, sendBridgeMessage } = createBridgeRecorder();

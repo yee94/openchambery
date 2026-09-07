@@ -66,6 +66,22 @@ describe('readUserMessageHeaderIdentity', () => {
         });
     });
 
+    test('reads provider and model from the current nested user-message shape', () => {
+        expect(readUserMessageHeaderIdentity({
+            agent: 'build',
+            model: {
+                providerID: 'openai',
+                modelID: 'gpt-5.6',
+                variant: 'high',
+            },
+        })).toEqual({
+            agentName: 'build',
+            providerId: 'openai',
+            modelId: 'gpt-5.6',
+            variant: 'high',
+        });
+    });
+
     test('returns null when the user row has no header identity', () => {
         expect(readUserMessageHeaderIdentity({ role: 'user' })).toBeNull();
         expect(readUserMessageHeaderIdentity(null)).toBeNull();

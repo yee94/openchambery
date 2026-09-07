@@ -59,6 +59,11 @@ describe('mobile composer overflow and swap contract', () => {
         expect(mobileCss).toContain('[data-composer-content="true"] .overflow-hidden');
         expect(mobileCss).toContain('[data-composer-input-shell="true"]');
         expect(mobileCss).toContain('[data-attachment-preview="true"]');
+        expect(mobileCss).toContain('[data-message-image-slot="true"]');
+        expect(mobileCss).toContain('[data-user-message-bubble="true"]');
+        expect(mobileCss).toContain('[data-user-message-clamp="true"]');
+        expect(mobileCss).toContain('[data-user-message-collapse="true"]');
+        expect(mobileCss).toContain('[data-user-message-body]:has([data-user-message-clamp="true"]) [data-message-files]');
         expect(mobileCss).toContain('Composer clip shells must stay clippers');
         expect(mobileCss).toContain('min-height: min-content');
         expect(mobileCss).toContain('[data-composer-highlight="true"]');
@@ -74,7 +79,8 @@ describe('mobile composer overflow and swap contract', () => {
 
     test('declares alternating transform layers and snap-only transition', () => {
         expect(mobileCss).toContain('@property --oc-mobile-composer-swap');
-        expect(mobileCss).toMatch(/\.oc-mobile-composer-expanded-layer\s*\{[^}]*min\(1, var\(--oc-mobile-composer-swap\) \* 2\) \* 110%/s);
+        expect(mobileCss).toMatch(/\.oc-mobile-composer-expanded-layer\s*\{[^}]*transform:\s*none/s);
+        expect(mobileCss).toMatch(/data-oc-composer-swap-phase="snapping"[\s\S]*?\.oc-mobile-composer-expanded-layer\s*\{[^}]*min\(1, var\(--oc-mobile-composer-swap\) \* 2\) \* 110%/s);
         expect(mobileCss).toMatch(/\.oc-mobile-composer-compact-layer\s*\{[^}]*width:\s*80%;[^}]*--oc-mobile-glass-shadow[^}]*--oc-mobile-glass-blur[^}]*max\(0, var\(--oc-mobile-composer-swap\) \* 2 - 1\)/s);
         expect(mobileCss).toMatch(/\.oc-mobile-composer-compact-layer\s*\{[^}]*background:\s*var\(--oc-mobile-glass-fill\)/s);
         expect(mobileCss).toMatch(/data-oc-composer-swap-phase="snapping"[^}]*transition:\s*--oc-mobile-composer-swap 240ms/s);
@@ -107,8 +113,24 @@ describe('mobile composer overflow and swap contract', () => {
         expect(mobileCss).not.toContain('animation-timeline');
         expect(mobileCss).not.toContain('--oc-mobile-composer-shrink');
         expect(mobileCss).not.toContain('@keyframes oc-mobile-composer-');
-        expect(chatContainerSource.match(/oc-chat-composer-swap-scope/g)).toHaveLength(2);
-        expect(chatContainerSource.match(/oc-mobile-composer-foot--overlay/g)).toHaveLength(2);
+        const establishingDraftShell = chatContainerSource.slice(
+            chatContainerSource.indexOf('if ((draftSubmitting || draftEstablishing) && draftPendingMessage)'),
+            chatContainerSource.indexOf('if (draftSubmitting || draftEstablishing)'),
+        );
+        const hydratingShell = chatContainerSource.slice(
+            chatContainerSource.indexOf('if (isSessionHydrating)', chatContainerSource.indexOf('if (draftSubmitting || draftEstablishing)')),
+            chatContainerSource.indexOf('if (renderedViewportMessages.length === 0 && !sessionIsWorking)'),
+        );
+        const transcriptShell = chatContainerSource.slice(
+            chatContainerSource.lastIndexOf("<div ref={composerSwapScopeRef} className={cn('relative flex flex-col h-full bg-background'"),
+            chatContainerSource.indexOf('const MemoizedChatContainerContent'),
+        );
+        for (const shell of [establishingDraftShell, hydratingShell, transcriptShell]) {
+            expect(shell.match(/oc-chat-composer-swap-scope/g)).toHaveLength(1);
+            expect(shell.match(/oc-mobile-composer-foot--overlay/g)).toHaveLength(1);
+        }
+        expect(chatContainerSource.match(/oc-chat-composer-swap-scope/g)).toHaveLength(3);
+        expect(chatContainerSource.match(/oc-mobile-composer-foot--overlay/g)).toHaveLength(3);
         for (const source of [chatContainerSource, chatInputSource, autoFollowSource]) {
             expect(source).not.toContain("setProperty('--oc-mobile-composer-shrink'");
             expect(source).not.toContain("setProperty('--oc-chat-foot-inset'");
@@ -305,7 +327,7 @@ describe('mobile composer overflow and swap contract', () => {
         expect(chatInputSource).toContain('isMobile && isCapacitorApp() && !nativeIosComposerActive && inputBarOffset > 0 && !mobileTextareaFocused');
     });
 
-    test('in-flow draft feet pin expanded and hide leftover compact pills', () => {
+    test('idle draft feet stay in-flow while the establishing draft uses the overlay contract', () => {
         expect(mobileCss).toMatch(
             /\.oc-mobile-composer-foot:not\(\.oc-mobile-composer-foot--overlay\)\s*\{[^}]*--oc-mobile-composer-swap:\s*0/,
         );
@@ -313,8 +335,19 @@ describe('mobile composer overflow and swap contract', () => {
             /\.oc-mobile-composer-foot:not\(\.oc-mobile-composer-foot--overlay\)\s+\.oc-mobile-composer-compact-layer\s*\{[^}]*display:\s*none/,
         );
         expect(swapHookSource).toContain('clearComposerSwap');
-        expect(chatContainerSource.match(/oc-mobile-composer-foot--overlay/g)).toHaveLength(2);
-        expect(chatContainerSource).toContain('oc-draft-center');
+        const establishingDraftShell = chatContainerSource.slice(
+            chatContainerSource.indexOf('if ((draftSubmitting || draftEstablishing) && draftPendingMessage)'),
+            chatContainerSource.indexOf('if (draftSubmitting || draftEstablishing)'),
+        );
+        const idleDraftShell = chatContainerSource.slice(
+            chatContainerSource.indexOf('if (draftSubmitting || draftEstablishing)'),
+            chatContainerSource.indexOf('if (!currentSessionId)', chatContainerSource.indexOf('if (draftSubmitting || draftEstablishing)')),
+        );
+        expect(establishingDraftShell).toContain('oc-mobile-composer-foot--overlay');
+        expect(establishingDraftShell).toContain('oc-chat-composer-swap-scope');
+        expect(idleDraftShell).toContain('oc-mobile-composer-foot');
+        expect(idleDraftShell).not.toContain('oc-mobile-composer-foot--overlay');
+        expect(idleDraftShell).toContain('oc-draft-center');
     });
 
     test('native iOS in-flow feet reserve the pill so draft pickers sit above the input', () => {
@@ -323,6 +356,12 @@ describe('mobile composer overflow and swap contract', () => {
         );
         expect(chatInputSource).toContain('oc-mobile-draft-target-selectors');
         expect(chatInputSource).toContain('data-native-composer-accessories');
+        // Establishing foot is geometry-only; project/branch must not paint through
+        // the invisible shell via `.oc-mobile-composer-reveal { visibility: visible }`.
+        expect(chatInputSource).toContain('&& !draftBusy');
+        expect(chatInputSource).toMatch(
+            /const showDraftTargetSelectors = surface\.kind === 'primary'[\s\S]*?&& !draftBusy/,
+        );
 
         const start = mobileCss.indexOf(
             ':root.oc-native-ios-composer\n  .oc-mobile-composer-foot:not(.oc-mobile-composer-foot--overlay) {',

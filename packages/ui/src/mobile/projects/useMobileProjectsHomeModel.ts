@@ -7,6 +7,7 @@ import {
 } from '@/apps/mobileSessionPagination';
 import type { IconName } from '@/components/icon/icons';
 import { useI18n } from '@/lib/i18n';
+import { formatSessionChangeCounts, readSessionChangeSummary } from '@/lib/sessionChangeSummary';
 import { PROJECT_ICON_MAP } from '@/lib/projectMeta';
 import { useDirectoryStore } from '@/stores/useDirectoryStore';
 import {
@@ -40,6 +41,10 @@ import type {
   MobileSessionTreeNode,
   MobileWorktreeGroup,
 } from './MobileProjectsHome';
+import {
+  reuseMobileSessionTreeNode,
+  reuseMobileSessionTreeNodeList,
+} from './mobileSessionTreeNode';
 
 /** Sentinel session-row ids for bucket pagination (presentational tree has no dedicated slot). */
 export const SHOW_MORE_ID_PREFIX = '__show_more__:';
@@ -336,38 +341,63 @@ export function useMobileProjectsHomeModel(): MobileProjectsHomeModel {
     return map;
   }, [projectsMeta]);
 
+  const previousPinnedNodesRef = React.useRef<MobileSessionTreeNode[]>([]);
+  const previousInProgressNodesRef = React.useRef<MobileSessionTreeNode[]>([]);
+  const previousHomeSessionNodesRef = React.useRef<Map<string, MobileSessionTreeNode>>(new Map());
+
   const { pinnedSessions, inProgressSessions } = React.useMemo(() => {
     const projectById = new Map(projectsMeta.map((project) => [project.id, project]));
     const untitled = t('mobile.sessions.untitled');
-    const toNode = (session: Session, pinned: boolean): MobileSessionTreeNode[] => {
+    const previousPinnedById = new Map(
+      previousPinnedNodesRef.current.map((node) => [node.id, node]),
+    );
+    const previousInProgressById = new Map(
+      previousInProgressNodesRef.current.map((node) => [node.id, node]),
+    );
+    const toNode = (
+      session: Session,
+      pinned: boolean,
+      previousById: Map<string, MobileSessionTreeNode>,
+    ): MobileSessionTreeNode[] => {
       const owner = ownership.bySessionId.get(session.id);
       const project = owner ? projectById.get(owner.projectId) : undefined;
       if (!project) return [];
       const worktree = owner?.kind === 'worktree'
         ? findExactWorktreeMatch(project, owner.scopeDirectory)
         : null;
-      return [{
+      const next: MobileSessionTreeNode = {
         id: session.id,
         directory: getSessionDirectory(session),
         title: session.title?.trim() || untitled,
         subtitle: formatHomeSessionSubtitle(project.label, worktree?.branch),
+        changes: formatSessionChangeCounts(readSessionChangeSummary(session)) ?? undefined,
         activityLabel: formatRelativeShort(getSessionTimestamp(session)) || undefined,
         unread: (unseenBySession[session.id] ?? 0) > 0,
         pinned,
         archived: isSessionArchived(session),
         active: currentSessionId === session.id,
-      }];
+      };
+      return [reuseMobileSessionTreeNode(previousById.get(session.id), next)];
     };
-    return {
-      pinnedSessions: derivePinnedSessions(sessions, pinnedSessionIds)
-        .flatMap((session) => toNode(session, true)),
-      inProgressSessions: listInProgressHomeSessions(
-        sessions,
-        pinnedSessionIds,
-        runningSessionIds,
-        unseenBySession,
-      ).flatMap((session) => toNode(session, false)),
-    };
+    const nextPinned = derivePinnedSessions(sessions, pinnedSessionIds)
+      .flatMap((session) => toNode(session, true, previousPinnedById));
+    const nextInProgress = listInProgressHomeSessions(
+      sessions,
+      pinnedSessionIds,
+      runningSessionIds,
+      unseenBySession,
+    ).flatMap((session) => toNode(session, false, previousInProgressById));
+    const pinnedSessions = reuseMobileSessionTreeNodeList(
+      previousPinnedNodesRef.current,
+      nextPinned,
+    );
+    const inProgressSessions = reuseMobileSessionTreeNodeList(
+      previousInProgressNodesRef.current,
+      nextInProgress,
+    );
+    previousPinnedNodesRef.current = pinnedSessions;
+    previousInProgressNodesRef.current = inProgressSessions;
+    return { pinnedSessions, inProgressSessions };
   }, [
     currentSessionId,
     ownership,
@@ -397,8 +427,13 @@ export function useMobileProjectsHomeModel(): MobileProjectsHomeModel {
 
   const homeProjects = React.useMemo<MobileProjectHomeItem[]>(() => {
     const normalizedDirectory = normalizePath(currentDirectory);
+    const nextSessionNodes = new Map<string, MobileSessionTreeNode>();
+    const rememberNode = (node: MobileSessionTreeNode): MobileSessionTreeNode => {
+      if (node.kind !== 'pagination') nextSessionNodes.set(node.id, node);
+      return node;
+    };
 
-    return projectNodes.map((node) => {
+    const projects = projectNodes.map((node) => {
       const projectExpanded = projectExpandedMap[node.project.id] ?? true;
       const defaultVisible = getMobileSessionDefaultVisibleCount();
       const iconName: IconName | undefined = node.project.icon
@@ -428,16 +463,23 @@ export function useMobileProjectsHomeModel(): MobileProjectsHomeModel {
           const unseen = unseenBySession[session.id] ?? 0;
           // Subagents are filtered out of roots; keep unread only for top-level rows.
           const unread = unseen > 0 && !parentId;
-          return {
+          const next: MobileSessionTreeNode = {
             id: session.id,
             directory: bucket.path,
             title: session.title?.trim() || t('mobile.sessions.untitled'),
+            changes: formatSessionChangeCounts(readSessionChangeSummary(session)) ?? undefined,
             activityLabel: formatRelativeShort(getSessionTimestamp(session)) || undefined,
             unread,
             pinned: pinnedSessionIds.has(session.id),
             archived: isSessionArchived(session),
             active: currentSessionId === session.id,
           };
+          const reused = reuseMobileSessionTreeNode(
+            previousHomeSessionNodesRef.current.get(session.id)
+              ?? nextSessionNodes.get(session.id),
+            next,
+          );
+          return rememberNode(reused);
         };
 
         const visibleRoots = selectVisibleSessions(
@@ -515,6 +557,8 @@ export function useMobileProjectsHomeModel(): MobileProjectsHomeModel {
         worktrees,
       };
     });
+    previousHomeSessionNodesRef.current = nextSessionNodes;
+    return projects;
   }, [
     activePaginationByDirectory,
     alwaysVisibleSessionIds,

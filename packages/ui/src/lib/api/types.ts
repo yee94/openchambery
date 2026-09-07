@@ -743,6 +743,7 @@ export interface NotificationPayload {
   tag?: string;
   kind?: string;
   sessionId?: string;
+  assistantID?: string;
   directory?: string;
   requireHidden?: boolean;
 }
@@ -807,6 +808,13 @@ export interface LiveActivityTokenPayload {
   activityId: string;
   sessionId: string;
   token: string;
+  items?: Array<{
+    sessionId: string;
+    title: string;
+    status: string;
+    startedAt: number;
+    endedAt?: number;
+  }>;
 }
 
 export interface LiveActivityTokenUnregisterPayload {

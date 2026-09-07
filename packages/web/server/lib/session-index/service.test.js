@@ -68,7 +68,7 @@ describe('Electron session index', () => {
     service.close();
   });
 
-  it('excludes Assistant, Scheduled, and smallModel system sessions from ordinary sidebar summaries', () => {
+  it('excludes Assistant, Scheduled, smallModel, and llm system sessions from ordinary sidebar summaries', () => {
     const runtimeRef = { value: 'http://runtime-a.test' };
     const service = createService(runtimeRef);
     const assistantSession = {
@@ -83,11 +83,15 @@ describe('Electron session index', () => {
       ...session('ses_small_model', 97),
       metadata: { openchamber: { smallModel: { purpose: 'session-title' } } },
     };
+    const llmSession = {
+      ...session('ses_llm', 96),
+      metadata: { openchamber: { llm: { purpose: 'chat-completions' } } },
+    };
     const ordinary = session('ses_ordinary', 98);
 
     service.replaceDirectory({
       directory: '/repo',
-      sessions: [assistantSession, scheduledSession, smallModelSession, ordinary],
+      sessions: [assistantSession, scheduledSession, smallModelSession, llmSession, ordinary],
       cursor: null,
       hasMore: false,
     });
@@ -96,7 +100,45 @@ describe('Electron session index', () => {
     service.upsert(assistantSession);
     service.upsert(scheduledSession);
     service.upsert(smallModelSession);
+    service.upsert(llmSession);
     expect(service.snapshot().directories[0].sessions.map((item) => item.id)).toEqual(['ses_ordinary']);
+    service.close();
+  });
+
+  it('keeps contact-assigned worker sessions visible in ordinary sidebar summaries', () => {
+    const runtimeRef = { value: 'http://runtime-a.test' };
+    const service = createService(runtimeRef);
+    const worker = {
+      ...session('ses_worker', 100),
+      metadata: {
+        openchamber: {
+          assigned: { from: 'contact', assistantID: 'assistant_1', name: 'A' },
+        },
+      },
+    };
+    const legacyWorker = {
+      ...session('ses_legacy_worker', 99),
+      metadata: {
+        openchamber: {
+          assistant: { assistantID: 'assistant_1', name: 'A' },
+          assigned: { from: 'contact' },
+        },
+      },
+    };
+    const hiddenBinding = {
+      ...session('ses_binding', 98),
+      metadata: { openchamber: { assistant: { assistantID: 'assistant_1', name: 'A' } } },
+    };
+    service.replaceDirectory({
+      directory: '/repo',
+      sessions: [worker, legacyWorker, hiddenBinding],
+      cursor: null,
+      hasMore: false,
+    });
+    expect(service.snapshot().directories[0].sessions.map((item) => item.id)).toEqual([
+      'ses_worker',
+      'ses_legacy_worker',
+    ]);
     service.close();
   });
 

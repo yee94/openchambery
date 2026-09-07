@@ -236,13 +236,30 @@ describe('session-title helpers', () => {
       metadata: { openchamber: { smallModel: { purpose: 'session-title' } } },
     })).toBe(true);
     expect(isSystemOwnedSession({
+      metadata: { openchamber: { llm: { purpose: 'chat-completions' } } },
+    })).toBe(true);
+    expect(isSystemOwnedSession({
       title: '[Assistant] Looks system',
       metadata: { openchamber: { assistant: { name: 'no-id' } } },
     })).toBe(false);
     expect(isSystemOwnedSession({
       metadata: { openchamber: { smallModel: { purpose: '' } } },
     })).toBe(false);
+    expect(isSystemOwnedSession({
+      metadata: { openchamber: { llm: { purpose: '' } } },
+    })).toBe(false);
     expect(isSystemOwnedSession({ title: 'Ordinary' })).toBe(false);
+    expect(isSystemOwnedSession({
+      metadata: { openchamber: { assigned: { from: 'contact', assistantID: 'assistant_1' } } },
+    })).toBe(false);
+    expect(isSystemOwnedSession({
+      metadata: {
+        openchamber: {
+          assistant: { assistantID: 'assistant_1' },
+          assigned: { from: 'contact' },
+        },
+      },
+    })).toBe(false);
   });
 
   it('skips title generation and patch for system-owned sessions', async () => {

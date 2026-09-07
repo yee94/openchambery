@@ -48,6 +48,25 @@ describe('canAbortActiveComposerShortcut', () => {
       primaryCanAbort: false,
     })).toBe(true);
   });
+
+  test('treats an in-flight pending send as abortable even when surface wiring is still idle', () => {
+    expect(canAbortActiveComposerShortcut({
+      sessionId: 'session-1',
+      surfaceKind: 'primary',
+      wiringCanAbort: false,
+      primaryCanAbort: false,
+      pendingSend: true,
+    })).toBe(true);
+  });
+
+  test('allows aborting the current session when no composer surface is mounted', () => {
+    expect(canAbortActiveComposerShortcut({
+      sessionId: 'session-1',
+      surfaceKind: null,
+      wiringCanAbort: false,
+      primaryCanAbort: true,
+    })).toBe(true);
+  });
 });
 
 describe('executeLeaderCompact', () => {

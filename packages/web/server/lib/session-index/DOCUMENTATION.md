@@ -15,9 +15,12 @@ Sessions titled `smartfetch-secondary` are temporary SmartFetch model calls;
 the index excludes them from every snapshot and clears prior summaries when a
   matching session update arrives. System-owned sessions are excluded by
   authoritative metadata only: a non-empty
-  `metadata.openchamber.assistant.assistantID`,
-  `metadata.openchamber.scheduledTask.taskID`, or
-  `metadata.openchamber.smallModel.purpose`. Title prefixes are human labels and
+  `metadata.openchamber.assistant.assistantID` (unless
+  `metadata.openchamber.assigned.from === 'contact'` — those are visible
+  coding workers the Assistant subscribed to),
+  `metadata.openchamber.scheduledTask.taskID`,
+  `metadata.openchamber.smallModel.purpose`, or
+  `metadata.openchamber.llm.purpose`. Title prefixes are human labels and
   never participate in this filter. Metadata is the ownership/isolation signal;
 `time.archived` is archive state; `time.pinned` is OpenChamber-owned pin state
 overlaid from the independent `session_pin` table (also mirrored onto in-window

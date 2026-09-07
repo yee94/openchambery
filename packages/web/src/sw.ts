@@ -19,6 +19,7 @@ type PushPayload = {
   data?: {
     url?: string;
     sessionId?: string;
+    assistantID?: string;
     type?: string;
   };
   icon?: string;

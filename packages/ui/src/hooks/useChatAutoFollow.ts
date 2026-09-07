@@ -715,16 +715,18 @@ export const useChatAutoFollow = ({
             return;
         }
 
-        // Within the bottom zone → (re-)pin to following. This is how scrolling
-        // back DOWN to the bottom resumes auto-follow. Crucially, re-engage only
-        // when the user arrives by scrolling down (or is already following, or is
-        // essentially at the true bottom). A user scrolling UP that merely lands
-        // in the bottom spacer zone must NOT be yanked back into follow — that is
-        // the dead-zone fight that made small upward scrolls impossible while
-        // content streams.
+        // Downward arrival in the bottom band resumes following. A stationary
+        // event at the edge preserves an already released reading position.
         if (isNearBottomOf(geometry, isMobileRef.current)) {
-            const atTrueBottom = distanceFromBottomOf(geometry) <= AUTO_MATCH_TOLERANCE_PX;
-            if (scrollingDown || stateRef.current === 'following' || atTrueBottom) {
+            // Clamp the baseline so content shrink and rubber-band settlement
+            // preserve following while upward travel takes reading ownership.
+            const previousInRange = Math.min(previousTop, Math.max(0, geometry.scrollHeight - geometry.clientHeight));
+            if (geometry.scrollTop < previousInRange - 0.5) {
+                releaseFromUserIntent();
+                queueSave();
+                return;
+            }
+            if (scrollingDown || stateRef.current === 'following') {
                 setStateValue('following');
             }
             queueSave();
@@ -758,7 +760,7 @@ export const useChatAutoFollow = ({
         lastScrollTopRef.current = containerEl.scrollTop;
     }, [containerEl, enabled]);
 
-    const touchLastYRef = React.useRef<number | null>(null);
+    const touchPositionRef = React.useRef<{ x: number; y: number; dx: number; dy: number } | null>(null);
 
     const handleWheel = useEvent((event: WheelEvent) => {
         const container = scrollRef.current;
@@ -770,28 +772,36 @@ export const useChatAutoFollow = ({
 
     const handleTouchStart = useEvent((event: TouchEvent) => {
         const touch = event.touches.item(0);
-        touchLastYRef.current = touch ? touch.clientY : null;
+        touchPositionRef.current = touch ? { x: touch.clientX, y: touch.clientY, dx: 0, dy: 0 } : null;
     });
 
     const handleTouchMove = useEvent((event: TouchEvent) => {
         const container = scrollRef.current;
         const touch = event.touches.item(0);
         if (!touch) {
-            touchLastYRef.current = null;
+            touchPositionRef.current = null;
             return;
         }
-        const previousY = touchLastYRef.current;
-        touchLastYRef.current = touch.clientY;
-        if (previousY === null) return;
-        const fingerDelta = touch.clientY - previousY;
-        if (fingerDelta <= TOUCH_FINGER_DOWN_THRESHOLD) return;
+        const previous = touchPositionRef.current;
+        if (!previous) return;
+        const stepY = touch.clientY - previous.y;
+        const reversed = stepY * previous.dy < 0;
+        const dx = (reversed ? 0 : previous.dx) + touch.clientX - previous.x;
+        const dy = (reversed ? 0 : previous.dy) + stepY;
+        touchPositionRef.current = { x: touch.clientX, y: touch.clientY, dx, dy };
+        if (dy <= 0 || Math.abs(dx) >= dy) return;
         if (!container) return;
-        if (nestedScrollableCanConsumeUp(container, event.target)) return;
+        if (nestedScrollableCanConsumeUp(container, event.target)) {
+            touchPositionRef.current.dx = 0;
+            touchPositionRef.current.dy = 0;
+            return;
+        }
+        if (dy <= TOUCH_FINGER_DOWN_THRESHOLD) return;
         notifyUpwardUserIntent();
     });
 
     const handleTouchEnd = useEvent(() => {
-        touchLastYRef.current = null;
+        touchPositionRef.current = null;
     });
 
     const handleKeyDown = useEvent((event: KeyboardEvent) => {

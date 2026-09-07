@@ -55,6 +55,7 @@ vi.mock('@/stores/useUIStore', () => ({
 
 vi.mock('./useMobileAutocompleteMaxHeight', () => ({
   useMobileAutocompleteMaxHeight: () => undefined,
+  useMobileAutocompleteFixedBox: () => ({ left: 0, width: 320, bottom: 80, maxHeight: 200 }),
 }));
 
 vi.mock('@/lib/i18n', () => ({
