@@ -1,9 +1,9 @@
 /**
- * Cap QueuedMessageChips spirit for Lynx — local queue chips above composer.
+ * Cap QueuedMessageChips spirit for Lynx — queue chips above composer.
  *
  * Placement: sibling ABOVE LynxComposerGlassCard (Cap composer-queue stack).
- * Reorder: portable ↑/↓ (Cap @dnd-kit deferred — document honesty).
- * Trailing: SessionGoal strip shares the same shell when present.
+ * Source: Cap server message-queue when wired via composerActions; else local.
+ * Reorder: portable ↑/↓ (no @dnd-kit). Trailing: SessionGoal strip when present.
  */
 import type { ReactNode } from 'react';
 

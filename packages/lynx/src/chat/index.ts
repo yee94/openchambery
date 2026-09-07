@@ -218,6 +218,20 @@ export {
 } from './queuedMessageChips';
 export { LynxQueuedMessageChips } from './QueuedMessageChips';
 export {
+  LYNX_MESSAGE_QUEUE_ROUTE,
+  fetchLynxMessageQueueSnapshot,
+  fetchLynxMessageQueueScope,
+  fetchLynxMessageQueueScopeForSession,
+  admitLynxTextQueueItem,
+  reorderLynxQueueScope,
+  removeLynxQueueItem,
+  sendLynxQueueItemNow,
+  flushLynxQueueScopeFirst,
+  type LynxMessageQueueItem,
+  type LynxMessageQueueScope,
+  type LynxMessageQueueMutationResult,
+} from './messageQueueServer';
+export {
   parseLynxSessionGoal,
   formatLynxGoalTokens,
   formatLynxGoalDuration,

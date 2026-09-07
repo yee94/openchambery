@@ -306,6 +306,16 @@ export function LynxChatScreen({
     setSendingQueueIds(new Set());
     setGoalArmed(false);
     setGoalDialogOpen(false);
+    let cancelled = false;
+    void (async () => {
+      const result = await composer.refreshQueue();
+      if (cancelled) return;
+      if (result.status !== 'ok' && result.reason !== 'no-runtime') {
+        setActionError(`${result.reason}: ${result.error}`);
+      }
+      syncQueueFromComposer();
+    })();
+    return () => { cancelled = true; };
   }, [composer, syncQueueFromComposer]);
 
 
@@ -784,12 +794,15 @@ export function LynxChatScreen({
 
   const onQueueRemove = useCallback((id: string) => {
     setActionError(null);
-    const result = composer.removeFromQueue(id);
-    if (result.status !== 'ok') {
-      setActionError(`${result.reason}: ${result.error}`);
-      return;
-    }
-    syncQueueFromComposer();
+    void (async () => {
+      const result = await composer.removeFromQueue(id);
+      if (result.status !== 'ok') {
+        setActionError(`${result.reason}: ${result.error}`);
+        syncQueueFromComposer();
+        return;
+      }
+      syncQueueFromComposer();
+    })();
   }, [composer, syncQueueFromComposer]);
 
   const onQueueSendNow = useCallback(async (id: string) => {
@@ -823,12 +836,15 @@ export function LynxChatScreen({
     const to = direction === 'up' ? from - 1 : from + 1;
     const over = current[to];
     if (!over) return;
-    const result = composer.reorderQueue(id, over.id);
-    if (result.status !== 'ok') {
-      setActionError(`${result.reason}: ${result.error}`);
-      return;
-    }
-    syncQueueFromComposer();
+    void (async () => {
+      const result = await composer.reorderQueue(id, over.id);
+      if (result.status !== 'ok') {
+        setActionError(`${result.reason}: ${result.error}`);
+        syncQueueFromComposer();
+        return;
+      }
+      syncQueueFromComposer();
+    })();
   }, [composer, syncQueueFromComposer]);
 
   const onQuestionReply = useCallback(async (requestId: string, answers: string[][]) => {

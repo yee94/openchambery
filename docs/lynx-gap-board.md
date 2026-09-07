@@ -351,6 +351,7 @@ First implementation slice after this doc gate (order is deliberate: connect →
 38. ~~**QueuedMessageChips + SessionGoalRow**~~ — 代码接上 in `cursor/lynx-queue-chips-goal-local`. Cap queue chips + SessionGoal strip above composer glass; local `composerActions` queue with remove/send-now + portable ↑/↓ reorder (Cap `@dnd-kit` / server `/api/openchamber/message-queue` deferred). SessionGoal GET+PATCH metadata + optional `/api/goals/objective`; never fake-success. **MobileSessionStatusBar deferred** (Cap file large — follow-up). Docs honesty: tip APK `lynx-v2-debug-905c42e`; product NOT DONE / 三关未齐 / not EXHAUSTED; 真机残差 empty.
 39. ~~**MobileSessionStatusBar slim strip**~~ — 代码接上 in `cursor/lynx-session-status-bar-local`. Cap multi-session status bar **thin** parity (not full ~1900-line sheet): related session chips + busy/working indicator above composer with SessionGoal + queue chips; Cap filter/preserve-active-project resolvers; session-index related list from shell; full Cap sessions sheet / worktree menus / server message-queue deferred. Docs honesty: tip APK `lynx-v2-debug-ca32a72` (release exists); product NOT DONE / 三关未齐 / not EXHAUSTED; 真机残差 empty.
 40. ~~**SessionGoal create/manage dialog**~~ — 代码接上 in `cursor/lynx-session-goal-dialog-local`. Cap `SessionGoalDialog` + `setSessionGoal`/`clearSessionGoal` parity: Lynx `setLynxSessionGoal`/`clearLynxSessionGoal` (GET `/session/:id` + PATCH `metadata.openchamber.goal` + Cap `/api/goals/objective/:id`); create/manage overlay via shell `LynxCenteredDialog`/`LynxDialogPortal`; row tap → manage; create entry when no goal + Cap `/goal` arm (never auto-send). Complete via existing `setLynxSessionGoalStatus('complete')`. Docs honesty: tip `8def01d0` / tip APK `lynx-v2-debug-8def01d` (release exists); product NOT DONE / 三关未齐 / not EXHAUSTED; 真机残差 empty.
+41. ~~**Cap server message-queue client + QueuedMessageChips wire**~~ — 代码接上 in `cursor/lynx-message-queue-server-local`. Thin Cap-compatible `messageQueueServer.ts` over `LynxRuntimeFetch` (list/admit/reorder/remove/send-now; flush=send-now first); composerActions prefers server when reachable, falls back to local on unavailable; portable ↑/↓ (no `@dnd-kit` / no TanStack). Docs honesty: tip `c02f917f` / tip APK `lynx-v2-debug-c02f917` (release exists); product NOT DONE / 三关未齐 / not EXHAUSTED; 真机残差 empty; full Cap sessions sheet still deferred; host-only unchanged.
 
 Do not invent ASR / Bonjour / Capgo / TanStack 1.18. Share / Live Activity / widgets stay later.
 
@@ -620,7 +621,7 @@ Slice on `cursor/lynx-dialog-portal-theme-local` (base PR#61 tip `7a4c7b6a8`; PR
 
 ## Remaining (honest — not EXHAUSTED)
 
-**Product NOT DONE / 三关未齐 / not EXHAUSTED.** Linux Cap product rows continue to close on tip `8def01d0` + follow-ons (connect/settings/chat/projects/changes + Android first-paint #65–#69 + Cap phone overflow **new-session** in Next #32 + Voice model download/delete UI in Next #33 + Voice STT select + Changes dirty badge in Next #34 + PermissionCard metadata + permission auto-accept in Next #35 + Cap share-recipient picker in Next #36 + Projects menus/share in Next #37 + QueuedMessageChips + SessionGoalRow in Next #38 + MobileSessionStatusBar slim strip in Next #39 + SessionGoal create/manage dialog in Next #40). Queue chips + SessionGoal row/dialog + slim session status bar JS 代码接上 in #38–#40; **full Cap MobileSessionStatusBar sheet still deferred**. Remaining Cap-parity polish is thin; **host binders / HTML WKWebView / Pierre `@pierre/diffs` (honest DOM blocker — not ported) / Live Activity / iOS IPA / Share extension + ShareReceiverActivity / clipboard host / Cap server message-queue / 真机** still block EXHAUSTED. **Do not** mark landed under 三关. 真机残差: **empty** (no written device log). Tip APK: `lynx-v2-debug-8def01d` — release exists; do not invent a newer APK SHA until mobile-ci rebuilds.
+**Product NOT DONE / 三关未齐 / not EXHAUSTED.** Linux Cap product rows continue to close on tip `c02f917f` + follow-ons (connect/settings/chat/projects/changes + Android first-paint #65–#69 + Cap phone overflow **new-session** in Next #32 + Voice model download/delete UI in Next #33 + Voice STT select + Changes dirty badge in Next #34 + PermissionCard metadata + permission auto-accept in Next #35 + Cap share-recipient picker in Next #36 + Projects menus/share in Next #37 + QueuedMessageChips + SessionGoalRow in Next #38 + MobileSessionStatusBar slim strip in Next #39 + SessionGoal create/manage dialog in Next #40 + Cap server message-queue client in Next #41). Queue chips + SessionGoal row/dialog + slim session status bar + server MQ client JS 代码接上 in #38–#41; **full Cap MobileSessionStatusBar sheet still deferred**. Remaining Cap-parity polish is thin; **host binders / HTML WKWebView / Pierre `@pierre/diffs` (honest DOM blocker — not ported) / Live Activity / iOS IPA / Share extension + ShareReceiverActivity / clipboard host / 真机** still block EXHAUSTED. **Do not** mark landed under 三关. 真机残差: **empty** (no written device log). Tip APK: `lynx-v2-debug-c02f917` — release exists; do not invent a newer APK SHA until mobile-ci rebuilds.
 
 ### 代码接上 prior slice (`cursor/lynx-closable-missing-local` / PR#48)
 
@@ -837,7 +838,7 @@ Slice on `cursor/lynx-dialog-portal-theme-local` (base PR#61 tip `7a4c7b6a8`; PR
 | Item | Notes |
 |---|---|
 | QueuedMessageChips | Cap chips above composer; Lynx `LynxQueuedMessageChips` + `queuedMessageChips.ts` on local `composerActions` queue — remove / send-now / flush; portable ↑/↓ reorder (no `@dnd-kit`) |
-| Server message-queue | Cap `/api/openchamber/message-queue` + TanStack mutation flights **deferred** — local queue only this slice |
+| Server message-queue | Cap `/api/openchamber/message-queue` thin client 代码接上 in Next #41; TanStack/Zustand flights still deferred |
 | SessionGoalRow | Cap compact strip; Lynx `sessionGoal.ts` + `LynxSessionGoalRow` via GET `/session/:id` metadata + PATCH status; file objective GET `/api/goals/objective/:id` when `objectiveFile`; never fake-success |
 | MobileSessionStatusBar (full Cap sheet) | Slim strip 代码接上 in Next #39; **full** Cap ~1900-line sheet (worktree groups / long-press menus / MobileWindowMotion) still deferred |
 | Docs honesty | Tip APK `lynx-v2-debug-905c42e`; Next #38 |
@@ -850,7 +851,7 @@ Slice on `cursor/lynx-dialog-portal-theme-local` (base PR#61 tip `7a4c7b6a8`; PR
 | Slim MobileSessionStatusBar | Cap related-session chips + busy/working indicator above composer (with SessionGoal + queue); **not** full Cap sheet |
 | Pure helpers | Cap `shouldPreserveActiveProjectOnSessionOpen` + `resolveMobileSessionSheetDefaultFilter`; status normalize; session-index related list |
 | Shell wiring | session-index → relatedSessions / orderedSessionIds; chip tap → openChat; "All" → Projects home (honest Cap sheet analogue) |
-| Deferred | Full Cap sessions sheet / worktree collapse / long-press menus / server message-queue / `@dnd-kit` |
+| Deferred | Full Cap sessions sheet / worktree collapse / long-press menus / `@dnd-kit` (server MQ thin client in #41) |
 | Docs honesty | Tip APK `lynx-v2-debug-ca32a72` (release exists); Next #39 |
 | Docs honesty | NOT DONE / 三关未齐 / not EXHAUSTED / 真机残差 empty / no 真机过 claim |
 
@@ -864,6 +865,17 @@ Slice on `cursor/lynx-dialog-portal-theme-local` (base PR#61 tip `7a4c7b6a8`; PR
 | Complete | Cap complete via existing `setLynxSessionGoalStatus('complete')` |
 | Docs honesty | Tip `8def01d0` / APK `lynx-v2-debug-8def01d` (release exists); Next #40 |
 | Docs honesty | NOT DONE / 三关未齐 / not EXHAUSTED / 真机残差 empty / no 真机过 claim |
+
+### 代码接上 this slice (`cursor/lynx-message-queue-server-local` / Next #41)
+
+| Item | Notes |
+|---|---|
+| messageQueueServer.ts | Cap-compatible HTTP helpers over `LynxRuntimeFetch`: list/get scope (directory+session), admit text, reorder by queueItemIDs, remove, send-now, flush→send-now first; honest parse; no-runtime/HTTP never fake-success |
+| composer + chips wire | Prefer server queue when runtime reachable; unavailable (501/transport) → local queue; chips keep portable ↑/↓ (no `@dnd-kit`) |
+| Vitest | Happy-path parse + failure paths (`messageQueueServer.test.ts`) + composer server/local coverage |
+| Docs honesty | Tip `c02f917f` / APK `lynx-v2-debug-c02f917` (release exists); Next #41 |
+| Docs honesty | NOT DONE / 三关未齐 / not EXHAUSTED / 真机残差 empty / no 真机过 claim |
+| Still deferred | Full Cap sessions sheet; Cap TanStack/Zustand MQ sync flights; `@dnd-kit`; host-only unchanged |
 
 ### Still missing / host-only / 真机
 
@@ -881,7 +893,7 @@ Slice on `cursor/lynx-dialog-portal-theme-local` (base PR#61 tip `7a4c7b6a8`; PR
 | Share extension / Android `ShareReceiverActivity` | **Host-only** (separate from Next #36 JS full-page picker). Inbox + recipient picker 代码接上; native extension/receiver still host |
 | Native clipboard binder | Next #37 copyLink uses `navigator.clipboard` when present; otherwise labeled unavailable — host clipboard plugin still host-only |
 | MobileSessionStatusBar (full Cap sheet) | Slim related-session + busy strip 代码接上 in #39; full Cap sheet chrome still deferred |
-| Cap server message-queue | `/api/openchamber/message-queue` + DnD-kit — deferred; Lynx local queue chips 代码接上 in #38 |
+| Cap server message-queue | Thin Lynx client 代码接上 in #41 (`messageQueueServer` + composer wire); full Cap TanStack/Zustand sync + `@dnd-kit` still deferred |
 | Live Activity / Widgets / Control Center | iOS-only host — later |
 | Android sideload APK + lynx-ci | **Live** on tip (`lynx-mobile-ci` assembleRelease + prerelease `lynx-v2-debug-*`; lynx-ci green). First-paint cream/globalProps 代码接上 — **not** 真机过. |
 | iOS IPA / CocoaPods Lynx resolve | Still missing on Linux; Mac/device required |

@@ -287,3 +287,11 @@ Chosen mode is written at the top of `packages/lynx/README.md` (Mode B iOS 26 ho
 - Helpers: Cap filter / preserve-active-project resolvers + session-index related list; shell chip → openChat; "All" → Projects home analogue.
 - Product **NOT DONE** / 三关未齐 / not EXHAUSTED / 真机残差 empty / no 真机过 claim.
 
+## Notes — Cap server message-queue client (Next #41 / 2026-09-08)
+
+- Tip APK: `lynx-v2-debug-c02f917` (work/lynx-native @ `c02f917f`; release exists). Do not invent a newer APK SHA until mobile-ci rebuilds.
+- Thin Cap `/api/openchamber/message-queue` client (`messageQueueServer.ts`) over `LynxRuntimeFetch`: list/admit/reorder/remove/send-now (flush = send-now first). Honest parse; no-runtime/HTTP never fake-success.
+- `composerActions` prefers server when reachable; unavailable → local queue. QueuedMessageChips keep portable ↑/↓ (no `@dnd-kit` / no TanStack).
+- Full Cap sessions sheet / TanStack MQ sync still deferred; host-only unchanged.
+- Product **NOT DONE** / 三关未齐 / not EXHAUSTED / 真机残差 empty / no 真机过 claim.
+
