@@ -36,6 +36,8 @@ export type LynxViewProps = {
   'data-lynx-dialog-portal'?: string;
   'data-lynx-dialog-portal-mount'?: string;
   'data-lynx-dialog-portal-placement'?: string;
+  'data-lynx-share-recipient-picker'?: string;
+  'data-lynx-share-recipient-placement'?: string;
   'data-mobile-html-preview'?: string;
   bindtouchstart?: (event: { detail?: unknown }) => void;
   bindtouchmove?: (event: { detail?: unknown }) => void;
