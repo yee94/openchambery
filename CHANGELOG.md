@@ -4,6 +4,15 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.19.11] - 2026-09-08
+
+汇总 1.19.11-beta.1 ~ 1.19.11-beta.2。
+
+### 会话
+
+- 桌面侧栏 focus 到已完全可见的会话时保持滚动位置；只有部分或全部超出视口时才滚到约三分之一处。
+- 精简内置会话标题提示词：更短的英文规则，优先 ≤6 词 / ≤6 个 CJK 字，且用无定语、无动词的名词短语。
+
 ## [1.19.11-beta.2] - 2026-09-08
 
 ### 会话
