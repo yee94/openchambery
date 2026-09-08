@@ -55,11 +55,18 @@ export const scrollFocusedSessionRowIntoView = (
     return;
   }
 
+  const rowRect = row.getBoundingClientRect();
+  const viewportTop = container.getBoundingClientRect().top + container.clientTop;
+  const viewportBottom = viewportTop + container.clientHeight;
+  if (rowRect.top >= viewportTop && rowRect.bottom <= viewportBottom) {
+    return;
+  }
+
   const nextTop = getFocusedSessionRowScrollTop({
     containerScrollTop: container.scrollTop,
     containerClientHeight: container.clientHeight,
     containerScrollHeight: container.scrollHeight,
-    rowOffsetFromViewportTop: row.getBoundingClientRect().top - container.getBoundingClientRect().top,
+    rowOffsetFromViewportTop: rowRect.top - viewportTop,
   });
   if (Math.abs(nextTop - container.scrollTop) < MIN_SCROLL_DELTA_PX) {
     return;
