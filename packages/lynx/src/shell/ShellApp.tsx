@@ -5,6 +5,7 @@ import { LynxShareBridge } from '../assistants/ShareBridge';
 import { createLynxShareInbox, type LynxShareInbox } from '../assistants/shareInbox';
 import type { LynxAssistantDTO } from '../assistants/types';
 import { LynxChatScreen } from '../chat/ChatScreen';
+import { LynxSessionsSheet } from '../chat/SessionsSheet';
 import { relatedSessionsFromSessionIndex } from '../chat/sessionStatusBar';
 import { LynxDraftComposer } from '../chat/DraftComposer';
 import { LynxChatSheet } from '../chat/ChatSheets';
@@ -325,6 +326,7 @@ export function LynxShellApp({
 
   // Cap MobileSessionStatusBar related list — session-index snapshot when connected.
   const [sessionIndexState, setSessionIndexState] = useState(() => sessionIndexBindings?.getSnapshot() ?? null);
+  const [sessionsSheetOpen, setSessionsSheetOpen] = useState(false);
   useEffect(() => {
     if (!sessionIndexBindings) {
       setSessionIndexState(null);
@@ -362,14 +364,18 @@ export function LynxShellApp({
     }));
   };
 
-  /** Cap sessions sheet analogue on Lynx = Projects home (full Cap sheet deferred). */
+  /** Cap full sessions sheet — LynxMobileResizableSheet from slim status bar. */
   const openSessionsSheet = () => {
-    setChatSheet(null);
-    setNavigation((state) => {
-      let next = reduceLynxNavigation(state, { type: 'closeSecondary' });
-      next = reduceLynxNavigation(next, { type: 'setActiveTab', tab: 'projects' });
-      return next;
-    });
+    setSessionsSheetOpen(true);
+  };
+
+  const selectSessionFromSheet = (sessionId: string, directory: string | null) => {
+    setSessionsSheetOpen(false);
+    setNavigation((state) => reduceLynxNavigation(state, {
+      type: 'openChat',
+      sessionId,
+      directory,
+    }));
   };
 
 
@@ -513,6 +519,23 @@ export function LynxShellApp({
         activeTab={navigation.activeTab}
         visible={dockVisible}
         onTabSelected={selectTab}
+      />
+      <LynxSessionsSheet
+        locale={host.locale}
+        open={sessionsSheetOpen}
+        onClose={() => setSessionsSheetOpen(false)}
+        indexState={sessionIndexState}
+        runtimeFetch={runtimeFetch}
+        activeDirectory={statusBarDirectory}
+        currentSessionId={statusBarSessionId}
+        onSelectSession={selectSessionFromSheet}
+        onOpenDraft={(directory) => {
+          setSessionsSheetOpen(false);
+          openDraft(directory);
+        }}
+        onMutated={() => {
+          void sessionIndexBindings?.refresh?.();
+        }}
       />
       <LynxShareBridge
         locale={host.locale}

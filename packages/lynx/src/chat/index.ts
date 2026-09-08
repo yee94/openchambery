@@ -261,3 +261,21 @@ export {
 } from './sessionStatusBar';
 export { LynxSessionStatusBar } from './SessionStatusBar';
 
+export {
+  LYNX_SESSIONS_SHEET_DEFAULT_VISIBLE,
+  LYNX_SESSIONS_SHEET_SHOW_MORE_INCREMENT,
+  LYNX_SESSIONS_SHEET_NOTES,
+  buildLynxSessionsSheetFilterChips,
+  applyLynxSessionsSheetFilter,
+  flattenLynxSessionsSheetSessions,
+  buildLynxSessionsSheetModel,
+  sliceLynxSessionsSheetVisible,
+  nextLynxSessionsSheetVisibleCount,
+  collapseLynxSessionsSheetVisibleCount,
+  resolveLynxSessionsSheetOpenDirectory,
+  type LynxSessionsSheetFilterId,
+  type LynxSessionsSheetFilterChip,
+  type LynxSessionsSheetModel,
+} from './sessionsSheet';
+export { LynxSessionsSheet, type LynxSessionsSheetProps } from './SessionsSheet';
+
