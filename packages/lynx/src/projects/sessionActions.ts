@@ -70,6 +70,36 @@ export async function archiveLynxSession(
   }
 }
 
+/**
+ * Cap `archiveSessions` spirit — archive each id independently.
+ * Returns Cap-style `{ archivedIds, failedIds }` (never fake-success).
+ */
+export async function archiveLynxSessions(
+  runtimeFetch: LynxRuntimeFetch | null | undefined,
+  inputs: Array<{ sessionId: string; directory?: string | null }>,
+  options?: { archivedAt?: number },
+): Promise<{ archivedIds: string[]; failedIds: string[] }> {
+  const archivedIds: string[] = [];
+  const failedIds: string[] = [];
+  const archivedAt = options?.archivedAt ?? Date.now();
+  const unique = new Map<string, { sessionId: string; directory?: string | null }>();
+  for (const input of inputs) {
+    const sessionId = input.sessionId.trim();
+    if (!sessionId || unique.has(sessionId)) continue;
+    unique.set(sessionId, input);
+  }
+  for (const input of unique.values()) {
+    const result = await archiveLynxSession(runtimeFetch, {
+      sessionId: input.sessionId,
+      directory: input.directory,
+      archivedAt,
+    });
+    if (result.status === 'ok') archivedIds.push(input.sessionId.trim());
+    else failedIds.push(input.sessionId.trim());
+  }
+  return { archivedIds, failedIds };
+}
+
 /** Cap `unarchiveSession` — restore via PATCH `{ time: { archived: 0 } }`. Never fake-success. */
 export async function unarchiveLynxSession(
   runtimeFetch: LynxRuntimeFetch | null | undefined,
@@ -235,6 +265,8 @@ export async function deleteLynxSession(
     );
     if (response.status === 0) return { status: 'no-runtime' };
     if (!response.ok) {
+      // Cap cascade: parent DELETE removes children; subsequent child DELETE may 404.
+      if (response.status === 404) return { status: 'ok' };
       return {
         status: 'failed',
         error: `session.delete failed (${response.status})`,

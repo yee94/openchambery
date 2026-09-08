@@ -10,7 +10,7 @@ import {
   type LynxMenuItem,
 } from '../../projects/sessionMenuModel';
 import {
-  archiveLynxSession,
+  archiveLynxSessions,
   copyLynxText,
   deleteLynxSession,
   fetchLynxSessionShareUrl,
@@ -20,6 +20,15 @@ import {
   toggleLynxSessionPin,
   unshareLynxSession,
 } from '../../projects/sessionActions';
+import {
+  SESSION_DELETE_UNDO_MS,
+  cancelLynxScheduledSessionDeletes,
+  createLynxDeleteUndoBanner,
+  isLynxDeleteUndoExpired,
+  scheduleLynxSessionDeletes,
+  type LynxDeleteUndoBanner,
+} from '../../chat/sessionDeleteUndo';
+import { resolveLynxSessionTreeTargets } from '../../chat/sessionTreeIds';
 import {
   closeLynxProject,
   inferLynxProjectIsGit,
@@ -336,6 +345,8 @@ export function ProjectsHome({
   } | null>(null);
   const [explorerOpen, setExplorerOpen] = useState(false);
   const [chromeNote, setChromeNote] = useState<string | null>(null);
+  const [deleteUndo, setDeleteUndo] = useState<LynxDeleteUndoBanner | null>(null);
+  const [pendingDeletionIds, setPendingDeletionIds] = useState<string[]>([]);
   const searchQuery = searchQueryProp ?? internalQuery;
   const setSearchQuery = onSearchQueryChange ?? setInternalQuery;
 
@@ -352,10 +363,49 @@ export function ProjectsHome({
     return projectSessionIndexHome(indexState.snapshot, homeOptions);
   }, [modelOverride, indexState.snapshot, homeOptions]);
 
-  const model = useMemo(
+  const searchedModel = useMemo(
     () => filterLynxProjectsHomeForSearch(baseModel, searchQuery),
     [baseModel, searchQuery],
   );
+
+  useEffect(() => {
+    if (!deleteUndo) return;
+    const remaining = deleteUndo.expiresAt - Date.now();
+    if (remaining <= 0) {
+      setDeleteUndo(null);
+      return;
+    }
+    const timer = setTimeout(() => {
+      setDeleteUndo((current) => (
+        current && isLynxDeleteUndoExpired(current) ? null : current
+      ));
+    }, remaining);
+    return () => clearTimeout(timer);
+  }, [deleteUndo]);
+
+  const pendingDeletionSet = useMemo(() => new Set(pendingDeletionIds), [pendingDeletionIds]);
+  const model = useMemo(() => {
+    if (pendingDeletionSet.size === 0) return searchedModel;
+    const filterRows = (rows: typeof searchedModel.pinnedSessions) => (
+      rows.filter((row) => !pendingDeletionSet.has(row.id))
+    );
+    return {
+      ...searchedModel,
+      pinnedSessions: filterRows(searchedModel.pinnedSessions),
+      inProgressSessions: filterRows(searchedModel.inProgressSessions),
+      projects: searchedModel.projects.map((project) => ({
+        ...project,
+        sessions: filterRows(project.sessions),
+        worktrees: project.worktrees.map((worktree) => ({
+          ...worktree,
+          sessions: filterRows(worktree.sessions),
+          sessionCount: filterRows(worktree.sessions).length,
+        })),
+        sessionCount: filterRows(project.sessions).length,
+      })),
+    };
+  }, [pendingDeletionSet, searchedModel]);
+
 
   const showFailure = indexState.status === 'failed';
   const showUnsupported = indexState.status === 'unsupported';
@@ -532,35 +582,78 @@ export function ProjectsHome({
           setActionBusy(true);
           setActionError(null);
           void (async () => {
-            const result = await archiveLynxSession(runtimeFetch, {
-              sessionId: actionSession.id,
-              directory: actionSession.directory,
-            });
+            const targets = resolveLynxSessionTreeTargets(
+              { sessionId: actionSession.id, directory: actionSession.directory },
+              model.sessionById,
+            );
+            const { archivedIds, failedIds } = await archiveLynxSessions(
+              runtimeFetch,
+              targets.map((target) => ({
+                sessionId: target.sessionId,
+                directory: target.directory,
+              })),
+            );
             setActionBusy(false);
-            if (result.status !== 'ok') {
-              setActionError(result.status === 'no-runtime' ? 'no-runtime' : result.error);
-              return;
+            if (archivedIds.length > 0) {
+              setChromeNote(
+                archivedIds.length === 1
+                  ? lynxT(locale, 'lynx.chat.sessionsSheet.archiveSuccess')
+                  : lynxT(locale, 'lynx.chat.sessionsSheet.archiveSuccessPlural', {
+                    count: String(archivedIds.length),
+                  }),
+              );
+              closeActionSheet();
+              refreshAfterMutation();
             }
-            closeActionSheet();
-            refreshAfterMutation();
+            if (failedIds.length > 0) {
+              setActionError(
+                failedIds.length === 1
+                  ? lynxT(locale, 'lynx.chat.sessionsSheet.archiveError')
+                  : lynxT(locale, 'lynx.chat.sessionsSheet.archiveErrorPlural', {
+                    count: String(failedIds.length),
+                  }),
+              );
+            }
           })();
         },
         onDelete: () => {
-          setActionBusy(true);
           setActionError(null);
-          void (async () => {
-            const result = await deleteLynxSession(runtimeFetch, {
-              sessionId: actionSession.id,
-              directory: actionSession.directory,
-            });
-            setActionBusy(false);
-            if (result.status !== 'ok') {
-              setActionError(result.status === 'no-runtime' ? 'no-runtime' : result.error);
-              return;
-            }
-            closeActionSheet();
-            refreshAfterMutation();
-          })();
+          const targets = resolveLynxSessionTreeTargets(
+            { sessionId: actionSession.id, directory: actionSession.directory },
+            model.sessionById,
+          );
+          const { batchId, scheduledIds } = scheduleLynxSessionDeletes(targets, {
+            delayMs: SESSION_DELETE_UNDO_MS,
+            onCommit: async (entries) => {
+              const failedIds: string[] = [];
+              for (const entry of entries) {
+                const result = await deleteLynxSession(runtimeFetch, {
+                  sessionId: entry.sessionId,
+                  directory: entry.directory,
+                });
+                if (result.status !== 'ok') failedIds.push(entry.sessionId);
+              }
+              setPendingDeletionIds((current) => current.filter((id) => !scheduledIds.includes(id)));
+              setDeleteUndo((current) => (current?.batchId === batchId ? null : current));
+              if (failedIds.length > 0) {
+                setChromeNote(
+                  failedIds.length === 1
+                    ? lynxT(locale, 'lynx.chat.sessionsSheet.deleteCommitFailed')
+                    : lynxT(locale, 'lynx.chat.sessionsSheet.deleteCommitFailedPlural', {
+                      count: String(failedIds.length),
+                    }),
+                );
+              }
+              refreshAfterMutation();
+            },
+          });
+          if (!batchId) {
+            setActionError(lynxT(locale, 'lynx.chat.sessionsSheet.deleteError'));
+            return;
+          }
+          setPendingDeletionIds((current) => Array.from(new Set([...current, ...scheduledIds])));
+          setDeleteUndo(createLynxDeleteUndoBanner({ batchId, sessionIds: scheduledIds }));
+          closeActionSheet();
         },
       });
     })()
@@ -742,6 +835,54 @@ export function ProjectsHome({
           {chromeNote}
         </LynxText>
       ) : null}
+      {deleteUndo ? (
+        <LynxView
+          data-lynx-projects-delete-undo="true"
+          style={{
+            margin: '0 16px 8px',
+            padding: '10px 12px',
+            borderRadius: '12px',
+            borderWidth: '1px',
+            borderColor: cssVar('surface.mutedForeground'),
+            backgroundColor: cssVar('surface.elevated'),
+            flexDirection: 'row',
+            alignItems: 'center',
+          }}
+        >
+          <LynxText style={{ flexGrow: 1, color: cssVar('surface.foreground'), fontSize: '13px' }}>
+            {deleteUndo.sessionIds.length > 1
+              ? lynxT(locale, 'lynx.chat.sessionsSheet.deleteScheduledPlural', {
+                count: String(deleteUndo.sessionIds.length),
+              })
+              : lynxT(locale, 'lynx.chat.sessionsSheet.deleteScheduled')}
+          </LynxText>
+          <LynxView
+            data-lynx-projects-delete-undo-action="true"
+            bindtap={() => {
+              if (!deleteUndo) return;
+              if (cancelLynxScheduledSessionDeletes(deleteUndo.batchId)) {
+                setPendingDeletionIds((current) => current.filter((id) => !deleteUndo.sessionIds.includes(id)));
+                setDeleteUndo(null);
+              }
+            }}
+            accessibility-role="button"
+            accessibility-label={lynxT(locale, 'lynx.chat.sessionsSheet.undo')}
+            style={{
+              paddingLeft: '10px',
+              paddingRight: '10px',
+              paddingTop: '6px',
+              paddingBottom: '6px',
+              borderRadius: '8px',
+              backgroundColor: cssVar('primary.base'),
+            }}
+          >
+            <LynxText style={{ color: cssVar('primary.foreground'), fontSize: '12px', fontWeight: '700' }}>
+              {lynxT(locale, 'lynx.chat.sessionsSheet.undo')}
+            </LynxText>
+          </LynxView>
+        </LynxView>
+      ) : null}
+
 
       <DirectoryExplorerSheet
         locale={locale}

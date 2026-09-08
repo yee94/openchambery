@@ -2,6 +2,7 @@ import { describe, expect, test } from 'vitest';
 
 import {
   archiveLynxSession,
+  archiveLynxSessions,
   copyLynxText,
   createLynxSession,
   deleteLynxSession,
@@ -218,5 +219,38 @@ describe('requestLynxSessionSmartTitle', () => {
       error: 'session.smartTitle failed (500)',
       httpStatus: 500,
     });
+  });
+});
+
+describe('archiveLynxSessions + delete cascade', () => {
+  test('archiveLynxSessions reports archivedIds/failedIds honestly', async () => {
+    const calls: Array<{ path: string; init?: RequestInit }> = [];
+    const runtimeFetch = async (path: string, init?: RequestInit) => {
+      calls.push({ path, init });
+      if (path.includes('ses_fail')) {
+        return { ok: false, status: 500, json: async () => ({}) };
+      }
+      return { ok: true, status: 200, json: async () => ({}) };
+    };
+    const result = await archiveLynxSessions(runtimeFetch as never, [
+      { sessionId: 'ses_1', directory: '/repo' },
+      { sessionId: 'ses_fail', directory: '/repo' },
+      { sessionId: 'ses_1', directory: '/dup' },
+    ], { archivedAt: 99 });
+    expect(result).toEqual({ archivedIds: ['ses_1'], failedIds: ['ses_fail'] });
+    expect(calls).toHaveLength(2);
+    expect(JSON.parse(String(calls[0]!.init!.body))).toEqual({ time: { archived: 99 } });
+    expect(await archiveLynxSessions(null, [{ sessionId: 'ses_1' }])).toEqual({
+      archivedIds: [],
+      failedIds: ['ses_1'],
+    });
+  });
+
+  test('deleteLynxSession treats 404 as ok (parent cascade)', async () => {
+    const result = await deleteLynxSession(
+      async () => ({ ok: false, status: 404, json: async () => ({}) }),
+      { sessionId: 'ses_child', directory: '/repo' },
+    );
+    expect(result).toEqual({ status: 'ok' });
   });
 });
