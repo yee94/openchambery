@@ -9,6 +9,7 @@ import {
   renameLynxSession,
   shareLynxSession,
   toggleLynxSessionPin,
+  unarchiveLynxSession,
   unshareLynxSession,
 } from './sessionActions';
 
@@ -27,6 +28,30 @@ describe('Lynx session menu actions', () => {
     expect(calls[1]?.method).toBe('PATCH');
     expect(JSON.parse(calls[1]!.body!)).toEqual({ title: 'New' });
     expect(calls[2]).toMatchObject({ method: 'DELETE' });
+  });
+
+
+  test('unarchive patches time.archived = 0; mirrors archive error shape', async () => {
+    const calls: Array<{ path: string; method?: string; body?: string }> = [];
+    const runtimeFetch = async (path: string, init?: { method?: string; body?: string }) => {
+      calls.push({ path, method: init?.method, body: init?.body });
+      return { ok: true, status: 200, json: async () => ({ id: 'ses_1' }) };
+    };
+    expect(await unarchiveLynxSession(runtimeFetch, { sessionId: 'ses_1', directory: '/repo' })).toEqual({
+      status: 'ok',
+    });
+    expect(calls[0]).toMatchObject({ method: 'PATCH', path: '/session/ses_1?directory=%2Frepo' });
+    expect(JSON.parse(calls[0]!.body!)).toEqual({ time: { archived: 0 } });
+
+    expect(await unarchiveLynxSession(null, { sessionId: 'ses_1' })).toEqual({ status: 'no-runtime' });
+    const fail = await unarchiveLynxSession(async () => ({ ok: false, status: 500, json: async () => ({}) }), {
+      sessionId: 'ses_1',
+    });
+    expect(fail).toEqual({
+      status: 'failed',
+      error: 'session.unarchive failed (500)',
+      httpStatus: 500,
+    });
   });
 
   test('create session returns id; no-runtime / HTTP failure are honest', async () => {

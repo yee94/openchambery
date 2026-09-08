@@ -3,7 +3,8 @@
  *
  * Opens from LynxSessionStatusBar via LynxMobileResizableSheet (0.72 / 0.98).
  * Session-index grouped list + search + All/pinned/project chips + long-press
- * menus (buildLynx*MenuItems). Not Cap Zustand / @dnd-kit / MobileWindowMotion.
+ * menus (buildLynx*MenuItems) + Cap two-step archive + ~10s unarchive undo.
+ * Not Cap Zustand / toast lib / @dnd-kit / MobileWindowMotion / ArchivedSessionsDialog.
  */
 import { useEffect, useMemo, useState } from 'react';
 
@@ -26,10 +27,17 @@ import {
   renameLynxSession,
   shareLynxSession,
   toggleLynxSessionPin,
+  unarchiveLynxSession,
   unshareLynxSession,
   copyLynxText,
   fetchLynxSessionShareUrl,
 } from '../projects/sessionActions';
+import {
+  createLynxArchiveUndoBanner,
+  isLynxArchiveUndoExpired,
+  toggleLynxArchiveConfirm,
+  type LynxArchiveUndoBanner,
+} from './sessionArchiveUndo';
 import {
   buildLynxProjectMenuItems,
   buildLynxSessionMenuItems,
@@ -80,57 +88,133 @@ type ActionTarget =
 function SessionRow({
   session,
   isCurrent,
+  confirmingArchive,
   onSelect,
   onLongPress,
+  onRequestArchive,
+  onConfirmArchive,
+  locale,
 }: {
   session: LynxHomeSessionRow;
   isCurrent: boolean;
+  confirmingArchive: boolean;
   onSelect: () => void;
   onLongPress: () => void;
+  onRequestArchive: () => void;
+  onConfirmArchive: () => void;
+  locale: string;
 }) {
   return (
     <LynxView
       data-lynx-sessions-sheet-row={session.id}
       data-lynx-sessions-sheet-current={isCurrent ? 'true' : 'false'}
-      bindtap={onSelect}
-      bindlongpress={onLongPress}
-      accessibility-role="button"
-      accessibility-label={session.title}
+      data-lynx-sessions-sheet-confirming-archive={confirmingArchive ? 'true' : 'false'}
       style={{
-        paddingTop: '10px',
-        paddingBottom: '10px',
-        paddingLeft: '12px',
-        paddingRight: '12px',
+        flexDirection: 'row',
+        alignItems: 'center',
         marginBottom: '6px',
         borderRadius: '12px',
         borderWidth: '1px',
-        borderColor: isCurrent ? cssVar('primary.base') : cssVar('surface.mutedForeground'),
-        backgroundColor: isCurrent ? cssVar('surface.elevated') : cssVar('surface.muted'),
+        borderColor: confirmingArchive
+          ? cssVar('status.error')
+          : isCurrent
+            ? cssVar('primary.base')
+            : cssVar('surface.mutedForeground'),
+        backgroundColor: confirmingArchive
+          ? cssVar('surface.muted')
+          : isCurrent
+            ? cssVar('surface.elevated')
+            : cssVar('surface.muted'),
       }}
     >
-      <LynxView style={{ flexDirection: 'row', alignItems: 'center' }}>
-        {session.pinned ? (
-          <LynxText style={{ marginRight: '6px', color: cssVar('primary.base'), fontSize: '12px' }}>📌</LynxText>
+      <LynxView
+        bindtap={confirmingArchive ? undefined : onSelect}
+        bindlongpress={confirmingArchive ? undefined : onLongPress}
+        accessibility-role="button"
+        accessibility-label={session.title}
+        style={{
+          flexGrow: 1,
+          minWidth: '0',
+          paddingTop: '10px',
+          paddingBottom: '10px',
+          paddingLeft: '12px',
+          paddingRight: '8px',
+          opacity: confirmingArchive ? 0.55 : 1,
+        }}
+      >
+        <LynxView style={{ flexDirection: 'row', alignItems: 'center' }}>
+          {session.pinned ? (
+            <LynxText style={{ marginRight: '6px', color: cssVar('primary.base'), fontSize: '12px' }}>📌</LynxText>
+          ) : null}
+          {session.inProgress ? (
+            <LynxText style={{ marginRight: '6px', color: cssVar('surface.mutedForeground'), fontSize: '12px' }}>◐</LynxText>
+          ) : null}
+          <LynxText
+            style={{
+              color: cssVar('surface.foreground'),
+              fontSize: '14px',
+              fontWeight: isCurrent ? '700' : '500',
+              flexGrow: 1,
+            }}
+          >
+            {session.title}
+          </LynxText>
+        </LynxView>
+        {session.subtitle ? (
+          <LynxText style={{ marginTop: '2px', color: cssVar('surface.mutedForeground'), fontSize: '12px' }}>
+            {session.subtitle}
+          </LynxText>
         ) : null}
-        {session.inProgress ? (
-          <LynxText style={{ marginRight: '6px', color: cssVar('surface.mutedForeground'), fontSize: '12px' }}>◐</LynxText>
-        ) : null}
-        <LynxText
+      </LynxView>
+
+      {confirmingArchive ? (
+        <LynxView
+          data-lynx-sessions-sheet-archive-confirm={session.id}
+          bindtap={onConfirmArchive}
+          accessibility-role="button"
+          accessibility-label={lynxT(locale, 'lynx.chat.sessionsSheet.archiveAria')}
           style={{
-            color: cssVar('surface.foreground'),
-            fontSize: '14px',
-            fontWeight: isCurrent ? '700' : '500',
-            flexGrow: 1,
+            flexShrink: 0,
+            flexDirection: 'row',
+            alignItems: 'center',
+            marginRight: '4px',
+            paddingLeft: '10px',
+            paddingRight: '10px',
+            paddingTop: '8px',
+            paddingBottom: '8px',
+            borderRadius: '10px',
+            backgroundColor: cssVar('status.error'),
           }}
         >
-          {session.title}
+          <LynxText style={{ color: cssVar('status.onError'), fontSize: '12px', fontWeight: '700' }}>
+            {lynxT(locale, 'lynx.chat.sessionsSheet.archive')}
+          </LynxText>
+        </LynxView>
+      ) : null}
+
+      <LynxView
+        data-lynx-sessions-sheet-archive-toggle={session.id}
+        bindtap={onRequestArchive}
+        accessibility-role="button"
+        accessibility-label={
+          confirmingArchive
+            ? lynxT(locale, 'lynx.chat.sessionsSheet.cancelArchiveAria')
+            : lynxT(locale, 'lynx.chat.sessionsSheet.archiveAria')
+        }
+        style={{
+          flexShrink: 0,
+          width: '36px',
+          height: '36px',
+          marginRight: '6px',
+          alignItems: 'center',
+          justifyContent: 'center',
+          borderRadius: '10px',
+        }}
+      >
+        <LynxText style={{ color: cssVar('surface.mutedForeground'), fontSize: '16px' }}>
+          {confirmingArchive ? '✕' : '⧉'}
         </LynxText>
       </LynxView>
-      {session.subtitle ? (
-        <LynxText style={{ marginTop: '2px', color: cssVar('surface.mutedForeground'), fontSize: '12px' }}>
-          {session.subtitle}
-        </LynxText>
-      ) : null}
     </LynxView>
   );
 }
@@ -164,6 +248,9 @@ export function LynxSessionsSheet({
     project: LynxHomeProject;
     worktree: LynxHomeWorktreeGroup;
   } | null>(null);
+  const [confirmingArchiveSessionId, setConfirmingArchiveSessionId] = useState<string | null>(null);
+  const [archiveUndo, setArchiveUndo] = useState<LynxArchiveUndoBanner | null>(null);
+  const [archiveUndoError, setArchiveUndoError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!open) {
@@ -175,8 +262,26 @@ export function LynxSessionsSheet({
       setNote(null);
       setNewWorktreeProject(null);
       setWorktreeToDelete(null);
+      setConfirmingArchiveSessionId(null);
+      setArchiveUndo(null);
+      setArchiveUndoError(null);
     }
   }, [open]);
+
+  useEffect(() => {
+    if (!archiveUndo) return;
+    const remaining = archiveUndo.expiresAt - Date.now();
+    if (remaining <= 0) {
+      setArchiveUndo(null);
+      return;
+    }
+    const timer = setTimeout(() => {
+      setArchiveUndo((current) => (
+        current && isLynxArchiveUndoExpired(current) ? null : current
+      ));
+    }, remaining);
+    return () => clearTimeout(timer);
+  }, [archiveUndo]);
 
   const activeProjectId = useMemo(() => {
     const dir = activeDirectory?.trim();
@@ -221,6 +326,71 @@ export function LynxSessionsSheet({
 
   const refresh = () => {
     onMutated?.();
+  };
+
+  const showArchiveUndo = (session: LynxHomeSessionRow) => {
+    setArchiveUndoError(null);
+    setArchiveUndo(createLynxArchiveUndoBanner({
+      sessionId: session.id,
+      directory: session.directory,
+    }));
+  };
+
+  const runArchiveSession = async (session: LynxHomeSessionRow): Promise<boolean> => {
+    const result = await archiveLynxSession(runtimeFetch, {
+      sessionId: session.id,
+      directory: session.directory,
+    });
+    if (result.status !== 'ok') {
+      setActionError(
+        result.status === 'no-runtime'
+          ? 'no-runtime'
+          : (result.error || lynxT(locale, 'lynx.chat.sessionsSheet.archiveError')),
+      );
+      return false;
+    }
+    showArchiveUndo(session);
+    refresh();
+    return true;
+  };
+
+  const handleRequestArchive = (sessionId: string) => {
+    setArchiveUndoError(null);
+    setConfirmingArchiveSessionId((current) => toggleLynxArchiveConfirm(current, sessionId));
+  };
+
+  const handleConfirmArchive = (session: LynxHomeSessionRow) => {
+    setConfirmingArchiveSessionId(null);
+    setActionBusy(true);
+    setActionError(null);
+    void (async () => {
+      await runArchiveSession(session);
+      setActionBusy(false);
+    })();
+  };
+
+  const handleUndoArchive = () => {
+    if (!archiveUndo || actionBusy) return;
+    const pending = archiveUndo;
+    setActionBusy(true);
+    setArchiveUndoError(null);
+    void (async () => {
+      const result = await unarchiveLynxSession(runtimeFetch, {
+        sessionId: pending.sessionId,
+        directory: pending.directory,
+      });
+      setActionBusy(false);
+      if (result.status !== 'ok') {
+        setArchiveUndoError(
+          result.status === 'no-runtime'
+            ? 'no-runtime'
+            : (result.error || lynxT(locale, 'lynx.chat.sessionsSheet.undoFailed')),
+        );
+        return;
+      }
+      setArchiveUndo(null);
+      refresh();
+    })();
   };
 
   const selectSession = (session: LynxHomeSessionRow) => {
@@ -365,17 +535,11 @@ export function LynxSessionsSheet({
         setActionBusy(true);
         setActionError(null);
         void (async () => {
-          const result = await archiveLynxSession(runtimeFetch, {
-            sessionId: actionTarget.session.id,
-            directory: actionTarget.session.directory,
-          });
+          const session = actionTarget.session;
+          const ok = await runArchiveSession(session);
           setActionBusy(false);
-          if (result.status !== 'ok') {
-            setActionError(result.status === 'no-runtime' ? 'no-runtime' : result.error);
-            return;
-          }
+          if (!ok) return;
           closeActions();
-          refresh();
         })();
       },
       onDelete: () => {
@@ -568,6 +732,49 @@ export function LynxSessionsSheet({
           </LynxText>
         ) : null}
 
+        {archiveUndo ? (
+          <LynxView
+            data-lynx-sessions-sheet-archive-undo="true"
+            style={{
+              marginBottom: '8px',
+              padding: '10px 12px',
+              borderRadius: '12px',
+              borderWidth: '1px',
+              borderColor: cssVar('surface.mutedForeground'),
+              backgroundColor: cssVar('surface.elevated'),
+              flexDirection: 'row',
+              alignItems: 'center',
+            }}
+          >
+            <LynxText style={{ flexGrow: 1, color: cssVar('surface.foreground'), fontSize: '13px' }}>
+              {lynxT(locale, 'lynx.chat.sessionsSheet.archiveSuccess')}
+            </LynxText>
+            <LynxView
+              data-lynx-sessions-sheet-archive-undo-action="true"
+              bindtap={handleUndoArchive}
+              accessibility-role="button"
+              accessibility-label={lynxT(locale, 'lynx.chat.sessionsSheet.undo')}
+              style={{
+                paddingLeft: '10px',
+                paddingRight: '10px',
+                paddingTop: '6px',
+                paddingBottom: '6px',
+                borderRadius: '8px',
+                backgroundColor: cssVar('primary.base'),
+              }}
+            >
+              <LynxText style={{ color: cssVar('primary.foreground'), fontSize: '12px', fontWeight: '700' }}>
+                {lynxT(locale, 'lynx.chat.sessionsSheet.undo')}
+              </LynxText>
+            </LynxView>
+          </LynxView>
+        ) : null}
+        {archiveUndoError ? (
+          <LynxText style={{ marginBottom: '6px', color: cssVar('status.error'), fontSize: '12px' }}>
+            {archiveUndoError}
+          </LynxText>
+        ) : null}
+
         <LynxScrollView style={{ flexGrow: 1, minHeight: '0' }}>
           {indexStatus === 'loading' || indexStatus === 'idle' ? (
             <LynxText style={{ color: cssVar('surface.mutedForeground') }}>
@@ -636,8 +843,12 @@ export function LynxSessionsSheet({
               key={session.id}
               session={session}
               isCurrent={session.id === currentSessionId}
+              confirmingArchive={confirmingArchiveSessionId === session.id}
+              locale={locale}
               onSelect={() => selectSession(session)}
               onLongPress={() => openSessionActions(session)}
+              onRequestArchive={() => handleRequestArchive(session.id)}
+              onConfirmArchive={() => handleConfirmArchive(session)}
             />
           ))}
 
