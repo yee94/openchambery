@@ -276,5 +276,5 @@ export const LYNX_ARCHIVED_SESSIONS_NOTES = [
   'List: GET /api/experimental/session?archived=true&roots=true (Cap experimental.session.list).',
   'Session-index omits archived roots — used only for project labels when present.',
   'Restore: unarchiveLynxSession → PATCH { time: { archived: 0 } }; never fake-success.',
-  'Deferred: bulk multi-select, Cap toast lib, smart-title, @dnd-kit, MobileWindowMotion, iPad.',
+  'Deferred: bulk multi-select, Cap toast lib, @dnd-kit, MobileWindowMotion, iPad.',
 ] as const;

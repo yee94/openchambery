@@ -4,7 +4,7 @@
  * Opens from LynxSessionStatusBar via LynxMobileResizableSheet (0.72 / 0.98).
  * Session-index grouped list + search + All/pinned/project chips + long-press
  * menus (buildLynx*MenuItems) + Cap two-step archive + ~10s unarchive undo +
- * Cap ArchivedSessionsDialog. Not Cap Zustand / toast lib / @dnd-kit / MobileWindowMotion.
+ * Cap ArchivedSessionsDialog + rename smart-title. Not Cap Zustand / toast lib / @dnd-kit / MobileWindowMotion.
  */
 import { useEffect, useMemo, useState } from 'react';
 
@@ -25,6 +25,7 @@ import {
   archiveLynxSession,
   deleteLynxSession,
   renameLynxSession,
+  requestLynxSessionSmartTitle,
   shareLynxSession,
   toggleLynxSessionPin,
   unarchiveLynxSession,
@@ -1010,11 +1011,43 @@ export function LynxSessionsSheet({
                         refresh();
                       })();
                     }}
+                    style={{ opacity: actionBusy ? 0.6 : 1, marginBottom: '8px' }}
                   >
                     <LynxText style={{ color: cssVar('primary.base'), fontWeight: '600' }}>
                       {lynxT(locale, 'lynx.projects.menu.renameSave')}
                     </LynxText>
                   </LynxView>
+                  {actionTarget.kind === 'session' ? (
+                    <LynxView
+                      bindtap={() => {
+                        if (actionBusy) return;
+                        const sessionId = actionTarget.session.id;
+                        const directory = actionTarget.session.directory;
+                        setActionBusy(true);
+                        setActionError(null);
+                        void (async () => {
+                          // Cap closes immediately after submit — do not wait for generation.
+                          // Lynx has no Cap toast lib: await the PATCH queue only, then close or show inline error.
+                          const result = await requestLynxSessionSmartTitle(runtimeFetch, {
+                            sessionId,
+                            directory,
+                          });
+                          setActionBusy(false);
+                          if (result.status !== 'ok') {
+                            setActionError(result.status === 'no-runtime' ? 'no-runtime' : result.error);
+                            return;
+                          }
+                          closeActions();
+                          refresh();
+                        })();
+                      }}
+                      style={{ opacity: actionBusy ? 0.6 : 1, marginBottom: '8px' }}
+                    >
+                      <LynxText style={{ color: cssVar('surface.foreground'), fontWeight: '600' }}>
+                        {lynxT(locale, 'lynx.projects.menu.smartTitle')}
+                      </LynxText>
+                    </LynxView>
+                  ) : null}
                 </LynxView>
               ) : (
                 menuItems.map((item) => (
