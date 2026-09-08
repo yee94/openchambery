@@ -15,6 +15,7 @@ import {
   deleteLynxSession,
   fetchLynxSessionShareUrl,
   renameLynxSession,
+  requestLynxSessionSmartTitle,
   shareLynxSession,
   toggleLynxSessionPin,
   unshareLynxSession,
@@ -926,6 +927,35 @@ export function ProjectsHome({
               >
                 <LynxText style={{ color: cssVar('primary.base'), fontSize: '15px' }}>
                   {lynxT(locale, 'lynx.projects.menu.renameSave')}
+                </LynxText>
+              </LynxView>
+              <LynxView
+                bindtap={() => {
+                  if (actionBusy) return;
+                  const sessionId = actionTarget.session.id;
+                  const directory = actionTarget.session.directory;
+                  setActionBusy(true);
+                  setActionError(null);
+                  void (async () => {
+                    // Cap closes immediately after submit — do not wait for generation.
+                    // Lynx has no Cap toast: await PATCH queue only, then close or show inline error.
+                    const result = await requestLynxSessionSmartTitle(runtimeFetch, {
+                      sessionId,
+                      directory,
+                    });
+                    setActionBusy(false);
+                    if (result.status !== 'ok') {
+                      setActionError(result.status === 'no-runtime' ? 'no-runtime' : result.error);
+                      return;
+                    }
+                    closeActionSheet();
+                    refreshAfterMutation();
+                  })();
+                }}
+                style={{ padding: '12px 0', opacity: actionBusy ? 0.6 : 1 }}
+              >
+                <LynxText style={{ color: cssVar('surface.foreground'), fontSize: '15px' }}>
+                  {lynxT(locale, 'lynx.projects.menu.smartTitle')}
                 </LynxText>
               </LynxView>
               <LynxView

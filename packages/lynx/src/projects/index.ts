@@ -11,6 +11,7 @@ export {
   unarchiveLynxSession,
   deleteLynxSession,
   renameLynxSession,
+  requestLynxSessionSmartTitle,
   toggleLynxSessionPin,
   createLynxSession,
   shareLynxSession,

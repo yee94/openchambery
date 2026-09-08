@@ -217,6 +217,7 @@ export type LynxMessageKey =
   | 'lynx.chat.sheet.changes.diffStats'
   | 'lynx.projects.menu.renameSave'
   | 'lynx.projects.menu.renamePlaceholder'
+  | 'lynx.projects.menu.smartTitle'
   | 'lynx.settings.providerAuth.title'
   | 'lynx.settings.providerAuth.apiKey'
   | 'lynx.settings.providerAuth.saveApiKey'
@@ -724,6 +725,7 @@ const en: LynxDictionary = {
   'lynx.projects.menu.rename': 'Rename',
   'lynx.projects.menu.renameSave': 'Save',
   'lynx.projects.menu.renamePlaceholder': 'Session title',
+  'lynx.projects.menu.smartTitle': 'Generate titles automatically',
   'lynx.projects.menu.pin': 'Pin',
   'lynx.projects.menu.unpin': 'Unpin',
   'lynx.projects.menu.copyLink': 'Copy link',
@@ -1131,6 +1133,7 @@ const es: LynxDictionary = {
   'lynx.projects.menu.rename': 'Rename',
   'lynx.projects.menu.renameSave': 'Save',
   'lynx.projects.menu.renamePlaceholder': 'Session title',
+  'lynx.projects.menu.smartTitle': 'Generate titles automatically',
   'lynx.projects.menu.pin': 'Pin',
   'lynx.projects.menu.unpin': 'Unpin',
   'lynx.projects.menu.copyLink': 'Copy link',
@@ -1538,6 +1541,7 @@ const fr: LynxDictionary = {
   'lynx.projects.menu.rename': 'Rename',
   'lynx.projects.menu.renameSave': 'Save',
   'lynx.projects.menu.renamePlaceholder': 'Session title',
+  'lynx.projects.menu.smartTitle': 'Generate titles automatically',
   'lynx.projects.menu.pin': 'Pin',
   'lynx.projects.menu.unpin': 'Unpin',
   'lynx.projects.menu.copyLink': 'Copy link',
@@ -1945,6 +1949,7 @@ const ja: LynxDictionary = {
   'lynx.projects.menu.rename': 'Rename',
   'lynx.projects.menu.renameSave': 'Save',
   'lynx.projects.menu.renamePlaceholder': 'Session title',
+  'lynx.projects.menu.smartTitle': 'Generate titles automatically',
   'lynx.projects.menu.pin': 'Pin',
   'lynx.projects.menu.unpin': 'Unpin',
   'lynx.projects.menu.copyLink': 'Copy link',
@@ -2352,6 +2357,7 @@ const ko: LynxDictionary = {
   'lynx.projects.menu.rename': 'Rename',
   'lynx.projects.menu.renameSave': 'Save',
   'lynx.projects.menu.renamePlaceholder': 'Session title',
+  'lynx.projects.menu.smartTitle': 'Generate titles automatically',
   'lynx.projects.menu.pin': 'Pin',
   'lynx.projects.menu.unpin': 'Unpin',
   'lynx.projects.menu.copyLink': 'Copy link',
@@ -2759,6 +2765,7 @@ const pl: LynxDictionary = {
   'lynx.projects.menu.rename': 'Rename',
   'lynx.projects.menu.renameSave': 'Save',
   'lynx.projects.menu.renamePlaceholder': 'Session title',
+  'lynx.projects.menu.smartTitle': 'Generate titles automatically',
   'lynx.projects.menu.pin': 'Pin',
   'lynx.projects.menu.unpin': 'Unpin',
   'lynx.projects.menu.copyLink': 'Copy link',
@@ -3166,6 +3173,7 @@ const ptBR: LynxDictionary = {
   'lynx.projects.menu.rename': 'Rename',
   'lynx.projects.menu.renameSave': 'Save',
   'lynx.projects.menu.renamePlaceholder': 'Session title',
+  'lynx.projects.menu.smartTitle': 'Generate titles automatically',
   'lynx.projects.menu.pin': 'Pin',
   'lynx.projects.menu.unpin': 'Unpin',
   'lynx.projects.menu.copyLink': 'Copy link',
@@ -3573,6 +3581,7 @@ const uk: LynxDictionary = {
   'lynx.projects.menu.rename': 'Rename',
   'lynx.projects.menu.renameSave': 'Save',
   'lynx.projects.menu.renamePlaceholder': 'Session title',
+  'lynx.projects.menu.smartTitle': 'Generate titles automatically',
   'lynx.projects.menu.pin': 'Pin',
   'lynx.projects.menu.unpin': 'Unpin',
   'lynx.projects.menu.copyLink': 'Copy link',
@@ -3980,6 +3989,7 @@ const zhCN: LynxDictionary = {
   'lynx.projects.menu.rename': 'Rename',
   'lynx.projects.menu.renameSave': '保存',
   'lynx.projects.menu.renamePlaceholder': '会话标题',
+  'lynx.projects.menu.smartTitle': '智能生成标题',
   'lynx.projects.menu.pin': 'Pin',
   'lynx.projects.menu.unpin': 'Unpin',
   'lynx.projects.menu.copyLink': 'Copy link',
@@ -4387,6 +4397,7 @@ const zhTW: LynxDictionary = {
   'lynx.projects.menu.rename': 'Rename',
   'lynx.projects.menu.renameSave': '保存',
   'lynx.projects.menu.renamePlaceholder': '会话标题',
+  'lynx.projects.menu.smartTitle': '智慧生成標題',
   'lynx.projects.menu.pin': 'Pin',
   'lynx.projects.menu.unpin': 'Unpin',
   'lynx.projects.menu.copyLink': 'Copy link',

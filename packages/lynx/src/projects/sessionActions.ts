@@ -24,6 +24,18 @@ const ensureId = (sessionId: string): string => {
   return id;
 };
 
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+
+const unwrapSessionPayload = (payload: unknown): Record<string, unknown> | null => {
+  if (!isRecord(payload)) return null;
+  const nested = payload.data;
+  if (isRecord(nested)) return nested;
+  return payload;
+};
+
+
 export async function archiveLynxSession(
   runtimeFetch: LynxRuntimeFetch | null | undefined,
   input: { sessionId: string; directory?: string | null; archivedAt?: number },
@@ -128,6 +140,87 @@ export async function renameLynxSession(
     };
   }
 }
+
+
+/**
+ * Cap `requestSessionSmartTitle` — queue server-side title refresh.
+ * GET session then PATCH `metadata.openchamber.titleRefresh.requestedAt`.
+ * Preserves existing titleRefresh fields + lastAutoTitle when present.
+ * Close UI after submit; do not wait for generation. Never fake-success.
+ */
+export async function requestLynxSessionSmartTitle(
+  runtimeFetch: LynxRuntimeFetch | null | undefined,
+  input: { sessionId: string; directory?: string | null },
+): Promise<LynxSessionMutationResult> {
+  if (!runtimeFetch) return { status: 'no-runtime' };
+  try {
+    const sessionId = ensureId(input.sessionId);
+    const query = directoryQuery(input.directory);
+    const getResponse = await runtimeFetch(
+      `/session/${encodeURIComponent(sessionId)}${query}`,
+      { method: 'GET' },
+    );
+    if (getResponse.status === 0) return { status: 'no-runtime' };
+    if (!getResponse.ok) {
+      return {
+        status: 'failed',
+        error: `session.get failed (${getResponse.status})`,
+        httpStatus: getResponse.status,
+      };
+    }
+    const payload = await getResponse.json().catch(() => null);
+    const session = unwrapSessionPayload(payload);
+    if (!session) {
+      return {
+        status: 'failed',
+        error: 'session.get returned no session',
+        httpStatus: getResponse.status,
+      };
+    }
+    const metadata = isRecord(session.metadata) ? { ...session.metadata } : {};
+    const openchamber = isRecord(metadata.openchamber)
+      ? { ...metadata.openchamber }
+      : {};
+    const titleRefresh = isRecord(openchamber.titleRefresh)
+      ? { ...openchamber.titleRefresh }
+      : {};
+    const currentTitle = typeof session.title === 'string' ? session.title.trim() : '';
+    const existingLastAuto =
+      typeof titleRefresh.lastAutoTitle === 'string' ? titleRefresh.lastAutoTitle : undefined;
+    const lastAutoTitle = currentTitle || existingLastAuto;
+    openchamber.titleRefresh = {
+      ...titleRefresh,
+      ...(lastAutoTitle ? { lastAutoTitle } : {}),
+      requestedAt: Date.now(),
+    };
+    metadata.openchamber = openchamber;
+
+    const patchResponse = await runtimeFetch(
+      `/session/${encodeURIComponent(sessionId)}${query}`,
+      {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ metadata }),
+      },
+    );
+    if (patchResponse.status === 0) return { status: 'no-runtime' };
+    if (!patchResponse.ok) {
+      return {
+        status: 'failed',
+        error: `session.smartTitle failed (${patchResponse.status})`,
+        httpStatus: patchResponse.status,
+      };
+    }
+    return { status: 'ok' };
+  } catch (error) {
+    return {
+      status: 'failed',
+      error: error instanceof Error ? error.message : String(error),
+      httpStatus: 0,
+    };
+  }
+}
+
 
 export async function deleteLynxSession(
   runtimeFetch: LynxRuntimeFetch | null | undefined,
