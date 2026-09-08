@@ -253,6 +253,8 @@ export {
   closeLynxProject,
   createLynxWorktree,
   deleteLynxWorktree,
+  deleteLynxRemoteBranch,
+  normalizeLynxWorktreeBranchName,
   collectLynxWorktreeLinkedSessions,
   archiveLynxWorktreeLinkedSessions,
   probeLynxWorktreeDirty,

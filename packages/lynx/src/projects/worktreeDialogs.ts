@@ -1,7 +1,8 @@
 /**
  * Cap MobileDeleteWorktreeDialog / NewWorktreeDialog helpers for Lynx.
  * Pure portable TS — archive linked sessions + dirty probe via Cap git status.
- * Remote-branch delete stays deferred (separate Cap deleteRemoteBranch API; no Lynx helper yet).
+ * Remote-branch delete lives on Cap DELETE /api/git/remote-branches via
+ * `deleteLynxRemoteBranch` / `deleteLynxWorktree` in projectActions.
  */
 import { loadLynxGitStatus } from '../chat/changesSurface';
 import type { LynxRuntimeFetch } from '../runtime/fetch';

@@ -30,6 +30,13 @@ export type LynxWorktreeCreateResult =
   | { status: 'unavailable'; reason: string }
   | { status: 'failed'; error: string; httpStatus?: number };
 
+/** Worktree delete may remove the tree then fail remote-branch delete honestly. */
+export type LynxDeleteWorktreeResult =
+  | { status: 'ok' }
+  | { status: 'no-runtime' }
+  | { status: 'unavailable'; reason: string }
+  | { status: 'failed'; error: string; httpStatus?: number; worktreeRemoved?: boolean };
+
 const directoryQuery = (directory?: string | null): string => {
   const value = directory?.trim();
   return value ? `?directory=${encodeURIComponent(value)}` : '';
@@ -272,15 +279,82 @@ export async function createLynxWorktree(
   }
 }
 
-/** Cap `DELETE /api/git/worktrees?directory=` with `{ directory }` payload. */
+/** Cap branch name for remote delete — strip `refs/heads/` like Cap removeProjectWorktree. */
+export const normalizeLynxWorktreeBranchName = (branch?: string | null): string =>
+  (branch || '').replace(/^refs\/heads\//, '').trim();
+
+/**
+ * Cap `DELETE /api/git/remote-branches?directory=` with `{ branch, remote? }`.
+ * Real Cap contract — never fake-success.
+ */
+export async function deleteLynxRemoteBranch(
+  runtimeFetch: LynxRuntimeFetch | null | undefined,
+  input: {
+    projectDirectory: string;
+    branch: string;
+    remote?: string | null;
+  },
+): Promise<LynxProjectMutationResult> {
+  if (!runtimeFetch) return { status: 'no-runtime' };
+  const projectDirectory = input.projectDirectory.trim();
+  const branch = normalizeLynxWorktreeBranchName(input.branch);
+  if (!projectDirectory) {
+    return { status: 'failed', error: 'project directory required' };
+  }
+  if (!branch) {
+    return { status: 'failed', error: 'branch is required to delete remote branch' };
+  }
+  const remote = typeof input.remote === 'string' ? input.remote.trim() : '';
+  const payload: { branch: string; remote?: string } = { branch };
+  if (remote) payload.remote = remote;
+  try {
+    const response = await runtimeFetch(
+      `/api/git/remote-branches${directoryQuery(projectDirectory)}`,
+      {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      },
+    );
+    if (response.status === 0) return { status: 'no-runtime' };
+    if (response.status === 501 || response.status === 404) {
+      return {
+        status: 'unavailable',
+        reason: `git.remote-branches delete unavailable (${response.status})`,
+      };
+    }
+    if (!response.ok) {
+      const body = await response.json().catch(() => null) as { error?: unknown } | null;
+      const message = body && typeof body.error === 'string'
+        ? body.error
+        : `git.remote-branches delete failed (${response.status})`;
+      return { status: 'failed', error: message, httpStatus: response.status };
+    }
+    return { status: 'ok' };
+  } catch (error) {
+    return {
+      status: 'failed',
+      error: error instanceof Error ? error.message : String(error),
+    };
+  }
+}
+
+/**
+ * Cap `DELETE /api/git/worktrees?directory=` with `{ directory, deleteLocalBranch }`,
+ * then optional Cap `deleteRemoteBranch` (same order as Cap removeProjectWorktree).
+ * Remote failure after worktree removal is reported honestly (never fake-success).
+ */
 export async function deleteLynxWorktree(
   runtimeFetch: LynxRuntimeFetch | null | undefined,
   input: {
     projectDirectory: string;
     worktreeDirectory: string;
     deleteLocalBranch?: boolean;
+    deleteRemoteBranch?: boolean;
+    branch?: string | null;
+    remote?: string | null;
   },
-): Promise<LynxProjectMutationResult> {
+): Promise<LynxDeleteWorktreeResult> {
   if (!runtimeFetch) return { status: 'no-runtime' };
   const projectDirectory = input.projectDirectory.trim();
   const worktreeDirectory = input.worktreeDirectory.trim();
@@ -313,6 +387,37 @@ export async function deleteLynxWorktree(
         : `git.worktrees delete failed (${response.status})`;
       return { status: 'failed', error: message, httpStatus: response.status };
     }
+
+    const branchName = normalizeLynxWorktreeBranchName(input.branch);
+    if (input.deleteRemoteBranch && branchName) {
+      const remoteResult = await deleteLynxRemoteBranch(runtimeFetch, {
+        projectDirectory,
+        branch: branchName,
+        remote: input.remote,
+      });
+      if (remoteResult.status === 'ok') return { status: 'ok' };
+      if (remoteResult.status === 'no-runtime') {
+        return {
+          status: 'failed',
+          error: 'worktree removed but remote branch delete lost runtime',
+          worktreeRemoved: true,
+        };
+      }
+      if (remoteResult.status === 'unavailable') {
+        return {
+          status: 'failed',
+          error: `worktree removed but ${remoteResult.reason}`,
+          worktreeRemoved: true,
+        };
+      }
+      return {
+        status: 'failed',
+        error: `worktree removed but remote branch delete failed: ${remoteResult.error}`,
+        httpStatus: remoteResult.httpStatus,
+        worktreeRemoved: true,
+      };
+    }
+
     return { status: 'ok' };
   } catch (error) {
     return {

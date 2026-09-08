@@ -146,8 +146,8 @@ export type LynxDeleteWorktreeDialogProps = {
 
 /**
  * Cap MobileDeleteWorktreeDialog spirit via LynxCenteredDialog portal.
- * Deepens: deleteLocalBranch toggle + archive linked sessions + dirty warning
- * when Cap git status is reachable. Remote-branch toggle deferred (no Lynx helper).
+ * Deepens: deleteLocalBranch + deleteRemoteBranch toggles, archive linked
+ * sessions, dirty warning when Cap git status is reachable.
  */
 export function LynxDeleteWorktreeDialog({
   locale,
@@ -164,6 +164,7 @@ export function LynxDeleteWorktreeDialog({
 }: LynxDeleteWorktreeDialogProps) {
   const [busy, setBusy] = useState(false);
   const [deleteLocalBranch, setDeleteLocalBranch] = useState(false);
+  const [deleteRemoteBranch, setDeleteRemoteBranch] = useState(false);
   const [isDirty, setIsDirty] = useState(false);
   const [showDirty, setShowDirty] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -178,6 +179,7 @@ export function LynxDeleteWorktreeDialog({
     if (!open) {
       setBusy(false);
       setDeleteLocalBranch(false);
+      setDeleteRemoteBranch(false);
       setIsDirty(false);
       setShowDirty(false);
       setActionError(null);
@@ -248,11 +250,21 @@ export function LynxDeleteWorktreeDialog({
                     projectDirectory,
                     worktreeDirectory,
                     deleteLocalBranch: hasBranch && deleteLocalBranch,
+                    deleteRemoteBranch: hasBranch && deleteRemoteBranch,
+                    branch: worktreeBranch,
                   });
                   setBusy(false);
                   if (result.status === 'ok') {
                     onClose();
                     onDeleted?.();
+                    return;
+                  }
+                  // Cap may leave the tree gone when remote fails; Lynx refreshes
+                  // parent but surfaces the remote error (never fake-success).
+                  if (result.status === 'failed' && result.worktreeRemoved) {
+                    onDeleted?.();
+                    setActionError(result.error);
+                    onErrorNote?.(result.error);
                     return;
                   }
                   const note = result.status === 'unavailable'
@@ -315,35 +327,66 @@ export function LynxDeleteWorktreeDialog({
           </LynxText>
         ) : null}
         {hasBranch ? (
-          <LynxView
-            data-lynx-delete-worktree-local-branch="true"
-            bindtap={() => {
-              if (busy) return;
-              setDeleteLocalBranch((value) => !value);
-            }}
-            accessibility-role="switch"
-            style={{
-              flexDirection: 'row',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              paddingTop: '10px',
-              paddingBottom: '10px',
-              paddingLeft: '12px',
-              paddingRight: '12px',
-              marginBottom: '8px',
-              borderRadius: '12px',
-              borderWidth: '1px',
-              borderColor: cssVar('surface.mutedForeground'),
-              opacity: busy ? 0.5 : 1,
-            }}
-          >
-            <LynxText style={{ color: cssVar('surface.foreground'), fontSize: '13px', flexGrow: 1 }}>
-              {lynxT(locale, 'lynx.projects.worktree.deleteLocalBranch')}
-            </LynxText>
-            <LynxText style={{ color: cssVar('primary.base'), fontSize: '13px', fontWeight: '700' }}>
-              {deleteLocalBranch ? 'ON' : 'OFF'}
-            </LynxText>
-          </LynxView>
+          <>
+            <LynxView
+              data-lynx-delete-worktree-local-branch="true"
+              bindtap={() => {
+                if (busy) return;
+                setDeleteLocalBranch((value) => !value);
+              }}
+              accessibility-role="switch"
+              style={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                paddingTop: '10px',
+                paddingBottom: '10px',
+                paddingLeft: '12px',
+                paddingRight: '12px',
+                marginBottom: '8px',
+                borderRadius: '12px',
+                borderWidth: '1px',
+                borderColor: cssVar('surface.mutedForeground'),
+                opacity: busy ? 0.5 : 1,
+              }}
+            >
+              <LynxText style={{ color: cssVar('surface.foreground'), fontSize: '13px', flexGrow: 1 }}>
+                {lynxT(locale, 'lynx.projects.worktree.deleteLocalBranch')}
+              </LynxText>
+              <LynxText style={{ color: cssVar('primary.base'), fontSize: '13px', fontWeight: '700' }}>
+                {deleteLocalBranch ? 'ON' : 'OFF'}
+              </LynxText>
+            </LynxView>
+            <LynxView
+              data-lynx-delete-worktree-remote-branch="true"
+              bindtap={() => {
+                if (busy) return;
+                setDeleteRemoteBranch((value) => !value);
+              }}
+              accessibility-role="switch"
+              style={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                paddingTop: '10px',
+                paddingBottom: '10px',
+                paddingLeft: '12px',
+                paddingRight: '12px',
+                marginBottom: '8px',
+                borderRadius: '12px',
+                borderWidth: '1px',
+                borderColor: cssVar('surface.mutedForeground'),
+                opacity: busy ? 0.5 : 1,
+              }}
+            >
+              <LynxText style={{ color: cssVar('surface.foreground'), fontSize: '13px', flexGrow: 1 }}>
+                {lynxT(locale, 'lynx.projects.worktree.deleteRemoteBranch')}
+              </LynxText>
+              <LynxText style={{ color: cssVar('primary.base'), fontSize: '13px', fontWeight: '700' }}>
+                {deleteRemoteBranch ? 'ON' : 'OFF'}
+              </LynxText>
+            </LynxView>
+          </>
         ) : null}
         {actionError ? (
           <LynxText style={{ color: cssVar('status.error'), fontSize: '12px', marginBottom: '4px' }}>

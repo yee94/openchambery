@@ -24,6 +24,8 @@ export {
   closeLynxProject,
   createLynxWorktree,
   deleteLynxWorktree,
+  deleteLynxRemoteBranch,
+  normalizeLynxWorktreeBranchName,
   inferLynxProjectIsGit,
 } from './projectActions';
 
