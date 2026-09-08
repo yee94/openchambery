@@ -8,6 +8,7 @@ export {
 } from './sessionMenuModel';
 export {
   archiveLynxSession,
+  unarchiveLynxSession,
   deleteLynxSession,
   renameLynxSession,
   toggleLynxSessionPin,

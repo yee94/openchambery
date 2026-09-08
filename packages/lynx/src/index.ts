@@ -240,6 +240,7 @@ export {
   buildLynxProjectMenuItems,
   buildLynxWorktreeMenuItems,
   archiveLynxSession,
+  unarchiveLynxSession,
   deleteLynxSession,
   createLynxSession,
   toggleLynxSessionPin,

@@ -1,7 +1,7 @@
 /**
  * Cap session mutation APIs used by Projects swipe / long-press menus.
  * - pin/unpin: OpenChamber session-index (already in session-index/api)
- * - archive / rename: OpenCode PATCH /session/:id
+ * - archive / unarchive / rename: OpenCode PATCH /session/:id
  * - delete: OpenCode DELETE /session/:id
  * Never fake-success on transport/HTTP failure.
  */
@@ -45,6 +45,40 @@ export async function archiveLynxSession(
       return {
         status: 'failed',
         error: `session.archive failed (${response.status})`,
+        httpStatus: response.status,
+      };
+    }
+    return { status: 'ok' };
+  } catch (error) {
+    return {
+      status: 'failed',
+      error: error instanceof Error ? error.message : String(error),
+      httpStatus: 0,
+    };
+  }
+}
+
+/** Cap `unarchiveSession` — restore via PATCH `{ time: { archived: 0 } }`. Never fake-success. */
+export async function unarchiveLynxSession(
+  runtimeFetch: LynxRuntimeFetch | null | undefined,
+  input: { sessionId: string; directory?: string | null },
+): Promise<LynxSessionMutationResult> {
+  if (!runtimeFetch) return { status: 'no-runtime' };
+  try {
+    const sessionId = ensureId(input.sessionId);
+    const response = await runtimeFetch(
+      `/session/${encodeURIComponent(sessionId)}${directoryQuery(input.directory)}`,
+      {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ time: { archived: 0 } }),
+      },
+    );
+    if (response.status === 0) return { status: 'no-runtime' };
+    if (!response.ok) {
+      return {
+        status: 'failed',
+        error: `session.unarchive failed (${response.status})`,
         httpStatus: response.status,
       };
     }

@@ -278,4 +278,12 @@ export {
   type LynxSessionsSheetModel,
 } from './sessionsSheet';
 export { LynxSessionsSheet, type LynxSessionsSheetProps } from './SessionsSheet';
+export {
+  SESSION_ARCHIVE_UNDO_MS,
+  createLynxArchiveUndoBanner,
+  isLynxArchiveUndoExpired,
+  toggleLynxArchiveConfirm,
+  LYNX_SESSION_ARCHIVE_UNDO_NOTES,
+  type LynxArchiveUndoBanner,
+} from './sessionArchiveUndo';
 
