@@ -3,8 +3,10 @@ import { describe, expect, test } from 'vitest';
 import {
   closeLynxProject,
   createLynxWorktree,
+  deleteLynxRemoteBranch,
   deleteLynxWorktree,
   inferLynxProjectIsGit,
+  normalizeLynxWorktreeBranchName,
   probeLynxGitRepository,
   syncLynxProjectSessions,
   updateLynxProjectLabel,
@@ -126,6 +128,104 @@ describe('Lynx project / worktree actions', () => {
       status: 501,
       json: async () => ({}),
     }), { projectDirectory: '/repo', branchName: 'x' })).toMatchObject({ status: 'unavailable' });
+  });
+
+  test('normalizeLynxWorktreeBranchName strips refs/heads/', () => {
+    expect(normalizeLynxWorktreeBranchName('refs/heads/feature')).toBe('feature');
+    expect(normalizeLynxWorktreeBranchName('  feature  ')).toBe('feature');
+    expect(normalizeLynxWorktreeBranchName(null)).toBe('');
+  });
+
+  test('deleteLynxRemoteBranch hits Cap DELETE /api/git/remote-branches', async () => {
+    const calls: Array<{ path: string; method?: string; body?: string }> = [];
+    const runtimeFetch = async (path: string, init?: { method?: string; body?: string }) => {
+      calls.push({ path, method: init?.method, body: init?.body });
+      return { ok: true, status: 200, json: async () => ({ success: true }) };
+    };
+    expect(await deleteLynxRemoteBranch(runtimeFetch, {
+      projectDirectory: '/repo',
+      branch: 'refs/heads/feature',
+      remote: 'origin',
+    })).toEqual({ status: 'ok' });
+    expect(calls[0]).toMatchObject({
+      path: '/api/git/remote-branches?directory=%2Frepo',
+      method: 'DELETE',
+    });
+    expect(JSON.parse(calls[0]!.body!)).toEqual({ branch: 'feature', remote: 'origin' });
+
+    expect(await deleteLynxRemoteBranch(null, {
+      projectDirectory: '/repo',
+      branch: 'feature',
+    })).toEqual({ status: 'no-runtime' });
+    expect(await deleteLynxRemoteBranch(async () => ({
+      ok: false,
+      status: 501,
+      json: async () => ({}),
+    }), { projectDirectory: '/repo', branch: 'feature' })).toMatchObject({ status: 'unavailable' });
+    expect(await deleteLynxRemoteBranch(async () => ({
+      ok: false,
+      status: 500,
+      json: async () => ({ error: 'push denied' }),
+    }), { projectDirectory: '/repo', branch: 'feature' })).toEqual({
+      status: 'failed',
+      error: 'push denied',
+      httpStatus: 500,
+    });
+  });
+
+  test('deleteLynxWorktree optionally deletes remote branch after worktree remove', async () => {
+    const calls: Array<{ path: string; method?: string; body?: string }> = [];
+    const runtimeFetch = async (path: string, init?: { method?: string; body?: string }) => {
+      calls.push({ path, method: init?.method, body: init?.body });
+      if (path.includes('/remote-branches')) {
+        return { ok: true, status: 200, json: async () => ({ success: true }) };
+      }
+      return { ok: true, status: 200, json: async () => ({ success: true }) };
+    };
+    expect(await deleteLynxWorktree(runtimeFetch, {
+      projectDirectory: '/repo',
+      worktreeDirectory: '/repo-wt',
+      deleteLocalBranch: true,
+      deleteRemoteBranch: true,
+      branch: 'feature',
+    })).toEqual({ status: 'ok' });
+    expect(calls).toHaveLength(2);
+    expect(calls[0]?.path).toContain('/api/git/worktrees?directory=%2Frepo');
+    expect(JSON.parse(calls[0]!.body!)).toEqual({
+      directory: '/repo-wt',
+      deleteLocalBranch: true,
+    });
+    expect(calls[1]?.path).toContain('/api/git/remote-branches?directory=%2Frepo');
+    expect(JSON.parse(calls[1]!.body!)).toEqual({ branch: 'feature' });
+
+    // Without remote toggle — worktree only
+    calls.length = 0;
+    expect(await deleteLynxWorktree(runtimeFetch, {
+      projectDirectory: '/repo',
+      worktreeDirectory: '/repo-wt',
+      deleteRemoteBranch: false,
+      branch: 'feature',
+    })).toEqual({ status: 'ok' });
+    expect(calls).toHaveLength(1);
+
+    // Remote failure after worktree ok — honest failed + worktreeRemoved
+    const failingRemote = async (path: string, init?: { method?: string; body?: string }) => {
+      if (path.includes('/remote-branches')) {
+        return { ok: false, status: 500, json: async () => ({ error: 'remote gone' }) };
+      }
+      return { ok: true, status: 200, json: async () => ({ success: true }) };
+    };
+    expect(await deleteLynxWorktree(failingRemote, {
+      projectDirectory: '/repo',
+      worktreeDirectory: '/repo-wt',
+      deleteRemoteBranch: true,
+      branch: 'feature',
+    })).toEqual({
+      status: 'failed',
+      error: 'worktree removed but remote branch delete failed: remote gone',
+      httpStatus: 500,
+      worktreeRemoved: true,
+    });
   });
 
   test('inferLynxProjectIsGit uses worktree groups', () => {

@@ -286,6 +286,7 @@ export type LynxMessageKey =
   | 'lynx.projects.worktree.deleteConfirmAction'
   | 'lynx.projects.worktree.deleteUnavailable'
   | 'lynx.projects.worktree.deleteLocalBranch'
+  | 'lynx.projects.worktree.deleteRemoteBranch'
   | 'lynx.projects.worktree.deleteArchiveNote'
   | 'lynx.projects.worktree.deleteDirtyWarning'
   | 'lynx.shareWelcome.title'
@@ -707,6 +708,7 @@ const en: LynxDictionary = {
   'lynx.projects.worktree.deleteConfirmAction': 'Delete worktree',
   'lynx.projects.worktree.deleteUnavailable': 'Worktree delete unavailable',
   'lynx.projects.worktree.deleteLocalBranch': 'Also delete local branch',
+  'lynx.projects.worktree.deleteRemoteBranch': 'Also delete remote branch',
   'lynx.projects.worktree.deleteArchiveNote': 'Linked sessions in this worktree will be archived first.',
   'lynx.projects.worktree.deleteDirtyWarning': 'This worktree has uncommitted changes.',
   'lynx.shareWelcome.title': 'Share to an Assistant',
@@ -1085,6 +1087,7 @@ const es: LynxDictionary = {
   'lynx.projects.worktree.deleteConfirmAction': 'Delete worktree',
   'lynx.projects.worktree.deleteUnavailable': 'Worktree delete unavailable',
   'lynx.projects.worktree.deleteLocalBranch': 'Also delete local branch',
+  'lynx.projects.worktree.deleteRemoteBranch': 'Also delete remote branch',
   'lynx.projects.worktree.deleteArchiveNote': 'Linked sessions in this worktree will be archived first.',
   'lynx.projects.worktree.deleteDirtyWarning': 'This worktree has uncommitted changes.',
   'lynx.shareWelcome.title': 'Share to an Assistant',
@@ -1463,6 +1466,7 @@ const fr: LynxDictionary = {
   'lynx.projects.worktree.deleteConfirmAction': 'Delete worktree',
   'lynx.projects.worktree.deleteUnavailable': 'Worktree delete unavailable',
   'lynx.projects.worktree.deleteLocalBranch': 'Also delete local branch',
+  'lynx.projects.worktree.deleteRemoteBranch': 'Also delete remote branch',
   'lynx.projects.worktree.deleteArchiveNote': 'Linked sessions in this worktree will be archived first.',
   'lynx.projects.worktree.deleteDirtyWarning': 'This worktree has uncommitted changes.',
   'lynx.shareWelcome.title': 'Share to an Assistant',
@@ -1841,6 +1845,7 @@ const ja: LynxDictionary = {
   'lynx.projects.worktree.deleteConfirmAction': 'Delete worktree',
   'lynx.projects.worktree.deleteUnavailable': 'Worktree delete unavailable',
   'lynx.projects.worktree.deleteLocalBranch': 'Also delete local branch',
+  'lynx.projects.worktree.deleteRemoteBranch': 'Also delete remote branch',
   'lynx.projects.worktree.deleteArchiveNote': 'Linked sessions in this worktree will be archived first.',
   'lynx.projects.worktree.deleteDirtyWarning': 'This worktree has uncommitted changes.',
   'lynx.shareWelcome.title': 'Share to an Assistant',
@@ -2219,6 +2224,7 @@ const ko: LynxDictionary = {
   'lynx.projects.worktree.deleteConfirmAction': 'Delete worktree',
   'lynx.projects.worktree.deleteUnavailable': 'Worktree delete unavailable',
   'lynx.projects.worktree.deleteLocalBranch': 'Also delete local branch',
+  'lynx.projects.worktree.deleteRemoteBranch': 'Also delete remote branch',
   'lynx.projects.worktree.deleteArchiveNote': 'Linked sessions in this worktree will be archived first.',
   'lynx.projects.worktree.deleteDirtyWarning': 'This worktree has uncommitted changes.',
   'lynx.shareWelcome.title': 'Share to an Assistant',
@@ -2597,6 +2603,7 @@ const pl: LynxDictionary = {
   'lynx.projects.worktree.deleteConfirmAction': 'Delete worktree',
   'lynx.projects.worktree.deleteUnavailable': 'Worktree delete unavailable',
   'lynx.projects.worktree.deleteLocalBranch': 'Also delete local branch',
+  'lynx.projects.worktree.deleteRemoteBranch': 'Also delete remote branch',
   'lynx.projects.worktree.deleteArchiveNote': 'Linked sessions in this worktree will be archived first.',
   'lynx.projects.worktree.deleteDirtyWarning': 'This worktree has uncommitted changes.',
   'lynx.shareWelcome.title': 'Share to an Assistant',
@@ -2975,6 +2982,7 @@ const ptBR: LynxDictionary = {
   'lynx.projects.worktree.deleteConfirmAction': 'Delete worktree',
   'lynx.projects.worktree.deleteUnavailable': 'Worktree delete unavailable',
   'lynx.projects.worktree.deleteLocalBranch': 'Also delete local branch',
+  'lynx.projects.worktree.deleteRemoteBranch': 'Also delete remote branch',
   'lynx.projects.worktree.deleteArchiveNote': 'Linked sessions in this worktree will be archived first.',
   'lynx.projects.worktree.deleteDirtyWarning': 'This worktree has uncommitted changes.',
   'lynx.shareWelcome.title': 'Share to an Assistant',
@@ -3353,6 +3361,7 @@ const uk: LynxDictionary = {
   'lynx.projects.worktree.deleteConfirmAction': 'Delete worktree',
   'lynx.projects.worktree.deleteUnavailable': 'Worktree delete unavailable',
   'lynx.projects.worktree.deleteLocalBranch': 'Also delete local branch',
+  'lynx.projects.worktree.deleteRemoteBranch': 'Also delete remote branch',
   'lynx.projects.worktree.deleteArchiveNote': 'Linked sessions in this worktree will be archived first.',
   'lynx.projects.worktree.deleteDirtyWarning': 'This worktree has uncommitted changes.',
   'lynx.shareWelcome.title': 'Share to an Assistant',
@@ -3731,6 +3740,7 @@ const zhCN: LynxDictionary = {
   'lynx.projects.worktree.deleteConfirmAction': 'Delete worktree',
   'lynx.projects.worktree.deleteUnavailable': 'Worktree delete unavailable',
   'lynx.projects.worktree.deleteLocalBranch': 'Also delete local branch',
+  'lynx.projects.worktree.deleteRemoteBranch': 'Also delete remote branch',
   'lynx.projects.worktree.deleteArchiveNote': 'Linked sessions in this worktree will be archived first.',
   'lynx.projects.worktree.deleteDirtyWarning': 'This worktree has uncommitted changes.',
   'lynx.shareWelcome.title': 'Share to an Assistant',
@@ -4109,6 +4119,7 @@ const zhTW: LynxDictionary = {
   'lynx.projects.worktree.deleteConfirmAction': 'Delete worktree',
   'lynx.projects.worktree.deleteUnavailable': 'Worktree delete unavailable',
   'lynx.projects.worktree.deleteLocalBranch': 'Also delete local branch',
+  'lynx.projects.worktree.deleteRemoteBranch': 'Also delete remote branch',
   'lynx.projects.worktree.deleteArchiveNote': 'Linked sessions in this worktree will be archived first.',
   'lynx.projects.worktree.deleteDirtyWarning': 'This worktree has uncommitted changes.',
   'lynx.shareWelcome.title': 'Share to an Assistant',
