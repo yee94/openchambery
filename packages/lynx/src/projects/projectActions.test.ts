@@ -112,6 +112,15 @@ describe('Lynx project / worktree actions', () => {
       directory: '/repo-wt',
       deleteLocalBranch: false,
     });
+    expect(await deleteLynxWorktree(runtimeFetch, {
+      projectDirectory: '/repo',
+      worktreeDirectory: '/repo-wt',
+      deleteLocalBranch: true,
+    })).toEqual({ status: 'ok' });
+    expect(JSON.parse(calls[2]!.body!)).toEqual({
+      directory: '/repo-wt',
+      deleteLocalBranch: true,
+    });
     expect(await createLynxWorktree(async () => ({
       ok: false,
       status: 501,

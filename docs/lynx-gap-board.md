@@ -353,6 +353,7 @@ First implementation slice after this doc gate (order is deliberate: connect →
 40. ~~**SessionGoal create/manage dialog**~~ — 代码接上 in `cursor/lynx-session-goal-dialog-local`. Cap `SessionGoalDialog` + `setSessionGoal`/`clearSessionGoal` parity: Lynx `setLynxSessionGoal`/`clearLynxSessionGoal` (GET `/session/:id` + PATCH `metadata.openchamber.goal` + Cap `/api/goals/objective/:id`); create/manage overlay via shell `LynxCenteredDialog`/`LynxDialogPortal`; row tap → manage; create entry when no goal + Cap `/goal` arm (never auto-send). Complete via existing `setLynxSessionGoalStatus('complete')`. Docs honesty: tip `8def01d0` / tip APK `lynx-v2-debug-8def01d` (release exists); product NOT DONE / 三关未齐 / not EXHAUSTED; 真机残差 empty.
 41. ~~**Cap server message-queue client + QueuedMessageChips wire**~~ — 代码接上 in `cursor/lynx-message-queue-server-local`. Thin Cap-compatible `messageQueueServer.ts` over `LynxRuntimeFetch` (list/admit/reorder/remove/send-now; flush=send-now first); composerActions prefers server when reachable, falls back to local on unavailable; portable ↑/↓ (no `@dnd-kit` / no TanStack). Docs honesty: tip `c02f917f` / tip APK `lynx-v2-debug-c02f917` (release exists); product NOT DONE / 三关未齐 / not EXHAUSTED; 真机残差 empty; full Cap sessions sheet still deferred; host-only unchanged.
 42. ~~**Cap full sessions sheet from slim SessionStatusBar**~~ — 代码接上 in `cursor/lynx-sessions-sheet-local`. Cap MobileSessionsSheet / MobileSessionStatusBar sheet spirit via `LynxMobileResizableSheet` (0.72/0.98): session-index project+worktree grouped list (portable TS, not Cap Zustand), search, All/pinned/project filter chips (`LYNX_PINNED_SESSION_FILTER_ID` + `resolveMobileSessionSheetDefaultFilter` + `shouldPreserveActiveProjectOnSessionOpen`), tap → switch+close, long-press reuses `buildLynx*MenuItems` (honest unavailable when HTTP missing). Deferred: Cap `@dnd-kit` / MobileWindowMotion polish / iPad sidebar. Docs honesty: tip `f72fbe0c` / tip APK `lynx-v2-debug-f72fbe0` (release exists — do not invent newer); product NOT DONE / 三关未齐 / not EXHAUSTED; 真机残差 empty; host-only unchanged.
+43. ~~**Cap worktree create/delete dialogs on SessionsSheet**~~ — 代码接上 in `cursor/lynx-worktree-dialogs-local`. Cap name prompt (not auto `wt-*`) + confirm delete via shared `LynxCreateWorktreeDialog` / `LynxDeleteWorktreeDialog` (ProjectsHome + SessionsSheet). Deepen Cap MobileDeleteWorktreeDialog spirit: `deleteLocalBranch` toggle (API on `deleteLynxWorktree`), archive linked sessions via `archiveLynxSession`, dirty warning via Cap `GET /api/git/status` (`probeLynxWorktreeDirty`). Deferred: remote-branch delete (separate Cap API, no Lynx helper), Cap `@dnd-kit` / MobileWindowMotion / iPad sidebar. Docs honesty: base tip `ebe3d408` / tip APK `lynx-v2-debug-ebe3d40` (release exists — do not invent newer until mobile-ci rebuilds); product NOT DONE / 三关未齐 / not EXHAUSTED; 真机残差 empty; host-only unchanged.
 
 Do not invent ASR / Bonjour / Capgo / TanStack 1.18. Share / Live Activity / widgets stay later.
 
@@ -622,7 +623,7 @@ Slice on `cursor/lynx-dialog-portal-theme-local` (base PR#61 tip `7a4c7b6a8`; PR
 
 ## Remaining (honest — not EXHAUSTED)
 
-**Product NOT DONE / 三关未齐 / not EXHAUSTED.** Linux Cap product rows continue to close on tip `f72fbe0c` + follow-ons (connect/settings/chat/projects/changes + Android first-paint #65–#69 + Cap phone overflow **new-session** in Next #32 + Voice model download/delete UI in Next #33 + Voice STT select + Changes dirty badge in Next #34 + PermissionCard metadata + permission auto-accept in Next #35 + Cap share-recipient picker in Next #36 + Projects menus/share in Next #37 + QueuedMessageChips + SessionGoalRow in Next #38 + MobileSessionStatusBar slim strip in Next #39 + SessionGoal create/manage dialog in Next #40 + Cap server message-queue client in Next #41 + Cap full sessions sheet in Next #42). Queue chips + SessionGoal row/dialog + slim session status bar + server MQ client + full sessions sheet JS 代码接上 in #38–#42. Remaining Cap-parity polish is thin (Cap `@dnd-kit` / MobileWindowMotion / iPad sidebar deferred); **host binders / HTML WKWebView / Pierre `@pierre/diffs` (honest DOM blocker — not ported) / Live Activity / iOS IPA / Share extension + ShareReceiverActivity / clipboard host / 真机** still block EXHAUSTED. **Do not** mark landed under 三关. 真机残差: **empty** (no written device log). Tip APK: `lynx-v2-debug-f72fbe0` — release exists; do not invent a newer APK SHA until mobile-ci rebuilds.
+**Product NOT DONE / 三关未齐 / not EXHAUSTED.** Linux Cap product rows continue to close on tip `ebe3d408` + follow-ons (connect/settings/chat/projects/changes + Android first-paint #65–#69 + Cap phone overflow **new-session** in Next #32 + Voice model download/delete UI in Next #33 + Voice STT select + Changes dirty badge in Next #34 + PermissionCard metadata + permission auto-accept in Next #35 + Cap share-recipient picker in Next #36 + Projects menus/share in Next #37 + QueuedMessageChips + SessionGoalRow in Next #38 + MobileSessionStatusBar slim strip in Next #39 + SessionGoal create/manage dialog in Next #40 + Cap server message-queue client in Next #41 + Cap full sessions sheet in Next #42 + worktree create/delete dialogs in Next #43). Queue chips + SessionGoal row/dialog + slim session status bar + server MQ client + full sessions sheet + worktree dialogs JS 代码接上 in #38–#43. Remaining Cap-parity polish is thin (Cap `@dnd-kit` / MobileWindowMotion / iPad sidebar / remote-branch delete deferred); **host binders / HTML WKWebView / Pierre `@pierre/diffs` (honest DOM blocker — not ported) / Live Activity / iOS IPA / Share extension + ShareReceiverActivity / clipboard host / 真机** still block EXHAUSTED. **Do not** mark landed under 三关. 真机残差: **empty** (no written device log). Tip APK honesty relative to base tip: `lynx-v2-debug-ebe3d40` — release exists; do not invent a newer APK SHA until mobile-ci rebuilds (PR head SHA will change after merge).
 
 ### 代码接上 prior slice (`cursor/lynx-closable-missing-local` / PR#48)
 
@@ -841,7 +842,7 @@ Slice on `cursor/lynx-dialog-portal-theme-local` (base PR#61 tip `7a4c7b6a8`; PR
 | QueuedMessageChips | Cap chips above composer; Lynx `LynxQueuedMessageChips` + `queuedMessageChips.ts` on local `composerActions` queue — remove / send-now / flush; portable ↑/↓ reorder (no `@dnd-kit`) |
 | Server message-queue | Cap `/api/openchamber/message-queue` thin client 代码接上 in Next #41; TanStack/Zustand flights still deferred |
 | SessionGoalRow | Cap compact strip; Lynx `sessionGoal.ts` + `LynxSessionGoalRow` via GET `/session/:id` metadata + PATCH status; file objective GET `/api/goals/objective/:id` when `objectiveFile`; never fake-success |
-| MobileSessionStatusBar (full Cap sheet) | Slim strip 代码接上 in Next #39; **full** Cap ~1900-line sheet (worktree groups / long-press menus / MobileWindowMotion) still deferred |
+| MobileSessionStatusBar (full Cap sheet) | Slim strip 代码接上 in Next #39; **full** Cap sessions sheet 代码接上 in Next #42; worktree create/delete dialogs in Next #43; Cap `@dnd-kit` / MobileWindowMotion still deferred |
 | Docs honesty | Tip APK `lynx-v2-debug-905c42e`; Next #38 |
 | Docs honesty | NOT DONE / 三关未齐 / not EXHAUSTED / 真机残差 empty / no 真机过 claim |
 
@@ -852,7 +853,7 @@ Slice on `cursor/lynx-dialog-portal-theme-local` (base PR#61 tip `7a4c7b6a8`; PR
 | Slim MobileSessionStatusBar | Cap related-session chips + busy/working indicator above composer (with SessionGoal + queue); **not** full Cap sheet |
 | Pure helpers | Cap `shouldPreserveActiveProjectOnSessionOpen` + `resolveMobileSessionSheetDefaultFilter`; status normalize; session-index related list |
 | Shell wiring | session-index → relatedSessions / orderedSessionIds; chip tap → openChat; "All" → Projects home (honest Cap sheet analogue) |
-| Deferred | Full Cap sessions sheet / worktree collapse / long-press menus / `@dnd-kit` (server MQ thin client in #41) |
+| Deferred | Cap `@dnd-kit` / MobileWindowMotion / iPad sidebar (full sessions sheet in #42; worktree dialogs in #43; server MQ thin client in #41) |
 | Docs honesty | Tip APK `lynx-v2-debug-ca32a72` (release exists); Next #39 |
 | Docs honesty | NOT DONE / 三关未齐 / not EXHAUSTED / 真机残差 empty / no 真机过 claim |
 
@@ -876,7 +877,7 @@ Slice on `cursor/lynx-dialog-portal-theme-local` (base PR#61 tip `7a4c7b6a8`; PR
 | Vitest | Happy-path parse + failure paths (`messageQueueServer.test.ts`) + composer server/local coverage |
 | Docs honesty | Tip `c02f917f` / APK `lynx-v2-debug-c02f917` (release exists); Next #41 |
 | Docs honesty | NOT DONE / 三关未齐 / not EXHAUSTED / 真机残差 empty / no 真机过 claim |
-| Still deferred | Full Cap sessions sheet; Cap TanStack/Zustand MQ sync flights; `@dnd-kit`; host-only unchanged |
+| Still deferred | Cap TanStack/Zustand MQ sync flights; `@dnd-kit`; host-only unchanged (full sessions sheet in #42; worktree dialogs in #43) |
 
 ### Still missing / host-only / 真机
 
@@ -893,7 +894,7 @@ Slice on `cursor/lynx-dialog-portal-theme-local` (base PR#61 tip `7a4c7b6a8`; PR
 | Haptics / HEIC / media pick / APNs·FCM token mint | Adapters 代码接上; native plugins still host |
 | Share extension / Android `ShareReceiverActivity` | **Host-only** (separate from Next #36 JS full-page picker). Inbox + recipient picker 代码接上; native extension/receiver still host |
 | Native clipboard binder | Next #37 copyLink uses `navigator.clipboard` when present; otherwise labeled unavailable — host clipboard plugin still host-only |
-| MobileSessionStatusBar (full Cap sheet) | Slim related-session + busy strip 代码接上 in #39; full Cap sheet chrome still deferred |
+| MobileSessionStatusBar / sessions sheet | Slim strip 代码接上 in #39; full Cap sessions sheet 代码接上 in #42; worktree create/delete dialogs 代码接上 in #43. Remaining: Cap `@dnd-kit` / MobileWindowMotion / iPad sidebar / remote-branch delete |
 | Cap server message-queue | Thin Lynx client 代码接上 in #41 (`messageQueueServer` + composer wire); full Cap TanStack/Zustand sync + `@dnd-kit` still deferred |
 | Live Activity / Widgets / Control Center | iOS-only host — later |
 | Android sideload APK + lynx-ci | **Live** on tip (`lynx-mobile-ci` assembleRelease + prerelease `lynx-v2-debug-*`; lynx-ci green). First-paint cream/globalProps 代码接上 — **not** 真机过. |
