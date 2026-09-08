@@ -1,6 +1,6 @@
 /**
  * Cap MobileSessionsSheet archive confirm + sessionMutationUndo spirit for Lynx.
- * Portable helpers only — no Cap toast lib / ArchivedSessionsDialog / bulk multi-select.
+ * Portable helpers only — no Cap toast lib / bulk multi-select.
  */
 export const SESSION_ARCHIVE_UNDO_MS = 10_000;
 
@@ -45,5 +45,5 @@ export const LYNX_SESSION_ARCHIVE_UNDO_NOTES = [
   'Cap confirmingArchive / onRequestArchive / onConfirmArchive two-step control.',
   `Undo window mirrors Cap SESSION_DELETE_UNDO_MS (${SESSION_ARCHIVE_UNDO_MS}ms).`,
   'Undo calls unarchiveLynxSession → PATCH { time: { archived: 0 } }; never fake-success.',
-  'Deferred: Cap toast lib, bulk multi-select, ArchivedSessionsDialog, @dnd-kit.',
+  'Deferred: Cap toast lib, bulk multi-select, @dnd-kit (ArchivedSessionsDialog in #46).',
 ] as const;

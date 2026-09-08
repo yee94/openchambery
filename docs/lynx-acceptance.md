@@ -300,6 +300,12 @@ Chosen mode is written at the top of `packages/lynx/README.md` (Mode B iOS 26 ho
 - Tip APK: `lynx-v2-debug-a1ea85e` (work/lynx-native @ `a1ea85e0`; release exists). Was stale `fd333a0` — do not invent a newer APK SHA until mobile-ci rebuilds.
 - `unarchiveLynxSession`: Cap `unarchiveSession` → PATCH `/session/:id` `{ time: { archived: 0 } }`; mirrors archive error shape; never fake-success.
 - SessionsSheet: Cap two-step row archive (`confirmingArchive` / request / confirm) + portable ~10s undo banner/chip; long-press archive uses the same undo helper + session-index refresh.
-- Deferred: Cap toast lib / bulk multi-select / ArchivedSessionsDialog / smart-title / `@dnd-kit` / MobileWindowMotion / iPad sidebar / host-only.
+- Deferred at #45 merge: Cap toast lib / bulk multi-select / ArchivedSessionsDialog (closed in #46) / smart-title / `@dnd-kit` / MobileWindowMotion / iPad sidebar / host-only.
 - Product **NOT DONE** / 三关未齐 / not EXHAUSTED / 真机残差 empty / no 真机过 claim.
 
+## Notes — Cap ArchivedSessionsDialog (Next #46 / 2026-09-08)
+
+- `listLynxArchivedSessions`: Cap `experimental.session.list({ archived: true, roots: true })` → OpenChamber `GET /api/experimental/session`; paginated; failure ≠ empty.
+- `LynxArchivedSessionsDialog`: Cap project-bucket → session list → restore (`unarchiveLynxSession`) + preview; honest empty/load/no-runtime.
+- SessionsSheet entry: footer + undo-banner **View archived** (Cap secondary). Session-index supplies labels only (index drops archived roots).
+- Deferred: bulk multi-select / smart-title / Cap toast lib / `@dnd-kit` / MobileWindowMotion / iPad sidebar / host-only.
