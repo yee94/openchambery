@@ -2,6 +2,8 @@ import { describe, expect, it, vi } from 'vitest';
 import { AssignError, ASSIGN_CODES, PROJECT_REQUIRED_MESSAGE } from './assign.js';
 import {
   ASSIGN_SESSION_TOOL_NAME,
+  CLEAR_CHAT_HISTORY_CONFIRM_BUBBLE,
+  CLEAR_CHAT_HISTORY_TOOL_NAME,
   CREATE_ASSISTANT_TOOL_NAME,
   LIST_PROJECTS_TOOL_NAME,
   LIST_SESSIONS_TOOL_NAME,
@@ -20,6 +22,7 @@ import {
   resolveContactProviderModel,
   resolvePeerAssistant,
   stripContactToolFences,
+  userTextAuthorizesClearChatHistory,
 } from './contact-tools.js';
 
 describe('contact tool protocol', () => {
@@ -78,6 +81,7 @@ describe('contact tool protocol', () => {
   it('detects 建助理 without treating 不要开编码 session as assign_session', () => {
     const tools = [
       NEW_CONVERSATION_TOOL_NAME,
+      CLEAR_CHAT_HISTORY_TOOL_NAME,
       LIST_PROJECTS_TOOL_NAME,
       LIST_SESSIONS_TOOL_NAME,
       CREATE_ASSISTANT_TOOL_NAME,
@@ -90,6 +94,7 @@ describe('contact tool protocol', () => {
     ]);
     expect(detectRequestedContactTools('每天 18:00 排一个 ping 定时任务', tools)).toEqual([SCHEDULE_TASK_TOOL_NAME]);
     expect(detectRequestedContactTools('建会话写一个文件', tools)).toEqual([ASSIGN_SESSION_TOOL_NAME]);
+    expect(detectRequestedContactTools('对，你直接派给那个项目组，再建个会话去修这个问题', tools)).toEqual([ASSIGN_SESSION_TOOL_NAME]);
     expect(detectRequestedContactTools('写一个文件', tools)).toEqual([]);
     expect(detectRequestedContactTools('pwd', tools)).toEqual([]);
     expect(detectRequestedContactTools('给 PeerQA 说一声 hello-from-assistant 写好了', tools)).toEqual([
@@ -98,11 +103,24 @@ describe('contact tool protocol', () => {
     expect(detectRequestedContactTools('开新对话', tools)).toEqual([NEW_CONVERSATION_TOOL_NAME]);
     expect(detectRequestedContactTools('new conversation please', tools)).toEqual([NEW_CONVERSATION_TOOL_NAME]);
     expect(detectRequestedContactTools('clear chat', tools)).toEqual([NEW_CONVERSATION_TOOL_NAME]);
+    expect(detectRequestedContactTools('清除记忆', tools)).toEqual([NEW_CONVERSATION_TOOL_NAME]);
+    expect(detectRequestedContactTools('清空聊天记录', tools)).toEqual([CLEAR_CHAT_HISTORY_TOOL_NAME]);
+    expect(detectRequestedContactTools('清除聊天记录', tools)).toEqual([CLEAR_CHAT_HISTORY_TOOL_NAME]);
+    expect(detectRequestedContactTools('clear chat history', tools)).toEqual([CLEAR_CHAT_HISTORY_TOOL_NAME]);
+    expect(detectRequestedContactTools('delete chat history', tools)).toEqual([CLEAR_CHAT_HISTORY_TOOL_NAME]);
+    expect(detectRequestedContactTools('不要清除聊天记录', tools)).toEqual([]);
+    expect(detectRequestedContactTools('do not clear chat history', tools)).toEqual([]);
     expect(detectRequestedContactTools('找项目 openchamber yee', tools)).toEqual([LIST_PROJECTS_TOOL_NAME]);
     expect(detectRequestedContactTools('看看现有对话', tools)).toEqual([LIST_SESSIONS_TOOL_NAME]);
     expect(detectRequestedContactTools('list sessions in that project', tools)).toEqual([LIST_SESSIONS_TOOL_NAME]);
     expect(detectRequestedContactTools('开新对话', tools)).not.toContain(ASSIGN_SESSION_TOOL_NAME);
+    expect(detectRequestedContactTools('开新对话', tools)).not.toContain(CLEAR_CHAT_HISTORY_TOOL_NAME);
     expect(detectRequestedContactTools('不要开编码 session', tools)).toEqual([]);
+    expect(userTextAuthorizesClearChatHistory('清除聊天记录')).toBe(true);
+    expect(userTextAuthorizesClearChatHistory('清空聊天记录')).toBe(true);
+    expect(userTextAuthorizesClearChatHistory('清除记忆')).toBe(false);
+    expect(userTextAuthorizesClearChatHistory('不要清除聊天记录')).toBe(false);
+    expect(userTextAuthorizesClearChatHistory('开新对话')).toBe(false);
   });
 
   it('parses bash fences when the pi coding tools are allowed', () => {
@@ -120,6 +138,7 @@ describe('contact tool protocol', () => {
   it('tells DeepSeek to call tools from natural language, not slash commands', () => {
     const prompt = formatContactToolsPrompt(createContactTools());
     expect(prompt).toContain('new_conversation');
+    expect(prompt).toContain('clear_chat_history');
     expect(prompt).toContain('list_projects');
     expect(prompt).toContain('list_sessions');
     expect(prompt).toContain('create_assistant');
@@ -127,12 +146,15 @@ describe('contact tool protocol', () => {
     expect(prompt).toContain('message_assistant');
     expect(prompt).toContain('assign_session');
     expect(prompt).toContain('开新对话');
+    expect(prompt).toContain('清除记忆');
+    expect(prompt).toContain('清空聊天记录');
     expect(prompt).toContain('找项目');
     expect(prompt).toContain('现有对话');
     expect(prompt).toContain('建助理');
     expect(prompt).toContain('排定时任务');
     expect(prompt).toContain('说一声');
     expect(prompt).toContain('session/new');
+    expect(prompt).toContain('LLM memory only');
     expect(prompt).not.toContain('/card');
     expect(prompt).not.toContain('/dm');
     expect(prompt).toContain('A reply without the tool call does nothing');
@@ -168,8 +190,10 @@ describe('contact tool protocol', () => {
 describe('createContactTools', () => {
   it('exposes create_assistant, schedule_task, and assign_session and returns success cards', async () => {
     const onCard = vi.fn();
-    const resetContact = vi.fn(async () => ({ reset: true }));
+    const clearContactMemory = vi.fn(async () => ({ reset: true, memoryCleared: true }));
+    const resetContact = vi.fn(async () => ({ reset: true, historyCleared: true }));
     const tools = createContactTools({
+      clearContactMemory,
       resetContact,
       createAssistant: async (input) => ({
         id: 'asst_flow',
@@ -204,6 +228,7 @@ describe('createContactTools', () => {
     });
     expect(tools.map((tool) => tool.name)).toEqual([
       NEW_CONVERSATION_TOOL_NAME,
+      CLEAR_CHAT_HISTORY_TOOL_NAME,
       LIST_PROJECTS_TOOL_NAME,
       LIST_SESSIONS_TOOL_NAME,
       CREATE_ASSISTANT_TOOL_NAME,
@@ -214,11 +239,18 @@ describe('createContactTools', () => {
     expect(tools.some((tool) => ['bash', 'edit', 'read', 'write'].includes(tool.name))).toBe(false);
 
     const reset = await tools.find((tool) => tool.name === NEW_CONVERSATION_TOOL_NAME).execute('call_0', {});
-    expect(resetContact).toHaveBeenCalledTimes(1);
+    expect(clearContactMemory).toHaveBeenCalledTimes(1);
+    expect(resetContact).not.toHaveBeenCalled();
     expect(reset.details.card).toBeUndefined();
-    expect(reset.details.reset).toBe(true);
+    expect(reset.details).toMatchObject({ reset: true, memoryCleared: true });
     expect(reset.terminate).toBe(true);
     expect(reset.content[0].text).toBe(NEW_CONVERSATION_CONFIRM_BUBBLE);
+
+    const wiped = await tools.find((tool) => tool.name === CLEAR_CHAT_HISTORY_TOOL_NAME).execute('call_wipe', {});
+    expect(resetContact).toHaveBeenCalledTimes(1);
+    expect(wiped.details).toMatchObject({ reset: true, historyCleared: true });
+    expect(wiped.terminate).toBe(true);
+    expect(wiped.content[0].text).toBe(CLEAR_CHAT_HISTORY_CONFIRM_BUBBLE);
 
     const created = await tools.find((tool) => tool.name === CREATE_ASSISTANT_TOOL_NAME).execute('call_1', { name: 'FlowQA', model: 'opencode-go/deepseek-v4-flash' });
     expect(created.details.card).toMatchObject({
@@ -333,5 +365,15 @@ describe('confirmBubbleAfterContactReset', () => {
     expect(confirmBubbleAfterContactReset([
       'I still see your dot.png and note.txt from earlier.',
     ])).toEqual([NEW_CONVERSATION_CONFIRM_BUBBLE]);
+  });
+
+  it('prefers the clear-history confirm when that tool ran', () => {
+    expect(confirmBubbleAfterContactReset([
+      CLEAR_CHAT_HISTORY_CONFIRM_BUBBLE,
+      'I still see older cards.',
+    ], CLEAR_CHAT_HISTORY_CONFIRM_BUBBLE)).toEqual([CLEAR_CHAT_HISTORY_CONFIRM_BUBBLE]);
+    expect(confirmBubbleAfterContactReset([
+      'leftover only',
+    ], CLEAR_CHAT_HISTORY_CONFIRM_BUBBLE)).toEqual([CLEAR_CHAT_HISTORY_CONFIRM_BUBBLE]);
   });
 });

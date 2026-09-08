@@ -81,6 +81,11 @@ export const isVisibleDesktopHost = (
   return sshInstanceIds.has(host.id);
 };
 
+export const supportsDesktopHostRemoteUpdate = (
+  host: DesktopHost | undefined,
+  sshInstanceIds: ReadonlySet<string>,
+): boolean => Boolean(host && !host.relay && sshInstanceIds.has(host.id));
+
 /**
  * Whether a persisted desktop host should appear as a Settings "链接" row.
  * Local SSH instance mirrors share an id with `desktopSshInstances` and stay
@@ -344,8 +349,8 @@ export type ProbeRelayDesktopHostResult = HostProbeResult & {
 };
 
 /**
- * Reachability check for a relay host: open a throwaway E2EE tunnel and hit
- * /health. Relay hosts have no HTTP address for `desktopHostProbe`. Hard
+ * Reachability and authentication check for a relay host over a throwaway E2EE
+ * tunnel. Relay hosts have no HTTP address for `desktopHostProbe`. Hard
  * timeout: a ghost relay registration (relay lost the host, host doesn't know)
  * leaves the tunnel in `connecting` forever — the probe must report
  * unreachable instead of hanging every status/switch flow with it.
@@ -357,6 +362,7 @@ export const probeRelayDesktopHost = async (
   // WebSocket connect + E2EE handshake); every other outcome closes it.
   options?: {
     keepTunnel?: boolean;
+    clientToken?: string | null;
   },
 ): Promise<ProbeRelayDesktopHostResult> => {
   const tunnel = createRelayTunnelClient({
@@ -366,17 +372,24 @@ export const probeRelayDesktopHost = async (
   });
   const startedAt = Date.now();
   let keep = false;
+  let timer: ReturnType<typeof setTimeout> | undefined;
   try {
-    const response = await Promise.race([
-      tunnel.fetch('/health'),
+    const session = await Promise.race([
+      (async () => {
+        const response = await tunnel.fetch('/auth/session', {
+          headers: options?.clientToken ? { Authorization: `Bearer ${options.clientToken}` } : {},
+        });
+        const payload = response.ok ? await response.json().catch(() => null) : null;
+        return { response, payload };
+      })(),
       new Promise<null>((resolve) => {
-        const timer = window.setTimeout(() => resolve(null), RELAY_PROBE_TIMEOUT_MS);
-        if (typeof timer !== 'number' && typeof (timer as { unref?: () => void }).unref === 'function') {
-          (timer as unknown as { unref: () => void }).unref();
-        }
+        timer = setTimeout(() => resolve(null), RELAY_PROBE_TIMEOUT_MS);
       }),
     ]);
+    const response = session?.response;
+    if (response?.status === 401 || response?.status === 403) return { status: 'auth', latencyMs: Math.max(0, Date.now() - startedAt) };
     if (!response?.ok) return { status: 'unreachable', latencyMs: 0 };
+    if (session?.payload?.authenticated !== true) return { status: 'auth', latencyMs: Math.max(0, Date.now() - startedAt) };
     keep = options?.keepTunnel === true;
     return {
       status: 'ok',
@@ -386,6 +399,7 @@ export const probeRelayDesktopHost = async (
   } catch {
     return { status: 'unreachable', latencyMs: 0 };
   } finally {
+    if (timer !== undefined) clearTimeout(timer);
     if (!keep) tunnel.close();
   }
 };

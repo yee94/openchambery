@@ -12,6 +12,7 @@ import { promisify } from 'node:util';
 import updaterPkg from 'electron-updater';
 import { ElectronSshManager, planOpenCodeConfigSync } from './ssh-manager.mjs';
 import { createDirectConfigSyncController } from './direct-config-sync.mjs';
+import { probeHostAuthentication } from './host-auth-probe.mjs';
 import { createSettingsStore } from './settings-store.mjs';
 import { createTrayController } from './tray.mjs';
 import {
@@ -1063,8 +1064,13 @@ const probeHostWithTimeout = async (url, timeoutMs, clientToken = '', requestHea
       return { status: 'unreachable', latencyMs: Date.now() - started };
     }
     const payload = await response.json().catch(() => null);
+    const versionStatus = classifyVersionPayload(payload);
+    if (versionStatus === 'ok' || versionStatus === 'update-recommended') {
+      const authStatus = await probeHostAuthentication(url, { headers, timeoutMs });
+      if (authStatus !== 'ok') return { status: authStatus, latencyMs: Date.now() - started };
+    }
     return {
-      status: classifyVersionPayload(payload),
+      status: versionStatus,
       latencyMs: Date.now() - started,
     };
   } catch {

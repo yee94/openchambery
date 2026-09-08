@@ -9,6 +9,7 @@ import { getWorktrees as defaultListWorktrees } from '../git/service.js';
 import { contactCardIdentity, parseContactCard, parseContactPart } from './cards.js';
 import {
   CONTACT_SETTLE_TEXT,
+  clearContactMemory as clearContactMemoryStore,
   contactHistoryForLlm,
   deleteContactMessages,
   ensureContactSchema,
@@ -23,12 +24,16 @@ import {
 import {
   ASSIGNED_SESSION_FALLBACK_BUBBLE,
   boundSessionListLimit,
+  CLEAR_CHAT_HISTORY_CONFIRM_BUBBLE,
   confirmBubbleAfterContactReset,
+  contactTurnClearedChatHistory,
   createContactTools,
   filterRegisteredProjects,
   matchesProjectQuery,
+  NEW_CONVERSATION_CONFIRM_BUBBLE,
   normalizeRegisteredProjects,
   sanitizeRegisteredProject,
+  userTextAuthorizesClearChatHistory,
 } from './contact-tools.js';
 import { AssignError, ASSIGN_CODES, assignSession, resolveAssignDirectory } from './assign.js';
 import { runContactTurn as defaultRunContactTurn } from './harness.js';
@@ -1026,9 +1031,6 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
     if (!userText) fail('validation_error');
     const userParts = userContactParts(input, userText);
     const row = active(assistantID);
-    // Snapshot history before admitting the user so the harness does not see a
-    // duplicate of the current userText (prompt still receives userText).
-    const history = contactHistoryForLlm(db, assistantID);
     if (typeof createChatCompletion !== 'function' && runContactTurn === defaultRunContactTurn) fail('upstream_error');
     let registeredProjects = [];
     try {
@@ -1056,18 +1058,51 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
       messageID,
     });
     contactTurnSettlement(messageID);
+    // Authorize wipe from this turn's real userText only — not tool args.
+    const clearChatHistoryAuthorized = userTextAuthorizesClearChatHistory(userText);
     const kickTurn = () => {
       void inContactTurnLane(row.assistant_id, async () => {
+        // Load the LLM window when the lane runs — not at admit time — so a
+        // prior turn's clear-memory cannot leave queued work with stale history.
+        // Exclude the admitted user row; prompt still receives userText/parts.
+        // beforeOrdinal caps later-admitted queued user rows out of this turn.
+        const admitted = db.prepare(
+          'SELECT ordinal FROM assistant_contact_message WHERE message_id=?',
+        ).get(messageID);
+        const parsedOrdinal = admitted?.ordinal == null ? NaN : Number(admitted.ordinal);
+        const beforeOrdinal = Number.isFinite(parsedOrdinal) ? parsedOrdinal : null;
+        const history = contactHistoryForLlm(db, row.assistant_id, {
+          excludeMessageIDs: [messageID],
+          beforeOrdinal,
+        });
         const assignedCards = [];
         let contactResetThisTurn = false;
+        let contactHistoryClearedThisTurn = false;
         const tools = createContactTools({
           assignWork: (params) => assignWork(row, params),
           createAssistant: (toolInput) => createAssistant(toolInput),
           scheduleTask: (params) => scheduleWork(row, params),
           deliverPeerMessage: (toolInput) => deliverPeerMessage(row.assistant_id, toolInput),
+          clearContactMemory: () => {
+            // Cap the watermark at this turn's user ordinal — never global MAX,
+            // or later-admitted queued users are permanently excluded from LLM history.
+            const result = clearContactMemory(row.assistant_id, {
+              upToOrdinal: beforeOrdinal,
+            });
+            contactResetThisTurn = true;
+            return result;
+          },
           resetContact: () => {
+            // Server core gate: model mis-select cannot self-authorize delete.
+            if (!clearChatHistoryAuthorized) {
+              throw new AssignError(
+                ASSIGN_CODES.VALIDATION,
+                'clear_chat_history requires explicit user wipe intent in this message.',
+              );
+            }
             const result = resetContact(row.assistant_id);
             contactResetThisTurn = true;
+            contactHistoryClearedThisTurn = true;
             return result;
           },
           listAssistants: () => db.prepare('SELECT * FROM assistant_v2 WHERE tombstone_at IS NULL ORDER BY created_at').all().map(output),
@@ -1107,8 +1142,14 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
             return;
           }
           const resetThisTurn = contactResetThisTurn || generated?.reset === true;
+          const historyClearedThisTurn = contactHistoryClearedThisTurn
+            || contactTurnClearedChatHistory(generated?.messages)
+            || generated?.historyCleared === true;
+          const preferredConfirm = historyClearedThisTurn
+            ? CLEAR_CHAT_HISTORY_CONFIRM_BUBBLE
+            : NEW_CONVERSATION_CONFIRM_BUBBLE;
           const bubbles = resetThisTurn
-            ? confirmBubbleAfterContactReset(generated?.bubbles)
+            ? confirmBubbleAfterContactReset(generated?.bubbles, preferredConfirm)
             : (Array.isArray(generated?.bubbles) ? generated.bubbles.filter((item) => typeof item === 'string' && item.trim()) : []);
           const cards = resetThisTurn
             ? []
@@ -1134,8 +1175,9 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
             resolveContactTurnSettlement(messageID, { status: 'error', error: detail });
             return;
           }
-          // new_conversation wipes the transcript (including the admitted user row).
-          // Re-admit the reset user message, then persist only the confirm bubble.
+          // clear_chat_history / resetContact wipe the transcript (including the
+          // admitted user row). Re-admit that user message, then persist only the
+          // confirm bubble. new_conversation keeps rows and only moves the watermark.
           if (resetThisTurn) {
             const existingUser = db.prepare('SELECT 1 AS ok FROM assistant_contact_message WHERE message_id=?').get(messageID);
             if (!existingUser) {
@@ -1201,8 +1243,32 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
     return listContactMessages(db, assistantID, { before: query.before, limit });
   };
   /**
-   * Clear this assistant's OpenChamber contact transcript (messages, parts,
-   * watches). Does not call OpenCode session/new — that is worker binding.
+   * Clear LLM memory only: advance the durable context boundary so later
+   * contactHistoryForLlm drops prior turns. Transcript GET keeps every row.
+   * Failed writes roll back and keep the previous boundary. Does not call
+   * OpenCode session/new.
+   */
+  const clearContactMemory = (assistantID, options = {}) => {
+    const row = editable(assistantID);
+    const upToOrdinal = options && typeof options === 'object' ? options.upToOrdinal : undefined;
+    db.exec('BEGIN IMMEDIATE');
+    try {
+      const cleared = clearContactMemoryStore(db, row.assistant_id, {
+        updatedAt: now(),
+        ...(upToOrdinal !== undefined ? { upToOrdinal } : {}),
+      });
+      bump();
+      db.exec('COMMIT');
+      return { assistantID: row.assistant_id, reset: true, memoryCleared: true, afterOrdinal: cleared.afterOrdinal };
+    } catch (error) {
+      db.exec('ROLLBACK');
+      throw error;
+    }
+  };
+  /**
+   * Delete this assistant's OpenChamber contact transcript (messages, parts,
+   * watches) and clear the context boundary. Intentional wipe only — also the
+   * POST /contact/reset contract. Does not call OpenCode session/new.
    */
   const resetContact = (assistantID) => {
     const row = editable(assistantID);
@@ -1215,7 +1281,7 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
       db.exec('ROLLBACK');
       throw error;
     }
-    return { assistantID: row.assistant_id, reset: true };
+    return { assistantID: row.assistant_id, reset: true, historyCleared: true };
   };
   const appendContactCard = (assistantID, input) => {
     const row = active(assistantID);
@@ -1371,5 +1437,5 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
       db.exec('ROLLBACK');
       throw error;
     }
-  }, ensure, createNew, compact, send, whenContactTurnSettled, abort, captureQueueDeliveryTarget, sendWithCapturedConfig, share, shareOperation, historicalMessages, contactMessages, resetContact, appendContactCard, deliverPeerMessage, listAssistantScheduledTasks, processEvent, reportAssignedSessionSettle: reportAssignedSession, reconcile, close: () => { if (!closed) { closed = true; unsubscribeEvents?.(); clearIntervalFn(timer); db.close(); } } };
+  }, ensure, createNew, compact, send, whenContactTurnSettled, abort, captureQueueDeliveryTarget, sendWithCapturedConfig, share, shareOperation, historicalMessages, contactMessages, clearContactMemory, resetContact, appendContactCard, deliverPeerMessage, listAssistantScheduledTasks, processEvent, reportAssignedSessionSettle: reportAssignedSession, reconcile, close: () => { if (!closed) { closed = true; unsubscribeEvents?.(); clearIntervalFn(timer); db.close(); } } };
 };

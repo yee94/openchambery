@@ -25,8 +25,10 @@ The Assistant conversation is a Grok-like **contact**, not an OpenCode coding ag
 
 **Contact memory (this PR)**
 
-- Natural language `开新对话` / “new conversation” / “clear chat” calls the `new_conversation` contact tool. That resets this assistant’s OpenChamber transcript only. It does not call OpenCode `session/new`. The same turn persists only the short confirm bubble; leftover model text about pre-reset attachments or cards is discarded.
-- Settings does not expose a continuous/stateless memory toggle. List cards omit provider/model badges; Settings detail still shows the bound model. New assistants stay continuous contact history; the server trims the LLM window. The contact surface has no compact / new-session chrome.
+- Natural language `开新对话` / “new conversation” / `清除记忆` / “clear chat” calls the `new_conversation` contact tool. That clears **LLM memory only** (server context boundary). The transcript UI keeps every prior bubble. It does not call OpenCode `session/new`.
+- Explicit wipe only: `清空/清除聊天记录` / “clear chat history” / “delete chat history” calls `clear_chat_history` (or intentional `POST …/contact/reset`). That deletes stored contact messages. The server authorizes wipe from the real user text (negation like 不要清除聊天记录 does not delete); the model cannot self-authorize via tool args.
+- The same turn persists only the short confirm bubble; leftover model text about pre-reset attachments or cards is discarded.
+- Settings does not expose a continuous/stateless memory toggle. List cards omit provider/model badges; Settings detail still shows the bound model. New assistants stay continuous contact history; the server trims the LLM window behind the durable boundary. The contact surface has no compact / new-session chrome.
 
 `GET /api/openchamber/assistants/capability` still hides navigation when Assistants are disabled.
 

@@ -9,9 +9,11 @@ import {
   CONTACT_LLM_FILE_CHAR_WEIGHT,
   CONTACT_LLM_MAX_CHARS,
   CONTACT_LLM_MAX_TURNS,
+  clearContactMemory,
   contactHistoryForLlm,
   deleteContactMessages,
   ensureContactSchema,
+  getContactContextBoundary,
   insertContactMessage,
   listContactMessages,
   nextContactOrdinal,
@@ -30,6 +32,7 @@ const openDb = () => {
 
 const insert = (db, assistantID, { role, text = '', parts, status = 'complete', fromAssistantID = null, fromAssistantName = null }) => {
   const messageID = crypto.randomUUID();
+  const ordinal = nextContactOrdinal(db, assistantID);
   insertContactMessage(db, {
     messageID,
     assistantID,
@@ -37,13 +40,13 @@ const insert = (db, assistantID, { role, text = '', parts, status = 'complete', 
     turnID: messageID,
     bubbleIndex: 0,
     createdAt: Date.now(),
-    ordinal: nextContactOrdinal(db, assistantID),
+    ordinal,
     status,
     parts: parts || (text ? [{ type: 'text', text }] : [{ type: 'text', text: '' }]),
     fromAssistantID,
     fromAssistantName,
   });
-  return messageID;
+  return { messageID, ordinal };
 };
 
 describe('contact LLM history trim', () => {
@@ -118,6 +121,25 @@ describe('contact LLM history trim', () => {
     ]);
   });
 
+  it('excludes later-admitted user rows past beforeOrdinal while keeping later assistant rows', () => {
+    const db = openDb();
+    const assistantID = 'asst_ceiling';
+    insert(db, assistantID, { role: 'user', text: 'prior-user' });
+    insert(db, assistantID, { role: 'assistant', text: 'prior-assistant' });
+    const current = insert(db, assistantID, { role: 'user', text: 'current-turn' });
+    insert(db, assistantID, { role: 'user', text: 'queued-later-user' });
+    insert(db, assistantID, { role: 'assistant', text: 'prior-lane-assistant-after-admit' });
+    expect(contactHistoryForLlm(db, assistantID, {
+      excludeMessageIDs: [current.messageID],
+      beforeOrdinal: current.ordinal,
+    })).toEqual([
+      { role: 'user', content: 'prior-user' },
+      { role: 'assistant', content: 'prior-assistant' },
+      { role: 'assistant', content: 'prior-lane-assistant-after-admit' },
+    ]);
+    db.close();
+  });
+
   it('clears LLM history after deleteContactMessages', () => {
     const db = openDb();
     const assistantID = 'asst_reset';
@@ -126,6 +148,109 @@ describe('contact LLM history trim', () => {
     deleteContactMessages(db, assistantID);
     expect(contactHistoryForLlm(db, assistantID)).toEqual([]);
     expect(listContactMessages(db, assistantID, { limit: 50 }).messages).toEqual([]);
+    expect(getContactContextBoundary(db, assistantID)).toBe(0);
+    db.close();
+  });
+
+  it('clearContactMemory keeps transcript rows and only advances the LLM boundary', () => {
+    const db = openDb();
+    const assistantID = 'asst_memory';
+    insert(db, assistantID, { role: 'user', text: 'secret-before' });
+    insert(db, assistantID, { role: 'assistant', text: 'remembered' });
+    const cleared = clearContactMemory(db, assistantID, { updatedAt: 42 });
+    expect(cleared).toMatchObject({ assistantID, memoryCleared: true, afterOrdinal: 2 });
+    expect(getContactContextBoundary(db, assistantID)).toBe(2);
+    expect(listContactMessages(db, assistantID, { limit: 50 }).messages.map((message) => message.text)).toEqual([
+      'secret-before',
+      'remembered',
+    ]);
+    expect(contactHistoryForLlm(db, assistantID)).toEqual([]);
+    insert(db, assistantID, { role: 'user', text: 'after-clear' });
+    insert(db, assistantID, { role: 'assistant', text: 'fresh-reply' });
+    expect(contactHistoryForLlm(db, assistantID)).toEqual([
+      { role: 'user', content: 'after-clear' },
+      { role: 'assistant', content: 'fresh-reply' },
+    ]);
+    db.close();
+  });
+
+  it('clearContactMemory upToOrdinal does not swallow later-admitted queued users', () => {
+    const db = openDb();
+    const assistantID = 'asst_queue_waterline';
+    insert(db, assistantID, { role: 'user', text: 'seed-secret' });
+    insert(db, assistantID, { role: 'assistant', text: 'seed-reply' });
+    const clearTurn = insert(db, assistantID, { role: 'user', text: '开新对话' });
+    const queued = insert(db, assistantID, { role: 'user', text: 'queued-after-admit' });
+    // Wrong: MAX would set afterOrdinal to queued.ordinal and permanently drop it.
+    const cleared = clearContactMemory(db, assistantID, {
+      updatedAt: 99,
+      upToOrdinal: clearTurn.ordinal,
+    });
+    expect(cleared.afterOrdinal).toBe(clearTurn.ordinal);
+    expect(getContactContextBoundary(db, assistantID)).toBe(clearTurn.ordinal);
+    expect(contactHistoryForLlm(db, assistantID)).toEqual([
+      { role: 'user', content: 'queued-after-admit' },
+    ]);
+    insert(db, assistantID, { role: 'assistant', text: 'queued-reply' });
+    insert(db, assistantID, { role: 'user', text: 'later-follow-up' });
+    const later = contactHistoryForLlm(db, assistantID);
+    expect(later.some((item) => item.content.includes('seed-secret'))).toBe(false);
+    expect(later.some((item) => item.content === 'queued-after-admit')).toBe(true);
+    expect(later.some((item) => item.content === 'queued-reply')).toBe(true);
+    expect(later.some((item) => item.content === 'later-follow-up')).toBe(true);
+    expect(queued.ordinal).toBeGreaterThan(clearTurn.ordinal);
+    db.close();
+  });
+
+  it('isolates context boundaries per assistant and survives reopen', () => {
+    const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'contact-boundary-'));
+    const Database = require('better-sqlite3');
+    const dbPath = path.join(directory, 'contact.sqlite');
+    const db = new Database(dbPath);
+    ensureContactSchema(db);
+    insert(db, 'asst_a', { role: 'user', text: 'a-secret' });
+    insert(db, 'asst_a', { role: 'assistant', text: 'a-reply' });
+    insert(db, 'asst_b', { role: 'user', text: 'b-secret' });
+    insert(db, 'asst_b', { role: 'assistant', text: 'b-reply' });
+    clearContactMemory(db, 'asst_a', { updatedAt: 1 });
+    expect(contactHistoryForLlm(db, 'asst_a')).toEqual([]);
+    expect(contactHistoryForLlm(db, 'asst_b')).toEqual([
+      { role: 'user', content: 'b-secret' },
+      { role: 'assistant', content: 'b-reply' },
+    ]);
+    db.close();
+    const reopened = new Database(dbPath);
+    ensureContactSchema(reopened);
+    expect(getContactContextBoundary(reopened, 'asst_a')).toBe(2);
+    expect(contactHistoryForLlm(reopened, 'asst_a')).toEqual([]);
+    expect(listContactMessages(reopened, 'asst_a', { limit: 50 }).messages).toHaveLength(2);
+    expect(contactHistoryForLlm(reopened, 'asst_b')).toEqual([
+      { role: 'user', content: 'b-secret' },
+      { role: 'assistant', content: 'b-reply' },
+    ]);
+    reopened.close();
+  });
+
+  it('keeps the previous boundary when clearContactMemory write fails inside a transaction', () => {
+    const db = openDb();
+    const assistantID = 'asst_fail';
+    insert(db, assistantID, { role: 'user', text: 'first' });
+    clearContactMemory(db, assistantID, { updatedAt: 10 });
+    expect(getContactContextBoundary(db, assistantID)).toBe(1);
+    insert(db, assistantID, { role: 'user', text: 'second' });
+    insert(db, assistantID, { role: 'assistant', text: 'second-reply' });
+    db.exec('BEGIN IMMEDIATE');
+    try {
+      clearContactMemory(db, assistantID, { updatedAt: 20 });
+      throw new Error('forced_write_failure');
+    } catch {
+      db.exec('ROLLBACK');
+    }
+    expect(getContactContextBoundary(db, assistantID)).toBe(1);
+    expect(contactHistoryForLlm(db, assistantID)).toEqual([
+      { role: 'user', content: 'second' },
+      { role: 'assistant', content: 'second-reply' },
+    ]);
     db.close();
   });
 });

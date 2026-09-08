@@ -1417,7 +1417,7 @@ export const RemoteInstancesPage: React.FC = () => {
     let cancelled = false;
     void Promise.all(visibleDirectHosts.map(async (host) => {
       const relayProbe = async (): Promise<DesktopHostProbeSnapshot> => {
-        const result = await probeRelayDesktopHost(host.relay!)
+        const result = await probeRelayDesktopHost(host.relay!, { clientToken: host.clientToken || null })
           .catch((): HostProbeResult => ({ status: 'unreachable', latencyMs: 0 }));
         return result.status === 'ok'
           ? { status: result.status, latencyMs: result.latencyMs, via: 'relay' }

@@ -1,7 +1,9 @@
 import { Agent } from '@earendil-works/pi-agent-core';
 import { isContactSpokenPreamble, splitContactBubbles } from './bubbles.js';
 import {
+  CLEAR_CHAT_HISTORY_CONFIRM_BUBBLE,
   confirmBubbleAfterContactReset,
+  contactTurnClearedChatHistory,
   contactTurnHasSuccessfulReset,
   contactTurnHasToolResult,
   detectRequestedContactTools,
@@ -75,7 +77,7 @@ export const CONTACT_SYSTEM_PROMPT = [
   'Never write chain-of-thought, plans, tool names, or English narration of what you will do. The user never sees thinking.',
   'Do not expose tool traces, Activity, or editor actions.',
   'You have bash, read, write, and edit in the working directory. Use them for pwd, files, and shell. Never say you have no terminal or cannot read files. Ignore any temporary generator workspace in the environment.',
-  'Understand natural language in any language, including Chinese: 开新对话 means new_conversation, 找项目 means list_projects, 现有对话 means list_sessions, 建助理 means create_assistant, 建会话 / 开个新会话 means assign_session, 排定时任务 means schedule_task, 给 X 说一声 means message_assistant, 发卡片 means emit a card via those tools — never ask the user to type /card or /dm.',
+  'Understand natural language in any language, including Chinese: 开新对话 / 清除记忆 means new_conversation (LLM memory only, chat history stays), 清空聊天记录 means clear_chat_history (delete transcript), 找项目 means list_projects, 现有对话 means list_sessions, 建助理 means create_assistant, 建会话 / 开个新会话 means assign_session, 排定时任务 means schedule_task, 给 X 说一声 means message_assistant, 发卡片 means emit a card via those tools — never ask the user to type /card or /dm.',
   'You receive the registered project catalog every turn. You CAN see those projects. Look them up yourself (fuzzy match label/name/path). Never say you cannot see the registered project list. Never ask for a raw filesystem path when a name matches. If the catalog is empty, tell the user to add a project in Settings.',
   'File and shell work in this working directory uses read, write, edit, and bash. To open a separate Chat coding session: match the project, optionally list_sessions for existing chats, then assign_session with projectPath or sessionID.',
   'A reply without the tool call does nothing. Never say 已创建, created, scheduled, or opened unless the tool already returned success.',
@@ -521,8 +523,11 @@ export async function runContactTurn({
       throw error;
     }
     const requested = detectRequestedContactTools(userText, contactTools.map((tool) => tool.name));
+    const hasRequestedResult = () => agent.state.messages.some((message) => (
+      message?.role === 'toolResult' && requested.includes(message.toolName)
+    ));
     let retried = false;
-    if (requested.length > 0 && !contactTurnHasToolResult(agent.state.messages)) {
+    if (requested.length > 0 && !hasRequestedResult() && !contactTurnHasSuccessfulReset(agent.state.messages)) {
       retried = true;
       await agent.prompt(MISSED_FENCE_RETRY_USER_TEXT);
       if (agent.state.errorMessage) {
@@ -531,7 +536,7 @@ export async function runContactTurn({
         throw error;
       }
     }
-    if (requested.length > 0 && !contactTurnHasToolResult(agent.state.messages)) {
+    if (requested.length > 0 && !hasRequestedResult() && !contactTurnHasSuccessfulReset(agent.state.messages)) {
       return {
         text: MISSED_TOOL_FAILURE_BUBBLE,
         bubbles: [MISSED_TOOL_FAILURE_BUBBLE],
@@ -543,12 +548,17 @@ export async function runContactTurn({
     const outcome = extractContactTurnOutcome(agent.state.messages, retried);
     const text = stripContactToolFences(outcome.text);
     if (contactTurnHasSuccessfulReset(agent.state.messages)) {
-      const bubbles = confirmBubbleAfterContactReset(splitContactBubbles(text));
+      const historyCleared = contactTurnClearedChatHistory(agent.state.messages);
+      const preferredConfirm = historyCleared
+        ? CLEAR_CHAT_HISTORY_CONFIRM_BUBBLE
+        : NEW_CONVERSATION_CONFIRM_BUBBLE;
+      const bubbles = confirmBubbleAfterContactReset(splitContactBubbles(text), preferredConfirm);
       return {
-        text: bubbles[0] || NEW_CONVERSATION_CONFIRM_BUBBLE,
+        text: bubbles[0] || preferredConfirm,
         bubbles,
         cards: [],
         reset: true,
+        historyCleared,
         thinkingLevel: agent.state.thinkingLevel,
         tools: [...agent.state.tools],
       };

@@ -12,6 +12,8 @@ Desktop starts the OpenChamber web server in the same Electron main process. The
 
 The preload bridge exposes desktop-only APIs to the web UI through `window.__OPENCHAMBER_DESKTOP__`. Privileged commands are checked in `main.mjs`, not only in the UI. The binary-path probe samples at most 8 KiB before a non-image binary file opens through the system handler.
 
+Desktop instance switches revalidate the target's authentication before committing the runtime endpoint. Direct probes verify service compatibility and `/auth/session` with the saved client credential; Relay probes verify `/auth/session` over the pinned E2EE tunnel and hand that authenticated tunnel to the runtime. Cached connected badges remain display snapshots. A direct authentication failure triggers Relay fallback when available; failed authentication on every candidate preserves the current instance and reports authentication required.
+
 ## Shutdown Lifecycle
 
 Electron owns the in-process server handle. Normal quit, relaunch, vibrancy relaunch, update installation, and `SIGINT`/`SIGTERM`/`SIGHUP` share one shutdown promise and await `serverHandle.stop({ exitProcess: false, forceCloseConnections: true })` before Electron exits, relaunches, or applies an update. Desktop teardown closes remaining local HTTP connections after initiating server close, avoiding the 10-second shutdown wait. This closes the message queue service and SQLite resources; SSH sessions also stop during the same teardown. A failed graceful stop launches the existing detached managed-OpenCode killer using process information captured before `stop()`. On macOS, a second `Cmd+Q` while the quit-risk confirmation is open confirms the quit and follows the same shutdown path as the dialog's Quit button.

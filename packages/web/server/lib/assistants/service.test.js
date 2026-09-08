@@ -5,6 +5,10 @@ import { describe, expect, it, vi } from 'vitest';
 import { createRequire } from 'node:module';
 import { createAssistantsService } from './service.js';
 import { assistantContractFixtures } from './contracts.js';
+import {
+  CLEAR_CHAT_HISTORY_CONFIRM_BUBBLE,
+  NEW_CONVERSATION_CONFIRM_BUBBLE,
+} from './contact-tools.js';
 
 const require = createRequire(import.meta.url);
 const root = () => fs.mkdtempSync(path.join(os.tmpdir(), 'assistants-'));
@@ -97,7 +101,7 @@ describe('assistants service', () => {
     service.close();
   });
 
-  it('new_conversation clears contact history without calling OpenCode session/new', async () => {
+  it('new_conversation clears LLM memory while keeping the full transcript', async () => {
     const directory = root();
     let creates = 0;
     let lastHistory = null;
@@ -109,7 +113,7 @@ describe('assistants service', () => {
         if (userText === '开新对话') {
           const tool = tools.find((item) => item.name === 'new_conversation');
           const result = await tool.execute('reset_1', {});
-          return { text: result.content[0].text, bubbles: [result.content[0].text] };
+          return { text: result.content[0].text, bubbles: [result.content[0].text], reset: true };
         }
         return { text: `reply:${userText}`, bubbles: [`reply:${userText}`] };
       },
@@ -125,13 +129,16 @@ describe('assistants service', () => {
     expect(creates).toBe(1);
     const page = service.contactMessages(assistant.id, { limit: 50 });
     expect(page.messages.map((message) => ({ role: message.role, text: message.text }))).toEqual([
+      { role: 'user', text: 'remember this secret' },
+      { role: 'assistant', text: 'reply:remember this secret' },
+      { role: 'user', text: 'and this too' },
+      { role: 'assistant', text: 'reply:and this too' },
       { role: 'user', text: '开新对话' },
-      { role: 'assistant', text: 'Started a new conversation. Previous contact messages are cleared.' },
+      { role: 'assistant', text: NEW_CONVERSATION_CONFIRM_BUBBLE },
     ]);
     await settleSend(service, assistant.id, { messageID: 'fresh_1', parts: [{ type: 'text', text: 'what did I say before?' }] });
     expect(lastHistory.map((item) => item.content)).toEqual([
-      '开新对话',
-      'Started a new conversation. Previous contact messages are cleared.',
+      NEW_CONVERSATION_CONFIRM_BUBBLE,
     ]);
     expect(lastHistory.some((item) => item.content.includes('remember this secret'))).toBe(false);
     service.close();
@@ -144,13 +151,14 @@ describe('assistants service', () => {
         if (userText === '开新对话') {
           await tools.find((item) => item.name === 'new_conversation').execute('reset_leftover', {});
           return {
-            text: 'Started a new conversation. Previous contact messages are cleared.\n\nI still see your dot.png and note.txt.',
+            text: `${NEW_CONVERSATION_CONFIRM_BUBBLE}\n\nI still see your dot.png and note.txt.`,
             bubbles: [
-              'Started a new conversation. Previous contact messages are cleared.',
+              NEW_CONVERSATION_CONFIRM_BUBBLE,
               'I still see your dot.png and note.txt.',
               'Those attachments are still in context.',
             ],
             cards: [{ type: 'card', cardType: 'session', sessionID: 'ses_stale', directory: '/repo', title: 'Old', status: 'busy' }],
+            reset: true,
           };
         }
         return { text: `reply:${userText}`, bubbles: [`reply:${userText}`] };
@@ -168,30 +176,281 @@ describe('assistants service', () => {
     await settleSend(service, assistant.id, { messageID: 'reset_leftover', parts: [{ type: 'text', text: '开新对话' }] });
     const page = service.contactMessages(assistant.id, { limit: 50 });
     expect(page.messages.map((message) => ({ role: message.role, text: message.text }))).toEqual([
+      { role: 'user', text: 'look at these' },
+      { role: 'assistant', text: 'reply:look at these' },
       { role: 'user', text: '开新对话' },
-      { role: 'assistant', text: 'Started a new conversation. Previous contact messages are cleared.' },
+      { role: 'assistant', text: NEW_CONVERSATION_CONFIRM_BUBBLE },
     ]);
     expect(page.messages.some((message) => message.text.includes('dot.png') || message.text.includes('note.txt'))).toBe(false);
-    expect(page.messages.some((message) => message.cards?.length > 0)).toBe(false);
+    expect(page.messages.filter((message) => message.cards?.length > 0)).toHaveLength(0);
     service.close();
   });
 
-  it('resetContact empties the transcript for a fresh UI refetch without createNew', async () => {
+  it('clear_chat_history and resetContact delete the transcript without createNew', async () => {
     const directory = root();
     let creates = 0;
     const service = setup(directory, {
       create: async () => ({ data: { id: `ses_${++creates}` } }),
+    }, {
+      runContactTurn: async ({ userText, tools }) => {
+        if (userText === '清空聊天记录' || userText === '清除聊天记录') {
+          const tool = tools.find((item) => item.name === 'clear_chat_history');
+          const result = await tool.execute('wipe_1', {});
+          if (result.details?.error) {
+            return { text: result.content[0].text, bubbles: [result.content[0].text] };
+          }
+          return {
+            text: result.content[0].text,
+            bubbles: [result.content[0].text],
+            reset: true,
+            historyCleared: true,
+            messages: [{
+              role: 'toolResult',
+              toolName: 'clear_chat_history',
+              details: result.details,
+            }],
+          };
+        }
+        return { text: `reply:${userText}`, bubbles: [`reply:${userText}`] };
+      },
     });
     const assistant = service.createAssistant(assistantInput);
     await service.ensure(assistant.id);
     await settleSend(service, assistant.id, { messageID: 'keep_1', parts: [{ type: 'text', text: 'hello' }] });
     expect(service.contactMessages(assistant.id, { limit: 50 }).messages.length).toBeGreaterThan(0);
-    expect(service.resetContact(assistant.id)).toEqual({ assistantID: assistant.id, reset: true });
+    expect(service.resetContact(assistant.id)).toEqual({
+      assistantID: assistant.id,
+      reset: true,
+      historyCleared: true,
+    });
     expect(creates).toBe(1);
     expect(service.contactMessages(assistant.id, { limit: 50 })).toMatchObject({
       messages: [],
       complete: true,
     });
+    await settleSend(service, assistant.id, { messageID: 'again_1', parts: [{ type: 'text', text: 'hello again' }] });
+    await settleSend(service, assistant.id, { messageID: 'wipe_1', parts: [{ type: 'text', text: '清空聊天记录' }] });
+    expect(service.contactMessages(assistant.id, { limit: 50 }).messages.map((message) => ({
+      role: message.role,
+      text: message.text,
+    }))).toEqual([
+      { role: 'user', text: '清空聊天记录' },
+      { role: 'assistant', text: CLEAR_CHAT_HISTORY_CONFIRM_BUBBLE },
+    ]);
+    await settleSend(service, assistant.id, { messageID: 'again_2', parts: [{ type: 'text', text: 'hello third' }] });
+    await settleSend(service, assistant.id, { messageID: 'wipe_2', parts: [{ type: 'text', text: '清除聊天记录' }] });
+    expect(service.contactMessages(assistant.id, { limit: 50 }).messages.map((message) => ({
+      role: message.role,
+      text: message.text,
+    }))).toEqual([
+      { role: 'user', text: '清除聊天记录' },
+      { role: 'assistant', text: CLEAR_CHAT_HISTORY_CONFIRM_BUBBLE },
+    ]);
+    service.close();
+  });
+
+  it('rejects malicious clear_chat_history without explicit wipe intent and keeps transcript', async () => {
+    const directory = root();
+    const wipeAttempts = [];
+    const service = setup(directory, {}, {
+      runContactTurn: async ({ userText, tools }) => {
+        if (userText === '清除记忆' || userText === '不要清除聊天记录') {
+          const tool = tools.find((item) => item.name === 'clear_chat_history');
+          const result = await tool.execute(`malicious_${userText}`, {});
+          wipeAttempts.push({
+            userText,
+            error: result.details?.error || null,
+            historyCleared: result.details?.historyCleared === true,
+          });
+          return {
+            text: `blocked:${userText}`,
+            bubbles: [`blocked:${userText}`],
+            messages: [{
+              role: 'toolResult',
+              toolName: 'clear_chat_history',
+              details: result.details,
+            }],
+          };
+        }
+        return { text: `reply:${userText}`, bubbles: [`reply:${userText}`] };
+      },
+    });
+    const assistant = service.createAssistant(assistantInput);
+    await settleSend(service, assistant.id, { messageID: 'seed_keep', parts: [{ type: 'text', text: 'keep-me' }] });
+    await settleSend(service, assistant.id, { messageID: 'bad_memory', parts: [{ type: 'text', text: '清除记忆' }] });
+    await settleSend(service, assistant.id, { messageID: 'bad_negation', parts: [{ type: 'text', text: '不要清除聊天记录' }] });
+    expect(wipeAttempts).toEqual([
+      { userText: '清除记忆', error: 'validation_error', historyCleared: false },
+      { userText: '不要清除聊天记录', error: 'validation_error', historyCleared: false },
+    ]);
+    const texts = service.contactMessages(assistant.id, { limit: 50 }).messages.map((message) => message.text);
+    expect(texts).toContain('keep-me');
+    expect(texts).toContain('清除记忆');
+    expect(texts).toContain('不要清除聊天记录');
+    expect(texts).not.toContain(CLEAR_CHAT_HISTORY_CONFIRM_BUBBLE);
+    service.close();
+  });
+
+  it('loads LLM history at turn start so queued turns respect a prior clear-memory', async () => {
+    const directory = root();
+    const histories = [];
+    let releaseClear;
+    const clearGate = new Promise((resolve) => { releaseClear = resolve; });
+    const service = setup(directory, {}, {
+      runContactTurn: async ({ history, userText, tools }) => {
+        histories.push({ userText, history: history.map((item) => item.content) });
+        if (userText === '开新对话') {
+          await tools.find((item) => item.name === 'new_conversation').execute('queued_clear', {});
+          releaseClear();
+          return { text: 'cleared', bubbles: ['cleared'], reset: true };
+        }
+        if (userText === 'queued after clear') {
+          await clearGate;
+        }
+        return { text: `reply:${userText}`, bubbles: [`reply:${userText}`] };
+      },
+    });
+    const assistant = service.createAssistant(assistantInput);
+    await settleSend(service, assistant.id, { messageID: 'seed_1', parts: [{ type: 'text', text: 'seed secret' }] });
+    const clearSend = service.send(assistant.id, { messageID: 'clear_q', parts: [{ type: 'text', text: '开新对话' }] });
+    const queuedSend = service.send(assistant.id, { messageID: 'queued_q', parts: [{ type: 'text', text: 'queued after clear' }] });
+    await Promise.all([clearSend, queuedSend]);
+    await service.whenContactTurnSettled('clear_q');
+    await service.whenContactTurnSettled('queued_q');
+    const queuedHistory = histories.find((entry) => entry.userText === 'queued after clear')?.history || [];
+    expect(queuedHistory.some((content) => content.includes('seed secret'))).toBe(false);
+    expect(service.contactMessages(assistant.id, { limit: 50 }).messages.some((message) => message.text === 'seed secret')).toBe(true);
+    service.close();
+  });
+
+  it('clear-memory watermark does not permanently exclude later-admitted queued users', async () => {
+    const directory = root();
+    const histories = [];
+    let releaseClear;
+    const clearGate = new Promise((resolve) => { releaseClear = resolve; });
+    const service = setup(directory, {}, {
+      runContactTurn: async ({ history, userText, tools }) => {
+        histories.push({ userText, history: history.map((item) => item.content) });
+        if (userText === '开新对话') {
+          await tools.find((item) => item.name === 'new_conversation').execute('waterline_clear', {});
+          releaseClear();
+          return { text: NEW_CONVERSATION_CONFIRM_BUBBLE, bubbles: [NEW_CONVERSATION_CONFIRM_BUBBLE], reset: true };
+        }
+        if (userText === 'queued keep me') {
+          await clearGate;
+        }
+        return { text: `reply:${userText}`, bubbles: [`reply:${userText}`] };
+      },
+    });
+    const assistant = service.createAssistant(assistantInput);
+    await settleSend(service, assistant.id, { messageID: 'seed_w', parts: [{ type: 'text', text: 'seed secret' }] });
+    const clearSend = service.send(assistant.id, { messageID: 'clear_w', parts: [{ type: 'text', text: '开新对话' }] });
+    const queuedSend = service.send(assistant.id, { messageID: 'queued_w', parts: [{ type: 'text', text: 'queued keep me' }] });
+    await Promise.all([clearSend, queuedSend]);
+    await service.whenContactTurnSettled('clear_w');
+    await service.whenContactTurnSettled('queued_w');
+    await settleSend(service, assistant.id, { messageID: 'follow_w', parts: [{ type: 'text', text: 'follow after queue' }] });
+    const followHistory = histories.find((entry) => entry.userText === 'follow after queue')?.history || [];
+    expect(followHistory.some((content) => content.includes('seed secret'))).toBe(false);
+    expect(followHistory.some((content) => content.includes('queued keep me'))).toBe(true);
+    expect(followHistory.some((content) => content.includes('reply:queued keep me'))).toBe(true);
+    service.close();
+  });
+
+  it('does not inject later-admitted queued user messages into the current turn history', async () => {
+    const directory = root();
+    const histories = [];
+    let releaseFirst;
+    const firstGate = new Promise((resolve) => { releaseFirst = resolve; });
+    const service = setup(directory, {}, {
+      runContactTurn: async ({ history, userText }) => {
+        histories.push({ userText, history: history.map((item) => item.content) });
+        if (userText === 'first turn') {
+          await firstGate;
+        }
+        return { text: `reply:${userText}`, bubbles: [`reply:${userText}`] };
+      },
+    });
+    const assistant = service.createAssistant(assistantInput);
+    await settleSend(service, assistant.id, { messageID: 'seed_hist', parts: [{ type: 'text', text: 'seed prior' }] });
+    const firstSend = service.send(assistant.id, { messageID: 'first_q', parts: [{ type: 'text', text: 'first turn' }] });
+    const queuedSend = service.send(assistant.id, { messageID: 'queued_later', parts: [{ type: 'text', text: 'queued later secret' }] });
+    await Promise.all([firstSend, queuedSend]);
+    // Let the first lane turn observe history while the queued user row is already admitted.
+    releaseFirst();
+    await service.whenContactTurnSettled('first_q');
+    await service.whenContactTurnSettled('queued_later');
+    const firstHistory = histories.find((entry) => entry.userText === 'first turn')?.history || [];
+    expect(firstHistory.some((content) => content.includes('seed prior'))).toBe(true);
+    expect(firstHistory.some((content) => content.includes('queued later secret'))).toBe(false);
+    const queuedHistory = histories.find((entry) => entry.userText === 'queued later secret')?.history || [];
+    expect(queuedHistory.some((content) => content.includes('first turn'))).toBe(true);
+    expect(queuedHistory.some((content) => content.includes('reply:first turn'))).toBe(true);
+    service.close();
+  });
+
+  it('persists clear-memory across restart and isolates assistants', async () => {
+    const directory = root();
+    const service = setup(directory, {}, {
+      runContactTurn: async ({ userText, tools }) => {
+        if (userText === '开新对话') {
+          await tools.find((item) => item.name === 'new_conversation').execute('persist_clear', {});
+          return { text: 'cleared', bubbles: ['cleared'], reset: true };
+        }
+        return { text: `reply:${userText}`, bubbles: [`reply:${userText}`] };
+      },
+    });
+    const first = service.createAssistant(assistantInput);
+    const second = service.createAssistant({ ...assistantInput, name: 'B' });
+    await settleSend(service, first.id, { messageID: 'a1', parts: [{ type: 'text', text: 'alpha secret' }] });
+    await settleSend(service, second.id, { messageID: 'b1', parts: [{ type: 'text', text: 'beta secret' }] });
+    await settleSend(service, first.id, { messageID: 'a_clear', parts: [{ type: 'text', text: '开新对话' }] });
+    expect(service.clearContactMemory(second.id)).toMatchObject({
+      assistantID: second.id,
+      memoryCleared: true,
+      reset: true,
+    });
+    service.close();
+    const histories = [];
+    const restarted = setup(directory, {}, {
+      runContactTurn: async ({ history, userText }) => {
+        histories.push({ assistantHint: userText, history: history.map((item) => item.content) });
+        return { text: `reply:${userText}`, bubbles: [`reply:${userText}`] };
+      },
+    });
+    const assistants = restarted.snapshot().assistants;
+    const a = assistants.find((item) => item.name === 'A');
+    const b = assistants.find((item) => item.name === 'B');
+    await settleSend(restarted, a.id, { messageID: 'a_next', parts: [{ type: 'text', text: 'after restart a' }] });
+    await settleSend(restarted, b.id, { messageID: 'b_next', parts: [{ type: 'text', text: 'after restart b' }] });
+    const aHistory = histories.find((entry) => entry.assistantHint === 'after restart a')?.history || [];
+    const bHistory = histories.find((entry) => entry.assistantHint === 'after restart b')?.history || [];
+    expect(aHistory.some((content) => content.includes('alpha secret'))).toBe(false);
+    expect(bHistory.some((content) => content.includes('beta secret'))).toBe(false);
+    expect(restarted.contactMessages(a.id, { limit: 50 }).messages.some((message) => message.text === 'alpha secret')).toBe(true);
+    expect(restarted.contactMessages(b.id, { limit: 50 }).messages.some((message) => message.text === 'beta secret')).toBe(true);
+    restarted.close();
+  });
+
+  it('exposes clearContactMemory without wiping GET transcript rows', async () => {
+    const directory = root();
+    let lastHistory = null;
+    const service = setup(directory, {}, {
+      runContactTurn: async ({ history, userText }) => {
+        lastHistory = history;
+        return { text: `reply:${userText}`, bubbles: [`reply:${userText}`] };
+      },
+    });
+    const assistant = service.createAssistant(assistantInput);
+    await settleSend(service, assistant.id, { messageID: 'api_1', parts: [{ type: 'text', text: 'visible forever' }] });
+    expect(service.clearContactMemory(assistant.id)).toMatchObject({
+      assistantID: assistant.id,
+      reset: true,
+      memoryCleared: true,
+    });
+    expect(service.contactMessages(assistant.id, { limit: 50 }).messages.some((message) => message.text === 'visible forever')).toBe(true);
+    await settleSend(service, assistant.id, { messageID: 'api_2', parts: [{ type: 'text', text: 'next' }] });
+    expect(lastHistory.some((item) => item.content.includes('visible forever'))).toBe(false);
     service.close();
   });
 

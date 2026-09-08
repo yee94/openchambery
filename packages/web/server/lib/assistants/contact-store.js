@@ -37,6 +37,14 @@ export const CONTACT_SCHEMA_SQL = `
   );
   CREATE INDEX IF NOT EXISTS assistant_contact_watch_session
     ON assistant_contact_watch(session_id, status);
+  -- Per-assistant LLM context watermark. Messages with ordinal <= after_ordinal
+  -- stay in the transcript UI but are excluded from contactHistoryForLlm.
+  -- Survives restart. Cleared only when the transcript is fully deleted.
+  CREATE TABLE IF NOT EXISTS assistant_contact_context_boundary (
+    assistant_id TEXT PRIMARY KEY,
+    after_ordinal INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+  );
 `;
 
 export const CONTACT_SETTLE_TEXT = Object.freeze({
@@ -154,6 +162,48 @@ export function deleteContactMessages(db, assistantID) {
   }
   db.prepare('DELETE FROM assistant_contact_message WHERE assistant_id=?').run(assistantID);
   db.prepare('DELETE FROM assistant_contact_watch WHERE assistant_id=?').run(assistantID);
+  db.prepare('DELETE FROM assistant_contact_context_boundary WHERE assistant_id=?').run(assistantID);
+}
+
+/** Durable LLM context watermark for one assistant (0 = no boundary). */
+export function getContactContextBoundary(db, assistantID) {
+  const row = db.prepare(
+    'SELECT after_ordinal FROM assistant_contact_context_boundary WHERE assistant_id=?',
+  ).get(assistantID);
+  if (!row || !Number.isFinite(Number(row.after_ordinal))) return 0;
+  return Number(row.after_ordinal);
+}
+
+/**
+ * Clear LLM memory only: keep every transcript row, advance the watermark so
+ * later contactHistoryForLlm drops prior turns.
+ *
+ * Prefer `upToOrdinal` (the clearing turn's user ordinal). Using global MAX
+ * would swallow later-admitted queued user rows and permanently exclude them
+ * from subsequent LLM windows. API/direct callers without a turn ceiling may
+ * omit `upToOrdinal` and clear through the current max.
+ * Never lowers an existing boundary. Failed callers must roll back the
+ * surrounding transaction to keep the old boundary.
+ */
+export function clearContactMemory(db, assistantID, { updatedAt = Date.now(), upToOrdinal = null } = {}) {
+  const current = getContactContextBoundary(db, assistantID);
+  const parsedCeiling = upToOrdinal == null || upToOrdinal === ''
+    ? NaN
+    : Number(upToOrdinal);
+  let afterOrdinal;
+  if (Number.isFinite(parsedCeiling)) {
+    afterOrdinal = parsedCeiling;
+  } else {
+    afterOrdinal = Number(db.prepare(
+      'SELECT COALESCE(MAX(ordinal), 0) AS max FROM assistant_contact_message WHERE assistant_id=?',
+    ).get(assistantID).max);
+  }
+  if (!Number.isFinite(afterOrdinal)) afterOrdinal = 0;
+  afterOrdinal = Math.max(afterOrdinal, current);
+  db.prepare(
+    'INSERT INTO assistant_contact_context_boundary(assistant_id, after_ordinal, updated_at) VALUES (?,?,?) ON CONFLICT(assistant_id) DO UPDATE SET after_ordinal=excluded.after_ordinal, updated_at=excluded.updated_at',
+  ).run(assistantID, afterOrdinal, updatedAt);
+  return { assistantID, afterOrdinal, memoryCleared: true };
 }
 
 export function upsertContactWatch(db, { assistantID, sessionID, directory, status, updatedAt }) {
@@ -202,14 +252,18 @@ export function updateSessionCardStatus(db, { assistantID, sessionID, status }) 
 }
 
 /**
- * LLM-only contact window. SQLite and the transcript UI may keep older bubbles;
- * this budget is the only model context. There is no summarizer and no
- * user-facing compress / continuous / stateless control on this path.
+ * LLM-only contact window. SQLite and the transcript UI may keep older bubbles
+ * (including rows before the durable context boundary). This budget is the only
+ * model context. There is no summarizer and no user-facing compress /
+ * continuous / stateless control on this path.
  *
  * A turn is a user message plus the assistant replies that follow it until the
  * next user. Newest turn is always kept, even when it exceeds the char budget.
  * Char estimate is text length plus CONTACT_LLM_FILE_CHAR_WEIGHT per file part
  * (CJK counts as one char; no tokenizer).
+ *
+ * clearContactMemory advances assistant_contact_context_boundary.after_ordinal;
+ * only messages with ordinal > that watermark enter this window.
  */
 export const CONTACT_LLM_MAX_TURNS = 8;
 export const CONTACT_LLM_MAX_CHARS = 6_000;
@@ -276,9 +330,40 @@ export function trimContactHistoryForLlm(messages, {
   return kept.reverse().flat();
 }
 
-export function contactHistoryForLlm(db, assistantID) {
+/**
+ * LLM window for one contact turn.
+ * - after_ordinal watermark drops cleared memory.
+ * - excludeMessageIDs drops the current admitted user row (prompt still gets userText).
+ * - beforeOrdinal is the current turn's user message ordinal. Later-admitted user
+ *   rows (queued turns) must not be injected into this turn; assistant rows written
+ *   after that ordinal by a prior completed lane turn still enter the window.
+ */
+export function contactHistoryForLlm(db, assistantID, { excludeMessageIDs = [], beforeOrdinal = null } = {}) {
+  const afterOrdinal = getContactContextBoundary(db, assistantID);
+  const exclude = new Set(
+    (Array.isArray(excludeMessageIDs) ? excludeMessageIDs : [])
+      .filter((id) => typeof id === 'string' && id),
+  );
+  // null/undefined must not become 0 via Number(null) — that would drop every user row.
+  const parsedCeiling = beforeOrdinal == null || beforeOrdinal === ''
+    ? NaN
+    : Number(beforeOrdinal);
+  const userOrdinalCeiling = Number.isFinite(parsedCeiling) ? parsedCeiling : null;
   const page = listContactMessages(db, assistantID, { limit: CONTACT_LLM_FETCH_LIMIT });
-  return trimContactHistoryForLlm(page.messages);
+  const messages = page.messages.filter((message) => {
+    if (exclude.has(message.messageID)) return false;
+    if (!(message.ordinal > afterOrdinal)) return false;
+    // Queued user admits after this turn's ordinal belong to later lane work.
+    if (
+      userOrdinalCeiling != null
+      && message.role === 'user'
+      && message.ordinal > userOrdinalCeiling
+    ) {
+      return false;
+    }
+    return true;
+  });
+  return trimContactHistoryForLlm(messages);
 }
 
 export { parseContactCard };

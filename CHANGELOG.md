@@ -4,6 +4,18 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.19.10-beta.2] - 2026-09-08
+
+### 助手
+
+- 「开新对话 / 清除记忆」只清空模型上下文，聊天记录仍保留；「清空聊天记录」才真正删除 transcript，且须用户明确授权，模型不能自行删记录。
+- 清除记忆的水位按当前轮用户消息 ordinal 截断，不会吞掉排队中已 admit 的后续用户消息；清记忆后本轮立即结束。
+- LLM 网关提示改为说明应用侧工具（含 openchamber-tool fence）由应用执行，避免生成器把自己当成无文本回复。
+
+### 桌面
+
+- 切换远程实例前会探测认证状态；仅健康/可达不足以切换。远程更新入口仅对支持的非 Local 实例显示。
+
 ## [1.19.10-beta.1] - 2026-09-08
 
 ### 会话
