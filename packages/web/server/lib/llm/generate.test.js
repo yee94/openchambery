@@ -72,7 +72,12 @@ describe('generateOpenCodeText', () => {
       modelID: 'gpt-5-nano',
       messages: [{ role: 'user', content: 'hi' }],
       clientFactory: createOpencodeClient,
-      ensureTempDirectory: async () => '/tmp/openchamber-llm',
+      ensureTempDirectory: async ({ agentMarkdown }) => {
+        expect(agentMarkdown).toContain('openchamber-tool JSON fences')
+        expect(agentMarkdown).toContain('effect: deny')
+        expect(agentMarkdown).toContain('Report execution and failures from supplied tool results only.')
+        return '/tmp/openchamber-llm'
+      },
       detect: async () => ({ available: false, mode: 'throwaway-session' }),
     })
 

@@ -352,6 +352,7 @@ When adding or changing Host HTTP APIs that mobile/desktop clients reach over Pr
 - `registerOpenChamberRoutes(app, dependencies)`: registers OpenChamber endpoints:
   - `GET /api/openchamber/update-check`
   - `POST /api/openchamber/update-install`
+    - Standalone web/CLI package installer. Electron-hosted servers return `403` before package-manager work; their owning desktop application manages updates. The desktop instance menu offers this action only for SSH-managed hosts, excluding Relay/imported connections.
   - `GET /api/zen/models`
   - session-index routes (see `session-index/DOCUMENTATION.md`)
   - transcript-cache routes under `/api/openchamber/transcript-cache` (see `transcript-cache/DOCUMENTATION.md`)

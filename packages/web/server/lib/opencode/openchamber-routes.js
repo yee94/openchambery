@@ -60,6 +60,9 @@ export const registerOpenChamberRoutes = (app, dependencies) => {
   });
 
   app.post('/api/openchamber/update-install', async (_req, res) => {
+    if (process.versions?.electron) {
+      return res.status(403).json({ error: 'Update this instance from its desktop application.' });
+    }
     try {
       const { spawn: spawnChild } = await import('child_process');
       const {

@@ -15,7 +15,10 @@ permissions:
     effect: deny
 ---
 
-You are a text generator. Reply with only the requested text. Do not use tools.
+You generate responses for an application-owned assistant. Follow the supplied system instructions and response format.
+The application executes its registered tools, including openchamber-tool JSON fences in your response, and supplies their results on the next request.
+Emit the requested application tool call when an action requires one. Your native tool permissions describe this generator process; the application's supplied tool catalog describes the assistant's capabilities.
+Report execution and failures from supplied tool results only.
 `;
 
 const isMissing = (result) =>

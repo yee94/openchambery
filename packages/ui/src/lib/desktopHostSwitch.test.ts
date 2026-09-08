@@ -127,16 +127,16 @@ describe('desktopHostSwitch', () => {
     expect(switchRuntimeEndpointCalls).toEqual([]);
   });
 
-  test('switchDesktopHost uses cached direct probe without re-probing', async () => {
+  test('switchDesktopHost revalidates cached direct probes before switching', async () => {
     const result = await switchDesktopHost(directHost, {
       cachedProbe: { status: 'ok', latencyMs: 9 },
     });
     expect(result).toEqual({
       ok: true,
       via: 'direct',
-      status: { status: 'ok', latencyMs: 9 },
+      status: { status: 'ok', latencyMs: 12 },
     });
-    expect(desktopHostProbeCalls).toEqual([]);
+    expect(desktopHostProbeCalls).toHaveLength(1);
     expect(switchRuntimeEndpointCalls).toEqual([[{
       apiBaseUrl: 'http://192.168.1.10:4096',
       clientToken: 'token-a',

@@ -27,11 +27,15 @@ export const CREATE_ASSISTANT_TOOL_NAME = 'create_assistant';
 export const SCHEDULE_TASK_TOOL_NAME = 'schedule_task';
 export const MESSAGE_ASSISTANT_TOOL_NAME = 'message_assistant';
 export const NEW_CONVERSATION_TOOL_NAME = 'new_conversation';
+export const CLEAR_CHAT_HISTORY_TOOL_NAME = 'clear_chat_history';
 export const LIST_PROJECTS_TOOL_NAME = 'list_projects';
 export const LIST_SESSIONS_TOOL_NAME = 'list_sessions';
 const CONTACT_TOOL_FENCE = 'openchamber-tool';
 export const ASSIGNED_SESSION_FALLBACK_BUBBLE = 'Opened a coding session.';
-export const NEW_CONVERSATION_CONFIRM_BUBBLE = 'Started a new conversation. Previous contact messages are cleared.';
+/** Clear-memory confirm: transcript rows stay; only the LLM window resets. */
+export const NEW_CONVERSATION_CONFIRM_BUBBLE = 'Memory cleared. Previous messages stay in the chat; I will not use them as context.';
+/** Explicit transcript wipe confirm (clear_chat_history / POST contact/reset). */
+export const CLEAR_CHAT_HISTORY_CONFIRM_BUBBLE = 'Chat history cleared.';
 const LIST_SESSIONS_LIMIT_DEFAULT = 20;
 const LIST_SESSIONS_LIMIT_MAX = 50;
 
@@ -43,13 +47,18 @@ export const MISSED_TOOL_FAILURE_BUBBLE = 'I could not complete that. No tool ra
 
 const CREATE_ASSISTANT_INTENT = /建助理|新建[^。\n!]{0,24}助理|创建[^。\n!]{0,24}助理|加一个助理|create (?:an |a new )?assistant|new assistant/iu;
 const SCHEDULE_TASK_INTENT = /排定时任务|排个?定时任务|定时任务|schedule (?:a )?(?:daily )?(?:task|ping)|scheduled task|排个?(?:每日)?(?:任务|ping)/iu;
-const ASSIGN_SESSION_INTENT = /建会话|开会话|开(?:一个)?(?:编码\s*)?(?:session|会话)|open (?:a )?(?:coding )?session|assign_session/giu;
+const ASSIGN_SESSION_INTENT = /(?:建|开)(?:一个|个)?(?:新)?(?:编码\s*)?(?:session|会话)|open (?:a )?(?:coding )?session|assign_session/giu;
 const MESSAGE_ASSISTANT_INTENT = /给[^。\n]{1,40}说(?:一声)?|跟[^。\n]{1,24}说(?:一声)?|告诉(?!我)[^。\n]{1,40}|说一声|message (?:the )?(?:assistant|peer)|(?:tell|message)\s+[A-Za-z0-9._-]+|send (?:a )?message to/iu;
-const NEW_CONVERSATION_INTENT = /开新对话|新对话|清空(?:聊天|对话)|clear chat|new conversation|start over/iu;
+// Explicit wipe only — must stay stricter than the safe clear-memory intent.
+// `g` so hasClearChatHistoryIntent can walk matches and honor nearby negation.
+const CLEAR_CHAT_HISTORY_INTENT = /(?:清空|清除|删除)(?:聊天|对话)记录|wipe (?:the )?chat(?: history)?|delete (?:the )?(?:chat|conversation) history|clear (?:the )?(?:chat|conversation) history/giu;
+// Default safe semantics: fresh LLM context, keep the transcript UI.
+const NEW_CONVERSATION_INTENT = /开新对话|新对话|清除记忆|清空(?:聊天|对话)(?!记录)|clear memory|clear chat(?! history)|new conversation|start over|forget (?:everything|this|what we|what i)/giu;
 const LIST_PROJECTS_INTENT = /找项目|查项目|看看项目|有哪些项目|项目列表|list projects|find project|registered project|which project/iu;
 const LIST_SESSIONS_INTENT = /现有对话|现有会话|查会话|找会话|会话列表|有哪些会话|list sessions|find (?:a )?session|existing (?:conversation|session|chat)|active (?:conversation|session)/iu;
 const INTENT_NEGATION = /不要|别|不用|不开|don't|do\s+not/iu;
 const newConversationParameters = typeboxObject({});
+const clearChatHistoryParameters = typeboxObject({});
 
 const assignParameters = typeboxObject({
   prompt: typeboxString('Coding prompt to kick into the worker OpenCode session.'),
@@ -276,15 +285,28 @@ export function parseContactToolCalls(text, allowedNames = []) {
 
 const isNegatedAt = (text, index) => INTENT_NEGATION.test(text.slice(Math.max(0, index - 12), index));
 
-const hasAssignSessionIntent = (text) => {
-  ASSIGN_SESSION_INTENT.lastIndex = 0;
-  let match = ASSIGN_SESSION_INTENT.exec(text);
+const hasIntentMatch = (regex, text) => {
+  regex.lastIndex = 0;
+  let match = regex.exec(text);
   while (match) {
     if (!isNegatedAt(text, match.index)) return true;
-    match = ASSIGN_SESSION_INTENT.exec(text);
+    match = regex.exec(text);
   }
   return false;
 };
+
+const hasAssignSessionIntent = (text) => hasIntentMatch(ASSIGN_SESSION_INTENT, text);
+
+/**
+ * True when userText has an explicit, non-negated transcript-wipe phrase.
+ * Server core uses this to authorize clear_chat_history / resetContact — the
+ * model cannot self-authorize through tool parameters.
+ */
+export function userTextAuthorizesClearChatHistory(userText) {
+  return hasIntentMatch(CLEAR_CHAT_HISTORY_INTENT, typeof userText === 'string' ? userText : '');
+}
+
+const hasNewConversationIntent = (text) => hasIntentMatch(NEW_CONVERSATION_INTENT, text);
 
 /** Which attached tools the user asked for in natural language. */
 export function detectRequestedContactTools(userText, allowedNames = []) {
@@ -295,7 +317,12 @@ export function detectRequestedContactTools(userText, allowedNames = []) {
   );
   const text = typeof userText === 'string' ? userText : '';
   const requested = [];
-  if (allowed.has(NEW_CONVERSATION_TOOL_NAME) && NEW_CONVERSATION_INTENT.test(text)) {
+  // Prefer explicit wipe over the safe clear-memory default when both could match.
+  // Negation (不要清除聊天记录) must not authorize delete.
+  const wantsClearHistory = allowed.has(CLEAR_CHAT_HISTORY_TOOL_NAME) && userTextAuthorizesClearChatHistory(text);
+  if (wantsClearHistory) {
+    requested.push(CLEAR_CHAT_HISTORY_TOOL_NAME);
+  } else if (allowed.has(NEW_CONVERSATION_TOOL_NAME) && hasNewConversationIntent(text)) {
     requested.push(NEW_CONVERSATION_TOOL_NAME);
   }
   if (allowed.has(LIST_PROJECTS_TOOL_NAME) && LIST_PROJECTS_INTENT.test(text)) {
@@ -394,7 +421,8 @@ export function formatContactToolsPrompt(tools) {
   if (list.length === 0) return '';
   return [
     'The user talks in natural language (including Chinese). Never ask them to type slash commands.',
-    'When they want a fresh contact chat (开新对话 / new conversation / clear chat), call new_conversation. That clears this contact transcript only. It is not OpenCode session/new and does not open a coding session.',
+    'When they want a fresh model context (开新对话 / new conversation / 清除记忆 / clear memory / clear chat), call new_conversation. That clears LLM memory only — chat history stays visible. It is not OpenCode session/new and does not open a coding session.',
+    'When they explicitly want to delete the stored chat (清空聊天记录 / clear chat history / delete chat history), call clear_chat_history. Do not use clear_chat_history for ordinary 开新对话 / new conversation wording.',
     'When they want to find a registered project (找项目 / list projects / "openchamber yee"), call list_projects or use the Registered projects block already in context.',
     'When they want existing conversations in a project (现有对话 / list sessions), call list_sessions.',
     'When they want another assistant (建助理 / create an assistant), call create_assistant.',
@@ -404,6 +432,9 @@ export function formatContactToolsPrompt(tools) {
     `Call exactly one tool per reply by emitting one fenced JSON block:`,
     `\`\`\`${CONTACT_TOOL_FENCE}`,
     `{"name":"${NEW_CONVERSATION_TOOL_NAME}","arguments":{}}`,
+    '```',
+    `\`\`\`${CONTACT_TOOL_FENCE}`,
+    `{"name":"${CLEAR_CHAT_HISTORY_TOOL_NAME}","arguments":{}}`,
     '```',
     `\`\`\`${CONTACT_TOOL_FENCE}`,
     `{"name":"${LIST_PROJECTS_TOOL_NAME}","arguments":{"query":"openchamber yee"}}`,
@@ -423,8 +454,9 @@ export function formatContactToolsPrompt(tools) {
     `\`\`\`${CONTACT_TOOL_FENCE}`,
     `{"name":"${ASSIGN_SESSION_TOOL_NAME}","arguments":{"prompt":"...","projectPath":"..."}}`,
     '```',
-    'If the user asked for more than one of these, do them in that order across turns: new_conversation, then list_projects, then list_sessions, then create_assistant, then schedule_task, then message_assistant, then assign_session.',
-    'new_conversation deletes this contact\'s stored messages and watches. It never calls session/new or createNew.',
+    'If the user asked for more than one of these, do them in that order across turns: new_conversation or clear_chat_history, then list_projects, then list_sessions, then create_assistant, then schedule_task, then message_assistant, then assign_session.',
+    'new_conversation advances this contact\'s LLM context boundary only. Stored messages and watches remain. It never calls session/new or createNew.',
+    'clear_chat_history deletes this contact\'s stored messages, parts, and watches. Use only for explicit wipe intent.',
     'You already receive the registered project catalog each turn. Prefer matching label/path yourself; list_projects refreshes or filters. Never claim you cannot see projects; never ask for a raw path when a name matches.',
     'list_sessions searches the OpenChamber session index for existing chats in a project. A failure is not an empty list — surface the error.',
     'assign_session opens a real OpenChamber/OpenCode session on a registered project (or reuses sessionID). You are not the worker.',
@@ -441,21 +473,45 @@ export function formatContactToolsPrompt(tools) {
   ].join('\n');
 }
 
+const isSuccessfulContextResetResult = (message) => (
+  message?.role === 'toolResult'
+  && !message.details?.error
+  && (
+    message.toolName === NEW_CONVERSATION_TOOL_NAME
+    || message.toolName === CLEAR_CHAT_HISTORY_TOOL_NAME
+    || message.details?.reset === true
+    || message.details?.memoryCleared === true
+    || message.details?.historyCleared === true
+  )
+);
+
 export function contactTurnHasSuccessfulReset(messages) {
+  return (Array.isArray(messages) ? messages : []).some(isSuccessfulContextResetResult);
+}
+
+/** True when this turn wiped the stored transcript (not just LLM memory). */
+export function contactTurnClearedChatHistory(messages) {
   return (Array.isArray(messages) ? messages : []).some((message) => (
-    message?.role === 'toolResult'
-    && (message.toolName === NEW_CONVERSATION_TOOL_NAME || message.details?.reset === true)
-    && !message.details?.error
+    isSuccessfulContextResetResult(message)
+    && (
+      message.toolName === CLEAR_CHAT_HISTORY_TOOL_NAME
+      || message.details?.historyCleared === true
+    )
   ));
 }
 
 /** After reset, keep only the short confirm — leftover pre-reset model text is discarded. */
-export function confirmBubbleAfterContactReset(bubbles) {
+export function confirmBubbleAfterContactReset(bubbles, preferredConfirm = NEW_CONVERSATION_CONFIRM_BUBBLE) {
   const list = (Array.isArray(bubbles) ? bubbles : [])
     .filter((item) => typeof item === 'string' && item.trim())
     .map((item) => item.trim());
-  const confirm = list.find((item) => item === NEW_CONVERSATION_CONFIRM_BUBBLE);
-  return [confirm || NEW_CONVERSATION_CONFIRM_BUBBLE];
+  const fallback = preferredConfirm === CLEAR_CHAT_HISTORY_CONFIRM_BUBBLE
+    ? CLEAR_CHAT_HISTORY_CONFIRM_BUBBLE
+    : NEW_CONVERSATION_CONFIRM_BUBBLE;
+  const confirm = list.find((item) => (
+    item === NEW_CONVERSATION_CONFIRM_BUBBLE || item === CLEAR_CHAT_HISTORY_CONFIRM_BUBBLE
+  ));
+  return [confirm || fallback];
 }
 
 export function extractContactCardsFromMessages(messages) {
@@ -485,6 +541,7 @@ export function createContactTools({
   createAssistant,
   scheduleTask,
   deliverPeerMessage,
+  clearContactMemory,
   resetContact,
   listAssistants,
   listProjects,
@@ -501,24 +558,50 @@ export function createContactTools({
       name: NEW_CONVERSATION_TOOL_NAME,
       label: 'New conversation',
       description: [
-        'Clear this assistant contact transcript (messages, parts, and watches).',
-        'Use when the user says 开新对话, new conversation, or clear chat.',
-        'Does not call OpenCode session/new or create a worker session.',
+        'Clear this assistant\'s LLM memory only. Chat history stays in the transcript UI.',
+        'Use when the user says 开新对话, new conversation, 清除记忆, clear memory, or clear chat.',
+        'Does not delete stored messages. Does not call OpenCode session/new.',
       ].join(' '),
       parameters: newConversationParameters,
       execute: async () => {
         try {
-          if (typeof resetContact !== 'function') {
-            throw new AssignError('upstream_error', 'Resetting this conversation is unavailable.');
+          if (typeof clearContactMemory !== 'function') {
+            throw new AssignError('upstream_error', 'Clearing contact memory is unavailable.');
           }
-          await resetContact();
+          await clearContactMemory();
           return {
             content: [{ type: 'text', text: NEW_CONVERSATION_CONFIRM_BUBBLE }],
-            details: { reset: true },
+            details: { reset: true, memoryCleared: true },
             terminate: true,
           };
         } catch (error) {
-          return toolFailure(error, 'new_conversation_failed', 'Could not start a new conversation.');
+          return toolFailure(error, 'new_conversation_failed', 'Could not clear contact memory.');
+        }
+      },
+    },
+    {
+      name: CLEAR_CHAT_HISTORY_TOOL_NAME,
+      label: 'Clear chat history',
+      description: [
+        'Delete this assistant contact transcript (messages, parts, and watches).',
+        'Use only when the user explicitly says 清空聊天记录, clear chat history, or delete chat history.',
+        'Ordinary 开新对话 / new conversation must use new_conversation instead.',
+        'Does not call OpenCode session/new or create a worker session.',
+      ].join(' '),
+      parameters: clearChatHistoryParameters,
+      execute: async () => {
+        try {
+          if (typeof resetContact !== 'function') {
+            throw new AssignError('upstream_error', 'Clearing chat history is unavailable.');
+          }
+          await resetContact();
+          return {
+            content: [{ type: 'text', text: CLEAR_CHAT_HISTORY_CONFIRM_BUBBLE }],
+            details: { reset: true, historyCleared: true },
+            terminate: true,
+          };
+        } catch (error) {
+          return toolFailure(error, 'clear_chat_history_failed', 'Could not clear chat history.');
         }
       },
     },

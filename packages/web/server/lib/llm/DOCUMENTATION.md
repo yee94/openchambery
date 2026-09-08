@@ -83,6 +83,12 @@ an empty success. The 502 body includes `{ error, message }`.
 
 ## Ownership
 
+The hidden generator agent explicitly describes application-owned tool calls:
+it emits `openchamber-tool` JSON for the contact harness to execute and receives
+the results on subsequent requests. Native OpenCode tool permissions remain
+denied. Capability statements and execution errors must follow the supplied
+application tool catalog and actual results.
+
 The Assistant contact harness owns system prompt, OpenChamber transcript,
 bubble splitting, and OpenChamber API tools (`assign_session`). Those tools
 deliver through contact **cards**, not this completions payload. The gateway

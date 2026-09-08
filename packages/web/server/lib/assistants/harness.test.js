@@ -211,6 +211,65 @@ describe('createContactStreamFn', () => {
 })
 
 describe('runContactTurn', () => {
+  it('keeps all eleven tools and assigns a session after reading a skill', async () => {
+    const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'oc-contact-mixed-'))
+    const home = path.join(workspace, 'home')
+    const skillDir = path.join(workspace, '.agents', 'skills', 'docs')
+    fs.mkdirSync(skillDir, { recursive: true })
+    fs.writeFileSync(path.join(skillDir, 'SKILL.md'), '---\nname: docs\ndescription: Read documentation\n---\nRead project docs.\n')
+    const assignWork = vi.fn(async () => ({ sessionID: 'ses_mixed', directory: workspace, title: 'Fix', status: 'busy' }))
+    const tools = createContactTools({ assignWork })
+    const replies = [
+      '```openchamber-tool\n{"name":"read","arguments":{"path":".agents/skills/docs/SKILL.md"}}\n```',
+      'Only documentation search is available.',
+      `\`\`\`openchamber-tool\n${JSON.stringify({ name: 'assign_session', arguments: { prompt: 'Fix the issue', projectPath: workspace } })}\n\`\`\``,
+      'Session opened.',
+    ]
+    let call = 0
+    const createChatCompletion = vi.fn(async ({ body }) => {
+      expect(body.messages[0].content).toContain('assign_session')
+      expect(body.messages[0].content).toContain('docs')
+      const content = replies[call++]
+      if (!content) throw new Error('Unexpected completion')
+      return { completion: { choices: [{ message: { content } }] } }
+    })
+    try {
+      const result = await runContactTurn({
+        assistant: { providerID: 'p', modelID: 'm', effectiveWorkspacePath: workspace, defaultPrompt: 'Keep replies short.' },
+        history: [], userText: '再建个会话去修这个问题', tools,
+        projects: [{ id: 'project', path: workspace }], skillHomeDir: home, createChatCompletion,
+      })
+      expect(result.tools.map((tool) => tool.name)).toEqual([...PI_CODING_TOOL_NAMES, ...tools.map((tool) => tool.name)])
+      expect(assignWork).toHaveBeenCalledTimes(1)
+      expect(result.cards).toEqual([expect.objectContaining({ sessionID: 'ses_mixed' })])
+      expect(createChatCompletion).toHaveBeenCalledTimes(4)
+    } finally {
+      fs.rmSync(workspace, { recursive: true, force: true })
+    }
+  })
+  it('retries assignment after an unrelated read result', async () => {
+    const prompts = []
+    function AgentImpl(options) {
+      this.state = { ...options.initialState, messages: [] }
+      this.prompt = async (text) => {
+        prompts.push(text)
+        if (prompts.length === 1) {
+          this.state.messages.push({ role: 'toolResult', toolName: 'read', content: [{ type: 'text', text: 'Skill instructions' }] })
+          this.state.messages.push({ role: 'assistant', content: [{ type: 'text', text: 'Only document search is available.' }] })
+        } else {
+          this.state.messages.push({ role: 'user', content: text })
+          this.state.messages.push({ role: 'toolResult', toolName: 'assign_session', content: [{ type: 'text', text: 'Opened session.' }] })
+        }
+      }
+    }
+    const result = await runContactTurn({
+      assistant: { providerID: 'p', modelID: 'm', defaultPrompt: '' },
+      history: [], userText: '建会话', tools: createContactTools(),
+      createChatCompletion: vi.fn(), AgentImpl,
+    })
+    expect(prompts).toHaveLength(2)
+    expect(result.bubbles).toEqual(['Opened session.'])
+  })
   it('runs pi-agent-core with thinking off and no tools by default', async () => {
     const prompt = vi.fn(async function prompt() {
       this.state.messages = [{
@@ -653,8 +712,9 @@ describe('runContactTurn', () => {
   })
 
   it('keeps only the new_conversation confirm and drops leftover attachment text', async () => {
-    const resetContact = vi.fn(async () => ({ reset: true }))
-    const tools = createContactTools({ resetContact })
+    const clearContactMemory = vi.fn(async () => ({ reset: true, memoryCleared: true }))
+    const resetContact = vi.fn(async () => ({ reset: true, historyCleared: true }))
+    const tools = createContactTools({ clearContactMemory, resetContact })
     function AgentImpl(options) {
       this.state = { ...options.initialState, messages: options.initialState.messages }
       this.prompt = async () => {
@@ -687,8 +747,10 @@ describe('runContactTurn', () => {
       tools,
       AgentImpl,
     })
-    expect(resetContact).toHaveBeenCalledTimes(1)
+    expect(clearContactMemory).toHaveBeenCalledTimes(1)
+    expect(resetContact).not.toHaveBeenCalled()
     expect(result.reset).toBe(true)
+    expect(result.historyCleared).toBe(false)
     expect(result.cards).toEqual([])
     expect(result.bubbles).toEqual([NEW_CONVERSATION_CONFIRM_BUBBLE])
     expect(result.bubbles.join('')).not.toContain('dot.png')
