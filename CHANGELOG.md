@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.19.11-beta.1] - 2026-09-08
+
+### 会话
+
+- 桌面侧栏 focus 到已完全可见的会话时保持滚动位置；只有部分或全部超出视口时才滚到约三分之一处。
+
 ## [1.19.10] - 2026-09-08
 
 汇总 1.19.10-beta.1 ~ 1.19.10-beta.2。
