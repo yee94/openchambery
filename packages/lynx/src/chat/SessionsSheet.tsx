@@ -3,8 +3,8 @@
  *
  * Opens from LynxSessionStatusBar via LynxMobileResizableSheet (0.72 / 0.98).
  * Session-index grouped list + search + All/pinned/project chips + long-press
- * menus (buildLynx*MenuItems) + Cap two-step archive + ~10s unarchive undo.
- * Not Cap Zustand / toast lib / @dnd-kit / MobileWindowMotion / ArchivedSessionsDialog.
+ * menus (buildLynx*MenuItems) + Cap two-step archive + ~10s unarchive undo +
+ * Cap ArchivedSessionsDialog. Not Cap Zustand / toast lib / @dnd-kit / MobileWindowMotion.
  */
 import { useEffect, useMemo, useState } from 'react';
 
@@ -32,6 +32,7 @@ import {
   copyLynxText,
   fetchLynxSessionShareUrl,
 } from '../projects/sessionActions';
+import { LynxArchivedSessionsDialog } from './ArchivedSessionsDialog';
 import {
   createLynxArchiveUndoBanner,
   isLynxArchiveUndoExpired,
@@ -251,6 +252,7 @@ export function LynxSessionsSheet({
   const [confirmingArchiveSessionId, setConfirmingArchiveSessionId] = useState<string | null>(null);
   const [archiveUndo, setArchiveUndo] = useState<LynxArchiveUndoBanner | null>(null);
   const [archiveUndoError, setArchiveUndoError] = useState<string | null>(null);
+  const [archivedDialogOpen, setArchivedDialogOpen] = useState(false);
 
   useEffect(() => {
     if (!open) {
@@ -265,6 +267,7 @@ export function LynxSessionsSheet({
       setConfirmingArchiveSessionId(null);
       setArchiveUndo(null);
       setArchiveUndoError(null);
+      setArchivedDialogOpen(false);
     }
   }, [open]);
 
@@ -750,6 +753,26 @@ export function LynxSessionsSheet({
               {lynxT(locale, 'lynx.chat.sessionsSheet.archiveSuccess')}
             </LynxText>
             <LynxView
+              data-lynx-sessions-sheet-archive-view="true"
+              bindtap={() => setArchivedDialogOpen(true)}
+              accessibility-role="button"
+              accessibility-label={lynxT(locale, 'lynx.chat.sessionsSheet.viewArchived')}
+              style={{
+                marginRight: '6px',
+                paddingLeft: '10px',
+                paddingRight: '10px',
+                paddingTop: '6px',
+                paddingBottom: '6px',
+                borderRadius: '8px',
+                borderWidth: '1px',
+                borderColor: cssVar('surface.mutedForeground'),
+              }}
+            >
+              <LynxText style={{ color: cssVar('surface.foreground'), fontSize: '12px', fontWeight: '600' }}>
+                {lynxT(locale, 'lynx.chat.sessionsSheet.viewArchived')}
+              </LynxText>
+            </LynxView>
+            <LynxView
               data-lynx-sessions-sheet-archive-undo-action="true"
               bindtap={handleUndoArchive}
               accessibility-role="button"
@@ -873,6 +896,29 @@ export function LynxSessionsSheet({
             </LynxView>
           ) : null}
         </LynxScrollView>
+
+
+        <LynxView
+          data-lynx-sessions-sheet-view-archived="true"
+          bindtap={() => setArchivedDialogOpen(true)}
+          accessibility-role="button"
+          accessibility-label={lynxT(locale, 'lynx.chat.sessionsSheet.viewArchived')}
+          style={{
+            marginTop: '8px',
+            paddingTop: '10px',
+            paddingBottom: '4px',
+            flexDirection: 'row',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+          }}
+        >
+          <LynxText style={{ color: cssVar('surface.foreground'), fontSize: '13px', fontWeight: '600' }}>
+            {lynxT(locale, 'lynx.chat.archived.title')}
+          </LynxText>
+          <LynxText style={{ color: cssVar('primary.base'), fontSize: '12px' }}>
+            {lynxT(locale, 'lynx.chat.sessionsSheet.viewArchived')}
+          </LynxText>
+        </LynxView>
 
         {actionTarget ? (
           <LynxView
@@ -1048,8 +1094,23 @@ export function LynxSessionsSheet({
             onErrorNote={(message) => setNote(message)}
           />
         ) : null}
+
+        <LynxArchivedSessionsDialog
+          locale={locale}
+          open={archivedDialogOpen}
+          onClose={() => setArchivedDialogOpen(false)}
+          indexState={indexState}
+          runtimeFetch={runtimeFetch}
+          onSelectSession={(sessionId, directory) => {
+            setArchivedDialogOpen(false);
+            onSelectSession(sessionId, directory);
+            onClose();
+          }}
+          onMutated={refresh}
+        />
       </LynxView>
     </LynxMobileResizableSheet>
   );
 }
+
 

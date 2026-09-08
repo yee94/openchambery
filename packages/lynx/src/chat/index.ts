@@ -287,3 +287,19 @@ export {
   type LynxArchiveUndoBanner,
 } from './sessionArchiveUndo';
 
+export { LynxArchivedSessionsDialog } from './ArchivedSessionsDialog';
+export {
+  LYNX_ARCHIVED_OTHER_PROJECT_ID,
+  LYNX_ARCHIVED_SESSIONS_PAGE_SIZE,
+  LYNX_ARCHIVED_SESSIONS_NOTES,
+  buildLynxArchivedSessionsModel,
+  formatLynxArchivedSessionCount,
+  getLynxArchivedSessionActivityMs,
+  isLynxArchivedByTime,
+  listLynxArchivedSessions,
+  parseLynxArchivedSessionRow,
+  type LynxArchivedProjectBucket,
+  type LynxArchivedSessionListResult,
+  type LynxArchivedSessionRow,
+  type LynxArchivedSessionsModel,
+} from './archivedSessions';
