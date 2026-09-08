@@ -5,11 +5,17 @@ import {
   createLynxWorktree,
   deleteLynxRemoteBranch,
   deleteLynxWorktree,
+  discoverLynxProjectIcon,
+  fetchLynxWorktreeOrder,
   inferLynxProjectIsGit,
+  loadLynxProjectMeta,
   normalizeLynxWorktreeBranchName,
   probeLynxGitRepository,
+  removeLynxProjectIcon,
+  setLynxWorktreeOrder,
   syncLynxProjectSessions,
   updateLynxProjectLabel,
+  updateLynxProjectMeta,
 } from './projectActions';
 
 describe('Lynx project / worktree actions', () => {
@@ -239,4 +245,156 @@ describe('Lynx project / worktree actions', () => {
       worktrees: [{ kind: 'worktree' }],
     })).toBe(true);
   });
+
+  test('updateLynxProjectMeta persists Cap label/icon/color fields', async () => {
+    let projects: Array<Record<string, unknown>> = [
+      { id: 'proj_1', path: '/repo', name: 'Old', label: 'Old', icon: null, color: null },
+    ];
+    const runtimeFetch = async (path: string, init?: { method?: string; body?: string }) => {
+      if (path.includes('/api/config/settings') && (!init?.method || init.method === 'GET')) {
+        return { ok: true, status: 200, json: async () => ({ projects }) };
+      }
+      if (path.includes('/api/config/settings') && init?.method === 'PUT') {
+        const body = JSON.parse(init.body || '{}') as { projects?: Array<Record<string, unknown>> };
+        projects = body.projects ?? projects;
+        return { ok: true, status: 200, json: async () => ({ projects }) };
+      }
+      return { ok: false, status: 500, json: async () => ({}) };
+    };
+    expect(await updateLynxProjectMeta(runtimeFetch, {
+      projectId: 'proj_1',
+      path: '/repo',
+      label: 'New',
+      icon: 'rocket',
+      color: 'keyword',
+    })).toEqual({ status: 'ok' });
+    expect(projects[0]).toMatchObject({
+      label: 'New',
+      name: 'New',
+      icon: 'rocket',
+      color: 'keyword',
+    });
+    expect(await loadLynxProjectMeta(runtimeFetch, {
+      projectId: 'proj_1',
+      path: '/repo',
+    })).toMatchObject({
+      status: 'ok',
+      meta: { label: 'New', icon: 'rocket', color: 'keyword' },
+    });
+    expect(await updateLynxProjectMeta(runtimeFetch, {
+      projectId: 'missing',
+      path: '/missing',
+      label: 'X',
+    })).toMatchObject({ status: 'unavailable' });
+  });
+
+  test('discover/remove project icon hit Cap /api/projects/:id/icon routes', async () => {
+    const calls: Array<{ path: string; method?: string }> = [];
+    const projects = [{ id: 'path_abc', path: '/repo', name: 'Repo', label: 'Repo' }];
+    const runtimeFetch = async (path: string, init?: { method?: string; body?: string }) => {
+      calls.push({ path, method: init?.method });
+      if (path.includes('/api/config/settings')) {
+        return { ok: true, status: 200, json: async () => ({ projects }) };
+      }
+      if (path.includes('/icon/discover')) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            skipped: false,
+            settings: {
+              projects: [{
+                ...projects[0],
+                iconImage: { mime: 'image/png', updatedAt: 1, source: 'auto' },
+              }],
+            },
+          }),
+        };
+      }
+      if (path.endsWith('/icon') && init?.method === 'DELETE') {
+        return { ok: true, status: 200, json: async () => ({ settings: { projects } }) };
+      }
+      return { ok: false, status: 500, json: async () => ({}) };
+    };
+    expect(await discoverLynxProjectIcon(runtimeFetch, {
+      projectId: '/repo',
+      path: '/repo',
+    })).toMatchObject({ status: 'ok', skipped: false });
+    expect(calls.some((call) => call.path.includes('/api/projects/path_abc/icon/discover'))).toBe(true);
+    expect(await removeLynxProjectIcon(runtimeFetch, {
+      projectId: '/repo',
+      path: '/repo',
+    })).toEqual({ status: 'ok', settingsProjects: projects });
+    const unavailableFetch = async (path: string, init?: { method?: string }) => {
+      if (path.includes('/api/config/settings')) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({ projects: [{ id: 'path_abc', path: '/repo', name: 'Repo', label: 'Repo' }] }),
+        };
+      }
+      return { ok: false, status: 501, json: async () => ({}) };
+    };
+    expect(await discoverLynxProjectIcon(unavailableFetch, {
+      projectId: '/repo',
+      path: '/repo',
+    })).toMatchObject({ status: 'unavailable' });
+  });
+
+  test('worktree order GET/PUT use Cap message-queue route', async () => {
+    const calls: Array<{ path: string; method?: string; body?: string }> = [];
+    const runtimeFetch = async (path: string, init?: { method?: string; body?: string }) => {
+      calls.push({ path, method: init?.method, body: init?.body });
+      if (init?.method === 'PUT') {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            revision: 3,
+            worktreeOrder: {
+              projectDirectory: '/repo',
+              orderedPaths: ['/repo/wt-b', '/repo/wt-a'],
+              revision: 3,
+            },
+          }),
+        };
+      }
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          projectDirectory: '/repo',
+          orderedPaths: ['/repo/wt-a', '/repo/wt-b'],
+          revision: 2,
+        }),
+      };
+    };
+    expect(await fetchLynxWorktreeOrder(runtimeFetch, '/repo')).toEqual({
+      status: 'ok',
+      orderedPaths: ['/repo/wt-a', '/repo/wt-b'],
+      revision: 2,
+    });
+    expect(calls[0]?.path).toContain('/api/openchamber/message-queue/worktrees/order');
+    expect(await setLynxWorktreeOrder(runtimeFetch, {
+      projectDirectory: '/repo',
+      orderedPaths: ['/repo/wt-b', '/repo/wt-a'],
+      expectedRevision: 2,
+      requestID: 'req-1',
+    })).toEqual({
+      status: 'ok',
+      orderedPaths: ['/repo/wt-b', '/repo/wt-a'],
+      revision: 3,
+    });
+    expect(JSON.parse(calls[1]!.body!)).toMatchObject({
+      requestID: 'req-1',
+      projectDirectory: '/repo',
+      expectedRevision: 2,
+    });
+    expect(await setLynxWorktreeOrder(async () => ({
+      ok: false,
+      status: 501,
+      json: async () => ({}),
+    }), { projectDirectory: '/repo', orderedPaths: ['/a'] })).toMatchObject({ status: 'unavailable' });
+  });
+
 });

@@ -34,8 +34,8 @@ import {
   inferLynxProjectIsGit,
   probeLynxGitRepository,
   syncLynxProjectSessions,
-  updateLynxProjectLabel,
 } from '../../projects/projectActions';
+import { LynxProjectEditSurface } from '../../projects/ProjectEditSurface';
 import {
   LynxCreateWorktreeDialog,
   LynxDeleteWorktreeDialog,
@@ -337,7 +337,6 @@ export function ProjectsHome({
   const [shareUrlBySessionId, setShareUrlBySessionId] = useState<Record<string, string>>({});
   const [closingProject, setClosingProject] = useState<LynxHomeProject | null>(null);
   const [editingProject, setEditingProject] = useState<LynxHomeProject | null>(null);
-  const [editLabelDraft, setEditLabelDraft] = useState('');
   const [newWorktreeProject, setNewWorktreeProject] = useState<LynxHomeProject | null>(null);
   const [worktreeToDelete, setWorktreeToDelete] = useState<{
     project: LynxHomeProject;
@@ -700,7 +699,6 @@ export function ProjectsHome({
       },
       onEditProject: () => {
         setEditingProject(actionTarget.project);
-        setEditLabelDraft(actionTarget.project.label);
         closeActionSheet();
       },
       onCloseProject: () => {
@@ -1149,76 +1147,24 @@ export function ProjectsHome({
       ) : null}
 
       {editingProject ? (
-        <LynxView
-          style={{
-            padding: '16px',
-            backgroundColor: cssVar('surface.elevated'),
-            borderTopLeftRadius: '16px',
-            borderTopRightRadius: '16px',
+        <LynxProjectEditSurface
+          locale={locale}
+          open
+          project={editingProject}
+          runtimeFetch={runtimeFetch}
+          linkedSessions={editingProject.sessions}
+          onClose={() => {
+            setEditingProject(null);
+            setActionError(null);
           }}
-          accessibility-label={lynxT(locale, 'lynx.projects.edit.title')}
-        >
-          <LynxText style={{ color: cssVar('surface.foreground'), fontWeight: '700', marginBottom: '8px' }}>
-            {lynxT(locale, 'lynx.projects.edit.title')}
-          </LynxText>
-          <LynxText style={{ color: cssVar('surface.mutedForeground'), fontSize: '12px', marginBottom: '8px' }}>
-            {editingProject.path}
-          </LynxText>
-          {actionError ? (
-            <LynxText style={{ color: cssVar('status.error'), fontSize: '12px', marginBottom: '8px' }}>
-              {actionError}
-            </LynxText>
-          ) : null}
-          <LynxInput
-            value={editLabelDraft}
-            placeholder={lynxT(locale, 'lynx.projects.edit.label')}
-            bindinput={(event) => setEditLabelDraft(event.detail?.value ?? '')}
-            style={{ color: cssVar('surface.foreground'), fontSize: '15px', marginBottom: '8px' }}
-          />
-          <LynxView
-            bindtap={() => {
-              if (actionBusy) return;
-              setActionBusy(true);
-              setActionError(null);
-              void (async () => {
-                const result = await updateLynxProjectLabel(runtimeFetch, {
-                  projectId: editingProject.id,
-                  path: editingProject.path,
-                  label: editLabelDraft,
-                });
-                setActionBusy(false);
-                if (result.status === 'ok') {
-                  setEditingProject(null);
-                  setEditLabelDraft('');
-                  refreshAfterMutation();
-                  return;
-                }
-                if (result.status === 'unavailable') {
-                  setActionError(lynxT(locale, 'lynx.projects.edit.unavailable'));
-                  return;
-                }
-                setActionError(result.status === 'no-runtime' ? 'no-runtime' : result.error);
-              })();
-            }}
-            style={{ padding: '12px 0', opacity: actionBusy ? 0.6 : 1 }}
-          >
-            <LynxText style={{ color: cssVar('primary.base'), fontSize: '15px' }}>
-              {lynxT(locale, 'lynx.projects.edit.save')}
-            </LynxText>
-          </LynxView>
-          <LynxView
-            bindtap={() => {
-              setEditingProject(null);
-              setEditLabelDraft('');
-              setActionError(null);
-            }}
-            style={{ padding: '12px 0' }}
-          >
-            <LynxText style={{ color: cssVar('surface.mutedForeground') }}>
-              {lynxT(locale, 'lynx.projects.menu.cancel')}
-            </LynxText>
-          </LynxView>
-        </LynxView>
+          onSaved={() => {
+            setEditingProject(null);
+            refreshAfterMutation();
+          }}
+          onWorktreesChanged={() => {
+            refreshAfterMutation();
+          }}
+        />
       ) : null}
 
       {newWorktreeProject ? (

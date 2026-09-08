@@ -22,7 +22,13 @@ export {
 export {
   syncLynxProjectSessions,
   probeLynxGitRepository,
+  loadLynxProjectMeta,
+  updateLynxProjectMeta,
   updateLynxProjectLabel,
+  discoverLynxProjectIcon,
+  removeLynxProjectIcon,
+  fetchLynxWorktreeOrder,
+  setLynxWorktreeOrder,
   closeLynxProject,
   createLynxWorktree,
   deleteLynxWorktree,
@@ -30,6 +36,21 @@ export {
   normalizeLynxWorktreeBranchName,
   inferLynxProjectIsGit,
 } from './projectActions';
+export {
+  LYNX_PROJECT_ICONS,
+  LYNX_PROJECT_COLORS,
+  LYNX_PROJECT_ICON_MAP,
+  LYNX_PROJECT_COLOR_MAP,
+  lynxProjectIconGlyph,
+  lynxProjectColorHex,
+} from './projectMeta';
+export {
+  moveLynxWorktreeOrder,
+  applyLynxWorktreeOrderPaths,
+  normalizeLynxWorktreeOrderPath,
+  lynxEditableWorktreeLabel,
+} from './projectEditSurface';
+export { LynxProjectEditSurface } from './ProjectEditSurface';
 
 export {
   loadLynxFsHome,

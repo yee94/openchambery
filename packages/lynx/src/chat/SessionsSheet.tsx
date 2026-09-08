@@ -15,8 +15,8 @@ import {
   inferLynxProjectIsGit,
   probeLynxGitRepository,
   syncLynxProjectSessions,
-  updateLynxProjectLabel,
 } from '../projects/projectActions';
+import { LynxProjectEditSurface } from '../projects/ProjectEditSurface';
 import {
   LynxCreateWorktreeDialog,
   LynxDeleteWorktreeDialog,
@@ -253,6 +253,7 @@ export function LynxSessionsSheet({
   const [actionError, setActionError] = useState<string | null>(null);
   const [actionBusy, setActionBusy] = useState(false);
   const [renameDraft, setRenameDraft] = useState<string | null>(null);
+  const [editingProject, setEditingProject] = useState<LynxHomeProject | null>(null);
   const [note, setNote] = useState<string | null>(null);
   const [newWorktreeProject, setNewWorktreeProject] = useState<LynxHomeProject | null>(null);
   const [worktreeToDelete, setWorktreeToDelete] = useState<{
@@ -701,7 +702,8 @@ export function LynxSessionsSheet({
         })();
       },
       onEditProject: () => {
-        setRenameDraft(actionTarget.project.label);
+        setEditingProject(actionTarget.project);
+        closeActions();
       },
       onCloseProject: () => {
         setActionBusy(true);
@@ -1124,34 +1126,19 @@ export function LynxSessionsSheet({
                       setActionBusy(true);
                       setActionError(null);
                       void (async () => {
-                        if (actionTarget.kind === 'session') {
-                          const result = await renameLynxSession(runtimeFetch, {
-                            sessionId: actionTarget.session.id,
-                            title: renameDraft,
-                            directory: actionTarget.session.directory,
-                          });
+                        if (actionTarget.kind !== 'session') {
                           setActionBusy(false);
-                          if (result.status !== 'ok') {
-                            setActionError(result.status === 'no-runtime' ? 'no-runtime' : result.error);
-                            return;
-                          }
-                        } else if (actionTarget.kind === 'project') {
-                          const result = await updateLynxProjectLabel(runtimeFetch, {
-                            projectId: actionTarget.project.id,
-                            path: actionTarget.project.path,
-                            label: renameDraft,
-                          });
-                          setActionBusy(false);
-                          if (result.status !== 'ok') {
-                            setActionError(
-                              result.status === 'no-runtime'
-                                ? 'no-runtime'
-                                : result.status === 'unavailable'
-                                  ? result.reason
-                                  : result.error,
-                            );
-                            return;
-                          }
+                          return;
+                        }
+                        const result = await renameLynxSession(runtimeFetch, {
+                          sessionId: actionTarget.session.id,
+                          title: renameDraft,
+                          directory: actionTarget.session.directory,
+                        });
+                        setActionBusy(false);
+                        if (result.status !== 'ok') {
+                          setActionError(result.status === 'no-runtime' ? 'no-runtime' : result.error);
+                          return;
                         }
                         closeActions();
                         refresh();
@@ -1255,7 +1242,29 @@ export function LynxSessionsSheet({
           />
         ) : null}
 
-        {worktreeToDelete ? (
+  
+      {editingProject ? (
+        <LynxProjectEditSurface
+          locale={locale}
+          open
+          project={editingProject}
+          runtimeFetch={runtimeFetch}
+          linkedSessions={editingProject.sessions}
+          onClose={() => {
+            setEditingProject(null);
+            setActionError(null);
+          }}
+          onSaved={() => {
+            setEditingProject(null);
+            refresh();
+          }}
+          onWorktreesChanged={() => {
+            refresh();
+          }}
+        />
+      ) : null}
+
+      {worktreeToDelete ? (
           <LynxDeleteWorktreeDialog
             locale={locale}
             open

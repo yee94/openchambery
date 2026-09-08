@@ -250,7 +250,13 @@ export {
   copyLynxText,
   syncLynxProjectSessions,
   probeLynxGitRepository,
+  loadLynxProjectMeta,
+  updateLynxProjectMeta,
   updateLynxProjectLabel,
+  discoverLynxProjectIcon,
+  removeLynxProjectIcon,
+  fetchLynxWorktreeOrder,
+  setLynxWorktreeOrder,
   closeLynxProject,
   createLynxWorktree,
   deleteLynxWorktree,
@@ -261,7 +267,12 @@ export {
   probeLynxWorktreeDirty,
   lynxWorktreeHasBranch,
   inferLynxProjectIsGit,
+  moveLynxWorktreeOrder,
+  applyLynxWorktreeOrderPaths,
+  LYNX_PROJECT_ICONS,
+  LYNX_PROJECT_COLORS,
 } from './projects';
+export { LynxProjectEditSurface } from './projects/ProjectEditSurface';
 export {
   createLynxShareWelcomeStore,
   LYNX_ASSISTANT_SHARE_WELCOME_STORAGE_KEY,
