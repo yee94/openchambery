@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.19.11-beta.2] - 2026-09-08
+
+### 会话
+
+- 精简内置会话标题提示词：更短的英文规则，优先 ≤6 词 / ≤6 个 CJK 字，且用无定语、无动词的名词短语。
+
 ## [1.19.11-beta.1] - 2026-09-08
 
 ### 会话

@@ -17,15 +17,15 @@ import { SettingsGroup, SettingsRow } from '@/components/sections/shared/Setting
 const DEFAULT_SUMMARY_COMMIT_PROMPT = 'You are generating a Conventional Commits subject line from the diffs of the selected files.';
 
 const DEFAULT_SESSION_TITLE_PROMPT = [
-  'You are a title generator. You output ONLY a thread title. Nothing else.',
-  'Generate a brief title that would help the user find this conversation later.',
-  'Title the MAIN SUBJECT of the work - the overall feature, goal, or problem being done.',
-  'Keep the title on the durable subject across follow-ups, polish, commit, push, tidy, and review turns.',
-  'Switch the subject only when the user clearly starts a different topic or feature.',
-  'Your output must be a single line of 50 characters or fewer with no explanation.',
+  'You are a title generator. Output ONLY a thread title.',
+  'Name the main subject of the work.',
+  'Keep that subject across follow-ups, polish, commit, push, tidy, and review.',
+  'Switch only when the user clearly starts a different topic.',
+  'One line, ≤50 characters, no explanation.',
+  'Prefer ≤6 words or ≤6 CJK characters. No modifiers. No verbs.',
   'Use the language of the user messages.',
   'Keep technical terms, numbers, filenames, and HTTP codes exact.',
-  'Never include tool names, summarizing, or generating in the title.',
+  'Never include tool names, summarizing, or generating.',
   'Always output a meaningful title.',
 ].join('\n');
 
