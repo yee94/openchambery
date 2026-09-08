@@ -22,6 +22,8 @@ export type LynxMobileResizableSheetProps = {
   ariaLabel: string;
   onClose: () => void;
   children: ReactNode;
+  /** Cap trailing slot (e.g. Save on project edit). Replaces default Close when set. */
+  trailing?: ReactNode;
   /** Default half (~72dvh Cap-aligned). */
   initiallyExpanded?: boolean;
 };
@@ -47,6 +49,7 @@ export function LynxMobileResizableSheet({
   ariaLabel,
   onClose,
   children,
+  trailing,
   initiallyExpanded = false,
 }: LynxMobileResizableSheetProps) {
   const [snap, setSnap] = useState<LynxMobileSheetSnap>(
@@ -172,16 +175,22 @@ export function LynxMobileResizableSheet({
           >
             {title ?? ariaLabel}
           </LynxText>
-          <LynxView
-            bindtap={onClose}
-            accessibility-role="button"
-            accessibility-label={lynxT(locale, 'lynx.sheet.close')}
-            data-lynx-resizable-sheet="close"
-          >
-            <LynxText style={{ color: cssVar('primary.base') }}>
-              {lynxT(locale, 'lynx.sheet.close')}
-            </LynxText>
-          </LynxView>
+          {trailing != null ? (
+            <LynxView data-lynx-resizable-sheet="trailing" style={{ flexShrink: 0 }}>
+              {trailing}
+            </LynxView>
+          ) : (
+            <LynxView
+              bindtap={onClose}
+              accessibility-role="button"
+              accessibility-label={lynxT(locale, 'lynx.sheet.close')}
+              data-lynx-resizable-sheet="close"
+            >
+              <LynxText style={{ color: cssVar('primary.base') }}>
+                {lynxT(locale, 'lynx.sheet.close')}
+              </LynxText>
+            </LynxView>
+          )}
         </LynxView>
 
         <LynxView
