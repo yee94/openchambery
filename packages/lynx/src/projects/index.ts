@@ -37,3 +37,15 @@ export {
   getLynxBrowseParentPath,
   appendLynxBrowsePathSegment,
 } from './directoryExplorer';
+
+export {
+  collectLynxWorktreeLinkedSessions,
+  archiveLynxWorktreeLinkedSessions,
+  probeLynxWorktreeDirty,
+  lynxWorktreeHasBranch,
+} from './worktreeDialogs';
+export {
+  LynxCreateWorktreeDialog,
+  LynxDeleteWorktreeDialog,
+} from './WorktreeDialogs';
+

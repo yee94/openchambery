@@ -21,13 +21,15 @@ import {
 } from '../../projects/sessionActions';
 import {
   closeLynxProject,
-  createLynxWorktree,
-  deleteLynxWorktree,
   inferLynxProjectIsGit,
   probeLynxGitRepository,
   syncLynxProjectSessions,
   updateLynxProjectLabel,
 } from '../../projects/projectActions';
+import {
+  LynxCreateWorktreeDialog,
+  LynxDeleteWorktreeDialog,
+} from '../../projects/WorktreeDialogs';
 import { filterLynxProjectsHomeForSearch } from '../../projects/search';
 import type { LynxRuntimeFetch } from '../../runtime/fetch';
 import {
@@ -327,7 +329,6 @@ export function ProjectsHome({
   const [editingProject, setEditingProject] = useState<LynxHomeProject | null>(null);
   const [editLabelDraft, setEditLabelDraft] = useState('');
   const [newWorktreeProject, setNewWorktreeProject] = useState<LynxHomeProject | null>(null);
-  const [newWorktreeName, setNewWorktreeName] = useState('');
   const [worktreeToDelete, setWorktreeToDelete] = useState<{
     project: LynxHomeProject;
     worktree: LynxHomeWorktreeGroup;
@@ -574,7 +575,6 @@ export function ProjectsHome({
       },
       onNewWorktree: () => {
         setNewWorktreeProject(actionTarget.project);
-        setNewWorktreeName('');
         closeActionSheet();
       },
       onSyncSessions: () => {
@@ -1051,75 +1051,21 @@ export function ProjectsHome({
       ) : null}
 
       {newWorktreeProject ? (
-        <LynxView
-          style={{
-            padding: '16px',
-            backgroundColor: cssVar('surface.elevated'),
-            borderTopLeftRadius: '16px',
-            borderTopRightRadius: '16px',
+        <LynxCreateWorktreeDialog
+          locale={locale}
+          open
+          projectDirectory={newWorktreeProject.path}
+          runtimeFetch={runtimeFetch}
+          onClose={() => {
+            setNewWorktreeProject(null);
+                setActionError(null);
           }}
-          accessibility-label={lynxT(locale, 'lynx.projects.worktree.createTitle')}
-        >
-          <LynxText style={{ color: cssVar('surface.foreground'), fontWeight: '700', marginBottom: '8px' }}>
-            {lynxT(locale, 'lynx.projects.worktree.createTitle')}
-          </LynxText>
-          {actionError ? (
-            <LynxText style={{ color: cssVar('status.error'), fontSize: '12px', marginBottom: '8px' }}>
-              {actionError}
-            </LynxText>
-          ) : null}
-          <LynxInput
-            value={newWorktreeName}
-            placeholder={lynxT(locale, 'lynx.projects.worktree.namePlaceholder')}
-            bindinput={(event) => setNewWorktreeName(event.detail?.value ?? '')}
-            style={{ color: cssVar('surface.foreground'), fontSize: '15px', marginBottom: '8px' }}
-          />
-          <LynxView
-            bindtap={() => {
-              if (actionBusy) return;
-              setActionBusy(true);
-              setActionError(null);
-              void (async () => {
-                const result = await createLynxWorktree(runtimeFetch, {
-                  projectDirectory: newWorktreeProject.path,
-                  branchName: newWorktreeName,
-                  worktreeName: newWorktreeName,
-                });
-                setActionBusy(false);
-                if (result.status === 'ok') {
-                  const path = result.path;
-                  setNewWorktreeProject(null);
-                  setNewWorktreeName('');
-                  refreshAfterMutation();
-                  onOpenDraft?.(path);
-                  return;
-                }
-                if (result.status === 'unavailable') {
-                  setActionError(lynxT(locale, 'lynx.projects.worktree.createUnavailable'));
-                  return;
-                }
-                setActionError(result.status === 'no-runtime' ? 'no-runtime' : result.error);
-              })();
-            }}
-            style={{ padding: '12px 0', opacity: actionBusy ? 0.6 : 1 }}
-          >
-            <LynxText style={{ color: cssVar('primary.base'), fontSize: '15px' }}>
-              {lynxT(locale, 'lynx.projects.worktree.create')}
-            </LynxText>
-          </LynxView>
-          <LynxView
-            bindtap={() => {
-              setNewWorktreeProject(null);
-              setNewWorktreeName('');
-              setActionError(null);
-            }}
-            style={{ padding: '12px 0' }}
-          >
-            <LynxText style={{ color: cssVar('surface.mutedForeground') }}>
-              {lynxT(locale, 'lynx.projects.menu.cancel')}
-            </LynxText>
-          </LynxView>
-        </LynxView>
+          onCreated={(path) => {
+            setNewWorktreeProject(null);
+                refreshAfterMutation();
+            onOpenDraft?.(path);
+          }}
+        />
       ) : null}
 
       <LynxDialogPortal>
@@ -1184,67 +1130,29 @@ export function ProjectsHome({
           </LynxCenteredDialog>
         ) : null}
 
-        {worktreeToDelete ? (
-          <LynxCenteredDialog
-            locale={locale}
-            open
-            title={lynxT(locale, 'lynx.projects.worktree.deleteConfirmTitle')}
-            description={lynxT(locale, 'lynx.projects.worktree.deleteConfirmDescription')}
-            ariaLabel={lynxT(locale, 'lynx.projects.worktree.deleteConfirmTitle')}
-            busy={actionBusy}
-            onClose={() => { if (!actionBusy) setWorktreeToDelete(null); }}
-            footer={(
-              <>
-                <LynxCenteredDialogAction
-                  label={lynxT(locale, 'lynx.projects.menu.cancel')}
-                  disabled={actionBusy}
-                  onTap={() => { setWorktreeToDelete(null); }}
-                />
-                <LynxCenteredDialogAction
-                  label={lynxT(locale, 'lynx.projects.worktree.deleteConfirmAction')}
-                  destructive
-                  disabled={actionBusy}
-                  onTap={() => {
-                    if (!worktreeToDelete || actionBusy) return;
-                    setActionBusy(true);
-                    void (async () => {
-                      const result = await deleteLynxWorktree(runtimeFetch, {
-                        projectDirectory: worktreeToDelete.project.path,
-                        worktreeDirectory: worktreeToDelete.worktree.path,
-                      });
-                      setActionBusy(false);
-                      if (result.status === 'ok') {
-                        setWorktreeToDelete(null);
-                        refreshAfterMutation();
-                        return;
-                      }
-                      setChromeNote(
-                        result.status === 'unavailable'
-                          ? lynxT(locale, 'lynx.projects.worktree.deleteUnavailable')
-                          : result.status === 'no-runtime'
-                            ? 'no-runtime'
-                            : result.error,
-                      );
-                      setWorktreeToDelete(null);
-                    })();
-                  }}
-                />
-              </>
-            )}
-          >
-            <LynxText
-              style={{
-                color: cssVar('surface.foreground'),
-                fontSize: '12px',
-                marginBottom: '8px',
-                fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
-              }}
-            >
-              {worktreeToDelete.worktree.path}
-            </LynxText>
-          </LynxCenteredDialog>
-        ) : null}
       </LynxDialogPortal>
+
+      {worktreeToDelete ? (
+        <LynxDeleteWorktreeDialog
+          locale={locale}
+          open
+          projectDirectory={worktreeToDelete.project.path}
+          worktreeDirectory={worktreeToDelete.worktree.path}
+          worktreeName={worktreeToDelete.worktree.name}
+          worktreeBranch={worktreeToDelete.worktree.branch}
+          linkedSessions={worktreeToDelete.worktree.sessions}
+          runtimeFetch={runtimeFetch}
+          onClose={() => setWorktreeToDelete(null)}
+          onDeleted={() => {
+            setWorktreeToDelete(null);
+            refreshAfterMutation();
+          }}
+          onErrorNote={(message) => {
+            setChromeNote(message);
+            setWorktreeToDelete(null);
+          }}
+        />
+      ) : null}
     </LynxView>
   );
 }

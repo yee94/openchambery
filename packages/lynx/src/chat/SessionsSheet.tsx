@@ -11,13 +11,15 @@ import { lynxT } from '../i18n/catalog';
 import { LynxInput, LynxScrollView, LynxText, LynxView } from '../lynx-elements';
 import {
   closeLynxProject,
-  createLynxWorktree,
-  deleteLynxWorktree,
   inferLynxProjectIsGit,
   probeLynxGitRepository,
   syncLynxProjectSessions,
   updateLynxProjectLabel,
 } from '../projects/projectActions';
+import {
+  LynxCreateWorktreeDialog,
+  LynxDeleteWorktreeDialog,
+} from '../projects/WorktreeDialogs';
 import {
   archiveLynxSession,
   deleteLynxSession,
@@ -157,6 +159,11 @@ export function LynxSessionsSheet({
   const [actionBusy, setActionBusy] = useState(false);
   const [renameDraft, setRenameDraft] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
+  const [newWorktreeProject, setNewWorktreeProject] = useState<LynxHomeProject | null>(null);
+  const [worktreeToDelete, setWorktreeToDelete] = useState<{
+    project: LynxHomeProject;
+    worktree: LynxHomeWorktreeGroup;
+  } | null>(null);
 
   useEffect(() => {
     if (!open) {
@@ -166,6 +173,8 @@ export function LynxSessionsSheet({
       setActionError(null);
       setRenameDraft(null);
       setNote(null);
+      setNewWorktreeProject(null);
+      setWorktreeToDelete(null);
     }
   }, [open]);
 
@@ -399,30 +408,8 @@ export function LynxSessionsSheet({
         onOpenDraft?.(directory);
       },
       onNewWorktree: () => {
-        setActionBusy(true);
-        setActionError(null);
-        void (async () => {
-          const name = `wt-${Date.now().toString(36)}`;
-          const result = await createLynxWorktree(runtimeFetch, {
-            projectDirectory: actionTarget.project.path,
-            worktreeName: name,
-            branchName: name,
-          });
-          setActionBusy(false);
-          if (result.status !== 'ok') {
-            setActionError(
-              result.status === 'no-runtime'
-                ? 'no-runtime'
-                : result.status === 'unavailable'
-                  ? result.reason
-                  : result.error,
-            );
-            return;
-          }
-          setNote(lynxT(locale, 'lynx.projects.menu.newWorktree'));
-          closeActions();
-          refresh();
-        })();
+        setNewWorktreeProject(actionTarget.project);
+        closeActions();
       },
       onSyncSessions: () => {
         setActionBusy(true);
@@ -490,27 +477,11 @@ export function LynxSessionsSheet({
       },
       onDeleteWorktree: actionTarget.worktree.kind === 'worktree'
         ? () => {
-          setActionBusy(true);
-          setActionError(null);
-          void (async () => {
-            const result = await deleteLynxWorktree(runtimeFetch, {
-              projectDirectory: actionTarget.project.path,
-              worktreeDirectory: actionTarget.worktree.path,
-            });
-            setActionBusy(false);
-            if (result.status !== 'ok') {
-              setActionError(
-                result.status === 'no-runtime'
-                  ? 'no-runtime'
-                  : result.status === 'unavailable'
-                    ? result.reason
-                    : result.error,
-              );
-              return;
-            }
-            closeActions();
-            refresh();
-          })();
+          setWorktreeToDelete({
+            project: actionTarget.project,
+            worktree: actionTarget.worktree,
+          });
+          closeActions();
         }
         : undefined,
     })
@@ -827,6 +798,44 @@ export function LynxSessionsSheet({
               </LynxView>
             </LynxView>
           </LynxView>
+        ) : null}
+
+        {newWorktreeProject ? (
+          <LynxCreateWorktreeDialog
+            locale={locale}
+            open
+            projectDirectory={newWorktreeProject.path}
+            runtimeFetch={runtimeFetch}
+            onClose={() => {
+              setNewWorktreeProject(null);
+              setActionError(null);
+            }}
+            onCreated={(path) => {
+              setNote(lynxT(locale, 'lynx.projects.menu.newWorktree'));
+              refresh();
+              onClose();
+              onOpenDraft?.(path);
+            }}
+          />
+        ) : null}
+
+        {worktreeToDelete ? (
+          <LynxDeleteWorktreeDialog
+            locale={locale}
+            open
+            projectDirectory={worktreeToDelete.project.path}
+            worktreeDirectory={worktreeToDelete.worktree.path}
+            worktreeName={worktreeToDelete.worktree.name}
+            worktreeBranch={worktreeToDelete.worktree.branch}
+            linkedSessions={worktreeToDelete.worktree.sessions}
+            runtimeFetch={runtimeFetch}
+            onClose={() => setWorktreeToDelete(null)}
+            onDeleted={() => {
+              setWorktreeToDelete(null);
+              refresh();
+            }}
+            onErrorNote={(message) => setNote(message)}
+          />
         ) : null}
       </LynxView>
     </LynxMobileResizableSheet>

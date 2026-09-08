@@ -253,6 +253,10 @@ export {
   closeLynxProject,
   createLynxWorktree,
   deleteLynxWorktree,
+  collectLynxWorktreeLinkedSessions,
+  archiveLynxWorktreeLinkedSessions,
+  probeLynxWorktreeDirty,
+  lynxWorktreeHasBranch,
   inferLynxProjectIsGit,
 } from './projects';
 export {
@@ -459,6 +463,10 @@ export {
   shouldAllowLynxCenteredDialogDismiss,
 } from './shell/centeredDialog';
 export { LynxCenteredDialog, LynxCenteredDialogAction } from './shell/CenteredDialog';
+export {
+  LynxCreateWorktreeDialog,
+  LynxDeleteWorktreeDialog,
+} from './projects/WorktreeDialogs';
 export {
   LYNX_SHELL_DIALOG_PORTAL,
   LYNX_SHELL_DIALOG_PORTAL_NOTES,
