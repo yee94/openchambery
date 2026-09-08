@@ -221,6 +221,6 @@ export const LYNX_SESSIONS_SHEET_NOTES = [
   'Filter chips: All / pinned / project (LYNX_PINNED_SESSION_FILTER_ID).',
   'Search via filterLynxProjectsHomeForSearch; tap session → switch + close.',
   'Menus reuse buildLynx*MenuItems; honest unavailable when HTTP missing.',
-  'Two-step archive + ~10s unarchive undo (sessionArchiveUndo); Cap toast/bulk/ArchivedSessionsDialog deferred.',
+  'Two-step archive + tree archive/delete + ~10s unarchive undo + Cap scheduleSessionDeletes ~10s delete undo; Cap toast/bulk/@dnd-kit deferred.',
   'Deferred: Cap @dnd-kit, MobileWindowMotion polish, iPad sidebar variant.',
 ] as const;

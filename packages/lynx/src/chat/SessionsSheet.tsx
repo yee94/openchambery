@@ -3,7 +3,7 @@
  *
  * Opens from LynxSessionStatusBar via LynxMobileResizableSheet (0.72 / 0.98).
  * Session-index grouped list + search + All/pinned/project chips + long-press
- * menus (buildLynx*MenuItems) + Cap two-step archive + ~10s unarchive undo +
+ * menus (buildLynx*MenuItems) + Cap two-step archive + tree archive/delete + ~10s unarchive undo + Cap delete undo +
  * Cap ArchivedSessionsDialog + rename smart-title. Not Cap Zustand / toast lib / @dnd-kit / MobileWindowMotion.
  */
 import { useEffect, useMemo, useState } from 'react';
@@ -22,7 +22,7 @@ import {
   LynxDeleteWorktreeDialog,
 } from '../projects/WorktreeDialogs';
 import {
-  archiveLynxSession,
+  archiveLynxSessions,
   deleteLynxSession,
   renameLynxSession,
   requestLynxSessionSmartTitle,
@@ -40,6 +40,15 @@ import {
   toggleLynxArchiveConfirm,
   type LynxArchiveUndoBanner,
 } from './sessionArchiveUndo';
+import {
+  SESSION_DELETE_UNDO_MS,
+  cancelLynxScheduledSessionDeletes,
+  createLynxDeleteUndoBanner,
+  isLynxDeleteUndoExpired,
+  scheduleLynxSessionDeletes,
+  type LynxDeleteUndoBanner,
+} from './sessionDeleteUndo';
+import { resolveLynxSessionTreeTargets } from './sessionTreeIds';
 import {
   buildLynxProjectMenuItems,
   buildLynxSessionMenuItems,
@@ -253,6 +262,9 @@ export function LynxSessionsSheet({
   const [confirmingArchiveSessionId, setConfirmingArchiveSessionId] = useState<string | null>(null);
   const [archiveUndo, setArchiveUndo] = useState<LynxArchiveUndoBanner | null>(null);
   const [archiveUndoError, setArchiveUndoError] = useState<string | null>(null);
+  const [deleteUndo, setDeleteUndo] = useState<LynxDeleteUndoBanner | null>(null);
+  const [deleteUndoError, setDeleteUndoError] = useState<string | null>(null);
+  const [pendingDeletionIds, setPendingDeletionIds] = useState<string[]>([]);
   const [archivedDialogOpen, setArchivedDialogOpen] = useState(false);
 
   useEffect(() => {
@@ -268,6 +280,9 @@ export function LynxSessionsSheet({
       setConfirmingArchiveSessionId(null);
       setArchiveUndo(null);
       setArchiveUndoError(null);
+      setDeleteUndo(null);
+      setDeleteUndoError(null);
+      setPendingDeletionIds([]);
       setArchivedDialogOpen(false);
     }
   }, [open]);
@@ -287,7 +302,23 @@ export function LynxSessionsSheet({
     return () => clearTimeout(timer);
   }, [archiveUndo]);
 
+  useEffect(() => {
+    if (!deleteUndo) return;
+    const remaining = deleteUndo.expiresAt - Date.now();
+    if (remaining <= 0) {
+      setDeleteUndo(null);
+      return;
+    }
+    const timer = setTimeout(() => {
+      setDeleteUndo((current) => (
+        current && isLynxDeleteUndoExpired(current) ? null : current
+      ));
+    }, remaining);
+    return () => clearTimeout(timer);
+  }, [deleteUndo]);
+
   const activeProjectId = useMemo(() => {
+
     const dir = activeDirectory?.trim();
     if (!dir || !indexState?.snapshot) return null;
     const built = buildLynxSessionsSheetModel({
@@ -319,7 +350,11 @@ export function LynxSessionsSheet({
     }
   }, [filterProjectId, sheet.filterProjectId]);
 
-  const sliced = sliceLynxSessionsSheetVisible(sheet.sessions, visibleCount);
+  const pendingDeletionSet = useMemo(() => new Set(pendingDeletionIds), [pendingDeletionIds]);
+  const sliced = sliceLynxSessionsSheetVisible(
+    sheet.sessions.filter((session) => !pendingDeletionSet.has(session.id)),
+    visibleCount,
+  );
 
   const closeActions = () => {
     setActionTarget(null);
@@ -332,30 +367,40 @@ export function LynxSessionsSheet({
     onMutated?.();
   };
 
-  const showArchiveUndo = (session: LynxHomeSessionRow) => {
+  const resolveTreeTargets = (session: LynxHomeSessionRow) => (
+    resolveLynxSessionTreeTargets(
+      { sessionId: session.id, directory: session.directory },
+      sheet.model.sessionById,
+    )
+  );
+
+  const showArchiveUndo = (entries: Array<{ sessionId: string; directory: string | null }>) => {
     setArchiveUndoError(null);
-    setArchiveUndo(createLynxArchiveUndoBanner({
-      sessionId: session.id,
-      directory: session.directory,
-    }));
+    setArchiveUndo(createLynxArchiveUndoBanner({ entries }));
   };
 
   const runArchiveSession = async (session: LynxHomeSessionRow): Promise<boolean> => {
-    const result = await archiveLynxSession(runtimeFetch, {
-      sessionId: session.id,
-      directory: session.directory,
-    });
-    if (result.status !== 'ok') {
-      setActionError(
-        result.status === 'no-runtime'
-          ? 'no-runtime'
-          : (result.error || lynxT(locale, 'lynx.chat.sessionsSheet.archiveError')),
-      );
-      return false;
+    const targets = resolveTreeTargets(session);
+    const { archivedIds, failedIds } = await archiveLynxSessions(
+      runtimeFetch,
+      targets.map((target) => ({
+        sessionId: target.sessionId,
+        directory: target.directory,
+      })),
+    );
+    if (archivedIds.length > 0) {
+      const archivedEntries = targets.filter((target) => archivedIds.includes(target.sessionId));
+      showArchiveUndo(archivedEntries);
+      refresh();
     }
-    showArchiveUndo(session);
-    refresh();
-    return true;
+    if (failedIds.length > 0) {
+      setActionError(
+        failedIds.length === 1
+          ? lynxT(locale, 'lynx.chat.sessionsSheet.archiveError')
+          : lynxT(locale, 'lynx.chat.sessionsSheet.archiveErrorPlural', { count: String(failedIds.length) }),
+      );
+    }
+    return archivedIds.length > 0;
   };
 
   const handleRequestArchive = (sessionId: string) => {
@@ -379,22 +424,79 @@ export function LynxSessionsSheet({
     setActionBusy(true);
     setArchiveUndoError(null);
     void (async () => {
-      const result = await unarchiveLynxSession(runtimeFetch, {
-        sessionId: pending.sessionId,
-        directory: pending.directory,
-      });
+      let failed = 0;
+      for (const entry of pending.entries) {
+        const result = await unarchiveLynxSession(runtimeFetch, {
+          sessionId: entry.sessionId,
+          directory: entry.directory,
+        });
+        if (result.status !== 'ok') failed += 1;
+      }
       setActionBusy(false);
-      if (result.status !== 'ok') {
+      if (failed > 0) {
         setArchiveUndoError(
-          result.status === 'no-runtime'
-            ? 'no-runtime'
-            : (result.error || lynxT(locale, 'lynx.chat.sessionsSheet.undoFailed')),
+          failed === pending.entries.length
+            ? lynxT(locale, 'lynx.chat.sessionsSheet.undoFailed')
+            : lynxT(locale, 'lynx.chat.sessionsSheet.undoFailedPartial', { count: String(failed) }),
         );
+        if (failed < pending.entries.length) refresh();
         return;
       }
       setArchiveUndo(null);
       refresh();
     })();
+  };
+
+  const clearPendingDeletionIds = (ids: string[]) => {
+    if (ids.length === 0) return;
+    const drop = new Set(ids);
+    setPendingDeletionIds((current) => current.filter((id) => !drop.has(id)));
+  };
+
+  const handleUndoDelete = () => {
+    if (!deleteUndo || actionBusy) return;
+    const pending = deleteUndo;
+    if (!cancelLynxScheduledSessionDeletes(pending.batchId)) {
+      setDeleteUndoError(lynxT(locale, 'lynx.chat.sessionsSheet.deleteUndoMissed'));
+      return;
+    }
+    clearPendingDeletionIds(pending.sessionIds);
+    setDeleteUndo(null);
+    setDeleteUndoError(null);
+  };
+
+  const runDeleteSessionTree = (session: LynxHomeSessionRow) => {
+    const targets = resolveTreeTargets(session);
+    setDeleteUndoError(null);
+    const { batchId, scheduledIds } = scheduleLynxSessionDeletes(targets, {
+      delayMs: SESSION_DELETE_UNDO_MS,
+      onCommit: async (entries) => {
+        const failedIds: string[] = [];
+        for (const entry of entries) {
+          const result = await deleteLynxSession(runtimeFetch, {
+            sessionId: entry.sessionId,
+            directory: entry.directory,
+          });
+          if (result.status !== 'ok') failedIds.push(entry.sessionId);
+        }
+        clearPendingDeletionIds(entries.map((entry) => entry.sessionId));
+        setDeleteUndo((current) => (current?.batchId === batchId ? null : current));
+        if (failedIds.length > 0) {
+          setDeleteUndoError(
+            failedIds.length === 1
+              ? lynxT(locale, 'lynx.chat.sessionsSheet.deleteCommitFailed')
+              : lynxT(locale, 'lynx.chat.sessionsSheet.deleteCommitFailedPlural', {
+                count: String(failedIds.length),
+              }),
+          );
+        }
+        refresh();
+      },
+    });
+    if (!batchId) return false;
+    setPendingDeletionIds((current) => Array.from(new Set([...current, ...scheduledIds])));
+    setDeleteUndo(createLynxDeleteUndoBanner({ batchId, sessionIds: scheduledIds }));
+    return true;
   };
 
   const selectSession = (session: LynxHomeSessionRow) => {
@@ -547,21 +649,13 @@ export function LynxSessionsSheet({
         })();
       },
       onDelete: () => {
-        setActionBusy(true);
         setActionError(null);
-        void (async () => {
-          const result = await deleteLynxSession(runtimeFetch, {
-            sessionId: actionTarget.session.id,
-            directory: actionTarget.session.directory,
-          });
-          setActionBusy(false);
-          if (result.status !== 'ok') {
-            setActionError(result.status === 'no-runtime' ? 'no-runtime' : result.error);
-            return;
-          }
-          closeActions();
-          refresh();
-        })();
+        const ok = runDeleteSessionTree(actionTarget.session);
+        if (!ok) {
+          setActionError(lynxT(locale, 'lynx.chat.sessionsSheet.deleteError'));
+          return;
+        }
+        closeActions();
       },
     })
     : [];
@@ -751,7 +845,11 @@ export function LynxSessionsSheet({
             }}
           >
             <LynxText style={{ flexGrow: 1, color: cssVar('surface.foreground'), fontSize: '13px' }}>
-              {lynxT(locale, 'lynx.chat.sessionsSheet.archiveSuccess')}
+              {(archiveUndo && archiveUndo.entries.length > 1)
+              ? lynxT(locale, 'lynx.chat.sessionsSheet.archiveSuccessPlural', {
+                count: String(archiveUndo.entries.length),
+              })
+              : lynxT(locale, 'lynx.chat.sessionsSheet.archiveSuccess')}
             </LynxText>
             <LynxView
               data-lynx-sessions-sheet-archive-view="true"
@@ -798,6 +896,54 @@ export function LynxSessionsSheet({
             {archiveUndoError}
           </LynxText>
         ) : null}
+        {deleteUndo ? (
+          <LynxView
+            data-lynx-sessions-sheet-delete-undo="true"
+            style={{
+              marginBottom: '8px',
+              padding: '10px 12px',
+              borderRadius: '12px',
+              borderWidth: '1px',
+              borderColor: cssVar('surface.mutedForeground'),
+              backgroundColor: cssVar('surface.elevated'),
+              flexDirection: 'row',
+              alignItems: 'center',
+            }}
+          >
+            <LynxText style={{ flexGrow: 1, color: cssVar('surface.foreground'), fontSize: '13px' }}>
+              {deleteUndo.sessionIds.length > 1
+                ? lynxT(locale, 'lynx.chat.sessionsSheet.deleteScheduledPlural', {
+                  count: String(deleteUndo.sessionIds.length),
+                })
+                : lynxT(locale, 'lynx.chat.sessionsSheet.deleteScheduled')}
+            </LynxText>
+            <LynxView
+              data-lynx-sessions-sheet-delete-undo-action="true"
+              bindtap={handleUndoDelete}
+              accessibility-role="button"
+              accessibility-label={lynxT(locale, 'lynx.chat.sessionsSheet.undo')}
+              style={{
+                paddingLeft: '10px',
+                paddingRight: '10px',
+                paddingTop: '6px',
+                paddingBottom: '6px',
+                borderRadius: '8px',
+                backgroundColor: cssVar('primary.base'),
+              }}
+            >
+              <LynxText style={{ color: cssVar('primary.foreground'), fontSize: '12px', fontWeight: '700' }}>
+                {lynxT(locale, 'lynx.chat.sessionsSheet.undo')}
+              </LynxText>
+            </LynxView>
+          </LynxView>
+        ) : null}
+        {deleteUndoError ? (
+          <LynxText style={{ marginBottom: '6px', color: cssVar('status.error'), fontSize: '12px' }}>
+            {deleteUndoError}
+          </LynxText>
+        ) : null}
+
+
 
         <LynxScrollView style={{ flexGrow: 1, minHeight: '0' }}>
           {indexStatus === 'loading' || indexStatus === 'idle' ? (

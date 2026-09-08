@@ -21,13 +21,28 @@ describe('Lynx session archive undo helpers', () => {
       now: 1_000,
     });
     expect(banner).toEqual({
-      sessionId: 'ses_1',
-      directory: '/repo',
+      entries: [{ sessionId: 'ses_1', directory: '/repo' }],
       expiresAt: 1_000 + SESSION_ARCHIVE_UNDO_MS,
     });
     expect(SESSION_ARCHIVE_UNDO_MS).toBe(10_000);
     expect(isLynxArchiveUndoExpired(banner, 1_000 + SESSION_ARCHIVE_UNDO_MS - 1)).toBe(false);
     expect(isLynxArchiveUndoExpired(banner, 1_000 + SESSION_ARCHIVE_UNDO_MS)).toBe(true);
     expect(isLynxArchiveUndoExpired(null)).toBe(true);
+  });
+
+  test('createLynxArchiveUndoBanner accepts tree entries', () => {
+    const banner = createLynxArchiveUndoBanner({
+      entries: [
+        { sessionId: 'root', directory: '/repo' },
+        { sessionId: 'child', directory: '/repo' },
+        { sessionId: 'root', directory: '/other' },
+      ],
+      now: 5_000,
+    });
+    expect(banner.entries).toEqual([
+      { sessionId: 'root', directory: '/other' },
+      { sessionId: 'child', directory: '/repo' },
+    ]);
+    expect(banner.expiresAt).toBe(5_000 + SESSION_ARCHIVE_UNDO_MS);
   });
 });
