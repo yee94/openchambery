@@ -200,6 +200,8 @@ function WorktreeGroup({
   visibleCount,
   onShowMore,
   onShowFewer,
+  /** Cap: search uses unpaginated catalog — never limit matches to the compact slice. */
+  searching = false,
 }: {
   locale: string;
   worktree: LynxHomeWorktreeGroup;
@@ -211,8 +213,16 @@ function WorktreeGroup({
   visibleCount: number;
   onShowMore: () => void;
   onShowFewer: () => void;
+  searching?: boolean;
 }) {
-  const sliced = sliceLynxSessionsSheetVisible(worktree.sessions, visibleCount);
+  const sliced = searching
+    ? {
+      visible: worktree.sessions.slice(),
+      remaining: 0,
+      canShowMore: false,
+      canShowFewer: false,
+    }
+    : sliceLynxSessionsSheetVisible(worktree.sessions, visibleCount);
   return (
     <LynxView style={{ marginTop: '8px' }}>
       <LynxView
@@ -293,6 +303,7 @@ function ProjectCard({
   visibleCountByBucket,
   onShowMoreBucket,
   onShowFewerBucket,
+  searching = false,
 }: {
   locale: string;
   project: LynxHomeProject;
@@ -307,6 +318,7 @@ function ProjectCard({
   visibleCountByBucket: Record<string, number>;
   onShowMoreBucket: (projectId: string, worktree: LynxHomeWorktreeGroup) => void;
   onShowFewerBucket: (projectId: string, worktreeId: string) => void;
+  searching?: boolean;
 }) {
   return (
     <LynxView
@@ -345,7 +357,7 @@ function ProjectCard({
               key={worktree.id}
               locale={locale}
               worktree={worktree}
-              expanded={worktreeExpanded[worktree.id] ?? worktree.kind === 'main'}
+              expanded={searching || (worktreeExpanded[worktree.id] ?? worktree.kind === 'main')}
               onToggle={() => onToggleWorktree(worktree.id)}
               onOpenSession={onOpenSession}
               onSessionLongPress={onSessionLongPress}
@@ -353,6 +365,7 @@ function ProjectCard({
               visibleCount={visibleCount}
               onShowMore={() => onShowMoreBucket(project.id, worktree)}
               onShowFewer={() => onShowFewerBucket(project.id, worktree.id)}
+              searching={searching}
             />
           );
         })
@@ -412,6 +425,8 @@ export function ProjectsHome({
   const [pendingDeletionIds, setPendingDeletionIds] = useState<string[]>([]);
   const searchQuery = searchQueryProp ?? internalQuery;
   const setSearchQuery = onSearchQueryChange ?? setInternalQuery;
+  /** Cap keyword search — bypass compact Show-more slice (catalogSessions spirit). */
+  const searching = searchQuery.trim().length > 0;
 
   const baseModel = useMemo(() => {
     if (modelOverride) return modelOverride;
@@ -1006,7 +1021,7 @@ export function ProjectsHome({
         </LynxText>
       ) : null}
 
-      {model.pinnedSessions.length > 0 ? (
+      {!searching && model.pinnedSessions.length > 0 ? (
         <LynxView style={{ marginBottom: '16px' }}>
           <LynxText style={{ color: cssVar('surface.mutedForeground'), fontSize: '13px', fontWeight: '600', marginBottom: '4px' }}>
             {lynxT(locale, 'lynx.projects.pinned')}
@@ -1023,7 +1038,7 @@ export function ProjectsHome({
         </LynxView>
       ) : null}
 
-      {model.inProgressSessions.length > 0 ? (
+      {!searching && model.inProgressSessions.length > 0 ? (
         <LynxView style={{ marginBottom: '16px' }}>
           <LynxText style={{ color: cssVar('surface.mutedForeground'), fontSize: '13px', fontWeight: '600', marginBottom: '4px' }}>
             {lynxT(locale, 'lynx.projects.inProgress')}
@@ -1058,7 +1073,7 @@ export function ProjectsHome({
           key={project.id}
           locale={locale}
           project={project}
-          expanded={projectExpanded[project.id] ?? true}
+          expanded={searching || (projectExpanded[project.id] ?? true)}
           onToggle={() => setProjectExpanded((map) => ({
             ...map,
             [project.id]: !(map[project.id] ?? true),
@@ -1072,6 +1087,7 @@ export function ProjectsHome({
           onSessionLongPress={openSessionActions}
           onProjectLongPress={openProjectActions}
           onWorktreeLongPress={openWorktreeActions}
+          searching={searching}
           visibleCountByBucket={visibleCountByBucket}
           onShowMoreBucket={(projectId, worktree) => {
             const key = lynxProjectsHomeBucketKey(projectId, worktree.id);

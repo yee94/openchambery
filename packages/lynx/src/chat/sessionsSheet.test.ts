@@ -186,6 +186,16 @@ describe('pagination + open directory', () => {
     expect(lynxProjectsHomeBucketKey('proj', 'wt-1')).toBe('proj::wt-1');
   });
 
+  test('search bypass uses full catalog length (no compact slice)', () => {
+    // Cap catalogSessions spirit: while searching, pass sessions.length as visibleCount
+    // so every match stays visible (ProjectsHome sets searching → skip slice).
+    const items = Array.from({ length: 12 }, (_, i) => `s${i}`);
+    const full = sliceLynxSessionsSheetVisible(items, items.length);
+    expect(full.visible).toHaveLength(12);
+    expect(full.canShowMore).toBe(false);
+    expect(full.canShowFewer).toBe(true);
+  });
+
   test('preserve-active-project open directory', () => {
     expect(resolveLynxSessionsSheetOpenDirectory({
       filterProjectId: null,
