@@ -177,6 +177,16 @@ export {
   catalogLoaderForSlug,
 } from './settings/catalogs';
 export {
+  loadLynxMcpSheet,
+  connectLynxMcp,
+  disconnectLynxMcp,
+  setLynxMcpConnected,
+  lynxMcpStatusTone,
+  type LynxMcpSheetRow,
+  type LynxMcpSheetLoadResult,
+  type LynxMcpActionResult,
+} from './chat/mcpSheet';
+export {
   computeLynxTitleCollapseProgress,
   LYNX_TITLE_COLLAPSE_DISTANCE,
 } from './shell/tabPageHeader';

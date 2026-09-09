@@ -62,6 +62,23 @@ export {
 } from './overflowMenu';
 
 export {
+  loadLynxMcpSheet,
+  connectLynxMcp,
+  disconnectLynxMcp,
+  setLynxMcpConnected,
+  lynxMcpStatusTone,
+  parseLynxMcpRuntimeStatus,
+  parseLynxMcpStatusMap,
+  mergeLynxMcpSheetRows,
+  type LynxMcpActionResult,
+  type LynxMcpRuntimeStatus,
+  type LynxMcpRuntimeStatusKind,
+  type LynxMcpSheetLoadResult,
+  type LynxMcpSheetRow,
+  type LynxMcpStatusTone,
+} from './mcpSheet';
+
+export {
   parseLynxMessageParts,
   buildLynxTurnCard,
   projectLynxActivity,
