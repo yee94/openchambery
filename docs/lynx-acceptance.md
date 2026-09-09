@@ -324,3 +324,9 @@ Chosen mode is written at the top of `packages/lynx/README.md` (Mode B iOS 26 ho
 - Residual after cssVar→hex: cream `#fffdf4` ≈ elevated `#fbfaf2` made done-phase cards look flat on Android softemu. Chrome: 1px `interactive.selection` solid border + radius 12 + elevated fill + optional soft boxShadow on pending-password / paste / add-instance / scan-QR.
 - Page background remains cream hex. No new palette colors; hex-only (no `var()`).
 - Product **NOT DONE** / 三关未齐 / not EXHAUSTED; 真机残差 = Connect welcome **card chrome** confirmation for Yee; no 真机过 claim.
+
+## Notes — Docs tip APK/SHA honesty (Next #56 / 2026-09-10)
+
+- Tip / prerelease APK: `lynx-v2-debug-eca4a03` (work/lynx-native @ `eca4a0305`; PR #94 / Next #55 MERGED; release exists). Was stale `lynx-v2-debug-7c5a135` / tip bases `5239dd7e6`/`7c5a135a9`. Do not invent a newer APK SHA than the published tag.
+- Cap phone skim found no new Linux-closable Cap product gap outside deferred thin leftovers (`@dnd-kit` / MobileWindowMotion / iPad sidebar / Cap toast sonner / bulk multi-select) and host-only — docs honesty only.
+- Product **NOT DONE** / 三关未齐 / not EXHAUSTED; 真机残差 = Connect welcome **card chrome** confirmation for Yee; no 真机过 claim.
