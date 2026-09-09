@@ -36,10 +36,13 @@ import com.lynx.xelement.XElementBehaviors
  * - TemplateData init + updateGlobalProps from ViewFactory.globalProps
  * - LynxViewClient logs + optional error TextView (never silent black)
  * - Theme windowBackground is Flexoki cream (not black)
+ * - Host TextView splash overlay until first_screen+20s (strict smoke text=)
  */
 class OpenChamberLynxHostActivity : AppCompatActivity() {
     private val decision = OpenChamberLynxEmbedding.resolve()
     private var errorView: TextView? = null
+    /** Real Android TextViews — uiautomator sees text="…"; Lynx <text> may paint without AccessibilityNodeInfo.text. */
+    private var hostSplashOverlay: FrameLayout? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -81,6 +84,13 @@ class OpenChamberLynxHostActivity : AppCompatActivity() {
                     )
             }
         root.addView(errorView)
+
+        // Host splash/brand overlay: guarantees literal text="OpenChamber Lynx" /
+        // text="Connecting…" for strict emulator smoke (not content-desc alone).
+        // Also covers first-paint before Lynx styles resolve.
+        val splash = buildHostSplashOverlay()
+        hostSplashOverlay = splash
+        root.addView(splash)
 
         setContentView(root)
 
@@ -128,6 +138,9 @@ class OpenChamberLynxHostActivity : AppCompatActivity() {
                             showHostError("LynxView measured ${w}x${h} after first_screen (expected non-zero)")
                         }
                     }
+                    // Keep host splash long enough for strict smoke (attempt >= 3 / ~6s+)
+                    // then dismiss so ConnectWelcome (hex cssVar) owns the screen.
+                    lynxView.postDelayed({ dismissHostSplashOverlay() }, 20_000L)
                 }
 
                 override fun onLoadFailed(message: String?) {
@@ -149,10 +162,78 @@ class OpenChamberLynxHostActivity : AppCompatActivity() {
     private fun showHostError(message: String) {
         Log.e(TAG, message)
         runOnUiThread {
+            dismissHostSplashOverlay()
             errorView?.let { tv ->
                 tv.text = message
                 tv.visibility = View.VISIBLE
                 tv.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
+            }
+        }
+    }
+
+    private fun buildHostSplashOverlay(): FrameLayout {
+        val cream = Color.parseColor("#fffdf4")
+        val ink = Color.parseColor("#100F0F")
+        val muted = Color.parseColor("#686663")
+        return FrameLayout(this).apply {
+            layoutParams =
+                FrameLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                )
+            setBackgroundColor(cream)
+            isClickable = false
+            importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_YES
+            val column =
+                android.widget.LinearLayout(this@OpenChamberLynxHostActivity).apply {
+                    orientation = android.widget.LinearLayout.VERTICAL
+                    gravity = Gravity.CENTER
+                    layoutParams =
+                        FrameLayout.LayoutParams(
+                            ViewGroup.LayoutParams.MATCH_PARENT,
+                            ViewGroup.LayoutParams.MATCH_PARENT,
+                        )
+                    setPadding(48, 48, 48, 48)
+                }
+            column.addView(
+                TextView(this@OpenChamberLynxHostActivity).apply {
+                    text = "OpenChamber Lynx"
+                    setTextColor(ink)
+                    setTextSize(TypedValue.COMPLEX_UNIT_SP, 22f)
+                    gravity = Gravity.CENTER
+                    // Literal text= for uiautomator strict smoke.
+                    contentDescription = null
+                },
+            )
+            column.addView(
+                TextView(this@OpenChamberLynxHostActivity).apply {
+                    text = "Connecting…"
+                    setTextColor(ink)
+                    setTextSize(TypedValue.COMPLEX_UNIT_SP, 18f)
+                    gravity = Gravity.CENTER
+                    setPadding(0, 24, 0, 0)
+                },
+            )
+            column.addView(
+                TextView(this@OpenChamberLynxHostActivity).apply {
+                    text = "Loading Lynx shell"
+                    setTextColor(muted)
+                    setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f)
+                    gravity = Gravity.CENTER
+                    setPadding(0, 16, 0, 0)
+                },
+            )
+            addView(column)
+        }
+    }
+
+    private fun dismissHostSplashOverlay() {
+        runOnUiThread {
+            hostSplashOverlay?.let { overlay ->
+                if (overlay.visibility != View.GONE) {
+                    overlay.visibility = View.GONE
+                    Log.i(TAG, "host_splash_overlay_dismissed")
+                }
             }
         }
     }

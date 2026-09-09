@@ -366,14 +366,14 @@ export function LynxSessionGoalCreateEntry({
         }}
       >
         <LynxText style={{
-          color: armed ? 'var(--status-info, #4387be)' : cssVar('surface.mutedForeground'),
+          color: armed ? '#4387be' : cssVar('surface.mutedForeground'),
           fontSize: '12px',
         }}
         >
           ◎
         </LynxText>
         <LynxText style={{
-          color: armed ? 'var(--status-info, #4387be)' : cssVar('surface.foreground'),
+          color: armed ? '#4387be' : cssVar('surface.foreground'),
           fontSize: '12px',
           fontWeight: '600',
         }}
@@ -392,7 +392,7 @@ export function LynxSessionGoalCreateEntry({
           style={{ padding: '4px 6px', flexShrink: 0 }}
         >
           <LynxText style={{
-            color: armed ? 'var(--status-info, #4387be)' : cssVar('surface.mutedForeground'),
+            color: armed ? '#4387be' : cssVar('surface.mutedForeground'),
             fontSize: '11px',
             fontWeight: '600',
           }}

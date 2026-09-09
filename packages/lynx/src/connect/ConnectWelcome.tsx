@@ -219,6 +219,14 @@ export function ConnectWelcome({
     }
   };
 
+  // Done-phase must use resolved hex (cssVar → LYNX_LIGHT_FALLBACKS). Emitting
+  // var(--token, #hex) is dropped by Android Lynx inline styles → 有字无样式.
+  const bg = cssVar('surface.background');
+  const fg = cssVar('surface.foreground');
+  const muted = cssVar('surface.mutedForeground');
+  const elevated = cssVar('surface.elevated');
+  const primary = cssVar('primary.base');
+
   return (
     <LynxScrollView
       style={{
@@ -226,26 +234,36 @@ export function ConnectWelcome({
         width: '100%',
         height: '100%',
         padding: '24px 16px',
-        backgroundColor: cssVar('surface.background'), // var(--surface-background, #fffdf4)
+        backgroundColor: bg, // #fffdf4 cream — plain hex, never var()
       }}
       accessibility-label="OpenChamber Lynx"
     >
       <LynxText
         style={{
+          fontSize: '14px',
+          fontWeight: '600',
+          color: muted,
+          marginBottom: '8px',
+        }}
+      >
+        OpenChamber Lynx
+      </LynxText>
+      <LynxText
+        style={{
           fontSize: '28px',
           fontWeight: '700',
-          color: cssVar('surface.foreground'),
+          color: fg,
           marginBottom: '8px',
         }}
       >
         {lynxT(locale, 'lynx.connect.welcome.title')}
       </LynxText>
-      <LynxText style={{ color: cssVar('surface.mutedForeground'), marginBottom: '20px' }}>
+      <LynxText style={{ color: muted, marginBottom: '20px' }}>
         {lynxT(locale, 'lynx.connect.welcome.body')}
       </LynxText>
 
       {error ? (
-        <LynxText style={{ color: cssVar('surface.foreground'), marginBottom: '12px' }}>
+        <LynxText style={{ color: fg, marginBottom: '12px' }}>
           {error}
         </LynxText>
       ) : null}
@@ -256,21 +274,21 @@ export function ConnectWelcome({
             marginBottom: '20px',
             padding: '12px',
             borderRadius: '12px',
-            backgroundColor: cssVar('surface.elevated'),
+            backgroundColor: elevated,
           }}
         >
-          <LynxText style={{ color: cssVar('surface.foreground'), fontWeight: '600', marginBottom: '8px' }}>
+          <LynxText style={{ color: fg, fontWeight: '600', marginBottom: '8px' }}>
             {lynxT(locale, 'lynx.connect.password.title')}: {pending.label}
           </LynxText>
           <LynxText
-            style={{ color: password ? cssVar('surface.foreground') : cssVar('surface.mutedForeground') }}
+            style={{ color: password ? fg : muted }}
             bindtap={() => setPassword(password ? '' : '•')}
           >
             {password ? '••••••••' : lynxT(locale, 'lynx.connect.password.placeholder')}
           </LynxText>
           <LynxView style={{ flexDirection: 'row', marginTop: '12px', gap: '12px' }}>
             <LynxView bindtap={() => void submitPassword()} accessibility-role="button">
-              <LynxText style={{ color: cssVar('primary.base'), fontWeight: '600' }}>
+              <LynxText style={{ color: primary, fontWeight: '600' }}>
                 {lynxT(locale, 'lynx.connect.password.submit')}
               </LynxText>
             </LynxView>
@@ -281,7 +299,7 @@ export function ConnectWelcome({
               }}
               accessibility-role="button"
             >
-              <LynxText style={{ color: cssVar('surface.mutedForeground') }}>
+              <LynxText style={{ color: muted }}>
                 {lynxT(locale, 'lynx.connect.password.cancel')}
               </LynxText>
             </LynxView>
@@ -289,11 +307,11 @@ export function ConnectWelcome({
         </LynxView>
       ) : null}
 
-      <LynxText style={{ color: cssVar('surface.mutedForeground'), fontSize: '13px', fontWeight: '600', marginBottom: '8px' }}>
+      <LynxText style={{ color: muted, fontSize: '13px', fontWeight: '600', marginBottom: '8px' }}>
         {lynxT(locale, 'lynx.connect.instances')}
       </LynxText>
       {connections.length === 0 ? (
-        <LynxText style={{ color: cssVar('surface.mutedForeground'), marginBottom: '16px' }}>
+        <LynxText style={{ color: muted, marginBottom: '16px' }}>
           {lynxT(locale, 'lynx.connect.instances.empty')}
         </LynxText>
       ) : (
@@ -308,15 +326,15 @@ export function ConnectWelcome({
             }}
           >
             <LynxView bindtap={() => void connectSaved(connection)} style={{ flexGrow: 1 }}>
-              <LynxText style={{ color: cssVar('surface.foreground'), fontWeight: '600' }}>
+              <LynxText style={{ color: fg, fontWeight: '600' }}>
                 {connection.label}
               </LynxText>
-              <LynxText style={{ color: cssVar('surface.mutedForeground'), fontSize: '12px' }}>
+              <LynxText style={{ color: muted, fontSize: '12px' }}>
                 {connectionDisplayUrl(connection)}
               </LynxText>
             </LynxView>
             <LynxView bindtap={() => void removeSaved(connection.id)} accessibility-role="button">
-              <LynxText style={{ color: cssVar('surface.mutedForeground') }}>
+              <LynxText style={{ color: muted }}>
                 {lynxT(locale, 'lynx.connect.instances.delete')}
               </LynxText>
             </LynxView>
@@ -330,20 +348,20 @@ export function ConnectWelcome({
           marginBottom: '16px',
           padding: '12px',
           borderRadius: '12px',
-          backgroundColor: cssVar('surface.elevated'),
+          backgroundColor: elevated,
         }}
       >
-        <LynxText style={{ color: cssVar('surface.foreground'), fontWeight: '600', marginBottom: '8px' }}>
+        <LynxText style={{ color: fg, fontWeight: '600', marginBottom: '8px' }}>
           {lynxT(locale, 'lynx.connect.paste.title')}
         </LynxText>
         <LynxText
-          style={{ color: pasteValue ? cssVar('surface.foreground') : cssVar('surface.mutedForeground') }}
+          style={{ color: pasteValue ? fg : muted }}
           bindtap={() => setPasteValue(pasteValue ? '' : 'openchamber://')}
         >
           {pasteValue || lynxT(locale, 'lynx.connect.paste.placeholder')}
         </LynxText>
         <LynxView bindtap={() => void redeemPaste()} style={{ marginTop: '12px' }} accessibility-role="button">
-          <LynxText style={{ color: cssVar('primary.base'), fontWeight: '600' }}>
+          <LynxText style={{ color: primary, fontWeight: '600' }}>
             {lynxT(locale, 'lynx.connect.paste.submit')}
           </LynxText>
         </LynxView>
@@ -354,26 +372,26 @@ export function ConnectWelcome({
           marginBottom: '16px',
           padding: '12px',
           borderRadius: '12px',
-          backgroundColor: cssVar('surface.elevated'),
+          backgroundColor: elevated,
         }}
       >
-        <LynxText style={{ color: cssVar('surface.foreground'), fontWeight: '600', marginBottom: '8px' }}>
+        <LynxText style={{ color: fg, fontWeight: '600', marginBottom: '8px' }}>
           {lynxT(locale, 'lynx.connect.add.title')}
         </LynxText>
         <LynxText
-          style={{ color: addUrl ? cssVar('surface.foreground') : cssVar('surface.mutedForeground'), marginBottom: '6px' }}
+          style={{ color: addUrl ? fg : muted, marginBottom: '6px' }}
           bindtap={() => setAddUrl(addUrl ? '' : 'http://127.0.0.1:4096')}
         >
           {addUrl || lynxT(locale, 'lynx.connect.add.urlPlaceholder')}
         </LynxText>
         <LynxText
-          style={{ color: addLabel ? cssVar('surface.foreground') : cssVar('surface.mutedForeground') }}
+          style={{ color: addLabel ? fg : muted }}
           bindtap={() => setAddLabel(addLabel ? '' : 'Local')}
         >
           {addLabel || lynxT(locale, 'lynx.connect.add.labelPlaceholder')}
         </LynxText>
         <LynxView bindtap={() => void addManual()} style={{ marginTop: '12px' }} accessibility-role="button">
-          <LynxText style={{ color: cssVar('primary.base'), fontWeight: '600' }}>
+          <LynxText style={{ color: primary, fontWeight: '600' }}>
             {lynxT(locale, 'lynx.connect.add.submit')}
           </LynxText>
         </LynxView>
@@ -438,15 +456,15 @@ export function ConnectWelcome({
           marginBottom: '16px',
           padding: '12px',
           borderRadius: '12px',
-          backgroundColor: cssVar('surface.elevated'),
+          backgroundColor: elevated,
         }}
         accessibility-role="button"
         accessibility-label={lynxT(locale, 'lynx.connect.qr.scan')}
       >
-        <LynxText style={{ color: cssVar('primary.base'), fontWeight: '600' }}>
+        <LynxText style={{ color: primary, fontWeight: '600' }}>
           {lynxT(locale, 'lynx.connect.qr.scan')}
         </LynxText>
-        <LynxText style={{ color: cssVar('surface.mutedForeground'), fontSize: '12px', marginTop: '4px' }}>
+        <LynxText style={{ color: muted, fontSize: '12px', marginTop: '4px' }}>
           {cameraAdapter?.isAvailable()
             ? lynxT(locale, 'lynx.connect.qr.scan')
             : lynxT(locale, 'lynx.connect.qr.unavailable')}

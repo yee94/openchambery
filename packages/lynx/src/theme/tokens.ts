@@ -52,9 +52,12 @@ export function themeVariantForId(themeId: LynxThemeId): 'light' | 'dark' {
 }
 
 /**
- * Flexoki-light hex fallbacks for first paint when Cap CSS vars are not injected
- * into the Lynx page (native sideload). Prefer `cssVar(token)` which embeds these
- * as `var(--name, fallback)` so unresolved vars never go transparent/invisible.
+ * Flexoki-light hex values for Lynx inline styles (native sideload).
+ *
+ * Cap CSS custom-property *names* stay in `LYNX_TOKEN_CSS_VARS` for docs /
+ * Explorer notes. Do **not** emit `var(--name, #hex)` into Lynx `style={{}}`:
+ * Android Lynx drops the entire style *value* when it contains `var(...)`,
+ * which painted Connect welcome as unstyled black-on-white (有字无样式).
  */
 export const LYNX_LIGHT_FALLBACKS: Record<LynxSemanticToken, string> = {
   'surface.background': '#fffdf4',
@@ -72,11 +75,17 @@ export const LYNX_LIGHT_FALLBACKS: Record<LynxSemanticToken, string> = {
 };
 
 /**
- * CSS var with Flexoki-light fallback. Pass `fallback: null` to emit bare
- * `var(--name)` (tests / callers that intentionally omit fallbacks).
+ * Resolved paint color for Lynx inline styles — always a plain `#hex`.
+ *
+ * Historically returned `var(--name, fallback)`; that form is rejected by the
+ * Android host inline-style path. Pass an explicit `fallback` hex to override;
+ * `null` still resolves to `LYNX_LIGHT_FALLBACKS[token]` (never emits `var()`).
  */
 export function cssVar(token: LynxSemanticToken, fallback: string | null = LYNX_LIGHT_FALLBACKS[token]): string {
-  const name = LYNX_TOKEN_CSS_VARS[token];
-  if (fallback == null) return `var(${name})`;
-  return `var(${name}, ${fallback})`;
+  return fallback ?? LYNX_LIGHT_FALLBACKS[token];
+}
+
+/** Alias for `cssVar` — resolved Flexoki-light hex for a semantic token. */
+export function tokenColor(token: LynxSemanticToken, fallback: string | null = LYNX_LIGHT_FALLBACKS[token]): string {
+  return cssVar(token, fallback);
 }

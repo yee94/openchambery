@@ -949,10 +949,10 @@ export function LynxChatScreen({
             style={{
               marginRight: '10px',
               color: contextDisplay.status === 'error'
-                ? 'var(--status-error)'
+                ? '#AF3029'
                 : contextDisplay.status === 'warning'
-                  ? 'var(--status-warning)'
-                  : 'var(--status-success)',
+                  ? '#d0a215'
+                  : '#66800B',
               fontSize: '12px',
               fontWeight: '600',
             }}

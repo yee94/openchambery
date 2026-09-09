@@ -103,7 +103,7 @@ function SessionChip({
             height: '6px',
             borderRadius: '3px',
             marginRight: '6px',
-            backgroundColor: 'var(--status-info)',
+            backgroundColor: '#4387be',
           }}
         />
       ) : null}
