@@ -10,7 +10,10 @@ import {
   buildLynxSessionsSheetModel,
   collapseLynxSessionsSheetVisibleCount,
   nextLynxSessionsSheetVisibleCount,
+  resolveLynxSessionsSheetNewChatDirectory,
   resolveLynxSessionsSheetOpenDirectory,
+  resolveLynxSessionsSheetTrailingActionIds,
+  resolveLynxSessionsSheetTrailingActiveProject,
   sliceLynxSessionsSheetVisible,
 } from './sessionsSheet';
 
@@ -193,5 +196,80 @@ describe('pagination + open directory', () => {
       sessionDirectory: '/session',
       currentDirectory: '/current',
     })).toBe('/session');
+  });
+});
+
+describe('trailing header actions', () => {
+  test('newChat when projects exist; newWorktree when git; addProject always', () => {
+    expect(resolveLynxSessionsSheetTrailingActionIds({
+      projectCount: 0,
+      activeProjectIsGitRepo: false,
+    })).toEqual(['addProject']);
+    expect(resolveLynxSessionsSheetTrailingActionIds({
+      projectCount: 2,
+      activeProjectIsGitRepo: false,
+    })).toEqual(['newChat', 'addProject']);
+    expect(resolveLynxSessionsSheetTrailingActionIds({
+      projectCount: 1,
+      activeProjectIsGitRepo: true,
+    })).toEqual(['newChat', 'newWorktree', 'addProject']);
+    expect(resolveLynxSessionsSheetTrailingActionIds({
+      projectCount: 0,
+      activeProjectIsGitRepo: true,
+    })).toEqual(['newWorktree', 'addProject']);
+  });
+
+  test('trailing active project prefers filter over chat directory', () => {
+    const projects = [
+      { id: '/a', path: '/a' },
+      { id: '/b', path: '/b' },
+    ];
+    expect(resolveLynxSessionsSheetTrailingActiveProject({
+      projects,
+      filterProjectId: '/b',
+      activeProjectId: '/a',
+    })?.id).toBe('/b');
+    expect(resolveLynxSessionsSheetTrailingActiveProject({
+      projects,
+      filterProjectId: null,
+      activeProjectId: '/a',
+    })?.id).toBe('/a');
+    expect(resolveLynxSessionsSheetTrailingActiveProject({
+      projects,
+      filterProjectId: LYNX_PINNED_SESSION_FILTER_ID,
+      activeProjectId: '/a',
+    })?.id).toBe('/a');
+    expect(resolveLynxSessionsSheetTrailingActiveProject({
+      projects,
+      filterProjectId: null,
+      activeProjectId: null,
+    })).toBe(null);
+  });
+
+  test('newChat directory prefers filter project then active then first', () => {
+    expect(resolveLynxSessionsSheetNewChatDirectory({
+      filterProjectId: '/a',
+      filterProjectPath: '/a',
+      activeDirectory: '/current',
+      firstProjectPath: '/first',
+    })).toBe('/a');
+    expect(resolveLynxSessionsSheetNewChatDirectory({
+      filterProjectId: null,
+      activeDirectory: '/current',
+      activeProjectPath: '/a',
+      firstProjectPath: '/first',
+    })).toBe('/current');
+    expect(resolveLynxSessionsSheetNewChatDirectory({
+      filterProjectId: LYNX_PINNED_SESSION_FILTER_ID,
+      activeDirectory: null,
+      activeProjectPath: '/a',
+      firstProjectPath: '/first',
+    })).toBe('/a');
+    expect(resolveLynxSessionsSheetNewChatDirectory({
+      filterProjectId: null,
+      activeDirectory: null,
+      activeProjectPath: null,
+      firstProjectPath: '/first',
+    })).toBe('/first');
   });
 });

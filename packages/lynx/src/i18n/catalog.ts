@@ -430,6 +430,7 @@ export type LynxMessageKey =
   | 'lynx.chat.sessionsSheet.deleteCommitFailedPlural'
   | 'lynx.chat.sessionsSheet.deleteUndoMissed'
   | 'lynx.chat.sessionsSheet.deleteError'
+  | 'lynx.chat.sessionsSheet.newChat'
   | 'lynx.chat.archived.title'
   | 'lynx.chat.archived.aria'
   | 'lynx.chat.archived.description'
@@ -537,6 +538,7 @@ const en: LynxDictionary = {
   'lynx.chat.sessionsSheet.deleteCommitFailedPlural': 'Could not delete {count} sessions',
   'lynx.chat.sessionsSheet.deleteUndoMissed': 'Delete already committed',
   'lynx.chat.sessionsSheet.deleteError': 'Could not schedule delete',
+  'lynx.chat.sessionsSheet.newChat': 'New Session',
   'lynx.chat.archived.title': 'Archived sessions',
   'lynx.chat.archived.aria': 'Archived sessions',
   'lynx.chat.archived.description': 'Select a project to view its archived sessions.',
@@ -971,6 +973,7 @@ const es: LynxDictionary = {
   'lynx.chat.sessionsSheet.deleteCommitFailedPlural': 'No se pudieron eliminar {count} sesiones',
   'lynx.chat.sessionsSheet.deleteUndoMissed': 'La eliminación ya se confirmó',
   'lynx.chat.sessionsSheet.deleteError': 'No se pudo programar la eliminación',
+  'lynx.chat.sessionsSheet.newChat': 'Nuevo chat',
   'lynx.chat.archived.title': 'Sesiones archivadas',
   'lynx.chat.archived.aria': 'Sesiones archivadas',
   'lynx.chat.archived.description': 'Selecciona un proyecto para ver sus sesiones archivadas.',
@@ -1405,6 +1408,7 @@ const fr: LynxDictionary = {
   'lynx.chat.sessionsSheet.deleteCommitFailedPlural': 'Impossible de supprimer {count} sessions',
   'lynx.chat.sessionsSheet.deleteUndoMissed': 'Suppression déjà confirmée',
   'lynx.chat.sessionsSheet.deleteError': 'Impossible de planifier la suppression',
+  'lynx.chat.sessionsSheet.newChat': 'Nouveau Chat',
   'lynx.chat.archived.title': 'Sessions archivées',
   'lynx.chat.archived.aria': 'Sessions archivées',
   'lynx.chat.archived.description': 'Sélectionnez un projet pour voir ses sessions archivées.',
@@ -1839,6 +1843,7 @@ const ja: LynxDictionary = {
   'lynx.chat.sessionsSheet.deleteCommitFailedPlural': '{count} 件のセッションを削除できませんでした',
   'lynx.chat.sessionsSheet.deleteUndoMissed': '削除は既に確定しています',
   'lynx.chat.sessionsSheet.deleteError': '削除を予約できませんでした',
+  'lynx.chat.sessionsSheet.newChat': '新規チャット',
   'lynx.chat.archived.title': 'アーカイブ済みセッション',
   'lynx.chat.archived.aria': 'アーカイブ済みセッション',
   'lynx.chat.archived.description': 'プロジェクトを選んでアーカイブ済みセッションを表示します。',
@@ -2273,6 +2278,7 @@ const ko: LynxDictionary = {
   'lynx.chat.sessionsSheet.deleteCommitFailedPlural': '{count}개 세션을 삭제하지 못했습니다',
   'lynx.chat.sessionsSheet.deleteUndoMissed': '삭제가 이미 확정되었습니다',
   'lynx.chat.sessionsSheet.deleteError': '삭제를 예약하지 못했습니다',
+  'lynx.chat.sessionsSheet.newChat': '새 채팅',
   'lynx.chat.archived.title': '보관된 세션',
   'lynx.chat.archived.aria': '보관된 세션',
   'lynx.chat.archived.description': '프로젝트를 선택해 보관된 세션을 봅니다.',
@@ -2707,6 +2713,7 @@ const pl: LynxDictionary = {
   'lynx.chat.sessionsSheet.deleteCommitFailedPlural': 'Nie udało się usunąć {count} sesji',
   'lynx.chat.sessionsSheet.deleteUndoMissed': 'Usunięcie już zatwierdzone',
   'lynx.chat.sessionsSheet.deleteError': 'Nie udało się zaplanować usunięcia',
+  'lynx.chat.sessionsSheet.newChat': 'Nowy czat',
   'lynx.chat.archived.title': 'Zarchiwizowane sesje',
   'lynx.chat.archived.aria': 'Zarchiwizowane sesje',
   'lynx.chat.archived.description': 'Wybierz projekt, aby zobaczyć zarchiwizowane sesje.',
@@ -3141,6 +3148,7 @@ const ptBR: LynxDictionary = {
   'lynx.chat.sessionsSheet.deleteCommitFailedPlural': 'Não foi possível excluir {count} sessões',
   'lynx.chat.sessionsSheet.deleteUndoMissed': 'Exclusão já confirmada',
   'lynx.chat.sessionsSheet.deleteError': 'Não foi possível agendar a exclusão',
+  'lynx.chat.sessionsSheet.newChat': 'Novo chat',
   'lynx.chat.archived.title': 'Sessões arquivadas',
   'lynx.chat.archived.aria': 'Sessões arquivadas',
   'lynx.chat.archived.description': 'Selecione um projeto para ver as sessões arquivadas.',
@@ -3575,6 +3583,7 @@ const uk: LynxDictionary = {
   'lynx.chat.sessionsSheet.deleteCommitFailedPlural': 'Не вдалося видалити {count} сеансів',
   'lynx.chat.sessionsSheet.deleteUndoMissed': 'Видалення вже підтверджено',
   'lynx.chat.sessionsSheet.deleteError': 'Не вдалося заплановувати видалення',
+  'lynx.chat.sessionsSheet.newChat': 'Новий чат',
   'lynx.chat.archived.title': 'Архівовані сесії',
   'lynx.chat.archived.aria': 'Архівовані сесії',
   'lynx.chat.archived.description': 'Виберіть проєкт, щоб переглянути його архівовані сесії.',
@@ -4009,6 +4018,7 @@ const zhCN: LynxDictionary = {
   'lynx.chat.sessionsSheet.deleteCommitFailedPlural': '有 {count} 个会话删除失败',
   'lynx.chat.sessionsSheet.deleteUndoMissed': '删除已生效',
   'lynx.chat.sessionsSheet.deleteError': '无法安排删除',
+  'lynx.chat.sessionsSheet.newChat': '新建聊天',
   'lynx.chat.archived.title': '已归档会话',
   'lynx.chat.archived.aria': '已归档会话',
   'lynx.chat.archived.description': '选择一个项目以查看其已归档会话。',
@@ -4443,6 +4453,7 @@ const zhTW: LynxDictionary = {
   'lynx.chat.sessionsSheet.deleteCommitFailedPlural': '有 {count} 個工作階段刪除失敗',
   'lynx.chat.sessionsSheet.deleteUndoMissed': '刪除已生效',
   'lynx.chat.sessionsSheet.deleteError': '無法安排刪除',
+  'lynx.chat.sessionsSheet.newChat': '新增聊天',
   'lynx.chat.archived.title': '已封存工作階段',
   'lynx.chat.archived.aria': '已封存工作階段',
   'lynx.chat.archived.description': '選擇專案以查看其已封存工作階段。',
