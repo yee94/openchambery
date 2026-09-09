@@ -309,3 +309,11 @@ Chosen mode is written at the top of `packages/lynx/README.md` (Mode B iOS 26 ho
 - `LynxArchivedSessionsDialog`: Cap project-bucket → session list → restore (`unarchiveLynxSession`) + preview; honest empty/load/no-runtime.
 - SessionsSheet entry: footer + undo-banner **View archived** (Cap secondary). Session-index supplies labels only (index drops archived roots).
 - Deferred: bulk multi-select / smart-title / Cap toast lib / `@dnd-kit` / MobileWindowMotion / iPad sidebar / host-only.
+
+## Notes — Cap MCP sheet live status + connect/disconnect (Next #54 / 2026-09-10)
+
+- Tip APK: `lynx-v2-debug-7c5a135` (work/lynx-native @ `7c5a135a9`; release exists). Do not invent a newer APK SHA until mobile-ci rebuilds.
+- Cap `McpDropdownContent` / `useMcpStore` parity: chat MCP sheet loads `GET /mcp` status ∪ `/api/config/mcp` configs; status disc + Cap Switch ON/OFF → `POST /mcp/{name}/connect|disconnect`; refresh; busy guard.
+- Honesty: no-runtime / HTTP failure never fake ON; `needs_auth` / `needs_client_registration` labeled (OAuth system browser stays host-only — not invented).
+- Vitest: `packages/lynx/src/chat/mcpSheet.test.ts`.
+- Product **NOT DONE** / 三关未齐 / not EXHAUSTED; 真机残差 keeps Connect welcome style confirmation open for Yee; no 真机过 claim.

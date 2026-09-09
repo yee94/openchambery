@@ -5,7 +5,13 @@ import type { LynxHostGlobalProps } from '../host/embedding';
 import { lynxT } from '../i18n/catalog';
 import { LynxInput, LynxScrollView, LynxText, LynxView } from '../lynx-elements';
 import type { LynxRuntimeFetch } from '../runtime/fetch';
-import { loadMcpCatalog, type LynxCatalogItem } from '../settings/catalogs';
+import {
+  loadLynxMcpSheet,
+  lynxMcpStatusTone,
+  setLynxMcpConnected,
+  type LynxMcpRuntimeStatus,
+  type LynxMcpSheetRow,
+} from './mcpSheet';
 import { cssVar } from '../theme/tokens';
 import {
   commitAndPushLynxGitChanges,
@@ -930,6 +936,45 @@ function RevertGlassChip({
   );
 }
 
+function mcpStatusLabel(locale: string, status: LynxMcpRuntimeStatus): string {
+  switch (status.kind) {
+    case 'connected':
+      return lynxT(locale, 'lynx.chat.sheet.mcp.status.connected');
+    case 'disabled':
+      return lynxT(locale, 'lynx.chat.sheet.mcp.status.disabled');
+    case 'failed':
+      return status.error
+        ? lynxT(locale, 'lynx.chat.sheet.mcp.status.failedWithError', { error: status.error })
+        : lynxT(locale, 'lynx.chat.sheet.mcp.status.failed');
+    case 'needs_auth':
+      return lynxT(locale, 'lynx.chat.sheet.mcp.status.needsAuth');
+    case 'needs_client_registration':
+      return status.error
+        ? lynxT(locale, 'lynx.chat.sheet.mcp.status.needsRegistrationWithError', { error: status.error })
+        : lynxT(locale, 'lynx.chat.sheet.mcp.status.needsRegistration');
+    default:
+      return lynxT(locale, 'lynx.chat.sheet.mcp.status.unknown');
+  }
+}
+
+function mcpToneColor(tone: ReturnType<typeof lynxMcpStatusTone>): string {
+  switch (tone) {
+    case 'success':
+      return cssVar('status.success');
+    case 'error':
+      return cssVar('status.error');
+    case 'warning':
+      return cssVar('primary.base');
+    default:
+      return cssVar('surface.mutedForeground');
+  }
+}
+
+/**
+ * Cap `McpDropdownContent` spirit: config ∪ status rows, status disc, Cap Switch
+ * connect/disconnect via POST `/mcp/{name}/connect|disconnect`, refresh.
+ * OAuth needs_auth stays labeled — host browser not invented.
+ */
 function McpSheetBody({
   locale,
   directory,
@@ -939,30 +984,63 @@ function McpSheetBody({
   directory: string | null;
   runtimeFetch: LynxRuntimeFetch | null;
 }) {
-  const [items, setItems] = useState<LynxCatalogItem[] | null>(null);
+  const [rows, setRows] = useState<LynxMcpSheetRow[] | null>(null);
   const [status, setStatus] = useState<'loading' | 'ok' | 'failed' | 'no-runtime' | 'unsupported'>('loading');
   const [error, setError] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [busyName, setBusyName] = useState<string | null>(null);
+  const [reloadToken, setReloadToken] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
     setStatus('loading');
     setError(null);
     void (async () => {
-      const result = await loadMcpCatalog(runtimeFetch, { directory });
+      const result = await loadLynxMcpSheet(runtimeFetch, { directory });
       if (cancelled) return;
       if (result.status === 'ok') {
-        setItems(result.items);
+        setRows(result.rows);
         setStatus('ok');
         return;
       }
-      setItems(null);
+      setRows(null);
       setStatus(result.status);
       if (result.status === 'failed') setError(result.error.message);
     })();
     return () => {
       cancelled = true;
     };
-  }, [runtimeFetch, directory]);
+  }, [runtimeFetch, directory, reloadToken]);
+
+  const refresh = () => {
+    if (busyName) return;
+    setActionError(null);
+    setReloadToken((n) => n + 1);
+  };
+
+  const toggle = async (row: LynxMcpSheetRow) => {
+    if (busyName) return;
+    setBusyName(row.name);
+    setActionError(null);
+    try {
+      const result = await setLynxMcpConnected(runtimeFetch, {
+        name: row.name,
+        directory,
+        connected: !row.connected,
+      });
+      if (result.status === 'no-runtime') {
+        setActionError(lynxT(locale, 'lynx.settings.noRuntime'));
+        return;
+      }
+      if (result.status === 'failed') {
+        setActionError(result.error || lynxT(locale, 'lynx.chat.sheet.mcp.actionFailed'));
+        // Cap refreshes status after failure too — keep honest disc.
+      }
+      setReloadToken((n) => n + 1);
+    } finally {
+      setBusyName(null);
+    }
+  };
 
   if (status === 'no-runtime') {
     return <Banner text={lynxT(locale, 'lynx.settings.noRuntime')} muted />;
@@ -973,25 +1051,104 @@ function McpSheetBody({
   if (status === 'failed') {
     return <Banner text={error || lynxT(locale, 'lynx.chat.sheet.mcp.failed')} />;
   }
-  if (status === 'loading' || !items) {
+  if (status === 'loading' || !rows) {
     return <Banner text={lynxT(locale, 'lynx.settings.loading')} muted />;
   }
 
   return (
     <LynxScrollView style={{ flexGrow: 1, padding: '0 16px 24px' }}>
-      {items.length === 0 ? (
+      <LynxView
+        style={{
+          flexDirection: 'row',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          paddingTop: '8px',
+          paddingBottom: '4px',
+        }}
+      >
+        {directory ? (
+          <LynxText
+            style={{
+              color: cssVar('surface.mutedForeground'),
+              fontSize: '12px',
+              flexGrow: 1,
+              minWidth: '0px',
+            }}
+          >
+            {directory.split('/').filter(Boolean).pop() || directory}
+          </LynxText>
+        ) : (
+          <LynxView style={{ flexGrow: 1 }} />
+        )}
+        <LynxView
+          bindtap={refresh}
+          accessibility-role="button"
+          accessibility-label={lynxT(locale, 'lynx.chat.sheet.mcp.refresh')}
+          style={{ padding: '6px 8px', opacity: busyName ? 0.5 : 1 }}
+        >
+          <LynxText style={{ color: cssVar('primary.base'), fontSize: '13px', fontWeight: '600' }}>
+            {lynxT(locale, 'lynx.chat.sheet.mcp.refresh')}
+          </LynxText>
+        </LynxView>
+      </LynxView>
+      {actionError ? <Banner text={actionError} /> : null}
+      {rows.length === 0 ? (
         <Banner text={lynxT(locale, 'lynx.chat.sheet.mcp.empty')} muted />
       ) : (
-        items.map((item) => (
-          <LynxView key={item.id} style={{ padding: '10px 0' }}>
-            <LynxText style={{ color: cssVar('surface.foreground') }}>{item.title}</LynxText>
-            {item.subtitle ? (
-              <LynxText style={{ color: cssVar('surface.mutedForeground'), fontSize: '12px' }}>
-                {item.subtitle}
-              </LynxText>
-            ) : null}
-          </LynxView>
-        ))
+        rows.map((row) => {
+          const tone = lynxMcpStatusTone(row.status);
+          const busy = busyName === row.name;
+          return (
+            <LynxView
+              key={row.name}
+              style={{
+                padding: '12px 0',
+                flexDirection: 'row',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+              }}
+            >
+              <LynxView style={{ flexGrow: 1, minWidth: '0px', flexDirection: 'row', alignItems: 'center' }}>
+                <LynxView
+                  style={{
+                    width: '10px',
+                    height: '10px',
+                    borderRadius: '5px',
+                    marginRight: '10px',
+                    flexShrink: 0,
+                    backgroundColor: mcpToneColor(tone),
+                  }}
+                  accessibility-label={mcpStatusLabel(locale, row.status)}
+                />
+                <LynxView style={{ flexGrow: 1, minWidth: '0px' }}>
+                  <LynxText style={{ color: cssVar('surface.foreground'), fontSize: '15px' }}>
+                    {row.title}
+                  </LynxText>
+                  <LynxText style={{ color: cssVar('surface.mutedForeground'), fontSize: '12px' }}>
+                    {mcpStatusLabel(locale, row.status)}
+                    {row.subtitle ? ` · ${row.subtitle}` : ''}
+                  </LynxText>
+                </LynxView>
+              </LynxView>
+              <LynxView
+                bindtap={() => { void toggle(row); }}
+                accessibility-role="button"
+                accessibility-label={row.connected
+                  ? lynxT(locale, 'lynx.chat.sheet.mcp.disconnect')
+                  : lynxT(locale, 'lynx.chat.sheet.mcp.connect')}
+                style={{ padding: '6px 8px', opacity: busy ? 0.5 : 1, flexShrink: 0 }}
+              >
+                <LynxText style={{ color: cssVar('primary.base'), fontWeight: '600' }}>
+                  {busy
+                    ? lynxT(locale, 'lynx.chat.sheet.mcp.busy')
+                    : row.connected
+                      ? 'ON'
+                      : 'OFF'}
+                </LynxText>
+              </LynxView>
+            </LynxView>
+          );
+        })
       )}
     </LynxScrollView>
   );
