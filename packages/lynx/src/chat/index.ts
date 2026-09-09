@@ -272,6 +272,7 @@ export {
   sliceLynxSessionsSheetVisible,
   nextLynxSessionsSheetVisibleCount,
   collapseLynxSessionsSheetVisibleCount,
+  lynxProjectsHomeBucketKey,
   resolveLynxSessionsSheetOpenDirectory,
   type LynxSessionsSheetFilterId,
   type LynxSessionsSheetFilterChip,

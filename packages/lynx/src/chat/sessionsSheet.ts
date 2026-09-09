@@ -200,6 +200,12 @@ export const nextLynxSessionsSheetVisibleCount = (
 export const collapseLynxSessionsSheetVisibleCount = (): number =>
   LYNX_SESSIONS_SHEET_DEFAULT_VISIBLE;
 
+/** Cap ProjectsHome `visibleCountByBucket` key: `projectId::bucketKey`. */
+export const lynxProjectsHomeBucketKey = (
+  projectId: string,
+  bucketKey: string,
+): string => `${projectId}::${bucketKey}`;
+
 /**
  * Cap open-session directory: when preserve-active-project (All / pinned),
  * keep the caller's current chat directory; otherwise use the session directory.

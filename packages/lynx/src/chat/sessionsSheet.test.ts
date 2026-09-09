@@ -9,6 +9,7 @@ import {
   buildLynxSessionsSheetFilterChips,
   buildLynxSessionsSheetModel,
   collapseLynxSessionsSheetVisibleCount,
+  lynxProjectsHomeBucketKey,
   nextLynxSessionsSheetVisibleCount,
   resolveLynxSessionsSheetNewChatDirectory,
   resolveLynxSessionsSheetOpenDirectory,
@@ -178,6 +179,11 @@ describe('pagination + open directory', () => {
     expect(sliced.canShowMore).toBe(true);
     expect(nextLynxSessionsSheetVisibleCount(3, 10)).toBe(10);
     expect(collapseLynxSessionsSheetVisibleCount()).toBe(3);
+  });
+
+  test('ProjectsHome Cap bucket key is projectId::bucketKey', () => {
+    expect(lynxProjectsHomeBucketKey('/repo', 'main')).toBe('/repo::main');
+    expect(lynxProjectsHomeBucketKey('proj', 'wt-1')).toBe('proj::wt-1');
   });
 
   test('preserve-active-project open directory', () => {
