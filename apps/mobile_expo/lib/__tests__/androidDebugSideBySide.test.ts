@@ -165,3 +165,23 @@ ${EXPO_REACT_BLOCK}
     expect(out.split('applicationIdSuffix ".debug"').length - 1).toBe(2);
   });
 });
+
+
+describe('withAndroidCleartextTraffic.ensureCleartext', () => {
+  it('sets android:usesCleartextTraffic on application', () => {
+    const { ensureCleartext } = require(
+      path.resolve(__dirname, '../../plugins/withAndroidCleartextTraffic.js'),
+    ) as {
+      ensureCleartext: (manifest: {
+        manifest: { application?: Array<{ $?: Record<string, string> }> };
+      }) => {
+        manifest: { application?: Array<{ $?: Record<string, string> }> };
+      };
+    };
+    const input = { manifest: { application: [{ $: { 'android:name': '.MainApplication' } }] } };
+    const out = ensureCleartext(input);
+    expect(out.manifest.application?.[0]?.$?.['android:usesCleartextTraffic']).toBe('true');
+    const twice = ensureCleartext(out);
+    expect(twice.manifest.application?.[0]?.$?.['android:usesCleartextTraffic']).toBe('true');
+  });
+});

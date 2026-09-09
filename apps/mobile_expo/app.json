@@ -86,6 +86,7 @@
       ],
       "./plugins/withOpenChamberSystemShell.js",
       "./plugins/withAndroidDebugSideBySide.js",
+      "./plugins/withAndroidCleartextTraffic.js",
       "react-native-quick-crypto"
     ],
     "experiments": {

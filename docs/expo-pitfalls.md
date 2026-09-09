@@ -55,6 +55,18 @@ Pairing v2 (`connectionPayload.ts`) carries `lan` + `relayUrl` + `hostEncPubJwk`
 
 OpenChamber with **no UI password** returns `GET /auth/session` → `{ authenticated: true, disabled: true }`. Cap and Expo **probes** must adopt that host **without** a client token on URL connect and saved reconnect.
 
+
+### Android cleartext + VPN vs LAN/relay
+
+Expo ships `android.usesCleartextTraffic: true` (Cap parity) and `withAndroidCleartextTraffic` re-asserts `android:usesCleartextTraffic="true"` after prebuild. Without it, Android targetSdk ≥ 28 blocks `http://192.168.x` LAN health/redeem and every probe falls through (or looks "broken" vs Cap WebView+CapacitorHttp).
+
+Phone on **VPN** often cannot reach LAN `192.168.x` even with cleartext allowed — Cap and Expo then must win on **relay** (same tunnel POST body framing). Tip already drops pairing `grant` from `MobileRelayConfig` like Cap; tunnel `fetch` POST string bodies match Cap `tunnel-payloads` / `tunnel-client` byte-for-byte aside from Hermes subtle polyfill. If redeem still fails, on-screen copy stays Cap `authRequired` with a temporary `(HTTP N)` / `(unreachable)` suffix and logcat `[mobile-connect] redeem:http`.
+
+
+### Expo SecureStore keys cannot encodeURIComponent URLs
+
+`expo-secure-store` `ensureValidKey` requires `/^[\w.-]+$/`. Logical connection keys are `relay:serverId@wss://…` / `http://192.168.x:port` — `encodeURIComponent` still yields `%3A` / `%40` / `%2F`, so `setItemAsync` **throws**, `writeSecureToken` returns false, and Cap-parity redeem shows `authRequired`（该服务器需要密码或客户端令牌）**even when redeem already issued a clientToken**. Cap Preferences accept broader keys; Expo must **SHA-256 hex** the logical key under `openchamber.mobile.token.<hex>` (see `lib/secureStore.ts`). Logcat: `secure:write-invalid-key` if a key ever fails the charset gate. Never log the token value.
+
 ### Do not invent `pairingFailed` on redeem
 
 Cap `redeemPairingConnection` on redeem HTTP fail / empty `clientToken` / SecureStore write fail / catch → **`t('mobile.connect.error.authRequired')` ONLY**. Cap does **not** invent `pairingFailed` ("已过期") and does **not** auth-disabled tokenless-adopt after a failed redeem. Expo must copy that path:

@@ -30,7 +30,7 @@ export type PairingRedeemResponse = {
 
 export type RedeemPairingResult =
   | { ok: true; clientToken: string; serverLabel?: string }
-  | { ok: false; reason: 'http' | 'no-token' | 'unreachable' };
+  | { ok: false; reason: 'http' | 'no-token' | 'unreachable'; status?: number };
 
 /** Cap-parity: only `result.clientToken` string (no nested token invent). */
 export const parsePairingRedeemToken = (body: unknown): string => {
@@ -338,10 +338,15 @@ export const redeemPairing = async (
     status: response?.status ?? null,
   });
   // Cap: !response?.ok → authRequired path (controller maps any redeem fail there).
-  if (!response?.ok) return { ok: false, reason: response ? 'http' : 'unreachable' };
+  // Expo diagnostic: keep HTTP status so UI/logcat can show (HTTP N) without inventing pairingFailed.
+  if (!response?.ok) {
+    return response
+      ? { ok: false, reason: 'http', status: response.status }
+      : { ok: false, reason: 'unreachable' };
+  }
   const json = await response.json().catch(() => null);
   const issued = parsePairingRedeemToken(json);
-  if (!issued) return { ok: false, reason: 'no-token' };
+  if (!issued) return { ok: false, reason: 'no-token', status: response.status };
   return { ok: true, clientToken: issued, serverLabel: parsePairingRedeemServerLabel(json) };
 };
 

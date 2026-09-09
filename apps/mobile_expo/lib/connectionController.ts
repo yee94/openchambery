@@ -17,6 +17,7 @@ import {
   probeSavedCandidates,
   redeemPairing,
   type ChosenTransport,
+  type RedeemPairingResult,
 } from '@/lib/connectionApi';
 import {
   deleteMobileConnection,
@@ -28,6 +29,18 @@ import {
 import { parseConnectionPayload, type PairingConnectionPayload } from '@/lib/connectionPayload';
 import { writeSecureToken } from '@/lib/secureStore';
 import { t } from '@/lib/i18n';
+
+
+/** Cap primary copy is authRequired; append (HTTP N) / reason only on fail paths for logcat+screen. */
+export const formatRedeemAuthRequiredError = (redeemed: Extract<RedeemPairingResult, { ok: false }>): string => {
+  const base = t('mobile.connect.error.authRequired');
+  if (redeemed.reason === 'http' && typeof redeemed.status === 'number') {
+    return `${base} (HTTP ${redeemed.status})`;
+  }
+  if (redeemed.reason === 'unreachable') return `${base} (unreachable)`;
+  if (redeemed.reason === 'no-token') return `${base} (no-token)`;
+  return base;
+};
 
 export type ConnectionPhase = 'booting' | 'connecting' | 'onboarding' | 'password' | 'connected';
 
@@ -273,7 +286,14 @@ export class ConnectionController {
       // Cap: HTTP fail / empty clientToken / SecureStore write fail / catch → authRequired ONLY.
       // Do NOT invent pairingFailed or auth-disabled tokenless adopt after failed redeem.
       if (!redeemed.ok || !redeemed.clientToken) {
-        this.setState({ error: t('mobile.connect.error.authRequired'), busy: false });
+        const detail = !redeemed.ok
+          ? formatRedeemAuthRequiredError(redeemed)
+          : t('mobile.connect.error.authRequired');
+        console.info('[mobile-connect]', 'redeem:fail', JSON.stringify({
+          reason: !redeemed.ok ? redeemed.reason : 'no-token',
+          status: !redeemed.ok ? redeemed.status ?? null : null,
+        }));
+        this.setState({ error: detail, busy: false });
         return false;
       }
       const label =

@@ -9,7 +9,7 @@ import {
   setConnectionHttp,
   setOpenRelaySession,
 } from '@/lib/connectionApi';
-import { ConnectionController } from '@/lib/connectionController';
+import { ConnectionController, formatRedeemAuthRequiredError } from '@/lib/connectionController';
 import { MemoryMetaStore, setMetaStoreBackend } from '@/lib/metaStore';
 import { MemorySecureStore, setSecureStoreBackend, type SecureStoreBackend } from '@/lib/secureStore';
 import { resetDeviceIdCacheForTests } from '@/lib/deviceId';
@@ -116,8 +116,10 @@ describe('redeem pairing Cap parity', () => {
     // Cap does NOT tokenless-adopt after redeem fail even when auth-disabled.
     expect(await controller.redeemPairingLink(encoded)).toBe(false);
     expect(controller.getState().phase).toBe('onboarding');
-    expect(controller.getState().error).toBe(t('mobile.connect.error.authRequired'));
+    expect(controller.getState().error).toBe(`${t('mobile.connect.error.authRequired')} (HTTP 400)`);
+    expect(controller.getState().error).toContain(t('mobile.connect.error.authRequired'));
     expect(controller.getState().error).not.toContain('已过期');
+    expect(controller.getState().error).not.toContain('pairingFailed');
     expect(redeemBody).toBeTruthy();
     const parsed = JSON.parse(redeemBody!);
     expect(parsed.clientKind).toBe('mobile');
@@ -157,7 +159,7 @@ describe('redeem pairing Cap parity', () => {
     });
     expect(await controller.redeemPairingLink(encoded)).toBe(false);
     expect(controller.getState().phase).toBe('onboarding');
-    expect(controller.getState().error).toBe(t('mobile.connect.error.authRequired'));
+    expect(controller.getState().error).toBe(`${t('mobile.connect.error.authRequired')} (HTTP 400)`);
     expect(controller.getState().error).not.toContain('配对失败');
   });
 
@@ -247,6 +249,92 @@ describe('redeem pairing Cap parity', () => {
       { kind: 'direct', url: 'http://192.168.1.74:2606' },
       { pairingId: 'p1', secret: 's1' },
     );
-    expect(result).toEqual({ ok: false, reason: 'no-token' });
+    expect(result).toEqual({ ok: false, reason: 'no-token', status: 200 });
+  });
+
+  it('surfaces HTTP status on redeem http fail', async () => {
+    setConnectionHttp({
+      request: async (url, init) => {
+        if (url.endsWith('/api/client-auth/pairing/redeem') && init?.method === 'POST') {
+          return { ok: false, status: 503, json: async () => ({ error: 'down' }) };
+        }
+        return { ok: false, status: 404, json: async () => null };
+      },
+    });
+    const result = await redeemPairing(
+      { kind: 'direct', url: 'http://192.168.1.74:2606' },
+      { pairingId: 'p1', secret: 's1' },
+    );
+    expect(result).toEqual({ ok: false, reason: 'http', status: 503 });
+  });
+
+  it('adopts after redeem when SecureStore enforces expo charset (relay runtime key)', async () => {
+    setMetaStoreBackend(new MemoryMetaStore());
+    const store = new Map<string, string>();
+    const EXPO_KEY = /^[\w.-]+$/;
+    setSecureStoreBackend({
+      getItem: async (key) => {
+        if (!EXPO_KEY.test(key)) throw new Error('Invalid key provided to SecureStore');
+        return store.get(key) ?? null;
+      },
+      setItem: async (key, value) => {
+        if (!EXPO_KEY.test(key)) throw new Error('Invalid key provided to SecureStore');
+        store.set(key, value);
+      },
+      deleteItem: async (key) => {
+        if (!EXPO_KEY.test(key)) throw new Error('Invalid key provided to SecureStore');
+        store.delete(key);
+      },
+    });
+    setConnectionHttp({
+      request: async (url, init) => {
+        if (url.endsWith('/health')) return { ok: true, status: 200, json: async () => ({ serverId: 'srv_test' }) };
+        if (url.endsWith('/api/client-auth/pairing/redeem') && init?.method === 'POST') {
+          return {
+            ok: true,
+            status: 200,
+            json: async () => ({ ok: true, clientToken: 'oc_client_issued', server: { label: 'Desk' } }),
+          };
+        }
+        return { ok: false, status: 404, json: async () => null };
+      },
+    });
+    const controller = new ConnectionController({ skipAutoConnect: true });
+    await controller.bootstrap();
+    const encoded = encodePairingConnectionPayload({
+      v: 2,
+      pairingId: 'pair_ok',
+      secret: 'secret',
+      label: 'Desk',
+      candidates: [
+        { type: 'lan', url: 'http://192.168.1.74:2606' },
+        {
+          type: 'relay',
+          relayUrl: 'wss://relay.example/ws',
+          serverId: 'srv_test',
+          hostEncPubJwk: { kty: 'EC', crv: 'P-256', x: 'eHhY', y: 'eVlZ' },
+          grant: 'grant-1',
+        },
+      ],
+    });
+    expect(await controller.redeemPairingLink(encoded)).toBe(true);
+    expect(controller.getState().phase).toBe('connected');
+    expect(controller.getState().active?.clientToken).toBe('oc_client_issued');
+    expect(controller.getState().error).toBeNull();
   });
 });
+
+describe('formatRedeemAuthRequiredError', () => {
+  it('keeps Cap authRequired copy and appends HTTP status', () => {
+    expect(formatRedeemAuthRequiredError({ ok: false, reason: 'http', status: 401 })).toBe(
+      `${t('mobile.connect.error.authRequired')} (HTTP 401)`,
+    );
+    expect(formatRedeemAuthRequiredError({ ok: false, reason: 'unreachable' })).toBe(
+      `${t('mobile.connect.error.authRequired')} (unreachable)`,
+    );
+    expect(formatRedeemAuthRequiredError({ ok: false, reason: 'no-token' })).toBe(
+      `${t('mobile.connect.error.authRequired')} (no-token)`,
+    );
+  });
+});
+

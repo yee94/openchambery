@@ -1,10 +1,12 @@
-import { CameraView, useCameraPermissions } from 'expo-camera';
+import { CameraView, useCameraPermissions, type BarcodeScanningResult } from 'expo-camera';
 import { useRouter } from 'expo-router';
 import React, { useCallback, useRef, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useConnection } from '@/context/ConnectionContext';
+import { parseConnectionPayload } from '@/lib/connectionPayload';
+import { pickScannedQrRaw } from '@/lib/qrScan';
 import { t } from '@/lib/i18n';
 
 export default function QrScanScreen() {
@@ -16,10 +18,53 @@ export default function QrScanScreen() {
   const handling = useRef(false);
 
   const onBarcode = useCallback(
-    async (raw: string) => {
+    async (scan: BarcodeScanningResult) => {
       if (handling.current) return;
       handling.current = true;
-      const ok = await controller.redeemPairingLink(raw);
+      const raw = pickScannedQrRaw(scan as BarcodeScanningResult & {
+        raw?: string;
+        rawValue?: string;
+        displayValue?: string;
+      });
+      // Never log secret/p= payload — length + scheme only (Cap console style).
+      console.info(
+        '[mobile-connect]',
+        'scan:raw',
+        JSON.stringify({
+          length: raw.length,
+          openchamber: /^openchamber:\/\//i.test(raw),
+          http: /^https?:\/\//i.test(raw),
+        }),
+      );
+      if (!raw) {
+        setError(t('mobile.connect.scan.invalid'));
+        handling.current = false;
+        return;
+      }
+
+      // Cap scanConnectionQr → resultFromRawValue → redeemPairingConnection / connectWithUrl.
+      const parsed = parseConnectionPayload(raw);
+      if (!parsed) {
+        console.info('[mobile-connect]', 'scan:invalid', JSON.stringify({ length: raw.length }));
+        setError(
+          /^openchamber:\/\//i.test(raw) && raw.length < 64
+            ? `${t('mobile.connect.scan.invalid')} (truncated? len=${raw.length})`
+            : t('mobile.connect.scan.invalid'),
+        );
+        handling.current = false;
+        return;
+      }
+
+      let ok = false;
+      if ('pairing' in parsed) {
+        ok = await controller.redeemPairingPayload(parsed.pairing);
+      } else {
+        ok = await controller.connectWithUrl({
+          url: parsed.url,
+          clientToken: parsed.clientToken,
+          label: parsed.label,
+        });
+      }
       if (ok) {
         router.replace('/');
         return;
@@ -54,8 +99,8 @@ export default function QrScanScreen() {
         style={StyleSheet.absoluteFill}
         facing="back"
         barcodeScannerSettings={{ barcodeTypes: ['qr'] }}
-        onBarcodeScanned={({ data }) => {
-          if (data) void onBarcode(data);
+        onBarcodeScanned={(result) => {
+          void onBarcode(result);
         }}
       />
       <View style={[styles.overlay, { paddingTop: insets.top + 12, paddingBottom: insets.bottom + 12 }]}>
