@@ -130,11 +130,12 @@ export const lynxSessionGoalStatusLabelKey: Record<LynxSessionGoalStatus, string
 
 /** Cap sessionGoalStatusColor — CSS vars Cap themes already expose. */
 export const lynxSessionGoalStatusColor: Record<LynxSessionGoalStatus, string> = {
-  active: 'var(--status-info, #4387be)',
-  paused: 'var(--surface-muted-foreground, #878580)',
-  blocked: 'var(--status-warning, #d0a215)',
-  budgetLimited: 'var(--status-warning, #d0a215)',
-  complete: 'var(--status-success, #879a39)',
+  // Plain hex — Android Lynx drops inline style values containing var(...).
+  active: '#4387be',
+  paused: '#878580',
+  blocked: '#d0a215',
+  budgetLimited: '#d0a215',
+  complete: '#66800B',
 };
 
 export type LynxGoalPauseResume =
