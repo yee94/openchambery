@@ -4,7 +4,8 @@
  * Opens from LynxSessionStatusBar via LynxMobileResizableSheet (0.72 / 0.98).
  * Session-index grouped list + search + All/pinned/project chips + long-press
  * menus (buildLynx*MenuItems) + Cap two-step archive + tree archive/delete + ~10s unarchive undo + Cap delete undo +
- * Cap ArchivedSessionsDialog + rename smart-title. Not Cap Zustand / toast lib / @dnd-kit / MobileWindowMotion.
+ * Cap ArchivedSessionsDialog + rename smart-title + header trailing newChat/worktree/addProject.
+ * Not Cap Zustand / toast lib / @dnd-kit / MobileWindowMotion.
  */
 import { useEffect, useMemo, useState } from 'react';
 
@@ -16,6 +17,7 @@ import {
   probeLynxGitRepository,
   syncLynxProjectSessions,
 } from '../projects/projectActions';
+import { DirectoryExplorerSheet } from '../projects/DirectoryExplorerSheet';
 import { LynxProjectEditSurface } from '../projects/ProjectEditSurface';
 import {
   LynxCreateWorktreeDialog,
@@ -71,7 +73,10 @@ import {
   buildLynxSessionsSheetModel,
   collapseLynxSessionsSheetVisibleCount,
   nextLynxSessionsSheetVisibleCount,
+  resolveLynxSessionsSheetNewChatDirectory,
   resolveLynxSessionsSheetOpenDirectory,
+  resolveLynxSessionsSheetTrailingActionIds,
+  resolveLynxSessionsSheetTrailingActiveProject,
   sliceLynxSessionsSheetVisible,
   type LynxSessionsSheetFilterId,
 } from './sessionsSheet';
@@ -267,6 +272,8 @@ export function LynxSessionsSheet({
   const [deleteUndoError, setDeleteUndoError] = useState<string | null>(null);
   const [pendingDeletionIds, setPendingDeletionIds] = useState<string[]>([]);
   const [archivedDialogOpen, setArchivedDialogOpen] = useState(false);
+  const [directoryExplorerOpen, setDirectoryExplorerOpen] = useState(false);
+  const [trailingGitRepo, setTrailingGitRepo] = useState(false);
 
   useEffect(() => {
     if (!open) {
@@ -285,6 +292,8 @@ export function LynxSessionsSheet({
       setDeleteUndoError(null);
       setPendingDeletionIds([]);
       setArchivedDialogOpen(false);
+      setDirectoryExplorerOpen(false);
+      setTrailingGitRepo(false);
     }
   }, [open]);
 
@@ -356,6 +365,64 @@ export function LynxSessionsSheet({
     sheet.sessions.filter((session) => !pendingDeletionSet.has(session.id)),
     visibleCount,
   );
+
+  /** Cap projectsMeta — unfiltered project list for trailing gating. */
+  const trailingProjects = useMemo(() => {
+    if (!indexState?.snapshot) return [] as LynxHomeProject[];
+    return buildLynxSessionsSheetModel({
+      snapshot: indexState.snapshot,
+      filterProjectId: null,
+      homeOptions,
+    }).model.projects;
+  }, [homeOptions, indexState?.snapshot]);
+
+  const trailingActiveProject = useMemo(() => resolveLynxSessionsSheetTrailingActiveProject({
+    projects: trailingProjects,
+    filterProjectId: sheet.filterProjectId,
+    activeProjectId,
+  }), [activeProjectId, sheet.filterProjectId, trailingProjects]);
+
+  useEffect(() => {
+    if (!open || !trailingActiveProject) {
+      setTrailingGitRepo(false);
+      return;
+    }
+    const inferred = inferLynxProjectIsGit(trailingActiveProject);
+    setTrailingGitRepo(inferred);
+    let cancelled = false;
+    void (async () => {
+      const probe = await probeLynxGitRepository(runtimeFetch, trailingActiveProject.path);
+      if (cancelled) return;
+      if (probe.status === 'ok') {
+        setTrailingGitRepo(probe.isGitRepository);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [open, runtimeFetch, trailingActiveProject]);
+
+  const trailingActionIds = useMemo(() => resolveLynxSessionsSheetTrailingActionIds({
+    projectCount: trailingProjects.length,
+    activeProjectIsGitRepo: trailingGitRepo,
+  }), [trailingGitRepo, trailingProjects.length]);
+
+  const handleTrailingNewChat = () => {
+    const directory = resolveLynxSessionsSheetNewChatDirectory({
+      filterProjectId: sheet.filterProjectId,
+      filterProjectPath: trailingActiveProject?.path,
+      activeDirectory,
+      activeProjectPath: trailingActiveProject?.path,
+      firstProjectPath: trailingProjects[0]?.path,
+    });
+    onClose();
+    onOpenDraft?.(directory);
+  };
+
+  const handleTrailingNewWorktree = () => {
+    if (!trailingActiveProject) return;
+    setNewWorktreeProject(trailingActiveProject);
+  };
 
   const closeActions = () => {
     setActionTarget(null);
@@ -760,6 +827,80 @@ export function LynxSessionsSheet({
   const indexStatus = indexState?.status ?? 'idle';
   const showChips = sheet.chips.length > 1;
 
+  const trailingActions = (
+    <LynxView
+      data-lynx-sessions-sheet-trailing="true"
+      style={{ flexDirection: 'row', alignItems: 'center', flexShrink: 0 }}
+    >
+      {trailingActionIds.includes('newChat') ? (
+        <LynxView
+          data-lynx-sessions-sheet-trailing-action="newChat"
+          bindtap={handleTrailingNewChat}
+          accessibility-role="button"
+          accessibility-label={lynxT(locale, 'lynx.chat.sessionsSheet.newChat')}
+          style={{
+            marginRight: '6px',
+            paddingLeft: '10px',
+            paddingRight: '10px',
+            paddingTop: '6px',
+            paddingBottom: '6px',
+            borderRadius: '8px',
+            backgroundColor: cssVar('primary.base'),
+          }}
+        >
+          <LynxText style={{ color: cssVar('primary.foreground'), fontSize: '12px', fontWeight: '700' }}>
+            {lynxT(locale, 'lynx.chat.sessionsSheet.newChat')}
+          </LynxText>
+        </LynxView>
+      ) : null}
+      {trailingActionIds.includes('newWorktree') ? (
+        <LynxView
+          data-lynx-sessions-sheet-trailing-action="newWorktree"
+          bindtap={handleTrailingNewWorktree}
+          accessibility-role="button"
+          accessibility-label={lynxT(locale, 'lynx.projects.menu.newWorktree')}
+          style={{
+            marginRight: '6px',
+            paddingLeft: '10px',
+            paddingRight: '10px',
+            paddingTop: '6px',
+            paddingBottom: '6px',
+            borderRadius: '8px',
+            borderWidth: '1px',
+            borderColor: cssVar('surface.mutedForeground'),
+            backgroundColor: cssVar('surface.muted'),
+          }}
+        >
+          <LynxText style={{ color: cssVar('surface.foreground'), fontSize: '12px', fontWeight: '600' }}>
+            {lynxT(locale, 'lynx.projects.menu.newWorktree')}
+          </LynxText>
+        </LynxView>
+      ) : null}
+      {trailingActionIds.includes('addProject') ? (
+        <LynxView
+          data-lynx-sessions-sheet-trailing-action="addProject"
+          bindtap={() => setDirectoryExplorerOpen(true)}
+          accessibility-role="button"
+          accessibility-label={lynxT(locale, 'lynx.projects.chrome.addProject')}
+          style={{
+            paddingLeft: '10px',
+            paddingRight: '10px',
+            paddingTop: '6px',
+            paddingBottom: '6px',
+            borderRadius: '8px',
+            borderWidth: '1px',
+            borderColor: cssVar('surface.mutedForeground'),
+            backgroundColor: cssVar('surface.muted'),
+          }}
+        >
+          <LynxText style={{ color: cssVar('surface.foreground'), fontSize: '12px', fontWeight: '600' }}>
+            {lynxT(locale, 'lynx.projects.chrome.addProject')}
+          </LynxText>
+        </LynxView>
+      ) : null}
+    </LynxView>
+  );
+
   return (
     <LynxMobileResizableSheet
       locale={locale}
@@ -767,6 +908,7 @@ export function LynxSessionsSheet({
       title={lynxT(locale, 'lynx.chat.sessionsSheet.title')}
       ariaLabel={lynxT(locale, 'lynx.chat.sessionsSheet.aria')}
       onClose={onClose}
+      trailing={trailingActions}
     >
       <LynxView data-lynx-sessions-sheet="body" style={{ flexGrow: 1, minHeight: '0', display: 'flex', flexDirection: 'column' }}>
         <LynxInput
@@ -1282,6 +1424,17 @@ export function LynxSessionsSheet({
             onErrorNote={(message) => setNote(message)}
           />
         ) : null}
+
+        <DirectoryExplorerSheet
+          locale={locale}
+          runtimeFetch={runtimeFetch ?? null}
+          open={directoryExplorerOpen}
+          onClose={() => setDirectoryExplorerOpen(false)}
+          onAdded={() => {
+            setDirectoryExplorerOpen(false);
+            refresh();
+          }}
+        />
 
         <LynxArchivedSessionsDialog
           locale={locale}

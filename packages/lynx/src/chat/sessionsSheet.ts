@@ -215,11 +215,76 @@ export const resolveLynxSessionsSheetOpenDirectory = (options: {
   return options.sessionDirectory ?? options.currentDirectory ?? null;
 };
 
+
+export type LynxSessionsSheetTrailingActionId = 'newChat' | 'newWorktree' | 'addProject';
+
+/**
+ * Cap MobileSessionsSheet trailingActions gating:
+ * newChat when projectsMeta.length > 0; newWorktree when activeProject?.isGitRepo;
+ * addProject always.
+ */
+export const resolveLynxSessionsSheetTrailingActionIds = (options: {
+  projectCount: number;
+  activeProjectIsGitRepo: boolean;
+}): LynxSessionsSheetTrailingActionId[] => {
+  const ids: LynxSessionsSheetTrailingActionId[] = [];
+  if (options.projectCount > 0) ids.push('newChat');
+  if (options.activeProjectIsGitRepo) ids.push('newWorktree');
+  ids.push('addProject');
+  return ids;
+};
+
+/** Cap activeProject for header newWorktree (filter project wins over chat directory). */
+export const resolveLynxSessionsSheetTrailingActiveProject = <T extends { id: string }>(options: {
+  projects: readonly T[];
+  filterProjectId: LynxSessionsSheetFilterId;
+  activeProjectId: string | null | undefined;
+}): T | null => {
+  const { projects, filterProjectId, activeProjectId } = options;
+  if (
+    typeof filterProjectId === 'string'
+    && filterProjectId !== LYNX_PINNED_SESSION_FILTER_ID
+  ) {
+    return projects.find((project) => project.id === filterProjectId) ?? null;
+  }
+  if (activeProjectId) {
+    return projects.find((project) => project.id === activeProjectId) ?? null;
+  }
+  return null;
+};
+
+/**
+ * Cap handleStartNewChat / startSessionDraftForDirectory — Lynx onOpenDraft directory.
+ * Prefer filtered project path, else active chat directory, else first project.
+ */
+export const resolveLynxSessionsSheetNewChatDirectory = (options: {
+  filterProjectId: LynxSessionsSheetFilterId;
+  filterProjectPath?: string | null;
+  activeDirectory?: string | null;
+  activeProjectPath?: string | null;
+  firstProjectPath?: string | null;
+}): string | null => {
+  if (
+    typeof options.filterProjectId === 'string'
+    && options.filterProjectId !== LYNX_PINNED_SESSION_FILTER_ID
+  ) {
+    return options.filterProjectPath
+      ?? options.activeDirectory
+      ?? options.firstProjectPath
+      ?? null;
+  }
+  return options.activeDirectory
+    ?? options.activeProjectPath
+    ?? options.firstProjectPath
+    ?? null;
+};
+
 export const LYNX_SESSIONS_SHEET_NOTES = [
   'Cap full sessions sheet spirit via LynxMobileResizableSheet (0.72 / 0.98).',
   'Grouped list from session-index projectSessionIndexHome — not Cap Zustand.',
   'Filter chips: All / pinned / project (LYNX_PINNED_SESSION_FILTER_ID).',
   'Search via filterLynxProjectsHomeForSearch; tap session → switch + close.',
+  'Header trailing: Cap newChat / newWorktree / addProject (onOpenDraft + LynxCreateWorktreeDialog + DirectoryExplorerSheet).',
   'Menus reuse buildLynx*MenuItems; honest unavailable when HTTP missing.',
   'Two-step archive + tree archive/delete + ~10s unarchive undo + Cap scheduleSessionDeletes ~10s delete undo; Cap toast/bulk/@dnd-kit deferred.',
   'Deferred: Cap @dnd-kit, MobileWindowMotion polish, iPad sidebar variant.',
