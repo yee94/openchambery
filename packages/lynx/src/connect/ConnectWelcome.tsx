@@ -227,8 +227,9 @@ export function ConnectWelcome({
   const elevated = cssVar('surface.elevated');
   const primary = cssVar('primary.base');
   // Cream #fffdf4 ≈ elevated #fbfaf2 on Android — border chrome makes cards read as
-  // shells without Cap elevation shadow. Prefer token border over inventing fills.
-  const cardBorder = cssVar('interactive.selection');
+  // shells without Cap elevation shadow. interactive.selection (#76736f30) is 8-digit
+  // alpha and may not paint as Android borderColor — use opaque hex instead.
+  const cardBorder = '#C8C5BB';
   const elevatedCardChrome = {
     padding: '12px',
     borderRadius: '12px',
