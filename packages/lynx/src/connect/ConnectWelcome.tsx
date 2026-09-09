@@ -226,6 +226,20 @@ export function ConnectWelcome({
   const muted = cssVar('surface.mutedForeground');
   const elevated = cssVar('surface.elevated');
   const primary = cssVar('primary.base');
+  // Cream #fffdf4 ≈ elevated #fbfaf2 on Android — border chrome makes cards read as
+  // shells without Cap elevation shadow. interactive.selection (#76736f30) is 8-digit
+  // alpha and may not paint as Android borderColor — use opaque hex instead.
+  const cardBorder = '#C8C5BB';
+  const elevatedCardChrome = {
+    padding: '12px',
+    borderRadius: '12px',
+    backgroundColor: elevated,
+    borderWidth: '1px',
+    borderStyle: 'solid' as const,
+    borderColor: cardBorder,
+    // Soft hint only — Android may ignore; 1px border is the reliable chrome.
+    boxShadow: `0 1px 2px ${cardBorder}`,
+  };
 
   return (
     <LynxScrollView
@@ -271,10 +285,8 @@ export function ConnectWelcome({
       {pending ? (
         <LynxView
           style={{
+            ...elevatedCardChrome,
             marginBottom: '20px',
-            padding: '12px',
-            borderRadius: '12px',
-            backgroundColor: elevated,
           }}
         >
           <LynxText style={{ color: fg, fontWeight: '600', marginBottom: '8px' }}>
@@ -344,11 +356,9 @@ export function ConnectWelcome({
 
       <LynxView
         style={{
+          ...elevatedCardChrome,
           marginTop: '16px',
           marginBottom: '16px',
-          padding: '12px',
-          borderRadius: '12px',
-          backgroundColor: elevated,
         }}
       >
         <LynxText style={{ color: fg, fontWeight: '600', marginBottom: '8px' }}>
@@ -369,10 +379,8 @@ export function ConnectWelcome({
 
       <LynxView
         style={{
+          ...elevatedCardChrome,
           marginBottom: '16px',
-          padding: '12px',
-          borderRadius: '12px',
-          backgroundColor: elevated,
         }}
       >
         <LynxText style={{ color: fg, fontWeight: '600', marginBottom: '8px' }}>
@@ -453,10 +461,8 @@ export function ConnectWelcome({
           })();
         }}
         style={{
+          ...elevatedCardChrome,
           marginBottom: '16px',
-          padding: '12px',
-          borderRadius: '12px',
-          backgroundColor: elevated,
         }}
         accessibility-role="button"
         accessibility-label={lynxT(locale, 'lynx.connect.qr.scan')}
