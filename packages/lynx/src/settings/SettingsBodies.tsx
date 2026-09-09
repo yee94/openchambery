@@ -3,7 +3,12 @@ import { useEffect, useState } from 'react';
 import type { LynxConnectionClient } from '../connection/client';
 import type { LynxPendingConnection, LynxSavedConnection } from '../connection/types';
 import { connectionDisplayUrl } from '../connection/urls';
-import { loadAssistantSnapshot } from '../assistants/api';
+import {
+  createLynxAssistant,
+  loadAssistantSnapshot,
+  resolveLynxAssistantCreateDefaults,
+  setLynxAssistantsEnabled,
+} from '../assistants/api';
 import { lynxT } from '../i18n/catalog';
 import { LynxInput, LynxText, LynxView } from '../lynx-elements';
 import type { LynxRuntimeFetch } from '../runtime/fetch';
@@ -70,6 +75,10 @@ export type SettingsBodyContext = {
   onConnected?: () => void;
   /** Shared About diagnostics recorder (optional inject). */
   diagnosticsRecorder?: LynxDiagnosticsRecorder | null;
+  /** Cap openAssistantSettings focus — open EntityEditor for this assistant id. */
+  assistantsFocusId?: string | null;
+  /** Clear assistantsFocusId after AssistantsSettingsBody consumes it. */
+  clearAssistantsFocusId?: () => void;
 };
 
 function Banner({ text, muted }: { text: string; muted?: boolean }) {
@@ -452,6 +461,9 @@ function AssistantsSettingsBody({ ctx }: { ctx: SettingsBodyContext }) {
   const [error, setError] = useState<string | null>(null);
   const [selected, setSelected] = useState<LynxCatalogItem | null>(null);
   const [reloadToken, setReloadToken] = useState(0);
+  const [snapshotRevision, setSnapshotRevision] = useState<number | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -459,20 +471,23 @@ function AssistantsSettingsBody({ ctx }: { ctx: SettingsBodyContext }) {
       const result = await loadAssistantSnapshot(ctx.runtimeFetch);
       if (cancelled) return;
       if (result.status === 'ok') {
-        if (!result.snapshot.enabled) {
-          setStatus('disabled');
-          setItems([]);
-          return;
-        }
-        setItems(result.snapshot.assistants.map((assistant) => ({
+        setSnapshotRevision(result.snapshot.revision);
+        const mapped = result.snapshot.assistants.map((assistant) => ({
           id: assistant.id,
           title: assistant.name,
           subtitle: assistant.mode,
-        })));
+        }));
+        if (!result.snapshot.enabled) {
+          setStatus('disabled');
+          setItems(mapped);
+          return;
+        }
+        setItems(mapped);
         setStatus('ok');
         return;
       }
       setItems(null);
+      setSnapshotRevision(null);
       setStatus(result.status === 'failed' ? 'failed' : result.status);
       if (result.status === 'failed') setError(result.error.message);
     })();
@@ -480,6 +495,82 @@ function AssistantsSettingsBody({ ctx }: { ctx: SettingsBodyContext }) {
       cancelled = true;
     };
   }, [ctx.runtimeFetch, reloadToken]);
+
+  // Cap openAssistantSettings(id) — focus EntityEditor once list is ready.
+  useEffect(() => {
+    const focusId = ctx.assistantsFocusId?.trim();
+    if (!focusId || !items) return;
+    const match = items.find((item) => item.id === focusId);
+    if (match) {
+      setSelected(match);
+      ctx.clearAssistantsFocusId?.();
+    }
+  }, [ctx.assistantsFocusId, ctx.clearAssistantsFocusId, items]);
+
+  const handleEnable = () => {
+    if (busy || snapshotRevision == null) return;
+    setBusy(true);
+    setActionError(null);
+    void (async () => {
+      const outcome = await setLynxAssistantsEnabled(ctx.runtimeFetch, {
+        enabled: true,
+        expectedRevision: snapshotRevision,
+      });
+      setBusy(false);
+      if (outcome.status !== 'ok') {
+        setActionError(
+          outcome.status === 'no-runtime'
+            ? lynxT(ctx.locale, 'lynx.settings.noRuntime')
+            : outcome.error.message || lynxT(ctx.locale, 'lynx.assistant.enableFailed'),
+        );
+        return;
+      }
+      setReloadToken((value) => value + 1);
+    })();
+  };
+
+  const handleCreate = () => {
+    if (busy) return;
+    setBusy(true);
+    setActionError(null);
+    void (async () => {
+      const defaults = await resolveLynxAssistantCreateDefaults(ctx.runtimeFetch);
+      if (defaults.status !== 'ok') {
+        setBusy(false);
+        setActionError(
+          defaults.status === 'no-runtime'
+            ? lynxT(ctx.locale, 'lynx.settings.noRuntime')
+            : defaults.error.message || lynxT(ctx.locale, 'lynx.assistant.createFailed'),
+        );
+        return;
+      }
+      const created = await createLynxAssistant(ctx.runtimeFetch, {
+        enabled: true,
+        name: 'New Assistant',
+        defaultPrompt: '',
+        workspacePath: null,
+        providerID: defaults.providerID,
+        modelID: defaults.modelID,
+        agent: null,
+        mode: 'continuous',
+      });
+      setBusy(false);
+      if (created.status !== 'ok') {
+        setActionError(
+          created.status === 'no-runtime'
+            ? lynxT(ctx.locale, 'lynx.settings.noRuntime')
+            : created.error.message || lynxT(ctx.locale, 'lynx.assistant.createFailed'),
+        );
+        return;
+      }
+      setSelected({
+        id: created.assistant.id,
+        title: created.assistant.name,
+        subtitle: created.assistant.mode,
+      });
+      setReloadToken((value) => value + 1);
+    })();
+  };
 
   if (selected) {
     return (
@@ -499,12 +590,31 @@ function AssistantsSettingsBody({ ctx }: { ctx: SettingsBodyContext }) {
 
   if (status === 'no-runtime') return <Banner text={lynxT(ctx.locale, 'lynx.settings.noRuntime')} muted />;
   if (status === 'unsupported') return <Banner text={lynxT(ctx.locale, 'lynx.settings.unsupported')} muted />;
-  if (status === 'disabled') return <Banner text={lynxT(ctx.locale, 'lynx.assistant.disabled')} muted />;
   if (status === 'failed') return <Banner text={error || lynxT(ctx.locale, 'lynx.settings.loadFailed')} />;
   if (status === 'loading' || !items) return <Banner text={lynxT(ctx.locale, 'lynx.settings.loading')} muted />;
 
+  if (status === 'disabled') {
+    return (
+      <LynxView>
+        <Banner text={lynxT(ctx.locale, 'lynx.assistant.disabled')} muted />
+        {actionError ? <Banner text={actionError} /> : null}
+        <LynxView
+          bindtap={handleEnable}
+          style={{ padding: '12px 0', opacity: busy ? 0.6 : 1 }}
+          accessibility-role="button"
+          accessibility-label={lynxT(ctx.locale, 'lynx.assistant.enable')}
+        >
+          <LynxText style={{ color: cssVar('primary.base'), fontWeight: '600' }}>
+            {lynxT(ctx.locale, 'lynx.assistant.enable')}
+          </LynxText>
+        </LynxView>
+      </LynxView>
+    );
+  }
+
   return (
     <LynxView>
+      {actionError ? <Banner text={actionError} /> : null}
       {items.length === 0 ? <Banner text={lynxT(ctx.locale, 'lynx.settings.catalog.empty')} muted /> : null}
       {items.map((item) => (
         <Row
@@ -514,6 +624,16 @@ function AssistantsSettingsBody({ ctx }: { ctx: SettingsBodyContext }) {
           onTap={() => setSelected(item)}
         />
       ))}
+      <LynxView
+        bindtap={handleCreate}
+        style={{ padding: '12px 0', opacity: busy ? 0.6 : 1 }}
+        accessibility-role="button"
+        accessibility-label={lynxT(ctx.locale, 'lynx.settings.assistants.create')}
+      >
+        <LynxText style={{ color: cssVar('primary.base'), fontWeight: '600' }}>
+          {lynxT(ctx.locale, 'lynx.settings.assistants.create')}
+        </LynxText>
+      </LynxView>
     </LynxView>
   );
 }
