@@ -229,6 +229,10 @@ describe('runContactTurn', () => {
     const createChatCompletion = vi.fn(async ({ body }) => {
       expect(body.messages[0].content).toContain('assign_session')
       expect(body.messages[0].content).toContain('docs')
+      expect(body.messages[0].content).toContain('arguments schema:')
+      expect(body.messages[0].content).toContain('"edits"')
+      expect(body.messages[0].content).toContain('"content"')
+      expect(body.messages[0].content).toContain('not OpenCode native tools and not MCP')
       const content = replies[call++]
       if (!content) throw new Error('Unexpected completion')
       return { completion: { choices: [{ message: { content } }] } }
@@ -242,11 +246,126 @@ describe('runContactTurn', () => {
       expect(result.tools.map((tool) => tool.name)).toEqual([...PI_CODING_TOOL_NAMES, ...tools.map((tool) => tool.name)])
       expect(assignWork).toHaveBeenCalledTimes(1)
       expect(result.cards).toEqual([expect.objectContaining({ sessionID: 'ses_mixed' })])
-      expect(createChatCompletion).toHaveBeenCalledTimes(4)
+      // read → text (miss) → missed-fence retry assign; assign terminates (no post-assign LLM).
+      expect(createChatCompletion).toHaveBeenCalledTimes(3)
+      // Tool call/result association: after read, the next completion sees a named tool result.
+      const secondMessages = createChatCompletion.mock.calls[1][0].body.messages
+      const toolResultTurn = secondMessages.find((message) => (
+        message.role === 'user' && typeof message.content === 'string' && message.content.includes('tool result name=read')
+      ))
+      expect(toolResultTurn).toBeTruthy()
+      expect(toolResultTurn.content).toMatch(/Read project docs|documentation/i)
     } finally {
       fs.rmSync(workspace, { recursive: true, force: true })
     }
   })
+  it('real Agent loop: looping assign fences create only one worker + one card (terminate)', async () => {
+    const assignWork = vi.fn(async () => ({
+      sessionID: 'ses_once',
+      directory: '/repo',
+      title: 'Once',
+      status: 'busy',
+    }))
+    const tools = createContactTools({ assignWork })
+    let completions = 0
+    const createChatCompletion = vi.fn(async () => {
+      completions += 1
+      // Safety: a non-terminating loop must not mint 37 sessions in tests.
+      if (completions > 8) {
+        throw new Error('harness safety stop: too many completions without terminate')
+      }
+      return {
+        completion: {
+          choices: [{
+            message: {
+              content: '```openchamber-tool\n{"name":"assign_session","arguments":{"prompt":"Fix login","projectPath":"/repo"}}\n```',
+            },
+          }],
+        },
+      }
+    })
+    const result = await runContactTurn({
+      assistant: { providerID: 'p', modelID: 'm', defaultPrompt: '' },
+      history: [],
+      userText: '建会话修 login',
+      tools,
+      projects: [{ id: 'p1', path: '/repo', label: 'Repo' }],
+      createChatCompletion,
+    })
+    expect(assignWork).toHaveBeenCalledTimes(1)
+    expect(result.cards).toEqual([expect.objectContaining({ sessionID: 'ses_once', cardType: 'session' })])
+    expect(result.cards).toHaveLength(1)
+    expect(result.bubbles).toContain('Opened a coding session.')
+    // First completion issues assign; terminate skips the auto follow-up LLM.
+    expect(createChatCompletion).toHaveBeenCalledTimes(1)
+    expect(completions).toBe(1)
+  })
+
+  it('real Agent loop: list_projects then assign keeps prereq + one session (terminate after assign)', async () => {
+    const listProjects = vi.fn(async () => [{ id: 'p1', path: '/repo', label: 'Repo' }])
+    const assignWork = vi.fn(async () => ({
+      sessionID: 'ses_prereq',
+      directory: '/repo',
+      title: 'Prereq',
+      status: 'busy',
+    }))
+    const tools = createContactTools({ listProjects, assignWork })
+    let completions = 0
+    const createChatCompletion = vi.fn(async ({ body }) => {
+      completions += 1
+      if (completions > 6) {
+        throw new Error('harness safety stop: too many completions')
+      }
+      const last = body.messages.at(-1)
+      const lastText = typeof last?.content === 'string' ? last.content : ''
+      if (lastText.includes('tool result name=list_projects') || lastText.includes('Registered projects')) {
+        return {
+          completion: {
+            choices: [{
+              message: {
+                content: '```openchamber-tool\n{"name":"assign_session","arguments":{"prompt":"Fix","projectPath":"/repo"}}\n```',
+              },
+            }],
+          },
+        }
+      }
+      if (completions === 1) {
+        return {
+          completion: {
+            choices: [{
+              message: {
+                content: '```openchamber-tool\n{"name":"list_projects","arguments":{"query":"repo"}}\n```',
+              },
+            }],
+          },
+        }
+      }
+      // If assign did not terminate, a looping model would keep assigning — fail closed.
+      return {
+        completion: {
+          choices: [{
+            message: {
+              content: '```openchamber-tool\n{"name":"assign_session","arguments":{"prompt":"Fix again","projectPath":"/repo"}}\n```',
+            },
+          }],
+        },
+      }
+    })
+    const result = await runContactTurn({
+      assistant: { providerID: 'p', modelID: 'm', defaultPrompt: '' },
+      history: [],
+      userText: '找项目 repo 然后建会话修问题',
+      tools,
+      projects: [{ id: 'p1', path: '/repo', label: 'Repo' }],
+      createChatCompletion,
+    })
+    expect(listProjects).toHaveBeenCalledTimes(1)
+    expect(assignWork).toHaveBeenCalledTimes(1)
+    expect(result.cards).toEqual([expect.objectContaining({ sessionID: 'ses_prereq' })])
+    expect(result.cards).toHaveLength(1)
+    expect(createChatCompletion.mock.calls.length).toBeLessThanOrEqual(3)
+  })
+
   it('retries assignment after an unrelated read result', async () => {
     const prompts = []
     function AgentImpl(options) {

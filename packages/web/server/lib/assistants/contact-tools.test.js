@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { AssignError, ASSIGN_CODES, PROJECT_REQUIRED_MESSAGE } from './assign.js';
 import {
+  ASSIGN_DUPLICATE_TURN_MESSAGE,
   ASSIGN_SESSION_TOOL_NAME,
   CLEAR_CHAT_HISTORY_CONFIRM_BUBBLE,
   CLEAR_CHAT_HISTORY_TOOL_NAME,
@@ -18,6 +19,7 @@ import {
   formatContactToolsPrompt,
   formatRegisteredProjectsPrompt,
   matchesProjectQuery,
+  normalizeAssignRequestKey,
   parseContactToolCalls,
   resolveContactProviderModel,
   resolvePeerAssistant,
@@ -160,6 +162,13 @@ describe('contact tool protocol', () => {
     expect(prompt).toContain('A reply without the tool call does nothing');
     expect(prompt).toContain('已创建');
     expect(prompt).toContain('Never claim you cannot see projects');
+    expect(prompt).toContain('One successful assign ends this turn');
+    expect(prompt).toContain('application-owned OpenChamber contact tools');
+    expect(prompt).toContain('arguments schema:');
+    expect(prompt).toContain('"prompt"');
+    expect(prompt).toContain('"projectPath"');
+    expect(prompt).toContain('"to"');
+    expect(prompt).toContain('"text"');
   });
 
   it('fuzzy-matches project labels like openchamber yee / openchamer yee', () => {
@@ -292,7 +301,54 @@ describe('createContactTools', () => {
       sessionID: 'ses_1',
       title: 'Login',
     });
+    expect(assigned.terminate).toBe(true);
     expect(onCard).toHaveBeenCalledTimes(3);
+  });
+
+  it('same-turn assign gate caches identical success and rejects a different second assign', async () => {
+    const assignWork = vi.fn(async () => ({
+      sessionID: 'ses_once',
+      directory: '/repo',
+      title: 'Once',
+      status: 'busy',
+    }));
+    const tools = createContactTools({ assignWork });
+    const assign = tools.find((tool) => tool.name === ASSIGN_SESSION_TOOL_NAME);
+    const args = { prompt: 'Fix login', projectPath: '/repo' };
+    const first = await assign.execute('call_a', args);
+    const secondSame = await assign.execute('call_b', { ...args });
+    expect(assignWork).toHaveBeenCalledTimes(1);
+    expect(secondSame.details.assigned.sessionID).toBe('ses_once');
+    expect(secondSame.terminate).toBe(true);
+    expect(normalizeAssignRequestKey(args)).toBe(normalizeAssignRequestKey({ ...args, title: '  ' }));
+    const different = await assign.execute('call_c', { prompt: 'Other work', projectPath: '/repo' });
+    expect(different.details.error).toBe('validation_error');
+    expect(different.content[0].text).toContain(ASSIGN_DUPLICATE_TURN_MESSAGE);
+    expect(different.terminate).toBe(true);
+    expect(assignWork).toHaveBeenCalledTimes(1);
+  });
+
+  it('same-turn parallel identical assigns share one worker create', async () => {
+    let release;
+    const barrier = new Promise((resolve) => { release = resolve; });
+    const assignWork = vi.fn(async () => {
+      await barrier;
+      return { sessionID: 'ses_parallel', directory: '/repo', title: 'P', status: 'busy' };
+    });
+    const tools = createContactTools({ assignWork });
+    const assign = tools.find((tool) => tool.name === ASSIGN_SESSION_TOOL_NAME);
+    const args = { prompt: 'Fix', projectPath: '/repo' };
+    const pending = Promise.all([
+      assign.execute('call_1', args),
+      assign.execute('call_2', args),
+    ]);
+    release();
+    const [a, b] = await pending;
+    expect(assignWork).toHaveBeenCalledTimes(1);
+    expect(a.details.assigned.sessionID).toBe('ses_parallel');
+    expect(b.details.assigned.sessionID).toBe('ses_parallel');
+    expect(a.terminate).toBe(true);
+    expect(b.terminate).toBe(true);
   });
 
   it('resolves a peer by name and rejects a missing recipient', () => {
