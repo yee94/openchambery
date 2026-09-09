@@ -108,6 +108,32 @@ export function nextContactOrdinal(db, assistantID) {
   ).get(assistantID).next);
 }
 
+/** Load one contact row by message id (null when missing). */
+export function getContactMessage(db, messageID) {
+  if (typeof messageID !== 'string' || !messageID) return null;
+  const row = db.prepare('SELECT * FROM assistant_contact_message WHERE message_id=?').get(messageID);
+  if (!row) return null;
+  return hydrateMessage(db, row);
+}
+
+/** Stable fingerprint for idempotent contact admission replay. */
+export function contactPartsFingerprint(parts) {
+  const list = Array.isArray(parts) ? parts : [];
+  return json(list.map((part) => {
+    if (!part || typeof part !== 'object') return null;
+    if (part.type === 'text') return { type: 'text', text: typeof part.text === 'string' ? part.text : '' };
+    if (part.type === 'file') {
+      return {
+        type: 'file',
+        mime: typeof part.mime === 'string' ? part.mime : '',
+        url: typeof part.url === 'string' ? part.url : '',
+        ...(typeof part.filename === 'string' && part.filename ? { filename: part.filename } : {}),
+      };
+    }
+    return part;
+  }));
+}
+
 export function insertContactMessage(db, {
   messageID,
   assistantID,
@@ -338,6 +364,44 @@ export function trimContactHistoryForLlm(messages, {
  *   rows (queued turns) must not be injected into this turn; assistant rows written
  *   after that ordinal by a prior completed lane turn still enter the window.
  */
+/**
+ * In-process contact-turn activity (not SQLite). Process memory only: APP
+ * restart while the server keeps running can rehydrate from snapshot; a server
+ * process restart clears every active turn so the green dot cannot stick forever.
+ * Status ladder: admission → queued → running → settled (removed).
+ */
+export const CONTACT_ACTIVE_TURN_STATUSES = Object.freeze(['queued', 'running']);
+
+export function createActiveContactTurn({ turnID, messageID, status = 'queued', admittedAt }) {
+  if (typeof turnID !== 'string' || !turnID.trim()) return null;
+  if (typeof messageID !== 'string' || !messageID.trim()) return null;
+  if (!CONTACT_ACTIVE_TURN_STATUSES.includes(status)) return null;
+  const at = Number(admittedAt);
+  if (!Number.isFinite(at)) return null;
+  return {
+    turnID: turnID.trim(),
+    messageID: messageID.trim(),
+    status,
+    admittedAt: Math.trunc(at),
+  };
+}
+
+/** Earliest admitted active turn; running preferred when admittedAt ties. */
+export function projectActiveContactTurn(activeTurns) {
+  const list = Array.isArray(activeTurns)
+    ? activeTurns
+    : (activeTurns instanceof Map ? [...activeTurns.values()] : []);
+  const valid = list
+    .map((item) => createActiveContactTurn(item))
+    .filter(Boolean)
+    .sort((left, right) => {
+      if (left.admittedAt !== right.admittedAt) return left.admittedAt - right.admittedAt;
+      if (left.status === right.status) return left.turnID.localeCompare(right.turnID);
+      return left.status === 'running' ? -1 : 1;
+    });
+  return valid[0] ?? null;
+}
+
 export function contactHistoryForLlm(db, assistantID, { excludeMessageIDs = [], beforeOrdinal = null } = {}) {
   const afterOrdinal = getContactContextBoundary(db, assistantID);
   const exclude = new Set(

@@ -7,7 +7,7 @@ import { getRuntimeGeneration, getRuntimeTransportIdentity } from '@/lib/runtime
 import { waitForSessionStartupBarrier } from '@/lib/session-startup-barrier';
 import { fetchGlobalScheduledTasks } from '@/lib/scheduledTasksApi';
 import { AssistantAPIError, AssistantShareOperationError, isAbortError, parseAssistantCapabilityDTO, parseAssistantContactCardAdmission, parseAssistantContactPage, parseAssistantContactPeerAdmission, parseAssistantDTO, parseAssistantHistoryPage, parseAssistantScheduledTasksPage, parseAssistantSnapshotDTO, parseCompactResponse, parseMessageAdmission, parseSessionBinding, parseShareOperation, type AssistantCapabilityDTO, type AssistantContactCardPart, type AssistantContactPeerAdmission, type AssistantContactSessionCardPart, type AssistantDTO, type AssistantHistoryPage, type AssistantMode, type AssistantPart, type AssistantSnapshotDTO, type AssistantSource, type CompactResponse, type MessageAdmission, type SessionBinding, type ShareOperation } from './assistantDTO';
-export type { AssistantContactAssistantCardPart, AssistantContactCardAdmission, AssistantContactCardPart, AssistantContactFilePart, AssistantContactMessage, AssistantContactPage, AssistantContactPart, AssistantContactPeerAdmission, AssistantContactScheduleCardPart, AssistantContactSessionCardPart, AssistantDTO, AssistantHistoryEntry, AssistantHistoryPage, AssistantMode, AssistantPart, AssistantScheduledTaskEntry, AssistantScheduledTasksPage, AssistantSource, CompactResponse, MessageAdmission, SessionBinding, ShareOperation } from './assistantDTO';
+export type { AssistantActiveContactTurn, AssistantActiveContactTurnStatus, AssistantContactAssistantCardPart, AssistantContactCardAdmission, AssistantContactCardPart, AssistantContactFilePart, AssistantContactMessage, AssistantContactPage, AssistantContactPart, AssistantContactPeerAdmission, AssistantContactScheduleCardPart, AssistantContactSessionCardPart, AssistantDTO, AssistantHistoryEntry, AssistantHistoryPage, AssistantMode, AssistantPart, AssistantScheduledTaskEntry, AssistantScheduledTasksPage, AssistantSource, CompactResponse, MessageAdmission, SessionBinding, ShareOperation } from './assistantDTO';
 export type AssistantSnapshot = AssistantSnapshotDTO;
 export type AssistantCapability = AssistantCapabilityDTO;
 export interface AssistantDraft { enabled: boolean; name: string; defaultPrompt: string; workspacePath: string | null; providerID: string; modelID: string; agent: string | null; variant?: string | null; mode: AssistantMode; }
@@ -71,13 +71,36 @@ const applyAssistant = (assistant: AssistantDTO, transport: string) => {
   queryClient.setQueryData<AssistantSnapshot>(key.snapshot(transport), (snapshot) => snapshot && ({ ...snapshot, assistants: snapshot.assistants.some((item) => item.id === assistant.id) ? snapshot.assistants.map((item) => item.id === assistant.id ? assistant : item) : [...snapshot.assistants, assistant] }));
   void queryClient.invalidateQueries({ queryKey: key.snapshot(transport) });
 };
-export const assistantSnapshotQueryOptions = (transport = getRuntimeTransportIdentity()) => ({ queryKey: key.snapshot(transport), queryFn: async ({ signal }: { signal: AbortSignal }) => parseAssistantSnapshotDTO(await requestJSON<unknown>('/api/openchamber/assistants/snapshot', { signal })), retry: 2 });
+/** While any assistant contact turn is busy, bound-poll snapshot so a missed SSE end cannot stick green forever. */
+export const CONTACT_WORKING_SNAPSHOT_POLL_MS = 2_500;
+export const snapshotHasContactWorking = (snapshot: AssistantSnapshot | undefined): boolean => (
+  Boolean(snapshot?.assistants.some((assistant) => assistant.working || assistant.activeContactTurn))
+);
+export const assistantSnapshotQueryOptions = (transport = getRuntimeTransportIdentity()) => ({
+  queryKey: key.snapshot(transport),
+  queryFn: async ({ signal }: { signal: AbortSignal }) => parseAssistantSnapshotDTO(await requestJSON<unknown>('/api/openchamber/assistants/snapshot', { signal })),
+  retry: 2,
+  refetchInterval: (query: { state: { data: AssistantSnapshot | undefined } }) => (
+    snapshotHasContactWorking(query.state.data) ? CONTACT_WORKING_SNAPSHOT_POLL_MS : false
+  ),
+  refetchIntervalInBackground: false,
+  // Foreground / tab focus recovery while a contact turn may still be live.
+  refetchOnWindowFocus: true,
+  refetchOnReconnect: true,
+});
 export const useAssistantSnapshotQuery = () => {
   const transport = getRuntimeTransportIdentity();
   const query = useQuery(assistantSnapshotQueryOptions(transport));
   React.useEffect(() => subscribeOpenchamberEvents((event) => {
     if (getRuntimeTransportIdentity() !== transport) return;
     if (event.type === 'event-stream-ready') {
+      void queryClient.invalidateQueries({ queryKey: key.snapshot(transport), exact: true });
+      return;
+    }
+    // Contact-turn start/end mutate process-local working without always bumping
+    // revision on the success path before clients read — refetch snapshot so list
+    // green dots and activeContactTurn stay server-authoritative across surfaces.
+    if (event.type === 'contact-turn-start' || event.type === 'contact-turn-end') {
       void queryClient.invalidateQueries({ queryKey: key.snapshot(transport), exact: true });
       return;
     }
@@ -143,6 +166,7 @@ export const assistantContactQueryOptions = (
   assistantID: string,
   transport = getRuntimeTransportIdentity(),
   runtimeGeneration = getRuntimeGeneration(),
+  options: { pollWhileWorking?: boolean } = {},
 ) => ({
   queryKey: key.contact(assistantID, transport, runtimeGeneration),
   queryFn: async ({ signal }: { signal: AbortSignal }) => {
@@ -154,20 +178,67 @@ export const assistantContactQueryOptions = (
     return page;
   },
   retry: 2,
+  refetchInterval: () => {
+    if (!options.pollWhileWorking) return false as const;
+    // Contact poll stays on while the owning snapshot says this assistant is working.
+    const snapshot = queryClient.getQueryData<AssistantSnapshot>(key.snapshot(transport));
+    const assistant = snapshot?.assistants.find((item) => item.id === assistantID);
+    return assistant?.working || assistant?.activeContactTurn ? CONTACT_WORKING_SNAPSHOT_POLL_MS : false;
+  },
+  refetchIntervalInBackground: false,
+  refetchOnWindowFocus: true as const,
+  refetchOnReconnect: true as const,
 });
 export const useAssistantContactMessagesQuery = (assistantID: string, enabled = true) => {
   const transport = getRuntimeTransportIdentity();
   const runtimeGeneration = getRuntimeGeneration();
   const query = useQuery({
-    ...assistantContactQueryOptions(assistantID, transport, runtimeGeneration),
+    ...assistantContactQueryOptions(assistantID, transport, runtimeGeneration, { pollWhileWorking: true }),
     enabled: enabled && Boolean(assistantID),
   });
   React.useEffect(() => subscribeOpenchamberEvents((event) => {
     if (getRuntimeTransportIdentity() !== transport) return;
-    if (event.type !== 'assistants-changed' && event.type !== 'event-stream-ready') return;
+    if (
+      event.type !== 'assistants-changed'
+      && event.type !== 'event-stream-ready'
+      && event.type !== 'contact-turn-end'
+    ) return;
+    if (
+      (event.type === 'contact-turn-end')
+      && 'assistantID' in event
+      && event.assistantID !== assistantID
+    ) return;
     void queryClient.invalidateQueries({ queryKey: key.contact(assistantID, transport, runtimeGeneration), exact: true });
   }), [assistantID, runtimeGeneration, transport]);
   return query;
+};
+
+/**
+ * Uncertain admission (client timeout): re-read the original messageID from contact
+ * history instead of minting a new send. Returns the row when the server already admitted it.
+ */
+export const confirmContactAdmissionByMessageID = async (
+  assistantID: string,
+  messageID: string,
+): Promise<{ admitted: true; messageID: string; revision: number | null } | null> => {
+  const transport = getRuntimeTransportIdentity();
+  const generation = getRuntimeGeneration();
+  await waitForSessionStartupBarrier();
+  assertCurrent(transport, generation);
+  const page = parseAssistantContactPage(await requestJSON<unknown>(
+    `/api/openchamber/assistants/${encodeURIComponent(assistantID)}/contact/messages?limit=100`,
+  ));
+  assertCurrent(transport, generation);
+  const found = page.messages.some((message) => message.messageID === messageID && message.role === 'user');
+  if (!found) return null;
+  void queryClient.invalidateQueries({ queryKey: key.contact(assistantID, transport, generation), exact: true });
+  void queryClient.invalidateQueries({ queryKey: key.snapshot(transport), exact: true });
+  const snapshot = queryClient.getQueryData<AssistantSnapshot>(key.snapshot(transport));
+  return {
+    admitted: true,
+    messageID,
+    revision: snapshot?.revision ?? null,
+  };
 };
 export const assistantScheduledTasksQueryOptions = (
   assistantID: string,

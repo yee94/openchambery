@@ -836,6 +836,10 @@ interface UIStore {
   notifyOnCompletion: boolean;
   notifyOnError: boolean;
   notifyOnQuestion: boolean;
+  notifyOnPermission: boolean;
+  notifyOnScheduledTasks: boolean;
+  notifyOnAssistants: boolean;
+  notifyOnGoals: boolean;
 
   // Per-event notification templates
   notificationTemplates: {
@@ -1021,6 +1025,10 @@ interface UIStore {
   setNotifyOnCompletion: (value: boolean) => void;
   setNotifyOnError: (value: boolean) => void;
   setNotifyOnQuestion: (value: boolean) => void;
+  setNotifyOnPermission: (value: boolean) => void;
+  setNotifyOnScheduledTasks: (value: boolean) => void;
+  setNotifyOnAssistants: (value: boolean) => void;
+  setNotifyOnGoals: (value: boolean) => void;
   setNotificationTemplates: (templates: UIStore['notificationTemplates']) => void;
   setSummarizeLastMessage: (value: boolean) => void;
   setSummaryThreshold: (value: number) => void;
@@ -1169,6 +1177,10 @@ export const useUIStore = create<UIStore>()(
         notifyOnCompletion: true,
         notifyOnError: true,
         notifyOnQuestion: true,
+        notifyOnPermission: true,
+        notifyOnScheduledTasks: true,
+        notifyOnAssistants: true,
+        notifyOnGoals: true,
         notificationTemplates: {
           completion: { ...EMPTY_NOTIFICATION_TEMPLATES.completion },
           error: { ...EMPTY_NOTIFICATION_TEMPLATES.error },
@@ -2602,6 +2614,10 @@ export const useUIStore = create<UIStore>()(
         setNotifyOnCompletion: (value) => { set({ notifyOnCompletion: value }); },
         setNotifyOnError: (value) => { set({ notifyOnError: value }); },
         setNotifyOnQuestion: (value) => { set({ notifyOnQuestion: value }); },
+        setNotifyOnPermission: (value) => { set({ notifyOnPermission: value }); },
+        setNotifyOnScheduledTasks: (value) => { set({ notifyOnScheduledTasks: value }); },
+        setNotifyOnAssistants: (value) => { set({ notifyOnAssistants: value }); },
+        setNotifyOnGoals: (value) => { set({ notifyOnGoals: value }); },
         setNotificationTemplates: (templates) => { set({ notificationTemplates: templates }); },
         setSummarizeLastMessage: (value) => { set({ summarizeLastMessage: value }); },
         setSummaryThreshold: (value) => { set({ summaryThreshold: value }); },
@@ -2904,6 +2920,10 @@ export const useUIStore = create<UIStore>()(
           notifyOnCompletion: state.notifyOnCompletion,
           notifyOnError: state.notifyOnError,
           notifyOnQuestion: state.notifyOnQuestion,
+          notifyOnPermission: state.notifyOnPermission,
+          notifyOnScheduledTasks: state.notifyOnScheduledTasks,
+          notifyOnAssistants: state.notifyOnAssistants,
+          notifyOnGoals: state.notifyOnGoals,
           notificationTemplates: state.notificationTemplates,
           summarizeLastMessage: state.summarizeLastMessage,
           summaryThreshold: state.summaryThreshold,

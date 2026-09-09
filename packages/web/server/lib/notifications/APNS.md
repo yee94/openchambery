@@ -13,10 +13,12 @@ registered them — so a leaked device token alone can't be used to push.
    `POST /v1/push/register-token`, signed with its auto-generated ECDSA P-256 key
    (`getOrCreateRelayKeypair`, persisted in settings like the VAPID keys). The relay records
    `token → serverId` where `serverId = SHA-256(publicKey)`.
- 3. On a trigger (ready/error/question/permission/goal_*), the server composes **generic,
-    content-free** text — a **locale-specific** scenario title (from `apns-titles.js`, keyed off
-    the locale stored with each device token at `POST /api/push/apns-token`) + the **session name**
-    as the body, no model/project/message content — plus a **`badge`** count (see below).
+3. On a trigger (ready/error/question/permission/goal_*), the server composes **generic,
+     content-free** text — a **locale-specific** scenario title (from `apns-titles.js`, keyed off
+     the locale stored with each device token at `POST /api/push/apns-token`) + the **session name**
+     as the body, no model/project/message content — plus a **`badge`** count (see below).
+     Scheduled-task runs add `task_complete` / `task_error` scenario titles (task name as the
+     body, error text never crosses), gated by their own settings toggle.
     **Contact turns are the exception:** APNs keeps the assistant nickname as the title and the
     spoken message as the body (`preserveAlert`), and forwards `assistantID` so a tap opens that
     conversation. Tokens are grouped by locale (relay signatures cover `title`, so mixed locales
@@ -59,6 +61,20 @@ dismissalDate?, staleDate?, publicKeyJwk, ts, sig }` signed over
 `${ts}.${sortedTokens}.${event}.${status}.${eventVersion}.${updatedAt}.${endedAt}.${dismissalDate}.${staleDate}`.
 Direct mode uses HTTP/2 token auth, `apns-topic: ${bundleId}.push-type.liveactivity`,
 `apns-push-type: liveactivity`, and no alert.
+
+While sessions are still working, a periodic refresh
+(`live-activity-refresh-runtime.js`, default every 30s,
+`OPENCHAMBER_LIVE_ACTIVITY_REFRESH_INTERVAL_MS`, `0` disables) recomputes each
+persisted Live Activity snapshot from the authoritative server-side session
+states and pushes an **update** only when something changed — a busy→retry
+transition, a newly visible top-level session, a missed idle completion, or a
+stale row recovering to working. Unchanged snapshots never send, because APNs
+budgets Live Activity updates per hour. Update payloads reuse the signed
+live-activity contract above (`staleDate = updatedAt + 20min`, snapshot `items`
+with `sessionID`/`title`/`status` rows — the same shape the foreground app
+writes via ActivityKit); when the recomputed snapshot has no working row left,
+the refresh sends `end` and clears accepted tokens locally. A tick is a no-op
+(one token-store read) when no device registered a Live Activity token.
 
 The APNs / relay payload **must not** carry `sessionId` or user/session content.
 `contentState` is only `{ status, eventVersion, updatedAt, endedAt }`.

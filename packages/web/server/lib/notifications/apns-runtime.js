@@ -1120,6 +1120,140 @@ export const createApnsRuntime = (deps) => {
     return entries;
   };
 
+  // Shared Live Activity delivery path (relay register-then-send, or direct APNs).
+  // Returns the tokens APNs accepted; callers decide what an accepted `end` means.
+  const deliverLiveActivityPayload = async (tokens, payload) => {
+    const accepted = [];
+    const relay = await resolveRelayConfig();
+    if (relay) {
+      rememberLiveActivityRelayRegisterUrl(relay.liveActivityRegisterUrl);
+      const outcomes = await mapWithBoundedConcurrency(
+        tokens,
+        RELAY_REGISTER_CONCURRENCY,
+        async (token) => {
+          const registered = await registerLiveActivityTokenWithRelay(token, relay);
+          return registered ? token : null;
+        },
+      );
+      const readyTokens = outcomes.filter((token) => typeof token === 'string');
+      if (readyTokens.length > 0) {
+        accepted.push(...await sendLiveActivityViaRelay(readyTokens, payload, relay));
+      }
+    } else {
+      accepted.push(...await sendLiveActivityViaDirectApns(tokens, payload));
+    }
+    return accepted;
+  };
+
+  // Periodic refresh entrypoint (see live-activity-refresh-runtime.js). For every
+  // persisted Live Activity entry the async `computeSnapshot(entry)` returns the
+  // next snapshot items (unix seconds) or null to skip; unchanged snapshots send
+  // nothing. Changed snapshots bump the aggregate event version, persist, and
+  // deliver an `update` — or an `end` (clearing accepted tokens) once no row is
+  // working anymore.
+  const refreshLiveActivityTokens = async ({ computeSnapshot } = {}) => {
+    if (typeof computeSnapshot !== 'function') return;
+    const now = Date.now();
+    const store = await readTokensFromDisk();
+    const pruned = pruneLiveActivityTokensBySession(store.liveActivityTokensBySession, now);
+    const entries = [];
+    const seen = new Set();
+    for (const record of Object.values(pruned)) {
+      for (const entry of record) {
+        if (seen.has(entry.token)) continue;
+        seen.add(entry.token);
+        entries.push(entry);
+      }
+    }
+    if (entries.length === 0) return;
+
+    const nextItemsByToken = new Map();
+    for (const entry of entries) {
+      let next = null;
+      try {
+        next = await computeSnapshot(entry);
+      } catch {
+        next = null;
+      }
+      if (next && Array.isArray(next.items)) nextItemsByToken.set(entry.token, next.items);
+    }
+    if (nextItemsByToken.size === 0) return;
+
+    const planned = [];
+    let nextVersion = 0;
+    await persistTokenUpdate((current) => {
+      const liveActivityTokensBySession = pruneLiveActivityTokensBySession(
+        current.liveActivityTokensBySession,
+        now,
+      );
+      const previous = current.liveActivityEventVersions?.[LIVE_ACTIVITY_AGGREGATE_SESSION_ID];
+      nextVersion = nextLiveActivityEventVersion(now, previous);
+      let plannedInRun = [];
+      for (const [uiSessionToken, record] of Object.entries(liveActivityTokensBySession)) {
+        const nextRecord = record.map((entry) => {
+          const items = nextItemsByToken.get(entry.token);
+          if (!items) return entry;
+          plannedInRun.push({ token: entry.token, items });
+          return { ...entry, snapshot: items };
+        });
+        liveActivityTokensBySession[uiSessionToken] = nextRecord;
+      }
+      planned.push(...plannedInRun);
+      return {
+        ...current,
+        liveActivityTokensBySession,
+        liveActivityEventVersions: {
+          ...(current.liveActivityEventVersions || {}),
+          [LIVE_ACTIVITY_AGGREGATE_SESSION_ID]: nextVersion,
+        },
+      };
+    });
+    if (planned.length === 0) return;
+
+    // Entries with identical snapshots share one APNs payload.
+    const signatureOf = (items) => items
+      .map((item) => `${item.sessionId}\0${item.title}\0${item.status}\0${item.endedAt ?? ''}`)
+      .join('\n');
+    const groups = new Map();
+    for (const plan of planned) {
+      const working = plan.items.filter((item) => liveActivityItemIsWorking(item.status));
+      const key = signatureOf(plan.items);
+      const group = groups.get(key) ?? { items: plan.items, tokens: [] };
+      group.tokens.push(plan.token);
+      groups.set(key, group);
+    }
+
+    const updatedAtSeconds = now / 1000;
+    const tokensToEnd = [];
+    for (const group of groups.values()) {
+      const working = group.items.filter((item) => liveActivityItemIsWorking(item.status));
+      const isEnd = working.length === 0;
+      const status = isEnd
+        ? (group.items.some((item) => item.status === 'error') ? 'error' : 'complete')
+        : (working[0]?.status || 'working');
+      const payload = {
+        event: isEnd ? 'end' : 'update',
+        contentState: contentStateFromSnapshot(
+          group.items,
+          status,
+          nextVersion,
+          updatedAtSeconds,
+          isEnd ? updatedAtSeconds : undefined,
+        ),
+        ...liveActivityPushDates(isEnd ? 'end' : 'update', status, updatedAtSeconds, now),
+      };
+      let accepted = [];
+      try {
+        accepted = await deliverLiveActivityPayload(group.tokens, payload);
+      } catch (error) {
+        console.warn('[Live Activity] refresh failed:', error?.message ?? error);
+        continue;
+      }
+      if (isEnd && accepted.length > 0) tokensToEnd.push(...accepted);
+    }
+    if (tokensToEnd.length > 0) await removeLiveActivityTokens(tokensToEnd);
+  };
+
   const sendLiveActivityEnd = async ({ sessionId, status, eventVersion, endedAt, title } = {}) => {
     const trimmedSessionId = typeof sessionId === 'string' ? sessionId.trim() : '';
     if (!isLimitedId(trimmedSessionId, MAX_LIVE_ACTIVITY_ID_CHARS)) return;
@@ -1217,24 +1351,7 @@ export const createApnsRuntime = (deps) => {
     const tokens = pendingEntries.map((entry) => entry.token);
     let accepted = [];
     try {
-      const relay = await resolveRelayConfig();
-      if (relay) {
-        rememberLiveActivityRelayRegisterUrl(relay.liveActivityRegisterUrl);
-        const outcomes = await mapWithBoundedConcurrency(
-          tokens,
-          RELAY_REGISTER_CONCURRENCY,
-          async (token) => {
-            const registered = await registerLiveActivityTokenWithRelay(token, relay);
-            return registered ? token : null;
-          },
-        );
-        const readyTokens = outcomes.filter((token) => typeof token === 'string');
-        if (readyTokens.length > 0) {
-          accepted = await sendLiveActivityViaRelay(readyTokens, payload, relay);
-        }
-      } else {
-        accepted = await sendLiveActivityViaDirectApns(tokens, payload);
-      }
+      accepted = await deliverLiveActivityPayload(tokens, payload);
     } catch (error) {
       console.warn('[Live Activity] end failed:', error?.message ?? error);
       return;
@@ -1332,6 +1449,7 @@ export const createApnsRuntime = (deps) => {
     addOrUpdateLiveActivityToken,
     removeLiveActivityToken,
     sendLiveActivityEnd,
+    refreshLiveActivityTokens,
     sendApnsToAllUiSessions,
     reRegisterAllTokens,
     resolveApnsConfig,

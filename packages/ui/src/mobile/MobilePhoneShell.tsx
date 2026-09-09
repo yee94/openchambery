@@ -4,6 +4,7 @@ import { useEvent } from '@reactuses/core';
 import { AssistantView } from '@/components/assistants/AssistantView';
 import { useI18n } from '@/lib/i18n';
 import { normalizePath } from '@/lib/pathNormalization';
+import { useUIStore } from '@/stores/useUIStore';
 import { useSessionUIStore } from '@/sync/session-ui-store';
 
 import { MobileAssistantTab } from './assistant/MobileAssistantTab';
@@ -84,6 +85,9 @@ export function MobilePhoneShell({
   const replaceChatSession = useMobileNavigationStore((state) => state.replaceChatSession);
 
   const setActiveTab = useEvent((tab: MobileTabId) => {
+    if (tab === 'settings') {
+      useUIStore.getState().setSettingsPage('home');
+    }
     setActiveTabStore(tab);
   });
 

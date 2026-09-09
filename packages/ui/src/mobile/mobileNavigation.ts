@@ -33,9 +33,19 @@ export type MobileSecondaryState =
       kind: 'instances';
     };
 
+export type MobileSettingsReturnTo = {
+  tab: MobileTabId;
+  secondary: MobileSecondaryState | null;
+};
+
 export type MobileNavigationState = {
   activeTab: MobileTabId;
   secondary: MobileSecondaryState | null;
+  /**
+   * Origin captured when another surface opens a Settings page. Back restores
+   * this instead of leaving the user on the Settings tab.
+   */
+  settingsReturnTo: MobileSettingsReturnTo | null;
 };
 
 export type MobileNavigationActions = {
@@ -45,6 +55,21 @@ export type MobileNavigationActions = {
   openInstances: () => void;
   closeSecondary: () => void;
 };
+
+/**
+ * Remember the current tab/secondary as the Settings back target. The first
+ * origin wins so a nested Settings jump does not overwrite it. Opening Settings
+ * while already on that tab has no origin.
+ */
+export function nextSettingsReturnTo(input: {
+  activeTab: MobileTabId;
+  secondary: MobileSecondaryState | null;
+  settingsReturnTo: MobileSettingsReturnTo | null;
+}): MobileSettingsReturnTo | null {
+  if (input.settingsReturnTo) return input.settingsReturnTo;
+  if (input.activeTab === 'settings') return null;
+  return { tab: input.activeTab, secondary: input.secondary };
+}
 
 export function pushMobileChatRoute(
   routes: readonly MobileChatRoute[],
@@ -85,6 +110,7 @@ export function reconcileMobileChatPredecessor(
 export const INITIAL_MOBILE_NAVIGATION_STATE: MobileNavigationState = {
   activeTab: 'projects',
   secondary: null,
+  settingsReturnTo: null,
 };
 
 /**

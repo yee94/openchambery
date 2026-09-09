@@ -16,6 +16,7 @@ import {
   createContactTools,
   detectRequestedContactTools,
   filterRegisteredProjects,
+  formatConnectedModelsPrompt,
   formatContactToolsPrompt,
   formatRegisteredProjectsPrompt,
   matchesProjectQuery,
@@ -26,6 +27,7 @@ import {
   stripContactToolFences,
   userTextAuthorizesClearChatHistory,
 } from './contact-tools.js';
+import { attachmentScopeKey } from './assign.js';
 
 describe('contact tool protocol', () => {
   it('parses an assign_session fence and strips it from chat text', () => {
@@ -167,8 +169,38 @@ describe('contact tool protocol', () => {
     expect(prompt).toContain('arguments schema:');
     expect(prompt).toContain('"prompt"');
     expect(prompt).toContain('"projectPath"');
+    expect(prompt).toContain('"providerID"');
+    expect(prompt).toContain('"modelID"');
+    expect(prompt).toContain('"model"');
+    expect(prompt).toContain('connected catalog');
     expect(prompt).toContain('"to"');
     expect(prompt).toContain('"text"');
+  });
+
+  it('exposes connected models for assign worker selection without inventing ids', () => {
+    const prompt = formatConnectedModelsPrompt([
+      { providerID: 'xai', modelID: 'grok-4.6', name: 'Grok 4.6', acceptsImages: true },
+      { providerID: 'opencode-go', modelID: 'deepseek-v4-flash', acceptsImages: false },
+    ]);
+    expect(prompt).toContain('xai');
+    expect(prompt).toContain('grok-4.6');
+    expect(prompt).toContain('acceptsImages=true');
+    expect(prompt).toContain('does NOT change this contact');
+    expect(formatConnectedModelsPrompt([])).toContain('none discoverable');
+  });
+
+  it('includes worker model and attachment scope in same-turn assign keys', () => {
+    const scope = attachmentScopeKey([
+      { type: 'file', mime: 'image/png', url: 'data:image/png;base64,aa', filename: 'a.png' },
+    ]);
+    const base = { prompt: 'Fix', projectPath: '/repo' };
+    expect(normalizeAssignRequestKey(base)).not.toBe(normalizeAssignRequestKey({
+      ...base,
+      model: 'xai/grok-4.6',
+    }));
+    expect(normalizeAssignRequestKey({ ...base, attachmentScope: scope })).not.toBe(
+      normalizeAssignRequestKey({ ...base, attachmentScope: [] }),
+    );
   });
 
   it('fuzzy-matches project labels like openchamber yee / openchamer yee', () => {
@@ -305,6 +337,35 @@ describe('createContactTools', () => {
     expect(onCard).toHaveBeenCalledTimes(3);
   });
 
+  it('forwards server turn file parts on assign and keeps model selection in the tool args', async () => {
+    const image = { type: 'file', mime: 'image/png', url: 'data:image/png;base64,aa', filename: 'shot.png' };
+    const assignWork = vi.fn(async (params) => ({
+      sessionID: 'ses_img',
+      directory: '/repo',
+      title: 'Shot',
+      status: 'busy',
+      model: { providerID: params.providerID, modelID: params.modelID },
+    }));
+    const tools = createContactTools({
+      assignWork,
+      turnFileParts: [image],
+      turnAttachmentScope: attachmentScopeKey([image]),
+    });
+    const result = await tools.find((tool) => tool.name === ASSIGN_SESSION_TOOL_NAME).execute('call_img', {
+      prompt: 'Fix card width',
+      projectPath: '/repo',
+      providerID: 'xai',
+      modelID: 'grok-4.6',
+    });
+    expect(assignWork).toHaveBeenCalledWith(expect.objectContaining({
+      prompt: 'Fix card width',
+      providerID: 'xai',
+      modelID: 'grok-4.6',
+      fileParts: [image],
+    }));
+    expect(result.terminate).toBe(true);
+  });
+
   it('same-turn assign gate caches identical success and rejects a different second assign', async () => {
     const assignWork = vi.fn(async () => ({
       sessionID: 'ses_once',
@@ -326,6 +387,56 @@ describe('createContactTools', () => {
     expect(different.content[0].text).toContain(ASSIGN_DUPLICATE_TURN_MESSAGE);
     expect(different.terminate).toBe(true);
     expect(assignWork).toHaveBeenCalledTimes(1);
+  });
+
+  it('same-turn assign gate treats different worker models as distinct requests after success', async () => {
+    const assignWork = vi.fn(async () => ({
+      sessionID: 'ses_model',
+      directory: '/repo',
+      title: 'M',
+      status: 'busy',
+    }));
+    const tools = createContactTools({ assignWork });
+    const assign = tools.find((tool) => tool.name === ASSIGN_SESSION_TOOL_NAME);
+    await assign.execute('call_1', { prompt: 'Fix', projectPath: '/repo', model: 'xai/grok-4.6' });
+    const second = await assign.execute('call_2', { prompt: 'Fix', projectPath: '/repo', model: 'openai/gpt-4o' });
+    expect(second.details.error).toBe('validation_error');
+    expect(assignWork).toHaveBeenCalledTimes(1);
+  });
+
+  it('prompt_ambiguous keeps recoverable sessionID/messageID and blocks a different create this turn', async () => {
+    let calls = 0;
+    const assignWork = vi.fn(async (params) => {
+      calls += 1;
+      if (calls === 1) {
+        throw new AssignError(
+          ASSIGN_CODES.PROMPT_AMBIGUOUS,
+          'admission unknown',
+          { ambiguous: true, sessionID: 'ses_amb', messageID: 'msg_amb' },
+        );
+      }
+      expect(params.sessionID).toBe('ses_amb');
+      expect(params.messageID).toBe('msg_amb');
+      return { sessionID: 'ses_amb', directory: '/repo', title: 'A', status: 'busy', messageID: 'msg_amb' };
+    });
+    const tools = createContactTools({ assignWork });
+    const assign = tools.find((tool) => tool.name === ASSIGN_SESSION_TOOL_NAME);
+    const args = { prompt: 'Fix', projectPath: '/repo' };
+    const failed = await assign.execute('call_a', args);
+    expect(failed.details).toMatchObject({
+      error: 'prompt_ambiguous',
+      ambiguous: true,
+      sessionID: 'ses_amb',
+      messageID: 'msg_amb',
+    });
+    expect(failed.terminate).toBe(true);
+    const other = await assign.execute('call_b', { prompt: 'Other', projectPath: '/repo' });
+    expect(other.details.error).toBe('validation_error');
+    expect(assignWork).toHaveBeenCalledTimes(1);
+    const recovered = await assign.execute('call_c', args);
+    expect(assignWork).toHaveBeenCalledTimes(2);
+    expect(recovered.details.assigned.sessionID).toBe('ses_amb');
+    expect(recovered.terminate).toBe(true);
   });
 
   it('same-turn parallel identical assigns share one worker create', async () => {

@@ -360,6 +360,18 @@ export const createSettingsHelpers = (dependencies) => {
     if (typeof candidate.notifyOnQuestion === 'boolean') {
       result.notifyOnQuestion = candidate.notifyOnQuestion;
     }
+    if (typeof candidate.notifyOnPermission === 'boolean') {
+      result.notifyOnPermission = candidate.notifyOnPermission;
+    }
+    if (typeof candidate.notifyOnScheduledTasks === 'boolean') {
+      result.notifyOnScheduledTasks = candidate.notifyOnScheduledTasks;
+    }
+    if (typeof candidate.notifyOnAssistants === 'boolean') {
+      result.notifyOnAssistants = candidate.notifyOnAssistants;
+    }
+    if (typeof candidate.notifyOnGoals === 'boolean') {
+      result.notifyOnGoals = candidate.notifyOnGoals;
+    }
     if (candidate.notificationTemplates && typeof candidate.notificationTemplates === 'object') {
       result.notificationTemplates = candidate.notificationTemplates;
     }

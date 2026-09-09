@@ -147,10 +147,10 @@ function MobileAssistantCard({
   onOpen,
   onEdit,
   onDelete,
-  // assignedSessionIDs / serverWorking remain public props for callers; live
-  // working state comes from useAssistantWorking(assistantID).
+  // serverWorking is snapshot-authoritative; local store is temporary only.
+  serverWorking = false,
 }: MobileAssistantCardProps) {
-  const working = useAssistantWorking(assistantID);
+  const working = useAssistantWorking(assistantID, serverWorking);
   const [menuOpen, setMenuOpen] = React.useState(false);
   const [pressed, setPressed] = React.useState(false);
   const longPressRef = React.useRef<MobileLongPressController | null>(null);

@@ -86,6 +86,10 @@ export type DesktopSettings = {
   notifyOnCompletion?: boolean;
   notifyOnError?: boolean;
   notifyOnQuestion?: boolean;
+  notifyOnPermission?: boolean;
+  notifyOnScheduledTasks?: boolean;
+  notifyOnAssistants?: boolean;
+  notifyOnGoals?: boolean;
 
   // Per-event notification templates
   notificationTemplates?: {

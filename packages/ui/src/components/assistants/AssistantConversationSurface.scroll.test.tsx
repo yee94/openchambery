@@ -113,6 +113,7 @@ const assistant = (id: string): AssistantDTO => ({
   historySessionCount: 0,
   assignedSessionIDs: [],
   working: false,
+  activeContactTurn: null,
   createdAt: 1,
   updatedAt: 1,
   tombstoneAt: null,

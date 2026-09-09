@@ -16,6 +16,8 @@ import {
   reconcileContactOptimisticTurns,
   reconcileContactTurnPreviews,
   scopeContactOptimisticTurns,
+  applyServerContactTurnAuthority,
+  seedContactTurnPreviewFromServer,
 } from './contactOptimisticTurns'
 
 const serverMessage = (messageID: string, text: string): AssistantContactMessage => ({
@@ -133,6 +135,109 @@ describe('contactOptimisticTurns', () => {
     expect(failed[0]).toMatchObject({ status: 'failed', error: 'upstream failed' })
     expect(contactTurnPreviewWorking(failed)).toBe(false)
     expect(mergeContactTranscript([], [], 'asst_1', failed)[0]).toMatchObject({ role: 'assistant', status: 'failed' })
+  })
+
+  test('seeds processing from server activeContactTurn and ignores stale ends for unknown turns', () => {
+    const seeded = seedContactTurnPreviewFromServer([], {
+      assistantID: 'asst_1',
+      turnID: 'turn_server',
+      admittedAt: 70,
+    })
+    expect(contactTurnPreviewWorking(seeded)).toBe(true)
+    expect(seeded[0]).toMatchObject({ turnID: 'turn_server', status: 'admitted', occurredAt: 70 })
+
+    const settled = new Set(['turn_done'])
+    expect(seedContactTurnPreviewFromServer([], {
+      assistantID: 'asst_1',
+      turnID: 'turn_done',
+      admittedAt: 71,
+    }, settled)).toEqual([])
+
+    const live = admitContactTurnPreview([], 'asst_1', 'turn_live', 80)
+    const ignored = endContactTurnPreview(live, {
+      assistantID: 'asst_1', turnID: 'turn_stale', status: 'complete', occurredAt: 81,
+    }, { requireExisting: true })
+    expect(ignored).toBe(live)
+    expect(contactTurnPreviewWorking(ignored)).toBe(true)
+
+    const ended = endContactTurnPreview(live, {
+      assistantID: 'asst_1', turnID: 'turn_live', status: 'complete', occurredAt: 82,
+    }, { requireExisting: true })
+    expect(contactTurnPreviewWorking(ended)).toBe(false)
+  })
+
+  test('server idle clears covered local processing but not a newer send or pending send', () => {
+    const busy = applyServerContactTurnAuthority([], {
+      assistantID: 'asst_1',
+      activeContactTurn: { turnID: 'turn_busy', admittedAt: 10 },
+      serverWorking: true,
+      snapshotRevision: 5,
+    })
+    expect(contactTurnPreviewWorking(busy)).toBe(true)
+    expect(busy[0]?.turnID).toBe('turn_busy')
+
+    const local = admitContactTurnPreview([], 'asst_1', 'turn_old', 1)
+    const cleared = applyServerContactTurnAuthority(local, {
+      assistantID: 'asst_1',
+      activeContactTurn: null,
+      serverWorking: false,
+      snapshotRevision: 12,
+      admissionRevisionByTurnID: new Map([['turn_old', 8]]),
+    })
+    expect(contactTurnPreviewWorking(cleared)).toBe(false)
+
+    const keptNewer = applyServerContactTurnAuthority(local, {
+      assistantID: 'asst_1',
+      activeContactTurn: null,
+      serverWorking: false,
+      snapshotRevision: 7,
+      admissionRevisionByTurnID: new Map([['turn_old', 8]]),
+    })
+    expect(contactTurnPreviewWorking(keptNewer)).toBe(true)
+
+    const pending = applyServerContactTurnAuthority(local, {
+      assistantID: 'asst_1',
+      activeContactTurn: null,
+      serverWorking: false,
+      snapshotRevision: 99,
+      pendingSendTurnIDs: new Set(['turn_old']),
+    })
+    expect(contactTurnPreviewWorking(pending)).toBe(true)
+  })
+
+  test('recovers durable server error rows without SSE and keeps multi-turn order', () => {
+    const live = admitContactTurnPreview(
+      admitContactTurnPreview([], 'asst_1', 'turn_a', 1),
+      'asst_1',
+      'turn_b',
+      2,
+    )
+    const recovered = applyServerContactTurnAuthority(live, {
+      assistantID: 'asst_1',
+      activeContactTurn: { turnID: 'turn_b', admittedAt: 2 },
+      serverWorking: true,
+      snapshotRevision: 4,
+      messages: [
+        { role: 'assistant', turnID: 'turn_a', status: 'error', text: 'No connected model' },
+      ],
+      admissionRevisionByTurnID: new Map([['turn_a', 3], ['turn_b', 4]]),
+    })
+    expect(recovered.find((preview) => preview.turnID === 'turn_a')?.status).toBe('failed')
+    expect(recovered.find((preview) => preview.turnID === 'turn_b')?.status).toBe('admitted')
+    expect(contactTurnPreviewWorking(recovered)).toBe(true)
+
+    const idleAfterMissedEnd = applyServerContactTurnAuthority(recovered, {
+      assistantID: 'asst_1',
+      activeContactTurn: null,
+      serverWorking: false,
+      snapshotRevision: 6,
+      admissionRevisionByTurnID: new Map([['turn_a', 3], ['turn_b', 4]]),
+      messages: [
+        { role: 'assistant', turnID: 'turn_a', status: 'error', text: 'No connected model' },
+        { role: 'assistant', turnID: 'turn_b', status: 'complete', text: 'done' },
+      ],
+    })
+    expect(contactTurnPreviewWorking(idleAfterMissedEnd)).toBe(false)
   })
 
   test('keeps a failed turn and prefers the server error.message', () => {

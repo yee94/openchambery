@@ -148,6 +148,30 @@ describe('scheduled-tasks runtime helpers', () => {
 });
 
 describe('scheduled-tasks runtime cleanup', () => {
+  it('notifies the notification runtime when a run settles, without blocking its result', async () => {
+    const updateScheduledTaskState = vi.fn(async () => ({ task: scheduledTask }));
+    const notifyTaskRun = vi.fn(async () => {
+      throw new Error('notification fanout failed');
+    });
+    const runtime = createRuntime(updateScheduledTaskState, { notifyTaskRun });
+    await runtime.syncProject('project-1');
+
+    const result = await runtime.runNow('project-1', 'task-1');
+
+    // waitForOpenCodeReady throws in this fixture → the run settles as error.
+    expect(result).toMatchObject({ ok: false, status: 'error' });
+    expect(notifyTaskRun).toHaveBeenCalledTimes(1);
+    expect(notifyTaskRun.mock.calls[0][0]).toMatchObject({
+      projectID: 'project-1',
+      taskID: 'task-1',
+      taskName: 'Task',
+      status: 'error',
+      reason: 'manual',
+    });
+    // A failing notification callback must not mark the run failed.
+    expect(runtime.getStatus().hasRunningScheduledTasks).toBe(false);
+  });
+
   it('releases the running lock after the initial running-state write fails', async () => {
     let calls = 0;
     const updateScheduledTaskState = vi.fn(async () => {

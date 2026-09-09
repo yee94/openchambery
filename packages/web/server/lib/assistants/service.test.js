@@ -15,7 +15,35 @@ const root = () => fs.mkdtempSync(path.join(os.tmpdir(), 'assistants-'));
 // Behavioral tests enable the global switch after boot; pass enabled:false to assert the fresh-install default.
 const setup = (directory = root(), client = {}, options = {}) => {
   const { enabled = true, ...serviceOptions } = options;
-  const service = createAssistantsService({ dbPath: path.join(directory, 'assistants.sqlite'), dataDir: directory, getAllowedRoots: () => [directory], buildOpenCodeUrl: () => 'http://127.0.0.1:1', getOpenCodeAuthHeaders: () => ({}), clientFactory: () => ({ session: { create: async () => ({ data: { id: crypto.randomUUID() } }), get: async () => ({ data: { id: 'present' } }), update: async () => ({ data: { id: 'archived' } }), promptAsync: async () => ({ data: { info: { id: 'msg_1' } } }), summarize: async () => ({ data: true }), ...client } }), runContactTurn: serviceOptions.runContactTurn ?? (async ({ userText }) => ({ text: `reply:${userText}`, bubbles: [`reply:${userText}`] })), ...serviceOptions });
+  const {
+    provider = undefined,
+    config = undefined,
+    session: sessionOverrides = {},
+    ...sessionClient
+  } = client && typeof client === 'object' ? client : {};
+  const service = createAssistantsService({
+    dbPath: path.join(directory, 'assistants.sqlite'),
+    dataDir: directory,
+    getAllowedRoots: () => [directory],
+    buildOpenCodeUrl: () => 'http://127.0.0.1:1',
+    getOpenCodeAuthHeaders: () => ({}),
+    clientFactory: () => ({
+      session: {
+        create: async () => ({ data: { id: crypto.randomUUID() } }),
+        get: async () => ({ data: { id: 'present' } }),
+        update: async () => ({ data: { id: 'archived' } }),
+        promptAsync: async () => ({ data: { info: { id: 'msg_1' } } }),
+        summarize: async () => ({ data: true }),
+        delete: async () => ({ data: true }),
+        ...sessionClient,
+        ...sessionOverrides,
+      },
+      ...(provider ? { provider } : {}),
+      ...(config ? { config } : {}),
+    }),
+    runContactTurn: serviceOptions.runContactTurn ?? (async ({ userText }) => ({ text: `reply:${userText}`, bubbles: [`reply:${userText}`] })),
+    ...serviceOptions,
+  });
   if (enabled) {
     const snapshot = service.snapshot();
     if (!snapshot.enabled) service.setEnabled({ enabled: true, expectedRevision: snapshot.revision });
@@ -83,7 +111,7 @@ describe('assistants service', () => {
     const assistant = service.createAssistant(assistantInput);
     const current = await service.ensure(assistant.id);
     const sent = await service.send(assistant.id, { ...current, messageID: 'client_1', parts: [{ type: 'text', text: 'hello' }] });
-    expect(sent).toEqual({ binding: current, messageID: 'client_1', admitted: true });
+    expect(sent).toEqual({ binding: current, messageID: 'client_1', admitted: true, revision: expect.any(Number) });
     // Admission resolves before the async turn persists assistant bubbles.
     expect(service.contactMessages(assistant.id, { limit: 50 }).messages.map((message) => ({ role: message.role, text: message.text }))).toEqual([
       { role: 'user', text: 'hello' },
@@ -512,7 +540,7 @@ describe('assistants service', () => {
     const service = setup(root(), { promptAsync: async () => ({ response: { status: 204 } }) }); const assistant = service.createAssistant(assistantInput); const current = await service.ensure(assistant.id);
     expect(await service.compact(assistant.id, current)).toEqual({ binding: current, summarized: true });
     expect(await settleSend(service, assistant.id, { ...current, messageID: 'client_204', parts: [{ type: 'text', text: 'hello' }] })).toMatchObject({ binding: current, messageID: 'client_204', admitted: true });
-    expect(Object.keys(assistantContractFixtures.assistant)).toContain('managedWorkspacePath'); expect(Object.keys(assistantContractFixtures.assistant)).not.toContain('skillRoots'); expect(Object.keys(assistantContractFixtures.compactResponse).sort()).toEqual(['binding', 'summarized']); expect(Object.keys(assistantContractFixtures.messageAdmission).sort()).toEqual(['admitted', 'binding', 'messageID']); service.close();
+    expect(Object.keys(assistantContractFixtures.assistant)).toContain('managedWorkspacePath'); expect(Object.keys(assistantContractFixtures.assistant)).not.toContain('skillRoots'); expect(Object.keys(assistantContractFixtures.compactResponse).sort()).toEqual(['binding', 'summarized']); expect(Object.keys(assistantContractFixtures.messageAdmission).sort()).toEqual(['admitted', 'binding', 'messageID', 'revision']); service.close();
   });
 
   it('admits 33-part direct messages and 129-part shares', async () => {
@@ -1203,6 +1231,309 @@ describe('assistants service', () => {
     service.close();
   });
 
+  it.each([
+    { error: { status: 404 } },
+    { data: { info: { id: 'different_message' }, parts: [] } },
+    { data: { parts: [] } },
+  ])('preserves ambiguous admission until lookup identifies the exact message: %j', async (lookupResult) => {
+    const directory = root();
+    const project = path.join(directory, 'app');
+    fs.mkdirSync(project, { recursive: true });
+    const creates = [];
+    const prompts = [];
+    const deletes = [];
+    const lookups = [];
+    let promptCalls = 0;
+    const service = setup(directory, {
+      create: async (input) => {
+        creates.push(input);
+        return { data: { id: 'ses_lookup' } };
+      },
+      promptAsync: async (input) => {
+        prompts.push(input);
+        promptCalls += 1;
+        if (promptCalls === 1) {
+          const error = new TypeError('fetch failed');
+          error.code = 'ECONNRESET';
+          throw error;
+        }
+        return { response: { status: 204 } };
+      },
+      delete: async (input) => {
+        deletes.push(input);
+        return { data: true };
+      },
+      message: async (input) => {
+        lookups.push(input);
+        // Each response leaves the requested message unconfirmed.
+        return lookupResult;
+      },
+    }, {
+      runContactTurn: async ({ tools }) => {
+        const assign = tools.find((tool) => tool.name === 'assign_session');
+        const first = await assign.execute('call_1', {
+          prompt: 'Fix',
+          projectPath: project,
+          variant: 'fast',
+        });
+        expect(first.details).toMatchObject({
+          error: 'prompt_ambiguous',
+          ambiguous: true,
+          sessionID: 'ses_lookup',
+        });
+        expect(typeof first.details.messageID).toBe('string');
+        expect(deletes).toEqual([]);
+        const second = await assign.execute('call_2', {
+          prompt: 'Fix',
+          projectPath: project,
+          variant: 'fast',
+        });
+        expect(second.details.assigned.sessionID).toBe('ses_lookup');
+        return {
+          text: second.content[0].text,
+          bubbles: [second.content[0].text],
+          cards: second.details.card ? [second.details.card] : [],
+        };
+      },
+    });
+    const assistant = service.createAssistant({ ...assistantInput, variant: 'fast' });
+    await settleSend(service, assistant.id, {
+      messageID: 'client_assign_lookup',
+      parts: [{ type: 'text', text: 'Fix' }],
+    });
+    expect(creates).toHaveLength(1);
+    expect(prompts[0]).toMatchObject({
+      sessionID: 'ses_lookup',
+      variant: 'fast',
+    });
+    // Retry reuses the same worker session (no second create).
+    expect(prompts.length).toBeGreaterThanOrEqual(2);
+    expect(prompts.every((item) => item.sessionID === 'ses_lookup')).toBe(true);
+    expect(lookups.length).toBeGreaterThanOrEqual(1);
+    expect(deletes).toEqual([]);
+    service.close();
+  });
+
+  it('assign forwards current-turn images and explicit worker model into promptAsync without changing the contact', async () => {
+    const directory = root();
+    const project = path.join(directory, 'app');
+    fs.mkdirSync(project, { recursive: true });
+    const image = { type: 'file', mime: 'image/png', url: 'data:image/png;base64,aa', filename: 'card.png' };
+    const creates = [];
+    const prompts = [];
+    const deletes = [];
+    const service = setup(directory, {
+      create: async (input) => {
+        creates.push(input);
+        return { data: { id: `ses_${creates.length}` } };
+      },
+      promptAsync: async (input) => {
+        prompts.push(input);
+        return { response: { status: 204 } };
+      },
+      delete: async (input) => {
+        deletes.push(input);
+        return { data: true };
+      },
+      provider: {
+        list: async () => ({ data: { connected: ['xai', 'opencode-go'] } }),
+      },
+      config: {
+        providers: async () => ({
+          data: {
+            providers: [
+              {
+                id: 'xai',
+                name: 'xAI',
+                models: {
+                  'grok-4.6': {
+                    id: 'grok-4.6',
+                    name: 'Grok 4.6',
+                    modalities: { input: ['text', 'image'] },
+                  },
+                },
+              },
+              {
+                id: 'opencode-go',
+                name: 'OpenCode Go',
+                models: {
+                  'deepseek-v4-flash': { id: 'deepseek-v4-flash', name: 'deepseek-v4-flash' },
+                },
+              },
+            ],
+          },
+        }),
+      },
+    }, {
+      runContactTurn: async ({ tools, userText, connectedModels }) => {
+        expect(connectedModels.some((entry) => entry.providerID === 'xai' && entry.modelID === 'grok-4.6' && entry.acceptsImages)).toBe(true);
+        const assign = tools.find((tool) => tool.name === 'assign_session');
+        const result = await assign.execute('call_1', {
+          prompt: userText,
+          projectPath: project,
+          title: 'Card width',
+          model: 'xai/grok-4.6',
+        });
+        return {
+          text: result.content[0].text,
+          bubbles: [result.content[0].text],
+          cards: result.details.card ? [result.details.card] : [],
+          tools,
+        };
+      },
+    });
+    const assistant = service.createAssistant(assistantInput);
+    expect(assistant.providerID).toBe('p');
+    expect(assistant.modelID).toBe('m');
+    const sent = await settleSend(service, assistant.id, {
+      messageID: 'client_assign_image_model',
+      parts: [{ type: 'text', text: '修移动端卡片宽度' }, image],
+    });
+    expect(sent.settled.status).toBe('complete');
+    expect(creates).toHaveLength(1);
+    expect(prompts).toEqual([expect.objectContaining({
+      sessionID: 'ses_1',
+      model: { providerID: 'xai', modelID: 'grok-4.6' },
+      parts: [
+        { type: 'text', text: '修移动端卡片宽度' },
+        image,
+      ],
+    })]);
+    expect(deletes).toEqual([]);
+    expect(service.snapshot().assistants[0]).toMatchObject({
+      id: assistant.id,
+      providerID: 'p',
+      modelID: 'm',
+    });
+    service.close();
+  });
+
+  it('invalid explicit worker model fails closed with no session create', async () => {
+    const directory = root();
+    const project = path.join(directory, 'app');
+    fs.mkdirSync(project, { recursive: true });
+    const creates = [];
+    const service = setup(directory, {
+      create: async (input) => {
+        creates.push(input);
+        return { data: { id: `ses_${creates.length}` } };
+      },
+      promptAsync: async () => ({ response: { status: 204 } }),
+      provider: {
+        list: async () => ({ data: { connected: ['xai'] } }),
+      },
+      config: {
+        providers: async () => ({
+          data: {
+            providers: [{
+              id: 'xai',
+              name: 'xAI',
+              models: { 'grok-4.6': { id: 'grok-4.6', name: 'Grok 4.6', modalities: { input: ['text', 'image'] } } },
+            }],
+          },
+        }),
+      },
+    }, {
+      runContactTurn: async ({ tools }) => {
+        const assign = tools.find((tool) => tool.name === 'assign_session');
+        const result = await assign.execute('call_1', {
+          prompt: 'Fix width',
+          projectPath: project,
+          model: 'missing/not-real',
+        });
+        expect(result.details.error).toBe('model_not_found');
+        return {
+          text: result.content[0].text,
+          bubbles: [result.content[0].text],
+          cards: [],
+          tools,
+        };
+      },
+    });
+    const assistant = service.createAssistant(assistantInput);
+    await settleSend(service, assistant.id, {
+      messageID: 'client_assign_bad_model',
+      parts: [{ type: 'text', text: '用 missing 模型建会话' }],
+    });
+    expect(creates).toEqual([]);
+    expect(service.snapshot().assistants[0]).toMatchObject({ providerID: 'p', modelID: 'm' });
+    service.close();
+  });
+
+  it('cleans up the worker session when create succeeds but promptAsync fails definitively (4xx)', async () => {
+    const directory = root();
+    const project = path.join(directory, 'app');
+    fs.mkdirSync(project, { recursive: true });
+    const creates = [];
+    const deletes = [];
+    const service = setup(directory, {
+      create: async (input) => {
+        creates.push(input);
+        return { data: { id: 'ses_fail_prompt' } };
+      },
+      promptAsync: async () => ({ error: { status: 400 }, response: { status: 400 } }),
+      delete: async (input) => {
+        deletes.push(input);
+        return { data: true };
+      },
+    }, {
+      runContactTurn: async ({ tools, userText }) => {
+        const assign = tools.find((tool) => tool.name === 'assign_session');
+        const result = await assign.execute('call_1', { prompt: userText, projectPath: project });
+        expect(result.details.error).toBe('upstream_error');
+        return {
+          text: result.content[0].text,
+          bubbles: [result.content[0].text],
+          cards: [],
+          tools,
+        };
+      },
+    });
+    const assistant = service.createAssistant(assistantInput);
+    await settleSend(service, assistant.id, {
+      messageID: 'client_assign_prompt_fail',
+      parts: [{ type: 'text', text: 'Fix after create' }],
+    });
+    expect(creates).toHaveLength(1);
+    expect(deletes).toEqual([expect.objectContaining({ sessionID: 'ses_fail_prompt' })]);
+    service.close();
+  });
+
+  it('keeps default-model assign behavior when no explicit worker model is requested', async () => {
+    const directory = root();
+    const project = path.join(directory, 'app');
+    fs.mkdirSync(project, { recursive: true });
+    const prompts = [];
+    const service = setup(directory, {
+      create: async () => ({ data: { id: 'ses_default' } }),
+      promptAsync: async (input) => {
+        prompts.push(input);
+        return { response: { status: 204 } };
+      },
+    }, {
+      runContactTurn: async ({ tools, userText }) => {
+        const assign = tools.find((tool) => tool.name === 'assign_session');
+        const result = await assign.execute('call_1', { prompt: userText, projectPath: project });
+        return {
+          text: result.content[0].text,
+          bubbles: [result.content[0].text],
+          cards: result.details.card ? [result.details.card] : [],
+          tools,
+        };
+      },
+    });
+    const assistant = service.createAssistant(assistantInput);
+    await settleSend(service, assistant.id, {
+      messageID: 'client_assign_default_model',
+      parts: [{ type: 'text', text: '建会话修一下' }],
+    });
+    expect(prompts).toEqual([expect.objectContaining({
+      model: { providerID: 'p', modelID: 'm' },
+      parts: [{ type: 'text', text: '建会话修一下' }],
+    })]);
+    service.close();
+  });
+
   it('creates another assistant from create_assistant and persists the assistant card', async () => {
     const directory = root();
     const service = setup(directory, {}, {
@@ -1576,7 +1907,9 @@ describe('assistants service', () => {
     });
     expect(service.snapshot().assistants[0]).toMatchObject({
       assignedSessionIDs: ['ses_work'],
-      working: true,
+      // assigned busy keeps the session card in flight; list green dot is contact-turn only
+      working: false,
+      activeContactTurn: null,
     });
     expect(service.processEvent({ type: 'session.idle', properties: { sessionID: 'ses_work' } })).toBe(true);
     const page = service.contactMessages(assistant.id);
@@ -1609,7 +1942,8 @@ describe('assistants service', () => {
     });
     expect(first.snapshot().assistants[0]).toMatchObject({
       assignedSessionIDs: ['ses_missed'],
-      working: true,
+      working: false,
+      activeContactTurn: null,
     });
     first.close();
 
@@ -1647,7 +1981,8 @@ describe('assistants service', () => {
       title: 'Follow-up',
       status: 'busy',
     });
-    expect(service.snapshot().assistants[0].working).toBe(true);
+    expect(service.snapshot().assistants[0].working).toBe(false);
+    expect(service.snapshot().assistants[0].assignedSessionIDs).toEqual(['ses_timer']);
     await tick();
     page = service.contactMessages(assistant.id);
     expect(page.messages.find((message) => message.parts.some((part) => part.type === 'card' && part.sessionID === 'ses_timer'))?.parts[0].status).toBe('complete');
@@ -1751,7 +2086,7 @@ describe('assistants service', () => {
     });
     expect(service.contactMessages(assistant.id).messages.filter((message) => message.text === 'oc.settle.complete')).toHaveLength(1);
     expect(service.snapshot().assistants[0].assignedSessionIDs.sort()).toEqual(['ses_busy', 'ses_down']);
-    expect(service.snapshot().assistants[0].working).toBe(true);
+    expect(service.snapshot().assistants[0].working).toBe(false);
     service.close();
   });
 
@@ -1997,11 +2332,24 @@ describe('assistants service', () => {
       binding: expect.objectContaining({ sessionID: null, sessionGeneration: 0 }),
       messageID: 'turn_stream_1',
       admitted: true,
+      revision: expect.any(Number),
     });
     expect(sent).not.toHaveProperty('settled');
+    expect(service.snapshot().assistants[0]).toMatchObject({
+      working: true,
+      activeContactTurn: expect.objectContaining({
+        turnID: 'turn_stream_1',
+        messageID: 'turn_stream_1',
+        status: expect.stringMatching(/^(queued|running)$/),
+      }),
+    });
     const settled = await service.whenContactTurnSettled('turn_stream_1');
     expect(settled).toMatchObject({ status: 'complete' });
     await new Promise((resolve) => setImmediate(resolve));
+    expect(service.snapshot().assistants[0]).toMatchObject({
+      working: false,
+      activeContactTurn: null,
+    });
     const types = events.map((event) => event.type);
     expect(types[0]).toBe('openchamber:contact-turn-start');
     expect(events[0].properties).toMatchObject({
@@ -2034,6 +2382,179 @@ describe('assistants service', () => {
     service.close();
   });
 
+  it('replays same messageID+payload admission once and conflicts on payload mismatch', async () => {
+    const directory = root();
+    let release;
+    const blocked = new Promise((resolve) => { release = resolve; });
+    let runs = 0;
+    const service = setup(directory, {}, {
+      runContactTurn: async () => {
+        runs += 1;
+        await blocked;
+        return { text: 'once', bubbles: ['once'] };
+      },
+    });
+    const assistant = service.createAssistant(assistantInput);
+    const first = await service.send(assistant.id, {
+      messageID: 'idem_1',
+      parts: [{ type: 'text', text: 'same' }],
+    });
+    expect(first).toMatchObject({ admitted: true, messageID: 'idem_1', revision: expect.any(Number) });
+    const replay = await service.send(assistant.id, {
+      messageID: 'idem_1',
+      parts: [{ type: 'text', text: 'same' }],
+    });
+    expect(replay).toMatchObject({ admitted: true, messageID: 'idem_1', replayed: true });
+    await expect(service.send(assistant.id, {
+      messageID: 'idem_1',
+      parts: [{ type: 'text', text: 'different' }],
+    })).rejects.toMatchObject({ code: 'idempotency_conflict' });
+    release();
+    await service.whenContactTurnSettled('idem_1');
+    expect(runs).toBe(1);
+    const after = await service.send(assistant.id, {
+      messageID: 'idem_1',
+      parts: [{ type: 'text', text: 'same' }],
+    });
+    expect(after).toMatchObject({ admitted: true, replayed: true });
+    expect(runs).toBe(1);
+    service.close();
+  });
+
+  it('persists a durable contact error bubble so query recovery works without SSE', async () => {
+    const service = setup(root(), {}, {
+      runContactTurn: async () => {
+        const error = new Error('No connected model');
+        error.code = 'no_provider';
+        throw error;
+      },
+    });
+    const assistant = service.createAssistant(assistantInput);
+    await service.send(assistant.id, {
+      messageID: 'fail_persist_1',
+      parts: [{ type: 'text', text: 'hi' }],
+    });
+    await service.whenContactTurnSettled('fail_persist_1');
+    const page = service.contactMessages(assistant.id);
+    expect(page.messages.map((message) => ({ role: message.role, status: message.status, text: message.text }))).toEqual([
+      { role: 'user', status: 'complete', text: 'hi' },
+      { role: 'assistant', status: 'error', text: 'No connected model' },
+    ]);
+    expect(service.snapshot().assistants[0]).toMatchObject({ working: false, activeContactTurn: null });
+    service.close();
+  });
+
+  it('bumps revision when queued contact turn becomes running', async () => {
+    const directory = root();
+    let release;
+    const blocked = new Promise((resolve) => { release = resolve; });
+    const tips = [];
+    const service = setup(directory, {}, {
+      onRevisionTip: (tip) => tips.push(tip),
+      runContactTurn: async () => {
+        await blocked;
+        return { text: 'ok', bubbles: ['ok'] };
+      },
+    });
+    const assistant = service.createAssistant(assistantInput);
+    const before = service.snapshot().revision;
+    await service.send(assistant.id, {
+      messageID: 'run_bump_1',
+      parts: [{ type: 'text', text: 'hi' }],
+    });
+    await new Promise((resolve) => setImmediate(resolve));
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(service.snapshot().assistants[0].activeContactTurn?.status).toBe('running');
+    expect(service.snapshot().revision).toBeGreaterThan(before);
+    release();
+    await service.whenContactTurnSettled('run_bump_1');
+    expect(tips.length).toBeGreaterThan(0);
+    service.close();
+  });
+
+  it('keeps snapshot working authoritative until settle and clears it on server process restart', async () => {
+    const directory = root();
+    let releaseTurn;
+    const blocked = new Promise((resolve) => { releaseTurn = resolve; });
+    const service = setup(directory, {}, {
+      runContactTurn: async () => {
+        await blocked;
+        return { text: 'done', bubbles: ['done'] };
+      },
+    });
+    const assistant = service.createAssistant(assistantInput);
+    await service.send(assistant.id, {
+      messageID: 'turn_auth_1',
+      parts: [{ type: 'text', text: 'hold' }],
+    });
+    expect(service.snapshot().assistants[0]).toMatchObject({
+      working: true,
+      activeContactTurn: {
+        turnID: 'turn_auth_1',
+        messageID: 'turn_auth_1',
+        status: expect.stringMatching(/^(queued|running)$/),
+        admittedAt: expect.any(Number),
+      },
+    });
+    // Same process: snapshot is the APP-restart recovery source.
+    expect(service.snapshot().assistants[0].working).toBe(true);
+    releaseTurn();
+    await service.whenContactTurnSettled('turn_auth_1');
+    expect(service.snapshot().assistants[0]).toMatchObject({
+      working: false,
+      activeContactTurn: null,
+    });
+    service.close();
+
+    // New process (server restart): process-local activity is gone — never permanently green.
+    const restarted = setup(directory, {}, {
+      runContactTurn: async () => ({ text: 'again', bubbles: ['again'] }),
+    });
+    expect(restarted.snapshot().assistants[0]).toMatchObject({
+      working: false,
+      activeContactTurn: null,
+    });
+    restarted.close();
+  });
+
+  it('isolates contact working per assistant and clears working on harness error', async () => {
+    const directory = root();
+    let releaseA;
+    const blockedA = new Promise((resolve) => { releaseA = resolve; });
+    const service = setup(directory, {}, {
+      runContactTurn: async ({ userText }) => {
+        if (userText === 'hold-a') {
+          await blockedA;
+          return { text: 'a-done', bubbles: ['a-done'] };
+        }
+        const error = new Error('No connected model');
+        error.code = 'no_provider';
+        throw error;
+      },
+    });
+    const first = service.createAssistant({ ...assistantInput, name: 'A' });
+    const second = service.createAssistant({ ...assistantInput, name: 'B' });
+    await service.send(first.id, {
+      messageID: 'turn_a',
+      parts: [{ type: 'text', text: 'hold-a' }],
+    });
+    await service.send(second.id, {
+      messageID: 'turn_b',
+      parts: [{ type: 'text', text: 'fail-b' }],
+    });
+    const snap = () => Object.fromEntries(service.snapshot().assistants.map((item) => [item.id, item]));
+    expect(snap()[first.id].working).toBe(true);
+    expect(snap()[first.id].activeContactTurn?.turnID).toBe('turn_a');
+    await service.whenContactTurnSettled('turn_b');
+    expect(snap()[second.id].working).toBe(false);
+    expect(snap()[second.id].activeContactTurn).toBeNull();
+    expect(snap()[first.id].working).toBe(true);
+    releaseA();
+    await service.whenContactTurnSettled('turn_a');
+    expect(snap()[first.id].working).toBe(false);
+    service.close();
+  });
+
   it('admits the user then broadcasts turn-end error when the harness fails', async () => {
     const events = [];
     const service = setup(root(), {}, {
@@ -2051,17 +2572,25 @@ describe('assistants service', () => {
     });
     expect(sent).toMatchObject({ admitted: true, messageID: 'client_no_provider' });
     expect(service.contactMessages(assistant.id).messages.map((message) => message.role)).toEqual(['user']);
+    expect(service.snapshot().assistants[0].working).toBe(true);
     const settled = await service.whenContactTurnSettled('client_no_provider');
     expect(settled).toMatchObject({ status: 'error', code: 'no_provider' });
     await new Promise((resolve) => setImmediate(resolve));
+    expect(service.snapshot().assistants[0]).toMatchObject({
+      working: false,
+      activeContactTurn: null,
+    });
     expect(events.some((event) => event.type === 'openchamber:contact-turn-start')).toBe(true);
     expect(events.some((event) => (
       event.type === 'openchamber:contact-turn-end'
       && event.properties?.status === 'error'
       && event.properties?.turnID === 'client_no_provider'
     ))).toBe(true);
-    // User row stays; no assistant bubble on failure.
-    expect(service.contactMessages(assistant.id).messages.map((message) => message.role)).toEqual(['user']);
+    // User row stays; durable error bubble enables query recovery without SSE.
+    expect(service.contactMessages(assistant.id).messages.map((message) => ({ role: message.role, status: message.status }))).toEqual([
+      { role: 'user', status: 'complete' },
+      { role: 'assistant', status: 'error' },
+    ]);
     service.close();
   });
 

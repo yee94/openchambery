@@ -9,10 +9,10 @@ const CONTACT_CARD_CHROME_CLASS = [
 ].join(' ')
 
 /** Assistant / schedule covers hug content. */
-export const CONTACT_CARD_COVER_CLASS = `${CONTACT_CARD_CHROME_CLASS} w-fit max-w-[15rem]`
+export const CONTACT_CARD_COVER_CLASS = `${CONTACT_CARD_CHROME_CLASS} w-fit min-w-0 max-w-[min(100%,15rem)]`
 
 /** Session covers can be wider for denser metadata, but not a full-width strip. */
-export const CONTACT_SESSION_CARD_COVER_CLASS = `${CONTACT_CARD_CHROME_CLASS} w-fit max-w-[20rem]`
+export const CONTACT_SESSION_CARD_COVER_CLASS = `${CONTACT_CARD_CHROME_CLASS} w-fit min-w-0 max-w-[min(100%,20rem)]`
 
 export function activateContactCardOnKeyDown(
   event: KeyboardEvent<HTMLElement>,

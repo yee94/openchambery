@@ -41,13 +41,16 @@ export const CLEAR_CHAT_HISTORY_CONFIRM_BUBBLE = 'Chat history cleared.';
 const LIST_SESSIONS_LIMIT_DEFAULT = 20;
 const LIST_SESSIONS_LIMIT_MAX = 50;
 
-/** Stable key for same-turn assign dedup (not cross-turn). */
+/** Stable key for same-turn assign dedup (not cross-turn). Includes worker model + attachment scope. */
 export function normalizeAssignRequestKey(params = {}) {
   const pick = (value) => {
     if (typeof value === 'string') return value.trim();
     if (value == null) return '';
     return String(value).trim();
   };
+  const attachments = Array.isArray(params?.attachmentScope)
+    ? params.attachmentScope
+    : (Array.isArray(params?.attachments) ? params.attachments : []);
   return JSON.stringify({
     prompt: pick(params?.prompt),
     projectPath: pick(params?.projectPath),
@@ -55,6 +58,10 @@ export function normalizeAssignRequestKey(params = {}) {
     branch: pick(params?.branch),
     sessionID: pick(params?.sessionID),
     title: pick(params?.title),
+    providerID: pick(params?.providerID),
+    modelID: pick(params?.modelID),
+    model: pick(params?.model),
+    attachments,
   });
 }
 
@@ -80,12 +87,16 @@ const newConversationParameters = typeboxObject({});
 const clearChatHistoryParameters = typeboxObject({});
 
 const assignParameters = typeboxObject({
-  prompt: typeboxString('Coding prompt to kick into the worker OpenCode session.'),
+  prompt: typeboxString('Coding prompt to kick into the worker OpenCode session. Current-turn user attachments (images/files) are forwarded by the server automatically — do not base64-encode or invent local paths.'),
   projectPath: typeboxOptional(typeboxString('Registered project path. Required when more than one project exists.')),
   directory: typeboxOptional(typeboxString('Existing project or worktree directory to reuse.')),
   branch: typeboxOptional(typeboxString('Existing Chat worktree branch to reuse. Do not create a new worktree.')),
   sessionID: typeboxOptional(typeboxString('Existing OpenCode session to reuse instead of creating one.')),
   title: typeboxOptional(typeboxString('Optional title for the worker session and contact card.')),
+  providerID: typeboxOptional(typeboxString('Optional worker OpenCode provider ID from the connected catalog. Does not change this contact\'s model. Illegal/blank values fail closed.')),
+  modelID: typeboxOptional(typeboxString('Optional worker OpenCode model ID from the connected catalog. Does not change this contact\'s model. Illegal/blank values fail closed.')),
+  model: typeboxOptional(typeboxString('Optional worker provider/model string such as provider/model-id from the connected catalog. Must not conflict with providerID/modelID. Does not change this contact\'s model.')),
+  variant: typeboxOptional(typeboxString('Optional worker variant for this assign only. Cross-model assign never reuses this contact\'s variant.')),
 });
 
 const createAssistantParameters = typeboxObject({
@@ -197,6 +208,47 @@ export function formatRegisteredProjectsPrompt(projects) {
     'Fuzzy-match user names like "openchamber yee" / "openchamer yee" against label and path.',
     'To open coding work after a match, call assign_session with that projectPath (or an existing sessionID from list_sessions).',
     'Use list_projects to refresh/filter and list_sessions to search existing conversations in a project.',
+  ].join('\n');
+}
+
+/** Sanitize connected catalog rows for prompt/tool consumption (no secrets). */
+function sanitizeConnectedModel(entry) {
+  if (!entry || typeof entry !== 'object') return null;
+  const providerID = typeof entry.providerID === 'string' ? entry.providerID.trim() : '';
+  const modelID = typeof entry.modelID === 'string' ? entry.modelID.trim() : '';
+  if (!providerID || !modelID) return null;
+  const name = typeof entry.name === 'string' && entry.name.trim() ? entry.name.trim() : modelID;
+  return {
+    providerID,
+    modelID,
+    name,
+    acceptsImages: entry.acceptsImages === true,
+  };
+}
+
+export function normalizeConnectedModels(models) {
+  return (Array.isArray(models) ? models : [])
+    .map(sanitizeConnectedModel)
+    .filter(Boolean);
+}
+
+/** Injected each turn so assign_session can pick an explicit worker model from the live catalog. */
+export function formatConnectedModelsPrompt(models) {
+  const list = normalizeConnectedModels(models);
+  if (list.length === 0) {
+    return [
+      'Connected OpenCode models: none discoverable this turn.',
+      'assign_session without providerID/modelID/model still uses this contact\'s default model.',
+      'If the user names a specific worker model, only use ids from a successful catalog load — never invent provider/model strings.',
+    ].join(' ');
+  }
+  return [
+    'Connected OpenCode models (worker targets for assign_session only — choosing one does NOT change this contact\'s own model):',
+    ...list.map((entry) => (
+      `- providerID=${JSON.stringify(entry.providerID)} modelID=${JSON.stringify(entry.modelID)} name=${JSON.stringify(entry.name)} acceptsImages=${entry.acceptsImages ? 'true' : 'false'}`
+    )),
+    'When the user names a worker model, pass providerID+modelID or model="provider/modelID" on assign_session. Ambiguous or unknown names must fail — never silent-fallback.',
+    'Current-turn user images/files are forwarded by the server on assign_session. Prefer a acceptsImages=true model when the user attached images.',
   ].join('\n');
 }
 
@@ -500,7 +552,7 @@ export function formatContactToolsPrompt(tools) {
     `{"name":"${MESSAGE_ASSISTANT_TOOL_NAME}","arguments":{"to":"PeerQA","text":"hello-from-assistant 写好了"}}`,
     '```',
     `\`\`\`${CONTACT_TOOL_FENCE}`,
-    `{"name":"${ASSIGN_SESSION_TOOL_NAME}","arguments":{"prompt":"...","projectPath":"..."}}`,
+    `{"name":"${ASSIGN_SESSION_TOOL_NAME}","arguments":{"prompt":"...","projectPath":"...","model":"provider/model-id"}}`,
     '```',
     'If the user asked for more than one of these, do them in that order across turns: new_conversation or clear_chat_history, then list_projects, then list_sessions, then create_assistant, then schedule_task, then message_assistant, then assign_session.',
     'Prerequisite lookups (list_projects / list_sessions) may run before assign_session in the same turn. After a successful assign_session the turn ends — never call assign_session again, and do not keep looping tools.',
@@ -508,7 +560,7 @@ export function formatContactToolsPrompt(tools) {
     'clear_chat_history deletes this contact\'s stored messages, parts, and watches. Use only for explicit wipe intent.',
     'You already receive the registered project catalog each turn. Prefer matching label/path yourself; list_projects refreshes or filters. Never claim you cannot see projects; never ask for a raw path when a name matches.',
     'list_sessions searches the OpenChamber session index for existing chats in a project. A failure is not an empty list — surface the error.',
-    'assign_session opens a real OpenChamber/OpenCode session on a registered project (or reuses sessionID). You are not the worker. One successful assign ends this turn.',
+    'assign_session opens a real OpenChamber/OpenCode session on a registered project (or reuses sessionID). You are not the worker. Optional providerID/modelID/model select the worker only from the connected catalog and never change this contact. Current-turn user attachments are server-forwarded — do not embed base64 or local paths. One successful assign ends this turn.',
     'create_assistant reuses already-connected OpenCode providers (providerID/modelID). Mode is continuous.',
     'schedule_task writes the same payload as PUT /api/projects/:id/scheduled-tasks onto a registered project.',
     'message_assistant is read-only: it inserts into the other contact transcript. It never runs promptAsync or mutates sessions or files. Never assign through a peer message.',
@@ -579,9 +631,17 @@ const toolFailure = (error, fallbackCode, fallbackMessage) => {
   const message = typeof error?.message === 'string' && error.message.trim()
     ? error.message.trim()
     : fallbackMessage;
+  const details = { error: code };
+  // Recoverable prompt admission identity — model must reuse sessionID/messageID,
+  // never blind-create another worker on the same contact turn.
+  if (error instanceof AssignError || (error && typeof error === 'object')) {
+    if (error.ambiguous === true) details.ambiguous = true;
+    if (typeof error.sessionID === 'string' && error.sessionID) details.sessionID = error.sessionID;
+    if (typeof error.messageID === 'string' && error.messageID) details.messageID = error.messageID;
+  }
   return {
     content: [{ type: 'text', text: message }],
-    details: { error: code },
+    details,
     terminate: true,
   };
 };
@@ -598,6 +658,10 @@ export function createContactTools({
   listSessions,
   currentAssistant,
   onCard,
+  /** Authoritative current-turn user file parts (server-owned). Forwarded on assign by default. */
+  turnFileParts = [],
+  /** Precomputed attachment fingerprint for same-turn assign dedup. */
+  turnAttachmentScope = [],
 } = {}) {
   const emitCard = (card) => {
     if (typeof onCard === 'function') onCard(card);
@@ -607,13 +671,19 @@ export function createContactTools({
    * Same contact-turn assign gate only (tools instance = one harness turn).
    * - Same args after success → cached success (no second worker).
    * - Different args after success / parallel mismatch → reject.
-   * - Failure clears the gate so a corrected retry may run.
+   * - Definitive failure clears the gate so a corrected retry may run.
+   * - prompt_ambiguous keeps the gate with sessionID/messageID so a retry must
+   *   reuse that worker — never blind-create a second session this turn.
    * Not cross-turn.
    */
   let assignTurnGate = null;
 
   const executeAssignOnce = async (params) => {
-    const key = normalizeAssignRequestKey(params);
+    let request = { ...(params || {}) };
+    const key = normalizeAssignRequestKey({
+      ...request,
+      attachmentScope: turnAttachmentScope,
+    });
     if (assignTurnGate?.status === 'done') {
       if (assignTurnGate.key === key) return assignTurnGate.result;
       throw new AssignError(ASSIGN_CODES.VALIDATION, ASSIGN_DUPLICATE_TURN_MESSAGE);
@@ -621,6 +691,14 @@ export function createContactTools({
     if (assignTurnGate?.status === 'pending') {
       if (assignTurnGate.key === key) return assignTurnGate.promise;
       throw new AssignError(ASSIGN_CODES.VALIDATION, ASSIGN_DUPLICATE_TURN_MESSAGE);
+    }
+    if (assignTurnGate?.status === 'ambiguous') {
+      if (assignTurnGate.key !== key) {
+        throw new AssignError(ASSIGN_CODES.VALIDATION, ASSIGN_DUPLICATE_TURN_MESSAGE);
+      }
+      // Same request after ambiguous admission: reuse worker identity only.
+      if (assignTurnGate.sessionID) request = { ...request, sessionID: assignTurnGate.sessionID };
+      if (assignTurnGate.messageID) request = { ...request, messageID: assignTurnGate.messageID };
     }
 
     let settle;
@@ -634,7 +712,12 @@ export function createContactTools({
         if (typeof assignWork !== 'function') {
           throw new AssignError('upstream_error', 'Assign is unavailable.');
         }
-        const assigned = await assignWork(params || {});
+        // Server owns current-turn attachments — model never supplies base64/paths.
+        const assigned = await assignWork({
+          ...request,
+          fileParts: turnFileParts,
+          attachmentScope: turnAttachmentScope,
+        });
         const card = createSessionCardPart({
           sessionID: assigned.sessionID,
           directory: assigned.directory,
@@ -653,7 +736,21 @@ export function createContactTools({
         assignTurnGate = { status: 'done', key, result };
         settle.resolve(result);
       } catch (error) {
-        assignTurnGate = null;
+        if (
+          error instanceof AssignError
+          && error.code === ASSIGN_CODES.PROMPT_AMBIGUOUS
+          && typeof error.sessionID === 'string'
+          && error.sessionID
+        ) {
+          assignTurnGate = {
+            status: 'ambiguous',
+            key,
+            sessionID: error.sessionID,
+            messageID: typeof error.messageID === 'string' ? error.messageID : null,
+          };
+        } else {
+          assignTurnGate = null;
+        }
         settle.reject(error);
       }
     })();
@@ -924,6 +1021,8 @@ export function createContactTools({
       description: [
         'Open or reuse a real OpenChamber coding session on a registered project path',
         'and kick the prompt into that session. Optional existing worktree branch or sessionID.',
+        'Optional providerID/modelID/model select the worker from the connected catalog only (does not change this contact).',
+        'Current-turn user attachments are forwarded by the server automatically.',
         'Successful assign ends this contact turn (terminate). Never codes here. Never uses assistant-workspaces.',
       ].join(' '),
       parameters: assignParameters,
