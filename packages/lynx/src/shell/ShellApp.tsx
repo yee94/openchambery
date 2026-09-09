@@ -71,6 +71,8 @@ function RootTab({
   onOpenAssistantConversation,
   onOpenAssistantNeedsSession,
   onOpenScheduledRun,
+  onOpenAssistantSettings,
+  onOpenAssistantsSettings,
   settingsInitialSlug,
 }: {
   tab: LynxTabId;
@@ -85,6 +87,8 @@ function RootTab({
   onOpenAssistantConversation: (assistant: LynxAssistantDTO) => void;
   onOpenAssistantNeedsSession: (assistant: LynxAssistantDTO) => void;
   onOpenScheduledRun: (sessionId: string, directory: string | null) => void;
+  onOpenAssistantSettings: (assistantId: string) => void;
+  onOpenAssistantsSettings: () => void;
   settingsInitialSlug: LynxMobileSettingsSlug | null;
 }) {
   switch (tab) {
@@ -107,6 +111,8 @@ function RootTab({
           runtimeFetch={runtimeFetch}
           onOpenConversation={onOpenAssistantConversation}
           onOpenNeedsSession={onOpenAssistantNeedsSession}
+          onOpenAssistantSettings={onOpenAssistantSettings}
+          onOpenAssistantsSettings={onOpenAssistantsSettings}
         />
       );
     case 'scheduled':
@@ -140,6 +146,7 @@ export function LynxShellApp({
   const [shareInbox] = useState(() => shareInboxProp ?? createLynxShareInbox());
   const [assistantNeedsSessionNote, setAssistantNeedsSessionNote] = useState<string | null>(null);
   const [settingsInitialSlug, setSettingsInitialSlug] = useState<LynxMobileSettingsSlug | null>(null);
+  const [assistantsFocusId, setAssistantsFocusId] = useState<string | null>(null);
   const [chatSheet, setChatSheet] = useState<LynxChatSheetKind | null>(null);
   const fullPageAutoGlassSkin = host.chromeOwner === 'lynx';
   const dockVisible = shouldPaintLynxDock({
@@ -156,7 +163,10 @@ export function LynxShellApp({
   const selectTab = (tab: LynxTabId) => {
     setAssistantNeedsSessionNote(null);
     setChatSheet(null);
-    if (tab !== 'settings') setSettingsInitialSlug(null);
+    if (tab !== 'settings') {
+      setSettingsInitialSlug(null);
+      setAssistantsFocusId(null);
+    }
     setNavigation((state) => reduceLynxNavigation(state, { type: 'setActiveTab', tab }));
   };
 
@@ -263,6 +273,7 @@ export function LynxShellApp({
         case 'setTab':
           setChatSheet(null);
           setSettingsInitialSlug(null);
+          setAssistantsFocusId(null);
           setNavigation((state) => reduceLynxNavigation(state, {
             type: 'setActiveTab',
             tab: command.tab,
@@ -311,6 +322,8 @@ export function LynxShellApp({
     connections,
     onConnectionsChange,
     onConnected,
+    assistantsFocusId,
+    clearAssistantsFocusId: () => setAssistantsFocusId(null),
   };
 
   const secondary = navigation.secondary;
@@ -508,6 +521,22 @@ export function LynxShellApp({
                 type: 'openChat',
                 sessionId,
                 directory,
+              }));
+            }}
+            onOpenAssistantSettings={(assistantId) => {
+              setAssistantsFocusId(assistantId);
+              setSettingsInitialSlug('assistants');
+              setNavigation((state) => reduceLynxNavigation(state, {
+                type: 'setActiveTab',
+                tab: 'settings',
+              }));
+            }}
+            onOpenAssistantsSettings={() => {
+              setAssistantsFocusId(null);
+              setSettingsInitialSlug('assistants');
+              setNavigation((state) => reduceLynxNavigation(state, {
+                type: 'setActiveTab',
+                tab: 'settings',
               }));
             }}
             settingsInitialSlug={settingsInitialSlug}

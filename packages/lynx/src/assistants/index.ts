@@ -2,6 +2,15 @@ export {
   loadAssistantSnapshot,
   loadAssistantCapability,
   ensureAssistantSession,
+  createLynxAssistant,
+  setLynxAssistantsEnabled,
+  deleteLynxAssistant,
+  resolveLynxAssistantCreateDefaults,
+} from './api';
+export type {
+  LynxAssistantDraft,
+  LynxAssistantMutationResult,
+  LynxAssistantCreateResult,
 } from './api';
 export {
   parseLynxAssistantDTO,
