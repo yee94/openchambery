@@ -172,9 +172,18 @@ export const createLynxAssistant = async (
     if (response.status === 0) return { status: 'no-runtime' };
     if (!response.ok) {
       const failed = await mutationFailure(response, 'POST /api/openchamber/assistants');
-      return failed.status === 'failed'
-        ? { status: 'failed', error: failed.error, httpStatus: failed.httpStatus }
-        : failed;
+      if (failed.status === 'no-runtime') return { status: 'no-runtime' };
+      if (failed.status === 'failed') {
+        return {
+          status: 'failed',
+          error: failed.error,
+          httpStatus: failed.httpStatus,
+        };
+      }
+      return {
+        status: 'failed',
+        error: new Error('POST /api/openchamber/assistants failed'),
+      };
     }
     const assistant = parseLynxAssistantDTO(await response.json());
     return { status: 'ok', assistant };
