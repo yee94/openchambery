@@ -317,3 +317,10 @@ Chosen mode is written at the top of `packages/lynx/README.md` (Mode B iOS 26 ho
 - Honesty: no-runtime / HTTP failure never fake ON; `needs_auth` / `needs_client_registration` labeled (OAuth system browser stays host-only — not invented).
 - Vitest: `packages/lynx/src/chat/mcpSheet.test.ts`.
 - Product **NOT DONE** / 三关未齐 / not EXHAUSTED; 真机残差 keeps Connect welcome style confirmation open for Yee; no 真机过 claim.
+
+## Notes — Connect welcome elevated card chrome (Next #55 / 2026-09-10)
+
+- Tip base: `5239dd7e6` (work/lynx-native after PR #93). Published APK honesty stays `lynx-v2-debug-7c5a135` — do not invent a newer APK SHA until mobile-ci rebuilds.
+- Residual after cssVar→hex: cream `#fffdf4` ≈ elevated `#fbfaf2` made done-phase cards look flat on Android softemu. Chrome: 1px `interactive.selection` solid border + radius 12 + elevated fill + optional soft boxShadow on pending-password / paste / add-instance / scan-QR.
+- Page background remains cream hex. No new palette colors; hex-only (no `var()`).
+- Product **NOT DONE** / 三关未齐 / not EXHAUSTED; 真机残差 = Connect welcome **card chrome** confirmation for Yee; no 真机过 claim.
