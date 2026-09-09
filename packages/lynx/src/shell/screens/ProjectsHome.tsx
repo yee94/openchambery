@@ -30,6 +30,13 @@ import {
 } from '../../chat/sessionDeleteUndo';
 import { resolveLynxSessionTreeTargets } from '../../chat/sessionTreeIds';
 import {
+  LYNX_SESSIONS_SHEET_DEFAULT_VISIBLE,
+  collapseLynxSessionsSheetVisibleCount,
+  lynxProjectsHomeBucketKey,
+  nextLynxSessionsSheetVisibleCount,
+  sliceLynxSessionsSheetVisible,
+} from '../../chat/sessionsSheet';
+import {
   closeLynxProject,
   inferLynxProjectIsGit,
   probeLynxGitRepository,
@@ -183,20 +190,39 @@ function SessionRow({
 }
 
 function WorktreeGroup({
+  locale,
   worktree,
   expanded,
   onToggle,
   onOpenSession,
   onSessionLongPress,
   onWorktreeLongPress,
+  visibleCount,
+  onShowMore,
+  onShowFewer,
+  /** Cap: search uses unpaginated catalog — never limit matches to the compact slice. */
+  searching = false,
 }: {
+  locale: string;
   worktree: LynxHomeWorktreeGroup;
   expanded: boolean;
   onToggle: () => void;
   onOpenSession?: (session: LynxHomeSessionRow) => void;
   onSessionLongPress?: (session: LynxHomeSessionRow) => void;
   onWorktreeLongPress?: (worktree: LynxHomeWorktreeGroup) => void;
+  visibleCount: number;
+  onShowMore: () => void;
+  onShowFewer: () => void;
+  searching?: boolean;
 }) {
+  const sliced = searching
+    ? {
+      visible: worktree.sessions.slice(),
+      remaining: 0,
+      canShowMore: false,
+      canShowFewer: false,
+    }
+    : sliceLynxSessionsSheetVisible(worktree.sessions, visibleCount);
   return (
     <LynxView style={{ marginTop: '8px' }}>
       <LynxView
@@ -218,22 +244,53 @@ function WorktreeGroup({
           {worktree.sessionCount} {expanded ? '▾' : '▸'}
         </LynxText>
       </LynxView>
-      {expanded
-        ? worktree.sessions.map((session) => (
-          <SessionRow
-            key={session.id}
-            session={session}
-            onOpen={onOpenSession}
-            onLongPress={onSessionLongPress}
-            cue={session.inProgress ? 'busy' : null}
-          />
-        ))
-        : null}
+      {expanded ? (
+        <>
+          {sliced.visible.map((session) => (
+            <SessionRow
+              key={session.id}
+              session={session}
+              onOpen={onOpenSession}
+              onLongPress={onSessionLongPress}
+              cue={session.inProgress ? 'busy' : null}
+            />
+          ))}
+          {sliced.canShowMore || sliced.canShowFewer ? (
+            <LynxView
+              style={{ flexDirection: 'row', gap: '12px', marginTop: '4px', paddingBottom: '4px' }}
+            >
+              {sliced.canShowMore ? (
+                <LynxView
+                  bindtap={onShowMore}
+                  accessibility-role="button"
+                  accessibility-label={lynxT(locale, 'lynx.chat.sessionsSheet.showMore')}
+                >
+                  <LynxText style={{ color: cssVar('primary.base'), fontSize: '13px' }}>
+                    {lynxT(locale, 'lynx.chat.sessionsSheet.showMore')} (+{sliced.remaining})
+                  </LynxText>
+                </LynxView>
+              ) : null}
+              {sliced.canShowFewer ? (
+                <LynxView
+                  bindtap={onShowFewer}
+                  accessibility-role="button"
+                  accessibility-label={lynxT(locale, 'lynx.chat.sessionsSheet.showFewer')}
+                >
+                  <LynxText style={{ color: cssVar('surface.mutedForeground'), fontSize: '13px' }}>
+                    {lynxT(locale, 'lynx.chat.sessionsSheet.showFewer')}
+                  </LynxText>
+                </LynxView>
+              ) : null}
+            </LynxView>
+          ) : null}
+        </>
+      ) : null}
     </LynxView>
   );
 }
 
 function ProjectCard({
+  locale,
   project,
   expanded,
   onToggle,
@@ -243,7 +300,12 @@ function ProjectCard({
   onSessionLongPress,
   onProjectLongPress,
   onWorktreeLongPress,
+  visibleCountByBucket,
+  onShowMoreBucket,
+  onShowFewerBucket,
+  searching = false,
 }: {
+  locale: string;
   project: LynxHomeProject;
   expanded: boolean;
   onToggle: () => void;
@@ -253,6 +315,10 @@ function ProjectCard({
   onSessionLongPress?: (session: LynxHomeSessionRow) => void;
   onProjectLongPress?: (project: LynxHomeProject) => void;
   onWorktreeLongPress?: (project: LynxHomeProject, worktree: LynxHomeWorktreeGroup) => void;
+  visibleCountByBucket: Record<string, number>;
+  onShowMoreBucket: (projectId: string, worktree: LynxHomeWorktreeGroup) => void;
+  onShowFewerBucket: (projectId: string, worktreeId: string) => void;
+  searching?: boolean;
 }) {
   return (
     <LynxView
@@ -283,17 +349,26 @@ function ProjectCard({
         </LynxText>
       </LynxView>
       {expanded
-        ? project.worktrees.map((worktree) => (
-          <WorktreeGroup
-            key={worktree.id}
-            worktree={worktree}
-            expanded={worktreeExpanded[worktree.id] ?? worktree.kind === 'main'}
-            onToggle={() => onToggleWorktree(worktree.id)}
-            onOpenSession={onOpenSession}
-            onSessionLongPress={onSessionLongPress}
-            onWorktreeLongPress={(wt) => onWorktreeLongPress?.(project, wt)}
-          />
-        ))
+        ? project.worktrees.map((worktree) => {
+          const bucketKey = lynxProjectsHomeBucketKey(project.id, worktree.id);
+          const visibleCount = visibleCountByBucket[bucketKey] ?? LYNX_SESSIONS_SHEET_DEFAULT_VISIBLE;
+          return (
+            <WorktreeGroup
+              key={worktree.id}
+              locale={locale}
+              worktree={worktree}
+              expanded={searching || (worktreeExpanded[worktree.id] ?? worktree.kind === 'main')}
+              onToggle={() => onToggleWorktree(worktree.id)}
+              onOpenSession={onOpenSession}
+              onSessionLongPress={onSessionLongPress}
+              onWorktreeLongPress={(wt) => onWorktreeLongPress?.(project, wt)}
+              visibleCount={visibleCount}
+              onShowMore={() => onShowMoreBucket(project.id, worktree)}
+              onShowFewer={() => onShowFewerBucket(project.id, worktree.id)}
+              searching={searching}
+            />
+          );
+        })
         : null}
     </LynxView>
   );
@@ -302,7 +377,7 @@ function ProjectCard({
 /**
  * Projects home: session-index cards + worktree groups + search + pin/busy cues.
  * failure ≠ empty — failed refresh keeps previous snapshot and shows an error banner.
- * Next #37: Cap-parity session share + project/worktree action sheets.
+ * Cap per-bucket Show more / Show fewer (default 3 / +7) via SessionsSheet helpers.
  */
 export function ProjectsHome({
   locale,
@@ -330,6 +405,8 @@ export function ProjectsHome({
   const [headerProgress, setHeaderProgress] = useState(0);
   const [projectExpanded, setProjectExpanded] = useState<Record<string, boolean>>({});
   const [worktreeExpanded, setWorktreeExpanded] = useState<Record<string, boolean>>({});
+  /** Cap `visibleCountByBucket` — per project/worktree key `projectId::worktreeId`. */
+  const [visibleCountByBucket, setVisibleCountByBucket] = useState<Record<string, number>>({});
   const [actionTarget, setActionTarget] = useState<ActionTarget | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [actionBusy, setActionBusy] = useState(false);
@@ -348,6 +425,8 @@ export function ProjectsHome({
   const [pendingDeletionIds, setPendingDeletionIds] = useState<string[]>([]);
   const searchQuery = searchQueryProp ?? internalQuery;
   const setSearchQuery = onSearchQueryChange ?? setInternalQuery;
+  /** Cap keyword search — bypass compact Show-more slice (catalogSessions spirit). */
+  const searching = searchQuery.trim().length > 0;
 
   const baseModel = useMemo(() => {
     if (modelOverride) return modelOverride;
@@ -942,7 +1021,7 @@ export function ProjectsHome({
         </LynxText>
       ) : null}
 
-      {model.pinnedSessions.length > 0 ? (
+      {!searching && model.pinnedSessions.length > 0 ? (
         <LynxView style={{ marginBottom: '16px' }}>
           <LynxText style={{ color: cssVar('surface.mutedForeground'), fontSize: '13px', fontWeight: '600', marginBottom: '4px' }}>
             {lynxT(locale, 'lynx.projects.pinned')}
@@ -959,7 +1038,7 @@ export function ProjectsHome({
         </LynxView>
       ) : null}
 
-      {model.inProgressSessions.length > 0 ? (
+      {!searching && model.inProgressSessions.length > 0 ? (
         <LynxView style={{ marginBottom: '16px' }}>
           <LynxText style={{ color: cssVar('surface.mutedForeground'), fontSize: '13px', fontWeight: '600', marginBottom: '4px' }}>
             {lynxT(locale, 'lynx.projects.inProgress')}
@@ -992,8 +1071,9 @@ export function ProjectsHome({
       {model.projects.map((project) => (
         <ProjectCard
           key={project.id}
+          locale={locale}
           project={project}
-          expanded={projectExpanded[project.id] ?? true}
+          expanded={searching || (projectExpanded[project.id] ?? true)}
           onToggle={() => setProjectExpanded((map) => ({
             ...map,
             [project.id]: !(map[project.id] ?? true),
@@ -1007,6 +1087,25 @@ export function ProjectsHome({
           onSessionLongPress={openSessionActions}
           onProjectLongPress={openProjectActions}
           onWorktreeLongPress={openWorktreeActions}
+          searching={searching}
+          visibleCountByBucket={visibleCountByBucket}
+          onShowMoreBucket={(projectId, worktree) => {
+            const key = lynxProjectsHomeBucketKey(projectId, worktree.id);
+            setVisibleCountByBucket((map) => ({
+              ...map,
+              [key]: nextLynxSessionsSheetVisibleCount(
+                map[key] ?? LYNX_SESSIONS_SHEET_DEFAULT_VISIBLE,
+                worktree.sessions.length,
+              ),
+            }));
+          }}
+          onShowFewerBucket={(projectId, worktreeId) => {
+            const key = lynxProjectsHomeBucketKey(projectId, worktreeId);
+            setVisibleCountByBucket((map) => ({
+              ...map,
+              [key]: collapseLynxSessionsSheetVisibleCount(),
+            }));
+          }}
         />
       ))}
       </LynxScrollView>

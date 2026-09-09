@@ -9,6 +9,7 @@ import {
   buildLynxSessionsSheetFilterChips,
   buildLynxSessionsSheetModel,
   collapseLynxSessionsSheetVisibleCount,
+  lynxProjectsHomeBucketKey,
   nextLynxSessionsSheetVisibleCount,
   resolveLynxSessionsSheetNewChatDirectory,
   resolveLynxSessionsSheetOpenDirectory,
@@ -178,6 +179,21 @@ describe('pagination + open directory', () => {
     expect(sliced.canShowMore).toBe(true);
     expect(nextLynxSessionsSheetVisibleCount(3, 10)).toBe(10);
     expect(collapseLynxSessionsSheetVisibleCount()).toBe(3);
+  });
+
+  test('ProjectsHome Cap bucket key is projectId::bucketKey', () => {
+    expect(lynxProjectsHomeBucketKey('/repo', 'main')).toBe('/repo::main');
+    expect(lynxProjectsHomeBucketKey('proj', 'wt-1')).toBe('proj::wt-1');
+  });
+
+  test('search bypass uses full catalog length (no compact slice)', () => {
+    // Cap catalogSessions spirit: while searching, pass sessions.length as visibleCount
+    // so every match stays visible (ProjectsHome sets searching → skip slice).
+    const items = Array.from({ length: 12 }, (_, i) => `s${i}`);
+    const full = sliceLynxSessionsSheetVisible(items, items.length);
+    expect(full.visible).toHaveLength(12);
+    expect(full.canShowMore).toBe(false);
+    expect(full.canShowFewer).toBe(true);
   });
 
   test('preserve-active-project open directory', () => {
