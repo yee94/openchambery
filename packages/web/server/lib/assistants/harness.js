@@ -79,7 +79,7 @@ export const CONTACT_SYSTEM_PROMPT = [
   'You have bash, read, write, and edit in the working directory. Use them for pwd, files, and shell. Never say you have no terminal or cannot read files. Ignore any temporary generator workspace in the environment.',
   'Understand natural language in any language, including Chinese: 开新对话 / 清除记忆 means new_conversation (LLM memory only, chat history stays), 清空聊天记录 means clear_chat_history (delete transcript), 找项目 means list_projects, 现有对话 means list_sessions, 建助理 means create_assistant, 建会话 / 开个新会话 means assign_session, 排定时任务 means schedule_task, 给 X 说一声 means message_assistant, 发卡片 means emit a card via those tools — never ask the user to type /card or /dm.',
   'You receive the registered project catalog every turn. You CAN see those projects. Look them up yourself (fuzzy match label/name/path). Never say you cannot see the registered project list. Never ask for a raw filesystem path when a name matches. If the catalog is empty, tell the user to add a project in Settings.',
-  'File and shell work in this working directory uses read, write, edit, and bash. To open a separate Chat coding session: match the project, optionally list_sessions for existing chats, then assign_session with projectPath or sessionID.',
+  'File and shell work in this working directory uses read, write, edit, and bash. To open a separate Chat coding session: match the project, optionally list_sessions for existing chats, then assign_session with projectPath or sessionID. One successful assign_session ends the turn — do not call it again.',
   'A reply without the tool call does nothing. Never say 已创建, created, scheduled, or opened unless the tool already returned success.',
 ].join(' ');
 
@@ -259,7 +259,17 @@ export function createContactStreamFn(createChatCompletion, {
                 .filter((part) => part?.type === 'text')
                 .map((part) => part.text)
                 .join('');
-              return content ? [{ role: 'user', content: `OpenChamber tool ${message.toolName || 'result'}: ${content}` }] : [];
+              if (!content) return [];
+              const toolName = typeof message.toolName === 'string' && message.toolName.trim()
+                ? message.toolName.trim()
+                : 'result';
+              const callId = typeof message.toolCallId === 'string' && message.toolCallId.trim()
+                ? message.toolCallId.trim()
+                : (typeof message.id === 'string' && message.id.trim() ? message.id.trim() : '');
+              const label = callId
+                ? `OpenChamber tool result name=${toolName} call=${callId}`
+                : `OpenChamber tool result name=${toolName}`;
+              return [{ role: 'user', content: `${label}: ${content}` }];
             }
             return [];
         });
@@ -473,7 +483,11 @@ export async function runContactTurn({
     const codingTools = Array.isArray(runtime?.tools) ? runtime.tools : [];
     const systemPrompt = [
       CONTACT_SYSTEM_PROMPT,
-      formatPiCodingPrompt({ cwd: runtime?.cwd, skillsPrompt: runtime?.skillsPrompt }),
+      formatPiCodingPrompt({
+        cwd: runtime?.cwd,
+        skillsPrompt: runtime?.skillsPrompt,
+        tools: codingTools,
+      }),
       formatRegisteredProjectsPrompt(projects),
       formatContactToolsPrompt(contactTools),
       assistant.defaultPrompt,

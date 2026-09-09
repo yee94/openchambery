@@ -4,6 +4,20 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.19.12] - 2026-09-09
+
+### 助手
+
+- 联系人工具与 pi 编码工具在系统提示中提供完整参数 schema，模型按 schema 调用 read/write/edit/bash 与 8 个操作工具。
+- `assign_session` 成功后立即结束本轮，并在同一轮内防重复开会话；同参数复用结果，不同参数直接拒绝。
+- 区分「清除记忆」与「清空聊天记录」；会话卡片与确认气泡为成功开会话后的用户可见结果。
+
+### LLM 网关
+
+- 生成器 throwaway 会话使用正确的 agent `permission: { "*": deny }` 与 session deny-all，避免误调原生/MCP/skill 工具。
+- `tool.ids` / `session.messages` 等确定性上游错误立即失败，不再伪装成仍在等待。
+- 临时工作目录支持并发首次创建与热刷新序列化写入，长驻进程可更新隐藏 agent 配置。
+
 ## [1.19.11] - 2026-09-08
 
 汇总 1.19.11-beta.1 ~ 1.19.11-beta.2。

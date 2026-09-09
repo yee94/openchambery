@@ -74,8 +74,11 @@ describe('generateOpenCodeText', () => {
       clientFactory: createOpencodeClient,
       ensureTempDirectory: async ({ agentMarkdown }) => {
         expect(agentMarkdown).toContain('openchamber-tool JSON fences')
-        expect(agentMarkdown).toContain('effect: deny')
+        expect(agentMarkdown).toMatch(/"\*"\s*:\s*deny/)
+        expect(agentMarkdown).toContain('permission:')
+        expect(agentMarkdown).not.toContain('effect: deny')
         expect(agentMarkdown).toContain('Report execution and failures from supplied tool results only.')
+        expect(agentMarkdown).toContain('Native permissions are denied')
         return '/tmp/openchamber-llm'
       },
       detect: async () => ({ available: false, mode: 'throwaway-session' }),
@@ -83,6 +86,8 @@ describe('generateOpenCodeText', () => {
 
     expect(create).toHaveBeenCalledWith(expect.objectContaining({
       title: expect.stringContaining('[openchamber-llm]'),
+      agent: 'openchamber-llm',
+      permission: [{ permission: '*', pattern: '*', action: 'deny' }],
       metadata: { openchamber: { llm: { purpose: 'chat-completions' } } },
     }), expect.anything())
     expect(update).toHaveBeenCalled()
@@ -415,6 +420,98 @@ describe('generateOpenCodeText', () => {
     })).rejects.toMatchObject({ code: 'upstream_error', message: 'boom' })
 
     expect(subscribers.size).toBe(0)
+  })
+
+  it('throws when tool.ids returns an SDK error instead of denying nothing', async () => {
+    const remove = vi.fn(async () => ({ data: true }))
+    await expect(generateOpenCodeText({
+      buildOpenCodeUrl: () => 'http://127.0.0.1:4096',
+      getOpenCodeAuthHeaders: () => ({}),
+      providerID: 'opencode',
+      modelID: 'gpt-5-nano',
+      messages: [{ role: 'user', content: 'hi' }],
+      clientFactory: () => ({
+        session: {
+          create: vi.fn(async () => ({ data: { id: 'ses_tmp' } })),
+          update: vi.fn(),
+          prompt: vi.fn(),
+          promptAsync: vi.fn(),
+          status: vi.fn(),
+          messages: vi.fn(),
+          delete: remove,
+        },
+        tool: { ids: async () => ({ error: { status: 500, message: 'tool catalog unavailable' } }) },
+      }),
+      ensureTempDirectory: async () => '/tmp/openchamber-llm',
+      detect: async () => ({ available: false, mode: 'throwaway-session' }),
+    })).rejects.toMatchObject({
+      code: 'upstream_error',
+      message: expect.stringContaining('tool.ids failed'),
+    })
+    expect(remove).not.toHaveBeenCalled()
+  })
+
+  it('throws when session.messages returns a deterministic 400', async () => {
+    const remove = vi.fn(async () => ({ data: true }))
+    await expect(generateOpenCodeText({
+      buildOpenCodeUrl: () => 'http://127.0.0.1:4096',
+      getOpenCodeAuthHeaders: () => ({}),
+      providerID: 'opencode',
+      modelID: 'gpt-5-nano',
+      messages: [{ role: 'user', content: 'hi' }],
+      clientFactory: () => ({
+        session: {
+          create: async () => ({ data: { id: 'ses_tmp' } }),
+          update: async () => ({ data: { id: 'ses_tmp' } }),
+          prompt: vi.fn(),
+          promptAsync: async () => ({ response: { status: 204 } }),
+          status: async () => ({ data: { ses_tmp: { type: 'idle' } } }),
+          messages: async () => ({ error: { status: 400, message: 'OutputFormatJsonSchema' } }),
+          delete: remove,
+        },
+        tool: { ids: async () => ({ data: ['bash'] }) },
+      }),
+      ensureTempDirectory: async () => '/tmp/openchamber-llm',
+      detect: async () => ({ available: false, mode: 'throwaway-session' }),
+    })).rejects.toMatchObject({
+      code: 'upstream_error',
+      message: expect.stringMatching(/session\.messages failed.*400|OutputFormatJsonSchema/),
+    })
+    expect(remove).toHaveBeenCalled()
+  })
+
+  it('logs SDK delete errors without erasing a successful generate result', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    try {
+      const result = await generateOpenCodeText({
+        buildOpenCodeUrl: () => 'http://127.0.0.1:4096',
+        getOpenCodeAuthHeaders: () => ({}),
+        providerID: 'opencode',
+        modelID: 'gpt-5-nano',
+        messages: [{ role: 'user', content: 'hi' }],
+        clientFactory: () => ({
+          session: {
+            create: async () => ({ data: { id: 'ses_tmp' } }),
+            update: async () => ({ data: { id: 'ses_tmp' } }),
+            prompt: vi.fn(),
+            promptAsync: async () => ({ response: { status: 204 } }),
+            status: async () => ({ data: { ses_tmp: { type: 'idle' } } }),
+            messages: async () => ({ data: [completedAssistant('ok')] }),
+            delete: async () => ({ error: { status: 500, message: 'delete denied' } }),
+          },
+          tool: { ids: async () => ({ data: [] }) },
+        }),
+        ensureTempDirectory: async () => '/tmp/openchamber-llm',
+        detect: async () => ({ available: false, mode: 'throwaway-session' }),
+      })
+      expect(result).toEqual({ text: 'ok', source: 'throwaway-session' })
+      expect(warn).toHaveBeenCalledWith(
+        expect.stringContaining('[llm] failed to delete throwaway OpenCode session:'),
+        expect.stringContaining('delete denied'),
+      )
+    } finally {
+      warn.mockRestore()
+    }
   })
 
   it('does not invent deltas on the sessionless /generate JSON path', async () => {

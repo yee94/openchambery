@@ -1,4 +1,4 @@
-import { AssignError, PROJECT_REQUIRED_MESSAGE } from './assign.js';
+import { AssignError, ASSIGN_CODES, PROJECT_REQUIRED_MESSAGE } from './assign.js';
 import { createAssistantCardPart, createScheduleCardPart, createSessionCardPart } from './cards.js';
 import { isPiCodingToolName } from './pi-tools.js';
 
@@ -32,12 +32,31 @@ export const LIST_PROJECTS_TOOL_NAME = 'list_projects';
 export const LIST_SESSIONS_TOOL_NAME = 'list_sessions';
 const CONTACT_TOOL_FENCE = 'openchamber-tool';
 export const ASSIGNED_SESSION_FALLBACK_BUBBLE = 'Opened a coding session.';
+/** Same-turn duplicate assign (different args after a success, or parallel mismatch). */
+export const ASSIGN_DUPLICATE_TURN_MESSAGE = 'This contact turn already opened a coding session. Do not assign again.';
 /** Clear-memory confirm: transcript rows stay; only the LLM window resets. */
 export const NEW_CONVERSATION_CONFIRM_BUBBLE = 'Memory cleared. Previous messages stay in the chat; I will not use them as context.';
 /** Explicit transcript wipe confirm (clear_chat_history / POST contact/reset). */
 export const CLEAR_CHAT_HISTORY_CONFIRM_BUBBLE = 'Chat history cleared.';
 const LIST_SESSIONS_LIMIT_DEFAULT = 20;
 const LIST_SESSIONS_LIMIT_MAX = 50;
+
+/** Stable key for same-turn assign dedup (not cross-turn). */
+export function normalizeAssignRequestKey(params = {}) {
+  const pick = (value) => {
+    if (typeof value === 'string') return value.trim();
+    if (value == null) return '';
+    return String(value).trim();
+  };
+  return JSON.stringify({
+    prompt: pick(params?.prompt),
+    projectPath: pick(params?.projectPath),
+    directory: pick(params?.directory),
+    branch: pick(params?.branch),
+    sessionID: pick(params?.sessionID),
+    title: pick(params?.title),
+  });
+}
 
 const DENIED_CODING_TOOLS = new Set(['glob', 'grep', 'shell', 'find', 'ls', 'powershell']);
 
@@ -414,6 +433,35 @@ export function resolvePeerAssistant(params = {}, assistants = [], currentAssist
   return matches[0];
 }
 
+/**
+ * Serialize a tool parameter schema for the contact system prompt.
+ * Accepts plain JSON-schema-like objects and TypeBox schemas (JSON.stringify).
+ * Strips non-enumerable TypeBox markers (~kind / ~optional).
+ */
+export function serializeToolParametersForPrompt(parameters) {
+  if (parameters == null) return '{"type":"object","properties":{}}';
+  try {
+    const text = JSON.stringify(parameters, (_key, value) => {
+      if (typeof value === 'function' || typeof value === 'symbol') return undefined;
+      return value;
+    });
+    if (typeof text === 'string' && text.trim() && text !== 'undefined') return text;
+  } catch {
+    // Fall through to empty object schema.
+  }
+  return '{"type":"object","properties":{}}';
+}
+
+/** One catalog line: name, description, and full arguments schema. */
+export function formatApplicationToolCatalogEntry(tool) {
+  if (!tool || typeof tool.name !== 'string' || !tool.name.trim()) return '';
+  const name = tool.name.trim();
+  const description = typeof tool.description === 'string' && tool.description.trim()
+    ? tool.description.trim()
+    : (typeof tool.label === 'string' && tool.label.trim() ? tool.label.trim() : name);
+  return `- ${name}: ${description}\n  arguments schema: ${serializeToolParametersForPrompt(tool.parameters)}`;
+}
+
 export function formatContactToolsPrompt(tools) {
   const list = Array.isArray(tools)
     ? tools.filter((tool) => tool?.name && !DENIED_CODING_TOOLS.has(tool.name) && !isPiCodingToolName(tool.name))
@@ -455,11 +503,12 @@ export function formatContactToolsPrompt(tools) {
     `{"name":"${ASSIGN_SESSION_TOOL_NAME}","arguments":{"prompt":"...","projectPath":"..."}}`,
     '```',
     'If the user asked for more than one of these, do them in that order across turns: new_conversation or clear_chat_history, then list_projects, then list_sessions, then create_assistant, then schedule_task, then message_assistant, then assign_session.',
+    'Prerequisite lookups (list_projects / list_sessions) may run before assign_session in the same turn. After a successful assign_session the turn ends — never call assign_session again, and do not keep looping tools.',
     'new_conversation advances this contact\'s LLM context boundary only. Stored messages and watches remain. It never calls session/new or createNew.',
     'clear_chat_history deletes this contact\'s stored messages, parts, and watches. Use only for explicit wipe intent.',
     'You already receive the registered project catalog each turn. Prefer matching label/path yourself; list_projects refreshes or filters. Never claim you cannot see projects; never ask for a raw path when a name matches.',
     'list_sessions searches the OpenChamber session index for existing chats in a project. A failure is not an empty list — surface the error.',
-    'assign_session opens a real OpenChamber/OpenCode session on a registered project (or reuses sessionID). You are not the worker.',
+    'assign_session opens a real OpenChamber/OpenCode session on a registered project (or reuses sessionID). You are not the worker. One successful assign ends this turn.',
     'create_assistant reuses already-connected OpenCode providers (providerID/modelID). Mode is continuous.',
     'schedule_task writes the same payload as PUT /api/projects/:id/scheduled-tasks onto a registered project.',
     'message_assistant is read-only: it inserts into the other contact transcript. It never runs promptAsync or mutates sessions or files. Never assign through a peer message.',
@@ -467,9 +516,10 @@ export function formatContactToolsPrompt(tools) {
     'When calling a tool that takes a beat (找项目 / 开会话), you may say one short spoken line first (≤40 characters, e.g. 我去找一下), then only the fence. No planning, no tool names, no "let me think".',
     'Never say 已创建, 已发送, created, scheduled, opened, or sent unless the tool already returned success.',
     'If no registered project exists, tell the user to add one in Settings — do not use assistant-workspaces.',
-    'After a successful tool, confirm in one short bubble. The user sees a contact card, not tool traces.',
+    'After a successful tool, confirm in one short bubble. The user sees a contact card, not tool traces. After successful assign_session the session card plus that short confirm is enough — stop.',
+    'These are application-owned OpenChamber contact tools (not OpenCode native tools, not MCP, not skill directory entries). Use only the names and argument schemas below:',
     'Available OpenChamber tools:',
-    ...list.map((tool) => `- ${tool.name}: ${tool.description || tool.label || tool.name}`),
+    ...list.map((tool) => formatApplicationToolCatalogEntry(tool)).filter(Boolean),
   ].join('\n');
 }
 
@@ -551,6 +601,64 @@ export function createContactTools({
 } = {}) {
   const emitCard = (card) => {
     if (typeof onCard === 'function') onCard(card);
+  };
+
+  /**
+   * Same contact-turn assign gate only (tools instance = one harness turn).
+   * - Same args after success → cached success (no second worker).
+   * - Different args after success / parallel mismatch → reject.
+   * - Failure clears the gate so a corrected retry may run.
+   * Not cross-turn.
+   */
+  let assignTurnGate = null;
+
+  const executeAssignOnce = async (params) => {
+    const key = normalizeAssignRequestKey(params);
+    if (assignTurnGate?.status === 'done') {
+      if (assignTurnGate.key === key) return assignTurnGate.result;
+      throw new AssignError(ASSIGN_CODES.VALIDATION, ASSIGN_DUPLICATE_TURN_MESSAGE);
+    }
+    if (assignTurnGate?.status === 'pending') {
+      if (assignTurnGate.key === key) return assignTurnGate.promise;
+      throw new AssignError(ASSIGN_CODES.VALIDATION, ASSIGN_DUPLICATE_TURN_MESSAGE);
+    }
+
+    let settle;
+    const promise = new Promise((resolve, reject) => {
+      settle = { resolve, reject };
+    });
+    assignTurnGate = { status: 'pending', key, promise };
+
+    void (async () => {
+      try {
+        if (typeof assignWork !== 'function') {
+          throw new AssignError('upstream_error', 'Assign is unavailable.');
+        }
+        const assigned = await assignWork(params || {});
+        const card = createSessionCardPart({
+          sessionID: assigned.sessionID,
+          directory: assigned.directory,
+          title: assigned.title,
+          status: assigned.status || 'busy',
+          branch: assigned.branch,
+        });
+        emitCard(card);
+        const result = {
+          // Short confirm for the transcript; session id lives on the card details.
+          content: [{ type: 'text', text: ASSIGNED_SESSION_FALLBACK_BUBBLE }],
+          details: { card, assigned },
+          // End the pi agent loop so a looping model cannot re-assign 37 times.
+          terminate: true,
+        };
+        assignTurnGate = { status: 'done', key, result };
+        settle.resolve(result);
+      } catch (error) {
+        assignTurnGate = null;
+        settle.reject(error);
+      }
+    })();
+
+    return promise;
   };
 
   return [
@@ -816,28 +924,12 @@ export function createContactTools({
       description: [
         'Open or reuse a real OpenChamber coding session on a registered project path',
         'and kick the prompt into that session. Optional existing worktree branch or sessionID.',
-        'Never codes here. Never uses assistant-workspaces.',
+        'Successful assign ends this contact turn (terminate). Never codes here. Never uses assistant-workspaces.',
       ].join(' '),
       parameters: assignParameters,
       execute: async (_toolCallId, params) => {
         try {
-          if (typeof assignWork !== 'function') {
-            throw new AssignError('upstream_error', 'Assign is unavailable.');
-          }
-          const assigned = await assignWork(params || {});
-          const card = createSessionCardPart({
-            sessionID: assigned.sessionID,
-            directory: assigned.directory,
-            title: assigned.title,
-            status: assigned.status || 'busy',
-            branch: assigned.branch,
-          });
-          emitCard(card);
-          return {
-            content: [{ type: 'text', text: `Opened coding session ${assigned.sessionID}. The user will see a session card.` }],
-            details: { card, assigned },
-            terminate: false,
-          };
+          return await executeAssignOnce(params || {});
         } catch (error) {
           return toolFailure(error, 'assign_failed', 'Could not assign a coding session.');
         }

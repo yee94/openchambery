@@ -1160,6 +1160,49 @@ describe('assistants service', () => {
     service.close();
   });
 
+  it('same contact-turn assign gate: model re-send creates one worker and one card', async () => {
+    const directory = root();
+    const project = path.join(directory, 'app');
+    fs.mkdirSync(project, { recursive: true });
+    const creates = [];
+    const service = setup(directory, {
+      create: async (input) => {
+        creates.push(input);
+        return { data: { id: `ses_${creates.length}` } };
+      },
+      promptAsync: async () => ({ response: { status: 204 } }),
+    }, {
+      runContactTurn: async ({ tools, userText }) => {
+        const assign = tools.find((tool) => tool.name === 'assign_session');
+        const args = { prompt: userText, projectPath: project, title: 'Once' };
+        const first = await assign.execute('call_1', args);
+        const second = await assign.execute('call_2', args);
+        const thirdDifferent = await assign.execute('call_3', { ...args, prompt: `${userText} again` });
+        expect(first.terminate).toBe(true);
+        expect(second.terminate).toBe(true);
+        expect(second.details.assigned.sessionID).toBe(first.details.assigned.sessionID);
+        expect(thirdDifferent.details.error).toBe('validation_error');
+        return {
+          text: first.content[0].text,
+          bubbles: [first.content[0].text],
+          cards: first.details.card ? [first.details.card, second.details.card].filter(Boolean) : [],
+          tools,
+        };
+      },
+    });
+    const assistant = service.createAssistant(assistantInput);
+    await settleSend(service, assistant.id, {
+      messageID: 'client_assign_once',
+      parts: [{ type: 'text', text: 'Fix once' }],
+    });
+    expect(creates).toHaveLength(1);
+    const page = service.contactMessages(assistant.id);
+    const cards = page.messages.flatMap((message) => (message.parts || []).filter((part) => part.type === 'card'));
+    expect(cards).toHaveLength(1);
+    expect(cards[0]).toMatchObject({ cardType: 'session', sessionID: 'ses_1' });
+    service.close();
+  });
+
   it('creates another assistant from create_assistant and persists the assistant card', async () => {
     const directory = root();
     const service = setup(directory, {}, {

@@ -6,19 +6,34 @@ const SETTLE_POLL_MS = 250;
 const INCOMPLETE_ASSISTANT_SETTLE_PROBES = 2;
 const EMPTY_IDLE_PROBES = 5;
 
+/**
+ * Session-level deny-all. OpenCode 1.18 session.create serializes this
+ * PermissionRuleset shape (permission/pattern/action). Confirmed on local
+ * 1.18.23/1.18.29: create returns the same rule on the session object.
+ */
+export const LLM_SESSION_DENY_PERMISSION = Object.freeze([
+  Object.freeze({ permission: '*', pattern: '*', action: 'deny' }),
+]);
+
+/**
+ * Agent frontmatter for OpenCode 1.18. Runtime /agent metadata uses
+ * permission:[{permission,pattern,action}]. Markdown config accepts the
+ * PermissionActionConfig map (`"*": deny`) / scalar `deny` / tools:"*":false —
+ * not the legacy action/resource/effect list (that loads but does not add
+ * a terminal * deny, so build-like allows and skill guidance stay visible).
+ */
 const AGENT_MARKDOWN = `---
 mode: primary
 hidden: true
-permissions:
-  - action: "*"
-    resource: "*"
-    effect: deny
+permission:
+  "*": deny
 ---
 
 You generate responses for an application-owned assistant. Follow the supplied system instructions and response format.
 The application executes its registered tools, including openchamber-tool JSON fences in your response, and supplies their results on the next request.
 Emit the requested application tool call when an action requires one. Your native tool permissions describe this generator process; the application's supplied tool catalog describes the assistant's capabilities.
 Report execution and failures from supplied tool results only.
+Do not call native OpenCode tools, MCP tools, or skill tools. Native permissions are denied for this generator session.
 `;
 
 const isMissing = (result) =>
@@ -152,7 +167,11 @@ const waitForIdleAssistant = async ({ client, sessionID, directory, signal }) =>
         directory,
         limit: 20,
       }, { signal });
-      if (!messagesResult?.error && Array.isArray(messagesResult?.data)) {
+      if (messagesResult?.error) {
+        // Deterministic upstream failures (e.g. 400) must not look like "still settling".
+        failGenerate(`OpenCode LLM session.messages failed: ${sdkErrorMessage(messagesResult, 'messages failed')}`);
+      }
+      if (Array.isArray(messagesResult?.data)) {
         const lastInfo = readMessageInfo(messagesResult.data.at(-1));
         if (lastInfo?.role === 'assistant') {
           emptyIdleProbes = 0;
@@ -469,13 +488,23 @@ export async function generateOpenCodeText({
       ? clientFactory()
       : createOpencodeClient({ baseUrl, directory: workingDirectory, headers });
 
-    const toolIds = await client.tool.ids({ directory: workingDirectory }).catch(() => ({ data: [] }));
+    let toolIds;
+    try {
+      toolIds = await client.tool.ids({ directory: workingDirectory });
+    } catch (error) {
+      failGenerate(`OpenCode tool.ids failed: ${error?.message || 'tool.ids failed'}`);
+    }
+    if (toolIds?.error) {
+      failGenerate(`OpenCode tool.ids failed: ${sdkErrorMessage(toolIds, 'tool.ids failed')}`);
+    }
     const tools = deniedTools(Array.isArray(toolIds?.data) ? toolIds.data : []);
 
     const created = await client.session.create({
       directory: workingDirectory,
       title: '[openchamber-llm] generate',
       agent: LLM_AGENT_NAME,
+      // Session fence: deny every native OpenCode/MCP/skill tool for this throwaway.
+      permission: LLM_SESSION_DENY_PERMISSION,
       metadata: { openchamber: { llm: { purpose: 'chat-completions' } } },
     }, { signal: controller.signal });
     const sessionID = created?.data?.id;
@@ -548,7 +577,13 @@ export async function generateOpenCodeText({
       }
       unsubscribeDeltas = null;
       try {
-        await client.session.delete({ sessionID, directory: workingDirectory });
+        const deleted = await client.session.delete({ sessionID, directory: workingDirectory });
+        if (deleted?.error) {
+          console.warn(
+            '[llm] failed to delete throwaway OpenCode session:',
+            sdkErrorMessage(deleted, 'delete failed'),
+          );
+        }
       } catch (error) {
         console.warn('[llm] failed to delete throwaway OpenCode session:', error?.message || error);
       }
@@ -570,4 +605,5 @@ export const _test = {
   subscribeThrowawayTextDeltas,
   LLM_AGENT_NAME,
   AGENT_MARKDOWN,
+  LLM_SESSION_DENY_PERMISSION,
 };

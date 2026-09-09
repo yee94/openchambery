@@ -29,27 +29,40 @@ The 1.18.4 client exposes `GET /provider`, `GET /config/providers`, and
    the response is JSON (`Content-Type` or a JSON object body). SPA / OpenCode
    HTML `200 <!doctype` is not generate — fall through to the throwaway path.
    Bundled 1.18.4 has no sessionless generate.
-2. Otherwise create a throwaway archived OpenCode session, deny every tool
-   (`client.tool.ids()` → `{ [id]: false }`), send our messages as
-   `system` + user text via `session.promptAsync` (v2 `session.prompt` only
-   forwards `{ id, prompt, delivery, resume }` and drops `model`/`parts` —
-   that produced empty assistant text and a 502). Contact file parts reuse the
-   existing OpenCode `{ type: 'file', mime, url, filename? }` delivery shape
-   (data URLs in the contact SQLite store — not a second attachment store) and
-   are forwarded on `promptAsync` only when the connected catalog marks that
-   model as image-capable (`modalities.input`, `input`, or `attachment`).
-   Non-vision models (for example deepseek-v4-flash) keep the `[image: …]`
-   description and any text-file bytes, and skip image data URLs so generate
-   cannot stall on unsupported vision parts. Non-image
-    text files are also inlined into the flattened prompt. Wait for idle via
-    `session.status` + `session.messages`, then delete the session. Throwaway
-    sessions are created with
-    `metadata.openchamber.llm.purpose = 'chat-completions'` (and archived
-    immediately) so sidebar visibility, session-index, session-title, and
-    notification/push fanout treat them as system-owned — same contract as
+2. Otherwise create a throwaway archived OpenCode session under a hidden
+   `openchamber-llm` agent whose frontmatter uses OpenCode 1.18
+   `permission: { "*": deny }` (not legacy `action`/`resource`/`effect` lists —
+   those load without a terminal `*` deny). `session.create` also sets
+   `permission: [{ permission: '*', pattern: '*', action: 'deny' }]` (SDK
+   PermissionRuleset; verified to round-trip on the session object). Deny every
+   catalog tool via `client.tool.ids()` → `{ [id]: false }` on `promptAsync`;
+   a `tool.ids` SDK/transport error fails generate (never silent empty deny).
+   Send messages as `system` + user text via `session.promptAsync` (v2
+   `session.prompt` only forwards `{ id, prompt, delivery, resume }` and drops
+   `model`/`parts` — that produced empty assistant text and a 502). Contact
+   file parts reuse the existing OpenCode `{ type: 'file', mime, url, filename? }`
+   delivery shape (data URLs in the contact SQLite store — not a second
+   attachment store) and are forwarded on `promptAsync` only when the connected
+   catalog marks that model as image-capable (`modalities.input`, `input`, or
+   `attachment`). Non-vision models (for example deepseek-v4-flash) keep the
+   `[image: …]` description and any text-file bytes, and skip image data URLs so
+   generate cannot stall on unsupported vision parts. Non-image text files are
+   also inlined into the flattened prompt. Wait for idle via `session.status` +
+   `session.messages`; a deterministic `session.messages` SDK error (for example
+   HTTP 400) fails generate immediately. Then delete the session and surface
+   delete SDK errors in diagnostics without erasing a successful text result.
+    Throwaway sessions use `metadata.openchamber.llm.purpose = 'chat-completions'`
+    (and archived immediately) so sidebar visibility, session-index, session-title,
+    and notification/push fanout treat them as system-owned — same contract as
     non-empty `smallModel.purpose`. This is a text generator only — never the
     contact transcript and never a coding SessionPrompt loop. Upstream
     `info.error.message` is forwarded on 502.
+    `ensureLlmTempDirectory` keeps one process-wide throwaway root (`openchamber-llm-…`).
+    Concurrent first callers share a single `mkdtemp` inflight; every caller still
+    writes/refreshes `.opencode/agent/<name>.md` after settle so a mid-flight ensure
+    cannot skip a newer agent body. Concurrent warm refreshes serialize through one
+    write chain (last committed body wins; no interleaved partial writes).
+    `stopLlmTempDirectory` clears the singleton for shutdown/tests.
 
 ### Internal token callback (in-process only)
 

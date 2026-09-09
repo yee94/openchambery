@@ -70,21 +70,68 @@ const bindHarnessTool = (tool, context) => ({
   ),
 });
 
-export function formatPiCodingPrompt({ cwd, skillsPrompt = '' } = {}) {
+/**
+ * Serialize a tool parameter schema for the contact system prompt.
+ * Mirrors contact-tools.serializeToolParametersForPrompt without a circular import.
+ */
+const serializeParameters = (parameters) => {
+  if (parameters == null) return '{"type":"object","properties":{}}';
+  try {
+    const text = JSON.stringify(parameters, (_key, value) => {
+      if (typeof value === 'function' || typeof value === 'symbol') return undefined;
+      return value;
+    });
+    if (typeof text === 'string' && text.trim() && text !== 'undefined') return text;
+  } catch {
+    // Fall through.
+  }
+  return '{"type":"object","properties":{}}';
+};
+
+const formatCodingToolEntry = (tool) => {
+  if (!tool || typeof tool.name !== 'string' || !tool.name.trim()) return '';
+  const name = tool.name.trim();
+  const description = typeof tool.description === 'string' && tool.description.trim()
+    ? tool.description.trim()
+    : name;
+  return `- ${name}: ${description}\n  arguments schema: ${serializeParameters(tool.parameters)}`;
+};
+
+export function formatPiCodingPrompt({ cwd, skillsPrompt = '', tools = [] } = {}) {
   if (typeof cwd !== 'string' || !cwd.trim()) return '';
+  const codingTools = Array.isArray(tools)
+    ? tools.filter((tool) => isPiCodingToolName(tool?.name))
+    : [];
+  const catalog = codingTools.length > 0
+    ? codingTools.map(formatCodingToolEntry).filter(Boolean)
+    : [
+      '- bash: Execute a bash command in the working directory.\n  arguments schema: {"type":"object","required":["command"],"properties":{"command":{"type":"string"},"timeout":{"type":"number"}}}',
+      '- read: Read a file (path required; optional offset/limit).\n  arguments schema: {"type":"object","required":["path"],"properties":{"path":{"type":"string"},"offset":{"type":"number"},"limit":{"type":"number"}}}',
+      '- write: Write/create a file (path + content required).\n  arguments schema: {"type":"object","required":["path","content"],"properties":{"path":{"type":"string"},"content":{"type":"string"}}}',
+      '- edit: Exact text replacement (path + edits[{oldText,newText}] required).\n  arguments schema: {"type":"object","required":["path","edits"],"properties":{"path":{"type":"string"},"edits":{"type":"array","items":{"type":"object","required":["oldText","newText"],"properties":{"oldText":{"type":"string"},"newText":{"type":"string"}}}}}}',
+    ];
   return [
     `Working directory: ${cwd}`,
-    'You have pi coding tools in this directory: read, write, edit, bash.',
+    'You have application-owned pi coding tools in this directory: read, write, edit, bash.',
+    'These are not OpenCode native tools and not MCP. Skill directory entries below are instructions only — load a matching skill by calling read on its path; never invent skill or MCP tool names (no context7, gh_grep, webfetch, etc.).',
     'This is your working directory. Ignore any other cwd from the environment, including temporary generator workspaces under /var/folders or os.tmpdir.',
     'When the user asks pwd, the current directory, or to look at files, call bash/read yourself. Never say you have no terminal or cannot read or write files.',
     'Skills are merged from ~/.claude/skills, ~/.agents/skills, and this project\'s .claude/skills plus .agents/skills (project wins on name). Read a skill file when the task matches its description.',
-    'Call these tools with the same fenced JSON as other tools:',
+    'Call these tools with the same fenced JSON as other tools. Match the argument schemas exactly:',
     '```openchamber-tool',
     '{"name":"bash","arguments":{"command":"pwd"}}',
     '```',
     '```openchamber-tool',
     '{"name":"read","arguments":{"path":".agents/skills/example/SKILL.md"}}',
     '```',
+    '```openchamber-tool',
+    '{"name":"write","arguments":{"path":"notes.txt","content":"hello"}}',
+    '```',
+    '```openchamber-tool',
+    '{"name":"edit","arguments":{"path":"notes.txt","edits":[{"oldText":"hello","newText":"hello world"}]}}',
+    '```',
+    'Available pi coding tools (full argument schemas):',
+    ...catalog,
     typeof skillsPrompt === 'string' && skillsPrompt.trim() ? skillsPrompt.trim() : '',
   ].filter(Boolean).join('\n');
 }
