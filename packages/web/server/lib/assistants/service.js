@@ -11,13 +11,17 @@ import {
   CONTACT_SETTLE_TEXT,
   clearContactMemory as clearContactMemoryStore,
   contactHistoryForLlm,
+  createActiveContactTurn,
   deleteContactMessages,
   ensureContactSchema,
+  contactPartsFingerprint,
+  getContactMessage,
   insertContactMessage,
   listContactMessages,
   listInFlightWatches,
   listWatchesBySession,
   nextContactOrdinal,
+  projectActiveContactTurn,
   updateSessionCardStatus,
   upsertContactWatch,
 } from './contact-store.js';
@@ -31,12 +35,23 @@ import {
   filterRegisteredProjects,
   matchesProjectQuery,
   NEW_CONVERSATION_CONFIRM_BUBBLE,
+  normalizeConnectedModels,
   normalizeRegisteredProjects,
   sanitizeRegisteredProject,
   userTextAuthorizesClearChatHistory,
 } from './contact-tools.js';
-import { AssignError, ASSIGN_CODES, assignSession, resolveAssignDirectory } from './assign.js';
+import {
+  AssignError,
+  ASSIGN_CODES,
+  assignSession,
+  attachmentScopeKey,
+  hasAssignImageParts,
+  resolveAssignDirectory,
+  resolveAssignWorkerModel,
+  sanitizeAssignFileParts,
+} from './assign.js';
 import { runContactTurn as defaultRunContactTurn } from './harness.js';
+import { loadConnectedCatalog } from '../llm/catalog.js';
 
 const require = createRequire(import.meta.url);
 const SCHEMA_VERSION = 11;
@@ -92,6 +107,25 @@ const isTransientMessagesFailure = (result, error) => {
 };
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const promptAdmitted = (result) => !result?.error && (result?.response?.status === 204 || result?.status === 204 || result?.data !== undefined || result?.response?.ok === true);
+/** Bound catalog / project list waits so a contact lane cannot hang forever. */
+export const CONTACT_CATALOG_DEADLINE_MS = 8_000;
+const awaitWithDeadline = async (work, ms = CONTACT_CATALOG_DEADLINE_MS, code = 'upstream_error') => {
+  let timer = null;
+  try {
+    return await Promise.race([
+      Promise.resolve().then(() => work),
+      new Promise((_, reject) => {
+        timer = setTimeout(() => {
+          const error = new Error(code);
+          error.code = code;
+          reject(error);
+        }, ms);
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+};
 
 export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, getOpenCodeAuthHeaders, getServerId = async () => null, getAllowedRoots = () => [], listProjects = async () => [], listScheduledTasks = null, sessionIndexService = null, upsertScheduledTask = null, syncScheduledTaskProject = null, globalEventHub = null, onRevisionTip = null, onContactTurnEvent = null, onContactTurnComplete = null, clock = () => Date.now(), setIntervalFn = setInterval, clearIntervalFn = clearInterval, setImmediateFn = setImmediate, reconcileIntervalMs = 60_000, clientFactory, createChatCompletion = null, runContactTurn = defaultRunContactTurn, listWorktrees = defaultListWorktrees } = {}) => {
   if (!dbPath || !dataDir) return null;
@@ -100,6 +134,10 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
   const db = new Database(dbPath); db.pragma('journal_mode = WAL'); db.pragma('foreign_keys = ON');
   let closed = false;
   const shareReservations = new Map();
+  // Process-local contact-turn activity. Not durable across server restart —
+  // a new process starts empty so working cannot stick green forever. APP
+  // restart rehydrates from snapshot while this process still holds the turn.
+  const activeContactTurnsByAssistant = new Map();
   db.exec(`CREATE TABLE IF NOT EXISTS assistant_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
     CREATE TABLE IF NOT EXISTS assistant_v2 (assistant_id TEXT PRIMARY KEY, revision INTEGER NOT NULL, enabled INTEGER NOT NULL, name TEXT NOT NULL, default_prompt TEXT NOT NULL, workspace_path TEXT, provider_id TEXT NOT NULL, model_id TEXT NOT NULL, agent TEXT, variant TEXT, mode TEXT NOT NULL DEFAULT 'continuous', current_session_id TEXT, session_generation INTEGER NOT NULL DEFAULT 0, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, tombstone_at INTEGER);
     CREATE TABLE IF NOT EXISTS assistant_share_operation (operation_id TEXT PRIMARY KEY, assistant_id TEXT NOT NULL, payload_hash TEXT NOT NULL, phase TEXT NOT NULL, session_id TEXT, message_id TEXT, state TEXT NOT NULL, response TEXT, error_code TEXT, attempt INTEGER NOT NULL DEFAULT 0, lease_expires_at INTEGER, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL);
@@ -168,8 +206,52 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
     db.prepare('DELETE FROM assistant_message_backfill WHERE assistant_id=? AND session_id=?').run(assistantID, sessionID);
     db.prepare("UPDATE assistant_message_mirror SET covered=0 WHERE assistant_id=? AND session_id=? AND COALESCE(json_extract(info_json,'$.role'),'')<>'user' AND COALESCE(json_extract(info_json,'$.openchamberAssistantAdmission'),0)<>1").run(assistantID, sessionID);
   };
+  const activeContactTurnsFor = (assistantID) => activeContactTurnsByAssistant.get(assistantID) ?? new Map();
+  const rememberActiveContactTurn = (assistantID, input) => {
+    const next = createActiveContactTurn(input);
+    if (!next) return null;
+    const turns = activeContactTurnsFor(assistantID);
+    turns.set(next.turnID, next);
+    activeContactTurnsByAssistant.set(assistantID, turns);
+    return next;
+  };
+  const markActiveContactTurnRunning = (assistantID, turnID) => {
+    const turns = activeContactTurnsFor(assistantID);
+    const current = turns.get(turnID);
+    if (!current) return null;
+    if (current.status === 'running') return current;
+    const next = createActiveContactTurn({ ...current, status: 'running' });
+    if (!next) return null;
+    turns.set(turnID, next);
+    activeContactTurnsByAssistant.set(assistantID, turns);
+    // queued → running must tip snapshot so clients poll authoritative status.
+    bump();
+    return next;
+  };
+  const settleActiveContactTurn = (assistantID, turnID, { bumpRevision = false } = {}) => {
+    const turns = activeContactTurnsFor(assistantID);
+    if (!turns.has(turnID)) {
+      if (bumpRevision) bump();
+      return false;
+    }
+    turns.delete(turnID);
+    if (turns.size === 0) activeContactTurnsByAssistant.delete(assistantID);
+    else activeContactTurnsByAssistant.set(assistantID, turns);
+    // Error paths may not persist assistant rows; still tip the snapshot so
+    // list green dots clear without waiting for a later SQLite write.
+    if (bumpRevision) bump();
+    return true;
+  };
+  const clearActiveContactTurns = (assistantID) => {
+    if (assistantID == null) {
+      activeContactTurnsByAssistant.clear();
+      return;
+    }
+    activeContactTurnsByAssistant.delete(assistantID);
+  };
   const output = (row) => {
     const watches = listInFlightWatches(db, row.assistant_id);
+    const activeContactTurn = projectActiveContactTurn(activeContactTurnsFor(row.assistant_id));
     return {
       id: row.assistant_id,
       revision: row.revision,
@@ -189,7 +271,10 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
       historySessionIDs: historyIDs(row.assistant_id),
       historySessionCount: historyCount(row.assistant_id),
       assignedSessionIDs: watches.map((watch) => watch.sessionID),
-      working: watches.some((watch) => watch.status === 'busy'),
+      // Grok-Bot list green dot: contact turn only. Assigned-session busy stays
+      // on the session card / assignedSessionIDs and must not keep the avatar lit.
+      working: activeContactTurn != null,
+      activeContactTurn,
       createdAt: row.created_at,
       updatedAt: row.updated_at,
       tombstoneAt: row.tombstone_at,
@@ -672,6 +757,31 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
       throw error;
     }
   };
+  /** Durable failure bubble so APP restart can recover error without SSE. */
+  const persistContactTurnFailure = (assistantID, { userMessageID, turnID, error }) => {
+    const detail = typeof error === 'string' && error.trim() ? error.trim() : 'upstream_error';
+    const failureID = `${userMessageID}:error`;
+    if (getContactMessage(db, failureID)) return;
+    db.exec('BEGIN IMMEDIATE');
+    try {
+      insertContactMessage(db, {
+        messageID: failureID,
+        assistantID,
+        role: 'assistant',
+        turnID,
+        bubbleIndex: 0,
+        createdAt: now(),
+        ordinal: nextContactOrdinal(db, assistantID),
+        status: 'error',
+        parts: [{ type: 'text', text: detail }],
+      });
+      bump();
+      db.exec('COMMIT');
+    } catch (writeError) {
+      db.exec('ROLLBACK');
+      throw writeError;
+    }
+  };
   /** Persist assistant bubbles/cards for an already-admitted user turn (no user row). */
   const persistContactAssistantReply = (assistantID, { userMessageID, bubbles, cards = [], turnID }) => {
     db.exec('BEGIN IMMEDIATE');
@@ -778,17 +888,138 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
   const resolveContactTurnSettlement = (messageID, result) => {
     contactTurnSettlement(messageID).resolve(result);
   };
-  const assignWork = (row, params) => assignSession({
-    ...params,
-    assistant: output(row),
-    defaultProjectPath: row.workspace_path,
-    allowedRoots: getAllowedRoots(),
-    managedWorkspaceRoot: path.resolve(dataDir, 'assistant-workspaces'),
-    listWorktrees,
-    createSession: (created) => client().session.create(created),
-    promptExisting: (prompted) => client().session.promptAsync(prompted),
-    messageID: params?.messageID || `msg_assign_${id()}`,
-  });
+  const loadAssignCatalog = async (signal) => {
+    try {
+      // Catalog owns its 8s AbortSignal deadline; optional parent signal is forwarded.
+      return await loadConnectedCatalog(client(), {
+        timeoutMs: CONTACT_CATALOG_DEADLINE_MS,
+        ...(signal ? { signal } : {}),
+      });
+    } catch (error) {
+      const wrapped = new AssignError(
+        ASSIGN_CODES.UPSTREAM,
+        typeof error?.message === 'string' && error.message.trim()
+          ? error.message.trim()
+          : 'Connected model catalog is unavailable.',
+      );
+      throw wrapped;
+    }
+  };
+  const loadRegisteredProjects = async () => {
+    const listed = await awaitWithDeadline(listProjects(), CONTACT_CATALOG_DEADLINE_MS, 'upstream_error');
+    if (!Array.isArray(listed)) {
+      throw new AssignError(ASSIGN_CODES.UPSTREAM, 'Registered project catalog failed to load.');
+    }
+    return listed;
+  };
+  /**
+   * Confirm whether an assign prompt message was admitted on the worker session.
+   * Prefer SDK exact lookup (v2.session.message → session.message), then bounded messages list.
+   * Returns { found: true|false } for assignSession; throws/unavailable become null via assign.
+   */
+  const lookupAssignMessage = async ({ sessionID, messageID, directory, signal } = {}) => {
+    if (typeof sessionID !== 'string' || !sessionID || typeof messageID !== 'string' || !messageID) {
+      return { found: false };
+    }
+    const api = client();
+    const options = signal ? { signal } : undefined;
+    const identity = (record) => (
+      record?.info?.id || record?.id || record?.messageID || record?.message?.id || null
+    );
+    const viaExact = async (fn, target) => {
+      if (typeof fn !== 'function') return null;
+      try {
+        const result = await fn.call(target, { sessionID, messageID, ...(directory ? { directory } : {}) }, options);
+        const status = result?.error?.status ?? result?.error?.statusCode ?? result?.status ?? result?.response?.status;
+        if (result?.error) {
+          if (status === 404) return { found: false };
+          if (status === 405 || status === 501) return null;
+          return null;
+        }
+        const record = result?.data ?? result;
+        const id = identity(record);
+        return { found: id === messageID };
+      } catch {
+        return null;
+      }
+    };
+    const v2 = await viaExact(api?.v2?.session?.message, api?.v2?.session);
+    if (v2) return v2;
+    const legacy = await viaExact(api?.session?.message, api?.session);
+    if (legacy) return legacy;
+    try {
+      const listed = await api.session.messages({
+        sessionID,
+        ...(directory ? { directory } : {}),
+        limit: 100,
+      }, options);
+      if (listed?.error) return { found: false };
+      const rows = Array.isArray(listed?.data) ? listed.data : (Array.isArray(listed) ? listed : []);
+      const hit = rows.some((row) => identity(row) === messageID);
+      return { found: hit };
+    } catch {
+      return null;
+    }
+  };
+  const assignWork = async (row, params = {}) => {
+    const fileParts = sanitizeAssignFileParts(params.fileParts || params.parts || []);
+    const signal = params.signal;
+    const sdkOptions = signal ? { signal } : undefined;
+    const explicitModel = Boolean(
+      (typeof params.providerID === 'string' && params.providerID.trim())
+      || (typeof params.modelID === 'string' && params.modelID.trim())
+      || (typeof params.model === 'string' && params.model.trim())
+      || (params.model && typeof params.model === 'object'),
+    );
+    const needsCatalog = explicitModel || hasAssignImageParts(fileParts);
+    let catalog = null;
+    if (needsCatalog) {
+      catalog = await loadAssignCatalog(signal);
+    }
+    const workerModel = resolveAssignWorkerModel({
+      providerID: params.providerID,
+      modelID: params.modelID,
+      model: params.model,
+      fallback: { providerID: row.provider_id, modelID: row.model_id },
+      catalog,
+    });
+    let acceptsImages = workerModel.acceptsImages;
+    if (hasAssignImageParts(fileParts) && acceptsImages == null && catalog) {
+      const entry = catalog.models.find((item) => (
+        item?.providerID === workerModel.providerID && item?.modelID === workerModel.modelID
+      ));
+      acceptsImages = entry?.acceptsImages === true;
+    }
+    // Worker model is prompt-only. Never mutate the contact assistant row.
+    // Forward tool variant + AbortSignal; lookupMessage uses real SDK exact/list paths.
+    return assignSession({
+      ...params,
+      fileParts,
+      ...(params.variant !== undefined ? { variant: params.variant } : {}),
+      ...(signal ? { signal } : {}),
+      model: {
+        providerID: workerModel.providerID,
+        modelID: workerModel.modelID,
+        source: workerModel.source,
+        acceptsImages,
+      },
+      acceptsImages,
+      assistant: output(row),
+      defaultProjectPath: row.workspace_path,
+      allowedRoots: getAllowedRoots(),
+      managedWorkspaceRoot: path.resolve(dataDir, 'assistant-workspaces'),
+      listWorktrees,
+      createSession: (created) => client().session.create(created, sdkOptions),
+      promptExisting: (prompted) => client().session.promptAsync(prompted, sdkOptions),
+      deleteSession: (deleted) => (
+        typeof client().session.delete === 'function'
+          ? client().session.delete(deleted, sdkOptions)
+          : undefined
+      ),
+      lookupMessage: (lookup) => lookupAssignMessage({ ...lookup, signal }),
+      messageID: params?.messageID || `msg_assign_${id()}`,
+    });
+  };
   const matchRegisteredProject = async (directory) => {
     const projects = await listProjects();
     const resolved = path.resolve(directory);
@@ -1034,11 +1265,7 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
     if (typeof createChatCompletion !== 'function' && runContactTurn === defaultRunContactTurn) fail('upstream_error');
     let registeredProjects = [];
     try {
-      const listed = await listProjects();
-      if (!Array.isArray(listed)) {
-        throw new AssignError(ASSIGN_CODES.UPSTREAM, 'Registered project catalog failed to load.');
-      }
-      registeredProjects = filterRegisteredProjects(listed);
+      registeredProjects = filterRegisteredProjects(await loadRegisteredProjects());
     } catch (error) {
       if (error instanceof AssignError || error instanceof AssistantError) throw error;
       // Still allow the turn — tools can surface a later catalog failure.
@@ -1046,11 +1273,34 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
     }
     const turnID = messageID;
     const assistantSnapshot = output(row);
+    const existingUser = getContactMessage(db, messageID);
+    if (existingUser) {
+      if (existingUser.assistantID !== row.assistant_id || existingUser.role !== 'user') fail('validation_error');
+      const existingFingerprint = contactPartsFingerprint(existingUser.parts);
+      const nextFingerprint = contactPartsFingerprint(
+        Array.isArray(userParts) && userParts.length > 0 ? userParts : [{ type: 'text', text: userText }],
+      );
+      if (existingFingerprint !== nextFingerprint) fail('idempotency_conflict');
+      // Same messageID + payload: replay admission only — never start a second lane turn.
+      return {
+        binding: binding(row),
+        messageID,
+        admitted: true,
+        revision: revision(),
+        replayed: true,
+      };
+    }
     admitContactUser(row.assistant_id, {
       userMessageID: messageID,
       userText,
       userParts,
       turnID,
+    });
+    rememberActiveContactTurn(row.assistant_id, {
+      turnID,
+      messageID,
+      status: 'queued',
+      admittedAt: now(),
     });
     emitContactTurnEvent('openchamber:contact-turn-start', {
       assistantID: row.assistant_id,
@@ -1062,6 +1312,12 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
     const clearChatHistoryAuthorized = userTextAuthorizesClearChatHistory(userText);
     const kickTurn = () => {
       void inContactTurnLane(row.assistant_id, async () => {
+        if (closed) {
+          settleActiveContactTurn(row.assistant_id, turnID, { bumpRevision: true });
+          resolveContactTurnSettlement(messageID, { status: 'error', error: 'closed' });
+          return;
+        }
+        markActiveContactTurnRunning(row.assistant_id, turnID);
         // Load the LLM window when the lane runs — not at admit time — so a
         // prior turn's clear-memory cannot leave queued work with stale history.
         // Exclude the admitted user row; prompt still receives userText/parts.
@@ -1078,6 +1334,20 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
         const assignedCards = [];
         let contactResetThisTurn = false;
         let contactHistoryClearedThisTurn = false;
+        // Current-turn attachments only — never unbounded history image forwarding.
+        const turnFileParts = sanitizeAssignFileParts(
+          (Array.isArray(userParts) ? userParts : []).filter((part) => part?.type === 'file'),
+        );
+        const turnAttachmentScope = attachmentScopeKey(turnFileParts);
+        let connectedModels = [];
+        try {
+          const catalog = await loadAssignCatalog(undefined);
+          connectedModels = normalizeConnectedModels(catalog?.models);
+        } catch {
+          // Catalog failure must not block default-model contact turns.
+          // Explicit worker model / image capability checks still fail closed inside assignWork.
+          connectedModels = [];
+        }
         const tools = createContactTools({
           assignWork: (params) => assignWork(row, params),
           createAssistant: (toolInput) => createAssistant(toolInput),
@@ -1106,16 +1376,12 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
             return result;
           },
           listAssistants: () => db.prepare('SELECT * FROM assistant_v2 WHERE tombstone_at IS NULL ORDER BY created_at').all().map(output),
-          listProjects: async () => {
-            const listed = await listProjects();
-            if (!Array.isArray(listed)) {
-              throw new AssignError(ASSIGN_CODES.UPSTREAM, 'Registered project catalog failed to load.');
-            }
-            return listed;
-          },
+          listProjects: async () => loadRegisteredProjects(),
           listSessions: (params) => listSessionsWork(params),
           currentAssistant: assistantSnapshot,
           onCard: (card) => assignedCards.push(card),
+          turnFileParts,
+          turnAttachmentScope,
         });
         try {
           const generated = await runContactTurn({
@@ -1126,6 +1392,7 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
             createChatCompletion,
             tools,
             projects: registeredProjects,
+            connectedModels,
             globalEventHub,
             onBubbleDelta: (bubbleIndex, delta, done) => {
               emitContactTurnEvent('openchamber:contact-bubble-delta', {
@@ -1138,6 +1405,7 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
             },
           });
           if (closed) {
+            settleActiveContactTurn(row.assistant_id, turnID, { bumpRevision: true });
             resolveContactTurnSettlement(messageID, { status: 'error', error: 'closed' });
             return;
           }
@@ -1159,6 +1427,16 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
             ].filter((card, index, list) => list.findIndex((item) => contactCardIdentity(item) === contactCardIdentity(card)) === index);
           if (bubbles.length === 0 && cards.length === 0) {
             const detail = 'Assistant returned no text';
+            try {
+              persistContactTurnFailure(row.assistant_id, {
+                userMessageID: messageID,
+                turnID,
+                error: detail,
+              });
+              settleActiveContactTurn(row.assistant_id, turnID);
+            } catch {
+              settleActiveContactTurn(row.assistant_id, turnID, { bumpRevision: true });
+            }
             emitContactTurnEvent('openchamber:contact-turn-end', {
               assistantID: row.assistant_id,
               turnID,
@@ -1195,6 +1473,8 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
             cards,
             turnID,
           });
+          // persistContactAssistantReply already bumps; clear activity without a second tip.
+          settleActiveContactTurn(row.assistant_id, turnID);
           emitContactTurnEvent('openchamber:contact-turn-end', {
             assistantID: row.assistant_id,
             turnID,
@@ -1214,6 +1494,16 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
             ? error.message.trim()
             : (error?.code || 'upstream_error');
           const statusCode = error?.code === 'no_provider' ? 'no_provider' : (error?.code || 'upstream_error');
+          try {
+            persistContactTurnFailure(row.assistant_id, {
+              userMessageID: messageID,
+              turnID,
+              error: detail,
+            });
+            settleActiveContactTurn(row.assistant_id, turnID);
+          } catch {
+            settleActiveContactTurn(row.assistant_id, turnID, { bumpRevision: true });
+          }
           emitContactTurnEvent('openchamber:contact-turn-end', {
             assistantID: row.assistant_id,
             turnID,
@@ -1234,7 +1524,7 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
     };
     // Defer past send() resolution so callers observe admission before assistant rows.
     setImmediateFn(kickTurn);
-    return { binding: binding(row), messageID, admitted: true };
+    return { binding: binding(row), messageID, admitted: true, revision: revision() };
   };
   const contactMessages = (assistantID, query = {}) => {
     editable(assistantID);
@@ -1275,6 +1565,8 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
     db.exec('BEGIN IMMEDIATE');
     try {
       deleteContactMessages(db, row.assistant_id);
+      // Active contact turns stay until settle — wipe must not drop the green
+      // dot while the clearing turn is still running.
       bump();
       db.exec('COMMIT');
     } catch (error) {
@@ -1430,6 +1722,7 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
       db.prepare('DELETE FROM assistant_message_backfill WHERE assistant_id=?').run(assistantID);
       db.prepare('DELETE FROM assistant_scheduled_task WHERE assistant_id=?').run(assistantID);
       deleteContactMessages(db, assistantID);
+      clearActiveContactTurns(assistantID);
       bump();
       db.exec('COMMIT');
       return { assistantID, tombstoneAt: now() };
@@ -1437,5 +1730,5 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
       db.exec('ROLLBACK');
       throw error;
     }
-  }, ensure, createNew, compact, send, whenContactTurnSettled, abort, captureQueueDeliveryTarget, sendWithCapturedConfig, share, shareOperation, historicalMessages, contactMessages, clearContactMemory, resetContact, appendContactCard, deliverPeerMessage, listAssistantScheduledTasks, processEvent, reportAssignedSessionSettle: reportAssignedSession, reconcile, close: () => { if (!closed) { closed = true; unsubscribeEvents?.(); clearIntervalFn(timer); db.close(); } } };
+  }, ensure, createNew, compact, send, whenContactTurnSettled, abort, captureQueueDeliveryTarget, sendWithCapturedConfig, share, shareOperation, historicalMessages, contactMessages, clearContactMemory, resetContact, appendContactCard, deliverPeerMessage, listAssistantScheduledTasks, processEvent, reportAssignedSessionSettle: reportAssignedSession, reconcile, close: () => { if (!closed) { closed = true; clearActiveContactTurns(); unsubscribeEvents?.(); clearIntervalFn(timer); db.close(); } } };
 };

@@ -2542,7 +2542,13 @@ const MobileShell: React.FC<{
       setSettingsOpen(true);
       return;
     }
-    useMobileNavigationStore.getState().setActiveTab('settings');
+    const navigation = useMobileNavigationStore.getState();
+    if (section) {
+      navigation.openSettingsFromCurrent();
+      return;
+    }
+    setSettingsPage('home');
+    navigation.setActiveTab('settings');
   });
 
   const openInstancesSettingsPage = useEvent(() => {

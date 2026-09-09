@@ -65,6 +65,14 @@ export const NotificationSettings: React.FC = () => {
   const setNotifyOnError = useUIStore(state => state.setNotifyOnError);
   const notifyOnQuestion = useUIStore(state => state.notifyOnQuestion);
   const setNotifyOnQuestion = useUIStore(state => state.setNotifyOnQuestion);
+  const notifyOnPermission = useUIStore(state => state.notifyOnPermission);
+  const setNotifyOnPermission = useUIStore(state => state.setNotifyOnPermission);
+  const notifyOnScheduledTasks = useUIStore(state => state.notifyOnScheduledTasks);
+  const setNotifyOnScheduledTasks = useUIStore(state => state.setNotifyOnScheduledTasks);
+  const notifyOnAssistants = useUIStore(state => state.notifyOnAssistants);
+  const setNotifyOnAssistants = useUIStore(state => state.setNotifyOnAssistants);
+  const notifyOnGoals = useUIStore(state => state.notifyOnGoals);
+  const setNotifyOnGoals = useUIStore(state => state.setNotifyOnGoals);
   const notificationTemplates = useUIStore(state => state.notificationTemplates);
   const setNotificationTemplates = useUIStore(state => state.setNotificationTemplates);
 
@@ -539,6 +547,30 @@ export const NotificationSettings: React.FC = () => {
               onChange={setNotifyOnQuestion}
               label={t('settings.notifications.page.events.questionLabel')}
               ariaLabel={t('settings.notifications.page.events.questionAria')}
+            />
+            <SettingsToggleRow
+              checked={notifyOnPermission}
+              onChange={setNotifyOnPermission}
+              label={t('settings.notifications.page.events.permissionLabel')}
+              ariaLabel={t('settings.notifications.page.events.permissionAria')}
+            />
+            <SettingsToggleRow
+              checked={notifyOnScheduledTasks}
+              onChange={setNotifyOnScheduledTasks}
+              label={t('settings.notifications.page.events.scheduledTasksLabel')}
+              ariaLabel={t('settings.notifications.page.events.scheduledTasksAria')}
+            />
+            <SettingsToggleRow
+              checked={notifyOnAssistants}
+              onChange={setNotifyOnAssistants}
+              label={t('settings.notifications.page.events.assistantsLabel')}
+              ariaLabel={t('settings.notifications.page.events.assistantsAria')}
+            />
+            <SettingsToggleRow
+              checked={notifyOnGoals}
+              onChange={setNotifyOnGoals}
+              label={t('settings.notifications.page.events.goalsLabel')}
+              ariaLabel={t('settings.notifications.page.events.goalsAria')}
             />
           </SettingsGroup>
 

@@ -26,6 +26,29 @@ mock.module('@/lib/runtime-fetch', () => ({
     if (path.includes('/session/ensure')) {
       return new Response(JSON.stringify({ sessionID: 'ses_1', directory: '/workspace', sessionGeneration: 1 }), { status: 200 });
     }
+    if (path.includes('/contact/messages')) {
+      return new Response(JSON.stringify({
+        messages: contactSendBehavior === 'timeout'
+          ? [{
+            messageID: 'oc_contact_1',
+            assistantID: 'asst_1',
+            role: 'user',
+            turnID: 'oc_contact_1',
+            bubbleIndex: 0,
+            createdAt: 1,
+            ordinal: 1,
+            status: 'complete',
+            fromAssistantID: null,
+            fromAssistantName: null,
+            parts: [{ type: 'text', text: 'hi' }],
+            text: 'hi',
+            cards: [],
+          }]
+          : [],
+        nextCursor: null,
+        complete: true,
+      }), { status: 200 });
+    }
     if (path.includes('/messages')) {
       if (init?.method === 'POST') {
         if (contactSendBehavior === 'timeout') {
@@ -41,6 +64,7 @@ mock.module('@/lib/runtime-fetch', () => ({
           admitted: true,
           messageID: 'oc_contact_1',
           binding: { sessionID: null, directory: '/workspace', sessionGeneration: 0 },
+          revision: 7,
         }), { status: 202 });
       }
       return new Response(JSON.stringify({ entries: [], nextCursor: null, complete: true }), { status: 200 });
@@ -64,11 +88,15 @@ mock.module('@/lib/openchamberEvents', () => ({
 
 const {
   assistantHistoryInfiniteQueryOptions,
+  assistantSnapshotQueryOptions,
+  confirmContactAdmissionByMessageID,
   CONTACT_SEND_TIMEOUT_MS,
+  CONTACT_WORKING_SNAPSHOT_POLL_MS,
   ensureAssistantSession,
   mapContactSendFailure,
   retainAssistantHistoryPlaceholder,
   sendAssistantContactMessage,
+  snapshotHasContactWorking,
 } = await import('./assistantQueries');
 
 const holdBarrier = () => {
@@ -240,6 +268,7 @@ describe('Assistant query contract', () => {
     const source = await readFile(join(directory, 'assistantQueries.ts'), 'utf8');
     expect(source).toContain("event.type !== 'assistants-changed'");
     expect(source).toContain("event.type === 'event-stream-ready'");
+    expect(source).toContain("event.type === 'contact-turn-start' || event.type === 'contact-turn-end'");
     expect(source).toContain('event.revision > snapshot.revision');
     expect(source).toContain('assistant.sessionGeneration > binding.sessionGeneration');
   });
@@ -362,6 +391,7 @@ describe('contact send abort', () => {
       admitted: true,
       messageID: 'oc_contact_1',
       binding: { sessionID: null, directory: '/workspace', sessionGeneration: 0 },
+      revision: 7,
     });
     expect(lastFetchInit?.signal instanceof AbortSignal).toBe(true);
     expect(lastFetchInit?.method).toBe('POST');
@@ -375,6 +405,9 @@ describe('contact send abort', () => {
       expect(error instanceof AssistantAPIError ? error.code : '').toBe('admission_timeout');
       expect(error instanceof AssistantAPIError ? error.status : 0).toBe(408);
     }
+    // Uncertain admission re-checks the original messageID instead of minting a new send.
+    const confirmed = await confirmContactAdmissionByMessageID('asst_1', 'oc_contact_1');
+    expect(confirmed).toEqual({ admitted: true, messageID: 'oc_contact_1', revision: null });
 
     contactSendBehavior = 'upstream';
     try {
@@ -385,5 +418,23 @@ describe('contact send abort', () => {
       expect(error instanceof AssistantAPIError ? error.code : '').toBe('upstream_error');
       expect(error instanceof AssistantAPIError ? error.message : '').toBe('OpenCode LLM generate timed out after 90000ms');
     }
+  });
+
+  test('polls snapshot only while a contact turn is working', async () => {
+    expect(CONTACT_WORKING_SNAPSHOT_POLL_MS).toBe(2_500);
+    expect(snapshotHasContactWorking({
+      revision: 1,
+      enabled: true,
+      assistants: [{ working: true, activeContactTurn: null } as never],
+    })).toBe(true);
+    expect(snapshotHasContactWorking({
+      revision: 1,
+      enabled: true,
+      assistants: [{ working: false, activeContactTurn: null } as never],
+    })).toBe(false);
+    const options = assistantSnapshotQueryOptions('runtime-a');
+    expect(typeof options.refetchInterval).toBe('function');
+    expect(options.refetchInterval?.({ state: { data: { revision: 1, enabled: true, assistants: [{ working: true, activeContactTurn: null }] } } } as never)).toBe(CONTACT_WORKING_SNAPSHOT_POLL_MS);
+    expect(options.refetchInterval?.({ state: { data: { revision: 1, enabled: true, assistants: [{ working: false, activeContactTurn: null }] } } } as never)).toBe(false);
   });
 });

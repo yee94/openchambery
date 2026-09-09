@@ -88,6 +88,7 @@ describe('settings navigation metadata', () => {
     expect(overflowMenu).not.toContain("key: 'instances'");
     // Phone overflow must not re-open Settings as a half-sheet; Settings is a root tab.
     expect(mobileApp).toContain("setActiveTab('settings')");
+    expect(mobileApp).toContain('openSettingsFromCurrent()');
     expect(mobileApp).toContain('settingsOpen && isIPad');
     expect(settingsView).toContain('case "instances":');
     expect(settingsView).toContain('return mobileInstancesPage ?? renderUnavailable();');

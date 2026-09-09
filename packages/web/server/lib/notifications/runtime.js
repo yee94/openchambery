@@ -316,6 +316,34 @@ export const createNotificationTriggerRuntime = (deps) => {
     return isHiddenFromNavSession(meta);
   };
 
+  // Live Activity refresh ticks carry no directory, so the cache lookup must
+  // match the session under ANY cached directory key before falling back to the
+  // directory-less OpenCode session endpoint.
+  const lookupSessionMetaAnyDirectory = (sessionId) => {
+    const direct = getCachedSessionMeta(sessionId, undefined);
+    if (direct) return direct;
+    const suffix = `\0${sessionId}`;
+    const now = Date.now();
+    for (const [key, entry] of sessionMetaCache) {
+      if (!key.endsWith(suffix)) continue;
+      if (now - entry.at <= SESSION_META_CACHE_TTL_MS) return entry;
+    }
+    return undefined;
+  };
+
+  // Sidebar candidate for a new Live Activity snapshot row: title + visibility
+  // under the same suppression rules as ordinary push. Cache-first; a missing
+  // meta resolves as not-visible (hidden sessions must never leak into a push).
+  const resolveLiveActivitySessionCandidate = async (sessionId) => {
+    const cached = lookupSessionMetaAnyDirectory(sessionId);
+    if (cached?.complete) {
+      return { title: cached.title ?? '', visible: !isHiddenFromNavSession(cached) };
+    }
+    const meta = await fetchSessionMeta(sessionId, undefined);
+    if (!meta) return null;
+    return { title: meta.title ?? '', visible: !isHiddenFromNavSession(meta) };
+  };
+
   const extractSessionIdFromPayload = (payload) => {
     if (!payload || typeof payload !== 'object') return null;
     const props = payload.properties;
@@ -650,7 +678,7 @@ export const createNotificationTriggerRuntime = (deps) => {
 
         const settings = await readSettingsFromDisk();
 
-        if (settings.notifyOnQuestion === false) {
+        if (settings.notifyOnPermission === false) {
           return;
         }
 
@@ -726,6 +754,8 @@ export const createNotificationTriggerRuntime = (deps) => {
   // full text; APNs with the generic per-type title and the session name as
   // body, so the relay never sees content).
   const sendGoalSettlePush = async ({ sessionId, directory, status, title, body }) => {
+    const settings = await readSettingsFromDisk();
+    if (settings.notifyOnGoals === false) return;
     let sessionName = '';
     try {
       const base = buildOpenCodeUrl(`/session/${encodeURIComponent(sessionId)}`, '');
@@ -759,6 +789,65 @@ export const createNotificationTriggerRuntime = (deps) => {
     );
   };
 
+  // Scheduled task run notification: fired by the scheduled-tasks runtime when
+  // a scheduled (non-manual) run settles. Desktop/UI SSE carry the task name
+  // and, on failure, the error text; push channels follow the same generic
+  // contract as other triggers (APNs title is the localized scenario, body is
+  // the task name). Manual runs skip — the user just clicked "run now".
+  const sendScheduledTaskRunNotification = async ({
+    projectID,
+    taskID,
+    taskName,
+    status,
+    sessionId,
+    reason,
+    errorMessage,
+  } = {}) => {
+    if (typeof projectID !== 'string' || !projectID) return;
+    if (typeof taskID !== 'string' || !taskID) return;
+    if (reason === 'manual') return;
+    if (status !== 'success' && status !== 'error') return;
+    const settings = await readSettingsFromDisk();
+    if (settings.notifyOnScheduledTasks === false) return;
+
+    const name = typeof taskName === 'string' && taskName.trim() ? taskName.trim() : 'Schedule';
+    const isError = status === 'error';
+    const title = isError ? 'Scheduled task failed' : 'Scheduled task completed';
+    const trimmedError = typeof errorMessage === 'string' && errorMessage.trim() ? errorMessage.trim() : '';
+    const body = isError && trimmedError ? `${name}: ${trimmedError}` : name;
+    const tag = `scheduled-${projectID}-${taskID}`;
+
+    if (settings.nativeNotificationsEnabled) {
+      const notificationPayload = {
+        kind: isError ? 'task-error' : 'task-complete',
+        title,
+        body,
+        tag,
+        ...(sessionId ? { sessionId } : {}),
+        requireHidden: false,
+      };
+      const desktopNotificationDelivered = emitDesktopNotification(notificationPayload);
+      broadcastUiNotification(notificationPayload, { desktopNotificationDelivered });
+    }
+
+    await fanoutPush(
+      {
+        title,
+        body,
+        tag,
+        data: {
+          url: typeof sessionId === 'string' && sessionId
+            ? buildSessionDeepLinkUrl(sessionId)
+            : '/',
+          ...(typeof sessionId === 'string' && sessionId ? { sessionId } : {}),
+          sessionName: name,
+          type: isError ? 'task_error' : 'task_complete',
+        },
+      },
+      { requireNoSse: true },
+    );
+  };
+
   const contactNotificationTitle = (name) => {
     if (typeof name !== 'string' || !name.trim()) return 'Assistant';
     const stripped = name.replace(/^(?:\p{Extended_Pictographic}|\p{Regional_Indicator}|[\uFE0F\u200D])+\s*/u, '').trim();
@@ -768,7 +857,7 @@ export const createNotificationTriggerRuntime = (deps) => {
   const sendContactTurnNotification = async ({ assistantID, name, body, status } = {}) => {
     if (typeof assistantID !== 'string' || !assistantID.trim()) return;
     const settings = await readSettingsFromDisk();
-    if (settings.notifyOnCompletion === false) return;
+    if (settings.notifyOnAssistants === false) return;
 
     const title = contactNotificationTitle(name);
     const rawBody = typeof body === 'string' ? body : '';
@@ -818,5 +907,7 @@ export const createNotificationTriggerRuntime = (deps) => {
     clearPendingPushBadge,
     sendGoalSettlePush,
     sendContactTurnNotification,
+    sendScheduledTaskRunNotification,
+    resolveLiveActivitySessionCandidate,
   };
 };

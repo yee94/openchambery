@@ -89,10 +89,10 @@ const AssistantListItem: React.FC<AssistantListItemProps> = ({
   onSelect,
   onEdit,
   onDelete,
-  // assignedSessionIDs / serverWorking remain public props for callers; live
-  // working state comes from useAssistantWorking(assistantID).
+  // serverWorking is snapshot-authoritative; local store is temporary only.
+  serverWorking = false,
 }) => {
-  const working = useAssistantWorking(assistantID);
+  const working = useAssistantWorking(assistantID, serverWorking);
   const [menuOpen, setMenuOpen] = React.useState(false);
   const handleSelect = useEvent(() => onSelect());
   const handleEdit = useEvent(() => {

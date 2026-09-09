@@ -310,6 +310,16 @@ export function ScheduledTasksWorkspace({
   });
   const [search, setSearch] = React.useState('');
   const [draftDirty, setDraftDirty] = React.useState(false);
+  // Sync mirror of draftDirty: the save path clears dirty and the editor then
+  // synchronously runs the close chain (onOpenChange(false) → confirm) inside
+  // the same microtask, before React commits the state update. useEvent
+  // handlers only see committed state, so the discard confirm must read the
+  // ref to observe the just-saved clean draft immediately.
+  const draftDirtyRef = React.useRef(false);
+  const updateDraftDirty = useEvent((dirty: boolean) => {
+    draftDirtyRef.current = dirty;
+    setDraftDirty(dirty);
+  });
   const [mutatingTaskIdentity, setMutatingTaskIdentity] = React.useState<string | null>(null);
   const [contextMenuTaskIdentity, setContextMenuTaskIdentity] = React.useState<string | null>(null);
   const [dropdownMenuTaskIdentity, setDropdownMenuTaskIdentity] = React.useState<string | null>(null);
@@ -497,8 +507,8 @@ export function ScheduledTasksWorkspace({
   });
 
   const confirmDraftChange = useEvent(() => (
-    !draftDirty || window.confirm(t('sessions.scheduledTasks.workspace.confirm.discardChanges'))
- ));
+    !draftDirtyRef.current || window.confirm(t('sessions.scheduledTasks.workspace.confirm.discardChanges'))
+  ));
 
   React.useEffect(() => {
     if (!draftDirty) {
@@ -526,7 +536,7 @@ export function ScheduledTasksWorkspace({
     }
     setSelectedTaskIdentity(identity);
     setEditorMode('edit');
-    setDraftDirty(false);
+    updateDraftDirty(false);
   });
 
   const handleCreate = useEvent(() => {
@@ -535,7 +545,7 @@ export function ScheduledTasksWorkspace({
     }
     setSelectedTaskIdentity(null);
     setEditorMode('create');
-    setDraftDirty(false);
+    updateDraftDirty(false);
   });
 
   const syncScheduledPath = useEvent((nextView: WorkspaceView, task?: { projectId: string; taskId: string } | null) => {
@@ -558,7 +568,7 @@ export function ScheduledTasksWorkspace({
     if (editorMode !== 'closed' && !confirmDraftChange()) return;
     setSelectedTaskIdentity(null);
     setEditorMode('closed');
-    setDraftDirty(false);
+    updateDraftDirty(false);
     setHistoryTaskFilter(null);
     setWorkspaceView(nextView);
     syncScheduledPath(nextView, null);
@@ -586,7 +596,7 @@ export function ScheduledTasksWorkspace({
     }
     setSelectedTaskIdentity(null);
     setEditorMode('closed');
-    setDraftDirty(false);
+    updateDraftDirty(false);
     setHistoryTaskFilter({ projectId: entry.projectId, taskId: entry.task.id });
     setWorkspaceView('history');
     syncScheduledPath('history', null);
@@ -616,7 +626,7 @@ export function ScheduledTasksWorkspace({
     }
     setSelectedTaskIdentity(null);
     setEditorMode('closed');
-    setDraftDirty(false);
+    updateDraftDirty(false);
   });
 
   const requestClose = useEvent(() => {
@@ -685,7 +695,7 @@ export function ScheduledTasksWorkspace({
       setSelectedTaskIdentity({ projectId: projectID, taskId: nextSelectedTask.id });
       setEditorMode('edit');
     }
-    setDraftDirty(false);
+    updateDraftDirty(false);
     toast.success(t('sessions.scheduledTasks.dialog.toast.saved'));
     return nextSelectedTask;
   });
@@ -702,7 +712,7 @@ export function ScheduledTasksWorkspace({
       if (selectedTaskIdentity && taskIdentityKey(selectedTaskIdentity) === deletedTaskIdentity) {
         setSelectedTaskIdentity(null);
         setEditorMode('closed');
-        setDraftDirty(false);
+        updateDraftDirty(false);
       }
       toast.success(t('sessions.scheduledTasks.dialog.toast.deleted'));
     } catch (error) {
@@ -1640,7 +1650,7 @@ export function ScheduledTasksWorkspace({
                 task={editorMode === 'edit' ? selectedTask : null}
                 onOpenChange={handleCancelEditor}
                 onSave={handleSaveTask}
-                onDirtyChange={setDraftDirty}
+                onDirtyChange={updateDraftDirty}
                 onRun={async () => { if (selectedTaskEntry) await handleRunTask(selectedTaskEntry); }}
                 onOpenTaskHistory={handleEditorOpenTaskHistory}
                 onDelete={async () => { if (selectedTaskEntry) await handleDeleteTask(selectedTaskEntry); }}
@@ -1669,7 +1679,7 @@ export function ScheduledTasksWorkspace({
             task={editorMode === 'edit' ? selectedTask : null}
             onOpenChange={handleCancelEditor}
             onSave={handleSaveTask}
-            onDirtyChange={setDraftDirty}
+            onDirtyChange={updateDraftDirty}
             onRun={async () => { if (selectedTaskEntry) await handleRunTask(selectedTaskEntry); }}
             onOpenTaskHistory={handleEditorOpenTaskHistory}
             onDelete={async () => { if (selectedTaskEntry) await handleDeleteTask(selectedTaskEntry); }}

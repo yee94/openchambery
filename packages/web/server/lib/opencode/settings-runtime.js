@@ -760,6 +760,22 @@ export const createSettingsRuntime = (deps) => {
       next.notifyOnQuestion = true;
       changed = true;
     }
+    if (typeof settings.notifyOnPermission !== 'boolean') {
+      next.notifyOnPermission = true;
+      changed = true;
+    }
+    if (typeof settings.notifyOnScheduledTasks !== 'boolean') {
+      next.notifyOnScheduledTasks = true;
+      changed = true;
+    }
+    if (typeof settings.notifyOnAssistants !== 'boolean') {
+      next.notifyOnAssistants = true;
+      changed = true;
+    }
+    if (typeof settings.notifyOnGoals !== 'boolean') {
+      next.notifyOnGoals = true;
+      changed = true;
+    }
 
     const { templates, changed: templatesChanged } = ensureNotificationTemplateShape(settings.notificationTemplates);
     if (templatesChanged || !settings.notificationTemplates || typeof settings.notificationTemplates !== 'object') {

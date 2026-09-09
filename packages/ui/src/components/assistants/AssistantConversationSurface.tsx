@@ -10,16 +10,19 @@ import { cn } from '@/lib/utils'
 import { donateNativeAssistantInteraction } from '@/apps/MobileShareBridge'
 import { useUIStore } from '@/stores/useUIStore'
 import {
+  confirmContactAdmissionByMessageID,
   sendAssistantContactMessage,
   useAssistantCapabilityQuery,
   useAssistantContactMessagesQuery,
   useAssistantSnapshotQuery,
   type AssistantDTO,
 } from '@/queries/assistantQueries'
+import { AssistantAPIError } from '@/queries/assistantDTO'
 import { getAssistantPresentation } from './assistantPresentation'
 import {
   admitContactTurnPreview,
   applyContactBubbleDelta,
+  applyServerContactTurnAuthority,
   beginContactComposerSubmit,
   contactOptimisticSending,
   contactTurnPreviewWorking,
@@ -104,6 +107,7 @@ export const AssistantConversationSurface: React.FC<AssistantConversationSurface
   const [sendError, setSendError] = React.useState<string | null>(null)
   const sendGate = React.useMemo(() => createContactSendGate(), [])
   const settledTurnIDsRef = React.useRef(new Set<string>())
+  const admissionRevisionByTurnIDRef = React.useRef(new Map<string, number>())
   const setContactWorking = useAssistantContactWorkingStore((state) => state.setWorking)
   const messages = contactQuery.data?.messages ?? EMPTY_CONTACT_MESSAGES
   const scopedOptimisticTurns = scopeContactOptimisticTurns(optimisticTurns, assistant.id)
@@ -111,6 +115,10 @@ export const AssistantConversationSurface: React.FC<AssistantConversationSurface
   const transcript = mergeContactTranscript(messages, scopedOptimisticTurns, assistant.id, scopedTurnPreviews)
   const sending = contactOptimisticSending(scopedOptimisticTurns)
   const processing = contactTurnPreviewWorking(scopedTurnPreviews)
+  // Server working is authoritative across remount; local preview is temporary.
+  const serverWorking = Boolean(assistant.working || assistant.activeContactTurn)
+  // Domain snapshot revision only — never the per-assistant config revision.
+  const snapshotRevision = snapshotQuery.data?.revision ?? null
   const streamingTextLength = scopedTurnPreviews.reduce((total, preview) => (
     total + preview.bubbles.reduce((bubbleTotal, bubble) => bubbleTotal + bubble.text.length, 0)
   ), 0)
@@ -124,22 +132,51 @@ export const AssistantConversationSurface: React.FC<AssistantConversationSurface
   React.useEffect(() => {
     setSendError(null)
     settledTurnIDsRef.current.clear()
+    admissionRevisionByTurnIDRef.current = new Map()
     setOptimisticTurns((current) => scopeContactOptimisticTurns(current, assistant.id))
     setTurnPreviews((current) => scopeContactTurnPreviews(current, assistant.id))
   }, [assistant.id])
 
   React.useEffect(() => {
     setOptimisticTurns((current) => reconcileContactOptimisticTurns(current, messages))
-    setTurnPreviews((current) => reconcileContactTurnPreviews(current, messages))
   }, [messages])
 
+  // Seed busy / clear stale local previews from snapshot authority (missed SSE end,
+  // APP restart, durable error rows). Old idle snapshots cannot wipe a newer send.
   React.useEffect(() => {
-    setContactWorking(assistant.id, sending || processing)
-  }, [assistant.id, processing, sending, setContactWorking])
+    const pendingSendTurnIDs = new Set(
+      scopedOptimisticTurns.filter((turn) => turn.status === 'sending').map((turn) => turn.messageID),
+    )
+    setTurnPreviews((current) => applyServerContactTurnAuthority(current, {
+      assistantID: assistant.id,
+      activeContactTurn: assistant.activeContactTurn
+        ? { turnID: assistant.activeContactTurn.turnID, admittedAt: assistant.activeContactTurn.admittedAt }
+        : null,
+      serverWorking,
+      snapshotRevision,
+      admissionRevisionByTurnID: admissionRevisionByTurnIDRef.current,
+      pendingSendTurnIDs,
+      messages,
+      settledTurnIDs: settledTurnIDsRef.current,
+    }))
+  }, [
+    assistant.activeContactTurn,
+    assistant.id,
+    messages,
+    scopedOptimisticTurns,
+    serverWorking,
+    snapshotRevision,
+  ])
+
+  React.useEffect(() => {
+    // Never write local false over server busy — list green dots use snapshot too.
+    setContactWorking(assistant.id, sending || processing || serverWorking)
+  }, [assistant.id, processing, sending, serverWorking, setContactWorking])
 
   React.useEffect(() => {
     const id = assistant.id
     return () => {
+      // Drop only this surface's local overlay. Snapshot serverWorking remains.
       setContactWorking(id, false)
     }
   }, [assistant.id, setContactWorking])
@@ -147,7 +184,8 @@ export const AssistantConversationSurface: React.FC<AssistantConversationSurface
   const handleContactEvent = useEvent((event: OpenChamberEvent) => {
     if (!('assistantID' in event) || event.assistantID !== assistant.id) return
     if (event.type === 'contact-turn-start') {
-      if (settledTurnIDsRef.current.has(event.turnID)) return
+      // A fresh start for this turn must win over a stale end that arrived first.
+      settledTurnIDsRef.current.delete(event.turnID)
       setTurnPreviews((current) => admitContactTurnPreview(current, event.assistantID, event.turnID, event.occurredAt))
       return
     }
@@ -158,7 +196,12 @@ export const AssistantConversationSurface: React.FC<AssistantConversationSurface
     }
     if (event.type === 'contact-turn-end') {
       settledTurnIDsRef.current.add(event.turnID)
-      setTurnPreviews((current) => reconcileContactTurnPreviews(endContactTurnPreview(current, event), messages))
+      // requireExisting avoids inventing a failed row from a stale end after remount
+      // when server already dropped the turn; never wipe a different live turnID.
+      setTurnPreviews((current) => reconcileContactTurnPreviews(
+        endContactTurnPreview(current, event, { requireExisting: true }),
+        messages,
+      ))
     }
   })
 
@@ -211,7 +254,10 @@ export const AssistantConversationSurface: React.FC<AssistantConversationSurface
     setAttachments([])
     setSendError(null)
     try {
-      await sendAssistantContactMessage(sentAssistantID, begun.messageID, { parts: begun.parts })
+      const admitted = await sendAssistantContactMessage(sentAssistantID, begun.messageID, { parts: begun.parts })
+      if (typeof admitted.revision === 'number') {
+        admissionRevisionByTurnIDRef.current.set(begun.messageID, admitted.revision)
+      }
       setOptimisticTurns((current) => markContactOptimisticAdmitted(current, begun.messageID))
       if (!settledTurnIDsRef.current.has(begun.messageID)) {
         setTurnPreviews((current) => admitContactTurnPreview(current, sentAssistantID, begun.messageID))
@@ -226,6 +272,24 @@ export const AssistantConversationSurface: React.FC<AssistantConversationSurface
         }).catch(() => undefined)
       }
     } catch (error) {
+      // Uncertain admission: re-check the original messageID — never mint a second send.
+      if (error instanceof AssistantAPIError && error.code === 'admission_timeout') {
+        try {
+          const confirmed = await confirmContactAdmissionByMessageID(sentAssistantID, begun.messageID)
+          if (confirmed) {
+            if (typeof confirmed.revision === 'number') {
+              admissionRevisionByTurnIDRef.current.set(begun.messageID, confirmed.revision)
+            }
+            setOptimisticTurns((current) => markContactOptimisticAdmitted(current, begun.messageID))
+            if (!settledTurnIDsRef.current.has(begun.messageID)) {
+              setTurnPreviews((current) => admitContactTurnPreview(current, sentAssistantID, begun.messageID))
+            }
+            return
+          }
+        } catch {
+          // Fall through to failed — still the same messageID, no retry with a new id.
+        }
+      }
       const detail = contactSendErrorMessage(error, {
         noProvider: t('assistants.contact.noProvider'),
         sendFailed: t('assistants.contact.sendFailed'),
@@ -399,7 +463,7 @@ export const AssistantConversationSurface: React.FC<AssistantConversationSurface
                             aria-label={isPeer ? t('assistants.contact.peer.aria', { name: senderName }) : undefined}
                             data-assistant-contact-text=""
                             className={cn(
-                              'min-w-0 max-w-full [overflow-wrap:anywhere] rounded-[1.35rem] px-4 py-2.5 typography-ui leading-6',
+                              'min-w-0 max-w-full [overflow-wrap:anywhere] rounded-[1.35rem] px-4 py-2.5 typography-markdown leading-6',
                               useMarkdown ? null : 'whitespace-pre-wrap',
                               isUser
                                 ? 'rounded-[1.15rem] rounded-br-lg bg-[var(--primary-base)]/90 text-[var(--primary-foreground)]'

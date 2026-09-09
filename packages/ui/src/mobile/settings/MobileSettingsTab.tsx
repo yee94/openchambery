@@ -31,6 +31,7 @@ export function MobileSettingsTab({ className, contentClassName, instancesPage }
         flowMobile
         // Deep links / enable-assistants / MCP create set settingsPage before
         // switching to this tab; auto-open lands on that page instead of nav.
+        // Tab-bar taps reset settingsPage to home so this stays on the first-level list.
         autoOpenMobilePage
         visiblePageSlugs={[...MOBILE_SETTINGS_PAGE_SLUGS]}
         mobileInstancesPage={instancesPage}

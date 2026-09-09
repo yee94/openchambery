@@ -5,11 +5,19 @@ export type AssistantMode = 'continuous' | 'stateless';
 export type AssistantPart = { type: 'text'; text: string; synthetic?: boolean } | { type: 'file'; mime: string; url: string };
 
 export interface AssistantCapabilityDTO { supported: boolean; enabled: boolean; revision: number; serverInstanceID: string | null; }
-export interface AssistantDTO { id: string; revision: number; enabled: boolean; name: string; defaultPrompt: string; workspacePath: string | null; effectiveWorkspacePath: string; managedWorkspacePath: string | null; providerID: string; modelID: string; agent: string | null; variant: string | null; mode: AssistantMode; sessionID: string | null; sessionGeneration: number; historySessionIDs: string[]; historySessionCount: number; assignedSessionIDs: string[]; working: boolean; createdAt: number | null; updatedAt: number; tombstoneAt: number | null; }
+/** Server-authoritative in-flight contact turn. Local SSE/optimistic is temporary only. */
+export type AssistantActiveContactTurnStatus = 'queued' | 'running'
+export interface AssistantActiveContactTurn {
+  turnID: string
+  messageID: string
+  status: AssistantActiveContactTurnStatus
+  admittedAt: number
+}
+export interface AssistantDTO { id: string; revision: number; enabled: boolean; name: string; defaultPrompt: string; workspacePath: string | null; effectiveWorkspacePath: string; managedWorkspacePath: string | null; providerID: string; modelID: string; agent: string | null; variant: string | null; mode: AssistantMode; sessionID: string | null; sessionGeneration: number; historySessionIDs: string[]; historySessionCount: number; assignedSessionIDs: string[]; working: boolean; activeContactTurn: AssistantActiveContactTurn | null; createdAt: number | null; updatedAt: number; tombstoneAt: number | null; }
 export interface AssistantSnapshotDTO { revision: number; enabled: boolean; assistants: AssistantDTO[]; }
 export interface SessionBinding { sessionID: string | null; directory: string; sessionGeneration: number; }
 export interface CompactResponse { binding: SessionBinding; summarized: true; }
-export interface MessageAdmission { binding: SessionBinding; messageID: string; admitted: true; }
+export interface MessageAdmission { binding: SessionBinding; messageID: string; admitted: true; revision: number | null; replayed?: boolean; }
 export interface ShareOperation { operationID: string; assistantID: string; sessionID: string | null; messageID: string | null; state: 'submitting' | 'running' | 'completed' | 'failed' | 'unresolved'; phase: string; attempt: number; leaseExpiresAt: number | null; errorCode: string | null; }
 export interface AssistantHistoryEntry { sessionID: string; directory: string | null; info: Message; parts: Part[]; }
 export interface AssistantHistoryPage { entries: AssistantHistoryEntry[]; nextCursor: string | null; complete: boolean; }
@@ -121,11 +129,34 @@ const bool = (value: unknown, resource: string): boolean => typeof value === 'bo
 const enumValue = <T extends string>(value: unknown, choices: readonly T[], resource: string): T => choices.includes(value as T) ? value as T : invalid(resource);
 
 export const parseAssistantCapabilityDTO = (payload: unknown): AssistantCapabilityDTO => { const value = record(payload, 'capability'); return { supported: bool(value.supported, 'capability'), enabled: bool(value.enabled, 'capability'), revision: number(value.revision, 'capability'), serverInstanceID: nullableString(value.serverInstanceID, 'capability') }; };
-export const parseAssistantDTO = (payload: unknown): AssistantDTO => { const value = record(payload, 'assistant'); const historySessionIDs = Array.isArray(value.historySessionIDs) ? value.historySessionIDs.map((item) => string(item, 'assistant')) : []; const historySessionCount = value.historySessionCount === undefined ? historySessionIDs.length : number(value.historySessionCount, 'assistant'); if (!Number.isSafeInteger(historySessionCount) || historySessionCount < historySessionIDs.length) return invalid('assistant'); const assignedSessionIDs = Array.isArray(value.assignedSessionIDs) ? value.assignedSessionIDs.map((item) => string(item, 'assistant')) : []; return { id: string(value.id, 'assistant'), revision: number(value.revision, 'assistant'), enabled: bool(value.enabled, 'assistant'), name: string(value.name, 'assistant'), defaultPrompt: string(value.defaultPrompt, 'assistant'), workspacePath: nullableString(value.workspacePath, 'assistant'), effectiveWorkspacePath: string(value.effectiveWorkspacePath, 'assistant'), managedWorkspacePath: nullableString(value.managedWorkspacePath ?? null, 'assistant'), providerID: string(value.providerID, 'assistant'), modelID: string(value.modelID, 'assistant'), agent: nullableString(value.agent, 'assistant'), variant: nullableString(value.variant ?? null, 'assistant'), mode: enumValue(value.mode, ['continuous', 'stateless'] as const, 'assistant'), sessionID: nullableString(value.sessionID, 'assistant'), sessionGeneration: number(value.sessionGeneration, 'assistant'), historySessionIDs, historySessionCount, assignedSessionIDs, working: value.working === undefined ? false : bool(value.working, 'assistant'), createdAt: nullableNumber(value.createdAt, 'assistant'), updatedAt: number(value.updatedAt, 'assistant'), tombstoneAt: nullableNumber(value.tombstoneAt, 'assistant') }; };
+const parseActiveContactTurn = (value: unknown): AssistantActiveContactTurn | null => {
+  if (value == null) return null
+  const turn = record(value, 'assistant')
+  return {
+    turnID: string(turn.turnID, 'assistant'),
+    messageID: string(turn.messageID, 'assistant'),
+    status: enumValue(turn.status, ['queued', 'running'] as const, 'assistant'),
+    admittedAt: number(turn.admittedAt, 'assistant'),
+  }
+}
+export const parseAssistantDTO = (payload: unknown): AssistantDTO => { const value = record(payload, 'assistant'); const historySessionIDs = Array.isArray(value.historySessionIDs) ? value.historySessionIDs.map((item) => string(item, 'assistant')) : []; const historySessionCount = value.historySessionCount === undefined ? historySessionIDs.length : number(value.historySessionCount, 'assistant'); if (!Number.isSafeInteger(historySessionCount) || historySessionCount < historySessionIDs.length) return invalid('assistant'); const assignedSessionIDs = Array.isArray(value.assignedSessionIDs) ? value.assignedSessionIDs.map((item) => string(item, 'assistant')) : []; const activeContactTurn = value.activeContactTurn === undefined ? null : parseActiveContactTurn(value.activeContactTurn); const working = value.working === undefined ? activeContactTurn != null : bool(value.working, 'assistant'); return { id: string(value.id, 'assistant'), revision: number(value.revision, 'assistant'), enabled: bool(value.enabled, 'assistant'), name: string(value.name, 'assistant'), defaultPrompt: string(value.defaultPrompt, 'assistant'), workspacePath: nullableString(value.workspacePath, 'assistant'), effectiveWorkspacePath: string(value.effectiveWorkspacePath, 'assistant'), managedWorkspacePath: nullableString(value.managedWorkspacePath ?? null, 'assistant'), providerID: string(value.providerID, 'assistant'), modelID: string(value.modelID, 'assistant'), agent: nullableString(value.agent, 'assistant'), variant: nullableString(value.variant ?? null, 'assistant'), mode: enumValue(value.mode, ['continuous', 'stateless'] as const, 'assistant'), sessionID: nullableString(value.sessionID, 'assistant'), sessionGeneration: number(value.sessionGeneration, 'assistant'), historySessionIDs, historySessionCount, assignedSessionIDs, working, activeContactTurn, createdAt: nullableNumber(value.createdAt, 'assistant'), updatedAt: number(value.updatedAt, 'assistant'), tombstoneAt: nullableNumber(value.tombstoneAt, 'assistant') }; };
 export const parseAssistantSnapshotDTO = (payload: unknown): AssistantSnapshotDTO => { const value = record(payload, 'snapshot'); return { revision: number(value.revision, 'snapshot'), enabled: bool(value.enabled, 'snapshot'), assistants: Array.isArray(value.assistants) ? value.assistants.map(parseAssistantDTO) : invalid('snapshot') }; };
 export const parseSessionBinding = (payload: unknown): SessionBinding => { const value = record(payload, 'binding'); return { sessionID: nullableString(value.sessionID, 'binding'), directory: string(value.directory, 'binding'), sessionGeneration: number(value.sessionGeneration, 'binding') }; };
 export const parseCompactResponse = (payload: unknown): CompactResponse => { const value = record(payload, 'compact'); if (value.summarized !== true) return invalid('compact'); return { binding: parseSessionBinding(value.binding), summarized: true }; };
-export const parseMessageAdmission = (payload: unknown): MessageAdmission => { const value = record(payload, 'message_admission'); if (value.admitted !== true) return invalid('message_admission'); return { binding: parseSessionBinding(value.binding), messageID: string(value.messageID, 'message_admission'), admitted: true }; };
+export const parseMessageAdmission = (payload: unknown): MessageAdmission => {
+  const value = record(payload, 'message_admission');
+  if (value.admitted !== true) return invalid('message_admission');
+  const revision = value.revision === undefined || value.revision === null
+    ? null
+    : number(value.revision, 'message_admission');
+  return {
+    binding: parseSessionBinding(value.binding),
+    messageID: string(value.messageID, 'message_admission'),
+    admitted: true,
+    revision,
+    ...(value.replayed === true ? { replayed: true } : {}),
+  };
+};
 export const parseShareOperation = (payload: unknown): ShareOperation => { const value = record(payload, 'share_operation'); return { operationID: string(value.operationID, 'share_operation'), assistantID: string(value.assistantID, 'share_operation'), sessionID: nullableString(value.sessionID, 'share_operation'), messageID: nullableString(value.messageID, 'share_operation'), state: enumValue(value.state, ['submitting', 'running', 'completed', 'failed', 'unresolved'] as const, 'share_operation'), phase: string(value.phase, 'share_operation'), attempt: number(value.attempt, 'share_operation'), leaseExpiresAt: nullableNumber(value.leaseExpiresAt, 'share_operation'), errorCode: nullableString(value.errorCode, 'share_operation') }; };
 export const parseAssistantHistoryPage = (payload: unknown): AssistantHistoryPage => {
   const value = record(payload, 'assistant_history');

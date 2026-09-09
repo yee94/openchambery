@@ -87,6 +87,7 @@ import {
 } from "@/lib/settings/search";
 import { MobileFloatingSurface } from "@/mobile/MobileSurface";
 import { MobileDetailNavigation } from "@/mobile/MobileDetailNavigation";
+import { useMobileNavigationStore } from "@/mobile/useMobileNavigationStore";
 import { MobileTabPageHeader } from "@/mobile/MobileTabPageHeader";
 import { MobileSettingsGroup } from "@/mobile/settings/MobileSettingsGroup";
 import { useMobileBackRoute } from "@/mobile/mobileBackNavigation";
@@ -1173,6 +1174,16 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     setMobileStage(def.kind === "split" ? "page-sidebar" : "page-content");
   }, [autoOpenMobilePage, isMobile, mobileStage, settingsSlug]);
 
+  // Tab-bar (and restore) resets land on `home`; drop any keep-alive nested stage
+  // so the Settings root is the first-level list, not the last inner page.
+  React.useEffect(() => {
+    if (!flowMobile || settingsSlug !== "home") {
+      return;
+    }
+    autoNavSlugRef.current = null;
+    setMobileStage("nav");
+  }, [flowMobile, settingsSlug]);
+
   const showBackButton = isMobile && mobileStage !== "nav";
   const backButtonTargetsPageSidebar =
     isMobile &&
@@ -1226,13 +1237,26 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   }, [pushMobileSplitDetailHistory, settingsSlug]);
 
   const handleBack = React.useCallback(() => {
+    if (flowMobile && useMobileNavigationStore.getState().settingsReturnTo) {
+      autoNavSlugRef.current = null;
+      setMobileStage("nav");
+      setSettingsPage("home");
+      useMobileNavigationStore.getState().restoreSettingsReturnTo();
+      return;
+    }
+
     if (backButtonTargetsPageSidebar) {
       handleMobileSplitItemDeleted();
       return;
     }
 
     setMobileStage("nav");
-  }, [backButtonTargetsPageSidebar, handleMobileSplitItemDeleted]);
+  }, [
+    backButtonTargetsPageSidebar,
+    flowMobile,
+    handleMobileSplitItemDeleted,
+    setSettingsPage,
+  ]);
 
   // Stable bridge refs for useMobileBackRoute: stage switches only retarget
   // .current so the route id is not unregistered/re-registered mid-flow.

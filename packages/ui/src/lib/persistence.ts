@@ -523,6 +523,18 @@ const applyDesktopUiPreferences = (settings: DesktopSettings) => {
   if (typeof settings.notifyOnQuestion === 'boolean' && settings.notifyOnQuestion !== store.notifyOnQuestion) {
     store.setNotifyOnQuestion(settings.notifyOnQuestion);
   }
+  if (typeof settings.notifyOnPermission === 'boolean' && settings.notifyOnPermission !== store.notifyOnPermission) {
+    store.setNotifyOnPermission(settings.notifyOnPermission);
+  }
+  if (typeof settings.notifyOnScheduledTasks === 'boolean' && settings.notifyOnScheduledTasks !== store.notifyOnScheduledTasks) {
+    store.setNotifyOnScheduledTasks(settings.notifyOnScheduledTasks);
+  }
+  if (typeof settings.notifyOnAssistants === 'boolean' && settings.notifyOnAssistants !== store.notifyOnAssistants) {
+    store.setNotifyOnAssistants(settings.notifyOnAssistants);
+  }
+  if (typeof settings.notifyOnGoals === 'boolean' && settings.notifyOnGoals !== store.notifyOnGoals) {
+    store.setNotifyOnGoals(settings.notifyOnGoals);
+  }
   if (settings.notificationTemplates && typeof settings.notificationTemplates === 'object') {
     store.setNotificationTemplates(settings.notificationTemplates);
   }
@@ -932,6 +944,18 @@ const sanitizeWebSettings = (payload: unknown): DesktopSettings | null => {
   }
   if (typeof candidate.notifyOnQuestion === 'boolean') {
     result.notifyOnQuestion = candidate.notifyOnQuestion;
+  }
+  if (typeof candidate.notifyOnPermission === 'boolean') {
+    result.notifyOnPermission = candidate.notifyOnPermission;
+  }
+  if (typeof candidate.notifyOnScheduledTasks === 'boolean') {
+    result.notifyOnScheduledTasks = candidate.notifyOnScheduledTasks;
+  }
+  if (typeof candidate.notifyOnAssistants === 'boolean') {
+    result.notifyOnAssistants = candidate.notifyOnAssistants;
+  }
+  if (typeof candidate.notifyOnGoals === 'boolean') {
+    result.notifyOnGoals = candidate.notifyOnGoals;
   }
   if (candidate.notificationTemplates && typeof candidate.notificationTemplates === 'object') {
     const templates = candidate.notificationTemplates as Record<string, unknown>;

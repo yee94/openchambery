@@ -421,6 +421,7 @@ export const createScheduledTasksRuntime = (deps) => {
     getSmallModelService,
     waitForOpenCodeReady,
     emitTaskRunEvent,
+    notifyTaskRun,
     runHistoryStore = null,
     logger = console,
     maxGlobalConcurrency = DEFAULT_GLOBAL_CONCURRENCY,
@@ -1485,6 +1486,26 @@ export const createScheduledTasksRuntime = (deps) => {
           ...(sessionID ? { sessionID } : {}),
         });
       } catch {
+      }
+
+      // Notification fanout for scheduled (non-manual) runs; the notification
+      // runtime owns every delivery gate (settings toggle, channels).
+      try {
+        await notifyTaskRun?.({
+          projectID,
+          taskID,
+          taskName,
+          status,
+          reason,
+          ...(sessionID ? { sessionId: sessionID } : {}),
+          ...(status === 'error' ? { errorMessage } : {}),
+        });
+      } catch (error) {
+        logger.warn?.('[ScheduledTasks] task-run notification failed', {
+          projectID,
+          taskID,
+          error: safeErrorMessage(error),
+        });
       }
 
       return {

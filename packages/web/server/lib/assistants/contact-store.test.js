@@ -11,12 +11,14 @@ import {
   CONTACT_LLM_MAX_TURNS,
   clearContactMemory,
   contactHistoryForLlm,
+  createActiveContactTurn,
   deleteContactMessages,
   ensureContactSchema,
   getContactContextBoundary,
   insertContactMessage,
   listContactMessages,
   nextContactOrdinal,
+  projectActiveContactTurn,
   trimContactHistoryForLlm,
 } from './contact-store.js';
 
@@ -229,6 +231,16 @@ describe('contact LLM history trim', () => {
       { role: 'assistant', content: 'b-reply' },
     ]);
     reopened.close();
+  });
+
+  it('projects the earliest active contact turn for snapshot recovery', () => {
+    expect(createActiveContactTurn({ turnID: '', messageID: 'm', status: 'queued', admittedAt: 1 })).toBeNull();
+    expect(createActiveContactTurn({ turnID: 't', messageID: 'm', status: 'settled', admittedAt: 1 })).toBeNull();
+    const queued = createActiveContactTurn({ turnID: 't1', messageID: 'm1', status: 'queued', admittedAt: 20 });
+    const running = createActiveContactTurn({ turnID: 't0', messageID: 'm0', status: 'running', admittedAt: 10 });
+    expect(projectActiveContactTurn([queued, running])).toEqual(running);
+    expect(projectActiveContactTurn(new Map([['t1', queued]]))).toEqual(queued);
+    expect(projectActiveContactTurn([])).toBeNull();
   });
 
   it('keeps the previous boundary when clearContactMemory write fails inside a transaction', () => {

@@ -373,8 +373,8 @@ describe('notification trigger runtime llm system-session suppression', () => {
   });
 });
 
-const rootSessionResponse = () => jsonResponse({
-  id: 'ses_root',
+const rootSessionResponse = (sessionId = 'ses_root') => jsonResponse({
+  id: sessionId,
   parentID: null,
   title: 'Ordinary',
   metadata: {},
@@ -428,9 +428,9 @@ describe('contact turn notifications', () => {
     expect(sendApnsToAllUiSessions.mock.calls[0][0].type).toBeUndefined();
   });
 
-  it('skips contact notifications when completion notices are disabled', async () => {
+  it('skips contact notifications when assistant notices are disabled', async () => {
     const { runtime, emitDesktopNotification, sendPushToAllUiSessions } = createRuntime({
-      readSettingsFromDisk: vi.fn(async () => ({ ...defaultSettings, notifyOnCompletion: false })),
+      readSettingsFromDisk: vi.fn(async () => ({ ...defaultSettings, notifyOnAssistants: false })),
     });
     await runtime.sendContactTurnNotification({
       assistantID: 'asst_1',
@@ -440,6 +440,19 @@ describe('contact turn notifications', () => {
     });
     expect(emitDesktopNotification).not.toHaveBeenCalled();
     expect(sendPushToAllUiSessions).not.toHaveBeenCalled();
+  });
+
+  it('keeps contact notifications on when only completion notices are disabled', async () => {
+    const { runtime, emitDesktopNotification } = createRuntime({
+      readSettingsFromDisk: vi.fn(async () => ({ ...defaultSettings, notifyOnCompletion: false })),
+    });
+    await runtime.sendContactTurnNotification({
+      assistantID: 'asst_1',
+      name: '大小白',
+      body: 'hi',
+      status: 'complete',
+    });
+    expect(emitDesktopNotification).toHaveBeenCalled();
   });
 });
 
@@ -544,5 +557,155 @@ describe('notification trigger live activity end', () => {
     expect(sendLiveActivityEnd).toHaveBeenCalledTimes(2);
     expect(sendLiveActivityEnd).toHaveBeenNthCalledWith(1, { sessionId: 'ses_root', status: 'complete' });
     expect(sendLiveActivityEnd).toHaveBeenNthCalledWith(2, { sessionId: 'ses_root', status: 'complete' });
+  });
+});
+
+describe('notification event toggles', () => {
+  it('skips permission notifications when permission notices are disabled', async () => {
+    vi.useFakeTimers();
+    vi.stubGlobal('fetch', vi.fn(async () => rootSessionResponse('ses_perm_toggle')));
+    const { runtime, emitDesktopNotification, sendPushToAllUiSessions } = createRuntime({
+      readSettingsFromDisk: vi.fn(async () => ({ ...defaultSettings, notifyOnPermission: false })),
+    });
+    await runtime.maybeSendPushForTrigger({
+      type: 'permission.asked',
+      properties: {
+        directory: '/repo',
+        sessionID: 'ses_perm_toggle',
+        id: 'perm_1',
+        permission: 'edit',
+      },
+    });
+    await vi.runAllTimersAsync();
+    expect(emitDesktopNotification).not.toHaveBeenCalled();
+    expect(sendPushToAllUiSessions).not.toHaveBeenCalled();
+  });
+
+  it('keeps permission notifications independent of the question toggle', async () => {
+    vi.useFakeTimers();
+    vi.stubGlobal('fetch', vi.fn(async () => rootSessionResponse('ses_perm_indep')));
+    const { runtime, emitDesktopNotification } = createRuntime({
+      readSettingsFromDisk: vi.fn(async () => ({ ...defaultSettings, notifyOnQuestion: false })),
+    });
+    await runtime.maybeSendPushForTrigger({
+      type: 'permission.asked',
+      properties: {
+        directory: '/repo',
+        sessionID: 'ses_perm_indep',
+        id: 'perm_2',
+        permission: 'edit',
+      },
+    });
+    await vi.runAllTimersAsync();
+    expect(emitDesktopNotification).toHaveBeenCalledTimes(1);
+    expect(emitDesktopNotification.mock.calls[0][0]).toMatchObject({ kind: 'permission' });
+  });
+
+  it('skips goal settle push when goal notices are disabled', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse({ id: 'ses_goal', title: 'Goal run' })));
+    const { runtime, sendPushToAllUiSessions } = createRuntime({
+      readSettingsFromDisk: vi.fn(async () => ({ ...defaultSettings, notifyOnGoals: false })),
+    });
+    await runtime.sendGoalSettlePush({
+      sessionId: 'ses_goal',
+      status: 'complete',
+      title: 'Goal completed',
+      body: 'all done',
+    });
+    expect(sendPushToAllUiSessions).not.toHaveBeenCalled();
+  });
+
+  it('still sends goal settle push by default', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse({ id: 'ses_goal', title: 'Goal run' })));
+    const { runtime, sendPushToAllUiSessions } = createRuntime();
+    await runtime.sendGoalSettlePush({
+      sessionId: 'ses_goal',
+      status: 'complete',
+      title: 'Goal completed',
+      body: 'all done',
+    });
+    expect(sendPushToAllUiSessions).toHaveBeenCalledTimes(1);
+    expect(sendPushToAllUiSessions.mock.calls[0][0]).toMatchObject({ tag: 'goal-ses_goal' });
+  });
+});
+
+describe('scheduled task run notifications', () => {
+  it('notifies on a scheduled success run across desktop, UI, and push channels', async () => {
+    const { runtime, emitDesktopNotification, broadcastUiNotification, sendPushToAllUiSessions, sendApnsToAllUiSessions } = createRuntime();
+    await runtime.sendScheduledTaskRunNotification({
+      projectID: 'proj_1',
+      taskID: 'task_1',
+      taskName: 'Nightly digest',
+      status: 'success',
+      sessionId: 'ses_task',
+      reason: 'scheduled',
+    });
+    expect(emitDesktopNotification).toHaveBeenCalledWith(expect.objectContaining({
+      kind: 'task-complete',
+      title: 'Scheduled task completed',
+      body: 'Nightly digest',
+      tag: 'scheduled-proj_1-task_1',
+    }));
+    expect(broadcastUiNotification).toHaveBeenCalledTimes(1);
+    expect(sendPushToAllUiSessions).toHaveBeenCalledWith(expect.objectContaining({
+      title: 'Scheduled task completed',
+      data: expect.objectContaining({ type: 'task_complete', sessionName: 'Nightly digest', sessionId: 'ses_task' }),
+    }), expect.objectContaining({ requireNoSse: true }));
+    expect(sendApnsToAllUiSessions).toHaveBeenCalledWith(expect.objectContaining({
+      type: 'task_complete',
+      sessionName: 'Nightly digest',
+    }), expect.objectContaining({ requireNoSse: true }));
+  });
+
+  it('includes the error text on failure for desktop/web push only', async () => {
+    const { runtime, emitDesktopNotification, sendPushToAllUiSessions, sendApnsToAllUiSessions } = createRuntime();
+    await runtime.sendScheduledTaskRunNotification({
+      projectID: 'proj_1',
+      taskID: 'task_1',
+      taskName: 'Nightly digest',
+      status: 'error',
+      reason: 'scheduled',
+      errorMessage: 'agent aborted',
+    });
+    expect(emitDesktopNotification).toHaveBeenCalledWith(expect.objectContaining({
+      kind: 'task-error',
+      body: 'Nightly digest: agent aborted',
+    }));
+    expect(sendPushToAllUiSessions).toHaveBeenCalledWith(expect.objectContaining({
+      title: 'Scheduled task failed',
+      body: 'Nightly digest: agent aborted',
+      data: expect.objectContaining({ type: 'task_error' }),
+    }), expect.anything());
+    // APNs keeps the generic contract: scenario title + task name only, no error text.
+    expect(sendApnsToAllUiSessions).toHaveBeenCalledWith(expect.objectContaining({
+      type: 'task_error',
+      sessionName: 'Nightly digest',
+    }), expect.anything());
+    expect(JSON.stringify(sendApnsToAllUiSessions.mock.calls[0][0])).not.toContain('agent aborted');
+  });
+
+  it('skips manual runs and the disabled toggle', async () => {
+    const { runtime, emitDesktopNotification, sendPushToAllUiSessions } = createRuntime();
+    await runtime.sendScheduledTaskRunNotification({
+      projectID: 'proj_1',
+      taskID: 'task_1',
+      taskName: 'Nightly digest',
+      status: 'success',
+      reason: 'manual',
+    });
+    expect(emitDesktopNotification).not.toHaveBeenCalled();
+
+    const disabled = createRuntime({
+      readSettingsFromDisk: vi.fn(async () => ({ ...defaultSettings, notifyOnScheduledTasks: false })),
+    });
+    await disabled.runtime.sendScheduledTaskRunNotification({
+      projectID: 'proj_1',
+      taskID: 'task_1',
+      taskName: 'Nightly digest',
+      status: 'success',
+      reason: 'scheduled',
+    });
+    expect(disabled.emitDesktopNotification).not.toHaveBeenCalled();
+    expect(disabled.sendPushToAllUiSessions).not.toHaveBeenCalled();
   });
 });

@@ -20,10 +20,33 @@ describe('Assistant DTO parsing', () => {
     expect(snapshot.assistants[0]?.historySessionCount).toBe(1);
     expect(snapshot.assistants[0]?.assignedSessionIDs).toEqual([]);
     expect(snapshot.assistants[0]?.working).toBe(false);
+    expect(snapshot.assistants[0]?.activeContactTurn).toBeNull();
+    const withActive = parseAssistantSnapshotDTO({
+      revision: 1,
+      enabled: true,
+      assistants: [{
+        ...assistantContractFixtures.assistant,
+        working: true,
+        activeContactTurn: {
+          turnID: 'turn_1',
+          messageID: 'turn_1',
+          status: 'running',
+          admittedAt: 99,
+        },
+      }],
+    }).assistants[0];
+    expect(withActive?.working).toBe(true);
+    expect(withActive?.activeContactTurn).toEqual({
+      turnID: 'turn_1',
+      messageID: 'turn_1',
+      status: 'running',
+      admittedAt: 99,
+    });
     expect('skillRoots' in snapshot.assistants[0]).toBe(false);
     expect(binding.directory).toBe('/workspace');
     expect(compact.binding.sessionID).toBe('ses_fixture');
     expect(admission.messageID).toBe('msg_fixture');
+    expect(admission.revision).toBe(4);
     expect(share.sessionID).toBe('ses_fixture');
     expect(share.state).toBe('running');
     expect(history.entries[0]?.sessionID).toBe('ses_fixture');

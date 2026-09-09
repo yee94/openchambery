@@ -80,6 +80,10 @@ import { createNotificationEmitterRuntime } from './lib/notifications/emitter-ru
 import { createNotificationTriggerRuntime } from './lib/notifications/runtime.js';
 import { createPushRuntime } from './lib/notifications/push-runtime.js';
 import { createApnsRuntime } from './lib/notifications/apns-runtime.js';
+import {
+  createLiveActivityRefreshRuntime,
+  resolveLiveActivityRefreshIntervalMs,
+} from './lib/notifications/live-activity-refresh-runtime.js';
 import { createNotificationTemplateRuntime } from './lib/notifications/template-runtime.js';
 import { createPermissionAutoAcceptRuntime } from './lib/permission-auto-accept/runtime.js';
 import { createGracefulShutdownRuntime } from './lib/opencode/shutdown-runtime.js';
@@ -670,6 +674,17 @@ const maybeSendPushForTrigger = (...args) => notificationTriggerRuntime.maybeSen
 const setAutoAcceptSession = (sessionId, enabled) => permissionAutoAcceptRuntime.setSessionPolicy(sessionId, enabled);
 clearPendingPushBadge = () => notificationTriggerRuntime.clearPendingPushBadge();
 
+// Keeps Live Activity snapshots fresh for iOS devices whose app iOS suspended
+// or killed: every interval (default 30s) recompute each registered token's
+// snapshot from the authoritative session states and push only real changes.
+// The tick is a no-op (one token-store read) when no device registered.
+const liveActivityRefreshRuntime = createLiveActivityRefreshRuntime({
+  intervalMs: resolveLiveActivityRefreshIntervalMs(),
+  refreshLiveActivityTokens: (...args) => apnsRuntime.refreshLiveActivityTokens(...args),
+  getSessionStateSnapshot: () => sessionRuntime.getSessionStateSnapshot(),
+  resolveSession: (sessionId) => notificationTriggerRuntime.resolveLiveActivitySessionCandidate(sessionId),
+});
+
 // Single lazy small-model service for all consumers (feature routes, session
 // assist/title/goal, scheduled tasks). Catalog loader is directory-scoped and
 // never requests models.dev.
@@ -1036,6 +1051,7 @@ const scheduledTasksRuntime = createScheduledTasksRuntime({
       }
     }
   },
+  notifyTaskRun: (event) => notificationTriggerRuntime.sendScheduledTaskRunNotification(event),
   logger: console,
 });
 
@@ -1675,6 +1691,8 @@ async function main(options = {}) {
     console.warn('[ScheduledTasks] Failed to start runtime:', error?.message || error);
   }
 
+  liveActivityRefreshRuntime.start();
+
   // Only desktop / SSH-managed remotes (OPENCHAMBER_RUNTIME=desktop|ssh-remote)
   // open a relay host-control socket or poll relay demand. Local `dev` / `web`
   // never reconcile, so they cannot inherit a leftover desktop env and start
@@ -1736,6 +1754,7 @@ async function main(options = {}) {
         console.warn('[message-queue] Failed to close durable database during shutdown');
       }
       realtimeProxyRuntime.stop();
+      liveActivityRefreshRuntime.dispose();
       if (relayReconcileTimer) clearInterval(relayReconcileTimer);
       try {
         relayService.stop();
