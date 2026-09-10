@@ -1815,6 +1815,218 @@ describe('assistants service', () => {
     service.close();
   });
 
+  const sessionFollowCatalog = {
+    provider: {
+      list: async () => ({ data: { connected: ['xai', 'openai', 'p'] } }),
+    },
+    config: {
+      providers: async () => ({
+        data: {
+          providers: [
+            {
+              id: 'xai',
+              name: 'xAI',
+              models: {
+                'grok-4.6': {
+                  id: 'grok-4.6',
+                  name: 'Grok 4.6',
+                  modalities: { input: ['text', 'image'] },
+                },
+              },
+            },
+            {
+              id: 'openai',
+              name: 'OpenAI',
+              models: {
+                'gpt-4o': { id: 'gpt-4o', name: 'GPT-4o', modalities: { input: ['text', 'image'] } },
+              },
+            },
+            {
+              id: 'p',
+              name: 'P',
+              models: { m: { id: 'm', name: 'M' } },
+            },
+          ],
+        },
+      }),
+    },
+  };
+
+  it('reused sessionID without explicit model follows session.model when in catalog', async () => {
+    const directory = root();
+    const project = path.join(directory, 'app');
+    fs.mkdirSync(project, { recursive: true });
+    const prompts = [];
+    const gets = [];
+    const service = setup(directory, {
+      create: async () => ({ data: { id: 'ses_should_not_create' } }),
+      get: async (input) => {
+        gets.push(input);
+        return { data: { id: input.sessionID, model: { providerID: 'xai', id: 'grok-4.6' } } };
+      },
+      promptAsync: async (input) => {
+        prompts.push(input);
+        return { response: { status: 204 } };
+      },
+      ...sessionFollowCatalog,
+    }, {
+      runContactTurn: async ({ tools, userText }) => {
+        const assign = tools.find((tool) => tool.name === 'assign_session');
+        const result = await assign.execute('call_1', {
+          prompt: userText,
+          sessionID: 'ses_reuse',
+          projectPath: project,
+        });
+        return {
+          text: result.content[0].text,
+          bubbles: [result.content[0].text],
+          cards: result.details.card ? [result.details.card] : [],
+        };
+      },
+    });
+    const assistant = service.createAssistant(assistantInput);
+    await settleSend(service, assistant.id, {
+      messageID: 'client_assign_session_model',
+      parts: [{ type: 'text', text: '继续修' }],
+    });
+    expect(gets.some((item) => item.sessionID === 'ses_reuse')).toBe(true);
+    expect(prompts).toEqual([expect.objectContaining({
+      sessionID: 'ses_reuse',
+      model: { providerID: 'xai', modelID: 'grok-4.6' },
+    })]);
+    expect(service.snapshot().assistants[0]).toMatchObject({ providerID: 'p', modelID: 'm' });
+    service.close();
+  });
+
+  it('reused session falls back to assistant model when session model is not in catalog', async () => {
+    const directory = root();
+    const project = path.join(directory, 'app');
+    fs.mkdirSync(project, { recursive: true });
+    const prompts = [];
+    const service = setup(directory, {
+      create: async () => ({ data: { id: 'ses_no' } }),
+      get: async (input) => ({
+        data: { id: input.sessionID, model: { providerID: 'missing', modelID: 'gone' } },
+      }),
+      promptAsync: async (input) => {
+        prompts.push(input);
+        return { response: { status: 204 } };
+      },
+      ...sessionFollowCatalog,
+    }, {
+      runContactTurn: async ({ tools, userText }) => {
+        const assign = tools.find((tool) => tool.name === 'assign_session');
+        const result = await assign.execute('call_1', {
+          prompt: userText,
+          sessionID: 'ses_stale',
+          projectPath: project,
+        });
+        return {
+          text: result.content[0].text,
+          bubbles: [result.content[0].text],
+          cards: result.details.card ? [result.details.card] : [],
+        };
+      },
+    });
+    const assistant = service.createAssistant(assistantInput);
+    await settleSend(service, assistant.id, {
+      messageID: 'client_assign_session_stale',
+      parts: [{ type: 'text', text: '继续' }],
+    });
+    expect(prompts).toEqual([expect.objectContaining({
+      sessionID: 'ses_stale',
+      model: { providerID: 'p', modelID: 'm' },
+    })]);
+    service.close();
+  });
+
+  it('reused session falls back to assistant model when session.get fails', async () => {
+    const directory = root();
+    const project = path.join(directory, 'app');
+    fs.mkdirSync(project, { recursive: true });
+    const prompts = [];
+    const service = setup(directory, {
+      create: async () => ({ data: { id: 'ses_no' } }),
+      get: async () => {
+        throw new Error('session get failed');
+      },
+      promptAsync: async (input) => {
+        prompts.push(input);
+        return { response: { status: 204 } };
+      },
+      ...sessionFollowCatalog,
+    }, {
+      runContactTurn: async ({ tools, userText }) => {
+        const assign = tools.find((tool) => tool.name === 'assign_session');
+        const result = await assign.execute('call_1', {
+          prompt: userText,
+          sessionID: 'ses_get_fail',
+          projectPath: project,
+        });
+        expect(result.details.error).toBeUndefined();
+        return {
+          text: result.content[0].text,
+          bubbles: [result.content[0].text],
+          cards: result.details.card ? [result.details.card] : [],
+        };
+      },
+    });
+    const assistant = service.createAssistant(assistantInput);
+    const sent = await settleSend(service, assistant.id, {
+      messageID: 'client_assign_session_get_fail',
+      parts: [{ type: 'text', text: '继续' }],
+    });
+    expect(sent.settled.status).toBe('complete');
+    expect(prompts).toEqual([expect.objectContaining({
+      sessionID: 'ses_get_fail',
+      model: { providerID: 'p', modelID: 'm' },
+    })]);
+    service.close();
+  });
+
+  it('explicit model still overrides reused session model', async () => {
+    const directory = root();
+    const project = path.join(directory, 'app');
+    fs.mkdirSync(project, { recursive: true });
+    const prompts = [];
+    const service = setup(directory, {
+      create: async () => ({ data: { id: 'ses_no' } }),
+      get: async (input) => ({
+        data: { id: input.sessionID, model: { providerID: 'xai', id: 'grok-4.6' } },
+      }),
+      promptAsync: async (input) => {
+        prompts.push(input);
+        return { response: { status: 204 } };
+      },
+      ...sessionFollowCatalog,
+    }, {
+      runContactTurn: async ({ tools, userText }) => {
+        const assign = tools.find((tool) => tool.name === 'assign_session');
+        const result = await assign.execute('call_1', {
+          prompt: userText,
+          sessionID: 'ses_explicit',
+          projectPath: project,
+          model: 'openai/gpt-4o',
+        });
+        return {
+          text: result.content[0].text,
+          bubbles: [result.content[0].text],
+          cards: result.details.card ? [result.details.card] : [],
+        };
+      },
+    });
+    const assistant = service.createAssistant(assistantInput);
+    await settleSend(service, assistant.id, {
+      messageID: 'client_assign_session_explicit',
+      parts: [{ type: 'text', text: '用 gpt' }],
+    });
+    expect(prompts).toEqual([expect.objectContaining({
+      sessionID: 'ses_explicit',
+      model: { providerID: 'openai', modelID: 'gpt-4o' },
+    })]);
+    service.close();
+  });
+
   it('creates another assistant from create_assistant and persists the assistant card', async () => {
     const directory = root();
     const service = setup(directory, {}, {

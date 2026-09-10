@@ -8,9 +8,11 @@ import {
   assignSession,
   attachmentScopeKey,
   buildAssignParts,
+  extractAssignSessionModel,
   hasAssignImageParts,
   isAmbiguousPromptFailure,
   isManagedAssistantWorkspace,
+  normalizeAssignSessionModel,
   requireProvidedString,
   resolveAssignDirectory,
   resolveAssignWorkerModel,
@@ -81,6 +83,64 @@ describe('requireProvidedString / resolveAssignWorkerModel', () => {
       source: 'assistant',
       name: null,
       acceptsImages: null,
+    });
+  });
+
+  it('prefers a catalog-matched session model over the assistant default', () => {
+    expect(normalizeAssignSessionModel({ providerID: 'xai', id: 'grok-4.6' })).toEqual({
+      providerID: 'xai',
+      modelID: 'grok-4.6',
+    });
+    expect(extractAssignSessionModel({
+      session: { model: { providerID: 'xai', id: 'grok-4.6' } },
+    })).toEqual({ providerID: 'xai', modelID: 'grok-4.6' });
+    expect(extractAssignSessionModel({
+      messages: [
+        { info: { role: 'user', model: { providerID: 'openai', modelID: 'gpt-4o' } } },
+        { info: { role: 'assistant', model: { providerID: 'xai', id: 'grok-4.6' } } },
+      ],
+    })).toEqual({ providerID: 'xai', modelID: 'grok-4.6' });
+    expect(resolveAssignWorkerModel({
+      sessionModel: { providerID: 'xai', modelID: 'grok-4.6' },
+      fallback: { providerID: 'p', modelID: 'm' },
+      catalog,
+    })).toMatchObject({
+      providerID: 'xai',
+      modelID: 'grok-4.6',
+      source: 'session',
+      acceptsImages: true,
+    });
+  });
+
+  it('degrades to the assistant model when the session model is missing from catalog', () => {
+    expect(resolveAssignWorkerModel({
+      sessionModel: { providerID: 'missing', modelID: 'gone' },
+      fallback: { providerID: 'p', modelID: 'm' },
+      catalog,
+    })).toEqual({
+      providerID: 'p',
+      modelID: 'm',
+      source: 'assistant',
+      name: null,
+      acceptsImages: null,
+    });
+    expect(resolveAssignWorkerModel({
+      sessionModel: { providerID: 'xai', modelID: 'grok-4.6' },
+      fallback: { providerID: 'p', modelID: 'm' },
+      catalog: null,
+    }).source).toBe('assistant');
+  });
+
+  it('keeps explicit model fail-closed over a session model', () => {
+    expect(resolveAssignWorkerModel({
+      model: 'openai/gpt-4o',
+      sessionModel: { providerID: 'xai', modelID: 'grok-4.6' },
+      fallback: { providerID: 'p', modelID: 'm' },
+      catalog,
+    })).toMatchObject({
+      providerID: 'openai',
+      modelID: 'gpt-4o',
+      source: 'explicit',
     });
   });
 
