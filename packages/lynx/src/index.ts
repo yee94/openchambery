@@ -199,6 +199,7 @@ export { parsePastedPairingLink } from './connect/pairingPaste';
 
 export {
   loadLynxGitStatus,
+  partitionLynxGitChangeEntries,
   loadLynxGitFileDiff,
   commitLynxGitChanges,
   commitAndPushLynxGitChanges,

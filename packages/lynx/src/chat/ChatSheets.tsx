@@ -20,6 +20,8 @@ import {
   loadLynxGitFileDiff,
   loadLynxGitStatus,
   revertLynxGitFile,
+  revertLynxGitFiles,
+  partitionLynxGitChangeEntries,
   stageLynxGitFiles,
   syncLynxGit,
   unstageLynxGitFiles,
@@ -473,6 +475,36 @@ function ChangesSheetBody({
     setActionNote(result.error.message);
   };
 
+  /** Cap ChangesPanel group header Stage all / Unstage all (onActionAll). */
+  const runStageBulk = async (direction: 'stage' | 'unstage', paths: readonly string[]) => {
+    if (actionBusy || paths.length === 0) return;
+    setActionBusy(true);
+    setActionNote(null);
+    const result = direction === 'stage'
+      ? await stageLynxGitFiles(runtimeFetch, directory, paths)
+      : await unstageLynxGitFiles(runtimeFetch, directory, paths);
+    setActionBusy(false);
+    if (result.status === 'ok') {
+      setActionNote(lynxT(
+        locale,
+        direction === 'stage'
+          ? 'lynx.chat.sheet.changes.stageAllOk'
+          : 'lynx.chat.sheet.changes.unstageAllOk',
+      ));
+      setReloadNonce((n) => n + 1);
+      return;
+    }
+    if (result.status === 'no-runtime') {
+      setActionNote(lynxT(locale, 'lynx.settings.noRuntime'));
+      return;
+    }
+    if (result.status === 'no-directory') {
+      setActionNote(lynxT(locale, 'lynx.chat.sheet.noDirectory'));
+      return;
+    }
+    setActionNote(result.error.message);
+  };
+
   const runCommit = async () => {
     setActionBusy(true);
     setActionNote(null);
@@ -548,18 +580,33 @@ function ChangesSheetBody({
     if (next) setPendingRevert(next);
   };
 
+  /** Cap ChangesPanel revert-all toolbar — same centered Dialog confirm. */
+  const askRevertAll = (paths: readonly string[]) => {
+    if (actionBusy) return;
+    const next = requestLynxRevertConfirm(paths);
+    if (next) setPendingRevert(next);
+  };
+
   const dismissRevertConfirm = () => {
     setPendingRevert(resolveLynxRevertConfirm(pendingRevert, 'cancel').pending);
   };
 
-  const runRevert = async (path: string) => {
+  const runRevert = async (paths: readonly string[]) => {
+    if (paths.length === 0) return;
     setActionBusy(true);
     setActionNote(null);
-    const result = await revertLynxGitFile(runtimeFetch, directory, path);
+    const result = paths.length === 1
+      ? await revertLynxGitFile(runtimeFetch, directory, paths[0]!)
+      : await revertLynxGitFiles(runtimeFetch, directory, paths);
     setActionBusy(false);
     if (result.status === 'ok') {
-      setActionNote(lynxT(locale, 'lynx.chat.sheet.changes.revertOk'));
-      if (diffEntry?.path === path) {
+      setActionNote(lynxT(
+        locale,
+        paths.length === 1
+          ? 'lynx.chat.sheet.changes.revertOk'
+          : 'lynx.chat.sheet.changes.revertAllOk',
+      ));
+      if (diffEntry && paths.includes(diffEntry.path)) {
         setDiffEntry(null);
         setDiffPlan(null);
         setDiffNote(null);
@@ -581,8 +628,8 @@ function ChangesSheetBody({
   const confirmRevert = () => {
     const resolved = resolveLynxRevertConfirm(pendingRevert, 'confirm');
     setPendingRevert(resolved.pending);
-    if (resolved.shouldRevert && resolved.path) {
-      void runRevert(resolved.path);
+    if (resolved.shouldRevert && resolved.paths && resolved.paths.length > 0) {
+      void runRevert(resolved.paths);
     }
   };
 
@@ -679,6 +726,9 @@ function ChangesSheetBody({
     return <Banner text={lynxT(locale, 'lynx.settings.loading')} muted />;
   }
 
+  const { staged, unstaged } = partitionLynxGitChangeEntries(entries);
+  const allChangePaths = entries.map((entry) => entry.path);
+
   return (
     <LynxView style={{ flexGrow: 1 }}>
     <LynxScrollView style={{ flexGrow: 1, padding: '0 16px 24px' }}>
@@ -730,98 +780,107 @@ function ChangesSheetBody({
       {entries.length === 0 ? (
         <Banner text={lynxT(locale, 'lynx.chat.sheet.changes.empty')} muted />
       ) : (
-        entries.map((entry) => {
-          const statusCode = lynxChangeStatusCode(entry.status);
-          const stats = diffStats[entry.path];
-          return (
-          <LynxView
-            key={`${entry.staged ? 's' : 'u'}:${entry.path}`}
-            style={{
-              minHeight: `${LYNX_CHANGE_ROW_SPACING.rowMinHeightPx}px`,
-              paddingTop: `${LYNX_CHANGE_ROW_SPACING.rowPaddingYPx}px`,
-              paddingBottom: `${LYNX_CHANGE_ROW_SPACING.rowPaddingYPx}px`,
-              flexDirection: 'row',
-              alignItems: 'center',
-            }}
-          >
-            <LynxView
-              style={{
-                flexGrow: 1,
-                flexDirection: 'row',
-                alignItems: 'center',
-                minWidth: '0px',
-              }}
-              bindtap={() => { void openDiff(entry); }}
-            >
-              <LynxText
-                style={{
-                  color: cssVar(lynxChangeStatusToken(statusCode)),
-                  fontSize: '12px',
-                  fontWeight: '700',
-                  width: `${LYNX_CHANGE_ROW_SPACING.statusCodeWidthPx}px`,
-                  textAlign: 'center',
-                  marginRight: `${LYNX_CHANGE_ROW_SPACING.contentGapPx}px`,
-                  flexShrink: 0,
-                }}
-              >
-                {statusCode}
-              </LynxText>
-              <LynxView style={{ flexGrow: 1, minWidth: '0px' }}>
-                <LynxText style={{ color: cssVar('surface.foreground'), fontSize: '13px' }}>
-                  {entry.path}
-                </LynxText>
-                <LynxText style={{ color: cssVar('surface.mutedForeground'), fontSize: '11px' }}>
-                  {entry.status}
-                  {entry.staged ? ' · staged' : ''}
-                </LynxText>
-              </LynxView>
-              {stats ? (
-                <LynxView
-                  style={{
-                    flexDirection: 'row',
-                    alignItems: 'center',
-                    flexShrink: 0,
-                    marginLeft: `${LYNX_CHANGE_ROW_SPACING.contentGapPx}px`,
-                    marginRight: `${LYNX_CHANGE_ROW_SPACING.contentGapPx}px`,
-                  }}
-                >
-                  <LynxText style={{ color: cssVar('status.success'), fontSize: '12px' }}>
-                    +{stats.insertions}
-                  </LynxText>
-                  <LynxText
-                    style={{
-                      color: cssVar('surface.mutedForeground'),
-                      fontSize: '12px',
-                      marginLeft: `${LYNX_CHANGE_ROW_SPACING.statsSlashMarginPx}px`,
-                      marginRight: `${LYNX_CHANGE_ROW_SPACING.statsSlashMarginPx}px`,
-                    }}
-                  >
-                    /
-                  </LynxText>
-                  <LynxText style={{ color: cssVar('status.error'), fontSize: '12px' }}>
-                    -{stats.deletions}
-                  </LynxText>
-                </LynxView>
-              ) : null}
-            </LynxView>
-            <RevertGlassChip
-              label={lynxT(locale, 'lynx.chat.sheet.changes.revert')}
-              host={host}
-              fullPageAutoGlassSkin={fullPageAutoGlassSkin}
-              onTap={() => { askRevert(entry); }}
-            />
-            <StageGlassChip
-              symbol={entry.staged ? '-' : '+'}
-              label={entry.staged
-                ? lynxT(locale, 'lynx.chat.sheet.changes.unstage')
-                : lynxT(locale, 'lynx.chat.sheet.changes.stage')}
-              host={host}
-              fullPageAutoGlassSkin={fullPageAutoGlassSkin}
-              onTap={() => { if (!actionBusy) void runStageToggle(entry); }}
+        <>
+          {/* Cap ChangesPanel revert-all toolbar (confirm via centered Dialog). */}
+          <LynxView style={{ flexDirection: 'row', flexWrap: 'wrap', marginBottom: '8px' }}>
+            <ActionChip
+              label={lynxT(locale, 'lynx.chat.sheet.changes.revertAll')}
+              onTap={() => { askRevertAll(allChangePaths); }}
             />
           </LynxView>
-          );
-        })
+          {staged.length > 0 ? (
+            <LynxView style={{ marginBottom: '12px' }}>
+              <LynxView
+                style={{
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  marginBottom: '4px',
+                }}
+              >
+                <LynxText
+                  style={{
+                    color: cssVar('surface.foreground'),
+                    fontSize: '13px',
+                    fontWeight: '600',
+                    flexGrow: 1,
+                  }}
+                >
+                  {lynxT(locale, 'lynx.chat.sheet.changes.stagedTitle')}
+                </LynxText>
+                <StageGlassChip
+                  symbol="-"
+                  label={lynxT(locale, 'lynx.chat.sheet.changes.unstageAll')}
+                  host={host}
+                  fullPageAutoGlassSkin={fullPageAutoGlassSkin}
+                  onTap={() => {
+                    if (!actionBusy) {
+                      void runStageBulk('unstage', staged.map((entry) => entry.path));
+                    }
+                  }}
+                />
+              </LynxView>
+              {staged.map((entry) => (
+                <ChangeEntryRow
+                  key={`s:${entry.path}`}
+                  entry={entry}
+                  locale={locale}
+                  diffStats={diffStats}
+                  host={host}
+                  fullPageAutoGlassSkin={fullPageAutoGlassSkin}
+                  onOpenDiff={() => { void openDiff(entry); }}
+                  onAskRevert={() => { askRevert(entry); }}
+                  onStageToggle={() => { if (!actionBusy) void runStageToggle(entry); }}
+                />
+              ))}
+            </LynxView>
+          ) : null}
+          {unstaged.length > 0 ? (
+            <LynxView style={{ marginBottom: '12px' }}>
+              <LynxView
+                style={{
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  marginBottom: '4px',
+                }}
+              >
+                <LynxText
+                  style={{
+                    color: cssVar('surface.foreground'),
+                    fontSize: '13px',
+                    fontWeight: '600',
+                    flexGrow: 1,
+                  }}
+                >
+                  {lynxT(locale, 'lynx.chat.sheet.changes.unstagedTitle')}
+                </LynxText>
+                <StageGlassChip
+                  symbol="+"
+                  label={lynxT(locale, 'lynx.chat.sheet.changes.stageAll')}
+                  host={host}
+                  fullPageAutoGlassSkin={fullPageAutoGlassSkin}
+                  onTap={() => {
+                    if (!actionBusy) {
+                      void runStageBulk('stage', unstaged.map((entry) => entry.path));
+                    }
+                  }}
+                />
+              </LynxView>
+              {unstaged.map((entry) => (
+                <ChangeEntryRow
+                  key={`u:${entry.path}`}
+                  entry={entry}
+                  locale={locale}
+                  diffStats={diffStats}
+                  host={host}
+                  fullPageAutoGlassSkin={fullPageAutoGlassSkin}
+                  onOpenDiff={() => { void openDiff(entry); }}
+                  onAskRevert={() => { askRevert(entry); }}
+                  onStageToggle={() => { if (!actionBusy) void runStageToggle(entry); }}
+                />
+              ))}
+            </LynxView>
+          ) : null}
+        </>
       )}
     </LynxScrollView>
       {/* Cap DialogPortal spirit — shell-root full-screen overlay, not nested absolute. */}
@@ -830,9 +889,27 @@ function ChangesSheetBody({
           <LynxCenteredDialog
             locale={locale}
             open
-            title={lynxT(locale, 'lynx.chat.sheet.changes.revertConfirmTitle')}
-            description={lynxT(locale, 'lynx.chat.sheet.changes.revertConfirmDescription')}
-            ariaLabel={lynxT(locale, 'lynx.chat.sheet.changes.revertConfirmTitle')}
+            title={lynxT(
+              locale,
+              (pendingRevert.paths.length > 1)
+                ? 'lynx.chat.sheet.changes.revertAllConfirmTitle'
+                : 'lynx.chat.sheet.changes.revertConfirmTitle',
+            )}
+            description={lynxT(
+              locale,
+              (pendingRevert.paths.length > 1)
+                ? 'lynx.chat.sheet.changes.revertAllConfirmDescription'
+                : 'lynx.chat.sheet.changes.revertConfirmDescription',
+              (pendingRevert.paths.length > 1)
+                ? { count: pendingRevert.paths.length }
+                : undefined,
+            )}
+            ariaLabel={lynxT(
+              locale,
+              (pendingRevert.paths.length > 1)
+                ? 'lynx.chat.sheet.changes.revertAllConfirmTitle'
+                : 'lynx.chat.sheet.changes.revertConfirmTitle',
+            )}
             busy={actionBusy}
             onClose={() => { if (!actionBusy) dismissRevertConfirm(); }}
             footer={(
@@ -861,11 +938,124 @@ function ChangesSheetBody({
                 fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
               }}
             >
-              {pendingRevert.path}
+              {pendingRevert.paths.length > 1
+                ? pendingRevert.paths.join('\n')
+                : pendingRevert.path}
             </LynxText>
           </LynxCenteredDialog>
         ) : null}
       </LynxDialogPortal>
+    </LynxView>
+  );
+}
+
+
+function ChangeEntryRow({
+  entry,
+  locale,
+  diffStats,
+  host,
+  fullPageAutoGlassSkin,
+  onOpenDiff,
+  onAskRevert,
+  onStageToggle,
+}: {
+  entry: LynxGitChangeEntry;
+  locale: string;
+  diffStats: Record<string, LynxGitDiffStat>;
+  host: LynxHostGlobalProps | null;
+  fullPageAutoGlassSkin: boolean;
+  onOpenDiff: () => void;
+  onAskRevert: () => void;
+  onStageToggle: () => void;
+}) {
+  const statusCode = lynxChangeStatusCode(entry.status);
+  const stats = diffStats[entry.path];
+  return (
+    <LynxView
+      style={{
+        minHeight: `${LYNX_CHANGE_ROW_SPACING.rowMinHeightPx}px`,
+        paddingTop: `${LYNX_CHANGE_ROW_SPACING.rowPaddingYPx}px`,
+        paddingBottom: `${LYNX_CHANGE_ROW_SPACING.rowPaddingYPx}px`,
+        flexDirection: 'row',
+        alignItems: 'center',
+      }}
+    >
+      <LynxView
+        style={{
+          flexGrow: 1,
+          flexDirection: 'row',
+          alignItems: 'center',
+          minWidth: '0px',
+        }}
+        bindtap={onOpenDiff}
+      >
+        <LynxText
+          style={{
+            color: cssVar(lynxChangeStatusToken(statusCode)),
+            fontSize: '12px',
+            fontWeight: '700',
+            width: `${LYNX_CHANGE_ROW_SPACING.statusCodeWidthPx}px`,
+            textAlign: 'center',
+            marginRight: `${LYNX_CHANGE_ROW_SPACING.contentGapPx}px`,
+            flexShrink: 0,
+          }}
+        >
+          {statusCode}
+        </LynxText>
+        <LynxView style={{ flexGrow: 1, minWidth: '0px' }}>
+          <LynxText style={{ color: cssVar('surface.foreground'), fontSize: '13px' }}>
+            {entry.path}
+          </LynxText>
+          <LynxText style={{ color: cssVar('surface.mutedForeground'), fontSize: '11px' }}>
+            {entry.status}
+            {entry.staged ? ' · staged' : ''}
+          </LynxText>
+        </LynxView>
+        {stats ? (
+          <LynxView
+            style={{
+              flexDirection: 'row',
+              alignItems: 'center',
+              flexShrink: 0,
+              marginLeft: `${LYNX_CHANGE_ROW_SPACING.contentGapPx}px`,
+              marginRight: `${LYNX_CHANGE_ROW_SPACING.contentGapPx}px`,
+            }}
+          >
+            <LynxText style={{ color: cssVar('status.success'), fontSize: '12px' }}>
+              +{stats.insertions}
+            </LynxText>
+            <LynxText
+              style={{
+                color: cssVar('surface.mutedForeground'),
+                fontSize: '12px',
+                marginLeft: `${LYNX_CHANGE_ROW_SPACING.statsSlashMarginPx}px`,
+                marginRight: `${LYNX_CHANGE_ROW_SPACING.statsSlashMarginPx}px`,
+              }}
+            >
+              /
+            </LynxText>
+            <LynxText style={{ color: cssVar('status.error'), fontSize: '12px' }}>
+              -{stats.deletions}
+            </LynxText>
+          </LynxView>
+        ) : null}
+      </LynxView>
+      <RevertGlassChip
+        label={lynxT(locale, 'lynx.chat.sheet.changes.revert')}
+        host={host}
+        fullPageAutoGlassSkin={fullPageAutoGlassSkin}
+        onTap={onAskRevert}
+      />
+      <StageGlassChip
+        symbol={entry.staged ? '-' : '+'}
+        label={entry.staged
+          ? lynxT(locale, 'lynx.chat.sheet.changes.unstage')
+          : lynxT(locale, 'lynx.chat.sheet.changes.stage')}
+        host={host}
+        fullPageAutoGlassSkin={fullPageAutoGlassSkin}
+        onTap={onStageToggle}
+      />
     </LynxView>
   );
 }

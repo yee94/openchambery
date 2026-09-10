@@ -10,6 +10,20 @@ export type LynxGitChangeEntry = {
   staged: boolean;
 };
 
+/** Cap ChangesPanel staged vs unstaged groups (phone MobileChangesSurface). */
+export const partitionLynxGitChangeEntries = (
+  entries: readonly LynxGitChangeEntry[],
+): { staged: LynxGitChangeEntry[]; unstaged: LynxGitChangeEntry[] } => {
+  const staged: LynxGitChangeEntry[] = [];
+  const unstaged: LynxGitChangeEntry[] = [];
+  for (const entry of entries) {
+    if (entry.staged) staged.push(entry);
+    else unstaged.push(entry);
+  }
+  return { staged, unstaged };
+};
+
+
 export type LynxGitDiffStat = {
   insertions: number;
   deletions: number;
