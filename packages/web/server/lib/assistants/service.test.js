@@ -1848,6 +1848,139 @@ describe('assistants service', () => {
     service.close();
   });
 
+  it('reads and persists defaultPrompt via get_assistant_settings / update_default_prompt', async () => {
+    const directory = root();
+    const tips = [];
+    const harnessTurns = [];
+    let phase = 'read';
+    const service = setup(directory, {}, {
+      onRevisionTip: (tip) => tips.push(tip),
+      runContactTurn: async ({ tools, assistant }) => {
+        harnessTurns.push({
+          phase,
+          defaultPrompt: assistant.defaultPrompt,
+          toolNames: tools.map((tool) => tool.name),
+        });
+        if (phase === 'read') {
+          const get = tools.find((tool) => tool.name === 'get_assistant_settings');
+          const result = await get.execute('call_get', {});
+          expect(result.details.settings).toMatchObject({
+            id: assistant.id,
+            name: 'A',
+            defaultPrompt: 'Base persona',
+            providerID: 'p',
+            modelID: 'm',
+            enabled: true,
+          });
+          expect(result.content[0].text).toContain('Base persona');
+          phase = 'write';
+          return { text: 'Current default prompt loaded.', bubbles: ['Current default prompt loaded.'] };
+        }
+        if (phase === 'write') {
+          const update = tools.find((tool) => tool.name === 'update_default_prompt');
+          const unchanged = await update.execute('call_same', { prompt: 'Base persona' });
+          expect(unchanged.details).toMatchObject({ updated: false, unchanged: true, defaultPrompt: 'Base persona' });
+          const beforeRevision = service.snapshot().assistants.find((item) => item.id === assistant.id).revision;
+          const saved = await update.execute('call_set', { prompt: 'Reply only in Chinese.' });
+          expect(saved.details).toMatchObject({ updated: true, defaultPrompt: 'Reply only in Chinese.' });
+          expect(saved.terminate).toBe(false);
+          const after = service.snapshot().assistants.find((item) => item.id === assistant.id);
+          expect(after.defaultPrompt).toBe('Reply only in Chinese.');
+          expect(after.revision).toBe(beforeRevision + 1);
+          phase = 'next';
+          return { text: 'Default prompt saved.', bubbles: ['Default prompt saved.'] };
+        }
+        // Next turn: harness must see the persisted defaultPrompt from DB snapshot.
+        expect(assistant.defaultPrompt).toBe('Reply only in Chinese.');
+        const get = tools.find((tool) => tool.name === 'get_assistant_settings');
+        const live = await get.execute('call_live', {});
+        expect(live.details.settings.defaultPrompt).toBe('Reply only in Chinese.');
+        return { text: 'Confirmed.', bubbles: ['Confirmed.'] };
+      },
+    });
+    const host = service.createAssistant({ ...assistantInput, defaultPrompt: 'Base persona' });
+    expect(host.defaultPrompt).toBe('Base persona');
+    const tipBeforeWrite = tips.length;
+
+    await settleSend(service, host.id, {
+      messageID: 'client_settings_read',
+      parts: [{ type: 'text', text: '看看我的默认提示词' }],
+    });
+    await settleSend(service, host.id, {
+      messageID: 'client_settings_write',
+      parts: [{ type: 'text', text: '把默认提示词改成只用中文回复' }],
+    });
+    const tipAfterWrite = tips.length;
+    expect(tipAfterWrite).toBeGreaterThan(tipBeforeWrite);
+    expect(service.snapshot().assistants.find((item) => item.id === host.id).defaultPrompt).toBe('Reply only in Chinese.');
+
+    await settleSend(service, host.id, {
+      messageID: 'client_settings_next',
+      parts: [{ type: 'text', text: '确认一下默认提示词' }],
+    });
+    expect(harnessTurns.some((turn) => turn.phase === 'next' && turn.defaultPrompt === 'Reply only in Chinese.')).toBe(true);
+    expect(harnessTurns[0].toolNames).toEqual(expect.arrayContaining([
+      'get_assistant_settings',
+      'update_default_prompt',
+    ]));
+    service.close();
+  });
+
+  it('retries update_default_prompt once on revision_conflict and reports persistent conflict', async () => {
+    const directory = root();
+    let host;
+    let mode = 'retry_success';
+    const service = setup(directory, {}, {
+      runContactTurn: async ({ tools }) => {
+        const update = tools.find((tool) => tool.name === 'update_default_prompt');
+        if (mode === 'retry_success') {
+          // Concurrent name write lands during the pre-CAS yield → first CAS conflicts, retry succeeds.
+          const pending = update.execute('call_retry', { prompt: 'After conflict retry' });
+          await service.updateAssistant(host.id, {
+            expectedRevision: service.snapshot().assistants.find((item) => item.id === host.id).revision,
+            name: 'ConcurrentRename',
+          });
+          const result = await pending;
+          expect(result.details).toMatchObject({ updated: true, defaultPrompt: 'After conflict retry' });
+          expect(result.details.error).toBeUndefined();
+          mode = 'retry_fail';
+          return { text: 'Retried ok.', bubbles: ['Retried ok.'] };
+        }
+        // Two concurrent writes during attempt 0 and attempt 1 yields → both CAS fail.
+        const pending = update.execute('call_fail', { prompt: 'Should fail' });
+        await service.updateAssistant(host.id, {
+          expectedRevision: service.snapshot().assistants.find((item) => item.id === host.id).revision,
+          name: 'BumpOne',
+        });
+        await Promise.resolve();
+        await service.updateAssistant(host.id, {
+          expectedRevision: service.snapshot().assistants.find((item) => item.id === host.id).revision,
+          name: 'BumpTwo',
+        });
+        const failed = await pending;
+        expect(failed.details.error).toBe('revision_conflict');
+        expect(failed.terminate).toBe(true);
+        return { text: 'Conflict reported.', bubbles: ['Conflict reported.'] };
+      },
+    });
+    host = service.createAssistant({ ...assistantInput, defaultPrompt: 'Original' });
+    await settleSend(service, host.id, {
+      messageID: 'client_prompt_retry',
+      parts: [{ type: 'text', text: '改默认提示词' }],
+    });
+    expect(service.snapshot().assistants.find((item) => item.id === host.id)).toMatchObject({
+      defaultPrompt: 'After conflict retry',
+      name: 'ConcurrentRename',
+    });
+    await settleSend(service, host.id, {
+      messageID: 'client_prompt_conflict',
+      parts: [{ type: 'text', text: '再改默认提示词' }],
+    });
+    // Persistent conflict must not apply the failed write.
+    expect(service.snapshot().assistants.find((item) => item.id === host.id).defaultPrompt).toBe('After conflict retry');
+    service.close();
+  });
+
   it('creates a scheduled task from schedule_task and persists the schedule card', async () => {
     const directory = root();
     const upserts = [];

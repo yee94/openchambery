@@ -1479,6 +1479,49 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
             listAssistants: () => db.prepare('SELECT * FROM assistant_v2 WHERE tombstone_at IS NULL ORDER BY created_at').all().map(output),
             listProjects: async () => loadRegisteredProjects(),
             listSessions: (params) => listSessionsWork(params),
+            // Live DB read — not the turn-start assistantSnapshot.
+            readAssistantSettings: () => output(editable(row.assistant_id)),
+            // Persist defaultPrompt via updateAssistant CAS; one revision_conflict retry.
+            updateAssistantSettings: async (patch = {}) => {
+              const normalizePrompt = (value) => {
+                if (typeof value !== 'string') fail('validation_error');
+                if (value.length > 200_000) fail('validation_error');
+                return value.trim();
+              };
+              let lastError = null;
+              for (let attempt = 0; attempt < 2; attempt++) {
+                const current = output(editable(row.assistant_id));
+                if (!Object.prototype.hasOwnProperty.call(patch, 'defaultPrompt')) {
+                  fail('validation_error');
+                }
+                const nextPrompt = normalizePrompt(patch.defaultPrompt);
+                if (current.defaultPrompt === nextPrompt) {
+                  return {
+                    updated: false,
+                    unchanged: true,
+                    defaultPrompt: current.defaultPrompt,
+                    assistant: current,
+                  };
+                }
+                // Yield so a concurrent UI PATCH can land before CAS (and tests can inject).
+                await Promise.resolve();
+                try {
+                  const updated = await updateAssistant(row.assistant_id, {
+                    expectedRevision: current.revision,
+                    defaultPrompt: nextPrompt,
+                  });
+                  return {
+                    updated: true,
+                    defaultPrompt: updated.defaultPrompt,
+                    assistant: updated,
+                  };
+                } catch (error) {
+                  lastError = error;
+                  if (error?.code !== 'revision_conflict') throw error;
+                }
+              }
+              throw lastError;
+            },
             currentAssistant: assistantSnapshot,
             onCard: (card) => assignedCards.push(card),
             turnFileParts,

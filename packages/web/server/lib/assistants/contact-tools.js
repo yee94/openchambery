@@ -30,6 +30,8 @@ export const NEW_CONVERSATION_TOOL_NAME = 'new_conversation';
 export const CLEAR_CHAT_HISTORY_TOOL_NAME = 'clear_chat_history';
 export const LIST_PROJECTS_TOOL_NAME = 'list_projects';
 export const LIST_SESSIONS_TOOL_NAME = 'list_sessions';
+export const GET_ASSISTANT_SETTINGS_TOOL_NAME = 'get_assistant_settings';
+export const UPDATE_DEFAULT_PROMPT_TOOL_NAME = 'update_default_prompt';
 const CONTACT_TOOL_FENCE = 'openchamber-tool';
 export const ASSIGNED_SESSION_FALLBACK_BUBBLE = 'Opened a coding session.';
 /** Same-turn duplicate assign (different args after a success, or parallel mismatch). */
@@ -38,6 +40,9 @@ export const ASSIGN_DUPLICATE_TURN_MESSAGE = 'This contact turn already opened a
 export const NEW_CONVERSATION_CONFIRM_BUBBLE = 'Memory cleared. Previous messages stay in the chat; I will not use them as context.';
 /** Explicit transcript wipe confirm (clear_chat_history / POST contact/reset). */
 export const CLEAR_CHAT_HISTORY_CONFIRM_BUBBLE = 'Chat history cleared.';
+/** Default-prompt write confirm: persisted settings, next turns only. */
+export const UPDATE_DEFAULT_PROMPT_CONFIRM_BUBBLE = 'Default prompt saved. It applies on later turns (this turn already built its system prompt).';
+export const UPDATE_DEFAULT_PROMPT_UNCHANGED_BUBBLE = 'Default prompt is already that value — nothing changed.';
 const LIST_SESSIONS_LIMIT_DEFAULT = 20;
 const LIST_SESSIONS_LIMIT_MAX = 50;
 
@@ -82,9 +87,16 @@ const CLEAR_CHAT_HISTORY_INTENT = /(?:清空|清除|删除)(?:聊天|对话)记�
 const NEW_CONVERSATION_INTENT = /开新对话|新对话|清除记忆|清空(?:聊天|对话)(?!记录)|clear memory|clear chat(?! history)|new conversation|start over|forget (?:everything|this|what we|what i)/giu;
 const LIST_PROJECTS_INTENT = /找项目|查项目|看看项目|有哪些项目|项目列表|list projects|find project|registered project|which project/iu;
 const LIST_SESSIONS_INTENT = /现有对话|现有会话|查会话|找会话|会话列表|有哪些会话|list sessions|find (?:a )?session|existing (?:conversation|session|chat)|active (?:conversation|session)/iu;
+// Self settings: missed-fence retry hints only (not authorization).
+const GET_ASSISTANT_SETTINGS_INTENT = /(?:查看|看看|读|显示)(?:一下)?(?:我的|本助手的|助手)?(?:助手设定|默认提示词|系统提示词|人设)|(?:我的|本助手的)?(?:助手设定|默认提示词|系统提示词|人设)(?:是什么|怎么样)|(?:get|show|read|view) (?:my |the )?(?:assistant settings|default prompt|system prompt)/iu;
+const UPDATE_DEFAULT_PROMPT_INTENT = /(?:改|修改|设置|更新|清空)(?:一下)?(?:我的|本助手的|助手)?(?:默认提示词|系统提示词|人设)|(?:默认提示词|系统提示词|人设)(?:改成|设为|设置为|更新为|清空)|把(?:我的|本助手的|助手)?(?:默认提示词|系统提示词|人设)(?:改|设|更新|清空)|(?:update|change|set|clear) (?:my |the )?(?:default prompt|system prompt)/iu;
 const INTENT_NEGATION = /不要|别|不用|不开|don't|do\s+not/iu;
 const newConversationParameters = typeboxObject({});
 const clearChatHistoryParameters = typeboxObject({});
+const getAssistantSettingsParameters = typeboxObject({});
+const updateDefaultPromptParameters = typeboxObject({
+  prompt: typeboxString('New default prompt / system persona for this assistant. Empty string clears it. Persists to assistant settings; applies on later turns.'),
+});
 
 const assignParameters = typeboxObject({
   prompt: typeboxString('Coding prompt to kick into the worker OpenCode session. Current-turn user attachments (images/files) are forwarded by the server automatically — do not base64-encode or invent local paths.'),
@@ -402,6 +414,12 @@ export function detectRequestedContactTools(userText, allowedNames = []) {
   if (allowed.has(LIST_SESSIONS_TOOL_NAME) && LIST_SESSIONS_INTENT.test(text)) {
     requested.push(LIST_SESSIONS_TOOL_NAME);
   }
+  // Prefer write intent when both settings phrases match (e.g. 把默认提示词改成 X).
+  if (allowed.has(UPDATE_DEFAULT_PROMPT_TOOL_NAME) && UPDATE_DEFAULT_PROMPT_INTENT.test(text)) {
+    requested.push(UPDATE_DEFAULT_PROMPT_TOOL_NAME);
+  } else if (allowed.has(GET_ASSISTANT_SETTINGS_TOOL_NAME) && GET_ASSISTANT_SETTINGS_INTENT.test(text)) {
+    requested.push(GET_ASSISTANT_SETTINGS_TOOL_NAME);
+  }
   if (allowed.has(CREATE_ASSISTANT_TOOL_NAME) && CREATE_ASSISTANT_INTENT.test(text)) {
     requested.push(CREATE_ASSISTANT_TOOL_NAME);
   }
@@ -525,6 +543,8 @@ export function formatContactToolsPrompt(tools) {
     'When they explicitly want to delete the stored chat (清空聊天记录 / clear chat history / delete chat history), call clear_chat_history. Do not use clear_chat_history for ordinary 开新对话 / new conversation wording.',
     'When they want to find a registered project (找项目 / list projects / "openchamber yee"), call list_projects or use the Registered projects block already in context.',
     'When they want existing conversations in a project (现有对话 / list sessions), call list_sessions.',
+    'When they want to view this assistant\'s own settings / default prompt / system persona (查看助手设定 / 默认提示词 / 系统提示词 / 人设), call get_assistant_settings.',
+    'When they want to change this assistant\'s default prompt / system persona (改默认提示词 / 设置人设 / update default prompt), call update_default_prompt. That writes Assistant settings and persists — it is not a one-shot message and not new_conversation.',
     'When they want another assistant (建助理 / create an assistant), call create_assistant.',
     'When they want a separate Chat coding session (建会话 / open a session / 开个新会话), call assign_session after matching the project. File and shell work in this assistant\'s working directory uses read, write, edit, and bash — not assign_session.',
     'When they want a scheduled task (排定时任务 / schedule daily ping), call schedule_task.',
@@ -543,6 +563,12 @@ export function formatContactToolsPrompt(tools) {
     `{"name":"${LIST_SESSIONS_TOOL_NAME}","arguments":{"projectPath":"/path/to/repo","query":"login"}}`,
     '```',
     `\`\`\`${CONTACT_TOOL_FENCE}`,
+    `{"name":"${GET_ASSISTANT_SETTINGS_TOOL_NAME}","arguments":{}}`,
+    '```',
+    `\`\`\`${CONTACT_TOOL_FENCE}`,
+    `{"name":"${UPDATE_DEFAULT_PROMPT_TOOL_NAME}","arguments":{"prompt":"Be terse and reply in Chinese."}}`,
+    '```',
+    `\`\`\`${CONTACT_TOOL_FENCE}`,
     `{"name":"${CREATE_ASSISTANT_TOOL_NAME}","arguments":{"name":"FlowQA","model":"opencode-go/deepseek-v4-flash"}}`,
     '```',
     `\`\`\`${CONTACT_TOOL_FENCE}`,
@@ -554,12 +580,14 @@ export function formatContactToolsPrompt(tools) {
     `\`\`\`${CONTACT_TOOL_FENCE}`,
     `{"name":"${ASSIGN_SESSION_TOOL_NAME}","arguments":{"prompt":"...","projectPath":"...","model":"provider/model-id"}}`,
     '```',
-    'If the user asked for more than one of these, do them in that order across turns: new_conversation or clear_chat_history, then list_projects, then list_sessions, then create_assistant, then schedule_task, then message_assistant, then assign_session.',
+    'If the user asked for more than one of these, do them in that order across turns: new_conversation or clear_chat_history, then list_projects, then list_sessions, then get_assistant_settings or update_default_prompt, then create_assistant, then schedule_task, then message_assistant, then assign_session.',
     'Prerequisite lookups (list_projects / list_sessions) may run before assign_session in the same turn. After a successful assign_session the turn ends — never call assign_session again, and do not keep looping tools.',
     'new_conversation advances this contact\'s LLM context boundary only. Stored messages and watches remain. It never calls session/new or createNew.',
     'clear_chat_history deletes this contact\'s stored messages, parts, and watches. Use only for explicit wipe intent.',
     'You already receive the registered project catalog each turn. Prefer matching label/path yourself; list_projects refreshes or filters. Never claim you cannot see projects; never ask for a raw path when a name matches.',
     'list_sessions searches the OpenChamber session index for existing chats in a project. A failure is not an empty list — surface the error.',
+    'get_assistant_settings reads this contact\'s live Assistant settings from storage (id, name, defaultPrompt, provider/model, agent, variant, mode, workspacePath, enabled). Use it before claiming what the default prompt is.',
+    'update_default_prompt persists defaultPrompt on this assistant row (empty string clears). It is Assistant settings — not a one-shot user message and not new_conversation. Takes effect on later turns only; this turn\'s system prompt is already built. After success, confirm in one short bubble.',
     'assign_session opens a real OpenChamber/OpenCode session on a registered project (or reuses sessionID). You are not the worker. Optional providerID/modelID/model select the worker only from the connected catalog and never change this contact. Current-turn user attachments are server-forwarded — do not embed base64 or local paths. One successful assign ends this turn.',
     'create_assistant reuses already-connected OpenCode providers (providerID/modelID). Mode is continuous.',
     'schedule_task writes the same payload as PUT /api/projects/:id/scheduled-tasks onto a registered project.',
@@ -646,6 +674,48 @@ const toolFailure = (error, fallbackCode, fallbackMessage) => {
   };
 };
 
+/** Subset of AssistantDTO fields exposed to get/update settings tools. */
+export function pickAssistantSettings(dto) {
+  if (!dto || typeof dto !== 'object') return null;
+  const id = typeof dto.id === 'string' && dto.id.trim()
+    ? dto.id.trim()
+    : (typeof dto.assistantID === 'string' && dto.assistantID.trim() ? dto.assistantID.trim() : null);
+  if (!id) return null;
+  return {
+    id,
+    name: typeof dto.name === 'string' ? dto.name : '',
+    defaultPrompt: typeof dto.defaultPrompt === 'string' ? dto.defaultPrompt : '',
+    providerID: typeof dto.providerID === 'string' ? dto.providerID : '',
+    modelID: typeof dto.modelID === 'string' ? dto.modelID : '',
+    agent: dto.agent == null ? null : String(dto.agent),
+    variant: dto.variant == null ? null : String(dto.variant),
+    mode: dto.mode === 'stateless' ? 'stateless' : 'continuous',
+    workspacePath: dto.workspacePath == null ? null : String(dto.workspacePath),
+    enabled: Boolean(dto.enabled),
+  };
+}
+
+/** Short readable settings dump for the model (empty defaultPrompt is explicit). */
+export function formatAssistantSettingsContent(settings) {
+  const row = pickAssistantSettings(settings) || settings;
+  if (!row || typeof row !== 'object') return 'Assistant settings unavailable.';
+  const prompt = typeof row.defaultPrompt === 'string' ? row.defaultPrompt : '';
+  const promptLine = prompt === '' ? 'defaultPrompt: (empty)' : `defaultPrompt:\n${prompt}`;
+  return [
+    `Assistant settings for ${row.name || row.id || 'this contact'}:`,
+    `id: ${row.id || ''}`,
+    `name: ${row.name || ''}`,
+    promptLine,
+    `providerID: ${row.providerID || ''}`,
+    `modelID: ${row.modelID || ''}`,
+    `agent: ${row.agent == null ? '(none)' : row.agent}`,
+    `variant: ${row.variant == null ? '(none)' : row.variant}`,
+    `mode: ${row.mode || 'continuous'}`,
+    `workspacePath: ${row.workspacePath == null ? '(managed)' : row.workspacePath}`,
+    `enabled: ${row.enabled ? 'true' : 'false'}`,
+  ].join('\n');
+}
+
 export function createContactTools({
   assignWork,
   createAssistant,
@@ -656,6 +726,8 @@ export function createContactTools({
   listAssistants,
   listProjects,
   listSessions,
+  readAssistantSettings,
+  updateAssistantSettings,
   currentAssistant,
   onCard,
   /** Authoritative current-turn user file parts (server-owned). Forwarded on assign by default. */
@@ -880,6 +952,78 @@ export function createContactTools({
           };
         } catch (error) {
           return toolFailure(error, 'list_sessions_failed', 'Could not list sessions.');
+        }
+      },
+    },
+    {
+      name: GET_ASSISTANT_SETTINGS_TOOL_NAME,
+      label: 'Get assistant settings',
+      description: [
+        'Read this assistant contact\'s live settings from storage (not a stale turn snapshot).',
+        'Returns id, name, defaultPrompt, providerID, modelID, agent, variant, mode, workspacePath, enabled.',
+        'Use when the user asks about 助手设定 / 默认提示词 / 系统提示词 / 人设.',
+      ].join(' '),
+      parameters: getAssistantSettingsParameters,
+      execute: async () => {
+        try {
+          if (typeof readAssistantSettings !== 'function') {
+            throw new AssignError('upstream_error', 'Reading assistant settings is unavailable.');
+          }
+          const raw = await readAssistantSettings();
+          const settings = pickAssistantSettings(raw?.settings ?? raw);
+          if (!settings) {
+            throw new AssignError('upstream_error', 'Assistant settings failed to load.');
+          }
+          return {
+            content: [{ type: 'text', text: formatAssistantSettingsContent(settings) }],
+            details: { settings },
+            terminate: false,
+          };
+        } catch (error) {
+          return toolFailure(error, 'get_assistant_settings_failed', 'Could not read assistant settings.');
+        }
+      },
+    },
+    {
+      name: UPDATE_DEFAULT_PROMPT_TOOL_NAME,
+      label: 'Update default prompt',
+      description: [
+        'Persist this assistant\'s defaultPrompt (system persona) to Assistant settings.',
+        'Required prompt string; empty string clears it. Not a one-shot message — takes effect on later turns.',
+        'Use when the user asks to 改默认提示词 / 设置人设 / update default prompt.',
+      ].join(' '),
+      parameters: updateDefaultPromptParameters,
+      execute: async (_toolCallId, params) => {
+        try {
+          if (typeof updateAssistantSettings !== 'function') {
+            throw new AssignError('upstream_error', 'Updating assistant settings is unavailable.');
+          }
+          if (typeof params?.prompt !== 'string') {
+            throw new AssignError('validation_error', 'update_default_prompt requires prompt (string; empty clears).');
+          }
+          // Allow empty string (clear). Do not trim here — service normalizes like updateAssistant.
+          const result = await updateAssistantSettings({ defaultPrompt: params.prompt });
+          if (result?.unchanged === true || result?.updated === false) {
+            const defaultPrompt = typeof result?.defaultPrompt === 'string'
+              ? result.defaultPrompt
+              : params.prompt;
+            return {
+              content: [{ type: 'text', text: UPDATE_DEFAULT_PROMPT_UNCHANGED_BUBBLE }],
+              details: { updated: false, unchanged: true, defaultPrompt },
+              terminate: false,
+            };
+          }
+          const defaultPrompt = typeof result?.defaultPrompt === 'string'
+            ? result.defaultPrompt
+            : params.prompt;
+          return {
+            content: [{ type: 'text', text: UPDATE_DEFAULT_PROMPT_CONFIRM_BUBBLE }],
+            details: { updated: true, defaultPrompt },
+            // Same as create_assistant / schedule_task: keep the turn open for a short confirm.
+            terminate: false,
+          };
+        } catch (error) {
+          return toolFailure(error, 'update_default_prompt_failed', 'Could not update default prompt.');
         }
       },
     },

@@ -6,12 +6,16 @@ import {
   CLEAR_CHAT_HISTORY_CONFIRM_BUBBLE,
   CLEAR_CHAT_HISTORY_TOOL_NAME,
   CREATE_ASSISTANT_TOOL_NAME,
+  GET_ASSISTANT_SETTINGS_TOOL_NAME,
   LIST_PROJECTS_TOOL_NAME,
   LIST_SESSIONS_TOOL_NAME,
   MESSAGE_ASSISTANT_TOOL_NAME,
   NEW_CONVERSATION_CONFIRM_BUBBLE,
   NEW_CONVERSATION_TOOL_NAME,
   SCHEDULE_TASK_TOOL_NAME,
+  UPDATE_DEFAULT_PROMPT_CONFIRM_BUBBLE,
+  UPDATE_DEFAULT_PROMPT_TOOL_NAME,
+  UPDATE_DEFAULT_PROMPT_UNCHANGED_BUBBLE,
   confirmBubbleAfterContactReset,
   contactTurnHasSuccessfulReset,
   createContactTools,
@@ -89,6 +93,8 @@ describe('contact tool protocol', () => {
       CLEAR_CHAT_HISTORY_TOOL_NAME,
       LIST_PROJECTS_TOOL_NAME,
       LIST_SESSIONS_TOOL_NAME,
+      GET_ASSISTANT_SETTINGS_TOOL_NAME,
+      UPDATE_DEFAULT_PROMPT_TOOL_NAME,
       CREATE_ASSISTANT_TOOL_NAME,
       SCHEDULE_TASK_TOOL_NAME,
       MESSAGE_ASSISTANT_TOOL_NAME,
@@ -118,6 +124,9 @@ describe('contact tool protocol', () => {
     expect(detectRequestedContactTools('找项目 openchamber yee', tools)).toEqual([LIST_PROJECTS_TOOL_NAME]);
     expect(detectRequestedContactTools('看看现有对话', tools)).toEqual([LIST_SESSIONS_TOOL_NAME]);
     expect(detectRequestedContactTools('list sessions in that project', tools)).toEqual([LIST_SESSIONS_TOOL_NAME]);
+    expect(detectRequestedContactTools('看看我的默认提示词', tools)).toEqual([GET_ASSISTANT_SETTINGS_TOOL_NAME]);
+    expect(detectRequestedContactTools('把默认提示词改成简洁中文', tools)).toEqual([UPDATE_DEFAULT_PROMPT_TOOL_NAME]);
+    expect(detectRequestedContactTools('update default prompt to be terse', tools)).toEqual([UPDATE_DEFAULT_PROMPT_TOOL_NAME]);
     expect(detectRequestedContactTools('开新对话', tools)).not.toContain(ASSIGN_SESSION_TOOL_NAME);
     expect(detectRequestedContactTools('开新对话', tools)).not.toContain(CLEAR_CHAT_HISTORY_TOOL_NAME);
     expect(detectRequestedContactTools('不要开编码 session', tools)).toEqual([]);
@@ -146,6 +155,8 @@ describe('contact tool protocol', () => {
     expect(prompt).toContain('clear_chat_history');
     expect(prompt).toContain('list_projects');
     expect(prompt).toContain('list_sessions');
+    expect(prompt).toContain('get_assistant_settings');
+    expect(prompt).toContain('update_default_prompt');
     expect(prompt).toContain('create_assistant');
     expect(prompt).toContain('schedule_task');
     expect(prompt).toContain('message_assistant');
@@ -155,11 +166,15 @@ describe('contact tool protocol', () => {
     expect(prompt).toContain('清空聊天记录');
     expect(prompt).toContain('找项目');
     expect(prompt).toContain('现有对话');
+    expect(prompt).toContain('默认提示词');
+    expect(prompt).toContain('助手设定');
     expect(prompt).toContain('建助理');
     expect(prompt).toContain('排定时任务');
     expect(prompt).toContain('说一声');
     expect(prompt).toContain('session/new');
     expect(prompt).toContain('LLM memory only');
+    expect(prompt).toContain('Persists');
+    expect(prompt).toContain('later turns');
     expect(prompt).not.toContain('/card');
     expect(prompt).not.toContain('/dm');
     expect(prompt).toContain('A reply without the tool call does nothing');
@@ -273,6 +288,8 @@ describe('createContactTools', () => {
       CLEAR_CHAT_HISTORY_TOOL_NAME,
       LIST_PROJECTS_TOOL_NAME,
       LIST_SESSIONS_TOOL_NAME,
+      GET_ASSISTANT_SETTINGS_TOOL_NAME,
+      UPDATE_DEFAULT_PROMPT_TOOL_NAME,
       CREATE_ASSISTANT_TOOL_NAME,
       SCHEDULE_TASK_TOOL_NAME,
       MESSAGE_ASSISTANT_TOOL_NAME,
@@ -534,6 +551,75 @@ describe('createContactTools', () => {
     expect(failed.details.error).toBe('upstream_error');
     expect(failed.content[0].text).toContain('Session index is unavailable');
     expect(failed.details.sessions).toBeUndefined();
+  });
+
+  it('reads assistant settings via live callback and formats empty defaultPrompt', async () => {
+    const readAssistantSettings = vi.fn(async () => ({
+      id: 'asst_host',
+      name: 'DeepSeekQA',
+      defaultPrompt: '',
+      providerID: 'p',
+      modelID: 'm',
+      agent: null,
+      variant: null,
+      mode: 'continuous',
+      workspacePath: null,
+      enabled: true,
+    }));
+    const tools = createContactTools({ readAssistantSettings });
+    const result = await tools.find((tool) => tool.name === GET_ASSISTANT_SETTINGS_TOOL_NAME).execute('call_get', {});
+    expect(readAssistantSettings).toHaveBeenCalledTimes(1);
+    expect(result.details.settings).toMatchObject({
+      id: 'asst_host',
+      name: 'DeepSeekQA',
+      defaultPrompt: '',
+      providerID: 'p',
+      modelID: 'm',
+      enabled: true,
+    });
+    expect(result.content[0].text).toContain('defaultPrompt: (empty)');
+    expect(result.terminate).toBe(false);
+  });
+
+  it('updates default prompt, no-ops when unchanged, and reports callback failures', async () => {
+    const updateAssistantSettings = vi.fn(async ({ defaultPrompt }) => {
+      if (defaultPrompt === 'same') {
+        return { updated: false, unchanged: true, defaultPrompt: 'same' };
+      }
+      return { updated: true, defaultPrompt };
+    });
+    const tools = createContactTools({ updateAssistantSettings });
+    const update = tools.find((tool) => tool.name === UPDATE_DEFAULT_PROMPT_TOOL_NAME);
+
+    const saved = await update.execute('call_set', { prompt: 'Be terse.' });
+    expect(updateAssistantSettings).toHaveBeenCalledWith({ defaultPrompt: 'Be terse.' });
+    expect(saved.details).toEqual({ updated: true, defaultPrompt: 'Be terse.' });
+    expect(saved.content[0].text).toBe(UPDATE_DEFAULT_PROMPT_CONFIRM_BUBBLE);
+    expect(saved.terminate).toBe(false);
+
+    const cleared = await update.execute('call_clear', { prompt: '' });
+    expect(updateAssistantSettings).toHaveBeenCalledWith({ defaultPrompt: '' });
+    expect(cleared.details).toEqual({ updated: true, defaultPrompt: '' });
+    expect(cleared.terminate).toBe(false);
+
+    const unchanged = await update.execute('call_same', { prompt: 'same' });
+    expect(unchanged.details).toEqual({ updated: false, unchanged: true, defaultPrompt: 'same' });
+    expect(unchanged.content[0].text).toBe(UPDATE_DEFAULT_PROMPT_UNCHANGED_BUBBLE);
+    expect(unchanged.terminate).toBe(false);
+
+    const missing = await update.execute('call_missing', {});
+    expect(missing.details.error).toBe('validation_error');
+    expect(missing.terminate).toBe(true);
+
+    updateAssistantSettings.mockRejectedValueOnce(Object.assign(new Error('revision_conflict'), { code: 'revision_conflict' }));
+    const conflicted = await update.execute('call_conflict', { prompt: 'X' });
+    expect(conflicted.details.error).toBe('revision_conflict');
+    expect(conflicted.terminate).toBe(true);
+
+    updateAssistantSettings.mockRejectedValueOnce(Object.assign(new Error('sqlite busy'), { code: 'upstream_error' }));
+    const storageFailed = await update.execute('call_storage', { prompt: 'Y' });
+    expect(storageFailed.details.error).toBe('upstream_error');
+    expect(storageFailed.terminate).toBe(true);
   });
 });
 
