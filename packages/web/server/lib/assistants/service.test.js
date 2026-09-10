@@ -3,7 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { createRequire } from 'node:module';
-import { createAssistantsService } from './service.js';
+import { assignedSessionResumeMessageID, createAssistantsService } from './service.js';
 import { assistantContractFixtures } from './contracts.js';
 import {
   CLEAR_CHAT_HISTORY_CONFIRM_BUBBLE,
@@ -2138,6 +2138,44 @@ describe('assistants service', () => {
     service.close();
   });
 
+  it('updates another assistant defaultPrompt by name without changing the host', async () => {
+    const directory = root();
+    const service = setup(directory, {}, {
+      runContactTurn: async ({ tools }) => {
+        const get = tools.find((tool) => tool.name === 'get_assistant_settings');
+        const update = tools.find((tool) => tool.name === 'update_default_prompt');
+        const seen = await get.execute('call_peer_get', { to: 'OpenCode 配置助手' });
+        expect(seen.details.settings).toMatchObject({
+          name: 'OpenCode 配置助手',
+          defaultPrompt: 'peer persona',
+        });
+        const saved = await update.execute('call_peer_set', {
+          to: 'OpenCode 配置助手',
+          prompt: 'new peer persona',
+        });
+        expect(saved.details).toMatchObject({
+          updated: true,
+          defaultPrompt: 'new peer persona',
+          name: 'OpenCode 配置助手',
+        });
+        return { text: 'Updated peer.', bubbles: ['Updated peer.'] };
+      },
+    });
+    const host = service.createAssistant({ ...assistantInput, name: 'Host', defaultPrompt: 'host persona' });
+    const peer = service.createAssistant({
+      ...assistantInput,
+      name: 'OpenCode 配置助手',
+      defaultPrompt: 'peer persona',
+    });
+    await settleSend(service, host.id, {
+      messageID: 'client_peer_prompt',
+      parts: [{ type: 'text', text: '改 OpenCode 配置助手的默认提示词' }],
+    });
+    expect(service.snapshot().assistants.find((item) => item.id === host.id).defaultPrompt).toBe('host persona');
+    expect(service.snapshot().assistants.find((item) => item.id === peer.id).defaultPrompt).toBe('new peer persona');
+    service.close();
+  });
+
   it('retries update_default_prompt once on revision_conflict and reports persistent conflict', async () => {
     const directory = root();
     let host;
@@ -2520,9 +2558,24 @@ describe('assistants service', () => {
     service.close();
   });
 
-  it('subscribes assigned sessions so idle updates the card, appends a settle message, and clears working', () => {
+  it('subscribes assigned sessions so idle updates the card, resumes contact LLM, and skips canned settle bubbles', async () => {
     const directory = root();
-    const service = setup(directory);
+    let time = 5_000;
+    const resumes = [];
+    const service = setup(directory, {
+      messages: async () => ({
+        data: [{
+          info: { id: 'msg_worker', role: 'assistant' },
+          parts: [{ type: 'text', text: 'Worker finished login fix.' }],
+        }],
+      }),
+    }, {
+      clock: () => time,
+      runContactTurn: async ({ userText }) => {
+        resumes.push(userText);
+        return { text: '登录修复已完成。', bubbles: ['登录修复已完成。'] };
+      },
+    });
     const assistant = service.createAssistant(assistantInput);
     service.appendContactCard(assistant.id, {
       cardType: 'session',
@@ -2538,6 +2591,8 @@ describe('assistants service', () => {
       activeContactTurn: null,
     });
     expect(service.processEvent({ type: 'session.idle', properties: { sessionID: 'ses_work' } })).toBe(true);
+    const resumeID = assignedSessionResumeMessageID(assistant.id, 'ses_work', 'complete', 5_000);
+    await service.whenContactTurnSettled(resumeID);
     const page = service.contactMessages(assistant.id);
     expect(page.messages.find((message) => message.parts.some((part) => part.type === 'card'))?.parts[0]).toMatchObject({
       type: 'card',
@@ -2545,17 +2600,27 @@ describe('assistants service', () => {
       sessionID: 'ses_work',
       status: 'complete',
     });
-    expect(page.messages.filter((message) => message.text === 'oc.settle.complete')).toHaveLength(1);
+    expect(page.messages.filter((message) => message.text === 'oc.settle.complete')).toHaveLength(0);
+    expect(page.messages.some((message) => message.text === '登录修复已完成。')).toBe(true);
+    expect(page.messages.some((message) => message.role === 'user' && message.messageID === resumeID)).toBe(false);
+    expect(resumes).toHaveLength(1);
+    expect(resumes[0]).toContain('ses_work');
+    expect(resumes[0]).toContain('complete');
+    expect(resumes[0]).toContain('Login');
+    expect(resumes[0]).toContain('Worker finished login fix.');
     expect(service.snapshot().assistants[0]).toMatchObject({
       assignedSessionIDs: [],
       working: false,
+      activeContactTurn: null,
     });
+    // Same complete watch → changed=false → no second resume.
     expect(service.processEvent({ type: 'session.idle', properties: { sessionID: 'ses_work' } })).toBe(false);
-    expect(service.contactMessages(assistant.id).messages.filter((message) => message.text === 'oc.settle.complete')).toHaveLength(1);
+    expect(resumes).toHaveLength(1);
+    expect(service.contactMessages(assistant.id).messages.filter((message) => message.text === '登录修复已完成。')).toHaveLength(1);
     service.close();
   });
 
-  it('reconciles a missed assigned-session idle on boot and the 60s timer', async () => {
+  it('reconciles a missed assigned-session idle on boot and the 60s timer with resume and no canned settle', async () => {
     const directory = root();
     const first = setup(directory);
     const assistant = first.createAssistant(assistantInput);
@@ -2574,6 +2639,8 @@ describe('assistants service', () => {
     first.close();
 
     let tick;
+    let time = 7_000;
+    const resumes = [];
     const service = setup(directory, {
       get: async ({ sessionID }) => (
         sessionID === 'ses_missed' || sessionID === 'ses_timer'
@@ -2582,24 +2649,38 @@ describe('assistants service', () => {
       ),
       messages: async ({ sessionID }) => (
         sessionID === 'ses_missed' || sessionID === 'ses_timer'
-          ? { data: [{ info: { id: `msg_${sessionID}`, role: 'assistant', time: { completed: 1 } } }] }
+          ? {
+            data: [{
+              info: { id: `msg_${sessionID}`, role: 'assistant', time: { completed: 1 } },
+              parts: [{ type: 'text', text: `done:${sessionID}` }],
+            }],
+          }
           : { data: [] }
       ),
     }, {
+      clock: () => time,
       setIntervalFn: (fn) => {
         tick = fn;
         return 1;
       },
+      runContactTurn: async ({ userText }) => {
+        resumes.push(userText);
+        const label = userText.includes('ses_timer') ? 'timer-done' : 'missed-done';
+        return { text: label, bubbles: [label] };
+      },
     });
     await service.reconcile();
+    await service.whenContactTurnSettled(assignedSessionResumeMessageID(assistant.id, 'ses_missed', 'complete', 7_000));
     let page = service.contactMessages(assistant.id);
     expect(page.messages.find((message) => message.parts.some((part) => part.type === 'card'))?.parts[0].status).toBe('complete');
-    expect(page.messages.filter((message) => message.text === 'oc.settle.complete')).toHaveLength(1);
+    expect(page.messages.filter((message) => message.text === 'oc.settle.complete')).toHaveLength(0);
+    expect(page.messages.some((message) => message.text === 'missed-done')).toBe(true);
     expect(service.snapshot().assistants[0]).toMatchObject({
       assignedSessionIDs: [],
       working: false,
     });
 
+    time = 8_000;
     service.appendContactCard(assistant.id, {
       cardType: 'session',
       sessionID: 'ses_timer',
@@ -2610,15 +2691,20 @@ describe('assistants service', () => {
     expect(service.snapshot().assistants[0].working).toBe(false);
     expect(service.snapshot().assistants[0].assignedSessionIDs).toEqual(['ses_timer']);
     await tick();
+    await service.whenContactTurnSettled(assignedSessionResumeMessageID(assistant.id, 'ses_timer', 'complete', 8_000));
     page = service.contactMessages(assistant.id);
     expect(page.messages.find((message) => message.parts.some((part) => part.type === 'card' && part.sessionID === 'ses_timer'))?.parts[0].status).toBe('complete');
-    expect(page.messages.filter((message) => message.text === 'oc.settle.complete')).toHaveLength(2);
+    expect(page.messages.filter((message) => message.text === 'oc.settle.complete')).toHaveLength(0);
+    expect(page.messages.some((message) => message.text === 'timer-done')).toBe(true);
+    expect(resumes).toHaveLength(2);
     expect(service.snapshot().assistants[0].working).toBe(false);
     service.close();
   });
 
-  it('reconciles a missing assigned session as complete and an assistant error as failed', async () => {
+  it('reconciles a missing assigned session as complete and an assistant error as failed without settle bubbles', async () => {
     const directory = root();
+    let time = 9_000;
+    const resumes = [];
     const service = setup(directory, {
       get: async ({ sessionID }) => {
         if (sessionID === 'ses_gone') return { error: { status: 404 } };
@@ -2626,8 +2712,24 @@ describe('assistants service', () => {
         return { data: { id: sessionID } };
       },
       messages: async ({ sessionID }) => {
-        if (sessionID === 'ses_fail') return { data: [{ info: { id: 'msg_fail', role: 'assistant', error: { message: 'boom' } } }] };
+        if (sessionID === 'ses_fail') {
+          return {
+            data: [{
+              info: { id: 'msg_fail', role: 'assistant', error: { message: 'boom' } },
+              parts: [{ type: 'text', text: 'worker boom' }],
+            }],
+          };
+        }
         return { data: [] };
+      },
+    }, {
+      clock: () => time,
+      runContactTurn: async ({ userText }) => {
+        resumes.push(userText);
+        return {
+          text: userText.includes('error') ? '失败摘要' : '完成摘要',
+          bubbles: [userText.includes('error') ? '失败摘要' : '完成摘要'],
+        };
       },
     });
     const assistant = service.createAssistant(assistantInput);
@@ -2646,26 +2748,37 @@ describe('assistants service', () => {
       status: 'busy',
     });
     await service.reconcile();
+    await Promise.all([
+      service.whenContactTurnSettled(assignedSessionResumeMessageID(assistant.id, 'ses_gone', 'complete', 9_000)),
+      service.whenContactTurnSettled(assignedSessionResumeMessageID(assistant.id, 'ses_fail', 'error', 9_000)),
+    ]);
     const cards = service.contactMessages(assistant.id).messages
       .filter((message) => message.parts.some((part) => part.type === 'card'))
       .map((message) => message.parts[0]);
     expect(cards.find((card) => card.sessionID === 'ses_gone')?.status).toBe('complete');
     expect(cards.find((card) => card.sessionID === 'ses_fail')?.status).toBe('error');
     const texts = service.contactMessages(assistant.id).messages.map((message) => message.text);
-    expect(texts.filter((text) => text === 'oc.settle.complete')).toHaveLength(1);
-    expect(texts.filter((text) => text === 'oc.settle.error')).toHaveLength(1);
+    expect(texts.filter((text) => text === 'oc.settle.complete')).toHaveLength(0);
+    expect(texts.filter((text) => text === 'oc.settle.error')).toHaveLength(0);
+    expect(texts).toEqual(expect.arrayContaining(['完成摘要', '失败摘要']));
+    expect(resumes.some((text) => text.includes('ses_gone') && text.includes('complete'))).toBe(true);
+    expect(resumes.some((text) => text.includes('ses_fail') && text.includes('error'))).toBe(true);
     expect(service.snapshot().assistants[0]).toMatchObject({
       assignedSessionIDs: [],
       working: false,
     });
+    const resumeCount = resumes.length;
     await service.reconcile();
-    expect(service.contactMessages(assistant.id).messages.filter((message) => message.text === 'oc.settle.complete')).toHaveLength(1);
-    expect(service.contactMessages(assistant.id).messages.filter((message) => message.text === 'oc.settle.error')).toHaveLength(1);
+    expect(resumes).toHaveLength(resumeCount);
+    expect(service.contactMessages(assistant.id).messages.filter((message) => message.text === 'oc.settle.complete')).toHaveLength(0);
+    expect(service.contactMessages(assistant.id).messages.filter((message) => message.text === 'oc.settle.error')).toHaveLength(0);
     service.close();
   });
 
   it('does not settle in-flight watches on fetch failure or while the session is still running', async () => {
     const directory = root();
+    let time = 10_000;
+    const resumes = [];
     const service = setup(directory, {
       get: async ({ sessionID }) => {
         if (sessionID === 'ses_down') throw new Error('network');
@@ -2674,9 +2787,22 @@ describe('assistants service', () => {
         return { data: { id: sessionID } };
       },
       messages: async ({ sessionID }) => {
-        if (sessionID === 'ses_idle') return { data: [{ info: { id: 'msg_idle', role: 'assistant', time: { completed: 1 } } }] };
+        if (sessionID === 'ses_idle') {
+          return {
+            data: [{
+              info: { id: 'msg_idle', role: 'assistant', time: { completed: 1 } },
+              parts: [{ type: 'text', text: 'idle worker' }],
+            }],
+          };
+        }
         if (sessionID === 'ses_busy') return { data: [{ info: { id: 'msg_busy', role: 'assistant' } }] };
         throw new Error('should not settle from messages after get failure');
+      },
+    }, {
+      clock: () => time,
+      runContactTurn: async ({ userText }) => {
+        resumes.push(userText);
+        return { text: 'idle-resume', bubbles: ['idle-resume'] };
       },
     });
     const assistant = service.createAssistant(assistantInput);
@@ -2702,6 +2828,7 @@ describe('assistants service', () => {
       status: 'busy',
     });
     await service.reconcile();
+    await service.whenContactTurnSettled(assignedSessionResumeMessageID(assistant.id, 'ses_idle', 'complete', 10_000));
     const cards = Object.fromEntries(service.contactMessages(assistant.id).messages
       .filter((message) => message.parts.some((part) => part.type === 'card'))
       .map((message) => [message.parts[0].sessionID, message.parts[0].status]));
@@ -2710,7 +2837,9 @@ describe('assistants service', () => {
       ses_busy: 'busy',
       ses_idle: 'complete',
     });
-    expect(service.contactMessages(assistant.id).messages.filter((message) => message.text === 'oc.settle.complete')).toHaveLength(1);
+    expect(service.contactMessages(assistant.id).messages.filter((message) => message.text === 'oc.settle.complete')).toHaveLength(0);
+    expect(service.contactMessages(assistant.id).messages.some((message) => message.text === 'idle-resume')).toBe(true);
+    expect(resumes).toHaveLength(1);
     expect(service.snapshot().assistants[0].assignedSessionIDs.sort()).toEqual(['ses_busy', 'ses_down']);
     expect(service.snapshot().assistants[0].working).toBe(false);
     service.close();
@@ -2719,13 +2848,26 @@ describe('assistants service', () => {
   it('does not rewrite a reconciled session.error as complete on a later idle poll', async () => {
     const directory = root();
     let idle = false;
+    let time = 11_000;
+    const resumes = [];
     const service = setup(directory, {
       get: async ({ sessionID }) => (
         sessionID === 'ses_err'
           ? { data: idle ? { id: 'ses_err', status: { type: 'idle' } } : { id: 'ses_err', error: { message: 'boom' } } }
           : { data: { id: sessionID } }
       ),
-      messages: async () => ({ data: [{ info: { id: 'msg_err', role: 'assistant', time: { completed: 1 } } }] }),
+      messages: async () => ({
+        data: [{
+          info: { id: 'msg_err', role: 'assistant', time: { completed: 1 } },
+          parts: [{ type: 'text', text: 'err body' }],
+        }],
+      }),
+    }, {
+      clock: () => time,
+      runContactTurn: async ({ userText }) => {
+        resumes.push(userText);
+        return { text: 'error-resume', bubbles: ['error-resume'] };
+      },
     });
     const assistant = service.createAssistant(assistantInput);
     service.appendContactCard(assistant.id, {
@@ -2736,12 +2878,19 @@ describe('assistants service', () => {
       status: 'busy',
     });
     await service.reconcile();
+    await service.whenContactTurnSettled(assignedSessionResumeMessageID(assistant.id, 'ses_err', 'error', 11_000));
     expect(service.contactMessages(assistant.id).messages.find((message) => message.parts.some((part) => part.type === 'card'))?.parts[0].status).toBe('error');
-    expect(service.contactMessages(assistant.id).messages.some((message) => message.text === 'oc.settle.error')).toBe(true);
+    expect(service.contactMessages(assistant.id).messages.some((message) => message.text === 'oc.settle.error')).toBe(false);
+    expect(service.contactMessages(assistant.id).messages.some((message) => message.text === 'error-resume')).toBe(true);
+    expect(resumes).toHaveLength(1);
+    expect(resumes[0]).toContain('error');
     idle = true;
+    time = 12_000;
     await service.reconcile();
     expect(service.contactMessages(assistant.id).messages.find((message) => message.parts.some((part) => part.type === 'card'))?.parts[0].status).toBe('error');
     expect(service.contactMessages(assistant.id).messages.some((message) => message.text === 'oc.settle.complete')).toBe(false);
+    // Later idle must not resume complete after error.
+    expect(resumes).toHaveLength(1);
     expect(service.snapshot().assistants[0]).toMatchObject({
       assignedSessionIDs: [],
       working: false,
@@ -2749,9 +2898,17 @@ describe('assistants service', () => {
     service.close();
   });
 
-  it('accepts a session-goal settle into the same card without mutating the worker', () => {
+  it('accepts a session-goal settle into the same card without mutating the worker or writing settle text', async () => {
     const directory = root();
-    const service = setup(directory);
+    let time = 13_000;
+    const resumes = [];
+    const service = setup(directory, {}, {
+      clock: () => time,
+      runContactTurn: async ({ userText }) => {
+        resumes.push(userText);
+        return { text: 'goal-resume', bubbles: ['goal-resume'] };
+      },
+    });
     const assistant = service.createAssistant(assistantInput);
     service.appendContactCard(assistant.id, {
       cardType: 'session',
@@ -2761,16 +2918,27 @@ describe('assistants service', () => {
       status: 'busy',
     });
     expect(service.reportAssignedSessionSettle('ses_goal', 'complete')).toBe(true);
+    await service.whenContactTurnSettled(assignedSessionResumeMessageID(assistant.id, 'ses_goal', 'complete', 13_000));
     const page = service.contactMessages(assistant.id);
     expect(page.messages.find((message) => message.parts.some((part) => part.type === 'card'))?.parts[0].status).toBe('complete');
-    expect(page.messages.some((message) => message.text === 'oc.settle.complete')).toBe(true);
+    expect(page.messages.some((message) => message.text === 'oc.settle.complete')).toBe(false);
+    expect(page.messages.some((message) => message.text === 'goal-resume')).toBe(true);
+    expect(resumes).toHaveLength(1);
     expect(service.snapshot().assistants[0].working).toBe(false);
     service.close();
   });
 
-  it('maps question and error onto the same card and does not rewrite error as complete', () => {
+  it('maps question and error onto the same card and does not rewrite error as complete', async () => {
     const directory = root();
-    const service = setup(directory);
+    let time = 14_000;
+    const resumes = [];
+    const service = setup(directory, {}, {
+      clock: () => time,
+      runContactTurn: async ({ userText }) => {
+        resumes.push(userText);
+        return { text: 'ask-error-resume', bubbles: ['ask-error-resume'] };
+      },
+    });
     const assistant = service.createAssistant(assistantInput);
     service.appendContactCard(assistant.id, {
       cardType: 'session',
@@ -2782,20 +2950,27 @@ describe('assistants service', () => {
     expect(service.processEvent({ type: 'question.asked', properties: { sessionID: 'ses_ask' } })).toBe(true);
     let page = service.contactMessages(assistant.id);
     expect(page.messages.find((message) => message.parts.some((part) => part.type === 'card'))?.parts[0].status).toBe('question');
-    expect(page.messages.some((message) => message.text === 'oc.settle.question')).toBe(true);
+    // question: card only — no canned settle bubble and no contact resume.
+    expect(page.messages.some((message) => message.text === 'oc.settle.question')).toBe(false);
+    expect(resumes).toHaveLength(0);
     expect(service.snapshot().assistants[0]).toMatchObject({
       assignedSessionIDs: ['ses_ask'],
       working: false,
     });
     expect(service.processEvent({ type: 'session.error', properties: { sessionID: 'ses_ask' } })).toBe(true);
+    await service.whenContactTurnSettled(assignedSessionResumeMessageID(assistant.id, 'ses_ask', 'error', 14_000));
     page = service.contactMessages(assistant.id);
     expect(page.messages.find((message) => message.parts.some((part) => part.type === 'card'))?.parts[0].status).toBe('error');
-    expect(page.messages.some((message) => message.text === 'oc.settle.error')).toBe(true);
+    expect(page.messages.some((message) => message.text === 'oc.settle.error')).toBe(false);
+    expect(page.messages.some((message) => message.text === 'ask-error-resume')).toBe(true);
+    expect(resumes).toHaveLength(1);
+    expect(resumes[0]).toContain('error');
     expect(service.processEvent({ type: 'session.idle', properties: { sessionID: 'ses_ask' } })).toBe(false);
     expect(service.processEvent({ type: 'session.status', properties: { sessionID: 'ses_ask', status: { type: 'idle' } } })).toBe(false);
     page = service.contactMessages(assistant.id);
     expect(page.messages.find((message) => message.parts.some((part) => part.type === 'card'))?.parts[0].status).toBe('error');
     expect(page.messages.some((message) => message.text === 'oc.settle.complete')).toBe(false);
+    expect(resumes).toHaveLength(1);
     expect(service.snapshot().assistants[0]).toMatchObject({
       assignedSessionIDs: [],
       working: false,

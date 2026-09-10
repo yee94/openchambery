@@ -88,14 +88,21 @@ const NEW_CONVERSATION_INTENT = /开新对话|新对话|清除记忆|清空(?:�
 const LIST_PROJECTS_INTENT = /找项目|查项目|看看项目|有哪些项目|项目列表|list projects|find project|registered project|which project/iu;
 const LIST_SESSIONS_INTENT = /现有对话|现有会话|查会话|找会话|会话列表|有哪些会话|list sessions|find (?:a )?session|existing (?:conversation|session|chat)|active (?:conversation|session)/iu;
 // Self settings: missed-fence retry hints only (not authorization).
-const GET_ASSISTANT_SETTINGS_INTENT = /(?:查看|看看|读|显示)(?:一下)?(?:我的|本助手的|助手)?(?:助手设定|默认提示词|系统提示词|人设)|(?:我的|本助手的)?(?:助手设定|默认提示词|系统提示词|人设)(?:是什么|怎么样)|(?:get|show|read|view) (?:my |the )?(?:assistant settings|default prompt|system prompt)/iu;
-const UPDATE_DEFAULT_PROMPT_INTENT = /(?:改|修改|设置|更新|清空)(?:一下)?(?:我的|本助手的|助手)?(?:默认提示词|系统提示词|人设)|(?:默认提示词|系统提示词|人设)(?:改成|设为|设置为|更新为|清空)|把(?:我的|本助手的|助手)?(?:默认提示词|系统提示词|人设)(?:改|设|更新|清空)|(?:update|change|set|clear) (?:my |the )?(?:default prompt|system prompt)/iu;
+const GET_ASSISTANT_SETTINGS_INTENT = /(?:查看|看看|读|显示)(?:一下)?(?:[^。\n]{0,40}?)(?:助手设定|默认提示词|系统提示词|人设)|(?:助手设定|默认提示词|系统提示词|人设)(?:是什么|怎么样)|(?:get|show|read|view) (?:[\w\u4e00-\u9fff]{0,40} )?(?:assistant settings|default prompt|system prompt)/iu;
+const UPDATE_DEFAULT_PROMPT_INTENT = /(?:改|修改|设置|更新|清空)(?:一下)?(?:[^。\n]{0,40}?)(?:默认提示词|系统提示词|人设)|(?:默认提示词|系统提示词|人设)(?:改成|设为|设置为|更新为|清空)|把(?:[^。\n]{0,40}?)(?:默认提示词|系统提示词|人设)(?:改|设|更新|清空)|(?:update|change|set|clear) (?:[\w\u4e00-\u9fff]{0,40} )?(?:default prompt|system prompt)/iu;
 const INTENT_NEGATION = /不要|别|不用|不开|don't|do\s+not/iu;
 const newConversationParameters = typeboxObject({});
 const clearChatHistoryParameters = typeboxObject({});
-const getAssistantSettingsParameters = typeboxObject({});
+const getAssistantSettingsParameters = typeboxObject({
+  to: typeboxOptional(typeboxString('Target assistant display name. Omit to read this contact. Same as message_assistant `to`.')),
+  name: typeboxOptional(typeboxString('Target assistant display name if `to` is omitted.')),
+  toAssistantID: typeboxOptional(typeboxString('Target assistant id when the display name is ambiguous.')),
+});
 const updateDefaultPromptParameters = typeboxObject({
-  prompt: typeboxString('New default prompt / system persona for this assistant. Empty string clears it. Persists to assistant settings; applies on later turns.'),
+  prompt: typeboxString('New default prompt / system persona. Empty string clears it. Persists to Assistant settings; applies on later turns of that contact.'),
+  to: typeboxOptional(typeboxString('Target assistant display name. Omit to update this contact. Example: OpenCode 配置助手.')),
+  name: typeboxOptional(typeboxString('Target assistant display name if `to` is omitted.')),
+  toAssistantID: typeboxOptional(typeboxString('Target assistant id when the display name is ambiguous.')),
 });
 
 const assignParameters = typeboxObject({
@@ -504,6 +511,36 @@ export function resolvePeerAssistant(params = {}, assistants = [], currentAssist
 }
 
 /**
+ * Resolve a live assistant for settings read/write.
+ * No to/name/toAssistantID → null (caller uses this contact).
+ * Name/id may target self or another live assistant.
+ */
+export function resolveAssistantTarget(params = {}, assistants = []) {
+  const toAssistantID = trim(params.toAssistantID, 256);
+  const toName = trim(params.to, 256) || trim(params.name, 256);
+  const list = Array.isArray(assistants) ? assistants : [];
+  if (!toAssistantID && !toName) return null;
+  if (toAssistantID) {
+    const match = list.find((item) => assistantIdentity(item) === toAssistantID);
+    if (!match) {
+      throw new AssignError('not_found', 'No assistant with that id is available.');
+    }
+    return match;
+  }
+  const matches = list.filter((item) => {
+    const name = typeof item?.name === 'string' ? item.name.trim() : '';
+    return name === toName || name.toLowerCase() === toName.toLowerCase();
+  });
+  if (matches.length === 0) {
+    throw new AssignError('not_found', `No assistant named ${toName} is available.`);
+  }
+  if (matches.length > 1) {
+    throw new AssignError('validation_error', `Several assistants are named ${toName}; use toAssistantID.`);
+  }
+  return matches[0];
+}
+
+/**
  * Serialize a tool parameter schema for the contact system prompt.
  * Accepts plain JSON-schema-like objects and TypeBox schemas (JSON.stringify).
  * Strips non-enumerable TypeBox markers (~kind / ~optional).
@@ -543,8 +580,8 @@ export function formatContactToolsPrompt(tools) {
     'When they explicitly want to delete the stored chat (清空聊天记录 / clear chat history / delete chat history), call clear_chat_history. Do not use clear_chat_history for ordinary 开新对话 / new conversation wording.',
     'When they want to find a registered project (找项目 / list projects / "openchamber yee"), call list_projects or use the Registered projects block already in context.',
     'When they want existing conversations in a project (现有对话 / list sessions), call list_sessions.',
-    'When they want to view this assistant\'s own settings / default prompt / system persona (查看助手设定 / 默认提示词 / 系统提示词 / 人设), call get_assistant_settings.',
-    'When they want to change this assistant\'s default prompt / system persona (改默认提示词 / 设置人设 / update default prompt), call update_default_prompt. That writes Assistant settings and persists — it is not a one-shot message and not new_conversation.',
+    'When they want to view assistant settings / default prompt / system persona (查看助手设定 / 默认提示词 / 系统提示词 / 人设), call get_assistant_settings. Omit `to` for this contact; pass to="OpenCode 配置助手" (or toAssistantID) to read another live assistant.',
+    'When they want to change a default prompt / system persona (改默认提示词 / 设置人设 / 改某助手的默认提示词), call update_default_prompt. That writes Assistant settings and persists — it is not a one-shot message and not new_conversation. Omit `to` for this contact; pass to/name/toAssistantID to update another live assistant without changing this one.',
     'When they want another assistant (建助理 / create an assistant), call create_assistant.',
     'When they want a separate Chat coding session (建会话 / open a session / 开个新会话), call assign_session after matching the project. File and shell work in this assistant\'s working directory uses read, write, edit, and bash — not assign_session.',
     'When they want a scheduled task (排定时任务 / schedule daily ping), call schedule_task.',
@@ -566,7 +603,7 @@ export function formatContactToolsPrompt(tools) {
     `{"name":"${GET_ASSISTANT_SETTINGS_TOOL_NAME}","arguments":{}}`,
     '```',
     `\`\`\`${CONTACT_TOOL_FENCE}`,
-    `{"name":"${UPDATE_DEFAULT_PROMPT_TOOL_NAME}","arguments":{"prompt":"Be terse and reply in Chinese."}}`,
+    `{"name":"${UPDATE_DEFAULT_PROMPT_TOOL_NAME}","arguments":{"to":"OpenCode 配置助手","prompt":"Be terse and reply in Chinese."}}`,
     '```',
     `\`\`\`${CONTACT_TOOL_FENCE}`,
     `{"name":"${CREATE_ASSISTANT_TOOL_NAME}","arguments":{"name":"FlowQA","model":"opencode-go/deepseek-v4-flash"}}`,
@@ -586,8 +623,8 @@ export function formatContactToolsPrompt(tools) {
     'clear_chat_history deletes this contact\'s stored messages, parts, and watches. Use only for explicit wipe intent.',
     'You already receive the registered project catalog each turn. Prefer matching label/path yourself; list_projects refreshes or filters. Never claim you cannot see projects; never ask for a raw path when a name matches.',
     'list_sessions searches the OpenChamber session index for existing chats in a project. A failure is not an empty list — surface the error.',
-    'get_assistant_settings reads this contact\'s live Assistant settings from storage (id, name, defaultPrompt, provider/model, agent, variant, mode, workspacePath, enabled). Use it before claiming what the default prompt is.',
-    'update_default_prompt persists defaultPrompt on this assistant row (empty string clears). It is Assistant settings — not a one-shot user message and not new_conversation. Takes effect on later turns only; this turn\'s system prompt is already built. After success, confirm in one short bubble.',
+    'get_assistant_settings reads live Assistant settings from storage (id, name, defaultPrompt, provider/model, agent, variant, mode, workspacePath, enabled). Omit to/name/toAssistantID for this contact; pass them to read another live assistant. Use it before claiming what a default prompt is.',
+    'update_default_prompt persists defaultPrompt on the target assistant row (empty string clears). Omit to/name/toAssistantID for this contact; pass them to update another live assistant — that does not overwrite this contact. It is Assistant settings — not a one-shot user message and not new_conversation. Takes effect on later turns of that contact only. After success, confirm in one short bubble.',
     'assign_session opens a real OpenChamber/OpenCode session on a registered project (or reuses sessionID). You are not the worker. Optional providerID/modelID/model select the worker only from the connected catalog and never change this contact. Current-turn user attachments are server-forwarded — do not embed base64 or local paths. One successful assign ends this turn.',
     'create_assistant reuses already-connected OpenCode providers (providerID/modelID). Mode is continuous.',
     'schedule_task writes the same payload as PUT /api/projects/:id/scheduled-tasks onto a registered project.',
@@ -672,6 +709,21 @@ const toolFailure = (error, fallbackCode, fallbackMessage) => {
     details,
     terminate: true,
   };
+};
+
+const settingsTargetParams = (params) => Boolean(
+  trim(params?.toAssistantID, 256) || trim(params?.to, 256) || trim(params?.name, 256),
+);
+
+const resolveSettingsAssistantTarget = async (params, listAssistants) => {
+  const toAssistantID = trim(params?.toAssistantID, 256);
+  const toName = trim(params?.to, 256) || trim(params?.name, 256);
+  if (!toAssistantID && !toName) return null;
+  if (typeof listAssistants !== 'function') {
+    throw new AssignError('upstream_error', 'Listing assistants is unavailable.');
+  }
+  const listed = await listAssistants();
+  return resolveAssistantTarget(params, listed);
 };
 
 /** Subset of AssistantDTO fields exposed to get/update settings tools. */
@@ -959,17 +1011,23 @@ export function createContactTools({
       name: GET_ASSISTANT_SETTINGS_TOOL_NAME,
       label: 'Get assistant settings',
       description: [
-        'Read this assistant contact\'s live settings from storage (not a stale turn snapshot).',
+        'Read live Assistant settings from storage (not a stale turn snapshot).',
+        'Omit to/name/toAssistantID to read this contact. Pass to="OpenCode 配置助手" or toAssistantID to read another live assistant.',
         'Returns id, name, defaultPrompt, providerID, modelID, agent, variant, mode, workspacePath, enabled.',
-        'Use when the user asks about 助手设定 / 默认提示词 / 系统提示词 / 人设.',
+        'Use when the user asks about 助手设定 / 默认提示词 / 系统提示词 / 人设 — including another assistant\'s.',
       ].join(' '),
       parameters: getAssistantSettingsParameters,
-      execute: async () => {
+      execute: async (_toolCallId, params) => {
         try {
           if (typeof readAssistantSettings !== 'function') {
             throw new AssignError('upstream_error', 'Reading assistant settings is unavailable.');
           }
-          const raw = await readAssistantSettings();
+          const target = settingsTargetParams(params)
+            ? await resolveSettingsAssistantTarget(params, listAssistants)
+            : null;
+          const raw = target
+            ? await readAssistantSettings({ assistantID: assistantIdentity(target) })
+            : await readAssistantSettings();
           const settings = pickAssistantSettings(raw?.settings ?? raw);
           if (!settings) {
             throw new AssignError('upstream_error', 'Assistant settings failed to load.');
@@ -988,9 +1046,10 @@ export function createContactTools({
       name: UPDATE_DEFAULT_PROMPT_TOOL_NAME,
       label: 'Update default prompt',
       description: [
-        'Persist this assistant\'s defaultPrompt (system persona) to Assistant settings.',
-        'Required prompt string; empty string clears it. Not a one-shot message — takes effect on later turns.',
-        'Use when the user asks to 改默认提示词 / 设置人设 / update default prompt.',
+        'Persist defaultPrompt (system persona) to Assistant settings for this contact or another live assistant.',
+        'Required prompt string; empty string clears it. Not a one-shot message — takes effect on later turns of that contact.',
+        'Omit to/name/toAssistantID to update this contact. Pass to="OpenCode 配置助手" to update that assistant without changing this one.',
+        'Use when the user asks to 改默认提示词 / 设置人设 / 改某助手的默认提示词.',
       ].join(' '),
       parameters: updateDefaultPromptParameters,
       execute: async (_toolCallId, params) => {
@@ -1001,24 +1060,32 @@ export function createContactTools({
           if (typeof params?.prompt !== 'string') {
             throw new AssignError('validation_error', 'update_default_prompt requires prompt (string; empty clears).');
           }
+          const target = settingsTargetParams(params)
+            ? await resolveSettingsAssistantTarget(params, listAssistants)
+            : null;
+          const assistantID = target ? assistantIdentity(target) : null;
           // Allow empty string (clear). Do not trim here — service normalizes like updateAssistant.
-          const result = await updateAssistantSettings({ defaultPrompt: params.prompt });
-          if (result?.unchanged === true || result?.updated === false) {
-            const defaultPrompt = typeof result?.defaultPrompt === 'string'
-              ? result.defaultPrompt
-              : params.prompt;
-            return {
-              content: [{ type: 'text', text: UPDATE_DEFAULT_PROMPT_UNCHANGED_BUBBLE }],
-              details: { updated: false, unchanged: true, defaultPrompt },
-              terminate: false,
-            };
-          }
+          const result = await updateAssistantSettings({
+            defaultPrompt: params.prompt,
+            ...(assistantID ? { assistantID } : {}),
+          });
           const defaultPrompt = typeof result?.defaultPrompt === 'string'
             ? result.defaultPrompt
             : params.prompt;
+          const details = {
+            defaultPrompt,
+            ...(assistantID ? { assistantID, name: target?.name || null } : {}),
+          };
+          if (result?.unchanged === true || result?.updated === false) {
+            return {
+              content: [{ type: 'text', text: UPDATE_DEFAULT_PROMPT_UNCHANGED_BUBBLE }],
+              details: { ...details, updated: false, unchanged: true },
+              terminate: false,
+            };
+          }
           return {
             content: [{ type: 'text', text: UPDATE_DEFAULT_PROMPT_CONFIRM_BUBBLE }],
-            details: { updated: true, defaultPrompt },
+            details: { ...details, updated: true },
             // Same as create_assistant / schedule_task: keep the turn open for a short confirm.
             terminate: false,
           };

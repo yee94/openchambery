@@ -948,7 +948,10 @@ describe('Assistant UI product contract', () => {
     expect(conversation).toContain('assistant.activeContactTurn');
     expect(conversation).toContain('confirmContactAdmissionByMessageID');
     expect(conversation).toContain('admission_timeout');
-    expect(conversation).toContain('oc.settle.complete');
+    expect(conversation).toContain('isInternalSettleText');
+    expect(conversation).toContain("text.trim().startsWith('oc.settle.')");
+    expect(conversation).toContain('Drop legacy pure oc.settle.');
+    expect(conversation).not.toContain('assistants.contact.settle.complete');
     expect(conversation).not.toContain('<Activity');
     expect(mobileTab).toContain('<AssistantWorkingAvatar');
     expect(mobileTab).toContain('useAssistantWorking(assistantID, serverWorking)');

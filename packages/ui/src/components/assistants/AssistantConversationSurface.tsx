@@ -58,11 +58,8 @@ import {
   type ContactComposerAttachment,
 } from './contactComposerAttachments'
 
-const SETTLE_TEXT: Record<string, 'assistants.contact.settle.complete' | 'assistants.contact.settle.error' | 'assistants.contact.settle.question'> = {
-  'oc.settle.complete': 'assistants.contact.settle.complete',
-  'oc.settle.error': 'assistants.contact.settle.error',
-  'oc.settle.question': 'assistants.contact.settle.question',
-}
+/** Legacy internal settle markers — never render as user-visible bubbles. */
+const isInternalSettleText = (text: string) => text.trim().startsWith('oc.settle.')
 
 type AssistantConversationSurfaceProps = {
   assistant: AssistantDTO
@@ -141,6 +138,12 @@ export const AssistantConversationSurface: React.FC<AssistantConversationSurface
   const scopedOptimisticTurns = scopeContactOptimisticTurns(optimisticTurns, assistant.id)
   const scopedTurnPreviews = scopeContactTurnPreviews(turnPreviews, assistant.id)
   const transcript = mergeContactTranscript(messages, scopedOptimisticTurns, assistant.id, scopedTurnPreviews)
+    .filter((message) => {
+      // Drop legacy pure oc.settle.* rows so they leave no empty avatar shell.
+      const parts = Array.isArray(message.parts) ? message.parts : []
+      if (parts.length === 0) return true
+      return parts.some((part) => !(part.type === 'text' && isInternalSettleText(part.text)))
+    })
   const sending = contactOptimisticSending(scopedOptimisticTurns)
   const processing = contactTurnPreviewWorking(scopedTurnPreviews)
   // Server working is authoritative across remount; local preview is temporary.
@@ -518,9 +521,12 @@ export const AssistantConversationSurface: React.FC<AssistantConversationSurface
                       if (part.type === 'file') {
                         return <AssistantContactAttachment key={`${message.messageID}:file:${index}`} assistantID={assistant.id} part={part} />
                       }
+                      if (part.type === 'text' && isInternalSettleText(part.text)) {
+                        // Legacy oc.settle.* markers: card status already shows outcome.
+                        return null
+                      }
                       if (part.type === 'text' && (part.text.trim() || message.status === 'streaming')) {
-                        const settleKey = SETTLE_TEXT[part.text]
-                        const useMarkdown = !isUser && !settleKey
+                        const useMarkdown = !isUser
                         return (
                           <div
                             key={`${message.messageID}:text:${index}`}
@@ -546,7 +552,7 @@ export const AssistantConversationSurface: React.FC<AssistantConversationSurface
                                 enableFileReferences={false}
                                 className="w-full min-w-0 [overflow-wrap:anywhere]"
                               />
-                            ) : settleKey ? t(settleKey) : part.text}
+                            ) : part.text}
                             {message.status === 'streaming' && index === message.parts.length - 1 ? (
                               <span
                                 aria-hidden
