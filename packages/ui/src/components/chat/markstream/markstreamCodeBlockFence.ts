@@ -3,6 +3,7 @@ type CodeBlockNodeShape = {
   language?: string;
   code?: string;
   raw?: string;
+  loading?: boolean;
 };
 
 /** Opening fence line: optional indent + 3+ backticks or tildes (CommonMark). */
@@ -58,5 +59,9 @@ export const fenceMarkdownFromCodeBlockNode = (node: CodeBlockNodeShape): string
   const code = node.code ?? '';
   const marker = pickCodeBlockFenceMarker(code);
   const body = code.endsWith('\n') ? code : `${code}\n`;
+  // Incremental Markstream nodes can omit fence-shaped raw. Do not invent a
+  // closing marker while the parser still owns an open fence: that would
+  // switch each update from prefix highlighting to a full Shiki replacement.
+  if (node.loading) return `${marker}${language}\n${body}`;
   return `${marker}${language}\n${body}${marker}\n`;
 };

@@ -121,4 +121,51 @@ const scrollReplay = async () => {
   return { initialHeight, heights, visibility };
 };
 
-Object.assign(window, { markstreamStyleReplay: replay, markstreamScrollReplay: scrollReplay });
+const streamReplay = async () => {
+  const theme = getDefaultTheme(false);
+  generator.apply(theme);
+  useUIStore.setState({ codeBlockLineWrap: false });
+  const prefix = Array.from({ length: 30 }, (_, index) => `const value${index} = "hello";`).join('\n');
+  const render = (source: string, streaming: boolean) => flushSync(() => root.render(
+    <FixtureThemeContext.Provider value={theme}>
+      <I18nProvider>
+        <MarkstreamRenderer content={source} messageId="stream-flicker" isStreaming={streaming}
+          isAnimated={false} skipFadeIn enableFileReferences={false} />
+      </I18nProvider>
+    </FixtureThemeContext.Provider>,
+  ));
+  const waitForSource = async (source: string) => {
+    for (let attempt = 0; attempt < 200; attempt += 1) {
+      const code = document.querySelector('code[data-md-stream-applied]');
+      if (code?.getAttribute('data-md-stream-applied') === source) return code;
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+    throw new Error(`Streaming Shiki did not reach the latest source: ${JSON.stringify({
+      expected: source,
+      applied: document.querySelector('code')?.getAttribute('data-md-stream-applied'),
+      text: document.querySelector('code')?.textContent,
+      open: document.querySelector('pre')?.getAttribute('data-md-stream-fence'),
+    })}`);
+  };
+  render(`\`\`\`typescript\n${prefix}\n`, true);
+  const code = await waitForSource(`${prefix}\n`);
+  const firstToken = code.querySelector('.line span');
+  const height = code.parentElement!.getBoundingClientRect().height;
+  const initialTextMatches = code.textContent === `${prefix}\n`;
+  let stable = true;
+  const heights: number[] = [];
+  for (let index = 1; index <= 8; index += 1) {
+    const source = `${prefix}\nconst tail = ${index};\n`;
+    render(`\`\`\`typescript\n${source}`, true);
+    const updated = await waitForSource(source);
+    stable &&= updated === code && updated.querySelector('.line span') === firstToken;
+    heights.push(updated.parentElement!.getBoundingClientRect().height);
+  }
+  render(`\`\`\`typescript\n${prefix}\nconst tail = 8;\n\`\`\``, false);
+  for (let attempt = 0; attempt < 200 && !document.querySelector('pre.shiki'); attempt += 1) {
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+  return { initialTextMatches, stable, height, heights, closed: Boolean(document.querySelector('pre.shiki')) };
+};
+
+Object.assign(window, { markstreamStyleReplay: replay, markstreamScrollReplay: scrollReplay, markstreamStreamReplay: streamReplay });
