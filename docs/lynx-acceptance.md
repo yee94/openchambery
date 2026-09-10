@@ -337,3 +337,16 @@ Chosen mode is written at the top of `packages/lynx/README.md` (Mode B iOS 26 ho
 - Product **NOT DONE** / 三关未齐 / not EXHAUSTED. 真机残差 unchanged: Connect welcome **card chrome** confirm still open for Yee. No 真机过 claim.
 - Cap phone skim found no new Linux-closable Cap product gap outside deferred thin leftovers (`@dnd-kit` / MobileWindowMotion / iPad sidebar / Cap toast sonner / bulk multi-select) and host-only — docs honesty only.
 - Product **NOT DONE** / 三关未齐 / not EXHAUSTED; 真机残差 = Connect welcome **card chrome** confirmation for Yee; no 真机过 claim.
+
+## Notes — Cap Files sheet search (Next #58 / 2026-09-10)
+
+- Cap `MobileFilesSurface` search via `GET /api/find/file` — Lynx `searchLynxFiles` + Files sheet debounce ~250ms / maxResults 40; tap → text preview. failure ≠ empty; empty query stays browse.
+- Base tip / prerelease APK at merge: `lynx-v2-debug-4d871ba` (work/lynx-native @ `4d871bad0`; PR #96 / Next #57 MERGED; release existed). Tip later advanced — see Next #59 tip honesty.
+- Product **NOT DONE** / 三关未齐 / not EXHAUSTED. 真机残差 unchanged: Connect welcome **card chrome** confirm still open for Yee. No 真机过 claim.
+
+## Notes — Docs tip APK/SHA honesty post-#58 (Next #59 / 2026-09-10)
+
+- Tip / prerelease APK: `lynx-v2-debug-53ea9cd` (work/lynx-native @ `53ea9cdee4`; PR #97 / Next #58 MERGED; release exists). Was stale `lynx-v2-debug-4d871ba` / tip `4d871bad0`. Do not invent a newer APK SHA than the published tag.
+- Cap phone skim (MobileApp / Files / Changes / SessionsSheet / chat header-swipe+sync / overflow vs `packages/lynx`) found no new Linux-closable Cap product gap outside deferred thin leftovers (`@dnd-kit` / MobileWindowMotion / iPad sidebar / Cap toast sonner / bulk multi-select) and host-only — docs honesty only.
+- Product **NOT DONE** / 三关未齐 / not EXHAUSTED. 真机残差 unchanged: Connect welcome **card chrome** confirm still open for Yee on tip APK `lynx-v2-debug-53ea9cd`. No 真机过 claim. Host-only unchanged (Keychain/camera/IME/Pierre/WKWebView/Mode B/Share ext/iOS IPA).
+
