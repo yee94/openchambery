@@ -350,3 +350,8 @@ Chosen mode is written at the top of `packages/lynx/README.md` (Mode B iOS 26 ho
 - Cap phone skim (MobileApp / Files / Changes / SessionsSheet / chat header-swipe+sync / overflow vs `packages/lynx`) found no new Linux-closable Cap product gap outside deferred thin leftovers (`@dnd-kit` / MobileWindowMotion / iPad sidebar / Cap toast sonner / bulk multi-select) and host-only — docs honesty only.
 - Product **NOT DONE** / 三关未齐 / not EXHAUSTED. 真机残差 unchanged: Connect welcome **card chrome** confirm still open for Yee on tip APK `lynx-v2-debug-53ea9cd`. No 真机过 claim. Host-only unchanged (Keychain/camera/IME/Pierre/WKWebView/Mode B/Share ext/iOS IPA).
 
+## Notes — Docs tip APK/SHA honesty post-#59 (Next #60 / 2026-09-10)
+
+- Tip / prerelease APK: `lynx-v2-debug-5ae491f` (work/lynx-native @ `5ae491f6a3`; PR #98 / Next #59 MERGED; release exists). Was stale `lynx-v2-debug-53ea9cd` / tip `53ea9cdee4`. Do not invent a newer APK SHA than the published tag.
+- Cap phone skim (MobileApp / Files / Changes / SessionsSheet / chat header-swipe+sync / overflow / MCP vs `packages/lynx`) found no new Linux-closable Cap product gap outside deferred thin leftovers (`@dnd-kit` / MobileWindowMotion / iPad sidebar / Cap toast sonner / bulk multi-select) and host-only — docs honesty only.
+- Product **NOT DONE** / 三关未齐 / not EXHAUSTED. 真机残差 unchanged: Connect welcome **card chrome** confirm still open for Yee on tip APK `lynx-v2-debug-5ae491f`. No 真机过 claim. Host-only unchanged (Keychain/camera/IME/Pierre/WKWebView/Mode B/Share ext/iOS IPA).
