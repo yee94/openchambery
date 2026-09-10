@@ -336,6 +336,22 @@ export {
   evaluateLynxSwipeDirection,
   LYNX_EDGE_SWIPE_HOST_CONTRACT,
 } from './chat/edgeSwipeSessionSwitch';
+
+export {
+  LYNX_HEADER_SWIPE_HOST_CONTRACT,
+  createLynxHeaderSwipeToSessionsMachine,
+  evaluateLynxHeaderSwipe,
+  shouldStartLynxHeaderSwipe,
+  type LynxHeaderSwipeMachine,
+  type LynxHeaderSwipeMachineEvent,
+} from './chat/headerSwipeToSessions';
+
+export {
+  resolveLynxTranscriptSyncHint,
+  createLynxSyncHintSmoother,
+  mapLynxLiveConnectionToSyncPhase,
+  deriveLynxTranscriptLoadStatus,
+} from './chat/transcriptSyncHint';
 export {
   armLynxMarkdownPinReveal,
   createLynxMarkdownPinRevealState,

@@ -436,6 +436,7 @@ export function LynxShellApp({
             onSelectRelatedSession={selectRelatedSession}
             onSessionSwipe={(_direction, targetId) => selectRelatedSession(targetId)}
             onOpenSessionsSheet={openSessionsSheet}
+            headerSwipeDisabled={sessionsSheetOpen}
           />
         ) : assistantRoute?.sessionId ? (
           <LynxChatScreen
@@ -458,6 +459,7 @@ export function LynxShellApp({
             onSelectRelatedSession={selectRelatedSession}
             onSessionSwipe={(_direction, targetId) => selectRelatedSession(targetId)}
             onOpenSessionsSheet={openSessionsSheet}
+            headerSwipeDisabled={sessionsSheetOpen}
           />
         ) : secondary?.kind === 'draft' ? (
           <LynxDraftComposer

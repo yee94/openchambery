@@ -154,6 +154,36 @@ export {
   LYNX_EDGE_SWIPE_HOST_CONTRACT,
   LYNX_SESSION_SWIPE_SURFACE_ATTR,
 } from './edgeSwipeSessionSwitch';
+
+export {
+  LYNX_HEADER_SWIPE_HOST_CONTRACT,
+  LYNX_HEADER_SWIPE_OPEN_DISTANCE_RATIO,
+  LYNX_HEADER_SWIPE_CANCEL_DISTANCE_RATIO,
+  createLynxHeaderSwipeToSessionsMachine,
+  createLynxHeaderSwipeGestureState,
+  evaluateLynxHeaderSwipe,
+  updateLynxHeaderSwipeGestureState,
+  shouldStartLynxHeaderSwipe,
+  isLynxHeaderSwipeSelectionExcluded,
+  getLynxHeaderSwipePresentationProgress,
+  getLynxHeaderSwipeBackProgress,
+  type LynxHeaderSwipeMachine,
+  type LynxHeaderSwipeMachineEvent,
+  type LynxHeaderSwipeMachineEffect,
+  type LynxHeaderSwipeInput,
+  type LynxHeaderSwipeStartInput,
+} from './headerSwipeToSessions';
+
+export {
+  LYNX_SYNC_HINT_SHOW_DELAY_MS,
+  LYNX_SYNC_HINT_HIDE_GRACE_MS,
+  resolveLynxTranscriptSyncHint,
+  createLynxSyncHintSmoother,
+  mapLynxLiveConnectionToSyncPhase,
+  deriveLynxTranscriptLoadStatus,
+  type LynxTranscriptSyncHintInput,
+  type LynxTranscriptSyncHintKind,
+} from './transcriptSyncHint';
 export {
   armLynxMarkdownPinReveal,
   createLynxMarkdownPinRevealState,
