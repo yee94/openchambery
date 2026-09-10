@@ -297,7 +297,8 @@ describe('runContactTurn', () => {
     expect(assignWork).toHaveBeenCalledTimes(1)
     expect(result.cards).toEqual([expect.objectContaining({ sessionID: 'ses_once', cardType: 'session' })])
     expect(result.cards).toHaveLength(1)
-    expect(result.bubbles).toContain('Opened a coding session.')
+    // Card is the user-facing confirm — English toolText must not leak into bubbles.
+    expect(result.bubbles.join('\n')).not.toContain('Opened a coding session.')
     // First completion issues assign; terminate skips the auto follow-up LLM.
     expect(createChatCompletion).toHaveBeenCalledTimes(1)
     expect(completions).toBe(1)
@@ -389,7 +390,9 @@ describe('runContactTurn', () => {
       createChatCompletion: vi.fn(), AgentImpl,
     })
     expect(prompts).toHaveLength(2)
-    expect(result.bubbles).toEqual(['Opened session.'])
+    // assign toolText is not a user bubble; no spoken/card in this fixture.
+    expect(result.bubbles).toEqual([])
+    expect(result.bubbles.join('\n')).not.toContain('Opened session.')
   })
   it('runs pi-agent-core with thinking off and no tools by default', async () => {
     const prompt = vi.fn(async function prompt() {
@@ -558,7 +561,9 @@ describe('runContactTurn', () => {
       projects: [{ id: 'proj_yee', path: '/repo/sample-app', label: 'OpenChamber Yee' }],
       AgentImpl,
     })
-    expect(result.bubbles).toEqual(['opened'])
+    // Keep assistant spoken/confirm text; do not paint English assign toolText.
+    expect(result.bubbles).toEqual(['Opening that.'])
+    expect(result.bubbles.join('\n')).not.toContain('opened')
     expect(result.cards).toEqual([expect.objectContaining({ sessionID: 'ses_1', cardType: 'session' })])
     expect(result.thinkingLevel).toBe('off')
   })
@@ -602,7 +607,7 @@ describe('runContactTurn', () => {
       AgentImpl,
     })
     expect(result.bubbles.join('\n')).not.toMatch(/Let me think|assign_session/)
-    expect(result.bubbles).toEqual(['Opened a coding session.'])
+    expect(result.bubbles.join('\n')).not.toContain('Opened a coding session.')
     expect(result.cards).toEqual([expect.objectContaining({ sessionID: 'ses_plan' })])
   })
 
@@ -644,7 +649,7 @@ describe('runContactTurn', () => {
       tools: [{ name: 'assign_session', execute: vi.fn() }],
       AgentImpl,
     })
-    expect(result.bubbles).toEqual(['我去找一下', 'Opened a coding session.'])
+    expect(result.bubbles).toEqual(['我去找一下'])
     expect(result.cards).toEqual([expect.objectContaining({ sessionID: 'ses_speak' })])
   })
 
@@ -733,7 +738,8 @@ describe('runContactTurn', () => {
       assistantID: 'asst_flow',
     })])
     expect(result.bubbles.join('')).not.toContain('好的，我来直接创建')
-    expect(result.bubbles.join('')).toContain('Created assistant FlowNL')
+    expect(result.bubbles.join('')).not.toContain('Created assistant FlowNL')
+    expect(result.cards).toHaveLength(1)
     expect(result.thinkingLevel).toBe('off')
   })
 
@@ -769,8 +775,9 @@ describe('runContactTurn', () => {
     ])
     expect(createAssistant).not.toHaveBeenCalled()
     expect(result.cards).toEqual([])
-    expect(result.bubbles).toEqual([MISSED_TOOL_FAILURE_BUBBLE])
-    expect(result.bubbles.join('')).not.toContain('已创建')
+    // Prefer existing assistant text over the English missed-tool fallback.
+    expect(result.bubbles).toEqual(['好的，已创建。'])
+    expect(result.bubbles).not.toEqual([MISSED_TOOL_FAILURE_BUBBLE])
   })
 
   it('retries a missed fence once and then executes message_assistant', async () => {
@@ -828,7 +835,8 @@ describe('runContactTurn', () => {
       text: 'hello-from-assistant 写好了',
     })
     expect(result.cards).toEqual([])
-    expect(result.bubbles.join('')).toContain('Sent to PeerQA')
+    // English tool confirm must not leak; retry slice has no spoken preamble.
+    expect(result.bubbles.join('')).not.toContain('Sent to PeerQA')
     expect(result.bubbles.join('')).not.toContain('好的，我去说一声')
   })
 

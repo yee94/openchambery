@@ -1,21 +1,29 @@
 import { Agent } from '@earendil-works/pi-agent-core';
 import { isContactSpokenPreamble, splitContactBubbles } from './bubbles.js';
 import {
+  ASSIGN_SESSION_TOOL_NAME,
   CLEAR_CHAT_HISTORY_CONFIRM_BUBBLE,
+  CLEAR_CHAT_HISTORY_TOOL_NAME,
   confirmBubbleAfterContactReset,
   contactTurnClearedChatHistory,
   contactTurnHasSuccessfulReset,
   contactTurnHasToolResult,
+  CREATE_ASSISTANT_TOOL_NAME,
   detectRequestedContactTools,
   extractContactCardsFromMessages,
   formatContactToolsPrompt,
   formatConnectedModelsPrompt,
   formatRegisteredProjectsPrompt,
+  GET_ASSISTANT_SETTINGS_TOOL_NAME,
+  MESSAGE_ASSISTANT_TOOL_NAME,
   MISSED_FENCE_RETRY_USER_TEXT,
   MISSED_TOOL_FAILURE_BUBBLE,
   NEW_CONVERSATION_CONFIRM_BUBBLE,
+  NEW_CONVERSATION_TOOL_NAME,
   parseContactToolCalls,
+  SCHEDULE_TASK_TOOL_NAME,
   stripContactToolFences,
+  UPDATE_DEFAULT_PROMPT_TOOL_NAME,
 } from './contact-tools.js';
 import {
   createPiCodingRuntime,
@@ -78,7 +86,7 @@ export const CONTACT_SYSTEM_PROMPT = [
   'Never write chain-of-thought, plans, tool names, or English narration of what you will do. The user never sees thinking.',
   'Do not expose tool traces, Activity, or editor actions.',
   'You have bash, read, write, and edit in the working directory. Use them for pwd, files, and shell. Never say you have no terminal or cannot read files. Ignore any temporary generator workspace in the environment.',
-  'Understand natural language in any language, including Chinese: 开新对话 / 清除记忆 means new_conversation (LLM memory only, chat history stays), 清空聊天记录 means clear_chat_history (delete transcript), 找项目 means list_projects, 现有对话 means list_sessions, 建助理 means create_assistant, 建会话 / 开个新会话 means assign_session, 排定时任务 means schedule_task, 给 X 说一声 means message_assistant, 发卡片 means emit a card via those tools — never ask the user to type /card or /dm.',
+  'Understand natural language in any language, including Chinese: 开新对话 / 清除记忆 means new_conversation (LLM memory only, chat history stays), 清空聊天记录 means clear_chat_history (delete transcript), 找项目 means list_projects, 现有对话 means list_sessions, 查看助手设定 / 默认提示词 means get_assistant_settings, 改默认提示词 / 设置人设 means update_default_prompt (persists Assistant settings, later turns only), 建助理 means create_assistant, 建会话 / 开个新会话 means assign_session, 排定时任务 means schedule_task, 给 X 说一声 means message_assistant, 发卡片 means emit a card via those tools — never ask the user to type /card or /dm.',
   'You receive the registered project catalog every turn. You CAN see those projects. Look them up yourself (fuzzy match label/name/path). Never say you cannot see the registered project list. Never ask for a raw filesystem path when a name matches. If the catalog is empty, tell the user to add a project in Settings.',
   'File and shell work in this working directory uses read, write, edit, and bash. To open a separate Chat coding session: match the project, optionally list_sessions for existing chats, then assign_session with projectPath or sessionID. Optional worker model via providerID/modelID/model from the connected catalog — that does not change this contact. Current-turn user attachments are server-forwarded on assign. One successful assign_session ends the turn — do not call it again.',
   'A reply without the tool call does nothing. Never say 已创建, created, scheduled, or opened unless the tool already returned success.',
@@ -417,6 +425,22 @@ const extractToolResultText = (messages) => {
   return '';
 };
 
+/** Tool confirms that are themselves the user-facing bubble (no card). */
+const TOOL_TEXT_BUBBLE_TOOLS = new Set([
+  NEW_CONVERSATION_TOOL_NAME,
+  CLEAR_CHAT_HISTORY_TOOL_NAME,
+  UPDATE_DEFAULT_PROMPT_TOOL_NAME,
+  GET_ASSISTANT_SETTINGS_TOOL_NAME,
+]);
+
+/** Card / side-effect tools: never paint English toolText into the transcript. */
+const CARD_SIDE_EFFECT_TOOLS = new Set([
+  ASSIGN_SESSION_TOOL_NAME,
+  CREATE_ASSISTANT_TOOL_NAME,
+  SCHEDULE_TASK_TOOL_NAME,
+  MESSAGE_ASSISTANT_TOOL_NAME,
+]);
+
 const extractContactTurnOutcome = (messages, retried) => {
   const list = Array.isArray(messages) ? messages : [];
   let start = 0;
@@ -440,9 +464,22 @@ const extractContactTurnOutcome = (messages, retried) => {
   const coding = isPiCodingToolName(lastToolName);
   const toolText = extractToolResultText(slice);
   const assistant = extractAssistantText(slice);
-  const confirm = hasTool && !coding
-    ? (toolText || assistant)
-    : (assistant || (coding ? toolText : ''));
+  let confirm = '';
+  if (hasTool && !coding) {
+    if (TOOL_TEXT_BUBBLE_TOOLS.has(lastToolName)) {
+      // Confirm-only tools: toolText is the user bubble.
+      confirm = toolText || assistant;
+    } else if (CARD_SIDE_EFFECT_TOOLS.has(lastToolName)) {
+      // Spoken preamble only. Card is enough when present; never English toolText.
+      // Post-tool assistant text (terminate:false tools) may still surface when no spoken.
+      confirm = spoken ? '' : (assistant || '');
+    } else {
+      // list_projects / list_sessions and other app tools keep toolText.
+      confirm = toolText || assistant;
+    }
+  } else {
+    confirm = assistant || (coding ? toolText : '');
+  }
   const parts = [];
   if (spoken) parts.push(spoken);
   if (confirm && confirm !== spoken) parts.push(confirm);
@@ -554,6 +591,19 @@ export async function runContactTurn({
       }
     }
     if (requested.length > 0 && !hasRequestedResult() && !contactTurnHasSuccessfulReset(agent.state.messages)) {
+      // Prefer any spoken/assistant text already in the turn over the English failure fallback.
+      const missed = extractContactTurnOutcome(agent.state.messages, retried);
+      const missedText = stripContactToolFences(missed.text).trim();
+      if (missedText) {
+        const missedBubbles = splitContactBubbles(missedText);
+        return {
+          text: missedText,
+          bubbles: missedBubbles.length > 0 ? missedBubbles : [missedText],
+          cards: [],
+          thinkingLevel: agent.state.thinkingLevel,
+          tools: [...agent.state.tools],
+        };
+      }
       return {
         text: MISSED_TOOL_FAILURE_BUBBLE,
         bubbles: [MISSED_TOOL_FAILURE_BUBBLE],
@@ -580,7 +630,8 @@ export async function runContactTurn({
         tools: [...agent.state.tools],
       };
     }
-    if (!text.trim() && outcome.cards.length === 0) {
+    // Card tools / side-effect tools may finish with cards only (no English toolText bubble).
+    if (!text.trim() && outcome.cards.length === 0 && !outcome.hasTool) {
       const error = new Error('Assistant returned no text');
       error.code = 'upstream_error';
       throw error;
