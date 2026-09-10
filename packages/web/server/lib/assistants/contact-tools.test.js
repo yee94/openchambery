@@ -13,6 +13,7 @@ import {
   NEW_CONVERSATION_TOOL_NAME,
   SCHEDULE_TASK_TOOL_NAME,
   confirmBubbleAfterContactReset,
+  contactTurnHasSuccessfulReset,
   createContactTools,
   detectRequestedContactTools,
   filterRegisteredProjects,
@@ -25,7 +26,7 @@ import {
   resolveContactProviderModel,
   resolvePeerAssistant,
   stripContactToolFences,
-  userTextAuthorizesClearChatHistory,
+  userTextRequestsClearChatHistory,
 } from './contact-tools.js';
 import { attachmentScopeKey } from './assign.js';
 
@@ -120,11 +121,11 @@ describe('contact tool protocol', () => {
     expect(detectRequestedContactTools('开新对话', tools)).not.toContain(ASSIGN_SESSION_TOOL_NAME);
     expect(detectRequestedContactTools('开新对话', tools)).not.toContain(CLEAR_CHAT_HISTORY_TOOL_NAME);
     expect(detectRequestedContactTools('不要开编码 session', tools)).toEqual([]);
-    expect(userTextAuthorizesClearChatHistory('清除聊天记录')).toBe(true);
-    expect(userTextAuthorizesClearChatHistory('清空聊天记录')).toBe(true);
-    expect(userTextAuthorizesClearChatHistory('清除记忆')).toBe(false);
-    expect(userTextAuthorizesClearChatHistory('不要清除聊天记录')).toBe(false);
-    expect(userTextAuthorizesClearChatHistory('开新对话')).toBe(false);
+    expect(userTextRequestsClearChatHistory('清除聊天记录')).toBe(true);
+    expect(userTextRequestsClearChatHistory('清空聊天记录')).toBe(true);
+    expect(userTextRequestsClearChatHistory('清除记忆')).toBe(false);
+    expect(userTextRequestsClearChatHistory('不要清除聊天记录')).toBe(false);
+    expect(userTextRequestsClearChatHistory('开新对话')).toBe(false);
   });
 
   it('parses bash fences when the pi coding tools are allowed', () => {
@@ -292,6 +293,23 @@ describe('createContactTools', () => {
     expect(wiped.details).toMatchObject({ reset: true, historyCleared: true });
     expect(wiped.terminate).toBe(true);
     expect(wiped.content[0].text).toBe(CLEAR_CHAT_HISTORY_CONFIRM_BUBBLE);
+    expect(wiped.content[0].text).not.toMatch(/not cleared|denied|new_conversation instead/i);
+    expect(contactTurnHasSuccessfulReset([{
+      role: 'toolResult',
+      toolName: CLEAR_CHAT_HISTORY_TOOL_NAME,
+      details: wiped.details,
+    }])).toBe(true);
+
+    // Storage failure still surfaces as a tool error (no silent denial protocol).
+    resetContact.mockRejectedValueOnce(Object.assign(new Error('sqlite busy'), { code: 'upstream_error' }));
+    const failed = await tools.find((tool) => tool.name === CLEAR_CHAT_HISTORY_TOOL_NAME).execute('call_wipe_fail', {});
+    expect(failed.details.error).toBe('upstream_error');
+    expect(failed.terminate).toBe(true);
+    expect(contactTurnHasSuccessfulReset([{
+      role: 'toolResult',
+      toolName: CLEAR_CHAT_HISTORY_TOOL_NAME,
+      details: failed.details,
+    }])).toBe(false);
 
     const created = await tools.find((tool) => tool.name === CREATE_ASSISTANT_TOOL_NAME).execute('call_1', { name: 'FlowQA', model: 'opencode-go/deepseek-v4-flash' });
     expect(created.details.card).toMatchObject({

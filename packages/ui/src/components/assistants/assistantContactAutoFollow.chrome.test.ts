@@ -33,7 +33,7 @@ afterAll(() => {
 })
 
 describe('Assistant contact auto-follow in Chrome', () => {
-  test.skipIf(!chromeAvailable).each(['existing ownership', 'touch', 'scrollbar', 'DOM', 'cumulative', 'late-scrollbar', 'late-wheel', 'late-touch-pointer', 'late-previous-touch'] as const)('%s', async (scenario) => {
+  test.skipIf(!chromeAvailable).each(['prepend', 'existing ownership', 'touch', 'scrollbar', 'DOM', 'cumulative', 'late-scrollbar', 'late-wheel', 'late-touch-pointer', 'late-previous-touch'] as const)('%s', async (scenario) => {
     const root = evidenceRoot()
     evidenceDirs.push(root)
     const work = mkdtempSync(join(root, 'assistant-contact-scroll-'))
@@ -99,6 +99,16 @@ window.addEventListener('unhandledrejection', (event) => {
       expect(ready, 'browser harness API became ready').toBe(true)
       const initial = await page.evaluate<Measure>(`${api}.measure()`)
       expect(initial.top).toBe(initial.maxTop)
+
+      if (scenario === 'prepend') {
+        const evidence = await page.evaluate<{ before: number; afterPrepend: number; afterImage: number; messages: number }>(`${api}.prependEvidence()`)
+        console.info('[assistant prepend and late image evidence]', evidence)
+        process.stdout.write(`${JSON.stringify({ scenario: 'assistant-prepend-late-image', ...evidence })}\n`)
+        expect(evidence.messages).toBe(40)
+        expect(Math.abs(evidence.afterPrepend - evidence.before)).toBeLessThanOrEqual(2)
+        expect(Math.abs(evidence.afterImage - evidence.before)).toBeLessThanOrEqual(2)
+        return
+      }
 
       if (scenario !== 'existing ownership') {
         const race = await page.evaluate<{

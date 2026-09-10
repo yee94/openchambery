@@ -1324,7 +1324,7 @@ button.oc-mobile-worktree-label-trigger:active,
   font-size: var(--text-micro);
   line-height: 1.45;
   -webkit-box-orient: vertical;
-  -webkit-line-clamp: 3;
+  -webkit-line-clamp: 2;
 }
 
 .oc-mobile-assistant-content > * {

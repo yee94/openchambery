@@ -1,4 +1,10 @@
-import { refreshRuntimeUrlAuthToken, setRuntimeBearerToken, setRuntimeExtraHeaders } from '@/lib/runtime-auth';
+import {
+  beginRuntimeAuthEndpointSwitch,
+  endRuntimeAuthEndpointSwitch,
+  refreshRuntimeUrlAuthToken,
+  setRuntimeBearerToken,
+  setRuntimeExtraHeaders,
+} from '@/lib/runtime-auth';
 import { configureRuntimeUrlResolver } from '@/lib/runtime-url';
 import {
   activateRelayTunnel,
@@ -194,8 +200,16 @@ export const switchRuntimeEndpoint = (options: { apiBaseUrl: string; clientToken
     setWindowRuntimeValue(runtimeWindow, '__OPENCHAMBER_RUNTIME_HEADERS__', options.requestHeaders || undefined);
   }
   configureRuntimeUrlResolver({ apiBaseUrl, realtimeBaseUrl: apiBaseUrl });
-  setRuntimeExtraHeaders(options.requestHeaders || null);
-  setRuntimeBearerToken(options.clientToken || null);
+  // Transport fingerprint is already the target. Credential mutations during
+  // this window publish reason:'endpoint-switch' so durable caches keep disk
+  // partitions for A→B→A while still receiving auth events (no silent suppress).
+  beginRuntimeAuthEndpointSwitch();
+  try {
+    setRuntimeExtraHeaders(options.requestHeaders || null);
+    setRuntimeBearerToken(options.clientToken || null);
+  } finally {
+    endRuntimeAuthEndpointSwitch();
+  }
   // Relay mode routes runtime HTTP/WS through an E2EE tunnel instead of the
   // network. Activate the tunnel BEFORE minting the url token, since the mint
   // itself rides the tunnel (runtimeFetch -> tunnel.fetch).

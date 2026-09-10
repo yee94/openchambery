@@ -75,33 +75,147 @@ export const clearRuntimeUrlAuthToken = (): void => {
   localRuntimeUrlAuthTokenExpiresAt = 0;
 };
 
-const resetRuntimeAuthGeneration = (): void => {
+/**
+ * Why authGeneration advanced. Secret-free — never carries bearer plaintext.
+ * - credential: ordinary token/provider/header mutation (may revoke prior identity)
+ * - invalidate: explicit session revoke (401 / logout)
+ * - endpoint-switch: runtime endpoint rebind (transport already updated; live cleanup only)
+ */
+export type RuntimeAuthMutationReason = 'credential' | 'invalidate' | 'endpoint-switch';
+
+export type RuntimeAuthGenerationDetail = {
+  generation: number;
+  reason: RuntimeAuthMutationReason;
+  /**
+   * SHA-256 hex of the previous bearer (if any), for scoped durable cache eviction.
+   * Never the raw token.
+   */
+  previousBearerDigest?: string;
+};
+
+type RuntimeAuthGenerationListener = (detail: RuntimeAuthGenerationDetail) => void;
+
+const runtimeAuthGenerationListeners = new Set<RuntimeAuthGenerationListener>();
+
+/** Digest of the currently active bearer (updated after each successful set). */
+let activeBearerDigest: string | null = null;
+/** Nested endpoint-switch depth so concurrent header+token sets keep the reason. */
+let endpointSwitchDepth = 0;
+
+const hashBearerDigestSyncFallback = async (token: string): Promise<string> => {
+  const bytes = new TextEncoder().encode(token);
+  const digest = await crypto.subtle.digest('SHA-256', bytes);
+  return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, '0')).join('');
+};
+
+const notifyRuntimeAuthGenerationListeners = (detail: RuntimeAuthGenerationDetail): void => {
+  for (const listener of runtimeAuthGenerationListeners) {
+    try {
+      listener(detail);
+    } catch {
+      // A listener throwing must not break auth mutation fanout.
+    }
+  }
+};
+
+const resolveAuthMutationReason = (explicit?: RuntimeAuthMutationReason): RuntimeAuthMutationReason => {
+  if (explicit) return explicit;
+  if (endpointSwitchDepth > 0) return 'endpoint-switch';
+  return 'credential';
+};
+
+const resetRuntimeAuthGeneration = (options: {
+  reason?: RuntimeAuthMutationReason;
+  previousBearerDigest?: string | null;
+} = {}): void => {
+  const previousBearerDigest = options.previousBearerDigest === undefined
+    ? (activeBearerDigest ?? undefined)
+    : (options.previousBearerDigest || undefined);
   runtimeAuthGeneration += 1;
   runtimeUrlAuthRefreshPromise = null;
   clearRuntimeUrlAuthToken();
   // Credentials changed: if a consumer is active, re-mint promptly.
   scheduleUrlAuthRefresh();
+  notifyRuntimeAuthGenerationListeners({
+    generation: runtimeAuthGeneration,
+    reason: resolveAuthMutationReason(options.reason),
+    ...(previousBearerDigest ? { previousBearerDigest } : {}),
+  });
+};
+
+/**
+ * Mark the following credential mutations as part of a runtime endpoint switch.
+ * Callers must pair with endRuntimeAuthEndpointSwitch (try/finally).
+ * Auth events still fire — listeners decide live-vs-durable from reason metadata.
+ */
+export const beginRuntimeAuthEndpointSwitch = (): void => {
+  endpointSwitchDepth += 1;
+};
+
+export const endRuntimeAuthEndpointSwitch = (): void => {
+  endpointSwitchDepth = Math.max(0, endpointSwitchDepth - 1);
+};
+
+/**
+ * Secret-free auth epoch subscription. Fires after bearer/provider/extra-header
+ * mutations and explicit session invalidation. Detail never carries tokens.
+ */
+export const subscribeRuntimeAuthGeneration = (
+  listener: RuntimeAuthGenerationListener,
+): (() => void) => {
+  runtimeAuthGenerationListeners.add(listener);
+  return () => {
+    runtimeAuthGenerationListeners.delete(listener);
+  };
+};
+
+/**
+ * Explicit session revocation (cookie 401 / forced logout path) without a new bearer.
+ * Bumps authGeneration so headless cache lanes can drop scoped state immediately.
+ */
+export const invalidateRuntimeAuthSession = (): void => {
+  resetRuntimeAuthGeneration({ reason: 'invalidate' });
 };
 
 export const setRuntimeAuthCredentialProvider = (provider: RuntimeAuthCredentialProvider): void => {
+  const previousBearerDigest = activeBearerDigest;
   runtimeBearerToken = '';
-  resetRuntimeAuthGeneration();
+  activeBearerDigest = null;
+  resetRuntimeAuthGeneration({
+    reason: 'credential',
+    previousBearerDigest,
+  });
   credentialProvider = provider;
 };
 
 export const clearRuntimeAuthCredentialProvider = (): void => {
+  const previousBearerDigest = activeBearerDigest;
   runtimeBearerToken = '';
-  resetRuntimeAuthGeneration();
+  activeBearerDigest = null;
+  resetRuntimeAuthGeneration({
+    reason: 'credential',
+    previousBearerDigest,
+  });
   credentialProvider = () => null;
 };
 
 export const setRuntimeBearerToken = (token: string | null | undefined): void => {
   const normalized = normalizeBearerToken(token);
   const unchanged = normalized === getRuntimeBearerTokenSync();
+  const previousBearerDigest = activeBearerDigest;
   runtimeBearerToken = normalized;
   credentialProvider = () => normalized ? { type: 'bearer', token: normalized } : null;
   if (unchanged) return;
-  resetRuntimeAuthGeneration();
+  // Keep previous digest on the event; refresh active digest asynchronously (no secret on wire).
+  activeBearerDigest = null;
+  resetRuntimeAuthGeneration({ previousBearerDigest });
+  if (normalized) {
+    void hashBearerDigestSyncFallback(normalized).then((digest) => {
+      if (getRuntimeBearerTokenSync() === normalized) {
+        activeBearerDigest = digest;
+      }
+    }).catch(() => undefined);
+  }
 };
 
 export const setRuntimeExtraHeaders = (headers: Record<string, string> | null | undefined): void => {
@@ -110,7 +224,9 @@ export const setRuntimeExtraHeaders = (headers: Record<string, string> | null | 
   const next = sanitizeRuntimeExtraHeaders(headers);
   if (runtimeExtraHeadersEqual(runtimeExtraHeaders, next)) return;
   runtimeExtraHeaders = next;
-  resetRuntimeAuthGeneration();
+  // Header-only changes do not rotate bearer identity; keep previousBearerDigest out
+  // so durable bearer partitions are not wiped on CF-Access header churn alone.
+  resetRuntimeAuthGeneration({ previousBearerDigest: null });
 };
 
 export const getRuntimeExtraHeadersSync = (): Record<string, string> => {

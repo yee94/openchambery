@@ -3,6 +3,8 @@ import os from 'node:os'
 import path from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
 import {
+  CLEAR_CHAT_HISTORY_CONFIRM_BUBBLE,
+  CLEAR_CHAT_HISTORY_TOOL_NAME,
   CREATE_ASSISTANT_TOOL_NAME,
   MESSAGE_ASSISTANT_TOOL_NAME,
   MISSED_FENCE_RETRY_USER_TEXT,
@@ -874,5 +876,127 @@ describe('runContactTurn', () => {
     expect(result.bubbles).toEqual([NEW_CONVERSATION_CONFIRM_BUBBLE])
     expect(result.bubbles.join('')).not.toContain('dot.png')
     expect(result.bubbles.join('')).not.toContain('note.txt')
+  })
+
+  it('real Agent loop: clear_chat_history fence runs once, terminates, no follow-up completion', async () => {
+    const clearContactMemory = vi.fn(async () => ({ reset: true, memoryCleared: true }))
+    const resetContact = vi.fn(async () => ({ reset: true, historyCleared: true }))
+    const tools = createContactTools({ clearContactMemory, resetContact })
+    let completions = 0
+    const createChatCompletion = vi.fn(async () => {
+      completions += 1
+      if (completions > 4) {
+        throw new Error('harness safety stop: clear_chat_history must terminate without follow-up LLM')
+      }
+      // Looping model would keep emitting wipe fences; terminate must stop after one tool run.
+      return {
+        completion: {
+          choices: [{
+            message: {
+              content: '```openchamber-tool\n{"name":"clear_chat_history","arguments":{}}\n```',
+            },
+          }],
+        },
+      }
+    })
+    const result = await runContactTurn({
+      assistant: { providerID: 'p', modelID: 'm', defaultPrompt: '' },
+      history: [
+        { role: 'user', content: 'secret before wipe' },
+        { role: 'assistant', content: 'remembered secret' },
+      ],
+      userText: '清空聊天记录',
+      tools,
+      createChatCompletion,
+      // Default real Agent — only completion is stubbed (same pattern as assign terminate).
+    })
+    expect(resetContact).toHaveBeenCalledTimes(1)
+    expect(clearContactMemory).not.toHaveBeenCalled()
+    expect(result.reset).toBe(true)
+    expect(result.historyCleared).toBe(true)
+    expect(result.bubbles).toEqual([CLEAR_CHAT_HISTORY_CONFIRM_BUBBLE])
+    expect(result.bubbles.join('')).not.toMatch(/not cleared|denied|new_conversation instead|secret/i)
+    expect(result.cards).toEqual([])
+    expect(createChatCompletion).toHaveBeenCalledTimes(1)
+    expect(completions).toBe(1)
+  })
+
+  it('real Agent loop: clear_chat_history after cross-turn confirm terminates once with confirm only', async () => {
+    const clearContactMemory = vi.fn(async () => ({ reset: true, memoryCleared: true }))
+    const resetContact = vi.fn(async () => ({ reset: true, historyCleared: true }))
+    const tools = createContactTools({ clearContactMemory, resetContact })
+    let completions = 0
+    const createChatCompletion = vi.fn(async () => {
+      completions += 1
+      if (completions > 4) {
+        throw new Error('harness safety stop: wipe must terminate once')
+      }
+      return {
+        completion: {
+          choices: [{
+            message: {
+              content: '```openchamber-tool\n{"name":"clear_chat_history","arguments":{}}\n```',
+            },
+          }],
+        },
+      }
+    })
+    const result = await runContactTurn({
+      assistant: { providerID: 'p', modelID: 'm', defaultPrompt: '' },
+      history: [
+        { role: 'user', content: '能不能帮我清一下聊天？' },
+        { role: 'assistant', content: '是要清空聊天记录吗？' },
+      ],
+      userText: '对，清空聊天记录',
+      tools,
+      createChatCompletion,
+    })
+    expect(resetContact).toHaveBeenCalledTimes(1)
+    expect(clearContactMemory).not.toHaveBeenCalled()
+    expect(result.reset).toBe(true)
+    expect(result.historyCleared).toBe(true)
+    expect(result.bubbles).toEqual([CLEAR_CHAT_HISTORY_CONFIRM_BUBBLE])
+    expect(result.bubbles.join('')).not.toMatch(/not cleared|denied|explicit wipe|new_conversation instead/i)
+    expect(createChatCompletion).toHaveBeenCalledTimes(1)
+    expect(completions).toBe(1)
+  })
+
+  it('real Agent loop: new_conversation terminates once and does not call resetContact', async () => {
+    const clearContactMemory = vi.fn(async () => ({ reset: true, memoryCleared: true }))
+    const resetContact = vi.fn(async () => ({ reset: true, historyCleared: true }))
+    const tools = createContactTools({ clearContactMemory, resetContact })
+    let completions = 0
+    const createChatCompletion = vi.fn(async () => {
+      completions += 1
+      if (completions > 4) {
+        throw new Error('harness safety stop: new_conversation must terminate without follow-up LLM')
+      }
+      return {
+        completion: {
+          choices: [{
+            message: {
+              content: '```openchamber-tool\n{"name":"new_conversation","arguments":{}}\n```',
+            },
+          }],
+        },
+      }
+    })
+    const result = await runContactTurn({
+      assistant: { providerID: 'p', modelID: 'm', defaultPrompt: '' },
+      history: [
+        { role: 'user', content: 'transcript stays' },
+        { role: 'assistant', content: 'yes it does' },
+      ],
+      userText: '清除记忆',
+      tools,
+      createChatCompletion,
+    })
+    expect(clearContactMemory).toHaveBeenCalledTimes(1)
+    expect(resetContact).not.toHaveBeenCalled()
+    expect(result.reset).toBe(true)
+    expect(result.historyCleared).toBe(false)
+    expect(result.bubbles).toEqual([NEW_CONVERSATION_CONFIRM_BUBBLE])
+    expect(createChatCompletion).toHaveBeenCalledTimes(1)
+    expect(completions).toBe(1)
   })
 })

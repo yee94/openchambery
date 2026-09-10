@@ -370,10 +370,10 @@ const hasAssignSessionIntent = (text) => hasIntentMatch(ASSIGN_SESSION_INTENT, t
 
 /**
  * True when userText has an explicit, non-negated transcript-wipe phrase.
- * Server core uses this to authorize clear_chat_history / resetContact — the
- * model cannot self-authorize through tool parameters.
+ * Tool-selection hint only (missed-fence retry / detectRequestedContactTools).
+ * Invoking clear_chat_history executes the wipe — no separate text gate.
  */
-export function userTextAuthorizesClearChatHistory(userText) {
+export function userTextRequestsClearChatHistory(userText) {
   return hasIntentMatch(CLEAR_CHAT_HISTORY_INTENT, typeof userText === 'string' ? userText : '');
 }
 
@@ -389,8 +389,8 @@ export function detectRequestedContactTools(userText, allowedNames = []) {
   const text = typeof userText === 'string' ? userText : '';
   const requested = [];
   // Prefer explicit wipe over the safe clear-memory default when both could match.
-  // Negation (不要清除聊天记录) must not authorize delete.
-  const wantsClearHistory = allowed.has(CLEAR_CHAT_HISTORY_TOOL_NAME) && userTextAuthorizesClearChatHistory(text);
+  // Negation (不要清除聊天记录) is not a wipe request hint.
+  const wantsClearHistory = allowed.has(CLEAR_CHAT_HISTORY_TOOL_NAME) && userTextRequestsClearChatHistory(text);
   if (wantsClearHistory) {
     requested.push(CLEAR_CHAT_HISTORY_TOOL_NAME);
   } else if (allowed.has(NEW_CONVERSATION_TOOL_NAME) && hasNewConversationIntent(text)) {
@@ -799,6 +799,7 @@ export function createContactTools({
           if (typeof resetContact !== 'function') {
             throw new AssignError('upstream_error', 'Clearing chat history is unavailable.');
           }
+          // Model selected the tool → execute wipe. Storage failures surface as errors.
           await resetContact();
           return {
             content: [{ type: 'text', text: CLEAR_CHAT_HISTORY_CONFIRM_BUBBLE }],

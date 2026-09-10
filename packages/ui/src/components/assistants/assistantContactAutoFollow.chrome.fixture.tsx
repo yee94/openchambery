@@ -9,6 +9,7 @@ type HarnessState = {
   assistantID: string
   revision: number
   height: number
+  earlier: number | null
 }
 
 type HarnessMeasure = {
@@ -26,6 +27,7 @@ type HarnessAPI = {
   resumeAtBottomWithTouch: () => HarnessMeasure
   resetWrites: () => void
   measure: () => HarnessMeasure
+  prependEvidence: () => Promise<{ before: number; afterPrepend: number; afterImage: number; messages: number }>
   slightTouchBeforeLayout: (input: 'touch' | 'scrollbar' | 'DOM' | 'cumulative' | 'late-scrollbar' | 'late-wheel' | 'late-touch-pointer' | 'late-previous-touch') => Promise<{
     beforeGrowth: HarnessMeasure
     afterGrowth: HarnessMeasure
@@ -45,6 +47,7 @@ declare global {
 
 let updateState: ((patch: Partial<HarnessState>) => void) | null = null
 let writes = 0
+let preparePrepend: (() => void) | null = null
 
 const findScrollTopDescriptor = (element: HTMLElement): PropertyDescriptor => {
   let prototype: object | null = element
@@ -63,13 +66,15 @@ const App: React.FC = () => {
     assistantID: 'assistant-a',
     revision: 0,
     height: 800,
+    earlier: null,
   })
   updateState = (patch) => setState((current) => ({ ...current, ...patch }))
-  const { scrollRef, contentRef } = useAssistantContactAutoFollow({
+  const { scrollRef, contentRef, preparePrepend: prepare } = useAssistantContactAutoFollow({
     active: state.active,
     assistantID: state.assistantID,
     contentRevision: state.revision,
   })
+  preparePrepend = prepare
   const attachScroller = React.useMemo<React.RefCallback<HTMLDivElement>>(() => (node) => {
     if (node && !Object.prototype.hasOwnProperty.call(node, 'scrollTop')) {
       const native = findScrollTopDescriptor(node)
@@ -89,9 +94,15 @@ const App: React.FC = () => {
     <div
       ref={attachScroller}
       data-test-scroller=""
-      style={{ height: 200, width: 320, overflowY: 'auto' }}
+      style={{ height: 200, width: 320, overflowY: 'auto', overflowAnchor: 'none' }}
     >
-      <div ref={contentRef} data-test-content="" style={{ height: state.height, width: 300 }} />
+      <div ref={contentRef} data-test-content="" style={{ height: state.earlier === null ? state.height : undefined, width: 300 }}>
+        {state.earlier === null ? null : Array.from({ length: 20 + state.earlier }, (_, index) => index - (state.earlier ?? 0)).map((id) =>
+          <div key={id} data-message-id={`message-${id}`} style={{ minHeight: 72, padding: 8, boxSizing: 'border-box' }}>
+            {id === -1 ? <img data-late-image="" alt="Synthetic attachment" style={{ display: 'block', maxWidth: '100%' }} /> : null}
+            Synthetic message {id}
+          </div>)}
+      </div>
     </div>
   )
 }
@@ -143,6 +154,26 @@ const dispatchTouch = (type: string, clientY?: number) => {
 
 window.assistantContactAutoFollowHarness = {
   patch,
+  prependEvidence: async () => {
+    await patch({ earlier: 0, revision: 1 })
+    scroller.dispatchEvent(new WheelEvent('wheel', { bubbles: true, deltaY: -80 }))
+    scroller.scrollTop = 20
+    scroller.dispatchEvent(new Event('scroll'))
+    const row = document.querySelector<HTMLElement>('[data-message-id="message-0"]')!
+    const offset = () => row.getBoundingClientRect().top - scroller.getBoundingClientRect().top
+    const before = offset()
+    preparePrepend?.()
+    await patch({ earlier: 20, revision: 2 })
+    const afterPrepend = offset()
+    const image = document.querySelector<HTMLImageElement>('[data-late-image]')!
+    await new Promise<void>((resolve, reject) => {
+      image.onload = () => resolve()
+      image.onerror = () => reject(new Error('synthetic image failed'))
+      image.src = `data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="240" height="180"><rect width="240" height="180" fill="gray"/></svg>')}`
+    })
+    await settle()
+    return { before, afterPrepend, afterImage: offset(), messages: document.querySelectorAll('[data-message-id]').length }
+  },
   slightTouchBeforeLayout: async (input) => {
     await patch({ assistantID: 'delayed-scroll', revision: 0, height: 800 })
     let scrollEvents = 0

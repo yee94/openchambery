@@ -74,9 +74,23 @@ export function parseContactCard(value) {
 function parseContactFilePart(value) {
   if (!isRecord(value) || value.type !== 'file') return null;
   const mime = string(value.mime);
-  const url = typeof value.url === 'string' && value.url.trim() ? value.url.trim() : '';
-  if (!mime || !url) return null;
+  if (!mime) return null;
   const filename = string(value.filename);
+  const attachmentID = string(value.attachmentID);
+  const sha256 = string(value.sha256);
+  const size = typeof value.size === 'number' && Number.isSafeInteger(value.size) && value.size >= 0
+    ? value.size
+    : null;
+  // Preferred durable form: opaque attachmentID (no client path/url authority).
+  if (attachmentID) {
+    const next = { type: 'file', mime, attachmentID };
+    if (filename) next.filename = filename;
+    if (sha256) next.sha256 = sha256;
+    if (size != null) next.size = size;
+    return next;
+  }
+  const url = typeof value.url === 'string' && value.url.trim() ? value.url.trim() : '';
+  if (!url) return null;
   return filename ? { type: 'file', mime, url, filename } : { type: 'file', mime, url };
 }
 

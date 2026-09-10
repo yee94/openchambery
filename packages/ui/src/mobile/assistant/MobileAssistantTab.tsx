@@ -9,6 +9,7 @@ import { AssistantWorkingAvatar } from '@/components/assistants/AssistantWorking
 import { useAssistantWorking } from '@/components/assistants/assistantWorking';
 import { AssistantDeleteConfirmDialog } from '@/components/assistants/AssistantDeleteConfirmDialog';
 import { getAssistantPresentation } from '@/components/assistants/assistantPresentation';
+import { ASSISTANT_MESSAGE_PREVIEW_CLASS, getAssistantMessagePreview } from '@/components/assistants/assistantMessagePreview';
 import { Icon } from '@/components/icon/Icon';
 import { Button } from '@/components/ui/button';
 import {
@@ -247,7 +248,7 @@ function MobileAssistantCard({
             <span className="oc-mobile-entity-title oc-mobile-assistant-name block min-w-0 truncate font-semibold text-foreground">
               {displayName}
             </span>
-            <span className="oc-mobile-assistant-summary text-muted-foreground">
+            <span className={cn('oc-mobile-assistant-summary', ASSISTANT_MESSAGE_PREVIEW_CLASS)}>
               {summary}
             </span>
           </span>
@@ -312,7 +313,23 @@ export function MobileAssistantTab({ onEnable, onOpenAssistant, className }: Mob
 
   if (capability.data?.supported && capability.data.enabled && snapshot.data?.enabled && snapshot.data.assistants.length > 0) {
     return (
-      <MobileTabPageScaffold title={pageTitle} className={className} surface={false} scrollsWithPage>
+      <MobileTabPageScaffold
+        title={pageTitle}
+        className={className}
+        surface={false}
+        scrollsWithPage
+        trailing={(
+          <Button
+            type="button"
+            variant="mobileGlass"
+            size="mobileIcon"
+            aria-label={t('assistants.settings.create')}
+            onClick={handleCreate}
+          >
+            <Icon name="add" className="size-5" />
+          </Button>
+        )}
+      >
         <div
           className="oc-mobile-assistant-catalog"
           role="listbox"
@@ -321,7 +338,7 @@ export function MobileAssistantTab({ onEnable, onOpenAssistant, className }: Mob
           {snapshot.data.assistants.map((assistant) => {
             const presentation = getAssistantPresentation(assistant.name);
             const displayName = presentation.displayName || assistant.name;
-            const summary = assistant.defaultPrompt.trim();
+            const summary = getAssistantMessagePreview(assistant.latestMessagePreview, t);
 
             return (
               <MobileAssistantCard

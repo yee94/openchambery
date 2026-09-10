@@ -23,6 +23,7 @@ import { useUIStore } from '@/stores/useUIStore';
 import { AssistantConversationSurface } from './AssistantConversationSurface';
 import { AssistantDeleteConfirmDialog } from './AssistantDeleteConfirmDialog';
 import { getAssistantPresentation } from './assistantPresentation';
+import { ASSISTANT_MESSAGE_PREVIEW_CLASS, getAssistantMessagePreview } from './assistantMessagePreview';
 import { resolveAssistantWorkspacePresentation } from './assistantWorkspaceState';
 
 type MobileAssistantConversationHeaderProps = {
@@ -64,6 +65,7 @@ const MobileAssistantConversationHeader: React.FC<MobileAssistantConversationHea
 };
 
 type AssistantListItemProps = {
+  summary: string;
   assistantID: string;
   displayName: string;
   avatarEmoji?: string;
@@ -79,6 +81,7 @@ type AssistantListItemProps = {
 };
 
 const AssistantListItem: React.FC<AssistantListItemProps> = ({
+  summary,
   assistantID,
   displayName,
   avatarEmoji,
@@ -130,6 +133,7 @@ const AssistantListItem: React.FC<AssistantListItemProps> = ({
         <AssistantWorkingAvatar name={assistantID} emoji={avatarEmoji} size={24} label={displayName} working={working} />
         <span className="min-w-0 flex-1">
           <span className="block truncate typography-ui-label font-medium">{displayName}</span>
+          <span className={cn(ASSISTANT_MESSAGE_PREVIEW_CLASS, 'mt-1.5')}>{summary}</span>
         </span>
       </ContextMenuTrigger>
       <ContextMenuContent className="min-w-[10rem]">
@@ -238,8 +242,17 @@ export const AssistantView: React.FC<AssistantViewProps> = ({ activeOverride, on
     <div className="relative flex h-full min-h-0 overflow-hidden bg-background" data-presentation="workspace">
       {isMobileSurface ? null : (
         <section className="flex h-full min-h-0 w-[clamp(16rem,22vw,20rem)] shrink-0 flex-col overflow-hidden">
-          <header className="shrink-0 px-4 pb-3 pt-4 sm:px-5">
-            <h1 className="truncate typography-ui-label font-semibold text-foreground">{t('assistants.title')}</h1>
+          <header className="flex shrink-0 items-center gap-3 px-4 pb-3 pt-4 sm:px-5">
+            <h1 className="min-w-0 flex-1 truncate typography-ui-label font-semibold text-foreground">{t('assistants.title')}</h1>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              aria-label={t('assistants.settings.create')}
+              onClick={openCreateSettings}
+            >
+              <Icon name="add" className="size-4" />
+            </Button>
           </header>
           <div className="min-h-0 flex-1 overflow-y-auto px-3 pb-4 sm:px-4" role="listbox" aria-label={t('assistants.listAria')}>
             <div className="flex flex-col gap-1 border-t border-border/40 pt-3">
@@ -250,6 +263,7 @@ export const AssistantView: React.FC<AssistantViewProps> = ({ activeOverride, on
                   <AssistantListItem
                     key={item.id}
                     assistantID={item.id}
+                    summary={getAssistantMessagePreview(item.latestMessagePreview, t)}
                     displayName={itemPresentation.displayName}
                     avatarEmoji={itemPresentation.avatarEmoji ?? undefined}
                     selected={selected}

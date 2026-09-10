@@ -82,8 +82,6 @@ const emptyDraft = (defaultName = ''): AssistantDraft => {
     workspacePath: null,
     providerID: defaultModel?.providerID ?? '',
     modelID: defaultModel?.modelID ?? '',
-    agent: null,
-    mode: 'continuous',
   };
 };
 
@@ -94,8 +92,19 @@ const draftFromAssistant = (assistant: AssistantDTO): AssistantDraft => ({
   workspacePath: assistant.workspacePath,
   providerID: assistant.providerID,
   modelID: assistant.modelID,
-  agent: assistant.agent,
-  mode: assistant.mode,
+});
+
+/**
+ * Settings UI does not own agent/variant/mode. PATCH must omit them so the
+ * server keeps prior values (undefined → retain; null would clear).
+ */
+export const toAssistantSettingsUpdateDraft = (draft: AssistantDraft): AssistantDraft => ({
+  enabled: draft.enabled,
+  name: draft.name,
+  defaultPrompt: draft.defaultPrompt,
+  workspacePath: draft.workspacePath,
+  providerID: draft.providerID,
+  modelID: draft.modelID,
 });
 
 const projectName = (project: ProjectEntry): string => (
@@ -345,8 +354,6 @@ export const AssistantsSettingsSidebar: React.FC<{ onItemSelect?: () => void }> 
             workspacePath: null,
             providerID: defaultModel.providerID,
             modelID: defaultModel.modelID,
-            agent: null,
-            mode: 'continuous',
           });
           selectSettingsAssistant(created.id);
         }
@@ -501,7 +508,9 @@ export const AssistantsSettingsPage: React.FC<AssistantsSettingsPageProps> = ({ 
     }
     setSaving(true);
     try {
-      const result = selected ? await updateAssistant(selected, draft) : await createAssistant(draft);
+      const result = selected
+        ? await updateAssistant(selected, toAssistantSettingsUpdateDraft(draft))
+        : await createAssistant(draft);
       selectSettingsAssistant(result.id);
       toast.success(t('assistants.settings.toast.saved'));
     } catch {

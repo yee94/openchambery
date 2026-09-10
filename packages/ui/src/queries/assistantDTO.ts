@@ -2,6 +2,17 @@ import type { Message, Part } from '@opencode-ai/sdk/v2';
 
 export type AssistantSource = 'composer' | 'ios-share' | 'android-share';
 export type AssistantMode = 'continuous' | 'stateless';
+export type AssistantLatestMessagePreview = {
+  messageID: string;
+  ordinal: number;
+  role: 'user' | 'assistant';
+  text: string;
+  fallbackKind: 'image' | 'file' | 'session' | 'assistant' | 'schedule' | null;
+};
+export interface AssistantDTO {
+  /** Missing on legacy inputs; the HTTP parser normalizes absence to null. */
+  latestMessagePreview?: AssistantLatestMessagePreview | null;
+}
 export type AssistantPart = { type: 'text'; text: string; synthetic?: boolean } | { type: 'file'; mime: string; url: string };
 
 export interface AssistantCapabilityDTO { supported: boolean; enabled: boolean; revision: number; serverInstanceID: string | null; }
@@ -23,7 +34,18 @@ export interface AssistantHistoryEntry { sessionID: string; directory: string | 
 export interface AssistantHistoryPage { entries: AssistantHistoryEntry[]; nextCursor: string | null; complete: boolean; }
 export type AssistantContactCardType = 'session' | 'assistant' | 'schedule';
 export type AssistantContactTextPart = { type: 'text'; text: string };
-export type AssistantContactFilePart = { type: 'file'; mime: string; url: string; filename?: string };
+/** Legacy inline data-URL file part. */
+export type AssistantContactFileUrlPart = { type: 'file'; mime: string; url: string; filename?: string };
+/** Reference file part (no url) — attachment store descriptor. */
+export type AssistantContactFileRefPart = {
+  type: 'file';
+  mime: string;
+  attachmentID: string;
+  sha256: string;
+  size: number;
+  filename?: string;
+};
+export type AssistantContactFilePart = AssistantContactFileUrlPart | AssistantContactFileRefPart;
 export type AssistantContactSessionCardPart = {
   type: 'card';
   cardType: 'session';
@@ -78,6 +100,10 @@ export interface AssistantContactPage {
   messages: AssistantContactMessage[];
   nextCursor: string | null;
   complete: boolean;
+  /** Transcript wipe generation (bumps only on clear history / reset). */
+  generation: number;
+  /** Assistants domain revision tip (same counter as snapshot). */
+  revision: number;
 }
 export interface AssistantContactCardAdmission {
   messageID: string;
@@ -139,7 +165,20 @@ const parseActiveContactTurn = (value: unknown): AssistantActiveContactTurn | nu
     admittedAt: number(turn.admittedAt, 'assistant'),
   }
 }
-export const parseAssistantDTO = (payload: unknown): AssistantDTO => { const value = record(payload, 'assistant'); const historySessionIDs = Array.isArray(value.historySessionIDs) ? value.historySessionIDs.map((item) => string(item, 'assistant')) : []; const historySessionCount = value.historySessionCount === undefined ? historySessionIDs.length : number(value.historySessionCount, 'assistant'); if (!Number.isSafeInteger(historySessionCount) || historySessionCount < historySessionIDs.length) return invalid('assistant'); const assignedSessionIDs = Array.isArray(value.assignedSessionIDs) ? value.assignedSessionIDs.map((item) => string(item, 'assistant')) : []; const activeContactTurn = value.activeContactTurn === undefined ? null : parseActiveContactTurn(value.activeContactTurn); const working = value.working === undefined ? activeContactTurn != null : bool(value.working, 'assistant'); return { id: string(value.id, 'assistant'), revision: number(value.revision, 'assistant'), enabled: bool(value.enabled, 'assistant'), name: string(value.name, 'assistant'), defaultPrompt: string(value.defaultPrompt, 'assistant'), workspacePath: nullableString(value.workspacePath, 'assistant'), effectiveWorkspacePath: string(value.effectiveWorkspacePath, 'assistant'), managedWorkspacePath: nullableString(value.managedWorkspacePath ?? null, 'assistant'), providerID: string(value.providerID, 'assistant'), modelID: string(value.modelID, 'assistant'), agent: nullableString(value.agent, 'assistant'), variant: nullableString(value.variant ?? null, 'assistant'), mode: enumValue(value.mode, ['continuous', 'stateless'] as const, 'assistant'), sessionID: nullableString(value.sessionID, 'assistant'), sessionGeneration: number(value.sessionGeneration, 'assistant'), historySessionIDs, historySessionCount, assignedSessionIDs, working, activeContactTurn, createdAt: nullableNumber(value.createdAt, 'assistant'), updatedAt: number(value.updatedAt, 'assistant'), tombstoneAt: nullableNumber(value.tombstoneAt, 'assistant') }; };
+const parseLatestMessagePreview = (payload: unknown): AssistantLatestMessagePreview | null => {
+  if (payload == null) return null;
+  const value = record(payload, 'assistant_preview');
+  const ordinal = number(value.ordinal, 'assistant_preview');
+  if (!Number.isSafeInteger(ordinal) || ordinal < 0) return invalid('assistant_preview');
+  return {
+    messageID: string(value.messageID, 'assistant_preview'),
+    ordinal,
+    role: enumValue(value.role, ['user', 'assistant'] as const, 'assistant_preview'),
+    text: string(value.text, 'assistant_preview'),
+    fallbackKind: value.fallbackKind === null ? null : enumValue(value.fallbackKind, ['image', 'file', 'session', 'assistant', 'schedule'] as const, 'assistant_preview'),
+  };
+};
+export const parseAssistantDTO = (payload: unknown): AssistantDTO => { const value = record(payload, 'assistant'); const historySessionIDs = Array.isArray(value.historySessionIDs) ? value.historySessionIDs.map((item) => string(item, 'assistant')) : []; const historySessionCount = value.historySessionCount === undefined ? historySessionIDs.length : number(value.historySessionCount, 'assistant'); if (!Number.isSafeInteger(historySessionCount) || historySessionCount < historySessionIDs.length) return invalid('assistant'); const assignedSessionIDs = Array.isArray(value.assignedSessionIDs) ? value.assignedSessionIDs.map((item) => string(item, 'assistant')) : []; const activeContactTurn = value.activeContactTurn === undefined ? null : parseActiveContactTurn(value.activeContactTurn); const working = value.working === undefined ? activeContactTurn != null : bool(value.working, 'assistant'); return { latestMessagePreview: parseLatestMessagePreview(value.latestMessagePreview), id: string(value.id, 'assistant'), revision: number(value.revision, 'assistant'), enabled: bool(value.enabled, 'assistant'), name: string(value.name, 'assistant'), defaultPrompt: string(value.defaultPrompt, 'assistant'), workspacePath: nullableString(value.workspacePath, 'assistant'), effectiveWorkspacePath: string(value.effectiveWorkspacePath, 'assistant'), managedWorkspacePath: nullableString(value.managedWorkspacePath ?? null, 'assistant'), providerID: string(value.providerID, 'assistant'), modelID: string(value.modelID, 'assistant'), agent: nullableString(value.agent, 'assistant'), variant: nullableString(value.variant ?? null, 'assistant'), mode: enumValue(value.mode, ['continuous', 'stateless'] as const, 'assistant'), sessionID: nullableString(value.sessionID, 'assistant'), sessionGeneration: number(value.sessionGeneration, 'assistant'), historySessionIDs, historySessionCount, assignedSessionIDs, working, activeContactTurn, createdAt: nullableNumber(value.createdAt, 'assistant'), updatedAt: number(value.updatedAt, 'assistant'), tombstoneAt: nullableNumber(value.tombstoneAt, 'assistant') }; };
 export const parseAssistantSnapshotDTO = (payload: unknown): AssistantSnapshotDTO => { const value = record(payload, 'snapshot'); return { revision: number(value.revision, 'snapshot'), enabled: bool(value.enabled, 'snapshot'), assistants: Array.isArray(value.assistants) ? value.assistants.map(parseAssistantDTO) : invalid('snapshot') }; };
 export const parseSessionBinding = (payload: unknown): SessionBinding => { const value = record(payload, 'binding'); return { sessionID: nullableString(value.sessionID, 'binding'), directory: string(value.directory, 'binding'), sessionGeneration: number(value.sessionGeneration, 'binding') }; };
 export const parseCompactResponse = (payload: unknown): CompactResponse => { const value = record(payload, 'compact'); if (value.summarized !== true) return invalid('compact'); return { binding: parseSessionBinding(value.binding), summarized: true }; };
@@ -197,12 +236,31 @@ const parseContactPart = (value: unknown): AssistantContactPart => {
     const filename = part.filename === undefined || part.filename === null
       ? undefined
       : string(part.filename, 'assistant_contact_part');
-    return {
-      type: 'file',
-      mime: string(part.mime, 'assistant_contact_part'),
-      url: string(part.url, 'assistant_contact_part'),
-      ...(filename ? { filename } : {}),
-    };
+    const mime = string(part.mime, 'assistant_contact_part');
+    const hasUrl = part.url !== undefined && part.url !== null;
+    const hasRef = part.attachmentID !== undefined && part.attachmentID !== null;
+    if (hasUrl && hasRef) return invalid('assistant_contact_part');
+    if (hasRef) {
+      const size = number(part.size, 'assistant_contact_part');
+      if (!Number.isSafeInteger(size) || size < 0) return invalid('assistant_contact_part');
+      return {
+        type: 'file',
+        mime,
+        attachmentID: string(part.attachmentID, 'assistant_contact_part'),
+        sha256: string(part.sha256, 'assistant_contact_part'),
+        size,
+        ...(filename ? { filename } : {}),
+      };
+    }
+    if (hasUrl) {
+      return {
+        type: 'file',
+        mime,
+        url: string(part.url, 'assistant_contact_part'),
+        ...(filename ? { filename } : {}),
+      };
+    }
+    return invalid('assistant_contact_part');
   }
   if (part.type === 'card') {
     const cardType = enumValue(part.cardType, ['session', 'assistant', 'schedule'] as const, 'assistant_contact_part');
@@ -249,6 +307,10 @@ export const parseAssistantContactPage = (payload: unknown): AssistantContactPag
   if (!complete && !nextCursor) return invalid('assistant_contact');
   if (complete && nextCursor) return invalid('assistant_contact');
   if (!Array.isArray(value.messages)) return invalid('assistant_contact');
+  const generation = number(value.generation, 'assistant_contact');
+  const revision = number(value.revision, 'assistant_contact');
+  if (!Number.isSafeInteger(generation) || generation < 0) return invalid('assistant_contact');
+  if (!Number.isSafeInteger(revision) || revision < 0) return invalid('assistant_contact');
   return {
     messages: value.messages.map((item) => {
       const message = record(item, 'assistant_contact_message');
@@ -272,6 +334,8 @@ export const parseAssistantContactPage = (payload: unknown): AssistantContactPag
     }),
     nextCursor,
     complete,
+    generation,
+    revision,
   };
 };
 export const parseAssistantContactCardAdmission = (payload: unknown): AssistantContactCardAdmission => {

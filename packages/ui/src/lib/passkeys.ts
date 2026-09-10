@@ -208,5 +208,15 @@ export const resetAllAuth = async () => {
     throw new Error(await getPasskeyErrorMessage(response, 'Could not clear saved authentication.'));
   }
 
+  // Drop attachment cache before callers reload — cookie session is gone.
+  try {
+    const { clearAssistantAttachmentCacheAll } = await import('@/lib/assistant-attachment-cache');
+    const { invalidateRuntimeAuthSession } = await import('@/lib/runtime-auth');
+    await clearAssistantAttachmentCacheAll('auth-reset');
+    invalidateRuntimeAuthSession();
+  } catch {
+    // Cache clear must not block auth reset success.
+  }
+
   return response.json().catch(() => null);
 };

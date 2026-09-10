@@ -1,0 +1,302 @@
+/**
+ * Pure contact-transcript merge for latest-window refresh + older pagination.
+ * Server pages newest-first keyset; each page.messages is ascending by ordinal.
+ * Ordinal holes from tool wipe are legal — gap is window non-overlap, not dense ordinals.
+ *
+ * Gap state splits two identities (no multi-layer queue):
+ * - gapRequestIDs: which fill session may advance gapCursor (updated on full slide).
+ * - gapTargetIDs: earliest unfinished bridge targets; full slide keeps them until hit/complete.
+ */
+import type { AssistantContactMessage, AssistantContactPage } from './assistantDTO'
+
+export const CONTACT_MESSAGES_PAGE_DEFAULT = 20
+export const CONTACT_GAP_FILL_MAX_PAGES = 5
+
+export type ContactMessagesView = {
+  messages: AssistantContactMessage[]
+  /** -1 = uninitialized empty; 0+ = server generation. */
+  generation: number
+  revision: number
+  olderCursor: string | null
+  olderComplete: boolean
+  hasMessageGap: boolean
+  gapCursor: string | null
+  /**
+   * Request identity for the active fill session (previous live window at last full slide).
+   * Only gap responses captured with this identity may advance gapCursor.
+   */
+  gapRequestIDs: readonly string[] | null
+  /**
+   * Earliest unfinished targets to bridge back to. Full slides keep these until a fill page
+   * intersects them or the server reports complete.
+   */
+  gapTargetIDs: readonly string[] | null
+  /** Last applied latest-window IDs (for overlap detection). */
+  liveWindowIDs: readonly string[]
+}
+
+export const emptyContactMessagesView = (): ContactMessagesView => ({
+  messages: [],
+  generation: -1,
+  revision: 0,
+  olderCursor: null,
+  olderComplete: true,
+  hasMessageGap: false,
+  gapCursor: null,
+  gapRequestIDs: null,
+  gapTargetIDs: null,
+  liveWindowIDs: [],
+})
+
+export const isContactMessagesInitialized = (view: ContactMessagesView | null | undefined): boolean => (
+  Boolean(view && view.generation >= 0)
+)
+
+const byOrdinal = (left: AssistantContactMessage, right: AssistantContactMessage) => {
+  if (left.ordinal !== right.ordinal) return left.ordinal - right.ordinal
+  return left.messageID.localeCompare(right.messageID)
+}
+
+export const mergeContactMessagesById = (
+  existing: readonly AssistantContactMessage[],
+  incoming: readonly AssistantContactMessage[],
+  preferred: 'incoming' | 'existing' = 'incoming',
+): AssistantContactMessage[] => {
+  const map = new Map<string, AssistantContactMessage>()
+  for (const message of existing) map.set(message.messageID, message)
+  for (const message of incoming) {
+    if (preferred === 'incoming' || !map.has(message.messageID)) {
+      map.set(message.messageID, message)
+    }
+  }
+  return [...map.values()].sort(byOrdinal)
+}
+
+const minOrdinal = (messages: readonly AssistantContactMessage[]) => {
+  let min = Number.POSITIVE_INFINITY
+  for (const message of messages) {
+    if (message.ordinal < min) min = message.ordinal
+  }
+  return Number.isFinite(min) ? min : null
+}
+
+const idsOf = (messages: readonly AssistantContactMessage[]) => messages.map((message) => message.messageID)
+
+const intersects = (left: readonly string[], right: ReadonlySet<string>) => {
+  for (const id of left) {
+    if (right.has(id)) return true
+  }
+  return false
+}
+
+const toIdSet = (ids: readonly string[]) => new Set(ids)
+
+const sameIDList = (left: readonly string[] | null | undefined, right: readonly string[] | null | undefined) => {
+  if (!left || !right) return false
+  if (left.length !== right.length) return false
+  return left.every((id, index) => id === right[index])
+}
+
+const clearGap = <T extends Partial<ContactMessagesView>>(base: T) => ({
+  ...base,
+  hasMessageGap: false as const,
+  gapCursor: null,
+  gapRequestIDs: null,
+  gapTargetIDs: null,
+})
+
+/**
+ * Apply a latest-window page (no before). Preserves older-than-window rows.
+ * Gap = no ID overlap with the previous live window while server still has older cursor.
+ * Closed only by gap-fill overlap with gapTargetIDs or server complete — not by ordinal density.
+ */
+export const applyContactLatestPage = (
+  previous: ContactMessagesView | null | undefined,
+  page: AssistantContactPage,
+): ContactMessagesView => {
+  const prev = previous ?? emptyContactMessagesView()
+  const initialized = isContactMessagesInitialized(prev)
+  const latest = [...page.messages].sort(byOrdinal)
+  const liveWindowIDs = idsOf(latest)
+
+  // Generation fencing does not depend on message length (empty reset is valid).
+  if (initialized && page.generation < prev.generation) {
+    return prev
+  }
+  if (initialized && page.generation > prev.generation) {
+    return {
+      messages: latest,
+      generation: page.generation,
+      revision: page.revision,
+      olderCursor: page.nextCursor,
+      olderComplete: page.complete,
+      hasMessageGap: false,
+      gapCursor: null,
+      gapRequestIDs: null,
+      gapTargetIDs: null,
+      liveWindowIDs,
+    }
+  }
+  if (!initialized) {
+    return {
+      messages: latest,
+      generation: page.generation,
+      revision: page.revision,
+      olderCursor: page.complete ? null : page.nextCursor,
+      olderComplete: page.complete,
+      hasMessageGap: false,
+      gapCursor: null,
+      gapRequestIDs: null,
+      gapTargetIDs: null,
+      liveWindowIDs,
+    }
+  }
+
+  // Same generation.
+  if (latest.length === 0) {
+    return {
+      ...prev,
+      generation: page.generation,
+      revision: Math.max(prev.revision, page.revision),
+      olderCursor: prev.olderCursor ?? page.nextCursor,
+      olderComplete: prev.olderComplete && page.complete,
+      liveWindowIDs: [],
+      hasMessageGap: prev.hasMessageGap,
+      gapCursor: prev.hasMessageGap ? (page.nextCursor ?? prev.gapCursor) : null,
+      gapRequestIDs: prev.hasMessageGap ? prev.gapRequestIDs : null,
+      gapTargetIDs: prev.hasMessageGap ? prev.gapTargetIDs : null,
+    }
+  }
+
+  const windowMin = minOrdinal(latest)!
+  const belowWindow = prev.messages.filter((message) => message.ordinal < windowMin)
+  const prevInWindow = prev.messages.filter((message) => message.ordinal >= windowMin)
+  const preferred = page.revision >= prev.revision ? 'incoming' as const : 'existing' as const
+  const windowMerged = mergeContactMessagesById(prevInWindow, latest, preferred)
+  const merged = mergeContactMessagesById(belowWindow, windowMerged, 'incoming')
+
+  const prevLive = prev.liveWindowIDs
+  const liveSet = toIdSet(liveWindowIDs)
+  const overlappedPreviousLive = prevLive.length > 0 && intersects(prevLive, liveSet)
+
+  let hasMessageGap = prev.hasMessageGap
+  let gapCursor = prev.gapCursor
+  let gapRequestIDs = prev.gapRequestIDs
+  let gapTargetIDs = prev.gapTargetIDs
+
+  if (!overlappedPreviousLive && prevLive.length > 0 && page.nextCursor) {
+    // Full slide: new request identity + cursor under new latest; keep unfinished earliest targets.
+    hasMessageGap = true
+    gapCursor = page.nextCursor
+    const request = prevLive.filter((id) => !liveSet.has(id))
+    gapRequestIDs = request.length > 0 ? request : [...prevLive]
+    if (prev.hasMessageGap && prev.gapTargetIDs && prev.gapTargetIDs.length > 0) {
+      gapTargetIDs = prev.gapTargetIDs
+    } else {
+      gapTargetIDs = gapRequestIDs
+    }
+  } else if (prev.hasMessageGap) {
+    // Same / overlapping latest: keep resume cursor, request identity, and targets.
+    hasMessageGap = true
+    gapCursor = prev.gapCursor
+    gapRequestIDs = prev.gapRequestIDs
+    gapTargetIDs = prev.gapTargetIDs
+  } else {
+    hasMessageGap = false
+    gapCursor = null
+    gapRequestIDs = null
+    gapTargetIDs = null
+  }
+
+  return {
+    messages: merged,
+    generation: page.generation,
+    revision: Math.max(prev.revision, page.revision),
+    olderCursor: prev.liveWindowIDs.length === 0 && prev.messages.length === 0
+      ? (page.complete ? null : page.nextCursor)
+      : prev.olderCursor,
+    olderComplete: !initialized || (prev.liveWindowIDs.length === 0 && prev.messages.length === 0)
+      ? page.complete
+      : prev.olderComplete,
+    hasMessageGap,
+    gapCursor: hasMessageGap ? gapCursor : null,
+    gapRequestIDs: hasMessageGap ? gapRequestIDs : null,
+    gapTargetIDs: hasMessageGap ? gapTargetIDs : null,
+    liveWindowIDs,
+  }
+}
+
+export const applyContactOlderPage = (
+  previous: ContactMessagesView,
+  page: AssistantContactPage,
+): ContactMessagesView => {
+  if (!isContactMessagesInitialized(previous)) return previous
+  if (page.generation !== previous.generation) return previous
+  const preferred = page.revision >= previous.revision ? 'incoming' as const : 'existing' as const
+  const merged = mergeContactMessagesById(previous.messages, page.messages, preferred)
+  return {
+    ...previous,
+    messages: merged,
+    revision: Math.max(previous.revision, page.revision),
+    olderCursor: page.complete ? null : page.nextCursor,
+    olderComplete: page.complete,
+  }
+}
+
+/**
+ * @param gapSession Request identity (+ optional cursor) captured when the gap HTTP request started.
+ * Messages always merge; cursor advance only if request identity still matches the view.
+ * Close only on gapTargetIDs overlap (earliest unfinished) or server complete.
+ */
+export const applyContactGapPage = (
+  previous: ContactMessagesView,
+  page: AssistantContactPage,
+  gapSession?: { requestIDs: readonly string[]; cursor?: string | null },
+): ContactMessagesView => {
+  if (!isContactMessagesInitialized(previous)) return previous
+  if (page.generation !== previous.generation) return previous
+  const preferred = page.revision >= previous.revision ? 'incoming' as const : 'existing' as const
+  const merged = mergeContactMessagesById(previous.messages, page.messages, preferred)
+  const revision = Math.max(previous.revision, page.revision)
+
+  const sessionRequest = gapSession?.requestIDs ?? previous.gapRequestIDs
+  const identityMatches = Boolean(
+    previous.hasMessageGap
+    && sessionRequest
+    && previous.gapRequestIDs
+    && sameIDList(sessionRequest, previous.gapRequestIDs),
+  )
+
+  if (!identityMatches) {
+    // Stale gap response for a replaced request identity — merge only.
+    return {
+      ...previous,
+      messages: merged,
+      revision,
+    }
+  }
+
+  const incomingIds = idsOf(page.messages)
+  const targets = previous.gapTargetIDs ?? []
+  const targetSet = toIdSet(targets)
+  const hitEarliest = targets.length > 0 && intersects(incomingIds, targetSet)
+  const closed = hitEarliest || page.complete || !page.nextCursor
+
+  if (closed) {
+    return clearGap({
+      ...previous,
+      messages: merged,
+      revision,
+    })
+  }
+
+  return {
+    ...previous,
+    messages: merged,
+    revision,
+    hasMessageGap: true,
+    gapCursor: page.nextCursor ?? previous.gapCursor,
+    gapRequestIDs: previous.gapRequestIDs,
+    gapTargetIDs: previous.gapTargetIDs,
+  }
+}

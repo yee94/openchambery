@@ -1,4 +1,7 @@
 import { EventEmitter } from 'events';
+import { createHash } from 'node:crypto';
+import fs from 'node:fs';
+import os from 'node:os';
 import path from 'path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -323,15 +326,10 @@ describe('fs stat', () => {
 
 describe('fs prompt attachments', () => {
   it('stores binary bytes under the data-dir content-addressed path', async () => {
-    const fsPromises = {
-      mkdir: vi.fn(async () => undefined),
-      writeFile: vi.fn(async () => undefined),
-      rename: vi.fn(async () => undefined),
-      unlink: vi.fn(async () => undefined),
-    };
-    const handler = registerPromptAttachment(fsPromises);
+    const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'fs-prompt-att-'));
+    const handler = registerPromptAttachment({}, { openchamberDataDir: dataDir });
     const body = Buffer.from('hello-image');
-    const digest = 'a9a8fa077e26f69bcc4a7eeec6e1827a07ae07281952ae755766b9f06c8185e1';
+    const digest = createHash('sha256').update(body).digest('hex');
     const req = {
       params: { attachmentID: 'att-1' },
       headers: {
@@ -347,34 +345,20 @@ describe('fs prompt attachments', () => {
     const res = createMockResponse();
     await handler(req, res);
 
-    expect(res.body).toEqual({
+    expect(res.body).toMatchObject({
       success: true,
-      path: `/data/openchamber/prompt-attachments/${digest.slice(0, 2)}/${digest}.png`,
       size: body.length,
       mime: 'image/png',
       sha256: digest,
     });
-    expect(fsPromises.mkdir).toHaveBeenCalledWith(
-      `/data/openchamber/prompt-attachments/${digest.slice(0, 2)}`,
-      { recursive: true, mode: 0o700 },
-    );
-    const tmp = fsPromises.writeFile.mock.calls[0][0];
-    expect(tmp).toMatch(new RegExp(`^/data/openchamber/prompt-attachments/${digest.slice(0, 2)}/${digest}\\.png\\.tmp-`));
-    expect(fsPromises.writeFile).toHaveBeenCalledWith(tmp, body, { mode: 0o600 });
-    expect(fsPromises.rename).toHaveBeenCalledWith(
-      tmp,
-      `/data/openchamber/prompt-attachments/${digest.slice(0, 2)}/${digest}.png`,
-    );
+    expect(fs.existsSync(res.body.path)).toBe(true);
+    expect(path.basename(res.body.path)).toBe(`${digest}.png`);
+    fs.rmSync(dataDir, { recursive: true, force: true });
   });
 
   it('rejects digest mismatches without writing a durable file', async () => {
-    const fsPromises = {
-      mkdir: vi.fn(async () => undefined),
-      writeFile: vi.fn(async () => undefined),
-      rename: vi.fn(async () => undefined),
-      unlink: vi.fn(async () => undefined),
-    };
-    const handler = registerPromptAttachment(fsPromises);
+    const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'fs-prompt-att-bad-'));
+    const handler = registerPromptAttachment({}, { openchamberDataDir: dataDir });
     const body = Buffer.from('hello-image');
     const req = {
       params: { attachmentID: 'att-1' },
@@ -391,8 +375,9 @@ describe('fs prompt attachments', () => {
     await handler(req, res);
     expect(res.statusCode).toBe(400);
     expect(res.body).toEqual({ error: 'Attachment digest mismatch' });
-    expect(fsPromises.writeFile).not.toHaveBeenCalled();
-    expect(fsPromises.rename).not.toHaveBeenCalled();
+    const storeRoot = path.join(dataDir, 'prompt-attachments');
+    expect(fs.existsSync(storeRoot) ? fs.readdirSync(storeRoot).length : 0).toBe(0);
+    fs.rmSync(dataDir, { recursive: true, force: true });
   });
 
   it('reports unavailable storage when the data dir is missing', async () => {

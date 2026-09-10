@@ -1,7 +1,11 @@
 import React from 'react'
 import { useEvent } from '@reactuses/core'
-import { ChatPromptComposer, type ChatPromptAttachment } from '@/components/chat/ChatPromptComposer'
+import { ChatPromptComposer } from '@/components/chat/ChatPromptComposer'
+import { Button } from '@/components/ui/button'
+import { uploadAssistantAttachment, type AssistantAttachmentDescriptor } from '@/lib/assistant-attachment-upload'
+import { AssistantContactAttachment } from './AssistantContactAttachment'
 import { MarkdownRenderer } from '@/components/chat/MarkdownRenderer'
+import { useRuntimeTransportIdentity } from '@/components/chat/imageSource'
 import { Icon } from '@/components/icon/Icon'
 import { useI18n } from '@/lib/i18n'
 import { subscribeOpenchamberEvents, type OpenChamberEvent } from '@/lib/openchamberEvents'
@@ -51,6 +55,7 @@ import {
   filesFromDrop,
   mergeContactComposerAttachments,
   readContactComposerFiles,
+  type ContactComposerAttachment,
 } from './contactComposerAttachments'
 
 const SETTLE_TEXT: Record<string, 'assistants.contact.settle.complete' | 'assistants.contact.settle.error' | 'assistants.contact.settle.question'> = {
@@ -84,6 +89,7 @@ export const AssistantConversationSurface: React.FC<AssistantConversationSurface
   overlayHeader = false,
 }) => {
   const { t } = useI18n()
+  const transportIdentity = useRuntimeTransportIdentity()
   const isMobile = useUIStore((state) => state.isMobile)
   const capabilityQuery = useAssistantCapabilityQuery()
   const snapshotQuery = useAssistantSnapshotQuery()
@@ -101,10 +107,32 @@ export const AssistantConversationSurface: React.FC<AssistantConversationSurface
     return fromAssistantName || t('assistants.contact.peer.unknown')
   }
   const [draft, setDraft] = React.useState('')
-  const [attachments, setAttachments] = React.useState<ChatPromptAttachment[]>([])
+  const [attachments, setAttachments] = React.useState<ContactComposerAttachment[]>([])
+  const retrySendRef = React.useRef<{ assistantID: string; text: string; attachments: ContactComposerAttachment[]; messageID: string } | null>(null)
+  const uploadedRef = React.useRef(new Map<string, AssistantAttachmentDescriptor>())
+  const uploadControllerRef = React.useRef(new AbortController())
+  React.useEffect(() => {
+    const controller = new AbortController()
+    uploadControllerRef.current = controller
+    return () => controller.abort()
+  }, [assistant.id, transportIdentity])
+  const previewUrlsRef = React.useRef(new Set<string>())
+  React.useEffect(() => {
+    const next = new Set(attachments.map((attachment) => attachment.url))
+    for (const url of previewUrlsRef.current) if (!next.has(url)) URL.revokeObjectURL(url)
+    previewUrlsRef.current = next
+  }, [attachments])
+  React.useEffect(() => () => { for (const url of previewUrlsRef.current) URL.revokeObjectURL(url) }, [])
   const [optimisticTurns, setOptimisticTurns] = React.useState<ContactOptimisticTurn[]>([])
   const [turnPreviews, setTurnPreviews] = React.useState<ContactTurnPreview[]>([])
   const [sendError, setSendError] = React.useState<string | null>(null)
+  React.useEffect(() => {
+    uploadedRef.current.clear()
+    retrySendRef.current = null
+    setOptimisticTurns([])
+    setTurnPreviews([])
+    setSendError(null)
+  }, [transportIdentity])
   const sendGate = React.useMemo(() => createContactSendGate(), [])
   const settledTurnIDsRef = React.useRef(new Set<string>())
   const admissionRevisionByTurnIDRef = React.useRef(new Map<string, number>())
@@ -123,10 +151,24 @@ export const AssistantConversationSurface: React.FC<AssistantConversationSurface
     total + preview.bubbles.reduce((bubbleTotal, bubble) => bubbleTotal + bubble.text.length, 0)
   ), 0)
   const previewByTurnID = new Map(scopedTurnPreviews.map((preview) => [preview.turnID, preview]))
-  const { scrollRef, contentRef } = useAssistantContactAutoFollow({
+  const pageFlightRef = React.useRef(false)
+  const loadEarlier = useEvent(async (automatic = false) => {
+    if (!active || pageFlightRef.current || contactQuery.isFetchingPreviousPage || contactQuery.isFillingMessageGap) return
+    if (automatic && contactQuery.previousPageError) return
+    if (!contactQuery.hasPreviousPage && !contactQuery.hasMessageGap) return
+    pageFlightRef.current = true
+    preparePrepend()
+    try {
+      if (contactQuery.hasMessageGap) await contactQuery.retryMessageGap()
+      else await contactQuery.fetchPreviousPage()
+    } catch { /* Query retains the loaded transcript and exposes the retry state. */ }
+    finally { pageFlightRef.current = false }
+  })
+  const { scrollRef, contentRef, preparePrepend } = useAssistantContactAutoFollow({
     active,
     assistantID: assistant.id,
-    contentRevision: `${transcript.length}:${streamingTextLength}`,
+    contentRevision: `${transcript[0]?.messageID}:${transcript.length}:${streamingTextLength}:${contactQuery.isFetchingPreviousPage}:${contactQuery.hasPreviousPage}:${contactQuery.isFillingMessageGap}`,
+    onLoadEarlier: () => { void loadEarlier(true) },
   })
 
   React.useEffect(() => {
@@ -212,7 +254,13 @@ export const AssistantConversationSurface: React.FC<AssistantConversationSurface
   }, [active, assistant.id])
 
   const addFiles = useEvent(async (files: ArrayLike<File> | null) => {
+    if (sending) return
+    const uploadController = uploadControllerRef.current
     const result = await readContactComposerFiles(files)
+    if (uploadController.signal.aborted) {
+      result.attachments.forEach((attachment) => URL.revokeObjectURL(attachment.url))
+      return
+    }
     if (result.skippedTooLarge > 0) {
       setSendError(t('assistants.contact.attachment.tooLarge'))
     }
@@ -237,24 +285,48 @@ export const AssistantConversationSurface: React.FC<AssistantConversationSurface
     void addFiles(files)
   })
   const submit = useEvent(async () => {
+    const uploadController = uploadControllerRef.current
     const text = draft
     const staged = attachments
     const sentAssistantID = assistant.id
+    const previous = retrySendRef.current
+    const retryID = previous?.assistantID === sentAssistantID && previous.text === text && previous.attachments === staged ? previous.messageID : null
     const begun = beginContactComposerSubmit({
       gate: sendGate,
       sending: contactOptimisticSending(scopedOptimisticTurns),
       text,
       attachments: staged,
       assistantID: sentAssistantID,
-      createMessageID: () => `oc_contact_${createUuid()}`,
+      createMessageID: () => retryID || `oc_contact_${createUuid()}`,
     })
     if (!begun.ok) return
-    setOptimisticTurns((current) => [...current, begun.turn])
-    setDraft('')
-    setAttachments([])
+    retrySendRef.current = { assistantID: sentAssistantID, text, attachments: staged, messageID: begun.messageID }
+    setOptimisticTurns((current) => [...current.filter((turn) => turn.messageID !== begun.messageID), begun.turn])
     setSendError(null)
+    const clearSentDraft = () => {
+      setDraft((current) => current === text ? '' : current)
+      setAttachments((current) => current.filter((attachment) => !staged.includes(attachment)))
+      staged.forEach((attachment) => uploadedRef.current.delete(`${sentAssistantID}:${attachment.id}`))
+      retrySendRef.current = null
+    }
     try {
-      const admitted = await sendAssistantContactMessage(sentAssistantID, begun.messageID, { parts: begun.parts })
+      const descriptors: AssistantAttachmentDescriptor[] = []
+      for (const attachment of staged) {
+        const key = `${sentAssistantID}:${attachment.id}`
+        let descriptor = uploadedRef.current.get(key)
+        if (!descriptor) {
+          descriptor = await uploadAssistantAttachment(sentAssistantID, attachment.file, attachment.id, uploadController.signal)
+          if (uploadController.signal.aborted) return
+          uploadedRef.current.set(key, descriptor)
+        }
+        descriptors.push(descriptor)
+      }
+      if (uploadController.signal.aborted) return
+      const parts = [...begun.parts.filter((part) => part.type === 'text'), ...descriptors]
+      setOptimisticTurns((current) => current.map((turn) => turn.messageID === begun.messageID ? { ...turn, parts } : turn))
+      const admitted = await sendAssistantContactMessage(sentAssistantID, begun.messageID, { parts })
+      if (uploadController.signal.aborted) return
+      clearSentDraft()
       if (typeof admitted.revision === 'number') {
         admissionRevisionByTurnIDRef.current.set(begun.messageID, admitted.revision)
       }
@@ -272,11 +344,14 @@ export const AssistantConversationSurface: React.FC<AssistantConversationSurface
         }).catch(() => undefined)
       }
     } catch (error) {
+      if (uploadController.signal.aborted) return
       // Uncertain admission: re-check the original messageID — never mint a second send.
       if (error instanceof AssistantAPIError && error.code === 'admission_timeout') {
         try {
           const confirmed = await confirmContactAdmissionByMessageID(sentAssistantID, begun.messageID)
+          if (uploadController.signal.aborted) return
           if (confirmed) {
+            clearSentDraft()
             if (typeof confirmed.revision === 'number') {
               admissionRevisionByTurnIDRef.current.set(begun.messageID, confirmed.revision)
             }
@@ -296,6 +371,7 @@ export const AssistantConversationSurface: React.FC<AssistantConversationSurface
         timedOut: t('assistants.contact.timedOut'),
       })
       setOptimisticTurns((current) => markContactOptimisticFailed(current, begun.messageID, detail))
+      setSendError(detail)
     } finally {
       sendGate.release()
     }
@@ -339,6 +415,7 @@ export const AssistantConversationSurface: React.FC<AssistantConversationSurface
             </div>
             <p className="mt-4 typography-ui-label font-medium text-foreground">{displayName}</p>
             <p className="mt-1.5 typography-ui leading-6 text-muted-foreground">{t('assistants.contact.loadFailed')}</p>
+            <Button type="button" size="sm" variant="ghost" onClick={() => void contactQuery.refetch()}>{t('chat.history.retry')}</Button>
           </div>
         ) : empty ? (
           <div ref={contentRef} className="mx-auto flex h-full min-h-56 max-w-sm flex-col items-center justify-center pb-16 text-center" data-assistant-contact-empty="">
@@ -354,6 +431,14 @@ export const AssistantConversationSurface: React.FC<AssistantConversationSurface
           </div>
         ) : (
           <div ref={contentRef} className="mx-auto flex w-full max-w-[42rem] flex-col">
+            {contactQuery.isPending ? <p role="status" className="py-3 text-center typography-micro text-muted-foreground">{t('common.loading')}</p> : null}
+            {contactQuery.hasPreviousPage || contactQuery.hasMessageGap ? <div className="mb-3 flex flex-col items-center gap-1" data-assistant-contact-pagination="" aria-busy={contactQuery.isFetchingPreviousPage || contactQuery.isFillingMessageGap}>
+              {contactQuery.previousPageError ? <p role="alert" className="typography-micro text-[var(--status-error)]">{t('chat.history.loadOlderFailed')}</p> : null}
+              {contactQuery.hasMessageGap ? <p role="status" className="typography-micro text-muted-foreground">{t('assistants.contact.history.gap')}</p> : null}
+              <Button type="button" size="sm" variant="ghost" disabled={contactQuery.isFetchingPreviousPage || contactQuery.isFillingMessageGap} onClick={() => void loadEarlier()}>
+                {t(contactQuery.isFetchingPreviousPage || contactQuery.isFillingMessageGap ? 'chat.history.loadingMore' : contactQuery.previousPageError || contactQuery.hasMessageGap ? 'chat.history.retry' : 'chat.history.loadOlder')}
+              </Button>
+            </div> : null}
             {transcript.map((message, messageIndex) => {
               const previousMessage = messageIndex > 0 ? transcript[messageIndex - 1] : null
               const isUser = message.role === 'user'
@@ -375,6 +460,7 @@ export const AssistantConversationSurface: React.FC<AssistantConversationSurface
               return (
                 <div
                   key={message.messageID}
+                  data-message-id={message.messageID}
                   className={cn(
                     'flex w-full',
                     isUser ? 'justify-end' : 'justify-start',
@@ -429,30 +515,8 @@ export const AssistantConversationSurface: React.FC<AssistantConversationSurface
                       if (part.type === 'card' && part.cardType === 'schedule') {
                         return <AssistantScheduleCard key={`${message.messageID}:card:${index}`} card={part} />
                       }
-                      if (part.type === 'file' && part.mime.startsWith('image/') && part.url) {
-                        return (
-                          <img
-                            key={`${message.messageID}:file:${index}`}
-                            src={part.url}
-                            alt={part.filename || t('assistants.contact.attachment.image')}
-                            className="max-h-72 max-w-full rounded-[1.35rem] border border-border/40 object-contain"
-                            data-assistant-contact-image=""
-                          />
-                        )
-                      }
                       if (part.type === 'file') {
-                        return (
-                          <div
-                            key={`${message.messageID}:file:${index}`}
-                            className="flex max-w-full items-center gap-2.5 rounded-[1.25rem] bg-[var(--surface-muted)] px-3.5 py-2.5 ring-1 ring-inset ring-[var(--surface-subtle)]"
-                            data-assistant-contact-file=""
-                          >
-                            <Icon name="file-text" className="size-4 shrink-0 text-muted-foreground" />
-                            <span className="min-w-0 truncate typography-ui">
-                              {part.filename || t('assistants.contact.attachment.file')}
-                            </span>
-                          </div>
-                        )
+                        return <AssistantContactAttachment key={`${message.messageID}:file:${index}`} assistantID={assistant.id} part={part} />
                       }
                       if (part.type === 'text' && (part.text.trim() || message.status === 'streaming')) {
                         const settleKey = SETTLE_TEXT[part.text]
@@ -516,7 +580,7 @@ export const AssistantConversationSurface: React.FC<AssistantConversationSurface
         data-assistant-contact-composer=""
       >
         {sendError ? (
-          <p className="chat-input-column mb-2 typography-micro text-[var(--status-error)]">{sendError}</p>
+          <div className="chat-input-column mb-2 flex items-center gap-2"><p role="alert" className="typography-micro text-[var(--status-error)]">{sendError}</p>{retrySendRef.current ? <Button type="button" size="sm" variant="ghost" disabled={sending} onClick={() => void submit()}>{t('chat.history.retry')}</Button> : null}</div>
         ) : null}
         <form
           className={cn('relative w-full pt-1.5 pb-4', isMobile && 'bottom-safe-area oc-mobile-composer')}
@@ -532,7 +596,7 @@ export const AssistantConversationSurface: React.FC<AssistantConversationSurface
               layout="inline"
               value={draft}
               attachments={attachments}
-              pending={false}
+              pending={sending}
               isMobile={isMobile}
               placeholder={t('assistants.contact.placeholder', { name: displayName })}
               sendLabel={t('assistants.contact.send')}
@@ -547,6 +611,9 @@ export const AssistantConversationSurface: React.FC<AssistantConversationSurface
                 void addFiles(files)
               }}
               onRemoveAttachment={(id) => {
+                if (sending) return
+                uploadedRef.current.delete(`${assistant.id}:${id}`)
+                retrySendRef.current = null
                 setAttachments((current) => current.filter((attachment) => attachment.id !== id))
               }}
               onPaste={handlePaste}

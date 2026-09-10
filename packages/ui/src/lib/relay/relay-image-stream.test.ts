@@ -45,6 +45,7 @@ const {
   releaseRelayImageDisplayUrl,
   resetRelayImageStreamForTests,
   streamRelayImageDisplayUrl,
+  streamVerifiedBlobDisplayUrl,
 } = await import('./relay-image-stream');
 
 const textEncoder = new TextEncoder();
@@ -514,6 +515,39 @@ describe('clearAllRelayImageAssets', () => {
       await streamRelayImageDisplayUrl('/z.png', new AbortController().signal);
       clearAllRelayImageAssets('test');
       expect(revoked).toContain('blob:clear-me');
+    } finally {
+      URL.createObjectURL = originalCreate;
+      URL.revokeObjectURL = originalRevoke;
+    }
+  });
+});
+
+describe('streamVerifiedBlobDisplayUrl', () => {
+  test('writes a verified Blob through the native bridge before returning URL', async () => {
+    const { record } = installBridge();
+    const blob = new Blob([textEncoder.encode('verified-png')], { type: 'image/png' });
+    const url = await streamVerifiedBlobDisplayUrl(blob, new AbortController().signal);
+    expect(url.startsWith('openchamber-asset://stream/')).toBe(true);
+    expect(record.open).toHaveLength(1);
+    expect(record.open[0]?.mimeType).toBe('image/png');
+    expect(record.ends).toHaveLength(1);
+    expect(record.writes.length).toBeGreaterThanOrEqual(1);
+    releaseRelayImageDisplayUrl(url);
+    await waitFor(() => record.releases.length >= 1);
+  });
+
+  test('falls back to object URL without a native bridge', async () => {
+    const blob = new Blob([textEncoder.encode('obj')], { type: 'image/jpeg' });
+    const originalCreate = URL.createObjectURL;
+    const originalRevoke = URL.revokeObjectURL;
+    URL.createObjectURL = (() => 'blob:verified') as typeof URL.createObjectURL;
+    URL.revokeObjectURL = (() => undefined) as typeof URL.revokeObjectURL;
+    try {
+      const url = await streamVerifiedBlobDisplayUrl(blob, new AbortController().signal, {
+        mimeType: 'image/jpeg',
+      });
+      expect(url).toBe('blob:verified');
+      releaseRelayImageDisplayUrl(url);
     } finally {
       URL.createObjectURL = originalCreate;
       URL.revokeObjectURL = originalRevoke;

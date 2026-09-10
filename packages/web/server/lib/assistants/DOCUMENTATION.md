@@ -40,6 +40,7 @@ and keep their existing error result handling.
 - Worker sessions stamp `metadata.openchamber.assigned` (`from: 'contact'`, `assistantID`, `name`). They must **not** use `openchamber.assistant.assistantID` — that marker hides archived Assistant bindings from Chat.
 - `AssistantDTO.assignedSessionIDs` lists in-flight (`busy`/`question`) watches for assigned worker sessions. Session-card busy stays on the card; it does **not** drive the list green dot.
 - **Contact active turn (server authoritative):** process-local metadata tracks admission → `queued` → `running` → settled (removed). `AssistantDTO.working` is true only while that assistant has an unsettled contact turn. `AssistantDTO.activeContactTurn` is `{ turnID, messageID, status: 'queued'|'running', admittedAt }` or `null` so APP restart / reconnect can rehydrate list green dots and the contact 3-dot row from the snapshot HTTP GET — local optimistic and SSE preview are temporary only. A server process restart clears in-memory activity (no permanent green; tools are not auto-rerun). Per-assistant lanes isolate turns across assistants/runtimes. Stale `contact-turn-end` for an older `turnID` must not clear a newer active turn.
+- **List latest-message preview (server authoritative):** every `AssistantDTO` path (`snapshot` / `create` / `update` / other `output` rows) carries `latestMessagePreview: { messageID, ordinal, role: 'user'|'assistant', text, fallbackKind: 'image'|'file'|'session'|'assistant'|'schedule'|null } | null`. Source is the contact transcript only (not `defaultPrompt` / `updatedAt`). Order is the same keyset as contact pages: newest `(ordinal DESC, message_id DESC)`. Visible roles are `user`, `assistant`, and `peer` (peer maps to `role: 'user'` because inbound DMs are user-visible). Internal assigned-session settle markers (`oc.settle.*`) are excluded in the SQL candidate probe (and again in `buildContactMessagePreview`). Durable error bubbles keep their real body text. Plain text is sanitized and capped at `CONTACT_PREVIEW_MAX_CHARS` (500) with no data-URL/base64 bodies. File-only rows set `fallbackKind` `image`/`file`; pure cards set `session`/`assistant`/`schedule`. Empty transcript → `null`. **Snapshot cost:** one prepared statement reused per assistant (`assistant_id` + indexed `ORDER BY ordinal DESC, message_id DESC LIMIT candidateLimit`, catalog ≤100) collecting only those bounded candidates, then **one** parts `IN` query — not a window/`ROW_NUMBER` over full multi-assistant history and not HTTP N+1. SQL already drops pure settle tails so they cannot exhaust the LIMIT and hide an older real bubble; remaining non-preview empty rows may still consume a candidate slot within that same LIMIT. Admission, assistant completion, peer DM, card insert, wipe, and clear-memory already bump domain revision / `openchamber:assistants-changed`; clients re-GET snapshot for the new preview. Clear-memory keeps transcript rows so the preview still reflects the last bubble; clear-history / reset remove rows so the preview becomes the wipe confirm (or `null` after a full unbounded wipe with no remaining user).
 - No registered project → clear `project_required` (ask the user to configure a project). Never fall back to managed assistant-workspaces.
 - Assign must not go through the peer DM channel.
 - `assignWork` (service) resolves the worker model via the connected catalog (`capabilities.input.image` preferred), forwards tool `variant` (cross-model drops contact variant), passes AbortSignal into create/prompt/delete/catalog, and supplies `lookupMessage` over real SDK exact lookup (`v2.session.message` → `session.message` → bounded `session.messages`). Ambiguous prompt admission returns `prompt_ambiguous` with `sessionID`/`messageID` and does **not** delete the worker; the contact-turn assign gate retains that identity so a same-args retry reuses the session and cannot blind-create another worker this turn.
@@ -63,12 +64,12 @@ and keep their existing error result handling.
 **Clear memory vs clear chat history (this PR)**
 
 - `new_conversation` clears **LLM memory only**. It advances the durable per-assistant context boundary in `assistant_contact_context_boundary` (`after_ordinal` watermark). `GET /:id/contact/messages` keeps the full transcript. Later `contactHistoryForLlm` returns only messages with `ordinal > after_ordinal`. Confirms with `NEW_CONVERSATION_CONFIRM_BUBBLE`. Natural language default (safe): 开新对话 / new conversation / 清除记忆 / clear memory / clear chat / start over.
-- `clear_chat_history` **deletes** this assistant's contact transcript via `deleteContactMessages` (messages, parts, watches) and clears the boundary. Confirms with `CLEAR_CHAT_HISTORY_CONFIRM_BUBBLE`. Natural language only when explicit: 清空/清除/删除聊天记录 / clear chat history / delete chat history. Negation (不要清除聊天记录) does not authorize.
-- **Server core authorization**: contact `send` binds `resetContact` only after `userTextAuthorizesClearChatHistory(userText)` on the **real admitted user text** for that turn. A model mis-select of `clear_chat_history` without explicit wipe intent fails the tool, keeps every transcript row, and cannot self-authorize via tool parameters. Direct `POST /api/openchamber/assistants/:id/contact/reset` → `resetContact` remains the intentional wipe API for non-model consumers.
+- `clear_chat_history` **deletes** this assistant's contact transcript via `deleteContactMessages` (messages, parts, watches) and clears the boundary. Confirms with `CLEAR_CHAT_HISTORY_CONFIRM_BUBBLE`. Natural-language tool-selection hint (missed-fence retry): 清空/清除/删除聊天记录 / clear chat history / delete chat history. Negation (不要清除聊天记录) is not a wipe request hint. When the model calls the tool, the wipe **executes** — there is no separate user-text authorization gate and no silent/denied bubble protocol. Real storage failures still surface as tool errors.
+- Tool wipe (`upToOrdinal` = current turn's user ordinal) **keeps only** `role=user` rows with `ordinal >= ceiling` (the wipe request itself + later-admitted queued users) and their parts/`messageID`s. It **deletes all other roles at any ordinal** (prior users, assistant/peer/error/cards) — including late writes from an earlier still-running lane whose ordinal landed after the wipe user — so leftover A replies/cards cannot pollute the transcript or later LLM history. Watches and the context boundary always clear. Keeping the wipe user avoids delete+re-admit reordering queued users before it. Direct `POST /api/openchamber/assistants/:id/contact/reset` → `resetContact` without a ceiling deletes **every** transcript row (existing contract; concurrent in-flight admissions are not preserved on that path).
 - Service also exposes `clearContactMemory` for the watermark path (`new_conversation`). Neither path calls OpenCode `session/new` / `createNew`.
-- Both tools terminate the contact turn. Persist only the matching confirm bubble. Discard leftover assistant text and cards from the same pre-reset generation.
+- Both tools terminate the contact turn (`terminate: true`). Persist only the matching confirm bubble. Discard leftover assistant text and cards from the same pre-reset generation. Application tool result text is preferred for the visible confirm — never paint a denial body.
 - Failed boundary/transcript writes roll back and keep the previous state.
-- Contact send loads `contactHistoryForLlm` when the per-assistant turn lane starts (not at admit-time snapshot), so a prior clear-memory cannot leave a queued turn with stale history. The admitted user row is excluded from that window; `userText` / parts still go to the prompt. The current turn's user `ordinal` is the **upper bound for later-admitted user rows** (`beforeOrdinal`): queued user messages already in SQLite must not be injected into this turn's history. Assistant rows written by a prior completed lane turn after that ordinal still enter the window. Clear-memory watermark uses the **clearing turn's user ordinal** (`upToOrdinal`), not global MAX — otherwise later-admitted queued user rows would be permanently excluded from subsequent LLM windows. Direct API `clearContactMemory` without a turn ceiling still advances to the current max. Both tools set `terminate: true` so the pi agent loop ends immediately after the reset.
+- Contact send loads `contactHistoryForLlm` when the per-assistant turn lane starts (not at admit-time snapshot), so a prior clear-memory cannot leave a queued turn with stale history. The admitted user row is excluded from that window; `userText` / parts still go to the prompt. The current turn's user `ordinal` is the **upper bound for later-admitted user rows** (`beforeOrdinal`): queued user messages already in SQLite must not be injected into this turn's history. Assistant rows written by a prior completed lane turn after that ordinal still enter the window. Clear-memory watermark and tool wipe both use the **clearing turn's user ordinal** (`upToOrdinal`), not global MAX — otherwise later-admitted queued user rows would be permanently excluded (or deleted). Direct API `clearContactMemory` / `resetContact` without a turn ceiling still advance/delete through the current full set.
 
 **Contact LLM window (this PR)**
 
@@ -76,9 +77,22 @@ and keep their existing error result handling.
 
 **Contact attachments (this PR)**
 
-- Attach is required on the contact composer: images and non-image files via picker, paste, and drag-drop. Same OpenCode file-part convention (`mime` + data `url`, optional `filename`) stored in `assistant_contact_part`. Do not invent a second store or route uploads through SessionPrompt / ChatInput / the message-queue attachment store.
-- User bubbles persist file parts. Images render inline; other files render as a named chip. Refresh hydrates the same parts.
-- The contact harness turn receives those file parts so the OpenChamber Chat Completions / OpenCode provider gateway can show images to the model.
+- Attach is required on the contact composer: images and non-image files via picker, paste, and drag-drop.
+- **Upload (frozen):** `PUT /api/openchamber/assistants/:id/contact/attachments/:uploadID` raw bytes with headers
+  `X-Content-SHA256`, `X-Content-Size`, `Content-Type`, optional `X-Attachment-Filename` (encodeURIComponent).
+  Returns `{ type:'file', attachmentID, sha256, size, mime, filename? }` — never a filesystem path.
+  Same uploadID + same content is idempotent; different content → `idempotency_conflict` (409).
+- **Download (frozen):** `GET …/contact/attachments/:attachmentID` runtime-auth, opaque ID scoped to
+  assistant + live `generation`. Body is raw bytes with `Content-Type`, `Content-Length`, `ETag`,
+  `X-Content-Type-Options: nosniff`. Stale generation after clear-chat → 404.
+- Bytes are content-addressed under `dataDir/prompt-attachments` (shared with Chat prompt uploads).
+  DB metadata stores only controlled `relative_path` + descriptor; client paths/urls are never authority.
+- New uploads capped at **25 MiB**; image magic-byte checks for PNG/JPEG/GIF/WEBP/BMP.
+- Admission accepts `attachmentID` refs (validated ownership) or legacy data URLs (landed to disk then stored as descriptors).
+- Harness + assign materialize descriptors to data URLs **only at execution time**; DB/UI keep descriptors.
+- Clear-memory keeps attachment rows; clear-chat bumps generation so external GETs fail while in-flight
+  materialize (owned read) may still complete for the running turn.
+- Legacy data-URL migration: batch 20 / 50 MiB, write disk first, CAS-replace `part_json`; failure keeps old JSON.
 
 **Inter-assistant DM (this PR, read-only)**
 
@@ -89,6 +103,24 @@ and keep their existing error result handling.
 - This is the inbox primitive for later summon. Do not invent a second inbox.
 
 `GET /api/openchamber/assistants/capability` remains the navigation gate.
+
+**Contact messages page (frozen UI contract)**
+
+- `GET /api/openchamber/assistants/:id/contact/messages?limit=20[&before=opaque][&messageID=…]`
+  returns `{ messages, nextCursor, complete, generation, revision }`.
+- Default `limit` is **20**, max **100**. The first page is the **newest**
+  window (chat tail); each page's `messages` array is ascending by
+  `(ordinal, messageID)`. Older pages use keyset `before` encoded as base64url
+  JSON `{ v:1, assistantID, generation, ordinal, messageID }`.
+- `generation` starts at **0** and increments **only** on transcript wipe
+  (`clear_chat_history` / `POST …/contact/reset`). `new_conversation` /
+  clear-memory does **not** bump it. A cursor whose generation does not match
+  returns `contact_generation_conflict` (HTTP **409**); clients must refetch
+  from the start. Invalid cursor encoding is `validation_error` (400).
+- `messageID` exact admission is mutually exclusive with `before`. Same page
+  envelope: at most one message for this assistant, `nextCursor: null`,
+  `complete: true`. Missing or other-assistant IDs yield `messages: []`.
+- `revision` is the assistants domain tip (same counter as snapshot).
 
 ## History coverage
 

@@ -8,7 +8,10 @@ import { reduceBackfillState } from './history-state.js';
 import { getWorktrees as defaultListWorktrees } from '../git/service.js';
 import { contactCardIdentity, parseContactCard, parseContactPart } from './cards.js';
 import {
+  CONTACT_PAGE_DEFAULT_LIMIT,
+  CONTACT_PAGE_MAX_LIMIT,
   CONTACT_SETTLE_TEXT,
+  bumpContactGeneration,
   clearContactMemory as clearContactMemoryStore,
   contactHistoryForLlm,
   createActiveContactTurn,
@@ -16,6 +19,8 @@ import {
   ensureContactSchema,
   contactPartsFingerprint,
   getContactMessage,
+  getLatestContactMessagePreview,
+  getLatestContactMessagePreviews,
   insertContactMessage,
   listContactMessages,
   listInFlightWatches,
@@ -25,6 +30,21 @@ import {
   updateSessionCardStatus,
   upsertContactWatch,
 } from './contact-store.js';
+import {
+  CONTACT_ATTACHMENT_TURN_BUDGET_BYTES,
+  assertContactAttachmentOwned,
+  assertContactAttachmentReadable,
+  canonicalDescriptorFromRow,
+  ensureContactAttachmentSchema,
+  getContactAttachmentRow,
+  ingestDataUrlFilePart,
+  isSafeInlineImageMime,
+  materializeContactHistory,
+  materializeContactParts,
+  migrateContactDataUrlParts,
+  putContactAttachment,
+  readContactAttachmentBytes,
+} from './contact-attachments.js';
 import {
   ASSIGNED_SESSION_FALLBACK_BUBBLE,
   boundSessionListLimit,
@@ -38,7 +58,6 @@ import {
   normalizeConnectedModels,
   normalizeRegisteredProjects,
   sanitizeRegisteredProject,
-  userTextAuthorizesClearChatHistory,
 } from './contact-tools.js';
 import {
   AssignError,
@@ -54,7 +73,7 @@ import { runContactTurn as defaultRunContactTurn } from './harness.js';
 import { loadConnectedCatalog } from '../llm/catalog.js';
 
 const require = createRequire(import.meta.url);
-const SCHEMA_VERSION = 11;
+const SCHEMA_VERSION = 12;
 const normalizeSessionDirectory = (value) => {
   if (typeof value !== 'string') return null;
   const trimmed = value.trim();
@@ -162,6 +181,21 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
     CREATE INDEX IF NOT EXISTS assistant_scheduled_task_assistant
       ON assistant_scheduled_task(assistant_id, created_at DESC);`);
   ensureContactSchema(db);
+  ensureContactAttachmentSchema(db);
+  // Background legacy data-URL → descriptor migration (cancelable; never touches foreign DBs).
+  const contactAttachmentMigration = { controller: new AbortController(), promise: null };
+  contactAttachmentMigration.promise = Promise.resolve().then(() => migrateContactDataUrlParts({
+    db,
+    dataDir,
+    signal: contactAttachmentMigration.controller.signal,
+    yieldFn: () => new Promise((resolve) => setImmediateFn(resolve)),
+  })).catch((error) => {
+    if (error?.name !== 'AbortError' && !closed) {
+      // Diagnostics only — never throw into boot.
+      console.warn('[assistants] contact attachment migration:', error?.code || error?.message || error);
+    }
+    return { migrated: 0, failed: 0, scanned: 0, failures: [], error: error?.code || error?.message };
+  });
   const historyColumns = new Set(db.prepare("SELECT name FROM pragma_table_info('assistant_session_history')").all().map((column) => column.name));
   if (!historyColumns.has('directory')) db.exec('ALTER TABLE assistant_session_history ADD COLUMN directory TEXT');
   const mirrorColumns = new Set(db.prepare("SELECT name FROM pragma_table_info('assistant_message_mirror')").all().map((column) => column.name));
@@ -249,9 +283,12 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
     }
     activeContactTurnsByAssistant.delete(assistantID);
   };
-  const output = (row) => {
+  const output = (row, latestMessagePreview) => {
     const watches = listInFlightWatches(db, row.assistant_id);
     const activeContactTurn = projectActiveContactTurn(activeContactTurnsFor(row.assistant_id));
+    const preview = latestMessagePreview !== undefined
+      ? latestMessagePreview
+      : getLatestContactMessagePreview(db, row.assistant_id);
     return {
       id: row.assistant_id,
       revision: row.revision,
@@ -275,6 +312,9 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
       // on the session card / assignedSessionIDs and must not keep the avatar lit.
       working: activeContactTurn != null,
       activeContactTurn,
+      // Contact-transcript list desc: authoritative last visible bubble (not
+      // defaultPrompt / updatedAt). null when the contact has no list-visible rows.
+      latestMessagePreview: preview ?? null,
       createdAt: row.created_at,
       updatedAt: row.updated_at,
       tombstoneAt: row.tombstone_at,
@@ -327,7 +367,9 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
   const restoreOnce = async (row, expectedSessionID, expectedGeneration) => { for (let attempt = 0; attempt < 3; attempt++) { const current = active(row.assistant_id); if (current.current_session_id !== expectedSessionID || current.session_generation !== expectedGeneration) return binding(current); const created = await createSession(current); const won = replaceBinding(current, created); if (won) return binding(won); } return binding(active(row.assistant_id)); };
   const configuration = (row) => ({ model: { providerID: row.provider_id, modelID: row.model_id }, ...(row.agent ? { agent: row.agent } : {}), ...(row.variant ? { variant: row.variant } : {}), ...(row.default_prompt ? { system: row.default_prompt } : {}) });
   const capturedConfiguration = (target) => ({ model: { providerID: target.providerID, modelID: target.modelID }, ...(target.agent ? { agent: target.agent } : {}), ...(target.variant ? { variant: target.variant } : {}), ...(target.system ? { system: target.system } : target.defaultPrompt ? { system: target.defaultPrompt } : {}) });
-  const validateParts = (parts) => { if (!validAssistantDeliveryParts(parts)) fail('validation_error'); };
+  const validateParts = (parts) => {
+    if (!validAssistantDeliveryParts(parts, { allowAttachmentRefs: true })) fail('validation_error');
+  };
   const migrate = () => {
     if (db.prepare("SELECT value FROM assistant_meta WHERE key='schema_version'").get()?.value === String(SCHEMA_VERSION)) return;
     const v2Info = db.prepare("SELECT name,\"notnull\" AS required FROM pragma_table_info('assistant_v2')").all(); const v2Columns = new Set(v2Info.map((column) => column.name));
@@ -723,13 +765,60 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
     if (text) return text;
     return input.parts.some((part) => part?.type === 'file') ? '[attachment]' : '';
   };
-  const userContactParts = (input, userText) => {
+  const userContactParts = async (assistantID, input, userText) => {
     const parts = [];
+    let turnBytes = 0;
     if (Array.isArray(input.parts)) {
       for (const part of input.parts) {
         const parsed = parseContactPart(part);
-        if (parsed?.type === 'text' && parsed.text.trim()) parts.push({ type: 'text', text: parsed.text });
-        if (parsed?.type === 'file') parts.push(parsed);
+        if (parsed?.type === 'text' && parsed.text.trim()) {
+          parts.push({ type: 'text', text: parsed.text });
+          continue;
+        }
+        if (parsed?.type !== 'file') continue;
+        if (parsed.attachmentID) {
+          let row;
+          try {
+            // Admission: current-generation ownership + canonical row rebuild (ignore client meta).
+            row = assertContactAttachmentReadable(db, { attachmentID: parsed.attachmentID, assistantID });
+          } catch (error) {
+            fail(error?.code === 'not_found' ? 'not_found' : 'validation_error', error?.message);
+          }
+          const descriptor = canonicalDescriptorFromRow(row);
+          turnBytes += descriptor.size || 0;
+          if (turnBytes > CONTACT_ATTACHMENT_TURN_BUDGET_BYTES) {
+            fail('validation_error', 'Contact attachment total exceeds 50MiB budget');
+          }
+          parts.push(descriptor);
+          continue;
+        }
+        if (typeof parsed.url === 'string' && parsed.url.startsWith('data:')) {
+          try {
+            const descriptor = await ingestDataUrlFilePart({
+              db,
+              dataDir,
+              assistantID,
+              part: parsed,
+              clock: now,
+              mode: 'admission',
+            });
+            // Re-check generation after await.
+            const row = assertContactAttachmentReadable(db, {
+              attachmentID: descriptor.attachmentID,
+              assistantID,
+            });
+            const canonical = canonicalDescriptorFromRow(row);
+            turnBytes += canonical.size || 0;
+            if (turnBytes > CONTACT_ATTACHMENT_TURN_BUDGET_BYTES) {
+              fail('validation_error', 'Contact attachment total exceeds 50MiB budget');
+            }
+            parts.push(canonical);
+          } catch (error) {
+            fail(error?.code || 'validation_error', error?.message);
+          }
+          continue;
+        }
+        fail('validation_error', 'File parts require attachmentID or data URL');
       }
     }
     if (parts.length === 0 && userText) parts.push({ type: 'text', text: userText });
@@ -1260,8 +1349,8 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
     const messageID = string(input.messageID, 256, true);
     const userText = extractUserText(input);
     if (!userText) fail('validation_error');
-    const userParts = userContactParts(input, userText);
     const row = active(assistantID);
+    const userParts = await userContactParts(row.assistant_id, input, userText);
     if (typeof createChatCompletion !== 'function' && runContactTurn === defaultRunContactTurn) fail('upstream_error');
     let registeredProjects = [];
     try {
@@ -1308,8 +1397,6 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
       messageID,
     });
     contactTurnSettlement(messageID);
-    // Authorize wipe from this turn's real userText only — not tool args.
-    const clearChatHistoryAuthorized = userTextAuthorizesClearChatHistory(userText);
     const kickTurn = () => {
       void inContactTurnLane(row.assistant_id, async () => {
         if (closed) {
@@ -1334,11 +1421,6 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
         const assignedCards = [];
         let contactResetThisTurn = false;
         let contactHistoryClearedThisTurn = false;
-        // Current-turn attachments only — never unbounded history image forwarding.
-        const turnFileParts = sanitizeAssignFileParts(
-          (Array.isArray(userParts) ? userParts : []).filter((part) => part?.type === 'file'),
-        );
-        const turnAttachmentScope = attachmentScopeKey(turnFileParts);
         let connectedModels = [];
         try {
           const catalog = await loadAssignCatalog(undefined);
@@ -1348,47 +1430,65 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
           // Explicit worker model / image capability checks still fail closed inside assignWork.
           connectedModels = [];
         }
-        const tools = createContactTools({
-          assignWork: (params) => assignWork(row, params),
-          createAssistant: (toolInput) => createAssistant(toolInput),
-          scheduleTask: (params) => scheduleWork(row, params),
-          deliverPeerMessage: (toolInput) => deliverPeerMessage(row.assistant_id, toolInput),
-          clearContactMemory: () => {
-            // Cap the watermark at this turn's user ordinal — never global MAX,
-            // or later-admitted queued users are permanently excluded from LLM history.
-            const result = clearContactMemory(row.assistant_id, {
-              upToOrdinal: beforeOrdinal,
-            });
-            contactResetThisTurn = true;
-            return result;
-          },
-          resetContact: () => {
-            // Server core gate: model mis-select cannot self-authorize delete.
-            if (!clearChatHistoryAuthorized) {
-              throw new AssignError(
-                ASSIGN_CODES.VALIDATION,
-                'clear_chat_history requires explicit user wipe intent in this message.',
-              );
-            }
-            const result = resetContact(row.assistant_id);
-            contactResetThisTurn = true;
-            contactHistoryClearedThisTurn = true;
-            return result;
-          },
-          listAssistants: () => db.prepare('SELECT * FROM assistant_v2 WHERE tombstone_at IS NULL ORDER BY created_at').all().map(output),
-          listProjects: async () => loadRegisteredProjects(),
-          listSessions: (params) => listSessionsWork(params),
-          currentAssistant: assistantSnapshot,
-          onCard: (card) => assignedCards.push(card),
-          turnFileParts,
-          turnAttachmentScope,
-        });
         try {
+          // Materialize inside turn try so failures durable-error + settle working.
+          // DB/UI keep descriptors; harness + assign get execution-time data URLs under budget.
+          const executionHistory = await materializeContactHistory(
+            db,
+            dataDir,
+            row.assistant_id,
+            history,
+            { budgetBytes: CONTACT_ATTACHMENT_TURN_BUDGET_BYTES },
+          );
+          const executionParts = await materializeContactParts(
+            db,
+            dataDir,
+            row.assistant_id,
+            userParts,
+            { budgetBytes: CONTACT_ATTACHMENT_TURN_BUDGET_BYTES },
+          );
+          // Current-turn attachments only — never unbounded history image forwarding.
+          const turnFileParts = sanitizeAssignFileParts(
+            (Array.isArray(executionParts) ? executionParts : []).filter((part) => part?.type === 'file'),
+          );
+          const turnAttachmentScope = attachmentScopeKey(turnFileParts);
+          const tools = createContactTools({
+            assignWork: (params) => assignWork(row, params),
+            createAssistant: (toolInput) => createAssistant(toolInput),
+            scheduleTask: (params) => scheduleWork(row, params),
+            deliverPeerMessage: (toolInput) => deliverPeerMessage(row.assistant_id, toolInput),
+            clearContactMemory: () => {
+              // Cap the watermark at this turn's user ordinal — never global MAX,
+              // or later-admitted queued users are permanently excluded from LLM history.
+              const result = clearContactMemory(row.assistant_id, {
+                upToOrdinal: beforeOrdinal,
+              });
+              contactResetThisTurn = true;
+              return result;
+            },
+            resetContact: () => {
+              // Tool wipe: keep wipe user + later-admitted users only; delete all
+              // other roles at any ordinal (incl. late prior-lane assistant/cards).
+              const result = resetContact(row.assistant_id, {
+                upToOrdinal: beforeOrdinal,
+              });
+              contactResetThisTurn = true;
+              contactHistoryClearedThisTurn = true;
+              return result;
+            },
+            listAssistants: () => db.prepare('SELECT * FROM assistant_v2 WHERE tombstone_at IS NULL ORDER BY created_at').all().map(output),
+            listProjects: async () => loadRegisteredProjects(),
+            listSessions: (params) => listSessionsWork(params),
+            currentAssistant: assistantSnapshot,
+            onCard: (card) => assignedCards.push(card),
+            turnFileParts,
+            turnAttachmentScope,
+          });
           const generated = await runContactTurn({
             assistant: assistantSnapshot,
-            history,
+            history: executionHistory,
             userText,
-            userParts,
+            userParts: executionParts,
             createChatCompletion,
             tools,
             projects: registeredProjects,
@@ -1453,9 +1553,9 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
             resolveContactTurnSettlement(messageID, { status: 'error', error: detail });
             return;
           }
-          // clear_chat_history / resetContact wipe the transcript (including the
-          // admitted user row). Re-admit that user message, then persist only the
-          // confirm bubble. new_conversation keeps rows and only moves the watermark.
+          // clear_chat_history keeps the wipe user row (bounded delete). Re-admit
+          // only if the row is missing (unbounded API wipe / edge). Then persist
+          // only the confirm bubble. new_conversation keeps all rows + watermark.
           if (resetThisTurn) {
             const existingUser = db.prepare('SELECT 1 AS ok FROM assistant_contact_message WHERE message_id=?').get(messageID);
             if (!existingUser) {
@@ -1527,10 +1627,32 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
     return { binding: binding(row), messageID, admitted: true, revision: revision() };
   };
   const contactMessages = (assistantID, query = {}) => {
-    editable(assistantID);
-    const limit = query.limit == null ? 50 : Number(query.limit);
-    if (!Number.isInteger(limit) || limit < 1 || limit > 100) fail('validation_error');
-    return listContactMessages(db, assistantID, { before: query.before, limit });
+    const row = editable(assistantID);
+    const hasBefore = !(query.before == null || query.before === '');
+    const hasExact = !(query.messageID == null || query.messageID === '');
+    if (hasBefore && hasExact) fail('validation_error', 'before and messageID are mutually exclusive');
+    let limit = query.limit == null || query.limit === '' ? CONTACT_PAGE_DEFAULT_LIMIT : Number(query.limit);
+    if (!Number.isInteger(limit) || limit < 1 || limit > CONTACT_PAGE_MAX_LIMIT) fail('validation_error');
+    let page;
+    try {
+      page = listContactMessages(db, row.assistant_id, {
+        before: hasBefore ? query.before : undefined,
+        limit,
+        messageID: hasExact ? query.messageID : undefined,
+      });
+    } catch (error) {
+      if (error?.code === 'contact_generation_conflict' || error?.code === 'validation_error') {
+        fail(error.code, error.message);
+      }
+      throw error;
+    }
+    return {
+      messages: page.messages,
+      nextCursor: page.nextCursor,
+      complete: page.complete,
+      generation: page.generation,
+      revision: revision(),
+    };
   };
   /**
    * Clear LLM memory only: advance the durable context boundary so later
@@ -1557,23 +1679,34 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
   };
   /**
    * Delete this assistant's OpenChamber contact transcript (messages, parts,
-   * watches) and clear the context boundary. Intentional wipe only — also the
-   * POST /contact/reset contract. Does not call OpenCode session/new.
+   * watches) and clear the context boundary. Also the POST /contact/reset
+   * contract. Does not call OpenCode session/new.
+   *
+   * Tool path may pass `upToOrdinal` (wiping turn's user ordinal) so later-
+   * admitted queued rows survive. Direct API without a ceiling deletes every
+   * row (existing contract). Concurrent in-flight admissions already past 202
+   * keep their message IDs only when bounded; unbounded API wipe drops them
+   * and a later same-ID send replays as a fresh admission only if the row is gone.
    */
-  const resetContact = (assistantID) => {
+  const resetContact = (assistantID, options = {}) => {
     const row = editable(assistantID);
+    const upToOrdinal = options && typeof options === 'object' ? options.upToOrdinal : undefined;
     db.exec('BEGIN IMMEDIATE');
     try {
-      deleteContactMessages(db, row.assistant_id);
+      // Generation bumps only on transcript wipe — not on clear-memory.
+      const generation = bumpContactGeneration(db, row.assistant_id);
+      deleteContactMessages(db, row.assistant_id, {
+        ...(upToOrdinal !== undefined ? { upToOrdinal } : {}),
+      });
       // Active contact turns stay until settle — wipe must not drop the green
       // dot while the clearing turn is still running.
       bump();
       db.exec('COMMIT');
+      return { assistantID: row.assistant_id, reset: true, historyCleared: true, generation };
     } catch (error) {
       db.exec('ROLLBACK');
       throw error;
     }
-    return { assistantID: row.assistant_id, reset: true, historyCleared: true };
   };
   const appendContactCard = (assistantID, input) => {
     const row = active(assistantID);
@@ -1711,7 +1844,57 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
     operation = db.prepare('SELECT * FROM assistant_share_operation WHERE operation_id=?').get(operationID); if (operation?.phase !== 'reserving') { const claimed = claim(operationID, operation?.state === 'failed'); if (claimed) await submitClaim(claimed); } return shareOperation(operationID); };
   const timer = setIntervalFn(() => { if (!closed) { db.prepare('DELETE FROM assistant_share_operation WHERE updated_at<?').run(now() - SHARE_RETENTION_MS); return reconcile(); } }, reconcileIntervalMs);
   void reconcile();
-  return { capability: async () => ({ supported: true, enabled: enabled(), revision: revision(), serverInstanceID: await getServerId() }), snapshot: () => ({ revision: revision(), enabled: enabled(), assistants: db.prepare('SELECT * FROM assistant_v2 WHERE tombstone_at IS NULL ORDER BY created_at').all().map(output) }), createAssistant, updateAssistant, setEnabled: (input) => { if (!plainObject(input) || typeof input.enabled !== 'boolean' || input.expectedRevision !== revision()) fail('revision_conflict'); db.prepare("UPDATE assistant_meta SET value=? WHERE key='enabled'").run(input.enabled ? '1' : '0'); return { enabled: input.enabled, revision: bump() }; }, removeAssistant: (assistantID, expectedRevision) => {
+  const putAssistantContactAttachment = async (assistantID, uploadID, { stream, headers, signal, storeBytes } = {}) => {
+    const row = editable(assistantID);
+    try {
+      return await putContactAttachment({
+        db,
+        dataDir,
+        assistantID: row.assistant_id,
+        uploadID,
+        stream,
+        headers,
+        clock: now,
+        signal,
+        ...(storeBytes ? { storeBytes } : {}),
+      });
+    } catch (error) {
+      if (error?.code) fail(error.code, error.message);
+      throw error;
+    }
+  };
+  const getAssistantContactAttachment = async (assistantID, attachmentID) => {
+    const row = editable(assistantID);
+    try {
+      return await readContactAttachmentBytes({
+        db,
+        dataDir,
+        assistantID: row.assistant_id,
+        attachmentID,
+        external: true,
+      });
+    } catch (error) {
+      if (error?.code) fail(error.code, error.message);
+      throw error;
+    }
+  };
+  const migrateContactAttachments = async (assistantID = null) => migrateContactDataUrlParts({
+    db,
+    dataDir,
+    assistantID,
+    clock: now,
+  });
+  const snapshot = () => {
+    const rows = db.prepare('SELECT * FROM assistant_v2 WHERE tombstone_at IS NULL ORDER BY created_at').all();
+    // Per-assistant indexed LIMIT probes + one parts batch (catalog ≤100).
+    const previews = getLatestContactMessagePreviews(db, rows.map((row) => row.assistant_id));
+    return {
+      revision: revision(),
+      enabled: enabled(),
+      assistants: rows.map((row) => output(row, previews.get(row.assistant_id) ?? null)),
+    };
+  };
+  return { capability: async () => ({ supported: true, enabled: enabled(), revision: revision(), serverInstanceID: await getServerId() }), snapshot, createAssistant, updateAssistant, setEnabled: (input) => { if (!plainObject(input) || typeof input.enabled !== 'boolean' || input.expectedRevision !== revision()) fail('revision_conflict'); db.prepare("UPDATE assistant_meta SET value=? WHERE key='enabled'").run(input.enabled ? '1' : '0'); return { enabled: input.enabled, revision: bump() }; }, removeAssistant: (assistantID, expectedRevision) => {
     db.exec('BEGIN IMMEDIATE');
     try {
       const result = db.prepare('UPDATE assistant_v2 SET tombstone_at=?,revision=revision+1,updated_at=? WHERE assistant_id=? AND revision=? AND tombstone_at IS NULL').run(now(), now(), assistantID, expectedRevision);
@@ -1730,5 +1913,14 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
       db.exec('ROLLBACK');
       throw error;
     }
-  }, ensure, createNew, compact, send, whenContactTurnSettled, abort, captureQueueDeliveryTarget, sendWithCapturedConfig, share, shareOperation, historicalMessages, contactMessages, clearContactMemory, resetContact, appendContactCard, deliverPeerMessage, listAssistantScheduledTasks, processEvent, reportAssignedSessionSettle: reportAssignedSession, reconcile, close: () => { if (!closed) { closed = true; clearActiveContactTurns(); unsubscribeEvents?.(); clearIntervalFn(timer); db.close(); } } };
+  }, ensure, createNew, compact, send, whenContactTurnSettled, abort, captureQueueDeliveryTarget, sendWithCapturedConfig, share, shareOperation, historicalMessages, contactMessages, clearContactMemory, resetContact, appendContactCard, deliverPeerMessage, listAssistantScheduledTasks, putAssistantContactAttachment, getAssistantContactAttachment, migrateContactAttachments, processEvent, reportAssignedSessionSettle: reportAssignedSession, reconcile,   close: () => {
+    if (!closed) {
+      closed = true;
+      try { contactAttachmentMigration.controller.abort(); } catch { /* ignore */ }
+      clearActiveContactTurns();
+      unsubscribeEvents?.();
+      clearIntervalFn(timer);
+      db.close();
+    }
+  } };
 };

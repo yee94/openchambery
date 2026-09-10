@@ -1,6 +1,7 @@
 import { describe, expect, mock, test } from 'bun:test';
 
 import {
+  deleteMobileConnection,
   loadMobileConnections,
   upsertMobileConnection,
   validateMobileConnectionSession,
@@ -233,6 +234,52 @@ describe('validateMobileConnectionSession', () => {
 
       const result = await validateMobileConnectionSession({ url: 'https://runtime.example', clientToken: 'expired' });
       expect(result).toBe(false);
+    } finally {
+      restoreGlobals();
+    }
+  });
+
+  test('deleteMobileConnection awaits attachment cache clear for target bearer before token drop', async () => {
+    const { readFileSync } = await import('node:fs');
+    const { fileURLToPath } = await import('node:url');
+    const path = await import('node:path');
+    const source = readFileSync(
+      path.join(path.dirname(fileURLToPath(import.meta.url)), 'mobileConnections.ts'),
+      'utf8',
+    );
+    const fnStart = source.indexOf('export const deleteMobileConnection');
+    const fnBody = source.slice(fnStart, fnStart + 2500);
+    expect(fnBody).toContain('clearAssistantAttachmentCacheForBearer');
+    expect(fnBody).toContain('deleteSecureToken');
+    expect(fnBody.indexOf('clearAssistantAttachmentCacheForBearer')).toBeLessThan(
+      fnBody.indexOf('deleteSecureToken'),
+    );
+    expect(fnBody).toContain('readSecureToken');
+    // Runtime: deletion still removes the connection row on web (inline token).
+    try {
+      installTestWindow();
+      Object.defineProperty(globalThis, 'window', {
+        configurable: true,
+        value: {
+          setTimeout: globalThis.setTimeout.bind(globalThis),
+          clearTimeout: globalThis.clearTimeout.bind(globalThis),
+          addEventListener: () => undefined,
+          removeEventListener: () => undefined,
+          dispatchEvent: () => true,
+          location: { protocol: 'https:' },
+          localStorage: createLocalStorageStub(),
+        },
+      });
+      const saved = await upsertMobileConnection({
+        label: 'Home',
+        candidates: [{ kind: 'direct', url: 'https://home.example' }],
+        clientToken: 'tok-to-forget',
+      });
+      const id = saved[0]?.id;
+      expect(id).toBeTruthy();
+      await deleteMobileConnection(id!);
+      const remaining = await loadMobileConnections();
+      expect(remaining.find((c) => c.id === id)).toBeUndefined();
     } finally {
       restoreGlobals();
     }

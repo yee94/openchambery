@@ -12,6 +12,21 @@ import {
 
 const require = createRequire(import.meta.url);
 const root = () => fs.mkdtempSync(path.join(os.tmpdir(), 'assistants-'));
+/** Minimal valid 1×1 PNG (strict data-URL / image magic fixtures). */
+const FIXTURE_PNG = Buffer.from([
+  0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a,
+  0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44, 0x52,
+  0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01,
+  0x08, 0x02, 0x00, 0x00, 0x00, 0x90, 0x77, 0x53,
+  0xde, 0x00, 0x00, 0x00, 0x0c, 0x49, 0x44, 0x41,
+  0x54, 0x08, 0xd7, 0x63, 0xf8, 0xcf, 0xc0, 0x00,
+  0x00, 0x00, 0x03, 0x00, 0x01, 0x00, 0x05, 0xfe,
+  0xd4, 0xef, 0x00, 0x00, 0x00, 0x00, 0x49, 0x45,
+  0x4e, 0x44, 0xae, 0x42, 0x60, 0x82,
+]);
+const FIXTURE_PNG_DATA_URL = `data:image/png;base64,${FIXTURE_PNG.toString('base64')}`;
+/** Valid text/plain data URL body "x". */
+const FIXTURE_TEXT_DATA_URL = 'data:text/plain;base64,eA==';
 // Behavioral tests enable the global switch after boot; pass enabled:false to assert the fresh-install default.
 const setup = (directory = root(), client = {}, options = {}) => {
   const { enabled = true, ...serviceOptions } = options;
@@ -129,6 +144,80 @@ describe('assistants service', () => {
     service.close();
   });
 
+  it('exposes latestMessagePreview on create/update/snapshot from contact transcript', async () => {
+    const directory = root();
+    const service = setup(directory, {}, {
+      runContactTurn: async ({ userText }) => ({ text: `ok ${userText}`, bubbles: [`ok ${userText}`] }),
+    });
+    const created = service.createAssistant(assistantInput);
+    expect(created.latestMessagePreview).toBeNull();
+    expect(service.snapshot().assistants[0].latestMessagePreview).toBeNull();
+
+    await settleSend(service, created.id, { messageID: 'prev_u1', parts: [{ type: 'text', text: 'hello preview' }] });
+    const afterUser = service.snapshot().assistants[0].latestMessagePreview;
+    // After turn settle the assistant reply is newest.
+    expect(afterUser).toMatchObject({
+      role: 'assistant',
+      text: 'ok hello preview',
+      fallbackKind: null,
+    });
+    expect(typeof afterUser.messageID).toBe('string');
+    expect(Number.isFinite(afterUser.ordinal)).toBe(true);
+
+    const updated = await service.updateAssistant(created.id, {
+      expectedRevision: service.snapshot().assistants[0].revision,
+      name: 'Renamed',
+    });
+    expect(updated.latestMessagePreview).toMatchObject({ text: 'ok hello preview', role: 'assistant' });
+
+    // Clear-memory keeps transcript → preview stays on last bubble.
+    const memServiceClose = service;
+    // use existing service with clear tool path
+    memServiceClose.close();
+    const service2 = setup(directory, {}, {
+      runContactTurn: async ({ userText, tools }) => {
+        if (userText === '开新对话') {
+          await tools.find((item) => item.name === 'new_conversation').execute('mem', {});
+          return { text: NEW_CONVERSATION_CONFIRM_BUBBLE, bubbles: [NEW_CONVERSATION_CONFIRM_BUBBLE], reset: true };
+        }
+        if (userText === '清空聊天记录') {
+          const tool = tools.find((item) => item.name === 'clear_chat_history');
+          const result = await tool.execute('wipe', {});
+          return {
+            text: result.content[0].text,
+            bubbles: [result.content[0].text],
+            reset: true,
+            historyCleared: true,
+            messages: [{ role: 'toolResult', toolName: 'clear_chat_history', details: result.details }],
+          };
+        }
+        return { text: `ok ${userText}`, bubbles: [`ok ${userText}`] };
+      },
+    });
+    const id = service2.snapshot().assistants[0].id;
+    expect(service2.snapshot().assistants[0].latestMessagePreview?.text).toBe('ok hello preview');
+    await settleSend(service2, id, { messageID: 'prev_mem', parts: [{ type: 'text', text: '开新对话' }] });
+    expect(service2.snapshot().assistants[0].latestMessagePreview?.text).toBe(NEW_CONVERSATION_CONFIRM_BUBBLE);
+    // Transcript still has older rows after clear-memory.
+    expect(service2.contactMessages(id, { limit: 50 }).messages.some((m) => m.text === 'hello preview')).toBe(true);
+
+    await settleSend(service2, id, { messageID: 'prev_wipe', parts: [{ type: 'text', text: '清空聊天记录' }] });
+    expect(service2.snapshot().assistants[0].latestMessagePreview).toMatchObject({
+      text: CLEAR_CHAT_HISTORY_CONFIRM_BUBBLE,
+      role: 'assistant',
+    });
+    expect(service2.contactMessages(id, { limit: 50 }).messages.some((m) => m.text === 'hello preview')).toBe(false);
+
+    service2.close();
+    const cold = setup(directory, {}, {
+      runContactTurn: async ({ userText }) => ({ text: `ok ${userText}`, bubbles: [`ok ${userText}`] }),
+    });
+    expect(cold.snapshot().assistants[0].latestMessagePreview).toMatchObject({
+      text: CLEAR_CHAT_HISTORY_CONFIRM_BUBBLE,
+    });
+    cold.close();
+  });
+
   it('new_conversation clears LLM memory while keeping the full transcript', async () => {
     const directory = root();
     let creates = 0;
@@ -197,8 +286,8 @@ describe('assistants service', () => {
       messageID: 'attach_1',
       parts: [
         { type: 'text', text: 'look at these' },
-        { type: 'file', mime: 'image/png', url: 'data:image/png;base64,aa', filename: 'dot.png' },
-        { type: 'file', mime: 'text/plain', url: 'data:text/plain;base64,eA==', filename: 'note.txt' },
+        { type: 'file', mime: 'image/png', url: FIXTURE_PNG_DATA_URL, filename: 'dot.png' },
+        { type: 'file', mime: 'text/plain', url: FIXTURE_TEXT_DATA_URL, filename: 'note.txt' },
       ],
     });
     await settleSend(service, assistant.id, { messageID: 'reset_leftover', parts: [{ type: 'text', text: '开新对话' }] });
@@ -250,11 +339,13 @@ describe('assistants service', () => {
       assistantID: assistant.id,
       reset: true,
       historyCleared: true,
+      generation: 1,
     });
     expect(creates).toBe(1);
     expect(service.contactMessages(assistant.id, { limit: 50 })).toMatchObject({
       messages: [],
       complete: true,
+      generation: 1,
     });
     await settleSend(service, assistant.id, { messageID: 'again_1', parts: [{ type: 'text', text: 'hello again' }] });
     await settleSend(service, assistant.id, { messageID: 'wipe_1', parts: [{ type: 'text', text: '清空聊天记录' }] });
@@ -277,22 +368,26 @@ describe('assistants service', () => {
     service.close();
   });
 
-  it('rejects malicious clear_chat_history without explicit wipe intent and keeps transcript', async () => {
+  it('clear_chat_history executes when the model calls it without a user-text auth gate', async () => {
     const directory = root();
     const wipeAttempts = [];
     const service = setup(directory, {}, {
       runContactTurn: async ({ userText, tools }) => {
-        if (userText === '清除记忆' || userText === '不要清除聊天记录') {
+        if (userText === '请处理一下') {
           const tool = tools.find((item) => item.name === 'clear_chat_history');
-          const result = await tool.execute(`malicious_${userText}`, {});
+          const result = await tool.execute('model_chose_wipe', {});
           wipeAttempts.push({
-            userText,
             error: result.details?.error || null,
+            denied: result.details?.denied === true,
             historyCleared: result.details?.historyCleared === true,
+            terminate: result.terminate,
+            text: result.content?.[0]?.text,
           });
           return {
-            text: `blocked:${userText}`,
-            bubbles: [`blocked:${userText}`],
+            text: result.content[0].text,
+            bubbles: [result.content[0].text],
+            reset: true,
+            historyCleared: true,
             messages: [{
               role: 'toolResult',
               toolName: 'clear_chat_history',
@@ -305,17 +400,187 @@ describe('assistants service', () => {
     });
     const assistant = service.createAssistant(assistantInput);
     await settleSend(service, assistant.id, { messageID: 'seed_keep', parts: [{ type: 'text', text: 'keep-me' }] });
-    await settleSend(service, assistant.id, { messageID: 'bad_memory', parts: [{ type: 'text', text: '清除记忆' }] });
-    await settleSend(service, assistant.id, { messageID: 'bad_negation', parts: [{ type: 'text', text: '不要清除聊天记录' }] });
-    expect(wipeAttempts).toEqual([
-      { userText: '清除记忆', error: 'validation_error', historyCleared: false },
-      { userText: '不要清除聊天记录', error: 'validation_error', historyCleared: false },
-    ]);
+    await settleSend(service, assistant.id, { messageID: 'model_wipe', parts: [{ type: 'text', text: '请处理一下' }] });
+    expect(wipeAttempts).toEqual([{
+      error: null,
+      denied: false,
+      historyCleared: true,
+      terminate: true,
+      text: CLEAR_CHAT_HISTORY_CONFIRM_BUBBLE,
+    }]);
     const texts = service.contactMessages(assistant.id, { limit: 50 }).messages.map((message) => message.text);
-    expect(texts).toContain('keep-me');
-    expect(texts).toContain('清除记忆');
-    expect(texts).toContain('不要清除聊天记录');
-    expect(texts).not.toContain(CLEAR_CHAT_HISTORY_CONFIRM_BUBBLE);
+    expect(texts).not.toContain('keep-me');
+    expect(texts).toEqual(['请处理一下', CLEAR_CHAT_HISTORY_CONFIRM_BUBBLE]);
+    expect(texts.some((text) => /not cleared|denied|new_conversation instead/i.test(text))).toBe(false);
+    service.close();
+  });
+
+  it('tool wipe keeps later-admitted queued B and replays B only once', async () => {
+    const directory = root();
+    const turnRuns = [];
+    let aReachedTurn;
+    const aReachedGate = new Promise((resolve) => { aReachedTurn = resolve; });
+    let bAdmitted;
+    const bAdmittedGate = new Promise((resolve) => { bAdmitted = resolve; });
+    const service = setup(directory, {}, {
+      runContactTurn: async ({ userText, tools }) => {
+        turnRuns.push(userText);
+        if (userText === '清空聊天记录') {
+          aReachedTurn();
+          await bAdmittedGate;
+          const tool = tools.find((item) => item.name === 'clear_chat_history');
+          const result = await tool.execute('wipe_queue_a', {});
+          return {
+            text: result.content[0].text,
+            bubbles: [result.content[0].text],
+            reset: true,
+            historyCleared: true,
+            messages: [{
+              role: 'toolResult',
+              toolName: 'clear_chat_history',
+              details: result.details,
+            }],
+          };
+        }
+        return { text: `reply:${userText}`, bubbles: [`reply:${userText}`] };
+      },
+    });
+    const assistant = service.createAssistant(assistantInput);
+    await settleSend(service, assistant.id, { messageID: 'seed_queue', parts: [{ type: 'text', text: 'seed before wipe' }] });
+    // A pause -> B admission -> A wipe -> B complete -> replay B once.
+    const aSend = service.send(assistant.id, { messageID: 'wipe_a', parts: [{ type: 'text', text: '清空聊天记录' }] });
+    await aReachedGate;
+    const bSend = service.send(assistant.id, { messageID: 'queued_b', parts: [{ type: 'text', text: 'queued B keep me' }] });
+    await bSend;
+    bAdmitted();
+    await aSend;
+    await service.whenContactTurnSettled('wipe_a');
+    await service.whenContactTurnSettled('queued_b');
+    // Same messageID + payload replays admission only — no second lane run.
+    const replay = await service.send(assistant.id, { messageID: 'queued_b', parts: [{ type: 'text', text: 'queued B keep me' }] });
+    expect(replay).toMatchObject({ admitted: true, replayed: true, messageID: 'queued_b' });
+    const page = service.contactMessages(assistant.id, { limit: 50 });
+    const texts = page.messages.map((message) => message.text);
+    expect(texts).not.toContain('seed before wipe');
+    expect(texts).toContain('queued B keep me');
+    expect(texts).toContain('reply:queued B keep me');
+    expect(texts).toContain(CLEAR_CHAT_HISTORY_CONFIRM_BUBBLE);
+    // Wipe user kept in place (no re-admit reorder before B).
+    const wipeIdx = page.messages.findIndex((message) => message.messageID === 'wipe_a');
+    const bIdx = page.messages.findIndex((message) => message.messageID === 'queued_b');
+    expect(wipeIdx).toBeGreaterThanOrEqual(0);
+    expect(bIdx).toBeGreaterThan(wipeIdx);
+    expect(turnRuns.filter((text) => text === 'queued B keep me')).toHaveLength(1);
+    expect(page.messages.filter((message) => message.messageID === 'queued_b')).toHaveLength(1);
+    service.close();
+  });
+
+  it('tool wipe drops late prior-lane assistant/cards after reverse admit order and keeps C once', async () => {
+    const directory = root();
+    const turnRuns = [];
+    const cHistories = [];
+    let aReachedTurn;
+    const aReachedGate = new Promise((resolve) => { aReachedTurn = resolve; });
+    let lateWritten;
+    const lateWrittenGate = new Promise((resolve) => { lateWritten = resolve; });
+    let wipeMayRun;
+    const wipeMayRunGate = new Promise((resolve) => { wipeMayRun = resolve; });
+    const service = setup(directory, {}, {
+      runContactTurn: async ({ history, userText, tools }) => {
+        turnRuns.push(userText);
+        if (userText === 'ordinary A still running') {
+          aReachedTurn();
+          await lateWrittenGate;
+          // A completes after wipe already ran — its returned bubbles must not
+          // resurrect deleted late residue (wipe already cleared transcript).
+          return { text: 'late-A-final-bubble-should-not-matter', bubbles: ['late-A-final-bubble-should-not-matter'] };
+        }
+        if (userText === '清空聊天记录') {
+          await wipeMayRunGate;
+          const tool = tools.find((item) => item.name === 'clear_chat_history');
+          const result = await tool.execute('wipe_reverse', {});
+          return {
+            text: result.content[0].text,
+            bubbles: [result.content[0].text],
+            reset: true,
+            historyCleared: true,
+            messages: [{
+              role: 'toolResult',
+              toolName: 'clear_chat_history',
+              details: result.details,
+            }],
+          };
+        }
+        if (userText === 'queued C keep me') {
+          cHistories.push(history.map((item) => item.content));
+        }
+        return { text: `reply:${userText}`, bubbles: [`reply:${userText}`] };
+      },
+    });
+    const assistant = service.createAssistant(assistantInput);
+    await settleSend(service, assistant.id, { messageID: 'seed_rev', parts: [{ type: 'text', text: 'seed secret reverse' }] });
+    // A pause -> wipe B admit -> C admit -> late A reply/card/watch -> B wipe -> C.
+    const aSend = service.send(assistant.id, { messageID: 'ord_a', parts: [{ type: 'text', text: 'ordinary A still running' }] });
+    await aReachedGate;
+    const bSend = service.send(assistant.id, { messageID: 'wipe_b', parts: [{ type: 'text', text: '清空聊天记录' }] });
+    await bSend;
+    const cSend = service.send(assistant.id, { messageID: 'queued_c', parts: [{ type: 'text', text: 'queued C keep me' }] });
+    await cSend;
+    // Late residue from A while still paused (ordinal after wipe+C users).
+    service.appendContactCard(assistant.id, {
+      cardType: 'session',
+      sessionID: 'ses_late_a',
+      directory: directory,
+      title: 'late A card residue',
+      status: 'busy',
+      messageID: 'late_a_card',
+    });
+    const Database = require('better-sqlite3');
+    const db = new Database(path.join(directory, 'assistants.sqlite'));
+    const ordinal = Number(db.prepare(
+      'SELECT COALESCE(MAX(ordinal), 0) + 1 AS next FROM assistant_contact_message WHERE assistant_id=?',
+    ).get(assistant.id).next);
+    db.prepare(
+      'INSERT INTO assistant_contact_message(message_id,assistant_id,role,turn_id,bubble_index,created_at,ordinal,status) VALUES (?,?,?,?,?,?,?,?)',
+    ).run('late_a_reply', assistant.id, 'assistant', 'ord_a', 0, Date.now(), ordinal, 'complete');
+    db.prepare(
+      'INSERT INTO assistant_contact_part(message_id,part_id,ordinal,part_json) VALUES (?,?,?,?)',
+    ).run('late_a_reply', 'p1', 1, JSON.stringify({ type: 'text', text: 'late-A-reply-residue' }));
+    db.close();
+    lateWritten();
+    wipeMayRun();
+    await aSend;
+    await service.whenContactTurnSettled('ord_a');
+    await service.whenContactTurnSettled('wipe_b');
+    await service.whenContactTurnSettled('queued_c');
+    const replay = await service.send(assistant.id, { messageID: 'queued_c', parts: [{ type: 'text', text: 'queued C keep me' }] });
+    expect(replay).toMatchObject({ admitted: true, replayed: true, messageID: 'queued_c' });
+    const page = service.contactMessages(assistant.id, { limit: 50 });
+    const texts = page.messages.map((message) => message.text);
+    expect(texts).not.toContain('seed secret reverse');
+    expect(texts).not.toContain('late-A-reply-residue');
+    expect(texts).not.toContain('late-A-final-bubble-should-not-matter');
+    expect(page.messages.some((message) => (message.cards || []).some((card) => card.sessionID === 'ses_late_a'))).toBe(false);
+    expect(texts).toContain('queued C keep me');
+    expect(texts).toContain('reply:queued C keep me');
+    expect(texts).toContain(CLEAR_CHAT_HISTORY_CONFIRM_BUBBLE);
+    // Wipe user kept before C (no re-admit reorder).
+    const wipeIdx = page.messages.findIndex((message) => message.messageID === 'wipe_b');
+    const cIdx = page.messages.findIndex((message) => message.messageID === 'queued_c');
+    expect(wipeIdx).toBeGreaterThanOrEqual(0);
+    expect(cIdx).toBeGreaterThan(wipeIdx);
+    expect(turnRuns.filter((text) => text === 'queued C keep me')).toHaveLength(1);
+    expect(page.messages.filter((message) => message.messageID === 'queued_c')).toHaveLength(1);
+    // C LLM history must not see late A residue or pre-wipe seed.
+    const cHist = cHistories[0] || [];
+    expect(cHist.some((content) => String(content).includes('late-A'))).toBe(false);
+    expect(cHist.some((content) => String(content).includes('seed secret reverse'))).toBe(false);
+    const dbAfter = new Database(path.join(directory, 'assistants.sqlite'));
+    const watches = dbAfter.prepare(
+      'SELECT session_id FROM assistant_contact_watch WHERE assistant_id=?',
+    ).all(assistant.id);
+    expect(watches).toEqual([]);
+    dbAfter.close();
     service.close();
   });
 
@@ -485,8 +750,8 @@ describe('assistants service', () => {
   it('persists mixed text+image+file parts and forwards them to the contact harness', async () => {
     const directory = root();
     let harness;
-    const image = { type: 'file', mime: 'image/png', url: 'data:image/png;base64,aa', filename: 'shot.png' };
-    const file = { type: 'file', mime: 'text/plain', url: 'data:text/plain;base64,eA==', filename: 'notes.txt' };
+    const image = { type: 'file', mime: 'image/png', url: FIXTURE_PNG_DATA_URL, filename: 'shot.png' };
+    const file = { type: 'file', mime: 'text/plain', url: FIXTURE_TEXT_DATA_URL, filename: 'notes.txt' };
     const service = setup(directory, {}, {
       runContactTurn: async (input) => {
         harness = input;
@@ -499,11 +764,17 @@ describe('assistants service', () => {
       parts: [{ type: 'text', text: 'look' }, image, file],
     });
     expect(harness.userText).toBe('look');
-    expect(harness.userParts).toEqual([{ type: 'text', text: 'look' }, image, file]);
+    // Harness sees materialized data URLs; DB stores attachment descriptors (no raw url).
+    expect(harness.userParts[0]).toEqual({ type: 'text', text: 'look' });
+    expect(harness.userParts[1]).toMatchObject({ type: 'file', mime: 'image/png', filename: 'shot.png', url: expect.stringMatching(/^data:image\/png;base64,/) });
+    expect(harness.userParts[2]).toMatchObject({ type: 'file', mime: 'text/plain', filename: 'notes.txt', url: expect.stringMatching(/^data:text\/plain;base64,/) });
     expect(service.contactMessages(assistant.id, { limit: 50 }).messages[0]).toMatchObject({
       role: 'user',
-      text: 'look',
-      parts: [{ type: 'text', text: 'look' }, image, file],
+      parts: [
+        { type: 'text', text: 'look' },
+        { type: 'file', mime: 'image/png', filename: 'shot.png', attachmentID: expect.stringMatching(/^att_/) },
+        { type: 'file', mime: 'text/plain', filename: 'notes.txt', attachmentID: expect.stringMatching(/^att_/) },
+      ],
     });
     service.close();
     const restarted = setup(directory, {}, {
@@ -511,14 +782,14 @@ describe('assistants service', () => {
     });
     expect(restarted.contactMessages(assistant.id, { limit: 50 }).messages[0].parts).toEqual([
       { type: 'text', text: 'look' },
-      image,
-      file,
+      expect.objectContaining({ type: 'file', mime: 'image/png', filename: 'shot.png', attachmentID: expect.stringMatching(/^att_/) }),
+      expect.objectContaining({ type: 'file', mime: 'text/plain', filename: 'notes.txt', attachmentID: expect.stringMatching(/^att_/) }),
     ]);
     restarted.close();
   });
 
   it('admits a file-only contact send and stores the file part without a fake text row', async () => {
-    const image = { type: 'file', mime: 'image/png', url: 'data:image/png;base64,aa', filename: 'shot.png' };
+    const image = { type: 'file', mime: 'image/png', url: FIXTURE_PNG_DATA_URL, filename: 'shot.png' };
     let harness;
     const service = setup(root(), {}, {
       runContactTurn: async (input) => {
@@ -529,9 +800,14 @@ describe('assistants service', () => {
     const assistant = service.createAssistant(assistantInput);
     await settleSend(service, assistant.id, { messageID: 'file_only_1', parts: [image] });
     expect(harness.userText).toBe('[attachment]');
-    expect(harness.userParts).toEqual([image]);
+    expect(harness.userParts).toEqual([
+      expect.objectContaining({ type: 'file', mime: 'image/png', filename: 'shot.png', url: expect.stringMatching(/^data:image\/png;base64,/) }),
+    ]);
     const user = service.contactMessages(assistant.id).messages.find((message) => message.role === 'user');
-    expect(user.parts).toEqual([image]);
+    expect(user.parts).toEqual([
+      expect.objectContaining({ type: 'file', mime: 'image/png', filename: 'shot.png', attachmentID: expect.stringMatching(/^att_/) }),
+    ]);
+    expect(user.parts[0].url).toBeUndefined();
     expect(user.text).toBe('');
     service.close();
   });
@@ -1318,7 +1594,7 @@ describe('assistants service', () => {
     const directory = root();
     const project = path.join(directory, 'app');
     fs.mkdirSync(project, { recursive: true });
-    const image = { type: 'file', mime: 'image/png', url: 'data:image/png;base64,aa', filename: 'card.png' };
+    const image = { type: 'file', mime: 'image/png', url: FIXTURE_PNG_DATA_URL, filename: 'card.png' };
     const creates = [];
     const prompts = [];
     const deletes = [];
@@ -1396,7 +1672,12 @@ describe('assistants service', () => {
       model: { providerID: 'xai', modelID: 'grok-4.6' },
       parts: [
         { type: 'text', text: '修移动端卡片宽度' },
-        image,
+        expect.objectContaining({
+          type: 'file',
+          mime: 'image/png',
+          filename: 'card.png',
+          url: expect.stringMatching(/^data:image\/png;base64,/),
+        }),
       ],
     })]);
     expect(deletes).toEqual([]);
@@ -2616,6 +2897,95 @@ describe('assistants service', () => {
     expect(db.prepare('SELECT COUNT(*) AS count FROM assistant_message_part_mirror WHERE assistant_id=?').get(assistant.id).count).toBe(0);
     expect(db.prepare('SELECT COUNT(*) AS count FROM assistant_message_backfill WHERE assistant_id=?').get(assistant.id).count).toBe(0);
     db.close();
+    service.close();
+  });
+
+  it('pages contact messages 20/20/5 with generation+revision and exact messageID admission', async () => {
+    const directory = root();
+    const service = setup(directory, {}, {
+      runContactTurn: async ({ userText }) => ({ text: `r:${userText}`, bubbles: [`r:${userText}`] }),
+    });
+    const assistant = service.createAssistant(assistantInput);
+    const other = service.createAssistant({ ...assistantInput, name: 'B' });
+    // 45 user admits → 45 user + 45 assistant = 90 rows; page three windows of 20/20/5 on users alone
+    // Seed via direct store through many settled turns would be slow; insert via contactMessages path
+    // by settling 22 turns (44 rows) then more via appendContactCard for density.
+    for (let i = 0; i < 22; i += 1) {
+      await settleSend(service, assistant.id, {
+        messageID: `page_u_${i}`,
+        parts: [{ type: 'text', text: `u-${i}` }],
+      });
+    }
+    // 22 users + 22 assistants = 44; add one more card-only for 45th
+    service.appendContactCard(assistant.id, {
+      cardType: 'session',
+      sessionID: 'ses_page_extra',
+      directory,
+      title: 'extra',
+      status: 'complete',
+      messageID: 'page_card_45',
+    });
+
+    // Newest window first (chat tail), ascending within the page.
+    const defaultPage = service.contactMessages(assistant.id);
+    expect(defaultPage.messages).toHaveLength(20);
+    expect(defaultPage.complete).toBe(false);
+    expect(defaultPage.generation).toBe(0);
+    expect(defaultPage.revision).toEqual(expect.any(Number));
+    expect(defaultPage.messages.at(-1).messageID).toBe('page_card_45');
+
+    const second = service.contactMessages(assistant.id, { before: defaultPage.nextCursor, limit: 20 });
+    expect(second.messages).toHaveLength(20);
+    expect(second.complete).toBe(false);
+
+    const third = service.contactMessages(assistant.id, { before: second.nextCursor, limit: 20 });
+    expect(third.messages.length).toBeGreaterThanOrEqual(5);
+    expect(third.complete).toBe(true);
+    expect(third.nextCursor).toBeNull();
+    expect(third.messages[0].text).toBe('u-0');
+
+    // Concurrent append does not break a prior cursor keyset for older pages.
+    await settleSend(service, assistant.id, {
+      messageID: 'page_concurrent',
+      parts: [{ type: 'text', text: 'concurrent-append' }],
+    });
+    const stillSecond = service.contactMessages(assistant.id, { before: defaultPage.nextCursor, limit: 20 });
+    expect(stillSecond.messages[0].messageID).toBe(second.messages[0].messageID);
+
+    // Exact admission: deep/old message still found; missing / cross-assistant empty.
+    const deepID = third.messages[0].messageID;
+    const exact = service.contactMessages(assistant.id, { messageID: deepID });
+    expect(exact).toMatchObject({ nextCursor: null, complete: true, generation: 0 });
+    expect(exact.messages).toHaveLength(1);
+    expect(exact.messages[0].messageID).toBe(deepID);
+    expect(service.contactMessages(assistant.id, { messageID: 'nope' }).messages).toEqual([]);
+    expect(service.contactMessages(other.id, { messageID: deepID }).messages).toEqual([]);
+
+    // clear-memory keeps generation + cursor validity
+    const beforeGen = service.contactMessages(assistant.id).generation;
+    service.clearContactMemory(assistant.id);
+    expect(service.contactMessages(assistant.id, { before: defaultPage.nextCursor, limit: 5 }).generation).toBe(beforeGen);
+
+    // reset bumps generation → old cursor conflicts
+    const wiped = service.resetContact(assistant.id);
+    expect(wiped.generation).toBe(1);
+    expect(() => service.contactMessages(assistant.id, { before: defaultPage.nextCursor })).toThrowError(
+      expect.objectContaining({ code: 'contact_generation_conflict' }),
+    );
+    expect(service.contactMessages(assistant.id)).toMatchObject({
+      messages: [],
+      complete: true,
+      generation: 1,
+    });
+
+    // invalid cursor
+    expect(() => service.contactMessages(assistant.id, { before: '%%%' })).toThrowError(
+      expect.objectContaining({ code: 'validation_error' }),
+    );
+    expect(() => service.contactMessages(assistant.id, { before: 'x', messageID: 'y' })).toThrowError(
+      expect.objectContaining({ code: 'validation_error' }),
+    );
+
     service.close();
   });
 });
