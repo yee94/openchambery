@@ -215,7 +215,7 @@ export {
   resolveLynxRevertConfirm,
 } from './chat/revertConfirm';
 export type { LynxRevertConfirmDecision, LynxRevertConfirmRequest } from './chat/revertConfirm';
-export { listLynxDirectory, readLynxFile } from './chat/filesSurface';
+export { listLynxDirectory, readLynxFile, searchLynxFiles } from './chat/filesSurface';
 export {
   loadLynxProviderAuthMethods,
   saveLynxProviderApiKey,

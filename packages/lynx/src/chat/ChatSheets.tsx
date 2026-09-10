@@ -37,7 +37,7 @@ import {
   LynxCenteredDialogAction,
 } from '../shell/CenteredDialog';
 import { LynxDialogPortal } from '../shell/DialogPortal';
-import { listLynxDirectory, readLynxFile, type LynxFsEntry } from './filesSurface';
+import { listLynxDirectory, readLynxFile, searchLynxFiles, type LynxFsEntry, type LynxFsSearchHit } from './filesSurface';
 import { isLynxHtmlPath, planLynxHtmlPreview } from './htmlPreview';
 import {
   LYNX_CAP_ARROW_GO_BACK_GLYPH,
@@ -137,6 +137,11 @@ function FilesSheetBody({
   const [previewNote, setPreviewNote] = useState<string | null>(null);
   const [previewBusy, setPreviewBusy] = useState(false);
   const [htmlViewMode, setHtmlViewMode] = useState<'preview' | 'source'>('source');
+  /** Cap MobileFilesSurface search — empty = browse directory list. */
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchHits, setSearchHits] = useState<LynxFsSearchHit[] | null>(null);
+  const [searchStatus, setSearchStatus] = useState<'idle' | 'loading' | 'ok' | 'failed' | 'no-runtime'>('idle');
+  const [searchError, setSearchError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -158,6 +163,51 @@ function FilesSheetBody({
       cancelled = true;
     };
   }, [runtimeFetch, path]);
+
+  // Cap: debounce ~250ms then GET /api/find/file while query non-empty.
+  useEffect(() => {
+    const trimmed = searchQuery.trim();
+    if (!trimmed) {
+      setSearchHits(null);
+      setSearchStatus('idle');
+      setSearchError(null);
+      return;
+    }
+    let cancelled = false;
+    setSearchStatus('loading');
+    setSearchError(null);
+    const timer = setTimeout(() => {
+      void (async () => {
+        const result = await searchLynxFiles(runtimeFetch, {
+          directory: path,
+          query: trimmed,
+          maxResults: 40,
+        });
+        if (cancelled) return;
+        if (result.status === 'ok') {
+          setSearchHits(result.hits);
+          setSearchStatus('ok');
+          return;
+        }
+        setSearchHits(null);
+        if (result.status === 'no-runtime') {
+          setSearchStatus('no-runtime');
+          return;
+        }
+        if (result.status === 'no-directory' || result.status === 'no-query') {
+          setSearchHits(null);
+          setSearchStatus('idle');
+          return;
+        }
+        setSearchStatus('failed');
+        setSearchError(result.error.message);
+      })();
+    }, 250);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [runtimeFetch, path, searchQuery]);
 
   const openPreview = async (filePath: string) => {
     setPreviewPath(filePath);
@@ -240,12 +290,53 @@ function FilesSheetBody({
     return <Banner text={lynxT(locale, 'lynx.settings.loading')} muted />;
   }
 
+  const searching = searchQuery.trim().length > 0;
+
   return (
     <LynxScrollView style={{ flexGrow: 1, padding: '0 16px 24px' }}>
       <LynxText style={{ color: cssVar('surface.mutedForeground'), fontSize: '12px', marginBottom: '8px' }}>
         {path}
       </LynxText>
-      {entries.length === 0 ? (
+      <LynxInput
+        value={searchQuery}
+        placeholder={lynxT(locale, 'lynx.chat.sheet.files.search.placeholder')}
+        bindinput={(event) => setSearchQuery(event.detail?.value ?? '')}
+        style={{
+          marginBottom: '12px',
+          padding: '10px 12px',
+          borderRadius: '12px',
+          backgroundColor: cssVar('surface.elevated'),
+          color: cssVar('surface.foreground'),
+          fontSize: '14px',
+        }}
+      />
+      {searching ? (
+        searchStatus === 'loading' || searchHits === null ? (
+          <Banner text={lynxT(locale, 'lynx.settings.loading')} muted />
+        ) : searchStatus === 'no-runtime' ? (
+          <Banner text={lynxT(locale, 'lynx.settings.noRuntime')} muted />
+        ) : searchStatus === 'failed' ? (
+          <Banner text={searchError || lynxT(locale, 'lynx.chat.sheet.files.search.failed')} />
+        ) : searchHits.length === 0 ? (
+          <Banner text={lynxT(locale, 'lynx.chat.sheet.files.search.empty')} muted />
+        ) : (
+          searchHits.map((hit) => (
+            <LynxView
+              key={hit.path}
+              style={{ padding: '10px 0' }}
+              bindtap={() => { void openPreview(hit.path); }}
+            >
+              <LynxText style={{ color: cssVar('surface.foreground') }}>
+                {'📄 '}
+                {hit.name}
+              </LynxText>
+              <LynxText style={{ color: cssVar('surface.mutedForeground'), fontSize: '11px' }}>
+                {hit.relativePath}
+              </LynxText>
+            </LynxView>
+          ))
+        )
+      ) : entries.length === 0 ? (
         <Banner text={lynxT(locale, 'lynx.chat.sheet.files.empty')} muted />
       ) : (
         entries.map((entry) => (
@@ -253,8 +344,12 @@ function FilesSheetBody({
             key={entry.path}
             style={{ padding: '10px 0' }}
             bindtap={() => {
-              if (entry.type === 'directory') setPath(entry.path);
-              else void openPreview(entry.path);
+              if (entry.type === 'directory') {
+                setSearchQuery('');
+                setPath(entry.path);
+              } else {
+                void openPreview(entry.path);
+              }
             }}
           >
             <LynxText style={{ color: cssVar('surface.foreground') }}>
