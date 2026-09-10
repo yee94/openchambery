@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest';
 
-import { loadLynxGitStatus } from './changesSurface';
+import { loadLynxGitStatus, partitionLynxGitChangeEntries } from './changesSurface';
 
 describe('loadLynxGitStatus', () => {
   test('no-runtime / no-directory are not empty ok', async () => {
@@ -426,5 +426,21 @@ describe('commitAndPushLynxGitChanges', () => {
     const failed = await commitAndPushLynxGitChanges(runtimeFetch, '/repo', 'feat: x');
     expect(failed.status).toBe('failed');
     expect(kinds).toEqual(['commit', 'fetch', 'status', 'pull']);
+  });
+});
+
+
+describe('partitionLynxGitChangeEntries', () => {
+  test('Cap ChangesPanel staged vs unstaged groups', () => {
+    expect(partitionLynxGitChangeEntries([])).toEqual({ staged: [], unstaged: [] });
+    const entries = [
+      { path: 'a.ts', status: 'staged', staged: true },
+      { path: 'b.ts', status: 'modified', staged: false },
+      { path: 'c.ts', status: 'untracked', staged: false },
+    ];
+    expect(partitionLynxGitChangeEntries(entries)).toEqual({
+      staged: [entries[0]],
+      unstaged: [entries[1], entries[2]],
+    });
   });
 });
