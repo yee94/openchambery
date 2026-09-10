@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.19.13-beta.3] - 2026-09-10
+
+### Git
+
+- 变更树视图不再重复显示上级目录，文件行只保留文件名；悬停仍可看完整路径。
+
 ## [1.19.13-beta.2] - 2026-09-10
 
 ### 助手

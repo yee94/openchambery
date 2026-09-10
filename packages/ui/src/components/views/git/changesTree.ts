@@ -28,6 +28,13 @@ export type FlattenedTreeRow =
 const normalizePathForTree = (value: string): string =>
   value.replace(/\\/g, '/').replace(/^\/+/, '').trim();
 
+export const getChangesTreeFileName = (path: string): string => {
+  const normalized = normalizePathForTree(path);
+  if (!normalized) return path;
+  const lastSlash = normalized.lastIndexOf('/');
+  return lastSlash >= 0 ? normalized.slice(lastSlash + 1) : normalized;
+};
+
 const createDirectoryNode = (path: string, name: string): ChangesTreeDirectoryNode => ({
   id: `dir:${path}`,
   path,
