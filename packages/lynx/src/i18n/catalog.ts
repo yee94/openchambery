@@ -355,6 +355,8 @@ export type LynxMessageKey =
   | 'lynx.chat.context.aria'
   | 'lynx.chat.composer.attach'
   | 'lynx.chat.edgeSwipe.surface'
+  | 'lynx.chat.syncingMessages'
+  | 'lynx.chat.headerSwipe.surface'
   | 'lynx.projects.explorer.title'
   | 'lynx.projects.explorer.add'
   | 'lynx.projects.explorer.up'
@@ -898,6 +900,8 @@ const en: LynxDictionary = {
   'lynx.chat.context.aria': 'Context usage',
   'lynx.chat.composer.attach': 'Attach',
   'lynx.chat.edgeSwipe.surface': 'Session swipe surface',
+  'lynx.chat.syncingMessages': 'Syncing messages...',
+  'lynx.chat.headerSwipe.surface': 'Header swipe to sessions',
   'lynx.settings.about.diagnosticsEnabled': 'Client diagnostics',
   'lynx.settings.about.diagnostics': 'Export diagnostics',
   'lynx.settings.voice.noAsr': 'Mic / ASR stays host-bound. This page only lists /api/dictation status and models.',
@@ -1359,6 +1363,8 @@ const es: LynxDictionary = {
   'lynx.chat.context.aria': 'Uso del contexto',
   'lynx.chat.composer.attach': 'Adjuntar',
   'lynx.chat.edgeSwipe.surface': 'Superficie de cambio de sesión',
+  'lynx.chat.syncingMessages': 'Sincronizando mensajes...',
+  'lynx.chat.headerSwipe.surface': 'Deslizar cabecera a sesiones',
   'lynx.settings.about.diagnosticsEnabled': 'Diagnósticos del cliente',
   'lynx.settings.about.diagnostics': 'Exportar diagnósticos',
   'lynx.settings.voice.noAsr': 'Mic/ASR queda en el host. Esta página solo lista estado y modelos de /api/dictation.',
@@ -1820,6 +1826,8 @@ const fr: LynxDictionary = {
   'lynx.chat.context.aria': 'Utilisation du contexte',
   'lynx.chat.composer.attach': 'Joindre',
   'lynx.chat.edgeSwipe.surface': 'Surface de changement de session',
+  'lynx.chat.syncingMessages': 'Synchronisation des messages...',
+  'lynx.chat.headerSwipe.surface': 'Glisser en-tete vers sessions',
   'lynx.settings.about.diagnosticsEnabled': 'Diagnostics client',
   'lynx.settings.about.diagnostics': 'Exporter les diagnostics',
   'lynx.settings.voice.noAsr': 'Micro/ASR restent côté hôte. Cette page liste seulement statut et modèles /api/dictation.',
@@ -2281,6 +2289,8 @@ const ja: LynxDictionary = {
   'lynx.chat.context.aria': 'コンテキスト使用量',
   'lynx.chat.composer.attach': '添付',
   'lynx.chat.edgeSwipe.surface': 'セッション切り替え面',
+  'lynx.chat.syncingMessages': 'メッセージを同期中...',
+  'lynx.chat.headerSwipe.surface': 'ヘッダーをスワイプしてセッション',
   'lynx.settings.about.diagnosticsEnabled': 'クライアント診断',
   'lynx.settings.about.diagnostics': '診断を書き出す',
   'lynx.settings.voice.noAsr': 'マイク/ASRはホスト側。このページは /api/dictation の状態とモデルのみ。',
@@ -2742,6 +2752,8 @@ const ko: LynxDictionary = {
   'lynx.chat.context.aria': '컨텍스트 사용량',
   'lynx.chat.composer.attach': '첨부',
   'lynx.chat.edgeSwipe.surface': '세션 전환 표면',
+  'lynx.chat.syncingMessages': '메시지 동기화 중...',
+  'lynx.chat.headerSwipe.surface': '헤더 스와이프로 세션 열기',
   'lynx.settings.about.diagnosticsEnabled': '클라이언트 진단',
   'lynx.settings.about.diagnostics': '진단 내보내기',
   'lynx.settings.voice.noAsr': '마이크/ASR은 호스트. 이 페이지는 /api/dictation 상태·모델만.',
@@ -3203,6 +3215,8 @@ const pl: LynxDictionary = {
   'lynx.chat.context.aria': 'Użycie kontekstu',
   'lynx.chat.composer.attach': 'Dołącz',
   'lynx.chat.edgeSwipe.surface': 'Powierzchnia zmiany sesji',
+  'lynx.chat.syncingMessages': 'Synchronizowanie wiadomości...',
+  'lynx.chat.headerSwipe.surface': 'Przesunięcie nagłówka do sesji',
   'lynx.settings.about.diagnosticsEnabled': 'Diagnostyka klienta',
   'lynx.settings.about.diagnostics': 'Eksportuj diagnostykę',
   'lynx.settings.voice.noAsr': 'Mikrofon/ASR zostaje u hosta. Ta strona tylko status i modele /api/dictation.',
@@ -3664,6 +3678,8 @@ const ptBR: LynxDictionary = {
   'lynx.chat.context.aria': 'Uso do contexto',
   'lynx.chat.composer.attach': 'Anexar',
   'lynx.chat.edgeSwipe.surface': 'Superfície de troca de sessão',
+  'lynx.chat.syncingMessages': 'Sincronizando mensagens...',
+  'lynx.chat.headerSwipe.surface': 'Deslizar o cabeçalho para sessões',
   'lynx.settings.about.diagnosticsEnabled': 'Diagnósticos do cliente',
   'lynx.settings.about.diagnostics': 'Exportar diagnósticos',
   'lynx.settings.voice.noAsr': 'Mic/ASR ficam no host. Esta página só lista status e modelos /api/dictation.',
@@ -4125,6 +4141,8 @@ const uk: LynxDictionary = {
   'lynx.chat.context.aria': 'Використання контексту',
   'lynx.chat.composer.attach': 'Додати',
   'lynx.chat.edgeSwipe.surface': 'Поверхня зміни сесії',
+  'lynx.chat.syncingMessages': 'Синхронізація повідомлень...',
+  'lynx.chat.headerSwipe.surface': 'Змахування заголовка до сесій',
   'lynx.settings.about.diagnosticsEnabled': 'Клієнтська діагностика',
   'lynx.settings.about.diagnostics': 'Експорт діагностики',
   'lynx.settings.voice.noAsr': 'Мік/ASR лишаються на хості. Тут лише статус і моделі /api/dictation.',
@@ -4586,6 +4604,8 @@ const zhCN: LynxDictionary = {
   'lynx.chat.context.aria': '上下文用量',
   'lynx.chat.composer.attach': '附件',
   'lynx.chat.edgeSwipe.surface': '会话滑动切换区',
+  'lynx.chat.syncingMessages': '正在同步消息...',
+  'lynx.chat.headerSwipe.surface': '标题栏滑动打开会话',
   'lynx.settings.about.diagnosticsEnabled': '客户端诊断',
   'lynx.settings.about.diagnostics': '导出诊断',
   'lynx.settings.voice.noAsr': '麦克风/ASR 仍由宿主负责。本页仅列出 /api/dictation 状态与模型。',
@@ -5047,6 +5067,8 @@ const zhTW: LynxDictionary = {
   'lynx.chat.context.aria': '上下文用量',
   'lynx.chat.composer.attach': '附件',
   'lynx.chat.edgeSwipe.surface': '工作階段滑動切換區',
+  'lynx.chat.syncingMessages': '正在同步訊息...',
+  'lynx.chat.headerSwipe.surface': '標題列滑動開啟工作階段',
   'lynx.settings.about.diagnosticsEnabled': '用戶端診斷',
   'lynx.settings.about.diagnostics': '匯出診斷',
   'lynx.settings.voice.noAsr': '麥克風/ASR 仍由宿主負責。本頁僅列出 /api/dictation 狀態與模型。',

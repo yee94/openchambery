@@ -92,6 +92,16 @@ import {
   type LynxEdgeSwipeMachine,
 } from './edgeSwipeSessionSwitch';
 import {
+  createLynxHeaderSwipeToSessionsMachine,
+  type LynxHeaderSwipeMachine,
+} from './headerSwipeToSessions';
+import {
+  createLynxSyncHintSmoother,
+  deriveLynxTranscriptLoadStatus,
+  mapLynxLiveConnectionToSyncPhase,
+  resolveLynxTranscriptSyncHint,
+} from './transcriptSyncHint';
+import {
   armLynxMarkdownPinReveal,
   createLynxMarkdownPinRevealState,
   markLynxMarkdownPinReady,
@@ -169,6 +179,19 @@ export type LynxChatScreenProps = {
   edgeSwipeDispatchRef?: MutableRefObject<
     ((event: Parameters<LynxEdgeSwipeMachine['dispatch']>[0]) => void) | null
   >;
+  /**
+   * Cap header swipe → sessions. Shell sets true when sessions sheet / other
+   * overlays already own the gesture arena.
+   */
+  headerSwipeDisabled?: boolean;
+  /**
+   * Host/shell fills this ref with the header-swipe dispatch so native pan can
+   * feed events. Chat-body ownership + exclusions enforced inside the machine.
+   * Do not claim native pan success without a host binder.
+   */
+  headerSwipeDispatchRef?: MutableRefObject<
+    ((event: Parameters<LynxHeaderSwipeMachine['dispatch']>[0]) => void) | null
+  >;
 };
 
 const DEFAULT_MODEL: LynxComposerModel = {
@@ -204,6 +227,8 @@ export function LynxChatScreen({
   relatedSessions = [],
   onSelectRelatedSession,
   onOpenSessionsSheet,
+  headerSwipeDisabled = false,
+  headerSwipeDispatchRef,
 }: LynxChatScreenProps) {
   const [timeline, setTimeline] = useState<LynxTimelineState>(() =>
     createEmptyTimelineState(sessionId, directory),
@@ -255,12 +280,23 @@ export function LynxChatScreen({
   const permissionAutoAcceptRef = useRef(permissionAutoAccept);
   permissionAutoAcceptRef.current = permissionAutoAccept;
   const edgeSwipeRef = useRef<LynxEdgeSwipeMachine | null>(null);
+  const headerSwipeRef = useRef<LynxHeaderSwipeMachine | null>(null);
   const orderedSessionIdsRef = useRef(orderedSessionIds);
   orderedSessionIdsRef.current = orderedSessionIds;
   const onSessionSwipeRef = useRef(onSessionSwipe);
   onSessionSwipeRef.current = onSessionSwipe;
+  const onOpenSessionsSheetRef = useRef(onOpenSessionsSheet);
+  onOpenSessionsSheetRef.current = onOpenSessionsSheet;
+  const onBackRef = useRef(onBack);
+  onBackRef.current = onBack;
   const hapticsRef = useRef(haptics);
   hapticsRef.current = haptics;
+  const [userRefreshInFlight, setUserRefreshInFlight] = useState(false);
+  const [syncHintVisible, setSyncHintVisible] = useState(false);
+  const syncHintSmootherRef = useRef<ReturnType<typeof createLynxSyncHintSmoother> | null>(null);
+  if (!syncHintSmootherRef.current) {
+    syncHintSmootherRef.current = createLynxSyncHintSmoother(setSyncHintVisible);
+  }
 
   const sessionApi = useMemo(
     () => (runtimeFetch ? { runtimeFetch } : null),
@@ -462,6 +498,101 @@ export function LynxChatScreen({
     };
   }, [edgeSwipeDispatchRef, onComposerEdgeSwipeEvent]);
 
+  useEffect(() => {
+    headerSwipeRef.current = createLynxHeaderSwipeToSessionsMachine();
+  }, [sessionId]);
+
+  const applyHeaderSwipeEffects = useCallback(async (
+    effects: ReturnType<LynxHeaderSwipeMachine['dispatch']>,
+  ) => {
+    for (const effect of effects) {
+      if (effect.type === 'haptic' && hapticsRef.current) {
+        await applyLynxEdgeSwipeHaptic(hapticsRef.current, effect.strength);
+      }
+      if (effect.type === 'open') {
+        onOpenSessionsSheetRef.current?.();
+      }
+      if (effect.type === 'back') {
+        onBackRef.current();
+      }
+    }
+  }, []);
+
+  /** Host may bind pan and call this with chat-body ownership / exclusion flags. */
+  const onHeaderSwipeEvent = useCallback((
+    event: Parameters<LynxHeaderSwipeMachine['dispatch']>[0],
+  ) => {
+    const machine = headerSwipeRef.current;
+    if (!machine) return;
+    const overlayDisabled = headerSwipeDisabled
+      || menuOpen
+      || sheet !== null
+      || typeof onOpenSessionsSheetRef.current !== 'function';
+    const nextEvent = event.type === 'pointerDown'
+      ? {
+        ...event,
+        start: {
+          ...event.start,
+          disabled: event.start.disabled || overlayDisabled,
+        },
+        allowBack: event.allowBack !== false,
+      }
+      : event;
+    if (event.type === 'pointerDown' && overlayDisabled) {
+      // Drop tracking honestly — do not fake open/back while overlays own the arena.
+      machine.dispatch({ type: 'pointerCancel' });
+      return;
+    }
+    const effects = machine.dispatch(nextEvent);
+    void applyHeaderSwipeEffects(effects);
+  }, [applyHeaderSwipeEffects, headerSwipeDisabled, menuOpen, sheet]);
+
+  useEffect(() => {
+    if (!headerSwipeDispatchRef) return;
+    headerSwipeDispatchRef.current = onHeaderSwipeEvent;
+    return () => {
+      headerSwipeDispatchRef.current = null;
+    };
+  }, [headerSwipeDispatchRef, onHeaderSwipeEvent]);
+
+  // Cap WeChat-style sync whisper — portable Lynx signals only (no Cap Zustand flights).
+  const syncHintKind = useMemo(() => {
+    const loadStatus = deriveLynxTranscriptLoadStatus({
+      hydrated: timeline.hydrated,
+      initialError: timeline.initialError,
+    });
+    const hasTranscript = timeline.hydrated && timeline.entries.length > 0;
+    const phase = mapLynxLiveConnectionToSyncPhase(
+      liveConnection,
+      Boolean(runtimeFetch),
+    );
+    return resolveLynxTranscriptSyncHint({
+      sessionId,
+      hasTranscript,
+      loadStatus,
+      userRefreshInFlight,
+      // Honest: Lynx has no Cap transcript-resync flight registry.
+      backgroundResyncInFlight: false,
+      isConnected: phase.isConnected,
+      connectionPhase: phase.connectionPhase,
+    });
+  }, [
+    sessionId,
+    timeline.hydrated,
+    timeline.initialError,
+    timeline.entries.length,
+    liveConnection,
+    runtimeFetch,
+    userRefreshInFlight,
+  ]);
+
+  useEffect(() => {
+    const smoother = syncHintSmootherRef.current;
+    if (!smoother) return;
+    smoother.setRaw(syncHintKind === 'syncing');
+    return () => smoother.cancel();
+  }, [syncHintKind]);
+
   const onAttach = useCallback(async () => {
     setAttachError(null);
     if (!media) {
@@ -489,17 +620,23 @@ export function LynxChatScreen({
         state,
         'labeled stub: no connect runtime — transcript not loaded',
       ));
+      setUserRefreshInFlight(false);
       return;
     }
+    setUserRefreshInFlight(true);
     void (async () => {
-      const result = await fetchSessionMessages(
-        { runtimeFetch },
-        { sessionId, directory, limit: 30 },
-      );
-      if (result.status === 'ok') {
-        setTimeline((state) => applyInitialPage(state, result.page));
-      } else {
-        setTimeline((state) => applyInitialFailure(state, result.error));
+      try {
+        const result = await fetchSessionMessages(
+          { runtimeFetch },
+          { sessionId, directory, limit: 30 },
+        );
+        if (result.status === 'ok') {
+          setTimeline((state) => applyInitialPage(state, result.page));
+        } else {
+          setTimeline((state) => applyInitialFailure(state, result.error));
+        }
+      } finally {
+        setUserRefreshInFlight(false);
       }
     })();
   }, [runtimeFetch, sessionId, directory]);
@@ -926,6 +1063,8 @@ export function LynxChatScreen({
         backgroundColor: cssVar('surface.background'),
       }}
       accessibility-label={lynxT(locale, 'mobile.nav.secondaryPageAria')}
+      data-lynx-header-swipe-surface="true"
+      accessibility-hint={lynxT(locale, 'lynx.chat.headerSwipe.surface')}
     >
       <LynxView style={{ flexDirection: 'row', padding: '12px 16px', alignItems: 'center' }}>
         <LynxView bindtap={onBack} accessibility-label={lynxT(locale, 'lynx.shell.back')}>
@@ -933,16 +1072,28 @@ export function LynxChatScreen({
             {lynxT(locale, 'lynx.shell.back')}
           </LynxText>
         </LynxView>
-        <LynxText
-          style={{
-            marginLeft: '12px',
-            color: cssVar('surface.foreground'),
-            fontWeight: '600',
-            flexGrow: 1,
-          }}
-        >
-          {title ?? lynxT(locale, 'lynx.shell.chat.title')}
-        </LynxText>
+        <LynxView style={{ marginLeft: '12px', flexGrow: 1 }}>
+          <LynxText
+            style={{
+              color: cssVar('surface.foreground'),
+              fontWeight: '600',
+            }}
+          >
+            {title ?? lynxT(locale, 'lynx.shell.chat.title')}
+          </LynxText>
+          {syncHintVisible ? (
+            <LynxText
+              accessibility-label={lynxT(locale, 'lynx.chat.syncingMessages')}
+              style={{
+                color: cssVar('surface.mutedForeground'),
+                fontSize: '11px',
+                marginTop: '2px',
+              }}
+            >
+              {lynxT(locale, 'lynx.chat.syncingMessages')}
+            </LynxText>
+          ) : null}
+        </LynxView>
         {contextDisplay ? (
           <LynxText
             accessibility-label={lynxT(locale, 'lynx.chat.context.aria')}

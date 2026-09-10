@@ -309,10 +309,10 @@ Counts below are inventory rows (user-visible capabilities + owning modules), no
 | Shared transcript + composer | `ChatView.tsx`, `ChatContainer.tsx`, `ChatInput.tsx`, `MessageList.tsx` |
 | **1.19 LegendList timeline** | `TimelineList.tsx` — one list owns history + live tail |
 | Context usage | `MobileContextProgressButton.tsx`, `mobileContextUsage.ts` |
-| Transcript sync hint | `useMobileTranscriptSyncHint.ts` |
+| ~~Transcript sync hint~~ | `useMobileTranscriptSyncHint.ts` → Lynx `transcriptSyncHint.ts` (**代码接上** Next #57; no Cap Zustand flights) |
 | Sessions sheet | `MobileSessionsSheet.tsx` |
 | Edge-swipe session switch (composer) | `useEdgeSwipeSessionSwitch.ts` |
-| Header swipe → sessions | `useHeaderSwipeToSessions.ts` |
+| ~~Header swipe → sessions~~ | `useHeaderSwipeToSessions.ts` → Lynx `headerSwipeToSessions.ts` (**代码接上** Next #57; host pan bind thin) |
 | Overflow menu | `MobileApp.tsx` (`mobile-overflow-menu`) |
 | Tool patch sheets (`edit`, `multiedit`, `apply_patch`) | `MobileChangesSurface.tsx` |
 | Turn / direct diffs | `MobileChangesSurface.tsx`, `DiffView` |

@@ -328,5 +328,12 @@ Chosen mode is written at the top of `packages/lynx/README.md` (Mode B iOS 26 ho
 ## Notes — Docs tip APK/SHA honesty (Next #56 / 2026-09-10)
 
 - Tip / prerelease APK: `lynx-v2-debug-eca4a03` (work/lynx-native @ `eca4a0305`; PR #94 / Next #55 MERGED; release exists). Was stale `lynx-v2-debug-7c5a135` / tip bases `5239dd7e6`/`7c5a135a9`. Do not invent a newer APK SHA than the published tag.
+
+## Notes — Cap header swipe → sessions + transcript sync hint (Next #57 / 2026-09-10)
+
+- Cap `useHeaderSwipeToSessions` portable TS machine + ChatScreen/shell wire (`onOpenSessionsSheet` / back). Host pan via `headerSwipeDispatchRef` — same honesty as edge-swipe (do not fake native pan success).
+- Cap `useMobileTranscriptSyncHint` resolve + show-delay/hide-grace smoother. Inputs: timeline hydrate / overflow refresh / SSE live-tail phase only — **no** Cap Zustand sync stores. Header subtitle when syncing.
+- Tip / prerelease APK: `lynx-v2-debug-489336a` (work/lynx-native @ `489336a34`; PR #95 / Next #56 MERGED; release exists). Was stale `lynx-v2-debug-eca4a03` / tip `eca4a0305`. Do not invent a newer APK SHA than the published tag.
+- Product **NOT DONE** / 三关未齐 / not EXHAUSTED. 真机残差 unchanged: Connect welcome **card chrome** confirm still open for Yee. No 真机过 claim.
 - Cap phone skim found no new Linux-closable Cap product gap outside deferred thin leftovers (`@dnd-kit` / MobileWindowMotion / iPad sidebar / Cap toast sonner / bulk multi-select) and host-only — docs honesty only.
 - Product **NOT DONE** / 三关未齐 / not EXHAUSTED; 真机残差 = Connect welcome **card chrome** confirmation for Yee; no 真机过 claim.
