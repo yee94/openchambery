@@ -4,6 +4,19 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.19.13-beta.4] - 2026-09-10
+
+### 助手
+
+- 助手可读写自身设定里的默认提示词（`get_assistant_settings` / `update_default_prompt`），写入与设置页同一字段，下一轮生效。
+- 继续已有编码会话且未指定模型时，跟随该会话上一轮模型；目录里没有则降级为助手默认模型。
+- 派单成功不再把英文工具确认（Opened a coding session 等）写进对话；卡片和中文开场保留。
+- 编码任务结束后不再弹出「会话已完成 / 会话失败」；结果交回联系人助手，由它决定是否继续推进或总结汇报。
+
+### 会话
+
+- 流式代码块 Shiki 高亮更稳定，减少闪烁和重复渲染。
+
 ## [1.19.13-beta.3] - 2026-09-10
 
 ### Git

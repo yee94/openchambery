@@ -125,7 +125,9 @@ describe('contact tool protocol', () => {
     expect(detectRequestedContactTools('看看现有对话', tools)).toEqual([LIST_SESSIONS_TOOL_NAME]);
     expect(detectRequestedContactTools('list sessions in that project', tools)).toEqual([LIST_SESSIONS_TOOL_NAME]);
     expect(detectRequestedContactTools('看看我的默认提示词', tools)).toEqual([GET_ASSISTANT_SETTINGS_TOOL_NAME]);
+    expect(detectRequestedContactTools('看看 OpenCode 配置助手的默认提示词', tools)).toEqual([GET_ASSISTANT_SETTINGS_TOOL_NAME]);
     expect(detectRequestedContactTools('把默认提示词改成简洁中文', tools)).toEqual([UPDATE_DEFAULT_PROMPT_TOOL_NAME]);
+    expect(detectRequestedContactTools('改 OpenCode 配置助手的默认提示词', tools)).toEqual([UPDATE_DEFAULT_PROMPT_TOOL_NAME]);
     expect(detectRequestedContactTools('update default prompt to be terse', tools)).toEqual([UPDATE_DEFAULT_PROMPT_TOOL_NAME]);
     expect(detectRequestedContactTools('开新对话', tools)).not.toContain(ASSIGN_SESSION_TOOL_NAME);
     expect(detectRequestedContactTools('开新对话', tools)).not.toContain(CLEAR_CHAT_HISTORY_TOOL_NAME);
@@ -620,6 +622,69 @@ describe('createContactTools', () => {
     const storageFailed = await update.execute('call_storage', { prompt: 'Y' });
     expect(storageFailed.details.error).toBe('upstream_error');
     expect(storageFailed.terminate).toBe(true);
+  });
+
+  it('reads and updates another assistant defaultPrompt by name without changing self', async () => {
+    const peer = {
+      id: 'asst_peer',
+      name: 'OpenCode 配置助手',
+      defaultPrompt: 'old peer',
+      providerID: 'p',
+      modelID: 'm',
+      agent: null,
+      variant: null,
+      mode: 'continuous',
+      workspacePath: null,
+      enabled: true,
+    };
+    const host = {
+      id: 'asst_host',
+      name: 'Host',
+      defaultPrompt: 'host prompt',
+      providerID: 'p',
+      modelID: 'm',
+      agent: null,
+      variant: null,
+      mode: 'continuous',
+      workspacePath: null,
+      enabled: true,
+    };
+    const readAssistantSettings = vi.fn(async (input) => (
+      input?.assistantID === 'asst_peer' ? peer : host
+    ));
+    const updateAssistantSettings = vi.fn(async (patch) => ({
+      updated: true,
+      defaultPrompt: patch.defaultPrompt,
+    }));
+    const listAssistants = vi.fn(async () => [host, peer]);
+    const tools = createContactTools({
+      readAssistantSettings,
+      updateAssistantSettings,
+      listAssistants,
+      currentAssistant: host,
+    });
+
+    const got = await tools.find((tool) => tool.name === GET_ASSISTANT_SETTINGS_TOOL_NAME)
+      .execute('call_peer_get', { to: 'OpenCode 配置助手' });
+    expect(readAssistantSettings).toHaveBeenCalledWith({ assistantID: 'asst_peer' });
+    expect(got.details.settings).toMatchObject({ id: 'asst_peer', name: 'OpenCode 配置助手', defaultPrompt: 'old peer' });
+
+    const saved = await tools.find((tool) => tool.name === UPDATE_DEFAULT_PROMPT_TOOL_NAME)
+      .execute('call_peer_set', { to: 'OpenCode 配置助手', prompt: 'new peer persona' });
+    expect(updateAssistantSettings).toHaveBeenCalledWith({
+      defaultPrompt: 'new peer persona',
+      assistantID: 'asst_peer',
+    });
+    expect(saved.details).toMatchObject({
+      updated: true,
+      defaultPrompt: 'new peer persona',
+      assistantID: 'asst_peer',
+      name: 'OpenCode 配置助手',
+    });
+
+    const missing = await tools.find((tool) => tool.name === UPDATE_DEFAULT_PROMPT_TOOL_NAME)
+      .execute('call_missing_peer', { to: '没有这个助手', prompt: 'x' });
+    expect(missing.details.error).toBe('not_found');
   });
 });
 

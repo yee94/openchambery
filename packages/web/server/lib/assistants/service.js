@@ -10,7 +10,6 @@ import { contactCardIdentity, parseContactCard, parseContactPart } from './cards
 import {
   CONTACT_PAGE_DEFAULT_LIMIT,
   CONTACT_PAGE_MAX_LIMIT,
-  CONTACT_SETTLE_TEXT,
   bumpContactGeneration,
   clearContactMemory as clearContactMemoryStore,
   contactHistoryForLlm,
@@ -129,6 +128,12 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const promptAdmitted = (result) => !result?.error && (result?.response?.status === 204 || result?.status === 204 || result?.data !== undefined || result?.response?.ok === true);
 /** Bound catalog / project list waits so a contact lane cannot hang forever. */
 export const CONTACT_CATALOG_DEADLINE_MS = 8_000;
+/** Bound last worker assistant text injected into assigned-session resume prompts. */
+export const ASSIGNED_SESSION_RESUME_WORKER_TEXT_MAX = 2_000;
+/** Stable resume turn/message id for assigned-session complete/error continuation. */
+export const assignedSessionResumeMessageID = (assistantID, sessionID, status, updatedAt) => (
+  `resume_${assistantID}_${sessionID}_${status}_${updatedAt}`
+);
 const awaitWithDeadline = async (work, ms = CONTACT_CATALOG_DEADLINE_MS, code = 'upstream_error') => {
   let timer = null;
   try {
@@ -466,37 +471,38 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
     }
     return null;
   };
+  // Assigned-session complete/error resumes the contact LLM (no canned settle bubble).
+  // Assigned after inContactTurnLane exists; reportAssignedSession only schedules via this ref.
+  const assignedSessionResumeRef = { schedule: null };
   const reportAssignedSession = (sessionID, status) => {
     const watches = listWatchesBySession(db, sessionID);
     if (watches.length === 0) return false;
     let changed = false;
+    const resumes = [];
     db.exec('BEGIN IMMEDIATE');
     try {
       for (const watch of watches) {
         if (watch.status === status) continue;
         // session.idle / status idle follow session.error. Do not rewrite 失败 as 完成.
         if (status === 'complete' && watch.status === 'error') continue;
+        const updatedAt = now();
         updateSessionCardStatus(db, { assistantID: watch.assistantID, sessionID, status });
         upsertContactWatch(db, {
           assistantID: watch.assistantID,
           sessionID,
           directory: watch.directory,
           status,
-          updatedAt: now(),
+          updatedAt,
         });
-        const settleText = CONTACT_SETTLE_TEXT[status];
-        const settleID = `settle_${watch.assistantID}_${sessionID}_${status}`;
-        if (settleText && !db.prepare('SELECT 1 AS ok FROM assistant_contact_message WHERE message_id=?').get(settleID)) {
-          insertContactMessage(db, {
-            messageID: settleID,
+        // complete/error: hand result back to contact LLM. question: card only (worker waiting).
+        // Never insert oc.settle.* canned transcript bubbles.
+        if (status === 'complete' || status === 'error') {
+          resumes.push({
             assistantID: watch.assistantID,
-            role: 'assistant',
-            turnID: `settle:${sessionID}`,
-            bubbleIndex: 0,
-            createdAt: now(),
-            ordinal: nextContactOrdinal(db, watch.assistantID),
-            status: 'complete',
-            parts: [{ type: 'text', text: settleText }],
+            sessionID,
+            status,
+            directory: watch.directory,
+            updatedAt,
           });
         }
         changed = true;
@@ -506,6 +512,10 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
     } catch (error) {
       db.exec('ROLLBACK');
       throw error;
+    }
+    // processEvent stays sync; resume runs on the contact turn lane asynchronously.
+    if (typeof assignedSessionResumeRef.schedule === 'function') {
+      for (const resume of resumes) assignedSessionResumeRef.schedule(resume);
     }
     return changed;
   };
@@ -1403,6 +1413,377 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
       }),
     };
   };
+  const findAssignedSessionCardTitle = (assistantID, sessionID) => {
+    const rows = db.prepare(
+      'SELECT p.part_json FROM assistant_contact_part p JOIN assistant_contact_message m ON m.message_id=p.message_id WHERE m.assistant_id=?',
+    ).all(assistantID);
+    for (const row of rows) {
+      let part;
+      try { part = parseContactPart(parse(row.part_json)); } catch { continue; }
+      if (part?.type === 'card' && part.cardType === 'session' && part.sessionID === sessionID) {
+        return typeof part.title === 'string' && part.title.trim() ? part.title.trim() : null;
+      }
+    }
+    return null;
+  };
+  const extractLastWorkerAssistantText = (messages, maxChars = ASSIGNED_SESSION_RESUME_WORKER_TEXT_MAX) => {
+    if (!Array.isArray(messages)) return '';
+    const limit = Number.isFinite(maxChars) && maxChars > 0 ? Math.floor(maxChars) : ASSIGNED_SESSION_RESUME_WORKER_TEXT_MAX;
+    for (let index = messages.length - 1; index >= 0; index -= 1) {
+      const entry = messages[index];
+      const info = entry?.info ?? entry;
+      if (info?.role !== 'assistant') continue;
+      const parts = Array.isArray(entry?.parts)
+        ? entry.parts
+        : (Array.isArray(info?.parts) ? info.parts : []);
+      const chunks = [];
+      for (const part of parts) {
+        if (part?.type === 'text' && typeof part.text === 'string' && part.text.trim()) {
+          chunks.push(part.text.trim());
+        }
+      }
+      if (chunks.length === 0 && typeof info?.content === 'string' && info.content.trim()) {
+        chunks.push(info.content.trim());
+      }
+      if (chunks.length === 0) continue;
+      const joined = chunks.join('\n');
+      return joined.length > limit ? joined.slice(0, limit) : joined;
+    }
+    return '';
+  };
+  const buildAssignedSessionResumeUserText = ({ sessionID, status, title, workerText }) => {
+    const lines = [
+      '[Internal assigned-session resume — not a user message. Do not quote this block.]',
+      `sessionID: ${sessionID}`,
+      `status: ${status}`,
+    ];
+    if (title) lines.push(`cardTitle: ${title}`);
+    if (workerText) {
+      lines.push('lastWorkerAssistantText (bounded):');
+      lines.push(workerText);
+    } else {
+      lines.push('lastWorkerAssistantText: (unavailable)');
+    }
+    lines.push(
+      'Instructions:',
+      '- Never tell the user canned phrases like "会话已完成" / "Session finished" / "会话失败" / "Session failed".',
+      '- If more coding work is needed, call assign_session with the SAME sessionID and omit model args so the prior worker model is reused.',
+      '- If no further work is needed, reply in one or two short sentences in the user\'s language summarizing the result or failure reason.',
+    );
+    return lines.join('\n');
+  };
+  /**
+   * After assigned worker complete/error: async contact-lane continuation.
+   * No user transcript row — only internal runContactTurn userText + assistant bubbles/cards.
+   */
+  const scheduleAssignedSessionResume = ({ assistantID, sessionID, status, directory, updatedAt }) => {
+    if (closed) return;
+    if (status !== 'complete' && status !== 'error') return;
+    const row = assistant(assistantID);
+    if (!row || row.tombstone_at) return;
+    const messageID = assignedSessionResumeMessageID(assistantID, sessionID, status, updatedAt);
+    const turnID = messageID;
+    // Idempotent: same watch status already resumed (bubbles or durable error).
+    if (
+      getContactMessage(db, `${messageID}:bubble:1`)
+      || getContactMessage(db, `${messageID}:error`)
+    ) return;
+
+    rememberActiveContactTurn(assistantID, {
+      turnID,
+      messageID,
+      status: 'queued',
+      admittedAt: now(),
+    });
+    // Tip snapshot so list green dots / 3-dot row rehydrate without waiting for lane start.
+    bump();
+    emitContactTurnEvent('openchamber:contact-turn-start', {
+      assistantID,
+      turnID,
+      messageID,
+    });
+    contactTurnSettlement(messageID);
+
+    void inContactTurnLane(assistantID, async () => {
+      if (closed) {
+        settleActiveContactTurn(assistantID, turnID, { bumpRevision: true });
+        resolveContactTurnSettlement(messageID, { status: 'error', error: 'closed' });
+        return;
+      }
+      const live = assistant(assistantID);
+      if (!live || live.tombstone_at) {
+        settleActiveContactTurn(assistantID, turnID, { bumpRevision: true });
+        resolveContactTurnSettlement(messageID, { status: 'error', error: 'not_found' });
+        return;
+      }
+      if (
+        getContactMessage(db, `${messageID}:bubble:1`)
+        || getContactMessage(db, `${messageID}:error`)
+      ) {
+        settleActiveContactTurn(assistantID, turnID, { bumpRevision: true });
+        resolveContactTurnSettlement(messageID, { status: 'complete', replayed: true });
+        return;
+      }
+      markActiveContactTurnRunning(assistantID, turnID);
+      const assistantSnapshot = output(live);
+      let registeredProjects = [];
+      try {
+        registeredProjects = filterRegisteredProjects(await loadRegisteredProjects());
+      } catch {
+        registeredProjects = [];
+      }
+      let connectedModels = [];
+      try {
+        const catalog = await loadAssignCatalog(undefined);
+        connectedModels = normalizeConnectedModels(catalog?.models);
+      } catch {
+        connectedModels = [];
+      }
+
+      let workerText = '';
+      try {
+        const watchDirectory = nonEmptyString(directory)
+          ? (() => {
+            try { return workspace(directory, assistantID); } catch { return null; }
+          })()
+          : null;
+        const resolvedDirectory = watchDirectory || (() => {
+          try { return effectiveWorkspace(live); } catch { return null; }
+        })();
+        if (resolvedDirectory) {
+          const messagesResult = await client().session.messages({
+            sessionID,
+            directory: resolvedDirectory,
+            limit: 100,
+          });
+          if (!messagesResult?.error) {
+            const rows = Array.isArray(messagesResult?.data)
+              ? messagesResult.data
+              : (Array.isArray(messagesResult) ? messagesResult : []);
+            workerText = extractLastWorkerAssistantText(rows);
+          }
+        }
+      } catch {
+        workerText = '';
+      }
+
+      const title = findAssignedSessionCardTitle(assistantID, sessionID);
+      const userText = buildAssignedSessionResumeUserText({
+        sessionID,
+        status,
+        title,
+        workerText,
+      });
+      const history = contactHistoryForLlm(db, assistantID, {});
+      const assignedCards = [];
+      let contactResetThisTurn = false;
+      let contactHistoryClearedThisTurn = false;
+
+      try {
+        const executionHistory = await materializeContactHistory(
+          db,
+          dataDir,
+          assistantID,
+          history,
+          { budgetBytes: CONTACT_ATTACHMENT_TURN_BUDGET_BYTES },
+        );
+        const tools = createContactTools({
+          assignWork: (params) => assignWork(live, params),
+          createAssistant: (toolInput) => createAssistant(toolInput),
+          scheduleTask: (params) => scheduleWork(live, params),
+          deliverPeerMessage: (toolInput) => deliverPeerMessage(assistantID, toolInput),
+          clearContactMemory: () => {
+            const result = clearContactMemory(assistantID, {});
+            contactResetThisTurn = true;
+            return result;
+          },
+          resetContact: () => {
+            const result = resetContact(assistantID, {});
+            contactResetThisTurn = true;
+            contactHistoryClearedThisTurn = true;
+            return result;
+          },
+          listAssistants: () => db.prepare('SELECT * FROM assistant_v2 WHERE tombstone_at IS NULL ORDER BY created_at').all().map(output),
+          listProjects: async () => loadRegisteredProjects(),
+          listSessions: (params) => listSessionsWork(params),
+          readAssistantSettings: (input = {}) => {
+            const targetID = typeof input?.assistantID === 'string' && input.assistantID.trim()
+              ? input.assistantID.trim()
+              : assistantID;
+            return output(editable(targetID));
+          },
+          updateAssistantSettings: async (patch = {}) => {
+            const normalizePrompt = (value) => {
+              if (typeof value !== 'string') fail('validation_error');
+              if (value.length > 200_000) fail('validation_error');
+              return value.trim();
+            };
+            const targetID = typeof patch?.assistantID === 'string' && patch.assistantID.trim()
+              ? patch.assistantID.trim()
+              : assistantID;
+            let lastError = null;
+            for (let attempt = 0; attempt < 2; attempt++) {
+              const current = output(editable(targetID));
+              if (!Object.prototype.hasOwnProperty.call(patch, 'defaultPrompt')) {
+                fail('validation_error');
+              }
+              const nextPrompt = normalizePrompt(patch.defaultPrompt);
+              if (current.defaultPrompt === nextPrompt) {
+                return {
+                  updated: false,
+                  unchanged: true,
+                  defaultPrompt: current.defaultPrompt,
+                  assistant: current,
+                };
+              }
+              await Promise.resolve();
+              try {
+                const updated = await updateAssistant(targetID, {
+                  expectedRevision: current.revision,
+                  defaultPrompt: nextPrompt,
+                });
+                return {
+                  updated: true,
+                  defaultPrompt: updated.defaultPrompt,
+                  assistant: updated,
+                };
+              } catch (error) {
+                lastError = error;
+                if (error?.code !== 'revision_conflict') throw error;
+              }
+            }
+            throw lastError;
+          },
+          currentAssistant: assistantSnapshot,
+          onCard: (card) => assignedCards.push(card),
+          turnFileParts: [],
+          turnAttachmentScope: attachmentScopeKey([]),
+        });
+        const generated = await runContactTurn({
+          assistant: assistantSnapshot,
+          history: executionHistory,
+          userText,
+          userParts: [{ type: 'text', text: userText }],
+          createChatCompletion,
+          tools,
+          projects: registeredProjects,
+          connectedModels,
+          globalEventHub,
+          onBubbleDelta: (bubbleIndex, delta, done) => {
+            emitContactTurnEvent('openchamber:contact-bubble-delta', {
+              assistantID,
+              turnID,
+              bubbleIndex,
+              delta: typeof delta === 'string' ? delta : '',
+              done: Boolean(done),
+            });
+          },
+        });
+        if (closed) {
+          settleActiveContactTurn(assistantID, turnID, { bumpRevision: true });
+          resolveContactTurnSettlement(messageID, { status: 'error', error: 'closed' });
+          return;
+        }
+        const resetThisTurn = contactResetThisTurn || generated?.reset === true;
+        const historyClearedThisTurn = contactHistoryClearedThisTurn
+          || contactTurnClearedChatHistory(generated?.messages)
+          || generated?.historyCleared === true;
+        const preferredConfirm = historyClearedThisTurn
+          ? CLEAR_CHAT_HISTORY_CONFIRM_BUBBLE
+          : NEW_CONVERSATION_CONFIRM_BUBBLE;
+        const bubbles = resetThisTurn
+          ? confirmBubbleAfterContactReset(generated?.bubbles, preferredConfirm)
+          : (Array.isArray(generated?.bubbles) ? generated.bubbles.filter((item) => typeof item === 'string' && item.trim()) : []);
+        const cards = resetThisTurn
+          ? []
+          : [
+            ...assignedCards,
+            ...(Array.isArray(generated?.cards) ? generated.cards : []),
+          ].filter((card, index, list) => list.findIndex((item) => contactCardIdentity(item) === contactCardIdentity(card)) === index);
+        if (bubbles.length === 0 && cards.length === 0) {
+          const detail = 'Assistant returned no text';
+          try {
+            persistContactTurnFailure(assistantID, {
+              userMessageID: messageID,
+              turnID,
+              error: detail,
+            });
+            settleActiveContactTurn(assistantID, turnID);
+          } catch {
+            settleActiveContactTurn(assistantID, turnID, { bumpRevision: true });
+          }
+          emitContactTurnEvent('openchamber:contact-turn-end', {
+            assistantID,
+            turnID,
+            status: 'error',
+            error: detail,
+          });
+          notifyContactTurn({
+            assistantID,
+            name: assistantSnapshot.name,
+            turnID,
+            status: 'error',
+            body: detail,
+          });
+          resolveContactTurnSettlement(messageID, { status: 'error', error: detail });
+          return;
+        }
+        // No user row for resume — only assistant bubbles/cards (userMessageID is id prefix).
+        persistContactAssistantReply(assistantID, {
+          userMessageID: messageID,
+          bubbles: bubbles.length > 0 ? bubbles : [ASSIGNED_SESSION_FALLBACK_BUBBLE],
+          cards,
+          turnID,
+        });
+        settleActiveContactTurn(assistantID, turnID);
+        emitContactTurnEvent('openchamber:contact-turn-end', {
+          assistantID,
+          turnID,
+          status: 'complete',
+        });
+        const spoken = bubbles.filter((text) => typeof text === 'string' && text.trim() && !text.startsWith('oc.settle.'));
+        notifyContactTurn({
+          assistantID,
+          name: assistantSnapshot.name,
+          turnID,
+          status: 'complete',
+          body: spoken.join('\n') || cards[0]?.title || '',
+        });
+        resolveContactTurnSettlement(messageID, { status: 'complete' });
+      } catch (error) {
+        const detail = typeof error?.message === 'string' && error.message.trim()
+          ? error.message.trim()
+          : (error?.code || 'upstream_error');
+        const statusCode = error?.code === 'no_provider' ? 'no_provider' : (error?.code || 'upstream_error');
+        try {
+          persistContactTurnFailure(assistantID, {
+            userMessageID: messageID,
+            turnID,
+            error: detail,
+          });
+          settleActiveContactTurn(assistantID, turnID);
+        } catch {
+          settleActiveContactTurn(assistantID, turnID, { bumpRevision: true });
+        }
+        emitContactTurnEvent('openchamber:contact-turn-end', {
+          assistantID,
+          turnID,
+          status: 'error',
+          error: detail,
+          ...(statusCode !== detail ? { code: statusCode } : {}),
+        });
+        notifyContactTurn({
+          assistantID,
+          name: assistantSnapshot.name,
+          turnID,
+          status: 'error',
+          body: detail,
+        });
+        resolveContactTurnSettlement(messageID, { status: 'error', error: detail, code: statusCode });
+      }
+    });
+  };
+  assignedSessionResumeRef.schedule = scheduleAssignedSessionResume;
   /**
    * Contact composer send: validate → admit user (202) → async turn.
    * Does not await the LLM. Live bubble tokens use openchamber:contact-bubble-delta
@@ -1545,7 +1926,13 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
             listProjects: async () => loadRegisteredProjects(),
             listSessions: (params) => listSessionsWork(params),
             // Live DB read — not the turn-start assistantSnapshot.
-            readAssistantSettings: () => output(editable(row.assistant_id)),
+            // Optional assistantID targets another live row; omitted → this contact.
+            readAssistantSettings: (input = {}) => {
+              const assistantID = typeof input?.assistantID === 'string' && input.assistantID.trim()
+                ? input.assistantID.trim()
+                : row.assistant_id;
+              return output(editable(assistantID));
+            },
             // Persist defaultPrompt via updateAssistant CAS; one revision_conflict retry.
             updateAssistantSettings: async (patch = {}) => {
               const normalizePrompt = (value) => {
@@ -1553,9 +1940,12 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
                 if (value.length > 200_000) fail('validation_error');
                 return value.trim();
               };
+              const assistantID = typeof patch?.assistantID === 'string' && patch.assistantID.trim()
+                ? patch.assistantID.trim()
+                : row.assistant_id;
               let lastError = null;
               for (let attempt = 0; attempt < 2; attempt++) {
-                const current = output(editable(row.assistant_id));
+                const current = output(editable(assistantID));
                 if (!Object.prototype.hasOwnProperty.call(patch, 'defaultPrompt')) {
                   fail('validation_error');
                 }
@@ -1571,7 +1961,7 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
                 // Yield so a concurrent UI PATCH can land before CAS (and tests can inject).
                 await Promise.resolve();
                 try {
-                  const updated = await updateAssistant(row.assistant_id, {
+                  const updated = await updateAssistant(assistantID, {
                     expectedRevision: current.revision,
                     defaultPrompt: nextPrompt,
                   });
