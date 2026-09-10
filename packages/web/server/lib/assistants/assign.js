@@ -263,16 +263,55 @@ export function hasAssignImageParts(parts = []) {
 }
 
 /**
+ * Normalize a session/message model object to { providerID, modelID }.
+ * Accepts `{ providerID, id }` or `{ providerID, modelID }`. Lookup failures stay null.
+ */
+export function normalizeAssignSessionModel(model) {
+  if (!model || typeof model !== 'object' || Array.isArray(model)) return null;
+  const providerID = trim(model.providerID, 256);
+  const modelID = trim(model.modelID, 256) || trim(model.id, 256);
+  if (!providerID || !modelID) return null;
+  return { providerID, modelID };
+}
+
+/**
+ * Extract the last worker model from a session.get payload and optional messages list.
+ * Priority: session.model → newest user/assistant info.model. Never throws.
+ */
+export function extractAssignSessionModel({ session = null, messages = null } = {}) {
+  const payload = session?.data && typeof session.data === 'object' && !Array.isArray(session.data)
+    ? session.data
+    : session;
+  const fromSession = normalizeAssignSessionModel(payload?.model);
+  if (fromSession) return fromSession;
+
+  const rows = Array.isArray(messages)
+    ? messages
+    : (Array.isArray(messages?.data) ? messages.data : []);
+  for (let index = rows.length - 1; index >= 0; index -= 1) {
+    const row = rows[index];
+    const info = row?.info && typeof row.info === 'object' ? row.info : row;
+    const role = info?.role || row?.role;
+    if (role !== 'user' && role !== 'assistant') continue;
+    const hit = normalizeAssignSessionModel(info?.model || row?.model);
+    if (hit) return hit;
+  }
+  return null;
+}
+
+/**
  * Resolve worker model for assign.
- * - No explicit selection → assistant default (no catalog required).
+ * - No explicit selection → reused session model (catalog match, source session) else assistant default.
  * - Explicit selection → must resolve uniquely against the connected catalog; never silent fallback.
  * - Provided but illegal/blank/overlong/conflicting fields fail closed (validation_error).
+ * - Session model missing/not-in-catalog degrades to assistant default (never fails assign).
  */
 export function resolveAssignWorkerModel({
   providerID,
   modelID,
   model,
   fallback = {},
+  sessionModel = null,
   catalog = null,
 } = {}) {
   const explicitProvider = requireProvidedString(providerID, { field: 'providerID', max: 256 });
@@ -284,6 +323,21 @@ export function resolveAssignWorkerModel({
   const fallbackModel = trim(fallback.modelID, 256);
 
   if (!hasExplicit) {
+    const session = normalizeAssignSessionModel(sessionModel);
+    if (session && catalog && Array.isArray(catalog.models)) {
+      const hit = catalog.models.find((item) => (
+        item?.providerID === session.providerID && item?.modelID === session.modelID
+      ));
+      if (hit) {
+        return {
+          providerID: session.providerID,
+          modelID: session.modelID,
+          source: 'session',
+          name: typeof hit.name === 'string' ? hit.name : null,
+          acceptsImages: hit.acceptsImages === true ? true : hit.acceptsImages === false ? false : null,
+        };
+      }
+    }
     if (!fallbackProvider || !fallbackModel) {
       throw new AssignError(ASSIGN_CODES.VALIDATION, 'Assistant is missing a connected provider/model.');
     }
@@ -534,6 +588,7 @@ export async function assignSession(input = {}) {
         providerID: assistant.providerID,
         modelID: assistant.modelID,
       },
+      sessionModel: input.sessionModel,
       catalog: input.catalog,
     });
   }

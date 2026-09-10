@@ -66,6 +66,7 @@ import {
   attachmentScopeKey,
   hasAssignImageParts,
   resolveAssignDirectory,
+  extractAssignSessionModel,
   resolveAssignWorkerModel,
   sanitizeAssignFileParts,
 } from './assign.js';
@@ -1050,6 +1051,42 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
       return null;
     }
   };
+  /**
+   * Best-effort previous worker model for a reused sessionID.
+   * session.get → session.model, else newest message info.model. Never throws / never fails assign.
+   */
+  const lookupReusedSessionModel = async ({ sessionID, directory, signal } = {}) => {
+    if (typeof sessionID !== 'string' || !sessionID.trim()) return null;
+    const api = client();
+    const options = signal ? { signal } : undefined;
+    const dir = typeof directory === 'string' && directory.trim() ? directory.trim() : null;
+    try {
+      const got = await api.session.get({
+        sessionID,
+        ...(dir ? { directory: dir } : {}),
+      }, options);
+      if (got?.error) return null;
+      const sessionPayload = got?.data ?? got;
+      let messages = null;
+      const fromSession = extractAssignSessionModel({ session: sessionPayload });
+      if (fromSession) return fromSession;
+      try {
+        if (typeof api.session.messages !== 'function') return null;
+        const listed = await api.session.messages({
+          sessionID,
+          ...(dir ? { directory: dir } : {}),
+          limit: 40,
+        }, options);
+        if (listed?.error) return null;
+        messages = listed?.data ?? listed;
+      } catch {
+        return null;
+      }
+      return extractAssignSessionModel({ session: sessionPayload, messages });
+    } catch {
+      return null;
+    }
+  };
   const assignWork = async (row, params = {}) => {
     const fileParts = sanitizeAssignFileParts(params.fileParts || params.parts || []);
     const signal = params.signal;
@@ -1060,16 +1097,44 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
       || (typeof params.model === 'string' && params.model.trim())
       || (params.model && typeof params.model === 'object'),
     );
-    const needsCatalog = explicitModel || hasAssignImageParts(fileParts);
+    const reuseSessionID = typeof params.sessionID === 'string' && params.sessionID.trim()
+      ? params.sessionID.trim()
+      : '';
+    // Reused session without explicit model may follow the session's last model (catalog-gated).
+    const followSessionModel = Boolean(reuseSessionID && !explicitModel);
+    const needsCatalog = explicitModel || hasAssignImageParts(fileParts) || followSessionModel;
     let catalog = null;
+    let sessionModel = null;
     if (needsCatalog) {
-      catalog = await loadAssignCatalog(signal);
+      if (followSessionModel && !explicitModel && !hasAssignImageParts(fileParts)) {
+        // Session-follow degrades on catalog failure; explicit/image stay fail-closed.
+        try {
+          catalog = await loadAssignCatalog(signal);
+        } catch {
+          catalog = null;
+        }
+      } else {
+        catalog = await loadAssignCatalog(signal);
+      }
+    }
+    if (followSessionModel && catalog) {
+      const directoryHint = typeof params.directory === 'string' && params.directory.trim()
+        ? params.directory.trim()
+        : (typeof params.projectPath === 'string' && params.projectPath.trim()
+          ? params.projectPath.trim()
+          : null);
+      sessionModel = await lookupReusedSessionModel({
+        sessionID: reuseSessionID,
+        directory: directoryHint,
+        signal,
+      });
     }
     const workerModel = resolveAssignWorkerModel({
       providerID: params.providerID,
       modelID: params.modelID,
       model: params.model,
       fallback: { providerID: row.provider_id, modelID: row.model_id },
+      sessionModel,
       catalog,
     });
     let acceptsImages = workerModel.acceptsImages;
