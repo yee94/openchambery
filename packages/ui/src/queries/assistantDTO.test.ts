@@ -84,6 +84,8 @@ describe('Assistant DTO parsing', () => {
     const page = parseAssistantContactPage({
       complete: true,
       nextCursor: null,
+      generation: 0,
+      revision: 1,
       messages: [{
         messageID: 'peer_1',
         assistantID: 'asst_b',
@@ -127,6 +129,8 @@ describe('Assistant DTO parsing', () => {
     const page = parseAssistantContactPage({
       complete: true,
       nextCursor: null,
+      generation: 0,
+      revision: 2,
       messages: [{
         messageID: 'card_1',
         assistantID: 'asst_host',
@@ -155,6 +159,8 @@ describe('Assistant DTO parsing', () => {
     const page = parseAssistantContactPage({
       complete: true,
       nextCursor: null,
+      generation: 0,
+      revision: 3,
       messages: [{
         messageID: 'user_1',
         assistantID: 'asst_host',
@@ -170,15 +176,54 @@ describe('Assistant DTO parsing', () => {
           { type: 'text', text: 'look' },
           { type: 'file', mime: 'image/png', url: 'data:image/png;base64,aa', filename: 'shot.png' },
           { type: 'file', mime: 'text/plain', url: 'data:text/plain;base64,eA==', filename: 'notes.txt' },
+          {
+            type: 'file',
+            mime: 'application/pdf',
+            attachmentID: 'att_1',
+            sha256: 'abc',
+            size: 12,
+            filename: 'doc.pdf',
+          },
         ],
         text: 'look',
         cards: [],
       }],
     });
+    expect(page.generation).toBe(0);
+    expect(page.revision).toBe(3);
     expect(page.messages[0]?.parts).toEqual([
       { type: 'text', text: 'look' },
       { type: 'file', mime: 'image/png', url: 'data:image/png;base64,aa', filename: 'shot.png' },
       { type: 'file', mime: 'text/plain', url: 'data:text/plain;base64,eA==', filename: 'notes.txt' },
+      {
+        type: 'file',
+        mime: 'application/pdf',
+        attachmentID: 'att_1',
+        sha256: 'abc',
+        size: 12,
+        filename: 'doc.pdf',
+      },
     ]);
+    expect(() => parseAssistantContactPage({
+      complete: true,
+      nextCursor: null,
+      generation: 0,
+      revision: 1,
+      messages: [{
+        messageID: 'bad',
+        assistantID: 'a',
+        role: 'user',
+        turnID: 'bad',
+        bubbleIndex: 0,
+        createdAt: 1,
+        ordinal: 1,
+        status: 'complete',
+        fromAssistantID: null,
+        fromAssistantName: null,
+        parts: [{ type: 'file', mime: 'text/plain', url: 'data:,', attachmentID: 'x', sha256: 'y', size: 1 }],
+        text: '',
+        cards: [],
+      }],
+    })).toThrow(AssistantAPIError);
   });
 });

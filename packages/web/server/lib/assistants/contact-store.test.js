@@ -3,22 +3,37 @@ import os from 'node:os';
 import path from 'node:path';
 import { createRequire } from 'node:module';
 import { describe, expect, it } from 'vitest';
-import { createSessionCardPart } from './cards.js';
+import {
+  createAssistantCardPart,
+  createScheduleCardPart,
+  createSessionCardPart,
+} from './cards.js';
 import {
   CONTACT_LLM_FETCH_LIMIT,
   CONTACT_LLM_FILE_CHAR_WEIGHT,
   CONTACT_LLM_MAX_CHARS,
   CONTACT_LLM_MAX_TURNS,
+  CONTACT_PAGE_DEFAULT_LIMIT,
+  CONTACT_PAGE_MAX_LIMIT,
+  CONTACT_PREVIEW_MAX_CHARS,
+  CONTACT_SETTLE_TEXT,
+  bumpContactGeneration,
   clearContactMemory,
   contactHistoryForLlm,
   createActiveContactTurn,
+  decodeContactCursor,
   deleteContactMessages,
+  encodeContactCursor,
   ensureContactSchema,
   getContactContextBoundary,
+  getContactGeneration,
+  getLatestContactMessagePreview,
+  getLatestContactMessagePreviews,
   insertContactMessage,
   listContactMessages,
   nextContactOrdinal,
   projectActiveContactTurn,
+  sanitizeContactPreviewText,
   trimContactHistoryForLlm,
 } from './contact-store.js';
 
@@ -154,6 +169,52 @@ describe('contact LLM history trim', () => {
     db.close();
   });
 
+  it('deleteContactMessages upToOrdinal keeps wipe user + later users; drops late assistant/cards', () => {
+    const db = openDb();
+    const assistantID = 'asst_wipe_bound';
+    insert(db, assistantID, { role: 'user', text: 'seed-old' });
+    insert(db, assistantID, { role: 'assistant', text: 'seed-reply' });
+    const wipeTurn = insert(db, assistantID, { role: 'user', text: '清空聊天记录' });
+    const queued = insert(db, assistantID, {
+      role: 'user',
+      text: 'queued-B',
+      parts: [{ type: 'text', text: 'queued-B' }, { type: 'file', mime: 'text/plain', url: 'data:text/plain;base64,eA==', filename: 'b.txt' }],
+    });
+    // Late write from a prior still-running lane — ordinal after wipe user.
+    insert(db, assistantID, { role: 'assistant', text: 'late-A-reply-should-die' });
+    insert(db, assistantID, {
+      role: 'assistant',
+      text: '',
+      parts: [createSessionCardPart({
+        sessionID: 'ses_late_a',
+        directory: '/repo',
+        title: 'late A card',
+        status: 'busy',
+      })],
+    });
+    insert(db, assistantID, {
+      role: 'peer',
+      text: 'peer leftover',
+      fromAssistantID: 'asst_other',
+      fromAssistantName: 'Other',
+    });
+    deleteContactMessages(db, assistantID, { upToOrdinal: wipeTurn.ordinal });
+    const page = listContactMessages(db, assistantID, { limit: 50 });
+    expect(page.messages.map((message) => ({ role: message.role, text: message.text }))).toEqual([
+      { role: 'user', text: '清空聊天记录' },
+      { role: 'user', text: 'queued-B' },
+    ]);
+    expect(page.messages[0].messageID).toBe(wipeTurn.messageID);
+    expect(page.messages[1].messageID).toBe(queued.messageID);
+    expect(page.messages[1].parts.some((part) => part.type === 'file' && part.filename === 'b.txt')).toBe(true);
+    expect(page.messages.some((message) => message.cards?.length > 0)).toBe(false);
+    expect(page.messages.some((message) => (message.text || '').includes('late-A'))).toBe(false);
+    expect(page.messages.some((message) => message.role === 'peer')).toBe(false);
+    expect(getContactContextBoundary(db, assistantID)).toBe(0);
+    expect(contactHistoryForLlm(db, assistantID).some((item) => String(item.content).includes('late-A'))).toBe(false);
+    db.close();
+  });
+
   it('clearContactMemory keeps transcript rows and only advances the LLM boundary', () => {
     const db = openDb();
     const assistantID = 'asst_memory';
@@ -263,6 +324,347 @@ describe('contact LLM history trim', () => {
       { role: 'user', content: 'second' },
       { role: 'assistant', content: 'second-reply' },
     ]);
+    db.close();
+  });
+});
+
+describe('contact messages page keyset', () => {
+  it('pages 45 rows as 20/20/5 with opaque cursors and ascending pages', () => {
+    const db = openDb();
+    const assistantID = 'asst_page';
+    const ids = [];
+    for (let i = 0; i < 45; i += 1) {
+      ids.push(insert(db, assistantID, { role: i % 2 === 0 ? 'user' : 'assistant', text: `m-${i}` }).messageID);
+    }
+    expect(CONTACT_PAGE_DEFAULT_LIMIT).toBe(20);
+    expect(CONTACT_PAGE_MAX_LIMIT).toBe(100);
+
+    // First page is the newest window (chat tail), ascending within the page.
+    const first = listContactMessages(db, assistantID, { limit: 20 });
+    expect(first.messages).toHaveLength(20);
+    expect(first.complete).toBe(false);
+    expect(first.generation).toBe(0);
+    expect(first.messages[0].text).toBe('m-25');
+    expect(first.messages.at(-1).text).toBe('m-44');
+    expect(first.nextCursor).toEqual(expect.any(String));
+    const cursor1 = decodeContactCursor(first.nextCursor);
+    expect(cursor1).toMatchObject({
+      v: 1,
+      assistantID,
+      generation: 0,
+      messageID: ids[25],
+    });
+
+    const second = listContactMessages(db, assistantID, { before: first.nextCursor, limit: 20 });
+    expect(second.messages).toHaveLength(20);
+    expect(second.complete).toBe(false);
+    expect(second.messages[0].text).toBe('m-5');
+    expect(second.messages.at(-1).text).toBe('m-24');
+
+    const third = listContactMessages(db, assistantID, { before: second.nextCursor, limit: 20 });
+    expect(third.messages).toHaveLength(5);
+    expect(third.complete).toBe(true);
+    expect(third.nextCursor).toBeNull();
+    expect(third.messages.map((m) => m.text)).toEqual(['m-0', 'm-1', 'm-2', 'm-3', 'm-4']);
+    db.close();
+  });
+
+  it('rejects illegal cursors and cross-assistant cursor assistantID', () => {
+    const db = openDb();
+    insert(db, 'asst_a', { role: 'user', text: 'a' });
+    insert(db, 'asst_b', { role: 'user', text: 'b' });
+    expect(() => listContactMessages(db, 'asst_a', { before: 'not-base64!!!' })).toThrowError(
+      expect.objectContaining({ code: 'validation_error' }),
+    );
+    const foreign = encodeContactCursor({
+      assistantID: 'asst_b',
+      generation: 0,
+      ordinal: 1,
+      messageID: 'x',
+    });
+    expect(() => listContactMessages(db, 'asst_a', { before: foreign })).toThrowError(
+      expect.objectContaining({ code: 'validation_error' }),
+    );
+    expect(() => listContactMessages(db, 'asst_a', { before: 'x', messageID: 'y' })).toThrowError(
+      expect.objectContaining({ code: 'validation_error' }),
+    );
+    db.close();
+  });
+
+  it('bumps generation on wipe path only; clear-memory keeps generation and cursors', () => {
+    const db = openDb();
+    const assistantID = 'asst_gen';
+    for (let i = 0; i < 5; i += 1) insert(db, assistantID, { role: 'user', text: `g-${i}` });
+    const page0 = listContactMessages(db, assistantID, { limit: 2 });
+    expect(page0.generation).toBe(0);
+    const cursor = page0.nextCursor;
+
+    clearContactMemory(db, assistantID, { updatedAt: 1 });
+    expect(getContactGeneration(db, assistantID)).toBe(0);
+    expect(listContactMessages(db, assistantID, { before: cursor, limit: 2 }).messages).toHaveLength(2);
+
+    expect(bumpContactGeneration(db, assistantID)).toBe(1);
+    deleteContactMessages(db, assistantID);
+    expect(getContactGeneration(db, assistantID)).toBe(1);
+    expect(() => listContactMessages(db, assistantID, { before: cursor, limit: 2 })).toThrowError(
+      expect.objectContaining({ code: 'contact_generation_conflict' }),
+    );
+    db.close();
+  });
+
+  it('exact messageID is assistant-scoped, missing returns empty, works past 100 rows', () => {
+    const db = openDb();
+    const assistantID = 'asst_exact';
+    const other = 'asst_other';
+    const ids = [];
+    for (let i = 0; i < 120; i += 1) {
+      ids.push(insert(db, assistantID, { role: 'user', text: `e-${i}` }).messageID);
+    }
+    const foreign = insert(db, other, { role: 'user', text: 'foreign' });
+
+    const hit = listContactMessages(db, assistantID, { messageID: ids[110] });
+    expect(hit).toMatchObject({
+      nextCursor: null,
+      complete: true,
+      generation: 0,
+    });
+    expect(hit.messages).toHaveLength(1);
+    expect(hit.messages[0].text).toBe('e-110');
+
+    expect(listContactMessages(db, assistantID, { messageID: foreign.messageID }).messages).toEqual([]);
+    expect(listContactMessages(db, assistantID, { messageID: 'missing_id' }).messages).toEqual([]);
+    expect(listContactMessages(db, other, { messageID: foreign.messageID }).messages[0].text).toBe('foreign');
+    db.close();
+  });
+
+  it('isolates pages across assistants under concurrent appends', () => {
+    const db = openDb();
+    for (let i = 0; i < 10; i += 1) {
+      insert(db, 'asst_left', { role: 'user', text: `L-${i}` });
+      insert(db, 'asst_right', { role: 'user', text: `R-${i}` });
+    }
+    const left = listContactMessages(db, 'asst_left', { limit: 5 });
+    const right = listContactMessages(db, 'asst_right', { limit: 5 });
+    expect(left.messages.every((m) => m.assistantID === 'asst_left')).toBe(true);
+    expect(right.messages.every((m) => m.assistantID === 'asst_right')).toBe(true);
+    // Newest window first.
+    expect(left.messages.map((m) => m.text)).toEqual(['L-5', 'L-6', 'L-7', 'L-8', 'L-9']);
+    insert(db, 'asst_left', { role: 'user', text: 'L-append' });
+    const left2 = listContactMessages(db, 'asst_left', { before: left.nextCursor, limit: 5 });
+    expect(left2.messages.map((m) => m.text)).toEqual(['L-0', 'L-1', 'L-2', 'L-3', 'L-4']);
+    expect(listContactMessages(db, 'asst_right', { limit: 100 }).messages).toHaveLength(10);
+    db.close();
+  });
+});
+
+describe('contact latest message preview', () => {
+  it('returns null when the assistant has no contact rows', () => {
+    const db = openDb();
+    expect(getLatestContactMessagePreview(db, 'asst_empty')).toBeNull();
+    expect(getLatestContactMessagePreviews(db, ['asst_empty']).get('asst_empty')).toBeNull();
+    db.close();
+  });
+
+  it('picks the newest user or assistant text by ordinal (not createdAt heuristics)', () => {
+    const db = openDb();
+    const assistantID = 'asst_preview_text';
+    insert(db, assistantID, { role: 'user', text: 'older user' });
+    insert(db, assistantID, { role: 'assistant', text: 'older assistant' });
+    const latest = insert(db, assistantID, { role: 'user', text: 'newest user line' });
+    expect(getLatestContactMessagePreview(db, assistantID)).toEqual({
+      messageID: latest.messageID,
+      ordinal: latest.ordinal,
+      role: 'user',
+      text: 'newest user line',
+      fallbackKind: null,
+    });
+    db.close();
+  });
+
+  it('skips settle-only markers and maps peer DM to user role', () => {
+    const db = openDb();
+    const assistantID = 'asst_preview_peer';
+    insert(db, assistantID, { role: 'user', text: 'seed' });
+    insert(db, assistantID, { role: 'assistant', text: CONTACT_SETTLE_TEXT.complete });
+    const peer = insert(db, assistantID, {
+      role: 'peer',
+      text: 'hello from peer',
+      fromAssistantID: 'asst_other',
+      fromAssistantName: 'Other',
+    });
+    expect(getLatestContactMessagePreview(db, assistantID)).toEqual({
+      messageID: peer.messageID,
+      ordinal: peer.ordinal,
+      role: 'user',
+      text: 'hello from peer',
+      fallbackKind: null,
+    });
+    db.close();
+  });
+
+  it('keeps durable error body text as the preview', () => {
+    const db = openDb();
+    const assistantID = 'asst_preview_err';
+    insert(db, assistantID, { role: 'user', text: 'hi' });
+    const err = insert(db, assistantID, {
+      role: 'assistant',
+      text: 'No connected model',
+      status: 'error',
+    });
+    expect(getLatestContactMessagePreview(db, assistantID)).toMatchObject({
+      messageID: err.messageID,
+      role: 'assistant',
+      text: 'No connected model',
+      fallbackKind: null,
+    });
+    db.close();
+  });
+
+  it('uses attachment and card fallbackKind when there is no spoken text', () => {
+    const db = openDb();
+    const assistantID = 'asst_preview_fb';
+    insert(db, assistantID, {
+      role: 'user',
+      text: '',
+      parts: [{ type: 'file', mime: 'image/png', url: 'data:image/png;base64,aa', filename: 'shot.png' }],
+    });
+    expect(getLatestContactMessagePreview(db, assistantID)).toMatchObject({
+      role: 'user',
+      text: 'shot.png',
+      fallbackKind: 'image',
+    });
+    insert(db, assistantID, {
+      role: 'user',
+      text: '',
+      parts: [{ type: 'file', mime: 'application/pdf', url: 'data:application/pdf;base64,aa', filename: 'doc.pdf' }],
+    });
+    expect(getLatestContactMessagePreview(db, assistantID)).toMatchObject({
+      fallbackKind: 'file',
+      text: 'doc.pdf',
+    });
+    insert(db, assistantID, {
+      role: 'assistant',
+      text: '',
+      parts: [createSessionCardPart({
+        sessionID: 'ses_1',
+        directory: '/repo',
+        title: 'Fix login',
+        status: 'busy',
+      })],
+    });
+    expect(getLatestContactMessagePreview(db, assistantID)).toMatchObject({
+      role: 'assistant',
+      fallbackKind: 'session',
+      text: 'Fix login',
+    });
+    insert(db, assistantID, {
+      role: 'assistant',
+      text: '',
+      parts: [createAssistantCardPart({
+        assistantID: 'asst_x',
+        name: 'Flow',
+        providerID: 'p',
+        modelID: 'm',
+      })],
+    });
+    expect(getLatestContactMessagePreview(db, assistantID)).toMatchObject({
+      fallbackKind: 'assistant',
+      text: 'Flow',
+    });
+    insert(db, assistantID, {
+      role: 'assistant',
+      text: '',
+      parts: [createScheduleCardPart({
+        taskID: 'task_1',
+        projectID: 'proj_1',
+        name: 'Daily ping',
+      })],
+    });
+    expect(getLatestContactMessagePreview(db, assistantID)).toMatchObject({
+      fallbackKind: 'schedule',
+      text: 'Daily ping',
+    });
+    db.close();
+  });
+
+  it('bounds and sanitizes long / base64 text', () => {
+    const db = openDb();
+    const assistantID = 'asst_preview_bound';
+    const long = `hello ${'字'.repeat(CONTACT_PREVIEW_MAX_CHARS + 80)}`;
+    const dirty = `see data:image/png;base64,${'A'.repeat(80)} trailing`;
+    expect(sanitizeContactPreviewText(long).length).toBeLessThanOrEqual(CONTACT_PREVIEW_MAX_CHARS);
+    expect(sanitizeContactPreviewText(dirty)).not.toContain('base64');
+    insert(db, assistantID, { role: 'assistant', text: long });
+    const preview = getLatestContactMessagePreview(db, assistantID);
+    expect(preview.text.length).toBeLessThanOrEqual(CONTACT_PREVIEW_MAX_CHARS);
+    expect(preview.text.startsWith('hello')).toBe(true);
+    db.close();
+  });
+
+  it('batches previews across assistants without mixing identities', () => {
+    const db = openDb();
+    insert(db, 'asst_a', { role: 'user', text: 'from-a' });
+    insert(db, 'asst_b', { role: 'assistant', text: 'from-b' });
+    insert(db, 'asst_c', { role: 'user', text: 'unused' });
+    deleteContactMessages(db, 'asst_c');
+    const map = getLatestContactMessagePreviews(db, ['asst_a', 'asst_b', 'asst_c', 'asst_missing']);
+    expect(map.get('asst_a').text).toBe('from-a');
+    expect(map.get('asst_b').text).toBe('from-b');
+    expect(map.get('asst_c')).toBeNull();
+    expect(map.get('asst_missing')).toBeNull();
+    db.close();
+  });
+
+  it('finds latest visible text after a long settle tail and large history without full-table rank', () => {
+    const db = openDb();
+    const assistantID = 'asst_preview_deep';
+    for (let i = 0; i < 120; i += 1) {
+      insert(db, assistantID, { role: 'user', text: `hist-${i}` });
+      insert(db, assistantID, { role: 'assistant', text: `reply-${i}` });
+    }
+    const latest = insert(db, assistantID, { role: 'user', text: 'visible-after-settles' });
+    // More settle markers than CONTACT_PREVIEW_CANDIDATE_LIMIT after the real message.
+    for (let i = 0; i < 40; i += 1) {
+      insert(db, assistantID, {
+        role: 'assistant',
+        text: CONTACT_SETTLE_TEXT.complete,
+      });
+      insert(db, assistantID, {
+        role: 'assistant',
+        text: CONTACT_SETTLE_TEXT.error,
+      });
+    }
+    const preview = getLatestContactMessagePreview(db, assistantID);
+    expect(preview).toMatchObject({
+      messageID: latest.messageID,
+      ordinal: latest.ordinal,
+      role: 'user',
+      text: 'visible-after-settles',
+      fallbackKind: null,
+    });
+    const batch = getLatestContactMessagePreviews(db, [assistantID, 'asst_other_empty']);
+    expect(batch.get(assistantID)?.text).toBe('visible-after-settles');
+    expect(batch.get('asst_other_empty')).toBeNull();
+
+    // Probe must be an assistant_id range scan on the page index, not a full sort.
+    const plan = db.prepare(
+      `EXPLAIN QUERY PLAN
+       SELECT message_id, assistant_id, role, ordinal, status
+       FROM assistant_contact_message m
+       WHERE m.assistant_id = ?
+         AND m.role IN ('user', 'assistant', 'peer')
+       ORDER BY m.ordinal DESC, m.message_id DESC
+       LIMIT ?`,
+    ).all(assistantID, 24);
+    const planText = plan.map((row) => `${row.detail || ''}`).join('\n').toLowerCase();
+    expect(planText).toMatch(/assistant_contact_message/);
+    // Must not be a whole-table SCAN without using the assistant_id path.
+    expect(
+      planText.includes('assistant_id')
+      || planText.includes('assistant_contact_message_page')
+      || planText.includes('using index')
+      || planText.includes('search'),
+    ).toBe(true);
     db.close();
   });
 });

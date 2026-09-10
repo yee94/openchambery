@@ -47,6 +47,8 @@ mock.module('@/lib/runtime-fetch', () => ({
           : [],
         nextCursor: null,
         complete: true,
+        generation: 0,
+        revision: 1,
       }), { status: 200 });
     }
     if (path.includes('/messages')) {
@@ -407,7 +409,8 @@ describe('contact send abort', () => {
     }
     // Uncertain admission re-checks the original messageID instead of minting a new send.
     const confirmed = await confirmContactAdmissionByMessageID('asst_1', 'oc_contact_1');
-    expect(confirmed).toEqual({ admitted: true, messageID: 'oc_contact_1', revision: null });
+    expect(confirmed).toEqual({ admitted: true, messageID: 'oc_contact_1', revision: 1 });
+    expect(fetchCalls.some((path) => path.includes('messageID=oc_contact_1'))).toBe(true);
 
     contactSendBehavior = 'upstream';
     try {
@@ -420,8 +423,48 @@ describe('contact send abort', () => {
     }
   });
 
-  test('polls snapshot only while a contact turn is working', async () => {
+  test('contact POST forwards attachment descriptor parts without url', async () => {
+    contactSendBehavior = 'ok';
+    lastFetchInit = undefined;
+    const descriptor = {
+      type: 'file' as const,
+      mime: 'image/png',
+      attachmentID: 'att_send_1',
+      sha256: 'deadbeef',
+      size: 42,
+      filename: 'shot.png',
+    };
+    await sendAssistantContactMessage('asst_1', 'oc_contact_desc', {
+      parts: [
+        { type: 'text', text: 'see this' },
+        descriptor,
+      ],
+    });
+    const init = lastFetchInit as RequestInit | undefined;
+    expect(init?.method).toBe('POST');
+    const rawBody = init?.body;
+    const body = typeof rawBody === 'string' ? JSON.parse(rawBody) as {
+      messageID: string;
+      parts: Array<Record<string, unknown>>;
+    } : null;
+    expect(body?.messageID).toBe('oc_contact_desc');
+    expect(body?.parts?.[0]).toEqual({ type: 'text', text: 'see this' });
+    expect(body?.parts?.[1]).toEqual({
+      type: 'file',
+      mime: 'image/png',
+      attachmentID: 'att_send_1',
+      sha256: 'deadbeef',
+      size: 42,
+      filename: 'shot.png',
+    });
+    expect(body?.parts?.[1]?.url).toBeUndefined();
+    expect(Object.prototype.hasOwnProperty.call(body?.parts?.[1] ?? {}, 'url')).toBe(false);
+  });
+
+  test('foreground-reconciles snapshot busy denser and idle slower', async () => {
+    const { ASSISTANT_FOREGROUND_IDLE_RECONCILE_MS } = await import('./assistantQueries');
     expect(CONTACT_WORKING_SNAPSHOT_POLL_MS).toBe(2_500);
+    expect(ASSISTANT_FOREGROUND_IDLE_RECONCILE_MS).toBe(15_000);
     expect(snapshotHasContactWorking({
       revision: 1,
       enabled: true,
@@ -434,7 +477,8 @@ describe('contact send abort', () => {
     })).toBe(false);
     const options = assistantSnapshotQueryOptions('runtime-a');
     expect(typeof options.refetchInterval).toBe('function');
+    expect(options.refetchIntervalInBackground).toBe(false);
     expect(options.refetchInterval?.({ state: { data: { revision: 1, enabled: true, assistants: [{ working: true, activeContactTurn: null }] } } } as never)).toBe(CONTACT_WORKING_SNAPSHOT_POLL_MS);
-    expect(options.refetchInterval?.({ state: { data: { revision: 1, enabled: true, assistants: [{ working: false, activeContactTurn: null }] } } } as never)).toBe(false);
+    expect(options.refetchInterval?.({ state: { data: { revision: 1, enabled: true, assistants: [{ working: false, activeContactTurn: null }] } } } as never)).toBe(ASSISTANT_FOREGROUND_IDLE_RECONCILE_MS);
   });
 });

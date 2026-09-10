@@ -764,6 +764,28 @@ export const deleteMobileConnection = async (id: string): Promise<MobileSavedCon
   const connections = readConnections();
   const removed = connections.find((connection) => connection.id === id) ?? null;
   const next = connections.filter((connection) => connection.id !== id);
+  // Capture the target bearer (including non-active) and await attachment-cache
+  // scope clear BEFORE deleting the secure token so disk partitions cannot linger.
+  if (removed) {
+    let token: string | undefined;
+    if (isCapacitorApp()) {
+      try {
+        token = await readSecureToken(secureTokenKeyOf(removed)) || undefined;
+      } catch {
+        token = undefined;
+      }
+    } else if (typeof removed.clientToken === 'string' && removed.clientToken.trim()) {
+      token = removed.clientToken.trim();
+    }
+    if (token) {
+      try {
+        const { clearAssistantAttachmentCacheForBearer } = await import('@/lib/assistant-attachment-cache');
+        await clearAssistantAttachmentCacheForBearer(token, 'forget-connection');
+      } catch {
+        // Cache clear is best-effort relative to connection deletion.
+      }
+    }
+  }
   writeConnections(next);
   if (removed && isCapacitorApp()) await deleteSecureToken(secureTokenKeyOf(removed));
   if (removed) {

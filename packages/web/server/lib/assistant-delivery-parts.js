@@ -22,5 +22,23 @@ export const validAssistantDeliveryParts = (parts, { allowAttachmentRefs = false
     }
     const filenameOk = part.filename === undefined
       || (typeof part.filename === 'string' && part.filename.length > 0 && part.filename.length <= MAX_STRING_LENGTH);
-    return part.type === 'file' && typeof part.mime === 'string' && part.mime.length > 0 && part.mime.length <= MAX_STRING_LENGTH && filenameOk && ((allowAttachmentRefs && Object.keys(part).every((key) => key === 'type' || key === 'mime' || key === 'attachmentID') && typeof part.attachmentID === 'string' && part.attachmentID.length > 0 && part.attachmentID.length <= MAX_STRING_LENGTH) || (Object.keys(part).every((key) => key === 'type' || key === 'mime' || key === 'url' || key === 'filename') && typeof part.url === 'string' && part.url.length > 0 && part.url.length <= MAX_FILE_URL_LENGTH));
+    const fileKeysOk = allowAttachmentRefs
+      ? Object.keys(part).every((key) => (
+        key === 'type' || key === 'mime' || key === 'attachmentID' || key === 'filename'
+        || key === 'sha256' || key === 'size' || key === 'url'
+      ))
+      : Object.keys(part).every((key) => key === 'type' || key === 'mime' || key === 'url' || key === 'filename');
+    const refOk = allowAttachmentRefs
+      && typeof part.attachmentID === 'string'
+      && part.attachmentID.length > 0
+      && part.attachmentID.length <= MAX_STRING_LENGTH
+      && (part.url === undefined || (typeof part.url === 'string' && part.url.length > 0 && part.url.length <= MAX_FILE_URL_LENGTH));
+    const urlOk = typeof part.url === 'string' && part.url.length > 0 && part.url.length <= MAX_FILE_URL_LENGTH;
+    return part.type === 'file'
+      && typeof part.mime === 'string'
+      && part.mime.length > 0
+      && part.mime.length <= MAX_STRING_LENGTH
+      && filenameOk
+      && fileKeysOk
+      && (refOk || urlOk);
   });
