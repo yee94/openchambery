@@ -32,9 +32,10 @@ export function MarkstreamCodeBlockNode(props: MarkstreamCodeBlockProps) {
   const language = props.node.language ?? '';
   const code = props.node.code ?? '';
   const raw = props.node.raw ?? '';
+  const loading = props.node.loading === true || props.loading === true;
   const content = React.useMemo(
-    () => fenceMarkdownFromCodeBlockNode({ type: 'code_block', language, code, raw }),
-    [language, code, raw],
+    () => fenceMarkdownFromCodeBlockNode({ type: 'code_block', language, code, raw, loading }),
+    [language, code, raw, loading],
   );
   // Nested MarkdownRendererImpl streaming follows the OpenChamber host flag and
   // Markstream node.loading (open fence). Host already passes
