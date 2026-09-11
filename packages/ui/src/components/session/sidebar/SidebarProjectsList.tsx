@@ -10,6 +10,7 @@ import {
 } from '@dnd-kit/core';
 import { SortableContext, arrayMove, sortableKeyboardCoordinates, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { ScrollableOverlay } from '@/components/ui/ScrollableOverlay';
+import { Collapsible, CollapsibleContent } from '@/components/ui/collapsible';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { formatDirectoryName, formatPathForDisplay, cn } from '@/lib/utils';
 import type { SessionGroup } from './types';
@@ -299,7 +300,8 @@ export function SidebarProjectsList(props: Props): React.ReactNode {
                     setOpenSidebarMenuKey={props.setOpenSidebarMenuKey}
                     reorderEnabled={props.projectReorderEnabled ?? false}
                   >
-                    {!isCollapsed ? (
+                    <Collapsible open={!isCollapsed}>
+                      <CollapsibleContent data-sidebar-collapse className="h-[var(--collapsible-panel-height)] transition-[height] duration-200 ease-out data-[starting-style]:h-0 data-[ending-style]:h-0 data-[open]:animate-none data-[closed]:animate-none motion-reduce:transition-none" inert={isCollapsed || undefined}>
                       <div className="space-y-0 pt-0 pb-0.5">
                         {isSessionsLoading && section.groups.length === 0 ? (
                           <div
@@ -347,7 +349,8 @@ export function SidebarProjectsList(props: Props): React.ReactNode {
                           <div className={SIDEBAR_MUTED_HINT_CLASS}>{t('sessions.sidebar.empty.noSessions.title')}</div>
                         )}
                       </div>
-                    ) : null}
+                      </CollapsibleContent>
+                    </Collapsible>
                   </SortableProjectItem>
                 );
               })}

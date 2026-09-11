@@ -83,7 +83,9 @@ export const REMIX_PUSHPIN_FILL_SVG =
 export const ICON_NAME_MAP = {
   "add": { lucide: "plus", fill: false },
   "add-circle": { lucide: "circle-plus", fill: false },
-  "ai-agent": { lucide: "bot", fill: false },
+  "ai-agent": {
+    custom: `<rect x="4" y="7.5" width="16" height="13" rx="4.5" /><path d="M12 7.5V4.75" /><circle cx="12" cy="3.5" r="1.25" /><path d="M1.75 12.5v3M22.25 12.5v3M9 12.5v2M15 12.5v2" />`,
+  },
   "ai-agent-fill": { lucide: "bot", fill: true },
   "ai-generate-2": { lucide: "wand-sparkles", fill: false },
   "alert": { lucide: "circle-alert", fill: false },
@@ -123,7 +125,9 @@ export const ICON_NAME_MAP = {
   "chat-4": { custom: ROUND_CHAT_BUBBLE_SVG },
   "chat-ai-3": { lucide: "bot-message-square", fill: false },
   "chat-history": { lucide: "history", fill: false },
-  "chat-new": { lucide: "square-pen", fill: false },
+  "chat-new": {
+    custom: `<path d="M11.5 4.5H9A4.5 4.5 0 0 0 4.5 9v6.5A4.5 4.5 0 0 0 9 20h6.5a4.5 4.5 0 0 0 4.5-4.5V13" /><path d="m10 14.25.6-1.8a2 2 0 0 1 .48-.78l6.62-6.62a1.91 1.91 0 0 1 2.7 2.7l-6.62 6.62a2 2 0 0 1-.78.48l-1.8.6a.95.95 0 0 1-1.2-1.2Z" />`,
+  },
   "chat-thread": { custom: ROUND_CHAT_THREAD_SVG },
   "check": { lucide: "check", fill: false },
   "checkbox": { lucide: "square-check", fill: false },

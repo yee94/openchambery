@@ -1,5 +1,5 @@
 import React from 'react';
-import { useEvent, useResizeObserver } from '@reactuses/core';
+import { useEvent, useEventListener, useResizeObserver } from '@reactuses/core';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import type { Session } from '@opencode-ai/sdk/v2';
 
@@ -15,6 +15,7 @@ const ACTIVE_VIRTUALIZE_THRESHOLD = 30;
 // around 24-32px; virtua measures mounted rows and uses this as the initial hint.
 const ARCHIVED_ROW_ESTIMATE_PX = 28;
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { Collapsible, CollapsibleContent } from '@/components/ui/collapsible';
 import { Icon } from "@/components/icon/Icon";
 import { cn } from '@/lib/utils';
 import { sessionEvents } from '@/lib/sessionEvents';
@@ -705,6 +706,12 @@ function SessionGroupSectionBase(props: Props): React.ReactNode {
   // dep-gated effect that only fires when shouldVirtualizeArchived flips
   // would miss the eventual mount and leave the scroll element null.
   const [, setLayoutVersion] = React.useState(0);
+  // Panel presence changes after the controlled open render. Re-measure on
+  // actual body mount and release the virtualizer after the exit completes.
+  const setVirtualContainer = useEvent((node: HTMLDivElement | null) => {
+    archivedVirtualContainerRef.current = node;
+    setLayoutVersion((version) => version + 1);
+  });
   // useResizeObserver owns observe/disconnect. Pass the ref only while
   // virtualization is active so target identity changes when the body mounts
   // (ref alone is stable and would not re-run after a null-element no-op).
@@ -781,6 +788,15 @@ function SessionGroupSectionBase(props: Props): React.ReactNode {
       || archivedVirtualLayout.scrollElement === currentProvidedScrollElement);
   const archivedScrollEl = archivedVirtualLayout?.scrollElement ?? null;
   const archivedScrollMargin = archivedVirtualLayout?.scrollMargin ?? 0;
+  // A sibling panel moves this container without resizing it. Refresh the
+  // ancestor-scroll offset when that height transition reaches its endpoint.
+  useEventListener('transitionend', (event: TransitionEvent) => {
+    if (event.propertyName === 'height'
+      && event.target instanceof HTMLElement
+      && event.target.hasAttribute('data-sidebar-collapse')) {
+      setLayoutVersion((version) => version + 1);
+    }
+  }, virtualizerReady ? archivedScrollEl : null);
   const sessionVirtualizer = useVirtualizer<HTMLElement, HTMLDivElement>({
     count: visibleSessions.length,
     enabled: virtualizerReady,
@@ -1094,7 +1110,7 @@ function SessionGroupSectionBase(props: Props): React.ReactNode {
     >
       {renderFolderItems()}
       {shouldVirtualize ? (
-        <div ref={archivedVirtualContainerRef}>
+        <div ref={setVirtualContainer}>
           {!virtualizerReady ? (
             // At most one pre-paint frame: this wrapper must exist for the
             // layout effect to resolve the ancestor scroll element, which
@@ -1223,7 +1239,7 @@ function SessionGroupSectionBase(props: Props): React.ReactNode {
   }
 
   return (
-    <div className="oc-group">
+    <Collapsible open={!isCollapsed} className="oc-group">
       <div
         data-mobile-press-feedback={dragHandleProps ? 'none' : undefined}
         className={cn(
@@ -1472,8 +1488,10 @@ function SessionGroupSectionBase(props: Props): React.ReactNode {
            </div>
          ) : null}
       </div>
-      {!isCollapsed ? <div className={cn('oc-group-body', groupBodyPaddingClass)}>{body}</div> : null}
-    </div>
+      <CollapsibleContent data-sidebar-collapse className="h-[var(--collapsible-panel-height)] transition-[height] duration-200 ease-out data-[starting-style]:h-0 data-[ending-style]:h-0 data-[open]:animate-none data-[closed]:animate-none motion-reduce:transition-none" inert={isCollapsed || undefined}>
+        <div className={cn('oc-group-body', groupBodyPaddingClass)}>{body}</div>
+      </CollapsibleContent>
+    </Collapsible>
   );
 }
 
