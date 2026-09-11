@@ -65,6 +65,22 @@ describe('resolveAssignDirectory', () => {
 });
 
 describe('requireProvidedString / resolveAssignWorkerModel', () => {
+  it('resolves a unique informal alias while keeping explicit ids exact and ambiguity closed', () => {
+    const catalog = { models: [
+      { providerID: 'a', modelID: 'claude-sonnet-4-6', name: 'Claude Sonnet 4.6' },
+      { providerID: 'a', modelID: 'gpt-5.4', name: 'GPT 5.4' },
+      { providerID: 'b', modelID: 'gpt-5.4-mini', name: 'GPT 5.4 Mini' },
+    ] }
+    expect(resolveAssignWorkerModel({ model: 'sonnet 4.6', catalog }).modelID).toBe('claude-sonnet-4-6')
+    expect(resolveAssignWorkerModel({ model: 'gpt54', catalog }).modelID).toBe('gpt-5.4')
+    expect(() => resolveAssignWorkerModel({ model: 'gpt', catalog })).toThrow(/Several connected models/)
+    expect(() => resolveAssignWorkerModel({ providerID: 'a', modelID: 'sonnet 4.6', catalog })).toThrow(/No connected/)
+    expect(() => resolveAssignWorkerModel({ model: 'made-up-model', catalog })).toThrow(/No connected/)
+    expect(() => resolveAssignWorkerModel({ modelID: 'GPT 5.4', catalog })).toThrow(/No connected/)
+    expect(resolveAssignWorkerModel({ providerID: 'a', model: 'gpt', catalog }).modelID).toBe('gpt-5.4')
+    expect(() => resolveAssignWorkerModel({ model: 'sonnet', catalog: { models: [catalog.models[0], { ...catalog.models[0], providerID: 'b' }] } })).toThrow(/Several connected models/)
+  })
+
   const catalog = {
     models: [
       { providerID: 'openai', modelID: 'gpt-4o', name: 'GPT-4o', acceptsImages: true },

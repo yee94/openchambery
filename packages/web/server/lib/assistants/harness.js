@@ -504,6 +504,8 @@ export async function runContactTurn({
   tools = [],
   projects = [],
   connectedModels = [],
+  modelPreferences = null,
+  modelCatalogAvailable = true,
   onTextDelta = null,
   onBubbleDelta = null,
   globalEventHub = null,
@@ -528,7 +530,7 @@ export async function runContactTurn({
         tools: codingTools,
       }),
       formatRegisteredProjectsPrompt(projects),
-      formatConnectedModelsPrompt(connectedModels),
+      formatConnectedModelsPrompt(connectedModels, { preferences: modelPreferences, catalogAvailable: modelCatalogAvailable }),
       formatContactToolsPrompt(contactTools),
       assistant.defaultPrompt,
     ].filter((value) => typeof value === 'string' && value.trim()).join('\n\n');

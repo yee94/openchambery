@@ -1596,6 +1596,7 @@ async function main(options = {}) {
     formatSettingsResponse,
     readSettingsFromDisk,
     readSettingsFromDiskMigrated,
+    readSettingsFromDiskStrict,
     persistSettings,
     sanitizeProjects,
     sanitizeSkillCatalogs,

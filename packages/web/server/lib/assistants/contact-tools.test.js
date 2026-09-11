@@ -35,6 +35,40 @@ import {
 import { attachmentScopeKey } from './assign.js';
 
 describe('contact tool protocol', () => {
+  it('shows current-instance models with ordered favorites and recents using exact ids', () => {
+    const prompt = formatConnectedModelsPrompt([
+      { providerID: 'p', providerName: 'Connected Provider', modelID: 'claude-sonnet-4-6', name: 'Claude Sonnet 4.6' },
+      { providerID: 'q', modelID: 'gpt-5.4', name: 'GPT 5.4' },
+    ], { preferences: {
+      favoriteModels: [{ providerID: 'q', modelID: 'gpt-5.4', variant: 'high' }, { providerID: 'gone', modelID: 'offline' }],
+      recentModels: [{ providerID: 'p', modelID: 'claude-sonnet-4-6' }, { providerID: 'q', modelID: 'gpt-5.4' }],
+    } })
+    expect(prompt).toContain('Connected Provider')
+    expect(prompt).toContain('Favorite models (saved order)')
+    expect(prompt).toContain('Recent models (most recent first)')
+    expect(prompt).toContain('variant="high"')
+    expect(prompt).not.toContain('offline')
+    const recent = prompt.split('Recent models (most recent first)')[1]
+    expect(recent.indexOf('claude-sonnet-4-6')).toBeLessThan(recent.indexOf('gpt-5.4'))
+  })
+
+  it('distinguishes unavailable model preferences from successfully empty lists', () => {
+    expect(formatConnectedModelsPrompt([], { preferences: null })).toContain('preferences unavailable')
+    expect(formatConnectedModelsPrompt([], { preferences: { favoriteModels: [], recentModels: [] } })).toContain('Favorite models (saved order): none')
+    expect(formatConnectedModelsPrompt([], { catalogAvailable: false })).toContain('catalog unavailable')
+  })
+
+  it('parses watch_session and stop_session fences', () => {
+    const watchText = '```openchamber-tool\n{"name":"watch_session","arguments":{"sessionID":"ses_w"}}\n```';
+    expect(parseContactToolCalls(watchText, [WATCH_SESSION_TOOL_NAME, STOP_SESSION_TOOL_NAME]).toolCalls).toEqual([
+      { name: WATCH_SESSION_TOOL_NAME, arguments: { sessionID: 'ses_w' } },
+    ]);
+    const stopText = '好的 {"name":"stop_session","arguments":{"sessionID":"ses_s"}}';
+    expect(parseContactToolCalls(stopText, [WATCH_SESSION_TOOL_NAME, STOP_SESSION_TOOL_NAME]).toolCalls).toEqual([
+      { name: STOP_SESSION_TOOL_NAME, arguments: { sessionID: 'ses_s' } },
+    ]);
+  });
+
   it('parses an assign_session fence and strips it from chat text', () => {
     const text = 'On it.\n\n```openchamber-tool\n{"name":"assign_session","arguments":{"prompt":"Fix login","projectPath":"/repo"}}\n```';
     const parsed = parseContactToolCalls(text, [ASSIGN_SESSION_TOOL_NAME]);

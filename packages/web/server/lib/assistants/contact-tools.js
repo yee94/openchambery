@@ -241,6 +241,7 @@ function sanitizeConnectedModel(entry) {
     providerID,
     modelID,
     name,
+    providerName: typeof entry.providerName === 'string' && entry.providerName.trim() ? entry.providerName.trim() : providerID,
     acceptsImages: entry.acceptsImages === true,
   };
 }
@@ -251,23 +252,42 @@ export function normalizeConnectedModels(models) {
     .filter(Boolean);
 }
 
-/** Injected each turn so assign_session can pick an explicit worker model from the live catalog. */
-export function formatConnectedModelsPrompt(models) {
+/** Current-instance catalog and preference lists; preference order is authoritative. */
+export function formatConnectedModelsPrompt(models, { preferences = null, catalogAvailable = true } = {}) {
   const list = normalizeConnectedModels(models);
-  if (list.length === 0) {
-    return [
-      'Connected OpenCode models: none discoverable this turn.',
-      'assign_session without providerID/modelID/model still uses this contact\'s default model.',
-      'If the user names a specific worker model, only use ids from a successful catalog load — never invent provider/model strings.',
-    ].join(' ');
-  }
+  const byID = new Map(list.map((entry) => [JSON.stringify([entry.providerID, entry.modelID]), entry]));
+  const modelLine = (entry) => `providerID=${JSON.stringify(entry.providerID)} modelID=${JSON.stringify(entry.modelID)} providerName=${JSON.stringify(entry.providerName)} name=${JSON.stringify(entry.name)} acceptsImages=${entry.acceptsImages}`;
+  const preferenceLines = (label, refs, limit) => {
+    const rows = [];
+    const seen = new Set();
+    for (const ref of (Array.isArray(refs) ? refs : []).slice(0, limit)) {
+      const entry = byID.get(JSON.stringify([ref?.providerID, ref?.modelID]));
+      if (!entry) continue; // Disconnected/deleted models cannot become selection candidates.
+      const variant = typeof ref.variant === 'string' ? ref.variant.trim().slice(0, 256) : '';
+      const key = JSON.stringify([entry.providerID, entry.modelID, variant]);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      rows.push(`- ${modelLine(entry)}${variant ? ` variant=${JSON.stringify(variant)}` : ''}`);
+    }
+    return rows.length > 0 ? `${label}:\n${rows.join('\n')}` : `${label}: none among currently available models`;
+  };
   return [
-    'Connected OpenCode models (worker targets for assign_session only — choosing one does NOT change this contact\'s own model):',
-    ...list.map((entry) => (
-      `- providerID=${JSON.stringify(entry.providerID)} modelID=${JSON.stringify(entry.modelID)} name=${JSON.stringify(entry.name)} acceptsImages=${entry.acceptsImages ? 'true' : 'false'}`
-    )),
-    'When the user names a worker model, pass providerID+modelID or model="provider/modelID" on assign_session. Ambiguous or unknown names must fail — never silent-fallback.',
-    'Current-turn user images/files are forwarded by the server on assign_session. Prefer a acceptsImages=true model when the user attached images.',
+    !catalogAvailable
+      ? 'Connected OpenCode model catalog unavailable this turn; availability is unknown, not an empty catalog.'
+      : list.length === 0
+        ? 'Connected OpenCode models: none discoverable this turn.'
+        : 'Connected OpenCode models available in this OpenChamber instance:',
+    ...(catalogAvailable ? list.map((entry) => `- ${modelLine(entry)}`) : []),
+    !catalogAvailable || !preferences
+      ? 'Model preferences unavailable for matching this turn; do not assume there are no favorites or recent models.'
+      : [
+        preferenceLines('Favorite models (saved order)', preferences.favoriteModels, 64),
+        preferenceLines('Recent models (most recent first)', preferences.recentModels, 16),
+      ].join('\n'),
+    'Match informal model names against this instance catalog and use its exact providerID+modelID for assign_session, create_assistant, or schedule_task. Never invent IDs or use models from another instance.',
+    'Favorites and recency identify requests such as "my favorite" or "the model I used recently"; a bare ambiguous name must not silently pick a provider or favorite. Ask which candidate when more than one remains. Preference variants are separate from modelID.',
+    'Choosing a worker model does NOT change this contact\'s own model. assign_session without model args keeps its existing default/session-model behavior.',
+    'Current-turn user images/files are forwarded by the server on assign_session. Prefer acceptsImages=true when the user attached images.',
   ].join('\n');
 }
 

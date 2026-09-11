@@ -29,6 +29,7 @@ export const registerAssistantRoutes = (app, dependencies) => {
     getServerId: dependencies.getServerId,
     getAllowedRoots: dependencies.getAllowedRoots,
     listProjects: dependencies.listProjects,
+    readModelPreferences: dependencies.readModelPreferences,
     listScheduledTasks: dependencies.listScheduledTasks,
     sessionIndexService: dependencies.sessionIndexService,
     upsertScheduledTask: dependencies.upsertScheduledTask,

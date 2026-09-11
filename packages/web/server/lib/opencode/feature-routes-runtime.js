@@ -105,6 +105,7 @@ export const createFeatureRoutesRuntime = (dependencies) => {
       formatSettingsResponse,
       readSettingsFromDisk,
       readSettingsFromDiskMigrated,
+      readSettingsFromDiskStrict,
       persistSettings,
       sanitizeProjects,
       sanitizeSkillCatalogs,
@@ -245,6 +246,10 @@ export const createFeatureRoutesRuntime = (dependencies) => {
               ? { label: project.label.trim() }
               : {}),
           }));
+      },
+      readModelPreferences: async () => {
+        const settings = await readSettingsFromDiskStrict();
+        return { favoriteModels: settings.favoriteModels, recentModels: settings.recentModels };
       },
       listScheduledTasks: (projectID) => projectConfigRuntime.listScheduledTasks(projectID),
       sessionIndexService,
