@@ -9,6 +9,46 @@ const completedAssistant = (text) => ({
   parts: [{ type: 'text', text }],
 })
 
+
+describe('generate cancellation', () => {
+  it('cancels throwaway polling and still deletes only its temporary session', async () => {
+    const controller = new AbortController()
+    const remove = vi.fn(async () => ({ data: true }))
+    const client = {
+      tool: { ids: async () => ({ data: [] }) },
+      session: {
+        create: async () => ({ data: { id: 'ses_abort_fixture' } }),
+        update: async () => ({ data: { id: 'ses_abort_fixture' } }),
+        promptAsync: async () => ({ response: { status: 204 } }),
+        status: async (_args, { signal }) => { controller.abort(); signal.throwIfAborted() },
+        delete: remove,
+      },
+    }
+    await expect(generateOpenCodeText({
+      providerID: 'p', modelID: 'm', messages: [{ role: 'user', content: 'work' }],
+      buildOpenCodeUrl: () => 'http://localhost:1', getOpenCodeAuthHeaders: () => ({}),
+      detect: async () => ({ available: false, mode: 'throwaway-session' }),
+      clientFactory: () => client, ensureTempDirectory: async () => '/tmp/abort-fixture',
+      signal: controller.signal,
+    })).rejects.toMatchObject({ name: 'AbortError' })
+    expect(remove).toHaveBeenCalledExactlyOnceWith({ sessionID: 'ses_abort_fixture', directory: '/tmp/abort-fixture' })
+  })
+  it('aborts an in-flight model request when the contact continuation is cancelled', async () => {
+    const controller = new AbortController()
+    const fetchImpl = vi.fn(async (_url, { signal }) => {
+      controller.abort()
+      signal.throwIfAborted()
+    })
+    await expect(generateOpenCodeText({
+      providerID: 'p', modelID: 'm', messages: [{ role: 'user', content: 'work' }],
+      buildOpenCodeUrl: () => 'http://localhost:1', getOpenCodeAuthHeaders: () => ({}),
+      detect: async () => ({ available: true, mode: 'http', url: 'http://localhost:1/generate' }),
+      fetchImpl, signal: controller.signal,
+    })).rejects.toMatchObject({ name: 'AbortError' })
+    expect(fetchImpl).toHaveBeenCalledTimes(1)
+  })
+})
+
 describe('detectSessionlessGenerate', () => {
   it('returns unavailable when the probe 404s', async () => {
     const fetchImpl = vi.fn(async () => new Response('missing', { status: 404 }))

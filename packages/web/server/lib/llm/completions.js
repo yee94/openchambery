@@ -78,7 +78,9 @@ export async function createChatCompletion({
   fetchImpl,
   onTextDelta = null,
   globalEventHub = null,
+  signal = null,
 }) {
+  signal?.throwIfAborted();
   if (!isRecord(body)) throw new LlmError('validation_error', 400, 'JSON body is required');
   // Bundled OpenCode 1.18.4 generate is a full-turn JSON reply (sessionless
   // generate or throwaway session.promptAsync). This HTTP gateway does not
@@ -100,6 +102,7 @@ export async function createChatCompletion({
     provider: { list: async () => ({ error: { status: 500 } }) },
     config: { providers: async () => ({ error: { status: 500 } }) },
   });
+  signal?.throwIfAborted();
   if (!isConnectedModel(catalog, resolved.providerID, resolved.modelID)) {
     throw new LlmError(
       'no_provider',
@@ -124,6 +127,7 @@ export async function createChatCompletion({
       ))?.acceptsImages),
       onTextDelta,
       globalEventHub,
+      signal,
     });
   } catch (error) {
     if (error instanceof LlmError) throw error;
