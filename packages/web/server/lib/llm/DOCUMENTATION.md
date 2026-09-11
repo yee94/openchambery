@@ -106,3 +106,5 @@ The Assistant contact harness owns system prompt, OpenChamber transcript,
 bubble splitting, and OpenChamber API tools (`assign_session`). Those tools
 deliver through contact **cards**, not this completions payload. The gateway
 stays a text generator: OpenCode coding tools stay denied.
+
+Internal completion/generate calls accept an optional AbortSignal from the contact continuation. It is combined with the generator deadline and passed to upstream requests and settle polling. Cancellation still runs throwaway-session cleanup; it must not turn a late model response into a new tool operation.

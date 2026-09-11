@@ -66,7 +66,10 @@ const sleep = (ms, signal) => new Promise((resolve, reject) => {
     reject(signal.reason instanceof Error ? signal.reason : new Error('aborted'));
     return;
   }
-  const timer = setTimeout(resolve, ms);
+  const timer = setTimeout(() => {
+    signal?.removeEventListener?.('abort', onAbort);
+    resolve();
+  }, ms);
   const onAbort = () => {
     clearTimeout(timer);
     reject(signal.reason instanceof Error ? signal.reason : new Error('aborted'));
@@ -441,7 +444,9 @@ export async function generateOpenCodeText({
   forwardImageParts = false,
   onTextDelta = null,
   globalEventHub = null,
+  signal: parentSignal = null,
 }) {
+  parentSignal?.throwIfAborted();
   if (!providerID || !modelID) {
     const error = new Error('providerID and modelID are required');
     error.code = 'validation_error';
@@ -458,7 +463,9 @@ export async function generateOpenCodeText({
   const baseUrl = buildOpenCodeUrl('/', '').replace(/\/$/, '');
   const headers = getOpenCodeAuthHeaders() || {};
   const probe = await detect({ fetchImpl, baseUrl, headers, client: clientFactory?.() });
+  parentSignal?.throwIfAborted();
   const controller = new AbortController();
+  const requestSignal = parentSignal ? AbortSignal.any([parentSignal, controller.signal]) : controller.signal;
   const timeout = setTimeout(() => controller.abort(new Error(`OpenCode LLM generate timed out after ${GENERATE_TIMEOUT_MS}ms`)), GENERATE_TIMEOUT_MS);
 
   try {
@@ -476,7 +483,7 @@ export async function generateOpenCodeText({
             const parts = message.parts.filter((part) => part?.type !== 'file' || !String(part.mime || '').startsWith('image/'));
             return parts.length === message.parts.length ? message : { ...message, parts };
           }),
-        signal: controller.signal,
+        signal: requestSignal,
       });
     }
 
@@ -506,7 +513,7 @@ export async function generateOpenCodeText({
       // Session fence: deny every native OpenCode/MCP/skill tool for this throwaway.
       permission: LLM_SESSION_DENY_PERMISSION,
       metadata: { openchamber: { llm: { purpose: 'chat-completions' } } },
-    }, { signal: controller.signal });
+    }, { signal: requestSignal });
     const sessionID = created?.data?.id;
     if (created?.error || !sessionID) {
       failGenerate(`OpenCode LLM session create failed: ${sdkErrorMessage(created, 'create failed')}`);
@@ -550,7 +557,7 @@ export async function generateOpenCodeText({
           { type: 'text', text: flattened.prompt, synthetic: false },
           ...promptFiles,
         ],
-      }, { signal: controller.signal });
+      }, { signal: requestSignal });
       if (!promptAdmitted(prompted)) {
         failGenerate(`OpenCode LLM promptAsync failed: ${sdkErrorMessage(prompted, 'promptAsync failed')}`);
       }
@@ -561,7 +568,7 @@ export async function generateOpenCodeText({
           client,
           sessionID,
           directory: workingDirectory,
-          signal: controller.signal,
+          signal: requestSignal,
         });
         text = assistantTextFromMessages(settled);
       }

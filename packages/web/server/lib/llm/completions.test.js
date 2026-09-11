@@ -50,6 +50,7 @@ describe('createChatCompletion', () => {
   it('forwards in-process onTextDelta and globalEventHub to generateText', async () => {
     const generateText = vi.fn(async () => ({ text: 'streamed', source: 'throwaway-session' }))
     const onTextDelta = vi.fn()
+    const signal = new AbortController().signal
     const globalEventHub = { subscribeEvent: vi.fn() }
     await createChatCompletion({
       generateText,
@@ -60,9 +61,11 @@ describe('createChatCompletion', () => {
       body: { model: 'openai/gpt-5.2', messages: [{ role: 'user', content: 'hi' }] },
       onTextDelta,
       globalEventHub,
+      signal,
     })
     expect(generateText.mock.calls[0][0].onTextDelta).toBe(onTextDelta)
     expect(generateText.mock.calls[0][0].globalEventHub).toBe(globalEventHub)
+    expect(generateText.mock.calls[0][0].signal).toBe(signal)
   })
 
   it('forwards optional file parts on user messages', async () => {
