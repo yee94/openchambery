@@ -87,6 +87,8 @@ export function ensureContactSchema(db) {
   const columns = new Set(db.prepare("SELECT name FROM pragma_table_info('assistant_contact_message')").all().map((column) => column.name));
   if (!columns.has('from_assistant_id')) db.exec('ALTER TABLE assistant_contact_message ADD COLUMN from_assistant_id TEXT');
   if (!columns.has('from_assistant_name')) db.exec('ALTER TABLE assistant_contact_message ADD COLUMN from_assistant_name TEXT');
+  const watchColumns = new Set(db.prepare("SELECT name FROM pragma_table_info('assistant_contact_watch')").all().map((column) => column.name));
+  if (!watchColumns.has('resume_allowed')) db.exec('ALTER TABLE assistant_contact_watch ADD COLUMN resume_allowed INTEGER NOT NULL DEFAULT 1');
   // Attachment table ownership lives in contact-attachments.ensureContactAttachmentSchema.
 }
 
@@ -701,19 +703,20 @@ export function clearContactMemory(db, assistantID, { updatedAt = Date.now(), up
   return { assistantID, afterOrdinal, memoryCleared: true };
 }
 
-export function upsertContactWatch(db, { assistantID, sessionID, directory, status, updatedAt }) {
+export function upsertContactWatch(db, { assistantID, sessionID, directory, status, updatedAt, resumeAllowed = true }) {
   db.prepare(
-    'INSERT INTO assistant_contact_watch(assistant_id,session_id,directory,status,updated_at) VALUES (?,?,?,?,?) ON CONFLICT(assistant_id,session_id) DO UPDATE SET directory=excluded.directory,status=excluded.status,updated_at=excluded.updated_at',
-  ).run(assistantID, sessionID, directory || null, status, updatedAt);
+    'INSERT INTO assistant_contact_watch(assistant_id,session_id,directory,status,updated_at,resume_allowed) VALUES (?,?,?,?,?,?) ON CONFLICT(assistant_id,session_id) DO UPDATE SET directory=excluded.directory,status=excluded.status,updated_at=excluded.updated_at,resume_allowed=excluded.resume_allowed',
+  ).run(assistantID, sessionID, directory || null, status, updatedAt, resumeAllowed ? 1 : 0);
 }
 
 export function listWatchesBySession(db, sessionID) {
-  return db.prepare('SELECT assistant_id, session_id, directory, status FROM assistant_contact_watch WHERE session_id=?').all(sessionID)
+  return db.prepare('SELECT assistant_id, session_id, directory, status, resume_allowed FROM assistant_contact_watch WHERE session_id=?').all(sessionID)
     .map((row) => ({
       assistantID: row.assistant_id,
       sessionID: row.session_id,
       directory: row.directory,
       status: row.status,
+      resumeAllowed: row.resume_allowed !== 0,
     }));
 }
 
@@ -760,9 +763,9 @@ export function updateSessionCardStatus(db, { assistantID, sessionID, status }) 
  * clearContactMemory advances assistant_contact_context_boundary.after_ordinal;
  * only messages with ordinal > that watermark enter this window.
  */
-export const CONTACT_LLM_MAX_TURNS = 8;
-export const CONTACT_LLM_MAX_CHARS = 6_000;
-export const CONTACT_LLM_FETCH_LIMIT = 40;
+export const CONTACT_LLM_MAX_TURNS = 32;
+export const CONTACT_LLM_MAX_CHARS = 48_000;
+export const CONTACT_LLM_FETCH_LIMIT = 100;
 export const CONTACT_LLM_FILE_CHAR_WEIGHT = 80;
 
 const estimateLlmChars = (item) => {
@@ -773,7 +776,8 @@ const estimateLlmChars = (item) => {
 
 const toLlmHistoryItem = (message) => {
   const files = message.parts.filter((part) => part.type === 'file');
-  const content = message.text.trim() || (files.length > 0 ? '[attachment]' : '');
+  const cards = message.parts.filter((part) => part.type === 'card').map((part) => `[OpenChamber card context: ${JSON.stringify(part)}]`);
+  const content = [message.text.trim() || (files.length > 0 ? '[attachment]' : ''), ...cards].filter(Boolean).join('\n');
   return files.length > 0 ? { role: message.role, content, parts: files } : { role: message.role, content };
 };
 
@@ -784,9 +788,8 @@ const isLlmEligibleContactMessage = (message) => {
   if (message.role === 'peer' || message.fromAssistantID) return false;
   const hasText = Boolean(message.text?.trim());
   const hasFiles = Array.isArray(message.parts) && message.parts.some((part) => part.type === 'file');
-  // Drop pure-card, tool-trace, and thinking-only rows. Process text is not
-  // persisted as contact bubbles; card-only rows have neither text nor files.
-  return hasText || hasFiles;
+  const hasCards = Array.isArray(message.parts) && message.parts.some((part) => part.type === 'card');
+  return hasText || hasFiles || hasCards;
 };
 
 /** Turn-aware keep of recent user+assistant text pairs for the model only. */

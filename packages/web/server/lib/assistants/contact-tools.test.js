@@ -13,9 +13,13 @@ import {
   NEW_CONVERSATION_CONFIRM_BUBBLE,
   NEW_CONVERSATION_TOOL_NAME,
   SCHEDULE_TASK_TOOL_NAME,
+  STOP_SESSION_TOOL_NAME,
+  STOPPED_SESSION_FALLBACK_BUBBLE,
   UPDATE_DEFAULT_PROMPT_CONFIRM_BUBBLE,
   UPDATE_DEFAULT_PROMPT_TOOL_NAME,
   UPDATE_DEFAULT_PROMPT_UNCHANGED_BUBBLE,
+  WATCH_SESSION_TOOL_NAME,
+  WATCHED_SESSION_FALLBACK_BUBBLE,
   confirmBubbleAfterContactReset,
   contactTurnHasSuccessfulReset,
   createContactTools,
@@ -73,7 +77,7 @@ describe('contact tool protocol', () => {
     const text = 'On it.\n\n```openchamber-tool\n{"name":"assign_session","arguments":{"prompt":"Fix login","projectPath":"/repo"}}\n```';
     const parsed = parseContactToolCalls(text, [ASSIGN_SESSION_TOOL_NAME]);
     expect(parsed.chatText).toBe('On it.');
-    expect(parsed.toolCall).toEqual({
+    expect(parsed.toolCalls[0]).toEqual({
       name: ASSIGN_SESSION_TOOL_NAME,
       arguments: { prompt: 'Fix login', projectPath: '/repo' },
     });
@@ -86,7 +90,7 @@ describe('contact tool protocol', () => {
       [CREATE_ASSISTANT_TOOL_NAME, SCHEDULE_TASK_TOOL_NAME, ASSIGN_SESSION_TOOL_NAME],
     );
     expect(create.chatText).toBe('好。');
-    expect(create.toolCall).toEqual({
+    expect(create.toolCalls[0]).toEqual({
       name: CREATE_ASSISTANT_TOOL_NAME,
       arguments: { name: 'FlowQA', model: 'opencode-go/deepseek-v4-flash' },
     });
@@ -98,11 +102,11 @@ describe('contact tool protocol', () => {
       '```openchamber-tool\n{"name":"message_assistant","arguments":{"to":"PeerQA","text":"hello-from-assistant 写好了"}}\n```',
       [MESSAGE_ASSISTANT_TOOL_NAME],
     );
-    expect(peer.toolCall).toEqual({
+    expect(peer.toolCalls[0]).toEqual({
       name: MESSAGE_ASSISTANT_TOOL_NAME,
       arguments: { to: 'PeerQA', text: 'hello-from-assistant 写好了' },
     });
-    expect(schedule.toolCall).toEqual({
+    expect(schedule.toolCalls[0]).toEqual({
       name: SCHEDULE_TASK_TOOL_NAME,
       arguments: { name: 'Daily ping', prompt: 'ping', time: '18:00', timezone: 'Asia/Shanghai' },
     });
@@ -113,12 +117,100 @@ describe('contact tool protocol', () => {
       '好的，我来直接创建这个助理，不开编码会话。\n{"name":"create_assistant","arguments":{"name":"FlowNL","model":"opencode-go/deepseek-v4-flash"}}',
       [CREATE_ASSISTANT_TOOL_NAME, ASSIGN_SESSION_TOOL_NAME],
     );
-    expect(parsed.toolCall).toEqual({
+    expect(parsed.toolCalls[0]).toEqual({
       name: CREATE_ASSISTANT_TOOL_NAME,
       arguments: { name: 'FlowNL', model: 'opencode-go/deepseek-v4-flash' },
     });
     expect(parsed.chatText).toContain('好的，我来直接创建这个助理');
     expect(parsed.chatText).not.toContain('create_assistant');
+  });
+
+  it('accepts the existing single-call fence without a newline', () => {
+    expect(parseContactToolCalls('```openchamber-tool {"name":"read","arguments":{"path":"sample.md"}}```', ['read']).toolCalls)
+      .toEqual([{ name: 'read', arguments: { path: 'sample.md' } }]);
+  });
+
+  it('does not execute tool-shaped JSON inside other protocol or example fences', () => {
+    const text = '```openchamber-final\n{"status":"complete","text":"done","example":{"name":"bash","arguments":{"command":"pwd"}}}\n```';
+    expect(parseContactToolCalls(text, ['bash'])).toEqual({ chatText: text, toolCalls: [] });
+  });
+
+  it.each(['json\n', '\n', ''])('preserves complete tool payloads in generic fences: %s', (header) => {
+    const call = { name: 'read', arguments: { path: 'sample.md' } };
+    const result = parseContactToolCalls(`Before \`\`\`${header}${JSON.stringify(call)}\`\`\` After`, ['read']);
+    expect(result.toolCalls).toEqual([call]);
+    expect(result.chatText).toBe('Before  After');
+  });
+
+  it('does not run nested or partial tool examples in generic fences', () => {
+    const text = '```json\n{"example":{"name":"bash","arguments":{"command":"pwd"}}}\n```';
+    expect(parseContactToolCalls(text, ['bash'])).toEqual({ chatText: text, toolCalls: [] });
+    const prose = '```\nExample: {"name":"bash","arguments":{"command":"pwd"}}\n```';
+    expect(parseContactToolCalls(prose, ['bash'])).toEqual({ chatText: prose, toolCalls: [] });
+  });
+
+  it('retains every tool call in order across fenced and embedded JSON', () => {
+    const calls = [
+      { name: 'read', arguments: { path: 'sample.md' } },
+      { name: 'bash', arguments: { command: 'date +%F' } },
+      { name: 'write', arguments: { path: 'result.md', content: 'done' } },
+    ];
+    const text = `Before ${JSON.stringify(calls[0])}\n\n\`\`\`openchamber-tool\n${JSON.stringify(calls[1])}\n\`\`\`\nAfter ${JSON.stringify(calls[2])}`;
+    const result = parseContactToolCalls(text, ['read', 'bash', 'write']);
+    expect(result.toolCalls).toEqual(calls);
+    expect(result.chatText).toContain('Before');
+    expect(result.chatText).toContain('After');
+    expect(result.chatText).not.toContain('arguments');
+    expect(result.protocolError).toBeUndefined();
+  });
+
+  it('keeps markdown fences and escaped quotes inside JSON string arguments', () => {
+    const calls = [
+      { name: 'write', arguments: { path: 'note.md', content: '```json\n{"quoted": "value"}\n```' } },
+      { name: 'read', arguments: { path: 'note.md' } },
+    ];
+    const text = calls.map((call) => `\`\`\`openchamber-tool\n${JSON.stringify(call)}\n\`\`\``).join('\n');
+    expect(parseContactToolCalls(text, ['read', 'write'])).toEqual({ chatText: '', toolCalls: calls });
+  });
+
+  it('preserves both calls from the observed read-sample and bash-date response', () => {
+    const calls = [
+      { name: 'read', arguments: { path: 'notes/sample.md' } },
+      { name: 'bash', arguments: { command: 'date +%F' } },
+    ];
+    const text = calls.map((call) => `\`\`\`openchamber-tool\n${JSON.stringify(call)}\n\`\`\``).join('\n\n');
+    expect(parseContactToolCalls(text, ['read', 'bash'])).toEqual({ chatText: '', toolCalls: calls });
+  });
+
+  it.each([
+    '{bad json}',
+    '{"name":"unknown","arguments":{}}',
+    '{"name":"read","arguments":[]}',
+    '',
+  ])('rejects the complete batch when an explicit tool fence is invalid: %s', (invalid) => {
+    const valid = '\`\`\`openchamber-tool\n{"name":"read","arguments":{"path":"sample.md"}}\n\`\`\`';
+    const result = parseContactToolCalls(`${valid}\n\`\`\`openchamber-tool\n${invalid}\n\`\`\``, ['read']);
+    expect(result.toolCalls).toEqual([]);
+    expect(result.protocolError).toEqual(expect.any(String));
+  });
+
+  it('rejects a truncated explicit tool fence without executing an earlier call', () => {
+    const result = parseContactToolCalls('{"name":"read","arguments":{"path":"sample.md"}}\n\`\`\`openchamber-tool\n{"name":"read"', ['read']);
+    expect(result.toolCalls).toEqual([]);
+    expect(result.protocolError).toEqual(expect.any(String));
+  });
+
+  it.each(['', '{"name":"read","arguments":{"path":"sample.md"}}\n'])('rejects an unclosed outer JSON object without executing a nested call or valid prefix', (prefix) => {
+    const result = parseContactToolCalls(prefix + '{"example": {"name":"bash","arguments":{"command":"pwd"}}', ['read', 'bash']);
+    expect(result.toolCalls).toEqual([]);
+    expect(result.protocolError).toEqual(expect.any(String));
+  });
+
+  it('does not discover nested JSON arguments or strings as additional tool calls', () => {
+    const nested = { name: 'bash', arguments: { command: 'pwd' } };
+    const call = { name: 'write', arguments: { path: 'result.json', content: JSON.stringify(nested), metadata: nested } };
+    expect(parseContactToolCalls(JSON.stringify(call), ['write', 'bash']).toolCalls).toEqual([call]);
+    expect(parseContactToolCalls(JSON.stringify({ example: nested }), ['bash']).toolCalls).toEqual([]);
   });
 
   it('detects 建助理 without treating 不要开编码 session as assign_session', () => {
@@ -132,6 +224,8 @@ describe('contact tool protocol', () => {
       CREATE_ASSISTANT_TOOL_NAME,
       SCHEDULE_TASK_TOOL_NAME,
       MESSAGE_ASSISTANT_TOOL_NAME,
+      WATCH_SESSION_TOOL_NAME,
+      STOP_SESSION_TOOL_NAME,
       ASSIGN_SESSION_TOOL_NAME,
     ];
     expect(detectRequestedContactTools('帮我新建一个助理，名叫 FlowNL，不要开编码 session', tools)).toEqual([
@@ -140,6 +234,14 @@ describe('contact tool protocol', () => {
     expect(detectRequestedContactTools('每天 18:00 排一个 ping 定时任务', tools)).toEqual([SCHEDULE_TASK_TOOL_NAME]);
     expect(detectRequestedContactTools('建会话写一个文件', tools)).toEqual([ASSIGN_SESSION_TOOL_NAME]);
     expect(detectRequestedContactTools('对，你直接派给那个项目组，再建个会话去修这个问题', tools)).toEqual([ASSIGN_SESSION_TOOL_NAME]);
+    expect(detectRequestedContactTools('继续这个会话修 login', tools)).toEqual([ASSIGN_SESSION_TOOL_NAME]);
+    expect(detectRequestedContactTools('监听这个会话', tools)).toEqual([WATCH_SESSION_TOOL_NAME]);
+    expect(detectRequestedContactTools('watch this session', tools)).toEqual([WATCH_SESSION_TOOL_NAME]);
+    expect(detectRequestedContactTools('停止这个会话', tools)).toEqual([STOP_SESSION_TOOL_NAME]);
+    expect(detectRequestedContactTools('stop that session', tools)).toEqual([STOP_SESSION_TOOL_NAME]);
+    // Plain @session reference is context only — not auto watch/assign/stop.
+    expect(detectRequestedContactTools('看看 @session:ses_abc 里上次说了啥', tools)).toEqual([]);
+    expect(detectRequestedContactTools('@session:ses_abc', tools)).toEqual([]);
     expect(detectRequestedContactTools('写一个文件', tools)).toEqual([]);
     expect(detectRequestedContactTools('pwd', tools)).toEqual([]);
     expect(detectRequestedContactTools('给 PeerQA 说一声 hello-from-assistant 写好了', tools)).toEqual([
@@ -175,14 +277,14 @@ describe('contact tool protocol', () => {
 
   it('parses bash fences when the pi coding tools are allowed', () => {
     const text = '```openchamber-tool\n{"name":"bash","arguments":{"command":"pwd"}}\n```';
-    expect(parseContactToolCalls(text, ['bash', ASSIGN_SESSION_TOOL_NAME]).toolCall).toEqual({
+    expect(parseContactToolCalls(text, ['bash', ASSIGN_SESSION_TOOL_NAME]).toolCalls[0]).toEqual({
       name: 'bash',
       arguments: { command: 'pwd' },
     });
     expect(parseContactToolCalls(
       '```openchamber-tool\n{"name":"glob","arguments":{"pattern":"*"}}\n```',
       ['glob', 'bash'],
-    ).toolCall).toBeNull();
+    ).toolCalls).toEqual([]);
   });
 
   it('tells DeepSeek to call tools from natural language, not slash commands', () => {
@@ -197,6 +299,8 @@ describe('contact tool protocol', () => {
     expect(prompt).toContain('schedule_task');
     expect(prompt).toContain('message_assistant');
     expect(prompt).toContain('assign_session');
+    expect(prompt).toContain('watch_session');
+    expect(prompt).toContain('stop_session');
     expect(prompt).toContain('开新对话');
     expect(prompt).toContain('清除记忆');
     expect(prompt).toContain('清空聊天记录');
@@ -207,6 +311,9 @@ describe('contact tool protocol', () => {
     expect(prompt).toContain('建助理');
     expect(prompt).toContain('排定时任务');
     expect(prompt).toContain('说一声');
+    expect(prompt).toContain('监听会话');
+    expect(prompt).toContain('停止会话');
+    expect(prompt).toContain('plain @session:id reference alone is context');
     expect(prompt).toContain('session/new');
     expect(prompt).toContain('LLM memory only');
     expect(prompt).toContain('Persists');
@@ -330,6 +437,11 @@ describe('createContactTools', () => {
       SCHEDULE_TASK_TOOL_NAME,
       MESSAGE_ASSISTANT_TOOL_NAME,
       ASSIGN_SESSION_TOOL_NAME,
+      WATCH_SESSION_TOOL_NAME,
+      STOP_SESSION_TOOL_NAME,
+      'steer_session',
+      'archive_session',
+      'delete_session',
     ]);
     expect(tools.some((tool) => ['bash', 'edit', 'read', 'write'].includes(tool.name))).toBe(false);
 
@@ -406,6 +518,91 @@ describe('createContactTools', () => {
     });
     expect(assigned.terminate).toBe(true);
     expect(onCard).toHaveBeenCalledTimes(3);
+  });
+
+  it.each(['assign_session', 'watch_session'])('%s forwards AbortSignal and drops a late card after cancellation', async (name) => {
+    const controller = new AbortController();
+    const onCard = vi.fn();
+    const action = vi.fn(async input => {
+      expect(input.signal).toBe(controller.signal);
+      controller.abort();
+      return { sessionID: 'ses_late', directory: '/project', title: 'Late', status: 'busy' };
+    });
+    const tools = createContactTools({ assignWork: action, watchSession: action, onCard });
+    const tool = tools.find(t => t.name === name);
+    const result = await tool.execute('call', { sessionID: 'ses_late', prompt: 'work' }, controller.signal);
+    expect(result.details.error).toBeDefined();
+    expect(onCard).not.toHaveBeenCalled();
+    await tool.execute('call2', { sessionID: 'ses_late', prompt: 'work' }, controller.signal);
+    expect(action).toHaveBeenCalledTimes(1);
+  });
+
+  it('recognizes explicit session mutation requests and forwards cancellation signals', async () => {
+    const action = vi.fn(async () => ({ admitted: true }));
+    const tools = createContactTools({ steerSession: action, archiveSession: action, deleteSession: action });
+    expect(detectRequestedContactTools('取消这个 session', tools.map(t => t.name))).toEqual(['stop_session']);
+    expect(detectRequestedContactTools('归档这个会话', tools.map(t => t.name))).toEqual(['archive_session']);
+    expect(detectRequestedContactTools('删除这个 session', tools.map(t => t.name))).toEqual(['delete_session']);
+    expect(detectRequestedContactTools('给这个会话插话：先运行测试', tools.map(t => t.name))).toEqual(['steer_session']);
+    const controller = new AbortController();
+    const result = await tools.find(t => t.name === 'steer_session').execute('call', { sessionID: 'ses_exact', text: '先运行测试' }, controller.signal);
+    expect(action).toHaveBeenCalledWith({ sessionID: 'ses_exact', text: '先运行测试', signal: controller.signal });
+    expect(result.terminate).toBe(true);
+    expect(result.isError).not.toBe(true);
+    const invalid = await tools.find(t => t.name === 'steer_session').execute('call2', { sessionID: 'ses_exact', text: ' ' });
+    expect(invalid.details.error).toBe('validation_error');
+    expect(action).toHaveBeenCalledTimes(1);
+  });
+
+  it('watch_session emits a baseline session card and stop_session returns true abort results', async () => {
+    const onCard = vi.fn();
+    const watchSession = vi.fn(async () => ({
+      sessionID: 'ses_watch',
+      directory: '/repo',
+      title: 'Watched',
+      status: 'complete',
+      watched: true,
+      reused: true,
+    }));
+    const stopSession = vi.fn(async () => ({
+      sessionID: 'ses_watch',
+      directory: '/repo',
+      title: 'Watched',
+      aborted: true,
+    }));
+    const tools = createContactTools({ watchSession, stopSession, onCard });
+    const watched = await tools.find((tool) => tool.name === WATCH_SESSION_TOOL_NAME).execute('call_w', {
+      sessionID: 'ses_watch',
+    });
+    expect(watchSession).toHaveBeenCalledWith({ sessionID: 'ses_watch' });
+    expect(watched.terminate).toBe(true);
+    expect(watched.content[0].text).toBe(WATCHED_SESSION_FALLBACK_BUBBLE);
+    expect(watched.details.card).toMatchObject({
+      type: 'card',
+      cardType: 'session',
+      sessionID: 'ses_watch',
+      status: 'complete',
+    });
+    expect(onCard).toHaveBeenCalledTimes(1);
+
+    const stopped = await tools.find((tool) => tool.name === STOP_SESSION_TOOL_NAME).execute('call_s', {
+      sessionID: 'ses_watch',
+    });
+    expect(stopSession).toHaveBeenCalledWith({ sessionID: 'ses_watch' });
+    expect(stopped.terminate).toBe(true);
+    expect(stopped.content[0].text).toBe(STOPPED_SESSION_FALLBACK_BUBBLE);
+    expect(stopped.details.stopped).toMatchObject({ aborted: true, sessionID: 'ses_watch' });
+
+    const failedStop = createContactTools({
+      stopSession: async () => {
+        throw new AssignError(ASSIGN_CODES.UPSTREAM, 'abort refused');
+      },
+    });
+    const failed = await failedStop.find((tool) => tool.name === STOP_SESSION_TOOL_NAME).execute('call_f', {
+      sessionID: 'ses_watch',
+    });
+    expect(failed.details.error).toBe('upstream_error');
+    expect(failed.content[0].text).toContain('abort refused');
   });
 
   it('forwards server turn file parts on assign and keeps model selection in the tool args', async () => {

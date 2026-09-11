@@ -24,6 +24,7 @@ export const ASSIGN_CODES = Object.freeze({
   IMAGE_NOT_SUPPORTED: 'image_not_supported',
   NO_PROVIDER: 'no_provider',
   PROMPT_AMBIGUOUS: 'prompt_ambiguous',
+  NOT_FOUND: 'not_found',
 });
 
 export const PROJECT_REQUIRED_MESSAGE = 'No registered project is configured. Add a project in Settings before assigning work. Do not use assistant-workspaces.';
@@ -136,7 +137,13 @@ function normalizeProjectRoots(allowedRoots = []) {
   const roots = [];
   for (const root of allowedRoots) {
     if (typeof root !== 'string' || !root.trim()) continue;
-    const resolved = path.resolve(root.trim());
+    // realpath so /var vs /private/var (and prior resolveAssignDirectory results) still match.
+    let resolved = path.resolve(root.trim());
+    try {
+      resolved = fs.realpathSync(resolved);
+    } catch {
+      // Keep path.resolve when the root is not yet on disk.
+    }
     if (seen.has(resolved)) continue;
     seen.add(resolved);
     roots.push(resolved);
@@ -146,7 +153,15 @@ function normalizeProjectRoots(allowedRoots = []) {
 
 export function isManagedAssistantWorkspace(candidate, managedWorkspaceRoot) {
   if (!candidate || !managedWorkspaceRoot) return false;
-  return contained(path.resolve(candidate), path.resolve(managedWorkspaceRoot));
+  const realpathOrResolve = (value) => {
+    const resolved = path.resolve(value);
+    try {
+      return fs.realpathSync(resolved);
+    } catch {
+      return resolved;
+    }
+  };
+  return contained(realpathOrResolve(candidate), realpathOrResolve(managedWorkspaceRoot));
 }
 
 export function resolveAssignDirectory({
@@ -177,7 +192,16 @@ export function resolveAssignDirectory({
   const resolveExisting = (candidate) => {
     const raw = trim(candidate, 4096);
     if (!raw) return null;
-    const resolved = path.resolve(raw);
+    let resolved = path.resolve(raw);
+    if (!fs.existsSync(resolved) || !fs.statSync(resolved).isDirectory()) {
+      throw new AssignError(ASSIGN_CODES.VALIDATION, 'The project directory does not exist.');
+    }
+    try {
+      resolved = fs.realpathSync(resolved);
+    } catch {
+      throw new AssignError(ASSIGN_CODES.VALIDATION, 'The project directory does not exist.');
+    }
+    // Compare realpaths so a prior authoritative resolve cannot fail against non-real roots.
     rejectManaged(resolved);
     if (!underRoots(resolved)) {
       throw new AssignError(
@@ -185,14 +209,7 @@ export function resolveAssignDirectory({
         'That path is not a registered project. Add it in Settings, then assign again.',
       );
     }
-    if (!fs.existsSync(resolved) || !fs.statSync(resolved).isDirectory()) {
-      throw new AssignError(ASSIGN_CODES.VALIDATION, 'The project directory does not exist.');
-    }
-    try {
-      return fs.realpathSync(resolved);
-    } catch {
-      throw new AssignError(ASSIGN_CODES.VALIDATION, 'The project directory does not exist.');
-    }
+    return resolved;
   };
 
   let target = resolveExisting(directory) || resolveExisting(projectPath) || resolveExisting(defaultProjectPath);
@@ -260,6 +277,76 @@ export function buildAssignParts({ prompt, fileParts = [] }) {
 
 export function hasAssignImageParts(parts = []) {
   return sanitizeAssignFileParts(parts).some((part) => String(part.mime).toLowerCase().startsWith('image/'));
+}
+
+/**
+ * Directory from authoritative OpenCode session payload.
+ * Prefer session.directory / path / project.worktree — never invent paths.
+ */
+export function extractSessionDirectory(session) {
+  const payload = session?.data && typeof session.data === 'object' && !Array.isArray(session.data)
+    ? session.data
+    : session;
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return null;
+  return trim(payload.directory, 4096)
+    || trim(payload.path, 4096)
+    || trim(payload.project?.worktree, 4096)
+    || trim(payload.project?.directory, 4096)
+    || trim(payload.project?.path, 4096)
+    || null;
+}
+
+/** Title from session payload or index row. */
+export function extractSessionTitle(session) {
+  const payload = session?.data && typeof session.data === 'object' && !Array.isArray(session.data)
+    ? session.data
+    : session;
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return null;
+  return trim(payload.title, 256) || null;
+}
+
+/**
+ * Map OpenCode session + messages into contact watch/card status.
+ * Used as the baseline when watching an existing session so an already-terminal
+ * idle is not treated as a fresh complete transition.
+ * - busy/retry → busy (in-flight)
+ * - session.error / last assistant error → error
+ * - idle / time.completed / missing session → complete
+ * - otherwise busy (keep watching; never invent complete from silence)
+ */
+export function mapSessionToWatchStatus({
+  session = null,
+  messages = null,
+  missing = false,
+} = {}) {
+  if (missing) return 'complete';
+  const payload = session?.data && typeof session.data === 'object' && !Array.isArray(session.data)
+    ? session.data
+    : session;
+  if (payload?.error) return 'error';
+
+  const statusType = typeof payload?.status?.type === 'string'
+    ? payload.status.type
+    : (typeof payload?.status === 'string'
+      ? payload.status
+      : (typeof payload?.type === 'string' ? payload.type : ''));
+  if (statusType === 'busy' || statusType === 'retry') return 'busy';
+  if (statusType === 'question') return 'question';
+
+  const rows = Array.isArray(messages)
+    ? messages
+    : (Array.isArray(messages?.data) ? messages.data : []);
+  for (let index = rows.length - 1; index >= 0; index -= 1) {
+    const info = rows[index]?.info ?? rows[index];
+    if (info?.role !== 'assistant') continue;
+    if (info?.error) return 'error';
+    if (info?.time?.completed) return 'complete';
+    break;
+  }
+
+  if (statusType === 'idle' || payload?.time?.completed) return 'complete';
+  // No terminal signal — keep in-flight so later idle can settle once.
+  return 'busy';
 }
 
 /**
@@ -652,6 +739,7 @@ export async function assignSession(input = {}) {
     throw new AssignError(ASSIGN_CODES.UPSTREAM, 'Worker session APIs are unavailable.');
   }
 
+  input.signal?.throwIfAborted();
   let targetSessionID = sessionID;
   if (!targetSessionID) {
     let created;
@@ -672,6 +760,9 @@ export async function assignSession(input = {}) {
     }
   }
 
+  // A cancelled contact must not submit work after a late create response.
+  // Retain that session: creation succeeded, and cancellation is not deletion.
+  input.signal?.throwIfAborted();
   let prompted;
   let promptError;
   try {

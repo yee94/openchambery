@@ -22,8 +22,13 @@ import {
   NEW_CONVERSATION_TOOL_NAME,
   parseContactToolCalls,
   SCHEDULE_TASK_TOOL_NAME,
+  STOP_SESSION_TOOL_NAME,
+  STEER_SESSION_TOOL_NAME,
+  ARCHIVE_SESSION_TOOL_NAME,
+  DELETE_SESSION_TOOL_NAME,
   stripContactToolFences,
   UPDATE_DEFAULT_PROMPT_TOOL_NAME,
+  WATCH_SESSION_TOOL_NAME,
 } from './contact-tools.js';
 import {
   createPiCodingRuntime,
@@ -86,11 +91,34 @@ export const CONTACT_SYSTEM_PROMPT = [
   'Never write chain-of-thought, plans, tool names, or English narration of what you will do. The user never sees thinking.',
   'Do not expose tool traces, Activity, or editor actions.',
   'You have bash, read, write, and edit in the working directory. Use them for pwd, files, and shell. Never say you have no terminal or cannot read files. Ignore any temporary generator workspace in the environment.',
-  'Understand natural language in any language, including Chinese: 开新对话 / 清除记忆 means new_conversation (LLM memory only, chat history stays), 清空聊天记录 means clear_chat_history (delete transcript), 找项目 means list_projects, 现有对话 means list_sessions, 查看助手设定 / 默认提示词 means get_assistant_settings (pass to="Name" for another assistant), 改默认提示词 / 设置人设 / 改某助手的默认提示词 means update_default_prompt (persists that assistant\'s settings, later turns only; pass to="OpenCode 配置助手" to edit another contact without changing this one), 建助理 means create_assistant, 建会话 / 开个新会话 means assign_session, 排定时任务 means schedule_task, 给 X 说一声 means message_assistant, 发卡片 means emit a card via those tools — never ask the user to type /card or /dm.',
+  'Understand natural language in any language, including Chinese: 开新对话 / 清除记忆 means new_conversation (LLM memory only, chat history stays), 清空聊天记录 means clear_chat_history (delete transcript), 找项目 means list_projects, 现有对话 means list_sessions, 查看助手设定 / 默认提示词 means get_assistant_settings (pass to="Name" for another assistant), 改默认提示词 / 设置人设 / 改某助手的默认提示词 means update_default_prompt (persists that assistant\'s settings, later turns only; pass to="OpenCode 配置助手" to edit another contact without changing this one), 建助理 means create_assistant, 建会话 / 开个新会话 / 继续会话 means assign_session, 监听会话 means watch_session, 停止/取消/打断会话 means stop_session, 插话 means steer_session, 归档会话 means archive_session, 删除会话 means delete_session, 排定时任务 means schedule_task, 给 X 说一声 means message_assistant, 发卡片 means emit a card via those tools — never ask the user to type /card or /dm.',
   'You receive the registered project catalog every turn. You CAN see those projects. Look them up yourself (fuzzy match label/name/path). Never say you cannot see the registered project list. Never ask for a raw filesystem path when a name matches. If the catalog is empty, tell the user to add a project in Settings.',
-  'File and shell work in this working directory uses read, write, edit, and bash. To open a separate Chat coding session: match the project, optionally list_sessions for existing chats, then assign_session with projectPath or sessionID. Optional worker model via providerID/modelID/model from the connected catalog — that does not change this contact. Current-turn user attachments are server-forwarded on assign. One successful assign_session ends the turn — do not call it again.',
-  'A reply without the tool call does nothing. Never say 已创建, created, scheduled, or opened unless the tool already returned success.',
+  'File and shell work in this working directory uses read, write, edit, and bash. To open a separate Chat coding session: match the project, optionally list_sessions for existing chats, then assign_session with projectPath or sessionID. To continue an existing chat, assign_session with sessionID plus a coding prompt (omit model args to keep the prior worker model). To only listen without prompting when asked (监听/watch/monitor), watch_session with sessionID — a plain @session:id mention alone is not a watch request. To abort a running session, stop_session with sessionID. Optional worker model via providerID/modelID/model from the connected catalog — that does not change this contact. Current-turn user attachments are server-forwarded on assign. One successful assign_session or watch_session ends the turn — do not call it again.',
+  'A reply without the tool call does nothing. Never say 已创建, created, scheduled, opened, watched, or stopped unless the tool already returned success.',
 ].join(' ');
+
+// A workspace response must explicitly finish or ask for missing input. Plain
+// progress prose is not a final answer and must not silently end the pi loop.
+const WORKSPACE_RESPONSE_PROTOCOL = [
+  'Workspace response protocol: continue using openchamber-tool calls until the requested work and verification are done.',
+  'You may batch independent coding calls, but they execute sequentially in the order supplied. Wait for results before using their output. Send OpenChamber operation tools one at a time.',
+  'Reading a skill only loads instructions; execute its applicable steps before completing the task.',
+  'To finish, reply with only an openchamber-final JSON fence: ```openchamber-final\n{"status":"complete","text":"Your final answer in the user language"}\n```.',
+  'Use status "blocked" with the missing information or real blocker when you cannot proceed. Questions and ordinary conversation also use this final format; they do not require a tool call.',
+  'Do not use a final declaration for a progress update or promise to act later. Never invent tool results, User messages, or future assistant turns. Only supplied tool-result records are execution evidence.',
+].join('\n');
+
+const parseFinalResponse = (text) => {
+  const match = text.trim().match(/^```openchamber-final\s*([\s\S]*?)```$/u);
+  if (!match) return null;
+  try {
+    const value = JSON.parse(match[1]);
+    if (!value || !['complete', 'blocked'].includes(value.status) || typeof value.text !== 'string' || !value.text.trim()) return null;
+    return { status: value.status, text: value.text.trim() };
+  } catch {
+    return null;
+  }
+};
 
 const emptyUsage = () => ({
   input: 0,
@@ -237,7 +265,9 @@ export function createContactStreamFn(createChatCompletion, {
   onBubbleDelta = null,
   globalEventHub = null,
   bubbleGapMs = 0,
+  signal = null,
 } = {}) {
+  let callSequence = 0;
   return (model, context) => {
     const stream = createAssistantMessageEventStream();
     const run = async () => {
@@ -257,10 +287,13 @@ export function createContactStreamFn(createChatCompletion, {
               }];
             }
             if (message.role === 'assistant') {
-              const content = (message.content || [])
-                .filter((part) => part?.type === 'text')
-                .map((part) => part.text)
-                .join('');
+              const content = (message.content || []).map((part) => {
+                if (part?.type === 'text') return part.text;
+                if (part?.type !== 'toolCall') return '';
+                return '```openchamber-tool\n' + JSON.stringify({
+                  id: part.id, name: part.name, arguments: part.arguments,
+                }) + '\n```';
+              }).filter(Boolean).join('\n\n');
               return content ? [{ role: 'assistant', content }] : [];
             }
             if (message.role === 'toolResult') {
@@ -268,7 +301,6 @@ export function createContactStreamFn(createChatCompletion, {
                 .filter((part) => part?.type === 'text')
                 .map((part) => part.text)
                 .join('');
-              if (!content) return [];
               const toolName = typeof message.toolName === 'string' && message.toolName.trim()
                 ? message.toolName.trim()
                 : 'result';
@@ -278,7 +310,7 @@ export function createContactStreamFn(createChatCompletion, {
               const label = callId
                 ? `OpenChamber tool result name=${toolName} call=${callId}`
                 : `OpenChamber tool result name=${toolName}`;
-              return [{ role: 'user', content: `${label}: ${content}` }];
+              return [{ role: 'user', content: `${label}: ${JSON.stringify({ isError: message.isError === true, content })}` }];
             }
             return [];
         });
@@ -290,40 +322,68 @@ export function createContactStreamFn(createChatCompletion, {
         if (lastUser && fallbackFiles.length > 0 && !Array.isArray(lastUser.parts)) {
           lastUser.parts = fallbackFiles;
         }
-        const bubbleTracker = createContactBubbleDeltaTracker(onBubbleDelta);
-        const result = await createChatCompletion({
-          body: {
-            model: `${model.provider === 'openchamber' ? '' : `${model.provider}/`}${model.id}`.replace(/^\//, '') || model.name,
-            providerID: typeof model.name === 'string' && model.name.includes('/')
-              ? model.name.split('/')[0]
-              : undefined,
-            modelID: model.id,
-            messages,
-          },
-          onTextDelta: (delta) => {
-            if (typeof delta !== 'string' || !delta) return;
-            // Do not live-paint raw tokens: they are often chain-of-thought
-            // and would appear then vanish after parse/persist.
-            if (typeof onTextDelta === 'function') onTextDelta(delta);
-          },
-          globalEventHub,
-        });
-        const text = result?.completion?.choices?.[0]?.message?.content
-          ?? result?.text
-          ?? '';
         const allowedNames = (context.tools || []).map((tool) => tool?.name).filter(Boolean);
-        const parsed = parseContactToolCalls(text, allowedNames);
-        if (parsed.toolCall) {
-          const toolCall = {
+        const requiresFinal = allowedNames.some(isPiCodingToolName);
+        let text;
+        let parsed;
+        let finalText;
+        let rejectedCodingCalls = [];
+        // Repair only the rejected response: no tools have executed from it.
+        // Real results stay in messages, so already completed work is not replayed.
+        for (let attempt = 0; ; attempt += 1) {
+          signal?.throwIfAborted();
+          const result = await createChatCompletion({
+            signal,
+            body: {
+              model: `${model.provider === 'openchamber' ? '' : `${model.provider}/`}${model.id}`.replace(/^\//, '') || model.name,
+              providerID: typeof model.name === 'string' && model.name.includes('/')
+                ? model.name.split('/')[0]
+                : undefined,
+              modelID: model.id,
+              messages: [...messages],
+            },
+            onTextDelta: (delta) => {
+              if (typeof delta === 'string' && delta && typeof onTextDelta === 'function') onTextDelta(delta);
+            },
+            globalEventHub,
+          });
+          signal?.throwIfAborted();
+          text = result?.completion?.choices?.[0]?.message?.content ?? result?.text ?? '';
+          const finalResponse = parseFinalResponse(text);
+          finalText = finalResponse?.text ?? null;
+          // A final answer is opaque text; quoted tool examples in it cannot run.
+          parsed = finalText === null ? parseContactToolCalls(text, allowedNames) : { toolCalls: [], chatText: finalText };
+          const mixedBatch = parsed.toolCalls.length > 1 && parsed.toolCalls.some((call) => !isPiCodingToolName(call.name));
+          const malformedFinal = finalText === null && /```openchamber-final/u.test(parsed.chatText);
+          const skippedRejectedWork = rejectedCodingCalls.length > 0 && finalResponse?.status === 'complete';
+          const forgedTranscript = finalText === null && /(?:^|\n)\s*(?:(?:User|Assistant|Tool):|OpenChamber tool result name=)/iu.test(parsed.chatText);
+          const protocolError = parsed.protocolError
+            || (forgedTranscript ? 'Do not simulate user messages, assistant turns, or tool results. Output only your next real tool call and wait for execution.' : '')
+            || (skippedRejectedWork ? 'Previously rejected coding calls have not executed. Issue the remaining tool calls, or report a blocked outcome; do not declare them complete.' : '')
+            || (mixedBatch ? 'Send OpenChamber operation tools one at a time, without other calls in the same response.' : '')
+            || (malformedFinal ? 'The final declaration must be a single valid openchamber-final JSON fence with status and text, without other content.' : '')
+            || (requiresFinal && parsed.toolCalls.length === 0 && finalText === null ? 'A workspace response needs an actual tool call or an explicit final declaration.' : '');
+          if (!protocolError) break;
+          if (attempt >= 2) throw new Error('Assistant response protocol failed after two corrections; the task was not confirmed complete.');
+          const rejected = parsed.toolCalls.filter((call) => isPiCodingToolName(call.name));
+          if (rejected.length > 0) rejectedCodingCalls = rejected.map(({ name, arguments: args }) => ({ name, arguments: args }));
+          // Never replay rejected prose: it may contain fabricated user/tool results.
+          messages.push(
+            { role: 'user', content: `OpenChamber response protocol correction: ${protocolError} No tool calls from the rejected response executed. ${rejectedCodingCalls.length ? `Unexecuted proposed calls (not results): ${JSON.stringify(rejectedCodingCalls)}.` : ''} Continue the remaining work using the supplied real results; do not repeat completed operations. ${requiresFinal ? WORKSPACE_RESPONSE_PROTOCOL : 'Emit the corrected openchamber-tool call.'}` },
+          );
+        }
+        const bubbleTracker = createContactBubbleDeltaTracker(onBubbleDelta);
+        if (parsed.toolCalls.length > 0) {
+          const toolCalls = parsed.toolCalls.map((call) => ({
             type: 'toolCall',
-            id: `call_${Date.now().toString(36)}`,
-            name: parsed.toolCall.name,
-            arguments: parsed.toolCall.arguments,
-          };
+            id: `call_${Date.now().toString(36)}_${++callSequence}`,
+            name: call.name,
+            arguments: call.arguments,
+          }));
           const spoken = isContactSpokenPreamble(parsed.chatText) ? parsed.chatText.trim() : '';
           const content = spoken
-            ? [{ type: 'text', text: spoken }, toolCall]
-            : [toolCall];
+            ? [{ type: 'text', text: spoken }, ...toolCalls]
+            : toolCalls;
           const partial = {
             ...assistantMessage(model, spoken, 'toolUse'),
             content,
@@ -335,15 +395,17 @@ export function createContactStreamFn(createChatCompletion, {
             stream.push({ type: 'text_delta', contentIndex: 0, delta: spoken, partial });
             stream.push({ type: 'text_end', contentIndex: 0, content: spoken, partial });
           }
-          const toolIndex = spoken ? 1 : 0;
-          stream.push({ type: 'toolcall_start', contentIndex: toolIndex, partial });
-          stream.push({ type: 'toolcall_delta', contentIndex: toolIndex, delta: JSON.stringify(toolCall.arguments), partial });
-          stream.push({ type: 'toolcall_end', contentIndex: toolIndex, toolCall, partial });
+          toolCalls.forEach((toolCall, index) => {
+            const toolIndex = index + (spoken ? 1 : 0);
+            stream.push({ type: 'toolcall_start', contentIndex: toolIndex, partial });
+            stream.push({ type: 'toolcall_delta', contentIndex: toolIndex, delta: JSON.stringify(toolCall.arguments), partial });
+            stream.push({ type: 'toolcall_end', contentIndex: toolIndex, toolCall, partial });
+          });
           stream.push({ type: 'done', reason: 'toolUse', message: partial });
           stream.end(partial);
           return;
         }
-        const chatText = stripContactToolFences(text);
+        const chatText = finalText ?? parsed.chatText;
         const replyBubbles = splitContactBubbles(chatText);
         if (bubbleGapMs > 0 && replyBubbles.length > 1) {
           for (let index = 0; index < replyBubbles.length; index += 1) {
@@ -363,7 +425,7 @@ export function createContactStreamFn(createChatCompletion, {
         stream.push({ type: 'done', reason: 'stop', message: partial });
         stream.end(partial);
       } catch (error) {
-        const failed = assistantMessage(model, '', 'error', error?.message || 'upstream_error');
+        const failed = assistantMessage(model, '', signal?.aborted ? 'aborted' : 'error', error?.message || 'upstream_error');
         stream.push({ type: 'error', reason: 'error', error: failed });
         stream.end(failed);
       }
@@ -427,6 +489,10 @@ const extractToolResultText = (messages) => {
 
 /** Tool confirms that are themselves the user-facing bubble (no card). */
 const TOOL_TEXT_BUBBLE_TOOLS = new Set([
+  STOP_SESSION_TOOL_NAME,
+  STEER_SESSION_TOOL_NAME,
+  ARCHIVE_SESSION_TOOL_NAME,
+  DELETE_SESSION_TOOL_NAME,
   NEW_CONVERSATION_TOOL_NAME,
   CLEAR_CHAT_HISTORY_TOOL_NAME,
   UPDATE_DEFAULT_PROMPT_TOOL_NAME,
@@ -436,6 +502,8 @@ const TOOL_TEXT_BUBBLE_TOOLS = new Set([
 /** Card / side-effect tools: never paint English toolText into the transcript. */
 const CARD_SIDE_EFFECT_TOOLS = new Set([
   ASSIGN_SESSION_TOOL_NAME,
+  WATCH_SESSION_TOOL_NAME,
+  STOP_SESSION_TOOL_NAME,
   CREATE_ASSISTANT_TOOL_NAME,
   SCHEDULE_TASK_TOOL_NAME,
   MESSAGE_ASSISTANT_TOOL_NAME,
@@ -511,19 +579,25 @@ export async function runContactTurn({
   globalEventHub = null,
   skillHomeDir,
   AgentImpl = Agent,
+  signal = null,
+  readOnly = false,
 }) {
   const providerID = assistant.providerID;
   const modelID = assistant.modelID;
   const cwd = resolveAssistantCwd(assistant);
   const contactTools = Array.isArray(tools)
-    ? tools.filter((tool) => tool && typeof tool.name === 'string' && !isPiCodingToolName(tool.name))
+    ? tools.filter((tool) => tool && typeof tool.name === 'string' && !isPiCodingToolName(tool.name) && (!readOnly || ['list_projects', 'list_sessions', 'get_assistant_settings'].includes(tool.name)))
     : [];
   let runtime = null;
+  let removeAbortListener = null;
   try {
-    if (cwd) runtime = await createPiCodingRuntime(cwd, { homeDir: skillHomeDir });
+    signal?.throwIfAborted();
+    if (cwd && !readOnly) runtime = await createPiCodingRuntime(cwd, { homeDir: skillHomeDir });
     const codingTools = Array.isArray(runtime?.tools) ? runtime.tools : [];
     const systemPrompt = [
       CONTACT_SYSTEM_PROMPT,
+      'Conversation history is a bounded recent window, not guaranteed complete memory. OpenChamber card context records contain actual session identifiers and status; use them to resolve references to earlier work. Never claim to remember omitted details or repeat completed work because older context is missing. Ask for the missing detail when needed.',
+      readOnly ? 'This turn is a background result notification. Only read-only lookup tools are available. Never create or continue work; follow the latest user constraints and report the result briefly.' : '',
       formatPiCodingPrompt({
         cwd: runtime?.cwd,
         skillsPrompt: runtime?.skillsPrompt,
@@ -533,6 +607,7 @@ export async function runContactTurn({
       formatConnectedModelsPrompt(connectedModels, { preferences: modelPreferences, catalogAvailable: modelCatalogAvailable }),
       formatContactToolsPrompt(contactTools),
       assistant.defaultPrompt,
+      codingTools.length > 0 ? WORKSPACE_RESPONSE_PROTOCOL : '',
     ].filter((value) => typeof value === 'string' && value.trim()).join('\n\n');
     const model = createContactModel(providerID, modelID);
     // streamFn receives the model; completions needs providerID/modelID.
@@ -556,6 +631,7 @@ export async function runContactTurn({
       : [];
 
     const agent = new AgentImpl({
+      toolExecution: 'sequential',
       initialState: {
         systemPrompt,
         model,
@@ -569,10 +645,16 @@ export async function runContactTurn({
         onBubbleDelta,
         globalEventHub,
         bubbleGapMs: 280,
+        signal,
       }),
     });
 
+    const onAbort = () => agent.abort();
+    signal?.addEventListener('abort', onAbort, { once: true });
+    removeAbortListener = () => signal?.removeEventListener('abort', onAbort);
+    signal?.throwIfAborted();
     await agent.prompt(userText);
+    signal?.throwIfAborted();
     if (agent.state.errorMessage) {
       const error = new Error(agent.state.errorMessage);
       error.code = 'upstream_error';
@@ -585,7 +667,9 @@ export async function runContactTurn({
     let retried = false;
     if (requested.length > 0 && !hasRequestedResult() && !contactTurnHasSuccessfulReset(agent.state.messages)) {
       retried = true;
+      signal?.throwIfAborted();
       await agent.prompt(MISSED_FENCE_RETRY_USER_TEXT);
+      signal?.throwIfAborted();
       if (agent.state.errorMessage) {
         const error = new Error(agent.state.errorMessage);
         error.code = 'upstream_error';
@@ -615,7 +699,7 @@ export async function runContactTurn({
       };
     }
     const outcome = extractContactTurnOutcome(agent.state.messages, retried);
-    const text = stripContactToolFences(outcome.text);
+    const text = outcome.text;
     if (contactTurnHasSuccessfulReset(agent.state.messages)) {
       const historyCleared = contactTurnClearedChatHistory(agent.state.messages);
       const preferredConfirm = historyCleared
@@ -646,6 +730,7 @@ export async function runContactTurn({
       tools: [...agent.state.tools],
     };
   } finally {
+    removeAbortListener?.();
     try {
       await runtime?.close?.();
     } catch {

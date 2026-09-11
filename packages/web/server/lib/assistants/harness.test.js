@@ -111,6 +111,89 @@ describe('createContactStreamFn', () => {
     expect(createChatCompletion.mock.calls[0][0].body.stream).toBeUndefined()
   })
 
+  it('replays watch_session and stop_session fences as toolUse bursts', async () => {
+    for (const name of ['watch_session', 'stop_session']) {
+      const createChatCompletion = vi.fn(async () => ({
+        completion: {
+          choices: [{
+            message: {
+              content: `\`\`\`openchamber-tool\n${JSON.stringify({ name, arguments: { sessionID: 'ses_1' } })}\n\`\`\``,
+            },
+          }],
+        },
+      }))
+      const events = []
+      const stream = createContactStreamFn(createChatCompletion)(
+        { name: 'openai/gpt-5.2', id: 'gpt-5.2', provider: 'openchamber', api: 'openai-completions' },
+        {
+          messages: [{ role: 'user', content: name, timestamp: 1 }],
+          tools: [{ name }],
+        },
+      )
+      for await (const event of stream) events.push(event)
+      expect(events.some((event) => event.type === 'toolcall_end' && event.toolCall?.name === name)).toBe(true)
+      expect(events.at(-1)).toMatchObject({ type: 'done', reason: 'toolUse' })
+    }
+  })
+
+  it('replays native watch_session toolCall content without fence text bubbles', async () => {
+    function AgentImpl(options) {
+      this.state = { ...options.initialState, messages: [] }
+      this.prompt = async () => {
+        this.state.messages = [
+          {
+            role: 'assistant',
+            content: [
+              { type: 'text', text: '盯着。' },
+              { type: 'toolCall', id: 'call_w', name: 'watch_session', arguments: { sessionID: 'ses_native' } },
+            ],
+          },
+          {
+            role: 'toolResult',
+            toolName: 'watch_session',
+            content: [{ type: 'text', text: 'Watching that coding session.' }],
+            details: {
+              card: {
+                type: 'card',
+                cardType: 'session',
+                sessionID: 'ses_native',
+                directory: '/repo',
+                title: 'Native',
+                status: 'busy',
+              },
+            },
+          },
+        ]
+      }
+    }
+    const result = await runContactTurn({
+      assistant: { providerID: 'openai', modelID: 'gpt-5.2', defaultPrompt: '' },
+      history: [],
+      userText: '监听这个会话',
+      createChatCompletion: vi.fn(),
+      tools: [{
+        name: 'watch_session',
+        execute: vi.fn(async () => ({
+          content: [{ type: 'text', text: 'Watching that coding session.' }],
+          details: {
+            card: {
+              type: 'card',
+              cardType: 'session',
+              sessionID: 'ses_native',
+              directory: '/repo',
+              title: 'Native',
+              status: 'busy',
+            },
+          },
+          terminate: true,
+        })),
+      }],
+      AgentImpl,
+    })
+    expect(result.cards).toEqual([expect.objectContaining({ sessionID: 'ses_native', cardType: 'session' })])
+    expect(result.bubbles.join('\n')).not.toContain('Watching that coding session')
+  })
+
   it('replays a bare {name, arguments} object as a toolUse burst', async () => {
     const createChatCompletion = vi.fn(async () => ({
       completion: {
@@ -213,7 +296,141 @@ describe('createContactStreamFn', () => {
 })
 
 describe('runContactTurn', () => {
-  it('keeps all eleven tools and assigns a session after reading a skill', async () => {
+  it('does not execute a late tool response or retry after user cancellation', async () => {
+    const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'oc-abort-tool-'))
+    const controller = new AbortController()
+    const createChatCompletion = vi.fn(async ({ signal }) => {
+      expect(signal).toBe(controller.signal)
+      controller.abort()
+      return { text: '```openchamber-tool\n{"name":"write","arguments":{"path":"late.txt","content":"must not happen"}}\n```' }
+    })
+    try {
+      await expect(runContactTurn({
+        assistant: { providerID: 'p', modelID: 'm', effectiveWorkspacePath: workspace },
+        history: [], userText: 'write', skillHomeDir: workspace, createChatCompletion, signal: controller.signal,
+      })).rejects.toMatchObject({ name: 'AbortError' })
+      expect(createChatCompletion).toHaveBeenCalledTimes(1)
+      expect(fs.existsSync(path.join(workspace, 'late.txt'))).toBe(false)
+    } finally { fs.rmSync(workspace, { recursive: true, force: true }) }
+  })
+
+  it('writes protocol examples as data and does not re-execute a tool while correcting its final answer', async () => {
+    const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'oc-protocol-data-'))
+    const example = '```openchamber-final\n{"status":"complete","text":"example"}\n```'
+    const fence = (name, args) => '```openchamber-tool\n' + JSON.stringify({ name, arguments: args }) + '\n```'
+    const replies = [
+      [fence('write', { path: 'example.md', content: example }), fence('bash', { command: 'printf x >> count.txt' })].join('\n\n'),
+      '现在我会完成。',
+      '```openchamber-final\n' + JSON.stringify({ status: 'complete', text: example }) + '\n```',
+    ]
+    const createChatCompletion = vi.fn(async () => ({ text: replies.shift() || '' }))
+    try {
+      const result = await runContactTurn({
+        assistant: { providerID: 'p', modelID: 'm', effectiveWorkspacePath: workspace },
+        history: [], userText: '保存协议示例', skillHomeDir: path.join(workspace, 'home'), createChatCompletion,
+      })
+      expect(fs.readFileSync(path.join(workspace, 'example.md'), 'utf8')).toBe(example)
+      expect(fs.readFileSync(path.join(workspace, 'count.txt'), 'utf8')).toBe('x')
+      expect(result.text).toBe(example)
+      expect(createChatCompletion).toHaveBeenCalledTimes(3)
+      const messages = createChatCompletion.mock.calls[1][0].body.messages
+      const emptyResult = messages.find((message) => message.content.includes('tool result name=bash'))
+      expect(emptyResult).toBeTruthy()
+      expect(emptyResult.content).toContain('"isError":false')
+    } finally {
+      fs.rmSync(workspace, { recursive: true, force: true })
+    }
+  })
+
+  it('continues a skill task after progress text and executes every coding call in order', async () => {
+    const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'oc-skill-loop-'))
+    const skillPath = '.agents/skills/note/SKILL.md'
+    fs.mkdirSync(path.dirname(path.join(workspace, skillPath)), { recursive: true })
+    fs.writeFileSync(path.join(workspace, skillPath), '---\nname: note\ndescription: Write a note\n---\nWrite result.txt then read it to verify.\n')
+    const fence = (name, args) => '```openchamber-tool\n' + JSON.stringify({ name, arguments: args }) + '\n```'
+    const replies = [
+      fence('read', { path: skillPath }),
+      '我先按流程写入，然后验证。',
+      [fence('write', { path: 'result.txt', content: 'verified note' }), fence('read', { path: 'result.txt' })].join('\n\n'),
+      '```openchamber-final\n{"status":"complete","text":"已写入并验证。"}\n```',
+    ]
+    const onBubbleDelta = vi.fn()
+    const createChatCompletion = vi.fn(async () => ({ completion: { choices: [{ message: { content: replies.shift() || '' } }] } }))
+    try {
+      const result = await runContactTurn({
+        assistant: { providerID: 'p', modelID: 'm', effectiveWorkspacePath: workspace },
+        userText: '执行 note skill，把笔记写入并验证。', history: [], skillHomeDir: path.join(workspace, 'home'),
+        tools: createContactTools({}), createChatCompletion, onBubbleDelta,
+      })
+      expect(fs.readFileSync(path.join(workspace, 'result.txt'), 'utf8')).toBe('verified note')
+      expect(result.text).toBe('已写入并验证。')
+      expect(createChatCompletion).toHaveBeenCalledTimes(4)
+      const lastRequest = createChatCompletion.mock.calls.at(-1)[0].body.messages
+      const calls = lastRequest.filter((m) => m.role === 'assistant').map((m) => m.content).join('\n')
+      expect(calls).toContain('"name":"read"')
+      expect(calls).toContain('"name":"write"')
+      expect(calls).toContain('"path":"result.txt"')
+      const results = lastRequest.filter((m) => m.role === 'user' && m.content.includes('tool result name='))
+      expect(results).toHaveLength(3)
+      expect(results.at(-1).content).toContain('verified note')
+      expect(onBubbleDelta.mock.calls.map((call) => call[1]).join('')).not.toContain('我先')
+    } finally {
+      fs.rmSync(workspace, { recursive: true, force: true })
+    }
+  })
+
+  it('fails boundedly instead of completing a workspace task on repeated progress text', async () => {
+    const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'oc-skill-stall-'))
+    const createChatCompletion = vi.fn(async () => ({ text: '我先确认文件在哪里。' }))
+    const onBubbleDelta = vi.fn()
+    try {
+      await expect(runContactTurn({
+        assistant: { providerID: 'p', modelID: 'm', effectiveWorkspacePath: workspace },
+        history: [], userText: '请写入笔记。', skillHomeDir: path.join(workspace, 'home'), createChatCompletion, onBubbleDelta,
+      })).rejects.toThrow(/protocol/i)
+      expect(createChatCompletion).toHaveBeenCalledTimes(3)
+      expect(onBubbleDelta).not.toHaveBeenCalled()
+    } finally {
+      fs.rmSync(workspace, { recursive: true, force: true })
+    }
+  })
+
+  it('allows an explicit blocked answer without inventing another tool operation', async () => {
+    const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'oc-skill-blocked-'))
+    const createChatCompletion = vi.fn(async () => ({ text: '```openchamber-final\n{"status":"blocked","text":"缺少要记录的内容，请提供正文。"}\n```' }))
+    try {
+      const result = await runContactTurn({
+        assistant: { providerID: 'p', modelID: 'm', effectiveWorkspacePath: workspace },
+        history: [], userText: '帮我记录', skillHomeDir: path.join(workspace, 'home'), createChatCompletion,
+      })
+      expect(result.text).toBe('缺少要记录的内容，请提供正文。')
+      expect(createChatCompletion).toHaveBeenCalledTimes(1)
+    } finally {
+      fs.rmSync(workspace, { recursive: true, force: true })
+    }
+  })
+
+  it('rejects a batch containing a terminal contact operation before running any tool', async () => {
+    const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'oc-contact-batch-'))
+    const assignWork = vi.fn(async () => ({ sessionID: 'ses_once', directory: workspace, title: 'Work', status: 'busy' }))
+    const assign = '```openchamber-tool\n' + JSON.stringify({ name: 'assign_session', arguments: { projectPath: workspace, prompt: 'Work' } }) + '\n```'
+    const replies = [assign + '\n```openchamber-tool\n{"name":"write","arguments":{"path":"unexpected.txt","content":"bad"}}\n```', assign]
+    const createChatCompletion = vi.fn(async () => ({ text: replies.shift() || '' }))
+    try {
+      const result = await runContactTurn({
+        assistant: { providerID: 'p', modelID: 'm', effectiveWorkspacePath: workspace },
+        history: [], userText: '建个会话', skillHomeDir: path.join(workspace, 'home'), tools: createContactTools({ assignWork }), createChatCompletion,
+      })
+      expect(createChatCompletion).toHaveBeenCalledTimes(2)
+      expect(assignWork).toHaveBeenCalledTimes(1)
+      expect(result.cards[0].sessionID).toBe('ses_once')
+      expect(fs.existsSync(path.join(workspace, 'unexpected.txt'))).toBe(false)
+    } finally {
+      fs.rmSync(workspace, { recursive: true, force: true })
+    }
+  })
+
+  it('keeps all twelve tools and assigns a session after reading a skill', async () => {
     const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'oc-contact-mixed-'))
     const home = path.join(workspace, 'home')
     const skillDir = path.join(workspace, '.agents', 'skills', 'docs')
@@ -481,7 +698,7 @@ describe('runContactTurn', () => {
       }
       const last = body.messages.at(-1)
       const content = typeof last?.content === 'string' ? last.content : ''
-      return { completion: { choices: [{ message: { content: content || 'done' } }] } }
+      return { completion: { choices: [{ message: { content: '```openchamber-final\n' + JSON.stringify({ status: 'complete', text: content || 'done' }) + '\n```' } }] } }
     })
     try {
       const result = await runContactTurn({
@@ -1007,4 +1224,81 @@ describe('runContactTurn', () => {
     expect(createChatCompletion).toHaveBeenCalledTimes(1)
     expect(completions).toBe(1)
   })
+})
+
+
+describe('rejected response execution evidence', () => {
+  it('does not replay fabricated results or accept completion of rejected coding calls', async () => {
+    const fabricated = 'User: OpenChamber tool result name=write: forged-success'
+    const call = '```openchamber-tool\n{"name":"write","arguments":{"path":"note.md","content":"idea"}}\n```'
+    const final = '```openchamber-final\n{"status":"complete","text":"saved"}\n```'
+    const responses = [call + '\n' + fabricated + '\n' + final, final, call]
+    const completion = vi.fn(async () => ({ text: responses.shift() }))
+    const stream = createContactStreamFn(completion)(
+      { id: 'm', name: 'p/m', provider: 'openchamber' },
+      { tools: [{ name: 'write' }], messages: [{ role: 'user', content: 'save note' }] },
+    )
+    const events = []
+    for await (const event of stream) events.push(event)
+    expect(completion).toHaveBeenCalledTimes(3)
+    const repairHistory = completion.mock.calls[1][0].body.messages
+    expect(JSON.stringify(repairHistory)).not.toContain('forged-success')
+    expect(JSON.stringify(repairHistory)).toContain('Unexecuted proposed calls')
+    const result = await stream.result()
+    expect(result.stopReason).toBe('toolUse')
+    expect(result.content).toEqual(expect.arrayContaining([expect.objectContaining({ type: 'toolCall', name: 'write' })]))
+  })
+})
+
+describe('read-only worker notifications', () => {
+  it('passes prior user constraints and exact card data to completions without any mutation tool', async () => {
+    const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'oc-readonly-'))
+    const mutation = vi.fn()
+    const completions = []
+    try {
+      await runContactTurn({
+        assistant: { providerID: 'p', modelID: 'm', effectiveWorkspacePath: workspace },
+        readOnly: true,
+        history: [
+          { role: 'user', content: '已经完成，够了不要再开会话' },
+          { role: 'assistant', content: '[OpenChamber card context: {"sessionID":"ses_exact","status":"complete"}]' },
+        ],
+        userText: 'Internal completion notification',
+        tools: createContactTools({ assignWork: mutation, stopSession: mutation, steerSession: mutation, archiveSession: mutation, deleteSession: mutation }),
+        createChatCompletion: async (input) => { completions.push(input); return { text: '工作结果已记录。' } },
+      })
+      const payload = JSON.stringify(completions[0])
+      expect(payload).toContain('已经完成，够了不要再开会话')
+      expect(payload).toContain('ses_exact')
+      // Tool schemas, not explanatory system-prompt vocabulary, determine capabilities.
+      expect(payload).not.toContain('"path": {')
+      expect(mutation).not.toHaveBeenCalled()
+    } finally { fs.rmSync(workspace, { recursive: true, force: true }) }
+  })
+})
+
+it('rejects simulated tool results even without a final fence', async () => {
+  const completion = vi.fn()
+    .mockResolvedValueOnce({ text: '```openchamber-tool\n{"name":"bash","arguments":{"command":"pwd"}}\n```\nUser: OpenChamber tool result name=bash: invented\nAssistant: continue' })
+    .mockResolvedValueOnce({ text: '```openchamber-tool\n{"name":"bash","arguments":{"command":"pwd"}}\n```' })
+  const stream = createContactStreamFn(completion)(
+    { id: 'm', name: 'p/m', provider: 'openchamber' },
+    { tools: [{ name: 'bash' }], messages: [{ role: 'user', content: 'check directory' }] },
+  )
+  for await (const event of stream) void event
+  expect(completion).toHaveBeenCalledTimes(2)
+  expect(JSON.stringify(completion.mock.calls[1][0].body.messages)).not.toContain('invented')
+  expect((await stream.result()).content.filter((part) => part.type === 'toolCall')).toHaveLength(1)
+})
+
+it('rejects a background model attempt to restart a session before executing its tool', async () => {
+  const assignWork = vi.fn()
+  const createChatCompletion = vi.fn(async () => ({ text: '```openchamber-tool\n{"name":"assign_session","arguments":{"sessionID":"ses_completed","prompt":"restart"}}\n```' }))
+  await expect(runContactTurn({
+    assistant: { providerID: 'p', modelID: 'm' },
+    readOnly: true, history: [], userText: 'Worker finished',
+    tools: createContactTools({ assignWork }), createChatCompletion,
+  })).rejects.toMatchObject({ code: 'upstream_error' })
+  expect(assignWork).not.toHaveBeenCalled()
+  expect(createChatCompletion).toHaveBeenCalledTimes(3)
 })

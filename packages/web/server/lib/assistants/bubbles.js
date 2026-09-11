@@ -1,5 +1,5 @@
 const SENTENCE = /(?<=[.!?])\s+(?=[A-Z“"‘])/u;
-const CONTACT_PLANNING = /\b(let me think|i should|i need to|i'll call|i will call|the user (said|wants|asked)|actually,?|hmm\.?|assign_session|list_projects|list_sessions|create_assistant|schedule_task|tool call|projectPath)\b/i;
+const CONTACT_PLANNING = /\b(let me think|i should|i need to|i'll call|i will call|the user (said|wants|asked)|actually,?|hmm\.?|assign_session|watch_session|stop_session|list_projects|list_sessions|create_assistant|schedule_task|tool call|projectPath)\b/i;
 
 /**
  * A short spoken contact line (not chain-of-thought). Shown before a tool and kept.

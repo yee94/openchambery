@@ -63,7 +63,10 @@ import {
   ASSIGN_CODES,
   assignSession,
   attachmentScopeKey,
+  extractSessionDirectory,
+  extractSessionTitle,
   hasAssignImageParts,
+  mapSessionToWatchStatus,
   resolveAssignDirectory,
   extractAssignSessionModel,
   resolveAssignWorkerModel,
@@ -460,8 +463,18 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
     const sessionID = properties?.sessionID || properties?.sessionId || properties?.info?.sessionID || properties?.info?.sessionId;
     return nonEmptyString(sessionID) ? sessionID : '';
   };
+  const isUserAbort = (error) => error?.name === 'MessageAbortedError';
+  const assignedResumes = new Map();
+  const contactControllers = new Map();
+  const cancelAssignedResumes = ({ sessionID, assistantID }) => {
+    for (const resume of assignedResumes.values()) {
+      if (sessionID && resume.sessionID !== sessionID) continue;
+      if (assistantID && resume.assistantID !== assistantID) continue;
+      resume.controller.abort();
+    }
+  };
   const settleStatusFromEvent = (payload, properties) => {
-    if (payload.type === 'session.error') return 'error';
+    if (payload.type === 'session.error') return isUserAbort(properties.error) ? 'cancelled' : 'error';
     if (payload.type === 'question.asked' || payload.type === 'permission.asked') return 'question';
     if (payload.type === 'session.idle') return 'complete';
     if (payload.type === 'session.status') {
@@ -475,6 +488,7 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
   // Assigned after inContactTurnLane exists; reportAssignedSession only schedules via this ref.
   const assignedSessionResumeRef = { schedule: null };
   const reportAssignedSession = (sessionID, status) => {
+    if (status === 'cancelled') cancelAssignedResumes({ sessionID });
     const watches = listWatchesBySession(db, sessionID);
     if (watches.length === 0) return false;
     let changed = false;
@@ -482,7 +496,7 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
     db.exec('BEGIN IMMEDIATE');
     try {
       for (const watch of watches) {
-        if (watch.status === status) continue;
+        if (watch.status === status || watch.status === 'cancelled') continue;
         // session.idle / status idle follow session.error. Do not rewrite 失败 as 完成.
         if (status === 'complete' && watch.status === 'error') continue;
         const updatedAt = now();
@@ -493,10 +507,11 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
           directory: watch.directory,
           status,
           updatedAt,
+          resumeAllowed: watch.resumeAllowed,
         });
         // complete/error: hand result back to contact LLM. question: card only (worker waiting).
         // Never insert oc.settle.* canned transcript bubbles.
-        if (status === 'complete' || status === 'error') {
+        if (watch.resumeAllowed && (status === 'complete' || status === 'error')) {
           resumes.push({
             assistantID: watch.assistantID,
             sessionID,
@@ -537,12 +552,12 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
     if (isMissing(getResult)) return 'complete';
     if (getResult?.error) return null;
     const session = getResult?.data;
-    if (session?.error) return 'error';
+    if (session?.error) return isUserAbort(session.error) ? 'cancelled' : 'error';
     const statusType = sessionStatusType(session);
     if (statusType === 'busy' || statusType === 'retry') return null;
     if (isMissing(messagesResult)) return 'complete';
     const assistant = messagesResult && !messagesResult.error ? lastAssistantInfo(messagesResult.data) : null;
-    if (assistant?.error) return 'error';
+    if (assistant?.error) return isUserAbort(assistant.error) ? 'cancelled' : 'error';
     if (statusType === 'idle' || session?.time?.completed) return 'complete';
     if (assistant?.time?.completed) return 'complete';
     return null;
@@ -596,7 +611,9 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
     if (payload.type === 'message.updated') {
       const info = properties.info; const sessionID = info?.sessionID;
       if (!nonEmptyString(sessionID) || !plainObject(info)) return false;
-      const assistants = mappedAssistants(sessionID); for (const assistantID of assistants) { const current = assistant(assistantID)?.current_session_id === sessionID; mirrorMessage(assistantID, sessionID, info, undefined, current); if (!current) invalidateBackfill(assistantID, sessionID); } return assistants.length > 0;
+      const cancelled = info.role === 'assistant' && isUserAbort(info.error)
+        ? reportAssignedSession(sessionID, 'cancelled') : false;
+      const assistants = mappedAssistants(sessionID); for (const assistantID of assistants) { const current = assistant(assistantID)?.current_session_id === sessionID; mirrorMessage(assistantID, sessionID, info, undefined, current); if (!current) invalidateBackfill(assistantID, sessionID); } return cancelled || assistants.length > 0;
     }
     if (payload.type === 'message.part.updated') {
       const part = properties.part; const sessionID = properties.sessionID ?? part?.sessionID;
@@ -1114,6 +1131,187 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
       return null;
     }
   };
+  /**
+   * Find a session row in the OpenChamber session index (directory is index-authoritative).
+   * Index failure throws — never silent empty.
+   */
+  const findSessionInIndex = (sessionID) => {
+    if (!sessionIndexService || typeof sessionIndexService.snapshot !== 'function') {
+      return null;
+    }
+    let snapshot;
+    try {
+      snapshot = sessionIndexService.snapshot();
+    } catch (error) {
+      throw new AssignError(
+        ASSIGN_CODES.UPSTREAM,
+        typeof error?.message === 'string' && error.message.trim()
+          ? error.message.trim()
+          : 'Session index snapshot failed.',
+      );
+    }
+    if (!snapshot || !Array.isArray(snapshot.directories)) {
+      throw new AssignError(ASSIGN_CODES.UPSTREAM, 'Session index snapshot failed.');
+    }
+    for (const directory of snapshot.directories) {
+      const dir = typeof directory?.directory === 'string' ? directory.directory : '';
+      if (!dir) continue;
+      for (const session of Array.isArray(directory.sessions) ? directory.sessions : []) {
+        if (!session || typeof session.id !== 'string' || session.id !== sessionID) continue;
+        return {
+          sessionID,
+          directory: dir,
+          title: typeof session.title === 'string' ? session.title : null,
+          updatedAt: typeof session.time?.updated === 'number'
+            ? session.time.updated
+            : (typeof session.updatedAt === 'number' ? session.updatedAt : 0),
+        };
+      }
+    }
+    return null;
+  };
+  /**
+   * Resolve an existing OpenCode session for watch / stop / assign-reuse.
+   * Authority order: session index directory → session.get metadata → registered project.
+   * User-supplied directory/projectPath is a lookup hint only — never trusted as scope.
+   * Failures stay failures (not empty success).
+   */
+  const resolveReferencedSession = async ({
+    sessionID: rawSessionID,
+    directoryHint = null,
+    titleHint = null,
+    signal,
+    includeMessages = true,
+  } = {}) => {
+    const sessionID = typeof rawSessionID === 'string' ? rawSessionID.trim() : '';
+    if (!sessionID) {
+      throw new AssignError(ASSIGN_CODES.VALIDATION, 'sessionID is required.');
+    }
+    const options = signal ? { signal } : undefined;
+    const indexRow = findSessionInIndex(sessionID);
+    const hint = typeof directoryHint === 'string' && directoryHint.trim()
+      ? directoryHint.trim()
+      : null;
+    // Prefer index directory; user path is last-resort get hint only.
+    const getHints = [];
+    if (indexRow?.directory) getHints.push(indexRow.directory);
+    if (hint && !getHints.some((item) => directoryContained(item, hint) || directoryContained(hint, item))) {
+      getHints.push(hint);
+    }
+    if (getHints.length === 0) getHints.push(null);
+
+    let getResult = null;
+    let usedDirectoryHint = null;
+    let lastError = null;
+    for (const dir of getHints) {
+      try {
+        getResult = await client().session.get({
+          sessionID,
+          ...(dir ? { directory: dir } : {}),
+        }, options);
+        usedDirectoryHint = dir;
+        if (getResult && !getResult.error) break;
+        if (isMissing(getResult)) {
+          getResult = { missing: true, error: getResult?.error };
+          break;
+        }
+        // Non-404 error with a directory may be wrong scope — try next hint.
+        if (getResult?.error && dir) {
+          lastError = getResult.error;
+          getResult = null;
+          continue;
+        }
+        break;
+      } catch (error) {
+        lastError = error;
+        getResult = null;
+      }
+    }
+    if (!getResult) {
+      throw new AssignError(
+        ASSIGN_CODES.UPSTREAM,
+        typeof lastError?.message === 'string' && lastError.message.trim()
+          ? lastError.message.trim()
+          : 'Failed to load that coding session.',
+      );
+    }
+    if (getResult.missing || isMissing(getResult)) {
+      throw new AssignError(ASSIGN_CODES.NOT_FOUND, `No coding session ${sessionID} was found.`);
+    }
+    if (getResult.error) {
+      throw new AssignError(
+        ASSIGN_CODES.UPSTREAM,
+        typeof getResult.error?.message === 'string' && getResult.error.message.trim()
+          ? getResult.error.message.trim()
+          : 'Failed to load that coding session.',
+      );
+    }
+    const sessionPayload = getResult.data ?? getResult;
+    const metaDirectory = extractSessionDirectory(sessionPayload);
+    const directoryRaw = metaDirectory || indexRow?.directory || usedDirectoryHint;
+    if (!directoryRaw) {
+      throw new AssignError(
+        ASSIGN_CODES.VALIDATION,
+        'That session has no resolvable project directory.',
+      );
+    }
+    // Registered project scope = allowed roots (same gate as assign create).
+    // Reject managed assistant-workspaces and paths outside Settings projects.
+    let directory;
+    try {
+      directory = resolveAssignDirectory({
+        projectPath: directoryRaw,
+        directory: directoryRaw,
+        branch: null,
+        allowedRoots: getAllowedRoots(),
+        managedWorkspaceRoot: path.resolve(dataDir, 'assistant-workspaces'),
+        worktrees: [],
+      });
+    } catch (error) {
+      if (error instanceof AssignError) throw error;
+      throw new AssignError(
+        ASSIGN_CODES.WORKSPACE_FORBIDDEN,
+        'That session is not under a registered project. Add the project in Settings first.',
+      );
+    }
+
+    let messagesResult = null;
+    if (includeMessages && typeof client().session.messages === 'function') {
+      try {
+        messagesResult = await client().session.messages({
+          sessionID,
+          directory,
+          limit: 100,
+        }, options);
+        if (messagesResult?.error && !isMissing(messagesResult)) {
+          // Message fetch failure must not invent status; keep messages null.
+          messagesResult = null;
+        }
+      } catch {
+        messagesResult = null;
+      }
+    }
+    const messageRows = Array.isArray(messagesResult?.data)
+      ? messagesResult.data
+      : (Array.isArray(messagesResult) ? messagesResult : null);
+    const status = mapSessionToWatchStatus({
+      session: sessionPayload,
+      messages: messageRows,
+      missing: false,
+    });
+    const title = (typeof titleHint === 'string' && titleHint.trim() ? titleHint.trim() : null)
+      || extractSessionTitle(sessionPayload)
+      || indexRow?.title
+      || sessionID;
+    return {
+      sessionID,
+      directory,
+      title,
+      status,
+      session: sessionPayload,
+      messages: messageRows,
+    };
+  };
   const assignWork = async (row, params = {}) => {
     const fileParts = sanitizeAssignFileParts(params.fileParts || params.parts || []);
     const signal = params.signal;
@@ -1127,6 +1325,24 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
     const reuseSessionID = typeof params.sessionID === 'string' && params.sessionID.trim()
       ? params.sessionID.trim()
       : '';
+    // Reuse: resolve directory/project from authoritative session metadata first.
+    // User projectPath/directory are hints only and never override scope.
+    let reuseScope = null;
+    if (reuseSessionID) {
+      const directoryHint = typeof params.directory === 'string' && params.directory.trim()
+        ? params.directory.trim()
+        : (typeof params.projectPath === 'string' && params.projectPath.trim()
+          ? params.projectPath.trim()
+          : null);
+      reuseScope = await resolveReferencedSession({
+        sessionID: reuseSessionID,
+        directoryHint,
+        titleHint: typeof params.title === 'string' ? params.title : null,
+        signal,
+        // Messages only needed when following session model without explicit selection.
+        includeMessages: !explicitModel,
+      });
+    }
     // Reused session without explicit model may follow the session's last model (catalog-gated).
     const followSessionModel = Boolean(reuseSessionID && !explicitModel);
     const needsCatalog = explicitModel || hasAssignImageParts(fileParts) || followSessionModel;
@@ -1144,17 +1360,18 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
         catalog = await loadAssignCatalog(signal);
       }
     }
-    if (followSessionModel && catalog) {
-      const directoryHint = typeof params.directory === 'string' && params.directory.trim()
-        ? params.directory.trim()
-        : (typeof params.projectPath === 'string' && params.projectPath.trim()
-          ? params.projectPath.trim()
-          : null);
-      sessionModel = await lookupReusedSessionModel({
-        sessionID: reuseSessionID,
-        directory: directoryHint,
-        signal,
+    if (followSessionModel && catalog && reuseScope) {
+      sessionModel = extractAssignSessionModel({
+        session: reuseScope.session,
+        messages: reuseScope.messages,
       });
+      if (!sessionModel) {
+        sessionModel = await lookupReusedSessionModel({
+          sessionID: reuseSessionID,
+          directory: reuseScope.directory,
+          signal,
+        });
+      }
     }
     const workerModel = resolveAssignWorkerModel({
       providerID: params.providerID,
@@ -1175,6 +1392,16 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
     // Forward tool variant + AbortSignal; lookupMessage uses real SDK exact/list paths.
     return assignSession({
       ...params,
+      ...(reuseScope ? {
+        sessionID: reuseScope.sessionID,
+        directory: reuseScope.directory,
+        projectPath: reuseScope.directory,
+        // Drop untrusted branch when reusing — directory is already authoritative.
+        branch: undefined,
+        title: typeof params.title === 'string' && params.title.trim()
+          ? params.title.trim()
+          : reuseScope.title,
+      } : {}),
       fileParts,
       ...(params.variant !== undefined ? { variant: params.variant } : {}),
       ...(signal ? { signal } : {}),
@@ -1200,6 +1427,112 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
       lookupMessage: (lookup) => lookupAssignMessage({ ...lookup, signal }),
       messageID: params?.messageID || `msg_assign_${id()}`,
     });
+  };
+  /** Watch an existing session only — no prompt. Baseline status avoids false settle resume. */
+  const watchSessionWork = async (_row, params = {}) => {
+    const sessionID = typeof params.sessionID === 'string' ? params.sessionID.trim() : '';
+    if (!sessionID) {
+      throw new AssignError(ASSIGN_CODES.VALIDATION, 'watch_session requires sessionID.');
+    }
+    const resolved = await resolveReferencedSession({
+      sessionID,
+      // directory/projectPath from the model are never trusted as scope authority.
+      directoryHint: null,
+      titleHint: typeof params.title === 'string' ? params.title : null,
+      signal: params.signal,
+      includeMessages: true,
+    });
+    return {
+      sessionID: resolved.sessionID,
+      directory: resolved.directory,
+      title: resolved.title,
+      status: resolved.status,
+      watched: true,
+      reused: true,
+    };
+  };
+  /** Abort an existing coding session via real OpenCode session.abort. */
+  const stopSessionWork = async (_row, params = {}) => {
+    const sessionID = typeof params.sessionID === 'string' ? params.sessionID.trim() : '';
+    if (!sessionID) {
+      throw new AssignError(ASSIGN_CODES.VALIDATION, 'stop_session requires sessionID.');
+    }
+    const resolved = await resolveReferencedSession({
+      sessionID,
+      directoryHint: null,
+      signal: params.signal,
+      // Abort does not need messages for baseline.
+      includeMessages: false,
+    });
+    const signal = params.signal;
+    signal?.throwIfAborted();
+    const sdkOptions = signal ? { signal } : undefined;
+    if (typeof client().session.abort !== 'function') {
+      throw new AssignError(ASSIGN_CODES.UPSTREAM, 'Session abort is unavailable.');
+    }
+    let result;
+    try {
+      result = await client().session.abort({
+        sessionID: resolved.sessionID,
+        directory: resolved.directory,
+      }, sdkOptions);
+    } catch (error) {
+      throw new AssignError(
+        ASSIGN_CODES.UPSTREAM,
+        typeof error?.message === 'string' && error.message.trim()
+          ? error.message.trim()
+          : 'Failed to abort that coding session.',
+      );
+    }
+    if (isMissing(result)) {
+      throw new AssignError(ASSIGN_CODES.NOT_FOUND, `No coding session ${resolved.sessionID} was found.`);
+    }
+    if (result?.error || result?.data === false) {
+      throw new AssignError(
+        ASSIGN_CODES.UPSTREAM,
+        typeof result.error?.message === 'string' && result.error.message.trim()
+          ? result.error.message.trim()
+          : 'Failed to abort that coding session.',
+      );
+    }
+    reportAssignedSession(resolved.sessionID, 'cancelled');
+    return {
+      sessionID: resolved.sessionID,
+      directory: resolved.directory,
+      title: resolved.title,
+      aborted: true,
+    };
+  };
+  // Resolve scope from the authoritative session, never model-supplied directories.
+  const mutateSessionWork = async (operation, params = {}) => {
+    const sessionID = typeof params.sessionID === 'string' ? params.sessionID.trim() : '';
+    if (!sessionID) throw new AssignError(ASSIGN_CODES.VALIDATION, `${operation} requires sessionID.`);
+    if (operation === 'steer' && (typeof params.text !== 'string' || !params.text.trim())) {
+      throw new AssignError(ASSIGN_CODES.VALIDATION, 'steer requires text.');
+    }
+    const resolved = await resolveReferencedSession({ sessionID, signal: params.signal, includeMessages: false });
+    params.signal?.throwIfAborted();
+    const session = client().session;
+    const method = operation === 'steer' ? 'promptAsync' : operation === 'archive' ? 'update' : 'delete';
+    if (typeof session[method] !== 'function') throw new AssignError(ASSIGN_CODES.UPSTREAM, `Session ${operation} is unavailable.`);
+    const request = { sessionID, directory: resolved.directory };
+    if (operation === 'steer') Object.assign(request, {
+      messageID: `msg_steer_${id()}`, delivery: 'steer', parts: [{ type: 'text', text: params.text.trim() }],
+    });
+    if (operation === 'archive') request.time = { archived: now() };
+    let result;
+    try {
+      result = await session[method](request, params.signal ? { signal: params.signal } : undefined);
+    } catch (error) {
+      throw new AssignError(ASSIGN_CODES.UPSTREAM, error?.message || `Session ${operation} failed.`);
+    }
+    if (isMissing(result)) throw new AssignError(ASSIGN_CODES.NOT_FOUND, `No coding session ${sessionID} was found.`);
+    if (result?.error || result?.data === false || (operation === 'steer' && !promptAdmitted(result))) {
+      // Do not retry an ambiguous prompt submission: it may already be admitted upstream.
+      throw new AssignError(ASSIGN_CODES.UPSTREAM, `Session ${operation} was not confirmed. Do not resend automatically.`);
+    }
+    if (operation !== 'steer') reportAssignedSession(sessionID, 'cancelled');
+    return { sessionID, directory: resolved.directory, operation, ...(operation === 'steer' ? { messageID: request.messageID, admitted: true } : { [operation === 'archive' ? 'archived' : 'deleted']: true }) };
   };
   const matchRegisteredProject = async (directory) => {
     const projects = await listProjects();
@@ -1484,7 +1817,8 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
     lines.push(
       'Instructions:',
       '- Never tell the user canned phrases like "会话已完成" / "Session finished" / "会话失败" / "Session failed".',
-      '- If more coding work is needed, call assign_session with the SAME sessionID and omit model args so the prior worker model is reused.',
+      '- This is a read-only result notification, never authorization to create, restart, continue, steer, or otherwise mutate any session or file.',
+      '- Respect the latest user instructions in history, including stop/cancel. If work remains, report it and wait for an explicit user request.',
       '- If no further work is needed, reply in one or two short sentences in the user\'s language summarizing the result or failure reason.',
     );
     return lines.join('\n');
@@ -1506,6 +1840,15 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
       || getContactMessage(db, `${messageID}:error`)
     ) return;
 
+    if (assignedResumes.has(messageID)) return;
+    const controller = new AbortController();
+    assignedResumes.set(messageID, { assistantID, sessionID, controller });
+    const finishCancelled = () => {
+      settleActiveContactTurn(assistantID, turnID, { bumpRevision: true });
+      emitContactTurnEvent('openchamber:contact-turn-end', { assistantID, turnID, status: 'cancelled' });
+      resolveContactTurnSettlement(messageID, { status: 'cancelled' });
+    };
+
     rememberActiveContactTurn(assistantID, {
       turnID,
       messageID,
@@ -1522,6 +1865,7 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
     contactTurnSettlement(messageID);
 
     void inContactTurnLane(assistantID, async () => {
+      if (controller.signal.aborted) { finishCancelled(); return; }
       if (closed) {
         settleActiveContactTurn(assistantID, turnID, { bumpRevision: true });
         resolveContactTurnSettlement(messageID, { status: 'error', error: 'closed' });
@@ -1549,7 +1893,7 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
       } catch {
         registeredProjects = [];
       }
-      const modelContext = await loadContactModelContext(undefined);
+      const modelContext = await loadContactModelContext(controller.signal);
 
       let workerText = '';
       try {
@@ -1571,6 +1915,11 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
             const rows = Array.isArray(messagesResult?.data)
               ? messagesResult.data
               : (Array.isArray(messagesResult) ? messagesResult : []);
+            if (isUserAbort(lastAssistantInfo(rows)?.error)) {
+              reportAssignedSession(sessionID, 'cancelled');
+              finishCancelled();
+              return;
+            }
             workerText = extractLastWorkerAssistantText(rows);
           }
         }
@@ -1578,6 +1927,7 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
         workerText = '';
       }
 
+      if (controller.signal.aborted) { finishCancelled(); return; }
       const title = findAssignedSessionCardTitle(assistantID, sessionID);
       const userText = buildAssignedSessionResumeUserText({
         sessionID,
@@ -1600,6 +1950,11 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
         );
         const tools = createContactTools({
           assignWork: (params) => assignWork(live, params),
+          watchSession: (params) => watchSessionWork(live, params),
+          stopSession: (params) => stopSessionWork(live, params),
+          steerSession: (params) => mutateSessionWork('steer', params),
+          archiveSession: (params) => mutateSessionWork('archive', params),
+          deleteSession: (params) => mutateSessionWork('delete', params),
           createAssistant: (toolInput) => createAssistant(toolInput),
           scheduleTask: (params) => scheduleWork(live, params),
           deliverPeerMessage: (toolInput) => deliverPeerMessage(assistantID, toolInput),
@@ -1670,7 +2025,10 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
           turnFileParts: [],
           turnAttachmentScope: attachmentScopeKey([]),
         });
+        controller.signal.throwIfAborted();
         const generated = await runContactTurn({
+          signal: controller.signal,
+          readOnly: true,
           assistant: assistantSnapshot,
           history: executionHistory,
           userText,
@@ -1681,6 +2039,7 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
           ...modelContext,
           globalEventHub,
           onBubbleDelta: (bubbleIndex, delta, done) => {
+            if (controller.signal.aborted) return;
             emitContactTurnEvent('openchamber:contact-bubble-delta', {
               assistantID,
               turnID,
@@ -1690,6 +2049,7 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
             });
           },
         });
+        if (controller.signal.aborted) { finishCancelled(); return; }
         if (closed) {
           settleActiveContactTurn(assistantID, turnID, { bumpRevision: true });
           resolveContactTurnSettlement(messageID, { status: 'error', error: 'closed' });
@@ -1762,6 +2122,7 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
         });
         resolveContactTurnSettlement(messageID, { status: 'complete' });
       } catch (error) {
+        if (controller.signal.aborted) { finishCancelled(); return; }
         const detail = typeof error?.message === 'string' && error.message.trim()
           ? error.message.trim()
           : (error?.code || 'upstream_error');
@@ -1792,7 +2153,7 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
         });
         resolveContactTurnSettlement(messageID, { status: 'error', error: detail, code: statusCode });
       }
-    });
+    }).finally(() => { assignedResumes.delete(messageID); });
   };
   assignedSessionResumeRef.schedule = scheduleAssignedSessionResume;
   /**
@@ -1836,12 +2197,24 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
         replayed: true,
       };
     }
+    cancelAssignedResumes({ assistantID: row.assistant_id });
+    // A new user turn supersedes pending background notifications as well as running ones.
+    // Explicit assign/watch admission rearms only its own watch. Keep live card status intact.
+    db.prepare('UPDATE assistant_contact_watch SET resume_allowed=0 WHERE assistant_id=?').run(row.assistant_id);
     admitContactUser(row.assistant_id, {
       userMessageID: messageID,
       userText,
       userParts,
       turnID,
     });
+    const controller = new AbortController();
+    contactControllers.set(messageID, { assistantID: row.assistant_id, controller });
+    const finishCancelled = () => {
+      settleActiveContactTurn(row.assistant_id, turnID, { bumpRevision: true });
+      emitContactTurnEvent('openchamber:contact-turn-end', { assistantID: row.assistant_id, turnID, status: 'cancelled' });
+      resolveContactTurnSettlement(messageID, { status: 'cancelled' });
+      contactControllers.delete(messageID);
+    };
     rememberActiveContactTurn(row.assistant_id, {
       turnID,
       messageID,
@@ -1856,6 +2229,7 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
     contactTurnSettlement(messageID);
     const kickTurn = () => {
       void inContactTurnLane(row.assistant_id, async () => {
+        if (controller.signal.aborted) { finishCancelled(); return; }
         if (closed) {
           settleActiveContactTurn(row.assistant_id, turnID, { bumpRevision: true });
           resolveContactTurnSettlement(messageID, { status: 'error', error: 'closed' });
@@ -1878,7 +2252,7 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
         const assignedCards = [];
         let contactResetThisTurn = false;
         let contactHistoryClearedThisTurn = false;
-        const modelContext = await loadContactModelContext(undefined);
+        const modelContext = await loadContactModelContext(controller.signal);
         try {
           // Materialize inside turn try so failures durable-error + settle working.
           // DB/UI keep descriptors; harness + assign get execution-time data URLs under budget.
@@ -1903,6 +2277,11 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
           const turnAttachmentScope = attachmentScopeKey(turnFileParts);
           const tools = createContactTools({
             assignWork: (params) => assignWork(row, params),
+            watchSession: (params) => watchSessionWork(row, params),
+            stopSession: (params) => stopSessionWork(row, params),
+            steerSession: (params) => mutateSessionWork('steer', params),
+            archiveSession: (params) => mutateSessionWork('archive', params),
+            deleteSession: (params) => mutateSessionWork('delete', params),
             createAssistant: (toolInput) => createAssistant(toolInput),
             scheduleTask: (params) => scheduleWork(row, params),
             deliverPeerMessage: (toolInput) => deliverPeerMessage(row.assistant_id, toolInput),
@@ -1985,7 +2364,9 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
             turnFileParts,
             turnAttachmentScope,
           });
+          controller.signal.throwIfAborted();
           const generated = await runContactTurn({
+            signal: controller.signal,
             assistant: assistantSnapshot,
             history: executionHistory,
             userText,
@@ -1996,6 +2377,7 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
             ...modelContext,
             globalEventHub,
             onBubbleDelta: (bubbleIndex, delta, done) => {
+              if (controller.signal.aborted) return;
               emitContactTurnEvent('openchamber:contact-bubble-delta', {
                 assistantID: row.assistant_id,
                 turnID,
@@ -2005,6 +2387,7 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
               });
             },
           });
+          if (controller.signal.aborted) { finishCancelled(); return; }
           if (closed) {
             settleActiveContactTurn(row.assistant_id, turnID, { bumpRevision: true });
             resolveContactTurnSettlement(messageID, { status: 'error', error: 'closed' });
@@ -2091,6 +2474,7 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
           });
           resolveContactTurnSettlement(messageID, { status: 'complete' });
         } catch (error) {
+          if (controller.signal.aborted) { finishCancelled(); return; }
           const detail = typeof error?.message === 'string' && error.message.trim()
             ? error.message.trim()
             : (error?.code || 'upstream_error');
@@ -2120,6 +2504,8 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
             body: detail,
           });
           resolveContactTurnSettlement(messageID, { status: 'error', error: detail, code: statusCode });
+        } finally {
+          contactControllers.delete(messageID);
         }
       });
     };
@@ -2320,7 +2706,28 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
     };
     return mode === 'stateless' ? inStatelessLane(deliveryTarget.assistantID, submit) : submit();
   };
-  const abort = async (assistantID, input) => { const row = active(assistantID); if (!plainObject(input) || input.sessionID !== row.current_session_id || input.sessionGeneration !== row.session_generation || !row.current_session_id) fail('revision_conflict'); const result = await client().session.abort({ sessionID: row.current_session_id, directory: effectiveWorkspace(row) }); if (isMissing(result)) fail('not_found'); if (result.error) fail('upstream_error'); return { binding: binding(row), aborted: true }; };
+  const abort = async (assistantID, input) => {
+    const row = active(assistantID);
+    if (!plainObject(input) || input.sessionID !== row.current_session_id || input.sessionGeneration !== row.session_generation) fail('revision_conflict');
+    let interrupted = false;
+    for (const turn of contactControllers.values()) {
+      if (turn.assistantID !== assistantID) continue;
+      turn.controller.abort();
+      interrupted = true;
+    }
+    for (const turn of assignedResumes.values()) {
+      if (turn.assistantID !== assistantID) continue;
+      turn.controller.abort();
+      interrupted = true;
+    }
+    db.prepare('UPDATE assistant_contact_watch SET resume_allowed=0 WHERE assistant_id=?').run(assistantID);
+    if (interrupted) return { binding: binding(row), aborted: true };
+    if (!row.current_session_id) fail('revision_conflict');
+    const result = await client().session.abort({ sessionID: row.current_session_id, directory: effectiveWorkspace(row) });
+    if (isMissing(result)) fail('not_found');
+    if (result.error) fail('upstream_error');
+    return { binding: binding(row), aborted: true };
+  };
   const createNew = async (assistantID) => { for (let attempt = 0; attempt < 3; attempt++) { const row = active(assistantID); const created = await createSession(row); const won = replaceBinding(row, created); if (won) return binding(won); } return binding(active(assistantID)); };
   const shareOperation = (operationID) => { const row = db.prepare('SELECT * FROM assistant_share_operation WHERE operation_id=?').get(operationID); return row && { operationID: row.operation_id, assistantID: row.assistant_id, sessionID: row.session_id, messageID: row.message_id, state: row.state, phase: row.phase, attempt: row.attempt, leaseExpiresAt: row.lease_expires_at, errorCode: row.error_code }; };
   const claim = (operationID, retry = false) => { db.exec('BEGIN IMMEDIATE'); try { const operation = db.prepare('SELECT * FROM assistant_share_operation WHERE operation_id=?').get(operationID); if (!operation) { db.exec('COMMIT'); return null; } const at = now(); const eligible = operation.state === 'failed' ? retry : operation.state === 'running' && operation.lease_expires_at <= at && operation.phase === 'admitted'; if (!eligible || operation.attempt >= SHARE_MAX_ATTEMPTS) { db.exec('COMMIT'); return null; } const result = db.prepare("UPDATE assistant_share_operation SET state='running',phase='submitting',attempt=attempt+1,lease_expires_at=?,error_code=NULL,updated_at=? WHERE operation_id=? AND state=? AND phase=? AND attempt<? AND (state='failed' OR lease_expires_at<=?)").run(at + SHARE_LEASE_MS, at, operationID, operation.state, operation.phase, SHARE_MAX_ATTEMPTS, at); const claimed = result.changes ? db.prepare('SELECT * FROM assistant_share_operation WHERE operation_id=?').get(operationID) : null; db.exec('COMMIT'); return claimed; } catch (error) { db.exec('ROLLBACK'); throw error; } };
@@ -2415,6 +2822,8 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
       throw error;
     }
   }, ensure, createNew, compact, send, whenContactTurnSettled, abort, captureQueueDeliveryTarget, sendWithCapturedConfig, share, shareOperation, historicalMessages, contactMessages, clearContactMemory, resetContact, appendContactCard, deliverPeerMessage, listAssistantScheduledTasks, putAssistantContactAttachment, getAssistantContactAttachment, migrateContactAttachments, processEvent, reportAssignedSessionSettle: reportAssignedSession, reconcile,   close: () => {
+    cancelAssignedResumes({});
+    for (const turn of contactControllers.values()) turn.controller.abort();
     if (!closed) {
       closed = true;
       try { contactAttachmentMigration.controller.abort(); } catch { /* ignore */ }
