@@ -1128,8 +1128,10 @@ describe('draftEstablishing paint prelude', () => {
     setOptimisticRefs(() => {}, () => {});
 
     let resolveCreate;
+    let markCreateStarted;
+    const createStarted = new Promise((resolve) => { markCreateStarted = resolve; });
     const originalCreateSession = opencodeClient.createSession;
-    opencodeClient.createSession = () => new Promise((resolve) => { resolveCreate = resolve; });
+    opencodeClient.createSession = () => new Promise((resolve) => { resolveCreate = resolve; markCreateStarted(); });
 
     try {
       useProjectsStore.setState({ projects: [projectA], activeProjectId: projectA.id });
@@ -1143,10 +1145,8 @@ describe('draftEstablishing paint prelude', () => {
       expect(useSessionUIStore.getState().newSessionDraft.draftEstablishing).toBe(false);
       expect(useSessionUIStore.getState().newSessionDraft.draftSubmitting).toBe(true);
 
-      // claim's paint gate plus directory resolution can take more than one tick.
-      for (let i = 0; i < 20 && typeof resolveCreate !== 'function'; i += 1) {
-        await new Promise((resolve) => setTimeout(resolve, 0));
-      }
+      // Wait for actual submission, not a machine-speed-dependent number of ticks.
+      await createStarted;
       resolveCreate({ id: 'ses-establishing-001', directory: projectA.path });
       await materializePromise;
     } finally {

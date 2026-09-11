@@ -51,7 +51,7 @@ describe('MessageHeader', () => {
     expect(html).toContain('GLM-5.3');
     expect(html).toContain('agent-badge');
     expect(html).toContain('Orchestrator');
-    expect(html).toContain('flex items-center gap-2');
+    expect(html).toContain('flex min-w-0 items-center gap-2');
     expect(html).not.toContain('max-w-[45%]');
     expect(html).not.toMatch(/inline-flex min-w-0 flex-1 items-center gap-1\.5/);
   });
