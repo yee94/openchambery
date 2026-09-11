@@ -72,6 +72,24 @@ describe('Assistant unread UI', () => {
     expect(host.querySelector('[data-assistant-unread-count]')).toBeNull();
   });
 
+  test('mobile dock keeps the total on the selected assistant tab and formats small counts', async () => {
+    state.total = 2;
+    await render(<MobileTabBar activeTab="assistant" onTabChange={() => undefined} />);
+    const tab = host.querySelector('[data-tab="assistant"][aria-selected="true"]');
+    const badge = tab?.querySelector('[data-assistant-unread-count]');
+    expect(badge?.textContent).toBe('2');
+    expect(badge?.getAttribute('aria-label')).toBe('assistants.unread.label:2');
+    expect(tab?.className).toContain('overflow-visible');
+    expect(tab?.querySelector('.relative')?.className).toContain('overflow-visible');
+    expect(badge?.className).toContain('bg-foreground');
+    expect(badge?.className).toContain('text-background');
+    expect(badge?.className).toContain('ring-2');
+    expect(badge?.className).toContain('text-[11px]');
+    expect(badge?.className).not.toContain('bg-[var(--status-info)]');
+    expect(badge?.parentElement?.className).toContain('left-full');
+    expect(badge?.parentElement?.className).toContain('ml-0.5');
+  });
+
   test('visible focused bottom row reports its loaded cursor once', async () => {
     await mountMarker();
     await intersect(false); expect(state.mark).not.toHaveBeenCalled();

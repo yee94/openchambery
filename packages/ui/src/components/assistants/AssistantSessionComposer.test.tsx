@@ -103,6 +103,24 @@ test('keyboard selection uses the shared chip display and canonical session code
   expect(submit).toHaveBeenCalledTimes(1);
 });
 
+test('compact picker insets its options and preserves close and selection focus behavior', async () => {
+  await type('@');
+  const list = document.querySelector('[role="listbox"]')!;
+  expect(list.classList.contains('p-1.5')).toBe(true);
+  expect(rows()[0].getAttribute('aria-selected')).toBe('true');
+  expect(rows()[0].querySelector('[title="/repo/one"]')?.classList.contains('truncate')).toBe(true);
+  const close = document.querySelector<HTMLButtonElement>('button[aria-label="dialog.common.actions.close"]')!;
+  await act(async () => close.click());
+  expect(rows()).toHaveLength(0);
+  expect(draft).toBe('@');
+  await type('@Sh');
+  await key('ArrowUp');
+  expect(rows()[1].getAttribute('aria-selected')).toBe('true');
+  await key('Enter');
+  expect(document.activeElement).toBe(input());
+  expect(draft).toBe(' @session:ses_1 ');
+});
+
 test('Tab accepts, Escape and outside press cancel while retaining the draft', async () => {
   await type('@Shared'); await key('Escape');
   expect(draft).toBe('@Shared'); expect(rows()).toHaveLength(0);

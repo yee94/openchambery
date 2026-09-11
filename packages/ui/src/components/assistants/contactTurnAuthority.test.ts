@@ -90,7 +90,7 @@ describe('contact turn authority (refresh / missed end / race)', () => {
         { role: 'assistant', turnID: 'turn_1', status: 'error', text: 'boom' },
       ],
     })
-    expect(next.find((preview) => preview.turnID === 'turn_1')?.status).toBe('failed')
+    expect(next.find((preview) => preview.turnID === 'turn_1')).toBeUndefined()
     expect(next.find((preview) => preview.turnID === 'turn_2')?.status).toBe('admitted')
     expect(contactTurnPreviewWorking(next)).toBe(true)
   })

@@ -63,9 +63,9 @@ const SessionMentionPicker = React.forwardRef<PickerHandle, {
   });
   React.useImperativeHandle(ref, () => ({ keyDown }), [keyDown]);
   return <ComposerAutocompleteLayer ref={containerRef} isMobile={isMobile} className="max-w-[640px] max-h-64">
-    <div className="flex items-center gap-2 px-3 py-2">
-      <span className="flex-1 typography-meta text-muted-foreground">{t('assistants.contact.sessionMention.scope')}</span>
-      <Button type="button" size="icon" variant="ghost" aria-label={t('dialog.common.actions.close')} onClick={onClose}><Icon name="close" className="size-4" /></Button>
+    <div className="flex shrink-0 items-center gap-2 px-3 py-1">
+      <span className="min-w-0 flex-1 text-[length:calc(var(--text-meta)*0.875)] leading-4 text-muted-foreground">{t('assistants.contact.sessionMention.scope')}</span>
+      <Button type="button" size="xs" variant="ghost" aria-label={t('dialog.common.actions.close')} onClick={onClose}><Icon name="close" className="size-4" /></Button>
     </div>
     {result.isPending ? <p role="status" className="px-3 py-2 typography-meta text-muted-foreground">{t('common.loading')}</p> : null}
     {result.isError ? <div role="alert" className="px-3 py-2 typography-meta text-[var(--status-error)]">
@@ -76,11 +76,11 @@ const SessionMentionPicker = React.forwardRef<PickerHandle, {
       {t(result.data === null ? 'common.unavailable' : 'sessions.sidebar.empty.noMatches.title')}
     </p> : null}
     <ScrollableOverlay preventOverscroll outerClassName="flex-1 min-h-0" className="px-0">
-      <div id={listId} role="listbox" aria-label={t('chat.fileMentionAutocomplete.groups.sessions')} className="pb-2">
+      <div id={listId} role="listbox" aria-label={t('chat.fileMentionAutocomplete.groups.sessions')} className="p-1.5">
         {sessions.map((session, rowIndex) => <div
           key={`${session.directory}:${session.id}`} id={`${listId}-${rowIndex}`} role="option" aria-selected={rowIndex === index}
           ref={(node) => { rowRefs.current[rowIndex] = node; }}
-          className={cn('flex min-h-11 cursor-pointer items-center gap-2 rounded-lg px-3 py-1.5 typography-ui-label', composerAutocompleteRowClassName(isMobile, rowIndex === index))}
+          className={cn('flex min-h-10 cursor-pointer items-center gap-2 rounded-md px-1.5 py-1 typography-ui-label', composerAutocompleteRowClassName(isMobile, rowIndex === index))}
           onMouseDown={(event) => event.preventDefault()}
           onMouseMove={() => setHighlight({ query, index: rowIndex })}
           onPointerDown={(event) => { if (event.pointerType === 'touch') touch.pointerDown(event.clientX, event.clientY); }}
@@ -93,13 +93,13 @@ const SessionMentionPicker = React.forwardRef<PickerHandle, {
         >
           <Icon name="chat-thread" className="size-4 shrink-0 text-muted-foreground" />
           <div className="min-w-0 flex-1">
-            <div className="truncate" title={session.title}>{session.title || t('chat.fileMentionAutocomplete.untitledSession')}</div>
-            <div className="truncate typography-meta text-muted-foreground" title={session.directory}>{session.directory}</div>
+            <div className="truncate font-medium leading-5" title={session.title}>{session.title || t('chat.fileMentionAutocomplete.untitledSession')}</div>
+            <div className="truncate text-[length:calc(var(--text-meta)*0.875)] leading-4 text-muted-foreground" title={session.directory}>{session.directory}</div>
           </div>
         </div>)}
       </div>
     </ScrollableOverlay>
-    {!isMobile ? <div className="border-t px-3 py-1.5 typography-meta text-muted-foreground">{t('chat.autocomplete.keyboardHint')}</div> : null}
+    {!isMobile ? <div className="mx-1.5 shrink-0 border-t px-1.5 py-1 text-[length:calc(var(--text-meta)*0.875)] leading-4 text-muted-foreground">{t('chat.autocomplete.keyboardHint')}</div> : null}
   </ComposerAutocompleteLayer>;
 });
 
