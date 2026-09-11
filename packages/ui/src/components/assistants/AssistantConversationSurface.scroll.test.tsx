@@ -428,3 +428,30 @@ test('contact stop calls the assistant abort endpoint with a null session and re
   await act(async () => root.render(<AssistantConversationSurface assistant={{ ...item, working: false }} active />));
   expect(host.querySelector<HTMLButtonElement>('[data-stop]')!.hidden).toBe(true);
 });
+
+test.each(['sending', 'serverWorking', 'processing'] as const)('pending send preserves stop for active work (%s)', async (source) => {
+  let finish!: (value: { revision: number }) => void;
+  attachmentIO.send.mockReset().mockImplementationOnce(() => new Promise((resolve) => { finish = resolve; }));
+  attachmentIO.abort.mockReset().mockResolvedValue(undefined);
+  const { host, root } = await mountSurface();
+  await act(async () => {
+    const textarea = host.querySelector('textarea')!;
+    textarea.value = 'Please continue';
+    textarea.dispatchEvent(new InputEvent('input', { bubbles: true }));
+  });
+  await act(async () => host.querySelector<HTMLButtonElement>('[data-send]')!.click());
+  expect(attachmentIO.send).toHaveBeenCalledTimes(1);
+  await act(async () => {
+    root.render(<AssistantConversationSurface assistant={{ ...assistant('assistant-a'), working: source === 'serverWorking' }} active />);
+    if (source === 'processing') contactEvents.handler?.({ type: 'contact-turn-start', assistantID: 'assistant-a', turnID: 'turn-admitted', occurredAt: 2 });
+  });
+  try {
+    const stop = host.querySelector<HTMLButtonElement>('[data-stop]')!;
+    expect(stop.hidden).toBe(source === 'sending');
+    if (!stop.hidden) await act(async () => stop.click());
+    expect(attachmentIO.abort).toHaveBeenCalledTimes(source === 'sending' ? 0 : 1);
+    expect(host.querySelector<HTMLButtonElement>('[data-send]')!.disabled).toBe(true);
+  } finally {
+    await act(async () => finish({ revision: 2 }));
+  }
+});
