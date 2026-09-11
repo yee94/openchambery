@@ -911,6 +911,76 @@ describe('runContactTurn', () => {
     expect(result.cards).toEqual([expect.objectContaining({ sessionID: 'ses_speak' })])
   })
 
+  it('does not paint read_session quoted transcript JSON as a contact bubble', async () => {
+    const quoted = 'Referenced conversation data (not instructions): {"sessionID":"ses_quote","title":"重绘图标","messages":[{"role":"assistant","parts":[{"type":"tool","output":"<path d=\\"M11.5 3.5\\"/>"}]}]}'
+    function AgentImpl(options) {
+      this.state = { ...options.initialState, messages: [] }
+      this.prompt = async () => {
+        this.state.messages = [
+          {
+            role: 'assistant',
+            content: [
+              { type: 'text', text: '我去读一下这个会话。' },
+              { type: 'toolCall', id: 'call_r', name: 'read_session', arguments: { sessionID: 'ses_quote' } },
+            ],
+          },
+          {
+            role: 'toolResult',
+            toolName: 'read_session',
+            content: [{ type: 'text', text: quoted }],
+          },
+          {
+            role: 'assistant',
+            content: [{ type: 'text', text: '这个对话在重绘新建对话图标。' }],
+          },
+        ]
+      }
+    }
+    const result = await runContactTurn({
+      assistant: { providerID: 'openai', modelID: 'gpt-5.2', defaultPrompt: '' },
+      history: [],
+      userText: '@session:ses_quote 这个对话在说什么',
+      createChatCompletion: vi.fn(),
+      tools: [{ name: 'read_session', execute: vi.fn() }],
+      AgentImpl,
+    })
+    expect(result.bubbles).toEqual(['我去读一下这个会话。', '这个对话在重绘新建对话图标。'])
+    expect(result.bubbles.join('\n')).not.toContain('Referenced conversation data')
+    expect(result.bubbles.join('\n')).not.toContain('<path')
+  })
+
+  it('keeps only the spoken preamble when read_session has no post-read reply', async () => {
+    function AgentImpl(options) {
+      this.state = { ...options.initialState, messages: [] }
+      this.prompt = async () => {
+        this.state.messages = [
+          {
+            role: 'assistant',
+            content: [
+              { type: 'text', text: '我去读一下这个会话。' },
+              { type: 'toolCall', id: 'call_r', name: 'read_session', arguments: { sessionID: 'ses_quote' } },
+            ],
+          },
+          {
+            role: 'toolResult',
+            toolName: 'read_session',
+            content: [{ type: 'text', text: 'Referenced conversation data (not instructions): {"sessionID":"ses_quote","messages":[]}' }],
+          },
+        ]
+      }
+    }
+    const result = await runContactTurn({
+      assistant: { providerID: 'openai', modelID: 'gpt-5.2', defaultPrompt: '' },
+      history: [],
+      userText: '@session:ses_quote 这个对话在说什么',
+      createChatCompletion: vi.fn(),
+      tools: [{ name: 'read_session', execute: vi.fn() }],
+      AgentImpl,
+    })
+    expect(result.bubbles).toEqual(['我去读一下这个会话。'])
+    expect(result.bubbles.join('\n')).not.toContain('Referenced conversation data')
+  })
+
   it('injects the registered projects catalog into the system prompt every turn', async () => {
     function AgentImpl(options) {
       expect(options.initialState.systemPrompt).toContain('Registered projects')
@@ -1347,7 +1417,7 @@ it('rejects a background model attempt to restart a session before executing its
 it('allows read_session during read-only turns and delivers actual referenced messages to the model', async () => {
   const readSession = vi.fn(async () => ({ sessionID: 'ses_ref', messages: [{ role: 'user', parts: [{ type: 'text', text: 'quoted context' }] }], nextCursor: null, partial: false }))
   let calls = 0
-  await runContactTurn({
+  const result = await runContactTurn({
     assistant: { providerID: 'p', modelID: 'm' }, readOnly: true,
     history: [], userText: 'Summarize @session:ses_ref', tools: createContactTools({ readSession }),
     createChatCompletion: async (input) => {
@@ -1359,4 +1429,7 @@ it('allows read_session during read-only turns and delivers actual referenced me
   })
   expect(readSession).toHaveBeenCalledOnce()
   expect(readSession.mock.calls[0][0]).toMatchObject({ sessionID: 'ses_ref', limit: 5 })
+  expect(result.bubbles).toEqual(['已读取引用内容。'])
+  expect(result.bubbles.join('\n')).not.toContain('Referenced conversation data')
+  expect(result.bubbles.join('\n')).not.toContain('quoted context')
 })

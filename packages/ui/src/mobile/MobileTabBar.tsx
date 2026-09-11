@@ -71,8 +71,9 @@ export function MobileTabBar({ activeTab, onTabChange, className }: MobileTabBar
             onClick={handleTabClick}
             onKeyDown={handleTabKeyDown}
             className={cn(
-              // Equal flex slots + min-w-0 so long locale strings truncate, never overflow.
-              'oc-mobile-tab-button min-w-0 flex-1 flex-col overflow-hidden',
+              // Equal flex slots + min-w-0 so long locale strings truncate on the label only.
+              // overflow stays visible so the assistant unread bubble can paint outside the icon.
+              'oc-mobile-tab-button min-w-0 flex-1 flex-col overflow-visible',
               'text-xs font-medium leading-none tracking-tight text-muted-foreground',
               // The dock supplies immediate touch-down glass feedback in mobile.css.
               'transition-[background-color,color,box-shadow,transform] duration-100',
@@ -87,11 +88,18 @@ export function MobileTabBar({ activeTab, onTabChange, className }: MobileTabBar
               ],
             )}
           >
-            <span className="relative inline-flex">
+            <span className="relative inline-flex shrink-0 overflow-visible">
               <Icon name={tab.icon} weight="medium" className="size-[23px] shrink-0" />
-              {tab.id === 'assistant' ? <span id="mobile-tab-assistant-unread" className="absolute -right-5 -top-1"><AssistantNavigationUnreadBadge /></span> : null}
+              {tab.id === 'assistant' ? (
+                <span
+                  id="mobile-tab-assistant-unread"
+                  className="pointer-events-none absolute left-full -top-1 ml-0.5 inline-flex z-10"
+                >
+                  <AssistantNavigationUnreadBadge className="h-[18px] min-w-[18px] bg-foreground px-1 text-[11px] font-bold tracking-normal text-background shadow-none ring-2 ring-background" />
+                </span>
+              ) : null}
             </span>
-            <span className="block max-w-full overflow-hidden text-ellipsis whitespace-nowrap">{label}</span>
+            <span className="oc-mobile-tab-label block max-w-full overflow-hidden text-ellipsis whitespace-nowrap">{label}</span>
           </Button>
         );
       })}

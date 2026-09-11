@@ -285,6 +285,8 @@
 .oc-mobile-floating-bottom-bar-navigation {
   gap: var(--oc-mobile-dock-gap);
   padding: var(--oc-mobile-dock-inner-inset);
+  /* Assistant unread bubble overhangs the icon; do not clip the glass dock. */
+  overflow: visible;
 }
 
 .oc-mobile-floating-bottom-bar-actions {
@@ -304,7 +306,8 @@
   corner-shape: round;
   font-size: 0.75rem !important;
   line-height: 0.75rem !important;
-  overflow: hidden;
+  /* visible: assistant unread bubble overhangs the icon (WeChat-style). */
+  overflow: visible;
   scrollbar-width: none;
   -webkit-tap-highlight-color: transparent;
   touch-action: manipulation;
@@ -323,13 +326,14 @@
   background: color-mix(in srgb, var(--interactive-selection) 55%, transparent);
 }
 
-.oc-mobile-tab-button > span {
+/* Label-only clip keeps long locales ellipsized without hiding the unread badge. */
+.oc-mobile-tab-button > .oc-mobile-tab-label {
   overflow: hidden;
   scrollbar-width: none;
 }
 
 .oc-mobile-tab-button::-webkit-scrollbar,
-.oc-mobile-tab-button > span::-webkit-scrollbar {
+.oc-mobile-tab-button > .oc-mobile-tab-label::-webkit-scrollbar {
   display: none;
   width: 0;
   height: 0;

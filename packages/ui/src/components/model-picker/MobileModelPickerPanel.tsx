@@ -463,9 +463,12 @@ const MobileModelPickerPanelBody: React.FC<MobileModelPickerPanelBodyProps> = ({
                             onExpandedModelKeyChange(null);
                         }}
                         onPointerUp={(event) => {
-                            // Android WebView can keep the composer textarea as the native
-                            // focus owner after its sheet-opening blur. Focus in the completed
-                            // direct-touch gesture so the search field owns the IME reliably.
+                            // Android WebView can keep another field (composer, settings
+                            // prompt) as the native IME owner after the sheet-opening blur.
+                            // Re-focus only when this field does not already own document
+                            // focus: a second focus({ preventScroll }) on iOS cancels the
+                            // keyboard the original tap just raised.
+                            if (document.activeElement === event.currentTarget) return;
                             event.currentTarget.focus({ preventScroll: true });
                         }}
                         placeholder={t('chat.modelControls.searchProvidersOrModels')}

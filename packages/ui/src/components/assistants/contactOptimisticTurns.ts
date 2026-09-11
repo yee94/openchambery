@@ -156,6 +156,8 @@ export const mergeContactTranscript = (
     if (rows.length === 0) continue;
     const index = lastIndexByTurn.get(preview.turnID);
     if (index === undefined) {
+      // Failed overlays must not trail into a later conversation after wipe.
+      if (preview.status === 'failed' && base.some((message) => message.turnID !== preview.turnID)) continue;
       trailing.push(...rows);
       continue;
     }
@@ -189,10 +191,15 @@ export const admitContactTurnPreview = (
   turnID: string,
   occurredAt = Date.now(),
 ): ContactTurnPreview[] => {
-  if (previews.some((preview) => preview.assistantID === assistantID && preview.turnID === turnID)) {
-    return previews as ContactTurnPreview[];
+  const withoutStaleFailed = previews.filter((preview) => (
+    preview.assistantID !== assistantID || preview.status !== 'failed' || preview.turnID === turnID
+  ));
+  if (withoutStaleFailed.some((preview) => preview.assistantID === assistantID && preview.turnID === turnID)) {
+    return withoutStaleFailed.length === previews.length
+      ? previews as ContactTurnPreview[]
+      : withoutStaleFailed as ContactTurnPreview[];
   }
-  return [...previews, { assistantID, turnID, status: 'admitted', bubbles: [], occurredAt }];
+  return [...withoutStaleFailed, { assistantID, turnID, status: 'admitted', bubbles: [], occurredAt }];
 };
 
 /**
@@ -217,6 +224,8 @@ export const seedContactTurnPreviewFromServer = (
  * - Never clear a newer local send whose admission revision is ahead of this
  *   snapshot, or a turn still in optimistic "sending".
  * - Recover durable error rows from contact messages without SSE.
+ * - Failed overlays are ephemeral: a newer turn or vanished turnID drops them
+ *   so a timeout cannot trail into the next conversation.
  */
 export const applyServerContactTurnAuthority = (
   previews: readonly ContactTurnPreview[],
@@ -391,8 +400,22 @@ export const reconcileContactTurnPreviews = (
   previews: readonly ContactTurnPreview[],
   messages: readonly Pick<AssistantContactMessage, 'role' | 'turnID'>[],
 ): ContactTurnPreview[] => {
+  const presentTurnIDs = new Set(messages.map((message) => message.turnID).filter(Boolean));
+  const lastTurnID = messages.length > 0 ? messages[messages.length - 1]?.turnID ?? null : null;
+  const liveTurnID = [...previews].reverse().find((preview) => (
+    preview.status === 'admitted' || preview.status === 'streaming'
+  ))?.turnID ?? lastTurnID;
   const authoritativeTurns = new Set(messages.flatMap((message) => message.role === 'assistant' ? [message.turnID] : []));
-  const next = previews.filter((preview) => preview.status !== 'complete' || !authoritativeTurns.has(preview.turnID));
+  const next = previews.filter((preview) => {
+    if (preview.status === 'admitted' || preview.status === 'streaming') return true;
+    if (preview.status === 'complete' && authoritativeTurns.has(preview.turnID)) return false;
+    if (!presentTurnIDs.has(preview.turnID)) return false;
+    if (preview.status === 'failed') {
+      if (liveTurnID && liveTurnID !== preview.turnID) return false;
+      if (lastTurnID && lastTurnID !== preview.turnID) return false;
+    }
+    return true;
+  });
   return next.length === previews.length ? previews as ContactTurnPreview[] : next;
 };
 

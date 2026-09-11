@@ -800,7 +800,10 @@ const useNativeMobileChrome = (): void => {
       const blurActiveTextField = () => {
         const active = document.activeElement;
         if (!(active instanceof HTMLElement)) return;
-        if (active.tagName !== 'TEXTAREA' && active.tagName !== 'INPUT' && !active.isContentEditable) return;
+        // keyboardWillHide must not steal overlay/settings search focus. A
+        // model-picker tap can race the previous field's hide, and WKWebView
+        // also emits hide when the keyboard-inset overlay resizes under IME.
+        if (!isComposerKeyboardTarget(active)) return;
         active.blur();
       };
 

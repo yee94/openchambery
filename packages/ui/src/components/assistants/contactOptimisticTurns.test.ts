@@ -137,6 +137,42 @@ describe('contactOptimisticTurns', () => {
     expect(mergeContactTranscript([], [], 'asst_1', failed)[0]).toMatchObject({ role: 'assistant', status: 'failed' })
   })
 
+  test('a later conversation drops a failed overlay so a timeout cannot trail', () => {
+    const failed = endContactTurnPreview([], {
+      assistantID: 'asst_1',
+      turnID: 'turn_timeout',
+      status: 'error',
+      error: 'OpenCode LLM generate timed out after 90000ms',
+      occurredAt: 1,
+    })
+    const wiped = [
+      { ...serverMessage('turn_wipe', '清空历史记录与消息记录'), turnID: 'turn_wipe' },
+      { ...serverMessage('turn_wipe:bubble:1', 'Chat history cleared.'), role: 'assistant' as const, turnID: 'turn_wipe' },
+    ]
+    expect(reconcileContactTurnPreviews(failed, wiped)).toEqual([])
+    expect(mergeContactTranscript(wiped, [], 'asst_1', failed).some((message) => message.status === 'failed')).toBe(false)
+
+    const nextTurn = admitContactTurnPreview(failed, 'asst_1', 'turn_hey', 2)
+    expect(nextTurn.find((preview) => preview.status === 'failed')).toBeUndefined()
+    expect(nextTurn.find((preview) => preview.turnID === 'turn_hey')?.status).toBe('admitted')
+
+    const continued = [
+      ...wiped,
+      { ...serverMessage('turn_hey', 'hey!'), turnID: 'turn_hey' },
+    ]
+    const authority = applyServerContactTurnAuthority(failed, {
+      assistantID: 'asst_1',
+      activeContactTurn: { turnID: 'turn_hey', admittedAt: 2 },
+      serverWorking: true,
+      snapshotRevision: 20,
+      messages: continued,
+    })
+    expect(authority.find((preview) => preview.status === 'failed')).toBeUndefined()
+    expect(mergeContactTranscript(continued, [], 'asst_1', [...failed, ...authority]).some((message) => (
+      message.status === 'failed' || (message.text || '').includes('timed out')
+    ))).toBe(false)
+  })
+
   test('seeds processing from server activeContactTurn and ignores stale ends for unknown turns', () => {
     const seeded = seedContactTurnPreviewFromServer([], {
       assistantID: 'asst_1',
@@ -222,7 +258,7 @@ describe('contactOptimisticTurns', () => {
       ],
       admissionRevisionByTurnID: new Map([['turn_a', 3], ['turn_b', 4]]),
     })
-    expect(recovered.find((preview) => preview.turnID === 'turn_a')?.status).toBe('failed')
+    expect(recovered.find((preview) => preview.turnID === 'turn_a')).toBeUndefined()
     expect(recovered.find((preview) => preview.turnID === 'turn_b')?.status).toBe('admitted')
     expect(contactTurnPreviewWorking(recovered)).toBe(true)
 

@@ -21,6 +21,7 @@ import {
   NEW_CONVERSATION_CONFIRM_BUBBLE,
   NEW_CONVERSATION_TOOL_NAME,
   parseContactToolCalls,
+  READ_SESSION_TOOL_NAME,
   SCHEDULE_TASK_TOOL_NAME,
   STOP_SESSION_TOOL_NAME,
   STEER_SESSION_TOOL_NAME,
@@ -539,6 +540,11 @@ const CARD_SIDE_EFFECT_TOOLS = new Set([
   MESSAGE_ASSISTANT_TOOL_NAME,
 ]);
 
+/** Lookup payloads for the model only — never paint quoted JSON as a user bubble. */
+const MODEL_ONLY_LOOKUP_TOOLS = new Set([
+  READ_SESSION_TOOL_NAME,
+]);
+
 const extractContactTurnOutcome = (messages, retried) => {
   const list = Array.isArray(messages) ? messages : [];
   let start = 0;
@@ -571,6 +577,9 @@ const extractContactTurnOutcome = (messages, retried) => {
       // Spoken preamble only. Card is enough when present; never English toolText.
       // Post-tool assistant text (terminate:false tools) may still surface when no spoken.
       confirm = spoken ? '' : (assistant || '');
+    } else if (MODEL_ONLY_LOOKUP_TOOLS.has(lastToolName)) {
+      // Quoted transcript stays in the tool result. Keep spoken + post-read reply.
+      confirm = assistant || '';
     } else {
       // list_projects / list_sessions and other app tools keep toolText.
       confirm = toolText || assistant;

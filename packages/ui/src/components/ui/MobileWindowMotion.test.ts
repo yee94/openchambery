@@ -141,6 +141,7 @@ describe('MobileWindowMotion recipe', () => {
     expect(mobileModelPickerPanelSource).toContain('outerClassName="min-h-0 flex-1"');
     expect(mobileModelPickerPanelSource).toContain('data-mobile-sheet-no-dismiss=""');
     expect(mobileModelPickerPanelSource).toContain('onPointerUp={(event) => {');
+    expect(mobileModelPickerPanelSource).toContain('if (document.activeElement === event.currentTarget) return;');
     expect(mobileModelPickerPanelSource).toContain('event.currentTarget.focus({ preventScroll: true })');
     // Whitespace-tolerant: Body split may change indent; contract is type=text + bound query.
     expect(mobileModelPickerPanelSource).toMatch(/type="text"\s+value=\{query\}/);

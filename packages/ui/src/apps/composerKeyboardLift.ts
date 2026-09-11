@@ -4,7 +4,8 @@
  * Capacitor Android (and iOS early intent) only raise the bottom chat composer
  * via transform FLIP. Non-composer fields (question cards, settings, overlays)
  * must not arm that path — they either sit in a scroll region or use the
- * overlay inset surface.
+ * overlay inset surface. iOS keyboardWillHide likewise must not blur those
+ * fields, or a model-picker / settings search tap loses the IME.
  */
 
 export const COMPOSER_KEYBOARD_LIFT_SELECTOR = '.oc-mobile-composer';
