@@ -152,7 +152,7 @@ const awaitWithDeadline = async (work, ms = CONTACT_CATALOG_DEADLINE_MS, code = 
   }
 };
 
-export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, getOpenCodeAuthHeaders, getServerId = async () => null, getAllowedRoots = () => [], listProjects = async () => [], listScheduledTasks = null, sessionIndexService = null, upsertScheduledTask = null, syncScheduledTaskProject = null, globalEventHub = null, onRevisionTip = null, onContactTurnEvent = null, onContactTurnComplete = null, clock = () => Date.now(), setIntervalFn = setInterval, clearIntervalFn = clearInterval, setImmediateFn = setImmediate, reconcileIntervalMs = 60_000, clientFactory, createChatCompletion = null, runContactTurn = defaultRunContactTurn, listWorktrees = defaultListWorktrees } = {}) => {
+export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, getOpenCodeAuthHeaders, getServerId = async () => null, getAllowedRoots = () => [], listProjects = async () => [], readModelPreferences = async () => null, listScheduledTasks = null, sessionIndexService = null, upsertScheduledTask = null, syncScheduledTaskProject = null, globalEventHub = null, onRevisionTip = null, onContactTurnEvent = null, onContactTurnComplete = null, clock = () => Date.now(), setIntervalFn = setInterval, clearIntervalFn = clearInterval, setImmediateFn = setImmediate, reconcileIntervalMs = 60_000, clientFactory, createChatCompletion = null, runContactTurn = defaultRunContactTurn, listWorktrees = defaultListWorktrees } = {}) => {
   if (!dbPath || !dataDir) return null;
   const Database = require('better-sqlite3');
   fs.mkdirSync(path.dirname(dbPath), { recursive: true });
@@ -1005,6 +1005,23 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
       throw wrapped;
     }
   };
+  const loadContactModelContext = async (signal) => {
+    const [catalogResult, preferencesResult] = await Promise.allSettled([
+      loadAssignCatalog(signal),
+      awaitWithDeadline(Promise.resolve().then(() => readModelPreferences()), CONTACT_CATALOG_DEADLINE_MS, 'upstream_error'),
+    ]);
+    const catalog = catalogResult.status === 'fulfilled' ? catalogResult.value : null;
+    const providerNames = new Map((catalog?.providers || []).map((provider) => [provider.id, provider.name]));
+    const preferences = preferencesResult.status === 'fulfilled' ? preferencesResult.value : null;
+    return {
+      connectedModels: normalizeConnectedModels((catalog?.models || []).map((model) => ({ ...model, providerName: providerNames.get(model.providerID) }))),
+      modelCatalogAvailable: catalog !== null,
+      modelPreferences: preferences && typeof preferences === 'object' ? {
+        favoriteModels: Array.isArray(preferences.favoriteModels) ? preferences.favoriteModels.slice(0, 64) : [],
+        recentModels: Array.isArray(preferences.recentModels) ? preferences.recentModels.slice(0, 16) : [],
+      } : null,
+    };
+  };
   const loadRegisteredProjects = async () => {
     const listed = await awaitWithDeadline(listProjects(), CONTACT_CATALOG_DEADLINE_MS, 'upstream_error');
     if (!Array.isArray(listed)) {
@@ -1532,13 +1549,7 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
       } catch {
         registeredProjects = [];
       }
-      let connectedModels = [];
-      try {
-        const catalog = await loadAssignCatalog(undefined);
-        connectedModels = normalizeConnectedModels(catalog?.models);
-      } catch {
-        connectedModels = [];
-      }
+      const modelContext = await loadContactModelContext(undefined);
 
       let workerText = '';
       try {
@@ -1667,7 +1678,7 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
           createChatCompletion,
           tools,
           projects: registeredProjects,
-          connectedModels,
+          ...modelContext,
           globalEventHub,
           onBubbleDelta: (bubbleIndex, delta, done) => {
             emitContactTurnEvent('openchamber:contact-bubble-delta', {
@@ -1867,15 +1878,7 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
         const assignedCards = [];
         let contactResetThisTurn = false;
         let contactHistoryClearedThisTurn = false;
-        let connectedModels = [];
-        try {
-          const catalog = await loadAssignCatalog(undefined);
-          connectedModels = normalizeConnectedModels(catalog?.models);
-        } catch {
-          // Catalog failure must not block default-model contact turns.
-          // Explicit worker model / image capability checks still fail closed inside assignWork.
-          connectedModels = [];
-        }
+        const modelContext = await loadContactModelContext(undefined);
         try {
           // Materialize inside turn try so failures durable-error + settle working.
           // DB/UI keep descriptors; harness + assign get execution-time data URLs under budget.
@@ -1990,7 +1993,7 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
             createChatCompletion,
             tools,
             projects: registeredProjects,
-            connectedModels,
+            ...modelContext,
             globalEventHub,
             onBubbleDelta: (bubbleIndex, delta, done) => {
               emitContactTurnEvent('openchamber:contact-bubble-delta', {

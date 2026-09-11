@@ -3509,3 +3509,73 @@ describe('assistants service', () => {
     service.close();
   });
 });
+
+
+describe('contact current-instance model context', () => {
+  const catalogClient = (id) => ({
+    provider: { list: async () => ({ data: { connected: [id] } }) },
+    config: { providers: async () => ({ data: { providers: [
+      { id, name: `Provider ${id}`, models: { model: { id: 'model', name: `Model ${id}` } } },
+      { id: 'disconnected', models: { hidden: { id: 'hidden' } } },
+    ] } }) },
+  });
+
+  it('refreshes catalog and ordered preferences every turn without crossing instances', async () => {
+    let instance = 'one';
+    let refs = [{ providerID: 'one', modelID: 'model', variant: 'high' }];
+    const seen = [];
+    const options = {
+      clientFactory: () => catalogClient(instance),
+      readModelPreferences: () => ({ favoriteModels: refs, recentModels: [...refs].reverse(), unrelatedSetting: 'not prompt data' }),
+      runContactTurn: async (context) => { seen.push(context); return { text: 'ready', bubbles: ['ready'] }; },
+    };
+    const service = setup(root(), {}, options);
+    const assistant = service.createAssistant(assistantInput);
+    await settleSend(service, assistant.id, { messageID: 'model_context_one', parts: [{ type: 'text', text: 'Which models?' }] });
+    instance = 'two';
+    refs = [{ providerID: 'two', modelID: 'model' }, { providerID: 'one', modelID: 'model' }];
+    await settleSend(service, assistant.id, { messageID: 'model_context_two', parts: [{ type: 'text', text: 'Which models now?' }] });
+    expect(seen[0].connectedModels).toEqual([{ providerID: 'one', providerName: 'Provider one', modelID: 'model', name: 'Model one', acceptsImages: false }]);
+    expect(seen[1].connectedModels.map(model => model.providerID)).toEqual(['two']);
+    expect(seen[1].modelPreferences).toEqual({ favoriteModels: refs, recentModels: [...refs].reverse() });
+    expect(seen.every(context => context.modelCatalogAvailable)).toBe(true);
+    service.close();
+  });
+
+  it.each(['throw', 'reject'])('preserves a valid catalog when preferences %s and reports preferences as unknown', async (failure) => {
+    const seen = [];
+    const service = setup(root(), catalogClient('live'), {
+      readModelPreferences: () => { if (failure === 'throw') throw new Error('unreadable settings'); return Promise.reject(new Error('unreadable settings')); },
+      runContactTurn: async (context) => { seen.push(context); return { text: 'ready', bubbles: ['ready'] }; },
+    });
+    const assistant = service.createAssistant(assistantInput);
+    const result = await settleSend(service, assistant.id, { messageID: `preferences_${failure}`, parts: [{ type: 'text', text: 'Which models?' }] });
+    expect(result.settled.status).not.toBe('error');
+    expect(seen).toHaveLength(1);
+    expect(seen[0].modelCatalogAvailable).toBe(true);
+    expect(seen[0].connectedModels[0].providerID).toBe('live');
+    expect(seen[0].modelPreferences).toBeNull();
+    service.close();
+  });
+
+  it('distinguishes failed catalog lookup from a successful empty instance', async () => {
+    const seen = [];
+    let failed = true;
+    const service = setup(root(), {
+      provider: { list: async () => { if (failed) throw new Error('unavailable'); return { data: { connected: [] } }; } },
+      config: { providers: async () => ({ data: { providers: [] } }) },
+    }, {
+      readModelPreferences: async () => ({ favoriteModels: [], recentModels: [] }),
+      runContactTurn: async (context) => { seen.push(context); return { text: 'ready', bubbles: ['ready'] }; },
+    });
+    const assistant = service.createAssistant(assistantInput);
+    await settleSend(service, assistant.id, { messageID: 'catalog_failed', parts: [{ type: 'text', text: 'Which models?' }] });
+    failed = false;
+    await settleSend(service, assistant.id, { messageID: 'catalog_empty', parts: [{ type: 'text', text: 'Try again' }] });
+    expect(seen.map(context => context.modelCatalogAvailable)).toEqual([false, true]);
+    expect(seen.map(context => context.connectedModels)).toEqual([[], []]);
+    expect(seen[1].modelPreferences).toEqual({ favoriteModels: [], recentModels: [] });
+    service.close();
+  });
+});
+

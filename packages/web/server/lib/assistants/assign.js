@@ -408,7 +408,7 @@ export function resolveAssignWorkerModel({
   }
 
   const models = catalog.models.filter((entry) => entry && typeof entry === 'object');
-  const matches = models.filter((entry) => {
+  let matches = models.filter((entry) => {
     const entryProvider = trim(entry.providerID, 256);
     const entryModel = trim(entry.modelID, 256);
     const entryName = trim(entry.name, 512);
@@ -420,6 +420,7 @@ export function resolveAssignWorkerModel({
       return entryProvider === wantedProvider;
     }
     if (!wantedProvider && wantedModel) {
+      if (explicitModel) return entryModel === wantedModel;
       const needle = wantedModel.toLowerCase();
       return entryModel.toLowerCase() === needle
         || (entryName && entryName.toLowerCase() === needle)
@@ -427,6 +428,19 @@ export function resolveAssignWorkerModel({
     }
     return false;
   });
+
+  // Only the informal `model` alias gets fuzzy matching. Explicit IDs remain exact.
+  if (matches.length === 0 && combined && !combined.includes('/') && !explicitModel) {
+    const normalize = (value) => trim(value, 512).toLowerCase().replace(/[^\p{L}\p{N}]/gu, '');
+    const needle = normalize(combined);
+    const eligible = models.filter((entry) => !wantedProvider || entry.providerID === wantedProvider);
+    if (needle.length >= 2) {
+      const exact = eligible.filter((entry) => normalize(entry.modelID) === needle || normalize(entry.name) === needle);
+      matches = exact.length > 0 ? exact : eligible.filter((entry) => (
+        normalize(entry.modelID).includes(needle) || normalize(entry.name).includes(needle)
+      ));
+    }
+  }
 
   if (matches.length === 0) {
     const label = wantedProvider && wantedModel
