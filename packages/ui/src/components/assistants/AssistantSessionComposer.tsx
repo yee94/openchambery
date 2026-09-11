@@ -1,11 +1,16 @@
 import React from 'react';
 import { useEvent, useEventListener } from '@reactuses/core';
 import { useQuery } from '@tanstack/react-query';
+import { decorateComposerReference, expandComposerReferenceSelection, insertComposerReference, materializeSessionMentionTokens, reconcileComposerDocument, resolveComposerReferenceDeletion, serializeComposerDocument, type ComposerDocument } from '@/composer/document';
+import { createComposerReferenceHistorySnapshot, emptyComposerReferenceHistory, pushComposerReferenceHistory, redoComposerReferenceHistory, undoComposerReferenceHistory } from '@/composer/reference-history';
+import { composerTriggerIconDisplay } from '@/composer/inline-visual';
+import { ComposerTriggerIconMark } from '@/components/chat/ComposerTriggerIconMark';
+import { buildHighlightParts } from '@/components/chat/composerHighlight';
 import { ChatPromptComposer } from '@/components/chat/ChatPromptComposer';
 import { ComposerAutocompleteLayer } from '@/components/chat/ComposerAutocompleteLayer';
 import { composerAutocompleteRowClassName } from '@/components/chat/composerAutocompleteChrome';
 import { createMentionTouchSelectionController } from '@/components/chat/fileMentionTouchSelection';
-import { getSessionMentionToken, getVisibleSessionMentionCandidates } from '@/components/chat/fileMentionAutocompleteState';
+import { getVisibleSessionMentionCandidates } from '@/components/chat/fileMentionAutocompleteState';
 import { useRuntimeTransportIdentity } from '@/components/chat/imageSource';
 import { ScrollableOverlay } from '@/components/ui/ScrollableOverlay';
 import { Button } from '@/components/ui/button';
@@ -106,45 +111,100 @@ type Props = Omit<React.ComponentProps<typeof ChatPromptComposer>, 'onChange'> &
 
 export const AssistantSessionComposer = ({ active, working = false, onChange, ...props }: Props) => {
   const { t } = useI18n();
+  const [localDocument, setLocalDocument] = React.useState<{ canonical: string; document: ComposerDocument }>(() => ({
+    canonical: props.value, document: materializeSessionMentionTokens(props.value, new Map()),
+  }));
+  // The contact draft API stays canonical; editing and painting share Chat's
+  // authoritative reference ranges, codecs, and reserved icon slots.
+  const document = React.useMemo(() => localDocument.canonical === props.value
+    ? localDocument.document : materializeSessionMentionTokens(props.value, new Map()), [localDocument, props.value]);
   const [cursor, setCursor] = React.useState(0);
   const [dismissed, setDismissed] = React.useState(true);
   const [composing, setComposing] = React.useState(false);
   const [activeOptionId, setActiveOptionId] = React.useState<string>();
   const inputRef = React.useRef<HTMLTextAreaElement>(null);
+  const highlightRef = React.useRef<HTMLDivElement>(null);
   const pickerRef = React.useRef<PickerHandle>(null);
   const caretRef = React.useRef<number | null>(null);
+  const historyRef = React.useRef(emptyComposerReferenceHistory());
   const listId = React.useId();
   const trigger = active && !props.pending && !props.disabled && !dismissed && !composing
-    ? resolveComposerAutocompleteTrigger({ text: props.value, cursor }) : null;
+    ? resolveComposerAutocompleteTrigger({ text: document.text, cursor }) : null;
   const mention = trigger?.kind === 'mention' ? trigger : null;
   React.useLayoutEffect(() => {
     if (caretRef.current === null) return;
     inputRef.current?.focus({ preventScroll: true });
     inputRef.current?.setSelectionRange(caretRef.current, caretRef.current);
     caretRef.current = null;
-  }, [props.value]);
+  }, [document]);
   const close = useEvent(() => setDismissed(true));
+  const commit = useEvent((nextDocument: ComposerDocument, caret: number, recordHistory = true) => {
+    const serialized = serializeComposerDocument(nextDocument);
+    if (!serialized.ok) return;
+    if (recordHistory) historyRef.current = pushComposerReferenceHistory(historyRef.current, {
+      before: createComposerReferenceHistorySnapshot(document, [], { start: inputRef.current?.selectionStart ?? cursor, end: inputRef.current?.selectionEnd ?? cursor }),
+      after: createComposerReferenceHistorySnapshot(nextDocument, [], { start: caret, end: caret }),
+    });
+    if (!composing) caretRef.current = caret;
+    setCursor(caret);
+    setLocalDocument({ canonical: serialized.text, document: nextDocument });
+    onChange(serialized.text);
+  });
   const select = useEvent((session: MentionSession) => {
     if (!mention) return;
     const title = session.title || t('chat.fileMentionAutocomplete.untitledSession');
-    const reference = `@${getSessionMentionToken(session.id)} ${JSON.stringify({ title, sessionID: session.id, directory: session.directory })} `;
-    const next = props.value.slice(0, mention.tokenStart) + reference + props.value.slice(mention.tokenEnd);
-    caretRef.current = mention.tokenStart + reference.length;
-    setCursor(caretRef.current);
+    const inserted = insertComposerReference(document, mention.tokenStart, mention.tokenEnd, {
+      id: `session:${session.id}:${crypto.randomUUID()}`, kind: 'session', sessionId: session.id,
+      display: composerTriggerIconDisplay({ trigger: '@', icon: 'chat-thread', label: title }),
+    }, { inlineBoundaries: true, padDocumentEdges: true });
+    const caret = inserted.caret + (inserted.document.text[inserted.caret] === ' ' ? 1 : 0);
     setDismissed(true);
-    onChange(next);
+    commit(inserted.document, caret);
   });
-  return <ChatPromptComposer {...props} pending={props.pending || working}
+  const copyReferenceSelection = useEvent((event: React.ClipboardEvent<HTMLTextAreaElement>, cut: boolean) => {
+    const input = event.currentTarget;
+    if (input.selectionStart === input.selectionEnd || !event.clipboardData
+      || !document.references.some(reference => reference.start < input.selectionEnd && reference.end > input.selectionStart)) return;
+    const range = expandComposerReferenceSelection(input.selectionStart, input.selectionEnd, document.references)
+      ?? { start: input.selectionStart, end: input.selectionEnd };
+    const copied = serializeComposerDocument({ text: document.text.slice(range.start, range.end),
+      references: document.references.filter(reference => reference.start >= range.start && reference.end <= range.end)
+        .map(reference => ({ ...reference, start: reference.start - range.start, end: reference.end - range.start })),
+    });
+    if (!copied.ok) return;
+    event.preventDefault(); event.clipboardData.setData('text/plain', copied.text);
+    if (cut) {
+      const removed = reconcileComposerDocument(document, document.text.slice(0, range.start) + document.text.slice(range.end), range.start, range.start);
+      commit(removed.document, removed.caret);
+    }
+  });
+  const highlighted = React.useMemo(() => buildHighlightParts(document.text, document.references.map(reference => ({
+    start: reference.start, end: reference.end, priority: 103, ...decorateComposerReference(reference),
+  })))?.map((part, index) => <span key={`${index}-${part.text.length}`} className={part.className}>
+    {part.visual ? <ComposerTriggerIconMark visual={part.visual} text={part.text} /> : part.text}
+  </span>), [document]);
+  return <ChatPromptComposer {...props} value={document.text} pending={props.pending || working}
     disableInputWhilePending={props.pending === true} inputRef={inputRef}
+    highlightedContent={highlighted} highlightRef={highlightRef}
+    textLayoutClassName={cn('whitespace-pre-wrap break-words overflow-hidden px-3 typography-markdown md:typography-ui-label', props.layout === 'inline' ? 'py-3 leading-6' : 'pt-4 pb-2', props.textLayoutClassName)}
     onChange={(value, event) => {
-      onChange(value);
-      setCursor(event?.target.selectionStart ?? value.length);
+      const next = reconcileComposerDocument(document, value, event?.target.selectionStart ?? value.length, event?.target.selectionEnd ?? value.length);
+      commit(next.document, next.caret);
       setDismissed((event?.nativeEvent as InputEvent | undefined)?.inputType === 'insertFromPaste');
     }}
     textareaProps={{ ...props.textareaProps,
       'aria-controls': mention ? listId : undefined,
       'aria-activedescendant': mention ? activeOptionId : undefined,
       'aria-autocomplete': 'list',
+      onScroll: (event) => {
+        props.textareaProps?.onScroll?.(event);
+        if (highlightRef.current) {
+          highlightRef.current.scrollTop = event.currentTarget.scrollTop;
+          highlightRef.current.scrollLeft = event.currentTarget.scrollLeft;
+        }
+      },
+      onCopy: (event) => { props.textareaProps?.onCopy?.(event); if (!event.defaultPrevented) copyReferenceSelection(event, false); },
+      onCut: (event) => { props.textareaProps?.onCut?.(event); if (!event.defaultPrevented) copyReferenceSelection(event, true); },
       onSelect: (event) => { setCursor(event.currentTarget.selectionStart); props.textareaProps?.onSelect?.(event); },
       onCompositionStart: () => { setComposing(true); },
       onCompositionEnd: (event) => { setComposing(false); setCursor(event.currentTarget.selectionStart); },
@@ -152,6 +212,19 @@ export const AssistantSessionComposer = ({ active, working = false, onChange, ..
         props.textareaProps?.onKeyDown?.(event);
         if (event.defaultPrevented || isIMECompositionEvent(event)) return;
         if (composing) { if (event.key === 'Enter') event.preventDefault(); return; }
+        if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'z') {
+          const restored = event.shiftKey ? redoComposerReferenceHistory(historyRef.current, document) : undoComposerReferenceHistory(historyRef.current, document);
+          if (restored) {
+            event.preventDefault(); historyRef.current = restored.history;
+            commit(restored.snapshot.document, restored.snapshot.selection.end, false); setDismissed(true);
+          }
+          return;
+        }
+        if (event.key === 'Backspace' || event.key === 'Delete') {
+          const removed = resolveComposerReferenceDeletion(document, { key: event.key,
+            selectionStart: event.currentTarget.selectionStart, selectionEnd: event.currentTarget.selectionEnd, altKey: event.altKey });
+          if (removed) { event.preventDefault(); commit(removed.document, removed.caret); setDismissed(true); return; }
+        }
         if (mention && ['ArrowDown', 'ArrowUp', 'Enter', 'Tab', 'Escape'].includes(event.key)) {
           event.preventDefault(); event.stopPropagation(); pickerRef.current?.keyDown(event.key);
         }

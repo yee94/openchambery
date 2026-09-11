@@ -1,6 +1,8 @@
 import React from 'react'
+import { AssistantReadMarker } from './AssistantReadMarker'
+import { getLoadedAssistantReadPosition } from '@/queries/assistantContactMessages'
 import { useEvent } from '@reactuses/core'
-import { ChatPromptComposer } from '@/components/chat/ChatPromptComposer'
+import { AssistantSessionComposer } from './AssistantSessionComposer'
 import { Button } from '@/components/ui/button'
 import { uploadAssistantAttachment, type AssistantAttachmentDescriptor } from '@/lib/assistant-attachment-upload'
 import { AssistantContactAttachment } from './AssistantContactAttachment'
@@ -14,6 +16,7 @@ import { cn } from '@/lib/utils'
 import { donateNativeAssistantInteraction } from '@/apps/MobileShareBridge'
 import { useUIStore } from '@/stores/useUIStore'
 import {
+  abortAssistantSession,
   confirmContactAdmissionByMessageID,
   sendAssistantContactMessage,
   useAssistantCapabilityQuery,
@@ -91,6 +94,9 @@ export const AssistantConversationSurface: React.FC<AssistantConversationSurface
   const capabilityQuery = useAssistantCapabilityQuery()
   const snapshotQuery = useAssistantSnapshotQuery()
   const contactQuery = useAssistantContactMessagesQuery(assistant.id, active)
+  const settingsOpen = useUIStore((state) => state.isSettingsDialogOpen)
+  const readPosition = active && !settingsOpen && !contactQuery.hasMessageGap
+    ? getLoadedAssistantReadPosition(assistant, contactQuery.data) : null
   const presentation = getAssistantPresentation(assistant.name)
   const displayName = presentation.displayName || assistant.name
   const peerName = (fromAssistantID: string | null, fromAssistantName: string | null) => {
@@ -123,6 +129,7 @@ export const AssistantConversationSurface: React.FC<AssistantConversationSurface
   const [optimisticTurns, setOptimisticTurns] = React.useState<ContactOptimisticTurn[]>([])
   const [turnPreviews, setTurnPreviews] = React.useState<ContactTurnPreview[]>([])
   const [sendError, setSendError] = React.useState<string | null>(null)
+  const stoppingRef = React.useRef(false)
   React.useEffect(() => {
     uploadedRef.current.clear()
     retrySendRef.current = null
@@ -380,6 +387,21 @@ export const AssistantConversationSurface: React.FC<AssistantConversationSurface
     }
   })
 
+  const stop = useEvent(async () => {
+    if (sending || stoppingRef.current) return
+    stoppingRef.current = true
+    const controller = uploadControllerRef.current
+    setSendError(null)
+    try {
+      await abortAssistantSession(assistant.id, assistant)
+      // Working state converges from the server acknowledgement/SSE, never an optimistic stop.
+    } catch (error) {
+      if (!controller.signal.aborted) setSendError(error instanceof Error ? error.message : t('settings.mcp.page.toast.unexpectedError'))
+    } finally {
+      stoppingRef.current = false
+    }
+  })
+
   const loadFailed = contactQuery.isError && transcript.length === 0
   const empty = contactQuery.isSuccess && transcript.length === 0
   const optimisticByID = new Map(scopedOptimisticTurns.map((turn) => [turn.messageID, turn]))
@@ -574,6 +596,11 @@ export const AssistantConversationSurface: React.FC<AssistantConversationSurface
                     {failedPreviewRow ? (
                       <p className="px-1 typography-micro text-[var(--status-error)]">{preview?.error || t('assistants.contact.sendFailed')}</p>
                     ) : null}
+                    {readPosition?.messageID === message.messageID ? <AssistantReadMarker
+                      key={`${transportIdentity}:${assistant.id}:${readPosition.generation}:${readPosition.ordinal}`}
+                      assistantID={assistant.id}
+                      position={readPosition}
+                    /> : null}
                   </div>
                 </div>
               )
@@ -598,11 +625,16 @@ export const AssistantConversationSurface: React.FC<AssistantConversationSurface
           onDrop={handleDrop}
         >
           <div className="chat-input-column relative overflow-visible">
-            <ChatPromptComposer
+            <AssistantSessionComposer
+              key={`${transportIdentity}:${assistant.id}`}
+              active={active}
               layout="inline"
               value={draft}
               attachments={attachments}
               pending={sending}
+              working={processing || serverWorking}
+              onStop={!sending && (processing || serverWorking) ? () => { void stop() } : undefined}
+              stopLabel={t('chat.chatInput.actions.stopGeneratingAria')}
               isMobile={isMobile}
               placeholder={t('assistants.contact.placeholder', { name: displayName })}
               sendLabel={t('assistants.contact.send')}

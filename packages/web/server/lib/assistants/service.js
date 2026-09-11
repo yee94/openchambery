@@ -10,22 +10,29 @@ import { contactCardIdentity, parseContactCard, parseContactPart } from './cards
 import {
   CONTACT_PAGE_DEFAULT_LIMIT,
   CONTACT_PAGE_MAX_LIMIT,
+  advanceContactReadWatermark,
   bumpContactGeneration,
   clearContactMemory as clearContactMemoryStore,
   contactHistoryForLlm,
   createActiveContactTurn,
   deleteContactMessages,
+  deleteContactReadState,
   ensureContactSchema,
   contactPartsFingerprint,
   getContactMessage,
+  getContactReadTip,
+  getContactReadWatermark,
+  getContactUnreadSnapshots,
   getLatestContactMessagePreview,
   getLatestContactMessagePreviews,
   insertContactMessage,
   listContactMessages,
   listInFlightWatches,
   listWatchesBySession,
+  migrateContactReadStateDefaultRead,
   nextContactOrdinal,
   projectActiveContactTurn,
+  resetContactReadWatermarkForGeneration,
   updateSessionCardStatus,
   upsertContactWatch,
 } from './contact-store.js';
@@ -76,7 +83,7 @@ import { runContactTurn as defaultRunContactTurn } from './harness.js';
 import { loadConnectedCatalog } from '../llm/catalog.js';
 
 const require = createRequire(import.meta.url);
-const SCHEMA_VERSION = 12;
+const SCHEMA_VERSION = 13;
 const normalizeSessionDirectory = (value) => {
   if (typeof value !== 'string') return null;
   const trimmed = value.trim();
@@ -292,12 +299,19 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
     }
     activeContactTurnsByAssistant.delete(assistantID);
   };
-  const output = (row, latestMessagePreview) => {
+  const output = (row, latestMessagePreview, unreadSnapshot) => {
     const watches = listInFlightWatches(db, row.assistant_id);
     const activeContactTurn = projectActiveContactTurn(activeContactTurnsFor(row.assistant_id));
     const preview = latestMessagePreview !== undefined
       ? latestMessagePreview
       : getLatestContactMessagePreview(db, row.assistant_id);
+    const unread = unreadSnapshot !== undefined && unreadSnapshot !== null
+      ? unreadSnapshot
+      : (getContactUnreadSnapshots(db, [row.assistant_id]).get(row.assistant_id) ?? {
+        unreadCount: 0,
+        readWatermark: getContactReadWatermark(db, row.assistant_id),
+        readTip: getContactReadTip(db, row.assistant_id),
+      });
     return {
       id: row.assistant_id,
       revision: row.revision,
@@ -324,6 +338,12 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
       // Contact-transcript list desc: authoritative last visible bubble (not
       // defaultPrompt / updatedAt). null when the contact has no list-visible rows.
       latestMessagePreview: preview ?? null,
+      // Shared multi-client unread: countable assistant/peer replies after watermark.
+      unreadCount: Number(unread.unreadCount) || 0,
+      // Persisted shared watermark (generation + keyset). Clients POST this tip safely.
+      readWatermark: unread.readWatermark,
+      // Highest readable tip for safe mark-read report (transcript head + generation).
+      readTip: unread.readTip,
       createdAt: row.created_at,
       updatedAt: row.updated_at,
       tombstoneAt: row.tombstone_at,
@@ -389,6 +409,9 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
     const legacy = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='assistant'").get();
     if (legacy) { const columns = new Set(db.prepare("SELECT name FROM pragma_table_info('assistant')").all().map((column) => column.name)); for (const row of db.prepare('SELECT * FROM assistant').all()) { let sessionID = row.current_session_id ?? null; if (!sessionID && columns.has('inbox_topic_id') && row.inbox_topic_id) sessionID = db.prepare('SELECT session_id FROM assistant_topic WHERE topic_id=?').get(row.inbox_topic_id)?.session_id ?? null; if (!sessionID) sessionID = db.prepare("SELECT session_id FROM assistant_operation WHERE topic_id IN (SELECT topic_id FROM assistant_topic WHERE assistant_id=?) AND state='completed' AND session_id IS NOT NULL ORDER BY updated_at DESC LIMIT 1").get(row.assistant_id)?.session_id ?? db.prepare('SELECT session_id FROM assistant_turn WHERE topic_id IN (SELECT topic_id FROM assistant_topic WHERE assistant_id=?) AND session_id IS NOT NULL ORDER BY created_at DESC LIMIT 1').get(row.assistant_id)?.session_id ?? null; const mode = columns.has('mode') && row.mode === 'stateless' ? 'stateless' : 'continuous'; db.prepare('INSERT OR IGNORE INTO assistant_v2 (assistant_id,revision,enabled,name,default_prompt,workspace_path,provider_id,model_id,agent,variant,mode,current_session_id,session_generation,created_at,updated_at,tombstone_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)').run(row.assistant_id, row.revision, row.enabled, row.name, row.default_prompt, managedConfig(row.workspace_path, row.assistant_id), row.provider_id, row.model_id, row.agent, null, mode, sessionID, Math.max(0, row.session_generation ?? 0), row.created_at, row.updated_at, row.tombstone_at); } }
     for (const row of db.prepare('SELECT assistant_id,workspace_path FROM assistant_v2 WHERE workspace_path IS NOT NULL').all()) { const workspacePath = managedConfig(row.workspace_path, row.assistant_id); if (workspacePath === null) db.prepare('UPDATE assistant_v2 SET workspace_path=NULL WHERE assistant_id=?').run(row.assistant_id); }
+    // v13: shared contact read watermark. Legacy transcripts default to fully read
+    // so existing installs do not flash unread on upgrade; later messages count.
+    migrateContactReadStateDefaultRead(db, { updatedAt: now() });
     db.prepare("INSERT OR REPLACE INTO assistant_meta(key,value) VALUES ('schema_version',?)").run(String(SCHEMA_VERSION));
   };
   migrate();
@@ -466,6 +489,9 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
   const isUserAbort = (error) => error?.name === 'MessageAbortedError';
   const assignedResumes = new Map();
   const contactControllers = new Map();
+  // Last UI locale seen from a client per assistant. Background notifications
+  // (assigned-session settle) have no request locale, so they recall this value.
+  const contactTurnLanguages = new Map();
   const cancelAssignedResumes = ({ sessionID, assistantID }) => {
     for (const resume of assignedResumes.values()) {
       if (sessionID && resume.sessionID !== sessionID) continue;
@@ -1312,6 +1338,50 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
       messages: messageRows,
     };
   };
+  const readSessionWork = async (params = {}) => {
+    const limit = params.limit === undefined ? 20 : params.limit;
+    if (!Number.isInteger(limit) || limit < 1 || limit > 50) throw new AssignError(ASSIGN_CODES.VALIDATION, 'limit must be an integer from 1 to 50.');
+    if (params.before !== undefined && (typeof params.before !== 'string' || !params.before || params.before.length > 2048)) throw new AssignError(ASSIGN_CODES.VALIDATION, 'before must be an opaque cursor.');
+    const { signal } = params;
+    signal?.throwIfAborted();
+    const resolved = await resolveReferencedSession({ sessionID: params.sessionID, signal, includeMessages: false });
+    const result = await client().session.messages({
+      sessionID: resolved.sessionID, directory: resolved.directory, limit,
+      ...(params.before ? { before: params.before } : {}),
+    }, signal ? { signal } : undefined);
+    signal?.throwIfAborted();
+    if (isMissing(result)) throw new AssignError(ASSIGN_CODES.NOT_FOUND, 'That session no longer exists.');
+    if (result?.error || !Array.isArray(result?.data)) throw new AssignError(ASSIGN_CODES.UPSTREAM, 'Could not read session messages.');
+    const rows = result.data;
+    if (rows.some((entry) => (entry?.info?.sessionID && entry.info.sessionID !== resolved.sessionID))) throw new AssignError(ASSIGN_CODES.UPSTREAM, 'Session message identity mismatch.');
+    let remaining = 24000;
+    let partial = rows.length > limit;
+    const text = (value) => {
+      if (typeof value !== 'string') return '';
+      const kept = value.slice(0, Math.min(4000, remaining));
+      remaining -= kept.length;
+      if (kept.length < value.length) partial = true;
+      return kept;
+    };
+    const messages = rows.slice(-limit).map((entry) => {
+      const info = entry.info ?? entry;
+      const parts = [];
+      const sourceParts = Array.isArray(entry.parts) ? entry.parts : [];
+      if (sourceParts.length > 20) partial = true;
+      for (const part of sourceParts.slice(0, 20)) {
+        if (part.type === 'text') parts.push({ type: 'text', text: text(part.text) });
+        else if (part.type === 'file') { parts.push({ type: 'file', mime: part.mime, filename: text(part.filename) }); partial = true; }
+        else if (part.type === 'tool') {
+          parts.push({ type: 'tool', tool: text(part.tool), status: part.state?.status, output: text(part.state?.output), error: text(part.state?.error) });
+          partial = true; // Inputs and binary details are intentionally omitted.
+        } else if (part.type !== 'step-start' && part.type !== 'step-finish') partial = true;
+      }
+      return { messageID: info.id, role: info.role, parts };
+    });
+    const cursor = result.response?.headers?.get('x-next-cursor');
+    const nextCursor = typeof cursor === 'string' && cursor ? cursor : null;
+    return { sessionID: resolved.sessionID, directory: resolved.directory, title: resolved.title.slice(0, 500), messages, nextCursor, partial: partial || nextCursor !== null };
+  };
   const assignWork = async (row, params = {}) => {
     const fileParts = sanitizeAssignFileParts(params.fileParts || params.parts || []);
     const signal = params.signal;
@@ -1972,6 +2042,7 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
           listAssistants: () => db.prepare('SELECT * FROM assistant_v2 WHERE tombstone_at IS NULL ORDER BY created_at').all().map(output),
           listProjects: async () => loadRegisteredProjects(),
           listSessions: (params) => listSessionsWork(params),
+          readSession: (params) => readSessionWork(params),
           readAssistantSettings: (input = {}) => {
             const targetID = typeof input?.assistantID === 'string' && input.assistantID.trim()
               ? input.assistantID.trim()
@@ -2033,6 +2104,7 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
           history: executionHistory,
           userText,
           userParts: [{ type: 'text', text: userText }],
+          language: contactTurnLanguages.get(assistantID) ?? '',
           createChatCompletion,
           tools,
           projects: registeredProjects,
@@ -2167,7 +2239,9 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
     const messageID = string(input.messageID, 256, true);
     const userText = extractUserText(input);
     if (!userText) fail('validation_error');
+    const language = typeof input.language === 'string' ? input.language.trim().slice(0, 64) : '';
     const row = active(assistantID);
+    if (language) contactTurnLanguages.set(row.assistant_id, language);
     const userParts = await userContactParts(row.assistant_id, input, userText);
     if (typeof createChatCompletion !== 'function' && runContactTurn === defaultRunContactTurn) fail('upstream_error');
     let registeredProjects = [];
@@ -2307,6 +2381,7 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
             listAssistants: () => db.prepare('SELECT * FROM assistant_v2 WHERE tombstone_at IS NULL ORDER BY created_at').all().map(output),
             listProjects: async () => loadRegisteredProjects(),
             listSessions: (params) => listSessionsWork(params),
+            readSession: (params) => readSessionWork(params),
             // Live DB read — not the turn-start assistantSnapshot.
             // Optional assistantID targets another live row; omitted → this contact.
             readAssistantSettings: (input = {}) => {
@@ -2371,6 +2446,7 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
             history: executionHistory,
             userText,
             userParts: executionParts,
+            language,
             createChatCompletion,
             tools,
             projects: registeredProjects,
@@ -2585,11 +2661,56 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
       deleteContactMessages(db, row.assistant_id, {
         ...(upToOrdinal !== undefined ? { upToOrdinal } : {}),
       });
+      // Rebind read watermark to the new generation at empty cursor so post-wipe
+      // confirm bubbles can surface as unread; stale generation mark-read fails closed.
+      resetContactReadWatermarkForGeneration(db, row.assistant_id, generation, { updatedAt: now() });
       // Active contact turns stay until settle — wipe must not drop the green
       // dot while the clearing turn is still running.
       bump();
       db.exec('COMMIT');
       return { assistantID: row.assistant_id, reset: true, historyCleared: true, generation };
+    } catch (error) {
+      db.exec('ROLLBACK');
+      throw error;
+    }
+  };
+  /**
+   * Advance the shared contact read watermark (multi-client).
+   * Body: { generation, ordinal, messageID } — must match live generation;
+   * only monotonic forward moves bump revision / assistants-changed.
+   * Idempotent no-op when unchanged (no broadcast).
+   */
+  const markContactRead = (assistantID, input = {}) => {
+    const row = editable(assistantID);
+    if (!plainObject(input)) fail('validation_error');
+    db.exec('BEGIN IMMEDIATE');
+    try {
+      let advanced;
+      try {
+        advanced = advanceContactReadWatermark(db, row.assistant_id, {
+          generation: input.generation,
+          ordinal: input.ordinal,
+          messageID: input.messageID,
+        }, { updatedAt: now() });
+      } catch (error) {
+        if (error?.code === 'contact_generation_conflict' || error?.code === 'validation_error') {
+          fail(error.code, error.message);
+        }
+        throw error;
+      }
+      let tipRevision = revision();
+      if (advanced.changed) {
+        tipRevision = bump();
+      }
+      db.exec('COMMIT');
+      return {
+        assistantID: row.assistant_id,
+        changed: advanced.changed,
+        unreadCount: advanced.unreadCount,
+        readWatermark: advanced.readWatermark,
+        readTip: advanced.readTip,
+        revision: tipRevision,
+      };
     } catch (error) {
       db.exec('ROLLBACK');
       throw error;
@@ -2794,12 +2915,19 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
   });
   const snapshot = () => {
     const rows = db.prepare('SELECT * FROM assistant_v2 WHERE tombstone_at IS NULL ORDER BY created_at').all();
+    const assistantIDs = rows.map((row) => row.assistant_id);
     // Per-assistant indexed LIMIT probes + one parts batch (catalog ≤100).
-    const previews = getLatestContactMessagePreviews(db, rows.map((row) => row.assistant_id));
+    const previews = getLatestContactMessagePreviews(db, assistantIDs);
+    // Batch unread/watermark/tip — no per-assistant N+1 on snapshot.
+    const unreadByID = getContactUnreadSnapshots(db, assistantIDs);
     return {
       revision: revision(),
       enabled: enabled(),
-      assistants: rows.map((row) => output(row, previews.get(row.assistant_id) ?? null)),
+      assistants: rows.map((row) => output(
+        row,
+        previews.get(row.assistant_id) ?? null,
+        unreadByID.get(row.assistant_id) ?? null,
+      )),
     };
   };
   return { capability: async () => ({ supported: true, enabled: enabled(), revision: revision(), serverInstanceID: await getServerId() }), snapshot, createAssistant, updateAssistant, setEnabled: (input) => { if (!plainObject(input) || typeof input.enabled !== 'boolean' || input.expectedRevision !== revision()) fail('revision_conflict'); db.prepare("UPDATE assistant_meta SET value=? WHERE key='enabled'").run(input.enabled ? '1' : '0'); return { enabled: input.enabled, revision: bump() }; }, removeAssistant: (assistantID, expectedRevision) => {
@@ -2813,7 +2941,9 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
       db.prepare('DELETE FROM assistant_message_backfill WHERE assistant_id=?').run(assistantID);
       db.prepare('DELETE FROM assistant_scheduled_task WHERE assistant_id=?').run(assistantID);
       deleteContactMessages(db, assistantID);
+      deleteContactReadState(db, assistantID);
       clearActiveContactTurns(assistantID);
+      contactTurnLanguages.delete(assistantID);
       bump();
       db.exec('COMMIT');
       return { assistantID, tombstoneAt: now() };
@@ -2821,13 +2951,14 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
       db.exec('ROLLBACK');
       throw error;
     }
-  }, ensure, createNew, compact, send, whenContactTurnSettled, abort, captureQueueDeliveryTarget, sendWithCapturedConfig, share, shareOperation, historicalMessages, contactMessages, clearContactMemory, resetContact, appendContactCard, deliverPeerMessage, listAssistantScheduledTasks, putAssistantContactAttachment, getAssistantContactAttachment, migrateContactAttachments, processEvent, reportAssignedSessionSettle: reportAssignedSession, reconcile,   close: () => {
+  }, ensure, createNew, compact, send, whenContactTurnSettled, abort, captureQueueDeliveryTarget, sendWithCapturedConfig, share, shareOperation, historicalMessages, contactMessages, clearContactMemory, resetContact, markContactRead, appendContactCard, deliverPeerMessage, listAssistantScheduledTasks, putAssistantContactAttachment, getAssistantContactAttachment, migrateContactAttachments, processEvent, reportAssignedSessionSettle: reportAssignedSession, reconcile,   close: () => {
     cancelAssignedResumes({});
     for (const turn of contactControllers.values()) turn.controller.abort();
     if (!closed) {
       closed = true;
       try { contactAttachmentMigration.controller.abort(); } catch { /* ignore */ }
       clearActiveContactTurns();
+      contactTurnLanguages.clear();
       unsubscribeEvents?.();
       clearIntervalFn(timer);
       db.close();

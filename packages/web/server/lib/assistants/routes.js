@@ -49,6 +49,8 @@ export const registerAssistantRoutes = (app, dependencies) => {
   app.get('/api/openchamber/assistants/:assistantID/messages', (req, res) => respond(res, () => service.historicalMessages(req.params.assistantID, req.query)));
   app.get('/api/openchamber/assistants/:assistantID/contact/messages', (req, res) => respond(res, () => service.contactMessages(req.params.assistantID, req.query)));
   app.post('/api/openchamber/assistants/:assistantID/contact/reset', (req, res) => respond(res, () => service.resetContact(req.params.assistantID)));
+  // Shared multi-client contact read watermark (monotonic; generation-fenced).
+  app.post('/api/openchamber/assistants/:assistantID/contact/read', (req, res) => respond(res, () => service.markContactRead(req.params.assistantID, req.body)));
   app.post('/api/openchamber/assistants/:assistantID/contact/cards', (req, res) => respond(res, () => service.appendContactCard(req.params.assistantID, req.body), 201));
   app.post('/api/openchamber/assistants/:assistantID/contact/dm', (req, res) => respond(res, () => service.deliverPeerMessage(req.params.assistantID, req.body), 201));
   // Contact attachments: raw-byte PUT + opaque GET (content-addressed under dataDir).

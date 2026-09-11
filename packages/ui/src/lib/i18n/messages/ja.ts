@@ -4,6 +4,8 @@ import { settingsDict } from './ja.settings';
 export const dict: Record<I18nKey, string> = {
   ...settingsDict,
   'common.loading': '読み込み中...',
+  'assistants.contact.sessionMention.scope': '索引内の最近のセッション · @タイトルで参照',
+  'assistants.contact.sessionMention.loadFailed': 'セッションを更新できませんでした。再試行して一覧を更新してください。',
   'sessions.startupSync.title': 'セッションを同期中',
   'sessions.startupSync.progress': '{total} 件中 {completed} 件のプロジェクトを読み込みました',
   'common.unavailable': '利用できません',

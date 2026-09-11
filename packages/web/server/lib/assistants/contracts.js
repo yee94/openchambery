@@ -28,9 +28,40 @@ export const assistantContractFixtures = Object.freeze({
       text: 'Fixture reply',
       fallbackKind: null,
     }),
+    /** Countable assistant/peer replies after the shared read watermark. */
+    unreadCount: 0,
+    /** Persisted shared read watermark (multi-client). */
+    readWatermark: Object.freeze({
+      generation: 0,
+      ordinal: 2,
+      messageID: 'msg_contact_fixture',
+    }),
+    /** Highest safe mark-read tip (transcript head + generation). */
+    readTip: Object.freeze({
+      generation: 0,
+      ordinal: 2,
+      messageID: 'msg_contact_fixture',
+    }),
     createdAt: 1234,
     updatedAt: 1234,
     tombstoneAt: null,
+  }),
+  /** Frozen POST /assistants/:id/contact/read response. */
+  contactReadResponse: Object.freeze({
+    assistantID: 'assistant_fixture',
+    changed: true,
+    unreadCount: 0,
+    readWatermark: Object.freeze({
+      generation: 0,
+      ordinal: 2,
+      messageID: 'msg_contact_fixture',
+    }),
+    readTip: Object.freeze({
+      generation: 0,
+      ordinal: 2,
+      messageID: 'msg_contact_fixture',
+    }),
+    revision: 4,
   }),
   sessionBinding: Object.freeze({ sessionID: 'ses_fixture', directory: '/workspace', sessionGeneration: 4 }),
   compactResponse: Object.freeze({ binding: Object.freeze({ sessionID: 'ses_fixture', directory: '/workspace', sessionGeneration: 4 }), summarized: true }),

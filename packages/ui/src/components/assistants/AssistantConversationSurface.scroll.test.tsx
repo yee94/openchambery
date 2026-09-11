@@ -8,16 +8,22 @@ const contactEvents = vi.hoisted(() => ({
   handler: null as ((event: Record<string, unknown>) => void) | null,
 }));
 const contactQueryState = vi.hoisted(() => ({ extraMessages: 0, earlier: 0, hasPreviousPage: false, isFetchingPreviousPage: false, previousPageError: null as Error | null, fetchPreviousPage: vi.fn(), hasMessageGap: false, isFillingMessageGap: false, retryMessageGap: vi.fn() }));
-const attachmentIO = vi.hoisted(() => ({ upload: vi.fn(), send: vi.fn(), display: vi.fn(), blob: vi.fn(), release: vi.fn() }));
+const attachmentIO = vi.hoisted(() => ({ upload: vi.fn(), send: vi.fn(), abort: vi.fn(), display: vi.fn(), blob: vi.fn(), release: vi.fn() }));
+const unreadUI = vi.hoisted(() => ({ settingsOpen: false }));
+vi.mock('./AssistantReadMarker', () => ({
+  AssistantReadMarker: ({ position }: { position: { ordinal: number; messageID: string } }) => <span data-test-read-ordinal={position.ordinal} data-test-read-message={position.messageID} />,
+}));
 vi.mock('@/lib/assistant-attachment-upload', () => ({ uploadAssistantAttachment: attachmentIO.upload }));
 vi.mock('@/lib/assistant-attachment-cache', () => ({ getAssistantAttachmentDisplay: attachmentIO.display, getAssistantAttachmentBlob: attachmentIO.blob }));
 vi.mock('@/components/chat/imageSource', () => ({ useRuntimeTransportIdentity: () => 'test', useResolvedImageSource: (url: string) => url }));
+vi.mock('@/queries/sessionIndexQueries', () => ({ sessionIndexSnapshotQueryOptions: vi.fn() }));
 
 vi.mock('@/components/chat/ChatPromptComposer', () => ({
-  ChatPromptComposer: (props: { value: string; pending: boolean; attachments: { id: string; name: string }[]; onChange: (value: string) => void; onSubmit: () => void; onAddFiles: (files: FileList | null) => void }) => <div data-test-composer="">
+  ChatPromptComposer: (props: { value: string; pending: boolean; onStop?: () => void; attachments: { id: string; name: string }[]; onChange: (value: string) => void; onSubmit: () => void; onAddFiles: (files: FileList | null) => void }) => <div data-test-composer="">
     <textarea value={props.value} onInput={(event) => props.onChange(event.currentTarget.value)} />
     <input type="file" onChange={(event) => props.onAddFiles(event.currentTarget.files)} />
     {props.attachments.map((attachment) => <span key={attachment.id} data-preview="">{attachment.name}</span>)}
+    <button type="button" data-stop="" hidden={!props.pending || !props.onStop} onClick={props.onStop}>Stop</button>
     <button type="button" data-send="" disabled={props.pending} onClick={props.onSubmit}>Send</button>
   </div>,
 }));
@@ -38,9 +44,10 @@ vi.mock('@/apps/MobileShareBridge', () => ({
   donateNativeAssistantInteraction: () => Promise.resolve(),
 }));
 vi.mock('@/stores/useUIStore', () => ({
-  useUIStore: (selector: (state: { isMobile: boolean }) => unknown) => selector({ isMobile: false }),
+  useUIStore: (selector: (state: { isMobile: boolean; isSettingsDialogOpen: boolean }) => unknown) => selector({ isMobile: false, isSettingsDialogOpen: unreadUI.settingsOpen }),
 }));
 vi.mock('@/queries/assistantQueries', () => ({
+  abortAssistantSession: attachmentIO.abort,
   sendAssistantContactMessage: attachmentIO.send,
   useAssistantCapabilityQuery: () => ({ data: null }),
   useAssistantContactMessagesQuery: (assistantID: string) => ({
@@ -82,6 +89,7 @@ vi.mock('@/queries/assistantQueries', () => ({
       ],
       nextCursor: null,
       complete: true,
+      generation: 0,
     },
     isError: false,
     isSuccess: true,
@@ -167,10 +175,50 @@ afterEach(async () => {
   contactQueryState.previousPageError = null;
   contactQueryState.hasMessageGap = false;
   contactQueryState.isFillingMessageGap = false;
+  unreadUI.settingsOpen = false;
   vi.clearAllMocks();
 });
 
 describe('AssistantConversationSurface scroll ownership', () => {
+  test('read marker belongs to the loaded row and detaches for inactive, settings and gap surfaces', async () => {
+    contactQueryState.extraMessages = 1;
+    const { root, host } = await mountSurface();
+    const item = { ...assistant('assistant-a'), unreadCount: 3, readTip: { generation: 0, ordinal: 20, messageID: 'newer-unloaded' }, readWatermark: { generation: 0, ordinal: 0, messageID: '' } };
+    await act(async () => root.render(<AssistantConversationSurface assistant={item} active />));
+    expect(host.querySelector('[data-test-read-ordinal]')?.getAttribute('data-test-read-message')).toBe('assistant-a:refetch:0');
+    await act(async () => root.render(<AssistantConversationSurface assistant={item} active={false} />));
+    expect(host.querySelector('[data-test-read-ordinal]')).toBeNull();
+    unreadUI.settingsOpen = true;
+    await act(async () => root.render(<AssistantConversationSurface assistant={item} active />));
+    expect(host.querySelector('[data-test-read-ordinal]')).toBeNull();
+    unreadUI.settingsOpen = false;
+    contactQueryState.hasMessageGap = true;
+    await act(async () => root.render(<AssistantConversationSurface assistant={item} active />));
+    expect(host.querySelector('[data-test-read-ordinal]')).toBeNull();
+    contactQueryState.hasMessageGap = false;
+    await act(async () => root.render(<AssistantConversationSurface assistant={{ ...item, readTip: { ...item.readTip, generation: 1 } }} active />));
+    expect(host.querySelector('[data-test-read-ordinal]')).toBeNull();
+  });
+
+  test('session references retain their exact plain-text payload and retry identity through failed admission', async () => {
+    const text = 'Watch @session:ses_existing {"title":"Existing work","sessionID":"ses_existing","directory":"/repo/existing"}';
+    attachmentIO.send.mockRejectedValueOnce(new Error('offline')).mockResolvedValue({ revision: 1 });
+    const { host } = await mountSurface();
+    const textarea = host.querySelector('textarea')!;
+    await act(async () => {
+      textarea.value = text;
+      textarea.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    expect(attachmentIO.send).not.toHaveBeenCalled();
+    const send = host.querySelector<HTMLButtonElement>('[data-send]')!;
+    await act(async () => send.click());
+    expect(textarea.value).toBe(text);
+    expect(attachmentIO.send.mock.calls[0][2]).toEqual({ parts: [{ type: 'text', text }] });
+    await act(async () => send.click());
+    expect(attachmentIO.send.mock.calls[1]).toEqual(attachmentIO.send.mock.calls[0]);
+    expect(textarea.value).toBe('');
+  });
+
   test('gap recovery shows its status and disables retry while filling', async () => {
     contactQueryState.hasMessageGap = true;
     contactQueryState.retryMessageGap.mockResolvedValue(undefined);
@@ -358,4 +406,25 @@ describe('AssistantConversationSurface scroll ownership', () => {
     expect(scrollTop).toBe(180);
     expect(writes).toBe(0);
   });
+});
+
+
+test('contact stop calls the assistant abort endpoint with a null session and retains working on failure', async () => {
+  attachmentIO.abort.mockRejectedValueOnce(new Error('Stop request failed'));
+  const { host, root } = await mountSurface();
+  const item = { ...assistant('assistant-a'), working: true };
+  await act(async () => root.render(<AssistantConversationSurface assistant={item} active />));
+  const stop = host.querySelector<HTMLButtonElement>('[data-stop]')!;
+  expect(stop.hidden).toBe(false);
+  await act(async () => stop.click());
+  expect(attachmentIO.abort).toHaveBeenCalledWith('assistant-a', expect.objectContaining({ sessionID: null, sessionGeneration: 0 }));
+  expect(host.querySelector('[role="alert"]')?.textContent).toContain('Stop request failed');
+  expect(host.querySelector<HTMLButtonElement>('[data-stop]')!.hidden).toBe(false);
+  attachmentIO.abort.mockResolvedValueOnce(undefined);
+  await act(async () => stop.click());
+  expect(attachmentIO.abort).toHaveBeenCalledTimes(2);
+  // Successful HTTP admission also waits for authoritative idle; it must not invent it.
+  expect(host.querySelector<HTMLButtonElement>('[data-stop]')!.hidden).toBe(false);
+  await act(async () => root.render(<AssistantConversationSurface assistant={{ ...item, working: false }} active />));
+  expect(host.querySelector<HTMLButtonElement>('[data-stop]')!.hidden).toBe(true);
 });

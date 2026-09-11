@@ -3,6 +3,8 @@ import type { Message, Part } from '@opencode-ai/sdk/v2';
 export type AssistantSource = 'composer' | 'ios-share' | 'android-share';
 export type AssistantMode = 'continuous' | 'stateless';
 export type AssistantLatestMessagePreview = {
+  /** Absent only on older servers. */
+  createdAt?: number;
   messageID: string;
   ordinal: number;
   role: 'user' | 'assistant';
@@ -10,6 +12,9 @@ export type AssistantLatestMessagePreview = {
   fallbackKind: 'image' | 'file' | 'session' | 'assistant' | 'schedule' | null;
 };
 export interface AssistantDTO {
+  unreadCount?: number;
+  readWatermark?: AssistantReadPosition | null;
+  readTip?: AssistantReadPosition | null;
   /** Missing on legacy inputs; the HTTP parser normalizes absence to null. */
   latestMessagePreview?: AssistantLatestMessagePreview | null;
 }
@@ -26,6 +31,15 @@ export interface AssistantActiveContactTurn {
 }
 export interface AssistantDTO { id: string; revision: number; enabled: boolean; name: string; defaultPrompt: string; workspacePath: string | null; effectiveWorkspacePath: string; managedWorkspacePath: string | null; providerID: string; modelID: string; agent: string | null; variant: string | null; mode: AssistantMode; sessionID: string | null; sessionGeneration: number; historySessionIDs: string[]; historySessionCount: number; assignedSessionIDs: string[]; working: boolean; activeContactTurn: AssistantActiveContactTurn | null; createdAt: number | null; updatedAt: number; tombstoneAt: number | null; }
 export interface AssistantSnapshotDTO { revision: number; enabled: boolean; assistants: AssistantDTO[]; }
+export type AssistantReadPosition = { generation: number; ordinal: number; messageID: string };
+export type AssistantReadResponse = {
+  assistantID: string;
+  changed: boolean;
+  unreadCount: number;
+  readWatermark: AssistantReadPosition;
+  readTip: AssistantReadPosition;
+  revision: number;
+};
 export interface SessionBinding { sessionID: string | null; directory: string; sessionGeneration: number; }
 export interface CompactResponse { binding: SessionBinding; summarized: true; }
 export interface MessageAdmission { binding: SessionBinding; messageID: string; admitted: true; revision: number | null; replayed?: boolean; }
@@ -171,6 +185,7 @@ const parseLatestMessagePreview = (payload: unknown): AssistantLatestMessagePrev
   const ordinal = number(value.ordinal, 'assistant_preview');
   if (!Number.isSafeInteger(ordinal) || ordinal < 0) return invalid('assistant_preview');
   return {
+    ...(value.createdAt === undefined ? {} : { createdAt: number(value.createdAt, 'assistant_preview') }),
     messageID: string(value.messageID, 'assistant_preview'),
     ordinal,
     role: enumValue(value.role, ['user', 'assistant'] as const, 'assistant_preview'),
@@ -178,7 +193,28 @@ const parseLatestMessagePreview = (payload: unknown): AssistantLatestMessagePrev
     fallbackKind: value.fallbackKind === null ? null : enumValue(value.fallbackKind, ['image', 'file', 'session', 'assistant', 'schedule'] as const, 'assistant_preview'),
   };
 };
-export const parseAssistantDTO = (payload: unknown): AssistantDTO => { const value = record(payload, 'assistant'); const historySessionIDs = Array.isArray(value.historySessionIDs) ? value.historySessionIDs.map((item) => string(item, 'assistant')) : []; const historySessionCount = value.historySessionCount === undefined ? historySessionIDs.length : number(value.historySessionCount, 'assistant'); if (!Number.isSafeInteger(historySessionCount) || historySessionCount < historySessionIDs.length) return invalid('assistant'); const assignedSessionIDs = Array.isArray(value.assignedSessionIDs) ? value.assignedSessionIDs.map((item) => string(item, 'assistant')) : []; const activeContactTurn = value.activeContactTurn === undefined ? null : parseActiveContactTurn(value.activeContactTurn); const working = value.working === undefined ? activeContactTurn != null : bool(value.working, 'assistant'); return { latestMessagePreview: parseLatestMessagePreview(value.latestMessagePreview), id: string(value.id, 'assistant'), revision: number(value.revision, 'assistant'), enabled: bool(value.enabled, 'assistant'), name: string(value.name, 'assistant'), defaultPrompt: string(value.defaultPrompt, 'assistant'), workspacePath: nullableString(value.workspacePath, 'assistant'), effectiveWorkspacePath: string(value.effectiveWorkspacePath, 'assistant'), managedWorkspacePath: nullableString(value.managedWorkspacePath ?? null, 'assistant'), providerID: string(value.providerID, 'assistant'), modelID: string(value.modelID, 'assistant'), agent: nullableString(value.agent, 'assistant'), variant: nullableString(value.variant ?? null, 'assistant'), mode: enumValue(value.mode, ['continuous', 'stateless'] as const, 'assistant'), sessionID: nullableString(value.sessionID, 'assistant'), sessionGeneration: number(value.sessionGeneration, 'assistant'), historySessionIDs, historySessionCount, assignedSessionIDs, working, activeContactTurn, createdAt: nullableNumber(value.createdAt, 'assistant'), updatedAt: number(value.updatedAt, 'assistant'), tombstoneAt: nullableNumber(value.tombstoneAt, 'assistant') }; };
+const readInteger = (value: unknown): number => {
+  const result = number(value, 'assistant_read');
+  return Number.isSafeInteger(result) && result >= 0 ? result : invalid('assistant_read');
+};
+export const parseAssistantReadPosition = (payload: unknown): AssistantReadPosition => {
+  const value = record(payload, 'assistant_read');
+  return { generation: readInteger(value.generation), ordinal: readInteger(value.ordinal), messageID: string(value.messageID, 'assistant_read') };
+};
+const parseAssistantUnread = (value: Record<string, unknown>) => ({
+  unreadCount: value.unreadCount === undefined ? 0 : readInteger(value.unreadCount),
+  readWatermark: value.readWatermark == null ? null : parseAssistantReadPosition(value.readWatermark),
+  readTip: value.readTip == null ? null : parseAssistantReadPosition(value.readTip),
+});
+export const parseAssistantReadResponse = (payload: unknown): AssistantReadResponse => {
+  const value = record(payload, 'assistant_read');
+  return {
+    assistantID: string(value.assistantID, 'assistant_read'), changed: bool(value.changed, 'assistant_read'),
+    unreadCount: readInteger(value.unreadCount), readWatermark: parseAssistantReadPosition(value.readWatermark),
+    readTip: parseAssistantReadPosition(value.readTip), revision: readInteger(value.revision),
+  };
+};
+export const parseAssistantDTO = (payload: unknown): AssistantDTO => { const value = record(payload, 'assistant'); const historySessionIDs = Array.isArray(value.historySessionIDs) ? value.historySessionIDs.map((item) => string(item, 'assistant')) : []; const historySessionCount = value.historySessionCount === undefined ? historySessionIDs.length : number(value.historySessionCount, 'assistant'); if (!Number.isSafeInteger(historySessionCount) || historySessionCount < historySessionIDs.length) return invalid('assistant'); const assignedSessionIDs = Array.isArray(value.assignedSessionIDs) ? value.assignedSessionIDs.map((item) => string(item, 'assistant')) : []; const activeContactTurn = value.activeContactTurn === undefined ? null : parseActiveContactTurn(value.activeContactTurn); const working = value.working === undefined ? activeContactTurn != null : bool(value.working, 'assistant'); return { ...parseAssistantUnread(value), latestMessagePreview: parseLatestMessagePreview(value.latestMessagePreview), id: string(value.id, 'assistant'), revision: number(value.revision, 'assistant'), enabled: bool(value.enabled, 'assistant'), name: string(value.name, 'assistant'), defaultPrompt: string(value.defaultPrompt, 'assistant'), workspacePath: nullableString(value.workspacePath, 'assistant'), effectiveWorkspacePath: string(value.effectiveWorkspacePath, 'assistant'), managedWorkspacePath: nullableString(value.managedWorkspacePath ?? null, 'assistant'), providerID: string(value.providerID, 'assistant'), modelID: string(value.modelID, 'assistant'), agent: nullableString(value.agent, 'assistant'), variant: nullableString(value.variant ?? null, 'assistant'), mode: enumValue(value.mode, ['continuous', 'stateless'] as const, 'assistant'), sessionID: nullableString(value.sessionID, 'assistant'), sessionGeneration: number(value.sessionGeneration, 'assistant'), historySessionIDs, historySessionCount, assignedSessionIDs, working, activeContactTurn, createdAt: nullableNumber(value.createdAt, 'assistant'), updatedAt: number(value.updatedAt, 'assistant'), tombstoneAt: nullableNumber(value.tombstoneAt, 'assistant') }; };
 export const parseAssistantSnapshotDTO = (payload: unknown): AssistantSnapshotDTO => { const value = record(payload, 'snapshot'); return { revision: number(value.revision, 'snapshot'), enabled: bool(value.enabled, 'snapshot'), assistants: Array.isArray(value.assistants) ? value.assistants.map(parseAssistantDTO) : invalid('snapshot') }; };
 export const parseSessionBinding = (payload: unknown): SessionBinding => { const value = record(payload, 'binding'); return { sessionID: nullableString(value.sessionID, 'binding'), directory: string(value.directory, 'binding'), sessionGeneration: number(value.sessionGeneration, 'binding') }; };
 export const parseCompactResponse = (payload: unknown): CompactResponse => { const value = record(payload, 'compact'); if (value.summarized !== true) return invalid('compact'); return { binding: parseSessionBinding(value.binding), summarized: true }; };

@@ -21,6 +21,7 @@ export type NativeIosTabBarAppearance = 'dark' | 'light';
 export type NativeIosTabBarItem = {
   id: NativeIosTabId;
   label: string;
+  badge?: string | null;
 };
 
 export type NativeIosTabBarState = {
@@ -106,7 +107,7 @@ export const nativeTabBarStatesEqual = (
   && left.accentColor === right.accentColor
   && left.tabs.length === right.tabs.length
   && left.tabs.every((tab, index) => (
-    tab.id === right.tabs[index]?.id && tab.label === right.tabs[index]?.label
+    tab.id === right.tabs[index]?.id && tab.label === right.tabs[index]?.label && tab.badge === right.tabs[index]?.badge
   ))
 );
 

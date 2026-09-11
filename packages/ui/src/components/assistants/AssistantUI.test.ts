@@ -365,7 +365,8 @@ describe('Assistant UI product contract', () => {
     expect(conversation).not.toContain('<StatusRowContainer');
     expect(conversation).not.toContain('<TimelineDialog');
     expect(conversation).not.toContain('<ChatInput');
-    expect(conversation).toContain('<ChatPromptComposer');
+    expect(conversation).toContain('<AssistantSessionComposer');
+    expect(await read('AssistantSessionComposer.tsx')).toContain('<ChatPromptComposer');
     expect(conversation).toContain('layout="inline"');
     expect(conversation).toContain('data-assistant-contact-composer');
     expect(conversation).toContain('data-assistant-contact-composer-surface');
@@ -526,11 +527,12 @@ describe('Assistant UI product contract', () => {
       read('../chat/ChatPromptComposer.tsx'),
       read('../chat/ChatComposerSurface.tsx'),
     ]);
-    expect(conversation).toContain('<ChatPromptComposer');
+    expect(conversation).toContain('<AssistantSessionComposer');
+    expect(await read('AssistantSessionComposer.tsx')).toContain('<ChatPromptComposer');
     expect(conversation).not.toContain('<ChatInput');
     expect(conversation).toContain('onAddFiles');
     expect(conversation).toContain('fileAccept="*/*"');
-    expect(conversation).not.toContain('onStop');
+    expect(conversation).toContain('onStop');
     expect(conversation).not.toContain('thinkingLevel');
     expect(promptComposer).toContain('data-composer-send="true"');
     expect(promptComposer).toContain('data-composer-circle={sendReady ? \'true\' : undefined}');

@@ -1,4 +1,5 @@
 import { useEvent } from '@reactuses/core';
+import { AssistantNavigationUnreadBadge } from '@/components/assistants/AssistantUnreadBadge';
 
 import { Icon } from '@/components/icon/Icon';
 import { Button } from '@/components/ui/button';
@@ -63,6 +64,7 @@ export function MobileTabBar({ activeTab, onTabChange, className }: MobileTabBar
             size="sm"
             aria-controls={`mobile-tabpanel-${tab.id}`}
             aria-label={label}
+            aria-describedby={tab.id === 'assistant' ? 'mobile-tab-assistant-unread' : undefined}
             aria-selected={selected}
             tabIndex={selected ? 0 : -1}
             title={label}
@@ -85,7 +87,10 @@ export function MobileTabBar({ activeTab, onTabChange, className }: MobileTabBar
               ],
             )}
           >
-            <Icon name={tab.icon} weight="medium" className="size-[23px] shrink-0" />
+            <span className="relative inline-flex">
+              <Icon name={tab.icon} weight="medium" className="size-[23px] shrink-0" />
+              {tab.id === 'assistant' ? <span id="mobile-tab-assistant-unread" className="absolute -right-5 -top-1"><AssistantNavigationUnreadBadge /></span> : null}
+            </span>
             <span className="block max-w-full overflow-hidden text-ellipsis whitespace-nowrap">{label}</span>
           </Button>
         );

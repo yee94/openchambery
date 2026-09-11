@@ -18,7 +18,7 @@ vi.mock('@/components/ui/ScrollableOverlay', () => ({ ScrollableOverlay: ({ chil
 vi.mock('@/components/ui/textarea', () => ({
   Textarea: React.forwardRef<HTMLTextAreaElement, React.TextareaHTMLAttributes<HTMLTextAreaElement>>((props, ref) => (
     <textarea ref={ref} value={props.value} disabled={props.disabled} onInput={props.onChange as React.FormEventHandler<HTMLTextAreaElement>}
-      onKeyDown={props.onKeyDown} onSelect={props.onSelect} onCompositionStart={props.onCompositionStart} onCompositionEnd={props.onCompositionEnd}
+      onCopy={props.onCopy} onCut={props.onCut} onKeyDown={props.onKeyDown} onSelect={props.onSelect} onCompositionStart={props.onCompositionStart} onCompositionEnd={props.onCompositionEnd}
       aria-controls={props['aria-controls']} aria-activedescendant={props['aria-activedescendant']} />
   )),
 }));
@@ -87,15 +87,18 @@ test('mounts only for @, searches the bounded snapshot once, and shows directory
   expect(submit).not.toHaveBeenCalled();
 });
 
-test('keyboard selection inserts the canonical token plus escaped metadata and preserves the surrounding draft', async () => {
+test('keyboard selection uses the shared chip display and canonical session codec', async () => {
   await type('Watch @Sh please', 9);
   await key('ArrowDown');
   expect(input().getAttribute('aria-activedescendant')).toBe(rows()[1].id);
   await key('Enter');
-  expect(draft).toBe(`Watch @session:ses_1 ${JSON.stringify({ title: 'Shared "title"', sessionID: 'ses_1', directory: '/repo/two' })}  please`);
+  expect(draft).toBe('Watch @session:ses_1 please');
+  expect(input().value).toContain('Shared "title"');
+  expect(input().value).not.toContain('session:');
+  expect(host.querySelector('[data-composer-highlight]')?.textContent).toContain('Shared "title"');
   expect(rows()).toHaveLength(0);
   expect(submit).not.toHaveBeenCalled();
-  expect(input().selectionStart).toBe(draft.indexOf(' please'));
+  expect(input().selectionStart).toBe(input().value.indexOf('please'));
   await key('Enter');
   expect(submit).toHaveBeenCalledTimes(1);
 });
@@ -197,4 +200,49 @@ test('working contact exposes stop while keeping the draft editable for a follow
   await type('A follow-up');
   await key('Enter');
   expect(submit).toHaveBeenCalledTimes(1);
+});
+
+
+test('shared reference deletion and undo keep canonical identity and surrounding text', async () => {
+  await type('Read @Sh please', 8);
+  await key('Enter');
+  const selected = draft;
+  const chipEnd = input().value.indexOf(' please');
+  input().setSelectionRange(chipEnd, chipEnd);
+  await key('Backspace');
+  expect(draft).toBe('Read  please');
+  expect(host.querySelector('[data-composer-highlight]')).toBeNull();
+  await key('z', { ctrlKey: true });
+  expect(draft).toBe(selected);
+  expect(host.querySelector('[data-composer-highlight]')?.textContent).toContain('Shared "title"');
+  await key('z', { ctrlKey: true, shiftKey: true });
+  expect(draft).toBe('Read  please');
+});
+
+test('external canonical drafts materialize using the same session codec and reset cleanly', async () => {
+  draft = 'Read @session:ses_external'; await act(async () => render());
+  expect(input().value).toContain('ses_external');
+  expect(input().value).not.toContain('session:');
+  expect(host.querySelector('[data-composer-highlight]')).not.toBeNull();
+  draft = ''; await act(async () => render());
+  expect(input().value).toBe('');
+  expect(host.querySelector('[data-composer-highlight]')).toBeNull();
+});
+
+
+test('copy and cut serialize the shared canonical identity instead of a display label', async () => {
+  await type('@Sh'); await key('Enter');
+  const start = input().value.indexOf('@');
+  input().setSelectionRange(start + 1, start + 4);
+  const setData = vi.fn();
+  const copy = new Event('copy', { bubbles: true, cancelable: true });
+  Object.defineProperty(copy, 'clipboardData', { value: { setData } });
+  await act(async () => input().dispatchEvent(copy));
+  expect(setData).toHaveBeenLastCalledWith('text/plain', '@session:ses_0');
+  expect(draft).toContain('@session:ses_0');
+  input().setSelectionRange(start + 1, start + 4);
+  const cut = new Event('cut', { bubbles: true, cancelable: true });
+  Object.defineProperty(cut, 'clipboardData', { value: { setData } });
+  await act(async () => input().dispatchEvent(cut));
+  expect(draft).not.toContain('@session:');
 });

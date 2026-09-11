@@ -1,4 +1,7 @@
+import { sortAssistantContacts } from './sortAssistantContacts';
 import React from 'react';
+import { AssistantUnreadBadge } from './AssistantUnreadBadge';
+import { AssistantMarkAllReadButton } from './AssistantMarkAllReadButton';
 import { useEvent } from '@reactuses/core';
 import { AssistantWorkingAvatar } from './AssistantWorkingAvatar';
 import { useAssistantWorking } from './assistantWorking';
@@ -65,6 +68,7 @@ const MobileAssistantConversationHeader: React.FC<MobileAssistantConversationHea
 };
 
 type AssistantListItemProps = {
+  unreadCount: number;
   summary: string;
   assistantID: string;
   displayName: string;
@@ -81,6 +85,7 @@ type AssistantListItemProps = {
 };
 
 const AssistantListItem: React.FC<AssistantListItemProps> = ({
+  unreadCount,
   summary,
   assistantID,
   displayName,
@@ -135,6 +140,7 @@ const AssistantListItem: React.FC<AssistantListItemProps> = ({
           <span className="block truncate typography-ui-label font-medium">{displayName}</span>
           <span className={cn(ASSISTANT_MESSAGE_PREVIEW_CLASS, 'mt-1.5')}>{summary}</span>
         </span>
+        <AssistantUnreadBadge count={unreadCount} />
       </ContextMenuTrigger>
       <ContextMenuContent className="min-w-[10rem]">
         <ContextMenuItem onClick={handleEdit}>
@@ -175,6 +181,7 @@ export const AssistantView: React.FC<AssistantViewProps> = ({ activeOverride, on
   const capabilityQuery = useAssistantCapabilityQuery();
   const snapshotQuery = useAssistantSnapshotQuery();
   const snapshot = snapshotQuery.data;
+  const contacts = React.useMemo(() => sortAssistantContacts(snapshot?.assistants ?? []), [snapshot?.assistants]);
   const selectedAssistantID = useAssistantUIStore((state) => state.assistantByTransport[transport] ?? null);
   const selectAssistant = useAssistantUIStore((state) => state.selectAssistant);
   const requestCreate = useAssistantUIStore((state) => state.requestCreate);
@@ -254,15 +261,19 @@ export const AssistantView: React.FC<AssistantViewProps> = ({ activeOverride, on
               <Icon name="add" className="size-4" />
             </Button>
           </header>
+          <div className="flex justify-end px-4 pb-2 sm:px-5">
+            <AssistantMarkAllReadButton snapshot={snapshot} />
+          </div>
           <div className="min-h-0 flex-1 overflow-y-auto px-3 pb-4 sm:px-4" role="listbox" aria-label={t('assistants.listAria')}>
             <div className="flex flex-col gap-1 border-t border-border/40 pt-3">
-              {snapshot.assistants.map((item) => {
+              {contacts.map((item) => {
                 const selected = item.id === selectedAssistantID;
                 const itemPresentation = getAssistantPresentation(item.name);
                 return (
                   <AssistantListItem
                     key={item.id}
                     assistantID={item.id}
+                    unreadCount={item.unreadCount ?? 0}
                     summary={getAssistantMessagePreview(item.latestMessagePreview, t)}
                     displayName={itemPresentation.displayName}
                     avatarEmoji={itemPresentation.avatarEmoji ?? undefined}

@@ -24,6 +24,7 @@ type AssistantSessionCardProps = {
 }
 
 const displayStatus = (liveType: string | undefined, persisted: string | null | undefined) => {
+  if (persisted === 'cancelled') return persisted
   if (liveType === 'busy' || liveType === 'retry') return liveType
   if (persisted === 'error' || persisted === 'question' || persisted === 'complete') return persisted
   if (liveType === 'idle') return 'complete'
@@ -32,6 +33,7 @@ const displayStatus = (liveType: string | undefined, persisted: string | null | 
 }
 
 const statusKey = (status: string | null | undefined) => {
+  if (status === 'cancelled') return 'assistants.contact.card.session.status.cancelled' as const
   if (status === 'busy') return 'assistants.contact.card.session.status.busy' as const
   if (status === 'retry') return 'assistants.contact.card.session.status.retry' as const
   if (status === 'idle') return 'assistants.contact.card.session.status.idle' as const

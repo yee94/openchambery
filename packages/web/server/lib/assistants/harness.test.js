@@ -13,7 +13,7 @@ import {
   NEW_CONVERSATION_TOOL_NAME,
   createContactTools,
 } from './contact-tools.js'
-import { createContactStreamFn, runContactTurn } from './harness.js'
+import { createContactStreamFn, resolveContactLanguage, runContactTurn } from './harness.js'
 import { PI_CODING_TOOL_NAMES } from './pi-tools.js'
 
 describe('createContactStreamFn', () => {
@@ -681,6 +681,47 @@ describe('runContactTurn', () => {
     }
   })
 
+  it('injects the UI locale into {{LANGUAGE}} across the system prompt', async () => {
+    function AgentImpl(options) {
+      expect(options.initialState.systemPrompt).toContain('Always reply in Simplified Chinese')
+      expect(options.initialState.systemPrompt).not.toContain('{{LANGUAGE}}')
+      // A defaultPrompt placeholder resolves with the same locale.
+      expect(options.initialState.systemPrompt).toContain('Persona locale: Simplified Chinese')
+      this.state = { ...options.initialState, messages: [{ role: 'assistant', content: [{ type: 'text', text: '好的。' }] }] }
+      this.prompt = async () => {}
+    }
+    const result = await runContactTurn({
+      assistant: { providerID: 'p', modelID: 'm', defaultPrompt: 'Persona locale: {{LANGUAGE}}' },
+      history: [],
+      userText: 'hi',
+      language: 'zh-CN',
+      createChatCompletion: vi.fn(),
+      AgentImpl,
+    })
+    expect(result.bubbles).toEqual(['好的。'])
+  })
+
+  it('falls back to a neutral phrase for unknown or missing locale without leaking the token', async () => {
+    function AgentImpl(options) {
+      expect(options.initialState.systemPrompt).not.toContain('{{LANGUAGE}}')
+      expect(options.initialState.systemPrompt).toContain("Always reply in the user's interface language")
+      this.state = { ...options.initialState, messages: [{ role: 'assistant', content: [{ type: 'text', text: 'ok' }] }] }
+      this.prompt = async () => {}
+    }
+    const result = await runContactTurn({
+      assistant: { providerID: 'p', modelID: 'm', defaultPrompt: '' },
+      history: [],
+      userText: 'hi',
+      language: '<script>alert(1)</script>',
+      createChatCompletion: vi.fn(),
+      AgentImpl,
+    })
+    expect(result.bubbles).toEqual(['ok'])
+    expect(resolveContactLanguage('fr')).toBe('French')
+    expect(resolveContactLanguage('PT-BR')).toBe('Brazilian Portuguese')
+    expect(resolveContactLanguage('nope')).toBe("the user's interface language")
+  })
+
   it('executes bash pwd in the assistant workspace', async () => {
     const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'oc-assistant-pwd-'))
     const home = fs.mkdtempSync(path.join(os.tmpdir(), 'oc-assistant-pwd-home-'))
@@ -1301,4 +1342,21 @@ it('rejects a background model attempt to restart a session before executing its
   })).rejects.toMatchObject({ code: 'upstream_error' })
   expect(assignWork).not.toHaveBeenCalled()
   expect(createChatCompletion).toHaveBeenCalledTimes(3)
+})
+
+it('allows read_session during read-only turns and delivers actual referenced messages to the model', async () => {
+  const readSession = vi.fn(async () => ({ sessionID: 'ses_ref', messages: [{ role: 'user', parts: [{ type: 'text', text: 'quoted context' }] }], nextCursor: null, partial: false }))
+  let calls = 0
+  await runContactTurn({
+    assistant: { providerID: 'p', modelID: 'm' }, readOnly: true,
+    history: [], userText: 'Summarize @session:ses_ref', tools: createContactTools({ readSession }),
+    createChatCompletion: async (input) => {
+      calls += 1
+      if (calls === 1) return { text: '```openchamber-tool\n{"name":"read_session","arguments":{"sessionID":"ses_ref","limit":5}}\n```' }
+      expect(JSON.stringify(input)).toContain('quoted context')
+      return { text: '已读取引用内容。' }
+    },
+  })
+  expect(readSession).toHaveBeenCalledOnce()
+  expect(readSession.mock.calls[0][0]).toMatchObject({ sessionID: 'ses_ref', limit: 5 })
 })
