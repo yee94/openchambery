@@ -98,7 +98,7 @@ const draftFromAssistant = (assistant: AssistantDTO): AssistantDraft => ({
  * Settings UI does not own agent/variant/mode. PATCH must omit them so the
  * server keeps prior values (undefined → retain; null would clear).
  */
-export const toAssistantSettingsUpdateDraft = (draft: AssistantDraft): AssistantDraft => ({
+const toAssistantSettingsUpdateDraft = (draft: AssistantDraft): AssistantDraft => ({
   enabled: draft.enabled,
   name: draft.name,
   defaultPrompt: draft.defaultPrompt,
