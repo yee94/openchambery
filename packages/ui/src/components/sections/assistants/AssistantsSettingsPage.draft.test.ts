@@ -194,8 +194,8 @@ describe('AssistantsSettingsPage draft → save payload', () => {
   test('page source keeps draft helpers free of agent/variant/mode and routes PATCH through the omit helper', async () => {
     const source = await pageSource();
     const emptyDraft = source.slice(source.indexOf('const emptyDraft'), source.indexOf('const draftFromAssistant'));
-    const draftFrom = source.slice(source.indexOf('const draftFromAssistant'), source.indexOf('export const toAssistantSettingsUpdateDraft'));
-    const updateHelper = source.slice(source.indexOf('export const toAssistantSettingsUpdateDraft'), source.indexOf('const projectName'));
+    const draftFrom = source.slice(source.indexOf('const draftFromAssistant'), source.indexOf('const toAssistantSettingsUpdateDraft'));
+    const updateHelper = source.slice(source.indexOf('const toAssistantSettingsUpdateDraft'), source.indexOf('const projectName'));
     const save = source.slice(source.indexOf('const save = useEvent'), source.indexOf('const remove = useEvent'));
 
     expect(emptyDraft).not.toMatch(/\bagent\s*:/);
