@@ -248,7 +248,7 @@ test('iOS share suggestions donate and resolve exact Assistant conversations', a
     source('ios/App/App/OpenChamberShareStore.swift'),
     source('ios/App/App/OpenChamberSharePlugin.swift'),
     source('../ui/src/apps/MobileShareBridge.tsx'),
-    source('../ui/src/components/assistants/AssistantView.tsx'),
+    source('../ui/src/components/assistants/AssistantConversationSurface.tsx'),
   ]);
   assert.match(appInfo, /<key>NSUserActivityTypes<\/key>[\s\S]*<string>INSendMessageIntent<\/string>/);
   assert.match(extensionInfo, /<key>IntentsSupported<\/key>[\s\S]*<string>INSendMessageIntent<\/string>/);
@@ -261,7 +261,7 @@ test('iOS share suggestions donate and resolve exact Assistant conversations', a
   assert.match(store, /intent\.setImage\(image, forParameterNamed:/);
   assert.match(plugin, /CAPPluginMethod\(name: "donateAssistantInteraction"/);
   assert.match(bridge, /Capacitor\.getPlatform\(\) !== 'ios'/);
-  const admission = assistantView.indexOf('await sendAssistantMessage(assistant.id');
+  const admission = assistantView.indexOf('await sendAssistantContactMessage(sentAssistantID');
   const donation = assistantView.indexOf('donateNativeAssistantInteraction({');
   assert.ok(admission >= 0 && donation > admission);
 });
