@@ -74,6 +74,184 @@ const settleSend = async (service, assistantID, body) => {
 const assistantInput = { name: 'A', providerID: 'p', modelID: 'm' };
 
 describe('assistants service', () => {
+  it.each(['steer', 'archive', 'delete'])('%s_session performs the real scoped SDK operation', async (operation) => {
+    const directory = root();
+    const mutate = vi.fn(async () => ({ data: true }));
+    const runContactTurn = vi.fn(async ({ tools }) => {
+      const tool = tools.find(t => t.name === `${operation}_session`);
+      const result = await tool.execute('op_call', { sessionID: 'ses_target', text: 'use the existing context' });
+      expect(result.isError).not.toBe(true);
+      expect(result.terminate).toBe(true);
+      return { text: 'done', bubbles: ['done'] };
+    });
+    const method = operation === 'steer' ? 'promptAsync' : operation === 'archive' ? 'update' : 'delete';
+    const service = setup(directory, {
+      get: async ({ sessionID }) => ({ data: { id: sessionID, directory } }),
+      [method]: mutate,
+    }, { runContactTurn });
+    const assistant = service.createAssistant(assistantInput);
+    service.appendContactCard(assistant.id, { cardType: 'session', sessionID: 'ses_target', directory, status: 'busy' });
+    await settleSend(service, assistant.id, { messageID: `msg_${operation}`, parts: [{ type: 'text', text: operation }] });
+    const calls = mutate.mock.calls.filter(([p]) => p.sessionID === 'ses_target');
+    expect(calls).toHaveLength(1);
+    expect(calls[0][0]).toMatchObject({ sessionID: 'ses_target', directory: fs.realpathSync(directory) });
+    if (operation === 'steer') {
+      expect(calls[0][0]).toMatchObject({ delivery: 'steer', parts: [{ type: 'text', text: 'use the existing context' }] });
+      expect(calls[0][0]).not.toHaveProperty('model');
+    } else {
+      if (operation === 'archive') expect(calls[0][0].time.archived).toBeGreaterThan(0);
+      service.processEvent({ type: 'session.idle', properties: { sessionID: 'ses_target' } });
+      await new Promise(resolve => setTimeout(resolve, 20));
+      expect(runContactTurn).toHaveBeenCalledTimes(1);
+    }
+    service.close();
+  });
+  it.each(['steer', 'archive', 'delete'])('%s_session does not report upstream failure as success', async (operation) => {
+    const directory = root();
+    let operationResult;
+    const service = setup(directory, {
+      get: async ({ sessionID }) => ({ data: { id: sessionID, directory } }),
+      promptAsync: async () => ({ error: { message: 'failed' } }),
+      update: async () => ({ error: { message: 'failed' } }),
+      delete: async () => ({ error: { message: 'failed' } }),
+    }, { runContactTurn: async ({ tools }) => {
+      const result = await tools.find(t => t.name === `${operation}_session`).execute('op', { sessionID: 'ses_target', text: 'instruction' });
+      operationResult = result;
+      return { text: 'failed', bubbles: ['failed'] };
+    } });
+    const assistant = service.createAssistant(assistantInput);
+    await settleSend(service, assistant.id, { messageID: `msg_fail_${operation}`, parts: [{ type: 'text', text: operation }] });
+    expect(operationResult?.details.error).toBe('upstream_error');
+    service.close();
+  });
+
+  it('explicit stop cancels only its worker watch even when the upstream emits no event', async () => {
+    const directory = root()
+    const abort = vi.fn(async () => ({ data: true }))
+    const runContactTurn = vi.fn(async ({ tools }) => {
+      const tool = tools.find(t => t.name === 'stop_session')
+      const result = await tool.execute('stop_call', { sessionID: 'ses_stop' })
+      expect(result.isError).not.toBe(true)
+      return { text: 'stopped', bubbles: ['stopped'] }
+    })
+    const service = setup(directory, {
+      get: async ({ sessionID }) => ({ data: { id: sessionID, directory, status: { type: 'busy' } } }), abort,
+    }, { runContactTurn })
+    const assistant = service.createAssistant(assistantInput)
+    for (const sessionID of ['ses_stop', 'ses_other']) service.appendContactCard(assistant.id, { cardType: 'session', sessionID, directory, status: 'busy' })
+    await settleSend(service, assistant.id, { messageID: 'stop_request', parts: [{ type: 'text', text: '停止会话 ses_stop' }] })
+    service.processEvent({ type: 'session.idle', properties: { sessionID: 'ses_stop' } })
+    await new Promise(setImmediate)
+    expect(abort).toHaveBeenCalledTimes(1)
+    expect(runContactTurn).toHaveBeenCalledTimes(1)
+    expect(service.snapshot().assistants[0].assignedSessionIDs).toEqual(['ses_other'])
+    expect(service.contactMessages(assistant.id).messages.flatMap(m => m.parts).find(p => p.sessionID === 'ses_stop').status).toBe('cancelled')
+    service.close()
+  })
+
+  it('only an explicit new watch can rearm an interrupted worker', async () => {
+    const directory = root()
+    const runContactTurn = vi.fn(async () => ({ text: 'done', bubbles: ['done'] }))
+    const service = setup(directory, {}, { runContactTurn, clock: () => 77 })
+    const assistant = service.createAssistant(assistantInput)
+    const card = { cardType: 'session', sessionID: 'ses_rearm', directory, status: 'busy' }
+    service.appendContactCard(assistant.id, card)
+    service.processEvent({ type: 'session.error', properties: { sessionID: 'ses_rearm', error: { name: 'MessageAbortedError' } } })
+    service.appendContactCard(assistant.id, card)
+    service.processEvent({ type: 'session.idle', properties: { sessionID: 'ses_rearm' } })
+    await service.whenContactTurnSettled(assignedSessionResumeMessageID(assistant.id, 'ses_rearm', 'complete', 77))
+    expect(runContactTurn).toHaveBeenCalledTimes(1)
+    service.close()
+  })
+
+  it('a new user instruction cancels an active automatic continuation and discards its late reply', async () => {
+    const directory = root()
+    let started
+    const ready = new Promise(resolve => { started = resolve })
+    let release
+    const pending = new Promise(resolve => { release = resolve })
+    let resumeSignal
+    const service = setup(directory, {}, {
+      runContactTurn: async ({ userText, signal }) => {
+        if (userText.startsWith('[Internal assigned-session')) {
+          resumeSignal = signal
+          started()
+          await pending
+          return { text: 'late retry', bubbles: ['late retry'] }
+        }
+        return { text: 'stopped', bubbles: ['stopped'] }
+      },
+    })
+    const assistant = service.createAssistant(assistantInput)
+    service.appendContactCard(assistant.id, { cardType: 'session', sessionID: 'ses_active', directory, status: 'busy' })
+    service.processEvent({ type: 'session.idle', properties: { sessionID: 'ses_active' } })
+    await ready
+    const sent = await service.send(assistant.id, { messageID: 'user_stop', parts: [{ type: 'text', text: '停下不要继续' }] })
+    expect(resumeSignal.aborted).toBe(true)
+    release()
+    await service.whenContactTurnSettled(sent.messageID)
+    const text = service.contactMessages(assistant.id).messages.map(m => m.text)
+    expect(text).toContain('stopped')
+    expect(text).not.toContain('late retry')
+    expect(service.snapshot().assistants[0].working).toBe(false)
+    service.close()
+  })
+
+  it.each(['session.error', 'message.updated'])('user interruption via %s cancels the watch without an automatic continuation', async (type) => {
+    const directory = root()
+    const runContactTurn = vi.fn(async () => ({ text: 'must not resume', bubbles: ['must not resume'] }))
+    const service = setup(directory, {}, { runContactTurn })
+    const assistant = service.createAssistant(assistantInput)
+    service.appendContactCard(assistant.id, { cardType: 'session', sessionID: 'ses_cancel', directory, status: 'busy' })
+    const error = { name: 'MessageAbortedError', data: { message: 'Aborted by user' } }
+    service.processEvent({ type, properties: type === 'message.updated'
+      ? { info: { id: 'msg_abort', role: 'assistant', sessionID: 'ses_cancel', error } }
+      : { sessionID: 'ses_cancel', error } })
+    service.processEvent({ type: 'session.idle', properties: { sessionID: 'ses_cancel' } })
+    service.processEvent({ type: 'session.status', properties: { sessionID: 'ses_cancel', status: { type: 'busy' } } })
+    service.processEvent({ type: 'session.error', properties: { sessionID: 'ses_cancel', error: { name: 'UnknownError' } } })
+    await new Promise(setImmediate)
+    expect(runContactTurn).not.toHaveBeenCalled()
+    expect(service.contactMessages(assistant.id).messages.flatMap(m => m.parts).find(p => p.type === 'card').status).toBe('cancelled')
+    expect(service.snapshot().assistants[0].assignedSessionIDs).toEqual([])
+    service.close()
+    const restarted = setup(directory, {}, { runContactTurn })
+    restarted.processEvent({ type: 'session.idle', properties: { sessionID: 'ses_cancel' } })
+    await new Promise(setImmediate)
+    expect(runContactTurn).not.toHaveBeenCalled()
+    restarted.close()
+  })
+
+  it('reconciliation recognizes an interrupted worker instead of resuming its error', async () => {
+    const directory = root()
+    const runContactTurn = vi.fn(async () => ({ text: 'unexpected', bubbles: ['unexpected'] }))
+    const service = setup(directory, {
+      get: async () => ({ data: { status: { type: 'idle' } } }),
+      messages: async () => ({ data: [{ info: { role: 'assistant', error: { name: 'MessageAbortedError' }, time: { completed: 1 } } }] }),
+    }, { runContactTurn })
+    const assistant = service.createAssistant(assistantInput)
+    service.appendContactCard(assistant.id, { cardType: 'session', sessionID: 'ses_cancel', directory, status: 'busy' })
+    await service.reconcile()
+    await new Promise(setImmediate)
+    expect(runContactTurn).not.toHaveBeenCalled()
+    expect(service.contactMessages(assistant.id).messages.flatMap(m => m.parts).find(p => p.type === 'card').status).toBe('cancelled')
+    service.close()
+  })
+
+  it('an interruption revokes a queued continuation even when complete arrived first', async () => {
+    const directory = root()
+    const runContactTurn = vi.fn(async () => ({ text: 'unexpected', bubbles: ['unexpected'] }))
+    const service = setup(directory, {}, { runContactTurn, clock: () => 42 })
+    const assistant = service.createAssistant(assistantInput)
+    service.appendContactCard(assistant.id, { cardType: 'session', sessionID: 'ses_race', directory, status: 'busy' })
+    service.processEvent({ type: 'session.idle', properties: { sessionID: 'ses_race' } })
+    service.processEvent({ type: 'session.error', properties: { sessionID: 'ses_race', error: { name: 'MessageAbortedError' } } })
+    await service.whenContactTurnSettled(assignedSessionResumeMessageID(assistant.id, 'ses_race', 'complete', 42))
+    expect(runContactTurn).not.toHaveBeenCalled()
+    expect(service.snapshot().assistants[0].working).toBe(false)
+    service.close()
+  })
+
   it('migrates a legacy inbox binding once and exposes the v2 DTO', () => {
     const directory = root(); const Database = require('better-sqlite3'); const db = new Database(path.join(directory, 'assistants.sqlite'));
     db.exec("CREATE TABLE assistant_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL); CREATE TABLE assistant (assistant_id TEXT PRIMARY KEY, revision INTEGER NOT NULL, enabled INTEGER NOT NULL, name TEXT NOT NULL, default_prompt TEXT NOT NULL, workspace_path TEXT, skill_roots TEXT NOT NULL, provider_id TEXT NOT NULL, model_id TEXT NOT NULL, agent TEXT, mode TEXT NOT NULL, inbox_topic_id TEXT NOT NULL, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, tombstone_at INTEGER); CREATE TABLE assistant_topic (topic_id TEXT PRIMARY KEY, assistant_id TEXT NOT NULL, title TEXT NOT NULL, session_id TEXT, session_workspace_path TEXT, revision INTEGER NOT NULL, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, tombstone_at INTEGER); CREATE TABLE assistant_turn (turn_id TEXT PRIMARY KEY, topic_id TEXT NOT NULL, ordinal INTEGER NOT NULL, kind TEXT NOT NULL, source TEXT NOT NULL, parts TEXT NOT NULL, assistant_revision INTEGER NOT NULL, session_id TEXT, message_id TEXT, operation_id TEXT, created_at INTEGER NOT NULL); CREATE TABLE assistant_operation (operation_id TEXT PRIMARY KEY, topic_id TEXT, type TEXT, payload_hash TEXT NOT NULL, state TEXT NOT NULL, phase TEXT, response TEXT, error_code TEXT, attempt INTEGER, lease_expires_at INTEGER, session_id TEXT, message_id TEXT, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL)");
@@ -1940,7 +2118,7 @@ describe('assistants service', () => {
     service.close();
   });
 
-  it('reused session falls back to assistant model when session.get fails', async () => {
+  it('reused session fails closed when session.get fails (no blind prompt)', async () => {
     const directory = root();
     const project = path.join(directory, 'app');
     fs.mkdirSync(project, { recursive: true });
@@ -1963,11 +2141,12 @@ describe('assistants service', () => {
           sessionID: 'ses_get_fail',
           projectPath: project,
         });
-        expect(result.details.error).toBeUndefined();
+        expect(result.details.error).toBe('upstream_error');
+        expect(result.content[0].text).toMatch(/session get failed|Failed to load/i);
         return {
           text: result.content[0].text,
           bubbles: [result.content[0].text],
-          cards: result.details.card ? [result.details.card] : [],
+          cards: [],
         };
       },
     });
@@ -1977,10 +2156,7 @@ describe('assistants service', () => {
       parts: [{ type: 'text', text: '继续' }],
     });
     expect(sent.settled.status).toBe('complete');
-    expect(prompts).toEqual([expect.objectContaining({
-      sessionID: 'ses_get_fail',
-      model: { providerID: 'p', modelID: 'm' },
-    })]);
+    expect(prompts).toEqual([]);
     service.close();
   });
 
@@ -2025,6 +2201,232 @@ describe('assistants service', () => {
       model: { providerID: 'openai', modelID: 'gpt-4o' },
     })]);
     service.close();
+  });
+
+  it('watch_session baselines terminal idle without resume, and busy watch settles once', async () => {
+    const directory = root();
+    const project = path.join(directory, 'app');
+    fs.mkdirSync(project, { recursive: true });
+    const idleResumes = [];
+    const prompts = [];
+    const idleService = setup(directory, {
+      create: async () => ({ data: { id: 'ses_no' } }),
+      get: async (input) => ({
+        data: {
+          id: input.sessionID,
+          directory: project,
+          title: 'Done work',
+          status: { type: 'idle' },
+          time: { completed: 10 },
+        },
+      }),
+      messages: async () => ({
+        data: [{ info: { role: 'assistant', time: { completed: 10 } } }],
+      }),
+      promptAsync: async (input) => {
+        prompts.push(input);
+        return { response: { status: 204 } };
+      },
+    }, {
+      runContactTurn: async ({ tools, userText }) => {
+        if (typeof userText === 'string' && userText.includes('Internal assigned-session resume')) {
+          idleResumes.push(userText);
+          return { text: '已完成', bubbles: ['已完成'], cards: [] };
+        }
+        const watch = tools.find((tool) => tool.name === 'watch_session');
+        const result = await watch.execute('call_w', { sessionID: 'ses_watch_idle' });
+        expect(result.terminate).toBe(true);
+        expect(result.details.watched.status).toBe('complete');
+        expect(prompts).toEqual([]);
+        return {
+          text: '在听',
+          bubbles: ['在听'],
+          cards: result.details.card ? [result.details.card] : [],
+        };
+      },
+    });
+    const idleAssistant = idleService.createAssistant(assistantInput);
+    await settleSend(idleService, idleAssistant.id, {
+      messageID: 'client_watch_idle',
+      parts: [{ type: 'text', text: '监听这个会话' }],
+    });
+    const page = idleService.contactMessages(idleAssistant.id);
+    const card = page.messages.flatMap((message) => message.parts || []).find((part) => part.type === 'card');
+    expect(card).toMatchObject({
+      cardType: 'session',
+      sessionID: 'ses_watch_idle',
+      status: 'complete',
+      directory: fs.realpathSync(project),
+    });
+    expect(idleService.snapshot().assistants[0].assignedSessionIDs).toEqual([]);
+    // Same terminal baseline again must not schedule a false resume.
+    expect(idleService.reportAssignedSessionSettle('ses_watch_idle', 'complete')).toBe(false);
+    expect(idleResumes).toEqual([]);
+    idleService.close();
+
+    // Watching busy then settling still resumes once (fixed clock → stable resume id).
+    let time = 12_000;
+    const busyResumes = [];
+    const busyService = setup(directory, {
+      get: async (input) => ({
+        data: { id: input.sessionID, directory: project, title: 'Busy', status: { type: 'busy' } },
+      }),
+      messages: async () => ({ data: [] }),
+    }, {
+      clock: () => time,
+      runContactTurn: async ({ tools, userText }) => {
+        if (typeof userText === 'string' && userText.includes('Internal assigned-session resume')) {
+          busyResumes.push(userText);
+          return { text: '好了', bubbles: ['好了'], cards: [] };
+        }
+        const watch = tools.find((tool) => tool.name === 'watch_session');
+        const result = await watch.execute('call_w', { sessionID: 'ses_watch_busy' });
+        expect(result.details.watched.status).toBe('busy');
+        return {
+          text: '盯着',
+          bubbles: ['盯着'],
+          cards: result.details.card ? [result.details.card] : [],
+        };
+      },
+    });
+    const busyAssistant = busyService.createAssistant({ name: 'B', providerID: 'p', modelID: 'm' });
+    await settleSend(busyService, busyAssistant.id, {
+      messageID: 'client_watch_busy',
+      parts: [{ type: 'text', text: '监听' }],
+    });
+    expect(busyService.snapshot().assistants[0].assignedSessionIDs).toEqual(['ses_watch_busy']);
+    expect(busyService.reportAssignedSessionSettle('ses_watch_busy', 'complete')).toBe(true);
+    await busyService.whenContactTurnSettled(
+      assignedSessionResumeMessageID(busyAssistant.id, 'ses_watch_busy', 'complete', 12_000),
+    );
+    expect(busyResumes).toHaveLength(1);
+    expect(busyResumes[0]).toContain('ses_watch_busy');
+    expect(busyService.snapshot().assistants[0].assignedSessionIDs).toEqual([]);
+    busyService.close();
+  });
+
+  it('stop_session calls real session.abort and surfaces abort failures', async () => {
+    const directory = root();
+    const project = path.join(directory, 'app');
+    fs.mkdirSync(project, { recursive: true });
+    const aborts = [];
+    const service = setup(directory, {
+      get: async (input) => ({
+        data: { id: input.sessionID, directory: project, title: 'Running', status: { type: 'busy' } },
+      }),
+      abort: async (input) => {
+        aborts.push(input);
+        return { data: true };
+      },
+    }, {
+      runContactTurn: async ({ tools }) => {
+        const stop = tools.find((tool) => tool.name === 'stop_session');
+        const result = await stop.execute('call_s', { sessionID: 'ses_stop' });
+        expect(result.details.error).toBeUndefined();
+        expect(result.details.stopped).toMatchObject({
+          sessionID: 'ses_stop',
+          aborted: true,
+          directory: fs.realpathSync(project),
+        });
+        expect(result.terminate).toBe(true);
+        return {
+          text: '已停下',
+          bubbles: ['已停下'],
+          cards: [],
+        };
+      },
+    });
+    const assistant = service.createAssistant(assistantInput);
+    await settleSend(service, assistant.id, {
+      messageID: 'client_stop_ok',
+      parts: [{ type: 'text', text: '停止这个会话' }],
+    });
+    expect(aborts).toEqual([expect.objectContaining({
+      sessionID: 'ses_stop',
+      directory: fs.realpathSync(project),
+    })]);
+    service.close();
+
+    const failAborts = [];
+    const failService = setup(directory, {
+      get: async (input) => ({
+        data: { id: input.sessionID, directory: project, title: 'Running' },
+      }),
+      abort: async (input) => {
+        failAborts.push(input);
+        return { error: { message: 'abort refused by upstream' } };
+      },
+    }, {
+      runContactTurn: async ({ tools }) => {
+        const stop = tools.find((tool) => tool.name === 'stop_session');
+        const result = await stop.execute('call_s', { sessionID: 'ses_stop_fail' });
+        expect(result.details.error).toBe('upstream_error');
+        expect(result.content[0].text).toContain('abort refused by upstream');
+        return {
+          text: result.content[0].text,
+          bubbles: [result.content[0].text],
+          cards: [],
+        };
+      },
+    });
+    const failAssistant = failService.createAssistant(assistantInput);
+    await settleSend(failService, failAssistant.id, {
+      messageID: 'client_stop_fail',
+      parts: [{ type: 'text', text: '停止会话' }],
+    });
+    expect(failAborts).toHaveLength(1);
+    failService.close();
+  });
+
+  it('watch/stop/assign-reuse reject unregistered session directories', async () => {
+    const directory = root();
+    const project = path.join(directory, 'app');
+    const outside = fs.mkdtempSync(path.join(os.tmpdir(), 'assistants-out-'));
+    fs.mkdirSync(project, { recursive: true });
+    const service = createAssistantsService({
+      dbPath: path.join(directory, 'assistants-out.sqlite'),
+      dataDir: directory,
+      getAllowedRoots: () => [project],
+      buildOpenCodeUrl: () => 'http://127.0.0.1:1',
+      getOpenCodeAuthHeaders: () => ({}),
+      clientFactory: () => ({
+        session: {
+          create: async () => ({ data: { id: 'x' } }),
+          get: async (input) => ({
+            data: { id: input.sessionID, directory: outside, title: 'Outside' },
+          }),
+          abort: async () => ({ data: true }),
+          promptAsync: async () => ({ response: { status: 204 } }),
+          update: async () => ({ data: {} }),
+          delete: async () => ({ data: true }),
+          messages: async () => ({ data: [] }),
+        },
+      }),
+      runContactTurn: async ({ tools }) => {
+        const watch = tools.find((tool) => tool.name === 'watch_session');
+        const watched = await watch.execute('call_w', { sessionID: 'ses_out' });
+        expect(watched.details.error).toBe('workspace_forbidden');
+        const stop = tools.find((tool) => tool.name === 'stop_session');
+        const stopped = await stop.execute('call_s', { sessionID: 'ses_out' });
+        expect(stopped.details.error).toBe('workspace_forbidden');
+        const assign = tools.find((tool) => tool.name === 'assign_session');
+        const assigned = await assign.execute('call_a', {
+          prompt: 'continue',
+          sessionID: 'ses_out',
+        });
+        expect(assigned.details.error).toBe('workspace_forbidden');
+        return { text: '拒绝', bubbles: ['拒绝'], cards: [] };
+      },
+    });
+    const snap = service.snapshot();
+    if (!snap.enabled) service.setEnabled({ enabled: true, expectedRevision: snap.revision });
+    const assistant = service.createAssistant(assistantInput);
+    await settleSend(service, assistant.id, {
+      messageID: 'client_out_scope',
+      parts: [{ type: 'text', text: '监听' }],
+    });
+    service.close();
+    fs.rmSync(outside, { recursive: true, force: true });
   });
 
   it('creates another assistant from create_assistant and persists the assistant card', async () => {
@@ -3579,3 +3981,44 @@ describe('contact current-instance model context', () => {
   });
 });
 
+describe('contact continuity and stop ownership', () => {
+  it('supersedes future watch notifications durably without falsifying card state and allows explicit rearm', async () => {
+    const directory = root();
+    let calls = 0;
+    const options = { runContactTurn: async () => { calls += 1; return { text: '收到', bubbles: ['收到'] }; } };
+    let service = setup(directory, {}, options);
+    const assistant = service.createAssistant(assistantInput);
+    service.appendContactCard(assistant.id, { cardType: 'session', sessionID: 'ses_later', directory, title: 'Work', status: 'busy' });
+    await settleSend(service, assistant.id, { messageID: 'stop_later', parts: [{ type: 'text', text: '够了，不要继续' }] });
+    service.close();
+    service = setup(directory, {}, options);
+    service.processEvent({ type: 'session.idle', properties: { sessionID: 'ses_later' } });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(calls).toBe(1);
+    expect(service.contactMessages(assistant.id).messages.flatMap((m) => m.parts).find((p) => p.type === 'card').status).toBe('complete');
+    service.appendContactCard(assistant.id, { cardType: 'session', sessionID: 'ses_later', directory, title: 'Work', status: 'busy' });
+    service.processEvent({ type: 'session.idle', properties: { sessionID: 'ses_later' } });
+    await vi.waitFor(() => expect(calls).toBe(2));
+    service.close();
+  });
+
+  it('aborts the actual contact turn without a legacy binding and drops late output', async () => {
+    let release;
+    let started;
+    const ready = new Promise((resolve) => { started = resolve; });
+    const service = setup(root(), {}, { runContactTurn: async ({ signal }) => {
+      started(signal);
+      await new Promise((resolve) => { release = resolve; });
+      return { text: 'late result', bubbles: ['late result'] };
+    } });
+    const assistant = service.createAssistant(assistantInput);
+    const sent = await service.send(assistant.id, { messageID: 'abort_contact', parts: [{ type: 'text', text: 'work' }] });
+    const signal = await ready;
+    await service.abort(assistant.id, sent.binding);
+    expect(signal.aborted).toBe(true);
+    release();
+    expect(await service.whenContactTurnSettled(sent.messageID)).toMatchObject({ status: 'cancelled' });
+    expect(service.contactMessages(assistant.id).messages.map((m) => m.text)).not.toContain('late result');
+    service.close();
+  });
+});

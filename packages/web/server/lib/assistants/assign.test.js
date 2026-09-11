@@ -9,9 +9,11 @@ import {
   attachmentScopeKey,
   buildAssignParts,
   extractAssignSessionModel,
+  extractSessionDirectory,
   hasAssignImageParts,
   isAmbiguousPromptFailure,
   isManagedAssistantWorkspace,
+  mapSessionToWatchStatus,
   normalizeAssignSessionModel,
   requireProvidedString,
   resolveAssignDirectory,
@@ -225,6 +227,25 @@ describe('requireProvidedString / resolveAssignWorkerModel', () => {
 });
 
 describe('resolveAssignWorkerVariant', () => {
+  it('does not submit or delete a session whose create completes after cancellation', async () => {
+    const directory = root();
+    const controller = new AbortController();
+    const promptExisting = vi.fn();
+    const deleteSession = vi.fn();
+    const createSession = vi.fn(async () => {
+      controller.abort();
+      return { data: { id: 'ses_created' } };
+    });
+    await expect(assignSession({
+      prompt: 'Fix', directory, assistant: { providerID: 'p', modelID: 'm' },
+      allowedRoots: [directory], managedWorkspaceRoot: path.join(directory, 'assistant-workspaces'),
+      createSession, promptExisting, deleteSession, signal: controller.signal,
+    })).rejects.toMatchObject({ name: 'AbortError' });
+    expect(createSession).toHaveBeenCalledTimes(1);
+    expect(promptExisting).not.toHaveBeenCalled();
+    expect(deleteSession).not.toHaveBeenCalled();
+  });
+
   it('reuses assistant variant only for same/default model; drops it cross-model', () => {
     expect(resolveAssignWorkerVariant({
       source: 'assistant',
@@ -541,5 +562,47 @@ describe('assignSession', () => {
     expect(createSession).not.toHaveBeenCalled();
     expect(deleteSession).not.toHaveBeenCalled();
     expect(promptExisting).toHaveBeenCalledWith(expect.objectContaining({ sessionID: 'ses_existing' }));
+  });
+
+  it('mapSessionToWatchStatus baselines terminal idle without inventing busy', () => {
+    expect(mapSessionToWatchStatus({
+      session: { id: 'ses_1', status: { type: 'idle' }, time: { completed: 1 } },
+      messages: [{ info: { role: 'assistant', time: { completed: 1 } } }],
+    })).toBe('complete');
+    expect(mapSessionToWatchStatus({
+      session: { id: 'ses_2', status: { type: 'busy' } },
+    })).toBe('busy');
+    expect(mapSessionToWatchStatus({
+      session: { id: 'ses_3', error: { message: 'boom' } },
+    })).toBe('error');
+    expect(mapSessionToWatchStatus({ missing: true })).toBe('complete');
+    expect(extractSessionDirectory({
+      directory: '/repo/app',
+      project: { worktree: '/other' },
+    })).toBe('/repo/app');
+    expect(extractSessionDirectory({
+      project: { worktree: '/repo/wt' },
+    })).toBe('/repo/wt');
+  });
+
+  it('resolveAssignDirectory accepts a realpath candidate against non-realpath allowed roots', () => {
+    const directory = root();
+    const project = path.join(directory, 'app');
+    fs.mkdirSync(project, { recursive: true });
+    const realProject = fs.realpathSync(project);
+    // First resolve returns realpath; second call with the same realpath must still pass.
+    const first = resolveAssignDirectory({
+      directory: project,
+      allowedRoots: [directory],
+      managedWorkspaceRoot: path.join(directory, 'assistant-workspaces'),
+    });
+    expect(first).toBe(realProject);
+    const second = resolveAssignDirectory({
+      directory: realProject,
+      projectPath: realProject,
+      allowedRoots: [directory],
+      managedWorkspaceRoot: path.join(directory, 'assistant-workspaces'),
+    });
+    expect(second).toBe(realProject);
   });
 });

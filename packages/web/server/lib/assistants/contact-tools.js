@@ -23,6 +23,11 @@ const typeboxObject = (properties) => {
 };
 
 export const ASSIGN_SESSION_TOOL_NAME = 'assign_session';
+export const WATCH_SESSION_TOOL_NAME = 'watch_session';
+export const STOP_SESSION_TOOL_NAME = 'stop_session';
+export const STEER_SESSION_TOOL_NAME = 'steer_session';
+export const ARCHIVE_SESSION_TOOL_NAME = 'archive_session';
+export const DELETE_SESSION_TOOL_NAME = 'delete_session';
 export const CREATE_ASSISTANT_TOOL_NAME = 'create_assistant';
 export const SCHEDULE_TASK_TOOL_NAME = 'schedule_task';
 export const MESSAGE_ASSISTANT_TOOL_NAME = 'message_assistant';
@@ -34,6 +39,8 @@ export const GET_ASSISTANT_SETTINGS_TOOL_NAME = 'get_assistant_settings';
 export const UPDATE_DEFAULT_PROMPT_TOOL_NAME = 'update_default_prompt';
 const CONTACT_TOOL_FENCE = 'openchamber-tool';
 export const ASSIGNED_SESSION_FALLBACK_BUBBLE = 'Opened a coding session.';
+export const WATCHED_SESSION_FALLBACK_BUBBLE = 'Watching that coding session.';
+export const STOPPED_SESSION_FALLBACK_BUBBLE = '已停止该会话。';
 /** Same-turn duplicate assign (different args after a success, or parallel mismatch). */
 export const ASSIGN_DUPLICATE_TURN_MESSAGE = 'This contact turn already opened a coding session. Do not assign again.';
 /** Clear-memory confirm: transcript rows stay; only the LLM window resets. */
@@ -72,13 +79,14 @@ export function normalizeAssignRequestKey(params = {}) {
 
 const DENIED_CODING_TOOLS = new Set(['glob', 'grep', 'shell', 'find', 'ls', 'powershell']);
 
-const FENCE = new RegExp(`\`\`\`${CONTACT_TOOL_FENCE}\\s*([\\s\\S]*?)\`\`\``, 'u');
 export const MISSED_FENCE_RETRY_USER_TEXT = 'emit the fence now, do not claim success.';
 export const MISSED_TOOL_FAILURE_BUBBLE = 'I could not complete that. No tool ran, so nothing was created.';
 
 const CREATE_ASSISTANT_INTENT = /建助理|新建[^。\n!]{0,24}助理|创建[^。\n!]{0,24}助理|加一个助理|create (?:an |a new )?assistant|new assistant/iu;
 const SCHEDULE_TASK_INTENT = /排定时任务|排个?定时任务|定时任务|schedule (?:a )?(?:daily )?(?:task|ping)|scheduled task|排个?(?:每日)?(?:任务|ping)/iu;
-const ASSIGN_SESSION_INTENT = /(?:建|开)(?:一个|个)?(?:新)?(?:编码\s*)?(?:session|会话)|open (?:a )?(?:coding )?session|assign_session/giu;
+const ASSIGN_SESSION_INTENT = /(?:建|开)(?:一个|个)?(?:新)?(?:编码\s*)?(?:session|会话)|继续(?:这个|该|那个)?(?:编码\s*)?(?:session|会话)|open (?:a )?(?:coding )?session|continue (?:the |this |that )?(?:coding )?session|assign_session/giu;
+const WATCH_SESSION_INTENT = /监听(?:这个|该|那个)?(?:编码\s*)?(?:session|会话)|关注(?:这个|该|那个)?(?:编码\s*)?(?:session|会话)|watch (?:the |this |that )?(?:coding )?session|monitor (?:the |this |that )?(?:coding )?session|watch_session/giu;
+const STOP_SESSION_INTENT = /停止(?:这个|该|那个)?(?:编码\s*)?(?:session|会话)|中止(?:这个|该|那个)?(?:编码\s*)?(?:session|会话)|打断(?:这个|该|那个)?(?:编码\s*)?(?:session|会话)|stop (?:the |this |that )?(?:coding )?session|abort (?:the |this |that )?(?:coding )?session|stop_session/giu;
 const MESSAGE_ASSISTANT_INTENT = /给[^。\n]{1,40}说(?:一声)?|跟[^。\n]{1,24}说(?:一声)?|告诉(?!我)[^。\n]{1,40}|说一声|message (?:the )?(?:assistant|peer)|(?:tell|message)\s+[A-Za-z0-9._-]+|send (?:a )?message to/iu;
 // Explicit wipe only — must stay stricter than the safe clear-memory intent.
 // `g` so hasClearChatHistoryIntent can walk matches and honor nearby negation.
@@ -116,6 +124,15 @@ const assignParameters = typeboxObject({
   modelID: typeboxOptional(typeboxString('Optional worker OpenCode model ID from the connected catalog. Does not change this contact\'s model. Illegal/blank values fail closed.')),
   model: typeboxOptional(typeboxString('Optional worker provider/model string such as provider/model-id from the connected catalog. Must not conflict with providerID/modelID. Does not change this contact\'s model.')),
   variant: typeboxOptional(typeboxString('Optional worker variant for this assign only. Cross-model assign never reuses this contact\'s variant.')),
+});
+
+const watchSessionParameters = typeboxObject({
+  sessionID: typeboxString('Existing OpenCode/OpenChamber session to watch only (no new prompt). Prefer ids from list_sessions or a user @session reference.'),
+  title: typeboxOptional(typeboxString('Optional card title override. Server still resolves directory from authoritative session metadata.')),
+});
+
+const stopSessionParameters = typeboxObject({
+  sessionID: typeboxString('Existing OpenCode/OpenChamber session to abort. Prefer ids from list_sessions, a session card, or a user @session reference.'),
 });
 
 const createAssistantParameters = typeboxObject({
@@ -352,17 +369,22 @@ const extractJsonObjectAt = (text, start) => {
   return null;
 };
 
-const findEmbeddedToolCall = (text, allowedNames) => {
-  for (let index = 0; index < text.length; index += 1) {
-    if (text[index] !== '{') continue;
-    const snippet = extractJsonObjectAt(text, index);
-    if (!snippet) continue;
-    const toolCall = parseToolPayload(snippet, allowedNames);
-    if (!toolCall) continue;
-    const chatText = stripContactToolFences(`${text.slice(0, index)}${text.slice(index + snippet.length)}`.trim());
-    return { chatText, toolCall };
+const findToolFenceEnd = (text, start) => {
+  let inString = false;
+  let escaped = false;
+  for (let index = start; index < text.length; index += 1) {
+    const character = text[index];
+    if (inString) {
+      if (escaped) escaped = false;
+      else if (character === '\\') escaped = true;
+      else if (character === '"') inString = false;
+    } else if (character === '"') {
+      inString = true;
+    } else if (text.startsWith('```', index)) {
+      return index;
+    }
   }
-  return null;
+  return -1;
 };
 
 export function stripContactToolFences(text) {
@@ -377,20 +399,67 @@ export function parseContactToolCalls(text, allowedNames = []) {
       .map((name) => name.trim()),
   );
   const raw = typeof text === 'string' ? text : '';
-  const chatText = stripContactToolFences(raw);
-  const fence = raw.match(FENCE);
-  if (fence?.[1]) {
-    const toolCall = parseToolPayload(fence[1], allowed);
-    if (toolCall) return { chatText, toolCall };
+  const toolCalls = [];
+  const visible = [];
+  let visibleStart = 0;
+  for (let index = 0; index < raw.length;) {
+    if (raw.startsWith('```', index)) {
+      const header = raw.slice(index + 3).match(/^([^\r\n`]*)/u)?.[0] || '';
+      const explicit = raw.startsWith(CONTACT_TOOL_FENCE, index + 3)
+        && /[\s{]|^$/u.test(raw[index + 3 + CONTACT_TOOL_FENCE.length] || '');
+      const genericJson = header.trim() === 'json' || header.trim() === '' || header.trimStart().startsWith('{');
+      const payloadStart = index + 3 + (explicit
+        ? CONTACT_TOOL_FENCE.length
+        : header.trimStart().startsWith('{') ? 0 : header.length);
+      const end = explicit || genericJson
+        ? findToolFenceEnd(raw, payloadStart)
+        : raw.indexOf('```', payloadStart);
+      if (explicit) {
+        if (end < 0) {
+          return { chatText: '', toolCalls: [], protocolError: 'Unclosed openchamber-tool fence' };
+        }
+        const toolCall = parseToolPayload(raw.slice(payloadStart, end).trim(), allowed);
+        if (!toolCall) {
+          return { chatText: '', toolCalls: [], protocolError: 'Invalid or unavailable tool in openchamber-tool fence' };
+        }
+        toolCalls.push(toolCall);
+        visible.push(raw.slice(visibleStart, index));
+        visibleStart = end + 3;
+      }
+      if (!explicit && genericJson && end >= 0) {
+        const toolCall = parseToolPayload(raw.slice(payloadStart, end).trim(), allowed);
+        if (toolCall) {
+          toolCalls.push(toolCall);
+          visible.push(raw.slice(visibleStart, index));
+          visibleStart = end + 3;
+        }
+      }
+      // Other fenced prose/examples and final declarations are not tool invocations.
+      index = end < 0 ? raw.length : end + 3;
+      continue;
+    }
+    if (raw[index] !== '{') {
+      index += 1;
+      continue;
+    }
+    const snippet = extractJsonObjectAt(raw, index);
+    if (!snippet) {
+      // Do not reinterpret a nested object from malformed outer JSON as an
+      // operation, or repeatedly scan the same unfinished suffix.
+      return { chatText: '', toolCalls: [], protocolError: 'Unclosed JSON object in tool response' };
+    }
+    const toolCall = parseToolPayload(snippet, allowed);
+    if (toolCall) {
+      toolCalls.push(toolCall);
+      visible.push(raw.slice(visibleStart, index));
+      visibleStart = index + snippet.length;
+    }
+    // Consume the whole outer object even if it is ordinary JSON. Its nested
+    // arguments or example objects must never become additional operations.
+    index += snippet.length;
   }
-  const trimmed = raw.trim();
-  if (trimmed.startsWith('{') && trimmed.endsWith('}')) {
-    const toolCall = parseToolPayload(trimmed, allowed);
-    if (toolCall) return { chatText: '', toolCall };
-  }
-  const embedded = findEmbeddedToolCall(raw, allowed);
-  if (embedded) return embedded;
-  return { chatText, toolCall: null };
+  visible.push(raw.slice(visibleStart));
+  return { chatText: visible.join('').trim(), toolCalls };
 }
 
 const isNegatedAt = (text, index) => INTENT_NEGATION.test(text.slice(Math.max(0, index - 12), index));
@@ -406,6 +475,8 @@ const hasIntentMatch = (regex, text) => {
 };
 
 const hasAssignSessionIntent = (text) => hasIntentMatch(ASSIGN_SESSION_INTENT, text);
+const hasWatchSessionIntent = (text) => hasIntentMatch(WATCH_SESSION_INTENT, text);
+const hasStopSessionIntent = (text) => hasIntentMatch(STOP_SESSION_INTENT, text);
 
 /**
  * True when userText has an explicit, non-negated transcript-wipe phrase.
@@ -453,7 +524,18 @@ export function detectRequestedContactTools(userText, allowedNames = []) {
   if (allowed.has(SCHEDULE_TASK_TOOL_NAME) && SCHEDULE_TASK_INTENT.test(text)) {
     requested.push(SCHEDULE_TASK_TOOL_NAME);
   }
-  if (allowed.has(ASSIGN_SESSION_TOOL_NAME) && hasAssignSessionIntent(text)) {
+  // Prefer explicit stop/watch over generic continue/assign when both could match.
+  if (allowed.has(DELETE_SESSION_TOOL_NAME) && /删除.*(?:session|会话|对话)|delete.*session|delete_session/iu.test(text)) {
+    requested.push(DELETE_SESSION_TOOL_NAME);
+  } else if (allowed.has(ARCHIVE_SESSION_TOOL_NAME) && /归档.*(?:session|会话|对话)|archive.*session|archive_session/iu.test(text)) {
+    requested.push(ARCHIVE_SESSION_TOOL_NAME);
+  } else if (allowed.has(STEER_SESSION_TOOL_NAME) && /插话|steer_session|steer.*session/iu.test(text)) {
+    requested.push(STEER_SESSION_TOOL_NAME);
+  } else if (allowed.has(STOP_SESSION_TOOL_NAME) && (hasStopSessionIntent(text) || /(?:停止|取消|打断|中止).*?(?:session|会话)|(?:stop|cancel|interrupt).*session/iu.test(text))) {
+    requested.push(STOP_SESSION_TOOL_NAME);
+  } else if (allowed.has(WATCH_SESSION_TOOL_NAME) && hasWatchSessionIntent(text)) {
+    requested.push(WATCH_SESSION_TOOL_NAME);
+  } else if (allowed.has(ASSIGN_SESSION_TOOL_NAME) && hasAssignSessionIntent(text)) {
     requested.push(ASSIGN_SESSION_TOOL_NAME);
   }
   if (allowed.has(MESSAGE_ASSISTANT_TOOL_NAME) && MESSAGE_ASSISTANT_INTENT.test(text)) {
@@ -603,10 +685,12 @@ export function formatContactToolsPrompt(tools) {
     'When they want to view assistant settings / default prompt / system persona (查看助手设定 / 默认提示词 / 系统提示词 / 人设), call get_assistant_settings. Omit `to` for this contact; pass to="OpenCode 配置助手" (or toAssistantID) to read another live assistant.',
     'When they want to change a default prompt / system persona (改默认提示词 / 设置人设 / 改某助手的默认提示词), call update_default_prompt. That writes Assistant settings and persists — it is not a one-shot message and not new_conversation. Omit `to` for this contact; pass to/name/toAssistantID to update another live assistant without changing this one.',
     'When they want another assistant (建助理 / create an assistant), call create_assistant.',
-    'When they want a separate Chat coding session (建会话 / open a session / 开个新会话), call assign_session after matching the project. File and shell work in this assistant\'s working directory uses read, write, edit, and bash — not assign_session.',
+    'When they want a separate Chat coding session (建会话 / open a session / 开个新会话), call assign_session after matching the project. To continue an existing chat, call assign_session with that sessionID and a coding prompt. File and shell work in this assistant\'s working directory uses read, write, edit, and bash — not assign_session.',
+    'When they explicitly want to only listen to an existing coding session without sending a prompt (监听会话 / watch session / monitor session), call watch_session with sessionID. A plain @session:id reference alone is context, not a watch request — do not call watch_session unless they asked to listen/watch/monitor.',
+    'When they want to stop/abort a running coding session (停止会话 / stop session), call stop_session with sessionID — that calls real OpenCode session.abort.',
     'When they want a scheduled task (排定时任务 / schedule daily ping), call schedule_task.',
     'When they want to tell another assistant (给 PeerQA 说一声 / message PeerQA), call message_assistant.',
-    `Call exactly one tool per reply by emitting one fenced JSON block:`,
+    `Call exactly one OpenChamber operation tool per reply; coding tools may be batched as described by the workspace protocol.`,
     `\`\`\`${CONTACT_TOOL_FENCE}`,
     `{"name":"${NEW_CONVERSATION_TOOL_NAME}","arguments":{}}`,
     '```',
@@ -637,23 +721,32 @@ export function formatContactToolsPrompt(tools) {
     `\`\`\`${CONTACT_TOOL_FENCE}`,
     `{"name":"${ASSIGN_SESSION_TOOL_NAME}","arguments":{"prompt":"...","projectPath":"...","model":"provider/model-id"}}`,
     '```',
-    'If the user asked for more than one of these, do them in that order across turns: new_conversation or clear_chat_history, then list_projects, then list_sessions, then get_assistant_settings or update_default_prompt, then create_assistant, then schedule_task, then message_assistant, then assign_session.',
-    'Prerequisite lookups (list_projects / list_sessions) may run before assign_session in the same turn. After a successful assign_session the turn ends — never call assign_session again, and do not keep looping tools.',
+    `\`\`\`${CONTACT_TOOL_FENCE}`,
+    `{"name":"${WATCH_SESSION_TOOL_NAME}","arguments":{"sessionID":"ses_example"}}`,
+    '```',
+    `\`\`\`${CONTACT_TOOL_FENCE}`,
+    `{"name":"${STOP_SESSION_TOOL_NAME}","arguments":{"sessionID":"ses_example"}}`,
+    '```',
+    'If the user asked for more than one of these, do them in that order across turns: new_conversation or clear_chat_history, then list_projects, then list_sessions, then get_assistant_settings or update_default_prompt, then create_assistant, then schedule_task, then message_assistant, then watch_session or stop_session, then assign_session.',
+    'Prerequisite lookups (list_projects / list_sessions) may run before assign_session / watch_session / stop_session in the same turn. After a successful assign_session or watch_session the turn ends — never call them again in that turn, and do not keep looping tools.',
     'new_conversation advances this contact\'s LLM context boundary only. Stored messages and watches remain. It never calls session/new or createNew.',
     'clear_chat_history deletes this contact\'s stored messages, parts, and watches. Use only for explicit wipe intent.',
     'You already receive the registered project catalog each turn. Prefer matching label/path yourself; list_projects refreshes or filters. Never claim you cannot see projects; never ask for a raw path when a name matches.',
     'list_sessions searches the OpenChamber session index for existing chats in a project. A failure is not an empty list — surface the error.',
     'get_assistant_settings reads live Assistant settings from storage (id, name, defaultPrompt, provider/model, agent, variant, mode, workspacePath, enabled). Omit to/name/toAssistantID for this contact; pass them to read another live assistant. Use it before claiming what a default prompt is.',
     'update_default_prompt persists defaultPrompt on the target assistant row (empty string clears). Omit to/name/toAssistantID for this contact; pass them to update another live assistant — that does not overwrite this contact. It is Assistant settings — not a one-shot user message and not new_conversation. Takes effect on later turns of that contact only. After success, confirm in one short bubble.',
-    'assign_session opens a real OpenChamber/OpenCode session on a registered project (or reuses sessionID). You are not the worker. Optional providerID/modelID/model select the worker only from the connected catalog and never change this contact. Current-turn user attachments are server-forwarded — do not embed base64 or local paths. One successful assign ends this turn.',
+    'assign_session opens a real OpenChamber/OpenCode session on a registered project (or reuses sessionID with a coding prompt). You are not the worker. For reuse, pass sessionID; the server resolves directory from authoritative session metadata — do not invent paths. Optional providerID/modelID/model select the worker only from the connected catalog and never change this contact. Omitting model args on reuse keeps the prior worker model when still connected. Current-turn user attachments are server-forwarded — do not embed base64 or local paths. One successful assign ends this turn.',
+    'watch_session attaches a session card and listens only — no promptAsync. Requires sessionID. Directory/project come from authoritative session metadata, never from a user-supplied path. Baseline status is recorded so an already-finished session is not treated as a new completion. One successful watch ends this turn.',
+    'steer_session sends text into an existing session with delivery=steer, preserving its model. archive_session archives an existing session; delete_session permanently deletes it. Use exact sessionID from history, references or list_sessions; ask if the target is ambiguous. Only delete when the user requested deletion. These operations call real APIs; never claim success from a spoken promise. assign_session creates a new session when sessionID is omitted, or continues an existing session when supplied.',
+    'stop_session calls real OpenCode session.abort for that sessionID and returns the true result. Directory comes from authoritative session metadata. A failure is not a silent success. Do not claim stopped unless the tool returned success.',
     'create_assistant reuses already-connected OpenCode providers (providerID/modelID). Mode is continuous.',
     'schedule_task writes the same payload as PUT /api/projects/:id/scheduled-tasks onto a registered project.',
     'message_assistant is read-only: it inserts into the other contact transcript. It never runs promptAsync or mutates sessions or files. Never assign through a peer message.',
     'A reply without the tool call does nothing — agreeing in Chinese (好的 / 我来创建 / 我去说一声) is not sending.',
-    'When calling a tool that takes a beat (找项目 / 开会话), you may say one short spoken line first (≤40 characters, e.g. 我去找一下), then only the fence. No planning, no tool names, no "let me think".',
-    'Never say 已创建, 已发送, created, scheduled, opened, or sent unless the tool already returned success.',
+    'When calling a tool that takes a beat (找项目 / 开会话 / 监听会话), you may say one short spoken line first (≤40 characters, e.g. 我去找一下), then only the fence. No planning, no tool names, no "let me think".',
+    'Never say 已创建, 已发送, 已停止, created, scheduled, opened, watched, stopped, or sent unless the tool already returned success.',
     'If no registered project exists, tell the user to add one in Settings — do not use assistant-workspaces.',
-    'After a successful tool, confirm in one short bubble. The user sees a contact card, not tool traces. After successful assign_session the session card plus that short confirm is enough — stop.',
+    'After a successful tool, confirm in one short bubble. The user sees a contact card, not tool traces. After successful assign_session or watch_session the session card plus that short confirm is enough — stop.',
     'These are application-owned OpenChamber contact tools (not OpenCode native tools, not MCP, not skill directory entries). Use only the names and argument schemas below:',
     'Available OpenChamber tools:',
     ...list.map((tool) => formatApplicationToolCatalogEntry(tool)).filter(Boolean),
@@ -790,6 +883,11 @@ export function formatAssistantSettingsContent(settings) {
 
 export function createContactTools({
   assignWork,
+  watchSession,
+  stopSession,
+  steerSession,
+  archiveSession,
+  deleteSession,
   createAssistant,
   scheduleTask,
   deliverPeerMessage,
@@ -822,7 +920,8 @@ export function createContactTools({
    */
   let assignTurnGate = null;
 
-  const executeAssignOnce = async (params) => {
+  const executeAssignOnce = async (params, signal) => {
+    signal?.throwIfAborted();
     let request = { ...(params || {}) };
     const key = normalizeAssignRequestKey({
       ...request,
@@ -861,7 +960,9 @@ export function createContactTools({
           ...request,
           fileParts: turnFileParts,
           attachmentScope: turnAttachmentScope,
+          ...(signal ? { signal } : {}),
         });
+        signal?.throwIfAborted();
         const card = createSessionCardPart({
           sessionID: assigned.sessionID,
           directory: assigned.directory,
@@ -1253,18 +1354,118 @@ export function createContactTools({
       description: [
         'Open or reuse a real OpenChamber coding session on a registered project path',
         'and kick the prompt into that session. Optional existing worktree branch or sessionID.',
+        'To continue an existing chat, pass sessionID plus a coding prompt; omit model args to keep the prior worker model.',
+        'When sessionID is set, the server resolves directory from authoritative session metadata (not a user path).',
         'Optional providerID/modelID/model select the worker from the connected catalog only (does not change this contact).',
         'Current-turn user attachments are forwarded by the server automatically.',
         'Successful assign ends this contact turn (terminate). Never codes here. Never uses assistant-workspaces.',
       ].join(' '),
       parameters: assignParameters,
-      execute: async (_toolCallId, params) => {
+      execute: async (_toolCallId, params, signal) => {
         try {
-          return await executeAssignOnce(params || {});
+          return await executeAssignOnce(params || {}, signal);
         } catch (error) {
           return toolFailure(error, 'assign_failed', 'Could not assign a coding session.');
         }
       },
     },
+    {
+      name: WATCH_SESSION_TOOL_NAME,
+      label: 'Watch session',
+      description: [
+        'Watch an existing OpenCode/OpenChamber coding session without sending a prompt.',
+        'Requires sessionID (from list_sessions, a session card, or a user @session reference).',
+        'Server resolves directory/project from authoritative session metadata and records baseline status so an old terminal state is not treated as a new change.',
+        'Emits a session card and reuses the assigned-session watch/report pipeline. Ends this contact turn on success.',
+      ].join(' '),
+      parameters: watchSessionParameters,
+      execute: async (_toolCallId, params, signal) => {
+        try {
+          signal?.throwIfAborted();
+          if (typeof watchSession !== 'function') {
+            throw new AssignError('upstream_error', 'Watching a session is unavailable.');
+          }
+          const sessionID = trim(params?.sessionID, 256);
+          if (!sessionID) {
+            throw new AssignError('validation_error', 'watch_session requires sessionID.');
+          }
+          const watched = await watchSession({
+            sessionID,
+            ...(params?.title !== undefined ? { title: params.title } : {}),
+            ...(signal ? { signal } : {}),
+          });
+          signal?.throwIfAborted();
+          const card = createSessionCardPart({
+            sessionID: watched.sessionID,
+            directory: watched.directory,
+            title: watched.title,
+            status: watched.status || 'busy',
+            branch: watched.branch,
+          });
+          emitCard(card);
+          return {
+            content: [{ type: 'text', text: WATCHED_SESSION_FALLBACK_BUBBLE }],
+            details: { card, watched },
+            terminate: true,
+          };
+        } catch (error) {
+          return toolFailure(error, 'watch_session_failed', 'Could not watch that coding session.');
+        }
+      },
+    },
+    {
+      name: STOP_SESSION_TOOL_NAME,
+      label: 'Stop session',
+      description: [
+        'Abort a running OpenCode/OpenChamber coding session via real session.abort.',
+        'Requires sessionID. Directory is resolved from authoritative session metadata.',
+        'Returns the true abort result — never claim stopped unless this tool succeeds.',
+      ].join(' '),
+      parameters: stopSessionParameters,
+      execute: async (_toolCallId, params, signal) => {
+        try {
+          if (typeof stopSession !== 'function') {
+            throw new AssignError('upstream_error', 'Stopping a session is unavailable.');
+          }
+          const sessionID = trim(params?.sessionID, 256);
+          if (!sessionID) {
+            throw new AssignError('validation_error', 'stop_session requires sessionID.');
+          }
+          const stopped = await stopSession({ sessionID, ...(signal ? { signal } : {}) });
+          return {
+            content: [{ type: 'text', text: STOPPED_SESSION_FALLBACK_BUBBLE }],
+            details: { stopped },
+            // Confirm the successful mutation without another model iteration.
+            terminate: true,
+          };
+        } catch (error) {
+          return toolFailure(error, 'stop_session_failed', 'Could not stop that coding session.');
+        }
+      },
+    },
+    ...[
+      { name: STEER_SESSION_TOOL_NAME, label: 'Steer session', action: steerSession, text: '已向会话发送插话。', description: 'Insert a user instruction into an existing coding session using delivery=steer. Requires sessionID and text; preserves the session model.' },
+      { name: ARCHIVE_SESSION_TOOL_NAME, label: 'Archive session', action: archiveSession, text: '已归档会话。', description: 'Archive the exact existing session requested by the user and stop assistant follow-ups. Requires sessionID.' },
+      { name: DELETE_SESSION_TOOL_NAME, label: 'Delete session', action: deleteSession, text: '已删除会话。', description: 'Permanently delete the exact session only when the user explicitly requests deletion. Requires sessionID.' },
+    ].map(({ name, label, action, text, description }) => ({
+      name, label, description,
+      parameters: typeboxObject({
+        sessionID: typeboxString('Exact existing session ID from history, references or list_sessions. Never guess an ID.'),
+        ...(name === STEER_SESSION_TOOL_NAME ? { text: typeboxString('User instruction to insert into the session.') } : {}),
+      }),
+      execute: async (_toolCallId, params, signal) => {
+        try {
+          if (typeof action !== 'function') throw new AssignError('upstream_error', `${name} is unavailable.`);
+          const sessionID = trim(params?.sessionID, 256);
+          if (!sessionID) throw new AssignError('validation_error', `${name} requires sessionID.`);
+          const instruction = typeof params?.text === 'string' ? params.text.trim() : '';
+          if (name === STEER_SESSION_TOOL_NAME && !instruction) throw new AssignError('validation_error', 'steer_session requires text.');
+          const result = await action({ sessionID, ...(name === STEER_SESSION_TOOL_NAME ? { text: instruction } : {}), ...(signal ? { signal } : {}) });
+          return { content: [{ type: 'text', text }], details: { operation: name, result }, terminate: true };
+        } catch (error) {
+          return toolFailure(error, `${name}_failed`, `Could not perform ${name}.`);
+        }
+      },
+    })),
   ];
 }

@@ -68,30 +68,30 @@ const insert = (db, assistantID, { role, text = '', parts, status = 'complete', 
 
 describe('contact LLM history trim', () => {
   it('documents the budget constants in one place', () => {
-    expect(CONTACT_LLM_MAX_TURNS).toBe(8);
-    expect(CONTACT_LLM_MAX_CHARS).toBe(6_000);
-    expect(CONTACT_LLM_FETCH_LIMIT).toBe(40);
+    expect(CONTACT_LLM_MAX_TURNS).toBe(32);
+    expect(CONTACT_LLM_MAX_CHARS).toBe(48_000);
+    expect(CONTACT_LLM_FETCH_LIMIT).toBe(100);
     expect(CONTACT_LLM_FILE_CHAR_WEIGHT).toBe(80);
   });
 
   it('keeps the newest user+assistant turns and leaves older SQLite rows for the UI', () => {
     const db = openDb();
     const assistantID = 'asst_trim';
-    for (let index = 0; index < 12; index += 1) {
+    for (let index = 0; index < 36; index += 1) {
       insert(db, assistantID, { role: 'user', text: `user-${index}` });
       insert(db, assistantID, { role: 'assistant', text: `assistant-${index}` });
     }
     const history = contactHistoryForLlm(db, assistantID);
     expect(history).toHaveLength(CONTACT_LLM_MAX_TURNS * 2);
     expect(history[0]).toEqual({ role: 'user', content: 'user-4' });
-    expect(history.at(-1)).toEqual({ role: 'assistant', content: 'assistant-11' });
+    expect(history.at(-1)).toEqual({ role: 'assistant', content: 'assistant-35' });
     const page = listContactMessages(db, assistantID, { limit: 100 });
-    expect(page.messages).toHaveLength(24);
+    expect(page.messages).toHaveLength(72);
     expect(page.messages[0].text).toBe('user-0');
     db.close();
   });
 
-  it('drops peer, error, and pure-card rows from the LLM window', () => {
+  it('keeps card identity and drops peer and error rows from the LLM window', () => {
     const db = openDb();
     const assistantID = 'asst_filter';
     insert(db, assistantID, { role: 'user', text: 'keep-user' });
@@ -105,6 +105,7 @@ describe('contact LLM history trim', () => {
     expect(contactHistoryForLlm(db, assistantID)).toEqual([
       { role: 'user', content: 'keep-user' },
       { role: 'assistant', content: 'keep-assistant' },
+      { role: 'assistant', content: expect.stringContaining('\"sessionID\":\"ses_1\"') },
     ]);
     expect(listContactMessages(db, assistantID, { limit: 50 }).messages).toHaveLength(5);
     db.close();
