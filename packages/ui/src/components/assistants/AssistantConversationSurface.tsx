@@ -388,7 +388,7 @@ export const AssistantConversationSurface: React.FC<AssistantConversationSurface
   })
 
   const stop = useEvent(async () => {
-    if (sending || stoppingRef.current) return
+    if (stoppingRef.current) return
     stoppingRef.current = true
     const controller = uploadControllerRef.current
     setSendError(null)
@@ -633,7 +633,7 @@ export const AssistantConversationSurface: React.FC<AssistantConversationSurface
               attachments={attachments}
               pending={sending}
               working={processing || serverWorking}
-              onStop={!sending && (processing || serverWorking) ? () => { void stop() } : undefined}
+              onStop={processing || serverWorking ? () => { void stop() } : undefined}
               stopLabel={t('chat.chatInput.actions.stopGeneratingAria')}
               isMobile={isMobile}
               placeholder={t('assistants.contact.placeholder', { name: displayName })}
