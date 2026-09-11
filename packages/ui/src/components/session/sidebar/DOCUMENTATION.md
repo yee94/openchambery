@@ -86,6 +86,15 @@
 - Project collapse state controls presentation only; Electron session-summary
   refresh targets come from the persisted project index, so no collapse/re-expand
   gesture is required to make a project appear.
+- Project, labeled session-group, and folder bodies use controlled Base UI
+  Collapsible panels with a 200ms ease-out height transition. Existing headers
+  and persisted collapse state retain ownership; search-expanded groups/folders
+  retain their open behavior. Body spacing sits inside the animated panel so
+  the occupied height reaches zero. Closing bodies become inert immediately
+  and unmount after exit; reduced motion disables the transition. Virtualized
+  groups re-measure on actual body mount, refresh their ancestor-scroll offset
+  when a sidebar height transition ends, and release their scrolling subscription
+  after the closing body unmounts. Dedicated mobile pages keep their own behavior.
 - Renderer-level worktree catalog reconciliation runs after event-stream ready,
   topology changes, and deduplicated unknown session directories. The sidebar
   consumes that catalog and retains `oc.worktreeMap` as its cold-start snapshot.
