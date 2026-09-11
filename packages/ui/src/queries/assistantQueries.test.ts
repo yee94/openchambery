@@ -216,7 +216,8 @@ describe('Assistant query contract', () => {
     expect(source).toContain('/share');
     expect(source).toContain("share-operations");
     expect(source).toContain('payload: { messageID, parts, source }');
-    expect(source).toContain('{ sessionID: binding.sessionID, sessionGeneration: binding.sessionGeneration, messageID, parts, source }');
+    expect(source).toContain('{ sessionID: binding.sessionID, sessionGeneration: binding.sessionGeneration, messageID, parts, source, language: useI18nStore.getState().locale }');
+    expect(source).toContain('language: useI18nStore.getState().locale');
     expect(source).toContain('waitForSessionStartupBarrier');
     expect(source).toContain('/contact/messages');
     expect(source).toContain('/contact/cards');

@@ -1,4 +1,7 @@
+import { sortAssistantContacts } from '@/components/assistants/sortAssistantContacts';
 import * as React from 'react';
+import { AssistantUnreadBadge } from '@/components/assistants/AssistantUnreadBadge';
+import { AssistantMarkAllReadButton } from '@/components/assistants/AssistantMarkAllReadButton';
 import { useEvent } from '@reactuses/core';
 
 import assistantGuideHero from '@/assets/assistant-guide/assistant-guide-hero-wide.jpg';
@@ -123,6 +126,7 @@ function MobileAssistantDisabledGuide({ onEnable }: { onEnable: () => void }) {
 }
 
 type MobileAssistantCardProps = {
+  unreadCount: number;
   assistantID: string;
   displayName: string;
   avatarEmoji?: string;
@@ -138,6 +142,7 @@ type MobileAssistantCardProps = {
 };
 
 function MobileAssistantCard({
+  unreadCount,
   assistantID,
   displayName,
   avatarEmoji,
@@ -252,6 +257,7 @@ function MobileAssistantCard({
               {summary}
             </span>
           </span>
+          <AssistantUnreadBadge count={unreadCount} />
         </ContextMenuTrigger>
       </MobileFloatingSurface>
       <ContextMenuContent className="min-w-[10rem]">
@@ -277,6 +283,7 @@ export function MobileAssistantTab({ onEnable, onOpenAssistant, className }: Mob
   const mobileActions = useMobileAppActions();
   const capability = useAssistantCapabilityQuery();
   const snapshot = useAssistantSnapshotQuery();
+  const contacts = React.useMemo(() => sortAssistantContacts(snapshot.data?.assistants ?? []), [snapshot.data?.assistants]);
   const requestCreate = useAssistantUIStore((state) => state.requestCreate);
   const [deleteTarget, setDeleteTarget] = React.useState<AssistantDTO | null>(null);
   const handleEnable = useEvent(() => onEnable());
@@ -330,12 +337,15 @@ export function MobileAssistantTab({ onEnable, onOpenAssistant, className }: Mob
           </Button>
         )}
       >
+        <div className="flex justify-end pb-2">
+          <AssistantMarkAllReadButton snapshot={snapshot.data} />
+        </div>
         <div
           className="oc-mobile-assistant-catalog"
           role="listbox"
           aria-label={t('assistants.listAria')}
         >
-          {snapshot.data.assistants.map((assistant) => {
+          {contacts.map((assistant) => {
             const presentation = getAssistantPresentation(assistant.name);
             const displayName = presentation.displayName || assistant.name;
             const summary = getAssistantMessagePreview(assistant.latestMessagePreview, t);
@@ -344,6 +354,7 @@ export function MobileAssistantTab({ onEnable, onOpenAssistant, className }: Mob
               <MobileAssistantCard
                 key={assistant.id}
                 assistantID={assistant.id}
+                unreadCount={assistant.unreadCount ?? 0}
                 displayName={displayName}
                 avatarEmoji={presentation.avatarEmoji ?? undefined}
                 summary={summary}

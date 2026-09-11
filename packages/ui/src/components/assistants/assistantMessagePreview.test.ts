@@ -8,7 +8,7 @@ import type { AssistantLatestMessagePreview } from '@/queries/assistantDTO';
 import { assistantContractFixtures } from '../../../../web/server/lib/assistants/contracts.js';
 import { ASSISTANT_MESSAGE_PREVIEW_CLASS, getAssistantMessagePreview } from './assistantMessagePreview';
 
-const preview: AssistantLatestMessagePreview = { messageID: 'm2', ordinal: 2, role: 'assistant', text: '最新消息', fallbackKind: null };
+const preview: AssistantLatestMessagePreview = { createdAt: 123, messageID: 'm2', ordinal: 2, role: 'assistant', text: '最新消息', fallbackKind: null };
 const t = (key: string) => key;
 
 describe('Assistant snapshot message preview', () => {

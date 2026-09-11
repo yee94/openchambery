@@ -1,4 +1,5 @@
 import React from 'react';
+import { parseAssistantReadPosition, parseAssistantReadResponse, type AssistantReadPosition } from './assistantDTO';
 import { useInfiniteQuery, useQuery, type InfiniteData, type QueryClient, type QueryKey } from '@tanstack/react-query';
 import { queryClient } from '@/lib/queryRuntime';
 import { subscribeOpenchamberEvents } from '@/lib/openchamberEvents';
@@ -6,6 +7,7 @@ import { runtimeFetch } from '@/lib/runtime-fetch';
 import { getRuntimeGeneration, getRuntimeTransportIdentity } from '@/lib/runtime-switch';
 import { waitForSessionStartupBarrier } from '@/lib/session-startup-barrier';
 import { fetchGlobalScheduledTasks } from '@/lib/scheduledTasksApi';
+import { useI18nStore } from '@/lib/i18n/store';
 import { AssistantAPIError, AssistantShareOperationError, isAbortError, parseAssistantCapabilityDTO, parseAssistantContactCardAdmission, parseAssistantContactPage, parseAssistantContactPeerAdmission, parseAssistantDTO, parseAssistantHistoryPage, parseAssistantScheduledTasksPage, parseAssistantSnapshotDTO, parseCompactResponse, parseMessageAdmission, parseSessionBinding, parseShareOperation, type AssistantCapabilityDTO, type AssistantContactCardPart, type AssistantContactFilePart, type AssistantContactMessage, type AssistantContactPage, type AssistantContactPeerAdmission, type AssistantContactSessionCardPart, type AssistantDTO, type AssistantHistoryPage, type AssistantMode, type AssistantPart, type AssistantSnapshotDTO, type AssistantSource, type CompactResponse, type MessageAdmission, type SessionBinding, type ShareOperation } from './assistantDTO';
 import {
   applyContactGapPage,
@@ -116,29 +118,43 @@ export const assistantSnapshotQueryOptions = (transport = getRuntimeTransportIde
   refetchOnWindowFocus: true,
   refetchOnReconnect: true,
 });
+const snapshotSubscriptions = new Map<string, { count: number; dispose: () => void }>();
+const retainAssistantSnapshotEvents = (transport: string) => {
+  const existing = snapshotSubscriptions.get(transport);
+  if (existing) {
+    existing.count += 1;
+  } else {
+    const dispose = subscribeOpenchamberEvents((event) => {
+      if (getRuntimeTransportIdentity() !== transport) return;
+      const snapshot = queryClient.getQueryData<AssistantSnapshot>(key.snapshot(transport));
+      if (event.type === 'event-stream-ready' || event.type === 'contact-turn-start' || event.type === 'contact-turn-end'
+        || (event.type === 'assistants-changed' && (!snapshot || event.revision > snapshot.revision))) {
+        void queryClient.invalidateQueries({ queryKey: key.snapshot(transport), exact: true });
+      }
+    });
+    snapshotSubscriptions.set(transport, { count: 1, dispose });
+  }
+  return () => {
+    const subscription = snapshotSubscriptions.get(transport);
+    if (subscription && --subscription.count === 0) {
+      subscription.dispose();
+      snapshotSubscriptions.delete(transport);
+    }
+  };
+};
 export const useAssistantSnapshotQuery = () => {
   const transport = getRuntimeTransportIdentity();
   const query = useQuery(assistantSnapshotQueryOptions(transport));
-  React.useEffect(() => subscribeOpenchamberEvents((event) => {
-    if (getRuntimeTransportIdentity() !== transport) return;
-    if (event.type === 'event-stream-ready') {
-      void queryClient.invalidateQueries({ queryKey: key.snapshot(transport), exact: true });
-      return;
-    }
-    // Contact-turn start/end mutate process-local working without always bumping
-    // revision on the success path before clients read — refetch snapshot so list
-    // green dots and activeContactTurn stay server-authoritative across surfaces.
-    if (event.type === 'contact-turn-start' || event.type === 'contact-turn-end') {
-      void queryClient.invalidateQueries({ queryKey: key.snapshot(transport), exact: true });
-      return;
-    }
-    if (event.type !== 'assistants-changed') return;
-    const snapshot = queryClient.getQueryData<AssistantSnapshot>(key.snapshot(transport));
-    if (!snapshot || event.revision > snapshot.revision) {
-      void queryClient.invalidateQueries({ queryKey: key.snapshot(transport), exact: true });
-    }
-  }), [transport]);
+  React.useEffect(() => retainAssistantSnapshotEvents(transport), [transport]);
   return query;
+};
+const selectAssistantUnreadTotal = (snapshot: AssistantSnapshot) => snapshot.enabled
+  ? snapshot.assistants.reduce((total, assistant) => total + (assistant.unreadCount ?? 0), 0) : 0;
+export const useAssistantUnreadTotal = () => {
+  const transport = getRuntimeTransportIdentity();
+  const query = useQuery({ ...assistantSnapshotQueryOptions(transport), select: selectAssistantUnreadTotal });
+  React.useEffect(() => retainAssistantSnapshotEvents(transport), [transport]);
+  return query.data ?? 0;
 };
 export const assistantHistoryInfiniteQueryOptions = (
   assistantID: string,
@@ -664,8 +680,8 @@ export const ensureAssistantSession = async (assistantID: string): Promise<Sessi
 };
 export const newAssistantSession = async (assistantID: string): Promise<SessionBinding> => { const transport = getRuntimeTransportIdentity(); const generation = getRuntimeGeneration(); const binding = parseSessionBinding(await requestJSON<unknown>(`/api/openchamber/assistants/${encodeURIComponent(assistantID)}/session/new`, jsonInit('POST'))); assertCurrent(transport, generation); applyBinding(assistantID, binding, transport); return binding; };
 export const compactAssistantSession = async (assistantID: string, binding: SessionBinding): Promise<CompactResponse> => { const transport = getRuntimeTransportIdentity(); const generation = getRuntimeGeneration(); const result = parseCompactResponse(await requestJSON<unknown>(`/api/openchamber/assistants/${encodeURIComponent(assistantID)}/session/compact`, jsonInit('POST', { sessionID: binding.sessionID, sessionGeneration: binding.sessionGeneration }))); assertCurrent(transport, generation); applyBinding(assistantID, result.binding, transport); return result; };
-export const abortAssistantSession = async (assistantID: string, binding: SessionBinding): Promise<void> => { const transport = getRuntimeTransportIdentity(); const generation = getRuntimeGeneration(); await requestJSON<unknown>(`/api/openchamber/assistants/${encodeURIComponent(assistantID)}/session/abort`, jsonInit('POST', { sessionID: binding.sessionID, sessionGeneration: binding.sessionGeneration })); assertCurrent(transport, generation); };
-export const sendAssistantMessage = async (assistantID: string, binding: SessionBinding, messageID: string, parts: AssistantPart[], source: AssistantSource = 'composer'): Promise<MessageAdmission> => { const transport = getRuntimeTransportIdentity(); const generation = getRuntimeGeneration(); const result = parseMessageAdmission(await requestJSON<unknown>(`/api/openchamber/assistants/${encodeURIComponent(assistantID)}/messages`, jsonInit('POST', { sessionID: binding.sessionID, sessionGeneration: binding.sessionGeneration, messageID, parts, source }))); assertCurrent(transport, generation); applyBinding(assistantID, result.binding, transport); invalidateContact(assistantID, transport); return result; };
+export const abortAssistantSession = async (assistantID: string, binding: Pick<SessionBinding, 'sessionID' | 'sessionGeneration'>): Promise<void> => { const transport = getRuntimeTransportIdentity(); const generation = getRuntimeGeneration(); await requestJSON<unknown>(`/api/openchamber/assistants/${encodeURIComponent(assistantID)}/session/abort`, jsonInit('POST', { sessionID: binding.sessionID, sessionGeneration: binding.sessionGeneration })); assertCurrent(transport, generation); void queryClient.invalidateQueries({ queryKey: key.snapshot(transport), exact: true }); };
+export const sendAssistantMessage = async (assistantID: string, binding: SessionBinding, messageID: string, parts: AssistantPart[], source: AssistantSource = 'composer'): Promise<MessageAdmission> => { const transport = getRuntimeTransportIdentity(); const generation = getRuntimeGeneration(); const result = parseMessageAdmission(await requestJSON<unknown>(`/api/openchamber/assistants/${encodeURIComponent(assistantID)}/messages`, jsonInit('POST', { sessionID: binding.sessionID, sessionGeneration: binding.sessionGeneration, messageID, parts, source, language: useI18nStore.getState().locale }))); assertCurrent(transport, generation); applyBinding(assistantID, result.binding, transport); invalidateContact(assistantID, transport); return result; };
 /** Contact composer send parts: text or full file union (inline url or attachment descriptor). */
 export type AssistantContactSendPart =
   | { type: 'text'; text: string }
@@ -691,7 +707,7 @@ export const sendAssistantContactMessage = async (
       : [{ type: 'text' as const, text: input.text ?? '' }];
   const signal = AbortSignal.timeout(CONTACT_SEND_TIMEOUT_MS);
   try {
-    const result = parseMessageAdmission(await requestJSON<unknown>(`/api/openchamber/assistants/${encodeURIComponent(assistantID)}/messages`, { ...jsonInit('POST', { messageID, parts }), signal }));
+    const result = parseMessageAdmission(await requestJSON<unknown>(`/api/openchamber/assistants/${encodeURIComponent(assistantID)}/messages`, { ...jsonInit('POST', { messageID, parts, language: useI18nStore.getState().locale }), signal }));
     assertCurrent(transport, generation);
     applyBinding(assistantID, result.binding, transport);
     invalidateContact(assistantID, transport);
@@ -738,3 +754,39 @@ export const updateAssistant = async (assistant: AssistantDTO, draft: AssistantD
 export const deleteAssistant = async (assistant: AssistantDTO): Promise<void> => { await requestJSON(`/api/openchamber/assistants/${encodeURIComponent(assistant.id)}`, jsonInit('DELETE', { expectedRevision: assistant.revision })); await queryClient.invalidateQueries({ queryKey: key.snapshot(getRuntimeTransportIdentity()) }); };
 export const fetchAssistantCapability = async (): Promise<AssistantCapability> => parseAssistantCapabilityDTO(await requestJSON<unknown>('/api/openchamber/assistants/capability'));
 export const assistantQueryKeys = key;
+
+export const markAssistantContactRead = async (assistantID: string, position: AssistantReadPosition) => {
+  const transport = getRuntimeTransportIdentity();
+  const generation = getRuntimeGeneration();
+  const captured = parseAssistantReadPosition(position);
+  try {
+    const result = parseAssistantReadResponse(await requestJSON<unknown>(
+      `/api/openchamber/assistants/${encodeURIComponent(assistantID)}/contact/read`,
+      { ...jsonInit('POST', captured), signal: AbortSignal.timeout(15_000) },
+    ));
+    assertCurrent(transport, generation);
+    if (result.assistantID !== assistantID) throw new AssistantAPIError('invalid_assistant_read_response', 200);
+    // Complete GET snapshots own catalog counts and revisions across concurrent reads.
+    return result;
+  } finally {
+    if (getRuntimeTransportIdentity() === transport && getRuntimeGeneration() === generation) {
+      void queryClient.invalidateQueries({ queryKey: key.snapshot(transport), exact: true });
+    }
+  }
+};
+
+export const markAllAssistantsRead = async (snapshot: AssistantSnapshot) => {
+  const targets = snapshot.assistants.filter((assistant) => (assistant.unreadCount ?? 0) > 0 && assistant.readTip)
+    .map((assistant) => ({ id: assistant.id, position: { ...assistant.readTip! } }));
+  const transport = getRuntimeTransportIdentity();
+  const generation = getRuntimeGeneration();
+  const results: PromiseSettledResult<unknown>[] = [];
+  // Bounded fanout; every target keeps its click-time watermark across batches.
+  for (let index = 0; index < targets.length; index += 4) {
+    results.push(...await Promise.allSettled(targets.slice(index, index + 4).map(async (target) => {
+      assertCurrent(transport, generation);
+      return markAssistantContactRead(target.id, target.position);
+    })));
+  }
+  return { failed: results.filter((result) => result.status === 'rejected').length };
+};

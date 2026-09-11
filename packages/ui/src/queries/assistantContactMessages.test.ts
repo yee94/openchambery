@@ -4,10 +4,13 @@ import {
   applyContactGapPage,
   applyContactLatestPage,
   applyContactOlderPage,
+  compareContactMessageKeyset,
   CONTACT_GAP_FILL_MAX_PAGES,
   CONTACT_MESSAGES_PAGE_DEFAULT,
   emptyContactMessagesView,
+  getLoadedAssistantReadPosition,
   isContactMessagesInitialized,
+  isContactVisiblePart,
   mergeContactMessagesById,
 } from './assistantContactMessages'
 
@@ -267,5 +270,110 @@ describe('assistantContactMessages merge', () => {
   test('empty view bootstrap', () => {
     expect(emptyContactMessagesView().messages).toEqual([])
     expect(isContactMessagesInitialized(emptyContactMessagesView())).toBe(false)
+  })
+
+  test('keyset order is SQLite BINARY-equivalent (not localeCompare) for same ordinal', () => {
+    // ASCII binary: uppercase before lowercase; punctuation before letters.
+    expect(compareContactMessageKeyset(
+      { ordinal: 1, messageID: 'B' },
+      { ordinal: 1, messageID: 'a' },
+    )).toBeLessThan(0)
+    expect('B' < 'a').toBe(true)
+    // localeCompare often folds case and can disagree with binary on a/B.
+    const localeDisagree = Math.sign('B'.localeCompare('a')) !== Math.sign(
+      compareContactMessageKeyset({ ordinal: 0, messageID: 'B' }, { ordinal: 0, messageID: 'a' }),
+    )
+    // Document the hazard even when a locale happens to match; sort must stay binary.
+    expect(typeof localeDisagree).toBe('boolean')
+
+    expect(compareContactMessageKeyset(
+      { ordinal: 1, messageID: 'msg-A' },
+      { ordinal: 1, messageID: 'msg_A' },
+    )).toBeLessThan(0) // '-' (0x2d) < '_' (0x5f)
+    expect(compareContactMessageKeyset(
+      { ordinal: 1, messageID: 'id_1' },
+      { ordinal: 1, messageID: 'id_1' },
+    )).toBe(0)
+    expect(compareContactMessageKeyset(
+      { ordinal: 2, messageID: 'z' },
+      { ordinal: 1, messageID: 'a' },
+    )).toBeGreaterThan(0)
+
+    const sameOrdinal = [
+      msg(5, 'b', { messageID: 'b' }),
+      msg(5, 'A', { messageID: 'A' }),
+      msg(5, 'a', { messageID: 'a' }),
+      msg(5, '_', { messageID: '_' }),
+      msg(5, '-', { messageID: '-' }),
+    ]
+    const merged = mergeContactMessagesById([], sameOrdinal)
+    expect(merged.map((row) => row.messageID)).toEqual(['-', 'A', '_', 'a', 'b'])
+  })
+
+  test('visible part and loaded read position use full keyset + per-part settle rules', () => {
+    expect(isContactVisiblePart({ type: 'text', text: 'hi' })).toBe(true)
+    expect(isContactVisiblePart({ type: 'text', text: '  ' })).toBe(false)
+    expect(isContactVisiblePart({ type: 'text', text: 'oc.settle.complete' })).toBe(false)
+    expect(isContactVisiblePart({ type: 'file' })).toBe(true)
+
+    const assistant = {
+      id: 'asst_1',
+      unreadCount: 2,
+      readTip: { generation: 0, ordinal: 9, messageID: 'tip' },
+      readWatermark: { generation: 0, ordinal: 5, messageID: 'b' },
+    }
+    // Same ordinal as watermark: messageID must decide already-read.
+    const afterMark = msg(5, 'body', {
+      messageID: 'c',
+      role: 'assistant',
+      assistantID: 'asst_1',
+    })
+    const atMark = msg(5, 'body', {
+      messageID: 'b',
+      role: 'assistant',
+      assistantID: 'asst_1',
+    })
+    const beforeMark = msg(5, 'body', {
+      messageID: 'a',
+      role: 'assistant',
+      assistantID: 'asst_1',
+    })
+    expect(getLoadedAssistantReadPosition(assistant, {
+      generation: 0,
+      messages: [afterMark],
+    })).toEqual({ generation: 0, ordinal: 5, messageID: 'c' })
+    expect(getLoadedAssistantReadPosition(assistant, {
+      generation: 0,
+      messages: [atMark],
+    })).toBeNull()
+    expect(getLoadedAssistantReadPosition(assistant, {
+      generation: 0,
+      messages: [beforeMark],
+    })).toBeNull()
+
+    // Settle prefix + spoken body still qualifies; pure settle / blank do not.
+    const mixed = msg(7, 'x', {
+      role: 'assistant',
+      assistantID: 'asst_1',
+      messageID: 'mix',
+      parts: [
+        { type: 'text', text: 'oc.settle.complete' },
+        { type: 'text', text: 'spoken' },
+      ],
+      text: 'oc.settle.completespoken',
+    })
+    expect(getLoadedAssistantReadPosition(assistant, {
+      generation: 0,
+      messages: [mixed],
+    })).toEqual({ generation: 0, ordinal: 7, messageID: 'mix' })
+    expect(getLoadedAssistantReadPosition(assistant, {
+      generation: 0,
+      messages: [msg(8, 'oc.settle.error', {
+        role: 'assistant',
+        assistantID: 'asst_1',
+        messageID: 'settle',
+        parts: [{ type: 'text', text: 'oc.settle.error' }],
+      })],
+    })).toBeNull()
   })
 })

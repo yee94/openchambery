@@ -3,6 +3,8 @@ import { settingsDict } from './fr.settings';
 export const dict = {
   ...settingsDict,
   'common.loading': 'Chargement...',
+  'assistants.contact.sessionMention.scope': 'Sessions récentes indexées · Saisissez @titre pour référencer',
+  'assistants.contact.sessionMention.loadFailed': 'Impossible d’actualiser les sessions. Réessayez pour mettre à jour la liste.',
   'sessions.startupSync.title': 'Synchronisation des sessions',
   'sessions.startupSync.progress': '{completed} projets chargés sur {total}',
   'common.unavailable': 'Indisponible',

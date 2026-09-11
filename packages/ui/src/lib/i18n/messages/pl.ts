@@ -5,6 +5,8 @@ export const dict: Record<I18nKey, string> = {
   ...settingsDict,
 
   'common.loading': 'Ładowanie...',
+  'assistants.contact.sessionMention.scope': 'Ostatnie sesje w indeksie · Wpisz @tytuł, aby dodać odwołanie',
+  'assistants.contact.sessionMention.loadFailed': 'Nie udało się odświeżyć sesji. Spróbuj ponownie, aby zaktualizować listę.',
   'sessions.startupSync.title': 'Synchronizowanie sesji',
   'sessions.startupSync.progress': 'Wczytano {completed} z {total} projektów',
   'common.unavailable': 'Niedostępne',

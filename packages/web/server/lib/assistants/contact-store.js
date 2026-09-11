@@ -56,6 +56,17 @@ export const CONTACT_SCHEMA_SQL = `
     assistant_id TEXT PRIMARY KEY,
     generation INTEGER NOT NULL DEFAULT 0
   );
+  -- Shared per-assistant contact read watermark (multi-client). Keyset order is
+  -- (ordinal ASC, message_id ASC). generation must match transcript generation.
+  -- Missing row ≡ nothing read (ordinal 0, empty message_id). Schema migrate
+  -- seeds existing assistants to the current tip so legacy history is read.
+  CREATE TABLE IF NOT EXISTS assistant_contact_read_state (
+    assistant_id TEXT PRIMARY KEY,
+    last_read_ordinal INTEGER NOT NULL DEFAULT 0,
+    last_read_message_id TEXT NOT NULL DEFAULT '',
+    generation INTEGER NOT NULL DEFAULT 0,
+    updated_at INTEGER NOT NULL
+  );
 `;
 
 export const CONTACT_SETTLE_TEXT = Object.freeze({
@@ -114,6 +125,473 @@ export function bumpContactGeneration(db, assistantID) {
     'INSERT INTO assistant_contact_generation(assistant_id, generation) VALUES (?, 1) ON CONFLICT(assistant_id) DO UPDATE SET generation=generation+1',
   ).run(assistantID);
   return getContactGeneration(db, assistantID);
+}
+
+/** Empty / start-of-transcript read cursor (nothing read). */
+export const EMPTY_CONTACT_READ_CURSOR = Object.freeze({
+  ordinal: 0,
+  messageID: '',
+});
+
+/**
+ * Compare contact keyset cursors (ordinal ASC, message_id ASC).
+ * Returns negative when left < right, 0 when equal, positive when left > right.
+ */
+export function compareContactReadCursor(left, right) {
+  const leftOrdinal = Number(left?.ordinal);
+  const rightOrdinal = Number(right?.ordinal);
+  const a = Number.isFinite(leftOrdinal) ? leftOrdinal : 0;
+  const b = Number.isFinite(rightOrdinal) ? rightOrdinal : 0;
+  if (a !== b) return a - b;
+  const leftID = typeof left?.messageID === 'string' ? left.messageID : '';
+  const rightID = typeof right?.messageID === 'string' ? right.messageID : '';
+  if (leftID < rightID) return -1;
+  if (leftID > rightID) return 1;
+  return 0;
+}
+
+const normalizeReadCursor = (value) => {
+  const ordinalRaw = Number(value?.ordinal);
+  const ordinal = Number.isSafeInteger(ordinalRaw) && ordinalRaw >= 0 ? ordinalRaw : 0;
+  const messageID = typeof value?.messageID === 'string' ? value.messageID : '';
+  return { ordinal, messageID };
+};
+
+/**
+ * Persisted shared read watermark for one assistant.
+ * Missing row → generation from transcript gen table, cursor at empty (nothing read).
+ */
+export function getContactReadWatermark(db, assistantID) {
+  if (typeof assistantID !== 'string' || !assistantID) {
+    return {
+      generation: 0,
+      ordinal: EMPTY_CONTACT_READ_CURSOR.ordinal,
+      messageID: EMPTY_CONTACT_READ_CURSOR.messageID,
+    };
+  }
+  const generation = getContactGeneration(db, assistantID);
+  const row = db.prepare(
+    'SELECT last_read_ordinal, last_read_message_id, generation FROM assistant_contact_read_state WHERE assistant_id=?',
+  ).get(assistantID);
+  if (!row) {
+    return {
+      generation,
+      ordinal: EMPTY_CONTACT_READ_CURSOR.ordinal,
+      messageID: EMPTY_CONTACT_READ_CURSOR.messageID,
+    };
+  }
+  const cursor = normalizeReadCursor({
+    ordinal: row.last_read_ordinal,
+    messageID: row.last_read_message_id,
+  });
+  // Stale generation on the row (e.g. wipe without reset helper) → treat as unread baseline.
+  const rowGeneration = Number(row.generation);
+  if (!Number.isSafeInteger(rowGeneration) || rowGeneration !== generation) {
+    return {
+      generation,
+      ordinal: EMPTY_CONTACT_READ_CURSOR.ordinal,
+      messageID: EMPTY_CONTACT_READ_CURSOR.messageID,
+    };
+  }
+  return {
+    generation,
+    ordinal: cursor.ordinal,
+    messageID: cursor.messageID,
+  };
+}
+
+/**
+ * Highest transcript keyset tip for one assistant (any role).
+ * Empty transcript → empty cursor. Clients report up to this tip after viewing.
+ */
+export function getContactReadTip(db, assistantID) {
+  if (typeof assistantID !== 'string' || !assistantID) {
+    return {
+      generation: 0,
+      ordinal: EMPTY_CONTACT_READ_CURSOR.ordinal,
+      messageID: EMPTY_CONTACT_READ_CURSOR.messageID,
+    };
+  }
+  const generation = getContactGeneration(db, assistantID);
+  const row = db.prepare(
+    `SELECT ordinal, message_id AS messageID
+     FROM assistant_contact_message
+     WHERE assistant_id=?
+     ORDER BY ordinal DESC, message_id DESC
+     LIMIT 1`,
+  ).get(assistantID);
+  if (!row) {
+    return {
+      generation,
+      ordinal: EMPTY_CONTACT_READ_CURSOR.ordinal,
+      messageID: EMPTY_CONTACT_READ_CURSOR.messageID,
+    };
+  }
+  return {
+    generation,
+    ordinal: Number(row.ordinal) || 0,
+    messageID: typeof row.messageID === 'string' ? row.messageID : '',
+  };
+}
+
+/**
+ * True when one part is user-visible — matches UI settle-per-part filter
+ * (AssistantConversationSurface / getLoadedAssistantReadPosition):
+ * file/card, or non-empty text that is not an internal `oc.settle.*` marker.
+ * Empty/whitespace text and settle markers alone are not visible.
+ */
+export function isContactVisiblePart(part) {
+  if (!part || typeof part !== 'object') return false;
+  if (part.type === 'file' || part.type === 'card') return true;
+  if (part.type !== 'text') return false;
+  const trimmed = typeof part.text === 'string' ? part.text.trim() : '';
+  return Boolean(trimmed) && !trimmed.startsWith('oc.settle.');
+}
+
+/**
+ * True when a contact row should contribute to unreadCount.
+ * Counts complete/error assistant replies and user-facing peer DMs that have
+ * ≥1 visible part (per-part settle filter). User messages, blank rows,
+ * settle-only markers, and non-visible roles are excluded.
+ * Streaming tokens never create rows — one persisted bubble ≡ one count unit.
+ */
+export function isContactUnreadCountableMessage(message) {
+  if (!message || typeof message !== 'object') return false;
+  const role = message.role;
+  if (role !== 'assistant' && role !== 'peer') return false;
+  const status = typeof message.status === 'string' ? message.status : 'complete';
+  if (status !== 'complete' && status !== 'error') return false;
+  const parts = Array.isArray(message.parts) ? message.parts : [];
+  if (parts.length > 0) return parts.some(isContactVisiblePart);
+  // Parts-less fixtures: treat top-level text like a single text part.
+  const trimmed = typeof message.text === 'string' ? message.text.trim() : '';
+  return Boolean(trimmed) && !trimmed.startsWith('oc.settle.');
+}
+
+/** SQL predicate: message is after the read watermark keyset (exclusive). */
+const contactUnreadAfterWatermarkSql = (ordinalAlias, messageIdAlias) => (
+  `(${ordinalAlias} > ?
+    OR (${ordinalAlias} = ? AND ${messageIdAlias} > ?))`
+);
+
+/**
+ * SQL: message has ≥1 user-visible part (file/card/non-empty non-settle text).
+ * Per-part — settle prefix on one part does not hide sibling body/file/card.
+ * Uses json_extract + GLOB (case-sensitive) to match JS startsWith('oc.settle.').
+ */
+const contactUnreadHasVisiblePartSql = (messageIdExpr) => (
+  `EXISTS (
+     SELECT 1 FROM assistant_contact_part p
+     WHERE p.message_id = ${messageIdExpr}
+       AND (
+         json_extract(p.part_json, '$.type') IN ('file', 'card')
+         OR (
+           json_extract(p.part_json, '$.type') = 'text'
+           AND length(trim(coalesce(json_extract(p.part_json, '$.text'), ''))) > 0
+           AND trim(coalesce(json_extract(p.part_json, '$.text'), '')) NOT GLOB 'oc.settle.*'
+         )
+       )
+   )`
+);
+
+/**
+ * Count unread user-facing assistant/peer replies after the watermark.
+ * Watermark keyset is applied in SQL; only post-watermark candidates hit the
+ * visible-part EXISTS. Fully-read history (no candidates) does not scan parts.
+ */
+export function countContactUnread(db, assistantID, watermark = null) {
+  if (typeof assistantID !== 'string' || !assistantID) return 0;
+  const mark = watermark && typeof watermark === 'object'
+    ? normalizeReadCursor(watermark)
+    : normalizeReadCursor(getContactReadWatermark(db, assistantID));
+  const afterSql = contactUnreadAfterWatermarkSql('m.ordinal', 'm.message_id');
+  const row = db.prepare(
+    `SELECT COUNT(*) AS count
+     FROM assistant_contact_message m
+     WHERE m.assistant_id = ?
+       AND m.role IN ('assistant', 'peer')
+       AND m.status IN ('complete', 'error')
+       AND ${afterSql}
+       AND ${contactUnreadHasVisiblePartSql('m.message_id')}`,
+  ).get(assistantID, mark.ordinal, mark.ordinal, mark.messageID);
+  return Number(row?.count) || 0;
+}
+
+/**
+ * Batch unread counts + watermarks + tips for snapshot (catalog ≤100).
+ * Returns Map(assistantID → { unreadCount, readWatermark, readTip }).
+ * Per-assistant watermark keyset is pushed into SQL via a VALUES marks CTE;
+ * COUNT aggregates only post-watermark visible candidates (no full-history
+ * message/.parts scan when the catalog is fully read).
+ */
+export function getContactUnreadSnapshots(db, assistantIDs) {
+  const result = new Map();
+  const ids = [...new Set(
+    (Array.isArray(assistantIDs) ? assistantIDs : [])
+      .filter((id) => typeof id === 'string' && id),
+  )];
+  for (const id of ids) {
+    result.set(id, {
+      unreadCount: 0,
+      readWatermark: {
+        generation: 0,
+        ordinal: EMPTY_CONTACT_READ_CURSOR.ordinal,
+        messageID: EMPTY_CONTACT_READ_CURSOR.messageID,
+      },
+      readTip: {
+        generation: 0,
+        ordinal: EMPTY_CONTACT_READ_CURSOR.ordinal,
+        messageID: EMPTY_CONTACT_READ_CURSOR.messageID,
+      },
+    });
+  }
+  if (ids.length === 0) return result;
+
+  const placeholders = ids.map(() => '?').join(',');
+  const generationRows = db.prepare(
+    `SELECT assistant_id, generation FROM assistant_contact_generation
+     WHERE assistant_id IN (${placeholders})`,
+  ).all(...ids);
+  const generationByID = new Map(ids.map((id) => [id, 0]));
+  for (const row of generationRows) {
+    const generation = Number(row.generation);
+    generationByID.set(
+      row.assistant_id,
+      Number.isSafeInteger(generation) && generation >= 0 ? generation : 0,
+    );
+  }
+
+  const stateRows = db.prepare(
+    `SELECT assistant_id, last_read_ordinal, last_read_message_id, generation
+     FROM assistant_contact_read_state
+     WHERE assistant_id IN (${placeholders})`,
+  ).all(...ids);
+  const watermarkByID = new Map();
+  for (const id of ids) {
+    watermarkByID.set(id, {
+      generation: generationByID.get(id) ?? 0,
+      ordinal: EMPTY_CONTACT_READ_CURSOR.ordinal,
+      messageID: EMPTY_CONTACT_READ_CURSOR.messageID,
+    });
+  }
+  for (const row of stateRows) {
+    const liveGeneration = generationByID.get(row.assistant_id) ?? 0;
+    const rowGeneration = Number(row.generation);
+    if (!Number.isSafeInteger(rowGeneration) || rowGeneration !== liveGeneration) {
+      continue;
+    }
+    const cursor = normalizeReadCursor({
+      ordinal: row.last_read_ordinal,
+      messageID: row.last_read_message_id,
+    });
+    watermarkByID.set(row.assistant_id, {
+      generation: liveGeneration,
+      ordinal: cursor.ordinal,
+      messageID: cursor.messageID,
+    });
+  }
+
+  // Tip: newest (ordinal, message_id) per assistant — one indexed probe each (≤100).
+  const tipProbe = db.prepare(
+    `SELECT ordinal, message_id AS messageID
+     FROM assistant_contact_message
+     WHERE assistant_id=?
+     ORDER BY ordinal DESC, message_id DESC
+     LIMIT 1`,
+  );
+  const tipByID = new Map();
+  for (const id of ids) {
+    const tipRow = tipProbe.get(id);
+    tipByID.set(id, {
+      generation: generationByID.get(id) ?? 0,
+      ordinal: tipRow ? (Number(tipRow.ordinal) || 0) : EMPTY_CONTACT_READ_CURSOR.ordinal,
+      messageID: tipRow && typeof tipRow.messageID === 'string' ? tipRow.messageID : EMPTY_CONTACT_READ_CURSOR.messageID,
+    });
+  }
+
+  // Unread: one aggregated COUNT with per-id watermark keyset in SQL.
+  // Fully-read assistants contribute zero candidate rows → no parts EXISTS work.
+  const markValuesSql = ids.map(() => '(?,?,?)').join(',');
+  const markParams = [];
+  for (const id of ids) {
+    const mark = watermarkByID.get(id) || EMPTY_CONTACT_READ_CURSOR;
+    markParams.push(id, mark.ordinal, mark.messageID);
+  }
+  const unreadByID = new Map(ids.map((id) => [id, 0]));
+  const countRows = db.prepare(
+    `WITH marks(assistant_id, mark_ordinal, mark_message_id) AS (
+       VALUES ${markValuesSql}
+     )
+     SELECT m.assistant_id AS assistant_id, COUNT(*) AS count
+     FROM assistant_contact_message m
+     INNER JOIN marks ON marks.assistant_id = m.assistant_id
+     WHERE m.role IN ('assistant', 'peer')
+       AND m.status IN ('complete', 'error')
+       AND (
+         m.ordinal > marks.mark_ordinal
+         OR (m.ordinal = marks.mark_ordinal AND m.message_id > marks.mark_message_id)
+       )
+       AND ${contactUnreadHasVisiblePartSql('m.message_id')}
+     GROUP BY m.assistant_id`,
+  ).all(...markParams);
+  for (const row of countRows) {
+    unreadByID.set(row.assistant_id, Number(row.count) || 0);
+  }
+
+  for (const id of ids) {
+    result.set(id, {
+      unreadCount: unreadByID.get(id) || 0,
+      readWatermark: watermarkByID.get(id),
+      readTip: tipByID.get(id),
+    });
+  }
+  return result;
+}
+
+/**
+ * Monotonic advance of the shared read watermark.
+ * - generation must match live transcript generation (else contact_generation_conflict).
+ * - Only moves forward in (ordinal, messageID) keyset order; late/stale lower
+ *   cursors are no-ops (changed:false) so concurrent clients cannot erase newer unread.
+ * - Incoming cursor is clamped to the current transcript tip (cannot invent future ids).
+ * - Idempotent when equal: changed false, no write.
+ */
+export function advanceContactReadWatermark(db, assistantID, input = {}, { updatedAt = Date.now() } = {}) {
+  if (typeof assistantID !== 'string' || !assistantID) {
+    throw contactStoreError('validation_error', 'assistantID required');
+  }
+  const liveGeneration = getContactGeneration(db, assistantID);
+  const requestedGeneration = Number(input.generation);
+  if (!Number.isSafeInteger(requestedGeneration) || requestedGeneration < 0) {
+    throw contactStoreError('validation_error', 'generation must be a non-negative integer');
+  }
+  if (requestedGeneration !== liveGeneration) {
+    throw contactStoreError(
+      'contact_generation_conflict',
+      'Contact transcript generation changed; refetch snapshot before marking read.',
+    );
+  }
+  const requested = normalizeReadCursor({
+    ordinal: input.ordinal,
+    messageID: input.messageID,
+  });
+  if (requested.ordinal < 0 || (requested.ordinal > 0 && !requested.messageID)) {
+    // ordinal 0 + empty messageID is the valid "nothing" cursor; otherwise require messageID.
+    if (requested.ordinal !== 0 || requested.messageID !== '') {
+      throw contactStoreError('validation_error', 'ordinal/messageID cursor invalid');
+    }
+  }
+  if (requested.ordinal > 0 && typeof input.messageID !== 'string') {
+    throw contactStoreError('validation_error', 'messageID must be a string');
+  }
+
+  const tip = getContactReadTip(db, assistantID);
+  const current = getContactReadWatermark(db, assistantID);
+
+  // Clamp to tip so deleted/future ids cannot jump past the authoritative head.
+  let next = requested;
+  if (compareContactReadCursor(next, tip) > 0) {
+    next = { ordinal: tip.ordinal, messageID: tip.messageID };
+  }
+
+  // Monotonic: never move backward.
+  if (compareContactReadCursor(next, current) <= 0) {
+    return {
+      changed: false,
+      readWatermark: current,
+      readTip: tip,
+      unreadCount: countContactUnread(db, assistantID, current),
+    };
+  }
+
+  db.prepare(
+    `INSERT INTO assistant_contact_read_state(
+       assistant_id, last_read_ordinal, last_read_message_id, generation, updated_at
+     ) VALUES (?,?,?,?,?)
+     ON CONFLICT(assistant_id) DO UPDATE SET
+       last_read_ordinal=excluded.last_read_ordinal,
+       last_read_message_id=excluded.last_read_message_id,
+       generation=excluded.generation,
+       updated_at=excluded.updated_at`,
+  ).run(assistantID, next.ordinal, next.messageID, liveGeneration, updatedAt);
+
+  const readWatermark = {
+    generation: liveGeneration,
+    ordinal: next.ordinal,
+    messageID: next.messageID,
+  };
+  return {
+    changed: true,
+    readWatermark,
+    readTip: tip,
+    unreadCount: countContactUnread(db, assistantID, readWatermark),
+  };
+}
+
+/**
+ * After a generation bump (wipe/reset): bind read state to the new generation
+ * with an empty watermark so remaining/new rows can become unread. Does not
+ * seed to tip — post-wipe confirm bubbles should surface as unread until viewed.
+ */
+export function resetContactReadWatermarkForGeneration(db, assistantID, generation, { updatedAt = Date.now() } = {}) {
+  if (typeof assistantID !== 'string' || !assistantID) {
+    throw contactStoreError('validation_error', 'assistantID required');
+  }
+  const nextGeneration = Number(generation);
+  if (!Number.isSafeInteger(nextGeneration) || nextGeneration < 0) {
+    throw contactStoreError('validation_error', 'generation must be a non-negative integer');
+  }
+  db.prepare(
+    `INSERT INTO assistant_contact_read_state(
+       assistant_id, last_read_ordinal, last_read_message_id, generation, updated_at
+     ) VALUES (?,?,?,?,?)
+     ON CONFLICT(assistant_id) DO UPDATE SET
+       last_read_ordinal=excluded.last_read_ordinal,
+       last_read_message_id=excluded.last_read_message_id,
+       generation=excluded.generation,
+       updated_at=excluded.updated_at`,
+  ).run(
+    assistantID,
+    EMPTY_CONTACT_READ_CURSOR.ordinal,
+    EMPTY_CONTACT_READ_CURSOR.messageID,
+    nextGeneration,
+    updatedAt,
+  );
+  return getContactReadWatermark(db, assistantID);
+}
+
+/**
+ * Schema migrate helper: seed every assistant that has transcript rows so
+ * legacy history is treated as already read (unreadCount 0). Assistants with
+ * no messages keep the implicit empty watermark.
+ */
+export function migrateContactReadStateDefaultRead(db, { updatedAt = Date.now() } = {}) {
+  const assistants = db.prepare(
+    `SELECT DISTINCT assistant_id AS assistantID FROM assistant_contact_message`,
+  ).all();
+  let seeded = 0;
+  for (const row of assistants) {
+    const assistantID = row.assistantID;
+    if (typeof assistantID !== 'string' || !assistantID) continue;
+    const existing = db.prepare(
+      'SELECT assistant_id FROM assistant_contact_read_state WHERE assistant_id=?',
+    ).get(assistantID);
+    if (existing) continue;
+    const tip = getContactReadTip(db, assistantID);
+    db.prepare(
+      `INSERT INTO assistant_contact_read_state(
+         assistant_id, last_read_ordinal, last_read_message_id, generation, updated_at
+       ) VALUES (?,?,?,?,?)`,
+    ).run(assistantID, tip.ordinal, tip.messageID, tip.generation, updatedAt);
+    seeded += 1;
+  }
+  return { seeded };
+}
+
+/** Drop read-state row (assistant delete / full cleanup). */
+export function deleteContactReadState(db, assistantID) {
+  if (typeof assistantID !== 'string' || !assistantID) return;
+  db.prepare('DELETE FROM assistant_contact_read_state WHERE assistant_id=?').run(assistantID);
 }
 
 /**
@@ -290,6 +768,7 @@ export function buildContactMessagePreview(message) {
   return {
     messageID,
     ordinal,
+    createdAt: message.createdAt,
     // Peer DMs are user-visible inbox rows; list language is user|assistant only.
     role: sourceRole === 'assistant' ? 'assistant' : 'user',
     text: text || '',
@@ -660,6 +1139,9 @@ export function deleteContactMessages(db, assistantID, { upToOrdinal = null } = 
   }
   db.prepare('DELETE FROM assistant_contact_watch WHERE assistant_id=?').run(assistantID);
   db.prepare('DELETE FROM assistant_contact_context_boundary WHERE assistant_id=?').run(assistantID);
+  // Unbounded wipe leaves generation/read_state for the service layer to rebind
+  // (resetContact bumps generation + resetContactReadWatermarkForGeneration).
+  // Assistant delete clears read_state via deleteContactReadState.
 }
 
 /** Durable LLM context watermark for one assistant (0 = no boundary). */

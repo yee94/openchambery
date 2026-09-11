@@ -5,6 +5,8 @@ export const dict: Record<I18nKey, string> = {
   ...settingsDict,
   "mobile.settings.switchInstance": "Cambiar de instancia",
   "common.loading": "Cargando...",
+  'assistants.contact.sessionMention.scope': 'Sesiones recientes indexadas · Escribe @título para referenciar',
+  'assistants.contact.sessionMention.loadFailed': 'No se pudieron actualizar las sesiones. Reintenta para actualizar la lista.',
   "sessions.startupSync.title": "Sincronizando sesiones",
   "sessions.startupSync.progress": "Se cargaron {completed} de {total} proyectos",
   "common.unavailable": "No disponible",

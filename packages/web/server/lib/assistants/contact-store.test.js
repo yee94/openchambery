@@ -17,9 +17,12 @@ import {
   CONTACT_PAGE_MAX_LIMIT,
   CONTACT_PREVIEW_MAX_CHARS,
   CONTACT_SETTLE_TEXT,
+  advanceContactReadWatermark,
   bumpContactGeneration,
   clearContactMemory,
+  compareContactReadCursor,
   contactHistoryForLlm,
+  countContactUnread,
   createActiveContactTurn,
   decodeContactCursor,
   deleteContactMessages,
@@ -27,12 +30,19 @@ import {
   ensureContactSchema,
   getContactContextBoundary,
   getContactGeneration,
+  getContactReadTip,
+  getContactReadWatermark,
+  getContactUnreadSnapshots,
   getLatestContactMessagePreview,
   getLatestContactMessagePreviews,
   insertContactMessage,
+  isContactUnreadCountableMessage,
+  isContactVisiblePart,
   listContactMessages,
+  migrateContactReadStateDefaultRead,
   nextContactOrdinal,
   projectActiveContactTurn,
+  resetContactReadWatermarkForGeneration,
   sanitizeContactPreviewText,
   trimContactHistoryForLlm,
 } from './contact-store.js';
@@ -475,6 +485,7 @@ describe('contact latest message preview', () => {
     expect(getLatestContactMessagePreview(db, assistantID)).toEqual({
       messageID: latest.messageID,
       ordinal: latest.ordinal,
+      createdAt: latest.createdAt,
       role: 'user',
       text: 'newest user line',
       fallbackKind: null,
@@ -496,6 +507,7 @@ describe('contact latest message preview', () => {
     expect(getLatestContactMessagePreview(db, assistantID)).toEqual({
       messageID: peer.messageID,
       ordinal: peer.ordinal,
+      createdAt: peer.createdAt,
       role: 'user',
       text: 'hello from peer',
       fallbackKind: null,
@@ -639,6 +651,7 @@ describe('contact latest message preview', () => {
     expect(preview).toMatchObject({
       messageID: latest.messageID,
       ordinal: latest.ordinal,
+      createdAt: latest.createdAt,
       role: 'user',
       text: 'visible-after-settles',
       fallbackKind: null,
@@ -666,6 +679,308 @@ describe('contact latest message preview', () => {
       || planText.includes('using index')
       || planText.includes('search'),
     ).toBe(true);
+    db.close();
+  });
+});
+
+describe('contact read watermark / unread', () => {
+  it('counts only complete/error assistant and peer replies; ignores user and settle-only', () => {
+    expect(isContactVisiblePart({ type: 'text', text: 'hi' })).toBe(true);
+    expect(isContactVisiblePart({ type: 'text', text: '  ' })).toBe(false);
+    expect(isContactVisiblePart({ type: 'text', text: CONTACT_SETTLE_TEXT.complete })).toBe(false);
+    expect(isContactVisiblePart({ type: 'file', mime: 'image/png' })).toBe(true);
+    expect(isContactUnreadCountableMessage({
+      role: 'assistant',
+      status: 'complete',
+      text: 'hi',
+      parts: [{ type: 'text', text: 'hi' }],
+    })).toBe(true);
+    expect(isContactUnreadCountableMessage({
+      role: 'assistant',
+      status: 'error',
+      text: 'boom',
+      parts: [{ type: 'text', text: 'boom' }],
+    })).toBe(true);
+    expect(isContactUnreadCountableMessage({
+      role: 'peer',
+      status: 'complete',
+      text: 'dm',
+      parts: [{ type: 'text', text: 'dm' }],
+    })).toBe(true);
+    expect(isContactUnreadCountableMessage({
+      role: 'user',
+      status: 'complete',
+      text: 'me',
+      parts: [{ type: 'text', text: 'me' }],
+    })).toBe(false);
+    expect(isContactUnreadCountableMessage({
+      role: 'assistant',
+      status: 'complete',
+      text: CONTACT_SETTLE_TEXT.complete,
+      parts: [{ type: 'text', text: CONTACT_SETTLE_TEXT.complete }],
+    })).toBe(false);
+    // Blank / whitespace-only is not countable.
+    expect(isContactUnreadCountableMessage({
+      role: 'assistant',
+      status: 'complete',
+      text: '',
+      parts: [{ type: 'text', text: '' }],
+    })).toBe(false);
+    expect(isContactUnreadCountableMessage({
+      role: 'assistant',
+      status: 'complete',
+      text: '   ',
+      parts: [{ type: 'text', text: '   ' }],
+    })).toBe(false);
+    // Settle beside real body still counts (per-part, not joined-text startsWith).
+    expect(isContactUnreadCountableMessage({
+      role: 'assistant',
+      status: 'complete',
+      parts: [
+        { type: 'text', text: CONTACT_SETTLE_TEXT.complete },
+        { type: 'text', text: 'spoken summary' },
+      ],
+    })).toBe(true);
+    // Settle prefix + file/card hybrid counts.
+    expect(isContactUnreadCountableMessage({
+      role: 'assistant',
+      status: 'complete',
+      parts: [
+        { type: 'text', text: CONTACT_SETTLE_TEXT.error },
+        { type: 'file', mime: 'text/plain', filename: 'a.txt' },
+      ],
+    })).toBe(true);
+
+    const db = openDb();
+    const assistantID = 'asst_unread_count';
+    insert(db, assistantID, { role: 'user', text: 'u1' });
+    insert(db, assistantID, { role: 'assistant', text: 'a1' });
+    insert(db, assistantID, { role: 'assistant', text: CONTACT_SETTLE_TEXT.complete });
+    insert(db, assistantID, { role: 'peer', text: 'p1', fromAssistantID: 'other', fromAssistantName: 'Peer' });
+    insert(db, assistantID, { role: 'assistant', text: 'failed', status: 'error' });
+    // No watermark → all countable unread.
+    expect(countContactUnread(db, assistantID)).toBe(3);
+    db.close();
+  });
+
+  it('SQL single/batch counts match visible-part rules for blank, settle prefix, and mixed parts', () => {
+    const db = openDb();
+    const assistantID = 'asst_unread_visible';
+    insert(db, assistantID, { role: 'assistant', text: '' });
+    insert(db, assistantID, { role: 'assistant', text: '   ' });
+    insert(db, assistantID, { role: 'assistant', text: CONTACT_SETTLE_TEXT.complete });
+    insert(db, assistantID, {
+      role: 'assistant',
+      parts: [
+        { type: 'text', text: CONTACT_SETTLE_TEXT.question },
+        { type: 'text', text: 'need your input' },
+      ],
+    });
+    insert(db, assistantID, {
+      role: 'assistant',
+      parts: [
+        { type: 'text', text: CONTACT_SETTLE_TEXT.complete },
+        createSessionCardPart({
+          sessionID: 'ses_visible',
+          directory: '/tmp/proj',
+          title: 'Work',
+          status: 'complete',
+        }),
+      ],
+    });
+    insert(db, assistantID, { role: 'assistant', text: 'plain' });
+    // blank×2 + settle-only excluded; mixed text, settle+card, plain → 3
+    expect(countContactUnread(db, assistantID)).toBe(3);
+    expect(getContactUnreadSnapshots(db, [assistantID]).get(assistantID)?.unreadCount).toBe(3);
+
+    const tip = getContactReadTip(db, assistantID);
+    advanceContactReadWatermark(db, assistantID, {
+      generation: tip.generation,
+      ordinal: tip.ordinal,
+      messageID: tip.messageID,
+    }, { updatedAt: 1 });
+    expect(countContactUnread(db, assistantID)).toBe(0);
+    expect(getContactUnreadSnapshots(db, [assistantID]).get(assistantID)?.unreadCount).toBe(0);
+    db.close();
+  });
+
+  it('migrates legacy rows to default-read and only new messages count', () => {
+    const db = openDb();
+    const assistantID = 'asst_migrate_read';
+    const a1 = insert(db, assistantID, { role: 'assistant', text: 'old-a' });
+    const a2 = insert(db, assistantID, { role: 'assistant', text: 'old-b' });
+    expect(countContactUnread(db, assistantID)).toBe(2);
+    const migrated = migrateContactReadStateDefaultRead(db, { updatedAt: 1 });
+    expect(migrated.seeded).toBe(1);
+    expect(countContactUnread(db, assistantID)).toBe(0);
+    const watermark = getContactReadWatermark(db, assistantID);
+    expect(watermark).toMatchObject({
+      ordinal: a2.ordinal,
+      messageID: a2.messageID,
+      generation: 0,
+    });
+    // Re-seed is idempotent.
+    expect(migrateContactReadStateDefaultRead(db, { updatedAt: 2 }).seeded).toBe(0);
+
+    insert(db, assistantID, { role: 'user', text: 'new-u' });
+    const newer = insert(db, assistantID, { role: 'assistant', text: 'new-a' });
+    expect(countContactUnread(db, assistantID)).toBe(1);
+    expect(getContactReadTip(db, assistantID)).toMatchObject({
+      ordinal: newer.ordinal,
+      messageID: newer.messageID,
+    });
+    void a1;
+    db.close();
+  });
+
+  it('advances monotonically, clamps to tip, and rejects stale generation', () => {
+    const db = openDb();
+    const assistantID = 'asst_mono';
+    const first = insert(db, assistantID, { role: 'assistant', text: 'one' });
+    const second = insert(db, assistantID, { role: 'assistant', text: 'two' });
+    const third = insert(db, assistantID, { role: 'assistant', text: 'three' });
+
+    const toFirst = advanceContactReadWatermark(db, assistantID, {
+      generation: 0,
+      ordinal: first.ordinal,
+      messageID: first.messageID,
+    }, { updatedAt: 10 });
+    expect(toFirst.changed).toBe(true);
+    expect(toFirst.unreadCount).toBe(2);
+
+    // Equal → no-op.
+    const same = advanceContactReadWatermark(db, assistantID, {
+      generation: 0,
+      ordinal: first.ordinal,
+      messageID: first.messageID,
+    }, { updatedAt: 11 });
+    expect(same.changed).toBe(false);
+    expect(same.unreadCount).toBe(2);
+
+    // Late lower cursor cannot erase newer unread.
+    const staleLower = advanceContactReadWatermark(db, assistantID, {
+      generation: 0,
+      ordinal: 0,
+      messageID: '',
+    }, { updatedAt: 12 });
+    expect(staleLower.changed).toBe(false);
+    expect(getContactReadWatermark(db, assistantID).ordinal).toBe(first.ordinal);
+
+    // Forward to second.
+    const toSecond = advanceContactReadWatermark(db, assistantID, {
+      generation: 0,
+      ordinal: second.ordinal,
+      messageID: second.messageID,
+    }, { updatedAt: 13 });
+    expect(toSecond.changed).toBe(true);
+    expect(toSecond.unreadCount).toBe(1);
+
+    // Future cursor clamps to tip (third).
+    const overshoot = advanceContactReadWatermark(db, assistantID, {
+      generation: 0,
+      ordinal: third.ordinal + 99,
+      messageID: 'zzz_future',
+    }, { updatedAt: 14 });
+    expect(overshoot.changed).toBe(true);
+    expect(overshoot.readWatermark).toMatchObject({
+      ordinal: third.ordinal,
+      messageID: third.messageID,
+    });
+    expect(overshoot.unreadCount).toBe(0);
+
+    const generation = bumpContactGeneration(db, assistantID);
+    expect(generation).toBe(1);
+    resetContactReadWatermarkForGeneration(db, assistantID, generation, { updatedAt: 15 });
+    expect(() => advanceContactReadWatermark(db, assistantID, {
+      generation: 0,
+      ordinal: third.ordinal,
+      messageID: third.messageID,
+    })).toThrow(expect.objectContaining({ code: 'contact_generation_conflict' }));
+
+    // After generation reset, previous tip rows that remain are unread again.
+    expect(countContactUnread(db, assistantID)).toBe(3);
+    expect(compareContactReadCursor(
+      { ordinal: 1, messageID: 'a' },
+      { ordinal: 1, messageID: 'b' },
+    )).toBeLessThan(0);
+    db.close();
+  });
+
+  it('batches unread snapshots without per-assistant N+1 shape', () => {
+    const db = openDb();
+    const a = 'asst_batch_a';
+    const b = 'asst_batch_b';
+    insert(db, a, { role: 'assistant', text: 'a1' });
+    insert(db, a, { role: 'assistant', text: 'a2' });
+    insert(db, b, { role: 'peer', text: 'b1', fromAssistantID: 'x', fromAssistantName: 'X' });
+    const batch = getContactUnreadSnapshots(db, [a, b, 'asst_empty']);
+    expect(batch.get(a)?.unreadCount).toBe(2);
+    expect(batch.get(b)?.unreadCount).toBe(1);
+    expect(batch.get('asst_empty')?.unreadCount).toBe(0);
+    expect(batch.get(a)?.readTip?.ordinal).toBeGreaterThan(0);
+    expect(batch.get(a)?.readWatermark?.ordinal).toBe(0);
+    db.close();
+  });
+
+  it('pushes watermark keyset into SQL so fully-read history does not scan parts (scale + plan)', () => {
+    const db = openDb();
+    const assistantID = 'asst_unread_scale';
+    const otherID = 'asst_unread_scale_b';
+    for (let i = 0; i < 240; i += 1) {
+      insert(db, assistantID, { role: 'assistant', text: `hist-${i}` });
+    }
+    insert(db, otherID, { role: 'assistant', text: 'other-only' });
+    const tip = getContactReadTip(db, assistantID);
+    advanceContactReadWatermark(db, assistantID, {
+      generation: tip.generation,
+      ordinal: tip.ordinal,
+      messageID: tip.messageID,
+    }, { updatedAt: 1 });
+    // Fully read: single + batch both 0; other assistant still 1.
+    expect(countContactUnread(db, assistantID)).toBe(0);
+    const fullyRead = getContactUnreadSnapshots(db, [assistantID, otherID]);
+    expect(fullyRead.get(assistantID)?.unreadCount).toBe(0);
+    expect(fullyRead.get(otherID)?.unreadCount).toBe(1);
+
+    insert(db, assistantID, { role: 'assistant', text: CONTACT_SETTLE_TEXT.complete });
+    insert(db, assistantID, { role: 'assistant', text: '' });
+    insert(db, assistantID, { role: 'assistant', text: 'new-visible' });
+    expect(countContactUnread(db, assistantID)).toBe(1);
+    expect(getContactUnreadSnapshots(db, [assistantID]).get(assistantID)?.unreadCount).toBe(1);
+
+    // Keyset-bounded probe must use the page index path (not a full-table sort of history).
+    const plan = db.prepare(
+      `EXPLAIN QUERY PLAN
+       SELECT COUNT(*) AS count
+       FROM assistant_contact_message m
+       WHERE m.assistant_id = ?
+         AND m.role IN ('assistant', 'peer')
+         AND m.status IN ('complete', 'error')
+         AND (m.ordinal > ? OR (m.ordinal = ? AND m.message_id > ?))`,
+    ).all(assistantID, tip.ordinal, tip.ordinal, tip.messageID);
+    const planText = plan.map((row) => `${row.detail || ''}`).join('\n').toLowerCase();
+    expect(planText).toMatch(/assistant_contact_message/);
+    expect(
+      planText.includes('assistant_id')
+      || planText.includes('assistant_contact_message_page')
+      || planText.includes('using index')
+      || planText.includes('search'),
+    ).toBe(true);
+    // Batch VALUES+join form also stays index-friendly on assistant_id.
+    const batchPlan = db.prepare(
+      `EXPLAIN QUERY PLAN
+       WITH marks(assistant_id, mark_ordinal, mark_message_id) AS (VALUES (?, ?, ?))
+       SELECT m.assistant_id, COUNT(*) AS count
+       FROM assistant_contact_message m
+       INNER JOIN marks ON marks.assistant_id = m.assistant_id
+       WHERE m.role IN ('assistant', 'peer')
+         AND m.status IN ('complete', 'error')
+         AND (m.ordinal > marks.mark_ordinal
+              OR (m.ordinal = marks.mark_ordinal AND m.message_id > marks.mark_message_id))
+       GROUP BY m.assistant_id`,
+    ).all(assistantID, tip.ordinal, tip.messageID);
+    const batchPlanText = batchPlan.map((row) => `${row.detail || ''}`).join('\n').toLowerCase();
+    expect(batchPlanText).toMatch(/assistant_contact_message/);
     db.close();
   });
 });

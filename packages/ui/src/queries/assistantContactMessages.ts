@@ -7,7 +7,61 @@
  * - gapRequestIDs: which fill session may advance gapCursor (updated on full slide).
  * - gapTargetIDs: earliest unfinished bridge targets; full slide keeps them until hit/complete.
  */
-import type { AssistantContactMessage, AssistantContactPage } from './assistantDTO'
+import type { AssistantContactMessage, AssistantContactPage, AssistantDTO, AssistantReadPosition } from './assistantDTO'
+
+/**
+ * Contact keyset order matching server SQLite BINARY:
+ * (ordinal ASC, message_id ASC) via JS relational `<`/`>` (not localeCompare).
+ */
+export const compareContactMessageKeyset = (
+  left: { ordinal: number; messageID: string },
+  right: { ordinal: number; messageID: string },
+): number => {
+  if (left.ordinal !== right.ordinal) return left.ordinal - right.ordinal
+  if (left.messageID < right.messageID) return -1
+  if (left.messageID > right.messageID) return 1
+  return 0
+}
+
+/** True when a part is user-visible (file/card or non-empty non-settle text). */
+export const isContactVisiblePart = (part: { type: string; text?: string }): boolean => {
+  if (part.type === 'file' || part.type === 'card') return true
+  if (part.type !== 'text') return false
+  const trimmed = typeof part.text === 'string' ? part.text.trim() : ''
+  return Boolean(trimmed) && !trimmed.startsWith('oc.settle.')
+}
+
+export const getLoadedAssistantReadPosition = (
+  assistant: Pick<AssistantDTO, 'id' | 'unreadCount' | 'readTip' | 'readWatermark'>,
+  page: Pick<AssistantContactPage, 'generation' | 'messages'> | undefined,
+): AssistantReadPosition | null => {
+  if (!page || !assistant.readTip || !((assistant.unreadCount ?? 0) > 0)) return null
+  const tip = assistant.readTip
+  if (page.generation !== tip.generation) return null
+  // The loaded row owns the reported cursor even when the catalog has a newer tip.
+  let message: AssistantContactMessage | undefined
+  for (let index = page.messages.length - 1; index >= 0; index -= 1) {
+    const row = page.messages[index]
+    if (row.assistantID === assistant.id && (row.status === 'complete' || row.status === 'error')
+      && row.parts.some(isContactVisiblePart)) {
+      message = row
+      break
+    }
+  }
+  if (!message) return null
+  const watermark = assistant.readWatermark
+  if (watermark) {
+    if (watermark.generation > page.generation) return null
+    if (
+      watermark.generation === page.generation
+      && compareContactMessageKeyset(
+        { ordinal: watermark.ordinal, messageID: watermark.messageID },
+        { ordinal: message.ordinal, messageID: message.messageID },
+      ) >= 0
+    ) return null
+  }
+  return { generation: page.generation, ordinal: message.ordinal, messageID: message.messageID }
+}
 
 export const CONTACT_MESSAGES_PAGE_DEFAULT = 20
 export const CONTACT_GAP_FILL_MAX_PAGES = 5
@@ -52,10 +106,12 @@ export const isContactMessagesInitialized = (view: ContactMessagesView | null | 
   Boolean(view && view.generation >= 0)
 )
 
-const byOrdinal = (left: AssistantContactMessage, right: AssistantContactMessage) => {
-  if (left.ordinal !== right.ordinal) return left.ordinal - right.ordinal
-  return left.messageID.localeCompare(right.messageID)
-}
+const byOrdinal = (left: AssistantContactMessage, right: AssistantContactMessage) => (
+  compareContactMessageKeyset(
+    { ordinal: left.ordinal, messageID: left.messageID },
+    { ordinal: right.ordinal, messageID: right.messageID },
+  )
+)
 
 export const mergeContactMessagesById = (
   existing: readonly AssistantContactMessage[],

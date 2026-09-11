@@ -4,6 +4,8 @@ import { settingsDict } from './ko.settings';
 export const dict: Record<I18nKey, string> = {
   ...settingsDict,
   'common.loading': '로딩 중...',
+  'assistants.contact.sessionMention.scope': '색인된 최근 세션 · @제목을 입력하여 참조',
+  'assistants.contact.sessionMention.loadFailed': '세션을 새로 고치지 못했습니다. 다시 시도하여 목록을 업데이트하세요.',
   'sessions.startupSync.title': '세션 동기화 중',
   'sessions.startupSync.progress': '프로젝트 {total}개 중 {completed}개 로드됨',
   'common.unavailable': '사용할 수 없음',

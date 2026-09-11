@@ -84,10 +84,40 @@ function createAssistantMessageEventStream() {
   };
 }
 
+const CONTACT_LANGUAGE_NAMES = {
+  en: 'English',
+  fr: 'French',
+  'zh-CN': 'Simplified Chinese',
+  'zh-TW': 'Traditional Chinese',
+  uk: 'Ukrainian',
+  es: 'Spanish',
+  'pt-BR': 'Brazilian Portuguese',
+  ko: 'Korean',
+  pl: 'Polish',
+  ja: 'Japanese',
+};
+
+const CONTACT_LANGUAGE_FALLBACK = "the user's interface language";
+
+/**
+ * Map a UI locale code to a display name for the system prompt. Unknown or
+ * missing values fall back to a neutral phrase so `{{LANGUAGE}}` never leaks.
+ * Whitelisted only: arbitrary client text must not reach the system prompt.
+ */
+export const resolveContactLanguage = (value) => {
+  if (typeof value !== 'string') return CONTACT_LANGUAGE_FALLBACK;
+  const code = value.trim();
+  if (!code) return CONTACT_LANGUAGE_FALLBACK;
+  if (CONTACT_LANGUAGE_NAMES[code]) return CONTACT_LANGUAGE_NAMES[code];
+  const match = Object.keys(CONTACT_LANGUAGE_NAMES).find((key) => key.toLowerCase() === code.toLowerCase());
+  return match ? CONTACT_LANGUAGE_NAMES[match] : CONTACT_LANGUAGE_FALLBACK;
+};
+
 export const CONTACT_SYSTEM_PROMPT = [
   "You are OpenChamber's in-app assistant — a personable contact who can also work in the user's configured project directory.",
   'Reply in short chat bubbles: a few sentences each, separated by a blank line.',
   'Talk like a person in the user\'s language. One short spoken bubble at a time — never a wall of paragraphs.',
+  'Always reply in {{LANGUAGE}} — the user\'s current interface language — even when the user writes in another language, unless they explicitly ask for a different one.',
   'Never write chain-of-thought, plans, tool names, or English narration of what you will do. The user never sees thinking.',
   'Do not expose tool traces, Activity, or editor actions.',
   'You have bash, read, write, and edit in the working directory. Use them for pwd, files, and shell. Never say you have no terminal or cannot read files. Ignore any temporary generator workspace in the environment.',
@@ -578,6 +608,7 @@ export async function runContactTurn({
   onBubbleDelta = null,
   globalEventHub = null,
   skillHomeDir,
+  language = '',
   AgentImpl = Agent,
   signal = null,
   readOnly = false,
@@ -586,7 +617,7 @@ export async function runContactTurn({
   const modelID = assistant.modelID;
   const cwd = resolveAssistantCwd(assistant);
   const contactTools = Array.isArray(tools)
-    ? tools.filter((tool) => tool && typeof tool.name === 'string' && !isPiCodingToolName(tool.name) && (!readOnly || ['list_projects', 'list_sessions', 'get_assistant_settings'].includes(tool.name)))
+    ? tools.filter((tool) => tool && typeof tool.name === 'string' && !isPiCodingToolName(tool.name) && (!readOnly || ['list_projects', 'list_sessions', 'read_session', 'get_assistant_settings'].includes(tool.name)))
     : [];
   let runtime = null;
   let removeAbortListener = null;
@@ -608,7 +639,8 @@ export async function runContactTurn({
       formatContactToolsPrompt(contactTools),
       assistant.defaultPrompt,
       codingTools.length > 0 ? WORKSPACE_RESPONSE_PROTOCOL : '',
-    ].filter((value) => typeof value === 'string' && value.trim()).join('\n\n');
+    ].filter((value) => typeof value === 'string' && value.trim()).join('\n\n')
+      .replaceAll('{{LANGUAGE}}', resolveContactLanguage(language));
     const model = createContactModel(providerID, modelID);
     // streamFn receives the model; completions needs providerID/modelID.
     model.name = `${providerID}/${modelID}`;

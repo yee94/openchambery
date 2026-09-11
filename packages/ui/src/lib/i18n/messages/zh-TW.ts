@@ -4,6 +4,8 @@ import { settingsDict } from './zh-TW.settings';
 export const dict: Record<I18nKey, string> = {
   ...settingsDict,
   'common.loading': '載入中...',
+  'assistants.contact.sessionMention.scope': '近期索引會話 · 輸入 @標題 引用',
+  'assistants.contact.sessionMention.loadFailed': '會話重新整理失敗，請重試以更新清單。',
   'sessions.startupSync.title': '正在同步會話',
   'sessions.startupSync.progress': '已載入 {completed}/{total} 個專案',
   'common.unavailable': '無法使用',

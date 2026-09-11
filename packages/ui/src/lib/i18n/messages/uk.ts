@@ -5,6 +5,8 @@ export const dict: Record<I18nKey, string> = {
   ...settingsDict,
   "mobile.settings.switchInstance": "Перемкнути екземпляр",
   "common.loading": "Завантаження...",
+  'assistants.contact.sessionMention.scope': 'Нещодавні сеанси в індексі · Введіть @назву для посилання',
+  'assistants.contact.sessionMention.loadFailed': 'Не вдалося оновити сеанси. Спробуйте ще раз, щоб оновити список.',
   "sessions.startupSync.title": "Синхронізація сеансів",
   "sessions.startupSync.progress": "Завантажено {completed} з {total} проєктів",
   "common.unavailable": "Недоступно",
