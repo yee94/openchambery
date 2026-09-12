@@ -48,6 +48,7 @@ export const CONTACT_SCHEMA_SQL = `
   CREATE TABLE IF NOT EXISTS assistant_contact_context_boundary (
     assistant_id TEXT PRIMARY KEY,
     after_ordinal INTEGER NOT NULL,
+    assistant_after_ordinal INTEGER NOT NULL DEFAULT 0,
     updated_at INTEGER NOT NULL
   );
   -- Contact transcript generation: bumps only on clear_chat_history / resetContact.
@@ -98,6 +99,8 @@ export function ensureContactSchema(db) {
   const columns = new Set(db.prepare("SELECT name FROM pragma_table_info('assistant_contact_message')").all().map((column) => column.name));
   if (!columns.has('from_assistant_id')) db.exec('ALTER TABLE assistant_contact_message ADD COLUMN from_assistant_id TEXT');
   if (!columns.has('from_assistant_name')) db.exec('ALTER TABLE assistant_contact_message ADD COLUMN from_assistant_name TEXT');
+  const boundaryColumns = new Set(db.prepare("SELECT name FROM pragma_table_info('assistant_contact_context_boundary')").all().map((column) => column.name));
+  if (!boundaryColumns.has('assistant_after_ordinal')) db.exec('ALTER TABLE assistant_contact_context_boundary ADD COLUMN assistant_after_ordinal INTEGER NOT NULL DEFAULT 0');
   const watchColumns = new Set(db.prepare("SELECT name FROM pragma_table_info('assistant_contact_watch')").all().map((column) => column.name));
   if (!watchColumns.has('resume_allowed')) db.exec('ALTER TABLE assistant_contact_watch ADD COLUMN resume_allowed INTEGER NOT NULL DEFAULT 1');
   // Attachment table ownership lives in contact-attachments.ensureContactAttachmentSchema.
@@ -1177,6 +1180,12 @@ export function getContactContextBoundary(db, assistantID) {
   return Number(row.after_ordinal);
 }
 
+/** Includes replies committed by an earlier lane after the clearing user was queued. */
+export function getContactAssistantContextBoundary(db, assistantID) {
+  const row = db.prepare('SELECT after_ordinal, assistant_after_ordinal FROM assistant_contact_context_boundary WHERE assistant_id=?').get(assistantID);
+  return row ? Math.max(Number(row.after_ordinal) || 0, Number(row.assistant_after_ordinal) || 0) : 0;
+}
+
 /**
  * Clear LLM memory only: keep every transcript row, advance the watermark so
  * later contactHistoryForLlm drops prior turns.
@@ -1190,6 +1199,8 @@ export function getContactContextBoundary(db, assistantID) {
  */
 export function clearContactMemory(db, assistantID, { updatedAt = Date.now(), upToOrdinal = null } = {}) {
   const current = getContactContextBoundary(db, assistantID);
+  const currentTip = Number(db.prepare('SELECT COALESCE(MAX(ordinal), 0) AS value FROM assistant_contact_message WHERE assistant_id=?').get(assistantID).value);
+  const assistantAfterOrdinal = Math.max(currentTip, getContactAssistantContextBoundary(db, assistantID));
   const parsedCeiling = upToOrdinal == null || upToOrdinal === ''
     ? NaN
     : Number(upToOrdinal);
@@ -1204,8 +1215,8 @@ export function clearContactMemory(db, assistantID, { updatedAt = Date.now(), up
   if (!Number.isFinite(afterOrdinal)) afterOrdinal = 0;
   afterOrdinal = Math.max(afterOrdinal, current);
   db.prepare(
-    'INSERT INTO assistant_contact_context_boundary(assistant_id, after_ordinal, updated_at) VALUES (?,?,?) ON CONFLICT(assistant_id) DO UPDATE SET after_ordinal=excluded.after_ordinal, updated_at=excluded.updated_at',
-  ).run(assistantID, afterOrdinal, updatedAt);
+    'INSERT INTO assistant_contact_context_boundary(assistant_id, after_ordinal, assistant_after_ordinal, updated_at) VALUES (?,?,?,?) ON CONFLICT(assistant_id) DO UPDATE SET after_ordinal=excluded.after_ordinal, assistant_after_ordinal=excluded.assistant_after_ordinal, updated_at=excluded.updated_at',
+  ).run(assistantID, afterOrdinal, assistantAfterOrdinal, updatedAt);
   return { assistantID, afterOrdinal, memoryCleared: true };
 }
 
@@ -1257,8 +1268,9 @@ export function updateSessionCardStatus(db, { assistantID, sessionID, status }) 
 
 /**
  * LLM-only contact window. SQLite and the transcript UI may keep older bubbles
- * (including rows before the durable context boundary). This budget is the only
- * model context. There is no summarizer and no user-facing compress /
+ * (including rows before the durable context boundary). This budget owns the
+ * automatic model context; explicit recall uses the same boundaries in memory.js.
+ * There is no summarizer and no user-facing compress /
  * continuous / stateless control on this path.
  *
  * A turn is a user message plus the assistant replies that follow it until the
@@ -1382,6 +1394,7 @@ export function projectActiveContactTurn(activeTurns) {
 
 export function contactHistoryForLlm(db, assistantID, { excludeMessageIDs = [], beforeOrdinal = null } = {}) {
   const afterOrdinal = getContactContextBoundary(db, assistantID);
+  const assistantAfterOrdinal = getContactAssistantContextBoundary(db, assistantID);
   const exclude = new Set(
     (Array.isArray(excludeMessageIDs) ? excludeMessageIDs : [])
       .filter((id) => typeof id === 'string' && id),
@@ -1395,6 +1408,7 @@ export function contactHistoryForLlm(db, assistantID, { excludeMessageIDs = [], 
   const messages = page.messages.filter((message) => {
     if (exclude.has(message.messageID)) return false;
     if (!(message.ordinal > afterOrdinal)) return false;
+    if (message.role === 'assistant' && message.ordinal <= assistantAfterOrdinal) return false;
     // Queued user admits after this turn's ordinal belong to later lane work.
     if (
       userOrdinalCeiling != null

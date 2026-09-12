@@ -426,6 +426,8 @@ describe('createContactTools', () => {
       onCard,
     });
     expect(tools.map((tool) => tool.name)).toEqual([
+      'search_memory',
+      'read_memory',
       NEW_CONVERSATION_TOOL_NAME,
       CLEAR_CHAT_HISTORY_TOOL_NAME,
       LIST_PROJECTS_TOOL_NAME,
