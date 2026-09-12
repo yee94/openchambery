@@ -2,6 +2,8 @@ export {
   loadGlobalScheduledTasks,
   loadScheduledTaskRuns,
   upsertScheduledTask,
+  deleteScheduledTask,
+  runScheduledTaskNow,
 } from './api';
 export type {
   LynxScheduledTask,

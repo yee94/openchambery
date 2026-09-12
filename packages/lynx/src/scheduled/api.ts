@@ -153,3 +153,55 @@ export const upsertScheduledTask = async (
   if (!parsed || !Array.isArray(parsed.tasks)) return [];
   return parsed.tasks.filter(isTask);
 };
+
+/** Cap DELETE `/api/projects/:projectId/scheduled-tasks/:taskId`. Never fake-success. */
+export const deleteScheduledTask = async (
+  runtimeFetch: LynxRuntimeFetch,
+  projectId: string,
+  taskId: string,
+): Promise<LynxScheduledTask[]> => {
+  const safeProjectID = projectId.trim();
+  const safeTaskID = taskId.trim();
+  if (!safeProjectID) throw new Error('projectId is required');
+  if (!safeTaskID) throw new Error('taskId is required');
+  const response = await runtimeFetch(
+    `/api/projects/${encodeURIComponent(safeProjectID)}/scheduled-tasks/${encodeURIComponent(safeTaskID)}`,
+    {
+      method: 'DELETE',
+      headers: { Accept: 'application/json' },
+    },
+  );
+  await ensureOk(response, 'Failed to delete schedule');
+  const parsed = await response.json() as { tasks?: unknown };
+  if (!parsed || !Array.isArray(parsed.tasks)) return [];
+  return parsed.tasks.filter(isTask);
+};
+
+/**
+ * Cap POST `/api/projects/:projectId/scheduled-tasks/:taskId/run` (Run now).
+ * Returns optional sessionId for navigation; failures must surface — never fake-success.
+ */
+export const runScheduledTaskNow = async (
+  runtimeFetch: LynxRuntimeFetch,
+  projectId: string,
+  taskId: string,
+): Promise<{ sessionId?: string }> => {
+  const safeProjectID = projectId.trim();
+  const safeTaskID = taskId.trim();
+  if (!safeProjectID) throw new Error('projectId is required');
+  if (!safeTaskID) throw new Error('taskId is required');
+  const response = await runtimeFetch(
+    `/api/projects/${encodeURIComponent(safeProjectID)}/scheduled-tasks/${encodeURIComponent(safeTaskID)}/run`,
+    {
+      method: 'POST',
+      headers: { Accept: 'application/json' },
+    },
+  );
+  await ensureOk(response, 'Failed to run schedule');
+  const parsed = await response.json().catch(() => null) as { sessionId?: unknown } | null;
+  const sessionId = typeof parsed?.sessionId === 'string' && parsed.sessionId.length > 0
+    ? parsed.sessionId
+    : undefined;
+  return { sessionId };
+};
+

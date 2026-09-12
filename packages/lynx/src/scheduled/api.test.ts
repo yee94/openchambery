@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'vitest';
 
 import type { LynxHttpResponse } from '../connection/types';
-import { loadGlobalScheduledTasks, loadScheduledTaskRuns, upsertScheduledTask } from './api';
+import { deleteScheduledTask, loadGlobalScheduledTasks, loadScheduledTaskRuns, runScheduledTaskNow, upsertScheduledTask } from './api';
 
 const jsonResponse = (status: number, body: unknown): LynxHttpResponse => ({
   ok: status >= 200 && status < 300,
@@ -66,6 +66,39 @@ describe('scheduled tasks API', () => {
     });
     expect(page.runs).toHaveLength(1);
     expect(page.complete).toBe(true);
+  });
+
+
+  test('delete hits Cap DELETE route', async () => {
+    const tasks = await deleteScheduledTask(async (path, init) => {
+      expect(path).toBe('/api/projects/%2Frepo/scheduled-tasks/task_1');
+      expect(init?.method).toBe('DELETE');
+      return jsonResponse(200, { tasks: [task] });
+    }, '/repo', 'task_1');
+    expect(tasks[0]?.id).toBe('task_1');
+  });
+
+  test('delete requires ids', async () => {
+    await expect(deleteScheduledTask(async () => jsonResponse(200, { tasks: [] }), '', 'task_1')).rejects.toThrow(/projectId/);
+    await expect(deleteScheduledTask(async () => jsonResponse(200, { tasks: [] }), '/repo', '  ')).rejects.toThrow(/taskId/);
+  });
+
+  test('run now hits Cap POST /run and returns sessionId', async () => {
+    const result = await runScheduledTaskNow(async (path, init) => {
+      expect(path).toBe('/api/projects/%2Frepo/scheduled-tasks/task_1/run');
+      expect(init?.method).toBe('POST');
+      return jsonResponse(200, { sessionId: 'ses_run' });
+    }, '/repo', 'task_1');
+    expect(result.sessionId).toBe('ses_run');
+  });
+
+  test('run now omits empty sessionId', async () => {
+    const result = await runScheduledTaskNow(async () => jsonResponse(200, {}), '/repo', 'task_1');
+    expect(result.sessionId).toBeUndefined();
+  });
+
+  test('run now HTTP failure throws (never fake-success)', async () => {
+    await expect(runScheduledTaskNow(async () => jsonResponse(500, { error: 'nope' }), '/repo', 'task_1')).rejects.toThrow(/Failed to run/);
   });
 
   test('upsert editor hook uses Cap PUT', async () => {
