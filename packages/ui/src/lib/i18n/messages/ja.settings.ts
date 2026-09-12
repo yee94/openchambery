@@ -75,6 +75,7 @@ export const settingsDict = {
   'settings.page.chat.title': 'チャット',
   'settings.page.shortcuts.title': 'ショートカット',
   'settings.page.sessions.title': 'セッション',
+  'settings.page.archivedSessions.title': 'アーカイブ済みセッション',
   'settings.page.summaryAI.title': 'AI 要約',
   'settings.page.magicPrompts.title': 'マジックプロンプト',
   'settings.page.notifications.title': '通知',

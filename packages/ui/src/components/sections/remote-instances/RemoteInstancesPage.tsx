@@ -91,6 +91,7 @@ import {
 } from '@/lib/desktopHostSwitch';
 import { createRelayTunnelClient } from '@/lib/relay/tunnel-client';
 import { getDesktopLanAddress, isDesktopLocalOriginActive, isDesktopShell } from '@/lib/desktop';
+import { DesktopLanAccessSettings } from '@/components/sections/openchamber/DesktopLanAccessSettings';
 import { runtimeFetch } from '@/lib/runtime-fetch';
 import { getRuntimeApiBaseUrl, getRuntimeKey, subscribeRuntimeEndpointChanged, switchRuntimeEndpoint } from '@/lib/runtime-switch';
 import {
@@ -2159,6 +2160,7 @@ export const RemoteInstancesPage: React.FC = () => {
     return (
       <>
       <SettingsPageLayout>
+        <DesktopLanAccessSettings />
         {clientAuth ? (
           <RemoteSettingsSection
             itemId="remote-instances.client-auth"

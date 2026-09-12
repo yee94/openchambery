@@ -71,6 +71,7 @@ export const settingsDict = {
   'settings.page.chat.title': 'Chat',
   'settings.page.shortcuts.title': 'Raccourcis',
   'settings.page.sessions.title': 'Sessions',
+  'settings.page.archivedSessions.title': 'Sessions archivées',
   'settings.page.summaryAI.title': 'Résumés IA',
   'settings.page.magicPrompts.title': 'Prompts magiques',
   'settings.page.notifications.title': 'Notifications',

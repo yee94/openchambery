@@ -28,7 +28,7 @@ describe('settings navigation metadata', () => {
 
     expect(pagesByGroup).toEqual({
       connection: ['instances'],
-      personalization: ['appearance', 'chat', 'notifications', 'sessions', 'summary-ai', 'shortcuts'],
+      personalization: ['appearance', 'chat', 'notifications', 'sessions', 'archived-sessions', 'summary-ai', 'shortcuts'],
       workspace: ['projects', 'git', 'remote-instances'],
       opencode: ['providers', 'agents', 'assistants', 'behavior', 'commands', 'mcp', 'plugins', 'global-config'],
       content: ['magic-prompts', 'snippets', 'skills.installed', 'skills.catalog'],

@@ -40,13 +40,19 @@ function getSessionActivityMs(session: Session): number {
   return session.time?.updated ?? session.time?.archived ?? session.time?.created ?? 0
 }
 
-export function ArchivedSessionsDialog(): React.ReactNode {
+export function ArchivedSessionsManager({
+  mode = 'dialog',
+}: {
+  mode?: 'dialog' | 'page'
+}): React.ReactNode {
   const { t } = useI18n()
   const { isMobile, isTablet, hasTouchInput } = useDeviceInfo()
   const useMobileOverlay = isMobile || isTablet || hasTouchInput
+  const isPage = mode === 'page'
 
   const open = useUIStore((state) => state.isArchivedSessionsDialogOpen)
   const setOpen = useUIStore((state) => state.setArchivedSessionsDialogOpen)
+  const active = isPage || open
   const projects = useProjectsStore((state) => state.projects)
   const archivedSessions = useGlobalSessionsStore((state) => state.archivedSessions)
   const setCurrentSession = useSessionUIStore((state) => state.setCurrentSession)
@@ -57,7 +63,7 @@ export function ArchivedSessionsDialog(): React.ReactNode {
   const [restoringId, setRestoringId] = React.useState<string | null>(null)
 
   React.useEffect(() => {
-    if (!open) {
+    if (!active) {
       setSelectedProjectId(null)
       setRestoringId(null)
       return
@@ -76,7 +82,7 @@ export function ArchivedSessionsDialog(): React.ReactNode {
     return () => {
       cancelled = true
     }
-  }, [open, t])
+  }, [active, t])
 
   const projectBuckets = React.useMemo((): ProjectBucket[] => {
     const ownershipProjects = projects.map((project) => ({
@@ -291,6 +297,17 @@ export function ArchivedSessionsDialog(): React.ReactNode {
     </div>
   )
 
+  if (isPage) {
+    return (
+      <div data-settings-item="archived-sessions.manage" className="oc-settings-section-stack">
+        <p className="typography-meta text-muted-foreground">
+          {t('settings.openchamber.archivedSessions.description')}
+        </p>
+        {body}
+      </div>
+    )
+  }
+
   if (useMobileOverlay) {
     return (
       <MobileOverlayPanel
@@ -324,4 +341,8 @@ export function ArchivedSessionsDialog(): React.ReactNode {
       </DialogContent>
     </Dialog>
   )
+}
+
+export function ArchivedSessionsDialog(): React.ReactNode {
+  return <ArchivedSessionsManager mode="dialog" />
 }

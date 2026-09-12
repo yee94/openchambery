@@ -72,6 +72,7 @@
   'settings.page.chat.title': '聊天',
   'settings.page.shortcuts.title': '快速鍵',
   'settings.page.sessions.title': '工作階段',
+  'settings.page.archivedSessions.title': '已封存工作階段',
   'settings.page.summaryAI.title': '智慧摘要',
   'settings.page.magicPrompts.title': '魔法提示詞',
   'settings.page.notifications.title': '通知',

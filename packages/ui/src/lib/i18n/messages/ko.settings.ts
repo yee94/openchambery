@@ -75,6 +75,7 @@ export const settingsDict = {
   'settings.page.chat.title': '채팅',
   'settings.page.shortcuts.title': '단축키',
   'settings.page.sessions.title': '세션',
+  'settings.page.archivedSessions.title': '보관된 세션',
   'settings.page.summaryAI.title': 'AI 요약',
   'settings.page.magicPrompts.title': '매직 프롬프트',
   'settings.page.notifications.title': '알림',
