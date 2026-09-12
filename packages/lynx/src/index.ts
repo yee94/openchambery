@@ -191,8 +191,12 @@ export {
   LYNX_TITLE_COLLAPSE_DISTANCE,
 } from './shell/tabPageHeader';
 export {
-  resolveLynxConnectGate,
+  AUTO_CONNECT_ATTEMPT_TIMEOUT_MS,
+  initialAutoConnectPhase,
   nextAutoConnectPhase,
+  raceAutoConnectAttempt,
+  resolveLynxConnectGate,
+  shouldAttemptAutoConnect,
   type LynxAutoConnectPhase,
 } from './connect/autoConnectPhase';
 export { parsePastedPairingLink } from './connect/pairingPaste';
