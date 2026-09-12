@@ -75,6 +75,7 @@ export const settingsDict = {
   "settings.page.chat.title": "Чат",
   "settings.page.shortcuts.title": "Гарячі клавіші",
   "settings.page.sessions.title": "Сесії",
+  "settings.page.archivedSessions.title": "Архівовані сесії",
   "settings.page.summaryAI.title": "Підсумки ШІ",
   "settings.page.magicPrompts.title": "Магічні промпти",
   "settings.page.notifications.title": "Сповіщення",

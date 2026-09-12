@@ -75,6 +75,7 @@ export const settingsDict = {
   'settings.page.chat.title': '聊天',
   'settings.page.shortcuts.title': '快捷键',
   'settings.page.sessions.title': '会话',
+  'settings.page.archivedSessions.title': '已归档会话',
   'settings.page.summaryAI.title': '智能摘要',
   'settings.page.magicPrompts.title': '魔法提示词',
   'settings.page.notifications.title': '通知',

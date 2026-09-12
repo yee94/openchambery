@@ -59,6 +59,7 @@ import { GitPage } from "@/components/sections/git-identities/GitPage";
 import type { OpenChamberSection } from "@/components/sections/openchamber/types";
 import { OpenChamberPage } from "@/components/sections/openchamber/OpenChamberPage";
 import { AboutSettings } from "@/components/sections/openchamber/AboutSettings";
+import { ArchivedSessionsPage } from "@/components/sections/openchamber/ArchivedSessionsPage";
 import { useDeviceInfo } from "@/lib/device";
 import {
   isDesktopLocalOriginActive,
@@ -224,6 +225,8 @@ export function getSettingsNavIcon(slug: SettingsPageSlug): IconName | null {
       return "command";
     case "sessions":
       return "chat-history";
+    case "archived-sessions":
+      return "archive";
     case "summary-ai":
       return "ai-generate-2";
 
@@ -686,6 +689,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
           return t("settings.page.shortcuts.title");
         case "sessions":
           return t("settings.page.sessions.title");
+        case "archived-sessions":
+          return t("settings.page.archivedSessions.title");
         case "summary-ai":
           return t("settings.page.summaryAI.title");
         case "magic-prompts":
@@ -1126,6 +1131,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
           return <SnippetsPage />;
         case "git":
           return <GitPage />;
+        case "archived-sessions":
+          return <ArchivedSessionsPage />;
         case "appearance":
         case "chat":
         case "shortcuts":

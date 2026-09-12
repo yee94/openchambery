@@ -1159,6 +1159,7 @@ export const settingsDict = {
   'settings.page.providers.title': 'Dostawcy',
   'settings.page.remoteInstances.title': 'Zdalne instancje',
   'settings.page.sessions.title': 'Sesje',
+  'settings.page.archivedSessions.title': 'Zarchiwizowane sesje',
   'settings.page.summaryAI.title': 'Podsumowania AI',
   'settings.page.shortcuts.title': 'Skróty',
   'settings.page.skills.title': 'Umiejętności',

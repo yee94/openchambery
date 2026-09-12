@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.19.13-beta.9] - 2026-09-12
+
+### 设置
+
+- 已归档会话从会话页拆成独立菜单项，并配上图标。
+- 局域网开启、桌面密码和连接地址改到远程实例页。
+
 ## [1.19.13-beta.8] - 2026-09-12
 
 ### 移动端
