@@ -11,8 +11,11 @@ import {
 import type { LynxPendingConnection, LynxSavedConnection } from './connection/types';
 import { ConnectWelcome } from './connect/ConnectWelcome';
 import {
+  initialAutoConnectPhase,
   nextAutoConnectPhase,
+  raceAutoConnectAttempt,
   resolveLynxConnectGate,
+  shouldAttemptAutoConnect,
   type LynxAutoConnectPhase,
 } from './connect/autoConnectPhase';
 import { createHostGlobalProps, type LynxHostGlobalProps } from './host/embedding';
@@ -84,7 +87,13 @@ export function App({
     });
   }, [injectedClient]);
 
-  const [phase, setPhase] = useState<LynxAutoConnectPhase>(skipAutoConnect ? 'done' : 'pending');
+  const hasSavedToken = useMemo(
+    () => client.loadConnections().some((connection) => Boolean(connection.hasToken)),
+    [client],
+  );
+  const [phase, setPhase] = useState<LynxAutoConnectPhase>(() =>
+    initialAutoConnectPhase({ skipAutoConnect, hasSavedToken }),
+  );
   const [connected, setConnected] = useState(false);
   const [connections, setConnections] = useState<LynxSavedConnection[]>(() => client.loadConnections());
   const [pending, setPending] = useState<LynxPendingConnection | null>(null);
@@ -92,14 +101,18 @@ export function App({
   const [autoConnectLabel, setAutoConnectLabel] = useState<string | null>(null);
 
   useEffect(() => {
-    if (skipAutoConnect) return;
+    if (!shouldAttemptAutoConnect({ skipAutoConnect, hasSavedToken })) {
+      setPhase('done');
+      return;
+    }
     let cancelled = false;
     setPhase((current) => nextAutoConnectPhase(current, 'start'));
-    const target = client.loadConnections()[0];
+    const target = client.loadConnections().find((connection) => Boolean(connection.hasToken))
+      ?? client.loadConnections()[0];
     setAutoConnectLabel(target?.label ?? null);
     void (async () => {
       try {
-        const ok = await client.autoConnectLastInstance();
+        const ok = await raceAutoConnectAttempt(client.autoConnectLastInstance());
         if (cancelled) return;
         if (ok) {
           setConnected(true);
@@ -112,7 +125,7 @@ export function App({
     return () => {
       cancelled = true;
     };
-  }, [client, skipAutoConnect]);
+  }, [client, hasSavedToken, skipAutoConnect]);
 
   const gate = resolveLynxConnectGate({ phase, connected, autoConnectLabel });
 
