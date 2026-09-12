@@ -253,7 +253,8 @@ const isCapacitorMobileApp = (): boolean => {
   return window.location.protocol === 'capacitor:';
 };
 
-const useNativeMobileChrome = (): void => {
+// eslint-disable-next-line react-refresh/only-export-components -- Native focus lifecycle is exercised directly by integration tests.
+export const useNativeMobileChrome = (): void => {
   React.useEffect(() => {
     if (!isCapacitorMobileApp()) return;
 
@@ -553,11 +554,13 @@ const useNativeMobileChrome = (): void => {
           dispatchKb('oc:keyboard-settled', { open: true });
         };
         const markClosed = (blur: boolean) => {
+          // Native close events can arrive after focus moved into a settings or
+          // overlay field. Blur ownership stays with the bottom chat composer.
           // focusout and oc:ime-state can both fire for one dismissal; restarting
           // the hide transition mid-flight is what parks the composer above the
           // already-gone IME for an extra beat.
           if (!keyboardOpen) {
-            if (blur && isTextField(document.activeElement)) {
+            if (blur && isTextField(document.activeElement) && isComposerKeyboardTarget(document.activeElement)) {
               (document.activeElement as HTMLElement).blur();
             }
             return;
@@ -567,7 +570,7 @@ const useNativeMobileChrome = (): void => {
           keyboardOpen = false;
           composerLiftArmed = false;
           armedImeHeight = 0;
-          if (blur && isTextField(document.activeElement)) {
+          if (blur && isTextField(document.activeElement) && isComposerKeyboardTarget(document.activeElement)) {
             (document.activeElement as HTMLElement).blur();
           }
           root.classList.remove('oc-keyboard-open');
