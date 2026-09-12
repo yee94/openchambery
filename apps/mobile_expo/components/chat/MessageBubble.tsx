@@ -1,13 +1,13 @@
 import React, { memo, useMemo } from 'react';
 import { Pressable, StyleSheet, View as RNView } from 'react-native';
 
+import { ChatMarkdown } from '@/components/chat/ChatMarkdown';
 import { ReasoningDisclosure } from '@/components/chat/ReasoningDisclosure';
 import { SkillGroup } from '@/components/chat/SkillGroup';
 import { ToolCard } from '@/components/chat/ToolCard';
 import { UsedFold } from '@/components/chat/UsedFold';
 import { Text, useThemeColor } from '@/components/Themed';
 import type { TranscriptRow } from '@/lib/chatTranscript';
-import { safeStreamingMarkdownText } from '@/lib/streamingMarkdown';
 import { partsSignature, segmentsFromParts } from '@/lib/toolCards';
 
 export type MessageBubbleProps = {
@@ -18,6 +18,7 @@ export type MessageBubbleProps = {
 function MessageBubbleImpl({ row, onLongPress }: MessageBubbleProps) {
   const textColor = useThemeColor({}, 'text');
   const muted = useThemeColor({}, 'muted');
+  const tint = useThemeColor({}, 'tint');
   const isUser = row.role === 'user';
 
   const segments = useMemo(
@@ -32,10 +33,27 @@ function MessageBubbleImpl({ row, onLongPress }: MessageBubbleProps) {
       s.kind === 'skill-group',
   );
 
-  const fallbackText = useMemo(
-    () => safeStreamingMarkdownText(row.text, row.streaming),
-    [row.text, row.streaming],
-  );
+  const bodyColor = isUser ? '#fff' : textColor;
+  const linkColor = isUser ? '#FFE4C4' : tint;
+  const codeBg = isUser ? 'rgba(0,0,0,0.22)' : 'rgba(127,127,127,0.22)';
+  const codeColor = isUser ? '#fff' : textColor;
+
+  const renderMarkdown = (content: string, streaming: boolean) => {
+    if (!content && streaming) {
+      return <Text style={[styles.body, { color: bodyColor }]}>…</Text>;
+    }
+    if (!content) return null;
+    return (
+      <ChatMarkdown
+        content={content}
+        streaming={streaming}
+        color={bodyColor}
+        linkColor={linkColor}
+        codeBackground={codeBg}
+        codeColor={codeColor}
+      />
+    );
+  };
 
   if (isUser || !hasStructured) {
     return (
@@ -50,9 +68,7 @@ function MessageBubbleImpl({ row, onLongPress }: MessageBubbleProps) {
             isUser ? styles.userBubble : styles.assistantBubble,
           ]}
         >
-          <Text style={[styles.body, { color: isUser ? '#fff' : textColor }]}>
-            {fallbackText || (row.streaming ? '…' : '')}
-          </Text>
+          {renderMarkdown(row.text, row.streaming)}
           {row.streaming ? (
             <Text style={[styles.streaming, { color: isUser ? 'rgba(255,255,255,0.7)' : muted }]}>
               streaming
@@ -79,16 +95,11 @@ function MessageBubbleImpl({ row, onLongPress }: MessageBubbleProps) {
           if (segment.kind === 'tool') {
             return <ToolCard key={segment.id} card={segment.card} />;
           }
-          const display = safeStreamingMarkdownText(
-            segment.text,
-            row.streaming && segments[segments.length - 1] === segment,
-          );
-          if (!display && !row.streaming) return null;
+          const liveTail = row.streaming && segments[segments.length - 1] === segment;
+          if (!segment.text && !row.streaming) return null;
           return (
             <RNView key={segment.id} style={[styles.bubble, styles.assistantBubble]}>
-              <Text style={[styles.body, { color: textColor }]}>
-                {display || (row.streaming ? '…' : '')}
-              </Text>
+              {renderMarkdown(segment.text, Boolean(liveTail))}
             </RNView>
           );
         })}

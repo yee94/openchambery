@@ -22,6 +22,7 @@
     "expo-status-bar": "~57.0.1",
     "expo-symbols": "~57.0.2",
     "expo-web-browser": "~57.0.2",
+    "marked": "^17.0.6",
     "openchamber-system-shell": "file:./modules/openchamber-system-shell",
     "react": "19.2.3",
     "react-dom": "19.2.3",
