@@ -337,9 +337,7 @@ export function MobileAssistantTab({ onEnable, onOpenAssistant, className }: Mob
           </Button>
         )}
       >
-        <div className="flex justify-end pb-2">
-          <AssistantMarkAllReadButton snapshot={snapshot.data} />
-        </div>
+        <AssistantMarkAllReadButton snapshot={snapshot.data} rowClassName="flex justify-end pb-2" />
         <div
           className="oc-mobile-assistant-catalog"
           role="listbox"

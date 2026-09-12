@@ -150,7 +150,7 @@ const wait = async (host: HTMLDivElement, pred: (p: ReturnType<typeof probe>) =>
   for (let i = 0; i < 40; i += 1) {
     const p = probe(host)
     if (pred(p)) return p
-    await act(async () => { await Promise.resolve() })
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)) })
   }
   throw new Error(`${label}: ${JSON.stringify(probe(host))} fetches=${hoisted.fetches.length}`)
 }
@@ -362,12 +362,12 @@ describe('assistant contact pagination query', () => {
 
     const releaseOne = async () => {
       for (let i = 0; i < 50 && pendingGap.length === 0; i += 1) {
-        await act(async () => { await Promise.resolve() })
+        await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)) })
       }
       const next = pendingGap.shift()
       if (!next) return false
       await act(async () => { next.resolve() })
-      await act(async () => { await Promise.resolve(); await Promise.resolve() })
+      await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)) })
       return true
     }
 

@@ -4,7 +4,11 @@ import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import type { AssistantSnapshot } from '@/queries/assistantQueries';
 
 const state = vi.hoisted(() => ({ mark: vi.fn(), all: vi.fn(), toast: vi.fn(), total: 0, native: false, transport: 'a', generation: 1 }));
-vi.mock('@/queries/assistantQueries', () => ({ markAssistantContactRead: state.mark, markAllAssistantsRead: state.all, useAssistantUnreadTotal: () => state.total }));
+vi.mock('@/queries/assistantQueries', () => ({
+  markAssistantContactRead: state.mark,
+  markAllAssistantsRead: state.all,
+  useAssistantUnreadTotal: () => state.total,
+}));
 vi.mock('@/lib/runtime-switch', () => ({ getRuntimeTransportIdentity: () => state.transport, getRuntimeGeneration: () => state.generation }));
 vi.mock('@/lib/platform', () => ({ isCapacitorApp: () => state.native }));
 vi.mock('sonner', () => ({ toast: { error: state.toast } }));
@@ -144,6 +148,76 @@ describe('Assistant unread UI', () => {
     await act(async () => vi.advanceTimersByTimeAsync(30_000));
     expect(state.mark).toHaveBeenCalledTimes(2);
     expect(disconnect).toHaveBeenCalled();
+  });
+
+  test.each([
+    ['empty catalog', []],
+    ['zero count', [{ id: 'a', unreadCount: 0, readTip: position }]],
+    ['missing count', [{ id: 'a', readTip: position }]],
+    ['legacy missing fields', [{ id: 'a' }]],
+  ])('mark-all hides the entire row for %s', async (_label, assistants) => {
+    const snapshot = { enabled: true, revision: 1, assistants } as AssistantSnapshot;
+    await render(<AssistantMarkAllReadButton snapshot={snapshot} rowClassName="flex justify-end pb-2" />);
+    expect(host.childElementCount).toBe(0);
+  });
+
+  test.each([null, undefined])('mark-all keeps unread visible and disabled with readTip=%s', async (readTip) => {
+    const snapshot = { enabled: true, revision: 1, assistants: [{ id: 'a', unreadCount: 3, readTip }] } as AssistantSnapshot;
+    await render(<AssistantMarkAllReadButton snapshot={snapshot} />);
+    const button = host.querySelector('button')!;
+    expect(button.textContent).toBe('assistants.unread.markAll');
+    expect(button.disabled).toBe(true);
+    await act(async () => button.click());
+    expect(state.all).not.toHaveBeenCalled();
+  });
+
+  test.each(['flex justify-end px-4 pb-2 sm:px-5', 'flex justify-end pb-2'])(
+    'mark-all preserves its flight across row visibility changes with layout %s', async (rowClassName) => {
+      const unread = { enabled: true, revision: 1, assistants: [{ id: 'a', unreadCount: 2, readTip: position }] } as AssistantSnapshot;
+      const read = { ...unread, revision: 2, assistants: [{ ...unread.assistants[0], unreadCount: 0 }] };
+      const arrival = { ...unread, revision: 3 };
+      let finish!: (result: { failed: number }) => void;
+      state.all.mockImplementationOnce(() => new Promise((resolve) => { finish = resolve; }))
+        .mockResolvedValue({ failed: 0 });
+      await render(<AssistantMarkAllReadButton snapshot={unread} rowClassName={rowClassName} />);
+      expect(host.firstElementChild?.className).toBe(rowClassName);
+      expect(host.querySelectorAll('button')).toHaveLength(1);
+      await act(async () => { host.querySelector('button')!.click(); host.querySelector('button')!.click(); });
+      expect(state.all).toHaveBeenCalledExactlyOnceWith(unread);
+      await render(<AssistantMarkAllReadButton snapshot={read} rowClassName={rowClassName} />);
+      expect(host.childElementCount).toBe(0);
+      await render(<AssistantMarkAllReadButton snapshot={arrival} rowClassName={rowClassName} />);
+      const button = host.querySelector('button')!;
+      expect(host.firstElementChild?.className).toBe(rowClassName);
+      expect(button.disabled).toBe(true);
+      expect(button.getAttribute('aria-busy')).toBe('true');
+      await act(async () => button.click());
+      expect(state.all).toHaveBeenCalledTimes(1);
+      await act(async () => finish({ failed: 0 }));
+      expect(button.disabled).toBe(false);
+      expect(button.getAttribute('aria-busy')).toBe('false');
+      await act(async () => button.click());
+      expect(state.all).toHaveBeenCalledTimes(2);
+      expect(state.all).toHaveBeenLastCalledWith(arrival);
+      await render(<AssistantMarkAllReadButton snapshot={read} rowClassName={rowClassName} />);
+      expect(host.childElementCount).toBe(0);
+    },
+  );
+
+  test('mark-all stays hidden when its pending batch finishes after unread clears', async () => {
+    const unread = { enabled: true, revision: 1, assistants: [{ id: 'a', unreadCount: 1, readTip: position }] } as AssistantSnapshot;
+    const read = { ...unread, assistants: [{ ...unread.assistants[0], unreadCount: 0 }] };
+    let finish!: (result: { failed: number }) => void;
+    state.all.mockImplementation(() => new Promise((resolve) => { finish = resolve; }));
+    await render(<AssistantMarkAllReadButton snapshot={unread} />);
+    await act(async () => host.querySelector('button')!.click());
+    await render(<AssistantMarkAllReadButton snapshot={read} />);
+    expect(host.childElementCount).toBe(0);
+    await act(async () => finish({ failed: 0 }));
+    expect(host.childElementCount).toBe(0);
+    await render(<AssistantMarkAllReadButton snapshot={unread} />);
+    expect(host.querySelector('button')!.disabled).toBe(false);
+    expect(state.all).toHaveBeenCalledTimes(1);
   });
 
   test('mark-all serializes clicks and surfaces partial failure for retry', async () => {

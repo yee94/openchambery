@@ -3,6 +3,10 @@
  * Server pages newest-first keyset; each page.messages is ascending by ordinal.
  * Ordinal holes from tool wipe are legal — gap is window non-overlap, not dense ordinals.
  *
+ * Authoritative same-generation latest replaces its coverage:
+ * complete page = full set; partial page = first keyset through the latest end.
+ * Stale lower-revision latest preserves existing rows.
+ *
  * Gap state splits two identities (no multi-layer queue):
  * - gapRequestIDs: which fill session may advance gapCursor (updated on full slide).
  * - gapTargetIDs: earliest unfinished bridge targets; full slide keeps them until hit/complete.
@@ -161,8 +165,36 @@ const clearGap = <T extends Partial<ContactMessagesView>>(base: T) => ({
   gapTargetIDs: null,
 })
 
+const messageKeyset = (message: AssistantContactMessage) => ({
+  ordinal: message.ordinal,
+  messageID: message.messageID,
+})
+
 /**
- * Apply a latest-window page (no before). Preserves older-than-window rows.
+ * Authoritative same-generation latest coverage (after revision fence).
+ * complete: page is the full server set.
+ * partial: replace from the page's first keyset through the latest end, retaining older history.
+ */
+const replaceLatestCoverage = (
+  previousMessages: readonly AssistantContactMessage[],
+  latest: readonly AssistantContactMessage[],
+  complete: boolean,
+): AssistantContactMessage[] => {
+  if (complete) return [...latest]
+  if (latest.length === 0) return [...previousMessages]
+  const pageFirst = latest[0]!
+  const older = previousMessages.filter(
+    (message) => compareContactMessageKeyset(messageKeyset(message), messageKeyset(pageFirst)) < 0,
+  )
+  return [...older, ...latest]
+}
+
+/**
+ * Apply a latest-window page (no before).
+ * After generation/revision fencing, an authoritative page replaces its coverage range
+ * (complete = full set; partial = first keyset through latest end) so same-generation server deletes win.
+ * Stale lower-revision pages never delete: same-id keeps existing, unique ids still merge.
+ * Optimistic/streaming overlays remain owned by the contact surface, outside this server cache.
  * Gap = no ID overlap with the previous live window while server still has older cursor.
  * Closed only by gap-fill overlap with gapTargetIDs or server complete — not by ordinal density.
  */
@@ -209,11 +241,28 @@ export const applyContactLatestPage = (
   }
 
   // Same generation.
+  const revision = Math.max(prev.revision, page.revision)
+  const authoritative = page.revision >= prev.revision
+
   if (latest.length === 0) {
+    if (authoritative && page.complete) {
+      return {
+        messages: [],
+        generation: page.generation,
+        revision,
+        olderCursor: null,
+        olderComplete: true,
+        hasMessageGap: false,
+        gapCursor: null,
+        gapRequestIDs: null,
+        gapTargetIDs: null,
+        liveWindowIDs: [],
+      }
+    }
     return {
       ...prev,
       generation: page.generation,
-      revision: Math.max(prev.revision, page.revision),
+      revision,
       olderCursor: prev.olderCursor ?? page.nextCursor,
       olderComplete: prev.olderComplete && page.complete,
       liveWindowIDs: [],
@@ -224,12 +273,17 @@ export const applyContactLatestPage = (
     }
   }
 
-  const windowMin = minOrdinal(latest)!
-  const belowWindow = prev.messages.filter((message) => message.ordinal < windowMin)
-  const prevInWindow = prev.messages.filter((message) => message.ordinal >= windowMin)
-  const preferred = page.revision >= prev.revision ? 'incoming' as const : 'existing' as const
-  const windowMerged = mergeContactMessagesById(prevInWindow, latest, preferred)
-  const merged = mergeContactMessagesById(belowWindow, windowMerged, 'incoming')
+  let merged: AssistantContactMessage[]
+  if (authoritative) {
+    merged = replaceLatestCoverage(prev.messages, latest, page.complete)
+  } else {
+    // Stale: retain existing same-id content; still absorb unique ids from the late page.
+    const windowMin = minOrdinal(latest)!
+    const belowWindow = prev.messages.filter((message) => message.ordinal < windowMin)
+    const prevInWindow = prev.messages.filter((message) => message.ordinal >= windowMin)
+    const windowMerged = mergeContactMessagesById(prevInWindow, latest, 'existing')
+    merged = mergeContactMessagesById(belowWindow, windowMerged, 'incoming')
+  }
 
   const prevLive = prev.liveWindowIDs
   const liveSet = toIdSet(liveWindowIDs)
@@ -267,7 +321,7 @@ export const applyContactLatestPage = (
   return {
     messages: merged,
     generation: page.generation,
-    revision: Math.max(prev.revision, page.revision),
+    revision,
     olderCursor: prev.liveWindowIDs.length === 0 && prev.messages.length === 0
       ? (page.complete ? null : page.nextCursor)
       : prev.olderCursor,

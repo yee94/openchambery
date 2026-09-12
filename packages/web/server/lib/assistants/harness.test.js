@@ -13,10 +13,47 @@ import {
   NEW_CONVERSATION_TOOL_NAME,
   createContactTools,
 } from './contact-tools.js'
-import { createContactStreamFn, resolveContactLanguage, runContactTurn } from './harness.js'
+import {
+  createContactStreamFn,
+  projectStreamedContactTurnBubbles,
+  resolveContactLanguage,
+  runContactTurn,
+} from './harness.js'
 import { PI_CODING_TOOL_NAMES } from './pi-tools.js'
 
 describe('createContactStreamFn', () => {
+  it('runs managed contact lookups from the user home with the coordination policy', async () => {
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), 'oc-contact-home-'))
+    const homeSpy = vi.spyOn(os, 'homedir').mockReturnValue(home)
+    fs.writeFileSync(path.join(home, 'example-config.txt'), 'configured value')
+    const createChatCompletion = vi.fn(async ({ body }) => {
+      const system = body.messages[0].content
+      expect(system).toContain(`Working directory: ${home}`)
+      expect(system).toContain('personable contact focused on understanding the user')
+      expect(system).toContain('default to finding the relevant existing OpenCode workspace')
+      expect(system).toContain('small, clearly scoped configuration changes directly')
+      expect(system).toContain('walk its parent directories')
+      expect(system).toContain('Look up existing OpenCode conversations with list_sessions')
+      const result = body.messages.find((message) => typeof message.content === 'string' && message.content.includes('tool result name=read'))
+      if (result) {
+        expect(result.content).toContain('configured value')
+        return { completion: { choices: [{ message: { content: '```openchamber-final\n{"status":"complete","text":"configured value"}\n```' } }] } }
+      }
+      return { completion: { choices: [{ message: { content: '```openchamber-tool\n{"name":"read","arguments":{"path":"example-config.txt"}}\n```' } }] } }
+    })
+    try {
+      const result = await runContactTurn({
+        assistant: { providerID: 'p', modelID: 'm', workspacePath: null, effectiveWorkspacePath: path.join(home, 'managed') },
+        history: [], userText: 'Read example-config.txt', skillHomeDir: home, createChatCompletion,
+      })
+      expect(result.text).toContain('configured value')
+      expect(createChatCompletion).toHaveBeenCalledTimes(2)
+    } finally {
+      homeSpy.mockRestore()
+      fs.rmSync(home, { recursive: true, force: true })
+    }
+  })
+
   it('forwards completion text as pi-ai text events', async () => {
     const createChatCompletion = vi.fn(async () => ({
       completion: { choices: [{ message: { content: 'Hi' } }] },
@@ -291,6 +328,43 @@ describe('createContactStreamFn', () => {
     expect(bubbleDeltas).toEqual([
       { index: 0, delta: 'One.', done: true },
       { index: 1, delta: 'Two.', done: true },
+    ])
+  })
+
+  it('continues bubble indices after prior turn streamed assistant messages (tool then final)', async () => {
+    const bubbleDeltas = []
+    const createChatCompletion = vi.fn(async () => ({
+      completion: { choices: [{ message: { content: 'Final B.\n\nFinal C.' } }] },
+    }))
+    const streamFn = createContactStreamFn(createChatCompletion, {
+      onBubbleDelta: (index, delta, done) => bubbleDeltas.push({ index, delta, done }),
+      turnMessageStart: 0,
+    })
+    const priorTurn = [
+      { role: 'user', content: 'do it', timestamp: 1 },
+      {
+        role: 'assistant',
+        content: [
+          { type: 'text', text: 'Preamble A' },
+          { type: 'toolCall', id: 'call_1', name: 'assign_session', arguments: { prompt: 'x' } },
+        ],
+      },
+      {
+        role: 'toolResult',
+        toolName: 'assign_session',
+        toolCallId: 'call_1',
+        content: [{ type: 'text', text: 'Opened a coding session.' }],
+      },
+    ]
+    expect(projectStreamedContactTurnBubbles(priorTurn, 0)).toEqual(['Preamble A'])
+    const stream = streamFn(
+      { name: 'openai/gpt-5.2', id: 'gpt-5.2', provider: 'openchamber', api: 'openai-completions' },
+      { messages: priorTurn },
+    )
+    for await (const event of stream) void event
+    expect(bubbleDeltas).toEqual([
+      { index: 1, delta: 'Final B.', done: true },
+      { index: 2, delta: 'Final C.', done: true },
     ])
   })
 })
@@ -607,8 +681,8 @@ describe('runContactTurn', () => {
       createChatCompletion: vi.fn(), AgentImpl,
     })
     expect(prompts).toHaveLength(2)
-    // assign toolText is not a user bubble; no spoken/card in this fixture.
-    expect(result.bubbles).toEqual([])
+    // assign toolText is not a user bubble. Turn-boundary keeps pre-retry assistant prose.
+    expect(result.bubbles).toEqual(['Only document search is available.'])
     expect(result.bubbles.join('\n')).not.toContain('Opened session.')
   })
   it('runs pi-agent-core with thinking off and no tools by default', async () => {
@@ -786,7 +860,7 @@ describe('runContactTurn', () => {
       expect(options.initialState.systemPrompt).toContain('说一声')
       expect(options.initialState.systemPrompt).toContain('A reply without the tool call does nothing')
       expect(options.initialState.systemPrompt).toContain('已创建')
-      expect(options.initialState.systemPrompt).toContain('cannot see the registered project list')
+      expect(options.initialState.systemPrompt).toContain('You receive the registered project catalog every turn')
       this.state = { ...options.initialState, messages: [] }
       this.prompt = async () => {
         this.state.messages = [
@@ -1065,7 +1139,8 @@ describe('runContactTurn', () => {
       name: 'FlowNL',
       assistantID: 'asst_flow',
     })])
-    expect(result.bubbles.join('')).not.toContain('好的，我来直接创建')
+    // Turn-boundary keeps pre-retry spoken; English tool confirm still stays out.
+    expect(result.bubbles.join('')).toContain('好的，我来直接创建')
     expect(result.bubbles.join('')).not.toContain('Created assistant FlowNL')
     expect(result.cards).toHaveLength(1)
     expect(result.thinkingLevel).toBe('off')
@@ -1104,7 +1179,7 @@ describe('runContactTurn', () => {
     expect(createAssistant).not.toHaveBeenCalled()
     expect(result.cards).toEqual([])
     // Prefer existing assistant text over the English missed-tool fallback.
-    expect(result.bubbles).toEqual(['好的，已创建。'])
+    expect(result.bubbles).toEqual(['好的，已创建。', '好的，已创建。'])
     expect(result.bubbles).not.toEqual([MISSED_TOOL_FAILURE_BUBBLE])
   })
 
@@ -1163,9 +1238,9 @@ describe('runContactTurn', () => {
       text: 'hello-from-assistant 写好了',
     })
     expect(result.cards).toEqual([])
-    // English tool confirm must not leak; retry slice has no spoken preamble.
+    // English tool confirm must not leak. Turn-boundary projection keeps the pre-retry spoken line.
     expect(result.bubbles.join('')).not.toContain('Sent to PeerQA')
-    expect(result.bubbles.join('')).not.toContain('好的，我去说一声')
+    expect(result.bubbles.join('')).toContain('好的，我去说一声')
   })
 
   it('keeps only the new_conversation confirm and drops leftover attachment text', async () => {
@@ -1358,6 +1433,158 @@ describe('rejected response execution evidence', () => {
     const result = await stream.result()
     expect(result.stopReason).toBe('toolUse')
     expect(result.content).toEqual(expect.arrayContaining([expect.objectContaining({ type: 'toolCall', name: 'write' })]))
+  })
+})
+
+describe('runContactTurn bubble index continuity', () => {
+  const fence = (name, args) => '```openchamber-tool\n' + JSON.stringify({ name, arguments: args }) + '\n```'
+  const completionFromReplies = (replies) => {
+    const queue = [...replies]
+    return vi.fn(async () => ({
+      completion: { choices: [{ message: { content: queue.shift() || '' } }] },
+    }))
+  }
+  const readSessionTools = (sessionID = 'ses_idx') => createContactTools({
+    readSession: async () => ({
+      sessionID,
+      messages: [{ messageID: 'm1', role: 'user', parts: [{ type: 'text', text: 'hi' }] }],
+    }),
+  })
+
+  it('real Agent gateway stub: preamble then read_session then multi-bubble final keeps stable SSE indices', async () => {
+    const bubbleDeltas = []
+    const createChatCompletion = completionFromReplies([
+      `我去读一下\n\n${fence('read_session', { sessionID: 'ses_idx' })}`,
+      '办好了。\n\n还有后续说明。',
+    ])
+    const result = await runContactTurn({
+      assistant: { providerID: 'p', modelID: 'm', defaultPrompt: '' },
+      history: [],
+      userText: '读一下那个会话',
+      createChatCompletion,
+      tools: readSessionTools(),
+      onBubbleDelta: (index, delta, done) => bubbleDeltas.push({ index, delta, done }),
+    })
+    expect(createChatCompletion).toHaveBeenCalledTimes(2)
+    const doneBubbles = bubbleDeltas.filter((item) => item.done)
+    expect(doneBubbles.map((item) => ({ index: item.index, delta: item.delta }))).toEqual([
+      { index: 0, delta: '我去读一下' },
+      { index: 1, delta: '办好了。' },
+      { index: 2, delta: '还有后续说明。' },
+    ])
+    expect(result.bubbles).toEqual(['我去读一下', '办好了。', '还有后续说明。'])
+    // Published stream is a stable prefix of the final array.
+    expect(result.bubbles.slice(0, doneBubbles.length)).toEqual(doneBubbles.map((item) => item.delta))
+  })
+
+  it('real Agent: two read_session preambles keep both spoken lines plus final in bubbles', async () => {
+    const bubbleDeltas = []
+    const createChatCompletion = completionFromReplies([
+      `我去读一下\n\n${fence('read_session', { sessionID: 'ses_a' })}`,
+      `我再读一下\n\n${fence('read_session', { sessionID: 'ses_b' })}`,
+      '办好了',
+    ])
+    const result = await runContactTurn({
+      assistant: { providerID: 'p', modelID: 'm', defaultPrompt: '' },
+      history: [],
+      userText: '读两个会话',
+      createChatCompletion,
+      tools: readSessionTools('ses_a'),
+      onBubbleDelta: (index, delta, done) => bubbleDeltas.push({ index, delta, done }),
+    })
+    expect(createChatCompletion).toHaveBeenCalledTimes(3)
+    const doneBubbles = bubbleDeltas.filter((item) => item.done).map((item) => item.delta)
+    expect(doneBubbles).toEqual(['我去读一下', '我再读一下', '办好了'])
+    expect(result.bubbles).toEqual(['我去读一下', '我再读一下', '办好了'])
+    expect(result.bubbles.slice(0, doneBubbles.length)).toEqual(doneBubbles)
+  })
+
+  it('real Agent: duplicate preamble text is kept as independent bubbles', async () => {
+    const bubbleDeltas = []
+    const createChatCompletion = completionFromReplies([
+      `我去读一下\n\n${fence('read_session', { sessionID: 'ses_a' })}`,
+      `我去读一下\n\n${fence('read_session', { sessionID: 'ses_b' })}`,
+      '办好了',
+    ])
+    const result = await runContactTurn({
+      assistant: { providerID: 'p', modelID: 'm', defaultPrompt: '' },
+      history: [],
+      userText: '再读一遍',
+      createChatCompletion,
+      tools: readSessionTools('ses_a'),
+      onBubbleDelta: (index, delta, done) => bubbleDeltas.push({ index, delta, done }),
+    })
+    const doneBubbles = bubbleDeltas.filter((item) => item.done).map((item) => item.delta)
+    expect(doneBubbles).toEqual(['我去读一下', '我去读一下', '办好了'])
+    expect(result.bubbles).toEqual(['我去读一下', '我去读一下', '办好了'])
+  })
+
+  it('real Agent: multi-segment spoken preambles then terminal tool confirm append after published prefix', async () => {
+    const bubbleDeltas = []
+    // Two independent short spokens (each tool turn); confirm-only tool text appends at end.
+    // update_default_prompt is terminate:false so a plain final closes the agent loop.
+    const createChatCompletion = completionFromReplies([
+      `我先看一下\n\n${fence('list_sessions', { query: 'login' })}`,
+      `马上改人设\n\n${fence('update_default_prompt', { prompt: 'be brief' })}`,
+      '改好了',
+    ])
+    const tools = createContactTools({
+      listSessions: async () => ({ sessions: [] }),
+      updateAssistantSettings: async ({ defaultPrompt }) => ({ defaultPrompt, updated: true }),
+      currentAssistant: { id: 'asst_x', name: 'A', providerID: 'p', modelID: 'm', defaultPrompt: '' },
+    })
+    const result = await runContactTurn({
+      assistant: { providerID: 'p', modelID: 'm', defaultPrompt: '' },
+      history: [],
+      userText: '改默认提示词 be brief',
+      createChatCompletion,
+      tools,
+      onBubbleDelta: (index, delta, done) => bubbleDeltas.push({ index, delta, done }),
+    })
+    const doneBubbles = bubbleDeltas.filter((item) => item.done).map((item) => item.delta)
+    expect(doneBubbles).toEqual(['我先看一下', '马上改人设', '改好了'])
+    // Tool-only confirm appends after the published spoken/final prefix.
+    expect(result.bubbles.slice(0, 3)).toEqual(['我先看一下', '马上改人设', '改好了'])
+    expect(result.bubbles.length).toBeGreaterThan(3)
+    expect(result.bubbles.slice(0, doneBubbles.length)).toEqual(doneBubbles)
+    expect(result.bubbles.at(-1)).toMatch(/Default prompt/i)
+    expect(result.bubbles.join('\n')).not.toContain('openchamber-tool')
+  })
+
+  it('real Agent: missed-tool retry keeps pre-retry spoken bubbles in the final array', async () => {
+    const bubbleDeltas = []
+    const createAssistant = vi.fn(async (input) => ({
+      id: 'asst_miss',
+      name: input.name,
+      providerID: input.providerID,
+      modelID: input.modelID,
+      mode: 'continuous',
+    }))
+    const createChatCompletion = completionFromReplies([
+      '好的，我来创建。',
+      `这就建好\n\n${fence('create_assistant', { name: 'MissRetry', model: 'p/m' })}`,
+    ])
+    const result = await runContactTurn({
+      assistant: { providerID: 'p', modelID: 'm', defaultPrompt: '' },
+      history: [],
+      userText: '帮我新建一个助理，名叫 MissRetry，不要开编码 session',
+      createChatCompletion,
+      tools: createContactTools({
+        createAssistant,
+        currentAssistant: { providerID: 'p', modelID: 'm' },
+      }),
+      onBubbleDelta: (index, delta, done) => bubbleDeltas.push({ index, delta, done }),
+    })
+    expect(createChatCompletion.mock.calls.length).toBeGreaterThanOrEqual(2)
+    expect(createAssistant).toHaveBeenCalled()
+    const doneBubbles = bubbleDeltas.filter((item) => item.done).map((item) => item.delta)
+    expect(doneBubbles).toContain('好的，我来创建。')
+    expect(result.bubbles).toEqual(expect.arrayContaining(['好的，我来创建。']))
+    // Final array keeps the full turn projection (streamed prefix stable).
+    expect(result.bubbles.slice(0, doneBubbles.length)).toEqual(doneBubbles)
+    expect(result.bubbles).not.toEqual([MISSED_TOOL_FAILURE_BUBBLE])
+    // Card tool: English tool confirm stays out of bubbles.
+    expect(result.bubbles.join('')).not.toContain('Created assistant')
   })
 })
 

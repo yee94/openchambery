@@ -2160,7 +2160,6 @@ export const RemoteInstancesPage: React.FC = () => {
     return (
       <>
       <SettingsPageLayout>
-        <DesktopLanAccessSettings />
         {clientAuth ? (
           <RemoteSettingsSection
             itemId="remote-instances.client-auth"
@@ -2778,6 +2777,8 @@ export const RemoteInstancesPage: React.FC = () => {
             </div>
           )}
         </RemoteSettingsSection> : null}
+
+        <DesktopLanAccessSettings />
 
         <Dialog
           open={Boolean(patternHost)}

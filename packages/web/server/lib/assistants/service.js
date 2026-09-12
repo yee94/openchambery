@@ -17,6 +17,7 @@ import {
   createActiveContactTurn,
   deleteContactMessages,
   deleteContactReadState,
+  deleteContactTurnAssistantOutputs,
   ensureContactSchema,
   contactPartsFingerprint,
   getContactMessage,
@@ -140,10 +141,11 @@ const promptAdmitted = (result) => !result?.error && (result?.response?.status =
 export const CONTACT_CATALOG_DEADLINE_MS = 8_000;
 /** Bound last worker assistant text injected into assigned-session resume prompts. */
 export const ASSIGNED_SESSION_RESUME_WORKER_TEXT_MAX = 2_000;
-/** Stable resume turn/message id for assigned-session complete/error continuation. */
+/** Stable resume turn/message id for assigned-session complete/error/cancelled continuation. */
 export const assignedSessionResumeMessageID = (assistantID, sessionID, status, updatedAt) => (
   `resume_${assistantID}_${sessionID}_${status}_${updatedAt}`
 );
+const assignedSessionResumeStatus = (status) => status === 'complete' || status === 'error' || status === 'cancelled';
 const awaitWithDeadline = async (work, ms = CONTACT_CATALOG_DEADLINE_MS, code = 'upstream_error') => {
   let timer = null;
   try {
@@ -492,11 +494,33 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
   // Last UI locale seen from a client per assistant. Background notifications
   // (assigned-session settle) have no request locale, so they recall this value.
   const contactTurnLanguages = new Map();
-  const cancelAssignedResumes = ({ sessionID, assistantID }) => {
+  const cancelAssignedResumes = ({ sessionID, assistantID, statuses } = {}) => {
     for (const resume of assignedResumes.values()) {
       if (sessionID && resume.sessionID !== sessionID) continue;
       if (assistantID && resume.assistantID !== assistantID) continue;
+      if (statuses && !statuses.includes(resume.status)) continue;
       resume.controller.abort();
+    }
+  };
+  // Abort-request lifecycle only (stop_session). Concurrent same-session aborts share one promise.
+  // Observed SSE terminals are stashed until abort settles so resume=true cannot beat resume=false.
+  const sessionAbortInflight = new Map();
+  const abortTerminalRank = (status) => {
+    if (status === 'cancelled') return 3;
+    if (status === 'error') return 2;
+    if (status === 'complete') return 1;
+    return 0;
+  };
+  const stashSessionAbortTerminal = (entry, status, resume) => {
+    if (!entry || typeof status !== 'string' || !status) return;
+    const nextRank = abortTerminalRank(status);
+    if (nextRank <= 0) return;
+    const prev = entry.observed;
+    const prevRank = prev ? abortTerminalRank(prev.status) : -1;
+    // cancelled wins over complete/error; error wins over complete; equal rank keeps latest.
+    if (nextRank > prevRank || (nextRank === prevRank && (status === 'cancelled' || nextRank > 0))) {
+      entry.observed = { status, resume: resume !== false };
+      if (status === 'cancelled') entry.observed.resume = resume !== false;
     }
   };
   const settleStatusFromEvent = (payload, properties) => {
@@ -510,11 +534,20 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
     }
     return null;
   };
-  // Assigned-session complete/error resumes the contact LLM (no canned settle bubble).
+  // Assigned-session complete/error/cancelled resumes the contact LLM (no canned settle bubble).
   // Assigned after inContactTurnLane exists; reportAssignedSession only schedules via this ref.
   const assignedSessionResumeRef = { schedule: null };
-  const reportAssignedSession = (sessionID, status) => {
-    if (status === 'cancelled') cancelAssignedResumes({ sessionID });
+  const reportAssignedSession = (sessionID, status, resume = true) => {
+    const inflight = sessionAbortInflight.get(sessionID);
+    if (inflight) {
+      // Defer watch terminal + continuation until stop_session abort settles.
+      stashSessionAbortTerminal(inflight, status, resume);
+      return false;
+    }
+    // Drop complete/error notifies for this worker. Do not abort a cancelled
+    // interrupt notify — duplicate cancelled reports (boot+timer, error+message.updated)
+    // must still reach the contact LLM.
+    if (status === 'cancelled') cancelAssignedResumes({ sessionID, statuses: ['complete', 'error'] });
     const watches = listWatchesBySession(db, sessionID);
     if (watches.length === 0) return false;
     let changed = false;
@@ -535,9 +568,10 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
           updatedAt,
           resumeAllowed: watch.resumeAllowed,
         });
-        // complete/error: hand result back to contact LLM. question: card only (worker waiting).
+        // complete/error/user-interrupt cancelled: hand result back to contact LLM.
+        // question: card only (worker waiting). stop_session passes resume=false.
         // Never insert oc.settle.* canned transcript bubbles.
-        if (watch.resumeAllowed && (status === 'complete' || status === 'error')) {
+        if (resume && watch.resumeAllowed && assignedSessionResumeStatus(status)) {
           resumes.push({
             assistantID: watch.assistantID,
             sessionID,
@@ -878,7 +912,7 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
     if (parts.length === 0 && userText) parts.push({ type: 'text', text: userText });
     return parts;
   };
-  /** Admit the user row only — HTTP 202 returns here; assistant bubbles persist later. */
+  /** Admit the user row only — HTTP 202 returns here; assistant bubbles persist as they publish. */
   const admitContactUser = (assistantID, { userMessageID, userText, userParts, turnID }) => {
     db.exec('BEGIN IMMEDIATE');
     try {
@@ -925,13 +959,135 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
       throw writeError;
     }
   };
-  /** Persist assistant bubbles/cards for an already-admitted user turn (no user row). */
-  const persistContactAssistantReply = (assistantID, { userMessageID, bubbles, cards = [], turnID }) => {
+  const contactBubbleMessageID = (userMessageID, bubbleIndex) => `${userMessageID}:bubble:${bubbleIndex + 1}`;
+  const contactCardMessageID = (userMessageID, index) => `${userMessageID}:card:${index + 1}`;
+
+  const persistPublishedContactBubble = (assistantID, { userMessageID, turnID, bubbleIndex, text }) => {
+    const trimmed = typeof text === 'string' ? text.trim() : '';
+    if (!trimmed || trimmed.startsWith('oc.settle.')) return false;
+    const bubbleID = contactBubbleMessageID(userMessageID, bubbleIndex);
+    if (getContactMessage(db, bubbleID)) return false;
     db.exec('BEGIN IMMEDIATE');
     try {
+      if (getContactMessage(db, bubbleID)) {
+        db.exec('COMMIT');
+        return false;
+      }
+      insertContactMessage(db, {
+        messageID: bubbleID,
+        assistantID,
+        role: 'assistant',
+        turnID,
+        bubbleIndex,
+        createdAt: now(),
+        ordinal: nextContactOrdinal(db, assistantID),
+        status: 'complete',
+        parts: [{ type: 'text', text: trimmed }],
+      });
+      bump();
+      db.exec('COMMIT');
+      return true;
+    } catch (error) {
+      db.exec('ROLLBACK');
+      throw error;
+    }
+  };
+
+  const persistPublishedContactCard = (assistantID, { userMessageID, turnID, index, card: cardInput }) => {
+    const card = parseContactCard({ type: 'card', cardType: cardInput?.cardType || 'session', ...cardInput });
+    if (!card) return false;
+    const cardID = contactCardMessageID(userMessageID, index);
+    if (getContactMessage(db, cardID)) return false;
+    db.exec('BEGIN IMMEDIATE');
+    try {
+      if (getContactMessage(db, cardID)) {
+        db.exec('COMMIT');
+        return false;
+      }
+      insertContactMessage(db, {
+        messageID: cardID,
+        assistantID,
+        role: 'assistant',
+        turnID,
+        bubbleIndex: 0,
+        createdAt: now(),
+        ordinal: nextContactOrdinal(db, assistantID),
+        status: 'complete',
+        parts: [card],
+      });
+      if (card.cardType === 'session' && card.sessionID) {
+        upsertContactWatch(db, {
+          assistantID,
+          sessionID: card.sessionID,
+          directory: card.directory,
+          status: card.status === 'error' || card.status === 'question' || card.status === 'complete' ? card.status : 'busy',
+          updatedAt: now(),
+        });
+      }
+      bump();
+      db.exec('COMMIT');
+      return true;
+    } catch (error) {
+      db.exec('ROLLBACK');
+      throw error;
+    }
+  };
+
+  const publishContactBubbleDelta = ({
+    assistantID, turnID, userMessageID, spokenByIndex, bubbleIndex, delta, done, signal,
+  }) => {
+    if (signal?.aborted) return;
+    const chunk = typeof delta === 'string' ? delta : '';
+    if (chunk) spokenByIndex.set(bubbleIndex, `${spokenByIndex.get(bubbleIndex) || ''}${chunk}`);
+    emitContactTurnEvent('openchamber:contact-bubble-delta', {
+      assistantID,
+      turnID,
+      bubbleIndex,
+      delta: chunk,
+      done: Boolean(done),
+    });
+    if (!done) return;
+    try {
+      persistPublishedContactBubble(assistantID, {
+        userMessageID,
+        turnID,
+        bubbleIndex,
+        text: spokenByIndex.get(bubbleIndex) || '',
+      });
+    } catch {
+      // Publishing a spoken bubble must not abort the live turn.
+    }
+  };
+
+  const rememberPublishedContactCard = (assistantID, { userMessageID, turnID, assignedCards, card }) => {
+    assignedCards.push(card);
+    try {
+      persistPublishedContactCard(assistantID, {
+        userMessageID,
+        turnID,
+        index: assignedCards.length - 1,
+        card,
+      });
+    } catch {
+      // Publishing a card must not abort the live turn.
+    }
+  };
+
+  /** Persist remaining assistant bubbles/cards for an already-admitted user turn (no user row). */
+  const persistContactAssistantReply = (assistantID, {
+    userMessageID, bubbles, cards = [], turnID, reset = false,
+  }) => {
+    db.exec('BEGIN IMMEDIATE');
+    try {
+      // Successful new_conversation / clear_chat_history: drop this turn's pre-reset
+      // spoken/card rows so the unique confirm can own bubble:1 (same id is not skipped).
+      if (reset) {
+        deleteContactTurnAssistantOutputs(db, assistantID, turnID);
+      }
       let ordinal = nextContactOrdinal(db, assistantID);
       bubbles.forEach((text, index) => {
-        const bubbleID = `${userMessageID}:bubble:${index + 1}`;
+        const bubbleID = contactBubbleMessageID(userMessageID, index);
+        if (getContactMessage(db, bubbleID)) return;
         insertContactMessage(db, {
           messageID: bubbleID,
           assistantID,
@@ -948,8 +1104,10 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
       cards.forEach((cardInput, index) => {
         const card = parseContactCard({ type: 'card', cardType: cardInput?.cardType || 'session', ...cardInput });
         if (!card) return;
+        const cardID = contactCardMessageID(userMessageID, index);
+        if (getContactMessage(db, cardID)) return;
         insertContactMessage(db, {
-          messageID: `${userMessageID}:card:${index + 1}`,
+          messageID: cardID,
           assistantID,
           role: 'assistant',
           turnID,
@@ -1536,42 +1694,90 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
     });
     const signal = params.signal;
     signal?.throwIfAborted();
-    const sdkOptions = signal ? { signal } : undefined;
     if (typeof client().session.abort !== 'function') {
       throw new AssignError(ASSIGN_CODES.UPSTREAM, 'Session abort is unavailable.');
     }
-    let result;
+    const targetID = resolved.sessionID;
+    // Share one abort lifecycle per worker session (register before await abort).
+    const existing = sessionAbortInflight.get(targetID);
+    if (existing?.promise) {
+      const shared = await existing.promise;
+      if (shared?.ok) {
+        return {
+          sessionID: targetID,
+          directory: resolved.directory,
+          title: resolved.title,
+          aborted: true,
+        };
+      }
+      throw shared?.error || new AssignError(ASSIGN_CODES.UPSTREAM, 'Failed to abort that coding session.');
+    }
+    const entry = { sessionID: targetID, observed: null, promise: null };
+    sessionAbortInflight.set(targetID, entry);
+    const failAbort = (code, message) => new AssignError(
+      code,
+      typeof message === 'string' && message.trim() ? message.trim() : 'Failed to abort that coding session.',
+    );
+    entry.promise = (async () => {
+      const sdkOptions = signal ? { signal } : undefined;
+      let result;
+      try {
+        signal?.throwIfAborted();
+        result = await client().session.abort({
+          sessionID: targetID,
+          directory: resolved.directory,
+        }, sdkOptions);
+      } catch (error) {
+        const observed = entry.observed;
+        if (sessionAbortInflight.get(targetID) === entry) sessionAbortInflight.delete(targetID);
+        if (observed) reportAssignedSession(targetID, observed.status, observed.resume !== false);
+        const wrapped = error?.name === 'AbortError' || signal?.aborted
+          ? error
+          : failAbort(
+            ASSIGN_CODES.UPSTREAM,
+            typeof error?.message === 'string' ? error.message : '',
+          );
+        return { ok: false, error: wrapped };
+      }
+      if (isMissing(result)) {
+        const observed = entry.observed;
+        if (sessionAbortInflight.get(targetID) === entry) sessionAbortInflight.delete(targetID);
+        if (observed) reportAssignedSession(targetID, observed.status, observed.resume !== false);
+        return { ok: false, error: failAbort(ASSIGN_CODES.NOT_FOUND, `No coding session ${targetID} was found.`) };
+      }
+      if (result?.error || result?.data === false) {
+        const observed = entry.observed;
+        if (sessionAbortInflight.get(targetID) === entry) sessionAbortInflight.delete(targetID);
+        if (observed) reportAssignedSession(targetID, observed.status, observed.resume !== false);
+        return {
+          ok: false,
+          error: failAbort(
+            ASSIGN_CODES.UPSTREAM,
+            typeof result.error?.message === 'string' ? result.error.message : '',
+          ),
+        };
+      }
+      // Success (including silent abort with no SSE): release map first so reporter applies.
+      if (sessionAbortInflight.get(targetID) === entry) sessionAbortInflight.delete(targetID);
+      cancelAssignedResumes({ sessionID: targetID });
+      // Assistant already owns this user turn; do not schedule a second cancelled notify.
+      reportAssignedSession(targetID, 'cancelled', false);
+      return { ok: true };
+    })();
     try {
-      result = await client().session.abort({
-        sessionID: resolved.sessionID,
-        directory: resolved.directory,
-      }, sdkOptions);
-    } catch (error) {
-      throw new AssignError(
-        ASSIGN_CODES.UPSTREAM,
-        typeof error?.message === 'string' && error.message.trim()
-          ? error.message.trim()
-          : 'Failed to abort that coding session.',
-      );
+      const outcome = await entry.promise;
+      if (outcome?.ok) {
+        return {
+          sessionID: targetID,
+          directory: resolved.directory,
+          title: resolved.title,
+          aborted: true,
+        };
+      }
+      throw outcome?.error || failAbort(ASSIGN_CODES.UPSTREAM, '');
+    } finally {
+      if (sessionAbortInflight.get(targetID) === entry) sessionAbortInflight.delete(targetID);
     }
-    if (isMissing(result)) {
-      throw new AssignError(ASSIGN_CODES.NOT_FOUND, `No coding session ${resolved.sessionID} was found.`);
-    }
-    if (result?.error || result?.data === false) {
-      throw new AssignError(
-        ASSIGN_CODES.UPSTREAM,
-        typeof result.error?.message === 'string' && result.error.message.trim()
-          ? result.error.message.trim()
-          : 'Failed to abort that coding session.',
-      );
-    }
-    reportAssignedSession(resolved.sessionID, 'cancelled');
-    return {
-      sessionID: resolved.sessionID,
-      directory: resolved.directory,
-      title: resolved.title,
-      aborted: true,
-    };
   };
   // Resolve scope from the authoritative session, never model-supplied directories.
   const mutateSessionWork = async (operation, params = {}) => {
@@ -1877,6 +2083,12 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
       `sessionID: ${sessionID}`,
       `status: ${status}`,
     ];
+    if (status === 'cancelled') {
+      lines.push(
+        'reason: user_interrupted',
+        'The user manually interrupted this assigned worker session (OpenCode session.abort / MessageAbortedError). This is not a model failure and not an assistant-initiated stop_session.',
+      );
+    }
     if (title) lines.push(`cardTitle: ${title}`);
     if (workerText) {
       lines.push('lastWorkerAssistantText (bounded):');
@@ -1886,20 +2098,28 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
     }
     lines.push(
       'Instructions:',
-      '- Never tell the user canned phrases like "会话已完成" / "Session finished" / "会话失败" / "Session failed".',
+      '- Never tell the user canned phrases like "会话已完成" / "Session finished" / "会话失败" / "Session failed" / "会话已取消" / "Session cancelled".',
       '- This is a read-only result notification, never authorization to create, restart, continue, steer, or otherwise mutate any session or file.',
       '- Respect the latest user instructions in history, including stop/cancel. If work remains, report it and wait for an explicit user request.',
-      '- If no further work is needed, reply in one or two short sentences in the user\'s language summarizing the result or failure reason.',
     );
+    if (status === 'cancelled') {
+      lines.push(
+        '- The user interrupted this worker themselves. In the user\'s language, acknowledge that interruption and decide the next spoken step (usually stop here and wait). Do not restart the worker unless history already asked you to.',
+      );
+    } else {
+      lines.push(
+        '- If no further work is needed, reply in one or two short sentences in the user\'s language summarizing the result or failure reason.',
+      );
+    }
     return lines.join('\n');
   };
   /**
-   * After assigned worker complete/error: async contact-lane continuation.
+   * After assigned worker complete/error/cancelled: async contact-lane continuation.
    * No user transcript row — only internal runContactTurn userText + assistant bubbles/cards.
    */
   const scheduleAssignedSessionResume = ({ assistantID, sessionID, status, directory, updatedAt }) => {
     if (closed) return;
-    if (status !== 'complete' && status !== 'error') return;
+    if (!assignedSessionResumeStatus(status)) return;
     const row = assistant(assistantID);
     if (!row || row.tombstone_at) return;
     const messageID = assignedSessionResumeMessageID(assistantID, sessionID, status, updatedAt);
@@ -1912,7 +2132,7 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
 
     if (assignedResumes.has(messageID)) return;
     const controller = new AbortController();
-    assignedResumes.set(messageID, { assistantID, sessionID, controller });
+    assignedResumes.set(messageID, { assistantID, sessionID, status, controller });
     const finishCancelled = () => {
       settleActiveContactTurn(assistantID, turnID, { bumpRevision: true });
       emitContactTurnEvent('openchamber:contact-turn-end', { assistantID, turnID, status: 'cancelled' });
@@ -1985,7 +2205,9 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
             const rows = Array.isArray(messagesResult?.data)
               ? messagesResult.data
               : (Array.isArray(messagesResult) ? messagesResult : []);
-            if (isUserAbort(lastAssistantInfo(rows)?.error)) {
+            // complete/error that discovers a user abort becomes cancelled + notify.
+            // A cancelled resume must still run with reason: user_interrupted.
+            if (status !== 'cancelled' && isUserAbort(lastAssistantInfo(rows)?.error)) {
               reportAssignedSession(sessionID, 'cancelled');
               finishCancelled();
               return;
@@ -2006,9 +2228,16 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
         workerText,
       });
       const history = contactHistoryForLlm(db, assistantID, {});
-      const assignedCards = [];
-      let contactResetThisTurn = false;
-      let contactHistoryClearedThisTurn = false;
+        const assignedCards = [];
+        const spokenByIndex = new Map();
+        let contactResetThisTurn = false;
+        let contactHistoryClearedThisTurn = false;
+        const markContactReset = (historyCleared = false) => {
+          contactResetThisTurn = true;
+          if (historyCleared) contactHistoryClearedThisTurn = true;
+          spokenByIndex.clear();
+          assignedCards.length = 0;
+        };
 
       try {
         const executionHistory = await materializeContactHistory(
@@ -2030,13 +2259,12 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
           deliverPeerMessage: (toolInput) => deliverPeerMessage(assistantID, toolInput),
           clearContactMemory: () => {
             const result = clearContactMemory(assistantID, {});
-            contactResetThisTurn = true;
+            markContactReset(false);
             return result;
           },
           resetContact: () => {
             const result = resetContact(assistantID, {});
-            contactResetThisTurn = true;
-            contactHistoryClearedThisTurn = true;
+            markContactReset(true);
             return result;
           },
           listAssistants: () => db.prepare('SELECT * FROM assistant_v2 WHERE tombstone_at IS NULL ORDER BY created_at').all().map(output),
@@ -2092,7 +2320,12 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
             throw lastError;
           },
           currentAssistant: assistantSnapshot,
-          onCard: (card) => assignedCards.push(card),
+          onCard: (card) => {
+            if (contactResetThisTurn) return;
+            rememberPublishedContactCard(assistantID, {
+              userMessageID: messageID, turnID, assignedCards, card,
+            });
+          },
           turnFileParts: [],
           turnAttachmentScope: attachmentScopeKey([]),
         });
@@ -2111,13 +2344,9 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
           ...modelContext,
           globalEventHub,
           onBubbleDelta: (bubbleIndex, delta, done) => {
-            if (controller.signal.aborted) return;
-            emitContactTurnEvent('openchamber:contact-bubble-delta', {
-              assistantID,
-              turnID,
-              bubbleIndex,
-              delta: typeof delta === 'string' ? delta : '',
-              done: Boolean(done),
+            if (contactResetThisTurn) return;
+            publishContactBubbleDelta({
+              assistantID, turnID, userMessageID: messageID, spokenByIndex, bubbleIndex, delta, done, signal: controller.signal,
             });
           },
         });
@@ -2177,6 +2406,7 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
           bubbles: bubbles.length > 0 ? bubbles : [ASSIGNED_SESSION_FALLBACK_BUBBLE],
           cards,
           turnID,
+          reset: resetThisTurn,
         });
         settleActiveContactTurn(assistantID, turnID);
         emitContactTurnEvent('openchamber:contact-turn-end', {
@@ -2324,8 +2554,15 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
           beforeOrdinal,
         });
         const assignedCards = [];
+        const spokenByIndex = new Map();
         let contactResetThisTurn = false;
         let contactHistoryClearedThisTurn = false;
+        const markContactReset = (historyCleared = false) => {
+          contactResetThisTurn = true;
+          if (historyCleared) contactHistoryClearedThisTurn = true;
+          spokenByIndex.clear();
+          assignedCards.length = 0;
+        };
         const modelContext = await loadContactModelContext(controller.signal);
         try {
           // Materialize inside turn try so failures durable-error + settle working.
@@ -2365,7 +2602,7 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
               const result = clearContactMemory(row.assistant_id, {
                 upToOrdinal: beforeOrdinal,
               });
-              contactResetThisTurn = true;
+              markContactReset(false);
               return result;
             },
             resetContact: () => {
@@ -2374,8 +2611,7 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
               const result = resetContact(row.assistant_id, {
                 upToOrdinal: beforeOrdinal,
               });
-              contactResetThisTurn = true;
-              contactHistoryClearedThisTurn = true;
+              markContactReset(true);
               return result;
             },
             listAssistants: () => db.prepare('SELECT * FROM assistant_v2 WHERE tombstone_at IS NULL ORDER BY created_at').all().map(output),
@@ -2435,7 +2671,12 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
               throw lastError;
             },
             currentAssistant: assistantSnapshot,
-            onCard: (card) => assignedCards.push(card),
+            onCard: (card) => {
+              if (contactResetThisTurn) return;
+              rememberPublishedContactCard(row.assistant_id, {
+                userMessageID: messageID, turnID, assignedCards, card,
+              });
+            },
             turnFileParts,
             turnAttachmentScope,
           });
@@ -2453,13 +2694,9 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
             ...modelContext,
             globalEventHub,
             onBubbleDelta: (bubbleIndex, delta, done) => {
-              if (controller.signal.aborted) return;
-              emitContactTurnEvent('openchamber:contact-bubble-delta', {
-                assistantID: row.assistant_id,
-                turnID,
-                bubbleIndex,
-                delta: typeof delta === 'string' ? delta : '',
-                done: Boolean(done),
+              if (contactResetThisTurn) return;
+              publishContactBubbleDelta({
+                assistantID: row.assistant_id, turnID, userMessageID: messageID, spokenByIndex, bubbleIndex, delta, done, signal: controller.signal,
               });
             },
           });
@@ -2532,6 +2769,7 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
             bubbles: bubbles.length > 0 ? bubbles : [ASSIGNED_SESSION_FALLBACK_BUBBLE],
             cards,
             turnID,
+            reset: resetThisTurn,
           });
           // persistContactAssistantReply already bumps; clear activity without a second tip.
           settleActiveContactTurn(row.assistant_id, turnID);
@@ -2953,6 +3191,7 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
     }
   }, ensure, createNew, compact, send, whenContactTurnSettled, abort, captureQueueDeliveryTarget, sendWithCapturedConfig, share, shareOperation, historicalMessages, contactMessages, clearContactMemory, resetContact, markContactRead, appendContactCard, deliverPeerMessage, listAssistantScheduledTasks, putAssistantContactAttachment, getAssistantContactAttachment, migrateContactAttachments, processEvent, reportAssignedSessionSettle: reportAssignedSession, reconcile,   close: () => {
     cancelAssignedResumes({});
+    sessionAbortInflight.clear();
     for (const turn of contactControllers.values()) turn.controller.abort();
     if (!closed) {
       closed = true;

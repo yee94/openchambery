@@ -261,9 +261,7 @@ export const AssistantView: React.FC<AssistantViewProps> = ({ activeOverride, on
               <Icon name="add" className="size-4" />
             </Button>
           </header>
-          <div className="flex justify-end px-4 pb-2 sm:px-5">
-            <AssistantMarkAllReadButton snapshot={snapshot} />
-          </div>
+          <AssistantMarkAllReadButton snapshot={snapshot} rowClassName="flex justify-end px-4 pb-2 sm:px-5" />
           <div className="min-h-0 flex-1 overflow-y-auto px-3 pb-4 sm:px-4" role="listbox" aria-label={t('assistants.listAria')}>
             <div className="flex flex-col gap-1 border-t border-border/40 pt-3">
               {contacts.map((item) => {

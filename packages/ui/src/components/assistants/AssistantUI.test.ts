@@ -572,9 +572,10 @@ describe('Assistant UI product contract', () => {
     );
     expect(promptComposer).toContain('const contentHeight = inline ? Math.max(textarea.scrollHeight, 48) : textarea.scrollHeight;');
     expect(promptComposer).toContain('const nextInlineGrown = nextHeight > 48;');
-    expect(promptComposer).toContain("'min-h-12 max-h-32 px-3 py-3 leading-6'");
+    expect(promptComposer).toContain("'field-sizing-fixed min-h-12 max-h-32 px-3 py-3 leading-6'");
+    expect(promptComposer).toContain("textarea.style.height = inline ? '0px' : 'auto'");
     expect(promptComposer).toContain("fillContainer={inline ? false : textareaProps?.fillContainer}");
-    expect(promptComposer).toContain("inline && 'flex min-h-12 items-end'");
+    expect(promptComposer).toContain("inline && cn('flex min-h-12', inlineGrown ? 'items-end' : 'items-center')");
     expect(promptComposer).not.toContain('inline && !inlineAlignEnd');
     expect(promptComposer).not.toContain('min-h-8 max-h-32 self-center px-3 py-2 leading-5');
     expect(promptComposer).toContain('flex h-12 shrink-0 items-center pr-1.5');

@@ -232,7 +232,7 @@ export function formatRegisteredProjectsPrompt(projects) {
     return [
       'Registered projects: none.',
       'You can see this catalog. There are zero registered projects right now.',
-      'Tell the user to add a project in Settings. Never invent a filesystem path and never claim you cannot see the project list.',
+      'Look up existing OpenCode conversations with list_sessions and inspect the working directory to locate the relevant workspace. Once identified, ask the user to register that workspace in Settings before assigning work. Base paths on actual lookup results.',
     ].join(' ');
   }
   return [
@@ -687,7 +687,7 @@ export function formatContactToolsPrompt(tools) {
     'When they want to view assistant settings / default prompt / system persona (查看助手设定 / 默认提示词 / 系统提示词 / 人设), call get_assistant_settings. Omit `to` for this contact; pass to="OpenCode 配置助手" (or toAssistantID) to read another live assistant.',
     'When they want to change a default prompt / system persona (改默认提示词 / 设置人设 / 改某助手的默认提示词), call update_default_prompt. That writes Assistant settings and persists — it is not a one-shot message and not new_conversation. Omit `to` for this contact; pass to/name/toAssistantID to update another live assistant without changing this one.',
     'When they want another assistant (建助理 / create an assistant), call create_assistant.',
-    'When they want a separate Chat coding session (建会话 / open a session / 开个新会话), call assign_session after matching the project. To continue an existing chat, call assign_session with that sessionID and a coding prompt. File and shell work in this assistant\'s working directory uses read, write, edit, and bash — not assign_session.',
+    'For substantive tasks and requests to open a Chat session (建会话 / open a session / 开个新会话), call assign_session after locating the relevant workspace. To continue an existing chat, call assign_session with that sessionID and a task prompt. Direct read, write, edit, and bash support workspace discovery, simple lookups, and small, bounded configuration changes.',
     'When they explicitly want to only listen to an existing coding session without sending a prompt (监听会话 / watch session / monitor session), call watch_session with sessionID. A plain @session:id reference alone is context, not a watch request — do not call watch_session unless they asked to listen/watch/monitor.',
     'When they want to stop/abort a running coding session (停止会话 / stop session), call stop_session with sessionID — that calls real OpenCode session.abort.',
     'When they want a scheduled task (排定时任务 / schedule daily ping), call schedule_task.',
@@ -747,7 +747,7 @@ export function formatContactToolsPrompt(tools) {
     'A reply without the tool call does nothing — agreeing in Chinese (好的 / 我来创建 / 我去说一声) is not sending.',
     'When calling a tool that takes a beat (找项目 / 开会话 / 监听会话), you may say one short spoken line first (≤40 characters, e.g. 我去找一下), then only the fence. No planning, no tool names, no "let me think".',
     'Never say 已创建, 已发送, 已停止, created, scheduled, opened, watched, stopped, or sent unless the tool already returned success.',
-    'If no registered project exists, tell the user to add one in Settings — do not use assistant-workspaces.',
+    'With an empty registered catalog, first discover the relevant existing workspace through list_sessions and directory lookups, then ask the user to register that workspace in Settings before assignment.',
     'After a successful tool, confirm in one short bubble. The user sees a contact card, not tool traces. After successful assign_session or watch_session the session card plus that short confirm is enough — stop.',
     'These are application-owned OpenChamber contact tools (not OpenCode native tools, not MCP, not skill directory entries). Use only the names and argument schemas below:',
     'Available OpenChamber tools:',

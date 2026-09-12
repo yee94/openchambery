@@ -9,6 +9,7 @@ import {
   CLEAR_CHAT_HISTORY_CONFIRM_BUBBLE,
   NEW_CONVERSATION_CONFIRM_BUBBLE,
 } from './contact-tools.js';
+import { runContactTurn as realRunContactTurn } from './harness.js';
 
 const require = createRequire(import.meta.url);
 const root = () => fs.mkdtempSync(path.join(os.tmpdir(), 'assistants-'));
@@ -151,16 +152,21 @@ describe('assistants service', () => {
 
   it('only an explicit new watch can rearm an interrupted worker', async () => {
     const directory = root()
-    const runContactTurn = vi.fn(async () => ({ text: 'done', bubbles: ['done'] }))
+    const runContactTurn = vi.fn(async ({ userText }) => ({
+      text: userText.includes('cancelled') ? 'interrupted' : 'done',
+      bubbles: [userText.includes('cancelled') ? 'interrupted' : 'done'],
+    }))
     const service = setup(directory, {}, { runContactTurn, clock: () => 77 })
     const assistant = service.createAssistant(assistantInput)
     const card = { cardType: 'session', sessionID: 'ses_rearm', directory, status: 'busy' }
     service.appendContactCard(assistant.id, card)
     service.processEvent({ type: 'session.error', properties: { sessionID: 'ses_rearm', error: { name: 'MessageAbortedError' } } })
+    await service.whenContactTurnSettled(assignedSessionResumeMessageID(assistant.id, 'ses_rearm', 'cancelled', 77))
+    expect(runContactTurn).toHaveBeenCalledTimes(1)
     service.appendContactCard(assistant.id, card)
     service.processEvent({ type: 'session.idle', properties: { sessionID: 'ses_rearm' } })
     await service.whenContactTurnSettled(assignedSessionResumeMessageID(assistant.id, 'ses_rearm', 'complete', 77))
-    expect(runContactTurn).toHaveBeenCalledTimes(1)
+    expect(runContactTurn).toHaveBeenCalledTimes(2)
     service.close()
   })
 
@@ -197,57 +203,89 @@ describe('assistants service', () => {
     service.close()
   })
 
-  it.each(['session.error', 'message.updated'])('user interruption via %s cancels the watch without an automatic continuation', async (type) => {
+  it.each(['session.error', 'message.updated'])('user interruption via %s resumes contact with a user_interrupted reason', async (type) => {
     const directory = root()
-    const runContactTurn = vi.fn(async () => ({ text: 'must not resume', bubbles: ['must not resume'] }))
-    const service = setup(directory, {}, { runContactTurn })
+    const resumes = []
+    const runContactTurn = vi.fn(async ({ userText }) => {
+      resumes.push(userText)
+      return { text: '你自己打断了，我就先停这儿。', bubbles: ['你自己打断了，我就先停这儿。'] }
+    })
+    const service = setup(directory, {
+      messages: async () => ({
+        data: [{
+          info: { id: 'msg_abort', role: 'assistant', error: { name: 'MessageAbortedError' } },
+          parts: [{ type: 'text', text: 'Halfway through login fix.' }],
+        }],
+      }),
+    }, { runContactTurn, clock: () => 88 })
     const assistant = service.createAssistant(assistantInput)
     service.appendContactCard(assistant.id, { cardType: 'session', sessionID: 'ses_cancel', directory, status: 'busy' })
     const error = { name: 'MessageAbortedError', data: { message: 'Aborted by user' } }
     service.processEvent({ type, properties: type === 'message.updated'
       ? { info: { id: 'msg_abort', role: 'assistant', sessionID: 'ses_cancel', error } }
       : { sessionID: 'ses_cancel', error } })
+    await service.whenContactTurnSettled(assignedSessionResumeMessageID(assistant.id, 'ses_cancel', 'cancelled', 88))
+    expect(runContactTurn).toHaveBeenCalledTimes(1)
+    expect(resumes[0]).toContain('status: cancelled')
+    expect(resumes[0]).toContain('reason: user_interrupted')
+    expect(resumes[0]).toContain('manually interrupted')
+    expect(resumes[0]).toContain('Halfway through login fix.')
+    expect(service.contactMessages(assistant.id).messages.some((message) => message.text === '你自己打断了，我就先停这儿。')).toBe(true)
     service.processEvent({ type: 'session.idle', properties: { sessionID: 'ses_cancel' } })
     service.processEvent({ type: 'session.status', properties: { sessionID: 'ses_cancel', status: { type: 'busy' } } })
     service.processEvent({ type: 'session.error', properties: { sessionID: 'ses_cancel', error: { name: 'UnknownError' } } })
     await new Promise(setImmediate)
-    expect(runContactTurn).not.toHaveBeenCalled()
+    expect(runContactTurn).toHaveBeenCalledTimes(1)
     expect(service.contactMessages(assistant.id).messages.flatMap(m => m.parts).find(p => p.type === 'card').status).toBe('cancelled')
     expect(service.snapshot().assistants[0].assignedSessionIDs).toEqual([])
     service.close()
-    const restarted = setup(directory, {}, { runContactTurn })
+    const restarted = setup(directory, {}, { runContactTurn, clock: () => 99 })
     restarted.processEvent({ type: 'session.idle', properties: { sessionID: 'ses_cancel' } })
     await new Promise(setImmediate)
-    expect(runContactTurn).not.toHaveBeenCalled()
+    expect(runContactTurn).toHaveBeenCalledTimes(1)
     restarted.close()
   })
 
-  it('reconciliation recognizes an interrupted worker instead of resuming its error', async () => {
+  it('reconciliation recognizes an interrupted worker and resumes cancelled instead of error', async () => {
     const directory = root()
-    const runContactTurn = vi.fn(async () => ({ text: 'unexpected', bubbles: ['unexpected'] }))
+    const resumes = []
+    const runContactTurn = vi.fn(async ({ userText }) => {
+      resumes.push(userText)
+      return { text: 'interrupted', bubbles: ['interrupted'] }
+    })
     const service = setup(directory, {
       get: async () => ({ data: { status: { type: 'idle' } } }),
-      messages: async () => ({ data: [{ info: { role: 'assistant', error: { name: 'MessageAbortedError' }, time: { completed: 1 } } }] }),
-    }, { runContactTurn })
+      messages: async () => ({ data: [{ info: { role: 'assistant', error: { name: 'MessageAbortedError' }, time: { completed: 1 } }, parts: [{ type: 'text', text: 'partial worker' }] }] }),
+    }, { runContactTurn, clock: () => 90 })
     const assistant = service.createAssistant(assistantInput)
     service.appendContactCard(assistant.id, { cardType: 'session', sessionID: 'ses_cancel', directory, status: 'busy' })
     await service.reconcile()
-    await new Promise(setImmediate)
-    expect(runContactTurn).not.toHaveBeenCalled()
+    await service.whenContactTurnSettled(assignedSessionResumeMessageID(assistant.id, 'ses_cancel', 'cancelled', 90))
+    expect(runContactTurn).toHaveBeenCalledTimes(1)
+    expect(resumes[0]).toContain('status: cancelled')
+    expect(resumes[0]).toContain('reason: user_interrupted')
+    expect(resumes[0]).not.toContain('status: error')
     expect(service.contactMessages(assistant.id).messages.flatMap(m => m.parts).find(p => p.type === 'card').status).toBe('cancelled')
     service.close()
   })
 
-  it('an interruption revokes a queued continuation even when complete arrived first', async () => {
+  it('an interruption revokes a queued complete continuation and resumes cancelled instead', async () => {
     const directory = root()
-    const runContactTurn = vi.fn(async () => ({ text: 'unexpected', bubbles: ['unexpected'] }))
+    const resumes = []
+    const runContactTurn = vi.fn(async ({ userText }) => {
+      resumes.push(userText)
+      return { text: 'interrupted', bubbles: ['interrupted'] }
+    })
     const service = setup(directory, {}, { runContactTurn, clock: () => 42 })
     const assistant = service.createAssistant(assistantInput)
     service.appendContactCard(assistant.id, { cardType: 'session', sessionID: 'ses_race', directory, status: 'busy' })
     service.processEvent({ type: 'session.idle', properties: { sessionID: 'ses_race' } })
     service.processEvent({ type: 'session.error', properties: { sessionID: 'ses_race', error: { name: 'MessageAbortedError' } } })
     await service.whenContactTurnSettled(assignedSessionResumeMessageID(assistant.id, 'ses_race', 'complete', 42))
-    expect(runContactTurn).not.toHaveBeenCalled()
+    await service.whenContactTurnSettled(assignedSessionResumeMessageID(assistant.id, 'ses_race', 'cancelled', 42))
+    expect(runContactTurn).toHaveBeenCalledTimes(1)
+    expect(resumes[0]).toContain('status: cancelled')
+    expect(resumes[0]).toContain('reason: user_interrupted')
     expect(service.snapshot().assistants[0].working).toBe(false)
     service.close()
   })
@@ -1770,7 +1808,9 @@ describe('assistants service', () => {
     const page = service.contactMessages(assistant.id);
     expect(page.messages.map((message) => message.role)).toEqual(['user', 'assistant', 'assistant']);
     expect(page.messages.some((message) => message.role === 'peer')).toBe(false);
-    expect(page.messages.at(-1).parts[0]).toMatchObject({
+    expect(page.messages.some((message) => message.text === 'Opened the login session.')).toBe(true);
+    const cardPart = page.messages.flatMap((message) => message.parts).find((part) => part.type === 'card');
+    expect(cardPart).toMatchObject({
       type: 'card',
       cardType: 'session',
       sessionID: 'ses_1',
@@ -3723,6 +3763,51 @@ describe('assistants service', () => {
     service.close();
   });
 
+  it('persists completed spoken bubbles before the contact turn settles', async () => {
+    const directory = root();
+    let release;
+    const blocked = new Promise((resolve) => { release = resolve; });
+    const service = setup(directory, {}, {
+      runContactTurn: async ({ onBubbleDelta }) => {
+        onBubbleDelta(0, '我去找一下', true);
+        await blocked;
+        onBubbleDelta(1, '办好了', true);
+        return { bubbles: ['我去找一下', '办好了'] };
+      },
+    });
+    const assistant = service.createAssistant(assistantInput);
+    await service.send(assistant.id, {
+      messageID: 'mid_turn_1',
+      parts: [{ type: 'text', text: 'hi' }],
+    });
+    let page = { messages: [] };
+    for (let attempt = 0; attempt < 40; attempt += 1) {
+      page = service.contactMessages(assistant.id);
+      if (page.messages.some((message) => message.messageID === 'mid_turn_1:bubble:1')) break;
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+    expect(page.messages.map((message) => ({ id: message.messageID, text: message.text }))).toEqual([
+      { id: 'mid_turn_1', text: 'hi' },
+      { id: 'mid_turn_1:bubble:1', text: '我去找一下' },
+    ]);
+    expect(service.snapshot().assistants[0]).toMatchObject({
+      working: true,
+      latestMessagePreview: expect.objectContaining({ text: '我去找一下' }),
+    });
+    release();
+    await service.whenContactTurnSettled('mid_turn_1');
+    page = service.contactMessages(assistant.id);
+    expect(page.messages.map((message) => message.messageID)).toEqual([
+      'mid_turn_1',
+      'mid_turn_1:bubble:1',
+      'mid_turn_1:bubble:2',
+    ]);
+    const db = new (require('better-sqlite3'))(path.join(directory, 'assistants.sqlite'));
+    expect(db.prepare('SELECT COUNT(*) AS count FROM assistant_contact_message WHERE message_id=?').get('mid_turn_1:bubble:1').count).toBe(1);
+    db.close();
+    service.close();
+  });
+
   it('replays same messageID+payload admission once and conflicts on payload mismatch', async () => {
     const directory = root();
     let release;
@@ -4195,6 +4280,458 @@ describe('read_session referenced conversation', () => {
     expect(outcome.details.error).toBeTruthy();
     expect(outcome.details.messages).toBeUndefined();
     if (scenario === 'invalid-limit') expect(read).not.toHaveBeenCalled();
+    service.close();
+  });
+
+  it('real harness two read_session preambles: SSE done bubbles match SQLite 1:1 including duplicates', async () => {
+    const directory = root();
+    const events = [];
+    const fence = (name, args) => '```openchamber-tool\n' + JSON.stringify({ name, arguments: args }) + '\n```';
+    const replies = [
+      `我去读一下\n\n${fence('read_session', { sessionID: 'ses_a' })}`,
+      `我再读一下\n\n${fence('read_session', { sessionID: 'ses_b' })}`,
+      '```openchamber-final\n{"status":"complete","text":"办好了"}\n```',
+    ];
+    const createChatCompletion = vi.fn(async () => ({
+      completion: { choices: [{ message: { content: replies.shift() || '' } }] },
+    }));
+    const service = setup(directory, {
+      get: async ({ sessionID }) => ({
+        data: { id: sessionID, directory, title: sessionID },
+      }),
+      messages: async ({ sessionID }) => ({
+        data: [{
+          info: { id: `msg_${sessionID}`, sessionID, role: 'user' },
+          parts: [{ type: 'text', text: `body:${sessionID}` }],
+        }],
+      }),
+    }, {
+      onContactTurnEvent: (event) => events.push(event),
+      // Real Agent + createContactTools; only completion gateway is stubbed.
+      runContactTurn: realRunContactTurn,
+      createChatCompletion,
+    });
+    const assistant = service.createAssistant(assistantInput);
+    await settleSend(service, assistant.id, {
+      messageID: 'two_read_1',
+      parts: [{ type: 'text', text: '读两个会话' }],
+    });
+    const doneDeltas = events
+      .filter((event) => event.type === 'openchamber:contact-bubble-delta' && event.properties?.done)
+      .map((event) => ({
+        index: event.properties.bubbleIndex,
+        text: event.properties.delta,
+      }));
+    expect(doneDeltas).toEqual([
+      { index: 0, text: '我去读一下' },
+      { index: 1, text: '我再读一下' },
+      { index: 2, text: '办好了' },
+    ]);
+    const page = service.contactMessages(assistant.id);
+    const assistantBubbles = page.messages
+      .filter((message) => message.role === 'assistant' && message.messageID.startsWith('two_read_1:bubble:'))
+      .map((message) => ({ id: message.messageID, text: message.text }));
+    expect(assistantBubbles).toEqual([
+      { id: 'two_read_1:bubble:1', text: '我去读一下' },
+      { id: 'two_read_1:bubble:2', text: '我再读一下' },
+      { id: 'two_read_1:bubble:3', text: '办好了' },
+    ]);
+    // SSE final array ↔ SQLite 1:1
+    expect(assistantBubbles.map((row) => row.text)).toEqual(doneDeltas.map((row) => row.text));
+    service.close();
+  });
+
+  it('real harness duplicate preambles keep both lines in SSE and SQLite', async () => {
+    const directory = root();
+    const events = [];
+    const fence = (name, args) => '```openchamber-tool\n' + JSON.stringify({ name, arguments: args }) + '\n```';
+    const replies = [
+      `我去读一下\n\n${fence('read_session', { sessionID: 'ses_dup_a' })}`,
+      `我去读一下\n\n${fence('read_session', { sessionID: 'ses_dup_b' })}`,
+      '```openchamber-final\n{"status":"complete","text":"办好了"}\n```',
+    ];
+    const service = setup(directory, {
+      get: async ({ sessionID }) => ({ data: { id: sessionID, directory, title: sessionID } }),
+      messages: async ({ sessionID }) => ({
+        data: [{ info: { id: 'm', sessionID, role: 'assistant' }, parts: [{ type: 'text', text: 'x' }] }],
+      }),
+    }, {
+      onContactTurnEvent: (event) => events.push(event),
+      runContactTurn: realRunContactTurn,
+      createChatCompletion: vi.fn(async () => ({
+        completion: { choices: [{ message: { content: replies.shift() || '' } }] },
+      })),
+    });
+    const assistant = service.createAssistant(assistantInput);
+    await settleSend(service, assistant.id, {
+      messageID: 'dup_preamble_1',
+      parts: [{ type: 'text', text: '再读一遍' }],
+    });
+    const texts = events
+      .filter((event) => event.type === 'openchamber:contact-bubble-delta' && event.properties?.done)
+      .map((event) => event.properties.delta);
+    expect(texts).toEqual(['我去读一下', '我去读一下', '办好了']);
+    const sqlite = service.contactMessages(assistant.id).messages
+      .filter((message) => message.messageID.startsWith('dup_preamble_1:bubble:'))
+      .map((message) => message.text);
+    expect(sqlite).toEqual(texts);
+    service.close();
+  });
+
+  it('real harness missed-tool retry keeps pre-retry spoken in SSE and SQLite', async () => {
+    const directory = root();
+    const events = [];
+    const fence = (name, args) => '```openchamber-tool\n' + JSON.stringify({ name, arguments: args }) + '\n```';
+    const replies = [
+      '```openchamber-final\n{"status":"complete","text":"好的，我来创建。"}\n```',
+      `这就建好\n\n${fence('create_assistant', { name: 'MissSvc', model: 'p/m' })}`,
+    ];
+    const service = setup(directory, {}, {
+      onContactTurnEvent: (event) => events.push(event),
+      runContactTurn: realRunContactTurn,
+      createChatCompletion: vi.fn(async () => ({
+        completion: { choices: [{ message: { content: replies.shift() || '' } }] },
+      })),
+    });
+    const assistant = service.createAssistant(assistantInput);
+    await settleSend(service, assistant.id, {
+      messageID: 'miss_retry_1',
+      parts: [{ type: 'text', text: '帮我新建一个助理，名叫 MissSvc，不要开编码 session' }],
+    });
+    const texts = events
+      .filter((event) => event.type === 'openchamber:contact-bubble-delta' && event.properties?.done)
+      .map((event) => event.properties.delta);
+    expect(texts).toContain('好的，我来创建。');
+    const sqlite = service.contactMessages(assistant.id).messages
+      .filter((message) => message.messageID.startsWith('miss_retry_1:bubble:'))
+      .map((message) => message.text);
+    expect(sqlite).toEqual(texts);
+    expect(sqlite.join('')).not.toContain('Created assistant');
+    service.close();
+  });
+
+  it('new_conversation preamble is replaced by unique reset confirm; history and generation kept', async () => {
+    const directory = root();
+    let releasePreamble;
+    const preambleGate = new Promise((resolve) => { releasePreamble = resolve; });
+    const service = setup(directory, {}, {
+      runContactTurn: async ({ userText, tools, onBubbleDelta }) => {
+        if (userText !== '开新对话') return { text: `reply:${userText}`, bubbles: [`reply:${userText}`] };
+        onBubbleDelta(0, '我先清一下记忆', true);
+        await preambleGate;
+        await tools.find((item) => item.name === 'new_conversation').execute('nc_preamble', {});
+        onBubbleDelta(0, '迟到气泡应被屏蔽', true);
+        return {
+          text: NEW_CONVERSATION_CONFIRM_BUBBLE,
+          bubbles: [NEW_CONVERSATION_CONFIRM_BUBBLE, 'leftover should drop'],
+          reset: true,
+        };
+      },
+    });
+    const assistant = service.createAssistant(assistantInput);
+    const genBefore = service.contactMessages(assistant.id).generation;
+    await settleSend(service, assistant.id, {
+      messageID: 'hist_keep',
+      parts: [{ type: 'text', text: 'remember me' }],
+    });
+    const sent = await service.send(assistant.id, {
+      messageID: 'reset_preamble',
+      parts: [{ type: 'text', text: '开新对话' }],
+    });
+    let mid = { messages: [] };
+    for (let attempt = 0; attempt < 40; attempt += 1) {
+      mid = service.contactMessages(assistant.id);
+      if (mid.messages.some((message) => message.messageID === 'reset_preamble:bubble:1')) break;
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+    expect(mid.messages.some((message) => message.text === '我先清一下记忆')).toBe(true);
+    releasePreamble();
+    await service.whenContactTurnSettled(sent.messageID);
+    const page = service.contactMessages(assistant.id, { limit: 50 });
+    expect(page.generation).toBe(genBefore);
+    expect(page.messages.map((message) => ({ role: message.role, text: message.text }))).toEqual([
+      { role: 'user', text: 'remember me' },
+      { role: 'assistant', text: 'reply:remember me' },
+      { role: 'user', text: '开新对话' },
+      { role: 'assistant', text: NEW_CONVERSATION_CONFIRM_BUBBLE },
+    ]);
+    expect(page.messages.filter((message) => message.messageID.startsWith('reset_preamble:bubble:'))).toHaveLength(1);
+    expect(page.messages.some((message) => message.text.includes('迟到') || message.text.includes('leftover'))).toBe(false);
+    service.close();
+  });
+
+  it('stop_session defers SSE complete during abort and cancels without resume on success', async () => {
+    const directory = root();
+    const project = path.join(directory, 'app');
+    fs.mkdirSync(project, { recursive: true });
+    let releaseAbort;
+    const abortGate = new Promise((resolve) => { releaseAbort = resolve; });
+    const resumes = [];
+    let abortCalls = 0;
+    const service = setup(directory, {
+      get: async (input) => ({
+        data: { id: input.sessionID, directory: project, title: 'Running', status: { type: 'busy' } },
+      }),
+      abort: async () => {
+        abortCalls += 1;
+        await abortGate;
+        return { data: true };
+      },
+    }, {
+      runContactTurn: async ({ tools, userText }) => {
+        if (typeof userText === 'string' && userText.includes('Internal assigned-session resume')) {
+          resumes.push(userText);
+          return { text: '续答', bubbles: ['续答'] };
+        }
+        if (userText === 'watch') {
+          const watch = tools.find((tool) => tool.name === 'watch_session');
+          const result = await watch.execute('call_w', { sessionID: 'ses_abort_race' });
+          return { text: '盯着', bubbles: ['盯着'], cards: result.details.card ? [result.details.card] : [] };
+        }
+        if (userText === 'peer watch') {
+          const watch = tools.find((tool) => tool.name === 'watch_session');
+          const result = await watch.execute('call_peer_w', { sessionID: 'ses_abort_race' });
+          return { text: 'peer盯', bubbles: ['peer盯'], cards: result.details.card ? [result.details.card] : [] };
+        }
+        const stop = tools.find((tool) => tool.name === 'stop_session');
+        const stopPromise = stop.execute('call_s', { sessionID: 'ses_abort_race' });
+        await new Promise((resolve) => setTimeout(resolve, 5));
+        // SSE complete arrives while abort is in flight — must not schedule resume.
+        expect(service.reportAssignedSessionSettle('ses_abort_race', 'complete')).toBe(false);
+        releaseAbort();
+        const result = await stopPromise;
+        expect(result.details.error).toBeUndefined();
+        expect(result.details.stopped?.aborted).toBe(true);
+        return { text: '已停下', bubbles: ['已停下'] };
+      },
+    });
+    const assistant = service.createAssistant(assistantInput);
+    // Second assistant keeps resume_allowed=true while the stopper's send clears only its own.
+    const peer = service.createAssistant({ name: 'PeerWatch', providerID: 'p', modelID: 'm' });
+    await settleSend(service, assistant.id, {
+      messageID: 'watch_abort_race',
+      parts: [{ type: 'text', text: 'watch' }],
+    });
+    await settleSend(service, peer.id, {
+      messageID: 'peer_watch_abort_race',
+      parts: [{ type: 'text', text: 'peer watch' }],
+    });
+    expect(service.snapshot().assistants.find((row) => row.id === assistant.id).assignedSessionIDs).toEqual(['ses_abort_race']);
+    expect(service.snapshot().assistants.find((row) => row.id === peer.id).assignedSessionIDs).toEqual(['ses_abort_race']);
+    await settleSend(service, assistant.id, {
+      messageID: 'stop_abort_race',
+      parts: [{ type: 'text', text: '停止会话' }],
+    });
+    expect(abortCalls).toBe(1);
+    // Strong assert: peer still had resumeAllowed=true, yet success path resume=false suppresses it.
+    expect(resumes).toEqual([]);
+    const page = service.contactMessages(assistant.id);
+    const card = page.messages.flatMap((message) => message.parts || []).find((part) => part?.cardType === 'session');
+    expect(card?.status).toBe('cancelled');
+    const peerCard = service.contactMessages(peer.id).messages
+      .flatMap((message) => message.parts || [])
+      .find((part) => part?.sessionID === 'ses_abort_race');
+    expect(peerCard?.status).toBe('cancelled');
+    // Late complete after cancelled stays idempotent.
+    expect(service.reportAssignedSessionSettle('ses_abort_race', 'complete')).toBe(false);
+    service.close();
+  });
+
+  it('stop_session abort failure replays observed terminal to resumeAllowed peer; independent worker unaffected', async () => {
+    const directory = root();
+    const project = path.join(directory, 'app');
+    fs.mkdirSync(project, { recursive: true });
+    let releaseAbort;
+    const abortGate = new Promise((resolve) => { releaseAbort = resolve; });
+    const resumes = [];
+    const service = setup(directory, {
+      get: async (input) => ({
+        data: { id: input.sessionID, directory: project, title: input.sessionID, status: { type: 'busy' } },
+      }),
+      abort: async (input) => {
+        if (input.sessionID === 'ses_fail_abort') {
+          await abortGate;
+          return { error: { message: 'abort refused' } };
+        }
+        return { data: true };
+      },
+    }, {
+      runContactTurn: async ({ tools, userText }) => {
+        if (typeof userText === 'string' && userText.includes('Internal assigned-session resume')) {
+          resumes.push(userText);
+          return { text: '续', bubbles: ['续'] };
+        }
+        if (userText === 'watch both') {
+          const watch = tools.find((tool) => tool.name === 'watch_session');
+          await watch.execute('w1', { sessionID: 'ses_fail_abort' });
+          await watch.execute('w2', { sessionID: 'ses_other_worker' });
+          return { text: '双盯', bubbles: ['双盯'], cards: [] };
+        }
+        if (userText === 'peer watch fail') {
+          const watch = tools.find((tool) => tool.name === 'watch_session');
+          await watch.execute('peer_w', { sessionID: 'ses_fail_abort' });
+          return { text: 'peer盯', bubbles: ['peer盯'], cards: [] };
+        }
+        const stop = tools.find((tool) => tool.name === 'stop_session');
+        const stopPromise = stop.execute('s1', { sessionID: 'ses_fail_abort' });
+        await new Promise((resolve) => setTimeout(resolve, 5));
+        // SSE complete while abort in-flight is deferred.
+        expect(service.reportAssignedSessionSettle('ses_fail_abort', 'complete')).toBe(false);
+        releaseAbort();
+        const result = await stopPromise;
+        expect(result.details.error).toBe('upstream_error');
+        expect(result.content[0].text).toContain('abort refused');
+        return { text: result.content[0].text, bubbles: [result.content[0].text] };
+      },
+    });
+    const assistant = service.createAssistant(assistantInput);
+    const peer = service.createAssistant({ name: 'PeerFail', providerID: 'p', modelID: 'm' });
+    await settleSend(service, assistant.id, {
+      messageID: 'watch_fail_abort',
+      parts: [{ type: 'text', text: 'watch both' }],
+    });
+    await settleSend(service, peer.id, {
+      messageID: 'peer_watch_fail_abort',
+      parts: [{ type: 'text', text: 'peer watch fail' }],
+    });
+    expect(service.snapshot().assistants.find((row) => row.id === assistant.id).assignedSessionIDs.sort()).toEqual([
+      'ses_fail_abort',
+      'ses_other_worker',
+    ].sort());
+    await settleSend(service, assistant.id, {
+      messageID: 'stop_fail_abort',
+      parts: [{ type: 'text', text: '停止失败会话' }],
+    });
+    // Stopper send cleared its own resume_allowed; peer still resumeAllowed=true so
+    // failure replay of stashed complete must schedule peer continuation.
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(resumes.some((text) => text.includes('ses_fail_abort'))).toBe(true);
+    expect(service.snapshot().assistants.find((row) => row.id === assistant.id).assignedSessionIDs).toEqual(['ses_other_worker']);
+    const page = service.contactMessages(assistant.id, { limit: 50 });
+    const cards = page.messages.flatMap((message) => message.parts || []).filter((part) => part?.cardType === 'session');
+    const failedCard = cards.find((part) => part.sessionID === 'ses_fail_abort');
+    const otherCard = cards.find((part) => part.sessionID === 'ses_other_worker');
+    expect(failedCard?.status).toBe('complete');
+    expect(otherCard?.status).toBe('busy');
+    const peerCard = service.contactMessages(peer.id).messages
+      .flatMap((message) => message.parts || [])
+      .find((part) => part?.sessionID === 'ses_fail_abort');
+    expect(peerCard?.status).toBe('complete');
+    service.close();
+  });
+
+  it('stop_session silent abort success cancels without waiting for SSE', async () => {
+    const directory = root();
+    const project = path.join(directory, 'app');
+    fs.mkdirSync(project, { recursive: true });
+    const resumes = [];
+    const service = setup(directory, {
+      get: async (input) => ({
+        data: { id: input.sessionID, directory: project, title: 'Silent', status: { type: 'busy' } },
+      }),
+      abort: async () => ({ data: true }),
+    }, {
+      runContactTurn: async ({ tools, userText }) => {
+        if (typeof userText === 'string' && userText.includes('Internal assigned-session resume')) {
+          resumes.push(userText);
+          return { text: '续', bubbles: ['续'] };
+        }
+        if (userText === 'watch') {
+          const watch = tools.find((tool) => tool.name === 'watch_session');
+          const result = await watch.execute('w', { sessionID: 'ses_silent' });
+          return { text: '盯', bubbles: ['盯'], cards: result.details.card ? [result.details.card] : [] };
+        }
+        if (userText === 'peer silent watch') {
+          const watch = tools.find((tool) => tool.name === 'watch_session');
+          const result = await watch.execute('peer_silent', { sessionID: 'ses_silent' });
+          return { text: 'peer盯', bubbles: ['peer盯'], cards: result.details.card ? [result.details.card] : [] };
+        }
+        const stop = tools.find((tool) => tool.name === 'stop_session');
+        const result = await stop.execute('s', { sessionID: 'ses_silent' });
+        expect(result.details.stopped?.aborted).toBe(true);
+        return { text: '停了', bubbles: ['停了'] };
+      },
+    });
+    const assistant = service.createAssistant(assistantInput);
+    const peer = service.createAssistant({ name: 'PeerSilent', providerID: 'p', modelID: 'm' });
+    await settleSend(service, assistant.id, {
+      messageID: 'watch_silent',
+      parts: [{ type: 'text', text: 'watch' }],
+    });
+    await settleSend(service, peer.id, {
+      messageID: 'peer_watch_silent',
+      parts: [{ type: 'text', text: 'peer silent watch' }],
+    });
+    await settleSend(service, assistant.id, {
+      messageID: 'stop_silent',
+      parts: [{ type: 'text', text: '停止' }],
+    });
+    // Peer still resumeAllowed; success resume=false must suppress peer continuation too.
+    expect(resumes).toEqual([]);
+    expect(service.snapshot().assistants.find((row) => row.id === assistant.id).assignedSessionIDs).toEqual([]);
+    expect(service.snapshot().assistants.find((row) => row.id === peer.id).assignedSessionIDs).toEqual([]);
+    const card = service.contactMessages(assistant.id).messages
+      .flatMap((message) => message.parts || [])
+      .find((part) => part?.sessionID === 'ses_silent');
+    expect(card?.status).toBe('cancelled');
+    service.close();
+  });
+
+  it('concurrent stop_session on the same worker shares one abort and cancels once', async () => {
+    const directory = root();
+    const project = path.join(directory, 'app');
+    fs.mkdirSync(project, { recursive: true });
+    let releaseAbort;
+    const abortGate = new Promise((resolve) => { releaseAbort = resolve; });
+    let abortCalls = 0;
+    const resumes = [];
+    const service = setup(directory, {
+      get: async (input) => ({
+        data: { id: input.sessionID, directory: project, title: 'Concurrent', status: { type: 'busy' } },
+      }),
+      abort: async () => {
+        abortCalls += 1;
+        await abortGate;
+        return { data: true };
+      },
+    }, {
+      runContactTurn: async ({ tools, userText }) => {
+        if (typeof userText === 'string' && userText.includes('Internal assigned-session resume')) {
+          resumes.push(userText);
+          return { text: '续', bubbles: ['续'] };
+        }
+        if (userText === 'watch concurrent') {
+          const watch = tools.find((tool) => tool.name === 'watch_session');
+          await watch.execute('cw', { sessionID: 'ses_concurrent' });
+          return { text: '盯', bubbles: ['盯'], cards: [] };
+        }
+        if (userText === 'peer concurrent watch') {
+          const watch = tools.find((tool) => tool.name === 'watch_session');
+          await watch.execute('pcw', { sessionID: 'ses_concurrent' });
+          return { text: 'peer盯', bubbles: ['peer盯'], cards: [] };
+        }
+        const stop = tools.find((tool) => tool.name === 'stop_session');
+        const result = await stop.execute(`s_${userText}`, { sessionID: 'ses_concurrent' });
+        expect(result.details.stopped?.aborted).toBe(true);
+        return { text: '停了', bubbles: ['停了'] };
+      },
+    });
+    const a = service.createAssistant({ name: 'StopA', providerID: 'p', modelID: 'm' });
+    const b = service.createAssistant({ name: 'StopB', providerID: 'p', modelID: 'm' });
+    await settleSend(service, a.id, { messageID: 'watch_conc_a', parts: [{ type: 'text', text: 'watch concurrent' }] });
+    await settleSend(service, b.id, { messageID: 'watch_conc_b', parts: [{ type: 'text', text: 'peer concurrent watch' }] });
+    const stopA = service.send(a.id, { messageID: 'stop_conc_a', parts: [{ type: 'text', text: 'stop A' }] });
+    const stopB = service.send(b.id, { messageID: 'stop_conc_b', parts: [{ type: 'text', text: 'stop B' }] });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    releaseAbort();
+    await Promise.all([
+      stopA.then((sent) => service.whenContactTurnSettled(sent.messageID)),
+      stopB.then((sent) => service.whenContactTurnSettled(sent.messageID)),
+    ]);
+    expect(abortCalls).toBe(1);
+    expect(resumes).toEqual([]);
+    expect(service.snapshot().assistants.find((row) => row.id === a.id).assignedSessionIDs).toEqual([]);
+    expect(service.snapshot().assistants.find((row) => row.id === b.id).assignedSessionIDs).toEqual([]);
     service.close();
   });
 });

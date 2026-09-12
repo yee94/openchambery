@@ -30,6 +30,12 @@ afterEach(() => {
 });
 
 describe('resolveAssistantCwd', () => {
+  it('starts a managed contact in the server user home while preserving its binding metadata', () => {
+    const assistant = { workspacePath: null, effectiveWorkspacePath: '/managed/contact' };
+    expect(resolveAssistantCwd(assistant)).toBe(os.homedir());
+    expect(assistant.effectiveWorkspacePath).toBe('/managed/contact');
+  });
+
   it('prefers effectiveWorkspacePath over workspacePath', () => {
     expect(resolveAssistantCwd({
       effectiveWorkspacePath: '/effective',
@@ -99,6 +105,8 @@ describe('formatPiCodingPrompt', () => {
     expect(prompt).toContain('not OpenCode native tools and not MCP');
     expect(prompt).toContain('never invent skill or MCP tool names');
     expect(prompt).toContain('context7');
+    expect(prompt).toContain('small, bounded tasks');
+    expect(prompt).toContain('worker session via assign_session');
     await runtime.close();
   });
 });
