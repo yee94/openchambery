@@ -159,6 +159,27 @@ export function ScheduledTab({
           initial={editor.task}
           onClose={() => setEditor({ open: false })}
           onSaved={() => setReloadToken((n) => n + 1)}
+          onDeleted={() => setReloadToken((n) => n + 1)}
+          onRan={(result) => {
+            setReloadToken((n) => n + 1);
+            if (result.sessionId && editor.open && editor.task) {
+              const { projectId, task } = editor.task;
+              onOpenRunSession?.({
+                id: `run-now:${task.id}:${Date.now()}`,
+                projectId,
+                taskId: task.id,
+                taskName: task.name,
+                trigger: 'manual',
+                status: 'running',
+                sessionId: result.sessionId,
+                directory: null,
+                error: null,
+                startedAt: Date.now(),
+                finishedAt: null,
+                durationMs: null,
+              });
+            }
+          }}
         />
       ) : null}
 

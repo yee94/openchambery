@@ -1150,6 +1150,18 @@ Slice on `cursor/lynx-dialog-portal-theme-local` (base PR#61 tip `7a4c7b6a8`; PR
 | 真机残差 | Unchanged — Connect welcome **card chrome** confirm for Yee on tip APK `lynx-v2-debug-3b2ae4c` |
 | Still deferred | Cap `@dnd-kit` / MobileWindowMotion / iPad / Cap toast / bulk; host-only unchanged (Keychain/camera/IME/Pierre/WKWebView/Mode B/Share ext/ShareReceiverActivity/iOS IPA/FCM for lynx.debug/Live Activity/clipboard host) |
 
+### 代码接上 this slice (`cursor/lynx-scheduled-run-delete-local` / Next #73)
+
+| Item | Notes |
+|---|---|
+| Cap Run now | `runScheduledTaskNow` → `POST /api/projects/:projectId/scheduled-tasks/:taskId/run`; optional `sessionId` opens chat via existing `onOpenRunSession` |
+| Cap Delete | `deleteScheduledTask` → `DELETE …/scheduled-tasks/:taskId`; two-tap confirm (no Cap toast/sonner) |
+| Editor chrome | `ScheduledEditor` edit mode: Run now + Delete under Save; list reload via `onDeleted` / `onRan` |
+| Vitest | `api.test.ts` — DELETE route, POST /run + sessionId, id guards, HTTP failure ≠ fake-success |
+| Docs honesty | Base tip `ea6349303` (PR #111 / Next #72 MERGED); published APK still `lynx-v2-debug-3b2ae4c` (do NOT invent newer); Next #73 |
+| Docs honesty | NOT DONE / 三关未齐 / not EXHAUSTED; 真机残差 keeps Connect welcome **card chrome** confirm for Yee on `lynx-v2-debug-3b2ae4c` |
+| Still deferred | Cap `@dnd-kit` / MobileWindowMotion / iPad / Cap toast / bulk; host-only unchanged (Keychain/camera/IME/Pierre/WKWebView/Mode B/Share ext/ShareReceiverActivity/iOS IPA/FCM for lynx.debug/Live Activity/clipboard host) |
+
 ### Still missing / host-only / 真机
 
 | Remaining | Why |

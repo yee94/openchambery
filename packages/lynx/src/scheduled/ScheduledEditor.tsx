@@ -5,7 +5,7 @@ import { LynxInput, LynxScrollView, LynxText, LynxView } from '../lynx-elements'
 import type { LynxRuntimeFetch } from '../runtime/fetch';
 import { loadLynxSettings } from '../settings/api';
 import { cssVar } from '../theme/tokens';
-import { upsertScheduledTask } from './api';
+import { deleteScheduledTask, runScheduledTaskNow, upsertScheduledTask } from './api';
 import type { LynxGlobalScheduledTask, LynxScheduledTask } from './types';
 
 export type ScheduledEditorProps = {
@@ -15,6 +15,10 @@ export type ScheduledEditorProps = {
   initial: LynxGlobalScheduledTask | null;
   onClose: () => void;
   onSaved?: () => void;
+  /** Cap delete — refresh list after success. */
+  onDeleted?: () => void;
+  /** Cap Run now — optional sessionId for chat open. */
+  onRan?: (result: { sessionId?: string }) => void;
 };
 
 type Draft = {
@@ -63,7 +67,7 @@ const draftFromInitial = (initial: LynxGlobalScheduledTask | null): Draft => {
 };
 
 /**
- * Scheduled task editor beyond the labeled stub — wires Cap PUT upsert.
+ * Scheduled task editor — Cap PUT upsert + Run now (POST /run) + Delete.
  * Create requires a project id from settings projects list; never fake-success.
  */
 export function ScheduledEditor({
@@ -72,12 +76,16 @@ export function ScheduledEditor({
   initial,
   onClose,
   onSaved,
+  onDeleted,
+  onRan,
 }: ScheduledEditorProps) {
   const [draft, setDraft] = useState<Draft>(() => draftFromInitial(initial));
   const [projects, setProjects] = useState<Array<{ id: string; label: string }>>([]);
   const [projectsStatus, setProjectsStatus] = useState<'idle' | 'loading' | 'ok' | 'failed' | 'no-runtime'>('idle');
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [actionBusy, setActionBusy] = useState<'run' | 'delete' | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState(false);
 
   useEffect(() => {
     setDraft(draftFromInitial(initial));
@@ -179,6 +187,59 @@ export function ScheduledEditor({
       setSaveError(error instanceof Error ? error.message : String(error));
     } finally {
       setSaving(false);
+    }
+  };
+
+  const onRunNow = async () => {
+    setSaveError(null);
+    setConfirmDelete(false);
+    if (!runtimeFetch) {
+      setSaveError(lynxT(locale, 'lynx.scheduled.noRuntime'));
+      return;
+    }
+    const projectId = draft.projectId.trim();
+    const taskId = draft.taskId?.trim() ?? '';
+    if (!projectId || !taskId) {
+      setSaveError(lynxT(locale, 'lynx.scheduled.editor.runRequiresSaved'));
+      return;
+    }
+    setActionBusy('run');
+    try {
+      const result = await runScheduledTaskNow(runtimeFetch, projectId, taskId);
+      onRan?.(result);
+    } catch (error) {
+      setSaveError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setActionBusy(null);
+    }
+  };
+
+  const onDelete = async () => {
+    setSaveError(null);
+    if (!runtimeFetch) {
+      setSaveError(lynxT(locale, 'lynx.scheduled.noRuntime'));
+      return;
+    }
+    const projectId = draft.projectId.trim();
+    const taskId = draft.taskId?.trim() ?? '';
+    if (!projectId || !taskId) {
+      setSaveError(lynxT(locale, 'lynx.scheduled.editor.runRequiresSaved'));
+      return;
+    }
+    if (!confirmDelete) {
+      setConfirmDelete(true);
+      return;
+    }
+    setActionBusy('delete');
+    try {
+      await deleteScheduledTask(runtimeFetch, projectId, taskId);
+      onDeleted?.();
+      onClose();
+    } catch (error) {
+      setSaveError(error instanceof Error ? error.message : String(error));
+      setConfirmDelete(false);
+    } finally {
+      setActionBusy(null);
     }
   };
 
@@ -344,7 +405,7 @@ export function ScheduledEditor({
 
       <LynxView
         bindtap={() => {
-          if (!saving) void onSave();
+          if (!saving && !actionBusy) void onSave();
         }}
         accessibility-role="button"
         style={{
@@ -360,6 +421,55 @@ export function ScheduledEditor({
             : lynxT(locale, 'lynx.scheduled.editor.save')}
         </LynxText>
       </LynxView>
+
+      {initial && draft.taskId ? (
+        <LynxView style={{ marginTop: '12px', gap: '8px' }}>
+          <LynxView
+            bindtap={() => {
+              if (!saving && !actionBusy) void onRunNow();
+            }}
+            accessibility-role="button"
+            accessibility-label={lynxT(locale, 'lynx.scheduled.editor.runNow')}
+            style={{
+              padding: '10px 12px',
+              borderRadius: '12px',
+              borderWidth: '1px',
+              borderColor: cssVar('interactive.selection'),
+              borderStyle: 'solid',
+              alignItems: 'center',
+            }}
+          >
+            <LynxText style={{ color: cssVar('primary.base'), fontWeight: '600' }}>
+              {actionBusy === 'run'
+                ? lynxT(locale, 'lynx.scheduled.editor.running')
+                : lynxT(locale, 'lynx.scheduled.editor.runNow')}
+            </LynxText>
+          </LynxView>
+          <LynxView
+            bindtap={() => {
+              if (!saving && !actionBusy) void onDelete();
+            }}
+            accessibility-role="button"
+            accessibility-label={lynxT(locale, 'lynx.scheduled.editor.delete')}
+            style={{
+              padding: '10px 12px',
+              borderRadius: '12px',
+              borderWidth: '1px',
+              borderColor: cssVar('interactive.selection'),
+              borderStyle: 'solid',
+              alignItems: 'center',
+            }}
+          >
+            <LynxText style={{ color: cssVar('surface.mutedForeground'), fontWeight: '600' }}>
+              {actionBusy === 'delete'
+                ? lynxT(locale, 'lynx.scheduled.editor.deleting')
+                : confirmDelete
+                  ? lynxT(locale, 'lynx.scheduled.editor.deleteConfirm')
+                  : lynxT(locale, 'lynx.scheduled.editor.delete')}
+            </LynxText>
+          </LynxView>
+        </LynxView>
+      ) : null}
     </LynxScrollView>
   );
 }
