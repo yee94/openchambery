@@ -27,6 +27,8 @@ export type MobileSecondaryState =
       /** Assistant conversation page. The selected Assistant is owned by the
           Assistant UI store; navigation only owns the page depth. */
       kind: 'assistant';
+      /** Optional detail pushed above the retained Assistant conversation. */
+      settingsAssistantID?: string;
     }
   | {
       /** Instance management page opened above the Projects root tab. */
@@ -138,6 +140,7 @@ export type MobileParentSessionTarget = {
 export type MobileSecondaryBackDecision =
   | { action: 'none' }
   | { action: 'closeSecondary' }
+  | { action: 'popAssistantSettings' }
   | { action: 'popChatSession'; parent: MobileParentSessionTarget };
 
 export function resolveMobileSecondaryBackDecision(input: {
@@ -145,6 +148,9 @@ export function resolveMobileSecondaryBackDecision(input: {
   parentSessionTarget: MobileParentSessionTarget | null;
 }): MobileSecondaryBackDecision {
   if (!input.secondary) return { action: 'none' };
+  if (input.secondary.kind === 'assistant' && input.secondary.settingsAssistantID) {
+    return { action: 'popAssistantSettings' };
+  }
   if (input.secondary.kind === 'chat' && input.secondary.routes.length > 1) {
     const predecessor = input.secondary.routes.at(-2)!;
     return {
