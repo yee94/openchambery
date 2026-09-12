@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.19.15-beta.4] - 2026-09-12
+
+### 界面
+
+- 助手列表 working 状态绿点放大，更容易看见。
+
 ## [1.19.15-beta.3] - 2026-09-12
 
 ### 界面
