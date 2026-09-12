@@ -6,7 +6,7 @@ const fixture = vi.hoisted(() => {
   const assistant = {
     id: 'asst_route', name: 'Route assistant', enabled: true,
     defaultPrompt: 'Route prompt', workspacePath: null, managedWorkspacePath: null,
-    providerID: 'provider', modelID: 'model',
+    providerID: 'provider', modelID: 'model', variant: 'medium',
   };
   return {
     assistant,
@@ -20,7 +20,14 @@ const fixture = vi.hoisted(() => {
 vi.mock('@/lib/i18n', () => ({ useI18n: () => ({ t: (key: string) => key }) }));
 vi.mock('@/components/icon/Icon', () => ({ Icon: () => null }));
 vi.mock('@/components/chat/AgentAvatar', () => ({ AgentAvatar: () => null }));
-vi.mock('@/components/sections/agents/ModelSelector', () => ({ ModelSelector: () => null }));
+vi.mock('@/components/sections/agents/ModelSelector', () => ({
+  ModelSelector: ({ variant, onChange }: { variant?: string; onChange: (provider: string, model: string, variant?: string) => void }) => (
+    <div data-testid="model-picker" data-variant={variant}>
+      <button onClick={() => onChange('provider', 'model', 'high')}>pick-high</button>
+      <button onClick={() => onChange('provider', 'plain-model', '')}>pick-plain</button>
+    </div>
+  ),
+}));
 vi.mock('@/stores/useConfigStore', () => ({
   useConfigStore: { getState: () => ({ providers: [] }) },
 }));
@@ -74,6 +81,27 @@ test('route ID owns displayed and saved assistant while the Settings tab selecti
   expect(fixture.update).toHaveBeenCalledWith(fixture.assistant, expect.objectContaining({ name: 'Route assistant' }));
   expect(fixture.create).not.toHaveBeenCalled();
   expect(useAssistantUIStore.getState().settingsSelectedAssistantID).toBe('asst_settings_tab');
+});
+
+test('mounted settings rehydrates and saves a variant selected inside the model picker', async () => {
+  await act(async () => root.render(<AssistantsSettingsPage assistantID="asst_route" />));
+  expect(host.querySelector('[data-testid="model-picker"]')?.getAttribute('data-variant')).toBe('medium');
+  await act(async () => button('pick-high').click());
+  expect(host.querySelector('[data-testid="model-picker"]')?.getAttribute('data-variant')).toBe('high');
+  await act(async () => button('assistants.settings.save').click());
+  expect(fixture.update).toHaveBeenCalledWith(fixture.assistant, expect.objectContaining({
+    providerID: 'provider', modelID: 'model', variant: 'high',
+  }));
+});
+
+test('switching to a plain model clears the previous variant when saved', async () => {
+  await act(async () => root.render(<AssistantsSettingsPage assistantID="asst_route" />));
+  await act(async () => button('pick-plain').click());
+  expect(host.querySelector('[data-testid="model-picker"]')?.getAttribute('data-variant')).toBe('');
+  await act(async () => button('assistants.settings.save').click());
+  expect(fixture.update).toHaveBeenCalledWith(fixture.assistant, expect.objectContaining({
+    modelID: 'plain-model', variant: null,
+  }));
 });
 
 test('deleting the route assistant returns through its owner and preserves the Settings tab selection', async () => {

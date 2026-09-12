@@ -81,7 +81,6 @@ export function normalizeAssignRequestKey(params = {}) {
 const DENIED_CODING_TOOLS = new Set(['glob', 'grep', 'shell', 'find', 'ls', 'powershell']);
 
 export const MISSED_FENCE_RETRY_USER_TEXT = 'emit the fence now, do not claim success.';
-export const MISSED_TOOL_FAILURE_BUBBLE = 'I could not complete that. No tool ran, so nothing was created.';
 
 const CREATE_ASSISTANT_INTENT = /建助理|新建[^。\n!]{0,24}助理|创建[^。\n!]{0,24}助理|加一个助理|create (?:an |a new )?assistant|new assistant/iu;
 const SCHEDULE_TASK_INTENT = /排定时任务|排个?定时任务|定时任务|schedule (?:a )?(?:daily )?(?:task|ping)|scheduled task|排个?(?:每日)?(?:任务|ping)/iu;
@@ -745,7 +744,7 @@ export function formatContactToolsPrompt(tools) {
     'schedule_task writes the same payload as PUT /api/projects/:id/scheduled-tasks onto a registered project.',
     'message_assistant is read-only: it inserts into the other contact transcript. It never runs promptAsync or mutates sessions or files. Never assign through a peer message.',
     'A reply without the tool call does nothing — agreeing in Chinese (好的 / 我来创建 / 我去说一声) is not sending.',
-    'When calling a tool that takes a beat (找项目 / 开会话 / 监听会话), you may say one short spoken line first (≤40 characters, e.g. 我去找一下), then only the fence. No planning, no tool names, no "let me think".',
+    'Before starting work, publish a short natural-language openchamber-message prefix describing the next action, followed by the tool fence. Publish verified milestones as the work proceeds. Keep private reasoning, tool names, and raw traces out of public messages. After each actual result, decide whether the user needs a progress message or the final outcome.',
     'Never say 已创建, 已发送, 已停止, created, scheduled, opened, watched, stopped, or sent unless the tool already returned success.',
     'With an empty registered catalog, first discover the relevant existing workspace through list_sessions and directory lookups, then ask the user to register that workspace in Settings before assignment.',
     'After a successful tool, confirm in one short bubble. The user sees a contact card, not tool traces. After successful assign_session or watch_session the session card plus that short confirm is enough — stop.',
@@ -780,20 +779,6 @@ export function contactTurnClearedChatHistory(messages) {
       || message.details?.historyCleared === true
     )
   ));
-}
-
-/** After reset, keep only the short confirm — leftover pre-reset model text is discarded. */
-export function confirmBubbleAfterContactReset(bubbles, preferredConfirm = NEW_CONVERSATION_CONFIRM_BUBBLE) {
-  const list = (Array.isArray(bubbles) ? bubbles : [])
-    .filter((item) => typeof item === 'string' && item.trim())
-    .map((item) => item.trim());
-  const fallback = preferredConfirm === CLEAR_CHAT_HISTORY_CONFIRM_BUBBLE
-    ? CLEAR_CHAT_HISTORY_CONFIRM_BUBBLE
-    : NEW_CONVERSATION_CONFIRM_BUBBLE;
-  const confirm = list.find((item) => (
-    item === NEW_CONVERSATION_CONFIRM_BUBBLE || item === CLEAR_CHAT_HISTORY_CONFIRM_BUBBLE
-  ));
-  return [confirm || fallback];
 }
 
 export function extractContactCardsFromMessages(messages) {

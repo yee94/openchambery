@@ -113,6 +113,29 @@ describe('detectSessionlessGenerate', () => {
 })
 
 describe('generateOpenCodeText', () => {
+  it.each(['high', undefined])('passes variant %s to the upstream prompt and returns only text parts', async (variant) => {
+    const client = throwawayClient({
+      status: async () => ({ data: {} }),
+      messages: async () => ({ data: [{
+        ...completedAssistant('public reply'),
+        parts: [{ type: 'reasoning', text: 'private reasoning' }, { type: 'text', text: 'public reply' }],
+      }] }),
+    });
+    client.session.promptAsync = vi.fn(async () => ({ response: { status: 204 } }));
+    const result = await throwawayGenerate(client, { variant });
+    expect(client.session.promptAsync.mock.calls[0][0].variant).toBe(variant);
+    expect(result.text).toBe('public reply');
+  });
+
+  it('passes variant to sessionless generation', async () => {
+    const fetchImpl = vi.fn(async () => new Response(JSON.stringify({ text: 'reply' })));
+    await throwawayGenerate({}, {
+      variant: 'high', fetchImpl,
+      detect: async () => ({ available: true, mode: 'http', url: 'http://localhost:1/generate' }),
+    });
+    expect(JSON.parse(fetchImpl.mock.calls[0][1].body).variant).toBe('high');
+  });
+
   it('uses promptAsync with model+parts, waits for idle messages, and never calls v2 session.prompt', async () => {
     const create = vi.fn(async () => ({ data: { id: 'ses_tmp' } }))
     const update = vi.fn(async () => ({ data: { id: 'ses_tmp' } }))

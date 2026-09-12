@@ -20,7 +20,6 @@ import {
   UPDATE_DEFAULT_PROMPT_UNCHANGED_BUBBLE,
   WATCH_SESSION_TOOL_NAME,
   WATCHED_SESSION_FALLBACK_BUBBLE,
-  confirmBubbleAfterContactReset,
   contactTurnHasSuccessfulReset,
   createContactTools,
   detectRequestedContactTools,
@@ -917,31 +916,5 @@ describe('createContactTools', () => {
     const missing = await tools.find((tool) => tool.name === UPDATE_DEFAULT_PROMPT_TOOL_NAME)
       .execute('call_missing_peer', { to: '没有这个助手', prompt: 'x' });
     expect(missing.details.error).toBe('not_found');
-  });
-});
-
-describe('confirmBubbleAfterContactReset', () => {
-  it('keeps the canonical confirm and drops leftover attachment bubbles', () => {
-    expect(confirmBubbleAfterContactReset([
-      NEW_CONVERSATION_CONFIRM_BUBBLE,
-      'I still see your dot.png and note.txt.',
-      'Those attachments are still in context.',
-    ])).toEqual([NEW_CONVERSATION_CONFIRM_BUBBLE]);
-  });
-
-  it('uses the canonical confirm when leftover text is the only extracted bubble', () => {
-    expect(confirmBubbleAfterContactReset([
-      'I still see your dot.png and note.txt from earlier.',
-    ])).toEqual([NEW_CONVERSATION_CONFIRM_BUBBLE]);
-  });
-
-  it('prefers the clear-history confirm when that tool ran', () => {
-    expect(confirmBubbleAfterContactReset([
-      CLEAR_CHAT_HISTORY_CONFIRM_BUBBLE,
-      'I still see older cards.',
-    ], CLEAR_CHAT_HISTORY_CONFIRM_BUBBLE)).toEqual([CLEAR_CHAT_HISTORY_CONFIRM_BUBBLE]);
-    expect(confirmBubbleAfterContactReset([
-      'leftover only',
-    ], CLEAR_CHAT_HISTORY_CONFIRM_BUBBLE)).toEqual([CLEAR_CHAT_HISTORY_CONFIRM_BUBBLE]);
   });
 });

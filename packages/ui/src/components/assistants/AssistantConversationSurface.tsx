@@ -482,6 +482,20 @@ export const AssistantConversationSurface: React.FC<AssistantConversationSurface
               const preview = previewByTurnID.get(message.turnID)
               const processingRow = message.status === 'admitted' && message.messageID.endsWith(':preview:admitted')
               const failedPreviewRow = message.status === 'failed' && message.messageID.endsWith(':preview:failed')
+              if (message.status === 'error' || failedPreviewRow) {
+                return (
+                  <div key={message.messageID} data-message-id={message.messageID} data-assistant-contact-error="" className="mt-3 px-1">
+                    <p role="alert" className="whitespace-pre-wrap typography-micro text-[var(--status-error)] [overflow-wrap:anywhere]">
+                      {message.text || preview?.error || t('assistants.contact.sendFailed')}
+                    </p>
+                    {readPosition?.messageID === message.messageID ? <AssistantReadMarker
+                      key={`${transportIdentity}:${assistant.id}:${readPosition.generation}:${readPosition.ordinal}`}
+                      assistantID={assistant.id}
+                      position={readPosition}
+                    /> : null}
+                  </div>
+                )
+              }
               return (
                 <div
                   key={message.messageID}
@@ -592,9 +606,6 @@ export const AssistantConversationSurface: React.FC<AssistantConversationSurface
                     ) : null}
                     {optimistic?.status === 'failed' ? (
                       <p className="px-1 typography-micro text-[var(--status-error)]">{optimistic.error || t('assistants.contact.sendFailed')}</p>
-                    ) : null}
-                    {failedPreviewRow ? (
-                      <p className="px-1 typography-micro text-[var(--status-error)]">{preview?.error || t('assistants.contact.sendFailed')}</p>
                     ) : null}
                     {readPosition?.messageID === message.messageID ? <AssistantReadMarker
                       key={`${transportIdentity}:${assistant.id}:${readPosition.generation}:${readPosition.ordinal}`}

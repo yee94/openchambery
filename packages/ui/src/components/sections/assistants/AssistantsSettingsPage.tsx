@@ -82,6 +82,7 @@ const emptyDraft = (defaultName = ''): AssistantDraft => {
     workspacePath: null,
     providerID: defaultModel?.providerID ?? '',
     modelID: defaultModel?.modelID ?? '',
+    variant: null,
   };
 };
 
@@ -92,10 +93,11 @@ const draftFromAssistant = (assistant: AssistantDTO): AssistantDraft => ({
   workspacePath: assistant.workspacePath,
   providerID: assistant.providerID,
   modelID: assistant.modelID,
+  variant: assistant.variant,
 });
 
 /**
- * Settings UI does not own agent/variant/mode. PATCH must omit them so the
+ * Settings UI does not own agent/mode. PATCH must omit them so the
  * server keeps prior values (undefined → retain; null would clear).
  */
 const toAssistantSettingsUpdateDraft = (draft: AssistantDraft): AssistantDraft => ({
@@ -105,6 +107,7 @@ const toAssistantSettingsUpdateDraft = (draft: AssistantDraft): AssistantDraft =
   workspacePath: draft.workspacePath,
   providerID: draft.providerID,
   modelID: draft.modelID,
+  variant: draft.variant ?? null,
 });
 
 const projectName = (project: ProjectEntry): string => (
@@ -639,7 +642,7 @@ export const AssistantsSettingsPage: React.FC<AssistantsSettingsPageProps> = ({ 
               label={t('assistants.settings.runtime')}
             >
                 <SettingsRow itemId="assistants.model" label={t('assistants.settings.model')}>
-                  <ModelSelector providerId={draft.providerID} modelId={draft.modelID} providers={catalogProviders} onChange={(providerID, modelID) => setDraft((current) => ({ ...current, providerID, modelID }))} className="oc-settings-inline-value" />
+                  <ModelSelector providerId={draft.providerID} modelId={draft.modelID} variant={draft.variant ?? ''} providers={catalogProviders} onChange={(providerID, modelID, variant) => setDraft((current) => ({ ...current, providerID, modelID, variant: variant || null }))} className="oc-settings-inline-value" />
                 </SettingsRow>
             </SettingsGroup>
 

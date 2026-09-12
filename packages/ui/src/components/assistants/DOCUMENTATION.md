@@ -42,6 +42,15 @@ The web-painted mobile dock overrides the shared badge chrome with an inverse su
 
 ## Acceptance criteria
 
+Contact progress consists of model-authored natural-language messages delivered through
+the existing bubble SSE and persisted history. Explicit public message records arrive
+while the model and tools are still running; stable message IDs reconcile them without
+turn-end duplication. The UI adds no tool log, timer narration, or progress widget.
+Server `status:error` records and failed-turn previews render as plain `role=alert`
+feedback with status-error styling, separately from assistant avatars and speech bubbles.
+They retain message anchors and read-watermark recovery. Tool confirmation text remains
+model input; the model supplies the visible result summary, including settings saves.
+
 The Assistant conversation is a Grok-like **contact**, not an OpenCode coding agent. Primary Chat still owns LegendList / Activity / tools. Assistant must not wrap `ChatContainer` as its transcript. Server-side contact turns may run pi `read` / `write` / `edit` / `bash` in the assistant workspace and load merged `.agents`/`.claude` skills; the contact UI still does not render tool traces. Contact bubbles wrap unbreakable tokens (`overflow-wrap: anywhere`); the transcript scroller is `overflow-x-hidden` so a long path cannot grow the page sideways.
 
 **Session cards (this PR)**

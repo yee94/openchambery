@@ -53,15 +53,10 @@ import {
   readContactAttachmentBytes,
 } from './contact-attachments.js';
 import {
-  ASSIGNED_SESSION_FALLBACK_BUBBLE,
   boundSessionListLimit,
-  CLEAR_CHAT_HISTORY_CONFIRM_BUBBLE,
-  confirmBubbleAfterContactReset,
-  contactTurnClearedChatHistory,
   createContactTools,
   filterRegisteredProjects,
   matchesProjectQuery,
-  NEW_CONVERSATION_CONFIRM_BUBBLE,
   normalizeConnectedModels,
   normalizeRegisteredProjects,
   sanitizeRegisteredProject,
@@ -2231,10 +2226,8 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
         const assignedCards = [];
         const spokenByIndex = new Map();
         let contactResetThisTurn = false;
-        let contactHistoryClearedThisTurn = false;
-        const markContactReset = (historyCleared = false) => {
+        const markContactReset = () => {
           contactResetThisTurn = true;
-          if (historyCleared) contactHistoryClearedThisTurn = true;
           spokenByIndex.clear();
           assignedCards.length = 0;
         };
@@ -2357,15 +2350,8 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
           return;
         }
         const resetThisTurn = contactResetThisTurn || generated?.reset === true;
-        const historyClearedThisTurn = contactHistoryClearedThisTurn
-          || contactTurnClearedChatHistory(generated?.messages)
-          || generated?.historyCleared === true;
-        const preferredConfirm = historyClearedThisTurn
-          ? CLEAR_CHAT_HISTORY_CONFIRM_BUBBLE
-          : NEW_CONVERSATION_CONFIRM_BUBBLE;
-        const bubbles = resetThisTurn
-          ? confirmBubbleAfterContactReset(generated?.bubbles, preferredConfirm)
-          : (Array.isArray(generated?.bubbles) ? generated.bubbles.filter((item) => typeof item === 'string' && item.trim()) : []);
+        const bubbles = resetThisTurn && generated?.reset !== true ? []
+          : (Array.isArray(generated?.bubbles) ? generated.bubbles.filter((item) => typeof item === 'string' && item.trim()).slice(0, resetThisTurn ? 1 : undefined) : []);
         const cards = resetThisTurn
           ? []
           : [
@@ -2403,7 +2389,7 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
         // No user row for resume — only assistant bubbles/cards (userMessageID is id prefix).
         persistContactAssistantReply(assistantID, {
           userMessageID: messageID,
-          bubbles: bubbles.length > 0 ? bubbles : [ASSIGNED_SESSION_FALLBACK_BUBBLE],
+          bubbles,
           cards,
           turnID,
           reset: resetThisTurn,
@@ -2420,7 +2406,7 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
           name: assistantSnapshot.name,
           turnID,
           status: 'complete',
-          body: spoken.join('\n') || cards[0]?.title || '',
+          body: spoken.at(-1) || cards[0]?.title || '',
         });
         resolveContactTurnSettlement(messageID, { status: 'complete' });
       } catch (error) {
@@ -2556,10 +2542,8 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
         const assignedCards = [];
         const spokenByIndex = new Map();
         let contactResetThisTurn = false;
-        let contactHistoryClearedThisTurn = false;
-        const markContactReset = (historyCleared = false) => {
+        const markContactReset = () => {
           contactResetThisTurn = true;
-          if (historyCleared) contactHistoryClearedThisTurn = true;
           spokenByIndex.clear();
           assignedCards.length = 0;
         };
@@ -2707,15 +2691,8 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
             return;
           }
           const resetThisTurn = contactResetThisTurn || generated?.reset === true;
-          const historyClearedThisTurn = contactHistoryClearedThisTurn
-            || contactTurnClearedChatHistory(generated?.messages)
-            || generated?.historyCleared === true;
-          const preferredConfirm = historyClearedThisTurn
-            ? CLEAR_CHAT_HISTORY_CONFIRM_BUBBLE
-            : NEW_CONVERSATION_CONFIRM_BUBBLE;
-          const bubbles = resetThisTurn
-            ? confirmBubbleAfterContactReset(generated?.bubbles, preferredConfirm)
-            : (Array.isArray(generated?.bubbles) ? generated.bubbles.filter((item) => typeof item === 'string' && item.trim()) : []);
+          const bubbles = resetThisTurn && generated?.reset !== true ? []
+            : (Array.isArray(generated?.bubbles) ? generated.bubbles.filter((item) => typeof item === 'string' && item.trim()).slice(0, resetThisTurn ? 1 : undefined) : []);
           const cards = resetThisTurn
             ? []
             : [
@@ -2766,7 +2743,7 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
           }
           persistContactAssistantReply(row.assistant_id, {
             userMessageID: messageID,
-            bubbles: bubbles.length > 0 ? bubbles : [ASSIGNED_SESSION_FALLBACK_BUBBLE],
+            bubbles,
             cards,
             turnID,
             reset: resetThisTurn,
@@ -2784,7 +2761,7 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
             name: assistantSnapshot.name,
             turnID,
             status: 'complete',
-            body: spoken.join('\n') || cards[0]?.title || '',
+            body: spoken.at(-1) || cards[0]?.title || '',
           });
           resolveContactTurnSettlement(messageID, { status: 'complete' });
         } catch (error) {

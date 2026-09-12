@@ -96,6 +96,10 @@ export async function createChatCompletion({
   const resolved = parseModelRef(body.model, body.providerID, body.modelID);
   if (!resolved) throw new LlmError('validation_error', 400, 'model or providerID/modelID is required');
   const messages = normalizeMessages(body.messages);
+  if (body.variant != null && typeof body.variant !== 'string') {
+    throw new LlmError('validation_error', 400, 'variant must be a string or null');
+  }
+  const variant = body.variant?.trim() || undefined;
 
   const client = clientFactory?.() ?? null;
   const catalog = await loadCatalog(client ?? {
@@ -118,6 +122,7 @@ export async function createChatCompletion({
       getOpenCodeAuthHeaders,
       providerID: resolved.providerID,
       modelID: resolved.modelID,
+      ...(variant ? { variant } : {}),
       messages,
       fetchImpl,
       clientFactory,
