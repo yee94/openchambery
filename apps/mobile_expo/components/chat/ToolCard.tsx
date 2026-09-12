@@ -1,8 +1,11 @@
 import React, { memo, useState } from 'react';
-import { Pressable, StyleSheet, View as RNView } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, View as RNView } from 'react-native';
 
+import { ChatMarkdown } from '@/components/chat/ChatMarkdown';
 import { Text, useThemeColor } from '@/components/Themed';
+import { useColorScheme } from '@/components/useColorScheme';
 import type { ToolCardModel } from '@/lib/toolCards';
+import { truncateToolCardBody } from '@/lib/toolCards';
 import { t } from '@/lib/i18n';
 
 export type ToolCardProps = {
@@ -28,13 +31,14 @@ function statusLabel(status: ToolCardModel['status']): string {
 
 function ToolCardImpl({ card }: ToolCardProps) {
   const [expanded, setExpanded] = useState(false);
+  const scheme = useColorScheme();
   const textColor = useThemeColor({}, 'text');
   const muted = useThemeColor({}, 'muted');
-  const body =
-    card.error?.trim() ||
-    card.output?.trim() ||
-    null;
+  const tint = useThemeColor({}, 'tint');
+  const rawBody = card.error?.trim() || card.output?.trim() || null;
+  const body = rawBody ? truncateToolCardBody(rawBody) : null;
   const canExpand = Boolean(body);
+  const codeBg = scheme === 'dark' ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)';
 
   return (
     <RNView style={styles.wrap} accessibilityRole="summary">
@@ -66,11 +70,16 @@ function ToolCardImpl({ card }: ToolCardProps) {
         ) : null}
       </Pressable>
       {expanded && body ? (
-        <RNView style={styles.body}>
-          <Text style={[styles.bodyText, { color: textColor }]} selectable>
-            {body.length > 4000 ? `${body.slice(0, 4000)}…` : body}
-          </Text>
-        </RNView>
+        <ScrollView style={styles.body} nestedScrollEnabled>
+          <ChatMarkdown
+            content={body}
+            variant="tool"
+            color={textColor}
+            linkColor={tint}
+            codeBackground={codeBg}
+            codeColor={textColor}
+          />
+        </ScrollView>
       ) : null}
     </RNView>
   );
@@ -132,10 +141,5 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     paddingVertical: 8,
     maxHeight: 220,
-  },
-  bodyText: {
-    fontSize: 12,
-    lineHeight: 17,
-    fontFamily: 'monospace',
   },
 });

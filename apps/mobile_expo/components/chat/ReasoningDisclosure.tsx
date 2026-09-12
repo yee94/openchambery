@@ -1,7 +1,9 @@
 import React, { memo, useEffect, useState } from 'react';
 import { Pressable, StyleSheet, View as RNView } from 'react-native';
 
+import { ChatMarkdown } from '@/components/chat/ChatMarkdown';
 import { Text, useThemeColor } from '@/components/Themed';
+import { useColorScheme } from '@/components/useColorScheme';
 import type { ReasoningModel } from '@/lib/toolCards';
 import { t } from '@/lib/i18n';
 
@@ -10,8 +12,9 @@ export type ReasoningDisclosureProps = {
 };
 
 function ReasoningDisclosureImpl({ reasoning }: ReasoningDisclosureProps) {
+  const scheme = useColorScheme();
   const muted = useThemeColor({}, 'muted');
-  const textColor = useThemeColor({}, 'text');
+  const tint = useThemeColor({}, 'tint');
   const [expanded, setExpanded] = useState(reasoning.streaming);
   const [userToggled, setUserToggled] = useState(false);
 
@@ -24,6 +27,8 @@ function ReasoningDisclosureImpl({ reasoning }: ReasoningDisclosureProps) {
   const summary =
     reasoning.summary ||
     (reasoning.streaming ? t('mobile.chat.reasoning.thinking') : t('mobile.chat.reasoning.thought'));
+
+  const codeBg = scheme === 'dark' ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)';
 
   return (
     <RNView style={styles.wrap}>
@@ -43,9 +48,15 @@ function ReasoningDisclosureImpl({ reasoning }: ReasoningDisclosureProps) {
       </Pressable>
       {expanded && reasoning.text ? (
         <RNView style={styles.body}>
-          <Text style={[styles.bodyText, { color: textColor }]} selectable>
-            {reasoning.text}
-          </Text>
+          <ChatMarkdown
+            content={reasoning.text}
+            streaming={reasoning.streaming}
+            variant="reasoning"
+            color={muted}
+            linkColor={tint}
+            codeBackground={codeBg}
+            codeColor={muted}
+          />
         </RNView>
       ) : null}
     </RNView>
@@ -80,10 +91,6 @@ const styles = StyleSheet.create({
     borderLeftWidth: 2,
     borderLeftColor: 'rgba(127,127,127,0.4)',
     marginLeft: 2,
-  },
-  bodyText: {
-    fontSize: 13,
-    lineHeight: 18,
     opacity: 0.85,
   },
 });

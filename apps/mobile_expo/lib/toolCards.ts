@@ -254,6 +254,14 @@ export const toolCardFromPart = (part: ChatMessagePart, index: number): ToolCard
   };
 };
 
+/** Cap tool cards truncate huge outputs before markdown render. */
+export const TOOL_CARD_BODY_MAX = 4000;
+
+export const truncateToolCardBody = (body: string, max = TOOL_CARD_BODY_MAX): string => {
+  if (body.length <= max) return body;
+  return `${body.slice(0, max)}…`;
+};
+
 const SUMMARY_MAX = 80;
 
 export const cleanReasoningText = (text: string): string => {

@@ -10,16 +10,60 @@ import {
 } from '@/lib/chatMarkdownModel';
 import { segmentStreamingMarkdown } from '@/lib/streamingMarkdown';
 
+/** Cap MarkdownRendererImpl variants — denser type for nested tool/reasoning. */
+export type ChatMarkdownVariant = 'assistant' | 'tool' | 'reasoning';
+
 export type ChatMarkdownProps = {
   content: string;
   /** When true, isolate trailing open fences (Cap streaming cadence). */
   streaming?: boolean;
+  /** Cap-parity: assistant (bubble), tool (code size), reasoning (meta/dimmed). */
+  variant?: ChatMarkdownVariant;
   color: string;
   /** Link / accent color (assistant tint). User bubbles pass a light accent. */
   linkColor?: string;
   codeBackground?: string;
   codeColor?: string;
   selectable?: boolean;
+};
+
+type Density = {
+  body: { fontSize: number; lineHeight: number };
+  codespan: { fontSize: number };
+  codeText: { fontSize: number; lineHeight: number };
+  listMarker: { fontSize: number; lineHeight: number };
+  headingScale: number;
+  rootGap: number;
+};
+
+const DENSITY: Record<ChatMarkdownVariant, Density> = {
+  // Message bubbles — slightly larger than Cap web markdown for RN readability.
+  assistant: {
+    body: { fontSize: 16, lineHeight: 22 },
+    codespan: { fontSize: 14 },
+    codeText: { fontSize: 13, lineHeight: 18 },
+    listMarker: { fontSize: 16, lineHeight: 22 },
+    headingScale: 1,
+    rootGap: 6,
+  },
+  // Cap --text-code (0.75rem ≈ 12).
+  tool: {
+    body: { fontSize: 12, lineHeight: 17 },
+    codespan: { fontSize: 12 },
+    codeText: { fontSize: 12, lineHeight: 16 },
+    listMarker: { fontSize: 12, lineHeight: 17 },
+    headingScale: 0.85,
+    rootGap: 4,
+  },
+  // Cap --text-markdown / --text-meta (0.875rem ≈ 14).
+  reasoning: {
+    body: { fontSize: 13, lineHeight: 18 },
+    codespan: { fontSize: 12 },
+    codeText: { fontSize: 12, lineHeight: 16 },
+    listMarker: { fontSize: 13, lineHeight: 18 },
+    headingScale: 0.9,
+    rootGap: 4,
+  },
 };
 
 const HEADING_SIZE: Record<number, { fontSize: number; lineHeight: number }> = {
@@ -37,6 +81,7 @@ type InlineStyleCtx = {
   codeBackground: string;
   codeColor: string;
   onLinkPress: (href: string) => void;
+  density: Density;
 };
 
 function renderInlines(nodes: ChatMarkdownInline[], ctx: InlineStyleCtx): React.ReactNode[] {
@@ -73,7 +118,11 @@ function renderInlines(nodes: ChatMarkdownInline[], ctx: InlineStyleCtx): React.
             key={key}
             style={[
               styles.codespan,
-              { color: ctx.codeColor, backgroundColor: ctx.codeBackground },
+              {
+                color: ctx.codeColor,
+                backgroundColor: ctx.codeBackground,
+                fontSize: ctx.density.codespan.fontSize,
+              },
             ]}
           >
             {node.text}
@@ -123,18 +172,23 @@ function BlockView({
       return <View style={[styles.hr, { backgroundColor: ctx.codeBackground }]} />;
     case 'plain':
       return (
-        <Text style={[styles.body, { color: ctx.color }]} selectable={selectable}>
+        <Text style={[styles.body, ctx.density.body, { color: ctx.color }]} selectable={selectable}>
           {block.text}
         </Text>
       );
     case 'paragraph':
       return (
-        <Text style={[styles.body, { color: ctx.color }]} selectable={selectable}>
+        <Text style={[styles.body, ctx.density.body, { color: ctx.color }]} selectable={selectable}>
           {renderInlines(block.children, ctx)}
         </Text>
       );
     case 'heading': {
-      const size = HEADING_SIZE[block.depth] ?? HEADING_SIZE[3]!;
+      const base = HEADING_SIZE[block.depth] ?? HEADING_SIZE[3]!;
+      const scale = ctx.density.headingScale;
+      const size = {
+        fontSize: Math.round(base.fontSize * scale),
+        lineHeight: Math.round(base.lineHeight * scale),
+      };
       return (
         <Text
           style={[styles.heading, size, { color: ctx.color }]}
@@ -153,7 +207,10 @@ function BlockView({
           {block.lang ? (
             <Text style={[styles.codeLang, { color: ctx.linkColor }]}>{block.lang}</Text>
           ) : null}
-          <Text style={[styles.codeText, { color: ctx.codeColor }]} selectable={selectable}>
+          <Text
+            style={[styles.codeText, ctx.density.codeText, { color: ctx.codeColor }]}
+            selectable={selectable}
+          >
             {block.text.replace(/\n$/, '')}
           </Text>
         </View>
@@ -165,9 +222,11 @@ function BlockView({
             const marker = block.ordered ? `${block.start + i}.` : '•';
             return (
               <View key={`${index}-li-${i}`} style={styles.listItem}>
-                <Text style={[styles.listMarker, { color: ctx.color }]}>{marker}</Text>
+                <Text style={[styles.listMarker, ctx.density.listMarker, { color: ctx.color }]}>
+                  {marker}
+                </Text>
                 <View style={styles.listBody}>
-                  <Text style={[styles.body, { color: ctx.color }]} selectable={selectable}>
+                  <Text style={[styles.body, ctx.density.body, { color: ctx.color }]} selectable={selectable}>
                     {renderInlines(item, ctx)}
                   </Text>
                 </View>
@@ -203,6 +262,7 @@ function BlockView({
 function ChatMarkdownImpl({
   content,
   streaming = false,
+  variant = 'assistant',
   color,
   linkColor,
   codeBackground,
@@ -212,6 +272,7 @@ function ChatMarkdownImpl({
   const resolvedLink = linkColor ?? '#3b82f6';
   const resolvedCodeBg = codeBackground ?? 'rgba(127,127,127,0.22)';
   const resolvedCodeColor = codeColor ?? color;
+  const density = DENSITY[variant] ?? DENSITY.assistant;
 
   const onLinkPress = useCallback((href: string) => {
     if (!isSafeMarkdownHref(href)) return;
@@ -225,8 +286,9 @@ function ChatMarkdownImpl({
       codeBackground: resolvedCodeBg,
       codeColor: resolvedCodeColor,
       onLinkPress,
+      density,
     }),
-    [color, resolvedLink, resolvedCodeBg, resolvedCodeColor, onLinkPress],
+    [color, resolvedLink, resolvedCodeBg, resolvedCodeColor, onLinkPress, density],
   );
 
   const segments = useMemo(
@@ -255,7 +317,7 @@ function ChatMarkdownImpl({
   }
 
   return (
-    <View style={styles.root}>
+    <View style={[styles.root, { gap: density.rootGap }]}>
       {docs.map((piece, i) => {
         if (piece.openFence) {
           return (
@@ -263,7 +325,10 @@ function ChatMarkdownImpl({
               key={`live-fence-${i}`}
               style={[styles.codeBlock, { backgroundColor: resolvedCodeBg }]}
             >
-              <Text style={[styles.codeText, { color: resolvedCodeColor }]} selectable={selectable}>
+              <Text
+                style={[styles.codeText, density.codeText, { color: resolvedCodeColor }]}
+                selectable={selectable}
+              >
                 {piece.plain}
               </Text>
             </View>

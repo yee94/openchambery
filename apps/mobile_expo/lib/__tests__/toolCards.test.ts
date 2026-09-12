@@ -8,9 +8,11 @@ import {
   reasoningFromPart,
   reasoningSummary,
   segmentsFromParts,
+  TOOL_CARD_BODY_MAX,
   toolCardFromPart,
   toolDisplayName,
   toolShortDescription,
+  truncateToolCardBody,
 } from '@/lib/toolCards';
 
 describe('normalizeToolName / display', () => {
@@ -84,6 +86,29 @@ describe('reasoning disclosure helpers', () => {
       time: { start: 1, end: 2 },
     };
     expect(reasoningFromPart(part, 0)?.streaming).toBe(false);
+  });
+
+  it('keeps markdown markers in cleaned reasoning body for ChatMarkdown', () => {
+    const part: ChatMessagePart = {
+      id: 'r3',
+      type: 'reasoning',
+      text: '> step **one**\n> with `code`',
+      time: { start: 1, end: 2 },
+    };
+    const model = reasoningFromPart(part, 0);
+    expect(model?.text).toContain('**one**');
+    expect(model?.text).toContain('`code`');
+    expect(model?.text).not.toMatch(/^>/m);
+  });
+});
+
+describe('truncateToolCardBody', () => {
+  it('leaves short bodies alone and ellipsizes long ones', () => {
+    expect(truncateToolCardBody('short')).toBe('short');
+    const long = 'x'.repeat(TOOL_CARD_BODY_MAX + 50);
+    const out = truncateToolCardBody(long);
+    expect(out.length).toBe(TOOL_CARD_BODY_MAX + 1);
+    expect(out.endsWith('…')).toBe(true);
   });
 });
 
