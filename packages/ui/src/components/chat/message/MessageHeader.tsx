@@ -71,14 +71,13 @@ const MessageHeader: React.FC<MessageHeaderProps> = ({ isUser, isMobile, provide
                         {!isUser && agentName && (
                             <div
                                 className={cn(
-                                    'agent-badge inline-flex max-w-[50%] shrink-0 items-center gap-1 cursor-default rounded font-normal leading-tight whitespace-nowrap',
-                                    isMobile ? 'px-1 py-px text-[10px]' : 'px-1.5 py-0.5 typography-micro',
+                                    'agent-badge inline-flex shrink-0 items-center gap-1 cursor-default rounded px-1.5 py-0 font-normal leading-none text-[10px]',
                                     getAgentColor(agentName).class
                                 )}
                             >
                                 {/* 与选择 Agent 一致：用 identicon 头像代替通用机器人图标 */}
                                 <AgentAvatar name={agentName} size={10} />
-                                <span className="truncate">
+                                <span>
                                     {agentName.charAt(0).toUpperCase() + agentName.slice(1)}
                                 </span>
                             </div>

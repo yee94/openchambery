@@ -46,13 +46,16 @@ describe('MessageHeader', () => {
     );
   });
 
-  test('keeps the agent badge next to the model name on the left', () => {
+  test('keeps the agent badge content-sized next to the model name on the left', () => {
     const html = renderHeader(false);
     expect(html).toContain('GLM-5.3');
     expect(html).toContain('agent-badge');
     expect(html).toContain('Orchestrator');
+    expect(html).toContain('text-[10px]');
     expect(html).toContain('flex min-w-0 items-center gap-2');
+    expect(html).not.toContain('max-w-[50%]');
     expect(html).not.toContain('max-w-[45%]');
+    expect(html).not.toContain('whitespace-nowrap');
     expect(html).not.toMatch(/inline-flex min-w-0 flex-1 items-center gap-1\.5/);
   });
 });

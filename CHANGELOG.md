@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.19.15-beta.3] - 2026-09-12
+
+### 界面
+
+- 消息头 Agent 徽章恢复为小字号并按内容宽度显示，长名称不再被截断。
+
 ## [1.19.15-beta.2] - 2026-09-12
 
 ### 移动端
