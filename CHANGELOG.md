@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.19.13-beta.8] - 2026-09-12
+
+### 移动端
+
+- 修复 Android 设置内模型选择半浮层的搜索失焦问题，搜索框在延迟到达的键盘关闭事件后保持焦点。
+- 保留聊天输入框通过系统返回键收起键盘后再次点击输入的行为。
+
 ## [1.19.13-beta.7] - 2026-09-12
 
 ### 助理

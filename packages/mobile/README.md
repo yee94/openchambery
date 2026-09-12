@@ -39,6 +39,12 @@ The mobile package reuses the web build, then rewrites `mobile.html` to `index.h
 - **iOS:** ImageIO (`CGImageSourceCreateWithData` → `CGImageDestinationAddImage` with `kCGImageDestinationLossyCompressionQuality`) on `com.openchamber.media.transcode`.
 - **Android:** `BitmapFactory.decodeByteArray` → `Bitmap.compress(JPEG)` on the existing media executor. Devices without a HEIF decoder reject so the JS fallback can run.
 
+## Native Android Keyboard
+
+`ImeSyncBridge` emits `oc:ime-state` visibility and height through the asynchronous Capacitor WebView bridge. Shared UI's `useNativeMobileChrome` in `packages/ui/src/apps/MobileApp.tsx` owns the Android response. On native close, both its open and already-closed paths restrict `blur()` to a focused text field inside `.oc-mobile-composer`. Settings, model-picker search, and other fields retain DOM focus across late or repeated close events. Keyboard insets, classes, and composer lift still follow the existing close lifecycle. Native Back dismissal continues to blur the focused composer so a subsequent tap can start a fresh keyboard session.
+
+The shared UI focus regression tests exercise the production hook and real picker sheet with simulated native events; actual device event ordering and keyboard presentation require Android validation.
+
 ## Native iOS Composer
 
 - `OpenChamberComposer` is an iOS-only Capacitor overlay. It is not registered on Android; hosted H5 and the web Composer stay unchanged. Appearance Settings on Capacitor iOS exposes `openchamber.iosNativeUi` (default off). Turning it on makes `canUseNativeIosComposer` and the native tab bar available; off keeps the same WebView path as Android. Live Activities are not gated by this setting.
