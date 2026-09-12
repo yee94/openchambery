@@ -9,7 +9,7 @@ only model path the Assistant harness (`pi-agent-core` `streamFn`) talks to.
   from OpenCode `GET /provider` (`connected`) plus `GET /config/providers`.
   Plugin adapter formats stay inside OpenCode; this route does not parse them.
 - `POST /api/openchamber/llm/chat/completions` — `{ model, messages, stream?,
-  providerID?, modelID? }` → OpenAI `chat.completion` JSON.
+  providerID?, modelID?, variant? }` → OpenAI `chat.completion` JSON.
   This **public** gateway is **non-streaming**. Bundled OpenCode 1.18.4 generate
   (`POST /generate` when present, otherwise throwaway `session.promptAsync`
   plus idle wait) returns a full assistant turn. `stream: true` is rejected with
@@ -18,6 +18,13 @@ only model path the Assistant harness (`pi-agent-core` `streamFn`) talks to.
   The contact UI may stream later via a **server-internal** path only (below).
 
 `model` may be `providerID/modelID` or a bare `modelID` paired with `providerID`.
+
+`variant` is an optional OpenCode model variant string. Null, omitted, or empty
+values preserve the provider default. Other types fail validation before a model
+call. A selected variant is forwarded unchanged to sessionless generate and to
+the throwaway `session.promptAsync` body. OpenCode owns provider-specific variant
+semantics. Variant selection changes inference configuration only; completion
+output continues to include text parts and keeps reasoning parts private.
 
 ## Internals (verified on bundled `@opencode-ai/sdk` 1.18.4)
 

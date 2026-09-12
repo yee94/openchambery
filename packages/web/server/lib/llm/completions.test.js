@@ -2,6 +2,25 @@ import { describe, expect, it, vi } from 'vitest'
 import { LlmError, createChatCompletion } from './completions.js'
 
 describe('createChatCompletion', () => {
+  it.each(['high', 'medium', null, ''])('forwards variant %s with default compatibility', async (variant) => {
+    const generateText = vi.fn(async () => ({ text: 'done' }));
+    await createChatCompletion({
+      generateText,
+      loadCatalog: async () => ({ models: [{ providerID: 'p', modelID: 'm' }] }),
+      body: { model: 'p/m', variant, messages: [{ role: 'user', content: 'hi' }] },
+    });
+    expect(generateText.mock.calls[0][0].variant).toBe(variant || undefined);
+  });
+
+  it('rejects malformed variants before a model call', async () => {
+    const generateText = vi.fn();
+    await expect(createChatCompletion({
+      generateText,
+      body: { model: 'p/m', variant: { high: true }, messages: [{ role: 'user', content: 'hi' }] },
+    })).rejects.toMatchObject({ code: 'validation_error', statusCode: 400 });
+    expect(generateText).not.toHaveBeenCalled();
+  });
+
   it('rejects when the requested model is not connected', async () => {
     const generateText = vi.fn()
     await expect(createChatCompletion({

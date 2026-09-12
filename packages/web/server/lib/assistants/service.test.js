@@ -75,6 +75,28 @@ const settleSend = async (service, assistantID, body) => {
 const assistantInput = { name: 'A', providerID: 'p', modelID: 'm' };
 
 describe('assistants service', () => {
+  it('rehydrates the saved thinking variant into contact turns and preserves it on a rejected write', async () => {
+    const directory = root();
+    const runContactTurn = vi.fn(async () => ({ text: 'done', bubbles: ['done'] }));
+    let service = setup(directory, {}, { runContactTurn });
+    try {
+      const assistant = service.createAssistant({ ...assistantInput, variant: 'high' });
+      service.close();
+      service = setup(directory, {}, { runContactTurn });
+      await settleSend(service, assistant.id, { messageID: 'variant-restored', parts: [{ type: 'text', text: 'hello' }] });
+      expect(runContactTurn.mock.calls[0][0].assistant.variant).toBe('high');
+      await expect(service.updateAssistant(assistant.id, { expectedRevision: 999, variant: 'low' })).rejects.toBeDefined();
+      await settleSend(service, assistant.id, { messageID: 'variant-after-conflict', parts: [{ type: 'text', text: 'hello' }] });
+      expect(runContactTurn.mock.calls[1][0].assistant.variant).toBe('high');
+      await service.updateAssistant(assistant.id, { expectedRevision: 1, variant: null });
+      await settleSend(service, assistant.id, { messageID: 'variant-default', parts: [{ type: 'text', text: 'hello' }] });
+      expect(runContactTurn.mock.calls[2][0].assistant.variant).toBeNull();
+    } finally {
+      service.close();
+      fs.rmSync(directory, { recursive: true, force: true });
+    }
+  });
+
   it.each(['steer', 'archive', 'delete'])('%s_session performs the real scoped SDK operation', async (operation) => {
     const directory = root();
     const mutate = vi.fn(async () => ({ data: true }));
@@ -3670,11 +3692,11 @@ describe('assistants service', () => {
     service.close();
   });
 
-  it('notifies like a contact SMS when a contact turn completes', async () => {
+  it('notifies with the latest model message without replaying progress at completion', async () => {
     const onContactTurnComplete = vi.fn();
     const service = setup(root(), {}, {
       onContactTurnComplete,
-      runContactTurn: async () => ({ text: '我去找一下', bubbles: ['我去找一下', 'Opened a coding session.'] }),
+      runContactTurn: async () => ({ text: '任务已安排。', bubbles: ['我去找一下', '任务已安排。'] }),
     });
     const assistant = service.createAssistant({ ...assistantInput, name: '大小白' });
     await settleSend(service, assistant.id, {
@@ -3686,7 +3708,7 @@ describe('assistants service', () => {
       name: '大小白',
       turnID: 'notify_1',
       status: 'complete',
-      body: '我去找一下\nOpened a coding session.',
+      body: '任务已安排。',
     });
     service.close();
   });
@@ -4339,6 +4361,56 @@ describe('read_session referenced conversation', () => {
     // SSE final array ↔ SQLite 1:1
     expect(assistantBubbles.map((row) => row.text)).toEqual(doneDeltas.map((row) => row.text));
     service.close();
+  });
+
+  it('persists public model messages before generation and tool completion, with no final replay', async () => {
+    const directory = root();
+    const events = [];
+    let releaseGeneration;
+    let releaseTool;
+    const generationGate = new Promise((resolve) => { releaseGeneration = resolve; });
+    const toolGate = new Promise((resolve) => { releaseTool = resolve; });
+    const prefix = '```openchamber-message\n{"text":"我先读一下会话，确认目前的进展。"}\n```\n';
+    const tool = '```openchamber-tool\n{"name":"read_session","arguments":{"sessionID":"ses_progress"}}\n```';
+    let calls = 0;
+    const read = vi.fn(async () => {
+      await toolGate;
+      return { data: [] };
+    });
+    const service = setup(directory, {
+      get: async () => ({ data: { id: 'ses_progress', directory } }), messages: read,
+    }, {
+      onContactTurnEvent: (event) => events.push(event),
+      runContactTurn: realRunContactTurn,
+      createChatCompletion: async ({ onTextDelta }) => {
+        if (++calls === 1) {
+          onTextDelta(prefix);
+          await generationGate;
+          onTextDelta(tool);
+          return { text: prefix + tool };
+        }
+        return { text: '```openchamber-final\n{"status":"complete","text":"这个会话目前为空。"}\n```' };
+      },
+    });
+    const assistant = service.createAssistant(assistantInput);
+    try {
+      await service.send(assistant.id, { messageID: 'live_public', parts: [{ type: 'text', text: '读一下会话' }] });
+      await vi.waitFor(() => expect(service.contactMessages(assistant.id).messages.some((m) => m.text === '我先读一下会话，确认目前的进展。')).toBe(true));
+      expect(read).not.toHaveBeenCalled();
+      expect(service.snapshot().assistants.find((a) => a.id === assistant.id).working).toBe(true);
+      expect(events.some((e) => e.type === 'openchamber:contact-turn-end')).toBe(false);
+      releaseGeneration();
+      await vi.waitFor(() => expect(read).toHaveBeenCalledTimes(1));
+      // A fresh snapshot/history read while the actual tool is pending restores the same message.
+      expect(service.contactMessages(assistant.id).messages.filter((m) => m.role === 'assistant').map((m) => m.text)).toEqual(['我先读一下会话，确认目前的进展。']);
+      releaseTool();
+      await service.whenContactTurnSettled('live_public');
+      expect(service.contactMessages(assistant.id).messages.filter((m) => m.role === 'assistant').map((m) => m.text)).toEqual(['我先读一下会话，确认目前的进展。', '这个会话目前为空。']);
+      const deltas = events.filter((e) => e.type === 'openchamber:contact-bubble-delta' && e.properties.done);
+      expect(deltas.map((e) => e.properties.bubbleIndex)).toEqual([0, 1]);
+    } finally {
+      releaseGeneration(); releaseTool(); service.close();
+    }
   });
 
   it('real harness duplicate preambles keep both lines in SSE and SQLite', async () => {

@@ -350,12 +350,13 @@ const filesForPrompt = (files, forwardImageParts) => {
   return files.filter((part) => !String(part?.mime || '').startsWith('image/'));
 };
 
-async function generateViaSessionless({ fetchImpl, url, headers, providerID, modelID, messages, signal }) {
+async function generateViaSessionless({ fetchImpl, url, headers, providerID, modelID, variant, messages, signal }) {
   const response = await fetchImpl(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Accept: 'application/json', ...headers },
     body: JSON.stringify({
       model: { providerID, modelID },
+      ...(variant ? { variant } : {}),
       messages,
     }),
     signal,
@@ -451,6 +452,7 @@ export async function generateOpenCodeText({
   providerID,
   modelID,
   messages,
+  variant,
   fetchImpl = globalThis.fetch.bind(globalThis),
   clientFactory,
   ensureTempDirectory,
@@ -508,6 +510,7 @@ export async function generateOpenCodeText({
         headers,
         providerID,
         modelID,
+        variant,
         messages: forwardImageParts
           ? messages
           : messages.map((message) => {
@@ -586,6 +589,7 @@ export async function generateOpenCodeText({
         directory: workingDirectory,
         agent: LLM_AGENT_NAME,
         model: { providerID, modelID },
+        ...(variant ? { variant } : {}),
         ...(flattened.system ? { system: flattened.system } : {}),
         tools,
         parts: [

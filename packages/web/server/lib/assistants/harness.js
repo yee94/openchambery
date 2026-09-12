@@ -1,35 +1,17 @@
 import { Agent } from '@earendil-works/pi-agent-core';
 import { isContactSpokenPreamble, splitContactBubbles } from './bubbles.js';
 import {
-  ASSIGN_SESSION_TOOL_NAME,
-  CLEAR_CHAT_HISTORY_CONFIRM_BUBBLE,
-  CLEAR_CHAT_HISTORY_TOOL_NAME,
-  confirmBubbleAfterContactReset,
   contactTurnClearedChatHistory,
   contactTurnHasSuccessfulReset,
   contactTurnHasToolResult,
-  CREATE_ASSISTANT_TOOL_NAME,
   detectRequestedContactTools,
   extractContactCardsFromMessages,
   formatContactToolsPrompt,
   formatConnectedModelsPrompt,
   formatRegisteredProjectsPrompt,
-  GET_ASSISTANT_SETTINGS_TOOL_NAME,
-  MESSAGE_ASSISTANT_TOOL_NAME,
   MISSED_FENCE_RETRY_USER_TEXT,
-  MISSED_TOOL_FAILURE_BUBBLE,
-  NEW_CONVERSATION_CONFIRM_BUBBLE,
-  NEW_CONVERSATION_TOOL_NAME,
   parseContactToolCalls,
-  READ_SESSION_TOOL_NAME,
-  SCHEDULE_TASK_TOOL_NAME,
-  STOP_SESSION_TOOL_NAME,
-  STEER_SESSION_TOOL_NAME,
-  ARCHIVE_SESSION_TOOL_NAME,
-  DELETE_SESSION_TOOL_NAME,
   stripContactToolFences,
-  UPDATE_DEFAULT_PROMPT_TOOL_NAME,
-  WATCH_SESSION_TOOL_NAME,
 } from './contact-tools.js';
 import {
   createPiCodingRuntime,
@@ -121,7 +103,9 @@ export const CONTACT_SYSTEM_PROMPT = [
   'Reply in short chat bubbles: a few sentences each, separated by a blank line.',
   'Talk like a person in the user\'s language. One short spoken bubble at a time — never a wall of paragraphs.',
   'Always reply in {{LANGUAGE}} — the user\'s current interface language — even when the user writes in another language, unless they explicitly ask for a different one.',
-  'Never write chain-of-thought, plans, tool names, or English narration of what you will do. The user never sees thinking.',
+  'Keep private reasoning and tool traces private. Communicate your next concrete action, verified milestones, and blockers in short natural messages in {{LANGUAGE}}.',
+  'Before starting work, send a short message explaining the next action. During multi-step work, send a message when a meaningful result arrives or the direction changes. Publish these messages during execution; keep the final answer to the remaining outcome instead of repeating earlier updates.',
+  'Public message protocol: put each user-facing progress message at the START of your response in its own openchamber-message JSON fence, with a single-line JSON object {"text":"Your short message"}. Then emit the next tool call or final answer. A closed message fence is delivered immediately while you are still generating. Include only text intended for the user. Tool results are evidence for you to summarize in your own words; never copy their stock confirmation wording into your reply.',
   'Do not expose tool traces, Activity, or editor actions.',
   'You have bash, read, write, and edit in the working directory. Use them for pwd, files, and shell. Never say you have no terminal or cannot read files. Ignore any temporary generator workspace in the environment.',
   'Understand natural language in any language, including Chinese: 开新对话 / 清除记忆 means new_conversation (LLM memory only, chat history stays), 清空聊天记录 means clear_chat_history (delete transcript), 找项目 means list_projects, 现有对话 means list_sessions, 查看助手设定 / 默认提示词 means get_assistant_settings (pass to="Name" for another assistant), 改默认提示词 / 设置人设 / 改某助手的默认提示词 means update_default_prompt (persists that assistant\'s settings, later turns only; pass to="OpenCode 配置助手" to edit another contact without changing this one), 建助理 means create_assistant, 建会话 / 开个新会话 / 继续会话 means assign_session, 监听会话 means watch_session, 停止/取消/打断会话 means stop_session, 插话 means steer_session, 归档会话 means archive_session, 删除会话 means delete_session, 排定时任务 means schedule_task, 给 X 说一声 means message_assistant, 发卡片 means emit a card via those tools — never ask the user to type /card or /dm.',
@@ -193,10 +177,9 @@ const assistantMessage = (model, text, stopReason, errorMessage) => ({
 /**
  * streamFn for pi-agent-core. Calls OpenChamber completions (public HTTP stays
  * non-streaming). In-process callers may pass onTextDelta/globalEventHub for
- * the throwaway generate path. Raw tokens are never painted as contact bubbles
- * (they are often chain-of-thought). User-facing bubbles emit only after parse:
- * no-tool replies as stripped bubbles; tool calls stay silent until the tool
- * confirm. Must not throw — encode failures on the event stream.
+ * the throwaway generate path. Complete public prefix records publish during
+ * generation; ordinary raw tokens stay private. Legacy prose and final replies
+ * publish after parsing. Failures are encoded on the event stream.
  */
 const completionFileParts = (value) => (Array.isArray(value) ? value : [])
   .filter((part) => part?.type === 'file' && typeof part.mime === 'string' && typeof part.url === 'string')
@@ -210,32 +193,54 @@ const completionFileParts = (value) => (Array.isArray(value) ? value : [])
 /** Fence start (openchamber-tool or generic ```) — stop live bubble deltas. */
 const CONTACT_FENCE_START = /```/;
 
-/** Tool confirms that are themselves the user-facing bubble (no card). */
-const TOOL_TEXT_BUBBLE_TOOLS = new Set([
-  STOP_SESSION_TOOL_NAME,
-  STEER_SESSION_TOOL_NAME,
-  ARCHIVE_SESSION_TOOL_NAME,
-  DELETE_SESSION_TOOL_NAME,
-  NEW_CONVERSATION_TOOL_NAME,
-  CLEAR_CHAT_HISTORY_TOOL_NAME,
-  UPDATE_DEFAULT_PROMPT_TOOL_NAME,
-  GET_ASSISTANT_SETTINGS_TOOL_NAME,
-]);
+// Only explicitly public, complete prefix records may publish before completion.
+// Retain at most one bounded incomplete record; ordinary text and tool JSON stay private.
+function createPublicMessageReader(publish) {
+  const marker = '```openchamber-message';
+  let pending = '';
+  let stopped = false;
+  return {
+    push(delta) {
+      if (stopped || typeof delta !== 'string') return;
+      pending += delta;
+      while (true) {
+        pending = pending.trimStart();
+        if (!pending || marker.startsWith(pending)) return;
+        if (!pending.startsWith(marker)) { stopped = true; return; }
+        const match = pending.match(/^```openchamber-message[ \t]*\r?\n([^\n]+)\r?\n```/u);
+        if (match && match[0].length > 8192) { stopped = true; return; }
+        if (!match) {
+          if (pending.length > 8192) stopped = true;
+          return;
+        }
+        let value;
+        try {
+          value = JSON.parse(match[1]);
+          if (typeof value?.text !== 'string' || !value.text.trim() || value.text.length > 2000) {
+            stopped = true;
+            return;
+          }
+        } catch { stopped = true; return; }
+        publish(value.text.trim());
+        pending = pending.slice(match[0].length);
+      }
+    },
+  };
+}
 
-/** Card / side-effect tools: never paint English toolText into the transcript. */
-const CARD_SIDE_EFFECT_TOOLS = new Set([
-  ASSIGN_SESSION_TOOL_NAME,
-  WATCH_SESSION_TOOL_NAME,
-  STOP_SESSION_TOOL_NAME,
-  CREATE_ASSISTANT_TOOL_NAME,
-  SCHEDULE_TASK_TOOL_NAME,
-  MESSAGE_ASSISTANT_TOOL_NAME,
-]);
-
-/** Lookup payloads for the model only — never paint quoted JSON as a user bubble. */
-const MODEL_ONLY_LOOKUP_TOOLS = new Set([
-  READ_SESSION_TOOL_NAME,
-]);
+function stripPublicMessages(text) {
+  let rest = text.trimStart();
+  while (rest.startsWith('```openchamber-message')) {
+    const match = rest.match(/^```openchamber-message[ \t]*\r?\n([^\n]+)\r?\n```/u);
+    if (!match || match[0].length > 8192) throw new Error('Invalid public message record');
+    const value = JSON.parse(match[1]);
+    if (typeof value?.text !== 'string' || !value.text.trim() || value.text.length > 2000) {
+      throw new Error('Invalid public message text');
+    }
+    rest = rest.slice(match[0].length).trimStart();
+  }
+  return rest;
+}
 
 const assistantTextParts = (message) => (Array.isArray(message?.content) ? message.content : [])
   .filter((part) => part?.type === 'text' && typeof part.text === 'string')
@@ -257,7 +262,7 @@ export function projectStreamedContactTurnBubbles(messages, turnStart = 0) {
     const hasTool = parts.some((part) => part?.type === 'toolCall');
     const text = assistantTextParts(message).trim();
     if (!text) continue;
-    if (hasTool && !isContactSpokenPreamble(text)) continue;
+    if (hasTool && message.contactPublicText !== true && !isContactSpokenPreamble(text)) continue;
     for (const bubble of splitContactBubbles(text)) bubbles.push(bubble);
   }
   return bubbles;
@@ -360,11 +365,22 @@ export function createContactStreamFn(createChatCompletion, {
   signal = null,
   /** Fixed Agent message length before this contact turn (prior history only). */
   turnMessageStart = 0,
+  variant = null,
 } = {}) {
   let callSequence = 0;
   const turnStart = Number.isFinite(Number(turnMessageStart)) ? Math.max(0, Number(turnMessageStart)) : 0;
   return (model, context) => {
     const stream = createAssistantMessageEventStream();
+    const publicBubbles = [];
+    const baseIndex = projectStreamedContactTurnBubbles(context.messages, turnStart).length;
+    const publishPublicMessage = (text) => {
+      signal?.throwIfAborted();
+      for (const bubble of splitContactBubbles(text)) {
+        const index = baseIndex + publicBubbles.length;
+        publicBubbles.push(bubble);
+        onBubbleDelta?.(index, bubble, true);
+      }
+    };
     const run = async () => {
       try {
         const fallbackFiles = completionFileParts(pendingFileParts);
@@ -427,6 +443,8 @@ export function createContactStreamFn(createChatCompletion, {
         // Real results stay in messages, so already completed work is not replayed.
         for (let attempt = 0; ; attempt += 1) {
           signal?.throwIfAborted();
+          const publicStart = publicBubbles.length;
+          const publicReader = createPublicMessageReader(publishPublicMessage);
           const result = await createChatCompletion({
             signal,
             body: {
@@ -435,15 +453,28 @@ export function createContactStreamFn(createChatCompletion, {
                 ? model.name.split('/')[0]
                 : undefined,
               modelID: model.id,
+              ...(variant ? { variant } : {}),
               messages: [...messages],
             },
             onTextDelta: (delta) => {
+              if (signal?.aborted) return;
+              if (typeof delta === 'string') {
+                publicReader.push(delta);
+              }
               if (typeof delta === 'string' && delta && typeof onTextDelta === 'function') onTextDelta(delta);
             },
             globalEventHub,
           });
           signal?.throwIfAborted();
           text = result?.completion?.choices?.[0]?.message?.content ?? result?.text ?? '';
+          const finalPublic = [];
+          createPublicMessageReader((value) => finalPublic.push(...splitContactBubbles(value))).push(text);
+          const observedPublic = publicBubbles.slice(publicStart);
+          if (observedPublic.some((value, index) => finalPublic[index] !== value)) {
+            throw new Error('Model changed an already published public message');
+          }
+          for (const value of finalPublic.slice(observedPublic.length)) publishPublicMessage(value);
+          text = stripPublicMessages(text);
           const finalResponse = parseFinalResponse(text);
           finalText = finalResponse?.text ?? null;
           // A final answer is opaque text; quoted tool examples in it cannot run.
@@ -462,14 +493,17 @@ export function createContactStreamFn(createChatCompletion, {
           if (attempt >= 2) throw new Error('Assistant response protocol failed after two corrections; the task was not confirmed complete.');
           const rejected = parsed.toolCalls.filter((call) => isPiCodingToolName(call.name));
           if (rejected.length > 0) rejectedCodingCalls = rejected.map(({ name, arguments: args }) => ({ name, arguments: args }));
+          if (publicBubbles.length > publicStart) {
+            messages.push({ role: 'assistant', content: publicBubbles.slice(publicStart).join('\n\n') });
+          }
           // Never replay rejected prose: it may contain fabricated user/tool results.
           messages.push(
             { role: 'user', content: `OpenChamber response protocol correction: ${protocolError} No tool calls from the rejected response executed. ${rejectedCodingCalls.length ? `Unexecuted proposed calls (not results): ${JSON.stringify(rejectedCodingCalls)}.` : ''} Continue the remaining work using the supplied real results; do not repeat completed operations. ${requiresFinal ? WORKSPACE_RESPONSE_PROTOCOL : 'Emit the corrected openchamber-tool call.'}` },
           );
         }
         // Continue turn-global bubble indices from already-streamed turn messages.
-        const baseIndex = projectStreamedContactTurnBubbles(context.messages, turnStart).length;
-        const bubbleTracker = createContactBubbleDeltaTracker(onBubbleDelta, { baseIndex });
+        const nextIndex = baseIndex + publicBubbles.length;
+        const bubbleTracker = createContactBubbleDeltaTracker(onBubbleDelta, { baseIndex: nextIndex });
         if (parsed.toolCalls.length > 0) {
           const toolCalls = parsed.toolCalls.map((call) => ({
             type: 'toolCall',
@@ -479,22 +513,24 @@ export function createContactStreamFn(createChatCompletion, {
           }));
           const spoken = isContactSpokenPreamble(parsed.chatText) ? parsed.chatText.trim() : '';
           const spokenBubbles = spoken ? splitContactBubbles(spoken) : [];
-          const content = spoken
-            ? [{ type: 'text', text: spoken }, ...toolCalls]
+          const publicText = [...publicBubbles, ...spokenBubbles].join('\n\n');
+          const content = publicText
+            ? [{ type: 'text', text: publicText }, ...toolCalls]
             : toolCalls;
           const partial = {
             ...assistantMessage(model, spoken, 'toolUse'),
             content,
+            contactPublicText: true,
           };
           if (spokenBubbles.length > 0) bubbleTracker.finish(spokenBubbles);
           stream.push({ type: 'start', partial });
-          if (spoken) {
+          if (publicText) {
             stream.push({ type: 'text_start', contentIndex: 0, partial });
-            stream.push({ type: 'text_delta', contentIndex: 0, delta: spoken, partial });
-            stream.push({ type: 'text_end', contentIndex: 0, content: spoken, partial });
+            stream.push({ type: 'text_delta', contentIndex: 0, delta: publicText, partial });
+            stream.push({ type: 'text_end', contentIndex: 0, content: publicText, partial });
           }
           toolCalls.forEach((toolCall, index) => {
-            const toolIndex = index + (spoken ? 1 : 0);
+            const toolIndex = index + (publicText ? 1 : 0);
             stream.push({ type: 'toolcall_start', contentIndex: toolIndex, partial });
             stream.push({ type: 'toolcall_delta', contentIndex: toolIndex, delta: JSON.stringify(toolCall.arguments), partial });
             stream.push({ type: 'toolcall_end', contentIndex: toolIndex, toolCall, partial });
@@ -507,7 +543,7 @@ export function createContactStreamFn(createChatCompletion, {
         const replyBubbles = splitContactBubbles(chatText);
         if (bubbleGapMs > 0 && replyBubbles.length > 1) {
           for (let index = 0; index < replyBubbles.length; index += 1) {
-            onBubbleDelta?.(baseIndex + index, replyBubbles[index], true);
+            onBubbleDelta?.(nextIndex + index, replyBubbles[index], true);
             if (index < replyBubbles.length - 1) {
               await new Promise((resolve) => setTimeout(resolve, bubbleGapMs));
             }
@@ -515,7 +551,7 @@ export function createContactStreamFn(createChatCompletion, {
         } else {
           bubbleTracker.finish(replyBubbles);
         }
-        const partial = assistantMessage(model, chatText, 'stop');
+        const partial = assistantMessage(model, [...publicBubbles, ...replyBubbles].join('\n\n'), 'stop');
         stream.push({ type: 'start', partial });
         stream.push({ type: 'text_start', contentIndex: 0, partial });
         stream.push({ type: 'text_delta', contentIndex: 0, delta: chatText, partial });
@@ -555,25 +591,11 @@ const extractAssistantText = (messages) => {
   return '';
 };
 
-const extractToolResultText = (messages) => {
-  for (let index = messages.length - 1; index >= 0; index -= 1) {
-    const message = messages[index];
-    if (message?.role !== 'toolResult') continue;
-    const text = (message.content || [])
-      .filter((part) => part?.type === 'text' && typeof part.text === 'string')
-      .map((part) => part.text)
-      .join('')
-      .trim();
-    if (text) return text;
-  }
-  return '';
-};
-
 /**
  * Final turn bubbles reuse the same projection as live onBubbleDelta indices
  * (every spoken preamble + final assistant text; independent messages keep
- * duplicate text). Tool-result-only confirms (never streamed mid-turn) append
- * after that published prefix. Reset collapses to a unique confirm separately.
+ * duplicate text). Tool results remain model input. Reset uses a fresh model
+ * confirmation with the completed reset result as its only task context.
  */
 const extractContactTurnOutcome = (messages) => {
   const slice = Array.isArray(messages) ? messages : [];
@@ -581,38 +603,8 @@ const extractContactTurnOutcome = (messages) => {
   const hasTool = contactTurnHasToolResult(slice);
   // Same rules as live SSE indices — keep every independent spoken/final bubble.
   const published = projectStreamedContactTurnBubbles(slice, 0);
-  const lastToolName = [...slice].reverse().find((message) => message?.role === 'toolResult')?.toolName;
-  const coding = isPiCodingToolName(lastToolName);
-  const toolText = extractToolResultText(slice);
-  const assistant = extractAssistantText(slice);
-  // Tool-result text is never projected mid-turn; append only when it is the
-  // user-facing confirm (confirm-only / list tools). Spoken + assistant text
-  // already live in `published`. Card/side-effect and read_session never paint
-  // English tool payloads.
-  let toolOnlyConfirm = '';
-  if (hasTool && !coding) {
-    if (TOOL_TEXT_BUBBLE_TOOLS.has(lastToolName)) {
-      toolOnlyConfirm = toolText || '';
-      if (!toolOnlyConfirm && published.length === 0) toolOnlyConfirm = assistant || '';
-    } else if (CARD_SIDE_EFFECT_TOOLS.has(lastToolName) || MODEL_ONLY_LOOKUP_TOOLS.has(lastToolName)) {
-      toolOnlyConfirm = '';
-    } else {
-      // list_projects / list_sessions and other app tools keep toolText.
-      toolOnlyConfirm = toolText || '';
-      if (!toolOnlyConfirm && published.length === 0) toolOnlyConfirm = assistant || '';
-    }
-  } else if (hasTool && coding && published.length === 0) {
-    toolOnlyConfirm = toolText || '';
-  }
+  extractAssistantText(slice); // Preserve model errors even after earlier public messages.
   const bubbles = [...published];
-  if (toolOnlyConfirm) {
-    const confirmBubbles = splitContactBubbles(toolOnlyConfirm);
-    const trailing = bubbles.slice(-confirmBubbles.length);
-    const alreadySuffix = confirmBubbles.length > 0
-      && trailing.length === confirmBubbles.length
-      && trailing.every((item, index) => item === confirmBubbles[index]);
-    if (!alreadySuffix) bubbles.push(...confirmBubbles);
-  }
   return {
     text: bubbles.join('\n\n'),
     bubbles,
@@ -711,6 +703,7 @@ export async function runContactTurn({
         messages: prior,
       },
       streamFn: createContactStreamFn(createChatCompletion, {
+        variant: assistant.variant,
         pendingFileParts,
         onTextDelta,
         onBubbleDelta,
@@ -747,8 +740,8 @@ export async function runContactTurn({
       }
     }
     if (requested.length > 0 && !hasRequestedResult() && !contactTurnHasSuccessfulReset(agent.state.messages)) {
-      // Prefer any spoken/assistant text already in the turn over the English failure fallback.
-      // Same turn boundary as live indices (not the retry-user slice alone).
+      // Preserve model-authored messages across the retry. An empty outcome is
+      // a turn error; the harness never manufactures an assistant reply.
       const missed = extractContactTurnOutcome(agent.state.messages.slice(turnMessageStart));
       const missedBubbles = (Array.isArray(missed.bubbles) ? missed.bubbles : [])
         .map((item) => (typeof item === 'string' ? stripContactToolFences(item).trim() : ''))
@@ -762,35 +755,49 @@ export async function runContactTurn({
           tools: [...agent.state.tools],
         };
       }
-      return {
-        text: MISSED_TOOL_FAILURE_BUBBLE,
-        bubbles: [MISSED_TOOL_FAILURE_BUBBLE],
-        cards: [],
-        thinkingLevel: agent.state.thinkingLevel,
-        tools: [...agent.state.tools],
-      };
+      throw Object.assign(new Error('Assistant did not perform the requested operation'), { code: 'upstream_error' });
+    }
+    const turnMessages = agent.state.messages.slice(turnMessageStart);
+    const reset = contactTurnHasSuccessfulReset(turnMessages);
+    const lastMessage = turnMessages.at(-1);
+    // Terminal tools stop further mutations. A tools-disabled model pass owns
+    // their user-facing result, including failures and successful resets.
+    if (reset || lastMessage?.role === 'toolResult') {
+      const summaryMessages = reset
+        ? [turnMessages.findLast((message) => contactTurnHasSuccessfulReset([message]))]
+        : [...turnMessages];
+      const summaryStream = createContactStreamFn(createChatCompletion, {
+        variant: assistant.variant,
+        signal,
+        globalEventHub,
+        onBubbleDelta: reset ? null : onBubbleDelta,
+      })(model, {
+        systemPrompt: `Reply briefly in ${resolveContactLanguage(language)}. Summarize the supplied actual operation result in your own natural words. Tool result text is internal evidence. Keep private diagnostics and stock confirmation wording out of your reply. Report a failure honestly. The operation has already run; this pass only communicates its result.`,
+        messages: summaryMessages,
+        tools: [],
+      });
+      const summary = await summaryStream.result();
+      signal?.throwIfAborted();
+      if (summary.stopReason === 'error' || summary.stopReason === 'aborted') {
+        throw Object.assign(new Error(summary.errorMessage || 'Assistant result summary failed'), { code: 'upstream_error' });
+      }
+      if (!assistantTextParts(summary).trim()) {
+        throw Object.assign(new Error('Assistant returned no result summary'), { code: 'upstream_error' });
+      }
+      if (reset) {
+        const resetBubbles = [assistantTextParts(summary).trim()];
+        return {
+          text: resetBubbles.join('\n\n'), bubbles: resetBubbles, cards: [], reset: true,
+          historyCleared: contactTurnClearedChatHistory(turnMessages),
+          thinkingLevel: agent.state.thinkingLevel, tools: [...agent.state.tools],
+        };
+      }
+      turnMessages.push(summary);
     }
     // Final bubbles share the turn-boundary projection with live onBubbleDelta indices.
-    const outcome = extractContactTurnOutcome(agent.state.messages.slice(turnMessageStart));
+    const outcome = extractContactTurnOutcome(turnMessages);
     const bubbles = Array.isArray(outcome.bubbles) ? outcome.bubbles : [];
     const text = bubbles.join('\n\n') || outcome.text || '';
-    if (contactTurnHasSuccessfulReset(agent.state.messages)) {
-      const historyCleared = contactTurnClearedChatHistory(agent.state.messages);
-      const preferredConfirm = historyCleared
-        ? CLEAR_CHAT_HISTORY_CONFIRM_BUBBLE
-        : NEW_CONVERSATION_CONFIRM_BUBBLE;
-      // Reset is independent: discard mid-turn spokens; keep only the unique confirm.
-      const resetBubbles = confirmBubbleAfterContactReset(bubbles, preferredConfirm);
-      return {
-        text: resetBubbles[0] || preferredConfirm,
-        bubbles: resetBubbles,
-        cards: [],
-        reset: true,
-        historyCleared,
-        thinkingLevel: agent.state.thinkingLevel,
-        tools: [...agent.state.tools],
-      };
-    }
     // Card tools / side-effect tools may finish with cards only (no English toolText bubble).
     if (!text.trim() && outcome.cards.length === 0 && !outcome.hasTool) {
       const error = new Error('Assistant returned no text');

@@ -10,6 +10,7 @@ const contactEvents = vi.hoisted(() => ({
 const contactQueryState = vi.hoisted(() => ({ extraMessages: 0, earlier: 0, hasPreviousPage: false, isFetchingPreviousPage: false, previousPageError: null as Error | null, fetchPreviousPage: vi.fn(), hasMessageGap: false, isFillingMessageGap: false, retryMessageGap: vi.fn() }));
 const attachmentIO = vi.hoisted(() => ({ upload: vi.fn(), send: vi.fn(), abort: vi.fn(), display: vi.fn(), blob: vi.fn(), release: vi.fn() }));
 const unreadUI = vi.hoisted(() => ({ settingsOpen: false }));
+const failureUI = vi.hoisted(() => ({ failed: false }));
 vi.mock('./AssistantReadMarker', () => ({
   AssistantReadMarker: ({ position }: { position: { ordinal: number; messageID: string } }) => <span data-test-read-ordinal={position.ordinal} data-test-read-message={position.messageID} />,
 }));
@@ -79,7 +80,7 @@ vi.mock('@/queries/assistantQueries', () => ({
           bubbleIndex: 0,
           createdAt: index + 2,
           ordinal: index + 1,
-          status: 'complete',
+          status: failureUI.failed ? 'error' : 'complete',
           fromAssistantID: null,
           fromAssistantName: null,
           parts: [{ type: 'text', text: `refetched ${index}` }],
@@ -176,10 +177,37 @@ afterEach(async () => {
   contactQueryState.hasMessageGap = false;
   contactQueryState.isFillingMessageGap = false;
   unreadUI.settingsOpen = false;
+  failureUI.failed = false;
   vi.clearAllMocks();
 });
 
 describe('AssistantConversationSurface scroll ownership', () => {
+  test('shows a completed public message while the turn is still working', async () => {
+    const { host, root } = await mountSurface();
+    const busy = {
+      ...assistant('assistant-a'), working: true,
+      activeContactTurn: { turnID: 'live-turn', messageID: 'live-turn', status: 'running' as const, admittedAt: 2 },
+    };
+    await act(async () => root.render(<AssistantConversationSurface assistant={busy} active />));
+    await act(async () => contactEvents.handler?.({
+      type: 'contact-bubble-delta', assistantID: busy.id, turnID: 'live-turn', bubbleIndex: 0,
+      delta: '我先检查配置，再保存修改。', done: true, occurredAt: 3,
+    }));
+    expect(Array.from(host.querySelectorAll('[data-assistant-contact-text]')).map((node) => node.textContent)).toContain('我先检查配置，再保存修改。');
+    expect(host.querySelector('[data-assistant-contact-processing]')).toBeTruthy();
+    expect(host.querySelector<HTMLButtonElement>('[data-stop]')?.hidden).toBe(false);
+  });
+
+  test('renders durable system errors as alerts outside assistant speech bubbles', async () => {
+    contactQueryState.extraMessages = 1;
+    failureUI.failed = true;
+    const { host } = await mountSurface();
+    const errorRow = host.querySelector('[data-assistant-contact-error]');
+    expect(errorRow?.querySelector('[role="alert"]')?.textContent).toBe('refetched 0');
+    expect(errorRow?.querySelector('[data-assistant-contact-text]')).toBeNull();
+    expect(errorRow?.getAttribute('data-assistant-contact-role')).toBeNull();
+    expect(errorRow?.getAttribute('data-message-id')).toBe('assistant-a:refetch:0');
+  });
   test('read marker belongs to the loaded row and detaches for inactive, settings and gap surfaces', async () => {
     contactQueryState.extraMessages = 1;
     const { root, host } = await mountSurface();
