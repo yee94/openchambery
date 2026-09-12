@@ -32,15 +32,20 @@ import { resolveAssistantWorkspacePresentation } from './assistantWorkspaceState
 type MobileAssistantConversationHeaderProps = {
   assistant?: Pick<AssistantDTO, 'id' | 'name' | 'assignedSessionIDs' | 'working'> | null;
   onBack: () => void;
+  onOpenSettings?: (assistantID: string) => void;
 };
 
-const MobileAssistantConversationHeader: React.FC<MobileAssistantConversationHeaderProps> = ({ assistant, onBack }) => {
+const MobileAssistantConversationHeader: React.FC<MobileAssistantConversationHeaderProps> = ({ assistant, onBack, onOpenSettings }) => {
   const { t } = useI18n();
   const mobileActions = useMobileAppActions();
   const presentation = assistant ? getAssistantPresentation(assistant.name) : null;
   const displayName = assistant && presentation ? presentation.displayName || assistant.name : '';
   const openSettings = useEvent(() => {
     if (!assistant) return;
+    if (onOpenSettings) {
+      onOpenSettings(assistant.id);
+      return;
+    }
     openAssistantSettings(assistant.id, mobileActions ? { openMobileSettings: mobileActions.openSettings } : undefined);
   });
 
@@ -165,9 +170,11 @@ export type AssistantViewProps = {
   activeOverride?: boolean;
   /** When present, mobile renders a second-level conversation header with Back. */
   onMobileBack?: () => void;
+  /** Phone stack owns the independent Settings detail above this conversation. */
+  onMobileOpenSettings?: (assistantID: string) => void;
 };
 
-export const AssistantView: React.FC<AssistantViewProps> = ({ activeOverride, onMobileBack }) => {
+export const AssistantView: React.FC<AssistantViewProps> = ({ activeOverride, onMobileBack, onMobileOpenSettings }) => {
   const { t } = useI18n();
   const { isMobile } = useDeviceInfo();
   const mobileActions = useMobileAppActions();
@@ -224,11 +231,11 @@ export const AssistantView: React.FC<AssistantViewProps> = ({ activeOverride, on
     assistantCount: snapshot?.assistants.length ?? 0,
     hasAssistant: Boolean(assistant),
   });
-  const renderState = (icon: 'cloud-off' | 'error-warning' | 'ai-agent', title: string, description?: string, action?: React.ReactNode) => <div className="relative flex h-full min-h-0 flex-col">{isMobileSurface ? <MobileAssistantConversationHeader assistant={assistant} onBack={handleMobileBack} /> : null}<div className="flex min-h-0 flex-1 flex-col items-center justify-center px-6 pt-[calc(max(0.25rem,var(--oc-safe-area-top,0px))+var(--oc-mobile-detail-navigation-height,3.5rem))] text-center"><Icon name={icon} className="size-6 text-muted-foreground" /><h1 className="mt-4 typography-ui-header font-semibold">{title}</h1>{description ? <p className="mt-2 max-w-md typography-ui text-muted-foreground">{description}</p> : null}{action ? <div className="mt-5">{action}</div> : null}</div></div>;
+  const renderState = (icon: 'cloud-off' | 'error-warning' | 'ai-agent', title: string, description?: string, action?: React.ReactNode) => <div className="relative flex h-full min-h-0 flex-col">{isMobileSurface ? <MobileAssistantConversationHeader assistant={assistant} onBack={handleMobileBack} onOpenSettings={onMobileOpenSettings} /> : null}<div className="flex min-h-0 flex-1 flex-col items-center justify-center px-6 pt-[calc(max(0.25rem,var(--oc-safe-area-top,0px))+var(--oc-mobile-detail-navigation-height,3.5rem))] text-center"><Icon name={icon} className="size-6 text-muted-foreground" /><h1 className="mt-4 typography-ui-header font-semibold">{title}</h1>{description ? <p className="mt-2 max-w-md typography-ui text-muted-foreground">{description}</p> : null}{action ? <div className="mt-5">{action}</div> : null}</div></div>;
   if (workspaceState === 'loading') {
     return (
       <div className="relative flex h-full min-h-0 flex-col">
-        {isMobileSurface ? <MobileAssistantConversationHeader assistant={assistant} onBack={handleMobileBack} /> : null}
+        {isMobileSurface ? <MobileAssistantConversationHeader assistant={assistant} onBack={handleMobileBack} onOpenSettings={onMobileOpenSettings} /> : null}
         <div
           className="flex min-h-0 flex-1 flex-col items-center justify-center px-6 pt-[calc(max(0.25rem,var(--oc-safe-area-top,0px))+var(--oc-mobile-detail-navigation-height,3.5rem))] text-center"
           aria-busy="true"
@@ -298,7 +305,7 @@ export const AssistantView: React.FC<AssistantViewProps> = ({ activeOverride, on
       />
       <div className={cn('relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-background', !isMobileSurface && 'border-l border-[var(--surface-subtle)]')}>
         {isMobileSurface ? (
-          <MobileAssistantConversationHeader assistant={assistant} onBack={handleMobileBack} />
+          <MobileAssistantConversationHeader assistant={assistant} onBack={handleMobileBack} onOpenSettings={onMobileOpenSettings} />
         ) : (
           <header className="flex h-16 shrink-0 items-center gap-3.5 border-b border-[var(--surface-subtle)]/70 px-5 sm:px-7">
             <AssistantWorkingAvatar name={assistant.id} emoji={presentation.avatarEmoji} size={30} label={presentation.displayName || assistant.name} />

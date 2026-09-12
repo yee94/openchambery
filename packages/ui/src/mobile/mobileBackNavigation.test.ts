@@ -357,6 +357,12 @@ describe('phone Settings returnTo wiring', () => {
 });
 
 describe('resolveMobileSecondaryBackDecision', () => {
+  test('Assistant settings pops to its retained conversation', () => {
+    expect(resolveMobileSecondaryBackDecision({
+      secondary: { kind: 'assistant', settingsAssistantID: 'asst_1' },
+      parentSessionTarget: null,
+    })).toEqual({ action: 'popAssistantSettings' });
+  });
   const parent = { id: 'ses_parent', directory: '/proj' };
   const parentRoute = { key: 'parent', sessionId: parent.id, directory: parent.directory };
   const childRoute = { key: 'child', sessionId: 'ses_child', directory: '/proj' };

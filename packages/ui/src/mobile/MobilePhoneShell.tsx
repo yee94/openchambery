@@ -8,6 +8,7 @@ import { useUIStore } from '@/stores/useUIStore';
 import { useSessionUIStore } from '@/sync/session-ui-store';
 
 import { MobileAssistantTab } from './assistant/MobileAssistantTab';
+import { MobileAssistantSettingsPage } from './assistant/MobileAssistantSettingsPage';
 import type { MobileParentSessionTarget } from './mobileNavigation';
 import type { MobileTabId } from './mobileTabs';
 import { MobileTabsRoot } from './MobileTabsRoot';
@@ -78,6 +79,8 @@ export function MobilePhoneShell({
   const openSessionStore = useMobileNavigationStore((state) => state.openSession);
   const openDraftStore = useMobileNavigationStore((state) => state.openDraft);
   const openAssistantStore = useMobileNavigationStore((state) => state.openAssistant);
+  const pushAssistantSettings = useMobileNavigationStore((state) => state.pushAssistantSettings);
+  const popAssistantSettings = useMobileNavigationStore((state) => state.popAssistantSettings);
   const closeSecondaryStore = useMobileNavigationStore((state) => state.closeSecondary);
   const popChatSessionStore = useMobileNavigationStore((state) => state.popChatSession);
   const reconcileChatPredecessor = useMobileNavigationStore((state) => state.reconcileChatPredecessor);
@@ -123,6 +126,10 @@ export function MobilePhoneShell({
   const handleSecondaryBack = useEvent(() => {
     if (scheduledEditorBackRef.current?.()) return true;
     const secondary = useMobileNavigationStore.getState().secondary;
+    if (secondary?.kind === 'assistant' && secondary.settingsAssistantID) {
+      popAssistantSettings();
+      return true;
+    }
     if (secondary?.kind === 'chat' && secondary.routes.length > 1) {
       popChatSessionStore();
       return true;
@@ -208,6 +215,9 @@ export function MobilePhoneShell({
   const secondaryPages = React.useMemo(() => {
     if (!secondaryKind) return null;
     if (secondaryKind === 'assistant') {
+      const settingsAssistantID = navigation.secondary?.kind === 'assistant'
+        ? navigation.secondary.settingsAssistantID
+        : undefined;
       return [{
         key: 'assistant-secondary',
         depth: 1,
@@ -215,11 +225,21 @@ export function MobilePhoneShell({
         onBack: handleSecondaryBack,
         content: (
           <AssistantView
-            activeOverride
+            activeOverride={!settingsAssistantID}
             onMobileBack={() => mobileBackNavigationCoordinator.requestAnimatedBack('root')}
+            onMobileOpenSettings={pushAssistantSettings}
           />
         ),
-      }];
+      }, ...(settingsAssistantID ? [{
+        key: `assistant-settings:${settingsAssistantID}`,
+        depth: 2,
+        ariaLabel: t('assistants.conversation.openSettings'),
+        onBack: handleSecondaryBack,
+        content: <MobileAssistantSettingsPage
+          assistantID={settingsAssistantID}
+          onBack={() => { mobileBackNavigationCoordinator.requestAnimatedBack('root'); }}
+        />,
+      }] : [])];
     }
     if (secondaryKind === 'instances') {
       return [{
@@ -262,7 +282,7 @@ export function MobilePhoneShell({
         }),
       };
     });
-  }, [secondaryKind, navigation.secondary, handleSecondaryBack, instancesSecondaryPage, renderChat, t]);
+  }, [secondaryKind, navigation.secondary, handleSecondaryBack, pushAssistantSettings, instancesSecondaryPage, renderChat, t]);
 
   return (
     <MobileTabsRoot

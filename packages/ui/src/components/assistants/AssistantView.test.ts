@@ -112,6 +112,12 @@ describe('AssistantView synthetic part consumption', () => {
 })
 
 describe('AssistantView contact surface', () => {
+  test('phone gear delegates directly to its page-stack owner', async () => {
+    const source = await readFile(join(directory, 'AssistantView.tsx'), 'utf8')
+    const header = source.slice(source.indexOf('const MobileAssistantConversationHeader:'), source.indexOf('type AssistantListItemProps'))
+    expect(header).toContain('if (onOpenSettings) {\n      onOpenSettings(assistant.id);\n      return;')
+    expect(source).toContain('onOpenSettings={onMobileOpenSettings}')
+  })
   test('keeps localized creation actions in populated desktop and mobile headers', async () => {
     const desktop = await readFile(join(directory, 'AssistantView.tsx'), 'utf8')
     const mobile = await readFile(join(directory, '../../mobile/assistant/MobileAssistantTab.tsx'), 'utf8')

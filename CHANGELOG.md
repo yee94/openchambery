@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.19.15-beta.2] - 2026-09-12
+
+### 移动端
+
+- 助手正文右上角的设置作为独立页面打开，返回按钮、系统返回与侧滑返回直接回到保留的正文和输入草稿。
+- 助手设置详情独立管理选中项，打开、保存和删除时保持底部 Settings 页的选择状态。
+
 ## [1.19.15-beta.1] - 2026-09-12
 
 ### 助理

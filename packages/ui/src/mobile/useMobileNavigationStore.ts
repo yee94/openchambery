@@ -64,6 +64,8 @@ type MobileNavigationStore = MobileNavigationState & {
   openDraft: (options?: OpenDraftOptions) => void;
   /** Select an Assistant, then open its conversation as the second-level page. */
   openAssistant: (assistantID: string) => void;
+  pushAssistantSettings: (assistantID: string) => void;
+  popAssistantSettings: () => void;
   /** Open instance management as a second-level page above the current root tab. */
   openInstances: () => void;
   closeSecondary: () => void;
@@ -238,6 +240,14 @@ export const useMobileNavigationStore = create<MobileNavigationStore>((set, get)
     resetMobileSessionMirror();
     set({ secondary: { kind: 'instances' } });
   },
+  pushAssistantSettings: (assistantID) => set((state) => {
+    if (state.secondary?.kind !== 'assistant' || state.secondary.settingsAssistantID === assistantID) return state;
+    return { secondary: { ...state.secondary, settingsAssistantID: assistantID } };
+  }),
+  popAssistantSettings: () => set((state) => {
+    if (state.secondary?.kind !== 'assistant' || !state.secondary.settingsAssistantID) return state;
+    return { secondary: { kind: 'assistant' } };
+  }),
   closeSecondary: () => {
     resetMobileSessionMirror();
     set((state) => (state.secondary ? { ...state, secondary: null } : state));

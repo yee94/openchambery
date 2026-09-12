@@ -443,15 +443,17 @@ export const AssistantsSettingsSidebar: React.FC<{ onItemSelect?: () => void }> 
 
 interface AssistantsSettingsPageProps {
   onItemDeleted?: () => void;
+  /** Route-owned selection for a detail opened above an Assistant conversation. */
+  assistantID?: string;
 }
 
-export const AssistantsSettingsPage: React.FC<AssistantsSettingsPageProps> = ({ onItemDeleted }) => {
+export const AssistantsSettingsPage: React.FC<AssistantsSettingsPageProps> = ({ onItemDeleted, assistantID }) => {
   const { t } = useI18n();
   const snapshotQuery = useAssistantSnapshotQuery();
   const capabilityQuery = useAssistantCapabilityQuery();
   const snapshot = snapshotQuery.data;
   const projects = useProjectsStore((state) => state.projects);
-  const selectedID = useAssistantUIStore((state) => state.settingsSelectedAssistantID);
+  const selectedID = useAssistantUIStore((state) => assistantID ?? state.settingsSelectedAssistantID);
   const selectSettingsAssistant = useAssistantUIStore((state) => state.selectSettingsAssistant);
   const defaultShareAssistant = useAssistantUIStore((state) => state.defaultShareAssistant);
   const setDefaultShareAssistant = useAssistantUIStore((state) => state.setDefaultShareAssistant);
@@ -472,10 +474,10 @@ export const AssistantsSettingsPage: React.FC<AssistantsSettingsPageProps> = ({ 
   }, [selected]);
 
   React.useEffect(() => {
-    if (snapshotQuery.isSuccess && selectedID && selectedID !== 'new' && !selected) {
+    if (assistantID === undefined && snapshotQuery.isSuccess && selectedID && selectedID !== 'new' && !selected) {
       selectSettingsAssistant(null);
     }
-  }, [selectSettingsAssistant, selected, selectedID, snapshotQuery.isSuccess]);
+  }, [assistantID, selectSettingsAssistant, selected, selectedID, snapshotQuery.isSuccess]);
 
   React.useEffect(() => {
     if (selectedID !== 'new' || createRequestRevision <= handledCreateRequestRef.current) return;
@@ -502,6 +504,7 @@ export const AssistantsSettingsPage: React.FC<AssistantsSettingsPageProps> = ({ 
   const startCreate = useEvent(() => requestCreate());
 
   const save = useEvent(async () => {
+    if (assistantID !== undefined && !selected) return;
     if (!draft.name.trim() || !draft.providerID || !draft.modelID) {
       toast.error(t('assistants.settings.validation.required'));
       return;
@@ -511,7 +514,7 @@ export const AssistantsSettingsPage: React.FC<AssistantsSettingsPageProps> = ({ 
       const result = selected
         ? await updateAssistant(selected, toAssistantSettingsUpdateDraft(draft))
         : await createAssistant(draft);
-      selectSettingsAssistant(result.id);
+      if (assistantID === undefined) selectSettingsAssistant(result.id);
       toast.success(t('assistants.settings.toast.saved'));
     } catch {
       toast.error(t('assistants.settings.toast.saveFailed'));
@@ -529,7 +532,7 @@ export const AssistantsSettingsPage: React.FC<AssistantsSettingsPageProps> = ({ 
         const capability = await fetchAssistantCapability();
         if (capability.serverInstanceID && defaultShareAssistant.serverInstanceID === capability.serverInstanceID) setDefaultShareAssistant(null);
       }
-      selectSettingsAssistant(null);
+      if (assistantID === undefined) selectSettingsAssistant(null);
       onItemDeleted?.();
       toast.success(t('assistants.settings.toast.deleted'));
     } catch {
@@ -574,7 +577,7 @@ export const AssistantsSettingsPage: React.FC<AssistantsSettingsPageProps> = ({ 
     return <div className="flex h-full items-center justify-center text-muted-foreground"><Icon name="loader-4" className="mr-2 size-4 animate-spin" />{t('common.loading')}</div>;
   }
 
-  if (snapshotQuery.isError && !snapshot) {
+  if ((snapshotQuery.isError && !snapshot) || (assistantID !== undefined && !selected)) {
     return (
       <div className="flex h-full flex-col items-center justify-center gap-3 px-6 text-center">
         <Icon name="cloud-off" className="size-6 text-muted-foreground" />
