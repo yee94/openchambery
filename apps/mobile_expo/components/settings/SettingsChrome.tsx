@@ -42,9 +42,9 @@ export function useSettingsTheme() {
     text: useThemeColor({}, 'text'),
     background: useThemeColor({}, 'background'),
     muted: dark ? 'rgba(250,250,250,0.55)' : 'rgba(24,24,27,0.55)',
-    surface: dark ? '#171717' : '#ffffff',
+    surface: dark ? Colors.dark.card : Colors.light.card,
     border: dark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)',
-    danger: '#E07A3D',
+    danger: dark ? Colors.dark.destructive : Colors.light.destructive,
     field: dark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)',
     selectionWash: dark ? 'rgba(251,146,60,0.18)' : 'rgba(194,65,12,0.12)',
   };

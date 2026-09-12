@@ -12,6 +12,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Text, useThemeColor } from '@/components/Themed';
 import { useColorScheme } from '@/components/useColorScheme';
+import Colors from '@/constants/Colors';
 import { t } from '@/lib/i18n';
 import type { ProjectEntry } from '@/lib/projectsSettingsApi';
 import type { ScheduledTask } from '@/lib/scheduledTasksApi';
@@ -116,7 +117,7 @@ export function ScheduledTaskEditor({
     }
   }, [open, task]);
 
-  const cardBg = dark ? '#171717' : '#ffffff';
+  const cardBg = dark ? Colors.dark.card : Colors.light.card;
   const inputBg = dark ? '#262626' : '#f4f4f5';
   const border = dark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.08)';
 

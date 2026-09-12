@@ -14,13 +14,14 @@ function canUseGlass(): boolean {
 }
 
 function solidFill(scheme: 'light' | 'dark' | 'auto'): string {
+  // Cap warm sand / dark card — honest solid, not liquid glass.
   if (scheme === 'light') {
-    return Platform.OS === 'android' ? 'rgba(250,250,250,0.98)' : 'rgba(245,245,247,0.94)';
+    return Platform.OS === 'android' ? 'rgba(254,252,244,0.98)' : 'rgba(254,252,244,0.94)';
   }
   if (scheme === 'dark') {
-    return Platform.OS === 'android' ? 'rgba(32,32,36,0.96)' : 'rgba(28,28,30,0.92)';
+    return Platform.OS === 'android' ? 'rgba(28,27,26,0.96)' : 'rgba(28,27,26,0.92)';
   }
-  return Platform.OS === 'android' ? 'rgba(32,32,36,0.96)' : 'rgba(28,28,30,0.92)';
+  return Platform.OS === 'android' ? 'rgba(28,27,26,0.96)' : 'rgba(28,27,26,0.92)';
 }
 
 /**

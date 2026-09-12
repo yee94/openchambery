@@ -3,6 +3,7 @@ import { ActivityIndicator, Modal, Pressable, StyleSheet, View as RNView } from 
 
 import { Text } from '@/components/Themed';
 import { t } from '@/lib/i18n';
+import Colors from '@/constants/Colors';
 
 type Props = {
   visible: boolean;
@@ -25,7 +26,7 @@ export function AssistantDeleteConfirm({
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onCancel}>
       <Pressable style={styles.backdrop} onPress={pending ? undefined : onCancel}>
         <Pressable
-          style={[styles.card, { backgroundColor: dark ? '#171717' : '#fff' }]}
+          style={[styles.card, { backgroundColor: dark ? Colors.dark.card : Colors.light.card }]}
           onPress={(e) => e.stopPropagation?.()}
         >
           <Text style={styles.title}>{t('assistants.settings.delete')}</Text>

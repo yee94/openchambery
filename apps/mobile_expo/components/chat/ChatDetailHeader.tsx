@@ -10,6 +10,7 @@ import { ContextUsageRing } from '@/components/chat/ContextUsageRing';
 import { GlassDisc, GLASS_DISC_SIZE } from '@/components/chrome/GlassDisc';
 import { Text, useThemeColor } from '@/components/Themed';
 import { useColorScheme } from '@/components/useColorScheme';
+import Colors from '@/constants/Colors';
 import type { MobileContextDisplay } from '@/lib/contextUsage';
 import { t } from '@/lib/i18n';
 
@@ -36,7 +37,7 @@ export function ChatDetailHeader({
   const dark = scheme === 'dark';
   const text = useThemeColor({}, 'text');
   const muted = useThemeColor({}, 'muted');
-  const fadeColor = dark ? 'rgba(10,10,10,0.92)' : 'rgba(250,250,250,0.92)';
+  const fadeColor = Colors[dark ? 'dark' : 'light'].fade;
   const topInset = Math.max(insets.top, 16);
   const chromeHeight = topInset + CHAT_DETAIL_NAV_BAND;
 

@@ -18,6 +18,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Text, useThemeColor } from '@/components/Themed';
 import { useColorScheme } from '@/components/useColorScheme';
+import Colors from '@/constants/Colors';
 
 /** Cap MobileTabPageHeader collapse distance — layout height stays fixed. */
 export const TITLE_COLLAPSE_DISTANCE = 48;
@@ -42,7 +43,7 @@ export function MobileTabPageHeader({ title, trailing, scrollY, style }: HeaderP
   const dark = useColorScheme() === 'dark';
   const text = useThemeColor({}, 'text');
   const headerChrome = Math.max(insets.top, 12) + 12 + HEADER_ACTION_SIZE;
-  const fadeColor = dark ? 'rgba(10,10,10,0.92)' : 'rgba(250,250,250,0.92)';
+  const fadeColor = Colors[dark ? 'dark' : 'light'].fade;
 
   const headerInnerStyle = useAnimatedStyle(() => {
     const collapse = interpolate(

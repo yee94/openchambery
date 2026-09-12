@@ -90,7 +90,7 @@ function shellIconFill(dark: boolean): string {
 }
 
 function cardSurface(dark: boolean): string {
-  return dark ? '#171717' : '#ffffff';
+  return dark ? Colors.dark.card : Colors.light.card;
 }
 
 function SessionRow({
@@ -547,7 +547,7 @@ export function ProjectsHome() {
   const attentionSessions = model
     ? [...model.pinnedSessions, ...model.inProgressSessions]
     : [];
-  const fadeColor = dark ? 'rgba(10,10,10,0.92)' : 'rgba(250,250,250,0.92)';
+  const fadeColor = colors.fade;
   const editEntry = editProject
     ? projects.find((entry) => entry.id === editProject.id) ?? null
     : null;
@@ -625,7 +625,7 @@ export function ProjectsHome() {
               onPress={() => setMenuOpen(true)}
               style={[styles.primaryDisc, { backgroundColor: colors.tint }]}
             >
-              <Text style={styles.plusLabel}>+</Text>
+              <Text style={[styles.plusLabel, { color: colors.primaryForeground }]}>+</Text>
             </Pressable>
           </RNView>
         </Animated.View>
@@ -961,14 +961,13 @@ const styles = StyleSheet.create({
     borderRadius: GLASS_DISC / 2,
     alignItems: 'center',
     justifyContent: 'center',
-    shadowColor: '#c2410c',
+    shadowColor: Colors.light.tint,
     shadowOpacity: 0.28,
     shadowRadius: 10,
     shadowOffset: { width: 0, height: 6 },
     elevation: 4,
   },
   plusLabel: {
-    color: '#fff',
     fontSize: 24,
     fontWeight: '600',
     marginTop: -2,
@@ -987,7 +986,7 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   projectShell: {
-    borderRadius: 18,
+    borderRadius: 24, // Cap --oc-mobile-surface-radius 1.5rem
     overflow: 'hidden',
     shadowColor: '#000',
     shadowOpacity: 0.06,

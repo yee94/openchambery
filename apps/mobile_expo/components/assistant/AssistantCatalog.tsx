@@ -35,7 +35,7 @@ function openAssistantsSettings(router: ReturnType<typeof useRouter>, params?: R
 }
 
 function cardSurface(dark: boolean): string {
-  return dark ? '#171717' : '#ffffff';
+  return dark ? Colors.dark.card : Colors.light.card;
 }
 
 export function AssistantCatalog() {

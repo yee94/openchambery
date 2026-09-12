@@ -28,6 +28,7 @@ import {
   buildProjectEntry,
   type ProjectEntry,
 } from '@/lib/projectsSettingsApi';
+import Colors from '@/constants/Colors';
 
 type ActionSheetProps = {
   visible: boolean;
@@ -42,7 +43,7 @@ function ActionSheet({ visible, title, onClose, dark, children }: ActionSheetPro
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
       <Pressable style={styles.backdrop} onPress={onClose}>
         <Pressable
-          style={[styles.sheet, { backgroundColor: dark ? '#171717' : '#fff' }]}
+          style={[styles.sheet, { backgroundColor: dark ? Colors.dark.card : Colors.light.card }]}
           onPress={(e) => e.stopPropagation?.()}
         >
           <Text style={styles.sheetTitle}>{title}</Text>

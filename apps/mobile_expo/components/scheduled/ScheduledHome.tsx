@@ -45,7 +45,7 @@ function floatSurface(dark: boolean): string {
 }
 
 function cardSurface(dark: boolean): string {
-  return dark ? '#171717' : '#ffffff';
+  return dark ? Colors.dark.card : Colors.light.card;
 }
 
 type SegmentSymbol = React.ComponentProps<typeof SymbolView>['name'];
@@ -374,7 +374,7 @@ export function ScheduledHome() {
                 ]}
                 accessibilityLabel={t('sessions.scheduledTasks.dialog.actions.newTask')}
               >
-                <Text style={{ color: dark ? '#18181b' : '#fafafa', fontSize: 22, fontWeight: '600' }}>
+                <Text style={{ color: Colors[dark ? 'dark' : 'light'].primaryForeground, fontSize: 22, fontWeight: '600' }}>
                   +
                 </Text>
               </Pressable>

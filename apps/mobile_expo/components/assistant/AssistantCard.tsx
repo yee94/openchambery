@@ -13,6 +13,7 @@ import { Text } from '@/components/Themed';
 import { t } from '@/lib/i18n';
 import { getAssistantPresentation } from '@/lib/assistantPresentation';
 import type { AssistantDTO } from '@/lib/assistantsApi';
+import Colors from '@/constants/Colors';
 
 type Props = {
   assistant: AssistantDTO;
@@ -144,7 +145,7 @@ export function AssistantCard({
           }}
         >
           <Pressable
-            style={[styles.menu, { backgroundColor: dark ? '#171717' : '#fff' }]}
+            style={[styles.menu, { backgroundColor: dark ? Colors.dark.card : Colors.light.card }]}
             onPress={(e) => e.stopPropagation?.()}
           >
             <Pressable

@@ -11,6 +11,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Text, View, useThemeColor } from '@/components/Themed';
 import { useColorScheme } from '@/components/useColorScheme';
+import Colors from '@/constants/Colors';
 import { getAssistantPresentation } from '@/lib/assistantPresentation';
 import { t } from '@/lib/i18n';
 import type { ShareCatalogEntry } from '@/lib/systemShell/share';
@@ -36,7 +37,7 @@ export function ShareRecipientPicker({ draft, entries, busy, onSelect, onCancel 
   const muted = dark ? 'rgba(250,250,250,0.55)' : 'rgba(24,24,27,0.55)';
   const background = useThemeColor({}, 'background');
   const border = dark ? 'rgba(250,250,250,0.12)' : 'rgba(24,24,27,0.12)';
-  const surface = dark ? '#171717' : '#ffffff';
+  const surface = dark ? Colors.dark.card : Colors.light.card;
 
   const handleCancel = () => {
     if (draft && !busy) onCancel(draft);

@@ -13,6 +13,8 @@ import {
 } from 'react-native';
 
 import { Text, useThemeColor } from '@/components/Themed';
+import { useColorScheme } from '@/components/useColorScheme';
+import Colors from '@/constants/Colors';
 import type { QuestionRequest } from '@/lib/questionApi';
 import { t } from '@/lib/i18n';
 
@@ -24,6 +26,8 @@ export type QuestionCardProps = {
 };
 
 function QuestionCardImpl({ question, busy = false, onSubmit, onDismiss }: QuestionCardProps) {
+  const scheme = useColorScheme();
+  const colors = Colors[scheme];
   const textColor = useThemeColor({}, 'text');
   const muted = useThemeColor({}, 'muted');
   const questions = useMemo(() => question.questions ?? [], [question.questions]);
@@ -136,7 +140,7 @@ function QuestionCardImpl({ question, busy = false, onSubmit, onDismiss }: Quest
                   key={option.label}
                   onPress={() => toggleOption(option.label)}
                   disabled={busy}
-                  style={[styles.option, selected && styles.optionSelected]}
+                  style={[styles.option, selected && [styles.optionSelected, { borderColor: colors.tint, backgroundColor: colors.tint + '2e' }]]}
                   accessibilityRole={isMultiple ? 'checkbox' : 'radio'}
                   accessibilityState={{ selected, disabled: busy }}
                 >
@@ -154,7 +158,7 @@ function QuestionCardImpl({ question, busy = false, onSubmit, onDismiss }: Quest
                 setSelectedOptions((prev) => ({ ...prev, [activeIndex]: [] }));
               }}
               disabled={busy}
-              style={[styles.option, customActive && styles.optionSelected]}
+              style={[styles.option, customActive && [styles.optionSelected, { borderColor: colors.tint, backgroundColor: colors.tint + '2e' }]]}
             >
               <Text style={[styles.optionLabel, { color: textColor }]}>
                 {t('mobile.chat.question.other')}
@@ -195,21 +199,21 @@ function QuestionCardImpl({ question, busy = false, onSubmit, onDismiss }: Quest
           <Pressable
             onPress={() => setActiveIndex((i) => Math.min(questions.length - 1, i + 1))}
             disabled={busy}
-            style={styles.primaryBtn}
+            style={[styles.primaryBtn, { backgroundColor: colors.tint }]}
           >
-            <Text style={styles.primaryText}>{t('mobile.chat.question.next')}</Text>
+            <Text style={[styles.primaryText, { color: colors.primaryForeground }]}>{t('mobile.chat.question.next')}</Text>
           </Pressable>
         ) : (
           <Pressable
             onPress={handleSubmit}
             disabled={!requiredSatisfied || busy}
-            style={[styles.primaryBtn, (!requiredSatisfied || busy) && styles.primaryDisabled]}
+            style={[styles.primaryBtn, { backgroundColor: colors.tint }, (!requiredSatisfied || busy) && styles.primaryDisabled]}
             accessibilityRole="button"
           >
             {busy ? (
               <ActivityIndicator color="#fff" />
             ) : (
-              <Text style={styles.primaryText}>{t('mobile.chat.question.submit')}</Text>
+              <Text style={[styles.primaryText, { color: colors.primaryForeground }]}>{t('mobile.chat.question.submit')}</Text>
             )}
           </Pressable>
         )}
@@ -283,8 +287,7 @@ const styles = StyleSheet.create({
     borderColor: 'transparent',
   },
   optionSelected: {
-    borderColor: '#E87722',
-    backgroundColor: 'rgba(232,119,34,0.18)',
+    borderWidth: StyleSheet.hairlineWidth,
   },
   optionLabel: {
     fontSize: 14,
@@ -318,19 +321,18 @@ const styles = StyleSheet.create({
     fontSize: 14,
   },
   primaryBtn: {
-    backgroundColor: '#E87722',
-    borderRadius: 10,
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    minWidth: 72,
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
     alignItems: 'center',
+    justifyContent: 'center',
+    minWidth: 88,
   },
   primaryDisabled: {
     opacity: 0.45,
   },
   primaryText: {
-    color: '#fff',
-    fontSize: 14,
+    fontSize: 15,
     fontWeight: '600',
   },
 });

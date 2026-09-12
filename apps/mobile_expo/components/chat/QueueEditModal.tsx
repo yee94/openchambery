@@ -31,6 +31,8 @@ export function QueueEditModal({
   const textColor = useThemeColor({}, 'text');
   const muted = useThemeColor({}, 'muted');
   const backgroundColor = useThemeColor({}, 'background');
+  const tint = useThemeColor({}, 'tint');
+  const primaryForeground = useThemeColor({}, 'primaryForeground');
 
   useEffect(() => {
     if (visible) setValue(initialValue);
@@ -58,10 +60,12 @@ export function QueueEditModal({
             </Pressable>
             <Pressable
               onPress={() => onSave(value)}
-              style={[styles.btn, styles.save]}
+              style={[styles.btn, styles.save, { backgroundColor: tint }]}
               accessibilityRole="button"
             >
-              <Text style={styles.saveText}>{t('mobile.chat.queue.editSave')}</Text>
+              <Text style={[styles.saveText, { color: primaryForeground }]}>
+                {t('mobile.chat.queue.editSave')}
+              </Text>
             </Pressable>
           </RNView>
         </RNView>
@@ -109,11 +113,9 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
   },
   save: {
-    backgroundColor: '#E87722',
     borderRadius: 8,
   },
   saveText: {
-    color: '#fff',
     fontWeight: '600',
   },
 });
