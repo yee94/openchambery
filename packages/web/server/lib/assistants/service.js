@@ -5,6 +5,7 @@ import path from 'node:path';
 import { createOpencodeClient } from '@opencode-ai/sdk/v2';
 import { validAssistantDeliveryParts } from '../assistant-delivery-parts.js';
 import { reduceBackfillState } from './history-state.js';
+import { createContactMemoryReader } from './memory.js';
 import { getWorktrees as defaultListWorktrees } from '../git/service.js';
 import { contactCardIdentity, parseContactCard, parseContactPart } from './cards.js';
 import {
@@ -2240,7 +2241,10 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
           history,
           { budgetBytes: CONTACT_ATTACHMENT_TURN_BUDGET_BYTES },
         );
+        const memory = createContactMemoryReader(db, assistantID, { assertAvailable: () => editable(assistantID) });
         const tools = createContactTools({
+          searchMemory: memory.search,
+          readMemory: memory.read,
           assignWork: (params) => assignWork(live, params),
           watchSession: (params) => watchSessionWork(live, params),
           stopSession: (params) => stopSessionWork(live, params),
@@ -2570,7 +2574,12 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
             (Array.isArray(executionParts) ? executionParts : []).filter((part) => part?.type === 'file'),
           );
           const turnAttachmentScope = attachmentScopeKey(turnFileParts);
+          const memory = createContactMemoryReader(db, row.assistant_id, {
+            beforeOrdinal, assertAvailable: () => editable(row.assistant_id),
+          });
           const tools = createContactTools({
+            searchMemory: memory.search,
+            readMemory: memory.read,
             assignWork: (params) => assignWork(row, params),
             watchSession: (params) => watchSessionWork(row, params),
             stopSession: (params) => stopSessionWork(row, params),
