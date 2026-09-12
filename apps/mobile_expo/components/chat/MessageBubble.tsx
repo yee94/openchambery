@@ -7,6 +7,8 @@ import { SkillGroup } from '@/components/chat/SkillGroup';
 import { ToolCard } from '@/components/chat/ToolCard';
 import { UsedFold } from '@/components/chat/UsedFold';
 import { Text, useThemeColor } from '@/components/Themed';
+import { useColorScheme } from '@/components/useColorScheme';
+import Colors from '@/constants/Colors';
 import type { TranscriptRow } from '@/lib/chatTranscript';
 import { partsSignature, segmentsFromParts } from '@/lib/toolCards';
 
@@ -15,7 +17,19 @@ export type MessageBubbleProps = {
   row: TranscriptRow;
 };
 
+type Palette = (typeof Colors)['light'] & {
+  elevated?: string;
+  tint: string;
+};
+
+/**
+ * Cap ChatMessage optics (chrome — Expo UI) + Cap-parity markdown body (this track):
+ * - User: elevated plate, max 85%, radius-xl with tighter bottom-right
+ * - Assistant: flat full-bleed text (no gray bubble)
+ */
 function MessageBubbleImpl({ row, onLongPress }: MessageBubbleProps) {
+  const scheme = useColorScheme();
+  const colors = Colors[scheme] as Palette;
   const textColor = useThemeColor({}, 'text');
   const muted = useThemeColor({}, 'muted');
   const tint = useThemeColor({}, 'tint');
@@ -33,14 +47,16 @@ function MessageBubbleImpl({ row, onLongPress }: MessageBubbleProps) {
       s.kind === 'skill-group',
   );
 
-  const bodyColor = isUser ? '#fff' : textColor;
-  const linkColor = isUser ? '#FFE4C4' : tint;
-  const codeBg = isUser ? 'rgba(0,0,0,0.22)' : 'rgba(127,127,127,0.22)';
-  const codeColor = isUser ? '#fff' : textColor;
+  const elevated =
+    colors.elevated ?? (scheme === 'dark' ? '#282726' : '#f7f0e4');
+  const bodyColor = textColor;
+  const linkColor = tint;
+  const codeBg = scheme === 'dark' ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)';
+  const codeColor = textColor;
 
   const renderMarkdown = (content: string, streaming: boolean) => {
     if (!content && streaming) {
-      return <Text style={[styles.body, { color: bodyColor }]}>…</Text>;
+      return <Text style={[styles.body, { color: muted }]}>…</Text>;
     }
     if (!content) return null;
     return (
@@ -64,15 +80,20 @@ function MessageBubbleImpl({ row, onLongPress }: MessageBubbleProps) {
       >
         <RNView
           style={[
-            styles.bubble,
-            isUser ? styles.userBubble : styles.assistantBubble,
+            isUser
+              ? [
+                  styles.userBubble,
+                  {
+                    backgroundColor: elevated,
+                    borderColor: `${tint}14`,
+                  },
+                ]
+              : styles.assistantFlat,
           ]}
         >
           {renderMarkdown(row.text, row.streaming)}
-          {row.streaming ? (
-            <Text style={[styles.streaming, { color: isUser ? 'rgba(255,255,255,0.7)' : muted }]}>
-              streaming
-            </Text>
+          {row.streaming && !row.text ? (
+            <Text style={[styles.streaming, { color: muted }]}>…</Text>
           ) : null}
         </RNView>
       </Pressable>
@@ -98,14 +119,11 @@ function MessageBubbleImpl({ row, onLongPress }: MessageBubbleProps) {
           const liveTail = row.streaming && segments[segments.length - 1] === segment;
           if (!segment.text && !row.streaming) return null;
           return (
-            <RNView key={segment.id} style={[styles.bubble, styles.assistantBubble]}>
+            <RNView key={segment.id} style={styles.assistantFlat}>
               {renderMarkdown(segment.text, Boolean(liveTail))}
             </RNView>
           );
         })}
-        {row.streaming ? (
-          <Text style={[styles.streaming, { color: muted }]}>streaming</Text>
-        ) : null}
       </RNView>
     </Pressable>
   );
@@ -124,39 +142,42 @@ export const MessageBubble = memo(MessageBubbleImpl, (prev, next) => {
 const styles = StyleSheet.create({
   wrap: {
     paddingHorizontal: 14,
-    paddingVertical: 4,
+    paddingVertical: 6,
     width: '100%',
   },
   userWrap: {
     alignItems: 'flex-end',
+    paddingTop: 8,
   },
   assistantWrap: {
     alignItems: 'flex-start',
+    paddingBottom: 4,
   },
   assistantColumn: {
-    maxWidth: '96%',
+    maxWidth: '100%',
     width: '100%',
-    gap: 4,
-  },
-  bubble: {
-    maxWidth: '92%',
-    borderRadius: 16,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
+    gap: 6,
   },
   userBubble: {
-    backgroundColor: '#E87722',
+    maxWidth: '85%',
+    borderRadius: 16,
+    borderBottomRightRadius: 4,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderWidth: StyleSheet.hairlineWidth,
   },
-  assistantBubble: {
-    backgroundColor: 'rgba(127,127,127,0.18)',
+  assistantFlat: {
     maxWidth: '100%',
+    width: '100%',
+    paddingHorizontal: 2,
+    paddingVertical: 2,
   },
   body: {
     fontSize: 16,
-    lineHeight: 22,
+    lineHeight: 24,
   },
   streaming: {
-    marginTop: 4,
-    fontSize: 11,
+    marginTop: 2,
+    fontSize: 14,
   },
 });
