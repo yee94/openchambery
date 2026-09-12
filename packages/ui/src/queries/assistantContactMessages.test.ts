@@ -70,7 +70,7 @@ describe('assistantContactMessages merge', () => {
     expect(again.messages.map((m) => m.ordinal)).toEqual([10, 12])
   })
 
-  test('latest refresh keeps older history and prefers incoming on same id', () => {
+  test('latest refresh keeps older history and replaces same-id content in coverage', () => {
     const first = applyContactLatestPage(null, page(Array.from({ length: 20 }, (_, i) => msg(i + 1)), {
       nextCursor: 'c1',
       complete: false,
@@ -81,13 +81,99 @@ describe('assistantContactMessages merge', () => {
     expect(first.olderComplete).toBe(false)
 
     const refreshed = applyContactLatestPage(first, page(
-      [...Array.from({ length: 10 }, (_, i) => msg(i + 11)), ...Array.from({ length: 10 }, (_, i) => msg(i + 21))],
+      [
+        ...Array.from({ length: 10 }, (_, i) => msg(i + 11, `upd-${i + 11}`)),
+        ...Array.from({ length: 10 }, (_, i) => msg(i + 21)),
+      ],
       { nextCursor: 'c2', complete: false, revision: 2 },
     ))
     expect(refreshed.messages.map((m) => m.ordinal)).toEqual(Array.from({ length: 30 }, (_, i) => i + 1))
+    expect(refreshed.messages.find((m) => m.ordinal === 15)?.text).toBe('upd-15')
     expect(refreshed.revision).toBe(2)
     expect(refreshed.hasMessageGap).toBe(false)
     expect(refreshed.olderCursor).toBe('c1')
+  })
+
+  test('same-generation authoritative latest drops deleted mid-window rows and keeps confirm', () => {
+    // Realtime already persisted assistant bubbles; new_conversation deletes them and writes confirm.
+    const seeded = applyContactLatestPage(null, page([
+      msg(1, 'user-turn', { role: 'user', turnID: 'turn_1', messageID: 'user_1' }),
+      msg(2, 'spoken', {
+        role: 'assistant', turnID: 'turn_1', messageID: 'asst_bubble', bubbleIndex: 0,
+      }),
+      msg(3, 'card-title', {
+        role: 'assistant', turnID: 'turn_1', messageID: 'asst_card', bubbleIndex: 1,
+      }),
+      msg(4, 'peer-hi', {
+        role: 'user', turnID: 'peer_1', messageID: 'peer_1', fromAssistantID: 'other',
+      }),
+    ], { generation: 0, revision: 3, complete: true }))
+    expect(seeded.messages).toHaveLength(4)
+
+    const afterNew = applyContactLatestPage(seeded, page([
+      msg(1, 'user-turn', { role: 'user', turnID: 'turn_1', messageID: 'user_1' }),
+      msg(4, 'peer-hi', {
+        role: 'user', turnID: 'peer_1', messageID: 'peer_1', fromAssistantID: 'other',
+      }),
+      msg(5, 'confirm-new', {
+        role: 'assistant', turnID: 'turn_new', messageID: 'confirm_1', bubbleIndex: 0,
+      }),
+    ], { generation: 0, revision: 4, complete: true }))
+
+    expect(afterNew.messages.map((m) => m.messageID)).toEqual(['user_1', 'peer_1', 'confirm_1'])
+    expect(afterNew.messages.some((m) => m.messageID === 'asst_bubble' || m.messageID === 'asst_card')).toBe(false)
+    expect(afterNew.revision).toBe(4)
+  })
+
+  test('authoritative complete empty page clears same-generation cache', () => {
+    const first = applyContactLatestPage(null, page([msg(1), msg(2)], {
+      generation: 0, revision: 2, complete: true,
+    }))
+    const cleared = applyContactLatestPage(first, page([], {
+      generation: 0, revision: 3, complete: true, nextCursor: null,
+    }))
+    expect(cleared.messages).toEqual([])
+    expect(cleared.liveWindowIDs).toEqual([])
+    expect(cleared.olderComplete).toBe(true)
+    expect(cleared.olderCursor).toBeNull()
+    expect(cleared.hasMessageGap).toBe(false)
+    expect(cleared.revision).toBe(3)
+  })
+
+  test('partial latest coverage retains older history outside page span', () => {
+    const first = applyContactLatestPage(null, page(range(1, 20), {
+      nextCursor: 'older', complete: false, revision: 1,
+    }))
+    // Server deleted ordinal 18 inside the latest window; page still incomplete.
+    const partial = applyContactLatestPage(first, page(
+      [...range(11, 17), ...range(19, 28)],
+      { nextCursor: 'gap', complete: false, revision: 2 },
+    ))
+    expect(partial.messages.map((m) => m.ordinal)).toEqual([
+      ...Array.from({ length: 10 }, (_, i) => i + 1),
+      ...Array.from({ length: 7 }, (_, i) => i + 11),
+      ...Array.from({ length: 10 }, (_, i) => i + 19),
+    ])
+    expect(partial.messages.some((m) => m.ordinal === 18)).toBe(false)
+    expect(partial.olderCursor).toBe('older')
+    expect(partial.hasMessageGap).toBe(false)
+  })
+
+  test.each([true, false])('reset with a regressed tip removes deleted trailing bubbles (complete=%s)', (complete) => {
+    const user = msg(1, 'new conversation', { role: 'user', messageID: 'user_1' })
+    const first = applyContactLatestPage(null, page([
+      user,
+      msg(2, 'spoken one', { messageID: 'user_1:bubble:1' }),
+      msg(3, 'spoken two', { messageID: 'user_1:bubble:2' }),
+    ], { generation: 0, revision: 3, complete, nextCursor: complete ? null : 'older' }))
+    const authoritative = page([
+      user,
+      msg(2, 'confirmation', { messageID: 'user_1:bubble:1' }),
+    ], { generation: 0, revision: 4, complete, nextCursor: complete ? null : 'older' })
+    const refreshed = applyContactLatestPage(first, authoritative)
+    expect(refreshed.messages.map((m) => m.messageID)).toEqual(['user_1', 'user_1:bubble:1'])
+    expect(refreshed.messages.map((m) => m.text)).toEqual(['new conversation', 'confirmation'])
+    expect(applyContactLatestPage(refreshed, authoritative).messages).toEqual(refreshed.messages)
   })
 
   test('generation reset drops history; empty gen1 rejects late gen0 latest', () => {
@@ -101,12 +187,17 @@ describe('assistantContactMessages merge', () => {
     expect(late.messages).toHaveLength(0)
   })
 
-  test('lower latest revision keeps same-id content but still merges unique ids', () => {
-    const first = applyContactLatestPage(null, page([msg(1)], { revision: 5 }))
-    const stale = applyContactLatestPage(first, page([msg(1, 'old'), msg(2)], { revision: 4 }))
+  test('lower latest revision keeps same-id content, merges unique ids, and does not delete', () => {
+    const first = applyContactLatestPage(null, page([msg(1), msg(2), msg(3)], { revision: 5, complete: true }))
+    const stale = applyContactLatestPage(first, page([msg(1, 'old'), msg(2)], { revision: 4, complete: true }))
+    expect(stale.messages.map((m) => m.ordinal)).toEqual([1, 2, 3])
     expect(stale.messages.find((m) => m.ordinal === 1)?.text).toBe('m1')
     expect(stale.messages.find((m) => m.ordinal === 2)?.text).toBe('m2')
     expect(stale.revision).toBe(5)
+
+    const staleAdds = applyContactLatestPage(first, page([msg(1, 'old'), msg(9)], { revision: 4, complete: true }))
+    expect(staleAdds.messages.map((m) => m.ordinal)).toEqual([1, 2, 3, 9])
+    expect(staleAdds.messages.find((m) => m.ordinal === 1)?.text).toBe('m1')
   })
 
   test('gap uses window non-overlap; same latest keeps resume until earliest target hit', () => {

@@ -20,6 +20,7 @@ export function isPiCodingToolName(name) {
 }
 
 export function resolveAssistantCwd(assistant) {
+  if (assistant?.workspacePath === null) return os.homedir();
   for (const value of [assistant?.effectiveWorkspacePath, assistant?.workspacePath]) {
     if (typeof value === 'string' && value.trim()) return value.trim();
   }
@@ -113,6 +114,7 @@ export function formatPiCodingPrompt({ cwd, skillsPrompt = '', tools = [] } = {}
   return [
     `Working directory: ${cwd}`,
     'You have application-owned pi coding tools in this directory: read, write, edit, bash.',
+    'Use this directory as the starting point for workspace discovery and small, bounded tasks. Substantial implementation belongs in a worker session via assign_session; keep this contact focused on conversation, coordination, and reporting results.',
     'These are not OpenCode native tools and not MCP. Skill directory entries below are instructions only — load a matching skill by calling read on its path; never invent skill or MCP tool names (no context7, gh_grep, webfetch, etc.).',
     'This is your working directory. Ignore any other cwd from the environment, including temporary generator workspaces under /var/folders or os.tmpdir.',
     'When the user asks pwd, the current directory, or to look at files, call bash/read yourself. Never say you have no terminal or cannot read or write files.',

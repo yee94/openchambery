@@ -213,15 +213,25 @@ function toCapgoResponse(decision) {
   };
 }
 
-async function withReleaseNotes(decision, parsedRequest, changelogBaseUrl) {
-  if (decision.primaryAction !== 'apply_ota' || !decision.ota?.bundle?.releaseVersion) {
-    return decision;
+function releaseNotesLatestVersion(decision) {
+  if (decision.primaryAction === 'apply_ota') {
+    return decision.ota?.bundle?.releaseVersion || null;
   }
+  if (decision.primaryAction === 'install_native_required') {
+    const version = decision.native?.version;
+    return typeof version === 'string' && version.trim() ? version.trim() : null;
+  }
+  return null;
+}
+
+async function withReleaseNotes(decision, parsedRequest, changelogBaseUrl) {
+  const latestVersion = releaseNotesLatestVersion(decision);
+  if (!latestVersion) return decision;
 
   const releaseNotes = await loadReleaseNotes(
     changelogBaseUrl,
     resolveChangelogCurrentVersion(parsedRequest),
-    decision.ota.bundle.releaseVersion,
+    latestVersion,
   );
   if (!releaseNotes) return decision;
   return { ...decision, releaseNotes };

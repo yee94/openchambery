@@ -10,6 +10,30 @@ const completedAssistant = (text) => ({
 })
 
 
+const throwawayGenerate = (client, extra = {}) => generateOpenCodeText({
+  providerID: 'p',
+  modelID: 'm',
+  messages: [{ role: 'user', content: 'work' }],
+  buildOpenCodeUrl: () => 'http://localhost:1',
+  getOpenCodeAuthHeaders: () => ({}),
+  detect: async () => ({ available: false, mode: 'throwaway-session' }),
+  clientFactory: () => client,
+  ensureTempDirectory: async () => '/tmp/timeout-fixture',
+  ...extra,
+})
+
+const throwawayClient = ({ status, messages, id = 'ses_tmp', remove = vi.fn(async () => ({ data: true })) }) => ({
+  tool: { ids: async () => ({ data: [] }) },
+  session: {
+    create: async () => ({ data: { id } }),
+    update: async () => ({ data: { id } }),
+    promptAsync: async () => ({ response: { status: 204 } }),
+    status,
+    messages,
+    delete: remove,
+  },
+})
+
 describe('generate cancellation', () => {
   it('cancels throwaway polling and still deletes only its temporary session', async () => {
     const controller = new AbortController()
@@ -583,6 +607,34 @@ describe('generateOpenCodeText', () => {
     expect(result).toEqual({ text: 'full reply', source: 'generate' })
     expect(onTextDelta).not.toHaveBeenCalled()
     expect(subscribers.size).toBe(0)
+  })
+})
+
+describe('generate stall timeout', () => {
+  it('keeps waiting while the throwaway session stays busy past the stall deadline', async () => {
+    let polls = 0
+    const result = await throwawayGenerate(throwawayClient({
+      status: async () => {
+        polls += 1
+        return { data: { ses_tmp: { type: polls < 12 ? 'busy' : 'idle' } } }
+      },
+      messages: async () => ({ data: [completedAssistant('late reply')] }),
+    }), {
+      timeoutMs: 50,
+      settlePollMs: 10,
+    })
+    expect(polls).toBeGreaterThan(5)
+    expect(result).toEqual({ text: 'late reply', source: 'throwaway-session' })
+  })
+
+  it('times out when throwaway settle makes no progress', async () => {
+    await expect(throwawayGenerate(throwawayClient({
+      status: async () => ({ data: {} }),
+      messages: async () => ({ data: [] }),
+    }), {
+      timeoutMs: 40,
+      settlePollMs: 10,
+    })).rejects.toThrow(/timed out after 40ms without progress/)
   })
 })
 

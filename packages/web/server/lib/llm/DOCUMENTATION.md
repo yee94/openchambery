@@ -47,9 +47,14 @@ The 1.18.4 client exposes `GET /provider`, `GET /config/providers`, and
    `attachment`). Non-vision models (for example deepseek-v4-flash) keep the
    `[image: …]` description and any text-file bytes, and skip image data URLs so
    generate cannot stall on unsupported vision parts. Non-image text files are
-   also inlined into the flattened prompt. Wait for idle via `session.status` +
-   `session.messages`; a deterministic `session.messages` SDK error (for example
-   HTTP 400) fails generate immediately. Then delete the session and surface
+    also inlined into the flattened prompt. Wait for idle via `session.status` +
+    `session.messages`; a deterministic `session.messages` SDK error (for example
+    HTTP 400) fails generate immediately. The generator deadline is a **stall**
+    timer (`GENERATE_TIMEOUT_MS` = 90s), not a wall-clock cap. Busy / retry
+    session status, an incomplete assistant message, and throwaway
+    `message.part.delta` tokens reset the stall timer — a live model must not
+    look like "no response".
+    Then delete the session and surface
    delete SDK errors in diagnostics without erasing a successful text result.
     Throwaway sessions use `metadata.openchamber.llm.purpose = 'chat-completions'`
     (and archived immediately) so sidebar visibility, session-index, session-title,
@@ -107,4 +112,4 @@ bubble splitting, and OpenChamber API tools (`assign_session`). Those tools
 deliver through contact **cards**, not this completions payload. The gateway
 stays a text generator: OpenCode coding tools stay denied.
 
-Internal completion/generate calls accept an optional AbortSignal from the contact continuation. It is combined with the generator deadline and passed to upstream requests and settle polling. Cancellation still runs throwaway-session cleanup; it must not turn a late model response into a new tool operation.
+Internal completion/generate calls accept an optional AbortSignal from the contact continuation. It is combined with the stall generator deadline and passed to upstream requests and settle polling. Cancellation still runs throwaway-session cleanup; it must not turn a late model response into a new tool operation.

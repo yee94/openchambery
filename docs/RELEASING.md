@@ -376,7 +376,7 @@ OTA tag 会创建 **GitHub prerelease**（`mobile-beta/v…` 或 `mobile-stable/
 
 **Fixture B**（存量 manifest，无 `minShellReleaseVersion`）：`nativeBuild: 21` + 旧 web 版本 → `apply_ota`（无门放行；即便遗留 `platforms.*.minNativeBuild` 也不再抬门）。
 
-线上探活的四画像沿用同一套版本门语义：有 `minShellReleaseVersion` 时旧壳重装，无门时旧壳 `apply_ota`；`nativeBuild` 故意填小以回归「两把计数器错位」类误判。
+线上探活的四画像沿用同一套版本门语义：有 `minShellReleaseVersion` 时旧壳重装，无门时旧壳 `apply_ota`；`nativeBuild` 故意填小以回归「两把计数器错位」类误判。**稳定 native**（门 = active，无 prerelease）的「新壳」画像是 `builtin` + 同版本 `nativeVersion`，解析为已内嵌 web，期望 `none`（不是 `apply_ota`）。**beta native** 同形画像仍期望 `apply_ota`（beta 不能从 builtin 证明已内嵌）。
 
 这保证「发布了」等于「客户端检测得到」：灰度桶、版本门抬升、降级保护、iOS 剥离版本号等任一环节回归都会在发布时暴露，而不是等用户设备发现。本地可手动跑同款验证（`--fixtures-only` 只验画像表）。
 

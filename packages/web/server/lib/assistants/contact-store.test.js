@@ -26,6 +26,7 @@ import {
   createActiveContactTurn,
   decodeContactCursor,
   deleteContactMessages,
+  deleteContactTurnAssistantOutputs,
   encodeContactCursor,
   ensureContactSchema,
   getContactContextBoundary,
@@ -57,14 +58,16 @@ const openDb = () => {
   return db;
 };
 
-const insert = (db, assistantID, { role, text = '', parts, status = 'complete', fromAssistantID = null, fromAssistantName = null }) => {
-  const messageID = crypto.randomUUID();
+const insert = (db, assistantID, {
+  role, text = '', parts, status = 'complete', fromAssistantID = null, fromAssistantName = null, turnID = null, messageID = null,
+}) => {
+  const id = typeof messageID === 'string' && messageID ? messageID : crypto.randomUUID();
   const ordinal = nextContactOrdinal(db, assistantID);
   insertContactMessage(db, {
-    messageID,
+    messageID: id,
     assistantID,
     role,
-    turnID: messageID,
+    turnID: typeof turnID === 'string' && turnID ? turnID : id,
     bubbleIndex: 0,
     createdAt: Date.now(),
     ordinal,
@@ -73,7 +76,7 @@ const insert = (db, assistantID, { role, text = '', parts, status = 'complete', 
     fromAssistantID,
     fromAssistantName,
   });
-  return { messageID, ordinal };
+  return { messageID: id, ordinal };
 };
 
 describe('contact LLM history trim', () => {
@@ -177,6 +180,37 @@ describe('contact LLM history trim', () => {
     expect(contactHistoryForLlm(db, assistantID)).toEqual([]);
     expect(listContactMessages(db, assistantID, { limit: 50 }).messages).toEqual([]);
     expect(getContactContextBoundary(db, assistantID)).toBe(0);
+    db.close();
+  });
+
+  it('deleteContactTurnAssistantOutputs removes only this turn assistant rows', () => {
+    const db = openDb();
+    const assistantID = 'asst_turn_out';
+    const oldUser = insert(db, assistantID, { role: 'user', text: 'old', turnID: 'turn_old' });
+    insert(db, assistantID, { role: 'assistant', text: 'old-reply', turnID: 'turn_old' });
+    const clearing = insert(db, assistantID, { role: 'user', text: '开新对话', turnID: 'turn_reset' });
+    insert(db, assistantID, { role: 'assistant', text: 'preamble', turnID: 'turn_reset' });
+    insert(db, assistantID, {
+      role: 'peer',
+      text: 'peer keep',
+      turnID: 'turn_reset',
+      fromAssistantID: 'asst_other',
+      fromAssistantName: 'Other',
+    });
+    const queued = insert(db, assistantID, { role: 'user', text: 'queued', turnID: 'turn_q' });
+    const removed = deleteContactTurnAssistantOutputs(db, assistantID, 'turn_reset');
+    expect(removed).toBeGreaterThan(0);
+    const page = listContactMessages(db, assistantID, { limit: 50 });
+    expect(page.messages.map((message) => ({ role: message.role, text: message.text, turn: message.turnID }))).toEqual([
+      { role: 'user', text: 'old', turn: 'turn_old' },
+      { role: 'assistant', text: 'old-reply', turn: 'turn_old' },
+      { role: 'user', text: '开新对话', turn: 'turn_reset' },
+      { role: 'peer', text: 'peer keep', turn: 'turn_reset' },
+      { role: 'user', text: 'queued', turn: 'turn_q' },
+    ]);
+    expect(page.messages[0].messageID).toBe(oldUser.messageID);
+    expect(page.messages[2].messageID).toBe(clearing.messageID);
+    expect(page.messages[4].messageID).toBe(queued.messageID);
     db.close();
   });
 

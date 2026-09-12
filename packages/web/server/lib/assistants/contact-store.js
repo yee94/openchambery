@@ -253,7 +253,8 @@ export function isContactVisiblePart(part) {
  * Counts complete/error assistant replies and user-facing peer DMs that have
  * ≥1 visible part (per-part settle filter). User messages, blank rows,
  * settle-only markers, and non-visible roles are excluded.
- * Streaming tokens never create rows — one persisted bubble ≡ one count unit.
+   * Token-level SSE deltas never create rows. Each published spoken bubble
+   * or card is one count unit, including rows persisted before turn end.
  */
 export function isContactUnreadCountableMessage(message) {
   if (!message || typeof message !== 'object') return false;
@@ -1142,6 +1143,29 @@ export function deleteContactMessages(db, assistantID, { upToOrdinal = null } = 
   // Unbounded wipe leaves generation/read_state for the service layer to rebind
   // (resetContact bumps generation + resetContactReadWatermarkForGeneration).
   // Assistant delete clears read_state via deleteContactReadState.
+}
+
+/**
+ * Delete only this turn's assistant-role output rows (spoken bubbles / cards / errors).
+ * Keeps the clearing user, queued users, peers, older turns, watches, generation,
+ * context boundary, and read watermark. Does not call deleteContactMessages.
+ */
+export function deleteContactTurnAssistantOutputs(db, assistantID, turnID) {
+  if (typeof assistantID !== 'string' || !assistantID.trim()) return 0;
+  if (typeof turnID !== 'string' || !turnID.trim()) return 0;
+  const ids = db.prepare(
+    `SELECT message_id FROM assistant_contact_message
+     WHERE assistant_id=? AND turn_id=? AND role='assistant'`,
+  ).all(assistantID, turnID).map((row) => row.message_id);
+  for (const messageID of ids) {
+    db.prepare('DELETE FROM assistant_contact_part WHERE message_id=?').run(messageID);
+  }
+  if (ids.length === 0) return 0;
+  const result = db.prepare(
+    `DELETE FROM assistant_contact_message
+     WHERE assistant_id=? AND turn_id=? AND role='assistant'`,
+  ).run(assistantID, turnID);
+  return Number(result?.changes) || ids.length;
 }
 
 /** Durable LLM context watermark for one assistant (0 = no boundary). */

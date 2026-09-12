@@ -17,7 +17,7 @@ vi.mock('@/components/icon/Icon', () => ({ Icon: () => null }));
 vi.mock('@/components/ui/ScrollableOverlay', () => ({ ScrollableOverlay: ({ children }: { children: React.ReactNode }) => <div>{children}</div> }));
 vi.mock('@/components/ui/textarea', () => ({
   Textarea: React.forwardRef<HTMLTextAreaElement, React.TextareaHTMLAttributes<HTMLTextAreaElement>>((props, ref) => (
-    <textarea ref={ref} value={props.value} disabled={props.disabled} onInput={props.onChange as React.FormEventHandler<HTMLTextAreaElement>}
+    <textarea ref={ref} className={props.className} style={props.style} value={props.value} disabled={props.disabled} onInput={props.onChange as React.FormEventHandler<HTMLTextAreaElement>}
       onCopy={props.onCopy} onCut={props.onCut} onKeyDown={props.onKeyDown} onSelect={props.onSelect} onCompositionStart={props.onCompositionStart} onCompositionEnd={props.onCompositionEnd}
       aria-controls={props['aria-controls']} aria-activedescendant={props['aria-activedescendant']} />
   )),
@@ -85,6 +85,63 @@ test('mounts only for @, searches the bounded snapshot once, and shows directory
   expect(document.body.textContent).toContain('sessions.sidebar.empty.noMatches.title');
   expect(runtime.load).toHaveBeenCalledTimes(1);
   expect(submit).not.toHaveBeenCalled();
+});
+
+test('stacked composer retains its textarea spacing and separate footer', () => {
+  expect(host.querySelector('[data-composer-layout="stacked"]')).not.toBeNull();
+  expect(host.querySelector('[data-chat-input-footer]')).not.toBeNull();
+  expect(input().classList.contains('min-h-[52px]')).toBe(true);
+  expect(input().classList.contains('pt-4')).toBe(true);
+  expect(input().classList.contains('pb-2')).toBe(true);
+  expect(input().classList.contains('field-sizing-fixed')).toBe(false);
+});
+
+test('inline contact centers the compact input and bottom-aligns measured multiline growth', async () => {
+  let measuredHeight = 48;
+  const heightAtMeasurement: string[] = [];
+  const renderInline = (value: string) => root.render(<AssistantSessionComposer
+    active={false} layout="inline" isMobile value={value} onChange={() => {}} onSubmit={submit}
+    onAddFiles={() => {}} onStop={stop} working inputStyle={{ maxHeight: '128px' }}
+  />);
+  await act(async () => renderInline(''));
+  Object.defineProperty(input(), 'scrollHeight', { configurable: true, get: () => {
+    heightAtMeasurement.push(input().style.height);
+    return measuredHeight;
+  } });
+  const row = () => host.querySelector('[data-composer-layout="inline"]')!;
+  const shell = () => host.querySelector('[data-composer-input-shell]')!;
+  const expectCompact = () => {
+    expect(input().style.height).toBe('48px');
+    expect(row().classList.contains('items-center')).toBe(true);
+    expect(shell().classList.contains('items-center')).toBe(true);
+  };
+  expectCompact();
+  expect(input().classList.contains('field-sizing-fixed')).toBe(true);
+  expect(input().classList.contains('py-3')).toBe(true);
+  expect(input().classList.contains('leading-6')).toBe(true);
+  for (const selector of ['[data-composer-inline-attach]', '[data-composer-inline-send]']) {
+    const rail = host.querySelector(selector)!;
+    expect(rail.classList.contains('h-12')).toBe(true);
+    expect(rail.classList.contains('items-center')).toBe(true);
+  }
+  await act(async () => renderInline('Single line'));
+  expectCompact();
+  for (const value of ['Soft wrapped text', 'Two\nlines']) {
+    measuredHeight = 72;
+    await act(async () => renderInline(value));
+    expect(input().style.height).toBe('72px');
+    expect(row().classList.contains('items-end')).toBe(true);
+    expect(shell().classList.contains('items-end')).toBe(true);
+  }
+  measuredHeight = 160;
+  await act(async () => renderInline('Long multiline text'));
+  expect(input().style.height).toBe('128px');
+  expect(input().style.overflowY).toBe('auto');
+  measuredHeight = 48;
+  await act(async () => renderInline(''));
+  expectCompact();
+  expect(input().style.overflowY).toBe('hidden');
+  expect(heightAtMeasurement.every((height) => height === '0px')).toBe(true);
 });
 
 test('keyboard selection uses the shared chip display and canonical session codec', async () => {

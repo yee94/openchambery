@@ -6,6 +6,10 @@ const SETTLE_POLL_MS = 250;
 const INCOMPLETE_ASSISTANT_SETTLE_PROBES = 2;
 const EMPTY_IDLE_PROBES = 5;
 
+const positiveMs = (value, fallback) => (
+  Number.isFinite(value) && value > 0 ? Math.trunc(value) : fallback
+);
+
 /**
  * Session-level deny-all. OpenCode 1.18 session.create serializes this
  * PermissionRuleset shape (permission/pattern/action). Confirmed on local
@@ -138,9 +142,17 @@ const deniedTools = (ids) => {
   return tools;
 };
 
-const waitForIdleAssistant = async ({ client, sessionID, directory, signal }) => {
+const waitForIdleAssistant = async ({
+  client,
+  sessionID,
+  directory,
+  signal,
+  onProgress = null,
+  settlePollMs = SETTLE_POLL_MS,
+}) => {
   let incompleteAssistantProbes = 0;
   let emptyIdleProbes = 0;
+  const pollMs = positiveMs(settlePollMs, SETTLE_POLL_MS);
 
   for (;;) {
     signal?.throwIfAborted?.();
@@ -160,7 +172,8 @@ const waitForIdleAssistant = async ({ client, sessionID, directory, signal }) =>
     if (sessionBusy) {
       incompleteAssistantProbes = 0;
       emptyIdleProbes = 0;
-      await sleep(SETTLE_POLL_MS, signal);
+      onProgress?.();
+      await sleep(pollMs, signal);
       continue;
     }
 
@@ -186,6 +199,7 @@ const waitForIdleAssistant = async ({ client, sessionID, directory, signal }) =>
             return messagesResult.data;
           }
           incompleteAssistantProbes += 1;
+          onProgress?.();
           if (incompleteAssistantProbes >= INCOMPLETE_ASSISTANT_SETTLE_PROBES) {
             return messagesResult.data;
           }
@@ -202,7 +216,7 @@ const waitForIdleAssistant = async ({ client, sessionID, directory, signal }) =>
       if (error?.code === 'upstream_error') throw error;
     }
 
-    await sleep(SETTLE_POLL_MS, signal);
+    await sleep(pollMs, signal);
   }
 };
 
@@ -445,6 +459,8 @@ export async function generateOpenCodeText({
   onTextDelta = null,
   globalEventHub = null,
   signal: parentSignal = null,
+  timeoutMs = GENERATE_TIMEOUT_MS,
+  settlePollMs = SETTLE_POLL_MS,
 }) {
   parentSignal?.throwIfAborted();
   if (!providerID || !modelID) {
@@ -466,7 +482,23 @@ export async function generateOpenCodeText({
   parentSignal?.throwIfAborted();
   const controller = new AbortController();
   const requestSignal = parentSignal ? AbortSignal.any([parentSignal, controller.signal]) : controller.signal;
-  const timeout = setTimeout(() => controller.abort(new Error(`OpenCode LLM generate timed out after ${GENERATE_TIMEOUT_MS}ms`)), GENERATE_TIMEOUT_MS);
+  const stallMs = positiveMs(timeoutMs, GENERATE_TIMEOUT_MS);
+  const abortGenerate = (message) => {
+    if (controller.signal.aborted) return;
+    controller.abort(new Error(message));
+  };
+  // Idle deadline only: live busy/delta/incomplete assistant progress
+  // must not look like "the model hung". There is no wall-clock cap.
+  let stallTimer = setTimeout(() => {
+    abortGenerate(`OpenCode LLM generate timed out after ${stallMs}ms without progress`);
+  }, stallMs);
+  const bumpTimeout = () => {
+    if (controller.signal.aborted) return;
+    clearTimeout(stallTimer);
+    stallTimer = setTimeout(() => {
+      abortGenerate(`OpenCode LLM generate timed out after ${stallMs}ms without progress`);
+    }, stallMs);
+  };
 
   try {
     if (probe.available && probe.mode === 'http' && probe.url) {
@@ -542,7 +574,10 @@ export async function generateOpenCodeText({
       unsubscribeDeltas = subscribeThrowawayTextDeltas({
         globalEventHub,
         sessionID,
-        onTextDelta,
+        onTextDelta: (text) => {
+          bumpTimeout();
+          if (typeof onTextDelta === 'function') onTextDelta(text);
+        },
       });
 
       // promptAsync still forwards model/parts/tools. v2 session.prompt does not.
@@ -561,6 +596,7 @@ export async function generateOpenCodeText({
       if (!promptAdmitted(prompted)) {
         failGenerate(`OpenCode LLM promptAsync failed: ${sdkErrorMessage(prompted, 'promptAsync failed')}`);
       }
+      bumpTimeout();
 
       let text = assistantTextFromPrompt(prompted?.data ?? prompted);
       if (!text.trim()) {
@@ -569,6 +605,8 @@ export async function generateOpenCodeText({
           sessionID,
           directory: workingDirectory,
           signal: requestSignal,
+          onProgress: bumpTimeout,
+          settlePollMs,
         });
         text = assistantTextFromMessages(settled);
       }
@@ -596,7 +634,7 @@ export async function generateOpenCodeText({
       }
     }
   } finally {
-    clearTimeout(timeout);
+    clearTimeout(stallTimer);
   }
 }
 
@@ -613,4 +651,5 @@ export const _test = {
   LLM_AGENT_NAME,
   AGENT_MARKDOWN,
   LLM_SESSION_DENY_PERMISSION,
+  GENERATE_TIMEOUT_MS,
 };
