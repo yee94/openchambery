@@ -1,8 +1,11 @@
 import fs from 'node:fs';
+import { createRequire } from 'node:module';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { createScheduledTaskRunHistoryStore } from './run-history-store.js';
+
+const require = createRequire(import.meta.url);
 
 const directories = [];
 
@@ -26,6 +29,7 @@ const startSample = (store, overrides = {}) => store.startRun({
   trigger: overrides.trigger ?? 'scheduled',
   directory: overrides.directory ?? '/tmp/project-a',
   startedAt: overrides.startedAt,
+  slotAt: overrides.slotAt,
 });
 
 describe('scheduled task run history store', () => {
@@ -158,6 +162,76 @@ describe('scheduled task run history store', () => {
     expect(() => store.listRuns({ limit: '1.5' })).toThrow(/limit/i);
     expect(() => store.listRuns({ limit: 0 })).toThrow(/limit/i);
     expect(() => store.listRuns({ limit: -3 })).toThrow(/limit/i);
+    store.close();
+  });
+
+  it('lets only one scheduled startRun occupy a slot, including across store handles', () => {
+    const dbPath = createTempDbPath();
+    const first = createScheduledTaskRunHistoryStore({ dbPath });
+    startSample(first, { id: 'run-a', slotAt: 1_700_000_000_000 });
+
+    expect(() => startSample(first, { id: 'run-b', slotAt: 1_700_000_000_000 })).toThrow(
+      /already claimed/,
+    );
+
+    const second = createScheduledTaskRunHistoryStore({ dbPath });
+    expect(() => startSample(second, { id: 'run-c', slotAt: 1_700_000_000_000 })).toThrow(
+      /already claimed/,
+    );
+
+    startSample(first, { id: 'run-next-slot', slotAt: 1_700_000_000_000 + 60_000 });
+    startSample(first, {
+      id: 'run-manual',
+      trigger: 'manual',
+      slotAt: 1_700_000_000_000,
+    });
+
+    expect(first.listRuns({}).runs.map((run) => run.id).sort()).toEqual([
+      'run-a',
+      'run-manual',
+      'run-next-slot',
+    ].sort());
+
+    first.close();
+    second.close();
+  });
+
+  it('adds slot occupancy to databases created before slot_at existed', () => {
+    const dbPath = createTempDbPath();
+    const Database = require('better-sqlite3');
+    const legacy = new Database(dbPath);
+    legacy.exec(`
+      CREATE TABLE scheduled_task_run (
+        run_id TEXT PRIMARY KEY NOT NULL,
+        project_id TEXT NOT NULL,
+        task_id TEXT NOT NULL,
+        task_name TEXT NOT NULL,
+        trigger TEXT NOT NULL,
+        status TEXT NOT NULL,
+        session_id TEXT,
+        directory TEXT,
+        error TEXT,
+        started_at INTEGER NOT NULL,
+        finished_at INTEGER,
+        duration_ms INTEGER
+      );
+    `);
+    legacy.prepare(`
+      INSERT INTO scheduled_task_run (
+        run_id, project_id, task_id, task_name, trigger, status,
+        session_id, directory, error, started_at, finished_at, duration_ms
+      ) VALUES ('legacy-run', 'project-a', 'task-1', 'Morning Sync', 'scheduled',
+        'success', NULL, '/tmp/project-a', NULL, 50, 60, 10)
+    `).run();
+    legacy.close();
+
+    const store = createScheduledTaskRunHistoryStore({ dbPath });
+    expect(store.listRuns({}).runs).toHaveLength(1);
+    startSample(store, { id: 'run-a', slotAt: 1_700_000_000_000 });
+    expect(() => startSample(store, { id: 'run-b', slotAt: 1_700_000_000_000 })).toThrow(
+      /already claimed/,
+    );
+    expect(store.listRuns({}).runs.map((run) => run.id)).toEqual(['run-a', 'legacy-run']);
     store.close();
   });
 });
