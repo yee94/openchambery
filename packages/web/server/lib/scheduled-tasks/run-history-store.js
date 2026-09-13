@@ -8,6 +8,8 @@ const require = createRequire(import.meta.url);
 const DEFAULT_LIMIT = 20;
 const MAX_LIMIT = 100;
 const INTERRUPTED_ERROR = 'Run interrupted by process restart';
+export const SCHEDULED_SLOT_CLAIMED_CODE = 'SCHEDULED_SLOT_CLAIMED';
+const SQLITE_UNIQUE_CODES = new Set(['SQLITE_CONSTRAINT', 'SQLITE_CONSTRAINT_UNIQUE']);
 
 const asNonEmptyString = (value) => {
   if (typeof value !== 'string') {
@@ -105,6 +107,18 @@ export const createScheduledTaskRunHistoryStore = ({ dbPath, clock = () => Date.
       ON scheduled_task_run (project_id, task_id, started_at DESC, run_id DESC);
   `);
 
+  const hasSlotAt = db.prepare(`
+    SELECT 1 AS ok FROM pragma_table_info('scheduled_task_run') WHERE name = 'slot_at'
+  `).get();
+  if (!hasSlotAt) {
+    db.exec('ALTER TABLE scheduled_task_run ADD COLUMN slot_at INTEGER');
+  }
+  db.exec(`
+    CREATE UNIQUE INDEX IF NOT EXISTS scheduled_task_run_scheduled_slot
+      ON scheduled_task_run (project_id, task_id, slot_at)
+      WHERE trigger = 'scheduled' AND slot_at IS NOT NULL
+  `);
+
   const now = () => Math.trunc(clock());
 
   const convergeInterruptedRuns = () => {
@@ -137,17 +151,29 @@ export const createScheduledTaskRunHistoryStore = ({ dbPath, clock = () => Date.
     const trigger = record.trigger === 'manual' ? 'manual' : 'scheduled';
     const directory = asNonEmptyString(record.directory);
     const startedAt = asFiniteInteger(record.startedAt) ?? now();
+    const slotAt = trigger === 'scheduled'
+      ? asFiniteInteger(record.slotAt ?? record.slot_at)
+      : null;
 
     if (!projectId || !taskId) {
       throw new Error('projectId and taskId are required');
     }
 
-    db.prepare(`
-      INSERT INTO scheduled_task_run (
-        run_id, project_id, task_id, task_name, trigger, status,
-        session_id, directory, error, started_at, finished_at, duration_ms
-      ) VALUES (?, ?, ?, ?, ?, 'running', NULL, ?, NULL, ?, NULL, NULL)
-    `).run(id, projectId, taskId, taskName, trigger, directory, startedAt);
+    try {
+      db.prepare(`
+        INSERT INTO scheduled_task_run (
+          run_id, project_id, task_id, task_name, trigger, status,
+          session_id, directory, error, started_at, finished_at, duration_ms, slot_at
+        ) VALUES (?, ?, ?, ?, ?, 'running', NULL, ?, NULL, ?, NULL, NULL, ?)
+      `).run(id, projectId, taskId, taskName, trigger, directory, startedAt, slotAt);
+    } catch (error) {
+      if (slotAt !== null && SQLITE_UNIQUE_CODES.has(error?.code)) {
+        const claimed = new Error('scheduled slot already claimed');
+        claimed.code = SCHEDULED_SLOT_CLAIMED_CODE;
+        throw claimed;
+      }
+      throw error;
+    }
 
     return rowToDto(db.prepare('SELECT * FROM scheduled_task_run WHERE run_id = ?').get(id));
   };

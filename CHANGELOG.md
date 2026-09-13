@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.19.17-beta.1] - 2026-09-13
+
+### 定时任务
+
+- 同一条定时任务在多个 OpenChamber 进程同时运行时，到点只会触发一次。
+
 ## [1.19.16] - 2026-09-13
 
 ### 助理

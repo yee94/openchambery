@@ -1,3 +1,6 @@
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('@opencode-ai/sdk/v2', () => ({
@@ -5,6 +8,7 @@ vi.mock('@opencode-ai/sdk/v2', () => ({
 }));
 
 const { createOpencodeClient } = await import('@opencode-ai/sdk/v2');
+const { createScheduledTaskRunHistoryStore } = await import('./run-history-store.js');
 const {
   computeNextRunAt,
   createScheduledTasksRuntime,
@@ -1324,5 +1328,72 @@ describe('scheduled-tasks run history and session lifecycle', () => {
     expect(emitTaskRunEvent.mock.calls.filter((call) => call[0].status === 'success')).toHaveLength(successEmitsAfterRun);
 
     vi.unstubAllGlobals();
+  });
+});
+
+describe('scheduled-tasks cross-process slot occupancy', () => {
+  it('lets only one runtime occupy a scheduled slot when two schedulers share a history store', async () => {
+    const random = vi.spyOn(Math, 'random').mockReturnValue(0);
+    vi.useFakeTimers();
+    vi.setSystemTime(Date.UTC(2026, 0, 1, 9, 29, 54));
+
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'scheduled-slot-'));
+    const store = createScheduledTaskRunHistoryStore({
+      dbPath: path.join(dir, 'scheduled-task-runs.sqlite'),
+    });
+    const first = { stop() {} };
+    const second = { stop() {} };
+    try {
+      const dueTask = {
+        ...scheduledTask,
+        schedule: {
+          kind: 'daily',
+          times: ['09:30'],
+          timezone: 'UTC',
+        },
+      };
+      const stateWrites = [];
+      const notifyTaskRun = vi.fn(async () => {});
+      const createSharedRuntime = () => createScheduledTasksRuntime({
+        projectConfigRuntime: {
+          listScheduledTasks: vi.fn(async () => [dueTask]),
+          updateScheduledTaskState: vi.fn(async (_projectID, _taskID, state) => {
+            stateWrites.push(state);
+            return { task: { ...dueTask, state: { ...dueTask.state, ...state } } };
+          }),
+          upsertScheduledTask: vi.fn(async (_projectID, task) => ({ task })),
+        },
+        listProjects: vi.fn(async () => [{ id: 'project-1', path: '/tmp/project-1' }]),
+        buildOpenCodeUrl: vi.fn(() => 'http://127.0.0.1:4096'),
+        getOpenCodeAuthHeaders: vi.fn(() => ({})),
+        waitForOpenCodeReady: vi.fn(async () => {
+          throw new Error('OpenCode unavailable');
+        }),
+        logger: { info: vi.fn(), warn: vi.fn() },
+        runHistoryStore: store,
+        notifyTaskRun,
+      });
+
+      Object.assign(first, createSharedRuntime());
+      Object.assign(second, createSharedRuntime());
+      await first.start();
+      await second.start();
+      await vi.advanceTimersByTimeAsync(6_000);
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+
+      expect(store.listRuns({}).runs).toHaveLength(1);
+      expect(notifyTaskRun).toHaveBeenCalledTimes(1);
+      expect(stateWrites.filter((state) => state.lastStatus === 'running')).toHaveLength(1);
+      expect(stateWrites.filter((state) => state.lastStatus === 'error')).toHaveLength(1);
+    } finally {
+      first.stop();
+      second.stop();
+      store.close();
+      fs.rmSync(dir, { recursive: true, force: true });
+      random.mockRestore();
+      vi.useRealTimers();
+    }
   });
 });
