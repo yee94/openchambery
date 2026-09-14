@@ -22,7 +22,7 @@ Rules:
 1. Chat is a **pushed** secondary page. It is never a fifth dock item. The dock / host tab bar **hides** on chat, draft, assistant conversation, and instances.
 2. Do not ship Mode C (Capacitor WebView dock + optional native overlay). Lynx does not need `openchamber.iosNativeUi`.
 3. A binary that draws both a host `UITabBar` **and** a Lynx floating dock has failed IA.
-4. LegendList-semantics timeline + Settings home (22 slugs, Cap main including `archived-sessions`) are in this package; Assistant unread + mark-all-read is wired (Next #91). Rich turn cards, settings editors, FCM, and full CI matrices remain later.
+4. LegendList-semantics timeline + Settings home (22 slugs, Cap main including `archived-sessions`) are in this package; Assistant unread + mark-all-read landed in Next #91. Rich turn cards, settings editors, FCM, and full CI matrices remain later.
 
 Code: `src/host/embedding.ts`. Native mirrors: `host/ios/`, `host/android/`.
 
@@ -106,3 +106,5 @@ See `RUNNABLE.md` for Linux-box results. iOS simulator + Android APK CI / 真机
 | 代码接上 | Shell / embedding / glass contracts + connect/pairing/session-index client. Host must still inject HTTP + Keychain + (later) relay tunnel. |
 | CI绿 | Package typecheck + Vitest. No APK/IPA job yet. |
 | 真机过 | **not executed** (Linux cloud agent; no Xcode/adb device) |
+
+Track tip (docs honesty): `work/lynx-native` @ `3fda6eb3f2f72580c7a25036c413fa8e5c17ab65` (PR #131 / Next #91 MERGED). Published tip APK: `lynx-v2-debug-4cc762c` (prerelease; exists for tip after PR #130 / `4cc762cd2`). No `lynx-v2-debug-3fda6eb` at write time — do not invent. Mobile CI may later publish for newer tip. Product **NOT DONE** / 三关未齐 / not EXHAUSTED. 真机残差: Connect welcome **card chrome** confirm for Yee. Host-only unchanged.
