@@ -272,7 +272,7 @@ export const formatLynxArchivedSessionCount = (
 ): string => `${count} ${count === 1 ? singular : plural}`;
 
 export const LYNX_ARCHIVED_SESSIONS_NOTES = [
-  'Cap ArchivedSessionsDialog: project buckets → session list → restore/preview.',
+  'Cap ArchivedSessionsDialog + Settings ArchivedSessionsPage (manager mode=page).',
   'List: GET /api/experimental/session?archived=true&roots=true (Cap experimental.session.list).',
   'Session-index omits archived roots — used only for project labels when present.',
   'Restore: unarchiveLynxSession → PATCH { time: { archived: 0 } }; never fake-success.',

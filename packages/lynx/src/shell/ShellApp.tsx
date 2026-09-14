@@ -314,18 +314,6 @@ export function LynxShellApp({
     };
   }, [runtimeFetch]);
 
-  const settingsBodyContext: SettingsBodyContext = {
-    locale: host.locale,
-    runtimeFetch,
-    lynxClientVersion,
-    connectionClient,
-    connections,
-    onConnectionsChange,
-    onConnected,
-    assistantsFocusId,
-    clearAssistantsFocusId: () => setAssistantsFocusId(null),
-  };
-
   const secondary = navigation.secondary;
   const chatRoutes = secondary?.kind === 'chat' ? secondary.routes : [];
   const chatWindow = lynxChatStackWindow(chatRoutes);
@@ -391,6 +379,22 @@ export function LynxShellApp({
     }));
   };
 
+  const settingsBodyContext: SettingsBodyContext = {
+    locale: host.locale,
+    runtimeFetch,
+    lynxClientVersion,
+    connectionClient,
+    connections,
+    onConnectionsChange,
+    onConnected,
+    assistantsFocusId,
+    clearAssistantsFocusId: () => setAssistantsFocusId(null),
+    indexState: sessionIndexState,
+    onSelectSession: selectSessionFromSheet,
+    onArchivedMutated: () => {
+      void sessionIndexBindings?.refresh?.();
+    },
+  };
 
   // Outer root <page> lives in App — keep shell content as <view> to avoid nested pages.
   return (

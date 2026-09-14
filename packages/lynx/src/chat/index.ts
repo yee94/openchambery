@@ -335,7 +335,13 @@ export {
   type LynxArchiveUndoBanner,
 } from './sessionArchiveUndo';
 
-export { LynxArchivedSessionsDialog } from './ArchivedSessionsDialog';
+export {
+  LynxArchivedSessionsDialog,
+  LynxArchivedSessionsManager,
+  type LynxArchivedSessionsDialogProps,
+  type LynxArchivedSessionsManagerMode,
+  type LynxArchivedSessionsManagerProps,
+} from './ArchivedSessionsDialog';
 export {
   LYNX_ARCHIVED_OTHER_PROJECT_ID,
   LYNX_ARCHIVED_SESSIONS_PAGE_SIZE,

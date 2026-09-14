@@ -82,7 +82,7 @@ function SettingsRow({
 }
 
 /**
- * Settings tab: search + grouped 21 mobile slugs + in-tab push pages.
+ * Settings tab: search + grouped 22 mobile slugs + in-tab push pages.
  * Dock stays visible (not a secondary chat-style page).
  */
 export function SettingsTab({

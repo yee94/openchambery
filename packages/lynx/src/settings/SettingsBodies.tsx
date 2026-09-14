@@ -9,9 +9,11 @@ import {
   resolveLynxAssistantCreateDefaults,
   setLynxAssistantsEnabled,
 } from '../assistants/api';
+import { LynxArchivedSessionsManager } from '../chat/ArchivedSessionsDialog';
 import { lynxT } from '../i18n/catalog';
 import { LynxInput, LynxText, LynxView } from '../lynx-elements';
 import type { LynxRuntimeFetch } from '../runtime/fetch';
+import type { SessionIndexState } from '../session-index/types';
 import { cssVar } from '../theme/tokens';
 import { parsePastedPairingLink } from '../connect/pairingPaste';
 import {
@@ -79,6 +81,12 @@ export type SettingsBodyContext = {
   assistantsFocusId?: string | null;
   /** Clear assistantsFocusId after AssistantsSettingsBody consumes it. */
   clearAssistantsFocusId?: () => void;
+  /** Session-index labels for archived project buckets (index drops archived roots). */
+  indexState?: SessionIndexState | null;
+  /** Cap ArchivedSessionsPage preview → open chat. */
+  onSelectSession?: (sessionId: string, directory: string | null) => void;
+  /** Refresh session-index after restore. */
+  onArchivedMutated?: () => void;
 };
 
 function Banner({ text, muted }: { text: string; muted?: boolean }) {
@@ -298,6 +306,20 @@ function NotificationsBody({ ctx }: { ctx: SettingsBodyContext }) {
       <Banner text={lynxT(ctx.locale, 'lynx.settings.notifications.hooks')} muted />
       <Banner text={lynxT(ctx.locale, 'lynx.settings.notifications.pushWired')} muted />
     </LynxView>
+  );
+}
+
+function ArchivedSessionsBody({ ctx }: { ctx: SettingsBodyContext }) {
+  return (
+    <LynxArchivedSessionsManager
+      locale={ctx.locale}
+      mode="page"
+      active
+      runtimeFetch={ctx.runtimeFetch}
+      indexState={ctx.indexState ?? null}
+      onSelectSession={ctx.onSelectSession}
+      onMutated={ctx.onArchivedMutated}
+    />
   );
 }
 
@@ -1659,6 +1681,8 @@ export function renderLynxSettingsBody(
       return <NotificationsBody ctx={ctx} />;
     case 'sessions':
       return <SessionsBody ctx={ctx} />;
+    case 'archived-sessions':
+      return <ArchivedSessionsBody ctx={ctx} />;
     case 'projects':
       return <ProjectsSettingsBody ctx={ctx} />;
     case 'git':

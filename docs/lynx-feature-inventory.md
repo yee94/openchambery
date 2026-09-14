@@ -372,7 +372,7 @@ Counts below are inventory rows (user-visible capabilities + owning modules), no
 |---|---|
 | Full settings nav + search | `MobileSettingsTab.tsx` → `SettingsView` |
 | Split collection → entity editor | `SettingsView.tsx` |
-| All 21 mobile slugs above | `components/sections/*` |
+| All 22 mobile slugs above (Cap main incl. `archived-sessions`) | `components/sections/*` |
 | Instance management | `MobileInstancesSurface` |
 
 ### 8. Share (native)
