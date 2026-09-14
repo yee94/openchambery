@@ -513,3 +513,5 @@ Lynx starts from **zero landed product surfaces**. Use `docs/lynx-gap-board.md` 
 - `docs/lynx-gap-board.md` — landed / missing / Android downgrade / next / 真机残差 / 故意不移植
 - `docs/lynx-acceptance.md` — 三关 + harness + host chrome
 - `docs/lynx-ia-ui.md` — IA, glass, embedding
+
+Track tip (docs honesty, Next #92): `work/lynx-native` @ `3fda6eb3f2f72580c7a25036c413fa8e5c17ab65` (PR #131 / Next #91 MERGED). Published tip APK: `lynx-v2-debug-4cc762c` (prerelease; exists for tip after PR #130 / `4cc762cd2`). No `lynx-v2-debug-3fda6eb` at write time — do not invent. Mobile CI may later publish for newer tip. Product **NOT DONE** / 三关未齐 / not EXHAUSTED. Next #90 archived-sessions and Next #91 Assistant unread are landed. 真机残差: Connect welcome **card chrome** confirm for Yee. Host-only unchanged.
