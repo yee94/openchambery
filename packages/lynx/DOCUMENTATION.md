@@ -97,6 +97,7 @@ QR / paste: `parseConnectionPayload` accepts v2 pairing links or a bare `http(s)
 - DirectoryExplorer: `src/projects/directoryExplorer.ts` against `/api/fs/home` + `/api/fs/list` + settings projects
 - Composer `/` `@`: `src/chat/composerCatalog.ts`
 - Assistant admission: `src/assistants/admission.ts` → `POST /api/openchamber/assistants/:id/messages`
+- Assistant unread / mark-all: `src/assistants/api.ts` → `POST /api/openchamber/assistants/:id/contact/read` (`{ generation, ordinal, messageID }`). Mark-all fans out unread+`readTip` in batches of 4. Snapshot parse defaults `unreadCount` to 0; malformed counts/positions fail closed. Portable open/latest-visible read mark uses snapshot `readTip` (Cap IntersectionObserver geometry is a host residual). Failure ≠ empty / no fake mark-success.
 - Voice: `src/settings/dictation.ts` — `/api/dictation/*` only (no invented ASR)
 - About diagnostics: `src/settings/diagnostics.ts`
 

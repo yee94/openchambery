@@ -47,6 +47,10 @@ export type LynxViewProps = {
   'data-lynx-session-status-current'?: string;
   'data-lynx-session-status-type'?: string;
   'data-lynx-session-status-unread'?: string;
+  'data-lynx-assistant-unread-badge'?: string;
+  'data-lynx-assistant-unread-count'?: string;
+  'data-lynx-assistant-mark-all-read'?: string;
+  'data-lynx-dock-assistant-unread'?: string;
   'data-lynx-session-busy-indicator'?: string;
   'data-lynx-session-status-running-count'?: string;
   'data-lynx-session-status-open-sheet'?: string;

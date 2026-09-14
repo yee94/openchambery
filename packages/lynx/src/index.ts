@@ -140,10 +140,18 @@ export {
   loadAssistantSnapshot,
   loadAssistantCapability,
   ensureAssistantSession,
+  markLynxAssistantContactRead,
+  markAllLynxAssistantsRead,
   parseLynxAssistantSnapshot,
+  parseLynxAssistantReadPosition,
+  parseLynxAssistantReadResponse,
+  formatLynxAssistantUnreadBadge,
+  selectLynxAssistantUnreadTotal,
   type LynxAssistantDTO,
   type LynxAssistantSnapshot,
   type LynxAssistantLoadResult,
+  type LynxAssistantReadPosition,
+  type LynxAssistantReadResponse,
 } from './assistants';
 export {
   loadGlobalScheduledTasks,

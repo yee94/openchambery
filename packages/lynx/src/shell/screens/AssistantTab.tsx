@@ -3,10 +3,16 @@ import { useEffect, useState } from 'react';
 import {
   deleteLynxAssistant,
   loadAssistantSnapshot,
+  markAllLynxAssistantsRead,
   setLynxAssistantsEnabled,
 } from '../../assistants/api';
 import { LynxShareWelcome } from '../../assistants/ShareWelcome';
-import type { LynxAssistantDTO, LynxAssistantLoadResult } from '../../assistants/types';
+import { LynxAssistantUnreadBadge } from '../../assistants/UnreadBadge';
+import type { LynxAssistantDTO, LynxAssistantLoadResult, LynxAssistantSnapshot } from '../../assistants/types';
+import {
+  lynxAssistantsEligibleForMarkAll,
+  selectLynxAssistantUnreadTotal,
+} from '../../assistants/unread';
 import { lynxT, tabLabel } from '../../i18n/catalog';
 import { LynxScrollView, LynxText, LynxView } from '../../lynx-elements';
 import type { LynxRuntimeFetch } from '../../runtime/fetch';
@@ -28,6 +34,10 @@ export type AssistantTabProps = {
   resultOverride?: LynxAssistantLoadResult | null;
   /** Show Cap AssistantShareWelcome education chrome once. */
   shareWelcomeEnabled?: boolean;
+  /** Dock / shell unread total. `null` = unknown (failure ≠ 0). */
+  onUnreadTotalChange?: (total: number | null) => void;
+  /** After mark-all / mutations so the dock can refresh. */
+  onSnapshotChanged?: (snapshot: LynxAssistantSnapshot) => void;
 };
 
 function modeLabel(locale: string, mode: LynxAssistantDTO['mode']): string {
@@ -65,9 +75,12 @@ function AssistantCard({
         <LynxText style={{ color: cssVar('surface.foreground'), fontSize: '16px', fontWeight: '700' }}>
           {assistant.name}
         </LynxText>
-        <LynxText style={{ color: cssVar('surface.mutedForeground'), fontSize: '12px' }}>
-          {modeLabel(locale, assistant.mode)}
-        </LynxText>
+        <LynxView style={{ flexDirection: 'row', alignItems: 'center' }}>
+          <LynxAssistantUnreadBadge locale={locale} count={assistant.unreadCount} />
+          <LynxText style={{ color: cssVar('surface.mutedForeground'), fontSize: '12px', marginLeft: '8px' }}>
+            {modeLabel(locale, assistant.mode)}
+          </LynxText>
+        </LynxView>
       </LynxView>
       <LynxText style={{ color: cssVar('surface.mutedForeground'), fontSize: '12px', marginTop: '6px' }}>
         {assistant.effectiveWorkspacePath}
@@ -111,6 +124,8 @@ export function AssistantTab({
   onOpenAssistantsSettings,
   resultOverride = null,
   shareWelcomeEnabled = true,
+  onUnreadTotalChange,
+  onSnapshotChanged,
 }: AssistantTabProps) {
   const [result, setResult] = useState<LynxAssistantLoadResult | null>(resultOverride);
   const [reloadToken, setReloadToken] = useState(0);
@@ -134,6 +149,15 @@ export function AssistantTab({
       cancelled = true;
     };
   }, [runtimeFetch, resultOverride, reloadToken]);
+
+  useEffect(() => {
+    if (!result) return;
+    if (result.status === 'ok') {
+      onUnreadTotalChange?.(selectLynxAssistantUnreadTotal(result.snapshot));
+      return;
+    }
+    onUnreadTotalChange?.(null);
+  }, [result]);
 
   const refresh = () => setReloadToken((value) => value + 1);
 
@@ -183,6 +207,35 @@ export function AssistantTab({
       refresh();
     })();
   };
+
+  const handleMarkAllRead = () => {
+    if (busy || result?.status !== 'ok') return;
+    const snapshot = result.snapshot;
+    if (lynxAssistantsEligibleForMarkAll(snapshot).length === 0) return;
+    setBusy(true);
+    setActionError(null);
+    void (async () => {
+      const outcome = await markAllLynxAssistantsRead(runtimeFetch, snapshot);
+      setBusy(false);
+      if (outcome.status === 'no-runtime') {
+        setActionError(lynxT(locale, 'lynx.assistant.noRuntime'));
+        return;
+      }
+      if (outcome.snapshot) {
+        setResult({ status: 'ok', snapshot: outcome.snapshot });
+        onSnapshotChanged?.(outcome.snapshot);
+        onUnreadTotalChange?.(selectLynxAssistantUnreadTotal(outcome.snapshot));
+      } else {
+        refresh();
+      }
+      if (outcome.failed > 0) {
+        setActionError(lynxT(locale, 'lynx.assistant.unread.markAllFailed'));
+      }
+    })();
+  };
+
+  const markAllVisible = result?.status === 'ok'
+    && lynxAssistantsEligibleForMarkAll(result.snapshot).length > 0;
 
   return (
     <LynxScrollView
@@ -277,6 +330,25 @@ export function AssistantTab({
               {lynxT(locale, 'lynx.assistant.enable')}
             </LynxText>
           </LynxView>
+        </LynxView>
+      ) : null}
+
+      {markAllVisible ? (
+        <LynxView
+          bindtap={handleMarkAllRead}
+          accessibility-role="button"
+          accessibility-label={lynxT(locale, 'lynx.assistant.unread.markAll')}
+          data-lynx-assistant-mark-all-read="true"
+          style={{
+            marginBottom: '12px',
+            alignSelf: 'flex-end',
+            padding: '6px 8px',
+            opacity: busy ? 0.6 : 1,
+          }}
+        >
+          <LynxText style={{ color: cssVar('surface.mutedForeground'), fontSize: '12px', fontWeight: '600' }}>
+            {lynxT(locale, 'lynx.assistant.unread.markAll')}
+          </LynxText>
         </LynxView>
       ) : null}
 

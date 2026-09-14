@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
 
-import { ensureAssistantSession } from '../assistants/api';
+import { ensureAssistantSession, loadAssistantSnapshot } from '../assistants/api';
 import { LynxShareBridge } from '../assistants/ShareBridge';
 import { createLynxShareInbox, type LynxShareInbox } from '../assistants/shareInbox';
-import type { LynxAssistantDTO } from '../assistants/types';
+import type { LynxAssistantDTO, LynxAssistantReadPosition, LynxAssistantSnapshot } from '../assistants/types';
+import { selectLynxAssistantUnreadTotal } from '../assistants/unread';
 import { LynxChatScreen } from '../chat/ChatScreen';
 import { LynxSessionsSheet } from '../chat/SessionsSheet';
 import { relatedSessionsFromSessionIndex } from '../chat/sessionStatusBar';
@@ -74,6 +75,8 @@ function RootTab({
   onOpenAssistantSettings,
   onOpenAssistantsSettings,
   settingsInitialSlug,
+  onUnreadTotalChange,
+  onSnapshotChanged,
 }: {
   tab: LynxTabId;
   locale: string;
@@ -90,6 +93,8 @@ function RootTab({
   onOpenAssistantSettings: (assistantId: string) => void;
   onOpenAssistantsSettings: () => void;
   settingsInitialSlug: LynxMobileSettingsSlug | null;
+  onUnreadTotalChange?: (total: number | null) => void;
+  onSnapshotChanged?: (snapshot: LynxAssistantSnapshot) => void;
 }) {
   switch (tab) {
     case 'projects':
@@ -113,6 +118,8 @@ function RootTab({
           onOpenNeedsSession={onOpenAssistantNeedsSession}
           onOpenAssistantSettings={onOpenAssistantSettings}
           onOpenAssistantsSettings={onOpenAssistantsSettings}
+          onUnreadTotalChange={onUnreadTotalChange}
+          onSnapshotChanged={onSnapshotChanged}
         />
       );
     case 'scheduled':
@@ -148,6 +155,12 @@ export function LynxShellApp({
   const [settingsInitialSlug, setSettingsInitialSlug] = useState<LynxMobileSettingsSlug | null>(null);
   const [assistantsFocusId, setAssistantsFocusId] = useState<string | null>(null);
   const [chatSheet, setChatSheet] = useState<LynxChatSheetKind | null>(null);
+  const [assistantUnreadTotal, setAssistantUnreadTotal] = useState<number | null>(null);
+  const [assistantReadTip, setAssistantReadTip] = useState<{
+    assistantId: string;
+    readTip: LynxAssistantReadPosition | null;
+  } | null>(null);
+  const [assistantUnreadReload, setAssistantUnreadReload] = useState(0);
   const fullPageAutoGlassSkin = host.chromeOwner === 'lynx';
   const dockVisible = shouldPaintLynxDock({
     embedding: {
@@ -159,6 +172,22 @@ export function LynxShellApp({
     },
     navigation,
   });
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      const outcome = await loadAssistantSnapshot(runtimeFetch);
+      if (cancelled) return;
+      if (outcome.status === 'ok') {
+        setAssistantUnreadTotal(selectLynxAssistantUnreadTotal(outcome.snapshot));
+        return;
+      }
+      setAssistantUnreadTotal(null);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [runtimeFetch, assistantUnreadReload]);
 
   const selectTab = (tab: LynxTabId) => {
     setAssistantNeedsSessionNote(null);
@@ -200,6 +229,7 @@ export function LynxShellApp({
 
   const openAssistantConversation = (assistant: LynxAssistantDTO) => {
     setAssistantNeedsSessionNote(null);
+    setAssistantReadTip({ assistantId: assistant.id, readTip: assistant.readTip });
     setNavigation((state) => reduceLynxNavigation(state, {
       type: 'openAssistant',
       assistantId: assistant.id,
@@ -211,6 +241,7 @@ export function LynxShellApp({
 
   const openAssistantNeedsSession = (assistant: LynxAssistantDTO) => {
     // Cap AssistantView: ensure only while unbound — never invent a chat id.
+    setAssistantReadTip({ assistantId: assistant.id, readTip: assistant.readTip });
     setNavigation((state) => reduceLynxNavigation(state, {
       type: 'openAssistant',
       assistantId: assistant.id,
@@ -464,6 +495,15 @@ export function LynxShellApp({
             onSessionSwipe={(_direction, targetId) => selectRelatedSession(targetId)}
             onOpenSessionsSheet={openSessionsSheet}
             headerSwipeDisabled={sessionsSheetOpen}
+            assistantId={assistantRoute.assistantId}
+            assistantReadTip={
+              assistantReadTip?.assistantId === assistantRoute.assistantId
+                ? assistantReadTip.readTip
+                : null
+            }
+            onAssistantReadMarked={() => {
+              setAssistantUnreadReload((value) => value + 1);
+            }}
           />
         ) : secondary?.kind === 'draft' ? (
           <LynxDraftComposer
@@ -546,6 +586,10 @@ export function LynxShellApp({
               }));
             }}
             settingsInitialSlug={settingsInitialSlug}
+            onUnreadTotalChange={setAssistantUnreadTotal}
+            onSnapshotChanged={(snapshot) => {
+              setAssistantUnreadTotal(selectLynxAssistantUnreadTotal(snapshot));
+            }}
           />
         )}
       </LynxView>
@@ -554,6 +598,7 @@ export function LynxShellApp({
         activeTab={navigation.activeTab}
         visible={dockVisible}
         onTabSelected={selectTab}
+        assistantUnreadCount={assistantUnreadTotal}
       />
       <LynxSessionsSheet
         locale={host.locale}
