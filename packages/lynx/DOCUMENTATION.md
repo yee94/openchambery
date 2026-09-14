@@ -113,4 +113,4 @@ Vitest project `@openchamber/lynx` (`src/**/*.test.ts`). Navigation harness: `sr
 | CI绿 | Package typecheck + Vitest. Track CI (Android debug APK + iOS sim) is a later slice. |
 | 真机过 | Not executed (Linux cloud VM; no Xcode / physical device). |
 
-Track tip (docs honesty): `work/lynx-native` @ `3fda6eb3f2f72580c7a25036c413fa8e5c17ab65` (PR #131 / Next #91 MERGED). Published tip APK: `lynx-v2-debug-4cc762c` (prerelease; exists for tip after PR #130 / `4cc762cd2`). No `lynx-v2-debug-3fda6eb` at write time — do not invent. Mobile CI may later publish for newer tip. Product **NOT DONE** / 三关未齐 / not EXHAUSTED. 真机残差: Connect welcome **card chrome** confirm for Yee. Host-only unchanged.
+Track tip (docs honesty): `work/lynx-native` @ `63da3d63aa354eb66677f6ff57d5dd546ddca24b` (PR #132 / Next #92 MERGED). Published tip APK: `lynx-v2-debug-63da3d6` (prerelease; exists). Was stale `lynx-v2-debug-4cc762c` / tip `3fda6eb3f2f72580c7a25036c413fa8e5c17ab65`. Do not invent a newer APK than published. Product **NOT DONE** / 三关未齐 / not EXHAUSTED. 真机残差: Connect welcome **card chrome** confirm for Yee. Host-only unchanged.
