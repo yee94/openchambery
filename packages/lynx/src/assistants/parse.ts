@@ -2,6 +2,8 @@ import type {
   LynxAssistantCapability,
   LynxAssistantDTO,
   LynxAssistantMode,
+  LynxAssistantReadPosition,
+  LynxAssistantReadResponse,
   LynxAssistantSnapshot,
 } from './types';
 
@@ -49,6 +51,44 @@ const mode = (value: unknown, resource: string): LynxAssistantMode => {
   throw new LynxAssistantParseError(`invalid_${resource}_response`);
 };
 
+/** Cap `readInteger` — safe non-negative integer; reject floats / negatives. */
+const readInteger = (value: unknown): number => {
+  const result = number(value, 'assistant_read');
+  if (!Number.isSafeInteger(result) || result < 0) {
+    throw new LynxAssistantParseError('invalid_assistant_read_response');
+  }
+  return result;
+};
+
+/** Cap `parseAssistantReadPosition` — fail closed on malformed positions. */
+export const parseLynxAssistantReadPosition = (payload: unknown): LynxAssistantReadPosition => {
+  const value = record(payload, 'assistant_read');
+  return {
+    generation: readInteger(value.generation),
+    ordinal: readInteger(value.ordinal),
+    messageID: string(value.messageID, 'assistant_read'),
+  };
+};
+
+const parseLynxAssistantUnread = (value: Record<string, unknown>) => ({
+  unreadCount: value.unreadCount === undefined ? 0 : readInteger(value.unreadCount),
+  readWatermark: value.readWatermark == null ? null : parseLynxAssistantReadPosition(value.readWatermark),
+  readTip: value.readTip == null ? null : parseLynxAssistantReadPosition(value.readTip),
+});
+
+/** Cap `parseAssistantReadResponse` — never invent a successful mark. */
+export const parseLynxAssistantReadResponse = (payload: unknown): LynxAssistantReadResponse => {
+  const value = record(payload, 'assistant_read');
+  return {
+    assistantID: string(value.assistantID, 'assistant_read'),
+    changed: bool(value.changed, 'assistant_read'),
+    unreadCount: readInteger(value.unreadCount),
+    readWatermark: parseLynxAssistantReadPosition(value.readWatermark),
+    readTip: parseLynxAssistantReadPosition(value.readTip),
+    revision: readInteger(value.revision),
+  };
+};
+
 /** Cap `parseAssistantDTO` contract — fail closed, never invent rows. */
 export const parseLynxAssistantDTO = (payload: unknown): LynxAssistantDTO => {
   const value = record(payload, 'assistant');
@@ -62,6 +102,7 @@ export const parseLynxAssistantDTO = (payload: unknown): LynxAssistantDTO => {
     throw new LynxAssistantParseError('invalid_assistant_response');
   }
   return {
+    ...parseLynxAssistantUnread(value),
     id: string(value.id, 'assistant'),
     revision: number(value.revision, 'assistant'),
     enabled: bool(value.enabled, 'assistant'),

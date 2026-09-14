@@ -356,6 +356,9 @@ Counts below are inventory rows (user-visible capabilities + owning modules), no
 | Share welcome (native only) | `AssistantShareWelcome` |
 | Context menu: edit, delete, share guide | `MobileAssistantTab.tsx` |
 | Jump from assistant reply into source session | `openSession` on phone |
+| Unread badge (99+) + dock total | Cap `AssistantUnreadBadge` / `useAssistantUnreadTotal` — Lynx `LynxAssistantUnreadBadge` + dock |
+| Mark all as read | Cap `AssistantMarkAllReadButton` / `markAllAssistantsRead` batch 4 — Lynx `markAllLynxAssistantsRead` |
+| Per-contact read mark | Cap `AssistantReadMarker` + `POST …/contact/read` — Lynx portable open/`readTip` mark (IntersectionObserver host residual) |
 
 ### 6. Scheduled tasks tab
 

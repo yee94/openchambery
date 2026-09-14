@@ -1,12 +1,15 @@
 import type { LynxRuntimeFetch } from '../runtime/fetch';
-import { parseLynxAssistantCapability, parseLynxAssistantDTO, parseLynxAssistantSnapshot, LynxAssistantParseError } from './parse';
+import { parseLynxAssistantCapability, parseLynxAssistantDTO, parseLynxAssistantReadPosition, parseLynxAssistantReadResponse, parseLynxAssistantSnapshot, LynxAssistantParseError } from './parse';
 import type {
   LynxAssistantCapability,
   LynxAssistantDTO,
   LynxAssistantLoadResult,
   LynxAssistantMode,
+  LynxAssistantReadPosition,
+  LynxAssistantReadResponse,
   LynxAssistantSnapshot,
 } from './types';
+import { LYNX_ASSISTANT_MARK_ALL_BATCH_SIZE, lynxAssistantsEligibleForMarkAll } from './unread';
 
 const ensureOk = async (response: { ok: boolean; status: number }): Promise<void> => {
   if (response.ok) return;
@@ -339,6 +342,116 @@ export const resolveLynxAssistantCreateDefaults = async (
       error: error instanceof Error ? error : new Error(String(error)),
     };
   }
+};
+
+export type LynxAssistantMarkReadResult =
+  | { status: 'ok'; read: LynxAssistantReadResponse; snapshot: LynxAssistantSnapshot | null }
+  | { status: 'no-runtime' }
+  | { status: 'failed'; error: Error; httpStatus?: number };
+
+export type LynxAssistantMarkAllReadResult =
+  | { status: 'ok'; failed: number; snapshot: LynxAssistantSnapshot | null }
+  | { status: 'no-runtime' };
+
+const refreshAssistantSnapshot = async (
+  runtimeFetch: LynxRuntimeFetch,
+  options?: { signal?: AbortSignal },
+): Promise<LynxAssistantSnapshot | null> => {
+  const refresh = await loadAssistantSnapshot(runtimeFetch, options);
+  return refresh.status === 'ok' ? refresh.snapshot : null;
+};
+
+/**
+ * Cap `POST /api/openchamber/assistants/:id/contact/read` `{ generation, ordinal, messageID }`.
+ * Real POST only — no-runtime / HTTP / parse failures stay explicit. Snapshot
+ * refresh is best-effort after a confirmed POST; refresh failure does not
+ * invent an empty catalog.
+ */
+export const markLynxAssistantContactRead = async (
+  runtimeFetch: LynxRuntimeFetch | null | undefined,
+  assistantID: string,
+  position: LynxAssistantReadPosition,
+  options?: { signal?: AbortSignal; refreshSnapshot?: boolean },
+): Promise<LynxAssistantMarkReadResult> => {
+  if (!runtimeFetch) return { status: 'no-runtime' };
+  const id = assistantID.trim();
+  if (!id) {
+    return { status: 'failed', error: new Error('assistant id required') };
+  }
+  try {
+    const captured = parseLynxAssistantReadPosition(position);
+    const response = await runtimeFetch(
+      `/api/openchamber/assistants/${encodeURIComponent(id)}/contact/read`,
+      {
+        method: 'POST',
+        headers: {
+          Accept: 'application/json',
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(captured),
+        signal: options?.signal,
+      },
+    );
+    if (response.status === 0) return { status: 'no-runtime' };
+    if (!response.ok) {
+      const failed = await mutationFailure(response, `POST /api/openchamber/assistants/${id}/contact/read`);
+      if (failed.status === 'no-runtime') return { status: 'no-runtime' };
+      if (failed.status === 'failed') {
+        return { status: 'failed', error: failed.error, httpStatus: failed.httpStatus };
+      }
+      return { status: 'failed', error: new Error('contact/read failed') };
+    }
+    const read = parseLynxAssistantReadResponse(await response.json());
+    if (read.assistantID !== id) {
+      return {
+        status: 'failed',
+        error: new Error('invalid_assistant_read_response'),
+      };
+    }
+    const shouldRefresh = options?.refreshSnapshot !== false;
+    const snapshot = shouldRefresh ? await refreshAssistantSnapshot(runtimeFetch, options) : null;
+    return { status: 'ok', read, snapshot };
+  } catch (error) {
+    if (error instanceof LynxAssistantParseError) {
+      return { status: 'failed', error };
+    }
+    return {
+      status: 'failed',
+      error: error instanceof Error ? error : new Error(String(error)),
+    };
+  }
+};
+
+/**
+ * Cap `markAllAssistantsRead`: fanout over unread + readTip, batch size 4,
+ * return `{ failed }`. Refresh snapshot after. Never fake-success a failed POST.
+ */
+export const markAllLynxAssistantsRead = async (
+  runtimeFetch: LynxRuntimeFetch | null | undefined,
+  snapshot: LynxAssistantSnapshot,
+  options?: { signal?: AbortSignal },
+): Promise<LynxAssistantMarkAllReadResult> => {
+  if (!runtimeFetch) return { status: 'no-runtime' };
+  const targets = lynxAssistantsEligibleForMarkAll(snapshot);
+  const results: PromiseSettledResult<LynxAssistantMarkReadResult>[] = [];
+  for (let index = 0; index < targets.length; index += LYNX_ASSISTANT_MARK_ALL_BATCH_SIZE) {
+    const batch = targets.slice(index, index + LYNX_ASSISTANT_MARK_ALL_BATCH_SIZE);
+    results.push(...await Promise.allSettled(batch.map(async (target) => {
+      const outcome = await markLynxAssistantContactRead(runtimeFetch, target.id, target.position, {
+        signal: options?.signal,
+        refreshSnapshot: false,
+      });
+      if (outcome.status !== 'ok') {
+        throw outcome.status === 'failed'
+          ? outcome.error
+          : new Error(outcome.status);
+      }
+      return outcome;
+    })));
+  }
+  const failed = results.filter((result) => result.status === 'rejected').length;
+  const nextSnapshot = await refreshAssistantSnapshot(runtimeFetch, options);
+  return { status: 'ok', failed, snapshot: nextSnapshot };
 };
 
 export type { LynxAssistantSnapshot, LynxAssistantLoadResult };

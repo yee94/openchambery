@@ -21,6 +21,13 @@ describe('Lynx semantic tokens', () => {
     expect(cssVar('status.onError')).toBe('#fffdf4');
   });
 
+  test('exposes Cap status-info for unread badges', () => {
+    expect(LYNX_TOKEN_CSS_VARS['status.info']).toBe('--status-info');
+    expect(LYNX_TOKEN_CSS_VARS['status.onInfo']).toBe('--status-info-foreground');
+    expect(cssVar('status.info')).toBe('#205EA6');
+    expect(cssVar('status.onInfo')).toBe('#fffdf4');
+  });
+
   test('every semantic token maps to a Cap CSS var name and resolves to Flexoki-light hex', () => {
     const keys = Object.keys(LYNX_TOKEN_CSS_VARS) as LynxSemanticToken[];
     expect(keys.length).toBeGreaterThanOrEqual(11);

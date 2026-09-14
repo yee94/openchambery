@@ -1,5 +1,22 @@
 export type LynxAssistantMode = 'continuous' | 'stateless';
 
+/** Cap `AssistantReadPosition` — POST body for contact/read. */
+export type LynxAssistantReadPosition = {
+  generation: number;
+  ordinal: number;
+  messageID: string;
+};
+
+/** Cap `AssistantReadResponse` from POST …/contact/read. */
+export type LynxAssistantReadResponse = {
+  assistantID: string;
+  changed: boolean;
+  unreadCount: number;
+  readWatermark: LynxAssistantReadPosition;
+  readTip: LynxAssistantReadPosition;
+  revision: number;
+};
+
 export type LynxAssistantDTO = {
   id: string;
   revision: number;
@@ -21,6 +38,10 @@ export type LynxAssistantDTO = {
   createdAt: number | null;
   updatedAt: number;
   tombstoneAt: number | null;
+  /** Absent on older servers — parser defaults to 0. */
+  unreadCount: number;
+  readTip: LynxAssistantReadPosition | null;
+  readWatermark: LynxAssistantReadPosition | null;
 };
 
 export type LynxAssistantSnapshot = {

@@ -79,6 +79,8 @@ import {
   type LynxLiveTailConnectionState,
 } from './liveTail';
 import { resolveLynxComposerOccupancyInset } from './imeOccupancy';
+import { LynxAssistantReadMarker } from '../assistants/ReadMarker';
+import type { LynxAssistantReadPosition } from '../assistants/types';
 import type { LynxChatRoute } from '../shell/navigation';
 import {
   buildLynxChatContextChrome,
@@ -192,6 +194,14 @@ export type LynxChatScreenProps = {
   headerSwipeDispatchRef?: MutableRefObject<
     ((event: Parameters<LynxHeaderSwipeMachine['dispatch']>[0]) => void) | null
   >;
+  /**
+   * Cap Assistant contact surface. When set with `assistantReadTip`, Lynx
+   * posts open/latest-visible mark using the snapshot tip — no invented
+   * position, no fake success. IntersectionObserver geometry is a host residual.
+   */
+  assistantId?: string | null;
+  assistantReadTip?: LynxAssistantReadPosition | null;
+  onAssistantReadMarked?: () => void;
 };
 
 const DEFAULT_MODEL: LynxComposerModel = {
@@ -229,6 +239,9 @@ export function LynxChatScreen({
   onOpenSessionsSheet,
   headerSwipeDisabled = false,
   headerSwipeDispatchRef,
+  assistantId = null,
+  assistantReadTip = null,
+  onAssistantReadMarked,
 }: LynxChatScreenProps) {
   const [timeline, setTimeline] = useState<LynxTimelineState>(() =>
     createEmptyTimelineState(sessionId, directory),
@@ -1066,6 +1079,16 @@ export function LynxChatScreen({
       data-lynx-header-swipe-surface="true"
       accessibility-hint={lynxT(locale, 'lynx.chat.headerSwipe.surface')}
     >
+      {assistantId ? (
+        <LynxAssistantReadMarker
+          key={assistantId}
+          runtimeFetch={runtimeFetch}
+          assistantId={assistantId}
+          readTip={assistantReadTip}
+          viewing
+          onMarked={onAssistantReadMarked}
+        />
+      ) : null}
       <LynxView style={{ flexDirection: 'row', padding: '12px 16px', alignItems: 'center' }}>
         <LynxView bindtap={onBack} accessibility-label={lynxT(locale, 'lynx.shell.back')}>
           <LynxText style={{ color: cssVar('primary.base') }}>

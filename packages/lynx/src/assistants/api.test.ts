@@ -6,10 +6,13 @@ import {
   deleteLynxAssistant,
   ensureAssistantSession,
   loadAssistantSnapshot,
+  markAllLynxAssistantsRead,
+  markLynxAssistantContactRead,
   resolveLynxAssistantCreateDefaults,
   setLynxAssistantsEnabled,
 } from './api';
 import { parseLynxAssistantSnapshot } from './parse';
+import { LYNX_ASSISTANT_MARK_ALL_BATCH_SIZE } from './unread';
 
 const jsonResponse = (status: number, body: unknown): LynxHttpResponse => ({
   ok: status >= 200 && status < 300,
@@ -38,6 +41,9 @@ const assistant = {
   createdAt: null,
   updatedAt: 2,
   tombstoneAt: null,
+  unreadCount: 0,
+  readTip: null,
+  readWatermark: null,
 };
 
 const draft = {
@@ -200,5 +206,110 @@ describe('assistants create / enable / delete', () => {
       jsonResponse(200, { providers: [] })
     ));
     expect(result.status).toBe('failed');
+  });
+});
+
+const readTip = { generation: 2, ordinal: 5, messageID: 'msg_tip' };
+
+const readResponse = (assistantID: string) => ({
+  assistantID,
+  changed: true,
+  unreadCount: 0,
+  readWatermark: readTip,
+  readTip,
+  revision: 9,
+});
+
+describe('assistants contact read / mark-all', () => {
+  test('markLynxAssistantContactRead POSTs Cap position and parses read response', async () => {
+    const result = await markLynxAssistantContactRead(async (path, init) => {
+      if (path === '/api/openchamber/assistants/asst_1/contact/read') {
+        expect(init?.method).toBe('POST');
+        expect(JSON.parse(String(init?.body))).toEqual(readTip);
+        return jsonResponse(200, readResponse('asst_1'));
+      }
+      expect(path).toBe('/api/openchamber/assistants/snapshot');
+      return jsonResponse(200, { revision: 9, enabled: true, assistants: [assistant] });
+    }, 'asst_1', readTip);
+    expect(result.status).toBe('ok');
+    if (result.status !== 'ok') return;
+    expect(result.read.unreadCount).toBe(0);
+    expect(result.snapshot?.revision).toBe(9);
+  });
+
+  test('markLynxAssistantContactRead no-runtime / HTTP failure stay honest', async () => {
+    expect(await markLynxAssistantContactRead(null, 'asst_1', readTip)).toEqual({
+      status: 'no-runtime',
+    });
+    const failed = await markLynxAssistantContactRead(async () => (
+      jsonResponse(500, { error: 'read_failed' })
+    ), 'asst_1', readTip);
+    expect(failed.status).toBe('failed');
+    if (failed.status !== 'failed') return;
+    expect(failed.error.message).toBe('read_failed');
+  });
+
+  test('markAllLynxAssistantsRead fans out unread+readTip in batches of 4', async () => {
+    const targets = Array.from({ length: 5 }, (_, index) => ({
+      ...assistant,
+      id: `asst_${index}`,
+      unreadCount: 1,
+      readTip,
+    }));
+    const skipped = { ...assistant, id: 'asst_skip', unreadCount: 2, readTip: null };
+    const snapshot = parseLynxAssistantSnapshot({
+      revision: 1,
+      enabled: true,
+      assistants: [...targets, skipped],
+    });
+    const posted: string[] = [];
+    let maxInFlight = 0;
+    let inFlight = 0;
+    const result = await markAllLynxAssistantsRead(async (path, init) => {
+      if (path.endsWith('/contact/read')) {
+        inFlight += 1;
+        maxInFlight = Math.max(maxInFlight, inFlight);
+        posted.push(String(path));
+        expect(init?.method).toBe('POST');
+        inFlight -= 1;
+        const id = path.split('/')[4] ?? '';
+        return jsonResponse(200, readResponse(id));
+      }
+      return jsonResponse(200, { revision: 2, enabled: true, assistants: [] });
+    }, snapshot);
+    expect(result.status).toBe('ok');
+    if (result.status !== 'ok') return;
+    expect(posted).toHaveLength(5);
+    expect(posted).not.toContain('/api/openchamber/assistants/asst_skip/contact/read');
+    expect(maxInFlight).toBeLessThanOrEqual(LYNX_ASSISTANT_MARK_ALL_BATCH_SIZE);
+    expect(result.failed).toBe(0);
+    expect(result.snapshot?.revision).toBe(2);
+  });
+
+  test('markAllLynxAssistantsRead returns failed count without fake-success', async () => {
+    const snapshot = parseLynxAssistantSnapshot({
+      revision: 1,
+      enabled: true,
+      assistants: [
+        { ...assistant, id: 'ok', unreadCount: 1, readTip },
+        { ...assistant, id: 'bad', unreadCount: 3, readTip },
+      ],
+    });
+    const result = await markAllLynxAssistantsRead(async (path) => {
+      if (path.includes('/bad/contact/read')) return jsonResponse(500, { error: 'boom' });
+      if (path.endsWith('/contact/read')) return jsonResponse(200, readResponse('ok'));
+      return jsonResponse(200, { revision: 3, enabled: true, assistants: [] });
+    }, snapshot);
+    expect(result.status).toBe('ok');
+    if (result.status !== 'ok') return;
+    expect(result.failed).toBe(1);
+  });
+
+  test('markAllLynxAssistantsRead null runtime is no-runtime', async () => {
+    expect(await markAllLynxAssistantsRead(null, {
+      revision: 1,
+      enabled: true,
+      assistants: [],
+    })).toEqual({ status: 'no-runtime' });
   });
 });

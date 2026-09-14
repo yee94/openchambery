@@ -27,4 +27,9 @@ describe('Lynx shell catalog', () => {
     expect(lynxT('ja', 'mobile.tabs.assistant')).toBe('助手');
     expect(lynxT('en', 'mobile.nav.aria')).toBe('Mobile navigation');
   });
+
+  test('assistant unread label interpolates count', () => {
+    expect(lynxT('en', 'lynx.assistant.unread.label', { count: 3 })).toBe('3 unread');
+    expect(lynxT('zh-CN', 'lynx.assistant.unread.label', { count: 12 })).toBe('12 条未读');
+  });
 });

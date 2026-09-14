@@ -527,4 +527,11 @@ Chosen mode is written at the top of `packages/lynx/README.md` (Mode B iOS 26 ho
 - Cap **main** `MOBILE_SETTINGS_PAGE_SLUGS` is 22 including `archived-sessions` (`ArchivedSessionsPage` + `ArchivedSessionsManager mode="page"`). Tip Cap `packages/ui` still lists 21 — Lynx implements against Cap main.
 - Settings in-tab push reuses `listLynxArchivedSessions` / `unarchiveLynxSession` / `LynxArchivedSessionsManager` (SessionsSheet dialog unchanged). Failure ≠ empty; honest no-runtime; no Cap toast / no invented ASR.
 - Slug/metadata tests lock 22. Base tip `c451d696b` (PR #129 / Next #89 MERGED). Published APK honesty stays `lynx-v2-debug-8ec0384` (release exists for tip `8ec03842f`) — do not invent a newer APK for this PR head.
-- Product **NOT DONE** / 三关未齐 / not EXHAUSTED. 真机残差 unchanged: Connect welcome **card chrome** confirm still open for Yee. No 真机过 claim. Host-only unchanged. Out of scope: Assistant unread + mark-all-read; `@dnd-kit`; merge to main.
+- Product **NOT DONE** / 三关未齐 / not EXHAUSTED. 真机残差 unchanged: Connect welcome **card chrome** confirm still open for Yee. No 真机过 claim. Host-only unchanged. Out of scope at merge: Assistant unread + mark-all-read (closed in Next #91); `@dnd-kit`; merge to main.
+
+## Notes — Cap Assistant unread + mark-all-read (Next #91 / 2026-09-14)
+
+- Cap **main** `AssistantUnreadBadge` / `AssistantMarkAllReadButton` / `AssistantReadMarker` + `POST /api/openchamber/assistants/:id/contact/read` `{ generation, ordinal, messageID }`. Mark-all fans out `unreadCount > 0 && readTip` in batches of 4 and returns `{ failed }`.
+- Lynx parse defaults absent `unreadCount` to 0; rejects malformed counts/positions. Real POST only; refresh snapshot after; no Cap toast (portable banner). Catalog row badges + dock Assistant-tab total (99+). Portable open/latest-visible mark uses snapshot `readTip` while viewing that assistant conversation. Cap IntersectionObserver / scroll-bottom / focus geometry is a documented host residual — never fake mark-success.
+- Base tip `4cc762cd2` (PR #130 / Next #90 MERGED). Published APK honesty stays `lynx-v2-debug-8ec0384` (release exists for tip `8ec03842f`) — do not invent a newer APK for this PR head.
+- Product **NOT DONE** / 三关未齐 / not EXHAUSTED. 真机残差 unchanged: Connect welcome **card chrome** confirm still open for Yee. No 真机过 claim. Host-only unchanged (Keychain/camera/IME/Pierre/WKWebView/Mode B/Share ext/iOS IPA/@dnd-kit/MobileWindowMotion/iPad/Cap toast/bulk).
