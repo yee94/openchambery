@@ -22,7 +22,7 @@ Rules:
 1. Chat is a **pushed** secondary page. It is never a fifth dock item. The dock / host tab bar **hides** on chat, draft, assistant conversation, and instances.
 2. Do not ship Mode C (Capacitor WebView dock + optional native overlay). Lynx does not need `openchamber.iosNativeUi`.
 3. A binary that draws both a host `UITabBar` **and** a Lynx floating dock has failed IA.
-4. LegendList-semantics timeline + Settings home (21 slugs) are in this package; rich turn cards, settings editors, FCM, and full CI matrices remain later.
+4. LegendList-semantics timeline + Settings home (22 slugs, Cap main including `archived-sessions`) are in this package; rich turn cards, settings editors, FCM, and full CI matrices remain later.
 
 Code: `src/host/embedding.ts`. Native mirrors: `host/ios/`, `host/android/`.
 

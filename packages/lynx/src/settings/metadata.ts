@@ -53,8 +53,9 @@ export const LYNX_SETTINGS_GROUP_LABEL: Record<LynxSettingsPageGroup, string> = 
 };
 
 /**
- * Titles/groups/keywords mirror Cap SETTINGS_PAGE_METADATA for the 21 mobile slugs.
- * Keep order identical to LYNX_MOBILE_SETTINGS_PAGE_SLUGS / Cap MOBILE list.
+ * Titles/groups/keywords mirror Cap main SETTINGS_PAGE_METADATA for the 22 mobile slugs.
+ * Keep order identical to LYNX_MOBILE_SETTINGS_PAGE_SLUGS / Cap main MOBILE list.
+ * Tip `packages/ui` may still list 21; implement against Cap main.
  */
 export const LYNX_SETTINGS_PAGE_METADATA: readonly LynxSettingsPageMeta[] = [
   {
@@ -95,6 +96,14 @@ export const LYNX_SETTINGS_PAGE_METADATA: readonly LynxSettingsPageMeta[] = [
     group: 'personalization',
     kind: 'single',
     keywords: ['defaults', 'default agent', 'default model', 'retention', 'memory'],
+    body: 'wired',
+  },
+  {
+    slug: 'archived-sessions',
+    title: 'Archived sessions',
+    group: 'personalization',
+    kind: 'single',
+    keywords: ['archive', 'archived', 'restore', 'preview', 'history'],
     body: 'wired',
   },
   {

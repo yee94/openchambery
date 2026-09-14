@@ -3,6 +3,7 @@ import { describe, expect, test } from 'vitest';
 import type { SessionIndexSnapshot } from '../session-index/types';
 import {
   LYNX_ARCHIVED_OTHER_PROJECT_ID,
+  LYNX_ARCHIVED_SESSIONS_NOTES,
   buildLynxArchivedSessionsModel,
   formatLynxArchivedSessionCount,
   getLynxArchivedSessionActivityMs,
@@ -183,5 +184,12 @@ describe('formatLynxArchivedSessionCount', () => {
   test('singular/plural', () => {
     expect(formatLynxArchivedSessionCount(1, 'session', 'sessions')).toBe('1 session');
     expect(formatLynxArchivedSessionCount(3, 'session', 'sessions')).toBe('3 sessions');
+  });
+});
+
+describe('LYNX_ARCHIVED_SESSIONS_NOTES', () => {
+  test('documents Settings page mode plus list/unarchive honesty', () => {
+    expect(LYNX_ARCHIVED_SESSIONS_NOTES.some((note) => note.includes('ArchivedSessionsPage'))).toBe(true);
+    expect(LYNX_ARCHIVED_SESSIONS_NOTES.some((note) => note.includes('never fake-success'))).toBe(true);
   });
 });

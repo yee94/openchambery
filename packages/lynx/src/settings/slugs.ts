@@ -8,6 +8,7 @@ export const LYNX_MOBILE_SETTINGS_PAGE_SLUGS = [
   'chat',
   'notifications',
   'sessions',
+  'archived-sessions',
   'summary-ai',
   'projects',
   'git',

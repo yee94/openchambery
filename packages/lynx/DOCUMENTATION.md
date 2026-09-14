@@ -10,7 +10,7 @@ Lynx native phone shell + connect client for the `work/lynx-native` track.
 - Host embedding decision and host ↔ page bridge (`src/host/`)
 - Lynx 3.8 `<blur-view>` glass mapping and Android blur downgrade (`src/glass/`)
 - Lynx-local catalog for dock / stub copy (`src/i18n/`)
-- Mobile settings **search + 21 slug rows + push stubs** (`src/settings/`)
+- Mobile settings **search + 22 slug rows + push pages** (`src/settings/`) — Cap main includes `archived-sessions`
 - Chat LegendList-semantics timeline + send/stop/queue + Cap global-event SSE live tail (`src/chat/`)
 - Native host embedding sources (`host/ios/`, `host/android/`)
 
