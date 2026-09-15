@@ -85,8 +85,15 @@ jobs:
           distribution: temurin
           java-version: '21'
 
+      # setup-android@v3 default packages is `tools platform-tools`. Google
+      # stopped serving the obsolete SDK Tools package `tools` (2026-09-15;
+      # android-actions/setup-android#537). cmdline-tools is already installed
+      # by this action; pin platform-tools only so sdkmanager stays green.
+      # Do not bump to v4 solely for this — v4 still defaults to `tools`.
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
 
       - name: Install Android platform + build-tools
         run: |

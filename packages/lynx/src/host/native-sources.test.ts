@@ -132,5 +132,9 @@ describe('native host sources', () => {
     expect(mobileCi).toContain('Android sideload APK');
     expect(mobileCi).toContain('lynx-v2-debug-');
     expect(mobileCi).toContain('assembleRelease');
+    // setup-android default `tools` is gone from the Google repository.
+    expect(mobileCi).toContain('android-actions/setup-android@v3');
+    expect(mobileCi).toMatch(/packages:\s*platform-tools/);
+    expect(mobileCi).not.toMatch(/packages:\s*['"]?tools(?:\s|['"]|$)/);
   });
 });
