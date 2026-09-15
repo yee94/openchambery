@@ -3,14 +3,19 @@ import { useEvent } from '@reactuses/core'
 import { Button } from '@/components/ui/button'
 import { Icon } from '@/components/icon/Icon'
 import { useResolvedImageSource, useRuntimeTransportIdentity } from '@/components/chat/imageSource'
+import type { ToolPopupContent } from '@/components/chat/message/types'
 import { getAssistantAttachmentBlob, getAssistantAttachmentDisplay } from '@/lib/assistant-attachment-cache'
 import type { AssistantAttachmentDescriptor } from '@/lib/assistant-attachment-upload'
 import type { AssistantContactFilePart } from '@/queries/assistantDTO'
 import { useI18n } from '@/lib/i18n'
 
-const imageClass = 'max-h-72 max-w-full rounded-[1.35rem] border border-border/40 object-contain'
+const imageClass = 'max-h-72 max-w-full rounded-[1.35rem] border border-border/40 object-contain cursor-zoom-in'
 
-function CachedAttachment({ assistantID, descriptor }: { assistantID: string; descriptor: AssistantAttachmentDescriptor }) {
+function CachedAttachment({ assistantID, descriptor, onShowPopup }: {
+  assistantID: string
+  descriptor: AssistantAttachmentDescriptor
+  onShowPopup?: (content: ToolPopupContent) => void
+}) {
   const { t } = useI18n()
   const transport = useRuntimeTransportIdentity()
   const { attachmentID, sha256, size, mime, filename } = descriptor
@@ -64,7 +69,35 @@ function CachedAttachment({ assistantID, descriptor }: { assistantID: string; de
     }
   })
   const name = filename || t(image ? 'assistants.contact.attachment.image' : 'assistants.contact.attachment.file')
-  if (image && url && !failed) return <img src={url} alt={name} className={imageClass} onError={() => setFailed(true)} data-assistant-contact-image="" />
+  // Same viewer contract as chat attachment images: pass the leased display URL;
+  // the lease lives with this row, and assistant switches close the viewer first.
+  const openPreview = useEvent(() => {
+    if (!onShowPopup || !url) return
+    onShowPopup({
+      open: true,
+      title: name,
+      content: '',
+      metadata: { tool: 'image-preview', filename: name, mime },
+      image: { url, mimeType: mime, filename: name, size, gallery: [{ url, mimeType: mime, filename: name, size }], index: 0 },
+    })
+  })
+  if (image && url && !failed) return (
+    <img
+      src={url}
+      alt={name}
+      className={imageClass}
+      onError={() => setFailed(true)}
+      onClick={openPreview}
+      onKeyDown={(event) => {
+        if (event.key !== 'Enter' && event.key !== ' ') return
+        event.preventDefault()
+        openPreview()
+      }}
+      role="button"
+      tabIndex={0}
+      data-assistant-contact-image=""
+    />
+  )
   return <div className="flex max-w-full flex-col gap-1 rounded-[1.25rem] bg-[var(--surface-muted)] px-3.5 py-2.5 ring-1 ring-inset ring-[var(--surface-subtle)]" data-assistant-contact-file="">
     <span className="flex min-w-0 items-center gap-2.5"><Icon name="file-text" className="size-4 shrink-0 text-muted-foreground" /><span className="truncate typography-ui">{name}</span></span>
     {failed ? <p role="alert" className="typography-micro text-[var(--status-error)]">{t('assistants.contact.attachment.loadFailed')}</p> : null}
@@ -73,20 +106,53 @@ function CachedAttachment({ assistantID, descriptor }: { assistantID: string; de
   </div>
 }
 
-function LegacyAttachment({ part }: { part: AssistantContactFilePart & { url: string } }) {
+function LegacyAttachment({ part, onShowPopup }: { part: AssistantContactFilePart & { url: string }; onShowPopup?: (content: ToolPopupContent) => void }) {
   const { t } = useI18n()
   // Historical contact URLs have no workspace authority. Only direct web/data/blob sources enter the shared resolver.
   const safeSource = /^(?:https?:|data:|blob:)/i.test(part.url) ? part.url : ''
   const source = useResolvedImageSource(safeSource, '')
   const [failed, setFailed] = React.useState(false)
-  if (part.mime.startsWith('image/') && source && !failed) return <img src={source} alt={part.filename || t('assistants.contact.attachment.image')} className={imageClass} onError={() => setFailed(true)} data-assistant-contact-image="" />
+  const name = part.filename || t('assistants.contact.attachment.image')
+  const openPreview = useEvent(() => {
+    if (!onShowPopup || !source) return
+    onShowPopup({
+      open: true,
+      title: name,
+      content: '',
+      metadata: { tool: 'image-preview', filename: name },
+      image: { url: source, filename: name, gallery: [{ url: source, filename: name }], index: 0 },
+    })
+  })
+  if (part.mime.startsWith('image/') && source && !failed) return (
+    <img
+      src={source}
+      alt={name}
+      className={imageClass}
+      onError={() => setFailed(true)}
+      onClick={openPreview}
+      onKeyDown={(event) => {
+        if (event.key !== 'Enter' && event.key !== ' ') return
+        event.preventDefault()
+        openPreview()
+      }}
+      role="button"
+      tabIndex={0}
+      data-assistant-contact-image=""
+    />
+  )
   return <div className="flex max-w-full items-center gap-2.5 rounded-[1.25rem] bg-[var(--surface-muted)] px-3.5 py-2.5" data-assistant-contact-file="">
     <Icon name="file-text" className="size-4 shrink-0 text-muted-foreground" /><span className="truncate typography-ui">{part.filename || t('assistants.contact.attachment.file')}</span>
     {failed ? <Button type="button" size="sm" variant="ghost" onClick={() => setFailed(false)}>{t('chat.history.retry')}</Button> : null}
   </div>
 }
 
-export function AssistantContactAttachment({ assistantID, part }: { assistantID: string; part: AssistantContactFilePart }) {
+export function AssistantContactAttachment({ assistantID, part, onShowPopup }: {
+  assistantID: string
+  part: AssistantContactFilePart
+  onShowPopup?: (content: ToolPopupContent) => void
+}) {
   const transport = useRuntimeTransportIdentity()
-  return 'attachmentID' in part ? <CachedAttachment key={`${transport}:${assistantID}:${part.attachmentID}:${part.sha256}`} assistantID={assistantID} descriptor={part} /> : <LegacyAttachment key={`${transport}:${part.url}`} part={part} />
+  return 'attachmentID' in part
+    ? <CachedAttachment key={`${transport}:${assistantID}:${part.attachmentID}:${part.sha256}`} assistantID={assistantID} descriptor={part} onShowPopup={onShowPopup} />
+    : <LegacyAttachment key={`${transport}:${part.url}`} part={part} onShowPopup={onShowPopup} />
 }

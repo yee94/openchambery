@@ -8,6 +8,8 @@ import { uploadAssistantAttachment, type AssistantAttachmentDescriptor } from '@
 import { AssistantContactAttachment } from './AssistantContactAttachment'
 import { MarkdownRenderer } from '@/components/chat/MarkdownRenderer'
 import { useRuntimeTransportIdentity } from '@/components/chat/imageSource'
+import type { ToolPopupContent } from '@/components/chat/message/types'
+import { lazyWithChunkRecovery } from '@/lib/chunkLoadRecovery'
 import { Icon } from '@/components/icon/Icon'
 import { useI18n } from '@/lib/i18n'
 import { subscribeOpenchamberEvents, type OpenChamberEvent } from '@/lib/openchamberEvents'
@@ -60,6 +62,8 @@ import {
   readContactComposerFiles,
   type ContactComposerAttachment,
 } from './contactComposerAttachments'
+
+const ToolOutputDialog = lazyWithChunkRecovery(() => import('@/components/chat/message/ToolOutputDialog'))
 
 /** Legacy internal settle markers — never render as user-visible bubbles. */
 const isInternalSettleText = (text: string) => text.trim().startsWith('oc.settle.')
@@ -129,6 +133,22 @@ export const AssistantConversationSurface: React.FC<AssistantConversationSurface
   const [optimisticTurns, setOptimisticTurns] = React.useState<ContactOptimisticTurn[]>([])
   const [turnPreviews, setTurnPreviews] = React.useState<ContactTurnPreview[]>([])
   const [sendError, setSendError] = React.useState<string | null>(null)
+  // Shared image/mermaid preview — same ToolOutputDialog contract as ChatMessage.
+  const [popupContent, setPopupContent] = React.useState<ToolPopupContent>({ open: false, title: '', content: '' })
+  const setImagePreviewOpen = useUIStore((state) => state.setImagePreviewOpen)
+  const handleShowPopup = useEvent((content: ToolPopupContent) => {
+    // Only viewer-capable content opens here; the contact surface has no tool popups.
+    if (content.image || content.mermaid) {
+      setPopupContent(content)
+      setImagePreviewOpen(true)
+    }
+  })
+  const handlePopupChange = useEvent((open: boolean) => {
+    setPopupContent((prev) => ({ ...prev, open }))
+    setImagePreviewOpen(open)
+  })
+  // The dialog unmounts with this surface, so release the global overlay flag here.
+  React.useEffect(() => () => { setImagePreviewOpen(false) }, [setImagePreviewOpen])
   const stoppingRef = React.useRef(false)
   React.useEffect(() => {
     uploadedRef.current.clear()
@@ -187,7 +207,10 @@ export const AssistantConversationSurface: React.FC<AssistantConversationSurface
     admissionRevisionByTurnIDRef.current = new Map()
     setOptimisticTurns((current) => scopeContactOptimisticTurns(current, assistant.id))
     setTurnPreviews((current) => scopeContactTurnPreviews(current, assistant.id))
-  }, [assistant.id])
+    // The open preview belongs to the previous contact's transcript.
+    setPopupContent({ open: false, title: '', content: '' })
+    setImagePreviewOpen(false)
+  }, [assistant.id, setImagePreviewOpen])
 
   React.useEffect(() => {
     setOptimisticTurns((current) => reconcileContactOptimisticTurns(current, messages))
@@ -555,7 +578,7 @@ export const AssistantConversationSurface: React.FC<AssistantConversationSurface
                         return <AssistantScheduleCard key={`${message.messageID}:card:${index}`} card={part} />
                       }
                       if (part.type === 'file') {
-                        return <AssistantContactAttachment key={`${message.messageID}:file:${index}`} assistantID={assistant.id} part={part} />
+                        return <AssistantContactAttachment key={`${message.messageID}:file:${index}`} assistantID={assistant.id} part={part} onShowPopup={handleShowPopup} />
                       }
                       if (part.type === 'text' && isInternalSettleText(part.text)) {
                         // Legacy oc.settle.* markers: card status already shows outcome.
@@ -586,6 +609,7 @@ export const AssistantConversationSurface: React.FC<AssistantConversationSurface
                                 isStreaming={message.status === 'streaming'}
                                 variant="assistant"
                                 enableFileReferences={false}
+                                onShowPopup={handleShowPopup}
                                 className="w-full min-w-0 [overflow-wrap:anywhere]"
                               />
                             ) : part.text}
@@ -678,6 +702,15 @@ export const AssistantConversationSurface: React.FC<AssistantConversationSurface
           </div>
         </form>
       </footer>
+      {popupContent.open ? (
+        <React.Suspense fallback={null}>
+          <ToolOutputDialog
+            popup={popupContent}
+            onOpenChange={handlePopupChange}
+            isMobile={isMobile}
+          />
+        </React.Suspense>
+      ) : null}
     </div>
   )
 }
