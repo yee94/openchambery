@@ -7,10 +7,14 @@ import type { AssistantDTO } from '@/queries/assistantDTO';
 const contactEvents = vi.hoisted(() => ({
   handler: null as ((event: Record<string, unknown>) => void) | null,
 }));
-const contactQueryState = vi.hoisted(() => ({ extraMessages: 0, earlier: 0, hasPreviousPage: false, isFetchingPreviousPage: false, previousPageError: null as Error | null, fetchPreviousPage: vi.fn(), hasMessageGap: false, isFillingMessageGap: false, retryMessageGap: vi.fn() }));
+const contactQueryState = vi.hoisted(() => ({ extraMessages: 0, earlier: 0, imageFilePart: false as false | 'legacy' | 'cached', hasPreviousPage: false, isFetchingPreviousPage: false, previousPageError: null as Error | null, fetchPreviousPage: vi.fn(), hasMessageGap: false, isFillingMessageGap: false, retryMessageGap: vi.fn() }));
 const attachmentIO = vi.hoisted(() => ({ upload: vi.fn(), send: vi.fn(), abort: vi.fn(), display: vi.fn(), blob: vi.fn(), release: vi.fn() }));
 const unreadUI = vi.hoisted(() => ({ settingsOpen: false }));
 const failureUI = vi.hoisted(() => ({ failed: false }));
+const previewIO = vi.hoisted(() => ({
+  flagCalls: [] as boolean[],
+  markdownOnShowPopup: null as ((content: Record<string, unknown>) => void) | null,
+}));
 vi.mock('./AssistantReadMarker', () => ({
   AssistantReadMarker: ({ position }: { position: { ordinal: number; messageID: string } }) => <span data-test-read-ordinal={position.ordinal} data-test-read-message={position.messageID} />,
 }));
@@ -29,7 +33,15 @@ vi.mock('@/components/chat/ChatPromptComposer', () => ({
   </div>,
 }));
 vi.mock('@/components/chat/MarkdownRenderer', () => ({
-  MarkdownRenderer: ({ content }: { content: string }) => <span>{content}</span>,
+  MarkdownRenderer: (props: { content: string; onShowPopup?: (content: Record<string, unknown>) => void }) => {
+    previewIO.markdownOnShowPopup = props.onShowPopup ?? null;
+    return <span>{props.content}</span>;
+  },
+}));
+vi.mock('@/components/chat/message/ToolOutputDialog', () => ({
+  default: ({ popup, onOpenChange }: { popup: { image?: { url?: string } }; onOpenChange: (open: boolean) => void }) => (
+    <div data-test-preview-dialog="" data-image={popup.image?.url ?? ''} onClick={() => onOpenChange(false)} />
+  ),
 }));
 vi.mock('@/components/icon/Icon', () => ({ Icon: () => null }));
 vi.mock('@/lib/i18n', () => ({
@@ -44,9 +56,13 @@ vi.mock('@/lib/openchamberEvents', () => ({
 vi.mock('@/apps/MobileShareBridge', () => ({
   donateNativeAssistantInteraction: () => Promise.resolve(),
 }));
-vi.mock('@/stores/useUIStore', () => ({
-  useUIStore: (selector: (state: { isMobile: boolean; isSettingsDialogOpen: boolean }) => unknown) => selector({ isMobile: false, isSettingsDialogOpen: unreadUI.settingsOpen }),
-}));
+vi.mock('@/stores/useUIStore', () => {
+  // Stable action identity, matching the zustand contract the surface's effects rely on.
+  const setImagePreviewOpen = (open: boolean) => { previewIO.flagCalls.push(open); };
+  return {
+    useUIStore: (selector: (state: { isMobile: boolean; isSettingsDialogOpen: boolean; setImagePreviewOpen: (open: boolean) => void }) => unknown) => selector({ isMobile: false, isSettingsDialogOpen: unreadUI.settingsOpen, setImagePreviewOpen }),
+  };
+});
 vi.mock('@/queries/assistantQueries', () => ({
   abortAssistantSession: attachmentIO.abort,
   sendAssistantContactMessage: attachmentIO.send,
@@ -72,6 +88,23 @@ vi.mock('@/queries/assistantQueries', () => ({
           text: 'hello',
           cards: [],
         },
+        ...(contactQueryState.imageFilePart ? [{
+          messageID: `${assistantID}:image`,
+          assistantID,
+          role: 'assistant',
+          turnID: `${assistantID}:image-turn`,
+          bubbleIndex: 0,
+          createdAt: 2,
+          ordinal: 1,
+          status: 'complete',
+          fromAssistantID: null,
+          fromAssistantName: null,
+          parts: [contactQueryState.imageFilePart === 'cached'
+            ? { type: 'file', attachmentID: 'attachment-image', sha256: 'a'.repeat(64), size: 9, mime: 'image/png', filename: 'shot.png' }
+            : { type: 'file', mime: 'image/png', url: 'data:image/png;base64,AA', filename: 'legacy.png' }],
+          text: '',
+          cards: [],
+        }] : []),
         ...Array.from({ length: contactQueryState.extraMessages }, (_, index) => ({
           messageID: `${assistantID}:refetch:${index}`,
           assistantID,
@@ -171,6 +204,7 @@ afterEach(async () => {
   contactEvents.handler = null;
   contactQueryState.extraMessages = 0;
   contactQueryState.earlier = 0;
+  contactQueryState.imageFilePart = false;
   contactQueryState.hasPreviousPage = false;
   contactQueryState.isFetchingPreviousPage = false;
   contactQueryState.previousPageError = null;
@@ -178,6 +212,8 @@ afterEach(async () => {
   contactQueryState.isFillingMessageGap = false;
   unreadUI.settingsOpen = false;
   failureUI.failed = false;
+  previewIO.flagCalls.length = 0;
+  previewIO.markdownOnShowPopup = null;
   vi.clearAllMocks();
 });
 
@@ -308,6 +344,55 @@ describe('AssistantConversationSurface scroll ownership', () => {
     await act(async () => complete({ url: 'blob:late', release: attachmentIO.release }));
     expect(attachmentIO.release).toHaveBeenCalledTimes(1);
   });
+  test('markdown image activation opens the shared viewer and closes it on assistant switch', async () => {
+    contactQueryState.extraMessages = 1;
+    const { root, host } = await mountSurface();
+    expect(previewIO.markdownOnShowPopup).toBeTypeOf('function');
+    await act(async () => {
+      previewIO.markdownOnShowPopup?.({ open: true, title: 'shot.png', content: '', image: { url: '/abs/shot.png', filename: 'shot.png', gallery: [{ url: '/abs/shot.png' }], index: 0 } });
+    });
+    const dialog = host.querySelector('[data-test-preview-dialog]');
+    expect(dialog?.getAttribute('data-image')).toBe('/abs/shot.png');
+    expect(previewIO.flagCalls.at(-1)).toBe(true);
+    // Non-viewer content (plain tool text) never opens the viewer.
+    await act(async () => {
+      previewIO.markdownOnShowPopup?.({ open: true, title: 'note', content: 'tool text' });
+    });
+    expect(host.querySelector('[data-test-preview-dialog]')).toBeTruthy();
+    expect(host.querySelector('[data-test-preview-dialog]')?.getAttribute('data-image')).toBe('/abs/shot.png');
+    // Viewer close reports through the global overlay flag.
+    await act(async () => { host.querySelector('[data-test-preview-dialog]')!.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+    expect(host.querySelector('[data-test-preview-dialog]')).toBeNull();
+    expect(previewIO.flagCalls.at(-1)).toBe(false);
+    // Switching assistants closes an open viewer.
+    await act(async () => {
+      previewIO.markdownOnShowPopup?.({ open: true, title: 'again.png', content: '', image: { url: '/abs/again.png' } });
+    });
+    expect(host.querySelector('[data-test-preview-dialog]')).toBeTruthy();
+    await act(async () => root.render(<AssistantConversationSurface assistant={assistant('assistant-b')} active />));
+    expect(host.querySelector('[data-test-preview-dialog]')).toBeNull();
+    expect(previewIO.flagCalls.at(-1)).toBe(false);
+  });
+
+  test('inline attachment images open the shared viewer on activation for cached and legacy parts', async () => {
+    attachmentIO.display.mockResolvedValue({ url: 'openchamber-asset://shot', release: attachmentIO.release });
+    contactQueryState.imageFilePart = 'cached';
+    const { root, host } = await mountSurface();
+    const cached = host.querySelector<HTMLImageElement>('img[data-assistant-contact-image]')!;
+    expect(cached.getAttribute('src')).toBe('openchamber-asset://shot');
+    expect(cached.getAttribute('role')).toBe('button');
+    await act(async () => { cached.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+    expect(host.querySelector('[data-test-preview-dialog]')?.getAttribute('data-image')).toBe('openchamber-asset://shot');
+    await act(async () => root.render(null));
+
+    contactQueryState.imageFilePart = 'legacy';
+    const { host: legacyHost } = await mountSurface();
+    const legacy = legacyHost.querySelector<HTMLImageElement>('img[data-assistant-contact-image]')!;
+    expect(legacy.getAttribute('src')).toBe('data:image/png;base64,AA');
+    await act(async () => { legacy.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+    expect(legacyHost.querySelector('[data-test-preview-dialog]')?.getAttribute('data-image')).toBe('data:image/png;base64,AA');
+  });
+
   test('top button and upward gesture share one flight; failures retain rows and expose retry', async () => {
     contactQueryState.hasPreviousPage = true;
     let finish!: () => void;
