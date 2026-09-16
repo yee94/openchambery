@@ -6,6 +6,8 @@ import type { StoreApi } from "zustand"
 import { useStore } from "zustand"
 import type { OpencodeClient } from "@opencode-ai/sdk/v2/client"
 import { createEventPipeline } from "./event-pipeline"
+import { refreshQuestionAutoDelegate } from "@/lib/questionAutoDelegate"
+import { QuestionAutoDelegateNotifications } from "@/components/chat/QuestionAutoDelegateStatus"
 import { bindStreamReconnect, noteStreamActivity, requestStreamReconnect } from "./stream-liveness"
 import { isVSCodeRuntime } from "@/lib/desktop"
 import { isMobileSurfaceRuntime } from "@/lib/runtimeSurface"
@@ -2038,6 +2040,11 @@ export function handleEvent(
     return
   }
 
+  if ((payload as { type?: unknown }).type === "openchamber:question-auto-delegate-changed") {
+    void refreshQuestionAutoDelegate()
+    return
+  }
+
   if ((payload as { type?: unknown }).type === "openchamber:permission-auto-accept.updated") {
     const properties = (payload as unknown as { properties?: unknown }).properties
     if (properties && typeof properties === "object") {
@@ -2762,6 +2769,7 @@ export function SyncProvider(props: {
         })
       },
       onCompensation: (trigger) => {
+        void refreshQuestionAutoDelegate()
         // Ticket 07: ready barrier after replay flush. First ready
         // (isReconnect:false) is a no-op skip inside the controller.
         // Unregistered seam is a no-op so store resync is not dual-written.
@@ -3046,7 +3054,7 @@ export function SyncProvider(props: {
     }
   }, [props.directory, childStores])
 
-  return <SyncContext.Provider value={system}>{props.children}</SyncContext.Provider>
+  return <SyncContext.Provider value={system}><QuestionAutoDelegateNotifications />{props.children}</SyncContext.Provider>
 }
 
 // ---------------------------------------------------------------------------

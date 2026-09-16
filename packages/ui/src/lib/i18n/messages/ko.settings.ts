@@ -1,4 +1,7 @@
 export const settingsDict = {
+  'settings.chat.questionDelegate.label': '답변 대기 질문 자동 위임',
+  'settings.chat.questionDelegate.description': '30초 동안 응답이 없으면 모델이 판단하고 계속 진행하도록 요청합니다. 질문 카드를 조작하면 해당 질문의 카운트다운이 일시 정지됩니다.',
+  'settings.chat.questionDelegate.saveFailed': '자동 위임 설정 저장에 실패했습니다. 현재 상태를 확인하고 다시 시도하세요.',
   'settings.globalConfig.title': '전역 구성',
   'settings.globalConfig.description': '~/.config/opencode에서 현재 사용 중인 구성 파일을 편집합니다.',
   'settings.globalConfig.actions.reload': '파일 다시 불러오기',

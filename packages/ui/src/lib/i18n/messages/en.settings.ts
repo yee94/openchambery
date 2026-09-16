@@ -1,4 +1,7 @@
 export const settingsDict = {
+  'settings.chat.questionDelegate.label': 'Automatically delegate unanswered questions',
+  'settings.chat.questionDelegate.description': 'After 30 seconds without a response, ask the model to decide and continue. Interacting with a question pauses its countdown.',
+  'settings.chat.questionDelegate.saveFailed': 'Could not save automatic delegation. Check the current status before retrying.',
   'settings.globalConfig.title': 'Global Configuration',
   'settings.globalConfig.description': 'Edit the configuration files currently used from ~/.config/opencode.',
   'settings.globalConfig.actions.reload': 'Reload file',

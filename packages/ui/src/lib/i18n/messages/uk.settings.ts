@@ -1,4 +1,7 @@
 export const settingsDict = {
+  'settings.chat.questionDelegate.label': 'Автоматично делегувати питання без відповіді',
+  'settings.chat.questionDelegate.description': 'Через 30 секунд без відповіді попросити модель вирішити й продовжити. Взаємодія з питанням призупиняє його відлік.',
+  'settings.chat.questionDelegate.saveFailed': 'Помилка збереження автоматичного делегування. Перевірте поточний стан перед повторною спробою.',
   'settings.globalConfig.title': 'Глобальна конфігурація',
   'settings.globalConfig.description': 'Редагуйте активні файли конфігурації в ~/.config/opencode.',
   'settings.globalConfig.actions.reload': 'Перезавантажити файл',

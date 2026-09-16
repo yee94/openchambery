@@ -135,6 +135,18 @@ describe('settings helpers', () => {
     });
   });
 
+  it('accepts questionAutoDelegateEnabled as a persisted boolean setting', () => {
+    const helpers = createTestHelpers();
+
+    expect(helpers.sanitizeSettingsUpdate({ questionAutoDelegateEnabled: true })).toEqual({
+      questionAutoDelegateEnabled: true,
+    });
+    expect(helpers.sanitizeSettingsUpdate({ questionAutoDelegateEnabled: false })).toEqual({
+      questionAutoDelegateEnabled: false,
+    });
+    expect(helpers.sanitizeSettingsUpdate({ questionAutoDelegateEnabled: 'true' })).toEqual({});
+  });
+
   it('accepts desktopUiPassword as a persisted shared setting', () => {
     const helpers = createTestHelpers();
 

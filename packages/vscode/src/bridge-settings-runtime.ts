@@ -6,6 +6,7 @@ import { createOpencodeClient } from '@opencode-ai/sdk/v2';
 import { BUILT_IN_SKILL_LOCATION, type DiscoveredSkill, type SkillScope, type SkillSource } from './opencodeConfig';
 import { projectProviderCatalog, type ProviderCatalog } from './provider-catalog-runtime';
 import { formatSettingsResponse } from './settings-visible-runtime';
+import { applyQuestionAutoDelegateEnabled } from './question-auto-delegate-runtime';
 import type { BridgeContext } from './bridge';
 
 const SETTINGS_KEY = 'openchamber.settings';
@@ -376,6 +377,13 @@ export const persistSettings = async (changes: Record<string, unknown>, ctx?: Br
     delete restChanges.sessionGoalEnabled;
   }
 
+  if (
+    'questionAutoDelegateEnabled' in restChanges
+    && typeof restChanges.questionAutoDelegateEnabled !== 'boolean'
+  ) {
+    delete restChanges.questionAutoDelegateEnabled;
+  }
+
   if ('sessionGoalDefaultBudgetEnabled' in restChanges && typeof restChanges.sessionGoalDefaultBudgetEnabled !== 'boolean') {
     delete restChanges.sessionGoalDefaultBudgetEnabled;
   }
@@ -420,6 +428,18 @@ export const persistSettings = async (changes: Record<string, unknown>, ctx?: Br
   delete settingsForGlobalState.summaryCustomAPIToken;
   delete settingsForGlobalState.desktopUiPassword;
   await ctx?.context?.globalState.update(SETTINGS_KEY, settingsForGlobalState);
+
+  // Only after a successful persist — failed saves must not apply runtime flags.
+  if (
+    Object.prototype.hasOwnProperty.call(restChanges, 'questionAutoDelegateEnabled')
+    && typeof restChanges.questionAutoDelegateEnabled === 'boolean'
+  ) {
+    try {
+      applyQuestionAutoDelegateEnabled(restChanges.questionAutoDelegateEnabled !== false);
+    } catch {
+      // Runtime may not be started yet; next start() re-reads enabled from disk.
+    }
+  }
 
   // Return the same shape as readSettings (with derived fields re-applied).
   return readSettings(ctx);

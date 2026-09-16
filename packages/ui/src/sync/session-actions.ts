@@ -267,8 +267,11 @@ function formatSdkError(error: unknown): string {
 function assertSdkSuccess<T>(result: SdkResult<T>, operation: string): T | undefined {
   if (!result.error) return result.data
   const status = result.response?.status
-  const error = new Error(`${operation} failed${status ? ` (${status})` : ""}: ${formatSdkError(result.error)}`) as Error & { status?: number }
+  const error = new Error(`${operation} failed${status ? ` (${status})` : ""}: ${formatSdkError(result.error)}`) as Error & { status?: number; code?: string }
   if (status !== undefined) error.status = status
+  if (typeof result.error === "object" && result.error !== null && "code" in result.error && typeof result.error.code === "string") {
+    error.code = result.error.code
+  }
   throw error
 }
 
@@ -832,6 +835,12 @@ function resolveDirectoryForBlockingRequest(
   }
 
   return null
+}
+
+export function isQuestionSubmissionClaimedError(error: unknown): boolean {
+  if (!error || typeof error !== "object") return false
+  const failure = error as { status?: unknown; code?: unknown }
+  return failure.status === 409 && failure.code === "question_submission_claimed"
 }
 
 export function isQuestionRequestNotFoundError(error: unknown): boolean {
@@ -2132,9 +2141,10 @@ export async function respondToQuestion(
   sessionId: string,
   requestId: string,
   answers: string[] | string[][],
+  directoryHint?: string,
 ): Promise<void> {
   await waitForConnectionOrThrow()
-  const directory = resolveDirectoryForBlockingRequest("question", sessionId, requestId)
+  const directory = directoryHint || resolveDirectoryForBlockingRequest("question", sessionId, requestId)
     || getSessionDirectory(sessionId)
     || dir()
   try {
@@ -2162,9 +2172,10 @@ export async function respondToQuestion(
 export async function rejectQuestion(
   sessionId: string,
   requestId: string,
+  directoryHint?: string,
 ): Promise<void> {
   await waitForConnectionOrThrow()
-  const directory = resolveDirectoryForBlockingRequest("question", sessionId, requestId)
+  const directory = directoryHint || resolveDirectoryForBlockingRequest("question", sessionId, requestId)
     || getSessionDirectory(sessionId)
     || dir()
   try {

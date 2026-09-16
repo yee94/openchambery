@@ -1,5 +1,19 @@
 # Chat components
 
+## Question auto-delegation
+
+`QuestionCard` retains its question/session identity and existing parent-view subagent attribution. `QuestionAutoDelegateStatus` reads the runtime-scoped Query snapshot through `lib/questionAutoDelegate.ts`; pause and immediate delegate use the matching request's authoritative `sessionID` and `directory`. Manual reply/reject retain the official SDK path and pass that directory to session actions. The SDK error wrapper preserves the structured payload `code` plus HTTP `status`; precisely `409` + `question_submission_claimed` triggers a snapshot refresh and a scope-bound local submission lock. Drafts remain mounted. A stale or failed refresh keeps the result-pending presentation and offers status refresh. Other failures retain ordinary failure handling; submitting, uncertain, and settled authority states disable answer submission.
+
+The bottom strip shows server state, pause/delegate actions, explicit in-flight state, stale/partial coverage, and retryable errors. `serverNow` plus a monotonic receipt timestamp corrects the client clock; only the countdown leaf ticks (250ms), with a transform-only progress transition and reduced-motion override. Reaching zero displays an awaiting-confirmation state. The host owns the 30-second timer and answer submission.
+
+Pointer/click, keyboard, input, paste, and composition-start capture pause the whole request with `reason: interaction`; question-tab changes participate. Focus events stay outside this contract, preserving programmatic textarea autofocus. Explicit pause uses `reason: user`. A pending request is single-flight; failed interaction pauses require an explicit retry. `QuestionAutoDelegateNotifications`, mounted alongside the transcript under SyncProvider, shows confirmed automatic reply feedback even after the card leaves the pending list. It uses a stable epoch/request toast ID, transition detection, and foreground visibility gating; background clients consume the new snapshot quietly. Separate simultaneously visible clients each own their local toast.
+
+Reply history remains upstream-owned: `ToolPart` displays parsed Q&A from a completed question tool's string output. Missing or unparseable upstream output falls back to question input, so the actual auto-reply text may be unavailable in that history view. Delegation snapshots contain state and resolution only; the UI creates no synthetic answer/message from a success receipt.
+
+Chat settings expose `questionAutoDelegateEnabled` (default true) through the existing `RuntimeAPIs.settings.save` and `chat.question-auto-delegate` search anchor. Authoritative GET supplies the toggle state; failed saves preserve the prior value. The host owns off/on cancellation and fresh deadlines. Disabled automatic countdown still offers explicit one-shot delegation for a pending question, preserving the global setting. Shared controls, wrapping actions, and all shipped locales apply across runtimes; runtimeFetch bridge delivery belongs to the runtime adapter.
+
+Focused coverage: `QuestionCard.autoDelegate.test.tsx`, `QuestionCard.customTextarea.test.tsx`, `lib/questionAutoDelegate.test.ts`, and `sections/openchamber/QuestionAutoDelegateSetting.test.tsx`. Browser/native visual, network, and bridge integration require their owning runtime checks.
+
 The first-prompt establishing draft uses the same overlay Composer foot and swap scope as the final transcript. The idle draft keeps the in-flow Composer contract.
 
 `ChatPromptComposer` inline layout keeps a 48px single-line rail and always measures the textarea `scrollHeight`, including soft wrapping with no authored newline. Wrapped or explicit multiline content grows with 24px line-height and 12px vertical padding up to `max-h-32`; overflow then scrolls inside the textarea. A measured height above 48px bottom-aligns the fixed 48px attach/send rails, while compact inline consumers retain centered controls at the idle height.

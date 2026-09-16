@@ -52,6 +52,14 @@ So:
 
 ## Ownership map
 
+### Question auto-delegate pull authority
+
+`lib/questionAutoDelegate.ts` owns a TanStack Query keyed by transport identity and runtime generation. It validates the Host `question-auto-delegate/core.d.ts` snapshot, passes GET cancellation to `runtimeFetch`, retains the previous snapshot after read failure, and applies mutation `{ outcome, snapshot }` responses (including 409 claims). Same-epoch revisions, retired epochs, and request sequence prevent late snapshots from replacing newer host state. Runtime-generation checks discard stale GET/mutation completions.
+
+`sync-context.handleEvent` consumes `openchamber:question-auto-delegate-changed` as an invalidation tip only. The stream-ready compensation edge also invalidates; active query observers lead with GET and runtime changes select a fresh key. Invalidation cancels an older in-flight GET before refetching, including cold-query tip races. `QuestionAutoDelegateNotifications` remains mounted through pending-card removal for confirmed automatic success feedback. High-frequency countdown paint belongs only to the card's leaf component. Session actions accept an optional authoritative question directory while preserving existing directory resolution for their other callers.
+
+VS Code webview tip delivery may directly call the exported `refreshQuestionAutoDelegate()` function. It resolves the current runtime at call time and invalidates the shared Query; this integration uses the existing export without a second DOM-event listener. Manual SDK claim conflicts preserve structured `status` and `code` through `assertSdkSuccess` and use the same refresh entrypoint.
+
 ### Worktree topology catalog reconciliation
 
 `worktreeTopologySync.ts` owns renderer-level worktree catalog reconciliation. It starts from `AppEffects`, remains shared through a realm ref-count, and skips VS Code. Event-stream ready envelopes, topology changes, registry topology changes, and deduplicated unknown recovery directories force per-project catalog enumeration. Recovery candidates are the union of live `activeSessions` directories and session-index snapshot `cachedDirectories`, so an empty worktree (no live sessions) still recovers catalog for other clients that only have index-backed directories. Candidate membership is semantic: a new Set/array with the same members does not force an extra catalog refresh. When a directory leaves the candidate set, its unknown/suppression bookkeeping is cleared so a later reappearance can recover again in the same ready epoch. Successful empty results authoritatively clear that project, failed reads preserve its prior catalog, and only added worktree directories start global session synchronization. Unknown-directory suppression begins only after every registered project completes successfully for its recovery epoch; failures retain bounded retry and lifecycle/runtime changes discard stale work.

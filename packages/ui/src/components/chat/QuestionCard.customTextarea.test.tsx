@@ -1,6 +1,12 @@
 import React, { act } from 'react';
 import { createRoot } from 'react-dom/client';
-import { afterEach, describe, expect, test } from 'vitest';
+import { afterEach, describe, expect, test, vi } from 'vitest';
+
+vi.mock('@/sync/sync-context', () => ({ useSessions: () => [] }));
+vi.mock('@/sync/session-actions', () => ({}));
+vi.mock('@/stores/useUIStore', () => ({ useUIStore: () => false }));
+vi.mock('@/sync/session-ui-store', () => ({ useSessionUIStore: () => null }));
+vi.mock('@/components/ui', () => ({ toast: {} }));
 
 import { CustomAnswerTextarea } from './QuestionCard';
 

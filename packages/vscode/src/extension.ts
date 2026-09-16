@@ -3,7 +3,14 @@ import { ChatViewProvider } from './ChatViewProvider';
 import { AgentManagerPanelProvider } from './AgentManagerPanelProvider';
 import { SessionEditorPanelProvider } from './SessionEditorPanelProvider';
 import { createOpenCodeManager, type OpenCodeManager } from './opencode';
-import { startGlobalEventWatcher, stopGlobalEventWatcher, setChatViewProvider } from './sessionActivityWatcher';
+import {
+  startGlobalEventWatcher,
+  stopGlobalEventWatcher,
+  suspendGlobalEventWatcher,
+  setChatViewProvider,
+  addGlobalEventMessageSink,
+} from './sessionActivityWatcher';
+import { addQuestionAutoDelegateTipSink } from './question-auto-delegate-runtime';
 import { setWorktreeBootstrapStatusNotifier } from './gitService';
 import { resolveWorkspaceFolders } from './workspaceResolver';
 
@@ -723,6 +730,18 @@ export async function activate(context: vscode.ExtensionContext) {
     })
   );
 
+  // Extension-level sinks so host tips (session-activity, question-auto-delegate)
+  // reach chat + agent manager + session editor even when one panel is closed.
+  const hostMessageSink = {
+    postMessage: (message: unknown) => {
+      chatViewProvider?.postMessage(message);
+      agentManagerProvider?.postMessage(message);
+      sessionEditorProvider?.postMessage(message);
+    },
+  };
+  context.subscriptions.push({ dispose: addGlobalEventMessageSink(hostMessageSink) });
+  context.subscriptions.push({ dispose: addQuestionAutoDelegateTipSink(hostMessageSink) });
+
   // Subscribe to status changes - this broadcasts to webview
   context.subscriptions.push(
     openCodeManager.onStatusChange((status, error) => {
@@ -730,13 +749,17 @@ export async function activate(context: vscode.ExtensionContext) {
       agentManagerProvider?.updateConnectionStatus(status, error);
       sessionEditorProvider?.updateConnectionStatus(status, error);
 
-      // Start/stop global event watcher based on connection status
-      // Mirrors web server and desktop behavior
-      if (status === 'connected' && chatViewProvider && openCodeManager) {
-        setChatViewProvider(chatViewProvider);
-        void startGlobalEventWatcher(openCodeManager, chatViewProvider);
+      // Start/suspend global event watcher based on connection status.
+      // QAD timers live on the Extension Host singleton — webview visibility
+      // must not gate them. Same-upstream disconnect keeps QAD core (pause/
+      // claim/uncertain); only deactivate / real endpoint switch disposes.
+      if (status === 'connected' && openCodeManager) {
+        if (chatViewProvider) {
+          setChatViewProvider(chatViewProvider);
+        }
+        void startGlobalEventWatcher(openCodeManager, chatViewProvider ?? hostMessageSink);
       } else if (status === 'disconnected' || status === 'error') {
-        stopGlobalEventWatcher();
+        suspendGlobalEventWatcher();
       }
     })
   );

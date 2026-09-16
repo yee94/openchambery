@@ -324,6 +324,9 @@ export const createSettingsHelpers = (dependencies) => {
     if (typeof candidate.sessionGoalEnabled === 'boolean') {
       result.sessionGoalEnabled = candidate.sessionGoalEnabled;
     }
+    if (typeof candidate.questionAutoDelegateEnabled === 'boolean') {
+      result.questionAutoDelegateEnabled = candidate.questionAutoDelegateEnabled;
+    }
     if (typeof candidate.sessionGoalDefaultBudgetEnabled === 'boolean') {
       result.sessionGoalDefaultBudgetEnabled = candidate.sessionGoalDefaultBudgetEnabled;
     }

@@ -1,4 +1,7 @@
 export const settingsDict = {
+  'settings.chat.questionDelegate.label': 'Automatycznie przekazuj pytania bez odpowiedzi',
+  'settings.chat.questionDelegate.description': 'Po 30 sekundach bez odpowiedzi poproś model o decyzję i kontynuację. Interakcja z pytaniem wstrzymuje jego odliczanie.',
+  'settings.chat.questionDelegate.saveFailed': 'Zapis automatycznego przekazywania nie powiódł się. Sprawdź bieżący stan przed ponowieniem.',
   'settings.globalConfig.title': 'Konfiguracja globalna',
   'settings.globalConfig.description': 'Edytuj aktywne pliki konfiguracji w ~/.config/opencode.',
   'settings.globalConfig.actions.reload': 'Wczytaj plik ponownie',

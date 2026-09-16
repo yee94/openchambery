@@ -21,6 +21,7 @@ export const registerOpenCodeRoutes = (app, dependencies) => {
     refreshOpenCodeAfterConfigChange,
     buildOpenCodeUrl,
     getOpenCodeAuthHeaders,
+    onSettingsPersisted,
   } = dependencies;
 
   let authLibrary = null;
@@ -328,7 +329,19 @@ export const registerOpenCodeRoutes = (app, dependencies) => {
 
   app.put('/api/config/settings', async (req, res) => {
     try {
-      const updated = await persistSettings(req.body ?? {});
+      const changes = req.body ?? {};
+      const updated = await persistSettings(changes);
+      // Only after a successful persist — failed saves must not apply runtime flags.
+      if (
+        typeof onSettingsPersisted === 'function'
+        && Object.prototype.hasOwnProperty.call(changes, 'questionAutoDelegateEnabled')
+      ) {
+        try {
+          onSettingsPersisted(updated, changes);
+        } catch (error) {
+          console.warn('[API:PUT /api/config/settings] onSettingsPersisted failed:', error?.message ?? error);
+        }
+      }
       res.json(updated);
     } catch (error) {
       console.error('[API:PUT /api/config/settings] Failed to save settings:', error);

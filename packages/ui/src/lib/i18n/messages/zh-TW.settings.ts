@@ -1,5 +1,8 @@
 ﻿export const settingsDict = {
   'settings.globalConfig.title': '全域設定',
+  'settings.chat.questionDelegate.label': '自動託管待回答問題',
+  'settings.chat.questionDelegate.description': '30 秒無人回應時，自動請模型自行決定並繼續執行。操作問題卡片會暫停該問題的倒數。',
+  'settings.chat.questionDelegate.saveFailed': '自動託管設定儲存失敗，請確認目前狀態後重試。',
   'settings.globalConfig.description': '編輯 ~/.config/opencode 中目前生效的設定檔。',
   'settings.globalConfig.actions.reload': '重新載入檔案',
   'settings.globalConfig.restartHint': '儲存後重新啟動 OpenCode，使設定變更生效。',

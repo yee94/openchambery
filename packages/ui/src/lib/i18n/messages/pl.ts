@@ -3,6 +3,23 @@ import { settingsDict } from './pl.settings';
 
 export const dict: Record<I18nKey, string> = {
   ...settingsDict,
+  'chat.questionDelegate.countdown': 'Model zdecyduje za {seconds} s',
+  'chat.questionDelegate.awaiting': 'Oczekiwanie na potwierdzenie hosta…',
+  'chat.questionDelegate.pausing': 'Wstrzymywanie odliczania…',
+  'chat.questionDelegate.paused': 'Odliczanie wstrzymane',
+  'chat.questionDelegate.disabled': 'Automatyczne odliczanie jest wyłączone',
+  'chat.questionDelegate.refreshStatus': 'Odśwież stan',
+  'chat.questionDelegate.submitting': 'Wysyłanie odpowiedzi…',
+  'chat.questionDelegate.uncertain': 'Wynik wysyłania jest niepewny. Oczekiwanie na potwierdzenie.',
+  'chat.questionDelegate.settled': 'Pytanie rozstrzygnięte',
+  'chat.questionDelegate.success': 'Wysłano odpowiedź z prośbą o kontynuację. Model zdecyduje o dalszych krokach.',
+  'chat.questionDelegate.stale': 'Wyświetlany jest ostatni znany stan; synchronizacja z hostem trwa.',
+  'chat.questionDelegate.pauseFailed': 'Wstrzymanie nie powiodło się. Odliczanie hosta może nadal trwać.',
+  'chat.questionDelegate.delegateFailed': 'Przekazanie nie powiodło się. Sprawdź stan i spróbuj ponownie.',
+  'chat.questionDelegate.loadFailed': 'Odświeżenie stanu przekazania nie powiodło się.',
+  'chat.questionDelegate.retry': 'Ponów',
+  'chat.questionDelegate.pause': 'Wstrzymaj odliczanie',
+  'chat.questionDelegate.delegate': 'Przekaż teraz',
 
   'common.loading': 'Ładowanie...',
   'assistants.contact.sessionMention.scope': 'Ostatnie sesje w indeksie · Wpisz @tytuł, aby dodać odwołanie',

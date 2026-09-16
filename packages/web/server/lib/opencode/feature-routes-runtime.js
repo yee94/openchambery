@@ -7,6 +7,7 @@ import { registerGitRoutes } from '../git/routes.js';
 import { registerMagicPromptRoutes } from '../magic-prompts/routes.js';
 import { registerSessionFoldersRoutes } from '../session-folders/routes.js';
 import { registerPermissionAutoAcceptRoutes } from '../permission-auto-accept/runtime.js';
+import { registerQuestionAutoDelegateRoutes } from '../question-auto-delegate/routes.js';
 import { registerConfigEntityRoutes } from './config-entity-routes.js';
 import { registerSettingsUtilityRoutes } from './core-routes.js';
 import { registerProjectIconRoutes } from './project-icon-routes.js';
@@ -123,6 +124,7 @@ export const createFeatureRoutesRuntime = (dependencies) => {
       getOpenChamberEventClients,
       writeSseEvent,
       permissionAutoAcceptRuntime,
+      questionAutoDelegateRuntime,
       messageQueueService,
       messageQueueRuntime,
       broadcastGlobalUiEvent,
@@ -140,6 +142,11 @@ export const createFeatureRoutesRuntime = (dependencies) => {
     });
 
     registerPermissionAutoAcceptRoutes(app, permissionAutoAcceptRuntime);
+    // Question auto-delegate + precise /api/question/:id/reply|reject intercepts
+    // must win before the generic OpenCode proxy.
+    if (questionAutoDelegateRuntime) {
+      registerQuestionAutoDelegateRoutes(app, questionAutoDelegateRuntime);
+    }
 
     registerOpenCodeRoutes(app, {
       crypto,
@@ -157,6 +164,19 @@ export const createFeatureRoutesRuntime = (dependencies) => {
       refreshOpenCodeAfterConfigChange,
       buildOpenCodeUrl,
       getOpenCodeAuthHeaders,
+      onSettingsPersisted: (updated, changes) => {
+        if (!questionAutoDelegateRuntime) return;
+        if (!Object.prototype.hasOwnProperty.call(changes ?? {}, 'questionAutoDelegateEnabled')) return;
+        // Only a real boolean may change runtime state — invalid/coerced junk is ignored.
+        const fromChanges = changes.questionAutoDelegateEnabled;
+        const fromUpdated = updated?.questionAutoDelegateEnabled;
+        const next = typeof fromUpdated === 'boolean'
+          ? fromUpdated
+          : (typeof fromChanges === 'boolean' ? fromChanges : null);
+        if (typeof next !== 'boolean') return;
+        // Persisted successfully — apply immediately. Failed saves never reach here.
+        questionAutoDelegateRuntime.applyEnabled(next);
+      },
     });
 
     registerProjectIconRoutes(app, {

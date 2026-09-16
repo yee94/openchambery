@@ -181,6 +181,7 @@ const ChatSectionContent: React.FC = () => {
     <OpenChamberVisualSettings
       visibleSettings={[
         "sessionGoal",
+        "questionAutoDelegate",
         "sessionAssist",
         "chatRenderMode",
         "messageTransport",

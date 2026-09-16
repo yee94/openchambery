@@ -86,6 +86,7 @@ import {
 } from './lib/notifications/live-activity-refresh-runtime.js';
 import { createNotificationTemplateRuntime } from './lib/notifications/template-runtime.js';
 import { createPermissionAutoAcceptRuntime } from './lib/permission-auto-accept/runtime.js';
+import { createQuestionAutoDelegateRuntime } from './lib/question-auto-delegate/runtime.js';
 import { createGracefulShutdownRuntime } from './lib/opencode/shutdown-runtime.js';
 import { createProjectConfigRuntime } from './lib/projects/project-config.js';
 import { createRemoteClientAuthRuntime } from './lib/client-auth/remote-clients.js';
@@ -706,10 +707,25 @@ const sessionTitleRuntime = createSessionTitleRuntime({
   getSmallModelService,
 });
 
+// Forward declaration: question auto-delegate is created after the event hub;
+// goal hooks close over this binding so auto-delegate can keep goals alive.
+let questionAutoDelegateRuntime = null;
+/** Filled inside main() once the SQLite session index is constructed. */
+let sessionIndexServiceRef = null;
+
 const sessionGoalRuntime = createSessionGoalRuntime({
   buildOpenCodeUrl,
   getOpenCodeAuthHeaders,
   getSmallModelService,
+  shouldKeepGoalActiveForQuestion: (sessionId) => (
+    questionAutoDelegateRuntime?.isAutoHandling(sessionId) === true
+  ),
+  isQuestionBlockingGoal: (sessionId) => (
+    questionAutoDelegateRuntime?.isBlockingSession(sessionId) === true
+  ),
+  onGoalPaused: (sessionId, directory) => (
+    questionAutoDelegateRuntime?.pauseForSessionTree?.(sessionId, directory)
+  ),
   emitGoalNotification: async ({ sessionId, directory, status, goal }) => {
     // The goal settle notification replaces the per-turn ready notifications
     // (suppressed while the goal is active) — so it obeys the same toggle.
@@ -764,6 +780,38 @@ permissionAutoAcceptRuntime.start();
 notificationTriggerRuntime.setGetIsSessionAutoAccepting(
   (sessionId, directory) => permissionAutoAcceptRuntime.isSessionAutoAccepting(sessionId, directory),
 );
+
+const broadcastQuestionAutoDelegateTip = createOpenChamberEventBroadcaster({
+  getOpenChamberEventClients: () => uiOpenChamberEventClients,
+  writeSseEvent,
+});
+questionAutoDelegateRuntime = createQuestionAutoDelegateRuntime({
+  globalEventHub: globalMessageStreamHub,
+  buildOpenCodeUrl,
+  getOpenCodeAuthHeaders,
+  readSettingsFromDiskMigrated,
+  sanitizeProjects,
+  listIndexedDirectories: async () => {
+    try {
+      const snap = sessionIndexServiceRef?.snapshot?.();
+      const directories = Array.isArray(snap?.directories) ? snap.directories : [];
+      return directories
+        .map((entry) => (typeof entry?.directory === 'string' ? entry.directory.trim() : ''))
+        .filter(Boolean);
+    } catch {
+      return [];
+    }
+  },
+  broadcastGlobalUiEvent,
+  broadcastOpenChamberEvent: broadcastQuestionAutoDelegateTip,
+  onUserTakeover: ({ sessionID, directory }) => {
+    // User pause / manual claim / feature disable → goal pause on root owner.
+    void sessionGoalRuntime.pauseForQuestion?.(sessionID, directory)?.catch((error) => {
+      console.warn('[question-auto-delegate] goal pause on takeover failed:', error?.message ?? error);
+    });
+  },
+});
+questionAutoDelegateRuntime.start();
 
 const openCodeWatcherRuntime = createOpenCodeWatcherRuntime({
   waitForOpenCodePort: (...args) => waitForOpenCodePort(...args),
@@ -1109,6 +1157,7 @@ const gracefulShutdownRuntime = createGracefulShutdownRuntime({
   openCodeWatcherRuntime,
   sessionTitleRuntime,
   sessionGoalRuntime,
+  questionAutoDelegateRuntime,
   sessionRuntime,
   getHealthCheckInterval: () => healthCheckInterval,
   clearHealthCheckInterval: (value) => clearInterval(value),
@@ -1263,6 +1312,7 @@ async function main(options = {}) {
     dbPath: resolveSessionIndexDbPath({ sessionIndexDbPath }, OPENCHAMBER_DATA_DIR),
     getRuntimeConfig: () => getDesktopRuntimeConfig?.() ?? null,
   });
+  sessionIndexServiceRef = sessionIndexService;
   const transcriptCacheService = createTranscriptCacheService({
     dbPath: resolveTranscriptCacheDbPath({ transcriptCacheDbPath: options.transcriptCacheDbPath }),
   });
@@ -1615,6 +1665,7 @@ async function main(options = {}) {
     broadcastGlobalUiEvent,
     writeSseEvent,
     permissionAutoAcceptRuntime,
+    questionAutoDelegateRuntime,
     messageQueueService,
     messageQueueRuntime,
     globalMessageStreamHub,

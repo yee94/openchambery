@@ -1,4 +1,7 @@
 export const settingsDict = {
+  'settings.chat.questionDelegate.label': 'Delegar automaticamente perguntas pendentes',
+  'settings.chat.questionDelegate.description': 'Após 30 segundos sem resposta, pedir ao modelo para decidir e continuar. Interagir com uma pergunta pausa sua contagem regressiva.',
+  'settings.chat.questionDelegate.saveFailed': 'Falha ao salvar a delegação automática. Verifique o estado atual antes de tentar novamente.',
   'settings.globalConfig.title': 'Configuração global',
   'settings.globalConfig.description': 'Edite os arquivos de configuração ativos em ~/.config/opencode.',
   'settings.globalConfig.actions.reload': 'Recarregar arquivo',

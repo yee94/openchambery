@@ -192,6 +192,7 @@ This module provides OpenCode server integration utilities for the web server ru
   - `persistSettings(changes)`
   - `setRunExclusivePersist(fn)`
   - Persistent permission auto-accept policy is stored under `permissionAutoAccept`; execution ownership lives in `lib/permission-auto-accept/`.
+  - Question auto-delegate toggle is stored under `questionAutoDelegateEnabled` (default on); execution ownership lives in `lib/question-auto-delegate/` (shared `core.d.ts` for VS Code).
   - One-shot compact-chat defaults migration: when disk marker `compactChatDefaultsMigrationVersion` is missing, rewrite legacy/absent `chatRenderMode`/`activityRenderMode`/`showTurnChangedFiles` to `sorted`/`collapsed`/`true` and persist marker `1` (marker stays on disk; response allowlist still hides it). Marker already `1` preserves user values; `persistSettings` runs the same migration before the first write.
   - `startWebUiServer({ settingsPersistLock })` late-binds that shared runner after module load.
 

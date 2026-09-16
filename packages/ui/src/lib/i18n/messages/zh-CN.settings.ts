@@ -1,4 +1,7 @@
 export const settingsDict = {
+  'settings.chat.questionDelegate.label': '自动托管待回答问题',
+  'settings.chat.questionDelegate.description': '30 秒无人应答时，自动请模型自行决定并继续执行。操作问题卡片会暂停该问题的倒计时。',
+  'settings.chat.questionDelegate.saveFailed': '自动托管设置保存失败，请确认当前状态后重试。',
   'settings.globalConfig.title': '全局配置',
   'settings.globalConfig.description': '编辑 ~/.config/opencode 中当前生效的配置文件。',
   'settings.globalConfig.actions.reload': '重新加载文件',
