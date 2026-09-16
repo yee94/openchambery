@@ -1,4 +1,7 @@
 export const settingsDict = {
+  'settings.chat.questionDelegate.label': '未回答の質問を自動で委任',
+  'settings.chat.questionDelegate.description': '30秒間回答がない場合、モデルに判断と続行を依頼します。質問カードを操作すると、その質問のカウントダウンが一時停止します。',
+  'settings.chat.questionDelegate.saveFailed': '自動委任の設定を保存できませんでした。現在の状態を確認して再試行してください。',
   'settings.globalConfig.title': 'グローバル設定',
   'settings.globalConfig.description': '~/.config/opencode で現在使われている設定ファイルを編集します。',
   'settings.globalConfig.actions.reload': 'ファイルを再読み込み',

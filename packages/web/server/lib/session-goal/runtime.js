@@ -306,6 +306,19 @@ export const createSessionGoalRuntime = ({
   idleQuietMs = IDLE_QUIET_MS,
   kickoffQuietMs = KICKOFF_QUIET_MS,
   maxAutoTurns = MAX_AUTO_TURNS,
+  /**
+   * When true, question.asked only clears the idle timer (blocks continuation)
+   * without writing goal status=paused — used while question auto-delegate will answer.
+   * User takeover / disable still call pauseForQuestion explicitly.
+   */
+  shouldKeepGoalActiveForQuestion,
+  /** When true at tick time, skip continuation (pending auto-delegated question). */
+  isQuestionBlockingGoal,
+  /**
+   * Reverse path: when a goal is paused/aborted, pause related question auto-delegate
+   * timers for the session tree (root + descendants).
+   */
+  onGoalPaused,
 }) => {
   const timers = new Map();
   const inflight = new Set();
@@ -508,6 +521,12 @@ export const createSessionGoalRuntime = ({
 
   const tick = async (sessionId, directory) => {
     if (!isSessionGoalEnabled()) return;
+
+    // Pending auto-delegated questions (this session or known descendants) must
+    // block continuation without permanently pausing the goal.
+    if (typeof isQuestionBlockingGoal === 'function' && isQuestionBlockingGoal(sessionId) === true) {
+      return;
+    }
 
     const session = await openCodeFetch(`/session/${encodeURIComponent(sessionId)}`, { directory })
       .catch((error) => {
@@ -726,6 +745,12 @@ export const createSessionGoalRuntime = ({
       return;
     }
 
+    // Re-check question blockers immediately before dispatch (uncertain included).
+    if (typeof isQuestionBlockingGoal === 'function' && isQuestionBlockingGoal(sessionId) === true) {
+      console.log('[session-goal] question still blocking, dropping continuation');
+      return;
+    }
+
     console.log(`[session-goal] continuing ${sessionId} (turn ${written.turnsUsed}/${maxAutoTurns}, tokens ${written.tokensUsed}${written.tokenBudget ? `/${written.tokenBudget}` : ''})`);
     await sendContinuation({ sessionId, directory, goal: { ...written, objective: effectiveObjective }, lastAssistantInfo: executionInfo ?? lastAssistantInfo });
   };
@@ -748,42 +773,100 @@ export const createSessionGoalRuntime = ({
     timers.set(sessionId, { timer, armedAt: Date.now() });
   };
 
+  /** Walk parentID chain to the root owner session (multi-level subagent/grandchild). */
+  const resolveGoalOwner = async (sessionId, directory) => {
+    const seen = new Set();
+    let currentId = sessionId;
+    let currentDirectory = directory;
+    let current = null;
+    while (currentId && !seen.has(currentId)) {
+      seen.add(currentId);
+      current = await openCodeFetch(`/session/${encodeURIComponent(currentId)}`, { directory: currentDirectory })
+        .catch(() => null);
+      if (!current || typeof current !== 'object') {
+        return { sessionId: currentId, directory: currentDirectory, session: null };
+      }
+      const parentId = typeof current.parentID === 'string' ? current.parentID.trim() : '';
+      if (!parentId) {
+        return {
+          sessionId: currentId,
+          directory: typeof current.directory === 'string' && current.directory
+            ? current.directory
+            : currentDirectory,
+          session: current,
+        };
+      }
+      clearTimer(parentId);
+      currentDirectory = typeof current.directory === 'string' && current.directory
+        ? current.directory
+        : currentDirectory;
+      currentId = parentId;
+    }
+    return { sessionId: currentId || sessionId, directory: currentDirectory, session: current };
+  };
+
+  const notifyGoalPaused = (sessionId, directory) => {
+    if (typeof onGoalPaused !== 'function') return;
+    try {
+      const result = onGoalPaused(sessionId, directory);
+      if (result && typeof result.then === 'function') {
+        result.catch((error) => {
+          console.warn('[session-goal] onGoalPaused failed:', error?.message || error);
+        });
+      }
+    } catch (error) {
+      console.warn('[session-goal] onGoalPaused failed:', error?.message || error);
+    }
+  };
+
+  /** Question-driven pauses must keep auto-delegate timers; user/abort pauses cancel them. */
+  const isQuestionDrivenPause = (goal) => (
+    typeof goal?.statusReason === 'string'
+    && goal.statusReason === 'paused for question'
+  );
+
   // Immediate event path for a user abort: pause the active goal right away,
   // BEFORE any idle tick could send a continuation over the user's explicit
   // "stop". Messages the user sends afterwards leave the paused goal alone;
   // Resume re-arms the loop (and kicks off immediately on an idle session).
+  //
+  // UI races: metadata may land as paused before the abort event. When the goal
+  // is already paused for a non-question reason, still notify so question
+  // auto-delegate timers are cancelled (abort path used to no-op on non-active).
   const pauseAfterAbort = async (sessionId, directory) => {
-    const session = await openCodeFetch(`/session/${encodeURIComponent(sessionId)}`, { directory })
-      .catch(() => null);
-    const goal = parseGoalMetadata(session);
-    if (!goal || goal.status !== 'active') return;
-    await writeGoal(sessionId, directory, goal.id, () => ({
+    const owner = await resolveGoalOwner(sessionId, directory);
+    const goal = parseGoalMetadata(owner.session);
+    if (!goal) return;
+    if (goal.status === 'paused') {
+      if (!isQuestionDrivenPause(goal)) {
+        notifyGoalPaused(owner.sessionId, owner.directory);
+      }
+      return;
+    }
+    if (goal.status !== 'active') return;
+    await writeGoal(owner.sessionId, owner.directory, goal.id, () => ({
       status: 'paused',
       statusReason: 'paused after abort',
     }));
-    console.log(`[session-goal] ${sessionId} paused after user abort`);
+    console.log(`[session-goal] ${owner.sessionId} paused after user abort`);
+    notifyGoalPaused(owner.sessionId, owner.directory);
   };
 
   // Pause the active goal when the agent asks a question — without aborting
   // the current turn. Aborting would kill the pending question. A question
-  // from a child/sub-agent session pauses the parent session's goal.
+  // from a child/sub-agent (any depth) pauses the root owner session's goal.
   const pauseForQuestion = async (sessionId, directory) => {
-    const session = await openCodeFetch(`/session/${encodeURIComponent(sessionId)}`, { directory })
-      .catch(() => null);
-    if (!session || typeof session !== 'object') return;
-    const parentId = typeof session.parentID === 'string' ? session.parentID.trim() : '';
-    const targetId = parentId || sessionId;
-    if (parentId) clearTimer(parentId);
-    const target = parentId
-      ? await openCodeFetch(`/session/${encodeURIComponent(targetId)}`, { directory }).catch(() => null)
-      : session;
-    const goal = parseGoalMetadata(target);
+    const owner = await resolveGoalOwner(sessionId, directory);
+    if (!owner.session) return;
+    clearTimer(owner.sessionId);
+    const goal = parseGoalMetadata(owner.session);
     if (!goal || goal.status !== 'active') return;
-    await writeGoal(targetId, directory, goal.id, () => ({
+    await writeGoal(owner.sessionId, owner.directory, goal.id, () => ({
       status: 'paused',
       statusReason: 'paused for question',
     }));
-    console.log(`[session-goal] ${targetId} paused for question`);
+    console.log(`[session-goal] ${owner.sessionId} paused for question`);
+    // Takeover path already pauses questions; still notify for abort-style symmetry.
   };
 
   const processPayload = (payload, directoryHint = '') => {
@@ -808,6 +891,11 @@ export const createSessionGoalRuntime = ({
     const asked = extractQuestionAsked(payload, directoryHint);
     if (asked) {
       clearTimer(asked.sessionId);
+      // Auto-delegate keeps the goal active (status stays active) so a successful
+      // auto-reply can continue on the next idle. User takeover/disable still pause.
+      const keepActive = typeof shouldKeepGoalActiveForQuestion === 'function'
+        && shouldKeepGoalActiveForQuestion(asked.sessionId, asked.directory || directoryHint) === true;
+      if (keepActive) return;
       if (!inflight.has(asked.sessionId)) {
         inflight.add(asked.sessionId);
         pauseForQuestion(asked.sessionId, asked.directory || directoryHint)
@@ -831,22 +919,32 @@ export const createSessionGoalRuntime = ({
       return;
     }
 
-    // Kickoff path: a goal set (or resumed — the UI stamps statusReason
-    // 'resumed') while the session is already idle emits no status
-    // transition, only session.updated. Arm a short timer; the tick's
-    // quiescence check keeps this safe if the session is actually busy.
+    // session.updated carries goal create/resume/pause without a status event.
     const update = extractSessionUpdate(payload);
-    if (
-      update
-      && !update.parentID
-      && update.goal
-      && update.goal.status === 'active'
-      && (update.goal.turnsUsed === 0 || update.goal.statusReason === 'resumed')
-      && !timers.has(update.sessionId)
-      && !inflight.has(update.sessionId)
-    ) {
-      const quiet = update.goal.statusReason === 'resumed' ? RESUME_KICKOFF_MS : kickoffQuietMs;
-      armTimer(update.sessionId, update.directory || directoryHint, quiet);
+    if (update && !update.parentID && update.goal) {
+      // Explicit UI/user pause (not question-driven): cancel goal timer and
+      // reverse-pause related question auto-delegate timers. Question pauses
+      // keep auto-delegate counting so the agent can continue after auto-reply.
+      if (update.goal.status === 'paused') {
+        clearTimer(update.sessionId);
+        if (!isQuestionDrivenPause(update.goal)) {
+          notifyGoalPaused(update.sessionId, update.directory || directoryHint);
+        }
+        return;
+      }
+
+      // Kickoff path: a goal set (or resumed — the UI stamps statusReason
+      // 'resumed') while the session is already idle. Arm a short timer; the
+      // tick's quiescence check keeps this safe if the session is actually busy.
+      if (
+        update.goal.status === 'active'
+        && (update.goal.turnsUsed === 0 || update.goal.statusReason === 'resumed')
+        && !timers.has(update.sessionId)
+        && !inflight.has(update.sessionId)
+      ) {
+        const quiet = update.goal.statusReason === 'resumed' ? RESUME_KICKOFF_MS : kickoffQuietMs;
+        armTimer(update.sessionId, update.directory || directoryHint, quiet);
+      }
     }
   };
 
@@ -858,5 +956,10 @@ export const createSessionGoalRuntime = ({
     timers.clear();
   };
 
-  return { processPayload, stop };
+  return {
+    processPayload,
+    stop,
+    /** Used by question auto-delegate user takeover / disable paths. */
+    pauseForQuestion: (sessionId, directory) => pauseForQuestion(sessionId, directory),
+  };
 };

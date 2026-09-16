@@ -31,6 +31,13 @@ interface SettingsSearchAvailabilityContext extends SettingsRuntimeContext {
 
 const SETTINGS_SEARCH_ITEMS: readonly SettingsSearchItem[] = [
   {
+    id: 'chat.question-auto-delegate',
+    page: 'chat',
+    titleKey: 'settings.chat.questionDelegate.label',
+    descriptionKey: 'settings.chat.questionDelegate.description',
+    keywords: ['question', 'auto', 'delegate', '30', 'subagent', '托管', '倒计时'],
+  },
+  {
     id: 'instances.manage',
     page: 'instances',
     titleKey: 'mobile.settings.switchInstance',

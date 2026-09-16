@@ -104,11 +104,21 @@ before touching the filesystem). Rationale: metadata rides every
       stop), with a tick-side safety net. Messages sent while paused leave
       the goal alone; Resume re-arms the loop, and resuming over an aborted
       tail skips the audit and goes straight to a continuation nudge;
-    - `question.asked` also pauses an active goal (including when a child /
+    - `question.asked` pauses an active goal (including when a child /
       sub-agent session asks — the parent session's goal is the one paused)
       but does NOT abort the current turn: aborting would kill the pending
       question. After the user answers, they Resume manually to re-arm
-      the loop;
+      the loop. **Exception:** when question auto-delegate is handling the
+      ask (`shouldKeepGoalActiveForQuestion`), the goal stays `active` and
+      only the idle timer is cleared; `tick` also bails while
+      `isQuestionBlockingGoal` reports a pending auto-delegated question on
+      the session or a known descendant. User pause / disable of auto-delegate
+      still calls `pauseForQuestion`. See `lib/question-auto-delegate/`.
+      Explicit `session.updated` with `status: paused` notifies `onGoalPaused`
+      (cancels related question timers) **except** when `statusReason` is
+      `paused for question` (auto-delegate must keep counting). Abort after
+      metadata already paused still notifies for non-question pause reasons
+      (UI concurrent abort + metadata race).
    - terminal checks, cheapest first: assistant turn error → `blocked`;
      `tokensUsed >= tokenBudget` → `budgetLimited`;
      `turnsUsed >= MAX_AUTO_TURNS` (20) → `blocked`;
