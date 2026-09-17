@@ -1697,9 +1697,7 @@ export const OpenChamberVisualSettings: React.FC<OpenChamberVisualSettingsProps>
                 {hasBehaviorSettings && (
                     <div className="oc-settings-section-stack">
 
-                            {shouldShow('questionAutoDelegate') && <QuestionAutoDelegateSetting />}
-
-                            {(shouldShow('userMessageRendering') || shouldShow('mermaidRendering') || shouldShow('chatRenderMode') || shouldShow('messageTransport') || (shouldShow('activityRenderMode') && chatRenderMode === 'sorted') || (shouldShow('diffLayout') && !isVSCode) || shouldShow('followUpBehavior')) && (
+                                                        {(shouldShow('userMessageRendering') || shouldShow('mermaidRendering') || shouldShow('chatRenderMode') || shouldShow('messageTransport') || (shouldShow('activityRenderMode') && chatRenderMode === 'sorted') || (shouldShow('diffLayout') && !isVSCode) || shouldShow('followUpBehavior')) && (
                                 <div className="grid w-full grid-cols-1 gap-y-[var(--oc-settings-section-stack-gap)]">
                                     {shouldShow('chatRenderMode') && (
                                         <ResponsiveSettingsGroup
@@ -2026,6 +2024,8 @@ export const OpenChamberVisualSettings: React.FC<OpenChamberVisualSettingsProps>
                                     </ResponsiveSettingsRow>
                                 </ResponsiveSettingsGroup>
                             )}
+
+                            {shouldShow('questionAutoDelegate') && <QuestionAutoDelegateSetting />}
 
                             {(shouldShow('sessionAssist') || shouldShow('collapsibleUserMessages') || shouldShow('stickyUserHeader') || (shouldShow('promptNavigatorEnabled') && !isVSCode) || shouldShow('wideChatLayout') || shouldShow('codeBlockLineWrap') || shouldShow('splitAssistantMessageActions') || shouldShow('showAssistantTps') || shouldShow('subagentReadOnlyBanner') || shouldShow('dotfiles') || shouldShow('fileViewerPreview') || shouldShow('persistDraft') || shouldShow('showToolFileIcons') || shouldShow('showSubagentTaskDetails') || shouldShow('showTurnChangedFiles') || (!isMobile && shouldShow('inputSpellcheck')) || shouldShow('reasoning')) && (
                                 <div className="oc-settings-section-stack">
