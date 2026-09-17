@@ -104,9 +104,65 @@ describe('QuestionCard auto delegation', () => {
     expect(host.textContent).toContain('Model decides in 25s');
     expect(mocks.fetch).toHaveBeenCalledTimes(gets);
     await act(async () => { await vi.advanceTimersByTimeAsync(25000); });
-    expect(host.textContent).toContain('Waiting for host confirmation');
+    expect(host.textContent).toContain('Waiting for confirmation');
+    expect(host.textContent).not.toMatch(/host/i);
     expect(posts()).toHaveLength(0); expect(mocks.reply).not.toHaveBeenCalled();
     expect(host.querySelector('[style*="scaleX(0)"]')).toBeTruthy();
+  });
+  test('disabled setting does not start a local countdown for an unlisted question', async () => {
+    snapshot = { ...snapshot, enabled: false, requests: [] };
+    await mount();
+    expect(host.textContent).not.toContain('Model decides');
+    expect(bar()).toBeNull();
+    expect(host.textContent).toContain('Automatic countdown is off');
+  });
+  test('disabled setting hides countdown even if a request is still marked counting', async () => {
+    snapshot = { ...snapshot, enabled: false };
+    await mount();
+    expect(host.textContent).not.toContain('Model decides');
+    expect(bar()).toBeNull();
+    expect(host.textContent).toContain('Automatic countdown is off');
+  });
+  test('question interaction stops the countdown immediately even if pause is still in flight', async () => {
+    mocks.fetch.mockImplementation(async (_path: string, init?: RequestInit) => {
+      if (init?.method === 'POST') return new Promise(() => {});
+      return Response.json(snapshot);
+    });
+    await mount();
+    expect(host.textContent).toContain('Model decides in 30s');
+    await act(async () => { button('Option A').click(); });
+    expect(host.textContent).not.toContain('Model decides');
+    expect(bar()).toBeNull();
+    expect(host.textContent).toMatch(/Pausing countdown|Countdown paused/);
+  });
+  test('answering before the snapshot arrives stops the local countdown', async () => {
+    mocks.fetch.mockImplementation(() => new Promise(() => {}));
+    await act(async () => { root.render(<QuestionCard question={question} />); });
+    await flush();
+    expect(host.textContent).toContain('Model decides in 30s');
+    await act(async () => { button('Option A').click(); });
+    expect(host.textContent).not.toContain('Model decides');
+    expect(bar()).toBeNull();
+    expect(host.textContent).toContain('Countdown paused');
+    expect(host.querySelector('[role="alert"]')).toBeNull();
+  });
+  test('held interaction pauses once the snapshot lists the question', async () => {
+    mocks.fetch.mockImplementation(() => new Promise(() => {}));
+    await act(async () => { root.render(<QuestionCard question={question} />); });
+    await flush();
+    await act(async () => { button('Option A').click(); });
+    expect(posts()).toHaveLength(0);
+    mocks.fetch.mockImplementation(async (_path: string, init?: RequestInit) => {
+      if (init?.method === 'POST') {
+        snapshot = { ...snapshot, revision: snapshot.revision + 1, requests: [{ ...snapshot.requests[0], state: 'paused', deadlineAt: null, pauseReason: 'interaction' }] };
+        return Response.json({ outcome: 'paused', snapshot });
+      }
+      return Response.json(snapshot);
+    });
+    await publish();
+    expect(posts()).toHaveLength(1);
+    expect(JSON.parse(posts()[0][1].body).reason).toBe('interaction');
+    expect(host.textContent).toContain('Countdown paused');
   });
   test('option and tab interactions pause using the child identity and preserve attribution', async () => {
     await mount();
@@ -121,13 +177,14 @@ describe('QuestionCard auto delegation', () => {
     expect(mocks.reply).toHaveBeenCalledWith('child', 'q-1', [['Option A'], ['Option B']], '/child-project');
   });
   test.each(['input', 'paste', 'compositionstart', 'keydown'])('%s pauses while programmatic focus remains inert', async (type) => {
-    await mount(); await click('Other…');
-    snapshot = { ...snapshot, revision: snapshot.revision + 1, requests: [{ ...snapshot.requests[0], state: 'counting', deadlineAt: 31000 }] };
-    await publish(); mocks.fetch.mockClear();
-    const textarea = host.querySelector('textarea')!;
-    await act(async () => { textarea.blur(); textarea.focus(); }); await flush();
+    await mount();
+    const card = host.querySelector<HTMLElement>('[data-question-card]')!;
+    const option = button('Option A');
+    await act(async () => { option.blur(); option.focus(); }); await flush();
     expect(posts()).toHaveLength(0);
-    await act(async () => { textarea.dispatchEvent(type === 'keydown' ? new KeyboardEvent(type, { key: 'a', bubbles: true }) : new Event(type, { bubbles: true })); });
+    await act(async () => {
+      card.dispatchEvent(type === 'keydown' ? new KeyboardEvent(type, { key: 'a', bubbles: true }) : new Event(type, { bubbles: true }));
+    });
     await flush();
     expect(posts()).toHaveLength(1);
   });
