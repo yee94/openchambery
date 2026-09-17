@@ -23,12 +23,19 @@ export function useQuestionDelegation(question: QuestionRequest) {
   const [claim, setClaim] = React.useState<{ scope: string; epoch?: string } | null>(null);
   const claimed = claim?.scope === scope && (!claim.epoch || claim.epoch === query.data?.snapshot.epoch);
   const awaitingClaim = claimed && (!request || !['submitting', 'uncertain', 'settled'].includes(request.state));
+  const [held, setHeld] = React.useState<{ scope: string } | null>(null);
+  const heldForScope = held?.scope === scope;
   const flight = React.useRef<string | null>(null);
   const failedScope = React.useRef<string | null>(null);
   const latestScope = React.useRef(scope);
   latestScope.current = scope;
+  const hold = useEvent(() => {
+    if (claimed) return;
+    setHeld((current) => (current?.scope === scope ? current : { scope }));
+  });
   const run = useEvent(async (action: 'pause' | 'delegate', reason: 'interaction' | 'user' = 'user') => {
     if (claimed) return;
+    if (action === 'pause') hold();
     if (flight.current === scope || (reason === 'interaction' && failedScope.current === scope)) return;
     const cached = getQuestionAutoDelegateSnapshot();
     const currentRequest = matchRequest(cached?.snapshot.requests, question);
@@ -41,6 +48,7 @@ export function useQuestionDelegation(question: QuestionRequest) {
       }
       return;
     }
+    if (action === 'pause' && reason === 'interaction' && !currentRequest) return;
     const generation = getRuntimeGeneration();
     flight.current = scope;
     failedScope.current = null;
@@ -50,7 +58,10 @@ export function useQuestionDelegation(question: QuestionRequest) {
       const data = cached ?? await ensureQuestionAutoDelegate();
       if (generation !== getRuntimeGeneration()) throw new Error('Runtime changed');
       const identity = matchRequest(data.snapshot.requests, question);
-      if (!identity) throw new Error('Question identity unavailable');
+      if (!identity) {
+        if (action === 'pause' && reason === 'interaction') return;
+        throw new Error('Question identity unavailable');
+      }
       if ((action === 'pause' && identity.state !== 'counting') || ['submitting', 'uncertain', 'settled'].includes(identity.state)) return;
       const outcome = await mutateQuestionAutoDelegate(action, identity, action === 'pause' ? reason : undefined);
       if (['error', 'not_found', 'disabled'].includes(outcome)) throw new Error('Question operation failed');
@@ -66,6 +77,7 @@ export function useQuestionDelegation(question: QuestionRequest) {
   });
   const interaction = useEvent((event: React.SyntheticEvent<HTMLElement>) => {
     if ((event.target as Element).closest('[data-question-delegation-controls]')) return;
+    hold();
     void run('pause', 'interaction');
   });
   const submissionClaimed = useEvent(async (submittedScope: string) => {
@@ -74,7 +86,12 @@ export function useQuestionDelegation(question: QuestionRequest) {
     setUI({ scope, pending: null, failed: null });
     await refreshQuestionAutoDelegate();
   });
-  return { query, request, pending, failed, run, interaction, submissionClaimed, claimed, awaitingClaim, scope };
+  React.useEffect(() => {
+    if (!heldForScope || claimed) return;
+    if (request?.state !== 'counting') return;
+    void run('pause', 'interaction');
+  }, [heldForScope, claimed, request?.state, request?.requestID]);
+  return { query, request, pending, failed, run, interaction, submissionClaimed, claimed, awaitingClaim, scope, held: heldForScope };
 }
 
 type Delegation = ReturnType<typeof useQuestionDelegation>;
@@ -107,7 +124,7 @@ function LiveCountdown({ data, deadlineAt, startedAt, delayMs }: {
 
 export function QuestionAutoDelegateStatus({ delegation }: { delegation: Delegation }) {
   const { t } = useI18n();
-  const { query, request, pending, failed, run, claimed, awaitingClaim, scope } = delegation;
+  const { query, request, pending, failed, run, claimed, awaitingClaim, scope, held } = delegation;
   const startedAt = React.useRef(performance.now());
   const startedScope = React.useRef(scope);
   if (startedScope.current !== scope) {
@@ -115,24 +132,28 @@ export function QuestionAutoDelegateStatus({ delegation }: { delegation: Delegat
     startedAt.current = performance.now();
   }
   const locked = claimed || request?.state === 'submitting' || request?.state === 'uncertain' || request?.state === 'settled';
-  const showCountdown = !awaitingClaim && !pending && (!request || request.state === 'counting');
+  const enabled = query.data?.snapshot.enabled !== false;
+  const showCountdown = enabled && !awaitingClaim && !pending && !held && (!request || request.state === 'counting');
   const delayMs = query.data?.snapshot.delayMs ?? DEFAULT_DELAY_MS;
+  const status = awaitingClaim ? 'chat.questionDelegate.uncertain'
+    : pending ? (pending === 'pause' ? 'chat.questionDelegate.pausing' : 'chat.questionDelegate.submitting')
+    : request?.state === 'submitting' ? 'chat.questionDelegate.submitting'
+    : request?.state === 'uncertain' ? 'chat.questionDelegate.uncertain'
+    : request?.state === 'settled' && request.submittedBy === 'auto' && request.resolution === 'replied' ? 'chat.questionDelegate.success'
+    : request?.state === 'settled' ? 'chat.questionDelegate.settled'
+    : !enabled ? 'chat.questionDelegate.disabled'
+    : held || request?.state === 'paused' ? 'chat.questionDelegate.paused'
+    : request?.state === 'disabled' ? 'chat.questionDelegate.disabled'
+    : 'chat.questionDelegate.settled';
   return <div data-question-delegation-controls className="flex flex-col gap-1.5 border-t border-border/20 px-2 py-1.5">
     {showCountdown ? <LiveCountdown data={query.data} deadlineAt={request?.deadlineAt ?? null} startedAt={startedAt.current} delayMs={delayMs} /> : null}
     <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
       {!showCountdown ? <div className="min-w-0 flex-1 basis-40 typography-micro text-muted-foreground">
-        {awaitingClaim ? <span role="status">{t('chat.questionDelegate.uncertain')}</span>
-          : pending ? <span role="status">{t(pending === 'pause' ? 'chat.questionDelegate.pausing' : 'chat.questionDelegate.submitting')}</span>
-          : <span role="status">{t(request?.state === 'paused' ? 'chat.questionDelegate.paused'
-            : request?.state === 'disabled' ? 'chat.questionDelegate.disabled'
-              : request?.state === 'submitting' ? 'chat.questionDelegate.submitting'
-                : request?.state === 'uncertain' ? 'chat.questionDelegate.uncertain'
-                  : request?.state === 'settled' && request.submittedBy === 'auto' && request.resolution === 'replied' ? 'chat.questionDelegate.success'
-                    : 'chat.questionDelegate.settled')}</span>}
+        <span role="status">{t(status)}</span>
       </div> : null}
       {query.isError || failed ? <div role="alert" className="min-w-0 flex-1 basis-40 typography-micro text-[var(--status-error)]">{t(failed === 'pause' ? 'chat.questionDelegate.pauseFailed' : failed === 'delegate' ? 'chat.questionDelegate.delegateFailed' : 'chat.questionDelegate.loadFailed')}</div> : null}
       {(query.isError || failed || awaitingClaim) && <Button variant="ghost" size="xs" disabled={Boolean(pending) || query.isFetching} onClick={() => failed && !claimed ? void run(failed) : void query.refetch()}>{t(claimed ? 'chat.questionDelegate.refreshStatus' : 'chat.questionDelegate.retry')}</Button>}
-      {request?.state === 'counting' && !locked && <Button variant="ghost" size="xs" disabled={Boolean(pending)} onClick={() => void run('pause')}>{t('chat.questionDelegate.pause')}</Button>}
+      {request?.state === 'counting' && !locked && enabled && !held && <Button variant="ghost" size="xs" disabled={Boolean(pending)} onClick={() => void run('pause')}>{t('chat.questionDelegate.pause')}</Button>}
       {request && !locked && <Button variant="outline" size="xs" disabled={Boolean(pending)} onClick={() => void run('delegate')}>{t('chat.questionDelegate.delegate')}</Button>}
     </div>
   </div>;
