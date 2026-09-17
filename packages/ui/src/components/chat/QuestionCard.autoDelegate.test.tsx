@@ -70,10 +70,35 @@ afterEach(async () => {
   await act(async () => { root.unmount(); }); queryClient.clear(); host.remove(); vi.useRealTimers(); vi.restoreAllMocks();
 });
 
+const bar = () => host.querySelector<HTMLElement>('[data-question-delegate-bar]');
+
 describe('QuestionCard auto delegation', () => {
+  test('shows a full-width countdown bar before the host snapshot arrives', async () => {
+    mocks.fetch.mockImplementation(() => new Promise(() => {}));
+    await act(async () => { root.render(<QuestionCard question={question} />); });
+    await flush();
+    expect(host.textContent).not.toContain('Loading...');
+    expect(host.textContent).toContain('Model decides in 30s');
+    expect(bar()?.className).toContain('h-1');
+    expect(bar()?.className).toContain('w-full');
+  });
+  test('keeps the countdown bar when the snapshot has not yet listed this question', async () => {
+    snapshot = { ...snapshot, requests: [] };
+    await mount();
+    expect(host.textContent).not.toContain('Loading...');
+    expect(host.textContent).toContain('Model decides in 30s');
+    expect(bar()).toBeTruthy();
+  });
+  test('matches the host countdown by request id even when session ids differ', async () => {
+    snapshot = { ...snapshot, requests: [{ ...snapshot.requests[0], sessionID: 'other-session' }] };
+    await mount();
+    expect(host.textContent).toContain('Model decides in 30s');
+    expect(bar()).toBeTruthy();
+  });
   test('server-relative countdown updates locally and expiry submits no browser answer', async () => {
     await mount();
     expect(host.textContent).toContain('Model decides in 30s');
+    expect(bar()?.className).toContain('h-1');
     const gets = mocks.fetch.mock.calls.length;
     await act(async () => { await vi.advanceTimersByTimeAsync(5000); });
     expect(host.textContent).toContain('Model decides in 25s');

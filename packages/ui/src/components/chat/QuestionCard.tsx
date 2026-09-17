@@ -605,6 +605,8 @@ export const QuestionCard: React.FC<QuestionCardProps> = ({ question }) => {
             ) : null}
           </div>
 
+          <QuestionAutoDelegateStatus delegation={delegation} />
+
           {/* Footer actions */}
           <div className="px-2 pb-1.5 pt-1 flex items-center gap-1.5 border-t border-border/20">
             <button
@@ -641,7 +643,6 @@ export const QuestionCard: React.FC<QuestionCardProps> = ({ question }) => {
               </div>
             ) : null}
           </div>
-          <QuestionAutoDelegateStatus delegation={delegation} />
         </div>
       </div>
     </div>
