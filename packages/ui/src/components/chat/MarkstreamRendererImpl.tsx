@@ -6,6 +6,7 @@ import { cn } from '@/lib/utils';
 import { useOptionalThemeSystem } from '@/contexts/useThemeSystem';
 import { useEffectiveDirectory } from '@/hooks/useEffectiveDirectory';
 import { useRuntimeAPIs } from '@/hooks/useRuntimeAPIs';
+import { useUIStore } from '@/stores/useUIStore';
 import { markdownHeightCacheKey, rememberMarkdownHeight } from './markdown/markdownHeightCache';
 import {
   handleMarkstreamFileReferenceKeyDown,
@@ -110,8 +111,16 @@ const MarkstreamRendererImpl: React.FC<MarkstreamRendererProps> = ({
   });
   useResizeObserver(containerRef, handleResize);
 
+  const openInAppBrowser = useEvent((directory: string, url: string) => {
+    useUIStore.getState().openContextBrowser(directory, url);
+  });
   const handleClick = useEvent((event: MouseEvent) => {
-    handleMarkstreamPointerEvent(event, { onShowPopup, fileReference: fileReferenceOptions });
+    handleMarkstreamPointerEvent(event, {
+      onShowPopup,
+      fileReference: fileReferenceOptions,
+      effectiveDirectory,
+      openInAppBrowser,
+    });
   });
   const handleKeyDown = useEvent((event: KeyboardEvent) => {
     handleMarkstreamFileReferenceKeyDown(event, { fileReference: fileReferenceOptions });
