@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.19.19-beta.1] - 2026-09-19
+
+### Relay
+
+- Host 控制通道连上后立刻掉线时，不再把重连间隔清回 1 秒；稳住一段时间后才恢复，避免每秒重连风暴。
+- Relay 对 host-control 按 IP 和 Host 身份限频，超限返回 4029 且不替换已有控制连接。不根据客户端应用版本拒连。
+
 ## [1.19.18] - 2026-09-17
 
 ### 问题自动托管

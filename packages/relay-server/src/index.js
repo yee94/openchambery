@@ -15,7 +15,8 @@ const DEFAULT_LIMITS = {
   maxGlobalQueuedBytes: 32 * 1024 * 1024, maxBufferedAmount: 2 * 1024 * 1024,
   maxControlQueueEntries: 256, maxControlQueuedBytes: 2 * 1024 * 1024,
   pumpRetryMs: 25, heartbeatMs: 30_000, handshakeMs: 10_000, closeDeadlineMs: 5_000,
-  admissionWindowMs: 60_000, maxAdmissionsPerIp: 120, maxAdmissionEntries: 10_000,
+  admissionWindowMs: 60_000, maxAdmissionsPerIp: 120,
+  maxHostControlAdmissionsPerIp: 30, maxHostControlAdmissionsPerServer: 12, maxAdmissionEntries: 10_000,
   idAttempts: 4,
 };
 const fields = {
@@ -87,15 +88,22 @@ export const createPrivateRelayServer = (options = {}) => {
     for (const [key, expiry] of replay) if (expiry <= now) replay.delete(key);
     for (const [key, record] of admissions) if (record.until <= now) admissions.delete(key);
   };
-  const admitIp = (ip, role) => {
-    purge(); const key = `${role}:${ip}`; let record = admissions.get(key);
+  const admit = (key, cap) => {
+    purge(); let record = admissions.get(key);
     if (!record) {
       if (admissions.size >= limits.maxAdmissionEntries) { addReason('limited'); return false; }
       record = { count: 0, until: clock.now() + limits.admissionWindowMs }; admissions.set(key, record);
     }
     record.count += 1;
-    if (record.count > limits.maxAdmissionsPerIp) { addReason('limited'); return false; }
+    if (record.count > cap) { addReason('limited'); return false; }
     return true;
+  };
+  const admitUpgrade = (ip, parsed) => {
+    if (parsed.role === 'host-control') {
+      return admit(`host-control:${ip}`, limits.maxHostControlAdmissionsPerIp)
+        && admit(`host-control-server:${parsed.serverId}`, limits.maxHostControlAdmissionsPerServer);
+    }
+    return admit(`${parsed.role}:${ip}`, limits.maxAdmissionsPerIp);
   };
   const removeSocket = (socket) => {
     if (!accepted.delete(socket)) return;
@@ -330,8 +338,11 @@ export const createPrivateRelayServer = (options = {}) => {
     localServer.on('upgrade', (request, socket, head) => {
       if (socket._relayTcpTimer) { clock.clearTimeout(socket._relayTcpTimer); socket._relayTcpTimer = null; }
       const parsed = parse(request); const ip = resolveClientIp(request);
-      if (!parsed) { addReason('policyRejected'); return reject(request, socket, head, CLOSE.malformed); }
-      if (!admitIp(ip, parsed.role)) return reject(request, socket, head, CLOSE.limit);
+      if (!parsed) {
+        if (!admit(`malformed:${ip}`, limits.maxAdmissionsPerIp)) return reject(request, socket, head, CLOSE.limit);
+        addReason('policyRejected'); return reject(request, socket, head, CLOSE.malformed);
+      }
+      if (!admitUpgrade(ip, parsed)) return reject(request, socket, head, CLOSE.limit);
       if (!authenticate(parsed)) { addReason('authRejected'); return reject(request, socket, head, CLOSE.auth); }
       if (counts.sockets >= limits.maxSockets) { addReason('limited'); return reject(request, socket, head, CLOSE.limit); }
       localWss.handleUpgrade(request, socket, head, (ws) => { accepted.add(ws); counts.sockets += 1; ws.on('close', () => removeSocket(ws)); ws._relayHandshake = clock.setTimeout(() => { if (!ws._relayRole) safeClose(ws, CLOSE.malformed, 'handshake timeout'); }, limits.handshakeMs); options.onSocketAccepted?.({ socket: ws, role: parsed.role }); attach(ws, request, parsed); if (ws._relayHandshake) { clock.clearTimeout(ws._relayHandshake); ws._relayHandshake = null; } });
