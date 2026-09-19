@@ -35,6 +35,29 @@ const ALLOWED_WS_PATHS = new Set([
   '/api/dictation/ws',
 ]);
 
+/** Preview/Browser HMR sockets: path is `/api/preview/proxy/<id>/...` (prefix, not exact). */
+const PREVIEW_PROXY_WS_PATH_PREFIX = '/api/preview/proxy/';
+
+/**
+ * Tunnel WebSocket path allowlist (defense in depth; pairs with isUrlAuthWebSocketPath).
+ * Exact paths for terminal/dictation/events; prefix only for preview proxy HMR.
+ *
+ * @param {unknown} path
+ * @returns {boolean}
+ */
+export const isTunnelWsPathAllowed = (path) => {
+  if (typeof path !== 'string' || !path) return false;
+  // Path only (no query) — tunnel open payload already splits query.
+  if (ALLOWED_WS_PATHS.has(path)) return true;
+  try {
+    const pathname = new URL(path, 'http://127.0.0.1').pathname;
+    if (ALLOWED_WS_PATHS.has(pathname)) return true;
+    return pathname.startsWith(PREVIEW_PROXY_WS_PATH_PREFIX);
+  } catch {
+    return false;
+  }
+};
+
 // Hop-by-hop headers stripped from tunneled requests; `host` is set by fetch
 // to the loopback origin. content-length is dropped too because the body is
 // re-chunked through the tunnel and undici computes framing itself.
@@ -320,7 +343,7 @@ export const createTunnelHost = ({
       void sendAbort(streamId, error?.message ?? 'malformed ws open');
       return;
     }
-    if (!ALLOWED_WS_PATHS.has(open.path)) {
+    if (!isTunnelWsPathAllowed(open.path)) {
       void sendAbort(streamId, 'Path is not allowed through the relay');
       return;
     }

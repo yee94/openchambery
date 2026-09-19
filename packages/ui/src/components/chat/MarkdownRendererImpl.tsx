@@ -75,9 +75,13 @@ const useCurrentMermaidTheme = () => {
 const useExternalLinkInteractions = ({
   containerRef,
   enabled,
+  effectiveDirectory,
+  openInAppBrowser,
 }: {
   containerRef: React.RefObject<HTMLDivElement | null>;
   enabled?: boolean;
+  effectiveDirectory?: string;
+  openInAppBrowser?: (directory: string, url: string) => void;
 }) => {
   const handleClick = useEvent((event: MouseEvent) => {
     if (enabled === false) {
@@ -113,6 +117,11 @@ const useExternalLinkInteractions = ({
 
     event.preventDefault();
     event.stopPropagation();
+    const directory = (effectiveDirectory || '').trim();
+    if (directory && openInAppBrowser) {
+      openInAppBrowser(directory, href);
+      return;
+    }
     void openExternalUrl(href);
   });
 
@@ -1300,11 +1309,16 @@ const MarkdownRendererImpl: React.FC<MarkdownRendererProps> = ({
   const { editor, runtime } = useRuntimeAPIs();
   const containerRef = React.useRef<HTMLDivElement>(null);
   const effectiveDirectory = useEffectiveDirectory() ?? '';
-  const openContextPreview = useUIStore((state) => state.openContextPreview);
 
+  const openInAppBrowser = useEvent((directory: string, url: string) => {
+    useUIStore.getState().openContextBrowser(directory, url);
+  });
+
+  // Loopback markdown chrome previously opened Preview; session-body links now
+  // always open the in-app Browser panel (same as primary http(s) clicks).
   const handlePreviewLoopback = useEvent((url: string) => {
     if (!effectiveDirectory) return;
-    openContextPreview(effectiveDirectory, url);
+    openInAppBrowser(effectiveDirectory, url);
   });
 
   const live = isStreaming && !disableStreamAnimation;
@@ -1326,7 +1340,11 @@ const MarkdownRendererImpl: React.FC<MarkdownRendererProps> = ({
     onShowPopup,
     enabled: enableFileReferences && !isStreaming,
   });
-  useExternalLinkInteractions({ containerRef });
+  useExternalLinkInteractions({
+    containerRef,
+    effectiveDirectory,
+    openInAppBrowser,
+  });
   const {
     reconcileMarkdownImageResources,
     transportIdentity: imageTransportIdentity,
@@ -1454,6 +1472,10 @@ const SimpleMarkdownRendererImpl: React.FC<{
     enablePanZoom: mermaidControls.showPanZoomControls,
     allowMermaidWheelEvents,
   });
+  const openInAppBrowser = useEvent((directory: string, url: string) => {
+    useUIStore.getState().openContextBrowser(directory, url);
+  });
+
   useFileReferenceInteractions({
     containerRef,
     effectiveDirectory,
@@ -1462,7 +1484,12 @@ const SimpleMarkdownRendererImpl: React.FC<{
     onShowPopup,
     enabled: enableFileReferences,
   });
-  useExternalLinkInteractions({ containerRef, enabled: !disableLinkSafety });
+  useExternalLinkInteractions({
+    containerRef,
+    enabled: !disableLinkSafety,
+    effectiveDirectory,
+    openInAppBrowser,
+  });
   const {
     reconcileMarkdownImageResources,
     transportIdentity: imageTransportIdentity,

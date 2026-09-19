@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.19.19-beta.2] - 2026-09-19
+
+### 浏览器与预览
+
+- 会话正文里的 http(s) 链接（含 localhost）单击后在内置浏览器打开，地址栏可改可跳；按住修饰键仍用系统浏览器。
+- 经 Relay 连接时，预览和内置浏览器打开 Host 上的 localhost，不再打到客户端本机端口。
+- Relay 下 Vite 一类开发服务器的热更新可穿过隧道；被预览站点自己的登录 cookie 在 Relay 下仍不可用。
+
 ## [1.19.19-beta.1] - 2026-09-19
 
 ### Relay

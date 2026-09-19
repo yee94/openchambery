@@ -274,4 +274,30 @@ describe('useUIStore context panel tabs', () => {
     expect(useUIStore.getState().isRightSidebarOpen).toBe(true);
     expect(useUIStore.getState().rightSidebarTab).toBe('files');
   });
+
+  test('openContextBrowser reuses desktop-browser tab and updates non-empty targetPath', () => {
+    const directory = '/repo';
+    const store = useUIStore.getState();
+
+    store.openContextBrowser(directory, 'https://example.com/one');
+    const first = useUIStore.getState().contextPanelByDirectory[directory];
+    expect(first?.isOpen).toBe(true);
+    expect(first?.tabs).toHaveLength(1);
+    expect(first?.tabs[0]?.mode).toBe('browser');
+    expect(first?.tabs[0]?.dedupeKey).toBe('desktop-browser');
+    expect(first?.tabs[0]?.targetPath).toBe('https://example.com/one');
+    expect(first?.activeTabId).toBe(first?.tabs[0]?.id);
+
+    store.openContextBrowser(directory, 'https://example.com/two');
+    const second = useUIStore.getState().contextPanelByDirectory[directory];
+    expect(second?.tabs).toHaveLength(1);
+    expect(second?.tabs[0]?.targetPath).toBe('https://example.com/two');
+    expect(second?.tabs[0]?.id).toBe(first?.tabs[0]?.id);
+
+    // Empty URL must not wipe an existing targetPath (header "open browser" affordance).
+    store.openContextBrowser(directory);
+    const third = useUIStore.getState().contextPanelByDirectory[directory];
+    expect(third?.tabs).toHaveLength(1);
+    expect(third?.tabs[0]?.targetPath).toBe('https://example.com/two');
+  });
 });

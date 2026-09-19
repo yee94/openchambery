@@ -41,16 +41,16 @@ Relay is not a separate link format: it is one transport candidate inside the un
 Everything a client normally sends to the single OpenChamber origin:
 - **HTTP** — REST endpoints and proxied OpenCode SDK calls under `/api/*`, plus `/auth/*` and `/health`.
 - **SSE** — streamed responses opened through `runtimeFetch`, including `/api/openchamber/events` and SDK global SSE. Relay carries these HTTP response body frames through the tunnel.
-- **WebSocket** — the endpoints that use a real socket (the global event stream on platforms that support WS, terminal I/O, dictation).
+- **WebSocket** — the endpoints that use a real socket (the global event stream on platforms that support WS, terminal I/O, dictation, and Preview/Browser HMR under `/api/preview/proxy/<id>/...`).
 
-The host dispatcher restricts tunneled traffic to explicit path allowlists (one for HTTP, one for WS).
+The host dispatcher restricts tunneled traffic to explicit path allowlists (one for HTTP, one for WS). WS allowlist is exact-match for app sockets and **prefix** `/api/preview/proxy/` for Vite/dev-server HMR only (`isTunnelWsPathAllowed`).
 
 ### Catalog and new HTTP API pitfalls over Relay
 
 Private Relay is transparent for allowlisted HTTP paths, so most “works on LAN / Desktop, empty on mobile Relay” bugs are Host routing or client transport-identity mistakes rather than Relay framing bugs:
 
 - **Same path, real Host route required.** Clients call the ordinary `/api/...` path through the tunnel. If that route is missing on the Host process currently holding the relay claim (wrong git worktree, stale packaged Desktop build, or a backend that never registered the OpenChamber route before the OpenCode proxy/SPA fallback), the tunnel still returns HTTP 200 with SPA HTML or proxied OpenCode content. Symptom: chat and status work, Provider/model catalog does not.
-- **HTTP allowlist is prefix-based for `/api/`.** New REST/SSE APIs under `/api/` do not need a tunnel-host allowlist edit. New **WebSocket** paths still need both `ALLOWED_WS_PATHS` and `isUrlAuthWebSocketPath` (see the `relay-transport` skill). Config sync (`/api/openchamber/config-sync/*`, ticket 05/06) therefore works over Relay without a tunnel-host allowlist change; identity and credential grants remain endpoint concerns (`relay:<serverId>`, pairing-settings / inbound host grant).
+- **HTTP allowlist is prefix-based for `/api/`.** New REST/SSE APIs under `/api/` do not need a tunnel-host allowlist edit. New **WebSocket** paths still need both tunnel-host allowlisting (`isTunnelWsPathAllowed` / exact `ALLOWED_WS_PATHS`, plus the **`/api/preview/proxy/` prefix** for Preview HMR only) and `isUrlAuthWebSocketPath` (see the `relay-transport` skill). Config sync (`/api/openchamber/config-sync/*`, ticket 05/06) therefore works over Relay without a tunnel-host allowlist change; identity and credential grants remain endpoint concerns (`relay:<serverId>`, pairing-settings / inbound host grant).
 - **Transport identity ≠ runtime key.** After LAN⇄relay swaps, UI catalog loaders commit only when `useConfigStore.catalogTransportIdentity` matches `getRuntimeTransportIdentity()`. `runtimeEndpointReset.ts` must write that transport fingerprint on both full endpoint reset and in-place transport reconnect. Writing `runtimeKey` instead leaves Providers empty because the stable device/instance id is shared across LAN and relay.
 - **Safe catalog projection stays Host-owned.** Provider credentials never cross the browser; Relay only carries the already-allowlisted `GET /api/config/catalog/providers` JSON. Keep Host projection, client parser bounds, and `partial` rules in sync (empty `release_date` is absent, not partial).
 
@@ -99,6 +99,8 @@ The E2EE and framing logic exists twice: TypeScript in `packages/ui/src/lib/rela
 ## Runtime integration (client)
 
 Relay mode plugs into the existing client transport layer rather than a parallel path: `runtime-switch` activates the tunnel singleton, `runtime-fetch` routes runtime requests and product SSE streamed responses through it, `runtime-url` builds browser-consumed URLs, `runtime-socket` opens tunneled WebSockets, and `runtime-auth` mints the URL-scoped token through the tunnel. Direct-URL connections and the Electron realtime-proxy path are unaffected.
+
+**Electron Preview over Relay:** Chromium cannot load Host loopback pages through the tunnel URL scheme. The desktop client starts a **loopback HTTP origin** (`127.0.0.1` + ephemeral port) in the Electron main process; the Preview iframe loads `/api/preview/proxy/...` from that origin, and the owner renderer `runtimeFetch`es the same path (tunneled). **WebSocket / Vite HMR** uses the same path prefix: the gateway accepts `Upgrade: websocket` only under `/api/preview/proxy/`, notifies the owner renderer, which opens the socket via `openRuntimeWebSocket` after minting `oc_url_token` (never a raw `new WebSocket` against a runtime URL). The host tunnel dispatcher allows that prefix via `isTunnelWsPathAllowed` (exact paths remain for terminal/dictation/events). The Host preview proxy (rewrite, token, SSRF, `rewriteViteClientHmr`) is unchanged. Upstream-app cookies are not available on this path (query-token auth only). See `packages/electron/preview-loopback-gateway.mjs`.
 
 ### Transport identity vs runtime key (do not mix)
 

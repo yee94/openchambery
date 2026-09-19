@@ -18,6 +18,11 @@ const loadCreateUiAuth = async () => {
   return module.createUiAuth;
 };
 
+const loadIsUrlAuthWebSocketPath = async () => {
+  const module = await import('./ui-auth.js');
+  return module.isUrlAuthWebSocketPath;
+};
+
 const createResponse = () => {
   let statusCode = 200;
   let body = null;
@@ -46,6 +51,22 @@ const createResponse = () => {
     },
   };
 };
+
+describe('isUrlAuthWebSocketPath', () => {
+  it('allows preview proxy prefix and exact terminal/dictation/event sockets', async () => {
+    const isUrlAuthWebSocketPath = await loadIsUrlAuthWebSocketPath();
+    expect(isUrlAuthWebSocketPath('/api/preview/proxy/abc123/')).toBe(true);
+    expect(isUrlAuthWebSocketPath('/api/preview/proxy/abc123/@vite')).toBe(true);
+    expect(isUrlAuthWebSocketPath('/api/terminal/ws')).toBe(true);
+    expect(isUrlAuthWebSocketPath('/api/dictation/ws')).toBe(true);
+    expect(isUrlAuthWebSocketPath('/api/event/ws')).toBe(true);
+    expect(isUrlAuthWebSocketPath('/api/global/event/ws')).toBe(true);
+    expect(isUrlAuthWebSocketPath('/api/openchamber/realtime-proxy/ws')).toBe(true);
+    expect(isUrlAuthWebSocketPath('/api/evil/ws')).toBe(false);
+    expect(isUrlAuthWebSocketPath('/api/preview/proxy')).toBe(false);
+    expect(isUrlAuthWebSocketPath('/api/session')).toBe(false);
+  });
+});
 
 describe('ui auth client credential seam', () => {
   it('accepts bearer client credentials when UI password auth is enabled', async () => {
