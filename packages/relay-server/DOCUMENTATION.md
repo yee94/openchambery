@@ -8,7 +8,7 @@ The Relay server brokers Layer 1 routing: Host control connections, client route
 
 Host and Client terminate the E2EE channel. Each Host authenticates Relay connections with its long-lived P-256 signing key. Pairing secrets and client bearer credentials continue through endpoint validation; Relay reachability grants transport access.
 
-Relay v1 admission accepts anonymous Client route requests. Per-IP, global, pending-connection, raw-socket, frame, and queue limits bound that public entry point. Configure limits for the expected traffic volume and keep the Relay behind TLS. Pair queues pause the fast sender at half the per-connection byte limit so a slow peer applies TCP backpressure instead of filling memory until `4029`. Ready pairs send one frame per tick so one tunnel cannot monopolize the event loop.
+Relay v1 admission accepts anonymous Client route requests. Per-IP, global, pending-connection, raw-socket, frame, and queue limits bound that public entry point. Host-control upgrades are separately bounded per IP and per `serverId` so a Host reconnect loop cannot monopolize the listener; a limited Host-control upgrade is `4029` and does not replace a live control socket. Relay does not inspect Host or Client application versions — mixed app versions are a Host/Client concern, and unsupported Layer 1 fields are ignored rather than version-gated. Configure limits for the expected traffic volume and keep the Relay behind TLS. Pair queues pause the fast sender at half the per-connection byte limit so a slow peer applies TCP backpressure instead of filling memory until `4029`. Ready pairs send one frame per tick so one tunnel cannot monopolize the event loop.
 
 The Relay keeps process-local routing state only. Hosts reconnect after Relay restarts, and a control disconnect retains its Host route for the 30-second grace period.
 
@@ -259,9 +259,11 @@ For an IPv6 literal in a public URL, enclose the host in brackets: `wss://[2001:
 | `OPENCHAMBER_RELAY_SERVER_HEARTBEAT_MS` | `30000` | ms WebSocket ping interval |
 | `OPENCHAMBER_RELAY_SERVER_HANDSHAKE_MS` | `10000` | ms for TCP and WebSocket admission |
 | `OPENCHAMBER_RELAY_SERVER_CLOSE_DEADLINE_MS` | `5000` | ms before forced socket close |
-| `OPENCHAMBER_RELAY_SERVER_ADMISSION_WINDOW_MS` | `60000` | ms per-IP admission window |
-| `OPENCHAMBER_RELAY_SERVER_MAX_ADMISSIONS_PER_IP` | `120` | upgrades per role and IP per admission window |
-| `OPENCHAMBER_RELAY_SERVER_MAX_ADMISSION_ENTRIES` | `10000` | tracked role/IP admission records |
+| `OPENCHAMBER_RELAY_SERVER_ADMISSION_WINDOW_MS` | `60000` | ms admission window |
+| `OPENCHAMBER_RELAY_SERVER_MAX_ADMISSIONS_PER_IP` | `120` | Client, Host-data, and malformed upgrades per role/IP per window |
+| `OPENCHAMBER_RELAY_SERVER_MAX_HOST_CONTROL_ADMISSIONS_PER_IP` | `30` | Host-control upgrades per IP per window |
+| `OPENCHAMBER_RELAY_SERVER_MAX_HOST_CONTROL_ADMISSIONS_PER_SERVER` | `12` | Host-control upgrades per `serverId` per window |
+| `OPENCHAMBER_RELAY_SERVER_MAX_ADMISSION_ENTRIES` | `10000` | tracked admission records |
 | `OPENCHAMBER_RELAY_SERVER_ID_ATTEMPTS` | `4` | random connection-ID attempts |
 
 Host Push URL (OpenChamber Host, not the Push process):

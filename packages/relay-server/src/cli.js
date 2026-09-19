@@ -1,7 +1,7 @@
 import { startPrivateRelayServer } from './index.js';
 import { isIP } from 'node:net';
 
-const LIMIT_KEYS = ['maxUrlBytes', 'maxFieldBytes', 'maxHosts', 'maxSockets', 'maxConnections', 'maxClientsPerHost', 'maxClientsPerIp', 'maxPendingClients', 'pendingMs', 'maxRawSockets', 'maxRawSocketsPerIp', 'graceMs', 'timestampSkewMs', 'replayMs', 'maxReplayEntries', 'maxFrameBytes', 'maxQueuedBytesPerConnection', 'maxGlobalQueuedBytes', 'maxBufferedAmount', 'maxControlQueueEntries', 'maxControlQueuedBytes', 'pumpRetryMs', 'heartbeatMs', 'handshakeMs', 'closeDeadlineMs', 'admissionWindowMs', 'maxAdmissionsPerIp', 'maxAdmissionEntries', 'idAttempts'];
+const LIMIT_KEYS = ['maxUrlBytes', 'maxFieldBytes', 'maxHosts', 'maxSockets', 'maxConnections', 'maxClientsPerHost', 'maxClientsPerIp', 'maxPendingClients', 'pendingMs', 'maxRawSockets', 'maxRawSocketsPerIp', 'graceMs', 'timestampSkewMs', 'replayMs', 'maxReplayEntries', 'maxFrameBytes', 'maxQueuedBytesPerConnection', 'maxGlobalQueuedBytes', 'maxBufferedAmount', 'maxControlQueueEntries', 'maxControlQueuedBytes', 'pumpRetryMs', 'heartbeatMs', 'handshakeMs', 'closeDeadlineMs', 'admissionWindowMs', 'maxAdmissionsPerIp', 'maxHostControlAdmissionsPerIp', 'maxHostControlAdmissionsPerServer', 'maxAdmissionEntries', 'idAttempts'];
 const upperSnake = (key) => key.replace(/[A-Z]/g, (letter) => `_${letter}`).toUpperCase();
 const envName = (key) => `OPENCHAMBER_RELAY_SERVER_${upperSnake(key)}`;
 const fail = (name) => { throw new Error(`Invalid ${name}`); };
