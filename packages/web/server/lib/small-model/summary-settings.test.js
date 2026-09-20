@@ -29,10 +29,14 @@ const { callSmallModel } = await import('./call.js');
 const { generateViaOpenCodeSession } = await import('./opencode-session.js');
 const { readAuthFile } = await import('../opencode/auth.js');
 
-const createService = (catalog = {}) => createSmallModelService({
+const createService = (catalog = {}, connected = null) => createSmallModelService({
   buildOpenCodeUrl: () => 'http://127.0.0.1:4096/',
   getOpenCodeAuthHeaders: () => ({}),
   getModelCatalog: async () => catalog,
+  getConnectedCatalog: async () => {
+    if (connected === null) throw new Error('connected catalog unavailable');
+    return { connected, providers: [], models: [] };
+  },
 });
 
 describe('summary AI settings', () => {
@@ -281,5 +285,85 @@ describe('summary AI settings', () => {
       modelID: 'codebuddy-flash',
       source: 'summary-provider',
     });
+  });
+
+  it('lists connected plugin providers that have no auth.json entry', async () => {
+    vi.mocked(readAuthFile).mockReturnValue({});
+    const catalog = {
+      codebuddy: {
+        id: 'codebuddy',
+        name: 'CodeBuddy',
+        models: { 'codebuddy-flash': { id: 'codebuddy-flash' } },
+      },
+    };
+
+    const { listCallableProviders, listCallableModels } = createService(catalog, ['codebuddy']);
+    expect(await listCallableProviders()).toEqual(['codebuddy']);
+    expect(await listCallableModels()).toEqual({ codebuddy: ['codebuddy-flash'] });
+  });
+
+  it('does not list auth.json plugin providers that are not connected', async () => {
+    vi.mocked(readAuthFile).mockReturnValue({
+      mistral: { type: 'api', key: 'mistral-key' },
+    });
+    const catalog = {
+      mistral: {
+        id: 'mistral',
+        name: 'Mistral',
+        models: { 'mistral-small': { id: 'mistral-small' } },
+      },
+    };
+
+    const { listCallableProviders, listCallableModels } = createService(catalog, []);
+    expect(await listCallableProviders()).toEqual([]);
+    expect(await listCallableModels()).toEqual({});
+  });
+
+  it('keeps dedicated providers callable from auth.json even when they are not connected', async () => {
+    vi.mocked(readAuthFile).mockReturnValue({
+      openai: { type: 'oauth', access: 'openai-access', refresh: 'openai-refresh', expires: 0 },
+    });
+
+    const { listCallableProviders, listCallableModels } = createService({}, []);
+    expect(await listCallableProviders()).toEqual(['openai']);
+    expect(await listCallableModels()).toEqual({ openai: ['gpt-5.4-mini'] });
+  });
+
+  it('requires a custom base URL, model ID, and token before enabling custom mode', async () => {
+    await fsPromises.writeFile(path.join(tempRoot, 'settings.json'), JSON.stringify({
+      summaryModelMode: 'custom',
+      summaryCustomBaseURL: 'https://summary.example.test/v1',
+      summaryModelID: 'summary-model',
+    }), 'utf8');
+
+    const { generateSmallModelText } = createService();
+    await expect(generateSmallModelText({
+      purpose: 'commit',
+      prompt: 'Diff content',
+    })).rejects.toMatchObject({
+      message: 'Custom summary API requires a Base URL, model ID, and API token',
+      statusCode: 400,
+    });
+  });
+
+  it('prefers summaryCustomModelID over the shared summaryModelID for custom calls', async () => {
+    await fsPromises.writeFile(path.join(tempRoot, 'settings.json'), JSON.stringify({
+      summaryModelMode: 'custom',
+      summaryCustomBaseURL: 'https://summary.example.test/v1',
+      summaryModelID: 'provider-model',
+      summaryCustomModelID: 'custom-model',
+      summaryCustomAPIToken: 'summary-token',
+    }), 'utf8');
+
+    const { generateSmallModelText } = createService();
+    await generateSmallModelText({
+      purpose: 'commit',
+      prompt: 'Diff content',
+    });
+
+    expect(callSmallModel).toHaveBeenCalledWith(expect.objectContaining({
+      modelID: 'custom-model',
+      custom: expect.objectContaining({ modelID: 'custom-model' }),
+    }));
   });
 });

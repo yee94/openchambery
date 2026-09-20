@@ -127,6 +127,24 @@ Web and Electron store up to four panel transcript views within a 48 MiB local c
 the cache is runtime-scoped through each view's geometry key and is cleared for
 all nested views when its tab closes.
 
+ContextPanel file tabs pass their target path to a directory/path-keyed `FilesView`.
+`openContextFile`, `openContextFileAtLine`, and file-tab selection consult the
+existing `mainTabGuard` before changing the active target or pending file intent.
+The guard can retain a continuation in the existing FilesView unsaved-changes
+dialog: cancel keeps the current tab/editor/draft, save resumes only after success,
+and discard resumes explicitly. Thus the old keyed editor and its autosave timer
+stay mounted until the navigation decision completes. `openContextPanelTab` is
+the low-level tab commit used after the file-navigation guard has allowed the move.
+That target owns the editor content and read error even when the shared file-tab
+store removes a missing file or directory and falls back to another open file.
+The selected text file's read owns failure cleanup; background tab stat pruning
+skips that path (binary previews retain stat validation). A current failed read atomically clears only matching pending file
+focus/navigation, preserving a newer target. Failed reads stay terminal for that
+view until an explicit Retry or a new selection/remount; stale completions are discarded and concurrent
+renders share one selected-file read. Full FilesView retains its open-file fallback
+and expands directory references in the tree. Existing runtime read permissions
+and outside-file grants remain authoritative.
+
 `configCatalogQueries.ts` owns the safe Provider catalog and the composer Agent
 catalog by transport identity. Provider catalog Query keys are sharded by
 normalized config directory (different projects/instances must not share one

@@ -4,6 +4,19 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.19.20-beta.1] - 2026-09-20
+
+### 智能摘要
+
+- 自定义 OpenAI 兼容 API 的模型 ID 可以正常输入，不再被提供商列表打回。
+- 摘要提供商列表改用 OpenCode 已连接的提供商，插件或环境注入的凭证也能选到。
+- 自定义 API 可测试连接、拉取模型候选；保存前校验 Base URL、模型 ID 和 Token。
+
+### 文件预览
+
+- 上下文面板的文件标签绑定目标路径，未保存时切换文件可取消、保存或丢弃。
+- 读文件失败不再卡死或串到别的已打开文件，可重试。
+
 ## [1.19.19] - 2026-09-20
 
 汇总 1.19.19-beta.1 ~ 1.19.19-beta.2。

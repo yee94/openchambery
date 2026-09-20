@@ -357,7 +357,7 @@ export const persistSettings = async (changes: Record<string, unknown>, ctx?: Br
   if ('summaryModelMode' in restChanges && restChanges.summaryModelMode !== 'provider' && restChanges.summaryModelMode !== 'custom') {
     delete restChanges.summaryModelMode;
   }
-  for (const key of ['summaryProviderID', 'summaryModelID', 'summaryCustomBaseURL', 'summaryCommitPrompt', 'summarySessionTitlePrompt']) {
+  for (const key of ['summaryProviderID', 'summaryModelID', 'summaryCustomModelID', 'summaryCustomBaseURL', 'summaryCommitPrompt', 'summarySessionTitlePrompt']) {
     const value = restChanges[key];
     if (typeof value !== 'string') {
       delete restChanges[key];

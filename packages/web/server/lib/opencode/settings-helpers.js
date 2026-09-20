@@ -452,6 +452,12 @@ export const createSettingsHelpers = (dependencies) => {
         ? trimmed.slice(0, SUMMARY_MODEL_ID_MAX_LENGTH)
         : undefined;
     }
+    if (typeof candidate.summaryCustomModelID === 'string') {
+      const trimmed = candidate.summaryCustomModelID.trim();
+      result.summaryCustomModelID = trimmed.length > 0
+        ? trimmed.slice(0, SUMMARY_MODEL_ID_MAX_LENGTH)
+        : undefined;
+    }
     if (typeof candidate.summaryCustomBaseURL === 'string') {
       const trimmed = candidate.summaryCustomBaseURL.trim();
       if (!trimmed) {

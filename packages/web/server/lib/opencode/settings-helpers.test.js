@@ -45,6 +45,7 @@ describe('settings helpers', () => {
       summaryModelMode: 'custom',
       summaryCustomBaseURL: 'https://summary.example.test/v1/',
       summaryModelID: 'summary-model',
+      summaryCustomModelID: 'custom-model',
       summaryCustomAPIToken: 'summary-token',
       summaryCommitPrompt: 'Return commit JSON.',
       summarySessionTitlePrompt: 'Return a short title.',
@@ -54,6 +55,7 @@ describe('settings helpers', () => {
       summaryModelMode: 'custom',
       summaryCustomBaseURL: 'https://summary.example.test/v1',
       summaryModelID: 'summary-model',
+      summaryCustomModelID: 'custom-model',
       summaryCustomAPIToken: 'summary-token',
       summaryCommitPrompt: 'Return commit JSON.',
       summarySessionTitlePrompt: 'Return a short title.',
@@ -63,6 +65,7 @@ describe('settings helpers', () => {
       summaryModelMode: 'custom',
       summaryCustomBaseURL: 'https://summary.example.test/v1',
       summaryModelID: 'summary-model',
+      summaryCustomModelID: 'custom-model',
       hasSummaryCustomAPIToken: true,
     });
     expect(response).not.toHaveProperty('summaryCustomAPIToken');

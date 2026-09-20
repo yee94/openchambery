@@ -1,7 +1,10 @@
 # Small Model
 
-Server-side LLM calls that reuse the user's existing OpenCode provider logins
-(`~/.local/share/opencode/auth.json`). OpenCode uses a "small model" internally
+Server-side LLM calls that reuse the user's existing OpenCode provider logins.
+Dedicated adapters still read `~/.local/share/opencode/auth.json`. Plugin and
+other non-dedicated providers are listed from OpenCode's connected catalog
+(`provider.list()` ∩ `config.providers`, same as `loadConnectedCatalog`).
+OpenCode uses a "small model" internally
 (titles, summaries) but does not expose it through the SDK or plugins — this
 module replicates that mechanism as an OpenChamber runtime API.
 
@@ -83,12 +86,18 @@ every other runtime API.
   `cost.input` / `cost.output`, `model.api.url`, provider `name`. Client-safe
   provider catalog projection remains in `opencode/provider-catalog.js` for
   `/api/config/catalog/providers`.
-- `routes.js` — `GET /api/small-model` (resolution preview) and
+- `routes.js` — `GET /api/small-model` (resolution preview),
   `POST /api/small-model/generate` (`{ prompt, system?, maxOutputTokens?,
-  model?, directory? }` → `{ text, providerID, modelID, source }`).
-  The preview response includes `callableModels`, the Provider/model allowlist
-  consumed by Settings → Summary AI. Callable lists receive the same
-  `directory` as describe/generate so they share the directory catalog.
+  model?, directory? }` → `{ text, providerID, modelID, source }`),
+  `POST /api/small-model/test` (custom OpenAI-compatible probe → `{ ok, code? }`),
+  and `POST /api/small-model/custom-models` (best-effort `{baseURL}/models`
+  suggestions → `{ models }`). The preview response includes `callableModels`,
+  the Provider/model allowlist consumed by Settings → Summary AI. Callable
+  lists receive the same `directory` as describe/generate so they share the
+  directory catalog.
+- `custom-api.js` — custom Summary AI probe and model listing. Failure codes
+  are `incomplete`, `token` (401/403), `model` (404 / `model_not_found`), or
+  `baseURL` (network / non-OpenAI-compatible). Tokens are never logged.
 
 ## Dispatch
 
@@ -98,10 +107,16 @@ every other runtime API.
 | `openai` / `anthropic` / `google` / `github-copilot` with usable dedicated auth | Direct dedicated adapter (`call.js`) |
 | Any other usable auth + catalog model (plugin providers, …) | Temporary OpenCode session (`opencode-session.js`) |
 
-Callable Settings lists include every `isUsableAuthEntry` provider that has at
-least one catalog model id (no `api.url` gate). OpenAI OAuth still surfaces
-only `gpt-5.4-mini`; Copilot only `gpt-5.4-nano`; Copilot auth aliases merge
-to `github-copilot`.
+Callable Settings lists:
+- Dedicated adapters (`openai`, `anthropic`, `google`, `github-copilot`) stay
+  gated by usable `auth.json` entries and the existing small-model whitelist
+  (OpenAI OAuth → `gpt-5.4-mini`; Copilot → `gpt-5.4-nano`).
+- Every other provider is taken from the connected catalog (plugin / env
+  credentials that OpenCode reports as connected), intersected with catalog
+  model ids. No `api.url` gate. If the connected catalog request fails, the
+  list falls back to usable `auth.json` plugin entries rather than pretending
+  none exist.
+Copilot auth aliases merge to `github-copilot`.
 
 ## OpenCode session lifecycle
 
@@ -149,9 +164,13 @@ directly.
 Commit-message generation and session-title refresh pass `purpose: 'commit'`
 or `purpose: 'session-title'` to `generateSmallModelText`. Settings → Summary
 AI can select an authenticated OpenCode provider/model or a custom
-OpenAI-compatible `baseURL`, model ID, and API token. A custom token stays in
-the server settings file; settings read responses expose only
-`hasSummaryCustomAPIToken`.
+OpenAI-compatible `baseURL`, model ID, and API token. Custom mode stores the
+model id in `summaryCustomModelID` (legacy `summaryModelID` is still read when
+that field is absent). Custom mode is enabled only when base URL, model ID,
+and API token are all present. A custom token stays in the server settings
+file; settings read responses expose only `hasSummaryCustomAPIToken`. Settings
+can probe the custom API (`POST /api/small-model/test`) and load model
+suggestions from `{baseURL}/models` without blocking free-form entry.
 
 `summaryCommitPrompt` and `summarySessionTitlePrompt` replace the respective
 call's system prompt when non-empty. With no persisted provider choice, summary
