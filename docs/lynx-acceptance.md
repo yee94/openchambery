@@ -845,4 +845,11 @@ Chosen mode is written at the top of `packages/lynx/README.md` (Mode B iOS 26 ho
 
 - Cap skim pending / **NO_NEW** expected from prior skim + Settings search gap closed in #139. Settings search LynxInput stays 代码接上 (Next #139), not 三关 landed / not 真机过.
 - Tip / prerelease APK: `lynx-v2-debug-5f98d1c` (work/lynx-native @ `5f98d1c5427a064f60cddf743e88ba6ad454f1da`; PR #183 / Next #141 MERGED; release exists). Was stale `lynx-v2-debug-fa087e5` / tip `fa087e5bccd27bad126a5aedfab4255ce4553f75`. Tip delta `fa087e5`→`5f98d1c` is docs-only. Lynx Mobile CI SUCCESS on tip `5f98d1c` (run 35513768378). Do not invent a newer APK SHA than the published tag.
-- Product **NOT DONE** / 三关未齐 / not EXHAUSTED. 真机残差 unchanged: Connect welcome **card chrome** confirm still open for Yee on published APK `lynx-v2-debug-5f98d1c`. No 真机过 claim. Host-only unchanged (Keychain/camera/IME/Pierre/WKWebView/Mode B/Share ext/ShareReceiverActivity/iOS IPA/FCM for lynx.debug/Live Activity/clipboard host).
+- **MERGED** as PR #184 — tip advanced to `9fc7723e6ea4deb1895d1f3736a5ff63528cbb9e` / published APK `lynx-v2-debug-9fc7723` (see Next #143).
+- Product **NOT DONE** / 三关未齐 / not EXHAUSTED. 真机残差 unchanged: Connect welcome **card chrome** confirm still open for Yee. No 真机过 claim. Host-only unchanged (Keychain/camera/IME/Pierre/WKWebView/Mode B/Share ext/ShareReceiverActivity/iOS IPA/FCM for lynx.debug/Live Activity/clipboard host).
+
+## Notes — Docs tip APK/SHA honesty post-#142 (Next #143 / 2026-09-21)
+
+- Cap skim pending / **NO_NEW** expected from prior skim + Settings search gap closed in #139. Settings search LynxInput stays 代码接上 (Next #139), not 三关 landed / not 真机过.
+- Tip / prerelease APK: `lynx-v2-debug-9fc7723` (work/lynx-native @ `9fc7723e6ea4deb1895d1f3736a5ff63528cbb9e`; PR #184 / Next #142 MERGED; release exists). Was stale `lynx-v2-debug-5f98d1c` / tip `5f98d1c5427a064f60cddf743e88ba6ad454f1da`. Tip delta `5f98d1c`→`9fc7723` is docs-only. Lynx Mobile CI SUCCESS on tip `9fc7723` (run 35523180671). Do not invent a newer APK SHA than the published tag.
+- Product **NOT DONE** / 三关未齐 / not EXHAUSTED. 真机残差 unchanged: Connect welcome **card chrome** confirm still open for Yee on published APK `lynx-v2-debug-9fc7723`. No 真机过 claim. Host-only unchanged (Keychain/camera/IME/Pierre/WKWebView/Mode B/Share ext/ShareReceiverActivity/iOS IPA/FCM for lynx.debug/Live Activity/clipboard host).
