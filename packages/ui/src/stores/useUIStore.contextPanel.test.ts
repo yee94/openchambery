@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, test } from 'bun:test';
+import { beforeEach, describe, expect, test } from 'vitest';
 import { useUIStore } from './useUIStore';
 
 beforeEach(() => {
@@ -11,10 +11,40 @@ beforeEach(() => {
     rightSidebarTab: 'git',
     pendingFileFocusPath: null,
     pendingFileViewerMode: null,
+    pendingFileNavigation: null,
+    mainTabGuard: null,
   });
 });
 
 describe('useUIStore context panel tabs', () => {
+  test('runs a synchronous navigation guard once for a file reference', () => {
+    let calls = 0;
+    useUIStore.getState().setMainTabGuard(() => { calls += 1; return true; });
+    useUIStore.getState().openContextFile('/repo', '/repo/B.ts');
+    expect(calls).toBe(1);
+    expect(useUIStore.getState().pendingFileFocusPath).toBe('/repo/B.ts');
+  });
+
+  test('defers a line reference and its pending intent until the existing guard resumes it', () => {
+    const store = useUIStore.getState();
+    store.openContextFile('/repo', '/repo/A.ts');
+    store.setPendingFileFocusPath(null);
+    const original = useUIStore.getState().contextPanelByDirectory['/repo'];
+    let resume: (() => void) | undefined;
+    store.setMainTabGuard((_tab, continueNavigation) => { resume = continueNavigation; return false; });
+    store.openContextFileAtLine('/repo', '/repo/B.ts', 7, 2);
+    expect(useUIStore.getState().contextPanelByDirectory['/repo']).toBe(original);
+    expect(useUIStore.getState().pendingFileNavigation).toBeNull();
+    expect(useUIStore.getState().pendingFileFocusPath).toBeNull();
+    expect(resume).toBeTypeOf('function');
+    store.setMainTabGuard(null);
+    resume?.();
+    const current = useUIStore.getState();
+    const panel = current.contextPanelByDirectory['/repo'];
+    expect(panel.tabs.find((tab) => tab.id === panel.activeTabId)?.targetPath).toBe('/repo/B.ts');
+    expect(current.pendingFileNavigation).toEqual({ path: '/repo/B.ts', line: 7, column: 2 });
+  });
+
   test('opens a turn-scoped file diff at the requested line', () => {
     const directory = '/repo';
 

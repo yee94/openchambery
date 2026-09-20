@@ -133,6 +133,7 @@ export type DesktopSettings = {
   summaryModelMode?: 'provider' | 'custom';
   summaryProviderID?: string;
   summaryModelID?: string;
+  summaryCustomModelID?: string;
   summaryCustomBaseURL?: string;
   summaryCustomAPIToken?: string;
   hasSummaryCustomAPIToken?: boolean;

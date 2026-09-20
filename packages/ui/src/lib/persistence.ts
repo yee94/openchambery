@@ -901,6 +901,9 @@ const sanitizeWebSettings = (payload: unknown): DesktopSettings | null => {
   if (typeof candidate.summaryModelID === 'string' && candidate.summaryModelID.length > 0) {
     result.summaryModelID = candidate.summaryModelID;
   }
+  if (typeof candidate.summaryCustomModelID === 'string' && candidate.summaryCustomModelID.length > 0) {
+    result.summaryCustomModelID = candidate.summaryCustomModelID;
+  }
   if (typeof candidate.summaryCustomBaseURL === 'string') {
     result.summaryCustomBaseURL = candidate.summaryCustomBaseURL;
   }

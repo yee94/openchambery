@@ -2706,6 +2706,18 @@ export const ContextPanel: React.FC<{ directory?: string | null }> = ({ director
   );
 
   const isFileTabActive = activeTab?.mode === 'file';
+  const [retainedFileTarget, setRetainedFileTarget] = React.useState<{ directory: string; path: string | null } | null>(null);
+  const fileTargetPath = isFileTabActive
+    ? activeTab.targetPath
+    : retainedFileTarget?.directory === directoryKey
+      && tabs.some((tab) => tab.mode === 'file' && tab.targetPath === retainedFileTarget.path)
+      ? retainedFileTarget.path
+      : null;
+  React.useEffect(() => {
+    setRetainedFileTarget((current) => current?.directory === directoryKey && current.path === fileTargetPath
+      ? current
+      : { directory: directoryKey, path: fileTargetPath ?? null });
+  }, [directoryKey, fileTargetPath]);
   const fileNotice = isFileTabActive ? activeTab?.fileNotice ?? null : null;
 
   React.useEffect(() => {
@@ -2890,9 +2902,14 @@ export const ContextPanel: React.FC<{ directory?: string | null }> = ({ director
         </div>
       ) : null}
       <div className={cn('relative min-h-0 flex-1 overflow-hidden', isResizing && 'pointer-events-none')}>
-        {hasFileTabs ? (
+        {hasFileTabs && fileTargetPath ? (
           <div className={cn('absolute inset-0', isFileTabActive ? 'block' : 'hidden')}>
-            <FilesView mode="editor-only" isActive={isOpen && isFileTabActive} />
+            <FilesView
+              key={`${directoryKey}:${fileTargetPath ?? ''}`}
+              mode="editor-only"
+              targetPath={fileTargetPath}
+              isActive={isOpen && isFileTabActive}
+            />
           </div>
         ) : null}
         {chatRenderMode === 'legacy-iframe' && chatTabs.map((tab) => {

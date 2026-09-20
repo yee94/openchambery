@@ -115,7 +115,7 @@ type PendingFileNavigation = {
   column: number;
 };
 
-export type MainTabGuard = (nextTab: MainTab) => boolean;
+export type MainTabGuard = (nextTab: MainTab, continueNavigation?: () => void) => boolean;
 export type EventStreamStatus =
   | 'idle'
   | 'connecting'
@@ -1072,6 +1072,13 @@ interface UIStore {
 }
 
 
+const canNavigateToContextFile = (state: UIStore, directory: string, path: string | null | undefined, continueNavigation: () => void): boolean => {
+  const panel = state.contextPanelByDirectory[directory];
+  const activeTab = panel?.tabs.find((tab) => tab.id === panel.activeTabId);
+  if (activeTab?.mode === 'file' && activeTab.targetPath === path) return true;
+  return state.mainTabGuard?.('files', continueNavigation) ?? true;
+};
+
 export const useUIStore = create<UIStore>()(
   devtools(
     persist(
@@ -1527,6 +1534,9 @@ export const useUIStore = create<UIStore>()(
           if (!normalizedDirectory || !normalizedFilePath) {
             return;
           }
+          if (!canNavigateToContextFile(get(), normalizedDirectory, normalizedFilePath, () => get().openContextFile(directory, filePath, options))) {
+            return;
+          }
 
           get().openContextPanelTab(normalizedDirectory, {
             mode: 'file',
@@ -1544,6 +1554,9 @@ export const useUIStore = create<UIStore>()(
           const normalizedLine = Number.isFinite(line) ? Math.max(1, Math.trunc(line)) : 1;
           const normalizedColumn = Number.isFinite(column) ? Math.max(1, Math.trunc(column as number)) : 1;
           if (!normalizedDirectory || !normalizedFilePath) {
+            return;
+          }
+          if (!canNavigateToContextFile(get(), normalizedDirectory, normalizedFilePath, () => get().openContextFileAtLine(directory, filePath, line, column))) {
             return;
           }
 
@@ -1621,6 +1634,10 @@ export const useUIStore = create<UIStore>()(
           const normalizedDirectory = normalizeDirectoryPath((directory || '').trim());
           const normalizedTabID = (tabID || '').trim();
           if (!normalizedDirectory || !normalizedTabID) {
+            return;
+          }
+          const targetTab = get().contextPanelByDirectory[normalizedDirectory]?.tabs.find((tab) => tab.id === normalizedTabID);
+          if (targetTab?.mode === 'file' && !canNavigateToContextFile(get(), normalizedDirectory, targetTab.targetPath, () => get().setActiveContextPanelTab(directory, tabID))) {
             return;
           }
 
