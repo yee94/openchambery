@@ -823,5 +823,12 @@ Chosen mode is written at the top of `packages/lynx/README.md` (Mode B iOS 26 ho
 
 - Cap phone Settings search is a real `<input>` (`settingsSearchQuery` + `onChange`). Lynx `SettingsSearchField` is now an editable `LynxInput` (`value` + `bindinput` → `onChange` / `setSearchQuery`, placeholder `lynx.settings.search.placeholder`) instead of display-only chrome. Filter path unchanged: `filterLynxSettingsPages` over the 22-slug catalog.
 - Settings search field is 代码接上 (editable LynxInput). Still **not** 三关 landed / not 真机过. Host IME chrome polish out of scope.
-- Base tip `42bb986425ea447b164a779d8087f271630d75a4` (PR #180 / Next #138 MERGED). Published APK honesty stays `lynx-v2-debug-ed50652` (release exists for tip `ed506522f`) — do not invent `lynx-v2-debug-42bb986` or a newer APK for this PR head.
+- Base tip at write `42bb986425ea447b164a779d8087f271630d75a4` (PR #180 / Next #138 MERGED). Published-at-merge APK honesty was `lynx-v2-debug-ed50652` (release existed for tip `ed506522f`) — do not invent `lynx-v2-debug-42bb986` as that head's APK.
+- **MERGED** as PR #181 — tip advanced to `de4ff4ea23f3446df77f8c1764e51507aabd9ce7` / published APK `lynx-v2-debug-de4ff4e` (see Next #140).
 - Product **NOT DONE** / 三关未齐 / not EXHAUSTED. 真机残差 unchanged: Connect welcome **card chrome** confirm still open for Yee. No 真机过 claim. Host-only unchanged (Keychain/camera/IME/Pierre/WKWebView/Mode B/Share ext/ShareReceiverActivity/iOS IPA/@dnd-kit/MobileWindowMotion/iPad/Cap toast/bulk).
+
+## Notes — Docs tip APK/SHA honesty post-#139 (Next #140 / 2026-09-20)
+
+- Cap skim pending / **NO_NEW** expected from prior skim + Settings search gap closed in #139. Settings search LynxInput stays 代码接上 (Next #139), not 三关 landed / not 真机过.
+- Tip / prerelease APK: `lynx-v2-debug-de4ff4e` (work/lynx-native @ `de4ff4ea23f3446df77f8c1764e51507aabd9ce7`; PR #181 / Next #139 MERGED; release exists). Was stale `lynx-v2-debug-ed50652` / tip bases `ed506522f7bab857424af81a703520558f1fe359` / Next #139 base `42bb986425ea447b164a779d8087f271630d75a4` / published-at-merge APK for #139 head. Tip delta `42bb986`→`de4ff4ea23` includes product Settings search LynxInput (Next #139). Lynx Mobile CI SUCCESS on tip `de4ff4e` (run 35497211638). Do not invent a newer APK SHA than the published tag.
+- Product **NOT DONE** / 三关未齐 / not EXHAUSTED. 真机残差 unchanged: Connect welcome **card chrome** confirm still open for Yee on published APK `lynx-v2-debug-de4ff4e`. No 真机过 claim. Host-only unchanged (Keychain/camera/IME/Pierre/WKWebView/Mode B/Share ext/ShareReceiverActivity/iOS IPA/FCM for lynx.debug/Live Activity/clipboard host).
