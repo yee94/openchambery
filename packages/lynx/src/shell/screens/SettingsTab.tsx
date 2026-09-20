@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 
 import { lynxT, tabLabel } from '../../i18n/catalog';
-import { LynxScrollView, LynxText, LynxView } from '../../lynx-elements';
+import { LynxInput, LynxScrollView, LynxText, LynxView } from '../../lynx-elements';
 import {
   filterLynxSettingsPages,
   groupLynxSettingsPages,
@@ -23,28 +23,21 @@ function SettingsSearchField({
   onChange: (value: string) => void;
 }) {
   return (
-    <LynxView
+    <LynxInput
+      id="lynx-settings-search"
+      value={value}
+      placeholder={lynxT(locale, 'lynx.settings.search.placeholder')}
+      bindinput={(event) => onChange(event.detail?.value ?? '')}
+      accessibility-label={lynxT(locale, 'lynx.settings.search.placeholder')}
       style={{
         marginBottom: '16px',
         padding: '10px 12px',
         borderRadius: '12px',
         backgroundColor: cssVar('surface.elevated'),
+        color: cssVar('surface.foreground'),
+        fontSize: '14px',
       }}
-    >
-      <LynxText
-        style={{ color: value ? cssVar('surface.foreground') : cssVar('surface.mutedForeground') }}
-        bindtap={() => {
-          if (!value) onChange('');
-        }}
-      >
-        {value || lynxT(locale, 'lynx.settings.search.placeholder')}
-      </LynxText>
-      <LynxView
-        id="lynx-settings-search"
-        bindtap={() => onChange(value)}
-        style={{ height: '0px' }}
-      />
-    </LynxView>
+    />
   );
 }
 
