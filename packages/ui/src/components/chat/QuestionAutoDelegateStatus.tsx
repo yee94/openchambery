@@ -48,22 +48,26 @@ export function useQuestionDelegation(question: QuestionRequest) {
       }
       return;
     }
-    if (action === 'pause' && reason === 'interaction' && !currentRequest) return;
     const generation = getRuntimeGeneration();
     flight.current = scope;
     failedScope.current = null;
     setUI({ scope, pending: action, failed: null });
     const startedScope = scope;
     try {
-      const data = cached ?? await ensureQuestionAutoDelegate();
-      if (generation !== getRuntimeGeneration()) throw new Error('Runtime changed');
-      const identity = matchRequest(data.snapshot.requests, question);
-      if (!identity) {
-        if (action === 'pause' && reason === 'interaction') return;
-        throw new Error('Question identity unavailable');
+      let identity = {
+        requestID: question.id,
+        sessionID: currentRequest?.sessionID || question.sessionID,
+        directory: currentRequest?.directory || '',
+      };
+      if (action === 'delegate' && !currentRequest) {
+        const data = cached ?? await ensureQuestionAutoDelegate();
+        if (generation !== getRuntimeGeneration()) throw new Error('Runtime changed');
+        const matched = matchRequest(data.snapshot.requests, question);
+        if (!matched) throw new Error('Question identity unavailable');
+        identity = { requestID: matched.requestID, sessionID: matched.sessionID, directory: matched.directory };
       }
-      if ((action === 'pause' && identity.state !== 'counting') || ['submitting', 'uncertain', 'settled'].includes(identity.state)) return;
       const outcome = await mutateQuestionAutoDelegate(action, identity, action === 'pause' ? reason : undefined);
+      if (outcome === 'not_found' && action === 'pause' && reason === 'interaction') return;
       if (['error', 'not_found', 'disabled'].includes(outcome)) throw new Error('Question operation failed');
     } catch {
       if (latestScope.current === startedScope) {
@@ -88,7 +92,7 @@ export function useQuestionDelegation(question: QuestionRequest) {
   });
   React.useEffect(() => {
     if (!heldForScope || claimed) return;
-    if (request?.state !== 'counting') return;
+    if (request && request.state !== 'counting') return;
     void run('pause', 'interaction');
   }, [heldForScope, claimed, request?.state, request?.requestID]);
   return { query, request, pending, failed, run, interaction, submissionClaimed, claimed, awaitingClaim, scope, held: heldForScope };

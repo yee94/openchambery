@@ -99,6 +99,6 @@ export async function mutateQuestionAutoDelegate(
   queryClient.setQueryData(key(runtime), (previous: QuestionDelegateData | undefined) =>
     mergeQuestionDelegateData(previous, dataFrom(result.snapshot, requestSequence)));
   void refreshQuestionAutoDelegate();
-  if (!response.ok && !['claimed', 'uncertain'].includes(result.outcome)) throw new Error(`Question ${action}: ${response.status}`);
+  if (!response.ok && !['claimed', 'uncertain', 'not_found'].includes(result.outcome)) throw new Error(`Question ${action}: ${response.status}`);
   return result.outcome;
 }

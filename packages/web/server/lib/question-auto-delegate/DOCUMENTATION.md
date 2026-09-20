@@ -59,7 +59,7 @@ Tip event (not a data payload):
 | Method | Path | Notes |
 |---|---|---|
 | `GET` | `/api/question-auto-delegate` | snapshot |
-| `POST` | `.../requests/:id/pause` | `{ sessionID, directory, reason: 'interaction'\|'user' }` — bound identity conflicts → 409 |
+| `POST` | `.../requests/:id/pause` | `{ sessionID, directory, reason: 'interaction'\|'user' }` — bound identity conflicts → 409. Directory may be empty; pause still cancels the auto timer. |
 | `POST` | `.../requests/:id/delegate` | recovers identity via scoped list; allowed when toggle off |
 | `POST` | `/api/question/:id/reply` | manual: `answers` must be an array (incl. `[]`); never auto text |
 | `POST` | `/api/question/:id/reject` | SDK body preserved |

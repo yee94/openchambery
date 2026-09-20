@@ -131,6 +131,26 @@ describe('question auto-delegate core — claim / upstream outcomes', () => {
     core.dispose();
   });
 
+  it('interaction pause cancels the auto-reply timer even without a directory hint', async () => {
+    const io = createIo();
+    const core = createQuestionAutoDelegateCore({ io });
+    ready(core);
+    core.processEvent(asked());
+    expect(io.__clock.pendingCount()).toBe(1);
+    const paused = await core.pause({
+      requestID: 'q1',
+      sessionID: 'ses-1',
+      directory: '',
+      reason: 'interaction',
+    });
+    expect(paused.outcome).toBe('paused');
+    expect(io.__clock.pendingCount()).toBe(0);
+    await io.__clock.advance(30_000);
+    expect(io.__posts).toHaveLength(0);
+    expect(core.snapshot().requests[0]?.state).toBe('paused');
+    core.dispose();
+  });
+
   it('HTTP 400 definitive reject releases claim and pauses for manual retry (no auto loop)', async () => {
     let calls = 0;
     const io = createIo({

@@ -135,33 +135,24 @@ describe('QuestionCard auto delegation', () => {
     expect(bar()).toBeNull();
     expect(host.textContent).toMatch(/Pausing countdown|Countdown paused/);
   });
-  test('answering before the snapshot arrives stops the local countdown', async () => {
-    mocks.fetch.mockImplementation(() => new Promise(() => {}));
-    await act(async () => { root.render(<QuestionCard question={question} />); });
-    await flush();
-    expect(host.textContent).toContain('Model decides in 30s');
-    await act(async () => { button('Option A').click(); });
-    expect(host.textContent).not.toContain('Model decides');
-    expect(bar()).toBeNull();
-    expect(host.textContent).toContain('Countdown paused');
-    expect(host.querySelector('[role="alert"]')).toBeNull();
-  });
-  test('held interaction pauses once the snapshot lists the question', async () => {
-    mocks.fetch.mockImplementation(() => new Promise(() => {}));
-    await act(async () => { root.render(<QuestionCard question={question} />); });
-    await flush();
-    await act(async () => { button('Option A').click(); });
-    expect(posts()).toHaveLength(0);
+  test('answering before the snapshot arrives still pauses the server timer', async () => {
     mocks.fetch.mockImplementation(async (_path: string, init?: RequestInit) => {
       if (init?.method === 'POST') {
         snapshot = { ...snapshot, revision: snapshot.revision + 1, requests: [{ ...snapshot.requests[0], state: 'paused', deadlineAt: null, pauseReason: 'interaction' }] };
         return Response.json({ outcome: 'paused', snapshot });
       }
-      return Response.json(snapshot);
+      return new Promise(() => {});
     });
-    await publish();
+    await act(async () => { root.render(<QuestionCard question={question} />); });
+    await flush();
+    expect(host.textContent).toContain('Model decides in 30s');
+    await act(async () => { button('Option A').click(); });
+    await flush();
     expect(posts()).toHaveLength(1);
-    expect(JSON.parse(posts()[0][1].body).reason).toBe('interaction');
+    expect(String(posts()[0][0])).toContain('/pause');
+    expect(JSON.parse(posts()[0][1].body)).toEqual({ sessionID: 'child', directory: '', reason: 'interaction' });
+    expect(host.textContent).not.toContain('Model decides');
+    expect(bar()).toBeNull();
     expect(host.textContent).toContain('Countdown paused');
   });
   test('option and tab interactions pause using the child identity and preserve attribution', async () => {
