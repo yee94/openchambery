@@ -4,6 +4,25 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.19.19] - 2026-09-20
+
+汇总 1.19.19-beta.1 ~ 1.19.19-beta.2。
+
+### 问题自动托管
+
+- 选择、输入或切换问题后，立即取消服务端倒计时，到期不会再自动作答。
+
+### 浏览器与预览
+
+- 会话正文里的 http(s) 链接（含 localhost）单击后在内置浏览器打开，地址栏可改可跳；按住修饰键仍用系统浏览器。
+- 经 Relay 连接时，预览和内置浏览器打开 Host 上的 localhost，不再打到客户端本机端口。
+- Relay 下 Vite 一类开发服务器的热更新可穿过隧道；被预览站点自己的登录 cookie 在 Relay 下仍不可用。
+
+### Relay
+
+- Host 控制通道连上后立刻掉线时，不再把重连间隔清回 1 秒；稳住一段时间后才恢复，避免每秒重连风暴。
+- Relay 对 host-control 按 IP 和 Host 身份限频，超限返回 4029 且不替换已有控制连接。不根据客户端应用版本拒连。
+
 ## [1.19.19-beta.2] - 2026-09-19
 
 ### 浏览器与预览
