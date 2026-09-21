@@ -908,4 +908,11 @@ Chosen mode is written at the top of `packages/lynx/README.md` (Mode B iOS 26 ho
 
 - Cap skim pending / **NO_NEW** expected from prior skim + Settings search gap closed in #139. Settings search LynxInput stays 代码接上 (Next #139), not 三关 landed / not 真机过.
 - Tip / prerelease APK: `lynx-v2-debug-dcb67d6` (work/lynx-native @ `dcb67d6075b670ce24fb6efcf19384ae8adbc07e`; PR #192 / Next #150 MERGED; release exists; asset `openchamber-lynx-debug-dcb67d6.apk`). Was stale `lynx-v2-debug-daca88c` / tip `daca88c832f3df0d1a59bf5ca3eaa828f1885656`. Tip delta `daca88c`→`dcb67d6` is docs-only. Lynx Mobile CI SUCCESS on tip `dcb67d6` (run 35610772314). Do not invent a newer APK SHA than the published tag.
+- **MERGED** as PR #193 — tip advanced to `309af29373d68d7d4ea3757af9adf4896946490f` / published APK `lynx-v2-debug-309af29` (see Next #152).
 - Product **NOT DONE** / 三关未齐 / not EXHAUSTED. 真机残差 unchanged: Connect welcome **card chrome** confirm still open for Yee on published APK `lynx-v2-debug-dcb67d6`. No 真机过 claim. Host-only unchanged (Keychain/camera/IME/Pierre/WKWebView/Mode B/Share ext/ShareReceiverActivity/iOS IPA/FCM for lynx.debug/Live Activity/clipboard host).
+
+## Notes — Docs tip APK/SHA honesty post-#151 (Next #152 / 2026-09-21)
+
+- Cap skim pending / **NO_NEW** expected from prior skim + Settings search gap closed in #139. Settings search LynxInput stays 代码接上 (Next #139), not 三关 landed / not 真机过.
+- Tip / prerelease APK: `lynx-v2-debug-309af29` (work/lynx-native @ `309af29373d68d7d4ea3757af9adf4896946490f`; PR #193 / Next #151 MERGED; release exists; asset `openchamber-lynx-debug-309af29.apk`). Was stale `lynx-v2-debug-dcb67d6` / tip `dcb67d6075b670ce24fb6efcf19384ae8adbc07e`. Tip delta `dcb67d6`→`309af29` is docs-only. Lynx Mobile CI SUCCESS on tip `309af29` (run 35629501281). Do not invent a newer APK SHA than the published tag.
+- Product **NOT DONE** / 三关未齐 / not EXHAUSTED. 真机残差 unchanged: Connect welcome **card chrome** confirm still open for Yee on published APK `lynx-v2-debug-309af29`. No 真机过 claim. Host-only unchanged (Keychain/camera/IME/Pierre/WKWebView/Mode B/Share ext/ShareReceiverActivity/iOS IPA/FCM for lynx.debug/Live Activity/clipboard host).
