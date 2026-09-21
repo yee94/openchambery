@@ -25,7 +25,7 @@ describe('OpenCode message queue adapter', () => {
     await adapter.waitForReady({ signal: new AbortController().signal });
     expect(waitForReady).toHaveBeenCalledWith();
   });
-  it('captures runtime, materializes text and files, and sends the captured configuration', async () => {
+  it('captures runtime, materializes text and files, and applies sendConfig before prompt', async () => {
     const fetchMock = vi.fn(async () => ({ ok: true, status: 204, json: async () => ({}) }));
     vi.stubGlobal('fetch', fetchMock);
     makeOpenCodeV2Client.mockReturnValue(v2Client());
@@ -34,8 +34,17 @@ describe('OpenCode message queue adapter', () => {
     const runtime = adapter.captureRuntime(); const scope = { sessionID: 'session', directory: '/repo' }; expect(await adapter.checkEligibility(scope)).toMatchObject({ available: true, idle: true, settled: true, latestMessageID: 'old' });
     const parts = await adapter.materializeAttachments({ content: 'text', attachments: [{}] }); expect(parts).toEqual([{ type: 'text', text: 'text' }, { type: 'file', url: 'file:///attachment' }]);
     await adapter.send({ scope, messageID: 'message', runtime, sendConfig: { providerID: 'p', modelID: 'm', agent: 'a', variant: 'v' }, parts });
-    expect(String(fetchMock.mock.calls[0][0])).toContain('/api/session/session/prompt');
-    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual(expect.objectContaining({ id: 'message', delivery: 'steer', model: { providerID: 'p', modelID: 'm' }, agent: 'a', variant: 'v' }));
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(String(fetchMock.mock.calls[0][0])).toContain('/api/session/session/agent');
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({ agent: 'a' });
+    expect(String(fetchMock.mock.calls[1][0])).toContain('/api/session/session/model');
+    expect(JSON.parse(fetchMock.mock.calls[1][1].body)).toEqual({ model: { id: 'm', providerID: 'p', variant: 'v' } });
+    expect(String(fetchMock.mock.calls[2][0])).toContain('/api/session/session/prompt');
+    const promptBody = JSON.parse(fetchMock.mock.calls[2][1].body);
+    expect(promptBody).toEqual(expect.objectContaining({ id: 'message', delivery: 'steer', text: 'text' }));
+    expect(promptBody.model).toBeUndefined();
+    expect(promptBody.agent).toBeUndefined();
+    expect(promptBody.variant).toBeUndefined();
     generation = 2; expect(await adapter.send({ scope, runtime, sendConfig: { providerID: 'p', modelID: 'm' } })).toMatchObject({ code: 'runtime_stale' });
     vi.unstubAllGlobals();
   });
@@ -56,7 +65,8 @@ describe('OpenCode message queue adapter', () => {
     const adapter = createOpenCodeMessageQueueAdapter({ buildOpenCodeUrl: () => upstreamUrl, getOpenCodeAuthHeaders: () => ({}), getRuntimeConfig: () => ({ apiBaseUrl: upstreamUrl }), readAttachment: () => null });
     const runtime = adapter.captureRuntime();
     await adapter.send({ scope: { sessionID: 's', directory: '/repo' }, messageID: 'msg_1', runtime, sendConfig: { providerID: 'p', modelID: 'm' }, parts: [] });
-    expect(String(fetchMock.mock.calls[0][0])).toContain('http://opencode-upstream:4096/api/session/s/prompt');
+    const promptCall = fetchMock.mock.calls.find(([url]) => String(url).includes('/prompt'));
+    expect(String(promptCall[0])).toContain('http://opencode-upstream:4096/api/session/s/prompt');
     upstreamUrl = 'http://opencode-upstream:4097/';
     expect(adapter.isCurrent(runtime)).toBe(false);
     vi.unstubAllGlobals();
@@ -66,7 +76,9 @@ describe('OpenCode message queue adapter', () => {
     vi.stubGlobal('fetch', fetchMock);
     makeOpenCodeV2Client.mockReturnValue(v2Client({ inbox: [{ id: 'wanted', sessionID: 's' }] }));
     const adapter = createOpenCodeMessageQueueAdapter({ buildOpenCodeUrl: () => 'http://open.code/', getOpenCodeAuthHeaders: () => ({}), getSessionEligibility: () => ({ idle: true, settled: true }), getLatestMessageID: () => null, readAttachment: () => null });
-    expect(await adapter.send({ scope: { sessionID: 's', directory: '/d' }, messageID: 'm', sendConfig: { providerID: 'p', modelID: 'm' } })).toMatchObject({ kind: 'ambiguous', status: 503 }); expect(await adapter.findMessage({ sessionID: 's', directory: '/d' }, 'wanted')).toEqual({ found: true });
+    // Prompt-only path (no sendConfig) classifies transport status on the POST itself.
+    expect(await adapter.send({ scope: { sessionID: 's', directory: '/d' }, messageID: 'm', parts: [] })).toMatchObject({ kind: 'ambiguous', status: 503 });
+    expect(await adapter.findMessage({ sessionID: 's', directory: '/d' }, 'wanted')).toEqual({ found: true });
     vi.unstubAllGlobals();
   });
   it('treats explicit 2xx empty bodies as ok and never treats undefined/malformed results as success', async () => {
@@ -79,7 +91,7 @@ describe('OpenCode message queue adapter', () => {
       .mockResolvedValueOnce({});
     vi.stubGlobal('fetch', fetchMock);
     const adapter = createOpenCodeMessageQueueAdapter({ buildOpenCodeUrl: () => 'http://open.code/', getOpenCodeAuthHeaders: () => ({}), getRuntimeConfig: () => ({ apiBaseUrl: 'http://open.code' }), readAttachment: () => null });
-    const base = { scope: { sessionID: 's', directory: '/d' }, messageID: 'm', sendConfig: { providerID: 'p', modelID: 'm' }, parts: [] };
+    const base = { scope: { sessionID: 's', directory: '/d' }, messageID: 'm', parts: [] };
     await expect(adapter.send(base)).resolves.toMatchObject({ ok: true, status: 204 });
     await expect(adapter.send(base)).resolves.toMatchObject({ ok: true, status: 202 });
     await expect(adapter.send(base)).resolves.toMatchObject({ ok: true, status: 200 });
@@ -93,14 +105,16 @@ describe('OpenCode message queue adapter', () => {
       .mockResolvedValueOnce({ ok: false, status: 400, json: async () => ({}) })
       .mockResolvedValueOnce({ ok: false, status: 422, json: async () => ({}) })
       .mockResolvedValueOnce({ ok: false, status: 429, json: async () => ({}) })
-      .mockResolvedValueOnce({ ok: false, status: 408, json: async () => ({}) });
+      .mockResolvedValueOnce({ ok: false, status: 408, json: async () => ({}) })
+      .mockResolvedValueOnce({ ok: false, status: 409, json: async () => ({ _tag: 'SessionBusyError' }) });
     vi.stubGlobal('fetch', fetchMock);
     const adapter = createOpenCodeMessageQueueAdapter({ buildOpenCodeUrl: () => 'http://open.code/', getOpenCodeAuthHeaders: () => ({}), readAttachment: () => null });
-    const base = { scope: { sessionID: 's', directory: '/d' }, messageID: 'm', sendConfig: { providerID: 'p', modelID: 'm' }, parts: [] };
+    const base = { scope: { sessionID: 's', directory: '/d' }, messageID: 'm', parts: [] };
     await expect(adapter.send(base)).resolves.toMatchObject({ ok: false, kind: 'failed', status: 400 });
     await expect(adapter.send(base)).resolves.toMatchObject({ ok: false, kind: 'failed', status: 422 });
     await expect(adapter.send(base)).resolves.toMatchObject({ ok: false, kind: 'ambiguous', status: 429 });
     await expect(adapter.send(base)).resolves.toMatchObject({ ok: false, kind: 'ambiguous', status: 408 });
+    await expect(adapter.send(base)).resolves.toMatchObject({ ok: false, kind: 'retry', code: 'session_busy' });
     vi.unstubAllGlobals();
   });
   it('prefers client.v2.session.message exact lookup and treats 404 as found:false', async () => {
@@ -179,6 +193,122 @@ describe('OpenCode message queue adapter', () => {
   });
 });
 
+describe('sendConfig serial boundary (v2 prompt contract)', () => {
+  it('applies different models in agent→model→prompt order per item', async () => {
+    const calls = [];
+    const fetchMock = vi.fn(async (url, init) => {
+      calls.push({ url: String(url), body: init?.body ? JSON.parse(init.body) : null });
+      return { ok: true, status: 204, json: async () => ({}) };
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    const adapter = createOpenCodeMessageQueueAdapter({
+      buildOpenCodeUrl: () => 'http://open.code/',
+      getOpenCodeAuthHeaders: () => ({}),
+      readAttachment: () => null,
+    });
+    const scope = { sessionID: 's', directory: '/d' };
+    await adapter.send({
+      scope, messageID: 'msg_a', parts: [{ type: 'text', text: 'first' }],
+      sendConfig: { providerID: 'openai', modelID: 'gpt-a', agent: 'build', variant: 'fast' },
+    });
+    await adapter.send({
+      scope, messageID: 'msg_b', parts: [{ type: 'text', text: 'second' }],
+      sendConfig: { providerID: 'anthropic', modelID: 'claude-b', agent: 'plan' },
+    });
+    expect(calls.map((c) => c.url.replace(/^.*\/api\/session\/s\//, ''))).toEqual([
+      'agent?directory=%2Fd',
+      'model?directory=%2Fd',
+      'prompt?directory=%2Fd',
+      'agent?directory=%2Fd',
+      'model?directory=%2Fd',
+      'prompt?directory=%2Fd',
+    ]);
+    expect(calls[0].body).toEqual({ agent: 'build' });
+    expect(calls[1].body).toEqual({ model: { id: 'gpt-a', providerID: 'openai', variant: 'fast' } });
+    expect(calls[2].body).toEqual(expect.objectContaining({ id: 'msg_a', text: 'first', delivery: 'steer' }));
+    expect(calls[2].body.model).toBeUndefined();
+    expect(calls[3].body).toEqual({ agent: 'plan' });
+    expect(calls[4].body).toEqual({ model: { id: 'claude-b', providerID: 'anthropic' } });
+    expect(calls[5].body).toEqual(expect.objectContaining({ id: 'msg_b', text: 'second' }));
+    vi.unstubAllGlobals();
+  });
+
+  it('does not POST prompt when model switch fails', async () => {
+    const fetchMock = vi.fn(async (url) => {
+      if (String(url).includes('/model')) return { ok: false, status: 400, json: async () => ({ _tag: 'InvalidRequestError' }) };
+      return { ok: true, status: 204, json: async () => ({}) };
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    const adapter = createOpenCodeMessageQueueAdapter({
+      buildOpenCodeUrl: () => 'http://open.code/',
+      getOpenCodeAuthHeaders: () => ({}),
+      readAttachment: () => null,
+    });
+    const result = await adapter.send({
+      scope: { sessionID: 's', directory: '/d' },
+      messageID: 'msg_fail',
+      parts: [{ type: 'text', text: 'nope' }],
+      sendConfig: { providerID: 'p', modelID: 'm', agent: 'a' },
+    });
+    expect(result).toMatchObject({ ok: false, kind: 'failed', code: 'config_switch_failed', status: 400 });
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/prompt'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/agent'))).toBe(true);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/model'))).toBe(true);
+    vi.unstubAllGlobals();
+  });
+
+  it('treats session busy on switch as retry without prompt', async () => {
+    const fetchMock = vi.fn(async (url) => {
+      if (String(url).includes('/agent')) return { ok: false, status: 409, json: async () => ({ _tag: 'SessionBusyError' }) };
+      return { ok: true, status: 200, json: async () => ({}) };
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    const adapter = createOpenCodeMessageQueueAdapter({
+      buildOpenCodeUrl: () => 'http://open.code/',
+      getOpenCodeAuthHeaders: () => ({}),
+      readAttachment: () => null,
+    });
+    const result = await adapter.send({
+      scope: { sessionID: 's', directory: '/d' },
+      messageID: 'msg_busy',
+      parts: [{ type: 'text', text: 'wait' }],
+      sendConfig: { providerID: 'p', modelID: 'm', agent: 'a' },
+    });
+    expect(result).toMatchObject({ ok: false, kind: 'retry', code: 'session_busy' });
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/prompt'))).toBe(false);
+    vi.unstubAllGlobals();
+  });
+
+  it('maps MessageNotFoundError _tag from projection to found:false', async () => {
+    const api = v2Client({ inbox: [] });
+    api.session.message.mockRejectedValue({
+      _tag: 'MessageNotFoundError',
+      sessionID: 's',
+      messageID: 'missing',
+      message: 'not found',
+    });
+    makeOpenCodeV2Client.mockReturnValue(api);
+    const adapter = createOpenCodeMessageQueueAdapter({
+      buildOpenCodeUrl: () => 'http://open.code/',
+      getOpenCodeAuthHeaders: () => ({}),
+      readAttachment: () => null,
+    });
+    await expect(adapter.findMessage({ sessionID: 's', directory: '/d' }, 'missing')).resolves.toEqual({ found: false });
+  });
+
+  it('awaits projection rejections so non-404 stays unavailable instead of escaping', async () => {
+    const api = v2Client({ inbox: [] });
+    api.session.message.mockRejectedValue(Object.assign(new Error('boom'), { status: 500 }));
+    makeOpenCodeV2Client.mockReturnValue(api);
+    const adapter = createOpenCodeMessageQueueAdapter({
+      buildOpenCodeUrl: () => 'http://open.code/',
+      getOpenCodeAuthHeaders: () => ({}),
+      readAttachment: () => null,
+    });
+    await expect(adapter.findMessage({ sessionID: 's', directory: '/d' }, 'wanted')).resolves.toEqual({ unavailable: true });
+  });
+});
+
 describe('intent queue prompt/inbox authority (ticket 12)', () => {
   const jsonResponse = (status, body) => ({
     ok: status >= 200 && status < 300,
@@ -210,12 +340,14 @@ describe('intent queue prompt/inbox authority (ticket 12)', () => {
       content: 'stale-local-parts',
     });
     expect(result).toMatchObject({ ok: true, status: 200 });
-    expect(fetchMock).toHaveBeenCalledTimes(1);
-    const [url, init] = fetchMock.mock.calls[0];
+    const promptCall = fetchMock.mock.calls.find(([url]) => String(url).includes('/prompt'));
+    expect(promptCall).toBeTruthy();
+    const [url, init] = promptCall;
     expect(String(url)).toContain('/api/session/s/prompt');
     const body = JSON.parse(init.body);
     expect(body.delivery).toMatch(/steer|queue/);
     expect(body.id).toBe('msg_inbox');
+    expect(body.model).toBeUndefined();
     expect(init.method).toBe('POST');
     vi.unstubAllGlobals();
   });
@@ -268,8 +400,10 @@ describe('intent queue prompt/inbox authority (ticket 12)', () => {
     });
     expect(result.ok).toBe(true);
     expect(readAttachment).toHaveBeenCalled();
-    const body = JSON.parse(fetchMock.mock.calls[0][1].body);
+    const promptCall = fetchMock.mock.calls.find(([url]) => String(url).includes('/prompt'));
+    const body = JSON.parse(promptCall[1].body);
     expect(body.files?.length || body.parts).toBeTruthy();
+    expect(body.model).toBeUndefined();
     vi.unstubAllGlobals();
   });
 });

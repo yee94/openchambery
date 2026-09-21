@@ -182,21 +182,33 @@ Every actual run (timer or manual):
       pass `signal` in `RequestInit`).
  5. `attachSession(runID, sessionID)` immediately after create.
     - If attach fails, the runtime fails the run without prompting.
- 6. Goal metadata PATCH (preserving the
-     `scheduledTask` marker together with `goal`), then command or `session.prompt`.
-    Non-cancellable async gaps (small-model distill, objective file write) check
-    `signal.throwIfAborted()` before continuing so a timed-out run never prompts.
+ 6. When goal capability is supported: optional goal setup (objective file /
+     Host goal state), then command or `session.prompt`. While unsupported,
+     `goalEnabled` never reaches this step (refused at step 1-equivalent before
+     OpenCode ready / create). Non-cancellable async gaps (small-model distill,
+     objective file write) check `signal.throwIfAborted()` before continuing so
+     a timed-out run never prompts.
     **Admission is not completion:** `session.prompt` / command return when the
     turn is accepted, not when the agent finishes.
- 7. Wait for the real session outcome (bounded by the same watchdog):
-    - Poll `session.active` + `message.list` until the session is idle and
-      the tail is a settled assistant turn (completed, or incomplete-but-stable
-      while idle). Assistant `error` (including abort) finalizes as `error`.
-    - Goal-enabled runs poll `session.get` for terminal goal status
-      (`complete` → success; `blocked` / `budgetLimited` → error) and do not
-      finish on the first idle between goal turns.
-    - `durationMs` / `finishedAt` are wall-clock from run start through this
-      settlement — not the prompt admission latency.
+  7. Wait for the real session outcome (bounded by the same watchdog):
+     - Poll `session.active` + `message.list` until the session is idle and
+       the **latest-side** message page settles. Settlement always uses
+       `message.list({ limit: 50, order: 'desc' })` (newest first) — never
+       `order: 'asc'` page-0 + `at(-1)`, which reads an old page once the
+       session exceeds the limit.
+     - Real terminal success requires an assistant tail with `time.completed`
+       and finish not `tool-calls` (prefer `finish: 'stop'`). `finish:
+       'tool-calls'`, incomplete assistants (no `time.completed`), and
+       non-assistant tails such as `model-switched` never succeed — including
+       after multiple incomplete idle probes.
+     - `session.active` / `message.list` failures stay **unknown** (keep
+       polling under the watchdog); they never masquerade as idle success.
+     - Assistant `error` (and terminal finish `error` / `length` /
+       `content-filter`) finalizes as `error`.
+     - Goal-enabled runs: see Goal safety gating below. When Host goal state
+       is unavailable they refuse before session create (no terminal-goal wait).
+     - `durationMs` / `finishedAt` are wall-clock from run start through this
+       settlement — not the prompt admission latency.
  8. On watchdog timeout after a session exists: immediately throw the canonical
     `schedule run timed out` without awaiting non-cancellable helper work. A
     once-only abort listener registered after session create starts best-effort
@@ -227,13 +239,34 @@ that same history session. `observeSessionEvent` corrects **only task state**
 - `session.status` busy/retry while `lastStatus` is `error` or `success` →
   `lastStatus` `running`, clear `lastError`, keep/set `lastSessionId`
 - later `session.idle` (or idle `session.status`) with a success snapshot from
-  `session.active` + `message.list` → `lastStatus` `success`
+  `session.active` + latest-side `message.list` → `lastStatus` `success`
 - do not change `lastRunAt` / `lastDurationMs` / `nextRunAt`
+- history rows are never rewritten; `finishRun` is not called again
 
 A live run (`runningTaskKeys`) owns settlement; the observer is a no-op while
 the task is in `runningTaskKeys`. Idle correction is a no-op if `lastStatus`
-is already `success`, or if the snapshot is still error/busy/unknown. Observer
-failures are logged and must not throw out of the event bus.
+is already `success`, or if the snapshot is still error/busy/unknown
+(`session.active` failure and goal-unsupported goal tasks stay unknown).
+Observer failures are logged and must not throw out of the event bus.
+
+## Goal safety gating
+
+Session goal Host state is advertised by
+`packages/web/server/lib/session-goal/capability.js`. On OpenCode v2 the
+capability is `{ supported: false, reason: 'v2_goal_state_unavailable' }`
+(v2 SessionInfo has no `metadata.openchamber.goal`). This is an explicit
+capability gap — not recovery-complete.
+
+| Path | Behavior while unsupported |
+|---|---|
+| `PUT` scheduled task / managed-tool create·update with `execution.goalEnabled` | HTTP 501, config not written |
+| Existing `goalEnabled` task due or manual run | Fail **before** OpenCode ready / session create / objective write / prompt; history `error` with the capability reason; task config kept |
+| Ordinary non-goal task | Unchanged |
+| Post-run observer on a goal-enabled task | Never promotes assistant-tail idle to success |
+
+Do not treat objective-file hints or first-turn assistant idle as a registered
+goal success. Full Host goal-state migration is out of scope for this module
+cut; flip `getSessionGoalCapability().supported` when it lands.
 
 Run start also emits `scheduled-task-ran` with `status: running` as soon as
 task state is persisted, so the outer task list can show in-progress before

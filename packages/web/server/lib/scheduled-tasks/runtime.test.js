@@ -381,7 +381,8 @@ describe('scheduled-tasks run history and session lifecycle', () => {
         data: [{
           id: 'msg_ok',
           type: 'assistant',
-          time: { completed: Date.now() },
+          time: { created: Date.now(), completed: Date.now() },
+          finish: 'stop',
         }],
       };
     });
@@ -396,6 +397,20 @@ describe('scheduled-tasks run history and session lifecycle', () => {
     });
     return { create, prompt, command, interrupt, list, active, messageList, get };
   };
+
+  const completedAssistant = (id = 'msg_ok') => ({
+    id,
+    type: 'assistant',
+    time: { created: 1_000, completed: 1_100 },
+    finish: 'stop',
+  });
+
+  const erroredAssistant = (id = 'msg_err') => ({
+    id,
+    type: 'assistant',
+    time: { created: 2_000, completed: 2_100 },
+    error: { name: 'ProviderError', message: 'upstream failed' },
+  });
 
   it('creates session with Scheduled title and location, attaches history, then prompts via session.prompt', async () => {
     const history = createHistoryStore();
@@ -756,34 +771,23 @@ describe('scheduled-tasks run history and session lifecycle', () => {
     vi.useRealTimers();
   });
 
-  it('watchdog timeout during hanging small-model distill returns without waiting and blocks later goal stages', async () => {
-    vi.useFakeTimers();
+  it('goalEnabled refuses before OpenCode ready / distill / session create (no side effects)', async () => {
     const history = createHistoryStore();
-    let resolveDistill;
-    let distillStarted = false;
     const create = vi.fn(async () => ({ id: 'ses_distill' }));
     const interrupt = vi.fn(async () => undefined);
-    const command = vi.fn(async () => {
-      throw new Error('command must not run after hanging distill');
-    });
-    const list = vi.fn(async () => ({ data: [] }));
     const prompt = vi.fn(async () => {
-      throw new Error('session.prompt must not run after hanging distill');
+      throw new Error('session.prompt must not run for unsupported goal');
     });
     makeOpenCodeV2Client.mockReturnValue({
-      session: { create, prompt, command, interrupt },
-      command: { list },
+      session: { create, prompt, command: vi.fn(), interrupt },
+      command: { list: vi.fn(async () => ({ data: [] })) },
     });
 
-    const generateSmallModelText = vi.fn(() => {
-      distillStarted = true;
-      return new Promise((resolve) => {
-        resolveDistill = () => resolve({ text: 'distilled criteria' });
-      });
-    });
+    const generateSmallModelText = vi.fn(async () => ({ text: 'should not distill' }));
     const getSmallModelService = vi.fn(async () => ({ generateSmallModelText }));
+    const waitForOpenCodeReady = vi.fn(async () => {});
 
-    // Oversized prompt forces small-model distill (threshold 5000).
+    // Oversized prompt would force distill if goal were admitted — it must not.
     const largePrompt = `finish the migration ${'x'.repeat(5100)}`;
     const goalTask = {
       ...scheduledTask,
@@ -807,64 +811,32 @@ describe('scheduled-tasks run history and session lifecycle', () => {
       buildOpenCodeUrl: vi.fn(() => 'http://127.0.0.1:4096'),
       getOpenCodeAuthHeaders: vi.fn(() => ({})),
       getSmallModelService,
-      waitForOpenCodeReady: vi.fn(async () => {}),
+      waitForOpenCodeReady,
       logger: { info: vi.fn(), warn: vi.fn() },
       runHistoryStore: history,
-      maxRunDurationMs: 1_000,
     });
     await runtime.syncProject('project-1');
+    const result = await runtime.runNow('project-1', 'task-1');
 
-    const unhandled = [];
-    const onUnhandled = (reason) => {
-      unhandled.push(reason);
-    };
-    process.on('unhandledRejection', onUnhandled);
-
-    try {
-      const runPromise = runtime.runNow('project-1', 'task-1');
-      await vi.advanceTimersByTimeAsync(0);
-      expect(distillStarted).toBe(true);
-      expect(generateSmallModelText).toHaveBeenCalled();
-
-      // Timeout must return while distill is still gated (non-cancellable).
-      await vi.advanceTimersByTimeAsync(1_000);
-      const result = await runPromise;
-
-      expect(result.ok).toBe(false);
-      expect(result.status).toBe('error');
-      expect(result.error).toBe('schedule run timed out');
-      expect(interrupt).toHaveBeenCalledWith({
-        sessionID: 'ses_distill',
-        continue: false,
-      });
-      expect(prompt).not.toHaveBeenCalled();
-      expect(command).not.toHaveBeenCalled();
-
-      const started = history.startRun.mock.calls[0][0];
-      expect(history.attachSession).toHaveBeenCalledWith(started.id, 'ses_distill');
-      expect(history.finishRun).toHaveBeenCalledWith(
-        started.id,
-        expect.objectContaining({
-          status: 'error',
-          error: 'schedule run timed out',
-        }),
-      );
-
-      // Release distill after finalize; abort gate must block goal write / prompt.
-      resolveDistill?.();
-      await vi.advanceTimersByTimeAsync(0);
-      await Promise.resolve();
-      await Promise.resolve();
-      expect(prompt).not.toHaveBeenCalled();
-      expect(unhandled).toEqual([]);
-    } finally {
-      process.off('unhandledRejection', onUnhandled);
-      resolveDistill?.();
-      vi.useRealTimers();
-    }
+    expect(result.ok).toBe(false);
+    expect(result.error).toMatch(/v2_goal_state_unavailable/);
+    expect(waitForOpenCodeReady).not.toHaveBeenCalled();
+    expect(getSmallModelService).not.toHaveBeenCalled();
+    expect(generateSmallModelText).not.toHaveBeenCalled();
+    expect(create).not.toHaveBeenCalled();
+    expect(prompt).not.toHaveBeenCalled();
+    expect(writeObjective).not.toHaveBeenCalled();
+    expect(history.attachSession).not.toHaveBeenCalled();
+    expect(history.finishRun).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({
+        status: 'error',
+        error: expect.stringMatching(/v2_goal_state_unavailable/),
+      }),
+    );
   });
 
-  it('goalEnabled writes the file-backed objective and does not PATCH session metadata', async () => {
+  it('goalEnabled refuses before session create / objective write when Host goal state is unavailable', async () => {
     const history = createHistoryStore();
     const client = createSuccessfulClient({ sessionID: 'ses_goal' });
 
@@ -896,14 +868,228 @@ describe('scheduled-tasks run history and session lifecycle', () => {
     await runtime.syncProject('project-1');
     const result = await runtime.runNow('project-1', 'task-1');
 
+    // Capability gap is an explicit run failure — not recovery-complete success.
+    expect(result.ok).toBe(false);
+    expect(result.status).toBe('error');
+    expect(result.error).toMatch(/v2_goal_state_unavailable/);
+    expect(client.create).not.toHaveBeenCalled();
+    expect(client.prompt).not.toHaveBeenCalled();
+    expect(writeObjective).not.toHaveBeenCalled();
+    expect(history.finishRun).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({
+        status: 'error',
+        error: expect.stringMatching(/v2_goal_state_unavailable/),
+      }),
+    );
+    // Task config is preserved (goalEnabled stays on the task); only this run fails.
+    const finalPatch = updateScheduledTaskState.mock.calls.at(-1)[2];
+    expect(finalPatch.lastStatus).toBe('error');
+    expect(Object.hasOwn(finalPatch, 'lastSessionId')).toBe(false);
+  });
+
+  it('ordinary non-goal runs still create a session and settle on the assistant tail', async () => {
+    const history = createHistoryStore();
+    const client = createSuccessfulClient({ sessionID: 'ses_plain' });
+    const updateScheduledTaskState = vi.fn(async (_projectID, _taskID, state) => ({
+      task: { ...scheduledTask, state: { ...scheduledTask.state, ...state } },
+    }));
+    const runtime = createRuntime(updateScheduledTaskState, {
+      runHistoryStore: history,
+      waitForOpenCodeReady: vi.fn(async () => {}),
+    });
+    await runtime.syncProject('project-1');
+    const result = await runtime.runNow('project-1', 'task-1');
+
     expect(result.ok).toBe(true);
-    expect(writeObjective).toHaveBeenCalledWith('ses_goal', 'finish the migration');
-    expect(client.prompt).toHaveBeenCalledWith({
-      sessionID: 'ses_goal',
-      text: expect.stringContaining('Goal mode is active for this session'),
-    }, expect.objectContaining({ signal: expect.any(AbortSignal) }));
-    expect(client.prompt.mock.calls[0][0].text).toContain('finish the migration');
-    expect(client.interrupt).not.toHaveBeenCalled();
+    expect(client.create).toHaveBeenCalled();
+    expect(client.prompt).toHaveBeenCalled();
+    expect(writeObjective).not.toHaveBeenCalled();
+  });
+
+  it('settles from the latest-side page: >50 older completed + newest error → error', async () => {
+    const history = createHistoryStore();
+    // order=desc page: newest first. Older completed assistants must not win.
+    const latestPage = [
+      erroredAssistant('msg_latest'),
+      ...Array.from({ length: 49 }, (_, index) => completedAssistant(`msg_old_${index}`)),
+    ];
+    createSuccessfulClient({
+      messageListImpl: async () => ({ data: latestPage }),
+    });
+    const updateScheduledTaskState = vi.fn(async (_projectID, _taskID, state) => ({
+      task: { ...scheduledTask, state: { ...scheduledTask.state, ...state } },
+    }));
+    const runtime = createRuntime(updateScheduledTaskState, {
+      runHistoryStore: history,
+      waitForOpenCodeReady: vi.fn(async () => {}),
+    });
+    await runtime.syncProject('project-1');
+    const result = await runtime.runNow('project-1', 'task-1');
+
+    expect(result.ok).toBe(false);
+    expect(result.status).toBe('error');
+    expect(result.error).toBe('ProviderError');
+    expect(history.finishRun).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({ status: 'error', error: 'ProviderError' }),
+    );
+  });
+
+  it('settles from the latest-side page: >50 older errors + newest completed → success', async () => {
+    const history = createHistoryStore();
+    const latestPage = [
+      completedAssistant('msg_latest'),
+      ...Array.from({ length: 49 }, (_, index) => erroredAssistant(`msg_old_${index}`)),
+    ];
+    createSuccessfulClient({
+      messageListImpl: async () => ({ data: latestPage }),
+    });
+    const updateScheduledTaskState = vi.fn(async (_projectID, _taskID, state) => ({
+      task: { ...scheduledTask, state: { ...scheduledTask.state, ...state } },
+    }));
+    const runtime = createRuntime(updateScheduledTaskState, {
+      runHistoryStore: history,
+      waitForOpenCodeReady: vi.fn(async () => {}),
+    });
+    await runtime.syncProject('project-1');
+    const result = await runtime.runNow('project-1', 'task-1');
+
+    expect(result.ok).toBe(true);
+    expect(history.finishRun).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({ status: 'success' }),
+    );
+  });
+
+  it('does not succeed when the latest message is model-switched', async () => {
+    vi.useFakeTimers();
+    const history = createHistoryStore();
+    createSuccessfulClient({
+      messageListImpl: async () => ({
+        data: [{
+          id: 'msg_switch',
+          type: 'model-switched',
+          time: { created: Date.now() },
+          model: { providerID: 'openai', id: 'gpt-4.1' },
+        }],
+      }),
+    });
+    const updateScheduledTaskState = vi.fn(async (_projectID, _taskID, state) => ({
+      task: { ...scheduledTask, state: { ...scheduledTask.state, ...state } },
+    }));
+    const runtime = createRuntime(updateScheduledTaskState, {
+      runHistoryStore: history,
+      waitForOpenCodeReady: vi.fn(async () => {}),
+      maxRunDurationMs: 2_500,
+    });
+    await runtime.syncProject('project-1');
+
+    const runPromise = runtime.runNow('project-1', 'task-1');
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(history.finishRun).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(1_500);
+    const result = await runPromise;
+
+    expect(result.ok).toBe(false);
+    expect(result.error).toBe('schedule run timed out');
+    vi.useRealTimers();
+  });
+
+  it('does not succeed when the assistant finish is tool-calls', async () => {
+    vi.useFakeTimers();
+    const history = createHistoryStore();
+    createSuccessfulClient({
+      messageListImpl: async () => ({
+        data: [{
+          id: 'msg_tools',
+          type: 'assistant',
+          time: { created: 1, completed: 2 },
+          finish: 'tool-calls',
+        }],
+      }),
+    });
+    const updateScheduledTaskState = vi.fn(async (_projectID, _taskID, state) => ({
+      task: { ...scheduledTask, state: { ...scheduledTask.state, ...state } },
+    }));
+    const runtime = createRuntime(updateScheduledTaskState, {
+      runHistoryStore: history,
+      waitForOpenCodeReady: vi.fn(async () => {}),
+      maxRunDurationMs: 2_500,
+    });
+    await runtime.syncProject('project-1');
+
+    const runPromise = runtime.runNow('project-1', 'task-1');
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(history.finishRun).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(1_500);
+    const result = await runPromise;
+
+    expect(result.ok).toBe(false);
+    expect(result.error).toBe('schedule run timed out');
+    vi.useRealTimers();
+  });
+
+  it('does not succeed after two incomplete assistant idle probes', async () => {
+    vi.useFakeTimers();
+    const history = createHistoryStore();
+    createSuccessfulClient({
+      messageListImpl: async () => ({
+        data: [{
+          id: 'msg_incomplete',
+          type: 'assistant',
+          time: { created: 1 },
+          // no time.completed, no finish
+        }],
+      }),
+    });
+    const updateScheduledTaskState = vi.fn(async (_projectID, _taskID, state) => ({
+      task: { ...scheduledTask, state: { ...scheduledTask.state, ...state } },
+    }));
+    const runtime = createRuntime(updateScheduledTaskState, {
+      runHistoryStore: history,
+      waitForOpenCodeReady: vi.fn(async () => {}),
+      maxRunDurationMs: 3_500,
+    });
+    await runtime.syncProject('project-1');
+
+    const runPromise = runtime.runNow('project-1', 'task-1');
+    // Two idle polls with incomplete assistant must not finalize as success.
+    await vi.advanceTimersByTimeAsync(2_000);
+    expect(history.finishRun).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(1_500);
+    const result = await runPromise;
+
+    expect(result.ok).toBe(false);
+    expect(result.error).toBe('schedule run timed out');
+    expect(history.finishRun).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({ status: 'error', error: 'schedule run timed out' }),
+    );
+    vi.useRealTimers();
+  });
+
+  it('lists settlement messages with order=desc (latest-side page)', async () => {
+    const history = createHistoryStore();
+    const client = createSuccessfulClient();
+    const updateScheduledTaskState = vi.fn(async (_projectID, _taskID, state) => ({
+      task: { ...scheduledTask, state: { ...scheduledTask.state, ...state } },
+    }));
+    const runtime = createRuntime(updateScheduledTaskState, {
+      runHistoryStore: history,
+      waitForOpenCodeReady: vi.fn(async () => {}),
+    });
+    await runtime.syncProject('project-1');
+    await runtime.runNow('project-1', 'task-1');
+
+    expect(client.messageList).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sessionID: 'ses_1',
+        limit: 50,
+        order: 'desc',
+      }),
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
+    );
   });
 
   it('successful runs never call session.interrupt', async () => {
@@ -1017,11 +1203,7 @@ describe('scheduled-tasks run history and session lifecycle', () => {
     }));
 
     client.messageList.mockImplementation(async () => ({
-      data: [{
-        id: 'msg_ok',
-        type: 'assistant',
-        time: { completed: Date.now() },
-      }],
+      data: [completedAssistant('msg_ok')],
     }));
 
     await runtime.observeSessionEvent({
@@ -1066,11 +1248,7 @@ describe('scheduled-tasks run history and session lifecycle', () => {
     expect(history.finishRun).toHaveBeenCalledTimes(1);
 
     client.messageList.mockImplementation(async () => ({
-      data: [{
-        id: 'msg_ok',
-        type: 'assistant',
-        time: { completed: Date.now() },
-      }],
+      data: [completedAssistant('msg_ok')],
     }));
 
     await runtime.observeSessionEvent({
@@ -1202,11 +1380,7 @@ describe('scheduled-tasks run history and session lifecycle', () => {
     const successEmitsAfterRun = emitTaskRunEvent.mock.calls.filter((call) => call[0].status === 'success').length;
 
     client.messageList.mockImplementation(async () => ({
-      data: [{
-        id: 'msg_ok',
-        type: 'assistant',
-        time: { completed: Date.now() },
-      }],
+      data: [completedAssistant('msg_ok')],
     }));
 
     await runtime.observeSessionEvent({

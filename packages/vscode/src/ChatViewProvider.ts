@@ -529,7 +529,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     const { id, type, payload } = message;
 
     const { path, headers } = (payload || {}) as { path?: string; headers?: Record<string, string> };
-    const normalizedPath = typeof path === 'string' && path.trim().length > 0 ? path.trim() : '/event';
+    const normalizedPath = typeof path === 'string' && path.trim().length > 0 ? path.trim() : '/api/event';
 
     if (!this._openCodeManager) {
       return {

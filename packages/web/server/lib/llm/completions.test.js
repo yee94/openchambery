@@ -33,7 +33,7 @@ describe('createChatCompletion', () => {
   })
 
   it('returns a non-stream completion from generateText', async () => {
-    const generateText = vi.fn(async () => ({ text: 'done', source: 'throwaway-session' }))
+    const generateText = vi.fn(async () => ({ text: 'done', source: 'generate.text' }))
     const result = await createChatCompletion({
       generateText,
       loadCatalog: async () => ({
@@ -45,10 +45,11 @@ describe('createChatCompletion', () => {
     expect(result.completion.choices[0].message.content).toBe('done')
     expect(result.providerID).toBe('openai')
     expect(result.modelID).toBe('gpt-5.2')
+    expect(result.source).toBe('generate.text')
   })
 
   it('forwards in-process onTextDelta and globalEventHub to generateText', async () => {
-    const generateText = vi.fn(async () => ({ text: 'streamed', source: 'throwaway-session' }))
+    const generateText = vi.fn(async () => ({ text: 'streamed', source: 'attachment-session' }))
     const onTextDelta = vi.fn()
     const globalEventHub = { subscribeEvent: vi.fn() }
     await createChatCompletion({
@@ -66,7 +67,7 @@ describe('createChatCompletion', () => {
   })
 
   it('forwards optional file parts on user messages', async () => {
-    const generateText = vi.fn(async () => ({ text: 'saw it', source: 'throwaway-session' }))
+    const generateText = vi.fn(async () => ({ text: 'saw it', source: 'attachment-session' }))
     const image = { type: 'file', mime: 'image/png', url: 'data:image/png;base64,aa', filename: 'shot.png' }
     await createChatCompletion({
       generateText,
@@ -86,7 +87,7 @@ describe('createChatCompletion', () => {
   })
 
   it('asks generate to skip image bytes when the catalog model is not vision-capable', async () => {
-    const generateText = vi.fn(async () => ({ text: 'ok', source: 'throwaway-session' }))
+    const generateText = vi.fn(async () => ({ text: 'ok', source: 'generate.text' }))
     await createChatCompletion({
       generateText,
       loadCatalog: async () => ({
@@ -96,6 +97,26 @@ describe('createChatCompletion', () => {
       body: { model: 'opencode/deepseek-v4-flash', messages: [{ role: 'user', content: 'look' }] },
     })
     expect(generateText.mock.calls[0][0].forwardImageParts).toBe(false)
+  })
+
+  it('rejects malformed data URL file parts', async () => {
+    const generateText = vi.fn()
+    await expect(createChatCompletion({
+      generateText,
+      loadCatalog: async () => ({
+        models: [{ providerID: 'openai', modelID: 'gpt-5.2', acceptsImages: true }],
+        connected: ['openai'],
+      }),
+      body: {
+        model: 'openai/gpt-5.2',
+        messages: [{
+          role: 'user',
+          content: 'look',
+          parts: [{ type: 'file', mime: 'image/png', url: 'https://example.com/x.png' }],
+        }],
+      },
+    })).rejects.toMatchObject({ code: 'validation_error', statusCode: 400 })
+    expect(generateText).not.toHaveBeenCalled()
   })
 
   it('LlmError carries a stable code', () => {
@@ -122,6 +143,26 @@ describe('createChatCompletion', () => {
       code: 'upstream_error',
       statusCode: 502,
       message: 'model refused the request',
+    })
+  })
+
+  it('maps llm_attachment_generation_unavailable before treating it as generic upstream', async () => {
+    const generateText = vi.fn(async () => {
+      const error = new Error('deny-all missing')
+      error.code = 'llm_attachment_generation_unavailable'
+      throw error
+    })
+    await expect(createChatCompletion({
+      generateText,
+      loadCatalog: async () => ({
+        models: [{ providerID: 'openai', modelID: 'gpt-4o', acceptsImages: true }],
+        connected: ['openai'],
+      }),
+      body: { model: 'openai/gpt-4o', messages: [{ role: 'user', content: 'hi' }] },
+    })).rejects.toMatchObject({
+      code: 'llm_attachment_generation_unavailable',
+      statusCode: 502,
+      message: 'deny-all missing',
     })
   })
 })

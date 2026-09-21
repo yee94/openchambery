@@ -166,6 +166,59 @@ describe('registerSessionTurnPageRoutes', () => {
     expect(kept.body.records[0].parts.some((part) => part.type === 'reasoning')).toBe(true);
   });
 
+  it('normalizes native SessionMessage content before slim+reasoning so content cannot leak', async () => {
+    const loadPage = vi.fn(async () => ({
+      ok: true,
+      records: [{
+        id: 'msg_a1',
+        sessionID: 'ses_1',
+        type: 'assistant',
+        time: { created: 1, completed: 2 },
+        agent: 'build',
+        model: { providerID: 'p', id: 'm' },
+        tokens: { input: 1, output: 2, reasoning: 9 },
+        content: [
+          { type: 'reasoning', text: 'SECRET_REASONING_BODY' },
+          { type: 'text', text: 'visible-answer' },
+          {
+            type: 'tool',
+            name: 'bash',
+            id: 'call_1',
+            state: { status: 'completed', title: 'ran', output: 'HUGE_TOOL_OUTPUT' },
+          },
+        ],
+      }],
+      turnCount: 0,
+      cursor: null,
+      complete: true,
+    }));
+    const { app, route } = registry();
+    registerSessionTurnPageRoutes(app, { sessionTurnPageService: { loadPage } });
+
+    const stripped = response();
+    await route('GET', ROUTE)({
+      params: { sessionID: 'ses_1' },
+      query: { includeReasoning: 'false' },
+      headers: {},
+    }, stripped);
+
+    expect(stripped.statusCode).toBe(200);
+    const record = stripped.body.records[0];
+    expect(record.info.id).toBe('msg_a1');
+    expect(record.info.role).toBe('assistant');
+    expect(record.info.tokens.reasoning).toBe(9);
+    expect(record.info.content).toBeUndefined();
+    expect(record.parts.every((part) => part.type !== 'reasoning')).toBe(true);
+    expect(record.parts.some((part) => part.type === 'text' && part.text === 'visible-answer')).toBe(true);
+    const tool = record.parts.find((part) => part.type === 'tool');
+    expect(tool.slim).toBe(true);
+    expect(tool.state.output).toBeUndefined();
+    expect(stripped.body.partsProjection).toBe('slim-v1');
+    const serialized = JSON.stringify(stripped.body);
+    expect(serialized).not.toContain('SECRET_REASONING_BODY');
+    expect(serialized).not.toContain('HUGE_TOOL_OUTPUT');
+  });
+
   it('maps upstream service errors to an upstream HTTP status', async () => {
     const loadPage = vi.fn(async () => ({
       ok: false,
@@ -835,6 +888,154 @@ describe('registerSessionTurnPageRoutes — exact message GET', () => {
     }, res);
     expect(res.statusCode).toBe(404);
     expect(res.body.code).toBe('not_found');
+  });
+
+  it('maps AbortError to 499 and does not fold it into upstream 502', async () => {
+    const fetchExactMessage = vi.fn(async () => {
+      const error = new Error('aborted');
+      error.name = 'AbortError';
+      throw error;
+    });
+    const { app, route } = registry();
+    registerSessionTurnPageRoutes(app, {
+      sessionTurnPageService: { loadPage: vi.fn() },
+      fetchExactMessage,
+    });
+    const res = response();
+    await route('GET', EXACT_MESSAGE_ROUTE)({
+      params: { sessionID: 'ses_1', messageID: 'msg_1' },
+      query: {},
+      headers: {},
+    }, res);
+    expect(res.statusCode).toBe(499);
+    expect(res.statusCode).not.toBe(502);
+  });
+});
+
+describe('registerSessionTurnPageRoutes — real OpenCode.make + fake HTTP', () => {
+  const jsonResponse = (status, body) => ({
+    ok: status >= 200 && status < 300,
+    status,
+    headers: {
+      get: (name) => (String(name).toLowerCase() === 'content-type' ? 'application/json' : null),
+    },
+    json: async () => body,
+    text: async () => JSON.stringify(body ?? null),
+    arrayBuffer: async () => new TextEncoder().encode(JSON.stringify(body ?? null)).buffer,
+  });
+
+  it('session.message MessageNotFoundError _tag maps to HTTP 404 via real client', async () => {
+    const { OpenCode } = await import('@opencode-ai/client');
+    const fetchImpl = vi.fn(async (url) => {
+      const path = String(url);
+      if (path.includes('/message/msg_missing')) {
+        return jsonResponse(404, {
+          _tag: 'MessageNotFoundError',
+          sessionID: 'ses_1',
+          messageID: 'msg_missing',
+          message: 'Message not found',
+        });
+      }
+      return jsonResponse(500, { _tag: 'UnknownError', message: 'unexpected' });
+    });
+    makeOpenCodeV2Client.mockImplementation(({ baseUrl, authHeaders }) =>
+      OpenCode.make({ baseUrl, headers: authHeaders, fetch: fetchImpl }));
+
+    const { app, route } = registry();
+    registerSessionTurnPageRoutes(app, {
+      sessionTurnPageService: { loadPage: vi.fn() },
+      buildOpenCodeUrl: () => 'http://open.code/',
+      getOpenCodeAuthHeaders: () => ({ Authorization: 'Basic test' }),
+    });
+    const res = response();
+    await route('GET', EXACT_MESSAGE_ROUTE)({
+      params: { sessionID: 'ses_1', messageID: 'msg_missing' },
+      query: {},
+      headers: {},
+    }, res);
+
+    expect(res.statusCode).toBe(404);
+    expect(res.body.code).toBe('not_found');
+    expect(fetchImpl).toHaveBeenCalled();
+  });
+
+  it('exact message serializes native assistant with reasoning strip and L1 slim', async () => {
+    const { OpenCode } = await import('@opencode-ai/client');
+    const nativeAssistant = {
+      id: 'msg_a1',
+      type: 'assistant',
+      time: { created: 10, completed: 20 },
+      agent: 'build',
+      model: { providerID: 'openai', id: 'gpt' },
+      tokens: { input: 3, output: 4, reasoning: 7 },
+      content: [
+        { type: 'reasoning', text: 'PRIVATE_CHAIN' },
+        { type: 'text', text: 'hello-world' },
+      ],
+      // Host may still see legacy summary on some mirrors; L1 must slim it.
+      summary: {
+        diffs: [{
+          file: 'a.ts',
+          status: 'modified',
+          additions: 1,
+          deletions: 0,
+          patch: 'PATCH_BODY_SHOULD_NOT_LEAVE',
+        }],
+      },
+    };
+    const fetchImpl = vi.fn(async () => jsonResponse(200, { data: nativeAssistant }));
+    makeOpenCodeV2Client.mockImplementation(({ baseUrl, authHeaders }) =>
+      OpenCode.make({ baseUrl, headers: authHeaders, fetch: fetchImpl }));
+
+    const { app, route } = registry();
+    registerSessionTurnPageRoutes(app, {
+      sessionTurnPageService: { loadPage: vi.fn() },
+      buildOpenCodeUrl: () => 'http://open.code/',
+      getOpenCodeAuthHeaders: () => ({}),
+    });
+
+    const stripped = response();
+    await route('GET', EXACT_MESSAGE_ROUTE)({
+      params: { sessionID: 'ses_1', messageID: 'msg_a1' },
+      query: { includeReasoning: 'false' },
+      headers: {},
+    }, stripped);
+
+    expect(stripped.statusCode).toBe(200);
+    expect(stripped.body.info.id).toBe('msg_a1');
+    expect(stripped.body.info.role).toBe('assistant');
+    expect(stripped.body.info.content).toBeUndefined();
+    expect(stripped.body.info.tokens.reasoning).toBe(7);
+    expect(stripped.body.parts.every((part) => part.type !== 'reasoning')).toBe(true);
+    expect(stripped.body.parts.some((part) => part.type === 'text' && part.text === 'hello-world')).toBe(true);
+    expect(stripped.body.info.summary?.diffs?.[0]?.patch).toBeUndefined();
+    expect(JSON.stringify(stripped.body)).not.toContain('PRIVATE_CHAIN');
+    expect(JSON.stringify(stripped.body)).not.toContain('PATCH_BODY_SHOULD_NOT_LEAVE');
+  });
+
+  it('preserves abort from real client transport instead of 502', async () => {
+    const { OpenCode } = await import('@opencode-ai/client');
+    const fetchImpl = vi.fn(async () => {
+      const error = new Error('The operation was aborted');
+      error.name = 'AbortError';
+      throw error;
+    });
+    makeOpenCodeV2Client.mockImplementation(({ baseUrl, authHeaders }) =>
+      OpenCode.make({ baseUrl, headers: authHeaders, fetch: fetchImpl }));
+
+    const { app, route } = registry();
+    registerSessionTurnPageRoutes(app, {
+      sessionTurnPageService: { loadPage: vi.fn() },
+      buildOpenCodeUrl: () => 'http://open.code/',
+      getOpenCodeAuthHeaders: () => ({}),
+    });
+    const res = response();
+    await route('GET', EXACT_MESSAGE_ROUTE)({
+      params: { sessionID: 'ses_1', messageID: 'msg_1' },
+      query: {},
+      headers: {},
+    }, res);
+    expect(res.statusCode).toBe(499);
   });
 });
 

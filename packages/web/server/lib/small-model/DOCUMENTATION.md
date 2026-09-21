@@ -21,10 +21,11 @@ every other runtime API.
   tasks. Tests may call the factory with a mock `getModelCatalog`. Returns
   `stop()` to remove the lazy temp directory used by the session path (wired
   from `server/index.js` `stop()`).
-- `opencode-session.js` — temporary OpenCode session path for non-dedicated
-  providers. Lazily creates `mkdtemp('openchamber-smallmodel-')` with a hidden
-  deny-all agent, then create → archive → `prompt_async` → poll idle → read
-  assistant text → best-effort `session.delete`.
+- `opencode-session.js` — fallback for non-dedicated providers. Lazily prepares
+  `mkdtemp('openchamber-smallmodel-')` with a hidden deny-all agent markdown
+  (isolation invariant), then calls official `@opencode-ai/client`
+  `generate.text({ location?, prompt, model: { id, providerID } })`. No coding
+  session / `promptAsync` / `tool.ids` path. Empty text is never success.
 - `resolve.js` — model selection, mirroring OpenCode's `getSmallModel` chain:
   0. OpenChamber's own settings override (Settings → Sessions → Small Model):
      when `smallModelUseDefault` is `false`, `smallModelOverride`

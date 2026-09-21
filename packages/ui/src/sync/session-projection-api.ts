@@ -160,6 +160,27 @@ function messageTime(value: unknown): Message["time"] {
   }
 }
 
+/**
+ * Map official TokenUsageInfo onto Message.tokens for TPS / settle chrome.
+ * Partial records are kept when any recognized count is present.
+ */
+function projectionTokens(value: unknown): Message["tokens"] | undefined {
+  if (!record(value)) return undefined
+  const cache = record(value.cache)
+    ? {
+      ...(typeof value.cache.read === "number" ? { read: value.cache.read } : {}),
+      ...(typeof value.cache.write === "number" ? { write: value.cache.write } : {}),
+    }
+    : undefined
+  const tokens: NonNullable<Message["tokens"]> = {
+    ...(typeof value.input === "number" ? { input: value.input } : {}),
+    ...(typeof value.output === "number" ? { output: value.output } : {}),
+    ...(typeof value.reasoning === "number" ? { reasoning: value.reasoning } : {}),
+    ...(cache && (cache.read !== undefined || cache.write !== undefined) ? { cache } : {}),
+  }
+  return Object.keys(tokens).length > 0 ? tokens : undefined
+}
+
 function baseMessage(
   sessionID: string,
   item: SessionProjectionRecord,
@@ -220,6 +241,14 @@ export function normalizeSessionProjectionMessage(
     if (record(item.model)) {
       info.modelID = asString(item.model.id)
       info.providerID = asString(item.model.providerID)
+      const variant = asString(item.model.variant)
+      if (info.modelID || info.providerID || variant) {
+        info.model = {
+          ...(info.providerID ? { providerID: info.providerID } : {}),
+          ...(info.modelID ? { modelID: info.modelID } : {}),
+          ...(variant ? { variant } : {}),
+        }
+      }
     }
     const agent = asString(item.agent)
     if (agent) {
@@ -236,6 +265,15 @@ export function normalizeSessionProjectionMessage(
         type: asString(item.error.type) ?? "error",
         message: asString(item.error.message) ?? "",
       }
+    }
+    // Official SessionMessage.Assistant carries usage for TPS / cost chrome.
+    // Dropping these blanks assistant settle metadata after GET reconcile.
+    if (typeof item.cost === "number" && Number.isFinite(item.cost)) {
+      info.cost = item.cost
+    }
+    const tokens = projectionTokens(item.tokens)
+    if (tokens) {
+      info.tokens = tokens
     }
     const parts: Part[] = []
     const content: unknown[] = Array.isArray(item.content) ? item.content : []

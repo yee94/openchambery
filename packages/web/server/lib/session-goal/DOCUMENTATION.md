@@ -53,11 +53,16 @@ before touching the filesystem). Rationale: metadata rides every
 `session.updated`, so multi-KB objectives must not live there.
 
 - `objectives.js` — write/read/delete, 5000-char clamp.
-- `routes.js` — `PUT/GET/DELETE /api/goals/objective/:sessionId`
-  (OpenChamber-owned, registered before the generic proxy; JSON parsing via
-  the `/api/goals` family in core-routes). The UI writes the file BEFORE
-  patching the goal metadata and falls back to an inline objective when the
-  write fails; `clearSessionGoal` deletes the file best-effort.
+- `capability.js` — `getSessionGoalCapability()` / `assertSessionGoalSupported()`
+  (single source; currently `{ supported: false, reason: 'v2_goal_state_unavailable' }`).
+- `routes.js` — `GET /api/goals/capability`, create/resume refuse endpoints,
+  `PUT/GET/DELETE /api/goals/objective/:sessionId` (OpenChamber-owned,
+  registered before the generic proxy; JSON parsing via the `/api/goals`
+  family in core-routes). While capability is unsupported, create / resume /
+  objective-write refuse with HTTP 501; GET/DELETE objective remain for
+  leftover files. The UI writes the file BEFORE patching the goal metadata
+  and falls back to an inline objective when the write fails;
+  `clearSessionGoal` deletes the file best-effort.
 - The tick resolves the effective objective fresh on every cycle (the file
   is live-editable mid-goal) and falls back to the inline `objective` when
   the file is unreadable — a goal never dies because a file went away.
@@ -173,16 +178,44 @@ sees only that final turn, so the report is its evidence.
   (edit/pause/resume/complete/clear).
 - Sidebar glyph next to the date in `SessionNodeItem`.
 
+## Capability (Host goal state)
+
+`capability.js` is the single source for whether Host goal state is available:
+
+```
+getSessionGoalCapability() → { supported: false, reason: 'v2_goal_state_unavailable' }
+```
+
+OpenCode v2 SessionInfo has no `metadata.openchamber.goal`. Full Host goal-state
+migration is out of scope for this cut — advertise the gap explicitly so callers
+do not treat objective-file hints or first-turn idle as a registered goal.
+
+| Surface | While unsupported |
+|---|---|
+| `GET /api/goals/capability` | Returns the capability object (UI lane later) |
+| `POST /api/goals/:sessionId` (create) | HTTP 501 |
+| `POST /api/goals/:sessionId/resume` | HTTP 501 |
+| `PUT /api/goals/objective/:sessionId` | HTTP 501 (create side-effect) |
+| `GET` / `DELETE` objective | Still allowed for leftover files |
+| Scheduled `goalEnabled` create/edit | HTTP 501 (scheduled-tasks routes + managed tool) |
+| Existing `goalEnabled` task run | Fail before session create; history error; config kept |
+
+Flip `supported` in `capability.js` when Host goal state lands; do not wire
+partial objective-only paths as recovery-complete. `runtime.js` / server
+`index.js` wiring of a restored loop is a parent-lane concern.
+
 ## Scheduled goals
 
-Scheduled tasks can run as goals: `execution.goalEnabled` (+ optional
-`execution.goalTokenBudget`) on a task makes the scheduled-tasks runtime
-stamp `metadata.openchamber.goal` onto the fresh session (objective = the
-expanded task prompt) and attach the goal-mode intro part to the prompt.
-The loop here picks it up from session events like any other goal.
+When capability is supported, scheduled tasks with `execution.goalEnabled`
+(+ optional `execution.goalTokenBudget`) stamp Host goal state onto the fresh
+session (objective = the expanded task prompt) and attach the goal-mode intro
+part to the prompt. The loop here picks it up from session events like any
+other goal. While unsupported, those runs refuse before session create (see
+scheduled-tasks Goal safety gating).
 
 ## Limitations
 
+- Host goal state unavailable on OpenCode v2 (`v2_goal_state_unavailable`).
 - TODO(watch): Assistant contact assign skipped a watch tool this slice.
   Goal settle already notifies. Do not invent a second scheduler. A later
   thin contact tool can post a read-only session status card when

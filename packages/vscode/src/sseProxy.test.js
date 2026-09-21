@@ -57,14 +57,35 @@ describe('VS Code SSE proxy', () => {
 
     await proxy.run;
 
-    expect(fetchInput).toBe('http://127.0.0.1:4096/global/event');
+    expect(fetchInput).toBe('http://127.0.0.1:4096/api/global/event');
     expect(fetchInit.headers.Authorization).toBe('Bearer test-token');
     expect(fetchInit.headers['Last-Event-ID']).toBe('evt-0');
     expect(proxy.headers['content-type']).toContain('text/event-stream');
     expect(received.join('')).toBe(upstreamChunks.join(''));
   });
 
-  it('adds the active directory for directory-scoped event streams', async () => {
+  it('adds the active directory for directory-scoped event streams on /api/event', async () => {
+    let fetchInput;
+    globalThis.fetch = mock((input) => {
+      fetchInput = input;
+      return Promise.resolve(createSseResponse(['data: {"type":"server.connected"}\n\n']));
+    });
+
+    const proxy = await openSseProxy({
+      manager: createManager(),
+      path: '/api/event?foo=bar',
+      signal: new AbortController().signal,
+      onChunk: () => {},
+    });
+    await proxy.run;
+
+    const url = new URL(fetchInput);
+    expect(url.pathname).toBe('/api/event');
+    expect(url.searchParams.get('foo')).toBe('bar');
+    expect(url.searchParams.get('directory')).toBe('/repo');
+  });
+
+  it('restores /api for legacy root SSE paths', async () => {
     let fetchInput;
     globalThis.fetch = mock((input) => {
       fetchInput = input;
@@ -80,8 +101,7 @@ describe('VS Code SSE proxy', () => {
     await proxy.run;
 
     const url = new URL(fetchInput);
-    expect(url.pathname).toBe('/event');
-    expect(url.searchParams.get('foo')).toBe('bar');
+    expect(url.pathname).toBe('/api/event');
     expect(url.searchParams.get('directory')).toBe('/repo');
   });
 
@@ -94,14 +114,14 @@ describe('VS Code SSE proxy', () => {
 
     const proxy = await openSseProxy({
       manager: createManager(),
-      path: '/global/event?includeReasoning=false&x=1',
+      path: '/api/global/event?includeReasoning=false&x=1',
       signal: new AbortController().signal,
       onChunk: () => {},
     });
     await proxy.run;
 
     const url = new URL(fetchInput);
-    expect(url.pathname).toBe('/global/event');
+    expect(url.pathname).toBe('/api/global/event');
     expect(url.searchParams.get('x')).toBe('1');
     expect(url.searchParams.has('includeReasoning')).toBe(false);
   });

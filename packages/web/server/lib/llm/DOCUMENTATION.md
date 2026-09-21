@@ -5,78 +5,66 @@ only model path the Assistant harness (`pi-agent-core` `streamFn`) talks to.
 
 ## Contract
 
-- `GET /api/openchamber/llm/models` — connected `{providerID, modelID}` catalog
-  from OpenCode `GET /provider` (`connected`) plus `GET /config/providers`.
-  Plugin adapter formats stay inside OpenCode; this route does not parse them.
+- `GET /api/openchamber/llm/models` — available `{providerID, modelID}` catalog
+  from official `@opencode-ai/client` `provider.list` + `model.list`
+  (`{ location, data }`). `ModelInfo.id` is the external modelID used in
+  generate/session refs (`ModelInfo.modelID` is a separate internal field).
+  Vision is `capabilities.input` containing `image`.
 - `POST /api/openchamber/llm/chat/completions` — `{ model, messages, stream?,
   providerID?, modelID? }` → OpenAI `chat.completion` JSON.
-  This **public** gateway is **non-streaming**. Bundled OpenCode 1.18.4 generate
-  (`POST /generate` when present, otherwise throwaway `session.promptAsync`
-  plus idle wait) returns a full assistant turn. `stream: true` is rejected with
+  This **public** gateway is **non-streaming**. `stream: true` is rejected with
   `validation_error` (HTTP 400). Do not emit fake SSE after the fact on this
-  route (never typewrite a completed string into tokens over HTTP).
-  The contact UI may stream later via a **server-internal** path only (below).
+  route. The contact UI may stream later via a **server-internal** path only.
 
 `model` may be `providerID/modelID` or a bare `modelID` paired with `providerID`.
 
-## Internals (verified on bundled `@opencode-ai/sdk` 1.18.4)
+## Internals (official `@opencode-ai/client`)
 
-The 1.18.4 client exposes `GET /provider`, `GET /config/providers`, and
-`session.prompt` / `session.promptAsync`. It does **not** expose
-`POST /api/generate` or any other sessionless generate method.
+Credentials stay in OpenCode. This module does not read `auth.json`, does not
+call Anthropic/OpenAI/plugin SDKs, and does not use the `openai` npm package.
 
-1. Probe `POST /generate` (and SDK `generate` if present). Use it only when
-   the response is JSON (`Content-Type` or a JSON object body). SPA / OpenCode
-   HTML `200 <!doctype` is not generate — fall through to the throwaway path.
-   Bundled 1.18.4 has no sessionless generate.
-2. Otherwise create a throwaway archived OpenCode session, deny every tool
-   (`client.tool.ids()` → `{ [id]: false }`), send our messages as
-   `system` + user text via `session.promptAsync` (v2 `session.prompt` only
-   forwards `{ id, prompt, delivery, resume }` and drops `model`/`parts` —
-   that produced empty assistant text and a 502). Contact file parts reuse the
-   existing OpenCode `{ type: 'file', mime, url, filename? }` delivery shape
-   (data URLs in the contact SQLite store — not a second attachment store) and
-   are forwarded on `promptAsync` only when the connected catalog marks that
-   model as image-capable (`modalities.input`, `input`, or `attachment`).
-   Non-vision models (for example deepseek-v4-flash) keep the `[image: …]`
-   description and any text-file bytes, and skip image data URLs so generate
-   cannot stall on unsupported vision parts. Non-image
-    text files are also inlined into the flattened prompt. Wait for idle via
-    `session.status` + `session.messages`, then delete the session. Throwaway
-    sessions are created with
-    `metadata.openchamber.llm.purpose = 'chat-completions'` (and archived
-    immediately) so sidebar visibility, session-index, session-title, and
-    notification/push fanout treat them as system-owned — same contract as
-    non-empty `smallModel.purpose`. This is a text generator only — never the
-    contact transcript and never a coding SessionPrompt loop. Upstream
-    `info.error.message` is forwarded on 502.
+### Text path (no vision image bytes)
+
+`client.generate.text({ location?, prompt, model: { id, providerID, variant? } },
+{ signal })` → `{ text }`. No session. System text is prepended into `prompt`.
+`onTextDelta` is skipped honestly (no fake typewriter).
+
+### Attachment / vision path
+
+When the catalog marks the model vision-capable and the request includes image
+data-URL file parts:
+
+1. Ensure the throwaway temp directory agent markdown (`openchamber-llm`,
+   permissions array ending in `action:* resource:* effect:deny`).
+2. `agent.get({ agentID: 'openchamber-llm', location })` and require the **final**
+   permissions rule to be deny-all. Failure → `llm_attachment_generation_unavailable`
+   **before** any `session.prompt`. Title is never treated as permission isolation.
+3. `session.create({ location, agent, model: { id, providerID } })` (bare session id).
+4. Optional `session.instructions.entry.put` for the system prompt.
+5. Subscribe for `session.text.delta` (`data.sessionID` / `assistantMessageID` /
+   `ordinal` / `delta`) before prompt; unsubscribe in `finally`.
+6. `session.prompt({ sessionID, text, files: [{ uri, name? }], delivery })`.
+7. `session.wait` then `message.list({ order: 'desc' })`; verify newest assistant
+   `finish` / `error`; extract text content.
+8. On timeout/abort: `session.interrupt({ continue: false })` and always
+   `session.remove` in `finally`.
+
+Non-vision models keep the `[image: …]` description strategy and never forward
+image bytes. Data URLs are strictly validated; a single attachment is capped at
+20 MiB (plus existing inline text-file limits). An external/temp workspace that
+OpenCode cannot see fails explicitly (`llm_attachment_generation_unavailable`).
+
+There is no `/generate` probe, no `tool.ids` deny map, and no `promptAsync` path.
 
 ### Internal token callback (in-process only)
 
 `generateOpenCodeText` / `createChatCompletion` accept optional
-`onTextDelta(text: string)` and `globalEventHub` (the shared
-`globalMessageStreamHub` / `subscribeEvent` surface).
+`onTextDelta(text: string)` and `globalEventHub`.
 
-- **Throwaway session path:** after archive, before `promptAsync`, subscribe to
-  the hub. Forward real OpenCode `message.part.delta` events whose
-  `properties.sessionID` matches this throwaway session, `field` is `text`
-  (or omitted), and `messageID` matches the first assistant message locked for
-  that generate. Still wait for idle and return the **full** text (strip/parse
-  needs the complete string). Unsubscribe in `finally` so failed generates
-  cannot leak listeners.
-- **Sessionless `/generate` JSON path:** cannot emit live deltas — skip
-  `onTextDelta` honestly (no fake typewriter of the completed string).
+- **Attachment session path:** real `session.text.delta` tokens for this session.
+- **`generate.text` path:** cannot emit live deltas — skip `onTextDelta`.
 - **HTTP `POST .../chat/completions`:** does not pass these options and still
-  rejects `stream: true`. Token deltas never leave the server as SSE on that
-  route.
-
-Bundled OpenCode 1.18.4 emits `message.part.delta` on the global event stream
-for normal session prompts (same events the UI transcript already consumes).
-Throwaway LLM sessions use the same `session.promptAsync` path, so they are
-expected to emit the same delta events when the model streams tokens.
-
-Credentials stay in OpenCode. This module does not read `auth.json`, does not
-call Anthropic/OpenAI/plugin SDKs, and does not use the `openai` npm package.
+  rejects `stream: true`.
 
 No connected provider → `no_provider` (HTTP 400). Upstream failure is never
 an empty success. The 502 body includes `{ error, message }`.
@@ -86,4 +74,5 @@ an empty success. The 502 body includes `{ error, message }`.
 The Assistant contact harness owns system prompt, OpenChamber transcript,
 bubble splitting, and OpenChamber API tools (`assign_session`). Those tools
 deliver through contact **cards**, not this completions payload. The gateway
-stays a text generator: OpenCode coding tools stay denied.
+stays a text generator: OpenCode coding tools stay denied on the attachment path
+via the verified agent permissions ruleset.

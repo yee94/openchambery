@@ -5,7 +5,9 @@ import path from 'node:path';
 import {
   clearDetectedOpencodeCliPathCache,
   createLegacyOpenCodeBinaryError,
+  evaluateV1MigrationGate,
   fetchOpenCodeHealth,
+  fetchV1MigrationGate,
   isLegacyOpenCodeCliBasename,
   parseOpenCodeListeningLine,
   resolveDetectedOpencodeCliPath,
@@ -129,7 +131,7 @@ describe('fetchOpenCodeHealth', () => {
       const headers = new Headers(init?.headers);
       expect(headers.get('Authorization')).toMatch(/^Basic /);
       if (url.endsWith('/global/health')) {
-        return new Response(JSON.stringify({ healthy: true, version: '1.15.0' }), {
+        return new Response(JSON.stringify({ healthy: true, version: '0.0.0-next-17444' }), {
           status: 200,
           headers: { 'content-type': 'application/json' },
         });
@@ -147,9 +149,62 @@ describe('fetchOpenCodeHealth', () => {
     ]);
     expect(result).toEqual({
       healthy: true,
-      version: '1.15.0',
+      version: '0.0.0-next-17444',
       path: '/global/health',
     });
+  });
+
+  test('rejects healthy 1.x version bodies instead of admitting the sidecar', async () => {
+    globalThis.fetch = async (input) => {
+      const url = String(input);
+      if (url.endsWith('/api/health') || url.endsWith('/global/health')) {
+        return new Response(JSON.stringify({ healthy: true, version: '1.15.0' }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        });
+      }
+      return new Response('not found', { status: 404 });
+    };
+
+    const result = await fetchOpenCodeHealth('http://127.0.0.1:45678', {
+      Authorization: 'Basic b3BlbmNvZGU6c2VjcmV0',
+    });
+    expect(result).toBeNull();
+  });
+
+  test('rejects healthy bodies with a missing version', async () => {
+    globalThis.fetch = async () => new Response(JSON.stringify({ healthy: true }), {
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+    });
+    expect(await fetchOpenCodeHealth('http://127.0.0.1:45678')).toBeNull();
+  });
+});
+
+describe('V1 migration gate (VS Code)', () => {
+  test('required/running/error block and completed/absent admit', () => {
+    expect(evaluateV1MigrationGate({ status: 'required' }).admitTranscript).toBe(false);
+    expect(evaluateV1MigrationGate({ status: 'running' }).admitTranscript).toBe(false);
+    expect(evaluateV1MigrationGate({ status: 'error', error: 'x' }).admitTranscript).toBe(false);
+    expect(evaluateV1MigrationGate({ status: 'completed' }).admitTranscript).toBe(true);
+    expect(evaluateV1MigrationGate({ httpStatus: 404 }).admitTranscript).toBe(true);
+  });
+
+  test('fetchV1MigrationGate polls GET only', async () => {
+    const calls = [];
+    globalThis.fetch = async (input, init) => {
+      calls.push({ url: String(input), method: init?.method });
+      return new Response(JSON.stringify({ status: 'completed' }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      });
+    };
+    const gate = await fetchV1MigrationGate('http://127.0.0.1:45678', {
+      Authorization: 'Basic b3BlbmNvZGU6c2VjcmV0',
+    });
+    expect(gate.admitTranscript).toBe(true);
+    expect(calls[0].url).toContain('/api/experimental/migration/v1');
+    expect(calls[0].method).toBe('GET');
   });
 });
 

@@ -33,6 +33,7 @@ export const CONTACT_SCHEMA_SQL = `
     directory TEXT,
     status TEXT NOT NULL,
     updated_at INTEGER NOT NULL,
+    message_id TEXT,
     PRIMARY KEY (assistant_id, session_id)
   );
   CREATE INDEX IF NOT EXISTS assistant_contact_watch_session
@@ -52,6 +53,10 @@ export function ensureContactSchema(db) {
   const columns = new Set(db.prepare("SELECT name FROM pragma_table_info('assistant_contact_message')").all().map((column) => column.name));
   if (!columns.has('from_assistant_id')) db.exec('ALTER TABLE assistant_contact_message ADD COLUMN from_assistant_id TEXT');
   if (!columns.has('from_assistant_name')) db.exec('ALTER TABLE assistant_contact_message ADD COLUMN from_assistant_name TEXT');
+  const watchColumns = new Set(db.prepare("SELECT name FROM pragma_table_info('assistant_contact_watch')").all().map((column) => column.name));
+  // Delivery watermark: assign prompt message ID so reused-session settle
+  // only counts assistant tails that belong to this delivery.
+  if (!watchColumns.has('message_id')) db.exec('ALTER TABLE assistant_contact_watch ADD COLUMN message_id TEXT');
 }
 
 const decodeCursor = (value) => {
@@ -156,34 +161,41 @@ export function deleteContactMessages(db, assistantID) {
   db.prepare('DELETE FROM assistant_contact_watch WHERE assistant_id=?').run(assistantID);
 }
 
-export function upsertContactWatch(db, { assistantID, sessionID, directory, status, updatedAt }) {
+export function upsertContactWatch(db, { assistantID, sessionID, directory, status, updatedAt, messageID = undefined }) {
+  const nextMessageID = typeof messageID === 'string' && messageID.trim()
+    ? messageID.trim()
+    : (messageID === null ? null : undefined);
+  if (nextMessageID === undefined) {
+    db.prepare(
+      'INSERT INTO assistant_contact_watch(assistant_id,session_id,directory,status,updated_at,message_id) VALUES (?,?,?,?,?,NULL) ON CONFLICT(assistant_id,session_id) DO UPDATE SET directory=excluded.directory,status=excluded.status,updated_at=excluded.updated_at',
+    ).run(assistantID, sessionID, directory || null, status, updatedAt);
+    return;
+  }
   db.prepare(
-    'INSERT INTO assistant_contact_watch(assistant_id,session_id,directory,status,updated_at) VALUES (?,?,?,?,?) ON CONFLICT(assistant_id,session_id) DO UPDATE SET directory=excluded.directory,status=excluded.status,updated_at=excluded.updated_at',
-  ).run(assistantID, sessionID, directory || null, status, updatedAt);
+    'INSERT INTO assistant_contact_watch(assistant_id,session_id,directory,status,updated_at,message_id) VALUES (?,?,?,?,?,?) ON CONFLICT(assistant_id,session_id) DO UPDATE SET directory=excluded.directory,status=excluded.status,updated_at=excluded.updated_at,message_id=excluded.message_id',
+  ).run(assistantID, sessionID, directory || null, status, updatedAt, nextMessageID);
 }
 
+const mapWatchRow = (row) => ({
+  assistantID: row.assistant_id,
+  sessionID: row.session_id,
+  directory: row.directory,
+  status: row.status,
+  messageID: typeof row.message_id === 'string' && row.message_id.trim() ? row.message_id : null,
+});
+
 export function listWatchesBySession(db, sessionID) {
-  return db.prepare('SELECT assistant_id, session_id, directory, status FROM assistant_contact_watch WHERE session_id=?').all(sessionID)
-    .map((row) => ({
-      assistantID: row.assistant_id,
-      sessionID: row.session_id,
-      directory: row.directory,
-      status: row.status,
-    }));
+  return db.prepare('SELECT assistant_id, session_id, directory, status, message_id FROM assistant_contact_watch WHERE session_id=?').all(sessionID)
+    .map(mapWatchRow);
 }
 
 export function listInFlightWatches(db, assistantID) {
   const rows = typeof assistantID === 'string' && assistantID
-    ? db.prepare('SELECT assistant_id, session_id, directory, status FROM assistant_contact_watch WHERE assistant_id=?').all(assistantID)
-    : db.prepare('SELECT assistant_id, session_id, directory, status FROM assistant_contact_watch').all();
+    ? db.prepare('SELECT assistant_id, session_id, directory, status, message_id FROM assistant_contact_watch WHERE assistant_id=?').all(assistantID)
+    : db.prepare('SELECT assistant_id, session_id, directory, status, message_id FROM assistant_contact_watch').all();
   return rows
     .filter((row) => IN_FLIGHT_WATCH.has(row.status))
-    .map((row) => ({
-      assistantID: row.assistant_id,
-      sessionID: row.session_id,
-      directory: row.directory,
-      status: row.status,
-    }));
+    .map(mapWatchRow);
 }
 
 export function updateSessionCardStatus(db, { assistantID, sessionID, status }) {

@@ -1,6 +1,6 @@
 import { createChatCompletion, LlmError } from './completions.js';
 import { loadConnectedCatalog } from './catalog.js';
-import { createOpencodeClient } from '@opencode-ai/sdk/v2';
+import { OpenCode } from '@opencode-ai/client';
 import { ensureLlmTempDirectory } from './temp-directory.js';
 
 const fail = (res, error) => {
@@ -11,14 +11,16 @@ const fail = (res, error) => {
       ? 400
       : code === 'validation_error'
         ? 400
-        : code === 'upstream_error'
+        : code === 'llm_attachment_generation_unavailable'
           ? 502
-          : 500;
+          : code === 'upstream_error'
+            ? 502
+            : 500;
   res.status(status).json({ ok: false, error: code, message: error?.message || code });
 };
 
 export const registerLlmRoutes = (app, dependencies) => {
-  const client = () => createOpencodeClient({
+  const client = () => OpenCode.make({
     baseUrl: dependencies.buildOpenCodeUrl('/', '').replace(/\/$/, ''),
     headers: dependencies.getOpenCodeAuthHeaders(),
   });

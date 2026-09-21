@@ -49,7 +49,9 @@ Keep `bridge.ts` as a thin orchestration layer that delegates message handling t
     `bridge-session-turn-page-runtime.ts`. Internal watchers stay full-fidelity.
 
 - `sseProxy.ts`
-  - Extension Host SSE proxy to OpenCode `/event` and `/global/event`.
+  - Extension Host SSE proxy to OpenCode v2 `/api/event` and `/api/global/event`.
+  - Legacy `/event` forms are rewritten to `/api/*` before joining the sidecar
+    origin so upstream never loses the v2 prefix.
   - Reads `includeReasoning` from the webview path query; strips it before the
     upstream OpenCode fetch. When `'false'`, parse-filters SSE blocks before
     `api:sse:chunk` postMessage, and emits `:heartbeat\n\n` every 10s while no
@@ -59,12 +61,14 @@ Keep `bridge.ts` as a thin orchestration layer that delegates message handling t
 
 - `bridge-proxy-runtime.ts`
   - Proxy route handlers (`api:proxy`, `api:session:message`) with injected helper dependencies.
-  - Exact `GET /session/:sessionID/message/:messageID` responses are L1-projected
+  - `ensureOpenCodeApiUpstreamPath` restores the v2 `/api` prefix for bare root
+    paths; webview local OpenChamber routes still win before this generic proxy.
+  - Exact `GET /api/session/:sessionID/message/:messageID` responses are L1-projected
     (`summary.diffs` → thin `{ file, status?, additions, deletions }[]` plus
     additive `diffCount` / `hasDiffs`) on the Extension Host before the payload
     enters the webview. Full `parts` behavior is preserved unless
     `includeReasoning=false` (then `type=reasoning` parts are removed after L1).
-  - Official `GET /session/:sessionID/message` list responses apply the same
+  - Official `GET /api/session/:sessionID/message` list responses apply the same
     reasoning strip when `includeReasoning=false`. The param is stripped before
     OpenCode upstream.
 
@@ -166,7 +170,8 @@ Keep `bridge.ts` as a thin orchestration layer that delegates message handling t
   - Auto-discovery looks for `opencode2` (PATH, `~/.bun/bin/opencode2`, `~/.opencode/bin/opencode2`, Homebrew). PATH 1.x `opencode` is not a hit.
   - A resolved basename of `opencode` / `opencode.exe` / `opencode.cmd` fails closed with `OPENCODE_BINARY_INVALID` and names `opencode2`.
   - Listening accepts `server listening on http://…` and the legacy `opencode server listening on …` line.
-  - Health probes `GET /api/health` first (`{ healthy: true }`), then `/global/health`, with Basic auth (username `opencode`). The password is never written to logs.
+  - Health probes `GET /api/health` first, then `/global/health`, with Basic auth (username `opencode`). Admission requires `healthy: true` and a non-1.x version string; 1.15.0-style bodies fail closed. The password is never written to logs.
+  - V1 migration gate (`GET /api/experimental/migration/v1`): `required` / `running` / `error` block transcript readiness; `completed` or HTTP 404 admit. Managed and external starts both wait on this gate; dispose/stop aborts an in-flight wait.
 
 - `bridge-system-runtime.ts`
   - System/editor/provider/quota/notification/update-check message handlers.

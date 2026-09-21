@@ -58,9 +58,19 @@ const sleep = (ms: number, signal: AbortSignal) => new Promise<void>((resolve) =
 
 const getAbortReason = (signal: AbortSignal) => signal.reason ?? new DOMException('Aborted', 'AbortError');
 
-const normalizeSsePath = (path: string): { pathname: '/event' | '/global/event'; searchParams: URLSearchParams; directory: string | null } => {
+type OpenCodeSsePathname = '/api/event' | '/api/global/event';
+
+/**
+ * Normalize webview SSE paths onto v2 `/api/*` roots. Accept legacy `/event`
+ * forms and restore the `/api` prefix before joining the sidecar origin.
+ */
+const normalizeSsePath = (path: string): { pathname: OpenCodeSsePathname; searchParams: URLSearchParams; directory: string | null } => {
   const parsed = new URL(path, 'https://openchamber.invalid');
-  const pathname = parsed.pathname === '/global/event' ? '/global/event' : '/event';
+  const raw = parsed.pathname.replace(/\/+$/, '') || '/';
+  const pathname: OpenCodeSsePathname =
+    raw === '/api/global/event' || raw === '/global/event'
+      ? '/api/global/event'
+      : '/api/event';
   const directory = parsed.searchParams.get('directory');
   return {
     pathname,
@@ -73,7 +83,7 @@ const resolveDefaultDirectory = (manager: OpenCodeManager): string => {
   return manager.getWorkingDirectory() || 'global';
 };
 
-const createSseUrl = (baseUrl: string, pathname: '/event' | '/global/event', searchParams: URLSearchParams, directory: string): URL => {
+const createSseUrl = (baseUrl: string, pathname: OpenCodeSsePathname, searchParams: URLSearchParams, directory: string): URL => {
   const base = `${baseUrl.replace(/\/+$/, '')}/`;
   const url = new URL(pathname.replace(/^\/+/, ''), base);
   for (const [key, value] of searchParams) {
@@ -81,7 +91,7 @@ const createSseUrl = (baseUrl: string, pathname: '/event' | '/global/event', sea
     if (key === 'includeReasoning') continue;
     url.searchParams.append(key, value);
   }
-  if (pathname === '/event' && !url.searchParams.has('directory')) {
+  if (pathname === '/api/event' && !url.searchParams.has('directory')) {
     url.searchParams.set('directory', directory);
   }
   return url;

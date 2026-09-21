@@ -1,7 +1,7 @@
 import { describe, test } from 'vitest';
 import assert from 'node:assert/strict';
 import type { BridgeContext } from './bridge';
-import { handleProxyBridgeMessage } from './bridge-proxy-runtime';
+import { ensureOpenCodeApiUpstreamPath, handleProxyBridgeMessage } from './bridge-proxy-runtime';
 
 const deps = {
   tryHandleLocalFsProxy: async () => null,
@@ -28,6 +28,42 @@ const ctx = {
     },
   },
 } as unknown as BridgeContext;
+
+describe('VS Code OpenCode upstream /api path restore', () => {
+  test('keeps /api paths and restores missing prefix for legacy roots', () => {
+    assert.equal(ensureOpenCodeApiUpstreamPath('/api/session/x/message'), '/api/session/x/message');
+    assert.equal(ensureOpenCodeApiUpstreamPath('/session/x/message?directory=/r'), '/api/session/x/message?directory=/r');
+    assert.equal(ensureOpenCodeApiUpstreamPath('/event'), '/api/event');
+    assert.equal(ensureOpenCodeApiUpstreamPath('/api/global/event'), '/api/global/event');
+  });
+
+  test('final HTTP upstream URL includes /api for session reads', async () => {
+    const originalFetch = globalThis.fetch;
+    let fetchInput: string | undefined;
+    try {
+      globalThis.fetch = (async (input: Parameters<typeof fetch>[0]) => {
+        fetchInput = String(input);
+        return new Response('{"ok":true}', { status: 200, headers: { 'content-type': 'application/json' } });
+      }) as typeof fetch;
+
+      await handleProxyBridgeMessage(
+        { id: 'u1', type: 'api:proxy', payload: { method: 'GET', path: '/api/session/ses_1/message?directory=/x' } },
+        ctx,
+        deps,
+      );
+      assert.equal(fetchInput, 'http://127.0.0.1:3902/api/session/ses_1/message?directory=/x');
+
+      await handleProxyBridgeMessage(
+        { id: 'u2', type: 'api:proxy', payload: { method: 'GET', path: '/config?directory=/x' } },
+        ctx,
+        deps,
+      );
+      assert.equal(fetchInput, 'http://127.0.0.1:3902/api/config?directory=/x');
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+});
 
 describe('VS Code API proxy aborts', () => {
   test('aborts non-SSE api:proxy fetches by bridge request id', async () => {

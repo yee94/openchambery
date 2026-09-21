@@ -360,6 +360,7 @@ export const settingsDict = {
   'settings.agents.page.permissions.addCustomRule': 'Ajouter une règle personnalisée',
   'settings.agents.page.permissions.permissionPlaceholder': 'Autorisation...',
   'settings.agents.page.permissions.patternPlaceholder': 'Modèle (e.g. *)',
+  'settings.permissions.saved.retry': 'Réessayer',
   'settings.permissions.saved.title': 'Autorisations de projet enregistrées',
   'settings.permissions.saved.empty': 'Aucune autorisation enregistrée pour ce projet',
   'settings.permissions.saved.delete': 'Supprimer',

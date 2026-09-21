@@ -98,6 +98,8 @@ import {
 import { UNKNOWN_SESSION_HISTORY_BOUNDARY } from "./types"
 import {
   normalizeSessionProjectionMessage,
+  reconcileFetched,
+  type ReconcileFetchedRecord,
 } from "./session-projection-api"
 import { enqueueExactFill } from "./transcript-exact-fill-scheduler"
 
@@ -221,11 +223,6 @@ function toTranscriptData(
   }
 }
 
-function messageCreatedAt(message: Message | undefined): number | undefined {
-  const created = message?.time?.created
-  return typeof created === "number" && Number.isFinite(created) ? created : undefined
-}
-
 function hasUnconfirmedOptimisticPart(parts: readonly Part[] | undefined): boolean {
   return Boolean(
     parts?.some(
@@ -235,30 +232,72 @@ function hasUnconfirmedOptimisticPart(parts: readonly Part[] | undefined): boole
 }
 
 /**
- * Tail-window deletions for user refresh. Anchor = oldest `time.created` on the
- * new page. Only messages strictly newer than that anchor, absent from the page,
- * and not unconfirmed optimistic rows are server-deleted. Older-than-anchor
- * history is outside the tail page and must stay.
+ * Request-level touched ids for one force GET: message/parts identity that
+ * changed while the request was in flight (SSE / optimistic), plus any still
+ * unconfirmed optimistic rows. Session-level `liveRevision` must not stand in
+ * for this set — a delta on B must not freeze untouched A against the GET body.
+ */
+function collectRequestTouchedMessageIDs(
+  beforeMessages: Readonly<Record<string, Message | undefined>>,
+  beforeParts: Readonly<Record<string, readonly Part[] | undefined>>,
+  after: TranscriptData,
+): Set<string> {
+  const touched = new Set<string>()
+  const ids = new Set<string>([
+    ...Object.keys(beforeMessages),
+    ...Object.keys(beforeParts),
+    ...after.messageOrder,
+    ...Object.keys(after.messagesByID),
+    ...Object.keys(after.partsByMessageID),
+  ])
+  for (const id of ids) {
+    if (beforeMessages[id] !== after.messagesByID[id]) touched.add(id)
+    if (beforeParts[id] !== after.partsByMessageID[id]) touched.add(id)
+  }
+  for (const id of after.messageOrder) {
+    if (hasUnconfirmedOptimisticPart(after.partsByMessageID[id])) touched.add(id)
+  }
+  return touched
+}
+
+function transcriptToReconcileRecords(transcript: TranscriptData): ReconcileFetchedRecord[] {
+  const records: ReconcileFetchedRecord[] = []
+  for (const id of transcript.messageOrder) {
+    const info = transcript.messagesByID[id]
+    if (!info?.id) continue
+    records.push({
+      info,
+      parts: [...(transcript.partsByMessageID[id] ?? [])],
+    })
+  }
+  return records
+}
+
+function transportPageToReconcileRecords(
+  page: TranscriptTransportPage,
+): ReconcileFetchedRecord[] {
+  const records: ReconcileFetchedRecord[] = []
+  for (const record of page.records) {
+    if (!record.info?.id) continue
+    records.push({
+      info: record.info,
+      parts: [...(record.parts ?? [])],
+    })
+  }
+  return records
+}
+
+/**
+ * After reconcileFetched, drop local rows that the page coverage no longer
+ * keeps. Unconfirmed optimistic rows stay even if the GET omitted them.
  */
 function collectAuthorityRefreshRemovals(
   transcript: TranscriptData,
-  page: TranscriptTransportPage,
+  keepIDs: ReadonlySet<string>,
 ): string[] {
-  if (page.records.length === 0) return []
-  let anchor: number | undefined
-  for (const record of page.records) {
-    const created = messageCreatedAt(record.info)
-    if (created === undefined) continue
-    if (anchor === undefined || created < anchor) anchor = created
-  }
-  if (anchor === undefined) return []
-
-  const pageIDs = new Set(page.records.map((record) => record.info.id))
   const removed: string[] = []
   for (const messageID of transcript.messageOrder) {
-    if (pageIDs.has(messageID)) continue
-    const created = messageCreatedAt(transcript.messagesByID[messageID])
-    if (created === undefined || created <= anchor) continue
+    if (keepIDs.has(messageID)) continue
     if (hasUnconfirmedOptimisticPart(transcript.partsByMessageID[messageID])) continue
     removed.push(messageID)
   }
@@ -1753,7 +1792,15 @@ export function createQueryTranscriptRepository(
       const refreshDiffBefore = tryCaptureTranscriptCanonicalSnapshot(() =>
         repository.getTranscript(scope),
       )
-      const capturedLiveRevision = repository.getTranscript(scope).liveRevision
+      // Snapshot message/parts refs before the GET so in-flight SSE can be
+      // classified as request-level touched ids (not session liveRevision).
+      const beforeTranscript = repository.getTranscript(scope)
+      const beforeMessages: Record<string, Message | undefined> = {
+        ...beforeTranscript.messagesByID,
+      }
+      const beforeParts: Record<string, readonly Part[] | undefined> = {
+        ...beforeTranscript.partsByMessageID,
+      }
       const page = await deps.fetcher({
         directory: identity.directory,
         sessionID: identity.sessionID,
@@ -1763,12 +1810,36 @@ export function createQueryTranscriptRepository(
       if (getReasoningProjectionRevision() !== capturedProjectionRevision) {
         return repository.getTranscript(scope)
       }
-      const liveRevision = repository.getTranscript(scope).liveRevision
+      // Runtime/endpoint switch: discard the lagging GET against the captured
+      // identity. Read back through that identity so a new generation's empty
+      // cache is not mistaken for a successful clear.
+      if (!liveIdentityMatches(identity)) {
+        return repository.getTranscript({
+          directory: identity.directory,
+          sessionID: identity.sessionID,
+          transport: identity.transport,
+          generation: identity.generation,
+        })
+      }
+      const live = repository.getTranscript(scope)
+      const touched = collectRequestTouchedMessageIDs(beforeMessages, beforeParts, live)
+      // Official GUI reconcileFetched: GET is the page base; touched keep local;
+      // incomplete tails keep earlier local rows outside this page's coverage.
+      const reconciled = reconcileFetched({
+        fetched: transportPageToReconcileRecords(page),
+        previous: transcriptToReconcileRecords(live),
+        touched,
+        completeTail: page.complete === true,
+      })
+      const liveRevision = live.liveRevision
+      // Feed the already-reconciled page as current (not session-stale):
+      // upsert/replace applies GET bodies for untouched rows; touched rows
+      // already carry the local SSE/optimistic winners from reconcileFetched.
       repository.apply(scope, {
         type: "http-page",
         purpose: "reconcile-page",
         page: {
-          records: page.records.map((record) => ({
+          records: reconciled.map((record) => ({
             info: record.info,
             parts: record.parts,
           })),
@@ -1776,23 +1847,21 @@ export function createQueryTranscriptRepository(
           cursor: undefined,
           turnCount: 0,
         },
-        capturedLiveRevision,
+        capturedLiveRevision: liveRevision,
         liveRevision,
       })
-      // Stale tail is not evidence the server deleted in-range rows.
-      if (liveRevision <= capturedLiveRevision) {
-        const removals = collectAuthorityRefreshRemovals(
-          repository.getTranscript(scope),
-          page,
-        )
-        for (const messageID of removals) {
-          repository.apply(scope, { type: "remove-message", messageID })
-          deps.clearOptimisticShadow?.({
-            directory: identity.directory,
-            sessionID: identity.sessionID,
-            messageID,
-          })
-        }
+      const keepIDs = new Set(reconciled.map((record) => record.info.id))
+      const removals = collectAuthorityRefreshRemovals(
+        repository.getTranscript(scope),
+        keepIDs,
+      )
+      for (const messageID of removals) {
+        repository.apply(scope, { type: "remove-message", messageID })
+        deps.clearOptimisticShadow?.({
+          directory: identity.directory,
+          sessionID: identity.sessionID,
+          messageID,
+        })
       }
       const next = repository.getTranscript(scope)
       cacheBudget.noteScopeObserved(toCacheScope(scope))

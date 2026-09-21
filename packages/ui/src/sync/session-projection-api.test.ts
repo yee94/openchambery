@@ -188,6 +188,44 @@ describe("fetchSessionProjectionPage", () => {
     expect(byID.msg_sys?.parts?.some((part) => (part as { text?: string }).text === "system instruction")).toBe(true)
   })
 
+  test("assistant GET keeps tokens/cost for TPS chrome", async () => {
+    responseImpl = async () =>
+      jsonResponse({
+        data: [{
+          id: "msg_asst",
+          type: "assistant",
+          time: { created: 20, completed: 30 },
+          agent: "build",
+          model: { id: "gpt", providerID: "openai" },
+          finish: "stop",
+          cost: 0.042,
+          tokens: {
+            input: 10,
+            output: 44,
+            reasoning: 9,
+            cache: { read: 2, write: 0 },
+          },
+          content: [{ type: "text", text: "answer" }],
+        }],
+        cursor: { previous: null, next: null },
+      })
+    const { fetchSessionProjectionPage } = await import("./session-projection-api")
+    const page = await fetchSessionProjectionPage({
+      sessionID: SESSION,
+      directory: "/repo",
+    })
+    const info = page.records[0]?.info as {
+      cost?: number
+      finish?: string
+      tokens?: { output?: number; reasoning?: number; input?: number }
+    }
+    expect(info.finish).toBe("stop")
+    expect(info.cost).toBe(0.042)
+    expect(info.tokens?.output).toBe(44)
+    expect(info.tokens?.reasoning).toBe(9)
+    expect(info.tokens?.input).toBe(10)
+  })
+
   test("compaction running / completed / failed stay as compaction cards, not assistant text", async () => {
     responseImpl = async () =>
       jsonResponse({

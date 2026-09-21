@@ -174,6 +174,45 @@ describe("normalizeOpenCodeEvent", () => {
       sessionID: "ses_a",
       kind: "terminal",
     })
+
+    const officialStep = normalizeOpenCodeEvent({
+      id: "evt_step",
+      created: 1_700_000_000_200,
+      type: "session.step.started",
+      durable: { aggregateID: "session:ses_a", seq: 1, version: 1 },
+      data: {
+        sessionID: "ses_a",
+        assistantMessageID: "msg_a",
+        agent: "build",
+        model: { id: "gpt", providerID: "openai" },
+      },
+    })
+    expect(officialStep.action).toBe("emit")
+    if (officialStep.action !== "emit") return
+    expect(officialStep.event.type).toBe("session.step.started")
+    expect(officialStep.event.properties.eventCreated).toBe(1_700_000_000_200)
+    expect(officialStep.event.domainActivityHint).toEqual({
+      sessionID: "ses_a",
+      kind: "activity",
+    })
+
+    const officialEnded = normalizeOpenCodeEvent({
+      created: 1_700_000_000_500,
+      type: "session.step.ended",
+      data: {
+        sessionID: "ses_a",
+        assistantMessageID: "msg_a",
+        finish: "stop",
+        cost: 0.01,
+        tokens: { input: 1, output: 2, reasoning: 0, cache: { read: 0, write: 0 } },
+      },
+    })
+    expect(officialEnded.action).toBe("emit")
+    if (officialEnded.action !== "emit") return
+    expect(officialEnded.event.domainActivityHint).toEqual({
+      sessionID: "ses_a",
+      kind: "terminal",
+    })
   })
 
   test("does not invent legacy Message/Part from current text events", () => {

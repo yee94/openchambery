@@ -116,13 +116,15 @@ const jsonResponse = (body, status = 200) => new Response(JSON.stringify(body), 
   headers: { 'content-type': 'application/json' },
 });
 
+const DEFAULT_V2_HEALTH = { healthy: true, version: '0.0.0-next-17444' };
+
 const stubOpenCodeFetch = (overrides = {}) => {
-  const fetchMock = vi.fn(async (url) => {
+  const fetchMock = vi.fn(async (url, init) => {
     const href = String(url);
     if (href.includes('/api/experimental/migration/v1')) {
       const migration = overrides.migration;
       if (typeof migration === 'function') {
-        return migration();
+        return migration(url, init);
       }
       if (migration && typeof migration === 'object' && Number.isInteger(migration.httpStatus)) {
         return jsonResponse(migration.body ?? {}, migration.httpStatus);
@@ -130,7 +132,11 @@ const stubOpenCodeFetch = (overrides = {}) => {
       return jsonResponse(migration ?? { status: 'completed' });
     }
     if (href.includes('/api/health') || href.includes('/global/health')) {
-      return jsonResponse(overrides.health ?? { healthy: true });
+      const health = overrides.health;
+      if (typeof health === 'function') {
+        return health(url, init);
+      }
+      return jsonResponse(health ?? DEFAULT_V2_HEALTH);
     }
     return new Response('not found', { status: 404 });
   });
@@ -203,7 +209,13 @@ describe('OpenCode lifecycle', () => {
 
     const fetchMock = vi.fn(async (url) => {
       if (String(url).includes('/api/health')) {
-        return new Response(JSON.stringify({ healthy: true }), {
+        return new Response(JSON.stringify(DEFAULT_V2_HEALTH), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        });
+      }
+      if (String(url).includes('/api/experimental/migration/v1')) {
+        return new Response(JSON.stringify({ status: 'completed' }), {
           status: 200,
           headers: { 'content-type': 'application/json' },
         });
@@ -627,4 +639,111 @@ describe('OpenCode lifecycle', () => {
     expect(stateRef.current.isOpenCodeReady).toBe(false);
     expect(stateRef.current.v1Migration).toBeNull();
   });
+
+  it('rejects healthy 1.x health bodies instead of admitting the process', async () => {
+    const stateRef = {};
+    const runtime = createRuntime({}, stateRef);
+    stateRef.current.openCodePort = 45678;
+    stubOpenCodeFetch({ health: { healthy: true, version: '1.15.0' } });
+
+    await expect(runtime.waitForOpenCodeReady(300, 40)).rejects.toThrow(/unhealthy|Timed out|1\.|version/i);
+    expect(stateRef.current.isOpenCodeReady).toBe(false);
+  });
+
+  it('rejects healthy responses with a missing version', async () => {
+    const stateRef = {};
+    const runtime = createRuntime({}, stateRef);
+    stateRef.current.openCodePort = 45678;
+    stubOpenCodeFetch({ health: { healthy: true } });
+
+    await expect(runtime.waitForOpenCodeReady(300, 40)).rejects.toThrow();
+    expect(stateRef.current.isOpenCodeReady).toBe(false);
+  });
+
+  it('health version + migration matrix: v2+completed admits, v2+running blocks, 1.x blocks', async () => {
+    const cases = [
+      { health: DEFAULT_V2_HEALTH, migration: { status: 'completed' }, admit: true },
+      { health: DEFAULT_V2_HEALTH, migration: { status: 'running' }, admit: false },
+      { health: DEFAULT_V2_HEALTH, migration: { status: 'required' }, admit: false },
+      { health: DEFAULT_V2_HEALTH, migration: { status: 'error', error: 'disk' }, admit: false },
+      { health: { healthy: true, version: '1.18.18' }, migration: { status: 'completed' }, admit: false },
+    ];
+
+    for (const entry of cases) {
+      const stateRef = {};
+      const runtime = createRuntime({}, stateRef);
+      stateRef.current.openCodePort = 45678;
+      stubOpenCodeFetch({ health: entry.health, migration: entry.migration });
+      if (entry.admit) {
+        await runtime.waitForOpenCodeReady(1000, 40);
+        expect(stateRef.current.isOpenCodeReady).toBe(true);
+      } else {
+        await expect(runtime.waitForOpenCodeReady(250, 40)).rejects.toThrow();
+        expect(stateRef.current.isOpenCodeReady).toBe(false);
+      }
+    }
+  });
+
+  it('aborts a hung migration probe with the same per-attempt signal after health', async () => {
+    const stateRef = {};
+    const runtime = createRuntime({}, stateRef);
+    stateRef.current.openCodePort = 45678;
+    let migrationStarted = 0;
+    let sawAbort = false;
+    stubOpenCodeFetch({
+      health: DEFAULT_V2_HEALTH,
+      migration: (_url, init) => {
+        migrationStarted += 1;
+        return new Promise((_resolve, reject) => {
+          const signal = init?.signal;
+          if (!signal) {
+            reject(new Error('migration probe missing abort signal'));
+            return;
+          }
+          if (signal.aborted) {
+            sawAbort = true;
+            reject(new DOMException('Aborted', 'AbortError'));
+            return;
+          }
+          signal.addEventListener('abort', () => {
+            sawAbort = true;
+            reject(new DOMException('Aborted', 'AbortError'));
+          }, { once: true });
+        });
+      },
+    });
+
+    // Default per-attempt health timeout is 5s; outer deadline must exceed it once
+    // so the hung migration is aborted by the attempt timer, not only the loop exit.
+    const started = Date.now();
+    await expect(runtime.waitForOpenCodeReady(6500, 50)).rejects.toThrow();
+    const elapsed = Date.now() - started;
+    expect(migrationStarted).toBeGreaterThan(0);
+    expect(sawAbort).toBe(true);
+    expect(elapsed).toBeLessThan(12_000);
+    expect(stateRef.current.isOpenCodeReady).toBe(false);
+  }, 15_000);
+
+  it('does not mark external skip-start ready before version and migration admit', async () => {
+    const stateRef = {};
+    const runtime = createRuntime({
+      env: {
+        ENV_CONFIGURED_OPENCODE_PORT: null,
+        ENV_CONFIGURED_OPENCODE_HOST: { origin: 'http://127.0.0.1:3001' },
+        ENV_EFFECTIVE_PORT: 3001,
+        ENV_CONFIGURED_OPENCODE_HOSTNAME: '127.0.0.1',
+        ENV_SKIP_OPENCODE_START: true,
+      },
+      syncFromHmrState: vi.fn(),
+    }, stateRef);
+    // Reject health so bootstrap's waitForOpenCodeReady fails quickly without a
+    // 20s migration spin, while still proving skip-start never pre-admits ready.
+    stubOpenCodeFetch({ health: { healthy: true, version: '1.15.0' } });
+
+    await runtime.bootstrapOpenCodeAtStartup();
+
+    expect(stateRef.current.isExternalOpenCode).toBe(true);
+    expect(stateRef.current.isOpenCodeReady).toBe(false);
+    expect(stateRef.current.openCodePort).toBe(3001);
+  }, 25_000);
 });

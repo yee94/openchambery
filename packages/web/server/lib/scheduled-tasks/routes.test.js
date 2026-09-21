@@ -359,4 +359,91 @@ describe('scheduled task mutation routes', () => {
     await Promise.resolve();
     expect(scheduledTasksRuntime.syncProject).toHaveBeenCalledTimes(4);
   });
+
+  it('rejects create/edit with goalEnabled when Host goal state is unavailable', async () => {
+    const projectConfigRuntime = {
+      upsertScheduledTask: vi.fn(async () => {
+        throw new Error('upsert must not run for unsupported goal');
+      }),
+      deleteScheduledTask: vi.fn(),
+      listScheduledTasks: vi.fn(),
+    };
+    const routes = registerMutationRoutes({
+      projectConfigRuntime,
+      scheduledTasksRuntime: { syncProject: vi.fn(async () => {}) },
+      scheduleSyncRetry: vi.fn(),
+    });
+
+    const created = createResponse();
+    await routes.put({
+      params: { projectId: 'project-a' },
+      body: {
+        task: {
+          name: 'Goal task',
+          execution: {
+            prompt: 'do the work',
+            providerID: 'openai',
+            modelID: 'gpt',
+            goalEnabled: true,
+          },
+        },
+      },
+    }, created);
+
+    expect(created.statusCode).toBe(501);
+    expect(created.body.error).toMatch(/v2_goal_state_unavailable/);
+    expect(created.body.capability).toEqual({
+      supported: false,
+      reason: 'v2_goal_state_unavailable',
+    });
+    expect(projectConfigRuntime.upsertScheduledTask).not.toHaveBeenCalled();
+
+    const updated = createResponse();
+    await routes.put({
+      params: { projectId: 'project-a' },
+      body: {
+        task: {
+          id: 'existing',
+          name: 'Existing',
+          execution: {
+            prompt: 'do the work',
+            providerID: 'openai',
+            modelID: 'gpt',
+            goalEnabled: true,
+          },
+        },
+      },
+    }, updated);
+
+    expect(updated.statusCode).toBe(501);
+    expect(projectConfigRuntime.upsertScheduledTask).not.toHaveBeenCalled();
+  });
+
+  it('allows ordinary non-goal task create when goal is unsupported', async () => {
+    const savedTask = { id: 'plain', name: 'Plain' };
+    const projectConfigRuntime = {
+      upsertScheduledTask: vi.fn(async () => ({ task: savedTask, tasks: [savedTask], created: true })),
+      deleteScheduledTask: vi.fn(),
+      listScheduledTasks: vi.fn(),
+    };
+    const routes = registerMutationRoutes({
+      projectConfigRuntime,
+      scheduledTasksRuntime: { syncProject: vi.fn(async () => {}) },
+      scheduleSyncRetry: vi.fn(),
+    });
+
+    const response = createResponse();
+    await routes.put({
+      params: { projectId: 'project-a' },
+      body: {
+        task: {
+          name: 'Plain',
+          execution: { prompt: 'hello', providerID: 'openai', modelID: 'gpt' },
+        },
+      },
+    }, response);
+
+    expect(response.statusCode).toBe(200);
+    expect(projectConfigRuntime.upsertScheduledTask).toHaveBeenCalledTimes(1);
+  });
 });

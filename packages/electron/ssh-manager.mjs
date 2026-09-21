@@ -64,7 +64,8 @@ export const buildRemoteSyncPrepareScript = (plan, options = {}) => buildRemoteS
 });
 
 const OPENCHAMBER_NPM_PACKAGE = '@openchambery/web';
-const OPENCODE_NPM_PACKAGE = 'opencode-ai';
+// v2 CLI package installs the `opencode2` binary. Never install 1.x `opencode-ai`.
+const OPENCODE_NPM_PACKAGE = '@opencode-ai/cli';
 export const REMOTE_NODE_MIN_MAJOR = 22;
 const REMOTE_NODE_CANDIDATE_GLOBS = [
   '/codev/opt/nodejs/*/bin/node',
@@ -1026,7 +1027,7 @@ const waitLocalForwardReady = async (localPort) => {
 };
 
 /**
- * Parse a version token from CLI output (`openchamber --version`, `opencode --version`).
+ * Parse a version token from CLI output (`openchamber --version`, `opencode2 --version`).
  * Accepts stable and prerelease/build semver so a matching beta is not treated as missing.
  * @param {unknown} raw
  * @returns {string | null}
@@ -1044,6 +1045,13 @@ export const parseVersionToken = (raw) => {
     }
   }
   return null;
+};
+
+const isOpenCode1xVersionToken = (value) => {
+  if (typeof value !== 'string') return false;
+  const normalized = value.trim().replace(/^v/i, '');
+  if (!normalized) return false;
+  return /^1(?:\.|$)/.test(normalized);
 };
 
 const parseProbeStatusLine = (line, prefix) => {
@@ -1692,7 +1700,14 @@ export class ElectronSshManager {
 
   async ensureRemoteOpenCodeCli(parsed, controlPath, preferred) {
     const installedVersion = await this.currentRemoteOpenCodeVersion(parsed, controlPath);
-    if (installedVersion && (!this.opencodeCliVersion || installedVersion === this.opencodeCliVersion)) return;
+    // 1.x leftovers must be replaced; only matching opencode2 pin is a hit.
+    if (
+      installedVersion
+      && !isOpenCode1xVersionToken(installedVersion)
+      && (!this.opencodeCliVersion || installedVersion === this.opencodeCliVersion)
+    ) {
+      return;
+    }
 
     const hasBun = await this.remoteCommandExists(parsed, controlPath, 'bun');
     const hasNpm = await this.remoteCommandExists(parsed, controlPath, 'npm');
@@ -1714,8 +1729,14 @@ export class ElectronSshManager {
       try {
         await this.runManagedRemoteCommand(parsed, controlPath, command);
         const installed = await this.currentRemoteOpenCodeVersion(parsed, controlPath);
-        if (installed && (!this.opencodeCliVersion || installed === this.opencodeCliVersion)) return;
-        lastError = new Error('OpenCode CLI installation completed but the expected executable version is unavailable');
+        if (
+          installed
+          && !isOpenCode1xVersionToken(installed)
+          && (!this.opencodeCliVersion || installed === this.opencodeCliVersion)
+        ) {
+          return;
+        }
+        lastError = new Error('OpenCode CLI installation completed but the expected opencode2 version is unavailable');
       } catch (error) {
         lastError = error;
       }
@@ -1736,8 +1757,14 @@ export class ElectronSshManager {
 
   async currentRemoteOpenCodeVersion(parsed, controlPath) {
     try {
-      const output = await this.runManagedRemoteCommand(parsed, controlPath, 'opencode --version 2>/dev/null || true');
-      return parseVersionToken(output);
+      const output = await this.runManagedRemoteCommand(
+        parsed,
+        controlPath,
+        'opencode2 --version 2>/dev/null || true',
+      );
+      const version = parseVersionToken(output);
+      if (!version || isOpenCode1xVersionToken(version)) return null;
+      return version;
     } catch {
       return null;
     }

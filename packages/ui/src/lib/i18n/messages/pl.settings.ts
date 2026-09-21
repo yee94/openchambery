@@ -71,6 +71,7 @@ export const settingsDict = {
   'settings.agents.page.permissions.hideEditor': 'Ukryj edytor',
   'settings.agents.page.permissions.pattern': 'Wzorzec',
   'settings.agents.page.permissions.patternPlaceholder': 'Wzorzec (np. *)',
+  'settings.permissions.saved.retry': 'Spróbuj ponownie',
   'settings.permissions.saved.title': 'Zapisane uprawnienia projektu',
   'settings.permissions.saved.empty': 'Brak zapisanych uprawnień dla tego projektu',
   'settings.permissions.saved.delete': 'Usuń',

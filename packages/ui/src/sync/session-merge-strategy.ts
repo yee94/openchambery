@@ -114,6 +114,12 @@ const CURRENT: Readonly<Record<SessionMessagePagePurpose, SessionMergeStrategy>>
    * `protectOptimistic` is the extra constraint: slim/empty Host copies must
    * not replace an unconfirmed optimistic part set (different part ids bypass
    * same-id full-over-slim). Full incoming parts still replace.
+   *
+   * Force GET authority refresh does not encode request-level touched ids
+   * here. The query adapter runs official `reconcileFetched` (GET base,
+   * in-flight SSE ids keep local, incomplete page keeps earlier rows) then
+   * applies this current strategy with matching liveRevision so untouched
+   * rows accept the GET body. Session-level stale alone must not freeze them.
    */
   "reconcile-page": strategy({
     id: "reconcile-page",

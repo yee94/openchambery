@@ -3,6 +3,11 @@ import { DateTime } from 'luxon';
 import parser from 'cron-parser';
 import { makeOpenCodeV2Client } from '../opencode/v2-client.js';
 import { expandSnippets } from '../opencode/snippets.js';
+import {
+  getSessionGoalCapability,
+  isSessionGoalSupported,
+  sessionGoalUnavailableMessage,
+} from '../session-goal/capability.js';
 
 const DEFAULT_GLOBAL_CONCURRENCY = 4;
 const DEFAULT_PROJECT_CONCURRENCY = 2;
@@ -17,12 +22,17 @@ const MAX_PROJECT_SYNC_RETRIES = 3;
 /** Poll interval while waiting for the OpenCode session turn (or goal) to settle. */
 const SESSION_SETTLEMENT_POLL_MS = 1_000;
 /**
- * Incomplete assistant tails while idle need a couple of stable polls before we
- * treat them as settled (OpenCode sometimes leaves time.completed unset).
+ * Latest-side message page for settlement. order=desc + bounded limit — never
+ * order=asc page-0 + at(-1), which reads an old page once the session exceeds
+ * the limit.
  */
-const INCOMPLETE_ASSISTANT_SETTLE_PROBES = 2;
+const SESSION_SETTLEMENT_MESSAGE_LIMIT = 50;
 /** Goal terminal statuses — active/paused mean the run is still open. */
 const GOAL_TERMINAL_STATUSES = new Set(['complete', 'blocked', 'budgetLimited']);
+/** Assistant finish values that are real terminal success (not tool-calls mid-loop). */
+const ASSISTANT_SUCCESS_FINISH = new Set(['stop']);
+/** Assistant finish values that are terminal failure without an error object. */
+const ASSISTANT_ERROR_FINISH = new Set(['error', 'length', 'content-filter']);
 
 const buildTaskKey = (projectID, taskID) => `${projectID}:${taskID}`;
 
@@ -255,6 +265,10 @@ const sleep = (ms, signal) => new Promise((resolve, reject) => {
 
 const readMessageInfo = (entry) => {
   if (!entry || typeof entry !== 'object') return null;
+  // SessionMessageInfo is the entry itself; tolerate projected { info, parts }.
+  if (entry.info && typeof entry.info === 'object') {
+    return entry.info;
+  }
   return entry;
 };
 
@@ -269,6 +283,79 @@ const formatAssistantError = (error) => {
     return error.message.trim();
   }
   return 'assistant error';
+};
+
+const isAssistantMessage = (info) => (
+  info
+  && typeof info === 'object'
+  && (info.type === 'assistant' || info.role === 'assistant')
+);
+
+const isUserMessage = (info) => (
+  info
+  && typeof info === 'object'
+  && (info.type === 'user' || info.role === 'user')
+);
+
+/**
+ * Classify the newest message on a latest-side page.
+ * - finish tool-calls is mid-loop, never success
+ * - incomplete (no time.completed) is never success
+ * - model-switched / non-assistant tails are not success
+ * - only a completed assistant with a real terminal finish succeeds
+ */
+const classifyMessageTail = (messages) => {
+  if (!Array.isArray(messages) || messages.length === 0) {
+    return { outcome: 'unknown' };
+  }
+  // order=desc contract: index 0 is the newest message on this page.
+  // Do not re-rank by time.created — that reintroduces the old-page bug when
+  // a bounded page mixes ages (and fixtures / clock skew can invert created).
+  const latest = readMessageInfo(messages[0]);
+  if (!latest) {
+    return { outcome: 'unknown' };
+  }
+  if (isAssistantMessage(latest)) {
+    if (latest.error) {
+      return {
+        outcome: 'error',
+        error: formatAssistantError(latest.error),
+      };
+    }
+    const finish = typeof latest.finish === 'string' ? latest.finish.trim() : '';
+    if (finish === 'tool-calls') {
+      // Model paused for tools — not a successful run terminal.
+      return { outcome: 'busy' };
+    }
+    if (ASSISTANT_ERROR_FINISH.has(finish)) {
+      return {
+        outcome: 'error',
+        error: finish === 'error' ? 'assistant error' : `assistant finish ${finish}`,
+      };
+    }
+    if (latest.time?.completed && (!finish || ASSISTANT_SUCCESS_FINISH.has(finish))) {
+      return { outcome: 'success' };
+    }
+    // Incomplete assistant (no completed, or unknown finish) — not success.
+    return { outcome: 'busy' };
+  }
+  if (isUserMessage(latest)) {
+    return { outcome: 'awaiting_assistant', lastInfo: latest };
+  }
+  // model-switched, compaction, system, etc. — not a success terminal.
+  return { outcome: 'busy' };
+};
+
+const listLatestMessages = async (client, sessionID, requestOptions) => {
+  if (typeof client?.message?.list !== 'function') {
+    return null;
+  }
+  const messagesResult = await client.message.list({
+    sessionID,
+    limit: SESSION_SETTLEMENT_MESSAGE_LIMIT,
+    order: 'desc',
+  }, requestOptions);
+  return Array.isArray(messagesResult?.data) ? messagesResult.data : null;
 };
 
 const extractGoalFromSession = (session) => {
@@ -288,9 +375,11 @@ const extractGoalFromSession = (session) => {
 
 /**
  * Single-shot session outcome for post-run continuation (no polling).
- * Goal-enabled: terminal complete → success; blocked/budgetLimited → error;
- * otherwise not-yet-success. Non-goal: busy/retry, assistant error, or
- * completed assistant; incomplete/empty tails are not treated as success.
+ * Goal-enabled + supported: terminal complete → success; blocked/budgetLimited
+ * → error; otherwise not-yet-success. Goal unsupported: never invent success.
+ * Non-goal: session.active failure stays unknown; latest-side assistant tail
+ * must be a real terminal (finish tool-calls / incomplete / model-switch ≠
+ * success). History rows are never rewritten here.
  */
 const snapshotSessionOutcome = async ({
   client,
@@ -301,26 +390,32 @@ const snapshotSessionOutcome = async ({
 }) => {
   const requestOptions = signal ? { signal } : undefined;
 
-  if (goalEnabled && typeof client?.session?.get === 'function') {
-    try {
-      const sessionResult = await client.session.get({
-        sessionID,
-        directory: projectPath,
-      }, requestOptions);
-      if (!sessionResult?.error) {
-        const goal = extractGoalFromSession(sessionResult?.data ?? sessionResult);
-        if (goal && GOAL_TERMINAL_STATUSES.has(goal.status)) {
-          if (goal.status === 'complete') {
-            return { outcome: 'success' };
+  if (goalEnabled) {
+    if (!isSessionGoalSupported()) {
+      // v2 has no Host goal state — do not promote assistant-tail idle to success.
+      return { outcome: 'busy' };
+    }
+    if (typeof client?.session?.get === 'function') {
+      try {
+        const sessionResult = await client.session.get({
+          sessionID,
+          directory: projectPath,
+        }, requestOptions);
+        if (!sessionResult?.error) {
+          const goal = extractGoalFromSession(sessionResult?.data ?? sessionResult);
+          if (goal && GOAL_TERMINAL_STATUSES.has(goal.status)) {
+            if (goal.status === 'complete') {
+              return { outcome: 'success' };
+            }
+            return {
+              outcome: 'error',
+              error: goal.note || `goal ${goal.status}`,
+            };
           }
-          return {
-            outcome: 'error',
-            error: goal.note || `goal ${goal.status}`,
-          };
         }
+      } catch (error) {
+        if (signal?.aborted) throw error;
       }
-    } catch (error) {
-      if (signal?.aborted) throw error;
     }
     return { outcome: 'busy' };
   }
@@ -328,40 +423,31 @@ const snapshotSessionOutcome = async ({
   if (typeof client?.session?.active === 'function') {
     try {
       const activeMap = await client.session.active(requestOptions);
-      if (activeMap && typeof activeMap === 'object' && !Array.isArray(activeMap)
-        && Object.prototype.hasOwnProperty.call(activeMap, sessionID)) {
+      if (!(activeMap && typeof activeMap === 'object' && !Array.isArray(activeMap))) {
+        // Malformed active payload is unknown — never idle-success.
+        return { outcome: 'busy' };
+      }
+      if (Object.prototype.hasOwnProperty.call(activeMap, sessionID)) {
         return { outcome: 'busy' };
       }
     } catch (error) {
       if (signal?.aborted) throw error;
+      // active failure = unknown; do not fall through to message.list success.
+      return { outcome: 'busy' };
     }
   }
 
-  if (typeof client?.message?.list === 'function') {
-    try {
-      const messagesResult = await client.message.list({
-        sessionID,
-        limit: 50,
-        order: 'asc',
-      }, requestOptions);
-      const messages = Array.isArray(messagesResult?.data) ? messagesResult.data : null;
-      if (messages) {
-        const lastInfo = readMessageInfo(messages.at(-1));
-        if (lastInfo?.type === 'assistant' || lastInfo?.role === 'assistant') {
-          if (lastInfo.error) {
-            return {
-              outcome: 'error',
-              error: formatAssistantError(lastInfo.error),
-            };
-          }
-          if (lastInfo.time?.completed) {
-            return { outcome: 'success' };
-          }
-        }
-      }
-    } catch (error) {
-      if (signal?.aborted) throw error;
+  try {
+    const messages = await listLatestMessages(client, sessionID, requestOptions);
+    if (!messages) {
+      return { outcome: 'busy' };
     }
+    const classified = classifyMessageTail(messages);
+    if (classified.outcome === 'success' || classified.outcome === 'error') {
+      return classified;
+    }
+  } catch (error) {
+    if (signal?.aborted) throw error;
   }
 
   return { outcome: 'busy' };
@@ -782,10 +868,12 @@ export const createScheduledTasksRuntime = (deps) => {
   /**
    * session.prompt / command return when the turn is *admitted*, not when the
    * agent finishes. History must reflect the real session outcome and
-   * wall-clock duration — poll until idle+settled. v2 has no session metadata,
-   * so goal-enabled runs settle on the same assistant tail (no terminal-goal
-   * wait). session.active / message.list failures stay unknown — never idle
-   * or empty success.
+   * wall-clock duration — poll until idle+settled on a latest-side message
+   * page (order=desc). finish tool-calls and incomplete assistants never
+   * succeed; two incomplete idle probes must not invent success.
+   * session.active / message.list failures stay unknown — never idle or empty
+   * success. Goal-enabled runs that passed admission still settle on the
+   * assistant tail here when Host goal state is unavailable.
    */
   const waitForRunOutcome = async ({
     client,
@@ -793,7 +881,6 @@ export const createScheduledTasksRuntime = (deps) => {
     signal,
   }) => {
     const requestOptions = signal ? { signal } : undefined;
-    let incompleteAssistantProbes = 0;
     let emptyIdleProbes = 0;
 
     for (;;) {
@@ -806,6 +893,7 @@ export const createScheduledTasksRuntime = (deps) => {
           if (activeMap && typeof activeMap === 'object' && !Array.isArray(activeMap)) {
             sessionBusy = Object.prototype.hasOwnProperty.call(activeMap, sessionID);
           }
+          // Malformed / thrown active stays null → unknown, keep polling.
         } catch (error) {
           if (signal?.aborted) throw error;
         }
@@ -813,54 +901,38 @@ export const createScheduledTasksRuntime = (deps) => {
 
       if (sessionBusy !== false) {
         if (sessionBusy === true) {
-          incompleteAssistantProbes = 0;
           emptyIdleProbes = 0;
         }
         await sleep(SESSION_SETTLEMENT_POLL_MS, signal);
         continue;
       }
 
-      if (typeof client?.message?.list === 'function') {
-        try {
-          const messagesResult = await client.message.list({
-            sessionID,
-            limit: 50,
-            order: 'asc',
-          }, requestOptions);
-          const messages = Array.isArray(messagesResult?.data) ? messagesResult.data : null;
-          if (messages) {
-            const lastInfo = readMessageInfo(messages.at(-1));
-            if (lastInfo?.type === 'assistant') {
-              emptyIdleProbes = 0;
-              if (lastInfo.error) {
-                return {
-                  outcome: 'error',
-                  error: formatAssistantError(lastInfo.error),
-                };
-              }
-              if (lastInfo.time?.completed) {
-                return { outcome: 'success' };
-              }
-              incompleteAssistantProbes += 1;
-              if (incompleteAssistantProbes >= INCOMPLETE_ASSISTANT_SETTLE_PROBES) {
-                return { outcome: 'success' };
-              }
-            } else {
-              incompleteAssistantProbes = 0;
-              emptyIdleProbes += 1;
-              // Prompt admitted but no assistant yet, or aborted before reply.
-              // Allow several idle probes so we don't race the first token.
-              if (emptyIdleProbes >= 5 && lastInfo?.type === 'user') {
-                return {
-                  outcome: 'error',
-                  error: 'session ended without assistant response',
-                };
-              }
-            }
+      try {
+        const messages = await listLatestMessages(client, sessionID, requestOptions);
+        if (messages) {
+          const classified = classifyMessageTail(messages);
+          if (classified.outcome === 'success' || classified.outcome === 'error') {
+            return classified;
           }
-        } catch (error) {
-          if (signal?.aborted) throw error;
+          if (classified.outcome === 'awaiting_assistant') {
+            emptyIdleProbes += 1;
+            // Prompt admitted but no assistant yet, or aborted before reply.
+            // Allow several idle probes so we don't race the first token.
+            if (emptyIdleProbes >= 5) {
+              return {
+                outcome: 'error',
+                error: 'session ended without assistant response',
+              };
+            }
+          } else {
+            // busy / unknown tails (tool-calls, incomplete, model-switch, …)
+            // keep polling — never promote incomplete idle to success.
+            emptyIdleProbes = 0;
+          }
         }
+      } catch (error) {
+        if (signal?.aborted) throw error;
+        // message.list failure stays unknown — keep polling under the watchdog.
       }
 
       await sleep(SESSION_SETTLEMENT_POLL_MS, signal);
@@ -932,6 +1004,16 @@ export const createScheduledTasksRuntime = (deps) => {
     }
 
     signal?.throwIfAborted?.();
+
+    // Goal-enabled tasks: refuse before session create / objective write /
+    // prompt when Host goal state is unavailable. Config + run-history stay;
+    // only this run is recorded as error (no false first-turn success).
+    if (task.execution?.goalEnabled) {
+      const capability = getSessionGoalCapability();
+      if (!capability.supported) {
+        throw new Error(sessionGoalUnavailableMessage(capability));
+      }
+    }
 
     if (typeof waitForOpenCodeReady === 'function') {
       await waitForOpenCodeReady(10_000, 250);

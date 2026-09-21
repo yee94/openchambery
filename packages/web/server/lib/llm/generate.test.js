@@ -1,250 +1,317 @@
 import { describe, expect, it, vi } from 'vitest'
-import { detectSessionlessGenerate, generateOpenCodeText, _test } from './generate.js'
+import { generateOpenCodeText, _test } from './generate.js'
 
-const completedAssistant = (text) => ({
-  info: {
-    role: 'assistant',
-    time: { completed: Date.now() },
+const denyAllAgent = {
+  location: { directory: '/tmp/openchamber-llm' },
+  data: {
+    id: 'openchamber-llm',
+    name: 'openchamber-llm',
+    mode: 'primary',
+    hidden: true,
+    permissions: [
+      { action: '*', resource: '*', effect: 'deny' },
+    ],
   },
-  parts: [{ type: 'text', text }],
+}
+
+const completedAssistant = (text, extras = {}) => ({
+  id: 'msg_asst',
+  type: 'assistant',
+  time: { created: 1, completed: Date.now() },
+  agent: 'openchamber-llm',
+  model: { id: 'gpt-5-nano', providerID: 'opencode' },
+  content: [{ type: 'text', text }],
+  finish: 'stop',
+  ...extras,
 })
 
-describe('detectSessionlessGenerate', () => {
-  it('returns unavailable when the probe 404s', async () => {
-    const fetchImpl = vi.fn(async () => new Response('missing', { status: 404 }))
-    await expect(detectSessionlessGenerate({
-      fetchImpl,
-      baseUrl: 'http://127.0.0.1:4096',
-      headers: {},
-    })).resolves.toEqual({ available: false, mode: 'throwaway-session' })
-  })
-
-  it('returns available when the probe returns JSON', async () => {
-    const fetchImpl = vi.fn(async () => new Response(JSON.stringify({ ok: true }), {
-      status: 200,
-      headers: { 'Content-Type': 'application/json' },
-    }))
-    await expect(detectSessionlessGenerate({
-      fetchImpl,
-      baseUrl: 'http://127.0.0.1:4096',
-      headers: {},
-    })).resolves.toMatchObject({ available: true, mode: 'http' })
-  })
-
-  it('treats HTML 200 on /generate as unavailable', async () => {
-    const fetchImpl = vi.fn(async (url) => {
-      expect(String(url)).toMatch(/\/generate$/)
-      return new Response('<!doctype html><html><body>OpenChamber</body></html>', {
-        status: 200,
-        headers: { 'Content-Type': 'text/html; charset=utf-8' },
-      })
-    })
-    await expect(detectSessionlessGenerate({
-      fetchImpl,
-      baseUrl: 'http://127.0.0.1:4096',
-      headers: {},
-    })).resolves.toEqual({ available: false, mode: 'throwaway-session' })
-    expect(fetchImpl).toHaveBeenCalled()
-  })
+const jsonResponse = (status, body) => ({
+  ok: status >= 200 && status < 300,
+  status,
+  headers: {
+    get: (name) => (String(name).toLowerCase() === 'content-type' ? 'application/json' : null),
+  },
+  json: async () => body,
+  text: async () => JSON.stringify(body ?? null),
+  arrayBuffer: async () => new TextEncoder().encode(JSON.stringify(body ?? null)).buffer,
 })
 
-describe('generateOpenCodeText', () => {
-  it('uses promptAsync with model+parts, waits for idle messages, and never calls v2 session.prompt', async () => {
-    const create = vi.fn(async () => ({ data: { id: 'ses_tmp' } }))
-    const update = vi.fn(async () => ({ data: { id: 'ses_tmp' } }))
-    const ids = vi.fn(async () => ({ data: ['bash', 'edit'] }))
-    const prompt = vi.fn(async () => {
-      throw new Error('v2 session.prompt must not be used')
+describe('generateOpenCodeText — text path', () => {
+  it('uses generate.text with model id/providerID and never opens a session', async () => {
+    const text = vi.fn(async () => ({ text: 'reply' }))
+    const create = vi.fn()
+    const prompt = vi.fn()
+    const clientFactory = () => ({
+      generate: { text },
+      session: { create, prompt },
+      agent: { get: vi.fn() },
     })
-    const promptAsync = vi.fn(async () => ({ response: { status: 204 } }))
-    const status = vi.fn(async () => ({ data: { ses_tmp: { type: 'idle' } } }))
-    const messages = vi.fn(async () => ({ data: [completedAssistant('reply')] }))
-    const remove = vi.fn(async () => ({ data: true }))
-    const createOpencodeClient = vi.fn(() => ({
-      session: { create, update, prompt, promptAsync, status, messages, delete: remove },
-      tool: { ids },
-    }))
 
     const result = await generateOpenCodeText({
       buildOpenCodeUrl: () => 'http://127.0.0.1:4096',
       getOpenCodeAuthHeaders: () => ({}),
       providerID: 'opencode',
       modelID: 'gpt-5-nano',
-      messages: [{ role: 'user', content: 'hi' }],
-      clientFactory: createOpencodeClient,
-      ensureTempDirectory: async () => '/tmp/openchamber-llm',
-      detect: async () => ({ available: false, mode: 'throwaway-session' }),
+      messages: [
+        { role: 'system', content: 'Be brief' },
+        { role: 'user', content: 'hi' },
+      ],
+      clientFactory,
     })
 
-    expect(create).toHaveBeenCalledWith(expect.objectContaining({
-      title: expect.stringContaining('[openchamber-llm]'),
-      metadata: { openchamber: { llm: { purpose: 'chat-completions' } } },
+    expect(result).toEqual({ text: 'reply', source: 'generate.text' })
+    expect(text).toHaveBeenCalledWith(expect.objectContaining({
+      prompt: expect.stringContaining('Be brief'),
+      model: { id: 'gpt-5-nano', providerID: 'opencode' },
     }), expect.anything())
-    expect(update).toHaveBeenCalled()
-    expect(promptAsync).toHaveBeenCalledWith(expect.objectContaining({
-      sessionID: 'ses_tmp',
-      agent: 'openchamber-llm',
-      model: { providerID: 'opencode', modelID: 'gpt-5-nano' },
-      tools: { bash: false, edit: false },
-      parts: [{ type: 'text', text: 'User: hi', synthetic: false }],
-    }), expect.anything())
+    expect(text.mock.calls[0][0].prompt).toContain('User: hi')
+    expect(create).not.toHaveBeenCalled()
     expect(prompt).not.toHaveBeenCalled()
-    expect(status).toHaveBeenCalled()
-    expect(messages).toHaveBeenCalledWith(expect.objectContaining({ sessionID: 'ses_tmp' }), expect.anything())
-    expect(remove).toHaveBeenCalled()
-    expect(result).toEqual({ text: 'reply', source: 'throwaway-session' })
   })
 
-  it('forwards contact file parts on promptAsync so the model can see images', async () => {
-    const image = { type: 'file', mime: 'image/png', url: 'data:image/png;base64,aa', filename: 'shot.png' }
-    const file = { type: 'file', mime: 'text/plain', url: 'data:text/plain;base64,eA==', filename: 'notes.txt' }
-    const flattened = _test.flattenMessages([
-      { role: 'user', content: 'look', parts: [image, file] },
-    ])
-    expect(flattened.prompt).toContain('User: look')
-    expect(flattened.prompt).toContain('[image: shot.png (image/png)]')
-    expect(flattened.prompt).toContain('[file: notes.txt (text/plain)]')
-    expect(flattened.files).toEqual([image, file])
-
-    const promptAsync = vi.fn(async () => ({ response: { status: 204 } }))
-    const createOpencodeClient = vi.fn(() => ({
-      session: {
-        create: async () => ({ data: { id: 'ses_tmp' } }),
-        update: async () => ({ data: { id: 'ses_tmp' } }),
-        prompt: vi.fn(),
-        promptAsync,
-        status: async () => ({ data: { ses_tmp: { type: 'idle' } } }),
-        messages: async () => ({ data: [completedAssistant('saw it')] }),
-        delete: async () => ({ data: true }),
+  it('does not invent deltas on the generate.text path', async () => {
+    const onTextDelta = vi.fn()
+    const subscribers = new Set()
+    const globalEventHub = {
+      subscribeEvent(fn) {
+        subscribers.add(fn)
+        return () => { subscribers.delete(fn) }
       },
-      tool: { ids: async () => ({ data: [] }) },
-    }))
-    await generateOpenCodeText({
+    }
+    const result = await generateOpenCodeText({
       buildOpenCodeUrl: () => 'http://127.0.0.1:4096',
       getOpenCodeAuthHeaders: () => ({}),
       providerID: 'opencode',
       modelID: 'gpt-5-nano',
-      messages: [{ role: 'user', content: 'look', parts: [image, file] }],
-      clientFactory: createOpencodeClient,
-      ensureTempDirectory: async () => '/tmp/openchamber-llm',
-      detect: async () => ({ available: false, mode: 'throwaway-session' }),
-      forwardImageParts: true,
+      messages: [{ role: 'user', content: 'hi' }],
+      clientFactory: () => ({
+        generate: { text: async () => ({ text: 'full reply' }) },
+      }),
+      onTextDelta,
+      globalEventHub,
     })
-    expect(promptAsync.mock.calls[0][0].parts).toEqual([
-      expect.objectContaining({ type: 'text', synthetic: false }),
-      image,
-      file,
-    ])
+    expect(result).toEqual({ text: 'full reply', source: 'generate.text' })
+    expect(onTextDelta).not.toHaveBeenCalled()
+    expect(subscribers.size).toBe(0)
   })
 
-  it('skips image bytes for non-vision generate and keeps text files plus the image description', async () => {
+  it('keeps image descriptions for non-vision generate and stays on text path', async () => {
     const image = { type: 'file', mime: 'image/png', url: 'data:image/png;base64,aa', filename: 'shot.png' }
     const file = { type: 'file', mime: 'text/plain', url: 'data:text/plain;base64,eA==', filename: 'notes.txt' }
     expect(_test.filesForPrompt([image, file], false)).toEqual([file])
-    const promptAsync = vi.fn(async () => ({ response: { status: 204 } }))
-    const createOpencodeClient = vi.fn(() => ({
-      session: {
-        create: async () => ({ data: { id: 'ses_tmp' } }),
-        update: async () => ({ data: { id: 'ses_tmp' } }),
-        prompt: vi.fn(),
-        promptAsync,
-        status: async () => ({ data: { ses_tmp: { type: 'idle' } } }),
-        messages: async () => ({ data: [completedAssistant('cannot see images')] }),
-        delete: async () => ({ data: true }),
-      },
-      tool: { ids: async () => ({ data: [] }) },
-    }))
+    expect(_test.imageFilesForSession([image, file], false)).toEqual([])
+
+    const text = vi.fn(async () => ({ text: 'cannot see images' }))
+    const create = vi.fn()
     await generateOpenCodeText({
       buildOpenCodeUrl: () => 'http://127.0.0.1:4096',
       getOpenCodeAuthHeaders: () => ({}),
       providerID: 'opencode',
       modelID: 'deepseek-v4-flash',
       messages: [{ role: 'user', content: 'look', parts: [image, file] }],
-      clientFactory: createOpencodeClient,
-      ensureTempDirectory: async () => '/tmp/openchamber-llm',
-      detect: async () => ({ available: false, mode: 'throwaway-session' }),
-    })
-    expect(promptAsync.mock.calls[0][0].parts).toEqual([
-      expect.objectContaining({
-        type: 'text',
-        text: expect.stringContaining('[image: shot.png (image/png)]'),
+      clientFactory: () => ({
+        generate: { text },
+        session: { create },
       }),
-      file,
-    ])
-    expect(promptAsync.mock.calls[0][0].parts.some((part) => part.type === 'file' && part.mime.startsWith('image/'))).toBe(false)
+      forwardImageParts: false,
+    })
+    expect(create).not.toHaveBeenCalled()
+    expect(text.mock.calls[0][0].prompt).toContain('[image: shot.png (image/png)]')
+    expect(text.mock.calls[0][0].prompt).toContain('[file: notes.txt (text/plain)]')
+  })
+})
+
+describe('generateOpenCodeText — attachment session path', () => {
+  it('verifies deny-all before prompt, prompts with files, waits, lists, and removes', async () => {
+    const agentGet = vi.fn(async () => denyAllAgent)
+    const create = vi.fn(async () => ({ id: 'ses_tmp' }))
+    const put = vi.fn(async () => undefined)
+    const prompt = vi.fn(async () => ({ id: 'inbox_1', type: 'user' }))
+    const wait = vi.fn(async () => undefined)
+    const list = vi.fn(async () => ({ data: [completedAssistant('saw it')], cursor: {} }))
+    const remove = vi.fn(async () => undefined)
+    const interrupt = vi.fn(async () => undefined)
+    const text = vi.fn()
+    const image = { type: 'file', mime: 'image/png', url: 'data:image/png;base64,aa', filename: 'shot.png' }
+
+    const result = await generateOpenCodeText({
+      buildOpenCodeUrl: () => 'http://127.0.0.1:4096',
+      getOpenCodeAuthHeaders: () => ({}),
+      providerID: 'opencode',
+      modelID: 'gpt-4o',
+      messages: [
+        { role: 'system', content: 'Be careful' },
+        { role: 'user', content: 'look', parts: [image] },
+      ],
+      clientFactory: () => ({
+        generate: { text },
+        agent: { get: agentGet },
+        session: {
+          create,
+          prompt,
+          wait,
+          interrupt,
+          remove,
+          instructions: { entry: { put } },
+        },
+        message: { list },
+      }),
+      ensureTempDirectory: async () => '/tmp/openchamber-llm',
+      forwardImageParts: true,
+    })
+
+    expect(result).toEqual({ text: 'saw it', source: 'attachment-session' })
+    expect(agentGet).toHaveBeenCalledWith(expect.objectContaining({
+      agentID: 'openchamber-llm',
+      location: { directory: '/tmp/openchamber-llm' },
+    }), expect.anything())
+    expect(create).toHaveBeenCalledWith(expect.objectContaining({
+      agent: 'openchamber-llm',
+      model: { id: 'gpt-4o', providerID: 'opencode' },
+      location: { directory: '/tmp/openchamber-llm' },
+    }), expect.anything())
+    expect(put).toHaveBeenCalledWith(expect.objectContaining({
+      sessionID: 'ses_tmp',
+      key: 'system',
+      value: 'Be careful',
+    }), expect.anything())
+    // agent.get must complete before prompt
+    expect(agentGet.mock.invocationCallOrder[0]).toBeLessThan(prompt.mock.invocationCallOrder[0])
+    expect(prompt).toHaveBeenCalledWith(expect.objectContaining({
+      sessionID: 'ses_tmp',
+      text: expect.stringContaining('User: look'),
+      files: [{ uri: image.url, name: 'shot.png' }],
+      delivery: 'steer',
+    }), expect.anything())
+    expect(wait).toHaveBeenCalledWith({ sessionID: 'ses_tmp' }, expect.anything())
+    expect(list).toHaveBeenCalledWith(expect.objectContaining({
+      sessionID: 'ses_tmp',
+      order: 'desc',
+    }), expect.anything())
+    expect(remove).toHaveBeenCalledWith({ sessionID: 'ses_tmp' })
+    expect(text).not.toHaveBeenCalled()
   })
 
-  it('surfaces the OpenCode assistant error string after promptAsync 204', async () => {
-    const promptAsync = vi.fn(async () => ({ response: { status: 204 } }))
+  it('fails with llm_attachment_generation_unavailable before prompt when deny-all is missing', async () => {
     const prompt = vi.fn()
-    const createOpencodeClient = vi.fn(() => ({
-      session: {
-        create: async () => ({ data: { id: 'ses_tmp' } }),
-        update: async () => ({ data: { id: 'ses_tmp' } }),
-        prompt,
-        promptAsync,
-        status: async () => ({ data: { ses_tmp: { type: 'idle' } } }),
-        messages: async () => ({
-          data: [{
-            info: { role: 'assistant', error: { message: 'model refused the request' }, time: { completed: Date.now() } },
-            parts: [],
-          }],
-        }),
-        delete: async () => ({ data: true }),
-      },
-      tool: { ids: async () => ({ data: [] }) },
-    }))
+    const remove = vi.fn()
+    const image = { type: 'file', mime: 'image/png', url: 'data:image/png;base64,aa', filename: 'shot.png' }
 
     await expect(generateOpenCodeText({
       buildOpenCodeUrl: () => 'http://127.0.0.1:4096',
       getOpenCodeAuthHeaders: () => ({}),
       providerID: 'opencode',
-      modelID: 'gpt-5-nano',
-      messages: [{ role: 'user', content: 'hi' }],
-      clientFactory: createOpencodeClient,
+      modelID: 'gpt-4o',
+      messages: [{ role: 'user', content: 'look', parts: [image] }],
+      clientFactory: () => ({
+        agent: {
+          get: async () => ({
+            data: {
+              id: 'openchamber-llm',
+              permissions: [
+                { action: 'read', resource: 'file', effect: 'allow' },
+              ],
+            },
+          }),
+        },
+        session: {
+          create: async () => ({ id: 'ses_tmp' }),
+          prompt,
+          remove,
+        },
+      }),
       ensureTempDirectory: async () => '/tmp/openchamber-llm',
-      detect: async () => ({ available: false, mode: 'throwaway-session' }),
+      forwardImageParts: true,
+    })).rejects.toMatchObject({
+      code: 'llm_attachment_generation_unavailable',
+    })
+    expect(prompt).not.toHaveBeenCalled()
+  })
+
+  it('removes the session when wait fails and still cleans hub listeners', async () => {
+    const subscribers = new Set()
+    const globalEventHub = {
+      subscribeEvent(fn) {
+        subscribers.add(fn)
+        return () => { subscribers.delete(fn) }
+      },
+    }
+    const remove = vi.fn(async () => undefined)
+    const image = { type: 'file', mime: 'image/png', url: 'data:image/png;base64,aa', filename: 'shot.png' }
+
+    await expect(generateOpenCodeText({
+      buildOpenCodeUrl: () => 'http://127.0.0.1:4096',
+      getOpenCodeAuthHeaders: () => ({}),
+      providerID: 'opencode',
+      modelID: 'gpt-4o',
+      messages: [{ role: 'user', content: 'look', parts: [image] }],
+      clientFactory: () => ({
+        agent: { get: async () => denyAllAgent },
+        session: {
+          create: async () => ({ id: 'ses_tmp' }),
+          prompt: async () => ({ id: 'inbox' }),
+          wait: async () => {
+            throw new Error('wait boom')
+          },
+          remove,
+          interrupt: vi.fn(),
+          instructions: { entry: { put: async () => {} } },
+        },
+        message: { list: vi.fn() },
+      }),
+      ensureTempDirectory: async () => '/tmp/openchamber-llm',
+      forwardImageParts: true,
+      onTextDelta: vi.fn(),
+      globalEventHub,
+    })).rejects.toMatchObject({
+      code: 'upstream_error',
+      message: 'wait boom',
+    })
+    expect(remove).toHaveBeenCalledWith({ sessionID: 'ses_tmp' })
+    expect(subscribers.size).toBe(0)
+  })
+
+  it('surfaces assistant error from message.list and cleans up', async () => {
+    const remove = vi.fn(async () => undefined)
+    const image = { type: 'file', mime: 'image/png', url: 'data:image/png;base64,aa', filename: 'shot.png' }
+
+    await expect(generateOpenCodeText({
+      buildOpenCodeUrl: () => 'http://127.0.0.1:4096',
+      getOpenCodeAuthHeaders: () => ({}),
+      providerID: 'opencode',
+      modelID: 'gpt-4o',
+      messages: [{ role: 'user', content: 'look', parts: [image] }],
+      clientFactory: () => ({
+        agent: { get: async () => denyAllAgent },
+        session: {
+          create: async () => ({ id: 'ses_tmp' }),
+          prompt: async () => ({ id: 'inbox' }),
+          wait: async () => undefined,
+          remove,
+          interrupt: vi.fn(),
+          instructions: { entry: { put: async () => {} } },
+        },
+        message: {
+          list: async () => ({
+            data: [completedAssistant('', {
+              finish: 'error',
+              error: { message: 'model refused the request' },
+              content: [],
+            })],
+            cursor: {},
+          }),
+        },
+      }),
+      ensureTempDirectory: async () => '/tmp/openchamber-llm',
+      forwardImageParts: true,
     })).rejects.toMatchObject({
       code: 'upstream_error',
       message: 'model refused the request',
     })
-    expect(prompt).not.toHaveBeenCalled()
+    expect(remove).toHaveBeenCalled()
   })
 
-  it('falls through to promptAsync when the /generate probe returns HTML 200', async () => {
-    const fetchImpl = vi.fn(async () => new Response('<!doctype html>', {
-      status: 200,
-      headers: { 'Content-Type': 'text/html' },
-    }))
-    const promptAsync = vi.fn(async () => ({ response: { status: 204 } }))
-    const prompt = vi.fn()
-    const result = await generateOpenCodeText({
-      buildOpenCodeUrl: () => 'http://127.0.0.1:4096',
-      getOpenCodeAuthHeaders: () => ({}),
-      providerID: 'opencode',
-      modelID: 'glm-5.3-flash',
-      messages: [{ role: 'user', content: 'hi' }],
-      fetchImpl,
-      clientFactory: () => ({
-        session: {
-          create: async () => ({ data: { id: 'ses_tmp' } }),
-          update: async () => ({ data: { id: 'ses_tmp' } }),
-          prompt,
-          promptAsync,
-          status: async () => ({ data: { ses_tmp: { type: 'idle' } } }),
-          messages: async () => ({ data: [completedAssistant('reply')] }),
-          delete: async () => ({ data: true }),
-        },
-        tool: { ids: async () => ({ data: [] }) },
-      }),
-      ensureTempDirectory: async () => '/tmp/openchamber-llm',
-    })
-    expect(result).toEqual({ text: 'reply', source: 'throwaway-session' })
-    expect(promptAsync).toHaveBeenCalled()
-    expect(prompt).not.toHaveBeenCalled()
-  })
-
-  it('forwards filtered throwaway session text deltas via onTextDelta and still returns full text', async () => {
+  it('forwards filtered session.text.delta tokens via onTextDelta and still returns full text', async () => {
     const subscribers = new Set()
     const globalEventHub = {
       subscribeEvent(fn) {
@@ -257,190 +324,111 @@ describe('generateOpenCodeText', () => {
     }
     const deltas = []
     const onTextDelta = vi.fn((text) => { deltas.push(text) })
+    const image = { type: 'file', mime: 'image/png', url: 'data:image/png;base64,aa', filename: 'shot.png' }
 
-    const promptAsync = vi.fn(async () => {
-      // Same-session text deltas
+    const prompt = vi.fn(async () => {
       globalEventHub.emit({
         payload: {
-          type: 'message.part.delta',
-          properties: {
+          type: 'session.text.delta',
+          data: {
             sessionID: 'ses_tmp',
-            messageID: 'msg_asst',
-            partID: 'prt_1',
-            field: 'text',
+            assistantMessageID: 'msg_asst',
+            ordinal: 0,
             delta: 'Hel',
           },
         },
       })
       globalEventHub.emit({
         payload: {
-          type: 'message.part.delta',
-          properties: {
+          type: 'session.text.delta',
+          data: {
             sessionID: 'ses_tmp',
-            messageID: 'msg_asst',
-            partID: 'prt_1',
-            field: 'text',
+            assistantMessageID: 'msg_asst',
+            ordinal: 1,
             delta: 'lo',
           },
         },
       })
-      // Other session — must be ignored
+      // Other session — ignored
       globalEventHub.emit({
         payload: {
-          type: 'message.part.delta',
-          properties: {
+          type: 'session.text.delta',
+          data: {
             sessionID: 'ses_other',
-            messageID: 'msg_other',
-            partID: 'prt_x',
-            field: 'text',
+            assistantMessageID: 'msg_other',
+            ordinal: 0,
             delta: 'NOPE',
           },
         },
       })
-      // Same session, different messageID after lock — ignored
+      // Same session, different assistantMessageID after lock — ignored
       globalEventHub.emit({
         payload: {
-          type: 'message.part.delta',
-          properties: {
+          type: 'session.text.delta',
+          data: {
             sessionID: 'ses_tmp',
-            messageID: 'msg_other_asst',
-            partID: 'prt_2',
-            field: 'text',
+            assistantMessageID: 'msg_other_asst',
+            ordinal: 2,
             delta: 'SKIP',
           },
         },
       })
-      // Non-text field — ignored
+      // Stale ordinal — ignored
       globalEventHub.emit({
         payload: {
-          type: 'message.part.delta',
-          properties: {
+          type: 'session.text.delta',
+          data: {
             sessionID: 'ses_tmp',
-            messageID: 'msg_asst',
-            partID: 'prt_1',
-            field: 'reasoning',
-            delta: 'think',
+            assistantMessageID: 'msg_asst',
+            ordinal: 1,
+            delta: 'DUP',
           },
         },
       })
-      return { response: { status: 204 } }
+      return { id: 'inbox' }
     })
 
     const result = await generateOpenCodeText({
       buildOpenCodeUrl: () => 'http://127.0.0.1:4096',
       getOpenCodeAuthHeaders: () => ({}),
       providerID: 'opencode',
-      modelID: 'gpt-5-nano',
-      messages: [{ role: 'user', content: 'hi' }],
+      modelID: 'gpt-4o',
+      messages: [{ role: 'user', content: 'look', parts: [image] }],
       clientFactory: () => ({
+        agent: { get: async () => denyAllAgent },
         session: {
-          create: async () => ({ data: { id: 'ses_tmp' } }),
-          update: async () => ({ data: { id: 'ses_tmp' } }),
-          prompt: vi.fn(),
-          promptAsync,
-          status: async () => ({ data: { ses_tmp: { type: 'idle' } } }),
-          messages: async () => ({ data: [completedAssistant('Hello')] }),
-          delete: async () => ({ data: true }),
+          create: async () => ({ id: 'ses_tmp' }),
+          prompt,
+          wait: async () => undefined,
+          remove: async () => undefined,
+          interrupt: vi.fn(),
+          instructions: { entry: { put: async () => {} } },
         },
-        tool: { ids: async () => ({ data: [] }) },
+        message: {
+          list: async () => ({ data: [completedAssistant('Hello')], cursor: {} }),
+        },
       }),
       ensureTempDirectory: async () => '/tmp/openchamber-llm',
-      detect: async () => ({ available: false, mode: 'throwaway-session' }),
+      forwardImageParts: true,
       onTextDelta,
       globalEventHub,
     })
 
-    expect(result).toEqual({ text: 'Hello', source: 'throwaway-session' })
+    expect(result).toEqual({ text: 'Hello', source: 'attachment-session' })
     expect(deltas).toEqual(['Hel', 'lo'])
-    expect(onTextDelta).toHaveBeenCalledTimes(2)
-    // Listener removed after complete — further emits must not reach onTextDelta
     expect(subscribers.size).toBe(0)
     globalEventHub.emit({
       payload: {
-        type: 'message.part.delta',
-        properties: {
+        type: 'session.text.delta',
+        data: {
           sessionID: 'ses_tmp',
-          messageID: 'msg_asst',
-          partID: 'prt_1',
-          field: 'text',
+          assistantMessageID: 'msg_asst',
+          ordinal: 3,
           delta: 'late',
         },
       },
     })
     expect(onTextDelta).toHaveBeenCalledTimes(2)
-  })
-
-  it('removes the hub listener when generate fails after subscribe', async () => {
-    const subscribers = new Set()
-    const globalEventHub = {
-      subscribeEvent(fn) {
-        subscribers.add(fn)
-        return () => { subscribers.delete(fn) }
-      },
-    }
-    const onTextDelta = vi.fn()
-
-    await expect(generateOpenCodeText({
-      buildOpenCodeUrl: () => 'http://127.0.0.1:4096',
-      getOpenCodeAuthHeaders: () => ({}),
-      providerID: 'opencode',
-      modelID: 'gpt-5-nano',
-      messages: [{ role: 'user', content: 'hi' }],
-      clientFactory: () => ({
-        session: {
-          create: async () => ({ data: { id: 'ses_tmp' } }),
-          update: async () => ({ data: { id: 'ses_tmp' } }),
-          prompt: vi.fn(),
-          promptAsync: async () => ({ response: { status: 204 } }),
-          status: async () => ({ data: { ses_tmp: { type: 'idle' } } }),
-          messages: async () => ({
-            data: [{
-              info: { role: 'assistant', error: { message: 'boom' }, time: { completed: Date.now() } },
-              parts: [],
-            }],
-          }),
-          delete: async () => ({ data: true }),
-        },
-        tool: { ids: async () => ({ data: [] }) },
-      }),
-      ensureTempDirectory: async () => '/tmp/openchamber-llm',
-      detect: async () => ({ available: false, mode: 'throwaway-session' }),
-      onTextDelta,
-      globalEventHub,
-    })).rejects.toMatchObject({ code: 'upstream_error', message: 'boom' })
-
-    expect(subscribers.size).toBe(0)
-  })
-
-  it('does not invent deltas on the sessionless /generate JSON path', async () => {
-    const onTextDelta = vi.fn()
-    const subscribers = new Set()
-    const globalEventHub = {
-      subscribeEvent(fn) {
-        subscribers.add(fn)
-        return () => { subscribers.delete(fn) }
-      },
-    }
-    const fetchImpl = vi.fn(async () => new Response(JSON.stringify({ text: 'full reply' }), {
-      status: 200,
-      headers: { 'Content-Type': 'application/json' },
-    }))
-
-    const result = await generateOpenCodeText({
-      buildOpenCodeUrl: () => 'http://127.0.0.1:4096',
-      getOpenCodeAuthHeaders: () => ({}),
-      providerID: 'opencode',
-      modelID: 'gpt-5-nano',
-      messages: [{ role: 'user', content: 'hi' }],
-      fetchImpl,
-      detect: async () => ({ available: true, mode: 'http', url: 'http://127.0.0.1:4096/generate' }),
-      onTextDelta,
-      globalEventHub,
-    })
-
-    expect(result).toEqual({ text: 'full reply', source: 'generate' })
-    expect(onTextDelta).not.toHaveBeenCalled()
-    expect(subscribers.size).toBe(0)
   })
 })
 
@@ -456,5 +444,180 @@ describe('subscribeThrowawayTextDeltas', () => {
       onTextDelta: () => {},
       globalEventHub: null,
     })).toBeNull()
+  })
+})
+
+describe('data URL validation', () => {
+  it('rejects oversized attachments', () => {
+    const huge = Buffer.alloc(_test.MAX_ATTACHMENT_BYTES + 1, 1).toString('base64')
+    expect(() => _test.parseDataUrl(`data:image/png;base64,${huge}`)).toThrow(/limit/)
+  })
+
+  it('accepts small valid data URLs', () => {
+    const parsed = _test.parseDataUrl('data:image/png;base64,aa')
+    expect(parsed?.mime).toBe('image/png')
+    expect(parsed?.byteLength).toBeGreaterThan(0)
+  })
+})
+
+describe('generateOpenCodeText — real OpenCode.make + fake HTTP', () => {
+  it('catalog-shaped generate.text completion through the real client', async () => {
+    const { OpenCode } = await import('@opencode-ai/client')
+    const fetchImpl = vi.fn(async (url, init) => {
+      const path = String(url)
+      if (path.includes('/api/generate') && init?.method === 'POST') {
+        const body = JSON.parse(init.body)
+        expect(body.model).toEqual({ id: 'gpt-5-nano', providerID: 'opencode' })
+        expect(body.prompt).toContain('User: hi')
+        return jsonResponse(200, { data: { text: 'hello from generate' } })
+      }
+      return jsonResponse(500, { _tag: 'UnknownError', message: `unexpected ${path}` })
+    })
+
+    const result = await generateOpenCodeText({
+      buildOpenCodeUrl: () => 'http://127.0.0.1:4096',
+      getOpenCodeAuthHeaders: () => ({ Authorization: 'Basic test' }),
+      providerID: 'opencode',
+      modelID: 'gpt-5-nano',
+      messages: [{ role: 'user', content: 'hi' }],
+      clientFactory: () => OpenCode.make({
+        baseUrl: 'http://127.0.0.1:4096',
+        headers: { Authorization: 'Basic test' },
+        fetch: fetchImpl,
+      }),
+    })
+
+    expect(result).toEqual({ text: 'hello from generate', source: 'generate.text' })
+    expect(fetchImpl).toHaveBeenCalled()
+  })
+
+  it('attachment deny-all failure happens before prompt on the real client path shape', async () => {
+    const { OpenCode } = await import('@opencode-ai/client')
+    let prompted = false
+    const fetchImpl = vi.fn(async (url, init) => {
+      const path = String(url)
+      if (path.includes('/api/agent/openchamber-llm')) {
+        return jsonResponse(200, {
+          location: { directory: '/tmp/openchamber-llm', project: { id: 'p', directory: '/tmp', canonical: '/tmp' } },
+          data: {
+            id: 'openchamber-llm',
+            name: 'openchamber-llm',
+            mode: 'primary',
+            hidden: true,
+            permissions: [{ action: 'bash', resource: '*', effect: 'allow' }],
+            request: {},
+          },
+        })
+      }
+      if (path.includes('/prompt')) {
+        prompted = true
+        return jsonResponse(200, { data: { id: 'inbox' } })
+      }
+      if (path.endsWith('/api/session') && init?.method === 'POST') {
+        return jsonResponse(200, {
+          data: {
+            id: 'ses_tmp',
+            projectID: 'p',
+            cost: 0,
+            tokens: {},
+            time: { created: 1, updated: 1 },
+            location: { directory: '/tmp/openchamber-llm' },
+          },
+        })
+      }
+      return jsonResponse(500, { _tag: 'UnknownError', message: `unexpected ${path}` })
+    })
+
+    const image = { type: 'file', mime: 'image/png', url: 'data:image/png;base64,aa', filename: 'shot.png' }
+    await expect(generateOpenCodeText({
+      buildOpenCodeUrl: () => 'http://127.0.0.1:4096',
+      getOpenCodeAuthHeaders: () => ({}),
+      providerID: 'opencode',
+      modelID: 'gpt-4o',
+      messages: [{ role: 'user', content: 'look', parts: [image] }],
+      clientFactory: () => OpenCode.make({
+        baseUrl: 'http://127.0.0.1:4096',
+        fetch: fetchImpl,
+      }),
+      ensureTempDirectory: async () => '/tmp/openchamber-llm',
+      forwardImageParts: true,
+    })).rejects.toMatchObject({ code: 'llm_attachment_generation_unavailable' })
+    expect(prompted).toBe(false)
+  })
+
+  it('attachment success path removes the session after message.list', async () => {
+    const { OpenCode } = await import('@opencode-ai/client')
+    const calls = []
+    const fetchImpl = vi.fn(async (url, init) => {
+      const path = String(url)
+      const method = init?.method || 'GET'
+      calls.push(`${method} ${path.replace(/^https?:\/\/[^/]+/, '')}`)
+      if (path.includes('/api/agent/openchamber-llm')) {
+        return jsonResponse(200, {
+          location: { directory: '/tmp/openchamber-llm', project: { id: 'p', directory: '/tmp', canonical: '/tmp' } },
+          data: {
+            id: 'openchamber-llm',
+            name: 'openchamber-llm',
+            mode: 'primary',
+            hidden: true,
+            permissions: [{ action: '*', resource: '*', effect: 'deny' }],
+            request: {},
+          },
+        })
+      }
+      if (path.endsWith('/api/session') && method === 'POST') {
+        return jsonResponse(200, {
+          data: {
+            id: 'ses_tmp',
+            projectID: 'p',
+            cost: 0,
+            tokens: {},
+            time: { created: 1, updated: 1 },
+            location: { directory: '/tmp/openchamber-llm' },
+          },
+        })
+      }
+      if (path.includes('/instructions/entries/')) {
+        return { ok: true, status: 204, headers: { get: () => null }, text: async () => '', json: async () => null, arrayBuffer: async () => new ArrayBuffer(0) }
+      }
+      if (path.includes('/prompt')) {
+        return jsonResponse(200, { data: { id: 'inbox_1', type: 'user', text: 'look' } })
+      }
+      if (path.includes('/wait')) {
+        return { ok: true, status: 204, headers: { get: () => null }, text: async () => '', json: async () => null, arrayBuffer: async () => new ArrayBuffer(0) }
+      }
+      if (path.includes('/message') && method === 'GET') {
+        return jsonResponse(200, {
+          data: [completedAssistant('vision ok')],
+          cursor: {},
+        })
+      }
+      if (path.includes('/api/session/ses_tmp') && method === 'DELETE') {
+        return { ok: true, status: 204, headers: { get: () => null }, text: async () => '', json: async () => null, arrayBuffer: async () => new ArrayBuffer(0) }
+      }
+      return jsonResponse(500, { _tag: 'UnknownError', message: `unexpected ${method} ${path}` })
+    })
+
+    const image = { type: 'file', mime: 'image/png', url: 'data:image/png;base64,aa', filename: 'shot.png' }
+    const result = await generateOpenCodeText({
+      buildOpenCodeUrl: () => 'http://127.0.0.1:4096',
+      getOpenCodeAuthHeaders: () => ({}),
+      providerID: 'opencode',
+      modelID: 'gpt-4o',
+      messages: [{ role: 'user', content: 'look', parts: [image] }],
+      clientFactory: () => OpenCode.make({
+        baseUrl: 'http://127.0.0.1:4096',
+        fetch: fetchImpl,
+      }),
+      ensureTempDirectory: async () => '/tmp/openchamber-llm',
+      forwardImageParts: true,
+    })
+
+    expect(result).toEqual({ text: 'vision ok', source: 'attachment-session' })
+    expect(calls.some((c) => c.startsWith('DELETE ') && c.includes('/api/session/ses_tmp'))).toBe(true)
+    const agentIdx = calls.findIndex((c) => c.includes('/api/agent/openchamber-llm'))
+    const promptIdx = calls.findIndex((c) => c.includes('/prompt'))
+    expect(agentIdx).toBeGreaterThanOrEqual(0)
+    expect(promptIdx).toBeGreaterThan(agentIdx)
   })
 })

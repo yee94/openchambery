@@ -13,10 +13,12 @@ import { registerManagedProcess, unregisterManagedProcess, reapOrphanedProcesses
 import {
   createLegacyOpenCodeBinaryError,
   fetchOpenCodeHealth,
+  fetchV1MigrationGate,
   isLegacyOpenCodeCliBasename,
   normalizeConfiguredOpencodeBinary as normalizeConfiguredOpencodeBinaryFromSidecar,
   parseOpenCodeListeningLine,
   resolveDetectedOpencodeCliPath,
+  type V1MigrationGateResult,
 } from './opencode-sidecar';
 
 const t = vscode.l10n.t;
@@ -46,6 +48,7 @@ type OpenCodeDebugInfo = {
   lastReadyAttempts: number | null;
   lastStartAttempts: number | null;
   version: string | null;
+  v1Migration: V1MigrationGateResult | null;
   secureConnection: boolean;
   authSource: 'user-env' | 'generated' | 'rotated' | null;
 };
@@ -66,6 +69,7 @@ export interface OpenCodeManager {
   isCliAvailable(): boolean;
   getDebugInfo(): OpenCodeDebugInfo;
   onStatusChange(callback: (status: ConnectionStatus, error?: string) => void): vscode.Disposable;
+  dispose(): void;
 }
 
 function generateSecureOpenCodePassword(): string {
@@ -317,8 +321,22 @@ function resolveOpencodeCliPath(): string | null {
 }
 
 type ReadyResult =
-  | { ok: true; baseUrl: string; elapsedMs: number; attempts: number; version: string | null }
-  | { ok: false; elapsedMs: number; attempts: number; version: null };
+  | {
+      ok: true;
+      baseUrl: string;
+      elapsedMs: number;
+      attempts: number;
+      version: string | null;
+      v1Migration: V1MigrationGateResult;
+    }
+  | {
+      ok: false;
+      elapsedMs: number;
+      attempts: number;
+      version: string | null;
+      v1Migration: V1MigrationGateResult | null;
+      error?: string;
+    };
 
 function normalizeBaseUrl(value: string): string {
   return value.replace(/\/+$/, '');
@@ -482,40 +500,93 @@ function applyLoginShellEnvSnapshot() {
 async function waitForReady(
   serverUrl: string,
   timeoutMs = 15000,
-  authHeaders: Record<string, string> = {}
+  authHeaders: Record<string, string> = {},
+  externalSignal?: AbortSignal,
 ): Promise<ReadyResult> {
   const outputChannel = vscode.window.createOutputChannel('OpenChamberManager');
   const start = Date.now();
   const candidates = getCandidateBaseUrls(serverUrl);
   let attempts = 0;
+  let lastVersion: string | null = null;
+  let lastMigration: V1MigrationGateResult | null = null;
+  let lastError: string | undefined;
 
   while (Date.now() - start < timeoutMs) {
+    if (externalSignal?.aborted) {
+      return {
+        ok: false,
+        elapsedMs: Date.now() - start,
+        attempts,
+        version: lastVersion,
+        v1Migration: lastMigration,
+        error: 'cancelled',
+      };
+    }
     for (const baseUrl of candidates) {
       attempts += 1;
+      let timeout: ReturnType<typeof setTimeout> | null = null;
+      const controller = new AbortController();
+      const onExternalAbort = () => controller.abort();
       try {
-        const controller = new AbortController();
-        const timeout = setTimeout(() => controller.abort(), 3000);
+        // One timer covers health + migration so a hung migration cannot outrun
+        // the attempt budget after health already cleared.
+        if (externalSignal) {
+          if (externalSignal.aborted) {
+            controller.abort();
+          } else {
+            externalSignal.addEventListener('abort', onExternalAbort, { once: true });
+          }
+        }
+        timeout = setTimeout(() => controller.abort(), 5000);
 
-        // OpenCode readiness check. Use /global/health for OpenCode 1.15.x compatibility.
         const health = await fetchOpenCodeHealth(baseUrl, authHeaders, controller.signal);
 
-        clearTimeout(timeout);
         outputChannel?.appendLine(
           `Health check to ${baseUrl}${health?.path ?? '/api/health'} returned ${health?.healthy === true ? 'healthy' : 'unhealthy'} with body: ${JSON.stringify(health ? { healthy: health.healthy, version: health.version } : null)}`
         );
 
-        if (health?.healthy === true) {
-          return { ok: true, baseUrl, elapsedMs: Date.now() - start, attempts, version: health.version };
+        if (health?.healthy !== true) {
+          lastError = 'OpenCode health endpoint returned unhealthy or rejected version';
+          continue;
         }
-      } catch {
-        // ignore
+        lastVersion = health.version;
+
+        const migration = await fetchV1MigrationGate(baseUrl, authHeaders, controller.signal);
+        lastMigration = migration;
+        outputChannel?.appendLine(
+          `V1 migration gate at ${baseUrl}: phase=${migration.phase} admit=${migration.admitTranscript}`
+        );
+
+        if (migration.admitTranscript) {
+          return {
+            ok: true,
+            baseUrl,
+            elapsedMs: Date.now() - start,
+            attempts,
+            version: health.version,
+            v1Migration: migration,
+          };
+        }
+        lastError = migration.error || `V1 migration is ${migration.phase}`;
+      } catch (error) {
+        lastError = error instanceof Error ? error.message : String(error);
+      } finally {
+        if (timeout) clearTimeout(timeout);
+        externalSignal?.removeEventListener('abort', onExternalAbort);
       }
     }
 
     await new Promise(r => setTimeout(r, 100));
   }
 
-  return { ok: false, elapsedMs: Date.now() - start, attempts, version: null };
+  return {
+    ok: false,
+    elapsedMs: Date.now() - start,
+    attempts,
+    version: lastVersion,
+    v1Migration: lastMigration,
+    error: lastError,
+  };
 }
 
 async function spawnManagedOpenCodeServer(
@@ -662,12 +733,21 @@ export function createOpenCodeManager(context: vscode.ExtensionContext): OpenCod
   let lastReadyAttempts: number | null = null;
   let lastStartAttempts: number | null = null;
   let version: string | null = null;
+  let v1Migration: V1MigrationGateResult | null = null;
+  let readyAbortController: AbortController | null = null;
 
   let detectedPort: number | null = null;
   let cliMissing = false;
   let cliPath: string | null = null;
 
   let pendingOperation: Promise<void> | null = null;
+
+  const cancelReadyWait = () => {
+    if (readyAbortController) {
+      readyAbortController.abort();
+      readyAbortController = null;
+    }
+  };
 
   const config = vscode.workspace.getConfiguration('openchamber');
   const configuredApiUrl = config.get<string>('apiUrl') || '';
@@ -767,7 +847,25 @@ export function createOpenCodeManager(context: vscode.ExtensionContext): OpenCod
 
     if (useConfiguredUrl && configuredApiUrl) {
       setStatus('connecting');
-      setStatus('connected');
+      cancelReadyWait();
+      readyAbortController = new AbortController();
+      const ready = await waitForReady(
+        configuredApiUrl,
+        READY_CHECK_TIMEOUT_MS,
+        getOpenCodeAuthHeaders(),
+        readyAbortController.signal,
+      );
+      readyAbortController = null;
+      lastReadyElapsedMs = ready.elapsedMs;
+      lastReadyAttempts = ready.attempts;
+      version = ready.version;
+      v1Migration = ready.v1Migration;
+      if (ready.ok) {
+        setStatus('connected');
+        return;
+      }
+      const detail = ready.error || 'External OpenCode failed health or V1 migration admission';
+      setStatus('error', t('Failed to connect to OpenCode: {0}', detail));
       return;
     }
 
@@ -841,14 +939,23 @@ export function createOpenCodeManager(context: vscode.ExtensionContext): OpenCod
       }
 
       if (server && server.url) {
-        // Validate readiness for the current workspace context.
-        const ready = await waitForReady(server.url, READY_CHECK_TIMEOUT_MS, getOpenCodeAuthHeaders());
+        // Health + V1 migration gate before connected (required/running/error block).
+        cancelReadyWait();
+        readyAbortController = new AbortController();
+        const ready = await waitForReady(
+          server.url,
+          READY_CHECK_TIMEOUT_MS,
+          getOpenCodeAuthHeaders(),
+          readyAbortController.signal,
+        );
+        readyAbortController = null;
         lastReadyElapsedMs = ready.elapsedMs;
         lastReadyAttempts = ready.attempts;
+        version = ready.version;
+        v1Migration = ready.v1Migration;
         if (ready.ok) {
           managedApiUrlOverride = ready.baseUrl;
           detectedPort = resolvePortFromUrl(ready.baseUrl);
-          version = ready.version;
           setStatus('connected');
         } else {
           try {
@@ -857,7 +964,7 @@ export function createOpenCodeManager(context: vscode.ExtensionContext): OpenCod
             // ignore
           }
           server = null;
-          throw new Error('Server started but health check failed');
+          throw new Error(ready.error || 'Server started but health/migration gate failed');
         }
       } else {
         throw new Error('Server started but URL is missing');
@@ -893,6 +1000,7 @@ export function createOpenCodeManager(context: vscode.ExtensionContext): OpenCod
 
   async function stopInternal(): Promise<void> {
     const portToKill = detectedPort;
+    cancelReadyWait();
 
     if (server) {
       try {
@@ -929,6 +1037,7 @@ export function createOpenCodeManager(context: vscode.ExtensionContext): OpenCod
     managedApiUrlOverride = null;
     detectedPort = null;
     version = null;
+    v1Migration = null;
     setStatus('disconnected');
   }
 
@@ -1060,6 +1169,7 @@ export function createOpenCodeManager(context: vscode.ExtensionContext): OpenCod
         lastReadyAttempts,
         lastStartAttempts,
         version,
+        v1Migration,
         secureConnection,
         authSource: managedPasswordSource || (userProvidedEnvPassword ? 'user-env' : null),
       };
@@ -1067,7 +1177,13 @@ export function createOpenCodeManager(context: vscode.ExtensionContext): OpenCod
     onStatusChange(callback) {
       listeners.add(callback);
       callback(status, lastError);
-      return new vscode.Disposable(() => listeners.delete(callback));
+      return new vscode.Disposable(() => {
+        listeners.delete(callback);
+      });
+    },
+    dispose() {
+      cancelReadyWait();
+      listeners.clear();
     },
   };
 }

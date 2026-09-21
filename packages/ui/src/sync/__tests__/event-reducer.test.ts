@@ -494,8 +494,20 @@ describe("applyDirectoryEvent (non-transcript production domains)", () => {
       type: "session.status",
       properties: { sessionID: "ses_1", status: { type: "busy" } as SessionStatus },
     } as Event, callbacks)).toBe(true)
+    expect(applyDirectoryEvent(draft, {
+      type: "session.execution.succeeded",
+      properties: { sessionID: "ses_1" },
+    } as Event, callbacks)).toBe(true)
+    expect(applyDirectoryEvent(draft, {
+      type: "session.execution.failed",
+      properties: { sessionID: "ses_1" },
+    } as Event, callbacks)).toBe(true)
+    expect(applyDirectoryEvent(draft, {
+      type: "session.execution.interrupted",
+      properties: { sessionID: "ses_1" },
+    } as Event, callbacks)).toBe(true)
 
-    expect(released).toEqual(["ses_1", "ses_1", "ses_1"])
+    expect(released).toEqual(["ses_1", "ses_1", "ses_1", "ses_1", "ses_1", "ses_1"])
   })
 
   test("session.error records session_error_at; idle does not invent error; busy/retry clears it", () => {

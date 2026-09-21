@@ -1,3 +1,8 @@
+import {
+  getSessionGoalCapability,
+  isSessionGoalSupported,
+  sessionGoalUnavailableMessage,
+} from '../session-goal/capability.js';
 import { MANAGED_SCHEDULED_TASK_TOOL_PATH } from './managed-tool-contract.js';
 
 const MAX_ID_LENGTH = 512;
@@ -263,6 +268,17 @@ export const registerScheduledTaskToolRoute = (app, dependencies) => {
         : new Set(['taskId', 'name', 'enabled', 'schedule', 'execution']), 'input');
       validateTaskInputFields(input);
 
+      const refuseGoalExecution = (execution) => {
+        if (execution?.goalEnabled !== true || isSessionGoalSupported()) {
+          return null;
+        }
+        const capability = getSessionGoalCapability();
+        const error = new Error(sessionGoalUnavailableMessage(capability));
+        error.statusCode = 501;
+        error.capability = capability;
+        return error;
+      };
+
       if (operation === 'update') {
         const patch = {
           ...(input.name === undefined ? {} : { name: input.name }),
@@ -270,6 +286,8 @@ export const registerScheduledTaskToolRoute = (app, dependencies) => {
           ...(input.schedule === undefined ? {} : { schedule: input.schedule }),
           ...(input.execution === undefined ? {} : { execution: input.execution }),
         };
+        const goalRefusal = refuseGoalExecution(patch.execution);
+        if (goalRefusal) throw goalRefusal;
         const patched = await projectConfigRuntime.patchScheduledTask(project.id, taskID, patch);
         if (!patched?.task) return res.status(404).json({ error: 'Schedule not found' });
         const schedulerSynced = await syncAfterMutation(project.id, operation);
@@ -285,6 +303,8 @@ export const registerScheduledTaskToolRoute = (app, dependencies) => {
       if (operation === 'create' && (!execution.providerID || !execution.modelID)) {
         throw new Error('execution.providerID and execution.modelID are required from the user message or input');
       }
+      const goalRefusal = refuseGoalExecution(execution);
+      if (goalRefusal) throw goalRefusal;
       const taskInput = {
         ...(input.name === undefined ? {} : { name: input.name }),
         ...(input.enabled === undefined ? {} : { enabled: input.enabled }),
@@ -296,7 +316,17 @@ export const registerScheduledTaskToolRoute = (app, dependencies) => {
       return res.status(201).json({ projectId: project.id, created: upserted.created, task: upserted.task, tasks: upserted.tasks, schedulerSynced });
     } catch (error) {
       const statusCode = error?.statusCode || (isValidationError(error?.message || '') ? 400 : 500);
-      if (statusCode >= 500) logger.error?.('[ScheduledTaskTool] request failed', { operation: req.body?.operation, statusCode });
+      if (statusCode >= 500 && statusCode !== 501) {
+        logger.error?.('[ScheduledTaskTool] request failed', { operation: req.body?.operation, statusCode });
+      }
+      if (statusCode === 501) {
+        const capability = error?.capability || getSessionGoalCapability();
+        return res.status(501).json({
+          error: error?.message || sessionGoalUnavailableMessage(capability),
+          reason: capability.reason,
+          capability,
+        });
+      }
       return res.status(statusCode).json({ error: statusCode >= 500 ? 'Failed to manage schedule' : (error?.message || 'Invalid schedule request') });
     }
   });

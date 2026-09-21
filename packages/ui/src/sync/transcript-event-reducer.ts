@@ -416,21 +416,247 @@ function projectionPartID(messageID: string, type: string, ordinal: number): str
   return `${messageID}:${type}:${ordinal}`
 }
 
+type AssistantBootstrapMeta = {
+  /** Envelope wall-clock (`eventCreated`) or other positive created ms. */
+  created?: number
+  agent?: string
+  modelID?: string
+  providerID?: string
+  variant?: string
+  model?: { providerID?: string; modelID?: string; variant?: string }
+}
+
+/**
+ * Resolve a positive created timestamp for live assistant rows.
+ * `created: 0` breaks turn attribution: projectTurnRecords falls back to
+ * time order and treats 0 as earlier than every real user turn, so the live
+ * assistant is dropped from the turn tree.
+ */
+function resolveAssistantCreatedTime(meta?: AssistantBootstrapMeta): number {
+  if (typeof meta?.created === "number" && Number.isFinite(meta.created) && meta.created > 0) {
+    return meta.created
+  }
+  return Date.now()
+}
+
+function readEventCreated(props: Record<string, unknown>): number | undefined {
+  const value = props.eventCreated
+  return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : undefined
+}
+
 function ensureAssistantMessage(
   draft: TranscriptEventDraft,
   sessionID: string,
   messageID: string,
+  meta?: AssistantBootstrapMeta,
 ): boolean {
   const messages = draft.message[sessionID]
-  if (messages && conversationIndexOf(messages, messageID) >= 0) return false
+  const index = messages ? conversationIndexOf(messages, messageID) : -1
+  if (index >= 0 && messages) {
+    // Repair placeholder rows created before step.started carried real metadata.
+    const existing = messages[index]!
+    const existingCreated = existing.time?.created
+    let changed = false
+    const next = { ...existing, time: { ...existing.time } } as Message
+    if (
+      (existingCreated === undefined || existingCreated <= 0)
+      && typeof meta?.created === "number"
+      && meta.created > 0
+    ) {
+      next.time = { ...next.time, created: meta.created }
+      changed = true
+    }
+    if (!readNonEmptyString((existing as { agent?: unknown }).agent) && meta?.agent) {
+      next.agent = meta.agent
+      changed = true
+    }
+    if (!readNonEmptyString((existing as { modelID?: unknown }).modelID) && meta?.modelID) {
+      next.modelID = meta.modelID
+      changed = true
+    }
+    if (!readNonEmptyString((existing as { providerID?: unknown }).providerID) && meta?.providerID) {
+      next.providerID = meta.providerID
+      changed = true
+    }
+    if (!readNonEmptyString((existing as { variant?: unknown }).variant) && meta?.variant) {
+      next.variant = meta.variant
+      changed = true
+    }
+    if (!(existing as { model?: unknown }).model && meta?.model) {
+      next.model = meta.model
+      changed = true
+    }
+    if (!changed) return false
+    const nextMessages = [...messages]
+    nextMessages[index] = next
+    draft.message[sessionID] = nextMessages
+    return true
+  }
   const info = {
     id: messageID,
     sessionID,
     role: "assistant",
-    time: { created: 0 },
+    time: { created: resolveAssistantCreatedTime(meta) },
+    ...(meta?.agent ? { agent: meta.agent } : {}),
+    ...(meta?.modelID ? { modelID: meta.modelID } : {}),
+    ...(meta?.providerID ? { providerID: meta.providerID } : {}),
+    ...(meta?.variant ? { variant: meta.variant } : {}),
+    ...(meta?.model ? { model: meta.model } : {}),
   } as Message
   draft.message[sessionID] = messages ? [...messages, info] : [info]
   return true
+}
+
+function modelMetaFromStep(props: Record<string, unknown>): AssistantBootstrapMeta {
+  const agent = asString(props.agent)
+  const model = asRecord(props.model)
+  const modelID = model ? asString(model.id) ?? asString(model.modelID) : undefined
+  const providerID = model ? asString(model.providerID) : undefined
+  const variant = model ? asString(model.variant) : undefined
+  return {
+    ...(agent ? { agent } : {}),
+    ...(modelID ? { modelID } : {}),
+    ...(providerID ? { providerID } : {}),
+    ...(variant ? { variant } : {}),
+    ...(modelID || providerID || variant
+      ? {
+        model: {
+          ...(providerID ? { providerID } : {}),
+          ...(modelID ? { modelID } : {}),
+          ...(variant ? { variant } : {}),
+        },
+      }
+      : {}),
+  }
+}
+
+function readTokenUsage(value: unknown): Message["tokens"] | undefined {
+  const record = asRecord(value)
+  if (!record) return undefined
+  const cache = asRecord(record.cache)
+  const tokens: NonNullable<Message["tokens"]> = {
+    ...(typeof record.input === "number" ? { input: record.input } : {}),
+    ...(typeof record.output === "number" ? { output: record.output } : {}),
+    ...(typeof record.reasoning === "number" ? { reasoning: record.reasoning } : {}),
+    ...(cache
+      ? {
+        cache: {
+          ...(typeof cache.read === "number" ? { read: cache.read } : {}),
+          ...(typeof cache.write === "number" ? { write: cache.write } : {}),
+        },
+      }
+      : {}),
+  }
+  return Object.keys(tokens).length > 0 ? tokens : undefined
+}
+
+function patchAssistantMessage(
+  draft: TranscriptEventDraft,
+  sessionID: string,
+  messageID: string,
+  patch: Message,
+): boolean {
+  const messages = draft.message[sessionID]
+  if (!messages) {
+    draft.message[sessionID] = [patch]
+    return true
+  }
+  const index = conversationIndexOf(messages, messageID)
+  if (index < 0) {
+    draft.message[sessionID] = [...messages, patch]
+    return true
+  }
+  const existing = messages[index]!
+  const merged = mergeTranscriptMessageUpdate(existing, patch)
+  if (areMessageUpdateFieldsEqual(existing, merged) && existing.time?.created === merged.time?.created) {
+    return false
+  }
+  const next = [...messages]
+  next[index] = merged
+  draft.message[sessionID] = next
+  return true
+}
+
+function existingAssistantCreated(
+  draft: TranscriptEventDraft,
+  sessionID: string,
+  messageID: string,
+): number | undefined {
+  const messages = draft.message[sessionID]
+  if (!messages) return undefined
+  const index = conversationIndexOf(messages, messageID)
+  if (index < 0) return undefined
+  const created = messages[index]?.time?.created
+  return typeof created === "number" && Number.isFinite(created) && created > 0 ? created : undefined
+}
+
+function applyStepLifecycle(
+  draft: TranscriptEventDraft,
+  type: string,
+  sessionID: string,
+  messageID: string,
+  props: Record<string, unknown>,
+): boolean {
+  const eventCreated = readEventCreated(props)
+  if (type === "session.step.started") {
+    return ensureAssistantMessage(draft, sessionID, messageID, {
+      created: eventCreated,
+      ...modelMetaFromStep(props),
+    })
+  }
+  if (type === "session.step.ended") {
+    ensureAssistantMessage(draft, sessionID, messageID, { created: eventCreated })
+    const finish = asString(props.finish)
+    const tokens = readTokenUsage(props.tokens)
+    const cost = typeof props.cost === "number" && Number.isFinite(props.cost) ? props.cost : undefined
+    const created = existingAssistantCreated(draft, sessionID, messageID)
+      ?? resolveAssistantCreatedTime({ created: eventCreated })
+    const patch = {
+      id: messageID,
+      sessionID,
+      role: "assistant",
+      time: {
+        created,
+        ...(eventCreated ? { completed: eventCreated } : {}),
+      },
+      ...(finish ? { finish } : {}),
+      ...(tokens ? { tokens } : {}),
+      ...(cost !== undefined ? { cost } : {}),
+    } as Message
+    return patchAssistantMessage(draft, sessionID, messageID, patch)
+  }
+  if (type === "session.step.failed") {
+    ensureAssistantMessage(draft, sessionID, messageID, { created: eventCreated })
+    const error = asRecord(props.error)
+    const tokens = readTokenUsage(props.tokens)
+    const cost = typeof props.cost === "number" && Number.isFinite(props.cost) ? props.cost : undefined
+    const created = existingAssistantCreated(draft, sessionID, messageID)
+      ?? resolveAssistantCreatedTime({ created: eventCreated })
+    const patch = {
+      id: messageID,
+      sessionID,
+      role: "assistant",
+      time: {
+        created,
+        ...(eventCreated ? { completed: eventCreated } : {}),
+      },
+      finish: "error",
+      ...(error
+        ? {
+          error: {
+            type: asString(error.type) ?? "error",
+            message: asString(error.message) ?? "",
+          },
+        }
+        : asString(props.error)
+          ? { error: { type: "error", message: asString(props.error)! } }
+          : {}),
+      ...(tokens ? { tokens } : {}),
+      ...(cost !== undefined ? { cost } : {}),
+    } as Message
+    return patchAssistantMessage(draft, sessionID, messageID, patch)
+  }
+  return false
 }
 
 function toolOutput(content: unknown): string | undefined {
@@ -465,8 +691,9 @@ function upsertTextLikePart(
   type: "text" | "reasoning",
   ordinal: number,
   nextText: string | ((current: string) => string),
+  meta?: AssistantBootstrapMeta,
 ): boolean {
-  ensureAssistantMessage(draft, sessionID, messageID)
+  ensureAssistantMessage(draft, sessionID, messageID, meta)
   const parts = draft.part[messageID] ? [...draft.part[messageID]!] : []
   let index = findTypedPart(parts, type, messageID, ordinal)
   if (index < 0) {
@@ -502,8 +729,9 @@ function upsertToolPart(
   toolID: string,
   name: string | undefined,
   update: (part: Part) => Part,
+  meta?: AssistantBootstrapMeta,
 ): boolean {
-  ensureAssistantMessage(draft, sessionID, messageID)
+  ensureAssistantMessage(draft, sessionID, messageID, meta)
   const parts = draft.part[messageID] ? [...draft.part[messageID]!] : []
   let index = findToolIndex(parts, toolID)
   if (index < 0) {
@@ -538,30 +766,36 @@ function applyV2LiveOverlay(draft: TranscriptEventDraft, event: Event): Director
   const messageID = asString(props.assistantMessageID)
   if (!sessionID || !messageID) return false
   const ordinal = typeof props.ordinal === "number" ? props.ordinal : 0
+  const bootstrap: AssistantBootstrapMeta = { created: readEventCreated(props) }
+
+  // Official step lifecycle carries finish/cost/tokens and identity metadata.
+  if (type === "session.step.started" || type === "session.step.ended" || type === "session.step.failed") {
+    return applyStepLifecycle(draft, type, sessionID, messageID, props)
+  }
 
   if (type === "session.text.started") {
-    return upsertTextLikePart(draft, sessionID, messageID, "text", ordinal, "")
+    return upsertTextLikePart(draft, sessionID, messageID, "text", ordinal, "", bootstrap)
   }
   if (type === "session.text.delta") {
     const delta = typeof props.delta === "string" ? props.delta : ""
     if (!delta) return false
-    return upsertTextLikePart(draft, sessionID, messageID, "text", ordinal, (current) => current + delta)
+    return upsertTextLikePart(draft, sessionID, messageID, "text", ordinal, (current) => current + delta, bootstrap)
   }
   if (type === "session.text.ended") {
     const text = typeof props.text === "string" ? props.text : ""
-    return upsertTextLikePart(draft, sessionID, messageID, "text", ordinal, text)
+    return upsertTextLikePart(draft, sessionID, messageID, "text", ordinal, text, bootstrap)
   }
   if (type === "session.reasoning.started") {
-    return upsertTextLikePart(draft, sessionID, messageID, "reasoning", ordinal, "")
+    return upsertTextLikePart(draft, sessionID, messageID, "reasoning", ordinal, "", bootstrap)
   }
   if (type === "session.reasoning.delta") {
     const delta = typeof props.delta === "string" ? props.delta : ""
     if (!delta) return false
-    return upsertTextLikePart(draft, sessionID, messageID, "reasoning", ordinal, (current) => current + delta)
+    return upsertTextLikePart(draft, sessionID, messageID, "reasoning", ordinal, (current) => current + delta, bootstrap)
   }
   if (type === "session.reasoning.ended") {
     const text = typeof props.text === "string" ? props.text : ""
-    return upsertTextLikePart(draft, sessionID, messageID, "reasoning", ordinal, text)
+    return upsertTextLikePart(draft, sessionID, messageID, "reasoning", ordinal, text, bootstrap)
   }
 
   const toolID = asString(props.id)
@@ -569,7 +803,7 @@ function applyV2LiveOverlay(draft: TranscriptEventDraft, event: Event): Director
   const name = asString(props.name)
 
   if (type === "session.tool.input.started") {
-    return upsertToolPart(draft, sessionID, messageID, toolID, name, (part) => part)
+    return upsertToolPart(draft, sessionID, messageID, toolID, name, (part) => part, bootstrap)
   }
   if (type === "session.tool.input.delta") {
     const delta = typeof props.delta === "string" ? props.delta : ""
@@ -581,14 +815,14 @@ function applyV2LiveOverlay(draft: TranscriptEventDraft, event: Event): Director
       }
       const input = typeof state.input === "string" ? state.input + delta : delta
       return { ...part, state: { ...state, status: "pending", input } } as Part
-    })
+    }, bootstrap)
   }
   if (type === "session.tool.input.ended") {
     const text = typeof props.text === "string" ? props.text : ""
     return upsertToolPart(draft, sessionID, messageID, toolID, name, (part) => {
       const state = asRecord((part as { state?: unknown }).state) ?? {}
       return { ...part, state: { ...state, input: text } } as Part
-    })
+    }, bootstrap)
   }
   if (type === "session.tool.called") {
     return upsertToolPart(draft, sessionID, messageID, toolID, name, (part) => {
@@ -602,7 +836,7 @@ function applyV2LiveOverlay(draft: TranscriptEventDraft, event: Event): Director
           metadata: asRecord(state.metadata) ?? {},
         },
       } as Part
-    })
+    }, bootstrap)
   }
   if (type === "session.tool.progress") {
     return upsertToolPart(draft, sessionID, messageID, toolID, name, (part) => {
@@ -611,7 +845,7 @@ function applyV2LiveOverlay(draft: TranscriptEventDraft, event: Event): Director
         ...part,
         state: { ...state, metadata: asRecord(props.metadata) ?? asRecord(state.metadata) ?? {} },
       } as Part
-    })
+    }, bootstrap)
   }
   if (type === "session.tool.success") {
     return upsertToolPart(draft, sessionID, messageID, toolID, name, (part) => {
@@ -626,7 +860,7 @@ function applyV2LiveOverlay(draft: TranscriptEventDraft, event: Event): Director
           metadata: asRecord(props.metadata) ?? asRecord(state.metadata) ?? {},
         },
       } as Part
-    })
+    }, bootstrap)
   }
   if (type === "session.tool.failed") {
     return upsertToolPart(draft, sessionID, messageID, toolID, name, (part) => {
@@ -643,7 +877,7 @@ function applyV2LiveOverlay(draft: TranscriptEventDraft, event: Event): Director
           metadata: asRecord(props.metadata) ?? asRecord(state.metadata) ?? {},
         },
       } as Part
-    })
+    }, bootstrap)
   }
   return false
 }
