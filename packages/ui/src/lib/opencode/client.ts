@@ -1,5 +1,7 @@
-import { ClientError, isPermissionNotFoundError, OpenCode } from "@opencode-ai/client";
+import { ClientError, isPermissionNotFoundError, OpenCode } from "@opencode/client";
+import type { OpenCodeClient as RawOpenCodeClient } from "@opencode/client";
 import type { FilesAPI } from "../api/types";
+// OpenCodeClient from v2-types is the shimmed callable-session.message surface.
 import { getDesktopHomeDirectory } from "../desktop";
 import { readInstanceScopedItem } from "../instanceScopedStorage";
 import type {
@@ -62,11 +64,31 @@ import { fetchSessionProjectionPage } from "@/sync/session-projection-api";
 import { postSessionCompact } from "@/sync/session-compaction-api";
 import { postSessionRevertClear, postSessionRevertStage } from "@/sync/session-revert-api";
 import { postSessionPermissionReply } from "@/sync/session-permission-api";
+import { answersToFormAnswer, mapV2QuestionRequest } from "@/sync/v2-runtime";
 import {
   assertProviderCircuitClosed,
   recordProviderSuccess,
   recordProviderError,
 } from "./provider-tracker";
+
+/** Cache form field keys from list so reply can map string[][] onto form answer keys. */
+const pendingFormFieldKeys = new Map<string, string[]>();
+
+function rememberFormFieldKeys(formID: string, fields: ReadonlyArray<{ key?: unknown }> | undefined): void {
+  if (!formID) return;
+  const keys = (fields ?? [])
+    .map((field) => (typeof field?.key === "string" ? field.key : ""))
+    .filter((key) => key.length > 0);
+  if (keys.length > 0) {
+    pendingFormFieldKeys.set(formID, keys);
+  }
+}
+
+function takeFormFieldKeys(formID: string): string[] | undefined {
+  const keys = pendingFormFieldKeys.get(formID);
+  pendingFormFieldKeys.delete(formID);
+  return keys;
+}
 
 // Use relative path by default (works with both dev and nginx proxy server)
 // Can be overridden with VITE_OPENCODE_URL for absolute URLs in special deployments
@@ -256,12 +278,38 @@ const mergeAbortSignals = (signals: AbortSignal[]): { signal: AbortSignal; clean
   };
 };
 
+/**
+ * Official 2.x nests exact message lookup under `session.message.get`.
+ * OpenChamber callers still use `session.message(input)`.
+ */
+const withSessionMessageCompat = (client: RawOpenCodeClient): OpenCodeClient => {
+  const messageApi = client.session?.message;
+  const messageGet = messageApi && typeof messageApi === 'object' && typeof messageApi.get === 'function'
+    ? messageApi.get.bind(messageApi)
+    : null;
+  if (!messageGet) {
+    return client as OpenCodeClient;
+  }
+  const messageCompat = Object.assign(
+    (input: Parameters<typeof messageGet>[0], requestOptions?: Parameters<typeof messageGet>[1]) =>
+      messageGet(input, requestOptions),
+    messageApi,
+  );
+  return {
+    ...client,
+    session: {
+      ...client.session,
+      message: messageCompat as OpenCodeClient['session']['message'],
+    },
+  };
+};
+
 const createRuntimeOpencodeClient = (config: { baseUrl: string; headers?: HeadersInit }): OpenCodeClient => {
-  return OpenCode.make({
+  return withSessionMessageCompat(OpenCode.make({
     baseUrl: config.baseUrl,
     ...(config.headers ? { headers: config.headers } : {}),
     fetch: runtimeFetch,
-  });
+  }));
 };
 
 interface App {
@@ -630,9 +678,10 @@ class OpencodeService {
 
     if (!candidates.size) {
       try {
-        const project = await this.client.project.current(locationOf(this.currentDirectory));
-        addCandidate(project.directory);
-        addCandidate(project.canonical);
+        // Official 2.x dropped project.current; location.get carries project id/paths.
+        const location = await this.client.location.get(locationOf(this.currentDirectory));
+        addCandidate(location?.project?.directory);
+        addCandidate(location?.project?.canonical);
       } catch (error) {
         console.debug('Failed to load project info:', error);
       }
@@ -700,12 +749,12 @@ class OpencodeService {
     const requestDirectory = this.normalizeCandidatePath(directory) ?? this.currentDirectory;
     void params?.metadata;
     if (params?.parentID) {
+      // Official 2.x SessionForkInput is { sessionID, before? } (no boundary).
       const forked = await this.client.session.fork({
         sessionID: params.parentID,
-        boundary: { type: "through" },
       });
       if (params.title) {
-        await this.client.session.rename({ sessionID: forked.id, title: params.title });
+        await this.client.session.update({ sessionID: forked.id, title: params.title });
         return projectSession(await this.client.session.get({ sessionID: forked.id }));
       }
       return projectSession(forked);
@@ -748,7 +797,7 @@ class OpencodeService {
     if (patch.title === undefined) {
       throw v2CapabilityUnavailable('session.update');
     }
-    await this.client.session.rename({ sessionID: id, title: patch.title });
+    await this.client.session.update({ sessionID: id, title: patch.title });
     return projectSession(await this.client.session.get({ sessionID: id }));
   }
 
@@ -774,8 +823,8 @@ class OpencodeService {
     },
     options?: { signal?: AbortSignal },
   ): Promise<SnapshotFileDiff[]> {
-    // The pinned @opencode-ai/client preview does not expose `session.diff`
-    // yet; call the v2 route directly (Host proxies /api/* to the runtime).
+    // Prefer the Host-proxied HTTP route so optional messageID scoping stays
+    // available even when SessionDiffInput is session-scoped only.
     const requestDirectory = this.normalizeCandidatePath(params.directory) ?? this.currentDirectory;
     const messageID = typeof params.messageID === 'string' && params.messageID.trim().length > 0
       ? params.messageID.trim()
@@ -1090,21 +1139,20 @@ class OpencodeService {
       }
     }
 
+    // SessionCommandInput is { sessionID, name, text, files?, agents?, skills? }.
+    // model/agent/command/arguments/id are not on the 2.0.12 surface; command() returns void.
     void params.directory;
-    const inbox = await this.client.session.command({
+    void params.providerID;
+    void params.modelID;
+    void params.agent;
+    void params.variant;
+    await this.client.session.command({
       sessionID: params.id,
-      id: tempMessageId,
-      command: params.command,
-      arguments: params.arguments ?? '',
-      ...(params.agent ? { agent: params.agent } : {}),
-      model: {
-        id: params.modelID,
-        providerID: params.providerID,
-        ...(params.variant ? { variant: params.variant } : {}),
-      },
+      name: params.command,
+      text: params.arguments ?? '',
       ...(files.length > 0 ? { files } : {}),
     });
-    return inbox.id || tempMessageId;
+    return tempMessageId;
   }
 
   async abortSession(id: string): Promise<boolean> {
@@ -1190,11 +1238,10 @@ class OpencodeService {
       messageId: messageId ?? null,
       hasDirectory: Boolean(this.normalizeCandidatePath(directory) ?? this.currentDirectory),
     });
+    // Official 2.x SessionForkInput: { sessionID, before? } (before = messageID).
     const forkedSession = await this.client.session.fork({
       sessionID: sessionId,
-      boundary: messageId
-        ? { type: "before", messageID: messageId }
-        : { type: "through" },
+      ...(messageId ? { before: messageId } : {}),
     });
     console.info('[session-fork] SDK request completed', {
       sessionId,
@@ -1485,7 +1532,7 @@ class OpencodeService {
     return merged;
   }
 
-  // Questions ("ask" tool)
+  // Questions UI contract — backed by official 2.0.12 forms (client.question is gone).
   async replyToQuestion(requestId: string, answers: string[] | string[][], directory?: string | null, sessionID?: string): Promise<boolean> {
     const normalizedAnswers: string[][] = (() => {
       if (!Array.isArray(answers) || answers.length === 0) {
@@ -1499,23 +1546,25 @@ class OpencodeService {
 
     void directory;
     if (!sessionID) {
-      throw v2CapabilityUnavailable('question.reply (sessionID required)');
+      throw v2CapabilityUnavailable('session.form.reply (sessionID required)');
     }
-    await this.client.question.reply({
-      requestID: requestId,
+    const fieldKeys = takeFormFieldKeys(requestId);
+    await this.client.session.form.reply({
       sessionID,
-      answers: normalizedAnswers,
+      formID: requestId,
+      answer: answersToFormAnswer(normalizedAnswers, fieldKeys),
     });
     return true;
   }
 
   async rejectQuestion(requestId: string, sessionID?: string): Promise<boolean> {
     if (!sessionID) {
-      throw v2CapabilityUnavailable('question.reject (sessionID required)');
+      throw v2CapabilityUnavailable('session.form.cancel (sessionID required)');
     }
-    await this.client.question.reject({
-      requestID: requestId,
+    pendingFormFieldKeys.delete(requestId);
+    await this.client.session.form.cancel({
       sessionID,
+      formID: requestId,
     });
     return true;
   }
@@ -1524,16 +1573,28 @@ class OpencodeService {
    * Throws on fetch/SDK failure. See {@link listPendingPermissions} for
    * rationale — resync paths preserve state on throw via outer try/catch
    * instead of conflating failure with an empty server response.
+   *
+   * Official 2.0.12: pending interactive prompts are forms (`client.form.list`),
+   * mapped onto the existing QuestionRequest UI contract.
    */
   async listPendingQuestions(options?: { directories?: Array<string | null | undefined> }): Promise<QuestionRequest[]> {
     const fetches: Array<Promise<QuestionRequest[]>> = [];
 
     const fetchForDirectory = async (directory?: string | null): Promise<QuestionRequest[]> => {
-      const result = await this.client.question.request.list(locationOf(directory));
+      const result = await this.client.form.list(locationOf(directory));
       if (!result || !Array.isArray(result.data)) {
-        throw new Error(`question.list failed: ${formatSdkError(result)}`);
+        throw new Error(`form.list failed: ${formatSdkError(result)}`);
       }
-      return result.data as unknown as QuestionRequest[];
+      return result.data.map((form) => {
+        rememberFormFieldKeys(form.id, form.fields);
+        return mapV2QuestionRequest({
+          id: form.id,
+          sessionID: form.sessionID,
+          title: form.title,
+          fields: form.fields,
+          ...(form.metadata ? { metadata: form.metadata as Record<string, unknown> } : {}),
+        });
+      });
     };
 
     // Try unscoped first (server may return global pending items).
@@ -1793,19 +1854,19 @@ class OpencodeService {
     }
   }
 
-  // Command Management
+  // Command Management — CommandInfo is only { name, description? } on 2.0.12.
   async listCommands(): Promise<Array<{ name: string; description?: string; agent?: string; model?: string; source?: string }>> {
     const response = await this.client.command.list(locationOf(this.currentDirectory));
     const commands = response.data;
     if (!Array.isArray(commands)) {
       throw new Error(`command.list failed: ${formatSdkError(response)}`);
     }
-    // Return only lightweight info for autocomplete
+    // Return only lightweight info for autocomplete; agent/model stay optional undefined.
     return commands.map((cmd) => ({
       name: cmd.name,
       description: cmd.description,
-      agent: cmd.agent,
-      model: cmd.model ? `${cmd.model.providerID}/${cmd.model.id}` : undefined,
+      agent: undefined,
+      model: undefined,
       source: undefined,
       // Intentionally excluding template to keep memory usage low
     }));
@@ -1817,14 +1878,14 @@ class OpencodeService {
     if (!Array.isArray(commands)) {
       throw new Error(`command.list failed: ${formatSdkError(response)}`);
     }
-    // Return full command details including template
+    // UI contract keeps optional agent/model/template; 2.0.12 CommandInfo has neither.
     return commands.map((cmd) => ({
       name: cmd.name,
       description: cmd.description,
-      agent: cmd.agent,
-      model: cmd.model ? `${cmd.model.providerID}/${cmd.model.id}` : undefined,
+      agent: undefined,
+      model: undefined,
       source: undefined,
-      template: cmd.template,
+      template: '',
     }));
   }
 
@@ -1839,7 +1900,8 @@ class OpencodeService {
       const skills: Array<{ name: string; description?: string; location: string; content?: string }> = [];
       for (const item of data) {
           const name = typeof item.name === 'string' ? item.name.trim() : '';
-          const location = typeof item.location === 'string' ? item.location : '';
+          // SkillInfo uses `path`, not `location`.
+          const location = typeof item.path === 'string' ? item.path : '';
           if (!name || !location) {
             continue;
           }
@@ -1863,10 +1925,10 @@ class OpencodeService {
         if (command) {
           return {
             name: command.name,
-            template: command.template,
+            template: '',
             description: command.description,
-            agent: command.agent,
-            model: command.model ? `${command.model.providerID}/${command.model.id}` : undefined,
+            agent: undefined,
+            model: undefined,
           };
         }
       }

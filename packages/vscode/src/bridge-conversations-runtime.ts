@@ -1,5 +1,5 @@
-import { ClientError, OpenCode } from '@opencode-ai/client';
-import type { JsonValue, SessionInfo } from '@opencode-ai/client';
+import { ClientError, OpenCode } from '@opencode/client';
+import type { JsonValue, SessionInfo } from '@opencode/client';
 import type { BridgeContext, BridgeResponse } from './bridge';
 
 // =========================================================================

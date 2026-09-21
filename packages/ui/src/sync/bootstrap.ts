@@ -154,7 +154,10 @@ export async function bootstrapDirectory(input: {
   const phase1Results = await Promise.allSettled([
     seededProject
       ? Promise.resolve()
-      : retry(() => sdk.project.current(locationOf(directory)).then((current) => set({ project: current.id }))),
+      : retry(() => sdk.location.get(locationOf(directory)).then((location) => {
+          const id = location?.project?.id
+          if (id) set({ project: id })
+        })),
     retry(() => sdk.config.get(locationOf(directory)).then((entries) => {
       const config = mergeConfigDocuments(entries)
       set({ config })
@@ -244,11 +247,18 @@ export async function bootstrapDirectory(input: {
       const beforeSignatures = new Map(
         Object.entries(before.question ?? {}).map(([sessionID, questions]) => [sessionID, requestSignature(questions)]),
       )
-      const listed = await sdk.question.request.list(locationOf(directory))
+      // Official 2.0.12: pending interactive prompts are forms, not questions.
+      const listed = await sdk.form.list(locationOf(directory))
       const grouped = groupBySession(
         listed.data
-          .filter((q): q is NonNullable<typeof q> => !!q?.id && !!q?.sessionID)
-          .map(mapV2QuestionRequest),
+          .filter((form): form is NonNullable<typeof form> => !!form?.id && !!form?.sessionID)
+          .map((form) => mapV2QuestionRequest({
+            id: form.id,
+            sessionID: form.sessionID,
+            title: form.title,
+            fields: form.fields,
+            ...(form.metadata ? { metadata: form.metadata as Record<string, unknown> } : {}),
+          })),
       )
       const current = getState()
       const merged = { ...current.question }

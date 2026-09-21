@@ -39,10 +39,10 @@ test('prepare and verify scripts no longer pull 1.18.x or name the binary openco
   assert.doesNotMatch(prepare, /binary:\s*'opencode'/);
 });
 
-test('ssh-manager installs @opencode-ai/cli and probes opencode2', () => {
+test('ssh-manager installs @opencode/cli and probes opencode2', () => {
   const ssh = fs.readFileSync(path.join(scriptsDir, '..', 'ssh-manager.mjs'), 'utf8');
   const main = fs.readFileSync(path.join(scriptsDir, '..', 'main.mjs'), 'utf8');
-  assert.match(ssh, /@opencode-ai\/cli/);
+  assert.match(ssh, /@opencode\/cli/);
   assert.match(ssh, /opencode2 --version/);
   assert.doesNotMatch(ssh, /OPENCODE_NPM_PACKAGE = 'opencode-ai'/);
   assert.doesNotMatch(ssh, /'opencode --version/);
@@ -51,16 +51,16 @@ test('ssh-manager installs @opencode-ai/cli and probes opencode2', () => {
 });
 
 test('npm platform package names map from GitHub artifact variants', () => {
-  assert.equal(npmPackageForOpenCode2('darwin', { opencode: 'arm64' }), '@opencode-ai/cli-darwin-arm64');
-  assert.equal(npmPackageForOpenCode2('darwin', { opencode: 'x64' }), '@opencode-ai/cli-darwin-x64-baseline');
-  assert.equal(npmPackageForOpenCode2('win32', { opencode: 'x64' }), '@opencode-ai/cli-windows-x64-baseline');
-  assert.equal(npmPackageForOpenCode2('linux', { opencode: 'arm64' }), '@opencode-ai/cli-linux-arm64');
+  assert.equal(npmPackageForOpenCode2('darwin', { opencode: 'arm64' }), '@opencode/cli-darwin-arm64');
+  assert.equal(npmPackageForOpenCode2('darwin', { opencode: 'x64' }), '@opencode/cli-darwin-x64-baseline');
+  assert.equal(npmPackageForOpenCode2('win32', { opencode: 'x64' }), '@opencode/cli-windows-x64-baseline');
+  assert.equal(npmPackageForOpenCode2('linux', { opencode: 'arm64' }), '@opencode/cli-linux-arm64');
   assert.throws(() => npmPackageForOpenCode2('freebsd', { opencode: 'x64' }));
 });
 
 test('parseOpenCode2VersionOutput handles v2 and 1.x output formats', () => {
   // v2: 首个 token 是二进制名，版本带 v 前缀。
-  assert.equal(parseOpenCode2VersionOutput('opencode2 v0.0.0-next-17444\n'), '0.0.0-next-17444');
+  assert.equal(parseOpenCode2VersionOutput('opencode2 v2.0.12\n'), '2.0.12');
   assert.equal(parseOpenCode2VersionOutput('opencode2 v1.2.3-beta.1'), '1.2.3-beta.1');
   // 1.x: 首 token 即版本号。
   assert.equal(parseOpenCode2VersionOutput('1.18.18\n'), '1.18.18');

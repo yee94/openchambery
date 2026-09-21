@@ -16,7 +16,8 @@ const HEALTH_CHECK_MAX_CONSECUTIVE_FAILURES = parsePositiveInt(
 );
 const HEALTH_CHECK_INTERVAL_OVERRIDE_MS = parsePositiveInt(process.env.OPENCHAMBER_OPENCODE_HEALTH_INTERVAL_MS, 0);
 const HEALTH_CHECK_RESULT_CACHE_MS = parsePositiveInt(process.env.OPENCHAMBER_OPENCODE_HEALTH_CACHE_MS, 750);
-const OPENCODE_HEALTH_PATH = '/api/health';
+// Official OpenCode 2.x exposes ServerInfo at GET /api/info (client.server.info).
+const OPENCODE_HEALTH_PATH = '/api/info';
 const OPENCODE_HEALTH_FALLBACK_PATH = '/global/health';
 
 export const createOpenCodeLifecycleRuntime = (deps) => {
@@ -436,9 +437,9 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
     return false;
   };
 
-  // v2 health lives at /api/health; /global/health remains a probe fallback
-  // for older sidecars. Both require Basic auth from getOpenCodeAuthHeaders().
-  // healthy alone is not enough: reject 1.x and missing/unknown versions.
+  // v2 readiness lives at /api/info (ServerInfo.version); /global/health remains
+  // a probe fallback for older sidecars. Both require Basic auth from
+  // getOpenCodeAuthHeaders(). Version admission rejects 1.x / missing / noise.
   const fetchOpenCodeHealthOk = async (urlForPath, signal) => {
     const headers = { Accept: 'application/json', ...getOpenCodeAuthHeaders() };
     for (const healthPath of [OPENCODE_HEALTH_PATH, OPENCODE_HEALTH_FALLBACK_PATH]) {

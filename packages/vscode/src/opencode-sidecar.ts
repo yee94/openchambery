@@ -257,7 +257,8 @@ export function resolveDetectedOpencodeCliPath(options: {
   return null;
 }
 
-export const OPENCODE_HEALTH_PATH = '/api/health';
+// Official OpenCode 2.x exposes ServerInfo at GET /api/info (client.server.info).
+export const OPENCODE_HEALTH_PATH = '/api/info';
 export const OPENCODE_HEALTH_FALLBACK_PATH = '/global/health';
 export const OPENCODE_V1_MIGRATION_PATH = '/api/experimental/migration/v1';
 
@@ -291,7 +292,8 @@ export function evaluateOpenCodeHealthBody(body: { healthy?: unknown; version?: 
   if (!body || typeof body !== 'object' || Array.isArray(body)) {
     return { ok: false, version: null, reason: 'invalid-body' };
   }
-  if (body.healthy !== true) {
+  // Classic /api/health required healthy:true; /api/info omits healthy entirely.
+  if (Object.prototype.hasOwnProperty.call(body, 'healthy') && body.healthy !== true) {
     return { ok: false, version: null, reason: 'unhealthy' };
   }
   const raw = typeof body.version === 'string' ? body.version.trim() : '';
@@ -421,10 +423,10 @@ export async function fetchV1MigrationGate(
   }
 }
 
-// v2 health lives at /api/health; /global/health remains a probe fallback
-// for older sidecars. Both require Basic auth (username `opencode`).
+// v2 readiness lives at /api/info (ServerInfo.version); /global/health remains
+// a probe fallback for older sidecars. Both require Basic auth (username `opencode`).
 // Never log the password — only the caller may record URL path and status.
-// healthy alone is not enough: reject 1.x and missing/unknown versions.
+// Version admission rejects 1.x / missing / noise.
 export async function fetchOpenCodeHealth(
   baseUrl: string,
   authHeaders: Record<string, string> = {},

@@ -1,8 +1,8 @@
 // Pinned desktop/runtime opencode2. Upgrade and prepare must not fall back to 1.18.x.
-export const PINNED_OPENCODE2_VERSION = '0.0.0-next-17444';
+export const PINNED_OPENCODE2_VERSION = '2.0.12';
 
 // Global npm/bun package that installs the opencode2 binary (not 1.x opencode-ai).
-export const OPENCODE2_NPM_PACKAGE = '@opencode-ai/cli';
+export const OPENCODE2_NPM_PACKAGE = '@opencode/cli';
 
 export function isOpenCode1xVersion(value) {
   if (typeof value !== 'string') return false;
@@ -25,7 +25,9 @@ export function isAcceptableOpenCode2HealthVersion(value) {
 }
 
 /**
- * Pure health body gate used by lifecycle and VS Code sidecar.
+ * Pure health/info body gate used by lifecycle and VS Code sidecar.
+ * Accepts classic `{ healthy: true, version }` and official 2.x `ServerInfo`
+ * (`GET /api/info` → `{ version, pid, urls, paths }` without `healthy`).
  * @param {{ healthy?: unknown, version?: unknown } | null | undefined} body
  * @returns {{ ok: boolean, version: string | null, reason?: string }}
  */
@@ -33,7 +35,8 @@ export function evaluateOpenCodeHealthBody(body) {
   if (!body || typeof body !== 'object' || Array.isArray(body)) {
     return { ok: false, version: null, reason: 'invalid-body' };
   }
-  if (body.healthy !== true) {
+  // Classic /api/health required healthy:true; /api/info omits healthy entirely.
+  if (Object.prototype.hasOwnProperty.call(body, 'healthy') && body.healthy !== true) {
     return { ok: false, version: null, reason: 'unhealthy' };
   }
   const raw = typeof body.version === 'string' ? body.version.trim() : '';

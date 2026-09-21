@@ -71,7 +71,7 @@ const createV2ClientMock = mock(() => ({
 
 (mock as unknown as { restore?: () => void }).restore?.();
 
-mock.module('@opencode-ai/client', () => ({
+mock.module('@opencode/client', () => ({
   OpenCode: {
     make: createV2ClientMock,
   },

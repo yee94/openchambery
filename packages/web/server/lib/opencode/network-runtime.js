@@ -1,3 +1,5 @@
+import { evaluateOpenCodeHealthBody } from './opencode2-pin.js';
+
 export const createOpenCodeNetworkRuntime = (deps) => {
   const {
     state,
@@ -51,7 +53,7 @@ export const createOpenCodeNetworkRuntime = (deps) => {
           Accept: 'application/json',
           ...getOpenCodeAuthHeaders(),
         };
-        for (const healthPath of ['/api/health', '/global/health']) {
+        for (const healthPath of ['/api/info', '/global/health']) {
           const response = await fetch(`${baseUrl}${healthPath}`, {
             method: 'GET',
             headers,
@@ -59,7 +61,9 @@ export const createOpenCodeNetworkRuntime = (deps) => {
           });
           if (response.ok) {
             const body = await response.json().catch(() => null);
-            if (body?.healthy === true) {
+            // Official 2.x /api/info is ServerInfo (version, no healthy);
+            // /global/health may still return { healthy, version }.
+            if (evaluateOpenCodeHealthBody(body).ok) {
               return true;
             }
           }

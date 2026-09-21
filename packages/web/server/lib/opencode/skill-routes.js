@@ -1,4 +1,4 @@
-import { OpenCode } from '@opencode-ai/client';
+import { OpenCode } from '@opencode/client';
 
 const summarizeDescription = (value) => {
   const normalized = typeof value === 'string' ? value.replace(/\s+/gu, ' ').trim() : '';

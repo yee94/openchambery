@@ -6,7 +6,7 @@ only model path the Assistant harness (`pi-agent-core` `streamFn`) talks to.
 ## Contract
 
 - `GET /api/openchamber/llm/models` — available `{providerID, modelID}` catalog
-  from official `@opencode-ai/client` `provider.list` + `model.list`
+  from official `@opencode/client` `provider.list` + `model.list`
   (`{ location, data }`). `ModelInfo.id` is the external modelID used in
   generate/session refs (`ModelInfo.modelID` is a separate internal field).
   Vision prefers `capabilities.input.image === true` (SDK object shape), then
@@ -28,7 +28,7 @@ attachment-session `model` ref. OpenCode owns provider-specific variant
 semantics. Variant selection changes inference configuration only; completion
 output continues to include text parts and keeps reasoning parts private.
 
-## Internals (official `@opencode-ai/client`)
+## Internals (official `@opencode/client`)
 
 Credentials stay in OpenCode. This module does not read `auth.json`, does not
 call Anthropic/OpenAI/plugin SDKs, and does not use the `openai` npm package.

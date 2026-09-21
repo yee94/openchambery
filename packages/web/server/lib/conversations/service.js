@@ -1,4 +1,4 @@
-import { OpenCode } from '@opencode-ai/client';
+import { OpenCode } from '@opencode/client';
 
 // --- error classification ---
 

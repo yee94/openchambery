@@ -115,7 +115,7 @@ This module provides OpenCode server integration utilities for the web server ru
 
 ## Public exports (opencode2-pin.js)
 - `PINNED_OPENCODE2_VERSION`: exact desktop/runtime pin (never 1.x).
-- `OPENCODE2_NPM_PACKAGE`: `@opencode-ai/cli` (global install that ships the `opencode2` binary; not 1.x `opencode-ai`).
+- `OPENCODE2_NPM_PACKAGE`: `@opencode/cli` (global install that ships the `opencode2` binary; not 1.x `opencode-ai`).
 - `isOpenCode1xVersion(value)` / `isAcceptableOpenCode2HealthVersion(value)` / `evaluateOpenCodeHealthBody(body)`: health admission rejects 1.x and missing/unknown versions even when `healthy: true`.
 - `resolveOpenCode2UpgradeTarget(target)` / `rejectOpenCode1xUpgradeTarget(target)`: upgrade targets default to the pin and refuse 1.x.
 

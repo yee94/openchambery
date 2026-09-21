@@ -19,7 +19,7 @@ class ClientError extends Error {
 
 // No setSessionActivityPhase import — VS Code does not manually mark activity
 
-mock.module('@opencode-ai/client', () => ({ OpenCode: { make }, ClientError }));
+mock.module('@opencode/client', () => ({ OpenCode: { make }, ClientError }));
 
 const { handleConversationsBridgeMessage, resetVSCodeRegistry } = await import(
   './bridge-conversations-runtime'

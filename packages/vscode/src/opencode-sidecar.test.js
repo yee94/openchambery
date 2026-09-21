@@ -94,14 +94,14 @@ describe('parseOpenCodeListeningLine', () => {
 });
 
 describe('fetchOpenCodeHealth', () => {
-  test('probes /api/health with Basic auth before falling back to /global/health', async () => {
+  test('probes /api/info with Basic auth before falling back to /global/health', async () => {
     const calls = [];
     globalThis.fetch = async (input, init) => {
       const url = String(input);
       const headers = new Headers(init?.headers);
       calls.push({ url, authorization: headers.get('Authorization') ?? undefined });
-      if (url.endsWith('/api/health')) {
-        return new Response(JSON.stringify({ healthy: true, version: '0.0.0-next' }), {
+      if (url.endsWith('/api/info')) {
+        return new Response(JSON.stringify({ version: '2.0.12', pid: 1, urls: [], paths: { tmp: '/tmp' } }), {
           status: 200,
           headers: { 'content-type': 'application/json' },
         });
@@ -115,15 +115,15 @@ describe('fetchOpenCodeHealth', () => {
 
     expect(result).toEqual({
       healthy: true,
-      version: '0.0.0-next',
-      path: '/api/health',
+      version: '2.0.12',
+      path: '/api/info',
     });
-    expect(calls[0]?.url).toBe('http://127.0.0.1:45678/api/health');
+    expect(calls[0]?.url).toBe('http://127.0.0.1:45678/api/info');
     expect(calls[0]?.authorization).toMatch(/^Basic /);
     expect(calls.some((call) => call.url.includes('secret'))).toBe(false);
   });
 
-  test('falls back to /global/health when /api/health is unavailable', async () => {
+  test('falls back to /global/health when /api/info is unavailable', async () => {
     const calls = [];
     globalThis.fetch = async (input, init) => {
       const url = String(input);
@@ -131,7 +131,7 @@ describe('fetchOpenCodeHealth', () => {
       const headers = new Headers(init?.headers);
       expect(headers.get('Authorization')).toMatch(/^Basic /);
       if (url.endsWith('/global/health')) {
-        return new Response(JSON.stringify({ healthy: true, version: '0.0.0-next-17444' }), {
+        return new Response(JSON.stringify({ healthy: true, version: '2.0.12' }), {
           status: 200,
           headers: { 'content-type': 'application/json' },
         });
@@ -144,12 +144,12 @@ describe('fetchOpenCodeHealth', () => {
     });
 
     expect(calls).toEqual([
-      'http://127.0.0.1:45678/api/health',
+      'http://127.0.0.1:45678/api/info',
       'http://127.0.0.1:45678/global/health',
     ]);
     expect(result).toEqual({
       healthy: true,
-      version: '0.0.0-next-17444',
+      version: '2.0.12',
       path: '/global/health',
     });
   });
@@ -157,7 +157,7 @@ describe('fetchOpenCodeHealth', () => {
   test('rejects healthy 1.x version bodies instead of admitting the sidecar', async () => {
     globalThis.fetch = async (input) => {
       const url = String(input);
-      if (url.endsWith('/api/health') || url.endsWith('/global/health')) {
+      if (url.endsWith('/api/info') || url.endsWith('/global/health')) {
         return new Response(JSON.stringify({ healthy: true, version: '1.15.0' }), {
           status: 200,
           headers: { 'content-type': 'application/json' },

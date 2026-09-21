@@ -77,7 +77,7 @@ describe('assertOpenCode2Binary', () => {
   it('rejects OPENCODE_BINARY whose basename is 1.x opencode', () => {
     const dir = createTempDir('openchamber-startup-1x-');
     const binary = path.join(dir, process.platform === 'win32' ? 'opencode.exe' : 'opencode');
-    writeVersionBinary(binary, '0.0.0-next-17444');
+    writeVersionBinary(binary, '2.0.12');
     try {
       expect(() => assertOpenCode2Binary(binary)).toThrow(
         expect.objectContaining({
@@ -109,7 +109,7 @@ describe('assertOpenCode2Binary', () => {
   it('accepts an executable opencode2 that reports a v2 version', () => {
     const dir = createTempDir('openchamber-startup-v2-');
     const binary = path.join(dir, process.platform === 'win32' ? 'opencode2.cmd' : 'opencode2');
-    writeVersionBinary(binary, '0.0.0-next-17444');
+    writeVersionBinary(binary, '2.0.12');
     try {
       expect(assertOpenCode2Binary(binary)).toBe(binary);
     } finally {
@@ -125,7 +125,7 @@ describe('collectStartupEnv OpenCode binary', () => {
       const legacy = path.join(pathDir, process.platform === 'win32' ? 'opencode.exe' : 'opencode');
       const binary = path.join(pathDir, process.platform === 'win32' ? 'opencode2.cmd' : 'opencode2');
       writeVersionBinary(legacy, '1.18.4');
-      writeVersionBinary(binary, '0.0.0-next-17444');
+      writeVersionBinary(binary, '2.0.12');
       process.env.PATH = pathDir;
       delete process.env.OPENCODE_BINARY;
 

@@ -3,7 +3,7 @@ import { isSafeInlineImageMime } from './contact-attachments.js';
 import { createChatCompletion } from '../llm/completions.js';
 import { ensureLlmTempDirectory } from '../llm/temp-directory.js';
 import { setAssignedSessionSettleHandler } from '../session-goal/runtime.js';
-import { OpenCode } from '@opencode-ai/client';
+import { makeOpenCodeV2Client } from '../opencode/v2-client.js';
 
 const respond = (res, work, success = 200) => Promise.resolve().then(work).then((body) => res.status(success).json(body)).catch((error) => { const code = error instanceof AssistantError ? error.code : error?.code || 'internal_error'; const status = code === 'not_found' ? 404 : ['revision_conflict', 'idempotency_conflict', 'contact_generation_conflict'].includes(code) ? 409 : code === 'assistant_disabled' ? 403 : code === 'no_provider' ? 400 : code === 'upstream_error' || code === 'llm_attachment_generation_unavailable' ? 502 : 400; res.status(status).json({ ok: false, error: code, message: typeof error?.message === 'string' && error.message.trim() ? error.message : code }); });
 const gone = (_req, res) => res.status(410).json({ ok: false, error: 'assistant_topics_retired' });
@@ -13,9 +13,9 @@ export const registerAssistantRoutes = (app, dependencies) => {
     ...input,
     buildOpenCodeUrl: dependencies.buildOpenCodeUrl,
     getOpenCodeAuthHeaders: dependencies.getOpenCodeAuthHeaders,
-    clientFactory: () => OpenCode.make({
+    clientFactory: () => makeOpenCodeV2Client({
       baseUrl: dependencies.buildOpenCodeUrl('/', '').replace(/\/$/, ''),
-      headers: dependencies.getOpenCodeAuthHeaders(),
+      authHeaders: dependencies.getOpenCodeAuthHeaders(),
     }),
     ensureTempDirectory: ensureLlmTempDirectory,
     // Attachment-session generate may subscribe for session.text.delta (contact harness).

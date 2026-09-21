@@ -26,7 +26,7 @@ const sessionActiveMock = mock(async (...args: unknown[]) => {
 const sessionDiffSdkCalls: unknown[][] = [];
 const constructorConfigs: unknown[] = [];
 
-mock.module('@opencode-ai/client', () => ({
+mock.module('@opencode/client', () => ({
   OpenCode: {
     make: mock((config: unknown) => {
       sdkClientConfigs.push(config);
@@ -237,7 +237,7 @@ describe('opencodeClient getSessionActive', () => {
   });
 
   test('returns unsupported on 404/405/501', async () => {
-    const { ClientError } = await import('@opencode-ai/client');
+    const { ClientError } = await import('@opencode/client');
     for (const status of [404, 405, 501]) {
       sessionActiveResults.push(new ClientError('UnexpectedStatus', { cause: { status } }));
       expect(await opencodeClient.getSessionActive()).toEqual({ state: 'unsupported' });
@@ -245,7 +245,7 @@ describe('opencodeClient getSessionActive', () => {
   });
 
   test('returns unknown on 5xx, network, and malformed 200', async () => {
-    const { ClientError } = await import('@opencode-ai/client');
+    const { ClientError } = await import('@opencode/client');
     sessionActiveResults.push(new ClientError('UnexpectedStatus', { cause: { status: 500 } }));
     expect(await opencodeClient.getSessionActive()).toEqual({ state: 'unknown' });
 

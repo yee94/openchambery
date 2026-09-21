@@ -65,7 +65,7 @@ import { fetchSessionProjectionPage } from "./session-projection-api"
 import { confirmOptimisticAgainstPromoted, fetchSessionInbox, postSessionInterrupt } from "./session-prompt-api"
 import { postSessionRevertClear, postSessionRevertCommit, postSessionRevertStage, sessionRevertBusyError } from "./session-revert-api"
 import { isSessionSharingAvailable } from "./session-sharing-availability"
-import { v2CapabilityUnavailable } from "./v2-runtime"
+import { answersToFormAnswer, v2CapabilityUnavailable } from "./v2-runtime"
 
 import { stripMessageDiffSnapshots, stripSessionDiffSnapshots } from "./sanitize"
 import { sessionEvents } from "@/lib/sessionEvents"
@@ -923,8 +923,16 @@ function getRequestReplyClient(
   type: "permission" | "question",
   sessionId: string,
   requestId: string,
+  directoryHint?: string,
 ): OpenCodeClient {
-  const requestDirectory = resolveDirectoryForBlockingRequest(type, sessionId, requestId)
+  // Prefer explicit hint, then request/session ownership, then selected dir.
+  // Form reply/cancel have no directory body field — scope lives on the client.
+  const requestDirectory = (typeof directoryHint === "string" && directoryHint.trim().length > 0
+    ? directoryHint.trim()
+    : null)
+    || resolveDirectoryForBlockingRequest(type, sessionId, requestId)
+    || getSessionDirectory(sessionId)
+    || dir()
   if (requestDirectory) {
     return opencodeClient.getScopedSdkClient(requestDirectory)
   }
@@ -2175,20 +2183,19 @@ export async function respondToQuestion(
   directoryHint?: string,
 ): Promise<void> {
   await waitForConnectionOrThrow()
-  const directory = directoryHint || resolveDirectoryForBlockingRequest("question", sessionId, requestId)
-    || getSessionDirectory(sessionId)
-    || dir()
   try {
     const normalizedAnswers = answers.length === 0
       ? []
       : Array.isArray(answers[0])
         ? answers as string[][]
         : [answers as string[]]
-    await getRequestReplyClient("question", sessionId, requestId).question.reply({
+    // Official 2.0.12: questions → session.form.reply (no directory body field;
+    // directory scopes the client). Field keys fall back to synthetic keys when
+    // the list cache is unavailable from this path.
+    await getRequestReplyClient("question", sessionId, requestId, directoryHint).session.form.reply({
       sessionID: sessionId,
-      requestID: requestId,
-      answers: normalizedAnswers,
-      ...(directory ? { directory } : {}),
+      formID: requestId,
+      answer: answersToFormAnswer(normalizedAnswers),
     })
   } catch (error) {
     if (isQuestionRequestNotFoundError(error)) {
@@ -2204,14 +2211,10 @@ export async function rejectQuestion(
   directoryHint?: string,
 ): Promise<void> {
   await waitForConnectionOrThrow()
-  const directory = directoryHint || resolveDirectoryForBlockingRequest("question", sessionId, requestId)
-    || getSessionDirectory(sessionId)
-    || dir()
   try {
-    await getRequestReplyClient("question", sessionId, requestId).question.reject({
+    await getRequestReplyClient("question", sessionId, requestId, directoryHint).session.form.cancel({
       sessionID: sessionId,
-      requestID: requestId,
-      ...(directory ? { directory } : {}),
+      formID: requestId,
     })
   } catch (error) {
     if (isQuestionRequestNotFoundError(error)) {

@@ -2,7 +2,7 @@ import fs from 'fs';
 import fsPromises from 'fs/promises';
 import os from 'os';
 import path from 'path';
-import { OpenCode } from '@opencode-ai/client';
+import { OpenCode } from '@opencode/client';
 
 // Temporary OpenCode path for providers that lack a dedicated small-model
 // adapter (plugin providers, region/credential-chain, …).

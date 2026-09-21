@@ -2,8 +2,7 @@ import React, { act } from 'react';
 import { createRoot } from 'react-dom/client';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
-import type { Session } from '@opencode-ai/sdk/v2';
-import type { SessionIndexSnapshot } from '@/lib/session-index-api';
+import type { SessionIndexSession, SessionIndexSnapshot } from '@/lib/session-index-api';
 
 const runtime = vi.hoisted(() => ({ transport: 'runtime-a', load: vi.fn() }));
 vi.mock('@/components/chat/imageSource', () => ({ useRuntimeTransportIdentity: () => runtime.transport }));
@@ -26,7 +25,7 @@ vi.mock('@/components/ui/textarea', () => ({
 import { AssistantSessionComposer } from './AssistantSessionComposer';
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
-const session = (id: string, title: string, updated: number): Session => ({
+const session = (id: string, title: string, updated: number): SessionIndexSession => ({
   id, title, directory: '/stale-row-path', projectID: 'project', slug: id, version: '1', time: { created: 1, updated },
 });
 const snapshot = (): SessionIndexSnapshot => ({

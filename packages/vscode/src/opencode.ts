@@ -542,7 +542,7 @@ async function waitForReady(
         const health = await fetchOpenCodeHealth(baseUrl, authHeaders, controller.signal);
 
         outputChannel?.appendLine(
-          `Health check to ${baseUrl}${health?.path ?? '/api/health'} returned ${health?.healthy === true ? 'healthy' : 'unhealthy'} with body: ${JSON.stringify(health ? { healthy: health.healthy, version: health.version } : null)}`
+          `Health check to ${baseUrl}${health?.path ?? '/api/info'} returned ${health?.healthy === true ? 'healthy' : 'unhealthy'} with body: ${JSON.stringify(health ? { healthy: health.healthy, version: health.version } : null)}`
         );
 
         if (health?.healthy !== true) {

@@ -42,7 +42,7 @@ const CURRENT_ACTIVITY_PREFIXES = [
   "session.next.tool.",
   "session.next.shell.",
   "session.next.compaction.",
-  // Official v2 durable step/text/tool streams (`@opencode-ai/client`).
+  // Official v2 durable step/text/tool streams (`@opencode/client`).
   "session.step.",
   "session.text.",
   "session.reasoning.",

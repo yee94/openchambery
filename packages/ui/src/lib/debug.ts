@@ -270,7 +270,9 @@ export const debugUtils = {
     }
 
     try {
-      projectInfo = await opencodeClient.getSdkClient().project.current(locationOf(currentDirectory));
+      // Official 2.x dropped project.current; location.get exposes project.
+      const locationProject = await opencodeClient.getSdkClient().location.get(locationOf(currentDirectory));
+      projectInfo = locationProject?.project ?? null;
     } catch (error) {
       projectInfo = { error: error instanceof Error ? error.message : String(error) };
     }

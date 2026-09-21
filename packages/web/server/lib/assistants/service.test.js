@@ -4841,8 +4841,7 @@ describe('read_session referenced conversation', () => {
 
   it('uses OpenCode.make session/message methods and does not call 1.x SDK names', async () => {
     const source = fs.readFileSync(new URL('./service.js', import.meta.url), 'utf8');
-    expect(source).toContain("from '@opencode-ai/client'");
-    expect(source).toContain('OpenCode.make');
+    expect(source).toContain('makeOpenCodeV2Client');
     expect(source).not.toContain("from '@opencode-ai/sdk/v2'");
     expect(source).not.toContain('createOpencodeClient');
     expect(source).not.toContain('promptAsync');

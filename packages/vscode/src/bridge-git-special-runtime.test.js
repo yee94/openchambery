@@ -25,7 +25,7 @@ const rawFetch = vi.hoisted(() => vi.fn(async () => {
 }));
 
 vi.mock('./gitService', () => gitService);
-vi.mock('@opencode-ai/client', () => ({ OpenCode: { make } }));
+vi.mock('@opencode/client', () => ({ OpenCode: { make } }));
 
 const { handleSpecialGitBridgeMessage } = await import('./bridge-git-special-runtime');
 

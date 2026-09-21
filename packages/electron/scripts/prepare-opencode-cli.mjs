@@ -166,7 +166,7 @@ const main = async () => {
 
   const cacheDir = path.join(cacheRoot, version, `${process.platform}-${targetArchitecture.opencode}`);
   const archivePath = path.join(cacheDir, 'opencode2-cli.tgz');
-  // opencode2 v2 只发 npm 平台包（@opencode-ai/cli-<os>-<arch>[-baseline]），
+  // opencode2 v2 只发 npm 平台包（@opencode/cli-<os>-<arch>[-baseline]），
   // 上游没有对应的 GitHub release 二进制。
   const packageName = npmPackageForOpenCode2(process.platform, targetArchitecture);
   if (!fs.existsSync(archivePath)) {
@@ -178,9 +178,11 @@ const main = async () => {
 
   const extractDir = path.join(cacheDir, 'extract');
   extractArchive(archivePath, extractDir);
-  const extractedBinary = findBinary(extractDir, binaryName);
+  // Official 2.x platform tarballs ship `bin/opencode`; keep the staged name as opencode2.
+  const extractedBinary = findBinary(extractDir, binaryName)
+    || findBinary(extractDir, process.platform === 'win32' ? 'opencode.exe' : 'opencode');
   if (!extractedBinary) {
-    throw new Error(`Archive ${archivePath} did not contain ${binaryName}`);
+    throw new Error(`Archive ${archivePath} did not contain ${binaryName} or opencode`);
   }
 
   fs.mkdirSync(outputDir, { recursive: true });

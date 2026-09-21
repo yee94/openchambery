@@ -55,7 +55,7 @@ describe('checkOpenCodeCLI v2 gate', () => {
       writeVersionBinary(binary, '1.18.4');
       process.env.OPENCODE_BINARY = binary;
       const pathDir = createTempDir('openchamber-cli-mode-path-');
-      writeVersionBinary(path.join(pathDir, process.platform === 'win32' ? 'opencode2.cmd' : 'opencode2'), '0.0.0-next-17444');
+      writeVersionBinary(path.join(pathDir, process.platform === 'win32' ? 'opencode2.cmd' : 'opencode2'), '2.0.12');
       process.env.PATH = pathDir;
 
       const notices = [];
@@ -86,7 +86,7 @@ describe('checkOpenCodeCLI v2 gate', () => {
         : ['opencode', 'opencode.exe', 'opencode.cmd'];
       const pathDir = createTempDir('openchamber-cli-legacy-path-');
       const v2 = path.join(pathDir, process.platform === 'win32' ? 'opencode2.cmd' : 'opencode2');
-      writeVersionBinary(v2, '0.0.0-next-17444');
+      writeVersionBinary(v2, '2.0.12');
       process.env.PATH = pathDir;
 
       try {
@@ -117,7 +117,7 @@ describe('checkOpenCodeCLI v2 gate', () => {
       const legacy = path.join(pathDir, process.platform === 'win32' ? 'opencode.exe' : 'opencode');
       const binary = path.join(pathDir, process.platform === 'win32' ? 'opencode2.cmd' : 'opencode2');
       writeVersionBinary(legacy, '1.18.4');
-      writeVersionBinary(binary, '0.0.0-next-17444');
+      writeVersionBinary(binary, '2.0.12');
       process.env.PATH = pathDir;
       delete process.env.OPENCODE_BINARY;
 
@@ -138,7 +138,7 @@ describe('checkOpenCodeCLI v2 gate', () => {
       fs.writeFileSync(path.join(dataDir, 'settings.json'), JSON.stringify({ opencodeBinary: binary }));
       delete process.env.OPENCODE_BINARY;
       const pathDir = createTempDir('openchamber-cli-settings-path-');
-      writeVersionBinary(path.join(pathDir, process.platform === 'win32' ? 'opencode2.cmd' : 'opencode2'), '0.0.0-next-17444');
+      writeVersionBinary(path.join(pathDir, process.platform === 'win32' ? 'opencode2.cmd' : 'opencode2'), '2.0.12');
       process.env.PATH = pathDir;
       try {
         await expect(checkOpenCodeCLI()).rejects.toMatchObject({
@@ -156,7 +156,7 @@ describe('checkOpenCodeCLI v2 gate', () => {
     await withIsolatedOpenCodeEnv(async ({ dataDir }) => {
       const dir = createTempDir('openchamber-cli-settings-v2-');
       const binary = path.join(dir, process.platform === 'win32' ? 'opencode2.cmd' : 'opencode2');
-      writeVersionBinary(binary, '0.0.0-next-17444');
+      writeVersionBinary(binary, '2.0.12');
       fs.writeFileSync(path.join(dataDir, 'settings.json'), JSON.stringify({ opencodeBinary: binary }));
       delete process.env.OPENCODE_BINARY;
       process.env.PATH = createTempDir('openchamber-cli-settings-empty-');

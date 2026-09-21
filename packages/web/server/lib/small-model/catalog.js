@@ -1,4 +1,4 @@
-import { OpenCode } from '@opencode-ai/client';
+import { OpenCode } from '@opencode/client';
 
 // Directory-scoped OpenCode provider catalog for small-model resolution.
 // Never contacts models.dev — source of truth is client.config.providers().

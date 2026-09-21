@@ -20,12 +20,12 @@ mock.module('vscode', () => ({
   window: { activeColorTheme: { kind: 1 }, ColorThemeKind: { Light: 1, HighContrastLight: 4 } },
   ColorThemeKind: { Light: 1, HighContrastLight: 4 },
 }));
-// Bun aliases `os` ↔ `node:os`. Real @opencode-ai/client uses
+// Bun aliases `os` ↔ `node:os`. Real @opencode/client uses
 // `import { homedir } from "node:os"`; opencodeConfig uses `import os from 'node:os'`.
 const osMock = { homedir: () => settingsHome };
 mock.module('os', () => ({ ...osMock, default: osMock }));
 mock.module('node:os', () => ({ ...osMock, default: osMock }));
-mock.module('@opencode-ai/client', () => ({ OpenCode: { make } }));
+mock.module('@opencode/client', () => ({ OpenCode: { make } }));
 
 const { fetchProviderCatalogFromApi, readSettings } = await import('./bridge-settings-runtime.ts');
 

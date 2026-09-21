@@ -51,7 +51,7 @@ export const registerOpenCodeRoutes = (app, dependencies) => {
   };
 
   const readOpenCodeCurrentVersion = async () => {
-    const healthResponse = await fetch(buildOpenCodeUrl('/api/health', ''), {
+    const healthResponse = await fetch(buildOpenCodeUrl('/api/info', ''), {
       method: 'GET',
       headers: { Accept: 'application/json', ...getOpenCodeAuthHeaders() },
     });
@@ -236,7 +236,7 @@ export const registerOpenCodeRoutes = (app, dependencies) => {
         });
       }
 
-      const healthResponse = await fetch(buildOpenCodeUrl('/api/health', ''), {
+      const healthResponse = await fetch(buildOpenCodeUrl('/api/info', ''), {
         method: 'GET',
         headers: { Accept: 'application/json', ...getOpenCodeAuthHeaders() },
       });
@@ -268,7 +268,7 @@ export const registerOpenCodeRoutes = (app, dependencies) => {
 
   app.get('/api/opencode/health', async (_req, res) => {
     try {
-      const healthResponse = await fetch(buildOpenCodeUrl('/api/health', ''), {
+      const healthResponse = await fetch(buildOpenCodeUrl('/api/info', ''), {
         method: 'GET',
         headers: { Accept: 'application/json', ...getOpenCodeAuthHeaders() },
         signal: AbortSignal.timeout(4_000),
@@ -291,7 +291,7 @@ export const registerOpenCodeRoutes = (app, dependencies) => {
 
   app.get('/api/opencode/version', async (_req, res) => {
     try {
-      const healthResponse = await fetch(buildOpenCodeUrl('/api/health', ''), {
+      const healthResponse = await fetch(buildOpenCodeUrl('/api/info', ''), {
         method: 'GET',
         headers: { Accept: 'application/json', ...getOpenCodeAuthHeaders() },
       });

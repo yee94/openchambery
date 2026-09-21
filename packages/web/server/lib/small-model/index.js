@@ -3,7 +3,7 @@ import os from 'os';
 import path from 'path';
 import { readAuthFile } from '../opencode/auth.js';
 import { readConfigLayers } from '../opencode/shared.js';
-import { createOpencodeClient } from '@opencode-ai/sdk/v2';
+import { OpenCode } from '@opencode/client';
 import { loadConnectedCatalog } from '../llm/catalog.js';
 import { createModelCatalogLoader, getCatalogProvider } from './catalog.js';
 import { resolveSmallModel, parseModelRef, isUsableAuthEntry, getAuthEntryForProvider } from './resolve.js';
@@ -215,11 +215,11 @@ export function createSmallModelService(dependencies) {
       getOpenCodeAuthHeaders,
     }).getModelCatalog;
   const getConnectedCatalog = dependencies.getConnectedCatalog || (async (directory) => {
-    const client = createOpencodeClient({
+    const client = OpenCode.make({
       baseUrl: buildOpenCodeUrl('/', '').replace(/\/$/, ''),
-      ...(directory ? { directory } : {}),
       headers: getOpenCodeAuthHeaders(),
     });
+    void directory;
     return loadConnectedCatalog(client);
   });
 

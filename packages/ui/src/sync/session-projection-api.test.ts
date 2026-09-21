@@ -339,6 +339,32 @@ describe("fetchSessionProjectionPage", () => {
     expect(page.records).toEqual([])
     expect(page.complete).toBe(true)
   })
+
+  test("drops 2.0.12 idle/model-switched rows and keeps assistant text content", async () => {
+    const { normalizeSessionProjectionMessage } = await import("./session-projection-api")
+    expect(normalizeSessionProjectionMessage(SESSION, {
+      id: "msg_idle",
+      type: "idle",
+      outcome: "succeeded",
+      time: { created: 1 },
+    })).toBeNull()
+    expect(normalizeSessionProjectionMessage(SESSION, {
+      id: "msg_switched",
+      type: "model-switched",
+      time: { created: 1 },
+    })).toBeNull()
+    const assistant = normalizeSessionProjectionMessage(SESSION, {
+      id: "msg_asst_v2",
+      type: "assistant",
+      time: { created: 2, completed: 3 },
+      content: [
+        { type: "reasoning", text: "think" },
+        { type: "text", text: "正常" },
+      ],
+      finish: "stop",
+    })
+    expect(assistant?.parts.map((part) => (part as { type?: string; text?: string }).text)).toEqual(["think", "正常"])
+  })
 })
 
 describe("reconcileFetched", () => {

@@ -2,7 +2,7 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { parse as parseJsonc } from 'jsonc-parser';
-import { OpenCode } from '@opencode-ai/client';
+import { OpenCode } from '@opencode/client';
 import { projectProviderCatalog } from './provider-catalog.js';
 
 // Compose official v2 provider.list + model.list (+ optional default) into the

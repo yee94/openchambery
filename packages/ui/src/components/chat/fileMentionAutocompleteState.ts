@@ -276,15 +276,22 @@ export const resolveSessionMentionDeletion = (
     };
 };
 
-export const getVisibleSessionMentionCandidates = ({
+/** Session mention row; `directory` is required when the caller supplies it (e.g. index snapshot). */
+export type SessionMentionCandidate = Session & { directory?: string };
+
+/**
+ * Filter/sort session mention candidates while preserving the caller row type
+ * (so a required `directory: string` from index-backed rows stays required).
+ */
+export const getVisibleSessionMentionCandidates = <T extends SessionMentionCandidate>({
     sessions,
     currentSessionId,
     searchQuery,
 }: {
-    sessions: readonly Session[];
+    sessions: readonly T[];
     currentSessionId: string | null;
     searchQuery: string;
-}): Session[] => {
+}): T[] => {
     const normalizedQuery = searchQuery.trim().toLowerCase();
     return sessions
         .filter((session) => session.id !== currentSessionId)

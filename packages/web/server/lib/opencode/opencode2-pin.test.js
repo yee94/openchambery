@@ -16,7 +16,7 @@ describe('opencode2 pin (ticket 12)', () => {
     expect(isOpenCode1xVersion('1.18.x')).toBe(true);
     expect(isOpenCode1xVersion('1')).toBe(true);
     expect(isOpenCode1xVersion(PINNED_OPENCODE2_VERSION)).toBe(false);
-    expect(isOpenCode1xVersion('0.0.0-next-17444')).toBe(false);
+    expect(isOpenCode1xVersion('2.0.12')).toBe(false);
     expect(isOpenCode1xVersion('')).toBe(false);
     expect(isOpenCode1xVersion(null)).toBe(false);
   });
@@ -31,13 +31,14 @@ describe('opencode2 pin (ticket 12)', () => {
   });
 
   it('pins the opencode2 npm package name (not 1.x opencode-ai)', () => {
-    expect(OPENCODE2_NPM_PACKAGE).toBe('@opencode-ai/cli');
+    expect(OPENCODE2_NPM_PACKAGE).toBe('@opencode/cli');
     expect(OPENCODE2_NPM_PACKAGE).not.toBe('opencode-ai');
+    expect(OPENCODE2_NPM_PACKAGE).not.toBe('@opencode-ai/cli');
   });
 
-  it('accepts authoritative v2 health versions and rejects 1.x / missing / noise', () => {
+  it('accepts authoritative v2 health/info versions and rejects 1.x / missing / noise', () => {
     expect(isAcceptableOpenCode2HealthVersion(PINNED_OPENCODE2_VERSION)).toBe(true);
-    expect(isAcceptableOpenCode2HealthVersion('v0.0.0-next-17444')).toBe(true);
+    expect(isAcceptableOpenCode2HealthVersion('v2.0.12')).toBe(true);
     expect(isAcceptableOpenCode2HealthVersion('1.15.0')).toBe(false);
     expect(isAcceptableOpenCode2HealthVersion('v1.18.18')).toBe(false);
     expect(isAcceptableOpenCode2HealthVersion('')).toBe(false);
@@ -45,6 +46,11 @@ describe('opencode2 pin (ticket 12)', () => {
     expect(isAcceptableOpenCode2HealthVersion('not-a-version')).toBe(false);
 
     expect(evaluateOpenCodeHealthBody({ healthy: true, version: PINNED_OPENCODE2_VERSION })).toEqual({
+      ok: true,
+      version: PINNED_OPENCODE2_VERSION,
+    });
+    // Official 2.x ServerInfo from GET /api/info has version without healthy.
+    expect(evaluateOpenCodeHealthBody({ version: PINNED_OPENCODE2_VERSION, pid: 1 })).toEqual({
       ok: true,
       version: PINNED_OPENCODE2_VERSION,
     });

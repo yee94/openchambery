@@ -2,7 +2,7 @@
  * Official v2 step lifecycle: real envelope → normalizer → transcript reducer
  * → turn projection; GET projection keeps usage for TPS.
  *
- * Field shapes match `@opencode-ai/client@0.0.0-next-17444` SessionStep* /
+ * Field shapes match `@opencode/client@0.0.0-next-17444` SessionStep* /
  * SessionMessageAssistant (no guessed properties).
  */
 import { describe, expect, test } from "vitest"
@@ -52,7 +52,7 @@ function directory(): State {
   return { ...INITIAL_STATE, session_status: {}, session_status_observed_at: {} }
 }
 
-/** Official durable envelope shape from @opencode-ai/client. */
+/** Official durable envelope shape from @opencode/client. */
 function officialEnvelope(
   type: string,
   data: Record<string, unknown>,

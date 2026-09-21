@@ -13,7 +13,7 @@
 1. **运行时**：解析并托管 `opencode2` sidecar（`serve --hostname/--port`，或对齐官方桌面的 `--service`）。认 `server listening`、`GET /api/health`、Basic auth（用户名固定 `opencode`）。指向 1.x `opencode` 失败闭合。开机读 `GET /api/experimental/migration/v1`，完成前不当 transcript 已就绪。
 2. **权威源**：OpenCode 的 `session_message` 投影是正文唯一权威。客户端打开 / 焦点 / 「同步消息」走 `GET /api/session/:id/message`。合并法抄官方 GUI 的 `reconcileFetched`：GET 是页权威，飞行中 SSE 改过的 id 为 touched 覆盖本次 GET，不完整页保留更早本地行。
 3. **Host**：鉴权、directory/location 路由、Basic auth 注入、HTTP/SSE/WS 桥。不再拼回合、不再镜像 parts、不再自研 reconcile。
-4. **不长期双栈**。切过去只认 v2。`@opencode-ai/sdk/v2`（1.18.4 生成客户端）不能当 v2 权威源，要换成 `@opencode-ai/client`。
+4. **不长期双栈**。切过去只认 v2。`@opencode-ai/sdk/v2`（1.18.4 生成客户端）不能当 v2 权威源，要换成 `@opencode/client`。
 5. **不要赌 `session.log` 补历史**。默认 `opencode serve` 的 `events.persist=false`，EventTable 是空的，log 只有 `log.synced` 再切 live。断线对齐靠 GET 投影，不靠事件回放。
 6. **不要 in-process `ServerFetch.make`**。官方 desktop 也是 sidecar + localhost HTTP。OpenChamber 继续这条路。
 
@@ -42,10 +42,10 @@
 
 ### 2.3 硬约束
 
-- V2 仍是 beta：server / plugin API 会变。钉死 `opencode2` 版本（本机现成 `~/.bun/bin/opencode2` = `@opencode-ai/cli@0.0.0-next-17444`），升级单独车道。
+- 钉死 `opencode2` 版本为官方 `@opencode/cli@2.0.12`（client `@opencode/client@2.0.12`），升级单独车道。
 - 官方故意打破的只有三块：plugin API、server API、TUI `tui.json` → `cli.json`。配置和 `.opencode/` 尽量兼容，但 **V1 subtask 不会投影进 v2**，要进行中的 tool 会变成 `tool.interrupted`。
 - Web / Electron / VS Code / mobile / Relay 一次换契约。
-- 不新增依赖，除非本方案进入实施并明确批准 `@opencode-ai/client`。
+- 不新增依赖，除非本方案进入实施并明确批准 `@opencode/client`。
 
 ## 三、当前链路
 
@@ -198,7 +198,7 @@ sequenceDiagram
 | 发送 | `POST /api/session/:id/prompt` `{delivery, resume}` | 返回 inbox item，不是直接写 transcript |
 | 中断 | `POST /api/session/:id/interrupt?continue=` | 替换 1.x abort |
 | 会话列表 / 活跃 | `GET /api/session`、`GET /api/session/active` | 侧栏与 busy 以服务端为准，少靠 SSE 推断 |
-| 客户端 SDK | `@opencode-ai/client` | 替换 `@opencode-ai/sdk@1.18.4` 的 `/v2` |
+| 客户端 SDK | `@opencode/client` | 替换 `@opencode-ai/sdk@1.18.4` 的 `/v2` |
 
 ### 5.2 用来拆中间层（一致性 + 体验）
 
@@ -537,7 +537,7 @@ Assistants 读模型改成「按 binding 去问 OpenCode」。session-index 可�
 | `packages/ui/src/sync/session-merge-strategy.ts` | 2 | 默认改为 reconcileFetched |
 | `packages/ui/src/sync/transcript-merge.ts` | 2 | 删 `id < previousFirst` |
 | `packages/ui/src/sync/transcript-repository-*.ts` | 2 | force GET；打开/刷新走权威尾页 |
-| `packages/ui/src/lib/opencode/client.ts` | 1–3 | 换 `@opencode-ai/client` |
+| `packages/ui/src/lib/opencode/client.ts` | 1–3 | 换 `@opencode/client` |
 | `packages/web/server/lib/conversations/` | 3 | 薄编排，不缓存正文 |
 | `packages/web/server/lib/message-queue/` | 3 | 意图化 |
 | `packages/web/server/lib/assistants/service.js` | 5 | 停写 mirror |

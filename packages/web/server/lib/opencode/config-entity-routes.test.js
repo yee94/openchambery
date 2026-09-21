@@ -5,9 +5,9 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 
-vi.mock('@opencode-ai/client', () => ({ OpenCode: { make: vi.fn() } }));
+vi.mock('@opencode/client', () => ({ OpenCode: { make: vi.fn() } }));
 
-const { OpenCode } = await import('@opencode-ai/client');
+const { OpenCode } = await import('@opencode/client');
 const { registerConfigEntityRoutes } = await import('./config-entity-routes.js');
 const createOpencodeClient = OpenCode.make;
 
