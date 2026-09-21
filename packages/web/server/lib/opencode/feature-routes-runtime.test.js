@@ -43,6 +43,16 @@ describe('feature routes runtime composition', () => {
     expect(source).toContain('registerMessageQueueRoutes(app, { messageQueueService, messageQueueRuntime });');
   });
 
+  it('registers question auto-delegate routes (including reply/reject intercepts) before proxy composition', async () => {
+    const source = await fs.readFile(new URL('./feature-routes-runtime.js', import.meta.url), 'utf8');
+    expect(source).toContain("import { registerQuestionAutoDelegateRoutes } from '../question-auto-delegate/routes.js';");
+    expect(source).toMatch(/const \{[\s\S]*questionAutoDelegateRuntime,[\s\S]*\} = routeDependencies;/);
+    expect(source).toContain('registerQuestionAutoDelegateRoutes(app, questionAutoDelegateRuntime)');
+    const routesSource = await fs.readFile(new URL('../question-auto-delegate/routes.js', import.meta.url), 'utf8');
+    expect(routesSource).toContain("app.post('/api/question/:requestID/reply'");
+    expect(routesSource).toContain("app.post('/api/question/:requestID/reject'");
+  });
+
   it('registers session turn-page routes before proxy composition with OpenCode URL/auth deps', async () => {
     const source = await fs.readFile(new URL('./feature-routes-runtime.js', import.meta.url), 'utf8');
     expect(source).toContain("import { registerSessionTurnPageRoutes } from '../session-turn-pages/routes.js';");

@@ -115,7 +115,7 @@ type PendingFileNavigation = {
   column: number;
 };
 
-export type MainTabGuard = (nextTab: MainTab) => boolean;
+export type MainTabGuard = (nextTab: MainTab, continueNavigation?: () => void) => boolean;
 export type EventStreamStatus =
   | 'idle'
   | 'connecting'
@@ -836,6 +836,10 @@ interface UIStore {
   notifyOnCompletion: boolean;
   notifyOnError: boolean;
   notifyOnQuestion: boolean;
+  notifyOnPermission: boolean;
+  notifyOnScheduledTasks: boolean;
+  notifyOnAssistants: boolean;
+  notifyOnGoals: boolean;
 
   // Per-event notification templates
   notificationTemplates: {
@@ -1021,6 +1025,10 @@ interface UIStore {
   setNotifyOnCompletion: (value: boolean) => void;
   setNotifyOnError: (value: boolean) => void;
   setNotifyOnQuestion: (value: boolean) => void;
+  setNotifyOnPermission: (value: boolean) => void;
+  setNotifyOnScheduledTasks: (value: boolean) => void;
+  setNotifyOnAssistants: (value: boolean) => void;
+  setNotifyOnGoals: (value: boolean) => void;
   setNotificationTemplates: (templates: UIStore['notificationTemplates']) => void;
   setSummarizeLastMessage: (value: boolean) => void;
   setSummaryThreshold: (value: number) => void;
@@ -1063,6 +1071,13 @@ interface UIStore {
   setFileEditorKeymap: (value: FileEditorKeymap) => void;
 }
 
+
+const canNavigateToContextFile = (state: UIStore, directory: string, path: string | null | undefined, continueNavigation: () => void): boolean => {
+  const panel = state.contextPanelByDirectory[directory];
+  const activeTab = panel?.tabs.find((tab) => tab.id === panel.activeTabId);
+  if (activeTab?.mode === 'file' && activeTab.targetPath === path) return true;
+  return state.mainTabGuard?.('files', continueNavigation) ?? true;
+};
 
 export const useUIStore = create<UIStore>()(
   devtools(
@@ -1169,6 +1184,10 @@ export const useUIStore = create<UIStore>()(
         notifyOnCompletion: true,
         notifyOnError: true,
         notifyOnQuestion: true,
+        notifyOnPermission: true,
+        notifyOnScheduledTasks: true,
+        notifyOnAssistants: true,
+        notifyOnGoals: true,
         notificationTemplates: {
           completion: { ...EMPTY_NOTIFICATION_TEMPLATES.completion },
           error: { ...EMPTY_NOTIFICATION_TEMPLATES.error },
@@ -1515,6 +1534,9 @@ export const useUIStore = create<UIStore>()(
           if (!normalizedDirectory || !normalizedFilePath) {
             return;
           }
+          if (!canNavigateToContextFile(get(), normalizedDirectory, normalizedFilePath, () => get().openContextFile(directory, filePath, options))) {
+            return;
+          }
 
           get().openContextPanelTab(normalizedDirectory, {
             mode: 'file',
@@ -1532,6 +1554,9 @@ export const useUIStore = create<UIStore>()(
           const normalizedLine = Number.isFinite(line) ? Math.max(1, Math.trunc(line)) : 1;
           const normalizedColumn = Number.isFinite(column) ? Math.max(1, Math.trunc(column as number)) : 1;
           if (!normalizedDirectory || !normalizedFilePath) {
+            return;
+          }
+          if (!canNavigateToContextFile(get(), normalizedDirectory, normalizedFilePath, () => get().openContextFileAtLine(directory, filePath, line, column))) {
             return;
           }
 
@@ -1609,6 +1634,10 @@ export const useUIStore = create<UIStore>()(
           const normalizedDirectory = normalizeDirectoryPath((directory || '').trim());
           const normalizedTabID = (tabID || '').trim();
           if (!normalizedDirectory || !normalizedTabID) {
+            return;
+          }
+          const targetTab = get().contextPanelByDirectory[normalizedDirectory]?.tabs.find((tab) => tab.id === normalizedTabID);
+          if (targetTab?.mode === 'file' && !canNavigateToContextFile(get(), normalizedDirectory, targetTab.targetPath, () => get().setActiveContextPanelTab(directory, tabID))) {
             return;
           }
 
@@ -2602,6 +2631,10 @@ export const useUIStore = create<UIStore>()(
         setNotifyOnCompletion: (value) => { set({ notifyOnCompletion: value }); },
         setNotifyOnError: (value) => { set({ notifyOnError: value }); },
         setNotifyOnQuestion: (value) => { set({ notifyOnQuestion: value }); },
+        setNotifyOnPermission: (value) => { set({ notifyOnPermission: value }); },
+        setNotifyOnScheduledTasks: (value) => { set({ notifyOnScheduledTasks: value }); },
+        setNotifyOnAssistants: (value) => { set({ notifyOnAssistants: value }); },
+        setNotifyOnGoals: (value) => { set({ notifyOnGoals: value }); },
         setNotificationTemplates: (templates) => { set({ notificationTemplates: templates }); },
         setSummarizeLastMessage: (value) => { set({ summarizeLastMessage: value }); },
         setSummaryThreshold: (value) => { set({ summaryThreshold: value }); },
@@ -2904,6 +2937,10 @@ export const useUIStore = create<UIStore>()(
           notifyOnCompletion: state.notifyOnCompletion,
           notifyOnError: state.notifyOnError,
           notifyOnQuestion: state.notifyOnQuestion,
+          notifyOnPermission: state.notifyOnPermission,
+          notifyOnScheduledTasks: state.notifyOnScheduledTasks,
+          notifyOnAssistants: state.notifyOnAssistants,
+          notifyOnGoals: state.notifyOnGoals,
           notificationTemplates: state.notificationTemplates,
           summarizeLastMessage: state.summarizeLastMessage,
           summaryThreshold: state.summaryThreshold,

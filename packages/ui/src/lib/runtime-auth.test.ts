@@ -1,13 +1,18 @@
 import { describe, expect, test } from 'bun:test';
 import {
+  beginRuntimeAuthEndpointSwitch,
   buildRuntimeAuthHeaders,
   clearRuntimeAuthCredentialProvider,
   clearRuntimeUrlAuthToken,
+  endRuntimeAuthEndpointSwitch,
+  getRuntimeAuthGeneration,
   getRuntimeBearerTokenSync,
+  invalidateRuntimeAuthSession,
   refreshRuntimeUrlAuthToken,
   setRuntimeAuthCredentialProvider,
   setRuntimeBearerToken,
   setRuntimeExtraHeaders,
+  subscribeRuntimeAuthGeneration,
 } from './runtime-auth';
 
 describe('runtime auth headers', () => {
@@ -142,6 +147,46 @@ describe('runtime auth headers', () => {
       globalThis.fetch = previousFetch;
       clearRuntimeUrlAuthToken();
       setRuntimeExtraHeaders(null);
+      clearRuntimeAuthCredentialProvider();
+    }
+  });
+
+  test('subscribeRuntimeAuthGeneration fires on bearer change without secrets', () => {
+    const details: Array<{ generation: number; reason: string }> = [];
+    const stop = subscribeRuntimeAuthGeneration((detail) => {
+      details.push({ generation: detail.generation, reason: detail.reason });
+    });
+    try {
+      const before = getRuntimeAuthGeneration();
+      setRuntimeBearerToken(`token-${before + 1}`);
+      expect(details.length).toBeGreaterThanOrEqual(1);
+      expect(details.at(-1)?.generation).toBe(getRuntimeAuthGeneration());
+      expect(details.at(-1)?.reason).toBe('credential');
+      expect(JSON.stringify(details)).not.toContain('token-');
+      invalidateRuntimeAuthSession();
+      expect(details.at(-1)?.reason).toBe('invalidate');
+      expect(getRuntimeAuthGeneration()).toBeGreaterThan(before);
+    } finally {
+      stop();
+      clearRuntimeAuthCredentialProvider();
+    }
+  });
+
+  test('endpoint-switch reason is published while begin/end wraps credential sets', () => {
+    const reasons: string[] = [];
+    const stop = subscribeRuntimeAuthGeneration((detail) => {
+      reasons.push(detail.reason);
+    });
+    try {
+      beginRuntimeAuthEndpointSwitch();
+      try {
+        setRuntimeBearerToken(`switch-token-${Date.now()}`);
+      } finally {
+        endRuntimeAuthEndpointSwitch();
+      }
+      expect(reasons.at(-1)).toBe('endpoint-switch');
+    } finally {
+      stop();
       clearRuntimeAuthCredentialProvider();
     }
   });

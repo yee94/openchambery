@@ -14,6 +14,7 @@ Pairing v2 is implemented by `packages/web/server/lib/client-auth/pairing.js`. I
 - `packages/web/server/lib/client-auth/pairing.js`: short-lived Pairing v2 sessions and one-time secret redemption into trusted-device client tokens.
 
 ## Public exports (ui-auth.js)
+- `isUrlAuthWebSocketPath(pathname)`: true when a WebSocket upgrade may authenticate with `oc_url_token` (exact terminal/dictation/event/realtime-proxy paths, plus prefix `/api/preview/proxy/` for Preview HMR). Keep in sync with tunnel-host `isTunnelWsPathAllowed`.
 - `createUiAuth({ password, cookieName, sessionTtlMs, readSettingsFromDiskMigrated })`: creates UI auth controller with methods:
   - `enabled`
   - `requireAuth(req, res, next)`

@@ -228,6 +228,31 @@ const virtualAssetApi = isLocalPage
     }
   : undefined;
 
+// Preview loopback gateway — local packaged/HMR UI only. Unauthenticated
+// 127.0.0.1 front door; owner renderer runtimeFetchs / openRuntimeWebSockets
+// /api/preview/proxy/* (HTTP + HMR WS). Not on COMMANDS_SAFE_FOR_REMOTE.
+// Main re-checks isLocalSender.
+const previewGatewayApi = isLocalPage
+  ? {
+      ensure: () => ipcRenderer.invoke('openchamber:preview-gateway:ensure'),
+      release: () => ipcRenderer.invoke('openchamber:preview-gateway:release'),
+      begin: (payload) => ipcRenderer.invoke('openchamber:preview-gateway:begin', payload || {}),
+      push: (requestId, chunk) => ipcRenderer.invoke('openchamber:preview-gateway:push', { requestId, chunk }),
+      end: (requestId) => ipcRenderer.invoke('openchamber:preview-gateway:end', { requestId }),
+      abort: (requestId) => ipcRenderer.invoke('openchamber:preview-gateway:abort', { requestId }),
+      wsOpened: (payload) => ipcRenderer.invoke('openchamber:preview-gateway:ws-opened', payload || {}),
+      wsSend: (requestId, data, binary) => ipcRenderer.invoke('openchamber:preview-gateway:ws-send', {
+        requestId,
+        data,
+        binary: binary === true,
+      }),
+      wsClose: (requestId, payload) => ipcRenderer.invoke('openchamber:preview-gateway:ws-close', {
+        requestId,
+        ...(payload && typeof payload === 'object' ? payload : {}),
+      }),
+    }
+  : undefined;
+
 // The desktop bridge is exposed on all pages; the main-process gate in
 // ipcMain.handle('openchamber:invoke') decides per-command what is safe
 // for non-local callers (window/host-switcher ops yes, file/shell ops
@@ -248,4 +273,6 @@ contextBridge.exposeInMainWorld('__OPENCHAMBER_DESKTOP__', {
   // Opaque virtual image stream for relay/host-backed images. URL scheme is
   // openchamber-asset://stream/<assetId> — never host paths or credentials.
   virtualAsset: virtualAssetApi,
+  // Relay Preview iframe origin (http://127.0.0.1:<ephemeral>). Local page only.
+  previewGateway: previewGatewayApi,
 });

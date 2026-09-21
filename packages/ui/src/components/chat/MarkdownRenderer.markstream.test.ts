@@ -67,7 +67,10 @@ describe('markstream-react trial path', () => {
     expect(fileRefs).not.toContain('MutationObserver');
     expect(fileRefs).not.toContain('wrapMarkdownFileReferenceTokens');
     expect(custom).toContain("setCustomComponents({");
-    expect(custom).toContain('text: MarkstreamTextNode');
+    expect(custom).toContain('text: MarkstreamTextMapEntry');
+    expect(custom).toContain("props.node?.type === 'code_block'");
+    expect(custom).toContain('MarkstreamCodeBlockNode,');
+    expect(custom).toContain('MarkstreamTextNode,');
     expect(custom).toContain('inline_code: MarkstreamInlineCodeNode');
     expect(custom).toContain('code_block:');
     expect(custom).toContain('withMarkstreamComponentDisplay(MarkstreamCodeBlockNode');

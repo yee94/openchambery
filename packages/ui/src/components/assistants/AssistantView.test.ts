@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'bun:test'
+import { describe, expect, test } from 'vitest'
 import { readFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -112,6 +112,30 @@ describe('AssistantView synthetic part consumption', () => {
 })
 
 describe('AssistantView contact surface', () => {
+  test('phone gear delegates directly to its page-stack owner', async () => {
+    const source = await readFile(join(directory, 'AssistantView.tsx'), 'utf8')
+    const header = source.slice(source.indexOf('const MobileAssistantConversationHeader:'), source.indexOf('type AssistantListItemProps'))
+    expect(header).toContain('if (onOpenSettings) {\n      onOpenSettings(assistant.id);\n      return;')
+    expect(source).toContain('onOpenSettings={onMobileOpenSettings}')
+  })
+  test('keeps localized creation actions in populated desktop and mobile headers', async () => {
+    const desktop = await readFile(join(directory, 'AssistantView.tsx'), 'utf8')
+    const mobile = await readFile(join(directory, '../../mobile/assistant/MobileAssistantTab.tsx'), 'utf8')
+    const desktopHeader = desktop.slice(desktop.indexOf('<section className="flex h-full'), desktop.indexOf('role="listbox"'))
+    const mobileHeader = mobile.slice(mobile.indexOf('snapshot.data.assistants.length > 0'), mobile.indexOf('className="oc-mobile-assistant-catalog"'))
+    for (const header of [desktopHeader, mobileHeader]) {
+      expect(header).toContain('type="button"')
+      expect(header).toContain("aria-label={t('assistants.settings.create')}")
+      expect(header).toContain('<Icon name="add"')
+    }
+    expect(desktopHeader).toContain('size="icon"')
+    expect(desktopHeader).toContain('min-w-0 flex-1 truncate')
+    expect(desktopHeader).toContain('onClick={openCreateSettings}')
+    expect(mobileHeader).toContain('trailing={(')
+    expect(mobileHeader).toContain('size="mobileIcon"')
+    expect(mobileHeader).toContain('onClick={handleCreate}')
+  })
+
   test('does not ensure an OpenCode session to show the contact transcript', async () => {
     const source = await readFile(join(directory, 'AssistantView.tsx'), 'utf8')
     expect(source).toContain('<AssistantConversationSurface')

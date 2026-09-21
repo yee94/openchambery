@@ -34,7 +34,7 @@ const MessageHeader: React.FC<MessageHeaderProps> = ({ isUser, isMobile, provide
     return (
         <div className={cn('mb-1.5')}>
             <div className={cn('flex items-center justify-between gap-2')}>
-                <div className="flex items-center gap-2">
+                <div className="flex min-w-0 items-center gap-2">
                     <div className="flex-shrink-0">
                         {isUser ? (
                             <div className="w-9 h-9 rounded-xl bg-primary/10 flex items-center justify-center">
@@ -54,7 +54,7 @@ const MessageHeader: React.FC<MessageHeaderProps> = ({ isUser, isMobile, provide
                             </div>
                         )}
                     </div>
-                    <div className="flex items-center gap-2">
+                    <div className="flex min-w-0 items-center gap-2">
                         <h3
                             className={cn(
                                 'inline-flex min-w-0 items-center gap-1.5 font-semibold typography-ui-header tracking-tight leading-tight',
@@ -71,8 +71,7 @@ const MessageHeader: React.FC<MessageHeaderProps> = ({ isUser, isMobile, provide
                         {!isUser && agentName && (
                             <div
                                 className={cn(
-                                    'agent-badge inline-flex items-center gap-1 cursor-default rounded font-normal leading-tight',
-                                    isMobile ? 'px-1 py-px text-[10px]' : 'px-1.5 py-0.5 typography-micro',
+                                    'agent-badge inline-flex shrink-0 items-center gap-1 cursor-default rounded px-1.5 py-0 font-normal leading-none text-[10px]',
                                     getAgentColor(agentName).class
                                 )}
                             >

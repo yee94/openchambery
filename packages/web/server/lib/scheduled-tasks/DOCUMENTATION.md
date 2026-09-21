@@ -25,6 +25,8 @@ Server-owned scheduled task runtime and routes for OpenChamber-only automation.
   - Independent SQLite file `scheduled-task-runs.sqlite` (WAL)
   - Keyset-paginated list of run records
   - On open, converges leftover `running` rows to `error` with an interrupted message
+  - Scheduled runs claim `(project_id, task_id, slot_at)` so multiple OpenChamber
+    processes sharing a data dir cannot occupy the same fire slot
 
 - `packages/web/server/lib/scheduled-tasks/routes.js`
   - Global scheduled task list endpoint with per-project partial-result handling
@@ -101,6 +103,11 @@ Persisted columns:
 | `started_at` | Epoch ms |
 | `finished_at` | Nullable epoch ms |
 | `duration_ms` | Nullable |
+| `slot_at` | Scheduled occupancy key (the armed `nextRunAt`). Null for manual runs. List DTO omits this column. |
+
+Partial unique index `scheduled_task_run_scheduled_slot` on
+`(project_id, task_id, slot_at)` where `trigger = 'scheduled' AND slot_at IS NOT NULL`.
+A second `startRun` for the same slot throws `SCHEDULED_SLOT_CLAIMED`.
 
 Indexes support `started_at DESC, run_id DESC` listing with project/task filters.
 
@@ -168,6 +175,9 @@ failure preserves tasks from completed projects and adds that project ID to
 Every actual run (timer or manual):
 
 1. Allocate a unique `runID` and persist `status=running` in the history store.
+   Timer fires pass the armed `nextRunAt` as `slotAt`. A duplicate scheduled
+   slot claim skips the run: no session, no task-state write, no notification.
+   The losing scheduler arms the next occurrence and returns `{ skipped: true }`.
 2. Persist task state `lastStatus=running`.
 3. Create a per-run `AbortController` and race `runTaskWithWatchdog` against
    `maxRunDurationMs` (default 2 hours). Only this watchdog timeout aborts

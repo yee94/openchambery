@@ -12,15 +12,22 @@ export const useAssistantContactWorkingStore = create<AssistantContactWorkingSta
   })),
 }))
 
+/**
+ * List green-dot / contact busy. Server snapshot `working` is authoritative for
+ * APP restart and reconnect. Local sending/processing is temporary continuity
+ * until the snapshot/SSE catches up — never the sole durable source.
+ */
 export const isAssistantWorking = ({
   sending = false,
   processing = false,
+  serverWorking = false,
 }: {
   sending?: boolean
   processing?: boolean
-}) => sending || processing
+  serverWorking?: boolean
+}) => sending || processing || serverWorking
 
-export const useAssistantWorking = (assistantID: string) => {
+export const useAssistantWorking = (assistantID: string, serverWorking = false) => {
   const contactWorking = useAssistantContactWorkingStore((state) => Boolean(state.workingByID[assistantID]))
-  return isAssistantWorking({ processing: contactWorking })
+  return isAssistantWorking({ processing: contactWorking, serverWorking })
 }

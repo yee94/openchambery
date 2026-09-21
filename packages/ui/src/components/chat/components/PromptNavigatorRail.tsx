@@ -683,7 +683,7 @@ export function PromptNavigatorRail({
                                                         className={cn(
                                                             // Fill both clamp lines to the edge instead of
                                                             // leaving a ragged gap before a long next word.
-                                                            'min-w-0 flex-1 line-clamp-2 [overflow-wrap:anywhere] typography-meta',
+                                                            'min-w-0 flex-1 line-clamp-2 [overflow-wrap:anywhere] text-[length:calc(var(--text-meta)-0.0625rem)] leading-snug',
                                                             isActive
                                                                 ? 'text-[var(--interactive-selectionForeground)]'
                                                                 : 'text-[var(--surface-mutedForeground)]',

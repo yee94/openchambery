@@ -9,14 +9,24 @@ only model path the Assistant harness (`pi-agent-core` `streamFn`) talks to.
   from official `@opencode-ai/client` `provider.list` + `model.list`
   (`{ location, data }`). `ModelInfo.id` is the external modelID used in
   generate/session refs (`ModelInfo.modelID` is a separate internal field).
-  Vision is `capabilities.input` containing `image`.
+  Vision prefers `capabilities.input.image === true` (SDK object shape), then
+  v2 list `capabilities.input` containing `"image"`, then legacy
+  modalities/input/attachment. Catalog loads use a bounded AbortSignal
+  (default 8s) so a pending provider call cannot stall a contact lane.
 - `POST /api/openchamber/llm/chat/completions` — `{ model, messages, stream?,
-  providerID?, modelID? }` → OpenAI `chat.completion` JSON.
+  providerID?, modelID?, variant? }` → OpenAI `chat.completion` JSON.
   This **public** gateway is **non-streaming**. `stream: true` is rejected with
   `validation_error` (HTTP 400). Do not emit fake SSE after the fact on this
   route. The contact UI may stream later via a **server-internal** path only.
 
 `model` may be `providerID/modelID` or a bare `modelID` paired with `providerID`.
+
+`variant` is an optional OpenCode model variant string. Null, omitted, or empty
+values preserve the provider default. Other types fail validation before a model
+call. A selected variant is forwarded unchanged on `generate.text` and on the
+attachment-session `model` ref. OpenCode owns provider-specific variant
+semantics. Variant selection changes inference configuration only; completion
+output continues to include text parts and keeps reasoning parts private.
 
 ## Internals (official `@opencode-ai/client`)
 
@@ -39,7 +49,8 @@ data-URL file parts:
 2. `agent.get({ agentID: 'openchamber-llm', location })` and require the **final**
    permissions rule to be deny-all. Failure → `llm_attachment_generation_unavailable`
    **before** any `session.prompt`. Title is never treated as permission isolation.
-3. `session.create({ location, agent, model: { id, providerID } })` (bare session id).
+3. `session.create({ location, agent, model: { id, providerID, variant? } })`
+   (bare session id).
 4. Optional `session.instructions.entry.put` for the system prompt.
 5. Subscribe for `session.text.delta` (`data.sessionID` / `assistantMessageID` /
    `ordinal` / `delta`) before prompt; unsubscribe in `finally`.
@@ -54,7 +65,15 @@ image bytes. Data URLs are strictly validated; a single attachment is capped at
 20 MiB (plus existing inline text-file limits). An external/temp workspace that
 OpenCode cannot see fails explicitly (`llm_attachment_generation_unavailable`).
 
+`ensureLlmTempDirectory` keeps one process-wide throwaway root (`openchamber-llm-…`).
+Concurrent first callers share a single `mkdtemp` inflight; every caller still
+writes/refreshes `.opencode/agent/<name>.md` after settle so a mid-flight ensure
+cannot skip a newer agent body. Concurrent warm refreshes serialize through one
+write chain (last committed body wins; no interleaved partial writes).
+`stopLlmTempDirectory` clears the singleton for shutdown/tests.
+
 There is no `/generate` probe, no `tool.ids` deny map, and no `promptAsync` path.
+There is no `config.providers` catalog path.
 
 ### Internal token callback (in-process only)
 
@@ -71,8 +90,20 @@ an empty success. The 502 body includes `{ error, message }`.
 
 ## Ownership
 
+The hidden generator agent explicitly describes application-owned tool calls:
+it emits `openchamber-tool` JSON for the contact harness to execute and receives
+the results on subsequent requests. Native OpenCode tool permissions remain
+denied. Capability statements and execution errors must follow the supplied
+application tool catalog and actual results.
+
 The Assistant contact harness owns system prompt, OpenChamber transcript,
 bubble splitting, and OpenChamber API tools (`assign_session`). Those tools
 deliver through contact **cards**, not this completions payload. The gateway
 stays a text generator: OpenCode coding tools stay denied on the attachment path
 via the verified agent permissions ruleset.
+
+Internal completion/generate calls accept an optional AbortSignal from the
+contact continuation. It is combined with the generator deadline and passed to
+upstream requests. Cancellation still runs throwaway-session cleanup
+(`interrupt` + `remove`); it must not turn a late model response into a new
+tool operation.

@@ -36,6 +36,11 @@ import {
 } from './contextPanelEmbeddedChat';
 import { ContextPanelSessionTranscript } from './ContextPanelSessionTranscript';
 import {
+  normalizeBrowserUrl,
+  resolveBrowserPaneNavigation,
+  shouldUseDesktopWebviewBrowser,
+} from './browserPaneNavigation';
+import {
   createContextPanelNavigationState,
   createContextPanelSessionSurfaceId,
   createContextPanelSessionViewKey,
@@ -59,6 +64,12 @@ import {
   getBrowserProxyTargetKey,
   previewProxyTargetCache,
 } from '@/lib/preview/screenshot-capture';
+import { resolveRelayPreviewFrameSrc } from '@/lib/preview/relay-preview-frame-src';
+import {
+  ensurePreviewGatewayOrigin,
+  hasDesktopPreviewGateway,
+} from '@/lib/preview/relay-preview-gateway-client';
+import { isRelayModeActive } from '@/lib/relay/runtime-tunnel';
 
 const CONTEXT_PANEL_MIN_WIDTH = 380;
 const CONTEXT_PANEL_MAX_WIDTH = 1400;
@@ -461,18 +472,6 @@ const DESKTOP_BROWSER_SAME_WEBVIEW_NAVIGATION_SCRIPT = `(() => {
   }, true);
 })()`;
 
-const normalizeBrowserUrl = (value: string): string => {
-  const trimmed = value.trim();
-  if (!trimmed) return 'about:blank';
-  try {
-    const parsed = new URL(trimmed.includes('://') ? trimmed : `https://${trimmed}`);
-    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return 'about:blank';
-    return parsed.toString();
-  } catch {
-    return 'about:blank';
-  }
-};
-
 const runIframeScript = async <T,>(iframe: HTMLIFrameElement, script: string): Promise<T> => {
   const frameWindow = iframe.contentWindow;
   if (!frameWindow) {
@@ -701,9 +700,50 @@ const PreviewPane: React.FC<PreviewPaneProps> = ({ rawUrl, onNavigate }) => {
     })()
     : '';
 
-  const effectiveSrc = isLoopback ? proxySrc : directSrc;
-  const headerSrc = isLoopback ? stripPreviewTokenFromUrl(proxySrc) : directSrc;
-  const showLoading = isLoopback && (proxyState.status === 'loading' || proxyState.status === 'idle' || urlAuthReadyKey !== proxyUrlAuthKey);
+  // Electron + Relay: iframe must load http://127.0.0.1:<ephemeral> (loopback
+  // gateway). LAN/direct keep authenticatedAsset as-is — do not start gateway.
+  const relayPreviewActive = isLoopback && isRelayModeActive() && hasDesktopPreviewGateway();
+  const [previewGatewayOrigin, setPreviewGatewayOrigin] = React.useState('');
+  React.useEffect(() => {
+    if (!relayPreviewActive) {
+      setPreviewGatewayOrigin('');
+      return;
+    }
+    let cancelled = false;
+    setPreviewGatewayOrigin('');
+    void ensurePreviewGatewayOrigin()
+      .then((origin) => {
+        if (!cancelled && origin) setPreviewGatewayOrigin(origin);
+      })
+      .catch(() => {
+        if (!cancelled) setPreviewGatewayOrigin('');
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [relayPreviewActive, proxyUrlAuthKey]);
+
+  const frameSrc = isLoopback
+    ? resolveRelayPreviewFrameSrc({
+      relayActive: relayPreviewActive,
+      gatewayOrigin: previewGatewayOrigin || null,
+      authenticatedAssetUrl: proxySrc,
+    })
+    : '';
+  // Under relay+electron wait for gateway origin before treating the frame as ready.
+  const relayGatewayPending = relayPreviewActive && Boolean(proxySrc) && !previewGatewayOrigin;
+  const effectiveSrc = isLoopback
+    ? (relayGatewayPending ? '' : frameSrc)
+    : directSrc;
+  const headerSrc = isLoopback
+    ? stripPreviewTokenFromUrl(frameSrc || proxySrc)
+    : directSrc;
+  const showLoading = isLoopback && (
+    proxyState.status === 'loading'
+    || proxyState.status === 'idle'
+    || urlAuthReadyKey !== proxyUrlAuthKey
+    || relayGatewayPending
+  );
   const showError = isLoopback && proxyState.status === 'error';
 
   const attachPreviewAnnotation = React.useCallback((target: PreviewElementMetadata) => {
@@ -768,26 +808,28 @@ const PreviewPane: React.FC<PreviewPaneProps> = ({ rawUrl, onNavigate }) => {
     if (!bridgeReady || !frameWindow) {
       return;
     }
-    postPreviewBridgeMessage(frameWindow, proxySrc, {
+    // postMessage targetOrigin must match the iframe document origin (gateway
+    // under Relay, authenticated asset origin on LAN/direct).
+    postPreviewBridgeMessage(frameWindow, effectiveSrc || proxySrc, {
       source: 'openchamber-preview-parent',
       version: 1,
       type: 'set-inspect-mode',
       enabled: inspectMode,
     });
-  }, [bridgeReady, inspectMode, proxySrc]);
+  }, [bridgeReady, effectiveSrc, inspectMode, proxySrc]);
 
   React.useEffect(() => {
     const frameWindow = iframeRef.current?.contentWindow;
     if (!bridgeReady || !frameWindow) {
       return;
     }
-    postPreviewBridgeMessage(frameWindow, proxySrc, {
+    postPreviewBridgeMessage(frameWindow, effectiveSrc || proxySrc, {
       source: 'openchamber-preview-parent',
       version: 1,
       type: 'set-color-scheme',
       scheme: previewColorScheme,
     });
-  }, [bridgeReady, previewColorScheme, proxySrc]);
+  }, [bridgeReady, effectiveSrc, previewColorScheme, proxySrc]);
 
   React.useEffect(() => {
     if (!inspectMode || typeof window === 'undefined') return;
@@ -1081,7 +1123,7 @@ const PreviewPane: React.FC<PreviewPaneProps> = ({ rawUrl, onNavigate }) => {
 
     try {
       const location = frameWindow.location;
-      const proxyOrigin = getPreviewProxyOrigin(proxySrc);
+      const proxyOrigin = getPreviewProxyOrigin(effectiveSrc || proxySrc);
       if (location.origin !== proxyOrigin) {
         return;
       }
@@ -1094,7 +1136,7 @@ const PreviewPane: React.FC<PreviewPaneProps> = ({ rawUrl, onNavigate }) => {
     } catch {
       // Cross-origin frames are expected for non-loopback/direct previews.
     }
-  }, [isLoopback, proxySrc, proxyState]);
+  }, [effectiveSrc, isLoopback, proxySrc, proxyState]);
 
   return (
     <div className="absolute inset-0 flex flex-col">
@@ -1382,6 +1424,15 @@ const IframeBrowserPane: React.FC<DesktopBrowserPaneProps> = ({ initialUrl, dire
     });
   }, [historyIndex, persistUrl]);
 
+  // Follow parent tab targetPath changes (same desktop-browser tab, new markdown link).
+  const currentUrlRef = React.useRef(currentUrl);
+  currentUrlRef.current = currentUrl;
+  React.useEffect(() => {
+    const nextUrl = resolveBrowserPaneNavigation(initialUrl, currentUrlRef.current);
+    if (nextUrl === null) return;
+    applyUrl(nextUrl);
+  }, [initialUrl, applyUrl]);
+
   const goToHistory = React.useCallback((nextIndex: number) => {
     const nextUrl = history[nextIndex];
     if (!nextUrl) return;
@@ -1512,7 +1563,41 @@ const IframeBrowserPane: React.FC<DesktopBrowserPaneProps> = ({ initialUrl, dire
     }
   }, [loadedUrl, proxyState, proxyUrlAuthKey, reloadNonce, urlAuthReadyKey]);
 
-  const iframeSrc = proxySrc || (proxyState.status === 'error' ? loadedUrl : '');
+  // Electron + Relay: iframe must load http://127.0.0.1:<ephemeral> (loopback
+  // gateway). LAN/direct keep authenticatedAsset as-is — do not start gateway.
+  const relayBrowserActive = isRelayModeActive() && hasDesktopPreviewGateway();
+  const [previewGatewayOrigin, setPreviewGatewayOrigin] = React.useState('');
+  React.useEffect(() => {
+    if (!relayBrowserActive) {
+      setPreviewGatewayOrigin('');
+      return;
+    }
+    let cancelled = false;
+    setPreviewGatewayOrigin('');
+    void ensurePreviewGatewayOrigin()
+      .then((origin) => {
+        if (!cancelled && origin) setPreviewGatewayOrigin(origin);
+      })
+      .catch(() => {
+        if (!cancelled) setPreviewGatewayOrigin('');
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [relayBrowserActive, proxyUrlAuthKey]);
+
+  const frameSrc = proxySrc
+    ? resolveRelayPreviewFrameSrc({
+      relayActive: relayBrowserActive,
+      gatewayOrigin: previewGatewayOrigin || null,
+      authenticatedAssetUrl: proxySrc,
+    })
+    : '';
+  // Under relay+electron wait for gateway origin before treating the frame as ready.
+  const relayGatewayPending = relayBrowserActive && Boolean(proxySrc) && !previewGatewayOrigin;
+  const iframeSrc = relayGatewayPending
+    ? ''
+    : (frameSrc || (proxyState.status === 'error' && !relayBrowserActive ? loadedUrl : ''));
 
   const getCurrentUrlFromFrameUrl = React.useCallback((frameUrl: string): string => {
     if (!frameUrl || !loadedUrl || proxyState.status !== 'ready') return '';
@@ -1521,7 +1606,11 @@ const IframeBrowserPane: React.FC<DesktopBrowserPaneProps> = ({ initialUrl, dire
       const proxyBasePath = proxyState.proxyBasePath.endsWith('/')
         ? proxyState.proxyBasePath.slice(0, -1)
         : proxyState.proxyBasePath;
-      if (parsedFrameUrl.origin !== window.location.origin || !parsedFrameUrl.pathname.startsWith(proxyBasePath)) {
+      // Frame may be same-origin (LAN) or loopback gateway origin (Relay).
+      const proxyOrigin = getPreviewProxyOrigin(iframeSrc || proxySrc);
+      const originOk = parsedFrameUrl.origin === window.location.origin
+        || (Boolean(proxyOrigin) && parsedFrameUrl.origin === proxyOrigin);
+      if (!originOk || !parsedFrameUrl.pathname.startsWith(proxyBasePath)) {
         return '';
       }
 
@@ -1531,14 +1620,17 @@ const IframeBrowserPane: React.FC<DesktopBrowserPaneProps> = ({ initialUrl, dire
     } catch {
       return '';
     }
-  }, [loadedUrl, proxyState]);
+  }, [iframeSrc, loadedUrl, proxySrc, proxyState]);
 
   const getUpstreamUrlFromLocalFrameUrl = React.useCallback((frameUrl: string): string => {
     if (!frameUrl || !loadedUrl || proxyState.status !== 'ready') return '';
     try {
       const parsedFrameUrl = new URL(frameUrl, window.location.origin);
       const upstreamOrigin = new URL(loadedUrl).origin;
-      if (parsedFrameUrl.origin !== window.location.origin || upstreamOrigin === window.location.origin) {
+      const proxyOrigin = getPreviewProxyOrigin(iframeSrc || proxySrc);
+      const isLocalFrameOrigin = parsedFrameUrl.origin === window.location.origin
+        || (Boolean(proxyOrigin) && parsedFrameUrl.origin === proxyOrigin);
+      if (!isLocalFrameOrigin || upstreamOrigin === window.location.origin) {
         return '';
       }
 
@@ -1553,18 +1645,19 @@ const IframeBrowserPane: React.FC<DesktopBrowserPaneProps> = ({ initialUrl, dire
     } catch {
       return '';
     }
-  }, [loadedUrl, proxyState]);
+  }, [iframeSrc, loadedUrl, proxySrc, proxyState]);
 
   const postInspectMode = React.useCallback((enabled: boolean) => {
     const frameWindow = iframeRef.current?.contentWindow;
     if (!frameWindow) return;
-    frameWindow.postMessage({
+    // targetOrigin must match the iframe document origin (gateway under Relay).
+    postPreviewBridgeMessage(frameWindow, iframeSrc || proxySrc, {
       source: 'openchamber-preview-parent',
       version: 1,
       type: 'set-inspect-mode',
       enabled,
-    }, window.location.origin);
-  }, []);
+    });
+  }, [iframeSrc, proxySrc]);
 
   const attachBrowserAnnotation = React.useCallback(async (target: PreviewElementMetadata) => {
     const sessionKey = currentSessionId ?? (newSessionDraftOpen ? 'draft' : null);
@@ -1799,7 +1892,7 @@ const IframeBrowserPane: React.FC<DesktopBrowserPaneProps> = ({ initialUrl, dire
             <span className="max-w-md typography-micro leading-relaxed text-status-warning/70">{t('contextPanel.browser.trustNotice')}</span>
           </div>
         )}
-        {isLoading ? (
+        {(isLoading || relayGatewayPending) ? (
           <div className="absolute inset-0 flex items-center justify-center bg-background/70 typography-micro text-muted-foreground">
             {t('common.loading')}
           </div>
@@ -1952,6 +2045,18 @@ const DesktopBrowserPane: React.FC<DesktopBrowserPaneProps> = ({ initialUrl, dir
     const nextUrl = normalizeBrowserUrl(value);
     try { webview.loadURL(nextUrl); } catch { /* webview may not be ready */ }
   }, []);
+
+  // Follow parent tab targetPath changes (same desktop-browser tab, new markdown link).
+  const currentUrlRef = React.useRef(currentUrl);
+  currentUrlRef.current = currentUrl;
+  React.useEffect(() => {
+    const nextUrl = resolveBrowserPaneNavigation(initialUrl, currentUrlRef.current);
+    if (nextUrl === null) return;
+    setCurrentUrl(nextUrl);
+    setUrlInput(nextUrl);
+    setIsLoading(true);
+    loadUrl(nextUrl);
+  }, [initialUrl, loadUrl]);
 
   const handleInspect = React.useCallback(() => {
     const webview = webviewRef.current;
@@ -2588,13 +2693,31 @@ export const ContextPanel: React.FC<{ directory?: string | null }> = ({ director
     () => tabs.filter((tab) => tab.mode === 'diff' || tab.mode === 'file-diff'),
     [tabs],
   );
-  const BrowserPane = isElectronBrowserRuntime() ? DesktopBrowserPane : IframeBrowserPane;
+  // Electron LAN/direct: native webview. Electron + Relay: Host preview proxy iframe.
+  const BrowserPane = shouldUseDesktopWebviewBrowser({
+    isElectron: isElectronBrowserRuntime(),
+    relayActive: isRelayModeActive(),
+  })
+    ? DesktopBrowserPane
+    : IframeBrowserPane;
   const hasFileTabs = React.useMemo(
     () => tabs.some((tab) => tab.mode === 'file'),
     [tabs],
   );
 
   const isFileTabActive = activeTab?.mode === 'file';
+  const [retainedFileTarget, setRetainedFileTarget] = React.useState<{ directory: string; path: string | null } | null>(null);
+  const fileTargetPath = isFileTabActive
+    ? activeTab.targetPath
+    : retainedFileTarget?.directory === directoryKey
+      && tabs.some((tab) => tab.mode === 'file' && tab.targetPath === retainedFileTarget.path)
+      ? retainedFileTarget.path
+      : null;
+  React.useEffect(() => {
+    setRetainedFileTarget((current) => current?.directory === directoryKey && current.path === fileTargetPath
+      ? current
+      : { directory: directoryKey, path: fileTargetPath ?? null });
+  }, [directoryKey, fileTargetPath]);
   const fileNotice = isFileTabActive ? activeTab?.fileNotice ?? null : null;
 
   React.useEffect(() => {
@@ -2779,9 +2902,14 @@ export const ContextPanel: React.FC<{ directory?: string | null }> = ({ director
         </div>
       ) : null}
       <div className={cn('relative min-h-0 flex-1 overflow-hidden', isResizing && 'pointer-events-none')}>
-        {hasFileTabs ? (
+        {hasFileTabs && fileTargetPath ? (
           <div className={cn('absolute inset-0', isFileTabActive ? 'block' : 'hidden')}>
-            <FilesView mode="editor-only" isActive={isOpen && isFileTabActive} />
+            <FilesView
+              key={`${directoryKey}:${fileTargetPath ?? ''}`}
+              mode="editor-only"
+              targetPath={fileTargetPath}
+              isActive={isOpen && isFileTabActive}
+            />
           </div>
         ) : null}
         {chatRenderMode === 'legacy-iframe' && chatTabs.map((tab) => {

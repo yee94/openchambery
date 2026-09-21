@@ -31,6 +31,13 @@ interface SettingsSearchAvailabilityContext extends SettingsRuntimeContext {
 
 const SETTINGS_SEARCH_ITEMS: readonly SettingsSearchItem[] = [
   {
+    id: 'chat.question-auto-delegate',
+    page: 'chat',
+    titleKey: 'settings.chat.questionDelegate.label',
+    descriptionKey: 'settings.chat.questionDelegate.description',
+    keywords: ['question', 'auto', 'delegate', '30', 'subagent', '托管', '倒计时'],
+  },
+  {
     id: 'instances.manage',
     page: 'instances',
     titleKey: 'mobile.settings.switchInstance',
@@ -438,8 +445,8 @@ const SETTINGS_SEARCH_ITEMS: readonly SettingsSearchItem[] = [
     keywords: ['archive', 'delete', 'expire'],
   },
   {
-    id: 'sessions.archived',
-    page: 'sessions',
+    id: 'archived-sessions.manage',
+    page: 'archived-sessions',
     titleKey: 'settings.openchamber.archivedSessions.title',
     descriptionKey: 'settings.openchamber.archivedSessions.description',
     keywords: ['archive', 'archived', 'restore', 'preview', 'history'],
@@ -477,16 +484,16 @@ const SETTINGS_SEARCH_ITEMS: readonly SettingsSearchItem[] = [
     isAvailable: (ctx) => ctx.isDesktopLocalOrigin,
   },
   {
-    id: 'sessions.desktop-ui-password',
-    page: 'sessions',
+    id: 'remote-instances.desktop-ui-password',
+    page: 'remote-instances',
     titleKey: 'settings.openchamber.desktopPassword.field.password',
     descriptionKey: 'settings.openchamber.desktopPassword.field.passwordDescription',
     keywords: ['desktop', 'password', 'auth', 'login'],
     isAvailable: (ctx) => ctx.isDesktopLocalOrigin,
   },
   {
-    id: 'sessions.desktop-lan-access',
-    page: 'sessions',
+    id: 'remote-instances.desktop-lan-access',
+    page: 'remote-instances',
     titleKey: 'settings.openchamber.desktopNetwork.field.allowLanAccess',
     descriptionKey: 'settings.openchamber.desktopNetwork.field.allowLanAccessDescription',
     keywords: ['desktop', 'lan', 'network', 'phone', 'tablet'],

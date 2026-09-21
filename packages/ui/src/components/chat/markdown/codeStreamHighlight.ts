@@ -58,6 +58,7 @@ export const applyPrefixDiffHtmlLines = (
     if (existing.length === 0 && code.childNodes.length > 0 && nextLines.length > 0) {
         code.replaceChildren();
         for (let index = 0; index < nextLines.length; index += 1) {
+            if (index > 0) code.appendChild(document.createTextNode('\n'));
             code.appendChild(createLine(nextLines[index] ?? '', index));
         }
         return { reused: 0, replaced: 0, added: nextLines.length, removed: 0 };
@@ -75,12 +76,17 @@ export const applyPrefixDiffHtmlLines = (
 
     let removed = 0;
     for (let index = existing.length - 1; index >= shared + replaced; index -= 1) {
+        // Separators belong to the following line, so truncation also removes
+        // its newline without touching any unchanged leading token nodes.
+        const separator = existing[index]?.previousSibling;
+        if (separator?.nodeType === Node.TEXT_NODE) separator.remove();
         existing[index]?.remove();
         removed += 1;
     }
 
     let added = 0;
     for (let index = shared + replaced; index < nextLines.length; index += 1) {
+        if (index > 0) code.appendChild(document.createTextNode('\n'));
         code.appendChild(createLine(nextLines[index] ?? '', index));
         added += 1;
     }
@@ -140,7 +146,8 @@ export type HighlightLinesFn = (
 
 /**
  * Tokenize open fences off-thread and patch only the changed suffix.
- * Failure leaves the previous (or stamped plain) markup in place.
+ * Failure retains highlighted prefix lines and advances the suffix as plain
+ * text, so preserving the fence subtree cannot freeze visible stream output.
  */
 export const upgradeStreamingFenceHighlight = async (
     root: ParentNode,
@@ -156,7 +163,19 @@ export const upgradeStreamingFenceHighlight = async (
         const lang = languageFromCodeElement(code);
         if (lang === 'mermaid') return;
         const lines = await highlightLines(source, lang, options);
-        if (!lines || options?.signal?.aborted || !root.contains(code)) return;
+        if (options?.signal?.aborted || !root.contains(code) || streamingFenceSource(code) !== source) return;
+        if (!lines) {
+            const existing = lineElements(code);
+            const escaped = document.createElement('span');
+            applyPrefixDiffHtmlLines(code, source.split('\n').map((text, index) => {
+                const line = existing[index];
+                if (line?.textContent === text) return line.innerHTML;
+                escaped.textContent = text;
+                return escaped.innerHTML;
+            }));
+            // Do not mark a failed highlight as applied; it remains retryable.
+            return;
+        }
         applyPrefixDiffHtmlLines(code, lines);
         code.setAttribute(STREAM_APPLIED_ATTR, source);
         code.removeAttribute(STREAM_SRC_ATTR);

@@ -44,4 +44,26 @@ export function registerSmallModelRoutes(app, { getSmallModelService }) {
       res.status(statusCode).json({ error: error.message || 'Small model generation failed' });
     }
   });
+
+  app.post('/api/small-model/test', async (req, res) => {
+    try {
+      const { testCustomApi } = await getSmallModelService();
+      const result = await testCustomApi(req.body || {});
+      res.status(result.ok ? 200 : 400).json(result);
+    } catch (error) {
+      console.error('Small model custom API test failed:', error);
+      res.status(500).json({ ok: false, code: 'baseURL' });
+    }
+  });
+
+  app.post('/api/small-model/custom-models', async (req, res) => {
+    try {
+      const { listCustomModels } = await getSmallModelService();
+      const models = await listCustomModels(req.body || {});
+      res.json({ models });
+    } catch (error) {
+      console.error('Small model custom model list failed:', error);
+      res.json({ models: [] });
+    }
+  });
 }

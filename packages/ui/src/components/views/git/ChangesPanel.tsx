@@ -17,6 +17,7 @@ import {
   TREE_INDENT_PX,
   buildChangesTree,
   flattenChangesTree,
+  getChangesTreeFileName,
   type ChangesTreeDirectoryNode,
   type FlattenedTreeRow,
 } from './changesTree';
@@ -575,10 +576,11 @@ export const ChangesPanel: React.FC<ChangesPanelProps> = ({
           indentPx={row.depth * TREE_INDENT_PX}
           actionAtStart={false}
           showRevert={group.showRevertActions !== false}
+          displayPath={isTreeView ? getChangesTreeFileName(file.path) : undefined}
         />
       );
     },
-    [diffStats, isRevertingAll, renderDirectory, renderHeader, revertingPaths, visibleGroups]
+    [diffStats, isRevertingAll, isTreeView, renderDirectory, renderHeader, revertingPaths, visibleGroups]
   );
 
   // A divider is drawn above a file/directory row only when the row directly above

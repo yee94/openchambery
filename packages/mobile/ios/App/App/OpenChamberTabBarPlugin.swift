@@ -165,8 +165,26 @@ class OpenChamberTabBarPlugin: CAPPlugin, CAPBridgedPlugin, OpenChamberTabBarVie
                 id: id,
                 label: label,
                 symbol: pair.0,
-                selectedSymbol: pair.1
+                selectedSymbol: pair.1,
+                badge: parseBadge(object["badge"])
             )
         }
+    }
+
+    /// UI contract: `badge` is already a display string (count or capped label) or null to clear.
+    /// Native does not re-cap counts — formatting stays on the JS side.
+    private static func parseBadge(_ value: Any?) -> String? {
+        guard let value else { return nil }
+        if value is NSNull { return nil }
+        let raw: String
+        if let string = value as? String {
+            raw = string
+        } else if let string = value as? NSString {
+            raw = string as String
+        } else {
+            return nil
+        }
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
     }
 }

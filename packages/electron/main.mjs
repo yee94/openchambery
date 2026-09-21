@@ -12,6 +12,7 @@ import { promisify } from 'node:util';
 import updaterPkg from 'electron-updater';
 import { ElectronSshManager, planOpenCodeConfigSync } from './ssh-manager.mjs';
 import { createDirectConfigSyncController } from './direct-config-sync.mjs';
+import { probeHostAuthentication } from './host-auth-probe.mjs';
 import { createSettingsStore } from './settings-store.mjs';
 import { createTrayController } from './tray.mjs';
 import {
@@ -48,6 +49,7 @@ import {
   ASSET_SCHEME_PRIVILEGES,
   createVirtualAssetRegistry,
 } from './virtual-asset-protocol.mjs';
+import { createPreviewLoopbackGateway } from './preview-loopback-gateway.mjs';
 
 const execFileAsync = promisify(execFile);
 
@@ -1072,8 +1074,13 @@ const probeHostWithTimeout = async (url, timeoutMs, clientToken = '', requestHea
       return { status: 'unreachable', latencyMs: Date.now() - started };
     }
     const payload = await response.json().catch(() => null);
+    const versionStatus = classifyVersionPayload(payload);
+    if (versionStatus === 'ok' || versionStatus === 'update-recommended') {
+      const authStatus = await probeHostAuthentication(url, { headers, timeoutMs });
+      if (authStatus !== 'ok') return { status: authStatus, latencyMs: Date.now() - started };
+    }
     return {
-      status: classifyVersionPayload(payload),
+      status: versionStatus,
       latencyMs: Date.now() - started,
     };
   } catch {
@@ -1242,6 +1249,88 @@ const virtualAssetRegistry = createVirtualAssetRegistry();
 
 const registerVirtualAssetProtocol = () => {
   protocol.handle(ASSET_PROTOCOL, (request) => virtualAssetRegistry.handleRequest(request));
+};
+
+// Preview loopback gateway (Relay + Electron): unauthenticated 127.0.0.1 front
+// door for iframe GET/HEAD and WS upgrade under /api/preview/proxy/ only.
+// Owner renderer runtimeFetch / openRuntimeWebSocket the same path (tunnel +
+// tokens). No Relay keys in main. One owner webContents per gateway;
+// multi-window does not share ownership.
+/** @type {Electron.WebContents | null} */
+let previewGatewayOwner = null;
+/** @type {ReturnType<typeof createPreviewLoopbackGateway> | null} */
+let previewLoopbackGateway = null;
+
+const clearPreviewGatewayOwner = (webContents) => {
+  if (!previewGatewayOwner) return;
+  // Only clear when the destroyed/released contents is still the active owner
+  // (ownership may have transferred to another window).
+  if (webContents && previewGatewayOwner !== webContents) return;
+  previewGatewayOwner = null;
+  try {
+    previewLoopbackGateway?.markOwnerGone();
+  } catch {
+    // ignore
+  }
+};
+
+const emitPreviewGatewayToOwner = (event, detail) => {
+  if (!previewGatewayOwner || previewGatewayOwner.isDestroyed()) {
+    return false;
+  }
+  try {
+    previewGatewayOwner.send('openchamber:emit', { event, detail });
+    return true;
+  } catch {
+    return false;
+  }
+};
+
+const getOrCreatePreviewLoopbackGateway = () => {
+  if (previewLoopbackGateway) return previewLoopbackGateway;
+  previewLoopbackGateway = createPreviewLoopbackGateway({
+    sendToOwner: (payload) => {
+      if (!previewGatewayOwner || previewGatewayOwner.isDestroyed()) {
+        return false;
+      }
+      // Never log path/query (tokens). Payload is method + path only.
+      return emitPreviewGatewayToOwner('openchamber:preview-gateway-request', payload);
+    },
+    sendWsOpenToOwner: (payload) => {
+      if (!previewGatewayOwner || previewGatewayOwner.isDestroyed()) {
+        return false;
+      }
+      // Never log path/query (tokens).
+      return emitPreviewGatewayToOwner('openchamber:preview-gateway-ws-open', payload);
+    },
+    sendWsMessageToOwner: (payload) => {
+      if (!previewGatewayOwner || previewGatewayOwner.isDestroyed()) {
+        return false;
+      }
+      return emitPreviewGatewayToOwner('openchamber:preview-gateway-ws-message', payload);
+    },
+    sendWsCloseToOwner: (payload) => {
+      if (!previewGatewayOwner || previewGatewayOwner.isDestroyed()) {
+        return false;
+      }
+      return emitPreviewGatewayToOwner('openchamber:preview-gateway-ws-close', payload);
+    },
+    onClientAbort: (requestId) => {
+      emitPreviewGatewayToOwner('openchamber:preview-gateway-abort', { requestId });
+    },
+  });
+  return previewLoopbackGateway;
+};
+
+const bindPreviewGatewayOwner = (webContents) => {
+  if (!webContents || webContents.isDestroyed()) {
+    throw new Error('preview gateway owner is required');
+  }
+  previewGatewayOwner = webContents;
+  previewLoopbackGateway?.markOwnerPresent();
+  webContents.once('destroyed', () => {
+    clearPreviewGatewayOwner(webContents);
+  });
 };
 
 const normalizeNotificationInput = (raw) => {
@@ -5413,6 +5502,93 @@ ipcMain.handle('openchamber:asset:cancel', async (event, payload) => {
   requireLocalAssetSender(event, 'asset:cancel');
   const assetId = typeof payload?.assetId === 'string' ? payload.assetId : '';
   return virtualAssetRegistry.cancel(assetId);
+});
+
+// Preview loopback gateway — local UI only. Separate channels (not on
+// COMMANDS_SAFE_FOR_REMOTE / openchamber:invoke). Main is a dumb HTTP/WS pipe.
+const requireLocalPreviewGatewaySender = (event, label) => {
+  if (!isLocalSender(event.sender)) {
+    log.warn(`[ipc] rejected ${label} from non-local origin: ${event.sender?.getURL?.() || '(unknown)'}`);
+    throw new Error('IPC not available for this origin');
+  }
+};
+
+const requirePreviewGatewayOwner = (event, label) => {
+  requireLocalPreviewGatewaySender(event, label);
+  if (!previewGatewayOwner || previewGatewayOwner !== event.sender) {
+    throw new Error('preview gateway owner mismatch');
+  }
+};
+
+ipcMain.handle('openchamber:preview-gateway:ensure', async (event) => {
+  requireLocalPreviewGatewaySender(event, 'preview-gateway:ensure');
+  const gateway = getOrCreatePreviewLoopbackGateway();
+  bindPreviewGatewayOwner(event.sender);
+  const started = await gateway.start();
+  gateway.markOwnerPresent();
+  return { origin: started.origin };
+});
+
+ipcMain.handle('openchamber:preview-gateway:release', async (event) => {
+  requireLocalPreviewGatewaySender(event, 'preview-gateway:release');
+  if (previewGatewayOwner && previewGatewayOwner === event.sender) {
+    clearPreviewGatewayOwner(event.sender);
+  }
+  return { ok: true };
+});
+
+ipcMain.handle('openchamber:preview-gateway:begin', async (event, payload) => {
+  requirePreviewGatewayOwner(event, 'preview-gateway:begin');
+  const requestId = typeof payload?.requestId === 'string' ? payload.requestId : '';
+  return getOrCreatePreviewLoopbackGateway().begin(requestId, {
+    status: payload?.status,
+    headers: payload?.headers,
+  });
+});
+
+ipcMain.handle('openchamber:preview-gateway:push', async (event, payload) => {
+  requirePreviewGatewayOwner(event, 'preview-gateway:push');
+  const requestId = typeof payload?.requestId === 'string' ? payload.requestId : '';
+  return getOrCreatePreviewLoopbackGateway().push(requestId, payload?.chunk);
+});
+
+ipcMain.handle('openchamber:preview-gateway:end', async (event, payload) => {
+  requirePreviewGatewayOwner(event, 'preview-gateway:end');
+  const requestId = typeof payload?.requestId === 'string' ? payload.requestId : '';
+  return getOrCreatePreviewLoopbackGateway().end(requestId);
+});
+
+ipcMain.handle('openchamber:preview-gateway:abort', async (event, payload) => {
+  requirePreviewGatewayOwner(event, 'preview-gateway:abort');
+  const requestId = typeof payload?.requestId === 'string' ? payload.requestId : '';
+  return getOrCreatePreviewLoopbackGateway().abort(requestId);
+});
+
+ipcMain.handle('openchamber:preview-gateway:ws-opened', async (event, payload) => {
+  requirePreviewGatewayOwner(event, 'preview-gateway:ws-opened');
+  const requestId = typeof payload?.requestId === 'string' ? payload.requestId : '';
+  return getOrCreatePreviewLoopbackGateway().wsOpened(requestId, {
+    protocol: typeof payload?.protocol === 'string' ? payload.protocol : undefined,
+  });
+});
+
+ipcMain.handle('openchamber:preview-gateway:ws-send', async (event, payload) => {
+  requirePreviewGatewayOwner(event, 'preview-gateway:ws-send');
+  const requestId = typeof payload?.requestId === 'string' ? payload.requestId : '';
+  return getOrCreatePreviewLoopbackGateway().wsSend(
+    requestId,
+    payload?.data,
+    payload?.binary === true,
+  );
+});
+
+ipcMain.handle('openchamber:preview-gateway:ws-close', async (event, payload) => {
+  requirePreviewGatewayOwner(event, 'preview-gateway:ws-close');
+  const requestId = typeof payload?.requestId === 'string' ? payload.requestId : '';
+  return getOrCreatePreviewLoopbackGateway().wsClose(requestId, {
+    code: payload?.code,
+    reason: payload?.reason,
+  });
 });
 
 // --- Native tray / menu bar ---------------------------------------------------

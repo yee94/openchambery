@@ -346,7 +346,9 @@ describe('MarkstreamRenderer fenced code blocks (OpenChamber chrome)', () => {
     expect(text).toContain('+-- ServerRun A');
 
     await render({ content: TEXT_ASCII_TREE_A, isStreaming: true, messageId: 'msg-text-stream' });
-    text = await waitForCodeText((value) => value.includes('+-- ClientRun / toolCall_2'));
+    // The open fence now advances incrementally even without a worker; wait
+    // for the final line asserted below, not an earlier partially revealed row.
+    text = await waitForCodeText((value) => value.includes('终态：cancelled / 结束等待'));
     expect(text).toContain('+-- ClientRun / toolCall_2');
     expect(text).toContain('终态：cancelled / 结束等待');
 

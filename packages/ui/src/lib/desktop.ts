@@ -86,6 +86,10 @@ export type DesktopSettings = {
   notifyOnCompletion?: boolean;
   notifyOnError?: boolean;
   notifyOnQuestion?: boolean;
+  notifyOnPermission?: boolean;
+  notifyOnScheduledTasks?: boolean;
+  notifyOnAssistants?: boolean;
+  notifyOnGoals?: boolean;
 
   // Per-event notification templates
   notificationTemplates?: {
@@ -129,6 +133,7 @@ export type DesktopSettings = {
   summaryModelMode?: 'provider' | 'custom';
   summaryProviderID?: string;
   summaryModelID?: string;
+  summaryCustomModelID?: string;
   summaryCustomBaseURL?: string;
   summaryCustomAPIToken?: string;
   hasSummaryCustomAPIToken?: boolean;

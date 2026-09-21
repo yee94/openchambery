@@ -134,7 +134,8 @@ export const ChatPromptComposer: React.FC<ChatPromptComposerProps> = ({
     }
     const textarea = localInputRef.current;
     if (!textarea) return;
-    textarea.style.height = 'auto';
+    // Inline uses JS sizing; collapse to the CSS minimum before measuring wrapped content.
+    textarea.style.height = inline ? '0px' : 'auto';
     const maxHeight = Number.parseFloat(window.getComputedStyle(textarea).maxHeight);
     const contentHeight = inline ? Math.max(textarea.scrollHeight, 48) : textarea.scrollHeight;
     const nextHeight = Number.isFinite(maxHeight) ? Math.min(contentHeight, maxHeight) : contentHeight;
@@ -322,7 +323,7 @@ export const ChatPromptComposer: React.FC<ChatPromptComposerProps> = ({
           <div
             className={cn(
               'relative overflow-hidden',
-              inline && 'flex min-h-12 items-end',
+              inline && cn('flex min-h-12', inlineGrown ? 'items-end' : 'items-center'),
               expanded && 'flex min-h-0 flex-1 flex-col',
             )}
             data-composer-input-shell="true"
@@ -361,7 +362,7 @@ export const ChatPromptComposer: React.FC<ChatPromptComposerProps> = ({
               className={cn(
                 'relative z-10 resize-none overflow-y-hidden appearance-none border-0 bg-transparent typography-markdown hover:border-transparent md:typography-ui-label',
                 inline
-                  ? 'min-h-12 max-h-32 px-3 py-3 leading-6'
+                  ? 'field-sizing-fixed min-h-12 max-h-32 px-3 py-3 leading-6'
                   : 'min-h-[52px] max-h-40 rounded-b-none px-3 pb-2 pt-4',
                 textLayoutClassName,
                 inputClassName,

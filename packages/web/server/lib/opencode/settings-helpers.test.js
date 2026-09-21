@@ -45,6 +45,7 @@ describe('settings helpers', () => {
       summaryModelMode: 'custom',
       summaryCustomBaseURL: 'https://summary.example.test/v1/',
       summaryModelID: 'summary-model',
+      summaryCustomModelID: 'custom-model',
       summaryCustomAPIToken: 'summary-token',
       summaryCommitPrompt: 'Return commit JSON.',
       summarySessionTitlePrompt: 'Return a short title.',
@@ -54,6 +55,7 @@ describe('settings helpers', () => {
       summaryModelMode: 'custom',
       summaryCustomBaseURL: 'https://summary.example.test/v1',
       summaryModelID: 'summary-model',
+      summaryCustomModelID: 'custom-model',
       summaryCustomAPIToken: 'summary-token',
       summaryCommitPrompt: 'Return commit JSON.',
       summarySessionTitlePrompt: 'Return a short title.',
@@ -63,6 +65,7 @@ describe('settings helpers', () => {
       summaryModelMode: 'custom',
       summaryCustomBaseURL: 'https://summary.example.test/v1',
       summaryModelID: 'summary-model',
+      summaryCustomModelID: 'custom-model',
       hasSummaryCustomAPIToken: true,
     });
     expect(response).not.toHaveProperty('summaryCustomAPIToken');
@@ -133,6 +136,18 @@ describe('settings helpers', () => {
         sessions: { root: true, child: false },
       },
     });
+  });
+
+  it('accepts questionAutoDelegateEnabled as a persisted boolean setting', () => {
+    const helpers = createTestHelpers();
+
+    expect(helpers.sanitizeSettingsUpdate({ questionAutoDelegateEnabled: true })).toEqual({
+      questionAutoDelegateEnabled: true,
+    });
+    expect(helpers.sanitizeSettingsUpdate({ questionAutoDelegateEnabled: false })).toEqual({
+      questionAutoDelegateEnabled: false,
+    });
+    expect(helpers.sanitizeSettingsUpdate({ questionAutoDelegateEnabled: 'true' })).toEqual({});
   });
 
   it('accepts desktopUiPassword as a persisted shared setting', () => {

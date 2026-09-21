@@ -7,10 +7,32 @@ const {
   desktopHostsSet,
   isSettingsLinkDesktopHost,
   isVisibleDesktopHost,
+  supportsDesktopHostRemoteUpdate,
   redactSensitiveUrl,
   resolveDesktopHostUrl,
 } = await import('./desktopHosts');
 type DesktopHost = import('./desktopHosts').DesktopHost;
+
+describe('supportsDesktopHostRemoteUpdate', () => {
+  const host: DesktopHost = { id: 'ssh-1', label: 'Remote', url: 'http://localhost:60612' };
+  const sshIds = new Set(['ssh-1']);
+
+  test('allows a host owned by SSH management', () => {
+    expect(supportsDesktopHostRemoteUpdate(host, sshIds)).toBe(true);
+  });
+
+  test('excludes local, unknown and imported direct hosts', () => {
+    expect(supportsDesktopHostRemoteUpdate(undefined, sshIds)).toBe(false);
+    expect(supportsDesktopHostRemoteUpdate(host, new Set())).toBe(false);
+    expect(supportsDesktopHostRemoteUpdate({ ...host, id: 'paired', source: 'connect-link' }, sshIds)).toBe(false);
+  });
+
+  test('excludes relay-only and direct-plus-relay Electron connections', () => {
+    const relay = { relayUrl: 'wss://relay.example.com', serverId: 'remote', hostEncPubJwk: {} };
+    expect(supportsDesktopHostRemoteUpdate({ ...host, relay }, sshIds)).toBe(false);
+    expect(supportsDesktopHostRemoteUpdate({ ...host, url: 'relay://remote', relay }, sshIds)).toBe(false);
+  });
+});
 
 const withDesktopBridge = async <T>(handler: (cmd: string, args: Record<string, unknown>) => unknown | Promise<unknown>, run: () => Promise<T>): Promise<T> => {
   const previousWindow = Object.getOwnPropertyDescriptor(globalThis, 'window');
@@ -237,6 +259,5 @@ describe('isSettingsLinkDesktopHost', () => {
     }), new Set(['ssh-1']))).toBe(false);
   });
 });
-
 
 

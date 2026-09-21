@@ -1,3 +1,6 @@
+import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { describe, expect, test } from 'vitest';
 
 import {
@@ -8,6 +11,11 @@ import {
   shouldCorrectArmedImeLift,
   shouldReserveChatScrollInset,
 } from './composerKeyboardLift';
+
+const mobileAppSource = readFileSync(
+  join(dirname(fileURLToPath(import.meta.url)), 'MobileApp.tsx'),
+  'utf8',
+);
 
 const createElement = (tag: string, className = ''): HTMLElement => {
   const children: Element[] = [];
@@ -111,6 +119,13 @@ describe('composerKeyboardLift', () => {
     expect(shouldCorrectArmedImeLift(300, 280)).toBe(false);
     expect(shouldCorrectArmedImeLift(300, 0)).toBe(false);
     expect(shouldCorrectArmedImeLift(0, 360)).toBe(true);
+  });
+
+  test('iOS keyboard hide only blurs the bottom composer, not overlay search', () => {
+    expect(mobileAppSource).toContain('if (!isComposerKeyboardTarget(active)) return;');
+    expect(mobileAppSource).not.toMatch(
+      /const blurActiveTextField = \(\) => \{[\s\S]*?active\.tagName !== 'TEXTAREA'/,
+    );
   });
 
   test('converts native IME window px with the WebView device pixel ratio', () => {

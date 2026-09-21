@@ -11,6 +11,11 @@ import { createTunnelHost } from './tunnel-host.js';
 
 const BACKOFF_BASE_MS = 1000;
 const BACKOFF_CAP_MS = 30000;
+// Do not clear reconnect backoff on WebSocket `open`. A host that connects
+// then drops in ~1s (the observed control-channel storm) would otherwise retry
+// forever at 1s. Only a control socket that stays up this long is treated as
+// a healthy registration.
+const CONTROL_STABLE_MS = 15_000;
 const DATA_SOCKET_OPEN_TIMEOUT_MS = 15000;
 // Clients send a tunnel Ping at least every ~30s when idle, so a data socket
 // with no inbound traffic for 3 ping intervals belongs to a client that died
@@ -56,18 +61,25 @@ const resolveBatchWindowMs = (option) => {
  *   getLocalPort?: () => number,
  *   onStatus?: (status: { state: string, lastError: string | null, connectedClients: number }) => void,
  *   logger?: Pick<Console, 'warn'>,
+ *   reconnectBaseDelayMs?: number,
+ *   reconnectMaxDelayMs?: number,
+ *   controlStableMs?: number,
  * }} options
  */
-export const startRelayHost = ({ relayUrl, identity, localPort, getLocalPort, onStatus, logger = console, batchWindowMs, batch }) => {
+export const startRelayHost = ({ relayUrl, identity, localPort, getLocalPort, onStatus, logger = console, batchWindowMs, batch, reconnectBaseDelayMs, reconnectMaxDelayMs, controlStableMs }) => {
   const resolveLocalPort = typeof getLocalPort === 'function' ? getLocalPort : () => localPort;
   const localBatch = batch !== false;
   const resolvedBatchWindowMs = resolveBatchWindowMs(batchWindowMs);
+  const backoffBaseMs = Number.isFinite(reconnectBaseDelayMs) && reconnectBaseDelayMs >= 0 ? reconnectBaseDelayMs : BACKOFF_BASE_MS;
+  const backoffCapMs = Number.isFinite(reconnectMaxDelayMs) && reconnectMaxDelayMs >= 0 ? reconnectMaxDelayMs : BACKOFF_CAP_MS;
+  const stableMs = Number.isFinite(controlStableMs) && controlStableMs >= 0 ? controlStableMs : CONTROL_STABLE_MS;
 
   let stopped = false;
   let state = 'connecting';
   let lastError = null;
   let controlSocket = null;
   let reconnectTimer = null;
+  let stableTimer = null;
   let consecutiveFailures = 0;
   /** @type {Map<string, { socket: WebSocket, tunnel: ReturnType<typeof createTunnelHost> | null, openTimer: NodeJS.Timeout | null }>} */
   const dataSockets = new Map();
@@ -280,9 +292,15 @@ export const startRelayHost = ({ relayUrl, identity, localPort, getLocalPort, on
     }
   };
 
+  const clearStableTimer = () => {
+    if (!stableTimer) return;
+    clearTimeout(stableTimer);
+    stableTimer = null;
+  };
+
   const scheduleReconnect = () => {
     if (stopped || reconnectTimer) return;
-    const delay = Math.min(BACKOFF_BASE_MS * 2 ** consecutiveFailures, BACKOFF_CAP_MS);
+    const delay = Math.min(backoffBaseMs * 2 ** consecutiveFailures, backoffCapMs);
     consecutiveFailures += 1;
     setState('reconnecting');
     reconnectTimer = setTimeout(() => {
@@ -330,9 +348,15 @@ export const startRelayHost = ({ relayUrl, identity, localPort, getLocalPort, on
 
     socket.on('open', () => {
       if (controlSocket !== socket) return;
-      consecutiveFailures = 0;
       lastAliveAt = Date.now();
       setState('connected', null);
+      clearStableTimer();
+      stableTimer = setTimeout(() => {
+        if (controlSocket !== socket) return;
+        consecutiveFailures = 0;
+        stableTimer = null;
+      }, stableMs);
+      if (typeof stableTimer.unref === 'function') stableTimer.unref();
     });
     socket.on('pong', () => {
       lastAliveAt = Date.now();
@@ -348,6 +372,7 @@ export const startRelayHost = ({ relayUrl, identity, localPort, getLocalPort, on
     });
     socket.on('close', (code, reasonBuffer) => {
       clearInterval(pingTimer);
+      clearStableTimer();
       if (controlSocket !== socket) return;
       controlSocket = null;
       const reason = reasonBuffer ? reasonBuffer.toString('utf8') : '';
@@ -380,6 +405,7 @@ export const startRelayHost = ({ relayUrl, identity, localPort, getLocalPort, on
       clearTimeout(reconnectTimer);
       reconnectTimer = null;
     }
+    clearStableTimer();
     for (const connectionId of [...dataSockets.keys()]) {
       teardownDataSocket(connectionId, 1001, 'host stopping');
     }

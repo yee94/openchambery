@@ -119,4 +119,13 @@ describe('mobile press feedback scale policy', () => {
     expect(scheduledEditorSource).not.toContain('group-active:scale');
     expect(assistantViewSource).not.toContain('active:scale');
   });
+
+  test('assistant dock unread badge is not clipped by tab overflow rules', () => {
+    expect(tabBarSource).toContain('AssistantNavigationUnreadBadge');
+    expect(tabBarSource).toContain('overflow-visible');
+    expect(tabBarSource).toContain('oc-mobile-tab-label');
+    expect(mobileCss).toMatch(/\.oc-mobile-tab-button\s*\{[^}]*overflow:\s*visible/s);
+    expect(mobileCss).toContain('.oc-mobile-tab-button > .oc-mobile-tab-label');
+    expect(mobileCss).toMatch(/\.oc-mobile-floating-bottom-bar-navigation\s*\{[^}]*overflow:\s*visible/s);
+  });
 });

@@ -71,6 +71,33 @@ Keep `bridge.ts` as a thin orchestration layer that delegates message handling t
   - Official `GET /api/session/:sessionID/message` list responses apply the same
     reasoning strip when `includeReasoning=false`. The param is stripped before
     OpenCode upstream.
+  - OpenChamber-owned question auto-delegate routes and precise
+    `/question/:id/reply|reject` claim intercepts are handled here via
+    `tryHandleQuestionAutoDelegateProxy` **before** OpenCode upstream, so the
+    shared UI can keep using `runtimeFetch` without new `RuntimeAPIs` fields.
+
+- `question-auto-delegate-runtime.ts`
+  - Extension Host authority for automatic question handling (default on,
+    30s fixed reply). Imports the single source-of-truth core from
+    `packages/web/server/lib/question-auto-delegate/core.js` (+ sibling `core.d.ts`).
+  - IO talks to OpenCode **directly** (never loops Host `/question/*`).
+  - Snapshot tip: `openchamber:question-auto-delegate-changed` with
+    `{ epoch, revision }` only — webviews invalidate `GET /api/question-auto-delegate`.
+  - Settings field `questionAutoDelegateEnabled` (boolean, default true/absent⇒on):
+    persist via existing settings save; `applyEnabled` only after successful write.
+
+- `sessionActivityWatcher.ts`
+  - Global OpenCode event singleton (extension-level). Preserves directory on
+    the raw envelope for question auto-delegate + session activity.
+  - On connect/reconnect runs pending reconcile across workspace folders,
+    settings projects/pinned dirs, working directory, and observed event dirs
+    (background/subagent sessions keep timers even when no webview is open).
+  - Same-upstream OpenCode disconnect **suspends** the SSE loop only
+    (`suspendGlobalEventWatcher`) — QAD core, pause/claim/uncertain, and
+    activity maps stay. Full `stopGlobalEventWatcher` (dispose core) runs on
+    extension deactivate or when `start` detects a different OpenCode endpoint.
+  - Multi-sink broadcast (`addGlobalEventMessageSink`) fans host tips to chat,
+    agent manager, and session editor providers.
 
 - `session-turn-page-runtime.ts`
   - Pure turn-window aggregation over official OpenCode `session.messages` pages.
@@ -227,6 +254,30 @@ returns `{ files }` (L2) or `{ diff }` (L3). Non-GET → 405; illegal query → 
 The exact `GET /api/config/settings/bootstrap` webview route dispatches to
 `api:config/settings:bootstrap` before the generic settings route. The legacy
 `GET /api/config/settings?bootstrap=true` form remains supported.
+
+## Question auto-delegate (Extension Host)
+
+Contract source of truth (do not vendor/copy): `packages/web/server/lib/question-auto-delegate/core.js`
++ `core.d.ts` and `DOCUMENTATION.md` (snapshot shape, tip event, claim code
+`question_submission_claimed`). The VS Code host imports that core directly.
+
+| Path (after webview strips `/api`) | Behavior |
+|---|---|
+| `GET /question-auto-delegate` | Authoritative snapshot |
+| `POST /question-auto-delegate/requests/:id/pause` | `{ sessionID, directory, reason }` |
+| `POST /question-auto-delegate/requests/:id/delegate` | Immediate auto-reply claim |
+| `POST /question/:id/reply\|reject` | Sync claim + upstream; preserve SDK body/status |
+
+Timers are host-owned: closing every webview does not cancel counting. Webview
+tips call shared `refreshQuestionAutoDelegate` once (no window `message`
+re-dispatch). Same-endpoint disconnect retains core state; reconnect reconciles
+pending. Offline auto-submit waits briefly for `getApiUrl`; if still missing,
+returns `{ notSent: true, uncertain: false, status: 0 }` so core releases the
+claim into paused (manual retry). A real fetch that fails with status 0 stays
+`uncertain` (may have reached upstream). Shared settings: only ENOENT defaults
+enabled on; read/parse failure → `readEnabled() === null` (core unavailable
+gate, no auto timers even if the feature was previously off). Full dispose runs
+on extension deactivate or a real OpenCode endpoint switch.
 
 When adding new bridge route families:
 

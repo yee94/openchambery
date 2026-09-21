@@ -25,7 +25,7 @@ export type DesktopHostProbeSnapshot = {
 };
 
 const isBlockedHostStatus = (status: HostProbeResult['status'] | null | undefined): boolean => {
-  return status === 'unreachable' || status === 'wrong-service' || status === 'incompatible';
+  return status !== 'ok' && status !== 'update-recommended';
 };
 
 /** Stable runtime key for a saved desktop host. Must match DesktopHostSwitcher / relay restore. */
@@ -49,7 +49,7 @@ export type SwitchDesktopHostResult =
  */
 export const switchDesktopHost = async (
   host: DesktopHost,
-  options?: { cachedProbe?: DesktopHostProbeSnapshot | null },
+  _options?: { cachedProbe?: DesktopHostProbeSnapshot | null },
 ): Promise<SwitchDesktopHostResult> => {
   if (!isElectronShell()) {
     return { ok: false, status: { status: 'unreachable', latencyMs: 0 }, reason: 'unsupported' };
@@ -95,23 +95,7 @@ export const switchDesktopHost = async (
     });
   };
 
-  const cached = options?.cachedProbe;
-  if (cached?.status === 'ok') {
-    if (cached.via === 'relay' && host.relay) {
-      activateRelay(host.relay);
-      return { ok: true, via: 'relay', status: cached };
-    }
-    if (apiOrigin && cached.via !== 'relay') {
-      switchDirect(apiOrigin);
-      return { ok: true, via: 'direct', status: cached };
-    }
-    if (host.relay) {
-      activateRelay(host.relay);
-      return { ok: true, via: 'relay', status: { ...cached, via: 'relay' } };
-    }
-  }
-
-  // No usable probe result — probe now: direct first, relay fallback.
+  // Cached badges are display snapshots. Revalidate authentication at switch time.
   // Statuses are written once, with the final outcome, so the row never
   // flashes intermediate failures while the fallback is still running.
   let finalStatus: DesktopHostProbeSnapshot = { status: 'unreachable', latencyMs: 0 };
@@ -122,19 +106,20 @@ export const switchDesktopHost = async (
     const probe = await desktopHostProbe(apiOrigin, {
       clientToken: host.clientToken || null,
       requestHeaders: host.requestHeaders || null,
+      expectedServerId: host.relay?.serverId || null,
     }).catch((): HostProbeResult => ({ status: 'unreachable', latencyMs: 0 }));
     finalStatus = { status: probe.status, latencyMs: probe.latencyMs };
     if (!isBlockedHostStatus(probe.status)) transport = 'direct';
   }
 
   if (!transport && host.relay) {
-    const probe = await probeRelayDesktopHost(host.relay, { keepTunnel: true })
+    const probe = await probeRelayDesktopHost(host.relay, { keepTunnel: true, clientToken: host.clientToken || null })
       .catch((): HostProbeResult => ({ status: 'unreachable', latencyMs: 0 }));
     if (probe.status === 'ok') {
       finalStatus = { status: probe.status, latencyMs: probe.latencyMs, via: 'relay' };
       transport = 'relay';
       relayProbeTunnel = 'tunnel' in probe ? probe.tunnel : undefined;
-    } else if (!apiOrigin) {
+    } else if (!apiOrigin || probe.status === 'auth') {
       finalStatus = { status: probe.status, latencyMs: probe.latencyMs };
     }
   }

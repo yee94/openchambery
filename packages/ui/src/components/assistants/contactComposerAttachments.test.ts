@@ -18,16 +18,18 @@ class FakeFileReader {
 }
 
 describe('contactComposerAttachments', () => {
-  test('reads mixed image and file blobs as data-URL attachments', async () => {
+  test('retains original files and creates blob previews within the 25 MiB limit', async () => {
     vi.stubGlobal('FileReader', FakeFileReader)
     const image = new File(['img'], 'shot.png', { type: 'image/png' })
     const file = new File(['hi'], 'notes.txt', { type: 'text/plain' })
     const result = await readContactComposerFiles([image, file], () => 'att_1')
     expect(result.skippedTooLarge).toBe(0)
     expect(result.attachments).toEqual([
-      { id: 'att_1', url: 'data:image/png;base64,eA==', name: 'shot.png', mime: 'image/png' },
-      { id: 'att_1', url: 'data:text/plain;base64,eA==', name: 'notes.txt', mime: 'text/plain' },
+      { id: 'att_1', url: expect.stringMatching(/^blob:/), name: 'shot.png', mime: 'image/png', file: image },
+      { id: 'att_1', url: expect.stringMatching(/^blob:/), name: 'notes.txt', mime: 'text/plain', file },
     ])
+    expect(MAX_CONTACT_COMPOSER_FILE_BYTES).toBe(25 * 1024 * 1024)
+    result.attachments.forEach((attachment) => URL.revokeObjectURL(attachment.url))
     vi.unstubAllGlobals()
   })
 

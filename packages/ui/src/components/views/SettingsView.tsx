@@ -59,6 +59,7 @@ import { GitPage } from "@/components/sections/git-identities/GitPage";
 import type { OpenChamberSection } from "@/components/sections/openchamber/types";
 import { OpenChamberPage } from "@/components/sections/openchamber/OpenChamberPage";
 import { AboutSettings } from "@/components/sections/openchamber/AboutSettings";
+import { ArchivedSessionsPage } from "@/components/sections/openchamber/ArchivedSessionsPage";
 import { useDeviceInfo } from "@/lib/device";
 import {
   isDesktopLocalOriginActive,
@@ -87,6 +88,7 @@ import {
 } from "@/lib/settings/search";
 import { MobileFloatingSurface } from "@/mobile/MobileSurface";
 import { MobileDetailNavigation } from "@/mobile/MobileDetailNavigation";
+import { useMobileNavigationStore } from "@/mobile/useMobileNavigationStore";
 import { MobileTabPageHeader } from "@/mobile/MobileTabPageHeader";
 import { MobileSettingsGroup } from "@/mobile/settings/MobileSettingsGroup";
 import { useMobileBackRoute } from "@/mobile/mobileBackNavigation";
@@ -223,6 +225,8 @@ export function getSettingsNavIcon(slug: SettingsPageSlug): IconName | null {
       return "command";
     case "sessions":
       return "chat-history";
+    case "archived-sessions":
+      return "archive";
     case "summary-ai":
       return "ai-generate-2";
 
@@ -685,6 +689,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
           return t("settings.page.shortcuts.title");
         case "sessions":
           return t("settings.page.sessions.title");
+        case "archived-sessions":
+          return t("settings.page.archivedSessions.title");
         case "summary-ai":
           return t("settings.page.summaryAI.title");
         case "magic-prompts":
@@ -1125,6 +1131,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
           return <SnippetsPage />;
         case "git":
           return <GitPage />;
+        case "archived-sessions":
+          return <ArchivedSessionsPage />;
         case "appearance":
         case "chat":
         case "shortcuts":
@@ -1172,6 +1180,16 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     autoNavSlugRef.current = settingsSlug;
     setMobileStage(def.kind === "split" ? "page-sidebar" : "page-content");
   }, [autoOpenMobilePage, isMobile, mobileStage, settingsSlug]);
+
+  // Tab-bar (and restore) resets land on `home`; drop any keep-alive nested stage
+  // so the Settings root is the first-level list, not the last inner page.
+  React.useEffect(() => {
+    if (!flowMobile || settingsSlug !== "home") {
+      return;
+    }
+    autoNavSlugRef.current = null;
+    setMobileStage("nav");
+  }, [flowMobile, settingsSlug]);
 
   const showBackButton = isMobile && mobileStage !== "nav";
   const backButtonTargetsPageSidebar =
@@ -1226,13 +1244,26 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   }, [pushMobileSplitDetailHistory, settingsSlug]);
 
   const handleBack = React.useCallback(() => {
+    if (flowMobile && useMobileNavigationStore.getState().settingsReturnTo) {
+      autoNavSlugRef.current = null;
+      setMobileStage("nav");
+      setSettingsPage("home");
+      useMobileNavigationStore.getState().restoreSettingsReturnTo();
+      return;
+    }
+
     if (backButtonTargetsPageSidebar) {
       handleMobileSplitItemDeleted();
       return;
     }
 
     setMobileStage("nav");
-  }, [backButtonTargetsPageSidebar, handleMobileSplitItemDeleted]);
+  }, [
+    backButtonTargetsPageSidebar,
+    flowMobile,
+    handleMobileSplitItemDeleted,
+    setSettingsPage,
+  ]);
 
   // Stable bridge refs for useMobileBackRoute: stage switches only retarget
   // .current so the route id is not unregistered/re-registered mid-flow.

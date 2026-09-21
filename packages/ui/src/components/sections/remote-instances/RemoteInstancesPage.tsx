@@ -91,6 +91,7 @@ import {
 } from '@/lib/desktopHostSwitch';
 import { createRelayTunnelClient } from '@/lib/relay/tunnel-client';
 import { getDesktopLanAddress, isDesktopLocalOriginActive, isDesktopShell } from '@/lib/desktop';
+import { DesktopLanAccessSettings } from '@/components/sections/openchamber/DesktopLanAccessSettings';
 import { runtimeFetch } from '@/lib/runtime-fetch';
 import { getRuntimeApiBaseUrl, getRuntimeKey, subscribeRuntimeEndpointChanged, switchRuntimeEndpoint } from '@/lib/runtime-switch';
 import {
@@ -1417,7 +1418,7 @@ export const RemoteInstancesPage: React.FC = () => {
     let cancelled = false;
     void Promise.all(visibleDirectHosts.map(async (host) => {
       const relayProbe = async (): Promise<DesktopHostProbeSnapshot> => {
-        const result = await probeRelayDesktopHost(host.relay!)
+        const result = await probeRelayDesktopHost(host.relay!, { clientToken: host.clientToken || null })
           .catch((): HostProbeResult => ({ status: 'unreachable', latencyMs: 0 }));
         return result.status === 'ok'
           ? { status: result.status, latencyMs: result.latencyMs, via: 'relay' }
@@ -2776,6 +2777,8 @@ export const RemoteInstancesPage: React.FC = () => {
             </div>
           )}
         </RemoteSettingsSection> : null}
+
+        <DesktopLanAccessSettings />
 
         <Dialog
           open={Boolean(patternHost)}

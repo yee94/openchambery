@@ -664,6 +664,7 @@ export interface SettingsPayload {
   sessionRetentionAction?: 'archive' | 'delete';
   followUpBehavior?: 'steer' | 'queue';
   queueModeEnabled?: boolean;
+  questionAutoDelegateEnabled?: boolean;
   gitmojiEnabled?: boolean;
   inputSpellcheckEnabled?: boolean;
   showOpenCodeUpdateNotifications?: boolean;

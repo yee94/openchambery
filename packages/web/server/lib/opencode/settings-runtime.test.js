@@ -34,6 +34,27 @@ const createRuntime = async () => {
 };
 
 describe('settings runtime', () => {
+  it('migrates absent notification toggles to their defaults', async () => {
+    const { runtime, settingsFilePath, cleanup } = await createRuntime();
+    try {
+      // Pre-existing settings with only the legacy toggles — the four new
+      // notification switches must default to enabled.
+      await fsPromises.writeFile(settingsFilePath, JSON.stringify({
+        notifyOnCompletion: false,
+        notifyOnQuestion: false,
+      }));
+      const settings = await runtime.readSettingsFromDiskMigrated();
+      expect(settings.notifyOnCompletion).toBe(false);
+      expect(settings.notifyOnQuestion).toBe(false);
+      expect(settings.notifyOnPermission).toBe(true);
+      expect(settings.notifyOnScheduledTasks).toBe(true);
+      expect(settings.notifyOnAssistants).toBe(true);
+      expect(settings.notifyOnGoals).toBe(true);
+    } finally {
+      await cleanup();
+    }
+  });
+
   it('only remaps project plan paths within the migrated storage directory', async () => {
     const { runtime, settingsFilePath, tempRoot, cleanup } = await createRuntime();
     try {

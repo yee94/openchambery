@@ -1,4 +1,5 @@
 import * as React from 'react';
+import { useAssistantUnreadTotal } from '@/queries/assistantQueries';
 import { useEvent } from '@reactuses/core';
 
 import { Icon } from '@/components/icon/Icon';
@@ -140,9 +141,11 @@ export function MobileTabsRoot({
     onTabChange(nextTab);
   });
 
+  const assistantUnreadCount = useAssistantUnreadTotal();
   const nativeTabs = React.useMemo(
-    () => MOBILE_TABS.map((tab) => ({ id: tab.id, label: t(tab.labelKey) })),
-    [t],
+    () => MOBILE_TABS.map((tab) => ({ id: tab.id, label: t(tab.labelKey),
+      badge: tab.id === 'assistant' && assistantUnreadCount > 0 ? (assistantUnreadCount > 99 ? '99+' : String(assistantUnreadCount)) : null })),
+    [t, assistantUnreadCount],
   );
   const nativeTabBarVisible = showTabBar && !tabBarCovered && !topSecondaryPage;
   const nativeTabBarMode = useNativeIosTabBar({

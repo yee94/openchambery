@@ -86,6 +86,15 @@
 - Project collapse state controls presentation only; Electron session-summary
   refresh targets come from the persisted project index, so no collapse/re-expand
   gesture is required to make a project appear.
+- Project, labeled session-group, and folder bodies use controlled Base UI
+  Collapsible panels with a 200ms ease-out height transition. Existing headers
+  and persisted collapse state retain ownership; search-expanded groups/folders
+  retain their open behavior. Body spacing sits inside the animated panel so
+  the occupied height reaches zero. Closing bodies become inert immediately
+  and unmount after exit; reduced motion disables the transition. Virtualized
+  groups re-measure on actual body mount, refresh their ancestor-scroll offset
+  when a sidebar height transition ends, and release their scrolling subscription
+  after the closing body unmounts. Dedicated mobile pages keep their own behavior.
 - Renderer-level worktree catalog reconciliation runs after event-stream ready,
   topology changes, and deduplicated unknown session directories. The sidebar
   consumes that catalog and retains `oc.worktreeMap` as its cold-start snapshot.
@@ -153,7 +162,7 @@
   opacity/padding transition) when hover/always-visible row actions take that edge.
 - Archived groups are collapsed by default and support bulk deletion at group/folder level.
 - Session rows support compact inline dates in minimal mode and simplified metadata in default mode.
-- Session-row visual selection is published through a narrow row-only Focus store before authoritative navigation. Focus includes the render scope (`pinned` or `project`) plus session/project identity, so duplicate representations never both receive the Active background or satisfy the wrong paint barrier. On desktop, focusing a session smooth-scrolls that row to about one-third down the sidebar viewport (`scrollFocusedSessionRow.ts`); mobile keeps `block: 'nearest'`. Reduced-motion users get an instant jump.
+- Session-row visual selection is published through a narrow row-only Focus store before authoritative navigation. Focus includes the render scope (`pinned` or `project`) plus session/project identity, so duplicate representations never both receive the Active background or satisfy the wrong paint barrier. On desktop, focusing a fully visible session preserves the sidebar scroll position; a partially or fully out-of-view row smooth-scrolls to about one-third down the sidebar viewport (`scrollFocusedSessionRow.ts`). Mobile keeps `block: 'nearest'`. Reduced-motion users get an instant jump.
 - Previous/next-session navigation consumes ordered snapshots published from the rendered sidebar model and cycles one combined ring: visible pinned rows first, then the logically visible project rows in sidebar order, wrapping across both sections. Rows hidden by pinned/project/group/folder collapse or the group's Show more boundary are excluded, while always-visible (busy/retry + current viewing) rows retained beyond that boundary remain keyboard targets.
 - Global Mod+1…9 navigation numbers the first nine logically visible session rows from top to bottom across Pinned and the expanded project tree. Container headers never consume a number; duplicate Pinned/Project representations remain distinct Focus rows. Holding the platform primary modifier for 500ms reveals compact shortcut chips only on those rows; each chip occupies only its intrinsic width and replaces row quick actions until release. Releasing the modifier, window blur, or page hide clears the hints immediately.
 - Every session navigation announces a monotonic intent revision. A later sidebar, keyboard, deep-link, or switcher intent invalidates an older pending sidebar commit, including ABA sequences such as A -> B -> A.

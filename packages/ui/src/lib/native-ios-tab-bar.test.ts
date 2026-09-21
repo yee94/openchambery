@@ -102,6 +102,14 @@ describe('native iOS tab bar contract', () => {
     )).toBe(false);
   });
 
+  test('badge changes and clearing trigger native dock updates', () => {
+    const unread = state({ tabs: [{ id: 'assistant', label: 'Agent', badge: '99+' }] });
+    const read = state({ tabs: [{ id: 'assistant', label: 'Agent', badge: null }] });
+    expect(nativeTabBarStatesEqual(unread, unread)).toBe(true);
+    expect(nativeTabBarStatesEqual(unread, read)).toBe(false);
+    expect(resolveNativeIosTabBarSync({ visible: true, overlayHidden: false, lastState: unread, nextState: read })).toEqual({ action: 'present' });
+  });
+
   test('hides the native dock while a mobile overlay is active, matching the web sheet cover', () => {
     expect(resolveNativeIosTabBarVisible(true, false)).toBe(true);
     expect(resolveNativeIosTabBarVisible(true, true)).toBe(false);

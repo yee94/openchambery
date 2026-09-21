@@ -42,6 +42,8 @@ type TrackedAsset = {
   kind: 'native' | 'blob';
   transportIdentity: string;
   ttlTimer: ReturnType<typeof setTimeout> | null;
+  /** When >0, TTL is suppressed until retain count returns to 0. */
+  retainCount: number;
   released: boolean;
   byteLength: number;
   bridge: NativeRelayAssetBridge | null;
@@ -117,9 +119,37 @@ const releaseTrackedAsset = async (
 
 const armTtl = (asset: TrackedAsset): void => {
   clearTtl(asset);
+  if (asset.retainCount > 0) return;
   asset.ttlTimer = setTimeout(() => {
     void releaseTrackedAsset(asset, { abort: true, reason: 'ttl-expired' });
   }, RELAY_IMAGE_ASSET_TTL_MS);
+};
+
+/** True when the URL is still tracked and not released (including TTL expiry). */
+export const isRelayImageDisplayUrlLive = (url: string): boolean => {
+  if (!url) return false;
+  const asset = assetsByUrl.get(url);
+  return Boolean(asset && !asset.released);
+};
+
+/**
+ * Hold a display URL against TTL expiry while a consumer lease is active.
+ * Returns false when the URL is already gone (caller must rematerialize).
+ */
+export const retainRelayImageDisplayUrl = (url: string): boolean => {
+  const asset = assetsByUrl.get(url);
+  if (!asset || asset.released) return false;
+  asset.retainCount += 1;
+  clearTtl(asset);
+  return true;
+};
+
+/** Drop one retain hold; re-arms TTL when the last retain releases. */
+export const releaseRelayImageDisplayRetain = (url: string): void => {
+  const asset = assetsByUrl.get(url);
+  if (!asset || asset.released) return;
+  asset.retainCount = Math.max(0, asset.retainCount - 1);
+  if (asset.retainCount === 0) armTtl(asset);
 };
 
 const waitForConcurrencySlot = async (signal: AbortSignal): Promise<void> => {
@@ -206,6 +236,7 @@ const streamToNativeBridge = async (
     kind: 'native',
     transportIdentity,
     ttlTimer: null,
+    retainCount: 0,
     released: false,
     byteLength: 0,
     bridge,
@@ -355,6 +386,7 @@ const bufferToBlobUrl = async (
     kind: 'blob',
     transportIdentity,
     ttlTimer: null,
+    retainCount: 0,
     released: false,
     byteLength: blob.size,
     bridge: null,
@@ -363,6 +395,163 @@ const bufferToBlobUrl = async (
   assetsById.set(asset.assetId, asset);
   armTtl(asset);
   return url;
+};
+
+/**
+ * Materialize an already-verified Blob as a displayable URL.
+ * Desktop/mobile: openchamber-asset:// via the native bridge (full write then end).
+ * Web/VS Code: object URL. Callers must release via releaseRelayImageDisplayUrl.
+ */
+export const streamVerifiedBlobDisplayUrl = async (
+  blob: Blob,
+  signal: AbortSignal,
+  options: { mimeType?: string } = {},
+): Promise<string> => {
+  ensureTransportCleanup();
+
+  if (signal.aborted) {
+    throw signal.reason instanceof Error ? signal.reason : new Error('aborted');
+  }
+  if (!(blob instanceof Blob)) {
+    throw new Error('Verified display requires a Blob');
+  }
+  if (blob.size > RELAY_IMAGE_MAX_BYTES) {
+    throw new Error(`Image exceeds maximum size of ${RELAY_IMAGE_MAX_BYTES} bytes`);
+  }
+
+  const transportIdentity = getRuntimeTransportIdentity();
+  const mimeType = resolveVerifiedMimeType(blob, options.mimeType);
+  const bridge = await resolveNativeRelayAssetBridge();
+  if (bridge) {
+    return writeVerifiedBlobToNativeBridge(bridge, blob, mimeType, signal, transportIdentity);
+  }
+  return bufferBlobToObjectUrl(blob, signal, transportIdentity);
+};
+
+const resolveVerifiedMimeType = (blob: Blob, override?: string): string => {
+  const raw = (override || blob.type || '').split(';')[0]?.trim().toLowerCase();
+  if (raw && raw.startsWith('image/')) return raw;
+  // Electron virtual assets reject non-image MIME; default conservatively for display.
+  return raw || 'image/png';
+};
+
+const bufferBlobToObjectUrl = async (
+  blob: Blob,
+  signal: AbortSignal,
+  transportIdentity: string,
+): Promise<string> => {
+  if (signal.aborted) {
+    throw signal.reason instanceof Error ? signal.reason : new Error('aborted');
+  }
+  if (getRuntimeTransportIdentity() !== transportIdentity) {
+    throw new Error('Runtime transport changed during image load');
+  }
+  const url = URL.createObjectURL(blob);
+  const asset: TrackedAsset = {
+    assetId: mintAssetId(),
+    url,
+    kind: 'blob',
+    transportIdentity,
+    ttlTimer: null,
+    retainCount: 0,
+    released: false,
+    byteLength: blob.size,
+    bridge: null,
+  };
+  assetsByUrl.set(url, asset);
+  assetsById.set(asset.assetId, asset);
+  armTtl(asset);
+  return url;
+};
+
+/**
+ * Write a complete verified Blob into the native bridge before returning the URL.
+ * Unlike Response streaming, bytes are already trusted so open→write→end is awaited.
+ */
+const writeVerifiedBlobToNativeBridge = async (
+  bridge: NativeRelayAssetBridge,
+  blob: Blob,
+  mimeType: string,
+  signal: AbortSignal,
+  transportIdentity: string,
+): Promise<string> => {
+  await acquireOpenSlot(signal);
+  if (signal.aborted) {
+    releaseOpenSlot();
+    throw signal.reason instanceof Error ? signal.reason : new Error('aborted');
+  }
+  if (getRuntimeTransportIdentity() !== transportIdentity) {
+    releaseOpenSlot();
+    throw new Error('Runtime transport changed during image load');
+  }
+
+  const suggestedId = mintAssetId();
+  let opened: { assetId: string; url: string };
+  try {
+    opened = await bridge.openAsset({ assetId: suggestedId, mimeType });
+  } catch (error) {
+    releaseOpenSlot();
+    throw error;
+  }
+
+  if (!opened?.url || typeof opened.url !== 'string' || !opened.assetId) {
+    releaseOpenSlot();
+    await safeCall(() => bridge.abortAsset(suggestedId, 'invalid-open'));
+    throw new Error('Native asset bridge returned an incomplete open result');
+  }
+
+  inFlight.add(opened.assetId);
+  releaseOpenSlot();
+
+  const asset: TrackedAsset = {
+    assetId: opened.assetId,
+    url: opened.url,
+    kind: 'native',
+    transportIdentity,
+    ttlTimer: null,
+    retainCount: 0,
+    released: false,
+    byteLength: blob.size,
+    bridge,
+  };
+  assetsByUrl.set(opened.url, asset);
+  assetsById.set(opened.assetId, asset);
+  armTtl(asset);
+
+  try {
+    if (signal.aborted) {
+      throw signal.reason instanceof Error ? signal.reason : new Error('aborted');
+    }
+    if (getRuntimeTransportIdentity() !== transportIdentity) {
+      throw new Error('Runtime transport changed during image load');
+    }
+
+    const bytes = new Uint8Array(await blob.arrayBuffer());
+    if (signal.aborted) {
+      throw signal.reason instanceof Error ? signal.reason : new Error('aborted');
+    }
+    let offset = 0;
+    while (offset < bytes.byteLength) {
+      if (signal.aborted || asset.released) {
+        throw signal.reason instanceof Error ? signal.reason : new Error('aborted');
+      }
+      if (getRuntimeTransportIdentity() !== transportIdentity) {
+        throw new Error('Runtime transport changed during image load');
+      }
+      const end = Math.min(offset + RELAY_IMAGE_IPC_CHUNK_BYTES, bytes.byteLength);
+      await bridge.writeChunk(opened.assetId, bytes.subarray(offset, end));
+      offset = end;
+    }
+    await bridge.endAsset(opened.assetId);
+    inFlight.delete(opened.assetId);
+    return opened.url;
+  } catch (error) {
+    await releaseTrackedAsset(asset, {
+      abort: true,
+      reason: error instanceof Error ? error.message : 'verified-blob-failed',
+    });
+    throw error;
+  }
 };
 
 /**

@@ -863,6 +863,12 @@ function resolveDirectoryForBlockingRequest(
   return null
 }
 
+export function isQuestionSubmissionClaimedError(error: unknown): boolean {
+  if (!error || typeof error !== "object") return false
+  const failure = error as { status?: unknown; code?: unknown }
+  return failure.status === 409 && failure.code === "question_submission_claimed"
+}
+
 export function isQuestionRequestNotFoundError(error: unknown): boolean {
   if (error && typeof error === "object") {
     const status = (error as { status?: unknown }).status
@@ -2166,9 +2172,10 @@ export async function respondToQuestion(
   sessionId: string,
   requestId: string,
   answers: string[] | string[][],
+  directoryHint?: string,
 ): Promise<void> {
   await waitForConnectionOrThrow()
-  const directory = resolveDirectoryForBlockingRequest("question", sessionId, requestId)
+  const directory = directoryHint || resolveDirectoryForBlockingRequest("question", sessionId, requestId)
     || getSessionDirectory(sessionId)
     || dir()
   try {
@@ -2181,6 +2188,7 @@ export async function respondToQuestion(
       sessionID: sessionId,
       requestID: requestId,
       answers: normalizedAnswers,
+      ...(directory ? { directory } : {}),
     })
   } catch (error) {
     if (isQuestionRequestNotFoundError(error)) {
@@ -2193,15 +2201,17 @@ export async function respondToQuestion(
 export async function rejectQuestion(
   sessionId: string,
   requestId: string,
+  directoryHint?: string,
 ): Promise<void> {
   await waitForConnectionOrThrow()
-  const directory = resolveDirectoryForBlockingRequest("question", sessionId, requestId)
+  const directory = directoryHint || resolveDirectoryForBlockingRequest("question", sessionId, requestId)
     || getSessionDirectory(sessionId)
     || dir()
   try {
     await getRequestReplyClient("question", sessionId, requestId).question.reject({
       sessionID: sessionId,
       requestID: requestId,
+      ...(directory ? { directory } : {}),
     })
   } catch (error) {
     if (isQuestionRequestNotFoundError(error)) {

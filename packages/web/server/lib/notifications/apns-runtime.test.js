@@ -1175,3 +1175,131 @@ describe('apns live activity host-relay compatibility', () => {
     expect(apnsCalls).toHaveLength(0);
   });
 });
+
+describe('apns live activity refresh', () => {
+  it('sends nothing when no snapshot changed', async () => {
+    const fetchMock = vi.fn(async () => jsonResponse({ ok: true, results: [] }));
+    vi.stubGlobal('fetch', fetchMock);
+    process.env.OPENCHAMBER_PUSH_RELAY_URL = 'https://relay.test/v1/push/send';
+    const deps = makeDeps();
+    const runtime = createApnsRuntime(deps);
+    await runtime.addOrUpdateLiveActivityToken('s1', 'la-token', 'act-1', 'live', [
+      { sessionId: 'ses_1', title: 'One', status: 'working', startedAt: 1 },
+    ]);
+
+    fetchMock.mockClear();
+    await runtime.refreshLiveActivityTokens({ computeSnapshot: async () => null });
+    expect(fetchMock.mock.calls.filter(isLiveActivitySend)).toHaveLength(0);
+    const store = JSON.parse(await deps.fsPromises.readFile('/tmp/apns-tokens.json'));
+    expect(store.liveActivityTokensBySession.s1).toHaveLength(1);
+  });
+
+  it('pushes an update with the recomputed snapshot and bumps the event version monotonically', async () => {
+    const fetchMock = vi.fn(async () => jsonResponse({ ok: true, results: [] }));
+    vi.stubGlobal('fetch', fetchMock);
+    process.env.OPENCHAMBER_PUSH_RELAY_URL = 'https://relay.test/v1/push/send';
+    const deps = makeDeps();
+    const runtime = createApnsRuntime(deps);
+    await runtime.addOrUpdateLiveActivityToken('s1', 'la-token', 'act-1', 'live', [
+      { sessionId: 'ses_1', title: 'One', status: 'working', startedAt: 1 },
+    ]);
+
+    fetchMock.mockClear();
+    await runtime.refreshLiveActivityTokens({
+      computeSnapshot: async () => ({
+        items: [{ sessionId: 'ses_1', title: 'One', status: 'retry', startedAt: 1 }],
+      }),
+    });
+    const sent = JSON.parse(fetchMock.mock.calls.find(isLiveActivitySend)[1].body);
+    expect(sent.tokens).toEqual(['la-token']);
+    expect(sent.event).toBe('update');
+    expect(sent.contentState.status).toBe('retry');
+    expect(sent.contentState.workingCount).toBe(1);
+    expect(sent.contentState.items[0]).toMatchObject({ sessionID: 'ses_1', status: 'retry' });
+    expect(sent.staleDate).toBeGreaterThan(0);
+    expect(sent.dismissalDate).toBeUndefined();
+
+    const store = JSON.parse(await deps.fsPromises.readFile('/tmp/apns-tokens.json'));
+    expect(store.liveActivityTokensBySession.s1[0].snapshot[0].status).toBe('retry');
+    const firstVersion = store.liveActivityEventVersions.live;
+
+    fetchMock.mockClear();
+    await runtime.refreshLiveActivityTokens({
+      computeSnapshot: async () => ({
+        items: [{ sessionId: 'ses_1', title: 'One', status: 'working', startedAt: 1 }],
+      }),
+    });
+    const second = JSON.parse(fetchMock.mock.calls.find(isLiveActivitySend)[1].body);
+    expect(second.contentState.eventVersion).toBeGreaterThan(firstVersion);
+  });
+
+  it('ends and clears the token when nothing is working anymore', async () => {
+    const fetchMock = vi.fn(async () => jsonResponse({ ok: true, results: [] }));
+    vi.stubGlobal('fetch', fetchMock);
+    process.env.OPENCHAMBER_PUSH_RELAY_URL = 'https://relay.test/v1/push/send';
+    const deps = makeDeps();
+    const runtime = createApnsRuntime(deps);
+    await runtime.addOrUpdateLiveActivityToken('s1', 'la-token', 'act-1', 'live', [
+      { sessionId: 'ses_1', title: 'One', status: 'working', startedAt: 1 },
+    ]);
+
+    fetchMock.mockClear();
+    await runtime.refreshLiveActivityTokens({
+      computeSnapshot: async () => ({
+        items: [{ sessionId: 'ses_1', title: 'One', status: 'complete', startedAt: 1, endedAt: 5 }],
+      }),
+    });
+    const sent = JSON.parse(fetchMock.mock.calls.find(isLiveActivitySend)[1].body);
+    expect(sent.event).toBe('end');
+    expect(sent.contentState.status).toBe('complete');
+    expect(sent.dismissalDate).toBeGreaterThan(0);
+    expect(sent.staleDate).toBeUndefined();
+
+    const store = JSON.parse(await deps.fsPromises.readFile('/tmp/apns-tokens.json'));
+    expect(store.liveActivityTokensBySession.s1).toBeUndefined();
+  });
+
+  it('groups entries with identical snapshots into one send and keeps distinct snapshots separate', async () => {
+    const fetchMock = vi.fn(async () => jsonResponse({ ok: true, results: [] }));
+    vi.stubGlobal('fetch', fetchMock);
+    process.env.OPENCHAMBER_PUSH_RELAY_URL = 'https://relay.test/v1/push/send';
+    const runtime = createApnsRuntime(makeDeps());
+    await runtime.addOrUpdateLiveActivityToken('s1', 'la-token-a', 'act-1', 'live', [
+      { sessionId: 'ses_1', title: 'One', status: 'working', startedAt: 1 },
+    ]);
+    await runtime.addOrUpdateLiveActivityToken('s2', 'la-token-b', 'act-2', 'live', [
+      { sessionId: 'ses_2', title: 'Two', status: 'working', startedAt: 2 },
+    ]);
+
+    fetchMock.mockClear();
+    await runtime.refreshLiveActivityTokens({
+      computeSnapshot: async (entry) => {
+        if (entry.token === 'la-token-a') {
+          return { items: [{ sessionId: 'ses_1', title: 'One', status: 'retry', startedAt: 1 }] };
+        }
+        return { items: [{ sessionId: 'ses_2', title: 'Two', status: 'retry', startedAt: 2 }] };
+      },
+    });
+    const sends = fetchMock.mock.calls.filter(isLiveActivitySend).map((call) => JSON.parse(call[1].body));
+    expect(sends).toHaveLength(2);
+  });
+
+  it('treats a computeSnapshot rejection as skip, not failure', async () => {
+    const fetchMock = vi.fn(async () => jsonResponse({ ok: true, results: [] }));
+    vi.stubGlobal('fetch', fetchMock);
+    process.env.OPENCHAMBER_PUSH_RELAY_URL = 'https://relay.test/v1/push/send';
+    const deps = makeDeps();
+    const runtime = createApnsRuntime(deps);
+    await runtime.addOrUpdateLiveActivityToken('s1', 'la-token', 'act-1', 'live', [
+      { sessionId: 'ses_1', title: 'One', status: 'working', startedAt: 1 },
+    ]);
+
+    fetchMock.mockClear();
+    await expect(runtime.refreshLiveActivityTokens({
+      computeSnapshot: async () => {
+        throw new Error('boom');
+      },
+    })).resolves.toBeUndefined();
+    expect(fetchMock.mock.calls.filter(isLiveActivitySend)).toHaveLength(0);
+  });
+});

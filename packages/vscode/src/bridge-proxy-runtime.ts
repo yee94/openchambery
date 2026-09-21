@@ -6,6 +6,7 @@ import {
   stripIncludeReasoningParam,
 } from './reasoning-projection';
 import { projectExactMessagePayload } from './session-turn-page-runtime';
+import { tryHandleQuestionAutoDelegateProxy } from './question-auto-delegate-runtime';
 
 type BridgeMessageInput = {
   id: string;
@@ -230,6 +231,19 @@ export async function handleProxyBridgeMessage(
       const localFsResponse = await deps.tryHandleLocalFsProxy(normalizedMethod, normalizedPath);
       if (localFsResponse) {
         return { id, type, success: true, data: localFsResponse };
+      }
+
+      // OpenChamber-owned question auto-delegate + precise /question/:id/reply|reject
+      // claim gate. Handled on the Extension Host so timers stay authoritative
+      // without forwarding these Host routes to OpenCode (or re-entering claim).
+      const questionAutoDelegateResponse = await tryHandleQuestionAutoDelegateProxy(
+        normalizedMethod,
+        normalizedPath,
+        headers,
+        bodyBase64,
+      );
+      if (questionAutoDelegateResponse) {
+        return { id, type, success: true, data: questionAutoDelegateResponse };
       }
 
       const apiUrl = await waitForApiUrl(ctx?.manager);

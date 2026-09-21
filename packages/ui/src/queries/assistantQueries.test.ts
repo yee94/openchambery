@@ -26,6 +26,31 @@ mock.module('@/lib/runtime-fetch', () => ({
     if (path.includes('/session/ensure')) {
       return new Response(JSON.stringify({ sessionID: 'ses_1', directory: '/workspace', sessionGeneration: 1 }), { status: 200 });
     }
+    if (path.includes('/contact/messages')) {
+      return new Response(JSON.stringify({
+        messages: contactSendBehavior === 'timeout'
+          ? [{
+            messageID: 'oc_contact_1',
+            assistantID: 'asst_1',
+            role: 'user',
+            turnID: 'oc_contact_1',
+            bubbleIndex: 0,
+            createdAt: 1,
+            ordinal: 1,
+            status: 'complete',
+            fromAssistantID: null,
+            fromAssistantName: null,
+            parts: [{ type: 'text', text: 'hi' }],
+            text: 'hi',
+            cards: [],
+          }]
+          : [],
+        nextCursor: null,
+        complete: true,
+        generation: 0,
+        revision: 1,
+      }), { status: 200 });
+    }
     if (path.includes('/messages')) {
       if (init?.method === 'POST') {
         if (contactSendBehavior === 'timeout') {
@@ -41,6 +66,7 @@ mock.module('@/lib/runtime-fetch', () => ({
           admitted: true,
           messageID: 'oc_contact_1',
           binding: { sessionID: null, directory: '/workspace', sessionGeneration: 0 },
+          revision: 7,
         }), { status: 202 });
       }
       return new Response(JSON.stringify({ entries: [], nextCursor: null, complete: true }), { status: 200 });
@@ -64,11 +90,15 @@ mock.module('@/lib/openchamberEvents', () => ({
 
 const {
   assistantHistoryInfiniteQueryOptions,
+  assistantSnapshotQueryOptions,
+  confirmContactAdmissionByMessageID,
   CONTACT_SEND_TIMEOUT_MS,
+  CONTACT_WORKING_SNAPSHOT_POLL_MS,
   ensureAssistantSession,
   mapContactSendFailure,
   retainAssistantHistoryPlaceholder,
   sendAssistantContactMessage,
+  snapshotHasContactWorking,
 } = await import('./assistantQueries');
 
 const holdBarrier = () => {
@@ -186,7 +216,8 @@ describe('Assistant query contract', () => {
     expect(source).toContain('/share');
     expect(source).toContain("share-operations");
     expect(source).toContain('payload: { messageID, parts, source }');
-    expect(source).toContain('{ sessionID: binding.sessionID, sessionGeneration: binding.sessionGeneration, messageID, parts, source }');
+    expect(source).toContain('{ sessionID: binding.sessionID, sessionGeneration: binding.sessionGeneration, messageID, parts, source, language: useI18nStore.getState().locale }');
+    expect(source).toContain('language: useI18nStore.getState().locale');
     expect(source).toContain('waitForSessionStartupBarrier');
     expect(source).toContain('/contact/messages');
     expect(source).toContain('/contact/cards');
@@ -240,6 +271,7 @@ describe('Assistant query contract', () => {
     const source = await readFile(join(directory, 'assistantQueries.ts'), 'utf8');
     expect(source).toContain("event.type !== 'assistants-changed'");
     expect(source).toContain("event.type === 'event-stream-ready'");
+    expect(source).toContain("event.type === 'contact-turn-start' || event.type === 'contact-turn-end'");
     expect(source).toContain('event.revision > snapshot.revision');
     expect(source).toContain('assistant.sessionGeneration > binding.sessionGeneration');
   });
@@ -362,6 +394,7 @@ describe('contact send abort', () => {
       admitted: true,
       messageID: 'oc_contact_1',
       binding: { sessionID: null, directory: '/workspace', sessionGeneration: 0 },
+      revision: 7,
     });
     expect(lastFetchInit?.signal instanceof AbortSignal).toBe(true);
     expect(lastFetchInit?.method).toBe('POST');
@@ -375,6 +408,10 @@ describe('contact send abort', () => {
       expect(error instanceof AssistantAPIError ? error.code : '').toBe('admission_timeout');
       expect(error instanceof AssistantAPIError ? error.status : 0).toBe(408);
     }
+    // Uncertain admission re-checks the original messageID instead of minting a new send.
+    const confirmed = await confirmContactAdmissionByMessageID('asst_1', 'oc_contact_1');
+    expect(confirmed).toEqual({ admitted: true, messageID: 'oc_contact_1', revision: 1 });
+    expect(fetchCalls.some((path) => path.includes('messageID=oc_contact_1'))).toBe(true);
 
     contactSendBehavior = 'upstream';
     try {
@@ -385,5 +422,64 @@ describe('contact send abort', () => {
       expect(error instanceof AssistantAPIError ? error.code : '').toBe('upstream_error');
       expect(error instanceof AssistantAPIError ? error.message : '').toBe('OpenCode LLM generate timed out after 90000ms');
     }
+  });
+
+  test('contact POST forwards attachment descriptor parts without url', async () => {
+    contactSendBehavior = 'ok';
+    lastFetchInit = undefined;
+    const descriptor = {
+      type: 'file' as const,
+      mime: 'image/png',
+      attachmentID: 'att_send_1',
+      sha256: 'deadbeef',
+      size: 42,
+      filename: 'shot.png',
+    };
+    await sendAssistantContactMessage('asst_1', 'oc_contact_desc', {
+      parts: [
+        { type: 'text', text: 'see this' },
+        descriptor,
+      ],
+    });
+    const init = lastFetchInit as RequestInit | undefined;
+    expect(init?.method).toBe('POST');
+    const rawBody = init?.body;
+    const body = typeof rawBody === 'string' ? JSON.parse(rawBody) as {
+      messageID: string;
+      parts: Array<Record<string, unknown>>;
+    } : null;
+    expect(body?.messageID).toBe('oc_contact_desc');
+    expect(body?.parts?.[0]).toEqual({ type: 'text', text: 'see this' });
+    expect(body?.parts?.[1]).toEqual({
+      type: 'file',
+      mime: 'image/png',
+      attachmentID: 'att_send_1',
+      sha256: 'deadbeef',
+      size: 42,
+      filename: 'shot.png',
+    });
+    expect(body?.parts?.[1]?.url).toBeUndefined();
+    expect(Object.prototype.hasOwnProperty.call(body?.parts?.[1] ?? {}, 'url')).toBe(false);
+  });
+
+  test('foreground-reconciles snapshot busy denser and idle slower', async () => {
+    const { ASSISTANT_FOREGROUND_IDLE_RECONCILE_MS } = await import('./assistantQueries');
+    expect(CONTACT_WORKING_SNAPSHOT_POLL_MS).toBe(2_500);
+    expect(ASSISTANT_FOREGROUND_IDLE_RECONCILE_MS).toBe(15_000);
+    expect(snapshotHasContactWorking({
+      revision: 1,
+      enabled: true,
+      assistants: [{ working: true, activeContactTurn: null } as never],
+    })).toBe(true);
+    expect(snapshotHasContactWorking({
+      revision: 1,
+      enabled: true,
+      assistants: [{ working: false, activeContactTurn: null } as never],
+    })).toBe(false);
+    const options = assistantSnapshotQueryOptions('runtime-a');
+    expect(typeof options.refetchInterval).toBe('function');
+    expect(options.refetchIntervalInBackground).toBe(false);
+    expect(options.refetchInterval?.({ state: { data: { revision: 1, enabled: true, assistants: [{ working: true, activeContactTurn: null }] } } } as never)).toBe(CONTACT_WORKING_SNAPSHOT_POLL_MS);
+    expect(options.refetchInterval?.({ state: { data: { revision: 1, enabled: true, assistants: [{ working: false, activeContactTurn: null }] } } } as never)).toBe(ASSISTANT_FOREGROUND_IDLE_RECONCILE_MS);
   });
 });

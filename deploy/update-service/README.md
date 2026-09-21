@@ -110,7 +110,7 @@ Required JSON fields:
   "ota": { "state": "current | available | outside_rollout | incompatible", "bundle": { } },
   "native": { "state": "current | available | required", "version": "", "build": 0, "installUrl": "" },
   "nextCheckInSec": 3600,
-  "releaseNotes": "optional markdown newer than currentBundleId (not stripped iOS nativeVersion) through OTA releaseVersion",
+  "releaseNotes": "optional markdown newer than currentBundleId (not stripped iOS nativeVersion) through OTA releaseVersion or native.version",
   "isChannelRollback": "optional true only for cross-channel beta→stable rollback apply_ota"
 }
 ```
@@ -120,12 +120,14 @@ Clients must follow `primaryAction`: `apply_ota` applies the bundle in-app;
 the update. Do not invent a GitHub URL on the client.
 
 Relative `bundle.url` values are resolved to absolute URLs against the request origin.
-When `primaryAction` is `apply_ota`, the handler loads `/CHANGELOG.md` from the same
-origin as the channel manifest and attaches filtered `releaseNotes` (same extraction
-as `/v1/update/check`). On EdgeOne that origin is the Vercel host — same-origin
-CHANGELOG is either a reverse-proxied fetch loop or a git-time static file that
-stops before the current OTA range, which omits `releaseNotes`. Missing or empty
-changelog content omits the field.
+When `primaryAction` is `apply_ota` or `install_native_required`, the handler loads
+`/CHANGELOG.md` from the same origin as the channel manifest and attaches filtered
+`releaseNotes` (same extraction as `/v1/update/check`). The upper bound is the OTA
+`releaseVersion` for in-app apply, or `native.version` when the shell must reinstall.
+On EdgeOne that origin is the Vercel host — same-origin CHANGELOG is either a
+reverse-proxied fetch loop or a git-time static file that stops before the current
+OTA range, which omits `releaseNotes`. Missing or empty changelog content omits the
+field.
 
 `isChannelRollback` is present (and `true`) only when all of the following hold:
 request `channel` is `stable`, device `currentBundleId` is a prerelease (contains `-`,

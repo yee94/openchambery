@@ -20,10 +20,33 @@ describe('Assistant DTO parsing', () => {
     expect(snapshot.assistants[0]?.historySessionCount).toBe(1);
     expect(snapshot.assistants[0]?.assignedSessionIDs).toEqual([]);
     expect(snapshot.assistants[0]?.working).toBe(false);
+    expect(snapshot.assistants[0]?.activeContactTurn).toBeNull();
+    const withActive = parseAssistantSnapshotDTO({
+      revision: 1,
+      enabled: true,
+      assistants: [{
+        ...assistantContractFixtures.assistant,
+        working: true,
+        activeContactTurn: {
+          turnID: 'turn_1',
+          messageID: 'turn_1',
+          status: 'running',
+          admittedAt: 99,
+        },
+      }],
+    }).assistants[0];
+    expect(withActive?.working).toBe(true);
+    expect(withActive?.activeContactTurn).toEqual({
+      turnID: 'turn_1',
+      messageID: 'turn_1',
+      status: 'running',
+      admittedAt: 99,
+    });
     expect('skillRoots' in snapshot.assistants[0]).toBe(false);
     expect(binding.directory).toBe('/workspace');
     expect(compact.binding.sessionID).toBe('ses_fixture');
     expect(admission.messageID).toBe('msg_fixture');
+    expect(admission.revision).toBe(4);
     expect(share.sessionID).toBe('ses_fixture');
     expect(share.state).toBe('running');
     expect(history.entries[0]?.sessionID).toBe('ses_fixture');
@@ -61,6 +84,8 @@ describe('Assistant DTO parsing', () => {
     const page = parseAssistantContactPage({
       complete: true,
       nextCursor: null,
+      generation: 0,
+      revision: 1,
       messages: [{
         messageID: 'peer_1',
         assistantID: 'asst_b',
@@ -104,6 +129,8 @@ describe('Assistant DTO parsing', () => {
     const page = parseAssistantContactPage({
       complete: true,
       nextCursor: null,
+      generation: 0,
+      revision: 2,
       messages: [{
         messageID: 'card_1',
         assistantID: 'asst_host',
@@ -132,6 +159,8 @@ describe('Assistant DTO parsing', () => {
     const page = parseAssistantContactPage({
       complete: true,
       nextCursor: null,
+      generation: 0,
+      revision: 3,
       messages: [{
         messageID: 'user_1',
         assistantID: 'asst_host',
@@ -147,15 +176,54 @@ describe('Assistant DTO parsing', () => {
           { type: 'text', text: 'look' },
           { type: 'file', mime: 'image/png', url: 'data:image/png;base64,aa', filename: 'shot.png' },
           { type: 'file', mime: 'text/plain', url: 'data:text/plain;base64,eA==', filename: 'notes.txt' },
+          {
+            type: 'file',
+            mime: 'application/pdf',
+            attachmentID: 'att_1',
+            sha256: 'abc',
+            size: 12,
+            filename: 'doc.pdf',
+          },
         ],
         text: 'look',
         cards: [],
       }],
     });
+    expect(page.generation).toBe(0);
+    expect(page.revision).toBe(3);
     expect(page.messages[0]?.parts).toEqual([
       { type: 'text', text: 'look' },
       { type: 'file', mime: 'image/png', url: 'data:image/png;base64,aa', filename: 'shot.png' },
       { type: 'file', mime: 'text/plain', url: 'data:text/plain;base64,eA==', filename: 'notes.txt' },
+      {
+        type: 'file',
+        mime: 'application/pdf',
+        attachmentID: 'att_1',
+        sha256: 'abc',
+        size: 12,
+        filename: 'doc.pdf',
+      },
     ]);
+    expect(() => parseAssistantContactPage({
+      complete: true,
+      nextCursor: null,
+      generation: 0,
+      revision: 1,
+      messages: [{
+        messageID: 'bad',
+        assistantID: 'a',
+        role: 'user',
+        turnID: 'bad',
+        bubbleIndex: 0,
+        createdAt: 1,
+        ordinal: 1,
+        status: 'complete',
+        fromAssistantID: null,
+        fromAssistantName: null,
+        parts: [{ type: 'file', mime: 'text/plain', url: 'data:,', attachmentID: 'x', sha256: 'y', size: 1 }],
+        text: '',
+        cards: [],
+      }],
+    })).toThrow(AssistantAPIError);
   });
 });

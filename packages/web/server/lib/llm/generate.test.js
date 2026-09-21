@@ -36,6 +36,61 @@ const jsonResponse = (status, body) => ({
   arrayBuffer: async () => new TextEncoder().encode(JSON.stringify(body ?? null)).buffer,
 })
 
+describe('generate cancellation', () => {
+  it('cancels attachment wait and still removes only its temporary session', async () => {
+    const controller = new AbortController()
+    const remove = vi.fn(async () => undefined)
+    const interrupt = vi.fn(async () => undefined)
+    const image = { type: 'file', mime: 'image/png', url: 'data:image/png;base64,aa', filename: 'shot.png' }
+
+    await expect(generateOpenCodeText({
+      buildOpenCodeUrl: () => 'http://127.0.0.1:4096',
+      getOpenCodeAuthHeaders: () => ({}),
+      providerID: 'opencode',
+      modelID: 'gpt-4o',
+      messages: [{ role: 'user', content: 'look', parts: [image] }],
+      clientFactory: () => ({
+        agent: { get: async () => denyAllAgent },
+        session: {
+          create: async () => ({ id: 'ses_abort_fixture' }),
+          prompt: async () => ({ id: 'inbox' }),
+          wait: async (_args, { signal }) => {
+            controller.abort()
+            signal.throwIfAborted()
+          },
+          interrupt,
+          remove,
+          instructions: { entry: { put: async () => {} } },
+        },
+        message: { list: vi.fn() },
+      }),
+      ensureTempDirectory: async () => '/tmp/abort-fixture',
+      forwardImageParts: true,
+      signal: controller.signal,
+    })).rejects.toMatchObject({ name: 'AbortError' })
+    expect(remove).toHaveBeenCalledExactlyOnceWith({ sessionID: 'ses_abort_fixture' })
+    expect(interrupt).toHaveBeenCalledWith({ sessionID: 'ses_abort_fixture', continue: false })
+  })
+
+  it('aborts an in-flight generate.text when the contact continuation is cancelled', async () => {
+    const controller = new AbortController()
+    const text = vi.fn(async (_args, { signal }) => {
+      controller.abort()
+      signal.throwIfAborted()
+    })
+    await expect(generateOpenCodeText({
+      buildOpenCodeUrl: () => 'http://127.0.0.1:4096',
+      getOpenCodeAuthHeaders: () => ({}),
+      providerID: 'opencode',
+      modelID: 'gpt-5-nano',
+      messages: [{ role: 'user', content: 'work' }],
+      clientFactory: () => ({ generate: { text } }),
+      signal: controller.signal,
+    })).rejects.toMatchObject({ name: 'AbortError' })
+    expect(text).toHaveBeenCalledTimes(1)
+  })
+})
+
 describe('generateOpenCodeText — text path', () => {
   it('uses generate.text with model id/providerID and never opens a session', async () => {
     const text = vi.fn(async () => ({ text: 'reply' }))
@@ -67,6 +122,26 @@ describe('generateOpenCodeText — text path', () => {
     expect(text.mock.calls[0][0].prompt).toContain('User: hi')
     expect(create).not.toHaveBeenCalled()
     expect(prompt).not.toHaveBeenCalled()
+  })
+
+  it.each(['high', undefined])('passes variant %s to generate.text and returns only text', async (variant) => {
+    const text = vi.fn(async () => ({ text: 'public reply' }))
+    const result = await generateOpenCodeText({
+      buildOpenCodeUrl: () => 'http://127.0.0.1:4096',
+      getOpenCodeAuthHeaders: () => ({}),
+      providerID: 'opencode',
+      modelID: 'gpt-5-nano',
+      messages: [{ role: 'user', content: 'hi' }],
+      variant,
+      clientFactory: () => ({ generate: { text } }),
+    })
+    expect(result.text).toBe('public reply')
+    const model = text.mock.calls[0][0].model
+    if (variant) {
+      expect(model).toEqual({ id: 'gpt-5-nano', providerID: 'opencode', variant })
+    } else {
+      expect(model).toEqual({ id: 'gpt-5-nano', providerID: 'opencode' })
+    }
   })
 
   it('does not invent deltas on the generate.text path', async () => {
@@ -143,6 +218,7 @@ describe('generateOpenCodeText — attachment session path', () => {
         { role: 'system', content: 'Be careful' },
         { role: 'user', content: 'look', parts: [image] },
       ],
+      variant: 'high',
       clientFactory: () => ({
         generate: { text },
         agent: { get: agentGet },
@@ -156,7 +232,12 @@ describe('generateOpenCodeText — attachment session path', () => {
         },
         message: { list },
       }),
-      ensureTempDirectory: async () => '/tmp/openchamber-llm',
+      ensureTempDirectory: async ({ agentMarkdown }) => {
+        expect(agentMarkdown).toContain('openchamber-tool JSON fences')
+        expect(agentMarkdown).toMatch(/action:\s*"\*"/)
+        expect(agentMarkdown).toMatch(/effect:\s*deny/)
+        return '/tmp/openchamber-llm'
+      },
       forwardImageParts: true,
     })
 
@@ -167,7 +248,7 @@ describe('generateOpenCodeText — attachment session path', () => {
     }), expect.anything())
     expect(create).toHaveBeenCalledWith(expect.objectContaining({
       agent: 'openchamber-llm',
-      model: { id: 'gpt-4o', providerID: 'opencode' },
+      model: { id: 'gpt-4o', providerID: 'opencode', variant: 'high' },
       location: { directory: '/tmp/openchamber-llm' },
     }), expect.anything())
     expect(put).toHaveBeenCalledWith(expect.objectContaining({
@@ -429,6 +510,45 @@ describe('generateOpenCodeText — attachment session path', () => {
       },
     })
     expect(onTextDelta).toHaveBeenCalledTimes(2)
+  })
+
+  it('logs remove errors without erasing a successful generate result', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const image = { type: 'file', mime: 'image/png', url: 'data:image/png;base64,aa', filename: 'shot.png' }
+    try {
+      const result = await generateOpenCodeText({
+        buildOpenCodeUrl: () => 'http://127.0.0.1:4096',
+        getOpenCodeAuthHeaders: () => ({}),
+        providerID: 'opencode',
+        modelID: 'gpt-4o',
+        messages: [{ role: 'user', content: 'look', parts: [image] }],
+        clientFactory: () => ({
+          agent: { get: async () => denyAllAgent },
+          session: {
+            create: async () => ({ id: 'ses_tmp' }),
+            prompt: async () => ({ id: 'inbox' }),
+            wait: async () => undefined,
+            remove: async () => {
+              throw new Error('delete denied')
+            },
+            interrupt: vi.fn(),
+            instructions: { entry: { put: async () => {} } },
+          },
+          message: {
+            list: async () => ({ data: [completedAssistant('ok')], cursor: {} }),
+          },
+        }),
+        ensureTempDirectory: async () => '/tmp/openchamber-llm',
+        forwardImageParts: true,
+      })
+      expect(result).toEqual({ text: 'ok', source: 'attachment-session' })
+      expect(warn).toHaveBeenCalledWith(
+        expect.stringContaining('[llm] failed to remove throwaway OpenCode session:'),
+        expect.stringContaining('delete denied'),
+      )
+    } finally {
+      warn.mockRestore()
+    }
   })
 })
 

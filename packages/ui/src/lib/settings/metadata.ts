@@ -21,6 +21,7 @@ export type SettingsPageSlug =
   | 'chat'
   | 'shortcuts'
   | 'sessions'
+  | 'archived-sessions'
   | 'summary-ai'
   | 'magic-prompts'
   | 'snippets'
@@ -52,6 +53,7 @@ const SETTINGS_PAGE_ORDER: readonly SettingsPageSlug[] = [
   'chat',
   'notifications',
   'sessions',
+  'archived-sessions',
   'summary-ai',
   'shortcuts',
   'projects',
@@ -87,6 +89,7 @@ export const MOBILE_SETTINGS_PAGE_SLUGS = [
   'chat',
   'notifications',
   'sessions',
+  'archived-sessions',
   'summary-ai',
   'projects',
   'git',
@@ -267,6 +270,13 @@ export const SETTINGS_PAGE_METADATA: readonly SettingsPageMeta[] = [
     group: 'personalization',
     kind: 'single',
     keywords: ['defaults', 'default agent', 'default model', 'retention', 'memory', 'limits', 'zen'],
+  },
+  {
+    slug: 'archived-sessions',
+    title: 'Archived sessions',
+    group: 'personalization',
+    kind: 'single',
+    keywords: ['archive', 'archived', 'restore', 'preview', 'history'],
   },
   {
     slug: 'summary-ai',

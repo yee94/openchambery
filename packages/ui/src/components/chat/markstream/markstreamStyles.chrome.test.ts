@@ -39,7 +39,7 @@ describe('Markstream nested legacy code card Chromium styles', () => {
         { find: '@', replacement: uiSrc },
       ] },
       build: {
-        emptyOutDir: false, minify: false, outDir: work,
+        emptyOutDir: false, minify: false, reportCompressedSize: false, outDir: work,
         lib: {
           entry: join(here, 'markstreamStyles.chrome.fixture.tsx'),
           formats: ['iife'], name: 'MarkstreamStyleFixture',
@@ -178,6 +178,16 @@ describe('Markstream nested legacy code card Chromium styles', () => {
       writeFileSync(join(work, 'scroll-geometry.json'), JSON.stringify(scroll, null, 2));
       expect(scroll.visibility).toEqual(Array(12).fill('visible'));
       expect(scroll.heights).toEqual(Array(scroll.heights.length).fill(scroll.initialHeight));
+      const stream = await page.evaluate<{ initialTextMatches: boolean; stable: boolean; height: number; heights: number[]; closed: boolean }>(
+        'window.markstreamStreamReplay()',
+      );
+      writeFileSync(join(work, 'stream-geometry.json'), JSON.stringify(stream, null, 2));
+      expect(stream.initialTextMatches).toBe(true);
+      expect(stream.stable).toBe(true);
+      expect(stream.height).toBeGreaterThan(300);
+      expect(stream.heights.every((height) => height >= stream.height)).toBe(true);
+      expect(new Set(stream.heights).size).toBe(1);
+      expect(stream.closed).toBe(true);
     } finally {
       await session.close();
       await new Promise<void>((done, reject) => server.close((error) => error ? reject(error) : done()));

@@ -457,7 +457,7 @@ export function DesktopHostSwitcherDialog({
       const results = await Promise.all(
         hosts.map(async (h) => {
           const probeRelayLeg = async (): Promise<HostStatus> => {
-            const res = await probeRelayDesktopHost(h.relay!)
+            const res = await probeRelayDesktopHost(h.relay!, { clientToken: h.clientToken || null })
               .catch((): HostProbeResult => ({ status: 'unreachable', latencyMs: 0 }));
             return { status: res.status, latencyMs: res.latencyMs, ...(res.status === 'ok' ? { via: 'relay' as const } : {}) };
           };

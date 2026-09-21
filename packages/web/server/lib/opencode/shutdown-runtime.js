@@ -10,6 +10,7 @@ export const createGracefulShutdownRuntime = (dependencies) => {
     sessionRuntime,
     sessionTitleRuntime,
     sessionGoalRuntime,
+    questionAutoDelegateRuntime,
     scheduledTasksRuntime,
     getHealthCheckInterval,
     clearHealthCheckInterval,
@@ -44,6 +45,7 @@ export const createGracefulShutdownRuntime = (dependencies) => {
     sessionRuntime.dispose();
     sessionTitleRuntime?.stop?.();
     sessionGoalRuntime?.stop?.();
+    questionAutoDelegateRuntime?.dispose?.();
     // Stop timers/queue only. Keep the process-lifetime run history store open so
     // in-flight attach/finalize can still write, and so exitProcess:false restarts
     // can reuse the same global singleton without reopening a closed SQLite handle.

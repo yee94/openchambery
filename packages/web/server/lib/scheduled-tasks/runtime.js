@@ -8,6 +8,7 @@ import {
   isSessionGoalSupported,
   sessionGoalUnavailableMessage,
 } from '../session-goal/capability.js';
+import { SCHEDULED_SLOT_CLAIMED_CODE } from './run-history-store.js';
 
 const DEFAULT_GLOBAL_CONCURRENCY = 4;
 const DEFAULT_PROJECT_CONCURRENCY = 2;
@@ -484,6 +485,7 @@ export const createScheduledTasksRuntime = (deps) => {
     getSmallModelService,
     waitForOpenCodeReady,
     emitTaskRunEvent,
+    notifyTaskRun,
     runHistoryStore = null,
     logger = console,
     maxGlobalConcurrency = DEFAULT_GLOBAL_CONCURRENCY,
@@ -597,7 +599,7 @@ export const createScheduledTasksRuntime = (deps) => {
       if (!task || !task.enabled) {
         return;
       }
-      queueTaskRun(projectID, taskID, 'scheduled');
+      queueTaskRun(projectID, taskID, 'scheduled', nextRunAt);
       pumpQueue();
     }, boundedDelay);
 
@@ -731,13 +733,13 @@ export const createScheduledTasksRuntime = (deps) => {
     }
   };
 
-  const queueTaskRun = (projectID, taskID, reason) => {
+  const queueTaskRun = (projectID, taskID, reason, slotAt) => {
     const taskKey = buildTaskKey(projectID, taskID);
     if (queuedTaskKeys.has(taskKey) || runningTaskKeys.has(taskKey)) {
       return;
     }
     queuedTaskKeys.add(taskKey);
-    queue.push({ projectID, taskID, reason });
+    queue.push({ projectID, taskID, reason, slotAt });
   };
 
   const canRunTask = (projectID) => {
@@ -1162,7 +1164,7 @@ export const createScheduledTasksRuntime = (deps) => {
     }
   };
 
-  const runTask = async (projectID, taskID, reason) => {
+  const runTask = async (projectID, taskID, reason, slotAt) => {
     const taskMap = tasksByProject.get(projectID);
     const task = taskMap?.get(taskID);
     if (!task || !task.enabled) {
@@ -1195,6 +1197,9 @@ export const createScheduledTasksRuntime = (deps) => {
       if (runHistoryStore && typeof runHistoryStore.startRun === 'function') {
         try {
           runID = crypto.randomUUID();
+          const resolvedSlotAt = reason === 'scheduled' && Number.isFinite(slotAt)
+            ? Math.trunc(slotAt)
+            : undefined;
           runHistoryStore.startRun({
             id: runID,
             projectId: projectID,
@@ -1203,8 +1208,20 @@ export const createScheduledTasksRuntime = (deps) => {
             trigger: reason === 'manual' ? 'manual' : 'scheduled',
             directory: projectPath,
             startedAt: runStartedAt,
+            ...(resolvedSlotAt !== undefined ? { slotAt: resolvedSlotAt } : {}),
           });
         } catch (error) {
+          if (error?.code === SCHEDULED_SLOT_CLAIMED_CODE) {
+            const nextRunAt = computeNextRunAt(task, Date.now());
+            if (task.enabled && Number.isFinite(nextRunAt)) {
+              scheduleTask(projectID, taskID, nextRunAt);
+            }
+            logger.info?.('[ScheduledTasks] skipped duplicate scheduled slot', {
+              projectID,
+              taskID,
+            });
+            return { ok: false, skipped: true };
+          }
           errorMessage = safeErrorMessage(error);
           runID = null;
           logger.warn?.('[ScheduledTasks] failed to start run history', {
@@ -1419,6 +1436,26 @@ export const createScheduledTasksRuntime = (deps) => {
       } catch {
       }
 
+      // Notification fanout for scheduled (non-manual) runs; the notification
+      // runtime owns every delivery gate (settings toggle, channels).
+      try {
+        await notifyTaskRun?.({
+          projectID,
+          taskID,
+          taskName,
+          status,
+          reason,
+          ...(sessionID ? { sessionId: sessionID } : {}),
+          ...(status === 'error' ? { errorMessage } : {}),
+        });
+      } catch (error) {
+        logger.warn?.('[ScheduledTasks] task-run notification failed', {
+          projectID,
+          taskID,
+          error: safeErrorMessage(error),
+        });
+      }
+
       return {
         ok: status === 'success',
         status,
@@ -1458,7 +1495,7 @@ export const createScheduledTasksRuntime = (deps) => {
       queuedTaskKeys.delete(taskKey);
       consumed = true;
 
-      void runTask(item.projectID, item.taskID, item.reason).finally(() => {
+      void runTask(item.projectID, item.taskID, item.reason, item.slotAt).finally(() => {
         pumpQueue();
       });
     }
