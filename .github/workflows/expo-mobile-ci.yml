@@ -87,6 +87,11 @@ jobs:
 
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
+        with:
+          # v3 default is `tools platform-tools`. Google removed the legacy
+          # `tools` package, so `sdkmanager tools` now fails the job with
+          # "Failed to find package 'tools'" before prebuild/assemble.
+          packages: platform-tools
 
       - name: Install JS deps
         run: npm ci
