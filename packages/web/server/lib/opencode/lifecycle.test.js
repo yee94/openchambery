@@ -116,7 +116,7 @@ const jsonResponse = (body, status = 200) => new Response(JSON.stringify(body), 
   headers: { 'content-type': 'application/json' },
 });
 
-const DEFAULT_V2_HEALTH = { healthy: true, version: '0.0.0-next-17444' };
+const DEFAULT_V2_HEALTH = { version: '2.0.12', pid: 1, urls: [], paths: { tmp: '/tmp' } };
 
 const stubOpenCodeFetch = (overrides = {}) => {
   const fetchMock = vi.fn(async (url, init) => {
@@ -131,7 +131,7 @@ const stubOpenCodeFetch = (overrides = {}) => {
       }
       return jsonResponse(migration ?? { status: 'completed' });
     }
-    if (href.includes('/api/health') || href.includes('/global/health')) {
+    if (href.includes('/api/info') || href.includes('/global/health')) {
       const health = overrides.health;
       if (typeof health === 'function') {
         return health(url, init);
@@ -197,7 +197,7 @@ describe('OpenCode lifecycle', () => {
     await server.close();
   });
 
-  it('probes /api/health with Basic auth after the managed server is listening', async () => {
+  it('probes /api/info with Basic auth after the managed server is listening', async () => {
     delete process.env.OPENCODE_BINARY;
     const child = createMockChild();
     spawnMock.mockImplementationOnce(() => {
@@ -208,7 +208,7 @@ describe('OpenCode lifecycle', () => {
     });
 
     const fetchMock = vi.fn(async (url) => {
-      if (String(url).includes('/api/health')) {
+      if (String(url).includes('/api/info')) {
         return new Response(JSON.stringify(DEFAULT_V2_HEALTH), {
           status: 200,
           headers: { 'content-type': 'application/json' },
@@ -240,10 +240,10 @@ describe('OpenCode lifecycle', () => {
       waitForReady: network.waitForReady,
     });
     const server = await runtime.startOpenCode();
-    const healthCall = fetchMock.mock.calls.find((call) => String(call[0]).includes('/api/health'));
+    const healthCall = fetchMock.mock.calls.find((call) => String(call[0]).includes('/api/info'));
 
     expect(healthCall).toBeDefined();
-    expect(String(healthCall[0])).toContain('/api/health');
+    expect(String(healthCall[0])).toContain('/api/info');
     expect(healthCall[1].headers.Authorization).toMatch(/^Basic /);
 
     await server.close();

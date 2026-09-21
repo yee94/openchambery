@@ -2,7 +2,7 @@
  * Official OpenCode v2 project-level saved permissions.
  *
  * Uses the active official client for project resolution and saved rules.
- * Project IDs come from project.current for the selected directory.
+ * Project IDs come from location.get(...).project for the selected directory.
  *
  * - list: GET `/api/permission/saved?projectID=`
  * - remove: DELETE `/api/permission/saved/:id`
@@ -45,9 +45,10 @@ export function parsePermissionSavedList(payload: unknown): PermissionSavedInfo[
 export async function resolvePermissionSavedProject(directory: string, signal?: AbortSignal): Promise<string> {
   if (!directory.trim()) throw new Error("permission saved: directory required")
   signal?.throwIfAborted()
-  const project = await opencodeClient.getApiClient().project.current({ location: { directory } }, { signal })
+  // Official 2.x dropped project.current; location.get exposes project.id.
+  const location = await opencodeClient.getApiClient().location.get({ location: { directory } }, { signal })
   signal?.throwIfAborted()
-  const id = asString(project?.id)
+  const id = asString(location?.project?.id)
   if (!id) throw new Error("permission saved: project ID required")
   return id
 }

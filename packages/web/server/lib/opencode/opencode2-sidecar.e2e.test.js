@@ -169,7 +169,7 @@ describe('opencode2 sidecar e2e', () => {
     expect(server.url).toMatch(/^http:\/\/127\.0\.0\.1:\d+$/);
     expect(String(state.lastOpenCodeLaunchDiagnostics?.binary || '')).toContain('opencode2');
 
-    const health = await jsonGet(server.url, '/api/health');
+    const health = await jsonGet(server.url, '/api/info');
     expect(health.status).toBe(200);
     expect(health.body).toMatchObject({
       healthy: true,
@@ -177,7 +177,7 @@ describe('opencode2 sidecar e2e', () => {
     });
     expect(String(health.body?.version ?? '')).not.toMatch(OPENCODE_1X_VERSION);
 
-    const unauthenticated = await fetch(`${server.url}/api/health`);
+    const unauthenticated = await fetch(`${server.url}/api/info`);
     expect(unauthenticated.status).toBe(401);
 
     const gate = await fetchV1MigrationGate({

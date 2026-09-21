@@ -98,8 +98,7 @@ export function mapV2PermissionRequest(item: {
   }
 }
 
-/** Map v2 question.request rows onto the local QuestionRequest contract. */
-export function mapV2QuestionRequest(item: {
+type V2QuestionLike = {
   id: string
   sessionID: string
   questions?: Array<{
@@ -108,21 +107,91 @@ export function mapV2QuestionRequest(item: {
     options: Array<{ label: string; description: string }>
     multiple?: boolean
   }>
+  /** Official 2.0.12 FormInfo fields (question API is gone). */
+  title?: string
+  fields?: ReadonlyArray<{
+    key: string
+    type?: string
+    title?: string
+    description?: string
+    options?: ReadonlyArray<{ label?: string; value?: string; description?: string }>
+  }>
+  metadata?: Record<string, unknown>
   tool?: { messageID?: string; id?: string }
-}): QuestionRequest {
-  return {
-    id: item.id,
-    sessionID: item.sessionID,
-    questions: (item.questions ?? []).map((question) => ({
+}
+
+function questionsFromFormFields(item: V2QuestionLike): QuestionRequest["questions"] {
+  const fields = item.fields
+  if (!fields || fields.length === 0) {
+    const title = typeof item.title === "string" && item.title.length > 0 ? item.title : "Form"
+    return [{ question: title, header: title, options: [] }]
+  }
+  return fields.map((field) => {
+    const header = (typeof field.title === "string" && field.title.length > 0)
+      ? field.title
+      : field.key
+    const question = (typeof field.description === "string" && field.description.length > 0)
+      ? field.description
+      : (typeof item.title === "string" && item.title.length > 0 ? item.title : header)
+    const options = (field.options ?? []).map((option) => ({
+      label: option.label || option.value || "",
+      description: typeof option.description === "string" ? option.description : "",
+    })).filter((option) => option.label.length > 0)
+    return {
+      question,
+      header,
+      options,
+      ...(field.type === "multiselect" ? { multiple: true as const } : {}),
+    }
+  })
+}
+
+/**
+ * Map v2 form rows (and legacy question.request shapes) onto the local
+ * QuestionRequest UI contract. Official 2.0.12 replaced questions with forms.
+ */
+export function mapV2QuestionRequest(item: V2QuestionLike): QuestionRequest {
+  const questions = item.questions && item.questions.length > 0
+    ? item.questions.map((question) => ({
       question: question.question,
       header: question.header,
       options: question.options ?? [],
       ...(question.multiple ? { multiple: true } : {}),
-    })),
+    }))
+    : questionsFromFormFields(item)
+  return {
+    id: item.id,
+    sessionID: item.sessionID,
+    questions,
     ...(item.tool?.messageID
       ? { tool: { messageID: item.tool.messageID, callID: item.tool.id ?? "" } }
       : {}),
   }
+}
+
+/** Build session.form.reply `answer` from legacy string[][] answers + form field keys. */
+export function answersToFormAnswer(
+  answers: string[][],
+  fieldKeys?: readonly string[],
+): Record<string, string | number | boolean | string[]> {
+  const keys = fieldKeys && fieldKeys.length > 0
+    ? fieldKeys
+    : answers.map((_, index) => `field_${index}`)
+  const answer: Record<string, string | number | boolean | string[]> = {}
+  if (keys.length === 0) {
+    return answer
+  }
+  for (let index = 0; index < keys.length; index += 1) {
+    const key = keys[index]
+    const values = answers[index] ?? []
+    if (values.length > 1) {
+      answer[key] = values
+    } else {
+      answer[key] = values[0] ?? ""
+    }
+  }
+  // Extra answer rows without field keys are ignored; form schema owns keys.
+  return answer
 }
 
 export { projectSession }

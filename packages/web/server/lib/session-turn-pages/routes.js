@@ -375,7 +375,7 @@ const getHttpStatus = (error) => {
 };
 
 /**
- * Real `@opencode-ai/client` throws declared JSON bodies with `_tag`
+ * Real `@opencode/client` throws declared JSON bodies with `_tag`
  * (e.g. MessageNotFoundError) — no HTTP status on the object. Also accept
  * legacy status/code shapes from tests and older surfaces.
  */

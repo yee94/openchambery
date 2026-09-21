@@ -2,14 +2,14 @@ import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { validateConversationInput } from './validation.js';
 
 // Mock the official v2 client before any imports
-vi.mock('@opencode-ai/client', () => ({
+vi.mock('@opencode/client', () => ({
   OpenCode: { make: vi.fn() },
 }));
 
 // Lazy import to allow vi.mock to take effect
 const { createConversationsService } = await import('./service.js');
 
-const mockMake = (await import('@opencode-ai/client')).OpenCode.make;
+const mockMake = (await import('@opencode/client')).OpenCode.make;
 
 const clientError = (reason, cause) => {
   const error = new Error(reason);

@@ -582,10 +582,10 @@ describe('data URL validation', () => {
 
 describe('generateOpenCodeText — real OpenCode.make + fake HTTP', () => {
   it('catalog-shaped generate.text completion through the real client', async () => {
-    const { OpenCode } = await import('@opencode-ai/client')
+    const { OpenCode } = await import('@opencode/client')
     const fetchImpl = vi.fn(async (url, init) => {
       const path = String(url)
-      if (path.includes('/api/generate') && init?.method === 'POST') {
+      if (path.includes('/api/experimental/generate') && init?.method === 'POST') {
         const body = JSON.parse(init.body)
         expect(body.model).toEqual({ id: 'gpt-5-nano', providerID: 'opencode' })
         expect(body.prompt).toContain('User: hi')
@@ -612,7 +612,7 @@ describe('generateOpenCodeText — real OpenCode.make + fake HTTP', () => {
   })
 
   it('attachment deny-all failure happens before prompt on the real client path shape', async () => {
-    const { OpenCode } = await import('@opencode-ai/client')
+    const { OpenCode } = await import('@opencode/client')
     let prompted = false
     const fetchImpl = vi.fn(async (url, init) => {
       const path = String(url)
@@ -666,7 +666,7 @@ describe('generateOpenCodeText — real OpenCode.make + fake HTTP', () => {
   })
 
   it('attachment success path removes the session after message.list', async () => {
-    const { OpenCode } = await import('@opencode-ai/client')
+    const { OpenCode } = await import('@opencode/client')
     const calls = []
     const fetchImpl = vi.fn(async (url, init) => {
       const path = String(url)

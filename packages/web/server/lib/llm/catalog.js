@@ -144,7 +144,7 @@ const resolveCatalogLocation = (options) => {
 };
 
 /**
- * Load the connected catalog from an official `@opencode-ai/client`.
+ * Load the connected catalog from an official `@opencode/client`.
  * Uses model.list + provider.list only (no config.providers).
  * Failure is distinct from a successful empty catalog.
  *

@@ -2,7 +2,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import * as vscode from 'vscode';
-import { OpenCode } from '@opencode-ai/client';
+import { OpenCode } from '@opencode/client';
 import { BUILT_IN_SKILL_LOCATION, type DiscoveredSkill, type SkillScope, type SkillSource } from './opencodeConfig';
 import { projectProviderCatalog, type ProviderCatalog } from './provider-catalog-runtime';
 import { formatSettingsResponse } from './settings-visible-runtime';

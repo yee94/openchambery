@@ -162,10 +162,10 @@ describe('opencode2 upgrade pin (ticket 12)', () => {
   it('does not treat a 1.x latest string as an available upgrade', async () => {
     const fetchMock = vi.fn(async (url) => {
       const href = String(url);
-      if (href.includes('/api/health')) {
+      if (href.includes('/api/info')) {
         return {
           ok: true,
-          json: async () => ({ version: '0.0.0-next-17444', healthy: true }),
+          json: async () => ({ version: '2.0.12', healthy: true }),
         };
       }
       if (href.includes('registry.npmjs.org/opencode-ai') || href.includes('github.com/repos/anomalyco/opencode')) {

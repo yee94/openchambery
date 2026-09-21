@@ -15,7 +15,7 @@ const httpStatus = (error) => {
   return undefined;
 };
 /**
- * Real `@opencode-ai/client` throws declared JSON with `_tag` (no status).
+ * Real `@opencode/client` throws declared JSON with `_tag` (no status).
  * MessageNotFoundError / SessionNotFoundError must map to found:false, not unavailable.
  */
 const isNotFoundError = (error) => {

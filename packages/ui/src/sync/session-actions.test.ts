@@ -121,6 +121,19 @@ const mocks = vi.hoisted(() => {
       headers: { "content-type": "application/json" },
     })
 
+  const mockSessionForm = {
+    reply: vi.fn((params: Record<string, unknown>) => {
+      replyCalls.push({ method: "session.form.reply", params })
+      if (state.questionReplyError) return Promise.reject(state.questionReplyError)
+      return Promise.resolve()
+    }),
+    cancel: vi.fn((params: Record<string, unknown>) => {
+      replyCalls.push({ method: "session.form.cancel", params })
+      if (state.questionRejectError) return Promise.reject(state.questionRejectError)
+      return Promise.resolve()
+    }),
+  }
+
   const mockScopedClient = {
     permission: {
       reply: vi.fn((params: Record<string, unknown>) => {
@@ -128,17 +141,8 @@ const mocks = vi.hoisted(() => {
         return Promise.resolve({ data: true })
       }),
     },
-    question: {
-      reply: vi.fn((params: Record<string, unknown>) => {
-        replyCalls.push({ method: "question.reply", params })
-        if (state.questionReplyError) return Promise.reject(state.questionReplyError)
-        return Promise.resolve()
-      }),
-      reject: vi.fn((params: Record<string, unknown>) => {
-        replyCalls.push({ method: "question.reject", params })
-        if (state.questionRejectError) return Promise.reject(state.questionRejectError)
-        return Promise.resolve()
-      }),
+    session: {
+      form: mockSessionForm,
     },
   }
 
@@ -177,23 +181,12 @@ const mocks = vi.hoisted(() => {
         replyCalls.push({ method: "session.unshare", params })
         return Promise.resolve(state.sessionShareResult)
       }),
+      form: mockSessionForm,
     },
     permission: {
       reply: vi.fn((params: Record<string, unknown>) => {
         replyCalls.push({ method: "permission.reply", params })
         return Promise.resolve({ data: true })
-      }),
-    },
-    question: {
-      reply: vi.fn((params: Record<string, unknown>) => {
-        replyCalls.push({ method: "question.reply", params })
-        if (state.questionReplyError) return Promise.reject(state.questionReplyError)
-        return Promise.resolve()
-      }),
-      reject: vi.fn((params: Record<string, unknown>) => {
-        replyCalls.push({ method: "question.reject", params })
-        if (state.questionRejectError) return Promise.reject(state.questionRejectError)
-        return Promise.resolve()
       }),
     },
   }
@@ -3823,7 +3816,7 @@ describe("respondToQuestion passes directory", () => {
     mocks.questionReplyError = null
   })
 
-  test("passes directory to question.reply", async () => {
+  test("passes directory-scoped client to session.form.reply", async () => {
     const childStores = createChildStores([])
 
     const { setActionRefs, respondToQuestion } = await import("./session-actions")
@@ -3832,8 +3825,10 @@ describe("respondToQuestion passes directory", () => {
     await respondToQuestion("session-a", "q-1", [["answer1"]])
 
     expect(replyCalls.length).toBe(1)
-    expect(replyCalls[0].params.requestID).toBe("q-1")
+    expect(replyCalls[0].method).toBe("session.form.reply")
+    expect(replyCalls[0].params.formID).toBe("q-1")
     expect(replyCalls[0].params.sessionID).toBe("session-a")
+    expect(replyCalls[0].params.answer).toEqual({ field_0: "answer1" })
     expect(scopedClientDirectories).toEqual(["/test/project"])
   })
 
@@ -3841,8 +3836,8 @@ describe("respondToQuestion passes directory", () => {
     const { setActionRefs, respondToQuestion } = await import("./session-actions")
     setActionRefs(mockSdk as unknown as OpencodeClient, createChildStores([]), () => "/parent")
     await respondToQuestion("child", "child-question", [["Continue"]], "/child-project")
-    expect(replyCalls[0].params.directory).toBe("/child-project")
-    expect(replyCalls[0].params.requestID).toBe("child-question")
+    expect(scopedClientDirectories).toEqual(["/child-project"])
+    expect(replyCalls[0].params.formID).toBe("child-question")
   })
 
   test("preserves SDK error code and HTTP status for a claimed question", async () => {
@@ -3898,7 +3893,7 @@ describe("rejectQuestion passes directory", () => {
     mocks.questionReplyError = null
   })
 
-  test("passes directory to question.reject", async () => {
+  test("passes directory-scoped client to session.form.cancel", async () => {
     const childStores = createChildStores([])
 
     const { setActionRefs, rejectQuestion } = await import("./session-actions")
@@ -3907,15 +3902,18 @@ describe("rejectQuestion passes directory", () => {
     await rejectQuestion("session-a", "q-2")
 
     expect(replyCalls.length).toBe(1)
-    expect(replyCalls[0].params.requestID).toBe("q-2")
+    expect(replyCalls[0].method).toBe("session.form.cancel")
+    expect(replyCalls[0].params.formID).toBe("q-2")
     expect(replyCalls[0].params.sessionID).toBe("session-a")
+    expect(scopedClientDirectories).toEqual(["/test/project"])
   })
 
-  test("passes the authoritative child directory to question.reject", async () => {
+  test("passes the authoritative child directory to session.form.cancel", async () => {
     const { setActionRefs, rejectQuestion } = await import("./session-actions")
     setActionRefs(mockSdk as unknown as OpencodeClient, createChildStores([]), () => "/parent")
     await rejectQuestion("child", "child-question", "/child-project")
-    expect(replyCalls[0].params.directory).toBe("/child-project")
+    expect(scopedClientDirectories).toEqual(["/child-project"])
+    expect(replyCalls[0].params.formID).toBe("child-question")
   })
 })
 
@@ -4113,7 +4111,7 @@ describe("dismissOpenQuestionsForSession", () => {
     const dismissed = await dismissOpenQuestionsForSession("session-a")
 
     expect(dismissed).toBe(false)
-    expect(replyCalls.filter((call) => call.method === "question.reject")).toHaveLength(0)
+    expect(replyCalls.filter((call) => call.method === "session.form.cancel")).toHaveLength(0)
   })
 
   test("rejects every pending question in the session subtree (root + subagent child)", async () => {
@@ -4137,9 +4135,9 @@ describe("dismissOpenQuestionsForSession", () => {
     const dismissed = await dismissOpenQuestionsForSession("session-a")
 
     expect(dismissed).toBe(true)
-    const rejectCalls = replyCalls.filter((call) => call.method === "question.reject")
+    const rejectCalls = replyCalls.filter((call) => call.method === "session.form.cancel")
     expect(rejectCalls).toHaveLength(2)
-    const rejectedIds = rejectCalls.map((call) => call.params.requestID).sort()
+    const rejectedIds = rejectCalls.map((call) => call.params.formID).sort()
     expect(rejectedIds).toEqual(["q-child", "q-root"])
     // Optimistic clear: the questions are removed from the local store so the
     // prompt disappears instantly, without waiting for the reject round-trip.
@@ -4154,7 +4152,7 @@ describe("dismissOpenQuestionsForSession", () => {
       question: { "session-a": [staleQuestion] },
     })
     const childStores = createChildStores([["/test/project", store]])
-    mocks.questionRejectError = Object.assign(new Error("question.reject failed (404): QuestionNotFoundError"), { status: 404 })
+    mocks.questionRejectError = Object.assign(new Error("session.form.cancel failed (404): QuestionNotFoundError"), { status: 404 })
 
     const { setActionRefs, dismissOpenQuestionsForSession } = await import("./session-actions")
     setActionRefs(mockSdk as unknown as OpencodeClient, childStores, () => "/test/project")
@@ -4162,9 +4160,9 @@ describe("dismissOpenQuestionsForSession", () => {
     const dismissed = await dismissOpenQuestionsForSession("session-a")
 
     expect(dismissed).toBe(true)
-    const rejectCalls = replyCalls.filter((call) => call.method === "question.reject")
+    const rejectCalls = replyCalls.filter((call) => call.method === "session.form.cancel")
     expect(rejectCalls).toHaveLength(1)
-    expect(rejectCalls[0].params.requestID).toBe("q-stale")
+    expect(rejectCalls[0].params.formID).toBe("q-stale")
     // The stale entry is cleared from the store even though the server reported not-found.
     expect(store.getState().question["session-a"]).toBe(undefined)
   })

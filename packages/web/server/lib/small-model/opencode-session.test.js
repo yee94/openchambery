@@ -2,11 +2,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import fsPromises from 'fs/promises';
 import path from 'path';
 
-vi.mock('@opencode-ai/client', () => ({
+vi.mock('@opencode/client', () => ({
   OpenCode: { make: vi.fn() },
 }));
 
-const { OpenCode } = await import('@opencode-ai/client');
+const { OpenCode } = await import('@opencode/client');
 const {
   generateViaOpenCodeSession,
   stop,

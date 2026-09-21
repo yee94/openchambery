@@ -1,6 +1,6 @@
 import { createChatCompletion, LlmError } from './completions.js';
 import { loadConnectedCatalog } from './catalog.js';
-import { OpenCode } from '@opencode-ai/client';
+import { OpenCode } from '@opencode/client';
 import { ensureLlmTempDirectory } from './temp-directory.js';
 
 const fail = (res, error) => {

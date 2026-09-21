@@ -975,7 +975,7 @@ both readers agree on when a frame may shrink.
   `showReasoningTraces` is off; toggle reconnect drops pending batches. Current
   `session.next.*` frames emit `onNormalizedEvent` only and skip the legacy
   reducer queue. Official durable streams use `session.step.*` /
-  `session.text.*` / `session.tool.*` (from `@opencode-ai/client`); those enter
+  `session.text.*` / `session.tool.*` (from `@opencode/client`); those enter
   the transcript SSE whitelist and `transcript-event-reducer` live overlay.
   `session.step.started` bootstraps assistant identity + envelope `created`
   (never `time.created: 0`, which breaks turn attribution). `session.step.ended`

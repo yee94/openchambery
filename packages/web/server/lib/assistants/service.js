@@ -2,7 +2,7 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import { createRequire } from 'node:module';
 import path from 'node:path';
-import { OpenCode } from '@opencode-ai/client';
+import { makeOpenCodeV2Client } from '../opencode/v2-client.js';
 import { validAssistantDeliveryParts } from '../assistant-delivery-parts.js';
 import { reduceBackfillState } from './history-state.js';
 import { createContactMemoryReader } from './memory.js';
@@ -129,7 +129,7 @@ const getHttpStatus = (error) => {
   for (const value of candidates) { if (Number.isFinite(value)) return value; }
   return undefined;
 };
-// Real @opencode-ai/client throws declared JSON with `_tag` (no HTTP status).
+// Real @opencode/client throws declared JSON with `_tag` (no HTTP status).
 const isMissingError = (error) => {
   if (getHttpStatus(error) === 404 || isMissing(error)) return true;
   if (!error || typeof error !== 'object') return false;
@@ -424,7 +424,12 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
     };
   };
   const binding = (row) => ({ sessionID: row.current_session_id, directory: effectiveWorkspace(row), sessionGeneration: row.session_generation });
-  const client = () => clientFactory ? clientFactory() : OpenCode.make({ baseUrl: buildOpenCodeUrl('/', '').replace(/\/$/, ''), headers: getOpenCodeAuthHeaders() });
+  const client = () => clientFactory
+    ? clientFactory()
+    : makeOpenCodeV2Client({
+      baseUrl: buildOpenCodeUrl('/', '').replace(/\/$/, ''),
+      authHeaders: getOpenCodeAuthHeaders(),
+    });
   const metadata = (row) => ({ openchamber: { assistant: { assistantID: row.assistant_id, name: row.name } } });
   const createSession = async (row) => {
     const directory = effectiveWorkspace(row);
@@ -1575,6 +1580,9 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
     };
     const v2 = await viaExact(api?.v2?.session?.message, api?.v2?.session);
     if (v2) return v2;
+    // Official 2.x: session.message.get; shim may also expose callable session.message.
+    const nestedGet = await viaExact(api?.session?.message?.get, api?.session?.message);
+    if (nestedGet) return nestedGet;
     const legacy = await viaExact(api?.session?.message, api?.session);
     if (legacy) return legacy;
     try {

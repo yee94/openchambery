@@ -1,4 +1,4 @@
-import { OpenCode } from '@opencode-ai/client';
+import { OpenCode } from '@opencode/client';
 
 const LLM_AGENT_NAME = 'openchamber-llm';
 const GENERATE_TIMEOUT_MS = 90_000;
@@ -495,7 +495,7 @@ async function generateViaAttachmentSession({
 
 /**
  * Generate assistant text through OpenCode's connected providers via
- * `@opencode-ai/client`.
+ * `@opencode/client`.
  *
  * - Pure text: `generate.text` (no session).
  * - Vision image attachments: dedicated temp session after agent deny-all verify.

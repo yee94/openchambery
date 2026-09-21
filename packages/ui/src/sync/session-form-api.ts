@@ -2,7 +2,7 @@
  * Official OpenCode v2 session forms (not questions).
  *
  * SDK gap: `@opencode-ai/sdk@1.18.4` is not the v2 authority, and
- * `@opencode-ai/client` is not approved for this cut. GET/POST go through
+ * `@opencode/client` is not approved for this cut. GET/POST go through
  * the existing Host shallow proxy + `runtimeFetch`.
  *
  * - list: GET `/api/session/:sessionID/form`

@@ -2,7 +2,7 @@
  * Official OpenCode v2 session revert: stage / clear / commit.
  *
  * SDK gap: `@opencode-ai/sdk@1.18.4` is not the v2 authority, and
- * `@opencode-ai/client` is not approved for this cut. POST goes through the
+ * `@opencode/client` is not approved for this cut. POST goes through the
  * existing Host shallow proxy + `runtimeFetch`. Host must not interpret body.
  *
  * - stage: POST `/api/session/:sessionID/revert/stage` — hide messages after

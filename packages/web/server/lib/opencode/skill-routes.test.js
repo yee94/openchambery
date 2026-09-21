@@ -2,9 +2,9 @@ import { describe, expect, it, vi } from 'vitest';
 import express from 'express';
 import request from 'supertest';
 
-vi.mock('@opencode-ai/client', () => ({ OpenCode: { make: vi.fn() } }));
+vi.mock('@opencode/client', () => ({ OpenCode: { make: vi.fn() } }));
 
-const { OpenCode } = await import('@opencode-ai/client');
+const { OpenCode } = await import('@opencode/client');
 const { registerSkillRoutes } = await import('./skill-routes.js');
 
 describe('skill summary route', () => {

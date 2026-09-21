@@ -740,7 +740,7 @@ describe('parseVersionToken', () => {
   });
 
   test('parses opencode2 version output', () => {
-    expect(parseVersionToken('opencode2 v0.0.0-next-17444')).toBe('0.0.0-next-17444');
+    expect(parseVersionToken('opencode2 v2.0.12')).toBe('2.0.12');
   });
 });
 
@@ -755,15 +755,15 @@ describe('ensureRemoteOpenCodeCli opencode2 pin', () => {
     return manager;
   };
 
-  test('empty remote installs @opencode-ai/cli at the pinned version via opencode2 probe', async () => {
-    const manager = createManager('0.0.0-next-17444');
+  test('empty remote installs @opencode/cli at the pinned version via opencode2 probe', async () => {
+    const manager = createManager('2.0.12');
     const commands = [];
     manager.runManagedRemoteCommand = async (_parsed, _controlPath, script) => {
       commands.push(script);
       if (script.includes('opencode2 --version')) {
         // First probes empty, after install returns pin.
-        const installs = commands.filter((c) => c.includes('@opencode-ai/cli@')).length;
-        return installs > 0 ? 'opencode2 v0.0.0-next-17444\n' : '';
+        const installs = commands.filter((c) => c.includes('@opencode/cli@')).length;
+        return installs > 0 ? 'opencode2 v2.0.12\n' : '';
       }
       if (script.includes('command -v bun') || script.includes('command -v npm')) {
         return 'yes';
@@ -775,19 +775,19 @@ describe('ensureRemoteOpenCodeCli opencode2 pin', () => {
     await manager.ensureRemoteOpenCodeCli({ user: 'u', host: 'h' }, '/tmp/cp', 'npm');
 
     expect(commands.some((c) => c.includes('opencode2 --version'))).toBe(true);
-    expect(commands.some((c) => c.includes('@opencode-ai/cli@0.0.0-next-17444'))).toBe(true);
+    expect(commands.some((c) => c.includes('@opencode/cli@2.0.12'))).toBe(true);
     expect(commands.every((c) => !c.includes('opencode-ai@') && !/\bopencode --version\b/.test(c))).toBe(true);
   });
 
   test('1.x leftover is not accepted and triggers opencode2 reinstall', async () => {
-    const manager = createManager('0.0.0-next-17444');
+    const manager = createManager('2.0.12');
     let versionCalls = 0;
     const commands = [];
     manager.runManagedRemoteCommand = async (_parsed, _controlPath, script) => {
       commands.push(script);
       if (script.includes('opencode2 --version')) {
         versionCalls += 1;
-        return versionCalls === 1 ? '1.18.18\n' : 'opencode2 v0.0.0-next-17444\n';
+        return versionCalls === 1 ? '1.18.18\n' : 'opencode2 v2.0.12\n';
       }
       return '';
     };
@@ -795,15 +795,15 @@ describe('ensureRemoteOpenCodeCli opencode2 pin', () => {
 
     await manager.ensureRemoteOpenCodeCli({ user: 'u', host: 'h' }, '/tmp/cp', 'bun');
 
-    expect(commands.some((c) => c.includes('@opencode-ai/cli@0.0.0-next-17444'))).toBe(true);
+    expect(commands.some((c) => c.includes('@opencode/cli@2.0.12'))).toBe(true);
   });
 
   test('matching target v2 pin skips install', async () => {
-    const manager = createManager('0.0.0-next-17444');
+    const manager = createManager('2.0.12');
     const commands = [];
     manager.runManagedRemoteCommand = async (_parsed, _controlPath, script) => {
       commands.push(script);
-      if (script.includes('opencode2 --version')) return 'opencode2 v0.0.0-next-17444\n';
+      if (script.includes('opencode2 --version')) return 'opencode2 v2.0.12\n';
       return '';
     };
     manager.remoteCommandExists = async () => true;

@@ -925,7 +925,6 @@ describe('registerSessionTurnPageRoutes — real OpenCode.make + fake HTTP', () 
   });
 
   it('session.message MessageNotFoundError _tag maps to HTTP 404 via real client', async () => {
-    const { OpenCode } = await import('@opencode-ai/client');
     const fetchImpl = vi.fn(async (url) => {
       const path = String(url);
       if (path.includes('/message/msg_missing')) {
@@ -938,8 +937,9 @@ describe('registerSessionTurnPageRoutes — real OpenCode.make + fake HTTP', () 
       }
       return jsonResponse(500, { _tag: 'UnknownError', message: 'unexpected' });
     });
+    const { makeOpenCodeV2Client: realMake } = await vi.importActual('../opencode/v2-client.js');
     makeOpenCodeV2Client.mockImplementation(({ baseUrl, authHeaders }) =>
-      OpenCode.make({ baseUrl, headers: authHeaders, fetch: fetchImpl }));
+      realMake({ baseUrl, authHeaders, fetchImpl }));
 
     const { app, route } = registry();
     registerSessionTurnPageRoutes(app, {
@@ -960,7 +960,6 @@ describe('registerSessionTurnPageRoutes — real OpenCode.make + fake HTTP', () 
   });
 
   it('exact message serializes native assistant with reasoning strip and L1 slim', async () => {
-    const { OpenCode } = await import('@opencode-ai/client');
     const nativeAssistant = {
       id: 'msg_a1',
       type: 'assistant',
@@ -984,8 +983,9 @@ describe('registerSessionTurnPageRoutes — real OpenCode.make + fake HTTP', () 
       },
     };
     const fetchImpl = vi.fn(async () => jsonResponse(200, { data: nativeAssistant }));
+    const { makeOpenCodeV2Client: realMake } = await vi.importActual('../opencode/v2-client.js');
     makeOpenCodeV2Client.mockImplementation(({ baseUrl, authHeaders }) =>
-      OpenCode.make({ baseUrl, headers: authHeaders, fetch: fetchImpl }));
+      realMake({ baseUrl, authHeaders, fetchImpl }));
 
     const { app, route } = registry();
     registerSessionTurnPageRoutes(app, {
@@ -1014,14 +1014,14 @@ describe('registerSessionTurnPageRoutes — real OpenCode.make + fake HTTP', () 
   });
 
   it('preserves abort from real client transport instead of 502', async () => {
-    const { OpenCode } = await import('@opencode-ai/client');
     const fetchImpl = vi.fn(async () => {
       const error = new Error('The operation was aborted');
       error.name = 'AbortError';
       throw error;
     });
+    const { makeOpenCodeV2Client: realMake } = await vi.importActual('../opencode/v2-client.js');
     makeOpenCodeV2Client.mockImplementation(({ baseUrl, authHeaders }) =>
-      OpenCode.make({ baseUrl, headers: authHeaders, fetch: fetchImpl }));
+      realMake({ baseUrl, authHeaders, fetchImpl }));
 
     const { app, route } = registry();
     registerSessionTurnPageRoutes(app, {

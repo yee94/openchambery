@@ -602,7 +602,7 @@ export async function activate(context: vscode.ExtensionContext) {
       };
 
       const probeTargets: Array<{ label: string; path: string; includeDirectory?: boolean; timeoutMs?: number }> = [
-        { label: 'health', path: '/api/health', includeDirectory: false },
+        { label: 'health', path: '/api/info', includeDirectory: false },
         { label: 'healthFallback', path: '/global/health', includeDirectory: false },
         { label: 'config', path: '/api/config', includeDirectory: true },
         { label: 'providers', path: '/api/config/providers', includeDirectory: true },

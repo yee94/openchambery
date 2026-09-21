@@ -2,7 +2,7 @@
  * OpenCode v2 domain types and the unique local Message/Part render projection.
  *
  * Authority:
- * - Request/response domain types come from the real `@opencode-ai/client`.
+ * - Request/response domain types come from the real `@opencode/client`.
  * - Transcript rendering uses the local Message/Part projection below.
  *   That projection is the contract `session-projection-api.ts` normalize
  *   already emits (`{ info, parts }` records). It is not a copy of the
@@ -23,13 +23,13 @@ import type {
   McpStatusPending,
   ModelInfo,
   ModelRef,
-  OpenCodeClient,
+  OpenCodeClient as RawOpenCodeClient,
   PermissionEffect,
   PermissionRequest as V2PermissionRequest,
   PermissionRule,
   PermissionRuleset,
   PermissionSource,
-  ProjectCurrent,
+  Project,
   ProviderInfo,
   SessionActive,
   SessionInboxUser,
@@ -40,7 +40,10 @@ import type {
   SessionStatus,
   SkillInfo,
   TokenUsageInfo,
-} from "@opencode-ai/client";
+} from "@opencode/client";
+
+/** Official 2.x dropped `ProjectCurrent`; map local name to `Project`. */
+export type ProjectCurrent = Project;
 
 export type {
   AgentInfo,
@@ -56,12 +59,11 @@ export type {
   McpStatusPending,
   ModelInfo,
   ModelRef,
-  OpenCodeClient,
   PermissionEffect,
   PermissionRule,
   PermissionRuleset,
   PermissionSource,
-  ProjectCurrent,
+  Project,
   ProviderInfo,
   SessionActive,
   SessionInboxUser,
@@ -74,8 +76,21 @@ export type {
   TokenUsageInfo,
 };
 
-/** Real v2 client instance produced by `OpenCode.make(...)`. */
-export type V2Client = OpenCodeClient;
+/**
+ * Real v2 client from `OpenCode.make(...)`, plus OpenChamber's callable
+ * `session.message(input)` shim over official nested `session.message.get`.
+ */
+export type V2Client = Omit<RawOpenCodeClient, "session"> & {
+  session: Omit<RawOpenCodeClient["session"], "message"> & {
+    message: RawOpenCodeClient["session"]["message"] & ((
+      input: Parameters<RawOpenCodeClient["session"]["message"]["get"]>[0],
+      requestOptions?: Parameters<RawOpenCodeClient["session"]["message"]["get"]>[1],
+    ) => ReturnType<RawOpenCodeClient["session"]["message"]["get"]>);
+  };
+};
+
+/** Local name for the shimmed client instance type. */
+export type OpenCodeClient = V2Client;
 
 /**
  * Session row for existing directory/sidebar callers.
@@ -105,7 +120,7 @@ export type Session = Omit<SessionInfo, "location" | "cost" | "tokens" | "time" 
  * Local name kept for existing `OpencodeClient` type-only callers.
  * `experimental.session.list` is still a sync/client runtime cutover.
  */
-export type OpencodeClient = OpenCodeClient;
+export type OpencodeClient = V2Client;
 
 /** Agent permission document. v2 stores this as `PermissionRuleset`. */
 export type PermissionConfig = PermissionRuleset | Record<string, unknown>;

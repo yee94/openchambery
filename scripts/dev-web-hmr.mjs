@@ -139,7 +139,7 @@ mkdirSync(hmrSessionIndexDir, { recursive: true });
 
 // Keep the dev runtime on the pinned opencode2 version. PATH resolution can
 // pick up a newer global `~/.bun/bin/opencode2` whose v2 API surface has
-// drifted from the pinned `@opencode-ai/client` SDK (e.g. question → form),
+// drifted from the pinned `@opencode/client` SDK (e.g. question → form),
 // producing 404/UnsupportedContentType noise during bootstrap.
 const stagedPinnedBinary = path.join(repoRoot, 'packages', 'electron', 'resources', 'opencode-cli', 'opencode2');
 const apiEnv = {

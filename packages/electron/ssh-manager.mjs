@@ -65,7 +65,7 @@ export const buildRemoteSyncPrepareScript = (plan, options = {}) => buildRemoteS
 
 const OPENCHAMBER_NPM_PACKAGE = '@openchambery/web';
 // v2 CLI package installs the `opencode2` binary. Never install 1.x `opencode-ai`.
-const OPENCODE_NPM_PACKAGE = '@opencode-ai/cli';
+const OPENCODE_NPM_PACKAGE = '@opencode/cli';
 export const REMOTE_NODE_MIN_MAJOR = 22;
 const REMOTE_NODE_CANDIDATE_GLOBS = [
   '/codev/opt/nodejs/*/bin/node',

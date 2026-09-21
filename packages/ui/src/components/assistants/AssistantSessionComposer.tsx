@@ -23,7 +23,16 @@ import type { SessionIndexSnapshot } from '@/lib/session-index-api';
 import { sessionIndexSnapshotQueryOptions } from '@/queries/sessionIndexQueries';
 
 const selectSessions = (snapshot: SessionIndexSnapshot | null) => snapshot?.directories.flatMap(({ directory, sessions }) => (
-  directory ? sessions.filter((session) => !session.time.archived).map((session) => ({ ...session, directory })) : []
+  directory
+    ? sessions
+      .filter((session) => !session.time.archived)
+      .map((session) => ({
+        ...session,
+        // Index directory wins; fall back to session.location.directory only.
+        directory: directory || session.location?.directory || session.directory || '',
+      }))
+      .filter((session): session is typeof session & { directory: string } => session.directory.length > 0)
+    : []
 )) ?? null;
 type MentionSession = NonNullable<ReturnType<typeof selectSessions>>[number];
 type PickerHandle = { keyDown: (key: string) => void };

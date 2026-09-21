@@ -7,7 +7,7 @@ const make = mock(() => ({
   event: { subscribe: eventSubscribe },
 }));
 
-mock.module('@opencode-ai/client', () => ({ OpenCode: { make } }));
+mock.module('@opencode/client', () => ({ OpenCode: { make } }));
 
 const {
   startGlobalEventWatcher,

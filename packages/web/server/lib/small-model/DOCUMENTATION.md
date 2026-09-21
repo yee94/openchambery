@@ -26,7 +26,7 @@ every other runtime API.
   from `server/index.js` `stop()`).
 - `opencode-session.js` — fallback for non-dedicated providers. Lazily prepares
   `mkdtemp('openchamber-smallmodel-')` with a hidden deny-all agent markdown
-  (isolation invariant), then calls official `@opencode-ai/client`
+  (isolation invariant), then calls official `@opencode/client`
   `generate.text({ location?, prompt, model: { id, providerID } })`. No coding
   session / `promptAsync` / `tool.ids` path. Empty text is never success.
 - `resolve.js` — model selection, mirroring OpenCode's `getSmallModel` chain:

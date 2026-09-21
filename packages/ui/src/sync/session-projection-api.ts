@@ -2,7 +2,7 @@
  * Official OpenCode v2 session_message projection page.
  *
  * SDK gap: `@opencode-ai/sdk@1.18.4` is not the v2 authority, and
- * `@opencode-ai/client` is not approved for this cut. GET goes through the
+ * `@opencode/client` is not approved for this cut. GET goes through the
  * existing Host shallow proxy + `runtimeFetch`. Host must not interpret body.
  *
  * First paint: limit=20, order=desc. Older history uses the response cursor.
@@ -206,6 +206,17 @@ export function normalizeSessionProjectionMessage(
   if (!item) return null
   const id = item.id
   const type = asString(item.type) ?? "unknown"
+
+  // 2.0.12 emits session-lifecycle rows in the message list. They are not
+  // chat turns and must not render as assistant placeholders like `[idle]`.
+  if (
+    type === "idle"
+    || type === "model-switched"
+    || type === "agent-selected"
+    || type === "location-switched"
+  ) {
+    return null
+  }
 
   if (type === "user") {
     const info = baseMessage(sessionID, item, "user")

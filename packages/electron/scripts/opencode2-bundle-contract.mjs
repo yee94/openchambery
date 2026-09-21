@@ -9,7 +9,7 @@ export const bundledOpenCode2BinaryName = (platform = process.platform) => (
 );
 
 /**
- * opencode2 v2 发布在 npm 平台包（@opencode-ai/cli-<os>-<arch>[-baseline]），
+ * opencode2 v2 发布在 npm 平台包（@opencode/cli-<os>-<arch>[-baseline]），
  * 上游不再为 v2 提供 GitHub release 二进制。
  */
 export const npmPackageForOpenCode2 = (platform, targetArchitecture) => {
@@ -18,12 +18,12 @@ export const npmPackageForOpenCode2 = (platform, targetArchitecture) => {
   if (!os) throw new Error(`No opencode2 npm package mapping for platform ${platform}`);
   // x64 统一使用 baseline 变体，与旧 GitHub artifact 的 *-x64-baseline 对齐。
   const suffix = arch === 'x64' ? '-baseline' : '';
-  return `@opencode-ai/cli-${os}-${arch}${suffix}`;
+  return `@opencode/cli-${os}-${arch}${suffix}`;
 };
 
 /**
  * 解析 opencode2 `--version` 输出。
- * v2 输出形如 `opencode2 v0.0.0-next-17444`（首 token 是名字），
+ * v2 输出形如 `opencode2 v2.0.12`（首 token 是名字），
  * 1.x 输出形如 `1.18.18`（首 token 即版本）。
  */
 export const parseOpenCode2VersionOutput = (stdout) => {
