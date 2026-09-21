@@ -1,55 +1,48 @@
 import React from 'react';
+import { useEvent } from '@reactuses/core';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 
 import { Button } from '@/components/ui/button';
 import { SettingsGroup, SettingsRow } from '@/components/sections/shared/SettingsGroup';
 import { useI18n } from '@/lib/i18n';
-import { useProjectsStore } from '@/stores/useProjectsStore';
+import { useDirectoryStore } from '@/stores/useDirectoryStore';
 import {
-  deletePermissionSaved,
-  listPermissionSaved,
-  type PermissionSavedInfo,
-} from '@/sync/permission-saved-api';
+  deleteSavedPermissionQuery,
+  useSavedPermissionsQuery,
+  type SavedPermissionScope,
+} from '@/queries/savedPermissionQueries';
 
 export const SavedPermissionsSection: React.FC = () => {
   const { t } = useI18n();
-  const projectID = useProjectsStore((state) => state.activeProjectId);
-  const [items, setItems] = React.useState<PermissionSavedInfo[]>([]);
-  const [busyId, setBusyId] = React.useState<string | null>(null);
-
-  const reload = React.useCallback(async () => {
-    if (!projectID) {
-      setItems([]);
-      return;
-    }
-    try {
-      setItems(await listPermissionSaved({ projectID }));
-    } catch (error) {
-      console.error('[SavedPermissionsSection] Failed to list saved permissions:', error);
-    }
-  }, [projectID]);
-
-  React.useEffect(() => {
-    void reload();
-  }, [reload]);
-
-  const handleDelete = async (id: string) => {
-    setBusyId(id);
-    try {
-      await deletePermissionSaved({ id });
-      setItems((current) => current.filter((item) => item.id !== id));
-    } catch (error) {
-      console.error('[SavedPermissionsSection] Failed to delete saved permission:', error);
-    } finally {
-      setBusyId(null);
-    }
-  };
+  const directory = useDirectoryStore((state) => state.currentDirectory);
+  const client = useQueryClient();
+  const { project, list, scope } = useSavedPermissionsQuery(directory);
+  const deletion = useMutation({
+    mutationFn: ({ scope: captured, id }: { scope: SavedPermissionScope; id: string }) => deleteSavedPermissionQuery(client, captured, id),
+  });
+  const sameMutationScope = deletion.variables && JSON.stringify(deletion.variables.scope) === JSON.stringify(scope);
+  const failed = project.isError || list.isError;
+  const loading = Boolean(scope.directory) && (project.isPending || list.isPending) && !failed;
+  const items = list.data ?? [];
+  const handleDelete = useEvent((id: string) => deletion.mutate({ scope, id }));
+  const retry = useEvent(() => { void (project.isError ? project.refetch() : list.refetch()); });
 
   return (
     <div data-settings-item="permissions.saved" className="mb-6">
       <SettingsGroup
         label={t('settings.permissions.saved.title')}
-        description={items.length === 0 ? t('settings.permissions.saved.empty') : undefined}
+        description={loading ? t('common.loading') : !failed && list.isSuccess && items.length === 0 ? t('settings.permissions.saved.empty') : undefined}
       >
+        {failed && (
+          <SettingsRow label={<span role="alert">{t('settings.permissions.saved.loadFailed')}</span>}>
+            <Button type="button" variant="ghost" size="xs" onClick={retry} disabled={project.isFetching || list.isFetching}>
+              {t('settings.permissions.saved.retry')}
+            </Button>
+          </SettingsRow>
+        )}
+        {sameMutationScope && deletion.isError && (
+          <SettingsRow label={<span role="alert">{t('settings.permissions.saved.deleteFailed')}</span>}>{null}</SettingsRow>
+        )}
         {items.map((item) => (
           <SettingsRow
             key={item.id}
@@ -64,7 +57,7 @@ export const SavedPermissionsSection: React.FC = () => {
               type="button"
               variant="ghost"
               size="xs"
-              disabled={busyId === item.id}
+              disabled={failed || loading || Boolean(sameMutationScope && deletion.isPending)}
               onClick={() => void handleDelete(item.id)}
             >
               {t('settings.permissions.saved.delete')}

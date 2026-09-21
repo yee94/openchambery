@@ -42,6 +42,8 @@ const CURRENT_ACTIVITY_PREFIXES = [
   "session.next.tool.",
   "session.next.shell.",
   "session.next.compaction.",
+  // Official v2 durable step/text/tool streams (`@opencode-ai/client`).
+  "session.step.",
   "session.text.",
   "session.reasoning.",
   "session.tool.",
@@ -51,6 +53,8 @@ const CURRENT_ACTIVITY_PREFIXES = [
 const CURRENT_TERMINAL_TYPES = new Set([
   "session.next.step.ended",
   "session.next.step.failed",
+  "session.step.ended",
+  "session.step.failed",
 ])
 
 function stripVersionSuffix(type: string): string {
@@ -200,7 +204,18 @@ export function normalizeOpenCodeEvent(raw: unknown): NormalizeOpenCodeEventResu
     return { action: "drop", reason: "invalid" }
   }
 
-  const properties = toLegacyProperties(type, body)
+  // Copy so envelope wall-clock can be attached without mutating the raw body.
+  const properties: Record<string, unknown> = { ...toLegacyProperties(type, body) }
+  // Official envelopes carry `created` outside `data`. Live message bootstrap
+  // needs that clock so turn attribution does not stamp `time.created: 0`.
+  if (
+    typeof record.created === "number"
+    && Number.isFinite(record.created)
+    && record.created > 0
+    && typeof properties.eventCreated !== "number"
+  ) {
+    properties.eventCreated = record.created
+  }
   const locationDirectory =
     extractLocationDirectory(record)
     ?? extractLocationDirectory(body)

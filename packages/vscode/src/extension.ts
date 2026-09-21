@@ -597,16 +597,16 @@ export async function activate(context: vscode.ExtensionContext) {
       const probeTargets: Array<{ label: string; path: string; includeDirectory?: boolean; timeoutMs?: number }> = [
         { label: 'health', path: '/api/health', includeDirectory: false },
         { label: 'healthFallback', path: '/global/health', includeDirectory: false },
-        { label: 'config', path: '/config', includeDirectory: true },
-        { label: 'providers', path: '/config/providers', includeDirectory: true },
+        { label: 'config', path: '/api/config', includeDirectory: true },
+        { label: 'providers', path: '/api/config/providers', includeDirectory: true },
         // Can be slower on large configs; keep the probe from producing false negatives.
-        { label: 'agents', path: '/agent', includeDirectory: true, timeoutMs: 12000 },
-        { label: 'commands', path: '/command', includeDirectory: true, timeoutMs: 10000 },
-        { label: 'project', path: '/project/current', includeDirectory: true },
-        { label: 'path', path: '/path', includeDirectory: true },
+        { label: 'agents', path: '/api/agent', includeDirectory: true, timeoutMs: 12000 },
+        { label: 'commands', path: '/api/command', includeDirectory: true, timeoutMs: 10000 },
+        { label: 'project', path: '/api/project/current', includeDirectory: true },
+        { label: 'path', path: '/api/path', includeDirectory: true },
         // Session listing is what powers the sidebar. This helps diagnose "no sessions shown" bugs.
-        { label: 'sessions', path: '/session', includeDirectory: true, timeoutMs: 12000 },
-        { label: 'sessionStatus', path: '/session/status', includeDirectory: true },
+        { label: 'sessions', path: '/api/session', includeDirectory: true, timeoutMs: 12000 },
+        { label: 'sessionStatus', path: '/api/session/status', includeDirectory: true },
       ];
 
       const probes = resolvedApiUrl

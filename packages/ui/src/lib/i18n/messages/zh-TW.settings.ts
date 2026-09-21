@@ -1,4 +1,5 @@
 ﻿export const settingsDict = {
+  'settings.permissions.saved.retry': '重試',
   'settings.globalConfig.title': '全域設定',
   'settings.globalConfig.description': '編輯 ~/.config/opencode 中目前生效的設定檔。',
   'settings.globalConfig.actions.reload': '重新載入檔案',

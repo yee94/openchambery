@@ -259,6 +259,7 @@ export function resolveDetectedOpencodeCliPath(options: {
 
 export const OPENCODE_HEALTH_PATH = '/api/health';
 export const OPENCODE_HEALTH_FALLBACK_PATH = '/global/health';
+export const OPENCODE_V1_MIGRATION_PATH = '/api/experimental/migration/v1';
 
 export type OpenCodeHealthResult = {
   healthy: boolean;
@@ -266,9 +267,164 @@ export type OpenCodeHealthResult = {
   path: string;
 };
 
+// Keep health version admission aligned with web opencode2-pin.js.
+export function isOpenCode1xVersion(value: unknown): boolean {
+  if (typeof value !== 'string') return false;
+  const normalized = value.trim().replace(/^v/i, '');
+  if (!normalized) return false;
+  return /^1(?:\.|$)/.test(normalized);
+}
+
+export function isAcceptableOpenCode2HealthVersion(value: unknown): boolean {
+  if (typeof value !== 'string') return false;
+  const normalized = value.trim().replace(/^v/i, '');
+  if (!normalized) return false;
+  if (isOpenCode1xVersion(normalized)) return false;
+  return /^\d+(?:\.\d+)*(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/.test(normalized);
+}
+
+export function evaluateOpenCodeHealthBody(body: { healthy?: unknown; version?: unknown } | null | undefined): {
+  ok: boolean;
+  version: string | null;
+  reason?: string;
+} {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) {
+    return { ok: false, version: null, reason: 'invalid-body' };
+  }
+  if (body.healthy !== true) {
+    return { ok: false, version: null, reason: 'unhealthy' };
+  }
+  const raw = typeof body.version === 'string' ? body.version.trim() : '';
+  const version = raw ? raw.replace(/^v/i, '') : null;
+  if (!isAcceptableOpenCode2HealthVersion(version)) {
+    if (isOpenCode1xVersion(version)) {
+      return { ok: false, version, reason: '1x-version' };
+    }
+    return { ok: false, version, reason: 'unknown-version' };
+  }
+  return { ok: true, version };
+}
+
+export type V1MigrationGateResult = {
+  admitTranscript: boolean;
+  phase: string;
+  progress?: { label: string; numerator?: number; denominator?: number };
+  error?: string;
+  userNotice?: string;
+};
+
+const V1_MIGRATION_USER_NOTICE = [
+  'V1 history is backfilled in the opencode2 process.',
+  'Message ids are reused.',
+  'In-progress tools become interrupted.',
+  'V1 subtasks do not appear in v2.',
+].join(' ');
+
+/**
+ * Pure admission decision for GET /api/experimental/migration/v1.
+ * required/running/error never become an empty-list success.
+ */
+export function evaluateV1MigrationGate(input: {
+  httpStatus?: number;
+  status?: number | string;
+  body?: { status?: string; progress?: { label?: string; numerator?: number; denominator?: number }; error?: string } | null;
+  error?: unknown;
+} | null | undefined): V1MigrationGateResult {
+  const blocked = (phase: string, extra: Record<string, unknown> = {}): V1MigrationGateResult => ({
+    admitTranscript: false,
+    phase,
+    userNotice: V1_MIGRATION_USER_NOTICE,
+    ...extra,
+  });
+  const admitted = (phase: string, extra: Record<string, unknown> = {}): V1MigrationGateResult => ({
+    admitTranscript: true,
+    phase,
+    ...extra,
+  });
+
+  if (input == null) {
+    return blocked('error', { error: 'V1 migration status is missing or invalid' });
+  }
+  if (input.error instanceof Error || typeof input.error === 'string') {
+    const message = input.error instanceof Error ? input.error.message : input.error;
+    return blocked('error', { error: message || 'V1 migration status request failed' });
+  }
+
+  const httpStatus = typeof input.httpStatus === 'number'
+    ? input.httpStatus
+    : typeof input.status === 'number'
+      ? input.status
+      : undefined;
+  if (httpStatus === 404) {
+    return admitted('absent');
+  }
+  if (Number.isInteger(httpStatus) && (httpStatus as number) >= 400) {
+    return blocked('error', { error: `V1 migration status HTTP ${httpStatus}` });
+  }
+
+  const body = input.body !== undefined
+    ? input.body
+    : typeof input.status === 'string'
+      ? input as { status?: string; progress?: { label?: string; numerator?: number; denominator?: number }; error?: string }
+      : null;
+  const phase = body && typeof body === 'object' ? body.status : undefined;
+
+  if (phase === 'required') return blocked('required');
+  if (phase === 'running') {
+    const progress = body?.progress && typeof body.progress === 'object'
+      ? {
+          label: typeof body.progress.label === 'string' ? body.progress.label : '',
+          ...(Number.isFinite(body.progress.numerator) && (body.progress.numerator as number) >= 0
+            ? { numerator: body.progress.numerator as number }
+            : {}),
+          ...(Number.isFinite(body.progress.denominator) && (body.progress.denominator as number) >= 0
+            ? { denominator: body.progress.denominator as number }
+            : {}),
+        }
+      : undefined;
+    return blocked('running', progress ? { progress } : {});
+  }
+  if (phase === 'completed') {
+    return admitted('completed', { userNotice: V1_MIGRATION_USER_NOTICE });
+  }
+  if (phase === 'error') {
+    return blocked('error', {
+      error: typeof body?.error === 'string' && body.error.trim() ? body.error : 'V1 migration failed',
+    });
+  }
+  return blocked('error', { error: 'V1 migration status is missing or invalid' });
+}
+
+export async function fetchV1MigrationGate(
+  baseUrl: string,
+  authHeaders: Record<string, string> = {},
+  signal?: AbortSignal,
+): Promise<V1MigrationGateResult> {
+  const normalized = baseUrl.replace(/\/+$/, '');
+  try {
+    const response = await fetch(`${normalized}${OPENCODE_V1_MIGRATION_PATH}`, {
+      method: 'GET',
+      headers: {
+        Accept: 'application/json',
+        ...authHeaders,
+      },
+      signal,
+    });
+    const body = await response.json().catch(() => null) as {
+      status?: string;
+      progress?: { label?: string; numerator?: number; denominator?: number };
+      error?: string;
+    } | null;
+    return evaluateV1MigrationGate({ httpStatus: response.status, body });
+  } catch (error) {
+    return evaluateV1MigrationGate({ error });
+  }
+}
+
 // v2 health lives at /api/health; /global/health remains a probe fallback
 // for older sidecars. Both require Basic auth (username `opencode`).
 // Never log the password — only the caller may record URL path and status.
+// healthy alone is not enough: reject 1.x and missing/unknown versions.
 export async function fetchOpenCodeHealth(
   baseUrl: string,
   authHeaders: Record<string, string> = {},
@@ -287,13 +443,11 @@ export async function fetchOpenCodeHealth(
         continue;
       }
       const body = await response.json().catch(() => null) as { healthy?: boolean; version?: unknown } | null;
-      if (body?.healthy !== true) {
+      const gate = evaluateOpenCodeHealthBody(body);
+      if (!gate.ok) {
         continue;
       }
-      const version = typeof body.version === 'string' && body.version.trim().length > 0
-        ? body.version.trim().replace(/^v/, '')
-        : null;
-      return { healthy: true, version, path: healthPath };
+      return { healthy: true, version: gate.version, path: healthPath };
     } catch {
       // Try the next health path.
     }

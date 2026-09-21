@@ -299,15 +299,24 @@ const readAppMetadata = () => {
 const APP_METADATA = readAppMetadata();
 const APP_VERSION = APP_METADATA.version;
 const readPinnedOpenCodeCliVersion = () => {
+  const envOverride = typeof process.env.OPENCHAMBER_OPENCODE2_VERSION === 'string'
+    ? process.env.OPENCHAMBER_OPENCODE2_VERSION.trim()
+    : typeof process.env.OPENCHAMBER_OPENCODE_CLI_VERSION === 'string'
+      ? process.env.OPENCHAMBER_OPENCODE_CLI_VERSION.trim()
+      : '';
+  if (envOverride) return envOverride;
+
   const candidates = [
-    path.resolve(__dirname, '..', '..', 'package.json'),
-    path.join(__dirname, '..', 'web', 'package.json'),
-    path.join(app.getAppPath?.() || '', 'node_modules', '@openchambery', 'web', 'package.json'),
+    path.resolve(__dirname, '..', 'web', 'server', 'lib', 'opencode', 'opencode2-pin.js'),
+    path.resolve(__dirname, '..', '..', 'packages', 'web', 'server', 'lib', 'opencode', 'opencode2-pin.js'),
+    path.join(app.getAppPath?.() || '', 'node_modules', '@openchambery', 'web', 'server', 'lib', 'opencode', 'opencode2-pin.js'),
   ];
   for (const candidate of candidates) {
     try {
-      const version = JSON.parse(fs.readFileSync(candidate, 'utf8')).dependencies?.['@opencode-ai/sdk'];
-      if (typeof version === 'string' && /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(version)) return version;
+      // Sync read of the pin module source; avoid importing ESM at top-level in CJS main.
+      const source = fs.readFileSync(candidate, 'utf8');
+      const match = source.match(/PINNED_OPENCODE2_VERSION\s*=\s*['"]([^'"]+)['"]/);
+      if (match?.[1]) return match[1];
     } catch {
     }
   }

@@ -966,10 +966,20 @@ both readers agree on when a frame may shrink.
   `includeReasoning=false` from `reasoning-projection-client` when
   `showReasoningTraces` is off; toggle reconnect drops pending batches. Current
   `session.next.*` frames emit `onNormalizedEvent` only and skip the legacy
-  reducer queue. Canonical `session.status` still enters the reducer and
-  coalesces per session. `sync-context.handleNormalizedOpenCodeHints` issues
+  reducer queue. Official durable streams use `session.step.*` /
+  `session.text.*` / `session.tool.*` (from `@opencode-ai/client`); those enter
+  the transcript SSE whitelist and `transcript-event-reducer` live overlay.
+  `session.step.started` bootstraps assistant identity + envelope `created`
+  (never `time.created: 0`, which breaks turn attribution). `session.step.ended`
+  / `.failed` stamp finish/cost/tokens/error and completed time. Ingress keeps
+  envelope `created` as `properties.eventCreated`. Canonical `session.status`
+  still enters the reducer and coalesces per session. Execution terminals
+  (`session.execution.succeeded|failed|interrupted`) call the same
+  `onServerSessionIdle` path as legacy idle. Projection GET keeps assistant
+  `tokens`/`cost` for TPS. `sync-context.handleNormalizedOpenCodeHints` issues
   **one** bounded repository materialize / ensure for the currently viewed
-  session on terminal `session.next.step.ended` / `.failed` only.
+  session on terminal `session.step.ended` / `.failed` and
+  `session.next.step.ended` / `.failed` only.
 - **P2 promptAsync admission gate (documented, not switched):** OpenCode 1.18
   `v2.session.prompt` does not yet expose a per-item immutable
   provider/model/agent/variant admission contract matching OpenChamber's direct

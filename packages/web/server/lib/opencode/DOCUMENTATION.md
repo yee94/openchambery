@@ -113,6 +113,12 @@ This module provides OpenCode server integration utilities for the web server ru
   membership — that remains a UI-side authoritative pull fused with directory
   `/session/status`.
 
+## Public exports (opencode2-pin.js)
+- `PINNED_OPENCODE2_VERSION`: exact desktop/runtime pin (never 1.x).
+- `OPENCODE2_NPM_PACKAGE`: `@opencode-ai/cli` (global install that ships the `opencode2` binary; not 1.x `opencode-ai`).
+- `isOpenCode1xVersion(value)` / `isAcceptableOpenCode2HealthVersion(value)` / `evaluateOpenCodeHealthBody(body)`: health admission rejects 1.x and missing/unknown versions even when `healthy: true`.
+- `resolveOpenCode2UpgradeTarget(target)` / `rejectOpenCode1xUpgradeTarget(target)`: upgrade targets default to the pin and refuse 1.x.
+
 ## Public exports (v1-migration-gate.js)
 - `OPENCODE_V1_MIGRATION_PATH`: `/api/experimental/migration/v1`.
 - `V1_MIGRATION_USER_NOTICE`: user-visible backfill notes (reuse message ids; in-progress tools become interrupted; V1 subtasks omitted from v2).
@@ -120,7 +126,7 @@ This module provides OpenCode server integration utilities for the web server ru
 - `fetchV1MigrationGate({ url, headers, signal, fetchImpl })`: GET-only status poll used by lifecycle.
 
 ## Public exports (lifecycle.js)
-- `createOpenCodeLifecycleRuntime(dependencies)`: creates lifecycle runtime for managed/external OpenCode process orchestration. Managed spawn defaults to `opencode2`. Startup accepts both `server listening on http://127.0.0.1:PORT` and the legacy `opencode server listening on …` line. Readiness/health probes `GET /api/health` first (`{ healthy: true }`), then `/global/health`, and send Basic auth from `getOpenCodeAuthHeaders()` (username `opencode`). After health ok, `startOpenCode` / `waitForOpenCodeReady` poll `GET /api/experimental/migration/v1` (no POST; backfill is owned by opencode2). `isOpenCodeReady` means transcript may be fetched only when the gate admits (`completed`, or no V1 library such as HTTP 404). `required` / `running` / `error` keep the ready gate closed; `error` is retried. The last gate result is stored on `state.v1Migration` and published on the OpenChamber `/health` snapshot so UI can render `phase` and running `progress` (`label` / `numerator` / `denominator`) plus `userNotice` (reuse message ids; in-progress tools become interrupted; V1 subtasks do not appear in v2).
+- `createOpenCodeLifecycleRuntime(dependencies)`: creates lifecycle runtime for managed/external OpenCode process orchestration. Managed spawn defaults to `opencode2`. Startup accepts both `server listening on http://127.0.0.1:PORT` and the legacy `opencode server listening on …` line. Readiness/health probes `GET /api/health` first, then `/global/health`, with Basic auth (username `opencode`). A body is admitted only when `healthy: true` **and** `evaluateOpenCodeHealthBody` accepts the version (rejects 1.x and missing/unknown). After health ok, `startOpenCode` / `waitForOpenCodeReady` poll `GET /api/experimental/migration/v1` (no POST; backfill is owned by opencode2). Each readiness attempt uses one abort timer that covers **both** health and migration so a hung migration cannot outrun the per-attempt budget. External skip-start / auto-detect attach leave `isOpenCodeReady` false until the gate admits. `isOpenCodeReady` means transcript may be fetched only when the gate admits (`completed`, or no V1 library such as HTTP 404). `required` / `running` / `error` keep the ready gate closed; `error` is retried. The last gate result is stored on `state.v1Migration` and published on the OpenChamber `/health` snapshot so UI can render `phase` and running `progress` (`label` / `numerator` / `denominator`) plus `userNotice` (reuse message ids; in-progress tools become interrupted; V1 subtasks do not appear in v2).
 - Returned API:
   - `startOpenCode()`
   - `restartOpenCode()`

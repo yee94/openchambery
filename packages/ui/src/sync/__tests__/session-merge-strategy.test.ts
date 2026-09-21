@@ -177,6 +177,24 @@ describe("resolveSessionMergeStrategy", () => {
     expect(stale.parts).not.toBe(current.parts)
   })
 
+  // Authority refresh owns request-level touched overlay outside this table.
+  // Current reconcile-page stays upsert/replace so a force GET that already
+  // ran reconcileFetched can write untouched bodies; stale still backfills for
+  // non-refresh reconcile paths that still pass mismatched liveRevision.
+  test("reconcile-page current upserts; stale still backfills without dropping", () => {
+    const current = resolveSessionMergeStrategy({ purpose: "reconcile-page", stale: false })
+    const stale = resolveSessionMergeStrategy({ purpose: "reconcile-page", stale: true })
+
+    expect(current.messages).toBe("upsert")
+    expect(current.parts).toBe("replace")
+    expect(current.protectOptimistic).toBe("keep-unless-full")
+    expect(current.onStale).toBe("backfill")
+    expect(stale.onStale).toBe("backfill")
+    expect(stale.messages).toBe("insert-only")
+    expect(stale.parts).toBe("skip-existing")
+    expect(shouldDropStalePage("reconcile-page")).toBe(false)
+  })
+
   for (const purpose of PURPOSES) {
     test(`omitting stale for purpose=${purpose} matches stale:false`, () => {
       expect(resolveSessionMergeStrategy({ purpose })).toEqual(

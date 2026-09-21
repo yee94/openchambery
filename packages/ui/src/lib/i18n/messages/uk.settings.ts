@@ -1,4 +1,5 @@
 export const settingsDict = {
+  'settings.permissions.saved.retry': 'Повторити',
   'settings.globalConfig.title': 'Глобальна конфігурація',
   'settings.globalConfig.description': 'Редагуйте активні файли конфігурації в ~/.config/opencode.',
   'settings.globalConfig.actions.reload': 'Перезавантажити файл',

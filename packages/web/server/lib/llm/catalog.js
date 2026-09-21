@@ -5,52 +5,90 @@ const stringID = (value) => (typeof value === 'string' && value.trim() ? value.t
 const listIncludesImage = (value) => Array.isArray(value)
   && value.some((item) => String(item).toLowerCase() === 'image');
 
+/**
+ * ModelInfo.capabilities.input includes "image" for vision-capable models.
+ * Do not treat model titles or unrelated flags as vision isolation.
+ */
 function modelAcceptsImages(model) {
   if (!isRecord(model)) return false;
+  if (isRecord(model.capabilities) && listIncludesImage(model.capabilities.input)) return true;
+  // Defensive: older projected shapes may still carry modalities/input.
   if (isRecord(model.modalities) && listIncludesImage(model.modalities.input)) return true;
   if (listIncludesImage(model.input)) return true;
-  return model.attachment === true;
+  return false;
 }
 
 /**
- * Merge OpenCode `GET /provider` (connected ids) with `GET /config/providers`
- * (model catalog). Do not interpret plugin-specific provider configs.
+ * Project official v2 provider.list + model.list into the LLM gateway catalog.
+ *
+ * ModelInfo.id is the external modelID used in generate/session model refs.
+ * ModelInfo.modelID is a separate internal field and must not be preferred.
  *
  * @param {{
- *   connected?: unknown,
  *   providers?: unknown,
+ *   models?: unknown,
  * }} source
  */
 export function projectConnectedModels(source) {
-  const connected = new Set(
-    Array.isArray(source?.connected)
-      ? source.connected.map(stringID).filter(Boolean)
-      : [],
-  );
-  const models = [];
-  const providers = [];
-  const list = Array.isArray(source?.providers) ? source.providers : [];
-  for (const provider of list) {
+  const providersIn = Array.isArray(source?.providers) ? source.providers : [];
+  const modelsIn = Array.isArray(source?.models) ? source.models : [];
+
+  const providerMeta = new Map();
+  for (const provider of providersIn) {
     if (!isRecord(provider)) continue;
     const providerID = stringID(provider.id);
-    if (!providerID || !connected.has(providerID)) continue;
-    const providerModels = [];
-    const rawModels = isRecord(provider.models) ? Object.values(provider.models) : [];
-    for (const model of rawModels) {
-      if (!isRecord(model)) continue;
-      const modelID = stringID(model.id);
-      if (!modelID) continue;
-      const entry = { providerID, modelID, name: stringID(model.name) || modelID, acceptsImages: modelAcceptsImages(model) };
-      models.push(entry);
-      providerModels.push({ id: modelID, name: entry.name });
-    }
-    providers.push({
+    if (!providerID) continue;
+    providerMeta.set(providerID, {
       id: providerID,
       name: stringID(provider.name) || providerID,
+    });
+  }
+
+  const models = [];
+  const modelsByProvider = new Map();
+  for (const model of modelsIn) {
+    if (!isRecord(model)) continue;
+    const providerID = stringID(model.providerID);
+    // External model id for generate.text / session model refs.
+    const modelID = stringID(model.id);
+    if (!providerID || !modelID) continue;
+    if (providerMeta.size > 0 && !providerMeta.has(providerID)) continue;
+    const name = stringID(model.name) || modelID;
+    const entry = {
+      providerID,
+      modelID,
+      name,
+      acceptsImages: modelAcceptsImages(model),
+    };
+    models.push(entry);
+    if (!modelsByProvider.has(providerID)) modelsByProvider.set(providerID, []);
+    modelsByProvider.get(providerID).push({ id: modelID, name });
+  }
+
+  const connected = [];
+  const providers = [];
+  const providerIDs = providerMeta.size > 0
+    ? [...providerMeta.keys()]
+    : [...modelsByProvider.keys()];
+  for (const providerID of providerIDs) {
+    const meta = providerMeta.get(providerID) || { id: providerID, name: providerID };
+    const providerModels = modelsByProvider.get(providerID) || [];
+    if (providerModels.length === 0 && providerMeta.size > 0) {
+      // Provider listed with zero models is still "connected" but contributes no entries.
+      connected.push(providerID);
+      providers.push({ id: meta.id, name: meta.name, models: [] });
+      continue;
+    }
+    if (providerModels.length === 0) continue;
+    connected.push(providerID);
+    providers.push({
+      id: meta.id,
+      name: meta.name,
       models: providerModels,
     });
   }
-  return { connected: [...connected], providers, models };
+
+  return { connected, providers, models };
 }
 
 export function parseModelRef(model, providerID, modelID) {
@@ -77,24 +115,42 @@ export function isConnectedModel(catalog, providerID, modelID) {
 }
 
 /**
- * Load the connected catalog from an OpenCode SDK client.
+ * Load the connected catalog from an official `@opencode-ai/client`.
+ * Uses model.list + provider.list only (no config.providers).
  * Failure is distinct from a successful empty catalog.
+ *
+ * Real client returns `{ location, data }` and throws declared JSON errors
+ * (no `{ error }` envelope).
+ *
+ * @param {object} client
+ * @param {{ directory?: string, workspace?: string } | undefined} [location]
  */
-export async function loadConnectedCatalog(client) {
-  const listed = await client.provider.list({});
-  if (listed?.error || !isRecord(listed?.data)) {
-    const error = new Error('OpenCode provider list is unavailable');
-    error.code = 'upstream_error';
-    throw error;
+export async function loadConnectedCatalog(client, location) {
+  const request = location ? { location } : undefined;
+  let providersResult;
+  let modelsResult;
+  try {
+    [providersResult, modelsResult] = await Promise.all([
+      client.provider.list(request),
+      client.model.list(request),
+    ]);
+  } catch (error) {
+    const upstream = new Error(
+      typeof error?.message === 'string' && error.message.trim()
+        ? error.message
+        : 'OpenCode provider catalog is unavailable',
+    );
+    upstream.code = 'upstream_error';
+    upstream.cause = error;
+    throw upstream;
   }
-  const configured = await client.config.providers({});
-  if (configured?.error || !isRecord(configured?.data)) {
+  if (!Array.isArray(providersResult?.data) || !Array.isArray(modelsResult?.data)) {
     const error = new Error('OpenCode provider catalog is unavailable');
     error.code = 'upstream_error';
     throw error;
   }
   return projectConnectedModels({
-    connected: listed.data.connected,
-    providers: configured.data.providers,
+    providers: providersResult.data,
+    models: modelsResult.data,
   });
 }

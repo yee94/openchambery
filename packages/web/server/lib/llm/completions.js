@@ -1,5 +1,5 @@
 import { isConnectedModel, loadConnectedCatalog, parseModelRef } from './catalog.js';
-import { generateOpenCodeText } from './generate.js';
+import { generateOpenCodeText, parseDataUrl, MAX_ATTACHMENT_BYTES } from './generate.js';
 
 const isRecord = (value) => value !== null && typeof value === 'object' && !Array.isArray(value);
 
@@ -15,10 +15,29 @@ const normalizeCompletionFilePart = (part) => {
   if (!isRecord(part) || part.type !== 'file') return null;
   if (typeof part.mime !== 'string' || !part.mime.trim()) return null;
   if (typeof part.url !== 'string' || !part.url.trim()) return null;
+  const url = part.url.trim();
+  if (!url.startsWith('data:')) {
+    throw new LlmError('validation_error', 400, 'file part url must be a data URL');
+  }
+  let parsed;
+  try {
+    parsed = parseDataUrl(url);
+  } catch (error) {
+    if (error?.code === 'validation_error') {
+      throw new LlmError('validation_error', 400, error.message || 'attachment too large');
+    }
+    throw error;
+  }
+  if (!parsed) {
+    throw new LlmError('validation_error', 400, 'file part data URL is malformed');
+  }
+  if (parsed.byteLength > MAX_ATTACHMENT_BYTES) {
+    throw new LlmError('validation_error', 400, `Attachment exceeds ${MAX_ATTACHMENT_BYTES} byte limit`);
+  }
   return {
     type: 'file',
     mime: part.mime.trim(),
-    url: part.url.trim(),
+    url,
     ...(typeof part.filename === 'string' && part.filename.trim() ? { filename: part.filename.trim() } : {}),
   };
 };
@@ -57,15 +76,15 @@ export function toOpenAICompletion({ id, model, text, created = Math.floor(Date.
     }],
     usage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 },
   };
-}
+};
 
 /**
  * OpenAI-shaped completions against OpenCode's already-connected providers.
  *
  * Public HTTP stays non-streaming (`stream: true` → validation_error).
  * In-process callers (Assistant contact harness) may pass `onTextDelta` and
- * `globalEventHub`; those are forwarded to generate for real throwaway-session
- * `message.part.delta` tokens only — never as fake post-hoc SSE on this route.
+ * `globalEventHub`; those are forwarded to generate for real attachment-session
+ * `session.text.delta` tokens only — never as fake post-hoc SSE on this route.
  */
 export async function createChatCompletion({
   body,
@@ -75,14 +94,12 @@ export async function createChatCompletion({
   loadCatalog = loadConnectedCatalog,
   generateText = generateOpenCodeText,
   ensureTempDirectory,
-  fetchImpl,
   onTextDelta = null,
   globalEventHub = null,
 }) {
   if (!isRecord(body)) throw new LlmError('validation_error', 400, 'JSON body is required');
-  // Bundled OpenCode 1.18.4 generate is a full-turn JSON reply (sessionless
-  // generate or throwaway session.promptAsync). This HTTP gateway does not
-  // token-stream. Do not emit fake SSE after the fact.
+  // generate.text / attachment-session return a full turn. This HTTP gateway
+  // does not token-stream. Do not emit fake SSE after the fact.
   // In-process onTextDelta (optional) is a separate internal callback path.
   if (body.stream === true) {
     throw new LlmError(
@@ -97,8 +114,8 @@ export async function createChatCompletion({
 
   const client = clientFactory?.() ?? null;
   const catalog = await loadCatalog(client ?? {
-    provider: { list: async () => ({ error: { status: 500 } }) },
-    config: { providers: async () => ({ error: { status: 500 } }) },
+    provider: { list: async () => { throw new Error('no client'); } },
+    model: { list: async () => { throw new Error('no client'); } },
   });
   if (!isConnectedModel(catalog, resolved.providerID, resolved.modelID)) {
     throw new LlmError(
@@ -116,7 +133,6 @@ export async function createChatCompletion({
       providerID: resolved.providerID,
       modelID: resolved.modelID,
       messages,
-      fetchImpl,
       clientFactory,
       ensureTempDirectory,
       forwardImageParts: Boolean(catalog.models.find((entry) => (
@@ -129,6 +145,15 @@ export async function createChatCompletion({
     if (error instanceof LlmError) throw error;
     if (error?.code === 'validation_error') {
       throw new LlmError('validation_error', 400, error.message || 'validation_error');
+    }
+    if (error?.code === 'llm_attachment_generation_unavailable') {
+      throw new LlmError(
+        'llm_attachment_generation_unavailable',
+        502,
+        typeof error?.message === 'string' && error.message.trim()
+          ? error.message
+          : 'LLM attachment generation is unavailable',
+      );
     }
     throw new LlmError(
       'upstream_error',

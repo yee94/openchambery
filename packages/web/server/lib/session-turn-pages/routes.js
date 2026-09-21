@@ -211,6 +211,27 @@ const requestSignal = (req, res) => {
 };
 
 /**
+ * Native SessionMessageInfo carrier fields that become `parts`.
+ * Must not remain on `info` after normalize — otherwise
+ * includeReasoning=false can strip parts while leaking content/text.
+ */
+const MESSAGE_PART_CARRIER_KEYS = new Set(['content', 'text', 'files', 'parts', 'agents', 'skills']);
+
+const stripMessagePartCarriers = (value) => {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return value;
+  let changed = false;
+  const next = {};
+  for (const [key, field] of Object.entries(value)) {
+    if (MESSAGE_PART_CARRIER_KEYS.has(key)) {
+      changed = true;
+      continue;
+    }
+    next[key] = field;
+  }
+  return changed ? next : value;
+};
+
+/**
  * Project SessionMessageInfo (or an already-projected {info, parts} row)
  * into the host HTTP DTO. External route contract stays {info, parts}.
  */
@@ -260,26 +281,45 @@ const projectV2Parts = (entry) => {
 
 const projectSessionMessage = (entry) => {
   if (entry && typeof entry === 'object' && entry.info && typeof entry.info === 'object') {
-    return { info: entry.info, parts: Array.isArray(entry.parts) ? entry.parts : [] };
+    const info = stripMessagePartCarriers(entry.info);
+    return {
+      info: info === entry.info ? entry.info : info,
+      parts: Array.isArray(entry.parts) ? entry.parts : [],
+    };
   }
   if (!entry || typeof entry !== 'object' || typeof entry.id !== 'string' || entry.id.length === 0) {
     return entry;
   }
   const role = entry.type === 'user' || entry.type === 'assistant' ? entry.type : (entry.role ?? entry.type);
+  const info = {
+    ...stripMessagePartCarriers(entry),
+    id: entry.id,
+    sessionID: entry.sessionID,
+    role,
+    time: entry.time ?? { created: 0 },
+  };
   return {
-    info: {
-      id: entry.id,
-      sessionID: entry.sessionID,
-      role,
-      time: entry.time ?? { created: 0 },
-      ...entry,
-    },
+    info,
     parts: projectV2Parts(entry),
   };
 };
 
 const projectRecords = (records) =>
   (Array.isArray(records) ? records : []).map(projectSessionMessage);
+
+/**
+ * Host outbound order: normalize → slim/L1 bounds → reasoning strip.
+ * Slim/reasoning must run on `{info, parts}` so native `content` cannot
+ * rebuild filtered parts or leak through info expansion.
+ */
+const projectTurnPageRecords = (records, includeReasoning) =>
+  projectMessagesPayloadForReasoning(projectSlimParts(projectRecords(records)), includeReasoning);
+
+const projectReconcileRecords = (records, includeReasoning) =>
+  projectMessagesPayloadForReasoning(
+    projectMessageDiffSummaries(projectRecords(records)),
+    includeReasoning,
+  );
 
 const createV2FetchPage = ({ buildOpenCodeUrl, getOpenCodeAuthHeaders, logger }) => {
   return async ({ sessionID, before, limit, signal }) => {
@@ -327,13 +367,35 @@ const throwUpstream = (logger, label) => {
 };
 
 const getHttpStatus = (error) => {
-  const candidates = [error?.cause?.status, error?.status, error?.response?.status];
+  const candidates = [error?.cause?.status, error?.status, error?.response?.status, error?.statusCode];
   for (const value of candidates) {
     if (Number.isFinite(value)) return value;
   }
   return undefined;
 };
 
+/**
+ * Real `@opencode-ai/client` throws declared JSON bodies with `_tag`
+ * (e.g. MessageNotFoundError) — no HTTP status on the object. Also accept
+ * legacy status/code shapes from tests and older surfaces.
+ */
+const isNotFoundError = (error) => {
+  if (!error || typeof error !== 'object') return false;
+  const tag = error._tag ?? error.name;
+  if (tag === 'MessageNotFoundError' || tag === 'SessionNotFoundError') return true;
+  if (getHttpStatus(error) === 404) return true;
+  const code = error.code ?? error.type ?? error.error?.code ?? error.error?.type ?? error.error?._tag;
+  return code === 'not_found'
+    || code === 'NotFound'
+    || code === 'MessageNotFoundError'
+    || code === 'SessionNotFoundError';
+};
+
+const isAbortError = (error) => (
+  error?.name === 'AbortError'
+  || error?.code === 'aborted'
+  || error?.cause?.name === 'AbortError'
+);
 
 const createSdkFetchMessage = ({ buildOpenCodeUrl, getOpenCodeAuthHeaders, logger }) => {
   return async ({ sessionID, messageID, signal }) => {
@@ -342,7 +404,9 @@ const createSdkFetchMessage = ({ buildOpenCodeUrl, getOpenCodeAuthHeaders, logge
     try {
       result = await client.session.message({ sessionID, messageID }, { signal });
     } catch (error) {
-      if (getHttpStatus(error) === 404) {
+      // Preserve abort so routes map 499; never fold into upstream 502.
+      if (isAbortError(error) || signal?.aborted) throw error;
+      if (isNotFoundError(error)) {
         const notFound = new Error('not_found');
         notFound.code = 'not_found';
         throw notFound;
@@ -358,6 +422,11 @@ const createSdkFetchMessage = ({ buildOpenCodeUrl, getOpenCodeAuthHeaders, logge
   };
 };
 
+/**
+ * L3 diff source. v2 SessionMessageInfo has no summary.diffs; keep failure
+ * explicit until the parent lands an authoritative per-message diff API.
+ * Do not substitute working-tree / vcs.diff here.
+ */
 const createSdkFetchDiff = ({ buildOpenCodeUrl, getOpenCodeAuthHeaders, logger }) => {
   return async ({ sessionID, messageID, directory, signal }) => {
     const payload = await createSdkFetchMessage({
@@ -367,7 +436,7 @@ const createSdkFetchDiff = ({ buildOpenCodeUrl, getOpenCodeAuthHeaders, logger }
     })({ sessionID, messageID, directory, signal });
     const diffs = payload?.info?.summary?.diffs;
     if (!Array.isArray(diffs)) {
-      throwUpstream(logger, '[session-changes] session.message summary.diffs malformed payload');
+      throwUpstream(logger, '[session-changes] session.message summary.diffs unavailable (L3 source pending)');
     }
     return diffs;
   };
@@ -578,13 +647,13 @@ export const registerSessionTurnPageRoutes = (app, dependencies = {}) => {
       }
 
       const includeReasoning = readIncludeReasoningQuery(req.query);
-      const records = projectMessagesPayloadForReasoning(
-        projectMessageDiffSummaries(Array.isArray(result.records) ? result.records : []),
+      const records = projectReconcileRecords(
+        Array.isArray(result.records) ? result.records : [],
         includeReasoning,
       );
 
       return res.status(200).json({
-        records: projectRecords(records),
+        records,
         anchorFound: result.anchorFound === true,
         capturedHeadMessageID: result.capturedHeadMessageID ?? null,
         latestHeadMessageID: result.latestHeadMessageID ?? null,
@@ -673,14 +742,14 @@ export const registerSessionTurnPageRoutes = (app, dependencies = {}) => {
 
       // Turn-page responses (first packet and prepend) share slim-v1.
       // Reconcile stays on the other route and keeps full parts.
-      // includeReasoning=false drops type=reasoning parts after slim projection.
+      // Normalize native SessionMessageInfo first, then slim, then reasoning strip.
       const includeReasoning = readIncludeReasoningQuery(req.query);
-      const records = projectMessagesPayloadForReasoning(
-        projectSlimParts(result.records),
+      const records = projectTurnPageRecords(
+        Array.isArray(result.records) ? result.records : [],
         includeReasoning,
       );
       return res.status(200).json({
-        records: projectRecords(records),
+        records,
         turnCount: result.turnCount,
         cursor: result.cursor ?? null,
         complete: result.complete === true,
@@ -737,13 +806,13 @@ export const registerSessionTurnPageRoutes = (app, dependencies = {}) => {
         projectMessagesPayloadForReasoning(projectExactMessagePayload(payload), includeReasoning),
       );
     } catch (error) {
-      if (error?.name === 'AbortError' || error?.code === 'aborted') {
+      if (isAbortError(error) || error?.code === 'aborted') {
         if (!res.headersSent) {
           return res.status(499).json({ error: SAFE_ERRORS.aborted });
         }
         return undefined;
       }
-      if (error?.code === 'not_found') {
+      if (error?.code === 'not_found' || isNotFoundError(error)) {
         if (!res.headersSent) {
           return res.status(404).json({ error: 'not found', code: 'not_found' });
         }

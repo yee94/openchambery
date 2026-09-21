@@ -71,14 +71,29 @@ export class AssistantError extends Error {
 const fail = (code, message) => { throw new AssistantError(code, message); };
 const string = (value, max = 10_000, required = false) => { if (value == null && !required) return null; if (typeof value !== 'string' || value.length > max || (required && !value.trim())) fail('validation_error'); return value.trim(); };
 const nonEmptyString = (value, max = 10_000) => typeof value === 'string' && value.length > 0 && value.length <= max;
-const isMissing = (result) => result?.error?.status === 404 || result?.error?.statusCode === 404 || result?.error?.code === 'not_found' || result?.status === 404;
+const isMissing = (result) => {
+  if (!result || typeof result !== 'object') return false;
+  if (result.error?.status === 404 || result.error?.statusCode === 404 || result.status === 404) return true;
+  const code = result.error?.code ?? result.error?.type ?? result.error?._tag ?? result._tag ?? result.code;
+  return code === 'not_found' || code === 'SessionNotFoundError' || code === 'MessageNotFoundError';
+};
 const messagesErrorStatus = (result) => { const status = result?.error?.status ?? result?.error?.statusCode ?? result?.status; return Number.isFinite(status) ? status : null; };
 const getHttpStatus = (error) => {
   const candidates = [error?.cause?.status, error?.status, error?.response?.status];
   for (const value of candidates) { if (Number.isFinite(value)) return value; }
   return undefined;
 };
-const isMissingError = (error) => getHttpStatus(error) === 404 || isMissing(error);
+// Real @opencode-ai/client throws declared JSON with `_tag` (no HTTP status).
+const isMissingError = (error) => {
+  if (getHttpStatus(error) === 404 || isMissing(error)) return true;
+  if (!error || typeof error !== 'object') return false;
+  const tag = error._tag ?? error.name ?? error.code ?? error.type ?? error.error?._tag;
+  return tag === 'SessionNotFoundError' || tag === 'MessageNotFoundError' || tag === 'not_found';
+};
+const ASSISTANT_SUCCESS_FINISH = new Set(['stop']);
+const ASSISTANT_ERROR_FINISH = new Set(['error', 'length', 'content-filter']);
+const GOAL_ACTIVE_STATUSES = new Set(['active', 'paused']);
+const GOAL_ERROR_STATUSES = new Set(['blocked', 'budgetLimited']);
 const isTransientMessagesFailure = (result, error) => {
   if (error) {
     if (error instanceof AssistantError) return false;
@@ -373,22 +388,40 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
     db.prepare('UPDATE assistant_message_mirror SET covered=0 WHERE assistant_id=? AND session_id=? AND message_id=?').run(assistantID, sessionID, messageID);
     db.prepare('INSERT INTO assistant_message_backfill(assistant_id,session_id,cursor,complete,updated_at) VALUES (?,?,?,?,?) ON CONFLICT(assistant_id,session_id) DO UPDATE SET cursor=NULL,complete=0,updated_at=excluded.updated_at').run(assistantID, sessionID, null, 0, now());
   };
-  const eventSessionID = (properties) => {
-    const sessionID = properties?.sessionID || properties?.sessionId || properties?.info?.sessionID || properties?.info?.sessionId;
+  // Accept bridge/legacy `{ properties }` and native v2 `{ data }` envelopes.
+  const eventBody = (payload) => {
+    if (!plainObject(payload)) return null;
+    const data = plainObject(payload.data) ? payload.data : null;
+    const properties = plainObject(payload.properties) ? payload.properties : null;
+    if (data && Object.keys(data).length > 0) return data;
+    if (properties) return properties;
+    return data || properties || null;
+  };
+  const eventSessionID = (body) => {
+    const sessionID = body?.sessionID || body?.sessionId || body?.info?.sessionID || body?.info?.sessionId;
     return nonEmptyString(sessionID) ? sessionID : '';
   };
-  const settleStatusFromEvent = (payload, properties) => {
-    if (payload.type === 'session.error') return 'error';
-    if (payload.type === 'question.asked' || payload.type === 'permission.asked') return 'question';
-    if (payload.type === 'session.idle') return 'complete';
-    if (payload.type === 'session.status') {
-      const statusType = typeof properties.status?.type === 'string' ? properties.status.type : typeof properties.info?.type === 'string' ? properties.info.type : '';
-      if (statusType === 'busy' || statusType === 'retry') return 'busy';
+  const settleStatusFromEvent = (payload, body) => {
+    const type = typeof payload?.type === 'string' ? payload.type : '';
+    if (type === 'session.error' || type === 'session.execution.failed') return 'error';
+    // User interrupt is a failed delivery for the contact card, not a quiet complete.
+    if (type === 'session.execution.interrupted') return 'error';
+    if (type === 'session.execution.succeeded') return 'complete';
+    if (type === 'session.execution.started' || type === 'session.retry.scheduled') return 'busy';
+    if (type === 'question.asked' || type === 'permission.asked'
+      || type === 'session.pending.question' || type === 'session.pending.permission'
+      || type === 'pending.question' || type === 'pending.permission') return 'question';
+    if (type === 'session.idle') return 'complete';
+    if (type === 'session.status') {
+      const statusType = typeof body?.status?.type === 'string' ? body.status.type : typeof body?.info?.type === 'string' ? body.info.type : '';
+      if (statusType === 'busy' || statusType === 'retry' || statusType === 'running') return 'busy';
       if (statusType === 'idle') return 'complete';
     }
     return null;
   };
-  const reportAssignedSession = (sessionID, status) => {
+  // Stash assign delivery message IDs until the session card watch is written.
+  const pendingAssignMessageIDs = new Map();
+  const reportAssignedSession = (sessionID, status, { requireExecutionOwned = false } = {}) => {
     const watches = listWatchesBySession(db, sessionID);
     if (watches.length === 0) return false;
     let changed = false;
@@ -398,6 +431,9 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
         if (watch.status === status) continue;
         // session.idle / status idle follow session.error. Do not rewrite 失败 as 完成.
         if (status === 'complete' && watch.status === 'error') continue;
+        // Weak idle signals must not settle a delivery-watermarked watch — old
+        // session.idle can race a reuse assign. Formal execution.* owns that path.
+        if (requireExecutionOwned && status === 'complete' && watch.messageID) continue;
         updateSessionCardStatus(db, { assistantID: watch.assistantID, sessionID, status });
         upsertContactWatch(db, {
           assistantID: watch.assistantID,
@@ -405,6 +441,7 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
           directory: watch.directory,
           status,
           updatedAt: now(),
+          ...(watch.messageID ? { messageID: watch.messageID } : {}),
         });
         const settleText = CONTACT_SETTLE_TEXT[status];
         const settleID = `settle_${watch.assistantID}_${sessionID}_${status}`;
@@ -437,26 +474,134 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
     if (typeof session?.type === 'string') return session.type;
     return '';
   };
+  const readMessageInfo = (entry) => {
+    if (!entry || typeof entry !== 'object') return null;
+    if (plainObject(entry.info)) return entry.info;
+    return entry;
+  };
+  const isAssistantMessage = (info) => info && (info.type === 'assistant' || info.role === 'assistant');
+  const messageListItems = (result) => {
+    if (!result || result.error) return null;
+    if (Array.isArray(result.data)) return result.data;
+    if (Array.isArray(result)) return result;
+    if (Array.isArray(result.data?.items)) return result.data.items;
+    return null;
+  };
+  const activeMapOf = (value) => {
+    if (!value || typeof value !== 'object' || Array.isArray(value) || value.error) return null;
+    // Tolerate `{ data: { ses_x: … } }` wrappers without treating a bare map as nested data.
+    if (value.data && typeof value.data === 'object' && !Array.isArray(value.data) && value.id == null
+      && !Object.prototype.hasOwnProperty.call(value, 'type')) {
+      const nested = value.data;
+      if (!Array.isArray(nested) && typeof nested === 'object') return nested;
+    }
+    return value;
+  };
+  const goalOfSession = (session) => {
+    const goal = session?.metadata?.openchamber?.goal;
+    if (!goal || typeof goal !== 'object') return null;
+    const status = typeof goal.status === 'string' ? goal.status.trim() : '';
+    return status ? { status } : null;
+  };
+  /** Messages that belong to this delivery watermark (assign prompt messageID). */
+  const messagesOwnedByDelivery = (messages, deliveryMessageID) => {
+    if (!Array.isArray(messages)) return [];
+    if (!nonEmptyString(deliveryMessageID)) return messages;
+    const rows = messages.map((entry) => ({ entry, info: readMessageInfo(entry) }));
+    const delivery = rows.find((row) => row.info?.id === deliveryMessageID);
+    if (delivery) {
+      const created = typeof delivery.info?.time?.created === 'number' ? delivery.info.time.created : null;
+      return rows
+        .filter((row) => {
+          if (row.info?.id === deliveryMessageID) return true;
+          const rowCreated = typeof row.info?.time?.created === 'number' ? row.info.time.created : null;
+          if (created != null && rowCreated != null) {
+            if (rowCreated > created) return true;
+            if (rowCreated < created) return false;
+          }
+          // Ascending msg_ ids: strictly after the delivery user row.
+          return typeof row.info?.id === 'string' && row.info.id > deliveryMessageID;
+        })
+        .map((row) => row.entry);
+    }
+    // Delivery not on this page — only keep ids after the watermark.
+    return rows
+      .filter((row) => typeof row.info?.id === 'string' && row.info.id > deliveryMessageID)
+      .map((row) => row.entry);
+  };
   const lastAssistantInfo = (messages) => {
-    if (!Array.isArray(messages)) return null;
-    for (let index = messages.length - 1; index >= 0; index -= 1) {
-      const info = messages[index]?.info ?? messages[index];
-      if (info?.role === 'assistant') return info;
+    if (!Array.isArray(messages) || messages.length === 0) return null;
+    // Prefer newest by time.created; fall back to array order (desc list → index 0).
+    let best = null;
+    let bestCreated = Number.NEGATIVE_INFINITY;
+    let bestIndex = -1;
+    for (let index = 0; index < messages.length; index += 1) {
+      const info = readMessageInfo(messages[index]);
+      if (!isAssistantMessage(info)) continue;
+      const created = typeof info?.time?.created === 'number' ? info.time.created : Number.NEGATIVE_INFINITY;
+      if (!best || created > bestCreated || (created === bestCreated && index < bestIndex)) {
+        best = info;
+        bestCreated = created;
+        bestIndex = index;
+      }
+    }
+    if (best) return best;
+    // Desc page without timestamps: first assistant from the start.
+    for (let index = 0; index < messages.length; index += 1) {
+      const info = readMessageInfo(messages[index]);
+      if (isAssistantMessage(info)) return info;
     }
     return null;
   };
-  const inferAssignedSessionSettleStatus = (getResult, messagesResult) => {
+  const classifyOwnedAssistantTail = (assistantInfo) => {
+    if (!assistantInfo) return null;
+    if (assistantInfo.error) {
+      // MessageAbortedError and peers are failed deliveries for the contact card.
+      return 'error';
+    }
+    const finish = typeof assistantInfo.finish === 'string' ? assistantInfo.finish.trim() : '';
+    // Mid-loop tool-calls (even with time.completed) are intermediate steps.
+    if (finish === 'tool-calls') return null;
+    if (ASSISTANT_ERROR_FINISH.has(finish)) return 'error';
+    if (assistantInfo.time?.completed && (!finish || ASSISTANT_SUCCESS_FINISH.has(finish))) return 'complete';
+    if (!finish && !assistantInfo.time?.completed) return null;
+    return null;
+  };
+  const inferAssignedSessionSettleStatus = (getResult, messagesResult, { deliveryMessageID = null, activeBusy = null } = {}) => {
     if (isMissing(getResult)) return 'complete';
     if (getResult?.error) return null;
-    const session = getResult?.data;
+    // Authoritative active membership wins over stale get snapshots.
+    if (activeBusy === true) return null;
+    const session = sessionRecord(getResult);
     if (session?.error) return 'error';
+    const goal = goalOfSession(session);
+    // Goal settle is owned by the session-goal reporter — never invent success.
+    if (goal && GOAL_ACTIVE_STATUSES.has(goal.status)) return null;
+    if (goal && GOAL_ERROR_STATUSES.has(goal.status)) return 'error';
+    if (goal && goal.status === 'complete') return 'complete';
     const statusType = sessionStatusType(session);
-    if (statusType === 'busy' || statusType === 'retry') return null;
+    if (statusType === 'busy' || statusType === 'retry' || statusType === 'running') return null;
     if (isMissing(messagesResult)) return 'complete';
-    const assistant = messagesResult && !messagesResult.error ? lastAssistantInfo(messagesResult.data) : null;
-    if (assistant?.error) return 'error';
-    if (statusType === 'idle' || session?.time?.completed) return 'complete';
-    if (assistant?.time?.completed) return 'complete';
+    if (messagesResult?.error) return null;
+    const items = messageListItems(messagesResult);
+    if (!items) return null;
+    const owned = messagesOwnedByDelivery(items, deliveryMessageID);
+    // Reused session: only pre-delivery assistants remain → wait for this run.
+    if (nonEmptyString(deliveryMessageID) && owned.length === 0) return null;
+    if (nonEmptyString(deliveryMessageID) && !owned.some((entry) => readMessageInfo(entry)?.id === deliveryMessageID)
+      && !owned.some((entry) => isAssistantMessage(readMessageInfo(entry)))) {
+      return null;
+    }
+    const assistantInfo = lastAssistantInfo(owned);
+    const fromTail = classifyOwnedAssistantTail(assistantInfo);
+    if (fromTail) return fromTail;
+    // No owned assistant yet after delivery — keep waiting (superseded / not started).
+    if (nonEmptyString(deliveryMessageID) && !assistantInfo) return null;
+    // Legacy watches without watermark: idle / session completed may settle.
+    if (!nonEmptyString(deliveryMessageID)) {
+      if (statusType === 'idle' || session?.time?.completed) return 'complete';
+      if (assistantInfo?.time?.completed && assistantInfo.finish !== 'tool-calls') return 'complete';
+    }
     return null;
   };
   const resolveWatchDirectory = (watch) => {
@@ -475,26 +620,50 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
     } catch {
       return;
     }
+    if (watches.length === 0) return;
+    // One active query per reconcile — authoritative busy membership map.
+    let activeMap = null;
+    let activeKnown = false;
+    try {
+      const api = client();
+      if (typeof api.session?.active === 'function') {
+        const raw = await api.session.active();
+        activeMap = activeMapOf(raw);
+        activeKnown = activeMap != null;
+      }
+    } catch {
+      activeKnown = false;
+    }
+    if (closed) return;
     for (const watch of watches) {
       if (closed) return;
       try {
+        const activeBusy = activeKnown
+          ? Object.prototype.hasOwnProperty.call(activeMap, watch.sessionID)
+          : null;
+        if (activeBusy === true) continue;
         const directory = resolveWatchDirectory(watch);
         if (!directory) continue;
         let getResult;
         try {
-          getResult = await client().session.get({ sessionID: watch.sessionID, directory });
-        } catch {
-          continue;
+          getResult = await invokeSession(() => client().session.get({ sessionID: watch.sessionID, directory }));
+        } catch (error) {
+          if (isMissingError(error)) getResult = { error: { status: 404 }, status: 404 };
+          else continue;
         }
         if (closed) return;
         let messagesResult = null;
         try {
           messagesResult = await invokeSession(() => client().message.list({ sessionID: watch.sessionID, limit: 100, order: 'desc' }));
-        } catch {
-          messagesResult = null;
+        } catch (error) {
+          if (isMissingError(error)) messagesResult = { error: { status: 404 }, status: 404 };
+          else messagesResult = null;
         }
         if (closed) return;
-        const status = inferAssignedSessionSettleStatus(getResult, messagesResult);
+        const status = inferAssignedSessionSettleStatus(getResult, messagesResult, {
+          deliveryMessageID: watch.messageID,
+          activeBusy,
+        });
         if (status) reportAssignedSession(watch.sessionID, status);
       } catch {
         // One failed watch must not block unrelated watches.
@@ -503,45 +672,67 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
   };
   const processEvent = (event) => {
     const payload = event?.payload?.payload ?? event?.payload ?? event;
-    const properties = payload?.properties;
-    if (!plainObject(payload) || !plainObject(properties)) return false;
+    if (!plainObject(payload) || typeof payload.type !== 'string') return false;
+    const body = eventBody(payload);
+    // Message lifecycle still requires a body; execution/status may carry sessionID on body only.
     if (payload.type === 'message.updated') {
-      const info = properties.info; const sessionID = info?.sessionID;
+      if (!plainObject(body)) return false;
+      const info = body.info; const sessionID = info?.sessionID;
       if (!nonEmptyString(sessionID) || !plainObject(info)) return false;
       const assistants = mappedAssistants(sessionID); for (const assistantID of assistants) { const current = assistant(assistantID)?.current_session_id === sessionID; mirrorMessage(assistantID, sessionID, info, undefined, current); if (!current) invalidateBackfill(assistantID, sessionID); } return assistants.length > 0;
     }
     if (payload.type === 'message.part.updated') {
-      const part = properties.part; const sessionID = properties.sessionID ?? part?.sessionID;
+      if (!plainObject(body)) return false;
+      const part = body.part; const sessionID = body.sessionID ?? part?.sessionID;
       if (!nonEmptyString(sessionID) || !plainObject(part)) return false;
       const assistants = mappedAssistants(sessionID); for (const assistantID of assistants) { db.prepare("DELETE FROM assistant_message_part_mirror WHERE assistant_id=? AND session_id=? AND message_id=? AND part_id GLOB 'oc_asst_admission:*'").run(assistantID, sessionID, part.messageID); mirrorPart(assistantID, sessionID, part); if (assistant(assistantID)?.current_session_id !== sessionID) invalidateBackfill(assistantID, sessionID); } return assistants.length > 0;
     }
     if (payload.type === 'message.removed') {
-      const sessionID = properties.sessionID; const messageID = properties.messageID;
+      if (!plainObject(body)) return false;
+      const sessionID = body.sessionID; const messageID = body.messageID;
       if (!nonEmptyString(sessionID) || !nonEmptyString(messageID)) return false;
       const assistants = mappedAssistants(sessionID); for (const assistantID of assistants) { db.prepare('DELETE FROM assistant_message_part_mirror WHERE assistant_id=? AND session_id=? AND message_id=?').run(assistantID, sessionID, messageID); db.prepare('DELETE FROM assistant_message_mirror WHERE assistant_id=? AND session_id=? AND message_id=?').run(assistantID, sessionID, messageID); } return assistants.length > 0;
     }
     if (payload.type === 'message.part.removed') {
-      const sessionID = properties.sessionID; const messageID = properties.messageID ?? properties.part?.messageID; const partID = properties.partID ?? properties.part?.id;
+      if (!plainObject(body)) return false;
+      const sessionID = body.sessionID; const messageID = body.messageID ?? body.part?.messageID; const partID = body.partID ?? body.part?.id;
       if (!nonEmptyString(sessionID) || !nonEmptyString(messageID) || !nonEmptyString(partID)) return false;
       const assistants = mappedAssistants(sessionID); for (const assistantID of assistants) { db.prepare('DELETE FROM assistant_message_part_mirror WHERE assistant_id=? AND session_id=? AND message_id=? AND part_id=?').run(assistantID, sessionID, messageID, partID); if (assistant(assistantID)?.current_session_id !== sessionID) invalidateMessageCoverage(assistantID, sessionID, messageID); } return assistants.length > 0;
     }
-    if (payload.type === 'session.idle' || payload.type === 'session.error') {
-      const sessionID = eventSessionID(properties);
+    const sessionID = plainObject(body) ? eventSessionID(body) : '';
+    if (payload.type === 'session.execution.started' || payload.type === 'session.retry.scheduled') {
       if (!sessionID) return false;
-      const reported = reportAssignedSession(sessionID, settleStatusFromEvent(payload, properties));
-      const assistants = mappedAssistants(sessionID); for (const assistantID of assistants) { if (assistant(assistantID)?.current_session_id !== sessionID) invalidateBackfill(assistantID, sessionID); }
-      return reported || assistants.some((assistantID) => assistant(assistantID)?.current_session_id !== sessionID);
+      return reportAssignedSession(sessionID, 'busy');
     }
-    if (payload.type === 'session.status') {
-      const sessionID = eventSessionID(properties);
-      const status = settleStatusFromEvent(payload, properties);
-      if (!sessionID || !status) return false;
+    if (payload.type === 'session.execution.succeeded'
+      || payload.type === 'session.execution.failed'
+      || payload.type === 'session.execution.interrupted') {
+      if (!sessionID) return false;
+      const status = settleStatusFromEvent(payload, body);
+      if (!status) return false;
       const reported = reportAssignedSession(sessionID, status);
       const assistants = mappedAssistants(sessionID); for (const assistantID of assistants) { if (assistant(assistantID)?.current_session_id !== sessionID) invalidateBackfill(assistantID, sessionID); }
       return reported || assistants.some((assistantID) => assistant(assistantID)?.current_session_id !== sessionID);
     }
-    if (payload.type === 'question.asked' || payload.type === 'permission.asked') {
-      const sessionID = eventSessionID(properties);
+    if (payload.type === 'session.idle' || payload.type === 'session.error') {
+      if (!sessionID) return false;
+      // session.idle is a weak fallback: watermarked watches need execution.* or reconcile.
+      const status = settleStatusFromEvent(payload, body);
+      const reported = reportAssignedSession(sessionID, status, { requireExecutionOwned: payload.type === 'session.idle' });
+      const assistants = mappedAssistants(sessionID); for (const assistantID of assistants) { if (assistant(assistantID)?.current_session_id !== sessionID) invalidateBackfill(assistantID, sessionID); }
+      return reported || assistants.some((assistantID) => assistant(assistantID)?.current_session_id !== sessionID);
+    }
+    if (payload.type === 'session.status') {
+      if (!sessionID) return false;
+      const status = settleStatusFromEvent(payload, body);
+      if (!status) return false;
+      const reported = reportAssignedSession(sessionID, status, { requireExecutionOwned: status === 'complete' });
+      const assistants = mappedAssistants(sessionID); for (const assistantID of assistants) { if (assistant(assistantID)?.current_session_id !== sessionID) invalidateBackfill(assistantID, sessionID); }
+      return reported || assistants.some((assistantID) => assistant(assistantID)?.current_session_id !== sessionID);
+    }
+    if (payload.type === 'question.asked' || payload.type === 'permission.asked'
+      || payload.type === 'session.pending.question' || payload.type === 'session.pending.permission'
+      || payload.type === 'pending.question' || payload.type === 'pending.permission') {
       if (!sessionID) return false;
       return reportAssignedSession(sessionID, 'question');
     }
@@ -831,12 +1022,16 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
         });
         ordinal += 1;
         if (card.cardType === 'session' && card.sessionID) {
+          const deliveryMessageID = pendingAssignMessageIDs.get(card.sessionID)
+            || (nonEmptyString(card.messageID) ? card.messageID : null);
+          if (pendingAssignMessageIDs.has(card.sessionID)) pendingAssignMessageIDs.delete(card.sessionID);
           upsertContactWatch(db, {
             assistantID,
             sessionID: card.sessionID,
             directory: card.directory,
             status: card.status === 'error' || card.status === 'question' || card.status === 'complete' ? card.status : 'busy',
             updatedAt: now(),
+            ...(deliveryMessageID ? { messageID: deliveryMessageID } : {}),
           });
         }
       });
@@ -901,38 +1096,45 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
   const resolveContactTurnSettlement = (messageID, result) => {
     contactTurnSettlement(messageID).resolve(result);
   };
-  const assignWork = (row, params) => assignSession({
-    ...params,
-    assistant: output(row),
-    defaultProjectPath: row.workspace_path,
-    allowedRoots: getAllowedRoots(),
-    managedWorkspaceRoot: path.resolve(dataDir, 'assistant-workspaces'),
-    listWorktrees,
-    createSession: (created) => client().session.create({
-      title: created?.title,
-      ...(created?.directory ? { location: { directory: created.directory } } : {}),
-      ...(created?.agent ? { agent: created.agent } : {}),
-      ...(created?.model ? { model: created.model } : {}),
-    }),
-    promptExisting: async (prompted) => {
-      const api = client();
-      if (typeof api.session.switchAgent === 'function' && prompted.agent) {
-        await api.session.switchAgent({ sessionID: prompted.sessionID, agent: prompted.agent });
-      }
-      if (typeof api.session.switchModel === 'function' && prompted.model) {
-        await api.session.switchModel({
-          sessionID: prompted.sessionID,
-          model: {
-            id: prompted.model.modelID,
-            providerID: prompted.model.providerID,
-            ...(prompted.variant ? { variant: prompted.variant } : {}),
-          },
-        });
-      }
-      return api.session.prompt(toV2PromptInput(prompted.sessionID, prompted.parts, prompted.messageID));
-    },
-    messageID: params?.messageID || `msg_assign_${id()}`,
-  });
+  const assignWork = async (row, params) => {
+    const assigned = await assignSession({
+      ...params,
+      assistant: output(row),
+      defaultProjectPath: row.workspace_path,
+      allowedRoots: getAllowedRoots(),
+      managedWorkspaceRoot: path.resolve(dataDir, 'assistant-workspaces'),
+      listWorktrees,
+      createSession: (created) => client().session.create({
+        title: created?.title,
+        ...(created?.directory ? { location: { directory: created.directory } } : {}),
+        ...(created?.agent ? { agent: created.agent } : {}),
+        ...(created?.model ? { model: created.model } : {}),
+      }),
+      promptExisting: async (prompted) => {
+        const api = client();
+        if (typeof api.session.switchAgent === 'function' && prompted.agent) {
+          await api.session.switchAgent({ sessionID: prompted.sessionID, agent: prompted.agent });
+        }
+        if (typeof api.session.switchModel === 'function' && prompted.model) {
+          await api.session.switchModel({
+            sessionID: prompted.sessionID,
+            model: {
+              id: prompted.model.modelID,
+              providerID: prompted.model.providerID,
+              ...(prompted.variant ? { variant: prompted.variant } : {}),
+            },
+          });
+        }
+        return api.session.prompt(toV2PromptInput(prompted.sessionID, prompted.parts, prompted.messageID));
+      },
+      messageID: params?.messageID || `msg_assign_${id()}`,
+    });
+    // Stash until the session card watch is written so reuse cannot settle on an old tail.
+    if (nonEmptyString(assigned?.sessionID) && nonEmptyString(assigned?.messageID)) {
+      pendingAssignMessageIDs.set(assigned.sessionID, assigned.messageID);
+    }
+    return assigned;
+  };
   const matchRegisteredProject = async (directory) => {
     const projects = await listProjects();
     const resolved = path.resolve(directory);
@@ -1385,12 +1587,18 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
         parts: [card],
       });
       if (card.cardType === 'session' && card.sessionID) {
+        const deliveryMessageID = nonEmptyString(input.deliveryMessageID)
+          ? input.deliveryMessageID
+          : (pendingAssignMessageIDs.get(card.sessionID)
+            || (nonEmptyString(card.messageID) ? card.messageID : null));
+        if (pendingAssignMessageIDs.has(card.sessionID)) pendingAssignMessageIDs.delete(card.sessionID);
         upsertContactWatch(db, {
           assistantID: row.assistant_id,
           sessionID: card.sessionID,
           directory: card.directory,
           status: card.status === 'error' || card.status === 'question' || card.status === 'complete' ? card.status : 'busy',
           updatedAt: now(),
+          ...(deliveryMessageID ? { messageID: deliveryMessageID } : {}),
         });
       }
       bump();

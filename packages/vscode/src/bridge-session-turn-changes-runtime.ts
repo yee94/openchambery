@@ -108,7 +108,7 @@ const createManagerFetchers = (ctx: BridgeContext | undefined) => {
   }): Promise<unknown> => {
     const base = resolveBase();
     const url = new URL(
-      `${base}/session/${encodeURIComponent(sessionID)}/message/${encodeURIComponent(messageID)}`,
+      `${base}/api/session/${encodeURIComponent(sessionID)}/message/${encodeURIComponent(messageID)}`,
     );
     if (typeof directory === 'string' && directory.length > 0) {
       url.searchParams.set('directory', directory);
@@ -155,7 +155,7 @@ const createManagerFetchers = (ctx: BridgeContext | undefined) => {
     signal?: AbortSignal;
   }): Promise<unknown> => {
     const base = resolveBase();
-    const url = new URL(`${base}/session/${encodeURIComponent(sessionID)}/diff`);
+    const url = new URL(`${base}/api/session/${encodeURIComponent(sessionID)}/diff`);
     url.searchParams.set('messageID', messageID);
     if (typeof directory === 'string' && directory.length > 0) {
       url.searchParams.set('directory', directory);

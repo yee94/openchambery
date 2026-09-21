@@ -52,29 +52,60 @@ const collectProxyResponseHeaders = (headers: Headers, deps: Pick<ProxyRuntimeDe
   return result;
 };
 
-const isSseProxyPath = (requestPath: string): boolean => {
+/**
+ * Restore the v2 `/api` prefix for OpenCode upstream paths. Webview local
+ * OpenChamber routes already ran first; bare root paths are treated as legacy
+ * 1.x forms and rewritten so the sidecar origin never loses `/api`.
+ */
+export const ensureOpenCodeApiUpstreamPath = (requestPath: string): string => {
+  const trimmed = typeof requestPath === 'string' ? requestPath.trim() : '';
+  if (!trimmed) return '/api';
+  const withSlash = trimmed.startsWith('/') ? trimmed : `/${trimmed}`;
   try {
-    const parsed = new URL(requestPath, 'https://openchamber.invalid');
-    return parsed.pathname === '/event' || parsed.pathname === '/global/event';
+    const parsed = new URL(withSlash, 'https://openchamber.invalid');
+    const pathname = parsed.pathname || '/';
+    if (pathname === '/api' || pathname.startsWith('/api/')) {
+      return `${pathname}${parsed.search}${parsed.hash}`;
+    }
+    return `/api${pathname === '/' ? '' : pathname}${parsed.search}${parsed.hash}`;
   } catch {
-    return requestPath === '/event' || requestPath === '/global/event';
+    if (withSlash === '/api' || withSlash.startsWith('/api/') || withSlash.startsWith('/api?')) {
+      return withSlash;
+    }
+    return `/api${withSlash === '/' ? '' : withSlash}`;
   }
 };
 
-/** Exact GET /session/:id/message/:messageID (optional query). */
+const isSseProxyPath = (requestPath: string): boolean => {
+  try {
+    const parsed = new URL(requestPath, 'https://openchamber.invalid');
+    const pathname = parsed.pathname.replace(/\/+$/, '') || '/';
+    return pathname === '/api/event'
+      || pathname === '/api/global/event'
+      || pathname === '/event'
+      || pathname === '/global/event';
+  } catch {
+    return requestPath === '/api/event'
+      || requestPath === '/api/global/event'
+      || requestPath === '/event'
+      || requestPath === '/global/event';
+  }
+};
+
+/** Exact GET /api/session/:id/message/:messageID (optional query; legacy without /api ok). */
 const isExactSessionMessagePath = (requestPath: string): boolean =>
-  /^\/session\/[^/]+\/message\/[^/]+(?:\?.*)?$/.test(requestPath);
+  /^\/(?:api\/)?session\/[^/]+\/message\/[^/]+(?:\?.*)?$/.test(requestPath);
 
 /**
- * Official session.messages list GET /session/:id/message (no messageID segment).
+ * Official session.messages list GET /api/session/:id/message (no messageID segment).
  * Matches path or path?query; rejects exact message paths.
  */
 const isSessionMessagesListPath = (requestPath: string): boolean => {
   try {
     const parsed = new URL(requestPath, 'https://openchamber.invalid');
-    return /^\/session\/[^/]+\/message\/?$/.test(parsed.pathname);
+    return /^\/(?:api\/)?session\/[^/]+\/message\/?$/.test(parsed.pathname);
   } catch {
-    return /^\/session\/[^/]+\/message(?:\?.*)?$/.test(requestPath)
+    return /^\/(?:api\/)?session\/[^/]+\/message(?:\?.*)?$/.test(requestPath)
       && !isExactSessionMessagePath(requestPath);
   }
 };
@@ -126,7 +157,7 @@ const proxyAbortControllers = new Map<string, AbortController>();
 // soon as the request settles, so this only ever shares overlapping in-flight
 // requests; it never serves a stale response.
 // ---------------------------------------------------------------------------
-const COALESCE_READ_PATH = /^\/(config|path|app\/agents|agent|project|command)(\b|\/|\?|$)/;
+const COALESCE_READ_PATH = /^\/(?:api\/)?(config|path|app\/agents|agent|project|command)(\b|\/|\?|$)/;
 const READ_COALESCE = new Map<string, Promise<ApiProxyResponsePayload>>();
 
 const performApiProxyFetch = async (
@@ -209,7 +240,7 @@ export async function handleProxyBridgeMessage(
 
       // OpenChamber projection control — never forwarded to OpenCode.
       const includeReasoning = readIncludeReasoningFromUrl(normalizedPath);
-      const upstreamPath = stripIncludeReasoningParam(normalizedPath);
+      const upstreamPath = ensureOpenCodeApiUpstreamPath(stripIncludeReasoningParam(normalizedPath));
 
       const base = `${apiUrl.replace(/\/+$/, '')}/`;
       const targetUrl = new URL(upstreamPath.replace(/^\/+/, ''), base).toString();
@@ -327,7 +358,7 @@ export async function handleProxyBridgeMessage(
             : `/${requestPath.trim()}`
           : '/';
 
-      if (!/^\/session\/[^/]+\/message(?:\?.*)?$/.test(normalizedPath)) {
+      if (!/^\/(?:api\/)?session\/[^/]+\/message(?:\?.*)?$/.test(normalizedPath)) {
         const body = JSON.stringify({ error: 'Invalid session message proxy path' });
         const data: ApiProxyResponsePayload = {
           status: 400,
@@ -338,7 +369,8 @@ export async function handleProxyBridgeMessage(
       }
 
       const base = `${apiUrl.replace(/\/+$/, '')}/`;
-      const targetUrl = new URL(normalizedPath.replace(/^\/+/, ''), base).toString();
+      const upstreamPath = ensureOpenCodeApiUpstreamPath(normalizedPath);
+      const targetUrl = new URL(upstreamPath.replace(/^\/+/, ''), base).toString();
       const requestHeaders: Record<string, string> = {
         ...deps.sanitizeForwardHeaders(headers),
         ...ctx?.manager?.getOpenCodeAuthHeaders(),

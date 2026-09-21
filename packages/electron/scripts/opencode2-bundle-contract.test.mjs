@@ -39,6 +39,17 @@ test('prepare and verify scripts no longer pull 1.18.x or name the binary openco
   assert.doesNotMatch(prepare, /binary:\s*'opencode'/);
 });
 
+test('ssh-manager installs @opencode-ai/cli and probes opencode2', () => {
+  const ssh = fs.readFileSync(path.join(scriptsDir, '..', 'ssh-manager.mjs'), 'utf8');
+  const main = fs.readFileSync(path.join(scriptsDir, '..', 'main.mjs'), 'utf8');
+  assert.match(ssh, /@opencode-ai\/cli/);
+  assert.match(ssh, /opencode2 --version/);
+  assert.doesNotMatch(ssh, /OPENCODE_NPM_PACKAGE = 'opencode-ai'/);
+  assert.doesNotMatch(ssh, /'opencode --version/);
+  assert.match(main, /PINNED_OPENCODE2_VERSION|opencode2-pin/);
+  assert.doesNotMatch(main, /@opencode-ai\/sdk/);
+});
+
 test('npm platform package names map from GitHub artifact variants', () => {
   assert.equal(npmPackageForOpenCode2('darwin', { opencode: 'arm64' }), '@opencode-ai/cli-darwin-arm64');
   assert.equal(npmPackageForOpenCode2('darwin', { opencode: 'x64' }), '@opencode-ai/cli-darwin-x64-baseline');

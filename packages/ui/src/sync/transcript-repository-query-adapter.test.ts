@@ -1027,12 +1027,232 @@ describe("createQueryTranscriptRepository", () => {
     ))
     const refreshed = await pending
     expect(fetches).toBe(2)
-    // SSE advanced liveRevision during the pull: the merge backfills missing
-    // ids only (live msg_old keeps its streamed parts) and the in-range
-    // deletion pass is skipped so live rows are not destroyed.
-    expect(refreshed.messageOrder).toEqual(["msg_old", "msg_extra", "msg_new"])
+    // Touched msg_old keeps SSE; untouched msg_extra is absent from the complete
+    // GET id set and is deleted; msg_new is added from authority.
+    expect(refreshed.messageOrder).toEqual(["msg_old", "msg_new"])
     expect((repo.getParts(scope, "msg_old")[0] as { text?: string })?.text).toBe("live-sse")
-    expect(repo.getMessage(scope, "msg_extra")).toBeDefined()
+    expect(repo.getMessage(scope, "msg_extra")).toBeUndefined()
+    repo.destroy()
+  })
+
+  test("refreshFromAuthority: B SSE during GET still updates untouched A from authority", async () => {
+    let release: ((page: TranscriptTransportPage) => void) | undefined
+    let fetches = 0
+    const repo = createQueryTranscriptRepository({
+      client,
+      transport: TRANSPORT,
+      generation: GENERATION,
+      initialLimit: 2,
+      historyLimit: 2,
+      fetcher: async () => {
+        fetches += 1
+        if (fetches === 1) {
+          return transportPage(
+            [
+              { info: userMessage("msg_a", 1), parts: [textPart("p_a", "msg_a", "a-stale")] },
+              { info: assistantMessage("msg_b", 2), parts: [textPart("p_b", "msg_b", "b-stale")] },
+            ],
+            { complete: true },
+          )
+        }
+        return new Promise((resolve) => {
+          release = resolve
+        })
+      },
+      probe: {
+        getTransport: () => TRANSPORT,
+        getGeneration: () => GENERATION,
+      },
+    })
+
+    await repo.ensureInitial(scope)
+    const pending = repo.refreshFromAuthority(scope)
+    await Promise.resolve()
+    await Promise.resolve()
+    // Only B moves while the force GET is in flight.
+    repo.apply(scope, {
+      type: "sse-event",
+      event: {
+        type: "message.part.updated",
+        properties: { part: textPart("p_b", "msg_b", "b-live-delta") },
+      } as Event,
+    })
+    release?.(transportPage(
+      [
+        { info: userMessage("msg_a", 1), parts: [textPart("p_a", "msg_a", "a-from-get")] },
+        { info: assistantMessage("msg_b", 2), parts: [textPart("p_b", "msg_b", "b-from-get")] },
+      ],
+      { complete: true },
+    ))
+    const refreshed = await pending
+    expect(fetches).toBe(2)
+    expect(refreshed.messageOrder).toEqual(["msg_a", "msg_b"])
+    // Untouched A accepts the GET body; touched B keeps the in-flight SSE delta.
+    expect((repo.getParts(scope, "msg_a")[0] as { text?: string })?.text).toBe("a-from-get")
+    expect((repo.getParts(scope, "msg_b")[0] as { text?: string })?.text).toBe("b-live-delta")
+    repo.destroy()
+  })
+
+  test("refreshFromAuthority: untouched absence deletes; touched local row is kept", async () => {
+    let release: ((page: TranscriptTransportPage) => void) | undefined
+    let fetches = 0
+    const repo = createQueryTranscriptRepository({
+      client,
+      transport: TRANSPORT,
+      generation: GENERATION,
+      initialLimit: 3,
+      historyLimit: 3,
+      fetcher: async () => {
+        fetches += 1
+        if (fetches === 1) {
+          return transportPage(
+            [
+              { info: userMessage("msg_keep", 1), parts: [textPart("p_keep", "msg_keep", "keep")] },
+              { info: userMessage("msg_gone", 2), parts: [textPart("p_gone", "msg_gone", "gone")] },
+              { info: assistantMessage("msg_live", 3), parts: [textPart("p_live", "msg_live", "before")] },
+            ],
+            { complete: true },
+          )
+        }
+        return new Promise((resolve) => {
+          release = resolve
+        })
+      },
+      probe: {
+        getTransport: () => TRANSPORT,
+        getGeneration: () => GENERATION,
+      },
+    })
+
+    await repo.ensureInitial(scope)
+    const pending = repo.refreshFromAuthority(scope)
+    await Promise.resolve()
+    await Promise.resolve()
+    repo.apply(scope, {
+      type: "sse-event",
+      event: {
+        type: "message.part.updated",
+        properties: { part: textPart("p_live", "msg_live", "sse-live") },
+      } as Event,
+    })
+    // Complete tail omits msg_gone (server deleted) and omits msg_live (still
+    // streaming locally). Touched msg_live must stay; untouched msg_gone goes.
+    release?.(transportPage(
+      [
+        { info: userMessage("msg_keep", 1), parts: [textPart("p_keep", "msg_keep", "keep-fresh")] },
+      ],
+      { complete: true },
+    ))
+    const refreshed = await pending
+    expect(fetches).toBe(2)
+    expect(refreshed.messageOrder).toEqual(["msg_keep", "msg_live"])
+    expect((repo.getParts(scope, "msg_keep")[0] as { text?: string })?.text).toBe("keep-fresh")
+    expect((repo.getParts(scope, "msg_live")[0] as { text?: string })?.text).toBe("sse-live")
+    expect(repo.getMessage(scope, "msg_gone")).toBeUndefined()
+    repo.destroy()
+  })
+
+  test("refreshFromAuthority: incomplete page keeps earlier history outside coverage", async () => {
+    let release: ((page: TranscriptTransportPage) => void) | undefined
+    const repo = createQueryTranscriptRepository({
+      client,
+      transport: TRANSPORT,
+      generation: GENERATION,
+      initialLimit: 2,
+      historyLimit: 2,
+      fetcher: async () => new Promise((resolve) => {
+        release = resolve
+      }),
+      probe: {
+        getTransport: () => TRANSPORT,
+        getGeneration: () => GENERATION,
+      },
+    })
+
+    repo.apply(scope, {
+      type: "http-page",
+      purpose: "initial",
+      page: transportPage(
+        [
+          { info: userMessage("msg_01", 1), parts: [textPart("p01", "msg_01", "history")] },
+          { info: assistantMessage("msg_02", 2), parts: [textPart("p02", "msg_02", "history")] },
+          { info: userMessage("msg_10", 10), parts: [textPart("p10", "msg_10", "stale")] },
+          { info: assistantMessage("msg_11", 11), parts: [textPart("p11", "msg_11", "extra-tail")] },
+        ],
+        { complete: false, cursor: "msg_01" },
+      ),
+    })
+    const pending = repo.refreshFromAuthority(scope)
+    await Promise.resolve()
+    await Promise.resolve()
+    // B-side SSE on the tail must not freeze msg_10 or erase earlier history.
+    repo.apply(scope, {
+      type: "sse-event",
+      event: {
+        type: "message.part.updated",
+        properties: { part: textPart("p11", "msg_11", "sse-on-11") },
+      } as Event,
+    })
+    release?.(transportPage(
+      [
+        { info: userMessage("msg_10", 10), parts: [textPart("p10", "msg_10", "fresh")] },
+        { info: assistantMessage("msg_12", 12), parts: [textPart("p12", "msg_12", "added")] },
+      ],
+      { complete: false, cursor: "msg_10" },
+    ))
+    const refreshed = await pending
+    expect(refreshed.messageOrder).toEqual(["msg_01", "msg_02", "msg_10", "msg_11", "msg_12"])
+    expect((repo.getParts(scope, "msg_01")[0] as { text?: string })?.text).toBe("history")
+    expect((repo.getParts(scope, "msg_10")[0] as { text?: string })?.text).toBe("fresh")
+    expect((repo.getParts(scope, "msg_11")[0] as { text?: string })?.text).toBe("sse-on-11")
+    repo.destroy()
+  })
+
+  test("refreshFromAuthority: runtime switch discards the lagging GET", async () => {
+    let release: ((page: TranscriptTransportPage) => void) | undefined
+    let generation = GENERATION
+    // Identity comes only from the live probe so a mid-flight generation bump
+    // is visible to liveIdentityMatches (no pinned deps/scope generation).
+    const liveScope = { directory: DIRECTORY, sessionID: SESSION }
+    const repo = createQueryTranscriptRepository({
+      client,
+      initialLimit: 2,
+      historyLimit: 2,
+      fetcher: async () => new Promise((resolve) => {
+        release = resolve
+      }),
+      probe: {
+        getTransport: () => TRANSPORT,
+        getGeneration: () => generation,
+      },
+    })
+
+    repo.apply(liveScope, {
+      type: "http-page",
+      purpose: "initial",
+      page: transportPage(
+        [
+          { info: userMessage("msg_a", 1), parts: [textPart("p_a", "msg_a", "before")] },
+        ],
+        { complete: true },
+      ),
+    })
+    const pending = repo.refreshFromAuthority(liveScope)
+    await Promise.resolve()
+    await Promise.resolve()
+    generation = GENERATION + 1
+    release?.(transportPage(
+      [
+        { info: userMessage("msg_a", 1), parts: [textPart("p_a", "msg_a", "stale-get")] },
+        { info: assistantMessage("msg_b", 2), parts: [textPart("p_b", "msg_b", "should-not-land")] },
+      ],
+      { complete: true },
+    ))
+    const refreshed = await pending
+    // Return value is the captured-identity snapshot; live probe already moved.
+    expect(refreshed.messageOrder).toEqual(["msg_a"])
+    expect((refreshed.partsByMessageID.msg_a?.[0] as { text?: string })?.text).toBe("before")
+    expect(refreshed.messagesByID.msg_b).toBeUndefined()
     repo.destroy()
   })
 

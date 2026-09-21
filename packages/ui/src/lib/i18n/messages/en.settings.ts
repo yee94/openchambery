@@ -469,6 +469,7 @@ export const settingsDict = {
   'settings.agents.page.permissions.addCustomRule': 'Add Custom Rule',
   'settings.agents.page.permissions.permissionPlaceholder': 'Permission...',
   'settings.agents.page.permissions.patternPlaceholder': 'Pattern (e.g. *)',
+  'settings.permissions.saved.retry': 'Retry',
   'settings.permissions.saved.title': 'Saved project permissions',
   'settings.permissions.saved.empty': 'No saved permissions for this project',
   'settings.permissions.saved.delete': 'Delete',

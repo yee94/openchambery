@@ -14,11 +14,32 @@ const httpStatus = (error) => {
   }
   return undefined;
 };
+/**
+ * Real `@opencode-ai/client` throws declared JSON with `_tag` (no status).
+ * MessageNotFoundError / SessionNotFoundError must map to found:false, not unavailable.
+ */
 const isNotFoundError = (error) => {
+  if (!error || typeof error !== 'object') return false;
+  const tag = error._tag ?? error.name;
+  if (tag === 'MessageNotFoundError' || tag === 'SessionNotFoundError') return true;
   if (httpStatus(error) === 404) return true;
-  const code = error?.code ?? error?.type ?? error?.error?.code ?? error?.error?.type;
-  return code === 'not_found' || code === 'NotFound';
+  const code = error.code ?? error.type ?? error.error?.code ?? error.error?.type ?? error.error?._tag;
+  return code === 'not_found'
+    || code === 'NotFound'
+    || code === 'MessageNotFoundError'
+    || code === 'SessionNotFoundError';
 };
+const isSessionBusyError = (error) => {
+  if (!error || typeof error !== 'object') return false;
+  if ((error._tag ?? error.name) === 'SessionBusyError') return true;
+  const code = error.code ?? error.type ?? error.error?._tag;
+  return code === 'session_busy' || code === 'SessionBusyError';
+};
+const isAbortError = (error) => (
+  error?.name === 'AbortError'
+  || error?.code === 'aborted'
+  || error?.cause?.name === 'AbortError'
+);
 const messageType = (message) => {
   const info = message?.info ?? message;
   if (info?.type === 'assistant' || info?.type === 'user') return info.type;
@@ -97,6 +118,11 @@ export const createOpenCodeMessageQueueAdapter = ({
     return url;
   };
   const authHeaders = (runtime) => runtime?.config?.authHeaders ?? getOpenCodeAuthHeaders();
+  /**
+   * Official v2 SessionPrompt body: id/text/files/delivery only.
+   * model/agent/variant are NOT accepted on prompt — applied via
+   * session.switchAgent / session.switchModel at the serial submit boundary.
+   */
   const promptBodyFromContext = (context) => {
     const parts = Array.isArray(context.parts) ? context.parts : [];
     const text = typeof context.content === 'string' && context.content
@@ -109,19 +135,18 @@ export const createOpenCodeMessageQueueAdapter = ({
         ...(part.filename || part.name ? { name: part.filename || part.name } : {}),
         ...(part.mime ? { mime: part.mime } : {}),
       }));
-    const config = context.sendConfig ?? context;
     return {
       id: context.messageID,
       text,
       delivery: context.delivery === 'queue' ? 'queue' : 'steer',
       ...(files.length ? { files } : {}),
-      ...(config.agent ? { agent: config.agent } : {}),
-      ...(config.variant ? { variant: config.variant } : {}),
-      ...(config.providerID && config.modelID ? { model: { providerID: config.providerID, modelID: config.modelID } } : {}),
     };
   };
   const classifyHttpStatus = (status, { ok } = {}) => {
     if (ok || isSuccessStatus(status)) return { ok: true, status };
+    // 409 conflict / busy: definitive rejection before admission — retry later,
+    // do not mark accepted or re-POST as a new success path.
+    if (status === 409) return { ok: false, kind: 'retry', code: 'session_busy' };
     if (status === 408 || status === 429 || (Number.isInteger(status) && status >= 500)) {
       return { ok: false, status, kind: 'ambiguous' };
     }
@@ -130,12 +155,75 @@ export const createOpenCodeMessageQueueAdapter = ({
     }
     return { ok: false, kind: 'ambiguous', code: 'malformed_result' };
   };
+  const classifySwitchStatus = (status, { ok } = {}) => {
+    if (ok || isSuccessStatus(status)) return { ok: true, status };
+    if (status === 409) return { ok: false, kind: 'retry', code: 'session_busy' };
+    if (status === 408 || status === 429 || (Number.isInteger(status) && status >= 500)) {
+      return { ok: false, status, kind: 'ambiguous', code: 'config_switch_ambiguous' };
+    }
+    if (Number.isInteger(status) && status >= 400 && status < 500) {
+      return { ok: false, status, kind: 'failed', code: 'config_switch_failed' };
+    }
+    return { ok: false, kind: 'ambiguous', code: 'config_switch_ambiguous' };
+  };
+  /**
+   * Apply captured per-item sendConfig before prompt on the session serial
+   * boundary. Failure returns without POSTing prompt (no accidental re-send
+   * under the wrong model/agent). Order: agent → model(+variant).
+   */
+  const applySendConfig = async (sessionID, directory, runtime, sendConfig, { signal } = {}) => {
+    if (!sendConfig || typeof sendConfig !== 'object') return { ok: true };
+    const headers = { 'Content-Type': 'application/json', Accept: 'application/json', ...authHeaders(runtime) };
+    if (typeof sendConfig.agent === 'string' && sendConfig.agent) {
+      const response = await fetch(openCodeUrl(`/api/session/${encodeURIComponent(sessionID)}/agent`, directory, runtime), {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ agent: sendConfig.agent }),
+        signal,
+      });
+      if (!response || typeof response !== 'object') {
+        return { ok: false, kind: 'ambiguous', code: 'config_switch_ambiguous' };
+      }
+      const classified = classifySwitchStatus(response.status, { ok: response.ok });
+      if (!classified.ok) return classified;
+    }
+    if (typeof sendConfig.providerID === 'string' && sendConfig.providerID
+      && typeof sendConfig.modelID === 'string' && sendConfig.modelID) {
+      const model = {
+        id: sendConfig.modelID,
+        providerID: sendConfig.providerID,
+        ...(typeof sendConfig.variant === 'string' && sendConfig.variant
+          ? { variant: sendConfig.variant }
+          : {}),
+      };
+      const response = await fetch(openCodeUrl(`/api/session/${encodeURIComponent(sessionID)}/model`, directory, runtime), {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ model }),
+        signal,
+      });
+      if (!response || typeof response !== 'object') {
+        return { ok: false, kind: 'ambiguous', code: 'config_switch_ambiguous' };
+      }
+      const classified = classifySwitchStatus(response.status, { ok: response.ok });
+      if (!classified.ok) return classified;
+    }
+    return { ok: true };
+  };
   const send = async (context, { signal } = {}) => {
     if (!isCurrent(context.runtime)) return { ok: false, kind: 'retry', code: 'runtime_stale' };
     try {
       const parts = context.parts ?? await materializeAttachments(context, { signal });
       const sessionID = context.scope?.sessionID ?? context.sessionID;
       const directory = context.scope?.directory ?? context.directory;
+      const sendConfig = context.sendConfig && typeof context.sendConfig === 'object'
+        ? context.sendConfig
+        : null;
+      // Serial session boundary: switch captured config, then prompt once.
+      if (sendConfig) {
+        const switched = await applySendConfig(sessionID, directory, context.runtime, sendConfig, { signal });
+        if (!switched.ok) return switched;
+      }
       const response = await fetch(openCodeUrl(`/api/session/${encodeURIComponent(sessionID)}/prompt`, directory, context.runtime), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Accept: 'application/json', ...authHeaders(context.runtime) },
@@ -147,7 +235,8 @@ export const createOpenCodeMessageQueueAdapter = ({
       if (!response || typeof response !== 'object') return { ok: false, kind: 'ambiguous', code: 'malformed_result' };
       return classifyHttpStatus(response.status, { ok: response.ok });
     } catch (error) {
-      if (error?.name === 'AbortError') return { ok: false, kind: 'ambiguous', code: 'aborted' };
+      if (isAbortError(error)) return { ok: false, kind: 'ambiguous', code: 'aborted' };
+      if (isSessionBusyError(error)) return { ok: false, kind: 'retry', code: 'session_busy' };
       return { ok: false, kind: 'ambiguous', code: 'transport' };
     }
   };
@@ -184,7 +273,9 @@ export const createOpenCodeMessageQueueAdapter = ({
       const inbox = await findViaInbox(scope, messageID, { signal, runtime });
       if (inbox.unavailable) return { unavailable: true };
       if (inbox.found) return { found: true };
-      return findViaProjection(scope, messageID, { signal, runtime });
+      // Must await so projection rejections stay inside this try/catch
+      // (bare return of a Promise lets rejections escape as unhandled).
+      return await findViaProjection(scope, messageID, { signal, runtime });
     } catch { return { unavailable: true }; }
   };
   const observeSessionEvent = (scope, phase, runtime = captureRuntime()) => turnGate.observeEvent(turnKey(scope, runtime), phase);

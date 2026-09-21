@@ -265,4 +265,29 @@ describe('managed scheduled task tool route', () => {
       expect(oversized.status).toBe(413);
     } finally { fixture.restore(); }
   });
+
+  it('rejects create/update with goalEnabled when Host goal state is unavailable', async () => {
+    const fixture = createApp();
+    try {
+      const created = await request(fixture.app).post(MANAGED_SCHEDULED_TASK_TOOL_PATH).send(body('create', {
+        name: 'Goal task',
+        schedule: { kind: 'daily', time: '10:00', timezone: 'UTC' },
+        execution: { prompt: 'review', goalEnabled: true },
+      }));
+      expect(created.status).toBe(501);
+      expect(created.body.error).toMatch(/v2_goal_state_unavailable/);
+      expect(created.body.capability).toEqual({
+        supported: false,
+        reason: 'v2_goal_state_unavailable',
+      });
+      expect(fixture.projectConfigRuntime.upsertScheduledTask).not.toHaveBeenCalled();
+
+      const updated = await request(fixture.app).post(MANAGED_SCHEDULED_TASK_TOOL_PATH).send(body('update', {
+        taskId: 'task_1',
+        execution: { goalEnabled: true },
+      }));
+      expect(updated.status).toBe(501);
+      expect(fixture.projectConfigRuntime.patchScheduledTask).not.toHaveBeenCalled();
+    } finally { fixture.restore(); }
+  });
 });

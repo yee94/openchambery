@@ -374,6 +374,9 @@ export function applyDirectoryEvent(
     case "session.execution.failed":
     case "session.execution.interrupted": {
       const props = event.properties as { sessionID: string }
+      // Same release path as legacy session.idle / status idle — queue abort
+      // blocks and idle materialization hooks depend on this callback.
+      callbacks?.onServerSessionIdle?.(props.sessionID)
       const status = { type: "idle" } as const
       if (callbacks?.now) draft.session_status_observed_at[props.sessionID] = callbacks.now()
       if (areSessionStatusesEqual(draft.session_status[props.sessionID], status)) {

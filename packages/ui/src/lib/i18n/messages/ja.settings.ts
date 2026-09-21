@@ -469,6 +469,7 @@ export const settingsDict = {
   'settings.agents.page.permissions.addCustomRule': 'カスタムルールを追加',
   'settings.agents.page.permissions.permissionPlaceholder': '権限...',
   'settings.agents.page.permissions.patternPlaceholder': 'パターン（例: *）',
+  'settings.permissions.saved.retry': '再試行',
   'settings.permissions.saved.title': '保存済みのプロジェクト権限',
   'settings.permissions.saved.empty': 'このプロジェクトに保存済みの権限はありません',
   'settings.permissions.saved.delete': '削除',

@@ -436,6 +436,7 @@ export const settingsDict = {
   'settings.agents.page.permissions.addCustomRule': '添加自定义规则',
   'settings.agents.page.permissions.permissionPlaceholder': '权限...',
   'settings.agents.page.permissions.patternPlaceholder': '模式（例如 *）',
+  'settings.permissions.saved.retry': '重试',
   'settings.permissions.saved.title': '已保存的项目权限',
   'settings.permissions.saved.empty': '此项目没有已保存的权限',
   'settings.permissions.saved.delete': '删除',

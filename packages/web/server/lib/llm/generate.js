@@ -1,10 +1,11 @@
-import { createOpencodeClient } from '@opencode-ai/sdk/v2';
+import { OpenCode } from '@opencode-ai/client';
 
 const LLM_AGENT_NAME = 'openchamber-llm';
 const GENERATE_TIMEOUT_MS = 90_000;
-const SETTLE_POLL_MS = 250;
-const INCOMPLETE_ASSISTANT_SETTLE_PROBES = 2;
-const EMPTY_IDLE_PROBES = 5;
+/** Single attachment payload cap (decoded bytes). Composer UI allows larger drafts; gateway enforces this. */
+export const MAX_ATTACHMENT_BYTES = 20 * 1024 * 1024;
+const MAX_INLINE_FILE_CHARS = 100_000;
+const TEXT_FILE_MIME = /^(text\/|application\/(json|javascript|xml|sql|yaml|x-yaml|toml))/i;
 
 const AGENT_MARKDOWN = `---
 mode: primary
@@ -18,48 +19,16 @@ permissions:
 You are a text generator. Reply with only the requested text. Do not use tools.
 `;
 
-const isMissing = (result) =>
-  result?.error?.status === 404
-  || result?.error?.statusCode === 404
-  || result?.error?.code === 'not_found'
-  || result?.status === 404;
-
-const promptAdmitted = (result) =>
-  !result?.error
-  && (result?.response?.status === 204
-    || result?.status === 204
-    || result?.data !== undefined
-    || result?.response?.ok === true);
-
-const sdkErrorMessage = (result, fallback) => {
-  const status = result?.error?.status ?? result?.error?.statusCode ?? result?.status;
-  const message = result?.error?.message || result?.error?.data?.message || fallback;
-  return status ? `${message} (${status})` : message;
-};
-
-const failGenerate = (message) => {
+const failGenerate = (message, code = 'upstream_error') => {
   const error = new Error(message);
-  error.code = 'upstream_error';
+  error.code = code;
   throw error;
 };
 
-const sleep = (ms, signal) => new Promise((resolve, reject) => {
-  if (signal?.aborted) {
-    reject(signal.reason instanceof Error ? signal.reason : new Error('aborted'));
-    return;
-  }
-  const timer = setTimeout(resolve, ms);
-  const onAbort = () => {
-    clearTimeout(timer);
-    reject(signal.reason instanceof Error ? signal.reason : new Error('aborted'));
-  };
-  signal?.addEventListener?.('abort', onAbort, { once: true });
-});
-
-const readMessageInfo = (message) => {
-  if (!message || typeof message !== 'object') return null;
-  if (message.info && typeof message.info === 'object') return message.info;
-  return message;
+const clientErrorMessage = (error, fallback) => {
+  if (typeof error?.message === 'string' && error.message.trim()) return error.message;
+  if (typeof error === 'string' && error.trim()) return error;
+  return fallback;
 };
 
 const assistantErrorDetail = (error) => {
@@ -74,165 +43,6 @@ const assistantErrorDetail = (error) => {
   }
   return '';
 };
-
-const assistantTextFromPrompt = (data) => {
-  const parts = Array.isArray(data?.parts) ? data.parts : Array.isArray(data?.data?.parts) ? data.data.parts : [];
-  const text = parts
-    .filter((part) => part?.type === 'text' && typeof part.text === 'string')
-    .map((part) => part.text)
-    .join('');
-  if (text.trim()) return text;
-  const info = data?.info ?? data?.data?.info;
-  if (info?.error) {
-    const detail = assistantErrorDetail(info.error);
-    if (detail) failGenerate(detail);
-  }
-  return '';
-};
-
-const assistantTextFromMessages = (messages) => {
-  if (!Array.isArray(messages) || messages.length === 0) return '';
-  for (let i = messages.length - 1; i >= 0; i -= 1) {
-    const message = messages[i];
-    const info = readMessageInfo(message);
-    if (info?.role !== 'assistant') continue;
-    if (info.error) {
-      const detail = assistantErrorDetail(info.error);
-      failGenerate(detail || 'OpenCode assistant error');
-    }
-    const parts = Array.isArray(message?.parts) ? message.parts : [];
-    return parts
-      .map((part) => (part?.type === 'text' && typeof part.text === 'string' ? part.text : ''))
-      .filter(Boolean)
-      .join('');
-  }
-  return '';
-};
-
-const deniedTools = (ids) => {
-  const tools = Object.create(null);
-  for (const id of ids) {
-    if (typeof id === 'string' && id.trim()) tools[id.trim()] = false;
-  }
-  return tools;
-};
-
-const waitForIdleAssistant = async ({ client, sessionID, directory, signal }) => {
-  let incompleteAssistantProbes = 0;
-  let emptyIdleProbes = 0;
-
-  for (;;) {
-    signal?.throwIfAborted?.();
-
-    let sessionBusy = false;
-    try {
-      const statusResult = await client.session.status({ directory }, { signal });
-      if (!statusResult?.error && statusResult?.data && typeof statusResult.data === 'object') {
-        const statusValue = statusResult.data[sessionID];
-        const type = statusValue?.type ?? statusValue?.status;
-        sessionBusy = type === 'busy' || type === 'retry';
-      }
-    } catch (error) {
-      if (signal?.aborted) throw error;
-    }
-
-    if (sessionBusy) {
-      incompleteAssistantProbes = 0;
-      emptyIdleProbes = 0;
-      await sleep(SETTLE_POLL_MS, signal);
-      continue;
-    }
-
-    try {
-      const messagesResult = await client.session.messages({
-        sessionID,
-        directory,
-        limit: 20,
-      }, { signal });
-      if (!messagesResult?.error && Array.isArray(messagesResult?.data)) {
-        const lastInfo = readMessageInfo(messagesResult.data.at(-1));
-        if (lastInfo?.role === 'assistant') {
-          emptyIdleProbes = 0;
-          if (lastInfo.error) {
-            const detail = assistantErrorDetail(lastInfo.error);
-            failGenerate(detail || 'OpenCode assistant error');
-          }
-          if (lastInfo.time?.completed) {
-            return messagesResult.data;
-          }
-          incompleteAssistantProbes += 1;
-          if (incompleteAssistantProbes >= INCOMPLETE_ASSISTANT_SETTLE_PROBES) {
-            return messagesResult.data;
-          }
-        } else {
-          incompleteAssistantProbes = 0;
-          emptyIdleProbes += 1;
-          if (emptyIdleProbes >= EMPTY_IDLE_PROBES && lastInfo?.role === 'user') {
-            failGenerate('OpenCode LLM generator ended without assistant text');
-          }
-        }
-      }
-    } catch (error) {
-      if (signal?.aborted) throw error;
-      if (error?.code === 'upstream_error') throw error;
-    }
-
-    await sleep(SETTLE_POLL_MS, signal);
-  }
-};
-
-const isJsonContentType = (response) => /json/i.test(response?.headers?.get?.('content-type') || '');
-
-const looksLikeJsonObject = (text) => {
-  const trimmed = String(text || '').trim();
-  if (!trimmed || trimmed.startsWith('<')) return false;
-  try {
-    const parsed = JSON.parse(trimmed);
-    return parsed !== null && typeof parsed === 'object';
-  } catch {
-    return false;
-  }
-};
-
-/**
- * Detect a sessionless generate endpoint on the running OpenCode.
- * Bundled 1.18.4 does not expose POST /generate; keep the probe so a later
- * OpenCode that does can be used without changing the public completions API.
- *
- * SPA / OpenCode HTML often answers 200 text/html `<!doctype html>` for
- * unknown paths. That is not generate — only JSON (Content-Type or body)
- * counts as available.
- */
-export async function detectSessionlessGenerate({ fetchImpl, baseUrl, headers }) {
-  const clientShape = typeof arguments[0]?.client?.generate === 'function'
-    || typeof arguments[0]?.client?.v2?.generate === 'function';
-  if (clientShape) {
-    return { available: true, mode: 'sdk' };
-  }
-  const root = String(baseUrl || '').replace(/\/$/, '');
-  const candidates = [`${root}/generate`, `${root}/api/generate`];
-  for (const url of candidates) {
-    try {
-      const response = await fetchImpl(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Accept: 'application/json', ...headers },
-        body: JSON.stringify({ probe: true }),
-        signal: AbortSignal.timeout(4_000),
-      });
-      if (response.status === 404 || response.status === 405) continue;
-      const body = await response.text().catch(() => '');
-      if (isJsonContentType(response) || looksLikeJsonObject(body)) {
-        return { available: true, mode: 'http', url };
-      }
-    } catch {
-      // Probe failure is not a generate capability.
-    }
-  }
-  return { available: false, mode: 'throwaway-session' };
-}
-
-const TEXT_FILE_MIME = /^(text\/|application\/(json|javascript|xml|sql|yaml|x-yaml|toml))/i;
-const MAX_INLINE_FILE_CHARS = 100_000;
 
 const messageText = (message) => {
   if (typeof message?.content === 'string') return message.content;
@@ -255,21 +65,51 @@ const messageFileParts = (message) => {
     }));
 };
 
-const decodeDataUrlText = (url, mime) => {
-  if (!TEXT_FILE_MIME.test(mime) || typeof url !== 'string' || !url.startsWith('data:')) return null;
+/**
+ * Strict data-URL parse. Returns null when the URI is not a well-formed data URL.
+ * Decoded size is checked against MAX_ATTACHMENT_BYTES.
+ */
+export function parseDataUrl(url) {
+  if (typeof url !== 'string' || !url.startsWith('data:')) return null;
   const comma = url.indexOf(',');
-  if (comma < 0) return null;
+  if (comma < 5) return null;
   const meta = url.slice(5, comma);
   const payload = url.slice(comma + 1);
+  if (!meta || payload.length === 0) return null;
+  const parts = meta.split(';');
+  const mime = parts[0] && /^[\w.+-]+\/[\w.+-]+$/i.test(parts[0]) ? parts[0] : null;
+  if (!mime) return null;
+  const isBase64 = parts.some((part) => part.toLowerCase() === 'base64');
+  let bytes;
   try {
-    const bytes = meta.includes('base64')
+    bytes = isBase64
       ? Buffer.from(payload, 'base64')
       : Buffer.from(decodeURIComponent(payload), 'utf8');
-    const text = bytes.toString('utf8');
-    return text.length > MAX_INLINE_FILE_CHARS ? `${text.slice(0, MAX_INLINE_FILE_CHARS)}\n…` : text;
   } catch {
     return null;
   }
+  // Reject corrupt base64 that decodes to empty while payload was non-empty.
+  if (isBase64 && bytes.length === 0 && payload.replace(/\s/g, '').length > 0) return null;
+  if (bytes.length > MAX_ATTACHMENT_BYTES) {
+    const error = new Error(`Attachment exceeds ${MAX_ATTACHMENT_BYTES} byte limit`);
+    error.code = 'validation_error';
+    throw error;
+  }
+  return { mime, bytes, isBase64, byteLength: bytes.length };
+}
+
+const decodeDataUrlText = (url, mime) => {
+  if (!TEXT_FILE_MIME.test(mime)) return null;
+  let parsed;
+  try {
+    parsed = parseDataUrl(url);
+  } catch (error) {
+    if (error?.code === 'validation_error') throw error;
+    return null;
+  }
+  if (!parsed) return null;
+  const text = parsed.bytes.toString('utf8');
+  return text.length > MAX_INLINE_FILE_CHARS ? `${text.slice(0, MAX_INLINE_FILE_CHARS)}\n…` : text;
 };
 
 const describeContactFilePart = (part) => {
@@ -280,6 +120,25 @@ const describeContactFilePart = (part) => {
   if (decoded != null) return `[file: ${name} (${mime})]\n${decoded}`;
   return `[file: ${name} (${mime})]`;
 };
+
+/**
+ * Validate every file part URL before generate. Non-data URLs are rejected
+ * (gateway only accepts contact data-URL attachments).
+ */
+export function assertValidAttachmentParts(files) {
+  for (const part of files) {
+    if (!part || typeof part.url !== 'string') {
+      failGenerate('Attachment is missing a data URL', 'validation_error');
+    }
+    if (!part.url.startsWith('data:')) {
+      failGenerate('Attachment URL must be a data URL', 'validation_error');
+    }
+    const parsed = parseDataUrl(part.url);
+    if (!parsed) {
+      failGenerate('Attachment data URL is malformed', 'validation_error');
+    }
+  }
+}
 
 const flattenMessages = (messages) => {
   const system = [];
@@ -306,49 +165,30 @@ const flattenMessages = (messages) => {
   };
 };
 
+/** Image bytes only when the catalog model is vision-capable. */
 const filesForPrompt = (files, forwardImageParts) => {
   if (forwardImageParts) return files;
   return files.filter((part) => !String(part?.mime || '').startsWith('image/'));
 };
 
-async function generateViaSessionless({ fetchImpl, url, headers, providerID, modelID, messages, signal }) {
-  const response = await fetchImpl(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', Accept: 'application/json', ...headers },
-    body: JSON.stringify({
-      model: { providerID, modelID },
-      messages,
-    }),
-    signal,
-  });
-  if (!response.ok) {
-    const body = await response.text().catch(() => '');
-    failGenerate(`OpenCode generate failed (${response.status})${body ? `: ${body.slice(0, 200)}` : ''}`);
-  }
-  const payload = await response.json();
-  const text = typeof payload?.text === 'string'
-    ? payload.text
-    : typeof payload?.message === 'string'
-      ? payload.message
-      : '';
-  if (!text.trim()) failGenerate('OpenCode generate returned no text');
-  return { text: text.trim(), source: 'generate' };
-}
+const imageFilesForSession = (files, forwardImageParts) => {
+  if (!forwardImageParts) return [];
+  return files.filter((part) => String(part?.mime || '').startsWith('image/'));
+};
 
 const eventPayload = (event) => event?.payload?.payload ?? event?.payload ?? event;
 
-const eventDeltaProperties = (payload) => {
+const eventDeltaData = (payload) => {
   if (!payload || typeof payload !== 'object') return null;
-  if (payload.properties && typeof payload.properties === 'object') return payload.properties;
   if (payload.data && typeof payload.data === 'object') return payload.data;
+  if (payload.properties && typeof payload.properties === 'object') return payload.properties;
   return null;
 };
 
 /**
- * Forward real OpenCode `message.part.delta` text tokens for one throwaway
- * session. Returns an unsubscribe fn, or null when deltas cannot be observed
- * (no callback, no hub, or hub without subscribeEvent). Never fabricates
- * typewriter chunks from a completed string.
+ * Forward real OpenCode `session.text.delta` tokens for one throwaway session.
+ * Consumes data.sessionID / assistantMessageID / ordinal / delta.
+ * Returns unsubscribe, or null when deltas cannot be observed.
  *
  * @param {{ globalEventHub?: { subscribeEvent?: Function } | null, sessionID: string, onTextDelta?: ((text: string) => void) | null }} args
  * @returns {(() => void) | null}
@@ -358,22 +198,19 @@ export function subscribeThrowawayTextDeltas({ globalEventHub, sessionID, onText
   if (typeof sessionID !== 'string' || !sessionID) return null;
   if (typeof globalEventHub?.subscribeEvent !== 'function') return null;
 
-  // Lock to the first assistant messageID seen for this throwaway session so
-  // concurrent sessions on the shared hub cannot leak tokens into this generate.
   let assistantMessageID = null;
+  let lastOrdinal = -1;
 
   const unsubscribe = globalEventHub.subscribeEvent((event) => {
     const payload = eventPayload(event);
-    if (payload?.type !== 'message.part.delta') return;
-    const props = eventDeltaProperties(payload);
-    if (!props) return;
-    if (props.sessionID !== sessionID) return;
-    // Text field only — reasoning/other fields stay out of completion tokens.
-    if (typeof props.field === 'string' && props.field !== 'text') return;
-    if (typeof props.delta !== 'string' || props.delta.length === 0) return;
+    if (payload?.type !== 'session.text.delta') return;
+    const data = eventDeltaData(payload);
+    if (!data) return;
+    if (data.sessionID !== sessionID) return;
+    if (typeof data.delta !== 'string' || data.delta.length === 0) return;
 
-    const messageID = typeof props.messageID === 'string' && props.messageID
-      ? props.messageID
+    const messageID = typeof data.assistantMessageID === 'string' && data.assistantMessageID
+      ? data.assistantMessageID
       : null;
     if (assistantMessageID) {
       if (messageID && messageID !== assistantMessageID) return;
@@ -381,8 +218,13 @@ export function subscribeThrowawayTextDeltas({ globalEventHub, sessionID, onText
       assistantMessageID = messageID;
     }
 
+    if (typeof data.ordinal === 'number' && Number.isFinite(data.ordinal)) {
+      if (data.ordinal <= lastOrdinal) return;
+      lastOrdinal = data.ordinal;
+    }
+
     try {
-      onTextDelta(props.delta);
+      onTextDelta(data.delta);
     } catch {
       // Caller callback failures must not abort generate or leave the hub broken.
     }
@@ -392,19 +234,234 @@ export function subscribeThrowawayTextDeltas({ globalEventHub, sessionID, onText
 }
 
 /**
- * Generate assistant text through OpenCode's connected providers.
- * Sessionless generate if the binary exposes it; otherwise a throwaway
- * archived session used only as a tools-denied text generator.
+ * Verify the openchamber-llm agent ends with deny-all permissions.
+ * Title alone is never treated as isolation. Failure must happen before prompt.
+ */
+export async function assertLlmAgentDenyAll({ client, location, signal }) {
+  let result;
+  try {
+    result = await client.agent.get({
+      agentID: LLM_AGENT_NAME,
+      ...(location ? { location } : {}),
+    }, { signal });
+  } catch (error) {
+    failGenerate(
+      `OpenCode LLM agent is unavailable (${clientErrorMessage(error, 'agent.get failed')}); attachment generation blocked`,
+      'llm_attachment_generation_unavailable',
+    );
+  }
+  const permissions = result?.data?.permissions;
+  if (!Array.isArray(permissions) || permissions.length === 0) {
+    failGenerate(
+      'OpenCode LLM agent permissions are missing; attachment generation blocked',
+      'llm_attachment_generation_unavailable',
+    );
+  }
+  const last = permissions[permissions.length - 1];
+  if (
+    !last
+    || last.action !== '*'
+    || last.resource !== '*'
+    || last.effect !== 'deny'
+  ) {
+    failGenerate(
+      'OpenCode LLM agent final permission is not deny-all; attachment generation blocked',
+      'llm_attachment_generation_unavailable',
+    );
+  }
+  return result.data;
+}
+
+const assistantTextFromMessages = (messages) => {
+  if (!Array.isArray(messages) || messages.length === 0) return '';
+  for (const message of messages) {
+    // message.list order:desc — first assistant is the newest.
+    const role = message?.type ?? message?.role ?? message?.info?.role;
+    if (role !== 'assistant') continue;
+    const error = message?.error ?? message?.info?.error;
+    if (error) {
+      const detail = assistantErrorDetail(error);
+      failGenerate(detail || 'OpenCode assistant error');
+    }
+    const finish = message?.finish ?? message?.info?.finish;
+    if (finish === 'error') {
+      failGenerate(assistantErrorDetail(message?.error) || 'OpenCode assistant finish=error');
+    }
+    const content = Array.isArray(message?.content)
+      ? message.content
+      : Array.isArray(message?.parts)
+        ? message.parts
+        : [];
+    const text = content
+      .map((part) => (part?.type === 'text' && typeof part.text === 'string' ? part.text : ''))
+      .filter(Boolean)
+      .join('');
+    return text;
+  }
+  return '';
+};
+
+const makeClient = ({ baseUrl, headers, clientFactory }) => {
+  if (typeof clientFactory === 'function') return clientFactory();
+  return OpenCode.make({ baseUrl, headers });
+};
+
+async function generateViaTextApi({
+  client,
+  location,
+  providerID,
+  modelID,
+  prompt,
+  signal,
+}) {
+  let result;
+  try {
+    result = await client.generate.text({
+      ...(location ? { location } : {}),
+      prompt,
+      model: { id: modelID, providerID },
+    }, { signal });
+  } catch (error) {
+    failGenerate(clientErrorMessage(error, 'OpenCode generate.text failed'));
+  }
+  const text = typeof result?.text === 'string' ? result.text.trim() : '';
+  if (!text) failGenerate('OpenCode generate.text returned no text');
+  return { text, source: 'generate.text' };
+}
+
+async function generateViaAttachmentSession({
+  client,
+  workingDirectory,
+  providerID,
+  modelID,
+  system,
+  prompt,
+  imageFiles,
+  signal,
+  onTextDelta,
+  globalEventHub,
+}) {
+  const location = { directory: workingDirectory };
+
+  // Permission isolation must be verified before any prompt. Never use title as isolation.
+  await assertLlmAgentDenyAll({ client, location, signal });
+
+  let sessionID = null;
+  let unsubscribeDeltas = null;
+  try {
+    let created;
+    try {
+      created = await client.session.create({
+        title: '[openchamber-llm] generate',
+        agent: LLM_AGENT_NAME,
+        model: { id: modelID, providerID },
+        location,
+      }, { signal });
+    } catch (error) {
+      // Temp workspace invisible to OpenCode must fail explicitly.
+      failGenerate(
+        `OpenCode LLM session create failed (${clientErrorMessage(error, 'create failed')})`,
+        'llm_attachment_generation_unavailable',
+      );
+    }
+    sessionID = created?.id;
+    if (!sessionID) {
+      failGenerate('OpenCode LLM session create returned no id', 'llm_attachment_generation_unavailable');
+    }
+
+    if (system) {
+      try {
+        await client.session.instructions.entry.put({
+          sessionID,
+          key: 'system',
+          value: system,
+        }, { signal });
+      } catch (error) {
+        failGenerate(clientErrorMessage(error, 'instructions.entry.put failed'));
+      }
+    }
+
+    unsubscribeDeltas = subscribeThrowawayTextDeltas({
+      globalEventHub,
+      sessionID,
+      onTextDelta,
+    });
+
+    const files = imageFiles.map((part) => ({
+      uri: part.url,
+      ...(part.filename ? { name: part.filename } : {}),
+    }));
+
+    try {
+      await client.session.prompt({
+        sessionID,
+        text: prompt || '[attachment]',
+        ...(files.length > 0 ? { files } : {}),
+        delivery: 'steer',
+      }, { signal });
+    } catch (error) {
+      failGenerate(clientErrorMessage(error, 'session.prompt failed'));
+    }
+
+    try {
+      await client.session.wait({ sessionID }, { signal });
+    } catch (error) {
+      if (signal?.aborted) throw error;
+      failGenerate(clientErrorMessage(error, 'session.wait failed'));
+    }
+
+    let listed;
+    try {
+      listed = await client.message.list({
+        sessionID,
+        limit: 20,
+        order: 'desc',
+      }, { signal });
+    } catch (error) {
+      failGenerate(clientErrorMessage(error, 'message.list failed'));
+    }
+
+    const messages = Array.isArray(listed?.data) ? listed.data : [];
+    const text = assistantTextFromMessages(messages);
+    if (!text.trim()) {
+      failGenerate('OpenCode LLM generator returned no assistant text');
+    }
+    return { text: text.trim(), source: 'attachment-session' };
+  } finally {
+    try {
+      unsubscribeDeltas?.();
+    } catch {
+      // Unsubscribe must not mask generate errors or block session remove.
+    }
+    unsubscribeDeltas = null;
+    if (sessionID) {
+      if (signal?.aborted) {
+        try {
+          await client.session.interrupt({ sessionID, continue: false });
+        } catch {
+          // Best-effort interrupt on timeout/abort.
+        }
+      }
+      try {
+        await client.session.remove({ sessionID });
+      } catch (error) {
+        console.warn('[llm] failed to remove throwaway OpenCode session:', error?.message || error);
+      }
+    }
+  }
+}
+
+/**
+ * Generate assistant text through OpenCode's connected providers via
+ * `@opencode-ai/client`.
  *
- * V2 session.prompt only forwards { id, prompt, delivery, resume } and drops
- * model/parts/tools. Use promptAsync (body still has model, parts, tools,
- * system, agent) then wait for idle and read session.messages.
+ * - Pure text: `generate.text` (no session).
+ * - Vision image attachments: dedicated temp session after agent deny-all verify.
+ * - Non-vision: keep `[image: …]` descriptions; never forward image bytes.
  *
- * Optional internal streaming: pass `onTextDelta(text)` plus a live
- * `globalEventHub` (same hub as UI SSE). On the throwaway path only, real
- * `message.part.delta` tokens for this session are forwarded. Sessionless
- * `/generate` JSON cannot emit deltas — onTextDelta is skipped (no fake
- * typewriter). Public HTTP completions stay non-streaming.
+ * Optional internal streaming: `onTextDelta` + `globalEventHub` forwards real
+ * `session.text.delta` tokens on the attachment-session path only.
+ * `generate.text` cannot emit live deltas (no fake typewriter).
  */
 export async function generateOpenCodeText({
   buildOpenCodeUrl,
@@ -412,10 +469,8 @@ export async function generateOpenCodeText({
   providerID,
   modelID,
   messages,
-  fetchImpl = globalThis.fetch.bind(globalThis),
   clientFactory,
   ensureTempDirectory,
-  detect = detectSessionlessGenerate,
   forwardImageParts = false,
   onTextDelta = null,
   globalEventHub = null,
@@ -426,8 +481,12 @@ export async function generateOpenCodeText({
     throw error;
   }
   const flattened = flattenMessages(messages);
-  const promptFiles = filesForPrompt(flattened.files, forwardImageParts);
-  if (!flattened.prompt && promptFiles.length === 0) {
+  const allFiles = flattened.files;
+  assertValidAttachmentParts(allFiles);
+
+  const imageFiles = imageFilesForSession(allFiles, forwardImageParts);
+  // Non-image files stay as prompt descriptions (and inlined text when possible).
+  if (!flattened.prompt && imageFiles.length === 0 && allFiles.length === 0) {
     const error = new Error('messages must include a user turn');
     error.code = 'validation_error';
     throw error;
@@ -435,121 +494,62 @@ export async function generateOpenCodeText({
 
   const baseUrl = buildOpenCodeUrl('/', '').replace(/\/$/, '');
   const headers = getOpenCodeAuthHeaders() || {};
-  const probe = await detect({ fetchImpl, baseUrl, headers, client: clientFactory?.() });
+  const client = makeClient({ baseUrl, headers, clientFactory });
+
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(new Error(`OpenCode LLM generate timed out after ${GENERATE_TIMEOUT_MS}ms`)), GENERATE_TIMEOUT_MS);
+  const timeout = setTimeout(() => {
+    controller.abort(new Error(`OpenCode LLM generate timed out after ${GENERATE_TIMEOUT_MS}ms`));
+  }, GENERATE_TIMEOUT_MS);
 
   try {
-    if (probe.available && probe.mode === 'http' && probe.url) {
-      return await generateViaSessionless({
-        fetchImpl,
-        url: probe.url,
-        headers,
+    if (imageFiles.length > 0) {
+      if (typeof ensureTempDirectory !== 'function') {
+        failGenerate(
+          'LLM temp directory is required for attachment generation',
+          'llm_attachment_generation_unavailable',
+        );
+      }
+      let workingDirectory;
+      try {
+        workingDirectory = await ensureTempDirectory({
+          agentName: LLM_AGENT_NAME,
+          agentMarkdown: AGENT_MARKDOWN,
+        });
+      } catch (error) {
+        failGenerate(
+          `LLM temp directory failed (${clientErrorMessage(error, 'ensure failed')})`,
+          'llm_attachment_generation_unavailable',
+        );
+      }
+      if (typeof workingDirectory !== 'string' || !workingDirectory.trim()) {
+        failGenerate(
+          'LLM temp directory is empty; attachment generation blocked',
+          'llm_attachment_generation_unavailable',
+        );
+      }
+      return await generateViaAttachmentSession({
+        client,
+        workingDirectory: workingDirectory.trim(),
         providerID,
         modelID,
-        messages: forwardImageParts
-          ? messages
-          : messages.map((message) => {
-            if (!Array.isArray(message?.parts)) return message;
-            const parts = message.parts.filter((part) => part?.type !== 'file' || !String(part.mime || '').startsWith('image/'));
-            return parts.length === message.parts.length ? message : { ...message, parts };
-          }),
+        system: flattened.system,
+        prompt: flattened.prompt,
+        imageFiles,
         signal: controller.signal,
-      });
-    }
-
-    const workingDirectory = await ensureTempDirectory({
-      agentName: LLM_AGENT_NAME,
-      agentMarkdown: AGENT_MARKDOWN,
-    });
-    const client = clientFactory
-      ? clientFactory()
-      : createOpencodeClient({ baseUrl, directory: workingDirectory, headers });
-
-    const toolIds = await client.tool.ids({ directory: workingDirectory }).catch(() => ({ data: [] }));
-    const tools = deniedTools(Array.isArray(toolIds?.data) ? toolIds.data : []);
-
-    const created = await client.session.create({
-      directory: workingDirectory,
-      title: '[openchamber-llm] generate',
-      agent: LLM_AGENT_NAME,
-      metadata: { openchamber: { llm: { purpose: 'chat-completions' } } },
-    }, { signal: controller.signal });
-    const sessionID = created?.data?.id;
-    if (created?.error || !sessionID) {
-      failGenerate(`OpenCode LLM session create failed: ${sdkErrorMessage(created, 'create failed')}`);
-    }
-
-    let unsubscribeDeltas = null;
-    try {
-      const archiveAt = Date.now();
-      let archived = await client.session.update({
-        sessionID,
-        directory: workingDirectory,
-        time: { archived: archiveAt },
-      });
-      if (isMissing(archived)) {
-        archived = await client.session.update({
-          sessionID,
-          directory: workingDirectory,
-          time: { archived: archiveAt },
-        });
-      }
-      if (archived?.error) {
-        failGenerate(`OpenCode LLM session archive failed: ${sdkErrorMessage(archived, 'archive failed')}`);
-      }
-
-      // Subscribe before promptAsync so early message.part.delta tokens are not missed.
-      unsubscribeDeltas = subscribeThrowawayTextDeltas({
-        globalEventHub,
-        sessionID,
         onTextDelta,
+        globalEventHub,
       });
-
-      // promptAsync still forwards model/parts/tools. v2 session.prompt does not.
-      const prompted = await client.session.promptAsync({
-        sessionID,
-        directory: workingDirectory,
-        agent: LLM_AGENT_NAME,
-        model: { providerID, modelID },
-        ...(flattened.system ? { system: flattened.system } : {}),
-        tools,
-        parts: [
-          { type: 'text', text: flattened.prompt, synthetic: false },
-          ...promptFiles,
-        ],
-      }, { signal: controller.signal });
-      if (!promptAdmitted(prompted)) {
-        failGenerate(`OpenCode LLM promptAsync failed: ${sdkErrorMessage(prompted, 'promptAsync failed')}`);
-      }
-
-      let text = assistantTextFromPrompt(prompted?.data ?? prompted);
-      if (!text.trim()) {
-        const settled = await waitForIdleAssistant({
-          client,
-          sessionID,
-          directory: workingDirectory,
-          signal: controller.signal,
-        });
-        text = assistantTextFromMessages(settled);
-      }
-      if (!text.trim()) {
-        failGenerate('OpenCode LLM generator returned no assistant text');
-      }
-      return { text: text.trim(), source: 'throwaway-session' };
-    } finally {
-      try {
-        unsubscribeDeltas?.();
-      } catch {
-        // Unsubscribe must not mask generate errors or block session delete.
-      }
-      unsubscribeDeltas = null;
-      try {
-        await client.session.delete({ sessionID, directory: workingDirectory });
-      } catch (error) {
-        console.warn('[llm] failed to delete throwaway OpenCode session:', error?.message || error);
-      }
     }
+
+    // Text path: no session. System prompt is prepended into the single prompt string.
+    const prompt = [flattened.system, flattened.prompt].filter((part) => String(part || '').trim()).join('\n\n');
+    return await generateViaTextApi({
+      client,
+      providerID,
+      modelID,
+      prompt,
+      signal: controller.signal,
+    });
   } finally {
     clearTimeout(timeout);
   }
@@ -558,13 +558,16 @@ export async function generateOpenCodeText({
 export const _test = {
   flattenMessages,
   filesForPrompt,
+  imageFilesForSession,
   describeContactFilePart,
-  deniedTools,
-  assistantTextFromPrompt,
   assistantTextFromMessages,
   eventPayload,
-  eventDeltaProperties,
+  eventDeltaData,
   subscribeThrowawayTextDeltas,
+  assertLlmAgentDenyAll,
+  parseDataUrl,
+  assertValidAttachmentParts,
   LLM_AGENT_NAME,
   AGENT_MARKDOWN,
+  MAX_ATTACHMENT_BYTES,
 };

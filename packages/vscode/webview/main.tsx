@@ -1241,14 +1241,17 @@ window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
       return originalFetch(input as RequestInfo, init);
     }
 
-    const suffixPath = `${targetUrl.pathname.replace(/^\/api/, '')}${targetUrl.search}`;
+    // Keep the `/api` prefix for OpenCode v2 upstream. Local OpenChamber routes
+    // already won above; stripping `/api` here forced root paths on the sidecar
+    // and bypassed v2 `/api/*` routing.
+    const proxyPath = `${targetUrl.pathname}${targetUrl.search}`;
 
     const headersFromRequest = input instanceof Request ? headersToRecord(input.headers) : {};
     const headersFromInit = headersToRecord(init?.headers);
     const headers = { ...headersFromRequest, ...headersFromInit };
 
     if (isSseApiPath(targetUrl.pathname)) {
-      const start = await vscodeStreamPerfMeasure('vscode.webview.sse_start_ms', () => startSseProxy({ path: suffixPath, headers }));
+      const start = await vscodeStreamPerfMeasure('vscode.webview.sse_start_ms', () => startSseProxy({ path: proxyPath, headers }));
       if (!start.streamId) {
         return new Response(null, { status: start.status || 503, headers: start.headers || {} });
       }
@@ -1318,7 +1321,7 @@ window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
     if (method === 'POST' && isSessionMessageApiPath(targetUrl.pathname)) {
       const bodyText = await extractBodyText(input, init, method);
       const signal = (input instanceof Request ? input.signal : init?.signal) as AbortSignal | undefined;
-      const proxied = await proxySessionMessageRequest({ path: suffixPath, headers, bodyText, signal });
+      const proxied = await proxySessionMessageRequest({ path: proxyPath, headers, bodyText, signal });
       const response = buildProxiedResponse(proxied);
       maybeHideLoadingOverlay();
       return response;
@@ -1326,7 +1329,7 @@ window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
 
     const bodyBase64 = await extractBodyBase64(input, init, method);
     const signal = (input instanceof Request ? input.signal : init?.signal) as AbortSignal | undefined;
-    const proxied = await proxyApiRequest({ method, path: suffixPath, headers, bodyBase64, signal });
+    const proxied = await proxyApiRequest({ method, path: proxyPath, headers, bodyBase64, signal });
     const response = buildProxiedResponse(proxied);
     maybeHideLoadingOverlay();
     return response;

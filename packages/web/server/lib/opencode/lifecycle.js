@@ -1,6 +1,7 @@
 import { spawn, spawnSync } from 'node:child_process';
 import net from 'node:net';
 import { registerManagedProcess, unregisterManagedProcess, reapOrphanedProcesses } from './managed-process-registry.js';
+import { evaluateOpenCodeHealthBody } from './opencode2-pin.js';
 import { OPENCODE_V1_MIGRATION_PATH, fetchV1MigrationGate } from './v1-migration-gate.js';
 
 const parsePositiveInt = (value, fallback) => {
@@ -437,6 +438,7 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
 
   // v2 health lives at /api/health; /global/health remains a probe fallback
   // for older sidecars. Both require Basic auth from getOpenCodeAuthHeaders().
+  // healthy alone is not enough: reject 1.x and missing/unknown versions.
   const fetchOpenCodeHealthOk = async (urlForPath, signal) => {
     const headers = { Accept: 'application/json', ...getOpenCodeAuthHeaders() };
     for (const healthPath of [OPENCODE_HEALTH_PATH, OPENCODE_HEALTH_FALLBACK_PATH]) {
@@ -448,7 +450,8 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
         });
         if (!response.ok) continue;
         const body = await response.json().catch(() => null);
-        if (body?.healthy === true) return true;
+        const gate = evaluateOpenCodeHealthBody(body);
+        if (gate.ok) return true;
       } catch {
       }
     }
@@ -724,14 +727,15 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
     while (Date.now() < deadline) {
       let timeout = null;
       try {
+        // One timer covers health + migration for this attempt. Clearing after
+        // health alone let a hung migration outrun HEALTH_CHECK_TIMEOUT_MS and
+        // the outer deadline when the probe never settled.
         const controller = new AbortController();
         timeout = setTimeout(() => controller.abort(), HEALTH_CHECK_TIMEOUT_MS);
         const healthy = await fetchOpenCodeHealthOk(
           (healthPath) => buildOpenCodeUrl(healthPath, ''),
           controller.signal
         );
-        clearTimeout(timeout);
-        timeout = null;
 
         if (!healthy) {
           lastError = new Error('OpenCode health endpoint returned unhealthy response');
@@ -868,10 +872,12 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
         console.log(`Using external OpenCode server at ${label} (skip-start mode)`);
         state.openCodeBaseUrl = env.ENV_CONFIGURED_OPENCODE_HOST?.origin ?? null;
         setOpenCodePort(env.ENV_EFFECTIVE_PORT);
-        state.isOpenCodeReady = true;
+        // External attach is not ready until version + V1 migration admit.
+        state.isOpenCodeReady = false;
+        state.openCodeNotReadySince = Date.now();
         state.isExternalOpenCode = true;
         state.lastOpenCodeError = null;
-        state.openCodeNotReadySince = 0;
+        state.v1Migration = null;
         syncToHmrState();
       } else if (await isOpenCodeProcessHealthy() && (managedCapabilitiesRuntime ? managedCapabilitiesRuntime.hasValidIdentity() : true)) {
         console.log(`[HMR] Reusing existing OpenCode process on port ${state.openCodePort}`);
@@ -883,10 +889,12 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
         console.log(`Auto-detected existing OpenCode server at ${label}`);
         state.openCodeBaseUrl = env.ENV_CONFIGURED_OPENCODE_HOST?.origin ?? null;
         setOpenCodePort(env.ENV_EFFECTIVE_PORT);
-        state.isOpenCodeReady = true;
+        // Health ok is not transcript-ready; waitForOpenCodeReady applies the gate.
+        state.isOpenCodeReady = false;
+        state.openCodeNotReadySince = Date.now();
         state.isExternalOpenCode = true;
         state.lastOpenCodeError = null;
-        state.openCodeNotReadySince = 0;
+        state.v1Migration = null;
         syncToHmrState();
       } else {
         // We never auto-attach to an arbitrary pre-existing OpenCode instance.

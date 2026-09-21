@@ -436,6 +436,7 @@ export const settingsDict = {
   'settings.agents.page.permissions.addCustomRule': '사용자 정의 규칙 추가',
   'settings.agents.page.permissions.permissionPlaceholder': '권한...',
   'settings.agents.page.permissions.patternPlaceholder': '패턴(예: *)',
+  'settings.permissions.saved.retry': '다시 시도',
   'settings.permissions.saved.title': '저장된 프로젝트 권한',
   'settings.permissions.saved.empty': '이 프로젝트에 저장된 권한이 없습니다',
   'settings.permissions.saved.delete': '삭제',

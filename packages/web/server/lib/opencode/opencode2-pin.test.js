@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import {
+  OPENCODE2_NPM_PACKAGE,
   PINNED_OPENCODE2_VERSION,
+  evaluateOpenCodeHealthBody,
+  isAcceptableOpenCode2HealthVersion,
   isOpenCode1xVersion,
   rejectOpenCode1xUpgradeTarget,
   resolveOpenCode2UpgradeTarget,
@@ -25,5 +28,39 @@ describe('opencode2 pin (ticket 12)', () => {
     expect(resolveOpenCode2UpgradeTarget('')).toBe(PINNED_OPENCODE2_VERSION);
     expect(resolveOpenCode2UpgradeTarget(PINNED_OPENCODE2_VERSION)).toBe(PINNED_OPENCODE2_VERSION);
     expect(() => resolveOpenCode2UpgradeTarget('1.18.18')).toThrow(/1\.x/);
+  });
+
+  it('pins the opencode2 npm package name (not 1.x opencode-ai)', () => {
+    expect(OPENCODE2_NPM_PACKAGE).toBe('@opencode-ai/cli');
+    expect(OPENCODE2_NPM_PACKAGE).not.toBe('opencode-ai');
+  });
+
+  it('accepts authoritative v2 health versions and rejects 1.x / missing / noise', () => {
+    expect(isAcceptableOpenCode2HealthVersion(PINNED_OPENCODE2_VERSION)).toBe(true);
+    expect(isAcceptableOpenCode2HealthVersion('v0.0.0-next-17444')).toBe(true);
+    expect(isAcceptableOpenCode2HealthVersion('1.15.0')).toBe(false);
+    expect(isAcceptableOpenCode2HealthVersion('v1.18.18')).toBe(false);
+    expect(isAcceptableOpenCode2HealthVersion('')).toBe(false);
+    expect(isAcceptableOpenCode2HealthVersion(null)).toBe(false);
+    expect(isAcceptableOpenCode2HealthVersion('not-a-version')).toBe(false);
+
+    expect(evaluateOpenCodeHealthBody({ healthy: true, version: PINNED_OPENCODE2_VERSION })).toEqual({
+      ok: true,
+      version: PINNED_OPENCODE2_VERSION,
+    });
+    expect(evaluateOpenCodeHealthBody({ healthy: true, version: '1.15.0' })).toMatchObject({
+      ok: false,
+      version: '1.15.0',
+      reason: '1x-version',
+    });
+    expect(evaluateOpenCodeHealthBody({ healthy: true })).toMatchObject({
+      ok: false,
+      reason: 'unknown-version',
+    });
+    expect(evaluateOpenCodeHealthBody({ healthy: false, version: PINNED_OPENCODE2_VERSION })).toMatchObject({
+      ok: false,
+      reason: 'unhealthy',
+    });
+    expect(evaluateOpenCodeHealthBody(null)).toMatchObject({ ok: false, reason: 'invalid-body' });
   });
 });

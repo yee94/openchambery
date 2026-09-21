@@ -132,7 +132,7 @@ const createManagerFetchPage = (ctx: BridgeContext | undefined) => {
     }
 
     const base = apiUrl.replace(/\/+$/, '');
-    const url = new URL(`${base}/session/${encodeURIComponent(sessionID)}/message`);
+    const url = new URL(`${base}/api/session/${encodeURIComponent(sessionID)}/message`);
     if (Number.isFinite(limit)) {
       url.searchParams.set('limit', String(Math.floor(limit as number)));
     }
