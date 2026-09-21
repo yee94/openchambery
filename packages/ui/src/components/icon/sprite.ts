@@ -5,7 +5,7 @@
 export const iconSpriteData = {
   "add": `<path d="M5 12h14" /> <path d="M12 5v14" />`,
   "add-circle": `<circle cx="12" cy="12" r="10" /> <path d="M8 12h8" /> <path d="M12 8v8" />`,
-  "ai-agent": `<path d="M12 8V4H8" /> <rect width="16" height="12" x="4" y="8" rx="2" /> <path d="M2 14h2" /> <path d="M20 14h2" /> <path d="M15 13v2" /> <path d="M9 13v2" />`,
+  "ai-agent": `<rect x="4" y="7.5" width="16" height="13" rx="4.5" /><path d="M12 7.5V4.75" /><circle cx="12" cy="3.5" r="1.25" /><path d="M1.75 12.5v3M22.25 12.5v3M9 12.5v2M15 12.5v2" />`,
   "ai-agent-fill": `<path d="M12 8V4H8"  fill="currentColor"/> <rect width="16" height="12" x="4" y="8" rx="2" /> <path d="M2 14h2"  fill="currentColor"/> <path d="M20 14h2"  fill="currentColor"/> <path d="M15 13v2"  fill="currentColor"/> <path d="M9 13v2"  fill="currentColor"/>`,
   "ai-generate-2": `<path d="m21.64 3.64-1.28-1.28a1.21 1.21 0 0 0-1.72 0L2.36 18.64a1.21 1.21 0 0 0 0 1.72l1.28 1.28a1.2 1.2 0 0 0 1.72 0L21.64 5.36a1.2 1.2 0 0 0 0-1.72" /> <path d="m14 7 3 3" /> <path d="M5 6v4" /> <path d="M19 14v4" /> <path d="M10 2v2" /> <path d="M7 8H3" /> <path d="M21 16h-4" /> <path d="M11 3H9" />`,
   "alert": `<circle cx="12" cy="12" r="10" /> <line x1="12" x2="12" y1="8" y2="12" /> <line x1="12" x2="12.01" y1="16" y2="16" />`,
@@ -46,7 +46,7 @@ export const iconSpriteData = {
   "chat-4": `<path d="M12 3a9 9 0 0 1 7.45 14.05L21 21l-4.05-1.55A9 9 0 1 1 12 3Z" />`,
   "chat-ai-3": `<path d="M12 6V2H8" /> <path d="M15 11v2" /> <path d="M2 12h2" /> <path d="M20 12h2" /> <path d="M20 16a2 2 0 0 1-2 2H8.828a2 2 0 0 0-1.414.586l-2.202 2.202A.71.71 0 0 1 4 20.286V8a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2z" /> <path d="M9 11v2" />`,
   "chat-history": `<path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" /> <path d="M3 3v5h5" /> <path d="M12 7v5l4 2" />`,
-  "chat-new": `<path d="M12 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /> <path d="M18.375 2.625a1 1 0 0 1 3 3l-9.013 9.014a2 2 0 0 1-.853.505l-2.873.84a.5.5 0 0 1-.62-.62l.84-2.873a2 2 0 0 1 .506-.852z" />`,
+  "chat-new": `<path d="M11.5 4.5H9A4.5 4.5 0 0 0 4.5 9v6.5A4.5 4.5 0 0 0 9 20h6.5a4.5 4.5 0 0 0 4.5-4.5V13" /><path d="m10 14.25.6-1.8a2 2 0 0 1 .48-.78l6.62-6.62a1.91 1.91 0 0 1 2.7 2.7l-6.62 6.62a2 2 0 0 1-.78.48l-1.8.6a.95.95 0 0 1-1.2-1.2Z" />`,
   "chat-thread": `<path d="M10.5 7C11.3 4.9 13.1 3.5 15.25 3.5c3.45 0 6.25 2.45 6.25 5.5 0 1.13-.38 2.18-1.03 3.06l.58 2.14-2.3-.75c-.4.18-.8.32-1.2.43" /><path d="M8.5 8.25c-3.6 0-6.5 2.55-6.5 5.75 0 1.21.42 2.33 1.13 3.25l-.63 2.27 2.48-.8c1.04.56 2.24.88 3.52.88 3.6 0 6.5-2.55 6.5-5.75S12.1 8.25 8.5 8.25Z" />`,
   "check": `<path d="M20 6 9 17l-5-5" />`,
   "checkbox": `<rect width="18" height="18" x="3" y="3" rx="2" /> <path d="m9 12 2 2 4-4" />`,

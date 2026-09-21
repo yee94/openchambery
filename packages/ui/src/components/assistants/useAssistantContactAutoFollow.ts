@@ -21,11 +21,13 @@ type UseAssistantContactAutoFollowOptions = {
   active: boolean
   assistantID: string
   contentRevision: string | number
+  onLoadEarlier?: () => void
 }
 
 type UseAssistantContactAutoFollowResult = {
   scrollRef: React.RefCallback<HTMLDivElement>
   contentRef: React.RefCallback<HTMLDivElement>
+  preparePrepend: () => void
 }
 
 const readScrollGeometry = (element: HTMLElement): ScrollGeometry => ({
@@ -74,11 +76,13 @@ export const useAssistantContactAutoFollow = ({
   active,
   assistantID,
   contentRevision,
+  onLoadEarlier,
 }: UseAssistantContactAutoFollowOptions): UseAssistantContactAutoFollowResult => {
   const scrollNodeRef = React.useRef<HTMLDivElement | null>(null)
   const [scrollNode, setScrollNode] = React.useState<HTMLDivElement | null>(null)
   const [contentNode, setContentNode] = React.useState<HTMLDivElement | null>(null)
   const followingRef = React.useRef(true)
+  const anchorRef = React.useRef<{ id: string; offset: number } | null>(null)
   const activeIdentityRef = React.useRef<string | null>(null)
   const baselineNodeRef = React.useRef<HTMLDivElement | null>(null)
   const lastScrollTopRef = React.useRef(0)
@@ -96,6 +100,37 @@ export const useAssistantContactAutoFollow = ({
     setContentNode((current) => current === node ? current : node)
   }, [])
 
+  const captureAnchor = useEvent(() => {
+    const root = scrollNodeRef.current
+    if (!root || !activeRef.current || followingRef.current) return
+    const top = root.getBoundingClientRect().top
+    const row = Array.from(root.querySelectorAll<HTMLElement>('[data-message-id]'))
+      .find((node) => node.getBoundingClientRect().bottom > top)
+    anchorRef.current = row ? { id: row.dataset.messageId!, offset: row.getBoundingClientRect().top - top } : null
+  })
+  const restoreAnchor = useEvent(() => {
+    const root = scrollNodeRef.current
+    const anchor = anchorRef.current
+    if (!root || !anchor || !activeRef.current || followingRef.current) return
+    // Native gestures can move the DOM before their scroll event reaches React.
+    if (Math.abs(root.scrollTop - lastScrollTopRef.current) > 0.5) {
+      lastScrollTopRef.current = root.scrollTop
+      captureAnchor()
+      return
+    }
+    const row = Array.from(root.querySelectorAll<HTMLElement>('[data-message-id]'))
+      .find((node) => node.dataset.messageId === anchor.id)
+    if (!row) { captureAnchor(); return }
+    const delta = row.getBoundingClientRect().top - root.getBoundingClientRect().top - anchor.offset
+    if (Math.abs(delta) > 0.5) root.scrollTop += delta
+    lastScrollTopRef.current = root.scrollTop
+  })
+  const preparePrepend = useEvent(() => {
+    followingRef.current = false
+    lastScrollTopRef.current = scrollNodeRef.current?.scrollTop ?? 0
+    captureAnchor()
+  })
+
   const pinToBottom = useEvent(() => {
     if (!activeRef.current || !followingRef.current) return false
     const element = scrollNodeRef.current
@@ -106,6 +141,7 @@ export const useAssistantContactAutoFollow = ({
     if (geometry.scrollTop < previousTop - 0.5) {
       followingRef.current = false
       lastScrollTopRef.current = geometry.scrollTop
+      captureAnchor()
       return false
     }
     if (isAtBottom(geometry)) {
@@ -136,6 +172,7 @@ export const useAssistantContactAutoFollow = ({
 
   const releaseFollow = useEvent(() => {
     followingRef.current = false
+    captureAnchor()
   })
 
   const handleScroll = useEvent(() => {
@@ -153,6 +190,8 @@ export const useAssistantContactAutoFollow = ({
     }
 
     const intent = currentUserIntent()
+    captureAnchor()
+    if (geometry.scrollTop <= 80 && intent === 'up') onLoadEarlier?.()
     if (movedDown && isAtBottom(geometry) && (intent === 'down' || intent === 'scrollbar')) {
       followingRef.current = true
     }
@@ -165,6 +204,7 @@ export const useAssistantContactAutoFollow = ({
       if (nestedScrollableCanConsumeUp(element, event.target)) return
       rememberUserIntent('up')
       releaseFollow()
+      if (element.scrollTop <= 80) onLoadEarlier?.()
       return
     }
     if (nestedScrollableCanConsumeDown(element, event.target)) return
@@ -201,6 +241,7 @@ export const useAssistantContactAutoFollow = ({
     rememberUserIntent(fingerDelta > 0 ? 'up' : 'down')
     if (fingerDelta > TOUCH_FINGER_DOWN_THRESHOLD) {
       releaseFollow()
+      if (element.scrollTop <= 80) onLoadEarlier?.()
     }
   })
 
@@ -212,6 +253,7 @@ export const useAssistantContactAutoFollow = ({
     if (isReleaseKey(event)) {
       rememberUserIntent('up')
       releaseFollow()
+      if ((scrollNodeRef.current?.scrollTop ?? Infinity) <= 80) onLoadEarlier?.()
       return
     }
     if (isResumeKey(event)) rememberUserIntent('down')
@@ -230,12 +272,14 @@ export const useAssistantContactAutoFollow = ({
       activeIdentityRef.current = identity
       baselineNodeRef.current = element
       followingRef.current = true
+      anchorRef.current = null
       userIntentRef.current = null
       touchRef.current = null
       lastScrollTopRef.current = element?.scrollTop ?? 0
     }
     if (!active) return
     pinToBottom()
+    restoreAnchor()
     // eslint-disable-next-line react-hooks/exhaustive-deps -- these values own rerun semantics; useEvent keeps the writer current.
   }, [active, assistantID, contentRevision, scrollNode])
 
@@ -254,9 +298,10 @@ export const useAssistantContactAutoFollow = ({
 
   const handleContentResize = useEvent(() => {
     pinToBottom()
+    restoreAnchor()
   })
   const canObserveResize = typeof ResizeObserver !== 'undefined'
   useResizeObserver(canObserveResize && active ? contentNode : null, handleContentResize)
 
-  return { scrollRef, contentRef }
+  return { scrollRef, contentRef, preparePrepend }
 }

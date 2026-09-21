@@ -12,6 +12,8 @@ Desktop starts the OpenChamber web server in the same Electron main process. The
 
 The preload bridge exposes desktop-only APIs to the web UI through `window.__OPENCHAMBER_DESKTOP__`. Privileged commands are checked in `main.mjs`, not only in the UI. The binary-path probe samples at most 8 KiB before a non-image binary file opens through the system handler.
 
+Desktop instance switches revalidate the target's authentication before committing the runtime endpoint. Direct probes verify service compatibility and `/auth/session` with the saved client credential; Relay probes verify `/auth/session` over the pinned E2EE tunnel and hand that authenticated tunnel to the runtime. Cached connected badges remain display snapshots. A direct authentication failure triggers Relay fallback when available; failed authentication on every candidate preserves the current instance and reports authentication required.
+
 ## Shutdown Lifecycle
 
 Electron owns the in-process server handle. Normal quit, relaunch, vibrancy relaunch, update installation, and `SIGINT`/`SIGTERM`/`SIGHUP` share one shutdown promise and await `serverHandle.stop({ exitProcess: false, forceCloseConnections: true })` before Electron exits, relaunches, or applies an update. Desktop teardown closes remaining local HTTP connections after initiating server close, avoiding the 10-second shutdown wait. This closes the message queue service and SQLite resources; SSH sessions also stop during the same teardown. A failed graceful stop launches the existing detached managed-OpenCode killer using process information captured before `stop()`. On macOS, a second `Cmd+Q` while the quit-risk confirmation is open confirms the quit and follows the same shutdown path as the dialog's Quit button.
@@ -23,6 +25,7 @@ Electron owns the in-process server handle. Normal quit, relaunch, vibrancy rela
 | `main.mjs` | Electron main process, app lifecycle, windows, menus, deep links, native IPC handlers, updates, local server startup |
 | `preload.mjs` | Safe bridge from the rendered UI to Electron IPC |
 | `virtual-asset-protocol.mjs` | Opaque virtual image asset registry + `openchamber-asset` streaming protocol helpers |
+| `preview-loopback-gateway.mjs` | Relay Preview loopback HTTP gateway (`127.0.0.1` + ephemeral port) — dumb byte pipe to the owner renderer |
 | `settings-store.mjs` | Process-local serialized `settings.json` read-modify-write shared by main, ssh-manager, and the in-process web settings runtime |
 | `sync-run-store.mjs` | Append-only OpenCode config sync run records under `<dataDir>/sync-runs/` (not written into `settings.json`) |
 | `direct-config-sync.mjs` | Direct OpenChamber host sync over HTTP `/api/openchamber/config-sync/*` (`host:<id>` targets) |
@@ -275,6 +278,25 @@ Security invariants:
 - Main never sees host paths, bearer tokens, or relay keys — only opaque ids + binary chunks + image MIME.
 - Remote renderer pages cannot create or feed assets.
 - Does not share the `openchamber-ui` protocol handler.
+
+## Relay Preview Loopback Gateway
+
+When the desktop UI is connected to a Host over **private Relay**, Chromium cannot load Host loopback preview pages through `relay://` or by hitting the client machine's ports. Preview therefore uses a **local-only** HTTP gateway in the Electron main process:
+
+- Bind **`127.0.0.1` only** on an **ephemeral port**. Unauthenticated front door: **GET/HEAD** and **WebSocket upgrade** under path prefix **`/api/preview/proxy/`** only (everything else 404).
+- One owner `webContents` (the local page that called `ensure`). Multi-window: that window only; owner gone or send failure → HTTP 503 / WS close.
+- Main is a dumb pipe: no Relay keys, Host URLs, or bearer tokens. HTTP: emits `{ requestId, method, path }` to the owner; renderer `runtimeFetch`es and streams body back (`begin` / `push` / `end` / `abort`). WS: emits `ws-open` / `ws-message` / `ws-close`; renderer mints `oc_url_token`, opens via `openRuntimeWebSocket`, and pipes frames (`wsOpened` / `wsSend` / `wsClose`).
+- Auth stays on existing **`oc_preview_token` + `oc_url_token`** query rewrite. Chromium cannot apply tunneled **`Set-Cookie`** into the iframe jar, so the gateway never re-emits Set-Cookie — **upstream-app cookies (login on the previewed site) are dropped over Relay**. Never log gateway URLs, tokens, or paths with query.
+- LAN/direct Preview does **not** start the gateway; iframe `src` stays `authenticatedAsset(...)`. IPC channels are separate (`openchamber:preview-gateway:*`), local-page only, and are **not** on `COMMANDS_SAFE_FOR_REMOTE`.
+
+```ts
+// window.__OPENCHAMBER_DESKTOP__.previewGateway (local page only)
+previewGateway.ensure(): Promise<{ origin: string }>  // http://127.0.0.1:<port>
+previewGateway.begin({ requestId, status, headers })
+previewGateway.push(requestId, chunk)  // await each chunk (backpressure)
+previewGateway.end(requestId) / previewGateway.abort(requestId)
+previewGateway.wsOpened({ requestId }) / wsSend(requestId, data, binary?) / wsClose(requestId, { code?, reason? })
+```
 
 ## Logs And Data
 

@@ -3,6 +3,7 @@
 // the tunnel codec). No network, no real WebSocket.
 
 import { afterEach, describe, expect, test } from 'bun:test';
+import { QueryClient, QueryObserver } from '@tanstack/react-query';
 import {
   exportPublicKeyJwk,
   generateEcdhKeyPair,
@@ -27,7 +28,11 @@ import {
   type TunnelWireSocket,
 } from './tunnel-client';
 import { adoptRelayTunnel, deactivateRelayTunnel } from './runtime-tunnel';
-import { subscribeOpenchamberEvents } from '../openchamberEvents';
+import {
+  getLatestOpenchamberEventRevision,
+  subscribeOpenchamberEvents,
+  type OpenChamberEvent,
+} from '../openchamberEvents';
 
 const WS_OPEN = 1;
 const WS_CLOSED = 3;
@@ -83,6 +88,18 @@ class FakeEndpoint implements TunnelWireSocket {
   }
 }
 
+/** Shared long-lived SSE + snapshot fixture for T3 same-transport reconnect tests. */
+type EventsFixture = {
+  /** Number of times GET /api/openchamber/events was opened (across wires). */
+  openCount: number;
+  /** Push one SSE `data:` event onto every currently open events stream. */
+  pushEvent: (envelope: { type: string; properties?: unknown }) => void;
+  /** End all open events streams (optional). */
+  endAll: () => void;
+  /** Mutable assistants snapshot served on HTTP catch-up. */
+  snapshot: { revision: number; reply: string | null; body: string };
+};
+
 type MiniHostOptions = {
   silent?: boolean;
   onConnect?: () => void;
@@ -96,6 +113,11 @@ type MiniHostOptions = {
   recordFrame?: (frame: TunnelFrame) => void;
   onHttpRequest?: (request: { path: string; method: string; headers: Record<string, string> }) => void;
   onAbort?: (streamId: number) => void;
+  /**
+   * When set, `/api/openchamber/events` stays open (no StreamEnd) so tips and
+   * contact-turn frames can be pushed later. Survives host re-attach on killWire.
+   */
+  eventsFixture?: EventsFixture;
 };
 
 // A minimal host responder wired to one endpoint. Answers a few routes so the
@@ -191,10 +213,28 @@ const attachMiniHost = (endpoint: FakeEndpoint, hostPrivateKey: CryptoKey, optio
         pump();
       } else if (path === '/api/openchamber/events') {
         sendFrame(encodeTunnelFrame(TunnelFrameType.HttpResponse, streamId, encodeJsonPayload({ status: 200, headers: { 'content-type': 'text/event-stream' } })));
-        const event = textEncoder.encode(': 你\ndata: {"type":"openchamber:message-queue-changed","properties":{"revision":12,"occurredAt":34}}\n\n');
-        sendFrame(encodeTunnelFrame(TunnelFrameType.HttpBody, streamId, event.slice(0, 4)));
-        sendFrame(encodeTunnelFrame(TunnelFrameType.HttpBody, streamId, event.slice(4)));
-        sendFrame(encodeTunnelFrame(TunnelFrameType.StreamEnd, streamId, new Uint8Array(0)));
+        if (options.eventsFixture) {
+          const fixture = options.eventsFixture;
+          fixture.openCount += 1;
+          const pushers = (endpoint as FakeEndpoint & {
+            eventsPushers?: Map<number, (bytes: Uint8Array) => void>;
+          });
+          pushers.eventsPushers ??= new Map();
+          pushers.eventsPushers.set(streamId, (bytes) => {
+            if (aborted.has(streamId) || endpoint.closed) return;
+            sendFrame(encodeTunnelFrame(TunnelFrameType.HttpBody, streamId, bytes));
+          });
+          // Keep stream open — fixture.pushEvent fans out to all live pushers.
+          // Do not StreamEnd here.
+        } else {
+          const event = textEncoder.encode(': 你\ndata: {"type":"openchamber:message-queue-changed","properties":{"revision":12,"occurredAt":34}}\n\n');
+          sendFrame(encodeTunnelFrame(TunnelFrameType.HttpBody, streamId, event.slice(0, 4)));
+          sendFrame(encodeTunnelFrame(TunnelFrameType.HttpBody, streamId, event.slice(4)));
+          sendFrame(encodeTunnelFrame(TunnelFrameType.StreamEnd, streamId, new Uint8Array(0)));
+        }
+      } else if (path === '/api/openchamber/assistants/snapshot') {
+        const snap = options.eventsFixture?.snapshot ?? { revision: 0, reply: null, body: 'none' };
+        respondJson(streamId, 200, snap);
       } else {
         respondJson(streamId, 404, { error: 'not found' });
       }
@@ -249,6 +289,41 @@ const attachMiniHost = (endpoint: FakeEndpoint, hostPrivateKey: CryptoKey, optio
 
 const wait = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
+const createEventsFixture = (): EventsFixture => {
+  const hostEndpoints: FakeEndpoint[] = [];
+  const fixture: EventsFixture = {
+    openCount: 0,
+    snapshot: { revision: 1, reply: null, body: 'initial-before-disconnect' },
+    pushEvent: (envelope) => {
+      const line = `data: ${JSON.stringify(envelope)}\n\n`;
+      const bytes = textEncoder.encode(line);
+      for (const endpoint of hostEndpoints) {
+        if (endpoint.closed) continue;
+        const pushers = (endpoint as FakeEndpoint & {
+          eventsPushers?: Map<number, (b: Uint8Array) => void>;
+        }).eventsPushers;
+        if (!pushers) continue;
+        for (const push of pushers.values()) push(bytes);
+      }
+    },
+    endAll: () => {
+      for (const endpoint of hostEndpoints) {
+        if (endpoint.closed) continue;
+        const pushers = (endpoint as FakeEndpoint & {
+          eventsPushers?: Map<number, (b: Uint8Array) => void>;
+        }).eventsPushers;
+        if (!pushers) continue;
+        // StreamEnd is not exposed via pushers map keys alone — leave open until wire kill.
+        pushers.clear();
+      }
+    },
+  };
+  (fixture as EventsFixture & { _trackHost: (ep: FakeEndpoint) => void })._trackHost = (ep) => {
+    hostEndpoints.push(ep);
+  };
+  return fixture;
+};
+
 const setupClient = async (
   hostOptions: MiniHostOptions = {},
   clientOverrides: Partial<Parameters<typeof createRelayTunnelClient>[0]> = {},
@@ -259,6 +334,7 @@ const setupClient = async (
   sendTextToClient: (text: string) => void;
   clientBinaryCount: () => number;
   hostEncPubJwk: JsonWebKey;
+  lastHostEndpoint: () => FakeEndpoint | null;
 }> => {
   const hostKeyPair = await generateEcdhKeyPair();
   const hostPubJwk = await exportPublicKeyJwk(hostKeyPair.publicKey);
@@ -283,6 +359,9 @@ const setupClient = async (
       hostEndpoint.peer = clientEndpoint;
       lastClientEndpoint = clientEndpoint;
       lastHostEndpoint = hostEndpoint;
+      if (hostOptions.eventsFixture) {
+        (hostOptions.eventsFixture as EventsFixture & { _trackHost?: (ep: FakeEndpoint) => void })._trackHost?.(hostEndpoint);
+      }
       attachMiniHost(hostEndpoint, hostKeyPair.privateKey, hostOptions);
       queueMicrotask(() => clientEndpoint.onopen?.());
       return clientEndpoint;
@@ -295,6 +374,7 @@ const setupClient = async (
     sendTextToClient: (text: string) => lastHostEndpoint?.send(text),
     clientBinaryCount: () => lastClientEndpoint?.binarySent ?? 0,
     hostEncPubJwk: hostPubJwk,
+    lastHostEndpoint: () => lastHostEndpoint,
   };
 };
 
@@ -621,5 +701,244 @@ describe('createRelayTunnelClient', () => {
     expect(await message).toBe('echo:legacy');
     const health = await client.fetch('/health');
     expect(health.status).toBe(200);
+  });
+
+  test('T3 continuous: long-open E2EE SSE delivers ready + revision tip without remount', async () => {
+    const eventsFixture = createEventsFixture();
+    const httpPaths: string[] = [];
+    const { client, hostEncPubJwk, connectionCount } = await setupClient({
+      eventsFixture,
+      onHttpRequest: (req) => httpPaths.push(req.path),
+    });
+    track(client);
+    const originalWindow = globalThis.window;
+    const runtimeWindow = Object.assign(new EventTarget(), {
+      location: { origin: 'http://openchamber.test', href: 'http://openchamber.test/' },
+    });
+    let unsubscribe: (() => void) | undefined;
+    const received: OpenChamberEvent[] = [];
+
+    try {
+      Object.defineProperty(globalThis, 'window', { configurable: true, value: runtimeWindow });
+      // Same descriptor for the whole test — generation/transport identity stays put.
+      adoptRelayTunnel({ relayUrl: 'wss://relay.test/ws', serverId: 'server-1', hostEncPubJwk }, client);
+
+      unsubscribe = subscribeOpenchamberEvents((event) => {
+        received.push(event);
+      });
+
+      await wait(30);
+      expect(eventsFixture.openCount).toBe(1);
+      expect(httpPaths.filter((p) => p === '/api/openchamber/events')).toHaveLength(1);
+      expect(connectionCount()).toBe(1);
+
+      eventsFixture.pushEvent({ type: 'openchamber:event-stream-ready', properties: {} });
+      eventsFixture.pushEvent({
+        type: 'openchamber:assistants-changed',
+        properties: { revision: 3, occurredAt: 100 },
+      });
+      await wait(40);
+
+      expect(received).toEqual([
+        { type: 'event-stream-ready' },
+        { type: 'assistants-changed', revision: 3, occurredAt: 100 },
+      ]);
+      expect(getLatestOpenchamberEventRevision('assistants-changed')).toBe(3);
+      // Still one wire + one long-open events stream (no remount/reconnect).
+      expect(connectionCount()).toBe(1);
+      expect(eventsFixture.openCount).toBe(1);
+    } finally {
+      unsubscribe?.();
+      deactivateRelayTunnel();
+      Object.defineProperty(globalThis, 'window', { configurable: true, value: originalWindow });
+    }
+  });
+
+  test('T3 same-transport killWire: auto second SSE GET, ready, QueryClient HTTP catch-up, then contact turn frames', async () => {
+    const eventsFixture = createEventsFixture();
+    const httpPaths: string[] = [];
+    const { client, hostEncPubJwk, connectionCount, killWire } = await setupClient({
+      eventsFixture,
+      onHttpRequest: (req) => httpPaths.push(`${req.method} ${req.path}`),
+      // Faster reconnect so the test stays bounded.
+    }, {
+      reconnectBaseDelayMs: 15,
+      reconnectMaxDelayMs: 40,
+      pingIntervalMs: 10_000,
+      pingTimeoutMs: 20_000,
+    });
+    track(client);
+
+    const originalWindow = globalThis.window;
+    const runtimeWindow = Object.assign(new EventTarget(), {
+      location: { origin: 'http://openchamber.test', href: 'http://openchamber.test/' },
+    });
+    const descriptor = { relayUrl: 'wss://relay.test/ws', serverId: 'server-1', hostEncPubJwk };
+    let unsubscribe: (() => void) | undefined;
+    const sseEvents: OpenChamberEvent[] = [];
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false, staleTime: 0 } },
+    });
+    const snapshotKey = ['t3-assistants-snapshot', 'server-1'] as const;
+    const snapshotValues: Array<{ revision: number; reply: string | null; body: string }> = [];
+
+    // Lightweight real QueryObserver — mirrors production tip→invalidate→HTTP catch-up
+    // without importing assistantQueries (owned by another writer).
+    const observer = new QueryObserver(queryClient, {
+      queryKey: snapshotKey,
+      queryFn: async () => {
+        const response = await client.fetch('/api/openchamber/assistants/snapshot');
+        if (!response.ok) throw new Error(`snapshot HTTP ${response.status}`);
+        return response.json() as Promise<{ revision: number; reply: string | null; body: string }>;
+      },
+      staleTime: 0,
+    });
+    const unsubObserver = observer.subscribe((result) => {
+      if (result.data) snapshotValues.push(result.data);
+    });
+
+    try {
+      Object.defineProperty(globalThis, 'window', { configurable: true, value: runtimeWindow });
+      adoptRelayTunnel(descriptor, client);
+
+      unsubscribe = subscribeOpenchamberEvents((event) => {
+        sseEvents.push(event);
+        // Production pattern: tip / ready → invalidate + HTTP catch-up.
+        if (
+          event.type === 'event-stream-ready'
+          || event.type === 'assistants-changed'
+          || event.type === 'contact-turn-end'
+        ) {
+          void queryClient.invalidateQueries({ queryKey: snapshotKey }).then(() =>
+            queryClient.refetchQueries({ queryKey: snapshotKey }),
+          );
+        }
+      });
+
+      // --- Phase A: first long-open SSE + ready + revision tip ---
+      await wait(40);
+      expect(eventsFixture.openCount).toBe(1);
+      const wiresBeforeKill = connectionCount();
+      expect(wiresBeforeKill).toBe(1);
+
+      eventsFixture.pushEvent({ type: 'openchamber:event-stream-ready', properties: {} });
+      eventsFixture.pushEvent({
+        type: 'openchamber:assistants-changed',
+        properties: { revision: 4, occurredAt: 200 },
+      });
+      await wait(80);
+
+      expect(sseEvents.some((e) => e.type === 'event-stream-ready')).toBe(true);
+      expect(sseEvents.some((e) => e.type === 'assistants-changed' && e.revision === 4)).toBe(true);
+      expect(getLatestOpenchamberEventRevision('assistants-changed')).toBe(4);
+
+      // Wait for QueryObserver catch-up of initial tip.
+      await wait(80);
+      expect(snapshotValues.some((s) => s.body === 'initial-before-disconnect' && s.revision === 1)).toBe(true);
+
+      // --- Phase B: disconnect window — same descriptor, bump server snapshot ---
+      // killWire: descriptor/transport/runtime generation stay the same (no adopt change).
+      eventsFixture.snapshot = {
+        revision: 7,
+        body: 'after-disconnect-window',
+        reply: null,
+      };
+      killWire();
+
+      // Tunnel client reconnects a new wire (same host key / serverId / relayUrl).
+      await wait(200);
+      expect(connectionCount()).toBeGreaterThan(wiresBeforeKill);
+
+      // openchamberEvents stream dies with the wire → scheduleReconnect → second SSE GET.
+      const deadline = Date.now() + 2_000;
+      while (eventsFixture.openCount < 2 && Date.now() < deadline) {
+        await wait(30);
+      }
+      expect(eventsFixture.openCount).toBeGreaterThanOrEqual(2);
+      const eventsGets = httpPaths.filter((p) => p === 'GET /api/openchamber/events');
+      expect(eventsGets.length).toBeGreaterThanOrEqual(2);
+
+      // --- Phase C: second stream ready + tip → HTTP catch-up sees new snapshot ---
+      eventsFixture.pushEvent({ type: 'openchamber:event-stream-ready', properties: {} });
+      eventsFixture.pushEvent({
+        type: 'openchamber:assistants-changed',
+        properties: { revision: 7, occurredAt: 300 },
+      });
+      await wait(120);
+
+      expect(sseEvents.filter((e) => e.type === 'event-stream-ready').length).toBeGreaterThanOrEqual(2);
+      expect(getLatestOpenchamberEventRevision('assistants-changed')).toBe(7);
+
+      const catchupDeadline = Date.now() + 1_500;
+      while (
+        !snapshotValues.some((s) => s.body === 'after-disconnect-window' && s.revision === 7)
+        && Date.now() < catchupDeadline
+      ) {
+        await wait(30);
+      }
+      expect(snapshotValues.some((s) => s.body === 'after-disconnect-window' && s.revision === 7)).toBe(true);
+      expect(httpPaths.some((p) => p === 'GET /api/openchamber/assistants/snapshot')).toBe(true);
+
+      // --- Phase D: contact turn start/delta/end still arrive; reply without remount ---
+      eventsFixture.snapshot = {
+        revision: 8,
+        body: 'after-disconnect-window',
+        reply: 'contact-turn-reply-visible',
+      };
+      eventsFixture.pushEvent({
+        type: 'openchamber:contact-turn-start',
+        properties: {
+          assistantID: 'asst_t3',
+          turnID: 'msg_t3_1',
+          messageID: 'msg_t3_1',
+          occurredAt: 400,
+        },
+      });
+      eventsFixture.pushEvent({
+        type: 'openchamber:contact-bubble-delta',
+        properties: {
+          assistantID: 'asst_t3',
+          turnID: 'msg_t3_1',
+          bubbleIndex: 0,
+          delta: 'contact-turn-reply-visible',
+          done: true,
+          occurredAt: 401,
+        },
+      });
+      eventsFixture.pushEvent({
+        type: 'openchamber:contact-turn-end',
+        properties: {
+          assistantID: 'asst_t3',
+          turnID: 'msg_t3_1',
+          status: 'complete',
+          occurredAt: 402,
+        },
+      });
+      await wait(150);
+
+      expect(sseEvents.some((e) => e.type === 'contact-turn-start' && e.turnID === 'msg_t3_1')).toBe(true);
+      expect(sseEvents.some((e) => e.type === 'contact-bubble-delta' && e.delta === 'contact-turn-reply-visible')).toBe(true);
+      expect(sseEvents.some((e) => e.type === 'contact-turn-end' && e.status === 'complete')).toBe(true);
+
+      const replyDeadline = Date.now() + 1_500;
+      while (
+        !snapshotValues.some((s) => s.reply === 'contact-turn-reply-visible')
+        && Date.now() < replyDeadline
+      ) {
+        await wait(30);
+      }
+      expect(snapshotValues.some((s) => s.reply === 'contact-turn-reply-visible')).toBe(true);
+
+      // Same transport identity throughout (no descriptor swap).
+      expect(descriptor.serverId).toBe('server-1');
+      expect(descriptor.relayUrl).toBe('wss://relay.test/ws');
+    } finally {
+      unsubObserver();
+      observer.destroy();
+      queryClient.clear();
+      unsubscribe?.();
+      deactivateRelayTunnel();
+      Object.defineProperty(globalThis, 'window', { configurable: true, value: originalWindow });
+    }
   });
 });

@@ -56,6 +56,31 @@ test('native tab bar uses UITabBar liquid glass and keeps web as the fallback', 
   assert.doesNotMatch(view, /UIButton\.Configuration/);
 });
 
+test('native tab bar reads UI badge strings and drives UITabBarItem.badgeValue', async () => {
+  const plugin = await source('ios/App/App/OpenChamberTabBarPlugin.swift');
+  const view = await source('ios/App/App/OpenChamberTabBarView.swift');
+
+  // Bridge: parseTabs reads the UI-owned display string (or null → clear).
+  assert.match(plugin, /badge: parseBadge\(object\["badge"\]\)/);
+  assert.match(plugin, /private static func parseBadge/);
+  assert.match(plugin, /value is NSNull/);
+  assert.match(plugin, /trimmingCharacters\(in: \.whitespacesAndNewlines\)/);
+  // Native must not hardcode capped labels — formatting stays on the JS contract.
+  assert.doesNotMatch(plugin, /assistantUnreadCount\s*>\s*99/);
+  assert.doesNotMatch(view, /assistantUnreadCount\s*>\s*99/);
+  assert.doesNotMatch(plugin, /badgeValue\s*=\s*"\d/);
+  assert.doesNotMatch(view, /badgeValue\s*=\s*"\d/);
+
+  // View: paint / update / clear via system badgeValue without rebuilding chrome.
+  assert.match(view, /let badge: String\?/);
+  assert.match(view, /page\.tabBarItem\.badgeValue = Self\.badgeValue\(item\.badge\)/);
+  assert.match(view, /private func applyBadges\(\)/);
+  assert.match(view, /viewControllers\[index\]\.tabBarItem\.badgeValue = Self\.badgeValue\(item\.badge\)/);
+  assert.match(view, /private static func badgeValue\(_ badge: String\?\) -> String\?/);
+  assert.match(view, /guard let badge, !badge\.isEmpty else \{ return nil \}/);
+  assert.match(view, /Same tab structure: only push badgeValue updates/);
+});
+
 test('native tab bar switching stays on the overlay and does not own the React page stack', async () => {
   const plugin = await source('ios/App/App/OpenChamberTabBarPlugin.swift');
   const view = await source('ios/App/App/OpenChamberTabBarView.swift');

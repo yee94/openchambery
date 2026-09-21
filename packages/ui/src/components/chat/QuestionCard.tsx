@@ -16,6 +16,7 @@ import * as sessionActions from '@/sync/session-actions';
 import { useI18n } from '@/lib/i18n';
 import { serializeQuestionAsJson, serializeQuestionAsMarkdown } from './questionSerializers';
 import { QUESTION_CUSTOM_TEXTAREA_MIN_HEIGHT, clampQuestionCustomTextareaHeight } from './questionTextareaSizing';
+import { QuestionAutoDelegateStatus, useQuestionDelegation } from './QuestionAutoDelegateStatus';
 
 interface QuestionCardProps {
   question: QuestionRequest;
@@ -151,6 +152,7 @@ export const CustomAnswerTextarea = React.memo(function CustomAnswerTextarea({
 
 export const QuestionCard: React.FC<QuestionCardProps> = ({ question }) => {
   const { t } = useI18n();
+  const delegation = useQuestionDelegation(question);
   const respondToQuestion = sessionActions.respondToQuestion;
   const rejectQuestion = sessionActions.rejectQuestion;
   const isMobile = useUIStore((state) => state.isMobile);
@@ -162,7 +164,9 @@ export const QuestionCard: React.FC<QuestionCardProps> = ({ question }) => {
     return Boolean(sourceSession?.parentID && sourceSession.parentID === currentSessionId);
   }, [question.sessionID, currentSessionId, sessions]);
   const [activeTab, setActiveTab] = React.useState<TabKey>('0');
-  const [isResponding, setIsResponding] = React.useState(false);
+  const [manualResponding, setIsResponding] = React.useState(false);
+  const isResponding = manualResponding || delegation.claimed || delegation.pending === 'delegate' ||
+    delegation.request?.state === 'submitting' || delegation.request?.state === 'uncertain' || delegation.request?.state === 'settled';
   const [hasResponded, setHasResponded] = React.useState(false);
 
   const [selectedOptions, setSelectedOptions] = React.useState<Record<number, string[]>>({});
@@ -202,7 +206,7 @@ export const QuestionCard: React.FC<QuestionCardProps> = ({ question }) => {
   }, [questions, t]);
 
   // Helper to get answer display for a question index
-  const getAnswerDisplay = React.useCallback((index: number): string => {
+  const getAnswerDisplay = (index: number): string => {
     const isCustom = Boolean(customMode[index]);
     if (isCustom) {
       const value = (customTextRef.current[index] ?? '').trim();
@@ -210,7 +214,7 @@ export const QuestionCard: React.FC<QuestionCardProps> = ({ question }) => {
     }
     const answers = selectedOptions[index] ?? [];
     return answers.length > 0 ? answers.join(', ') : t('chat.questionCard.noAnswer');
-  }, [customMode, selectedOptions, t]);
+  };
 
   const isMultiple = Boolean(activeQuestion?.multiple);
   const selectedForActive = selectedOptions[activeIndex] ?? [];
@@ -238,7 +242,7 @@ export const QuestionCard: React.FC<QuestionCardProps> = ({ question }) => {
     return unansweredIndexes.length === 0;
   }, [questions.length, unansweredIndexes.length]);
 
-  const handleNextUnanswered = React.useCallback(() => {
+  const handleNextUnanswered = useEvent(() => {
     if (questions.length === 0 || unansweredIndexes.length === 0) return;
 
     const start = isSummaryTab ? -1 : activeIndex;
@@ -251,9 +255,9 @@ export const QuestionCard: React.FC<QuestionCardProps> = ({ question }) => {
     }
 
     setActiveTab(String(unansweredIndexes[0]));
-  }, [activeIndex, isSummaryTab, questions.length, unansweredIndexes]);
+  });
 
-  const buildAnswersPayload = React.useCallback((): string[][] => {
+  const buildAnswersPayload = (): string[][] => {
     const answers: string[][] = [];
 
     for (let index = 0; index < questions.length; index += 1) {
@@ -268,9 +272,9 @@ export const QuestionCard: React.FC<QuestionCardProps> = ({ question }) => {
     }
 
     return answers;
-  }, [customMode, questions.length, selectedOptions]);
+  };
 
-  const handleToggleOption = React.useCallback(
+  const handleToggleOption = useEvent(
     (label: string) => {
       if (!activeQuestion) return;
 
@@ -286,33 +290,35 @@ export const QuestionCard: React.FC<QuestionCardProps> = ({ question }) => {
         }
         return { ...prev, [activeIndex]: [label] };
       });
-    },
-    [activeIndex, activeQuestion, isMultiple]
+    }
   );
 
-  const handleSelectCustom = React.useCallback(() => {
+  const handleSelectCustom = useEvent(() => {
     setCustomMode((prev) => ({ ...prev, [activeIndex]: true }));
     setSelectedOptions((prev) => ({ ...prev, [activeIndex]: [] }));
     const hasValue = (customTextRef.current[activeIndex] ?? '').trim().length > 0;
     setCustomTextFilled((prev) => (prev[activeIndex] === hasValue ? prev : { ...prev, [activeIndex]: hasValue }));
-  }, [activeIndex]);
+  });
 
-  const handleCustomValueChange = React.useCallback((value: string) => {
+  const handleCustomValueChange = useEvent((value: string) => {
     customTextRef.current[activeIndex] = value;
     const hasValue = value.trim().length > 0;
     setCustomTextFilled((prev) => (prev[activeIndex] === hasValue ? prev : { ...prev, [activeIndex]: hasValue }));
-  }, [activeIndex]);
+  });
 
-  const handleConfirm = React.useCallback(async () => {
-    if (!requiredSatisfied) return;
+  const handleConfirm = useEvent(async () => {
+    if (!requiredSatisfied || isResponding) return;
 
+    const submittedScope = delegation.scope;
     setIsResponding(true);
     try {
       const answers = buildAnswersPayload();
-      await respondToQuestion(question.sessionID, question.id, answers);
+      await respondToQuestion(question.sessionID, question.id, answers, delegation.request?.directory);
       setHasResponded(true);
     } catch (error) {
-      if (sessionActions.isQuestionRequestNotFoundError(error)) {
+      if (sessionActions.isQuestionSubmissionClaimedError(error)) {
+        await delegation.submissionClaimed(submittedScope);
+      } else if (sessionActions.isQuestionRequestNotFoundError(error)) {
         toast.info(t('chat.questionCard.noLongerPending'));
         setHasResponded(true);
       } else {
@@ -323,9 +329,9 @@ export const QuestionCard: React.FC<QuestionCardProps> = ({ question }) => {
     } finally {
       setIsResponding(false);
     }
-  }, [buildAnswersPayload, question.id, question.sessionID, requiredSatisfied, respondToQuestion, t]);
+  });
 
-  const handleKeyDown = React.useCallback(
+  const handleKeyDown = useEvent(
     (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
       if (isIMECompositionEvent(e)) return;
 
@@ -337,17 +343,20 @@ export const QuestionCard: React.FC<QuestionCardProps> = ({ question }) => {
           handleNextUnanswered();
         }
       }
-    },
-    [handleConfirm, handleNextUnanswered, isMobile, requiredSatisfied]
+    }
   );
 
-  const handleDismiss = React.useCallback(async () => {
+  const handleDismiss = useEvent(async () => {
+    if (isResponding) return;
+    const submittedScope = delegation.scope;
     setIsResponding(true);
     try {
-      await rejectQuestion(question.sessionID, question.id);
+      await rejectQuestion(question.sessionID, question.id, delegation.request?.directory);
       setHasResponded(true);
     } catch (error) {
-      if (sessionActions.isQuestionRequestNotFoundError(error)) {
+      if (sessionActions.isQuestionSubmissionClaimedError(error)) {
+        await delegation.submissionClaimed(submittedScope);
+      } else if (sessionActions.isQuestionRequestNotFoundError(error)) {
         toast.info(t('chat.questionCard.noLongerPending'));
         setHasResponded(true);
       } else {
@@ -358,9 +367,9 @@ export const QuestionCard: React.FC<QuestionCardProps> = ({ question }) => {
     } finally {
       setIsResponding(false);
     }
-  }, [question.id, question.sessionID, rejectQuestion, t]);
+  });
 
-  const handleCopyMarkdown = React.useCallback(async () => {
+  const handleCopyMarkdown = useEvent(async () => {
     const text = serializeQuestionAsMarkdown(question);
     const result = await copyTextToClipboard(text);
     if (result.ok) {
@@ -368,9 +377,9 @@ export const QuestionCard: React.FC<QuestionCardProps> = ({ question }) => {
       return;
     }
     toast.error(t('chat.questionCard.copyFailed'));
-  }, [question, t]);
+  });
 
-  const handleCopyJson = React.useCallback(async () => {
+  const handleCopyJson = useEvent(async () => {
     const text = serializeQuestionAsJson(question);
     const result = await copyTextToClipboard(text);
     if (result.ok) {
@@ -378,7 +387,7 @@ export const QuestionCard: React.FC<QuestionCardProps> = ({ question }) => {
       return;
     }
     toast.error(t('chat.questionCard.copyFailed'));
-  }, [question, t]);
+  });
 
   if (hasResponded || questions.length === 0) {
     return null;
@@ -387,7 +396,14 @@ export const QuestionCard: React.FC<QuestionCardProps> = ({ question }) => {
   return (
     <div className="group w-full pt-0 pb-2">
       <div className="chat-column">
-        <div data-question-card className="-mt-1 border border-border/30 rounded-xl bg-muted/10">
+        <div data-question-card className="-mt-1 border border-border/30 rounded-xl bg-muted/10"
+          onPointerDownCapture={delegation.interaction}
+          onClickCapture={delegation.interaction}
+          onKeyDownCapture={delegation.interaction}
+          onInputCapture={delegation.interaction}
+          onPasteCapture={delegation.interaction}
+          onCompositionStartCapture={delegation.interaction}
+        >
           {/* Header */}
           <div className="px-2 py-1.5 border-b border-border/20">
             <div className="flex items-center gap-2">
@@ -588,6 +604,8 @@ export const QuestionCard: React.FC<QuestionCardProps> = ({ question }) => {
               </>
             ) : null}
           </div>
+
+          <QuestionAutoDelegateStatus delegation={delegation} />
 
           {/* Footer actions */}
           <div className="px-2 pb-1.5 pt-1 flex items-center gap-1.5 border-t border-border/20">

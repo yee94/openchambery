@@ -284,9 +284,11 @@ Trusted-proxy mode accepts exactly one valid IP address in `X-Forwarded-For`. Cl
 | `OPENCHAMBER_RELAY_SERVER_HEARTBEAT_MS` | `30000` | ms WebSocket ping interval |
 | `OPENCHAMBER_RELAY_SERVER_HANDSHAKE_MS` | `10000` | ms for TCP and WebSocket admission |
 | `OPENCHAMBER_RELAY_SERVER_CLOSE_DEADLINE_MS` | `5000` | ms before forced socket close |
-| `OPENCHAMBER_RELAY_SERVER_ADMISSION_WINDOW_MS` | `60000` | ms per-IP admission window |
-| `OPENCHAMBER_RELAY_SERVER_MAX_ADMISSIONS_PER_IP` | `120` | upgrades per role and IP per admission window |
-| `OPENCHAMBER_RELAY_SERVER_MAX_ADMISSION_ENTRIES` | `10000` | tracked role/IP admission records |
+| `OPENCHAMBER_RELAY_SERVER_ADMISSION_WINDOW_MS` | `60000` | ms admission window |
+| `OPENCHAMBER_RELAY_SERVER_MAX_ADMISSIONS_PER_IP` | `120` | Client, Host-data, and malformed upgrades per role/IP per window |
+| `OPENCHAMBER_RELAY_SERVER_MAX_HOST_CONTROL_ADMISSIONS_PER_IP` | `30` | Host-control upgrades per IP per window |
+| `OPENCHAMBER_RELAY_SERVER_MAX_HOST_CONTROL_ADMISSIONS_PER_SERVER` | `12` | Host-control upgrades per `serverId` per window |
+| `OPENCHAMBER_RELAY_SERVER_MAX_ADMISSION_ENTRIES` | `10000` | tracked admission records |
 | `OPENCHAMBER_RELAY_SERVER_ID_ATTEMPTS` | `4` | random connection-ID attempts |
 
 ### Host Push URL override
@@ -436,6 +438,7 @@ These assets define an optional follow-on deployment path. Validate the image, p
 | Host or Client cannot connect | Confirm the public URL uses the deployed `wss://` scheme, host, and exact Relay path. Confirm DNS, certificate, firewall, and proxy upstream reachability. |
 | `/healthz` succeeds and `/readyz` fails | Wait for the listener startup to complete, then inspect process stderr and service logs for bind errors. |
 | Clients receive admission or connection limits | Review `MAX_CONNECTIONS`, per-Host, per-Client-IP, pending, admission, and raw-socket limits against current traffic. |
+| One Host reconnects host-control thousands of times per hour | Relay does not version-gate Hosts. A live control is kept when a later host-control admission is limited (`4029`). Review `MAX_HOST_CONTROL_ADMISSIONS_PER_SERVER` / `_PER_IP` and the Host's control backoff. |
 | Many Clients share a reverse proxy | Increase `MAX_RAW_SOCKETS_PER_IP` for aggregate proxy-peer concurrency. |
 | Per-Client IP limits behave as proxy limits | Enable trusted-proxy mode, fully isolate Relay ingress behind that proxy, and configure a single replaced `X-Forwarded-For` IP. |
 | Existing clients continue using an earlier endpoint | Refresh the candidate or create a new pairing link after changing `OPENCHAMBER_RELAY_URL`. |

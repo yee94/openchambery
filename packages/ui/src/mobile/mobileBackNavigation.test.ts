@@ -14,6 +14,7 @@ import {
   type MobileBackHistory,
 } from './mobileBackNavigation';
 import {
+  nextSettingsReturnTo,
   popMobileChatRoute,
   pushMobileChatRoute,
   reconcileMobileChatPredecessor,
@@ -309,7 +310,59 @@ describe('MobileTabsRoot secondary enter', () => {
   });
 });
 
+describe('nextSettingsReturnTo', () => {
+  test('captures the current tab and secondary as the first Settings origin', () => {
+    expect(nextSettingsReturnTo({
+      activeTab: 'assistant',
+      secondary: { kind: 'assistant' },
+      settingsReturnTo: null,
+    })).toEqual({
+      tab: 'assistant',
+      secondary: { kind: 'assistant' },
+    });
+  });
+
+  test('keeps the first origin when Settings is opened again', () => {
+    const origin = { tab: 'assistant' as const, secondary: { kind: 'assistant' as const } };
+    expect(nextSettingsReturnTo({
+      activeTab: 'settings',
+      secondary: null,
+      settingsReturnTo: origin,
+    })).toEqual(origin);
+  });
+
+  test('has no origin when Settings is already the active tab', () => {
+    expect(nextSettingsReturnTo({
+      activeTab: 'settings',
+      secondary: null,
+      settingsReturnTo: null,
+    })).toBeNull();
+  });
+});
+
+describe('phone Settings returnTo wiring', () => {
+  test('opens Settings from another surface with restore-on-back, and tab taps reset to home', async () => {
+    const [mobileApp, phoneShell, settingsView] = await Promise.all([
+      readFile(join(here, '../apps/MobileApp.tsx'), 'utf8'),
+      readFile(join(here, 'MobilePhoneShell.tsx'), 'utf8'),
+      readFile(join(here, '../components/views/SettingsView.tsx'), 'utf8'),
+    ]);
+    expect(mobileApp).toContain('openSettingsFromCurrent()');
+    expect(phoneShell).toContain("tab === 'settings'");
+    expect(phoneShell).toContain("setSettingsPage('home')");
+    expect(settingsView).toContain('restoreSettingsReturnTo()');
+    expect(settingsView).toContain('setSettingsPage("home")');
+    expect(settingsView).toContain('if (!flowMobile || settingsSlug !== "home")');
+  });
+});
+
 describe('resolveMobileSecondaryBackDecision', () => {
+  test('Assistant settings pops to its retained conversation', () => {
+    expect(resolveMobileSecondaryBackDecision({
+      secondary: { kind: 'assistant', settingsAssistantID: 'asst_1' },
+      parentSessionTarget: null,
+    })).toEqual({ action: 'popAssistantSettings' });
+  });
   const parent = { id: 'ses_parent', directory: '/proj' };
   const parentRoute = { key: 'parent', sessionId: parent.id, directory: parent.directory };
   const childRoute = { key: 'child', sessionId: 'ses_child', directory: '/proj' };

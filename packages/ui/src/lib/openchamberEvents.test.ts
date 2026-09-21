@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'bun:test';
+import { afterEach, describe, expect, test, vi } from 'vitest';
 import {
   getLatestOpenchamberEventRevision,
   parseOpenchamberEventEnvelope,
@@ -183,4 +183,154 @@ test('shares one runtime SSE request, isolates listeners, aborts the final subsc
     Object.defineProperty(globalThis, 'window', { configurable: true, value: originalWindow });
     globalThis.fetch = originalFetch;
   }
+});
+
+describe('openchamber events heartbeat reconnect', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  test('after 45s silence aborts the hung stream, reconnects, and delivers ready/revision on the new GET', async () => {
+    vi.useFakeTimers();
+    const originalWindow = globalThis.window;
+    const originalFetch = globalThis.fetch;
+    const encoder = new TextEncoder();
+    const signals: AbortSignal[] = [];
+    const controllers: Array<ReadableStreamDefaultController<Uint8Array>> = [];
+    let requests = 0;
+    const received: unknown[] = [];
+    let unsubscribe: (() => void) | undefined;
+
+    // runtimeFetch needs a window origin for absolute URL resolution.
+    const runtimeWindow = Object.assign(new EventTarget(), {
+      location: { origin: 'http://openchamber.test', href: 'http://openchamber.test/' },
+    });
+
+    try {
+      Object.defineProperty(globalThis, 'window', { configurable: true, value: runtimeWindow });
+      globalThis.fetch = (async (_input: RequestInfo | URL, init?: RequestInit) => {
+        signals.push(init?.signal as AbortSignal);
+        requests += 1;
+        const body = new ReadableStream<Uint8Array>({
+          start(controller) {
+            controllers[requests - 1] = controller;
+            // First connection: open and hang (no further frames → heartbeat silence).
+            // Second connection: stay open for post-reconnect frames.
+          },
+        });
+        return new Response(body, {
+          status: 200,
+          headers: { 'content-type': 'text/event-stream' },
+        });
+      }) as typeof fetch;
+
+      unsubscribe = subscribeOpenchamberEvents((event) => {
+        received.push(event);
+      });
+
+      // Allow connect() → consumeRuntimeSse → onOpen (arms heartbeat).
+      await vi.advanceTimersByTimeAsync(0);
+      expect(requests).toBe(1);
+      expect(signals[0]?.aborted).toBe(false);
+      expect(controllers[0]).toBeTruthy();
+
+      // Seed a tip before silence so reconnect must still re-open a fresh GET.
+      controllers[0]?.enqueue(
+        encoder.encode('data: {"type":"openchamber:assistants-changed","properties":{"revision":5,"occurredAt":1}}\n\n'),
+      );
+      await vi.advanceTimersByTimeAsync(0);
+      expect(getLatestOpenchamberEventRevision('assistants-changed')).toBe(5);
+      expect(received).toEqual([{ type: 'assistants-changed', revision: 5, occurredAt: 1 }]);
+
+      // Heartbeat timeout is 45s from last activity (the tip above re-armed it).
+      await vi.advanceTimersByTimeAsync(44_999);
+      expect(requests).toBe(1);
+      expect(signals[0]?.aborted).toBe(false);
+
+      // Fire heartbeat timeout → cleanupAttempt + scheduleReconnect (1s first delay).
+      await vi.advanceTimersByTimeAsync(1);
+      expect(signals[0]?.aborted).toBe(true);
+      expect(requests).toBe(1);
+
+      await vi.advanceTimersByTimeAsync(1_000);
+      expect(requests).toBe(2);
+      expect(signals[1]?.aborted).toBe(false);
+
+      // New stream delivers ready + a higher revision tip.
+      controllers[1]?.enqueue(
+        encoder.encode('data: {"type":"openchamber:event-stream-ready","properties":{}}\n\n'),
+      );
+      controllers[1]?.enqueue(
+        encoder.encode('data: {"type":"openchamber:assistants-changed","properties":{"revision":9,"occurredAt":2}}\n\n'),
+      );
+      await vi.advanceTimersByTimeAsync(0);
+
+      expect(received).toEqual([
+        { type: 'assistants-changed', revision: 5, occurredAt: 1 },
+        { type: 'event-stream-ready' },
+        { type: 'assistants-changed', revision: 9, occurredAt: 2 },
+      ]);
+      expect(getLatestOpenchamberEventRevision('assistants-changed')).toBe(9);
+
+      // Unsubscribe clears attempt, heartbeat, and reconnect timers — no third request.
+      unsubscribe();
+      unsubscribe = undefined;
+      expect(signals[1]?.aborted).toBe(true);
+      expect(getLatestOpenchamberEventRevision('assistants-changed')).toBe(undefined);
+
+      await vi.advanceTimersByTimeAsync(120_000);
+      expect(requests).toBe(2);
+    } finally {
+      try { unsubscribe?.(); } catch { /* module-level cleanup */ }
+      Object.defineProperty(globalThis, 'window', { configurable: true, value: originalWindow });
+      globalThis.fetch = originalFetch;
+      vi.useRealTimers();
+    }
+  });
+
+  test('unsubscribe while a hung body is open clears the heartbeat timer without a reconnect storm', async () => {
+    vi.useFakeTimers();
+    const originalWindow = globalThis.window;
+    const originalFetch = globalThis.fetch;
+    const signals: AbortSignal[] = [];
+    let requests = 0;
+    let unsubscribe: (() => void) | undefined;
+    const runtimeWindow = Object.assign(new EventTarget(), {
+      location: { origin: 'http://openchamber.test', href: 'http://openchamber.test/' },
+    });
+
+    try {
+      Object.defineProperty(globalThis, 'window', { configurable: true, value: runtimeWindow });
+      globalThis.fetch = (async (_input: RequestInfo | URL, init?: RequestInit) => {
+        signals.push(init?.signal as AbortSignal);
+        requests += 1;
+        const body = new ReadableStream<Uint8Array>({
+          start() {
+            // Hang open forever until abort.
+          },
+        });
+        return new Response(body, {
+          status: 200,
+          headers: { 'content-type': 'text/event-stream' },
+        });
+      }) as typeof fetch;
+
+      unsubscribe = subscribeOpenchamberEvents(() => undefined);
+      await vi.advanceTimersByTimeAsync(0);
+      expect(requests).toBe(1);
+      expect(signals[0]?.aborted).toBe(false);
+
+      unsubscribe();
+      unsubscribe = undefined;
+      expect(signals[0]?.aborted).toBe(true);
+
+      await vi.advanceTimersByTimeAsync(120_000);
+      expect(requests).toBe(1);
+    } finally {
+      try { unsubscribe?.(); } catch { /* module-level cleanup */ }
+      Object.defineProperty(globalThis, 'window', { configurable: true, value: originalWindow });
+      globalThis.fetch = originalFetch;
+      vi.useRealTimers();
+    }
+  });
 });

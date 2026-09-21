@@ -206,6 +206,7 @@ This module provides OpenCode server integration utilities for the web server ru
   - `persistSettings(changes)`
   - `setRunExclusivePersist(fn)`
   - Persistent permission auto-accept policy is stored under `permissionAutoAccept`; execution ownership lives in `lib/permission-auto-accept/`.
+  - Question auto-delegate toggle is stored under `questionAutoDelegateEnabled` (default on); execution ownership lives in `lib/question-auto-delegate/` (shared `core.d.ts` for VS Code).
   - One-shot compact-chat defaults migration: when disk marker `compactChatDefaultsMigrationVersion` is missing, rewrite legacy/absent `chatRenderMode`/`activityRenderMode`/`showTurnChangedFiles` to `sorted`/`collapsed`/`true` and persist marker `1` (marker stays on disk; response allowlist still hides it). Marker already `1` preserves user values; `persistSettings` runs the same migration before the first write.
   - `startWebUiServer({ settingsPersistLock })` late-binds that shared runner after module load.
 
@@ -366,6 +367,7 @@ When adding or changing Host HTTP APIs that mobile/desktop clients reach over Pr
 - `registerOpenChamberRoutes(app, dependencies)`: registers OpenChamber endpoints:
   - `GET /api/openchamber/update-check`
   - `POST /api/openchamber/update-install`
+    - Standalone web/CLI package installer. Electron-hosted servers return `403` before package-manager work; their owning desktop application manages updates. The desktop instance menu offers this action only for SSH-managed hosts, excluding Relay/imported connections.
   - `GET /api/zen/models`
   - session-index routes (see `session-index/DOCUMENTATION.md`)
   - transcript-cache routes under `/api/openchamber/transcript-cache` (see `transcript-cache/DOCUMENTATION.md`)

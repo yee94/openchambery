@@ -177,6 +177,41 @@ test('mobile update check attaches releaseNotes for apply_ota from CHANGELOG.md'
   assert.ok(requests.some((href) => new URL(href).pathname === '/CHANGELOG.md'));
 });
 
+test('mobile update check attaches releaseNotes for install_native_required', async () => {
+  stubChannel({
+    manifest: channelManifest({
+      activeBundle: {
+        ...channelManifest().activeBundle,
+        minShellReleaseVersion: '1.18.2-beta.22',
+      },
+    }),
+    changelog: [
+      '# Changelog',
+      '',
+      '## [1.18.2-beta.22] - 2026-08-19',
+      '',
+      '- Native reinstall notes',
+      '',
+      '## [1.18.1] - 2026-08-01',
+      '',
+      '- Older change',
+    ].join('\n'),
+  });
+  const response = await handleMobileUpdateCheck(mobileRequest({
+    ...validBody,
+    nativeVersion: '1.0.0',
+    currentBundleId: 'builtin',
+  }));
+  const body = await response.json();
+
+  assert.equal(response.status, 200);
+  assert.equal(body.primaryAction, 'install_native_required');
+  assert.equal(
+    body.releaseNotes,
+    '## [1.18.2-beta.22] - 2026-08-19\n\n- Native reinstall notes',
+  );
+});
+
 test('mobile update check omits releaseNotes when CHANGELOG is unavailable', async () => {
   stubChannel({
     manifest: channelManifest(),

@@ -31,6 +31,8 @@ export interface Limits {
   closeDeadlineMs: number;
   admissionWindowMs: number;
   maxAdmissionsPerIp: number;
+  maxHostControlAdmissionsPerIp: number;
+  maxHostControlAdmissionsPerServer: number;
   maxAdmissionEntries: number;
   idAttempts: number;
 }

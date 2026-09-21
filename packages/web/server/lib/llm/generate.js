@@ -7,6 +7,14 @@ export const MAX_ATTACHMENT_BYTES = 20 * 1024 * 1024;
 const MAX_INLINE_FILE_CHARS = 100_000;
 const TEXT_FILE_MIME = /^(text\/|application\/(json|javascript|xml|sql|yaml|x-yaml|toml))/i;
 
+const positiveMs = (value, fallback) => (
+  Number.isFinite(value) && value > 0 ? Math.trunc(value) : fallback
+);
+
+/**
+ * Agent frontmatter for official client agent permissions (action/resource/effect).
+ * The final rule must be deny-all; assertLlmAgentDenyAll verifies that before prompt.
+ */
 const AGENT_MARKDOWN = `---
 mode: primary
 hidden: true
@@ -16,7 +24,11 @@ permissions:
     effect: deny
 ---
 
-You are a text generator. Reply with only the requested text. Do not use tools.
+You generate responses for an application-owned assistant. Follow the supplied system instructions and response format.
+The application executes its registered tools, including openchamber-tool JSON fences in your response, and supplies their results on the next request.
+Emit the requested application tool call when an action requires one. Your native tool permissions describe this generator process; the application's supplied tool catalog describes the assistant's capabilities.
+Report execution and failures from supplied tool results only.
+Do not call native OpenCode tools, MCP tools, or skill tools. Native permissions are denied for this generator session.
 `;
 
 const failGenerate = (message, code = 'upstream_error') => {
@@ -29,6 +41,21 @@ const clientErrorMessage = (error, fallback) => {
   if (typeof error?.message === 'string' && error.message.trim()) return error.message;
   if (typeof error === 'string' && error.trim()) return error;
   return fallback;
+};
+
+const isAbortLike = (error, signal) => (
+  signal?.aborted
+  || error?.name === 'AbortError'
+  || error?.code === 'ABORT_ERR'
+  || (typeof error?.message === 'string' && /aborted|This operation was aborted/i.test(error.message))
+);
+
+const rethrowIfAborted = (error, signal) => {
+  if (!isAbortLike(error, signal)) return;
+  if (error instanceof Error) throw error;
+  const next = new Error(clientErrorMessage(error, 'aborted'));
+  next.name = 'AbortError';
+  throw next;
 };
 
 const assistantErrorDetail = (error) => {
@@ -176,6 +203,12 @@ const imageFilesForSession = (files, forwardImageParts) => {
   return files.filter((part) => String(part?.mime || '').startsWith('image/'));
 };
 
+const modelRef = (providerID, modelID, variant) => ({
+  id: modelID,
+  providerID,
+  ...(variant ? { variant } : {}),
+});
+
 const eventPayload = (event) => event?.payload?.payload ?? event?.payload ?? event;
 
 const eventDeltaData = (payload) => {
@@ -311,6 +344,7 @@ async function generateViaTextApi({
   location,
   providerID,
   modelID,
+  variant,
   prompt,
   signal,
 }) {
@@ -319,12 +353,17 @@ async function generateViaTextApi({
     result = await client.generate.text({
       ...(location ? { location } : {}),
       prompt,
-      model: { id: modelID, providerID },
+      model: modelRef(providerID, modelID, variant),
     }, { signal });
   } catch (error) {
+    rethrowIfAborted(error, signal);
     failGenerate(clientErrorMessage(error, 'OpenCode generate.text failed'));
   }
-  const text = typeof result?.text === 'string' ? result.text.trim() : '';
+  const text = typeof result?.text === 'string'
+    ? result.text.trim()
+    : typeof result?.data?.text === 'string'
+      ? result.data.text.trim()
+      : '';
   if (!text) failGenerate('OpenCode generate.text returned no text');
   return { text, source: 'generate.text' };
 }
@@ -334,6 +373,7 @@ async function generateViaAttachmentSession({
   workingDirectory,
   providerID,
   modelID,
+  variant,
   system,
   prompt,
   imageFiles,
@@ -354,7 +394,7 @@ async function generateViaAttachmentSession({
       created = await client.session.create({
         title: '[openchamber-llm] generate',
         agent: LLM_AGENT_NAME,
-        model: { id: modelID, providerID },
+        model: modelRef(providerID, modelID, variant),
         location,
       }, { signal });
     } catch (error) {
@@ -364,7 +404,7 @@ async function generateViaAttachmentSession({
         'llm_attachment_generation_unavailable',
       );
     }
-    sessionID = created?.id;
+    sessionID = created?.id ?? created?.data?.id;
     if (!sessionID) {
       failGenerate('OpenCode LLM session create returned no id', 'llm_attachment_generation_unavailable');
     }
@@ -400,13 +440,14 @@ async function generateViaAttachmentSession({
         delivery: 'steer',
       }, { signal });
     } catch (error) {
+      rethrowIfAborted(error, signal);
       failGenerate(clientErrorMessage(error, 'session.prompt failed'));
     }
 
     try {
       await client.session.wait({ sessionID }, { signal });
     } catch (error) {
-      if (signal?.aborted) throw error;
+      rethrowIfAborted(error, signal);
       failGenerate(clientErrorMessage(error, 'session.wait failed'));
     }
 
@@ -418,6 +459,7 @@ async function generateViaAttachmentSession({
         order: 'desc',
       }, { signal });
     } catch (error) {
+      rethrowIfAborted(error, signal);
       failGenerate(clientErrorMessage(error, 'message.list failed'));
     }
 
@@ -462,6 +504,9 @@ async function generateViaAttachmentSession({
  * Optional internal streaming: `onTextDelta` + `globalEventHub` forwards real
  * `session.text.delta` tokens on the attachment-session path only.
  * `generate.text` cannot emit live deltas (no fake typewriter).
+ *
+ * Optional `signal` from the contact continuation is combined with the generator
+ * deadline. Cancellation still runs throwaway-session cleanup.
  */
 export async function generateOpenCodeText({
   buildOpenCodeUrl,
@@ -469,12 +514,16 @@ export async function generateOpenCodeText({
   providerID,
   modelID,
   messages,
+  variant,
   clientFactory,
   ensureTempDirectory,
   forwardImageParts = false,
   onTextDelta = null,
   globalEventHub = null,
+  signal: parentSignal = null,
+  timeoutMs = GENERATE_TIMEOUT_MS,
 }) {
+  parentSignal?.throwIfAborted?.();
   if (!providerID || !modelID) {
     const error = new Error('providerID and modelID are required');
     error.code = 'validation_error';
@@ -497,9 +546,14 @@ export async function generateOpenCodeText({
   const client = makeClient({ baseUrl, headers, clientFactory });
 
   const controller = new AbortController();
+  const deadlineMs = positiveMs(timeoutMs, GENERATE_TIMEOUT_MS);
+  const requestSignal = parentSignal
+    ? AbortSignal.any([parentSignal, controller.signal])
+    : controller.signal;
   const timeout = setTimeout(() => {
-    controller.abort(new Error(`OpenCode LLM generate timed out after ${GENERATE_TIMEOUT_MS}ms`));
-  }, GENERATE_TIMEOUT_MS);
+    controller.abort(new Error(`OpenCode LLM generate timed out after ${deadlineMs}ms`));
+  }, deadlineMs);
+  timeout.unref?.();
 
   try {
     if (imageFiles.length > 0) {
@@ -532,10 +586,11 @@ export async function generateOpenCodeText({
         workingDirectory: workingDirectory.trim(),
         providerID,
         modelID,
+        variant,
         system: flattened.system,
         prompt: flattened.prompt,
         imageFiles,
-        signal: controller.signal,
+        signal: requestSignal,
         onTextDelta,
         globalEventHub,
       });
@@ -547,8 +602,9 @@ export async function generateOpenCodeText({
       client,
       providerID,
       modelID,
+      variant,
       prompt,
-      signal: controller.signal,
+      signal: requestSignal,
     });
   } finally {
     clearTimeout(timeout);
@@ -570,4 +626,5 @@ export const _test = {
   LLM_AGENT_NAME,
   AGENT_MARKDOWN,
   MAX_ATTACHMENT_BYTES,
+  GENERATE_TIMEOUT_MS,
 };

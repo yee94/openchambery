@@ -11,6 +11,10 @@ const MARKDOWN_IMAGE_SELECTOR = 'img:not([data-md-link-favicon="true"])';
 type MarkstreamPointerOptions = {
   onShowPopup?: (content: ToolPopupContent) => void;
   fileReference?: OpenFileReferenceOptions;
+  /** Directory scoped to the session; required to open the in-app Browser panel. */
+  effectiveDirectory?: string;
+  /** Opens http(s) links in the context Browser panel (not system browser). */
+  openInAppBrowser?: (directory: string, url: string) => void;
 };
 
 const getMarkdownImageSource = (image: HTMLImageElement): string => (
@@ -82,6 +86,11 @@ export const handleMarkstreamPointerEvent = (
   }
   event.preventDefault();
   event.stopPropagation();
+  const directory = (options.effectiveDirectory || '').trim();
+  if (directory && options.openInAppBrowser) {
+    options.openInAppBrowser(directory, href);
+    return;
+  }
   void openExternalUrl(href);
 };
 

@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, test } from 'bun:test';
+import { beforeEach, describe, expect, test } from 'vitest';
 import { useUIStore } from './useUIStore';
 
 beforeEach(() => {
@@ -11,10 +11,40 @@ beforeEach(() => {
     rightSidebarTab: 'git',
     pendingFileFocusPath: null,
     pendingFileViewerMode: null,
+    pendingFileNavigation: null,
+    mainTabGuard: null,
   });
 });
 
 describe('useUIStore context panel tabs', () => {
+  test('runs a synchronous navigation guard once for a file reference', () => {
+    let calls = 0;
+    useUIStore.getState().setMainTabGuard(() => { calls += 1; return true; });
+    useUIStore.getState().openContextFile('/repo', '/repo/B.ts');
+    expect(calls).toBe(1);
+    expect(useUIStore.getState().pendingFileFocusPath).toBe('/repo/B.ts');
+  });
+
+  test('defers a line reference and its pending intent until the existing guard resumes it', () => {
+    const store = useUIStore.getState();
+    store.openContextFile('/repo', '/repo/A.ts');
+    store.setPendingFileFocusPath(null);
+    const original = useUIStore.getState().contextPanelByDirectory['/repo'];
+    let resume: (() => void) | undefined;
+    store.setMainTabGuard((_tab, continueNavigation) => { resume = continueNavigation; return false; });
+    store.openContextFileAtLine('/repo', '/repo/B.ts', 7, 2);
+    expect(useUIStore.getState().contextPanelByDirectory['/repo']).toBe(original);
+    expect(useUIStore.getState().pendingFileNavigation).toBeNull();
+    expect(useUIStore.getState().pendingFileFocusPath).toBeNull();
+    expect(resume).toBeTypeOf('function');
+    store.setMainTabGuard(null);
+    resume?.();
+    const current = useUIStore.getState();
+    const panel = current.contextPanelByDirectory['/repo'];
+    expect(panel.tabs.find((tab) => tab.id === panel.activeTabId)?.targetPath).toBe('/repo/B.ts');
+    expect(current.pendingFileNavigation).toEqual({ path: '/repo/B.ts', line: 7, column: 2 });
+  });
+
   test('opens a turn-scoped file diff at the requested line', () => {
     const directory = '/repo';
 
@@ -273,5 +303,31 @@ describe('useUIStore context panel tabs', () => {
     expect(useUIStore.getState().contextPanelByDirectory[directory]?.isOpen).toBe(true);
     expect(useUIStore.getState().isRightSidebarOpen).toBe(true);
     expect(useUIStore.getState().rightSidebarTab).toBe('files');
+  });
+
+  test('openContextBrowser reuses desktop-browser tab and updates non-empty targetPath', () => {
+    const directory = '/repo';
+    const store = useUIStore.getState();
+
+    store.openContextBrowser(directory, 'https://example.com/one');
+    const first = useUIStore.getState().contextPanelByDirectory[directory];
+    expect(first?.isOpen).toBe(true);
+    expect(first?.tabs).toHaveLength(1);
+    expect(first?.tabs[0]?.mode).toBe('browser');
+    expect(first?.tabs[0]?.dedupeKey).toBe('desktop-browser');
+    expect(first?.tabs[0]?.targetPath).toBe('https://example.com/one');
+    expect(first?.activeTabId).toBe(first?.tabs[0]?.id);
+
+    store.openContextBrowser(directory, 'https://example.com/two');
+    const second = useUIStore.getState().contextPanelByDirectory[directory];
+    expect(second?.tabs).toHaveLength(1);
+    expect(second?.tabs[0]?.targetPath).toBe('https://example.com/two');
+    expect(second?.tabs[0]?.id).toBe(first?.tabs[0]?.id);
+
+    // Empty URL must not wipe an existing targetPath (header "open browser" affordance).
+    store.openContextBrowser(directory);
+    const third = useUIStore.getState().contextPanelByDirectory[directory];
+    expect(third?.tabs).toHaveLength(1);
+    expect(third?.tabs[0]?.targetPath).toBe('https://example.com/two');
   });
 });

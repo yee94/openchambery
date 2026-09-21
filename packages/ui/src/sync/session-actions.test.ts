@@ -3837,6 +3837,29 @@ describe("respondToQuestion passes directory", () => {
     expect(scopedClientDirectories).toEqual(["/test/project"])
   })
 
+  test("uses authoritative child directory over the selected parent directory", async () => {
+    const { setActionRefs, respondToQuestion } = await import("./session-actions")
+    setActionRefs(mockSdk as unknown as OpencodeClient, createChildStores([]), () => "/parent")
+    await respondToQuestion("child", "child-question", [["Continue"]], "/child-project")
+    expect(replyCalls[0].params.directory).toBe("/child-project")
+    expect(replyCalls[0].params.requestID).toBe("child-question")
+  })
+
+  test("preserves SDK error code and HTTP status for a claimed question", async () => {
+    const { setActionRefs, respondToQuestion, isQuestionSubmissionClaimedError } = await import("./session-actions")
+    const pending = buildQuestion("claimed-question", "child")
+    const store = createStore({}, { question: { child: [pending] } })
+    setActionRefs(mockSdk as unknown as OpencodeClient, createChildStores([["/child", store]]), () => "/parent")
+    mocks.questionReplyError = { status: 409, code: "question_submission_claimed", error: "Question submission already claimed" }
+    let failure: unknown
+    try { await respondToQuestion("child", pending.id, [["Draft"]]) } catch (error) { failure = error }
+    expect(isQuestionSubmissionClaimedError(failure)).toBe(true)
+    expect(store.getState().question.child).toEqual([pending])
+    expect(isQuestionSubmissionClaimedError({ status: 409, code: "other_conflict" })).toBe(false)
+    expect(isQuestionSubmissionClaimedError({ status: 500, code: "question_submission_claimed" })).toBe(false)
+    expect(isQuestionSubmissionClaimedError(new Error("409 question_submission_claimed"))).toBe(false)
+  })
+
   test("removes stale question from child store when reply returns not found", async () => {
     const question: QuestionRequest = {
       id: "q-stale",
@@ -3886,6 +3909,13 @@ describe("rejectQuestion passes directory", () => {
     expect(replyCalls.length).toBe(1)
     expect(replyCalls[0].params.requestID).toBe("q-2")
     expect(replyCalls[0].params.sessionID).toBe("session-a")
+  })
+
+  test("passes the authoritative child directory to question.reject", async () => {
+    const { setActionRefs, rejectQuestion } = await import("./session-actions")
+    setActionRefs(mockSdk as unknown as OpencodeClient, createChildStores([]), () => "/parent")
+    await rejectQuestion("child", "child-question", "/child-project")
+    expect(replyCalls[0].params.directory).toBe("/child-project")
   })
 })
 

@@ -89,6 +89,10 @@ const getSwitchObserver = (): SwitchObserver => {
     onError: (error, variables) => {
       if (!(error instanceof DesktopHostSwitchError)) return;
       if (error.result.reason === 'unsupported') return;
+      if (error.result.status.status === 'auth') {
+        toast.error(t('desktopHostSwitcher.status.authRequired'));
+        return;
+      }
       toast.error(t('desktopHostSwitcher.toast.instanceUnreachable', {
         host: redactSensitiveUrl(variables.host.label),
       }));

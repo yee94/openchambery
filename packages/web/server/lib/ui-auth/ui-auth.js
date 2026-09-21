@@ -305,7 +305,16 @@ const isUrlAuthReadableHttpPath = (pathname) => {
     || /^\/api\/projects\/[^/]+\/icon$/.test(pathname);
 };
 
-const isUrlAuthWebSocketPath = (pathname) => {
+/**
+ * Paths that may authenticate a WebSocket upgrade with `oc_url_token`.
+ * Keep in sync with tunnel-host `isTunnelWsPathAllowed` for preview proxy prefix
+ * and exact terminal/dictation/event sockets (plus realtime-proxy on desktop).
+ *
+ * @param {unknown} pathname
+ * @returns {boolean}
+ */
+export const isUrlAuthWebSocketPath = (pathname) => {
+  if (typeof pathname !== 'string' || !pathname) return false;
   return pathname === '/api/event/ws'
     || pathname === '/api/global/event/ws'
     || pathname === '/api/openchamber/realtime-proxy/ws'

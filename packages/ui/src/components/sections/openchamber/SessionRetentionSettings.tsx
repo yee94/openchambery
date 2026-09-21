@@ -6,7 +6,6 @@ import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Icon } from "@/components/icon/Icon";
 import { useUIStore } from '@/stores/useUIStore';
-import { useGlobalSessionsStore } from '@/stores/useGlobalSessionsStore';
 import { useSessionAutoCleanup } from '@/hooks/useSessionAutoCleanup';
 import { useI18n } from '@/lib/i18n';
 import { SettingsField, SettingsGroup, SettingsRow } from '@/components/sections/shared/SettingsGroup';
@@ -30,8 +29,6 @@ export const SessionRetentionSettings: React.FC = () => {
 
   const { candidates, isRunning, runCleanup, action } = useSessionAutoCleanup({ autoRun: false });
   const pendingCount = candidates.length;
-  const archivedCount = useGlobalSessionsStore((state) => state.archivedSessions.length);
-  const setArchivedSessionsDialogOpen = useUIStore((state) => state.setArchivedSessionsDialogOpen);
 
   const handleRunCleanup = React.useCallback(async () => {
     const result = await runCleanup({ force: true });
@@ -166,33 +163,6 @@ export const SessionRetentionSettings: React.FC = () => {
           className="!font-normal"
         >
           {isRunning ? t('settings.openchamber.sessionRetention.actions.cleaningUp') : t('settings.openchamber.sessionRetention.actions.runCleanupNow')}
-        </Button>
-      </SettingsField>
-
-      <SettingsField
-        itemId="sessions.archived"
-        label={t('settings.openchamber.archivedSessions.title')}
-        description={(
-          <>
-            <span className="block">
-              {archivedCount === 1
-                ? t('settings.openchamber.archivedSessions.summarySingle', { count: archivedCount })
-                : t('settings.openchamber.archivedSessions.summaryPlural', { count: archivedCount })}
-            </span>
-            <span className="block">{t('settings.openchamber.archivedSessions.description')}</span>
-          </>
-        )}
-        descriptionPlacement="outside"
-      >
-        <Button
-          type="button"
-          variant="outline"
-          size="xs"
-          onClick={() => setArchivedSessionsDialogOpen(true)}
-          className="!font-normal"
-        >
-          <Icon name="archive" className="mr-1 h-3.5 w-3.5" />
-          {t('settings.openchamber.archivedSessions.actions.manage')}
         </Button>
       </SettingsField>
     </div>

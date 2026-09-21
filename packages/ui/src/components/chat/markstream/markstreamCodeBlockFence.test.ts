@@ -36,6 +36,14 @@ describe('markstreamCodeBlockFence', () => {
     );
   });
 
+  test('keeps reconstructed loading fences open across incremental parser updates', () => {
+    for (const raw of [undefined, 'const a = 1']) {
+      expect(fenceMarkdownFromCodeBlockNode({ raw, code: 'const a = 1', language: 'ts', loading: true })).toBe(
+        '```ts\nconst a = 1\n',
+      );
+    }
+  });
+
   test('rebuild uses a fence longer than embedded triple backticks', () => {
     const code = 'example:\n```\ninner\n```\n';
     expect(pickCodeBlockFenceMarker(code)).toBe('````');

@@ -10,6 +10,8 @@ struct OpenChamberTabBarItem {
     let label: String
     let symbol: String
     let selectedSymbol: String
+    /// Display string from UI (`"4"`, `"99+"`). `nil` / empty clears `badgeValue`.
+    let badge: String?
 }
 
 /// Full-screen pass-through host for a chrome-only `UITabBarController`.
@@ -96,9 +98,14 @@ final class OpenChamberTabBarView: UIView, UITabBarControllerDelegate {
             accessibilityLabel = ariaLabel
             chromeController.tabBar.accessibilityLabel = ariaLabel
         }
-        if !nextItems.isEmpty,
-           items.map(\.id) != nextItems.map(\.id) || items.map(\.label) != nextItems.map(\.label) {
-            rebuild(items: nextItems)
+        if !nextItems.isEmpty {
+            if items.map(\.id) != nextItems.map(\.id) || items.map(\.label) != nextItems.map(\.label) {
+                rebuild(items: nextItems)
+            } else {
+                // Same tab structure: only push badgeValue updates (set / replace / clear).
+                items = nextItems
+                applyBadges()
+            }
         }
         if let nextSelectedId, !nextSelectedId.isEmpty {
             selectedId = nextSelectedId
@@ -146,9 +153,25 @@ final class OpenChamberTabBarView: UIView, UITabBarControllerDelegate {
             )
             page.tabBarItem.accessibilityIdentifier = item.id
             page.tabBarItem.accessibilityLabel = item.label
+            page.tabBarItem.badgeValue = Self.badgeValue(item.badge)
             return page
         }
         applySelectedItem()
+    }
+
+    /// Apply UI-owned badge strings to existing items without rebuilding chrome.
+    private func applyBadges() {
+        guard let viewControllers = chromeController.viewControllers else { return }
+        for (index, item) in items.enumerated() {
+            guard index < viewControllers.count else { break }
+            viewControllers[index].tabBarItem.badgeValue = Self.badgeValue(item.badge)
+        }
+    }
+
+    /// `nil` / empty clears the system badge; non-empty uses the UI display string as-is.
+    private static func badgeValue(_ badge: String?) -> String? {
+        guard let badge, !badge.isEmpty else { return nil }
+        return badge
     }
 
     private func applySelectedItem() {

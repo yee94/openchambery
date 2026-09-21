@@ -226,7 +226,8 @@ describe('native composer autocomplete JS channel', () => {
       </AlwaysCopyHost>
     ));
 
-    expect(container.textContent).toContain('/');
+    expect(document.body.textContent).toContain('/');
+    expect(Number(container.querySelector('[data-count]')?.getAttribute('data-count'))).toBeGreaterThan(0);
     root.unmount();
   });
 
@@ -251,7 +252,8 @@ describe('native composer autocomplete JS channel', () => {
       </AlwaysCopyHost>
     ));
 
-    expect(container.querySelector('[class*="z-[100]"]')).not.toBeNull();
+    expect(document.body.querySelector('[class*="z-[100]"]')).not.toBeNull();
+    expect(container.querySelector('[data-renders]')?.getAttribute('data-renders')).not.toBe('25');
     root.unmount();
   });
 });

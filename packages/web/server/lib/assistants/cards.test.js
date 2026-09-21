@@ -68,7 +68,7 @@ describe('contact cards', () => {
     })).toBeNull()
   })
 
-  it('parses contact file parts with optional filename', () => {
+  it('parses contact file parts with optional filename and attachmentID refs', () => {
     expect(parseContactPart({
       type: 'file',
       mime: 'image/png',
@@ -88,6 +88,21 @@ describe('contact cards', () => {
       type: 'file',
       mime: 'text/plain',
       url: 'data:text/plain;base64,eA==',
+    })
+    expect(parseContactPart({
+      type: 'file',
+      mime: 'image/png',
+      attachmentID: 'att_abc',
+      sha256: 'a'.repeat(64),
+      size: 12,
+      filename: 'shot.png',
+    })).toEqual({
+      type: 'file',
+      mime: 'image/png',
+      attachmentID: 'att_abc',
+      sha256: 'a'.repeat(64),
+      size: 12,
+      filename: 'shot.png',
     })
     expect(parseContactPart({ type: 'file', mime: 'image/png' })).toBeNull()
   })

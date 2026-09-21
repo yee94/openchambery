@@ -52,6 +52,8 @@ interface ChangeRowProps {
   /** Place the stage/unstage action at the row start (flat view) instead of the end (tree view). */
   actionAtStart?: boolean;
   showRevert?: boolean;
+  /** Tree view already shows parent folders, so pass the basename only. Hover still uses `file.path`. */
+  displayPath?: string;
 }
 
 export const ChangeRow = React.memo<ChangeRowProps>(function ChangeRow({
@@ -67,6 +69,7 @@ export const ChangeRow = React.memo<ChangeRowProps>(function ChangeRow({
   indentPx = 0,
   actionAtStart = false,
   showRevert = true,
+  displayPath,
 }) {
   const descriptor = useMemo(() => describeChange(file), [file]);
   const { t } = useI18n();
@@ -137,7 +140,7 @@ export const ChangeRow = React.memo<ChangeRowProps>(function ChangeRow({
             {descriptor.code}
           </span>
           <FileTypeIcon filePath={file.path} className="size-3 shrink-0" />
-          <TruncatedPath path={file.path} className="min-w-0 flex-1 typography-code" />
+          <TruncatedPath path={displayPath ?? file.path} title={file.path} className="min-w-0 flex-1 typography-code" />
           <span className="shrink-0 typography-code tabular-nums">
             <span style={{ color: 'var(--status-success)' }}>+{insertions}</span>
             <span className="text-muted-foreground mx-0.5">/</span>

@@ -32,7 +32,7 @@ The sheet body is a flex column (`flex min-h-0 flex-1 flex-col overflow-hidden`)
 
 Dismiss-gesture ownership never arms on form fields (`input` / `textarea` / `select` / `contenteditable`) or on `[data-mobile-sheet-no-dismiss]`. Those controls sit outside the list scroller as pinned chrome; treating their touchstart as a potential dismiss lets tiny finger jitter call `preventDefault` on touchmove and steals focus/keyboard on Android WebView. Initial modal focus lands on the motion surface with `preventScroll`, not the first FOCUSABLE control (which would otherwise hit the snap handle or steal search focus on stack churn).
 
-Searchable picker sheets must not treat a click as activation unless the same control also received the matching `pointerdown`. Focusing a pinned search field raises the IME, which lifts the keyboard-inset overlay; the leftover click can land on the scrim or a model row and close the sheet or pick a model. `matchingPress.ts` owns that contract: overlay scrims use `markOverlayScrimPress` / `shouldCommitOverlayScrimDismiss`, and picker rows consume `markMatchingPress` before their `onClick`. Search fields in these sheets use `type="text"` plus `inputMode="search"` so WebKit does not inject a native search-clear control.
+Searchable picker sheets must not treat a click as activation unless the same control also received the matching `pointerdown`. Focusing a pinned search field raises the IME, which lifts the keyboard-inset overlay; the leftover click can land on the scrim or a model row and close the sheet or pick a model. `matchingPress.ts` owns that contract: overlay scrims use `markOverlayScrimPress` / `shouldCommitOverlayScrimDismiss`, and picker rows consume `markMatchingPress` before their `onClick`. Search fields in these sheets use `type="text"` plus `inputMode="search"` so WebKit does not inject a native search-clear control. The pinned search field may re-focus on `pointerup` only when another field still owns document focus; a second `focus({ preventScroll })` on an already-focused input cancels the iOS keyboard.
 
 Feature-owned sheets may pass `bodyClassName` to `MobileResizableSheet` for local body layout treatment. When present, the shared header remains borderless and owns its close action and accessibility contract; features must not restore an empty picker header or picker-title divider locally. The shared sheet always owns its motion and resize handle.
 
@@ -58,6 +58,18 @@ The flow-mobile Settings root and its push-detail surface both use
 ## Dialog Surfaces
 
 `DialogContent` owns both the popup surface and its backdrop. Feature-specific dialog treatments pass popup styling through `className` and backdrop styling through `overlayClassName`; this keeps blur and dimming local to the owning dialog without changing every modal surface.
+
+### Settings picker focus verification
+
+`MobileWindowMotion.focus.test.tsx` mounts the real model picker, resizable sheet, and Base UI Dialog in happy-dom and checks `document.activeElement` after search activation across page, parent-sheet, and dialog hosts.
+
+`MobileWindowMotion.android-focus.test.tsx` mounts the exported production `useNativeMobileChrome` hook with the real model panel and sheet. Capacitor SDK calls and unrelated startup server requests are mocked at their boundaries. Native `oc:ime-state` payloads exercise both open and already-closed keyboard paths: settings/search fields retain DOM focus, keyboard geometry clears, and composer dismissal still blurs its own text field. The test also covers input touch jitter and native-close ordering. Run from the repository root:
+
+```sh
+bunx vitest run --project @openchamber/ui packages/ui/src/components/ui/MobileWindowMotion.focus.test.tsx packages/ui/src/components/ui/MobileWindowMotion.android-focus.test.tsx
+```
+
+These tests establish DOM focus behavior for supplied event sequences in happy-dom. Physical Android keyboard presentation and native event arrival order require device validation; full Settings data loading and deployed-bundle parity remain separate runtime checks.
 
 ## Grouped Cards
 

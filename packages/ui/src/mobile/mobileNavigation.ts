@@ -27,15 +27,27 @@ export type MobileSecondaryState =
       /** Assistant conversation page. The selected Assistant is owned by the
           Assistant UI store; navigation only owns the page depth. */
       kind: 'assistant';
+      /** Optional detail pushed above the retained Assistant conversation. */
+      settingsAssistantID?: string;
     }
   | {
       /** Instance management page opened above the Projects root tab. */
       kind: 'instances';
     };
 
+export type MobileSettingsReturnTo = {
+  tab: MobileTabId;
+  secondary: MobileSecondaryState | null;
+};
+
 export type MobileNavigationState = {
   activeTab: MobileTabId;
   secondary: MobileSecondaryState | null;
+  /**
+   * Origin captured when another surface opens a Settings page. Back restores
+   * this instead of leaving the user on the Settings tab.
+   */
+  settingsReturnTo: MobileSettingsReturnTo | null;
 };
 
 export type MobileNavigationActions = {
@@ -45,6 +57,21 @@ export type MobileNavigationActions = {
   openInstances: () => void;
   closeSecondary: () => void;
 };
+
+/**
+ * Remember the current tab/secondary as the Settings back target. The first
+ * origin wins so a nested Settings jump does not overwrite it. Opening Settings
+ * while already on that tab has no origin.
+ */
+export function nextSettingsReturnTo(input: {
+  activeTab: MobileTabId;
+  secondary: MobileSecondaryState | null;
+  settingsReturnTo: MobileSettingsReturnTo | null;
+}): MobileSettingsReturnTo | null {
+  if (input.settingsReturnTo) return input.settingsReturnTo;
+  if (input.activeTab === 'settings') return null;
+  return { tab: input.activeTab, secondary: input.secondary };
+}
 
 export function pushMobileChatRoute(
   routes: readonly MobileChatRoute[],
@@ -85,6 +112,7 @@ export function reconcileMobileChatPredecessor(
 export const INITIAL_MOBILE_NAVIGATION_STATE: MobileNavigationState = {
   activeTab: 'projects',
   secondary: null,
+  settingsReturnTo: null,
 };
 
 /**
@@ -112,6 +140,7 @@ export type MobileParentSessionTarget = {
 export type MobileSecondaryBackDecision =
   | { action: 'none' }
   | { action: 'closeSecondary' }
+  | { action: 'popAssistantSettings' }
   | { action: 'popChatSession'; parent: MobileParentSessionTarget };
 
 export function resolveMobileSecondaryBackDecision(input: {
@@ -119,6 +148,9 @@ export function resolveMobileSecondaryBackDecision(input: {
   parentSessionTarget: MobileParentSessionTarget | null;
 }): MobileSecondaryBackDecision {
   if (!input.secondary) return { action: 'none' };
+  if (input.secondary.kind === 'assistant' && input.secondary.settingsAssistantID) {
+    return { action: 'popAssistantSettings' };
+  }
   if (input.secondary.kind === 'chat' && input.secondary.routes.length > 1) {
     const predecessor = input.secondary.routes.at(-2)!;
     return {

@@ -1,5 +1,6 @@
 import React from 'react';
 import { cn } from '@/lib/utils';
+import { Collapsible, CollapsibleContent } from '@/components/ui/collapsible';
 import type { SessionFolder } from '@/stores/useSessionFoldersStore';
 import { useI18n } from '@/lib/i18n';
 import { Icon } from "@/components/icon/Icon";
@@ -153,7 +154,7 @@ const SessionFolderItemBase = <TSessionNode,>({
   const folderPadLeft = getSidebarRowPaddingLeft(depth);
 
   return (
-    <div className={cn('oc-folder')}>
+    <Collapsible open={!isCollapsed} className={cn('oc-folder')}>
       {/* Folder header – also acts as a drop zone when droppableRef is provided */}
       <div
         ref={droppableRef}
@@ -334,7 +335,7 @@ const SessionFolderItemBase = <TSessionNode,>({
 
       {/* Folder body — child rows indent via padding inside their own chips
           so hover/active wash stays full-width (reserved left gutter). */}
-      {!isCollapsed ? (
+      <CollapsibleContent data-sidebar-collapse className="h-[var(--collapsible-panel-height)] transition-[height] duration-200 ease-out data-[starting-style]:h-0 data-[ending-style]:h-0 data-[open]:animate-none data-[closed]:animate-none motion-reduce:transition-none" inert={isCollapsed || undefined}>
         <div className="pb-1">
           {/* Sub-folders first */}
           {subFolderItems}
@@ -363,8 +364,8 @@ const SessionFolderItemBase = <TSessionNode,>({
             </div>
           ) : null}
         </div>
-      ) : null}
-    </div>
+      </CollapsibleContent>
+    </Collapsible>
   );
 };
 

@@ -1,4 +1,7 @@
+import { sortAssistantContacts } from '@/components/assistants/sortAssistantContacts';
 import * as React from 'react';
+import { AssistantUnreadBadge } from '@/components/assistants/AssistantUnreadBadge';
+import { AssistantMarkAllReadButton } from '@/components/assistants/AssistantMarkAllReadButton';
 import { useEvent } from '@reactuses/core';
 
 import assistantGuideHero from '@/assets/assistant-guide/assistant-guide-hero-wide.jpg';
@@ -9,6 +12,7 @@ import { AssistantWorkingAvatar } from '@/components/assistants/AssistantWorking
 import { useAssistantWorking } from '@/components/assistants/assistantWorking';
 import { AssistantDeleteConfirmDialog } from '@/components/assistants/AssistantDeleteConfirmDialog';
 import { getAssistantPresentation } from '@/components/assistants/assistantPresentation';
+import { ASSISTANT_MESSAGE_PREVIEW_CLASS, getAssistantMessagePreview } from '@/components/assistants/assistantMessagePreview';
 import { Icon } from '@/components/icon/Icon';
 import { Button } from '@/components/ui/button';
 import {
@@ -122,6 +126,7 @@ function MobileAssistantDisabledGuide({ onEnable }: { onEnable: () => void }) {
 }
 
 type MobileAssistantCardProps = {
+  unreadCount: number;
   assistantID: string;
   displayName: string;
   avatarEmoji?: string;
@@ -137,6 +142,7 @@ type MobileAssistantCardProps = {
 };
 
 function MobileAssistantCard({
+  unreadCount,
   assistantID,
   displayName,
   avatarEmoji,
@@ -147,10 +153,10 @@ function MobileAssistantCard({
   onOpen,
   onEdit,
   onDelete,
-  // assignedSessionIDs / serverWorking remain public props for callers; live
-  // working state comes from useAssistantWorking(assistantID).
+  // serverWorking is snapshot-authoritative; local store is temporary only.
+  serverWorking = false,
 }: MobileAssistantCardProps) {
-  const working = useAssistantWorking(assistantID);
+  const working = useAssistantWorking(assistantID, serverWorking);
   const [menuOpen, setMenuOpen] = React.useState(false);
   const [pressed, setPressed] = React.useState(false);
   const longPressRef = React.useRef<MobileLongPressController | null>(null);
@@ -247,10 +253,11 @@ function MobileAssistantCard({
             <span className="oc-mobile-entity-title oc-mobile-assistant-name block min-w-0 truncate font-semibold text-foreground">
               {displayName}
             </span>
-            <span className="oc-mobile-assistant-summary text-muted-foreground">
+            <span className={cn('oc-mobile-assistant-summary', ASSISTANT_MESSAGE_PREVIEW_CLASS)}>
               {summary}
             </span>
           </span>
+          <AssistantUnreadBadge count={unreadCount} />
         </ContextMenuTrigger>
       </MobileFloatingSurface>
       <ContextMenuContent className="min-w-[10rem]">
@@ -276,6 +283,7 @@ export function MobileAssistantTab({ onEnable, onOpenAssistant, className }: Mob
   const mobileActions = useMobileAppActions();
   const capability = useAssistantCapabilityQuery();
   const snapshot = useAssistantSnapshotQuery();
+  const contacts = React.useMemo(() => sortAssistantContacts(snapshot.data?.assistants ?? []), [snapshot.data?.assistants]);
   const requestCreate = useAssistantUIStore((state) => state.requestCreate);
   const [deleteTarget, setDeleteTarget] = React.useState<AssistantDTO | null>(null);
   const handleEnable = useEvent(() => onEnable());
@@ -312,21 +320,39 @@ export function MobileAssistantTab({ onEnable, onOpenAssistant, className }: Mob
 
   if (capability.data?.supported && capability.data.enabled && snapshot.data?.enabled && snapshot.data.assistants.length > 0) {
     return (
-      <MobileTabPageScaffold title={pageTitle} className={className} surface={false} scrollsWithPage>
+      <MobileTabPageScaffold
+        title={pageTitle}
+        className={className}
+        surface={false}
+        scrollsWithPage
+        trailing={(
+          <Button
+            type="button"
+            variant="mobileGlass"
+            size="mobileIcon"
+            aria-label={t('assistants.settings.create')}
+            onClick={handleCreate}
+          >
+            <Icon name="add" className="size-5" />
+          </Button>
+        )}
+      >
+        <AssistantMarkAllReadButton snapshot={snapshot.data} rowClassName="flex justify-end pb-2" />
         <div
           className="oc-mobile-assistant-catalog"
           role="listbox"
           aria-label={t('assistants.listAria')}
         >
-          {snapshot.data.assistants.map((assistant) => {
+          {contacts.map((assistant) => {
             const presentation = getAssistantPresentation(assistant.name);
             const displayName = presentation.displayName || assistant.name;
-            const summary = assistant.defaultPrompt.trim();
+            const summary = getAssistantMessagePreview(assistant.latestMessagePreview, t);
 
             return (
               <MobileAssistantCard
                 key={assistant.id}
                 assistantID={assistant.id}
+                unreadCount={assistant.unreadCount ?? 0}
                 displayName={displayName}
                 avatarEmoji={presentation.avatarEmoji ?? undefined}
                 summary={summary}

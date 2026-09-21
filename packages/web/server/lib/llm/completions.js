@@ -96,7 +96,9 @@ export async function createChatCompletion({
   ensureTempDirectory,
   onTextDelta = null,
   globalEventHub = null,
+  signal = null,
 }) {
+  signal?.throwIfAborted();
   if (!isRecord(body)) throw new LlmError('validation_error', 400, 'JSON body is required');
   // generate.text / attachment-session return a full turn. This HTTP gateway
   // does not token-stream. Do not emit fake SSE after the fact.
@@ -111,12 +113,17 @@ export async function createChatCompletion({
   const resolved = parseModelRef(body.model, body.providerID, body.modelID);
   if (!resolved) throw new LlmError('validation_error', 400, 'model or providerID/modelID is required');
   const messages = normalizeMessages(body.messages);
+  if (body.variant != null && typeof body.variant !== 'string') {
+    throw new LlmError('validation_error', 400, 'variant must be a string or null');
+  }
+  const variant = body.variant?.trim() || undefined;
 
   const client = clientFactory?.() ?? null;
   const catalog = await loadCatalog(client ?? {
     provider: { list: async () => { throw new Error('no client'); } },
     model: { list: async () => { throw new Error('no client'); } },
   });
+  signal?.throwIfAborted();
   if (!isConnectedModel(catalog, resolved.providerID, resolved.modelID)) {
     throw new LlmError(
       'no_provider',
@@ -132,6 +139,7 @@ export async function createChatCompletion({
       getOpenCodeAuthHeaders,
       providerID: resolved.providerID,
       modelID: resolved.modelID,
+      ...(variant ? { variant } : {}),
       messages,
       clientFactory,
       ensureTempDirectory,
@@ -140,6 +148,7 @@ export async function createChatCompletion({
       ))?.acceptsImages),
       onTextDelta,
       globalEventHub,
+      signal,
     });
   } catch (error) {
     if (error instanceof LlmError) throw error;

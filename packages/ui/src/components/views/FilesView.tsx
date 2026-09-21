@@ -1,4 +1,5 @@
 import React from 'react';
+import { useEvent } from '@reactuses/core';
 import { runtimeFetch } from '@/lib/runtime-fetch';
 
 import { toast } from '@/components/ui';
@@ -663,6 +664,7 @@ const Dialogs: React.FC<DialogsProps> = ({
 interface FilesViewProps {
   mode?: 'full' | 'editor-only';
   isActive?: boolean;
+  targetPath?: string | null;
 }
 
 // eslint-disable-next-line react-refresh/only-export-components -- Pure polling predicate is tested directly.
@@ -728,7 +730,7 @@ const useAssetAuthRefresh = (
   return { readyKey, nonce };
 };
 
-export const FilesView: React.FC<FilesViewProps> = ({ mode = 'full', isActive = true }) => {
+export const FilesView: React.FC<FilesViewProps> = ({ mode = 'full', isActive = true, targetPath }) => {
   const { t } = useI18n();
   const { files, runtime } = useRuntimeAPIs();
   const { currentTheme, availableThemes, lightThemeId, darkThemeId } = useThemeSystem();
@@ -838,7 +840,9 @@ export const FilesView: React.FC<FilesViewProps> = ({ mode = 'full', isActive = 
   }, []);
 
   const openFiles = React.useMemo(() => openPaths.map(toFileNode), [openPaths, toFileNode]);
+  const boundTargetPath = mode === 'editor-only' && targetPath ? normalizePath(targetPath) : null;
   const effectiveSelectedPath = React.useMemo(() => {
+    if (boundTargetPath) return boundTargetPath;
     if (selectedPath) {
       const comparableSelected = toComparablePath(selectedPath);
       if (openPaths.some((path) => toComparablePath(path) === comparableSelected)) {
@@ -846,7 +850,7 @@ export const FilesView: React.FC<FilesViewProps> = ({ mode = 'full', isActive = 
       }
     }
     return openPaths[0] ?? null;
-  }, [openPaths, selectedPath]);
+  }, [boundTargetPath, openPaths, selectedPath]);
   const selectedFile = React.useMemo(() => (effectiveSelectedPath ? toFileNode(effectiveSelectedPath) : null), [effectiveSelectedPath, toFileNode]);
   const selectedFilePath = selectedFile?.path ?? '';
 
@@ -916,6 +920,7 @@ export const FilesView: React.FC<FilesViewProps> = ({ mode = 'full', isActive = 
   const desktopImageBlobUrlRef = React.useRef<string>('');
 
   const [loadedFilePath, setLoadedFilePath] = React.useState<string | null>(null);
+  const [failedFilePath, setFailedFilePath] = React.useState<string | null>(null);
 
   const [draftContent, setDraftContent] = React.useState('');
   const [isSaving, setIsSaving] = React.useState(false);
@@ -929,13 +934,14 @@ export const FilesView: React.FC<FilesViewProps> = ({ mode = 'full', isActive = 
   const diagramEditorRef = React.useRef<React.ComponentRef<typeof DiagramEditor>>(null);
   const lastLoadedFileStatRef = React.useRef<FileStatSnapshot | null>(null);
   const activeFileLoadIdRef = React.useRef(0);
+  const activeFileLoadPathRef = React.useRef<string | null>(null);
   const [autoSaveStatus, setAutoSaveStatus] = React.useState<'idle' | 'saved'>('idle');
   const [diagramSaved, setDiagramSaved] = React.useState(false);
   const [autoSaveEnabled, setAutoSaveEnabled] = React.useState(getInitialAutoSaveEnabled);
 
   const [confirmDiscardOpen, setConfirmDiscardOpen] = React.useState(false);
   const pendingSelectFileRef = React.useRef<FileNode | null>(null);
-  const pendingTabRef = React.useRef<import('@/stores/useUIStore').MainTab | null>(null);
+  const pendingTabRef = React.useRef<import('@/stores/useUIStore').MainTab | (() => void) | null>(null);
   const pendingClosePathRef = React.useRef<string | null>(null);
   const skipDirtyOnceRef = React.useRef(false);
   const copiedContentTimeoutRef = React.useRef<number | null>(null);
@@ -1616,7 +1622,10 @@ export const FilesView: React.FC<FilesViewProps> = ({ mode = 'full', isActive = 
     }
 
     let cancelled = false;
-    const paths = [...openPaths];
+    // Text reads own selected-file failure cleanup; binary previews retain stat validation.
+    const paths = openPaths.filter((path) => path !== selectedFilePath
+      || (isImageFile(path) && !path.toLowerCase().endsWith('.svg'))
+      || isPdfFile(path));
 
     void Promise.all(paths.map(async (path) => {
       try {
@@ -1634,7 +1643,7 @@ export const FilesView: React.FC<FilesViewProps> = ({ mode = 'full', isActive = 
     return () => {
       cancelled = true;
     };
-  }, [files, openPaths, removeOpenPathsByPrefix, root]);
+  }, [files, openPaths, removeOpenPathsByPrefix, root, selectedFilePath]);
 
   const displayedContent = React.useMemo(() =>
     fileContent.length > MAX_VIEW_CHARS
@@ -1701,13 +1710,13 @@ export const FilesView: React.FC<FilesViewProps> = ({ mode = 'full', isActive = 
       return;
     }
 
-    const guard = (_nextTab: import('@/stores/useUIStore').MainTab) => {
+    const guard = (_nextTab: import('@/stores/useUIStore').MainTab, continueNavigation?: () => void) => {
       if (skipDirtyOnceRef.current) {
         skipDirtyOnceRef.current = false;
         return true;
       }
       setConfirmDiscardOpen(true);
-      pendingTabRef.current = _nextTab;
+      pendingTabRef.current = continueNavigation ?? _nextTab;
       return false;
     };
 
@@ -1801,17 +1810,30 @@ export const FilesView: React.FC<FilesViewProps> = ({ mode = 'full', isActive = 
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isSaving, saveDraft]);
 
-  const loadSelectedFile = React.useCallback(async (node: FileNode) => {
+  const clearFailedFileNavigation = useEvent((path: string) => {
+    useUIStore.setState((state) => {
+      const focusMatches = normalizePath(state.pendingFileFocusPath ?? '') === path;
+      const navigationMatches = normalizePath(state.pendingFileNavigation?.path ?? '') === path;
+      if (!focusMatches && !navigationMatches) return state;
+      return {
+        ...(focusMatches ? { pendingFileFocusPath: null, pendingFileViewerMode: null } : {}),
+        ...(navigationMatches ? { pendingFileNavigation: null } : {}),
+      };
+    });
+  });
+
+  const loadSelectedFile = useEvent(async (node: FileNode) => {
     const loadId = activeFileLoadIdRef.current + 1;
     activeFileLoadIdRef.current = loadId;
     const isCurrentLoad = () => {
       if (!root) return false;
       const rootState = useFilesViewTabsStore.getState().byRoot[root];
-      const currentPath = rootState?.selectedPath ?? rootState?.openPaths[0] ?? null;
+      const currentPath = boundTargetPath ?? rootState?.selectedPath ?? rootState?.openPaths[0] ?? null;
       return activeFileLoadIdRef.current === loadId && currentPath === node.path;
     };
 
     setFileError(null);
+    setFailedFilePath(null);
     setDesktopImageSrc('');
     setLoadedFilePath(null);
 
@@ -1856,6 +1878,7 @@ export const FilesView: React.FC<FilesViewProps> = ({ mode = 'full', isActive = 
       outsideFileGrant,
     };
 
+    activeFileLoadPathRef.current = node.path;
     await readFile(node.path, readOptions)
       .then((content) => {
         if (!isCurrentLoad()) {
@@ -1882,16 +1905,28 @@ export const FilesView: React.FC<FilesViewProps> = ({ mode = 'full', isActive = 
         if (!isCurrentLoad()) {
           return;
         }
+        clearFailedFileNavigation(node.path);
+        activeFileLoadPathRef.current = null;
+        setFileLoading(false);
+        setFailedFilePath(node.path);
+        setFileContent('');
+        setDraftContent('');
+        lastLoadedFileStatRef.current = null;
+        const message = error instanceof Error ? error.message : t('filesView.error.readFileFailed');
+        setFileError(message);
+        if (mode === 'editor-only') {
+          if (root && isDirectoryReadError(error)) {
+            removeOpenPath(root, node.path);
+          } else if (root && isFileMissingError(error)) {
+            removeOpenPathsByPrefix(root, node.path);
+          }
+          return;
+        }
         if (isDirectoryReadError(error)) {
-          setFileLoading(false);
           if (root) {
-            setSelectedPath(root, null);
+            removeOpenPath(root, node.path);
           }
           setFileError(null);
-          setFileContent('');
-          setDraftContent('');
-          setLoadedFilePath(null);
-          lastLoadedFileStatRef.current = null;
           if (searchQuery.trim().length > 0) {
             setSearchQuery('');
           }
@@ -1916,26 +1951,20 @@ export const FilesView: React.FC<FilesViewProps> = ({ mode = 'full', isActive = 
           if (root) {
             removeOpenPathsByPrefix(root, node.path);
           }
-          setFileContent('');
-          setDraftContent('');
           setFileError(null);
-          lastLoadedFileStatRef.current = null;
           if (isMobile) {
             setShowMobilePageContent(false);
           }
           return;
         }
-        setFileContent('');
-        setDraftContent('');
-        setFileError(error instanceof Error ? error.message : t('filesView.error.readFileFailed'));
-        lastLoadedFileStatRef.current = null;
       })
       .finally(() => {
         if (isCurrentLoad()) {
+          activeFileLoadPathRef.current = null;
           setFileLoading(false);
         }
       });
-  }, [expandPaths, isMobile, loadDirectory, mode, readFile, readFileStat, removeOpenPathsByPrefix, root, runtime.isDesktop, searchQuery, setSelectedPath, t]);
+  });
 
   const ensurePathVisible = React.useCallback(async (targetPath: string, includeTarget: boolean) => {
     if (!root) {
@@ -1988,6 +2017,7 @@ export const FilesView: React.FC<FilesViewProps> = ({ mode = 'full', isActive = 
     diagramSavedXmlRef.current = '';
     setDraftContent('');
     setLoadedFilePath(null);
+    setFailedFilePath(null);
     if (isMobile) {
       setShowMobilePageContent(true);
     }
@@ -2008,13 +2038,21 @@ export const FilesView: React.FC<FilesViewProps> = ({ mode = 'full', isActive = 
       return;
     }
 
-    if (loadedFilePath === selectedFile.path) {
+    if (loadedFilePath === selectedFile.path || failedFilePath === selectedFile.path) {
+      return;
+    }
+    if (activeFileLoadPathRef.current === selectedFile.path) {
       return;
     }
 
     // Selection changes are guarded; this effect is also what restores persisted tabs on mount.
     void loadSelectedFile(selectedFile);
-  }, [loadSelectedFile, loadedFilePath, selectedFile]);
+  }, [files, mode, root, runtime.isDesktop, isMobile, loadSelectedFile, loadedFilePath, failedFilePath, selectedFile]);
+
+  React.useEffect(() => () => {
+    activeFileLoadIdRef.current += 1;
+    activeFileLoadPathRef.current = null;
+  }, [root, selectedFilePath]);
 
   // Sync isDirty to a ref so the polling interval can read the latest value
   // without isDirty in its dependency array (avoids interval restart on every edit/save).
@@ -2121,7 +2159,12 @@ export const FilesView: React.FC<FilesViewProps> = ({ mode = 'full', isActive = 
 
     if (nextTab) {
       setMainTabGuard(null);
-      useUIStore.getState().setActiveMainTab(nextTab);
+      if (typeof nextTab === 'function') {
+        skipDirtyOnceRef.current = false;
+        nextTab();
+      } else {
+        useUIStore.getState().setActiveMainTab(nextTab);
+      }
     }
   }, [displayedContent, handleSelectFile, isMobile, removeOpenPath, root, selectedFile?.path, setMainTabGuard, setSelectedPath]);
 
@@ -2175,9 +2218,33 @@ export const FilesView: React.FC<FilesViewProps> = ({ mode = 'full', isActive = 
 
     if (nextTab) {
       setMainTabGuard(null);
-      useUIStore.getState().setActiveMainTab(nextTab);
+      if (typeof nextTab === 'function') {
+        skipDirtyOnceRef.current = false;
+        nextTab();
+      } else {
+        useUIStore.getState().setActiveMainTab(nextTab);
+      }
     }
   }, [handleSelectFile, isMobile, removeOpenPath, root, saveDraft, selectedFile?.path, setMainTabGuard, setSelectedPath]);
+
+  const cancelPendingNavigation = useEvent(() => {
+    if (isSaving) return;
+    const nextFile = pendingSelectFileRef.current;
+    if (nextFile) clearFailedFileNavigation(nextFile.path);
+    pendingSelectFileRef.current = null;
+    pendingTabRef.current = null;
+    pendingClosePathRef.current = null;
+    skipDirtyOnceRef.current = false;
+    setConfirmDiscardOpen(false);
+  });
+
+  const retrySelectedFile = useEvent(() => {
+    if (!selectedFile || fileLoading) return;
+    setFailedFilePath(null);
+    setFileError(null);
+    setLoadedFilePath(null);
+    setFileLoading(true);
+  });
 
   const handleCloseFile = React.useCallback((path: string) => {
     const isActive = selectedFile?.path === path;
@@ -2737,6 +2804,11 @@ export const FilesView: React.FC<FilesViewProps> = ({ mode = 'full', isActive = 
     };
 
     const targetPath = normalizePath(pendingFileNavigation.path);
+    if (failedFilePath === targetPath) {
+      clearFailedFileNavigation(targetPath);
+      pendingNavigationCycleRef.current = { key: '', attempts: 0 };
+      return;
+    }
     if (!targetPath) {
       setPendingFileNavigation(null);
       pendingNavigationCycleRef.current = { key: '', attempts: 0 };
@@ -2825,10 +2897,12 @@ export const FilesView: React.FC<FilesViewProps> = ({ mode = 'full', isActive = 
     pendingNavigationCycleRef.current = { key: '', attempts: 0 };
   }, [
     canEdit,
+    clearFailedFileNavigation,
     confirmDiscardOpen,
     draftContent,
     editorViewReadyNonce,
     fileError,
+    failedFilePath,
     fileLoading,
     isSelectedImage,
     isSelectedPdf,
@@ -2848,6 +2922,10 @@ export const FilesView: React.FC<FilesViewProps> = ({ mode = 'full', isActive = 
     }
 
     const targetPath = normalizePath(pendingFileFocusPath);
+    if (failedFilePath === targetPath) {
+      clearFailedFileNavigation(targetPath);
+      return;
+    }
     if (!targetPath) {
       setPendingFileFocusPath(null);
       return;
@@ -2876,8 +2954,10 @@ export const FilesView: React.FC<FilesViewProps> = ({ mode = 'full', isActive = 
     setPendingFileFocusPath(null);
   }, [
     canEdit,
+    clearFailedFileNavigation,
     confirmDiscardOpen,
     fileError,
+    failedFilePath,
     fileLoading,
     handleSelectFile,
     isSelectedImage,
@@ -3707,10 +3787,7 @@ export const FilesView: React.FC<FilesViewProps> = ({ mode = 'full', isActive = 
       className="relative flex h-full min-h-0 min-w-0 w-full flex-col overflow-hidden"
     >
       <Dialog open={confirmDiscardOpen} onOpenChange={(open) => {
-        // Intentionally no "cancel" action. Keep dialog modal.
-        if (!open) {
-          setConfirmDiscardOpen(true);
-        }
+        if (!open) cancelPendingNavigation();
       }}>
         <DialogContent showCloseButton={false} className="max-w-md">
           <DialogHeader>
@@ -3720,6 +3797,7 @@ export const FilesView: React.FC<FilesViewProps> = ({ mode = 'full', isActive = 
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
+            <Button variant="ghost" onClick={cancelPendingNavigation} disabled={isSaving}>{t('filesView.dialog.cancel')}</Button>
             <Button
               variant="outline"
               onClick={() => void saveAndContinue()}
@@ -3728,7 +3806,7 @@ export const FilesView: React.FC<FilesViewProps> = ({ mode = 'full', isActive = 
             >
               {t('filesView.unsaved.saveChanges')}
             </Button>
-            <Button variant="destructive" onClick={discardAndContinue}>{t('filesView.unsaved.discard')}</Button>
+            <Button variant="destructive" onClick={discardAndContinue} disabled={isSaving}>{t('filesView.unsaved.discard')}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -3972,7 +4050,10 @@ export const FilesView: React.FC<FilesViewProps> = ({ mode = 'full', isActive = 
                 </div>
               )
           ) : fileError ? (
-            <div className="p-3 typography-ui text-[color:var(--status-error)]">{fileError}</div>
+            <div role="alert" className="p-3 typography-ui text-[color:var(--status-error)]">
+              <div>{fileError}</div>
+              {failedFilePath === selectedFilePath && <Button variant="outline" size="sm" className="mt-2" onClick={retrySelectedFile}>{t('contextPanel.preview.actions.retry')}</Button>}
+            </div>
           ) : isSelectedImage && selectedFile ? (
             renderImagePreview(selectedFile)
           ) : isSelectedPdf ? (
@@ -4339,7 +4420,10 @@ export const FilesView: React.FC<FilesViewProps> = ({ mode = 'full', isActive = 
                 </div>
               )
           ) : fileError ? (
-            <div className="p-4 typography-ui text-[color:var(--status-error)]">{fileError}</div>
+            <div role="alert" className="p-4 typography-ui text-[color:var(--status-error)]">
+              <div>{fileError}</div>
+              {failedFilePath === selectedFilePath && <Button variant="outline" size="sm" className="mt-2" onClick={retrySelectedFile}>{t('contextPanel.preview.actions.retry')}</Button>}
+            </div>
           ) : isSelectedImage ? (
             renderImagePreview(selectedFile, { fullHeight: true })
           ) : isSelectedPdf ? (

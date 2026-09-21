@@ -9,6 +9,7 @@ export {
   type MobileNavigationActions,
   type MobileNavigationState,
   type MobileSecondaryState,
+  type MobileSettingsReturnTo,
 } from './mobileNavigation';
 export { MOBILE_TABS, type MobileTabDefinition, type MobileTabId } from './mobileTabs';
 export {

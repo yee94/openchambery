@@ -6,16 +6,24 @@ const listIncludesImage = (value) => Array.isArray(value)
   && value.some((item) => String(item).toLowerCase() === 'image');
 
 /**
- * ModelInfo.capabilities.input includes "image" for vision-capable models.
+ * Vision capability projection.
+ * Prefer authoritative OpenCode Model.capabilities (`input.image` boolean /
+ * `attachment`, or v2 list `input` containing `"image"`), then fall back to
+ * legacy modalities/input/attachment shapes used by older fixtures.
  * Do not treat model titles or unrelated flags as vision isolation.
  */
-function modelAcceptsImages(model) {
+export function modelAcceptsImages(model) {
   if (!isRecord(model)) return false;
-  if (isRecord(model.capabilities) && listIncludesImage(model.capabilities.input)) return true;
-  // Defensive: older projected shapes may still carry modalities/input.
+  if (isRecord(model.capabilities)) {
+    if (isRecord(model.capabilities.input) && typeof model.capabilities.input.image === 'boolean') {
+      return model.capabilities.input.image === true;
+    }
+    if (listIncludesImage(model.capabilities.input)) return true;
+    if (model.capabilities.attachment === true) return true;
+  }
   if (isRecord(model.modalities) && listIncludesImage(model.modalities.input)) return true;
   if (listIncludesImage(model.input)) return true;
-  return false;
+  return model.attachment === true;
 }
 
 /**
@@ -114,43 +122,120 @@ export function isConnectedModel(catalog, providerID, modelID) {
   return catalog.models.some((entry) => entry.providerID === providerID && entry.modelID === modelID);
 }
 
+/** Bound provider/model catalog loads so a pending SDK call cannot stall a contact lane. */
+export const CONNECTED_CATALOG_TIMEOUT_MS = 8_000;
+
+const isAbortError = (error) => (
+  error?.name === 'AbortError'
+  || error?.code === 'ABORT_ERR'
+  || (typeof error?.message === 'string' && /aborted|timed out/i.test(error.message))
+);
+
+const resolveCatalogLocation = (options) => {
+  if (!options || typeof options !== 'object') return undefined;
+  if (isRecord(options.location)) return options.location;
+  if (options.directory || options.workspace) {
+    return {
+      ...(options.directory ? { directory: options.directory } : {}),
+      ...(options.workspace ? { workspace: options.workspace } : {}),
+    };
+  }
+  return undefined;
+};
+
 /**
  * Load the connected catalog from an official `@opencode-ai/client`.
  * Uses model.list + provider.list only (no config.providers).
  * Failure is distinct from a successful empty catalog.
  *
  * Real client returns `{ location, data }` and throws declared JSON errors
- * (no `{ error }` envelope).
+ * (no `{ error }` envelope). Uses a bounded AbortSignal (default 8s).
  *
  * @param {object} client
- * @param {{ directory?: string, workspace?: string } | undefined} [location]
+ * @param {{
+ *   location?: { directory?: string, workspace?: string },
+ *   directory?: string,
+ *   workspace?: string,
+ *   signal?: AbortSignal,
+ *   timeoutMs?: number,
+ * }} [options]
  */
-export async function loadConnectedCatalog(client, location) {
+export async function loadConnectedCatalog(client, options = {}) {
+  const timeoutMs = Number.isFinite(options.timeoutMs) && options.timeoutMs > 0
+    ? Math.trunc(options.timeoutMs)
+    : CONNECTED_CATALOG_TIMEOUT_MS;
+  const location = resolveCatalogLocation(options);
   const request = location ? { location } : undefined;
-  let providersResult;
-  let modelsResult;
+  const parentSignal = options.signal;
+  const controller = new AbortController();
+  const onParentAbort = () => {
+    try {
+      controller.abort(parentSignal?.reason instanceof Error
+        ? parentSignal.reason
+        : new Error('Connected catalog aborted'));
+    } catch {
+      // ignore
+    }
+  };
+  if (parentSignal) {
+    if (parentSignal.aborted) onParentAbort();
+    else parentSignal.addEventListener('abort', onParentAbort, { once: true });
+  }
+  const timer = setTimeout(() => {
+    try {
+      controller.abort(new Error(`Connected catalog timed out after ${timeoutMs}ms`));
+    } catch {
+      // ignore
+    }
+  }, timeoutMs);
+  timer.unref?.();
+
+  const requestOptions = { signal: controller.signal };
   try {
-    [providersResult, modelsResult] = await Promise.all([
-      client.provider.list(request),
-      client.model.list(request),
-    ]);
+    let providersResult;
+    let modelsResult;
+    try {
+      [providersResult, modelsResult] = await Promise.all([
+        client.provider.list(request, requestOptions),
+        client.model.list(request, requestOptions),
+      ]);
+    } catch (error) {
+      if (controller.signal.aborted || isAbortError(error)) {
+        throw error;
+      }
+      const upstream = new Error(
+        typeof error?.message === 'string' && error.message.trim()
+          ? error.message
+          : 'OpenCode provider catalog is unavailable',
+      );
+      upstream.code = 'upstream_error';
+      upstream.cause = error;
+      throw upstream;
+    }
+    if (!Array.isArray(providersResult?.data) || !Array.isArray(modelsResult?.data)) {
+      const error = new Error('OpenCode provider catalog is unavailable');
+      error.code = 'upstream_error';
+      throw error;
+    }
+    return projectConnectedModels({
+      providers: providersResult.data,
+      models: modelsResult.data,
+    });
   } catch (error) {
-    const upstream = new Error(
-      typeof error?.message === 'string' && error.message.trim()
-        ? error.message
-        : 'OpenCode provider catalog is unavailable',
-    );
-    upstream.code = 'upstream_error';
-    upstream.cause = error;
-    throw upstream;
-  }
-  if (!Array.isArray(providersResult?.data) || !Array.isArray(modelsResult?.data)) {
-    const error = new Error('OpenCode provider catalog is unavailable');
-    error.code = 'upstream_error';
+    if (controller.signal.aborted || isAbortError(error)) {
+      const timedOut = typeof error?.message === 'string' && /timed out/i.test(error.message)
+        || (controller.signal.reason instanceof Error && /timed out/i.test(controller.signal.reason.message));
+      const next = new Error(
+        timedOut
+          ? `Connected catalog timed out after ${timeoutMs}ms`
+          : 'Connected catalog request was aborted',
+      );
+      next.code = 'upstream_error';
+      throw next;
+    }
     throw error;
+  } finally {
+    clearTimeout(timer);
+    parentSignal?.removeEventListener?.('abort', onParentAbort);
   }
-  return projectConnectedModels({
-    providers: providersResult.data,
-    models: modelsResult.data,
-  });
 }

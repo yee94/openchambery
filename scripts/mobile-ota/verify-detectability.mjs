@@ -177,8 +177,14 @@ function buildProfiles(manifest, expectedVersion = version) {
   // identity that clears the version gate without already being on active:
   // nativeVersion >= gate + currentBundleId builtin when gate === active;
   // otherwise a parseable id at the gate / just below active when ungated.
+  //
+  // Stable native (gate === active, no prerelease): builtin + nativeVersion
+  // equal to active is already-embedded web → none. Expecting apply_ota here
+  // is what failed v1.19.14 detectability. Beta native is not treated as
+  // embedded (iOS marketing version would lie), so builtin still apply_ota.
   let newShellBundleId
   let newShellNativeVersion = expectedVersion
+  let newShellExpect = 'apply_ota'
   if (!gate) {
     newShellBundleId = versionBelow(expectedVersion)
   } else if (gate !== expectedVersion) {
@@ -186,6 +192,7 @@ function buildProfiles(manifest, expectedVersion = version) {
   } else {
     newShellBundleId = 'builtin'
     newShellNativeVersion = expectedVersion
+    if (!String(expectedVersion).includes('-')) newShellExpect = 'none'
   }
 
   return [
@@ -226,7 +233,7 @@ function buildProfiles(manifest, expectedVersion = version) {
         shellApiVersion: shellApi,
         currentBundleId: newShellBundleId,
       },
-      expect: 'apply_ota',
+      expect: newShellExpect,
     },
     {
       name: 'device already on bundle',
@@ -496,6 +503,51 @@ function assertFixtureTables() {
   const liveFromB = buildProfiles(fixtureB, '1.18.3-beta.2')
   if (liveFromB[0].expect !== 'apply_ota' || liveFromB[1].expect !== 'apply_ota') {
     throw new Error('live profile builder must treat missing minShellReleaseVersion as ungated')
+  }
+
+  const liveNativeStable = buildProfiles({
+    activeBundle: {
+      bundleId: 'cccccccccccccccc',
+      releaseVersion: '1.19.14',
+      url: '/ota/bundles/cccccccccccccccc.zip',
+      size: 1,
+      checksum: '0'.repeat(64),
+      rolloutPercent: 100,
+      rolloutSalt: 'fixture-native-stable',
+      minShellApiVersion: 1,
+      minShellReleaseVersion: '1.19.14',
+      platforms: {
+        ios: { minNativeBuild: 1 },
+        android: { minNativeBuild: 1 },
+      },
+    },
+  }, '1.19.14')
+  if (liveNativeStable[2].body.currentBundleId !== 'builtin' || liveNativeStable[2].body.nativeBuild !== 21) {
+    throw new Error('live native stable new-shell must be builtin with tiny nativeBuild')
+  }
+  if (liveNativeStable[2].expect !== 'none') {
+    throw new Error('live native stable new-shell (gate===active builtin) must expect none — web already embedded')
+  }
+
+  const liveNativeBeta = buildProfiles({
+    activeBundle: {
+      bundleId: 'dddddddddddddddd',
+      releaseVersion: '1.19.13-beta.9',
+      url: '/ota/bundles/dddddddddddddddd.zip',
+      size: 1,
+      checksum: '0'.repeat(64),
+      rolloutPercent: 100,
+      rolloutSalt: 'fixture-native-beta',
+      minShellApiVersion: 1,
+      minShellReleaseVersion: '1.19.13-beta.9',
+      platforms: {
+        ios: { minNativeBuild: 1 },
+        android: { minNativeBuild: 1 },
+      },
+    },
+  }, '1.19.13-beta.9')
+  if (liveNativeBeta[2].expect !== 'apply_ota') {
+    throw new Error('live native beta new-shell (gate===active builtin) must expect apply_ota — beta is not embedded')
   }
 
   console.log('  ok fixtures: A (gated version) + B (legacy ungated) + C (stable channel rollback)')

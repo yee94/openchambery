@@ -156,6 +156,8 @@ export const mergeContactTranscript = (
     if (rows.length === 0) continue;
     const index = lastIndexByTurn.get(preview.turnID);
     if (index === undefined) {
+      // Failed overlays must not trail into a later conversation after wipe.
+      if (preview.status === 'failed' && base.some((message) => message.turnID !== preview.turnID)) continue;
       trailing.push(...rows);
       continue;
     }
@@ -189,10 +191,151 @@ export const admitContactTurnPreview = (
   turnID: string,
   occurredAt = Date.now(),
 ): ContactTurnPreview[] => {
-  if (previews.some((preview) => preview.assistantID === assistantID && preview.turnID === turnID)) {
+  const withoutStaleFailed = previews.filter((preview) => (
+    preview.assistantID !== assistantID || preview.status !== 'failed' || preview.turnID === turnID
+  ));
+  if (withoutStaleFailed.some((preview) => preview.assistantID === assistantID && preview.turnID === turnID)) {
+    return withoutStaleFailed.length === previews.length
+      ? previews as ContactTurnPreview[]
+      : withoutStaleFailed as ContactTurnPreview[];
+  }
+  return [...withoutStaleFailed, { assistantID, turnID, status: 'admitted', bubbles: [], occurredAt }];
+};
+
+/**
+ * Rehydrate the 3-dot processing row from server-authoritative activeContactTurn
+ * after APP restart / remount. Local SSE previews remain temporary overlays.
+ */
+export const seedContactTurnPreviewFromServer = (
+  previews: readonly ContactTurnPreview[],
+  active: { assistantID: string; turnID: string; admittedAt: number } | null | undefined,
+  settledTurnIDs?: ReadonlySet<string>,
+): ContactTurnPreview[] => {
+  if (!active?.turnID || !active.assistantID) return previews as ContactTurnPreview[];
+  if (settledTurnIDs?.has(active.turnID)) return previews as ContactTurnPreview[];
+  return admitContactTurnPreview(previews, active.assistantID, active.turnID, active.admittedAt);
+};
+
+/**
+ * Apply snapshot authority to local previews.
+ * - Seed from activeContactTurn when server is busy.
+ * - When server is idle and snapshot revision covers admission, drop stale
+ *   admitted/streaming overlays (missed contact-turn-end recovery).
+ * - Never clear a newer local send whose admission revision is ahead of this
+ *   snapshot, or a turn still in optimistic "sending".
+ * - Recover durable error rows from contact messages without SSE.
+ * - Failed overlays are ephemeral: a newer turn or vanished turnID drops them
+ *   so a timeout cannot trail into the next conversation.
+ */
+export const applyServerContactTurnAuthority = (
+  previews: readonly ContactTurnPreview[],
+  input: {
+    assistantID: string;
+    activeContactTurn?: { turnID: string; admittedAt: number } | null;
+    serverWorking?: boolean;
+    snapshotRevision?: number | null;
+    admissionRevisionByTurnID?: ReadonlyMap<string, number> | Record<string, number>;
+    pendingSendTurnIDs?: ReadonlySet<string>;
+    messages?: readonly Pick<AssistantContactMessage, 'role' | 'turnID' | 'status' | 'text'>[];
+    settledTurnIDs?: ReadonlySet<string>;
+    occurredAt?: number;
+  },
+): ContactTurnPreview[] => {
+  const assistantID = input.assistantID;
+  const pending = input.pendingSendTurnIDs ?? new Set<string>();
+  const settled = input.settledTurnIDs ?? new Set<string>();
+  const revision = typeof input.snapshotRevision === 'number' && Number.isFinite(input.snapshotRevision)
+    ? input.snapshotRevision
+    : null;
+  const admissionRevisions = input.admissionRevisionByTurnID instanceof Map
+    ? input.admissionRevisionByTurnID
+    : new Map(Object.entries(input.admissionRevisionByTurnID ?? {}).map(([key, value]) => [key, Number(value)]));
+  const occurredAt = input.occurredAt ?? Date.now();
+  const active = input.activeContactTurn && input.activeContactTurn.turnID
+    ? input.activeContactTurn
+    : null;
+  const serverBusy = Boolean(input.serverWorking || active);
+
+  let next = seedContactTurnPreviewFromServer(
+    previews,
+    active ? { assistantID, turnID: active.turnID, admittedAt: active.admittedAt } : null,
+    settled,
+  );
+
+  const messages = Array.isArray(input.messages) ? input.messages : [];
+  for (const message of messages) {
+    if (message.role !== 'assistant' || message.status !== 'error') continue;
+    if (pending.has(message.turnID) || settled.has(message.turnID)) continue;
+    next = endContactTurnPreview(next, {
+      assistantID,
+      turnID: message.turnID,
+      status: 'error',
+      error: message.text || 'upstream_error',
+      occurredAt,
+    });
+  }
+
+  next = reconcileContactTurnPreviews(next, messages);
+
+  if (serverBusy) {
+    // Keep other local turns unless a stale idle path; only ensure active is present.
+    const busyFiltered = next.filter((preview) => {
+      if (preview.assistantID !== assistantID) return true;
+      if (preview.status !== 'admitted' && preview.status !== 'streaming') return true;
+      if (pending.has(preview.turnID)) return true;
+      if (active && preview.turnID === active.turnID) return true;
+      // Server is busy on a different turn — drop overlays the server no longer owns
+      // once their admission is covered by this snapshot revision.
+      const admittedAt = admissionRevisions.get(preview.turnID);
+      if (typeof admittedAt === 'number' && revision != null && revision < admittedAt) return true;
+      if (typeof admittedAt === 'number' && revision != null && revision >= admittedAt && preview.turnID !== active?.turnID) {
+        return false;
+      }
+      // Unknown admission age while server points at another turn: keep until covered.
+      return !active || preview.turnID === active.turnID;
+    });
+    if (
+      busyFiltered.length === previews.length
+      && busyFiltered.every((preview, index) => preview === previews[index])
+    ) {
+      return previews as ContactTurnPreview[];
+    }
+    return busyFiltered as ContactTurnPreview[];
+  }
+
+  // Without an authoritative snapshot revision, seed only — do not clear local overlays.
+  if (revision == null) {
+    if (
+      next.length === previews.length
+      && next.every((preview, index) => preview === previews[index])
+    ) {
+      return previews as ContactTurnPreview[];
+    }
+    return next;
+  }
+
+  // Server idle: clear temporary processing once snapshot covers admission.
+  const filtered = next.filter((preview) => {
+    if (preview.assistantID !== assistantID) return true;
+    if (preview.status !== 'admitted' && preview.status !== 'streaming') return true;
+    if (pending.has(preview.turnID)) return true;
+    if (settled.has(preview.turnID)) return false;
+    const admittedAt = admissionRevisions.get(preview.turnID);
+    if (typeof admittedAt === 'number' && revision < admittedAt) {
+      // Stale idle snapshot must not wipe a newer send.
+      return true;
+    }
+    // Covered by idle authority (or seeded without local admission tracking after
+    // a full snapshot refresh that already reports idle).
+    return false;
+  });
+  if (
+    filtered.length === previews.length
+    && filtered.every((preview, index) => preview === previews[index])
+  ) {
     return previews as ContactTurnPreview[];
   }
-  return [...previews, { assistantID, turnID, status: 'admitted', bubbles: [], occurredAt }];
+  return filtered.length === next.length ? next : filtered as ContactTurnPreview[];
 };
 
 export const applyContactBubbleDelta = (
@@ -230,10 +373,21 @@ export const endContactTurnPreview = (
     error?: string;
     occurredAt: number;
   },
+  options: {
+    /** Ignore stale ends for turns the surface never tracked (do not invent failed rows). */
+    requireExisting?: boolean;
+  } = {},
 ): ContactTurnPreview[] => {
+  if (options.requireExisting) {
+    if (!previews.some((preview) => preview.assistantID === event.assistantID && preview.turnID === event.turnID)) {
+      return previews as ContactTurnPreview[];
+    }
+  }
   const admitted = admitContactTurnPreview(previews, event.assistantID, event.turnID, event.occurredAt);
   return admitted.map((preview) => {
     if (preview.assistantID !== event.assistantID || preview.turnID !== event.turnID) return preview;
+    // A later-admitted turn must not be wiped by a stale end for an older turnID.
+    if (preview.status === 'complete' || preview.status === 'failed') return preview;
     return {
       ...preview,
       status: event.status === 'error' ? 'failed' as const : 'complete' as const,
@@ -246,8 +400,22 @@ export const reconcileContactTurnPreviews = (
   previews: readonly ContactTurnPreview[],
   messages: readonly Pick<AssistantContactMessage, 'role' | 'turnID'>[],
 ): ContactTurnPreview[] => {
+  const presentTurnIDs = new Set(messages.map((message) => message.turnID).filter(Boolean));
+  const lastTurnID = messages.length > 0 ? messages[messages.length - 1]?.turnID ?? null : null;
+  const liveTurnID = [...previews].reverse().find((preview) => (
+    preview.status === 'admitted' || preview.status === 'streaming'
+  ))?.turnID ?? lastTurnID;
   const authoritativeTurns = new Set(messages.flatMap((message) => message.role === 'assistant' ? [message.turnID] : []));
-  const next = previews.filter((preview) => preview.status !== 'complete' || !authoritativeTurns.has(preview.turnID));
+  const next = previews.filter((preview) => {
+    if (preview.status === 'admitted' || preview.status === 'streaming') return true;
+    if (preview.status === 'complete' && authoritativeTurns.has(preview.turnID)) return false;
+    if (!presentTurnIDs.has(preview.turnID)) return false;
+    if (preview.status === 'failed') {
+      if (liveTurnID && liveTurnID !== preview.turnID) return false;
+      if (lastTurnID && lastTurnID !== preview.turnID) return false;
+    }
+    return true;
+  });
   return next.length === previews.length ? previews as ContactTurnPreview[] : next;
 };
 

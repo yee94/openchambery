@@ -117,9 +117,42 @@ it('enforces the replay limit independently', async () => {
 });
 
 it('enforces the per-IP admission limit independently', async () => {
-  const admissionLimit = await start({ maxAdmissionsPerIp: 1 }, { resolveClientIp: () => 'shared-ip' }); const admissionHost = identity(); const admissionSecondHost = identity(); await control(admissionLimit, admissionHost);
-  expect(await closeCode(hostUrl(admissionLimit, admissionSecondHost, 'host-control'))).toBe(4029);
+  const admissionLimit = await start({ maxAdmissionsPerIp: 1 }, { resolveClientIp: () => 'shared-ip' }); const admissionHost = identity(); await control(admissionLimit, admissionHost);
+  await open(clientUrl(admissionLimit, admissionHost));
+  expect(await closeCode(clientUrl(admissionLimit, admissionHost))).toBe(4029);
   expect(admissionLimit.getSnapshot()).toMatchObject({ reasons: { limited: 1 } });
+});
+
+it('rate-limits host-control admissions per IP across different serverIds', async () => {
+  const relay = await start({ maxHostControlAdmissionsPerIp: 1 }, { resolveClientIp: () => 'shared-ip' });
+  const first = identity(); const second = identity();
+  await control(relay, first);
+  expect(await closeCode(hostUrl(relay, second, 'host-control'))).toBe(4029);
+  expect(relay.getSnapshot()).toMatchObject({ controls: 1, reasons: { limited: 1 } });
+});
+
+it('keeps the live host-control when a later admission for the same server is limited', async () => {
+  const relay = await start({ maxHostControlAdmissionsPerServer: 1 });
+  const host = identity();
+  const first = await control(relay, host);
+  expect(await closeCode(hostUrl(relay, host, 'host-control'))).toBe(4029);
+  expect(first.readyState).toBe(WebSocket.OPEN);
+  expect(relay.getSnapshot()).toMatchObject({ controls: 1, reasons: { limited: 1 } });
+});
+
+it('does not apply host-control admission caps to client upgrades', async () => {
+  const relay = await start({ maxHostControlAdmissionsPerIp: 1, maxHostControlAdmissionsPerServer: 1, maxAdmissionsPerIp: 10 });
+  const host = identity();
+  await control(relay, host);
+  const client = await open(clientUrl(relay, host));
+  expect(client.readyState).toBe(WebSocket.OPEN);
+});
+
+it('rate-limits malformed upgrades per IP without inspecting a client version', async () => {
+  const relay = await start({ maxAdmissionsPerIp: 1 }, { resolveClientIp: () => 'scanner-ip' });
+  expect(await closeCode(`${relay.wsUrl}?v=9&role=client&serverId=x`)).toBe(1008);
+  expect(await closeCode(`${relay.wsUrl}?v=9&role=client&serverId=x`)).toBe(4029);
+  expect(relay.getSnapshot()).toMatchObject({ reasons: { policyRejected: 1, limited: 1 } });
 });
 
 it('expires replay entries using the injected clock', async () => {

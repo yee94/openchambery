@@ -448,4 +448,196 @@ describe('session-goal runtime — pause for question', () => {
       runtime.stop();
     });
   });
+
+  it('keeps the goal active when question auto-delegate will handle the ask', async () => {
+    const patches = [];
+    const session = buildSession('active');
+    const fetchImpl = async (input, init = {}) => {
+      const path = String(input).split('?')[0];
+      if (path.endsWith('/session/ses-goal') && init.method === 'PATCH') {
+        patches.push(JSON.parse(init.body || '{}'));
+      }
+      return new Response(JSON.stringify(session), { status: 200 });
+    };
+
+    await withFetch(fetchImpl, async () => {
+      const runtime = createSessionGoalRuntime({
+        buildOpenCodeUrl: (pathname) => `http://opencode${pathname}`,
+        getOpenCodeAuthHeaders: () => ({}),
+        getSmallModelService: async () => ({
+          generateSmallModelText: async () => ({ text: '{"verdict":"continue","note":"in progress"}' }),
+        }),
+        idleQuietMs: 1_000_000,
+        kickoffQuietMs: 1,
+        shouldKeepGoalActiveForQuestion: () => true,
+      });
+      runtime.processPayload(questionAskedPayload(), '/repo');
+      await flushQuestionPause();
+      expect(patches.length).toBe(0);
+      expect(session.metadata.openchamber.goal.status).toBe('active');
+      runtime.stop();
+    });
+  });
+
+  it('pauses the root owner goal when a grandchild session asks a question', async () => {
+    const patches = [];
+    const grand = { id: 'ses-grand', parentID: 'ses-child', directory: '/repo/wt' };
+    const child = { id: 'ses-child', parentID: 'ses-goal', directory: '/repo/wt' };
+    const parent = buildSession('active');
+    parent.directory = '/repo';
+    const fetchImpl = async (input, init = {}) => {
+      const path = String(input).split('?')[0];
+      if (path.endsWith('/session/ses-grand')) {
+        return new Response(JSON.stringify(grand), { status: 200 });
+      }
+      if (path.endsWith('/session/ses-child')) {
+        return new Response(JSON.stringify(child), { status: 200 });
+      }
+      if (path.endsWith('/session/ses-goal')) {
+        if (init.method === 'PATCH') {
+          const body = JSON.parse(init.body || '{}');
+          patches.push(body);
+          parent.metadata = body.metadata;
+        }
+        return new Response(JSON.stringify(parent), { status: 200 });
+      }
+      return new Response(JSON.stringify(parent), { status: 200 });
+    };
+
+    await withFetch(fetchImpl, async () => {
+      const runtime = makeRuntime();
+      runtime.processPayload(questionAskedPayload('ses-grand'), '/repo/wt');
+      await flushQuestionPause();
+      expect(patches.length).toBe(1);
+      expect(patches[0].metadata.openchamber.goal.status).toBe('paused');
+      runtime.stop();
+    });
+  });
+
+  it('notifies onGoalPaused after abort so question timers can reverse-pause', async () => {
+    const paused = [];
+    const session = buildSession('active');
+    const fetchImpl = async (input, init = {}) => {
+      const path = String(input).split('?')[0];
+      if (path.endsWith('/session/ses-goal') && init.method === 'PATCH') {
+        const body = JSON.parse(init.body || '{}');
+        session.metadata = body.metadata;
+      }
+      return new Response(JSON.stringify(session), { status: 200 });
+    };
+
+    await withFetch(fetchImpl, async () => {
+      const runtime = createSessionGoalRuntime({
+        buildOpenCodeUrl: (pathname) => `http://opencode${pathname}`,
+        getOpenCodeAuthHeaders: () => ({}),
+        getSmallModelService: async () => ({
+          generateSmallModelText: async () => ({ text: '{"verdict":"continue","note":"x"}' }),
+        }),
+        idleQuietMs: 1_000_000,
+        kickoffQuietMs: 1,
+        onGoalPaused: (sessionId, directory) => {
+          paused.push({ sessionId, directory });
+        },
+      });
+      runtime.processPayload({
+        type: 'message.updated',
+        properties: {
+          info: {
+            role: 'assistant',
+            sessionID: 'ses-goal',
+            error: { name: 'MessageAbortedError' },
+          },
+        },
+      }, '/repo');
+      await flushQuestionPause();
+      expect(session.metadata.openchamber.goal.status).toBe('paused');
+      expect(paused).toEqual([{ sessionId: 'ses-goal', directory: '/repo' }]);
+      runtime.stop();
+    });
+  });
+
+  it('notifies onGoalPaused when metadata lands paused before abort (UI race)', async () => {
+    const paused = [];
+    const session = buildSession('paused');
+    session.metadata.openchamber.goal.statusReason = 'paused by user';
+    const fetchImpl = async () => new Response(JSON.stringify(session), { status: 200 });
+
+    await withFetch(fetchImpl, async () => {
+      const runtime = createSessionGoalRuntime({
+        buildOpenCodeUrl: (pathname) => `http://opencode${pathname}`,
+        getOpenCodeAuthHeaders: () => ({}),
+        getSmallModelService: async () => ({
+          generateSmallModelText: async () => ({ text: '{"verdict":"continue","note":"x"}' }),
+        }),
+        idleQuietMs: 1_000_000,
+        kickoffQuietMs: 1,
+        onGoalPaused: (sessionId, directory) => {
+          paused.push({ sessionId, directory });
+        },
+      });
+      // Abort arrives after UI already wrote paused metadata — must still notify.
+      runtime.processPayload({
+        type: 'message.updated',
+        properties: {
+          info: {
+            role: 'assistant',
+            sessionID: 'ses-goal',
+            error: { name: 'MessageAbortedError' },
+          },
+        },
+      }, '/repo');
+      await flushQuestionPause();
+      expect(paused).toEqual([{ sessionId: 'ses-goal', directory: '/repo' }]);
+      runtime.stop();
+    });
+  });
+
+  it('session.updated paused-by-user notifies onGoalPaused; question pause does not', async () => {
+    const paused = [];
+    const userPaused = buildSession('paused');
+    userPaused.metadata.openchamber.goal.statusReason = 'paused by user';
+    const questionPaused = buildSession('paused');
+    questionPaused.metadata.openchamber.goal.statusReason = 'paused for question';
+
+    const makeRuntime = (session) => createSessionGoalRuntime({
+      buildOpenCodeUrl: (pathname) => `http://opencode${pathname}`,
+      getOpenCodeAuthHeaders: () => ({}),
+      getSmallModelService: async () => ({
+        generateSmallModelText: async () => ({ text: '{"verdict":"continue","note":"x"}' }),
+      }),
+      idleQuietMs: 1_000_000,
+      kickoffQuietMs: 1,
+      onGoalPaused: (sessionId, directory) => {
+        paused.push({ sessionId, directory, reason: session.metadata.openchamber.goal.statusReason });
+      },
+    });
+
+    await withFetch(async () => new Response(JSON.stringify(userPaused), { status: 200 }), async () => {
+      const runtime = makeRuntime(userPaused);
+      runtime.processPayload({
+        type: 'session.updated',
+        properties: { info: userPaused },
+      }, '/repo');
+      await flushQuestionPause();
+      expect(paused).toEqual([{
+        sessionId: 'ses-goal',
+        directory: '/repo',
+        reason: 'paused by user',
+      }]);
+      runtime.stop();
+    });
+
+    paused.length = 0;
+    await withFetch(async () => new Response(JSON.stringify(questionPaused), { status: 200 }), async () => {
+      const runtime = makeRuntime(questionPaused);
+      runtime.processPayload({
+        type: 'session.updated',
+        properties: { info: questionPaused },
+      }, '/repo');
+      await flushQuestionPause();
+      // Question-driven pause must preserve auto-delegate timers.
+      expect(paused).toEqual([]);
+      runtime.stop();
+    });
+  });
 });

@@ -1,4 +1,7 @@
+import { sortAssistantContacts } from './sortAssistantContacts';
 import React from 'react';
+import { AssistantUnreadBadge } from './AssistantUnreadBadge';
+import { AssistantMarkAllReadButton } from './AssistantMarkAllReadButton';
 import { useEvent } from '@reactuses/core';
 import { AssistantWorkingAvatar } from './AssistantWorkingAvatar';
 import { useAssistantWorking } from './assistantWorking';
@@ -23,20 +26,26 @@ import { useUIStore } from '@/stores/useUIStore';
 import { AssistantConversationSurface } from './AssistantConversationSurface';
 import { AssistantDeleteConfirmDialog } from './AssistantDeleteConfirmDialog';
 import { getAssistantPresentation } from './assistantPresentation';
+import { ASSISTANT_MESSAGE_PREVIEW_CLASS, getAssistantMessagePreview } from './assistantMessagePreview';
 import { resolveAssistantWorkspacePresentation } from './assistantWorkspaceState';
 
 type MobileAssistantConversationHeaderProps = {
   assistant?: Pick<AssistantDTO, 'id' | 'name' | 'assignedSessionIDs' | 'working'> | null;
   onBack: () => void;
+  onOpenSettings?: (assistantID: string) => void;
 };
 
-const MobileAssistantConversationHeader: React.FC<MobileAssistantConversationHeaderProps> = ({ assistant, onBack }) => {
+const MobileAssistantConversationHeader: React.FC<MobileAssistantConversationHeaderProps> = ({ assistant, onBack, onOpenSettings }) => {
   const { t } = useI18n();
   const mobileActions = useMobileAppActions();
   const presentation = assistant ? getAssistantPresentation(assistant.name) : null;
   const displayName = assistant && presentation ? presentation.displayName || assistant.name : '';
   const openSettings = useEvent(() => {
     if (!assistant) return;
+    if (onOpenSettings) {
+      onOpenSettings(assistant.id);
+      return;
+    }
     openAssistantSettings(assistant.id, mobileActions ? { openMobileSettings: mobileActions.openSettings } : undefined);
   });
 
@@ -64,6 +73,8 @@ const MobileAssistantConversationHeader: React.FC<MobileAssistantConversationHea
 };
 
 type AssistantListItemProps = {
+  unreadCount: number;
+  summary: string;
   assistantID: string;
   displayName: string;
   avatarEmoji?: string;
@@ -79,6 +90,8 @@ type AssistantListItemProps = {
 };
 
 const AssistantListItem: React.FC<AssistantListItemProps> = ({
+  unreadCount,
+  summary,
   assistantID,
   displayName,
   avatarEmoji,
@@ -89,10 +102,10 @@ const AssistantListItem: React.FC<AssistantListItemProps> = ({
   onSelect,
   onEdit,
   onDelete,
-  // assignedSessionIDs / serverWorking remain public props for callers; live
-  // working state comes from useAssistantWorking(assistantID).
+  // serverWorking is snapshot-authoritative; local store is temporary only.
+  serverWorking = false,
 }) => {
-  const working = useAssistantWorking(assistantID);
+  const working = useAssistantWorking(assistantID, serverWorking);
   const [menuOpen, setMenuOpen] = React.useState(false);
   const handleSelect = useEvent(() => onSelect());
   const handleEdit = useEvent(() => {
@@ -130,7 +143,9 @@ const AssistantListItem: React.FC<AssistantListItemProps> = ({
         <AssistantWorkingAvatar name={assistantID} emoji={avatarEmoji} size={24} label={displayName} working={working} />
         <span className="min-w-0 flex-1">
           <span className="block truncate typography-ui-label font-medium">{displayName}</span>
+          <span className={cn(ASSISTANT_MESSAGE_PREVIEW_CLASS, 'mt-1.5')}>{summary}</span>
         </span>
+        <AssistantUnreadBadge count={unreadCount} />
       </ContextMenuTrigger>
       <ContextMenuContent className="min-w-[10rem]">
         <ContextMenuItem onClick={handleEdit}>
@@ -155,9 +170,11 @@ export type AssistantViewProps = {
   activeOverride?: boolean;
   /** When present, mobile renders a second-level conversation header with Back. */
   onMobileBack?: () => void;
+  /** Phone stack owns the independent Settings detail above this conversation. */
+  onMobileOpenSettings?: (assistantID: string) => void;
 };
 
-export const AssistantView: React.FC<AssistantViewProps> = ({ activeOverride, onMobileBack }) => {
+export const AssistantView: React.FC<AssistantViewProps> = ({ activeOverride, onMobileBack, onMobileOpenSettings }) => {
   const { t } = useI18n();
   const { isMobile } = useDeviceInfo();
   const mobileActions = useMobileAppActions();
@@ -171,6 +188,7 @@ export const AssistantView: React.FC<AssistantViewProps> = ({ activeOverride, on
   const capabilityQuery = useAssistantCapabilityQuery();
   const snapshotQuery = useAssistantSnapshotQuery();
   const snapshot = snapshotQuery.data;
+  const contacts = React.useMemo(() => sortAssistantContacts(snapshot?.assistants ?? []), [snapshot?.assistants]);
   const selectedAssistantID = useAssistantUIStore((state) => state.assistantByTransport[transport] ?? null);
   const selectAssistant = useAssistantUIStore((state) => state.selectAssistant);
   const requestCreate = useAssistantUIStore((state) => state.requestCreate);
@@ -213,11 +231,11 @@ export const AssistantView: React.FC<AssistantViewProps> = ({ activeOverride, on
     assistantCount: snapshot?.assistants.length ?? 0,
     hasAssistant: Boolean(assistant),
   });
-  const renderState = (icon: 'cloud-off' | 'error-warning' | 'ai-agent', title: string, description?: string, action?: React.ReactNode) => <div className="relative flex h-full min-h-0 flex-col">{isMobileSurface ? <MobileAssistantConversationHeader assistant={assistant} onBack={handleMobileBack} /> : null}<div className="flex min-h-0 flex-1 flex-col items-center justify-center px-6 pt-[calc(max(0.25rem,var(--oc-safe-area-top,0px))+var(--oc-mobile-detail-navigation-height,3.5rem))] text-center"><Icon name={icon} className="size-6 text-muted-foreground" /><h1 className="mt-4 typography-ui-header font-semibold">{title}</h1>{description ? <p className="mt-2 max-w-md typography-ui text-muted-foreground">{description}</p> : null}{action ? <div className="mt-5">{action}</div> : null}</div></div>;
+  const renderState = (icon: 'cloud-off' | 'error-warning' | 'ai-agent', title: string, description?: string, action?: React.ReactNode) => <div className="relative flex h-full min-h-0 flex-col">{isMobileSurface ? <MobileAssistantConversationHeader assistant={assistant} onBack={handleMobileBack} onOpenSettings={onMobileOpenSettings} /> : null}<div className="flex min-h-0 flex-1 flex-col items-center justify-center px-6 pt-[calc(max(0.25rem,var(--oc-safe-area-top,0px))+var(--oc-mobile-detail-navigation-height,3.5rem))] text-center"><Icon name={icon} className="size-6 text-muted-foreground" /><h1 className="mt-4 typography-ui-header font-semibold">{title}</h1>{description ? <p className="mt-2 max-w-md typography-ui text-muted-foreground">{description}</p> : null}{action ? <div className="mt-5">{action}</div> : null}</div></div>;
   if (workspaceState === 'loading') {
     return (
       <div className="relative flex h-full min-h-0 flex-col">
-        {isMobileSurface ? <MobileAssistantConversationHeader assistant={assistant} onBack={handleMobileBack} /> : null}
+        {isMobileSurface ? <MobileAssistantConversationHeader assistant={assistant} onBack={handleMobileBack} onOpenSettings={onMobileOpenSettings} /> : null}
         <div
           className="flex min-h-0 flex-1 flex-col items-center justify-center px-6 pt-[calc(max(0.25rem,var(--oc-safe-area-top,0px))+var(--oc-mobile-detail-navigation-height,3.5rem))] text-center"
           aria-busy="true"
@@ -238,18 +256,30 @@ export const AssistantView: React.FC<AssistantViewProps> = ({ activeOverride, on
     <div className="relative flex h-full min-h-0 overflow-hidden bg-background" data-presentation="workspace">
       {isMobileSurface ? null : (
         <section className="flex h-full min-h-0 w-[clamp(16rem,22vw,20rem)] shrink-0 flex-col overflow-hidden">
-          <header className="shrink-0 px-4 pb-3 pt-4 sm:px-5">
-            <h1 className="truncate typography-ui-label font-semibold text-foreground">{t('assistants.title')}</h1>
+          <header className="flex shrink-0 items-center gap-3 px-4 pb-3 pt-4 sm:px-5">
+            <h1 className="min-w-0 flex-1 truncate typography-ui-label font-semibold text-foreground">{t('assistants.title')}</h1>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              aria-label={t('assistants.settings.create')}
+              onClick={openCreateSettings}
+            >
+              <Icon name="add" className="size-4" />
+            </Button>
           </header>
+          <AssistantMarkAllReadButton snapshot={snapshot} rowClassName="flex justify-end px-4 pb-2 sm:px-5" />
           <div className="min-h-0 flex-1 overflow-y-auto px-3 pb-4 sm:px-4" role="listbox" aria-label={t('assistants.listAria')}>
             <div className="flex flex-col gap-1 border-t border-border/40 pt-3">
-              {snapshot.assistants.map((item) => {
+              {contacts.map((item) => {
                 const selected = item.id === selectedAssistantID;
                 const itemPresentation = getAssistantPresentation(item.name);
                 return (
                   <AssistantListItem
                     key={item.id}
                     assistantID={item.id}
+                    unreadCount={item.unreadCount ?? 0}
+                    summary={getAssistantMessagePreview(item.latestMessagePreview, t)}
                     displayName={itemPresentation.displayName}
                     avatarEmoji={itemPresentation.avatarEmoji ?? undefined}
                     selected={selected}
@@ -275,7 +305,7 @@ export const AssistantView: React.FC<AssistantViewProps> = ({ activeOverride, on
       />
       <div className={cn('relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-background', !isMobileSurface && 'border-l border-[var(--surface-subtle)]')}>
         {isMobileSurface ? (
-          <MobileAssistantConversationHeader assistant={assistant} onBack={handleMobileBack} />
+          <MobileAssistantConversationHeader assistant={assistant} onBack={handleMobileBack} onOpenSettings={onMobileOpenSettings} />
         ) : (
           <header className="flex h-16 shrink-0 items-center gap-3.5 border-b border-[var(--surface-subtle)]/70 px-5 sm:px-7">
             <AssistantWorkingAvatar name={assistant.id} emoji={presentation.avatarEmoji} size={30} label={presentation.displayName || assistant.name} />

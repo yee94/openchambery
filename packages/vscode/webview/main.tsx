@@ -12,8 +12,10 @@ import {
   isSessionTurnChangesRoute,
 } from './sessionTurnChangesRoute';
 import { shouldSkipVSCodeNotificationSession } from './notificationSessionFilter';
+import { applyQuestionAutoDelegateHostTip } from './questionAutoDelegateTip';
 import { getSettingsBridgeMessageType, isSettingsBootstrapRequest } from '../src/settings-bootstrap-runtime';
 import type { RuntimeAPIs } from '@openchamber/ui/lib/api/types';
+import { refreshQuestionAutoDelegate } from '@openchamber/ui/lib/questionAutoDelegate';
 import { opencodeClient } from '@openchamber/ui/lib/opencode/client';
 import { sanitizeHeadersForBrowser } from '@openchamber/ui/lib/runtime-fetch';
 import {
@@ -96,6 +98,9 @@ const handleConnectionMessage = (event: MessageEvent) => {
     const properties = msg.properties && typeof msg.properties === 'object' ? msg.properties : msg;
     window.dispatchEvent(new CustomEvent('openchamber:worktree-bootstrap-status', { detail: properties }));
   }
+  // Tip-only: one shared Query refresh. Do not re-dispatch window message
+  // (same handler would recurse). No extra UI CustomEvent listener required.
+  applyQuestionAutoDelegateHostTip(msg, refreshQuestionAutoDelegate);
 };
 
 window.addEventListener('message', handleConnectionMessage);

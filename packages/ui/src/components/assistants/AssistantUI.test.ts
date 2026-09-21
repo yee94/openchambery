@@ -234,7 +234,7 @@ describe('Assistant UI product contract', () => {
     expect(mobileStyles).toContain('.oc-mobile-assistant-avatar .overflow-hidden');
   });
 
-  test('shows bounded prompt details without a model badge on Assistant cards', async () => {
+  test('shows bounded latest-message previews without a model badge on Assistant cards', async () => {
     const [mobileTab, view, mobileStyles] = await Promise.all([
       read('../../mobile/assistant/MobileAssistantTab.tsx'),
       read('AssistantView.tsx'),
@@ -243,7 +243,7 @@ describe('Assistant UI product contract', () => {
     expect(mobileTab).toContain('oc-mobile-assistant-name');
     expect(mobileTab).toContain('oc-mobile-assistant-summary');
     expect(mobileTab).not.toContain('name="arrow-right-s"');
-    // List cards keep name + prompt only — no provider/model chip.
+    // List cards keep name + latest-message preview only — no provider/model chip.
     expect(mobileTab).not.toContain('oc-mobile-assistant-card-header');
     expect(mobileTab).not.toContain('oc-mobile-assistant-mode');
     expect(mobileTab).not.toContain('{subtitle}');
@@ -263,7 +263,7 @@ describe('Assistant UI product contract', () => {
     expect(cardStyles).toContain('min-height: 7rem');
     expect(cardStyles).toContain('align-items: flex-start');
     expect(cardStyles).toContain('padding: 1rem');
-    expect(cardStyles).toContain('-webkit-line-clamp: 3');
+    expect(cardStyles).toContain('-webkit-line-clamp: 2');
   });
 
   test('separates mobile disabled guidance, empty onboarding, and unavailable states', async () => {
@@ -365,19 +365,19 @@ describe('Assistant UI product contract', () => {
     expect(conversation).not.toContain('<StatusRowContainer');
     expect(conversation).not.toContain('<TimelineDialog');
     expect(conversation).not.toContain('<ChatInput');
-    expect(conversation).toContain('<ChatPromptComposer');
+    expect(conversation).toContain('<AssistantSessionComposer');
+    expect(await read('AssistantSessionComposer.tsx')).toContain('<ChatPromptComposer');
     expect(conversation).toContain('layout="inline"');
     expect(conversation).toContain('data-assistant-contact-composer');
     expect(conversation).toContain('data-assistant-contact-composer-surface');
     expect(conversation).toContain('sendLabel={t(\'assistants.contact.send\')}');
-    expect(conversation).toContain('pending={false}');
-    expect(conversation).not.toContain('pending={sending}');
+    expect(conversation).toContain('pending={sending}');
     expect(conversation).toContain('beginContactComposerSubmit');
     expect(conversation).toContain('createContactSendGate');
     expect(conversation).toContain('markContactOptimisticFailed');
     expect(conversation).toContain('contactSendErrorMessage');
     expect(conversation).toContain("t('assistants.contact.timedOut')");
-    expect(conversation.indexOf("setDraft('')")).toBeLessThan(conversation.indexOf('await sendAssistantContactMessage'));
+    expect(conversation.indexOf('clearSentDraft()')).toBeGreaterThan(conversation.indexOf('await sendAssistantContactMessage'));
     expect(conversation.indexOf('begun.turn')).toBeLessThan(conversation.indexOf('await sendAssistantContactMessage'));
     expect(conversation).toContain('sendGate.release()');
     expect(conversation).toContain('data-assistant-contact-turn-status');
@@ -403,8 +403,10 @@ describe('Assistant UI product contract', () => {
     expect(conversation).toContain('fileAccept="*/*"');
     expect(conversation).toContain('onPaste={handlePaste}');
     expect(conversation).toContain('onDrop={handleDrop}');
-    expect(conversation).toContain('data-assistant-contact-image');
-    expect(conversation).toContain('data-assistant-contact-file');
+    expect(conversation).toContain('<AssistantContactAttachment');
+    const attachmentRenderer = await read('AssistantContactAttachment.tsx');
+    expect(attachmentRenderer).toContain('data-assistant-contact-image');
+    expect(attachmentRenderer).toContain('data-assistant-contact-file');
     expect(conversation).toContain('data-assistant-contact-text');
     expect(conversation).toContain('[overflow-wrap:anywhere]');
     expect(conversation).toContain('overflow-x-hidden overflow-y-auto');
@@ -412,7 +414,7 @@ describe('Assistant UI product contract', () => {
     expect(conversation).not.toContain('footerContent');
     expect(conversation).not.toContain('<MemoModelControls');
     expect(conversation).not.toContain('<CommandAutocomplete');
-    expect(conversation).not.toContain('<Button');
+    expect(conversation).toContain('data-assistant-contact-pagination');
     expect(conversation).not.toContain('<Textarea');
     expect(conversation).toContain('<AssistantSessionCard');
     expect(conversation).toContain('<AssistantAssistantCard');
@@ -445,8 +447,8 @@ describe('Assistant UI product contract', () => {
     expect(card).toContain('role="button"');
     expect(card).toContain('onClick={openSession}');
     expect(card).toContain('CONTACT_SESSION_CARD_COVER_CLASS');
-    expect(await read('contactCardChrome.ts')).toContain('w-fit max-w-[15rem]');
-    expect(await read('contactCardChrome.ts')).toContain('w-fit max-w-[20rem]');
+    expect(await read('contactCardChrome.ts')).toContain('w-fit min-w-0 max-w-[min(100%,15rem)]');
+    expect(await read('contactCardChrome.ts')).toContain('w-fit min-w-0 max-w-[min(100%,20rem)]');
     expect(await read('contactCardChrome.ts')).toContain('rounded-[1.35rem]');
     expect(await read('contactCardChrome.ts')).toContain('ring-[var(--surface-subtle)]');
     expect(card).toContain('readSessionChangeSummary');
@@ -525,11 +527,12 @@ describe('Assistant UI product contract', () => {
       read('../chat/ChatPromptComposer.tsx'),
       read('../chat/ChatComposerSurface.tsx'),
     ]);
-    expect(conversation).toContain('<ChatPromptComposer');
+    expect(conversation).toContain('<AssistantSessionComposer');
+    expect(await read('AssistantSessionComposer.tsx')).toContain('<ChatPromptComposer');
     expect(conversation).not.toContain('<ChatInput');
     expect(conversation).toContain('onAddFiles');
     expect(conversation).toContain('fileAccept="*/*"');
-    expect(conversation).not.toContain('onStop');
+    expect(conversation).toContain('onStop');
     expect(conversation).not.toContain('thinkingLevel');
     expect(promptComposer).toContain('data-composer-send="true"');
     expect(promptComposer).toContain('data-composer-circle={sendReady ? \'true\' : undefined}');
@@ -569,9 +572,10 @@ describe('Assistant UI product contract', () => {
     );
     expect(promptComposer).toContain('const contentHeight = inline ? Math.max(textarea.scrollHeight, 48) : textarea.scrollHeight;');
     expect(promptComposer).toContain('const nextInlineGrown = nextHeight > 48;');
-    expect(promptComposer).toContain("'min-h-12 max-h-32 px-3 py-3 leading-6'");
+    expect(promptComposer).toContain("'field-sizing-fixed min-h-12 max-h-32 px-3 py-3 leading-6'");
+    expect(promptComposer).toContain("textarea.style.height = inline ? '0px' : 'auto'");
     expect(promptComposer).toContain("fillContainer={inline ? false : textareaProps?.fillContainer}");
-    expect(promptComposer).toContain("inline && 'flex min-h-12 items-end'");
+    expect(promptComposer).toContain("inline && cn('flex min-h-12', inlineGrown ? 'items-end' : 'items-center')");
     expect(promptComposer).not.toContain('inline && !inlineAlignEnd');
     expect(promptComposer).not.toContain('min-h-8 max-h-32 self-center px-3 py-2 leading-5');
     expect(promptComposer).toContain('flex h-12 shrink-0 items-center pr-1.5');
@@ -619,11 +623,14 @@ describe('Assistant UI product contract', () => {
     ]);
     expect(conversation).toContain('useAssistantContactMessagesQuery');
     expect(conversation).toContain('sendAssistantContactMessage');
-    expect(conversation).toContain('{ parts: begun.parts }');
+    expect(conversation).toContain('uploadAssistantAttachment');
+    expect(conversation).toContain('begun.messageID, { parts }');
     expect(conversation).not.toContain('appendAssistantContactCard');
     expect(conversation).not.toContain('parseContactComposerInput');
     expect(queries).toContain('/contact/messages');
-    expect(queries).toContain("type: 'file'");
+    // SendPart is text | full AssistantContactFilePart union (url or attachment descriptor), not a local Extract.
+    expect(queries).toContain('AssistantContactSendPart');
+    expect(queries).toContain('AssistantContactFilePart');
     expect(queries).toContain('/contact/cards');
     expect(queries).toContain('/contact/dm');
     expect(queries).toContain('CONTACT_SEND_TIMEOUT_MS = 15_000');
@@ -748,6 +755,8 @@ describe('Assistant UI product contract', () => {
     expect(conversation).not.toContain('chat-content-max-width');
     expect(conversation).not.toContain('inputClassName=');
     expect(conversation).toContain("bg-[var(--primary-base)]/90 text-[var(--primary-foreground)]");
+    expect(conversation).toContain('px-4 py-2.5 typography-markdown leading-6');
+    expect(conversation).not.toContain('px-4 py-2.5 typography-ui leading-6');
     expect(conversation).toContain('border border-dashed border-border/50 bg-[var(--surface-muted)]/70');
     expect(conversation).toContain("cn('bg-[var(--surface-muted)] text-foreground', sameAssistantRun && 'rounded-tl-lg')");
     expect(conversation).toContain("startsTurn ? 'mt-6 first:mt-0' : sameAssistantRun ? 'mt-1.5' : 'mt-3'");
@@ -930,17 +939,25 @@ describe('Assistant UI product contract', () => {
     expect(avatar).toContain('bg-[var(--status-success)]');
     expect(avatar).toContain('absolute right-0 bottom-0 size-2');
     expect(working).toContain('isAssistantWorking');
-    expect(working).not.toContain('serverWorking');
+    expect(working).toContain('serverWorking');
     expect(working).not.toContain('assignedSessionIDs');
     expect(view).toContain('<AssistantWorkingAvatar');
-    expect(view).toContain('useAssistantWorking(assistantID)');
+    expect(view).toContain('useAssistantWorking(assistantID, serverWorking)');
     expect(view).not.toContain('working={selectedWorking}');
     expect(conversation).toContain('<AssistantWorkingAvatar');
     expect(conversation).not.toContain('working={!isPeer && working}');
     expect(conversation).not.toContain('useAssistantWorking');
-    expect(conversation).toContain('oc.settle.complete');
+    expect(conversation).toContain('applyServerContactTurnAuthority');
+    expect(conversation).toContain('assistant.activeContactTurn');
+    expect(conversation).toContain('confirmContactAdmissionByMessageID');
+    expect(conversation).toContain('admission_timeout');
+    expect(conversation).toContain('isInternalSettleText');
+    expect(conversation).toContain("text.trim().startsWith('oc.settle.')");
+    expect(conversation).toContain('Drop legacy pure oc.settle.');
+    expect(conversation).not.toContain('assistants.contact.settle.complete');
     expect(conversation).not.toContain('<Activity');
     expect(mobileTab).toContain('<AssistantWorkingAvatar');
+    expect(mobileTab).toContain('useAssistantWorking(assistantID, serverWorking)');
     expect(card).toContain("persisted === 'error' || persisted === 'question' || persisted === 'complete'");
     expect(card).toContain("if (liveType === 'idle') return 'complete'");
     expect(generate).toContain('client.session.promptAsync');

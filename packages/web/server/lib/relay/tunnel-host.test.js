@@ -17,7 +17,7 @@ import {
   encodeJsonPayload,
   encodeTunnelFrame,
 } from './tunnel-codec.js';
-import { createTunnelHost } from './tunnel-host.js';
+import { createTunnelHost, isTunnelWsPathAllowed } from './tunnel-host.js';
 
 const textEncoder = new TextEncoder();
 const textDecoder = new TextDecoder();
@@ -67,6 +67,72 @@ const waitFor = async (predicate, { timeoutMs = 2000, intervalMs = 5 } = {}) => 
   }
   throw new Error('waitFor timed out');
 };
+
+describe('isTunnelWsPathAllowed', () => {
+  it('allows exact terminal/dictation/event sockets and preview proxy prefix', () => {
+    expect(isTunnelWsPathAllowed('/api/terminal/ws')).toBe(true);
+    expect(isTunnelWsPathAllowed('/api/dictation/ws')).toBe(true);
+    expect(isTunnelWsPathAllowed('/api/event/ws')).toBe(true);
+    expect(isTunnelWsPathAllowed('/api/global/event/ws')).toBe(true);
+    expect(isTunnelWsPathAllowed('/api/preview/proxy/abc123/')).toBe(true);
+    expect(isTunnelWsPathAllowed('/api/preview/proxy/abc123/@vite/client')).toBe(true);
+    expect(isTunnelWsPathAllowed('/api/preview/proxy/deadbeef01234567')).toBe(true);
+  });
+
+  it('rejects non-allowlisted WS paths', () => {
+    expect(isTunnelWsPathAllowed('/api/evil/ws')).toBe(false);
+    expect(isTunnelWsPathAllowed('/api/session')).toBe(false);
+    expect(isTunnelWsPathAllowed('/api/preview/targets')).toBe(false);
+    expect(isTunnelWsPathAllowed('/api/preview/proxy')).toBe(false);
+    expect(isTunnelWsPathAllowed('/api/terminal/ws/extra')).toBe(false);
+    expect(isTunnelWsPathAllowed('/api/preview/proxy/../session')).toBe(false);
+    expect(isTunnelWsPathAllowed('/api/preview/proxy/%2e%2e/evil')).toBe(false);
+    expect(isTunnelWsPathAllowed('/api/preview/proxy/../../api/session')).toBe(false);
+    expect(isTunnelWsPathAllowed('')).toBe(false);
+    expect(isTunnelWsPathAllowed(null)).toBe(false);
+  });
+});
+
+describe('createTunnelHost WS path allowlist', () => {
+  it('aborts WsOpen for disallowed paths and dials preview proxy prefix', async () => {
+    FakeWebSocket.reset();
+
+    /** @type {Uint8Array[]} */
+    const outbound = [];
+    const host = createTunnelHost({
+      connectionId: 'test-conn',
+      getLocalPort: () => 9,
+      sendFrame: (frame) => {
+        outbound.push(frame);
+      },
+      getBufferedAmount: () => 0,
+      createWebSocket: (url, protocols) => new FakeWebSocket(url, protocols),
+    });
+
+    await host.handleFrame(encodeTunnelFrame(
+      TunnelFrameType.WsOpen,
+      10,
+      encodeJsonPayload({ path: '/api/evil/ws', query: '' }),
+    ));
+    expect(FakeWebSocket.instances.length).toBe(0);
+    await waitFor(() => outbound.some((frame) => decodeTunnelFrame(frame).frameType === TunnelFrameType.StreamAbort));
+
+    await host.handleFrame(encodeTunnelFrame(
+      TunnelFrameType.WsOpen,
+      11,
+      encodeJsonPayload({
+        path: '/api/preview/proxy/abc123/',
+        query: 'oc_preview_token=t&oc_url_token=u',
+      }),
+    ));
+    expect(FakeWebSocket.instances.length).toBe(1);
+    expect(FakeWebSocket.instances[0].url).toBe(
+      'ws://127.0.0.1:9/api/preview/proxy/abc123/?oc_preview_token=t&oc_url_token=u',
+    );
+
+    host.close();
+  });
+});
 
 describe('createTunnelHost WS fragment ordering', () => {
   it('keeps large then small WS text messages non-interleaved on one stream', async () => {

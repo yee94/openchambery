@@ -7,12 +7,14 @@ import { normalizePath } from '@/lib/pathNormalization';
 
 import {
   INITIAL_MOBILE_NAVIGATION_STATE,
+  nextSettingsReturnTo,
   popMobileChatRoute,
   pushMobileChatRoute,
   reconcileMobileChatPredecessor,
   replaceMobileChatRoute,
   type MobileChatRoute,
   type MobileNavigationState,
+  type MobileSettingsReturnTo,
 } from './mobileNavigation';
 import type { MobileTabId } from './mobileTabs';
 
@@ -32,8 +34,15 @@ type OpenDraftOptions = Parameters<
 >[0];
 
 type MobileNavigationStore = MobileNavigationState & {
-  /** Switch root tab; implicitly closes any secondary page. */
+  /** Switch root tab; implicitly closes any secondary page and Settings returnTo. */
   setActiveTab: (tab: MobileTabId) => void;
+  /**
+   * Open the Settings tab from another surface, remembering the current tab and
+   * secondary page so Settings back can restore them.
+   */
+  openSettingsFromCurrent: () => void;
+  /** Restore the captured Settings origin. Returns false when there is none. */
+  restoreSettingsReturnTo: () => MobileSettingsReturnTo | null;
   /**
    * Opens a root session route and synchronizes the primary session selection.
    */
@@ -55,6 +64,8 @@ type MobileNavigationStore = MobileNavigationState & {
   openDraft: (options?: OpenDraftOptions) => void;
   /** Select an Assistant, then open its conversation as the second-level page. */
   openAssistant: (assistantID: string) => void;
+  pushAssistantSettings: (assistantID: string) => void;
+  popAssistantSettings: () => void;
   /** Open instance management as a second-level page above the current root tab. */
   openInstances: () => void;
   closeSecondary: () => void;
@@ -124,11 +135,30 @@ const mirrorCurrentSession = (target: OpenSessionTarget): void => {
  * owns lightweight route order; `useSessionUIStore` owns the active primary
  * session used by app-wide status and composer behavior.
  */
-export const useMobileNavigationStore = create<MobileNavigationStore>((set) => ({
+export const useMobileNavigationStore = create<MobileNavigationStore>((set, get) => ({
   ...INITIAL_MOBILE_NAVIGATION_STATE,
   setActiveTab: (tab) => {
     resetMobileSessionMirror();
-    set({ activeTab: tab, secondary: null });
+    set({ activeTab: tab, secondary: null, settingsReturnTo: null });
+  },
+  openSettingsFromCurrent: () => {
+    resetMobileSessionMirror();
+    set((state) => ({
+      activeTab: 'settings',
+      secondary: null,
+      settingsReturnTo: nextSettingsReturnTo(state),
+    }));
+  },
+  restoreSettingsReturnTo: () => {
+    const returnTo = get().settingsReturnTo;
+    if (!returnTo) return null;
+    resetMobileSessionMirror();
+    set({
+      activeTab: returnTo.tab,
+      secondary: returnTo.secondary,
+      settingsReturnTo: null,
+    });
+    return returnTo;
   },
   openSession: (target) => {
     set({
@@ -210,6 +240,14 @@ export const useMobileNavigationStore = create<MobileNavigationStore>((set) => (
     resetMobileSessionMirror();
     set({ secondary: { kind: 'instances' } });
   },
+  pushAssistantSettings: (assistantID) => set((state) => {
+    if (state.secondary?.kind !== 'assistant' || state.secondary.settingsAssistantID === assistantID) return state;
+    return { secondary: { ...state.secondary, settingsAssistantID: assistantID } };
+  }),
+  popAssistantSettings: () => set((state) => {
+    if (state.secondary?.kind !== 'assistant' || !state.secondary.settingsAssistantID) return state;
+    return { secondary: { kind: 'assistant' } };
+  }),
   closeSecondary: () => {
     resetMobileSessionMirror();
     set((state) => (state.secondary ? { ...state, secondary: null } : state));

@@ -11,6 +11,7 @@ import { useSessionUIStore } from '@/sync/session-ui-store';
 import { useNotificationStore } from '@/sync/notification-store';
 import { useAllLiveSessions } from '@/sync/sync-context';
 import { useAssistantCapabilityQuery } from '@/queries/assistantQueries';
+import { AssistantNavigationUnreadBadge } from '@/components/assistants/AssistantUnreadBadge';
 import { openAssistant } from '@/stores/useAssistantUIStore';
 import { useAlwaysVisibleSessionIds, useRunningSessionIds } from './sidebar/hooks/useAlwaysVisibleSessionIds';
 import { useDirectoryStore } from '@/stores/useDirectoryStore';
@@ -2652,6 +2653,7 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
               >
                 <Icon name="ai-agent" className="size-4" />
                 <span className="truncate">{t("assistants.title")}</span>
+                <AssistantNavigationUnreadBadge className="ml-auto" />
               </Button> : null}
             </div>
           </>

@@ -155,6 +155,9 @@ const resetHeartbeatTimer = (expectedAttempt: ConnectionAttempt) => {
     cleanupAttempt();
     scheduleReconnect();
   }, HEARTBEAT_TIMEOUT_MS);
+  // Must retain the handle: the callback identity-checks heartbeatTimer === timer.
+  // Without this assignment the timeout is a no-op and a hung body never reconnects.
+  heartbeatTimer = timer;
 };
 
 const parseEnvelope = (raw: string): { type: string; properties: unknown } | null => {

@@ -2,6 +2,25 @@ import { describe, expect, it, vi } from 'vitest'
 import { LlmError, createChatCompletion } from './completions.js'
 
 describe('createChatCompletion', () => {
+  it.each(['high', 'medium', null, ''])('forwards variant %s with default compatibility', async (variant) => {
+    const generateText = vi.fn(async () => ({ text: 'done' }));
+    await createChatCompletion({
+      generateText,
+      loadCatalog: async () => ({ models: [{ providerID: 'p', modelID: 'm' }] }),
+      body: { model: 'p/m', variant, messages: [{ role: 'user', content: 'hi' }] },
+    });
+    expect(generateText.mock.calls[0][0].variant).toBe(variant || undefined);
+  });
+
+  it('rejects malformed variants before a model call', async () => {
+    const generateText = vi.fn();
+    await expect(createChatCompletion({
+      generateText,
+      body: { model: 'p/m', variant: { high: true }, messages: [{ role: 'user', content: 'hi' }] },
+    })).rejects.toMatchObject({ code: 'validation_error', statusCode: 400 });
+    expect(generateText).not.toHaveBeenCalled();
+  });
+
   it('rejects when the requested model is not connected', async () => {
     const generateText = vi.fn()
     await expect(createChatCompletion({
@@ -51,6 +70,7 @@ describe('createChatCompletion', () => {
   it('forwards in-process onTextDelta and globalEventHub to generateText', async () => {
     const generateText = vi.fn(async () => ({ text: 'streamed', source: 'attachment-session' }))
     const onTextDelta = vi.fn()
+    const signal = new AbortController().signal
     const globalEventHub = { subscribeEvent: vi.fn() }
     await createChatCompletion({
       generateText,
@@ -61,9 +81,11 @@ describe('createChatCompletion', () => {
       body: { model: 'openai/gpt-5.2', messages: [{ role: 'user', content: 'hi' }] },
       onTextDelta,
       globalEventHub,
+      signal,
     })
     expect(generateText.mock.calls[0][0].onTextDelta).toBe(onTextDelta)
     expect(generateText.mock.calls[0][0].globalEventHub).toBe(globalEventHub)
+    expect(generateText.mock.calls[0][0].signal).toBe(signal)
   })
 
   it('forwards optional file parts on user messages', async () => {

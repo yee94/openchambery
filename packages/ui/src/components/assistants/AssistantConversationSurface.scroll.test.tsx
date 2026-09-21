@@ -7,13 +7,41 @@ import type { AssistantDTO } from '@/queries/assistantDTO';
 const contactEvents = vi.hoisted(() => ({
   handler: null as ((event: Record<string, unknown>) => void) | null,
 }));
-const contactQueryState = vi.hoisted(() => ({ extraMessages: 0 }));
+const contactQueryState = vi.hoisted(() => ({ extraMessages: 0, earlier: 0, imageFilePart: false as false | 'legacy' | 'cached', hasPreviousPage: false, isFetchingPreviousPage: false, previousPageError: null as Error | null, fetchPreviousPage: vi.fn(), hasMessageGap: false, isFillingMessageGap: false, retryMessageGap: vi.fn() }));
+const attachmentIO = vi.hoisted(() => ({ upload: vi.fn(), send: vi.fn(), abort: vi.fn(), display: vi.fn(), blob: vi.fn(), release: vi.fn() }));
+const unreadUI = vi.hoisted(() => ({ settingsOpen: false }));
+const failureUI = vi.hoisted(() => ({ failed: false }));
+const previewIO = vi.hoisted(() => ({
+  flagCalls: [] as boolean[],
+  markdownOnShowPopup: null as ((content: Record<string, unknown>) => void) | null,
+}));
+vi.mock('./AssistantReadMarker', () => ({
+  AssistantReadMarker: ({ position }: { position: { ordinal: number; messageID: string } }) => <span data-test-read-ordinal={position.ordinal} data-test-read-message={position.messageID} />,
+}));
+vi.mock('@/lib/assistant-attachment-upload', () => ({ uploadAssistantAttachment: attachmentIO.upload }));
+vi.mock('@/lib/assistant-attachment-cache', () => ({ getAssistantAttachmentDisplay: attachmentIO.display, getAssistantAttachmentBlob: attachmentIO.blob }));
+vi.mock('@/components/chat/imageSource', () => ({ useRuntimeTransportIdentity: () => 'test', useResolvedImageSource: (url: string) => url }));
+vi.mock('@/queries/sessionIndexQueries', () => ({ sessionIndexSnapshotQueryOptions: vi.fn() }));
 
 vi.mock('@/components/chat/ChatPromptComposer', () => ({
-  ChatPromptComposer: () => <div data-test-composer="" />,
+  ChatPromptComposer: (props: { value: string; pending: boolean; onStop?: () => void; attachments: { id: string; name: string }[]; onChange: (value: string) => void; onSubmit: () => void; onAddFiles: (files: FileList | null) => void }) => <div data-test-composer="">
+    <textarea value={props.value} onInput={(event) => props.onChange(event.currentTarget.value)} />
+    <input type="file" onChange={(event) => props.onAddFiles(event.currentTarget.files)} />
+    {props.attachments.map((attachment) => <span key={attachment.id} data-preview="">{attachment.name}</span>)}
+    <button type="button" data-stop="" hidden={!props.pending || !props.onStop} onClick={props.onStop}>Stop</button>
+    <button type="button" data-send="" disabled={props.pending} onClick={props.onSubmit}>Send</button>
+  </div>,
 }));
 vi.mock('@/components/chat/MarkdownRenderer', () => ({
-  MarkdownRenderer: ({ content }: { content: string }) => <span>{content}</span>,
+  MarkdownRenderer: (props: { content: string; onShowPopup?: (content: Record<string, unknown>) => void }) => {
+    previewIO.markdownOnShowPopup = props.onShowPopup ?? null;
+    return <span>{props.content}</span>;
+  },
+}));
+vi.mock('@/components/chat/message/ToolOutputDialog', () => ({
+  default: ({ popup, onOpenChange }: { popup: { image?: { url?: string } }; onOpenChange: (open: boolean) => void }) => (
+    <div data-test-preview-dialog="" data-image={popup.image?.url ?? ''} onClick={() => onOpenChange(false)} />
+  ),
 }));
 vi.mock('@/components/icon/Icon', () => ({ Icon: () => null }));
 vi.mock('@/lib/i18n', () => ({
@@ -28,15 +56,23 @@ vi.mock('@/lib/openchamberEvents', () => ({
 vi.mock('@/apps/MobileShareBridge', () => ({
   donateNativeAssistantInteraction: () => Promise.resolve(),
 }));
-vi.mock('@/stores/useUIStore', () => ({
-  useUIStore: (selector: (state: { isMobile: boolean }) => unknown) => selector({ isMobile: false }),
-}));
+vi.mock('@/stores/useUIStore', () => {
+  // Stable action identity, matching the zustand contract the surface's effects rely on.
+  const setImagePreviewOpen = (open: boolean) => { previewIO.flagCalls.push(open); };
+  return {
+    useUIStore: (selector: (state: { isMobile: boolean; isSettingsDialogOpen: boolean; setImagePreviewOpen: (open: boolean) => void }) => unknown) => selector({ isMobile: false, isSettingsDialogOpen: unreadUI.settingsOpen, setImagePreviewOpen }),
+  };
+});
 vi.mock('@/queries/assistantQueries', () => ({
-  sendAssistantContactMessage: () => Promise.resolve(),
+  abortAssistantSession: attachmentIO.abort,
+  sendAssistantContactMessage: attachmentIO.send,
   useAssistantCapabilityQuery: () => ({ data: null }),
   useAssistantContactMessagesQuery: (assistantID: string) => ({
     data: {
       messages: [
+        ...Array.from({ length: contactQueryState.earlier }, (_, index) => ({
+          messageID: `earlier:${index}`, assistantID, role: 'assistant', turnID: `earlier:${index}`, bubbleIndex: 0, createdAt: 0, ordinal: index, status: 'complete', fromAssistantID: null, fromAssistantName: null, parts: [{ type: 'text', text: `older ${index}` }], text: '', cards: [],
+        })),
         {
           messageID: `${assistantID}:user`,
           assistantID,
@@ -52,6 +88,23 @@ vi.mock('@/queries/assistantQueries', () => ({
           text: 'hello',
           cards: [],
         },
+        ...(contactQueryState.imageFilePart ? [{
+          messageID: `${assistantID}:image`,
+          assistantID,
+          role: 'assistant',
+          turnID: `${assistantID}:image-turn`,
+          bubbleIndex: 0,
+          createdAt: 2,
+          ordinal: 1,
+          status: 'complete',
+          fromAssistantID: null,
+          fromAssistantName: null,
+          parts: [contactQueryState.imageFilePart === 'cached'
+            ? { type: 'file', attachmentID: 'attachment-image', sha256: 'a'.repeat(64), size: 9, mime: 'image/png', filename: 'shot.png' }
+            : { type: 'file', mime: 'image/png', url: 'data:image/png;base64,AA', filename: 'legacy.png' }],
+          text: '',
+          cards: [],
+        }] : []),
         ...Array.from({ length: contactQueryState.extraMessages }, (_, index) => ({
           messageID: `${assistantID}:refetch:${index}`,
           assistantID,
@@ -60,7 +113,7 @@ vi.mock('@/queries/assistantQueries', () => ({
           bubbleIndex: 0,
           createdAt: index + 2,
           ordinal: index + 1,
-          status: 'complete',
+          status: failureUI.failed ? 'error' : 'complete',
           fromAssistantID: null,
           fromAssistantName: null,
           parts: [{ type: 'text', text: `refetched ${index}` }],
@@ -70,9 +123,17 @@ vi.mock('@/queries/assistantQueries', () => ({
       ],
       nextCursor: null,
       complete: true,
+      generation: 0,
     },
     isError: false,
     isSuccess: true,
+    hasPreviousPage: contactQueryState.hasPreviousPage,
+    isFetchingPreviousPage: contactQueryState.isFetchingPreviousPage,
+    previousPageError: contactQueryState.previousPageError,
+    fetchPreviousPage: contactQueryState.fetchPreviousPage,
+    hasMessageGap: contactQueryState.hasMessageGap,
+    isFillingMessageGap: contactQueryState.isFillingMessageGap,
+    retryMessageGap: contactQueryState.retryMessageGap,
   }),
   useAssistantSnapshotQuery: () => ({ data: { assistants: [] } }),
 }));
@@ -90,6 +151,7 @@ vi.mock('./assistantWorking', () => ({
 }));
 
 import { AssistantConversationSurface } from './AssistantConversationSurface';
+import { AssistantContactAttachment } from './AssistantContactAttachment';
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -113,6 +175,7 @@ const assistant = (id: string): AssistantDTO => ({
   historySessionCount: 0,
   assignedSessionIDs: [],
   working: false,
+  activeContactTurn: null,
   createdAt: 1,
   updatedAt: 1,
   tombstoneAt: null,
@@ -140,9 +203,259 @@ afterEach(async () => {
   }
   contactEvents.handler = null;
   contactQueryState.extraMessages = 0;
+  contactQueryState.earlier = 0;
+  contactQueryState.imageFilePart = false;
+  contactQueryState.hasPreviousPage = false;
+  contactQueryState.isFetchingPreviousPage = false;
+  contactQueryState.previousPageError = null;
+  contactQueryState.hasMessageGap = false;
+  contactQueryState.isFillingMessageGap = false;
+  unreadUI.settingsOpen = false;
+  failureUI.failed = false;
+  previewIO.flagCalls.length = 0;
+  previewIO.markdownOnShowPopup = null;
+  vi.clearAllMocks();
 });
 
 describe('AssistantConversationSurface scroll ownership', () => {
+  test('shows a completed public message while the turn is still working', async () => {
+    const { host, root } = await mountSurface();
+    const busy = {
+      ...assistant('assistant-a'), working: true,
+      activeContactTurn: { turnID: 'live-turn', messageID: 'live-turn', status: 'running' as const, admittedAt: 2 },
+    };
+    await act(async () => root.render(<AssistantConversationSurface assistant={busy} active />));
+    await act(async () => contactEvents.handler?.({
+      type: 'contact-bubble-delta', assistantID: busy.id, turnID: 'live-turn', bubbleIndex: 0,
+      delta: '我先检查配置，再保存修改。', done: true, occurredAt: 3,
+    }));
+    expect(Array.from(host.querySelectorAll('[data-assistant-contact-text]')).map((node) => node.textContent)).toContain('我先检查配置，再保存修改。');
+    expect(host.querySelector('[data-assistant-contact-processing]')).toBeTruthy();
+    expect(host.querySelector<HTMLButtonElement>('[data-stop]')?.hidden).toBe(false);
+  });
+
+  test('renders durable system errors as alerts outside assistant speech bubbles', async () => {
+    contactQueryState.extraMessages = 1;
+    failureUI.failed = true;
+    const { host } = await mountSurface();
+    const errorRow = host.querySelector('[data-assistant-contact-error]');
+    expect(errorRow?.querySelector('[role="alert"]')?.textContent).toBe('refetched 0');
+    expect(errorRow?.querySelector('[data-assistant-contact-text]')).toBeNull();
+    expect(errorRow?.getAttribute('data-assistant-contact-role')).toBeNull();
+    expect(errorRow?.getAttribute('data-message-id')).toBe('assistant-a:refetch:0');
+  });
+  test('read marker belongs to the loaded row and detaches for inactive, settings and gap surfaces', async () => {
+    contactQueryState.extraMessages = 1;
+    const { root, host } = await mountSurface();
+    const item = { ...assistant('assistant-a'), unreadCount: 3, readTip: { generation: 0, ordinal: 20, messageID: 'newer-unloaded' }, readWatermark: { generation: 0, ordinal: 0, messageID: '' } };
+    await act(async () => root.render(<AssistantConversationSurface assistant={item} active />));
+    expect(host.querySelector('[data-test-read-ordinal]')?.getAttribute('data-test-read-message')).toBe('assistant-a:refetch:0');
+    await act(async () => root.render(<AssistantConversationSurface assistant={item} active={false} />));
+    expect(host.querySelector('[data-test-read-ordinal]')).toBeNull();
+    unreadUI.settingsOpen = true;
+    await act(async () => root.render(<AssistantConversationSurface assistant={item} active />));
+    expect(host.querySelector('[data-test-read-ordinal]')).toBeNull();
+    unreadUI.settingsOpen = false;
+    contactQueryState.hasMessageGap = true;
+    await act(async () => root.render(<AssistantConversationSurface assistant={item} active />));
+    expect(host.querySelector('[data-test-read-ordinal]')).toBeNull();
+    contactQueryState.hasMessageGap = false;
+    await act(async () => root.render(<AssistantConversationSurface assistant={{ ...item, readTip: { ...item.readTip, generation: 1 } }} active />));
+    expect(host.querySelector('[data-test-read-ordinal]')).toBeNull();
+  });
+
+  test('session references retain their exact plain-text payload and retry identity through failed admission', async () => {
+    const text = 'Watch @session:ses_existing {"title":"Existing work","sessionID":"ses_existing","directory":"/repo/existing"}';
+    attachmentIO.send.mockRejectedValueOnce(new Error('offline')).mockResolvedValue({ revision: 1 });
+    const { host } = await mountSurface();
+    const textarea = host.querySelector('textarea')!;
+    await act(async () => {
+      textarea.value = text;
+      textarea.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    expect(attachmentIO.send).not.toHaveBeenCalled();
+    const send = host.querySelector<HTMLButtonElement>('[data-send]')!;
+    await act(async () => send.click());
+    expect(textarea.value).toBe(text);
+    expect(attachmentIO.send.mock.calls[0][2]).toEqual({ parts: [{ type: 'text', text }] });
+    await act(async () => send.click());
+    expect(attachmentIO.send.mock.calls[1]).toEqual(attachmentIO.send.mock.calls[0]);
+    expect(textarea.value).toBe('');
+  });
+
+  test('gap recovery shows its status and disables retry while filling', async () => {
+    contactQueryState.hasMessageGap = true;
+    contactQueryState.retryMessageGap.mockResolvedValue(undefined);
+    const { host, root } = await mountSurface();
+    expect(host.querySelector('[role="status"]')?.textContent).toBe('assistants.contact.history.gap');
+    await act(async () => host.querySelector<HTMLButtonElement>('[data-assistant-contact-pagination] button')!.click());
+    expect(contactQueryState.retryMessageGap).toHaveBeenCalledTimes(1);
+    expect(contactQueryState.fetchPreviousPage).toHaveBeenCalledTimes(0);
+    contactQueryState.isFillingMessageGap = true;
+    await act(async () => root.render(<AssistantConversationSurface assistant={assistant('assistant-a')} active />));
+    const button = host.querySelector<HTMLButtonElement>('[data-assistant-contact-pagination] button')!;
+    expect(button.disabled).toBe(true);
+    expect(button.textContent).toBe('chat.history.loadingMore');
+  });
+
+  test('non-image attachments download verified Blobs only after a click and retry failure', async () => {
+    const part = { type: 'file' as const, attachmentID: 'attachment-a', sha256: 'a'.repeat(64), size: 3, mime: 'text/plain', filename: 'note.txt' };
+    attachmentIO.blob.mockRejectedValueOnce(new Error('offline')).mockResolvedValue(new Blob(['abc']));
+    const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => undefined);
+    try {
+      const { root, host } = await mountSurface();
+      await act(async () => root.render(<AssistantContactAttachment assistantID="assistant-a" part={part} />));
+      expect(attachmentIO.blob).toHaveBeenCalledTimes(0);
+      expect(attachmentIO.display).toHaveBeenCalledTimes(0);
+      await act(async () => host.querySelector<HTMLButtonElement>('button')!.click());
+      expect(host.querySelector('[role="alert"]')).toBeTruthy();
+      await act(async () => host.querySelector<HTMLButtonElement>('button')!.click());
+      expect(click).toHaveBeenCalledTimes(1);
+      expect(attachmentIO.blob).toHaveBeenCalledTimes(2);
+      expect(host.querySelector('[role="alert"]')).toBeNull();
+    } finally { click.mockRestore(); }
+  });
+  test('equivalent polled attachment descriptors reuse the display lease and release on removal', async () => {
+    const part = { type: 'file' as const, attachmentID: 'attachment-a', sha256: 'a'.repeat(64), size: 3, mime: 'image/png', filename: 'shot.png' };
+    attachmentIO.display.mockResolvedValue({ url: 'openchamber-asset://image', release: attachmentIO.release });
+    const { root, host } = await mountSurface();
+    await act(async () => root.render(<AssistantContactAttachment assistantID="assistant-a" part={part} />));
+    expect(host.querySelector('img')?.getAttribute('src')).toBe('openchamber-asset://image');
+    for (let index = 0; index < 20; index += 1) {
+      await act(async () => root.render(<AssistantContactAttachment assistantID="assistant-a" part={{ ...part }} />));
+    }
+    expect(attachmentIO.display).toHaveBeenCalledTimes(1);
+    const signal = attachmentIO.display.mock.calls[0][2].signal as AbortSignal;
+    await act(async () => root.render(null));
+    expect(signal.aborted).toBe(true);
+    expect(attachmentIO.release).toHaveBeenCalledTimes(1);
+  });
+
+  test('attachment failure provides a working retry and late completions release their lease', async () => {
+    const part = { type: 'file' as const, attachmentID: 'attachment-a', sha256: 'a'.repeat(64), size: 3, mime: 'image/png' };
+    let complete!: (display: { url: string; release: () => void }) => void;
+    attachmentIO.display.mockRejectedValueOnce(new Error('offline')).mockImplementationOnce(() => new Promise((resolve) => { complete = resolve; }));
+    const { root, host } = await mountSurface();
+    await act(async () => root.render(<AssistantContactAttachment assistantID="assistant-a" part={part} />));
+    expect(host.querySelector('[role="alert"]')?.textContent).toBe('assistants.contact.attachment.loadFailed');
+    await act(async () => host.querySelector<HTMLButtonElement>('button')!.click());
+    expect(host.querySelector('[role="status"]')).toBeTruthy();
+    await act(async () => { root.render(null); });
+    await act(async () => complete({ url: 'blob:late', release: attachmentIO.release }));
+    expect(attachmentIO.release).toHaveBeenCalledTimes(1);
+  });
+  test('markdown image activation opens the shared viewer and closes it on assistant switch', async () => {
+    contactQueryState.extraMessages = 1;
+    const { root, host } = await mountSurface();
+    expect(previewIO.markdownOnShowPopup).toBeTypeOf('function');
+    await act(async () => {
+      previewIO.markdownOnShowPopup?.({ open: true, title: 'shot.png', content: '', image: { url: '/abs/shot.png', filename: 'shot.png', gallery: [{ url: '/abs/shot.png' }], index: 0 } });
+    });
+    const dialog = host.querySelector('[data-test-preview-dialog]');
+    expect(dialog?.getAttribute('data-image')).toBe('/abs/shot.png');
+    expect(previewIO.flagCalls.at(-1)).toBe(true);
+    // Non-viewer content (plain tool text) never opens the viewer.
+    await act(async () => {
+      previewIO.markdownOnShowPopup?.({ open: true, title: 'note', content: 'tool text' });
+    });
+    expect(host.querySelector('[data-test-preview-dialog]')).toBeTruthy();
+    expect(host.querySelector('[data-test-preview-dialog]')?.getAttribute('data-image')).toBe('/abs/shot.png');
+    // Viewer close reports through the global overlay flag.
+    await act(async () => { host.querySelector('[data-test-preview-dialog]')!.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+    expect(host.querySelector('[data-test-preview-dialog]')).toBeNull();
+    expect(previewIO.flagCalls.at(-1)).toBe(false);
+    // Switching assistants closes an open viewer.
+    await act(async () => {
+      previewIO.markdownOnShowPopup?.({ open: true, title: 'again.png', content: '', image: { url: '/abs/again.png' } });
+    });
+    expect(host.querySelector('[data-test-preview-dialog]')).toBeTruthy();
+    await act(async () => root.render(<AssistantConversationSurface assistant={assistant('assistant-b')} active />));
+    expect(host.querySelector('[data-test-preview-dialog]')).toBeNull();
+    expect(previewIO.flagCalls.at(-1)).toBe(false);
+  });
+
+  test('inline attachment images open the shared viewer on activation for cached and legacy parts', async () => {
+    attachmentIO.display.mockResolvedValue({ url: 'openchamber-asset://shot', release: attachmentIO.release });
+    contactQueryState.imageFilePart = 'cached';
+    const { root, host } = await mountSurface();
+    const cached = host.querySelector<HTMLImageElement>('img[data-assistant-contact-image]')!;
+    expect(cached.getAttribute('src')).toBe('openchamber-asset://shot');
+    expect(cached.getAttribute('role')).toBe('button');
+    await act(async () => { cached.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+    expect(host.querySelector('[data-test-preview-dialog]')?.getAttribute('data-image')).toBe('openchamber-asset://shot');
+    await act(async () => root.render(null));
+
+    contactQueryState.imageFilePart = 'legacy';
+    const { host: legacyHost } = await mountSurface();
+    const legacy = legacyHost.querySelector<HTMLImageElement>('img[data-assistant-contact-image]')!;
+    expect(legacy.getAttribute('src')).toBe('data:image/png;base64,AA');
+    await act(async () => { legacy.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+    expect(legacyHost.querySelector('[data-test-preview-dialog]')?.getAttribute('data-image')).toBe('data:image/png;base64,AA');
+  });
+
+  test('top button and upward gesture share one flight; failures retain rows and expose retry', async () => {
+    contactQueryState.hasPreviousPage = true;
+    let finish!: () => void;
+    contactQueryState.fetchPreviousPage.mockImplementation(() => new Promise<void>((resolve) => { finish = resolve; }));
+    const { root, host, scroller } = await mountSurface();
+    const button = host.querySelector<HTMLButtonElement>('[data-assistant-contact-pagination] button')!;
+    await act(async () => { button.click(); button.click(); scroller.dispatchEvent(new WheelEvent('wheel', { deltaY: -80, bubbles: true })); });
+    expect(contactQueryState.fetchPreviousPage).toHaveBeenCalledTimes(1);
+    contactQueryState.previousPageError = new Error('offline');
+    await act(async () => { finish(); root.render(<AssistantConversationSurface assistant={assistant('assistant-a')} active />); });
+    expect(host.querySelector('[data-message-id="assistant-a:user"]')).toBeTruthy();
+    expect(host.querySelector('[role="alert"]')?.textContent).toBe('chat.history.loadOlderFailed');
+    await act(async () => { scroller.dispatchEvent(new WheelEvent('wheel', { deltaY: -80, bubbles: true })); });
+    expect(contactQueryState.fetchPreviousPage).toHaveBeenCalledTimes(1);
+    await act(async () => { button.click(); });
+    expect(contactQueryState.fetchPreviousPage).toHaveBeenCalledTimes(2);
+    await act(async () => finish());
+  });
+
+  test('prepend restores the first visible message ID and offset synchronously', async () => {
+    contactQueryState.hasPreviousPage = true;
+    let finish!: () => void;
+    contactQueryState.fetchPreviousPage.mockImplementation(() => new Promise<void>((resolve) => { finish = resolve; }));
+    const { root, host, scroller } = await mountSurface();
+    let top = 30;
+    Object.defineProperties(scroller, { scrollTop: { configurable: true, get: () => top, set: (value) => { top = value; } }, clientHeight: { configurable: true, value: 300 }, scrollHeight: { configurable: true, get: () => 900 + contactQueryState.earlier * 100 } });
+    const row = host.querySelector<HTMLElement>('[data-message-id="assistant-a:user"]')!;
+    row.getBoundingClientRect = () => ({ top: 50 + contactQueryState.earlier * 100 - top, bottom: 150 + contactQueryState.earlier * 100 - top } as DOMRect);
+    await act(async () => { host.querySelector<HTMLButtonElement>('[data-assistant-contact-pagination] button')!.click(); });
+    const offset = row.getBoundingClientRect().top;
+    contactQueryState.earlier = 20;
+    await act(async () => { finish(); root.render(<AssistantConversationSurface assistant={assistant('assistant-a')} active />); });
+    expect(row.getBoundingClientRect().top).toBe(offset);
+    expect(top).toBe(2030);
+  });
+
+  test('upload and send failures retain draft previews and retry the same upload/message IDs', async () => {
+    const descriptor = { type: 'file', attachmentID: 'attachment-a', sha256: 'a'.repeat(64), size: 3, mime: 'image/png', filename: 'shot.png' };
+    attachmentIO.upload.mockRejectedValueOnce(new Error('offline')).mockResolvedValue(descriptor);
+    attachmentIO.send.mockRejectedValueOnce(new Error('offline')).mockResolvedValue({ revision: 1 });
+    attachmentIO.display.mockResolvedValue({ url: 'blob:cached', release: attachmentIO.release });
+    const { host } = await mountSurface();
+    const textarea = host.querySelector('textarea')!;
+    const input = host.querySelector<HTMLInputElement>('input[type="file"]')!;
+    await act(async () => {
+      textarea.value = 'keep my draft'; textarea.dispatchEvent(new Event('input', { bubbles: true }));
+      Object.defineProperty(input, 'files', { value: [new File(['img'], 'shot.png', { type: 'image/png' })] });
+      input.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    const send = host.querySelector<HTMLButtonElement>('[data-send]')!;
+    await act(async () => send.click());
+    expect(textarea.value).toBe('keep my draft');
+    expect(host.querySelector('[data-preview]')).toBeTruthy();
+    await act(async () => send.click());
+    expect(textarea.value).toBe('keep my draft');
+    expect(attachmentIO.upload.mock.calls[0][2]).toBe(attachmentIO.upload.mock.calls[1][2]);
+    await act(async () => send.click());
+    expect(attachmentIO.upload).toHaveBeenCalledTimes(2);
+    expect(attachmentIO.send.mock.calls[0][1]).toBe(attachmentIO.send.mock.calls[1][1]);
+    expect(attachmentIO.send.mock.calls[1][2].parts[1]).toEqual(descriptor);
+    expect(textarea.value).toBe('');
+    expect(host.querySelector('[data-preview]')).toBeNull();
+  });
   test('matches primary chat overflow-anchor and overscroll containment', async () => {
     const { scroller } = await mountSurface();
     expect(scroller.style.overflowAnchor).toBe('none');
@@ -206,4 +519,52 @@ describe('AssistantConversationSurface scroll ownership', () => {
     expect(scrollTop).toBe(180);
     expect(writes).toBe(0);
   });
+});
+
+
+test('contact stop calls the assistant abort endpoint with a null session and retains working on failure', async () => {
+  attachmentIO.abort.mockRejectedValueOnce(new Error('Stop request failed'));
+  const { host, root } = await mountSurface();
+  const item = { ...assistant('assistant-a'), working: true };
+  await act(async () => root.render(<AssistantConversationSurface assistant={item} active />));
+  const stop = host.querySelector<HTMLButtonElement>('[data-stop]')!;
+  expect(stop.hidden).toBe(false);
+  await act(async () => stop.click());
+  expect(attachmentIO.abort).toHaveBeenCalledWith('assistant-a', expect.objectContaining({ sessionID: null, sessionGeneration: 0 }));
+  expect(host.querySelector('[role="alert"]')?.textContent).toContain('Stop request failed');
+  expect(host.querySelector<HTMLButtonElement>('[data-stop]')!.hidden).toBe(false);
+  attachmentIO.abort.mockResolvedValueOnce(undefined);
+  await act(async () => stop.click());
+  expect(attachmentIO.abort).toHaveBeenCalledTimes(2);
+  // Successful HTTP admission also waits for authoritative idle; it must not invent it.
+  expect(host.querySelector<HTMLButtonElement>('[data-stop]')!.hidden).toBe(false);
+  await act(async () => root.render(<AssistantConversationSurface assistant={{ ...item, working: false }} active />));
+  expect(host.querySelector<HTMLButtonElement>('[data-stop]')!.hidden).toBe(true);
+});
+
+test.each(['sending', 'serverWorking', 'processing'] as const)('pending send preserves stop for active work (%s)', async (source) => {
+  let finish!: (value: { revision: number }) => void;
+  attachmentIO.send.mockReset().mockImplementationOnce(() => new Promise((resolve) => { finish = resolve; }));
+  attachmentIO.abort.mockReset().mockResolvedValue(undefined);
+  const { host, root } = await mountSurface();
+  await act(async () => {
+    const textarea = host.querySelector('textarea')!;
+    textarea.value = 'Please continue';
+    textarea.dispatchEvent(new InputEvent('input', { bubbles: true }));
+  });
+  await act(async () => host.querySelector<HTMLButtonElement>('[data-send]')!.click());
+  expect(attachmentIO.send).toHaveBeenCalledTimes(1);
+  await act(async () => {
+    root.render(<AssistantConversationSurface assistant={{ ...assistant('assistant-a'), working: source === 'serverWorking' }} active />);
+    if (source === 'processing') contactEvents.handler?.({ type: 'contact-turn-start', assistantID: 'assistant-a', turnID: 'turn-admitted', occurredAt: 2 });
+  });
+  try {
+    const stop = host.querySelector<HTMLButtonElement>('[data-stop]')!;
+    expect(stop.hidden).toBe(source === 'sending');
+    if (!stop.hidden) await act(async () => stop.click());
+    expect(attachmentIO.abort).toHaveBeenCalledTimes(source === 'sending' ? 0 : 1);
+    expect(host.querySelector<HTMLButtonElement>('[data-send]')!.disabled).toBe(true);
+  } finally {
+    await act(async () => finish({ revision: 2 }));
+  }
 });

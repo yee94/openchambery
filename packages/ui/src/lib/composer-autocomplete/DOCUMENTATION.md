@@ -4,6 +4,8 @@ Runtime-agnostic trigger, rank, icon-name, and row-builder helpers for `/` comma
 
 ChatInput and the Capacitor iOS native composer both consume this module. A later language-server consumer can import the same functions without mounting React autocomplete UI.
 
+Assistant contacts also consume `resolveComposerAutocompleteTrigger` through `components/assistants/AssistantSessionComposer.tsx`. That caller accepts only the mention trigger and owns its session-only picker, existing runtime session-index Query subscription, and plain-text reference insertion. Its data bounds and interaction contract are documented in the Assistant UI module.
+
 ## Ownership
 
 | Concern | Owner |

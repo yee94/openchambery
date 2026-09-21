@@ -28,7 +28,7 @@ describe('settings navigation metadata', () => {
 
     expect(pagesByGroup).toEqual({
       connection: ['instances'],
-      personalization: ['appearance', 'chat', 'notifications', 'sessions', 'summary-ai', 'shortcuts'],
+      personalization: ['appearance', 'chat', 'notifications', 'sessions', 'archived-sessions', 'summary-ai', 'shortcuts'],
       workspace: ['projects', 'git', 'remote-instances'],
       opencode: ['providers', 'agents', 'assistants', 'behavior', 'commands', 'mcp', 'plugins', 'global-config'],
       content: ['magic-prompts', 'snippets', 'skills.installed', 'skills.catalog'],
@@ -88,6 +88,7 @@ describe('settings navigation metadata', () => {
     expect(overflowMenu).not.toContain("key: 'instances'");
     // Phone overflow must not re-open Settings as a half-sheet; Settings is a root tab.
     expect(mobileApp).toContain("setActiveTab('settings')");
+    expect(mobileApp).toContain('openSettingsFromCurrent()');
     expect(mobileApp).toContain('settingsOpen && isIPad');
     expect(settingsView).toContain('case "instances":');
     expect(settingsView).toContain('return mobileInstancesPage ?? renderUnavailable();');
