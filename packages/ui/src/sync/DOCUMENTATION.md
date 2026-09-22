@@ -52,6 +52,19 @@ So:
 
 ## Ownership map
 
+### Project activity ordering
+
+`handleEvent` compares status-bearing live events against the directory child's
+status (or the global live status map for unopened directories) before applying
+them. A real busy/retry/idle transition calls `promoteProjectForConversation`,
+shared with successful sends, to resolve project/worktree ownership and advance
+the current project order. Duplicate statuses preserve subsequent manual drags.
+Bootstrap/reconnect snapshots establish the baseline; token/part events leave
+structural project ordering unchanged. `useProjectsStore.moveProjectToTop`
+updates both registry and existing manual order, persists the result, and keeps
+references stable when the project is already first. Shared web, Electron,
+hosted/native mobile use this path; VS Code retains its workspace-owned registry.
+
 ### Question auto-delegate pull authority
 
 `lib/questionAutoDelegate.ts` owns a TanStack Query keyed by transport identity and runtime generation. It validates the Host `question-auto-delegate/core.d.ts` snapshot, passes GET cancellation to `runtimeFetch`, retains the previous snapshot after read failure, and applies mutation `{ outcome, snapshot }` responses (including 409 claims). Same-epoch revisions, retired epochs, and request sequence prevent late snapshots from replacing newer host state. Runtime-generation checks discard stale GET/mutation completions.
