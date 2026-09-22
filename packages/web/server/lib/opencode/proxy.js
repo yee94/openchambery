@@ -197,10 +197,19 @@ const sanitizeSessionListItem = (session) => {
 };
 
 const sanitizeSessionListPayload = (payload) => {
-  if (!Array.isArray(payload)) {
-    return payload;
+  if (Array.isArray(payload)) {
+    return payload.map((session) => sanitizeSessionListItem(session));
   }
-  return payload.map((session) => sanitizeSessionListItem(session));
+  if (payload && typeof payload === 'object' && Array.isArray(payload.data)) {
+    return { ...payload, data: payload.data.map((session) => sanitizeSessionListItem(session)) };
+  }
+  return payload;
+};
+
+const sessionListRecords = (payload) => {
+  if (Array.isArray(payload)) return payload;
+  if (payload && typeof payload === 'object' && Array.isArray(payload.data)) return payload.data;
+  return null;
 };
 
 export const isInteractiveSessionRequest = (method, requestUrl) => {
@@ -240,7 +249,55 @@ export const registerOpenCodeProxy = (app, deps) => {
     ensureOpenCodeApiPrefix,
     onInteractiveSessionRequest,
     onSessionTurnAdmission,
+    // OpenCode 2.x has no session-metadata update route. When the Host store is
+    // wired, fold its per-session metadata onto list/detail responses so
+    // clients keep reading `session.metadata` where they always did.
+    getStoredSessionMetadata = null,
   } = deps;
+
+  /**
+   * `{ [sessionID]: metadata }` for the current instance, or `null` when the
+   * store cannot answer. `null` means "unknown", and an unknown answer leaves
+   * the upstream record untouched — never rewrite a session as empty metadata.
+   */
+  const readStoredSessionMetadata = async () => {
+    if (typeof getStoredSessionMetadata !== 'function') return null;
+    try {
+      const stored = await getStoredSessionMetadata();
+      return stored && typeof stored === 'object' ? stored : null;
+    } catch (error) {
+      console.warn('[proxy] session metadata unavailable:', error?.message ?? error);
+      return null;
+    }
+  };
+
+  /**
+   * OpenChamber's stored metadata wins per key: OpenCode only ever saw what was
+   * set at create time, and everything written since lives on our side.
+   */
+  const withStoredMetadata = (session, stored) => {
+    if (!session || typeof session !== 'object' || typeof session.id !== 'string') return session;
+    const ours = stored[session.id];
+    if (!ours || typeof ours !== 'object' || Array.isArray(ours)) return session;
+    const theirs = session.metadata && typeof session.metadata === 'object' && !Array.isArray(session.metadata)
+      ? session.metadata
+      : {};
+    return { ...session, metadata: { ...theirs, ...ours } };
+  };
+
+  const overlaySession = (session, stored) => {
+    if (!stored) return session;
+    return withStoredMetadata(session, stored);
+  };
+
+  const overlayOwnedStateOnList = async (payload) => {
+    const records = sessionListRecords(payload);
+    if (!records) return payload;
+    const stored = await readStoredSessionMetadata();
+    if (!stored) return payload;
+    const overlaid = records.map((session) => overlaySession(session, stored));
+    return Array.isArray(payload) ? overlaid : { ...payload, data: overlaid };
+  };
 
   if (app.get('opencodeProxyConfigured')) {
     return;
@@ -656,14 +713,14 @@ export const registerOpenCodeProxy = (app, deps) => {
         return;
       }
 
-      if (result.parseError || !Array.isArray(result.payload)) {
+      if (result.parseError || !sessionListRecords(result.payload)) {
         res.setHeader('content-type', result.contentType);
         res.end(result.bodyText);
         return;
       }
 
       res.setHeader('content-type', result.contentType);
-      res.json(sanitizeSessionListPayload(result.payload));
+      res.json(await overlayOwnedStateOnList(sanitizeSessionListPayload(result.payload)));
     } catch (error) {
       if (isAbortError(error)) {
         return;
@@ -881,7 +938,7 @@ export const registerOpenCodeProxy = (app, deps) => {
           return bTime - aTime;
         });
         console.log(`[SessionMerge] ${globalSessions?.length || 0} global + ${extraSessions.length} extra = ${merged.length} total`);
-        return res.json(sanitizeSessionListPayload(merged));
+        return res.json(await overlayOwnedStateOnList(sanitizeSessionListPayload(merged)));
       } catch (error) {
         console.log(`[SessionMerge] Error: ${error.message}`);
         return res.status(500).json({ error: error.message || 'Failed to merge Windows sessions' });
@@ -891,6 +948,55 @@ export const registerOpenCodeProxy = (app, deps) => {
 
   app.get('/api/session', (req, res, next) => {
     return forwardSanitizedSessionListRequest(req, res, next, 'session.list');
+  });
+
+  // One session: the same metadata overlay as the list, so a detail read agrees
+  // with the list it came from. Everything else about the record is forwarded
+  // untouched. Without a store, fall through to the generic proxy.
+  app.get('/api/session/:sessionID', async (req, res, next) => {
+    if (typeof getStoredSessionMetadata !== 'function') return next();
+    // Nested routes (message, children, …) are registered separately; Express
+    // still matches this pattern for bare session ids only when no further
+    // segment is present — but be defensive if a child path slips through.
+    if (req.path.includes('/message') || String(req.params.sessionID || '').includes('/')) {
+      return next();
+    }
+    try {
+      const upstreamPath = await getRequestUpstreamPath(req);
+      const result = await fetchSessionListPayload(upstreamPath, { req });
+
+      res.status(result.upstream.status);
+      applyForwardProxyResponseHeaders(result.upstream.headers, res);
+      res.setHeader('content-type', result.contentType);
+
+      const record = result.isJson && !result.parseError ? result.payload : null;
+      const session = record && typeof record === 'object' && !Array.isArray(record)
+        ? (record.data && typeof record.data === 'object' && !Array.isArray(record.data) ? record.data : record)
+        : null;
+      if (!session || typeof session.id !== 'string') {
+        res.end(result.bodyText);
+        return;
+      }
+
+      const stored = await readStoredSessionMetadata();
+      if (!stored) {
+        res.end(result.bodyText);
+        return;
+      }
+
+      const overlaid = overlaySession(session, stored);
+      res.json(record.data && typeof record.data === 'object' && !Array.isArray(record.data)
+        ? { ...record, data: overlaid }
+        : overlaid);
+    } catch (error) {
+      if (isAbortError(error)) return;
+      console.error('[proxy] OpenCode session.get proxy error:', error?.message ?? error);
+      if (!res.headersSent) {
+        res.status(503).json({ error: 'OpenCode service unavailable' });
+        return;
+      }
+      next(error);
+    }
   });
 
   // Official session.messages list (not exact message — that is owned by

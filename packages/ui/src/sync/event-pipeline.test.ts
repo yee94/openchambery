@@ -181,6 +181,45 @@ describe("createEventPipeline", () => {
     }
   })
 
+  test("passes openchamber session-metadata events through for store merge", async () => {
+    let resolveStreamFinished!: () => void
+    const streamFinished = new Promise<void>((resolve) => {
+      resolveStreamFinished = resolve
+    })
+    let resolveDelivered!: (event: Event) => void
+    const deliveredEvent = new Promise<Event>((resolve) => {
+      resolveDelivered = resolve
+    })
+    const pipeline = createEventPipeline({
+      sdk: createSdk([
+        {
+          type: "openchamber:session-metadata",
+          properties: {
+            sessionID: "ses_1",
+            metadata: { openchamber: { goal: { status: "active" } } },
+          },
+        } as unknown as Event,
+      ], resolveStreamFinished),
+      onEvent: (_directory, payload) => {
+        resolveDelivered(payload)
+      },
+      transport: "sse",
+      heartbeatTimeoutMs: 1_000,
+    })
+
+    try {
+      await streamFinished
+      const delivered = await Promise.race([deliveredEvent, failAfter(500)])
+      expect(delivered.type).toBe("openchamber:session-metadata")
+      expect(delivered.properties).toEqual({
+        sessionID: "ses_1",
+        metadata: { openchamber: { goal: { status: "active" } } },
+      })
+    } finally {
+      pipeline.cleanup()
+    }
+  })
+
   test("maps current data/location session.status into the legacy reducer queue", async () => {
     let resolveStreamFinished!: () => void
     const streamFinished = new Promise<void>((resolve) => {

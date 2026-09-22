@@ -21,6 +21,7 @@ export const createServerUtilsRuntime = (dependencies) => {
     setOpenCodeNotReadySince,
     clearLastOpenCodeError,
     getLoginShellPath,
+    getStoredSessionMetadata = null,
   } = dependencies;
 
   const setOpenCodePort = (port) => {
@@ -215,6 +216,7 @@ export const createServerUtilsRuntime = (dependencies) => {
       getUiNotificationClients,
       onInteractiveSessionRequest: options.onInteractiveSessionRequest,
       onSessionTurnAdmission: options.onSessionTurnAdmission,
+      getStoredSessionMetadata,
     });
   };
 

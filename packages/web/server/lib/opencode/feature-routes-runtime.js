@@ -2,6 +2,7 @@ import { registerFsRoutes } from '../fs/routes.js';
 import { registerQuotaRoutes } from '../quota/routes.js';
 import { registerSmallModelRoutes } from '../small-model/routes.js';
 import { registerSessionGoalRoutes } from '../session-goal/routes.js';
+import { registerSessionMetadataRoutes } from '../session-metadata/routes.js';
 import { registerGitHubRoutes } from '../github/routes.js';
 import { registerGitRoutes } from '../git/routes.js';
 import { registerMagicPromptRoutes } from '../magic-prompts/routes.js';
@@ -113,6 +114,7 @@ export const createFeatureRoutesRuntime = (dependencies) => {
       isUnsafeSkillRelativePath,
       buildOpenCodeUrl,
       getOpenCodeAuthHeaders,
+      getIsExternalOpenCode = () => false,
       getSmallModelService: routeGetSmallModelService,
       getOpenCodePort,
       buildAugmentedPath,
@@ -132,6 +134,10 @@ export const createFeatureRoutesRuntime = (dependencies) => {
       getServerId,
       sessionIndexService,
       notifyContactTurnComplete,
+      sessionMetadataStore = null,
+      onSessionMetadataWritten = null,
+      persistSessionGoal = null,
+      readSessionMetadata = null,
     } = routeDependencies;
 
     registerSettingsUtilityRoutes(app, {
@@ -164,6 +170,7 @@ export const createFeatureRoutesRuntime = (dependencies) => {
       refreshOpenCodeAfterConfigChange,
       buildOpenCodeUrl,
       getOpenCodeAuthHeaders,
+      getIsExternalOpenCode,
       onSettingsPersisted: (updated, changes) => {
         if (!questionAutoDelegateRuntime) return;
         if (!Object.prototype.hasOwnProperty.call(changes ?? {}, 'questionAutoDelegateEnabled')) return;
@@ -388,7 +395,35 @@ export const createFeatureRoutesRuntime = (dependencies) => {
         throw new Error('Small model service is not configured');
       });
     registerSmallModelRoutes(app, { getSmallModelService });
-    registerSessionGoalRoutes(app);
+    registerSessionGoalRoutes(app, {
+      // Reuse the index-provided store seam — do not invent a second store.
+      persistSessionGoal: typeof persistSessionGoal === 'function'
+        ? persistSessionGoal
+        : (sessionMetadataStore
+          ? async (sessionId, _directory, goal) => {
+            const metadata = await sessionMetadataStore.setSessionMetadata(sessionId, {
+              openchamber: { goal },
+            });
+            return metadata;
+          }
+          : null),
+      readSessionMetadata: typeof readSessionMetadata === 'function'
+        ? readSessionMetadata
+        : (sessionMetadataStore
+          ? (sessionId) => sessionMetadataStore.get(sessionId)
+          : null),
+      // Same arm path as PUT /api/openchamber/sessions/:id/metadata.
+      onGoalPersisted: typeof onSessionMetadataWritten === 'function'
+        ? onSessionMetadataWritten
+        : null,
+    });
+    if (sessionMetadataStore) {
+      registerSessionMetadataRoutes(app, {
+        sessionMetadataStore,
+        broadcastGlobalUiEvent,
+        onMetadataWritten: onSessionMetadataWritten,
+      });
+    }
     registerGitHubRoutes(app);
     const broadcastOpenChamberEvent = createOpenChamberEventBroadcaster({
       getOpenChamberEventClients,

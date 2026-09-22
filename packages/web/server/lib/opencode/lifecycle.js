@@ -20,6 +20,10 @@ const HEALTH_CHECK_RESULT_CACHE_MS = parsePositiveInt(process.env.OPENCHAMBER_OP
 const OPENCODE_HEALTH_PATH = '/api/info';
 const OPENCODE_HEALTH_FALLBACK_PATH = '/global/health';
 const DEFAULT_OPENCODE_SERVE_PORT = 4096;
+// Last-used directory plus recently opened projects — deeper tails are unlikely
+// to be the user's first click and just add background work.
+const WARMUP_DIRECTORY_LIMIT = 4;
+const WARMUP_REQUEST_TIMEOUT_MS = 30000;
 
 export const createOpenCodeLifecycleRuntime = (deps) => {
   const {
@@ -46,6 +50,7 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
     getManagedOpenCodeShellEnvSnapshot,
     managedCapabilitiesRuntime = null,
     getActiveSessionCount = () => 0,
+    getWarmupDirectories = async () => [],
   } = deps;
 
   const killProcessOnPort = (port) => {
@@ -722,12 +727,16 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
     } catch (error) {
       console.error(`Failed to restart OpenCode: ${error.message}`);
       state.lastOpenCodeError = error.message;
-      if (!env.ENV_CONFIGURED_OPENCODE_PORT) {
-        state.openCodePort = null;
-        syncToHmrState();
+      // External serve is read-only: never clear its port, flip ownership, or
+      // spawn a managed replacement when a re-probe fails.
+      if (!state.isExternalOpenCode) {
+        if (!env.ENV_CONFIGURED_OPENCODE_PORT) {
+          state.openCodePort = null;
+          syncToHmrState();
+        }
+        state.openCodeApiPrefixDetected = true;
+        state.openCodeApiPrefix = '';
       }
-      state.openCodeApiPrefixDetected = true;
-      state.openCodeApiPrefix = '';
       throw error;
     } finally {
       state.currentRestartPromise = null;
@@ -942,6 +951,11 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
       await waitForOpenCodePort();
       try {
         await waitForOpenCodeReady();
+        // Warm only after readiness admits; a failed gate must not kick off
+        // directory-scoped traffic against an unready upstream.
+        if (state.isOpenCodeReady) {
+          void warmOpenCodeDirectories();
+        }
       } catch (error) {
         console.error(`OpenCode readiness check failed: ${error.message}`);
       }
@@ -949,6 +963,47 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
       console.error(`Failed to start OpenCode: ${error.message}`);
       console.log('Continuing without OpenCode integration...');
       state.lastOpenCodeError = error.message;
+    }
+  };
+
+  // OpenCode initializes each project directory lazily on its first
+  // directory-scoped request, and that initialization takes seconds on large
+  // session stores. Without warming, the user's first session open pays it
+  // interactively. Warm the most recently used directories right after
+  // readiness so the work overlaps UI startup instead. Sequential and
+  // best-effort: a failed or slow directory never blocks the others for long,
+  // and a restart invalidates the pass via the port/readiness guard.
+  const warmOpenCodeDirectories = async () => {
+    let directories = [];
+    try {
+      directories = await getWarmupDirectories();
+    } catch {
+      return;
+    }
+    if (!Array.isArray(directories) || directories.length === 0) return;
+
+    const warmedPort = state.openCodePort;
+    for (const directory of directories.slice(0, WARMUP_DIRECTORY_LIMIT)) {
+      if (typeof directory !== 'string' || !directory) continue;
+      if (!state.isOpenCodeReady || state.openCodePort !== warmedPort) return;
+      let timeout = null;
+      try {
+        const controller = new AbortController();
+        timeout = setTimeout(() => controller.abort(), WARMUP_REQUEST_TIMEOUT_MS);
+        // Warming a directory is the point, not the answer: any directory-scoped
+        // read makes OpenCode initialise it. `/api/session` is the cheapest one
+        // that takes a directory.
+        const url = `${buildOpenCodeUrl('/api/session', '')}?directory=${encodeURIComponent(directory)}&limit=1`;
+        await fetch(url, {
+          method: 'GET',
+          headers: { Accept: 'application/json', ...getOpenCodeAuthHeaders() },
+          signal: controller.signal,
+        });
+      } catch {
+        // Best-effort — the directory stays lazy and the UI's own request warms it.
+      } finally {
+        if (timeout) clearTimeout(timeout);
+      }
     }
   };
 
@@ -1063,6 +1118,9 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
   };
 
   const runHealthCheckCycle = async (source) => {
+    // External serve is read-only mount: never restart or spawn a second copy
+    // because the user's instance looks unhealthy from our probe.
+    if (state.isExternalOpenCode) return;
     if (!state.openCodeProcess || state.isShuttingDown || state.isRestartingOpenCode) return;
     if (healthCheckCyclePromise) return healthCheckCyclePromise;
 

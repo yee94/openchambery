@@ -72,6 +72,22 @@ export const applySessionEventToGlobalSessions = (payload: Event, directory?: st
     return
   }
 
+  // Host metadata store: replace metadata on an existing session only — never
+  // invent a row or clear the list.
+  if (payload.type === "openchamber:session-metadata") {
+    const properties = (payload as { properties?: { sessionID?: unknown; metadata?: unknown } }).properties
+    const sessionID = typeof properties?.sessionID === "string" ? properties.sessionID : ""
+    const metadata = properties?.metadata
+    if (!sessionID || !metadata || typeof metadata !== "object" || Array.isArray(metadata)) return
+    const current = getGlobalSessionSnapshot(sessionID)
+    if (!current) return
+    useGlobalSessionsStore.getState().upsertSession({
+      ...current,
+      metadata: metadata as Session["metadata"],
+    })
+    return
+  }
+
   if (payload.type === "session.deleted") {
     const sessionID = (payload as { properties?: { sessionID?: string } }).properties?.sessionID ?? getSessionInfoFromPayload(payload)?.id
     if (sessionID) {

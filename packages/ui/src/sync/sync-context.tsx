@@ -2341,6 +2341,7 @@ export function handleEvent(
     case "session.created":
     case "session.updated":
     case "session.deleted":
+    case "openchamber:session-metadata":
       draft.session = [...current.session]
       draft.session_status_observed_at = { ...current.session_status_observed_at }
       draft.permission = { ...current.permission }

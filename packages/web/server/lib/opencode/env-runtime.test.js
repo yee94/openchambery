@@ -344,6 +344,82 @@ describe('OpenCode env runtime', () => {
     expect(process.env.OPENCODE_BINARY).toBe(installed);
   });
 
+  it('falls back to a bundled 2.x CLI only after pin install fails', async () => {
+    const bundledDir = createTempDir('openchamber-bundled-fallback-');
+    const bundledName = process.platform === 'win32' ? 'opencode2.exe' : 'opencode2';
+    const bundledBinary = path.join(bundledDir, bundledName);
+    writeVersionBinary(bundledBinary, '2.0.12');
+    process.env.OPENCHAMBER_BUNDLED_OPENCODE_CLI_DIR = bundledDir;
+    process.env.PATH = createTempDir('openchamber-empty-path-bundled-fallback-');
+    process.env.OPENCHAMBER_DATA_DIR = createTempDir('openchamber-empty-data-bundled-fallback-');
+    delete process.env.OPENCODE_BINARY;
+    const emptyHome = createTempDir('openchamber-empty-home-bundled-fallback-');
+    const missingError = Object.assign(new Error('OpenCode CLI missing'), { code: 'OPENCODE_CLI_MISSING' });
+    const { runtime, state } = createRuntime({}, {
+      spawnSync: () => ({ status: 1, stdout: '', stderr: '' }),
+      homedir: () => emptyHome,
+      ensurePinnedOpenCode2Cli: async () => {
+        throw missingError;
+      },
+    });
+
+    await expect(runtime.ensurePinnedOpenCode2CliEnv()).resolves.toBe(bundledBinary);
+    expect(state.resolvedOpencodeBinary).toBe(bundledBinary);
+    expect(state.resolvedOpencodeBinarySource).toBe('bundled');
+    expect(process.env.OPENCODE_BINARY).toBe(bundledBinary);
+  });
+
+  it('falls back to bundled opencode name when pin install fails', async () => {
+    const bundledDir = createTempDir('openchamber-bundled-opencode-name-');
+    const bundledName = process.platform === 'win32' ? 'opencode.exe' : 'opencode';
+    const bundledBinary = path.join(bundledDir, bundledName);
+    writeVersionBinary(bundledBinary, '2.0.12');
+    process.env.OPENCHAMBER_BUNDLED_OPENCODE_CLI_DIR = bundledDir;
+    process.env.PATH = createTempDir('openchamber-empty-path-bundled-opencode-');
+    process.env.OPENCHAMBER_DATA_DIR = createTempDir('openchamber-empty-data-bundled-opencode-');
+    delete process.env.OPENCODE_BINARY;
+    const emptyHome = createTempDir('openchamber-empty-home-bundled-opencode-');
+    const missingError = Object.assign(new Error('OpenCode CLI missing'), { code: 'OPENCODE_CLI_MISSING' });
+    const { runtime, state } = createRuntime({}, {
+      spawnSync: () => ({ status: 1, stdout: '', stderr: '' }),
+      homedir: () => emptyHome,
+      ensurePinnedOpenCode2Cli: async () => {
+        throw missingError;
+      },
+    });
+
+    await expect(runtime.ensurePinnedOpenCode2CliEnv()).resolves.toBe(bundledBinary);
+    expect(state.resolvedOpencodeBinarySource).toBe('bundled');
+    expect(process.env.OPENCODE_BINARY).toBe(bundledBinary);
+  });
+
+  it('does not adopt a bundled 1.x CLI after pin install fails', async () => {
+    const bundledDir = createTempDir('openchamber-bundled-1x-');
+    const bundledName = process.platform === 'win32' ? 'opencode2.exe' : 'opencode2';
+    const bundledBinary = path.join(bundledDir, bundledName);
+    writeVersionBinary(bundledBinary, '1.18.4');
+    process.env.OPENCHAMBER_BUNDLED_OPENCODE_CLI_DIR = bundledDir;
+    process.env.PATH = createTempDir('openchamber-empty-path-bundled-1x-');
+    process.env.OPENCHAMBER_DATA_DIR = createTempDir('openchamber-empty-data-bundled-1x-');
+    delete process.env.OPENCODE_BINARY;
+    const emptyHome = createTempDir('openchamber-empty-home-bundled-1x-');
+    const missingError = Object.assign(new Error('OpenCode CLI missing'), { code: 'OPENCODE_CLI_MISSING' });
+    const { runtime, state } = createRuntime({}, {
+      spawnSync: () => ({ status: 1, stdout: '', stderr: '' }),
+      homedir: () => emptyHome,
+      ensurePinnedOpenCode2Cli: async () => {
+        throw missingError;
+      },
+    });
+
+    await expect(runtime.ensurePinnedOpenCode2CliEnv()).rejects.toMatchObject({
+      code: 'OPENCODE_CLI_MISSING',
+    });
+    expect(state.resolvedOpencodeBinary).toBeNull();
+    expect(state.resolvedOpencodeBinarySource).toBeNull();
+    expect(process.env.OPENCODE_BINARY).toBeUndefined();
+  });
+
   itIf(process.platform === 'darwin')('rejects known macOS OpenCode app bundle executable paths', async () => {
     const { runtime } = createRuntime({ opencodeBinary: '/Applications/OpenCode.app/Contents/MacOS/OpenCode' });
 

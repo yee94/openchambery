@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'bun:test';
+import { describe, expect, it, vi } from 'vitest';
 import { accountGoalTokenSpend, createSessionGoalRuntime, messageTokenSpend } from './runtime.js';
 
 // A session whose last assistant message is an orphaned incomplete turn: the
@@ -637,6 +637,67 @@ describe('session-goal runtime — pause for question', () => {
       await flushQuestionPause();
       // Question-driven pause must preserve auto-delegate timers.
       expect(paused).toEqual([]);
+      runtime.stop();
+    });
+  });
+});
+
+describe('session-goal runtime — Host metadata store seams', () => {
+  it('writes through persistSessionGoal and never PATCHes OpenCode metadata when seams are injected', async () => {
+    const active = buildSession('active');
+    const goal = active.metadata.openchamber.goal;
+    const metadata = {
+      openchamber: {
+        goal: { ...goal },
+        assist: { recap: 'keep-me' },
+      },
+    };
+    const readSessionMetadata = vi.fn(async () => metadata);
+    const persistSessionGoal = vi.fn(async (_sessionId, _directory, nextGoal) => {
+      metadata.openchamber = { ...metadata.openchamber, goal: nextGoal };
+    });
+    const fetchMock = vi.fn(async (input, init = {}) => {
+      const url = String(input);
+      const path = url.split('?')[0];
+      if (init.method === 'PATCH') {
+        throw new Error(`OpenCode metadata PATCH must not run when store seams are wired: ${path}`);
+      }
+      // resolveGoalOwner walks parentID via GET /session/:id
+      if (path.endsWith('/session/ses-goal')) {
+        return new Response(JSON.stringify({ id: 'ses-goal', directory: '/repo' }), { status: 200 });
+      }
+      return new Response(JSON.stringify({}), { status: 200 });
+    });
+
+    await withFetch(fetchMock, async () => {
+      const runtime = createSessionGoalRuntime({
+        buildOpenCodeUrl: (pathname) => `http://opencode${pathname}`,
+        getOpenCodeAuthHeaders: () => ({}),
+        getSmallModelService: async () => {
+          throw new Error('small model must not run');
+        },
+        idleQuietMs: 1_000_000,
+        kickoffQuietMs: 1,
+        maxAutoTurns: 20,
+        readSessionMetadata,
+        persistSessionGoal,
+      });
+
+      await runtime.pauseForQuestion('ses-goal', '/repo');
+
+      expect(readSessionMetadata).toHaveBeenCalledWith('ses-goal');
+      expect(persistSessionGoal).toHaveBeenCalledTimes(1);
+      expect(persistSessionGoal.mock.calls[0][0]).toBe('ses-goal');
+      expect(persistSessionGoal.mock.calls[0][1]).toBe('/repo');
+      expect(persistSessionGoal.mock.calls[0][2]).toMatchObject({
+        id: goal.id,
+        status: 'paused',
+        statusReason: 'paused for question',
+      });
+      // Neighbouring Host namespaces must survive the goal write (caller owns
+      // merge; this seam only receives the goal object).
+      expect(metadata.openchamber.assist).toEqual({ recap: 'keep-me' });
+      expect(fetchMock.mock.calls.some(([, init]) => init?.method === 'PATCH')).toBe(false);
       runtime.stop();
     });
   });

@@ -192,12 +192,13 @@ Every actual run (timer or manual):
       pass `signal` in `RequestInit`).
  5. `attachSession(runID, sessionID)` immediately after create.
     - If attach fails, the runtime fails the run without prompting.
- 6. When goal capability is supported: optional goal setup (objective file /
-     Host goal state), then command or `session.prompt`. While unsupported,
-     `goalEnabled` never reaches this step (refused at step 1-equivalent before
-     OpenCode ready / create). Non-cancellable async gaps (small-model distill,
-     objective file write) check `signal.throwIfAborted()` before continuing so
-     a timed-out run never prompts.
+  6. When `goalEnabled`: refuse before OpenCode ready / session create if
+      `persistSessionGoal` is not injected; otherwise write objective file,
+      persist an active goal into the Host session-metadata store, optionally
+      notify `onGoalPersisted` to arm the goal loop, then command or
+      `session.prompt`. Non-cancellable async gaps (small-model distill,
+      objective file write) check `signal.throwIfAborted()` before continuing so
+      a timed-out run never prompts.
     **Admission is not completion:** `session.prompt` / command return when the
     turn is accepted, not when the agent finishes.
   7. Wait for the real session outcome (bounded by the same watchdog):
@@ -215,8 +216,9 @@ Every actual run (timer or manual):
        polling under the watchdog); they never masquerade as idle success.
      - Assistant `error` (and terminal finish `error` / `length` /
        `content-filter`) finalizes as `error`.
-     - Goal-enabled runs: see Goal safety gating below. When Host goal state
-       is unavailable they refuse before session create (no terminal-goal wait).
+      - Goal-enabled runs: settle via Host goal terminal status when the store
+        seam is available (`readSessionMetadata` preferred over OpenCode
+        `session.get`). Store read failure is never empty-goal success.
      - `durationMs` / `finishedAt` are wall-clock from run start through this
        settlement — not the prompt admission latency.
  8. On watchdog timeout after a session exists: immediately throw the canonical
@@ -262,21 +264,21 @@ Observer failures are logged and must not throw out of the event bus.
 ## Goal safety gating
 
 Session goal Host state is advertised by
-`packages/web/server/lib/session-goal/capability.js`. On OpenCode v2 the
-capability is `{ supported: false, reason: 'v2_goal_state_unavailable' }`
-(v2 SessionInfo has no `metadata.openchamber.goal`). This is an explicit
-capability gap — not recovery-complete.
+`packages/web/server/lib/session-goal/capability.js` as `{ supported: true }`.
+Goal records live in the OpenChamber session-metadata store (same seam as
+manual UI / `session-goal` runtime). Scheduled runs inject
+`persistSessionGoal`, `readSessionMetadata`, and optional `onGoalPersisted`
+from `server/index.js`.
 
-| Path | Behavior while unsupported |
+| Path | Behavior |
 |---|---|
-| `PUT` scheduled task / managed-tool create·update with `execution.goalEnabled` | HTTP 501, config not written |
-| Existing `goalEnabled` task due or manual run | Fail **before** OpenCode ready / session create / objective write / prompt; history `error` with the capability reason; task config kept |
+| `PUT` scheduled task / managed-tool create·update with `execution.goalEnabled` | Allowed when capability supported |
+| Existing `goalEnabled` task due or manual run | Requires `persistSessionGoal`; without it fail **before** OpenCode ready / session create / objective write / prompt; with it write objective + active goal then prompt |
 | Ordinary non-goal task | Unchanged |
-| Post-run observer on a goal-enabled task | Never promotes assistant-tail idle to success |
+| Post-run observer on a goal-enabled task | Prefer Host store goal terminal status; never invent success from assistant-tail idle alone when goal is active |
 
 Do not treat objective-file hints or first-turn assistant idle as a registered
-goal success. Full Host goal-state migration is out of scope for this module
-cut; flip `getSessionGoalCapability().supported` when it lands.
+goal success without a store-backed goal record.
 
 Run start also emits `scheduled-task-ran` with `status: running` as soon as
 task state is persisted, so the outer task list can show in-progress before

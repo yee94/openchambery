@@ -183,4 +183,21 @@ describe('opencode2 upgrade pin (ticket 12)', () => {
     expect(String(response.body.latestVersion || '')).not.toContain('1.18');
     vi.unstubAllGlobals();
   });
+
+  it('returns 409 for external OpenCode and does not refresh', async () => {
+    const refreshOpenCodeAfterConfigChange = vi.fn(async () => undefined);
+    const { app, deps } = createUpgradeApp({
+      getIsExternalOpenCode: () => true,
+      refreshOpenCodeAfterConfigChange,
+    });
+
+    const response = await request(app)
+      .post('/api/opencode/upgrade')
+      .send({})
+      .expect(409);
+
+    expect(response.body.success).toBe(false);
+    expect(response.body.error).toMatch(/your own OpenCode serve/i);
+    expect(deps.refreshOpenCodeAfterConfigChange).not.toHaveBeenCalled();
+  });
 });
