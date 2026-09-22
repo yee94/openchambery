@@ -30,6 +30,7 @@ Product behavior copied from Capacitor + shared UI (`packages/ui/src/apps/mobile
 | Pin / unpin | `POST` / `DELETE` `…/session/:id/pin` | `pinSession` / `unpinSession` |
 | Official OpenCode session prompt/abort/messages | `@opencode-ai/sdk/v2` `/session/:id/{prompt_async,abort,message}` | `src/chat/sessionApi.ts` |
 | Cap global event live tail | `/api/global/event` SSE (WS `/api/global/event/ws`) | `src/chat/liveEvents.ts` + `liveTail.ts` — same LegendList, no overlay |
+| Cap contact turn SSE | `GET /api/openchamber/events` (`openchamber:contact-turn-start` / `contact-bubble-delta` / `contact-turn-end`) | `src/assistants/contactEvents.ts` + `contactOptimistic.ts` — same contact LegendList, filtered by `assistantID` |
 | Session create / archive / delete | `POST/PATCH/DELETE /session` | `src/projects/sessionActions.ts` |
 | Question / permission pending | `GET/POST /question`, `/permission` | `src/chat/pendingCards.ts` |
 
@@ -97,7 +98,7 @@ QR / paste: `parseConnectionPayload` accepts v2 pairing links or a bare `http(s)
 - DirectoryExplorer: `src/projects/directoryExplorer.ts` against `/api/fs/home` + `/api/fs/list` + settings projects
 - Composer `/` `@`: `src/chat/composerCatalog.ts`
 - Assistant admission: `src/assistants/admission.ts` → `POST /api/openchamber/assistants/:id/messages` (Cap body: `sessionID` / `sessionGeneration` / `messageID` / `parts`)
-- Assistant contact transcript (Next #158): `src/assistants/contactMessages.ts` → `GET …/messages` keyset pages; `contactMerge` / `contactDisplay` portable Cap stitch + settle filter; `ContactConversationScreen` secondary (not session ChatScreen); abort `POST …/session/abort`; live via Cap `/api/global/event` SSE (no invented `contact-*` events)
+- Assistant contact transcript (Next #158 + #160): `src/assistants/contactMessages.ts` → `GET …/messages` keyset pages; `contactMerge` / `contactDisplay` portable Cap stitch + settle filter; `ContactConversationScreen` secondary (not session ChatScreen); abort `POST …/session/abort`. Session `message.*` / `session.status` stay on `/api/global/event`. Contact turn start / bubble delta / turn end are the real Cap envelopes on existing `GET /api/openchamber/events` (same runtimeFetch opener), folded into that LegendList with optimistic send → admitted → failed previews. Malformed envelopes are dropped. A failed history refresh keeps the previous pages.
 - Assistant unread / mark-all: `src/assistants/api.ts` → `POST /api/openchamber/assistants/:id/contact/read` (`{ generation, ordinal, messageID }`). Mark-all fans out unread+`readTip` in batches of 4. Snapshot parse defaults `unreadCount` to 0; malformed counts/positions fail closed. Portable open/latest-visible read mark uses snapshot `readTip` (Cap IntersectionObserver geometry is a host residual). Failure ≠ empty / no fake mark-success.
 - Voice: `src/settings/dictation.ts` — `/api/dictation/*` only (no invented ASR)
 - About diagnostics: `src/settings/diagnostics.ts`
@@ -114,4 +115,4 @@ Vitest project `@openchamber/lynx` (`src/**/*.test.ts`). Navigation harness: `sr
 | CI绿 | Package typecheck + Vitest. Track CI (Android debug APK + iOS sim) is a later slice. |
 | 真机过 | Not executed (Linux cloud VM; no Xcode / physical device). |
 
-Track tip (docs honesty, Next #159): `work/lynx-native` @ `841d2e71644a6513106f5b10091f280c065bac11` (PR #200 / Next #158 MERGED). Published APK: `lynx-v2-debug-841d2e7` (asset `openchamber-lynx-debug-841d2e7.apk`; was stale cite `lynx-v2-debug-4d4ff10` / prior tip `ceb8c30a9`; do not invent newer). Lynx Mobile CI SUCCESS (run 35718022126). Contact transcript 代码接上 only — product **NOT DONE** / 三关未齐 / not EXHAUSTED.
+Track tip (docs honesty, Next #159 MERGED as PR #201; product Next #160): `work/lynx-native` @ `841d2e71644a6513106f5b10091f280c065bac11` (PR #200 / Next #158 MERGED). Published APK: `lynx-v2-debug-841d2e7` (asset `openchamber-lynx-debug-841d2e7.apk`; was stale cite `lynx-v2-debug-4d4ff10` / prior tip `ceb8c30a9`; do not invent newer). Lynx Mobile CI SUCCESS (run 35718022126). Contact transcript + contact-* SSE previews (`openchamber:contact-turn-start` / `contact-bubble-delta` / `contact-turn-end` + optimistic bubbles) are 代码接上 only — product **NOT DONE** / 三关未齐 / not EXHAUSTED.

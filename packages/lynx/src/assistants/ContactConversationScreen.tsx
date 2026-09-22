@@ -2,8 +2,11 @@
  * Cap Assistant contact transcript secondary screen for Lynx.
  *
  * Opens from AssistantTab — NOT session ChatScreen. Loads Cap
- * `GET …/assistants/:id/messages`, sends via admit, aborts via session/abort,
- * folds Cap `/api/global/event` SSE into the same LegendList (no TanStack Virtual).
+ * `GET …/assistants/:id/messages`, sends via admit, aborts via session/abort.
+ * Session message.* / session.status stay on `/api/global/event`.
+ * Contact turn start / bubble delta / turn end ride the existing
+ * `/api/openchamber/events` SSE (same runtimeFetch opener) and fold into
+ * this LegendList with optimistic send rows (no TanStack Virtual, no overlay list).
  */
 import { useEffect, useRef, useState } from 'react';
 
@@ -24,24 +27,36 @@ import {
   clearPrependSettle,
   createEmptyTimelineState,
   failLoadOlder,
-  setSessionWorking,
   type LynxTimelineEntry,
   type LynxTimelineState,
 } from '../chat/timelineModel';
 import {
   admitLynxAssistantMessage,
+  createLynxAssistantMessageId,
   type LynxSessionBinding,
 } from './admission';
 import { ensureAssistantSession } from './api';
 import {
-  extractLynxContactCards,
-  projectLynxContactTimelineEntries,
-  type LynxContactCard,
-} from './contactDisplay';
-import { buildLynxContactTranscript } from './contactMerge';
+  LYNX_OPENCHAMBER_EVENTS_SSE_PATH,
+  subscribeLynxContactEvents,
+} from './contactEvents';
+import {
+  composeLynxContactTimeline,
+  createLynxContactOptimisticTurn,
+  createLynxContactPreviewState,
+  markLynxContactOptimisticAdmitted,
+  markLynxContactOptimisticFailed,
+  pagesAfterLynxContactHistoryRefresh,
+  reconcileLynxContactOverlays,
+  reduceLynxContactTurnEvent,
+  settleLynxContactPreviewsOnAbort,
+  type LynxContactOptimisticTurn,
+  type LynxContactPreviewState,
+  type LynxContactTurnPreview,
+} from './contactOptimistic';
+import { type LynxContactCard } from './contactDisplay';
 import {
   abortLynxAssistantSession,
-  flattenLynxAssistantHistoryPages,
   getNextLynxAssistantHistoryPageParam,
   loadLynxAssistantContactMessages,
   type LynxAssistantHistoryPage,
@@ -159,32 +174,6 @@ function ContactEntry({
   );
 }
 
-const pagesToTimeline = (
-  pages: readonly LynxAssistantHistoryPage[],
-  sessionID: string | null | undefined,
-): {
-  page: { entries: LynxTimelineEntry[]; olderCursor: string | null; canLoadEarlier: boolean };
-  cards: Record<string, LynxContactCard[]>;
-} => {
-  const flat = flattenLynxAssistantHistoryPages(pages);
-  const transcript = buildLynxContactTranscript(flat, sessionID);
-  const entries = projectLynxContactTimelineEntries(transcript);
-  const cards: Record<string, LynxContactCard[]> = {};
-  for (const message of transcript) {
-    cards[message.info.id] = extractLynxContactCards(message);
-  }
-  const lastPage = pages[pages.length - 1];
-  const olderCursor = lastPage ? getNextLynxAssistantHistoryPageParam(lastPage) ?? null : null;
-  return {
-    cards,
-    page: {
-      entries,
-      olderCursor,
-      canLoadEarlier: Boolean(olderCursor),
-    },
-  };
-};
-
 /**
  * Cap phone Assistant conversation — contact transcript secondary.
  */
@@ -217,6 +206,8 @@ export function LynxContactConversationScreen({
   const [actionError, setActionError] = useState<string | null>(null);
   const [liveConnection, setLiveConnection] = useState<string>('idle');
   const [messageCards, setMessageCards] = useState<Record<string, LynxContactCard[]>>({});
+  const [optimistic, setOptimistic] = useState<LynxContactOptimisticTurn[]>([]);
+  const [previews, setPreviews] = useState<LynxContactTurnPreview[]>([]);
 
   const timelineRef = useRef(timeline);
   timelineRef.current = timeline;
@@ -224,6 +215,71 @@ export function LynxContactConversationScreen({
   bindingRef.current = binding;
   const pagesRef = useRef(pages);
   pagesRef.current = pages;
+  const optimisticRef = useRef(optimistic);
+  optimisticRef.current = optimistic;
+  const previewsRef = useRef(previews);
+  previewsRef.current = previews;
+  const previewStateRef = useRef<LynxContactPreviewState>(createLynxContactPreviewState());
+  const sessionStreamWorkingRef = useRef(false);
+  const contactPendingRef = useRef(false);
+  const connectionsRef = useRef({ session: 'idle', contact: 'idle' });
+
+  const publishConnection = () => {
+    const { session, contact } = connectionsRef.current;
+    if (contact === 'failed') {
+      setLiveConnection('failed');
+      return;
+    }
+    setLiveConnection(contact !== 'idle' ? contact : session);
+  };
+
+  const paintRef = useRef<(
+    base: LynxTimelineState,
+    overrides?: { pages?: readonly LynxAssistantHistoryPage[]; sessionStreamWorking?: boolean },
+  ) => void>(() => {});
+  paintRef.current = (base, overrides) => {
+    const pagesNow = overrides?.pages ?? pagesRef.current;
+    const composed = composeLynxContactTimeline({
+      pages: pagesNow,
+      sessionID: bindingRef.current.sessionID,
+      assistantID: assistantId,
+      optimistic: optimisticRef.current,
+      previews: previewsRef.current,
+    });
+    setMessageCards(composed.cards);
+    const streamWorking = overrides?.sessionStreamWorking ?? sessionStreamWorkingRef.current;
+    const next: LynxTimelineState = {
+      ...base,
+      entries: composed.entries,
+      sessionIsWorking: streamWorking || composed.working || contactPendingRef.current,
+    };
+    timelineRef.current = next;
+    setTimeline(next);
+  };
+
+  const adoptHistoryPages = (nextPages: readonly LynxAssistantHistoryPage[]) => {
+    const mutablePages = [...nextPages];
+    pagesRef.current = mutablePages;
+    setPages(mutablePages);
+    const reconciled = reconcileLynxContactOverlays({
+      pages: nextPages,
+      sessionID: bindingRef.current.sessionID,
+      optimistic: optimisticRef.current,
+      previews: previewsRef.current,
+    });
+    if (reconciled.optimistic !== optimisticRef.current) {
+      optimisticRef.current = reconciled.optimistic as LynxContactOptimisticTurn[];
+      setOptimistic(optimisticRef.current);
+    }
+    if (reconciled.previews !== previewsRef.current) {
+      previewsRef.current = reconciled.previews as LynxContactTurnPreview[];
+      previewStateRef.current = {
+        ...previewStateRef.current,
+        previews: previewsRef.current,
+      };
+      setPreviews(previewsRef.current);
+    }
+  };
 
   // Soft ensure when unbound — never invent a session id.
   useEffect(() => {
@@ -262,15 +318,25 @@ export function LynxContactConversationScreen({
   // Contact history load (stitched transcript). Failure ≠ empty success.
   useEffect(() => {
     let cancelled = false;
-    setTimeline(createEmptyTimelineState(assistantId, directory));
+    optimisticRef.current = [];
+    previewsRef.current = [];
+    previewStateRef.current = createLynxContactPreviewState();
+    contactPendingRef.current = false;
+    setOptimistic([]);
+    setPreviews([]);
+    const empty = createEmptyTimelineState(assistantId, directory);
+    timelineRef.current = empty;
+    setTimeline(empty);
+    pagesRef.current = [];
     setPages([]);
     setActionError(null);
 
     if (!runtimeFetch) {
-      setTimeline((state) => applyInitialFailure(
-        state,
+      const failed = applyInitialFailure(
+        empty,
         lynxT(locale, 'lynx.assistant.contact.noRuntime'),
-      ));
+      );
+      paintRef.current(failed);
       return;
     }
 
@@ -281,17 +347,17 @@ export function LynxContactConversationScreen({
         const error = result.status === 'failed'
           ? result.error.message
           : result.status;
-        setTimeline((state) => applyInitialFailure(state, error));
+        paintRef.current(applyInitialFailure(timelineRef.current, error));
         return;
       }
       const nextPages = [result.page];
-      setPages(nextPages);
-      const projected = pagesToTimeline(
-        nextPages,
-        bindingRef.current.sessionID,
-      );
-      setMessageCards(projected.cards);
-      setTimeline((state) => applyInitialPage(state, projected.page));
+      const olderCursor = getNextLynxAssistantHistoryPageParam(result.page) ?? null;
+      adoptHistoryPages(nextPages);
+      paintRef.current(applyInitialPage(timelineRef.current, {
+        entries: [],
+        olderCursor,
+        canLoadEarlier: Boolean(olderCursor),
+      }), { pages: nextPages });
     })();
 
     return () => {
@@ -299,11 +365,12 @@ export function LynxContactConversationScreen({
     };
   }, [assistantId, directory, runtimeFetch, locale]);
 
-  // Cap global-event SSE live tail for the current binding (honest — no invented contact-* events).
+  // Session message.* / session.status on Cap `/api/global/event` (same opener).
   useEffect(() => {
     const sessionId = binding.sessionID;
     if (!runtimeFetch || !sessionId) {
-      setLiveConnection('idle');
+      connectionsRef.current.session = 'idle';
+      publishConnection();
       return;
     }
     const controller = new AbortController();
@@ -315,12 +382,13 @@ export function LynxContactConversationScreen({
       signal: controller.signal,
       getTimeline: () => timelineRef.current,
       setTimeline: (next) => {
-        timelineRef.current = next;
-        setTimeline(next);
+        sessionStreamWorkingRef.current = next.sessionIsWorking;
+        paintRef.current(next, { sessionStreamWorking: next.sessionIsWorking });
       },
       onEffect: (effect) => {
         if (effect.type === 'connection') {
-          setLiveConnection(effect.state);
+          connectionsRef.current.session = effect.state;
+          publishConnection();
         }
       },
     });
@@ -328,6 +396,51 @@ export function LynxContactConversationScreen({
       controller.abort();
     };
   }, [runtimeFetch, binding.sessionID, binding.directory, directory]);
+
+  // Assistant-scoped contact-* SSE on the existing OpenChamber event bus.
+  useEffect(() => {
+    if (!runtimeFetch || !assistantId.trim()) {
+      connectionsRef.current.contact = 'idle';
+      publishConnection();
+      return;
+    }
+    let cancelled = false;
+    const controller = new AbortController();
+    const openStream = createLynxSseOpenFromRuntimeFetch(runtimeFetch);
+    void subscribeLynxContactEvents({
+      assistantID: assistantId,
+      openStream,
+      signal: controller.signal,
+      path: LYNX_OPENCHAMBER_EVENTS_SSE_PATH,
+      onConnection: (state) => {
+        connectionsRef.current.contact = state;
+        publishConnection();
+      },
+      onEvent: (event) => {
+        previewStateRef.current = reduceLynxContactTurnEvent(previewStateRef.current, event);
+        if (event.type === 'contact-turn-start' || event.type === 'contact-turn-end') {
+          contactPendingRef.current = false;
+        }
+        previewsRef.current = previewStateRef.current.previews as LynxContactTurnPreview[];
+        setPreviews(previewsRef.current);
+        paintRef.current(timelineRef.current);
+        if (event.type !== 'contact-turn-end') return;
+        const beforePages = pagesRef.current;
+        void (async () => {
+          const result = await loadLynxAssistantContactMessages(runtimeFetch, assistantId);
+          if (cancelled) return;
+          const nextPages = pagesAfterLynxContactHistoryRefresh(beforePages, result);
+          if (nextPages === beforePages) return;
+          adoptHistoryPages(nextPages);
+          paintRef.current(timelineRef.current, { pages: nextPages });
+        })();
+      },
+    });
+    return () => {
+      cancelled = true;
+      controller.abort();
+    };
+  }, [runtimeFetch, assistantId]);
 
   const onLoadOlder = () => {
     if (!runtimeFetch) {
@@ -337,38 +450,33 @@ export function LynxContactConversationScreen({
     setTimeline((state) => {
       const next = beginLoadOlder(state);
       if (!next.isLoadingOlder) return state;
+      timelineRef.current = next;
       const before = next.olderCursor;
       void (async () => {
         const result = await loadLynxAssistantContactMessages(runtimeFetch, assistantId, { before });
-        setTimeline((current) => {
-          if (result.status !== 'ok') {
-            return failLoadOlder(
-              current,
-              result.status === 'failed' ? result.error.message : result.status,
-            );
-          }
-          const nextPages = [...pagesRef.current, result.page];
-          setPages(nextPages);
-          const projected = pagesToTimeline(
-            nextPages,
-            bindingRef.current.sessionID,
+        if (result.status !== 'ok') {
+          const failed = failLoadOlder(
+            timelineRef.current,
+            result.status === 'failed' ? result.error.message : result.status,
           );
-          setMessageCards(projected.cards);
-          // Preserve live working / follow flags; replace entries from authoritative stitch.
-          const authoritative: LynxTimelineState = {
-            ...current,
-            entries: projected.page.entries,
-            olderCursor: projected.page.olderCursor,
-            canLoadEarlier: projected.page.canLoadEarlier,
-            isLoadingOlder: false,
-            loadOlderError: null,
-            prependSettling: true,
-            historyAnchorKeys: new Set(current.entries.map((entry) => entry.key)),
-          };
-          queueMicrotask(() => {
-            setTimeline((settled) => clearPrependSettle(settled));
-          });
-          return authoritative;
+          paintRef.current(failed);
+          return;
+        }
+        const nextPages = [...pagesRef.current, result.page];
+        const olderCursor = getNextLynxAssistantHistoryPageParam(result.page) ?? null;
+        adoptHistoryPages(nextPages);
+        const authoritative: LynxTimelineState = {
+          ...timelineRef.current,
+          olderCursor,
+          canLoadEarlier: Boolean(olderCursor),
+          isLoadingOlder: false,
+          loadOlderError: null,
+          prependSettling: true,
+          historyAnchorKeys: new Set(timelineRef.current.entries.map((entry) => entry.key)),
+        };
+        paintRef.current(authoritative, { pages: nextPages });
+        queueMicrotask(() => {
+          paintRef.current(clearPrependSettle(timelineRef.current), { pages: nextPages });
         });
       })();
       return next;
@@ -387,40 +495,55 @@ export function LynxContactConversationScreen({
       setActionError(lynxT(locale, 'lynx.assistant.openNeedsSession'));
       return;
     }
+    const messageID = createLynxAssistantMessageId();
+    const turn = createLynxContactOptimisticTurn(assistantId, messageID, text);
+    optimisticRef.current = [...optimisticRef.current, turn];
+    setOptimistic(optimisticRef.current);
+    setDraft('');
     setSending(true);
-    setTimeline((state) => setSessionWorking(state, true));
+    paintRef.current(timelineRef.current);
     try {
       const result = await admitLynxAssistantMessage(runtimeFetch, {
         assistantId,
         text,
+        messageID,
         sessionID: binding.sessionID,
         sessionGeneration: binding.sessionGeneration,
         mode,
       });
       if (result.status !== 'ok') {
-        setActionError(
-          result.status === 'failed'
-            ? result.error.message
-            : result.status,
+        const message = result.status === 'failed' ? result.error.message : result.status;
+        optimisticRef.current = markLynxContactOptimisticFailed(
+          optimisticRef.current,
+          messageID,
+          message,
         );
-        setTimeline((state) => setSessionWorking(state, false));
+        setOptimistic(optimisticRef.current);
+        setActionError(message);
+        paintRef.current(timelineRef.current);
         return;
       }
-      setDraft('');
+      optimisticRef.current = markLynxContactOptimisticAdmitted(optimisticRef.current, messageID);
+      setOptimistic(optimisticRef.current);
+      contactPendingRef.current = !previewStateRef.current.settledTurnIDs.has(messageID);
       setBinding(result.admission.binding);
+      bindingRef.current = result.admission.binding;
       const refresh = await loadLynxAssistantContactMessages(runtimeFetch, assistantId);
-      if (refresh.status === 'ok') {
-        const nextPages = [refresh.page];
-        setPages(nextPages);
-        const projected = pagesToTimeline(
-          nextPages,
-          result.admission.binding.sessionID,
-        );
-        setMessageCards(projected.cards);
-        setTimeline((state) => ({
-          ...applyInitialPage(state, projected.page),
-          sessionIsWorking: true,
-        }));
+      const nextPages = pagesAfterLynxContactHistoryRefresh(pagesRef.current, refresh);
+      if (nextPages !== pagesRef.current) {
+        const olderCursor = refresh.status === 'ok'
+          ? getNextLynxAssistantHistoryPageParam(refresh.page) ?? null
+          : timelineRef.current.olderCursor;
+        adoptHistoryPages(nextPages);
+        paintRef.current({
+          ...timelineRef.current,
+          olderCursor,
+          canLoadEarlier: Boolean(olderCursor),
+          initialError: null,
+          hydrated: true,
+        }, { pages: nextPages });
+      } else {
+        paintRef.current(timelineRef.current);
       }
     } finally {
       setSending(false);
@@ -443,7 +566,16 @@ export function LynxContactConversationScreen({
       return;
     }
     setBinding(result.binding);
-    setTimeline((state) => setSessionWorking(state, false));
+    bindingRef.current = result.binding;
+    contactPendingRef.current = false;
+    sessionStreamWorkingRef.current = false;
+    previewsRef.current = settleLynxContactPreviewsOnAbort(previewsRef.current, assistantId);
+    previewStateRef.current = {
+      ...previewStateRef.current,
+      previews: previewsRef.current,
+    };
+    setPreviews(previewsRef.current);
+    paintRef.current(timelineRef.current, { sessionStreamWorking: false });
   };
 
   const occupancyInset = 12;

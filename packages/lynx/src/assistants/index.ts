@@ -93,6 +93,16 @@ export type {
 } from './contactDisplay';
 export { LynxContactConversationScreen } from './ContactConversationScreen';
 export type { LynxContactConversationScreenProps } from './ContactConversationScreen';
+export {
+  parseLynxContactEventEnvelope,
+  subscribeLynxContactEvents,
+  LYNX_OPENCHAMBER_EVENTS_SSE_PATH,
+} from './contactEvents';
+export {
+  composeLynxContactTimeline,
+  mergeLynxContactTranscript,
+  reconcileLynxContactTurnPreviews,
+} from './contactOptimistic';
 
 export {
   isAssignedLynxShareDraft,
