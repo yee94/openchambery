@@ -22,12 +22,14 @@ export type LynxSecondaryState =
       directory?: string | null;
     }
   | {
-      /** Assistant conversation page — Cap depth; Lynx reuses chat chrome when session exists. */
+      /** Cap Assistant contact transcript secondary (not project session ChatScreen). */
       kind: 'assistant';
       assistantId: string;
       sessionId: string | null;
+      sessionGeneration: number;
       directory: string | null;
       title?: string | null;
+      mode?: 'continuous' | 'stateless' | null;
     }
   | {
       kind: 'instances';
@@ -130,8 +132,10 @@ export type LynxNavigationAction =
       type: 'openAssistant';
       assistantId: string;
       sessionId?: string | null;
+      sessionGeneration?: number;
       directory?: string | null;
       title?: string | null;
+      mode?: 'continuous' | 'stateless' | null;
     }
   | { type: 'openInstances' }
   | { type: 'closeSecondary' }
@@ -200,8 +204,10 @@ export function reduceLynxNavigation(
           kind: 'assistant',
           assistantId: action.assistantId,
           sessionId: action.sessionId ?? null,
+          sessionGeneration: action.sessionGeneration ?? 0,
           directory: action.directory ?? null,
           title: action.title ?? null,
+          mode: action.mode ?? null,
         },
       };
     case 'openInstances':

@@ -96,7 +96,8 @@ QR / paste: `parseConnectionPayload` accepts v2 pairing links or a bare `http(s)
 - Predictive / edge back: `src/host/predictiveBack.ts` + host stubs; shell must not double-own the edge (see `host/README.md`)
 - DirectoryExplorer: `src/projects/directoryExplorer.ts` against `/api/fs/home` + `/api/fs/list` + settings projects
 - Composer `/` `@`: `src/chat/composerCatalog.ts`
-- Assistant admission: `src/assistants/admission.ts` → `POST /api/openchamber/assistants/:id/messages`
+- Assistant admission: `src/assistants/admission.ts` → `POST /api/openchamber/assistants/:id/messages` (Cap body: `sessionID` / `sessionGeneration` / `messageID` / `parts`)
+- Assistant contact transcript (Next #158): `src/assistants/contactMessages.ts` → `GET …/messages` keyset pages; `contactMerge` / `contactDisplay` portable Cap stitch + settle filter; `ContactConversationScreen` secondary (not session ChatScreen); abort `POST …/session/abort`; live via Cap `/api/global/event` SSE (no invented `contact-*` events)
 - Assistant unread / mark-all: `src/assistants/api.ts` → `POST /api/openchamber/assistants/:id/contact/read` (`{ generation, ordinal, messageID }`). Mark-all fans out unread+`readTip` in batches of 4. Snapshot parse defaults `unreadCount` to 0; malformed counts/positions fail closed. Portable open/latest-visible read mark uses snapshot `readTip` (Cap IntersectionObserver geometry is a host residual). Failure ≠ empty / no fake mark-success.
 - Voice: `src/settings/dictation.ts` — `/api/dictation/*` only (no invented ASR)
 - About diagnostics: `src/settings/diagnostics.ts`
@@ -113,4 +114,4 @@ Vitest project `@openchamber/lynx` (`src/**/*.test.ts`). Navigation harness: `sr
 | CI绿 | Package typecheck + Vitest. Track CI (Android debug APK + iOS sim) is a later slice. |
 | 真机过 | Not executed (Linux cloud VM; no Xcode / physical device). |
 
-Track tip (docs honesty): `work/lynx-native` @ `4520eb00be8bd1cc8faea2cca151d3d55ae39b91` (PR #134 / Next #94 MERGED). Published APK: `lynx-v2-debug-50af885` (prerelease; exists; was the tip before this honesty merge / PR #133 / `50af885b81849d92bed38116930abc3ddbbf88ef`). Do not invent a newer APK than published (no `lynx-v2-debug-4520eb00`). Lynx Mobile CI on tip `4520eb00` FAILED at Setup Android SDK (`android-actions/setup-android@v3`: Failed to find package 'tools') — no newer published APK for `4520eb00`. Product **NOT DONE** / 三关未齐 / not EXHAUSTED. 真机残差: Connect welcome **card chrome** confirm for Yee on published APK `lynx-v2-debug-50af885`. Host-only unchanged.
+Track tip (docs honesty, Next #158): base `work/lynx-native` @ `ceb8c30a9` (PR #199 / Next #157 MERGED). Published APK: `lynx-v2-debug-4d4ff10` (do not invent newer). Contact transcript 代码接上 only — product **NOT DONE** / 三关未齐 / not EXHAUSTED.
