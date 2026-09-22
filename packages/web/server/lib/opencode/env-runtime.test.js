@@ -168,31 +168,24 @@ describe('OpenCode env runtime', () => {
     expect(state.resolvedOpencodeBinarySource).toBe('settings');
   });
 
-  it('rejects a configured 1.x opencode version in strict mode', async () => {
+  it('skips a configured 1.x opencode version instead of aborting startup', async () => {
     const dir = createTempDir('openchamber-opencode-1x-');
     const binary = path.join(dir, 'opencode');
     writeVersionBinary(binary, '1.18.4');
     const { runtime } = createRuntime({ opencodeBinary: binary });
 
-    await expect(runtime.applyOpencodeBinaryFromSettings({ strict: true })).rejects.toMatchObject({
-      code: 'OPENCODE_BINARY_INVALID',
-      message: expect.stringMatching(/1\.x.*OpenCode v2/s),
-    });
+    await expect(runtime.applyOpencodeBinaryFromSettings({ strict: true })).resolves.toBeNull();
+    expect(process.env.OPENCODE_BINARY).not.toBe(binary);
   });
 
-  it('rejects an explicit OPENCODE_BINARY that reports a 1.x version', () => {
+  it('skips an explicit OPENCODE_BINARY that reports a 1.x version', () => {
     const dir = createTempDir('openchamber-env-opencode-1x-');
     const binary = path.join(dir, process.platform === 'win32' ? 'opencode.exe' : 'opencode');
     writeVersionBinary(binary, '1.18.4');
     process.env.OPENCODE_BINARY = binary;
     const { runtime } = createRuntime({});
 
-    expect(() => runtime.resolveOpencodeCliPath()).toThrow(
-      expect.objectContaining({
-        code: 'OPENCODE_BINARY_INVALID',
-        message: expect.stringMatching(/1\.x.*OpenCode v2/s),
-      })
-    );
+    expect(runtime.resolveOpencodeCliPath()).not.toBe(binary);
   });
 
   it('discovers opencode from a home-directory install location', () => {
