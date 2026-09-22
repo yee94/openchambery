@@ -48,12 +48,51 @@ export type { LynxShareEnvelope, LynxShareInbox, LynxShareAttachment, LynxShareD
 export {
   admitLynxAssistantMessage,
   parseLynxMessageAdmission,
+  createLynxAssistantMessageId,
 } from './admission';
 export type {
   LynxMessageAdmission,
   LynxAdmitAssistantMessageResult,
   LynxAdmitAssistantMessageInput,
 } from './admission';
+
+export {
+  loadLynxAssistantContactMessages,
+  abortLynxAssistantSession,
+  parseLynxAssistantHistoryPage,
+  flattenLynxAssistantHistoryPages,
+  getNextLynxAssistantHistoryPageParam,
+  LYNX_ASSISTANT_HISTORY_PAGE_SIZE,
+  LynxAssistantHistoryParseError,
+} from './contactMessages';
+export type {
+  LynxAssistantHistoryEntry,
+  LynxAssistantHistoryPage,
+  LynxAssistantHistoryLoadResult,
+  LynxAssistantAbortResult,
+} from './contactMessages';
+export {
+  stitchLynxAssistantHistory,
+  mergeLynxCurrentSessionHistory,
+  buildLynxContactTranscript,
+  createLynxAssistantSessionDivider,
+  isLynxAssistantSessionDivider,
+  LYNX_ASSISTANT_SESSION_DIVIDER_PREFIX,
+} from './contactMerge';
+export {
+  filterLynxContactDisplayParts,
+  hasLynxUserDisplayableParts,
+  extractLynxContactCards,
+  projectLynxContactTimelineEntries,
+  projectLynxContactTimelineEntry,
+} from './contactDisplay';
+export type {
+  LynxContactCard,
+  LynxContactCardKind,
+  LynxContactChatMessage,
+} from './contactDisplay';
+export { LynxContactConversationScreen } from './ContactConversationScreen';
+export type { LynxContactConversationScreenProps } from './ContactConversationScreen';
 
 export {
   isAssignedLynxShareDraft,

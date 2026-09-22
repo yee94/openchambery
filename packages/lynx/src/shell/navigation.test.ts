@@ -113,7 +113,12 @@ describe('Lynx four-root dock IA', () => {
     const assistant = reduceLynxNavigation(INITIAL_LYNX_NAVIGATION_STATE, { type: 'openAssistant', assistantId: 'asst_1' });
     const instances = reduceLynxNavigation(INITIAL_LYNX_NAVIGATION_STATE, { type: 'openInstances' });
     expect(draft.secondary?.kind).toBe('draft');
-    expect(assistant.secondary).toMatchObject({ kind: 'assistant', assistantId: 'asst_1', sessionId: null });
+    expect(assistant.secondary).toMatchObject({
+      kind: 'assistant',
+      assistantId: 'asst_1',
+      sessionId: null,
+      sessionGeneration: 0,
+    });
     expect(instances.secondary?.kind).toBe('instances');
     expect(isDockHidden(draft)).toBe(true);
     expect(isDockHidden(assistant)).toBe(true);

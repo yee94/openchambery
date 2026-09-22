@@ -23,9 +23,9 @@ import { LynxDialogPortal } from '../DialogPortal';
 export type AssistantTabProps = {
   locale: string;
   runtimeFetch?: LynxRuntimeFetch | null;
-  /** Open conversation as secondary chat chrome. */
+  /** Open Cap contact transcript secondary (not session ChatScreen). */
   onOpenConversation?: (assistant: LynxAssistantDTO) => void;
-  /** Labeled stub when snapshot has no session yet — do not invent ASR / fake session. */
+  /** Soft-ensure path — same contact transcript; screen never invents ASR / fake session. */
   onOpenNeedsSession?: (assistant: LynxAssistantDTO) => void;
   /** Cap openAssistantSettings — Settings assistants EntityEditor for id. */
   onOpenAssistantSettings?: (assistantId: string) => void;
@@ -112,8 +112,8 @@ function AssistantCard({
 
 /**
  * Assistant catalog mapped to Cap MobileAssistantTab / assistants snapshot API.
- * Conversation opens as secondary chat chrome (LynxChatScreen). No invented ASR.
- * Next #51: Cap long-press Edit/Delete + empty Create + disabled Enable.
+ * Conversation opens Cap contact transcript secondary (LynxContactConversationScreen).
+ * No invented ASR. Soft-ensure lives inside the contact screen.
  */
 export function AssistantTab({
   locale,

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 
-import { ensureAssistantSession, loadAssistantSnapshot } from '../assistants/api';
+import { loadAssistantSnapshot } from '../assistants/api';
+import { LynxContactConversationScreen } from '../assistants/ContactConversationScreen';
 import { LynxShareBridge } from '../assistants/ShareBridge';
 import { createLynxShareInbox, type LynxShareInbox } from '../assistants/shareInbox';
 import type { LynxAssistantDTO, LynxAssistantReadPosition, LynxAssistantSnapshot } from '../assistants/types';
@@ -151,7 +152,6 @@ export function LynxShellApp({
 }: LynxShellAppProps) {
   const [navigation, setNavigation] = useState(initialState);
   const [shareInbox] = useState(() => shareInboxProp ?? createLynxShareInbox());
-  const [assistantNeedsSessionNote, setAssistantNeedsSessionNote] = useState<string | null>(null);
   const [settingsInitialSlug, setSettingsInitialSlug] = useState<LynxMobileSettingsSlug | null>(null);
   const [assistantsFocusId, setAssistantsFocusId] = useState<string | null>(null);
   const [chatSheet, setChatSheet] = useState<LynxChatSheetKind | null>(null);
@@ -190,7 +190,6 @@ export function LynxShellApp({
   }, [runtimeFetch, assistantUnreadReload]);
 
   const selectTab = (tab: LynxTabId) => {
-    setAssistantNeedsSessionNote(null);
     setChatSheet(null);
     if (tab !== 'settings') {
       setSettingsInitialSlug(null);
@@ -228,61 +227,22 @@ export function LynxShellApp({
   };
 
   const openAssistantConversation = (assistant: LynxAssistantDTO) => {
-    setAssistantNeedsSessionNote(null);
+    // Cap contact transcript secondary — not project session ChatScreen.
     setAssistantReadTip({ assistantId: assistant.id, readTip: assistant.readTip });
     setNavigation((state) => reduceLynxNavigation(state, {
       type: 'openAssistant',
       assistantId: assistant.id,
       sessionId: assistant.sessionID,
+      sessionGeneration: assistant.sessionGeneration,
       directory: assistant.effectiveWorkspacePath,
       title: assistant.name,
+      mode: assistant.mode,
     }));
   };
 
   const openAssistantNeedsSession = (assistant: LynxAssistantDTO) => {
-    // Cap AssistantView: ensure only while unbound — never invent a chat id.
-    setAssistantReadTip({ assistantId: assistant.id, readTip: assistant.readTip });
-    setNavigation((state) => reduceLynxNavigation(state, {
-      type: 'openAssistant',
-      assistantId: assistant.id,
-      sessionId: null,
-      directory: assistant.effectiveWorkspacePath,
-      title: assistant.name,
-    }));
-
-    if (!runtimeFetch) {
-      setAssistantNeedsSessionNote(
-        `${lynxT(host.locale, 'lynx.assistant.openNeedsSession')}: ${assistant.name}`,
-      );
-      return;
-    }
-
-    setAssistantNeedsSessionNote(lynxT(host.locale, 'lynx.assistant.ensuring'));
-    void (async () => {
-      try {
-        const binding = await ensureAssistantSession(runtimeFetch, assistant.id);
-        if (!binding.sessionID) {
-          setAssistantNeedsSessionNote(
-            lynxT(host.locale, 'lynx.assistant.ensureUnbound'),
-          );
-          return;
-        }
-        setAssistantNeedsSessionNote(null);
-        setNavigation((state) => reduceLynxNavigation(state, {
-          type: 'openAssistant',
-          assistantId: assistant.id,
-          sessionId: binding.sessionID,
-          directory: binding.directory || assistant.effectiveWorkspacePath,
-          title: assistant.name,
-        }));
-      } catch (error) {
-        setAssistantNeedsSessionNote(
-          `${lynxT(host.locale, 'lynx.assistant.ensureFailed')}: ${
-            error instanceof Error ? error.message : String(error)
-          }`,
-        );
-      }
-    })();
+    // Soft-ensure happens inside contact transcript screen — never invent a chat id.
+    openAssistantConversation(assistant);
   };
 
   useEffect(() => {
@@ -354,7 +314,7 @@ export function LynxShellApp({
   const sheetDirectory = chatRoute?.directory
     ?? (assistantRoute?.sessionId ? assistantRoute.directory : null)
     ?? null;
-  const showDetachedSheet = Boolean(chatSheet) && !chatRoute && !assistantRoute?.sessionId;
+  const showDetachedSheet = Boolean(chatSheet) && !chatRoute && !assistantRoute;
 
   // Cap MobileSessionStatusBar related list — session-index snapshot when connected.
   const [sessionIndexState, setSessionIndexState] = useState(() => sessionIndexBindings?.getSnapshot() ?? null);
@@ -473,36 +433,34 @@ export function LynxShellApp({
             onOpenSessionsSheet={openSessionsSheet}
             headerSwipeDisabled={sessionsSheetOpen}
           />
-        ) : assistantRoute?.sessionId ? (
-          <LynxChatScreen
+        ) : assistantRoute ? (
+          <LynxContactConversationScreen
             locale={host.locale}
-            host={host}
-            fullPageAutoGlassSkin={fullPageAutoGlassSkin}
-            sessionId={assistantRoute.sessionId}
+            assistantId={assistantRoute.assistantId}
+            title={assistantRoute.title ?? null}
+            mode={assistantRoute.mode ?? null}
+            initialSessionId={assistantRoute.sessionId}
+            initialSessionGeneration={assistantRoute.sessionGeneration}
             directory={assistantRoute.directory}
+            runtimeFetch={runtimeFetch}
             onBack={() => {
               setChatSheet(null);
               closeSecondary();
             }}
-            runtimeFetch={runtimeFetch}
-            title={assistantRoute.title ?? undefined}
-            initialSheet={chatSheet}
-            onSheetClosed={() => setChatSheet(null)}
-            onOpenDraft={openDraft}
-            orderedSessionIds={orderedSessionIds}
-            relatedSessions={relatedSessions}
-            onSelectRelatedSession={selectRelatedSession}
-            onSessionSwipe={(_direction, targetId) => selectRelatedSession(targetId)}
-            onOpenSessionsSheet={openSessionsSheet}
-            headerSwipeDisabled={sessionsSheetOpen}
-            assistantId={assistantRoute.assistantId}
-            assistantReadTip={
+            readTip={
               assistantReadTip?.assistantId === assistantRoute.assistantId
                 ? assistantReadTip.readTip
                 : null
             }
-            onAssistantReadMarked={() => {
+            onReadMarked={() => {
               setAssistantUnreadReload((value) => value + 1);
+            }}
+            onOpenSession={(sessionId, sessionDirectory) => {
+              setNavigation((state) => reduceLynxNavigation(state, {
+                type: 'openChat',
+                sessionId,
+                directory: sessionDirectory,
+              }));
             }}
           />
         ) : secondary?.kind === 'draft' ? (
@@ -521,28 +479,6 @@ export function LynxShellApp({
               }));
             }}
           />
-        ) : assistantRoute ? (
-          <LynxView style={{ flexGrow: 1, backgroundColor: cssVar('surface.background') }}>
-            <LynxView style={{ flexDirection: 'row', padding: '12px 16px', alignItems: 'center' }}>
-              <LynxView bindtap={closeSecondary} accessibility-label={lynxT(host.locale, 'lynx.shell.back')}>
-                <LynxText style={{ color: cssVar('primary.base') }}>
-                  {lynxT(host.locale, 'lynx.shell.back')}
-                </LynxText>
-              </LynxView>
-              <LynxText
-                style={{
-                  marginLeft: '12px',
-                  color: cssVar('surface.foreground'),
-                  fontWeight: '600',
-                }}
-              >
-                {assistantRoute.title || lynxT(host.locale, 'mobile.tabs.assistant')}
-              </LynxText>
-            </LynxView>
-            <LynxText style={{ padding: '16px', color: cssVar('surface.mutedForeground') }}>
-              {assistantNeedsSessionNote || lynxT(host.locale, 'lynx.assistant.openNeedsSession')}
-            </LynxText>
-          </LynxView>
         ) : secondary ? (
           <SecondaryStubPage
             locale={host.locale}

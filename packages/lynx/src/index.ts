@@ -147,12 +147,29 @@ export {
   parseLynxAssistantReadResponse,
   formatLynxAssistantUnreadBadge,
   selectLynxAssistantUnreadTotal,
+  loadLynxAssistantContactMessages,
+  abortLynxAssistantSession,
+  parseLynxAssistantHistoryPage,
+  flattenLynxAssistantHistoryPages,
+  getNextLynxAssistantHistoryPageParam,
+  stitchLynxAssistantHistory,
+  mergeLynxCurrentSessionHistory,
+  buildLynxContactTranscript,
+  filterLynxContactDisplayParts,
+  LynxContactConversationScreen,
   type LynxAssistantDTO,
   type LynxAssistantSnapshot,
   type LynxAssistantLoadResult,
   type LynxAssistantReadPosition,
   type LynxAssistantReadResponse,
+  type LynxAssistantHistoryPage,
+  type LynxAssistantHistoryEntry,
 } from './assistants';
+export {
+  admitLynxAssistantMessage,
+  parseLynxMessageAdmission,
+  createLynxAssistantMessageId,
+} from './assistants/admission';
 export {
   loadGlobalScheduledTasks,
   loadScheduledTaskRuns,
@@ -386,10 +403,6 @@ export {
   clampLynxBackProgress,
   LYNX_PREDICTIVE_BACK_WIRING_NOTES,
 } from './host/predictiveBack';
-export {
-  admitLynxAssistantMessage,
-  parseLynxMessageAdmission,
-} from './assistants/admission';
 export {
   loadLynxDictationStatus,
   requestLynxDictationModelDownload,
