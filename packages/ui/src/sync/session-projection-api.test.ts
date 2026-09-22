@@ -349,6 +349,12 @@ describe("fetchSessionProjectionPage", () => {
       time: { created: 1 },
     })).toBeNull()
     expect(normalizeSessionProjectionMessage(SESSION, {
+      id: "msg_idle_role",
+      role: "idle",
+      outcome: "succeeded",
+      time: { created: 1 },
+    })).toBeNull()
+    expect(normalizeSessionProjectionMessage(SESSION, {
       id: "msg_switched",
       type: "model-switched",
       time: { created: 1 },
@@ -364,6 +370,106 @@ describe("fetchSessionProjectionPage", () => {
       finish: "stop",
     })
     expect(assistant?.parts.map((part) => (part as { type?: string; text?: string }).text)).toEqual(["think", "正常"])
+  })
+
+  test("real wire reload page: user + assistant content, no idle control row", async () => {
+    const { normalizeSessionProjectionPage } = await import("./session-projection-api")
+    // Shape captured from isolated backend GET /session/.../message for
+    // ses_f373f63c7ffeiHcvYO52c2wz6W (orchestrator success).
+    const page = normalizeSessionProjectionPage({
+      data: [
+        {
+          id: "msg_idle_ok",
+          time: { created: 1790074467023 },
+          type: "idle",
+          outcome: "succeeded",
+        },
+        {
+          id: "msg_asst_orch",
+          time: { created: 1790074461285, streamed: 1790074467020, completed: 1790074467021 },
+          type: "assistant",
+          agent: "orchestrator",
+          model: { id: "glm-5.3-flash", providerID: "zai-coding-plan", variant: "default" },
+          content: [
+            { type: "reasoning", text: "think" },
+            { type: "text", text: "ORCH_UI_OK_1855" },
+          ],
+          finish: "stop",
+          rawFinish: "stop",
+          cost: 0,
+          tokens: { input: 10, output: 9, reasoning: 3, cache: { read: 0, write: 0 } },
+        },
+        {
+          id: "msg_user_orch",
+          time: { created: 1790074461271 },
+          text: "UI-E2E-FIX-ORCH-1855",
+          type: "user",
+        },
+      ],
+      cursor: { previous: null, next: null },
+    }, SESSION, "desc")
+
+    expect(page.records.map((record) => record.info.role)).toEqual(["user", "assistant"])
+    expect(page.records.map((record) => record.info.id)).toEqual(["msg_user_orch", "msg_asst_orch"])
+    const assistant = page.records[1]!
+    expect(assistant.info.agent).toBe("orchestrator")
+    expect(assistant.info.modelID).toBe("glm-5.3-flash")
+    expect(assistant.info.providerID).toBe("zai-coding-plan")
+    expect(assistant.info.model).toEqual({
+      providerID: "zai-coding-plan",
+      modelID: "glm-5.3-flash",
+      variant: "default",
+    })
+    expect((assistant.parts ?? []).some((part) => part.type === "text" && (part as { text?: string }).text === "ORCH_UI_OK_1855")).toBe(true)
+    expect(page.records.some((record) => (record.info as { type?: string }).type === "idle")).toBe(false)
+  })
+
+  test("real wire provider.auth 401 assistant keeps finish/error; idle failed control dropped", async () => {
+    const { normalizeSessionProjectionPage } = await import("./session-projection-api")
+    // Shape from ses_f374247a7ffe3CZ56e8xJ11VSV (DeepSeek build 401).
+    const page = normalizeSessionProjectionPage({
+      data: [
+        {
+          id: "msg_idle_fail",
+          time: { created: 3 },
+          type: "idle",
+          outcome: "failed",
+        },
+        {
+          id: "msg_asst_401",
+          time: { created: 2, completed: 3 },
+          type: "assistant",
+          agent: "build",
+          model: { id: "deepseek-flash", providerID: "deepseek", variant: "default" },
+          content: null,
+          finish: "error",
+          error: {
+            type: "provider.auth",
+            message: "Authentication Fails, Your api key: **** is invalid",
+            status: 401,
+          },
+        },
+        {
+          id: "msg_user_401",
+          time: { created: 1 },
+          text: "UI-E2E-FIX-DS-1851",
+          type: "user",
+        },
+      ],
+      cursor: { previous: null, next: null },
+    }, SESSION, "desc")
+
+    expect(page.records.map((record) => record.info.role)).toEqual(["user", "assistant"])
+    const assistant = page.records[1]!
+    expect(assistant.info.finish).toBe("error")
+    expect(assistant.info.agent).toBe("build")
+    const error = assistant.info.error as { type?: string; message?: string; status?: number }
+    expect(error.type).toBe("provider.auth")
+    expect(error.message).toContain("Authentication Fails")
+    expect(error.status).toBe(401)
+    expect(assistant.parts ?? []).toEqual([])
+    // Must not invent a successful empty assistant from the idle control row.
+    expect(page.records).toHaveLength(2)
   })
 })
 

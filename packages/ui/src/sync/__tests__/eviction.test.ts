@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import type { Message, Part } from '@/lib/opencode/v2-types'
+
 import type { PermissionRequest } from '@/types/permission'
 import type { QuestionRequest } from '@/types/question'
 

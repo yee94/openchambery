@@ -5,6 +5,7 @@ mock.module('@/lib/opencode/client', () => ({ opencodeClient: { getSdkClient: ()
 mock.module('@/lib/runtime-fetch', () => ({ runtimeFetch: async () => new Response('{}') }));
 mock.module('@/stores/useConfigStore', () => ({ useConfigStore: () => null }));
 mock.module('@/stores/useUIStore', () => ({ useUIStore: () => null }));
+mock.module('@/stores/useDirectoryStore', () => ({ useDirectoryStore: () => null }));
 mock.module('@/stores/useAgentsStore', () => ({ reloadOpenCodeConfiguration: async () => undefined }));
 mock.module('@/lib/i18n', () => ({ useI18n: () => ({ t: (key: string) => key }), getCurrentIntlLocale: () => 'en' }));
 mock.module('@/lib/clipboard', () => ({ copyTextToClipboard: async () => ({ ok: true }) }));

@@ -376,18 +376,21 @@ export function applyDirectoryEvent(
     }
 
     case "session.execution.started": {
+      // Authoritative new-run signal (v2 busy). Clear the previous turn's
+      // session_error_at the same way session.status busy/retry does, so a
+      // retry does not keep showing the prior failure.
       const props = event.properties as { sessionID: string }
       const status = { type: "busy" } as const
+      const errorChanged = clearSessionErrorAt(draft, props.sessionID)
       if (callbacks?.now) draft.session_status_observed_at[props.sessionID] = callbacks.now()
       if (areSessionStatusesEqual(draft.session_status[props.sessionID], status)) {
-        return callbacks?.now ? true : false
+        return Boolean(callbacks?.now) || errorChanged
       }
       draft.session_status[props.sessionID] = status
       return true
     }
 
     case "session.execution.succeeded":
-    case "session.execution.failed":
     case "session.execution.interrupted": {
       const props = event.properties as { sessionID: string }
       // Same release path as legacy session.idle / status idle — queue abort
@@ -397,6 +400,23 @@ export function applyDirectoryEvent(
       if (callbacks?.now) draft.session_status_observed_at[props.sessionID] = callbacks.now()
       if (areSessionStatusesEqual(draft.session_status[props.sessionID], status)) {
         return callbacks?.now ? true : false
+      }
+      draft.session_status[props.sessionID] = status
+      return true
+    }
+
+    case "session.execution.failed": {
+      // v2 terminal failure (e.g. Agent not found). Same idle settle as
+      // session.error, plus session_error_at so live UI can show the reason
+      // when no assistant row is produced.
+      const props = event.properties as { sessionID: string; error?: unknown }
+      callbacks?.onServerSessionIdle?.(props.sessionID)
+      const status = { type: "idle" } as const
+      const now = callbacks?.now?.()
+      if (now !== undefined) draft.session_status_observed_at[props.sessionID] = now
+      const errorChanged = now !== undefined ? assignSessionErrorAt(draft, props.sessionID, now) : false
+      if (areSessionStatusesEqual(draft.session_status[props.sessionID], status)) {
+        return now !== undefined || errorChanged
       }
       draft.session_status[props.sessionID] = status
       return true

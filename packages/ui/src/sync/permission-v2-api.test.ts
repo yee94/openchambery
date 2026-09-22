@@ -162,7 +162,7 @@ describe("official saved / permission reply / form HTTP (ticket 10)", () => {
       `/api/session/${encodeURIComponent("ses/a b")}/permission/${encodeURIComponent("per/1")}/reply`,
     )
     expect(calls[0]!.url.searchParams.get("directory")).toBe("/repo a")
-    expect(calls[0]!.body).toEqual({ reply: "always" })
+    expect(calls[0]!.body).toEqual({ decision: "always" })
   })
 
   test("permission reply HTTP non-2xx throws instead of empty success", async () => {

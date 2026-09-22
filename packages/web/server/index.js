@@ -89,6 +89,7 @@ import { createNotificationTemplateRuntime } from './lib/notifications/template-
 import { createPermissionAutoAcceptRuntime } from './lib/permission-auto-accept/runtime.js';
 import { createQuestionAutoDelegateRuntime } from './lib/question-auto-delegate/runtime.js';
 import { createGracefulShutdownRuntime } from './lib/opencode/shutdown-runtime.js';
+import { attachHttpServerConnectionTracker } from './lib/opencode/http-server-connections.js';
 import { createProjectConfigRuntime } from './lib/projects/project-config.js';
 import { createRemoteClientAuthRuntime } from './lib/client-auth/remote-clients.js';
 import { applyRuntimeCorsHeaders } from './lib/request-cors.js';
@@ -1213,7 +1214,6 @@ const retryOpenCodeStartup = async (...args) => {
   await openCodeLifecycleRuntime.retryOpenCodeStartup(...args);
   completeOpenCodeStartup();
 };
-const killProcessOnPort = (...args) => openCodeLifecycleRuntime.killProcessOnPort(...args);
 const waitForPortRelease = (...args) => openCodeLifecycleRuntime.waitForPortRelease(...args);
 
 const fetchAgentsSnapshot = (...args) => serverUtilsRuntime.fetchAgentsSnapshot(...args);
@@ -1250,7 +1250,6 @@ const gracefulShutdownRuntime = createGracefulShutdownRuntime({
   setOpenCodeProcess: (value) => {
     openCodeProcess = value;
   },
-  killProcessOnPort,
   waitForPortRelease,
   getServer: () => server,
   getUiAuthController: () => uiAuthController,
@@ -1499,6 +1498,9 @@ async function main(options = {}) {
   }));
   expressApp = app;
   server = http.createServer(app);
+  // Track server-owned sockets so forceCloseConnections can destroy upgraded
+  // WS/SSE leftovers that closeAllConnections does not release.
+  attachHttpServerConnectionTracker(server);
   let realtimeProxyRuntime = { stop: () => {} };
 
   // The relay service is constructed further below (it depends on the active
@@ -1880,12 +1882,9 @@ async function main(options = {}) {
     restartOpenCode: () => restartOpenCode(),
     getOpenCodeProcessInfo: () => {
       const managed = Boolean((openCodeProcess || openCodePort) && !ENV_SKIP_OPENCODE_START && !isExternalOpenCode);
-      // Only ever expose pid/port for a server WE manage. The Electron-side
-      // killer kills by port (lsof + kill -KILL), so returning a port we don't
-      // own — e.g. an external/desktop OpenCode on 4096 we attached to — would
-      // let a single miscomputed `managed` flag take down the user's separate
-      // server. Structurally withhold what isn't ours so the killer has no
-      // target, instead of relying on the flag check alone.
+      // Only ever expose pid/port for a server WE manage. Desktop no longer runs a
+      // post-stop detached killer of a pre-captured pid; still withhold non-owned
+      // process identity so diagnostics cannot imply we may kill an external serve.
       return {
         managed,
         pid: managed && typeof openCodeProcess?.pid === 'number' ? openCodeProcess.pid : null,

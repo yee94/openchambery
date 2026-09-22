@@ -600,7 +600,7 @@ type PrimaryComposerMessageRecord = {
   mode?: string;
   providerID?: string;
   modelID?: string;
-  model?: { providerID?: string; modelID?: string; variant?: string };
+  model?: string | { providerID?: string; modelID?: string; variant?: string };
   variant?: string;
 };
 
@@ -614,14 +614,17 @@ const readMessageAgent = (message: PrimaryComposerMessageRecord): string | undef
 
 const readMessageVariant = (message: PrimaryComposerMessageRecord): string | undefined => (
   // OpenCode 1.4.0 moved variant from top-level to model.variant.
-  readNonEmptyMessageString(message.model?.variant) ?? readNonEmptyMessageString(message.variant)
+  readNonEmptyMessageString(typeof message.model === 'object' ? message.model?.variant : undefined)
+  ?? readNonEmptyMessageString(message.variant)
 );
 
 const readUserMessageModel = (
   message: PrimaryComposerMessageRecord,
 ): { providerID: string; modelID: string } | null => {
-  const providerID = readNonEmptyMessageString(message.model?.providerID);
-  const modelID = readNonEmptyMessageString(message.model?.modelID);
+  // Projected user rows carry authoritative identity alongside a string model label.
+  const model = typeof message.model === 'object' ? message.model : undefined;
+  const providerID = readNonEmptyMessageString(message.providerID) ?? readNonEmptyMessageString(model?.providerID);
+  const modelID = readNonEmptyMessageString(message.modelID) ?? readNonEmptyMessageString(model?.modelID);
   if (!providerID || !modelID) {
     return null;
   }
@@ -631,16 +634,7 @@ const readUserMessageModel = (
 const readAssistantMessageModel = (
   message: PrimaryComposerMessageRecord,
 ): { providerID: string; modelID: string } | null => {
-  const providerID =
-    readNonEmptyMessageString(message.providerID)
-    ?? readNonEmptyMessageString(message.model?.providerID);
-  const modelID =
-    readNonEmptyMessageString(message.modelID)
-    ?? readNonEmptyMessageString(message.model?.modelID);
-  if (!providerID || !modelID) {
-    return null;
-  }
-  return { providerID, modelID };
+  return readUserMessageModel(message);
 };
 
 /** Extract the latest user message choice from a message list (newest last). */

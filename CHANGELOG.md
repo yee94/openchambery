@@ -4,6 +4,30 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [2.0.0-beta.2] - 2026-09-22
+
+这是 OpenCode 2 预览版，不会进入稳定自动更新，也不会改写现网手机 OTA。需要手动下载安装包。
+
+### 对话
+
+- 同一会话切换模型后，下一轮会真正用新模型；生成中选的模型也会留到下一轮。
+- Agent 按官方 id 发送（例如 `build`），不再把显示名发出去导致空回复。
+- 执行失败会显示错误；重试开始后旧提示会清掉。
+- 刷新会话不再出现空的 Assistant 标题。
+
+### 连接
+
+- OpenCode 2 健康检查按 `/api/info` 判断，不再误报 Connection lost。
+
+### 提供商
+
+- 新增列表显示可登录的 integration，不只是已经激活的 provider。
+- 浏览器 OAuth 会轮询授权状态；取消、超时和切换目录不会把迟到结果写错地方。
+
+### 桌面
+
+- 退出时会关掉遗留的 WebSocket，生成中退出不再空等 10 秒。
+
 ## [2.0.0-beta.1] - 2026-09-22
 
 这是 OpenCode 2 预览版，不会进入稳定自动更新。需要手动下载安装包。

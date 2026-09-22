@@ -11,6 +11,7 @@ let runtimeBase = '/api';
 const healthFetchCalls: unknown[][] = [];
 const healthFetchResults: Array<Response | Error | Promise<Response>> = [];
 const agentSdkCalls: unknown[][] = [];
+const agentListResults: Array<unknown> = [];
 const sessionStatusSdkCalls: unknown[][] = [];
 const sessionActiveSdkCalls: unknown[][] = [];
 const sessionActiveResults: Array<unknown> = [];
@@ -43,7 +44,20 @@ mock.module('@opencode/client', () => ({
         agent: {
           list: mock((...args: unknown[]) => {
             agentSdkCalls.push(args);
-            return Promise.resolve({ data: [{ id: 'build', name: 'build', mode: 'primary', hidden: false, permissions: [], request: { settings: {}, headers: {}, body: {} } }] });
+            const next = agentListResults.shift();
+            if (next instanceof Error) return Promise.reject(next);
+            if (next) return Promise.resolve(next);
+            // Official wire shape: id is machine key, name is display label.
+            return Promise.resolve({
+              data: [{
+                id: 'build',
+                name: 'Build',
+                mode: 'primary',
+                hidden: false,
+                permissions: [],
+                request: { settings: {}, headers: {}, body: {} },
+              }],
+            });
           }),
         },
         session: {
@@ -139,6 +153,7 @@ beforeEach(() => {
   healthFetchResults.length = 0;
   uploadPromptAttachmentCalls.length = 0;
   agentSdkCalls.length = 0;
+  agentListResults.length = 0;
   sessionStatusSdkCalls.length = 0;
   sessionActiveSdkCalls.length = 0;
   sessionActiveResults.length = 0;
@@ -169,6 +184,39 @@ describe('opencodeClient abort signals', () => {
     controller.abort();
     expect(passed?.aborted).toBe(true);
     expect(agentSdkCalls[0]?.[0]).toEqual({ location: { directory: '/workspace/project' } });
+  });
+
+  test('listAgents projects wire id Build display onto domain name=id for prompts', async () => {
+    agentListResults.push({
+      data: [
+        {
+          id: 'build',
+          name: 'Build',
+          mode: 'primary',
+          hidden: false,
+          permissions: [],
+          request: { settings: {}, headers: {}, body: {} },
+        },
+        {
+          id: 'plan',
+          name: 'Plan',
+          mode: 'primary',
+          hidden: false,
+          permissions: [],
+          request: { settings: {}, headers: {}, body: {} },
+        },
+      ],
+    });
+
+    const agents = await opencodeClient.listAgents('/workspace/project');
+    expect(agents.map((agent: { id: string; name: string; displayName: string }) => ({
+      id: agent.id,
+      name: agent.name,
+      displayName: agent.displayName,
+    }))).toEqual([
+      { id: 'build', name: 'build', displayName: 'Build' },
+      { id: 'plan', name: 'plan', displayName: 'Plan' },
+    ]);
   });
 
   test('does not call a 1.x session.status endpoint', async () => {

@@ -125,8 +125,19 @@ export type OpencodeClient = V2Client;
 /** Agent permission document. v2 stores this as `PermissionRuleset`. */
 export type PermissionConfig = PermissionRuleset | Record<string, unknown>;
 
-/** v2 agent catalog row, plus extras settings/composer already read. */
-export type Agent = AgentInfo & {
+/**
+ * v2 agent catalog row for UI selection/send.
+ *
+ * Wire rows separate `id` (server key, e.g. `build`) from `name` (display,
+ * e.g. `Build`). Domain projection sets `name` to the authoritative id and
+ * keeps the wire label as `displayName` so prompts and persistence stay id-
+ * keyed while UI can still show the label. See `agent-identity.ts`.
+ */
+export type Agent = Omit<AgentInfo, "name"> & {
+  /** Authoritative machine key (wire `id`). Used for selection and prompts. */
+  name: string;
+  /** Wire display label only. */
+  displayName: string;
   native?: boolean;
   options?: Record<string, unknown>;
   prompt?: string;

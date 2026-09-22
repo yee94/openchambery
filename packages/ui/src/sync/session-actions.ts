@@ -63,7 +63,7 @@ import { resolveSessionMergeStrategy, SEND_GAP_FILL_SESSION_MERGE_STRATEGY } fro
 import { postSessionPermissionReply } from "./session-permission-api"
 import { fetchSessionProjectionPage } from "./session-projection-api"
 import { confirmOptimisticAgainstPromoted, fetchSessionInbox, postSessionInterrupt } from "./session-prompt-api"
-import { postSessionRevertClear, postSessionRevertCommit, postSessionRevertStage, sessionRevertBusyError } from "./session-revert-api"
+import { postSessionRevertClear, postSessionRevertCommit, postSessionRevertStage } from "./session-revert-api"
 import { isSessionSharingAvailable } from "./session-sharing-availability"
 import { answersToFormAnswer, v2CapabilityUnavailable } from "./v2-runtime"
 

@@ -36,7 +36,6 @@ export const autoRespondsPermission = (input: {
   sessionID: string;
 }): boolean => {
   const { autoAccept, sessions, sessionById, sessionID } = input;
-  if (Object.keys(autoAccept).length === 0) return false;
   const lineage = resolveLineage(sessionID, sessions, sessionById);
 
   for (const id of lineage) {
@@ -46,5 +45,6 @@ export const autoRespondsPermission = (input: {
     return autoAccept[id] === true;
   }
 
-  return false;
+  // No explicit deny in the lineage: OpenChamber defaults to allow.
+  return true;
 };

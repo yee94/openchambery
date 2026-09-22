@@ -1,5 +1,36 @@
 # Sync architecture, event handling & store update rules
 
+## Session model switch on send (OpenCode 2.x)
+
+Official OpenCode 2.0.12 runs each turn from authoritative **`session.model`** /
+**`session.agent`**. Prompt `metadata.model` alone does **not** change the
+runner (see MODEL-SWITCH-DIAGNOSIS: UI metadata B, step still A).
+
+Before `POST .../prompt` on an existing session:
+
+1. `resolveSendSelection(sessionId, directory, desired)` compares the composer
+   pick to the directory/global session row (`session.model.id` + `providerID` +
+   variant; `session.agent`). Official wire variant `"default"` is the no-effort
+   sentinel and is equivalent to an omitted/empty composer variant, so same
+   provider/id re-sends do not POST a redundant `/model` after the server echoes
+   `variant:"default"`. Explicit non-default variants still switch; clearing a
+   real variant (e.g. `high` → omit) still switches.
+2. Only differences travel: `switchModel` uses official wire
+   `{ id, providerID, variant? }` via `POST /api/session/:id/model` (field is
+   **`id`**, not `modelID`); agent via `session.switchAgent`.
+3. Switch failure **blocks** prompt (no wrong-model send).
+4. Same-session concurrent sends share a per-session serial boundary queue on
+   the client so switch+prompt order stays correct.
+5. After a successful switch, `patchLocalSessionSelection` updates the
+   directory session row so the next resolve does not re-switch before SSE.
+
+New conversations that already set `session.model` on create need no extra
+switch when the pick matches. An in-flight turn keeps the old model until it
+settles; the **next** send applies the new selection.
+
+Owning modules: `session-send-selection.ts`, `lib/opencode/client.ts`
+(`applySendSelection` / `switchSessionModel`), `session-ui-store.routeMessage`.
+
 ## Scope
 
 This document covers the current client-side session/data architecture in `packages/ui/src/sync` and the rules for updating stores safely.
@@ -177,7 +208,7 @@ Renderable messages and session identity are independent completeness signals. M
 
 `scoped-session-status.ts` owns exact `(directory, sessionID)` status reads and subscriptions. A missing child-store snapshot reads as `unknown`; a successful directory status snapshot with no matching entry reads as `idle`. Its registry subscription rebinds when a requested directory store appears, and status listeners ignore parts plus other session IDs.
 
-`session_error_at` is a live per-session timestamp written only from `session.error` with `callbacks.now`. It is not persisted history and is not invented from ordinary `session.idle` / `session.status` idle. The next authoritative `busy` or `retry` (`session.status`, or a directory status snapshot applying busy/retry) clears that session's entry. `useSessionErrorAt(sessionID, directory)` is read-only (`bootstrap: false`) and notifies only when that session's `session_error_at` value changes.
+`session_error_at` is a live per-session timestamp written from `session.error` and v2 `session.execution.failed` with `callbacks.now`. It is not persisted history and is not invented from ordinary `session.idle` / `session.status` idle / `session.execution.succeeded` / `session.execution.interrupted`. The next authoritative `busy` or `retry` (`session.status`, `session.execution.started`, or a directory status snapshot applying busy/retry) clears that session's entry; `handleEvent` also drops that session's `type:"error"` notifications on `session.execution.started` so `useLatestSessionError` does not keep a stale failure across retry. `useSessionErrorAt(sessionID, directory)` is read-only (`bootstrap: false`) and notifies only when that session's `session_error_at` value changes. The error text itself is kept in the notification store (`type: "error"`) and the in-memory `session-error-log` for diagnostics; OpenCode does not persist the failure reason on the session row after reload.
 
 Imperative cross-directory session lookups use the cached ID index from `getAllSyncSessionMap()`. The index is rebuilt only when a child store's `state.session` reference changes; permission lineage checks must reuse it instead of rebuilding a full session map per call.
 
@@ -1762,6 +1793,7 @@ Keep this in sync with `handleDirectoryEvent` in `sync-context.tsx`:
 | `session.created/updated/deleted` | `session`, `permission`, `todo`, `part` |
 | `session.diff` | `session_diff` (preview summary only: file/status/additions/deletions; no patch bodies — full patches load on demand via `GET /session/{id}/diff`) |
 | `session.status/session.idle/session.error` | `session_status`, `session_status_observed_at`; `session.error` also writes `session_error_at`; `session.status` busy/retry may clear `session_error_at` |
+| `session.execution.started/succeeded/failed/interrupted` | `session_status`, `session_status_observed_at`; `started` clears `session_error_at` (+ error notifications in `handleEvent`); `failed` writes `session_error_at` (error text via notification store + session-error-log) |
 | `todo.updated` | `todo` |
 | `message.updated` | `message`, `part` when a loaded session observes a new assistant before its first part |
 | `message.removed` | `message`, `part` |

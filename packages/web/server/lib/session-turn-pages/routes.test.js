@@ -1,7 +1,11 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import { makeOpenCodeV2Client } from '../opencode/v2-client.js';
-import { registerSessionTurnPageRoutes } from './routes.js';
+import {
+  projectSessionMessageRecord,
+  projectSessionMessageRecords,
+  registerSessionTurnPageRoutes,
+} from './routes.js';
 
 vi.mock('../opencode/v2-client.js', () => ({ makeOpenCodeV2Client: vi.fn() }));
 
@@ -32,6 +36,85 @@ const response = () => ({
 });
 
 const ROUTE = '/api/openchamber/sessions/:sessionID/messages';
+
+describe('projectSessionMessageRecord (host SessionMessage → {info, parts})', () => {
+  it('drops idle control and projects two-turn wire without duplicate text', () => {
+    const records = projectSessionMessageRecords([
+      {
+        id: 'msg_u1',
+        type: 'user',
+        time: { created: 1 },
+        text: 'UI-E2E-FINAL-BUILD',
+        sessionID: 'ses_1',
+      },
+      {
+        id: 'msg_a1',
+        type: 'assistant',
+        time: { created: 2, completed: 3 },
+        sessionID: 'ses_1',
+        agent: 'build',
+        model: { id: 'glm-5.3-flash', providerID: 'zai-coding-plan', variant: 'default' },
+        content: [
+          { type: 'reasoning', text: 'think' },
+          { type: 'text', text: 'FINAL_BUILD_OK' },
+        ],
+        finish: 'stop',
+        rawFinish: 'stop',
+      },
+      {
+        id: 'msg_u2',
+        type: 'user',
+        time: { created: 4 },
+        text: 'UI-E2E-FINAL-FOLLOWUP',
+        sessionID: 'ses_1',
+      },
+      {
+        id: 'msg_a2',
+        type: 'assistant',
+        time: { created: 5, completed: 6 },
+        sessionID: 'ses_1',
+        agent: 'build',
+        model: { id: 'glm-5.3-flash', providerID: 'zai-coding-plan', variant: 'default' },
+        text: 'FINAL_FOLLOWUP_OK',
+        content: [
+          { type: 'reasoning', text: 'think2' },
+          { type: 'text', text: 'FINAL_FOLLOWUP_OK' },
+        ],
+        finish: 'stop',
+      },
+      {
+        id: 'msg_idle',
+        type: 'idle',
+        outcome: 'succeeded',
+        time: { created: 7 },
+      },
+    ]);
+
+    expect(records.map((row) => [row.info.role, row.info.id])).toEqual([
+      ['user', 'msg_u1'],
+      ['assistant', 'msg_a1'],
+      ['user', 'msg_u2'],
+      ['assistant', 'msg_a2'],
+    ]);
+    expect(projectSessionMessageRecord({
+      id: 'msg_idle2',
+      type: 'idle',
+      outcome: 'failed',
+      time: { created: 1 },
+    })).toBeNull();
+
+    const follow = records[3];
+    expect(follow.parts.filter((part) => part.type === 'text')).toHaveLength(1);
+    expect(follow.parts.find((part) => part.type === 'text').text).toBe('FINAL_FOLLOWUP_OK');
+    expect(follow.info.model).toEqual({
+      providerID: 'zai-coding-plan',
+      modelID: 'glm-5.3-flash',
+      variant: 'default',
+    });
+    expect(follow.info.type).toBeUndefined();
+    expect(follow.info.rawFinish).toBeUndefined();
+  });
+});
 
 describe('registerSessionTurnPageRoutes', () => {
   it('registers GET /api/openchamber/sessions/:sessionID/messages', () => {
@@ -735,6 +818,167 @@ describe('registerSessionTurnPageRoutes', () => {
         parts: [expect.objectContaining({ type: 'text', text: 'ok' })],
       }),
     ]);
+  });
+
+  it('drops v2 idle/control rows and does not double-expand text+content (FINAL-GATE cold reload)', async () => {
+    // Real wire shape from isolated backend hard-reload sessions:
+    // user + assistant(content) + idle outcome=succeeded, and assistants that
+    // occasionally carry both top-level text and content[].text.
+    const list = vi.fn(async () => ({
+      data: [
+        {
+          id: 'msg_idle_ok',
+          time: { created: 4 },
+          type: 'idle',
+          outcome: 'succeeded',
+        },
+        {
+          id: 'msg_a_follow',
+          time: { created: 3, completed: 4 },
+          type: 'assistant',
+          agent: 'build',
+          model: { id: 'glm-5.3-flash', providerID: 'zai-coding-plan', variant: 'default' },
+          // Both carriers present — must project exactly one text part.
+          text: 'FINAL_FOLLOWUP_OK',
+          content: [
+            { type: 'reasoning', text: 'think' },
+            { type: 'text', text: 'FINAL_FOLLOWUP_OK' },
+          ],
+          finish: 'stop',
+          rawFinish: 'stop',
+          cost: 0,
+          tokens: { input: 1, output: 1, reasoning: 1, cache: { read: 0, write: 0 } },
+        },
+        {
+          id: 'msg_u_follow',
+          time: { created: 2 },
+          type: 'user',
+          text: 'UI-E2E-FINAL-FOLLOWUP',
+        },
+        {
+          id: 'msg_a1',
+          time: { created: 1, completed: 2 },
+          type: 'assistant',
+          agent: 'build',
+          model: { id: 'glm-5.3-flash', providerID: 'zai-coding-plan', variant: 'default' },
+          content: [
+            { type: 'reasoning', text: 'first think' },
+            { type: 'text', text: 'FINAL_BUILD_OK' },
+          ],
+          finish: 'stop',
+        },
+        {
+          id: 'msg_u1',
+          time: { created: 0 },
+          type: 'user',
+          text: 'UI-E2E-FINAL-BUILD',
+        },
+      ],
+      cursor: { previous: null, next: null },
+    }));
+    makeOpenCodeV2Client.mockReturnValue({
+      message: { list },
+      session: { messages: undefined, status: undefined, abort: undefined },
+    });
+    const { app, route } = registry();
+    registerSessionTurnPageRoutes(app, {
+      buildOpenCodeUrl: () => 'http://open.code/',
+      getOpenCodeAuthHeaders: () => ({}),
+    });
+    const res = response();
+    await route('GET', ROUTE)({
+      params: { sessionID: 'ses_final_build' },
+      query: { turns: '2' },
+      headers: {},
+    }, res);
+
+    expect(res.statusCode).toBe(200);
+    expect(res.body.records.map((row) => row.info.role)).toEqual([
+      'user',
+      'assistant',
+      'user',
+      'assistant',
+    ]);
+    expect(res.body.records.map((row) => row.info.id)).toEqual([
+      'msg_u1',
+      'msg_a1',
+      'msg_u_follow',
+      'msg_a_follow',
+    ]);
+    // No idle / control leakage into ChatMessage props.
+    expect(res.body.records.some((row) => row.info.role === 'idle' || row.info.type === 'idle')).toBe(false);
+    expect(JSON.stringify(res.body)).not.toContain('"type":"idle"');
+
+    const firstAssistant = res.body.records[1];
+    expect(firstAssistant.info.agent).toBe('build');
+    expect(firstAssistant.info.modelID).toBe('glm-5.3-flash');
+    expect(firstAssistant.info.model).toEqual({
+      providerID: 'zai-coding-plan',
+      modelID: 'glm-5.3-flash',
+      variant: 'default',
+    });
+    expect(firstAssistant.info.type).toBeUndefined();
+    expect(firstAssistant.info.rawFinish).toBeUndefined();
+    const firstTexts = firstAssistant.parts.filter((part) => part.type === 'text');
+    expect(firstTexts).toHaveLength(1);
+    expect(firstTexts[0].text).toBe('FINAL_BUILD_OK');
+
+    const followAssistant = res.body.records[3];
+    const followTexts = followAssistant.parts.filter((part) => part.type === 'text');
+    expect(followTexts).toHaveLength(1);
+    expect(followTexts[0].text).toBe('FINAL_FOLLOWUP_OK');
+    expect(followAssistant.parts.filter((part) => part.type === 'reasoning')).toHaveLength(1);
+  });
+
+  it('keeps provider.auth 401 assistant error and drops idle failed control', async () => {
+    const list = vi.fn(async () => ({
+      data: [
+        { id: 'msg_idle_fail', time: { created: 3 }, type: 'idle', outcome: 'failed' },
+        {
+          id: 'msg_a_401',
+          time: { created: 2, completed: 3 },
+          type: 'assistant',
+          agent: 'build',
+          model: { id: 'deepseek-flash', providerID: 'deepseek', variant: 'default' },
+          content: null,
+          finish: 'error',
+          error: {
+            type: 'provider.auth',
+            message: 'Authentication Fails, Your api key: **** is invalid',
+            status: 401,
+          },
+        },
+        { id: 'msg_u_401', time: { created: 1 }, type: 'user', text: 'UI-E2E-FINAL-DS' },
+      ],
+      cursor: { previous: null, next: null },
+    }));
+    makeOpenCodeV2Client.mockReturnValue({
+      message: { list },
+      session: { messages: undefined, status: undefined, abort: undefined },
+    });
+    const { app, route } = registry();
+    registerSessionTurnPageRoutes(app, {
+      buildOpenCodeUrl: () => 'http://open.code/',
+      getOpenCodeAuthHeaders: () => ({}),
+    });
+    const res = response();
+    await route('GET', ROUTE)({
+      params: { sessionID: 'ses_ds' },
+      query: { turns: '1' },
+      headers: {},
+    }, res);
+
+    expect(res.statusCode).toBe(200);
+    expect(res.body.records).toHaveLength(2);
+    expect(res.body.records.map((row) => row.info.role)).toEqual(['user', 'assistant']);
+    const assistant = res.body.records[1];
+    expect(assistant.info.finish).toBe('error');
+    expect(assistant.info.error).toEqual({
+      type: 'provider.auth',
+      message: 'Authentication Fails, Your api key: **** is invalid',
+      status: 401,
+    });
+    expect(assistant.parts).toEqual([]);
   });
 
   it('default fetch throws on message.list failure and maps to upstream', async () => {

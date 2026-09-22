@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import type { Message, Part } from '@/lib/opencode/v2-types';
+import type { Part } from '@/lib/opencode/v2-types';
 
 import type { ChatMessageEntry, TurnActivityRecord } from './turns/types';
 import { dropLiveRevealJustificationParts, isAssistantMessageCompleted, resolveLiveRevealBodyMessageId, resolveVisibleSortedAssistants } from './visibleSortedAssistants';

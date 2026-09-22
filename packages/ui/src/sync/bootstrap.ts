@@ -1,8 +1,6 @@
 import type { OpenCodeClient, SessionStatus } from '@/lib/opencode/v2-types'
 import { mergeConfigDocuments } from "@/lib/opencode/v2-types"
 import type { Project } from '@/sync/types'
-import type { PermissionRequest } from '@/types/permission'
-import type { QuestionRequest } from '@/types/question'
 
 import { retry } from "./retry"
 import type { GlobalState, State } from "./types"

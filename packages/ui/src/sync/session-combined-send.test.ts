@@ -6,7 +6,7 @@
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
-import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test'
+import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { vi } from 'vitest'
 import { opencodeClient } from '@/lib/opencode/client'
 import { registerRuntimeAPIs } from '@/contexts/runtimeAPIRegistry'
@@ -1199,6 +1199,8 @@ describe('handleCombinedDraftSend', () => {
     queryClient.setQueryData(commandQueryOptions(PROJECT.path, transport).queryKey, [{ name: 'deploy' }])
     queryClient.setQueryData(installedSkillsQueryOptions(PROJECT.path, transport).queryKey, [])
     let command = ''
+    let switched = false
+    opencodeClient.applySendSelection = (async () => { switched = true }) as any
     opencodeClient.sendCommand = (async (input: { command: string }) => { command = input.command }) as any
 
     await routeMessage({
@@ -1210,6 +1212,87 @@ describe('handleCombinedDraftSend', () => {
     })
 
     expect(command).toBe('deploy')
+    // Unknown session → resolve requests model switch before command.
+    expect(switched).toBe(true)
+  })
+
+  test('17) existing send remaps legacy display agent Build to authoritative id build', async () => {
+    let sentAgent: string | undefined
+    opencodeClient.sendMessage = (async (input: { agent?: string }) => {
+      sentAgent = input.agent
+    }) as any
+
+    useConfigStore.setState({
+      isConnected: true,
+      currentAgentName: 'Build',
+      currentProviderId: 'openai',
+      currentModelId: 'gpt-4o',
+      agents: [{
+        id: 'build',
+        name: 'build',
+        displayName: 'Build',
+        mode: 'primary',
+        hidden: false,
+        permission: {},
+        options: {},
+      }] as any,
+    } as any)
+
+    await routeMessage({
+      sessionId: SESSION_ID,
+      directory: PROJECT.path,
+      content: 'UI-E2E agent id',
+      providerID: 'openai',
+      modelID: 'gpt-4o',
+      agent: 'Build',
+    })
+
+    expect(sentAgent).toBe('build')
+  })
+
+  test('18) combined draft send remaps Build display to build id on createWithPrompt', async () => {
+    let capturedAgent: string | undefined
+    registerRuntimeAPIs(makeCombinedAPI(async (input) => {
+      capturedAgent = input.agent
+      return successResult()
+    }))
+
+    useConfigStore.setState({
+      isConnected: true,
+      currentAgentName: 'Build',
+      currentProviderId: 'openai',
+      currentModelId: 'gpt-4o',
+      agents: [{
+        id: 'build',
+        name: 'build',
+        displayName: 'Build',
+        mode: 'primary',
+        hidden: false,
+        permission: {},
+        options: {},
+      }] as any,
+    } as any)
+
+    useSessionUIStore.setState((s) => ({
+      ...s,
+      newSessionDraft: {
+        open: true,
+        draftID: crypto.randomUUID(),
+        directoryOverride: null,
+        parentID: null,
+        draftSubmitting: false,
+      },
+      webUICreatedSessions: new Set(),
+    }))
+
+    await useSessionUIStore.getState().sendMessage(
+      'new draft Build',
+      'openai',
+      'gpt-4o',
+      'Build',
+    )
+
+    expect(capturedAgent).toBe('build')
   })
 })
 

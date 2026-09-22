@@ -43,7 +43,6 @@ import {
   type SessionTranscriptFetcher,
   type SessionTranscriptQueryKey,
 } from "./session-message-query"
-import { materializeSessionSnapshots } from "./materialization"
 import { forgetPromotedInbox } from "./session-inbox-overlay"
 import type { TranscriptDurableStore } from "./transcript-durable-store"
 import {

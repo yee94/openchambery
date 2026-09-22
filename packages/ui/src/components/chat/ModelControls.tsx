@@ -1,4 +1,5 @@
 import React from 'react';
+import { agentDisplayName as getAgentCatalogLabel } from '@/lib/opencode/agent-identity';
 import { useEvent } from '@reactuses/core';
 import type { Agent } from '@/lib/opencode/v2-types';
 import type { EditPermissionMode } from '@/stores/types/sessionTypes';
@@ -581,7 +582,7 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
         return scoreByFuzzyQuery(
             selectableDesktopAgents,
             agentSearchQuery.trim(),
-            (agent) => [agent.name, agent.description ?? ''],
+            (agent) => [agent.name, getAgentCatalogLabel(agent), agent.description ?? ''],
         ).map((entry) => entry.item);
     }, [selectableDesktopAgents, agentSearchQuery]);
 
@@ -1503,10 +1504,10 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
         if (!uiAgentName) {
             const buildAgent = primaryAgents.find(agent => agent.name === 'build');
             const defaultAgent = buildAgent || primaryAgents[0];
-            return defaultAgent ? capitalizeAgentName(defaultAgent.name) : 'Select Agent';
+            return defaultAgent ? capitalizeAgentName(getAgentCatalogLabel(defaultAgent)) : t('chat.modelControls.selectAgent');
         }
         const agent = agents.find(a => a.name === uiAgentName);
-        return agent ? capitalizeAgentName(agent.name) : capitalizeAgentName(uiAgentName);
+        return agent ? capitalizeAgentName(getAgentCatalogLabel(agent)) : capitalizeAgentName(uiAgentName);
     };
 
     const capitalizeAgentName = (name: string) => {
@@ -1860,7 +1861,7 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
                                             className="block typography-ui-label font-semibold"
                                             style={isSelected ? { color: `var(${agentColor.var})` } : undefined}
                                         >
-                                            {capitalizeAgentName(agent.name)}
+                                            {capitalizeAgentName(getAgentCatalogLabel(agent))}
                                         </span>
                                         {agent.description && (
                                             <span className="mt-1 block min-w-0 whitespace-normal break-words typography-micro text-muted-foreground">
@@ -2685,7 +2686,7 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
                                                     <div className="flex w-full min-w-0 flex-col gap-0.5">
                                                         <div className="flex items-center gap-1.5">
                                                             <AgentAvatar name={agent.name} size={14} />
-                                                            <span className="font-medium">{capitalizeAgentName(agent.name)}</span>
+                                                            <span className="font-medium">{capitalizeAgentName(getAgentCatalogLabel(agent))}</span>
                                                         </div>
                                                         {agent.description && (
                                                             <span className="typography-micro text-muted-foreground min-w-0 max-w-full ml-5 break-words">

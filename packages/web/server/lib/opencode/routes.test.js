@@ -201,3 +201,86 @@ describe('opencode2 upgrade pin (ticket 12)', () => {
     expect(deps.refreshOpenCodeAfterConfigChange).not.toHaveBeenCalled();
   });
 });
+
+describe('GET /api/opencode/health', () => {
+  const createHealthApp = () => {
+    const app = express();
+    const deps = {
+      ...createDependencies({ formatSettingsResponse: vi.fn(() => ({})) }),
+      buildOpenCodeUrl: vi.fn((pathname) => `http://opencode.test${pathname}`),
+      getOpenCodeAuthHeaders: vi.fn(() => ({ Authorization: 'Basic secret' })),
+    };
+    registerOpenCodeRoutes(app, deps);
+    return { app, deps };
+  };
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('admits official 2.x ServerInfo from /api/info without a healthy field', async () => {
+    const fetchMock = vi.fn(async (url) => {
+      expect(String(url)).toContain('/api/info');
+      return {
+        ok: true,
+        status: 200,
+        statusText: 'OK',
+        json: async () => ({
+          version: '2.0.12',
+          pid: 4242,
+          urls: { api: 'http://127.0.0.1:4096' },
+          paths: { config: '/tmp/config', data: '/tmp/data' },
+        }),
+      };
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    const { app } = createHealthApp();
+
+    const response = await request(app).get('/api/opencode/health').expect(200);
+
+    expect(response.body).toEqual({ healthy: true });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('rejects classic unhealthy bodies even when version is 2.x', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      statusText: 'OK',
+      json: async () => ({ healthy: false, version: '2.0.12' }),
+    })));
+    const { app } = createHealthApp();
+
+    const response = await request(app).get('/api/opencode/health').expect(200);
+
+    expect(response.body).toEqual({ healthy: false });
+  });
+
+  it('rejects 1.x bodies even when healthy:true is present', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      statusText: 'OK',
+      json: async () => ({ healthy: true, version: '1.18.18' }),
+    })));
+    const { app } = createHealthApp();
+
+    const response = await request(app).get('/api/opencode/health').expect(200);
+
+    expect(response.body).toEqual({ healthy: false });
+  });
+
+  it('returns healthy:false with error when upstream /api/info is not ok', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => ({
+      ok: false,
+      status: 502,
+      statusText: 'Bad Gateway',
+      json: async () => ({ error: 'upstream down' }),
+    })));
+    const { app } = createHealthApp();
+
+    const response = await request(app).get('/api/opencode/health').expect(502);
+
+    expect(response.body).toEqual({ healthy: false, error: 'upstream down' });
+  });
+});

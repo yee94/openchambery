@@ -16,6 +16,7 @@ const originalPath = process.env.PATH;
 
 afterEach(() => {
   spawnMock.mockReset();
+  vi.useRealTimers();
   vi.unstubAllGlobals();
   if (typeof originalOpencodeBinary === 'string') {
     process.env.OPENCODE_BINARY = originalOpencodeBinary;
@@ -180,6 +181,103 @@ describe('OpenCode lifecycle', () => {
     expect(options.env.OPENCODE_SERVER_PASSWORD).toBe('password');
 
     await server.close();
+  });
+
+  it('allows a polite SIGTERM close that finishes after 400ms without escalating early', async () => {
+    vi.useFakeTimers();
+    delete process.env.OPENCODE_BINARY;
+    const child = createMockChild();
+    child.kill = vi.fn((signal) => {
+      if (signal === 'SIGTERM') {
+        // Slow-but-healthy flush: exits after 800ms (>400ms), still under 2500ms grace.
+        setTimeout(() => {
+          child.signalCode = 'SIGTERM';
+          child.emit('close', null, 'SIGTERM');
+        }, 800);
+      }
+      return true;
+    });
+    spawnMock.mockImplementationOnce(() => {
+      queueMicrotask(() => {
+        child.stdout.emit('data', 'server listening on http://127.0.0.1:45678\n');
+      });
+      return child;
+    });
+    stubOpenCodeFetch();
+
+    const runtime = createRuntime();
+    const server = await runtime.startOpenCode();
+    const closePromise = server.close();
+
+    await vi.advanceTimersByTimeAsync(400);
+    expect(child.kill).toHaveBeenCalledWith('SIGTERM');
+    expect(child.kill).not.toHaveBeenCalledWith('SIGKILL');
+
+    await vi.advanceTimersByTimeAsync(400);
+    await closePromise;
+    expect(child.kill).not.toHaveBeenCalledWith('SIGKILL');
+    vi.useRealTimers();
+  });
+
+  it('escalates a hung managed child to SIGKILL only after the full 2500ms SIGTERM grace', async () => {
+    vi.useFakeTimers();
+    delete process.env.OPENCODE_BINARY;
+    const child = createMockChild();
+    child.kill = vi.fn((signal) => {
+      if (signal === 'SIGKILL') {
+        child.signalCode = 'SIGKILL';
+        queueMicrotask(() => child.emit('close', null, 'SIGKILL'));
+      }
+      return true;
+    });
+    spawnMock.mockImplementationOnce(() => {
+      queueMicrotask(() => {
+        child.stdout.emit('data', 'server listening on http://127.0.0.1:45678\n');
+      });
+      return child;
+    });
+    stubOpenCodeFetch();
+
+    const runtime = createRuntime();
+    const server = await runtime.startOpenCode();
+    const closePromise = server.close();
+
+    await vi.advanceTimersByTimeAsync(2499);
+    expect(child.kill).toHaveBeenCalledWith('SIGTERM');
+    expect(child.kill).not.toHaveBeenCalledWith('SIGKILL');
+
+    await vi.advanceTimersByTimeAsync(1);
+    expect(child.kill).toHaveBeenCalledWith('SIGKILL');
+    await vi.advanceTimersByTimeAsync(1000);
+    await closePromise;
+    vi.useRealTimers();
+  });
+
+  it('killProcessOnPort only signals the owned pid and never mass-kills by port', async () => {
+    const killSpy = vi.spyOn(process, 'kill').mockImplementation(() => true);
+    delete process.env.OPENCODE_BINARY;
+    const child = createMockChild();
+    spawnMock.mockImplementationOnce(() => {
+      queueMicrotask(() => {
+        child.stdout.emit('data', 'server listening on http://127.0.0.1:45678\n');
+      });
+      return child;
+    });
+    stubOpenCodeFetch();
+
+    const runtime = createRuntime();
+    await runtime.startOpenCode();
+    killSpy.mockClear();
+
+    runtime.killProcessOnPort(45678);
+    expect(killSpy).not.toHaveBeenCalled();
+
+    runtime.killProcessOnPort(45678, 4242);
+    expect(killSpy).toHaveBeenCalledWith(-4242, 'SIGKILL');
+    expect(killSpy).toHaveBeenCalledWith(4242, 'SIGKILL');
+    expect(killSpy.mock.calls.every(([target]) => target === -4242 || target === 4242)).toBe(true);
+
+    killSpy.mockRestore();
   });
 
   it('parses a v2 server listening line without the opencode prefix', async () => {

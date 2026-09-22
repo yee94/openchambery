@@ -8,13 +8,13 @@ This module owns the authoritative permission auto-accept policy for web, deskto
 
 `permissionAutoAccept.sessions` contains explicit per-session boolean policies.
 
-Policy inheritance uses the nearest explicit session value. A child `false` therefore overrides a parent `true`; descendants without an explicit value inherit from their nearest configured ancestor.
+Policy inheritance uses the nearest explicit session value. A child `false` therefore overrides a parent `true`. Sessions with no explicit value, including a missing ancestor lookup, default to allow. A failed settings load still fails closed and does not approve.
 
 ## Runtime
 
-`createPermissionAutoAcceptRuntime` loads and serializes policy writes, subscribes to the global OpenCode event hub, caches session lineage, retries transient replies, and reconciles pending permissions after startup, reconnect, and policy enablement. Enabling Auto-Accept for a session immediately accepts matching pending requests and keeps handling future requests without requiring a connected UI.
+`createPermissionAutoAcceptRuntime` loads and serializes policy writes, subscribes to the global OpenCode event hub, caches session lineage, retries transient replies, and reconciles pending permissions after startup, reconnect, and policy enablement. Pending requests are listed at `GET /permission/request` and approved with `POST /session/:sessionID/permission/:requestID/reply` body `{ decision: "always" }`. OpenCode 2.0.12 rejects the legacy `{ reply }` body and the unscoped `/permission/:id/reply` path.
 
-Unknown lineage and failed policy loads fail closed. A failed pending-permission fetch is distinct from an empty successful response and never clears policy state.
+A failed settings load fails closed and does not approve. A failed pending-permission fetch is distinct from an empty successful response and never clears policy state.
 
 ## Routes
 

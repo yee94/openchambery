@@ -2,6 +2,11 @@ import { create } from "zustand";
 import type { StoreApi, UseBoundStore } from "zustand";
 import { devtools, persist } from "zustand/middleware";
 import type { Agent, Config } from '@/lib/opencode/v2-types';
+import {
+    findAgentBySelectionKey,
+    projectAgent,
+    resolveAgentSendIdentity,
+} from "@/lib/opencode/agent-identity";
 import { opencodeClient } from "@/lib/opencode/client";
 import { scopeMatches, subscribeToConfigChanges } from "@/lib/configSync";
 import type { ModelMetadata } from "@/types";
@@ -295,7 +300,8 @@ const resolveDefaultAgentModelSelection = ({
         if (!selection) {
             return null;
         }
-        const candidate = agents.find((agent) => agent.name === selection.agentName);
+        // Accept authoritative id or legacy persisted display name (e.g. "Build").
+        const candidate = findAgentBySelectionKey(agents, selection.agentName);
         if (!candidate || !isPrimaryMode(candidate.mode) || candidate.hidden === true) {
             return null;
         }
@@ -325,17 +331,20 @@ const resolveDefaultAgentModelSelection = ({
 
     let resolvedAgent: Agent | undefined;
     if (settingsDefaultAgent) {
-        resolvedAgent = agents.find((agent) => agent.name === settingsDefaultAgent);
+        resolvedAgent = findAgentBySelectionKey(agents, settingsDefaultAgent);
     }
     if (!resolvedAgent && opencodeDefaultAgent) {
-        const candidate = agents.find((agent) => agent.name === opencodeDefaultAgent);
+        const candidate = findAgentBySelectionKey(agents, opencodeDefaultAgent);
         // OpenCode requires the default agent to be a visible primary agent.
         if (candidate && isPrimaryMode(candidate.mode) && candidate.hidden !== true) {
             resolvedAgent = candidate;
         }
     }
     if (!resolvedAgent) {
-        resolvedAgent = primaryAgents.find((agent) => agent.name === "build") || primaryAgents[0] || agents[0];
+        resolvedAgent = findAgentBySelectionKey(primaryAgents, "build")
+            || primaryAgents.find((agent) => agent.name === "build")
+            || primaryAgents[0]
+            || agents[0];
     }
     if (!resolvedAgent) {
         return { agentName: undefined };
@@ -926,9 +935,9 @@ const resolveSelectionWithManualGuard = ({
     resolvedModelId: string | undefined;
     resolvedVariant: string | undefined;
 }) => {
-    const manualAgentName = currentAgentName && agents.some((agent) => agent.name === currentAgentName)
-        ? currentAgentName
-        : undefined;
+    // Remap legacy display-name selections onto authoritative id (domain name).
+    const manualAgent = findAgentBySelectionKey(agents, currentAgentName);
+    const manualAgentName = manualAgent?.name;
     const manualModelValid = !!currentProviderId
         && !!currentModelId
         && hasProviderModel(providers, currentProviderId, currentModelId)
@@ -2082,7 +2091,9 @@ export const useConfigStore = create<ConfigStore>()(
                                 }),
                             ]);
 
-                            const safeAgents = Array.isArray(agents) ? agents : [];
+                            // listAgents already projects id→name; re-project so direct
+                            // test fixtures and stale cache rows still carry displayName.
+                            const safeAgents = (Array.isArray(agents) ? agents : []).map(projectAgent);
 
                             if (!isCurrent()) {
                                 return false;
@@ -2274,7 +2285,7 @@ export const useConfigStore = create<ConfigStore>()(
                             // back gracefully, stale settings pointing at removed agents/models/variants
                             // should be cleaned up.
                             const invalidSettings: { defaultModel?: string; defaultVariant?: string; defaultAgent?: string } = {};
-                            if (openChamberDefaults.defaultAgent && !safeAgents.some((agent) => agent.name === openChamberDefaults.defaultAgent)) {
+                            if (openChamberDefaults.defaultAgent && !findAgentBySelectionKey(safeAgents, openChamberDefaults.defaultAgent)) {
                                 invalidSettings.defaultAgent = '';
                             }
                             if (openChamberDefaults.defaultModel) {
@@ -2478,6 +2489,10 @@ export const useConfigStore = create<ConfigStore>()(
                         currentModelId,
                     } = get();
 
+                    // Store authoritative id (domain name). Accept display-name picks
+                    // from older UI/persisted paths without case-folding custom ids.
+                    const resolvedAgentName = resolveAgentSendIdentity(agents, agentName) ?? agentName;
+
                     set((state) => {
                         const directoryKey = state.activeDirectoryKey;
                         const baseSnapshot: DirectoryScopedConfig = state.directoryScoped[directoryKey] ?? {
@@ -2493,12 +2508,12 @@ export const useConfigStore = create<ConfigStore>()(
 
                         const nextSnapshot: DirectoryScopedConfig = {
                             ...baseSnapshot,
-                            currentAgentName: agentName,
+                            currentAgentName: resolvedAgentName,
                             selectionSource: "manual",
                         };
 
                         return {
-                            currentAgentName: agentName,
+                            currentAgentName: resolvedAgentName,
                             selectionSource: "manual",
                             directoryScoped: {
                                 ...state.directoryScoped,
@@ -2507,23 +2522,23 @@ export const useConfigStore = create<ConfigStore>()(
                         };
                     });
 
-                    if (agentName) {
+                    if (resolvedAgentName) {
                         const { currentSessionId } = useSessionUIStore.getState();
                         const selState = useSelectionStore.getState();
 
                         if (currentSessionId) {
-                            selState.saveSessionAgentSelection(currentSessionId, agentName);
+                            selState.saveSessionAgentSelection(currentSessionId, resolvedAgentName);
                         }
 
                         if (currentSessionId && useSessionUIStore.getState().isOpenChamberCreatedSession(currentSessionId)) {
-                            const existingAgentModel = selState.getAgentModelForSession(currentSessionId, agentName);
+                            const existingAgentModel = selState.getAgentModelForSession(currentSessionId, resolvedAgentName);
                             if (!existingAgentModel) {
                                 useSessionUIStore.getState().initializeNewOpenChamberSession(currentSessionId, agents);
                             }
                         }
                     }
 
-                    if (agentName) {
+                    if (resolvedAgentName) {
                         const { currentSessionId } = useSessionUIStore.getState();
 
                         const applyResolvedModelSelection = (providerId: string, modelId: string, variant?: string) => {
@@ -2564,7 +2579,7 @@ export const useConfigStore = create<ConfigStore>()(
                             });
                         };
 
-                        const agent = agents.find((candidate) => candidate.name === agentName);
+                        const agent = findAgentBySelectionKey(agents, resolvedAgentName);
 
                         const resolveVariantForModel = (
                             providerId: string,
@@ -2580,7 +2595,7 @@ export const useConfigStore = create<ConfigStore>()(
                             const savedVariant = currentSessionId
                                 ? useSelectionStore.getState().getAgentModelVariantForSession(
                                     currentSessionId,
-                                    agentName,
+                                    resolvedAgentName,
                                     providerId,
                                     modelId,
                                 )
@@ -2597,7 +2612,7 @@ export const useConfigStore = create<ConfigStore>()(
 
                         // Existing session memory for this agent (same conversation continuity).
                         if (currentSessionId) {
-                            const existingAgentModel = useSelectionStore.getState().getAgentModelForSession(currentSessionId, agentName);
+                            const existingAgentModel = useSelectionStore.getState().getAgentModelForSession(currentSessionId, resolvedAgentName);
                             if (existingAgentModel && hasProviderModel(providers, existingAgentModel.providerId, existingAgentModel.modelId)) {
                                 const resolvedVariant = resolveVariantForModel(
                                     existingAgentModel.providerId,
@@ -3375,7 +3390,8 @@ export const useConfigStore = create<ConfigStore>()(
                 getCurrentAgent: () => {
                     const { agents, currentAgentName } = get();
                     if (!currentAgentName) return undefined;
-                    return agents.find((a) => a.name === currentAgentName);
+                    // Exact id / domain name / legacy displayName — never case-fold.
+                    return findAgentBySelectionKey(agents, currentAgentName);
                 },
                 getModelMetadata: (providerId: string, modelId: string) => {
                     if (!providerId || !modelId) {
