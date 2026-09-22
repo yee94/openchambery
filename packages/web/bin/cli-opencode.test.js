@@ -75,7 +75,7 @@ describe('checkOpenCodeCLI v2 gate', () => {
         for (const mode of modes) {
           await expect(checkOpenCodeCLI((notice) => notices.push({ mode, notice }))).rejects.toMatchObject({
             code: 'OPENCODE_BINARY_INVALID',
-            message: expect.stringMatching(/opencode2 is missing/),
+            message: expect.stringMatching(/1\.x.*OpenCode v2/s),
           });
         }
         expect(notices).toEqual([]);
@@ -105,7 +105,7 @@ describe('checkOpenCodeCLI v2 gate', () => {
           try {
             await expect(checkOpenCodeCLI()).rejects.toMatchObject({
               code: 'OPENCODE_BINARY_INVALID',
-              message: expect.stringMatching(/reserved for 1\.x.*opencode2 is missing/s),
+              message: expect.stringMatching(/1\.x.*OpenCode v2/s),
             });
             expect(process.env.OPENCODE_BINARY).toBe(binary);
           } finally {
@@ -150,7 +150,7 @@ describe('checkOpenCodeCLI v2 gate', () => {
       try {
         await expect(checkOpenCodeCLI()).rejects.toMatchObject({
           code: 'OPENCODE_BINARY_INVALID',
-          message: expect.stringMatching(/reserved for 1\.x.*opencode2/s),
+          message: expect.stringMatching(/1\.x.*OpenCode v2/s),
         });
       } finally {
         fs.rmSync(dir, { recursive: true, force: true });
@@ -180,7 +180,7 @@ describe('checkOpenCodeCLI v2 gate', () => {
     await withIsolatedOpenCodeEnv(async () => {
       delete process.env.OPENCODE_BINARY;
       process.env.PATH = createTempDir('openchamber-cli-missing-');
-      await expect(checkOpenCodeCLI()).rejects.toThrow(/opencode2/);
+      await expect(checkOpenCodeCLI()).rejects.toThrow(/opencode/);
     });
   });
 

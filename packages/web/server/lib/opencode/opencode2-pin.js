@@ -79,6 +79,11 @@ export function parseOpenCode2VersionOutput(stdout) {
   return versionToken.replace(/^v/, '');
 }
 
+export function openCodeBinaryName(platform = process.platform) {
+  return platform === 'win32' ? 'opencode.exe' : 'opencode';
+}
+
+/** @deprecated Packaging leftover. Runtime install uses `openCodeBinaryName`. */
 export function openCode2BinaryName(platform = process.platform) {
   return platform === 'win32' ? 'opencode2.exe' : 'opencode2';
 }

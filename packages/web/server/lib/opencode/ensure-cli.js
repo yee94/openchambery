@@ -7,7 +7,7 @@ import {
   isAcceptableOpenCode2HealthVersion,
   isOpenCode2VersionAtLeast,
   npmPackageForOpenCode2,
-  openCode2BinaryName,
+  openCodeBinaryName,
   parseOpenCode2VersionOutput,
 } from './opencode2-pin.js';
 
@@ -30,7 +30,7 @@ export function resolveOpenChamberDataDir(env = process.env, homedir = os.homedi
 
 export function installedOpenCode2BinaryPath(version = PINNED_OPENCODE2_VERSION, options = {}) {
   const dataDir = options.dataDir || resolveOpenChamberDataDir(options.env, options.homedir);
-  return path.join(dataDir, 'opencode-cli', version, openCode2BinaryName(options.platform));
+  return path.join(dataDir, 'opencode-cli', version, openCodeBinaryName(options.platform));
 }
 
 export function readOpenCode2BinaryVersion(binaryPath, options = {}) {
@@ -129,7 +129,7 @@ export async function installPinnedOpenCode2Cli(options = {}) {
   const platform = options.platform || process.platform;
   const arch = options.arch || process.arch;
   const dataDir = options.dataDir || resolveOpenChamberDataDir(options.env, options.homedir);
-  const binaryName = openCode2BinaryName(platform);
+  const binaryName = openCodeBinaryName(platform);
   const outputBinary = installedOpenCode2BinaryPath(version, { dataDir, platform });
   const run = typeof options.spawnSync === 'function' ? options.spawnSync : spawnSync;
   const fetchImpl = typeof options.fetch === 'function' ? options.fetch : fetch;
@@ -181,7 +181,7 @@ export async function installPinnedOpenCode2Cli(options = {}) {
   }
 
   const extractedBinary = findBinary(extractDir, binaryName)
-    || findBinary(extractDir, platform === 'win32' ? 'opencode.exe' : 'opencode');
+    || findBinary(extractDir, platform === 'win32' ? 'opencode2.exe' : 'opencode2');
   if (!extractedBinary) {
     throw new Error(`Archive ${archivePath} did not contain ${binaryName} or opencode`);
   }
@@ -200,8 +200,8 @@ export async function installPinnedOpenCode2Cli(options = {}) {
 }
 
 /**
- * Use a discovered 2.x binary when it meets the pin, otherwise install the pin
- * into the OpenChamber data dir. Explicit overrides pass `preferDiscovered`.
+ * Reuse any discovered acceptable 2.x CLI. Install the pin only when nothing
+ * usable is already installed (global PATH, explicit override, or cache).
  */
 export async function ensurePinnedOpenCode2Cli(input = {}) {
   const pin = input.pin || PINNED_OPENCODE2_VERSION;
@@ -214,10 +214,7 @@ export async function ensurePinnedOpenCode2Cli(input = {}) {
 
   if (discoveredPath) {
     const version = readVersion(discoveredPath);
-    if (input.preferDiscovered && isAcceptableOpenCode2HealthVersion(version)) {
-      return { path: discoveredPath, version, source: 'discovered', installed: false };
-    }
-    if (isOpenCode2VersionAtLeast(version, pin)) {
+    if (isAcceptableOpenCode2HealthVersion(version)) {
       return { path: discoveredPath, version, source: 'discovered', installed: false };
     }
   }
@@ -230,7 +227,7 @@ export async function ensurePinnedOpenCode2Cli(input = {}) {
 
   if (!autoInstall) {
     const error = new Error(
-      `Unable to locate opencode2 ${pin}. Set OPENCODE_BINARY or install @opencode/cli@${pin}.`,
+      `Unable to locate opencode ${pin}. Set OPENCODE_BINARY or install @opencode/cli@${pin}.`,
     );
     error.code = 'OPENCODE_CLI_MISSING';
     throw error;

@@ -42,30 +42,29 @@ describe('ensurePinnedOpenCode2Cli', () => {
     });
   });
 
-  it('keeps an explicit older 2.x binary when preferDiscovered is set', async () => {
+  it('reuses an older global 2.x binary instead of reinstalling the pin', async () => {
     const result = await ensurePinnedOpenCode2Cli({
-      discoveredPath: '/opt/old-opencode2',
+      discoveredPath: '/opt/old-opencode',
       pin: '2.0.12',
-      preferDiscovered: true,
       readVersion: () => '2.0.5',
       install: async () => {
         throw new Error('should not install');
       },
     });
     expect(result.source).toBe('discovered');
-    expect(result.path).toBe('/opt/old-opencode2');
+    expect(result.path).toBe('/opt/old-opencode');
   });
 
-  it('installs the pin when PATH is missing or older than the pin', async () => {
+  it('installs the pin only when no usable 2.x binary is present', async () => {
     const dataDir = createTempDir('openchamber-ensure-cli-');
-    const installed = path.join(dataDir, 'opencode-cli', PINNED_OPENCODE2_VERSION, 'opencode2');
+    const installed = path.join(dataDir, 'opencode-cli', PINNED_OPENCODE2_VERSION, 'opencode');
     let installedOnce = false;
     const result = await ensurePinnedOpenCode2Cli({
-      discoveredPath: '/opt/old-opencode2',
+      discoveredPath: '',
       pin: PINNED_OPENCODE2_VERSION,
       dataDir,
+      platform: 'linux',
       readVersion: (binaryPath) => {
-        if (binaryPath === '/opt/old-opencode2') return '2.0.1';
         if (binaryPath === installed && installedOnce) return PINNED_OPENCODE2_VERSION;
         return '';
       },

@@ -19,6 +19,7 @@ const HEALTH_CHECK_RESULT_CACHE_MS = parsePositiveInt(process.env.OPENCHAMBER_OP
 // Official OpenCode 2.x exposes ServerInfo at GET /api/info (client.server.info).
 const OPENCODE_HEALTH_PATH = '/api/info';
 const OPENCODE_HEALTH_FALLBACK_PATH = '/global/health';
+const DEFAULT_OPENCODE_SERVE_PORT = 4096;
 
 export const createOpenCodeLifecycleRuntime = (deps) => {
   const {
@@ -244,7 +245,7 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
   };
 
   const createManagedOpenCodeServerProcess = async ({ hostname, port, timeout, cwd, env: processEnv, shellEnvKeysCount = 0 }) => {
-    let binary = (process.env.OPENCODE_BINARY || 'opencode2').trim() || 'opencode2';
+    let binary = (process.env.OPENCODE_BINARY || 'opencode').trim() || 'opencode';
     let args = ['serve', '--hostname', hostname, '--port', String(port)];
     let launchWrapperType = null;
 
@@ -441,20 +442,27 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
   // v2 readiness lives at /api/info (ServerInfo.version); /global/health remains
   // a probe fallback for older sidecars. Both require Basic auth from
   // getOpenCodeAuthHeaders(). Version admission rejects 1.x / missing / noise.
-  const fetchOpenCodeHealthOk = async (urlForPath, signal) => {
-    const headers = { Accept: 'application/json', ...getOpenCodeAuthHeaders() };
-    for (const healthPath of [OPENCODE_HEALTH_PATH, OPENCODE_HEALTH_FALLBACK_PATH]) {
-      try {
-        const response = await fetch(urlForPath(healthPath), {
-          method: 'GET',
-          headers,
-          signal,
-        });
-        if (!response.ok) continue;
-        const body = await response.json().catch(() => null);
-        const gate = evaluateOpenCodeHealthBody(body);
-        if (gate.ok) return true;
-      } catch {
+  const fetchOpenCodeHealthOk = async (urlForPath, signal, options = {}) => {
+    const headerCandidates = [
+      { Accept: 'application/json', ...getOpenCodeAuthHeaders() },
+    ];
+    if (options.allowUnauthenticated) {
+      headerCandidates.push({ Accept: 'application/json' });
+    }
+    for (const headers of headerCandidates) {
+      for (const healthPath of [OPENCODE_HEALTH_PATH, OPENCODE_HEALTH_FALLBACK_PATH]) {
+        try {
+          const response = await fetch(urlForPath(healthPath), {
+            method: 'GET',
+            headers,
+            signal,
+          });
+          if (!response.ok) continue;
+          const body = await response.json().catch(() => null);
+          const gate = evaluateOpenCodeHealthBody(body);
+          if (gate.ok) return true;
+        } catch {
+        }
       }
     }
     return false;
@@ -486,7 +494,8 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
       const base = origin ?? `http://127.0.0.1:${port}`;
       const healthy = await fetchOpenCodeHealthOk(
         (healthPath) => `${base}${healthPath}`,
-        controller.signal
+        controller.signal,
+        { allowUnauthenticated: true },
       );
       clearTimeout(timeout);
       return healthy;
@@ -516,7 +525,12 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
   const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
   const startOpenCodeOnce = async () => {
-    const desiredPort = env.ENV_CONFIGURED_OPENCODE_PORT ?? 0;
+    const requestedPort = env.ENV_CONFIGURED_OPENCODE_PORT;
+    const defaultPortFree = requestedPort
+      ? false
+      : await waitForPortRelease(DEFAULT_OPENCODE_SERVE_PORT, 200, env.ENV_CONFIGURED_OPENCODE_HOSTNAME);
+    const desiredPort = requestedPort
+      ?? (defaultPortFree ? DEFAULT_OPENCODE_SERVE_PORT : 0);
     const spawnPort = await resolveManagedOpenCodePort(desiredPort, env.ENV_CONFIGURED_OPENCODE_HOSTNAME);
     console.log(
       desiredPort > 0
@@ -889,11 +903,18 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
       } else if (state.openCodeProcess && !state.isExternalOpenCode && await isOpenCodeProcessHealthy()) {
         console.log('[HMR] Restarting managed OpenCode because scheduled-task capability identity is stale');
         await restartOpenCode();
-      } else if (env.ENV_EFFECTIVE_PORT && await probeExternalOpenCode(env.ENV_EFFECTIVE_PORT, env.ENV_CONFIGURED_OPENCODE_HOST?.origin)) {
-        const label = env.ENV_CONFIGURED_OPENCODE_HOST ? env.ENV_CONFIGURED_OPENCODE_HOST.origin : `http://localhost:${env.ENV_EFFECTIVE_PORT}`;
-        console.log(`Auto-detected existing OpenCode server at ${label}`);
+      } else if (
+        (env.ENV_EFFECTIVE_PORT || DEFAULT_OPENCODE_SERVE_PORT)
+        && await probeExternalOpenCode(
+          env.ENV_EFFECTIVE_PORT || DEFAULT_OPENCODE_SERVE_PORT,
+          env.ENV_CONFIGURED_OPENCODE_HOST?.origin,
+        )
+      ) {
+        const reusePort = env.ENV_EFFECTIVE_PORT || DEFAULT_OPENCODE_SERVE_PORT;
+        const label = env.ENV_CONFIGURED_OPENCODE_HOST ? env.ENV_CONFIGURED_OPENCODE_HOST.origin : `http://localhost:${reusePort}`;
+        console.log(`Reusing existing OpenCode serve at ${label}`);
         state.openCodeBaseUrl = env.ENV_CONFIGURED_OPENCODE_HOST?.origin ?? null;
-        setOpenCodePort(env.ENV_EFFECTIVE_PORT);
+        setOpenCodePort(reusePort);
         // Health ok is not transcript-ready; waitForOpenCodeReady applies the gate.
         state.isOpenCodeReady = false;
         state.openCodeNotReadySince = Date.now();
@@ -902,14 +923,8 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
         state.v1Migration = null;
         syncToHmrState();
       } else {
-        // We never auto-attach to an arbitrary pre-existing OpenCode instance.
-        // Attaching to an external server requires explicit opt-in via env
-        // (OPENCODE_HOST / OPENCODE_PORT / OPENCODE_SKIP_START), handled by the
-        // branches above. Without that opt-in we always start our OWN managed
-        // instance on a freshly-allocated port. A blind probe of the default
-        // port 4096 used to hijack a user's separately-running OpenCode (e.g.
-        // the OpenCode desktop app), coupling our lifecycle to theirs and
-        // breaking init against an unexpected server version/config.
+        // No healthy v2 serve on the requested/default port. Start a generic
+        // `opencode serve` so OpenChamber and other OpenCode clients can share it.
         state.isExternalOpenCode = false;
         state.openCodeBaseUrl = null;
         if (env.ENV_EFFECTIVE_PORT) {

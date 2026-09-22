@@ -123,8 +123,8 @@ This module provides OpenCode server integration utilities for the web server ru
 - `resolveOpenCode2UpgradeTarget(target)` / `rejectOpenCode1xUpgradeTarget(target)`: upgrade targets default to the pin and refuse 1.x.
 
 ## Public exports (ensure-cli.js)
-- `ensurePinnedOpenCode2Cli({ discoveredPath, preferDiscovered, pin, autoInstall, install, readVersion })`: if `discoveredPath` is acceptable 2.x and (`preferDiscovered` or version ≥ pin), return it; else reuse `~/.config/openchamber/opencode-cli/<pin>/opencode2` or download the official npm platform tarball. `OPENCHAMBER_OPENCODE2_AUTO_INSTALL=0` disables download (`OPENCODE_CLI_MISSING`). Explicit `OPENCODE_BINARY` / `settings.opencodeBinary` pass `preferDiscovered` so a user-selected 2.x is not replaced.
-- `installPinnedOpenCode2Cli(options)`: download `@opencode/cli-<os>-<arch>@pin`, extract, copy, chmod, verify `--version`.
+- `ensurePinnedOpenCode2Cli({ discoveredPath, pin, autoInstall, install, readVersion })`: reuse any discovered acceptable 2.x CLI (official name `opencode`, alias `opencode2`). Install the pin into `~/.config/openchamber/opencode-cli/<pin>/opencode` only when nothing usable is installed. `OPENCHAMBER_OPENCODE2_AUTO_INSTALL=0` disables download (`OPENCODE_CLI_MISSING`).
+- `installPinnedOpenCode2Cli(options)`: download `@opencode/cli-<os>-<arch>@pin`, extract, copy as `opencode`, chmod, verify `--version`.
 - `installedOpenCode2BinaryPath(version)` / `readOpenCode2BinaryVersion(path)` / `isOpenCode2AutoInstallEnabled()`.
 
 ## Public exports (v1-migration-gate.js)
@@ -148,7 +148,7 @@ This module provides OpenCode server integration utilities for the web server ru
   - `killProcessOnPort(port)`
 
 ## Public exports (env-runtime.js)
-- `createOpenCodeEnvRuntime(dependencies)`: creates runtime that owns OpenCode CLI environment and binary discovery state. Auto-discovery looks for `opencode2` (PATH, `~/.bun/bin/opencode2`, `~/.opencode/bin/opencode2`, Homebrew, then a previously installed pin under the OpenChamber data dir). It never falls back to a packaged/bundled Electron extraResource. Managed startup calls `ensurePinnedOpenCode2CliEnv()` to install the pin when discovery finds nothing or an older 2.x. A resolved basename of `opencode` / `opencode.exe` / `opencode.cmd` fails closed with `OPENCODE_BINARY_INVALID` (message says the basename is reserved for 1.x; rename or symlink to `opencode2`). OpenChamber does not treat PATH 1.x `opencode` as a hit and does not reuse an already-running `opencode2 service`.
+- `createOpenCodeEnvRuntime(dependencies)`: creates runtime that owns OpenCode CLI environment and binary discovery state. Auto-discovery matches master: settings/env, then PATH `opencode` (official v2) with `opencode2` as alias, then known install locations, then a previously installed pin under the OpenChamber data dir. 1.x binaries are skipped by `--version`, not by basename. It never falls back to a packaged/bundled Electron extraResource. Managed startup calls `ensurePinnedOpenCode2CliEnv()` and installs the pin only when no usable 2.x CLI exists. Explicit `OPENCODE_BINARY` that reports 1.x fails closed with `OPENCODE_BINARY_INVALID`. Bootstrap reuses a healthy v2 `opencode serve` on port 4096 when present; otherwise it starts generic `opencode serve`.
 - VS Code keeps a copied sidecar (`packages/vscode/src/opencode-sidecar.ts`) with the same invariants: discovery order may differ (no Electron bundled fallback), but reject list, listening lines, health path order (`/api/health` then `/global/health`), `{ healthy: true }`, and Basic username `opencode` must stay aligned. Changing one copy requires changing the other.
 - Returned API:
   - `applyLoginShellEnvSnapshot()`

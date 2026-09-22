@@ -1448,6 +1448,7 @@ async function main(options = {}) {
       return {
         openCodePort,
         openCodeRunning: Boolean(openCodePort && isOpenCodeReady && !isRestartingOpenCode),
+        openCodeStarting: Boolean(!isOpenCodeReady && !lastOpenCodeError),
         openCodeSecureConnection: isOpenCodeConnectionSecure(),
         openCodeAuthSource: openCodeAuthSource || null,
         openCodeApiPrefix: '',

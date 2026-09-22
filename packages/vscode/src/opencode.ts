@@ -204,7 +204,7 @@ function isKnownOpenCodeDesktopAppPath(candidate: string): boolean {
 }
 
 function createConfiguredOpencodeBinaryError(raw: string, normalized: string): Error {
-  const messageSuffix = 'OpenChamber needs the standalone opencode2 CLI. Install it and set openchamber.opencodeBinary to the CLI path, for example ~/.opencode/bin/opencode2, or leave the setting empty to use PATH lookup.';
+  const messageSuffix = 'OpenChamber needs the standalone OpenCode v2 CLI (`opencode`). Install it and set openchamber.opencodeBinary to the CLI path, for example ~/.opencode/bin/opencode, or leave the setting empty to use PATH lookup.';
   if (isKnownOpenCodeDesktopAppPath(raw) || isKnownOpenCodeDesktopAppPath(normalized)) {
     const platformName = process.platform === 'win32' ? 'Windows desktop app install' : 'macOS desktop app bundle';
     return new Error(`Configured OpenCode binary points at the ${platformName}, not the CLI: ${normalized}. ${messageSuffix}`);
@@ -594,7 +594,7 @@ async function spawnManagedOpenCodeServer(
   port: number,
   timeoutMs: number
 ): Promise<{ url: string; close: () => void }> {
-  const binary = stripWrappingQuotes(process.env.OPENCODE_BINARY || 'opencode2') || 'opencode2';
+  const binary = stripWrappingQuotes(process.env.OPENCODE_BINARY || 'opencode') || 'opencode';
   const launch = resolveWindowsLaunchSpec(binary, ['serve', '--hostname', '127.0.0.1', '--port', String(port)]);
   const child = spawn(launch.binary, launch.args, {
     cwd: workingDirectory,
