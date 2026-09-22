@@ -572,16 +572,31 @@ export const useSessionFoldersStore = create<SessionFoldersStore>()(
 
         const nextOrder = currentOrder.filter((id) => existingSessionIds.has(id));
         const orderChanged = nextOrder.length !== currentOrder.length;
-        const activityChanged = Object.keys(currentActivity).some((id) => !existingSessionIds.has(id));
+        const nextActivityEntries = Object.entries(currentActivity).filter(([id]) => existingSessionIds.has(id));
+        const activityChanged = nextActivityEntries.length !== Object.keys(currentActivity).length;
         if (!changed && !orderChanged && !activityChanged) return;
         const nextMap: SessionFoldersMap = { ...current, [scopeKey]: nextFolders };
         const nextCollapsed = syncCollapsedAfterFolderCleanup(scopeFolders ?? [], nextFolders, get().collapsedFolderIds);
         const nextSessionOrderByScope = orderChanged
-          ? { ...get().sessionOrderByScope, [scopeKey]: nextOrder }
+          ? (
+            nextOrder.length > 0
+              ? { ...get().sessionOrderByScope, [scopeKey]: nextOrder }
+              : Object.fromEntries(Object.entries(get().sessionOrderByScope).filter(([key]) => key !== scopeKey))
+          )
           : get().sessionOrderByScope;
-        const nextSessionOrderActivityByScope = (orderChanged || activityChanged)
-          ? Object.fromEntries(Object.entries(get().sessionOrderActivityByScope).filter(([key]) => key !== scopeKey))
-          : get().sessionOrderActivityByScope;
+        let nextSessionOrderActivityByScope = get().sessionOrderActivityByScope;
+        if (activityChanged || (orderChanged && nextOrder.length === 0)) {
+          if (nextActivityEntries.length === 0 || nextOrder.length === 0) {
+            nextSessionOrderActivityByScope = Object.fromEntries(
+              Object.entries(get().sessionOrderActivityByScope).filter(([key]) => key !== scopeKey),
+            );
+          } else {
+            nextSessionOrderActivityByScope = {
+              ...get().sessionOrderActivityByScope,
+              [scopeKey]: Object.fromEntries(nextActivityEntries),
+            };
+          }
+        }
 
         set(nextCollapsed
           ? { foldersMap: nextMap, collapsedFolderIds: nextCollapsed, sessionOrderByScope: nextSessionOrderByScope, sessionOrderActivityByScope: nextSessionOrderActivityByScope }
@@ -611,8 +626,11 @@ export const useSessionFoldersStore = create<SessionFoldersStore>()(
 
         const currentOrder = get().sessionOrderByScope[scopeKey] ?? [];
         const currentActivity = get().sessionOrderActivityByScope[scopeKey];
+        // When the activity baseline still matches, compose from the stored order so
+        // hidden ranks stay put. After activity promotions, `sessionIds` is already
+        // the effective visual order the user dragged on.
         const currentOrderIsActive = sessionOrderActivityMatches(activityBySessionId, currentActivity);
-        const orderedVisibleIds = currentOrderIsActive
+        const orderedVisibleIds = currentOrderIsActive && currentOrder.length > 0
           ? [
               ...currentOrder.filter((id) => visibleIds.includes(id)),
               ...visibleIds.filter((id) => !currentOrder.includes(id)),
@@ -626,9 +644,7 @@ export const useSessionFoldersStore = create<SessionFoldersStore>()(
         nextOrder.splice(fromIndex, 1);
         nextOrder.splice(toIndex, 0, activeSessionId);
         const visibleIdSet = new Set(visibleIds);
-        const hiddenOrder = currentOrderIsActive
-          ? currentOrder.filter((id) => !visibleIdSet.has(id))
-          : [];
+        const hiddenOrder = currentOrder.filter((id) => !visibleIdSet.has(id));
         const nextSessionOrderByScope = { ...get().sessionOrderByScope, [scopeKey]: [...nextOrder, ...hiddenOrder] };
         const nextSessionOrderActivityByScope = {
           ...get().sessionOrderActivityByScope,

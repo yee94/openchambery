@@ -775,7 +775,7 @@ const waitForWorktreeBootstrapIfConfigured = async (directory: string | null, pr
   }
 }
 
-const promoteProjectForConversation = (
+export const promoteProjectForConversation = (
   directory: string | null,
   availableWorktreesByProject: Map<string, WorktreeMetadata[]>,
 ): void => {
