@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.19.21-beta.1] - 2026-09-22
+
+### 对话
+
+- 同一轮里前面的生成失败会在后面成功后隐藏；仍在的失败改成紧凑提示，不再是大段红字。
+
+### 附件
+
+- 移动端助理和正文的回形针都先弹出半浮层，再选照片或文件。
+
 ## [1.19.20] - 2026-09-21
 
 汇总 1.19.20-beta.1。

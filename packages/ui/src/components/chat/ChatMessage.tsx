@@ -19,7 +19,7 @@ import MessageBody from './message/MessageBody';
 import type { AgentMentionInfo } from './message/types';
 import type { StreamPhase, ToolPopupContent } from './message/types';
 import { deriveMessageRole } from './message/messageRole';
-import { filterVisibleParts, normalizeParts } from './message/partUtils';
+import { filterVisibleParts, isEmptyTextPart, normalizeParts } from './message/partUtils';
 import { hasVisibleUserBubbleContent, normalizeUserDisplayParts } from './message/normalizeUserDisplayParts';
 import { flattenAssistantTextParts } from '@/lib/messages/messageText';
 import { getProviderModelDisplayName } from '@/lib/modelDisplay';
@@ -27,7 +27,7 @@ import { lazyWithChunkRecovery } from '@/lib/chunkLoadRecovery';
 import type { TurnGroupingContext } from './lib/turns/types';
 import { shouldTightenWorkingBottomGap } from './lib/activityExpansion';
 import { copyTextToClipboard } from '@/lib/clipboard';
-import { resolveAssistantErrorPresentation } from './message/assistantErrorPresentation';
+import { resolveAssistantErrorPresentation, shouldSuppressAssistantError } from './message/assistantErrorPresentation';
 import { FadeInOnReveal } from './message/FadeInOnReveal';
 import { streamPerfCount } from '@/stores/utils/streamDebug';
 import { areOptionalRenderRelevantMessagesEqual, areRenderRelevantMessagesEqual, areRelevantTurnGroupingContextsEqual } from './message/renderCompare';
@@ -719,11 +719,15 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
         if (isUser) {
             return undefined;
         }
+        const isTerminalAssistant = hasTurnGrouping ? isLastAssistantInTurn : !isFollowedByAssistant;
+        if (shouldSuppressAssistantError(isTerminalAssistant)) {
+            return undefined;
+        }
         return resolveAssistantErrorPresentation(
             (message.info as { error?: unknown } | undefined)?.error,
             t('chat.messageBody.aborted'),
         );
-    }, [isUser, message.info, t]);
+    }, [hasTurnGrouping, isFollowedByAssistant, isLastAssistantInTurn, isUser, message.info, t]);
 
     const assistantErrorText = assistantError?.text;
     const assistantErrorVariant = assistantError?.variant;
@@ -1061,7 +1065,33 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
         };
     }, [allowAnimation, isUser, resolvedAnimationHandlers, shouldReserveAnimationSpace]);
 
-    if (shouldHideUserMessage) {
+    const hasRenderableAssistantParts = React.useMemo(() => {
+        if (isUser) {
+            return true;
+        }
+        return normalizedParts.some((part) => {
+            if (part.type === 'patch') {
+                return false;
+            }
+            return !isEmptyTextPart(part);
+        });
+    }, [isUser, normalizedParts]);
+
+    const hostsTurnActivity = Boolean(
+        turnGroupingContext?.activityOwnerMessageId === message.info.id
+        && (
+            (turnGroupingContext.activityParts?.length ?? 0) > 0
+            || turnGroupingContext.hasTools
+            || turnGroupingContext.hasReasoning
+        ),
+    );
+    const shouldHideEmptyAssistant = !isUser
+        && isMessageCompleted
+        && !assistantError
+        && !hasRenderableAssistantParts
+        && !hostsTurnActivity;
+
+    if (shouldHideUserMessage || shouldHideEmptyAssistant) {
         return null;
     }
 
