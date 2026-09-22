@@ -630,9 +630,18 @@ describe('OpenCode lifecycle', () => {
 
   it('clears v1Migration when an external OpenCode restart probe fails', async () => {
     const stateRef = {};
-    const runtime = createRuntime({}, stateRef);
+    const runtime = createRuntime({
+      env: {
+        ENV_CONFIGURED_OPENCODE_PORT: null,
+        ENV_CONFIGURED_OPENCODE_HOST: null,
+        ENV_EFFECTIVE_PORT: 45678,
+        ENV_CONFIGURED_OPENCODE_HOSTNAME: '127.0.0.1',
+        ENV_SKIP_OPENCODE_START: false,
+      },
+    }, stateRef);
     stateRef.current.isExternalOpenCode = true;
     stateRef.current.openCodePort = 45678;
+    stateRef.current.openCodeBaseUrl = 'http://127.0.0.1:45678';
     stateRef.current.v1Migration = { admitTranscript: true, phase: 'completed' };
     vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ healthy: false }), {
       status: 200,
@@ -642,6 +651,10 @@ describe('OpenCode lifecycle', () => {
     await expect(runtime.restartOpenCode()).rejects.toThrow('External OpenCode server on port 45678 is not responding');
     expect(stateRef.current.isOpenCodeReady).toBe(false);
     expect(stateRef.current.v1Migration).toBeNull();
+    // Read-only external mount: failed re-probe keeps port + ownership; never spawn.
+    expect(stateRef.current.openCodePort).toBe(45678);
+    expect(stateRef.current.isExternalOpenCode).toBe(true);
+    expect(spawnMock).not.toHaveBeenCalled();
   });
 
   it('rejects healthy 1.x health bodies instead of admitting the process', async () => {

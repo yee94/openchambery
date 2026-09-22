@@ -266,7 +266,7 @@ describe('managed scheduled task tool route', () => {
     } finally { fixture.restore(); }
   });
 
-  it('rejects create/update with goalEnabled when Host goal state is unavailable', async () => {
+  it('allows create/update with goalEnabled when Host goal state is supported', async () => {
     const fixture = createApp();
     try {
       const created = await request(fixture.app).post(MANAGED_SCHEDULED_TASK_TOOL_PATH).send(body('create', {
@@ -274,20 +274,18 @@ describe('managed scheduled task tool route', () => {
         schedule: { kind: 'daily', time: '10:00', timezone: 'UTC' },
         execution: { prompt: 'review', goalEnabled: true },
       }));
-      expect(created.status).toBe(501);
-      expect(created.body.error).toMatch(/v2_goal_state_unavailable/);
-      expect(created.body.capability).toEqual({
-        supported: false,
-        reason: 'v2_goal_state_unavailable',
+      expect(created.status).toBe(201);
+      expect(fixture.projectConfigRuntime.upsertScheduledTask).toHaveBeenCalled();
+      expect(fixture.projectConfigRuntime.upsertScheduledTask.mock.calls[0][1]).toMatchObject({
+        execution: expect.objectContaining({ goalEnabled: true }),
       });
-      expect(fixture.projectConfigRuntime.upsertScheduledTask).not.toHaveBeenCalled();
 
       const updated = await request(fixture.app).post(MANAGED_SCHEDULED_TASK_TOOL_PATH).send(body('update', {
         taskId: 'task_1',
         execution: { goalEnabled: true },
       }));
-      expect(updated.status).toBe(501);
-      expect(fixture.projectConfigRuntime.patchScheduledTask).not.toHaveBeenCalled();
+      expect(updated.status).toBe(200);
+      expect(fixture.projectConfigRuntime.patchScheduledTask).toHaveBeenCalled();
     } finally { fixture.restore(); }
   });
 });

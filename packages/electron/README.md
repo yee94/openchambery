@@ -162,9 +162,9 @@ The package supports macOS, Windows, and Linux desktop features. Linux AppImage 
 
 ## OpenCode CLI (detect, then install)
 
-Managed Desktop / `openchamber serve` / HMR do **not** launch a packaged extraResource binary. Discovery order matches master: settings/env → PATH `opencode` (v2; `opencode2` is an alias) / known install locations → a previously installed pin under `~/.config/openchamber/opencode-cli/<version>/opencode`. If nothing usable is found, startup downloads `@opencode/cli-<os>-<arch>@pin` into that data dir. A healthy v2 `opencode serve` already listening on 4096 is reused; otherwise OpenChamber starts generic `serve` on 4096 when free. Explicit `OPENCODE_BINARY` / `settings.opencodeBinary` still win for an acceptable 2.x. Set `OPENCHAMBER_OPENCODE2_AUTO_INSTALL=0` to disable download.
+Managed Desktop / `openchamber serve` / HMR discovery still does **not** prefer a packaged extraResource binary. Discovery order matches master: settings/env → PATH `opencode` (v2; `opencode2` is an alias) / known install locations → a previously installed pin under `~/.config/openchamber/opencode-cli/<version>/opencode`. Any acceptable 2.x is used as-is. If nothing usable is found, startup downloads `@opencode/cli-<os>-<arch>@pin` into that data dir. Only when that pin install fails (or `OPENCHAMBER_OPENCODE2_AUTO_INSTALL=0` blocks it) does startup fall back to a staged 2.x binary under `OPENCHAMBER_BUNDLED_OPENCODE_CLI_DIR` or `process.resourcesPath/opencode-cli`. A healthy v2 `opencode serve` already listening on 4096 is reused; otherwise OpenChamber starts generic `serve` on 4096 when free. Explicit `OPENCODE_BINARY` / `settings.opencodeBinary` still win for an acceptable 2.x.
 
-`prepare:opencode-cli` still stages `resources/opencode-cli` for packaging/CI, but runtime resolution never uses that copy as a fallback.
+`prepare:opencode-cli` stages `resources/opencode-cli` for packaging/CI; runtime discovery (`resolveOpencodeCliPath`) still ignores that copy — it is only a last-resort after install failure.
 
 ## Releases and automatic updates
 

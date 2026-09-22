@@ -799,12 +799,12 @@ describe('scheduled-tasks run history and session lifecycle', () => {
     vi.useRealTimers();
   });
 
-  it('goalEnabled refuses before OpenCode ready / distill / session create (no side effects)', async () => {
+  it('goalEnabled without persist refuses before OpenCode ready / distill / session create (no side effects)', async () => {
     const history = createHistoryStore();
     const create = vi.fn(async () => ({ id: 'ses_distill' }));
     const interrupt = vi.fn(async () => undefined);
     const prompt = vi.fn(async () => {
-      throw new Error('session.prompt must not run for unsupported goal');
+      throw new Error('session.prompt must not run without goal persist');
     });
     makeOpenCodeV2Client.mockReturnValue({
       session: { create, prompt, command: vi.fn(), interrupt },
@@ -842,12 +842,13 @@ describe('scheduled-tasks run history and session lifecycle', () => {
       waitForOpenCodeReady,
       logger: { info: vi.fn(), warn: vi.fn() },
       runHistoryStore: history,
+      // intentionally no persistSessionGoal
     });
     await runtime.syncProject('project-1');
     const result = await runtime.runNow('project-1', 'task-1');
 
     expect(result.ok).toBe(false);
-    expect(result.error).toMatch(/v2_goal_state_unavailable/);
+    expect(result.error).toMatch(/session goal persist is not configured/);
     expect(waitForOpenCodeReady).not.toHaveBeenCalled();
     expect(getSmallModelService).not.toHaveBeenCalled();
     expect(generateSmallModelText).not.toHaveBeenCalled();
@@ -859,12 +860,12 @@ describe('scheduled-tasks run history and session lifecycle', () => {
       expect.any(String),
       expect.objectContaining({
         status: 'error',
-        error: expect.stringMatching(/v2_goal_state_unavailable/),
+        error: expect.stringMatching(/session goal persist is not configured/),
       }),
     );
   });
 
-  it('goalEnabled refuses before session create / objective write when Host goal state is unavailable', async () => {
+  it('goalEnabled without persist refuses before session create / objective write', async () => {
     const history = createHistoryStore();
     const client = createSuccessfulClient({ sessionID: 'ses_goal' });
 
@@ -892,14 +893,15 @@ describe('scheduled-tasks run history and session lifecycle', () => {
       waitForOpenCodeReady: vi.fn(async () => {}),
       logger: { info: vi.fn(), warn: vi.fn() },
       runHistoryStore: history,
+      // intentionally no persistSessionGoal
     });
     await runtime.syncProject('project-1');
     const result = await runtime.runNow('project-1', 'task-1');
 
-    // Capability gap is an explicit run failure — not recovery-complete success.
+    // Missing persist is an explicit run failure before any side effects.
     expect(result.ok).toBe(false);
     expect(result.status).toBe('error');
-    expect(result.error).toMatch(/v2_goal_state_unavailable/);
+    expect(result.error).toMatch(/session goal persist is not configured/);
     expect(client.create).not.toHaveBeenCalled();
     expect(client.prompt).not.toHaveBeenCalled();
     expect(writeObjective).not.toHaveBeenCalled();
@@ -907,13 +909,125 @@ describe('scheduled-tasks run history and session lifecycle', () => {
       expect.any(String),
       expect.objectContaining({
         status: 'error',
-        error: expect.stringMatching(/v2_goal_state_unavailable/),
+        error: expect.stringMatching(/session goal persist is not configured/),
       }),
     );
     // Task config is preserved (goalEnabled stays on the task); only this run fails.
     const finalPatch = updateScheduledTaskState.mock.calls.at(-1)[2];
     expect(finalPatch.lastStatus).toBe('error');
     expect(Object.hasOwn(finalPatch, 'lastSessionId')).toBe(false);
+  });
+
+  it('goalEnabled with persist writes objective + active goal then prompts', async () => {
+    const history = createHistoryStore();
+    const client = createSuccessfulClient({ sessionID: 'ses_goal_ok' });
+    const persistSessionGoal = vi.fn(async (_sessionId, _directory, goal) => ({
+      openchamber: { goal },
+    }));
+    const onGoalPersisted = vi.fn();
+
+    const goalTask = {
+      ...scheduledTask,
+      execution: {
+        ...scheduledTask.execution,
+        prompt: 'finish the migration',
+        goalEnabled: true,
+        goalTokenBudget: 12_000,
+      },
+    };
+    const updateScheduledTaskState = vi.fn(async (_projectID, _taskID, state) => ({
+      task: { ...goalTask, state: { ...goalTask.state, ...state } },
+    }));
+    const runtime = createScheduledTasksRuntime({
+      projectConfigRuntime: {
+        listScheduledTasks: vi.fn(async () => [goalTask]),
+        updateScheduledTaskState,
+        upsertScheduledTask: vi.fn(),
+      },
+      listProjects: vi.fn(async () => [{ id: 'project-1', path: '/tmp/project-1' }]),
+      buildOpenCodeUrl: vi.fn(() => 'http://127.0.0.1:4096'),
+      getOpenCodeAuthHeaders: vi.fn(() => ({})),
+      waitForOpenCodeReady: vi.fn(async () => {}),
+      logger: { info: vi.fn(), warn: vi.fn() },
+      runHistoryStore: history,
+      persistSessionGoal,
+      onGoalPersisted,
+    });
+    await runtime.syncProject('project-1');
+    const result = await runtime.runNow('project-1', 'task-1');
+
+    expect(result.ok).toBe(true);
+    expect(client.create).toHaveBeenCalled();
+    expect(writeObjective).toHaveBeenCalledWith('ses_goal_ok', 'finish the migration');
+    expect(persistSessionGoal).toHaveBeenCalledTimes(1);
+    expect(persistSessionGoal.mock.calls[0][0]).toBe('ses_goal_ok');
+    expect(persistSessionGoal.mock.calls[0][1]).toBe('/tmp/project-1');
+    expect(persistSessionGoal.mock.calls[0][2]).toMatchObject({
+      status: 'active',
+      objectiveFile: true,
+      objective: '',
+      tokenBudget: 12_000,
+      tokensUsed: 0,
+      turnsUsed: 0,
+      blockedStreak: 0,
+      note: '',
+      statusReason: '',
+      lastAccountedMessageID: '',
+    });
+    expect(typeof persistSessionGoal.mock.calls[0][2].id).toBe('string');
+    expect(persistSessionGoal.mock.calls[0][2].id.length).toBeGreaterThan(0);
+    expect(onGoalPersisted).toHaveBeenCalledWith(expect.objectContaining({
+      sessionID: 'ses_goal_ok',
+      directory: '/tmp/project-1',
+      metadata: expect.objectContaining({
+        openchamber: expect.objectContaining({
+          goal: expect.objectContaining({ status: 'active' }),
+        }),
+      }),
+    }));
+    expect(client.prompt).toHaveBeenCalled();
+  });
+
+  it('goalEnabled persist failure aborts before prompt', async () => {
+    const history = createHistoryStore();
+    const client = createSuccessfulClient({ sessionID: 'ses_goal_fail' });
+    const persistSessionGoal = vi.fn(async () => {
+      throw new Error('store unavailable');
+    });
+
+    const goalTask = {
+      ...scheduledTask,
+      execution: {
+        ...scheduledTask.execution,
+        prompt: 'finish the migration',
+        goalEnabled: true,
+      },
+    };
+    const updateScheduledTaskState = vi.fn(async (_projectID, _taskID, state) => ({
+      task: { ...goalTask, state: { ...goalTask.state, ...state } },
+    }));
+    const runtime = createScheduledTasksRuntime({
+      projectConfigRuntime: {
+        listScheduledTasks: vi.fn(async () => [goalTask]),
+        updateScheduledTaskState,
+        upsertScheduledTask: vi.fn(),
+      },
+      listProjects: vi.fn(async () => [{ id: 'project-1', path: '/tmp/project-1' }]),
+      buildOpenCodeUrl: vi.fn(() => 'http://127.0.0.1:4096'),
+      getOpenCodeAuthHeaders: vi.fn(() => ({})),
+      waitForOpenCodeReady: vi.fn(async () => {}),
+      logger: { info: vi.fn(), warn: vi.fn() },
+      runHistoryStore: history,
+      persistSessionGoal,
+    });
+    await runtime.syncProject('project-1');
+    const result = await runtime.runNow('project-1', 'task-1');
+
+    expect(result.ok).toBe(false);
+    expect(result.error).toMatch(/store unavailable/);
+    expect(writeObjective).toHaveBeenCalled();
+    expect(persistSessionGoal).toHaveBeenCalled();
+    expect(client.prompt).not.toHaveBeenCalled();
   });
 
   it('ordinary non-goal runs still create a session and settle on the assistant tail', async () => {

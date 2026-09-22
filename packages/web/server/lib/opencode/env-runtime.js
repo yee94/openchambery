@@ -1100,27 +1100,65 @@ export const createOpenCodeEnvRuntime = (deps) => {
     return null;
   };
 
+  // Last-resort only: used after pin install fails. Never consulted by resolveOpencodeCliPath.
+  const resolveBundledOpenCodeCliPath = () => {
+    const dirs = [];
+    const envDir = typeof process.env.OPENCHAMBER_BUNDLED_OPENCODE_CLI_DIR === 'string'
+      ? process.env.OPENCHAMBER_BUNDLED_OPENCODE_CLI_DIR.trim()
+      : '';
+    if (envDir) {
+      dirs.push(envDir);
+    }
+    if (typeof process.resourcesPath === 'string' && process.resourcesPath.trim()) {
+      dirs.push(path.join(process.resourcesPath, 'opencode-cli'));
+    }
+
+    // Official v2 name + packaging contract name (see electron opencode2-bundle-contract).
+    const names = ['opencode', 'opencode.exe', 'opencode2', 'opencode2.exe'];
+    for (const dir of dirs) {
+      for (const name of names) {
+        const accepted = acceptOpenCodeV2Candidate(path.join(dir, name), 'bundled');
+        if (accepted) {
+          return accepted;
+        }
+      }
+    }
+    return null;
+  };
+
   const ensurePinnedOpenCode2CliEnv = async (options = {}) => {
     const discovered = state.resolvedOpencodeBinary || resolveOpencodeCliPath();
     const source = state.resolvedOpencodeBinarySource;
     const explicit = source === 'env' || source === 'settings';
-    const result = await ensurePinnedCli({
-      discoveredPath: discovered,
-      preferDiscovered: explicit,
-      env: process.env,
-      homedir: resolveHomeDir,
-      ...options,
-    });
-    if (!result?.path) {
+    try {
+      const result = await ensurePinnedCli({
+        discoveredPath: discovered,
+        preferDiscovered: explicit,
+        env: process.env,
+        homedir: resolveHomeDir,
+        ...options,
+      });
+      if (!result?.path) {
+        return ensureOpencodeCliEnv();
+      }
+      if (result.source === 'installed') {
+        clearWslOpencodeResolution();
+        process.env.OPENCODE_BINARY = result.path;
+        state.resolvedOpencodeBinary = result.path;
+        state.resolvedOpencodeBinarySource = 'installed';
+      }
+      return ensureOpencodeCliEnv();
+    } catch (error) {
+      const bundled = resolveBundledOpenCodeCliPath();
+      if (!bundled) {
+        throw error;
+      }
+      clearWslOpencodeResolution();
+      process.env.OPENCODE_BINARY = bundled;
+      state.resolvedOpencodeBinary = bundled;
+      state.resolvedOpencodeBinarySource = 'bundled';
       return ensureOpencodeCliEnv();
     }
-    if (result.source === 'installed') {
-      clearWslOpencodeResolution();
-      process.env.OPENCODE_BINARY = result.path;
-      state.resolvedOpencodeBinary = result.path;
-      state.resolvedOpencodeBinarySource = 'installed';
-    }
-    return ensureOpencodeCliEnv();
   };
 
   const resolveGitBinaryForSpawn = () => {

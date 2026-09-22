@@ -210,6 +210,38 @@ const normalizeOpenChamberSessionStatus = (payload: Event): Event | null => {
 }
 
 /**
+ * Host session-metadata store announcements. OpenCode 2.x no longer carries
+ * live metadata on session.updated; the server broadcasts the full merged
+ * object after a Host write. Pass through as a typed event for reducers.
+ */
+const normalizeOpenChamberSessionMetadata = (payload: Event): Event | null => {
+  const record = payload as unknown as {
+    id?: unknown
+    type?: unknown
+    properties?: {
+      sessionID?: unknown
+      metadata?: unknown
+    }
+  }
+  if (record.type !== "openchamber:session-metadata") return null
+  const sessionID = typeof record.properties?.sessionID === "string" && record.properties.sessionID.length > 0
+    ? record.properties.sessionID
+    : ""
+  const metadata = record.properties?.metadata
+  if (!sessionID || !metadata || typeof metadata !== "object" || Array.isArray(metadata)) return null
+  return {
+    id: typeof record.id === "string" && record.id.length > 0
+      ? record.id
+      : `openchamber-metadata-${sessionID}-${Date.now()}`,
+    type: "openchamber:session-metadata",
+    properties: {
+      sessionID,
+      metadata: metadata as Record<string, unknown>,
+    },
+  } as Event
+}
+
+/**
  * Ingress normalization: openchamber synthetic status, then pure OpenCode
  * envelope normalizer (legacy properties / current data / durable sync filter /
  * versioned type strip), producing the legacy Event shape for reducers.
@@ -243,6 +275,21 @@ const normalizeIngressEvent = (payload: unknown): IngressResult => {
       normalized: {
         id: typeof openChamber.id === "string" ? openChamber.id : undefined,
         type: "session.status",
+        properties: props,
+      },
+    }
+  }
+
+  // openchamber:session-metadata → Host store full-replace of session.metadata
+  const openChamberMetadata = normalizeOpenChamberSessionMetadata(payload as Event)
+  if (openChamberMetadata) {
+    const props = openChamberMetadata.properties as Record<string, unknown>
+    return {
+      status: "event",
+      event: openChamberMetadata,
+      normalized: {
+        id: typeof openChamberMetadata.id === "string" ? openChamberMetadata.id : undefined,
+        type: "openchamber:session-metadata",
         properties: props,
       },
     }

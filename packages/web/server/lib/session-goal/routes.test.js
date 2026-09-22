@@ -46,24 +46,23 @@ const createResponse = () => {
 };
 
 describe('session-goal routes capability gating', () => {
-  const register = () => {
+  const register = (deps) => {
     const { app, getRoute } = createRouteRegistry();
-    registerSessionGoalRoutes(app);
+    registerSessionGoalRoutes(app, deps);
     return getRoute;
   };
 
-  it('exposes capability as unsupported with fixed reason', async () => {
+  it('exposes capability as supported', async () => {
     const getRoute = register();
     const response = createResponse();
     await getRoute('GET', '/api/goals/capability')({}, response);
     expect(response.statusCode).toBe(200);
     expect(response.body).toEqual({
-      supported: false,
-      reason: 'v2_goal_state_unavailable',
+      supported: true,
     });
   });
 
-  it('refuses manual goal create before any side effect', async () => {
+  it('returns 503 on create when persist is not injected (no side effects)', async () => {
     writeObjective.mockClear();
     const getRoute = register();
     const response = createResponse();
@@ -72,25 +71,23 @@ describe('session-goal routes capability gating', () => {
       body: { objective: 'ship it' },
     }, response);
 
-    expect(response.statusCode).toBe(501);
-    expect(response.body.reason).toBe('v2_goal_state_unavailable');
+    expect(response.statusCode).toBe(503);
     expect(response.body.operation).toBe('create');
     expect(writeObjective).not.toHaveBeenCalled();
   });
 
-  it('refuses manual goal resume', async () => {
+  it('returns 503 on resume when persist is not injected', async () => {
     const getRoute = register();
     const response = createResponse();
     await getRoute('POST', '/api/goals/:sessionId/resume')({
       params: { sessionId: 'ses_1' },
     }, response);
 
-    expect(response.statusCode).toBe(501);
+    expect(response.statusCode).toBe(503);
     expect(response.body.operation).toBe('resume');
-    expect(response.body.capability.supported).toBe(false);
   });
 
-  it('refuses objective write (create side-effect) while unsupported', async () => {
+  it('writes objective when capability is supported', async () => {
     writeObjective.mockClear();
     const getRoute = register();
     const response = createResponse();
@@ -99,8 +96,95 @@ describe('session-goal routes capability gating', () => {
       body: { content: 'objective text' },
     }, response);
 
-    expect(response.statusCode).toBe(501);
-    expect(writeObjective).not.toHaveBeenCalled();
+    expect(response.statusCode).toBe(200);
+    expect(response.body).toEqual({ ok: true });
+    expect(writeObjective).toHaveBeenCalledWith('ses_1', 'objective text');
+  });
+
+  it('creates an active goal via persist when injected', async () => {
+    writeObjective.mockClear();
+    const persistSessionGoal = vi.fn(async (_id, _dir, goal) => ({
+      openchamber: { goal },
+    }));
+    const onGoalPersisted = vi.fn();
+    const getRoute = register({ persistSessionGoal, onGoalPersisted });
+    const response = createResponse();
+    await getRoute('POST', '/api/goals/:sessionId')({
+      params: { sessionId: 'ses_1' },
+      body: { objective: 'ship it', directory: '/repo', tokenBudget: 5000 },
+    }, response);
+
+    expect(response.statusCode).toBe(200);
+    expect(response.body.ok).toBe(true);
+    expect(response.body.goal).toMatchObject({
+      status: 'active',
+      objectiveFile: true,
+      objective: '',
+      tokenBudget: 5000,
+      tokensUsed: 0,
+      turnsUsed: 0,
+      blockedStreak: 0,
+    });
+    expect(writeObjective).toHaveBeenCalledWith('ses_1', 'ship it');
+    expect(persistSessionGoal).toHaveBeenCalledTimes(1);
+    expect(persistSessionGoal.mock.calls[0][0]).toBe('ses_1');
+    expect(persistSessionGoal.mock.calls[0][1]).toBe('/repo');
+    expect(onGoalPersisted).toHaveBeenCalledWith(expect.objectContaining({
+      sessionID: 'ses_1',
+      directory: '/repo',
+    }));
+  });
+
+  it('resumes an existing goal to active with statusReason resumed', async () => {
+    const existing = {
+      id: 'goal-1',
+      status: 'paused',
+      objective: 'keep going',
+      objectiveFile: false,
+      tokenBudget: null,
+      tokensUsed: 10,
+      turnsUsed: 1,
+      blockedStreak: 0,
+      note: '',
+      statusReason: '',
+      lastAccountedMessageID: 'msg_1',
+      createdAt: 1,
+      updatedAt: 2,
+    };
+    const readSessionMetadata = vi.fn(async () => ({
+      openchamber: { goal: existing },
+    }));
+    const persistSessionGoal = vi.fn(async (_id, _dir, goal) => ({
+      openchamber: { goal },
+    }));
+    const getRoute = register({ persistSessionGoal, readSessionMetadata });
+    const response = createResponse();
+    await getRoute('POST', '/api/goals/:sessionId/resume')({
+      params: { sessionId: 'ses_1' },
+      body: { directory: '/repo' },
+    }, response);
+
+    expect(response.statusCode).toBe(200);
+    expect(response.body.goal).toMatchObject({
+      id: 'goal-1',
+      status: 'active',
+      statusReason: 'resumed',
+      objective: 'keep going',
+    });
+    expect(persistSessionGoal).toHaveBeenCalledTimes(1);
+  });
+
+  it('returns 404 on resume when no goal exists', async () => {
+    const readSessionMetadata = vi.fn(async () => ({}));
+    const persistSessionGoal = vi.fn();
+    const getRoute = register({ persistSessionGoal, readSessionMetadata });
+    const response = createResponse();
+    await getRoute('POST', '/api/goals/:sessionId/resume')({
+      params: { sessionId: 'ses_1' },
+    }, response);
+
+    expect(response.statusCode).toBe(404);
+    expect(persistSessionGoal).not.toHaveBeenCalled();
   });
 
   it('still allows objective read and delete for leftover files', async () => {

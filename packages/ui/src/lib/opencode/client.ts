@@ -790,10 +790,52 @@ class OpencodeService {
     patch: { title?: string; metadata?: Record<string, unknown>; time?: { archived?: number | null } },
     directory?: string | null,
   ): Promise<Session> {
-    void directory;
-    if (patch.metadata !== undefined || patch.time?.archived !== undefined) {
+    // OpenCode 2.x has no archive stamp write; keep refusing until Host archive
+    // store is wired on this branch.
+    if (patch.time?.archived !== undefined) {
       throw v2CapabilityUnavailable('session.update.metadata|archive');
     }
+
+    // Metadata-only: Host-owned store (OpenCode accepts metadata only at create).
+    // Title-only still uses session.update so ordinary renames keep working even
+    // before the metadata routes are registered on the server.
+    if (patch.metadata !== undefined && patch.title === undefined) {
+      const requestDirectory = this.normalizeCandidatePath(directory) ?? this.currentDirectory;
+      const body: Record<string, unknown> = { patch: patch.metadata };
+      if (requestDirectory) body.directory = requestDirectory;
+      const response = await runtimeFetch(
+        `${this.baseUrl}/openchamber/sessions/${encodeURIComponent(id)}/metadata`,
+        {
+          method: 'PUT',
+          headers: {
+            Accept: 'application/json',
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(body),
+        },
+      );
+      if (!response.ok) {
+        const error = new Error(`session.metadata update failed (${response.status})`) as Error & { status?: number };
+        error.status = response.status;
+        throw error;
+      }
+      const payload: unknown = await response.json().catch(() => null);
+      const returnedMetadata = payload !== null
+        && typeof payload === 'object'
+        && !Array.isArray(payload)
+        && 'metadata' in payload
+        && (payload as { metadata?: unknown }).metadata !== null
+        && typeof (payload as { metadata?: unknown }).metadata === 'object'
+        && !Array.isArray((payload as { metadata: unknown }).metadata)
+        ? (payload as { metadata: Record<string, unknown> }).metadata
+        : null;
+      const session = await this.getSession(id, directory);
+      if (returnedMetadata) {
+        return { ...session, metadata: returnedMetadata as Session['metadata'] };
+      }
+      return session;
+    }
+
     if (patch.title === undefined) {
       throw v2CapabilityUnavailable('session.update');
     }

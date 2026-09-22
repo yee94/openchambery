@@ -293,6 +293,22 @@ export function applyDirectoryEvent(
       return true
     }
 
+    // Host session-metadata store: replace metadata on an already-known session.
+    // Do not create rows or clear the list when the session is absent.
+    case "openchamber:session-metadata": {
+      const props = event.properties as { sessionID?: string; metadata?: Session["metadata"] }
+      const sessionID = typeof props.sessionID === "string" ? props.sessionID : ""
+      if (!sessionID || props.metadata === undefined) return false
+      const sessions = draft.session
+      const result = Binary.search(sessions, sessionID, (s) => s.id)
+      if (!result.found) return false
+      sessions[result.index] = {
+        ...sessions[result.index],
+        metadata: props.metadata,
+      }
+      return true
+    }
+
     case "session.deleted": {
       const info = (event.properties as { info: Session }).info
       const sessions = draft.session

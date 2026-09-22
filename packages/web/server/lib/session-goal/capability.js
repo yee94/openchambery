@@ -1,14 +1,13 @@
 /**
  * Session-goal Host capability for the current OpenCode surface.
  *
- * v2 SessionInfo has no metadata.openchamber.goal channel. Full Host goal-state
- * migration is out of scope for this cut: advertise unsupported explicitly so
- * scheduled/manual goal create·resume·edit paths refuse instead of writing
- * objective hints and recording a false first-turn success.
+ * Goal records live in the OpenChamber session-metadata store
+ * (`packages/web/server/lib/session-metadata/`), not OpenCode SessionInfo.
+ * When the store + scheduled-task / route persist seams are wired, advertise
+ * supported so create·resume·edit paths write trackable goal state.
  *
- * When Host goal state becomes available, flip `supported` here (single source)
- * so routes, scheduled-tasks, and a later UI lane stay aligned without bridge
- * bloat.
+ * `SESSION_GOAL_UNSUPPORTED_REASON` remains for structured refusals if a
+ * future surface must advertise unsupported again.
  */
 
 export const SESSION_GOAL_UNSUPPORTED_REASON = 'v2_goal_state_unavailable';
@@ -19,8 +18,7 @@ export const SESSION_GOAL_UNSUPPORTED_REASON = 'v2_goal_state_unavailable';
  */
 export function getSessionGoalCapability() {
   return {
-    supported: false,
-    reason: SESSION_GOAL_UNSUPPORTED_REASON,
+    supported: true,
   };
 }
 

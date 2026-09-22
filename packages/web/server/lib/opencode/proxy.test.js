@@ -313,3 +313,110 @@ describe('registerOpenCodeProxy reasoning projection routes', () => {
     expect(res.body[0].parts[0].text).toBe('keep-me');
   });
 });
+
+describe('registerOpenCodeProxy session metadata overlay', () => {
+  const mountProxyWithMetadata = (getStoredSessionMetadata) => {
+    const app = express();
+    registerOpenCodeProxy(app, {
+      fs: { promises: { realpath: async (v) => v } },
+      os: {},
+      path: {},
+      OPEN_CODE_READY_GRACE_MS: 1000,
+      LONG_REQUEST_TIMEOUT_MS: 60_000,
+      SSE_UPSTREAM_CONNECT_TIMEOUT_MS: 5_000,
+      SSE_UPSTREAM_STALL_TIMEOUT_MS: 5_000,
+      getRuntime: readyRuntime,
+      getOpenCodeAuthHeaders: () => ({}),
+      buildOpenCodeUrl: (path) => `http://127.0.0.1:4096${path}`,
+      ensureOpenCodeApiPrefix: () => {},
+      getStoredSessionMetadata,
+    });
+    return app;
+  };
+
+  it('merges Host store metadata onto session list and detail (store keys win)', async () => {
+    globalThis.fetch = vi.fn(async (url) => {
+      const path = String(url).split('?')[0];
+      if (path.endsWith('/api/session') || path.endsWith('/session')) {
+        return {
+          ok: true,
+          status: 200,
+          headers: new Headers({ 'content-type': 'application/json' }),
+          text: async () => JSON.stringify([
+            {
+              id: 'ses_1',
+              title: 'Alpha',
+              metadata: { fromOpenCode: true, shared: 'theirs' },
+            },
+            { id: 'ses_2', title: 'Beta' },
+          ]),
+        };
+      }
+      if (path.includes('/session/ses_1')) {
+        return {
+          ok: true,
+          status: 200,
+          headers: new Headers({ 'content-type': 'application/json' }),
+          text: async () => JSON.stringify({
+            id: 'ses_1',
+            title: 'Alpha',
+            metadata: { fromOpenCode: true, shared: 'theirs' },
+          }),
+        };
+      }
+      return {
+        ok: false,
+        status: 404,
+        headers: new Headers({ 'content-type': 'application/json' }),
+        text: async () => JSON.stringify({ error: 'not found' }),
+      };
+    });
+
+    const app = mountProxyWithMetadata(async () => ({
+      ses_1: { openchamber: { goal: { status: 'active' } }, shared: 'ours' },
+    }));
+
+    const list = await request(app).get('/api/session');
+    expect(list.status).toBe(200);
+    expect(list.body[0]).toMatchObject({
+      id: 'ses_1',
+      metadata: {
+        fromOpenCode: true,
+        shared: 'ours',
+        openchamber: { goal: { status: 'active' } },
+      },
+    });
+    expect(list.body[1].metadata).toBeUndefined();
+
+    const detail = await request(app).get('/api/session/ses_1');
+    expect(detail.status).toBe(200);
+    expect(detail.body).toMatchObject({
+      id: 'ses_1',
+      metadata: {
+        fromOpenCode: true,
+        shared: 'ours',
+        openchamber: { goal: { status: 'active' } },
+      },
+    });
+  });
+
+  it('leaves upstream records untouched when the store throws', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    globalThis.fetch = vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      headers: new Headers({ 'content-type': 'application/json' }),
+      text: async () => JSON.stringify([
+        { id: 'ses_1', title: 'Alpha', metadata: { fromOpenCode: true } },
+      ]),
+    }));
+
+    const app = mountProxyWithMetadata(async () => {
+      throw new Error('store down');
+    });
+
+    const list = await request(app).get('/api/session');
+    expect(list.status).toBe(200);
+    expect(list.body[0]).toEqual({ id: 'ses_1', title: 'Alpha', metadata: { fromOpenCode: true } });
+  });
+});

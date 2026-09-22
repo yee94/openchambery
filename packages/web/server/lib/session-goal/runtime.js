@@ -319,10 +319,22 @@ export const createSessionGoalRuntime = ({
    * timers for the session tree (root + descendants).
    */
   onGoalPaused,
+  /**
+   * OpenChamber session-metadata store seams. When both are functions, goal
+   * state is read/written only through the Host store (OpenCode 2.x has no
+   * session-metadata PATCH). When either is missing, keep the legacy OpenCode
+   * PATCH path so existing tests and unwired servers still work.
+   */
+  persistSessionGoal = null,
+  readSessionMetadata = null,
 }) => {
   const timers = new Map();
   const inflight = new Set();
   let stopped = false;
+
+  const isMetadataStoreWired = () => (
+    typeof persistSessionGoal === 'function' && typeof readSessionMetadata === 'function'
+  );
 
   const clearTimer = (sessionId) => {
     const existing = timers.get(sessionId);
@@ -383,7 +395,28 @@ export const createSessionGoalRuntime = ({
   // metadata writes (assist payloads, dismissals, UI goal edits) survive.
   // Returns the written goal, or null when the stored goal no longer matches
   // the expected id (user replaced/cleared it while we worked).
+  /**
+   * When the Host metadata store is wired, the goal lives there — OpenCode 2.x
+   * accepts session metadata only at create time. Re-read before every write so
+   * a concurrent edit (the user pausing from the UI) is not overwritten.
+   */
+  const readGoal = async (sessionId, directory) => {
+    if (isMetadataStoreWired()) {
+      return parseGoalMetadata({ metadata: await readSessionMetadata(sessionId) });
+    }
+    const session = await openCodeFetch(`/session/${encodeURIComponent(sessionId)}`, { directory });
+    return parseGoalMetadata(session);
+  };
+
   const writeGoal = async (sessionId, directory, expectedGoalId, mutate) => {
+    if (isMetadataStoreWired()) {
+      const currentGoal = await readGoal(sessionId, directory);
+      if (!currentGoal || currentGoal.id !== expectedGoalId) return null;
+      const nextGoal = { ...currentGoal, ...mutate(currentGoal), updatedAt: Date.now() };
+      await persistSessionGoal(sessionId, directory, nextGoal);
+      return nextGoal;
+    }
+
     const session = await openCodeFetch(`/session/${encodeURIComponent(sessionId)}`, { directory });
     const currentGoal = parseGoalMetadata(session);
     if (!currentGoal || currentGoal.id !== expectedGoalId) return null;
@@ -537,7 +570,9 @@ export const createSessionGoalRuntime = ({
     // Sub-agent/task sessions never carry user goals — skip them.
     if (typeof session.parentID === 'string' && session.parentID) return;
 
-    const goal = parseGoalMetadata(session);
+    const goal = isMetadataStoreWired()
+      ? await readGoal(sessionId, directory)
+      : parseGoalMetadata(session);
     if (!goal || goal.status !== 'active') return;
 
     // File-backed objectives: the metadata carries only a flag; the objective
@@ -835,7 +870,9 @@ export const createSessionGoalRuntime = ({
   // auto-delegate timers are cancelled (abort path used to no-op on non-active).
   const pauseAfterAbort = async (sessionId, directory) => {
     const owner = await resolveGoalOwner(sessionId, directory);
-    const goal = parseGoalMetadata(owner.session);
+    const goal = isMetadataStoreWired()
+      ? await readGoal(owner.sessionId, owner.directory)
+      : parseGoalMetadata(owner.session);
     if (!goal) return;
     if (goal.status === 'paused') {
       if (!isQuestionDrivenPause(goal)) {
@@ -857,9 +894,14 @@ export const createSessionGoalRuntime = ({
   // from a child/sub-agent (any depth) pauses the root owner session's goal.
   const pauseForQuestion = async (sessionId, directory) => {
     const owner = await resolveGoalOwner(sessionId, directory);
-    if (!owner.session) return;
+    // When the Host store is wired, goal state does not live on the OpenCode
+    // record — owner.session may be null only if the session itself is missing.
+    if (!isMetadataStoreWired() && !owner.session) return;
+    if (isMetadataStoreWired() && !owner.sessionId) return;
     clearTimer(owner.sessionId);
-    const goal = parseGoalMetadata(owner.session);
+    const goal = isMetadataStoreWired()
+      ? await readGoal(owner.sessionId, owner.directory)
+      : parseGoalMetadata(owner.session);
     if (!goal || goal.status !== 'active') return;
     await writeGoal(owner.sessionId, owner.directory, goal.id, () => ({
       status: 'paused',

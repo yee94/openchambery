@@ -378,6 +378,8 @@ const extractGoalFromSession = (session) => {
  * Single-shot session outcome for post-run continuation (no polling).
  * Goal-enabled + supported: terminal complete → success; blocked/budgetLimited
  * → error; otherwise not-yet-success. Goal unsupported: never invent success.
+ * Prefer Host `readSessionMetadata` over OpenCode `session.get` (direct clients
+ * do not see the Host store). Store read failure is never empty-goal success.
  * Non-goal: session.active failure stays unknown; latest-side assistant tail
  * must be a real terminal (finish tool-calls / incomplete / model-switch ≠
  * success). History rows are never rewritten here.
@@ -388,14 +390,43 @@ const snapshotSessionOutcome = async ({
   projectPath,
   goalEnabled,
   signal,
+  readSessionMetadata = null,
 }) => {
   const requestOptions = signal ? { signal } : undefined;
 
   if (goalEnabled) {
     if (!isSessionGoalSupported()) {
-      // v2 has no Host goal state — do not promote assistant-tail idle to success.
+      // Host goal state unavailable — do not promote assistant-tail idle to success.
       return { outcome: 'busy' };
     }
+
+    const classifyGoal = (goal) => {
+      if (goal && GOAL_TERMINAL_STATUSES.has(goal.status)) {
+        if (goal.status === 'complete') {
+          return { outcome: 'success' };
+        }
+        return {
+          outcome: 'error',
+          error: goal.note || `goal ${goal.status}`,
+        };
+      }
+      return null;
+    };
+
+    // Prefer Host store: OpenCode session.get cannot see openchamber.goal.
+    if (typeof readSessionMetadata === 'function') {
+      try {
+        const metadata = await readSessionMetadata(sessionID);
+        const classified = classifyGoal(extractGoalFromSession({ metadata }));
+        if (classified) return classified;
+      } catch (error) {
+        if (signal?.aborted) throw error;
+        // Store read failure must not masquerade as empty goal / success.
+        return { outcome: 'busy' };
+      }
+      return { outcome: 'busy' };
+    }
+
     if (typeof client?.session?.get === 'function') {
       try {
         const sessionResult = await client.session.get({
@@ -403,16 +434,10 @@ const snapshotSessionOutcome = async ({
           directory: projectPath,
         }, requestOptions);
         if (!sessionResult?.error) {
-          const goal = extractGoalFromSession(sessionResult?.data ?? sessionResult);
-          if (goal && GOAL_TERMINAL_STATUSES.has(goal.status)) {
-            if (goal.status === 'complete') {
-              return { outcome: 'success' };
-            }
-            return {
-              outcome: 'error',
-              error: goal.note || `goal ${goal.status}`,
-            };
-          }
+          const classified = classifyGoal(
+            extractGoalFromSession(sessionResult?.data ?? sessionResult),
+          );
+          if (classified) return classified;
         }
       } catch (error) {
         if (signal?.aborted) throw error;
@@ -491,6 +516,17 @@ export const createScheduledTasksRuntime = (deps) => {
     maxGlobalConcurrency = DEFAULT_GLOBAL_CONCURRENCY,
     maxProjectConcurrency = DEFAULT_PROJECT_CONCURRENCY,
     maxRunDurationMs = DEFAULT_MAX_RUN_MS,
+    /** Host store write: (sessionId, directory, goal) => Promise */
+    persistSessionGoal = null,
+    /** Host store read: (sessionId) => Promise<metadata|null> */
+    readSessionMetadata = null,
+    /**
+     * After a scheduled goal is first persisted, arm the session-goal loop.
+     * (session-goal runtime's own progress writes only broadcast — do not
+     * feed those back here.)
+     * @type {null | ((event: { sessionID: string, directory: string, metadata: object }) => void)}
+     */
+    onGoalPersisted = null,
   } = deps;
 
   let started = false;
@@ -784,10 +820,9 @@ export const createScheduledTasksRuntime = (deps) => {
     return `${promptText}\n${buildGoalIntroText(task.execution.goalTokenBudget)}`;
   };
 
-  // Scheduled goal runs: write the file-backed objective before the prompt
-  // goes out. v2 SessionInfo has no metadata, so we do not PATCH goal onto
-  // the session; ownership lives in run-history, and the session-goal loop
-  // will not attach until it also reads OpenChamber storage.
+  // Scheduled goal runs: write the file-backed objective, then persist a
+  // trackable goal record into the Host session-metadata store (same seam as
+  // manual UI goals). OpenCode SessionInfo has no openchamber.goal channel.
   const createTaskGoal = async ({
     sessionID,
     projectPath,
@@ -795,12 +830,14 @@ export const createScheduledTasksRuntime = (deps) => {
     signal,
   }) => {
     signal?.throwIfAborted?.();
+    if (typeof persistSessionGoal !== 'function') {
+      throw new Error('session goal persist is not configured');
+    }
     // File-backed objective keyed by session id: the full expanded prompt
-    // lives under the OpenChamber data dir. If the file write fails, warn
-    // and continue — the working agent still receives the full prompt in chat.
-    // Oversized prompts are distilled into audit criteria by the small model
-    // (the working agent gets the full prompt in chat anyway); on distill
-    // failure a head+tail excerpt keeps intent and acceptance criteria.
+    // lives under the OpenChamber data dir. If the file write fails, fall
+    // back to an inline objective so parseGoalMetadata still accepts the
+    // record. Oversized prompts are distilled into audit criteria by the
+    // small model; on distill failure a head+tail excerpt keeps intent.
     let objectiveText = expandSnippets(task.execution.prompt, projectPath);
     if (objectiveText.length > 5000) {
       let distilled = null;
@@ -845,17 +882,66 @@ export const createScheduledTasksRuntime = (deps) => {
       }
     }
     signal?.throwIfAborted?.();
+    let objectiveFile = false;
     try {
       const { writeObjective } = await import('../session-goal/objectives.js');
       await writeObjective(sessionID, objectiveText);
+      objectiveFile = true;
       signal?.throwIfAborted?.();
     } catch (error) {
       if (signal?.aborted) {
         throw error;
       }
-      console.warn('[scheduled-tasks] goal objective file write failed, continuing without file-backed objective:', error?.message || error);
+      console.warn('[scheduled-tasks] goal objective file write failed, continuing with inline objective:', error?.message || error);
     }
     signal?.throwIfAborted?.();
+
+    const budgetRaw = task.execution?.goalTokenBudget;
+    const tokenBudget = Number.isFinite(budgetRaw) && budgetRaw > 0
+      ? Math.floor(budgetRaw)
+      : null;
+    const now = Date.now();
+    const goal = {
+      id: crypto.randomUUID(),
+      status: 'active',
+      // File-backed: flag only (text lives under goals/<sessionId>.md).
+      // Inline fallback: full objective text when the file write failed.
+      objective: objectiveFile ? '' : objectiveText,
+      objectiveFile,
+      tokenBudget,
+      tokensUsed: 0,
+      turnsUsed: 0,
+      blockedStreak: 0,
+      note: '',
+      statusReason: '',
+      lastAccountedMessageID: '',
+      createdAt: now,
+      updatedAt: now,
+    };
+
+    // Persist failure must throw — never prompt as if the goal was registered.
+    const persisted = await persistSessionGoal(sessionID, projectPath, goal);
+    signal?.throwIfAborted?.();
+
+    if (typeof onGoalPersisted === 'function') {
+      try {
+        // Prefer full metadata when the seam returns the store object; otherwise
+        // synthesize the openchamber.goal shape the session-goal loop expects.
+        const metadata = persisted
+          && typeof persisted === 'object'
+          && !Array.isArray(persisted)
+          && persisted.openchamber
+          ? persisted
+          : { openchamber: { goal } };
+        onGoalPersisted({
+          sessionID,
+          directory: projectPath,
+          metadata,
+        });
+      } catch (error) {
+        console.warn('[scheduled-tasks] onGoalPersisted failed:', error?.message || error);
+      }
+    }
   };
 
   const runSessionPrompt = async ({ client, sessionID, projectPath, task, signal }) => {
@@ -1008,12 +1094,16 @@ export const createScheduledTasksRuntime = (deps) => {
     signal?.throwIfAborted?.();
 
     // Goal-enabled tasks: refuse before session create / objective write /
-    // prompt when Host goal state is unavailable. Config + run-history stay;
-    // only this run is recorded as error (no false first-turn success).
+    // prompt when Host goal state is unavailable OR persist is not wired.
+    // Config + run-history stay; only this run is recorded as error (no
+    // false first-turn success / no create·distill·prompt side effects).
     if (task.execution?.goalEnabled) {
       const capability = getSessionGoalCapability();
       if (!capability.supported) {
         throw new Error(sessionGoalUnavailableMessage(capability));
+      }
+      if (typeof persistSessionGoal !== 'function') {
+        throw new Error('session goal persist is not configured');
       }
     }
 
@@ -1642,6 +1732,7 @@ export const createScheduledTasksRuntime = (deps) => {
       sessionID,
       projectPath,
       goalEnabled: Boolean(task.execution?.goalEnabled),
+      readSessionMetadata,
     });
     if (snapshot.outcome !== 'success') {
       return;

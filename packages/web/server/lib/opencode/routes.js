@@ -23,6 +23,7 @@ export const registerOpenCodeRoutes = (app, dependencies) => {
     buildOpenCodeUrl,
     getOpenCodeAuthHeaders,
     onSettingsPersisted,
+    getIsExternalOpenCode = () => false,
   } = dependencies;
 
   let authLibrary = null;
@@ -184,6 +185,13 @@ export const registerOpenCodeRoutes = (app, dependencies) => {
 
   app.post('/api/opencode/upgrade', async (req, res) => {
     try {
+      if (getIsExternalOpenCode()) {
+        return res.status(409).json({
+          success: false,
+          error: 'This is your own OpenCode serve. OpenChamber will not upgrade or restart it.',
+        });
+      }
+
       if (await isBundledOpenCodeBinaryActive()) {
         return res.status(409).json({
           success: false,

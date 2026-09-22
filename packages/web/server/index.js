@@ -69,6 +69,7 @@ import { createMessageQueueRuntime } from './lib/message-queue/runtime.js';
 import { resolveMessageQueueDbPath } from './lib/message-queue/resolve-db-path.js';
 import { createOpenChamberEventBroadcaster } from './lib/opencode/feature-routes-runtime.js';
 import { createSessionGoalRuntime } from './lib/session-goal/runtime.js';
+import { createSessionMetadataStore } from './lib/session-metadata/session-metadata-store.js';
 import { createScheduledTasksRuntime } from './lib/scheduled-tasks/runtime.js';
 import { createScheduledTaskRunHistoryStore } from './lib/scheduled-tasks/run-history-store.js';
 import { createServerStartupRuntime } from './lib/opencode/server-startup-runtime.js';
@@ -715,6 +716,8 @@ let questionAutoDelegateRuntime = null;
 /** Filled inside main() once the SQLite session index is constructed. */
 let sessionIndexServiceRef = null;
 
+const sessionMetadataStore = createSessionMetadataStore({ dataDir: OPENCHAMBER_DATA_DIR });
+
 const sessionGoalRuntime = createSessionGoalRuntime({
   buildOpenCodeUrl,
   getOpenCodeAuthHeaders,
@@ -728,6 +731,23 @@ const sessionGoalRuntime = createSessionGoalRuntime({
   onGoalPaused: (sessionId, directory) => (
     questionAutoDelegateRuntime?.pauseForSessionTree?.(sessionId, directory)
   ),
+  readSessionMetadata: (sessionId) => sessionMetadataStore.get(sessionId),
+  persistSessionGoal: async (sessionId, _directory, goal) => {
+    const metadata = await sessionMetadataStore.setSessionMetadata(sessionId, {
+      openchamber: { goal },
+    });
+    // Broadcast only. Feeding this write back into processPayload would re-arm
+    // the loop the runtime is already inside.
+    try {
+      broadcastGlobalUiEvent({
+        type: 'openchamber:session-metadata',
+        properties: { sessionID: sessionId, metadata },
+      });
+    } catch (error) {
+      console.warn('[session-metadata] broadcast failed:', error?.message ?? error);
+    }
+    return goal;
+  },
   emitGoalNotification: async ({ sessionId, directory, status, goal }) => {
     // The goal settle notification replaces the per-turn ready notifications
     // (suppressed while the goal is active) — so it obeys the same toggle.
@@ -936,6 +956,7 @@ const serverUtilsRuntime = createServerUtilsRuntime({
     }
     return snapshot.PATH;
   },
+  getStoredSessionMetadata: () => sessionMetadataStore.getAll(),
 });
 
 const setOpenCodePort = (...args) => serverUtilsRuntime.setOpenCodePort(...args);
@@ -1063,6 +1084,26 @@ const openCodeLifecycleRuntime = createOpenCodeLifecycleRuntime({
   getManagedOpenCodeShellEnvSnapshot: getLoginShellEnvSnapshot,
   managedCapabilitiesRuntime,
   getActiveSessionCount,
+  // Most-recently-used directories first: OpenCode initializes each directory
+  // lazily on first request (seconds on large session stores), so the
+  // lifecycle warms these right after readiness — before the UI's first
+  // interactive request would otherwise pay that cost.
+  getWarmupDirectories: async () => {
+    const settings = await readSettingsFromDiskMigrated().catch(() => null);
+    if (!settings) return [];
+    const directories = [];
+    if (typeof settings.lastDirectory === 'string' && settings.lastDirectory) {
+      directories.push(settings.lastDirectory);
+    }
+    const projects = Array.isArray(settings.projects) ? [...settings.projects] : [];
+    projects.sort((a, b) => (b?.lastOpenedAt ?? 0) - (a?.lastOpenedAt ?? 0));
+    for (const project of projects) {
+      if (typeof project?.path === 'string' && project.path) {
+        directories.push(project.path);
+      }
+    }
+    return [...new Set(directories)];
+  },
 });
 
 const restartOpenCode = (...args) => openCodeLifecycleRuntime.restartOpenCode(...args);
@@ -1085,6 +1126,36 @@ const scheduledTasksRuntime = createScheduledTasksRuntime({
   getSmallModelService,
   waitForOpenCodeReady,
   runHistoryStore: scheduledTaskRunHistoryStore,
+  // Same Host store seam as session-goal / manual UI metadata writes.
+  readSessionMetadata: (sessionId) => sessionMetadataStore.get(sessionId),
+  persistSessionGoal: async (sessionId, _directory, goal) => {
+    const metadata = await sessionMetadataStore.setSessionMetadata(sessionId, {
+      openchamber: { goal },
+    });
+    try {
+      broadcastGlobalUiEvent({
+        type: 'openchamber:session-metadata',
+        properties: { sessionID: sessionId, metadata },
+      });
+    } catch (error) {
+      console.warn('[session-metadata] broadcast failed:', error?.message ?? error);
+    }
+    return metadata;
+  },
+  // Arm the goal loop after first persist only — do not feed progress writes
+  // back through processPayload (session-goal runtime already broadcasts those).
+  onGoalPersisted: ({ sessionID, directory, metadata }) => {
+    sessionGoalRuntime.processPayload({
+      type: 'session.updated',
+      properties: {
+        info: {
+          id: sessionID,
+          directory: directory || '',
+          metadata,
+        },
+      },
+    }, directory || '');
+  },
   emitTaskRunEvent: (event) => {
     for (const client of uiOpenChamberEventClients) {
       try {
@@ -1659,6 +1730,36 @@ async function main(options = {}) {
     isUnsafeSkillRelativePath,
     buildOpenCodeUrl,
     getOpenCodeAuthHeaders,
+    getIsExternalOpenCode: () => isExternalOpenCode,
+    sessionMetadataStore,
+    // Same store seam as sessionGoalRuntime / scheduledTasksRuntime.
+    readSessionMetadata: (sessionId) => sessionMetadataStore.get(sessionId),
+    persistSessionGoal: async (sessionId, _directory, goal) => {
+      const metadata = await sessionMetadataStore.setSessionMetadata(sessionId, {
+        openchamber: { goal },
+      });
+      try {
+        broadcastGlobalUiEvent({
+          type: 'openchamber:session-metadata',
+          properties: { sessionID: sessionId, metadata },
+        });
+      } catch (error) {
+        console.warn('[session-metadata] broadcast failed:', error?.message ?? error);
+      }
+      return metadata;
+    },
+    onSessionMetadataWritten: ({ sessionID, directory, metadata }) => {
+      sessionGoalRuntime.processPayload({
+        type: 'session.updated',
+        properties: {
+          info: {
+            id: sessionID,
+            directory: directory || '',
+            metadata,
+          },
+        },
+      }, directory || '');
+    },
     getSmallModelService,
     getOpenCodePort: () => openCodePort,
     buildAugmentedPath,

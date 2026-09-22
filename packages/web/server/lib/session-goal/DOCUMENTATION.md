@@ -1,10 +1,34 @@
 # Session Goal
 
 Server-side control loop that keeps a session working toward a user-defined
-objective stored under `metadata.openchamber.goal`, with the small model as
-an independent progress auditor. Built on OpenChamber's backend-driven
-architecture: the loop lives in
-the web server and survives UI disconnects.
+objective. On OpenCode 2.x the goal record lives in the OpenChamber session
+metadata store (`packages/web/server/lib/session-metadata/`), folded back onto
+`session.metadata` by the proxy. Capability is **open** (`supported: true`):
+manual UI, goal routes, and scheduled-task goal create all write the same
+store. The small model is an independent progress auditor. Built on
+OpenChamber's backend-driven architecture: the loop lives in the web server
+and survives UI disconnects.
+
+## v2 storage (OpenChamber session metadata store)
+
+OpenCode 2.x accepts session `metadata` only at create time — there is no
+PATCH. Goal progress therefore belongs in the Host
+`packages/web/server/lib/session-metadata/` store (merge-patched under
+`openchamber.goal`), not an OpenCode `PATCH /session/:id`.
+
+`createSessionGoalRuntime` accepts optional seams `readSessionMetadata` and
+`persistSessionGoal`. When **both** are injected, `writeGoal` / goal reads use
+only the store and never PATCH OpenCode. When either is missing, the legacy
+OpenCode PATCH path remains (tests and unwired servers).
+
+Those seams, the proxy overlay, and `PUT /api/openchamber/sessions/:id/metadata`
+are wired in `server/index.js`. A UI metadata write notifies the runtime with
+a synthetic `session.updated` so create/resume can arm the loop.
+
+**Capability is open** (`supported === true`). Scheduled-task goal create and
+`POST /api/goals/:sessionId` persist an active goal into the same store as
+manual UI metadata writes; after first persist they notify the runtime with a
+synthetic `session.updated` so the loop can arm.
 
 ## Goal payload (`metadata.openchamber.goal`)
 
@@ -54,14 +78,14 @@ before touching the filesystem). Rationale: metadata rides every
 
 - `objectives.js` — write/read/delete, 5000-char clamp.
 - `capability.js` — `getSessionGoalCapability()` / `assertSessionGoalSupported()`
-  (single source; currently `{ supported: false, reason: 'v2_goal_state_unavailable' }`).
-- `routes.js` — `GET /api/goals/capability`, create/resume refuse endpoints,
+  (single source; currently `{ supported: true }`).
+- `routes.js` — `GET /api/goals/capability`, create/resume endpoints,
   `PUT/GET/DELETE /api/goals/objective/:sessionId` (OpenChamber-owned,
   registered before the generic proxy; JSON parsing via the `/api/goals`
-  family in core-routes). While capability is unsupported, create / resume /
-  objective-write refuse with HTTP 501; GET/DELETE objective remain for
-  leftover files. The UI writes the file BEFORE patching the goal metadata
-  and falls back to an inline objective when the write fails;
+  family in core-routes). Create / resume require an injected
+  `persistSessionGoal` (503 when missing); objective PUT writes the file when
+  supported. The UI writes the file BEFORE patching the goal metadata and
+  falls back to an inline objective when the write fails;
   `clearSessionGoal` deletes the file best-effort.
 - The tick resolves the effective objective fresh on every cycle (the file
   is live-editable mid-goal) and falls back to the inline `objective` when
@@ -193,39 +217,33 @@ sees only that final turn, so the report is its evidence.
 `capability.js` is the single source for whether Host goal state is available:
 
 ```
-getSessionGoalCapability() → { supported: false, reason: 'v2_goal_state_unavailable' }
+getSessionGoalCapability() → { supported: true }
 ```
 
-OpenCode v2 SessionInfo has no `metadata.openchamber.goal`. Full Host goal-state
-migration is out of scope for this cut — advertise the gap explicitly so callers
-do not treat objective-file hints or first-turn idle as a registered goal.
+Goal records live in the OpenChamber session-metadata store (not OpenCode
+SessionInfo). Routes, scheduled tasks, and the proxy overlay share that store.
 
-| Surface | While unsupported |
+| Surface | While supported |
 |---|---|
-| `GET /api/goals/capability` | Returns the capability object (UI lane later) |
-| `POST /api/goals/:sessionId` (create) | HTTP 501 |
-| `POST /api/goals/:sessionId/resume` | HTTP 501 |
-| `PUT /api/goals/objective/:sessionId` | HTTP 501 (create side-effect) |
-| `GET` / `DELETE` objective | Still allowed for leftover files |
-| Scheduled `goalEnabled` create/edit | HTTP 501 (scheduled-tasks routes + managed tool) |
-| Existing `goalEnabled` task run | Fail before session create; history error; config kept |
-
-Flip `supported` in `capability.js` when Host goal state lands; do not wire
-partial objective-only paths as recovery-complete. `runtime.js` / server
-`index.js` wiring of a restored loop is a parent-lane concern.
+| `GET /api/goals/capability` | `{ supported: true }` |
+| `POST /api/goals/:sessionId` (create) | Write objective + persist active goal (503 if persist missing) |
+| `POST /api/goals/:sessionId/resume` | Set status active / statusReason resumed (404 if no goal) |
+| `PUT /api/goals/objective/:sessionId` | Writes the objective file |
+| `GET` / `DELETE` objective | Allowed |
+| Scheduled `goalEnabled` create/edit | Allowed |
+| Existing `goalEnabled` task run | Persist goal after session create; fail before create if persist unwired |
 
 ## Scheduled goals
 
-When capability is supported, scheduled tasks with `execution.goalEnabled`
-(+ optional `execution.goalTokenBudget`) stamp Host goal state onto the fresh
-session (objective = the expanded task prompt) and attach the goal-mode intro
-part to the prompt. The loop here picks it up from session events like any
-other goal. While unsupported, those runs refuse before session create (see
-scheduled-tasks Goal safety gating).
+Scheduled tasks with `execution.goalEnabled` (+ optional
+`execution.goalTokenBudget`) write the objective file, persist an active goal
+into the Host store (same shape as manual create), notify the goal runtime to
+arm, and attach the goal-mode intro to the prompt. Without
+`persistSessionGoal` injected, runs fail **before** session create (no
+create/distill/prompt side effects).
 
 ## Limitations
 
-- Host goal state unavailable on OpenCode v2 (`v2_goal_state_unavailable`).
 - TODO(watch): Assistant contact assign skipped a watch tool this slice.
   Goal settle already notifies. Do not invent a second scheduler. A later
   thin contact tool can post a read-only session status card when

@@ -360,11 +360,14 @@ describe('scheduled task mutation routes', () => {
     expect(scheduledTasksRuntime.syncProject).toHaveBeenCalledTimes(4);
   });
 
-  it('rejects create/edit with goalEnabled when Host goal state is unavailable', async () => {
+  it('allows create/edit with goalEnabled when Host goal state is supported', async () => {
+    const savedTask = {
+      id: 'goal-task',
+      name: 'Goal task',
+      execution: { prompt: 'do the work', goalEnabled: true },
+    };
     const projectConfigRuntime = {
-      upsertScheduledTask: vi.fn(async () => {
-        throw new Error('upsert must not run for unsupported goal');
-      }),
+      upsertScheduledTask: vi.fn(async () => ({ task: savedTask, tasks: [savedTask], created: true })),
       deleteScheduledTask: vi.fn(),
       listScheduledTasks: vi.fn(),
     };
@@ -390,14 +393,18 @@ describe('scheduled task mutation routes', () => {
       },
     }, created);
 
-    expect(created.statusCode).toBe(501);
-    expect(created.body.error).toMatch(/v2_goal_state_unavailable/);
-    expect(created.body.capability).toEqual({
-      supported: false,
-      reason: 'v2_goal_state_unavailable',
+    expect(created.statusCode).toBe(200);
+    expect(projectConfigRuntime.upsertScheduledTask).toHaveBeenCalledTimes(1);
+    expect(projectConfigRuntime.upsertScheduledTask.mock.calls[0][1]).toMatchObject({
+      execution: expect.objectContaining({ goalEnabled: true }),
     });
-    expect(projectConfigRuntime.upsertScheduledTask).not.toHaveBeenCalled();
 
+    const updatedTask = { ...savedTask, id: 'existing', name: 'Existing' };
+    projectConfigRuntime.upsertScheduledTask.mockResolvedValueOnce({
+      task: updatedTask,
+      tasks: [updatedTask],
+      created: false,
+    });
     const updated = createResponse();
     await routes.put({
       params: { projectId: 'project-a' },
@@ -415,8 +422,8 @@ describe('scheduled task mutation routes', () => {
       },
     }, updated);
 
-    expect(updated.statusCode).toBe(501);
-    expect(projectConfigRuntime.upsertScheduledTask).not.toHaveBeenCalled();
+    expect(updated.statusCode).toBe(200);
+    expect(projectConfigRuntime.upsertScheduledTask).toHaveBeenCalledTimes(2);
   });
 
   it('allows ordinary non-goal task create when goal is unsupported', async () => {
