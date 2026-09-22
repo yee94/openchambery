@@ -114,4 +114,4 @@ Vitest project `@openchamber/lynx` (`src/**/*.test.ts`). Navigation harness: `sr
 | CI绿 | Package typecheck + Vitest. Track CI (Android debug APK + iOS sim) is a later slice. |
 | 真机过 | Not executed (Linux cloud VM; no Xcode / physical device). |
 
-Track tip (docs honesty, Next #158): base `work/lynx-native` @ `ceb8c30a9` (PR #199 / Next #157 MERGED). Published APK: `lynx-v2-debug-4d4ff10` (do not invent newer). Contact transcript 代码接上 only — product **NOT DONE** / 三关未齐 / not EXHAUSTED.
+Track tip (docs honesty, Next #159): `work/lynx-native` @ `841d2e71644a6513106f5b10091f280c065bac11` (PR #200 / Next #158 MERGED). Published APK: `lynx-v2-debug-841d2e7` (asset `openchamber-lynx-debug-841d2e7.apk`; was stale cite `lynx-v2-debug-4d4ff10` / prior tip `ceb8c30a9`; do not invent newer). Lynx Mobile CI SUCCESS (run 35718022126). Contact transcript 代码接上 only — product **NOT DONE** / 三关未齐 / not EXHAUSTED.
