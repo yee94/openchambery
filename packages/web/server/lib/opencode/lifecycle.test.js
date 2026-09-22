@@ -132,6 +132,9 @@ const stubOpenCodeFetch = (overrides = {}) => {
       return jsonResponse(migration ?? { status: 'completed' });
     }
     if (href.includes('/api/info') || href.includes('/global/health')) {
+      if (overrides.reuseDefaultServe !== true && href.includes(':4096/')) {
+        return new Response('not found', { status: 404 });
+      }
       const health = overrides.health;
       if (typeof health === 'function') {
         return health(url, init);
@@ -170,7 +173,7 @@ describe('OpenCode lifecycle', () => {
     const server = await runtime.startOpenCode();
     const [binary, args, options] = spawnMock.mock.calls[0];
 
-    expect(binary).toBe('opencode2');
+    expect(binary).toBe('opencode');
     expect(args).toEqual(['serve', '--hostname', '127.0.0.1', '--port', '45678']);
     expect(options.env.PATH).toBe('/home/user/.bun/bin:/usr/local/bin:/usr/bin');
     expect(options.env.SHELL_ONLY).toBe('yes');
@@ -331,7 +334,7 @@ describe('OpenCode lifecycle', () => {
 
     const runtime = createRuntime();
 
-    await expect(runtime.startOpenCode()).rejects.toThrow('OpenCode process exited before serving with signal SIGTERM. Binary used: opencode2. No stdout/stderr captured');
+    await expect(runtime.startOpenCode()).rejects.toThrow('OpenCode process exited before serving with signal SIGTERM. Binary used: opencode. No stdout/stderr captured');
     expect(spawnMock).toHaveBeenCalledTimes(2);
   });
 
@@ -483,6 +486,7 @@ describe('OpenCode lifecycle', () => {
       clearResolvedOpenCodeBinary,
     }, stateRef);
     const errorLog = vi.spyOn(console, 'error').mockImplementation(() => {});
+    stubOpenCodeFetch();
 
     await runtime.bootstrapOpenCodeAtStartup();
     expect(spawnMock).not.toHaveBeenCalled();

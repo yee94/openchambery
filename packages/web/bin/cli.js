@@ -21,8 +21,6 @@ import { readDesktopLocalPortFromSettings } from './lib/cli-paths.js';
 import { searchPathFor } from './lib/cli-executables.js';
 import {
   assertOpenCode2Binary,
-  createLegacyOpenCodeBinaryError,
-  isLegacyOpenCodeCliBasename,
   readConfiguredOpenCodeBinary,
 } from './lib/cli-startup.js';
 import { ensurePinnedOpenCode2Cli } from '../server/lib/opencode/ensure-cli.js';
@@ -86,15 +84,12 @@ function importFromFilePath(filePath) {
 // --json all run this same check before serve starts.
 async function checkOpenCodeCLI(onNotice, options = {}) {
   if (process.env.OPENCODE_BINARY) {
-    if (isLegacyOpenCodeCliBasename(process.env.OPENCODE_BINARY)) {
-      throw createLegacyOpenCodeBinaryError(process.env.OPENCODE_BINARY);
-    }
     const override = assertOpenCode2Binary(process.env.OPENCODE_BINARY);
     if (override) {
       process.env.OPENCODE_BINARY = override;
       return override;
     }
-    const message = `OPENCODE_BINARY="${process.env.OPENCODE_BINARY}" is not an executable file. Falling back to PATH lookup.`;
+    const message = `OPENCODE_BINARY="${process.env.OPENCODE_BINARY}" is not a usable OpenCode v2 CLI. Falling back to PATH lookup.`;
     if (typeof onNotice === 'function') {
       onNotice({ level: 'warning', code: 'OPENCODE_BINARY_INVALID', message });
     } else {
@@ -104,9 +99,6 @@ async function checkOpenCodeCLI(onNotice, options = {}) {
 
   const configured = readConfiguredOpenCodeBinary();
   if (configured) {
-    if (isLegacyOpenCodeCliBasename(configured)) {
-      throw createLegacyOpenCodeBinaryError(configured);
-    }
     const fromConfig = assertOpenCode2Binary(configured);
     if (fromConfig) {
       process.env.OPENCODE_BINARY = fromConfig;
@@ -114,10 +106,21 @@ async function checkOpenCodeCLI(onNotice, options = {}) {
     }
   }
 
-  const resolvedFromPath = searchPathFor('opencode2');
-  const discovered = resolvedFromPath
-    ? (assertOpenCode2Binary(resolvedFromPath) || resolvedFromPath)
-    : '';
+  let discovered = '';
+  for (const name of ['opencode', 'opencode2']) {
+    const resolvedFromPath = searchPathFor(name);
+    if (!resolvedFromPath) continue;
+    try {
+      const verified = assertOpenCode2Binary(resolvedFromPath);
+      if (verified) {
+        discovered = verified;
+        break;
+      }
+    } catch (error) {
+      if (error?.code === 'OPENCODE_BINARY_INVALID') continue;
+      throw error;
+    }
+  }
   const ensureCli = typeof options.ensurePinnedOpenCode2Cli === 'function'
     ? options.ensurePinnedOpenCode2Cli
     : ensurePinnedOpenCode2Cli;
@@ -129,7 +132,7 @@ async function checkOpenCodeCLI(onNotice, options = {}) {
         onNotice({
           level: 'info',
           code: 'OPENCODE_CLI_INSTALLED',
-          message: `Installed opencode2 ${ensured.version} to ${ensured.path}`,
+          message: `Installed opencode ${ensured.version} to ${ensured.path}`,
         });
       }
       process.env.OPENCODE_BINARY = ensured.path;
@@ -138,16 +141,16 @@ async function checkOpenCodeCLI(onNotice, options = {}) {
   } catch (error) {
     if (error?.code === 'OPENCODE_CLI_MISSING') {
       throw new Error(
-        `Unable to locate the opencode2 CLI on PATH (${process.env.PATH || '<empty>'}). ` +
-        'Ensure opencode2 is installed and reachable, or set OPENCODE_BINARY to its full path.'
+        `Unable to locate the opencode CLI on PATH (${process.env.PATH || '<empty>'}). ` +
+        'Ensure OpenCode v2 is installed and reachable, or set OPENCODE_BINARY to its full path.'
       );
     }
     throw error;
   }
 
   throw new Error(
-    `Unable to locate the opencode2 CLI on PATH (${process.env.PATH || '<empty>'}). ` +
-    'Ensure opencode2 is installed and reachable, or set OPENCODE_BINARY to its full path.'
+    `Unable to locate the opencode CLI on PATH (${process.env.PATH || '<empty>'}). ` +
+    'Ensure OpenCode v2 is installed and reachable, or set OPENCODE_BINARY to its full path.'
   );
 }
 

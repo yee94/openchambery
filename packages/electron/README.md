@@ -162,7 +162,7 @@ The package supports macOS, Windows, and Linux desktop features. Linux AppImage 
 
 ## OpenCode CLI (detect, then install)
 
-Managed Desktop / `openchamber serve` / HMR do **not** launch a packaged extraResource binary. Discovery order is settings/env → PATH / known install locations → a previously installed pin under `~/.config/openchamber/opencode-cli/<version>/`. If nothing usable is found, or PATH is older than the pin in `packages/web/server/lib/opencode/opencode2-pin.js`, startup downloads the official npm platform package (`@opencode/cli-<os>-<arch>@pin`) into that data dir. Explicit `OPENCODE_BINARY` / `settings.opencodeBinary` still win for an acceptable 2.x. VS Code keeps user-installed CLI discovery. Set `OPENCHAMBER_OPENCODE2_AUTO_INSTALL=0` to disable download.
+Managed Desktop / `openchamber serve` / HMR do **not** launch a packaged extraResource binary. Discovery order matches master: settings/env → PATH `opencode` (v2; `opencode2` is an alias) / known install locations → a previously installed pin under `~/.config/openchamber/opencode-cli/<version>/opencode`. If nothing usable is found, startup downloads `@opencode/cli-<os>-<arch>@pin` into that data dir. A healthy v2 `opencode serve` already listening on 4096 is reused; otherwise OpenChamber starts generic `serve` on 4096 when free. Explicit `OPENCODE_BINARY` / `settings.opencodeBinary` still win for an acceptable 2.x. Set `OPENCHAMBER_OPENCODE2_AUTO_INSTALL=0` to disable download.
 
 `prepare:opencode-cli` still stages `resources/opencode-cli` for packaging/CI, but runtime resolution never uses that copy as a fallback.
 

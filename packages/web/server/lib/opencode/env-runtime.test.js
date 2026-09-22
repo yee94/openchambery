@@ -24,6 +24,16 @@ const createTempDir = (prefix) => {
   return dir;
 };
 
+const writeVersionBinary = (filePath, version) => {
+  fs.mkdirSync(path.dirname(filePath), { recursive: true });
+  if (process.platform === 'win32') {
+    fs.writeFileSync(filePath, `@echo off\r\necho ${version}\r\n`);
+    return;
+  }
+  fs.writeFileSync(filePath, `#!${process.execPath}\nconsole.log(${JSON.stringify(version)});\n`);
+  fs.chmodSync(filePath, 0o755);
+};
+
 const setPlatform = (platform) => {
   Object.defineProperty(process, 'platform', {
     value: platform,
@@ -158,45 +168,37 @@ describe('OpenCode env runtime', () => {
     expect(state.resolvedOpencodeBinarySource).toBe('settings');
   });
 
-  it('rejects a configured 1.x opencode basename in strict mode', async () => {
+  it('rejects a configured 1.x opencode version in strict mode', async () => {
     const dir = createTempDir('openchamber-opencode-1x-');
     const binary = path.join(dir, 'opencode');
-    fs.writeFileSync(binary, '#!/bin/sh\nexit 0\n');
-    fs.chmodSync(binary, 0o755);
+    writeVersionBinary(binary, '1.18.4');
     const { runtime } = createRuntime({ opencodeBinary: binary });
 
     await expect(runtime.applyOpencodeBinaryFromSettings({ strict: true })).rejects.toMatchObject({
       code: 'OPENCODE_BINARY_INVALID',
-      message: expect.stringMatching(/reserved for 1\.x.*opencode2/s),
+      message: expect.stringMatching(/1\.x.*OpenCode v2/s),
     });
   });
 
-  it('rejects an explicit OPENCODE_BINARY whose basename is 1.x opencode', () => {
+  it('rejects an explicit OPENCODE_BINARY that reports a 1.x version', () => {
     const dir = createTempDir('openchamber-env-opencode-1x-');
     const binary = path.join(dir, process.platform === 'win32' ? 'opencode.exe' : 'opencode');
-    fs.writeFileSync(binary, '#!/bin/sh\nexit 0\n');
-    if (process.platform !== 'win32') {
-      fs.chmodSync(binary, 0o755);
-    }
+    writeVersionBinary(binary, '1.18.4');
     process.env.OPENCODE_BINARY = binary;
     const { runtime } = createRuntime({});
 
     expect(() => runtime.resolveOpencodeCliPath()).toThrow(
       expect.objectContaining({
         code: 'OPENCODE_BINARY_INVALID',
-        message: expect.stringMatching(/reserved for 1\.x.*opencode2/s),
+        message: expect.stringMatching(/1\.x.*OpenCode v2/s),
       })
     );
   });
 
-  it('discovers opencode2 from a home-directory install location', () => {
-    const home = createTempDir('openchamber-home-opencode2-');
-    const binary = path.join(home, '.bun', 'bin', 'opencode2');
-    fs.mkdirSync(path.dirname(binary), { recursive: true });
-    fs.writeFileSync(binary, '#!/bin/sh\nexit 0\n');
-    if (process.platform !== 'win32') {
-      fs.chmodSync(binary, 0o755);
-    }
+  it('discovers opencode from a home-directory install location', () => {
+    const home = createTempDir('openchamber-home-opencode-');
+    const binary = path.join(home, '.bun', 'bin', 'opencode');
+    writeVersionBinary(binary, '2.0.12');
     process.env.PATH = createTempDir('openchamber-empty-path-home-');
     delete process.env.OPENCODE_BINARY;
     delete process.env.OPENCHAMBER_BUNDLED_OPENCODE_CLI_DIR;
@@ -233,12 +235,11 @@ describe('OpenCode env runtime', () => {
     const bundledDir = createTempDir('openchamber-bundled-opencode-');
     const bundledBinary = path.join(bundledDir, process.platform === 'win32' ? 'opencode2.exe' : 'opencode2');
     const pathDir = createTempDir('openchamber-path-opencode-');
-    const pathBinary = path.join(pathDir, process.platform === 'win32' ? 'opencode2.exe' : 'opencode2');
+    const pathBinary = path.join(pathDir, process.platform === 'win32' ? 'opencode.exe' : 'opencode');
     fs.writeFileSync(bundledBinary, '#!/bin/sh\nexit 0\n');
-    fs.writeFileSync(pathBinary, '#!/bin/sh\nexit 0\n');
+    writeVersionBinary(pathBinary, '2.0.12');
     if (process.platform !== 'win32') {
       fs.chmodSync(bundledBinary, 0o755);
-      fs.chmodSync(pathBinary, 0o755);
     }
     process.env.OPENCHAMBER_BUNDLED_OPENCODE_CLI_DIR = bundledDir;
     process.env.PATH = pathDir;
@@ -255,10 +256,9 @@ describe('OpenCode env runtime', () => {
     const explicitDir = createTempDir('openchamber-explicit-opencode-');
     const explicitBinary = path.join(explicitDir, process.platform === 'win32' ? 'opencode2.exe' : 'opencode2');
     fs.writeFileSync(bundledBinary, '#!/bin/sh\nexit 0\n');
-    fs.writeFileSync(explicitBinary, '#!/bin/sh\nexit 0\n');
+    writeVersionBinary(explicitBinary, '2.0.12');
     if (process.platform !== 'win32') {
       fs.chmodSync(bundledBinary, 0o755);
-      fs.chmodSync(explicitBinary, 0o755);
     }
     process.env.OPENCHAMBER_BUNDLED_OPENCODE_CLI_DIR = bundledDir;
     process.env.OPENCODE_BINARY = explicitBinary;
@@ -297,7 +297,7 @@ describe('OpenCode env runtime', () => {
   it('discovers a previously installed pin from the OpenChamber data dir', () => {
     const dataDir = createTempDir('openchamber-installed-cli-');
     const installedDir = path.join(dataDir, 'opencode-cli', '2.0.12');
-    const installedBinary = path.join(installedDir, process.platform === 'win32' ? 'opencode2.exe' : 'opencode2');
+    const installedBinary = path.join(installedDir, process.platform === 'win32' ? 'opencode.exe' : 'opencode');
     fs.mkdirSync(installedDir, { recursive: true });
     fs.writeFileSync(installedBinary, '#!/bin/sh\nexit 0\n');
     if (process.platform !== 'win32') {
@@ -389,10 +389,11 @@ describe('OpenCode env runtime', () => {
     setPlatform('win32');
     const localAppData = createTempDir('openchamber-localappdata-');
     const desktopBinary = path.join(localAppData, 'Programs', 'OpenCode', 'OpenCode.exe');
-    const cliBinary = path.join(createTempDir('openchamber-cli-'), 'opencode2.exe');
+    const cliBinary = path.join(createTempDir('openchamber-cli-'), 'opencode.exe');
     fs.mkdirSync(path.dirname(desktopBinary), { recursive: true });
     fs.writeFileSync(desktopBinary, '');
-    fs.writeFileSync(cliBinary, '');
+    fs.writeFileSync(cliBinary, `#!${process.execPath}\nconsole.log('2.0.12');\n`);
+    fs.chmodSync(cliBinary, 0o755);
     process.env.LOCALAPPDATA = localAppData;
     process.env.PATH = createTempDir('openchamber-empty-path-');
     process.env.SystemRoot = createTempDir('openchamber-empty-systemroot-');

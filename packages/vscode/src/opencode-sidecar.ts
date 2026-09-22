@@ -94,23 +94,31 @@ function isKnownOpenCodeDesktopAppPath(candidate: string): boolean {
 
 // PATH still ships 1.x `opencode` beside `opencode2`. A basename without the
 // trailing 2 is never a valid managed CLI — fail closed instead of spawning it.
-export function isLegacyOpenCodeCliBasename(candidate: string): boolean {
-  if (typeof candidate !== 'string' || candidate.trim().length === 0) {
-    return false;
-  }
-  if (isKnownOpenCodeDesktopAppPath(candidate)) {
-    return false;
-  }
-  const name = path.basename(candidate.trim()).toLowerCase();
-  return name === 'opencode' || name === 'opencode.exe' || name === 'opencode.cmd';
+export function isLegacyOpenCodeCliBasename(_candidate: string): boolean {
+  return false;
 }
 
 export function createLegacyOpenCodeBinaryError(candidate: string): Error & { code: string } {
   const error = new Error(
-    `Basename opencode is reserved for 1.x (${candidate}); rename or symlink to opencode2.`
+    `OpenCode 1.x is not supported (${candidate}). Install OpenCode v2 (opencode).`
   ) as Error & { code: string };
   error.code = 'OPENCODE_BINARY_INVALID';
   return error;
+}
+
+function readOpenCodeCliVersion(binaryPath: string): string {
+  try {
+    const result = spawnSync(binaryPath, ['--version'], {
+      encoding: 'utf8',
+      timeout: 8000,
+      windowsHide: true,
+    });
+    const tokens = `${result.stdout || ''}\n${result.stderr || ''}`.trim().split(/\s+/);
+    const versionToken = tokens.find((token) => /^v?\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(token));
+    return versionToken ? versionToken.replace(/^v/, '') : '';
+  } catch {
+    return '';
+  }
 }
 
 export function normalizeConfiguredOpencodeBinary(raw: unknown): string | null {
@@ -124,7 +132,7 @@ export function normalizeConfiguredOpencodeBinary(raw: unknown): string | null {
   try {
     const stat = fs.statSync(trimmed);
     if (stat.isDirectory()) {
-      return path.join(trimmed, process.platform === 'win32' ? 'opencode2.exe' : 'opencode2');
+      return path.join(trimmed, process.platform === 'win32' ? 'opencode.exe' : 'opencode');
     }
   } catch {
     // Keep the explicit path so strict startup validation can report it.
@@ -155,10 +163,12 @@ export function resolveDetectedOpencodeCliPath(options: {
     .filter(Boolean);
 
   for (const candidate of explicit) {
-    if (isLegacyOpenCodeCliBasename(candidate)) {
-      throw createLegacyOpenCodeBinaryError(candidate);
+    if (!isExecutable(candidate) || isKnownOpenCodeDesktopAppPath(candidate)) continue;
+    const version = readOpenCodeCliVersion(candidate);
+    if (isOpenCode1xVersion(version)) {
+      throw createLegacyOpenCodeBinaryError(`${candidate} reports ${version}`);
     }
-    if (isExecutable(candidate) && !isKnownOpenCodeDesktopAppPath(candidate)) {
+    if (isAcceptableOpenCode2HealthVersion(version)) {
       return candidate;
     }
   }
@@ -171,17 +181,17 @@ export function resolveDetectedOpencodeCliPath(options: {
   }
 
   const home = resolveHomeDir();
-  const unixFallbacks = [
-    path.join(home, '.opencode', 'bin', 'opencode2'),
-    path.join(home, '.bun', 'bin', 'opencode2'),
-    path.join(home, '.local', 'bin', 'opencode2'),
-    path.join(home, 'bin', 'opencode2'),
-    '/opt/homebrew/bin/opencode2',
-    '/usr/local/bin/opencode2',
-    '/home/linuxbrew/.linuxbrew/bin/opencode2',
-    '/usr/bin/opencode2',
-    '/bin/opencode2',
-  ];
+    const unixFallbacks = ['opencode', 'opencode2'].flatMap((name) => [
+    path.join(home, '.opencode', 'bin', name),
+    path.join(home, '.bun', 'bin', name),
+    path.join(home, '.local', 'bin', name),
+    path.join(home, 'bin', name),
+    `/opt/homebrew/bin/${name}`,
+    `/usr/local/bin/${name}`,
+    `/home/linuxbrew/.linuxbrew/bin/${name}`,
+    `/usr/bin/${name}`,
+    `/bin/${name}`,
+  ]);
 
   const winFallbacks = (() => {
     const userProfile = process.env.USERPROFILE || home;
@@ -210,16 +220,18 @@ export function resolveDetectedOpencodeCliPath(options: {
   })();
 
   if (process.platform !== 'win32') {
-    const fromPath = findExecutableInPath('opencode2');
-    if (fromPath && !isKnownOpenCodeDesktopAppPath(fromPath) && !isLegacyOpenCodeCliBasename(fromPath)) {
-      cachedDetectedOpencodeCliPath = fromPath;
-      return fromPath;
+    for (const name of ['opencode', 'opencode2']) {
+      const fromPath = findExecutableInPath(name);
+      if (fromPath && !isKnownOpenCodeDesktopAppPath(fromPath) && isAcceptableOpenCode2HealthVersion(readOpenCodeCliVersion(fromPath))) {
+        cachedDetectedOpencodeCliPath = fromPath;
+        return fromPath;
+      }
     }
   }
 
   const fallbacks = process.platform === 'win32' ? winFallbacks : unixFallbacks;
   for (const candidate of fallbacks) {
-    if (isExecutable(candidate) && !isKnownOpenCodeDesktopAppPath(candidate) && !isLegacyOpenCodeCliBasename(candidate)) {
+    if (isExecutable(candidate) && !isKnownOpenCodeDesktopAppPath(candidate) && isAcceptableOpenCode2HealthVersion(readOpenCodeCliVersion(candidate))) {
       cachedDetectedOpencodeCliPath = candidate;
       return candidate;
     }

@@ -6,8 +6,6 @@ import path from 'path';
 import {
   assertOpenCode2Binary,
   collectStartupEnv,
-  createLegacyOpenCodeBinaryError,
-  isLegacyOpenCodeCliBasename,
   readConfiguredOpenCodeBinary,
   resolveOpenCode2BinaryForStartup,
 } from './cli-startup.js';
@@ -54,51 +52,27 @@ async function withIsolatedOpenCodeEnv(fn) {
   }
 }
 
-describe('legacy OpenCode CLI basename', () => {
-  it('fails closed for opencode / opencode.exe / opencode.cmd and names opencode2', () => {
-    const names = ['opencode', 'opencode.exe', 'opencode.cmd'];
-    for (const name of names) {
-      const candidate = path.join('/usr/local/bin', name);
-      expect(isLegacyOpenCodeCliBasename(candidate)).toBe(true);
-      const error = createLegacyOpenCodeBinaryError(candidate);
-      expect(error.code).toBe('OPENCODE_BINARY_INVALID');
-      expect(error.message).toMatch(/reserved for 1\.x/);
-      expect(error.message).toMatch(/opencode2 is missing/);
-    }
-  });
-
-  it('does not treat opencode2 as a 1.x basename', () => {
-    expect(isLegacyOpenCodeCliBasename('/usr/local/bin/opencode2')).toBe(false);
-    expect(isLegacyOpenCodeCliBasename('/usr/local/bin/opencode2.exe')).toBe(false);
-  });
-});
-
 describe('assertOpenCode2Binary', () => {
-  it('rejects OPENCODE_BINARY whose basename is 1.x opencode', () => {
-    const dir = createTempDir('openchamber-startup-1x-');
+  it('accepts an official v2 binary named opencode', () => {
+    const dir = createTempDir('openchamber-startup-v2-name-');
     const binary = path.join(dir, process.platform === 'win32' ? 'opencode.exe' : 'opencode');
     writeVersionBinary(binary, '2.0.12');
     try {
-      expect(() => assertOpenCode2Binary(binary)).toThrow(
-        expect.objectContaining({
-          code: 'OPENCODE_BINARY_INVALID',
-          message: expect.stringMatching(/reserved for 1\.x.*opencode2/s),
-        })
-      );
+      expect(assertOpenCode2Binary(binary)).toBe(binary);
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
     }
   });
 
-  it('rejects an opencode2 path that reports a 1.x version', () => {
+  it('rejects an opencode path that reports a 1.x version', () => {
     const dir = createTempDir('openchamber-startup-1x-version-');
-    const binary = path.join(dir, process.platform === 'win32' ? 'opencode2.cmd' : 'opencode2');
+    const binary = path.join(dir, process.platform === 'win32' ? 'opencode.exe' : 'opencode');
     writeVersionBinary(binary, '1.18.4');
     try {
       expect(() => assertOpenCode2Binary(binary)).toThrow(
         expect.objectContaining({
           code: 'OPENCODE_BINARY_INVALID',
-          message: expect.stringMatching(/1\.x.*opencode2 is missing/s),
+          message: expect.stringMatching(/1\.x.*OpenCode v2/s),
         })
       );
     } finally {
@@ -149,7 +123,7 @@ describe('collectStartupEnv OpenCode binary', () => {
         expect(() => collectStartupEnv()).toThrow(
           expect.objectContaining({
             code: 'OPENCODE_BINARY_INVALID',
-            message: expect.stringMatching(/opencode2 is missing/),
+            message: expect.stringMatching(/1\.x.*OpenCode v2/s),
           })
         );
       } finally {
@@ -171,7 +145,7 @@ describe('collectStartupEnv OpenCode binary', () => {
         expect(() => resolveOpenCode2BinaryForStartup()).toThrow(
           expect.objectContaining({
             code: 'OPENCODE_BINARY_INVALID',
-            message: expect.stringMatching(/reserved for 1\.x.*opencode2/s),
+            message: expect.stringMatching(/1\.x.*OpenCode v2/s),
           })
         );
       } finally {

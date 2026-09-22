@@ -35,6 +35,12 @@ const writeExecutable = (filePath) => {
   }
 };
 
+const writeVersionBinary = (filePath, version) => {
+  fs.mkdirSync(path.dirname(filePath), { recursive: true });
+  fs.writeFileSync(filePath, `#!${process.execPath}\nconsole.log(${JSON.stringify(version)});\n`);
+  fs.chmodSync(filePath, 0o755);
+};
+
 const unusedSpawnSync = () => ({ status: 1, stdout: '', stderr: '' });
 
 afterEach(() => {
@@ -209,16 +215,9 @@ describe('V1 migration gate (VS Code)', () => {
 });
 
 describe('legacy OpenCode CLI basename', () => {
-  test('fails closed for opencode / opencode.exe / opencode.cmd and names opencode2', () => {
-    const names = ['opencode', 'opencode.exe', 'opencode.cmd'];
-    for (const name of names) {
-      const candidate = path.join('/usr/local/bin', name);
-      expect(isLegacyOpenCodeCliBasename(candidate)).toBe(true);
-      const error = createLegacyOpenCodeBinaryError(candidate);
-      expect(error.code).toBe('OPENCODE_BINARY_INVALID');
-      expect(error.message).toMatch(/reserved for 1\.x/);
-      expect(error.message).toMatch(/opencode2/);
-    }
+  test('does not reject the official v2 binary name opencode', () => {
+    expect(isLegacyOpenCodeCliBasename('/usr/local/bin/opencode')).toBe(false);
+    expect(createLegacyOpenCodeBinaryError('/usr/local/bin/opencode').message).toMatch(/OpenCode v2/);
   });
 });
 
@@ -244,8 +243,8 @@ describe('resolveDetectedOpencodeCliPath', () => {
     const pathDir = createTempDir('openchamber-vscode-path-opencode2-');
     const legacy = path.join(pathDir, process.platform === 'win32' ? 'opencode.exe' : 'opencode');
     const binary = path.join(pathDir, process.platform === 'win32' ? 'opencode2.exe' : 'opencode2');
-    writeExecutable(legacy);
-    writeExecutable(binary);
+    writeVersionBinary(legacy, '1.18.4');
+    writeVersionBinary(binary, '2.0.12');
     process.env.PATH = pathDir;
     delete process.env.OPENCODE_BINARY;
     delete process.env.OPENCODE_PATH;
@@ -262,7 +261,7 @@ describe('resolveDetectedOpencodeCliPath', () => {
   test('discovers opencode2 from a home-directory install location', () => {
     const home = createTempDir('openchamber-vscode-home-opencode2-');
     const binary = path.join(home, '.bun', 'bin', process.platform === 'win32' ? 'opencode2.exe' : 'opencode2');
-    writeExecutable(binary);
+    writeVersionBinary(binary, '2.0.12');
     process.env.PATH = createTempDir('openchamber-vscode-empty-path-home-');
     delete process.env.OPENCODE_BINARY;
     delete process.env.OPENCODE_PATH;
@@ -278,13 +277,13 @@ describe('resolveDetectedOpencodeCliPath', () => {
   test('rejects an explicit OPENCODE_BINARY whose basename is 1.x opencode', () => {
     const dir = createTempDir('openchamber-vscode-env-opencode-1x-');
     const binary = path.join(dir, process.platform === 'win32' ? 'opencode.exe' : 'opencode');
-    writeExecutable(binary);
+    writeVersionBinary(binary, '1.18.4');
     process.env.OPENCODE_BINARY = binary;
 
     expect(() => resolveDetectedOpencodeCliPath()).toThrow(
       expect.objectContaining({
         code: 'OPENCODE_BINARY_INVALID',
-        message: expect.stringMatching(/opencode2/),
+        message: expect.stringMatching(/1\.x.*OpenCode v2/s),
       }),
     );
   });
