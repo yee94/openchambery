@@ -314,14 +314,6 @@ export const createOpenCodeEnvRuntime = (deps) => {
     return trimmed;
   };
 
-  const createOpenCode1xVersionError = (candidate, version) => {
-    const error = new Error(
-      `OpenCode 1.x is not supported (${candidate} reports ${version}). Install OpenCode v2 (opencode).`
-    );
-    error.code = 'OPENCODE_BINARY_INVALID';
-    return error;
-  };
-
   const acceptOpenCodeV2Candidate = (candidate, source) => {
     if (typeof candidate !== 'string' || !candidate.trim()) return null;
     if (!isExecutable(candidate) || isWindowsOpenCodeDesktopAppPath(candidate) || isMacOpenCodeAppBundlePath(candidate)) {
@@ -353,7 +345,10 @@ export const createOpenCodeEnvRuntime = (deps) => {
       if (!isExecutable(candidate)) continue;
       const version = readOpenCode2BinaryVersion(candidate);
       if (isOpenCode1xVersion(version)) {
-        throw createOpenCode1xVersionError(candidate, version);
+        // Inherited OPENCODE_BINARY often points at a still-installed 1.x.
+        // Skip it and keep looking; never overwrite that binary.
+        console.warn(`Skipping OpenCode 1.x at ${candidate} (${version}); looking for v2.`);
+        continue;
       }
       const accepted = acceptOpenCodeV2Candidate(candidate, 'env');
       if (accepted) return accepted;
@@ -1023,10 +1018,7 @@ export const createOpenCodeEnvRuntime = (deps) => {
       if (normalized && isExecutable(normalized)) {
         const version = readOpenCode2BinaryVersion(normalized);
         if (isOpenCode1xVersion(version)) {
-          if (strict) {
-            throw createOpenCode1xVersionError(normalized, version);
-          }
-          console.warn(`Configured settings.opencodeBinary points at OpenCode 1.x, which OpenChamber refuses: ${normalized}`);
+          console.warn(`Skipping configured OpenCode 1.x at ${normalized} (${version}); looking for v2.`);
           return null;
         }
       }
@@ -1061,15 +1053,16 @@ export const createOpenCodeEnvRuntime = (deps) => {
       if (state.useWslForOpencode) {
         return state.resolvedOpencodeBinary;
       }
+      process.env.OPENCODE_BINARY = state.resolvedOpencodeBinary;
       ensureOpencodeShimRuntime(state.resolvedOpencodeBinary);
       return state.resolvedOpencodeBinary;
     }
 
     const existing = typeof process.env.OPENCODE_BINARY === 'string' ? process.env.OPENCODE_BINARY.trim() : '';
     if (existing && isExecutable(existing) && isOpenCode1xVersion(readOpenCode2BinaryVersion(existing))) {
-      throw createOpenCode1xVersionError(existing, readOpenCode2BinaryVersion(existing));
-    }
-    if (existing && isExecutable(existing)) {
+      console.warn(`Ignoring OpenCode 1.x OPENCODE_BINARY at ${existing}; looking for v2.`);
+      delete process.env.OPENCODE_BINARY;
+    } else if (existing && isExecutable(existing)) {
       clearWslOpencodeResolution();
       state.resolvedOpencodeBinary = existing;
       state.resolvedOpencodeBinarySource = state.resolvedOpencodeBinarySource || 'env';
@@ -1141,11 +1134,11 @@ export const createOpenCodeEnvRuntime = (deps) => {
       if (!result?.path) {
         return ensureOpencodeCliEnv();
       }
-      if (result.source === 'installed') {
+      if (result.path) {
         clearWslOpencodeResolution();
         process.env.OPENCODE_BINARY = result.path;
         state.resolvedOpencodeBinary = result.path;
-        state.resolvedOpencodeBinarySource = 'installed';
+        state.resolvedOpencodeBinarySource = result.source === 'installed' ? 'installed' : (state.resolvedOpencodeBinarySource || 'discovered');
       }
       return ensureOpencodeCliEnv();
     } catch (error) {

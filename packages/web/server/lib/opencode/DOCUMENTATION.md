@@ -119,7 +119,7 @@ This module provides OpenCode server integration utilities for the web server ru
 - `OPENCODE2_NPM_PACKAGE`: `@opencode/cli` (global install that ships the `opencode2` binary; not 1.x `opencode-ai`).
 - `parseOpenCode2VersionOutput(stdout)` / `compareOpenCode2Versions(left, right)` / `isOpenCode2VersionAtLeast(version, minimum)`: CLI `--version` parse and pin comparison.
 - `openCode2BinaryName(platform)` / `npmPackageForOpenCode2(platform, arch)`: staged binary name `opencode2` and official platform package `@opencode/cli-<os>-<arch>[-baseline]`.
-- `isOpenCode1xVersion(value)` / `isAcceptableOpenCode2HealthVersion(value)` / `evaluateOpenCodeHealthBody(body)`: health admission rejects 1.x and missing/unknown versions even when `healthy: true`.
+- `isOpenCode1xVersion(value)` / `isAcceptableOpenCode2HealthVersion(value)` / `evaluateOpenCodeHealthBody(body)`: health admission accepts only 2.x. 1.x, `0.x` pre-2 binaries, and missing/unknown versions are rejected even when `healthy: true`.
 - `resolveOpenCode2UpgradeTarget(target)` / `rejectOpenCode1xUpgradeTarget(target)`: upgrade targets default to the pin and refuse 1.x.
 
 ## Public exports (ensure-cli.js)

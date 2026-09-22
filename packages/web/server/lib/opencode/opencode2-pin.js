@@ -19,8 +19,8 @@ export function isAcceptableOpenCode2HealthVersion(value) {
   if (typeof value !== 'string') return false;
   const normalized = value.trim().replace(/^v/i, '');
   if (!normalized) return false;
-  if (isOpenCode1xVersion(normalized)) return false;
-  // Require a version-like token (semver or next pin), not free-form noise.
+  // Official CLI is 2.x. 1.x and pre-2 names like `opencode2 v0.0.0-beta-*` are not it.
+  if (!/^2(?:\.|$)/.test(normalized)) return false;
   return /^\d+(?:\.\d+)*(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/.test(normalized);
 }
 

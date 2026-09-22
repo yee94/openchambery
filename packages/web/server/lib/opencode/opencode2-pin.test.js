@@ -43,6 +43,7 @@ describe('opencode2 pin (ticket 12)', () => {
   it('accepts authoritative v2 health/info versions and rejects 1.x / missing / noise', () => {
     expect(isAcceptableOpenCode2HealthVersion(PINNED_OPENCODE2_VERSION)).toBe(true);
     expect(isAcceptableOpenCode2HealthVersion('v2.0.12')).toBe(true);
+    expect(isAcceptableOpenCode2HealthVersion('0.0.0-beta-18155')).toBe(false);
     expect(isAcceptableOpenCode2HealthVersion('1.15.0')).toBe(false);
     expect(isAcceptableOpenCode2HealthVersion('v1.18.18')).toBe(false);
     expect(isAcceptableOpenCode2HealthVersion('')).toBe(false);
