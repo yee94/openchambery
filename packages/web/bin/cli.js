@@ -25,6 +25,7 @@ import {
   isLegacyOpenCodeCliBasename,
   readConfiguredOpenCodeBinary,
 } from './lib/cli-startup.js';
+import { ensurePinnedOpenCode2Cli } from '../server/lib/opencode/ensure-cli.js';
 import { startupCommand } from './lib/commands-startup.js';
 import { logsCommand } from './lib/commands-logs.js';
 import { statusCommand } from './lib/commands-status.js';
@@ -83,7 +84,7 @@ function importFromFilePath(filePath) {
 
 // Binary validation is policy, not presentation: TTY, non-TTY, --quiet, and
 // --json all run this same check before serve starts.
-async function checkOpenCodeCLI(onNotice) {
+async function checkOpenCodeCLI(onNotice, options = {}) {
   if (process.env.OPENCODE_BINARY) {
     if (isLegacyOpenCodeCliBasename(process.env.OPENCODE_BINARY)) {
       throw createLegacyOpenCodeBinaryError(process.env.OPENCODE_BINARY);
@@ -114,10 +115,34 @@ async function checkOpenCodeCLI(onNotice) {
   }
 
   const resolvedFromPath = searchPathFor('opencode2');
-  if (resolvedFromPath) {
-    const verified = assertOpenCode2Binary(resolvedFromPath) || resolvedFromPath;
-    process.env.OPENCODE_BINARY = verified;
-    return verified;
+  const discovered = resolvedFromPath
+    ? (assertOpenCode2Binary(resolvedFromPath) || resolvedFromPath)
+    : '';
+  const ensureCli = typeof options.ensurePinnedOpenCode2Cli === 'function'
+    ? options.ensurePinnedOpenCode2Cli
+    : ensurePinnedOpenCode2Cli;
+
+  try {
+    const ensured = await ensureCli({ discoveredPath: discovered });
+    if (ensured?.path) {
+      if (typeof onNotice === 'function' && ensured.installed) {
+        onNotice({
+          level: 'info',
+          code: 'OPENCODE_CLI_INSTALLED',
+          message: `Installed opencode2 ${ensured.version} to ${ensured.path}`,
+        });
+      }
+      process.env.OPENCODE_BINARY = ensured.path;
+      return ensured.path;
+    }
+  } catch (error) {
+    if (error?.code === 'OPENCODE_CLI_MISSING') {
+      throw new Error(
+        `Unable to locate the opencode2 CLI on PATH (${process.env.PATH || '<empty>'}). ` +
+        'Ensure opencode2 is installed and reachable, or set OPENCODE_BINARY to its full path.'
+      );
+    }
+    throw error;
   }
 
   throw new Error(

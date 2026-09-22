@@ -615,6 +615,7 @@ const openCodeEnvRuntime = createOpenCodeEnvRuntime({
 const applyLoginShellEnvSnapshot = (...args) => openCodeEnvRuntime.applyLoginShellEnvSnapshot(...args);
 const getLoginShellEnvSnapshot = (...args) => openCodeEnvRuntime.getLoginShellEnvSnapshot(...args);
 const ensureOpencodeCliEnv = (...args) => openCodeEnvRuntime.ensureOpencodeCliEnv(...args);
+const ensurePinnedOpenCode2CliEnv = (...args) => openCodeEnvRuntime.ensurePinnedOpenCode2CliEnv(...args);
 const applyOpencodeBinaryFromSettings = (...args) => openCodeEnvRuntime.applyOpencodeBinaryFromSettings(...args);
 const resolveOpencodeCliPath = (...args) => openCodeEnvRuntime.resolveOpencodeCliPath(...args);
 const isExecutable = (...args) => openCodeEnvRuntime.isExecutable(...args);
@@ -1049,6 +1050,7 @@ const openCodeLifecycleRuntime = createOpenCodeLifecycleRuntime({
   normalizeApiPrefix,
   applyOpencodeBinaryFromSettings,
   ensureOpencodeCliEnv,
+  ensurePinnedOpenCode2CliEnv,
   ensureLocalOpenCodeServerPassword,
   resolveManagedOpenCodeLaunchSpec,
   setOpenCodePort,

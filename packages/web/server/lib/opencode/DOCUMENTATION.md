@@ -14,6 +14,7 @@ This module provides OpenCode server integration utilities for the web server ru
 - `packages/web/server/lib/opencode/v1-migration-gate.js`: pure V1→v2 migration admission gate (`GET /api/experimental/migration/v1` → whether transcript may be fetched).
 - `packages/web/server/lib/opencode/managed-capabilities-runtime.js`: managed-child scheduled-task resources, config injection, rotating bridge identity, and bridge authorization.
 - `packages/web/server/lib/opencode/env-runtime.js`: OpenCode CLI/binary resolution and shell environment runtime.
+- `packages/web/server/lib/opencode/ensure-cli.js`: detect local `opencode2` version and install the pinned official V2 into the OpenChamber data dir when missing or too old. Never uses a packaged/bundled binary.
 - `packages/web/server/lib/opencode/env-config.js`: OpenCode-related environment variable parsing and validation (host/port/hostname).
 - `packages/web/server/lib/opencode/hmr-state-runtime.js`: HMR-persistent runtime state initialization, auth-state bootstrap, and HMR sync helpers.
 - `packages/web/server/lib/opencode/bootstrap-runtime.js`: base app bootstrap runtime for status/auth/tts/notification/OpenChamber route wiring.
@@ -116,8 +117,15 @@ This module provides OpenCode server integration utilities for the web server ru
 ## Public exports (opencode2-pin.js)
 - `PINNED_OPENCODE2_VERSION`: exact desktop/runtime pin (never 1.x).
 - `OPENCODE2_NPM_PACKAGE`: `@opencode/cli` (global install that ships the `opencode2` binary; not 1.x `opencode-ai`).
+- `parseOpenCode2VersionOutput(stdout)` / `compareOpenCode2Versions(left, right)` / `isOpenCode2VersionAtLeast(version, minimum)`: CLI `--version` parse and pin comparison.
+- `openCode2BinaryName(platform)` / `npmPackageForOpenCode2(platform, arch)`: staged binary name `opencode2` and official platform package `@opencode/cli-<os>-<arch>[-baseline]`.
 - `isOpenCode1xVersion(value)` / `isAcceptableOpenCode2HealthVersion(value)` / `evaluateOpenCodeHealthBody(body)`: health admission rejects 1.x and missing/unknown versions even when `healthy: true`.
 - `resolveOpenCode2UpgradeTarget(target)` / `rejectOpenCode1xUpgradeTarget(target)`: upgrade targets default to the pin and refuse 1.x.
+
+## Public exports (ensure-cli.js)
+- `ensurePinnedOpenCode2Cli({ discoveredPath, preferDiscovered, pin, autoInstall, install, readVersion })`: if `discoveredPath` is acceptable 2.x and (`preferDiscovered` or version ≥ pin), return it; else reuse `~/.config/openchamber/opencode-cli/<pin>/opencode2` or download the official npm platform tarball. `OPENCHAMBER_OPENCODE2_AUTO_INSTALL=0` disables download (`OPENCODE_CLI_MISSING`). Explicit `OPENCODE_BINARY` / `settings.opencodeBinary` pass `preferDiscovered` so a user-selected 2.x is not replaced.
+- `installPinnedOpenCode2Cli(options)`: download `@opencode/cli-<os>-<arch>@pin`, extract, copy, chmod, verify `--version`.
+- `installedOpenCode2BinaryPath(version)` / `readOpenCode2BinaryVersion(path)` / `isOpenCode2AutoInstallEnabled()`.
 
 ## Public exports (v1-migration-gate.js)
 - `OPENCODE_V1_MIGRATION_PATH`: `/api/experimental/migration/v1`.
@@ -126,7 +134,7 @@ This module provides OpenCode server integration utilities for the web server ru
 - `fetchV1MigrationGate({ url, headers, signal, fetchImpl })`: GET-only status poll used by lifecycle.
 
 ## Public exports (lifecycle.js)
-- `createOpenCodeLifecycleRuntime(dependencies)`: creates lifecycle runtime for managed/external OpenCode process orchestration. Managed spawn defaults to `opencode2`. Startup accepts both `server listening on http://127.0.0.1:PORT` and the legacy `opencode server listening on …` line. Readiness/health probes `GET /api/health` first, then `/global/health`, with Basic auth (username `opencode`). A body is admitted only when `healthy: true` **and** `evaluateOpenCodeHealthBody` accepts the version (rejects 1.x and missing/unknown). After health ok, `startOpenCode` / `waitForOpenCodeReady` poll `GET /api/experimental/migration/v1` (no POST; backfill is owned by opencode2). Each readiness attempt uses one abort timer that covers **both** health and migration so a hung migration cannot outrun the per-attempt budget. External skip-start / auto-detect attach leave `isOpenCodeReady` false until the gate admits. `isOpenCodeReady` means transcript may be fetched only when the gate admits (`completed`, or no V1 library such as HTTP 404). `required` / `running` / `error` keep the ready gate closed; `error` is retried. The last gate result is stored on `state.v1Migration` and published on the OpenChamber `/health` snapshot so UI can render `phase` and running `progress` (`label` / `numerator` / `denominator`) plus `userNotice` (reuse message ids; in-progress tools become interrupted; V1 subtasks do not appear in v2).
+- `createOpenCodeLifecycleRuntime(dependencies)`: creates lifecycle runtime for managed/external OpenCode process orchestration. Managed spawn defaults to `opencode2`. Before spawn, `ensurePinnedOpenCode2CliEnv()` detects the local CLI version and installs the pinned official V2 when missing or too old (skipped for external skip-start). Startup accepts both `server listening on http://127.0.0.1:PORT` and the legacy `opencode server listening on …` line. Readiness/health probes `GET /api/health` first, then `/global/health`, with Basic auth (username `opencode`). A body is admitted only when `healthy: true` **and** `evaluateOpenCodeHealthBody` accepts the version (rejects 1.x and missing/unknown). After health ok, `startOpenCode` / `waitForOpenCodeReady` poll `GET /api/experimental/migration/v1` (no POST; backfill is owned by opencode2). Each readiness attempt uses one abort timer that covers **both** health and migration so a hung migration cannot outrun the per-attempt budget. External skip-start / auto-detect attach leave `isOpenCodeReady` false until the gate admits. `isOpenCodeReady` means transcript may be fetched only when the gate admits (`completed`, or no V1 library such as HTTP 404). `required` / `running` / `error` keep the ready gate closed; `error` is retried. The last gate result is stored on `state.v1Migration` and published on the OpenChamber `/health` snapshot so UI can render `phase` and running `progress` (`label` / `numerator` / `denominator`) plus `userNotice` (reuse message ids; in-progress tools become interrupted; V1 subtasks do not appear in v2).
 - Returned API:
   - `startOpenCode()`
   - `restartOpenCode()`
@@ -140,12 +148,13 @@ This module provides OpenCode server integration utilities for the web server ru
   - `killProcessOnPort(port)`
 
 ## Public exports (env-runtime.js)
-- `createOpenCodeEnvRuntime(dependencies)`: creates runtime that owns OpenCode CLI environment and binary discovery state. Auto-discovery looks for `opencode2` (PATH, `~/.bun/bin/opencode2`, `~/.opencode/bin/opencode2`, Homebrew, bundled `opencode2` / `opencode2.exe`). A resolved basename of `opencode` / `opencode.exe` / `opencode.cmd` fails closed with `OPENCODE_BINARY_INVALID` (message says the basename is reserved for 1.x; rename or symlink to `opencode2`). OpenChamber does not treat PATH 1.x `opencode` as a hit and does not reuse an already-running `opencode2 service`.
+- `createOpenCodeEnvRuntime(dependencies)`: creates runtime that owns OpenCode CLI environment and binary discovery state. Auto-discovery looks for `opencode2` (PATH, `~/.bun/bin/opencode2`, `~/.opencode/bin/opencode2`, Homebrew, then a previously installed pin under the OpenChamber data dir). It never falls back to a packaged/bundled Electron extraResource. Managed startup calls `ensurePinnedOpenCode2CliEnv()` to install the pin when discovery finds nothing or an older 2.x. A resolved basename of `opencode` / `opencode.exe` / `opencode.cmd` fails closed with `OPENCODE_BINARY_INVALID` (message says the basename is reserved for 1.x; rename or symlink to `opencode2`). OpenChamber does not treat PATH 1.x `opencode` as a hit and does not reuse an already-running `opencode2 service`.
 - VS Code keeps a copied sidecar (`packages/vscode/src/opencode-sidecar.ts`) with the same invariants: discovery order may differ (no Electron bundled fallback), but reject list, listening lines, health path order (`/api/health` then `/global/health`), `{ healthy: true }`, and Basic username `opencode` must stay aligned. Changing one copy requires changing the other.
 - Returned API:
   - `applyLoginShellEnvSnapshot()`
   - `getLoginShellEnvSnapshot()`
   - `ensureOpencodeCliEnv()`
+  - `ensurePinnedOpenCode2CliEnv()`
   - `applyOpencodeBinaryFromSettings()`
   - `resolveOpencodeCliPath()`
   - `resolveManagedOpenCodeLaunchSpec(opencodePath)`: resolves the effective managed OpenCode launch target, unwrapping Windows package-manager shims to a direct native binary or explicit runtime+script when possible.

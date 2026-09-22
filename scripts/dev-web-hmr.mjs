@@ -137,27 +137,15 @@ if (forceViteOptimize) {
 
 mkdirSync(hmrSessionIndexDir, { recursive: true });
 
-// Keep the dev runtime on the pinned opencode2 version. PATH resolution can
-// pick up a newer global `~/.bun/bin/opencode2` whose v2 API surface has
-// drifted from the pinned `@opencode/client` SDK (e.g. question → form),
-// producing 404/UnsupportedContentType noise during bootstrap.
-const stagedPinnedBinary = path.join(repoRoot, 'packages', 'electron', 'resources', 'opencode-cli', 'opencode2');
+// Do not pin the staged Electron bundled binary. Managed startup detects the
+// local opencode2 version and installs the pinned V2 into the OpenChamber
+// data dir when PATH is missing or too old.
 const apiEnv = {
   OPENCHAMBER_PORT: backendPort,
   OPENCHAMBER_SESSION_INDEX_DB_PATH: hmrSessionIndexDbPath,
   // Never inherit a leftover desktop runtime from the parent shell.
   OPENCHAMBER_RUNTIME: 'web',
 };
-if (
-  !process.env.OPENCODE_BINARY
-  && !process.env.OPENCODE_PATH
-  && !process.env.OPENCHAMBER_OPENCODE_PATH
-  && !process.env.OPENCHAMBER_OPENCODE_BIN
-  && existsSync(stagedPinnedBinary)
-) {
-  apiEnv.OPENCODE_BINARY = stagedPinnedBinary;
-  console.log(`[dev:web:hmr] Using pinned opencode2 for dev runtime: ${stagedPinnedBinary}`);
-}
 
 const api = run('api', 'bun', ['run', '--cwd', 'packages/web', 'dev:server:watch'], apiEnv);
 

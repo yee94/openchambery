@@ -23,8 +23,10 @@ async function withIsolatedOpenCodeEnv(fn) {
   const previousBinary = process.env.OPENCODE_BINARY;
   const previousPath = process.env.PATH;
   const previousDataDir = process.env.OPENCHAMBER_DATA_DIR;
+  const previousAutoInstall = process.env.OPENCHAMBER_OPENCODE2_AUTO_INSTALL;
   const dataDir = createTempDir('openchamber-cli-opencode-data-');
   process.env.OPENCHAMBER_DATA_DIR = dataDir;
+  process.env.OPENCHAMBER_OPENCODE2_AUTO_INSTALL = '0';
   try {
     return await fn({ dataDir });
   } finally {
@@ -42,6 +44,11 @@ async function withIsolatedOpenCodeEnv(fn) {
       process.env.OPENCHAMBER_DATA_DIR = previousDataDir;
     } else {
       delete process.env.OPENCHAMBER_DATA_DIR;
+    }
+    if (typeof previousAutoInstall === 'string') {
+      process.env.OPENCHAMBER_OPENCODE2_AUTO_INSTALL = previousAutoInstall;
+    } else {
+      delete process.env.OPENCHAMBER_OPENCODE2_AUTO_INSTALL;
     }
     fs.rmSync(dataDir, { recursive: true, force: true });
   }
@@ -174,6 +181,28 @@ describe('checkOpenCodeCLI v2 gate', () => {
       delete process.env.OPENCODE_BINARY;
       process.env.PATH = createTempDir('openchamber-cli-missing-');
       await expect(checkOpenCodeCLI()).rejects.toThrow(/opencode2/);
+    });
+  });
+
+  it('installs pinned opencode2 when PATH has no usable binary', async () => {
+    await withIsolatedOpenCodeEnv(async ({ dataDir }) => {
+      delete process.env.OPENCODE_BINARY;
+      process.env.PATH = createTempDir('openchamber-cli-install-missing-');
+      const installed = path.join(dataDir, 'opencode-cli', '2.0.12', process.platform === 'win32' ? 'opencode2.exe' : 'opencode2');
+      writeVersionBinary(installed, '2.0.12');
+      const notices = [];
+      await expect(checkOpenCodeCLI((notice) => notices.push(notice), {
+        ensurePinnedOpenCode2Cli: async () => ({
+          path: installed,
+          version: '2.0.12',
+          source: 'installed',
+          installed: true,
+        }),
+      })).resolves.toBe(installed);
+      expect(process.env.OPENCODE_BINARY).toBe(installed);
+      expect(notices).toEqual([
+        expect.objectContaining({ code: 'OPENCODE_CLI_INSTALLED' }),
+      ]);
     });
   });
 });

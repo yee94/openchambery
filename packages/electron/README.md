@@ -160,9 +160,11 @@ A loopback-only updater fixture is available for contributor QA of N-to-N+1 AppI
 
 The package supports macOS, Windows, and Linux desktop features. Linux AppImage builds include in-app window controls and auto-update; system tray and launch-at-login remain macOS/Windows only. Some native discovery helpers are platform-specific. For example, app icon fetching and app filtering currently only work on macOS, while opening files in installed apps and installed-app discovery work on macOS and Windows (Linux returns an empty list without errors).
 
-## Bundled OpenCode CLI
+## OpenCode CLI (detect, then install)
 
-Packaged Desktop builds include the official OpenCode CLI that matches the pinned version in `packages/web/server/lib/opencode/opencode2-pin.js`. `prepare:opencode-cli` downloads the platform-specific npm package (`@opencode/cli-<os>-<arch>`, the v2 distribution channel — v2 has no GitHub release binaries), caches the tarball under `packages/electron/.cache/opencode-cli`, stages `opencode2` or `opencode2.exe` into `resources/opencode-cli`, and verifies `opencode2 --version` before packaging. Re-running the step is fast when the staged binary already matches the pinned version.
+Managed Desktop / `openchamber serve` / HMR do **not** launch a packaged extraResource binary. Discovery order is settings/env → PATH / known install locations → a previously installed pin under `~/.config/openchamber/opencode-cli/<version>/`. If nothing usable is found, or PATH is older than the pin in `packages/web/server/lib/opencode/opencode2-pin.js`, startup downloads the official npm platform package (`@opencode/cli-<os>-<arch>@pin`) into that data dir. Explicit `OPENCODE_BINARY` / `settings.opencodeBinary` still win for an acceptable 2.x. VS Code keeps user-installed CLI discovery. Set `OPENCHAMBER_OPENCODE2_AUTO_INSTALL=0` to disable download.
+
+`prepare:opencode-cli` still stages `resources/opencode-cli` for packaging/CI, but runtime resolution never uses that copy as a fallback.
 
 ## Releases and automatic updates
 
