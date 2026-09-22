@@ -54,15 +54,9 @@ export const extractInlineFileMentions = ({ text, root, confirmedFilePaths, conf
     const normalizeMentionPath = (path: string): string => normalizeFsPath(path).replace(/^\.\//, '');
     const confirmed = new Set(confirmedFilePaths.map((path) => normalizeMentionPath(path)));
     const confirmedDirectories = new Set(confirmedDirectoryPaths.map((path) => normalizeMentionPath(path)));
-    const mentions = /@([^\s]+)/g;
-    let match: RegExpExecArray | null;
-    while ((match = mentions.exec(text)) !== null) {
-        const before = match.index > 0 ? text[match.index - 1] : null;
-        if (before && !/(\s|\(|\)|\[|\]|\{|\}|"|'|`|,|\.|;|:)/.test(before)) continue;
-        const mention = match[1].trim().replace(/^[`"'<(]+/, '').replace(/[),.;:!?`"'>]+$/g, '');
-        if (!mention || agentNames.has(mention.toLowerCase())) continue;
+    const pushAttachment = (mention: string): void => {
+        if (!mention || agentNames.has(mention.toLowerCase())) return;
         const normalizedMentionPath = normalizeMentionPath(mention);
-        // Relative form for confirmed-set matching (strip leading `/` only; never strip drive/UNC).
         const relativeMentionKey = isAbsolute(mention) || isAbsolute(normalizedMentionPath)
             ? normalizedMentionPath
             : normalizedMentionPath.replace(/^\/+/, '');
@@ -71,22 +65,49 @@ export const extractInlineFileMentions = ({ text, root, confirmedFilePaths, conf
             || mention.includes('/')
             || mention.includes('\\')
             || mention.includes('.');
-        if (!looksLikePath) continue;
-        // Absolute Windows drive / UNC / POSIX paths keep their own root — never join project root.
+        if (!looksLikePath) return;
         const normalizedServerPath = (isAbsolute(mention) || isAbsolute(normalizedMentionPath))
             ? normalizedMentionPath
             : normalizedRoot
                 ? join(normalizedRoot, relativeMentionKey)
                 : null;
-        if (!relativeMentionKey || !normalizedServerPath || seenPaths.has(normalizedServerPath)) continue;
+        if (!relativeMentionKey || !normalizedServerPath || seenPaths.has(normalizedServerPath)) return;
         seenPaths.add(normalizedServerPath);
         const filename = basename(normalizedServerPath) || relativeMentionKey;
-        // Prefer OpenCode's directory mime so message chips render a folder icon.
         const isDirectory = confirmedDirectories.has(normalizedMentionPath)
             || confirmedDirectories.has(relativeMentionKey)
             || /[/\\]$/.test(mention);
         const mimeType = isDirectory ? DIRECTORY_ATTACHMENT_MIME : 'text/plain';
         attachments.push({ id: createUuid(), file: new File([], filename, { type: mimeType }), filename, mimeType, size: 0, dataUrl: toServerFileUrl(normalizedServerPath), source: 'server', serverPath: normalizedServerPath });
+    };
+    const coveredMentionRanges: Array<{ start: number; end: number }> = [];
+    for (const path of confirmedFilePaths) {
+        if (!path.includes(' ') && !path.includes('\t')) continue;
+        const token = `@${path}`;
+        let from = 0;
+        while (from < text.length) {
+            const start = text.indexOf(token, from);
+            if (start < 0) break;
+            const before = start > 0 ? text[start - 1] : null;
+            const after = text[start + token.length];
+            const boundaryBefore = !before || /(\s|\(|\)|\[|\]|\{|\}|"|'|`|,|\.|;|:)/.test(before);
+            const boundaryAfter = after === undefined || /\s/.test(after);
+            if (boundaryBefore && boundaryAfter) {
+                coveredMentionRanges.push({ start, end: start + token.length });
+                pushAttachment(path);
+            }
+            from = start + token.length;
+        }
+    }
+    const mentions = /@([^\s]+)/g;
+    let match: RegExpExecArray | null;
+    while ((match = mentions.exec(text)) !== null) {
+        const tokenMatch = match;
+        if (coveredMentionRanges.some((range) => tokenMatch.index >= range.start && tokenMatch.index < range.end)) continue;
+        const before = tokenMatch.index > 0 ? text[tokenMatch.index - 1] : null;
+        if (before && !/(\s|\(|\)|\[|\]|\{|\}|"|'|`|,|\.|;|:)/.test(before)) continue;
+        const mention = tokenMatch[1].trim().replace(/^[`"'<(]+/, '').replace(/[),.;:!?`"'>]+$/g, '');
+        pushAttachment(mention);
     }
     return attachments;
 };

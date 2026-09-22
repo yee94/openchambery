@@ -31,6 +31,114 @@ export const looksLikePastedFileReference = (mention: string): boolean => {
   return FILE_EXTENSION_PATTERN.test(lastSegment);
 };
 
+const isMultiSegmentAbsolutePath = (value: string): boolean => {
+  const normalized = value.replace(/\\/g, '/');
+  if (/^[A-Za-z]:\//.test(normalized)) return normalized.slice(3).includes('/');
+  if (normalized.startsWith('//')) return normalized.replace(/^\/+/, '').includes('/');
+  if (normalized.startsWith('/')) return normalized.slice(1).includes('/');
+  return false;
+};
+
+type ScannedAtMention = {
+  value: string;
+  /** Exclusive end of `@${value}` after trailing punctuation is stripped. */
+  end: number;
+  /** Exclusive end of the raw token, including trailing punctuation the highlighter paints. */
+  highlightEnd: number;
+};
+
+const findLongestConfirmedSpacedMention = (
+  text: string,
+  at: number,
+  confirmedValues: ReadonlySet<string> | undefined,
+): ScannedAtMention | null => {
+  if (!confirmedValues || confirmedValues.size === 0 || text[at] !== '@') return null;
+  const rest = text.slice(at + 1);
+  let best: string | null = null;
+  for (const value of confirmedValues) {
+    if (!value || (!value.includes(' ') && !value.includes('\t'))) continue;
+    if (!rest.startsWith(value)) continue;
+    const next = text[at + 1 + value.length];
+    if (next !== undefined && !/\s/.test(next)) continue;
+    if (!best || value.length > best.length) best = value;
+  }
+  if (!best) return null;
+  const end = at + 1 + best.length;
+  return { value: best, end, highlightEnd: end };
+};
+
+/**
+ * A pasted absolute path may contain spaces in the filename
+ * (`/Users/.../今天我们穿越去哪？ - Slidev.pdf`). Extend only while the token
+ * stays a multi-segment absolute path and stop at the first extension or
+ * trailing slash, so following prose is not swallowed.
+ */
+const readSpacedPastedFileMention = (text: string, at: number): ScannedAtMention | null => {
+  const rest = text.slice(at + 1);
+  const firstBreak = rest.search(/\s/);
+  const firstToken = firstBreak === -1 ? rest : rest.slice(0, firstBreak);
+  if (!firstToken || /[\r\n]/.test(firstToken) || !isMultiSegmentAbsolutePath(firstToken)) return null;
+
+  let end = at + 1 + firstToken.length;
+  let value = firstToken;
+  if (looksLikePastedFileReference(value)) return { value, end, highlightEnd: end };
+
+  while (end < text.length && /[ \t]/.test(text[end])) {
+    let next = end + 1;
+    while (next < text.length && !/\s/.test(text[next])) next += 1;
+    if (next === end + 1) break;
+    const extended = text.slice(at + 1, next);
+    if (extended.length > 4096) break;
+    value = extended;
+    end = next;
+    if (looksLikePastedFileReference(value)) return { value, end, highlightEnd: end };
+  }
+  return null;
+};
+
+const readWhitespaceMention = (text: string, at: number): ScannedAtMention | null => {
+  const match = /^([^\s]+)/.exec(text.slice(at + 1));
+  const raw = match?.[1] ?? '';
+  if (!raw) return null;
+  const value = raw.trim().replace(/[),.;:!?`"'>]+$/g, '');
+  if (!value) return null;
+  return { value, end: at + 1 + value.length, highlightEnd: at + 1 + raw.length };
+};
+
+const scanAtMentions = (
+  text: string,
+  {
+    confirmedValues,
+    allowSpacedPastedPaths = false,
+  }: {
+    confirmedValues?: ReadonlySet<string>;
+    allowSpacedPastedPaths?: boolean;
+  },
+): Array<ScannedAtMention & { start: number }> => {
+  const found: Array<ScannedAtMention & { start: number }> = [];
+  let index = 0;
+  while (index < text.length) {
+    const at = text.indexOf('@', index);
+    if (at < 0) break;
+    const charBefore = at > 0 ? text[at - 1] : null;
+    const isBoundary = !charBefore || MENTION_BOUNDARY_BEFORE.test(charBefore);
+    if (!isBoundary) {
+      index = at + 1;
+      continue;
+    }
+    const token = findLongestConfirmedSpacedMention(text, at, confirmedValues)
+      ?? (allowSpacedPastedPaths ? readSpacedPastedFileMention(text, at) : null)
+      ?? readWhitespaceMention(text, at);
+    if (!token) {
+      index = at + 1;
+      continue;
+    }
+    found.push({ start: at, ...token });
+    index = Math.max(token.highlightEnd, token.end, at + 1);
+  }
+  return found;
+};
+
 /**
  * Merge file + directory search hits into one flat list ranked by the shared
  * file-mention search algorithm. Does not group by kind.
@@ -138,29 +246,20 @@ export const collectComposerMentionHighlights = (
 ): ComposerMentionHighlight[] => {
   if (!text.includes('@')) return [];
   const ranges: ComposerMentionHighlight[] = [];
-  const mentionRegex = /@([^\s]+)/g;
-  let match: RegExpExecArray | null;
-  while ((match = mentionRegex.exec(text)) !== null) {
-    const full = match[0];
-    const mention = String(match[1] || '').trim().replace(/[),.;:!?`"'>]+$/g, '');
-    const start = match.index;
-    const end = start + full.length;
-    const charBefore = start > 0 ? text[start - 1] : null;
-    const isBoundary = !charBefore || MENTION_BOUNDARY_BEFORE.test(charBefore);
-    if (!isBoundary || mention.length === 0) continue;
+  for (const token of scanAtMentions(text, { confirmedValues })) {
+    const { start, value: mention, end, highlightEnd } = token;
     if (mention.startsWith('session:')) continue;
     if (agentNames.has(mention.toLowerCase())) {
-      ranges.push({ start, end, kind: 'agent' });
+      ranges.push({ start, end: highlightEnd, kind: 'agent' });
       continue;
     }
-    const mentionEnd = start + 1 + mention.length;
-    const terminated = isFileMentionTokenTerminated(text, mentionEnd);
+    const terminated = isFileMentionTokenTerminated(text, end);
     if (shouldHighlightFileMention({
       mention,
       confirmed: confirmedValues.has(mention),
       terminated,
     })) {
-      ranges.push({ start, end, kind: 'file' });
+      ranges.push({ start, end: highlightEnd, kind: 'file' });
     }
   }
   return ranges;
@@ -178,26 +277,28 @@ export const collectConfirmableFileMentions = (
   {
     agentNames,
     includeUnterminatedPastedReferences = false,
+    confirmedValues,
   }: {
     agentNames?: ReadonlySet<string>;
     includeUnterminatedPastedReferences?: boolean;
+    /** Already-confirmed paths, including filenames that contain spaces. */
+    confirmedValues?: ReadonlySet<string>;
   } = {},
 ): ConfirmableFileMention[] => {
   if (!text.includes('@')) return [];
   const mentions: ConfirmableFileMention[] = [];
-  const mentionRegex = /@([^\s]+)/g;
-  let match: RegExpExecArray | null;
-  while ((match = mentionRegex.exec(text)) !== null) {
-    const mention = String(match[1] || '').trim().replace(/[),.;:!?`"'>]+$/g, '');
-    const start = match.index;
-    const charBefore = start > 0 ? text[start - 1] : null;
-    const isBoundary = !charBefore || MENTION_BOUNDARY_BEFORE.test(charBefore);
-    if (!isBoundary || !mention || mention.startsWith('session:')) continue;
+  for (const token of scanAtMentions(text, {
+    confirmedValues,
+    allowSpacedPastedPaths: includeUnterminatedPastedReferences,
+  })) {
+    const { start, value: mention, end } = token;
+    if (!mention || mention.startsWith('session:')) continue;
     if (agentNames?.has(mention.toLowerCase())) continue;
-    const end = start + 1 + mention.length;
+    const spaced = mention.includes(' ') || mention.includes('\t');
     const terminated = isFileMentionTokenTerminated(text, end);
-    const pastedReference = includeUnterminatedPastedReferences && looksLikePastedFileReference(mention);
-    if (!terminated && !pastedReference) continue;
+    const pastedReference = includeUnterminatedPastedReferences && (spaced || looksLikePastedFileReference(mention));
+    const confirmed = confirmedValues?.has(mention) === true;
+    if (!terminated && !pastedReference && !confirmed) continue;
     if (!looksLikeFilePath(mention) && !pastedReference) continue;
     mentions.push({
       kind: mention.endsWith('/') || mention.endsWith('\\') ? 'directory' : 'file',

@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.19.21-beta.2] - 2026-09-22
+
+### 对话
+
+- 粘贴带空格的文件路径（例如「今天我们穿越去哪？ - Slidev.pdf」）会保持为完整文件引用，不再在空格处截断，之后也可以继续输入。
+
 ## [1.19.21-beta.1] - 2026-09-22
 
 ### 对话
