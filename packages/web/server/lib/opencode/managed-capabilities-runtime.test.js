@@ -24,6 +24,7 @@ describe('managed OpenCode capabilities runtime', () => {
       runtime.recordManagedChildPid(44);
       const identity = runtime.getCapabilityIdentity();
       expect(childEnv.OPENCODE_CONFIG_CONTENT).toContain('scheduled-task.mjs');
+      expect(JSON.parse(childEnv.OPENCODE_CONFIG_CONTENT).plugin).toContain(path.join(dataDir, 'managed-opencode-capabilities', 'v2-plugin-host-shim'));
       expect(JSON.parse(childEnv.OPENCODE_CONFIG_CONTENT).instructions[0]).toMatch(/^\//);
       expect(childEnv.OPENCHAMBER_SCHEDULED_TASK_BRIDGE_PATH).toBe(MANAGED_SCHEDULED_TASK_TOOL_PATH);
       expect(childEnv.OPENCHAMBER_SCHEDULED_TASK_TOKEN_HEADER).toBe(MANAGED_SCHEDULED_TASK_TOKEN_HEADER);

@@ -207,13 +207,18 @@ export function normalizeSessionProjectionMessage(
   const id = item.id
   const type = asString(item.type) ?? "unknown"
 
-  // 2.0.12 emits session-lifecycle rows in the message list. They are not
-  // chat turns and must not render as assistant placeholders like `[idle]`.
+  // 2.0.12 emits session-lifecycle / control rows in the message list. They are
+  // not chat turns. Without this drop they land as empty Assistant headers
+  // (deriveMessageRole defaults unknown roles to assistant; role:"idle" still
+  // paints a non-user MessageHeader with no identity).
+  const roleHint = asString(item.role) ?? asString(item.clientRole)
   if (
     type === "idle"
     || type === "model-switched"
     || type === "agent-selected"
+    || type === "agent-switched"
     || type === "location-switched"
+    || roleHint === "idle"
   ) {
     return null
   }
@@ -250,13 +255,28 @@ export function normalizeSessionProjectionMessage(
   if (type === "assistant") {
     const info = baseMessage(sessionID, item, "assistant")
     if (record(item.model)) {
-      info.modelID = asString(item.model.id)
-      info.providerID = asString(item.model.providerID)
-      const variant = asString(item.model.variant)
+      // Wire uses model.id; domain Message.model uses modelID.
+      info.modelID = asString(item.model.id) ?? asString(item.model.modelID) ?? asString(item.modelID)
+      info.providerID = asString(item.model.providerID) ?? asString(item.providerID)
+      const variant = asString(item.model.variant) ?? asString(item.variant)
       if (info.modelID || info.providerID || variant) {
         info.model = {
           ...(info.providerID ? { providerID: info.providerID } : {}),
           ...(info.modelID ? { modelID: info.modelID } : {}),
+          ...(variant ? { variant } : {}),
+        }
+      }
+    } else {
+      // Top-level identity when model object is omitted.
+      const modelID = asString(item.modelID)
+      const providerID = asString(item.providerID)
+      const variant = asString(item.variant)
+      if (modelID) info.modelID = modelID
+      if (providerID) info.providerID = providerID
+      if (modelID || providerID || variant) {
+        info.model = {
+          ...(providerID ? { providerID } : {}),
+          ...(modelID ? { modelID } : {}),
           ...(variant ? { variant } : {}),
         }
       }
@@ -265,9 +285,10 @@ export function normalizeSessionProjectionMessage(
     if (agent) {
       info.agent = agent
     }
-    // Failed turns carry no content parts; keep finish/error on the info so
-    // the transcript can still render the failure instead of dropping it.
-    const finish = asString(item.finish)
+    // Failed turns (e.g. provider.auth 401) carry no content parts; keep
+    // finish/error on the info so the transcript can still render the failure
+    // instead of dropping it or inventing a successful empty assistant.
+    const finish = asString(item.finish) ?? asString(item.rawFinish)
     if (finish) {
       info.finish = finish
     }
@@ -275,6 +296,7 @@ export function normalizeSessionProjectionMessage(
       info.error = {
         type: asString(item.error.type) ?? "error",
         message: asString(item.error.message) ?? "",
+        ...(typeof item.error.status === "number" ? { status: item.error.status } : {}),
       }
     }
     // Official SessionMessage.Assistant carries usage for TPS / cost chrome.

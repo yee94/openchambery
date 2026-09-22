@@ -110,7 +110,8 @@ import { useConfigStore } from "@/stores/useConfigStore"
 import { useTodosPersistStore } from "@/stores/useTodosPersistStore"
 import { useSessionUIStore } from "./session-ui-store"
 import { toast } from "@/components/ui"
-import { appendNotification } from "./notification-store"
+import { appendNotification, clearSessionErrorNotifications } from "./notification-store"
+import { recordSessionError, summarizeOpenCodeError } from "./session-error-log"
 import {
   applyGlobalSessionStatusEvent,
   applyGlobalSessionStatusSnapshot,
@@ -127,7 +128,6 @@ import { mergePartsForDisplay } from "./displayParts"
 import { getInitialSessionTurnLimit } from "./session-message-policy"
 import { openSessionFromToast } from "./session-opener"
 import { getPermissionToastKey, showPermissionNeededToast } from "./permission-toast"
-import { applySessionFormLiveEvent } from "./session-form-store"
 import { getRuntimeLiveStatusSeed, LIVE_STATUS_TTL_MS } from "./runtime-live-memory"
 
 import { normalizeProjectPath } from "@/lib/projectResolution"
@@ -2241,11 +2241,40 @@ export function handleEvent(
     }
   }
 
-  // Notification dispatch for top-level session turn-complete events.
-  // These are NOT handled by the event reducer — only the notification store.
-  if (payload.type === "session.idle") {
-    const props = payload.properties as { sessionID?: string }
+  // New authoritative run: drop the previous turn's error notification so
+  // useLatestSessionError / SessionErrorNotice do not keep the stale failure
+  // after session.execution.started (reducer already clears session_error_at).
+  if (payload.type === "session.execution.started") {
+    const startedSessionID = (payload.properties as { sessionID?: string }).sessionID
+    if (startedSessionID) clearSessionErrorNotifications(startedSessionID)
+  }
+
+  // Notification dispatch for top-level turn-complete and execution failures.
+  // session.execution.failed is the v2 path that carries the error payload
+  // (legacy session.error keeps the same shape). Reducer settles idle +
+  // session_error_at; this store retains the message for live UI.
+  if (
+    payload.type === "session.idle"
+    || payload.type === "session.error"
+    || payload.type === "session.execution.failed"
+  ) {
+    const props = payload.properties as { sessionID?: string; error?: unknown }
     const sessionID = props.sessionID
+    const errorSummary = payload.type === "session.idle"
+      ? null
+      : summarizeOpenCodeError(props.error)
+    // Only record/retain when OpenCode actually supplied failure details.
+    // Empty summaries must not invent a fake error row.
+    const hasErrorDetails = Boolean(
+      errorSummary && (errorSummary.message || errorSummary.name),
+    )
+    if (hasErrorDetails && errorSummary && sessionID) {
+      recordSessionError({
+        sessionId: sessionID,
+        directory: resolvedDirectory ?? null,
+        ...errorSummary,
+      })
+    }
     const storeState = store.getState()
     const session = storeState.session.find((candidate) => candidate.id === sessionID)
       ?? useGlobalSessionsStore.getState().activeSessions.find((candidate) => candidate.id === sessionID)
@@ -2255,7 +2284,9 @@ export function handleEvent(
         session: sessionID,
         time: Date.now(),
         viewed: isViewedInCurrentSession(resolvedDirectory, sessionID),
-        type: "turn-complete",
+        ...(hasErrorDetails && errorSummary
+          ? { type: "error" as const, error: errorSummary }
+          : { type: "turn-complete" as const }),
       })
     }
   }
@@ -2353,6 +2384,10 @@ export function handleEvent(
     case "session.status":
     case "session.idle":
     case "session.error":
+    case "session.execution.started":
+    case "session.execution.succeeded":
+    case "session.execution.failed":
+    case "session.execution.interrupted":
       draft.session_status = { ...(current.session_status ?? {}) }
       draft.session_status_observed_at = { ...current.session_status_observed_at }
       draft.session_error_at = { ...current.session_error_at }

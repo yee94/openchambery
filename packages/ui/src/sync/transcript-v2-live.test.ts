@@ -36,7 +36,7 @@ const textPart = (id: string, messageID: string, text: string): Part =>
 const reasoningPart = (id: string, messageID: string, text: string): Part =>
   ({ id, messageID, sessionID: SESSION, type: "reasoning", text }) as Part
 
-const toolPart = (id: string, messageID: string, status = "pending"): Part =>
+const _toolPart = (id: string, messageID: string, status = "pending"): Part =>
   ({
     id,
     messageID,

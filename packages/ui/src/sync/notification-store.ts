@@ -24,7 +24,8 @@ type TurnCompleteNotification = NotificationBase & {
 
 type ErrorNotification = NotificationBase & {
   type: "error"
-  error?: { message?: string; code?: string }
+  /** What OpenCode reported for the failed turn; both null when it gave no details. */
+  error?: { name: string | null; message: string | null; code?: string }
 }
 
 export type Notification = TurnCompleteNotification | ErrorNotification
@@ -153,11 +154,43 @@ export function markSessionViewed(sessionId: string) {
   useNotificationStore.getState().markSessionViewed(sessionId)
 }
 
+/**
+ * Drop live error notifications for one session when a new authoritative run
+ * starts (`session.execution.started` / status busy). Keeps turn-complete rows.
+ * Scoped by session id only — does not touch other sessions or directories.
+ */
+export function clearSessionErrorNotifications(sessionId: string): void {
+  if (!sessionId) return
+  const current = useNotificationStore.getState().list
+  let changed = false
+  const next = current.filter((notification) => {
+    if (notification.session === sessionId && notification.type === "error") {
+      changed = true
+      return false
+    }
+    return true
+  })
+  if (!changed) return
+  useNotificationStore.setState({ list: next, index: buildIndex(next) })
+}
+
 // ---------------------------------------------------------------------------
 // React hooks for fine-grained subscriptions
 // ---------------------------------------------------------------------------
 
 export function useSessionUnseenCount(sessionId: string): number {
   return useNotificationStore((s) => s.index.session.unseenCount[sessionId] ?? 0)
+}
+
+/** The newest error OpenCode reported for this session, viewed or not. */
+export function useLatestSessionError(sessionId: string): ErrorNotification | null {
+  return useNotificationStore((s) => {
+    if (!sessionId) return null
+    for (let index = s.list.length - 1; index >= 0; index -= 1) {
+      const notification = s.list[index]
+      if (notification.session === sessionId && notification.type === "error") return notification
+    }
+    return null
+  })
 }
 

@@ -17,7 +17,10 @@ import type { Session, Part, Message, TextPart } from '@/lib/opencode/v2-types'
 
 import type { AttachedFile, SessionContextUsage, SessionWorktreeAttachment } from "@/stores/types/sessionTypes"
 import type { WorktreeMetadata } from "@/types/worktree"
+import { resolveAgentSendIdentity } from "@/lib/opencode/agent-identity"
 import { opencodeClient } from "@/lib/opencode/client"
+import { resolveSendSelection } from "@/sync/session-send-selection"
+export { resolveSendSelection } from "@/sync/session-send-selection"
 import { runtimeFetch, setRuntimeInteractiveSessionRequestId } from "@/lib/runtime-fetch"
 import { useConfigStore } from "@/stores/useConfigStore"
 import { useProjectsStore } from "@/stores/useProjectsStore"
@@ -255,12 +258,21 @@ export async function routeMessage(params: {
   await commitStagedRevertBeforeSend(params.sessionId, requestDirectory)
   const onSendConfirmed = createConfirmedSendCallback(params.sessionId, params.onSendConfirmed)
   let content = params.content
+  const sendAgent = resolveAgentSendIdentity(useConfigStore.getState().agents, params.agent) ?? params.agent
+  // Official 2.x: only switch session.model / session.agent when they differ
+  // from the desired composer pick. Metadata alone does not change the runner.
+  const sendSelection = resolveSendSelection(params.sessionId, requestDirectory, {
+    providerID: params.providerID,
+    modelID: params.modelID,
+    variant: params.variant,
+    agent: sendAgent,
+  })
   if (params.inputMode === "shell") {
     const messageID = params.messageID ?? ascendingId("msg")
     return opencodeClient.shellSession({
       sessionId: params.sessionId,
       directory: requestDirectory,
-      agent: params.agent ?? "",
+      agent: sendAgent ?? "",
       model: { providerID: params.providerID, modelID: params.modelID },
       command: params.content,
     }).then(() => {
@@ -316,25 +328,35 @@ export async function routeMessage(params: {
         content: params.content,
         providerID: params.providerID,
         modelID: params.modelID,
-        agent: params.agent,
+        agent: sendAgent,
         directory: requestDirectory,
         files: params.files,
         messageID: params.messageID,
         ticket: params.ticket,
         preserveOptimisticOnAmbiguous: params.preserveOptimisticOnAmbiguous,
         onSendConfirmed,
-        send: (messageID) => opencodeClient.sendCommand({
-          id: params.sessionId,
-          providerID: params.providerID,
-          modelID: params.modelID,
-          command: command.name,
-          arguments: argumentsText,
-          agent: params.agent,
-          variant: params.variant,
-          files: params.files,
-          messageId: messageID,
-          directory: requestDirectory,
-        }).then(() => {}),
+        send: async (messageID) => {
+          // Switch before command so the command turn runs on the desired model.
+          if (sendSelection.model || sendSelection.agent) {
+            await opencodeClient.applySendSelection(
+              params.sessionId,
+              { model: sendSelection.model, agent: sendSelection.agent },
+              requestDirectory,
+            )
+          }
+          await opencodeClient.sendCommand({
+            id: params.sessionId,
+            providerID: params.providerID,
+            modelID: params.modelID,
+            command: command.name,
+            arguments: argumentsText,
+            agent: sendAgent,
+            variant: params.variant,
+            files: params.files,
+            messageId: messageID,
+            directory: requestDirectory,
+          })
+        },
       })
     }
   }
@@ -345,7 +367,7 @@ export async function routeMessage(params: {
     content,
     providerID: params.providerID,
     modelID: params.modelID,
-    agent: params.agent,
+    agent: sendAgent,
     directory: requestDirectory,
     files: params.files,
     parts: params.optimisticParts,
@@ -359,7 +381,9 @@ export async function routeMessage(params: {
         providerID: params.providerID,
         modelID: params.modelID,
         text: content,
-        agent: params.agent,
+        agent: sendAgent,
+        switchModel: sendSelection.model,
+        switchAgent: sendSelection.agent,
         agentMentions: params.agentMentionName ? [{ name: params.agentMentionName }] : undefined,
         variant: params.variant,
         files: params.files,
@@ -1127,7 +1151,12 @@ async function handleCombinedDraftSend(params: {
   const draftSnapshot = useSessionUIStore.getState().newSessionDraft
   const trimmedAgent = typeof agent === "string" && agent.trim().length > 0 ? agent.trim() : undefined
   const configState = useConfigStore.getState()
-  const effectiveAgent = trimmedAgent ?? configState.currentAgentName
+  // Authoritative agent id for create/prompt. Catalog name is the machine key
+  // after projection; legacy display labels (e.g. "Build") remap via displayName.
+  const effectiveAgent = resolveAgentSendIdentity(
+    configState.agents,
+    trimmedAgent ?? configState.currentAgentName,
+  )
   const messageID = params.messageID ?? draftSnapshot.pendingUserMessage?.info.id ?? ascendingId("msg")
   const pendingAdditionalParts = draftSnapshot.syntheticParts?.length ? [...(additionalParts || []), ...draftSnapshot.syntheticParts] : additionalParts
   const pendingMessage = createPendingUserMessagePresentation({
@@ -2200,8 +2229,12 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
     const sessionAgentSelection = targetSessionId
       ? useSelectionStore.getState().getSessionAgentSelection(targetSessionId)
       : null
-    const configAgentName = useConfigStore.getState().currentAgentName
-    const effectiveAgent = trimmedAgent || sessionAgentSelection || configAgentName || undefined
+    const configState = useConfigStore.getState()
+    const configAgentName = configState.currentAgentName
+    const effectiveAgent = resolveAgentSendIdentity(
+      configState.agents,
+      trimmedAgent || sessionAgentSelection || configAgentName || undefined,
+    )
 
     if (targetSessionId) {
       useSelectionStore.getState().saveSessionModelSelection(targetSessionId, providerID, modelID)

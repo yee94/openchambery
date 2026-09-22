@@ -1,3 +1,5 @@
+import { forceCloseHttpServerConnections } from './http-server-connections.js';
+
 export const createGracefulShutdownRuntime = (dependencies) => {
   const {
     process,
@@ -22,7 +24,6 @@ export const createGracefulShutdownRuntime = (dependencies) => {
     getOpenCodePort,
     getOpenCodeProcess,
     setOpenCodeProcess,
-    killProcessOnPort,
     waitForPortRelease,
     getServer,
     getUiAuthController,
@@ -78,12 +79,14 @@ export const createGracefulShutdownRuntime = (dependencies) => {
     }
 
     if (!shouldSkipOpenCodeStop()) {
-      const portToKill = getOpenCodePort();
+      const portToRelease = getOpenCodePort();
       const openCodeProcess = getOpenCodeProcess();
 
       if (openCodeProcess) {
         console.log('Stopping OpenCode process...');
         try {
+          // close() owns SIGTERM→SIGKILL on this child handle. Never re-kill a
+          // numeric pid captured before close — it may already be recycled.
           await openCodeProcess.close();
         } catch (error) {
           console.warn('Error closing OpenCode process:', error);
@@ -91,9 +94,9 @@ export const createGracefulShutdownRuntime = (dependencies) => {
         setOpenCodeProcess(null);
       }
 
-      killProcessOnPort(portToKill);
-      if (!(await waitForPortRelease(portToKill, 5000))) {
-        console.warn(`Timed out waiting for OpenCode port ${portToKill} to be released during shutdown`);
+      // Probe only after owned close. Do not mass-kill by port (clients / external).
+      if (!(await waitForPortRelease(portToRelease, 5000))) {
+        console.warn(`Timed out waiting for OpenCode port ${portToRelease} to be released during shutdown`);
       }
     } else {
       console.log('Skipping OpenCode shutdown (external server)');
@@ -105,12 +108,18 @@ export const createGracefulShutdownRuntime = (dependencies) => {
       try {
         await Promise.race([
           new Promise((resolve) => {
+            // Stop accepting first. closeAllConnections drops plain HTTP sockets
+            // but leaves upgraded WS/SSE; destroy tracked server-owned leftovers
+            // so the close callback can fire without waiting SHUTDOWN_TIMEOUT.
             server.close(() => {
               console.log('HTTP server closed');
               resolve();
             });
             if (options.forceCloseConnections === true) {
-              server.closeAllConnections?.();
+              const { destroyedTracked } = forceCloseHttpServerConnections(server);
+              if (destroyedTracked > 0) {
+                console.log(`Forced close of ${destroyedTracked} remaining server socket(s)`);
+              }
             }
           }),
           new Promise((resolve) => {

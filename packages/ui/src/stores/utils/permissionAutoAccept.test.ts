@@ -6,12 +6,12 @@ function makeSession(id: string, parentID?: string): Session {
 }
 
 describe("autoRespondsPermission", () => {
-  test("returns false when autoAccept is empty", () => {
+  test("defaults to allow when autoAccept is empty", () => {
     expect(autoRespondsPermission({
       autoAccept: {},
       sessions: [makeSession("s1")],
       sessionID: "s1",
-    })).toBe(false)
+    })).toBe(true)
   })
 
   test("returns true when session has autoAccept enabled", () => {
@@ -70,7 +70,7 @@ describe("autoRespondsPermission", () => {
     })).toBe(true)
   })
 
-  test("returns false when only sibling has autoAccept enabled", () => {
+  test("defaults to allow when only a sibling has an explicit policy", () => {
     const autoAccept: PermissionAutoAcceptMap = { sibling: true }
     const sessions = [
       makeSession("parent"),
@@ -81,7 +81,7 @@ describe("autoRespondsPermission", () => {
       autoAccept,
       sessions,
       sessionID: "child",
-    })).toBe(false)
+    })).toBe(true)
   })
 
   test("child autoAccept overrides parent", () => {
@@ -97,12 +97,12 @@ describe("autoRespondsPermission", () => {
     })).toBe(false)
   })
 
-  test("returns false for unknown session", () => {
+  test("defaults to allow for a session with no explicit policy", () => {
     const autoAccept: PermissionAutoAcceptMap = { s1: true }
     expect(autoRespondsPermission({
       autoAccept,
       sessions: [],
       sessionID: "unknown",
-    })).toBe(false)
+    })).toBe(true)
   })
 })

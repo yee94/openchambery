@@ -110,7 +110,7 @@ export type State = {
   session_status: Record<string, SessionStatus>
   session_status_observed_at: Record<string, number>
   session_status_snapshot_at: number | undefined
-  /** Live `session.error` observation time. Not persisted history; busy/retry clears. */
+  /** Live `session.error` / `session.execution.failed` observation time. Not persisted history; busy/retry clears. */
   session_error_at: Record<string, number>
   session_diff: Record<string, FileDiff[]>
   todo: Record<string, Todo[]>

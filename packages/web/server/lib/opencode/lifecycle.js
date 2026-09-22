@@ -20,6 +20,10 @@ const HEALTH_CHECK_RESULT_CACHE_MS = parsePositiveInt(process.env.OPENCHAMBER_OP
 const OPENCODE_HEALTH_PATH = '/api/info';
 const OPENCODE_HEALTH_FALLBACK_PATH = '/global/health';
 const DEFAULT_OPENCODE_SERVE_PORT = 4096;
+// Polite SIGTERM window before SIGKILL for managed children (restart/OAuth/reload
+// need enough time for clean flush; do not shorten globally for Quit latency).
+const OPENCODE_CHILD_SIGTERM_GRACE_MS = 2500;
+const OPENCODE_CHILD_SIGKILL_WAIT_MS = 1000;
 // Last-used directory plus recently opened projects — deeper tails are unlikely
 // to be the user's first click and just add background work.
 const WARMUP_DIRECTORY_LIMIT = 4;
@@ -53,21 +57,39 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
     getWarmupDirectories = async () => [],
   } = deps;
 
-  const killProcessOnPort = (port) => {
-    if (!port || process.platform === 'win32') return;
-    try {
-      const result = spawnSync('lsof', ['-ti', `:${port}`], { encoding: 'utf8', timeout: 5000, windowsHide: true });
-      const output = result.stdout || '';
-      const myPid = process.pid;
-      for (const pidStr of output.split(/\s+/)) {
-        const pid = parseInt(pidStr.trim(), 10);
-        if (pid && pid !== myPid) {
-          try {
-            spawnSync('kill', ['-9', String(pid)], { stdio: 'ignore', timeout: 2000 });
-          } catch {
-          }
-        }
+  /**
+   * Force-signal only an owned managed OpenCode pid / process group.
+   * Never lsof-kill by port: that can murder clients still connected to the port
+   * or a newly bound external/shared `opencode serve` that we do not own.
+   * `port` is accepted for call-site compatibility and diagnostics only.
+   */
+  const killProcessOnPort = (port, ownedPid = null) => {
+    const pid = Number(ownedPid);
+    if (!Number.isInteger(pid) || pid <= 0) {
+      return;
+    }
+    if (pid === process.pid) {
+      return;
+    }
+
+    if (process.platform === 'win32') {
+      try {
+        spawnSync('taskkill', ['/pid', String(pid), '/f', '/t'], {
+          stdio: 'ignore',
+          timeout: 5000,
+          windowsHide: true,
+        });
+      } catch {
       }
+      return;
+    }
+
+    try {
+      process.kill(-pid, 'SIGKILL');
+    } catch {
+    }
+    try {
+      process.kill(pid, 'SIGKILL');
     } catch {
     }
   };
@@ -216,13 +238,13 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
 
     signalProcessTree('SIGTERM');
 
-    if (await waitForChildProcessClose(child, 2500)) {
+    if (await waitForChildProcessClose(child, OPENCODE_CHILD_SIGTERM_GRACE_MS)) {
       return;
     }
 
     signalProcessTree('SIGKILL');
 
-    await waitForChildProcessClose(child, 1000);
+    await waitForChildProcessClose(child, OPENCODE_CHILD_SIGKILL_WAIT_MS);
   };
 
   const closeManagedOpenCodeChild = async (child) => {
@@ -679,11 +701,13 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
         return;
       }
 
-      const portToKill = state.openCodePort;
+      const portToRelease = state.openCodePort;
 
       if (state.openCodeProcess) {
         console.log('Stopping existing OpenCode process...');
         try {
+          // close() owns the full SIGTERM→SIGKILL escalation on this child handle.
+          // Do not SIGKILL a pre-captured pid afterward — the OS may have recycled it.
           await state.openCodeProcess.close();
         } catch (error) {
           console.warn('Error closing OpenCode process:', error);
@@ -692,9 +716,9 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
         syncToHmrState();
       }
 
-      killProcessOnPort(portToKill);
-      if (!(await waitForPortRelease(portToKill, 5000))) {
-        console.warn(`Timed out waiting for OpenCode port ${portToKill} to be released`);
+      // Probe only: never mass-kill whoever holds the port (clients / external serve).
+      if (!(await waitForPortRelease(portToRelease, 5000))) {
+        console.warn(`Timed out waiting for OpenCode port ${portToRelease} to be released`);
       }
 
       if (env.ENV_CONFIGURED_OPENCODE_PORT) {

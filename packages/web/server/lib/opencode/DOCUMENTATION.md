@@ -87,6 +87,8 @@ This module provides OpenCode server integration utilities for the web server ru
   - `PUT /api/behavior/agents-md`
   - `POST /api/opencode/upgrade` (proxies OpenCode `POST /global/upgrade` with a required semantic version `target`, then restarts managed OpenCode so the new binary is active)
   - `GET /api/opencode/upgrade-status`
+  - `GET /api/opencode/health`: probes managed OpenCode `GET /api/info` (Basic auth, 4s timeout) and returns `{ healthy }` via `evaluateOpenCodeHealthBody`. Admits official 2.x `ServerInfo` (`version`/`pid`/`urls`/`paths` without `healthy`) and classic `{ healthy: true, version }`; rejects 1.x, missing/unknown versions, and `healthy: false`. Upstream non-OK responses pass through status with `{ healthy: false, error }`; transport failures return HTTP 503.
+  - `GET /api/opencode/version`
   - `POST /api/opencode/directory`
   - `GET /api/provider/:providerId/source`
   - `DELETE /api/provider/:providerId/auth`
@@ -144,8 +146,8 @@ This module provides OpenCode server integration utilities for the web server ru
   - `bootstrapOpenCodeAtStartup()`
   - `retryOpenCodeStartup()`
   - `startHealthMonitoring(healthCheckIntervalMs)`
-  - `waitForPortRelease(port, timeoutMs, hostname?)`
-  - `killProcessOnPort(port)`
+  - `waitForPortRelease(port, timeoutMs, hostname?)`: probe-only; reports whether the listener freed without killing occupants.
+  - `killProcessOnPort(port, ownedPid?)`: legacy helper retained for tests/compat; force-signals only an explicit owned pid/process group when `ownedPid` is provided. Restart and graceful shutdown **do not** call it after `child.close()` (close owns escalation; a second kill of a captured pid risks recycling). Never mass-kills by port via `lsof`.
 
 ## Public exports (env-runtime.js)
 - `createOpenCodeEnvRuntime(dependencies)`: creates runtime that owns OpenCode CLI environment and binary discovery state. Auto-discovery matches master: settings/env, then PATH `opencode` (official v2) with `opencode2` as alias, then known install locations, then a previously installed pin under the OpenChamber data dir. 1.x binaries are skipped by `--version`, not by basename. `resolveOpencodeCliPath()` never prefers a packaged/bundled Electron extraResource. Managed startup calls `ensurePinnedOpenCode2CliEnv()` and installs the pin only when no usable 2.x CLI exists; if pin install fails (or auto-install is disabled), it may last-resort to a 2.x binary under `OPENCHAMBER_BUNDLED_OPENCODE_CLI_DIR` or `process.resourcesPath/opencode-cli` (source `bundled`). Explicit `OPENCODE_BINARY` that reports 1.x fails closed with `OPENCODE_BINARY_INVALID`. Bootstrap reuses a healthy v2 `opencode serve` on port 4096 when present; otherwise it starts generic `opencode serve`.
@@ -168,7 +170,7 @@ This module provides OpenCode server integration utilities for the web server ru
 ## Public exports (managed-capabilities-runtime.js)
 - `createManagedCapabilitiesRuntime(dependencies?)`: returns resource publishing, bridge-origin, child-environment, identity, and bridge-authorization APIs for managed OpenCode only.
 - `mergeManagedOpenCodeConfig({ configContent, pluginUrl, instructionsUrl })`: merges injected plugin/instructions URLs with stable deduplication.
-- Managed child config injects the plugin as a file URL and instructions as an absolute filesystem path. Capability identity validates the current managed PID and its liveness before HMR reuse or bridge authorization.
+- Managed child config injects the scheduled-task plugin as a file URL and instructions as an absolute filesystem path, then appends the `v2-plugin-host-shim` directory. OpenCode 2.0.12 has no `ctx.catalog`; that shim re-invokes catalog-based user plugins against `provider.transform`. Capability identity validates the current managed PID and its liveness before HMR reuse or bridge authorization.
 - `bootstrap-runtime.js` forwards managed bridge authorization to the API auth gate. The reserved bridge path accepts only the current managed-child capability and returns HTTP 403 before UI, tunnel, or client authentication for every other request. `feature-routes-runtime.js` registers the managed scheduled-task bridge before generic OpenCode proxy composition.
 - Capability resources use an application-version and source-content SHA-256 fingerprint directory. The bridge token is a managed OpenCode process capability: every plugin loaded into that process belongs to the trusted-code boundary. External OpenCode receives no managed capability injection or bridge authorization.
 
@@ -336,9 +338,13 @@ When adding or changing Host HTTP APIs that mobile/desktop clients reach over Pr
   - `setupProxy(app)`
 
 ## Public exports (shutdown-runtime.js)
-- `createGracefulShutdownRuntime(dependencies)`: creates graceful shutdown runtime for managed OpenCode and web server teardown sequencing.
+- `createGracefulShutdownRuntime(dependencies)`: creates graceful shutdown runtime for managed OpenCode and web server teardown sequencing. Stops managed OpenCode only via `openCodeProcess.close()` (that handle owns SIGTERM→SIGKILL). After close, `waitForPortRelease(port, 5000)` probes whether the listener freed — never re-kills a pre-captured numeric pid (recycle hazard) and never mass-kills by port. When `forceCloseConnections: true`, after `server.close()` it runs `forceCloseHttpServerConnections` (`closeAllConnections` plus destroy of tracked upgraded sockets) so the HTTP close callback can fire without waiting `SHUTDOWN_TIMEOUT` on leftover WS/SSE.
 - Returned API:
-  - `gracefulShutdown(options?)`: accepts `forceCloseConnections: true` for runtimes that close remaining HTTP connections after initiating server close.
+  - `gracefulShutdown(options?)`: accepts `forceCloseConnections: true` for runtimes that close remaining HTTP connections after initiating server close (including upgraded sockets tracked by `attachHttpServerConnectionTracker`).
+
+## Public exports (http-server-connections.js)
+- `attachHttpServerConnectionTracker(server)`: tracks sockets from the server's `connection` event (covers later upgrades). Returns `{ getOpenSocketCount, destroyRemainingSockets, dispose }`.
+- `forceCloseHttpServerConnections(server)`: `closeAllConnections` then destroys remaining tracked sockets; returns `{ destroyedTracked }`. Only the owning server's sockets — never an external server.
 
 ## Public exports (server-startup-runtime.js)
 - `createServerStartupRuntime(dependencies)`: creates runtime for server bind/listen and process handler wiring.

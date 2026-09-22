@@ -38,7 +38,6 @@ import { toast } from '@/components/ui/toast';
 import { useThemeSystem } from '@/contexts/useThemeSystem';
 import { useNotificationStore } from '@/sync/notification-store';
 import { useI18n } from '@/lib/i18n';
-import { isSessionSharingAvailable } from '@/sync/session-sharing-availability';
 import { useRuntimeAPIs } from '@/hooks/useRuntimeAPIs';
 import { forceRefreshProjectWorktreeCatalog } from '@/lib/worktrees/worktreeManager';
 import { getRootBranch } from '@/lib/worktrees/worktreeStatus';

@@ -1,4 +1,6 @@
 import React from 'react';
+import { useQuery } from '@tanstack/react-query';
+import { useEvent } from '@reactuses/core';
 import { ScrollableOverlay } from '@/components/ui/ScrollableOverlay';
 import { ProviderLogo } from '@/components/ui/ProviderLogo';
 import { useConfigStore } from '@/stores/useConfigStore';
@@ -23,7 +25,11 @@ import type { ModelMetadata } from '@/types';
 import { getCurrentIntlLocale, useI18n } from '@/lib/i18n';
 import { runtimeFetch } from '@/lib/runtime-fetch';
 import { opencodeClient } from '@/lib/opencode/client';
-import { filterMethodsWithIndex, shouldLoadAvailableProviders } from './providerAvailability';
+import { filterMethodsWithIndex } from './providerAvailability';
+import { getRuntimeGeneration, getRuntimeTransportIdentity, subscribeRuntimeEndpointChanged } from '@/lib/runtime-switch';
+import { useDirectoryStore } from '@/stores/useDirectoryStore';
+import { providerConnectionQueryOptions } from './providerConnectionQueries';
+import { createProviderOAuthFlow } from './providerOAuth';
 import { QuotaCredentials } from './QuotaCredentials';
 import { SettingsGroup } from '@/components/sections/shared/SettingsGroup';
 
@@ -88,11 +94,6 @@ interface AuthMethod {
   [key: string]: unknown;
 }
 
-interface ProviderOption {
-  id: string;
-  name?: string;
-}
-
 interface ProviderSourceInfo {
   exists: boolean;
   path?: string | null;
@@ -105,9 +106,6 @@ interface ProviderSources {
   custom?: ProviderSourceInfo;
 }
 
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  typeof value === 'object' && value !== null;
-
 const normalizeAuthType = (method: AuthMethod) => {
   const raw = typeof method.type === 'string' ? method.type : '';
   const label = `${method.name ?? ''} ${method.label ?? ''}`.toLowerCase();
@@ -115,65 +113,6 @@ const normalizeAuthType = (method: AuthMethod) => {
   if (merged.includes('oauth')) return 'oauth';
   if (merged.includes('api')) return 'api';
   return raw.toLowerCase();
-};
-
-const parseAuthPayload = (payload: unknown): Record<string, AuthMethod[]> => {
-  if (!isRecord(payload)) {
-    return {};
-  }
-  const result: Record<string, AuthMethod[]> = {};
-  for (const [providerId, value] of Object.entries(payload)) {
-    if (Array.isArray(value)) {
-      result[providerId] = value.filter((entry) => isRecord(entry)) as AuthMethod[];
-    }
-  }
-  return result;
-};
-
-const normalizeProviderEntry = (entry: unknown): ProviderOption | null => {
-  if (typeof entry === 'string') {
-    return { id: entry };
-  }
-  if (!isRecord(entry)) {
-    return null;
-  }
-  const idCandidate =
-    (typeof entry.id === 'string' && entry.id) ||
-    (typeof entry.providerID === 'string' && entry.providerID) ||
-    (typeof entry.slug === 'string' && entry.slug) ||
-    (typeof entry.name === 'string' && entry.name);
-  if (!idCandidate) {
-    return null;
-  }
-  const nameCandidate = typeof entry.name === 'string' ? entry.name : undefined;
-  return { id: idCandidate, name: nameCandidate };
-};
-
-const parseProvidersPayload = (payload: unknown): ProviderOption[] => {
-  let entries: unknown[] = [];
-
-  if (Array.isArray(payload)) {
-    entries = payload;
-  } else if (isRecord(payload)) {
-    if (Array.isArray(payload.all)) {
-      entries = payload.all;
-    } else if (Array.isArray(payload.providers)) {
-      entries = payload.providers;
-    }
-  }
-
-  const mapped = entries
-    .map((entry) => normalizeProviderEntry(entry))
-    .filter((entry): entry is ProviderOption => Boolean(entry));
-
-  const seen = new Set<string>();
-  return mapped.filter((entry) => {
-    if (seen.has(entry.id)) {
-      return false;
-    }
-    seen.add(entry.id);
-    return true;
-  });
 };
 
 type IntegrationMethodLike = {
@@ -196,6 +135,7 @@ type ProviderLike = {
   name?: string;
 };
 
+// eslint-disable-next-line react-refresh/only-export-components -- tests import these helpers
 export const resolveIntegrationId = (
   providerId: string,
   providers: ProviderLike[],
@@ -211,6 +151,7 @@ export const resolveIntegrationId = (
   return providerId;
 };
 
+// eslint-disable-next-line react-refresh/only-export-components -- tests import these helpers
 export const buildAuthMethodsFromIntegrations = (
   providers: ProviderLike[],
   integrations: IntegrationLike[],
@@ -249,6 +190,12 @@ export const buildAuthMethodsFromIntegrations = (
 };
 
 export const ProvidersPage: React.FC = () => {
+  const generation = React.useSyncExternalStore(subscribeRuntimeEndpointChanged, getRuntimeGeneration, getRuntimeGeneration);
+  const directory = useDirectoryStore((state) => state.currentDirectory);
+  return <ProvidersPageContent key={`${generation}:${directory}`} />;
+};
+
+const ProvidersPageContent: React.FC = () => {
   const { t } = useI18n();
   const providers = useConfigStore((state) => state.providers);
   const selectedProviderId = useConfigStore((state) => state.selectedProviderId);
@@ -259,24 +206,63 @@ export const ProvidersPage: React.FC = () => {
   const hideAllModels = useUIStore((state) => state.hideAllModels);
   const showAllModels = useUIStore((state) => state.showAllModels);
 
-  const [authMethodsByProvider, setAuthMethodsByProvider] = React.useState<Record<string, AuthMethod[]>>({});
-  const [authLoading, setAuthLoading] = React.useState(false);
+  const connectionQuery = useQuery(providerConnectionQueryOptions());
+  const { methodsByProvider: authMethodsByProvider, integrationIdByProvider } = React.useMemo(() =>
+    buildAuthMethodsFromIntegrations(connectionQuery.data?.providers ?? [], connectionQuery.data?.integrations ?? []),
+  [connectionQuery.data]);
+  const authLoading = connectionQuery.isPending;
+  React.useEffect(() => {
+    if (connectionQuery.isError) toast.error(t('settings.providers.page.toast.authMethodsLoadFailed'));
+  }, [connectionQuery.isError, t]);
   const [apiKeyInputs, setApiKeyInputs] = React.useState<Record<string, string>>({});
   const [authBusyKey, setAuthBusyKey] = React.useState<string | null>(null);
   const [modelQuery, setModelQuery] = React.useState('');
   const [pendingOAuth, setPendingOAuth] = React.useState<{ providerId: string; methodIndex: number; methodID: string; attemptID: string; mode: 'auto' | 'code' } | null>(null);
-  const [integrationIdByProvider, setIntegrationIdByProvider] = React.useState<Record<string, string>>({});
   const [oauthCodes, setOauthCodes] = React.useState<Record<string, string>>({});
   const [oauthDetails, setOauthDetails] = React.useState<Record<string, { url?: string; instructions?: string; userCode?: string; mode: 'auto' | 'code' }>>({});
-  const [availableProviders, setAvailableProviders] = React.useState<ProviderOption[]>([]);
-  const [availableLoading, setAvailableLoading] = React.useState(false);
-  const [availableError, setAvailableError] = React.useState<string | null>(null);
+  const availableLoading = connectionQuery.isPending;
+  const availableError = connectionQuery.isError ? t('settings.providers.page.state.unableToLoadProviderList') : null;
   const [candidateProviderId, setCandidateProviderId] = React.useState('');
   const [providerSearchQuery, setProviderSearchQuery] = React.useState('');
   const [providerDropdownOpen, setProviderDropdownOpen] = React.useState(false);
   const [providerSources, setProviderSources] = React.useState<Record<string, ProviderSources>>({});
   const [showAuthPanel, setShowAuthPanel] = React.useState(false);
   const isAddMode = selectedProviderId === ADD_PROVIDER_ID;
+  const mutationLifetime = React.useRef<AbortController | null>(null);
+  React.useEffect(() => {
+    const controller = new AbortController();
+    mutationLifetime.current = controller;
+    return () => controller.abort();
+  }, []);
+  const captureMutationScope = useEvent(() => {
+    const controller = mutationLifetime.current;
+    if (!controller || controller.signal.aborted) return null;
+    const directory = opencodeClient.getDirectory();
+    const generation = getRuntimeGeneration();
+    return {
+      directory,
+      location: directory ? { directory } : undefined,
+      transportIdentity: getRuntimeTransportIdentity(),
+      signal: controller.signal,
+      isCurrent: () => mutationLifetime.current === controller
+        && !controller.signal.aborted
+        && getRuntimeGeneration() === generation
+        && opencodeClient.getDirectory() === directory,
+    };
+  });
+  const oauthFlow = React.useRef<ReturnType<typeof createProviderOAuthFlow> | null>(null);
+  const clearOAuth = useEvent(() => {
+    oauthFlow.current?.cancel();
+    oauthFlow.current = null;
+    setPendingOAuth(null);
+    setOauthDetails({});
+    setOauthCodes({});
+    setAuthBusyKey(null);
+  });
+  React.useEffect(() => {
+    clearOAuth();
+    return () => { oauthFlow.current?.cancel(); oauthFlow.current = null; };
+  }, [selectedProviderId, candidateProviderId, clearOAuth]);
 
   React.useEffect(() => {
     if (!selectedProviderId && providers.length > 0) {
@@ -284,89 +270,16 @@ export const ProvidersPage: React.FC = () => {
     }
   }, [providers, selectedProviderId, setSelectedProvider]);
 
-  React.useEffect(() => {
-    let isMounted = true;
-
-    const loadAuthMethods = async () => {
-      setAuthLoading(true);
-      try {
-        const client = opencodeClient.getSdkClient();
-        const [providersResult, integrationsResult] = await Promise.all([
-          client.provider.list(),
-          client.integration.list(),
-        ]);
-        if (!isMounted) return;
-        const mapped = buildAuthMethodsFromIntegrations(
-          Array.isArray(providersResult.data) ? providersResult.data : [],
-          Array.isArray(integrationsResult.data) ? integrationsResult.data : [],
-        );
-        setAuthMethodsByProvider(parseAuthPayload(mapped.methodsByProvider));
-        setIntegrationIdByProvider(mapped.integrationIdByProvider);
-      } catch (error) {
-        if (!isMounted) return;
-        console.error('Failed to load provider auth methods:', error);
-        toast.error(t('settings.providers.page.toast.authMethodsLoadFailed'));
-      } finally {
-        if (isMounted) {
-          setAuthLoading(false);
-        }
-      }
-    };
-
-    loadAuthMethods();
-
-    return () => {
-      isMounted = false;
-    };
-  }, [t]);
-
-  React.useEffect(() => {
-    if (!shouldLoadAvailableProviders(isAddMode)) {
-      return;
-    }
-
-    let isMounted = true;
-
-    const loadAvailableProviders = async () => {
-      setAvailableLoading(true);
-      setAvailableError(null);
-      try {
-        const result = await opencodeClient.getSdkClient().provider.list();
-        if (!isMounted) return;
-        setAvailableProviders(parseProvidersPayload(result.data));
-      } catch (error) {
-        if (!isMounted) return;
-        console.error('Failed to load available providers:', error);
-        setAvailableError(t('settings.providers.page.state.unableToLoadProviderList'));
-      } finally {
-        if (isMounted) {
-          setAvailableLoading(false);
-        }
-      }
-    };
-
-    loadAvailableProviders();
-
-    return () => {
-      isMounted = false;
-    };
-  }, [isAddMode, t]);
-
-  const connectedProviderIds = React.useMemo(
-    () => new Set(providers.map((provider) => provider.id)),
-    [providers]
-  );
-
   const unconnectedProviders = React.useMemo(
     () =>
-      availableProviders
-        .filter((provider) => !connectedProviderIds.has(provider.id))
+      (connectionQuery.data?.integrations ?? [])
+        .filter((integration) => !integration.id.startsWith('mcp_') && integration.connections.length === 0)
         .sort((a, b) => {
           const labelA = (a.name || a.id).toLowerCase();
           const labelB = (b.name || b.id).toLowerCase();
           return labelA.localeCompare(labelB);
         }),
-    [availableProviders, connectedProviderIds]
+    [connectionQuery.data]
   );
 
   React.useEffect(() => {
@@ -433,13 +346,15 @@ export const ProvidersPage: React.FC = () => {
   const selectedProvider = providers.find((provider) => provider.id === selectedProviderId);
   const selectedSources = selectedProviderId ? providerSources[selectedProviderId] : undefined;
 
-  const handleSaveApiKey = async (providerId: string) => {
+  const handleSaveApiKey = useEvent(async (providerId: string) => {
     const apiKey = apiKeyInputs[providerId]?.trim() ?? '';
     if (!apiKey) {
       toast.error(t('settings.providers.page.toast.apiKeyRequired'));
       return;
     }
 
+    const scope = captureMutationScope();
+    if (!scope) return;
     const busyKey = `api:${providerId}`;
     setAuthBusyKey(busyKey);
 
@@ -448,109 +363,83 @@ export const ProvidersPage: React.FC = () => {
       await opencodeClient.getSdkClient().integration.connect.key({
         integrationID,
         key: apiKey,
-      });
+        location: scope.location,
+      }, { signal: scope.signal });
+      if (!scope.isCurrent()) return;
 
-      toast.success(t('settings.providers.page.toast.apiKeySaved'));
       setApiKeyInputs((prev) => ({ ...prev, [providerId]: '' }));
-      await reloadOpenCodeConfiguration({ scopes: ["providers"], mode: "active" });
-      setSelectedProvider(providerId);
-    } catch (error) {
-      console.error('Failed to save API key:', error);
-      toast.error(t('settings.providers.page.toast.apiKeySaveFailed'));
+      await reloadOpenCodeConfiguration({ scopes: ['providers'], mode: 'active', queryDirectory: scope.directory, transportIdentity: scope.transportIdentity });
+      if (!scope.isCurrent()) return;
+      const refreshed = await connectionQuery.refetch({ throwOnError: true });
+      if (!scope.isCurrent()) return;
+      const connected = refreshed.data?.providers.find((provider) =>
+        provider.id === providerId || provider.integrationID === integrationID);
+      if (connected) setSelectedProvider(connected.id);
+      toast.success(t('settings.providers.page.toast.apiKeySaved'));
+    } catch {
+      if (scope.isCurrent()) toast.error(t('settings.providers.page.toast.apiKeySaveFailed'));
     } finally {
-      setAuthBusyKey(null);
+      if (scope.isCurrent()) setAuthBusyKey(null);
     }
-  };
+  });
 
-  const handleOAuthStart = async (providerId: string, methodIndex: number) => {
+  const handleOAuthStart = useEvent(async (providerId: string, methodIndex: number) => {
+    clearOAuth();
     const busyKey = `oauth:${providerId}:${methodIndex}`;
-    let autoCompleting = false;
     setAuthBusyKey(busyKey);
-
-    try {
-      const method = authMethodsByProvider[providerId]?.[methodIndex];
-      const methodID = typeof method?.id === 'string' ? method.id : '';
-      if (!methodID) {
-        throw new Error(t('settings.providers.page.toast.oauthStartFailed'));
-      }
-      const integrationID = integrationIdByProvider[providerId] || providerId;
-      const result = await opencodeClient.getSdkClient().integration.oauth.connect({
-        integrationID,
-        methodID,
-      });
-      const dataRecord: Record<string, unknown> = isRecord(result.data) ? result.data : {};
-      const urlCandidate = typeof dataRecord.url === 'string' ? dataRecord.url : undefined;
-      const instructions = typeof dataRecord.instructions === 'string' ? dataRecord.instructions : undefined;
-      const attemptID = typeof dataRecord.attemptID === 'string' ? dataRecord.attemptID : '';
-      const mode = dataRecord.mode === 'auto' ? 'auto' : 'code';
-
-      if (!attemptID || (!urlCandidate && !instructions)) {
-        throw new Error(t('settings.providers.page.toast.oauthDetailsMissing'));
-      }
-
-      const detailsKey = `${providerId}:${methodIndex}`;
-      setOauthDetails((prev) => ({
-        ...prev,
-        [detailsKey]: {
-          url: urlCandidate,
-          instructions,
-          mode,
-        },
-      }));
-
-      if (urlCandidate) {
-        void openExternalUrl(urlCandidate);
-      }
-      setPendingOAuth({ providerId, methodIndex, methodID, attemptID, mode });
-      toast.message(t('settings.providers.page.toast.completeOAuthInBrowser'));
-      if (mode === 'auto') {
-        autoCompleting = true;
-        void handleOAuthComplete(providerId, methodIndex, undefined, attemptID);
-      }
-    } catch (error) {
-      console.error('Failed to start OAuth flow:', error);
-      toast.error(t('settings.providers.page.toast.oauthStartFailed'));
-    } finally {
-      if (!autoCompleting) {
-        setAuthBusyKey(null);
-      }
-    }
-  };
-
-  const handleOAuthComplete = async (providerId: string, methodIndex: number, codeOverride?: string, attemptIDOverride?: string) => {
-    const codeKey = `${providerId}:${methodIndex}`;
-    const code = codeOverride ?? oauthCodes[codeKey]?.trim();
-
-    const busyKey = `oauth-complete:${providerId}:${methodIndex}`;
-    setAuthBusyKey(busyKey);
-
-    try {
-      const attemptID = attemptIDOverride
-        || (pendingOAuth?.providerId === providerId && pendingOAuth.methodIndex === methodIndex
-          ? pendingOAuth.attemptID
-          : '');
-      if (!attemptID) {
-        throw new Error(t('settings.providers.page.toast.oauthCompleteFailed'));
-      }
-      const integrationID = integrationIdByProvider[providerId] || providerId;
-      await opencodeClient.getSdkClient().integration.oauth.complete({
-        integrationID,
-        attemptID,
-        ...(code ? { code } : {}),
-      });
-
-      toast.success(t('settings.providers.page.toast.oauthCompleted'));
-      setOauthCodes((prev) => ({ ...prev, [codeKey]: '' }));
-      setPendingOAuth(null);
-      await reloadOpenCodeConfiguration({ scopes: ["providers"], mode: "active" });
-      setSelectedProvider(providerId);
-    } catch (error) {
-      console.error('Failed to complete OAuth flow:', error);
-      toast.error(t('settings.providers.page.toast.oauthCompleteFailed'));
-    } finally {
+    const method = authMethodsByProvider[providerId]?.[methodIndex];
+    const methodID = typeof method?.id === 'string' ? method.id : '';
+    if (!methodID) {
       setAuthBusyKey(null);
+      toast.error(t('settings.providers.page.toast.oauthStartFailed'));
+      return;
     }
-  };
+    const integrationID = integrationIdByProvider[providerId] || providerId;
+    const flow = createProviderOAuthFlow({
+      integrationID,
+      onAttempt: ({ attemptID, mode, url, instructions }) => {
+        setOauthDetails({ [`${providerId}:${methodIndex}`]: {
+          url, instructions, mode, userCode: /[A-Z0-9]{4}-[A-Z0-9]{4,5}/.exec(instructions)?.[0],
+        } });
+        setPendingOAuth({ providerId, methodIndex, methodID, attemptID, mode });
+        if (mode === 'code') setAuthBusyKey(null);
+        if (url && integrationID !== 'claude-code') void openExternalUrl(url);
+        toast.message(t('settings.providers.page.toast.completeOAuthInBrowser'));
+      },
+      onSuccess: async () => {
+        setPendingOAuth(null);
+        setOauthDetails({});
+        setOauthCodes({});
+        await reloadOpenCodeConfiguration({ scopes: ['providers'], mode: 'active' });
+        if (!flow.isCurrent() || oauthFlow.current !== flow) return;
+        const refreshed = await connectionQuery.refetch({ throwOnError: true });
+        if (!flow.isCurrent() || oauthFlow.current !== flow) return;
+        toast.success(t('settings.providers.page.toast.oauthCompleted'));
+        // Integration IDs can differ from the activated provider ID.
+        const connected = refreshed.data?.providers.find((provider) =>
+          provider.id === providerId || provider.integrationID === integrationID);
+        if (connected) setSelectedProvider(connected.id);
+        setAuthBusyKey(null);
+      },
+      onError: (phase) => {
+        setAuthBusyKey(null);
+        setPendingOAuth(null);
+        setOauthDetails({});
+        setOauthCodes({});
+        toast.error(t(phase === 'start' ? 'settings.providers.page.toast.oauthStartFailed' : 'settings.providers.page.toast.oauthCompleteFailed'));
+      },
+    });
+    oauthFlow.current = flow;
+    await flow.start(methodID);
+  });
+
+  const handleOAuthComplete = useEvent(async (providerId: string, methodIndex: number) => {
+    const codeKey = `${providerId}:${methodIndex}`;
+    const code = oauthCodes[codeKey]?.trim();
+    if (!code || pendingOAuth?.mode !== 'code' || pendingOAuth.providerId !== providerId || pendingOAuth.methodIndex !== methodIndex) return;
+    setAuthBusyKey(`oauth-complete:${providerId}:${methodIndex}`);
+    await oauthFlow.current?.complete(code);
+  });
 
   const handleCopyOAuthLink = async (url: string) => {
     const result = await copyTextToClipboard(url);
@@ -558,7 +447,6 @@ export const ProvidersPage: React.FC = () => {
       toast.success(t('settings.providers.page.toast.oauthLinkCopied'));
       return;
     }
-    console.error('Failed to copy OAuth link:', result.error);
     toast.error(t('settings.providers.page.toast.oauthLinkCopyFailed'));
   };
 
@@ -568,18 +456,20 @@ export const ProvidersPage: React.FC = () => {
       toast.success(t('settings.providers.page.toast.deviceCodeCopied'));
       return;
     }
-    console.error('Failed to copy device code:', result.error);
     toast.error(t('settings.providers.page.toast.deviceCodeCopyFailed'));
   };
 
-  const handleDisconnectProvider = async (providerId: string) => {
+  const handleDisconnectProvider = useEvent(async (providerId: string) => {
+    const scope = captureMutationScope();
+    if (!scope) return;
     const busyKey = `disconnect:${providerId}`;
     setAuthBusyKey(busyKey);
 
     try {
       const client = opencodeClient.getSdkClient();
       const integrationID = integrationIdByProvider[providerId] || providerId;
-      const integration = await client.integration.get({ integrationID });
+      const integration = await client.integration.get({ integrationID, location: scope.location }, { signal: scope.signal });
+      if (!scope.isCurrent()) return;
       const connections = Array.isArray(integration.data?.connections) ? integration.data.connections : [];
       const credentialIds = connections.flatMap((connection) => (
         connection.type === 'credential' && typeof connection.id === 'string' && connection.id
@@ -589,17 +479,21 @@ export const ProvidersPage: React.FC = () => {
       if (credentialIds.length === 0) {
         throw new Error(t('settings.providers.page.toast.providerDisconnectFailed'));
       }
-      await Promise.all(credentialIds.map((credentialID) => client.credential.remove({ credentialID })));
+      // Credentials are runtime-global in OpenCode 2; IDs come from the scoped integration read.
+      await Promise.all(credentialIds.map((credentialID) => client.credential.remove({ credentialID }, { signal: scope.signal })));
+      if (!scope.isCurrent()) return;
 
+      await reloadOpenCodeConfiguration({ scopes: ['providers'], mode: 'active', queryDirectory: scope.directory, transportIdentity: scope.transportIdentity });
+      if (!scope.isCurrent()) return;
+      await connectionQuery.refetch({ throwOnError: true });
+      if (!scope.isCurrent()) return;
       toast.success(t('settings.providers.page.toast.providerDisconnected'));
-      await reloadOpenCodeConfiguration({ scopes: ["providers"], mode: "active" });
-    } catch (error) {
-      console.error('Failed to disconnect provider:', error);
-      toast.error(t('settings.providers.page.toast.providerDisconnectFailed'));
+    } catch {
+      if (scope.isCurrent()) toast.error(t('settings.providers.page.toast.providerDisconnectFailed'));
     } finally {
-      setAuthBusyKey(null);
+      if (scope.isCurrent()) setAuthBusyKey(null);
     }
-  };
+  });
 
   if (!isAddMode && providers.length === 0) {
     return (
@@ -622,12 +516,13 @@ export const ProvidersPage: React.FC = () => {
           </div>
 
           <ProviderSettingsSection label={t('settings.providers.page.connect.selectProviderTitle')}>
+              {availableError && <p role="alert" className="typography-meta text-muted-foreground">{availableError}</p>}
               <div className="flex flex-wrap items-center gap-2 py-1.5">
                 <span className="typography-ui-label text-foreground">{t('settings.providers.page.connect.providerField')}</span>
                   {availableLoading ? (
                     <p className="typography-meta text-muted-foreground">{t('settings.providers.page.state.loading')}</p>
-                  ) : availableError ? (
-                    <p className="typography-meta text-muted-foreground">{availableError}</p>
+                  ) : availableError && !connectionQuery.data ? (
+                    <Button variant="outline" size="xs" onClick={() => void connectionQuery.refetch()}>{t('settings.providers.page.actions.reconnect')}</Button>
                   ) : unconnectedProviders.length === 0 ? (
                     <p className="typography-meta text-muted-foreground">{t('settings.providers.page.connect.allProvidersConnected')}</p>
                   ) : (
@@ -791,8 +686,9 @@ export const ProvidersPage: React.FC = () => {
                                     authBusyKey === `oauth-complete:${candidateProviderId}:${methodIndex}`
                                   }
                                 >
-                                  {t('settings.providers.page.actions.connect')}
+                                  {isPending && pendingOAuth.mode === 'auto' ? t('settings.providers.page.state.loading') : t('settings.providers.page.actions.connect')}
                                 </Button>
+                                {isPending && <Button variant="ghost" size="xs" onClick={clearOAuth}>{t('settings.common.actions.cancel')}</Button>}
                               </div>
 
                               {oauthDetails[codeKey]?.instructions && (
@@ -909,7 +805,7 @@ export const ProvidersPage: React.FC = () => {
               variant="outline"
               size="xs"
               className="!font-normal"
-              onClick={() => setShowAuthPanel((prev) => !prev)}
+              onClick={() => { clearOAuth(); setShowAuthPanel((prev) => !prev); }}
             >
               {showAuthPanel ? t('settings.providers.page.actions.hide') : t('settings.providers.page.actions.reconnect')}
             </Button>
@@ -990,8 +886,9 @@ export const ProvidersPage: React.FC = () => {
                                 authBusyKey === `oauth-complete:${selectedProvider.id}:${methodIndex}`
                               }
                             >
-                              {t('settings.providers.page.actions.connect')}
+                              {isPending && pendingOAuth.mode === 'auto' ? t('settings.providers.page.state.loading') : t('settings.providers.page.actions.connect')}
                             </Button>
+                            {isPending && <Button variant="ghost" size="xs" onClick={clearOAuth}>{t('settings.common.actions.cancel')}</Button>}
                           </div>
 
                           {oauthDetails[codeKey]?.instructions && (

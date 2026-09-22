@@ -4,7 +4,15 @@ import type { Agent } from '@/lib/opencode/v2-types';
 const DIRECTORY = '/workspace/project';
 const OTHER_DIRECTORY = '/workspace/other';
 const STORAGE_KEY = 'config-store';
-type TestAgent = { name: string; mode?: string; hidden?: boolean; model?: { providerID?: string; modelID?: string }; variant?: string };
+type TestAgent = {
+  id?: string;
+  name: string;
+  displayName?: string;
+  mode?: string;
+  hidden?: boolean;
+  model?: { providerID?: string; modelID?: string };
+  variant?: string;
+};
 
 let storage = new Map<string, string>();
 let liveProviderId = 'live';
@@ -118,7 +126,9 @@ let getProvidersForConfigImpl: ((directory?: string | null) => Promise<{
 }>) | null = null;
 
 const testAgent = (name: string, options?: Partial<TestAgent>): Agent => ({
+  id: options?.id ?? name,
   name,
+  displayName: options?.displayName ?? name,
   mode: options?.mode ?? 'primary',
   hidden: options?.hidden,
   model: options?.model,
@@ -2192,5 +2202,131 @@ describe('useConfigStore model metadata from live providers', () => {
       release_date: '2025-01-15',
     });
     expect(useConfigStore.getState().getModelMetadata('other', 'live-model')).toBe(undefined);
+  });
+});
+
+describe('useConfigStore agent identity (id vs display name)', () => {
+  beforeEach(() => {
+    queryClient.clear();
+    storage = new Map<string, string>();
+    Object.defineProperty(globalThis, 'localStorage', {
+      configurable: true,
+      value: makeStorage(),
+    });
+    liveAgents = [];
+    listAgentsImpl = null;
+    listAgentsCalls = 0;
+    settingsBootstrapStatus = 200;
+    setSyncRefs({} as never, { children: new Map(), getState: () => undefined } as never, DIRECTORY);
+    useSelectionStore.setState({
+      sessionModelSelections: new Map(),
+      sessionAgentSelections: new Map(),
+      sessionAgentModelSelections: new Map(),
+      sessionAgentModelVariantSelections: new Map(),
+      lastUsedProvider: null,
+    });
+    useSessionUIStore.setState({ currentSessionId: null });
+    useConfigStore.setState({
+      activeDirectoryKey: DIRECTORY,
+      directoryScoped: {},
+      providerConfigLoadingByDirectory: {},
+      agentConfigLoadingByDirectory: {},
+      providers: [provider('live')],
+      defaultProviders: { default: 'live' },
+      currentProviderId: 'live',
+      currentModelId: 'live-model',
+      currentVariant: undefined,
+      selectedProviderId: 'live',
+      currentAgentName: undefined,
+      agents: [],
+      agentModelSelections: {},
+      lastSelectedAgentName: undefined,
+      lastUserSelection: undefined,
+      globalLastUserSelection: undefined,
+      selectionSource: 'auto',
+      isConnected: true,
+      hasEverConnected: true,
+      connectionPhase: 'connected',
+      lastDisconnectReason: null,
+      isInitialized: true,
+      settingsDefaultModel: undefined,
+      settingsDefaultVariant: undefined,
+      settingsDefaultAgent: undefined,
+      opencodeDefaultAgent: undefined,
+      opencodeDefaultModel: undefined,
+      catalogTransportIdentity: getRuntimeTransportIdentity(),
+    });
+  });
+
+  test('setAgent stores Build/Plan by authoritative id and keeps displayName on catalog rows', () => {
+    const build = testAgent('build', { id: 'build', displayName: 'Build' });
+    const plan = testAgent('plan', { id: 'plan', displayName: 'Plan' });
+    useConfigStore.setState({ agents: [build, plan] });
+
+    useConfigStore.getState().setAgent('Build');
+    expect(useConfigStore.getState().currentAgentName).toBe('build');
+    expect(useConfigStore.getState().getCurrentAgent()?.displayName).toBe('Build');
+
+    useConfigStore.getState().setAgent('Plan');
+    expect(useConfigStore.getState().currentAgentName).toBe('plan');
+    expect(useConfigStore.getState().getCurrentAgent()?.name).toBe('plan');
+  });
+
+  test('setAgent prefers exact custom id Build over builtin displayName Build when both exist', () => {
+    useConfigStore.setState({
+      agents: [
+        testAgent('build', { id: 'build', displayName: 'Build' }),
+        testAgent('Build', { id: 'Build', displayName: 'Custom Build Label' }),
+      ],
+    });
+
+    useConfigStore.getState().setAgent('Build');
+    expect(useConfigStore.getState().currentAgentName).toBe('Build');
+    expect(useConfigStore.getState().getCurrentAgent()?.displayName).toBe('Custom Build Label');
+  });
+
+  test('loadAgents remaps persisted display name Build to id build without case-folding BUILD', async () => {
+    listAgentsImpl = async () => [
+      { id: 'build', name: 'Build', mode: 'primary', hidden: false },
+      { id: 'plan', name: 'Plan', mode: 'primary', hidden: false },
+    ];
+    useConfigStore.setState({
+      currentAgentName: 'Build',
+      selectionSource: 'manual',
+      directoryScoped: {
+        [DIRECTORY]: {
+          providers: [provider('live')],
+          agents: [],
+          currentProviderId: 'live',
+          currentModelId: 'live-model',
+          currentAgentName: 'Build',
+          selectedProviderId: 'live',
+          agentModelSelections: {},
+          defaultProviders: { default: 'live' },
+          selectionSource: 'manual',
+        },
+      },
+    });
+
+    await useConfigStore.getState().loadAgents({ directory: DIRECTORY, source: 'test:legacyBuildDisplay', forceRefresh: true });
+
+    const state = useConfigStore.getState();
+    expect(state.currentAgentName).toBe('build');
+    expect(state.agents.find((agent) => agent.name === 'build')?.displayName).toBe('Build');
+    expect(state.directoryScoped[DIRECTORY]?.currentAgentName).toBe('build');
+
+    // Unknown case-only key must not become build via toLowerCase.
+    useConfigStore.setState({ currentAgentName: 'BUILD', selectionSource: 'manual' });
+    await useConfigStore.getState().loadAgents({ directory: DIRECTORY, source: 'test:noCaseFold', forceRefresh: true });
+    // BUILD is not in catalog → manual guard falls through to default cascade (build).
+    expect(useConfigStore.getState().currentAgentName).toBe('build');
+  });
+
+  test('getCurrentAgent resolves legacy display selection before remap write', () => {
+    useConfigStore.setState({
+      agents: [testAgent('build', { id: 'build', displayName: 'Build' })],
+      currentAgentName: 'Build',
+    });
+    expect(useConfigStore.getState().getCurrentAgent()?.name).toBe('build');
   });
 });

@@ -122,15 +122,28 @@ export const createManagedCapabilitiesRuntime = ({
     bridgeOrigin = parsed.origin;
   };
 
+  const publishHostShim = async () => {
+    const sourceDir = pathLike.join(pathLike.dirname(fileURLToPath(import.meta.url)), 'v2-plugin-host-shim');
+    const target = pathLike.join(dataDir, 'managed-opencode-capabilities', 'v2-plugin-host-shim');
+    await fsLike.mkdir(target, { recursive: true });
+    await Promise.all(['package.json', 'index.mjs'].map((name) => fsLike.copyFile(pathLike.join(sourceDir, name), pathLike.join(target, name))));
+    return target;
+  };
+
   const prepareManagedChildEnv = async (baseEnv = {}) => {
     if (!bridgeOrigin) throw new Error('Managed scheduled-task bridge origin is unavailable');
-    const { pluginPath, instructionsPath } = await publishResources();
+    const [{ pluginPath, instructionsPath }, shimDirectory] = await Promise.all([
+      publishResources(),
+      publishHostShim(),
+    ]);
     const token = cryptoLike.randomBytes(32).toString('hex');
     const pluginUrl = pathToFileURL(pluginPath).href;
     identity = { version: materialVersion, origin: bridgeOrigin, token, childPid: null };
+    const merged = JSON.parse(mergeManagedOpenCodeConfig({ configContent: baseEnv.OPENCODE_CONFIG_CONTENT, pluginUrl, instructionsUrl: instructionsPath }));
+    merged.plugin = stableDedupe([...(Array.isArray(merged.plugin) ? merged.plugin : []), shimDirectory]);
     return {
       ...baseEnv,
-      OPENCODE_CONFIG_CONTENT: mergeManagedOpenCodeConfig({ configContent: baseEnv.OPENCODE_CONFIG_CONTENT, pluginUrl, instructionsUrl: instructionsPath }),
+      OPENCODE_CONFIG_CONTENT: JSON.stringify(merged),
       OPENCHAMBER_SCHEDULED_TASK_BRIDGE_ORIGIN: bridgeOrigin,
       OPENCHAMBER_SCHEDULED_TASK_BRIDGE_PATH: MANAGED_SCHEDULED_TASK_TOOL_PATH,
       OPENCHAMBER_SCHEDULED_TASK_TOKEN_HEADER: MANAGED_SCHEDULED_TASK_TOKEN_HEADER,

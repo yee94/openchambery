@@ -66,7 +66,7 @@ Success `200`:
 }
 ```
 
-- `records`: chronological oldest → newest, including intermediate non-boundary rows (synthetic, tools, subtask, compaction) inside the window.
+- `records`: chronological oldest → newest, including intermediate non-boundary rows (synthetic, tools, subtask, compaction) inside the window. Host projection drops v2 **control** SessionMessage rows (`idle`, `model-switched`, `agent-selected`, `agent-switched`, `location-switched`) so they never reach ChatMessage as empty Assistant headers. Native assistants project `content[]` once (never also top-level `text` when `content` is present). Wire `model.id` becomes domain `modelID`; `finish`/`error` on failed assistants (e.g. `provider.auth` 401) are preserved.
 - `turnCount`: count of authored user boundaries in `records`.
 - `cursor`: host-owned opaque token for the next `before=` request; `null` when `complete` is true. The token represents the position **just before** the earliest returned authored user (so the client can load older history without overlap).
 - `complete`: `upstreamComplete && selected.length === accumulated.length`. True when upstream history is exhausted **and** `selectTurnRecords` did not trim any older scanned rows (nothing left for the client). When the scan window held more than N turns and older rows were trimmed, or when upstream stopped on a full page with a missing `nextCursor` (suspicious truncation), `complete` stays `false` with a `cursor` so the client can fetch / retry.

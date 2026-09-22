@@ -6,7 +6,7 @@
  * existing Host shallow proxy + `runtimeFetch`.
  *
  * POST `/api/session/:sessionID/permission/:requestID/reply`
- * body `{ reply: "once" | "always" | "reject", message? }`
+ * body `{ decision: "once" | "always" | "reject", message? }`
  *
  * Server-side reject fails this request and every other pending request for
  * the same session. The client must drop the whole session pending set after
@@ -60,7 +60,7 @@ export async function postSessionPermissionReply(input: PostSessionPermissionRep
     headers: { "Content-Type": "application/json" },
     query: directoryQuery(input.directory),
     body: JSON.stringify({
-      reply: input.reply,
+      decision: input.reply,
       ...(input.message ? { message: input.message } : {}),
     }),
     signal: input.signal,

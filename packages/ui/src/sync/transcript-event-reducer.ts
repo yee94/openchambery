@@ -241,6 +241,21 @@ export function applyTranscriptDirectoryEvent(
   switch (event.type) {
     case "message.updated": {
       const info = (event.properties as { info: Message }).info
+      // v2 control rows (idle / model-switched / …) must not enter the live
+      // transcript; they render as empty Assistant headers after reload.
+      const wireExtras = info as Record<string, unknown>
+      const controlType = typeof wireExtras.type === "string" ? wireExtras.type : undefined
+      const controlRole = typeof wireExtras.role === "string" ? wireExtras.role : undefined
+      if (
+        controlType === "idle"
+        || controlType === "model-switched"
+        || controlType === "agent-selected"
+        || controlType === "agent-switched"
+        || controlType === "location-switched"
+        || controlRole === "idle"
+      ) {
+        return false
+      }
       const messages = draft.message[info.sessionID]
       const sessionWasRenderable = Boolean(messages) && messages.every(
         (message) => message.role !== "assistant" || draft.part[message.id] !== undefined,

@@ -1,5 +1,13 @@
 # Chat components
 
+## Agent labels and execution failure feedback
+
+Primary composer history parsing reads authoritative top-level `providerID` / `modelID` on both user and assistant rows, with nested model objects as a compatibility fallback. A string `model` remains a display label. When a manual next-turn pick becomes an optimistic user row, that row supersedes the previous assistant execution for restore/flush, so the composer, user row, and captured send retain the same selection. The existing session/scope guards and pinned-history lifetime remain in force. `primaryComposerSelection.test.ts` covers this transition with the projected user-row shape observed in browser verification.
+
+`ModelControls` uses `agentDisplayName` for catalog labels, the selected label, and search. Selection values retain the catalog's authoritative `Agent.name` ID; the core identity projection owns the mapping between IDs and display names.
+
+`ChatContainer` mounts `SessionErrorNotice` above the active session's composer. The notice combines `useLatestSessionError(sessionId)` with the directory-scoped `useSessionErrorAt` marker, preserves feedback after a notification is viewed, and hides when the authoritative marker clears. Known directory mismatches suppress the notice; a tail assistant's inline error owns presentation when present. The component reuses the assistant error formatter, semantic error colors, `role="alert"`, and localized fallback text. Sync owns error-marker creation and retry cleanup. `SessionErrorNotice.test.tsx` covers these presentation gates; live event delivery and retry cleanup require integration verification.
+
 ## Question auto-delegation
 
 `QuestionCard` retains its question/session identity and existing parent-view subagent attribution. `QuestionAutoDelegateStatus` reads the runtime-scoped Query snapshot through `lib/questionAutoDelegate.ts`; pause and immediate delegate use the matching request's authoritative `sessionID` and `directory`. Manual reply/reject retain the official SDK path and pass that directory to session actions. The SDK error wrapper preserves the structured payload `code` plus HTTP `status`; precisely `409` + `question_submission_claimed` triggers a snapshot refresh and a scope-bound local submission lock. Drafts remain mounted. A stale or failed refresh keeps the result-pending presentation and offers status refresh. Other failures retain ordinary failure handling; submitting, uncertain, and settled authority states disable answer submission.

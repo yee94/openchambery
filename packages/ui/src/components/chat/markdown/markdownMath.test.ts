@@ -5,7 +5,6 @@ import { marked, type Tokens } from 'marked';
 import { findDollarMathStart, matchDollarMath } from './markdownMath';
 
 // Same overlap as markdownCore's DollarMathToken so the Generic cast type-checks.
-type DollarMathToken = { type: string; raw: string; text: string; display: boolean };
 
 const dollarParser = marked.use({
   gfm: true,

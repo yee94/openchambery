@@ -22,7 +22,6 @@ const createRuntime = (server, shutdownTimeoutMs = 1000, overrides = {}) => crea
   getOpenCodePort: () => null,
   getOpenCodeProcess: () => null,
   setOpenCodeProcess: vi.fn(),
-  killProcessOnPort: vi.fn(),
   waitForPortRelease: vi.fn(async () => true),
   getServer: () => server,
   getUiAuthController: () => null,
@@ -95,5 +94,54 @@ describe('graceful shutdown runtime', () => {
 
     expect(scheduledTasksRuntime.stop).toHaveBeenCalledOnce();
     expect(runHistoryStore.close).not.toHaveBeenCalled();
+  });
+
+  it('awaits managed OpenCode close with zero extra kill, then probes port release for 5s', async () => {
+    const close = vi.fn(async () => undefined);
+    const waitForPortRelease = vi.fn(async (_port, timeoutMs) => {
+      expect(timeoutMs).toBe(5000);
+      return true;
+    });
+    const setOpenCodeProcess = vi.fn();
+    const server = {
+      close: vi.fn((callback) => {
+        callback();
+      }),
+    };
+
+    const runtime = createRuntime(server, 1000, {
+      shouldSkipOpenCodeStop: () => false,
+      getOpenCodePort: () => 45678,
+      getOpenCodeProcess: () => ({ close, pid: 99 }),
+      setOpenCodeProcess,
+      waitForPortRelease,
+    });
+    await runtime.gracefulShutdown({ exitProcess: false });
+
+    expect(close).toHaveBeenCalledOnce();
+    expect(setOpenCodeProcess).toHaveBeenCalledWith(null);
+    expect(waitForPortRelease).toHaveBeenCalledWith(45678, 5000);
+  });
+
+  it('does not kill anything when OpenCode close already finished and a later server stage fails', async () => {
+    const close = vi.fn(async () => undefined);
+    const waitForPortRelease = vi.fn(async () => true);
+    const server = {
+      close: vi.fn(() => {
+        throw new Error('server close blew up after opencode stop');
+      }),
+    };
+
+    const runtime = createRuntime(server, 1000, {
+      shouldSkipOpenCodeStop: () => false,
+      getOpenCodePort: () => 45678,
+      getOpenCodeProcess: () => ({ close, pid: 99 }),
+      setOpenCodeProcess: vi.fn(),
+      waitForPortRelease,
+    });
+
+    await expect(runtime.gracefulShutdown({ exitProcess: false })).rejects.toThrow(/server close blew up/);
+    expect(close).toHaveBeenCalledOnce();
+    expect(waitForPortRelease).toHaveBeenCalledWith(45678, 5000);
   });
 });

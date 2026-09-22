@@ -1,6 +1,11 @@
 import { createProjectIdFromPath } from '../projects/project-id.js';
 import { projectBootstrapSettingsResponse } from './settings-helpers.js';
-import { PINNED_OPENCODE2_VERSION, isOpenCode1xVersion, resolveOpenCode2UpgradeTarget } from './opencode2-pin.js';
+import {
+  PINNED_OPENCODE2_VERSION,
+  evaluateOpenCodeHealthBody,
+  isOpenCode1xVersion,
+  resolveOpenCode2UpgradeTarget,
+} from './opencode2-pin.js';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
@@ -288,7 +293,8 @@ export const registerOpenCodeRoutes = (app, dependencies) => {
           error: health?.error || healthResponse.statusText || 'OpenCode health check failed',
         });
       }
-      return res.json({ healthy: health?.healthy === true });
+      // Reuse lifecycle/sidecar gate: official 2.x ServerInfo omits `healthy`.
+      return res.json({ healthy: evaluateOpenCodeHealthBody(health).ok });
     } catch (error) {
       return res.status(503).json({
         healthy: false,

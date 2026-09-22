@@ -9,6 +9,7 @@ import type {
   Config,
   FilePartInput,
   Message,
+  ModelRef,
   OpenCodeClient,
   Part,
   PermissionV2Effect,
@@ -20,7 +21,12 @@ import type {
   SnapshotFileDiff,
   TextPartInput,
 } from "./v2-types";
+import { projectAgent } from "./agent-identity";
 import { mergeConfigDocuments, projectSession } from "./v2-types";
+import {
+  patchLocalSessionSelection,
+  type OfficialModelRef,
+} from "@/sync/session-send-selection";
 import type { PermissionRequest } from "@/types/permission";
 import type { QuestionRequest } from "@/types/question";
 import { convertHeicToJpegViaNative } from "../native-image-transcode";
@@ -488,6 +494,11 @@ class OpencodeService {
   private healthInFlight: Map<string, Promise<boolean>> = new Map();
   private healthCache: Map<string, { healthy: boolean; expiresAt: number }> = new Map();
   private healthCacheGeneration = 0;
+  /**
+   * Per-session serial boundary for switchModel/switchAgent + prompt.
+   * Same-session concurrent sends must not interleave switches (wrong model).
+   */
+  private sessionBoundaryQueues: Map<string, Promise<void>> = new Map();
 
   constructor(baseUrl: string = DEFAULT_BASE_URL) {
     const runtimeBase = resolveRuntimeBaseUrl();
@@ -621,6 +632,101 @@ class OpencodeService {
 
   getDirectory(): string | undefined {
     return this.currentDirectory;
+  }
+
+  /**
+   * Run work on the session serial boundary (switch then prompt). Failures of
+   * prior tasks do not block the next; order is preserved per sessionID.
+   */
+  private runSessionBoundary<T>(sessionID: string, task: () => Promise<T>): Promise<T> {
+    const key = sessionID.trim()
+    if (!key) return task()
+    const previous = this.sessionBoundaryQueues.get(key) ?? Promise.resolve()
+    let settle!: (value: T) => void
+    let fail!: (reason: unknown) => void
+    const result = new Promise<T>((resolve, reject) => {
+      settle = resolve
+      fail = reject
+    })
+    const run = () => task().then(settle, fail)
+    const chained = previous.then(run, run)
+    this.sessionBoundaryQueues.set(
+      key,
+      chained.then(
+        () => undefined,
+        () => undefined,
+      ),
+    )
+    return result
+  }
+
+  /**
+   * Official 2.0.12: POST /api/session/:id/model
+   * body `{ model: { id, providerID, variant? } }` — field is `id`, not modelID.
+   */
+  async switchSessionModel(
+    sessionID: string,
+    model: OfficialModelRef | ModelRef,
+    directory?: string | null,
+  ): Promise<void> {
+    const id = "id" in model && typeof model.id === "string" && model.id
+      ? model.id
+      : (model as { modelID?: string }).modelID
+    const providerID = model.providerID
+    if (!sessionID || !id || !providerID) {
+      throw new Error("switchSessionModel requires sessionID, model.id, and providerID")
+    }
+    const variant = typeof model.variant === "string" && model.variant.trim()
+      ? model.variant.trim()
+      : undefined
+    const body: OfficialModelRef = {
+      id,
+      providerID,
+      ...(variant ? { variant } : {}),
+    }
+    const scopedDir = this.normalizeCandidatePath(directory) ?? this.currentDirectory ?? ""
+    const client = this.getScopedSdkClient(scopedDir)
+    await client.session.switchModel({
+      sessionID,
+      model: body,
+    })
+    patchLocalSessionSelection(sessionID, scopedDir || directory, { model: body })
+  }
+
+  async switchSessionAgent(
+    sessionID: string,
+    agent: string,
+    directory?: string | null,
+  ): Promise<void> {
+    const name = typeof agent === "string" ? agent.trim() : ""
+    if (!sessionID || !name) {
+      throw new Error("switchSessionAgent requires sessionID and agent")
+    }
+    const scopedDir = this.normalizeCandidatePath(directory) ?? this.currentDirectory ?? ""
+    const client = this.getScopedSdkClient(scopedDir)
+    await client.session.switchAgent({
+      sessionID,
+      agent: name,
+    })
+    patchLocalSessionSelection(sessionID, scopedDir || directory, { agent: name })
+  }
+
+  /**
+   * Apply desired model/agent on the session before prompt. OpenCode 2.x runs
+   * the next turn from session.model / session.agent; prompt metadata does not
+   * change them. Failure must not continue to prompt (wrong-model send).
+   */
+  async applySendSelection(
+    sessionID: string,
+    selection: { model?: OfficialModelRef | ModelRef; agent?: string },
+    directory?: string | null,
+  ): Promise<void> {
+    if (selection.model) {
+      await this.switchSessionModel(sessionID, selection.model, directory)
+    }
+    if (selection.agent) {
+      await this.switchSessionAgent(sessionID, selection.agent, directory)
+    }
   }
 
   async withDirectory<T>(directory: string | undefined | null, fn: () => Promise<T>): Promise<T> {
@@ -1068,6 +1174,13 @@ class OpencodeService {
     prefaceTextSynthetic?: boolean;
     agent?: string;
     variant?: string;
+    /**
+     * Switch session.model before prompt when it differs (official wire
+     * `{ id, providerID, variant? }`). Omit when resolveSendSelection found no change.
+     */
+    switchModel?: OfficialModelRef | ModelRef;
+    /** Switch session.agent before prompt when it differs; omit when unchanged. */
+    switchAgent?: string;
     files?: Array<FileInputLite>;
     /** Additional text/file parts to include (for batch sending queued messages) */
     additionalParts?: Array<{
@@ -1128,31 +1241,46 @@ class OpencodeService {
     ));
 
     try {
-      // Ticket 06/07: v2 prompt via Host shallow proxy. Idle uses delivery=steer;
-      // busy same-session follow-up uses delivery=queue. Do not retry after a
-      // transport failure: through a remote tunnel the POST may already be
-      // running server-side even though the client lost the response.
-      const inbox = await postSessionPrompt({
-        sessionID: params.id,
-        directory: requestDirectory ?? "",
-        messageID: messageId,
-        text,
-        delivery: params.delivery,
-        ...(files.length > 0 ? { files } : {}),
-        ...(agents.length > 0 ? { agents } : {}),
-        ...(params.agent || params.variant || params.format
-          ? {
-              metadata: {
-                ...(params.agent ? { agent: params.agent } : {}),
-                ...(params.variant ? { variant: params.variant } : {}),
-                model: { providerID: params.providerID, modelID: params.modelID },
-                ...(params.format ? { format: params.format } : {}),
-              },
-            }
-          : {}),
-      });
-      recordProviderSuccess(params.providerID);
-      return inbox.id;
+      // Serial session boundary: switch model/agent when needed, then prompt.
+      // OpenCode 2.x runs the turn from session.model — metadata.model alone
+      // does not change the runner (MODEL-SWITCH-DIAGNOSIS).
+      return await this.runSessionBoundary(params.id, async () => {
+        await this.applySendSelection(
+          params.id,
+          {
+            model: params.switchModel,
+            agent: params.switchAgent,
+          },
+          requestDirectory,
+        )
+
+        // Ticket 06/07: v2 prompt via Host shallow proxy. Idle uses delivery=steer;
+        // busy same-session follow-up uses delivery=queue. Do not retry after a
+        // transport failure: through a remote tunnel the POST may already be
+        // running server-side even though the client lost the response.
+        const inbox = await postSessionPrompt({
+          sessionID: params.id,
+          directory: requestDirectory ?? "",
+          messageID: messageId,
+          text,
+          delivery: params.delivery,
+          ...(files.length > 0 ? { files } : {}),
+          ...(agents.length > 0 ? { agents } : {}),
+          ...(params.agent || params.variant || params.format || params.providerID
+            ? {
+                metadata: {
+                  ...(params.agent ? { agent: params.agent } : {}),
+                  ...(params.variant ? { variant: params.variant } : {}),
+                  // Observability only — runner uses session.model after switch.
+                  model: { providerID: params.providerID, modelID: params.modelID },
+                  ...(params.format ? { format: params.format } : {}),
+                },
+              }
+            : {}),
+        });
+        recordProviderSuccess(params.providerID);
+        return inbox.id;
+      })
     } catch (error) {
       recordProviderError(params.providerID, (error as Error & { status?: number }).status);
       throw error;
@@ -1837,7 +1965,7 @@ class OpencodeService {
       if (existing) return existing;
     }
 
-    const request = (async () => {
+    const request: Promise<Agent[]> = (async (): Promise<Agent[]> => {
       const timeout = createTimeoutSignal(LIST_AGENTS_TIMEOUT_MS);
       const merged = mergeAbortSignals(signal ? [signal, timeout.signal] : [timeout.signal]);
       try {
@@ -1848,7 +1976,9 @@ class OpencodeService {
         }
         // SDK gap / endpoint drift: current OpenCode exposes the authoritative
         // agent list at /agent, while app.agents can be empty on some runtimes.
-        return response.data;
+        // Project wire id→domain name so prompts send the server key, not the
+        // display label (e.g. id `build` / name `Build`).
+        return response.data.map((row) => projectAgent(row));
       } finally {
         timeout.cleanup();
         merged.cleanup();

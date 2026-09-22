@@ -1,9 +1,10 @@
-import { describe, expect, test } from 'bun:test';
+import { describe, expect, test } from 'vitest';
 import {
   applyPrimaryComposerSelectionChange,
   applyPrimaryComposerSessionRestore,
   capturePrimaryComposerSendConfig,
   parseLatestAssistantExecutionFromMessages,
+  parseLatestUserChoiceFromMessages,
   resolvePrimaryComposerSendConfig,
   resolvePrimaryComposerSessionSelection,
   shouldHoldPrimaryComposerUserPick,
@@ -533,6 +534,46 @@ describe('resolvePrimaryComposerSessionSelection', () => {
 });
 
 describe('parseLatestAssistantExecutionFromMessages', () => {
+  test('preserves a manual next-turn pick through optimistic user arrival and flush restore', () => {
+    const messages = [
+      { id: 'user_a', role: 'user', model: { providerID: 'provider-a', modelID: 'model-a' } },
+      { id: 'assistant_a', role: 'assistant', providerID: 'provider-a', modelID: 'model-a' },
+      {
+        id: 'user_b', role: 'user', agent: 'build',
+        providerID: 'provider-b', modelID: 'model-b', model: 'provider-b/model-b',
+      },
+    ];
+    const latestUserChoice = parseLatestUserChoiceFromMessages(messages);
+    expect(shouldHoldPrimaryComposerUserPick({
+      editRevision: 1, pinnedHistoryMessageId: 'user_a', latestHistoryMessageId: latestUserChoice?.id ?? null,
+    })).toBe(false);
+    expect(resolvePrimaryComposerSessionSelection({
+      sessionId: 'session',
+      latestUserChoice,
+      latestExecution: parseLatestAssistantExecutionFromMessages(messages),
+      catalog: {
+        providers: [
+          { id: 'provider-a', models: [{ id: 'model-a' }] },
+          { id: 'provider-b', models: [{ id: 'model-b' }] },
+        ],
+        agents: [{ name: 'build' }],
+      },
+    })).toMatchObject({ source: 'history', messageId: 'user_b', providerID: 'provider-b', modelID: 'model-b' });
+  });
+
+  test('reads top-level user identity before a stale nested model', () => {
+    expect(parseLatestUserChoiceFromMessages([{
+      id: 'user_b', role: 'user', providerID: 'provider-b', modelID: 'model-b',
+      model: { providerID: 'provider-a', modelID: 'model-a' },
+    }])).toMatchObject({ providerID: 'provider-b', modelID: 'model-b' });
+  });
+
+  test('a string model label alone preserves unknown execution identity', () => {
+    expect(parseLatestUserChoiceFromMessages([{
+      id: 'user', role: 'user', model: 'provider/model',
+    }])).toMatchObject({ id: 'user', providerID: undefined, modelID: undefined });
+  });
+
   test('reads providerID/modelID from the newest assistant message', () => {
     expect(parseLatestAssistantExecutionFromMessages([
       {

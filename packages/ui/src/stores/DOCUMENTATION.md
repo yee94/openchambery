@@ -166,7 +166,13 @@ persist snapshot. `useConfigStore.ts` owns Provider and Agent UI projections
 per-project selection (including directory-scoped `lastUserSelection` plus
 cross-project `globalLastUserSelection` for new-draft unit inherit of
 agent+model+variant; legacy `agentModelSelections` / `lastSelectedAgentName` are
-hydrate-only), and mutation orchestration. It applies the Provider DTO allowlist
+hydrate-only), and mutation orchestration. Agent selection and prompt identity
+use the authoritative OpenCode agent **id** (domain `Agent.name` after
+`projectAgent` in `lib/opencode/agent-identity.ts`). Wire display labels live on
+`Agent.displayName`. Persisted selections that still store a display label
+(e.g. `"Build"` for id `"build"`) remap through exact `displayName` match when
+the catalog loads — never via blind `toLowerCase`, so custom ids that differ
+only by case stay distinct. It applies the Provider DTO allowlist
 again when projecting Query results into the store. TanStack Query remains the
 Provider/Agent network SWR owner. `config-store` localStorage keeps one bounded
 safe Provider/default DTO startup snapshot on the active configuration
