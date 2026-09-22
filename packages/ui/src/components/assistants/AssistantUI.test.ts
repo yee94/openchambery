@@ -508,6 +508,8 @@ describe('Assistant UI product contract', () => {
     expect(chatInput).not.toContain('<Textarea');
     expect(promptComposer).toContain('<Textarea');
     expect(promptComposer).toContain('type="file"');
+    expect(promptComposer).toContain('<MobileAttachPickSheet');
+    expect(promptComposer).toContain('accept="image/*"');
     expect(promptComposer).toContain('data-chat-input-footer="true"');
     expect(promptComposer).toContain('onRemoveAttachment');
     expect(chatInput).toContain('<MemoModelControls');

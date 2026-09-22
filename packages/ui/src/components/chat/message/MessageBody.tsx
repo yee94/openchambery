@@ -2426,67 +2426,43 @@ const AssistantMessageBody = React.memo(({
                                     <span className="min-w-0">{errorMessage}</span>
                                 </div>
                             ) : (
-                            <div className={cn(
-                                'group/assistant-text relative flow-root my-1.5 break-words max-w-full',
-                                // Info: quiet chip — 圆角/padding 与 tool row 几何一致
-                                // Error: keep a clearer callout.
-                                // 移动端保留完整卡片边界，与消息内容列左缘对齐.
-                                errorVariant === 'info'
-                                    ? cn(
-                                        'inline-flex w-fit max-w-full border border-[var(--status-info-border)]/45 bg-[var(--status-info-background)]/40',
-                                        isMobile
-                                            ? 'items-start gap-1.5 rounded-lg px-2.5 py-1.5'
-                                            : cn('items-center gap-1.5', TOOL_ROW_CHIP_GEOMETRY_CLASS),
-                                    )
-                                    : 'mt-3 flex items-center gap-2 rounded-lg border border-[var(--status-error-border)] bg-[var(--status-error-background)] p-3',
-                            )}>
-                                {/* Mobile info: first-line slot (h-5 = leading-5) + slight optical
-                                    offset so the glyph center sits on the text midline. */}
-                                {errorVariant === 'info' && isMobile ? (
+                            <div
+                                role={errorVariant === 'error' ? 'alert' : 'status'}
+                                className={cn(
+                                    'my-1.5 inline-flex w-fit max-w-full gap-1.5 break-words typography-meta text-muted-foreground',
+                                    // Info/error share tool-row chip geometry. Mobile keeps a full
+                                    // chip boundary aligned to the message content column.
+                                    isMobile
+                                        ? 'items-start rounded-lg px-2.5 py-1.5'
+                                        : cn('items-center', TOOL_ROW_CHIP_GEOMETRY_CLASS),
+                                    errorVariant === 'info'
+                                        ? 'border border-[var(--status-info-border)]/45 bg-[var(--status-info-background)]/40'
+                                        : 'border border-[var(--status-error-border)]/45 bg-[var(--status-error-background)]/50',
+                                )}
+                            >
+                                {isMobile ? (
                                     <span className="inline-flex h-5 w-3.5 shrink-0 items-center justify-center translate-y-[2px]" aria-hidden="true">
                                         <Icon
                                             name={errorIconName}
                                             weight={MESSAGE_ACTION_ICON_WEIGHT}
-                                            className={cn(MESSAGE_ACTION_ICON_CLASS, 'text-[var(--status-info)]/80')}
+                                            className={cn(
+                                                MESSAGE_ACTION_ICON_CLASS,
+                                                errorVariant === 'info' ? 'text-[var(--status-info)]/80' : 'text-[var(--status-error)]',
+                                            )}
                                         />
                                     </span>
                                 ) : (
                                     <Icon
                                         name={errorIconName}
-                                        weight={errorVariant === 'info' ? MESSAGE_ACTION_ICON_WEIGHT : undefined}
+                                        weight={MESSAGE_ACTION_ICON_WEIGHT}
                                         className={cn(
                                             'shrink-0',
-                                            errorVariant === 'info'
-                                                ? cn(
-                                                    // 与底栏 copy/edit/time 同尺寸 + medium stroke，避免相对正文感图标过细
-                                                    MESSAGE_ACTION_ICON_CLASS,
-                                                    'text-[var(--status-info)]/80',
-                                                )
-                                                : 'h-4 w-4 text-[var(--status-error)]',
+                                            MESSAGE_ACTION_ICON_CLASS,
+                                            errorVariant === 'info' ? 'text-[var(--status-info)]/80' : 'text-[var(--status-error)]',
                                         )}
                                     />
                                 )}
-                                <div className={cn(
-                                    'min-w-0 break-words',
-                                    errorVariant === 'info'
-                                        ? cn(
-                                            // 关键：.markdown-content 默认 --text-markdown（移动端 0.9375rem），
-                                            // 必须 ! 压回 meta，否则图标对着正文字号会失调.
-                                            'text-muted-foreground [&_.markdown-content]:text-muted-foreground [&_p]:m-0',
-                                            '[&_.markdown-content]:!leading-5',
-                                            isMobile
-                                                ? '[&_.markdown-content]:!text-[length:var(--text-meta)]'
-                                                : '[&_.markdown-content]:!text-[13px]',
-                                        )
-                                        : 'flex-1',
-                                )}>
-                                    <SimpleMarkdownRenderer
-                                        content={errorMessage ?? ''}
-                                        onShowPopup={onShowPopup}
-                                        className="[&_.markdown-content>*:first-child]:mt-0 [&_.markdown-content>*:last-child]:mb-0"
-                                        enableFileReferences={false}
-                                    />
-                                </div>
+                                <span className="min-w-0">{errorMessage}</span>
                             </div>
                             )}
                         </FadeInOnReveal>

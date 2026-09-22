@@ -30,7 +30,7 @@ export function resolveAssistantErrorPresentation(
 
     if (errorName === 'SessionRetry') {
         return {
-            text: `Opencode failed to send a message. Retry attempt info: \n\`${detail}\``,
+            text: detail,
             variant: 'info',
         };
     }
@@ -50,7 +50,15 @@ export function resolveAssistantErrorPresentation(
     }
 
     return {
-        text: `Opencode failed to send message with error:\n\`${detail}\``,
+        text: detail,
         variant: 'error',
     };
+}
+
+/**
+ * Earlier assistants in a turn are retries that a later sibling superseded.
+ * Only the last assistant may surface an error; recovered attempts stay hidden.
+ */
+export function shouldSuppressAssistantError(isLastAssistantInTurn: boolean): boolean {
+    return !isLastAssistantInTurn;
 }
