@@ -17,14 +17,30 @@ const isLikelyAbsolutePath = (value: string): boolean => (
 /**
  * Plain-text paste is shared by real filesystem paths and Composer slash chips
  * (`/release`, `/\u2003release args`). A naive "starts with /" check turns those
- * chips into `@/release` file mentions. Require multi-segment path shape and
- * reject unescaped whitespace for text/plain only; drag/drop MIME types keep the
- * broader absolute-path check.
+ * chips into `@/release` file mentions. Require multi-segment path shape.
+ * text/plain still rejects slash-command arguments, but a multi-segment absolute
+ * path whose filename contains spaces (`/Users/.../Name - Slidev.pdf`) is a file.
+ * Drag/drop MIME types keep the broader absolute-path check.
  */
+const isSpacedPlainTextFilesystemPath = (value: string): boolean => {
+    if (/[\r\n]/.test(value) || !/\s/.test(value)) return false;
+    const normalized = value.replace(/\\/g, '/');
+    const multiSegment = normalized.startsWith('//')
+        ? normalized.replace(/^\/+/, '').includes('/')
+        : /^[A-Za-z]:\//.test(normalized)
+            ? normalized.slice(3).includes('/')
+            : normalized.startsWith('/') && normalized.slice(1).includes('/');
+    if (!multiSegment) return false;
+    if (normalized.endsWith('/')) return true;
+    const lastSegment = normalized.split('/').filter(Boolean).pop() ?? '';
+    return /\.[A-Za-z0-9]{1,8}$/.test(lastSegment);
+};
+
 const isLikelyPlainTextFilesystemPath = (value: string): boolean => {
     if (!isLikelyAbsolutePath(value)) return false;
     // Slash-command invocations commonly carry arguments after the head token.
-    if (/\s/.test(value)) return false;
+    // A multi-segment absolute file whose name contains spaces is not one of those.
+    if (/\s/.test(value)) return isSpacedPlainTextFilesystemPath(value);
 
     if (value.startsWith('//') || value.startsWith('\\\\')) {
         // UNC: //server/share or \\server\share — need a share segment.

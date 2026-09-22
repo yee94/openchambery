@@ -76,6 +76,17 @@ describe('file drop references', () => {
         expect(collectFileDropReferences({
             getData: (type: string) => type === 'text/plain' ? '/Users/example/project/src/index.ts' : '',
         } as Pick<DataTransfer, 'getData'>)).toEqual(['/Users/example/project/src/index.ts']);
+
+        expect(collectFileDropReferences({
+            getData: (type: string) => type === 'text/plain'
+                ? '/Users/example/Downloads/今天我们穿越去哪？ - Slidev.pdf'
+                : '',
+        } as Pick<DataTransfer, 'getData'>)).toEqual([
+            '/Users/example/Downloads/今天我们穿越去哪？ - Slidev.pdf',
+        ]);
+        expect(collectFileDropReferences({
+            getData: (type: string) => type === 'text/plain' ? '/release notes' : '',
+        } as Pick<DataTransfer, 'getData'>)).toEqual([]);
     });
 
     test('reads structured VS Code payloads without parsing plain JSON text', () => {

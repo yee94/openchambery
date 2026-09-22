@@ -81,6 +81,7 @@ describe('insertionBoundaries', () => {
             ...merged,
             { ...agent, range: { start: 20, end: 26 } },
         ]);
+        expect(appendUniqueDraftMention(existing, { ...existing[0]!, range: { start: 0, end: 4 } })).toEqual(existing);
     });
 
     test('advancePastTrailingBoundarySpace skips one ordinary space', () => {

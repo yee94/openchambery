@@ -28,6 +28,7 @@ const mobileModelPickerPanelSource = readFileSync(join(__dirname, '../model-pick
 const modelControlsSource = readFileSync(join(__dirname, '../chat/ModelControls.tsx'), 'utf-8');
 const agentSelectorSource = readFileSync(join(__dirname, '../sections/commands/AgentSelector.tsx'), 'utf-8');
 const chatInputSource = readFileSync(join(__dirname, '../chat/ChatInput.tsx'), 'utf-8');
+const mobileAttachPickSheetSource = readFileSync(join(__dirname, '../chat/MobileAttachPickSheet.tsx'), 'utf-8');
 const branchSelectorSource = readFileSync(join(__dirname, '../views/git/BranchSelector.tsx'), 'utf-8');
 const mobileStylesSource = readFileSync(join(__dirname, '../../styles/mobile.css'), 'utf-8');
 const mobileOverlayPanelSource = readFileSync(join(__dirname, 'MobileOverlayPanel.tsx'), 'utf-8');
@@ -122,8 +123,9 @@ describe('MobileWindowMotion recipe', () => {
     expect(mobileResizableSheetSource).toContain("? 'h-auto max-h-[72dvh]'");
     expect(mobileResizableSheetSource).toContain('const fillAvailableHeight = expanded || !fitContent;');
     expect(chatInputSource).toContain('id="android-media-pick-sheet"');
-    expect(chatInputSource).toContain('overflow-hidden rounded-2xl bg-[var(--surface-muted)]');
-    expect(chatInputSource).toContain('h-auto min-h-12 w-full justify-start gap-3 rounded-none supports-[corner-shape:squircle]:rounded-none px-4 border-b border-[var(--surface-subtle)] last:border-b-0');
+    expect(chatInputSource).toContain('<MobileAttachPickSheet');
+    expect(mobileAttachPickSheetSource).toContain('overflow-hidden rounded-2xl bg-[var(--surface-muted)]');
+    expect(mobileAttachPickSheetSource).toContain('h-auto min-h-12 w-full justify-start gap-3 rounded-none supports-[corner-shape:squircle]:rounded-none px-4 border-b border-[var(--surface-subtle)] last:border-b-0');
     expect(mobileResizableSheetSource).toContain('trailing?: React.ReactNode;');
     expect(mobileResizableSheetSource).toContain('{trailing ? <div className="flex shrink-0 items-center gap-1.5">{trailing}</div> : null}\n                <div ref={setHeaderActionsSlot} className="contents" />');
     expect(mobileResizableSheetSource).toContain('export const MobileSheetHeaderActions');

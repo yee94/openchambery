@@ -352,4 +352,36 @@ describe('file mention confirmation', () => {
             { kind: 'file', value: 'src/a.ts', start: 17, end: 26 },
         ]);
     });
+
+    test('keeps a pasted absolute path with spaces as one file mention', () => {
+        const path = '/Users/example/Downloads/今天我们穿越去哪？ - Slidev.pdf';
+        const token = `@${path}`;
+        expect(collectConfirmableFileMentions(token, {
+            includeUnterminatedPastedReferences: true,
+        })).toEqual([
+            { kind: 'file', value: path, start: 0, end: token.length },
+        ]);
+        expect(collectConfirmableFileMentions(`${token} 请总结`, {
+            includeUnterminatedPastedReferences: true,
+        })).toEqual([
+            { kind: 'file', value: path, start: 0, end: token.length },
+        ]);
+        expect(collectConfirmableFileMentions(`${token} 继续`, {
+            confirmedValues: new Set([path]),
+        })).toEqual([
+            { kind: 'file', value: path, start: 0, end: token.length },
+        ]);
+        expect(collectComposerMentionHighlights(`${token} 继续`, {
+            confirmedValues: new Set([path]),
+            agentNames: new Set(),
+        })).toEqual([{ start: 0, end: token.length, kind: 'file' }]);
+        expect(collectConfirmableFileMentions('@/release notes', {
+            includeUnterminatedPastedReferences: true,
+        }).every((mention) => !mention.value.includes(' '))).toBe(true);
+        expect(collectConfirmableFileMentions('@src/a.ts please review', {
+            includeUnterminatedPastedReferences: true,
+        })).toEqual([
+            { kind: 'file', value: 'src/a.ts', start: 0, end: 9 },
+        ]);
+    });
 });
