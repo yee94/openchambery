@@ -4,7 +4,22 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
-## [1.19.20] - 2026-09-21
+## [2.0.0-beta.1] - 2026-09-22
+
+这是 OpenCode 2 预览版，不会进入稳定自动更新。需要手动下载安装包。
+
+### OpenCode 2
+
+- 对接官方 OpenCode 2.0.12。命令名是 `opencode`，`opencode2` 只是别名。
+- 优先复用本机已安装的 2.x，没有才安装到 OpenChamber 自己的目录。不会覆盖 PATH 上的 1.x `opencode`。
+- 启动时复用 4096 上已有的健康 2.x serve。别人的进程只挂上去用，不重启、不杀掉、不升级。1.x serve 不会被顶掉。
+- OpenCode 还在启动时，Loading 显示「正在启动 OpenCode API…」。
+- 桌面安装包里的 CLI 只在下载失败后兜底，不会盖过 PATH 上更新的 2.x。
+
+### 目标模式
+
+- Goal 状态改存在 OpenChamber 自己的会话记录里，不再依赖 OpenCode 的 session metadata。
+- 定时任务开启目标后，会写入同一份记录，进度可以被追踪。
 
 汇总 1.19.20-beta.1。
 
