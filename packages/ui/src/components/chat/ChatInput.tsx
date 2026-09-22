@@ -3,6 +3,7 @@ import { useEvent, useResizeObserver } from '@reactuses/core';
 import { isCapacitorApp } from '@/lib/platform';
 import { isMobileOverlayFocusRestoreSuppressed } from '@/lib/mobileOverlayFocusRestore';
 import { canUseNativeMediaPick, pickNativeMediaFiles, NATIVE_MEDIA_PICK_LIMIT } from '@/lib/native-media-pick';
+import { MobileAttachPickSheet } from './MobileAttachPickSheet';
 import { useNativeIosComposer } from './useNativeIosComposer';
 import { useIosNativeUiEnabled } from '@/lib/iosNativeUi';
 import { applyNativeComposerAccessoryVar, canUseNativeIosComposer, getNativeIosComposerPlugin, handoffNativeComposerSendToWeb, resolveComposerInsertCaret } from '@/lib/native-ios-composer';
@@ -606,7 +607,7 @@ type ComposerAttachmentControlsProps = {
     onMenuOpenChange?: (open: boolean) => void;
     /** Mobile: open the attachment bottom sheet instead of the dropdown menu. */
     onOpenMobileSheet?: () => void;
-    /** Android Capacitor：打开照片/文件二选一 sheet */
+    /** Mobile: open the photos/files half-sheet instead of the system picker. */
     onOpenAndroidPickSheet?: () => void;
     withTooltip?: boolean;
 };
@@ -626,9 +627,8 @@ const ComposerAttachmentControls = React.memo(function ComposerAttachmentControl
 
     const isMobileAttach = Boolean(props.onOpenMobileSheet);
     const attachLabel = t('chat.chatInput.actions.attachFiles');
-    // Route mobile to the all-files picker too: the image-only input hid
-    // documents (.json etc.) on iOS. WKWebView still offers the photo
-    // library from the document picker's action sheet with accept="*/*".
+    // Mobile opens the photos/files half-sheet. This fallback is the direct
+    // all-files picker for desktop and any surface without that sheet.
     const handlePick = handlePickLocalFiles;
 
     const attachButton = (
@@ -4278,6 +4278,30 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
                         return;
                     }
 
+                    const spacedMention = composerMentions.find((mention) => (
+                        (mention.kind === 'file' || mention.kind === 'directory')
+                        && message.slice(mention.range.start, mention.range.end) === `@${mention.value}`
+                        && (
+                            (probeIndex >= mention.range.start && probeIndex < mention.range.end)
+                            || (e.key === 'Backspace' && message[probeIndex] === ' ' && mention.range.end === probeIndex)
+                        )
+                    ));
+                    if (spacedMention) {
+                        const removeUntil = message[spacedMention.range.end] === ' ' ? spacedMention.range.end + 1 : spacedMention.range.end;
+                        const nextMessage = `${message.slice(0, spacedMention.range.start)}${message.slice(removeUntil)}`;
+                        e.preventDefault();
+                        applyProgrammaticEdit(nextMessage);
+                        requestAnimationFrame(() => {
+                            if (textareaRef.current) {
+                                textareaRef.current.selectionStart = spacedMention.range.start;
+                                textareaRef.current.selectionEnd = spacedMention.range.start;
+                            }
+                            adjustTextareaHeight();
+                        });
+                        updateAutocompleteState(nextMessage, spacedMention.range.start);
+                        return;
+                    }
+
                     let tokenStart = probeIndex;
                     while (tokenStart > 0 && !/\s/.test(message[tokenStart - 1])) {
                         tokenStart -= 1;
@@ -4860,6 +4884,9 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
             for (const addition of collectConfirmableFileMentions(document.text, {
                 agentNames: knownAgentNames,
                 includeUnterminatedPastedReferences: inputSource === 'paste',
+                confirmedValues: new Set(mentions.flatMap((mention) => (
+                    mention.kind === 'file' || mention.kind === 'directory' ? [mention.value] : []
+                ))),
             })) {
                 next = appendUniqueDraftMention(next, {
                     kind: addition.kind,
@@ -5063,7 +5090,16 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
         const next = `${message.slice(0, selectionStart)}${insertion}${message.slice(selectionEnd)}`;
         detachAttachmentsMissingCitations(message, next);
         replaceWithConfirmedFileMentions(next, uniquePaths);
-    }, [message, replaceWithConfirmedFileMentions, detachAttachmentsMissingCitations]);
+        const caret = advancePastTrailingBoundarySpace(next, selectionStart + insertion.length);
+        cursorPosRef.current = caret;
+        setShowFileMention(false);
+        setMentionQuery('');
+        requestAnimationFrame(() => {
+            textareaRef.current?.setSelectionRange(caret, caret);
+            adjustTextareaHeight();
+            updateAutocompleteState(next, caret);
+        });
+    }, [adjustTextareaHeight, detachAttachmentsMissingCitations, message, replaceWithConfirmedFileMentions, setMentionQuery, setShowFileMention, updateAutocompleteState]);
 
     const handlePaste = React.useCallback(async (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
         const pastedFilePaths = collectFilePathsFromTransfer(e.clipboardData);
@@ -6267,7 +6303,8 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
         textareaRef.current?.blur();
     }, [markComposerActionGesture]);
 
-    // Android Capacitor 专用，sheet 提供照片/文件二选一。
+    // Mobile photos/files half-sheet. Android Capacitor photos use the native
+    // picker; other mobile surfaces use the image file input.
     const openAndroidMediaPickSheet = React.useCallback(() => {
         markComposerActionGesture();
         setAndroidMediaPickSheetOpen(true);
@@ -6744,7 +6781,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
                         openIssuePicker={openIssuePicker}
                         openPrPicker={openPrPicker}
                         onOpenMobileSheet={openMobileAttachSheet}
-                        onOpenAndroidPickSheet={canUseNativeMediaPick() ? openAndroidMediaPickSheet : undefined}
+                        onOpenAndroidPickSheet={openAndroidMediaPickSheet}
                     />
                 </div>
                 <div
@@ -6811,7 +6848,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
                         openPrPicker={openPrPicker}
                         onOpenSettings={onOpenSettings}
                         onOpenMobileSheet={openMobileAttachSheet}
-                        onOpenAndroidPickSheet={canUseNativeMediaPick() ? openAndroidMediaPickSheet : undefined}
+                        onOpenAndroidPickSheet={openAndroidMediaPickSheet}
                     />
                     {showPermissionAutoAcceptControl ? (
                         <PermissionAutoAcceptButton
@@ -7933,60 +7970,26 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
             </MobileResizableSheet>
         ) : null}
 
-        {/* Android Capacitor photo/file chooser: the all-files WebView input opens
-            the system file manager and loses the gallery experience; iOS keeps the
-            single attach flow (WKWebView's picker already offers the photo library). */}
+        {/* Mobile photos/files chooser. Native iOS composer keeps its own menu
+            and must not open this web sheet. */}
         {isMobile ? (
-            <MobileResizableSheet
+            <MobileAttachPickSheet
                 id="android-media-pick-sheet"
                 open={androidMediaPickSheetOpen}
                 onOpenChange={(open) => {
                     if (!open) setAndroidMediaPickSheetOpen(false);
                 }}
-                title={<h2 className="truncate typography-ui-label font-semibold">{t('chat.chatInput.actions.addAttachment')}</h2>}
-                ariaLabel={t('chat.chatInput.actions.addAttachment')}
-                closeAriaLabel={t('mobile.surface.closeAria')}
-                resizeAriaLabel={t('mobile.sessions.sheet.resizeAria')}
-                fitContent
-            >
-                <div className="flex min-h-0 flex-col overflow-y-auto overscroll-contain px-3 pb-3">
-                    <div
-                        className="overflow-hidden rounded-2xl bg-[var(--surface-muted)]"
-                        data-page-scroll-lock="true"
-                    >
-                        <Button
-                            type="button"
-                            variant="ghost"
-                            size="lg"
-                            className="h-auto min-h-12 w-full justify-start gap-3 rounded-none supports-[corner-shape:squircle]:rounded-none px-4 border-b border-[var(--surface-subtle)] last:border-b-0"
-                            data-mobile-press-feedback="none"
-                            onClick={() => {
-                                restoreKeyboardAfterOverlayRef.current = false;
-                                setAndroidMediaPickSheetOpen(false);
-                                requestAnimationFrame(handlePickAndroidPhotos);
-                            }}
-                        >
-                            <Icon name="file-image" className="size-5 flex-shrink-0 text-muted-foreground" />
-                            <span className="truncate">{t('chat.chatInput.actions.attachPhotos')}</span>
-                        </Button>
-                        <Button
-                            type="button"
-                            variant="ghost"
-                            size="lg"
-                            className="h-auto min-h-12 w-full justify-start gap-3 rounded-none supports-[corner-shape:squircle]:rounded-none px-4 border-b border-[var(--surface-subtle)] last:border-b-0"
-                            data-mobile-press-feedback="none"
-                            onClick={() => {
-                                restoreKeyboardAfterOverlayRef.current = false;
-                                setAndroidMediaPickSheetOpen(false);
-                                requestAnimationFrame(handlePickLocalFiles);
-                            }}
-                        >
-                            <Icon name="attachment-2" className="size-5 flex-shrink-0 text-muted-foreground" />
-                            <span className="truncate">{t('chat.chatInput.actions.attachFiles')}</span>
-                        </Button>
-                    </div>
-                </div>
-            </MobileResizableSheet>
+                onPickPhotos={() => {
+                    restoreKeyboardAfterOverlayRef.current = false;
+                    setAndroidMediaPickSheetOpen(false);
+                    requestAnimationFrame(handlePickAndroidPhotos);
+                }}
+                onPickFiles={() => {
+                    restoreKeyboardAfterOverlayRef.current = false;
+                    setAndroidMediaPickSheetOpen(false);
+                    requestAnimationFrame(handlePickLocalFiles);
+                }}
+            />
         ) : null}
 
         {/* Mobile draft target pickers: bottom sheets replacing the inline

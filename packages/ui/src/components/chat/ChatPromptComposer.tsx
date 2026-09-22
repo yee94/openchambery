@@ -1,11 +1,15 @@
 import React from 'react';
 import { useEvent, useResizeObserver } from '@reactuses/core';
+import { toast } from '@/components/ui';
 import { isIMECompositionEvent } from '@/lib/ime';
+import { useI18n } from '@/lib/i18n';
+import { canUseNativeMediaPick, NATIVE_MEDIA_PICK_LIMIT, pickNativeMediaFiles } from '@/lib/native-media-pick';
 import { cn } from '@/lib/utils';
 import { Icon } from '@/components/icon/Icon';
 import { SendCircleIcon, StopIcon } from '@/components/icons/StopIcon';
 import { Textarea } from '@/components/ui/textarea';
 import { ChatComposerSurface } from './ChatComposerSurface';
+import { MobileAttachPickSheet } from './MobileAttachPickSheet';
 
 export type ChatPromptAttachment = {
   id: string;
@@ -24,7 +28,7 @@ type ChatPromptComposerProps = Omit<React.ComponentProps<typeof ChatComposerSurf
   onChange: (value: string, event: React.ChangeEvent<HTMLTextAreaElement>) => void;
   onSubmit: () => void;
   onStop?: () => void;
-  onAddFiles?: (files: FileList | null) => void;
+  onAddFiles?: (files: ArrayLike<File> | null) => void;
   onRemoveAttachment?: (id: string) => void;
   addFilesLabel?: string;
   removeAttachmentLabel?: string;
@@ -121,11 +125,15 @@ export const ChatPromptComposer: React.FC<ChatPromptComposerProps> = ({
   expanded = false,
   ...surfaceProps
 }) => {
+  const { t } = useI18n();
   const inline = layout === 'inline';
   const [inlineGrown, setInlineGrown] = React.useState(false);
+  const [attachSheetOpen, setAttachSheetOpen] = React.useState(false);
   const inlineAlignEnd = attachments.length > 0 || inlineGrown;
   const localInputRef = React.useRef<HTMLTextAreaElement | null>(null);
   const fileInputRef = React.useRef<HTMLInputElement>(null);
+  const imageInputRef = React.useRef<HTMLInputElement>(null);
+  const attachSheetId = React.useId().replace(/:/g, '');
 
   const resizeTextarea = useEvent(() => {
     if (!autoResize || expanded || textareaProps?.fillContainer) {
@@ -164,16 +172,54 @@ export const ChatPromptComposer: React.FC<ChatPromptComposerProps> = ({
     event.target.value = '';
   };
 
+  const openAttachSheet = useEvent(() => {
+    localInputRef.current?.blur();
+    setAttachSheetOpen(true);
+  });
+
+  const pickPromptFiles = useEvent((input: HTMLInputElement | null) => {
+    setAttachSheetOpen(false);
+    requestAnimationFrame(() => input?.click());
+  });
+
+  const pickPromptPhotos = useEvent(() => {
+    setAttachSheetOpen(false);
+    requestAnimationFrame(() => {
+      void (async () => {
+        if (!canUseNativeMediaPick()) {
+          imageInputRef.current?.click();
+          return;
+        }
+        try {
+          const files = await pickNativeMediaFiles(NATIVE_MEDIA_PICK_LIMIT);
+          if (files === null) {
+            imageInputRef.current?.click();
+            return;
+          }
+          if (files.length > 0) onAddFiles?.(files);
+        } catch (error) {
+          console.error('Native photo pick failed', error);
+          toast.error(t('chat.chatInput.toast.attachFileFailed'));
+        }
+      })();
+    });
+  });
+
   const hasContent = value.trim().length > 0 || attachments.length > 0;
   const imageAttachments = attachments.filter((attachment) => attachment.mime.startsWith('image/'));
   const fileAttachments = attachments.filter((attachment) => !attachment.mime.startsWith('image/'));
   const defaultLeftControls = onAddFiles ? (
     <>
       <input ref={fileInputRef} type="file" accept={fileAccept} multiple className="hidden" onChange={handleFileChange} />
+      {isMobile ? (
+        <input ref={imageInputRef} type="file" accept="image/*" multiple className="hidden" onChange={handleFileChange} />
+      ) : null}
       <button
         type="button"
         className="flex size-8 shrink-0 items-center justify-center rounded-md text-foreground outline-none hover:bg-[var(--interactive-hover)] disabled:cursor-not-allowed disabled:opacity-40"
-        onClick={() => fileInputRef.current?.click()}
+        onClick={() => (isMobile ? openAttachSheet() : fileInputRef.current?.click())}
+        onMouseDown={isMobile ? (event) => event.preventDefault() : undefined}
+        onPointerDownCapture={isMobile ? (event) => event.preventDefault() : undefined}
         disabled={disabled || pending}
         aria-label={addFilesLabel}
       >
@@ -396,6 +442,17 @@ export const ChatPromptComposer: React.FC<ChatPromptComposerProps> = ({
           </ChatPromptFooter>
         )}
       </div>
+      {isMobile && onAddFiles ? (
+        <MobileAttachPickSheet
+          id={`mobile-attach-pick-${attachSheetId}`}
+          open={attachSheetOpen}
+          onOpenChange={(open) => {
+            if (!open) setAttachSheetOpen(false);
+          }}
+          onPickPhotos={pickPromptPhotos}
+          onPickFiles={() => pickPromptFiles(fileInputRef.current)}
+        />
+      ) : null}
     </ChatComposerSurface>
   );
 };
