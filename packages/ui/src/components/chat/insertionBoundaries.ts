@@ -64,6 +64,8 @@ export const insertTokenWithReferenceBoundaries = (
 /**
  * Append a durable mention when kind/value/range is not already present.
  * Matches ChatInput file/directory mention dedupe (kind:value:start:end).
+ * Overlapping ranges are dropped: Draft validation rejects the whole mention
+ * list, and that rejection makes the controlled composer ignore later keystrokes.
  */
 export const appendUniqueDraftMention = <T extends {
     kind: string;
@@ -72,7 +74,11 @@ export const appendUniqueDraftMention = <T extends {
 }>(mentions: readonly T[], addition: T): T[] => {
     const keyOf = (mention: T) => `${mention.kind}:${mention.value}:${mention.range.start}:${mention.range.end}`;
     const seen = new Set(mentions.map(keyOf));
-    return seen.has(keyOf(addition)) ? [...mentions] : [...mentions, addition];
+    if (seen.has(keyOf(addition))) return [...mentions];
+    const overlaps = mentions.some((mention) => (
+        mention.range.start < addition.range.end && addition.range.start < mention.range.end
+    ));
+    return overlaps ? [...mentions] : [...mentions, addition];
 };
 
 /** Move caret past an ordinary trailing boundary space left after a chip insert. */

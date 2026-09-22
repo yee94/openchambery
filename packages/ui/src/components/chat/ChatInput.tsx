@@ -4238,6 +4238,30 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
                         return;
                     }
 
+                    const spacedMention = composerMentions.find((mention) => (
+                        (mention.kind === 'file' || mention.kind === 'directory')
+                        && message.slice(mention.range.start, mention.range.end) === `@${mention.value}`
+                        && (
+                            (probeIndex >= mention.range.start && probeIndex < mention.range.end)
+                            || (e.key === 'Backspace' && message[probeIndex] === ' ' && mention.range.end === probeIndex)
+                        )
+                    ));
+                    if (spacedMention) {
+                        const removeUntil = message[spacedMention.range.end] === ' ' ? spacedMention.range.end + 1 : spacedMention.range.end;
+                        const nextMessage = `${message.slice(0, spacedMention.range.start)}${message.slice(removeUntil)}`;
+                        e.preventDefault();
+                        applyProgrammaticEdit(nextMessage);
+                        requestAnimationFrame(() => {
+                            if (textareaRef.current) {
+                                textareaRef.current.selectionStart = spacedMention.range.start;
+                                textareaRef.current.selectionEnd = spacedMention.range.start;
+                            }
+                            adjustTextareaHeight();
+                        });
+                        updateAutocompleteState(nextMessage, spacedMention.range.start);
+                        return;
+                    }
+
                     let tokenStart = probeIndex;
                     while (tokenStart > 0 && !/\s/.test(message[tokenStart - 1])) {
                         tokenStart -= 1;
@@ -4818,6 +4842,9 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
             for (const addition of collectConfirmableFileMentions(document.text, {
                 agentNames: knownAgentNames,
                 includeUnterminatedPastedReferences: inputSource === 'paste',
+                confirmedValues: new Set(mentions.flatMap((mention) => (
+                    mention.kind === 'file' || mention.kind === 'directory' ? [mention.value] : []
+                ))),
             })) {
                 next = appendUniqueDraftMention(next, {
                     kind: addition.kind,
@@ -5021,7 +5048,16 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
         const next = `${message.slice(0, selectionStart)}${insertion}${message.slice(selectionEnd)}`;
         detachAttachmentsMissingCitations(message, next);
         replaceWithConfirmedFileMentions(next, uniquePaths);
-    }, [message, replaceWithConfirmedFileMentions, detachAttachmentsMissingCitations]);
+        const caret = advancePastTrailingBoundarySpace(next, selectionStart + insertion.length);
+        cursorPosRef.current = caret;
+        setShowFileMention(false);
+        setMentionQuery('');
+        requestAnimationFrame(() => {
+            textareaRef.current?.setSelectionRange(caret, caret);
+            adjustTextareaHeight();
+            updateAutocompleteState(next, caret);
+        });
+    }, [adjustTextareaHeight, detachAttachmentsMissingCitations, message, replaceWithConfirmedFileMentions, setMentionQuery, setShowFileMention, updateAutocompleteState]);
 
     const handlePaste = React.useCallback(async (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
         const pastedFilePaths = collectFilePathsFromTransfer(e.clipboardData);

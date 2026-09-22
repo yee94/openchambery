@@ -105,6 +105,22 @@ test('manual and auto legacy delivery compile text-only queue content', () => {
     }
 });
 
+test('confirmed file paths with spaces stay one attachment', () => {
+    const path = '/Users/example/Downloads/今天我们穿越去哪？ - Slidev.pdf';
+    const compiled = compileChatComposerDelivery({
+        plan: legacyTextToAuthoredPlan(`see @${path} next`),
+        agents,
+        installedSkillNames: new Set(),
+        directory: '/project',
+        root: '/project',
+        confirmedFilePaths: [path],
+    });
+
+    expect(compiled.attachments).toHaveLength(1);
+    expect(compiled.attachments[0]?.serverPath).toBe(path);
+    expect(compiled.attachments[0]?.filename).toBe('今天我们穿越去哪？ - Slidev.pdf');
+});
+
 test('confirmed directory mentions send application/x-directory mime', () => {
     const compiled = compileChatComposerDelivery({
         plan: legacyTextToAuthoredPlan('update @opencode config'),
