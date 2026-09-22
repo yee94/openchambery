@@ -2,9 +2,13 @@ import { describe, expect, it } from 'vitest';
 import {
   OPENCODE2_NPM_PACKAGE,
   PINNED_OPENCODE2_VERSION,
+  compareOpenCode2Versions,
   evaluateOpenCodeHealthBody,
   isAcceptableOpenCode2HealthVersion,
   isOpenCode1xVersion,
+  isOpenCode2VersionAtLeast,
+  npmPackageForOpenCode2,
+  parseOpenCode2VersionOutput,
   rejectOpenCode1xUpgradeTarget,
   resolveOpenCode2UpgradeTarget,
 } from './opencode2-pin.js';
@@ -68,5 +72,16 @@ describe('opencode2 pin (ticket 12)', () => {
       reason: 'unhealthy',
     });
     expect(evaluateOpenCodeHealthBody(null)).toMatchObject({ ok: false, reason: 'invalid-body' });
+  });
+
+  it('parses --version output and compares against the pin', () => {
+    expect(parseOpenCode2VersionOutput('opencode2 v2.0.12\n')).toBe('2.0.12');
+    expect(parseOpenCode2VersionOutput('1.18.18\n')).toBe('1.18.18');
+    expect(compareOpenCode2Versions('2.0.12', '2.0.1')).toBeGreaterThan(0);
+    expect(isOpenCode2VersionAtLeast('2.0.12', '2.0.12')).toBe(true);
+    expect(isOpenCode2VersionAtLeast('2.0.1', '2.0.12')).toBe(false);
+    expect(isOpenCode2VersionAtLeast('1.18.18', '2.0.12')).toBe(false);
+    expect(npmPackageForOpenCode2('darwin', 'arm64')).toBe('@opencode/cli-darwin-arm64');
+    expect(npmPackageForOpenCode2('darwin', { opencode: 'x64' })).toBe('@opencode/cli-darwin-x64-baseline');
   });
 });

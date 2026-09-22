@@ -32,6 +32,7 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
     normalizeApiPrefix,
     applyOpencodeBinaryFromSettings,
     ensureOpencodeCliEnv,
+    ensurePinnedOpenCode2CliEnv,
     ensureLocalOpenCodeServerPassword,
     resolveManagedOpenCodeLaunchSpec,
     setOpenCodePort,
@@ -524,6 +525,9 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
     );
 
     await applyOpencodeBinaryFromSettings({ strict: true });
+    if (typeof ensurePinnedOpenCode2CliEnv === 'function') {
+      await ensurePinnedOpenCode2CliEnv();
+    }
     ensureOpencodeCliEnv();
     const openCodePassword = await ensureLocalOpenCodeServerPassword({ rotateManaged: true });
     const envPath = typeof buildManagedOpenCodePath === 'function'
@@ -952,6 +956,9 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
 
         clearResolvedOpenCodeBinary();
         await applyOpencodeBinaryFromSettings({ strict: true });
+        if (typeof ensurePinnedOpenCode2CliEnv === 'function') {
+          await ensurePinnedOpenCode2CliEnv();
+        }
         const resolved = ensureOpencodeCliEnv();
         if (!resolved) {
           const error = new Error('OpenCode CLI could not be resolved');

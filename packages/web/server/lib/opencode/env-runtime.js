@@ -3,6 +3,8 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { mergePathValues } from './path-utils.js';
+import { PINNED_OPENCODE2_VERSION } from './opencode2-pin.js';
+import { ensurePinnedOpenCode2Cli, installedOpenCode2BinaryPath } from './ensure-cli.js';
 
 export const createOpenCodeEnvRuntime = (deps) => {
   const {
@@ -12,6 +14,9 @@ export const createOpenCodeEnvRuntime = (deps) => {
   } = deps;
   const runSpawnSync = typeof deps.spawnSync === 'function' ? deps.spawnSync : spawnSync;
   const resolveHomeDir = typeof deps.homedir === 'function' ? deps.homedir : () => os.homedir();
+  const ensurePinnedCli = typeof deps.ensurePinnedOpenCode2Cli === 'function'
+    ? deps.ensurePinnedOpenCode2Cli
+    : ensurePinnedOpenCode2Cli;
 
   const parseNullSeparatedEnvSnapshot = (raw) => {
     if (typeof raw !== 'string' || raw.length === 0) {
@@ -275,39 +280,18 @@ export const createOpenCodeEnvRuntime = (deps) => {
     return normalized.endsWith(`${path.sep}programs${path.sep}opencode${path.sep}opencode.exe`);
   };
 
-  const bundledOpenCodeCliCandidates = () => {
-    const names = process.platform === 'win32' ? ['opencode2.exe'] : ['opencode2'];
-    const roots = [
-      process.env.OPENCHAMBER_BUNDLED_OPENCODE_CLI_DIR,
-      typeof process.resourcesPath === 'string' ? path.join(process.resourcesPath, 'opencode-cli') : null,
-    ]
-      .map((value) => (typeof value === 'string' ? value.trim() : ''))
-      .filter(Boolean);
-
-    const candidates = [];
-    for (const root of roots) {
-      for (const name of names) {
-        candidates.push(path.join(root, name));
-      }
-    }
-    return candidates;
-  };
-
-  const resolveBundledOpenCodeCliPath = () => {
-    for (const candidate of bundledOpenCodeCliCandidates()) {
-      if (isExecutable(candidate) && !isWindowsOpenCodeDesktopAppPath(candidate)) {
-        return candidate;
-      }
+  const resolveInstalledOpenCodeCliPath = () => {
+    const installed = installedOpenCode2BinaryPath(PINNED_OPENCODE2_VERSION, {
+      env: process.env,
+      homedir: resolveHomeDir,
+      platform: process.platform,
+    });
+    if (isExecutable(installed) && !isWindowsOpenCodeDesktopAppPath(installed)) {
+      clearWslOpencodeResolution();
+      state.resolvedOpencodeBinarySource = 'installed';
+      return installed;
     }
     return null;
-  };
-
-  const bundledOpenCodeCliFallback = () => {
-    const bundled = resolveBundledOpenCodeCliPath();
-    if (!bundled) return null;
-    clearWslOpencodeResolution();
-    state.resolvedOpencodeBinarySource = 'bundled';
-    return bundled;
   };
 
   const clearWslOpencodeResolution = () => {
@@ -372,9 +356,9 @@ export const createOpenCodeEnvRuntime = (deps) => {
       }
     }
 
-    // The bundled CLI is the LAST resort (see bundledOpenCodeCliFallback at the
-    // exit points below): a user's own OpenCode install — PATH, known install
-    // locations, or shell-resolved — must win over the pinned bundled copy.
+    // Never use a packaged/bundled OpenCode binary. PATH and known install
+    // locations win; a previously installed pin in the OpenChamber data dir is
+    // the last local fallback before auto-install.
     const resolvedFromPath = searchPathFor('opencode2');
     if (resolvedFromPath) {
       clearWslOpencodeResolution();
@@ -452,7 +436,7 @@ export const createOpenCodeEnvRuntime = (deps) => {
       // Do not auto-detect OpenCode from WSL. OpenCode sessions are keyed by
       // server-visible directories, and mixing Windows paths with WSL paths
       // creates duplicate/missing project state in the desktop app.
-      return bundledOpenCodeCliFallback();
+      return resolveInstalledOpenCodeCliPath();
     }
 
     const shells = [process.env.SHELL, '/bin/zsh', '/bin/bash', '/bin/sh'].filter(Boolean);
@@ -476,7 +460,7 @@ export const createOpenCodeEnvRuntime = (deps) => {
       }
     }
 
-    return bundledOpenCodeCliFallback();
+    return resolveInstalledOpenCodeCliPath();
   };
 
   const resolveNodeCliPath = () => {
@@ -1122,6 +1106,29 @@ export const createOpenCodeEnvRuntime = (deps) => {
     return null;
   };
 
+  const ensurePinnedOpenCode2CliEnv = async (options = {}) => {
+    const discovered = state.resolvedOpencodeBinary || resolveOpencodeCliPath();
+    const source = state.resolvedOpencodeBinarySource;
+    const explicit = source === 'env' || source === 'settings';
+    const result = await ensurePinnedCli({
+      discoveredPath: discovered,
+      preferDiscovered: explicit,
+      env: process.env,
+      homedir: resolveHomeDir,
+      ...options,
+    });
+    if (!result?.path) {
+      return ensureOpencodeCliEnv();
+    }
+    if (result.source === 'installed') {
+      clearWslOpencodeResolution();
+      process.env.OPENCODE_BINARY = result.path;
+      state.resolvedOpencodeBinary = result.path;
+      state.resolvedOpencodeBinarySource = 'installed';
+    }
+    return ensureOpencodeCliEnv();
+  };
+
   const resolveGitBinaryForSpawn = () => {
     if (process.platform !== 'win32') {
       return 'git';
@@ -1205,6 +1212,7 @@ export const createOpenCodeEnvRuntime = (deps) => {
   return {
     applyLoginShellEnvSnapshot,
     ensureOpencodeCliEnv,
+    ensurePinnedOpenCode2CliEnv,
     applyOpencodeBinaryFromSettings,
     getLoginShellEnvSnapshot,
     resolveOpencodeCliPath,

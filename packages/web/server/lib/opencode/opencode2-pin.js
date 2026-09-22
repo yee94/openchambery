@@ -67,3 +67,68 @@ export function resolveOpenCode2UpgradeTarget(target) {
   }
   return PINNED_OPENCODE2_VERSION;
 }
+
+/**
+ * Parse `opencode2 --version` / `opencode --version` stdout.
+ * v2: `opencode2 v2.0.12` (name then version). 1.x: `1.18.18`.
+ */
+export function parseOpenCode2VersionOutput(stdout) {
+  const tokens = String(stdout || '').trim().split(/\s+/);
+  const versionToken = tokens.find((token) => /^v?\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(token));
+  if (!versionToken) return '';
+  return versionToken.replace(/^v/, '');
+}
+
+export function openCode2BinaryName(platform = process.platform) {
+  return platform === 'win32' ? 'opencode2.exe' : 'opencode2';
+}
+
+export function resolveOpenCode2NpmArchitecture(arch = process.arch) {
+  const normalized = String(arch || '').trim().toLowerCase();
+  if (normalized === 'x64' || normalized === 'amd64' || normalized === 'x86_64') return 'x64';
+  if (normalized === 'arm64' || normalized === 'aarch64') return 'arm64';
+  throw new Error(`Unsupported OpenCode architecture ${JSON.stringify(arch)}`);
+}
+
+/**
+ * Official 2.x ships as `@opencode/cli-<os>-<arch>[-baseline]`.
+ * `targetArchitecture` may be `{ opencode }` (Electron prepare) or an arch string.
+ */
+export function npmPackageForOpenCode2(platform = process.platform, targetArchitecture = process.arch) {
+  const rawArch = targetArchitecture && typeof targetArchitecture === 'object'
+    ? (targetArchitecture.opencode ?? targetArchitecture.node)
+    : targetArchitecture;
+  const arch = resolveOpenCode2NpmArchitecture(rawArch);
+  const os = { darwin: 'darwin', win32: 'windows', linux: 'linux' }[platform];
+  if (!os) throw new Error(`No opencode2 npm package mapping for platform ${platform}`);
+  const suffix = arch === 'x64' ? '-baseline' : '';
+  return `@opencode/cli-${os}-${arch}${suffix}`;
+}
+
+function parseVersionForComparison(value) {
+  const normalized = String(value || '').replace(/^v/i, '').split('+')[0];
+  const prereleaseIndex = normalized.indexOf('-');
+  const core = prereleaseIndex >= 0 ? normalized.slice(0, prereleaseIndex) : normalized;
+  const parts = core.split('.').map((part) => {
+    const parsed = Number.parseInt(part || '0', 10);
+    return Number.isFinite(parsed) ? parsed : 0;
+  });
+  return { parts, prerelease: prereleaseIndex >= 0 };
+}
+
+export function compareOpenCode2Versions(left, right) {
+  const a = parseVersionForComparison(left);
+  const b = parseVersionForComparison(right);
+  const length = Math.max(a.parts.length, b.parts.length);
+  for (let index = 0; index < length; index += 1) {
+    const diff = (a.parts[index] || 0) - (b.parts[index] || 0);
+    if (diff !== 0) return diff;
+  }
+  if (a.prerelease !== b.prerelease) return a.prerelease ? -1 : 1;
+  return 0;
+}
+
+export function isOpenCode2VersionAtLeast(version, minimum = PINNED_OPENCODE2_VERSION) {
+  if (!isAcceptableOpenCode2HealthVersion(version)) return false;
+  return compareOpenCode2Versions(version, minimum) >= 0;
+}
