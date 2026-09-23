@@ -2415,7 +2415,7 @@ export const dict = {
   'chat.messageBody.subagent.errorDescription': 'Background subagent failed',
   'chat.messageBody.subagent.cancelledDescription': 'Background subagent cancelled',
   'chat.messageBody.subagent.openSession': 'Open subagent session: {label}',
-  'chat.messageBody.shellCommand.title': 'Shell command',
+  'chat.messageBody.shellCommand.title': 'Shell result',
   'chat.messageBody.shellCommand.hideOutput': 'Hide output',
   'chat.messageBody.shellCommand.showOutput': 'Show output',
   'chat.messageBody.shellCommand.copied': 'Copied',

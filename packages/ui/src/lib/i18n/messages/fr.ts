@@ -2141,7 +2141,7 @@ export const dict = {
   'chat.messageBody.subagent.errorDescription': 'Le sous-agent en arrière-plan a échoué',
   'chat.messageBody.subagent.cancelledDescription': 'Le sous-agent en arrière-plan a été annulé',
   'chat.messageBody.subagent.openSession': 'Ouvrir la session du sous-agent : {label}',
-  'chat.messageBody.shellCommand.title': 'Commande Shell',
+  'chat.messageBody.shellCommand.title': 'Résultat du shell',
   'chat.messageBody.shellCommand.hideOutput': 'Masquer la sortie',
   'chat.messageBody.shellCommand.showOutput': 'Afficher la sortie',
   'chat.messageBody.shellCommand.copied': 'Copié',

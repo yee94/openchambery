@@ -1,5 +1,7 @@
 # Chat components
 
+User-executed shell turns (native `shellAction` and legacy user-marker/bash bridges) render as full-width, left-aligned neutral terminal results. `TurnItem` suppresses the turn-owned model/agent header for these turns, including pending and completed frames, and keeps the result outside the sticky user header. `MessageBody` shows the command plus verbatim, whitespace-preserving output immediately in a bounded scroll area; output copying and localized pending/running/error feedback remain available. Ordinary user bubbles and assistant-owned bash tools retain their existing presentation. Shell marker normalization preserves the attached result payload.
+
 ## Question auto-delegation
 
 `QuestionCard` retains its question/session identity and existing parent-view subagent attribution. `QuestionAutoDelegateStatus` reads the runtime-scoped Query snapshot through `lib/questionAutoDelegate.ts`; pause and immediate delegate use the matching request's authoritative `sessionID` and `directory`. Manual reply/reject retain the official SDK path and pass that directory to session actions. The SDK error wrapper preserves the structured payload `code` plus HTTP `status`; precisely `409` + `question_submission_claimed` triggers a snapshot refresh and a scope-bound local submission lock. Drafts remain mounted. A stale or failed refresh keeps the result-pending presentation and offers status refresh. Other failures retain ordinary failure handling; submitting, uncertain, and settled authority states disable answer submission.

@@ -2380,7 +2380,7 @@ export const dict: Record<I18nKey, string> = {
   "chat.messageBody.subagent.errorDescription": "Фоновий підаґент завершився з помилкою",
   "chat.messageBody.subagent.cancelledDescription": "Фоновий підаґент скасовано",
   "chat.messageBody.subagent.openSession": "Відкрити сесію підаґента: {label}",
-  "chat.messageBody.shellCommand.title": "Команда оболонки",
+  "chat.messageBody.shellCommand.title": "Результат команди оболонки",
   "chat.messageBody.shellCommand.hideOutput": "Приховати вивід",
   "chat.messageBody.shellCommand.showOutput": "Показати результат",
   "chat.messageBody.shellCommand.copied": "Скопійовано",

@@ -2414,7 +2414,7 @@ export const dict: Record<I18nKey, string> = {
   'chat.messageBody.subagent.errorDescription': '백그라운드 하위 에이전트가 실패했습니다',
   'chat.messageBody.subagent.cancelledDescription': '백그라운드 하위 에이전트가 취소되었습니다',
   'chat.messageBody.subagent.openSession': '하위 에이전트 세션 열기: {label}',
-  'chat.messageBody.shellCommand.title': 'Shell 명령',
+  'chat.messageBody.shellCommand.title': '셸 실행 결과',
   'chat.messageBody.shellCommand.hideOutput': '숨기기 출력',
   'chat.messageBody.shellCommand.showOutput': '표시 출력',
   'chat.messageBody.shellCommand.copied': '복사됨',

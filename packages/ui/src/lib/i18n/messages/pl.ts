@@ -1384,7 +1384,7 @@ export const dict: Record<I18nKey, string> = {
   'chat.messageBody.shellCommand.copyOutput': 'Kopiuj wynik',
   'chat.messageBody.shellCommand.hideOutput': 'Ukryj wynik',
   'chat.messageBody.shellCommand.showOutput': 'Pokaż wynik',
-  'chat.messageBody.shellCommand.title': 'Polecenie powłoki',
+  'chat.messageBody.shellCommand.title': 'Wynik polecenia powłoki',
   'chat.messageBody.subtask.hidePrompt': 'Ukryj prompt',
   'chat.messageBody.subtask.openSession': 'Otwórz sesję podzadania',
   'chat.messageBody.subtask.showPrompt': 'Pokaż prompt',
