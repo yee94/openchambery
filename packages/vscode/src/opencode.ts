@@ -574,9 +574,13 @@ async function waitForReady(
           `Runtime contract at ${baseUrl}: phase=${admission.phase} execution=${admission.executionAllowed} band=${admission.versionBand}`
         );
         if (!admission.executionAllowed) {
-          lastError = admission.phase === 'ready-unverified'
-            ? `OpenCode ${admission.serveVersion || 'unknown'} is outside the verified contract band (${admission.minVerifiedVersion}–${admission.maxVerifiedVersion})`
-            : `OpenCode runtime contract blocked execution (${admission.phase}: ${admission.reasons.join(', ') || 'unknown'})`;
+          if (admission.reasons.includes('below-min-verified')) {
+            lastError = `OpenCode ${admission.serveVersion || 'unknown'} is below the minimum supported version (${admission.minVerifiedVersion}). Upgrade your opencode CLI to ${admission.minVerifiedVersion} or newer.`;
+          } else if (admission.reasons.includes('1x-version')) {
+            lastError = `OpenCode 1.x is not supported. Install OpenCode 2 (${admission.minVerifiedVersion} or newer).`;
+          } else {
+            lastError = `OpenCode runtime contract blocked execution (${admission.phase}: ${admission.reasons.join(', ') || 'unknown'})`;
+          }
           continue;
         }
 
