@@ -299,11 +299,15 @@ describe("ticket 10 source contracts", () => {
   test("settings list/delete saved permissions; agents display last-match, not a V1 tool map", () => {
     const agents = readFileSync(join(here, "../components/sections/agents/AgentsPage.tsx"), "utf8")
     const saved = readFileSync(join(here, "../components/sections/agents/SavedPermissionsSection.tsx"), "utf8")
+    const queries = readFileSync(join(here, "../queries/savedPermissionQueries.ts"), "utf8")
     expect(agents.includes("displayPermissionRulesLastMatch") || agents.includes("toPermissionRuleset")).toBe(true)
     expect(agents.includes("SavedPermissionsSection")).toBe(true)
     expect(agents.includes("summaryPermissionNames.map")).toBe(false)
-    expect(saved.includes("listPermissionSaved")).toBe(true)
-    expect(saved.includes("deletePermissionSaved")).toBe(true)
+    // UI goes through query helpers; official list/delete live in permission-saved-api.
+    expect(saved.includes("useSavedPermissionsQuery") || saved.includes("listPermissionSaved")).toBe(true)
+    expect(saved.includes("deleteSavedPermissionQuery") || saved.includes("deletePermissionSaved")).toBe(true)
+    expect(queries.includes("listPermissionSaved")).toBe(true)
+    expect(queries.includes("deletePermissionSaved")).toBe(true)
     expect(saved.includes("settings.permissions.saved.title")).toBe(true)
   })
 

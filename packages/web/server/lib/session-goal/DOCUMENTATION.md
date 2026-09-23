@@ -16,14 +16,23 @@ PATCH. Goal progress therefore belongs in the Host
 `packages/web/server/lib/session-metadata/` store (merge-patched under
 `openchamber.goal`), not an OpenCode `PATCH /session/:id`.
 
-`createSessionGoalRuntime` accepts optional seams `readSessionMetadata` and
-`persistSessionGoal`. When **both** are injected, `writeGoal` / goal reads use
-only the store and never PATCH OpenCode. When either is missing, the legacy
-OpenCode PATCH path remains (tests and unwired servers).
+`createSessionGoalRuntime` accepts optional seams:
+
+| Seam | Role |
+|---|---|
+| `readSessionMetadata` | Read Host metadata for the session |
+| `persistSessionGoal` | Full goal replace (routes / scheduled create) |
+| `mutateSessionMetadata` | Preferred conditional commit: `decide(committed) → { ok, patch }` on the store lock |
+
+When `mutateSessionMetadata` is present, runtime goal commits use it exclusively
+(no OpenCode PATCH). When only `readSessionMetadata` + `persistSessionGoal` are
+present, the runtime falls back to read-then-persist. When neither store path is
+wired, the legacy OpenCode PATCH path remains (tests / unwired servers).
 
 Those seams, the proxy overlay, and `PUT /api/openchamber/sessions/:id/metadata`
 are wired in `server/index.js`. A UI metadata write notifies the runtime with
-a synthetic `session.updated` so create/resume can arm the loop.
+a synthetic `session.updated` so create/resume can arm the loop. Metadata PUT
+normalizes `executionGeneration` for goal patches inside the store mutate lock.
 
 **Capability is open** (`supported === true`). Scheduled-task goal create and
 `POST /api/goals/:sessionId` persist an active goal into the same store as
@@ -42,14 +51,52 @@ synthetic `session.updated` so the loop can arm.
   tokensUsed,              // tokensCommitted + current segment (snapshot - baseline)
   tokensBaseline,          // segment start snapshot (pre-goal turn; 0 after compaction)
   tokensCommitted,         // closed segments' total (one segment per compaction)
-  turnsUsed,               // auto-continuations sent (capped at MAX_AUTO_TURNS)
+  turnsUsed,               // auto-continuation attempts committed (capped at MAX_AUTO_TURNS)
   blockedStreak,           // consecutive blocked audit verdicts
   auditFailStreak,         // consecutive failed/unavailable audit calls
   note,                    // latest audit progress note, <= 280 chars
   statusReason,            // why settled; 'resumed' is a kickoff signal from UI
   lastAccountedMessageID,  // incremental accounting cursor
+  executionGeneration,     // execution permit generation (see pause boundary)
+  pendingContinuation,     // durable admission (ticket 10); null when idle
   createdAt, updatedAt
 }
+
+### Durable continuation admission (`pendingContinuation`)
+
+Minimal Host-metadata field (not a parallel store). Written only through the
+same conditional goal owner as other goal commits:
+
+```
+{
+  messageID,     // msg_goalc_<goalId>_<generation>_<turnsUsed>
+  goalId, generation, turnsUsed,
+  phase,         // reserved | transport | uncertain | accepted
+  text,          // fixed prompt payload for legal same-id re-dispatch
+  providerID, modelID, variant?, agent?,
+  error?, at
+}
+```
+
+Rules:
+
+1. **Reserve before send** — persist fixed `messageID` + prompt/selection
+   identity with `phase: reserved` **without** bumping `turnsUsed`.
+2. **Accept commit** — `turnsUsed` increment and `pendingContinuation: null`
+   share one conditional write after upstream accept (or reconcile `found`).
+3. **Selection / pre-prompt drop** — pause or switchAgent/switchModel failure
+   clears reserved pending; **0 count**.
+4. **Uncertain transport** — keep durable identity; pause auto-continue with a
+   user-visible `statusReason` (reuses blocked/pause reason UI). Reconcile via
+   official `session.inbox.list` / `session.message.get` (or projected list);
+   fetch failure is **unavailable**, never authoritative empty.
+5. **Already received** — count once, clear pending; do not invent a new id.
+6. **pause → resume / goal replace** — reserved pending cleared on pause;
+   transport/uncertain/accepted identity retained (no claim of upstream revoke).
+   Stale `goalId` / superseded `generation` never overwrite newer user ops;
+   found-under-stale-gen still counts once.
+7. **Reboot** — restore pending from metadata, reconcile first, then same-id
+   fixed-payload re-dispatch only when still absent and generation matches.
 ```
 
 The UI writes goals (create/edit/pause/resume/clear) by patching this
@@ -62,8 +109,49 @@ content, since "Implement this plan: X" alone gives the audit nothing to
 judge against. The armed send also attaches a synthetic system-reminder
 part telling the agent goal mode is active and that each turn should end
 with a factual done/verified/remaining statement for the independent audit.
-Freshness/stale-write protection is by `id`: every runtime write re-reads the
-session and drops the write when the stored goal id no longer matches.
+
+### Execution generation and pause/commit boundary
+
+`executionGeneration` is the durable execution permit. It starts at `0` on
+create and advances on:
+
+- pause (user, abort, question) while status was `active`
+- resume (`paused`/`blocked`/… → `active`)
+- execution-condition edits (`tokenBudget`, `objective`, `objectiveFile`)
+
+Settle paths (`active` → `complete` / `blocked` / `budgetLimited`) keep the
+same generation. Writers go through `withGoalExecutionGeneration` (metadata
+PUT, `persistSessionGoal` Host wiring) or the runtime's `advanceGeneration`
+flag so UI patches that omit the field still bump correctly.
+
+Runtime commits (continue accounting, settle, pause) validate **goal id +
+expected generation + applicable status** on one serial boundary when the
+Host `mutateSessionMetadata` seam is wired. A late audit that returns
+`continue` / `complete` / `blocked` after pause cannot overwrite the paused
+snapshot or start a new `session.prompt` continuation.
+
+Local (in-process) ordering:
+
+1. Pause / stop / `session.updated` paused → bump dispatch epoch + abort
+   in-flight audit controller + clear idle timer (**before** awaiting durable
+   write).
+2. Tick captures epoch at start; re-checks before continue commit and before
+   dispatch.
+3. `sendContinuation` re-validates **epoch + shutdown recovery + stopped** after
+   every await (`switchAgent` / `switchModel` / generation re-read) and again
+   immediately before `session.prompt`. It also re-reads durable goal
+   generation/status at the prompt boundary. A pause or shutdown that lands
+   during selection must drop with `uncertain: false` and **zero** prompt.
+4. Continuation identity `{ goalId, generation, turnsUsed }` and
+   `phase: transport` are recorded **only at the actual prompt boundary** —
+   not before selection. Selection failures (agent/model switch) must **not**
+   be reported as prompt-uncertain. Uncertain applies only after prompt left
+   the process and transport failed; the identity is kept for reconcile. The
+   runtime does **not** claim full revoke of a request already handed upstream.
+   Explicit stop of the upstream turn remains the existing abort/stop operation.
+
+Public seams for tests / controlled async: `runTick`, `pauseGoal`,
+`getDispatchEpoch`, `getDispatchedContinuation`.
 
 ## File-backed objectives
 
@@ -168,11 +256,23 @@ before touching the filesystem). Rationale: metadata rides every
      audit unavailable") — resumable, and settling resets the streak so
      Resume gets fresh tolerance. A dead small model can never drive the
      loop blind to the turn cap;
-   - continue: persist accounting + `turnsUsed` first (a crash after the
-     write just waits for the next idle tick; the reverse could double-send),
-     re-check the tail, then `POST /session/:id/prompt_async` with the
-     continuation prompt using the last assistant message's
-     provider/model/agent — the goal spends the session's own subscription.
+    - continue (ticket 10 durable admission): persist accounting +
+       `pendingContinuation` (`phase: reserved`, fixed `msg_goalc_…` id +
+       prompt/selection payload) **without** bumping `turnsUsed`; re-check
+       tail; then `session.switchAgent` / `session.switchModel` +
+       `session.prompt` with that stable id. Accept → one conditional commit
+       of `turnsUsed + 1` and clear pending. Selection/pre-prompt pause or
+       failure clears reserved pending (0 count). Uncertain transport keeps
+       durable identity and pauses auto-continue with a readable
+       `statusReason`; next tick / reboot reconciles via inbox / exact
+       message (fail ≠ empty) before any new id. Already-received counts
+       once. Synthetic is metadata-only (`goalContinuation`).
+    - **Shutdown recovery (ticket 07):** `session.execution.interrupted` with
+      `reason: shutdown` clears the idle timer and sets a **local** recovery
+      pending marker (not a parallel durable store). Auto-continue / tick stay
+      gated until authoritative `session.status` idle or a non-shutdown
+      execution terminal clears the marker. Goal status itself is unchanged.
+
 4. Settling (`complete`/`blocked`/`budgetLimited`) fires the injected
    `emitGoalNotification` so the user hears about it even with the UI closed.
    The same settle also notifies a registered Assistant contact reporter

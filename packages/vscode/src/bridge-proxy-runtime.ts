@@ -1,5 +1,9 @@
 import type { BridgeContext, BridgeResponse } from './bridge';
-import { waitForApiUrl } from './opencode-ready';
+import {
+  isOpenCodeExecutionPermitted,
+  resolveConnectedApiUrl,
+  waitForApiUrl,
+} from './opencode-ready';
 import {
   projectMessagesPayloadForReasoning,
   readIncludeReasoningFromUrl,
@@ -7,6 +11,13 @@ import {
 } from './reasoning-projection';
 import { projectExactMessagePayload } from './session-turn-page-runtime';
 import { tryHandleQuestionAutoDelegateProxy } from './question-auto-delegate-runtime';
+import {
+  forgetSessionMetadata,
+  isSessionDeletePath,
+  readSessionIdFromSessionPath,
+  resolveSessionProxyOverlay,
+  tryHandleSessionMetadataProxy,
+} from './session-metadata-runtime';
 
 type BridgeMessageInput = {
   id: string;
@@ -75,6 +86,27 @@ export const ensureOpenCodeApiUpstreamPath = (requestPath: string): string => {
     }
     return `/api${withSlash === '/' ? '' : withSlash}`;
   }
+};
+
+/**
+ * Mutating OpenCode paths that require a current-instance execution permit
+ * (parity with web runtime-contract execution paths). Reads / diagnostics stay
+ * available when only a URL is known; writes must re-check connected status at
+ * dispatch so a restart cannot reuse a stale waitForApiUrl result.
+ */
+export const isBridgeExecutionWritePath = (method: string, requestPath: string): boolean => {
+  const upper = String(method || 'GET').toUpperCase();
+  if (upper === 'GET' || upper === 'HEAD' || upper === 'OPTIONS') return false;
+  const pathOnly = String(requestPath || '').split('?')[0] || '';
+  // Stop-task remains available without a fresh execution permit window.
+  if (/\/session(?:\/[^/]+)?\/(?:interrupt|abort)\b/.test(pathOnly)) return false;
+  return /\/session(?:\/[^/]+)?\/(?:prompt|prompt_async|command|shell|revert|unrevert|summarize|fork|generate|background|model|agent|synthetic|compact|skill|move|environment|instructions|message)(?:\/|$)/.test(pathOnly)
+    || ((upper === 'POST' || upper === 'PATCH') && /\/session\/[^/]+\/inbox\/[^/]+(?:\/(?:steer|queue))?\/?$/.test(pathOnly))
+    || (upper === 'POST' && /\/session\/[^/]+\/form(?:\/|$)/.test(pathOnly))
+    || /\/permission\//.test(pathOnly)
+    || /\/question\//.test(pathOnly)
+    || (upper === 'POST' && /\/session\/?$/.test(pathOnly))
+    || (upper === 'PATCH' && /\/session\/[^/]+\/?$/.test(pathOnly));
 };
 
 const isSseProxyPath = (requestPath: string): boolean => {
@@ -246,8 +278,19 @@ export async function handleProxyBridgeMessage(
         return { id, type, success: true, data: questionAutoDelegateResponse };
       }
 
-      const apiUrl = await waitForApiUrl(ctx?.manager);
-      if (!apiUrl) {
+      // OpenChamber-owned session metadata + Host archive (shared store core).
+      const sessionMetadataResponse = await tryHandleSessionMetadataProxy(
+        normalizedMethod,
+        normalizedPath,
+        headers,
+        bodyBase64,
+      );
+      if (sessionMetadataResponse) {
+        return { id, type, success: true, data: sessionMetadataResponse };
+      }
+
+      const waitedUrl = await waitForApiUrl(ctx?.manager);
+      if (!waitedUrl) {
         const data = deps.buildUnavailableApiResponse();
         return { id, type, success: true, data };
       }
@@ -255,6 +298,22 @@ export async function handleProxyBridgeMessage(
       // OpenChamber projection control — never forwarded to OpenCode.
       const includeReasoning = readIncludeReasoningFromUrl(normalizedPath);
       const upstreamPath = ensureOpenCodeApiUpstreamPath(stripIncludeReasoningParam(normalizedPath));
+
+      // Re-check current instance permit at dispatch (not only at wait settle).
+      // Writes require connected execution permit; reads/diagnostics may use the
+      // waited URL when still reachable even if status briefly flipped.
+      const requiresExecutionPermit = isBridgeExecutionWritePath(normalizedMethod, upstreamPath);
+      if (requiresExecutionPermit && !isOpenCodeExecutionPermitted(ctx?.manager)) {
+        const data = deps.buildUnavailableApiResponse();
+        return { id, type, success: true, data };
+      }
+      const apiUrl = requiresExecutionPermit
+        ? (resolveConnectedApiUrl(ctx?.manager) || waitedUrl)
+        : waitedUrl;
+      if (!apiUrl) {
+        const data = deps.buildUnavailableApiResponse();
+        return { id, type, success: true, data };
+      }
 
       const base = `${apiUrl.replace(/\/+$/, '')}/`;
       const targetUrl = new URL(upstreamPath.replace(/^\/+/, ''), base).toString();
@@ -297,6 +356,10 @@ export async function handleProxyBridgeMessage(
       proxyAbortControllers.set(id, abortController);
 
       try {
+        // Final permit check immediately before upstream write dispatch.
+        if (requiresExecutionPermit && !isOpenCodeExecutionPermitted(ctx?.manager)) {
+          return { id, type, success: true, data: deps.buildUnavailableApiResponse() };
+        }
         const data = await performApiProxyFetch(
           targetUrl,
           normalizedMethod,
@@ -349,6 +412,56 @@ export async function handleProxyBridgeMessage(
               };
             }
           }
+
+          // Host metadata + archive authority on session list/detail.
+          // Unavailable store → 503 retryable (never silent un-overlaid upstream).
+          const overlay = await resolveSessionProxyOverlay(
+            normalizedMethod,
+            normalizedPath,
+            data.status,
+            data.bodyText,
+          );
+          if (overlay.kind === 'unavailable') {
+            return {
+              id,
+              type,
+              success: true,
+              data: {
+                status: 503,
+                headers: { 'content-type': 'application/json' },
+                bodyText: JSON.stringify({
+                  error: overlay.error,
+                  code: 'session_metadata_unavailable',
+                  retryable: true,
+                }),
+              },
+            };
+          }
+          if (overlay.kind === 'overlay') {
+            return {
+              id,
+              type,
+              success: true,
+              data: {
+                ...data,
+                bodyText: overlay.bodyText,
+              },
+            };
+          }
+        }
+
+        // Successful upstream session delete → idempotent Host metadata cleanup.
+        // Failures stay logged; session.deleted(.v2) remains compensatory.
+        if (
+          normalizedMethod === 'DELETE'
+          && isSessionDeletePath(normalizedPath)
+          && data.status >= 200
+          && data.status < 300
+        ) {
+          const sessionID = readSessionIdFromSessionPath(normalizedPath);
+          if (sessionID) {
+            void forgetSessionMetadata(sessionID);
+          }
         }
 
         return { id, type, success: true, data };
@@ -358,8 +471,8 @@ export async function handleProxyBridgeMessage(
     }
 
     case 'api:session:message': {
-      const apiUrl = await waitForApiUrl(ctx?.manager);
-      if (!apiUrl) {
+      const waitedUrl = await waitForApiUrl(ctx?.manager);
+      if (!waitedUrl) {
         const data = deps.buildUnavailableApiResponse();
         return { id, type, success: true, data };
       }
@@ -382,6 +495,13 @@ export async function handleProxyBridgeMessage(
         return { id, type, success: true, data };
       }
 
+      // Message forward is always a write — require current instance permit.
+      if (!isOpenCodeExecutionPermitted(ctx?.manager)) {
+        const data = deps.buildUnavailableApiResponse();
+        return { id, type, success: true, data };
+      }
+      const apiUrl = resolveConnectedApiUrl(ctx?.manager) || waitedUrl;
+
       const base = `${apiUrl.replace(/\/+$/, '')}/`;
       const upstreamPath = ensureOpenCodeApiUpstreamPath(normalizedPath);
       const targetUrl = new URL(upstreamPath.replace(/^\/+/, ''), base).toString();
@@ -396,6 +516,9 @@ export async function handleProxyBridgeMessage(
       timeoutSignal.addEventListener('abort', onTimeout, { once: true });
 
       try {
+        if (!isOpenCodeExecutionPermitted(ctx?.manager)) {
+          return { id, type, success: true, data: deps.buildUnavailableApiResponse() };
+        }
         const response = await fetch(targetUrl, {
           method: 'POST',
           headers: requestHeaders,

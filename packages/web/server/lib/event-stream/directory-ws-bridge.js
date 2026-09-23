@@ -21,6 +21,8 @@ export function acceptDirectoryMessageStreamWsConnection({
   buildOpenCodeUrl,
   getOpenCodeAuthHeaders,
   processForwardedEventPayload,
+  /** Optional Host archive/metadata projection for session lifecycle events. */
+  projectOutboundSessionPayload = null,
   wsClients,
   triggerHealthCheck,
   heartbeatIntervalMs,
@@ -78,14 +80,23 @@ export function acceptDirectoryMessageStreamWsConnection({
   const run = async () => {
     const forwardEvent = ({ envelope, payload }) => {
       const directory = requestedDirectory || envelope?.directory || 'global';
+      let outbound = payload;
+      if (typeof projectOutboundSessionPayload === 'function') {
+        try {
+          const projected = projectOutboundSessionPayload(payload);
+          if (projected != null) outbound = projected;
+        } catch (error) {
+          console.warn('[event-stream] directory session projection failed:', error?.message ?? error);
+        }
+      }
 
-      sendMessageStreamWsEvent(socket, payload, {
+      sendMessageStreamWsEvent(socket, outbound, {
         directory,
         eventId: typeof envelope?.eventId === 'string' && envelope.eventId.length > 0 ? envelope.eventId : undefined,
         reasoningFilter,
       });
 
-      processForwardedEventPayload(payload, (syntheticPayload) => {
+      processForwardedEventPayload(outbound, (syntheticPayload) => {
         sendMessageStreamWsEvent(socket, syntheticPayload, {
           directory: 'global',
           reasoningFilter,

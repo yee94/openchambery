@@ -88,6 +88,8 @@ interface QueuedMessageChipProps {
 const QueuedMessageChip = memo(({ message, server, frozen, hasDispatchLock, pendingOperationKinds, sendPendingTimedOut, abortSendPending, isMobile, onEdit, onSend, onQueue, onRemove, compactionBarrier = false }: QueuedMessageChipProps) => {
     const { t } = useI18n();
     const inboxChip = isSessionInboxChip(message);
+    const inheritanceDescriptionId = React.useId();
+    const inheritsSessionSelection = inboxChip && message.delivery === 'queue';
     const pendingAdmission = isMessageQueuePendingAdmissionItem(message);
     const queueItemID = message.queueItemID || (message as QueuedMessage).id;
     const editPending = server && pendingOperationKinds.has('edit');
@@ -152,6 +154,8 @@ const QueuedMessageChip = memo(({ message, server, frozen, hasDispatchLock, pend
     return (
         <div
             ref={setNodeRef}
+            role="group"
+            aria-describedby={inheritsSessionSelection ? inheritanceDescriptionId : undefined}
             // Translate only (no scaleX/scaleY) so the lifted row keeps its size.
             style={{ transform: CSS.Translate.toString(transform), transition }}
             className={cn(
@@ -180,6 +184,7 @@ const QueuedMessageChip = memo(({ message, server, frozen, hasDispatchLock, pend
                 <Icon name={reorderPending ? 'loader-4' : 'draggable'} className={cn(isMobile ? 'size-3' : 'size-3.5', reorderPending && 'animate-spin')} aria-hidden="true" />
             </button>
             {isMobile ? removeAction : null}
+            <div className="min-w-0 flex-1">
             <span className={cn(
                 // items-baseline keeps chip labels on the same line as plain text
                 // ("hey") / "+N files". MessageReferenceChip exposes its label baseline
@@ -202,6 +207,12 @@ const QueuedMessageChip = memo(({ message, server, frozen, hasDispatchLock, pend
                     <span className="ml-1 shrink-0 text-muted-foreground">{t('chat.queuedMessage.attachments', { count: attachmentCount })}</span>
                 )}
             </span>
+            {inheritsSessionSelection ? (
+                <p id={inheritanceDescriptionId} className="whitespace-normal typography-meta text-muted-foreground">
+                    {t('chat.queuedMessage.inheritsSessionSelection')}
+                </p>
+            ) : null}
+            </div>
             <div className="flex shrink-0 items-center gap-1.5 text-muted-foreground">
                 {pendingAdmission ? (
                     <span

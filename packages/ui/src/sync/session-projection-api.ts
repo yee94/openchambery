@@ -98,6 +98,7 @@ function textPart(
   ordinal: number,
   text: string,
   type: "text" | "reasoning" = "text",
+  options?: { synthetic?: boolean },
 ): Part {
   if (type === "reasoning") {
     return {
@@ -114,7 +115,45 @@ function textPart(
     messageID,
     type: "text",
     text,
+    ...(options?.synthetic === true ? { synthetic: true } : {}),
   }
+}
+
+/**
+ * Official v2 synthetic / control rows project as user-shaped messages for the
+ * existing Message+Part view model. Native kind lives on `nativeType`; text
+ * parts carry `synthetic: true` so turn/recovery consumers share one rule.
+ */
+export function isNativeSyntheticMessage(info: Message | undefined): boolean {
+  if (!info) return false
+  const nativeType = (info as { nativeType?: unknown }).nativeType
+  if (nativeType === "synthetic") return true
+  const type = (info as { type?: unknown }).type
+  return type === "synthetic"
+}
+
+/**
+ * Authored user turn boundary: real user input, not native synthetic / shell /
+ * control rows. Shared by projection turnCount, recovery anchors, and hydration.
+ */
+export function isAuthoredUserTurnRecord(
+  info: Message | undefined,
+  parts: readonly Part[] | undefined,
+): boolean {
+  if (!info?.id) return false
+  if (isNativeSyntheticMessage(info)) return false
+  const role = (info as { clientRole?: unknown; role?: unknown }).clientRole ?? info.role
+  if (role !== "user") return false
+  if (!Array.isArray(parts) || parts.length === 0) return true
+  if (parts.some((part) => part.type === "subtask" || part.type === "compaction")) return false
+  if (parts.every((part) => Boolean((part as { synthetic?: boolean }).synthetic))) return false
+  return true
+}
+
+/** SDK / solid client: durable event id → message id (`evt_` → `msg_`). */
+export function messageIDFromEventID(eventID: string | undefined): string | undefined {
+  if (typeof eventID !== "string" || eventID.length === 0) return undefined
+  return eventID.replace(/^evt_/, "msg_")
 }
 
 function toolOutput(state: Record<string, unknown>): string | undefined {
@@ -347,15 +386,42 @@ export function normalizeSessionProjectionMessage(
   }
 
   if (type === "synthetic") {
-    const info = baseMessage(sessionID, item, "user")
-    const text = asString(item.text) ?? asString(item.description) ?? ""
-    return { info, parts: text ? [textPart(sessionID, id, 0, text)] : [] }
+    // Preserve native synthetic identity for turn/recovery consumers while
+    // keeping the existing user-shaped Message/Part view model.
+    const info: Message = {
+      ...baseMessage(sessionID, item, "user"),
+      nativeType: "synthetic",
+    }
+    const description = asString(item.description)
+    if (description) info.description = description
+    if (record(item.metadata)) info.metadata = item.metadata
+    // Shell / subagent association ids when present on the wire row.
+    const shellID = asString(item.shellID)
+    if (shellID) info.shellID = shellID
+    const childSessionID = asString(item.sessionID) && item.sessionID !== sessionID
+      ? asString(item.sessionID)
+      : asString(item.childSessionID) ?? asString(item.taskSessionID)
+    if (childSessionID) info.childSessionID = childSessionID
+    const text = asString(item.text) ?? description ?? ""
+    return {
+      info,
+      parts: text
+        ? [textPart(sessionID, id, 0, text, "text", { synthetic: true })]
+        : [{
+          id: partID(id, "text", 0),
+          sessionID,
+          messageID: id,
+          type: "text",
+          text: "",
+          synthetic: true,
+        }],
+    }
   }
 
   if (type === "system") {
-    const info = baseMessage(sessionID, item, "assistant")
-    const text = asString(item.text) ?? asString(item.description) ?? ""
-    return { info, parts: text ? [textPart(sessionID, id, 0, text)] : [] }
+    // System rows carry model instructions, including Code Mode catalog updates.
+    // Keep them outside the shared transcript projection for every consumer.
+    return null
   }
 
   if (type === "compaction") {
@@ -414,16 +480,20 @@ export function normalizeSessionProjectionPage(
   }
   if (order === "desc") records.reverse()
 
+  // OpenCode 2.x message.list cursor contract (client 2.0.12):
+  // - order=desc first/older pages advance via `cursor.next`
+  // - order=asc advances via `cursor.previous`
+  // A bare string cursor is treated as the continuation token for either order.
   const cursorObject = record(payload.cursor) ? payload.cursor : undefined
-  const previous = cursorObject
-    ? asString(cursorObject.previous)
+  const continuation = cursorObject
+    ? asString(order === "asc" ? cursorObject.previous : cursorObject.next)
     : asString(payload.cursor)
-  const complete = !previous
-  const turnCount = records.filter((record) => record.info.role === "user").length
+  const complete = !continuation
+  const turnCount = records.filter((entry) => isAuthoredUserTurnRecord(entry.info, entry.parts)).length
 
   return {
     records,
-    cursor: previous,
+    cursor: continuation,
     complete,
     turnCount,
   }
@@ -431,7 +501,7 @@ export function normalizeSessionProjectionPage(
 
 /**
  * GET `/api/session/:sessionID/message`
- * query: directory, limit, order, cursor?
+ * query: directory, limit, and either first-page order or an upstream cursor.
  */
 export async function fetchSessionProjectionPage(
   input: FetchSessionProjectionPageInput,
@@ -442,10 +512,11 @@ export async function fetchSessionProjectionPage(
   const query: Record<string, string> = {
     directory: input.directory,
     limit: String(limit),
-    order,
   }
   if (input.cursor) {
     query.cursor = input.cursor
+  } else {
+    query.order = order
   }
 
   const response = await runtimeFetch(path, {
@@ -508,7 +579,7 @@ export function normalizeSessionContextPage(
     records,
     cursor: undefined,
     complete: false,
-    turnCount: records.filter((entry) => entry.info.role === "user").length,
+    turnCount: records.filter((entry) => isAuthoredUserTurnRecord(entry.info, entry.parts)).length,
   }
 }
 

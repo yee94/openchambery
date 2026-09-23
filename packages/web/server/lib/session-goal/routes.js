@@ -62,6 +62,8 @@ const buildActiveGoalRecord = ({
     note: '',
     statusReason: typeof statusReason === 'string' ? statusReason : '',
     lastAccountedMessageID: '',
+    // Fresh goal starts a new execution generation (0). Resume / pause bump it.
+    executionGeneration: 0,
     createdAt: now,
     updatedAt: now,
   };
@@ -204,10 +206,17 @@ export function registerSessionGoalRoutes(app, deps = {}) {
     }
 
     const now = Date.now();
+    const priorGeneration = Number.isFinite(currentGoal.executionGeneration)
+      && currentGoal.executionGeneration >= 0
+      ? Math.floor(currentGoal.executionGeneration)
+      : 0;
     const goal = {
       ...currentGoal,
       status: 'active',
       statusReason: 'resumed',
+      // Resume opens a new execution generation so late audits from the prior
+      // active period cannot commit continue/settle.
+      executionGeneration: priorGeneration + 1,
       updatedAt: now,
     };
 

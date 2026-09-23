@@ -95,7 +95,7 @@ describe('tool busy title chrome', () => {
     test('non-task tool titles stay immediate full opacity without shine busy state', () => {
         expect(toolPartSource).not.toContain('MinDurationShineText');
         expect(toolPartSource).toContain('taskBusy && \'animate-text-shimmer\'');
-        expect(toolPartSource).toContain("normalizedPartTool === 'bash' && typeof effectiveTimeStart === 'number'");
+        expect(toolPartSource).toContain("(normalizedPartTool === 'bash' || isShellTool) && typeof effectiveTimeStart === 'number'");
     });
 
     test('every active expandable tool uses the shared loading orb and settled rows restore identity', () => {
@@ -105,6 +105,24 @@ describe('tool busy title chrome', () => {
         expect(toolPartSource).toContain(') : effectiveActive ? (');
         expect(toolPartSource).toContain("label={t('chat.assistantStatus.usingTool', { tool: taskTitle })}");
         expect(toolPartSource).toContain('getToolIcon(normalizedPartTool || part.tool)');
+    });
+
+    test('native subagent and plugin task share the task-row path', () => {
+        expect(toolPartSource).toContain('isTaskToolName(normalizedPartTool || part.tool)');
+        expect(toolPartSource).toContain('isBackgroundableToolName');
+        expect(toolPartSource).toContain('isBlockingForegroundToolPart');
+        expect(toolPartSource).toContain('moveSessionBlockingWorkToBackground');
+        expect(toolPartSource).toContain('data-component="session-background-move"');
+        expect(toolPartSource).toContain("t('chat.sessionBackground.moveRunning')");
+    });
+
+    test('background live state uses completion projection, not historical metadata.running alone', () => {
+        expect(toolPartSource).toContain('resolveBackgroundToolActivity');
+        expect(toolPartSource).toContain('collectBackgroundCompletions');
+        expect(toolPartSource).toContain('hasSettledBackgroundRunningHint');
+        expect(toolPartSource).toContain('backgroundActivity.kind === \'background-running\'');
+        expect(toolPartSource).toContain('backgroundActivity.kind === \'terminal\'');
+        expect(toolPartSource).not.toContain('isBackgroundRunningToolPart(part)');
     });
 
     test('unassigned task rows stay on the loading orb until an agent is assigned', () => {

@@ -1,11 +1,11 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import { makeOpenCodeV2Client } from '../opencode/v2-client.js';
+import { registerSessionTurnPageRoutes } from './routes.js';
 import {
-  projectSessionMessageRecord,
+  projectSessionMessage as projectSessionMessageRecord,
   projectSessionMessageRecords,
-  registerSessionTurnPageRoutes,
-} from './routes.js';
+} from './session-message-projection.js';
 
 vi.mock('../opencode/v2-client.js', () => ({ makeOpenCodeV2Client: vi.fn() }));
 
@@ -818,6 +818,43 @@ describe('registerSessionTurnPageRoutes', () => {
         parts: [expect.objectContaining({ type: 'text', text: 'ok' })],
       }),
     ]);
+  });
+
+  it('default fetch continues desc pages with cursor.next only, never order + cursor', async () => {
+    const list = vi.fn()
+      .mockResolvedValueOnce({
+        data: [{ id: 'msg_a2', type: 'assistant', time: { created: 4, completed: 5 }, content: [{ type: 'text', text: 'later' }] }],
+        cursor: { previous: 'raw_prev', next: 'raw_next' },
+      })
+      .mockResolvedValueOnce({
+        data: [
+          { id: 'msg_a1', type: 'assistant', time: { created: 2, completed: 3 }, content: [{ type: 'text', text: 'ok' }] },
+          { id: 'msg_u1', type: 'user', time: { created: 1 }, text: 'hi' },
+        ],
+        cursor: { previous: 'raw_prev_2', next: null },
+      });
+    makeOpenCodeV2Client.mockReturnValue({
+      message: { list },
+      session: { messages: undefined, status: undefined, abort: undefined },
+    });
+    const { app, route } = registry();
+    registerSessionTurnPageRoutes(app, {
+      buildOpenCodeUrl: () => 'http://open.code/',
+      getOpenCodeAuthHeaders: () => ({}),
+    });
+    const res = response();
+    await route('GET', ROUTE)({
+      params: { sessionID: 'ses_1' },
+      query: { turns: '1' },
+      headers: {},
+    }, res);
+
+    expect(list).toHaveBeenCalledTimes(2);
+    expect(list.mock.calls[0][0]).toEqual({ sessionID: 'ses_1', limit: 100, order: 'desc' });
+    expect(list.mock.calls[1][0]).toEqual({ sessionID: 'ses_1', limit: 100, cursor: 'raw_next' });
+    expect(res.statusCode).toBe(200);
+    expect(res.body.complete).toBe(true);
+    expect(res.body.records.map((record) => record.info.id)).toEqual(['msg_u1', 'msg_a1', 'msg_a2']);
   });
 
   it('drops v2 idle/control rows and does not double-expand text+content (FINAL-GATE cold reload)', async () => {

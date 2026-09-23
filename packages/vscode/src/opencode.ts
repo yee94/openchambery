@@ -12,6 +12,7 @@ import { resolveWorkingDirectoryChange } from './workingDirectoryChange';
 import { registerManagedProcess, unregisterManagedProcess, reapOrphanedProcesses } from './opencodeProcessRegistry';
 import {
   createLegacyOpenCodeBinaryError,
+  evaluateSidecarExecutionAdmission,
   fetchOpenCodeHealth,
   fetchV1MigrationGate,
   isLegacyOpenCodeCliBasename,
@@ -557,17 +558,36 @@ async function waitForReady(
           `V1 migration gate at ${baseUrl}: phase=${migration.phase} admit=${migration.admitTranscript}`
         );
 
-        if (migration.admitTranscript) {
-          return {
-            ok: true,
-            baseUrl,
-            elapsedMs: Date.now() - start,
-            attempts,
-            version: health.version,
-            v1Migration: migration,
-          };
+        if (!migration.admitTranscript) {
+          lastError = migration.error || `V1 migration is ${migration.phase}`;
+          continue;
         }
-        lastError = migration.error || `V1 migration is ${migration.phase}`;
+
+        // Ticket 11: core execution admission for the running serve (not CLI pin alone).
+        const admission = evaluateSidecarExecutionAdmission({
+          serveVersion: health.version,
+          reachable: true,
+          healthOk: true,
+          migrationAdmitTranscript: migration.admitTranscript,
+        });
+        outputChannel?.appendLine(
+          `Runtime contract at ${baseUrl}: phase=${admission.phase} execution=${admission.executionAllowed} band=${admission.versionBand}`
+        );
+        if (!admission.executionAllowed) {
+          lastError = admission.phase === 'ready-unverified'
+            ? `OpenCode ${admission.serveVersion || 'unknown'} is outside the verified contract band (${admission.minVerifiedVersion}–${admission.maxVerifiedVersion})`
+            : `OpenCode runtime contract blocked execution (${admission.phase}: ${admission.reasons.join(', ') || 'unknown'})`;
+          continue;
+        }
+
+        return {
+          ok: true,
+          baseUrl,
+          elapsedMs: Date.now() - start,
+          attempts,
+          version: health.version,
+          v1Migration: migration,
+        };
       } catch (error) {
         lastError = error instanceof Error ? error.message : String(error);
       } finally {

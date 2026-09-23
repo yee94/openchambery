@@ -54,6 +54,7 @@ import { lazyWithChunkRecovery } from '@/lib/chunkLoadRecovery';
 import { ReviewFlowDialog, type ReviewFlowExecution } from '@/components/session/ReviewFlowDialog';
 import { ActiveEditorFileSuggestion, AttachedFilesList, AttachedVSCodeFileChips } from './FileAttachment';
 import { QueuedMessageChips } from './QueuedMessageChips';
+import { SessionRecoveryNotice } from './SessionRecoveryNotice';
 import { AutoReviewBanner } from './AutoReviewBanner';
 import { FileMentionAutocomplete, type FileMentionHandle } from './FileMentionAutocomplete';
 import { CommandAutocomplete, type CommandAutocompleteHandle, type CommandInfo } from './CommandAutocomplete';
@@ -171,6 +172,9 @@ import { useSessionGoal } from '@/hooks/useSessionGoal';
 import { useSessionGoalArmStore } from '@/stores/useSessionGoalArmStore';
 import type { Part } from '@/lib/opencode/v2-types';
 import { consumesImmediateCommandText, getGoalCommandObjective, getLocalChatCommand, preservesComposerResources } from './localCommandClassifier';
+import { submitBtwCommand } from './btwCommand';
+import { useSessionBtwStore } from '@/stores/useSessionBtwStore';
+import { BtwComposerSurface } from '@/components/layout/BtwPanel';
 import { promoteTypedSlashChipSlots, stripLeadingSlashCommandSlot } from './typedSlashChipPromotion';
 import { consumeImmediateCommandText } from './immediateCommandTextConsumption';
 import { runImmediateSessionCommand } from './immediateSessionCommandAction';
@@ -2355,10 +2359,11 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
     }, [pendingInput, consumePendingInput, replacePlainDocument, applyProgrammaticEdit]);
 
     const hasContent = message.trim().length > 0 || sendableAttachedFiles.length > 0 || hasDrafts;
+    const isBtwCommand = surface.kind === 'primary' && getLocalChatCommand(message, inputMode) === 'btw';
     const hasQueuedMessages = serverQueue.mode === 'server'
         ? serverQueue.items.length > 0
         : queuedMessages.length > 0 || legacyPendingAdmissions.length > 0;
-    const queueFrozen = !queueModeAllowsMutations(serverQueue.mode);
+    const queueFrozen = !isBtwCommand && !queueModeAllowsMutations(serverQueue.mode);
     const canSend = hasContent || hasQueuedMessages;
 
     const stagedEditMessageId = useSessionUIStore(
@@ -2366,7 +2371,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
     );
 
     const sessionIsRunning = sessionPhase === 'busy' || sessionPhase === 'retry';
-    const canAbort = surface.activity?.canAbort ?? sessionIsRunning;
+    const canAbort = !isBtwCommand && (surface.activity?.canAbort ?? sessionIsRunning);
 
     const getCurrentInputSnapshot = React.useCallback(() => {
         const textarea = textareaRef.current;
@@ -2405,8 +2410,8 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
         React.useMemo(() => selectIsEstablishingDraft(establishingDraftID), [establishingDraftID]),
     );
     const sendPhase = React.useMemo(
-        () => composerSendPhase(submissionFlightKind, isComposerEstablishing),
-        [submissionFlightKind, isComposerEstablishing],
+        () => composerSendPhase(isBtwCommand ? null : submissionFlightKind, isBtwCommand ? false : isComposerEstablishing),
+        [submissionFlightKind, isComposerEstablishing, isBtwCommand],
     );
     const beginSubmissionFlight = (kind: 'send' | 'queue' = 'send'): boolean => (
         useComposerSendStore.getState().beginFlight(composerSendScopeKey, kind)
@@ -2959,6 +2964,23 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
     const handleSubmit = async (options?: SubmitOptions) => {
         if (!surface.active) return;
         if (submissionBlocked) return;
+        if (!options?.queuedOnly) {
+            const snapshot = options?.presetText == null ? getCurrentInputSnapshot() : null;
+            if (submitBtwCommand({
+                text: options?.presetText ?? snapshot?.message ?? '',
+                inputMode,
+                scope: currentSessionId && currentDirectory ? { sessionId: currentSessionId, directory: currentDirectory } : null,
+                hasReferences: Boolean(snapshot?.document.references.length || composerMentions.length),
+                allowed: surface.kind === 'primary' && isChatInputCommandAllowed(surface, { name: 'btw', source: 'openchamber' }),
+                ask: useSessionBtwStore.getState().ask,
+                clearText: () => { replacePlainDocument(''); setShowCommandAutocomplete(false); setCommandQuery(''); },
+                open: () => {
+                    useUIStore.getState().openContextPanelTab(currentDirectory ?? '', { mode: 'btw' });
+                    if (isMobile) { markComposerActionGesture(); textareaRef.current?.blur(); }
+                },
+                notify: (reason) => toast.error(t(`chat.btw.${reason}`)),
+            })) return;
+        }
         // Establishing owns the draft: stage a follow-up chip before the flight
         // gate below, which the in-progress create+prompt still holds.
         if (claimedByEstablishingFollowUp()) return;
@@ -4054,7 +4076,11 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
     handleSubmitRef.current = handleSubmit;
 
     // Primary action for send/queue button — respects selected follow-up behavior
-    const handlePrimaryAction = React.useCallback(() => {
+    const handlePrimaryAction = useEvent(() => {
+        if (getLocalChatCommand(getCurrentInputSnapshot().message, inputMode) === 'btw') {
+            void handleSubmitRef.current();
+            return;
+        }
         if (claimedByEstablishingFollowUp()) return;
         if (isSubmissionInFlight()) return;
         const inputSnapshot = getCurrentInputSnapshot();
@@ -4076,7 +4102,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
         } else {
             void handleSubmitRef.current();
         }
-    }, [inputMode, getCurrentInputSnapshot, currentSessionId, sessionIsRunning, autoReviewRunning, followUpBehavior, queueMessageFromEvent, serverQueue.mode, surface.deliveryTarget?.kind, surface.kind, enqueueEstablishingFollowUpFromComposer]);
+    });
 
     // Draft welcome presets: submit immediately.
     const submitPresetPrompt = React.useCallback((text: string) => {
@@ -4505,6 +4531,10 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
         // a send button; plain Enter should submit, Shift+Enter for newline.
         if (e.key === 'Enter' && !e.shiftKey) {
             e.preventDefault();
+            if (getLocalChatCommand(getCurrentInputSnapshot().message, inputMode) === 'btw') {
+                void handleSubmit();
+                return;
+            }
             // Establishing follow-ups bypass primary create+prompt flight so Enter
             // still stages "Queuing…" chips the same way the send button does.
             if (claimedByEstablishingFollowUp()) return;
@@ -5590,7 +5620,16 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
             new Set([...knownSlashNames, command.name.toLowerCase()]),
             plainInsert.length,
         );
-        replacePlainDocument(promotedInsert?.text ?? plainInsert);
+        if (command.name === 'btw') {
+            const document = getDocument();
+            const range = getSlashTokenRange(document.text, textareaRef.current?.selectionStart ?? document.text.length);
+            if (range) {
+                const insert = promotedInsert?.text ?? plainInsert;
+                applyProgrammaticEdit(document.text.slice(0, range.start) + insert + document.text.slice(range.end));
+            }
+        } else {
+            replacePlainDocument(promotedInsert?.text ?? plainInsert);
+        }
 
         const textareaElement = textareaRef.current as HTMLTextAreaElement & { _commandMetadata?: typeof command };
         if (textareaElement) {
@@ -6361,7 +6400,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
         ));
     });
     const evaluateChatInputCommandPolicy = useEvent((command: CommandInfo) => (
-        isChatInputCommandAllowed(surface, command)
+        (command.name !== 'btw' || surface.kind === 'primary') && isChatInputCommandAllowed(surface, command)
     ));
     const handleNativeAutocompleteAccept = useEvent((index: number) => {
         if (showCommandAutocomplete) {
@@ -7011,6 +7050,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
     // Gate trailing so an empty SessionGoalRow (no goal / disabled) does not keep
     // the queue shell open with only the composer-overlap spacer.
     const sessionGoalDirectory = currentSessionDirectoryForSync ?? currentDirectory;
+    const sessionRecoveryDirectory = surface.kind === 'secondary' ? surface.directory : currentSessionDirectoryForSync;
     const { goal: sessionGoal, enabled: sessionGoalEnabled } = useSessionGoal(currentSessionId ?? '', sessionGoalDirectory);
     const sessionGoalLeading = currentSessionId && sessionGoalEnabled && sessionGoal
         ? (
@@ -7037,9 +7077,11 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
                 if (!currentSessionId) return;
                 if (!canPromoteInboxItem({ sessionID: currentSessionId })) return;
                 const directory = currentSessionDirectoryForSync ?? currentDirectory ?? '';
+                // PATCH delivery=steer → 204; helper updates overlay under scope guard.
+                // Caller also sets known local delivery for immediate chip feedback.
                 void steerSessionInbox({ sessionID: currentSessionId, inboxID, directory })
-                    .then((item) => {
-                        updateInboxOverlayDelivery(currentSessionId, inboxID, item.delivery);
+                    .then(() => {
+                        updateInboxOverlayDelivery(currentSessionId, inboxID, 'steer');
                     })
                     .catch(() => {
                         toast.error(t('chat.chatInput.toast.messageSendFailed'));
@@ -7049,8 +7091,8 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
                 if (!currentSessionId) return;
                 const directory = currentSessionDirectoryForSync ?? currentDirectory ?? '';
                 void queueSessionInbox({ sessionID: currentSessionId, inboxID, directory })
-                    .then((item) => {
-                        updateInboxOverlayDelivery(currentSessionId, inboxID, item.delivery);
+                    .then(() => {
+                        updateInboxOverlayDelivery(currentSessionId, inboxID, 'queue');
                     })
                     .catch(() => {
                         toast.error(t('chat.chatInput.toast.messageSendFailed'));
@@ -7085,6 +7127,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
 
     return (
         <>
+        {surface.kind === 'primary' && currentSessionId ? <BtwComposerSurface scope={{ sessionId: currentSessionId, directory: currentDirectory }} active={surface.active} mobile={isMobile} /> : null}
         <form
             ref={composerFormRef}
             onSubmit={(e) => { e.preventDefault(); handlePrimaryAction(); }}
@@ -7464,6 +7507,9 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
                             />
                         ) : null}
                     </div>
+                ) : null}
+                {surface.active && currentSessionId && sessionRecoveryDirectory ? (
+                    <SessionRecoveryNotice sessionId={currentSessionId} directory={sessionRecoveryDirectory} />
                 ) : null}
                 {queuedMessageSurface}
                 </div>

@@ -17,7 +17,7 @@ import {
   CONTACT_MESSAGES_PAGE_DEFAULT,
   type ContactMessagesView,
 } from './assistantContactMessages';
-export type { AssistantActiveContactTurn, AssistantActiveContactTurnStatus, AssistantContactAssistantCardPart, AssistantContactCardAdmission, AssistantContactCardPart, AssistantContactFilePart, AssistantContactMessage, AssistantContactPage, AssistantContactPart, AssistantContactPeerAdmission, AssistantContactScheduleCardPart, AssistantContactSessionCardPart, AssistantDTO, AssistantHistoryEntry, AssistantHistoryPage, AssistantMode, AssistantPart, AssistantScheduledTaskEntry, AssistantScheduledTasksPage, AssistantSource, CompactResponse, MessageAdmission, SessionBinding, ShareOperation } from './assistantDTO';
+export type { AssistantActiveContactTurn, AssistantActiveContactTurnStatus, AssistantContactAssistantCardPart, AssistantContactCardAdmission, AssistantContactCardPart, AssistantContactFilePart, AssistantContactMessage, AssistantContactPage, AssistantContactPart, AssistantContactPeerAdmission, AssistantContactScheduleCardPart, AssistantContactSessionCardPart, AssistantDTO, AssistantHistoryEntry, AssistantHistoryFailedBinding, AssistantHistoryPage, AssistantMode, AssistantPart, AssistantScheduledTaskEntry, AssistantScheduledTasksPage, AssistantSource, CompactResponse, MessageAdmission, SessionBinding, ShareOperation } from './assistantDTO';
 export type { ContactMessagesView } from './assistantContactMessages';
 export {
   CONTACT_GAP_FILL_MAX_PAGES,
@@ -191,7 +191,17 @@ export const assistantHistoryInfiniteQueryOptions = (
   }),
   retry: 2,
 });
-export const getNextAssistantHistoryPageParam = (page: AssistantHistoryPage): string | undefined => page.complete ? undefined : page.nextCursor ?? undefined;
+/**
+ * Advance older history, including partial pages that still expose a retry cursor.
+ * complete=true ends pagination; partial never completes.
+ */
+export const getNextAssistantHistoryPageParam = (page: AssistantHistoryPage): string | undefined => (
+  page.complete ? undefined : page.nextCursor ?? undefined
+);
+/** True when any loaded page still has a retryable binding failure. */
+export const assistantHistoryHasPartial = (
+  pages: readonly Pick<AssistantHistoryPage, 'partial'>[] | undefined,
+): boolean => Boolean(pages?.some((page) => page.partial === true));
 export const useAssistantHistoryInfiniteQuery = (
   assistantID: string,
   binding: Pick<SessionBinding, 'sessionID' | 'sessionGeneration'>,

@@ -103,7 +103,12 @@ export const useMcpStatusQuery = (
 ) => {
   const currentDirectory = useDirectoryStore((state) => state.currentDirectory);
   const resolvedDirectory = directory === undefined ? currentDirectory : directory;
-  return useQuery({ ...mcpStatusQueryOptions(normalizeMcpDirectory(resolvedDirectory)), enabled: options.enabled });
+  const normalized = normalizeMcpDirectory(resolvedDirectory);
+  const enabled = options.enabled !== false && Boolean(normalized);
+  return useQuery({
+    ...mcpStatusQueryOptions(normalized),
+    enabled,
+  });
 };
 
 export const readMcpConfigsSnapshot = (

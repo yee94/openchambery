@@ -79,20 +79,49 @@ export const resolveOpenCodeUpdateVersion = (detail: unknown): string => {
 export interface OpenCodeUpgradeStatusLike {
   readonly available?: boolean | null;
   readonly latestVersion?: string | null;
+  readonly targetVersion?: string | null;
+  /** Ticket 12: only owned-cache runtimes may offer in-app upgrade. */
+  readonly canManage?: boolean | null;
+  readonly management?: string | null;
+  readonly guidance?: string | null;
+  readonly reason?: string | null;
+  readonly ownership?: string | null;
+  readonly supplySource?: string | null;
 }
 
 /**
  * Pulls the candidate version out of an `/api/opencode/upgrade-status` JSON
  * payload. Returns `''` when the payload is missing the field, has the wrong
- * type, or reports `available !== true`.
+ * type, reports `available !== true`, or is not in-app manageable (global CLI /
+ * external serve / bundled — those only get manual guidance).
  */
 export const resolveOpenCodeUpgradeStatusVersion = (
   status: OpenCodeUpgradeStatusLike | null | undefined,
 ): string => {
   if (!status) return '';
   if (status.available !== true) return '';
-  if (typeof status.latestVersion !== 'string') return '';
-  return status.latestVersion.trim();
+  // Explicit false blocks the toast; undefined keeps legacy hosts working.
+  if (status.canManage === false) return '';
+  const candidate = typeof status.latestVersion === 'string'
+    ? status.latestVersion
+    : (typeof status.targetVersion === 'string' ? status.targetVersion : '');
+  if (!candidate) return '';
+  return candidate.trim();
+};
+
+/**
+ * True when upgrade-status carries manual-management guidance the UI should show
+ * instead of an in-app upgrade action.
+ */
+export const isOpenCodeUpgradeManualOnly = (
+  status: OpenCodeUpgradeStatusLike | null | undefined,
+): boolean => {
+  if (!status) return false;
+  if (status.canManage === true) return false;
+  return status.management === 'manual-global'
+    || status.management === 'manual-external'
+    || status.management === 'bundled'
+    || typeof status.guidance === 'string' && status.guidance.trim().length > 0;
 };
 
 /**

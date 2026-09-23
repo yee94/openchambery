@@ -83,8 +83,8 @@ For streaming-frequency work, also load `performance-engineering`.
 
 ## Session And Queue Consistency
 
-- Capture provider, model, agent, variant, and other send configuration when queueing.
-- Do not re-resolve queued configuration from mutable current state at send time.
+- **Host / Assistant / self-owned queues:** Capture provider, model, agent, variant, and other send configuration when queueing. Do not re-resolve that captured configuration from mutable current state at dispatch time.
+- **Native OpenCode inbox queue (`delivery: "queue"`):** Do **not** apply composer selection (model/agent switch) on enqueue. The runner inherits authoritative `session.model` / `session.agent` / variant at consumption. Steer still applies the current selection immediately. Composer picks may be diagnostic metadata only.
 - Preserve server-backed attachments and convert paths at the transport boundary.
 - Pass a directory hint when a newly created session is not indexed yet.
 - Read mutable current directory at call time; never cache it in a long-lived closure.
@@ -116,7 +116,8 @@ Cover the relevant lifecycle, not only static state:
 - Historical message/session data drives a live spinner.
 - One failed entity blocks or clears all entities.
 - Light polling overwrites fields it did not fetch.
-- Queue reads current model/agent at send time.
+- Host/Assistant queue reads current model/agent at dispatch instead of captured config.
+- Native inbox queue applies composer model/agent switch on enqueue (must inherit at consume).
 - New session lookup assumes SSE already indexed it.
 - Optimistic data has no shadow entry or rollback.
 - Binary search or ranked insert on a collection whose order source is not that key.

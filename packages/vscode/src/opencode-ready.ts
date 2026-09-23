@@ -77,9 +77,29 @@ export async function waitForApiUrl(
     }
 
     timeoutId = setTimeout(() => {
-      // Bounded fallback: hand back whatever URL exists (possibly null) so a
-      // genuinely-stuck startup surfaces as unavailable rather than hanging.
-      finish(manager.getApiUrl());
+      // Deadline fail: never hand out a pre-ready / unverified getApiUrl().
+      // Sidecar waitForReady must admit execution before status is connected;
+      // a timeout while still connecting must not bypass that permit.
+      finish(null);
     }, timeoutMs);
   });
+}
+
+/**
+ * Current-instance API origin only when the manager is connected (execution
+ * permit was granted by waitForReady). Prefer this at write dispatch time so a
+ * restart that flips status after waitForApiUrl cannot forward with a stale URL.
+ */
+export function resolveConnectedApiUrl(manager: OpenCodeManager | undefined): string | null {
+  if (!manager) return null;
+  if (manager.getStatus() !== 'connected') return null;
+  return manager.getApiUrl();
+}
+
+/**
+ * Whether the manager currently holds an execution permit for writes.
+ * Connected status is only set after verified-band admission in waitForReady.
+ */
+export function isOpenCodeExecutionPermitted(manager: OpenCodeManager | undefined): boolean {
+  return resolveConnectedApiUrl(manager) != null;
 }

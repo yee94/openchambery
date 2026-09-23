@@ -8,6 +8,9 @@ import { createRoot, type Root } from 'react-dom/client';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import type { Message, Part } from '@/lib/opencode/v2-types';
+import { toast as sonnerToast, type ToastT } from 'sonner';
+import { createQueryTranscriptRepository } from '@/sync/transcript-repository-query-adapter';
+import type { TranscriptRepository } from '@/sync/transcript-repository';
 
 import type { ChatMessageEntry } from '../lib/turns/types';
 import type { SessionHistoryMeta } from '@/stores/types/sessionTypes';
@@ -15,6 +18,9 @@ import type { UseChatTimelineControllerResult } from './useChatTimelineControlle
 
 const runtimeSurface = vi.hoisted(() => ({
     mobileProbe: false,
+    runtimeKey: 'test-runtime',
+    generation: 1,
+    repository: null as TranscriptRepository | null,
 }));
 
 vi.mock('@/lib/runtimeSurface', () => ({
@@ -26,22 +32,23 @@ vi.mock('@/lib/desktop', () => ({
 }));
 
 vi.mock('@/lib/runtime-switch', () => ({
-    getRuntimeKey: () => 'test-runtime',
+    getRuntimeKey: () => runtimeSurface.runtimeKey,
+    getRuntimeGeneration: () => runtimeSurface.generation,
 }));
 
 vi.mock('@/lib/i18n', () => ({
     useI18n: () => ({ t: (key: string) => key }),
 }));
 
-vi.mock('@/components/ui', () => ({
-    toast: { error: vi.fn(), success: vi.fn(), info: vi.fn() },
-}));
+vi.mock('@/components/ui', async () => import('@/components/ui/toast'));
+vi.mock('@/hooks/streamingHaptics', () => ({ triggerMobileHaptic: vi.fn() }));
+vi.mock('@/lib/clipboard', () => ({ copyTextToClipboard: vi.fn(async () => ({ ok: true })) }));
 
 vi.mock('@/sync/transcript-repository-runtime', () => ({
-    getTranscriptRepository: () => null,
+    getTranscriptRepository: () => runtimeSurface.repository,
     transcriptScope: (directory: string | null, sessionId: string) => ({
         directory,
-        sessionId,
+        sessionID: sessionId,
     }),
 }));
 
@@ -109,6 +116,7 @@ const waitMs = async (ms: number) => {
 };
 
 type HarnessState = {
+    sessionId: string;
     isMobile: boolean;
     autoFillEnabled: boolean;
     isPinned: boolean;
@@ -124,6 +132,7 @@ type TimelineHarnessProps = HarnessState & {
 };
 
 const TimelineHarness: React.FC<TimelineHarnessProps> = ({
+    sessionId,
     isMobile,
     autoFillEnabled,
     isPinned,
@@ -142,7 +151,7 @@ const TimelineHarness: React.FC<TimelineHarnessProps> = ({
         if (node) applyScrollerGeometry(node, geometry);
     };
     const api = useChatTimelineController({
-        sessionId: SESSION_ID,
+        sessionId,
         directory: '/workspace',
         messages,
         historyMeta,
@@ -205,6 +214,7 @@ const mountController = async (input: {
         client,
         scrollRef,
         state: {
+            sessionId: SESSION_ID,
             isMobile: input.isMobile,
             autoFillEnabled: input.autoFillEnabled ?? true,
             isPinned: input.isPinned ?? true,
@@ -272,6 +282,161 @@ afterEach(async () => {
 
 beforeEach(() => {
     runtimeSurface.mobileProbe = false;
+    runtimeSurface.runtimeKey = 'test-runtime';
+    runtimeSurface.generation = 1;
+    runtimeSurface.repository = null;
+    for (const toast of sonnerToast.getToasts()) sonnerToast.dismiss(toast.id);
+});
+
+describe('history failure feedback with production toast store', () => {
+    const activeErrors = () => sonnerToast.getToasts().filter((toast): toast is ToastT => 'type' in toast && toast.type === 'error');
+    const fail = async () => { throw new Error('HTTP 400'); };
+
+    test('three upward retries keep one active error and Copy action; success clears it', async () => {
+        const load = vi.fn(fail);
+        const handle = await mountController({ isMobile: false, autoFillEnabled: false, loadMoreMessages: load });
+        for (let index = 0; index < 3; index += 1) {
+            await act(async () => handle.api!.handleHistoryUpwardIntent());
+            await waitMs(10);
+        }
+        expect(load).toHaveBeenCalledTimes(3);
+        expect(activeErrors()).toHaveLength(1);
+        expect(activeErrors()[0].title).toBe('chat.history.loadOlderFailed');
+        expect(activeErrors()[0].action).toMatchObject({ label: 'Copy' });
+        await handle.setState({ loadMoreMessages: async () => {
+            await handle.setState({ historyMeta: { ...historyMetaReady(), complete: true, canLoadEarlier: false } });
+        } });
+        await act(async () => { await handle.api!.loadEarlier({ userInitiated: true }); });
+        expect(activeErrors()).toHaveLength(0);
+    });
+
+    test.each(['session', 'runtime'] as const)('%s switch isolates late failure from new error', async (scope) => {
+        let rejectOld!: (error: Error) => void;
+        const handle = await mountController({ isMobile: true, loadMoreMessages: () => new Promise((_, reject) => { rejectOld = reject; }) });
+        let oldFlight!: Promise<void>;
+        await act(async () => { oldFlight = handle.api!.loadEarlier({ userInitiated: true }); });
+        if (scope === 'runtime') runtimeSurface.runtimeKey = 'other-runtime';
+        await handle.setState({ sessionId: scope === 'session' ? 'other-session' : SESSION_ID, loadMoreMessages: fail });
+        await act(async () => { await handle.api!.loadEarlier({ userInitiated: true }); });
+        expect(activeErrors()).toHaveLength(1);
+        const currentId = activeErrors()[0].id;
+        await act(async () => { rejectOld(new Error('old HTTP 400')); await oldFlight; });
+        expect(activeErrors().map((toast) => toast.id)).toEqual([currentId]);
+    });
+
+    test.each(['session', 'runtime'] as const)('%s switch clears old feedback and uses a distinct scoped ID', async (scope) => {
+        const handle = await mountController({ isMobile: true, loadMoreMessages: fail });
+        await act(async () => { await handle.api!.loadEarlier({ userInitiated: true }); });
+        const previousId = activeErrors()[0].id;
+        if (scope === 'runtime') runtimeSurface.runtimeKey = 'other-runtime';
+        await handle.setState({ sessionId: scope === 'session' ? 'other-session' : SESSION_ID });
+        expect(activeErrors()).toHaveLength(0);
+        await act(async () => { await handle.api!.loadEarlier({ userInitiated: true }); });
+        expect(activeErrors()).toHaveLength(1);
+        expect(activeErrors()[0].id).not.toBe(previousId);
+    });
+
+    test('late success after a session round trip preserves the current error', async () => {
+        let resolveOld!: () => void;
+        const handle = await mountController({ isMobile: true, loadMoreMessages: () => new Promise((resolve) => { resolveOld = resolve; }) });
+        let oldFlight!: Promise<void>;
+        await act(async () => { oldFlight = handle.api!.loadEarlier({ userInitiated: true }); });
+        await handle.setState({ sessionId: 'other-session' });
+        await handle.setState({ sessionId: SESSION_ID, loadMoreMessages: fail });
+        await act(async () => { await handle.api!.loadEarlier({ userInitiated: true }); });
+        const currentId = activeErrors()[0].id;
+        await act(async () => { resolveOld(); await oldFlight; });
+        expect(activeErrors().map((toast) => toast.id)).toEqual([currentId]);
+    });
+
+    test('runtime generation change isolates a late failure before the next render', async () => {
+        let rejectOld!: (error: Error) => void;
+        const handle = await mountController({ isMobile: true, loadMoreMessages: () => new Promise((_, reject) => { rejectOld = reject; }) });
+        let oldFlight!: Promise<void>;
+        await act(async () => { oldFlight = handle.api!.loadEarlier({ userInitiated: true }); });
+        runtimeSurface.generation += 1;
+        await act(async () => { rejectOld(new Error('old HTTP 400')); await oldFlight; });
+        expect(activeErrors()).toHaveLength(0);
+    });
+
+    test('auto-fill failure makes one request and stays silent', async () => {
+        const load = vi.fn(fail);
+        const handle = await mountController({ isMobile: false, loadMoreMessages: load });
+        await waitMs(350);
+        await handle.render();
+        expect(load).toHaveBeenCalledTimes(1);
+        expect(activeErrors()).toHaveLength(0);
+    });
+
+    test('stationary page blocks repeated scroll and auto-fill, retaining explicit retry feedback', async () => {
+        const load = vi.fn(async () => undefined);
+        const handle = await mountController({ isMobile: false, isPinned: false, autoFillEnabled: false, loadMoreMessages: load });
+        await act(async () => { await handle.api!.loadEarlier({ userInitiated: true }); });
+        expect(activeErrors()).toHaveLength(1);
+        expect(handle.api!.historySignals.canLoadEarlier).toBe(true);
+        for (let index = 0; index < 3; index += 1) {
+            await act(async () => handle.api!.handleHistoryScroll());
+        }
+        await handle.setState({ isPinned: true, autoFillEnabled: true });
+        await waitMs(350);
+        expect(load).toHaveBeenCalledTimes(1);
+        await act(async () => { await handle.api!.loadEarlier({ userInitiated: true }); });
+        expect(load).toHaveBeenCalledTimes(2);
+        expect(activeErrors()).toHaveLength(1);
+    });
+
+    test('empty records with advancing repository cursor make progress and keep one page per explicit request', async () => {
+        const client = new QueryClient();
+        const repo = createQueryTranscriptRepository({ client, transport: 'test-runtime', generation: 1 });
+        runtimeSurface.repository = repo;
+        const scope = { directory: '/workspace', sessionID: SESSION_ID };
+        repo.apply(scope, { type: 'http-page', purpose: 'initial', page: {
+            records: [message('msg_1'), message('msg_2')], cursor: 'cursor-1', complete: false, turnCount: 2,
+        } });
+        const load = vi.fn(async () => {
+            repo.apply(scope, { type: 'http-page', purpose: 'prepend', page: {
+                records: [], cursor: 'cursor-2', complete: false, turnCount: 0,
+            } });
+        });
+        const handle = await mountController({ isMobile: true, loadMoreMessages: load });
+        await act(async () => { await handle.api!.loadEarlier({ userInitiated: true }); });
+        expect(repo.getPagination(scope).cursor).toBe('cursor-2');
+        expect(load).toHaveBeenCalledTimes(1);
+        expect(activeErrors()).toHaveLength(0);
+        expect(handle.api!.historySignals.canLoadEarlier).toBe(true);
+        // A second explicit request receives the same cursor and surfaces the stall.
+        await act(async () => { await handle.api!.loadEarlier({ userInitiated: true }); });
+        expect(load).toHaveBeenCalledTimes(2);
+        expect(activeErrors()).toHaveLength(1);
+        repo.destroy();
+        client.clear();
+    });
+
+    test('auto-fill re-arms on an empty cursor advance and stops on the next stationary page', async () => {
+        const client = new QueryClient();
+        const repo = createQueryTranscriptRepository({ client, transport: 'test-runtime', generation: 1 });
+        runtimeSurface.repository = repo;
+        const scope = { directory: '/workspace', sessionID: SESSION_ID };
+        repo.apply(scope, { type: 'http-page', purpose: 'initial', page: {
+            records: [message('msg_1'), message('msg_2')], cursor: 'cursor-1', complete: false, turnCount: 2,
+        } });
+        const load = vi.fn(async () => {
+            repo.apply(scope, { type: 'http-page', purpose: 'prepend', page: {
+                records: [], cursor: 'cursor-2', complete: false, turnCount: 0,
+            } });
+        });
+        const handle = await mountController({ isMobile: false, loadMoreMessages: load });
+        await waitMs(350);
+        await handle.render();
+        await waitMs(350);
+        await handle.render();
+        await waitMs(350);
+        expect(load).toHaveBeenCalledTimes(2);
+        expect(handle.api!.historySignals.canLoadEarlier).toBe(true);
+        expect(activeErrors()).toHaveLength(0);
+        repo.destroy();
+        client.clear();
+    });
 });
 
 describe('useChatTimelineController mobile history boundary', () => {

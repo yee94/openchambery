@@ -166,9 +166,16 @@ describe("ticket 09 source contracts", () => {
 
   test("session-actions revert/unrevert use official stage/clear and do not delete the transcript tail", () => {
     const actionsSource = readFileSync(join(here, "session-actions.ts"), "utf8")
+    const uiSource = readFileSync(join(here, "session-ui-store.ts"), "utf8")
+    const revertApiSource = readFileSync(join(here, "session-revert-api.ts"), "utf8")
     expect(actionsSource.includes("postSessionRevertStage")).toBe(true)
     expect(actionsSource.includes("postSessionRevertClear") || actionsSource.includes("unrevertSession(")).toBe(true)
-    expect(actionsSource.includes("isSessionRevertBusyError") || actionsSource.includes("sessionRevertBusyError")).toBe(true)
+    // Busy 409 is typed in session-revert-api and surfaced from session-ui-store.
+    expect(
+      revertApiSource.includes("isSessionRevertBusyError")
+      || revertApiSource.includes("sessionRevertBusyError")
+      || uiSource.includes("isSessionRevertBusyError"),
+    ).toBe(true)
     const revertFn = actionsSource.slice(actionsSource.indexOf("export async function revertToMessage"))
     const revertBody = revertFn.slice(0, revertFn.indexOf("function removeSessionMessageFromStore"))
     expect(revertBody.includes("removeSessionMessageFromStore(")).toBe(false)

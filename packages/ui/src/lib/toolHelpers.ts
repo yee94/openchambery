@@ -110,7 +110,8 @@ const TOOL_METADATA: Record<string, ToolMetadata> = {
     inputFields: [
       { key: 'description', label: 'Task', type: 'text' },
       { key: 'prompt', label: 'Instructions', type: 'text' },
-      { key: 'subagent_type', label: 'Agent Type', type: 'text' }
+      { key: 'subagent_type', label: 'Agent Type', type: 'text' },
+      { key: 'agent', label: 'Agent Type', type: 'text' },
     ]
   },
 
@@ -216,6 +217,8 @@ const BUILT_IN_TOOL_ALIASES: Record<string, string> = {
   shell: 'bash',
   cmd: 'bash',
   terminal: 'bash',
+  // Native OpenCode tool name — same display / task-row family as plugin `task`.
+  subagent: 'task',
   structuredoutput: 'structuredoutput',
 };
 
@@ -795,7 +798,7 @@ export function formatToolInput(input: Record<string, unknown>, toolName: string
     return summary;
   }
 
-  if (toolName === 'task') {
+  if (toolName === 'task' || toolName === 'subagent') {
     const prompt = getString('prompt');
     if (prompt) return prompt;
     const desc = getString('description');

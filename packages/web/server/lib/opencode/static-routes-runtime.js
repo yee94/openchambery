@@ -47,8 +47,10 @@ export const createStaticRoutesRuntime = (dependencies) => {
         normalizePwaOrientation,
       });
 
+      // `root` limits send's dotfile check to `index.html`; an absolute path
+      // would 404 whenever the install lives under a dot directory (~/.bun, ~/.local).
       app.get(/^(?!\/api|.*\.(js|css|svg|png|jpg|jpeg|gif|ico|woff|woff2|ttf|eot|map)).*$/, (_req, res) => {
-        res.sendFile(path.join(distPath, 'index.html'));
+        res.sendFile('index.html', { root: distPath });
       });
       return;
     }

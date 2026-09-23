@@ -133,20 +133,35 @@ describe('opencode2 upgrade pin (ticket 12)', () => {
     app.use(express.json());
     const deps = {
       ...createDependencies({ formatSettingsResponse: vi.fn(() => ({})) }),
-      getOpenCodeResolutionSnapshot: vi.fn(async () => ({ source: 'path' })),
+      getOpenCodeResolutionSnapshot: vi.fn(async () => ({ source: 'path', resolved: '/usr/local/bin/opencode' })),
       buildOpenCodeUrl: vi.fn((pathname) => `http://opencode.test${pathname}`),
       getOpenCodeAuthHeaders: vi.fn(() => ({ Authorization: 'Basic secret' })),
       refreshOpenCodeAfterConfigChange: vi.fn(async () => undefined),
+      getResolvedOpenCodeBinarySource: vi.fn(() => 'path'),
+      getResolvedOpenCodeBinary: vi.fn(() => '/usr/local/bin/opencode'),
+      getActiveSessionCount: vi.fn(() => 0),
       ...overrides,
     };
     registerOpenCodeRoutes(app, deps);
     return { app, deps };
   };
 
-  it('rejects 1.x upgrade targets and never calls /global/upgrade', async () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('rejects 1.x upgrade targets even for owned cache', async () => {
     const fetchMock = vi.fn();
     vi.stubGlobal('fetch', fetchMock);
-    const { app } = createUpgradeApp();
+    const { app } = createUpgradeApp({
+      getOpenCodeResolutionSnapshot: vi.fn(async () => ({
+        source: 'installed',
+        resolved: '/tmp/openchamber/opencode-cli/2.0.12/opencode',
+      })),
+      getResolvedOpenCodeBinarySource: vi.fn(() => 'installed'),
+      getResolvedOpenCodeBinary: vi.fn(() => '/tmp/openchamber/opencode-cli/2.0.12/opencode'),
+      openchamberDataDir: '/tmp/openchamber',
+    });
 
     const response = await request(app)
       .post('/api/opencode/upgrade')
@@ -156,20 +171,17 @@ describe('opencode2 upgrade pin (ticket 12)', () => {
     expect(response.body.success).toBe(false);
     expect(response.body.error).toMatch(/1\.x/);
     expect(fetchMock).not.toHaveBeenCalled();
-    vi.unstubAllGlobals();
   });
 
-  it('does not treat a 1.x latest string as an available upgrade', async () => {
+  it('upgrade-status reports manual guidance for global CLI and never claims in-app available', async () => {
     const fetchMock = vi.fn(async (url) => {
       const href = String(url);
       if (href.includes('/api/info')) {
         return {
           ok: true,
+          status: 200,
           json: async () => ({ version: '2.0.12', healthy: true }),
         };
-      }
-      if (href.includes('registry.npmjs.org/opencode-ai') || href.includes('github.com/repos/anomalyco/opencode')) {
-        return { ok: true, json: async () => ({ version: '1.18.18', tag_name: 'v1.18.18' }) };
       }
       throw new Error(`unexpected fetch ${href}`);
     });
@@ -178,16 +190,21 @@ describe('opencode2 upgrade pin (ticket 12)', () => {
 
     const response = await request(app).get('/api/opencode/upgrade-status').expect(200);
 
+    expect(response.body.canManage).toBe(false);
+    expect(response.body.available).toBeNull();
+    expect(response.body.management).toBe('manual-global');
+    expect(response.body.guidance).toMatch(/global/i);
     expect(response.body.latestVersion).not.toMatch(/^v?1\./);
     expect(isOpenCode1xVersion(response.body.latestVersion)).toBe(false);
-    expect(String(response.body.latestVersion || '')).not.toContain('1.18');
-    vi.unstubAllGlobals();
+    expect(response.body.contract).toBeTruthy();
   });
 
-  it('returns 409 for external OpenCode and does not refresh', async () => {
+  it('returns 409 for external OpenCode and does not restart', async () => {
+    const restartOpenCode = vi.fn(async () => undefined);
     const refreshOpenCodeAfterConfigChange = vi.fn(async () => undefined);
     const { app, deps } = createUpgradeApp({
       getIsExternalOpenCode: () => true,
+      restartOpenCode,
       refreshOpenCodeAfterConfigChange,
     });
 
@@ -197,8 +214,77 @@ describe('opencode2 upgrade pin (ticket 12)', () => {
       .expect(409);
 
     expect(response.body.success).toBe(false);
-    expect(response.body.error).toMatch(/your own OpenCode serve/i);
+    expect(response.body.management).toBe('manual-external');
+    expect(response.body.error).toMatch(/external/i);
+    expect(deps.restartOpenCode).not.toHaveBeenCalled();
     expect(deps.refreshOpenCodeAfterConfigChange).not.toHaveBeenCalled();
+  });
+
+  it('refuses in-app upgrade when managed process uses global CLI', async () => {
+    const restartOpenCode = vi.fn(async () => undefined);
+    const { app, deps } = createUpgradeApp({ restartOpenCode });
+
+    const response = await request(app)
+      .post('/api/opencode/upgrade')
+      .send({ target: '2.0.14' })
+      .expect(409);
+
+    expect(response.body.success).toBe(false);
+    expect(response.body.ownership).toBe('global-cli');
+    expect(deps.restartOpenCode).not.toHaveBeenCalled();
+  });
+});
+
+describe('runtime contract routes (ticket 11)', () => {
+  const createContractApp = (overrides = {}) => {
+    const app = express();
+    const deps = {
+      ...createDependencies({ formatSettingsResponse: vi.fn(() => ({})) }),
+      getOpenCodeResolutionSnapshot: vi.fn(async () => ({ source: 'path' })),
+      buildOpenCodeUrl: vi.fn((pathname) => `http://opencode.test${pathname}`),
+      getOpenCodeAuthHeaders: vi.fn(() => ({ Authorization: 'Basic secret' })),
+      ...overrides,
+    };
+    registerOpenCodeRoutes(app, deps);
+    return { app, deps };
+  };
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('exposes contract admission separate from bare healthy', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      statusText: 'OK',
+      json: async () => ({ version: '2.0.12', pid: 1 }),
+    })));
+    const { app } = createContractApp();
+
+    const health = await request(app).get('/api/opencode/health').expect(200);
+    expect(health.body.healthy).toBe(true);
+    expect(health.body.contract.protocolCompatible).toBe(true);
+    expect(health.body.executionAllowed).toBe(true);
+
+    const contract = await request(app).get('/api/opencode/contract').expect(200);
+    expect(contract.body.serveVersion).toBe('2.0.12');
+    expect(contract.body.capabilities['core.protocol'].available).toBe(true);
+  });
+
+  it('marks older 2.x healthy-reachability may still fail execution admission', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      statusText: 'OK',
+      json: async () => ({ version: '2.0.5', pid: 1 }),
+    })));
+    const { app } = createContractApp();
+    const health = await request(app).get('/api/opencode/health').expect(200);
+    // evaluateOpenCodeHealthBody still accepts any 2.x for reachability
+    expect(health.body.healthy).toBe(true);
+    expect(health.body.executionAllowed).toBe(false);
+    expect(health.body.contract.phase).toBe('incompatible');
   });
 });
 
@@ -238,8 +324,15 @@ describe('GET /api/opencode/health', () => {
 
     const response = await request(app).get('/api/opencode/health').expect(200);
 
-    expect(response.body).toEqual({ healthy: true });
-    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(response.body).toMatchObject({
+      healthy: true,
+      version: '2.0.12',
+      executionAllowed: true,
+      protocolCompatible: true,
+    });
+    expect(response.body.contract).toBeTruthy();
+    // buildLiveContract also probes /api/info
+    expect(fetchMock).toHaveBeenCalled();
   });
 
   it('rejects classic unhealthy bodies even when version is 2.x', async () => {
@@ -253,7 +346,7 @@ describe('GET /api/opencode/health', () => {
 
     const response = await request(app).get('/api/opencode/health').expect(200);
 
-    expect(response.body).toEqual({ healthy: false });
+    expect(response.body).toMatchObject({ healthy: false });
   });
 
   it('rejects 1.x bodies even when healthy:true is present', async () => {
@@ -267,7 +360,10 @@ describe('GET /api/opencode/health', () => {
 
     const response = await request(app).get('/api/opencode/health').expect(200);
 
-    expect(response.body).toEqual({ healthy: false });
+    expect(response.body).toMatchObject({
+      healthy: false,
+      executionAllowed: false,
+    });
   });
 
   it('returns healthy:false with error when upstream /api/info is not ok', async () => {
@@ -281,6 +377,7 @@ describe('GET /api/opencode/health', () => {
 
     const response = await request(app).get('/api/opencode/health').expect(502);
 
-    expect(response.body).toEqual({ healthy: false, error: 'upstream down' });
+    expect(response.body).toMatchObject({ healthy: false, error: 'upstream down' });
+    expect(response.body.contract).toBeTruthy();
   });
 });

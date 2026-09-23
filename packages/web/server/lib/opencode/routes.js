@@ -6,6 +6,19 @@ import {
   isOpenCode1xVersion,
   resolveOpenCode2UpgradeTarget,
 } from './opencode2-pin.js';
+import {
+  installPinnedOpenCode2Cli,
+  readOpenCode2BinaryVersion,
+  resolveOpenChamberDataDir,
+} from './ensure-cli.js';
+import { evaluateRuntimeContract } from './runtime-contract.js';
+import {
+  buildUpgradeStatusSnapshot,
+  classifyRuntimeOwnership,
+  createUpgradeOperationState,
+  evaluateOwnedUpgradeResult,
+  resolveOwnedCacheBinaryPath,
+} from './owned-runtime-upgrade.js';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
@@ -29,7 +42,20 @@ export const registerOpenCodeRoutes = (app, dependencies) => {
     getOpenCodeAuthHeaders,
     onSettingsPersisted,
     getIsExternalOpenCode = () => false,
+    forceResolvedOpenCodeBinary = null,
+    restartOpenCode = null,
+    waitForOpenCodeReady = null,
+    getRuntimeContract = () => null,
+    getOpenCodeServeVersion = () => null,
+    getOpenCodeCliVersion = () => null,
+    getResolvedOpenCodeBinary = () => null,
+    getResolvedOpenCodeBinarySource = () => null,
+    getActiveSessionCount = () => 0,
+    openchamberDataDir = null,
   } = dependencies;
+
+  const upgradeOperation = createUpgradeOperationState();
+  const resolveDataDir = () => openchamberDataDir || resolveOpenChamberDataDir();
 
   let authLibrary = null;
   const pendingMcpAuthContextByState = new Map();
@@ -63,10 +89,80 @@ export const registerOpenCodeRoutes = (app, dependencies) => {
     });
     const health = await healthResponse.json().catch(() => null);
     if (!healthResponse.ok) {
-      return { ok: false, status: healthResponse.status, error: health?.error || healthResponse.statusText };
+      return {
+        ok: false,
+        status: healthResponse.status,
+        error: health?.error || healthResponse.statusText,
+        authenticated: healthResponse.status === 401 || healthResponse.status === 403 ? false : null,
+      };
     }
-    const currentVersion = typeof health?.version === 'string' ? health.version.replace(/^v/, '') : null;
-    return { ok: true, currentVersion };
+    const gate = evaluateOpenCodeHealthBody(health);
+    const currentVersion = gate.version
+      || (typeof health?.version === 'string' ? health.version.replace(/^v/, '') : null);
+    return { ok: gate.ok, currentVersion, healthOk: gate.ok, authenticated: true };
+  };
+
+  const resolveOwnershipContext = async () => {
+    const isExternal = getIsExternalOpenCode() === true;
+    let binarySource = typeof getResolvedOpenCodeBinarySource === 'function'
+      ? getResolvedOpenCodeBinarySource()
+      : null;
+    let binaryPath = typeof getResolvedOpenCodeBinary === 'function'
+      ? getResolvedOpenCodeBinary()
+      : null;
+    try {
+      const settings = await readSettingsFromDiskMigrated();
+      const resolution = await getOpenCodeResolutionSnapshot(settings);
+      binarySource = binarySource || resolution?.source || resolution?.detectedSourceNow || null;
+      binaryPath = binaryPath || resolution?.resolved || null;
+      if (resolution?.source === 'bundled' || resolution?.detectedSourceNow === 'bundled') {
+        binarySource = 'bundled';
+      }
+    } catch {
+      // Resolution failures still allow ownership classification from runtime flags.
+    }
+    return classifyRuntimeOwnership({
+      isExternal,
+      binarySource,
+      binaryPath,
+      dataDir: resolveDataDir(),
+    });
+  };
+
+  const buildLiveContract = async () => {
+    const cached = typeof getRuntimeContract === 'function' ? getRuntimeContract() : null;
+    const serveProbe = await readOpenCodeCurrentVersion().catch(() => ({ ok: false, currentVersion: null }));
+    const serveVersion = serveProbe.currentVersion
+      || (typeof getOpenCodeServeVersion === 'function' ? getOpenCodeServeVersion() : null);
+    const binaryPath = typeof getResolvedOpenCodeBinary === 'function' ? getResolvedOpenCodeBinary() : null;
+    const cliVersion = (typeof getOpenCodeCliVersion === 'function' ? getOpenCodeCliVersion() : null)
+      || (binaryPath ? readOpenCode2BinaryVersion(binaryPath) : null)
+      || null;
+    return evaluateRuntimeContract({
+      serveVersion,
+      cliVersion,
+      reachable: serveProbe.ok === true || Boolean(serveVersion) || Boolean(cached?.reachable),
+      authenticated: serveProbe.authenticated ?? cached?.authenticated ?? null,
+      healthOk: serveProbe.healthOk ?? serveProbe.ok ?? cached?.healthOk ?? null,
+      migrationAdmitTranscript: cached?.migrationExecutable ?? null,
+      migrationPhase: cached?.migrationPhase ?? null,
+      migrationError: cached?.migrationError ?? null,
+    });
+  };
+
+  const buildUpgradeStatus = async () => {
+    const ownership = await resolveOwnershipContext();
+    const contract = await buildLiveContract();
+    const activeCount = typeof getActiveSessionCount === 'function' ? Number(getActiveSessionCount()) || 0 : 0;
+    return buildUpgradeStatusSnapshot({
+      ownership,
+      serveVersion: contract.serveVersion,
+      cliVersion: contract.cliVersion,
+      targetVersion: PINNED_OPENCODE2_VERSION,
+      contract,
+      operation: upgradeOperation.getState(),
+      hasActiveTasks: activeCount > 0,
+    });
   };
 
   const parseVersionForComparison = (value) => {
@@ -190,17 +286,17 @@ export const registerOpenCodeRoutes = (app, dependencies) => {
 
   app.post('/api/opencode/upgrade', async (req, res) => {
     try {
-      if (getIsExternalOpenCode()) {
-        return res.status(409).json({
+      const ownership = await resolveOwnershipContext();
+      if (!ownership.canUpgradeInApp) {
+        const status = ownership.ownership === 'external-serve' || ownership.ownership === 'bundled' ? 409 : 409;
+        return res.status(status).json({
           success: false,
-          error: 'This is your own OpenCode serve. OpenChamber will not upgrade or restart it.',
-        });
-      }
-
-      if (await isBundledOpenCodeBinaryActive()) {
-        return res.status(409).json({
-          success: false,
-          error: 'OpenCode is bundled with OpenChamber Desktop and cannot be upgraded separately.',
+          error: ownership.guidance
+            || 'OpenChamber can only upgrade its owned OpenCode cache in-app.',
+          errorCode: ownership.reason || 'UPGRADE_NOT_MANAGED',
+          ownership: ownership.ownership,
+          management: ownership.management,
+          guidance: ownership.guidance,
         });
       }
 
@@ -211,23 +307,131 @@ export const registerOpenCodeRoutes = (app, dependencies) => {
         return res.status(400).json({
           success: false,
           error: 'OpenCode upgrade refuses 1.x targets. Only pinned opencode2 is allowed.',
+          errorCode: 'OPENCODE_UPGRADE_1X_REFUSED',
         });
       }
       const target = resolveOpenCode2UpgradeTarget(rawTarget);
-
-      try {
-        await refreshOpenCodeAfterConfigChange('OpenCode upgrade');
-      } catch (restartError) {
-        return res.status(500).json({
+      const confirmActive = req.body?.confirmActiveTasks === true || req.body?.force === true;
+      const activeCount = typeof getActiveSessionCount === 'function' ? Number(getActiveSessionCount()) || 0 : 0;
+      if (activeCount > 0 && !confirmActive) {
+        return res.status(409).json({
           success: false,
-          upgraded: true,
-          error: restartError instanceof Error
-            ? `OpenCode upgraded, but restart failed: ${restartError.message}`
-            : 'OpenCode upgraded, but restart failed',
+          error: 'OpenCode has active sessions. Confirm upgrade to interrupt them, or wait until idle.',
+          errorCode: 'UPGRADE_ACTIVE_TASKS',
+          hasActiveTasks: true,
+          activeSessionCount: activeCount,
         });
       }
 
-      return res.json({ success: true, restarted: true, version: target, pinned: true });
+      const begin = upgradeOperation.begin(target);
+      if (!begin.ok) {
+        return res.status(begin.status).json(begin.body);
+      }
+
+      const expectedBinaryPath = resolveOwnedCacheBinaryPath(target, { dataDir: resolveDataDir() });
+      let installedPath = expectedBinaryPath;
+
+      try {
+        upgradeOperation.setPhase('download');
+        installedPath = await installPinnedOpenCode2Cli({
+          version: target,
+          dataDir: resolveDataDir(),
+        });
+        const diskVersion = readOpenCode2BinaryVersion(installedPath);
+        if (diskVersion !== target) {
+          const error = new Error(
+            `Owned-cache binary version mismatch after install: expected ${target}, got ${diskVersion || 'unknown'}`,
+          );
+          error.code = 'UPGRADE_BINARY_VERSION_MISMATCH';
+          throw error;
+        }
+
+        upgradeOperation.setPhase('pin-binary', { binaryPath: installedPath });
+        if (typeof forceResolvedOpenCodeBinary !== 'function') {
+          const error = new Error('Owned-cache upgrade requires forceResolvedOpenCodeBinary');
+          error.code = 'UPGRADE_FORCE_BINARY_UNAVAILABLE';
+          throw error;
+        }
+        // Keep target identity through restart — do not rediscover global CLI.
+        forceResolvedOpenCodeBinary(installedPath, 'installed');
+
+        upgradeOperation.setPhase('restart');
+        if (typeof restartOpenCode === 'function') {
+          await restartOpenCode();
+        } else if (typeof refreshOpenCodeAfterConfigChange === 'function') {
+          // Fallback: still pin binary first so restart prefers owned cache.
+          await refreshOpenCodeAfterConfigChange('OpenCode owned-cache upgrade');
+        } else {
+          const error = new Error('No OpenCode restart path is configured');
+          error.code = 'UPGRADE_RESTART_UNAVAILABLE';
+          throw error;
+        }
+
+        if (typeof waitForOpenCodeReady === 'function') {
+          upgradeOperation.setPhase('wait-ready');
+          await waitForOpenCodeReady();
+        }
+
+        upgradeOperation.setPhase('verify');
+        // Re-pin after restart helpers that may clear resolution.
+        forceResolvedOpenCodeBinary(installedPath, 'installed');
+        const contract = await buildLiveContract();
+        const verification = evaluateOwnedUpgradeResult({
+          targetVersion: target,
+          serveVersion: contract.serveVersion,
+          cliVersion: contract.cliVersion,
+          binaryPath: typeof getResolvedOpenCodeBinary === 'function'
+            ? getResolvedOpenCodeBinary()
+            : installedPath,
+          expectedBinaryPath: installedPath,
+          contract,
+        });
+        if (!verification.ok) {
+          const error = new Error(verification.error);
+          error.code = verification.errorCode;
+          error.serveVersion = verification.serveVersion;
+          error.contract = verification.contract;
+          throw error;
+        }
+
+        upgradeOperation.succeed({
+          serveVersion: verification.serveVersion,
+          binaryPath: installedPath,
+        });
+        return res.json({
+          success: true,
+          upgraded: true,
+          restarted: true,
+          version: verification.serveVersion,
+          targetVersion: target,
+          pinned: true,
+          supplySource: 'owned-cache',
+          ownership: 'owned-cache',
+          binaryPath: installedPath,
+          contract: verification.contract,
+          operation: upgradeOperation.getState(),
+        });
+      } catch (upgradeError) {
+        const message = upgradeError instanceof Error ? upgradeError.message : 'Failed to upgrade OpenCode';
+        const errorCode = upgradeError?.code || 'UPGRADE_FAILED';
+        upgradeOperation.fail({
+          error: message,
+          errorCode,
+          phase: upgradeOperation.getState().phase,
+          serveVersion: upgradeError?.serveVersion ?? null,
+          binaryPath: installedPath,
+        });
+        // Preserve previous owned cache on disk; only report failure.
+        return res.status(500).json({
+          success: false,
+          upgraded: false,
+          error: message,
+          errorCode,
+          targetVersion: target,
+          operation: upgradeOperation.getState(),
+          contract: upgradeError?.contract || null,
+        });
+      }
     } catch (error) {
       console.error('Failed to upgrade OpenCode:', error);
       return res.status(500).json({
@@ -239,42 +443,35 @@ export const registerOpenCodeRoutes = (app, dependencies) => {
 
   app.get('/api/opencode/upgrade-status', async (_req, res) => {
     try {
-      if (await isBundledOpenCodeBinaryActive()) {
-        const current = await readOpenCodeCurrentVersion().catch(() => ({ ok: false, currentVersion: null }));
-        return res.json({
-          available: false,
-          currentVersion: current.ok ? current.currentVersion : null,
-          latestVersion: null,
-          source: 'bundled',
-        });
-      }
-
-      const healthResponse = await fetch(buildOpenCodeUrl('/api/info', ''), {
-        method: 'GET',
-        headers: { Accept: 'application/json', ...getOpenCodeAuthHeaders() },
-      });
-      const health = await healthResponse.json().catch(() => null);
-      if (!healthResponse.ok) {
-        return res.status(healthResponse.status).json({
-          available: null,
-          error: health?.error || healthResponse.statusText || 'Failed to read OpenCode version',
-        });
-      }
-      const currentVersion = typeof health?.version === 'string' ? health.version.replace(/^v/, '') : null;
-      const latestVersion = isOpenCode1xVersion(PINNED_OPENCODE2_VERSION) ? null : PINNED_OPENCODE2_VERSION;
-      if (!currentVersion || !latestVersion) {
-        return res.json({ available: null, currentVersion, latestVersion });
-      }
-      const available = !isOpenCode1xVersion(currentVersion) && compareVersions(latestVersion, currentVersion) > 0;
-      return res.json({
-        available,
-        currentVersion,
-        latestVersion,
-      });
+      const status = await buildUpgradeStatus();
+      return res.json(status);
     } catch (error) {
       return res.status(500).json({
         available: null,
         error: error instanceof Error ? error.message : 'Failed to check OpenCode upgrade status',
+        operation: upgradeOperation.getState(),
+      });
+    }
+  });
+
+  app.get('/api/opencode/contract', async (_req, res) => {
+    try {
+      const contract = await buildLiveContract();
+      const ownership = await resolveOwnershipContext();
+      return res.json({
+        ...contract,
+        ownership: ownership.ownership,
+        supplySource: ownership.supplySource,
+        canManageUpgrade: ownership.canUpgradeInApp,
+        management: ownership.management,
+        guidance: ownership.guidance,
+      });
+    } catch (error) {
+      return res.status(500).json({
+        schemaVersion: 1,
+        phase: 'unknown',
+        executionAllowed: false,
+        error: error instanceof Error ? error.message : 'Failed to evaluate OpenCode runtime contract',
       });
     }
   });
@@ -288,23 +485,45 @@ export const registerOpenCodeRoutes = (app, dependencies) => {
       });
       const health = await healthResponse.json().catch(() => null);
       if (!healthResponse.ok) {
+        const contract = evaluateRuntimeContract({
+          reachable: false,
+          authenticated: healthResponse.status === 401 || healthResponse.status === 403 ? false : null,
+          healthOk: false,
+        });
         return res.status(healthResponse.status).json({
           healthy: false,
           error: health?.error || healthResponse.statusText || 'OpenCode health check failed',
+          contract,
         });
       }
       // Reuse lifecycle/sidecar gate: official 2.x ServerInfo omits `healthy`.
-      return res.json({ healthy: evaluateOpenCodeHealthBody(health).ok });
+      const gate = evaluateOpenCodeHealthBody(health);
+      const contract = await buildLiveContract().catch(() => evaluateRuntimeContract({
+        serveVersion: gate.version,
+        reachable: gate.ok,
+        authenticated: true,
+        healthOk: gate.ok,
+      }));
+      return res.json({
+        healthy: gate.ok,
+        version: gate.version,
+        // Healthy is reachability/version shape only — not full execution semantics.
+        executionAllowed: contract.executionAllowed === true,
+        protocolCompatible: contract.protocolCompatible === true,
+        contract,
+      });
     } catch (error) {
       return res.status(503).json({
         healthy: false,
         error: error instanceof Error ? error.message : 'OpenCode health check failed',
+        contract: evaluateRuntimeContract({ reachable: false, healthOk: false }),
       });
     }
   });
 
   app.get('/api/opencode/version', async (_req, res) => {
     try {
+      const contract = await buildLiveContract();
       const healthResponse = await fetch(buildOpenCodeUrl('/api/info', ''), {
         method: 'GET',
         headers: { Accept: 'application/json', ...getOpenCodeAuthHeaders() },
@@ -313,11 +532,20 @@ export const registerOpenCodeRoutes = (app, dependencies) => {
       if (!healthResponse.ok) {
         return res.status(healthResponse.status).json({
           version: null,
+          serveVersion: null,
+          cliVersion: contract.cliVersion,
           error: health?.error || healthResponse.statusText || 'Failed to read OpenCode version',
+          contract,
         });
       }
       const version = typeof health?.version === 'string' ? health.version.replace(/^v/, '') : null;
-      return res.json({ version });
+      return res.json({
+        version,
+        serveVersion: version,
+        cliVersion: contract.cliVersion,
+        versionMismatch: Boolean(version && contract.cliVersion && version !== contract.cliVersion),
+        contract,
+      });
     } catch (error) {
       return res.status(500).json({
         version: null,

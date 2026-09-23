@@ -29,6 +29,9 @@ type FrameMeasure = {
   bodyNode: number | null;
   occupiedHeight: number;
   headingText: string;
+  errorTop: number | null;
+  errorBottom: number | null;
+  errorCount: number;
 };
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -81,7 +84,7 @@ describe('pending assistant header Chrome continuity', () => {
           enforce: 'pre',
           resolveId(source, importer) {
             if (
-              importer?.includes('/MessageList.tsx')
+              (importer?.includes('/MessageList.tsx') || importer?.includes('/SessionErrorNotice.tsx'))
               && (source === '@/sync/sync-context' || source.includes('/sync/sync-context'))
             ) {
               return syncFixturePath;
@@ -189,6 +192,17 @@ describe('pending assistant header Chrome continuity', () => {
           expect(closeEnough(completed.headerWrapperTop, busy.headerWrapperTop)).toBe(true);
           expect(closeEnough(completed.headerWrapperHeight, busy.headerWrapperHeight)).toBe(true);
           expect(closeEnough(completed.occupiedHeight, busy.occupiedHeight)).toBe(true);
+          const failure = await page.evaluate<FrameMeasure>(
+            'window.pendingHeaderReplay.replay("provider-error", "error")',
+          );
+          expect(failure.errorCount).toBe(1);
+          expect(failure.errorTop).not.toBeNull();
+          expect(failure.errorTop!).toBeGreaterThanOrEqual(failure.headerTop + failure.headerHeight);
+          expect(failure.errorTop! - failure.headerTop - failure.headerHeight).toBeLessThan(32);
+          expect(failure.errorBottom!).toBeLessThan(422);
+          const errorShotPath = join(work, `provider-error-${width}.png`);
+          await page.screenshotPng(errorShotPath);
+          console.info('[provider error Chrome evidence]', { width, errorShotPath, failure });
         }
       } finally {
         await session.close();

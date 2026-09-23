@@ -571,7 +571,6 @@ const SubagentNotificationCard: React.FC<{ notification: SubagentNotification }>
 const SHELL_CODE_TAG_STYLE: React.CSSProperties = { background: 'transparent', backgroundColor: 'transparent' };
 
 const UserShellActionPart: React.FC<{ part: ShellActionPartLike }> = ({ part }) => {
-    const [expanded, setExpanded] = React.useState(false);
     const [copiedOutput, setCopiedOutput] = React.useState(false);
     const copiedResetTimeoutRef = React.useRef<number | null>(null);
     const { t } = useI18n();
@@ -579,7 +578,7 @@ const UserShellActionPart: React.FC<{ part: ShellActionPartLike }> = ({ part }) 
     const command = typeof part.shellAction?.command === 'string' ? part.shellAction.command.trim() : '';
     const output = typeof part.shellAction?.output === 'string' ? part.shellAction.output : '';
     const status = typeof part.shellAction?.status === 'string' ? part.shellAction.status.trim().toLowerCase() : '';
-    const hasOutput = output.trim().length > 0;
+    const hasOutput = output.length > 0;
 
     const clearCopiedResetTimeout = useEvent(() => {
         if (copiedResetTimeoutRef.current !== null && typeof window !== 'undefined') {
@@ -611,18 +610,33 @@ const UserShellActionPart: React.FC<{ part: ShellActionPartLike }> = ({ part }) 
     });
 
     return (
-        <div className="mt-2">
+        <div className="min-w-0 rounded-lg border border-border/60 bg-[var(--surface-elevated)] px-3 py-2">
             <div className="flex items-center gap-2 flex-wrap">
                 <span className="typography-meta font-semibold text-foreground">{t('chat.messageBody.shellCommand.title')}</span>
-                {status ? (
+                {status && status !== 'completed' ? (
                     <span className={cn(
                         'inline-flex h-5 items-center rounded px-1.5 text-[11px] leading-none',
                         status === 'error'
                             ? 'bg-[var(--status-error-background)] text-[var(--status-error)]'
                             : 'bg-foreground/5 text-muted-foreground'
-                    )}>
-                        {status}
+                    )} role={status === 'error' ? 'alert' : 'status'}>
+                        {status === 'running' ? t('chat.assistantStatus.runningCommand')
+                            : status === 'pending' ? t('chat.statusRow.todo.status.pending')
+                                : status === 'error' ? t('chat.toolPart.error') : status}
                     </span>
+                ) : null}
+                {hasOutput ? (
+                    <Button
+                        type="button"
+                        variant="ghost"
+                        size="xs"
+                        className="ml-auto text-muted-foreground"
+                        onClick={() => { void copyOutputToClipboard(); }}
+                        aria-label={copiedOutput ? t('chat.messageBody.shellCommand.copied') : t('chat.messageBody.shellCommand.copyOutput')}
+                        title={copiedOutput ? t('chat.messageBody.shellCommand.copied') : t('chat.messageBody.shellCommand.copyOutput')}
+                    >
+                        <Icon name={copiedOutput ? 'check' : 'file-copy'} className="h-3.5 w-3.5" />
+                    </Button>
                 ) : null}
             </div>
 
@@ -639,36 +653,7 @@ const UserShellActionPart: React.FC<{ part: ShellActionPartLike }> = ({ part }) 
 
             {hasOutput ? (
                 <div className="mt-2 border-t border-border/60 pt-1.5">
-                    <div className="flex items-center gap-3 flex-wrap">
-                        <button
-                            type="button"
-                            className="typography-meta text-muted-foreground hover:text-foreground transition-colors underline underline-offset-2"
-                            onClick={() => setExpanded((value) => !value)}
-                        >
-                            {expanded ? t('chat.messageBody.shellCommand.hideOutput') : t('chat.messageBody.shellCommand.showOutput')}
-                        </button>
-                        <button
-                            type="button"
-                            className="inline-flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors"
-                            onClick={() => {
-                                void copyOutputToClipboard();
-                            }}
-                            aria-label={copiedOutput ? t('chat.messageBody.shellCommand.copied') : t('chat.messageBody.shellCommand.copyOutput')}
-                            title={copiedOutput ? t('chat.messageBody.shellCommand.copied') : t('chat.messageBody.shellCommand.copyOutput')}
-                        >
-                            {copiedOutput ? <Icon name="check" className="h-3.5 w-3.5" /> : <Icon name="file-copy" className="h-3.5 w-3.5" />}
-                        </button>
-                    </div>
-                    {expanded ? (
-                        <div className="typography-meta mt-1.5 max-h-56 overflow-auto font-mono text-foreground/85">
-                            <WorkerHighlightedCode
-                                language="bash"
-                                code={output}
-                                codeStyle={SHELL_CODE_TAG_STYLE}
-                                wrap
-                            />
-                        </div>
-                    ) : null}
+                    <pre className="typography-meta max-h-56 overflow-auto whitespace-pre-wrap break-words font-mono text-foreground/85" tabIndex={0}>{output}</pre>
                 </div>
             ) : null}
         </div>

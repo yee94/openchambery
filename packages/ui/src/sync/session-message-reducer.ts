@@ -163,16 +163,10 @@ function boundaryFromPage(
       "session message page: complete=false requires non-empty cursor",
     )
   }
-  // Cursor progress invariant: an incomplete page must advance the boundary.
-  // An empty page (zero records, zero turns) makes no progress at all, and a
-  // prepend that returns the same cursor it started from would paginate the
-  // same window forever. Both are page contract errors: the caller preserves
-  // the previous boundary/messages/loadedTurns and records request error.
-  if (page.records.length === 0) {
-    throw new SessionMessagePageContractError(
-      "session message page: complete=false with zero records makes no progress",
-    )
-  }
+  // Cursor progress invariant: incomplete pages must move the boundary token.
+  // A prepend that returns the same cursor would loop forever — contract error.
+  // An empty page with an *advanced* cursor is valid (system-only / fully
+  // filtered projection windows): keep prior records and adopt the new cursor.
   if (
     purpose === "prepend"
     && previous?.kind === "has-more"
@@ -181,6 +175,18 @@ function boundaryFromPage(
     throw new SessionMessagePageContractError(
       "session message page: prepend returned the same cursor without progress",
     )
+  }
+  if (page.records.length === 0) {
+    const cursorAdvanced = purpose === "prepend"
+      && previous?.kind === "has-more"
+      && previous.cursor !== cursor
+    if (!cursorAdvanced && purpose !== "initial") {
+      throw new SessionMessagePageContractError(
+        "session message page: complete=false with zero records makes no progress",
+      )
+    }
+    // initial empty incomplete (all rows filtered) still exposes older history
+    // via the Host continuation cursor — not a phantom has-more without token.
   }
   return { kind: "has-more", cursor, loadedTurns }
 }

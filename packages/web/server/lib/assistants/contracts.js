@@ -68,7 +68,17 @@ export const assistantContractFixtures = Object.freeze({
   messageAdmission: Object.freeze({ binding: Object.freeze({ sessionID: 'ses_fixture', directory: '/workspace', sessionGeneration: 4 }), messageID: 'msg_fixture', admitted: true, revision: 4 }),
   abortResponse: Object.freeze({ binding: Object.freeze({ sessionID: 'ses_fixture', directory: '/workspace', sessionGeneration: 4 }), aborted: true }),
   shareOperation: Object.freeze({ operationID: 'share_fixture', assistantID: 'assistant_fixture', sessionID: 'ses_fixture', messageID: 'msg_fixture', state: 'running', phase: 'submitted', attempt: 1, leaseExpiresAt: 1234, errorCode: null }),
-  historicalMessages: Object.freeze({ entries: Object.freeze([Object.freeze({ sessionID: 'ses_fixture', directory: null, info: Object.freeze({ id: 'msg_fixture', sessionID: 'ses_fixture', role: 'assistant', time: Object.freeze({ created: 1234 }) }), parts: Object.freeze([]) })]), nextCursor: null, complete: true }),
+  historicalMessages: Object.freeze({
+    entries: Object.freeze([Object.freeze({
+      sessionID: 'ses_fixture',
+      directory: null,
+      info: Object.freeze({ id: 'msg_fixture', sessionID: 'ses_fixture', role: 'assistant', time: Object.freeze({ created: 1234 }) }),
+      parts: Object.freeze([]),
+    })]),
+    nextCursor: null,
+    complete: true,
+    partial: false,
+  }),
   /** Frozen GET /assistants/:id/contact/messages page envelope (UI contract). */
   contactMessagesPage: Object.freeze({
     messages: Object.freeze([]),

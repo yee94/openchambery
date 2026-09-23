@@ -287,6 +287,8 @@ export type ChatContainerHost = {
   assistantHistory?: {
     entries: readonly AssistantHistoryEntry[];
     complete: boolean;
+    /** Upstream binding failure left a retryable gap; complete stays false. */
+    partial?: boolean;
     loading: boolean;
     fetchPrevious: () => Promise<unknown>;
   };

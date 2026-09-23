@@ -7,6 +7,13 @@ import {
   startQuestionAutoDelegateRuntime,
   stopQuestionAutoDelegateRuntime,
 } from './question-auto-delegate-runtime';
+import {
+  forgetSessionMetadata,
+  resolveDeletedSessionId,
+  startSessionMetadataRuntime,
+  stopSessionMetadataRuntime,
+  waitForSessionMetadataReady,
+} from './session-metadata-runtime';
 
 // Session activity tracking (mirrors web server and desktop behavior)
 type ActivityPhase = 'idle' | 'busy' | 'cooldown';
@@ -299,6 +306,11 @@ const ingestGlobalEvent = (rawEvent: unknown): void => {
     if (activity) {
       setSessionActivityPhase(activity.sessionId, activity.phase);
     }
+
+    // Host metadata cleanup after authoritative delete (best-effort).
+    // Handles session.deleted and versioned forms (session.deleted.v2).
+    const deletedId = resolveDeletedSessionId(payload);
+    if (deletedId) void forgetSessionMetadata(deletedId);
   }
 };
 
@@ -339,6 +351,7 @@ export const startGlobalEventWatcher = async (
   ) {
     // Real OpenCode endpoint switch — drop prior host authority cleanly.
     stopQuestionAutoDelegateRuntime();
+    stopSessionMetadataRuntime();
     boundQuestionAutoDelegateEndpoint = null;
   }
   if (nextEndpoint) {
@@ -348,6 +361,13 @@ export const startGlobalEventWatcher = async (
   if (globalEventWatcherAbortController) {
     // Already running — still (re)bind manager + QAD for same-endpoint refresh.
     startQuestionAutoDelegateRuntime(manager);
+    startSessionMetadataRuntime(manager);
+    // Re-arm Host metadata readiness after same-endpoint reconnect/refresh.
+    void waitForSessionMetadataReady({ timeoutMs: 12_000 }).then((ready) => {
+      if (!ready.ok) {
+        console.warn('[VSCode:session-metadata] readiness wait failed after rebind:', ready.error);
+      }
+    });
     return;
   }
 
@@ -357,6 +377,22 @@ export const startGlobalEventWatcher = async (
   // Extension-host singleton: start QAD before the SSE loop so pending reconcile
   // and timers are live even if the stream is slow to connect.
   startQuestionAutoDelegateRuntime(manager);
+  startSessionMetadataRuntime(manager);
+
+  // Gate Host archive readiness before the global SSE loop so lifecycle frames
+  // are not permanently dropped while the committed snapshot is still unknown.
+  // Failure keeps lifecycle suppressed + background retry; message paths stay open.
+  const metadataReady = await waitForSessionMetadataReady({ timeoutMs: 12_000 });
+  if (startToken !== globalEventWatcherStartToken) {
+    return;
+  }
+  if (!metadataReady.ok) {
+    console.warn(
+      '[VSCode:session-metadata] Host store not ready before event loop:',
+      metadataReady.error,
+      '(lifecycle suppressed until load succeeds; list/get return 503 retryable)',
+    );
+  }
 
   const port = await waitForOpenCodePort(manager);
   if (startToken !== globalEventWatcherStartToken) {
@@ -386,6 +422,20 @@ export const startGlobalEventWatcher = async (
         const baseUrl = manager.getApiUrl();
         if (!baseUrl) {
           throw new Error('OpenCode API URL not available');
+        }
+
+        // Each reconnect: re-confirm Host metadata readiness so a prior corrupt
+        // window can recover without dropping the next unique lifecycle batch.
+        const reconnectReady = await waitForSessionMetadataReady({
+          timeoutMs: 8_000,
+          signal,
+        });
+        if (signal.aborted) return;
+        if (!reconnectReady.ok) {
+          console.warn(
+            '[VSCode:session-metadata] Host store not ready on reconnect:',
+            reconnectReady.error,
+          );
         }
 
         const client = OpenCode.make({
@@ -460,6 +510,7 @@ export const stopGlobalEventWatcher = (): void => {
   // Full dispose: extension deactivate or intentional teardown only.
   // Transient OpenCode disconnect uses suspendGlobalEventWatcher instead.
   stopQuestionAutoDelegateRuntime();
+  stopSessionMetadataRuntime();
 
   for (const timer of sessionActivityCooldowns.values()) {
     clearTimeout(timer);

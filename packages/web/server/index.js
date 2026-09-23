@@ -52,6 +52,10 @@ import {
 } from './lib/opencode/core-routes.js';
 import { registerOpenChamberRoutes } from './lib/opencode/openchamber-routes.js';
 import { createServerUtilsRuntime } from './lib/opencode/server-utils-runtime.js';
+import {
+  configureServerOpenCodeFetchGate,
+  createServerOpenCodeFetch,
+} from './lib/opencode/server-opencode-fetch.js';
 import { createStaticRoutesRuntime } from './lib/opencode/static-routes-runtime.js';
 import { createSettingsRuntime } from './lib/opencode/settings-runtime.js';
 import { createOpenCodeResolutionRuntime } from './lib/opencode/opencode-resolution-runtime.js';
@@ -68,8 +72,20 @@ import { resolveTranscriptCacheDbPath } from './lib/transcript-cache/resolve-db-
 import { createMessageQueueRuntime } from './lib/message-queue/runtime.js';
 import { resolveMessageQueueDbPath } from './lib/message-queue/resolve-db-path.js';
 import { createOpenChamberEventBroadcaster } from './lib/opencode/feature-routes-runtime.js';
-import { createSessionGoalRuntime } from './lib/session-goal/runtime.js';
+import {
+  createSessionGoalRuntime,
+  withGoalExecutionGeneration,
+} from './lib/session-goal/runtime.js';
 import { createSessionMetadataStore } from './lib/session-metadata/session-metadata-store.js';
+import {
+  createSessionArchiveService,
+  createUpstreamSessionFetcher,
+} from './lib/session-metadata/session-archive.js';
+import {
+  projectSessionLifecyclePayload,
+  projectSessionWithHostMetadata,
+  projectSessionWithStoredMap,
+} from './lib/session-metadata/session-projection.js';
 import { createScheduledTasksRuntime } from './lib/scheduled-tasks/runtime.js';
 import { createScheduledTaskRunHistoryStore } from './lib/scheduled-tasks/run-history-store.js';
 import { createServerStartupRuntime } from './lib/opencode/server-startup-runtime.js';
@@ -448,6 +464,11 @@ let lastOpenCodeError = null;
 let lastOpenCodeLaunchDiagnostics = null;
 let isOpenCodeReady = false;
 let v1Migration = null;
+let openCodeServeVersion = null;
+let openCodeCliVersion = null;
+let runtimeContract = null;
+/** Bumps on start/restart so stale async health cannot re-permit an old instance. */
+let runtimeContractGeneration = 0;
 let openCodeNotReadySince = 0;
 let isExternalOpenCode = false;
 let exitOnShutdown = true;
@@ -575,6 +596,15 @@ const buildOpenCodeUrl = (...args) => openCodeNetworkRuntime.buildOpenCodeUrl(..
 const ensureOpenCodeApiPrefix = (...args) => openCodeNetworkRuntime.ensureOpenCodeApiPrefix(...args);
 const scheduleOpenCodeApiDetection = (...args) => openCodeNetworkRuntime.scheduleOpenCodeApiDetection(...args);
 
+// Host OpenCode transport gate (queue/goal/scheduled/assistants + v2-client).
+// Registered before background runtimes so direct OpenCode writes share proxy admission.
+configureServerOpenCodeFetchGate(() => runtimeContract);
+const serverOpenCodeFetch = createServerOpenCodeFetch({
+  buildOpenCodeUrl,
+  getOpenCodeAuthHeaders,
+  getRuntimeContract: () => runtimeContract,
+});
+
 const ENV_CONFIGURED_API_PREFIX = normalizeApiPrefix(
   process.env.OPENCODE_API_PREFIX || process.env.OPENCHAMBER_API_PREFIX || ''
 );
@@ -625,6 +655,7 @@ const searchPathFor = (...args) => openCodeEnvRuntime.searchPathFor(...args);
 const resolveGitBinaryForSpawn = (...args) => openCodeEnvRuntime.resolveGitBinaryForSpawn(...args);
 const resolveManagedOpenCodeLaunchSpec = (...args) => openCodeEnvRuntime.resolveManagedOpenCodeLaunchSpec(...args);
 const clearResolvedOpenCodeBinary = (...args) => openCodeEnvRuntime.clearResolvedOpenCodeBinary(...args);
+const forceResolvedOpenCodeBinary = (...args) => openCodeEnvRuntime.forceResolvedOpenCodeBinary(...args);
 const openCodeResolutionRuntime = createOpenCodeResolutionRuntime({
   path,
   resolveOpencodeCliPath,
@@ -709,6 +740,7 @@ const sessionTitleRuntime = createSessionTitleRuntime({
   buildOpenCodeUrl,
   getOpenCodeAuthHeaders,
   getSmallModelService,
+  serverOpenCodeFetch,
 });
 
 // Forward declaration: question auto-delegate is created after the event hub;
@@ -718,10 +750,81 @@ let questionAutoDelegateRuntime = null;
 let sessionIndexServiceRef = null;
 
 const sessionMetadataStore = createSessionMetadataStore({ dataDir: OPENCHAMBER_DATA_DIR });
+/**
+ * load() resolves `{ ok:false }` on read/corrupt failure (does not reject).
+ * Callers must check ok / isLoaded — never treat unresolved as empty success.
+ */
+const ensureSessionMetadataReady = async () => {
+  try {
+    const result = await sessionMetadataStore.load();
+    return result?.ok === true && sessionMetadataStore.isLoaded();
+  } catch (error) {
+    console.warn('[session-metadata] load threw:', error?.message ?? error);
+    return false;
+  }
+};
+// Prime without blocking module init; production gates (hub/SSE/routes) await ready.
+void ensureSessionMetadataReady().then((ok) => {
+  if (!ok) {
+    console.warn(
+      '[session-metadata] initial load not ready:',
+      sessionMetadataStore.getLoadFailureReason?.() || 'unknown',
+    );
+  }
+});
+
+/**
+ * Goal write through the Host metadata store.
+ * Advances executionGeneration on pause/resume/condition changes so late audits
+ * cannot commit against a prior execution permit. Broadcasts only after commit.
+ */
+const persistSessionGoalToStore = async (sessionId, _directory, goal) => {
+  const result = await sessionMetadataStore.mutateSessionMetadata(sessionId, (current) => {
+    const previousGoal = current?.openchamber?.goal && typeof current.openchamber.goal === 'object'
+      ? current.openchamber.goal
+      : null;
+    const nextGoal = withGoalExecutionGeneration(previousGoal, goal);
+    return { ok: true, patch: { openchamber: { goal: nextGoal } } };
+  });
+  if (!result?.committed) {
+    throw new Error(result?.reason || 'session goal persist was rejected');
+  }
+  const metadata = result.metadata;
+  try {
+    broadcastGlobalUiEvent({
+      type: 'openchamber:session-metadata',
+      properties: { sessionID: sessionId, metadata },
+    });
+  } catch (error) {
+    console.warn('[session-metadata] broadcast failed:', error?.message ?? error);
+  }
+  return metadata;
+};
+
+/** Filled in main() once the session index + broadcast sinks exist. */
+let sessionArchiveServiceRef = null;
+let sessionIndexSyncRuntimeRef = null;
+
+const readHostMetadataForSession = (sessionID) => {
+  const snap = sessionMetadataStore.getSnapshotSync();
+  if (!snap || typeof sessionID !== 'string') return null;
+  const host = snap[sessionID];
+  return host && typeof host === 'object' && !Array.isArray(host) ? host : null;
+};
+
+const projectHostSessionPayload = (payload) => {
+  const ready = sessionMetadataStore.isLoaded();
+  return projectSessionLifecyclePayload(
+    payload,
+    readHostMetadataForSession,
+    { hostReady: ready },
+  );
+};
 
 const sessionGoalRuntime = createSessionGoalRuntime({
   buildOpenCodeUrl,
   getOpenCodeAuthHeaders,
+  serverOpenCodeFetch,
   getSmallModelService,
   shouldKeepGoalActiveForQuestion: (sessionId) => (
     questionAutoDelegateRuntime?.isAutoHandling(sessionId) === true
@@ -733,21 +836,26 @@ const sessionGoalRuntime = createSessionGoalRuntime({
     questionAutoDelegateRuntime?.pauseForSessionTree?.(sessionId, directory)
   ),
   readSessionMetadata: (sessionId) => sessionMetadataStore.get(sessionId),
-  persistSessionGoal: async (sessionId, _directory, goal) => {
-    const metadata = await sessionMetadataStore.setSessionMetadata(sessionId, {
-      openchamber: { goal },
-    });
-    // Broadcast only. Feeding this write back into processPayload would re-arm
-    // the loop the runtime is already inside.
-    try {
-      broadcastGlobalUiEvent({
-        type: 'openchamber:session-metadata',
-        properties: { sessionID: sessionId, metadata },
-      });
-    } catch (error) {
-      console.warn('[session-metadata] broadcast failed:', error?.message ?? error);
+  // Conditional commit on the store's exclusive serial boundary (generation +
+  // status preconditions share the lock with persist). Broadcast-only on
+  // success — do not feed progress writes back into processPayload.
+  mutateSessionMetadata: async (sessionId, decide) => {
+    const result = await sessionMetadataStore.mutateSessionMetadata(sessionId, decide);
+    if (result?.committed) {
+      try {
+        broadcastGlobalUiEvent({
+          type: 'openchamber:session-metadata',
+          properties: { sessionID: sessionId, metadata: result.metadata },
+        });
+      } catch (error) {
+        console.warn('[session-metadata] broadcast failed:', error?.message ?? error);
+      }
     }
-    return goal;
+    return result;
+  },
+  persistSessionGoal: async (sessionId, directory, goal) => {
+    const metadata = await persistSessionGoalToStore(sessionId, directory, goal);
+    return metadata?.openchamber?.goal ?? goal;
   },
   emitGoalNotification: async ({ sessionId, directory, status, goal }) => {
     // The goal settle notification replaces the per-turn ready notifications
@@ -789,6 +897,7 @@ const globalMessageStreamHub = createGlobalMessageStreamHub({
   buildOpenCodeUrl,
   getOpenCodeAuthHeaders,
   upstreamStallTimeoutMs: getUpstreamStallTimeoutMs,
+  projectOutboundSessionPayload: projectHostSessionPayload,
 });
 
 const permissionAutoAcceptRuntime = createPermissionAutoAcceptRuntime({
@@ -931,6 +1040,9 @@ const serverUtilsRuntime = createServerUtilsRuntime({
     openCodeNotReadySince,
     isOpenCodeReady,
     isRestartingOpenCode,
+    v1Migration,
+    runtimeContract,
+    openCodeServeVersion,
   }),
   getOpenCodeAuthHeaders,
   buildOpenCodeUrl,
@@ -958,6 +1070,12 @@ const serverUtilsRuntime = createServerUtilsRuntime({
     return snapshot.PATH;
   },
   getStoredSessionMetadata: () => sessionMetadataStore.getAll(),
+  getStoredSessionMetadataSync: () => sessionMetadataStore.getSnapshotSync(),
+  ensureSessionMetadataReady,
+  onSessionDeleted: (sessionID) => {
+    if (!sessionArchiveServiceRef) return sessionMetadataStore.removeSession(sessionID);
+    return sessionArchiveServiceRef.forgetSession(sessionID);
+  },
 });
 
 const setOpenCodePort = (...args) => serverUtilsRuntime.setOpenCodePort(...args);
@@ -1028,6 +1146,13 @@ Object.defineProperties(openCodeLifecycleState, {
   lastOpenCodeLaunchDiagnostics: { get: () => lastOpenCodeLaunchDiagnostics, set: (value) => { lastOpenCodeLaunchDiagnostics = value; } },
   isOpenCodeReady: { get: () => isOpenCodeReady, set: (value) => { isOpenCodeReady = value; } },
   v1Migration: { get: () => v1Migration, set: (value) => { v1Migration = value; } },
+  openCodeServeVersion: { get: () => openCodeServeVersion, set: (value) => { openCodeServeVersion = value; } },
+  openCodeCliVersion: { get: () => openCodeCliVersion, set: (value) => { openCodeCliVersion = value; } },
+  runtimeContract: { get: () => runtimeContract, set: (value) => { runtimeContract = value; } },
+  runtimeContractGeneration: {
+    get: () => runtimeContractGeneration,
+    set: (value) => { runtimeContractGeneration = value; },
+  },
   openCodeNotReadySince: { get: () => openCodeNotReadySince, set: (value) => { openCodeNotReadySince = value; } },
   isExternalOpenCode: { get: () => isExternalOpenCode, set: (value) => { isExternalOpenCode = value; } },
   isShuttingDown: { get: () => isShuttingDown, set: (value) => { isShuttingDown = value; } },
@@ -1129,20 +1254,7 @@ const scheduledTasksRuntime = createScheduledTasksRuntime({
   runHistoryStore: scheduledTaskRunHistoryStore,
   // Same Host store seam as session-goal / manual UI metadata writes.
   readSessionMetadata: (sessionId) => sessionMetadataStore.get(sessionId),
-  persistSessionGoal: async (sessionId, _directory, goal) => {
-    const metadata = await sessionMetadataStore.setSessionMetadata(sessionId, {
-      openchamber: { goal },
-    });
-    try {
-      broadcastGlobalUiEvent({
-        type: 'openchamber:session-metadata',
-        properties: { sessionID: sessionId, metadata },
-      });
-    } catch (error) {
-      console.warn('[session-metadata] broadcast failed:', error?.message ?? error);
-    }
-    return metadata;
-  },
+  persistSessionGoal: persistSessionGoalToStore,
   // Arm the goal loop after first persist only — do not feed progress writes
   // back through processPayload (session-goal runtime already broadcasts those).
   onGoalPersisted: ({ sessionID, directory, metadata }) => {
@@ -1184,7 +1296,19 @@ const ensureGlobalWatcherStarted = async () => {
     return globalWatcherStartPromise;
   }
 
-  globalWatcherStartPromise = openCodeWatcherRuntime.start().catch((error) => {
+  // Await Host metadata ready before the internal hub attaches upstream SSE so
+  // session lifecycle frames are projected (not dropped) from the first event.
+  globalWatcherStartPromise = (async () => {
+    const ready = await ensureSessionMetadataReady();
+    if (!ready) {
+      const reason = sessionMetadataStore.getLoadFailureReason?.() || 'not ready';
+      const error = new Error(`session metadata unavailable before global watcher start: ${reason}`);
+      error.code = 'session_metadata_unavailable';
+      error.retryable = true;
+      throw error;
+    }
+    return openCodeWatcherRuntime.start();
+  })().catch((error) => {
     globalWatcherStartPromise = null;
     throw error;
   });
@@ -1199,10 +1323,22 @@ const completeOpenCodeStartup = () => {
   }
   // The global watcher used to start only for desktop notifications; session-title
   // and session-goal also ride its event hub, so it now starts unconditionally
-  // once OpenCode is up.
-  void ensureGlobalWatcherStarted().catch((error) => {
-    console.warn(`Global event watcher startup failed: ${error?.message || error}`);
-  });
+  // once OpenCode is up. Controlled retry when metadata is not yet ready.
+  const startWatcherWithRetry = (attempt = 0) => {
+    void ensureGlobalWatcherStarted().catch((error) => {
+      const retryable = error?.retryable === true || error?.code === 'session_metadata_unavailable';
+      const delays = [500, 1_500, 3_000, 6_000, 12_000];
+      if (retryable && attempt < delays.length) {
+        console.warn(
+          `Global event watcher deferred (metadata): ${error?.message || error}; retry ${attempt + 1}/${delays.length}`,
+        );
+        setTimeout(() => startWatcherWithRetry(attempt + 1), delays[attempt]);
+        return;
+      }
+      console.warn(`Global event watcher startup failed: ${error?.message || error}`);
+    });
+  };
+  startWatcherWithRetry();
 };
 
 const bootstrapOpenCodeAtStartup = async (...args) => {
@@ -1424,6 +1560,14 @@ async function main(options = {}) {
     buildOpenCodeUrl,
     getOpenCodeAuthHeaders,
     waitForOpenCodeReady,
+    projectSessions: (sessions) => {
+      const snap = sessionMetadataStore.getSnapshotSync();
+      // Not ready / unavailable — throw so sync keeps prior directory rows.
+      if (!snap) {
+        throw new Error('session metadata is unavailable: Host store not ready');
+      }
+      return sessions.map((session) => projectSessionWithStoredMap(session, snap));
+    },
     onRevisionTip: (tip) => {
       broadcastOpenChamberEvent({
         type: 'openchamber:session-index-changed',
@@ -1431,8 +1575,44 @@ async function main(options = {}) {
       });
     },
   });
+  sessionIndexSyncRuntimeRef = sessionIndexSyncRuntime;
+
+  sessionArchiveServiceRef = createSessionArchiveService({
+    sessionMetadataStore,
+    fetchUpstreamSession: createUpstreamSessionFetcher({
+      buildOpenCodeUrl,
+      getOpenCodeAuthHeaders,
+    }),
+    sessionIndexService,
+    broadcastSessionEvent: (payload, options = {}) => {
+      try {
+        broadcastGlobalUiEvent(payload, options);
+      } catch (error) {
+        console.warn('[session-archive] global UI broadcast failed:', error?.message ?? error);
+      }
+      try {
+        broadcastOpenChamberEvent(payload);
+      } catch (error) {
+        console.warn('[session-archive] openchamber event broadcast failed:', error?.message ?? error);
+      }
+    },
+    onIndexChanged: () => {
+      sessionIndexSyncRuntimeRef?.publishChange();
+    },
+  });
+
   const unsubscribeSessionIndexEvents = globalMessageStreamHub.subscribeEvent((event) => {
-    if (applySessionIndexEvent(sessionIndexService, event)) {
+    if (applySessionIndexEvent(sessionIndexService, event, Date.now(), {
+      isHostReady: () => sessionMetadataStore.isLoaded(),
+      projectSession: (session) => {
+        if (!sessionMetadataStore.isLoaded()) return null;
+        return projectSessionWithHostMetadata(
+          session,
+          readHostMetadataForSession(session?.id),
+        );
+      },
+      onSessionDeleted: (sessionID) => sessionArchiveServiceRef?.forgetSession(sessionID),
+    })) {
       sessionIndexSyncRuntime?.publishChange();
     }
   });
@@ -1528,6 +1708,9 @@ async function main(options = {}) {
         openCodeApiPrefixDetected: true,
         isOpenCodeReady,
         v1Migration,
+        openCodeServeVersion,
+        openCodeCliVersion,
+        runtimeContract,
         lastOpenCodeError,
         lastOpenCodeLaunchDiagnostics,
         opencodeBinaryResolved: resolvedOpencodeBinary || null,
@@ -1638,6 +1821,8 @@ async function main(options = {}) {
     setAutoAcceptSession,
     sessionIndexService,
     sessionIndexSyncRuntime,
+    // Production snapshot/lookup filter: committed Host archive authority.
+    getCommittedHostMetadata: async () => sessionMetadataStore.getAll(),
     transcriptCacheService,
   });
   uiAuthController = bootstrapResult.uiAuthController;
@@ -1733,23 +1918,37 @@ async function main(options = {}) {
     buildOpenCodeUrl,
     getOpenCodeAuthHeaders,
     getIsExternalOpenCode: () => isExternalOpenCode,
+    forceResolvedOpenCodeBinary,
+    restartOpenCode,
+    waitForOpenCodeReady,
+    getRuntimeContract: () => runtimeContract,
+    getOpenCodeServeVersion: () => openCodeServeVersion,
+    getOpenCodeCliVersion: () => openCodeCliVersion,
+    getResolvedOpenCodeBinary: () => resolvedOpencodeBinary,
+    getResolvedOpenCodeBinarySource: () => resolvedOpencodeBinarySource,
+    getActiveSessionCount,
     sessionMetadataStore,
+    sessionArchiveService: {
+      setArchive: (...args) => {
+        if (!sessionArchiveServiceRef) {
+          const error = new Error('session archive is not configured');
+          error.status = 503;
+          throw error;
+        }
+        return sessionArchiveServiceRef.setArchive(...args);
+      },
+      archiveSession: (...args) => {
+        if (!sessionArchiveServiceRef) {
+          const error = new Error('session archive is not configured');
+          error.status = 503;
+          throw error;
+        }
+        return sessionArchiveServiceRef.archiveSession(...args);
+      },
+    },
     // Same store seam as sessionGoalRuntime / scheduledTasksRuntime.
     readSessionMetadata: (sessionId) => sessionMetadataStore.get(sessionId),
-    persistSessionGoal: async (sessionId, _directory, goal) => {
-      const metadata = await sessionMetadataStore.setSessionMetadata(sessionId, {
-        openchamber: { goal },
-      });
-      try {
-        broadcastGlobalUiEvent({
-          type: 'openchamber:session-metadata',
-          properties: { sessionID: sessionId, metadata },
-        });
-      } catch (error) {
-        console.warn('[session-metadata] broadcast failed:', error?.message ?? error);
-      }
-      return metadata;
-    },
+    persistSessionGoal: persistSessionGoalToStore,
     onSessionMetadataWritten: ({ sessionID, directory, metadata }) => {
       sessionGoalRuntime.processPayload({
         type: 'session.updated',
@@ -1813,6 +2012,8 @@ async function main(options = {}) {
     getOpenCodeAuthHeaders,
     globalEventHub: globalMessageStreamHub,
     processForwardedEventPayload,
+    projectOutboundSessionPayload: projectHostSessionPayload,
+    ensureSessionMetadataReady,
     messageStreamWsClients: uiNotificationWsClients,
     upstreamStallTimeoutMs: getUpstreamStallTimeoutMs,
     terminalHeartbeatIntervalMs: TERMINAL_INPUT_WS_HEARTBEAT_INTERVAL_MS,
@@ -1898,6 +2099,7 @@ async function main(options = {}) {
         unsubscribeScheduledTaskEvents();
         sessionIndexSyncRuntime?.stop();
         sessionIndexService?.close();
+        sessionArchiveServiceRef?.stop?.();
       } catch {
         // The index is a local cache; a failed close must not block shutdown.
       }

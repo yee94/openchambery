@@ -45,6 +45,9 @@ import { getToolIcon } from './toolPresentation';
 import { useDurationTickerNow } from './useDurationTicker';
 import {
     buildTaskSummaryEntriesFromSession,
+    isBackgroundableToolName,
+    isShellToolName,
+    isTaskToolName,
     normalizeTaskSummaryEntries,
     parseTaskMetadataBlock,
     readTaskRunningFromOutput,
@@ -55,7 +58,16 @@ import {
     prepareTaskOutputForDisplay,
     type TaskToolSummaryEntry,
 } from './taskToolModel';
+import {
+    collectBackgroundCompletions,
+    hasSettledBackgroundRunningHint,
+    isBlockingForegroundToolPart,
+    moveSessionBlockingWorkToBackground,
+    readShellBackgroundIdentity,
+    resolveBackgroundToolActivity,
+} from './sessionBackgroundModel';
 import { shouldSuppressTaskLoading } from './shouldSuppressTaskLoading';
+import { opencodeClient } from '@/lib/opencode/client';
 import { areRenderRelevantPartsEqual } from '../renderCompare';
 import { useI18n } from '@/lib/i18n';
 import { getDiffPatchEntries, getPatchText, getToolNavigationDiffEntries } from './toolDiffUtils';
@@ -834,7 +846,11 @@ const getToolDescription = (part: ToolPartType, state: ToolStateUnion, currentDi
         return firstLine.substring(0, 100);
     }
 
-    if (part.tool === 'task' && input?.description && typeof input.description === 'string') {
+    if (
+        (part.tool === 'task' || part.tool === 'subagent')
+        && input?.description
+        && typeof input.description === 'string'
+    ) {
         return input.description.substring(0, 80);
     }
 
@@ -1763,7 +1779,7 @@ const ToolExpandedContent: React.FC<ToolExpandedContentProps> = React.memo(({
             return <div className="typography-meta text-muted-foreground">{t('chat.toolPart.awaitingResponse')}</div>;
         }
 
-        if (part.tool === 'task' && hasStringOutput) {
+        if ((part.tool === 'task' || part.tool === 'subagent') && hasStringOutput) {
             return renderScrollableBlock(
                 <div className="w-full min-w-0">
                     <SimpleMarkdownRenderer content={coerceToText(outputString)} variant="tool" onShowPopup={onShowPopup} />
@@ -1956,7 +1972,10 @@ const ToolPartContent: React.FC<ToolPartProps> = ({
     const currentDirectory = sessionSurface.directory || effectiveDirectory || '';
 
     const normalizedPartTool = normalizeToolName(part.tool);
-    const isTaskTool = normalizedPartTool === 'task';
+    // Plugin `task` + native OpenCode `subagent` share the task-row chrome.
+    const isTaskTool = isTaskToolName(normalizedPartTool || part.tool);
+    const isShellTool = isShellToolName(normalizedPartTool || part.tool);
+    const isBackgroundableTool = isBackgroundableToolName(normalizedPartTool || part.tool);
     const isTodoTool = normalizedPartTool === 'todowrite' || normalizedPartTool === 'todoread';
     // Edit/Write：单行导航，不展开详情
     const isFileNavTool = isFileNavToolName(normalizedPartTool);
@@ -2151,18 +2170,62 @@ const ToolPartContent: React.FC<ToolPartProps> = ({
     }, [input, isTaskTool, metadata, parsedTaskMetadata.sessionId, partMetadata, stateWithData, taskOutputString]);
 
     const taskSessionId = explicitTaskSessionId;
-    // Background subagent：tool part 立即终结（success），但输出仍标记子会话
-    // status=running。此时继续观察子会话状态，行内保持"后台运行中"活性。
-    // 观察是一次性闩锁：子会话权威回到 idle（且观察时间晚于任务开始）后停止订阅，
-    // 历史 background 行不长期占用窄状态订阅。
-    const taskOutputRunning = React.useMemo(() => isTaskTool && isFinalized && Boolean(
-        readTaskStatusFromRecord(metadata) === 'running'
-        || readTaskStatusFromRecord(stateWithData) === 'running'
-        || readTaskStatusFromRecord(partMetadata) === 'running'
-        || parsedTaskMetadata.status === 'running'
-        || readTaskRunningFromOutput(taskOutputString)
-    ), [isTaskTool, isFinalized, metadata, parsedTaskMetadata.status, partMetadata, stateWithData, taskOutputString]);
+    // Background subagent / shell：tool part 立即终结（success），但 metadata/output
+    // 仍可标记 status=running。该历史 hint 只表示曾转后台，不是永久 live。
+    // 权威来源：子会话 status（subagent）、父会话 synthetic shell/subagent 完成通知。
+    // 观察是一次性闩锁：权威 idle/terminal 确认后停止订阅，历史行不长期占用窄状态。
+    const settledRunningHint = React.useMemo(() => {
+        if (!isFinalized || !isBackgroundableTool) return false;
+        if (hasSettledBackgroundRunningHint(part)) return true;
+        if (readTaskStatusFromRecord(metadata) === 'running') return true;
+        if (readTaskStatusFromRecord(stateWithData) === 'running') return true;
+        if (readTaskStatusFromRecord(partMetadata) === 'running') return true;
+        if (isTaskTool && (
+            parsedTaskMetadata.status === 'running'
+            || readTaskRunningFromOutput(taskOutputString)
+        )) {
+            return true;
+        }
+        return false;
+    }, [
+        isBackgroundableTool,
+        isFinalized,
+        isTaskTool,
+        metadata,
+        parsedTaskMetadata.status,
+        part,
+        partMetadata,
+        stateWithData,
+        taskOutputString,
+    ]);
+    const taskOutputRunning = Boolean(isTaskTool && settledRunningHint);
+    const shellBackgroundRunningHint = Boolean(isShellTool && settledRunningHint);
     const [backgroundObserveActive, setBackgroundObserveActive] = React.useState(true);
+    const parentSessionIdForBackground = typeof part.sessionID === 'string' ? part.sessionID.trim() : '';
+    // Shell 完成后官方不 patch tool metadata；需要父会话消息上的 synthetic 通知。
+    // 仅在仍有 background hint 且观察未闩断时订阅，避免历史行常驻拉取。
+    const wantsParentCompletionProjection = Boolean(
+        isBackgroundableTool
+        && settledRunningHint
+        && backgroundObserveActive
+        && parentSessionIdForBackground,
+    );
+    const parentSessionMessagesForBackground = useSessionMessageRecords(
+        wantsParentCompletionProjection ? parentSessionIdForBackground : '',
+        currentDirectory,
+    );
+    const backgroundCompletions = React.useMemo(
+        () => (wantsParentCompletionProjection
+            ? collectBackgroundCompletions(parentSessionMessagesForBackground as Array<{
+                role?: unknown;
+                info?: { role?: unknown };
+                parts?: unknown;
+                content?: unknown;
+                metadata?: unknown;
+            }>)
+            : undefined),
+        [parentSessionMessagesForBackground, wantsParentCompletionProjection],
+    );
     const wantsTaskChildStatus = isTaskTool
         && ((!isFinalized && activeLatched) || (taskOutputRunning && backgroundObserveActive));
     const activeTaskStatusSessionId = wantsTaskChildStatus ? taskSessionId : undefined;
@@ -2172,6 +2235,14 @@ const ToolPartContent: React.FC<ToolPartProps> = ({
     const parentSessionStatus = useSessionStatus(activeTaskParentSessionId ?? '', currentDirectory);
     const statusObservedAt = useSessionStatusObservedAt(observedTaskSessionId ?? '', currentDirectory);
     const statusSnapshotAt = useSessionStatusSnapshotAt(currentDirectory, wantsTaskChildStatus);
+    const backgroundActivity = React.useMemo(
+        () => resolveBackgroundToolActivity({
+            part,
+            completions: backgroundCompletions,
+            childSessionStatusType: childSessionStatus?.type,
+        }),
+        [backgroundCompletions, childSessionStatus?.type, part],
+    );
     // 与 shouldSuppressTaskLoading 相同的新鲜度守卫：仅当 idle 观察时间不早于任务开始才确认结束。
     const childIdleConfirmed = Boolean(
         taskOutputRunning
@@ -2183,14 +2254,50 @@ const ToolPartContent: React.FC<ToolPartProps> = ({
         )
     );
     React.useEffect(() => {
-        if (childIdleConfirmed) setBackgroundObserveActive(false);
-    }, [childIdleConfirmed]);
+        if (childIdleConfirmed || backgroundActivity.kind === 'terminal') {
+            setBackgroundObserveActive(false);
+        }
+    }, [backgroundActivity.kind, childIdleConfirmed]);
     const taskBackgroundRunning = Boolean(
-        taskOutputRunning
+        isTaskTool
         && backgroundObserveActive
+        && !isError
+        && backgroundActivity.kind === 'background-running'
         && taskSessionId
-        && childSessionStatus?.type !== 'idle'
     );
+    // Shell 后台：live 仅当权威投影仍为 background-running；完成通知/终态后停止 busy。
+    const shellBackgroundRunning = Boolean(
+        isShellTool
+        && shellBackgroundRunningHint
+        && backgroundObserveActive
+        && !isError
+        && backgroundActivity.kind === 'background-running'
+        && Boolean(readShellBackgroundIdentity(part)?.workID)
+    );
+    const isBlockingForeground = isBlockingForegroundToolPart(part);
+    const [backgroundMovePending, setBackgroundMovePending] = React.useState(false);
+    const handleMoveToBackground = useEvent(async () => {
+        if (!isBlockingForeground || backgroundMovePending) return;
+        const sessionID = typeof part.sessionID === 'string' ? part.sessionID.trim() : '';
+        if (!sessionID) {
+            toast.error(t('chat.sessionBackground.moveFailed'));
+            return;
+        }
+        setBackgroundMovePending(true);
+        try {
+            const result = await moveSessionBlockingWorkToBackground(
+                sessionID,
+                opencodeClient.getSdkClient() as { session: { background: (input: { sessionID: string }) => Promise<unknown> } },
+            );
+            if (!result.ok) {
+                toast.error(t('chat.sessionBackground.moveFailed'), {
+                    description: result.error,
+                });
+            }
+        } finally {
+            setBackgroundMovePending(false);
+        }
+    });
     // 关闭详情时不必为竖线摘要拉取子会话消息
     const childSessionLookupId = (!showSubagentTaskDetails || hasFinalMetadataTaskSummary) ? '' : (taskSessionId ?? '');
 
@@ -2241,7 +2348,7 @@ const ToolPartContent: React.FC<ToolPartProps> = ({
         taskStartedAt: effectiveTimeStart,
         statusSnapshotAt,
     });
-    const effectiveActive = (isActive && !suppressTaskLoading) || taskBackgroundRunning;
+    const effectiveActive = (isActive && !suppressTaskLoading) || taskBackgroundRunning || shellBackgroundRunning;
     const taskBusy = Boolean(isTaskTool && effectiveActive && !isError);
     React.useEffect(() => {
         if (suppressTaskLoading) setActiveLatched(false);
@@ -2725,12 +2832,12 @@ const ToolPartContent: React.FC<ToolPartProps> = ({
                                     {taskTitle}
                                 </span>
                             )}
-                            {normalizedPartTool === 'bash' && typeof effectiveTimeStart === 'number' ? (
+                            {(normalizedPartTool === 'bash' || isShellTool) && typeof effectiveTimeStart === 'number' ? (
                                 <span className={cn('flex-shrink-0 tabular-nums text-muted-foreground/80', TOOL_ROW_DESCRIPTION_CLASS)}>
                                     <LiveDuration
                                         start={effectiveTimeStart}
-                                        end={typeof effectiveTimeEnd === 'number' ? effectiveTimeEnd : undefined}
-                                        active={Boolean(effectiveActive && typeof effectiveTimeEnd !== 'number')}
+                                        end={typeof effectiveTimeEnd === 'number' && !shellBackgroundRunning ? effectiveTimeEnd : undefined}
+                                        active={Boolean(effectiveActive && (!effectiveTimeEnd || shellBackgroundRunning))}
                                     />
                                 </span>
                             ) : null}
@@ -2793,6 +2900,26 @@ const ToolPartContent: React.FC<ToolPartProps> = ({
                         </div>
                     </div>
                 )}
+                {isBlockingForeground ? (
+                    <Button
+                        type="button"
+                        variant="ghost"
+                        size="xs"
+                        disabled={backgroundMovePending}
+                        className="ml-1 h-6 shrink-0 px-1.5 typography-micro text-muted-foreground hover:text-foreground"
+                        data-component="session-background-move"
+                        aria-label={t('chat.sessionBackground.moveRunning')}
+                        title={t('chat.sessionBackground.moveRunning')}
+                        onClick={(event) => {
+                            event.stopPropagation();
+                            void handleMoveToBackground();
+                        }}
+                    >
+                        {backgroundMovePending
+                            ? t('chat.sessionBackground.moving')
+                            : t('chat.sessionBackground.moveRunning')}
+                    </Button>
+                ) : null}
                 {!isFileNavTool && (!isTaskTool || showSubagentTaskDetails) ? (
                     <span
                         className="ml-auto inline-flex size-3.5 flex-shrink-0 items-center justify-center text-muted-foreground opacity-70"

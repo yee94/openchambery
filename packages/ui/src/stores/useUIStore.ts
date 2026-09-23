@@ -21,7 +21,7 @@ import { setIncludeReasoningProjection } from '@/lib/reasoning-projection-client
 export type MainTab = 'chat' | 'git' | 'diff' | 'terminal' | 'files' | 'diagram' | 'schedule' | 'assistant';
 export type PendingDiffScope = 'working' | 'staged' | 'turn';
 export type RightSidebarTab = 'git' | 'files';
-export type ContextPanelMode = 'diff' | 'file-diff' | 'file' | 'context' | 'chat' | 'preview' | 'browser';
+export type ContextPanelMode = 'diff' | 'file-diff' | 'file' | 'context' | 'chat' | 'preview' | 'browser' | 'btw';
 export type MermaidRenderingMode = 'svg' | 'ascii';
 export type UserMessageRenderingMode = 'markdown' | 'plain';
 type SelectorOpenOptions = { instant?: boolean };
@@ -391,7 +391,7 @@ const sanitizeContextPanelTabs = (tabs: unknown): ContextPanelTab[] => {
       touchedAt?: unknown;
     };
 
-    if (candidate.mode !== 'diff' && candidate.mode !== 'file-diff' && candidate.mode !== 'file' && candidate.mode !== 'context' && candidate.mode !== 'chat' && candidate.mode !== 'preview' && candidate.mode !== 'browser') {
+    if (candidate.mode !== 'diff' && candidate.mode !== 'file-diff' && candidate.mode !== 'file' && candidate.mode !== 'context' && candidate.mode !== 'chat' && candidate.mode !== 'preview' && candidate.mode !== 'browser' && candidate.mode !== 'btw') {
       continue;
     }
 
@@ -593,7 +593,7 @@ const sanitizeContextPanelByDirectory = (
       label?: unknown;
     };
 
-    let tabs = sanitizeContextPanelTabs(candidate.tabs);
+    let tabs = sanitizeContextPanelTabs(candidate.tabs).filter((tab) => tab.mode !== 'btw');
     let activeTabId = typeof candidate.activeTabId === 'string' ? candidate.activeTabId : null;
 
     if (tabs.length === 0 && (candidate.mode === 'diff' || candidate.mode === 'file-diff' || candidate.mode === 'file' || candidate.mode === 'context' || candidate.mode === 'chat')) {
@@ -610,7 +610,7 @@ const sanitizeContextPanelByDirectory = (
     const clampedTabs = clampContextPanelTabs(tabs, CONTEXT_PANEL_MAX_TABS, resolvedActiveTabId);
 
     next[directory] = {
-      isOpen: candidate.isOpen === true,
+      isOpen: candidate.isOpen === true && clampedTabs.length > 0,
       expanded: candidate.expanded === true,
       tabs: clampedTabs,
       activeTabId: resolveActiveContextPanelTabID(clampedTabs, resolvedActiveTabId),
@@ -2883,7 +2883,10 @@ export const useUIStore = create<UIStore>()(
           isRightSidebarOpen: state.isRightSidebarOpen,
           rightSidebarWidth: state.rightSidebarWidth,
           rightSidebarTab: state.rightSidebarTab,
-          contextPanelByDirectory: state.contextPanelByDirectory,
+          contextPanelByDirectory: Object.fromEntries(Object.entries(state.contextPanelByDirectory).map(([directory, panel]) => {
+            const tabs = panel.tabs.filter((tab) => tab.mode !== 'btw');
+            return [directory, { ...panel, tabs, activeTabId: resolveActiveContextPanelTabID(tabs, panel.activeTabId), isOpen: panel.isOpen && tabs.length > 0 }];
+          })),
           isBottomTerminalOpen: state.isBottomTerminalOpen,
           isBottomTerminalExpanded: state.isBottomTerminalExpanded,
           bottomTerminalHeight: state.bottomTerminalHeight,

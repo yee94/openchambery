@@ -147,7 +147,11 @@ const startFakeOpenCode = async (): Promise<{
     next();
   });
 
-  app.get('/global/event', (req, res) => {
+  // Production proxy forwards official v2 paths with `/api` restored
+  // (`toUpstreamOpenCodeApiPath`). Host mounts both `/api/global/event` and
+  // `/api/event`; fake upstream must match those upstream targets — not the
+  // pre-v2 bare `/global/event` or `/event`.
+  const writeSseFixture = (res: express.Response) => {
     res.writeHead(200, {
       'content-type': 'text/event-stream; charset=utf-8',
       'cache-control': 'no-cache',
@@ -243,9 +247,16 @@ const startFakeOpenCode = async (): Promise<{
     );
 
     res.end();
+  };
+
+  app.get('/api/global/event', (_req, res) => {
+    writeSseFixture(res);
+  });
+  app.get('/api/event', (_req, res) => {
+    writeSseFixture(res);
   });
 
-  app.get('/session/:sessionID/message', (req, res) => {
+  app.get('/api/session/:sessionID/message', (_req, res) => {
     res.json([
       {
         info: {
@@ -513,11 +524,15 @@ describe('relay reasoning projection e2e (Host filter over private relay)', () =
       for (const url of upstream.observation.urls) {
         expect(url).not.toContain('includeReasoning');
       }
-      // Sanity: upstream still saw the event + message routes.
-      expect(upstream.observation.urls.some((u) => u.includes('/global/event'))).toBe(true);
-      expect(upstream.observation.urls.some((u) => u.includes('/session/ses_1/message'))).toBe(
-        true,
-      );
+      // Sanity: upstream still saw official v2 event + message routes.
+      expect(
+        upstream.observation.urls.some(
+          (u) => u.includes('/api/global/event') || u.includes('/api/event'),
+        ),
+      ).toBe(true);
+      expect(
+        upstream.observation.urls.some((u) => u.includes('/api/session/ses_1/message')),
+      ).toBe(true);
 
       // Unauthenticated tunnel request still hits real auth gate (not open).
       const denied = await client.fetch('/api/global/event?includeReasoning=false', {

@@ -741,6 +741,7 @@ describe('routeMessage skill invocation', () => {
   const sendMessageCalls = [];
   let originalSendCommand;
   let originalSendMessage;
+  let originalApplySendSelection;
   let originalFetchQuery;
   let queryResults;
   let queryFetches;
@@ -786,6 +787,10 @@ describe('routeMessage skill invocation', () => {
 
     originalSendCommand = opencodeClient.sendCommand;
     originalSendMessage = opencodeClient.sendMessage;
+    originalApplySendSelection = opencodeClient.applySendSelection;
+    // Boundary mock: built-in command path may switch model before sendCommand.
+    // Never leak that request to localhost:3000 in unit tests.
+    opencodeClient.applySendSelection = async () => undefined;
     opencodeClient.sendCommand = async (params) => {
       sendCommandCalls.push(params);
       return 'msg';
@@ -799,6 +804,7 @@ describe('routeMessage skill invocation', () => {
   afterEach(() => {
     opencodeClient.sendCommand = originalSendCommand;
     opencodeClient.sendMessage = originalSendMessage;
+    opencodeClient.applySendSelection = originalApplySendSelection;
     queryClient.fetchQuery = originalFetchQuery;
     queryClient.removeQueries({ queryKey: installedSkillsQueryOptions('/skills/project').queryKey });
     queryClient.removeQueries({ queryKey: commandQueryOptions('/skills/project').queryKey });

@@ -35,13 +35,26 @@ export const createMessageQueueRuntime = ({ dbPath, attachmentRoot, service, att
   const observeSessionEvent = (event) => {
     if (!isCurrentRuntimeEvent(event)) return false;
     const payload = event?.payload?.payload ?? event?.payload;
-    const properties = payload?.properties;
+    // Accept bridge `{ properties }` and native v2 `{ data }` envelopes.
+    const properties = (payload?.properties && typeof payload.properties === 'object')
+      ? payload.properties
+      : ((payload?.data && typeof payload.data === 'object') ? payload.data : null);
     const directory = typeof event?.directory === 'string' && event.directory !== 'global' ? event.directory : '';
     const sessionID = typeof properties?.sessionID === 'string' ? properties.sessionID : '';
     if (!directory || !sessionID) return false;
+    // Ticket 07: shutdown interrupt keeps the upstream claim — do not treat as
+    // idle/error settlement for queue wake; wait for authoritative terminal.
+    if (payload.type === 'session.execution.interrupted' && properties?.reason === 'shutdown') {
+      return false;
+    }
     const phase = payload.type === 'session.status'
       ? properties?.status?.type ?? properties?.info?.type
-      : payload.type === 'session.idle' ? 'idle' : payload.type === 'session.error' ? 'error' : '';
+      : payload.type === 'session.idle' ? 'idle'
+        : payload.type === 'session.error' ? 'error'
+          : payload.type === 'session.execution.succeeded' ? 'idle'
+            : payload.type === 'session.execution.failed' ? 'error'
+              : payload.type === 'session.execution.interrupted' ? 'idle'
+                : '';
     if (typeof phase !== 'string' || !phase) return false;
     openCodeAdapter.observeSessionEvent?.({ directory, sessionID }, phase);
     return true;

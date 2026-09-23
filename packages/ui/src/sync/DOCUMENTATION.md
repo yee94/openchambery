@@ -2,7 +2,25 @@
 
 ## OpenCode 2 shell, form replies, and stream timing
 
-`session-projection-api.ts` projects native `shell` rows into user-owned `shellAction` cards, preserving command, output, and running/success/failure state. The transcript reducer handles `session.shell.started` / `ended` using the SDK's event-to-message ID rule and shell identity. Terminal shell events trigger the existing bounded active-session materialization to recover a missed start.
+`session-projection-api.ts` excludes native `system` rows from the shared transcript projection. These rows carry model instructions such as Code Mode catalog updates. Filtering follows the authoritative row type, preserving user/assistant text even when it quotes those instructions. System-only pages preserve the upstream cursor and completeness so older conversation history remains reachable.
+
+### Synthetic message identity (Ticket 03)
+
+Native `type: "synthetic"` rows (history GET and live `session.synthetic`) project through the shared `normalizeSessionProjectionMessage` rule: user-shaped Message/Part view model, `nativeType: "synthetic"`, text parts marked `synthetic: true`, plus description/metadata/association ids when present. `isAuthoredUserTurnRecord` / recovery anchors / page `turnCount` treat them as system-produced input, not authored user turns. Compact/fold/hide display choices stay downstream of this domain identity.
+
+### Shutdown execution recovery (Ticket 07)
+
+Verified against `@opencode/client` 2.0.12 / OpenCode core: `session.execution.interrupted` carries `reason: "user" | "shutdown" | "superseded" | "inactivity"`. Shutdown preserves the durable execution claim for restart; user/inactivity release it. Directory reducer: shutdown keeps `session_status` busy, writes `session_execution_recovery[sessionID] = { reason: "shutdown", observedAt }`, and **does not** call `onServerSessionIdle` (queue abort blocks / auto-continue stay closed). User interrupt, succeeded, failed, idle, and authoritative `session.status` clear recovery and reopen the idle gate. Global status map mirrors shutdown→busy. Goal/Host consumers retain their own ownership; they should read the recovery marker rather than treating busy as live work forever. Authoritative reconnect status ends recovery.
+
+### Revert committed read retirement (Ticket 08)
+
+`session.revert.committed` (data: `{ sessionID, to }`) clears the catalog `session.revert` marker and runs TranscriptRepository `revert-committed`: locate boundary `to` by exact id in repository `messageOrder` (chronological / seq-equivalent, matching upstream projector `gte(boundary.seq)`), drop that message and every later one, bump per-scope read epoch so in-flight HTTP/materialize completions lose commit eligibility. **Never** rank the cut with message-id string comparison (`id >= to`) — queue ids are minted at enqueue and can lexicographically precede earlier turns. When the boundary is missing from an incomplete window, force authority recovery (clear + `ensureInitial`) instead of inventing a range; exhausted windows missing the boundary are a no-op. Stage/clear remain marker-only. Other sessions' epochs stay untouched.
+
+### Demand-driven location services (Ticket 09)
+
+Directory bootstrap phase 1 stays critical (location/config/active status). Phase 2 keeps form + permission lists so background sessions remain reachable without a visible MCP surface. **MCP is not listed during bootstrap**, and the directory child store holds no MCP state. Demand for location-scoped catalogs (MCP configs/status, command catalog) is the set of mounted, enabled TanStack Query observers; there is no separate demand counter. `location-services-demand.ts` `refreshDemandedLocationServices` invalidates those catalogs with `refetchType: "active"`: `location.shutdown` (legacy `server.instance.disposed`) targets that directory, and `server.connected` / `global.disposed` outside the recent-boot window target every directory. Only observed catalogs refetch; unobserved ones are marked stale and load on their next consumer. Query keys carry the transport identity and runtime identity changes clear the client, so an old runtime's demand and results never refresh on the new one. Sidebar index browse with `bootstrap: false` never starts location MCP.
+
+`session-projection-api.ts` projects native `shell` rows into user-owned `shellAction` cards, preserving command, output, and running/success/failure state. The transcript reducer handles `session.shell.started` / `ended` using the SDK's event-to-message ID rule and shell identity. Query merge resolves a shell event's target card through the same `findShellMessageID` rule, and part equality compares `shellAction`, so an HTTP-loaded running card completes from the live end event or an authoritative page. Terminal shell events trigger the existing bounded active-session materialization to recover a missed start.
 
 Question reply adapters fetch `session.form.get` on the captured scoped client before `session.form.reply`. The form schema owns answer keys, option values, and scalar/array types; failures preserve the request for retry. No list-key cache or synthetic field keys participate in submission.
 
@@ -14,7 +32,9 @@ Official OpenCode 2.0.12 runs each turn from authoritative **`session.model`** /
 **`session.agent`**. Prompt `metadata.model` alone does **not** change the
 runner (see MODEL-SWITCH-DIAGNOSIS: UI metadata B, step still A).
 
-Before `POST .../prompt` on an existing session:
+### Steer / idle (apply composer selection)
+
+Before `POST .../prompt` when `delivery` is **`steer`** (or omitted):
 
 1. `resolveSendSelection(sessionId, directory, desired)` compares the composer
    pick to the directory/global session row (`session.model.id` + `providerID` +
@@ -34,10 +54,62 @@ Before `POST .../prompt` on an existing session:
 
 New conversations that already set `session.model` on create need no extra
 switch when the pick matches. An in-flight turn keeps the old model until it
-settles; the **next** send applies the new selection.
+settles; the **next steer** applies the new selection.
+
+### Native queue (inherit session config at consume) — Ticket 01
+
+When `delivery: "queue"`, **do not** call `applySendSelection` / model+agent
+switch on enqueue. Composer picks may be recorded in prompt `metadata` for
+diagnostics only. The runner re-reads authoritative `session.model` /
+`session.agent` / variant at the step boundary when the inbox item is consumed.
+Steer remains the explicit interrupt path that applies the current selection
+immediately. OpenChamber Host/Assistant **captured** queues keep their own
+per-item `sendConfig` contract (skill queue-capture clause); that does not
+override native OpenCode inbox queue.
 
 Owning modules: `session-send-selection.ts`, `lib/opencode/client.ts`
-(`applySendSelection` / `switchSessionModel`), `session-ui-store.routeMessage`.
+(`applySendSelection` / `switchSessionModel` / `sendMessage`),
+`session-ui-store.routeMessage`.
+
+## Prompt admission lifecycle — Ticket 02
+
+Verified on **2.0.12** / **2.0.14** core inbox: `admit` is idempotent for the
+same session + message id (fixed id + fixed payload; reconcile returns existing
+pending or promoted-from-message). Empty inbox + empty projection after a lost
+response is **unknown** (pending-not-visible vs cancelled) — never a new draft.
+
+1. `sendMessage` captures runtime generation, runtime key, directory, and a
+   `PromptCommitScope` at the **earliest entry**, before attachment upload,
+   `runSessionBoundary`, selection switch, or prompt POST. Every await re-checks
+   the capture before side effects. Upload and model/agent switch use the same
+   capture so a mid-flight runtime switch cannot land on the new target.
+  2. HTTP `POST .../prompt` success **is** admission on the captured commit
+   boundary only: `rememberUnpromotedInbox` after parse. Terminal receipts
+   (`cancelled` | `consumed`) are owner-bounded by transport + generation +
+   session + inbox id with a monotonic mark — late HTTP after SSE
+   cancel/delivered is a no-op (no ghost chip). Live authority (`enqueued`
+   SSE, user items only) may clear the receipt before remember. Snapshot
+   authority (`GET .../inbox` via `fetchSessionInboxAuthority`) captures
+   `startedMark` at request start: a terminal recorded **after** that mark
+   beats the stale GET (no clear, no re-admit). Delivery mutation is
+   `PATCH .../inbox/:id` body `{ delivery }` → 204 (not `.../steer|queue`).
+  3. `settleSessionPromptAfterSend` is **sync only**. Missing inbox after success
+   means consumed-or-pending-reconcile — **never** throw. Projection / inbox
+   fetch failures keep explicit admission + optimistic user content.
+  4. Lost/ambiguous responses: reconcile by fixed id (inbox pending **or**
+   projected), then at most **one** prompt-only retry with the same id/payload.
+   Explicit 4xx rejects are not retried. Model/agent switch is never part of
+   the retry. `unknown` does not mint a new identity. Runtime switch discards
+   stale completions for the old capture (`RuntimeGenerationMismatchError`).
+  5. Known SSE: `session.inbox.enqueued|cancelled|delivered|delivery.changed`
+   update the overlay via `applySessionInboxEvent`. Enqueued
+   synthetic/compaction/move never become empty user chips. Unknown types
+   leave state. Inbox mutations (PATCH/DELETE/GET side effects) re-check
+   runtime scope after the response before overlay/compaction writes.
+
+Owning modules: `session-prompt-api.ts`, `session-inbox-overlay.ts`,
+`lib/opencode/client.ts` (`sendMessage`), `session-actions.settleSessionPromptAfterSend`,
+`sync-context` inbox event branch.
 
 ## Scope
 
@@ -920,14 +992,38 @@ both readers agree on when a frame may shrink.
    `ensureInitial` may still short-circuit a hot cache
    on other ensure/selection paths; those buttons and the force-GET refresh
    must not use it.
-- Production application orchestration for transcript pages is owned by
-  `transcript-repository-production.ts` + the Query adapter: official v2
-  projection via `fetchProductionTranscriptTransportPage` (limit=20 order=desc,
-  response cursor, parent recovery, abort signal), then repository `http-page` /
-  InfiniteQuery `fetchPreviousPage` / `ensureInitial`. Stale pages gate with
-  `shouldDropStalePage(purpose)`. Loading / ready / error status lives on
-  repository `getRequestState`. Pure `reduceSessionMessagePage` remains the
-  model for merge math (Query adapter and test store adapter).
+ - Production application orchestration for transcript pages is owned by
+   `transcript-repository-production.ts` + the Query adapter: official v2
+   projection via `fetchProductionTranscriptTransportPage` (limit=20 order=desc,
+   continuation token = Host `cursor.next` under desc / `cursor.previous` under
+   asc, parent recovery, abort signal), then repository `http-page` /
+   InfiniteQuery `fetchPreviousPage` / `ensureInitial`. First paint may overlay
+   GET `/context` freshness onto the **projection window**
+    (`mergeInitialProjectionAndContext`): same-id context bodies win. Context
+    traversal order is the order source and ids never rank records: the last
+    context row also present in the projection window is the overlap anchor;
+    context-only rows after it are the **newer tail**, appended in context
+    order; context-only rows at or before it (**older prefix** or mid-window
+    gaps) stay off the first page (projection continuation cursor still owns
+    them — including checkpoint / compaction history the context view
+    intentionally hides). Without any overlap, context-only rows created at or
+    after the projection window end form the tail (equal `created` keeps
+    context order). Prepend keeps
+   already-visible overlapping ids in place and only inserts truly new earlier
+   rows in Host page order while the continuation cursor advances independently.
+   Empty system-only older pages may advance the Host cursor while keeping prior
+   records. A repeated continuation (`request.before === response.cursor`) is a
+   non-retryable transport-page contract error **before** Query cache write so a
+   stuck same→same page cannot warm `staleTime: Infinity` and block later Host
+   fixes; explicit retry must issue another HTTP. Transport-page Query owns
+   classified 502/503/504 retry (max 2); InfiniteQuery and `ensureInitial` must
+   not stack a second budget. One older-history interaction loads exactly one
+   page, and that page makes at most 3 fetch attempts (1 + 2 classified
+   retries); a first-paint attempt issues projection + `/context` GETs, a
+   prepend attempt issues the projection GET only. Stale pages gate with `shouldDropStalePage(purpose)`.
+   Loading / ready / error status lives on repository `getRequestState`. Pure
+   `reduceSessionMessagePage` remains the model for merge math (Query adapter
+   and test store adapter).
 - Canonical transcript InfiniteData lives in QueryCache under
   transport/generation/directory/session keys. SSE/WS enter only through
   repository `sse-event` (not as raw transport-page cache entries). Runtime
@@ -1474,8 +1570,8 @@ Examples of global-store updates performed in `session-actions.ts`:
 - `updateSessionTitle()` -> `upsertSession(result.data)`
 - `requestSessionSmartTitle()` -> writes `titleRefresh.requestedAt`, then `upsertSession(result.data)` (server session-title runtime regenerates the title)
 - `shareSession()` / `unshareSession()` -> `upsertSession(result.data)`
-- `archiveSession()` -> `archiveSessions([id], archivedAt)`
-- `unarchiveSession()` -> `updateSession({ time: { archived: 0 } })` then `upsertSession` into the active list
+- `archiveSession()` -> optimistic `archiveSessions([id], archivedAt)` then Host `updateSession({ time: { archived } })` (`PUT /api/openchamber/sessions/:id/archive`); same-runtime Host failure restores snapshots; runtime generation/identity change abandons without rolling A snapshots into B
+- `unarchiveSession()` -> Host `updateSession({ time: { archived: 0 } })` then `upsertSession` into the active list (strip any residual `0` stamp); same-runtime failure restores prior archived snapshot; runtime switch abandons without B pollution
 - `deleteSession()` -> optimistic `removeSessions([id])` then immediate server delete
 - UI hard-deletes use `scheduleSessionDeletes()` so the server delete waits for a 10s undo window; `cancelScheduledSessionDeletes()` restores local state without calling the server. Pending deletion IDs keep global refreshes and aggregated live child-store sessions hidden until cancellation restores the snapshot or delete settlement clears the pending state.
 - Archive success toasts use `showArchivedSessionsUndoToast()` (undo + open `ArchivedSessionsDialog` via `setArchivedSessionsDialogOpen`); delete success toasts use `deleteSessionsWithUndo()`. Neither expands the sidebar archived bucket by default.

@@ -4,6 +4,39 @@ import { normalizeSessionProjectionMessage } from './session-projection-api';
 import { computeAssistantTps } from '../components/chat/message/assistantTps';
 import { parseSessionFormInfo } from './session-form-api';
 
+test('system catalog instructions stay outside the transcript while identical assistant text is preserved', () => {
+  const text = 'The Code Mode tool catalog has changed. This catalog supersedes the previous Code Mode tool catalog.';
+  expect(normalizeSessionProjectionMessage('session', {
+    id: 'msg_catalog', type: 'system', time: { created: 1000 }, text,
+  })).toBeNull();
+  expect(normalizeSessionProjectionMessage('session', {
+    id: 'msg_answer', type: 'assistant', time: { created: 2000 }, content: [{ type: 'text', text }],
+  })?.parts[0]).toMatchObject({ type: 'text', text });
+});
+
+test('system-only projection pages retain the upstream history cursor', async () => {
+  const { normalizeSessionProjectionPage } = await import('./session-projection-api');
+  const page = normalizeSessionProjectionPage({
+    data: [{ id: 'msg_system', type: 'system', time: { created: 1000 }, text: 'internal instructions' }],
+    cursor: { previous: null, next: 'older-history' },
+  }, 'session');
+  expect(page.records).toEqual([]);
+  expect(page.cursor).toBe('older-history');
+  expect(page.complete).toBe(false);
+});
+
+test('context refresh excludes instruction updates and preserves neighboring chat rows', async () => {
+  const { normalizeSessionContextPage } = await import('./session-projection-api');
+  const page = normalizeSessionContextPage({ data: [
+    { id: 'msg_user', type: 'user', time: { created: 1000 }, text: 'hello' },
+    { id: 'msg_system', type: 'system', time: { created: 2000 },
+      text: 'model-facing catalog', description: 'Instructions updated: core/codemode' },
+    { id: 'msg_answer', type: 'assistant', time: { created: 3000 }, content: [{ type: 'text', text: 'answer' }] },
+  ] }, 'session');
+  expect(page.records.map((row) => row.info.id)).toEqual(['msg_user', 'msg_answer']);
+  expect(page.turnCount).toBe(1);
+});
+
 test('shell projection preserves the command, output and terminal status in the existing shell card', () => {
   const row = normalizeSessionProjectionMessage('session', {
     id: 'msg_shell', type: 'shell', shellID: 'shell_1', command: 'pwd',

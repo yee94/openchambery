@@ -1234,6 +1234,26 @@ export const createOpenCodeEnvRuntime = (deps) => {
     state.resolvedOpencodeBinary = null;
   };
 
+  /**
+   * Pin managed launch to an explicit binary for the duration of an owned-cache
+   * upgrade (ticket 12). Avoids rediscovery that would re-attach a global CLI.
+   */
+  const forceResolvedOpenCodeBinary = (binaryPath, source = 'installed') => {
+    const trimmed = typeof binaryPath === 'string' ? binaryPath.trim() : '';
+    if (!trimmed) {
+      const error = new Error('forceResolvedOpenCodeBinary requires a binary path');
+      error.code = 'OPENCODE_BINARY_INVALID';
+      throw error;
+    }
+    clearWslOpencodeResolution();
+    process.env.OPENCODE_BINARY = trimmed;
+    state.resolvedOpencodeBinary = trimmed;
+    state.resolvedOpencodeBinarySource = source || 'installed';
+    prependToPath(path.dirname(trimmed));
+    ensureOpencodeShimRuntime(trimmed);
+    return trimmed;
+  };
+
   return {
     applyLoginShellEnvSnapshot,
     ensureOpencodeCliEnv,
@@ -1246,5 +1266,6 @@ export const createOpenCodeEnvRuntime = (deps) => {
     searchPathFor,
     resolveGitBinaryForSpawn,
     clearResolvedOpenCodeBinary,
+    forceResolvedOpenCodeBinary,
   };
 };

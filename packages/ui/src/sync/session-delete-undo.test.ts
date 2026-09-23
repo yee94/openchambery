@@ -1,5 +1,9 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest"
+import { create, type StoreApi } from "zustand"
 import type { Session } from '@/lib/opencode/v2-types'
+import { INITIAL_STATE } from "./types"
+import type { DirectoryStore } from "./child-store"
+import { switchRuntimeEndpoint } from "@/lib/runtime-switch"
 
 const mocks = vi.hoisted(() => {
   const replyCalls: Array<{ method: string; params: Record<string, unknown> }> = []
@@ -147,11 +151,42 @@ vi.mock("./sync-refs", () => ({
 }))
 
 const {
+  archiveSession,
   cancelScheduledSessionDeletes,
   clearScheduledSessionDeletesForTests,
   scheduleSessionDeletes,
+  setActionRefs,
   unarchiveSession,
 } = await import("./session-actions")
+
+type TestDirectoryStore = DirectoryStore & {
+  message: Record<string, never[]>
+  part: Record<string, never[]>
+}
+
+function createDirectoryStore(sessions: Session[]): StoreApi<TestDirectoryStore> {
+  return create<TestDirectoryStore>()((set) => ({
+    ...INITIAL_STATE,
+    session: sessions,
+    message: {},
+    part: {},
+    permission: {},
+    patch: (partial) => set(partial as never),
+    replace: (next) => set(next as never),
+  }))
+}
+
+function createChildStores(entries: Array<[string, StoreApi<TestDirectoryStore>]>) {
+  return {
+    children: new Map(entries),
+    ensureChild: (dir: string) => {
+      const store = new Map(entries).get(dir)
+      if (!store) throw new Error(`No store for ${dir}`)
+      return store
+    },
+    getChild: (dir: string) => new Map(entries).get(dir),
+  } as unknown as import("./child-store").ChildStoreManager
+}
 
 describe("session delete undo window", () => {
   beforeEach(() => {
@@ -174,10 +209,14 @@ describe("session delete undo window", () => {
     mocks.uiState.setCurrentSessionCalls = []
     clearScheduledSessionDeletesForTests()
     mocks.globalState.pendingDeletionIds.clear()
+    switchRuntimeEndpoint({ apiBaseUrl: "http://runtime-a.test", runtimeKey: "runtime-a" })
+    setActionRefs({} as never, createChildStores([]), () => "/test/project")
   })
 
   afterEach(() => {
     clearScheduledSessionDeletesForTests()
+    switchRuntimeEndpoint({ apiBaseUrl: "http://runtime-a.test", runtimeKey: "runtime-a" })
+    setActionRefs({} as never, createChildStores([]), () => "/test/project")
   })
 
   test("scheduleSessionDeletes removes optimistically and commits after delay", async () => {
@@ -259,5 +298,173 @@ describe("session delete undo window", () => {
     expect(mocks.globalState.archivedSessions).toEqual([])
     expect(mocks.globalState.activeSessions[0]?.id).toBe("ses_arch")
     expect(mocks.globalState.activeSessions[0]?.time?.archived).toEqual(undefined)
+  })
+
+  test("archiveSession commits Host updateSession archive and classifies list buckets", async () => {
+    mocks.state.updateSessionImpl = async (sessionId, changes) => {
+      const archivedAt = (changes.time as { archived?: number } | undefined)?.archived ?? Date.now()
+      return makeSession(sessionId, { archived: archivedAt })
+    }
+
+    const ok = await archiveSession("ses_1")
+    expect(ok).toBe(true)
+
+    const updateCall = mocks.replyCalls.find((call) => call.method === "session.update")
+    expect(updateCall?.params.sessionID).toBe("ses_1")
+    expect(typeof (updateCall?.params.time as { archived?: number } | undefined)?.archived).toBe("number")
+    expect(((updateCall?.params.time as { archived?: number }).archived ?? 0) > 0).toBe(true)
+    expect(mocks.globalState.activeSessions.map((session) => session.id).sort()).toEqual(["ses_2"])
+    expect(mocks.globalState.archivedSessions.map((session) => session.id)).toEqual(["ses_1"])
+    expect(mocks.globalState.archivedSessions[0]?.time?.archived).toBeGreaterThan(0)
+  })
+
+  test("archiveSession rolls back optimistic list state when Host update fails", async () => {
+    mocks.state.updateSessionImpl = async () => {
+      throw new Error("archive unavailable")
+    }
+
+    const ok = await archiveSession("ses_1")
+    expect(ok).toBe(false)
+    expect(mocks.globalState.activeSessions.map((session) => session.id).sort()).toEqual(["ses_1", "ses_2"])
+    expect(mocks.globalState.archivedSessions).toEqual([])
+  })
+
+  test("archiveSession does not restore A snapshots into runtime B after switch (reject)", async () => {
+    const sessionA = makeSession("ses_1")
+    const childStore = createDirectoryStore([sessionA, makeSession("ses_2")])
+    setActionRefs({} as never, createChildStores([["/test/project", childStore]]), () => "/test/project")
+
+    let settle!: (action: "reject" | "resolve", value?: Session | Error) => void
+    const gate = new Promise<Session>((resolve, reject) => {
+      settle = (action, value) => {
+        if (action === "resolve") resolve((value as Session) ?? makeSession("ses_1", { archived: 1 }))
+        else reject(value instanceof Error ? value : new Error("archive unavailable"))
+      }
+    })
+    mocks.state.updateSessionImpl = () => gate
+
+    const pending = archiveSession("ses_1")
+    await vi.waitFor(() => {
+      expect(mocks.replyCalls.some((call) => call.method === "session.update")).toBe(true)
+      expect(mocks.globalState.archivedSessions.some((session) => session.id === "ses_1")).toBe(true)
+    })
+
+    // Runtime B installs its own catalog; a stale A rollback must not re-enter.
+    switchRuntimeEndpoint({ apiBaseUrl: "http://runtime-b.test", runtimeKey: "runtime-b" })
+    const sessionB = makeSession("ses_b", { directory: "/runtime-b/project" })
+    mocks.globalState.activeSessions = [sessionB]
+    mocks.globalState.archivedSessions = []
+    childStore.setState({ session: [sessionB] as never })
+
+    settle("reject")
+    expect(await pending).toBe(false)
+
+    expect(mocks.globalState.activeSessions.map((session) => session.id)).toEqual(["ses_b"])
+    expect(mocks.globalState.archivedSessions).toEqual([])
+    expect(childStore.getState().session.map((session) => session.id)).toEqual(["ses_b"])
+  })
+
+  test("archiveSession does not apply A success or rollback into runtime B after switch (resolve)", async () => {
+    const sessionA = makeSession("ses_1")
+    const childStore = createDirectoryStore([sessionA, makeSession("ses_2")])
+    setActionRefs({} as never, createChildStores([["/test/project", childStore]]), () => "/test/project")
+
+    let settle!: (action: "reject" | "resolve", value?: Session | Error) => void
+    const gate = new Promise<Session>((resolve, reject) => {
+      settle = (action, value) => {
+        if (action === "resolve") resolve((value as Session) ?? makeSession("ses_1", { archived: 1 }))
+        else reject(value instanceof Error ? value : new Error("archive unavailable"))
+      }
+    })
+    mocks.state.updateSessionImpl = () => gate
+
+    const pending = archiveSession("ses_1")
+    await vi.waitFor(() => {
+      expect(mocks.replyCalls.some((call) => call.method === "session.update")).toBe(true)
+    })
+
+    switchRuntimeEndpoint({ apiBaseUrl: "http://runtime-b.test", runtimeKey: "runtime-b" })
+    const sessionB = makeSession("ses_b", { directory: "/runtime-b/project" })
+    mocks.globalState.activeSessions = [sessionB]
+    mocks.globalState.archivedSessions = []
+    childStore.setState({ session: [sessionB] as never })
+
+    settle("resolve", makeSession("ses_1", { archived: 9_999 }))
+    expect(await pending).toBe(false)
+
+    expect(mocks.globalState.activeSessions.map((session) => session.id)).toEqual(["ses_b"])
+    expect(mocks.globalState.archivedSessions).toEqual([])
+    expect(childStore.getState().session.map((session) => session.id)).toEqual(["ses_b"])
+  })
+
+  test("unarchiveSession does not restore A snapshots into runtime B after switch (reject)", async () => {
+    const archived = makeSession("ses_arch", { archived: 1234 })
+    mocks.globalState.activeSessions = []
+    mocks.globalState.archivedSessions = [archived]
+    const childStore = createDirectoryStore([])
+    setActionRefs({} as never, createChildStores([["/test/project", childStore]]), () => "/test/project")
+
+    let settle!: (action: "reject" | "resolve", value?: Session | Error) => void
+    const gate = new Promise<Session>((resolve, reject) => {
+      settle = (action, value) => {
+        if (action === "resolve") resolve((value as Session) ?? makeSession("ses_arch"))
+        else reject(value instanceof Error ? value : new Error("unarchive unavailable"))
+      }
+    })
+    mocks.state.updateSessionImpl = () => gate
+
+    const pending = unarchiveSession("ses_arch")
+    await vi.waitFor(() => {
+      expect(mocks.replyCalls.some((call) => call.method === "session.update")).toBe(true)
+      expect(mocks.globalState.activeSessions.some((session) => session.id === "ses_arch")).toBe(true)
+    })
+
+    switchRuntimeEndpoint({ apiBaseUrl: "http://runtime-b.test", runtimeKey: "runtime-b" })
+    const sessionB = makeSession("ses_b", { directory: "/runtime-b/project" })
+    mocks.globalState.activeSessions = [sessionB]
+    mocks.globalState.archivedSessions = []
+    childStore.setState({ session: [sessionB] as never })
+
+    settle("reject")
+    expect(await pending).toBe(false)
+
+    expect(mocks.globalState.activeSessions.map((session) => session.id)).toEqual(["ses_b"])
+    expect(mocks.globalState.archivedSessions).toEqual([])
+    expect(childStore.getState().session.map((session) => session.id)).toEqual(["ses_b"])
+  })
+
+  test("unarchiveSession does not apply A success into runtime B after switch (resolve)", async () => {
+    const archived = makeSession("ses_arch", { archived: 1234 })
+    mocks.globalState.activeSessions = []
+    mocks.globalState.archivedSessions = [archived]
+    const childStore = createDirectoryStore([])
+    setActionRefs({} as never, createChildStores([["/test/project", childStore]]), () => "/test/project")
+
+    let settle!: (action: "reject" | "resolve", value?: Session | Error) => void
+    const gate = new Promise<Session>((resolve, reject) => {
+      settle = (action, value) => {
+        if (action === "resolve") resolve((value as Session) ?? makeSession("ses_arch"))
+        else reject(value instanceof Error ? value : new Error("unarchive unavailable"))
+      }
+    })
+    mocks.state.updateSessionImpl = () => gate
+
+    const pending = unarchiveSession("ses_arch")
+    await vi.waitFor(() => {
+      expect(mocks.replyCalls.some((call) => call.method === "session.update")).toBe(true)
+    })
+
+    switchRuntimeEndpoint({ apiBaseUrl: "http://runtime-b.test", runtimeKey: "runtime-b" })
+    const sessionB = makeSession("ses_b", { directory: "/runtime-b/project" })
+    mocks.globalState.activeSessions = [sessionB]
+    mocks.globalState.archivedSessions = []
+    childStore.setState({ session: [sessionB] as never })
+
+    settle("resolve", makeSession("ses_arch", { archived: 0 }))
+    expect(await pending).toBe(false)
+
+    expect(mocks.globalState.activeSessions.map((session) => session.id)).toEqual(["ses_b"])
+    expect(mocks.globalState.archivedSessions).toEqual([])
+    expect(childStore.getState().session.map((session) => session.id)).toEqual(["ses_b"])
   })
 })

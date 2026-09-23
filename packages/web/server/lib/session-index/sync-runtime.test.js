@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import { createSessionIndexSyncRuntime } from './sync-runtime.js';
+import { createSessionIndexSyncRuntime, extractSessionListCursorToken } from './sync-runtime.js';
 
 const session = (id, updated, directory = '/repo') => ({
   id,
@@ -87,6 +87,160 @@ describe('session index background sync runtime', () => {
     runtime.publishChange();
 
     await expect(changed).resolves.toMatchObject({ revision: initialRevision + 1 });
+  });
+
+  it('extracts cursor.next without stringifying objects', () => {
+    expect(extractSessionListCursorToken({ next: 'abc' })).toBe('abc');
+    expect(extractSessionListCursorToken({ next: 42 })).toBe('42');
+    expect(extractSessionListCursorToken({ foo: 1 })).toBeNull();
+    expect(extractSessionListCursorToken('plain')).toBe('plain');
+  });
+
+  it('continues paging when a short page still carries cursor.next', async () => {
+    const service = createService();
+    const cursors = [];
+    const runtime = createSessionIndexSyncRuntime({
+      sessionIndexService: service,
+      buildOpenCodeUrl: (route) => `http://opencode.test${route}`,
+      getOpenCodeAuthHeaders: () => ({}),
+      waitForOpenCodeReady: async () => true,
+      projectSessions: (sessions) => sessions,
+      fetchFn: async (url) => {
+        if (url.pathname !== '/session') {
+          return new Response(JSON.stringify([]), { status: 200 });
+        }
+        cursors.push(url.searchParams.get('cursor'));
+        if (!url.searchParams.get('cursor')) {
+          // Short page (not limit=20) but v2 still offers next — must continue.
+          return new Response(JSON.stringify({
+            data: [
+              { ...session('ses_arch_a', 30), time: { created: 1, updated: 30, archived: 9 } },
+              { ...session('ses_arch_b', 29), time: { created: 1, updated: 29, archived: 9 } },
+            ],
+            cursor: { next: 'more-after-short' },
+          }), { status: 200 });
+        }
+        return new Response(JSON.stringify({
+          data: [session('ses_active', 10)],
+          cursor: null,
+        }), { status: 200 });
+      },
+    });
+    runtime.enqueue(['/repo']);
+    await waitUntil(() => isFullyIdle(runtime));
+    expect(cursors).toContain('more-after-short');
+    expect(service.replaceDirectory.mock.calls[0][0].sessions).toEqual([
+      expect.objectContaining({ id: 'ses_active' }),
+    ]);
+  });
+
+  it('uses cursor.next for paging and does not write [object Object]', async () => {
+    const service = createService();
+    const cursors = [];
+    const runtime = createSessionIndexSyncRuntime({
+      sessionIndexService: service,
+      buildOpenCodeUrl: (route) => `http://opencode.test${route}`,
+      getOpenCodeAuthHeaders: () => ({}),
+      waitForOpenCodeReady: async () => true,
+      projectSessions: (sessions) => sessions,
+      fetchFn: async (url) => {
+        if (url.pathname !== '/session') {
+          return new Response(JSON.stringify([]), { status: 200 });
+        }
+        cursors.push(url.searchParams.get('cursor'));
+        if (!url.searchParams.get('cursor')) {
+          const archivedPage = Array.from({ length: 20 }, (_, index) => ({
+            ...session(`ses_arch_${index}`, 100 - index),
+            time: { created: 1, updated: 100 - index, archived: 9 },
+          }));
+          return new Response(JSON.stringify({
+            data: archivedPage,
+            cursor: { next: 'page-2-token' },
+          }), { status: 200 });
+        }
+        return new Response(JSON.stringify({
+          data: [session('ses_active', 10)],
+          cursor: { next: null },
+        }), { status: 200 });
+      },
+    });
+
+    runtime.enqueue(['/repo']);
+    await waitUntil(() => isFullyIdle(runtime));
+    expect(cursors[0]).toBeNull();
+    expect(cursors).toContain('page-2-token');
+    expect(cursors.some((value) => value === '[object Object]')).toBe(false);
+    expect(service.replaceDirectory.mock.calls[0][0].sessions).toEqual([
+      expect.objectContaining({ id: 'ses_active' }),
+    ]);
+  });
+
+  it('keeps prior directory rows when projectSessions fails', async () => {
+    const service = createService([{
+      directory: '/repo',
+      sessions: [session('ses_old', 10)],
+      cursor: null,
+      hasMore: false,
+    }]);
+    const runtime = createSessionIndexSyncRuntime({
+      sessionIndexService: service,
+      buildOpenCodeUrl: (route) => `http://opencode.test${route}`,
+      getOpenCodeAuthHeaders: () => ({}),
+      waitForOpenCodeReady: async () => true,
+      projectSessions: () => {
+        throw new Error('metadata unavailable');
+      },
+      fetchFn: async () => new Response(JSON.stringify([session('ses_new', 20)]), { status: 200 }),
+    });
+    runtime.enqueue(['/repo']);
+    await waitUntil(() => isFullyIdle(runtime));
+    // replaceDirectory must not have replaced with empty/new on failure.
+    expect(service.replaceDirectory).not.toHaveBeenCalled();
+    expect(runtime.snapshot().sync.failedDirectories).toContain('/repo');
+  });
+
+  it('skips Host-archived rows and pages within budget to fill active slots', async () => {
+    const service = createService();
+    const urls = [];
+    const runtime = createSessionIndexSyncRuntime({
+      sessionIndexService: service,
+      buildOpenCodeUrl: (route) => `http://opencode.test${route}`,
+      getOpenCodeAuthHeaders: () => ({}),
+      waitForOpenCodeReady: async () => true,
+      projectSessions: (sessions) => sessions.map((item) => (
+        String(item.id).startsWith('ses_arch')
+          ? { ...item, time: { ...item.time, archived: 9 } }
+          : item
+      )),
+      fetchFn: async (url) => {
+        if (url.pathname !== '/session') {
+          return new Response(JSON.stringify([]), { status: 200 });
+        }
+        urls.push(url.searchParams.get('cursor'));
+        if (!url.searchParams.get('cursor')) {
+          // Full page of archived rows — sync must continue with cursor.
+          const archivedPage = Array.from({ length: 20 }, (_, index) => session(`ses_arch_${index}`, 100 - index));
+          return new Response(JSON.stringify({
+            data: archivedPage,
+            cursor: 'page-2',
+          }), { status: 200 });
+        }
+        return new Response(JSON.stringify({
+          data: [session('ses_active', 10)],
+          cursor: null,
+        }), { status: 200 });
+      },
+    });
+
+    runtime.enqueue(['/repo']);
+    await waitUntil(() => isFullyIdle(runtime));
+
+    expect(urls[0]).toBeNull();
+    expect(urls).toContain('page-2');
+    expect(service.replaceDirectory.mock.calls[0][0].sessions).toEqual([
+      expect.objectContaining({ id: 'ses_active' }),
+    ]);
+    expect(service.replaceDirectory.mock.calls[0][0].sessions.some((item) => String(item.id).startsWith('ses_arch'))).toBe(false);
   });
 
   it('v2 session.list has no incremental start — always fetches a full page', async () => {

@@ -1,4 +1,5 @@
 import { OpenCode } from '@opencode/client';
+import { wrapFetchWithRuntimeContractGate } from './server-opencode-fetch.js';
 
 /**
  * @typedef {import('@opencode/client').OpenCodeClient} OpenCodeV2ClientRaw
@@ -19,15 +20,25 @@ import { OpenCode } from '@opencode/client';
 
 /**
  * Create the single server-side client for official OpenCode v2 APIs.
+ * Fetch is always wrapped with runtime-contract write admission so Host
+ * background clients (queue / scheduled / assistants) cannot bypass the proxy gate.
  *
- * @param {{ baseUrl: string, authHeaders?: Record<string, string>, fetchImpl?: typeof fetch }} input
+ * @param {{
+ *   baseUrl: string,
+ *   authHeaders?: Record<string, string>,
+ *   fetchImpl?: typeof fetch,
+ *   getRuntimeContract?: () => (object | null | undefined),
+ * }} input
  * @returns {OpenCodeV2Client}
  */
-export function makeOpenCodeV2Client({ baseUrl, authHeaders, fetchImpl }) {
+export function makeOpenCodeV2Client({ baseUrl, authHeaders, fetchImpl, getRuntimeContract }) {
+  const gatedFetch = wrapFetchWithRuntimeContractGate(fetchImpl || fetch, {
+    ...(typeof getRuntimeContract === 'function' ? { getRuntimeContract } : {}),
+  });
   const client = OpenCode.make({
     baseUrl: baseUrl.replace(/\/$/, ''),
     ...(authHeaders ? { headers: authHeaders } : {}),
-    ...(fetchImpl ? { fetch: fetchImpl } : {}),
+    fetch: gatedFetch,
   });
 
   const messageGet = client.session.message?.get?.bind(client.session.message);

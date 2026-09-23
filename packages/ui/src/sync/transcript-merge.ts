@@ -13,6 +13,7 @@ import type { InfiniteData } from "@tanstack/react-query"
 
 import {
   applyTranscriptDirectoryEvent,
+  findShellMessageID,
   type TranscriptEventDraft,
 } from "./transcript-event-reducer"
 import { materializeSessionSnapshots } from "./materialization"
@@ -30,6 +31,7 @@ import {
   compareTranscriptSortKey,
   transcriptSortKeyOf,
 } from "./transcript-durable-store"
+import { isAuthoredUserTurnRecord } from "./session-projection-api"
 import {
   isTranscriptSseEventType,
   type TranscriptCommandResult,
@@ -114,6 +116,17 @@ export type TranscriptMergeInput =
       }[]
       readonly skipPartTypes?: ReadonlySet<string>
       readonly merge?: SessionMergeStrategy
+    }
+  | {
+      /**
+       * Official session.revert.committed: drop the boundary message and every
+       * later message in repository `messageOrder` (seq-equivalent position).
+       * Do not rank by message-id string comparison — queue ids enqueue early
+       * and may sort before earlier turns. Missing boundary on an incomplete
+       * window sets `needsAuthorityRecovery` so adapters reset + refetch.
+       */
+      readonly type: "revert-committed"
+      readonly to: string
     }
 
 export type TranscriptMergeResult = {
@@ -350,32 +363,25 @@ function rebuildFromReducedState(
     for (const prevPage of previous.pages) {
       for (const id of prevPage.messageOrder) previousIDs.add(id)
     }
-    const historyMessages = nextMessages.filter((message) => {
-      // Page records define the prepend window; also include insert-only adds.
-      const inPage = page.records.some((record) => record.info.id === message.id)
-      return inPage || !previousIDs.has(message.id)
-    }).filter((message) => {
-      // History page should only hold messages that belong to the prepend set
-      // or were newly inserted ahead of the previous chain.
-      if (page.records.some((record) => record.info.id === message.id)) return true
-      if (!previousIDs.has(message.id)) {
-        // Only place newly inserted messages that sort before the previous head.
-        return true
-      }
-      return false
-    })
 
-    // Prefer records order from the HTTP page for the new history page.
+    // Overlapping ids stay on their existing pages so a Host older window that
+    // re-lists already-visible rows cannot reorder the conversation. Only
+    // records that are new to the transcript are placed on the history page,
+    // in the Host page's authoritative order. Cursor still advances from `page`.
     const historyOrdered: Message[] = []
     const historySeen = new Set<string>()
     for (const record of page.records) {
-      const message = nextMessages.find((item) => item.id === record.info.id)
-      if (!message || historySeen.has(message.id)) continue
-      historySeen.add(message.id)
+      const id = record.info.id
+      if (!id || previousIDs.has(id) || historySeen.has(id)) continue
+      const message = nextMessages.find((item) => item.id === id)
+        ?? (record.info as Message)
+      historySeen.add(id)
       historyOrdered.push(message)
     }
-    for (const message of historyMessages) {
-      if (historySeen.has(message.id)) continue
+    // Insert-only rows the reducer added ahead of the chain (not in page body).
+    for (const message of nextMessages) {
+      if (!message?.id || previousIDs.has(message.id) || historySeen.has(message.id)) continue
+      if (page.records.some((record) => record.info.id === message.id)) continue
       historySeen.add(message.id)
       historyOrdered.push(message)
     }
@@ -390,7 +396,6 @@ function rebuildFromReducedState(
       liveRevision,
     )
 
-    const remainingIDs = new Set(historySeen)
     const nextPages: TranscriptPage[] = [historyPage]
     const nextParams: (string | null)[] = [pageCursor]
 
@@ -398,13 +403,11 @@ function rebuildFromReducedState(
       const prevPage = previous.pages[index]!
       const keptMessages: Message[] = []
       for (const id of prevPage.messageOrder) {
-        if (remainingIDs.has(id)) continue
+        // Keep prior placement for every previously visible id (including overlap).
         const message = reduced.message[sessionID]?.find((item) => item.id === id)
           ?? prevPage.messagesByID[id]
         if (message) keptMessages.push(message)
       }
-      // Also absorb any nextMessages that still belong to this page slot and
-      // were not placed in history (e.g. upsert of existing tail ids).
       nextPages.push(
         sharePageMessages(prevPage, keptMessages, nextPart, liveRevision),
       )
@@ -603,6 +606,7 @@ function partPayloadEqual(left: Part, right: Part): boolean {
   if (left.id !== right.id || left.type !== right.type) return false
   if ((left as { text?: string }).text !== (right as { text?: string }).text) return false
   if ((left as { state?: unknown }).state !== (right as { state?: unknown }).state) return false
+  if ((left as { shellAction?: unknown }).shellAction !== (right as { shellAction?: unknown }).shellAction) return false
   if ((left as { output?: unknown }).output !== (right as { output?: unknown }).output) return false
   if ((left as { metadata?: unknown }).metadata !== (right as { metadata?: unknown }).metadata) return false
   if ((left as { time?: unknown }).time !== (right as { time?: unknown }).time) return false
@@ -631,18 +635,25 @@ function sortParts(parts: readonly Part[]): Part[] {
     .sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
 }
 
-function extractEventMessageID(event: Event): string | undefined {
+/** Resolve after the reducer applied `event`, so newly created rows are visible in `draft`. */
+function extractEventMessageID(
+  event: Event,
+  draft: TranscriptEventDraft,
+  sessionID: string,
+): string | undefined {
   const props = event.properties as {
     messageID?: string
     assistantMessageID?: string
     info?: { id?: string }
     part?: { messageID?: string }
+    shell?: { id?: string }
   } | undefined
   if (!props) return undefined
   if (typeof props.messageID === "string") return props.messageID
   if (typeof props.assistantMessageID === "string") return props.assistantMessageID
   if (typeof props.info?.id === "string") return props.info.id
   if (typeof props.part?.messageID === "string") return props.part.messageID
+  if (typeof props.shell?.id === "string") return findShellMessageID(draft, sessionID, props.shell.id)
   return undefined
 }
 
@@ -792,6 +803,16 @@ function applySseToTranscriptData(
     }
   }
 
+  if (event.type === "session.revert.committed") {
+    const to = typeof (event.properties as { to?: unknown })?.to === "string"
+      ? (event.properties as { to: string }).to
+      : undefined
+    if (!to) {
+      return { data: previous, result: { applied: false, changed: false } }
+    }
+    return applyRevertCommitted(previous, sessionID, to, liveRevision)
+  }
+
   const { draft, previousBoundary } = cloneTranscriptSseDraft(previous, sessionID)
 
   const applyResult = applyTranscriptDirectoryEvent(draft, event)
@@ -803,7 +824,7 @@ function applySseToTranscriptData(
     }
   }
 
-  const eventMessageID = extractEventMessageID(event)
+  const eventMessageID = extractEventMessageID(event, draft, sessionID)
   const targetMessageIDs = new Set<string>()
   if (eventMessageID) targetMessageIDs.add(eventMessageID)
 
@@ -900,8 +921,57 @@ function applySseEventsToTranscriptData(
   rebuildMessageIndex(messageList)
   let committedOrder = order.slice()
 
-  for (const event of events) {
+  for (let eventIndex = 0; eventIndex < events.length; eventIndex += 1) {
+    const event = events[eventIndex]!
     if (!isTranscriptSseEventType(event.type)) continue
+    // Revert commit rebuilds pages; finish remaining events on the new data.
+    if (event.type === "session.revert.committed") {
+      const to = typeof (event.properties as { to?: unknown })?.to === "string"
+        ? (event.properties as { to: string }).to
+        : undefined
+      if (!to) continue
+      const liveRevision = startLiveRevision + meaningfulChangeCount + 1
+      const baseData = meaningfulChangeCount > 0 || targetMessageIDs.size > 0
+        ? rebuildTranscriptAfterSseDraft(
+          previous,
+          sessionID,
+          draft,
+          previousBoundary,
+          liveRevision,
+          targetMessageIDs,
+        )
+        : previous
+      const reverted = applyRevertCommitted(baseData, sessionID, to, liveRevision + 1)
+      const rest = events.slice(eventIndex + 1)
+      if (rest.length === 0) {
+        return {
+          data: reverted.data,
+          result: {
+            applied: true,
+            changed: Boolean(reverted.result.changed || meaningfulChangeCount > 0),
+            materialization: firstMaterialization,
+          },
+        }
+      }
+      const continued = applySseEventsToTranscriptData(
+        reverted.data,
+        sessionID,
+        rest,
+        (reverted.data?.pages[reverted.data.pages.length - 1]?.sync.liveRevision ?? liveRevision) + 1,
+      )
+      return {
+        data: continued.data ?? reverted.data,
+        result: {
+          applied: true,
+          changed: Boolean(
+            reverted.result.changed
+            || continued.result.changed
+            || meaningfulChangeCount > 0,
+          ),
+          materialization: firstMaterialization ?? continued.result.materialization,
+        },
+      }
+    }
     anyApplied = true
     const applyResult = applyTranscriptDirectoryEvent(draft, event)
     const changed = typeof applyResult === "boolean" ? applyResult : applyResult.changed
@@ -918,7 +988,7 @@ function applySseEventsToTranscriptData(
       rebuildMessageIndex(nextList)
     }
 
-    const eventMessageID = extractEventMessageID(event)
+    const eventMessageID = extractEventMessageID(event, draft, sessionID)
     const orderChanged =
       order.length !== committedOrder.length
       || order.some((id, index) => id !== committedOrder[index])
@@ -1370,6 +1440,12 @@ export function mergeSessionTranscript(
       })
     }
 
+    case "revert-committed": {
+      const liveRevision =
+        previous?.pages[previous.pages.length - 1]?.sync.liveRevision ?? 0
+      return applyRevertCommitted(previous, sessionID, input.to, liveRevision + 1)
+    }
+
     default: {
       const _exhaustive: never = input
       void _exhaustive
@@ -1378,6 +1454,103 @@ export function mergeSessionTranscript(
         result: { applied: false, changed: false },
       }
     }
+  }
+}
+
+/**
+ * Truncate transcript at/after boundary `to` using repository messageOrder
+ * (chronological / seq-equivalent), matching upstream projector `gte(seq)`.
+ * Never ranks by message-id string comparison — queue ids are minted early and
+ * can lexicographically precede earlier turns. Returns
+ * `needsAuthorityRecovery` when the boundary is absent from an incomplete
+ * window so callers force an authoritative tail instead of ID-guess cropping.
+ */
+export function applyRevertCommitted(
+  previous: SessionTranscriptData | undefined,
+  sessionID: string,
+  to: string,
+  liveRevision: number,
+): TranscriptMergeResult & { needsAuthorityRecovery?: boolean } {
+  if (!previous || previous.pages.length === 0) {
+    return {
+      data: previous,
+      result: { applied: true, changed: false },
+      needsAuthorityRecovery: true,
+    }
+  }
+
+  const flat = projectFlatFromTranscriptData(previous, sessionID)
+  const order = flat.messageOrder
+  const cutIndex = order.findIndex((id) => id === to)
+  const historyBoundary = boundaryFromTranscriptData(previous)
+  const incomplete = historyBoundary.kind !== "exhausted"
+  const hasBoundary = cutIndex >= 0
+
+  // Missing boundary: never invent a cut from id ranking. Incomplete windows
+  // must recover authority; exhausted windows with no match are a no-op.
+  if (!hasBoundary) {
+    if (incomplete) {
+      return {
+        data: undefined,
+        result: { applied: true, changed: true },
+        needsAuthorityRecovery: true,
+      }
+    }
+    return {
+      data: previous,
+      result: { applied: true, changed: false },
+    }
+  }
+
+  const keptIDs = order.slice(0, cutIndex)
+  if (keptIDs.length === order.length) {
+    return {
+      data: previous,
+      result: { applied: true, changed: false },
+    }
+  }
+
+  const messagesByID: Record<string, Message> = {}
+  const partsByMessageID: Record<string, readonly Part[]> = {}
+  for (const id of keptIDs) {
+    const info = flat.messagesByID[id]
+    if (!info) continue
+    messagesByID[id] = info
+    const parts = flat.partsByMessageID[id]
+    if (parts) partsByMessageID[id] = parts
+  }
+
+  const turnCount = keptIDs.filter((id) =>
+    isAuthoredUserTurnRecord(messagesByID[id], partsByMessageID[id]),
+  ).length
+
+  // Keep the oldest page's cursor when history remains incomplete and we still
+  // have a leading page; otherwise mark exhausted when the kept window is the
+  // full remaining history after a complete load.
+  const oldest = previous.pages[0]
+  const complete = historyBoundary.kind === "exhausted" || keptIDs.length === 0
+  const cursor = complete ? null : (oldest?.cursor ?? null)
+
+  const page: TranscriptPage = {
+    kind: "tail",
+    messageOrder: keptIDs,
+    messagesByID,
+    partsByMessageID,
+    cursor,
+    complete,
+    turnCount,
+    sync: {
+      liveRevision,
+      confirmedHeadMessageID: keptIDs.length > 0 ? keptIDs[keptIDs.length - 1]! : null,
+    },
+  }
+
+  return {
+    data: {
+      pages: [page],
+      pageParams: [null],
+    },
+    result: { applied: true, changed: true },
   }
 }
 
@@ -1446,7 +1619,8 @@ export function shareSessionTranscriptData(
     return mergeIncomingTail(oldData, incoming, sessionID) ?? shared
   }
   if (newData.pages.length === oldData.pages.length + 1) {
-    // Prepend: first page is the new history window.
+    // Prepend: first page is the new history window (may be empty after system
+    // filtering while still carrying an advanced Host cursor).
     const incoming = newData.pages[0]!
     const merged = mergeSessionTranscript(oldData, sessionID, {
       type: "http-page",
@@ -1454,6 +1628,10 @@ export function shareSessionTranscriptData(
       page: transportFromTranscriptPage(incoming),
       liveRevision: incoming.sync.liveRevision,
     })
+    if (!merged.data) return oldData
+    // Prefer merge result; when records are unchanged but cursor advanced,
+    // rebuildFromReducedState still produces a leading history page with the
+    // new continuation — keep that rather than dropping to oldData.
     return merged.data
   }
   if (newData.pages.length === 1 && oldData.pages.length > 1) {

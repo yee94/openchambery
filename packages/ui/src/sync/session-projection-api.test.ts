@@ -90,7 +90,7 @@ describe("fetchSessionProjectionPage", () => {
     responseImpl = async () =>
       jsonResponse({
         data: [USER_JSON],
-        cursor: { previous: "cur_older", next: null },
+        cursor: { previous: null, next: "cur_older" },
       })
     globalThis.fetch = (async (input, init) => {
       const request = input instanceof Request ? input : new Request(input, init)
@@ -151,11 +151,11 @@ describe("fetchSessionProjectionPage", () => {
     expect(calls).toHaveLength(1)
     expect(calls[0]!.url.searchParams.get("cursor")).toBe("cur_from_previous_page")
     expect(calls[0]!.url.searchParams.get("limit")).toBe("20")
-    expect(calls[0]!.url.searchParams.get("order")).toBe("desc")
+    expect(calls[0]!.url.searchParams.has("order")).toBe(false)
     expect(calls[0]!.url.searchParams.has("before")).toBe(false)
   })
 
-  test("normalizes user / assistant text+reasoning+tool / synthetic / system from literal JSON", async () => {
+  test("normalizes chat rows and excludes system instructions from literal JSON", async () => {
     responseImpl = async () =>
       jsonResponse({
         data: [ASSISTANT_JSON, SYNTHETIC_JSON, SYSTEM_JSON, USER_JSON],
@@ -185,7 +185,7 @@ describe("fetchSessionProjectionPage", () => {
     expect(tool?.state?.output).toBe("file body")
 
     expect(byID.msg_syn?.parts?.some((part) => (part as { text?: string }).text === "synthetic body")).toBe(true)
-    expect(byID.msg_sys?.parts?.some((part) => (part as { text?: string }).text === "system instruction")).toBe(true)
+    expect(byID.msg_sys).toBeUndefined()
   })
 
   test("assistant GET keeps tokens/cost for TPS chrome", async () => {
@@ -283,7 +283,7 @@ describe("fetchSessionProjectionPage", () => {
           { ...ASSISTANT_JSON, id: "msg_new" },
           { ...USER_JSON, id: "msg_old" },
         ],
-        cursor: { previous: "cur_1", next: null },
+        cursor: { previous: null, next: "cur_1" },
       })
     const { fetchSessionProjectionPage } = await import("./session-projection-api")
 
@@ -313,7 +313,7 @@ describe("fetchSessionProjectionPage", () => {
   })
 
   test("missing data array throws instead of pretending empty success", async () => {
-    responseImpl = async () => jsonResponse({ cursor: { previous: null } })
+    responseImpl = async () => jsonResponse({ cursor: { previous: null, next: null } })
     const { fetchSessionProjectionPage } = await import("./session-projection-api")
     await expect(
       fetchSessionProjectionPage({ sessionID: SESSION, directory: "/repo" }),
@@ -338,6 +338,27 @@ describe("fetchSessionProjectionPage", () => {
     const page = await fetchSessionProjectionPage({ sessionID: SESSION, directory: "/repo" })
     expect(page.records).toEqual([])
     expect(page.complete).toBe(true)
+  })
+
+  test("order=desc incomplete pages use cursor.next (previous-only must not look complete)", async () => {
+    responseImpl = async () =>
+      jsonResponse({
+        data: [USER_JSON],
+        cursor: { previous: null, next: "older" },
+      })
+    const { fetchSessionProjectionPage, normalizeSessionProjectionPage } = await import("./session-projection-api")
+    const page = await fetchSessionProjectionPage({ sessionID: SESSION, directory: "/repo" })
+    expect(page.complete).toBe(false)
+    expect(page.cursor).toBe("older")
+
+    // Wire shape from Host: previous null does not mean exhausted under desc.
+    const normalized = normalizeSessionProjectionPage(
+      { data: [USER_JSON], cursor: { previous: null, next: "older" } },
+      SESSION,
+      "desc",
+    )
+    expect(normalized.complete).toBe(false)
+    expect(normalized.cursor).toBe("older")
   })
 
   test("drops 2.0.12 idle/model-switched rows and keeps assistant text content", async () => {

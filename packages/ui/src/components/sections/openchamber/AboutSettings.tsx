@@ -1,6 +1,7 @@
 import React from 'react';
 import { Capacitor } from '@capacitor/core';
 import { useEvent } from '@reactuses/core';
+import { useQuery } from '@tanstack/react-query';
 import { useUpdateStore } from '@/stores/useUpdateStore';
 import { useUIStore } from '@/stores/useUIStore';
 import { useShallow } from 'zustand/react/shallow';
@@ -18,8 +19,9 @@ import {
 } from '@/components/ui/dialog';
 import { Icon } from "@/components/icon/Icon";
 import { OpenChamberLogo } from '@/components/ui/OpenChamberLogo';
-import { useI18n } from '@/lib/i18n';
+import { useI18n, type I18nKey } from '@/lib/i18n';
 import { runtimeFetch } from '@/lib/runtime-fetch';
+import { getRuntimeGeneration, getRuntimeTransportIdentity, subscribeRuntimeEndpointChanged } from '@/lib/runtime-switch';
 import { formatMobileClientVersionLabel, getMobileClientVersion, getMobileClientBuildNumber } from '@/lib/mobileAppVersion';
 import { isCapacitorApp } from '@/lib/platform';
 import {
@@ -35,6 +37,38 @@ const DISCORD_URL = 'https://discord.gg/ZYRSdnwwKA';
 const X_URL = 'https://x.com/openchamber_dev';
 
 const MIN_CHECKING_DURATION = 800; // ms
+
+const MANAGEMENT_KEYS = {
+  'manual-global': 'settings.openchamber.about.opencodeManagement.manual-global',
+  'manual-external': 'settings.openchamber.about.opencodeManagement.manual-external',
+  bundled: 'settings.openchamber.about.opencodeManagement.bundled',
+  'in-app': 'settings.openchamber.about.opencodeManagement.in-app',
+  none: 'settings.openchamber.about.opencodeManagement.none',
+} as const satisfies Record<string, I18nKey>;
+
+type AboutSnapshot = {
+  openchamberVersion?: unknown;
+  currentVersion?: unknown;
+  serveVersion?: unknown;
+  canManage?: unknown;
+  management?: unknown;
+  guidance?: unknown;
+};
+const snapshotText = (value: unknown): string | null => typeof value === 'string' && value.trim() ? value.trim() : null;
+const aboutSnapshotQueryOptions = (path: '/api/system/info' | '/api/opencode/upgrade-status', transport: string, generation: number) => ({
+  queryKey: [transport, 'about', generation, path] as const,
+  queryFn: async ({ signal }: { signal: AbortSignal }): Promise<AboutSnapshot> => {
+    if (transport !== getRuntimeTransportIdentity() || generation !== getRuntimeGeneration()) throw new Error('Stale About runtime');
+    const response = await runtimeFetch(path, { method: 'GET', headers: { Accept: 'application/json' }, signal });
+    if (!response.ok) throw new Error(`About snapshot: ${response.status}`);
+    const snapshot: unknown = await response.json();
+    if (!snapshot || typeof snapshot !== 'object' || Array.isArray(snapshot)) throw new Error('Invalid About snapshot');
+    if (signal.aborted || transport !== getRuntimeTransportIdentity() || generation !== getRuntimeGeneration()) throw new Error('Stale About runtime');
+    return snapshot as AboutSnapshot;
+  },
+  retry: false,
+  staleTime: 30_000,
+});
 
 type CapacitorOtaConfig = {
   OpenChamberOTA?: {
@@ -67,8 +101,30 @@ export const AboutSettings: React.FC<AboutSettingsProps> = ({ initialUpdateDialo
   const [showChecking, setShowChecking] = React.useState(false);
   const [clientVersion, setClientVersion] = React.useState<string | null>(null);
   const [clientBuildNumber, setClientBuildNumber] = React.useState<number | null>(null);
-  const [openChamberVersion, setOpenChamberVersion] = React.useState<string | null>(null);
-  const [openCodeVersion, setOpenCodeVersion] = React.useState<string | null>(null);
+  const transport = React.useSyncExternalStore(subscribeRuntimeEndpointChanged, getRuntimeTransportIdentity, getRuntimeTransportIdentity);
+  const generation = React.useSyncExternalStore(subscribeRuntimeEndpointChanged, getRuntimeGeneration, getRuntimeGeneration);
+  const systemInfo = useQuery(aboutSnapshotQueryOptions('/api/system/info', transport, generation));
+  const upgradeStatus = useQuery(aboutSnapshotQueryOptions('/api/opencode/upgrade-status', transport, generation));
+  const openChamberVersion = snapshotText(systemInfo.data?.openchamberVersion);
+  const snapshot = upgradeStatus.data;
+  const version = snapshotText(snapshot?.serveVersion) ?? snapshotText(snapshot?.currentVersion);
+  const management = snapshotText(snapshot?.management);
+  const managementKey = management && Object.hasOwn(MANAGEMENT_KEYS, management)
+    ? MANAGEMENT_KEYS[management as keyof typeof MANAGEMENT_KEYS]
+    : null;
+  const managementLabel = snapshot?.canManage === false && managementKey ? t(managementKey) : null;
+  const openCodeVersion = version && managementLabel
+    ? t('settings.openchamber.about.opencodeVersionWithManagement', { version, management: managementLabel })
+    : version;
+  const managementGuidance = snapshot?.canManage === false
+    ? management === 'manual-global'
+      ? t('settings.openchamber.about.opencodeGuidance.manualGlobal')
+      : management === 'manual-external'
+        ? t('settings.openchamber.about.opencodeGuidance.manualExternal')
+        : management === 'bundled'
+          ? t('settings.openchamber.about.opencodeGuidance.bundled')
+          : null
+    : null;
   const updateStore = useUpdateStore(useShallow((s) => ({
     info: s.info,
     checking: s.checking,
@@ -174,60 +230,6 @@ export const AboutSettings: React.FC<AboutSettingsProps> = ({ initialUpdateDialo
   const currentVersionLabel = formatMobileClientVersionLabel(clientVersion, clientBuildNumber)
     ?? currentVersion;
 
-  React.useEffect(() => {
-    let cancelled = false;
-
-    const loadOpenChamberVersion = async () => {
-      try {
-        const response = await runtimeFetch('/api/system/info', {
-          method: 'GET',
-          headers: { Accept: 'application/json' },
-        });
-        if (!response.ok) return;
-        const data = await response.json().catch(() => null) as { openchamberVersion?: unknown } | null;
-        const version = typeof data?.openchamberVersion === 'string' && data.openchamberVersion.trim().length > 0
-          ? data.openchamberVersion.trim()
-          : null;
-        if (!cancelled) setOpenChamberVersion(version);
-      } catch {
-        if (!cancelled) setOpenChamberVersion(null);
-      }
-    };
-
-    void loadOpenChamberVersion();
-
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  React.useEffect(() => {
-    let cancelled = false;
-
-    const loadOpenCodeVersion = async () => {
-      try {
-        const response = await runtimeFetch('/api/opencode/upgrade-status', {
-          method: 'GET',
-          headers: { Accept: 'application/json' },
-        });
-        if (!response.ok) return;
-        const data = await response.json().catch(() => null) as { currentVersion?: unknown } | null;
-        const version = typeof data?.currentVersion === 'string' && data.currentVersion.trim().length > 0
-          ? data.currentVersion.trim()
-          : null;
-        if (!cancelled) setOpenCodeVersion(version);
-      } catch {
-        if (!cancelled) setOpenCodeVersion(null);
-      }
-    };
-
-    void loadOpenCodeVersion();
-
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
   // Track if we initiated a check to show toast on completion
   const didInitiateCheck = React.useRef(false);
 
@@ -273,7 +275,7 @@ export const AboutSettings: React.FC<AboutSettingsProps> = ({ initialUpdateDialo
               {openChamberVersion || t('settings.openchamber.about.state.unknown')}
             </span>
           </SettingsRow>
-          <SettingsRow label={t('settings.openchamber.about.field.instanceOpenCodeVersion')}>
+          <SettingsRow label={t('settings.openchamber.about.field.instanceOpenCodeVersion')} description={managementGuidance}>
             <span className="typography-ui-label font-mono text-foreground text-right">
               {openCodeVersion || t('settings.openchamber.about.state.unknown')}
             </span>
@@ -447,7 +449,7 @@ export const AboutSettings: React.FC<AboutSettingsProps> = ({ initialUpdateDialo
             {openChamberVersion || t('settings.openchamber.about.state.unknown')}
           </span>
         </SettingsRow>
-        <SettingsRow label={t('settings.openchamber.about.field.instanceOpenCodeVersion')}>
+        <SettingsRow label={t('settings.openchamber.about.field.instanceOpenCodeVersion')} description={managementGuidance}>
           <span className="typography-ui-label font-mono text-foreground text-right">
             {openCodeVersion || t('settings.openchamber.about.state.unknown')}
           </span>

@@ -6,6 +6,7 @@ import {
   MESSAGE_STREAM_GLOBAL_WS_PATH,
   MESSAGE_STREAM_WS_HEARTBEAT_INTERVAL_MS,
   sendMessageStreamWsEvent,
+  sendMessageStreamWsFrame,
 } from './protocol.js';
 import { createGlobalMessageStreamHub } from './global-hub.js';
 import { createGlobalMessageStreamWsBridge } from './global-ws-bridge.js';
@@ -62,6 +63,9 @@ export function createMessageStreamWsRuntime({
   buildOpenCodeUrl,
   getOpenCodeAuthHeaders,
   processForwardedEventPayload,
+  projectOutboundSessionPayload = null,
+  /** Await Host metadata ready before directory WS attaches upstream. */
+  ensureSessionMetadataReady = null,
   wsClients,
   triggerHealthCheck,
   heartbeatIntervalMs = MESSAGE_STREAM_WS_HEARTBEAT_INTERVAL_MS,
@@ -104,29 +108,62 @@ export function createMessageStreamWsRuntime({
     const includeReasoning = shouldIncludeReasoning(requestUrl.searchParams.get('includeReasoning'));
     const reasoningFilter = includeReasoning ? null : createReasoningOutboundFilter();
 
-    if (isGlobalStream) {
-      globalBridge.accept(socket, {
-        requestedLastEventId,
-        reasoningFilter,
-      });
-      return;
-    }
+    // Host metadata readiness gates *both* global and directory streams before
+    // accept/hub.start — otherwise globalBridge.accept → hub.start bypasses the
+    // gate and lifecycle frames can fan out while the store is still unknown.
+    void (async () => {
+      if (typeof ensureSessionMetadataReady === 'function') {
+        try {
+          const ready = await ensureSessionMetadataReady();
+          if (!ready) {
+            sendMessageStreamWsFrame(socket, {
+              type: 'error',
+              message: 'session metadata is unavailable',
+              code: 'session_metadata_unavailable',
+              retryable: true,
+            });
+            socket.close(1013, 'session metadata unavailable');
+            return;
+          }
+        } catch {
+          sendMessageStreamWsFrame(socket, {
+            type: 'error',
+            message: 'session metadata is unavailable',
+            code: 'session_metadata_unavailable',
+            retryable: true,
+          });
+          socket.close(1013, 'session metadata unavailable');
+          return;
+        }
+      }
 
-    acceptDirectoryMessageStreamWsConnection({
-      socket,
-      requestedLastEventId,
-      requestedDirectory,
-      reasoningFilter,
-      buildOpenCodeUrl,
-      getOpenCodeAuthHeaders,
-      processForwardedEventPayload,
-      wsClients,
-      triggerHealthCheck,
-      heartbeatIntervalMs,
-      upstreamStallTimeoutMs,
-      upstreamReconnectDelayMs,
-      fetchImpl,
-    });
+      if (socket.readyState !== 1) return;
+
+      if (isGlobalStream) {
+        globalBridge.accept(socket, {
+          requestedLastEventId,
+          reasoningFilter,
+        });
+        return;
+      }
+
+      acceptDirectoryMessageStreamWsConnection({
+        socket,
+        requestedLastEventId,
+        requestedDirectory,
+        reasoningFilter,
+        buildOpenCodeUrl,
+        getOpenCodeAuthHeaders,
+        processForwardedEventPayload,
+        projectOutboundSessionPayload,
+        wsClients,
+        triggerHealthCheck,
+        heartbeatIntervalMs,
+        upstreamStallTimeoutMs,
+        upstreamReconnectDelayMs,
+        fetchImpl,
+      });
+    })();
   });
 
   const upgradeHandler = (req, socket, head) => {

@@ -12,6 +12,10 @@ import {
   isDirectoryTurnAdmissionPath,
 } from './instance-recovery-runtime.js';
 import {
+  runtimeContractExecutionBlockedBody,
+  shouldBlockRuntimeContractExecution,
+} from './runtime-contract.js';
+import {
   createReasoningOutboundFilter,
   createSseBlockSplitter,
   filterSseBlock,
@@ -20,6 +24,11 @@ import {
   readIncludeReasoningQuery,
   stripIncludeReasoningParam,
 } from '../event-stream/reasoning-projection.js';
+import {
+  isSessionLifecycleEventType,
+  projectSessionLifecyclePayload,
+  projectSessionWithStoredMap,
+} from '../session-metadata/session-projection.js';
 
 /**
  * v2 protocol mounts every JSON/SSE route under `/api`
@@ -244,6 +253,8 @@ export const registerOpenCodeProxy = (app, deps) => {
     SSE_UPSTREAM_CONNECT_TIMEOUT_MS,
     SSE_UPSTREAM_STALL_TIMEOUT_MS,
     getRuntime,
+    /** Optional DI: `{ allowMissingContract: true }` for unit factories only. */
+    getRuntimeContractGateOptions = null,
     getOpenCodeAuthHeaders,
     buildOpenCodeUrl,
     ensureOpenCodeApiPrefix,
@@ -253,50 +264,137 @@ export const registerOpenCodeProxy = (app, deps) => {
     // wired, fold its per-session metadata onto list/detail responses so
     // clients keep reading `session.metadata` where they always did.
     getStoredSessionMetadata = null,
+    /** Sync committed snapshot; null = not ready / unknown when store is wired. */
+    getStoredSessionMetadataSync = null,
+    /** Await Host metadata load before SSE fan-out (resolves ok/false, does not reject). */
+    ensureSessionMetadataReady = null,
+    /** Best-effort Host metadata cleanup after successful upstream session delete. */
+    onSessionDeleted = null,
   } = deps;
 
-  /**
-   * `{ [sessionID]: metadata }` for the current instance, or `null` when the
-   * store cannot answer. `null` means "unknown", and an unknown answer leaves
-   * the upstream record untouched — never rewrite a session as empty metadata.
-   */
-  const readStoredSessionMetadata = async () => {
-    if (typeof getStoredSessionMetadata !== 'function') return null;
+  const storeConfigured = typeof getStoredSessionMetadata === 'function';
+
+  const waitForHostMetadataReady = async () => {
+    if (!storeConfigured) return true;
+    if (typeof ensureSessionMetadataReady === 'function') {
+      try {
+        return await ensureSessionMetadataReady() === true;
+      } catch {
+        return false;
+      }
+    }
+    // Fallback: one getAll attempt.
     try {
-      const stored = await getStoredSessionMetadata();
-      return stored && typeof stored === 'object' ? stored : null;
-    } catch (error) {
-      console.warn('[proxy] session metadata unavailable:', error?.message ?? error);
-      return null;
+      await getStoredSessionMetadata();
+      return true;
+    } catch {
+      return false;
     }
   };
 
   /**
-   * OpenChamber's stored metadata wins per key: OpenCode only ever saw what was
-   * set at create time, and everything written since lives on our side.
+   * When the Host store is wired, read failures are retryable errors — never
+   * silent upstream-without-overlay (that would look like authoritative empty
+   * Host state). When the store is not wired, leave upstream untouched.
+   * @returns {{ status: 'unconfigured' | 'ok' | 'unavailable', stored?: object, error?: string }}
    */
-  const withStoredMetadata = (session, stored) => {
-    if (!session || typeof session !== 'object' || typeof session.id !== 'string') return session;
-    const ours = stored[session.id];
-    if (!ours || typeof ours !== 'object' || Array.isArray(ours)) return session;
-    const theirs = session.metadata && typeof session.metadata === 'object' && !Array.isArray(session.metadata)
-      ? session.metadata
-      : {};
-    return { ...session, metadata: { ...theirs, ...ours } };
+  const readStoredSessionMetadata = async () => {
+    if (!storeConfigured) return { status: 'unconfigured' };
+    try {
+      const stored = await getStoredSessionMetadata();
+      if (!stored || typeof stored !== 'object') {
+        return { status: 'unavailable', error: 'session metadata is unavailable' };
+      }
+      return { status: 'ok', stored };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'session metadata is unavailable';
+      console.warn('[proxy] session metadata unavailable:', message);
+      return { status: 'unavailable', error: message };
+    }
   };
 
+  const readStoredSessionMetadataSync = () => {
+    if (typeof getStoredSessionMetadataSync !== 'function') {
+      return storeConfigured ? null : undefined;
+    }
+    try {
+      const stored = getStoredSessionMetadataSync();
+      if (stored && typeof stored === 'object') return stored;
+      return null;
+    } catch {
+      return null;
+    }
+  };
+
+  const metadataUnavailableResponse = (res, error) => {
+    res.status(503).json({
+      error: error || 'session metadata is unavailable',
+      code: 'session_metadata_unavailable',
+      retryable: true,
+    });
+  };
+
+  /**
+   * OpenChamber's stored metadata deep-merges onto upstream create-time
+   * metadata, and Host archive authority projects onto `time.archived`.
+   */
   const overlaySession = (session, stored) => {
     if (!stored) return session;
-    return withStoredMetadata(session, stored);
+    return projectSessionWithStoredMap(session, stored);
   };
 
+  /**
+   * @returns {Promise<{ ok: true, payload: unknown } | { ok: false, error: string }>}
+   */
   const overlayOwnedStateOnList = async (payload) => {
     const records = sessionListRecords(payload);
-    if (!records) return payload;
-    const stored = await readStoredSessionMetadata();
-    if (!stored) return payload;
-    const overlaid = records.map((session) => overlaySession(session, stored));
-    return Array.isArray(payload) ? overlaid : { ...payload, data: overlaid };
+    if (!records) return { ok: true, payload };
+    const meta = await readStoredSessionMetadata();
+    if (meta.status === 'unconfigured') return { ok: true, payload };
+    if (meta.status === 'unavailable') return { ok: false, error: meta.error || 'session metadata is unavailable' };
+    const overlaid = records.map((session) => overlaySession(session, meta.stored));
+    // Preserve `{ data, cursor }` (and any other list envelope fields).
+    return {
+      ok: true,
+      payload: Array.isArray(payload) ? overlaid : { ...payload, data: overlaid },
+    };
+  };
+
+  const createHostSessionSseFilter = () => ({
+    projectEvent: (payload) => {
+      // Transcript/message hot path stays open. Only session lifecycle frames
+      // require Host authority; until the store is ready they are suppressed.
+      const stored = readStoredSessionMetadataSync();
+      if (storeConfigured && stored == null) {
+        const type = payload?.type || payload?.payload?.type;
+        if (isSessionLifecycleEventType(type)) return null;
+        return payload;
+      }
+      if (!stored) return payload;
+      return projectSessionLifecyclePayload(payload, (sessionId) => {
+        const host = stored[sessionId];
+        return host && typeof host === 'object' && !Array.isArray(host) ? host : null;
+      }, { hostReady: true });
+    },
+  });
+
+  const composeSseFilters = (...filters) => {
+    const active = filters.filter(Boolean);
+    if (active.length === 0) return null;
+    if (active.length === 1) return active[0];
+    return {
+      projectEvent: (payload) => {
+        let current = payload;
+        for (const filter of active) {
+          current = filter.projectEvent(current);
+          if (current == null) return null;
+        }
+        return current;
+      },
+      dispose: () => {
+        for (const filter of active) filter.dispose?.();
+      },
+    };
   };
 
   if (app.get('opencodeProxyConfigured')) {
@@ -449,6 +547,15 @@ export const registerOpenCodeProxy = (app, deps) => {
   };
 
   const forwardSseRequest = async (req, res) => {
+    // Gate session-lifecycle Host authority before attaching upstream SSE so we
+    // never drop the only lifecycle frame while metadata is still unknown.
+    if (storeConfigured) {
+      const ready = await waitForHostMetadataReady();
+      if (!ready) {
+        return metadataUnavailableResponse(res, 'session metadata is unavailable');
+      }
+    }
+
     const abortController = new AbortController();
     const closeUpstream = () => abortController.abort();
     let upstream = null;
@@ -466,7 +573,13 @@ export const registerOpenCodeProxy = (app, deps) => {
     const includeReasoning = readIncludeReasoningQuery(req.query)
       && readIncludeReasoningFromUrl(requestUrl);
     const reasoningFilter = includeReasoning ? null : createReasoningOutboundFilter();
-    const sseSplitter = includeReasoning ? null : createSseBlockSplitter();
+    const hostSessionFilter = typeof getStoredSessionMetadataSync === 'function'
+      ? createHostSessionSseFilter()
+      : null;
+    const outboundSseFilter = composeSseFilters(reasoningFilter, hostSessionFilter);
+    // Parse SSE blocks when any Host projection filter is active (reasoning
+    // strip and/or session archive authority). Otherwise byte-identical passthrough.
+    const sseSplitter = outboundSseFilter ? createSseBlockSplitter() : null;
 
     req.on('close', closeUpstream);
 
@@ -582,20 +695,20 @@ export const registerOpenCodeProxy = (app, deps) => {
         }
         if (value && value.length > 0) {
           resetStallTimer();
-          if (includeReasoning) {
-            // Enabled path: byte-identical passthrough (existing behavior).
+          if (!outboundSseFilter || !sseSplitter) {
+            // No Host projection: byte-identical passthrough.
             sseBoundary.observe(value);
             const canContinue = await enqueueSseWrite(value);
             if (!canContinue) {
               break;
             }
           } else {
-            // Disabled path: parse SSE blocks, drop reasoning, re-serialize.
-            // Preserves id/event lines and GlobalEvent wrap when unchanged drop-only.
+            // Parse SSE blocks, apply reasoning strip + Host archive authority.
+            // Preserves id/event lines and GlobalEvent wrap when unchanged.
             const blocks = sseSplitter.push(value);
             let canContinue = true;
             for (const block of blocks) {
-              const filtered = filterSseBlock(block, reasoningFilter);
+              const filtered = filterSseBlock(block, outboundSseFilter);
               if (!filtered) {
                 continue;
               }
@@ -610,9 +723,9 @@ export const registerOpenCodeProxy = (app, deps) => {
         }
       }
 
-      if (!includeReasoning && sseSplitter) {
+      if (outboundSseFilter && sseSplitter) {
         for (const block of sseSplitter.finish()) {
-          const filtered = filterSseBlock(block, reasoningFilter);
+          const filtered = filterSseBlock(block, outboundSseFilter);
           if (filtered) {
             sseBoundary.observe(filtered);
             await enqueueSseWrite(filtered);
@@ -641,7 +754,7 @@ export const registerOpenCodeProxy = (app, deps) => {
     } finally {
       clearConnectTimer();
       clearStallTimer();
-      reasoningFilter?.dispose?.();
+      outboundSseFilter?.dispose?.();
       if (heartbeatTimer) {
         clearTimeout(heartbeatTimer);
         heartbeatTimer = null;
@@ -659,7 +772,7 @@ export const registerOpenCodeProxy = (app, deps) => {
     }
   };
 
-  const fetchSessionListPayload = async (upstreamPath, { req = null, timeoutMs = null } = {}) => {
+  const fetchSessionListPayload = async (upstreamPath, { req = null, timeoutMs = null, method = 'GET' } = {}) => {
     const headers = req
       ? {
           ...normalizeForwardedDirectoryHeaders(collectForwardProxyHeaders(req.headers, getOpenCodeAuthHeaders())),
@@ -672,7 +785,7 @@ export const registerOpenCodeProxy = (app, deps) => {
           'accept-encoding': 'identity',
         };
     const upstream = await fetch(buildOpenCodeUrl(upstreamPath, ''), {
-      method: 'GET',
+      method: method || 'GET',
       headers,
       ...(typeof timeoutMs === 'number' ? { signal: AbortSignal.timeout(timeoutMs) } : {}),
     });
@@ -720,7 +833,11 @@ export const registerOpenCodeProxy = (app, deps) => {
       }
 
       res.setHeader('content-type', result.contentType);
-      res.json(await overlayOwnedStateOnList(sanitizeSessionListPayload(result.payload)));
+      const overlaid = await overlayOwnedStateOnList(sanitizeSessionListPayload(result.payload));
+      if (!overlaid.ok) {
+        return metadataUnavailableResponse(res, overlaid.error);
+      }
+      res.json(overlaid.payload);
     } catch (error) {
       if (isAbortError(error)) {
         return;
@@ -835,12 +952,42 @@ export const registerOpenCodeProxy = (app, deps) => {
       req.path.startsWith('/config/settings') ||
       req.path.startsWith('/config/skills') ||
       req.path === '/config/reload' ||
-      req.path === '/health'
+      req.path === '/health' ||
+      req.path === '/opencode/health' ||
+      req.path === '/opencode/version' ||
+      req.path === '/opencode/contract' ||
+      req.path === '/opencode/upgrade-status' ||
+      req.path === '/opencode/upgrade'
     ) {
       return next();
     }
 
+    // Ticket 11: limit execution when the running serve fails contract admission.
+    // Diagnostics, reads, and stop-task stay available; health success alone is not full semantics.
+    // Require explicit executionAllowed === true for the *current* instance (null/pending blocks).
+    // Gate again after readiness hold so initial-unknown → ready-incompatible cannot slip through.
+    const pathForGate = req.originalUrl || req.url || req.path;
+    const gateOptions = typeof getRuntimeContractGateOptions === 'function'
+      ? getRuntimeContractGateOptions()
+      : {};
+    const blockedByContract = () => {
+      const contract = getRuntime()?.runtimeContract;
+      if (shouldBlockRuntimeContractExecution(req.method, pathForGate, contract, gateOptions)) {
+        return runtimeContractExecutionBlockedBody(contract);
+      }
+      return null;
+    };
+
+    const earlyBlock = blockedByContract();
+    if (earlyBlock) {
+      return res.status(409).json(earlyBlock);
+    }
+
     if (!shouldHoldProxiedRequest(getRuntime())) {
+      const lateBlock = blockedByContract();
+      if (lateBlock) {
+        return res.status(409).json(lateBlock);
+      }
       return next();
     }
 
@@ -850,6 +997,11 @@ export const registerOpenCodeProxy = (app, deps) => {
       if (res.writableEnded || req.aborted) return;
       const runtimeState = getRuntime();
       if (!shouldHoldProxiedRequest(runtimeState)) {
+        // Re-evaluate after wait: startup may have published incompatible/pending.
+        const afterHoldBlock = blockedByContract();
+        if (afterHoldBlock) {
+          return res.status(409).json(afterHoldBlock);
+        }
         return next();
       }
       if (!isMigrationBlockingTranscript(runtimeState) && Date.now() >= processDeadline) {
@@ -938,7 +1090,11 @@ export const registerOpenCodeProxy = (app, deps) => {
           return bTime - aTime;
         });
         console.log(`[SessionMerge] ${globalSessions?.length || 0} global + ${extraSessions.length} extra = ${merged.length} total`);
-        return res.json(await overlayOwnedStateOnList(sanitizeSessionListPayload(merged)));
+        const overlaid = await overlayOwnedStateOnList(sanitizeSessionListPayload(merged));
+        if (!overlaid.ok) {
+          return metadataUnavailableResponse(res, overlaid.error);
+        }
+        return res.json(overlaid.payload);
       } catch (error) {
         console.log(`[SessionMerge] Error: ${error.message}`);
         return res.status(500).json({ error: error.message || 'Failed to merge Windows sessions' });
@@ -954,7 +1110,7 @@ export const registerOpenCodeProxy = (app, deps) => {
   // with the list it came from. Everything else about the record is forwarded
   // untouched. Without a store, fall through to the generic proxy.
   app.get('/api/session/:sessionID', async (req, res, next) => {
-    if (typeof getStoredSessionMetadata !== 'function') return next();
+    if (!storeConfigured) return next();
     // Nested routes (message, children, …) are registered separately; Express
     // still matches this pattern for bare session ids only when no further
     // segment is present — but be defensive if a child path slips through.
@@ -965,32 +1121,79 @@ export const registerOpenCodeProxy = (app, deps) => {
       const upstreamPath = await getRequestUpstreamPath(req);
       const result = await fetchSessionListPayload(upstreamPath, { req });
 
-      res.status(result.upstream.status);
-      applyForwardProxyResponseHeaders(result.upstream.headers, res);
-      res.setHeader('content-type', result.contentType);
-
       const record = result.isJson && !result.parseError ? result.payload : null;
       const session = record && typeof record === 'object' && !Array.isArray(record)
         ? (record.data && typeof record.data === 'object' && !Array.isArray(record.data) ? record.data : record)
         : null;
       if (!session || typeof session.id !== 'string') {
+        res.status(result.upstream.status);
+        applyForwardProxyResponseHeaders(result.upstream.headers, res);
+        res.setHeader('content-type', result.contentType);
         res.end(result.bodyText);
         return;
       }
 
-      const stored = await readStoredSessionMetadata();
-      if (!stored) {
+      const meta = await readStoredSessionMetadata();
+      if (meta.status === 'unavailable') {
+        return metadataUnavailableResponse(res, meta.error);
+      }
+
+      res.status(result.upstream.status);
+      applyForwardProxyResponseHeaders(result.upstream.headers, res);
+      res.setHeader('content-type', result.contentType);
+
+      if (meta.status === 'unconfigured') {
         res.end(result.bodyText);
         return;
       }
 
-      const overlaid = overlaySession(session, stored);
+      const overlaid = overlaySession(session, meta.stored);
       res.json(record.data && typeof record.data === 'object' && !Array.isArray(record.data)
         ? { ...record, data: overlaid }
         : overlaid);
     } catch (error) {
       if (isAbortError(error)) return;
       console.error('[proxy] OpenCode session.get proxy error:', error?.message ?? error);
+      if (!res.headersSent) {
+        res.status(503).json({ error: 'OpenCode service unavailable' });
+        return;
+      }
+      next(error);
+    }
+  });
+
+  // Successful upstream delete → idempotent Host metadata cleanup. Failures are
+  // observable (logged) and compensated by session.deleted event ingest.
+  app.delete('/api/session/:sessionID', async (req, res, next) => {
+    if (typeof onSessionDeleted !== 'function') return next();
+    const sessionID = typeof req.params?.sessionID === 'string' ? req.params.sessionID.trim() : '';
+    if (!sessionID || sessionID.includes('/')) return next();
+    try {
+      const upstreamPath = await getRequestUpstreamPath(req);
+      const result = await fetchSessionListPayload(upstreamPath, {
+        req,
+        method: 'DELETE',
+      });
+      res.status(result.upstream.status);
+      applyForwardProxyResponseHeaders(result.upstream.headers, res);
+      res.setHeader('content-type', result.contentType || 'application/json');
+      if (result.upstream.status >= 200 && result.upstream.status < 300) {
+        try {
+          const cleanup = onSessionDeleted(sessionID);
+          if (cleanup && typeof cleanup.catch === 'function') {
+            cleanup.catch((error) => {
+              console.warn('[proxy] session metadata cleanup after delete failed (retry via event):', error?.message ?? error);
+            });
+          }
+        } catch (error) {
+          console.warn('[proxy] session metadata cleanup after delete failed (retry via event):', error?.message ?? error);
+        }
+      }
+      // Upstream failure keeps Host metadata (do not cleanup).
+      res.end(result.bodyText);
+    } catch (error) {
+      if (isAbortError(error)) return;
+      console.error('[proxy] OpenCode session.delete proxy error:', error?.message ?? error);
       if (!res.headersSent) {
         res.status(503).json({ error: 'OpenCode service unavailable' });
         return;

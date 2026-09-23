@@ -19,6 +19,39 @@ const normalizeSessionIdCandidate = (value: unknown): string | undefined => {
     return trimmed.length > 0 ? trimmed : undefined;
 };
 
+/** Normalize tool identity the same way ToolPart / process grouping do. */
+export const normalizeTaskToolName = (toolName: unknown): string => {
+    if (typeof toolName !== 'string') return '';
+    const trimmed = toolName.trim().toLowerCase();
+    if (!trimmed) return '';
+    const withoutIndex = trimmed.replace(/:\d+$/, '');
+    if (withoutIndex.includes('.')) {
+        const parts = withoutIndex.split('.').filter(Boolean);
+        return parts[parts.length - 1] ?? withoutIndex;
+    }
+    return withoutIndex;
+};
+
+/**
+ * Plugin task (`task`) and native OpenCode subagent (`subagent`) share the same
+ * child-session task row, navigation, and background-running observation path.
+ */
+export const isTaskToolName = (toolName: unknown): boolean => {
+    const name = normalizeTaskToolName(toolName);
+    return name === 'task' || name === 'subagent';
+};
+
+/** Upstream backgroundable shell tool names (official `shell` plus legacy aliases). */
+export const isShellToolName = (toolName: unknown): boolean => {
+    const name = normalizeTaskToolName(toolName);
+    return name === 'shell' || name === 'bash' || name === 'cmd' || name === 'terminal';
+};
+
+/** Tools the upstream session.background API can detach while they block the parent. */
+export const isBackgroundableToolName = (toolName: unknown): boolean => {
+    return isTaskToolName(toolName) || isShellToolName(toolName);
+};
+
 export const readTaskSessionIdFromRecord = (value: unknown): string | undefined => {
     if (!value || typeof value !== 'object') return undefined;
     const record = value as Record<string, unknown>;
@@ -181,6 +214,43 @@ export const parseSubagentNotification = (text: string | undefined): SubagentNot
     };
 };
 
+export type ShellNotificationState = 'completed' | 'error' | 'cancelled';
+
+export type ShellNotification = {
+    /** Official tag id is jobID when present, otherwise shellID. */
+    id: string;
+    shellID?: string;
+    jobID?: string;
+    state: ShellNotificationState;
+    command?: string;
+    body: string;
+};
+
+const SHELL_NOTIFICATION_PATTERN = /<shell\s+([^>]*?)>([\s\S]*?)<\/shell>/i;
+
+/**
+ * Parse the synthetic shell completion notice OpenCode injects when a
+ * background shell finishes: `<shell id="..." state="completed|cancelled|error"
+ * command="...">body</shell>`. Metadata on the synthetic message may also carry
+ * shellID/jobID/state; text parse is the durable history shape.
+ */
+export const parseShellNotification = (text: string | undefined): ShellNotification | undefined => {
+    if (typeof text !== 'string' || text.trim().length === 0) return undefined;
+    const match = text.trim().match(SHELL_NOTIFICATION_PATTERN);
+    if (!match) return undefined;
+
+    const id = readNotificationAttribute(match[1], 'id');
+    const state = normalizeNotificationState(readNotificationAttribute(match[1], 'state'));
+    if (!id || !state) return undefined;
+
+    return {
+        id,
+        state,
+        command: readNotificationAttribute(match[1], 'command'),
+        body: match[2].trim(),
+    };
+};
+
 const messageSummaryCache = new WeakMap<MessageRecord, TaskToolSummaryEntry[]>();
 
 const projectMessageSummaryEntries = (message: MessageRecord): TaskToolSummaryEntry[] => {
@@ -192,7 +262,12 @@ const projectMessageSummaryEntries = (message: MessageRecord): TaskToolSummaryEn
         for (const part of message.parts) {
             if (part.type !== 'tool') continue;
             const toolName = part.tool?.trim().toLowerCase();
-            if (!toolName || toolName === 'task' || toolName === 'todowrite' || toolName === 'todoread') continue;
+            if (
+                !toolName
+                || isTaskToolName(toolName)
+                || toolName === 'todowrite'
+                || toolName === 'todoread'
+            ) continue;
             const state = part.state as { status?: string; title?: string; input?: unknown } | undefined;
             entries.push({
                 id: part.id,

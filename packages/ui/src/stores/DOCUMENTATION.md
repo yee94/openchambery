@@ -248,8 +248,31 @@ Examples:
 - `useGlobalSessionsStore.ts`
 - `useSessionFoldersStore.ts`
 - `useSessionFocusStore.ts`
+- `useSessionBtwStore.ts`
 
 These stores coordinate persistent project/session metadata across multiple views.
+
+`useSessionBtwStore.ts` owns in-memory `/btw` side-question state shared by
+desktop and mobile. Keys are `getSessionBtwKey(scope)` =
+transport identity + normalized directory + sessionId. Entries are
+`{ question, answer, error, pending }` with a stable frozen
+`EMPTY_SESSION_BTW_ENTRY` for missing keys. `ask` / `retry` / `cancel` are
+module-stable methods: empty questions never leave the client; same-scope
+re-asks abort the previous controller and use controller identity so late
+success/failure cannot clobber the newer turn; cancel clears pending and
+leaves the question for retry. Runtime identity switches call
+`resetSessionBtwStoreForRuntimeSwitch` from `runtimeEndpointReset` (abort
+in-flight + drop entries). The store joins upstream side-question
+  instructions (no tools / no actions) and calls
+`opencodeClient.generateSessionAside` only (call-time scoped SDK client; no
+`withDirectory` / directory queue) — no prompt/inbox/queue path.
+Empty generate text is a failure, never a successful empty answer. Entry
+count is bounded (LRU-ish eviction of non-pending keys). The primary Composer's
+`BtwComposerSurface` owns scope/unmount cancellation with StrictMode-safe cleanup.
+Closing the answer panel cancels pending work; switching desktop tabs retains it.
+The leaf `BtwPanel` subscribes to one entry. `useUIStore` accepts the transient
+`btw` ContextPanel mode in memory and filters it from persistence/migration,
+resolving a surviving active tab or closing an otherwise empty persisted panel.
 
 `useProjectsStore.ts` caches the project registry, active project, and manual
 drag order in instance-scoped localStorage (`oc.inst.{runtimeKey}.*` via

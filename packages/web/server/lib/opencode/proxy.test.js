@@ -195,6 +195,175 @@ describe('resolveSessionTurnAdmissionRequest', () => {
   });
 });
 
+describe('registerOpenCodeProxy runtime contract gate (ticket 11)', () => {
+  it('blocks execution paths when runtime contract denies execution', async () => {
+    const app = express();
+    registerOpenCodeProxy(app, {
+      fs: { promises: { realpath: async (v) => v } },
+      os: {},
+      path: {},
+      OPEN_CODE_READY_GRACE_MS: 12_000,
+      LONG_REQUEST_TIMEOUT_MS: 60_000,
+      getRuntime: () => ({
+        openCodePort: 4096,
+        isOpenCodeReady: true,
+        openCodeNotReadySince: 0,
+        isRestartingOpenCode: false,
+        runtimeContract: {
+          executionAllowed: false,
+          phase: 'incompatible',
+          reasons: ['below-min-verified'],
+          serveVersion: '2.0.5',
+          minVerifiedVersion: '2.0.12',
+        },
+      }),
+      getOpenCodeAuthHeaders: () => ({}),
+      buildOpenCodeUrl: (pathname) => `http://opencode.test${pathname}`,
+      ensureOpenCodeApiPrefix: () => {},
+      getUiNotificationClients: () => [],
+    });
+
+    const response = await request(app)
+      .post('/api/session/ses_1/prompt')
+      .send({ parts: [] })
+      .expect(409);
+
+    expect(response.body.errorCode).toBe('RUNTIME_CONTRACT_EXECUTION_BLOCKED');
+    expect(response.body.phase).toBe('incompatible');
+  });
+
+  it('keeps interrupt available when execution is limited', async () => {
+    const upstreamUrls = [];
+    globalThis.fetch = vi.fn(async (url) => {
+      upstreamUrls.push(String(url));
+      return {
+        ok: true,
+        status: 200,
+        headers: new Headers({ 'content-type': 'application/json' }),
+        json: async () => ({}),
+        text: async () => '{}',
+        body: null,
+      };
+    });
+
+    const app = express();
+    registerOpenCodeProxy(app, {
+      fs: { promises: { realpath: async (v) => v } },
+      os: {},
+      path: {},
+      OPEN_CODE_READY_GRACE_MS: 12_000,
+      LONG_REQUEST_TIMEOUT_MS: 60_000,
+      getRuntime: () => ({
+        openCodePort: 4096,
+        isOpenCodeReady: true,
+        openCodeNotReadySince: 0,
+        isRestartingOpenCode: false,
+        runtimeContract: {
+          executionAllowed: false,
+          phase: 'ready-unverified',
+          reasons: ['unverified-newer'],
+          serveVersion: '2.1.0',
+          minVerifiedVersion: '2.0.12',
+        },
+      }),
+      getOpenCodeAuthHeaders: () => ({}),
+      buildOpenCodeUrl: (pathname) => `http://opencode.test${pathname}`,
+      ensureOpenCodeApiPrefix: () => {},
+      getUiNotificationClients: () => [],
+    });
+
+    // Gate must not 409 interrupt; proxy may still forward or fail transport — not contract block.
+    const response = await request(app)
+      .post('/api/session/ses_1/interrupt')
+      .send({});
+    expect(response.status).not.toBe(409);
+    expect(response.body?.errorCode).not.toBe('RUNTIME_CONTRACT_EXECUTION_BLOCKED');
+  });
+
+  it('blocks writes when runtimeContract is null (production default, no bypass)', async () => {
+    const app = express();
+    registerOpenCodeProxy(app, {
+      fs: { promises: { realpath: async (v) => v } },
+      os: {},
+      path: {},
+      OPEN_CODE_READY_GRACE_MS: 12_000,
+      LONG_REQUEST_TIMEOUT_MS: 60_000,
+      getRuntime: () => ({
+        openCodePort: 4096,
+        isOpenCodeReady: true,
+        openCodeNotReadySince: 0,
+        isRestartingOpenCode: false,
+        runtimeContract: null,
+      }),
+      getOpenCodeAuthHeaders: () => ({}),
+      buildOpenCodeUrl: (pathname) => `http://opencode.test${pathname}`,
+      ensureOpenCodeApiPrefix: () => {},
+      getUiNotificationClients: () => [],
+    });
+
+    const response = await request(app)
+      .post('/api/session/ses_1/prompt')
+      .send({ parts: [] })
+      .expect(409);
+    expect(response.body.errorCode).toBe('RUNTIME_CONTRACT_EXECUTION_BLOCKED');
+  });
+
+  it('re-gates after readiness hold when stale permit becomes incompatible', async () => {
+    // Race: early gate sees executionAllowed true (old instance), hold waits for
+    // restart, then new instance publishes incompatible — must 409, not forward.
+    const notReadySince = Date.now();
+    let tick = 0;
+    const app = express();
+    registerOpenCodeProxy(app, {
+      fs: { promises: { realpath: async (v) => v } },
+      os: {},
+      path: {},
+      OPEN_CODE_READY_GRACE_MS: 12_000,
+      LONG_REQUEST_TIMEOUT_MS: 60_000,
+      getRuntime: () => {
+        tick += 1;
+        if (tick <= 2) {
+          return {
+            openCodePort: 4096,
+            isOpenCodeReady: false,
+            openCodeNotReadySince: notReadySince,
+            isRestartingOpenCode: true,
+            runtimeContract: {
+              executionAllowed: true,
+              phase: 'ready',
+              serveVersion: '2.0.12',
+            },
+          };
+        }
+        return {
+          openCodePort: 4096,
+          isOpenCodeReady: true,
+          openCodeNotReadySince: 0,
+          isRestartingOpenCode: false,
+          runtimeContract: {
+            executionAllowed: false,
+            phase: 'incompatible',
+            reasons: ['below-min-verified'],
+            serveVersion: '2.0.5',
+            minVerifiedVersion: '2.0.12',
+          },
+        };
+      },
+      getOpenCodeAuthHeaders: () => ({}),
+      buildOpenCodeUrl: (pathname) => `http://opencode.test${pathname}`,
+      ensureOpenCodeApiPrefix: () => {},
+      getUiNotificationClients: () => [],
+    });
+
+    const response = await request(app)
+      .post('/api/session/ses_1/prompt')
+      .send({ parts: [] })
+      .expect(409);
+    expect(response.body.errorCode).toBe('RUNTIME_CONTRACT_EXECUTION_BLOCKED');
+    expect(response.body.phase).toBe('incompatible');
+  });
+});
+
 describe('registerOpenCodeProxy reasoning projection routes', () => {
   it('strips includeReasoning from SSE upstream and drops reasoning events when false', async () => {
     const upstreamUrls = [];
@@ -400,7 +569,7 @@ describe('registerOpenCodeProxy session metadata overlay', () => {
     });
   });
 
-  it('leaves upstream records untouched when the store throws', async () => {
+  it('returns retryable 503 when the configured store throws (never silent upstream)', async () => {
     vi.spyOn(console, 'warn').mockImplementation(() => {});
     globalThis.fetch = vi.fn(async () => ({
       ok: true,
@@ -416,7 +585,56 @@ describe('registerOpenCodeProxy session metadata overlay', () => {
     });
 
     const list = await request(app).get('/api/session');
+    expect(list.status).toBe(503);
+    expect(list.body).toMatchObject({
+      retryable: true,
+      code: 'session_metadata_unavailable',
+    });
+  });
+
+  it('projects Host archive onto time.archived and preserves list cursor envelopes', async () => {
+    globalThis.fetch = vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      headers: new Headers({ 'content-type': 'application/json' }),
+      text: async () => JSON.stringify({
+        data: [
+          {
+            id: 'ses_1',
+            title: 'Alpha',
+            time: { created: 1, updated: 2, archived: 50 },
+          },
+        ],
+        cursor: 'next-page',
+      }),
+    }));
+
+    const app = mountProxyWithMetadata(async () => ({
+      ses_1: { openchamber: { archive: { archivedAt: 99 } } },
+    }));
+
+    const list = await request(app).get('/api/session');
     expect(list.status).toBe(200);
-    expect(list.body[0]).toEqual({ id: 'ses_1', title: 'Alpha', metadata: { fromOpenCode: true } });
+    expect(list.body.cursor).toBe('next-page');
+    expect(list.body.data[0].time.archived).toBe(99);
+    expect(list.body.data[0].metadata.openchamber.archive.archivedAt).toBe(99);
+  });
+
+  it('explicit Host archivedAt 0 clears upstream historical time.archived', async () => {
+    globalThis.fetch = vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      headers: new Headers({ 'content-type': 'application/json' }),
+      text: async () => JSON.stringify([
+        { id: 'ses_1', time: { created: 1, updated: 2, archived: 50 } },
+      ]),
+    }));
+
+    const app = mountProxyWithMetadata(async () => ({
+      ses_1: { openchamber: { archive: { archivedAt: 0 } } },
+    }));
+
+    const list = await request(app).get('/api/session');
+    expect(list.body[0].time.archived).toBeUndefined();
   });
 });

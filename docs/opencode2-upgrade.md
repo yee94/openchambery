@@ -204,7 +204,7 @@ sequenceDiagram
 
 | 能力 | API / 事件 | 替换我们现在的什么 |
 |---|---|---|
-| Inbox | `GET/DELETE .../inbox`；`.../steer`；`.../queue`；`session.inbox.*` | 本 session 待发送。steer 抢占，queue 排队。compaction 是 barrier |
+| Inbox | `GET/DELETE .../inbox`；`PATCH .../inbox/:id` body `{ delivery }`（204）；`session.inbox.*` | 本 session 待发送。steer 抢占，queue 排队（同一 PATCH，非 `.../steer|queue`）。compaction 是 barrier；仅 `type:user` 进 chip |
 | Compaction | `POST .../compact`；`session.compaction.*`；`GET .../context` | 长会话不再靠 Host 截回合。`context` = 上次 checkpoint 之后的消息 |
 | Undo | `POST .../revert/stage\|clear\|commit`；`session.revert.*` | 对齐官方 `/undo` `/redo`。stage 可带 `files:true` 回文件 |
 | Agent / model 切换 | `POST .../agent`、`POST .../model`；投影为 `agent-switched` / `model-switched` | 时间线上的切换点，不再只改 header |
@@ -228,7 +228,7 @@ sequenceDiagram
 | `session.export/import` | 离线迁移。**sharing 不可用**，不要做分享按钮 |
 | `session.background` | 阻塞工具转后台 |
 | `session.wait` | 等 idle，给队列和测试用 |
-| `session.generate` | 从会话上下文一次性生成，给 commit message 等 |
+| `session.generate` | 从会话上下文一次性生成（无 tool loop、不写入主会话 history/inbox）。Commit/PR 文案：小模型 `/api/small-model/generate` 优先；404 时 fallback 到 `opencodeClient.generateSessionAside`（`session.generate`）。**禁止** steer → wait idle → 读最后 assistant。Commit fallback 显式携带所选文件 diff 与 `COMMIT_DIFF_*` 预算说明（截断/省略不得谎称全量）。模型跟会话契约；取消/超时/`runtime switch` 按捕获目标丢弃迟到结果。见 `packages/ui/src/lib/gitApi.ts` + `gitApi.generation.test.ts`。 |
 | Plugin list | V1 plugin **不能**在 V2 跑。oh-my-opencode 等要等官方 plugin 迁移 |
 
 ### 5.4 消息模型（视图层）

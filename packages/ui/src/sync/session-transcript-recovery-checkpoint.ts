@@ -11,7 +11,6 @@ import type { Message, Part } from '@/lib/opencode/v2-types'
 
 import type { QueryClient } from "@tanstack/react-query"
 
-import { isSyntheticPart } from "@/lib/messages/synthetic"
 import { ASSISTANT_SESSION_DIVIDER_PREFIX } from "@/components/chat/hostedSessionHistory"
 
 import {
@@ -19,25 +18,24 @@ import {
   type SessionTranscriptCheckpointQueryKey,
   type TranscriptCacheScope,
 } from "./session-transcript-query-cache"
+import { isAuthoredUserTurnRecord } from "./session-projection-api"
 import type { TranscriptData } from "./transcript-repository"
 
 // ---------------------------------------------------------------------------
 // Authored-user turn boundary (client mirror of Host isUserAuthoredTurnBoundary)
 // ---------------------------------------------------------------------------
 
-const hasPartType = (parts: readonly Part[] | undefined, type: string): boolean =>
-  Array.isArray(parts)
-  && parts.some((part) => part && typeof part === "object" && (part as { type?: unknown }).type === type)
-
 const isHostedSessionDivider = (messageID: string): boolean =>
   messageID.startsWith(ASSISTANT_SESSION_DIVIDER_PREFIX)
 
 /**
  * Whether a message is a stable authored-user turn boundary suitable as a
- * reconcile anchor. Mirrors Host `isUserAuthoredTurnBoundary`:
+ * reconcile anchor. Mirrors Host `isUserAuthoredTurnBoundary` and shares the
+ * projection synthetic/native-type rule from `isAuthoredUserTurnRecord`:
  * - role/clientRole must be user
- * - excludes fully synthetic, subtask, compaction, hosted session dividers
- * - empty parts on a user message still count
+ * - excludes native synthetic, fully synthetic parts, subtask, compaction,
+ *   hosted session dividers
+ * - empty parts on a real user message still count
  */
 export function isUserAuthoredTurnBoundaryMessage(
   message: Message | undefined,
@@ -45,16 +43,7 @@ export function isUserAuthoredTurnBoundaryMessage(
 ): boolean {
   if (!message?.id) return false
   if (isHostedSessionDivider(message.id)) return false
-
-  const info = message as Message & { clientRole?: unknown; role?: unknown }
-  const role = typeof info.clientRole === "string" ? info.clientRole : info.role
-  if (role !== "user") return false
-
-  if (!Array.isArray(parts) || parts.length === 0) return true
-  if (hasPartType(parts, "subtask")) return false
-  if (hasPartType(parts, "compaction")) return false
-  if (parts.every((part) => isSyntheticPart(part))) return false
-  return true
+  return isAuthoredUserTurnRecord(message, parts)
 }
 
 /**

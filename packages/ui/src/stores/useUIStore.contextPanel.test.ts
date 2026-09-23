@@ -17,6 +17,20 @@ beforeEach(() => {
 });
 
 describe('useUIStore context panel tabs', () => {
+  test('keeps btw live while persisting only durable tabs and a valid active reference', () => {
+    const store = useUIStore.getState();
+    store.openContextPanelTab('/repo', { mode: 'btw' });
+    const persist = () => useUIStore.persist.getOptions().partialize!(useUIStore.getState()) as Pick<ReturnType<typeof useUIStore.getState>, 'contextPanelByDirectory'>;
+    expect(useUIStore.getState().contextPanelByDirectory['/repo'].tabs[0].mode).toBe('btw');
+    expect(persist().contextPanelByDirectory['/repo']).toMatchObject({ tabs: [], activeTabId: null, isOpen: false });
+    store.openContextPanelTab('/repo', { mode: 'context' });
+    store.openContextPanelTab('/repo', { mode: 'btw' });
+    const persisted = persist().contextPanelByDirectory['/repo'];
+    expect(persisted.tabs.map((tab) => tab.mode)).toEqual(['context']);
+    expect(persisted.activeTabId).toBe(persisted.tabs[0].id);
+    expect(persisted.isOpen).toBe(true);
+    expect(useUIStore.getState().contextPanelByDirectory['/repo'].tabs).toHaveLength(2);
+  });
   test('runs a synchronous navigation guard once for a file reference', () => {
     let calls = 0;
     useUIStore.getState().setMainTabGuard(() => { calls += 1; return true; });

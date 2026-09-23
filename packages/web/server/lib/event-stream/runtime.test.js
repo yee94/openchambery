@@ -126,6 +126,118 @@ describe('event stream broadcaster', () => {
   });
 });
 
+describe('message stream websocket runtime Host metadata readiness', () => {
+  it('does not accept/start global hub while metadata load is pending', async () => {
+    const server = new EventEmitter();
+    const wsClients = new Set();
+    let fetchCalls = 0;
+    let releaseReady;
+    const readyGate = new Promise((resolve) => { releaseReady = resolve; });
+
+    const runtime = createMessageStreamWsRuntime({
+      server,
+      uiAuthController: null,
+      isRequestOriginAllowed: async () => true,
+      rejectWebSocketUpgrade() {},
+      buildOpenCodeUrl: (path) => `http://127.0.0.1:4096${path}`,
+      getOpenCodeAuthHeaders: () => ({}),
+      processForwardedEventPayload() {},
+      ensureSessionMetadataReady: async () => {
+        await readyGate;
+        return true;
+      },
+      wsClients,
+      upstreamReconnectDelayMs: 0,
+      fetchImpl: async (_url, options) => {
+        fetchCalls += 1;
+        return createSseResponse({
+          signal: options.signal,
+          holdOpen: true,
+          blocks: [
+            'id: evt-1\ndata: {"type":"session.updated","properties":{"info":{"id":"ses_1","time":{}}}}\n\n',
+          ],
+        });
+      },
+    });
+
+    const socket = new FakeSocket();
+    runtime.wsServer.emit('connection', socket, { url: '/api/global/event/ws' });
+    await new Promise((resolve) => setTimeout(resolve, 15));
+
+    // Still pending → no hub.start → no upstream fetch, no accept frames yet.
+    expect(fetchCalls).toBe(0);
+    expect(socket.closeCalls).toEqual([]);
+    expect(socket.sent.some((f) => f.type === 'event')).toBe(false);
+
+    releaseReady(true);
+    await new Promise((resolve) => setTimeout(resolve, 30));
+
+    expect(fetchCalls).toBe(1);
+    expect(socket.sent.some((f) => f.type === 'event'
+      && f.payload?.type === 'session.updated')).toBe(true);
+
+    socket.close();
+    await runtime.close();
+  });
+
+  it('rejects global connection when metadata ready fails', async () => {
+    const server = new EventEmitter();
+    const runtime = createMessageStreamWsRuntime({
+      server,
+      uiAuthController: null,
+      isRequestOriginAllowed: async () => true,
+      rejectWebSocketUpgrade() {},
+      buildOpenCodeUrl: (path) => `http://127.0.0.1:4096${path}`,
+      getOpenCodeAuthHeaders: () => ({}),
+      processForwardedEventPayload() {},
+      ensureSessionMetadataReady: async () => false,
+      wsClients: new Set(),
+      upstreamReconnectDelayMs: 0,
+      fetchImpl: async () => {
+        throw new Error('upstream must not start');
+      },
+    });
+
+    const socket = new FakeSocket();
+    runtime.wsServer.emit('connection', socket, { url: '/api/global/event/ws' });
+    await new Promise((resolve) => setTimeout(resolve, 15));
+
+    expect(socket.sent.some((f) => f.type === 'error'
+      && f.code === 'session_metadata_unavailable'
+      && f.retryable === true)).toBe(true);
+    expect(socket.closeCalls.some((c) => c.code === 1013)).toBe(true);
+
+    await runtime.close();
+  });
+
+  it('gates directory stream the same way as global', async () => {
+    const server = new EventEmitter();
+    const runtime = createMessageStreamWsRuntime({
+      server,
+      uiAuthController: null,
+      isRequestOriginAllowed: async () => true,
+      rejectWebSocketUpgrade() {},
+      buildOpenCodeUrl: (path) => `http://127.0.0.1:4096${path}`,
+      getOpenCodeAuthHeaders: () => ({}),
+      processForwardedEventPayload() {},
+      ensureSessionMetadataReady: async () => false,
+      wsClients: new Set(),
+      upstreamReconnectDelayMs: 0,
+      fetchImpl: async () => {
+        throw new Error('upstream must not start');
+      },
+    });
+
+    const socket = new FakeSocket();
+    runtime.wsServer.emit('connection', socket, { url: '/api/event/ws?directory=/repo' });
+    await new Promise((resolve) => setTimeout(resolve, 15));
+
+    expect(socket.sent.some((f) => f.code === 'session_metadata_unavailable')).toBe(true);
+    expect(socket.closeCalls.some((c) => c.code === 1013)).toBe(true);
+    await runtime.close();
+  });
+});
+
 describe('message stream websocket runtime', () => {
   it('filters reasoning events per connection when includeReasoning=false', async () => {
     const server = new EventEmitter();

@@ -1,4 +1,7 @@
 import { describe, expect, it } from 'bun:test';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import express from 'express';
 import request from 'supertest';
 import { createStaticRoutesRuntime } from './static-routes-runtime.js';
@@ -56,5 +59,35 @@ describe('static routes runtime', () => {
     expect(api.body).not.toEqual({ ok: true, mode: 'api-only', message: 'OpenChamber is running in API-only mode' });
     expect(auth.body).not.toEqual({ ok: true, mode: 'api-only', message: 'OpenChamber is running in API-only mode' });
     expect(health.body).not.toEqual({ ok: true, mode: 'api-only', message: 'OpenChamber is running in API-only mode' });
+  });
+
+  it('serves index.html for deep links when dist lives under a dot directory', async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'openchamber-static-'));
+    const distPath = path.join(root, '.bun', 'install', 'dist');
+    fs.mkdirSync(distPath, { recursive: true });
+    fs.writeFileSync(path.join(distPath, 'index.html'), '<!doctype html><title>OpenChamber</title>');
+    try {
+      const app = express();
+      createStaticRoutesRuntime({
+        fs,
+        path,
+        process: { env: { OPENCHAMBER_DIST_DIR: distPath } },
+        __dirname: '/server',
+        express,
+        resolveProjectDirectory: () => '',
+        buildOpenCodeUrl: () => '',
+        getOpenCodeAuthHeaders: () => ({}),
+        readSettingsFromDiskMigrated: async () => ({}),
+        normalizePwaAppName: (value) => value,
+        normalizePwaOrientation: (value) => value,
+      }).registerStaticRoutes(app);
+
+      const response = await request(app).get('/session/ses_abc');
+
+      expect(response.status).toBe(200);
+      expect(response.text).toContain('<title>OpenChamber</title>');
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
   });
 });

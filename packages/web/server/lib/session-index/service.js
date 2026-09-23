@@ -284,8 +284,14 @@ export const createSessionIndexService = ({ dbPath, getRuntimeConfig = () => nul
     const previousStateByID = new Map(
       existingSummaryState.all(key, normalizedDirectory).map((row) => [row.session_id, row]),
     );
+    // Active-only: archived sessions never enter the cold-start index. Host
+    // archive projection must set time.archived before replaceDirectory so a
+    // stale unarchived cache cannot resurrect them.
     const summaries = Array.isArray(sessions)
-      ? sessions.map((session) => toSummary(session, normalizedDirectory)).filter(Boolean).slice(0, MAX_ROOT_SESSIONS)
+      ? sessions
+        .map((session) => toSummary(session, normalizedDirectory))
+        .filter((summary) => summary && !summary.archivedAt)
+        .slice(0, MAX_ROOT_SESSIONS)
       : [];
     touchDirectory.run({
       runtimeKey: key,

@@ -1,6 +1,29 @@
-import { beforeEach, describe, expect, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import type { Message } from '@/lib/opencode/v2-types';
-import { switchRuntimeEndpoint } from './runtime-switch';
+
+// Boundary: reviewFlow only needs getRuntimeKey for runtime-guard helpers.
+// Real switchRuntimeEndpoint mints url-auth + dispatches endpoint-changed, which
+// fans into store listeners and happy-dom network (ECONNREFUSED :3000 /
+// ENOTFOUND) and leaves pending fetch tasks that fail environment teardown.
+const runtime = vi.hoisted(() => {
+  const state = { key: 'runtime-a' };
+  const settledFetch = (async () =>
+    new Response(JSON.stringify({ token: 'review-flow-test-url-token', expiresAt: Date.now() + 120_000 }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    })) as typeof fetch;
+  // Hoisted before static imports so module-load side effects cannot open real sockets.
+  vi.stubGlobal('fetch', settledFetch);
+  return { state, settledFetch };
+});
+
+vi.mock('@/lib/runtime-switch', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./runtime-switch')>();
+  return {
+    ...actual,
+    getRuntimeKey: () => runtime.state.key,
+  };
+});
 
 import {
   assertAutoReviewRuntimeStillCurrent,
@@ -15,7 +38,20 @@ import type { AutoReviewRun } from '@/stores/useAutoReviewStore';
 
 describe('reviewFlow auto-review helpers', () => {
   beforeEach(() => {
-    switchRuntimeEndpoint({ apiBaseUrl: 'http://runtime-a.test', runtimeKey: 'runtime-a' });
+    runtime.state.key = 'runtime-a';
+    // happy-dom keeps a window-bound Fetch; keep it settled for the whole case.
+    vi.stubGlobal('fetch', runtime.settledFetch);
+    if (typeof window !== 'undefined') {
+      try {
+        window.fetch = runtime.settledFetch;
+      } catch {
+        // Some environments expose a non-writable window.fetch.
+      }
+    }
+  });
+
+  afterEach(() => {
+    runtime.state.key = 'runtime-a';
   });
 
   test('detects and strips final review marker only from the final line', () => {
@@ -50,7 +86,7 @@ describe('reviewFlow auto-review helpers', () => {
 
   test('runtime guard rejects runs from a stale runtime', () => {
     expect(isAutoReviewRuntimeCurrent('runtime-a')).toBe(true);
-    switchRuntimeEndpoint({ apiBaseUrl: 'http://runtime-b.test', runtimeKey: 'runtime-b' });
+    runtime.state.key = 'runtime-b';
     expect(isAutoReviewRuntimeCurrent('runtime-a')).toBe(false);
     expect(() => assertAutoReviewRuntimeStillCurrent('runtime-a')).toThrow('runtime changed');
   });

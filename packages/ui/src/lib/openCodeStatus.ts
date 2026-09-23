@@ -20,6 +20,9 @@ type OpenChamberHealthSnapshot = {
   openCodeSecureConnection?: unknown;
   openCodeAuthSource?: unknown;
   isOpenCodeReady?: unknown;
+  openCodeServeVersion?: unknown;
+  openCodeCliVersion?: unknown;
+  runtimeContract?: unknown;
   lastOpenCodeError?: unknown;
   lastOpenCodeLaunchDiagnostics?: unknown;
   opencodeBinaryResolved?: unknown;
@@ -276,6 +279,22 @@ const buildOpenCodeStatusReport = async (): Promise<string> => {
   }
   if (typeof openChamberHealth?.openCodeAuthSource === 'string' && openChamberHealth.openCodeAuthSource.trim()) {
     lines.push(`OpenCode auth source: ${openChamberHealth.openCodeAuthSource}`);
+  }
+  if (typeof openChamberHealth?.openCodeServeVersion === 'string' && openChamberHealth.openCodeServeVersion.trim()) {
+    lines.push(`OpenCode serve version: ${openChamberHealth.openCodeServeVersion}`);
+  }
+  if (typeof openChamberHealth?.openCodeCliVersion === 'string' && openChamberHealth.openCodeCliVersion.trim()) {
+    lines.push(`OpenCode CLI version: ${openChamberHealth.openCodeCliVersion}`);
+  }
+  if (isRecord(openChamberHealth?.runtimeContract)) {
+    const contract = openChamberHealth.runtimeContract;
+    const phase = typeof contract.phase === 'string' ? contract.phase : '(unknown)';
+    const execution = contract.executionAllowed === true ? 'allowed' : 'limited';
+    const protocol = contract.protocolCompatible === true ? 'compatible' : 'incompatible';
+    lines.push(`OpenCode runtime contract: phase=${phase} protocol=${protocol} execution=${execution}`);
+    if (Array.isArray(contract.reasons) && contract.reasons.length > 0) {
+      lines.push(`OpenCode contract reasons: ${contract.reasons.filter((r): r is string => typeof r === 'string').join(', ')}`);
+    }
   }
 
   if (typeof window !== 'undefined') {

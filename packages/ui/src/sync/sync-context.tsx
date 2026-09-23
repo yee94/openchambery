@@ -39,6 +39,7 @@ import { projectSession } from "./v2-runtime"
 import { retry } from "./retry"
 import { updateStreamingState } from "./streaming"
 import { setActionRefs } from "./session-actions"
+import { applySessionInboxEvent } from "./session-prompt-api"
 import { setSyncRefs } from "./sync-refs"
 import {
   applyTranscriptCommand,
@@ -77,6 +78,8 @@ import {
   type TranscriptScope,
 } from "./transcript-repository"
 import { listTranscriptEventBroadcastScopes } from "./transcript-event-broadcast"
+import { queryClient } from "@/lib/queryRuntime"
+import { locationShutdownDirectory, refreshDemandedLocationServices } from "./location-services-demand"
 import {
   materializationStatusFromTranscriptData,
   messagesFromTranscriptData,
@@ -2057,6 +2060,14 @@ export function handleEvent(
     return
   }
 
+  const shutdownDirectory = locationShutdownDirectory(payload, rawDirectory)
+  if (shutdownDirectory) {
+    void refreshDemandedLocationServices(queryClient, {
+      transport: getRuntimeTransportIdentity(),
+      directory: shutdownDirectory,
+    })
+  }
+
   const directory = resolveDirectoryFromRoutingIndex(routingIndex, rawDirectory, payload, childStores)
 
   if (handleUiNotificationEvent(payload, directory)) {
@@ -2104,6 +2115,7 @@ export function handleEvent(
     // but only if not during recent boot
     if (payload.type === "server.connected" || payload.type === "global.disposed") {
       if (!recent) {
+        void refreshDemandedLocationServices(queryClient, { transport: getRuntimeTransportIdentity() })
         for (const dir of childStores.children.keys()) {
           const store = childStores.getChild(dir)
           if (store && store.getState().status !== "loading") {
@@ -2344,6 +2356,57 @@ export function handleEvent(
     return
   }
 
+  // Ticket 02: known inbox events update the composer overlay only (not
+  // transcript). Unknown types leave overlay untouched.
+  if (
+    payload.type === "session.inbox.enqueued"
+    || payload.type === "session.inbox.cancelled"
+    || payload.type === "session.inbox.delivered"
+    || payload.type === "session.inbox.delivery.changed"
+  ) {
+    applySessionInboxEvent({
+      type: payload.type,
+      properties: (payload.properties ?? null) as Record<string, unknown> | null,
+    })
+    updateRoutingIndexFromEvent(routingIndex, resolvedDirectory, payload)
+    return
+  }
+
+  // session.revert.committed: catalog marker clear + transcript range drop +
+  // read retirement. Stage/clear are catalog-only (not transcript SSE types).
+  if (
+    payload.type === "session.revert.committed"
+    || payload.type === "session.revert.staged"
+    || payload.type === "session.revert.cleared"
+  ) {
+    const revertDraft: State = {
+      ...current,
+      session: [...current.session],
+    }
+    const revertChanged = applyDirectoryEvent(revertDraft, payload, {
+      now: Date.now,
+    })
+    if (revertChanged) store.setState(revertDraft)
+
+    if (payload.type === "session.revert.committed") {
+      const transcriptSessionID = resolveTranscriptSseSessionID(payload)
+        ?? (payload.properties as { sessionID?: string }).sessionID
+      const to = (payload.properties as { to?: string }).to
+      if (transcriptSessionID && typeof to === "string" && to.length > 0) {
+        commitTranscriptSseEvent(
+          payload,
+          transcriptSessionID,
+          resolvedDirectory,
+          eventMessageID,
+          childStores,
+          routingIndex,
+        )
+      }
+    }
+    updateRoutingIndexFromEvent(routingIndex, resolvedDirectory, payload)
+    return
+  }
+
   // Ticket 03: transcript SSE events commit exclusively through
   // TranscriptRepository. Non-transcript events keep the draft+reducer path.
   if (isTranscriptSseEventType(payload.type)) {
@@ -2391,6 +2454,7 @@ export function handleEvent(
       draft.session_status = { ...(current.session_status ?? {}) }
       draft.session_status_observed_at = { ...current.session_status_observed_at }
       draft.session_error_at = { ...current.session_error_at }
+      draft.session_execution_recovery = { ...(current.session_execution_recovery ?? {}) }
       break
     case "todo.updated":
       draft.todo = { ...current.todo }

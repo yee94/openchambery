@@ -38,9 +38,29 @@ export const toChatMessageEntries = (
   return result.length === 0 ? EMPTY_PREFIX : result;
 };
 
-export const flattenAssistantHistoryPages = (pages: readonly Pick<AssistantHistoryPage, 'entries'>[]): AssistantHistoryEntry[] => (
-  pages.slice().reverse().flatMap((page) => page.entries)
-);
+/**
+ * Flatten infinite-query history pages (newest page first) into chronological entries.
+ * Dedupes by sessionID+messageID so a partial-page retry / refresh merge cannot
+ * drop already-delivered siblings or double-paint the same row.
+ */
+export const flattenAssistantHistoryPages = (
+  pages: readonly Pick<AssistantHistoryPage, 'entries'>[],
+): AssistantHistoryEntry[] => {
+  const seen = new Set<string>();
+  const result: AssistantHistoryEntry[] = [];
+  // Oldest page first so chronological order stays stable across partial retries.
+  for (const page of pages.slice().reverse()) {
+    for (const entry of page.entries) {
+      const id = entry?.info?.id;
+      if (typeof id !== 'string' || !id) continue;
+      const key = `${entry.sessionID}\0${id}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      result.push(entry);
+    }
+  }
+  return result;
+};
 
 /** Leftover Assistant SQLite admission/body mirrors must not paint on the live session. */
 export const isLegacyAssistantMirrorEntry = (entry: AssistantHistoryEntry | null | undefined): boolean => (

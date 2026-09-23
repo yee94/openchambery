@@ -51,6 +51,7 @@ mock.module('@/stores/useUIStore', () => ({
 }));
 mock.module('@/stores/permissionStore', () => ({ usePermissionStore: state }));
 mock.module('@/stores/useQuotaStore', () => ({ resetQuotaStoreForRuntimeSwitch: mock(() => undefined) }));
+mock.module('@/stores/useSessionBtwStore', () => ({ resetSessionBtwStoreForRuntimeSwitch: mock(() => undefined) }));
 mock.module('@/sync/session-ui-store', () => ({
   useSessionUIStore: {
     getState: () => sessionUiState,

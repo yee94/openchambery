@@ -11,15 +11,16 @@ import {
   type SessionTranscriptData,
 } from "./transcript-merge"
 import type { TranscriptTransportPage } from "./transcript-repository"
+import { normalizeSessionProjectionMessage } from "./session-projection-api"
 
 const SESSION = "ses_1"
 
-function userMessage(id: string): Message {
-  return { id, sessionID: SESSION, role: "user", time: { created: 1 } } as Message
+function userMessage(id: string, created = 1): Message {
+  return { id, sessionID: SESSION, role: "user", time: { created } } as Message
 }
 
-function assistantMessage(id: string): Message {
-  return { id, sessionID: SESSION, role: "assistant", time: { created: 1 } } as Message
+function assistantMessage(id: string, created = 1): Message {
+  return { id, sessionID: SESSION, role: "assistant", time: { created } } as Message
 }
 
 function textPart(id: string, messageID: string, text = id): Part {
@@ -106,6 +107,131 @@ describe("mergeSessionTranscript", () => {
     expect(flat.messageOrder[0]).toBe("msg_01")
   })
 
+  test("overlapping older page keeps prior placement and final order 1..25", () => {
+    // First paint: users 1..25 (context-filled). Older page re-lists 6..25.
+    const firstRecords = Array.from({ length: 25 }, (_, i) => {
+      const n = i + 1
+      return { info: userMessage(`u${n}`, n) }
+    })
+    const initial = mergeSessionTranscript(undefined, SESSION, {
+      type: "http-page",
+      purpose: "initial",
+      page: page(firstRecords, { cursor: "older26", complete: false, turnCount: 25 }),
+    }).data!
+
+    const olderRecords = Array.from({ length: 20 }, (_, i) => {
+      // Host desc wire reversed → oldest→newest 6..25
+      const n = i + 6
+      return { info: userMessage(`u${n}`, n) }
+    })
+    const { data, result } = mergeSessionTranscript(initial, SESSION, {
+      type: "http-page",
+      purpose: "prepend",
+      page: page(olderRecords, { cursor: "older6", complete: false, turnCount: 20 }),
+    })
+    expect(result.applied).toBe(true)
+    const flat = projectFlatFromTranscriptData(data, SESSION)
+    expect(flat.messageOrder).toEqual(Array.from({ length: 25 }, (_, i) => `u${i + 1}`))
+    expect(new Set(flat.messageOrder).size).toBe(25)
+    expect(data?.pages[0]?.cursor).toBe("older6")
+    expect(data?.pages[0]?.complete).toBe(false)
+    // Overlap stayed on the prior page; history page only holds truly new rows (none here).
+    expect(data?.pages[0]?.messageOrder).toEqual([])
+    expect(data?.pages[1]?.messageOrder).toEqual(flat.messageOrder)
+  })
+
+  test("overlapping older page with new earlier rows prepends them in Host order", () => {
+    const initial = mergeSessionTranscript(undefined, SESSION, {
+      type: "http-page",
+      purpose: "initial",
+      page: page(
+        Array.from({ length: 20 }, (_, i) => {
+          const n = i + 6
+          return { info: userMessage(`u${n}`, n) }
+        }),
+        { cursor: "older26", complete: false, turnCount: 20 },
+      ),
+    }).data!
+
+    const { data } = mergeSessionTranscript(initial, SESSION, {
+      type: "http-page",
+      purpose: "prepend",
+      page: page(
+        [
+          ...Array.from({ length: 5 }, (_, i) => {
+            const n = i + 1
+            return { info: userMessage(`u${n}`, n) }
+          }),
+          ...Array.from({ length: 20 }, (_, i) => {
+            const n = i + 6
+            return { info: userMessage(`u${n}`, n) }
+          }),
+        ],
+        { cursor: "older1", complete: false, turnCount: 25 },
+      ),
+    })
+    const flat = projectFlatFromTranscriptData(data, SESSION)
+    expect(flat.messageOrder).toEqual(Array.from({ length: 25 }, (_, i) => `u${i + 1}`))
+    expect(data?.pages[0]?.messageOrder).toEqual(["u1", "u2", "u3", "u4", "u5"])
+    expect(data?.pages[1]?.messageOrder[0]).toBe("u6")
+  })
+
+  test("empty system-only prepend advances cursor while keeping prior records", () => {
+    const initial = mergeSessionTranscript(undefined, SESSION, {
+      type: "http-page",
+      purpose: "initial",
+      page: page(
+        [{ info: userMessage("msg_10") }],
+        { cursor: "older1", complete: false, turnCount: 1 },
+      ),
+    }).data!
+
+    const { data, result } = mergeSessionTranscript(initial, SESSION, {
+      type: "http-page",
+      purpose: "prepend",
+      page: page([], { cursor: "older2", complete: false, turnCount: 0 }),
+    })
+    expect(result.applied).toBe(true)
+    expect(result.error).toBeUndefined()
+    expect(data?.pages).toHaveLength(2)
+    expect(data?.pages[0]?.messageOrder).toEqual([])
+    expect(data?.pages[0]?.cursor).toBe("older2")
+    expect(data?.pages[0]?.complete).toBe(false)
+    expect(data?.pages[1]?.messageOrder).toContain("msg_10")
+    expect(boundaryFromTranscriptData(data)).toEqual({
+      kind: "has-more",
+      cursor: "older2",
+      loadedTurns: 1,
+    })
+
+    // Structural sharing path must not drop the advanced cursor.
+    const shared = shareSessionTranscriptData(initial, data, SESSION)
+    expect(shared?.pages[0]?.cursor).toBe("older2")
+    expect(projectFlatFromTranscriptData(shared, SESSION).messageOrder).toContain("msg_10")
+  })
+
+  test("empty prepend with repeated cursor is rejected and keeps prior data", () => {
+    const initial = mergeSessionTranscript(undefined, SESSION, {
+      type: "http-page",
+      purpose: "initial",
+      page: page(
+        [{ info: userMessage("msg_10") }],
+        { cursor: "older1", complete: false, turnCount: 1 },
+      ),
+    }).data!
+
+    const { data, result } = mergeSessionTranscript(initial, SESSION, {
+      type: "http-page",
+      purpose: "prepend",
+      page: page([], { cursor: "older1", complete: false, turnCount: 0 }),
+    })
+    expect(result.applied).toBe(false)
+    expect(result.error).toContain("same cursor")
+    expect(data).toBe(initial)
+    expect(boundaryFromTranscriptData(data).kind).toBe("has-more")
+    expect((boundaryFromTranscriptData(data) as { cursor?: string }).cursor).toBe("older1")
+  })
+
   test("prepend keeps an earlier high-id message from the projection page", () => {
     const initial = mergeSessionTranscript(undefined, SESSION, {
       type: "http-page",
@@ -175,6 +301,66 @@ describe("mergeSessionTranscript", () => {
     expect(data?.pages[0]?.messagesByID["msg_1"]).toBe(prevUser)
     expect(data?.pages[0]?.partsByMessageID["msg_1"]).toBe(prevUserParts)
     expect((data?.pages[0]?.partsByMessageID["msg_2"]?.[0] as { text?: string })?.text).toBe("b-updated")
+  })
+
+  for (const mode of ["sse-event", "sse-event-batch"] as const) {
+    test(`${mode}: session.shell.ended completes a shell card loaded over HTTP`, () => {
+      const running = normalizeSessionProjectionMessage(SESSION, {
+        id: "msg_shell", type: "shell", shellID: "sh_1", command: "sleep 4; echo DONE",
+        status: "running", time: { created: 10 },
+      })!
+      const first = mergeSessionTranscript(undefined, SESSION, {
+        type: "http-page",
+        purpose: "initial",
+        page: page([{ info: userMessage("msg_0", 1) }, running], { complete: true, turnCount: 1 }),
+      }).data!
+      const prevOther = first.pages[0]!.messagesByID["msg_0"]
+      const ended = {
+        type: "session.shell.ended",
+        properties: {
+          sessionID: SESSION,
+          shell: { id: "sh_1", command: "sleep 4; echo DONE", status: "exited", exit: 0 },
+          output: { output: "DONE\n", cursor: 5, size: 5, truncated: false },
+          eventCreated: 20,
+        },
+      } as unknown as Event
+
+      const { data, result } = mergeSessionTranscript(first, SESSION, mode === "sse-event"
+        ? { type: "sse-event", event: ended }
+        : { type: "sse-event-batch", events: [ended] })
+
+      expect(result.changed).toBe(true)
+      expect(data?.pages[0]?.messageOrder).toEqual(["msg_0", "msg_shell"])
+      expect(data?.pages[0]?.messagesByID["msg_0"]).toBe(prevOther)
+      expect(data?.pages[0]?.messagesByID["msg_shell"]?.time).toMatchObject({ completed: 20 })
+      expect(data?.pages[0]?.partsByMessageID["msg_shell"]?.[0]).toMatchObject({
+        shellAction: { status: "completed", output: "DONE\n", shellID: "sh_1" },
+      })
+    })
+  }
+
+  test("authoritative recovery page replaces a stale running shell card", () => {
+    const shellRow = (status: string, output?: string) => normalizeSessionProjectionMessage(SESSION, {
+      id: "msg_shell", type: "shell", shellID: "sh_1", command: "echo DONE", status,
+      ...(status === "exited" ? { exit: 0 } : {}),
+      ...(output ? { output: { output } } : {}),
+      time: { created: 10 },
+    })!
+    const first = mergeSessionTranscript(undefined, SESSION, {
+      type: "http-page",
+      purpose: "initial",
+      page: page([shellRow("running")], { complete: true, turnCount: 1 }),
+    }).data!
+
+    const { data } = mergeSessionTranscript(first, SESSION, {
+      type: "http-page",
+      purpose: "recovery",
+      page: page([shellRow("exited", "DONE\n")], { complete: true, turnCount: 1 }),
+    })
+
+    expect(data?.pages[0]?.partsByMessageID["msg_shell"]?.[0]).toMatchObject({
+      shellAction: { status: "completed", output: "DONE\n" },
+    })
   })
 
   test("SSE tool lifecycle lands input, output and metadata", () => {

@@ -13,7 +13,7 @@ import type { TurnHistorySignals } from '../lib/turns/historySignals';
 import { getMemoryLimits, type SessionHistoryMeta } from '@/stores/types/sessionTypes';
 import { isVSCodeRuntime } from '@/lib/desktop';
 import { isMobileSurfaceRuntime } from '@/lib/runtimeSurface';
-import { getRuntimeKey } from '@/lib/runtime-switch';
+import { getRuntimeGeneration, getRuntimeKey } from '@/lib/runtime-switch';
 import { toast } from '@/components/ui';
 import { useI18n } from '@/lib/i18n';
 import { SESSION_TURN_PAGE_TIMEOUT_MS } from '@/sync/session-turn-page-api';
@@ -292,9 +292,9 @@ export type HistoryPageDecision =
     | 'stop-bounded';
 
 // Collapsed turns can absorb a full page without growing scrollHeight. Keep
-// paging while message/oldest/limit grew but visible height did not, until
-// height grows, history is complete, the page is empty, or the interaction
-// hits its page bound.
+// paging while data or the authoritative cursor advances but visible height
+// does not, until height grows, history completes, progress stalls, or the
+// interaction hits its page bound.
 export const resolveHistoryPageDecision = (input: {
     scrollHeightBefore: number;
     scrollHeightAfter: number;
@@ -304,11 +304,12 @@ export const resolveHistoryPageDecision = (input: {
     oldestIdAfter: string | null;
     limitBefore: number;
     limitAfter: number;
+    cursorBefore?: string | null;
+    cursorAfter?: string | null;
     hasMoreAbove: boolean;
     pagesLoaded: number;
     maxPages: number;
 }): HistoryPageDecision => {
-    if (input.pagesLoaded >= input.maxPages) return 'stop-bounded';
     if (!input.hasMoreAbove) return 'stop-exhausted';
 
     const heightGrowth = input.scrollHeightAfter - input.scrollHeightBefore;
@@ -321,9 +322,11 @@ export const resolveHistoryPageDecision = (input: {
             && typeof input.oldestIdAfter === 'string'
             && input.oldestIdBefore !== input.oldestIdAfter
         )
-        || input.limitAfter > input.limitBefore;
+        || (input.cursorBefore == null && input.limitAfter > input.limitBefore)
+        || (typeof input.cursorAfter === 'string' && input.cursorAfter !== input.cursorBefore);
 
     if (!dataGrowth) return 'stop-no-growth';
+    if (input.pagesLoaded >= input.maxPages) return 'stop-bounded';
     return 'continue';
 };
 
@@ -692,10 +695,24 @@ export const useChatTimelineController = ({
     const [activeTurnId, setActiveTurnId] = React.useState<string | null>(null);
     // Per-session short-viewport auto-fill block after no-growth / hard failure.
     const [autoFillBlocked, setAutoFillBlocked] = React.useState(false);
-    // A successful prepend that adds no records has reached the current history
-    // boundary. Keep the control hidden until an authoritative boundary update
-    // advances its loaded-turn limit.
-    const [noGrowthHistoryLimit, setNoGrowthHistoryLimit] = React.useState<number | null>(null);
+    // A stationary page blocks automatic scroll retries; explicit intent stays available.
+    const noGrowthBlockedRef = React.useRef(false);
+    const runtimeKey = getRuntimeKey();
+    const runtimeGeneration = getRuntimeGeneration();
+    const historyScope = React.useMemo(
+        () => ({ runtimeKey, runtimeGeneration, sessionId, directory }),
+        [runtimeKey, runtimeGeneration, sessionId, directory],
+    );
+    const historyScopeRef = React.useRef<typeof historyScope | null>(historyScope);
+    historyScopeRef.current = historyScope;
+    const historyErrorToastId = `chat-history-error:${JSON.stringify([runtimeKey, directory ?? null, sessionId])}`;
+    useIsomorphicLayoutEffect(() => {
+        historyScopeRef.current = historyScope;
+        return () => {
+            if (historyScopeRef.current === historyScope) historyScopeRef.current = null;
+            toast.dismiss(historyErrorToastId);
+        };
+    }, [historyScope, historyErrorToastId]);
     // Layout metrics for auto-fill enablement. Owned by ResizeObserver so
     // streaming text/tool growth updates geometry without a messages-keyed
     // layout effect that re-renders ChatContainer on every part commit.
@@ -712,7 +729,6 @@ export const useChatTimelineController = ({
     const directoryRef = React.useRef<string | null>(directory ?? null);
     const messagesRef = React.useRef(messages);
     const historyMetaRef = React.useRef<SessionHistoryMeta | null>(historyMeta);
-    const noGrowthHistoryLimitRef = React.useRef<number | null>(noGrowthHistoryLimit);
     const pendingRenderResolversRef = React.useRef<Array<() => void>>([]);
     const pendingScrollRequestRef = React.useRef<PendingScrollRequest | null>(null);
     const scrollPinRef = React.useRef<{ turnId: string; expiresAt: number } | null>(null);
@@ -721,9 +737,9 @@ export const useChatTimelineController = ({
 
     // Session switch: adjust state during render (React-supported prop-driven reset)
     // so we never race a layout effect against the first paint of the new session.
-    const [trackedSessionId, setTrackedSessionId] = React.useState(sessionId);
-    if (trackedSessionId !== sessionId) {
-        setTrackedSessionId(sessionId);
+    const [trackedHistoryScope, setTrackedHistoryScope] = React.useState(historyScope);
+    if (trackedHistoryScope !== historyScope) {
+        setTrackedHistoryScope(historyScope);
         if (historyInteractionTimerRef.current !== null && typeof window !== 'undefined') {
             window.clearTimeout(historyInteractionTimerRef.current);
             historyInteractionTimerRef.current = null;
@@ -735,16 +751,13 @@ export const useChatTimelineController = ({
         setPendingRevealWork(false);
         setActiveTurnId(null);
         setAutoFillBlocked(false);
-        noGrowthHistoryLimitRef.current = null;
-        setNoGrowthHistoryLimit(null);
+        noGrowthBlockedRef.current = false;
         setViewportMetrics({ scrollHeight: 0, clientHeight: 0 });
     }
 
     const historySignals = React.useMemo(() => {
         const hasBufferedTurns = false;
-        const blockedAtCurrentHistoryLimit = historyMeta?.limit === noGrowthHistoryLimit;
-        const hasMoreAboveTurns = !blockedAtCurrentHistoryLimit
-            && resolveHasMoreAboveTurns(historyMeta, messages.length);
+        const hasMoreAboveTurns = resolveHasMoreAboveTurns(historyMeta, messages.length);
         const historyLoading = Boolean(historyMeta?.loading);
         return {
             hasBufferedTurns,
@@ -766,7 +779,6 @@ export const useChatTimelineController = ({
     directoryRef.current = directory ?? null;
     messagesRef.current = messages;
     historyMetaRef.current = historyMeta;
-    noGrowthHistoryLimitRef.current = noGrowthHistoryLimit;
 
     const beginHistoryInteraction = useEvent(() => {
         historyInteractionRef.current = true;
@@ -924,7 +936,7 @@ export const useChatTimelineController = ({
     useIsomorphicLayoutEffect(() => {
         publishViewportMetrics();
         // Session/load edges only; publishViewportMetrics is useEvent-stable.
-    }, [sessionId, isLoadingOlder]);
+    }, [historyScope, isLoadingOlder]);
 
     // --- Synchronous scroll compensation for load-more / reveal ---
     // fetchOlderHistory stores a snapshot here before triggering the fetch and
@@ -983,14 +995,14 @@ export const useChatTimelineController = ({
         if (!container) return;
         attachTouchGestureTracking(container);
         resetTouchGestureTracking(container);
-    }, [sessionId, scrollRef]);
+    }, [historyScope, scrollRef]);
 
     useIsomorphicLayoutEffect(() => {
         stopKeeper();
         prePrependScrollRef.current = null;
         prependTrackingRef.current = null;
         messageListRef.current?.cancelViewportAnchorHold();
-    }, [sessionId]);
+    }, [historyScope]);
 
     useIsomorphicLayoutEffect(() => {
         const container = scrollRef.current;
@@ -1161,6 +1173,9 @@ export const useChatTimelineController = ({
     const waitWhileHistoryLoading = useEvent(async (
         targetSessionId: string,
     ): Promise<HistoryLoadingWaitResult> => {
+        const scope = historyScopeRef.current;
+        const isCurrent = () => scope === historyScopeRef.current
+            && scope?.runtimeKey === getRuntimeKey() && scope?.runtimeGeneration === getRuntimeGeneration();
         const waitStartedAt = Date.now();
         const deadline = waitStartedAt + HISTORY_LOADING_WAIT_MS;
         const directoryForLog = directoryRef.current;
@@ -1180,7 +1195,7 @@ export const useChatTimelineController = ({
             requestError: requestAtStart?.error ?? null,
         });
         while (historySignalsRef.current.historyLoading) {
-            if (sessionIdRef.current !== targetSessionId) {
+            if (!isCurrent() || sessionIdRef.current !== targetSessionId) {
                 console.info('[chat-history] historyLoading wait aborted — session switched', {
                     sessionId: targetSessionId,
                     elapsedMs: Date.now() - waitStartedAt,
@@ -1231,7 +1246,7 @@ export const useChatTimelineController = ({
                 )?.status ?? null)
                 : null,
         });
-        return sessionIdRef.current === targetSessionId ? 'cleared' : 'switched';
+        return isCurrent() && sessionIdRef.current === targetSessionId ? 'cleared' : 'switched';
     });
 
     const fetchOlderHistory = useEvent(async (input: {
@@ -1253,12 +1268,20 @@ export const useChatTimelineController = ({
         setIsLoadingOlder(true);
 
         const targetSessionId = sessionIdRef.current;
+        const scope = historyScopeRef.current;
+        const isCurrent = () => scope === historyScopeRef.current
+            && scope?.runtimeKey === getRuntimeKey() && scope?.runtimeGeneration === getRuntimeGeneration();
+        const readCursor = () => scope?.directory
+            ? getTranscriptRepository()?.getPagination(transcriptScope(scope.directory, targetSessionId)).cursor ?? null
+            : null;
+        const errorToastId = historyErrorToastId;
         let armedSnapshot: PrePrependSnapshot | null = null;
         let historyViewportPreservationActive = Boolean(input.userInitiated);
         if (historyViewportPreservationActive) {
             beginHistoryViewportPreservation();
         }
         const releaseSnapshot = () => {
+            if (!isCurrent()) return;
             if (armedSnapshot && prePrependScrollRef.current === armedSnapshot) {
                 prePrependScrollRef.current = null;
                 messageListRef.current?.cancelViewportAnchorHold();
@@ -1291,7 +1314,7 @@ export const useChatTimelineController = ({
                 }
             }
 
-            if (!sessionIdRef.current || sessionIdRef.current !== targetSessionId) {
+            if (!isCurrent() || !sessionIdRef.current || sessionIdRef.current !== targetSessionId) {
                 return false;
             }
 
@@ -1347,15 +1370,17 @@ export const useChatTimelineController = ({
                 const messageCountBefore = loadedMessageCount;
                 const oldestIdBefore = loadedOldestMessageId;
                 const limitBefore = loadedLimit;
+                const cursorBefore = readCursor();
 
                 await loadMoreMessages(targetSessionId, 'up');
                 pagesLoaded += 1;
-                if (sessionIdRef.current !== targetSessionId) {
+                if (!isCurrent() || sessionIdRef.current !== targetSessionId) {
                     releaseSnapshot();
                     return false;
                 }
 
                 await waitForNextRenderCommitOrTimeout();
+                if (!isCurrent()) return false;
 
                 const afterMessages = messagesRef.current;
                 const afterMessageCount = afterMessages.length;
@@ -1371,6 +1396,8 @@ export const useChatTimelineController = ({
                     oldestIdAfter: afterOldestMessageId,
                     limitBefore,
                     limitAfter: afterLimit,
+                    cursorBefore,
+                    cursorAfter: readCursor(),
                     hasMoreAbove: historySignalsRef.current.hasMoreAboveTurns,
                     pagesLoaded,
                     maxPages: HISTORY_INTERACTION_MAX_PAGES,
@@ -1403,31 +1430,30 @@ export const useChatTimelineController = ({
                         releaseSnapshot();
                         return false;
                     }
-                    const exhaustedLimit = historyMetaRef.current?.limit ?? limitBefore;
-                    noGrowthHistoryLimitRef.current = exhaustedLimit;
-                    setNoGrowthHistoryLimit(exhaustedLimit);
-                    historySignalsRef.current = {
-                        ...historySignalsRef.current,
-                        hasMoreAboveTurns: false,
-                        canLoadEarlier: false,
-                    };
+                    noGrowthBlockedRef.current = true;
+                    setAutoFillBlocked(true);
                     releaseSnapshot();
                     return false;
                 }
+                noGrowthBlockedRef.current = false;
+                setAutoFillBlocked(false);
+                toast.dismiss(errorToastId);
                 return true;
             }
         } catch (error) {
             releaseSnapshot();
             throw error;
         } finally {
-            isLoadingOlderRef.current = false;
-            setIsLoadingOlder(false);
-            settleHistoryInteraction();
-            // Desktop loading status is overlay (no layout push). Keep the
-            // snapshot + DOM keeper armed until the next commit settles so
-            // materialization/hydration mutations still correct before paint;
-            // then release so ordinary commits stay free of a stale read position.
-            void waitForNextRenderCommitOrTimeout().then(releaseSnapshot);
+            if (isCurrent()) {
+                isLoadingOlderRef.current = false;
+                setIsLoadingOlder(false);
+                settleHistoryInteraction();
+                // Desktop loading status is overlay (no layout push). Keep the
+                // snapshot + DOM keeper armed until the next commit settles so
+                // materialization/hydration mutations still correct before paint;
+                // then release so ordinary commits stay free of a stale read position.
+                void waitForNextRenderCommitOrTimeout().then(releaseSnapshot);
+            }
         }
     });
 
@@ -1441,8 +1467,9 @@ export const useChatTimelineController = ({
             runtimeKey: getRuntimeKey(),
             sessionId: sessionId ?? '',
         }),
-        mutationFn: async (input: { sessionId: string; userInitiated?: boolean }): Promise<boolean> => {
-            if (sessionIdRef.current !== input.sessionId) {
+        mutationFn: async (input: { sessionId: string; scope: typeof historyScope; userInitiated?: boolean }): Promise<boolean> => {
+            if (historyScopeRef.current !== input.scope || getRuntimeKey() !== input.scope.runtimeKey
+                || getRuntimeGeneration() !== input.scope.runtimeGeneration || sessionIdRef.current !== input.sessionId) {
                 return false;
             }
             beginHistoryInteraction();
@@ -1455,7 +1482,8 @@ export const useChatTimelineController = ({
                     userInitiated: Boolean(input.userInitiated),
                 });
             } finally {
-                settleHistoryInteraction();
+                if (historyScopeRef.current === input.scope
+                    && getRuntimeGeneration() === input.scope.runtimeGeneration) settleHistoryInteraction();
             }
         },
     });
@@ -1463,11 +1491,16 @@ export const useChatTimelineController = ({
     const loadEarlier = useEvent(async (options?: { userInitiated?: boolean }) => {
         const targetSessionId = sessionIdRef.current;
         if (!targetSessionId) return;
+        const scope = historyScope;
+        const errorToastId = historyErrorToastId;
+        const isCurrent = () => historyScopeRef.current === scope && getRuntimeKey() === scope.runtimeKey
+            && getRuntimeGeneration() === scope.runtimeGeneration;
         // Scope pending to this session so a prior session's in-flight mutation
         // cannot leave the new session's button spinning.
         if (
             loadEarlierMutation.isPending
             && loadEarlierMutation.variables?.sessionId === targetSessionId
+            && loadEarlierMutation.variables?.scope === scope
         ) {
             return;
         }
@@ -1480,11 +1513,13 @@ export const useChatTimelineController = ({
         try {
             const grew = await loadEarlierMutation.mutateAsync({
                 sessionId: targetSessionId,
+                scope,
                 userInitiated: Boolean(options?.userInitiated),
             });
             // Silent no-op paths (missing cursor, stop-no-growth) return false
             // without throwing. Always log when history still claims more;
             // toast only on user-initiated so auto-fill stays quiet.
+            if (!isCurrent()) return;
             if (grew === false && historySignalsRef.current.canLoadEarlier) {
                 const diagnostic = {
                     sessionId: targetSessionId,
@@ -1503,7 +1538,7 @@ export const useChatTimelineController = ({
                     diagnostic,
                 );
                 if (options?.userInitiated) {
-                    toast.error(t('chat.history.loadOlderFailed'));
+                    toast.error(t('chat.history.loadOlderFailed'), { id: errorToastId });
                 }
             }
         } catch (error) {
@@ -1527,11 +1562,12 @@ export const useChatTimelineController = ({
             // Transport failures / historyLoading wait timeout used to clear
             // the spinner with no feedback — mobile looked like a no-op. Toast
             // only on user-initiated paths so auto-fill stays quiet.
-            if (options?.userInitiated) {
+            if (isCurrent() && options?.userInitiated) {
                 toast.error(
                     isHistoryLoadingTimeoutError(error)
                         ? t('chat.history.loadOlderTimeout')
                         : t('chat.history.loadOlderFailed'),
+                    { id: errorToastId },
                 );
             }
         }
@@ -1542,6 +1578,7 @@ export const useChatTimelineController = ({
     const isLoadingOlderUi = (
         loadEarlierMutation.isPending
         && loadEarlierMutation.variables?.sessionId === sessionId
+        && loadEarlierMutation.variables?.scope === historyScope
     ) || isLoadingOlder;
 
     // Short / collapsed transcript: TanStack Query owns the auto-fill flight.
@@ -1550,6 +1587,9 @@ export const useChatTimelineController = ({
     // re-checked live in queryFn. Do not put isLoadingOlder in `enabled` —
     // flipping it mid-flight would cancel the Query and strand the load.
     const oldestMessageId = messages[0]?.info?.id ?? null;
+    const historyCursor = sessionId && directory
+        ? getTranscriptRepository()?.getPagination(transcriptScope(directory, sessionId)).cursor ?? null
+        : null;
     const autoFillGate = shouldAutoFillEarlierHistory({
         enabled: autoFillEnabled,
         isMobile,
@@ -1568,13 +1608,13 @@ export const useChatTimelineController = ({
     });
 
     useQuery({
-        queryKey: chatTimelineAutoFillQueryKey({
+        queryKey: [...chatTimelineAutoFillQueryKey({
             runtimeKey: getRuntimeKey(),
             sessionId: sessionId ?? '',
             oldestMessageId,
             messageCount: messages.length,
             canLoadEarlier: historySignals.canLoadEarlier,
-        }),
+        }), runtimeGeneration, directory ?? null, historyCursor],
         enabled: Boolean(sessionId) && autoFillGate,
         staleTime: Number.POSITIVE_INFINITY,
         gcTime: 0,
@@ -1600,6 +1640,10 @@ export const useChatTimelineController = ({
 
             const targetSessionId = sessionIdRef.current;
             if (!targetSessionId) return { status: 'skip' };
+            const scope = historyScope;
+            const isCurrent = () => historyScopeRef.current === scope && getRuntimeKey() === scope.runtimeKey
+                && getRuntimeGeneration() === scope.runtimeGeneration;
+            if (!isCurrent()) return { status: 'skip' };
 
             if (historySignalsRef.current.historyLoading || isLoadingOlderRef.current) {
                 const busy = new Error('auto-fill-busy') as Error & { code: string };
@@ -1620,6 +1664,7 @@ export const useChatTimelineController = ({
 
             try {
                 const grew = await fetchOlderHistory({ preserveViewport: true });
+                if (!isCurrent()) return { status: 'skip' };
                 if (!grew) {
                     // No-growth or hard stop while still short — block further auto-fill.
                     if (historySignalsRef.current.canLoadEarlier) {
@@ -1662,13 +1707,14 @@ export const useChatTimelineController = ({
                 } else {
                     logChatHistoryLoadOlderFailure('failed', error, diagnostic);
                 }
-                setAutoFillBlocked(true);
+                if (isCurrent()) setAutoFillBlocked(true);
                 throw error instanceof Error ? error : new Error('chat timeline auto-fill failed');
             }
         },
     });
 
     const decideAndLoadEarlier = useEvent((source: HistoryLoadSource) => {
+        if (source === 'scroll' && noGrowthBlockedRef.current) return;
         // Mobile never loads history from scroll/gesture position: any prepend
         // racing an active touch gesture can be hijacked by the native scroll
         // animation. The user scrolls to the natural top and taps an explicit

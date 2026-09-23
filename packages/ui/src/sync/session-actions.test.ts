@@ -373,7 +373,8 @@ vi.mock("@/lib/runtime-fetch", () => ({
         method: "permission.reply",
         params: {
           requestID,
-          reply: body.reply,
+          // Official v2 body is `{ decision }`; keep params.reply for call assertions.
+          reply: body.decision,
           directory: init?.query?.directory,
           sessionID,
         },
@@ -446,9 +447,10 @@ vi.mock("@/lib/runtime-fetch", () => ({
       if (mocks.state.hostTurnPageBehavior.error) {
         return new Response(mocks.state.hostTurnPageBehavior.error, { status: 500 })
       }
+      // order=desc first/older pages advance via cursor.next (v2 contract).
       const cursor = mocks.state.hostTurnPageBehavior.complete
         ? undefined
-        : { previous: mocks.state.hostTurnPageBehavior.cursor }
+        : { next: mocks.state.hostTurnPageBehavior.cursor }
       const items = mocks.toProjectionItems(mocks.state.sessionMessagesResult.data).reverse()
       return mocks.jsonProjectionResponse({
         data: items,

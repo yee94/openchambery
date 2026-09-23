@@ -259,14 +259,18 @@ export async function routeMessage(params: {
   const onSendConfirmed = createConfirmedSendCallback(params.sessionId, params.onSendConfirmed)
   let content = params.content
   const sendAgent = resolveAgentSendIdentity(useConfigStore.getState().agents, params.agent) ?? params.agent
-  // Official 2.x: only switch session.model / session.agent when they differ
-  // from the desired composer pick. Metadata alone does not change the runner.
-  const sendSelection = resolveSendSelection(params.sessionId, requestDirectory, {
-    providerID: params.providerID,
-    modelID: params.modelID,
-    variant: params.variant,
-    agent: sendAgent,
-  })
+  // Ticket 01: native queue inherits session config at consumption — do not
+  // switch model/agent on enqueue. Steer (and idle default) still apply the
+  // composer pick before prompt. Host/Assistant captured queues are separate.
+  const applyComposerSelection = params.delivery !== "queue"
+  const sendSelection = applyComposerSelection
+    ? resolveSendSelection(params.sessionId, requestDirectory, {
+      providerID: params.providerID,
+      modelID: params.modelID,
+      variant: params.variant,
+      agent: sendAgent,
+    })
+    : { model: undefined, agent: undefined }
   if (params.inputMode === "shell") {
     const messageID = params.messageID ?? ascendingId("msg")
     return opencodeClient.shellSession({
@@ -336,8 +340,9 @@ export async function routeMessage(params: {
         preserveOptimisticOnAmbiguous: params.preserveOptimisticOnAmbiguous,
         onSendConfirmed,
         send: async (messageID) => {
-          // Switch before command so the command turn runs on the desired model.
-          if (sendSelection.model || sendSelection.agent) {
+          // Steer/idle only: switch before command so the turn runs on the pick.
+          // Queue delivery must not reconfigure the active turn (ticket 01).
+          if (applyComposerSelection && (sendSelection.model || sendSelection.agent)) {
             await opencodeClient.applySendSelection(
               params.sessionId,
               { model: sendSelection.model, agent: sendSelection.agent },
@@ -382,8 +387,10 @@ export async function routeMessage(params: {
         modelID: params.modelID,
         text: content,
         agent: sendAgent,
-        switchModel: sendSelection.model,
-        switchAgent: sendSelection.agent,
+        // Queue: omit switch so client also skips applySendSelection.
+        ...(applyComposerSelection
+          ? { switchModel: sendSelection.model, switchAgent: sendSelection.agent }
+          : {}),
         agentMentions: params.agentMentionName ? [{ name: params.agentMentionName }] : undefined,
         variant: params.variant,
         files: params.files,

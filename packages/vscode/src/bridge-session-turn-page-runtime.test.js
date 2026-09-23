@@ -5,7 +5,9 @@ import { afterAll, beforeEach, describe, expect, it, mock } from 'bun:test';
  *
  * Handles bridge type `api:session-turn-page`:
  * - reads OpenCode base URL + auth from manager
- * - requests official `/session/:id/message?limit=&before=&directory=`
+ * - requests OpenCode v2 `/api/session/:id/message`: first page `order=desc`,
+ *   continuation `cursor=` only (upstream 400s on both)
+ * - reads `{ data (newest-first), cursor: { next } }` and projects `{ info, parts }`
  * - returns unified turn-page JSON { records, cursor, complete, turnCount }
  *
  * Extension Host bridge wires manager OpenCode URL/auth to the aggregator.
@@ -14,6 +16,15 @@ import { afterAll, beforeEach, describe, expect, it, mock } from 'bun:test';
 const originalFetch = globalThis.fetch;
 
 const loadRuntime = () => import('./bridge-session-turn-page-runtime');
+
+/** v2 `message.list` body: `data` is newest-first; fixtures are written oldest→newest. */
+const v2Page = (chronological, next = null) => new Response(
+  JSON.stringify({
+    data: chronological.slice().reverse(),
+    cursor: { previous: null, next: next || null },
+  }),
+  { status: 200, headers: { 'content-type': 'application/json' } },
+);
 
 const defaultCtx = {
   manager: {
@@ -31,19 +42,10 @@ describe('bridge session turn-page runtime', () => {
   beforeEach(() => {
     fetchCalls = [];
     responseImpl = async () =>
-      new Response(
-        JSON.stringify([
+      v2Page([
           { info: { id: 'msg_u1', role: 'user', time: { created: 1 } }, parts: [{ type: 'text', text: 'hi' }] },
           { info: { id: 'msg_a1', role: 'assistant', time: { created: 2 } }, parts: [{ type: 'text', text: 'ok' }] },
-        ]),
-        {
-          status: 200,
-          headers: {
-            'content-type': 'application/json',
-            'x-next-cursor': '',
-          },
-        },
-      );
+        ]);
 
     globalThis.fetch = (async (input, init) => {
       const request = input instanceof Request ? input : new Request(String(input), init);
@@ -104,15 +106,17 @@ describe('bridge session turn-page runtime', () => {
     const first = fetchCalls[0];
     expect(first.method).toBe('GET');
     expect(first.url.origin).toBe('http://opencode.test');
-    // Official OpenCode session messages path (singular "message")
-    expect(first.url.pathname).toBe('/session/ses_abc/message');
+    // Official OpenCode v2 session messages path (singular "message", /api prefix)
+    expect(first.url.pathname).toBe('/api/session/ses_abc/message');
     expect(first.url.searchParams.has('limit')).toBe(true);
-    expect(first.url.searchParams.get('before')).toBe('msg_cursor');
-    expect(first.url.searchParams.get('directory')).toBe('/repo/project');
+    expect(first.url.searchParams.get('cursor')).toBe('msg_cursor');
+    expect(first.url.searchParams.has('order')).toBe(false);
+    expect(first.url.searchParams.has('before')).toBe(false);
+    expect(first.url.searchParams.has('directory')).toBe(false);
     expect(first.headers.get('Authorization')).toBe('Bearer test-token');
   });
 
-  it('requests official path with limit + directory when before is omitted', async () => {
+  it('requests the first page with order=desc and no cursor when before is omitted', async () => {
     const { handleSessionTurnPageBridgeMessage } = await loadRuntime();
     await handleSessionTurnPageBridgeMessage(
       {
@@ -129,10 +133,11 @@ describe('bridge session turn-page runtime', () => {
 
     expect(fetchCalls.length).toBeGreaterThanOrEqual(1);
     const call = fetchCalls[0];
-    expect(call.url.pathname).toBe('/session/ses_1/message');
+    expect(call.url.pathname).toBe('/api/session/ses_1/message');
     expect(call.url.searchParams.has('limit')).toBe(true);
-    expect(call.url.searchParams.get('directory')).toBe('/repo');
-    expect(call.url.searchParams.has('before')).toBe(false);
+    expect(call.url.searchParams.get('order')).toBe('desc');
+    expect(call.url.searchParams.has('cursor')).toBe(false);
+    expect(call.url.searchParams.has('directory')).toBe(false);
   });
 
   it('returns unified JSON after aggregating three real user turns across pages', async () => {
@@ -173,12 +178,10 @@ describe('bridge session turn-page runtime', () => {
     ]);
 
     responseImpl = async (call) => {
-      const before = call.url.searchParams.get('before');
-      const key = before || null;
-      const page = pages.get(key) ?? { body: [], cursor: null };
-      const headers = { 'content-type': 'application/json' };
-      if (page.cursor) headers['x-next-cursor'] = page.cursor;
-      return new Response(JSON.stringify(page.body), { status: 200, headers });
+      const cursor = call.url.searchParams.get('cursor');
+      expect(cursor != null && call.url.searchParams.has('order')).toBe(false);
+      const page = pages.get(cursor || null) ?? { body: [], cursor: null };
+      return v2Page(page.body, page.cursor);
     };
 
     const result = await handleSessionTurnPageBridgeMessage(
@@ -208,12 +211,9 @@ describe('bridge session turn-page runtime', () => {
     let seenSignal;
     responseImpl = async (call) => {
       // Access signal via the last fetch init — captured through global fetch mock
-      return new Response(
-        JSON.stringify([
+      return v2Page([
           { info: { id: 'msg_u1', role: 'user', time: { created: 1 } }, parts: [{ type: 'text', text: 'hi' }] },
-        ]),
-        { status: 200, headers: { 'content-type': 'application/json' } },
-      );
+        ]);
     };
 
     // Patch fetch to capture signal from init
@@ -251,19 +251,10 @@ describe('bridge session turn-page runtime', () => {
   it('surfaces explicit no-progress error without partial records', async () => {
     const { handleSessionTurnPageBridgeMessage } = await loadRuntime();
     responseImpl = async () =>
-      new Response(
-        JSON.stringify([
+      v2Page([
           { info: { id: 'msg_a1', role: 'assistant', time: { created: 2 } }, parts: [] },
           { info: { id: 'msg_u1', role: 'user', time: { created: 1 } }, parts: [{ type: 'text', text: 'hi' }] },
-        ]),
-        {
-          status: 200,
-          headers: {
-            'content-type': 'application/json',
-            'x-next-cursor': 'msg_u1',
-          },
-        },
-      );
+        ], 'msg_u1');
 
     const result = await handleSessionTurnPageBridgeMessage(
       {
@@ -293,18 +284,9 @@ describe('bridge session turn-page runtime', () => {
     let page = 0;
     responseImpl = async () => {
       page += 1;
-      return new Response(
-        JSON.stringify([
-          { info: { id: `msg_a${page}`, role: 'assistant', time: { created: page } }, parts: [] },
-        ]),
-        {
-          status: 200,
-          headers: {
-            'content-type': 'application/json',
-            'x-next-cursor': `cursor_${page}`,
-          },
-        },
-      );
+      return v2Page([
+        { info: { id: `msg_a${page}`, role: 'assistant', time: { created: page } }, parts: [] },
+      ], `cursor_${page}`);
     };
 
     const result = await handleSessionTurnPageBridgeMessage(
@@ -369,8 +351,7 @@ describe('bridge session turn-page runtime', () => {
     const { handleSessionTurnPageBridgeMessage } = await loadRuntime();
     // One exhausted page with 4 authored turns; turns=2 → overscan trim → Host token.
     responseImpl = async () =>
-      new Response(
-        JSON.stringify([
+      v2Page([
           { info: { id: 'msg_u1', role: 'user', time: { created: 1 } }, parts: [{ type: 'text', text: '1' }] },
           { info: { id: 'msg_a1', role: 'assistant', time: { created: 2 } }, parts: [{ type: 'text', text: 'ok' }] },
           { info: { id: 'msg_u2', role: 'user', time: { created: 3 } }, parts: [{ type: 'text', text: '2' }] },
@@ -379,9 +360,7 @@ describe('bridge session turn-page runtime', () => {
           { info: { id: 'msg_a3', role: 'assistant', time: { created: 6 } }, parts: [{ type: 'text', text: 'ok' }] },
           { info: { id: 'msg_u4', role: 'user', time: { created: 7 } }, parts: [{ type: 'text', text: '4' }] },
           { info: { id: 'msg_a4', role: 'assistant', time: { created: 8 } }, parts: [{ type: 'text', text: 'ok' }] },
-        ]),
-        { status: 200, headers: { 'content-type': 'application/json' } },
-      );
+        ]);
 
     const result = await handleSessionTurnPageBridgeMessage(
       {
@@ -401,7 +380,7 @@ describe('bridge session turn-page runtime', () => {
     ]);
   });
 
-  it('passes Host token through bridge: decode to raw upstream before, never send oc1. upstream', async () => {
+  it('passes Host token through bridge: decode to raw upstream cursor, never send oc1. upstream', async () => {
     const { handleSessionTurnPageBridgeMessage } = await loadRuntime();
     const { encodeHostCursor } = await import('./session-turn-page-runtime');
 
@@ -418,20 +397,16 @@ describe('bridge session turn-page runtime', () => {
     ];
 
     responseImpl = async (call) => {
-      const before = call.url.searchParams.get('before');
+      const cursor = call.url.searchParams.get('cursor');
       let end = all.length;
-      if (before) {
-        const index = all.findIndex((entry) => entry.info.id === before);
+      if (cursor) {
+        const index = all.findIndex((entry) => entry.info.id === cursor);
         end = index >= 0 ? index : 0;
       }
       const limit = Number(call.url.searchParams.get('limit') || 50);
       const start = Math.max(0, end - limit);
       const slice = all.slice(start, end);
-      const headers = { 'content-type': 'application/json' };
-      if (start > 0) {
-        headers['x-next-cursor'] = slice[0]?.info.id ?? '';
-      }
-      return new Response(JSON.stringify(slice), { status: 200, headers });
+      return v2Page(slice, start > 0 ? slice[0]?.info.id : null);
     };
 
     const hostToken = encodeHostCursor({ before: null, boundaryID: 'msg_u3' });
@@ -455,13 +430,14 @@ describe('bridge session turn-page runtime', () => {
     ]);
     // Upstream must never see the Host token prefix.
     for (const call of fetchCalls) {
-      const before = call.url.searchParams.get('before');
-      if (before != null) {
-        expect(before.startsWith('oc1.')).toBe(false);
+      const cursor = call.url.searchParams.get('cursor');
+      if (cursor != null) {
+        expect(cursor.startsWith('oc1.')).toBe(false);
       }
     }
-    // First fetch re-opens origin page (before omitted when origin was null).
-    expect(fetchCalls[0].url.searchParams.has('before')).toBe(false);
+    // First fetch re-opens origin page (cursor omitted when origin was null).
+    expect(fetchCalls[0].url.searchParams.has('cursor')).toBe(false);
+    expect(fetchCalls[0].url.searchParams.get('order')).toBe('desc');
   });
 
   it('maps invalid_cursor safely without partial records', async () => {
@@ -497,15 +473,12 @@ describe('bridge session turn-page runtime', () => {
       Buffer.alloc(4),
     ]);
     const url = `data:image/png;base64,${png.toString('base64')}`;
-    responseImpl = async () => new Response(
-      JSON.stringify([
+    responseImpl = async () => v2Page([
         {
           info: { id: 'msg_u1', role: 'user', time: { created: 1 } },
           parts: [{ id: 'prt_file', type: 'file', mime: 'image/png', filename: 'shot.png', url }],
         },
-      ]),
-      { status: 200, headers: { 'content-type': 'application/json', 'x-next-cursor': '' } },
-    );
+      ]);
 
     const { handleSessionTurnPageBridgeMessage } = await loadRuntime();
     const first = await handleSessionTurnPageBridgeMessage(
@@ -550,8 +523,7 @@ describe('bridge session turn-page runtime', () => {
 
   it('summarizes message diff snapshots in the turn-page bridge response', async () => {
     const patch = 'diff-body-'.repeat(20_000);
-    responseImpl = async () => new Response(
-      JSON.stringify([{
+    responseImpl = async () => v2Page([{
         info: {
           id: 'msg_u1',
           role: 'user',
@@ -567,9 +539,7 @@ describe('bridge session turn-page runtime', () => {
           },
         },
         parts: [],
-      }]),
-      { status: 200, headers: { 'content-type': 'application/json', 'x-next-cursor': '' } },
-    );
+      }]);
 
     const { handleSessionTurnPageBridgeMessage } = await loadRuntime();
     const result = await handleSessionTurnPageBridgeMessage(
@@ -592,8 +562,7 @@ describe('bridge session turn-page runtime', () => {
   });
 
   it('drops reasoning parts when includeReasoning=false and keeps tokens.reasoning', async () => {
-    responseImpl = async () => new Response(
-      JSON.stringify([
+    responseImpl = async () => v2Page([
         {
           info: { id: 'msg_u1', role: 'user', time: { created: 1 } },
           parts: [{ type: 'text', text: 'hi' }],
@@ -610,9 +579,7 @@ describe('bridge session turn-page runtime', () => {
             { id: 'p_t', type: 'text', text: 'answer' },
           ],
         },
-      ]),
-      { status: 200, headers: { 'content-type': 'application/json', 'x-next-cursor': '' } },
-    );
+      ]);
 
     const { handleSessionTurnPageBridgeMessage } = await loadRuntime();
     const result = await handleSessionTurnPageBridgeMessage(
@@ -642,5 +609,53 @@ describe('bridge session turn-page runtime', () => {
     // Default slim path keeps reasoning identity (no body) rather than dropping the part.
     const keptAssistant = kept.data.records.find((r) => r.info?.id === 'msg_a1');
     expect(keptAssistant.parts.some((p) => p.type === 'reasoning')).toBe(true);
+  });
+
+  it('projects v2 native rows into { info, parts } and drops control rows', async () => {
+    responseImpl = async () => v2Page([
+      { id: 'msg_u1', sessionID: 'ses_1', type: 'user', text: 'hello', time: { created: 1 } },
+      { id: 'msg_idle', sessionID: 'ses_1', type: 'idle', time: { created: 2 } },
+      {
+        id: 'msg_a1',
+        sessionID: 'ses_1',
+        type: 'assistant',
+        time: { created: 3 },
+        model: { id: 'model-a', providerID: 'provider-a' },
+        content: [{ type: 'text', text: 'answer' }],
+      },
+    ]);
+
+    const { handleSessionTurnPageBridgeMessage } = await loadRuntime();
+    const result = await handleSessionTurnPageBridgeMessage(
+      { id: 'req_v2_native', type: 'api:session-turn-page', payload: { sessionID: 'ses_1', turns: 3 } },
+      defaultCtx,
+    );
+
+    expect(result.success).toBe(true);
+    expect(result.data.turnCount).toBe(1);
+    expect(result.data.records.map((entry) => [entry.info.id, entry.info.role])).toEqual([
+      ['msg_u1', 'user'],
+      ['msg_a1', 'assistant'],
+    ]);
+    expect(result.data.records[0].parts).toMatchObject([{ type: 'text', text: 'hello' }]);
+    expect(result.data.records[1].info).toMatchObject({ modelID: 'model-a', providerID: 'provider-a' });
+    expect(result.data.records[1].info.content).toBeUndefined();
+    expect(result.data.records[1].parts).toMatchObject([{ type: 'text', text: 'answer' }]);
+  });
+
+  it('fails as upstream on a 1.x array body instead of treating it as empty', async () => {
+    responseImpl = async () => new Response(
+      JSON.stringify([{ info: { id: 'msg_u1', role: 'user', time: { created: 1 } }, parts: [] }]),
+      { status: 200, headers: { 'content-type': 'application/json' } },
+    );
+
+    const { handleSessionTurnPageBridgeMessage } = await loadRuntime();
+    const result = await handleSessionTurnPageBridgeMessage(
+      { id: 'req_v1_body', type: 'api:session-turn-page', payload: { sessionID: 'ses_1', turns: 3 } },
+      defaultCtx,
+    );
+
+    expect(result.success).toBe(false);
+    expect(result.data?.records).toBeUndefined();
   });
 });

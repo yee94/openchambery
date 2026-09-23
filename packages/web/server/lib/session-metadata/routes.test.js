@@ -29,6 +29,7 @@ const mount = (overrides = {}) => {
   const app = express();
   registerSessionMetadataRoutes(app, {
     sessionMetadataStore: store,
+    sessionArchiveService: overrides.sessionArchiveService ?? null,
     broadcastGlobalUiEvent,
     onMetadataWritten: overrides.onMetadataWritten,
   });
@@ -50,7 +51,7 @@ describe('registerSessionMetadataRoutes', () => {
       .send({ patch: { openchamber: { goal: { status: 'active' } } }, directory: '/repo' })
       .expect(200);
     expect(second.body.metadata).toEqual({
-      openchamber: { assist: { recap: 'a' }, goal: { status: 'active' } },
+      openchamber: { assist: { recap: 'a' }, goal: { status: 'active', executionGeneration: 0 } },
     });
     await expect(store.get('ses_1')).resolves.toEqual(second.body.metadata);
     expect(broadcastGlobalUiEvent).toHaveBeenLastCalledWith({
@@ -71,7 +72,11 @@ describe('registerSessionMetadataRoutes', () => {
     expect(onMetadataWritten).toHaveBeenCalledWith({
       sessionID: 'ses_2',
       directory: '/repo',
-      metadata: { openchamber: { goal: { id: 'g1', status: 'active', objective: 'ship' } } },
+      metadata: {
+        openchamber: {
+          goal: { id: 'g1', status: 'active', objective: 'ship', executionGeneration: 0 },
+        },
+      },
     });
   });
 
@@ -107,5 +112,45 @@ describe('registerSessionMetadataRoutes', () => {
       .send({ patch: { a: 1 } })
       .expect(503);
     expect(res.body).toMatchObject({ error: expect.stringMatching(/could not be read/) });
+  });
+
+  it('archives via PUT /archive and returns the projected session', async () => {
+    const setArchive = vi.fn(async ({ sessionID, archivedAt }) => ({
+      session: {
+        id: sessionID,
+        title: 'Alpha',
+        directory: '/repo',
+        time: { created: 1, updated: 2, archived: archivedAt },
+        metadata: { openchamber: { archive: { archivedAt } } },
+      },
+    }));
+    const { app } = mount({
+      sessionArchiveService: { setArchive },
+    });
+
+    const res = await request(app)
+      .put('/api/openchamber/sessions/ses_1/archive')
+      .send({ archivedAt: 99, directory: '/repo' })
+      .expect(200);
+
+    expect(setArchive).toHaveBeenCalledWith({
+      sessionID: 'ses_1',
+      archivedAt: 99,
+      directory: '/repo',
+    });
+    expect(res.body.session).toMatchObject({
+      id: 'ses_1',
+      time: { archived: 99 },
+    });
+  });
+
+  it('rejects archive without a finite archivedAt', async () => {
+    const { app } = mount({
+      sessionArchiveService: { setArchive: vi.fn() },
+    });
+    await request(app)
+      .put('/api/openchamber/sessions/ses_1/archive')
+      .send({})
+      .expect(400);
   });
 });

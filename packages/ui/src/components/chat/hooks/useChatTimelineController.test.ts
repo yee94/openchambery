@@ -312,6 +312,31 @@ describe('resolveHistoryPageDecision', () => {
         })).toBe('stop-bounded');
     });
 
+    test('single-page ceiling preserves no-growth failure', () => {
+        expect(resolveHistoryPageDecision({
+            ...basePageDecisionInput,
+            scrollHeightBefore: 5000, scrollHeightAfter: 5000,
+            messageCountBefore: 40, messageCountAfter: 40,
+            oldestIdBefore: 'msg_10', oldestIdAfter: 'msg_10',
+            limitBefore: 40, limitAfter: 40,
+            hasMoreAbove: true, pagesLoaded: 1, maxPages: 1,
+        })).toBe('stop-no-growth');
+    });
+
+    test('authoritative cursor progress handles empty pages; a stationary cursor overrides limit-only growth', () => {
+        const input = {
+            ...basePageDecisionInput,
+            scrollHeightBefore: 5000, scrollHeightAfter: 5000,
+            messageCountBefore: 40, messageCountAfter: 40,
+            oldestIdBefore: 'msg_10', oldestIdAfter: 'msg_10',
+            limitBefore: 40, limitAfter: 40,
+            cursorBefore: 'cursor-1', cursorAfter: 'cursor-2',
+            hasMoreAbove: true, pagesLoaded: 1, maxPages: 1,
+        };
+        expect(resolveHistoryPageDecision(input)).toBe('stop-bounded');
+        expect(resolveHistoryPageDecision({ ...input, cursorAfter: 'cursor-1', limitAfter: 44 })).toBe('stop-no-growth');
+    });
+
     test('interaction page ceiling=1: first server turn page already stops further paging', () => {
         // One client interaction is allowed a single server turn-page request.
         // After that page lands, pagesLoaded=1 with maxPages=1 => stop-bounded
@@ -620,11 +645,11 @@ describe('useChatTimelineController source contracts', () => {
         expect(String(calls[2]?.[0])).toContain('load older failed');
     });
 
-    test('no-growth pagination suppresses the load-earlier affordance without a toast', () => {
+    test('no-growth pagination blocks automatic repetition and preserves authority', () => {
         expect(source).toContain("if (decision === 'stop-no-growth')");
-        expect(source).toContain('setNoGrowthHistoryLimit(exhaustedLimit)');
-        expect(source).toContain('blockedAtCurrentHistoryLimit');
-        expect(source).toContain('hasMoreAboveTurns: false');
+        expect(source).toContain('noGrowthBlockedRef.current = true');
+        expect(source).toContain('setAutoFillBlocked(true)');
+        expect(source).not.toContain('hasMoreAboveTurns: false');
     });
 
     test('handlers use useEvent; no React.useCallback', () => {

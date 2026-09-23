@@ -1791,15 +1791,12 @@ describe('useGlobalSessionsStore', () => {
       directory: '/repo/app',
       time: { created: 1, updated: 6, archived: 5 },
     });
-    const list = async (input: Record<string, unknown>) => ({
-      data: input.archived ? [mislabeled, trulyArchived] : [live],
-      error: undefined,
-      response: new Response(null, { status: 200 }),
+    // Host/list no longer filters by archived query flag — client classifies by positive time.archived.
+    const list: SessionListFn = async () => ({
+      data: [live, mislabeled, trulyArchived],
+      cursor: {},
     });
-    const sdk = { experimental: { session: { list } } } as unknown as OpenCodeClient;
-    const originalGetSdkClient = opencodeClient.getSdkClient;
-    opencodeClient.getSdkClient = () => sdk;
-    restoreGetSdkClient = () => { opencodeClient.getSdkClient = originalGetSdkClient; };
+    restoreGetSdkClient = installSdkList(list);
 
     const result = await useGlobalSessionsStore.getState().loadSessions();
 
@@ -1830,32 +1827,34 @@ describe('useGlobalSessionsStore', () => {
     expect(useGlobalSessionsStore.getState().archivedLoadingDirectories.has('/repo/app')).toBe(false);
   });
 
-  test('refreshArchivedSessionsForDirectories moves unlabeled sessions into active', async () => {
+  test('refreshArchivedSessionsForDirectories keeps only positive time.archived rows', async () => {
     const mislabeled = buildSession('https://share.example/mislabeled', {
       id: 'ses_mislabeled',
       directory: '/repo/app',
       time: { created: 1, updated: 4 },
+    });
+    const zeroArchived = buildSession('https://share.example/zero', {
+      id: 'ses_zero',
+      directory: '/repo/app',
+      time: { created: 1, updated: 4, archived: 0 },
     });
     const trulyArchived = buildSession('https://share.example/archived', {
       id: 'ses_archived',
       directory: '/repo/app',
       time: { created: 1, updated: 3, archived: 2 },
     });
-    const list = async () => ({
-      data: [mislabeled, trulyArchived],
-      error: undefined,
-      response: new Response(null, { status: 200 }),
+    // listGlobalSessionPages classifies client-side: archived path drops 0 / missing stamps.
+    const list: SessionListFn = async () => ({
+      data: [mislabeled, zeroArchived, trulyArchived],
+      cursor: {},
     });
-    const sdk = { experimental: { session: { list } } } as unknown as OpenCodeClient;
-    const originalGetSdkClient = opencodeClient.getSdkClient;
-    opencodeClient.getSdkClient = () => sdk;
-    restoreGetSdkClient = () => { opencodeClient.getSdkClient = originalGetSdkClient; };
+    restoreGetSdkClient = installSdkList(list);
 
     await useGlobalSessionsStore.getState().refreshArchivedSessionsForDirectories(['/repo/app']);
 
-    expect(useGlobalSessionsStore.getState().activeSessions.map((session) => session.id)).toEqual(['ses_mislabeled']);
+    expect(useGlobalSessionsStore.getState().activeSessions.map((session) => session.id)).toEqual([]);
     expect(useGlobalSessionsStore.getState().archivedSessions.map((session) => session.id)).toEqual(['ses_archived']);
-    expect(useGlobalSessionsStore.getState().sessionsByDirectory.get('/repo/app')?.map((session) => session.id)).toEqual(['ses_mislabeled']);
+    expect(useGlobalSessionsStore.getState().archivedLoadedDirectories.has('/repo/app')).toBe(true);
   });
 
   test('preserves cached active sessions and clears refresh state after a fetch failure', async () => {

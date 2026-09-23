@@ -112,11 +112,16 @@ export type State = {
   session_status_snapshot_at: number | undefined
   /** Live `session.error` / `session.execution.failed` observation time. Not persisted history; busy/retry clears. */
   session_error_at: Record<string, number>
+  /**
+   * Shutdown interruption recovery marker. Set on `session.execution.interrupted`
+   * with reason `shutdown` (claim preserved upstream). Cleared by authoritative
+   * status / started / succeeded / failed / user interrupt. Not a live busy proof.
+   */
+  session_execution_recovery: Record<string, { reason: "shutdown"; observedAt: number }>
   session_diff: Record<string, FileDiff[]>
   todo: Record<string, Todo[]>
   permission: Record<string, PermissionRequest[]>
   question: Record<string, QuestionRequest[]>
-  mcp: Record<string, McpStatus>
   lsp: LspStatus[]
   vcs: VcsInfo | undefined
   limit: number
@@ -219,11 +224,11 @@ export const INITIAL_STATE: State = {
   session_status_observed_at: {},
   session_status_snapshot_at: undefined,
   session_error_at: {},
+  session_execution_recovery: {},
   session_diff: {},
   todo: {},
   permission: {},
   question: {},
-  mcp: {},
   lsp: [],
   vcs: undefined,
   // Matches DIRECTORY_SESSION_LIMIT / session-index SESSION_LIMIT (one cold-start page).

@@ -1554,13 +1554,13 @@ const ToolOutputDialog: React.FC<ToolOutputDialogProps> = ({ popup, onOpenChange
                                 return (
                                 <div className="border-b border-border/20 p-4 -mx-3">
                                     <div className="typography-markdown font-medium text-muted-foreground mb-2 px-3">
-                                        {meta.tool === 'bash'
+                                        {meta.tool === 'bash' || meta.tool === 'shell'
                                             ? 'Command:'
-                                            : meta.tool === 'task'
+                                            : meta.tool === 'task' || meta.tool === 'subagent'
                                                 ? 'Task Details:'
                                                 : 'Input:'}
                                     </div>
-                                    {meta.tool === 'bash' && getInputValue('command') ? (
+                                    {(meta.tool === 'bash' || meta.tool === 'shell') && getInputValue('command') ? (
                                         <div className="tool-input-surface bg-transparent rounded-xl border border-border/20 mx-3">
                                             <WorkerHighlightedCode
                                                 language="bash"
@@ -1570,13 +1570,15 @@ const ToolOutputDialog: React.FC<ToolOutputDialogProps> = ({ popup, onOpenChange
                                                 wrap
                                             />
                                         </div>
-                                    ) : meta.tool === 'task' && getInputValue('prompt') ? (
+                                    ) : (meta.tool === 'task' || meta.tool === 'subagent') && getInputValue('prompt') ? (
                                         <div
                                             className="tool-input-surface bg-transparent rounded-xl border border-border/20 font-mono whitespace-pre-wrap text-foreground/90 mx-3"
                                             style={toolDisplayStyles.getPopupStyles()}
                                         >
                                             {getInputValue('description') ? `Task: ${getInputValue('description')}\n` : ''}
-                                            {getInputValue('subagent_type') ? `Agent Type: ${getInputValue('subagent_type')}\n` : ''}
+                                            {(getInputValue('subagent_type') || getInputValue('agent'))
+                                                ? `Agent Type: ${getInputValue('subagent_type') || getInputValue('agent')}\n`
+                                                : ''}
                                             {`Instructions:\n${getInputValue('prompt')}`}
                                         </div>
                                     ) : meta.tool === 'write' && getInputValue('content') ? (
@@ -1663,7 +1665,7 @@ const ToolOutputDialog: React.FC<ToolOutputDialogProps> = ({ popup, onOpenChange
                                     );
                                 }
 
-                                if (tool === 'task' || tool === 'reasoning') {
+                                if (tool === 'task' || tool === 'subagent' || tool === 'reasoning') {
                                     return (
                                         <div className={tool === 'reasoning' ? "text-muted-foreground/70" : ""}>
                                             <SimpleMarkdownRenderer content={popup.content} variant="tool" />

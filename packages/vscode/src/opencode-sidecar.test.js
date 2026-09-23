@@ -5,12 +5,15 @@ import path from 'node:path';
 import {
   clearDetectedOpencodeCliPathCache,
   createLegacyOpenCodeBinaryError,
+  evaluateSidecarExecutionAdmission,
   evaluateV1MigrationGate,
   fetchOpenCodeHealth,
   fetchV1MigrationGate,
   isLegacyOpenCodeCliBasename,
   parseOpenCodeListeningLine,
   resolveDetectedOpencodeCliPath,
+  RUNTIME_CONTRACT_MAX_VERIFIED,
+  RUNTIME_CONTRACT_MIN_VERIFIED,
 } from './opencode-sidecar.ts';
 
 const originalFetch = globalThis.fetch;
@@ -96,6 +99,43 @@ describe('parseOpenCodeListeningLine', () => {
       kind: 'invalid',
       line: 'server listening without a url',
     });
+  });
+});
+
+describe('evaluateSidecarExecutionAdmission (ticket 11)', () => {
+  test('admits verified serve for core execution', () => {
+    const result = evaluateSidecarExecutionAdmission({
+      serveVersion: '2.0.12',
+      reachable: true,
+      healthOk: true,
+      migrationAdmitTranscript: true,
+    });
+    expect(result.executionAllowed).toBe(true);
+    expect(result.phase).toBe('ready');
+    expect(result.versionBand).toBe('verified');
+    expect(result.minVerifiedVersion).toBe(RUNTIME_CONTRACT_MIN_VERIFIED);
+    expect(result.maxVerifiedVersion).toBe(RUNTIME_CONTRACT_MAX_VERIFIED);
+  });
+
+  test('blocks unverified-newer and below-min while keeping diagnostics phase', () => {
+    const newer = evaluateSidecarExecutionAdmission({
+      serveVersion: '2.1.0',
+      reachable: true,
+      healthOk: true,
+      migrationAdmitTranscript: true,
+    });
+    expect(newer.phase).toBe('ready-unverified');
+    expect(newer.executionAllowed).toBe(false);
+    expect(newer.protocolCompatible).toBe(true);
+
+    const older = evaluateSidecarExecutionAdmission({
+      serveVersion: '2.0.5',
+      reachable: true,
+      healthOk: true,
+      migrationAdmitTranscript: true,
+    });
+    expect(older.phase).toBe('incompatible');
+    expect(older.executionAllowed).toBe(false);
   });
 });
 

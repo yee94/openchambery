@@ -64,6 +64,13 @@ export function createGlobalMessageStreamHub({
   upstreamReconnectDelayMs,
   replayLimit = MESSAGE_STREAM_GLOBAL_REPLAY_LIMIT,
   getRuntimeIdentity = null,
+  /**
+   * Optional Host authority projection for session.created / session.updated
+   * (and GlobalEvent wrap). Applied before fan-out and replay so browser and
+   * server subscribers share the same archive view. Must be sync and cheap.
+   * @type {((payload: unknown) => unknown) | null}
+   */
+  projectOutboundSessionPayload = null,
 }) {
   const eventSubscribers = new Set();
   const statusSubscribers = new Set();
@@ -97,12 +104,19 @@ export function createGlobalMessageStreamHub({
     }
   };
 
+  let sessionPayloadProjector = typeof projectOutboundSessionPayload === 'function'
+    ? projectOutboundSessionPayload
+    : null;
+
+  /**
+   * Diff-summarize only. Host archive projection is applied at fan-out and
+   * replayAfter time against the *current* committed store — never baked into
+   * the replay buffer (stale archive stamps must not stick after Host writes).
+   */
   const normalizeEvent = ({ envelope, payload, connectionContext }) => {
     const directory =
       typeof envelope?.directory === 'string' && envelope.directory.length > 0 ? envelope.directory : 'global';
     const eventId = typeof envelope?.eventId === 'string' && envelope.eventId.length > 0 ? envelope.eventId : undefined;
-    // Summarize FileDiff bodies before fan-out and replay buffering so reconnect
-    // replay cannot re-amplify full patch frames into >64KB WS payloads.
     const outboundPayload = summarizeOutboundEventPayload(payload);
     return {
       envelope,
@@ -111,6 +125,19 @@ export function createGlobalMessageStreamHub({
       eventId,
       ...(connectionContext ? { runtimeIdentity: connectionContext } : {}),
     };
+  };
+
+  const projectForOutbound = (payload) => {
+    if (typeof sessionPayloadProjector !== 'function') return payload;
+    try {
+      const projected = sessionPayloadProjector(payload);
+      // null = Host not ready; suppress this lifecycle frame.
+      if (projected == null) return null;
+      return projected;
+    } catch (error) {
+      console.warn('[event-stream] session payload projection failed:', error?.message ?? error);
+      return payload;
+    }
   };
 
   const start = () => {
@@ -161,6 +188,7 @@ export function createGlobalMessageStreamHub({
           ...event,
           connectionContext: event?.connectionContext ?? activeConnectionRuntimeIdentity,
         });
+        // Buffer the unprojected payload so reconnect replay uses current Host authority.
         if (normalized.eventId) {
           replay.push(normalized);
           if (replay.length > replayLimit) {
@@ -168,8 +196,14 @@ export function createGlobalMessageStreamHub({
           }
         }
 
+        const projectedPayload = projectForOutbound(normalized.payload);
+        if (projectedPayload == null) return;
+        const outbound = projectedPayload === normalized.payload
+          ? normalized
+          : { ...normalized, payload: projectedPayload };
+
         for (const subscriber of Array.from(eventSubscribers)) {
-          notifySubscriber('event', subscriber, normalized);
+          notifySubscriber('event', subscriber, outbound);
         }
       },
       onError(error) {
@@ -227,10 +261,21 @@ export function createGlobalMessageStreamHub({
       }
 
       const index = replay.findIndex((entry) => entry.eventId === eventId);
-      return index === -1 ? [] : replay.slice(index + 1);
+      if (index === -1) return [];
+      // Re-project with current committed Host authority at replay time.
+      const out = [];
+      for (const entry of replay.slice(index + 1)) {
+        const projectedPayload = projectForOutbound(entry.payload);
+        if (projectedPayload == null) continue;
+        out.push(projectedPayload === entry.payload ? entry : { ...entry, payload: projectedPayload });
+      }
+      return out;
     },
     setRuntimeIdentityProvider(provider) {
       runtimeIdentityProvider = typeof provider === 'function' ? provider : null;
+    },
+    setSessionPayloadProjector(projector) {
+      sessionPayloadProjector = typeof projector === 'function' ? projector : null;
     },
   };
 }

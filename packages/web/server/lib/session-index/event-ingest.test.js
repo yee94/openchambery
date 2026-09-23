@@ -78,4 +78,77 @@ describe('session index event ingest', () => {
     expect(service.touchActivity).toHaveBeenCalledWith('ses_1', 400);
     expect(service.updateStatus).toHaveBeenCalledWith('ses_1', 'idle', 400);
   });
+
+  it('projects Host archive onto session upserts and cleans metadata on delete', () => {
+    const service = {
+      upsertAndReportChange: vi.fn(() => true),
+      remove: vi.fn(() => true),
+    };
+    const onSessionDeleted = vi.fn();
+    const projectSession = (session) => ({
+      ...session,
+      time: { ...session.time, archived: 77 },
+    });
+
+    applySessionIndexEvent(service, {
+      directory: '/repo',
+      payload: {
+        type: 'session.updated',
+        properties: { info: { id: 'ses_1', title: 'S', time: { created: 1, updated: 1 } } },
+      },
+    }, 100, { projectSession, isHostReady: () => true });
+
+    expect(service.upsertAndReportChange).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'ses_1', time: { created: 1, updated: 1, archived: 77 } }),
+      100,
+      { preserveActivity: true },
+    );
+
+    applySessionIndexEvent(service, {
+      payload: { type: 'session.deleted', properties: { sessionID: 'ses_1' } },
+    }, 200, { onSessionDeleted });
+    expect(service.remove).toHaveBeenCalledWith('ses_1');
+    expect(onSessionDeleted).toHaveBeenCalledWith('ses_1');
+  });
+
+  it('supports v2 data.info and versioned type suffixes', () => {
+    const service = { upsertAndReportChange: vi.fn(() => true) };
+    applySessionIndexEvent(service, {
+      directory: '/repo',
+      payload: {
+        type: 'session.updated.v2',
+        data: { info: { id: 'ses_v2', title: 'V2', time: { created: 1, updated: 2 } } },
+      },
+    }, 50, { isHostReady: () => true });
+    expect(service.upsertAndReportChange).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'ses_v2', directory: '/repo' }),
+      50,
+      { preserveActivity: true },
+    );
+  });
+
+  it('skips lifecycle index writes when Host is not ready (keeps prior rows)', () => {
+    const service = { upsertAndReportChange: vi.fn(() => true) };
+    expect(applySessionIndexEvent(service, {
+      payload: {
+        type: 'session.updated',
+        properties: { info: { id: 'ses_1', time: { created: 1, updated: 1 } } },
+      },
+    }, 1, { isHostReady: () => false })).toBe(false);
+    expect(service.upsertAndReportChange).not.toHaveBeenCalled();
+  });
+
+  it('skips index write when projectSession fails (not empty success)', () => {
+    const service = { upsertAndReportChange: vi.fn(() => true) };
+    expect(applySessionIndexEvent(service, {
+      payload: {
+        type: 'session.updated',
+        properties: { info: { id: 'ses_1', time: { created: 1, updated: 1 } } },
+      },
+    }, 1, {
+      isHostReady: () => true,
+      projectSession: () => { throw new Error('store down'); },
+    })).toBe(false);
+    expect(service.upsertAndReportChange).not.toHaveBeenCalled();
+  });
 });

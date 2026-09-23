@@ -412,6 +412,8 @@ export function diagnosticsKindForCommand(command: TranscriptCommand): Transcrip
       return "durable-seed"
     case "remove-message":
       return "purge"
+    case "revert-committed":
+      return "purge"
     default:
       return null
   }
