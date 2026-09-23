@@ -1259,6 +1259,7 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
                                 isMessageCompleted={isMessageCompleted}
                                 messageFinish={messageFinish}
                                 messageCompletedAt={messageCompletedAt ?? undefined}
+                                messageStreamedAt={message.info.time.streamed}
                                 messageCreatedAt={messageCreatedAt ?? undefined}
                                 messageTokens={messageTokens}
                                  isMobile={isMobile}

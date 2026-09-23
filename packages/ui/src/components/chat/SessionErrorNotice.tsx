@@ -20,9 +20,9 @@ export const SessionErrorNotice = ({ sessionId, directory, hasInlineError = fals
   const text = presentation?.text ?? t('chat.chatInput.toast.messageSendFailed');
   return (
     <div className="chat-column pb-2" data-session-error={sessionId}>
-      <div role="alert" className="inline-flex max-w-full items-start gap-1.5 rounded-md border border-[var(--status-error-border)]/45 bg-[var(--status-error-background)]/50 px-2 py-1 typography-meta text-[var(--status-error)]">
-        <Icon name="error-warning" className="mt-0.5 size-3.5 shrink-0" aria-hidden="true" />
-        <span className="min-w-0 whitespace-pre-wrap break-words">{text}</span>
+      <div role="alert" className="inline-flex w-fit max-w-full items-start gap-1.5 rounded-lg border border-[var(--status-error-border)]/45 bg-[var(--status-error-background)]/50 px-2 py-0.5 typography-meta text-muted-foreground">
+        <Icon name="error-warning" className="mt-0.5 size-3.5 shrink-0 text-[var(--status-error)]" aria-hidden="true" />
+        <span className="min-w-0 whitespace-pre-wrap [overflow-wrap:anywhere]">{text}</span>
       </div>
     </div>
   );

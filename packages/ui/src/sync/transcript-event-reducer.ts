@@ -12,6 +12,7 @@ import { conversationIndexOf } from "./conversation-order"
 import { syncDebug } from "./debug"
 import type { DirectoryEventResult, SessionMaterializationReason } from "./event-reducer"
 import { applySessionCompactionLiveEvent } from "./session-compaction-api"
+import { normalizeSessionProjectionMessage } from "./session-projection-api"
 
 export type TranscriptEventDraft = {
   message: Record<string, Message[]>
@@ -193,6 +194,7 @@ export function mergeTranscriptMessageUpdate(existing: Message, incoming: Messag
 }
 
 function areMessageUpdateFieldsEqual(existing: Message, next: Message): boolean {
+  if (existing.time.streamed !== next.time.streamed) return false
   if (existing.role !== next.role) return false
   if ((existing as { finish?: unknown }).finish !== (next as { finish?: unknown }).finish) return false
   if ((existing.time as { completed?: number })?.completed !== (next.time as { completed?: number })?.completed) return false
@@ -619,6 +621,14 @@ function applyStepLifecycle(
       ...modelMetaFromStep(props),
     })
   }
+  if (type === "session.step.streamed") {
+    if (!eventCreated) return false
+    ensureAssistantMessage(draft, sessionID, messageID, { created: eventCreated })
+    return patchAssistantMessage(draft, sessionID, messageID, {
+      id: messageID, sessionID, role: "assistant",
+      time: { created: existingAssistantCreated(draft, sessionID, messageID) ?? eventCreated, streamed: eventCreated },
+    })
+  }
   if (type === "session.step.ended") {
     ensureAssistantMessage(draft, sessionID, messageID, { created: eventCreated })
     const finish = asString(props.finish)
@@ -778,13 +788,37 @@ function applyV2LiveOverlay(draft: TranscriptEventDraft, event: Event): Director
   const props = asRecord(event.properties)
   if (!props) return false
   const sessionID = asString(props.sessionID)
+  if (sessionID && (type === "session.shell.started" || type === "session.shell.ended")) {
+    const shell = asRecord(props.shell)
+    const shellID = asString(shell?.id)
+    if (!shell || !shellID) return false
+    const messages = draft.message[sessionID] ?? []
+    const existing = messages.find((message) => draft.part[message.id]?.some(
+      (part) => part.type === "text" && part.shellAction?.shellID === shellID,
+    ))
+    // End events carry shell identity; a missed start is recovered by the terminal GET.
+    const id = existing?.id ?? (type === "session.shell.started" && event.id ? event.id.replace(/^evt_/, "msg_") : undefined)
+    if (!id) return false
+    if (type === "session.shell.started" && existing) return false
+    const row = normalizeSessionProjectionMessage(sessionID, {
+      id, type: "shell", shellID, command: shell.command, status: shell.status, exit: shell.exit,
+      output: props.output,
+      time: { created: existing?.time.created ?? readEventCreated(props),
+        ...(type === "session.shell.ended" ? { completed: readEventCreated(props) } : {}) },
+    })
+    if (!row) return false
+    if (existing && areJsonEquivalent(existing, row.info) && areJsonEquivalent(draft.part[id], row.parts)) return false
+    draft.message[sessionID] = existing ? messages.map((message) => message.id === id ? row.info : message) : [...messages, row.info]
+    draft.part[id] = row.parts
+    return true
+  }
   const messageID = asString(props.assistantMessageID)
   if (!sessionID || !messageID) return false
   const ordinal = typeof props.ordinal === "number" ? props.ordinal : 0
   const bootstrap: AssistantBootstrapMeta = { created: readEventCreated(props) }
 
   // Official step lifecycle carries finish/cost/tokens and identity metadata.
-  if (type === "session.step.started" || type === "session.step.ended" || type === "session.step.failed") {
+  if (type === "session.step.started" || type === "session.step.streamed" || type === "session.step.ended" || type === "session.step.failed") {
     return applyStepLifecycle(draft, type, sessionID, messageID, props)
   }
 

@@ -148,6 +148,7 @@ const areRenderRelevantMessageInfoEqual = (left: Message, right: Message): boole
     && (left as { userMessageMarker?: unknown }).userMessageMarker === (right as { userMessageMarker?: unknown }).userMessageMarker
     && ((left as { time?: { created?: unknown; completed?: unknown } }).time?.created ?? null) === ((right as { time?: { created?: unknown; completed?: unknown } }).time?.created ?? null)
     && ((left as { time?: { created?: unknown; completed?: unknown } }).time?.completed ?? null) === ((right as { time?: { created?: unknown; completed?: unknown } }).time?.completed ?? null)
+    && left.time?.streamed === right.time?.streamed
     // Token counts feed the assistant TPS footer; a tokens-only message
     // update (late settle tick, authority repair) must still re-render.
     && areMessageTokensEqual((left as { tokens?: unknown }).tokens, (right as { tokens?: unknown }).tokens);

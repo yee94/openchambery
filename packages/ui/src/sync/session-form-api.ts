@@ -40,6 +40,7 @@ export type SessionFormField =
       placeholder?: string
       default?: string
       options?: SessionFormOption[]
+      custom?: boolean
     }
   | {
       key: string
@@ -173,6 +174,7 @@ function parseField(value: unknown): SessionFormField | null {
       ...(asString(value.placeholder) ? { placeholder: asString(value.placeholder) } : {}),
       ...(typeof value.default === "string" ? { default: value.default } : {}),
       ...(options && options.length > 0 ? { options } : {}),
+      ...(typeof value.custom === "boolean" ? { custom: value.custom } : {}),
     }
   }
   if (type === "number" || type === "integer") {

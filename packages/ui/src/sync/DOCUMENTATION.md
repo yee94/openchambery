@@ -1,5 +1,13 @@
 # Sync architecture, event handling & store update rules
 
+## OpenCode 2 shell, form replies, and stream timing
+
+`session-projection-api.ts` projects native `shell` rows into user-owned `shellAction` cards, preserving command, output, and running/success/failure state. The transcript reducer handles `session.shell.started` / `ended` using the SDK's event-to-message ID rule and shell identity. Terminal shell events trigger the existing bounded active-session materialization to recover a missed start.
+
+Question reply adapters fetch `session.form.get` on the captured scoped client before `session.form.reply`. The form schema owns answer keys, option values, and scalar/array types; failures preserve the request for retry. No list-key cache or synthetic field keys participate in submission.
+
+Projection and live `session.step.streamed` preserve the upstream `time.streamed` clock through completion. Footer and context TPS consume that clock with authoritative token usage. Historical rows without it retain their legacy timing fallback. OpenCode client 2.0.12 exposes these measurement inputs rather than a precomputed TPS field.
+
 ## Session model switch on send (OpenCode 2.x)
 
 Official OpenCode 2.0.12 runs each turn from authoritative **`session.model`** /

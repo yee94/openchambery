@@ -624,6 +624,7 @@ export const ContextPanelContent: React.FC = () => {
               const assistantTpsLabel = (() => {
                 if (!showAssistantTps || !isAssistant || !tokens) return null;
                 const tps = computeAssistantTps({
+                  streamedAt: message.info.time?.streamed,
                   createdAt: messageCreatedAt,
                   completedAt: messageCompletedAt,
                   outputTokens: tokens.output,

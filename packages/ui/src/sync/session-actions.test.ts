@@ -122,6 +122,7 @@ const mocks = vi.hoisted(() => {
     })
 
   const mockSessionForm = {
+    get: vi.fn(async () => ({ fields: [{ key: "choice", type: "string" }] })),
     reply: vi.fn((params: Record<string, unknown>) => {
       replyCalls.push({ method: "session.form.reply", params })
       if (state.questionReplyError) return Promise.reject(state.questionReplyError)
@@ -3828,8 +3829,21 @@ describe("respondToQuestion passes directory", () => {
     expect(replyCalls[0].method).toBe("session.form.reply")
     expect(replyCalls[0].params.formID).toBe("q-1")
     expect(replyCalls[0].params.sessionID).toBe("session-a")
-    expect(replyCalls[0].params.answer).toEqual({ field_0: "answer1" })
+    expect(replyCalls[0].params.answer).toEqual({ choice: "answer1" })
     expect(scopedClientDirectories).toEqual(["/test/project"])
+  })
+
+  test("schema fetch failure preserves the question and retry reads its real keys", async () => {
+    const { setActionRefs, respondToQuestion } = await import("./session-actions")
+    const pending = buildQuestion("schema-question", "child")
+    const store = createStore({}, { question: { child: [pending] } })
+    setActionRefs(mockSdk as unknown as OpencodeClient, createChildStores([["/child", store]]), () => "/parent")
+    mockSdk.session.form.get.mockRejectedValueOnce(new Error("Schema unavailable"))
+    await expect(respondToQuestion("child", pending.id, [["Yes"]])).rejects.toThrow("Schema unavailable")
+    expect(replyCalls).toEqual([])
+    expect(store.getState().question.child).toEqual([pending])
+    await respondToQuestion("child", pending.id, [["Yes"]])
+    expect(replyCalls[0].params.answer).toEqual({ choice: "Yes" })
   })
 
   test("uses authoritative child directory over the selected parent directory", async () => {

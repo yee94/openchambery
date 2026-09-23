@@ -264,6 +264,7 @@ export type Message = {
   role: MessageRole;
   time: {
     created: number;
+    streamed?: number;
     completed?: number;
     start?: number;
     end?: number;
@@ -298,6 +299,7 @@ type ProjectionPartBase = {
 export type TextPart = ProjectionPartBase & {
   type: "text";
   text: string;
+  shellAction?: { command: string; output: string; status: string; shellID?: string };
   synthetic?: boolean;
   ignored?: boolean;
   time?: { start?: number; end?: number };

@@ -723,6 +723,7 @@ interface MessageBodyProps {
     isMessageCompleted: boolean;
     messageFinish?: string;
     messageCompletedAt?: number;
+    messageStreamedAt?: number;
     messageCreatedAt?: number;
     messageTokens?: { output?: number; reasoning?: number } | null;
 
@@ -1460,6 +1461,7 @@ const AssistantMessageBody = React.memo(({
     isMessageCompleted,
     messageFinish,
     messageCompletedAt,
+    messageStreamedAt,
     messageCreatedAt,
     messageTokens,
 
@@ -2316,6 +2318,7 @@ const AssistantMessageBody = React.memo(({
         const timingParts = sourceParts ?? parts;
         const counts = extractAssistantTokenCounts(timingParts, messageTokens);
         const tps = computeAssistantTps({
+            streamedAt: messageStreamedAt,
             createdAt: messageCreatedAt,
             completedAt: messageCompletedAt,
             fallbackDurationMs: turnGroupingContext?.durationMs,
@@ -2335,6 +2338,7 @@ const AssistantMessageBody = React.memo(({
         messageTokens,
         messageCreatedAt,
         messageCompletedAt,
+        messageStreamedAt,
         turnGroupingContext?.durationMs,
     ]);
 

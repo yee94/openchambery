@@ -47,6 +47,7 @@ const CURRENT_ACTIVITY_PREFIXES = [
   "session.text.",
   "session.reasoning.",
   "session.tool.",
+  "session.shell.",
   "session.compaction.",
 ] as const
 
@@ -55,6 +56,7 @@ const CURRENT_TERMINAL_TYPES = new Set([
   "session.next.step.failed",
   "session.step.ended",
   "session.step.failed",
+  "session.shell.ended",
 ])
 
 function stripVersionSuffix(type: string): string {

@@ -169,26 +169,28 @@ export function mapV2QuestionRequest(item: V2QuestionLike): QuestionRequest {
   }
 }
 
-/** Build session.form.reply `answer` from legacy string[][] answers + form field keys. */
+/** Build session.form.reply answers with the authoritative field keys and value types. */
 export function answersToFormAnswer(
   answers: string[][],
-  fieldKeys?: readonly string[],
+  fields: NonNullable<V2QuestionLike["fields"]>,
 ): Record<string, string | number | boolean | string[]> {
-  const keys = fieldKeys && fieldKeys.length > 0
-    ? fieldKeys
-    : answers.map((_, index) => `field_${index}`)
   const answer: Record<string, string | number | boolean | string[]> = {}
-  if (keys.length === 0) {
-    return answer
-  }
-  for (let index = 0; index < keys.length; index += 1) {
-    const key = keys[index]
-    const values = answers[index] ?? []
-    if (values.length > 1) {
-      answer[key] = values
-    } else {
-      answer[key] = values[0] ?? ""
-    }
+  for (let index = 0; index < fields.length; index += 1) {
+    const field = fields[index]
+    const values = (answers[index] ?? []).map((value) =>
+      field.options?.find((option) => (option.label || option.value) === value)?.value ?? value)
+    const value = values[0] ?? ""
+    if (field.type === "multiselect") answer[field.key] = values
+    else if (field.type === "number" || field.type === "integer") {
+      const number = Number(value)
+      if (!value.trim() || !Number.isFinite(number) || (field.type === "integer" && !Number.isInteger(number))) {
+        throw new Error(`Invalid numeric answer for ${field.key}`)
+      }
+      answer[field.key] = number
+    } else if (field.type === "boolean") {
+      if (value !== "true" && value !== "false") throw new Error(`Invalid boolean answer for ${field.key}`)
+      answer[field.key] = value === "true"
+    } else answer[field.key] = value
   }
   // Extra answer rows without field keys are ignored; form schema owns keys.
   return answer
