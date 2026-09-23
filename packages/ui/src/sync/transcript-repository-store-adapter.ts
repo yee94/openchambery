@@ -122,11 +122,8 @@ function readBoundary(
   return state.session_history_boundary?.[sessionID] ?? UNKNOWN_SESSION_HISTORY_BOUNDARY
 }
 
-function sortParts(parts: readonly Part[]): Part[] {
-  return parts
-    .filter((part) => !!part?.id)
-    .slice()
-    .sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
+function normalizeParts(parts: readonly Part[]): Part[] {
+  return parts.filter((part) => !!part?.id)
 }
 
 function boundariesEqual(
@@ -422,7 +419,7 @@ function applyOptimisticAdd(
     messages.push(command.message)
   }
   message[sessionID] = messages
-  part[command.message.id] = sortParts(command.parts)
+  part[command.message.id] = normalizeParts(command.parts)
 
   store.setState({ message, part })
   return { applied: true, changed: true }

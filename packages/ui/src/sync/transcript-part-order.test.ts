@@ -1,4 +1,4 @@
-import { describe, expect, test, vi } from "vitest"
+import { afterEach, describe, expect, test, vi } from "vitest"
 import { QueryClient } from "@tanstack/react-query"
 import type { Message, Part } from "@/lib/opencode/v2-types"
 import type { Event } from "./types"
@@ -43,7 +43,12 @@ const page = () => ({ records: [fixture()], complete: true, turnCount: 0 })
 const event = (type: string, properties: Record<string, unknown>) => ({ type, properties }) as Event
 
 function repository(kind: "query" | "store") {
-  if (kind === "query") return createQueryTranscriptRepository({ client: new QueryClient(), transport: "test", generation: 1 })
+  if (kind === "query") {
+    const client = new QueryClient()
+    const repo = createQueryTranscriptRepository({ client, transport: "test", generation: 1 })
+    cleanups.push(() => { repo.destroy(); client.clear() })
+    return repo
+  }
   let state: SessionMessageReducerState = { message: {}, part: {} }
   const store: TranscriptStoreSurface = {
     getState: () => state,
@@ -53,12 +58,15 @@ function repository(kind: "query" | "store") {
   return createStoreTranscriptRepository({ getStore: () => store })
 }
 
+const cleanups: Array<() => void> = []
+afterEach(() => { for (const cleanup of cleanups.splice(0)) cleanup() })
+
 describe("transcript content order", () => {
   test.each([undefined, "older-cursor"])("production fetch preserves native content order (cursor %s)", async (before) => {
     fetchPage.mockResolvedValue(page())
     fetchContext.mockResolvedValue(page())
     const result = await fetchProductionTranscriptTransportPage({ ...scope, before, limit: 20, signal: new AbortController().signal })
-    expect(ids(result.records[0].parts)).toEqual(ids(fixture().parts))
+    expect(ids(result.records[0].parts ?? [])).toEqual(ids(fixture().parts))
   })
 
   describe.each(["query", "store"] as const)("%s repository", (kind) => {
@@ -66,7 +74,6 @@ describe("transcript content order", () => {
       const repo = repository(kind)
       repo.apply(scope, { type: "http-page", purpose, page: page() })
       expect(ids(repo.getParts(scope, messageID))).toEqual(ids(fixture().parts))
-      repo.destroy()
     })
 
     test("optimistic insertion keeps supplied part order", () => {
@@ -74,7 +81,6 @@ describe("transcript content order", () => {
       const record = fixture()
       repo.apply(scope, { type: "optimistic-add", message: record.info, parts: record.parts })
       expect(ids(repo.getParts(scope, messageID))).toEqual(ids(record.parts))
-      repo.destroy()
     })
 
     test("part updates, deltas, replacement and removal locate identity without sorting", () => {
@@ -92,7 +98,6 @@ describe("transcript content order", () => {
       expect(ids(repo.getParts(scope, messageID))).toEqual([...ids(record.parts), appended.id])
       repo.apply(scope, { type: "sse-event", event: event("message.part.removed", { sessionID: scope.sessionID, messageID, partID: "call-z" }) })
       expect(ids(repo.getParts(scope, messageID))).toEqual([...ids(record.parts).filter((id) => id !== "call-z"), appended.id])
-      repo.destroy()
     })
 
     test("authority refresh repairs a previously id-sorted cache", () => {
@@ -101,7 +106,35 @@ describe("transcript content order", () => {
       repo.apply(scope, { type: "http-page", purpose: "initial", page: { ...page(), records: [{ ...record, parts: [...record.parts].sort((a, b) => a.id.localeCompare(b.id)) }] } })
       repo.apply(scope, { type: "http-page", purpose: "recovery", page: page() })
       expect(ids(repo.getParts(scope, messageID))).toEqual(ids(record.parts))
-      repo.destroy()
+    })
+
+    test("V2 stream order survives a matching HTTP snapshot and repeated updates", () => {
+      const repo = repository(kind)
+      const properties = { sessionID: scope.sessionID, assistantMessageID: messageID }
+      for (const [type, extra] of [
+        ["session.reasoning.delta", { ordinal: 0, delta: "Inspect the project" }],
+        ["session.text.delta", { ordinal: 0, delta: "First read the build instructions." }],
+        ["session.tool.input.started", { id: "call-z", name: "read" }],
+        ["session.text.delta", { ordinal: 1, delta: "Now build the application." }],
+        ["session.tool.input.started", { id: "call-a", name: "shell" }],
+      ] as const) {
+        repo.apply(scope, { type: "sse-event", event: event(type, { ...properties, ...extra }) })
+      }
+      expect(ids(repo.getParts(scope, messageID))).toEqual(ids(fixture().parts))
+      repo.apply(scope, { type: "http-page", purpose: "recovery", page: page() })
+      expect(ids(repo.getParts(scope, messageID))).toEqual(ids(fixture().parts))
+      const settled = repo.getParts(scope, messageID)
+      repo.apply(scope, { type: "http-page", purpose: "recovery", page: page() })
+      expect(repo.getParts(scope, messageID)).toBe(settled)
+    })
+
+    test("server replacement keeps an optimistic part in its original slot", () => {
+      const repo = repository(kind)
+      const record = fixture()
+      const optimistic = { ...record.parts[1], id: "zzz-placeholder", __openchamberOptimistic: true }
+      repo.apply(scope, { type: "optimistic-add", message: record.info, parts: [optimistic, record.parts[2]] })
+      repo.apply(scope, { type: "sse-event", event: event("message.part.updated", { part: record.parts[1] }) })
+      expect(ids(repo.getParts(scope, messageID))).toEqual([record.parts[1].id, record.parts[2].id])
     })
   })
 

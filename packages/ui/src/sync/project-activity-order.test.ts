@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, test, vi } from 'vitest';
-import type { Event } from '@opencode-ai/sdk/v2/client';
+import type { Event } from './types';
 import { useProjectsStore } from '@/stores/useProjectsStore';
 import { useGlobalSessionStatusStore } from './global-session-status';
 import { handleEvent } from './sync-context';

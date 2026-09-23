@@ -2109,7 +2109,7 @@ export function handleEvent(
   // synced directories; this map covers sessions a child store doesn't list
   // (unopened directories, or list/status races for just-created sessions).
   const statusSessionID = payload.type === "session.status" || payload.type === "session.idle" || payload.type === "session.error"
-    ? payload.properties.sessionID
+    ? getSessionIdFromPayload(payload)
     : undefined
   const previousStatus = statusSessionID
     ? childStores.getChild(directory)?.getState().session_status[statusSessionID]?.type

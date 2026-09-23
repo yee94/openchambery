@@ -632,11 +632,8 @@ function partsArraysEqualByRefOrContent(
   return true
 }
 
-function sortParts(parts: readonly Part[]): Part[] {
-  return parts
-    .filter((part) => !!part?.id)
-    .slice()
-    .sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
+function normalizeParts(parts: readonly Part[]): Part[] {
+  return parts.filter((part) => !!part?.id)
 }
 
 /** Resolve after the reducer applied `event`, so newly created rows are visible in `draft`. */
@@ -1122,7 +1119,7 @@ function applyOptimisticAdd(
     // and the bubble never appears at the tail.
     messages.push(message)
   }
-  const part = { ...flat.part, [message.id]: sortParts(parts) }
+  const part = { ...flat.part, [message.id]: normalizeParts(parts) }
 
   const pages = base.pages.map((page, pageIndex) => {
     const isTail = pageIndex === base.pages.length - 1

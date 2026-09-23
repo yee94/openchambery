@@ -15,6 +15,11 @@ on:
         required: false
         default: false
         type: boolean
+      skip_ota:
+        description: 'Publish installers and packages without updating mobile OTA'
+        required: false
+        default: false
+        type: boolean
       relay_only:
         description: 'Publish only the Relay Docker image'
         required: false
@@ -134,6 +139,7 @@ jobs:
         uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2.6.2
         with:
           tag_name: v${{ steps.get_version.outputs.version }}
+          target_commitish: ${{ github.sha }}
           draft: true
           prerelease: ${{ steps.get_version.outputs.is_prerelease == 'true' }}
           generate_release_notes: false
@@ -592,7 +598,7 @@ jobs:
   mobile-native-targets:
     name: Publish mobile nativeTargets to OTA
     needs: [create-release, mobile-release]
-    if: ${{ always() && !cancelled() && needs.create-release.result == 'success' && needs.mobile-release.result == 'success' && (github.event_name != 'workflow_dispatch' || !inputs.dry_run) }}
+    if: ${{ always() && !cancelled() && needs.create-release.result == 'success' && needs.mobile-release.result == 'success' && (github.event_name != 'workflow_dispatch' || (!inputs.dry_run && !inputs.skip_ota)) }}
     runs-on: ubuntu-latest
     concurrency:
       group: mobile-ota-production
