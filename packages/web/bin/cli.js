@@ -107,7 +107,7 @@ async function checkOpenCodeCLI(onNotice, options = {}) {
   }
 
   let discovered = '';
-  for (const name of ['opencode', 'opencode2']) {
+  for (const name of ['opencode']) {
     const resolvedFromPath = searchPathFor(name);
     if (!resolvedFromPath) continue;
     try {

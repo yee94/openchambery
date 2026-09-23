@@ -254,6 +254,8 @@ const BUILT_IN_TOOL_ALIASES: Record<string, string> = {
   // OpenCode 2 renamed `apply_patch` to `patch`; transcript projection does the
   // same, and this alias covers any raw name that still reaches the UI.
   patch: 'apply_patch',
+  // V2 has no multiedit tool. Historical parts use the edit label.
+  multiedit: 'edit',
   // Native OpenCode tool name — same display / task-row family as plugin `task`.
   subagent: 'task',
   structuredoutput: 'structuredoutput',
@@ -263,7 +265,6 @@ const BUILT_IN_TOOL_DISPLAY_KEYS = {
   read: 'chat.tools.display.read',
   write: 'chat.tools.display.write',
   edit: 'chat.tools.display.edit',
-  multiedit: 'chat.tools.display.multiedit',
   apply_patch: 'chat.tools.display.apply_patch',
   bash: 'chat.tools.display.bash',
   grep: 'chat.tools.display.grep',

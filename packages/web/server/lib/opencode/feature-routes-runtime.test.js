@@ -3,6 +3,14 @@ import { describe, expect, it, vi } from 'vitest';
 import { createWorktreeTopologyBroadcaster } from './feature-routes-runtime.js';
 
 describe('feature routes runtime composition', () => {
+  it('passes live shared-service ownership from the host to upgrade routes', async () => {
+    const host = await fs.readFile(new URL('../../index.js', import.meta.url), 'utf8');
+    const routes = await fs.readFile(new URL('./feature-routes-runtime.js', import.meta.url), 'utf8');
+    expect(host).toContain('getIsSharedOpenCodeService: () => openCodeLifecycleRuntime.isSharedOpenCodeService()');
+    expect(routes).toMatch(/getIsSharedOpenCodeService = \(\) => false,[\s\S]*\} = routeDependencies;/);
+    expect(routes).toMatch(/registerOpenCodeRoutes\(app, \{[^}]*getIsSharedOpenCodeService,/);
+  });
+
   it('wires Host isolation persist into scheduled-task runtime from the composition root', async () => {
     const source = await fs.readFile(new URL('../../index.js', import.meta.url), 'utf8');
     expect(source).toMatch(/createScheduledTasksRuntime\(\{[\s\S]*persistSessionMetadata: persistSessionMetadataToStore/);

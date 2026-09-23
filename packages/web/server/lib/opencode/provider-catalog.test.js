@@ -204,6 +204,54 @@ describe('projectProviderCatalog', () => {
     expect(result.value.partial).toBe(true);
   });
 
+  it('projects v2 variant arrays, capability lists, and tiered cost without leaking request payloads', () => {
+    const result = projectProviderCatalog({
+      providers: [{
+        id: 'openai',
+        name: 'OpenAI',
+        models: {
+          'gpt-5': {
+            id: 'gpt-5',
+            name: 'GPT 5',
+            capabilities: {
+              tools: true,
+              input: ['text', 'image', 'secret-modality'],
+              output: ['text'],
+            },
+            cost: [
+              { tier: { type: 'context', size: 200000 }, input: 9, output: 9, cache: { read: 1, write: 1 } },
+              { input: 1, output: 2, cache: { read: 0.1, write: 0.2 }, secret: 'cost-sentinel' },
+            ],
+            variants: [
+              { id: 'low', settings: { reasoningEffort: 'low', apiKey: 'variant-settings-sentinel' }, headers: { Authorization: 'variant-headers-sentinel' } },
+              { id: 'high', body: { store: false } },
+              { id: 'low' },
+              { id: 'constructor' },
+              'max',
+              { settings: { token: 'variant-missing-id-sentinel' } },
+            ],
+          },
+        },
+      }],
+      default: {},
+    });
+
+    expect(result.ok).toBe(true);
+    expect(result.value.partial).toBe(false);
+    expect(result.value.providers[0].models['gpt-5']).toEqual({
+      id: 'gpt-5',
+      name: 'GPT 5',
+      capabilities: {
+        toolcall: true,
+        input: { text: true, image: true },
+        output: { text: true },
+      },
+      cost: { input: 1, output: 2, cache: { read: 0.1, write: 0.2 } },
+      variants: { low: {}, high: {}, max: {} },
+    });
+    expect(JSON.stringify(result.value)).not.toContain('sentinel');
+  });
+
   it('treats empty/null release_date as absent without marking the catalog partial', () => {
     const catalog = safeCatalog();
     catalog.providers[0].models['gpt-5'].release_date = '';

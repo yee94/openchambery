@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 
 const directory = dirname(fileURLToPath(import.meta.url));
 const settingsSource = readFileSync(join(directory, 'OpenChamberVisualSettings.tsx'), 'utf8');
+const pageSource = readFileSync(join(directory, 'OpenChamberPage.tsx'), 'utf8');
 const searchSource = readFileSync(join(directory, '../../../lib/settings/search.ts'), 'utf8');
 const messagesDirectory = join(directory, '../../../lib/i18n/messages');
 const localeFiles = ['en.settings.ts', 'es.settings.ts', 'fr.settings.ts', 'ja.settings.ts', 'ko.settings.ts', 'pl.settings.ts', 'pt-BR.settings.ts', 'uk.settings.ts', 'zh-CN.settings.ts', 'zh-TW.settings.ts'];
@@ -12,6 +13,10 @@ const localeFiles = ['en.settings.ts', 'es.settings.ts', 'fr.settings.ts', 'ja.s
 describe('iOS native UI appearance setting', () => {
   test('registers the matching settings search anchor and localizes all copy', () => {
     expect(settingsSource).toContain('itemId="appearance.ios-native-ui"');
+    expect(settingsSource).toContain("shouldShow('iosNativeUi')");
+    expect(pageSource).toContain('"iosNativeUi"');
+    const chatSectionSource = pageSource.split('const ChatSectionContent')[1]?.split('const SessionsSectionContent')[0] ?? '';
+    expect(chatSectionSource).not.toContain('"iosNativeUi"');
     expect(settingsSource).toContain('canShowIosNativeUiSetting');
     expect(searchSource).toContain("id: 'appearance.ios-native-ui'");
     expect(searchSource).toContain("titleKey: 'settings.openchamber.visual.field.iosNativeUi'");

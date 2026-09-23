@@ -27,11 +27,15 @@ export const SavedPermissionsSection: React.FC = () => {
   const handleDelete = useEvent((id: string) => deletion.mutate({ scope, id }));
   const retry = useEvent(() => { void (project.isError ? project.refetch() : list.refetch()); });
 
+  if (!failed && !loading && items.length === 0) {
+    return null;
+  }
+
   return (
     <div data-settings-item="permissions.saved" className="mb-6">
       <SettingsGroup
         label={t('settings.permissions.saved.title')}
-        description={loading ? t('common.loading') : !failed && list.isSuccess && items.length === 0 ? t('settings.permissions.saved.empty') : undefined}
+        description={loading ? t('common.loading') : undefined}
       >
         {failed && (
           <SettingsRow label={<span role="alert">{t('settings.permissions.saved.loadFailed')}</span>}>

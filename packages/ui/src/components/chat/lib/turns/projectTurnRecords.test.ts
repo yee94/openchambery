@@ -118,7 +118,27 @@ describe('projectTurnRecords', () => {
 
         expect(projection.turns).toHaveLength(1);
         expect(projection.turns[0]?.assistantMessageIds).toEqual(['a1', 'a2', 'a3']);
+        expect(projection.turns[0]?.messages.map((record) => record.messageId)).toEqual(['u1', 'n0', 'a1', 'n1', 'a2', 'n2', 'a3']);
+        expect(projection.indexes.messageToTurnId.get('n1')).toBe('u1');
+        expect(projection.indexes.messageMetaById.get('n1')).toMatchObject({ isAssistantMessage: false, isUserMessage: false });
+        expect(projection.lastTurnMessageIds.has('n2')).toBe(true);
         expect(projection.ungroupedMessageIds.size).toBe(0);
+    });
+
+    test('notice-only changes invalidate their turn while unchanged history keeps its reference', () => {
+        const first = createMessageEntry({ id: 'u1', role: 'user', createdAt: 1 });
+        const answer = createMessageEntry({ id: 'a1', role: 'assistant', parentID: 'u1', createdAt: 2, finish: 'stop', completedAt: 3 });
+        const second = createMessageEntry({ id: 'u2', role: 'user', createdAt: 4 });
+        const notice: ChatMessageEntry = {
+            info: { id: 'notice', role: 'user', nativeType: 'synthetic', description: 'Continuing after restart', time: { created: 5 } } as unknown as Message,
+            parts: [],
+        };
+        const before = projectTurnRecords([first, answer, second]);
+        const after = projectTurnRecords([first, answer, second, notice], { previousProjection: before });
+        expect(after.turns[0]).toBe(before.turns[0]);
+        expect(after.turns[1]).not.toBe(before.turns[1]);
+        expect(after.turns[1].messages.at(-1)?.message).toBe(notice);
+        expect(projectTurnRecords([first, answer, second, notice], { previousProjection: after }).turns).toBe(after.turns);
     });
 
     test('a leading native synthetic row still anchors a turn', () => {

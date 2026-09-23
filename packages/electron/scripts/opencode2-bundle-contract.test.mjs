@@ -16,12 +16,12 @@ import {
 const scriptsDir = path.dirname(fileURLToPath(import.meta.url));
 const readScript = (name) => fs.readFileSync(path.join(scriptsDir, name), 'utf8');
 
-test('bundled resource name is opencode2, not 1.x opencode', () => {
-  assert.equal(bundledOpenCode2BinaryName('darwin'), 'opencode2');
-  assert.equal(bundledOpenCode2BinaryName('linux'), 'opencode2');
-  assert.equal(bundledOpenCode2BinaryName('win32'), 'opencode2.exe');
-  assert.equal(artifactForOpenCode2('darwin', { opencode: 'arm64' }).binary, 'opencode2');
-  assert.match(artifactForOpenCode2('darwin', { opencode: 'arm64' }).name, /opencode2/);
+test('bundled resource uses the official opencode name on every platform', () => {
+  assert.equal(bundledOpenCode2BinaryName('darwin'), 'opencode');
+  assert.equal(bundledOpenCode2BinaryName('linux'), 'opencode');
+  assert.equal(bundledOpenCode2BinaryName('win32'), 'opencode.exe');
+  assert.equal(artifactForOpenCode2('darwin', { opencode: 'arm64' }).binary, 'opencode');
+  assert.match(artifactForOpenCode2('darwin', { opencode: 'arm64' }).name, /opencode-darwin/);
   assert.equal(isOpenCode1xVersion(PINNED_OPENCODE2_VERSION), false);
 });
 
@@ -39,13 +39,13 @@ test('prepare and verify scripts no longer pull 1.18.x or name the binary openco
   assert.doesNotMatch(prepare, /binary:\s*'opencode'/);
 });
 
-test('ssh-manager installs @opencode/cli and probes opencode2', () => {
+test('ssh-manager installs @opencode/cli and probes opencode', () => {
   const ssh = fs.readFileSync(path.join(scriptsDir, '..', 'ssh-manager.mjs'), 'utf8');
   const main = fs.readFileSync(path.join(scriptsDir, '..', 'main.mjs'), 'utf8');
   assert.match(ssh, /@opencode\/cli/);
-  assert.match(ssh, /opencode2 --version/);
+  assert.match(ssh, /'opencode --version/);
   assert.doesNotMatch(ssh, /OPENCODE_NPM_PACKAGE = 'opencode-ai'/);
-  assert.doesNotMatch(ssh, /'opencode --version/);
+  assert.doesNotMatch(ssh, /'opencode2 --version/);
   assert.match(main, /PINNED_OPENCODE2_VERSION|opencode2-pin/);
   assert.doesNotMatch(main, /@opencode-ai\/sdk/);
 });

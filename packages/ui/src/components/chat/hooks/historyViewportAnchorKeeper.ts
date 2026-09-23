@@ -17,6 +17,8 @@ export interface HistoryViewportAnchor {
 }
 
 export interface HistoryViewportAnchorKeeper {
+    /** Start idle retirement after the owning history request has settled. */
+    settle(): void;
     /** After user scroll: rebase expected offset to the live offset (do not fight the user). */
     rebase(): void;
     /** Stop keeping; disconnect observers and clear timers. Idempotent. */
@@ -80,6 +82,8 @@ export const createHistoryViewportAnchorKeeper = (input: {
      * User scroll re-arms it. Leak prevention when the reading session goes idle.
      */
     maxLifetimeMs?: number;
+    /** Request ownership keeps the anchor alive while awaiting the prepend. */
+    pending?: boolean;
 }): HistoryViewportAnchorKeeper => {
     const {
         container,
@@ -93,6 +97,7 @@ export const createHistoryViewportAnchorKeeper = (input: {
     };
 
     let disposed = false;
+    let pending = input.pending ?? false;
     let quiesceTimer: ReturnType<typeof setTimeout> | null = null;
     let maxLifetimeTimer: ReturnType<typeof setTimeout> | null = null;
     let microtaskScheduled = false;
@@ -124,7 +129,7 @@ export const createHistoryViewportAnchorKeeper = (input: {
 
     const resetQuiesceTimer = () => {
         clearQuiesceTimer();
-        if (disposed) return;
+        if (disposed || pending) return;
         quiesceTimer = setTimeout(() => {
             quiesceTimer = null;
             dispose();
@@ -134,7 +139,7 @@ export const createHistoryViewportAnchorKeeper = (input: {
     /** User scroll re-arms the idle cap; the keeper lives while the reading session is active. */
     const resetMaxLifetimeTimer = () => {
         clearMaxLifetimeTimer();
-        if (disposed) return;
+        if (disposed || pending) return;
         maxLifetimeTimer = setTimeout(() => {
             maxLifetimeTimer = null;
             dispose();
@@ -230,5 +235,14 @@ export const createHistoryViewportAnchorKeeper = (input: {
     resetMaxLifetimeTimer();
     resetQuiesceTimer();
 
-    return { rebase, dispose };
+    return {
+        rebase,
+        dispose,
+        settle() {
+            if (disposed || !pending) return;
+            pending = false;
+            resetQuiesceTimer();
+            resetMaxLifetimeTimer();
+        },
+    };
 };

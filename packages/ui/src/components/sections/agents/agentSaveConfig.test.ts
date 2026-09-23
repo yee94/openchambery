@@ -4,6 +4,7 @@ import {
   catalogModelSelection,
   hasPermissionChanged,
   readStoredSystem,
+  formatAgentDisplayName,
   splitModelSelection,
   type AgentEditorSnapshot,
 } from './agentSaveConfig';
@@ -13,13 +14,16 @@ const baseSnapshot = (overrides: Partial<AgentEditorSnapshot> = {}): AgentEditor
   mode: 'subagent',
   model: 'openai/gpt-5#high',
   system: 'You are helpful.',
-  steps: undefined,
-  hidden: false,
-  disabled: false,
-  color: '',
   globalPermission: 'allow',
   permissionRules: [],
   ...overrides,
+});
+
+describe('formatAgentDisplayName', () => {
+  test('capitalizes the first letter of the agent id', () => {
+    expect(formatAgentDisplayName('build')).toBe('Build');
+    expect(formatAgentDisplayName('pr-review')).toBe('Pr-review');
+  });
 });
 
 describe('hasPermissionChanged', () => {
@@ -74,9 +78,9 @@ describe('buildAgentSaveConfig', () => {
     });
   });
 
-  test('update clears model, steps, and color when they are removed', () => {
-    const initial = baseSnapshot({ steps: 4, color: '#112233' });
-    const current = baseSnapshot({ model: '', steps: undefined, color: '' });
+  test('update clears model when it is removed', () => {
+    const initial = baseSnapshot();
+    const current = baseSnapshot({ model: '' });
 
     expect(buildAgentSaveConfig({
       isNewAgent: false,
@@ -87,8 +91,24 @@ describe('buildAgentSaveConfig', () => {
     })).toEqual({
       name: 'build',
       model: null,
-      steps: null,
-      color: null,
+    });
+  });
+
+  test('update includes scope when the write target changes', () => {
+    const initial = baseSnapshot();
+    const current = baseSnapshot();
+
+    expect(buildAgentSaveConfig({
+      isNewAgent: false,
+      agentName: 'build',
+      draftScope: 'project',
+      initialScope: 'user',
+      draftHasExplicitPermission: false,
+      current,
+      initial,
+    })).toEqual({
+      name: 'build',
+      scope: 'project',
     });
   });
 

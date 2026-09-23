@@ -141,14 +141,17 @@ export function convertAgentConfig(config) {
 export function applyNativePatch(current, patch) {
   const frontmatter = { ...current.frontmatter };
   let body = current.body;
-  for (const [key, value] of Object.entries(patch || {})) {
+  const changes = patch && typeof patch === 'object' ? patch : {};
+  for (const [key, value] of Object.entries(changes)) {
     if (value === undefined || key === 'name' || key === 'scope' || key === 'confirmDrop') continue;
     if (key === 'system') {
       body = value === null ? '' : String(value);
+      delete frontmatter.system;
       continue;
     }
     if (value === null || value === false && (key === 'hidden' || key === 'disabled')) {
       delete frontmatter[key];
+      if (key === 'model') delete frontmatter.variant;
       continue;
     }
     if (key === 'color' && (typeof value !== 'string' || !HEX_COLOR.test(value))) {
@@ -162,19 +165,44 @@ export function applyNativePatch(current, patch) {
     }
     if (key === 'permissions') {
       const permissions = normalizePermissions(value, undefined);
+      delete frontmatter.permission;
       if (permissions.length === 0) delete frontmatter.permissions;
       else frontmatter.permissions = permissions;
       continue;
     }
+    if (key === 'model') delete frontmatter.variant;
     frontmatter[key] = value;
   }
-  delete frontmatter.system;
-  delete frontmatter.variant;
-  delete frontmatter.prompt;
-  delete frontmatter.permission;
-  delete frontmatter.temperature;
-  delete frontmatter.top_p;
   return { frontmatter, body };
+}
+
+/**
+ * Write only the keys in `patch` onto the existing markdown document.
+ * `confirmDrop` removes fields the current format cannot represent.
+ * Unmentioned fields, including permissions, stay as they are.
+ *
+ * @param {{ frontmatter?: Record<string, unknown>, body?: string }} existing
+ * @param {Record<string, unknown>} patch
+ * @param {boolean} confirmDrop
+ */
+export function writeAgentDocument(existing, patch, confirmDrop) {
+  const frontmatter = { ...(existing?.frontmatter || {}) };
+  let body = typeof existing?.body === 'string' ? existing.body : '';
+  if (confirmDrop) {
+    const inspection = inspectAgentConfig({
+      ...frontmatter,
+      ...(body.trim() ? { prompt: body } : {}),
+    });
+    for (const item of inspection.dropped) {
+      if (item.key === 'prompt') {
+        body = '';
+        delete frontmatter.prompt;
+      } else {
+        delete frontmatter[item.key];
+      }
+    }
+  }
+  return applyNativePatch({ frontmatter, body }, patch);
 }
 
 const encodeModel = (model, variant) => {

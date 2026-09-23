@@ -10,7 +10,7 @@ afterEach(() => {
   configureServerOpenCodeFetchGate(null);
 });
 
-it('runs a Host smart-title request through generating, title publication, and cleared state', async () => {
+it.each([false, true])('runs a Host smart-title request and clears loading (model failure: %s)', async (fail) => {
   vi.useFakeTimers();
   const metadata = { openchamber: { titleRefresh: { lastAutoTitle: 'Original', requestedAt: 1000 } } };
   const session = { id: 'ses_title', title: 'Original', directory: '/repo', metadata };
@@ -29,6 +29,7 @@ it('runs a Host smart-title request through generating, title publication, and c
   };
   const generate = vi.fn(async () => {
     expect(session.metadata.openchamber.titleRefresh.isGenerating).toBe(true);
+    if (fail) throw new Error('title model unavailable');
     return { text: 'Title refresh', providerID: 'test', modelID: 'test' };
   });
   const runtime = createSessionTitleRuntime({
@@ -44,7 +45,8 @@ it('runs a Host smart-title request through generating, title publication, and c
     } });
     await vi.runAllTimersAsync();
     expect(generate).toHaveBeenCalledTimes(1);
-    expect(session.title).toBe('Title refresh');
+    expect(session.title).toBe(fail ? 'Original' : 'Title refresh');
+    if (fail) expect(session.metadata.openchamber.titleRefresh.lastError).toBe('title model unavailable');
     expect(session.metadata.openchamber.titleRefresh.isGenerating).not.toBe(true);
     expect(session.metadata.openchamber.titleRefresh.requestedAt).toBeUndefined();
     expect(updates.some((row) => row.metadata.openchamber.titleRefresh.isGenerating)).toBe(true);
@@ -74,6 +76,7 @@ it('uses the real v2 client and publishes the generated title without another se
       const body = await request.json();
       expect(Object.keys(body)).toEqual(['title']);
       session.title = body.title;
+      return new Response(null, { status: 204 });
     }
     return Response.json({ data: session });
   }));
@@ -90,7 +93,7 @@ it('uses the real v2 client and publishes the generated title without another se
   });
   const runtime = createSessionTitleRuntime({
     sessionAccess: access,
-    getSmallModelService: async () => ({ generateSmallModelText: async () => ({ text: 'Title refresh' }) }),
+    getSmallModelService: async () => ({ generateSmallModelText: async () => ({ text: 'Title refresh', providerID: 'test', modelID: 'test' }) }),
     now: () => 1000,
   });
   try {
@@ -102,6 +105,62 @@ it('uses the real v2 client and publishes the generated title without another se
     expect(events.at(-1)).toMatchObject({ type: 'session', row: { title: 'Title refresh', directory: '/repo' } });
     expect(metadata.openchamber.titleRefresh.isGenerating).toBeUndefined();
     expect(requests).toContain('PATCH /api/session/ses_title');
+  } finally {
+    runtime.stop();
+  }
+});
+
+it('starts the first title from admitted user text while the assistant is still running', async () => {
+  vi.useFakeTimers();
+  const session = {
+    id: 'ses_first', title: '', time: { created: 1, updated: 1 },
+    metadata: {},
+  };
+  let finishTitle;
+  const generation = new Promise((resolve) => { finishTitle = resolve; });
+  const generate = vi.fn(() => generation);
+  const access = {
+    get: vi.fn(async () => structuredClone(session)),
+    update: vi.fn(async (_id, _directory, patch) => {
+      if (patch.metadata) session.metadata = mergeMetadataPatch(session.metadata, patch.metadata);
+      if (patch.title) session.title = patch.title;
+    }),
+    messages: vi.fn(async () => []),
+  };
+  const runtime = createSessionTitleRuntime({
+    sessionAccess: access,
+    getSmallModelService: async () => ({ generateSmallModelText: generate }),
+    isTitleRefreshEnabled: () => true,
+    now: () => 1000,
+  });
+  const emit = (type, data) => runtime.processPayload({ type, data, created: 1000, location: { directory: '/repo' } });
+  try {
+    emit('session.created', { sessionID: session.id, location: { directory: '/repo' } });
+    emit('session.inbox.enqueued', { sessionID: session.id, inboxID: 'msg_synthetic', item: {
+      type: 'synthetic', delivery: 'steer', payload: { text: 'Internal instructions' },
+    } });
+    await vi.runAllTimersAsync();
+    expect(generate).not.toHaveBeenCalled();
+    emit('session.inbox.enqueued', { sessionID: session.id, inboxID: 'msg_first', item: {
+      type: 'user', delivery: 'steer', payload: { text: 'Implement a session title generator' },
+    } });
+    emit('session.execution.started', { sessionID: session.id });
+    emit('session.status', { sessionID: session.id, status: { type: 'busy' } });
+    await vi.runAllTimersAsync();
+    expect(generate).toHaveBeenCalledTimes(1);
+    expect(generate.mock.calls[0][0].prompt).toContain('Implement a session title generator');
+    expect(session.metadata.openchamber?.titleRefresh?.isGenerating).toBe(true);
+    expect(access.messages).not.toHaveBeenCalled();
+    finishTitle({ text: 'Session titles', providerID: 'test', modelID: 'test' });
+    await vi.runAllTimersAsync();
+    expect(session.title).toBe('Session titles');
+    expect(session.metadata.openchamber.titleRefresh.isGenerating).toBeUndefined();
+    emit('session.execution.succeeded', { sessionID: session.id });
+    emit('session.inbox.enqueued', { sessionID: session.id, inboxID: 'msg_second', item: {
+      type: 'user', delivery: 'steer', payload: { text: 'Follow up on the implementation' },
+    } });
+    await vi.runAllTimersAsync();
+    expect(generate).toHaveBeenCalledTimes(1);
   } finally {
     runtime.stop();
   }

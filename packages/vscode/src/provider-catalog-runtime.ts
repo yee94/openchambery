@@ -68,6 +68,31 @@ const projectModalities = (value: unknown): Record<'text' | 'audio' | 'image' | 
   return hasValue ? modalities : undefined;
 };
 
+// v2 ModelCapabilities.input/output are modality name arrays, not boolean maps.
+const projectModalityList = (value: unknown): Record<'text' | 'audio' | 'image' | 'video' | 'pdf', boolean> | undefined => {
+  if (!Array.isArray(value)) return undefined;
+  const modalities = createDictionary<boolean>() as Record<'text' | 'audio' | 'image' | 'video' | 'pdf', boolean>;
+  let hasValue = false;
+  for (const item of value) {
+    if (typeof item !== 'string' || !(MODALITIES as readonly string[]).includes(item)) continue;
+    modalities[item as typeof MODALITIES[number]] = true;
+    hasValue = true;
+  }
+  return hasValue ? modalities : undefined;
+};
+
+const projectVariantNames = (value: unknown): Array<string | undefined> | null => {
+  if (Array.isArray(value)) {
+    return value.map((item) => {
+      if (typeof item === 'string') return item;
+      if (isRecord(item) && typeof item.id === 'string') return item.id;
+      return undefined;
+    });
+  }
+  if (isRecord(value)) return Object.keys(value);
+  return null;
+};
+
 const projectModel = (value: unknown): { model: SafeModel; partial: boolean } | null => {
   if (!isRecord(value)) return null;
   const id = safeIdentifier(value.id);
@@ -84,28 +109,37 @@ const projectModel = (value: unknown): { model: SafeModel; partial: boolean } | 
       const capability = value.capabilities[key];
       if (typeof capability === 'boolean') capabilities[key] = capability;
     }
+    if (capabilities.toolcall === undefined && typeof value.capabilities.tools === 'boolean') {
+      capabilities.toolcall = value.capabilities.tools;
+    }
     for (const key of ['input', 'output'] as const) {
-      const projected = projectModalities(value.capabilities[key]);
+      const raw = value.capabilities[key];
+      const projected = Array.isArray(raw) ? projectModalityList(raw) : projectModalities(raw);
       if (projected) capabilities[key] = projected;
     }
     if (Object.keys(capabilities).length > 0) model.capabilities = capabilities;
   }
 
-  if (value.cost !== undefined && isRecord(value.cost)) {
-    const cost: NonNullable<SafeModel['cost']> = {};
-    for (const key of ['input', 'output'] as const) {
-      const amount = safeNumber(value.cost[key]);
-      if (amount !== undefined) cost[key] = amount;
-    }
-    if (value.cost.cache !== undefined && isRecord(value.cost.cache)) {
-      const cache: NonNullable<NonNullable<SafeModel['cost']>['cache']> = {};
-      for (const key of ['read', 'write'] as const) {
-        const amount = safeNumber(value.cost.cache[key]);
-        if (amount !== undefined) cache[key] = amount;
+  if (value.cost !== undefined) {
+    const costSource = Array.isArray(value.cost)
+      ? (value.cost.find((item) => isRecord(item) && !isRecord(item.tier)) ?? value.cost.find((item) => isRecord(item)))
+      : value.cost;
+    if (isRecord(costSource)) {
+      const cost: NonNullable<SafeModel['cost']> = {};
+      for (const key of ['input', 'output'] as const) {
+        const amount = safeNumber(costSource[key]);
+        if (amount !== undefined) cost[key] = amount;
       }
-      if (Object.keys(cache).length > 0) cost.cache = cache;
+      if (costSource.cache !== undefined && isRecord(costSource.cache)) {
+        const cache: NonNullable<NonNullable<SafeModel['cost']>['cache']> = {};
+        for (const key of ['read', 'write'] as const) {
+          const amount = safeNumber(costSource.cache[key]);
+          if (amount !== undefined) cache[key] = amount;
+        }
+        if (Object.keys(cache).length > 0) cost.cache = cache;
+      }
+      if (Object.keys(cost).length > 0) model.cost = cost;
     }
-    if (Object.keys(cost).length > 0) model.cost = cost;
   }
 
   if (value.limit !== undefined && isRecord(value.limit)) {
@@ -123,18 +157,22 @@ const projectModel = (value: unknown): { model: SafeModel; partial: boolean } | 
     if (releaseDate) model.release_date = releaseDate;
   }
 
-  if (value.variants !== undefined && isRecord(value.variants)) {
-    const variants = createDictionary<Record<string, never>>();
-    const entries = Object.entries(value.variants);
-    if (entries.length > MAX_VARIANTS_PER_MODEL) partial = true;
-    for (const [key, variant] of entries.slice(0, MAX_VARIANTS_PER_MODEL)) {
-      const variantName = safeIdentifier(key);
-      if (!variantName || !isRecord(variant) || Object.prototype.hasOwnProperty.call(variants, variantName)) {
-        continue;
+  if (value.variants !== undefined) {
+    const names = projectVariantNames(value.variants);
+    if (names) {
+      const variants = createDictionary<Record<string, never>>();
+      if (names.length > MAX_VARIANTS_PER_MODEL) partial = true;
+      const recordValues = isRecord(value.variants) ? value.variants : null;
+      for (const rawName of names.slice(0, MAX_VARIANTS_PER_MODEL)) {
+        const variantName = safeIdentifier(rawName);
+        if (!variantName || Object.prototype.hasOwnProperty.call(variants, variantName)) continue;
+        // Record form still requires an object value so string sentinels stay stripped.
+        // Array form only keeps the id; settings/headers/body never leave the server.
+        if (recordValues && !isRecord(recordValues[variantName])) continue;
+        variants[variantName] = createDictionary<never>();
       }
-      variants[variantName] = createDictionary<never>();
+      if (Object.keys(variants).length > 0) model.variants = variants;
     }
-    if (Object.keys(variants).length > 0) model.variants = variants;
   }
   return { model, partial };
 };

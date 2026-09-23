@@ -1476,39 +1476,37 @@ export async function commitStagedRevertBeforeSend(sessionId: string, directoryO
   }
   const { store, directory } = directoryState
   return runSessionHistoryMutation(sessionId, directory, async ({ isCurrent }) => {
-  // A partially initialized directory state (or test harness) has no session
-  // catalog; without it there is no staged revert to commit.
-  const session = store.getState().session?.find((item) => item.id === sessionId)
-  if (!session?.revert) return
-  const revertTo = typeof session.revert.messageID === "string" && session.revert.messageID.length > 0
-    ? session.revert.messageID
-    : null
-  const transport = captureRuntimeTransport()
-  await postSessionRevertCommit({ sessionID: sessionId, directory })
-  if (!isCurrent()) throw new Error("Session history mutation aborted because the runtime changed")
-  const next = [...store.getState().session]
-  const idx = next.findIndex((item) => item.id === sessionId)
-  if (idx >= 0) {
-    next[idx] = { ...next[idx], revert: undefined } as Session
-    store.setState({ session: next })
-  }
-  // Local commit must not wait only on SSE: apply the same repository boundary
-  // as `session.revert.committed` so the visible range drops immediately.
-  if (revertTo) {
-    try {
-      const { repository, directory: resolvedDirectory } = transcriptRepositoryForSession(
-        sessionId,
-        directory,
-      )
-      if (!isCurrentRuntimeTransport(transport)) return
-      repository.apply(transcriptScope(resolvedDirectory, sessionId), {
-        type: "revert-committed",
-        to: revertTo,
-      })
-    } catch {
-      // Catalog marker already cleared; SSE / next authority pull can finish.
+    // A partially initialized directory state (or test harness) has no session
+    // catalog; without it there is no staged revert to commit.
+    const session = store.getState().session?.find((item) => item.id === sessionId)
+    if (!session?.revert) return
+    const revertTo = typeof session.revert.messageID === "string" && session.revert.messageID.length > 0
+      ? session.revert.messageID
+      : null
+    await postSessionRevertCommit({ sessionID: sessionId, directory })
+    if (!isCurrent()) throw new Error("Session history mutation aborted because the runtime changed")
+    const next = [...store.getState().session]
+    const idx = next.findIndex((item) => item.id === sessionId)
+    if (idx >= 0) {
+      next[idx] = { ...next[idx], revert: undefined } as Session
+      store.setState({ session: next })
     }
-  }
+    // Local commit must not wait only on SSE: apply the same repository boundary
+    // as `session.revert.committed` so the visible range drops immediately.
+    if (revertTo) {
+      try {
+        const { repository, directory: resolvedDirectory } = transcriptRepositoryForSession(
+          sessionId,
+          directory,
+        )
+        repository.apply(transcriptScope(resolvedDirectory, sessionId), {
+          type: "revert-committed",
+          to: revertTo,
+        })
+      } catch {
+        // Catalog marker already cleared; SSE / next authority pull can finish.
+      }
+    }
   })
 }
 
@@ -1785,6 +1783,7 @@ export async function settleOptimisticSend(input: {
 export async function optimisticSend(input: {
   sessionId: string
   content: string
+  delivery?: "steer" | "queue"
   providerID: string
   modelID: string
   agent?: string
@@ -1808,6 +1807,28 @@ export async function optimisticSend(input: {
   /** The actual API call — receives the optimistic messageID so the server can use the same ID */
   send: (messageID: string) => Promise<void>
 }): Promise<void> {
+  if (input.delivery === "queue") {
+    // Native admission belongs to the composer queue until upstream consumes it.
+    // Keep connection/runtime fencing without creating a transcript row or busy state.
+    const capture = captureSendTarget(input.directory)
+    const transport = captureRuntimeTransport()
+    const messageID = input.messageID ?? ascendingId("msg")
+    let transportEntered = false
+    try {
+      input.onMessageID?.(messageID)
+      await waitForConnectionOrThrow()
+      assertCurrentSendTarget(capture, transport)
+      transportEntered = true
+      await withSendDispatchTimeout(input.send(messageID))
+      assertCurrentSendTarget(capture, transport)
+      input.onSendConfirmed?.(messageID)
+    } catch (error) {
+      throw error instanceof SendDispatchError
+        ? error
+        : new SendDispatchError(classifySendFailure(error, transportEntered), error, messageID)
+    }
+    return
+  }
   const ticket = input.ticket ?? beginOptimisticSend({
     sessionId: input.sessionId,
     content: input.content,
@@ -2314,6 +2335,37 @@ export async function respondToQuestion(
     })
   } catch (error) {
     if (isQuestionRequestNotFoundError(error)) {
+      removeQuestionRequestFromChildStores(sessionId, requestId)
+    }
+    throw error
+  }
+}
+
+/** Explicit user dismissal stops the run; Form.ask cancels its form on interrupt. */
+export async function dismissQuestion(
+  sessionId: string,
+  requestId: string,
+  directoryHint?: string,
+): Promise<void> {
+  const generation = getRuntimeGeneration()
+  const transport = getRuntimeTransportIdentity()
+  const client = getRequestReplyClient("question", sessionId, requestId, directoryHint)
+  const isCurrent = () => generation === getRuntimeGeneration() && transport === getRuntimeTransportIdentity()
+  await waitForConnectionOrThrow()
+  if (!isCurrent()) throw new Error("Question dismissal runtime changed")
+  try {
+    // @opencode/client 2.0.12 names the continuation flag `resume`.
+    // Cancel-first can terminate the runner without a user interruption reason,
+    // which OpenCode classifies as shutdown and retains for restart recovery.
+    const result = await client.session.interrupt({ sessionID: sessionId, resume: false })
+    if (!isCurrent()) return
+    // No active execution means there is no Form.ask cleanup to cancel an orphan.
+    if (!result.interrupted) {
+      await client.session.form.cancel({ sessionID: sessionId, formID: requestId })
+    }
+    if (isCurrent()) removeQuestionRequestFromChildStores(sessionId, requestId)
+  } catch (error) {
+    if (isCurrent() && isQuestionRequestNotFoundError(error)) {
       removeQuestionRequestFromChildStores(sessionId, requestId)
     }
     throw error
@@ -2892,6 +2944,10 @@ export async function commitMessageEdit(
     assertCurrent()
     assertBeforeReplacement()
     const previousRevert = store.getState().session.find((session) => session.id === sessionId)?.revert
+    // Moving an existing file revert with files:false restores its original
+    // snapshot upstream. Require that file operation to settle first so editing
+    // cannot silently change the current working tree.
+    if (previousRevert?.files?.length) throw new Error("The selected user message is unavailable")
     const editDiffBefore = tryCaptureTranscriptCanonicalSnapshot(() => readSessionTranscript(sessionId, directory).data)
     const revert = await postSessionRevertStage({ sessionID: sessionId, messageID: messageId, directory, files: false })
     assertCurrent()
@@ -2909,7 +2965,9 @@ export async function commitMessageEdit(
           assertCurrent()
         } catch (confirmationError) {
           assertCurrent()
-          if (getErrorStatus(confirmationError) !== 404) throw error
+          const missing = confirmationError !== null && typeof confirmationError === "object"
+            && "_tag" in confirmationError && confirmationError._tag === "MessageNotFoundError"
+          if (!missing) throw error
           setRevert(undefined)
           applyMessageEditCommit(store, sessionId, messageId, directory)
           return

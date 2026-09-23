@@ -330,6 +330,7 @@ export async function routeMessage(params: {
     } else if (command) {
       return optimisticSend({
         sessionId: params.sessionId,
+        delivery: params.delivery,
         content: params.content,
         providerID: params.providerID,
         modelID: params.modelID,
@@ -367,9 +368,10 @@ export async function routeMessage(params: {
     }
   }
 
-  // Normal prompt — optimistic insert so message appears instantly
+  // Direct prompts paint immediately; native queue admission stays off the transcript.
   return optimisticSend({
     sessionId: params.sessionId,
+    delivery: params.delivery,
     content,
     providerID: params.providerID,
     modelID: params.modelID,
@@ -2275,7 +2277,7 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
     const currentSessionDirectory = targetSessionId
       ? normalizePath(options?.directoryHint) ?? normalizePath(get().getDirectoryForSession(targetSessionId))
       : null
-    if (targetSessionId && !options?.ticket) {
+    if (targetSessionId && !options?.ticket && options?.delivery !== 'queue') {
       markPendingUserSendAnimation(targetSessionId)
     }
 
@@ -2289,14 +2291,15 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
     // Commit the edited target + old forward tail while still idle, then send.
     // `messageEditCommitting` stays set through interrupt/stage/commit (ChatInput
     // paints it before calling sendMessage).
+    const editTransport = getRuntimeTransportIdentity()
+    const editGeneration = getRuntimeGeneration()
+    const isEditRuntimeCurrent = () => editTransport === getRuntimeTransportIdentity() && editGeneration === getRuntimeGeneration()
     if (pendingStagedEdit) {
-      const transport = getRuntimeTransportIdentity()
-      const generation = getRuntimeGeneration()
       try {
         await commitMessageEdit(pendingStagedEdit.sessionId, pendingStagedEdit.messageId, {
           directory: currentSessionDirectory ?? undefined,
         })
-        if (transport !== getRuntimeTransportIdentity() || generation !== getRuntimeGeneration()) {
+        if (!isEditRuntimeCurrent()) {
           throw new Error("Session history mutation aborted because the runtime changed")
         }
         if (get().stagedMessageEdit === pendingStagedEdit) {
@@ -2304,7 +2307,7 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
         }
       } catch (error) {
         // A stale completion must not clear a newer runtime's editing indicator.
-        if (transport === getRuntimeTransportIdentity() && generation === getRuntimeGeneration()) {
+        if (isEditRuntimeCurrent()) {
           get().endMessageEditCommit(pendingStagedEdit.sessionId, pendingStagedEdit.messageId)
         }
         throw error
@@ -2343,7 +2346,7 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
       // Replacement path ends the "editing" paint whether send succeeds or fails.
       // On success the old tail is already gone; on send failure the composer draft
       // still holds the replacement text for an ordinary resend.
-      if (pendingStagedEdit) {
+      if (pendingStagedEdit && isEditRuntimeCurrent()) {
         get().endMessageEditCommit(pendingStagedEdit.sessionId, pendingStagedEdit.messageId)
       }
     }

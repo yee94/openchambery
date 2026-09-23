@@ -438,6 +438,7 @@ export const settingsDict = {
   "settings.agents.page.section.toolPermissions": "Дозволи інструмента",
   "settings.agents.page.field.agentName": "Ім'я агента",
   "settings.agents.page.field.agentNamePlaceholder": "Ім’я агента",
+  "settings.agents.page.field.scope": "Область",
   "settings.agents.page.field.scopePlaceholder": "Область",
   "settings.agents.page.field.descriptionPlaceholder": "Що робить цей агент?",
   "settings.agents.page.field.mode": "Режим",

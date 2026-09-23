@@ -30,7 +30,8 @@ import type { TurnGroupingContext } from './lib/turns/types';
 import { shouldTightenWorkingBottomGap } from './lib/activityExpansion';
 import { isUserShellMessage } from './lib/shellBridge';
 import { copyTextToClipboard } from '@/lib/clipboard';
-import { resolveAssistantErrorPresentation, shouldSuppressAssistantError } from './message/assistantErrorPresentation';
+import { resolveAssistantErrorPresentation, resolveRestartNotice, shouldSuppressAssistantError } from './message/assistantErrorPresentation';
+import { ResponseStatusRow } from './message/ResponseStatusRow';
 import { FadeInOnReveal } from './message/FadeInOnReveal';
 import { streamPerfCount } from '@/stores/utils/streamDebug';
 import { areOptionalRenderRelevantMessagesEqual, areRenderRelevantMessagesEqual, areRelevantTurnGroupingContextsEqual } from './message/renderCompare';
@@ -732,13 +733,11 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
         }
         return resolveAssistantErrorPresentation(
             (message.info as { error?: unknown } | undefined)?.error,
-            t('chat.messageBody.aborted'),
+            t,
         );
     }, [hasTurnGrouping, isFollowedByAssistant, isLastAssistantInTurn, isUser, message.info, t]);
 
     const assistantErrorText = assistantError?.text;
-    const assistantErrorVariant = assistantError?.variant;
-    const assistantErrorDetail = assistantError?.detail;
 
     const messageTextContent = React.useMemo(() => {
         if (isUser) {
@@ -1099,6 +1098,15 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
         && !hasRenderableAssistantParts
         && !hostsTurnActivity;
 
+    const restartNotice = resolveRestartNotice(message.info, t);
+    if (restartNotice) {
+        return (
+            <div ref={messageContainerRef} className="chat-message-column py-1.5" id={`message-${message.info.id}`} data-message-id={message.info.id} data-restart-notice="">
+                <ResponseStatusRow presentation={restartNotice} />
+            </div>
+        );
+    }
+
     if (shouldHideUserMessage || shouldHideEmptyAssistant) {
         return null;
     }
@@ -1190,9 +1198,7 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
                                                 editStaged={isEditStaged}
                                                 onCancelEdit={isEditStaged ? handleCancelEdit : undefined}
                                                 pendingMessageAction={pendingMessageAction}
-                                                errorMessage={assistantErrorText}
-                                                errorDetail={assistantErrorDetail}
-                                                errorVariant={assistantErrorVariant}
+                                                errorPresentation={assistantError}
                                                 userActionsMode={useExternalUserActionsRow ? 'external-content' : 'inline'}
                                                 stickyUserHeaderEnabled={stickyUserHeader && !isShellResult}
                                             />
@@ -1231,9 +1237,7 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
                                                 editStaged={isEditStaged}
                                                 onCancelEdit={isEditStaged ? handleCancelEdit : undefined}
                                                 pendingMessageAction={pendingMessageAction}
-                                                errorMessage={assistantErrorText}
-                                                errorDetail={assistantErrorDetail}
-                                                errorVariant={assistantErrorVariant}
+                                                errorPresentation={assistantError}
                                                 userActionsMode="external-actions"
                                                 stickyUserHeaderEnabled={stickyUserHeader}
                                             />
@@ -1287,9 +1291,7 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
                                 showReasoningTraces={showReasoningTraces}
                                 agentMention={agentMention}
                                 turnGroupingContext={turnGroupingContext}
-                                errorMessage={assistantErrorText}
-                                errorDetail={assistantErrorDetail}
-                                errorVariant={assistantErrorVariant}
+                                errorPresentation={assistantError}
                                 reviewTransferDirection={reviewTransferDirection}
                             />
 

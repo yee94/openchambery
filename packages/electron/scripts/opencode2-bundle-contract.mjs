@@ -14,16 +14,16 @@ export const bundledOpenCode2BinaryName = (platform = process.platform) => openC
 export const artifactForOpenCode2 = (platform, targetArchitecture) => {
   const arch = targetArchitecture?.opencode ?? targetArchitecture;
   if (platform === 'darwin') {
-    if (arch === 'arm64') return { name: 'opencode2-darwin-arm64.zip', binary: 'opencode2' };
-    if (arch === 'x64') return { name: 'opencode2-darwin-x64-baseline.zip', binary: 'opencode2' };
+    if (arch === 'arm64') return { name: 'opencode-darwin-arm64.zip', binary: 'opencode' };
+    if (arch === 'x64') return { name: 'opencode-darwin-x64-baseline.zip', binary: 'opencode' };
   }
   if (platform === 'win32') {
-    if (arch === 'arm64') return { name: 'opencode2-windows-arm64.zip', binary: 'opencode2.exe' };
-    if (arch === 'x64') return { name: 'opencode2-windows-x64-baseline.zip', binary: 'opencode2.exe' };
+    if (arch === 'arm64') return { name: 'opencode-windows-arm64.zip', binary: 'opencode.exe' };
+    if (arch === 'x64') return { name: 'opencode-windows-x64-baseline.zip', binary: 'opencode.exe' };
   }
   if (platform === 'linux') {
-    if (arch === 'arm64') return { name: 'opencode2-linux-arm64.tar.gz', binary: 'opencode2' };
-    if (arch === 'x64') return { name: 'opencode2-linux-x64-baseline.tar.gz', binary: 'opencode2' };
+    if (arch === 'arm64') return { name: 'opencode-linux-arm64.tar.gz', binary: 'opencode' };
+    if (arch === 'x64') return { name: 'opencode-linux-x64-baseline.tar.gz', binary: 'opencode' };
   }
   throw new Error(`No opencode2 CLI artifact mapping for ${platform}/${arch}`);
 };

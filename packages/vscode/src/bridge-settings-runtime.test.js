@@ -107,4 +107,33 @@ describe('VS Code provider catalog SDK access', () => {
       default: { provider: 'model' },
     });
   });
+
+  test('projects v2 thinking variants from model.list and strips request payloads', async () => {
+    providerListImpl = async () => ({
+      data: [{ id: 'provider', name: 'Provider' }],
+    });
+    modelListImpl = async () => ({
+      data: [{
+        id: 'model',
+        name: 'Model',
+        providerID: 'provider',
+        capabilities: { tools: true, input: ['text'], output: ['text'] },
+        variants: [
+          { id: 'low', settings: { apiKey: 'SECRET_SENTINEL' } },
+          { id: 'high', body: { store: false } },
+        ],
+      }],
+    });
+    modelDefaultImpl = async () => ({ data: null });
+
+    const catalog = await fetchProviderCatalogFromApi({
+      manager: {
+        getApiUrl: () => 'http://localhost:4096',
+        getOpenCodeAuthHeaders: () => ({}),
+      },
+    }, '/workspace');
+
+    expect(catalog.providers[0].models.model.variants).toEqual({ low: {}, high: {} });
+    expect(JSON.stringify(catalog)).not.toContain('SECRET_SENTINEL');
+  });
 });

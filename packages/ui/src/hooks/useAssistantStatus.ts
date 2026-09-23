@@ -84,12 +84,11 @@ const DEFAULT_WORKING: WorkingSummary = {
 
 const EMPTY_PARTS: Part[] = [];
 const STATUS_SIGNATURE_SEPARATOR = '\u0000';
-const EDITING_TOOLS = new Set(['edit', 'write', 'multiedit', 'apply_patch']);
+const EDITING_TOOLS = new Set(['edit', 'write', 'apply_patch']);
 const TOOL_STATUS_KEYS: Record<string, I18nKey> = {
     read: 'chat.assistantStatus.readingFile',
     write: 'chat.assistantStatus.writingFile',
     edit: 'chat.assistantStatus.editingFile',
-    multiedit: 'chat.assistantStatus.editingFiles',
     apply_patch: 'chat.assistantStatus.applyingPatch',
     bash: 'chat.assistantStatus.runningCommand',
     grep: 'chat.assistantStatus.searchingContent',
@@ -205,7 +204,7 @@ const createParsedStatus = (
 
     const isGenericStatus = activePartType === undefined;
     const statusText = (() => {
-        if (activePartType === 'editing') return activeToolName === 'multiedit' ? getToolStatusPhrase(activeToolName, t) : t('chat.assistantStatus.editingFile');
+        if (activePartType === 'editing') return t('chat.assistantStatus.editingFile');
         if (activePartType === 'tool' && activeToolName) return getToolStatusPhrase(activeToolName, t);
         if (activePartType === 'reasoning') return t('chat.assistantStatus.thinking');
         if (activePartType === 'text') return t('chat.assistantStatus.composing');

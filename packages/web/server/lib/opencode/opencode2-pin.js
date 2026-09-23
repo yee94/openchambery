@@ -1,7 +1,7 @@
 // Pinned desktop/runtime opencode2. Upgrade and prepare must not fall back to 1.18.x.
 export const PINNED_OPENCODE2_VERSION = '2.0.12';
 
-// Global npm/bun package that installs the opencode2 binary (not 1.x opencode-ai).
+// Global npm/bun package that installs the opencode v2 binary (not 1.x opencode-ai).
 export const OPENCODE2_NPM_PACKAGE = '@opencode/cli';
 
 export function isOpenCode1xVersion(value) {
@@ -85,7 +85,7 @@ export function openCodeBinaryName(platform = process.platform) {
 
 /** @deprecated Packaging leftover. Runtime install uses `openCodeBinaryName`. */
 export function openCode2BinaryName(platform = process.platform) {
-  return platform === 'win32' ? 'opencode2.exe' : 'opencode2';
+  return openCodeBinaryName(platform);
 }
 
 export function resolveOpenCode2NpmArchitecture(arch = process.arch) {

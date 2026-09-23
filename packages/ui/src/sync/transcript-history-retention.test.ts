@@ -4,6 +4,7 @@ import { createQueryTranscriptRepository } from './transcript-repository-query-a
 import { normalizeSessionProjectionPage } from './session-projection-api';
 import { SessionMessageHttpError } from './session-message-query';
 import type { TranscriptTransportPage } from './transcript-repository';
+import { mergeInitialProjectionAndContext } from './transcript-repository-production';
 
 const scope = { directory: '/workspace', sessionID: 'ses_retention' };
 const cleanups: Array<() => void> = [];
@@ -47,6 +48,49 @@ function setup() {
 }
 
 describe('loaded transcript history retention through production Query ownership', () => {
+    test('a system-only tail enriched from context must not erase already-loaded messages outside projection coverage', async () => {
+        const user = { id: 'msg_user', type: 'user', time: { created: 1 }, text: 'long task' };
+        const rows = [user, ...Array.from({ length: 64 }, (_, i) => ({
+            id: `msg_step_${String(i).padStart(3, '0')}`, type: 'assistant', parentID: user.id,
+            time: { created: i + 2 }, content: [{ type: 'text', text: `step body ${i}` }],
+        }))];
+        const client = new QueryClient();
+        let systemTail = false;
+        const repo = createQueryTranscriptRepository({
+            client, transport: 'retention-runtime', generation: 1,
+            probe: { getTransport: () => 'retention-runtime', getGeneration: () => 1 },
+            fetcher: async ({ before }) => {
+                if (systemTail && !before) {
+                    const projection = normalizeSessionProjectionPage({
+                        data: Array.from({ length: 20 }, (_, i) => ({ id: `msg_system_${i}`, type: 'system', time: { created: 100 + i }, text: 'catalog update' })),
+                        cursor: { next: 'cur_65' },
+                    }, scope.sessionID);
+                    const context = normalizeSessionProjectionPage({ data: [rows.at(-1), user] }, scope.sessionID);
+                    return mergeInitialProjectionAndContext(projection, context);
+                }
+                const end = before ? Number(before.slice(4)) : rows.length;
+                const start = Math.max(0, end - 20);
+                const page = normalizeSessionProjectionPage({
+                    data: JSON.parse(JSON.stringify(rows.slice(start, end).reverse())),
+                    cursor: { next: `cur_${start}` },
+                }, scope.sessionID);
+                return page;
+            },
+        });
+        cleanups.push(() => { repo.destroy(); client.clear(); });
+        await repo.ensureInitial(scope);
+        for (let page = 0; page < 3; page += 1) await repo.fetchPreviousPage(scope);
+        const loaded = repo.getTranscript(scope);
+        expect(loaded.messageOrder).toHaveLength(65);
+        systemTail = true;
+        await repo.refreshFromAuthority(scope);
+        const refreshed = repo.getTranscript(scope);
+        expect(refreshed.messageOrder).toEqual(loaded.messageOrder);
+        for (const id of loaded.messageOrder) {
+            expect(refreshed.partsByMessageID[id]).toEqual(loaded.partsByMessageID[id]);
+        }
+    });
+
     test('four pages keep every message/body; tail refresh and repeated initial ensure do not shrink history', async () => {
         const { repo, assertRows, fetcher } = setup();
         await repo.ensureInitial(scope);

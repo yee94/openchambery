@@ -383,6 +383,16 @@ const ChatViewport = React.memo(({
     // Spinner/disabled is mutation-owned only (isLoadingOlder); background
     // prefetch/SWR loading never drives the button.
     const loadOlderBusy = resolveMobileLoadOlderBusy({ isLoadingOlder });
+    const [mobileHistorySlot, setMobileHistorySlot] = React.useState({
+        sessionId: currentSessionId, directory, reserved: showLoadOlderButton,
+    });
+    const sameHistorySlotScope = mobileHistorySlot.sessionId === currentSessionId && mobileHistorySlot.directory === directory;
+    const reserveMobileHistorySlot = sameHistorySlotScope
+        ? mobileHistorySlot.reserved || showLoadOlderButton
+        : showLoadOlderButton;
+    if (!sameHistorySlotScope || mobileHistorySlot.reserved !== reserveMobileHistorySlot) {
+        setMobileHistorySlot({ sessionId: currentSessionId, directory, reserved: reserveMobileHistorySlot });
+    }
     // Desktop loads by scroll until failure/stall requires an explicit retry.
     // Both states are overlays so their lifecycle cannot push the transcript.
     const showDesktopLoadOlderStatus = resolveDesktopLoadOlderStatusVisibility({
@@ -559,13 +569,13 @@ const ChatViewport = React.memo(({
                                         aria-hidden="true"
                                     />
                                 )}
-                                {showLoadOlderButton && (
-                                    <div className="flex justify-center pt-3 pb-1">
+                                {isMobile && reserveMobileHistorySlot && (
+                                    <div className={cn('flex justify-center pt-3 pb-1', !showLoadOlderButton && 'invisible')} aria-hidden={!showLoadOlderButton}>
                                         <Button
                                             variant="secondary"
                                             size="sm"
                                             onClick={onLoadOlder}
-                                            disabled={loadOlderBusy}
+                                            disabled={loadOlderBusy || !showLoadOlderButton}
                                             aria-busy={loadOlderBusy}
                                         >
                                             <Icon name="loader-4" className={cn('size-4', loadOlderBusy ? 'animate-spin' : 'invisible')} aria-hidden="true" />
@@ -648,13 +658,13 @@ const ChatViewport = React.memo(({
                     data-scrollbar="chat"
                 >
                     <div className={cn('oc-chat-scroll-content relative z-0 min-h-full', isMobile && 'chat-scroll-foot-inset')}>
-                        {showLoadOlderButton && (
-                            <div className="flex justify-center pt-3 pb-1">
+                        {isMobile && reserveMobileHistorySlot && (
+                            <div className={cn('flex justify-center pt-3 pb-1', !showLoadOlderButton && 'invisible')} aria-hidden={!showLoadOlderButton}>
                                 <Button
                                     variant="secondary"
                                     size="sm"
                                     onClick={onLoadOlder}
-                                    disabled={loadOlderBusy}
+                                    disabled={loadOlderBusy || !showLoadOlderButton}
                                     aria-busy={loadOlderBusy}
                                 >
                                     <Icon name="loader-4" className={cn('size-4', loadOlderBusy ? 'animate-spin' : 'invisible')} aria-hidden="true" />
@@ -668,6 +678,7 @@ const ChatViewport = React.memo(({
                             ref={messageListRef}
                             sessionKey={currentSessionId}
                             virtualizerKey={virtualizerKey}
+                            timelineHistoryAnchorToken={timelineHistoryAnchorToken}
                             disableStaging={pendingRevealWork}
                             initialPinRevealComplete={initialPinRevealComplete}
                             messages={renderedMessages}

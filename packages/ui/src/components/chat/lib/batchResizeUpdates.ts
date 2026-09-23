@@ -7,6 +7,8 @@
  * entries (no layout read) and apply them in one `queueMicrotask`.
  */
 
+import { flushSync } from 'react-dom';
+
 export type ElementBoxSize = {
     width: number;
     height: number;
@@ -103,17 +105,26 @@ type ResizeItemTarget = {
  * Wrap TanStack `resizeItem` so a shared observer's per-entry callbacks
  * become one microtask of size writes (and one scroll-adjustment storm).
  */
-export const installBatchedResizeItem = (virtualizer: ResizeItemTarget): () => void => {
+export const installBatchedResizeItem = (virtualizer: ResizeItemTarget, afterMeasure?: () => void): () => void => {
     const original = virtualizer.resizeItem.bind(virtualizer);
+    let disposing = false;
     const batch = createMicrotaskBatch<number, number>((items) => {
-        for (const [index, size] of items) {
-            original(index, size);
+        const apply = () => {
+            for (const [index, size] of items) original(index, size);
+        };
+        // Core changes scroll offsets while measuring. Commit the matching
+        // React virtual padding in the same pre-paint microtask, not next frame.
+        if (disposing) apply();
+        else {
+            flushSync(apply);
+            afterMeasure?.();
         }
     });
     virtualizer.resizeItem = (index, size) => {
         batch.enqueue(index, size);
     };
     return () => {
+        disposing = true;
         virtualizer.resizeItem = original;
         batch.flush();
     };

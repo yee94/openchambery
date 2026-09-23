@@ -3,7 +3,7 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 const mocks = vi.hoisted(() => ({ fetch: vi.fn(), reply: vi.fn(), reject: vi.fn(), success: vi.fn(), error: vi.fn() }));
 vi.mock('@/lib/runtime-fetch', () => ({ runtimeFetch: mocks.fetch }));
-vi.mock('@/sync/session-actions', () => ({ respondToQuestion: mocks.reply, rejectQuestion: mocks.reject, isQuestionRequestNotFoundError: () => false,
+vi.mock('@/sync/session-actions', () => ({ respondToQuestion: mocks.reply, dismissQuestion: mocks.reject, isQuestionRequestNotFoundError: () => false,
   isQuestionSubmissionClaimedError: (error: { status?: number; code?: string }) => error.status === 409 && error.code === 'question_submission_claimed',
 }));
 vi.mock('@/sync/sync-context', () => ({ useSessions: () => [{ id: 'child', parentID: 'parent', directory: '/child-project' }] }));
@@ -73,6 +73,25 @@ afterEach(async () => {
 const bar = () => host.querySelector<HTMLElement>('[data-question-delegate-bar]');
 
 describe('QuestionCard auto delegation', () => {
+  test('Dismiss stops the question-owning child session and hides the card only after success', async () => {
+    await mount();
+    await click('Dismiss');
+    expect(mocks.reject).toHaveBeenCalledWith('child', 'q-1', '/child-project');
+    expect(mocks.reply).not.toHaveBeenCalled();
+    expect(host.querySelector('[data-question-card]')).toBeNull();
+  });
+
+  test('a failed user stop keeps the question and permits retry', async () => {
+    await mount();
+    mocks.reject.mockRejectedValueOnce(new Error('interrupt failed'));
+    await click('Dismiss');
+    expect(mocks.error).toHaveBeenCalled();
+    expect(button('Dismiss').disabled).toBe(false);
+    await click('Dismiss');
+    expect(mocks.reject).toHaveBeenCalledTimes(2);
+    expect(host.querySelector('[data-question-card]')).toBeNull();
+  });
+
   test('shows a full-width countdown bar before the host snapshot arrives', async () => {
     mocks.fetch.mockImplementation(() => new Promise(() => {}));
     await act(async () => { root.render(<QuestionCard question={question} />); });

@@ -470,6 +470,7 @@ export const settingsDict = {
   'settings.agents.page.section.toolPermissions': 'ツール権限',
   'settings.agents.page.field.agentName': 'Agent 名',
   'settings.agents.page.field.agentNamePlaceholder': 'agent-name',
+  'settings.agents.page.field.scope': '範囲',
   'settings.agents.page.field.scopePlaceholder': 'スコープ',
   'settings.agents.page.field.descriptionPlaceholder': 'この Agent は何をしますか？',
   'settings.agents.page.field.mode': 'モード',

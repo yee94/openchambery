@@ -61,10 +61,24 @@ it('projects only the bounded newest message page in conversation order', async 
   expect(messages[1].parts[0].text).toBe('Finished');
 });
 
+it('publishes a full loading row before the new session exists in client catalogs', async () => {
+  const f = fixture();
+  await f.access.update('ses_title', '/repo', { metadata: { openchamber: { titleRefresh: { isGenerating: true } } } });
+  expect(f.publish).toHaveBeenCalledWith(expect.objectContaining({
+    id: 'ses_title', directory: '/repo', metadata: expect.objectContaining({
+      openchamber: expect.objectContaining({ titleRefresh: expect.objectContaining({ isGenerating: true }) }),
+    }),
+  }), '/repo');
+  expect(api.session.update).not.toHaveBeenCalled();
+});
+
 it('does not publish success on a failed title write', async () => {
   const f = fixture();
   api.session.update.mockRejectedValue(new Error('offline'));
-  await expect(f.access.update('ses_title', '/repo', { title: 'Failed' })).rejects.toThrow('offline');
+  await expect(f.access.update('ses_title', '/repo', {
+    title: 'Failed', metadata: { openchamber: { titleRefresh: { lastAutoTitle: 'Failed' } } },
+  })).rejects.toThrow('offline');
+  expect(f.persist).not.toHaveBeenCalled();
   expect(f.publish).not.toHaveBeenCalled();
 });
 

@@ -214,7 +214,7 @@ function createConfiguredOpencodeBinaryError(raw: string, normalized: string): E
   try {
     const rawStat = fs.statSync(raw);
     if (rawStat.isDirectory()) {
-      return new Error(`Configured OpenCode binary directory does not contain an executable ${process.platform === 'win32' ? 'opencode2.exe' : 'opencode2'}: ${raw}. ${messageSuffix}`);
+      return new Error(`Configured OpenCode binary directory does not contain an executable ${process.platform === 'win32' ? 'opencode.exe' : 'opencode'}: ${raw}. ${messageSuffix}`);
     }
   } catch {
     // The normalized path check below produces the missing-path error.

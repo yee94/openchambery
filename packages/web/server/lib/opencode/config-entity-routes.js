@@ -26,10 +26,9 @@ const composeV2ProviderCatalogSource = (providers, models, defaultModel) => {
     if (typeof model.family === 'string' && model.family) entry.family = model.family;
     if (model.limit && typeof model.limit === 'object') entry.limit = model.limit;
     if (model.capabilities) entry.capabilities = model.capabilities;
-    if (model.cost && typeof model.cost === 'object' && !Array.isArray(model.cost)) entry.cost = model.cost;
-    if (model.variants && typeof model.variants === 'object' && !Array.isArray(model.variants)) {
-      entry.variants = model.variants;
-    }
+    // v2 cost is a tier array; v2 variants are `{ id }[]`. Projection owns the safe shape.
+    if (model.cost && typeof model.cost === 'object') entry.cost = model.cost;
+    if (model.variants && typeof model.variants === 'object') entry.variants = model.variants;
     if (typeof model.time?.released === 'number' && Number.isFinite(model.time.released)) {
       entry.release_date = new Date(model.time.released).toISOString().slice(0, 10);
     }

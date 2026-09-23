@@ -2,7 +2,8 @@
  * Ownership + upgrade status for OpenCode runtimes (ticket 12).
  *
  * Binary ownership and process ownership are modeled separately:
- * - external serve (attached process) is never upgraded/restarted in-app
+ * - arbitrary external serve is never upgraded/restarted in-app
+ * - official shared service can be replaced using an owned-cache binary
  * - managed process using a global CLI is "global-cli" (manual guidance)
  * - managed process using OpenChamber cache under opencode-cli/ is "owned-cache"
  * - bundled desktop binary cannot be upgraded separately
@@ -24,7 +25,7 @@ import {
 } from './ensure-cli.js';
 import { evaluateRuntimeContract, normalizeRuntimeVersion } from './runtime-contract.js';
 
-/** @typedef {'external-serve' | 'owned-cache' | 'global-cli' | 'bundled' | 'settings' | 'env' | 'unknown'} RuntimeOwnership */
+/** @typedef {'shared-service' | 'external-serve' | 'owned-cache' | 'global-cli' | 'bundled' | 'settings' | 'env' | 'unknown'} RuntimeOwnership */
 
 /**
  * @param {string | null | undefined} binaryPath
@@ -44,12 +45,25 @@ export function isOwnedOpenCodeCachePath(binaryPath, dataDir) {
 /**
  * @param {{
  *   isExternal?: boolean,
+ *   isSharedService?: boolean,
  *   binarySource?: string | null,
  *   binaryPath?: string | null,
  *   dataDir?: string | null,
  * }} input
  */
 export function classifyRuntimeOwnership(input = {}) {
+  if (input.isSharedService === true) {
+    return {
+      ownership: /** @type {RuntimeOwnership} */ ('shared-service'),
+      processOwnership: 'shared',
+      binaryOwnership: isOwnedOpenCodeCachePath(input.binaryPath, input.dataDir) ? 'owned-cache' : 'external-or-global',
+      canUpgradeInApp: true,
+      supplySource: 'shared-service',
+      management: 'in-app',
+      reason: null,
+      guidance: null,
+    };
+  }
   if (input.isExternal === true) {
     return {
       ownership: /** @type {RuntimeOwnership} */ ('external-serve'),

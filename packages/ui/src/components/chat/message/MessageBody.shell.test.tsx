@@ -11,6 +11,7 @@ vi.hoisted(() => {
   })));
 });
 vi.mock('../FileAttachment', () => ({ MessageFilesDisplay: () => null }));
+vi.mock('@/hooks/useEffectiveDirectory', () => ({ useEffectiveDirectory: () => '/workspace' }));
 vi.mock('@/lib/clipboard', () => ({ copyTextToClipboard: mocks.copy }));
 vi.mock('@/lib/i18n', () => ({ useI18n: () => ({ locale: 'en', t: (key: string) => key }) }));
 vi.mock('@/components/code/WorkerHighlightedCode', () => ({
@@ -75,5 +76,25 @@ describe('user shell results', () => {
     expect(container.textContent).toContain('Ordinary message');
     expect(container.querySelector('pre')).toBeNull();
     expect(container.textContent).not.toContain('chat.messageBody.shellCommand.title');
+  });
+
+  test.each([true, false])('renders assistant details and error recovery without crashing (mobile=%s)', async (isMobile) => {
+    const renderAssistant = async (failed: boolean) => {
+      await act(async () => root.render(<MessageBody
+        messageId="assistant-1" parts={[]} isUser={false} isMessageCompleted={false}
+        isMobile={isMobile} copiedCode={null} onCopyCode={() => undefined}
+        expandedTools={new Set()} onToggleTool={() => undefined} onShowPopup={() => undefined}
+        streamPhase="streaming" allowAnimation={false} shouldShowHeader={false}
+        errorPresentation={failed ? { text: 'Provider unavailable', icon: 'error-warning', variant: 'error' } : undefined}
+      />));
+    };
+    await renderAssistant(false);
+    expect(container.querySelector('[data-message-text-export-root]')).not.toBeNull();
+    expect(container.querySelector('[role="alert"]')).toBeNull();
+    await renderAssistant(true);
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain('Provider unavailable');
+    await renderAssistant(false);
+    expect(container.querySelector('[role="alert"]')).toBeNull();
+    expect(container.querySelector('[data-message-text-export-root]')).not.toBeNull();
   });
 });

@@ -1,4 +1,7 @@
 import React from "react";
+import { useMutation } from "@tanstack/react-query";
+import { useEvent } from "@reactuses/core";
+import { Button } from "@/components/ui/button";
 import { cn, getModifierLabel } from "@/lib/utils";
 import { useUIStore } from "@/stores/useUIStore";
 import { useProjectsStore } from "@/stores/useProjectsStore";
@@ -383,6 +386,15 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   onMobileStageChange,
 }) => {
   const { t } = useI18n();
+  const reloadMutation = useMutation({
+    mutationFn: reloadOpenCodeLocations,
+    onError: () => toast.error(t("chat.chatInput.toast.reloadFailed")),
+  });
+  const handleReloadOpenCode = useEvent(() => {
+    if (!reloadMutation.isPending) {
+      reloadMutation.mutate();
+    }
+  });
   const deviceInfo = useDeviceInfo();
   const isMobile = forceMobile ?? deviceInfo.isMobile;
 
@@ -1554,22 +1566,27 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             )}
           >
             {!runtimeCtx.isVSCode && (
-              <button
+              <Button
                 type="button"
+                variant="ghost"
+                size="sm"
+                disabled={reloadMutation.isPending}
+                aria-busy={reloadMutation.isPending}
                 className={cn(
                   isMobile
                     ? "oc-mobile-settings-row"
-                    : "flex h-7 w-full items-center gap-2 rounded-md px-2 overflow-hidden whitespace-nowrap",
+                    : "w-full justify-start overflow-hidden",
                   "text-sm font-semibold text-sidebar-foreground/90",
                   "hover:text-sidebar-foreground hover:bg-interactive-hover",
                 )}
-                onClick={() =>
-                  void reloadOpenCodeLocations().catch(() => toast.error(t('chat.chatInput.toast.reloadFailed')))
-                }
+                onClick={handleReloadOpenCode}
               >
-                <Icon name="restart" className="h-4 w-4 shrink-0" />
+                <Icon
+                  name="restart"
+                  className={cn("h-4 w-4 shrink-0", reloadMutation.isPending && "animate-spin")}
+                />
                 <span>{t("settings.view.actions.reloadOpenCode")}</span>
-              </button>
+              </Button>
             )}
           </div>
         </div>

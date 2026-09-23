@@ -54,6 +54,7 @@ export const settingsDict = {
   'settings.agents.page.field.mode': 'Tryb',
   'settings.agents.page.field.modeTooltip': 'Widoczność: Główny vs Podagent',
   'settings.agents.page.field.overrideModel': 'Nadpisz model',
+  'settings.agents.page.field.scope': 'Zakres',
   'settings.agents.page.field.scopePlaceholder': 'Zakres',
   'settings.agents.page.field.systemPromptPlaceholder': 'Jesteś ekspertem w asystowaniu przy kodowaniu...',
   'settings.agents.page.field.variant': 'Wariant myślenia',

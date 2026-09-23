@@ -3,11 +3,12 @@ import { createRoot, type Root } from 'react-dom/client';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { dict } from '@/lib/i18n/messages/en';
+import { dict as zh } from '@/lib/i18n/messages/zh-CN';
 import { QueuedMessageChips } from './QueuedMessageChips';
-import type { SessionInboxChip } from '@/sync/session-inbox-overlay';
+import type { SessionComposerPendingItem, SessionInboxChip } from '@/sync/session-inbox-overlay';
 
-const fixture = vi.hoisted(() => ({ items: [] as unknown[], mode: 'legacy' }));
-vi.mock('@/lib/i18n', () => ({ useI18n: () => ({ t: (key: keyof typeof dict) => dict[key] }) }));
+const fixture = vi.hoisted(() => ({ items: [] as unknown[], mode: 'legacy', chinese: false }));
+vi.mock('@/lib/i18n', () => ({ useI18n: () => ({ t: (key: keyof typeof dict) => (fixture.chinese ? zh : dict)[key] }) }));
 vi.mock('@/components/ui', () => ({ toast: { error: vi.fn() } }));
 vi.mock('@/lib/persistence', () => ({ updateDesktopSettings: vi.fn() }));
 vi.mock('@/sync/message-queue-server-runtime', () => ({ isMessageQueuePendingAdmissionItem: (item: { kind?: string }) => item.kind === 'pending-admission' }));
@@ -22,12 +23,12 @@ let client: QueryClient;
 const inbox: SessionInboxChip = { kind: 'session-inbox', requestID: 'inbox', queueItemID: 'inbox', operationID: 'inbox', messageID: 'inbox', content: 'Next task', delivery: 'queue', createdAt: 1, attachmentCount: 0 };
 beforeEach(() => {
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
-  fixture.items = []; fixture.mode = 'legacy';
+  fixture.items = []; fixture.mode = 'legacy'; fixture.chinese = false;
   client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   host = document.createElement('div'); document.body.append(host); root = createRoot(host);
 });
 afterEach(async () => { await act(async () => root.unmount()); client.clear(); host.remove(); });
-async function render(items: SessionInboxChip[] = [], onSteerClientPending?: (id: string) => Promise<void>) {
+async function render(items: SessionComposerPendingItem[] = [], onSteerClientPending?: (id: string) => Promise<void>) {
   await act(async () => root.render(<QueryClientProvider client={client}><QueuedMessageChips
     onEditMessage={() => true} onSendMessage={() => {}} draftKey={null} draftTarget={null}
     scope={{ state: 'bound', transportIdentity: 'test', runtimeGeneration: 1, directory: '/a', sessionID: 's', deliveryTarget: { kind: 'primary' } }}
@@ -35,6 +36,18 @@ async function render(items: SessionInboxChip[] = [], onSteerClientPending?: (id
     onSteerClientPending={onSteerClientPending}
   /></QueryClientProvider>));
 }
+it('shows the original Chinese queuing state until admission becomes a queued item', async () => {
+  fixture.chinese = true;
+  await render([{ ...inbox, kind: 'pending-admission', phase: 'admitting' }]);
+  expect(host.textContent).toContain('Next task');
+  expect(host.textContent).toContain('正在入队…');
+  expect(host.textContent).not.toContain('正在发送…');
+  expect(host.querySelector('button[aria-label="发送"]')).toBeNull();
+  await render([inbox]);
+  expect(host.textContent?.match(/Next task/g)).toHaveLength(1);
+  expect(host.textContent).not.toContain('正在入队…');
+  expect(host.querySelector<HTMLButtonElement>('button[aria-label="发送"]')?.disabled).toBe(false);
+});
 it('keeps queued inbox compact and offers Send without execution configuration hints', async () => {
   await render([inbox]);
   expect(host.textContent).toContain('Next task');

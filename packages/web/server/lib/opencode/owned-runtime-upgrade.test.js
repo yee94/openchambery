@@ -123,12 +123,12 @@ describe('owned runtime upgrade (ticket 12)', () => {
       contract: contractOk,
     }).errorCode).toBe('UPGRADE_BINARY_IDENTITY_MISMATCH');
 
-    // Target match alone is not enough — unverified band must not succeed.
+    // Target match alone is not enough — below-minimum versions must not succeed.
     expect(evaluateOwnedUpgradeResult({
-      targetVersion: '2.1.0',
-      serveVersion: '2.1.0',
+      targetVersion: '2.0.5',
+      serveVersion: '2.0.5',
       contract: evaluateRuntimeContract({
-        serveVersion: '2.1.0',
+        serveVersion: '2.0.5',
         reachable: true,
         authenticated: true,
         healthOk: true,

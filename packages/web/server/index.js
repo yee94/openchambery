@@ -1976,6 +1976,7 @@ async function main(options = {}) {
     buildOpenCodeUrl,
     getOpenCodeAuthHeaders,
     getIsExternalOpenCode: () => isExternalOpenCode,
+    getIsSharedOpenCodeService: () => openCodeLifecycleRuntime.isSharedOpenCodeService(),
     forceResolvedOpenCodeBinary,
     restartOpenCode,
     waitForOpenCodeReady,

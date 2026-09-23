@@ -1982,6 +1982,7 @@ export function createQueryTranscriptRepository(
         fetched: transportPageToReconcileRecords(page),
         previous: transcriptToReconcileRecords(live),
         touched,
+        coverageMessageIDs: page.coverageMessageIDs,
         completeTail: page.complete === true,
       })
       const liveRevision = live.liveRevision

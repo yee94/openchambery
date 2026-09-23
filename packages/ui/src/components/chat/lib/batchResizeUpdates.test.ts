@@ -1,4 +1,6 @@
 import { describe, expect, test, vi } from 'vitest';
+import React, { act } from 'react';
+import { createRoot } from 'react-dom/client';
 
 import {
     createMicrotaskBatch,
@@ -58,6 +60,45 @@ describe('sizeFromResizeObserverEntry', () => {
 });
 
 describe('installBatchedResizeItem', () => {
+    test('commits React padding once in the measurement microtask, alongside core scroll changes', async () => {
+        const host = document.createElement('div');
+        document.body.appendChild(host);
+        const root = createRoot(host);
+        let setPadding!: React.Dispatch<React.SetStateAction<number>>;
+        let commits = 0;
+        const Frame = () => {
+            const [padding, update] = React.useState(0);
+            setPadding = update;
+            React.useLayoutEffect(() => { commits += 1; });
+            return React.createElement('div', { style: { paddingTop: padding } });
+        };
+        await act(async () => { root.render(React.createElement(Frame)); });
+        let scrollOffset = 0;
+        const virtualizer = { resizeItem: (_index: number, size: number) => {
+            scrollOffset += size;
+            setPadding(value => value + size);
+        } };
+        const verifiedPadding: string[] = [];
+        const restore = installBatchedResizeItem(virtualizer, () => {
+            verifiedPadding.push((host.firstElementChild as HTMLElement).style.paddingTop);
+        });
+        try {
+            await act(async () => {
+                virtualizer.resizeItem(0, 32.25);
+                virtualizer.resizeItem(1, 44.5);
+                await Promise.resolve();
+                expect(scrollOffset).toBe(76.75);
+                expect((host.firstElementChild as HTMLElement).style.paddingTop).toBe('76.75px');
+                expect(commits).toBe(2);
+                expect(verifiedPadding).toEqual(['76.75px']);
+            });
+        } finally {
+            restore();
+            await act(async () => { root.unmount(); });
+            host.remove();
+        }
+    });
+
     test('defers per-row resizeItem until one microtask', async () => {
         const calls: Array<[number, number]> = [];
         const virtualizer = {

@@ -116,7 +116,7 @@ describe('SavedPermissionsSection scope ownership', () => {
     expect(container.textContent).not.toContain('upstream-a');
   });
 
-  it('shows first-load errors and retries, reserving empty copy for successful empty results', async () => {
+  it('shows first-load errors and retries, and hides the section when the list is empty', async () => {
     sdk.locationGet.mockRejectedValueOnce(new Error('offline'));
     await mount();
     expect(container.querySelector('[role="alert"]')?.textContent).toContain('saved.loadFailed');
@@ -126,7 +126,7 @@ describe('SavedPermissionsSection scope ownership', () => {
     await act(async () => container.querySelector('button')!.click());
     await settle();
     await settle();
-    expect(container.textContent).toContain('saved.empty');
+    expect(container.textContent).toBe('');
   });
 
   it('shows B list failure without A rows or delete actions', async () => {

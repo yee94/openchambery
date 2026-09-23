@@ -438,6 +438,7 @@ export const settingsDict = {
   "settings.agents.page.section.toolPermissions": "Permisos de herramientas",
   "settings.agents.page.field.agentName": "Nombre del agente",
   "settings.agents.page.field.agentNamePlaceholder": "nombre-agente",
+  "settings.agents.page.field.scope": "Ámbito",
   "settings.agents.page.field.scopePlaceholder": "Ámbito",
   "settings.agents.page.field.descriptionPlaceholder": "¿Qué hace este agente?",
   "settings.agents.page.field.mode": "Modo",

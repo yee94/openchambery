@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 
 import MessageList from './MessageList';
 import { useNotificationStore } from '@/sync/notification-store';
+import { normalizeSessionProjectionMessage } from '@/sync/session-projection-api';
 
 const mocks = vi.hoisted(() => ({
   errorAt: undefined as number | undefined,
@@ -282,6 +283,31 @@ describe('new conversation assistant header continuity', () => {
       );
     });
   };
+
+  test.each([
+    [false, 'live'], [true, 'live'], [false, 'sorted'], [true, 'sorted'],
+  ] as const)('renders restart recovery as a notice across reload and resumed output (mobile=%s, mode=%s)', async (mobile, mode) => {
+    mocks.uiState.isMobile = mobile;
+    mocks.uiState.chatRenderMode = mode;
+    const restart = normalizeSessionProjectionMessage(sessionID, {
+      id: 'restart-1', type: 'synthetic', time: { created: 3 },
+      description: 'Continuing after restart',
+      text: 'The server restarted while you were working. Continue from where you left off without repeating completed work.',
+    })!;
+    const interrupted = assistantMessage({ completed: true });
+    interrupted.info.error = { type: 'aborted', message: 'Step interrupted' };
+    await renderMessages([userMessage(), interrupted, restart], false);
+    expect(container.querySelectorAll('[data-restart-notice]')).toHaveLength(1);
+    expect(container.querySelector('[data-restart-notice]')?.textContent).toBe('chat.response.continuingAfterRestart');
+    expect(container.querySelector('[data-restart-notice] use')?.getAttribute('href')).toBe('#oc-restart');
+    expect(container.textContent).not.toContain('Continue from where you left off');
+    const resumed = assistantMessage({ completed: true, parts: [textPart('continued answer')] });
+    resumed.info = { ...resumed.info, id: 'assistant-2', time: { created: 4, completed: 5 } };
+    await renderMessages([userMessage(), interrupted, restart, resumed], false);
+    expect(container.querySelectorAll('[data-restart-notice]')).toHaveLength(1);
+    expect(container.textContent).toContain('continued answer');
+    expect(container.querySelector('[data-restart-notice] .animate-spin')).toBeNull();
+  });
 
   test.each(['live', 'sorted'] as const)('renders an execution failure inside its turn below the model header (%s)', async (mode) => {
     mocks.uiState.chatRenderMode = mode;

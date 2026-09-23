@@ -97,6 +97,7 @@ export function mergeInitialProjectionAndContext(
   if (projection.records.length === 0) {
     return {
       records: context.records,
+      coverageMessageIDs: projection.coverageMessageIDs ?? [],
       cursor: projection.cursor,
       complete: projection.complete,
       turnCount: context.turnCount,
@@ -128,6 +129,7 @@ export function mergeInitialProjectionAndContext(
   const turnCount = records.filter((entry) => isAuthoredUserTurnRecord(entry.info, entry.parts)).length
   return {
     records,
+    coverageMessageIDs: projection.coverageMessageIDs ?? projection.records.map((record) => record.info.id),
     cursor: projection.cursor,
     complete: projection.complete,
     turnCount,
@@ -171,6 +173,10 @@ export async function extendInitialPageToAuthoredUserTurn(
     current = {
       ...current,
       records,
+      coverageMessageIDs: [
+        ...(older.coverageMessageIDs ?? older.records.map((record) => record.info.id)),
+        ...(current.coverageMessageIDs ?? current.records.map((record) => record.info.id)),
+      ],
       cursor: older.cursor,
       complete: older.complete,
       turnCount: records.filter((entry) => isAuthoredUserTurnRecord(entry.info, entry.parts)).length,
@@ -276,6 +282,7 @@ export async function fetchProductionTranscriptTransportPage(input: {
 
   return {
     records,
+    coverageMessageIDs: page.coverageMessageIDs ?? page.records.map((record) => record.info.id),
     cursor: page.cursor ?? undefined,
     complete: page.complete,
     turnCount: page.turnCount,

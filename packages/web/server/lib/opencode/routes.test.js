@@ -2,6 +2,16 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import express from 'express';
 import request from 'supertest';
 import fs from 'fs';
+import { installPinnedOpenCode2Cli, readOpenCode2BinaryVersion } from './ensure-cli.js';
+
+vi.mock('./ensure-cli.js', async (importOriginal) => {
+  const actual = await importOriginal();
+  return {
+    ...actual,
+    installPinnedOpenCode2Cli: vi.fn(actual.installPinnedOpenCode2Cli),
+    readOpenCode2BinaryVersion: vi.fn(actual.readOpenCode2BinaryVersion),
+  };
+});
 
 import { registerOpenCodeRoutes } from './routes.js';
 import { isOpenCode1xVersion } from './opencode2-pin.js';
@@ -218,6 +228,82 @@ describe('opencode2 upgrade pin (ticket 12)', () => {
     expect(response.body.error).toMatch(/external/i);
     expect(deps.restartOpenCode).not.toHaveBeenCalled();
     expect(deps.refreshOpenCodeAfterConfigChange).not.toHaveBeenCalled();
+  });
+
+  it('upgrades a shared service using the owned cache and verifies the running version', async () => {
+    const binary = '/cache/opencode-cli/2.0.14/opencode';
+    vi.mocked(installPinnedOpenCode2Cli).mockResolvedValueOnce(binary);
+    vi.mocked(readOpenCode2BinaryVersion).mockReturnValueOnce('2.0.14');
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ version: '2.0.14', pid: 42 }))));
+    let resolvedBinary = '/usr/local/bin/opencode';
+    const restartOpenCode = vi.fn(async () => {});
+    const { app } = createUpgradeApp({
+      getIsExternalOpenCode: () => true,
+      getIsSharedOpenCodeService: () => true,
+      getResolvedOpenCodeBinary: () => resolvedBinary,
+      getOpenCodeCliVersion: () => '2.0.14',
+      forceResolvedOpenCodeBinary: (value) => { resolvedBinary = value; },
+      restartOpenCode,
+      waitForOpenCodeReady: vi.fn(),
+      openchamberDataDir: '/cache',
+    });
+
+    const response = await request(app).post('/api/opencode/upgrade').send({ target: '2.0.14' }).expect(200);
+    expect(restartOpenCode).toHaveBeenCalledWith({ binaryPath: binary });
+    expect(response.body).toMatchObject({ success: true, version: '2.0.14', ownership: 'shared-service' });
+  });
+
+  it('does not report a failed shared replacement as success and restores binary selection', async () => {
+    vi.mocked(installPinnedOpenCode2Cli).mockResolvedValueOnce('/cache/opencode-cli/2.0.14/opencode');
+    vi.mocked(readOpenCode2BinaryVersion).mockReturnValueOnce('2.0.14');
+    const forceResolvedOpenCodeBinary = vi.fn();
+    const { app } = createUpgradeApp({
+      getIsExternalOpenCode: () => true,
+      getIsSharedOpenCodeService: () => true,
+      forceResolvedOpenCodeBinary,
+      restartOpenCode: vi.fn(async () => { throw new Error('replacement failed'); }),
+    });
+    const response = await request(app).post('/api/opencode/upgrade').send({ target: '2.0.14' }).expect(500);
+    expect(response.body).toMatchObject({ upgraded: false, error: 'replacement failed' });
+    expect(forceResolvedOpenCodeBinary).toHaveBeenLastCalledWith('/usr/local/bin/opencode', 'path');
+  });
+
+  it('exposes shared upgrade availability while retaining active-task confirmation', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ version: '2.0.10', pid: 42 }))));
+    const restartOpenCode = vi.fn();
+    const { app } = createUpgradeApp({
+      getIsExternalOpenCode: () => true,
+      getIsSharedOpenCodeService: () => true,
+      getActiveSessionCount: () => 1,
+      restartOpenCode,
+    });
+    const status = await request(app).get('/api/opencode/upgrade-status').expect(200);
+    expect(status.body).toMatchObject({ canManage: true, available: true, ownership: 'shared-service' });
+    const response = await request(app).post('/api/opencode/upgrade').send({}).expect(409);
+    expect(response.body.errorCode).toBe('UPGRADE_ACTIVE_TASKS');
+    expect(restartOpenCode).not.toHaveBeenCalled();
+  });
+
+  it.each(['unreachable', 'old-version'])('rejects shared upgrade verification when the running service is %s', async (mode) => {
+    const binary = '/cache/opencode-cli/2.0.14/opencode';
+    vi.mocked(installPinnedOpenCode2Cli).mockResolvedValueOnce(binary);
+    vi.mocked(readOpenCode2BinaryVersion).mockReturnValueOnce('2.0.14');
+    vi.stubGlobal('fetch', vi.fn(async () => {
+      if (mode === 'unreachable') throw new Error('offline');
+      return new Response(JSON.stringify({ version: '2.0.12', pid: 42 }));
+    }));
+    const { app } = createUpgradeApp({
+      getIsExternalOpenCode: () => true,
+      getIsSharedOpenCodeService: () => true,
+      getResolvedOpenCodeBinary: () => binary,
+      getOpenCodeServeVersion: () => '2.0.14',
+      getOpenCodeCliVersion: () => '2.0.14',
+      getRuntimeContract: () => ({ reachable: true, authenticated: true, healthOk: true }),
+      forceResolvedOpenCodeBinary: vi.fn(),
+      restartOpenCode: vi.fn(),
+    });
+    const response = await request(app).post('/api/opencode/upgrade').send({ target: '2.0.14' }).expect(500);
+    expect(response.body.upgraded).toBe(false);
   });
 
   it('refuses in-app upgrade when managed process uses global CLI', async () => {

@@ -101,6 +101,20 @@ describe('Btw side conversation panel', () => {
     expect(useSessionBtwStore.getState().entries).toEqual({});
   });
 
+  test('reuses the primary composer pill: stacked textarea, footer send, 1.5rem radius', async () => {
+    await act(async () => root.render(<BtwPanel scope={scope} />));
+    const surface = host.querySelector<HTMLElement>('[data-btw-composer] > div');
+    const textarea = host.querySelector<HTMLTextAreaElement>('[data-btw-composer] textarea');
+    const footer = host.querySelector<HTMLElement>('[data-btw-composer] [data-chat-input-footer]');
+    const send = host.querySelector<HTMLElement>('[data-btw-composer] [data-composer-send]');
+    expect(surface?.style.borderRadius).toBe('1.5rem');
+    expect(textarea?.closest('[data-composer-layout="stacked"], [data-composer-content]')).toBeTruthy();
+    expect(host.querySelector('[data-composer-layout="inline"]')).toBeNull();
+    expect(footer).toBeTruthy();
+    expect(footer?.contains(send)).toBe(true);
+    expect(textarea?.parentElement?.contains(send)).toBe(false);
+  });
+
   test('Enter in the panel composer sends; follow-ups append as a conversation', async () => {
     api.generateSessionAside.mockResolvedValueOnce({ text: 'First answer' }).mockResolvedValueOnce({ text: 'Second answer' });
     await act(async () => root.render(<BtwPanel scope={scope} />));

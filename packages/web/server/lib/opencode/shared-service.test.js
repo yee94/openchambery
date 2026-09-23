@@ -80,4 +80,14 @@ describe('shared OpenCode service start', () => {
     await expect(startSharedOpenCodeService({ binary: 'opencode', env: {}, spawnImpl }))
       .rejects.toThrow(/exited with code 1: Background service failed to start/);
   });
+
+  it('replaces the registered service only for an explicit upgrade', async () => {
+    const child = fakeChild();
+    const spawnImpl = vi.fn(() => {
+      queueMicrotask(() => child.emit('exit', 0));
+      return child;
+    });
+    await startSharedOpenCodeService({ binary: '/cache/opencode', env: {}, replace: true, spawnImpl });
+    expect(spawnImpl).toHaveBeenCalledWith('/cache/opencode', ['service', 'restart'], expect.objectContaining({ windowsHide: true }));
+  });
 });

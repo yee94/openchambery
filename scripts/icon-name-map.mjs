@@ -252,6 +252,7 @@ export const ICON_NAME_MAP = {
   "node-tree": { lucide: "network", fill: false },
   "notification-3": { lucide: "bell", fill: false },
   "palette": { lucide: "palette", fill: false },
+  "pause-circle": { lucide: "circle-pause", fill: false },
   "pencil": { lucide: "pencil", fill: false },
   "pencil-ai": { lucide: "sparkles", fill: false },
   "pencil-ai-2": { lucide: "sparkles", fill: false },

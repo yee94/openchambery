@@ -69,7 +69,6 @@ const {
     resolveMarkdownPreloadReleaseWhileScrolling,
     resolveMarkdownVisibleReleaseLimit,
     resolveTanstackEstimatedEntrySize,
-    resolveTanstackEstimateMinSamples,
     resolveTimelineVirtualizerCacheKey,
     shouldInvalidateVirtualizerMeasurementsOnColumnResize,
     resolveTanstackHistoryFrameStyle,
@@ -414,14 +413,6 @@ describe('collapsed-mode virtualizer estimate and markdown preload', () => {
         expect(summary).toBe(320);
     });
 
-    test('converges the adaptive estimate with fewer samples while collapsed', () => {
-        expect(resolveTanstackEstimateMinSamples('collapsed')).toBeLessThan(
-            resolveTanstackEstimateMinSamples('summary'),
-        );
-        expect(resolveTanstackEstimateMinSamples('collapsed')).toBe(2);
-        expect(resolveTanstackEstimateMinSamples('summary')).toBe(5);
-    });
-
     test('widens markdown preload when collapsed or when the visible range is dense', () => {
         expect(resolveMarkdownPreloadEntries('summary', 4)).toBe(6);
         expect(resolveMarkdownPreloadEntries('collapsed', 4)).toBe(12);
@@ -484,7 +475,7 @@ describe('batched virtualizer resize writes', () => {
     test('TanStack resizeItem and LegendList row measure share the microtask batch helper', () => {
         const messageListSource = readFileSync(join(here, 'MessageList.tsx'), 'utf8');
         const timelineSource = readFileSync(join(here, 'TimelineList.tsx'), 'utf8');
-        expect(messageListSource).toContain('installBatchedResizeItem(tanstackVirtualizer)');
+        expect(messageListSource).toContain('installBatchedResizeItem(tanstackVirtualizer, restoreHistoryReadingAnchor)');
         expect(timelineSource).toContain('createSharedElementSizeBatch');
         expect(timelineSource).not.toContain('const height = node.offsetHeight');
     });

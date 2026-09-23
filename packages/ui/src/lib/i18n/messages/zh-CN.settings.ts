@@ -437,6 +437,7 @@ export const settingsDict = {
   'settings.agents.page.section.toolPermissions': '工具权限',
   'settings.agents.page.field.agentName': 'Agent 名称',
   'settings.agents.page.field.agentNamePlaceholder': 'agent-name',
+  'settings.agents.page.field.scope': '范围',
   'settings.agents.page.field.scopePlaceholder': '作用域',
   'settings.agents.page.field.descriptionPlaceholder': '这个 Agent 的作用是什么？',
   'settings.agents.page.field.mode': '模式',

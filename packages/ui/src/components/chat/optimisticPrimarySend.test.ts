@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'bun:test';
+import { describe, expect, test } from 'vitest';
 import { shouldOptimisticPrimarySend } from './optimisticPrimarySend';
 
 const eligible = {
@@ -21,6 +21,11 @@ describe('shouldOptimisticPrimarySend', () => {
         for (const localCommand of ['fork', 'undo', 'redo', 'compact', 'timeline', 'summary']) {
             expect(shouldOptimisticPrimarySend({ ...eligible, localCommand })).toBe(false);
         }
+    });
+
+    test('native queue admission stays off the transcript while direct steer still paints', () => {
+        expect(shouldOptimisticPrimarySend({ ...eligible, delivery: 'queue' })).toBe(false);
+        expect(shouldOptimisticPrimarySend({ ...eligible, delivery: 'steer' })).toBe(true);
     });
 
     test('skips secondary, queue-only, resource-preserving, shell, and missing session', () => {

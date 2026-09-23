@@ -92,8 +92,7 @@ function isKnownOpenCodeDesktopAppPath(candidate: string): boolean {
   return isMacOpenCodeAppBundlePath(candidate) || isWindowsOpenCodeDesktopAppPath(candidate);
 }
 
-// PATH still ships 1.x `opencode` beside `opencode2`. A basename without the
-// trailing 2 is never a valid managed CLI — fail closed instead of spawning it.
+// V1 and V2 share the official basename; admission is determined by version.
 export function isLegacyOpenCodeCliBasename(_candidate: string): boolean {
   return false;
 }
@@ -181,7 +180,7 @@ export function resolveDetectedOpencodeCliPath(options: {
   }
 
   const home = resolveHomeDir();
-    const unixFallbacks = ['opencode', 'opencode2'].flatMap((name) => [
+  const unixFallbacks = ['opencode'].flatMap((name) => [
     path.join(home, '.opencode', 'bin', name),
     path.join(home, '.bun', 'bin', name),
     path.join(home, '.local', 'bin', name),
@@ -200,27 +199,26 @@ export function resolveDetectedOpencodeCliPath(options: {
     const npmDir = path.join(appData, 'npm');
 
     return [
-      path.join(userProfile, '.opencode', 'bin', 'opencode2.exe'),
-      path.join(userProfile, '.opencode', 'bin', 'opencode2.cmd'),
-      path.join(npmDir, 'node_modules', 'opencode-ai', 'bin', 'opencode2.exe'),
-      path.join(npmDir, 'opencode2.exe'),
-      path.join(npmDir, 'opencode2.cmd'),
-      path.join(npmDir, 'opencode2.bat'),
+      path.join(userProfile, '.opencode', 'bin', 'opencode.exe'),
+      path.join(userProfile, '.opencode', 'bin', 'opencode.cmd'),
+      path.join(npmDir, 'opencode.exe'),
+      path.join(npmDir, 'opencode.cmd'),
+      path.join(npmDir, 'opencode.bat'),
       // System-wide Node installer keeps the global npm prefix here
-      // (npm i -g opencode-ai → opencode.cmd shim).
-      path.join(process.env.ProgramFiles || 'C:\\Program Files', 'nodejs', 'opencode2.cmd'),
-      path.join(userProfile, 'scoop', 'shims', 'opencode2.exe'),
-      path.join(userProfile, 'scoop', 'shims', 'opencode2.cmd'),
-      path.join(programData, 'chocolatey', 'bin', 'opencode2.exe'),
-      path.join(programData, 'chocolatey', 'bin', 'opencode2.cmd'),
+      // (npm i -g @opencode/cli → opencode.cmd shim).
+      path.join(process.env.ProgramFiles || 'C:\\Program Files', 'nodejs', 'opencode.cmd'),
+      path.join(userProfile, 'scoop', 'shims', 'opencode.exe'),
+      path.join(userProfile, 'scoop', 'shims', 'opencode.cmd'),
+      path.join(programData, 'chocolatey', 'bin', 'opencode.exe'),
+      path.join(programData, 'chocolatey', 'bin', 'opencode.cmd'),
       // Bun global install
-      path.join(userProfile, '.bun', 'bin', 'opencode2.exe'),
-      path.join(userProfile, '.bun', 'bin', 'opencode2.cmd'),
+      path.join(userProfile, '.bun', 'bin', 'opencode.exe'),
+      path.join(userProfile, '.bun', 'bin', 'opencode.cmd'),
     ].filter(Boolean);
   })();
 
   if (process.platform !== 'win32') {
-    for (const name of ['opencode', 'opencode2']) {
+    for (const name of ['opencode']) {
       const fromPath = findExecutableInPath(name);
       if (fromPath && !isKnownOpenCodeDesktopAppPath(fromPath) && isAcceptableOpenCode2HealthVersion(readOpenCodeCliVersion(fromPath))) {
         cachedDetectedOpencodeCliPath = fromPath;
@@ -238,14 +236,14 @@ export function resolveDetectedOpencodeCliPath(options: {
   }
 
   if (process.platform === 'win32') {
-    const fromPath = findExecutableInPath('opencode2');
-    if (fromPath && !isKnownOpenCodeDesktopAppPath(fromPath) && !isLegacyOpenCodeCliBasename(fromPath)) {
+    const fromPath = findExecutableInPath('opencode');
+    if (fromPath && !isKnownOpenCodeDesktopAppPath(fromPath) && isAcceptableOpenCode2HealthVersion(readOpenCodeCliVersion(fromPath))) {
       cachedDetectedOpencodeCliPath = fromPath;
       return fromPath;
     }
 
     try {
-      const result = runSpawnSync('where', ['opencode2'], {
+      const result = runSpawnSync('where', ['opencode'], {
         encoding: 'utf8',
         stdio: ['ignore', 'pipe', 'pipe'],
         windowsHide: true,
@@ -255,7 +253,7 @@ export function resolveDetectedOpencodeCliPath(options: {
           .split(/\r?\n/)
           .map((line) => line.trim())
           .filter(Boolean);
-        const found = lines.find((line) => isExecutable(line) && !isKnownOpenCodeDesktopAppPath(line) && !isLegacyOpenCodeCliBasename(line));
+        const found = lines.find((line) => isExecutable(line) && !isKnownOpenCodeDesktopAppPath(line) && isAcceptableOpenCode2HealthVersion(readOpenCodeCliVersion(line)));
         if (found) {
           cachedDetectedOpencodeCliPath = found;
           return found;

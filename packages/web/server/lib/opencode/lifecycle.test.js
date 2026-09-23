@@ -971,15 +971,14 @@ describe('shared official OpenCode service', () => {
     expect(fetchMock.mock.calls.some(([url]) => String(url).includes(':4096/'))).toBe(false);
   });
 
-  it('falls back to a managed serve and rolls back attach state when the service cannot start', async () => {
+  it('reports shared startup failure without probing or spawning a private serve, and can retry', async () => {
     process.env.OPENCODE_BINARY = '/mock/opencode';
     const sharedService = createSharedService({ start: vi.fn(async () => { throw new Error('boom'); }) });
     const adoptOpenCodeServerPassword = vi.fn();
     const stateRef = {};
     const runtime = createRuntime({ env: UNCONFIGURED_ENV, sharedService, adoptOpenCodeServerPassword }, stateRef);
     vi.spyOn(console, 'warn').mockImplementation(() => {});
-    stubSharedFetch();
-    startListeningChild();
+    const fetchMock = stubSharedFetch();
 
     await runtime.bootstrapOpenCodeAtStartup();
 
@@ -987,8 +986,71 @@ describe('shared official OpenCode service', () => {
     expect(runtime.isSharedOpenCodeService()).toBe(false);
     expect(stateRef.current.isExternalOpenCode).toBe(false);
     expect(stateRef.current.openCodeBaseUrl).toBeNull();
-    expect(stateRef.current.openCodeProcess?.pid).toBe(12345);
-    await stateRef.current.openCodeProcess.close();
+    expect(stateRef.current.openCodeProcess).toBeNull();
+    expect(stateRef.current.isOpenCodeReady).toBe(false);
+    expect(stateRef.current.lastOpenCodeError).toBe('boom');
+    expect(spawnMock).not.toHaveBeenCalled();
+    expect(fetchMock).not.toHaveBeenCalled();
+
+    sharedService.start.mockResolvedValue(undefined);
+    await runtime.bootstrapOpenCodeAtStartup();
+    expect(runtime.isSharedOpenCodeService()).toBe(true);
+    expect(stateRef.current.isOpenCodeReady).toBe(true);
+  });
+
+  it('reconnects using updated registration without replacing the service', async () => {
+    const sharedService = createSharedService();
+    const adoptOpenCodeServerPassword = vi.fn();
+    const stateRef = {};
+    const runtime = createRuntime({ env: UNCONFIGURED_ENV, sharedService, adoptOpenCodeServerPassword }, stateRef);
+    stubSharedFetch();
+    await runtime.bootstrapOpenCodeAtStartup();
+    sharedService.readRegistration.mockResolvedValue({ ...REGISTRATION, port: 49375, origin: 'http://127.0.0.1:49375', password: 'rotated' });
+
+    await runtime.restartOpenCode();
+
+    expect(sharedService.start.mock.lastCall[0].replace).toBe(false);
+    expect(stateRef.current.openCodePort).toBe(49375);
+    expect(adoptOpenCodeServerPassword).toHaveBeenLastCalledWith('rotated', 'shared-service');
+    expect(spawnMock).not.toHaveBeenCalled();
+  });
+
+  it('reattaches shared ownership across HMR and retires an old private child', async () => {
+    const sharedService = createSharedService();
+    const stateRef = {};
+    const runtime = createRuntime({ env: UNCONFIGURED_ENV, sharedService }, stateRef);
+    const close = vi.fn();
+    stateRef.current.openCodeProcess = { pid: 12345, close };
+    stateRef.current.openCodePort = 4096;
+    stubSharedFetch();
+    await runtime.bootstrapOpenCodeAtStartup();
+    expect(close).toHaveBeenCalledOnce();
+    expect(stateRef.current.openCodeProcess).toBeNull();
+    expect(runtime.isSharedOpenCodeService()).toBe(true);
+    await runtime.bootstrapOpenCodeAtStartup();
+    expect(runtime.isSharedOpenCodeService()).toBe(true);
+    expect(stateRef.current.isExternalOpenCode).toBe(true);
+    expect(spawnMock).not.toHaveBeenCalled();
+  });
+
+  it('uses the explicit upgrade binary without settings rediscovery and propagates replacement failures', async () => {
+    const sharedService = createSharedService();
+    const applyOpencodeBinaryFromSettings = vi.fn();
+    const stateRef = {};
+    const runtime = createRuntime({ env: UNCONFIGURED_ENV, sharedService, applyOpencodeBinaryFromSettings }, stateRef);
+    stubSharedFetch();
+    await runtime.bootstrapOpenCodeAtStartup();
+    applyOpencodeBinaryFromSettings.mockClear();
+
+    await runtime.restartOpenCode({ binaryPath: '/cache/opencode-cli/2.0.14/opencode' });
+
+    expect(sharedService.start.mock.lastCall[0]).toMatchObject({ binary: '/cache/opencode-cli/2.0.14/opencode', replace: true });
+    expect(applyOpencodeBinaryFromSettings).not.toHaveBeenCalled();
+    sharedService.start.mockRejectedValue(new Error('replacement failed'));
+    await expect(runtime.restartOpenCode({ binaryPath: '/cache/opencode-cli/2.0.14/opencode' })).rejects.toThrow('replacement failed');
+    expect(stateRef.current.isOpenCodeReady).toBe(false);
+    expect(stateRef.current.runtimeContract.executionAllowed).toBe(false);
+    expect(spawnMock).not.toHaveBeenCalled();
   });
 
   it('reloads config changes in place instead of restarting the shared service', async () => {

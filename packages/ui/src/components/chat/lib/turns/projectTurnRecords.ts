@@ -225,7 +225,7 @@ const DEFAULT_OPTIONS: ProjectTurnRecordsOptions = {
     showTurnChangedFiles: false,
 };
 
-const areSameMessageRefs = (left: ChatMessageEntry[], right: ChatMessageEntry[]): boolean => {
+const areSameMessageRefs = (left: TurnMessageRecord[], right: TurnMessageRecord[]): boolean => {
     if (left === right) {
         return true;
     }
@@ -234,7 +234,7 @@ const areSameMessageRefs = (left: ChatMessageEntry[], right: ChatMessageEntry[])
     }
 
     for (let index = 0; index < left.length; index += 1) {
-        if (left[index] !== right[index]) {
+        if (left[index].message !== right[index].message) {
             return false;
         }
     }
@@ -245,7 +245,7 @@ const areSameMessageRefs = (left: ChatMessageEntry[], right: ChatMessageEntry[])
 const canReusePreviousTurn = (previous: TurnRecord, next: TurnRecord): boolean => {
     return previous.userMessage === next.userMessage
         && previous.headerMessageId === next.headerMessageId
-        && areSameMessageRefs(previous.assistantMessages, next.assistantMessages);
+        && areSameMessageRefs(previous.messages, next.messages);
 };
 
 const hydrateTurnRecord = (
@@ -384,6 +384,7 @@ export const projectTurnRecords = (
 
     const turns: TurnRecord[] = [];
     const turnByUserId = new Map<string, TurnRecord>();
+    const noticeOwnerById = new Map<string, TurnRecord>();
     const groupedMessageIds = new Set<string>();
 
     messages.forEach((message, index) => {
@@ -392,6 +393,7 @@ export const projectTurnRecords = (
             return;
         }
         if (turns.length > 0 && isNativeSyntheticNotice(message)) {
+            noticeOwnerById.set(message.info.id, turns[turns.length - 1]);
             groupedMessageIds.add(message.info.id);
             return;
         }
@@ -428,6 +430,11 @@ export const projectTurnRecords = (
 
     messages.forEach((message, index) => {
         const role = resolveMessageRole(message);
+        const noticeOwner = noticeOwnerById.get(message.info.id);
+        if (noticeOwner) {
+            noticeOwner.messages.push(createTurnMessageRecord(message, index));
+            return;
+        }
         if (role !== 'assistant') {
             return;
         }

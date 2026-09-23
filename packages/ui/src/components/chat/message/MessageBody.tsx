@@ -64,6 +64,8 @@ import { getSessionSurfaceActionAvailability, navigateNestedSession, useSessionS
 import { pushPhoneNestedSession } from '@/mobile/useMobileNavigationStore';
 import { useMobileAppActions } from '@/apps/mobileAppContext';
 import { isSyntheticPart } from '@/lib/messages/synthetic';
+import type { AssistantErrorPresentation } from './assistantErrorPresentation';
+import { ResponseStatusRow } from './ResponseStatusRow';
 import { parseSubagentNotification, type SubagentNotification } from './parts/taskToolModel';
 import { FileTypeIcon } from '@/components/icons/FileTypeIcon';
 import { openTurnChangedFilePreview } from '../openTurnChangedFile';
@@ -741,9 +743,7 @@ interface MessageBodyProps {
     /** User rows only: edit staged for the next send — label + cancel replace the row. */
     editStaged?: boolean;
     onCancelEdit?: () => void;
-    errorMessage?: string;
-    errorDetail?: string;
-    errorVariant?: 'error' | 'info' | 'muted';
+    errorPresentation?: AssistantErrorPresentation;
     userActionsMode?: 'inline' | 'external-content' | 'external-actions';
     stickyUserHeaderEnabled?: boolean;
     reviewTransferDirection?: ReviewTransferDirection | null;
@@ -1465,11 +1465,10 @@ const AssistantMessageBody = React.memo(({
     onAuxiliaryContentComplete,
     showReasoningTraces = false,
     turnGroupingContext,
-    errorMessage,
-    errorDetail,
-    errorVariant = 'error',
+    errorPresentation,
     reviewTransferDirection = null,
 }: Omit<MessageBodyProps, 'isUser'>) => {
+    const errorMessage = errorPresentation?.text;
     const { t, locale } = useI18n();
     const chatSurfaceMode = useChatSurfaceMode();
     const sessionSurface = useSessionSurface();
@@ -1851,10 +1850,6 @@ const AssistantMessageBody = React.memo(({
     const shouldDeferSortedInlineText = isSortedRenderMode
         && !canRevealSortedBody
         && !(isCompactionTurn && isActivityExpanded);
-    const showErrorMessage = Boolean(errorMessage);
-    const errorIconName = errorVariant === 'muted'
-        ? 'stop-circle'
-        : errorVariant === 'info' ? 'information' : 'error-warning';
     const shouldShowMessageActions = hasCopyableText;
     // Settled turns (stop / completed / interrupt-error) get the footer even
     // when text is empty, so duration + TPS still show after user abort.
@@ -2403,29 +2398,10 @@ const AssistantMessageBody = React.memo(({
                      className="message-content-text leading-relaxed text-foreground/90 [&_p:last-child]:mb-0 [&_ul:last-child]:mb-0 [&_ol:last-child]:mb-0"
                  >
                     {renderedParts}
-                    {showErrorMessage && (
+                    {errorPresentation && (
                         <FadeInOnReveal key="assistant-error">
-                            <div
-                                role={errorVariant === 'error' ? 'alert' : 'status'}
-                                data-assistant-error={errorVariant}
-                                className="my-1.5 flex w-full min-w-0 items-start gap-1.5 typography-meta leading-5 text-muted-foreground"
-                            >
-                                <span className="inline-flex h-5 shrink-0 items-center" aria-hidden="true">
-                                    <Icon
-                                        name={errorIconName}
-                                        className={cn(
-                                            'size-3.5',
-                                            errorVariant === 'error' && 'text-[var(--status-error)]/85',
-                                            errorVariant === 'info' && 'text-[var(--status-info)]/80',
-                                        )}
-                                    />
-                                </span>
-                                <span className="min-w-0 flex-1 whitespace-pre-wrap [overflow-wrap:anywhere]">
-                                    {errorMessage}
-                                    {errorDetail ? (
-                                        <span className="ml-1.5 text-muted-foreground/60">{errorDetail}</span>
-                                    ) : null}
-                                </span>
+                            <div className="my-1.5" data-assistant-error={errorPresentation.variant}>
+                                <ResponseStatusRow presentation={errorPresentation} />
                             </div>
                         </FadeInOnReveal>
                     )}

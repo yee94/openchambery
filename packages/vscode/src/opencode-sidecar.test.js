@@ -277,11 +277,11 @@ describe('resolveDetectedOpencodeCliPath', () => {
     })).toBeNull();
   });
 
-  test('discovers opencode2 from PATH and ignores a sibling 1.x opencode', () => {
+  test('discovers official opencode from PATH and ignores the opencode2 alias', () => {
     const pathDir = createTempDir('openchamber-vscode-path-opencode2-');
-    const legacy = path.join(pathDir, process.platform === 'win32' ? 'opencode.exe' : 'opencode');
-    const binary = path.join(pathDir, process.platform === 'win32' ? 'opencode2.exe' : 'opencode2');
-    writeVersionBinary(legacy, '1.18.4');
+    const legacy = path.join(pathDir, process.platform === 'win32' ? 'opencode2.exe' : 'opencode2');
+    const binary = path.join(pathDir, process.platform === 'win32' ? 'opencode.exe' : 'opencode');
+    writeVersionBinary(legacy, '2.0.15');
     writeVersionBinary(binary, '2.0.12');
     process.env.PATH = pathDir;
     delete process.env.OPENCODE_BINARY;
@@ -296,9 +296,9 @@ describe('resolveDetectedOpencodeCliPath', () => {
     })).toBe(binary);
   });
 
-  test('discovers opencode2 from a home-directory install location', () => {
+  test('discovers opencode from a home-directory install location', () => {
     const home = createTempDir('openchamber-vscode-home-opencode2-');
-    const binary = path.join(home, '.bun', 'bin', process.platform === 'win32' ? 'opencode2.exe' : 'opencode2');
+    const binary = path.join(home, '.bun', 'bin', process.platform === 'win32' ? 'opencode.exe' : 'opencode');
     writeVersionBinary(binary, '2.0.12');
     process.env.PATH = createTempDir('openchamber-vscode-empty-path-home-');
     delete process.env.OPENCODE_BINARY;

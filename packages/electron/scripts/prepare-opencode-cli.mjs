@@ -178,9 +178,8 @@ const main = async () => {
 
   const extractDir = path.join(cacheDir, 'extract');
   extractArchive(archivePath, extractDir);
-  // Official 2.x platform tarballs ship `bin/opencode`; keep the staged name as opencode2.
-  const extractedBinary = findBinary(extractDir, binaryName)
-    || findBinary(extractDir, process.platform === 'win32' ? 'opencode.exe' : 'opencode');
+  // Official 2.x platform tarballs and staged resources both use `bin/opencode`.
+  const extractedBinary = findBinary(extractDir, binaryName);
   if (!extractedBinary) {
     throw new Error(`Archive ${archivePath} did not contain ${binaryName} or opencode`);
   }

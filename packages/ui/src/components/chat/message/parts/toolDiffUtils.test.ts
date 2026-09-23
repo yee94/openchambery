@@ -234,6 +234,22 @@ describe('toolDiffUtils', () => {
         })).toEqual({ added: 3, removed: 3 });
 
         expect(getToolPartLineDiffTotals({
+            state: {
+                metadata: {
+                    files: [{ file: 'src/a.ts', additions: 12, deletions: 1, patch: '--- a\n+++ b\n@@ -1 +1 @@\n-old\n+new\n' }],
+                },
+            },
+        })).toEqual({ added: 12, removed: 1 });
+
+        expect(getToolPartLineDiffTotals({
+            state: {
+                metadata: {
+                    files: [{ file: 'src/a.ts', patch: '--- a/src/a.ts\n+++ b/src/a.ts\n@@ -1 +1 @@\n-old\n+new\n' }],
+                },
+            },
+        })).toEqual({ added: 1, removed: 1 });
+
+        expect(getToolPartLineDiffTotals({
             state: { metadata: { patch: '--- a\n+++ b\n@@ -1 +1 @@\n-old\n+new\n' } },
         })).toEqual({ added: 1, removed: 1 });
 

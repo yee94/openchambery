@@ -93,12 +93,26 @@ describe('assertOpenCode2Binary', () => {
 });
 
 describe('collectStartupEnv OpenCode binary', () => {
-  it('persists PATH opencode2 and ignores a sibling 1.x opencode', async () => {
+  it('does not auto-discover opencode2 when the official command is missing', async () => {
+    await withIsolatedOpenCodeEnv(async () => {
+      const pathDir = createTempDir('openchamber-startup-alias-only-');
+      writeVersionBinary(path.join(pathDir, process.platform === 'win32' ? 'opencode2.cmd' : 'opencode2'), '2.0.15');
+      process.env.PATH = pathDir;
+      delete process.env.OPENCODE_BINARY;
+      try {
+        expect(collectStartupEnv().OPENCODE_BINARY).toBeUndefined();
+      } finally {
+        fs.rmSync(pathDir, { recursive: true, force: true });
+      }
+    });
+  });
+
+  it('persists official PATH opencode and ignores the opencode2 alias', async () => {
     await withIsolatedOpenCodeEnv(async () => {
       const pathDir = createTempDir('openchamber-startup-path-');
-      const legacy = path.join(pathDir, process.platform === 'win32' ? 'opencode.exe' : 'opencode');
-      const binary = path.join(pathDir, process.platform === 'win32' ? 'opencode2.cmd' : 'opencode2');
-      writeVersionBinary(legacy, '1.18.4');
+      const legacy = path.join(pathDir, process.platform === 'win32' ? 'opencode2.cmd' : 'opencode2');
+      const binary = path.join(pathDir, process.platform === 'win32' ? 'opencode.cmd' : 'opencode');
+      writeVersionBinary(legacy, '2.0.15');
       writeVersionBinary(binary, '2.0.12');
       process.env.PATH = pathDir;
       delete process.env.OPENCODE_BINARY;

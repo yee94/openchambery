@@ -8,10 +8,6 @@ export type AgentEditorSnapshot = {
   mode: AgentMode;
   model: string;
   system: string;
-  steps: number | undefined;
-  hidden: boolean;
-  disabled: boolean;
-  color: string;
   globalPermission: PermissionAction;
   permissionRules: PermissionRule[];
 };
@@ -24,10 +20,6 @@ type AgentSaveConfig = {
   mode?: AgentMode;
   model?: string | null;
   system?: string | null;
-  steps?: number | null;
-  hidden?: boolean;
-  disabled?: boolean;
-  color?: string | null;
   permissions?: NativePermission[] | null;
   scope?: AgentScope;
   confirmDrop?: boolean;
@@ -94,11 +86,6 @@ const encodeModel = (model: string): string | null => {
   return trimmed === '' ? null : trimmed;
 };
 
-const encodeColor = (color: string): string | null => {
-  const trimmed = color.trim();
-  return HEX_COLOR.test(trimmed) ? trimmed : null;
-};
-
 /**
  * Build a native agent patch.
  * Create sends the drafted values. Update sends only fields that differ.
@@ -108,6 +95,7 @@ export const buildAgentSaveConfig = ({
   isNewAgent,
   agentName,
   draftScope,
+  initialScope,
   draftHasExplicitPermission,
   current,
   initial,
@@ -116,6 +104,7 @@ export const buildAgentSaveConfig = ({
   isNewAgent: boolean;
   agentName: string;
   draftScope?: AgentScope;
+  initialScope?: AgentScope;
   draftHasExplicitPermission: boolean;
   current: AgentEditorSnapshot;
   initial: AgentEditorSnapshot | null;
@@ -127,7 +116,6 @@ export const buildAgentSaveConfig = ({
     const description = current.description.trim();
     const model = encodeModel(current.model);
     const system = current.system.trim();
-    const color = encodeColor(current.color);
     const permissionsChanged = hasPermissionChanged(current, initial);
     const shouldWritePermission = permissionsChanged || draftHasExplicitPermission;
     return {
@@ -136,10 +124,6 @@ export const buildAgentSaveConfig = ({
       ...(description ? { description } : {}),
       ...(model ? { model } : {}),
       ...(system ? { system } : {}),
-      ...(current.steps !== undefined ? { steps: current.steps } : {}),
-      ...(current.hidden ? { hidden: true } : {}),
-      ...(current.disabled ? { disabled: true } : {}),
-      ...(color ? { color } : {}),
       ...(shouldWritePermission ? { permissions } : {}),
       ...(draftScope ? { scope: draftScope } : {}),
       ...(confirmDrop ? { confirmDrop: true } : {}),
@@ -162,11 +146,8 @@ export const buildAgentSaveConfig = ({
     const system = current.system.trim();
     config.system = system || null;
   }
-  if (current.steps !== initial.steps) config.steps = current.steps ?? null;
-  if (current.hidden !== initial.hidden) config.hidden = current.hidden;
-  if (current.disabled !== initial.disabled) config.disabled = current.disabled;
-  if (current.color !== initial.color) config.color = encodeColor(current.color);
   if (hasPermissionChanged(current, initial)) config.permissions = permissions;
+  if (draftScope && initialScope && draftScope !== initialScope) config.scope = draftScope;
   return config;
 };
 
@@ -203,3 +184,10 @@ export const splitModelSelection = (value: string): { providerId: string; modelI
 };
 
 export const isHexColor = (value: string): boolean => HEX_COLOR.test(value.trim());
+
+/** Display label for an agent id (build → Build). Storage ids stay lowercase. */
+export const formatAgentDisplayName = (name: string): string => {
+  const trimmed = name.trim();
+  if (!trimmed) return trimmed;
+  return trimmed.charAt(0).toUpperCase() + trimmed.slice(1);
+};

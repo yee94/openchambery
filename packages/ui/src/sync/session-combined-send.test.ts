@@ -1151,6 +1151,46 @@ describe('handleCombinedDraftSend', () => {
     expect(parts.length).toBe(5)
   })
 
+  test('native queue admission never paints a user message while the request is pending', async () => {
+    const add = vi.fn()
+    const remove = vi.fn()
+    setOptimisticRefs(add, remove)
+    let finish!: () => void
+    let entered!: () => void
+    const started = new Promise<void>((resolve) => { entered = resolve })
+    opencodeClient.sendMessage = async () => {
+      entered()
+      await new Promise<void>((resolve) => { finish = resolve })
+      return 'msg_native_queue'
+    }
+    const pending = useSessionUIStore.getState().sendMessage(
+      'queued follow-up', 'openai', 'gpt-4o', undefined, undefined, undefined, undefined, undefined, 'normal',
+      { sessionId: SESSION_ID, directoryHint: PROJECT.path, delivery: 'queue', messageID: 'msg_native_queue' },
+    )
+    await started
+    const insertedBeforeAdmission = add.mock.calls.length
+    finish()
+    await pending
+    expect(insertedBeforeAdmission).toBe(0)
+    expect(add).not.toHaveBeenCalled()
+  })
+
+  test('rejected native queue admission preserves the running turn without transcript rollback', async () => {
+    const { childStore } = setupChildStores()
+    childStore.setState({ session_status: { [SESSION_ID]: { type: 'busy' } } })
+    const add = vi.fn()
+    const remove = vi.fn()
+    setOptimisticRefs(add, remove)
+    opencodeClient.sendMessage = async () => { throw new Error('rejected queue admission') }
+    await expect(useSessionUIStore.getState().sendMessage(
+      'queued follow-up', 'openai', 'gpt-4o', undefined, undefined, undefined, undefined, undefined, 'normal',
+      { sessionId: SESSION_ID, directoryHint: PROJECT.path, delivery: 'queue', messageID: 'msg_rejected_queue' },
+    )).rejects.toThrow('rejected queue admission')
+    expect(add).not.toHaveBeenCalled()
+    expect(remove).not.toHaveBeenCalled()
+    expect(childStore.getState().session_status[SESSION_ID]).toEqual({ type: 'busy' })
+  })
+
   test('13) existing send confirms caller and notification once', async () => {
     let callerConfirmations = 0
     opencodeClient.sendMessage = (async () => {}) as any
@@ -1510,6 +1550,44 @@ describe('staged message edits', () => {
     expect(useSessionUIStore.getState().messageEditCommitting).toBe(null)
     expect(messages[SESSION_ID].map((message) => message.id)).toEqual(['msg_2', 'msg_3'])
     restoreMessages()
+  })
+
+  test('replacement send failure clears the committed edit marker and retains the draft for ordinary retry', async () => {
+    const childStore = createChildStore()
+    childStore.setState({
+      session: [sessionFixture()],
+      message: { [SESSION_ID]: [
+        { id: 'msg_2', sessionID: SESSION_ID, role: 'user', time: { created: 2 } },
+        { id: 'msg_3', sessionID: SESSION_ID, role: 'assistant', time: { created: 3 } },
+      ] },
+    })
+    setActionRefs(makeActionSdk() as any, {
+      children: new Map([[PROJECT.path, childStore]]),
+      ensureChild: () => childStore,
+      getChild: () => childStore,
+    } as any, () => PROJECT.path)
+    useSessionUIStore.setState({
+      currentSessionId: SESSION_ID,
+      currentSessionDirectory: PROJECT.path,
+      stagedMessageEdit: { sessionId: SESSION_ID, messageId: 'msg_2' },
+      messageEditCommitting: { sessionId: SESSION_ID, messageId: 'msg_2' },
+    })
+    useInputStore.setState({ pendingInputText: 'replacement draft' })
+    const sequence: string[] = []
+    installRevert(sequence)
+    opencodeClient.sendMessage = async () => {
+      sequence.push('send')
+      throw Object.assign(new Error('send rejected'), { status: 400 })
+    }
+    await expect(useSessionUIStore.getState().sendMessage(
+      'replacement draft', 'openai', 'gpt-4o', undefined, undefined, undefined, undefined, undefined, undefined,
+      { commitStagedMessageEdit: true },
+    )).rejects.toThrow('send rejected')
+    expect(sequence).toEqual(['stage:msg_2', 'commit', 'send'])
+    expect(useSessionUIStore.getState().stagedMessageEdit).toBeNull()
+    expect(useSessionUIStore.getState().messageEditCommitting).toBeNull()
+    expect(useInputStore.getState().pendingInputText).toBe('replacement draft')
+    expect(childStore.getState().message[SESSION_ID]).toEqual([])
   })
 
   test('an explicit queued owner directory routes POST and optimistic state to that directory', async () => {

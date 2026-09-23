@@ -7,7 +7,6 @@ import { SessionErrorNotice } from './SessionErrorNotice';
 const state = vi.hoisted(() => ({ errorAt: 100 as number | undefined }));
 vi.mock('@/sync/sync-context', () => ({ useSessionErrorAt: () => state.errorAt }));
 vi.mock('@/lib/i18n', () => ({ useI18n: () => ({ t: (key: string) => key }) }));
-vi.mock('@/components/icon/Icon', () => ({ Icon: () => null }));
 let root: Root;
 let host: HTMLDivElement;
 beforeEach(() => {
@@ -38,7 +37,7 @@ it('uses the transcript column and a quiet full-width row for long errors', asyn
   expect(alert?.classList.contains('border')).toBe(false);
   expect(alert?.classList.contains('rounded-lg')).toBe(false);
   expect(alert?.querySelector('span.flex-1')?.classList.contains('[overflow-wrap:anywhere]')).toBe(true);
-  expect(alert?.textContent).toBe(message);
+  expect(alert?.textContent).toContain(message);
 });
 it('clears the error when authoritative activity clears error_at', async () => {
   await render(); await report(); state.errorAt = undefined; await render();
@@ -57,4 +56,22 @@ it('shows the latest same-session failure without exposing another session error
   await render(); await report('first failure'); await report('latest failure');
   await act(async () => useNotificationStore.getState().append({ type: 'error', session: 'other-session', time: Date.now(), viewed: false, error: { name: null, message: 'unrelated' } }));
   expect(host.textContent).toContain('latest failure'); expect(host.textContent).not.toContain('unrelated');
+});
+
+it('renders structured status and icon consistently, including non-error interruptions', async () => {
+  await render();
+  await act(async () => useNotificationStore.getState().append({
+    type: 'error', session: 'test-session', directory: '/test-project', time: Date.now(), viewed: false,
+    error: { name: 'provider.auth', type: 'provider.auth', message: 'original diagnosis', status: 401 },
+  }));
+  expect(host.querySelector('[role="alert"]')?.textContent).toContain('chat.response.auth');
+  expect(host.textContent).toContain('provider.auth · 401');
+  expect(host.querySelector('use')?.getAttribute('href')).toBe('#oc-lock');
+  await act(async () => useNotificationStore.getState().append({
+    type: 'error', session: 'test-session', directory: '/test-project', time: Date.now(), viewed: false,
+    error: { name: 'aborted', type: 'aborted', message: 'Step interrupted' },
+  }));
+  expect(host.querySelector('[role="alert"]')).toBeNull();
+  expect(host.querySelector('[role="status"]')?.textContent).toContain('chat.response.interrupted');
+  expect(host.querySelector('use')?.getAttribute('href')).toBe('#oc-pause-circle');
 });

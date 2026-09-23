@@ -13,7 +13,7 @@ import { getConfigDirectoryKey, useConfigStore } from '@/stores/useConfigStore';
 import { reloadOpenCodeLocations } from '@/stores/useAgentsStore';
 import { useUIStore } from '@/stores/useUIStore';
 import { useLeaderKeyStore } from '@/stores/useLeaderKeyStore';
-import { useMessageQueueStore, getPendingAdmissionsForScope, getQueueForScope, legacyQueueScope, queueScopeKey, type QueueItem, type QueueScope, type QueuedMessage } from '@/stores/messageQueueStore';
+import { useMessageQueueStore, getPendingAdmissionsForScope, getQueueForScope, legacyQueueScope, queueScopeKey, type QueueItem, type QueueScope, type QueuedMessage, type QueuePendingAdmissionItem } from '@/stores/messageQueueStore';
 import { useAutoReviewStore } from '@/stores/useAutoReviewStore';
 import { usePermissionStore } from '@/stores/permissionStore';
 import { autoRespondsPermission } from '@/stores/utils/permissionAutoAccept';
@@ -197,7 +197,7 @@ import {
     type ComposerSendPhase,
 } from '@/sync/composer-send-manager';
 import { drainEstablishingFollowUps } from '@/sync/composer-send-drain';
-import { updateInboxOverlayDelivery, useSessionInboxOverlayStore, toChip as toInboxChip, EMPTY_INBOX_CHIPS } from '@/sync/session-inbox-overlay';
+import { getInboxTerminal, updateInboxOverlayDelivery, useSessionInboxOverlayStore, toChip as toInboxChip, EMPTY_INBOX_CHIPS } from '@/sync/session-inbox-overlay';
 import { cancelUnpromotedInboxItem, queueSessionInbox, steerSessionInbox } from '@/sync/session-prompt-api';
 import { canPromoteInboxItem, useSessionCompactionBarrierStore } from '@/sync/session-compaction-api';
 import { runQueueMessageFireAndForget } from './queueMessageFireAndForget';
@@ -2464,9 +2464,21 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
         () => (inboxOverlayItems ? inboxOverlayItems.map(toInboxChip) : EMPTY_INBOX_CHIPS),
         [inboxOverlayItems],
     );
+    const [nativeQueueAdmission, setNativeQueueAdmission] = React.useState<{
+        sessionID: string;
+        runtime: ReturnType<typeof surfaceResources.captureRuntime>;
+        item: QueuePendingAdmissionItem;
+    } | null>(null);
+    const visibleNativeAdmission = nativeQueueAdmission
+        && nativeQueueAdmission.sessionID === currentSessionId
+        && isQueueAdmissionRuntimeCurrent(nativeQueueAdmission.runtime, surfaceResources.captureRuntime())
+        && !getInboxTerminal(nativeQueueAdmission.sessionID, nativeQueueAdmission.item.messageID)
+        && !inboxOverlayChips.some((item) => item.messageID === nativeQueueAdmission.item.messageID)
+        ? nativeQueueAdmission.item
+        : null;
     const composerPendingItems = React.useMemo(
-        () => [...establishingPendingItems, ...inboxOverlayChips],
-        [establishingPendingItems, inboxOverlayChips],
+        () => [...establishingPendingItems, ...inboxOverlayChips, ...(visibleNativeAdmission ? [visibleNativeAdmission] : [])],
+        [establishingPendingItems, inboxOverlayChips, visibleNativeAdmission],
     );
     const compactionBarrier = useSessionCompactionBarrierStore(
         React.useCallback((state) => (
@@ -3089,7 +3101,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
         if (!currentSessionId && resolvedDraftBusy) return;
 
         // Claim flight before the first await so button/keyboard/preset re-entry is blocked.
-        if (!beginSubmissionFlight()) return;
+        if (!beginSubmissionFlight(delivery === 'queue' ? 'queue' : 'send')) return;
         // New-session create: open establishing before any await so later Enter/Send
         // can stage follow-up chips instead of being blocked by this flight.
         const establishingDraftIDAtSubmit = !currentSessionId && newSessionDraftOpen && !queuedOnly && !resourcePolicy
@@ -3172,6 +3184,33 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
         // starts. The captured submission restores this exact draft if dispatch
         // cannot proceed. Local commands retain their existing resource policy.
         const clearedComposerBeforeDispatch = !queuedOnly && !resourcePolicy;
+        const nativeQueueMessageID = surface.kind === 'primary' && currentSessionId
+            && delivery === 'queue' && !queuedOnly && !resourcePolicy && !localCommand && inputMode === 'normal'
+            ? ascendingId('msg')
+            : undefined;
+        const clearNativeQueueAdmission = () => {
+            if (!nativeQueueMessageID) return;
+            setNativeQueueAdmission((pending) => pending?.item.messageID === nativeQueueMessageID ? null : pending);
+        };
+        if (nativeQueueMessageID && currentSessionId) {
+            setNativeQueueAdmission({
+                sessionID: currentSessionId,
+                runtime: surfaceResources.captureRuntime(),
+                item: {
+                    kind: 'pending-admission',
+                    requestID: nativeQueueMessageID,
+                    queueItemID: nativeQueueMessageID,
+                    operationID: nativeQueueMessageID,
+                    messageID: nativeQueueMessageID,
+                    content: logicalInputMessage,
+                    createdAt: Date.now(),
+                    phase: 'admitting',
+                    attachmentCount: sendableAttachedFiles.length,
+                    composerDocument: inputSnapshot.document,
+                    composerMentions,
+                },
+            });
+        }
         const quotesAtSubmit = composerQuoteScope ? (useComposerQuoteStore.getState().quotesByKey[composerQuoteScope] ?? []) : [];
         const quotesRideAlong = messageWithComposerQuotes(quotesAtSubmit, logicalInputMessage) !== logicalInputMessage;
         let quotesClearedForSubmit = false;
@@ -3195,6 +3234,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
         let optimisticTicket: OptimisticSendTicket | undefined;
         // Edit target painted as "editing" at submit time; released if we never dispatch.
         let messageEditCommitTarget: { sessionId: string; messageId: string } | undefined;
+        const editRuntimeAtSubmit = surfaceResources.captureRuntime();
         let handedOptimisticToSendPromise = false;
 
         try {
@@ -3207,6 +3247,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
             surfaceKind: surface.kind,
             currentSessionId,
             queuedOnly,
+            delivery,
             resourcePolicy,
             inputMode,
             localCommand,
@@ -3385,7 +3426,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
         // the queue here: this submission already owns its payload
         // (inputSnapshot), while the queue path re-reads the composer we just
         // cleared and would silently admit nothing.
-        if (currentSessionId && !queuedOnly && !resourcePolicy) {
+        if (currentSessionId && !queuedOnly && !resourcePolicy && delivery !== 'queue') {
             const dismissedQuestions = await sessionActions.dismissOpenQuestionsForSession(currentSessionId);
             if (dismissedQuestions) {
                 await sessionActions.abortCurrentOperation(currentSessionId);
@@ -3396,11 +3437,11 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
         // draftMessageID / establishingDraftIDAtSubmit were claimed before the first await.
         const sendMessageOptions = {
             ...(delivery ? { delivery } : {}),
-            commitStagedMessageEdit: !queuedOnly,
+            commitStagedMessageEdit: !queuedOnly && delivery !== 'queue',
             ...(optimisticTicket
                 ? { messageID: optimisticTicket.messageID, ticket: optimisticTicket }
-                : draftMessageID
-                    ? { messageID: draftMessageID }
+                : nativeQueueMessageID || draftMessageID
+                    ? { messageID: nativeQueueMessageID ?? draftMessageID }
                     : {}),
             ...(primarySubmitSessionIdAtStart
                 ? {
@@ -4005,16 +4046,17 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
         // Keep flight until send settles so a cleared composer cannot double-send.
         transferFlightToSendPromise = true;
         void sendPromise.finally(() => {
+            clearNativeQueueAdmission();
             endSubmissionFlight();
             // No-op once the commit already released it; the row must never be left
             // stuck in "editing" when a send settles without committing the edit.
-            if (messageEditCommitTarget) {
+            if (messageEditCommitTarget && isQueueAdmissionRuntimeCurrent(editRuntimeAtSubmit, surfaceResources.captureRuntime())) {
                 useSessionUIStore.getState().endMessageEditCommit(
                     messageEditCommitTarget.sessionId,
                     messageEditCommitTarget.messageId,
                 );
             }
-        });
+        }).catch(() => {});
 
         if (establishingDraftIDAtSubmit) {
             void sendPromise.then(() => {
@@ -4093,7 +4135,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
                 if (optimisticTicket) {
                     sessionActions.rollbackOptimisticSend(optimisticTicket);
                 }
-                if (messageEditCommitTarget) {
+                if (messageEditCommitTarget && isQueueAdmissionRuntimeCurrent(editRuntimeAtSubmit, surfaceResources.captureRuntime())) {
                     useSessionUIStore.getState().endMessageEditCommit(
                         messageEditCommitTarget.sessionId,
                         messageEditCommitTarget.messageId,
@@ -4101,6 +4143,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
                 }
             }
             if (!transferFlightToSendPromise) {
+                clearNativeQueueAdmission();
                 if (clearedComposerBeforeDispatch && submissionCapture) {
                     recoverSubmission(submissionCapture);
                     restoreSubmitQuotes();

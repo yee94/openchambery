@@ -57,6 +57,17 @@ const booleans = (value: unknown): Record<string, boolean> | undefined => {
   return Object.keys(output).length ? output : undefined;
 };
 
+// v2 ModelCapabilities.input/output are modality name arrays, not boolean maps.
+const modalityList = (value: unknown): Record<string, boolean> | undefined => {
+  if (!Array.isArray(value)) return undefined;
+  const output: Record<string, boolean> = {};
+  for (const item of value) {
+    if (typeof item !== 'string' || !MODALITIES.has(item)) continue;
+    output[item] = true;
+  }
+  return Object.keys(output).length ? output : undefined;
+};
+
 const capabilities = (value: unknown): ConfigCatalogCapabilities | undefined => {
   const input = record(value);
   if (!input) return undefined;
@@ -66,11 +77,34 @@ const capabilities = (value: unknown): ConfigCatalogCapabilities | undefined => 
     if (typeof input[key] !== 'boolean') continue;
     output[key] = input[key];
   }
-  const inputCapabilities = booleans(input.input);
-  const outputCapabilities = booleans(input.output);
+  if (output.toolcall === undefined && typeof input.tools === 'boolean') output.toolcall = input.tools;
+  const inputCapabilities = Array.isArray(input.input) ? modalityList(input.input) : booleans(input.input);
+  const outputCapabilities = Array.isArray(input.output) ? modalityList(input.output) : booleans(input.output);
   if (inputCapabilities) output.input = inputCapabilities;
   if (outputCapabilities) output.output = outputCapabilities;
   return Object.keys(output).length ? output : undefined;
+};
+
+const costEntry = (value: unknown): Record<string, unknown> | undefined => {
+  if (Array.isArray(value)) {
+    const base = value.find((item) => record(item) && !record((item as { tier?: unknown }).tier))
+      ?? value.find((item) => record(item));
+    return record(base);
+  }
+  return record(value);
+};
+
+// v2 ModelInfo.variants is `{ id }[]`. Catalog consumers read a name→{} record.
+const variantNames = (value: unknown): Array<string | undefined> | null => {
+  if (Array.isArray(value)) {
+    return value.map((item) => {
+      if (typeof item === 'string') return item;
+      const entry = record(item);
+      return typeof entry?.id === 'string' ? entry.id : undefined;
+    });
+  }
+  const input = record(value);
+  return input ? Object.keys(input) : null;
 };
 
 const model = (value: unknown): { value?: ConfigCatalogModel; partial: boolean } => {
@@ -84,7 +118,7 @@ const model = (value: unknown): { value?: ConfigCatalogModel; partial: boolean }
   let partial = false;
   const modelCapabilities = capabilities(input.capabilities);
   if (modelCapabilities) output.capabilities = modelCapabilities;
-  const rawCost = record(input.cost);
+  const rawCost = costEntry(input.cost);
   if (rawCost) {
     const cost: NonNullable<ConfigCatalogModel['cost']> = {};
     const costInput = number(rawCost.input); if (costInput !== undefined) cost.input = costInput;
@@ -108,15 +142,18 @@ const model = (value: unknown): { value?: ConfigCatalogModel; partial: boolean }
   // Empty/null/invalid release_date is treated as absent (common upstream placeholder), not partial.
   const safeReleaseDate = releaseDate(input.release_date);
   if (safeReleaseDate) output.release_date = safeReleaseDate;
-  const rawVariants = record(input.variants);
-  if (rawVariants) {
+  const names = variantNames(input.variants);
+  if (names) {
     const variants: Record<string, object> = {};
-    for (const [index, [key, item]] of Object.entries(rawVariants).entries()) {
+    const recordValues = record(input.variants);
+    for (const [index, rawName] of names.entries()) {
       if (index >= MAX_VARIANTS) {
         partial = true;
         break;
       }
-      if (!identifier(key) || !record(item)) continue;
+      const key = identifier(rawName);
+      if (!key || Object.prototype.hasOwnProperty.call(variants, key)) continue;
+      if (recordValues && !record(recordValues[key])) continue;
       variants[key] = {};
     }
     if (Object.keys(variants).length) output.variants = variants;
