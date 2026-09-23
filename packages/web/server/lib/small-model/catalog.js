@@ -1,7 +1,8 @@
 import { OpenCode } from '@opencode/client';
 
 // Directory-scoped OpenCode provider catalog for small-model resolution.
-// Never contacts models.dev — source of truth is client.config.providers().
+// Never contacts models.dev — source of truth is provider.list + model.list.
+// ModelInfo.id is the external model id; ModelInfo.modelID is internal.
 // On OpenCode failure the loader returns an explicit minimal fallback catalog
 // (not an authoritative empty map) so hardcoded candidates still resolve.
 
@@ -46,6 +47,18 @@ const normalizeDirectoryKey = (directory) => {
 
 const isRecord = (value) => value !== null && typeof value === 'object' && !Array.isArray(value);
 
+// v2 ModelInfo.cost is a tier array. Ranking still reads cost.input / cost.output.
+const projectCatalogCost = (cost) => {
+  const entry = Array.isArray(cost)
+    ? (cost.find((item) => isRecord(item) && !isRecord(item.tier)) || cost.find((item) => isRecord(item)))
+    : (isRecord(cost) ? cost : null);
+  if (!isRecord(entry)) return undefined;
+  const projected = Object.create(null);
+  if (Number.isFinite(entry.input)) projected.input = entry.input;
+  if (Number.isFinite(entry.output)) projected.output = entry.output;
+  return Object.keys(projected).length > 0 ? projected : undefined;
+};
+
 // Compose official v2 provider.list + model.list into the SDK catalog shape
 // consumed by toSmallModelCatalog. Missing arrays are failure, not empty success.
 const composeV2ProviderCatalogSource = (providers, models) => {
@@ -55,9 +68,11 @@ const composeV2ProviderCatalogSource = (providers, models) => {
   for (const model of models) {
     if (!isRecord(model)) continue;
     const providerID = typeof model.providerID === 'string' ? model.providerID : '';
-    const modelID = typeof model.modelID === 'string' && model.modelID
-      ? model.modelID
-      : (typeof model.id === 'string' ? model.id : '');
+    // ModelInfo.id is the external model id used in generate/session refs.
+    // ModelInfo.modelID is a separate internal field and must not be preferred.
+    const modelID = typeof model.id === 'string' && model.id
+      ? model.id
+      : (typeof model.modelID === 'string' ? model.modelID : '');
     if (!providerID || !modelID) continue;
     if (!modelsByProvider.has(providerID)) modelsByProvider.set(providerID, Object.create(null));
     const entry = { id: modelID };
@@ -68,6 +83,8 @@ const composeV2ProviderCatalogSource = (providers, models) => {
       if (Number.isFinite(model.limit.output)) limit.output = model.limit.output;
       if (Object.keys(limit).length > 0) entry.limit = limit;
     }
+    const cost = projectCatalogCost(model.cost);
+    if (cost) entry.cost = cost;
     if (isRecord(model.api) && typeof model.api.url === 'string' && model.api.url.trim()) {
       entry.api = { url: model.api.url.trim() };
     }

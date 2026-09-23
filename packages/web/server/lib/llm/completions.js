@@ -96,6 +96,8 @@ export async function createChatCompletion({
   ensureTempDirectory,
   onTextDelta = null,
   globalEventHub = null,
+  persistSessionMetadata = null,
+  onSystemSessionPersisted = null,
   signal = null,
 }) {
   signal?.throwIfAborted();
@@ -148,6 +150,8 @@ export async function createChatCompletion({
       ))?.acceptsImages),
       onTextDelta,
       globalEventHub,
+      persistSessionMetadata,
+      onSystemSessionPersisted,
       signal,
     });
   } catch (error) {

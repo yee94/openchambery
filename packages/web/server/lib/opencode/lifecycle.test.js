@@ -910,3 +910,117 @@ describe('OpenCode lifecycle', () => {
     expect(stateRef.current.openCodePort).toBe(3001);
   }, 25_000);
 });
+
+describe('shared official OpenCode service', () => {
+  const UNCONFIGURED_ENV = {
+    ENV_CONFIGURED_OPENCODE_PORT: null,
+    ENV_CONFIGURED_OPENCODE_HOST: null,
+    ENV_EFFECTIVE_PORT: null,
+    ENV_CONFIGURED_OPENCODE_HOSTNAME: '127.0.0.1',
+    ENV_SKIP_OPENCODE_START: false,
+  };
+  const REGISTRATION = {
+    origin: 'http://127.0.0.1:49374',
+    port: 49374,
+    pid: process.pid,
+    password: 'service-password',
+    version: '2.0.12',
+  };
+
+  const createSharedService = (overrides = {}) => ({
+    registrationFile: '/state/opencode/service.json',
+    buildStartEnv: (env) => {
+      const { OPENCODE_SERVER_PASSWORD: _password, ...rest } = env;
+      return rest;
+    },
+    start: vi.fn(async () => {}),
+    readRegistration: vi.fn(async () => REGISTRATION),
+    ...overrides,
+  });
+
+  const stubSharedFetch = () => {
+    const base = stubOpenCodeFetch();
+    const fetchMock = vi.fn(async (url, init) => (String(url).includes('/api/location/reload')
+      ? new Response(null, { status: 204 })
+      : base(url, init)));
+    vi.stubGlobal('fetch', fetchMock);
+    return fetchMock;
+  };
+
+  it('attaches to the registered service instead of spawning a private serve', async () => {
+    process.env.OPENCODE_BINARY = '/mock/opencode';
+    const sharedService = createSharedService();
+    const adoptOpenCodeServerPassword = vi.fn();
+    const stateRef = {};
+    const runtime = createRuntime({ env: UNCONFIGURED_ENV, sharedService, adoptOpenCodeServerPassword }, stateRef);
+    const fetchMock = stubSharedFetch();
+
+    await runtime.bootstrapOpenCodeAtStartup();
+
+    expect(spawnMock).not.toHaveBeenCalled();
+    expect(sharedService.start).toHaveBeenCalledTimes(1);
+    const startInput = sharedService.start.mock.calls[0][0];
+    expect(startInput.binary).toBe('/mock/opencode');
+    expect(startInput.env.OPENCODE_SERVER_PASSWORD).toBeUndefined();
+    expect(adoptOpenCodeServerPassword).toHaveBeenCalledWith('service-password', 'shared-service');
+    expect(stateRef.current.isExternalOpenCode).toBe(true);
+    expect(stateRef.current.openCodeBaseUrl).toBe('http://127.0.0.1:49374');
+    expect(stateRef.current.openCodePort).toBe(49374);
+    expect(runtime.isSharedOpenCodeService()).toBe(true);
+    // The leftover private serve on 4096 is never probed once the service wins.
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes(':4096/'))).toBe(false);
+  });
+
+  it('falls back to a managed serve and rolls back attach state when the service cannot start', async () => {
+    process.env.OPENCODE_BINARY = '/mock/opencode';
+    const sharedService = createSharedService({ start: vi.fn(async () => { throw new Error('boom'); }) });
+    const adoptOpenCodeServerPassword = vi.fn();
+    const stateRef = {};
+    const runtime = createRuntime({ env: UNCONFIGURED_ENV, sharedService, adoptOpenCodeServerPassword }, stateRef);
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    stubSharedFetch();
+    startListeningChild();
+
+    await runtime.bootstrapOpenCodeAtStartup();
+
+    expect(adoptOpenCodeServerPassword).toHaveBeenLastCalledWith(null, null);
+    expect(runtime.isSharedOpenCodeService()).toBe(false);
+    expect(stateRef.current.isExternalOpenCode).toBe(false);
+    expect(stateRef.current.openCodeBaseUrl).toBeNull();
+    expect(stateRef.current.openCodeProcess?.pid).toBe(12345);
+    await stateRef.current.openCodeProcess.close();
+  });
+
+  it('reloads config changes in place instead of restarting the shared service', async () => {
+    process.env.OPENCODE_BINARY = '/mock/opencode';
+    const sharedService = createSharedService();
+    const stateRef = {};
+    const runtime = createRuntime({ env: UNCONFIGURED_ENV, sharedService, adoptOpenCodeServerPassword: vi.fn() }, stateRef);
+    const fetchMock = stubSharedFetch();
+    await runtime.bootstrapOpenCodeAtStartup();
+    fetchMock.mockClear();
+
+    const result = await runtime.refreshOpenCodeAfterConfigChange('plugin add');
+
+    expect(result).toEqual({ reloaded: true, external: true });
+    const reloadCalls = fetchMock.mock.calls.filter(([url]) => String(url).includes('/api/location/reload'));
+    expect(reloadCalls).toHaveLength(1);
+    expect(reloadCalls[0][1]?.method).toBe('POST');
+    expect(spawnMock).not.toHaveBeenCalled();
+    expect(sharedService.start).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps an explicitly configured OpenCode port instead of the shared service', async () => {
+    const sharedService = createSharedService();
+    const stateRef = {};
+    const runtime = createRuntime({ sharedService, adoptOpenCodeServerPassword: vi.fn() }, stateRef);
+    stubSharedFetch();
+    startListeningChild();
+
+    await runtime.bootstrapOpenCodeAtStartup();
+
+    expect(sharedService.start).not.toHaveBeenCalled();
+    expect(runtime.isSharedOpenCodeService()).toBe(false);
+    await stateRef.current.openCodeProcess?.close();
+  });
+});

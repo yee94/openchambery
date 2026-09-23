@@ -81,9 +81,14 @@ export const createOpenCodeAuthStateRuntime = (dependencies) => {
     return generatedPassword;
   };
 
+  // A server OpenChamber does not own (the shared official service) keeps its
+  // own password; adopt it instead of generating one.
+  const adoptOpenCodeServerPassword = (password, source) => setOpenCodeAuthState(password, source);
+
   return {
     getOpenCodeAuthHeaders,
     isOpenCodeConnectionSecure,
     ensureLocalOpenCodeServerPassword,
+    adoptOpenCodeServerPassword,
   };
 };

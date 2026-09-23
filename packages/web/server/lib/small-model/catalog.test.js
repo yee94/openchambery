@@ -115,6 +115,39 @@ describe('createModelCatalogLoader', () => {
     });
   });
 
+  it('keys models by ModelInfo.id and keeps the base tier of array cost', async () => {
+    const loader = createModelCatalogLoader({
+      buildOpenCodeUrl: () => 'http://127.0.0.1:4096/',
+      getOpenCodeAuthHeaders: () => ({}),
+      fetchImpl: async (url) => {
+        const href = String(url);
+        const data = href.includes('/api/model')
+          ? [{
+              id: 'gpt-5.4-mini',
+              modelID: 'internal-pack',
+              providerID: 'openai',
+              name: 'GPT-5.4 Mini',
+              cost: [
+                { tier: { type: 'context', size: 200000 }, input: 9, output: 9 },
+                { input: 1, output: 2 },
+              ],
+            }]
+          : [{ id: 'openai', name: 'OpenAI', package: '@ai-sdk/openai' }];
+        return new Response(JSON.stringify({ data }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        });
+      },
+    });
+
+    const catalog = await loader.getModelCatalog('/proj');
+    expect(catalog.openai?.models?.['gpt-5.4-mini']).toEqual({
+      id: 'gpt-5.4-mini',
+      cost: { input: 1, output: 2 },
+    });
+    expect(catalog.openai?.models?.['internal-pack']).toBeUndefined();
+  });
+
   it('normalizes directory keys so trailing slashes share a bucket', () => {
     const loader = createModelCatalogLoader({
       buildOpenCodeUrl: () => 'http://127.0.0.1:9/',

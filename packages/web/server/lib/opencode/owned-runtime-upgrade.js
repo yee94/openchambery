@@ -395,12 +395,9 @@ export function evaluateOwnedUpgradeResult(input) {
       contract,
     };
   }
-  // Success requires the running serve to match target AND sit in the verified
-  // contract band (executionAllowed). ready-unverified must not report success.
   if (
     !contract.executionAllowed
     || !contract.protocolCompatible
-    || contract.versionBand !== 'verified'
   ) {
     return {
       ok: false,

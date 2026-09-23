@@ -32,7 +32,9 @@ membership, and `setPinned` can target a session that is not currently in the
 index. Archive or `remove` still clears the pin. Live OpenCode upserts never
 overwrite pin membership. Titles are for recognition. The index does
 not cache system sessions, so cold-start and live upserts stay aligned with
-ordinary sidebar lists.
+ordinary sidebar lists. System session creators persist isolation through the
+Host metadata store, then `onSystemSessionPersisted` upserts the projected
+session so a create-before-persist race cannot leave a visible summary.
 Pin and unpin use `POST` / `DELETE`
 `/api/openchamber/session-index/session/:id/pin`, write `session_pin`, then
 `publishChange()` so revision tips broadcast `openchamber:session-index-changed`.

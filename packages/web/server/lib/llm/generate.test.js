@@ -207,6 +207,8 @@ describe('generateOpenCodeText — attachment session path', () => {
     const remove = vi.fn(async () => undefined)
     const interrupt = vi.fn(async () => undefined)
     const text = vi.fn()
+    const persistSessionMetadata = vi.fn(async () => ({}))
+    const onSystemSessionPersisted = vi.fn()
     const image = { type: 'file', mime: 'image/png', url: 'data:image/png;base64,aa', filename: 'shot.png' }
 
     const result = await generateOpenCodeText({
@@ -219,6 +221,8 @@ describe('generateOpenCodeText — attachment session path', () => {
         { role: 'user', content: 'look', parts: [image] },
       ],
       variant: 'high',
+      persistSessionMetadata,
+      onSystemSessionPersisted,
       clientFactory: () => ({
         generate: { text },
         agent: { get: agentGet },
@@ -250,6 +254,7 @@ describe('generateOpenCodeText — attachment session path', () => {
       agent: 'openchamber-llm',
       model: { id: 'gpt-4o', providerID: 'opencode', variant: 'high' },
       location: { directory: '/tmp/openchamber-llm' },
+      metadata: { openchamber: { llm: { purpose: 'chat-completions' } } },
     }), expect.anything())
     expect(put).toHaveBeenCalledWith(expect.objectContaining({
       sessionID: 'ses_tmp',
@@ -270,6 +275,14 @@ describe('generateOpenCodeText — attachment session path', () => {
       order: 'desc',
     }), expect.anything())
     expect(remove).toHaveBeenCalledWith({ sessionID: 'ses_tmp' })
+    expect(persistSessionMetadata).toHaveBeenCalledWith('ses_tmp', {
+      openchamber: { llm: { purpose: 'chat-completions' } },
+    })
+    expect(onSystemSessionPersisted).toHaveBeenCalledWith({
+      sessionID: 'ses_tmp',
+      directory: '/tmp/openchamber-llm',
+      metadata: { openchamber: { llm: { purpose: 'chat-completions' } } },
+    })
     expect(text).not.toHaveBeenCalled()
   })
 

@@ -4,8 +4,8 @@ import path from 'path';
 import { readAuthFile } from '../opencode/auth.js';
 import { readConfigLayers } from '../opencode/shared.js';
 import { OpenCode } from '@opencode/client';
-import { loadConnectedCatalog } from '../llm/catalog.js';
-import { createModelCatalogLoader, getCatalogProvider } from './catalog.js';
+import { createChatCompletion } from '../llm/completions.js';
+import { createModelCatalogLoader } from './catalog.js';
 import { resolveSmallModel, parseModelRef, isUsableAuthEntry, getAuthEntryForProvider } from './resolve.js';
 import { callSmallModel } from './call.js';
 import { generateViaOpenCodeSession, stop as stopOpenCodeSessionTemp } from './opencode-session.js';
@@ -110,78 +110,9 @@ const isCallableDedicatedAuth = (auth, providerID) => {
   return false;
 };
 
-const providerHasCatalogModels = (provider) => {
-  if (!provider || typeof provider !== 'object') return false;
-  return Object.values(provider.models || {}).some(
-    (model) => typeof model?.id === 'string' && model.id.trim().length > 0,
-  );
-};
-
 const shouldUseDirectAdapter = (providerID, auth) => {
   if (!DEDICATED_DIRECT_PROVIDERS.has(providerID)) return false;
   return isCallableDedicatedAuth(auth, providerID);
-};
-
-const addNonDedicatedCallableProvider = (ids, catalog, providerID) => {
-  if (!providerID || providerID === 'copilot' || DEDICATED_DIRECT_PROVIDERS.has(providerID)) return;
-  const provider = getCatalogProvider(catalog, providerID);
-  if (providerHasCatalogModels(provider)) ids.add(providerID);
-};
-
-const listCallableProviderIDsForState = (auth, catalog, connectedIDs) => {
-  const ids = new Set();
-  for (const providerID of DEDICATED_DIRECT_PROVIDERS) {
-    if (isCallableDedicatedAuth(auth, providerID)) ids.add(providerID);
-  }
-  if (isUsableAuthEntry(getAuthEntryForProvider(auth, 'github-copilot'))) {
-    ids.add('github-copilot');
-  }
-
-  if (Array.isArray(connectedIDs)) {
-    for (const providerID of connectedIDs) {
-      addNonDedicatedCallableProvider(ids, catalog, providerID);
-    }
-  } else {
-    // Connected catalog failed: do not pretend plugin providers are absent.
-    for (const providerID of Object.keys(auth || {})) {
-      if (providerID === 'copilot') continue;
-      if (!isUsableAuthEntry(auth[providerID])) continue;
-      addNonDedicatedCallableProvider(ids, catalog, providerID);
-    }
-  }
-  return Array.from(ids);
-};
-
-const listCallableModelsForState = (auth, catalog, connectedIDs) => {
-  const result = {};
-  for (const providerID of listCallableProviderIDsForState(auth, catalog, connectedIDs)) {
-    if (providerID === 'openai' && auth.openai?.type === 'oauth') {
-      result[providerID] = ['gpt-5.4-mini'];
-      continue;
-    }
-    if (providerID === 'github-copilot') {
-      result[providerID] = ['gpt-5.4-nano'];
-      continue;
-    }
-    const provider = getCatalogProvider(catalog, providerID);
-    const modelIDs = Object.values(provider?.models || {})
-      .map((model) => (typeof model?.id === 'string' ? model.id : ''))
-      .filter(Boolean);
-    if (modelIDs.length > 0) {
-      result[providerID] = modelIDs;
-    }
-  }
-  return result;
-};
-
-const resolveDefaultSummaryModel = (auth, catalog, connectedIDs) => {
-  const callableModels = listCallableModelsForState(auth, catalog, connectedIDs);
-  const providerIDs = Object.keys(callableModels);
-  const providerID = callableModels.openai ? 'openai' : providerIDs[0];
-  const modelID = providerID ? callableModels[providerID]?.[0] : undefined;
-  return providerID && modelID
-    ? { providerID, modelID, source: 'summary-default' }
-    : null;
 };
 
 const readConfiguredSmallModel = (workingDirectory) => {
@@ -203,7 +134,8 @@ const readConfiguredSmallModel = (workingDirectory) => {
  *   buildOpenCodeUrl: (pathname: string, search?: string) => string,
  *   getOpenCodeAuthHeaders: () => Record<string, string>,
  *   getModelCatalog?: (directory?: string) => Promise<object>,
- *   getConnectedCatalog?: (directory?: string) => Promise<{ connected?: string[] }>,
+ *   openCodeClientFactory?: () => object,
+ *   createChatCompletion?: typeof createChatCompletion,
  * }} dependencies
  */
 export function createSmallModelService(dependencies) {
@@ -214,27 +146,96 @@ export function createSmallModelService(dependencies) {
       buildOpenCodeUrl,
       getOpenCodeAuthHeaders,
     }).getModelCatalog;
-  const getConnectedCatalog = dependencies.getConnectedCatalog || (async (directory) => {
-    const client = OpenCode.make({
-      baseUrl: buildOpenCodeUrl('/', '').replace(/\/$/, ''),
-      headers: getOpenCodeAuthHeaders(),
-    });
-    void directory;
-    return loadConnectedCatalog(client);
-  });
+  const openCodeClient = dependencies.openCodeClientFactory || (() => OpenCode.make({
+    baseUrl: buildOpenCodeUrl('/', '').replace(/\/$/, ''),
+    headers: getOpenCodeAuthHeaders(),
+  }));
+  const runChatCompletion = dependencies.createChatCompletion || createChatCompletion;
 
-  const loadCallableContext = async (directory) => {
-    const auth = readAuthFile();
-    const catalog = await getModelCatalog(directory);
-    let connectedIDs = null;
-    try {
-      const connectedCatalog = await getConnectedCatalog(directory);
-      connectedIDs = Array.isArray(connectedCatalog?.connected) ? connectedCatalog.connected : [];
-    } catch {
-      connectedIDs = null;
+  // No saved Summary AI model follows OpenCode's own default model.
+  const resolveSummaryProviderModel = async (summarySettings, directory) => {
+    if (summarySettings?.providerID && summarySettings?.modelID) {
+      return { providerID: summarySettings.providerID, modelID: summarySettings.modelID, source: 'summary-provider' };
     }
-    return { auth, catalog, connectedIDs };
+    let result;
+    try {
+      result = await openCodeClient().model.default(directory ? { location: { directory } } : undefined);
+    } catch (error) {
+      throw Object.assign(
+        new Error(`OpenCode default model is unavailable (${error?.message || error})`),
+        { statusCode: 502 },
+      );
+    }
+    const providerID = typeof result?.data?.providerID === 'string' ? result.data.providerID : '';
+    const modelID = typeof result?.data?.id === 'string' ? result.data.id : '';
+    if (!providerID || !modelID) {
+      throw Object.assign(new Error('No OpenCode default model is configured'), { statusCode: 404 });
+    }
+    return { providerID, modelID, source: 'summary-default' };
   };
+
+  // Summary AI (commit / session-title) shares the Assistant LLM gateway:
+  // connected-catalog check, then OpenCode generate.text. Custom mode keeps
+  // its direct OpenAI-compatible call.
+  async function generateSummaryText({ prompt, system, maxOutputTokens, directory, purpose }) {
+    const summarySettings = readSummarySettings();
+    const effectiveSystem = summarySettings?.prompts?.[purpose]
+      || (typeof system === 'string' && system.trim() ? system.trim() : undefined);
+
+    if (summarySettings?.mode === 'custom') {
+      const custom = summarySettings.custom;
+      if (!custom) {
+        throw Object.assign(
+          new Error('Custom summary API requires a Base URL, model ID, and API token'),
+          { statusCode: 400 },
+        );
+      }
+      const clamped = clampPromptToModelLimit({ prompt, catalog: {}, providerID: 'custom', modelID: custom.modelID });
+      const text = await callSmallModel({
+        auth: {},
+        catalog: {},
+        workingDirectory: directory,
+        providerID: 'custom',
+        modelID: custom.modelID,
+        prompt: clamped.prompt,
+        system: effectiveSystem,
+        maxOutputTokens,
+        custom,
+      });
+      return {
+        text: text.trim(),
+        providerID: 'custom',
+        modelID: custom.modelID,
+        source: 'summary-custom',
+        ...(clamped.truncated ? { inputTruncated: true } : {}),
+      };
+    }
+
+    const resolved = await resolveSummaryProviderModel(summarySettings, directory);
+    const catalog = await getModelCatalog(directory);
+    const clamped = clampPromptToModelLimit({ prompt, catalog, providerID: resolved.providerID, modelID: resolved.modelID });
+    const { completion } = await runChatCompletion({
+      body: {
+        providerID: resolved.providerID,
+        modelID: resolved.modelID,
+        messages: [
+          ...(effectiveSystem ? [{ role: 'system', content: effectiveSystem }] : []),
+          { role: 'user', content: clamped.prompt },
+        ],
+      },
+      buildOpenCodeUrl,
+      getOpenCodeAuthHeaders,
+      clientFactory: openCodeClient,
+    });
+    const text = completion?.choices?.[0]?.message?.content;
+    return {
+      text: typeof text === 'string' ? text.trim() : '',
+      providerID: resolved.providerID,
+      modelID: resolved.modelID,
+      source: resolved.source,
+      ...(clamped.truncated ? { inputTruncated: true } : {}),
+    };
+  }
 
   const resolveCustomApiInput = (body = {}) => {
     const summarySettings = readSummarySettings();
@@ -269,44 +270,23 @@ export function createSmallModelService(dependencies) {
       throw Object.assign(new Error('prompt is required'), { statusCode: 400 });
     }
 
-    const { auth, catalog, connectedIDs } = await loadCallableContext(directory);
-    const summarySettings = SUMMARY_PURPOSES.has(purpose) ? readSummarySettings() : null;
-    const summaryPrompt = summarySettings?.prompts?.[purpose];
-    const defaultSummaryModel = SUMMARY_PURPOSES.has(purpose)
-      ? resolveDefaultSummaryModel(auth, catalog, connectedIDs)
-      : null;
-
-    const explicit = parseModelRef(model);
-    const summaryProvider = summarySettings?.mode === 'provider' && summarySettings.providerID && summarySettings.modelID
-      ? {
-          providerID: summarySettings.providerID,
-          modelID: summarySettings.modelID,
-          source: 'summary-provider',
-        }
-      : summarySettings?.mode !== 'custom'
-        ? defaultSummaryModel
-        : null;
-    const summaryCustom = summarySettings?.mode === 'custom' ? summarySettings.custom : null;
-    if (summarySettings?.mode === 'custom' && !summaryCustom) {
-      throw Object.assign(
-        new Error('Custom summary API requires a Base URL, model ID, and API token'),
-        { statusCode: 400 },
-      );
+    if (SUMMARY_PURPOSES.has(purpose)) {
+      return generateSummaryText({ prompt: prompt.trim(), system, maxOutputTokens, directory, purpose });
     }
-    const resolved = summaryCustom
-      ? { providerID: 'custom', modelID: summaryCustom.modelID, source: 'summary-custom' }
-      : summaryProvider
-        ? summaryProvider
-        : explicit
-          ? { ...explicit, source: 'request' }
-          : resolveSmallModel({
-            auth,
-            catalog,
-            settingsSmallModel: readSmallModelSettingsOverride(),
-            configSmallModel: readConfiguredSmallModel(directory),
-            preferredProviderID: summarySettings?.providerID || preferredProviderID,
-            preferredModelID,
-          });
+
+    const auth = readAuthFile();
+    const catalog = await getModelCatalog(directory);
+    const explicit = parseModelRef(model);
+    const resolved = explicit
+      ? { ...explicit, source: 'request' }
+      : resolveSmallModel({
+        auth,
+        catalog,
+        settingsSmallModel: readSmallModelSettingsOverride(),
+        configSmallModel: readConfiguredSmallModel(directory),
+        preferredProviderID,
+        preferredModelID,
+      });
 
     if (!resolved) {
       throw Object.assign(
@@ -320,7 +300,7 @@ export function createSmallModelService(dependencies) {
     // model) is always allowed, anything else must stay on the session's
     // provider.
     if (restrictToPreferredProvider
-      && !['settings', 'config', 'request', 'summary-provider', 'summary-default', 'summary-custom'].includes(resolved.source)
+      && !['settings', 'config', 'request'].includes(resolved.source)
       && resolved.providerID !== preferredProviderID) {
       throw Object.assign(
         new Error('No small model available within the session provider'),
@@ -335,10 +315,10 @@ export function createSmallModelService(dependencies) {
       modelID: resolved.modelID,
     });
 
-    const effectiveSystem = summaryPrompt || (typeof system === 'string' && system.trim() ? system.trim() : undefined);
+    const effectiveSystem = typeof system === 'string' && system.trim() ? system.trim() : undefined;
 
     let text;
-    if (summaryCustom || shouldUseDirectAdapter(resolved.providerID, auth)) {
+    if (shouldUseDirectAdapter(resolved.providerID, auth)) {
       text = await callSmallModel({
         auth,
         catalog,
@@ -348,7 +328,6 @@ export function createSmallModelService(dependencies) {
         prompt: clamped.prompt,
         system: effectiveSystem,
         maxOutputTokens,
-        custom: summaryCustom,
       });
     } else {
       text = await generateViaOpenCodeSession({
@@ -370,29 +349,6 @@ export function createSmallModelService(dependencies) {
       source: resolved.source,
       ...(clamped.truncated ? { inputTruncated: true } : {}),
     };
-  }
-
-  /**
-   * Provider ids with a usable OpenCode login — the set the small model can
-   * actually call. Used by the settings override picker to hide providers that
-   * would only ever fail (e.g. opencode free models without a token).
-   */
-  async function listCallableProviders({ directory } = {}) {
-    try {
-      const { auth, catalog, connectedIDs } = await loadCallableContext(directory);
-      return listCallableProviderIDsForState(auth, catalog, connectedIDs);
-    } catch {
-      return [];
-    }
-  }
-
-  async function listCallableModels({ directory } = {}) {
-    try {
-      const { auth, catalog, connectedIDs } = await loadCallableContext(directory);
-      return listCallableModelsForState(auth, catalog, connectedIDs);
-    } catch {
-      return {};
-    }
   }
 
   async function testCustomApi(body) {
@@ -423,8 +379,6 @@ export function createSmallModelService(dependencies) {
 
   return {
     generateSmallModelText,
-    listCallableProviders,
-    listCallableModels,
     testCustomApi,
     listCustomModels,
     describeSmallModel,

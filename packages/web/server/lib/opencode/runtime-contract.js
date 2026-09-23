@@ -8,10 +8,8 @@
  *
  * Evidence bounds (ticket 11):
  * - MIN_VERIFIED: pin / installed verification (`2.0.12`)
- * - MAX_VERIFIED: read-only official source review (`2.0.14`)
- * Unverified newer 2.x stays connected for diagnostics (phase ready-unverified)
- * but executionAllowed is false until the band is verified; older 2.x and 1.x
- * are limited or refused explicitly.
+ * Any acceptable OpenCode 2.x at or above MIN_VERIFIED may execute. Below-min
+ * 2.x and 1.x are refused with upgrade guidance; there is no upper version cap.
  */
 
 import {
@@ -23,9 +21,6 @@ import {
 
 /** Lowest version with documented OpenChamber + OpenCode 2 contract tests. */
 export const RUNTIME_CONTRACT_MIN_VERIFIED = PINNED_OPENCODE2_VERSION;
-
-/** Highest version reviewed against official source without claiming infinite future range. */
-export const RUNTIME_CONTRACT_MAX_VERIFIED = '2.0.14';
 
 /**
  * Optional / core capabilities and the minimum serve version that admits them.
@@ -76,7 +71,7 @@ export function normalizeRuntimeVersion(value) {
 
 /**
  * @param {string | null | undefined} version
- * @returns {'1x' | 'invalid' | 'below-min' | 'verified' | 'unverified-newer' | 'unknown'}
+ * @returns {'1x' | 'invalid' | 'below-min' | 'verified' | 'unknown'}
  */
 export function classifyRuntimeVersionBand(version) {
   const normalized = normalizeRuntimeVersion(version);
@@ -85,9 +80,6 @@ export function classifyRuntimeVersionBand(version) {
   if (!isAcceptableOpenCode2HealthVersion(normalized)) return 'invalid';
   if (compareOpenCode2Versions(normalized, RUNTIME_CONTRACT_MIN_VERIFIED) < 0) {
     return 'below-min';
-  }
-  if (compareOpenCode2Versions(normalized, RUNTIME_CONTRACT_MAX_VERIFIED) > 0) {
-    return 'unverified-newer';
   }
   return 'verified';
 }
@@ -152,8 +144,6 @@ export function evaluateRuntimeContract(input = {}) {
     reasons.push('invalid-version');
   } else if (versionBand === 'below-min') {
     reasons.push('below-min-verified');
-  } else if (versionBand === 'unverified-newer') {
-    reasons.push('unverified-newer');
   }
   if (versionMismatch) {
     reasons.push('cli-serve-version-mismatch');
@@ -179,10 +169,6 @@ export function evaluateRuntimeContract(input = {}) {
       reason = 'invalid-version';
     } else if (!versionMeetsMinimum(serveVersion, meta.minVersion)) {
       reason = 'below-capability-min';
-    } else if (versionBand === 'unverified-newer') {
-      // The read-only migration probe remains diagnostic; execution capabilities share the write gate.
-      available = id === 'migration.v1Read';
-      reason = 'unverified-newer';
     } else {
       available = true;
     }
@@ -194,12 +180,10 @@ export function evaluateRuntimeContract(input = {}) {
     };
   }
 
-  // Protocol dimension: verified band is fully compatible; unverified-newer is
-  // not hard-incompatible for diagnostics, but required execution caps stay closed.
   const protocolCompatible = reachable
     && authenticated !== false
     && healthOk !== false
-    && (versionBand === 'verified' || versionBand === 'unverified-newer');
+    && versionBand === 'verified';
 
   const requiredCapsOk = Object.values(capabilities)
     .filter((cap) => cap.requiredForExecution)
@@ -213,9 +197,6 @@ export function evaluateRuntimeContract(input = {}) {
     reasons.push(migrationPhase === 'error' ? 'migration-error' : 'migration-blocked');
   }
 
-  // Execution requires a **verified** serve band only. Unverified-newer stays
-  // connected (phase ready-unverified + diagnostics) but must not open writes;
-  // below-min / unknown / 1.x never execute.
   const executionAllowed = reachable
     && authenticated !== false
     && healthOk !== false
@@ -238,8 +219,6 @@ export function evaluateRuntimeContract(input = {}) {
     phase = 'migration-blocked';
   } else if (healthOk === false) {
     phase = 'unhealthy';
-  } else if (versionBand === 'unverified-newer') {
-    phase = 'ready-unverified';
   }
 
   return {
@@ -258,7 +237,7 @@ export function evaluateRuntimeContract(input = {}) {
     versionBand,
     versionMismatch,
     minVerifiedVersion: RUNTIME_CONTRACT_MIN_VERIFIED,
-    maxVerifiedVersion: RUNTIME_CONTRACT_MAX_VERIFIED,
+    maxVerifiedVersion: null,
     pinnedVersion: PINNED_OPENCODE2_VERSION,
     capabilities,
     reasons,
@@ -372,18 +351,51 @@ export function shouldBlockRuntimeContractExecution(method, pathWithQuery, contr
 }
 
 /**
+ * User-facing message when execution is blocked by version admission.
+ * @param {object | null | undefined} contract
+ */
+export function formatRuntimeContractBlockedError(contract) {
+  const serve = contract?.serveVersion ?? null;
+  const min = contract?.minVerifiedVersion ?? RUNTIME_CONTRACT_MIN_VERIFIED;
+  const pinned = contract?.pinnedVersion ?? PINNED_OPENCODE2_VERSION;
+  const reasons = Array.isArray(contract?.reasons) ? contract.reasons : [];
+
+  if (reasons.includes('below-min-verified')) {
+    const current = serve ? `OpenCode ${serve}` : 'This OpenCode version';
+    return `${current} is below the minimum supported version (${min}). Upgrade to ${min} or newer (recommended: ${pinned}). Open Settings → About to update in OpenChamber, or upgrade your global \`opencode\` CLI if you manage it manually.`;
+  }
+  if (reasons.includes('1x-version')) {
+    return `OpenCode 1.x is not supported. Install OpenCode 2 (${min} or newer; recommended: ${pinned}).`;
+  }
+  if (reasons.includes('invalid-version') || reasons.includes('serve-version-unknown')) {
+    return `OpenCode version could not be verified. Install OpenCode 2 (${min} or newer; recommended: ${pinned}) and restart the runtime.`;
+  }
+  if (reasons.includes('migration-blocked') || reasons.includes('migration-error')) {
+    return 'OpenCode is finishing V1 history migration. Wait for migration to complete, then try again.';
+  }
+  if (reasons.includes('auth-failed')) {
+    return 'OpenCode authentication failed. Check OpenCode credentials in Settings and restart the runtime.';
+  }
+  if (reasons.includes('health-failed') || reasons.includes('unreachable')) {
+    return 'OpenCode is not reachable. Restart OpenCode from Settings → About or check that the serve process is running.';
+  }
+  return 'OpenCode is not ready to run sessions yet. Check Settings → About for version and runtime status.';
+}
+
+/**
  * Structured 409 body shared by proxy + serverOpenCodeFetch.
  * @param {object} contract
  */
 export function runtimeContractExecutionBlockedBody(contract) {
   return {
-    error: 'OpenCode runtime contract does not allow execution for this version',
+    error: formatRuntimeContractBlockedError(contract),
     errorCode: 'RUNTIME_CONTRACT_EXECUTION_BLOCKED',
     phase: contract?.phase ?? null,
     reasons: Array.isArray(contract?.reasons) ? contract.reasons : [],
     serveVersion: contract?.serveVersion ?? null,
     minVerifiedVersion: contract?.minVerifiedVersion ?? null,
     maxVerifiedVersion: contract?.maxVerifiedVersion ?? null,
+    pinnedVersion: contract?.pinnedVersion ?? PINNED_OPENCODE2_VERSION,
     contract: contract ?? null,
   };
 }

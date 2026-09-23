@@ -5,6 +5,7 @@ import { evaluateOpenCodeHealthBody } from './opencode2-pin.js';
 import { readOpenCode2BinaryVersion } from './ensure-cli.js';
 import { createRevokedRuntimeContract, evaluateRuntimeContract } from './runtime-contract.js';
 import { OPENCODE_V1_MIGRATION_PATH, fetchV1MigrationGate } from './v1-migration-gate.js';
+import { isProcessAlive } from './shared-service.js';
 
 const parsePositiveInt = (value, fallback) => {
   const parsed = Number.parseInt(String(value ?? ''), 10);
@@ -57,7 +58,17 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
     managedCapabilitiesRuntime = null,
     getActiveSessionCount = () => 0,
     getWarmupDirectories = async () => [],
+    // Official background service (shared-service.js). null keeps the private
+    // managed `opencode serve` path.
+    sharedService = null,
+    adoptOpenCodeServerPassword = null,
   } = deps;
+
+  // True while attached to the shared official service. It is external (never
+  // killed or respawned by us) but, unlike an arbitrary external serve, it can
+  // be re-ensured through `opencode service start` and hot-reloaded in place.
+  let sharedServiceAttached = false;
+  let sharedServicePid = null;
 
   /**
    * Force-signal only an owned managed OpenCode pid / process group.
@@ -585,7 +596,7 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
   };
 
   const isOpenCodeProcessHealthy = async () => {
-    if (!state.openCodeProcess || !state.openCodePort) {
+    if ((!state.openCodeProcess && !sharedServiceAttached) || !state.openCodePort) {
       return false;
     }
 
@@ -643,6 +654,105 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
     }
 
     throw new Error('Timed out waiting for OpenCode port');
+  };
+
+  /**
+   * Ensure the official service is running and point this runtime at its
+   * registration (origin, port, password). Throws when the CLI cannot start it
+   * or the registration is missing/malformed; the caller decides rollback.
+   */
+  const connectSharedOpenCodeService = async () => {
+    await applyOpencodeBinaryFromSettings({ strict: true });
+    if (typeof ensurePinnedOpenCode2CliEnv === 'function') {
+      await ensurePinnedOpenCode2CliEnv();
+    }
+    ensureOpencodeCliEnv();
+    let binary = (process.env.OPENCODE_BINARY || 'opencode').trim() || 'opencode';
+    let args = [];
+    if (process.platform === 'win32') {
+      const launchSpec = resolveManagedOpenCodeLaunchSpec(binary);
+      if (launchSpec?.binary) {
+        binary = launchSpec.binary;
+        args = Array.isArray(launchSpec.args) ? launchSpec.args : [];
+      }
+    }
+    const envPath = typeof buildManagedOpenCodePath === 'function'
+      ? buildManagedOpenCodePath()
+      : typeof buildAugmentedPath === 'function'
+        ? buildAugmentedPath()
+        : process.env.PATH;
+    const shellEnv = typeof getManagedOpenCodeShellEnvSnapshot === 'function'
+      ? getManagedOpenCodeShellEnvSnapshot() || {}
+      : {};
+    await sharedService.start({
+      binary,
+      args,
+      env: sharedService.buildStartEnv({ ...shellEnv, ...process.env, PATH: envPath }),
+    });
+    const registration = await sharedService.readRegistration();
+    if (!registration) {
+      throw new Error(`OpenCode service started but ${sharedService.registrationFile} is missing or invalid`);
+    }
+    adoptOpenCodeServerPassword?.(registration.password, 'shared-service');
+    state.openCodeBaseUrl = registration.origin;
+    setOpenCodePort(registration.port);
+    sharedServicePid = registration.pid;
+    return registration;
+  };
+
+  /**
+   * Attach to the shared official service instead of spawning a private serve.
+   * On any failure every field this touched is rolled back so bootstrap can
+   * continue with the managed path.
+   */
+  const attachSharedOpenCodeService = async () => {
+    if (!sharedService) return false;
+    revokeRuntimeExecutionPermit('shared-service-attach');
+    state.isOpenCodeReady = false;
+    state.openCodeNotReadySince = Date.now();
+    try {
+      const registration = await connectSharedOpenCodeService();
+      if (!(await probeExternalOpenCode(registration.port, registration.origin))) {
+        throw new Error(`OpenCode service at ${registration.origin} did not pass the health/version check`);
+      }
+      if (state.openCodeProcess && !state.isExternalOpenCode) {
+        await closeManagedOpenCodeChild(state.openCodeProcess).catch(() => {});
+        state.openCodeProcess = null;
+      }
+      sharedServiceAttached = true;
+      state.isExternalOpenCode = true;
+      state.lastOpenCodeError = null;
+      state.v1Migration = null;
+      state.managedCapabilityIdentity = null;
+      managedCapabilitiesRuntime?.setCapabilityIdentity(null);
+      syncToHmrState();
+      console.log(`[OpenCode] Attached to shared OpenCode service at ${registration.origin} (v${registration.version ?? 'unknown'})`);
+      return true;
+    } catch (error) {
+      sharedServiceAttached = false;
+      sharedServicePid = null;
+      state.openCodeBaseUrl = null;
+      state.openCodePort = null;
+      adoptOpenCodeServerPassword?.(null, null);
+      syncToHmrState();
+      console.warn(`[OpenCode] Shared OpenCode service unavailable, falling back to a managed server: ${error instanceof Error ? error.message : String(error)}`);
+      return false;
+    }
+  };
+
+  // `location.reload` rebuilds every loaded location in place: running
+  // sessions continue at the next step boundary and clients get
+  // `location.shutdown` to refetch location services.
+  const reloadSharedOpenCodeLocations = async () => {
+    const response = await fetch(buildOpenCodeUrl('/api/location/reload', ''), {
+      method: 'POST',
+      headers: { Accept: 'application/json', ...getOpenCodeAuthHeaders() },
+      signal: AbortSignal.timeout(120_000),
+    });
+    if (!response.ok) {
+      const body = await response.text().catch(() => '');
+      throw new Error(`OpenCode location reload failed (HTTP ${response.status})${body ? `: ${body.slice(0, 300)}` : ''}`);
+    }
   };
 
   const START_OPEN_CODE_MAX_ATTEMPTS = 2;
@@ -792,6 +902,17 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
       console.log('Restarting OpenCode process...');
 
       if (state.isExternalOpenCode) {
+        if (sharedServiceAttached) {
+          // The service may have been stopped or replaced by another client
+          // (new pid, possibly new port/password); `service start` revives or
+          // rediscovers it. Never kills it.
+          console.log('Re-ensuring shared OpenCode service...');
+          try {
+            await connectSharedOpenCodeService();
+          } catch (error) {
+            console.warn(`[OpenCode] Failed to re-ensure shared OpenCode service: ${error instanceof Error ? error.message : String(error)}`);
+          }
+        }
         console.log('Re-probing external OpenCode server...');
         const probePort = state.openCodePort || env.ENV_CONFIGURED_OPENCODE_PORT || 4096;
         const probeOrigin = state.openCodeBaseUrl ?? env.ENV_CONFIGURED_OPENCODE_HOST?.origin;
@@ -994,6 +1115,16 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
     const { agentName } = options;
 
     console.log(`Refreshing OpenCode after ${reason}`);
+
+    if (sharedServiceAttached) {
+      // Shared with other clients: reload in place instead of restarting.
+      await reloadSharedOpenCodeLocations();
+      if (agentName) {
+        await waitForAgentPresence(agentName);
+      }
+      return { reloaded: true, external: true };
+    }
+
     clearResolvedOpenCodeBinary();
     await applyOpencodeBinaryFromSettings();
 
@@ -1074,6 +1205,15 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
       } else if (state.openCodeProcess && !state.isExternalOpenCode && await isOpenCodeProcessHealthy()) {
         console.log('[HMR] Restarting managed OpenCode because scheduled-task capability identity is stale');
         await restartOpenCode();
+      } else if (
+        // Before the port-4096 probe: a leftover private serve there must not
+        // win over the official service every other client shares.
+        sharedService
+        && !env.ENV_CONFIGURED_OPENCODE_PORT
+        && !env.ENV_CONFIGURED_OPENCODE_HOST
+        && await attachSharedOpenCodeService()
+      ) {
+        // Attached to the official background service shared with TUI/CLI.
       } else if (
         (env.ENV_EFFECTIVE_PORT || DEFAULT_OPENCODE_SERVE_PORT)
         && await probeExternalOpenCode(
@@ -1281,15 +1421,20 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
 
   const runHealthCheckCycle = async (source) => {
     // External serve is read-only mount: never restart or spawn a second copy
-    // because the user's instance looks unhealthy from our probe.
-    if (state.isExternalOpenCode) return;
-    if (!state.openCodeProcess || state.isShuttingDown || state.isRestartingOpenCode) return;
+    // because the user's instance looks unhealthy from our probe. The shared
+    // service is the exception: "restart" only re-runs `service start`.
+    if (state.isExternalOpenCode && !sharedServiceAttached) return;
+    if (!sharedServiceAttached && !state.openCodeProcess) return;
+    if (state.isShuttingDown || state.isRestartingOpenCode) return;
     if (healthCheckCyclePromise) return healthCheckCyclePromise;
 
     healthCheckCyclePromise = (async () => {
       const healthy = await probeOpenCodeHealth();
       if (!healthy) {
-        if (!isManagedOpenCodeProcessAlive()) {
+        const processAlive = sharedServiceAttached
+          ? isProcessAlive(sharedServicePid)
+          : isManagedOpenCodeProcessAlive();
+        if (!processAlive) {
           console.log(`[lifecycle] ${source} health check: OpenCode process exited, restarting...`);
           consecutiveHealthFailures = 0;
           lastHealthProbeResult = null;
@@ -1347,6 +1492,7 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
 
   return {
     killProcessOnPort,
+    isSharedOpenCodeService: () => sharedServiceAttached,
     startOpenCode,
     restartOpenCode,
     waitForOpenCodeReady,

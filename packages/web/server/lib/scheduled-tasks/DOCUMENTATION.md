@@ -69,6 +69,14 @@ Server-owned scheduled task runtime and routes for OpenChamber-only automation.
   - `runNow(projectId, taskId)`
   - `observeSessionEvent(event)`
 
+Isolation dependencies (required for sidebar hide):
+
+- `persistSessionMetadata(sessionID, patch)` — Host store write. Missing
+  persist refuses the run **before** `session.create`. Persist failure after
+  create fails the run before prompt.
+- `onSystemSessionPersisted({ sessionID, directory, metadata })` — drop the
+  session from the sidebar index immediately after Host commit.
+
 Dependencies include optional `runHistoryStore` with:
 
 - `startRun(record)`

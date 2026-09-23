@@ -87,7 +87,7 @@ This module provides OpenCode server integration utilities for the web server ru
   - `PUT /api/behavior/agents-md`
   - `POST /api/opencode/upgrade` (ticket 12): in-app upgrade is **owned-cache only**. Installs the pinned/target `@opencode/cli` into `~/.config/openchamber/opencode-cli/<version>/`, force-pins that binary, restarts the managed process, and succeeds only after the running serve version + runtime contract verify. Global CLI / external serve / bundled return HTTP 409 with `management` + `guidance` and never mutate user installs. Concurrent upgrades are single-flight (`operation` state). Active sessions require `confirmActiveTasks`/`force`.
   - `GET /api/opencode/upgrade-status`: returns `currentVersion`/`serveVersion`/`cliVersion`, `targetVersion`/`latestVersion` (pin), `supplySource`, `ownership`, `canManage`, `management`, `guidance`, `contract`, and `operation`. `available` is true only when `canManage` and target > current; global/external report `available: null` plus manual guidance.
-  - `GET /api/opencode/contract` (ticket 11): runtime contract admission for the **running serve** (not health alone). Dimensions: reachable / authenticated / protocolCompatible / executionAllowed / capabilities / migration / CLI↔serve mismatch. Verified band `2.0.12`–`2.0.14`; older 2.x limited; unverified newer 2.x stays connected (`ready-unverified`) with diagnostics but **`executionAllowed: false`** until the band is verified.
+  - `GET /api/opencode/contract` (ticket 11): runtime contract admission for the **running serve** (not health alone). Dimensions: reachable / authenticated / protocolCompatible / executionAllowed / capabilities / migration / CLI↔serve mismatch. Floor `2.0.12` (acceptable OpenCode 2.x at or above); below-min 2.x and 1.x block execution with upgrade guidance; no upper version cap.
   - `GET /api/opencode/health`: probes managed OpenCode `GET /api/info` (Basic auth, 4s timeout). `healthy` is reachability/version shape via `evaluateOpenCodeHealthBody` (admits official 2.x `ServerInfo` and classic `{ healthy: true, version }`; rejects 1.x / missing / `healthy: false`). Response also includes `executionAllowed`, `protocolCompatible`, and `contract` so clients do not treat health success as full execution semantics. Upstream non-OK responses pass through status with `{ healthy: false, error, contract }`; transport failures return HTTP 503.
   - `GET /api/opencode/version`: serve + CLI versions, mismatch flag, and contract snapshot
   - `POST /api/opencode/directory`
@@ -126,8 +126,9 @@ This module provides OpenCode server integration utilities for the web server ru
 - `resolveOpenCode2UpgradeTarget(target)` / `rejectOpenCode1xUpgradeTarget(target)`: upgrade targets default to the pin and refuse 1.x.
 
 ## Public exports (runtime-contract.js)
-- Ticket 11 pure admission matrix. `RUNTIME_CONTRACT_MIN_VERIFIED` (`2.0.12`) / `RUNTIME_CONTRACT_MAX_VERIFIED` (`2.0.14`) bound documented evidence; capabilities include `core.protocol`, `session.prompt`, `session.queuedInput`, `session.background`, `session.generationFallback`, `migration.v1Read`.
-- `evaluateRuntimeContract(input)`: separate reachable / auth / protocol / execution / migration / CLI↔serve mismatch reasons for UI and diagnostics. **`executionAllowed` requires `versionBand === 'verified'`** (unverified-newer is diagnostic-only).
+- Ticket 11 pure admission matrix. `RUNTIME_CONTRACT_MIN_VERIFIED` (`2.0.12`) is the documented 2.x floor; capabilities include `core.protocol`, `session.prompt`, `session.queuedInput`, `session.background`, `session.generationFallback`, `migration.v1Read`.
+- `evaluateRuntimeContract(input)`: separate reachable / auth / protocol / execution / migration / CLI↔serve mismatch reasons for UI and diagnostics. **`executionAllowed` requires acceptable OpenCode 2.x at or above the floor** (`versionBand === 'verified'`).
+- `formatRuntimeContractBlockedError(contract)` / `runtimeContractExecutionBlockedBody(contract)`: user-facing upgrade guidance on HTTP 409 execution blocks (below-min / 1.x), not raw JSON dumps.
 - `isRuntimeContractExecutionPath` / `isRuntimeContractDiagnosticPath` / `isRuntimeContractStopPath` / `shouldBlockRuntimeContractExecution` / `createRevokedRuntimeContract`: proxy + Host transport gate helpers. **Execution paths require `executionAllowed === true` on the current contract**; null/pending/false all block (no silent bypass). Unit/DI factories may pass `{ allowMissingContract: true }` only when no lifecycle is wired. Interrupt/abort and reads stay available when execution is limited. Health success is not full execution semantics.
 
 ## Public exports (server-opencode-fetch.js)
@@ -151,9 +152,11 @@ This module provides OpenCode server integration utilities for the web server ru
 
 ## Public exports (lifecycle.js)
 - `createOpenCodeLifecycleRuntime(dependencies)`: creates lifecycle runtime for managed/external OpenCode process orchestration. Bootstrap reuses a healthy v2 `opencode serve` when present; otherwise starts managed `opencode serve`. Before managed spawn, `ensurePinnedOpenCode2CliEnv()` detects the local CLI version and installs the pinned official V2 when missing or too old (skipped for external skip-start). Startup accepts both `server listening on http://127.0.0.1:PORT` and the legacy `opencode server listening on …` line. Readiness/health probes `GET /api/info` first, then `/global/health`, with Basic auth (username `opencode`). A body is admitted only when `evaluateOpenCodeHealthBody` accepts the version (rejects 1.x and missing/unknown). After health ok, `startOpenCode` / `waitForOpenCodeReady` poll `GET /api/experimental/migration/v1` (no POST; backfill is owned by opencode2). Each readiness attempt uses one abort timer that covers **both** health and migration so a hung migration cannot outrun the per-attempt budget. External instances are a read-only mount: restart/refresh only re-probe health + V1 migration (never kill, spawn, clear port, or flip `isExternalOpenCode`); health monitoring skips them; upgrade routes return 409. After readiness admits, lifecycle warms recent directories via optional `getWarmupDirectories` (sequential best-effort `GET /api/session?directory=&limit=1`). External skip-start / auto-detect attach leave `isOpenCodeReady` false until the gate admits. `isOpenCodeReady` means transcript may be fetched only when the gate admits (`completed`, or no V1 library such as HTTP 404). `required` / `running` / `error` keep the ready gate closed; `error` is retried. The last gate result is stored on `state.v1Migration` and published on the OpenChamber `/health` snapshot so UI can render `phase` and running `progress` (`label` / `numerator` / `denominator`) plus `userNotice` (reuse message ids; in-progress tools become interrupted; V1 subtasks do not appear in v2).
+- Shared official service: when `sharedService` is injected and neither an OpenCode port nor host is configured, bootstrap first runs `opencode service start` and attaches to the registered stable-channel service (after HMR reuse, before the port-4096 probe and managed spawn). The attach adopts the registration password, sets base URL/port, and marks the server external, so no managed capabilities (scheduled-task plugin, bridge token, `v2-plugin-host-shim`) are injected and upgrade routes return 409. Attach failure rolls back URL/port/password and falls through to managed spawn. While attached, `restartOpenCode` re-runs `service start` before re-probing, `refreshOpenCodeAfterConfigChange` calls `POST /api/location/reload` instead of restarting (returns `{ reloaded: true, external: true }`), and health monitoring runs using registration-PID liveness.
 - Returned API:
   - `startOpenCode()`
   - `restartOpenCode()`
+  - `isSharedOpenCodeService()`: true while attached to the shared official service.
   - `waitForOpenCodeReady(timeoutMs?, intervalMs?)`
   - `waitForAgentPresence(agentName, timeoutMs?, intervalMs?)`
   - `refreshOpenCodeAfterConfigChange(reason, options?)`
@@ -162,6 +165,15 @@ This module provides OpenCode server integration utilities for the web server ru
   - `startHealthMonitoring(healthCheckIntervalMs)`
   - `waitForPortRelease(port, timeoutMs, hostname?)`: probe-only; reports whether the listener freed without killing occupants.
   - `killProcessOnPort(port, ownedPid?)`: legacy helper retained for tests/compat; force-signals only an explicit owned pid/process group when `ownedPid` is provided. Restart and graceful shutdown **do not** call it after `child.close()` (close owns escalation; a second kill of a captured pid risks recycling). Never mass-kills by port via `lsof`.
+
+## Public exports (shared-service.js)
+- Discovery and start of the official `opencode serve --service` background service shared with official Desktop/TUI (one process, one database, so providers and plugins stay in sync across clients).
+- `resolveSharedServiceRegistrationPath(env?, homeDir?)`: `${XDG_STATE_HOME || ~/.local/state}/opencode/service.json` (stable channels only).
+- `isSharedServiceEnabled(env?)`: on by default; `OPENCHAMBER_OPENCODE_SHARED_SERVICE=0|false|off` opts out.
+- `parseSharedServiceRegistration(text)` / `readSharedServiceRegistration({ file, fsLike })`: `{ origin, port, pid, password, version }` or `null`; missing/malformed files are absent, never a service.
+- `buildSharedServiceStartEnv(env)`: strips `OPENCHAMBER_*`, `OPENCODE_SERVER_PASSWORD`, and `OPENCODE_PASSWORD` so the long-lived service never inherits OpenChamber credentials.
+- `startSharedOpenCodeService({ binary, args, env, spawnImpl, timeoutMs })`: runs `<binary> [...args] service start`; rejects with the stderr tail on non-zero exit or timeout.
+- `isProcessAlive(pid)`, `createSharedOpenCodeService({ envLike, fsLike, spawnImpl })`: the lifecycle dependency (`start`, `readRegistration`, `buildStartEnv`).
 
 ## Public exports (env-runtime.js)
 - `createOpenCodeEnvRuntime(dependencies)`: creates runtime that owns OpenCode CLI environment and binary discovery state. Auto-discovery matches master: settings/env, then PATH `opencode` (official v2) with `opencode2` as alias, then known install locations, then a previously installed pin under the OpenChamber data dir. 1.x binaries are skipped by `--version`, not by basename. `resolveOpencodeCliPath()` never prefers a packaged/bundled Electron extraResource. Managed startup calls `ensurePinnedOpenCode2CliEnv()` and installs the pin only when no usable 2.x CLI exists; if pin install fails (or auto-install is disabled), it may last-resort to a 2.x binary under `OPENCHAMBER_BUNDLED_OPENCODE_CLI_DIR` or `process.resourcesPath/opencode-cli` (source `bundled`). Explicit `OPENCODE_BINARY` that reports 1.x fails closed with `OPENCODE_BINARY_INVALID`. Bootstrap reuses a healthy v2 `opencode serve` on port 4096 when present; otherwise it starts generic `opencode serve`.
@@ -273,11 +285,36 @@ This module provides OpenCode server integration utilities for the web server ru
   - `resolveProjectDirectory(req)`
   - `resolveOptionalProjectDirectory(req)`
 
+## V2 configuration persistence and activation
+
+Agent, Command, MCP, Plugin and Skill mutation routes write their existing local
+configuration paths and return `{ success: true, requiresReload: false,
+application: 'watch' }` (skill install retains its `ok` result). They do not call
+the process lifecycle or `location.reload`. V2 Config watchers and plugin/domain
+reconciliation apply watched changes; frontend domain events refresh catalogs.
+The receipt means **persisted**, not confirmed activation. A remote external
+OpenCode with a different filesystem cannot see Host-local writes merely because
+the write succeeded; restarting that server does not transfer those files either.
+
+Raw global `opencode` config saves no longer request a restart. Opaque plugin-owned
+JSON targets retain `requiresManualRestart: true` because OpenCode's config watcher
+does not guarantee those plugins reload their private configuration. Explicit UI
+configuration reload uses official SDK `location.reload`. The historical
+`/api/config/reload` host/bridge endpoint remains reserved for existing process
+startup/recovery/binary-change callers, not ordinary Settings mutations.
+
+`config-hot-reload.integration.test.js` is opt-in via
+`OPENCHAMBER_TEST_OPENCODE_BINARY=<absolute-v2-cli>`. It starts a separate loopback
+server with isolated HOME/XDG/config/database, checks global command changes,
+plugin disable/re-enable, credentials and MCP config changes without reload or
+restart, then terminates only its own child and removes its temporary files.
+It makes no model requests and never reads real user credentials.
+
 ## Public exports (config-entity-routes.js)
 - `registerConfigEntityRoutes(app, dependencies)`: registers configuration entity routes:
-  - `GET /api/config/catalog/providers` resolves the request project directory, calls OpenCode's SDK `config.providers`, and returns schema version `1` with an allowlisted provider/model catalog. The route is available through the shared web host used by Web, Electron, hosted mobile, and Capacitor mobile, before generic OpenCode proxy handling.
+  - `GET /api/config/catalog/providers` resolves the request project directory, composes official v2 `provider.list` + `model.list` (+ `model.default`), and returns schema version `1` with an allowlisted provider/model catalog. Catalog model ids and defaults use `ModelInfo.id` (the external generate/session id). `ModelInfo.modelID` is an internal field and is not the catalog key. The route is available through the shared web host used by Web, Electron, hosted mobile, and Capacitor mobile, before generic OpenCode proxy handling.
   - Provider catalog responses include only provider `id`, `name`, and safe models. Safe models include `id`, `name`, fixed text/audio/image/video/pdf capability modalities, bounded cost/limit fields, `release_date`, and variant names with `{}` values. Identifiers are bounded to 512 characters, display names to 1024, release dates to 64, numeric values to absolute 1e9, and catalog collections to 200 providers, 500 models per provider, and 100 defaults or variants. Provider credentials/configuration and unallowlisted model fields stay server-side. Malformed catalog roots and SDK error envelopes return HTTP 502. `partial: true` is structural only: provider/model/default truncation, dropped providers/models/defaults, or truncated variant dictionaries. Soft allowlist stripping of optional metadata (unknown modalities, non-boolean capability flags, out-of-range cost/limit numbers, empty/null/invalid `release_date`) keeps valid models and must not set `partial: true`, or UI refresh retains a stale complete snapshot after OpenCode provider updates.
-  - Agents: `/api/config/agents/:name` and `/api/config/agents/:name/config`
+  - Agents: `/api/config/agents/:name` and `/api/config/agents/:name/config`. Create and update bodies with `native` rewrite the markdown file in the current agent format. When the existing file has fields that cannot be represented, the route returns HTTP 409 `drop-confirmation` until the client sends `confirmDrop`.
   - Commands: batched metadata via `POST /api/config/commands/metadata`; `{ catalog: true }` returns the compact autocomplete catalog without templates, plus CRUD at `/api/config/commands/:name`
   - Global raw configs: `GET /api/config/global` discovers existing config targets; `GET/PUT /api/config/global/:target` reads and writes `opencode`, `oh-my-opencode-slim`, and `oh-my-openagent` JSON or JSONC files
   - MCP servers: `/api/config/mcp` and `/api/config/mcp/:name`
@@ -299,6 +336,7 @@ When adding or changing Host HTTP APIs that mobile/desktop clients reach over Pr
   - `getOpenCodeAuthHeaders()`
   - `isOpenCodeConnectionSecure()`
   - `ensureLocalOpenCodeServerPassword(options?)`
+  - `adoptOpenCodeServerPassword(password, source)`: adopts a password owned by another process (the shared official service registration); `null` clears it on attach rollback.
 
 ## Public exports (core-routes.js)
 - `registerServerStatusRoutes(app, dependencies)`: registers status/system endpoints:

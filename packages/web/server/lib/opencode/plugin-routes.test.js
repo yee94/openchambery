@@ -263,11 +263,11 @@ describe('opencode plugin routes', () => {
     expect(response.body.results[0]).toMatchObject({ kind: 'npm-ok', spec: '@scope/foo@1.0.0', name: '@scope/foo' });
   });
 
-  test('POST /entry creates entry and requires reload', async () => {
+  test('POST /entry persists for V2 hot reload without restarting', async () => {
     const response = await createEntry('a');
 
-    expect(response.body).toMatchObject({ success: true, requiresReload: true, reloadDelayMs: 25 });
-    expect(refreshOpenCodeAfterConfigChange).toHaveBeenCalledWith('plugin entry creation');
+    expect(response.body).toMatchObject({ success: true, requiresReload: false, application: 'watch' });
+    expect(refreshOpenCodeAfterConfigChange).not.toHaveBeenCalled();
   });
 
   test('GET after POST returns created entry', async () => {
@@ -302,7 +302,7 @@ describe('opencode plugin routes', () => {
     expect(response.body.success).toBe(true);
     const after = await request(app).get('/api/config/plugins').expect(200);
     expect(after.body.entries[0]).toEqual(expect.objectContaining({ spec: 'b', scope: 'user' }));
-    expect(refreshOpenCodeAfterConfigChange).toHaveBeenCalledWith('plugin entry update');
+    expect(refreshOpenCodeAfterConfigChange).not.toHaveBeenCalled();
   });
 
   test('DELETE /entry/:id removes entry and prunes plugin key', async () => {
@@ -315,15 +315,15 @@ describe('opencode plugin routes', () => {
     const after = await request(app).get('/api/config/plugins').expect(200);
     expect(after.body.entries).toEqual([]);
     expect(readJson(userConfigPath).plugin).toBeUndefined();
-    expect(refreshOpenCodeAfterConfigChange).toHaveBeenCalledWith('plugin entry deletion');
+    expect(refreshOpenCodeAfterConfigChange).not.toHaveBeenCalled();
   });
 
   test('POST /file writes plugin dir file', async () => {
     const response = await createFile('test.js', '//x');
 
-    expect(response.body).toMatchObject({ success: true, requiresReload: true });
+    expect(response.body).toMatchObject({ success: true, requiresReload: false, application: 'watch' });
     expect(fs.readFileSync(path.join(rootDir, 'plugins', 'test.js'), 'utf8')).toBe('//x');
-    expect(refreshOpenCodeAfterConfigChange).toHaveBeenCalledWith('plugin file creation');
+    expect(refreshOpenCodeAfterConfigChange).not.toHaveBeenCalled();
   });
 
   test('POST duplicate file returns 409', async () => {
@@ -348,7 +348,7 @@ describe('opencode plugin routes', () => {
       .expect(200);
 
     expect(fs.readFileSync(path.join(rootDir, 'plugins', 'test.js'), 'utf8')).toBe('//y');
-    expect(refreshOpenCodeAfterConfigChange).toHaveBeenCalledWith('plugin file update');
+    expect(refreshOpenCodeAfterConfigChange).not.toHaveBeenCalled();
   });
 
   test('DELETE /file/:id unlinks file', async () => {
@@ -359,7 +359,7 @@ describe('opencode plugin routes', () => {
     await request(app).delete(`/api/config/plugins/file/${encodeURIComponent(id)}`).expect(200);
 
     expect(fs.existsSync(path.join(rootDir, 'plugins', 'test.js'))).toBe(false);
-    expect(refreshOpenCodeAfterConfigChange).toHaveBeenCalledWith('plugin file deletion');
+    expect(refreshOpenCodeAfterConfigChange).not.toHaveBeenCalled();
   });
 
   test('PATCH unknown entry id returns 404', async () => {
