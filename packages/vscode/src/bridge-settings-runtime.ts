@@ -103,64 +103,38 @@ export const fetchOpenCodeSkillsFromApi = async (
     return null;
   }
 
-  try {
-    const base = apiUrl.endsWith('/') ? apiUrl : `${apiUrl}/`;
-    const url = new URL('skill', base);
-    if (workingDirectory) {
-      url.searchParams.set('directory', workingDirectory);
-    }
-
-    const response = await fetch(url.toString(), {
-      method: 'GET',
-      headers: {
-        Accept: 'application/json',
-        ...(ctx?.manager?.getOpenCodeAuthHeaders() || {}),
-      },
-      signal: AbortSignal.timeout(8_000),
-    });
-
-    if (!response.ok) {
-      return null;
-    }
-
-    const payload = await response.json();
-    if (!Array.isArray(payload)) {
-      return null;
-    }
-
-    return payload
-      .map((item) => {
-        const name = typeof item?.name === 'string' ? item.name.trim() : '';
-        const location = typeof item?.location === 'string' ? item.location : '';
-        const description = typeof item?.description === 'string' ? item.description : '';
-        const content = typeof item?.content === 'string' ? item.content : '';
-        if (!name || !location) {
-          return null;
-        }
-        if (location === BUILT_IN_SKILL_LOCATION) {
-          return {
-            name,
-            path: location,
-            scope: 'user',
-            source: 'opencode',
-            description,
-            content,
-          } as DiscoveredSkill;
-        }
-        const inferred = inferSkillScopeAndSourceFromLocation(location, workingDirectory);
-        return {
-          name,
-          path: location,
-          scope: inferred.scope,
-          source: inferred.source,
-          description,
-          content,
-        } as DiscoveredSkill;
-      })
-      .filter((item): item is DiscoveredSkill => item !== null);
-  } catch {
-    return null;
+  const client = OpenCode.make({
+    baseUrl: apiUrl.replace(/\/+$/, ''),
+    headers: ctx?.manager?.getOpenCodeAuthHeaders() ?? {},
+    fetch: globalThis.fetch,
+  });
+  const response = await client.skill.list(
+    workingDirectory ? { location: { directory: workingDirectory } } : undefined,
+    { signal: AbortSignal.timeout(8_000) },
+  );
+  const payload = response.data;
+  if (!Array.isArray(payload)) {
+    throw new Error('OpenCode skill catalog is unavailable');
   }
+
+  return payload
+    .map((item): DiscoveredSkill | null => {
+      const name = typeof item.id === 'string' ? item.id : '';
+      const location = typeof item.path === 'string' ? item.path : '';
+      if (!name || !location) return null;
+      const inferred = location === BUILT_IN_SKILL_LOCATION
+        ? { scope: 'user' as const, source: 'opencode' as const }
+        : inferSkillScopeAndSourceFromLocation(location, workingDirectory);
+      return {
+        name,
+        path: location,
+        scope: inferred.scope,
+        source: inferred.source,
+        description: item.description ?? '',
+        content: item.content,
+      };
+    })
+    .filter((item): item is DiscoveredSkill => item !== null);
 };
 
 export type OpenCodeCommand = {

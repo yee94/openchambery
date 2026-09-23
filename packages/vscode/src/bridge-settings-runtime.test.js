@@ -9,10 +9,12 @@ let modelDefaultImpl = async () => ({ data: null });
 const providerList = mock(async (...args) => providerListImpl(...args));
 const modelList = mock(async (...args) => modelListImpl(...args));
 const modelDefault = mock(async (...args) => modelDefaultImpl(...args));
+const skillList = mock(async () => ({ data: [{ id: 'release', name: 'Git Release', path: '/repo/.opencode/skills/release/SKILL.md', description: 'Release notes' }] }));
 const make = mock(() => ({
   provider: { list: providerList },
   model: { list: modelList, default: modelDefault },
   command: { list: async () => ({ data: [] }) },
+  skill: { list: skillList },
 }));
 
 mock.module('vscode', () => ({
@@ -27,13 +29,21 @@ mock.module('os', () => ({ ...osMock, default: osMock }));
 mock.module('node:os', () => ({ ...osMock, default: osMock }));
 mock.module('@opencode/client', () => ({ OpenCode: { make } }));
 
-const { fetchProviderCatalogFromApi, readSettings } = await import('./bridge-settings-runtime.ts');
+const { fetchProviderCatalogFromApi, fetchOpenCodeSkillsFromApi, readSettings } = await import('./bridge-settings-runtime.ts');
 
 afterAll(() => {
   fs.rmSync(settingsHome, { recursive: true, force: true });
 });
 
 describe('VS Code provider catalog SDK access', () => {
+  test('projects V2 skill id/path and preserves directory scope', async () => {
+    const skills = await fetchOpenCodeSkillsFromApi({ manager: {
+      getApiUrl: () => 'http://opencode.test', getOpenCodeAuthHeaders: () => ({}),
+    } }, '/repo');
+    expect(skills).toEqual([expect.objectContaining({ name: 'release', path: '/repo/.opencode/skills/release/SKILL.md' })]);
+    expect(skillList).toHaveBeenCalledWith({ location: { directory: '/repo' } }, { signal: expect.any(AbortSignal) });
+  });
+
   test('returns token presence booleans without token values', () => {
     const settings = readSettings({
       context: {

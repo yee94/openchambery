@@ -1632,6 +1632,17 @@ const StaticHistoryList = React.memo(({ entries, engine, contentRef, scrollRef, 
         getScrollElement: () => scrollRef?.current ?? null,
         estimateSize: () => estimatedEntrySizeRef.current,
         overscan: historyOverscan,
+        measureElement: (element, entry, instance) => {
+            const key = instance.options.getItemKey(instance.indexFromElement(element));
+            const cached = instance.itemSizeCache.get(key);
+            if (instance.options.useCachedMeasurements) return cached ?? instance.options.estimateSize(instance.indexFromElement(element));
+            // Rows are in normal flow: rounding each fractional border box makes
+            // the virtual padding disagree with the DOM after a prepend.
+            const height = entry?.borderBoxSize?.[0]?.blockSize;
+            if (height !== undefined) return height;
+            if (!entry && cached !== undefined) return cached;
+            return element.getBoundingClientRect().height;
+        },
         scrollToFn: (offset, options, instance) => {
             // Expose the new total height before core writes an anchor
             // correction so the browser does not clamp the offset to the old

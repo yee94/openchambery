@@ -452,6 +452,8 @@ When adding or changing Host HTTP APIs that mobile/desktop clients reach over Pr
   - `POST /api/projects/:projectId/icon/discover`
 
 ## Public exports (skill-routes.js)
+
+The V2 skill catalog uses `id` as the existing OpenChamber `name` invocation key and `path` as the file location. Frontmatter `name` is a display label, never an invocation key. Local fallback discovery uses the same path-derived ID, so live and local entries deduplicate correctly. Web, Electron and mobile share this route; VS Code mirrors the projection through `skill.list` in its extension host. Upstream failures remain errors rather than empty successful catalogs.
 - `registerSkillRoutes(app, dependencies)`: registers skills-related routes:
   - Skills config CRUD and metadata under `/api/config/skills*`; `summary=true` returns compact autocomplete fields without skill content or sources
   - Skills catalog listing/source pagination, scan, and install routes

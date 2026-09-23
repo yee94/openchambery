@@ -22,6 +22,7 @@ import {
   applyDirectoryEvent,
   permissionRequestFromEventProperties,
   questionRequestFromEventProperties,
+  questionRequestFromFormProperties,
   type SessionMaterializationReason,
 } from "./event-reducer"
 import { useGlobalSyncStore } from "./global-sync-store"
@@ -2295,6 +2296,42 @@ export function handleEvent(
     }
   }
 
+  if (payload.type === "form.created") {
+    const question = questionRequestFromFormProperties(payload.properties)
+    if (question) {
+      const sessionID = question.sessionID
+      const session = store.getState().session.find((candidate) => candidate.id === sessionID)
+        ?? useGlobalSessionsStore.getState().activeSessions.find((candidate) => candidate.id === sessionID)
+      if (session && !(session as Session & { parentID?: string | null }).parentID) {
+        const toastKey = getQuestionToastKey(sessionID, question.id)
+        const isViewed = isViewedInCurrentSession(resolvedDirectory, sessionID)
+        if (!isViewed && toastKey && !pendingQuestionToastIds.has(toastKey)) {
+          pendingQuestionToastIds.add(toastKey)
+          const firstQuestion = question.questions?.[0]
+          const title = firstQuestion?.header?.trim() || "Input needed"
+          const description = firstQuestion?.question?.trim() || "Agent is waiting for your response"
+          toast.info(title, {
+            id: `question-${toastKey}`,
+            description,
+            action: {
+              label: "Open session",
+              onClick: () => openSessionFromToast(sessionID, resolvedDirectory),
+            },
+          })
+        }
+      }
+    }
+  }
+
+  if (payload.type === "form.replied" || payload.type === "form.cancelled") {
+    const props = payload.properties as { sessionID?: string; id?: string; requestID?: string }
+    const toastKey = getQuestionToastKey(props.sessionID, props.id ?? props.requestID)
+    if (toastKey) {
+      pendingQuestionToastIds.delete(toastKey)
+      toast.dismiss(`question-${toastKey}`)
+    }
+  }
+
   // New authoritative run: drop the previous turn's error notification so
   // useLatestSessionError / SessionErrorNotice do not keep the stale failure
   // after session.execution.started (reducer already clears session_error_at).
@@ -2510,6 +2547,9 @@ export function handleEvent(
     case "question.asked":
     case "question.replied":
     case "question.rejected":
+    case "form.created":
+    case "form.replied":
+    case "form.cancelled":
       draft.question = { ...current.question }
       break
     case "lsp.updated":

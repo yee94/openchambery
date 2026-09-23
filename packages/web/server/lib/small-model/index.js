@@ -1,15 +1,12 @@
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
-import { readAuthFile } from '../opencode/auth.js';
 import { readConfigLayers } from '../opencode/shared.js';
 import { OpenCode } from '@opencode/client';
 import { createChatCompletion } from '../llm/completions.js';
 import { createModelCatalogLoader } from './catalog.js';
-import { resolveSmallModel, parseModelRef, isUsableAuthEntry, getAuthEntryForProvider } from './resolve.js';
-import { callSmallModel } from './call.js';
-import { generateViaOpenCodeSession, stop as stopOpenCodeSessionTemp } from './opencode-session.js';
-import { listCustomSummaryModels, testCustomSummaryApi } from './custom-api.js';
+import { resolveSmallModel, parseModelRef } from './resolve.js';
+import { generateCustomSummaryText, listCustomSummaryModels, testCustomSummaryApi } from './custom-api.js';
 
 const OPENCHAMBER_SETTINGS_FILE = path.join(
   process.env.OPENCHAMBER_DATA_DIR
@@ -68,8 +65,7 @@ const readSmallModelSettingsOverride = () => {
 
 // Rough safety clamp so a huge input never blows the model's context window.
 // Token estimate is ~4 chars/token; when the catalog has no limit for the
-// model (Copilot/codex utility models are not listed) a conservative default
-// applies.
+// model (or the call goes to a custom API) a conservative default applies.
 const DEFAULT_CONTEXT_TOKENS = 64_000;
 const OUTPUT_RESERVE_TOKENS = 4_000;
 
@@ -82,37 +78,6 @@ const clampPromptToModelLimit = ({ prompt, catalog, providerID, modelID }) => {
     return { prompt, truncated: false };
   }
   return { prompt: `${prompt.slice(0, maxChars)}…`, truncated: true };
-};
-
-// Dedicated adapters keep the direct wire-format path. Everything else
-// (plugin providers, credential-chain, missing api.url, …) goes through a
-// temporary OpenCode session so auth/endpoint rewrite stay in the runtime.
-const DEDICATED_DIRECT_PROVIDERS = new Set(['openai', 'anthropic', 'google', 'github-copilot']);
-
-// Mirrors pickWithinProvider / callSmallModel auth gates so Settings pickers
-// never list dedicated providers that would only fail at dispatch time.
-const isCallableDedicatedAuth = (auth, providerID) => {
-  if (providerID === 'openai') {
-    const entry = auth?.openai;
-    return isUsableAuthEntry(entry) && (entry.type === 'api' || entry.type === 'oauth');
-  }
-  if (providerID === 'anthropic') {
-    const entry = auth?.anthropic;
-    return entry?.type === 'api' && isUsableAuthEntry(entry);
-  }
-  if (providerID === 'google') {
-    const entry = auth?.google;
-    return entry?.type === 'api' && isUsableAuthEntry(entry);
-  }
-  if (providerID === 'github-copilot') {
-    return isUsableAuthEntry(getAuthEntryForProvider(auth, 'github-copilot'));
-  }
-  return false;
-};
-
-const shouldUseDirectAdapter = (providerID, auth) => {
-  if (!DEDICATED_DIRECT_PROVIDERS.has(providerID)) return false;
-  return isCallableDedicatedAuth(auth, providerID);
 };
 
 const readConfiguredSmallModel = (workingDirectory) => {
@@ -136,11 +101,15 @@ const readConfiguredSmallModel = (workingDirectory) => {
  *   getModelCatalog?: (directory?: string) => Promise<object>,
  *   openCodeClientFactory?: () => object,
  *   createChatCompletion?: typeof createChatCompletion,
+ *   persistSessionMetadata?: (sessionID: string, patch: object) => Promise<unknown>,
+ *   onSystemSessionPersisted?: (input: { sessionID: string, directory: string, metadata: object }) => void,
  * }} dependencies
  */
 export function createSmallModelService(dependencies) {
   const buildOpenCodeUrl = dependencies.buildOpenCodeUrl;
   const getOpenCodeAuthHeaders = dependencies.getOpenCodeAuthHeaders;
+  const persistSessionMetadata = dependencies.persistSessionMetadata || null;
+  const onSystemSessionPersisted = dependencies.onSystemSessionPersisted || null;
   const getModelCatalog = dependencies.getModelCatalog
     || createModelCatalogLoader({
       buildOpenCodeUrl,
@@ -174,9 +143,38 @@ export function createSmallModelService(dependencies) {
     return { providerID, modelID, source: 'summary-default' };
   };
 
-  // Summary AI (commit / session-title) shares the Assistant LLM gateway:
-  // connected-catalog check, then OpenCode generate.text. Custom mode keeps
-  // its direct OpenAI-compatible call.
+  // Every OpenCode-backed call shares the Assistant LLM gateway: connected
+  // catalog check, then a throwaway-session `session.generate`.
+  const generateThroughGateway = async ({ resolved, prompt, system, directory }) => {
+    const catalog = await getModelCatalog(directory);
+    const clamped = clampPromptToModelLimit({ prompt, catalog, providerID: resolved.providerID, modelID: resolved.modelID });
+    const { completion } = await runChatCompletion({
+      body: {
+        providerID: resolved.providerID,
+        modelID: resolved.modelID,
+        messages: [
+          ...(system ? [{ role: 'system', content: system }] : []),
+          { role: 'user', content: clamped.prompt },
+        ],
+      },
+      buildOpenCodeUrl,
+      getOpenCodeAuthHeaders,
+      clientFactory: openCodeClient,
+      persistSessionMetadata,
+      onSystemSessionPersisted,
+    });
+    const text = completion?.choices?.[0]?.message?.content;
+    return {
+      text: typeof text === 'string' ? text.trim() : '',
+      providerID: resolved.providerID,
+      modelID: resolved.modelID,
+      source: resolved.source,
+      ...(clamped.truncated ? { inputTruncated: true } : {}),
+    };
+  };
+
+  // Summary AI (commit / session-title): the saved OpenCode model or OpenCode's
+  // default through the gateway, or the user's custom OpenAI-compatible API.
   async function generateSummaryText({ prompt, system, maxOutputTokens, directory, purpose }) {
     const summarySettings = readSummarySettings();
     const effectiveSystem = summarySettings?.prompts?.[purpose]
@@ -191,16 +189,13 @@ export function createSmallModelService(dependencies) {
         );
       }
       const clamped = clampPromptToModelLimit({ prompt, catalog: {}, providerID: 'custom', modelID: custom.modelID });
-      const text = await callSmallModel({
-        auth: {},
-        catalog: {},
-        workingDirectory: directory,
-        providerID: 'custom',
+      const text = await generateCustomSummaryText({
+        baseURL: custom.baseURL,
+        apiToken: custom.apiToken,
         modelID: custom.modelID,
         prompt: clamped.prompt,
         system: effectiveSystem,
         maxOutputTokens,
-        custom,
       });
       return {
         text: text.trim(),
@@ -212,29 +207,7 @@ export function createSmallModelService(dependencies) {
     }
 
     const resolved = await resolveSummaryProviderModel(summarySettings, directory);
-    const catalog = await getModelCatalog(directory);
-    const clamped = clampPromptToModelLimit({ prompt, catalog, providerID: resolved.providerID, modelID: resolved.modelID });
-    const { completion } = await runChatCompletion({
-      body: {
-        providerID: resolved.providerID,
-        modelID: resolved.modelID,
-        messages: [
-          ...(effectiveSystem ? [{ role: 'system', content: effectiveSystem }] : []),
-          { role: 'user', content: clamped.prompt },
-        ],
-      },
-      buildOpenCodeUrl,
-      getOpenCodeAuthHeaders,
-      clientFactory: openCodeClient,
-    });
-    const text = completion?.choices?.[0]?.message?.content;
-    return {
-      text: typeof text === 'string' ? text.trim() : '',
-      providerID: resolved.providerID,
-      modelID: resolved.modelID,
-      source: resolved.source,
-      ...(clamped.truncated ? { inputTruncated: true } : {}),
-    };
+    return generateThroughGateway({ resolved, prompt, system: effectiveSystem, directory });
   }
 
   const resolveCustomApiInput = (body = {}) => {
@@ -252,8 +225,8 @@ export function createSmallModelService(dependencies) {
   };
 
   /**
-   * Generates text with the user's small model, resolved and authenticated
-   * entirely server-side from the OpenCode config and auth store.
+   * Generates text with the user's small model, resolved server-side from
+   * OpenChamber settings, the OpenCode config, and the connected catalog.
    */
   async function generateSmallModelText({
     prompt,
@@ -274,14 +247,11 @@ export function createSmallModelService(dependencies) {
       return generateSummaryText({ prompt: prompt.trim(), system, maxOutputTokens, directory, purpose });
     }
 
-    const auth = readAuthFile();
-    const catalog = await getModelCatalog(directory);
     const explicit = parseModelRef(model);
     const resolved = explicit
       ? { ...explicit, source: 'request' }
       : resolveSmallModel({
-        auth,
-        catalog,
+        catalog: await getModelCatalog(directory),
         settingsSmallModel: readSmallModelSettingsOverride(),
         configSmallModel: readConfiguredSmallModel(directory),
         preferredProviderID,
@@ -290,7 +260,7 @@ export function createSmallModelService(dependencies) {
 
     if (!resolved) {
       throw Object.assign(
-        new Error('No small model available — no authenticated provider has a suitable model'),
+        new Error('No small model available — no connected OpenCode provider has a suitable model'),
         { statusCode: 404 },
       );
     }
@@ -308,47 +278,12 @@ export function createSmallModelService(dependencies) {
       );
     }
 
-    const clamped = clampPromptToModelLimit({
+    return generateThroughGateway({
+      resolved,
       prompt: prompt.trim(),
-      catalog,
-      providerID: resolved.providerID,
-      modelID: resolved.modelID,
+      system: typeof system === 'string' && system.trim() ? system.trim() : undefined,
+      directory,
     });
-
-    const effectiveSystem = typeof system === 'string' && system.trim() ? system.trim() : undefined;
-
-    let text;
-    if (shouldUseDirectAdapter(resolved.providerID, auth)) {
-      text = await callSmallModel({
-        auth,
-        catalog,
-        workingDirectory: directory,
-        providerID: resolved.providerID,
-        modelID: resolved.modelID,
-        prompt: clamped.prompt,
-        system: effectiveSystem,
-        maxOutputTokens,
-      });
-    } else {
-      text = await generateViaOpenCodeSession({
-        buildOpenCodeUrl,
-        getOpenCodeAuthHeaders,
-        providerID: resolved.providerID,
-        modelID: resolved.modelID,
-        prompt: clamped.prompt,
-        system: effectiveSystem,
-        purpose: typeof purpose === 'string' && purpose.trim() ? purpose.trim() : 'generate',
-        directory,
-      });
-    }
-
-    return {
-      text: text.trim(),
-      providerID: resolved.providerID,
-      modelID: resolved.modelID,
-      source: resolved.source,
-      ...(clamped.truncated ? { inputTruncated: true } : {}),
-    };
   }
 
   async function testCustomApi(body) {
@@ -364,17 +299,13 @@ export function createSmallModelService(dependencies) {
    * Reports which model would be used, without calling it.
    */
   async function describeSmallModel({ directory, preferredProviderID, preferredModelID } = {}) {
-    const auth = readAuthFile();
-    const catalog = await getModelCatalog(directory);
-    const resolved = resolveSmallModel({
-      auth,
-      catalog,
+    return resolveSmallModel({
+      catalog: await getModelCatalog(directory),
       settingsSmallModel: readSmallModelSettingsOverride(),
       configSmallModel: readConfiguredSmallModel(directory),
       preferredProviderID,
       preferredModelID,
     });
-    return resolved;
   }
 
   return {
@@ -382,6 +313,5 @@ export function createSmallModelService(dependencies) {
     testCustomApi,
     listCustomModels,
     describeSmallModel,
-    stop: stopOpenCodeSessionTemp,
   };
 }

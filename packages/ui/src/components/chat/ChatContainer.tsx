@@ -47,6 +47,7 @@ import { PermissionCard } from './PermissionCard';
 import { QuestionCard } from './QuestionCard';
 import { FormCard } from './FormCard';
 import { refreshSessionForms, useSessionFormStore } from '@/sync/session-form-store';
+import { isQuestionFormMetadata } from '@/sync/v2-runtime';
 import { isSessionRetryAction, resolveRetryActionCopy } from '@/sync/session-retry-action';
 import { StatusRowContainer } from './StatusRowContainer';
 import ScrollToBottomButton from './components/ScrollToBottomButton';
@@ -323,6 +324,7 @@ type ChatViewportProps = {
     retryActionCopy: { title: string; message: string; label: string; link?: string } | null;
     isProgrammaticFollowActive: boolean;
     showLoadOlderButton: boolean;
+    historyRetryRequired: boolean;
     onLoadOlder: () => void;
     turnIds: string[];
     activeTurnId: string | null;
@@ -365,6 +367,7 @@ const ChatViewport = React.memo(({
     retryActionCopy,
     isProgrammaticFollowActive,
     showLoadOlderButton,
+    historyRetryRequired,
     onLoadOlder,
     turnIds,
     activeTurnId,
@@ -380,12 +383,37 @@ const ChatViewport = React.memo(({
     // Spinner/disabled is mutation-owned only (isLoadingOlder); background
     // prefetch/SWR loading never drives the button.
     const loadOlderBusy = resolveMobileLoadOlderBusy({ isLoadingOlder });
-    // Desktop has no load-older button — show a restrained muted status while
-    // scroll/auto-fill pagination is in flight so a long Host wait is not silent.
+    // Desktop loads by scroll until failure/stall requires an explicit retry.
+    // Both states are overlays so their lifecycle cannot push the transcript.
     const showDesktopLoadOlderStatus = resolveDesktopLoadOlderStatusVisibility({
         isMobile,
         isLoadingOlder: loadOlderBusy,
     });
+    const desktopHistoryStatus = !isMobile && (showDesktopLoadOlderStatus || historyRetryRequired) ? (
+        <div className="absolute inset-x-0 top-0 z-20 flex justify-center pointer-events-none" role="status" aria-live="polite">
+            <div className="flex items-center justify-center gap-1.5 pt-3 pb-1">
+                {historyRetryRequired ? (
+                    <Button
+                        variant="secondary"
+                        size="sm"
+                        className="pointer-events-auto relative"
+                        onClick={onLoadOlder}
+                        disabled={loadOlderBusy}
+                        aria-busy={loadOlderBusy}
+                    >
+                        <Icon name="loader-4" className={cn('size-3.5', loadOlderBusy ? 'animate-spin' : 'invisible')} aria-hidden="true" />
+                        {t('chat.history.retry')}
+                        <span className="size-3.5" aria-hidden="true" />
+                    </Button>
+                ) : (
+                    <>
+                        <Icon name="loader-4" className="size-3.5 animate-spin text-[var(--surface-mutedForeground)]" aria-hidden="true" />
+                        <span className="typography-meta text-[var(--surface-mutedForeground)]">{t('chat.history.loadingMore')}</span>
+                    </>
+                )}
+            </div>
+        </div>
+    ) : null;
     const promptPreviewsByTurnIdRef = React.useRef<Map<string, Part[]>>(new Map());
     // Cache normalized parts per source array so unchanged messages keep the
     // same reference and the memo below can bail out to the previous map.
@@ -540,31 +568,13 @@ const ChatViewport = React.memo(({
                                             disabled={loadOlderBusy}
                                             aria-busy={loadOlderBusy}
                                         >
-                                            {loadOlderBusy && (
-                                                <Icon name="loader-4" className="size-4 animate-spin" />
-                                            )}
+                                            <Icon name="loader-4" className={cn('size-4', loadOlderBusy ? 'animate-spin' : 'invisible')} aria-hidden="true" />
                                             {t('chat.history.loadOlder')}
+                                            <span className="size-4" aria-hidden="true" />
                                         </Button>
                                     </div>
                                 )}
-                                {showDesktopLoadOlderStatus && (
-                                    <div
-                                        className="absolute inset-x-0 top-0 z-20 flex justify-center pointer-events-none"
-                                        role="status"
-                                        aria-live="polite"
-                                    >
-                                        <div className="flex items-center justify-center gap-1.5 pt-3 pb-1">
-                                            <Icon
-                                                name="loader-4"
-                                                className="size-3.5 animate-spin text-[var(--surface-mutedForeground)]"
-                                                aria-hidden="true"
-                                            />
-                                            <span className="typography-meta text-[var(--surface-mutedForeground)]">
-                                                {t('chat.history.loadingMore')}
-                                            </span>
-                                        </div>
-                                    </div>
-                                )}
+                                {desktopHistoryStatus}
                             </>
                         )}
                         footerSlot={(
@@ -647,31 +657,13 @@ const ChatViewport = React.memo(({
                                     disabled={loadOlderBusy}
                                     aria-busy={loadOlderBusy}
                                 >
-                                    {loadOlderBusy && (
-                                        <Icon name="loader-4" className="size-4 animate-spin" />
-                                    )}
+                                    <Icon name="loader-4" className={cn('size-4', loadOlderBusy ? 'animate-spin' : 'invisible')} aria-hidden="true" />
                                     {t('chat.history.loadOlder')}
+                                    <span className="size-4" aria-hidden="true" />
                                 </Button>
                             </div>
                         )}
-                        {showDesktopLoadOlderStatus && (
-                            <div
-                                className="absolute inset-x-0 top-0 z-20 flex justify-center pointer-events-none"
-                                role="status"
-                                aria-live="polite"
-                            >
-                                <div className="flex items-center justify-center gap-1.5 pt-3 pb-1">
-                                    <Icon
-                                        name="loader-4"
-                                        className="size-3.5 animate-spin text-[var(--surface-mutedForeground)]"
-                                        aria-hidden="true"
-                                    />
-                                    <span className="typography-meta text-[var(--surface-mutedForeground)]">
-                                        {t('chat.history.loadingMore')}
-                                    </span>
-                                </div>
-                            </div>
-                        )}
+                        {desktopHistoryStatus}
                         <MessageList
                             ref={messageListRef}
                             sessionKey={currentSessionId}
@@ -787,6 +779,7 @@ const ChatViewport = React.memo(({
         && prev.retryActionCopy === next.retryActionCopy
         && prev.isProgrammaticFollowActive === next.isProgrammaticFollowActive
         && prev.showLoadOlderButton === next.showLoadOlderButton
+        && prev.historyRetryRequired === next.historyRetryRequired
         && prev.onLoadOlder === next.onLoadOlder
         && prev.turnIds === next.turnIds
         && prev.activeTurnId === next.activeTurnId
@@ -1145,8 +1138,14 @@ const ChatContainerContent: React.FC<ChatContainerContentProps> = ({
     // forms entry for this session yet, `?? []` would mint a fresh empty array
     // per read, trip React's "getSnapshot should be cached" loop, and crash
     // the chat container with "Maximum update depth exceeded".
-    const sessionForms = useSessionFormStore(
+    const storedSessionForms = useSessionFormStore(
         (state) => (currentSessionId ? state.forms[currentSessionId] ?? EMPTY_SESSION_FORMS : EMPTY_SESSION_FORMS),
+    );
+    // Question-tool forms already render as QuestionCard. Drop them here so a
+    // hydrated list cannot paint a second "Questions" card before refresh.
+    const sessionForms = React.useMemo(
+        () => storedSessionForms.filter((form) => !isQuestionFormMetadata(form.metadata)),
+        [storedSessionForms],
     );
     React.useEffect(() => {
         if (!currentSessionId) return;
@@ -2123,6 +2122,7 @@ const ChatContainerContent: React.FC<ChatContainerContentProps> = ({
 						retryActionCopy={null}
 						isProgrammaticFollowActive={isFollowingProgrammatically}
 						showLoadOlderButton={false}
+						historyRetryRequired={false}
 						onLoadOlder={handleLoadOlderClick}
 						turnIds={[]}
 						activeTurnId={null}
@@ -2406,6 +2406,7 @@ const ChatContainerContent: React.FC<ChatContainerContentProps> = ({
                 retryActionCopy={retryActionCopy}
                 isProgrammaticFollowActive={isFollowingProgrammatically}
                 showLoadOlderButton={showLoadOlderButton}
+                historyRetryRequired={timelineController.historyRetryRequired}
                 onLoadOlder={handleLoadOlderClick}
                 turnIds={timelineController.turnIds}
                 activeTurnId={timelineController.activeTurnId}

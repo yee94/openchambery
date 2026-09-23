@@ -9,6 +9,7 @@ import { emitSyncConfigChanged } from "./sync-refs"
 import {
   activeMembershipToStatus,
   locationToPath,
+  isQuestionFormMetadata,
   mapV2PermissionRequest,
   mapV2Project,
   mapV2QuestionRequest,
@@ -251,11 +252,11 @@ export async function bootstrapDirectory(input: {
       const beforeSignatures = new Map(
         Object.entries(before.question ?? {}).map(([sessionID, questions]) => [sessionID, requestSignature(questions)]),
       )
-      // Official 2.0.12: pending interactive prompts are forms, not questions.
+      // Question-tool forms only. Generic forms stay on the session form store.
       const listed = await sdk.form.list(locationOf(directory))
       const grouped = groupBySession(
         listed.data
-          .filter((form): form is NonNullable<typeof form> => !!form?.id && !!form?.sessionID)
+          .filter((form): form is NonNullable<typeof form> => !!form?.id && !!form?.sessionID && isQuestionFormMetadata(form.metadata))
           .map((form) => mapV2QuestionRequest({
             id: form.id,
             sessionID: form.sessionID,

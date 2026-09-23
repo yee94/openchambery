@@ -8,9 +8,21 @@ import {
   preservesComposerResources,
 } from './localCommandClassifier';
 
+const vscodeReload = { reloadEnabled: true };
+
 describe('getLocalChatCommand', () => {
   test('classifies every local command', () => {
-    for (const command of LOCAL_CHAT_COMMANDS) expect(getLocalChatCommand(`/${command} detail`, 'normal')).toBe(command);
+    for (const command of LOCAL_CHAT_COMMANDS) {
+      expect(getLocalChatCommand(`/${command} detail`, 'normal', vscodeReload)).toBe(command);
+    }
+  });
+  test('keeps /reload local only when the VS Code command is enabled', () => {
+    expect(getLocalChatCommand('/reload', 'normal')).toBeNull();
+    expect(getLocalChatCommand('/reload detail', 'normal', { reloadEnabled: false })).toBeNull();
+    expect(getLocalChatCommand('/reload', 'normal', vscodeReload)).toBe('reload');
+    expect(preservesComposerResources('/reload', 'normal')).toBe(false);
+    expect(consumesImmediateCommandText('/reload', 'normal')).toBe(false);
+    expect(consumesImmediateCommandText('/reload', 'normal', vscodeReload)).toBe(true);
   });
   test('keeps remote commands on the remote path', () => {
     expect(getLocalChatCommand('/remote-command', 'normal')).toBeNull();
@@ -36,16 +48,18 @@ describe('getLocalChatCommand', () => {
   });
   test('keeps every local command resource-preserving, including /goal with draft text', () => {
     for (const command of LOCAL_CHAT_COMMANDS) {
-      expect(preservesComposerResources(`/${command}`, 'normal')).toBe(true);
-      expect(preservesComposerResources(`/${command} trailing draft`, 'normal')).toBe(true);
+      expect(preservesComposerResources(`/${command}`, 'normal', vscodeReload)).toBe(true);
+      expect(preservesComposerResources(`/${command} trailing draft`, 'normal', vscodeReload)).toBe(true);
     }
     expect(preservesComposerResources('/remote-command', 'normal')).toBe(false);
   });
   test('consumes text only for immediate local actions', () => {
-    for (const command of IMMEDIATE_LOCAL_CHAT_COMMANDS) expect(consumesImmediateCommandText(`/${command}`, 'normal')).toBe(true);
+    for (const command of IMMEDIATE_LOCAL_CHAT_COMMANDS) {
+      expect(consumesImmediateCommandText(`/${command}`, 'normal', vscodeReload)).toBe(true);
+    }
     // /new fires an immediate session create; its text is consumed like compact.
     expect(consumesImmediateCommandText('/new', 'normal')).toBe(true);
-    expect(consumesImmediateCommandText('/reload', 'normal')).toBe(true);
+    expect(consumesImmediateCommandText('/reload', 'normal', vscodeReload)).toBe(true);
     expect(consumesImmediateCommandText('/summary', 'normal')).toBe(false);
     expect(consumesImmediateCommandText('/compact', 'shell')).toBe(false);
   });
@@ -59,7 +73,7 @@ describe('getLocalChatCommand', () => {
           } catch {
             // The command action owns its failure presentation.
           }
-          if (!preservesComposerResources(text, 'normal')) {
+          if (!preservesComposerResources(text, 'normal', vscodeReload)) {
             queue += 1; legacyBinding += 1; attachments += 1; synthetic += 1; inlineDrafts += 1;
           }
         },

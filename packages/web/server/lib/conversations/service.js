@@ -55,6 +55,7 @@ const toV2PromptInput = (sanitizedInput, sessionID) => {
     text,
     ...(files.length > 0 ? { files } : {}),
     ...(agents.length > 0 ? { agents } : {}),
+    ...(sanitizedInput.skills?.length ? { skills: sanitizedInput.skills.map(({ id }) => ({ id, name: id })) } : {}),
     ...(sanitizedInput.metadata ? { metadata: sanitizedInput.metadata } : {}),
     delivery: 'steer',
   };

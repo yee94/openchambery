@@ -1475,6 +1475,7 @@ export async function commitStagedRevertBeforeSend(sessionId: string, directoryO
     return
   }
   const { store, directory } = directoryState
+  return runSessionHistoryMutation(sessionId, directory, async ({ isCurrent }) => {
   // A partially initialized directory state (or test harness) has no session
   // catalog; without it there is no staged revert to commit.
   const session = store.getState().session?.find((item) => item.id === sessionId)
@@ -1484,7 +1485,7 @@ export async function commitStagedRevertBeforeSend(sessionId: string, directoryO
     : null
   const transport = captureRuntimeTransport()
   await postSessionRevertCommit({ sessionID: sessionId, directory })
-  if (!isCurrentRuntimeTransport(transport)) return
+  if (!isCurrent()) throw new Error("Session history mutation aborted because the runtime changed")
   const next = [...store.getState().session]
   const idx = next.findIndex((item) => item.id === sessionId)
   if (idx >= 0) {
@@ -1508,6 +1509,7 @@ export async function commitStagedRevertBeforeSend(sessionId: string, directoryO
       // Catalog marker already cleared; SSE / next authority pull can finish.
     }
   }
+  })
 }
 
 export async function shareSession(_sessionId: string): Promise<Session | null> {
@@ -2667,7 +2669,7 @@ export async function revertToMessage(
   })
 }
 
-function removeSessionMessageFromStore(
+function applyMessageEditCommit(
   store: DirectoryStoreApi,
   sessionId: string,
   messageId: string,
@@ -2675,9 +2677,6 @@ function removeSessionMessageFromStore(
 ): void {
   const resolvedDirectory = directory ?? getSessionDirectory(sessionId) ?? _getDirectory()
   const resolvedScope = transcriptScope(resolvedDirectory, sessionId)
-  const deleteDiffBefore = tryCaptureTranscriptCanonicalSnapshot(() =>
-    readSessionTranscript(sessionId, resolvedDirectory).data,
-  )
   const scopes = [...listCanonicalTranscriptScopes(sessionId)]
   if (!scopes.some((scope) => scope.directory === resolvedDirectory && scope.sessionID === sessionId)) {
     scopes.push(resolvedScope)
@@ -2685,8 +2684,8 @@ function removeSessionMessageFromStore(
   let boundApplied = false
   for (const scope of scopes) {
     const applied = applyTranscriptCommand(scope, {
-      type: "remove-message",
-      messageID: messageId,
+      type: "revert-committed",
+      to: messageId,
     })
     if (applied != null) boundApplied = true
   }
@@ -2694,27 +2693,9 @@ function removeSessionMessageFromStore(
   // production repository is unbound (unit tests without a Query bind).
   if (!boundApplied) {
     resolveTranscriptRepositoryForStore(resolvedDirectory, store).apply(resolvedScope, {
-      type: "remove-message",
-      messageID: messageId,
+      type: "revert-committed",
+      to: messageId,
     })
-  }
-  const deleteDiffAfter = tryCaptureTranscriptCanonicalSnapshot(() =>
-    readSessionTranscript(sessionId, resolvedDirectory).data,
-  )
-  try {
-    if (deleteDiffBefore && deleteDiffAfter) {
-      recordTranscriptDiff({
-        trigger: "user-delete",
-        sessionID: sessionId,
-        directory: resolvedDirectory,
-        transport: getRuntimeTransportIdentity(),
-        generation: getRuntimeGeneration(),
-        before: deleteDiffBefore,
-        after: deleteDiffAfter,
-      })
-    }
-  } catch {
-    // Diagnostics must never affect message removal.
   }
 }
 
@@ -2826,43 +2807,8 @@ export async function stageMessageEdit(
 }
 
 /**
- * Resolve the delete range for an edit commit from live conversation order.
- * `conversation` is transcript `messageOrder` (oldest → newest) — never
- * re-sorted by id. Forward means "at or after the target in that array".
- * Only server-known ids are candidates, so an optimistic row is never deleted.
- * When a replacement id is known, the tail stops at that conversation
- * position so the echoed resend (and anything after it) is kept.
- */
-function resolveMessageEditDeleteRange(
-  messageId: string,
-  conversation: readonly Message[],
-  serverKnownIds: ReadonlySet<string>,
-  options?: { preserveMessageId?: string },
-): Message[] {
-  const targetIndex = conversation.findIndex((message) => message.id === messageId)
-  const targetMessage = targetIndex >= 0 ? conversation[targetIndex] : undefined
-  if (!targetMessage || targetMessage.role !== "user" || !serverKnownIds.has(messageId)) {
-    throw new Error("The selected user message is unavailable")
-  }
-
-  const preserveMessageId = options?.preserveMessageId
-  const preserveIndex = preserveMessageId
-    ? conversation.findIndex((message) => message.id === preserveMessageId)
-    : -1
-  const end = preserveIndex > targetIndex ? preserveIndex : conversation.length
-  return conversation
-    .slice(targetIndex, end)
-    .filter((message) => {
-      if (!serverKnownIds.has(message.id)) return false
-      if (preserveMessageId && message.id === preserveMessageId) return false
-      return true
-    })
-}
-
-/**
  * Abort a still-busy session before an edit replacement is dispatched.
- * OpenCode rejects deleteMessage while the session is busy (HTTP 409), so callers
- * must wait for idle after abort before deleting the old tail.
+ * OpenCode rejects revert while busy, so callers must wait for idle after interrupt.
  */
 export async function abortBusySessionForMessageEdit(
   sessionId: string,
@@ -2872,16 +2818,12 @@ export async function abortBusySessionForMessageEdit(
   const { store, directory } = dirStoreForSession(sessionId, directoryOverride)
   const status = store.getState().session_status[sessionId]
   if (!status || status.type === "idle") return
-  try {
-    await postSessionInterrupt({ sessionID: sessionId, directory })
-  } catch {
-    // ignore abort errors — waitForSessionIdle still observes the live status
-  }
+  await postSessionInterrupt({ sessionID: sessionId, directory })
 }
 
 /**
  * Wait until the session reports idle (or has no status entry).
- * Used after abort so deleteMessage is not rejected with "Session is busy".
+ * Used after interrupt so revert is not rejected with "Session is busy".
  * The composer keeps `messageEditCommitting` painted while this wait runs.
  */
 export async function waitForSessionIdleForMessageEdit(
@@ -2893,8 +2835,12 @@ export async function waitForSessionIdleForMessageEdit(
   const intervalMs = options?.intervalMs ?? 100
   const { store } = dirStoreForSession(sessionId, directoryOverride)
   const deadline = Date.now() + timeoutMs
+  const transport = captureRuntimeTransport()
 
   while (Date.now() < deadline) {
+    if (!isCurrentRuntimeTransport(transport)) {
+      throw new Error("Session history mutation aborted because the runtime changed")
+    }
     const status = store.getState().session_status[sessionId]
     if (!status || status.type === "idle") return
     await new Promise<void>((resolve) => setTimeout(resolve, intervalMs))
@@ -2907,53 +2853,92 @@ export async function waitForSessionIdleForMessageEdit(
 
 /**
  * Commit a staged message edit before its replacement send.
- * Order required by OpenCode: abort (if busy) → wait idle → delete old tail → send.
- * The official delete-message endpoint removes conversation data only, so the
- * action deletes the target turn and every later conversation-order message
- * while retaining files — except a preserved replacement id and anything after
- * it in `messageOrder` (safety for an already-echoed in-flight row).
- *
- * Local rows are dropped one by one as their remote delete succeeds — nothing is
- * hidden up front. The composer paints an "editing" affordance on the target
- * while abort/wait/delete run. The server snapshot is membership-only and is
- * not materialized, so a windowed or id-sorted refetch cannot rewrite the
- * visible timeline.
+ * Interrupt → idle → stage(files:false) → commit must finish before admission
+ * of the replacement. V2 truncates the entire forward range, including unloaded
+ * history. A replacement already in that range makes the operation unsafe.
+ * Failed commit clears the temporary boundary (or restores the previous one);
+ * failed cleanup keeps the authoritative staged marker visible for recovery.
  */
 export async function commitMessageEdit(
   sessionId: string,
   messageId: string,
   options?: { directory?: string; preserveMessageId?: string },
 ): Promise<void> {
-  const directoryOverride = options?.directory
-  const preserveMessageId = options?.preserveMessageId
-    ?? useSessionUIStore.getState().pendingSendMessageIDs.get(sessionId)
-  const { store, directory } = dirStoreForSession(sessionId, directoryOverride)
-  const editDiffBefore = tryCaptureTranscriptCanonicalSnapshot(() =>
-    readSessionTranscript(sessionId, directoryOverride).data,
-  )
-
-  try {
-    await abortBusySessionForMessageEdit(sessionId, { directory: directoryOverride })
-    await waitForSessionIdleForMessageEdit(sessionId, { directory: directoryOverride })
-
-    const serverKnownIds = new Set(
-      (await fetchSessionMessageSnapshot(sessionId, directoryOverride)).map((message) => message.id),
-    )
-    // Read order after the snapshot await so abort/SSE rows that landed during
-    // the membership fetch are included in the conversation tail.
-    const conversation = readSessionMessages(sessionId, directoryOverride)
-    const removedMessages = resolveMessageEditDeleteRange(messageId, conversation, serverKnownIds, {
-      preserveMessageId,
-    })
-
-    for (const message of [...removedMessages].reverse()) {
-      await opencodeClient.deleteSessionMessage(sessionId, message.id, directory)
-      removeSessionMessageFromStore(store, sessionId, message.id, directory)
+  const { store, directory } = dirStoreForSession(sessionId, options?.directory)
+  return runSessionHistoryMutation(sessionId, directory, async ({ isCurrent }) => {
+    const assertCurrent = () => {
+      if (!isCurrent()) throw new Error("Session history mutation aborted because the runtime changed")
     }
-  } finally {
+    const assertBeforeReplacement = () => {
+      const conversation = readSessionMessages(sessionId, directory)
+      const target = conversation.find((message) => message.id === messageId)
+      if (!target || target.role !== "user") throw new Error("The selected user message is unavailable")
+      const replacement = options?.preserveMessageId
+        ?? useSessionUIStore.getState().pendingSendMessageIDs.get(sessionId)
+      if (replacement && conversation.some((message) => message.id === replacement)) {
+        throw new Error("Message edit must commit before the replacement is admitted")
+      }
+    }
+    const setRevert = (revert: Session["revert"]) => {
+      assertCurrent()
+      store.setState((state) => ({
+        session: state.session.map((session) => session.id === sessionId ? { ...session, revert } : session),
+      }))
+    }
+    assertBeforeReplacement()
+    await abortBusySessionForMessageEdit(sessionId, { directory })
+    assertCurrent()
+    await waitForSessionIdleForMessageEdit(sessionId, { directory })
+    assertCurrent()
+    assertBeforeReplacement()
+    const previousRevert = store.getState().session.find((session) => session.id === sessionId)?.revert
+    const editDiffBefore = tryCaptureTranscriptCanonicalSnapshot(() => readSessionTranscript(sessionId, directory).data)
+    const revert = await postSessionRevertStage({ sessionID: sessionId, messageID: messageId, directory, files: false })
+    assertCurrent()
+    setRevert(revert)
+    try {
+      assertBeforeReplacement()
+      await postSessionRevertCommit({ sessionID: sessionId, directory })
+    } catch (error) {
+      assertCurrent()
+      if (isAmbiguousSendFailure(error)) {
+        // A lost commit response is not a rejected commit. Only an authoritative
+        // missing boundary confirms truncation; a failed read leaves it unresolved.
+        try {
+          await opencodeClient.getApiClient().session.message({ sessionID: sessionId, messageID: messageId })
+          assertCurrent()
+        } catch (confirmationError) {
+          assertCurrent()
+          if (getErrorStatus(confirmationError) !== 404) throw error
+          setRevert(undefined)
+          applyMessageEditCommit(store, sessionId, messageId, directory)
+          return
+        }
+      }
+      // Do not claim rollback until the server confirms it. If cleanup fails,
+      // retain the marker and original error; a retry can stage the same boundary.
+      try {
+        if (previousRevert) {
+          const restored = await postSessionRevertStage({
+            sessionID: sessionId, messageID: previousRevert.messageID, directory,
+            files: Boolean(previousRevert.files?.length),
+          })
+          setRevert(restored)
+        } else {
+          await postSessionRevertClear({ sessionID: sessionId, directory })
+          setRevert(undefined)
+        }
+      } catch {
+        assertCurrent()
+      }
+      throw error
+    }
+    assertCurrent()
+    setRevert(undefined)
+    applyMessageEditCommit(store, sessionId, messageId, directory)
     try {
       const editDiffAfter = tryCaptureTranscriptCanonicalSnapshot(() =>
-        readSessionTranscript(sessionId, directoryOverride).data,
+        readSessionTranscript(sessionId, directory).data,
       )
       if (editDiffBefore && editDiffAfter) {
         recordTranscriptDiff({
@@ -2969,18 +2954,7 @@ export async function commitMessageEdit(
     } catch {
       // Diagnostics must never affect message edit.
     }
-  }
-}
-
-/** Server membership snapshot — does not rewrite the live transcript. */
-async function fetchSessionMessageSnapshot(sessionId: string, directoryOverride?: string): Promise<Message[]> {
-  const { directory } = dirStoreForSession(sessionId, directoryOverride)
-  const records = await fetchSessionProjectionRecords({
-    sessionID: sessionId,
-    directory,
-    limit: getMessageRefetchLimit(),
   })
-  return records.map((record) => stripMessageDiffSnapshots(record.info))
 }
 
 /** Resolves to the authoritative snapshot this refetch materialized. */

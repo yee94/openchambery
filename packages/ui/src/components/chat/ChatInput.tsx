@@ -893,11 +893,7 @@ const ComposerActionButtons = React.memo(function ComposerActionButtons(props: C
         ? t('chat.chatInput.actions.queuingMessageAria')
         : sendInFlight
             ? t('chat.chatInput.actions.sendingMessageAria')
-            : t(queueFrozen && queueFallbackAvailable && canAbort
-                ? 'chat.chatInput.actions.sendMessageAria'
-                : canAbort
-                    ? 'chat.chatInput.actions.queueMessageAria'
-                    : 'chat.chatInput.actions.sendMessageAria');
+            : t('chat.chatInput.actions.sendMessageAria');
     const circleButtonClass = compact
         ? (compactCircleButtonClass ?? stopFooterIconButtonClass ?? footerIconButtonClass)
         : (stopFooterIconButtonClass ?? footerIconButtonClass);
@@ -2004,8 +2000,9 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
     );
     const knownSlashNames = React.useMemo(() => {
         const names = new Set<string>([
-            'init', 'review', 'undo', 'redo', 'fork', 'timeline', 'model', 'compact', 'reload', 'summary', 'workspace-review', 'craft-goal', 'goal', 'catch-up', 'debug', 'weigh', 'explore',
+            'init', 'review', 'undo', 'redo', 'fork', 'timeline', 'model', 'compact', 'summary', 'workspace-review', 'craft-goal', 'goal', 'catch-up', 'debug', 'weigh', 'explore',
         ]);
+        if (isVSCodeRuntime()) names.add('reload');
         if (!isMobile && !isVSCodeRuntime()) names.add('handoff-review');
         for (const command of availableCommands) names.add(command.name.toLowerCase());
         for (const skill of availableSkills) names.add(skill.name.toLowerCase());
@@ -2543,23 +2540,27 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
     const handleQueueMessage = useEvent(async () => {
         if (!surface.active) return;
         if (isSubmissionInFlight()) return;
-        // A staged edit routed through the queue still means "delete the old turn,
-        // then send the new content": run the delete first so the queue item is the
-        // replacement, not an extra message. A failed delete keeps the staged edit
-        // and drops the admission instead of parking a stale delete for a later
-        // unrelated send.
+        // Commit the V2 history boundary before admitting the queued replacement.
+        // A failed commit keeps the draft available and blocks queue admission.
         if (currentSessionId) {
             const stagedBeforeQueue = useSessionUIStore.getState().stagedMessageEdit;
             if (stagedBeforeQueue && stagedBeforeQueue.sessionId === currentSessionId) {
+                if (useSessionUIStore.getState().messageEditCommitting) return;
+                const editRuntime = surfaceResources.captureRuntime();
+                const editDirectory = useSessionUIStore.getState().getDirectoryForSession(currentSessionId);
+                const isEditRuntimeCurrent = () => isQueueAdmissionRuntimeCurrent(editRuntime, surfaceResources.captureRuntime());
                 useSessionUIStore.getState().beginMessageEditCommit(stagedBeforeQueue.sessionId, stagedBeforeQueue.messageId);
                 try {
-                    await commitMessageEdit(stagedBeforeQueue.sessionId, stagedBeforeQueue.messageId);
+                    await commitMessageEdit(stagedBeforeQueue.sessionId, stagedBeforeQueue.messageId, { directory: editDirectory ?? undefined });
                 } catch (error) {
-                    console.warn('[chat-input] staged-edit delete failed before queue admission', error);
+                    console.warn('[chat-input] staged-edit commit failed before queue admission', error);
                     return;
                 } finally {
-                    useSessionUIStore.getState().endMessageEditCommit(stagedBeforeQueue.sessionId, stagedBeforeQueue.messageId);
+                    if (isEditRuntimeCurrent()) {
+                        useSessionUIStore.getState().endMessageEditCommit(stagedBeforeQueue.sessionId, stagedBeforeQueue.messageId);
+                    }
                 }
+                if (!isEditRuntimeCurrent() || useSessionUIStore.getState().currentSessionId !== currentSessionId) return;
                 if (useSessionUIStore.getState().stagedMessageEdit === stagedBeforeQueue) {
                     useSessionUIStore.getState().clearStagedMessageEdit(stagedBeforeQueue.sessionId);
                 }
@@ -3215,9 +3216,8 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
                 useSessionUIStore.getState().getDirectoryForSession(currentSessionId)
                 ?? currentDirectory
                 ?? null;
-            // Staged edit: paint the target as "editing" instead of hiding it. The
-            // transcript keeps every row it has until a remote delete confirms, so
-            // the optimistic reply row and the pending edit never fight over it.
+            // V2 revert truncates everything after the target. Paint only the
+            // editing affordance until commit; admit the optimistic row afterward.
             const stagedEdit = useSessionUIStore.getState().stagedMessageEdit;
             if (stagedEdit && stagedEdit.sessionId === currentSessionId) {
                 messageEditCommitTarget = { sessionId: stagedEdit.sessionId, messageId: stagedEdit.messageId };
@@ -3228,7 +3228,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
                 expectedConfigKey: getConfigDirectoryKey(sessionDirectoryForOptimistic),
                 activeDirectoryKey: configState.activeDirectoryKey,
             });
-            if (optimisticConfig?.providerID && optimisticConfig?.modelID) {
+            if (!messageEditCommitTarget && optimisticConfig?.providerID && optimisticConfig?.modelID) {
                 const rootAttachments = sanitizeAttachmentsForSend(sendableAttachedFiles);
                 optimisticTicket = sessionActions.beginOptimisticSend({
                     sessionId: currentSessionId,
@@ -3724,7 +3724,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
                 setTimelineDialogOpen(true);
                 return;
             }
-            else if (commandName === 'reload') {
+            else if (commandName === 'reload' && isVSCodeRuntime()) {
                 // Like /compact: consume the text synchronously, then reload in
                 // the background so the composer stays free while OpenCode
                 // rebuilds its locations.
@@ -4119,7 +4119,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
     // Update ref with latest handleSubmit on every render
     handleSubmitRef.current = handleSubmit;
 
-    // Primary action for send/queue button — respects selected follow-up behavior
+    // Primary Send steers; Enter retains the selected follow-up behavior.
     const handlePrimaryAction = useEvent(() => {
         if (getLocalChatCommand(getCurrentInputSnapshot().message, inputMode) === 'btw') {
             void handleSubmitRef.current();
@@ -4136,8 +4136,8 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
         const queueUsable = canQueue
             && queueModeAllowsMutations(serverQueue.mode)
             && assistantQueueAdmissionAvailable(surface.deliveryTarget?.kind, serverQueue.mode);
-        if (followUpBehavior === 'queue' && canQueue && surface.kind === 'primary') {
-            void handleSubmitRef.current({ delivery: 'queue' });
+        if (canQueue && surface.kind === 'primary') {
+            void handleSubmitRef.current({ delivery: 'steer' });
         } else if (followUpBehavior === 'queue' && queueUsable) {
             queueMessageFromEvent();
         } else if ((followUpBehavior === 'steer' && canQueue) || (followUpBehavior === 'queue' && canQueue && !queueUsable)) {
@@ -7139,11 +7139,8 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
                 if (!canPromoteInboxItem({ sessionID: currentSessionId })) return;
                 const directory = currentSessionDirectoryForSync ?? currentDirectory ?? '';
                 // PATCH delivery=steer → 204; helper updates overlay under scope guard.
-                // Caller also sets known local delivery for immediate chip feedback.
-                void steerSessionInbox({ sessionID: currentSessionId, inboxID, directory })
-                    .then(() => {
-                        updateInboxOverlayDelivery(currentSessionId, inboxID, 'steer');
-                    })
+                // The chip mutation owns immediate feedback until authority arrives.
+                return steerSessionInbox({ sessionID: currentSessionId, inboxID, directory })
                     .catch(() => {
                         toast.error(t('chat.chatInput.toast.messageSendFailed'));
                     });

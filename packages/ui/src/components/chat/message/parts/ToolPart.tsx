@@ -17,6 +17,7 @@ import { useUIStore } from '@/stores/useUIStore';
 import { sessionEvents } from '@/lib/sessionEvents';
 import { ScrollShadow } from '@/components/ui/ScrollShadow';
 import { Button } from '@/components/ui/button';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { toast } from '@/components/ui';
 import { Text } from '@/components/ui/text';
 import { FileTypeIcon } from '@/components/icons/FileTypeIcon';
@@ -2886,24 +2887,37 @@ const ToolPartContent: React.FC<ToolPartProps> = ({
                     </div>
                 )}
                 {isBlockingForeground ? (
-                    <Button
-                        type="button"
-                        variant="ghost"
-                        size="xs"
-                        disabled={backgroundMovePending}
-                        className="ml-1 h-6 shrink-0 px-1.5 typography-micro text-muted-foreground hover:text-foreground"
-                        data-component="session-background-move"
-                        aria-label={t('chat.sessionBackground.moveRunning')}
-                        title={t('chat.sessionBackground.moveRunning')}
-                        onClick={(event) => {
-                            event.stopPropagation();
-                            void handleMoveToBackground();
-                        }}
-                    >
-                        {backgroundMovePending
-                            ? t('chat.sessionBackground.moving')
-                            : t('chat.sessionBackground.moveRunning')}
-                    </Button>
+                    <Tooltip>
+                        <TooltipTrigger asChild>
+                            <Button
+                                type="button"
+                                variant="ghost"
+                                size="xs"
+                                disabled={backgroundMovePending}
+                                className="shrink-0 text-muted-foreground hover:text-foreground"
+                                data-component="session-background-move"
+                                aria-label={backgroundMovePending
+                                    ? t('chat.sessionBackground.moving')
+                                    : t('chat.sessionBackground.moveRunning')}
+                                aria-busy={backgroundMovePending}
+                                onKeyDown={(event) => event.stopPropagation()}
+                                onClick={(event) => {
+                                    event.stopPropagation();
+                                    void handleMoveToBackground();
+                                }}
+                            >
+                                <Icon
+                                    name={backgroundMovePending ? 'loader-4' : 'picture-in-picture-2'}
+                                    className={cn('size-3.5', backgroundMovePending && 'animate-spin')}
+                                />
+                            </Button>
+                        </TooltipTrigger>
+                        <TooltipContent side="top">
+                            {backgroundMovePending
+                                ? t('chat.sessionBackground.moving')
+                                : t('chat.sessionBackground.moveRunning')}
+                        </TooltipContent>
+                    </Tooltip>
                 ) : null}
                 {!isFileNavTool && (!isTaskTool || showSubagentTaskDetails) ? (
                     <span

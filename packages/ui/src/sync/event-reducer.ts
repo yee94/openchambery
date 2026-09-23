@@ -9,7 +9,7 @@ import type { FileDiff, GlobalState, State } from "./types"
 import { dropSessionCaches } from "./session-cache"
 import { stripSessionDiffSnapshots, summarizeFileDiffs } from "./sanitize"
 import { shouldSkipStaleSessionEvent } from "./session-event-freshness"
-import { mapV2PermissionRequest, mapV2QuestionRequest } from "./v2-runtime"
+import { isQuestionFormMetadata, mapV2PermissionRequest, mapV2QuestionRequest } from "./v2-runtime"
 
 function asRecord(value: unknown): Record<string, unknown> | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null
@@ -96,6 +96,78 @@ export function questionRequestFromEventProperties(properties: unknown): Questio
       }
       : undefined,
   })
+}
+
+/**
+ * Official question-tool `form.created` payload. Generic forms return null so
+ * they stay on the session form store instead of a second question card.
+ */
+export function questionRequestFromFormProperties(properties: unknown): QuestionRequest | null {
+  const record = asRecord(properties)
+  if (!record) return null
+  const form = asRecord(record.form) ?? record
+  if (!isQuestionFormMetadata(form.metadata)) return null
+  const id = asNonEmptyString(form.id)
+  const sessionID = asNonEmptyString(form.sessionID) ?? asNonEmptyString(form.sessionId)
+  if (!id || !sessionID) return null
+  const metadata = asRecord(form.metadata) ?? undefined
+  const fields = Array.isArray(form.fields)
+    ? form.fields.flatMap((entry) => {
+      const field = asRecord(entry)
+      const key = field ? asNonEmptyString(field.key) : undefined
+      if (!field || !key) return []
+      const options = Array.isArray(field.options)
+        ? field.options.flatMap((option) => {
+          const rec = asRecord(option)
+          if (!rec) return []
+          return [{
+            ...(typeof rec.label === "string" ? { label: rec.label } : {}),
+            ...(typeof rec.value === "string" ? { value: rec.value } : {}),
+            ...(typeof rec.description === "string" ? { description: rec.description } : {}),
+          }]
+        })
+        : undefined
+      return [{
+        key,
+        ...(typeof field.type === "string" ? { type: field.type } : {}),
+        ...(typeof field.title === "string" ? { title: field.title } : {}),
+        ...(typeof field.description === "string" ? { description: field.description } : {}),
+        ...(options && options.length > 0 ? { options } : {}),
+      }]
+    })
+    : undefined
+  return mapV2QuestionRequest({
+    id,
+    sessionID,
+    title: typeof form.title === "string" ? form.title : undefined,
+    ...(fields && fields.length > 0 ? { fields } : {}),
+    ...(metadata ? { metadata } : {}),
+  })
+}
+
+function upsertQuestion(draft: State, question: QuestionRequest): boolean {
+  const questions = draft.question[question.sessionID] ?? []
+  const next = [...questions]
+  const result = Binary.search(next, question.id, (q) => q.id)
+  if (result.found) {
+    next[result.index] = question
+  } else {
+    next.splice(result.index, 0, question)
+  }
+  draft.question[question.sessionID] = next
+  return true
+}
+
+function removeQuestion(draft: State, sessionID: string | undefined, requestID: string | undefined): boolean {
+  if (!sessionID || !requestID) return false
+  const questions = draft.question[sessionID]
+  if (!questions) return false
+  const result = Binary.search(questions, requestID, (q) => q.id)
+  if (!result.found) return false
+  const next = [...questions]
+  next.splice(result.index, 1)
+  draft.question[sessionID] = next
+  return true
 }
 
 function assignSessionErrorAt(draft: State, sessionID: string, at: number): boolean {
@@ -610,31 +682,25 @@ export function applyDirectoryEvent(
     case "question.asked": {
       const question = questionRequestFromEventProperties(event.properties)
       if (!question) return false
-      const questions = draft.question[question.sessionID] ?? []
-      const next = [...questions]
-      const result = Binary.search(next, question.id, (q) => q.id)
-      if (result.found) {
-        next[result.index] = question
-      } else {
-        next.splice(result.index, 0, question)
-      }
-      draft.question[question.sessionID] = next
-      return true
+      return upsertQuestion(draft, question)
+    }
+
+    case "form.created": {
+      const question = questionRequestFromFormProperties(event.properties)
+      if (!question) return false
+      return upsertQuestion(draft, question)
     }
 
     case "question.replied":
     case "question.rejected": {
-      const props = event.properties as { sessionID: string; requestID: string }
-      const questions = draft.question[props.sessionID]
-      if (!questions) return false
-      const result = Binary.search(questions, props.requestID, (q) => q.id)
-      if (result.found) {
-        const next = [...questions]
-        next.splice(result.index, 1)
-        draft.question[props.sessionID] = next
-        return true
-      }
-      return false
+      const props = event.properties as { sessionID?: string; requestID?: string }
+      return removeQuestion(draft, props.sessionID, props.requestID)
+    }
+
+    case "form.replied":
+    case "form.cancelled": {
+      const props = event.properties as { sessionID?: string; id?: string; requestID?: string }
+      return removeQuestion(draft, props.sessionID, props.id ?? props.requestID)
     }
 
     case "lsp.updated": {

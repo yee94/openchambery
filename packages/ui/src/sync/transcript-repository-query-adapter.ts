@@ -432,6 +432,10 @@ export function createQueryTranscriptRepository(
    * HTTP pages and materialize completions lose commit eligibility.
    */
   const sessionReadEpoch = new Map<string, number>()
+  // HTTP acknowledgement and SSE echo describe the same irreversible boundary.
+  // Keep a bounded receipt set so the second arrival cannot erase a new prompt
+  // via the missing-boundary recovery path of a partially loaded transcript.
+  const committedRevertReceipts = new Set<string>()
   /** Epoch captured when an authority/history fetch started. */
   const inflightReadEpoch = new Map<string, number>()
 
@@ -1581,6 +1585,12 @@ export function createQueryTranscriptRepository(
         }
         case "revert-committed": {
           const key = scopeKey(identity)
+          const receipt = `${key}\n${command.to}`
+          if (committedRevertReceipts.has(receipt)) return { applied: true, changed: false }
+          committedRevertReceipts.add(receipt)
+          if (committedRevertReceipts.size > 256) {
+            committedRevertReceipts.delete(committedRevertReceipts.values().next().value!)
+          }
           bumpReadEpoch(key)
           // Cancel in-flight authority/prepend so they cannot resurrect rows.
           authorityTailInflight.delete(key)
@@ -2146,6 +2156,9 @@ export function createQueryTranscriptRepository(
 
     /** Purge every transcript family under a transport generation (runtime switch). */
     purgeGeneration(transport: string, generation: number) {
+      for (const receipt of committedRevertReceipts) {
+        if (receipt.startsWith(`${transport}\n${generation}\n`)) committedRevertReceipts.delete(receipt)
+      }
       // Drop controllers pinned to the old generation so stale flights cannot
       // re-seed the cache after purge.
       for (const [key, controller] of controllers) {
@@ -2192,6 +2205,7 @@ export function createQueryTranscriptRepository(
       p0Latches.clear()
       p0Painted.clear()
       prependFlights.clear()
+      committedRevertReceipts.clear()
       cacheBudget.dispose()
     },
   }

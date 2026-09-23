@@ -5,15 +5,12 @@ import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 const mocks = vi.hoisted(() => ({
   fetch: vi.fn(),
   updateDesktopSettings: vi.fn(),
+  modelSelectorProps: [] as Array<Record<string, unknown>>,
 }));
 
 vi.mock('@/lib/runtime-fetch', () => ({ runtimeFetch: mocks.fetch }));
 vi.mock('@/lib/persistence', () => ({ updateDesktopSettings: mocks.updateDesktopSettings }));
 vi.mock('@/contexts/runtimeAPIRegistry', () => ({ getRegisteredRuntimeAPIs: () => null }));
-vi.mock('@/queries/agentQueries', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('@/queries/agentQueries')>()),
-  useScopedProvidersQuery: () => ({ data: [] }),
-}));
 vi.mock('@/contexts/useThemeSystem', () => ({
   useThemeSystem: () => ({ currentTheme: {} }),
 }));
@@ -24,7 +21,10 @@ vi.mock('@/lib/codemirror/flexokiTheme', () => ({
   createFlexokiCodeMirrorTheme: () => [],
 }));
 vi.mock('@/components/sections/agents/ModelSelector', () => ({
-  ModelSelector: ({ modelId }: { modelId: string }) => <div data-testid="provider-model">{modelId}</div>,
+  ModelSelector: (props: { modelId: string } & Record<string, unknown>) => {
+    mocks.modelSelectorProps.push(props);
+    return <div data-testid="provider-model">{props.modelId}</div>;
+  },
 }));
 vi.mock('@/lib/i18n', async () => {
   const { dict } = await import('@/lib/i18n/messages/en');
@@ -60,6 +60,7 @@ beforeEach(async () => {
   };
   mocks.fetch.mockReset();
   mocks.updateDesktopSettings.mockReset();
+  mocks.modelSelectorProps.length = 0;
   mocks.fetch.mockImplementation(async (path: string) => {
     if (path === '/api/config/settings') return Response.json(settings);
     if (path === '/api/small-model/custom-models') return Response.json({ models: [] });
@@ -110,6 +111,24 @@ test('an unsaved provider model stays empty so the server follows the OpenCode d
 
   expect(host.querySelector('[data-testid="provider-model"]')?.textContent).toBe('');
   expect(mocks.fetch).not.toHaveBeenCalledWith('/api/small-model', expect.anything());
+});
+
+test('provider picker uses the shared chat model catalog without a custom provider list or allowlist', async () => {
+  settings = { summaryModelMode: 'provider', summaryProviderID: 'opencode-go', summaryModelID: 'deepseek-v4-flash' };
+  await act(async () => {
+    root.unmount();
+  });
+  root = createRoot(host);
+  await act(async () => {
+    root.render(<SummarySettings />);
+  });
+  await flush();
+
+  const props = mocks.modelSelectorProps.at(-1);
+  expect(props?.modelId).toBe('deepseek-v4-flash');
+  expect(props?.providers).toBeUndefined();
+  expect(props?.allowedProviderIds).toBeUndefined();
+  expect(props?.allowedModelIdsByProvider).toBeUndefined();
 });
 
 test('switching modes round-trips without losing custom or provider configuration', async () => {

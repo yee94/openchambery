@@ -3,8 +3,23 @@ import fsPromises from 'fs/promises';
 import os from 'os';
 import path from 'path';
 import { getSkillSources, mergeDiscoveredSkills } from './skills.js';
+import { addSkillFromMdFile } from './shared.js';
 
 describe('skills', () => {
+  it('uses the path-derived id even when frontmatter has a different display name', async () => {
+    const root = await fsPromises.mkdtemp(path.join(os.tmpdir(), 'oc-skill-id-'));
+    try {
+      const dir = path.join(root, 'release');
+      await fsPromises.mkdir(dir);
+      const file = path.join(dir, 'SKILL.md');
+      await fsPromises.writeFile(file, '---\nname: Git Release\ndescription: Release notes\n---\nInstructions');
+      const skills = new Map();
+      addSkillFromMdFile(skills, file, 'project', 'opencode');
+      expect([...skills.keys()]).toEqual(['release']);
+    } finally {
+      await fsPromises.rm(root, { recursive: true, force: true });
+    }
+  });
   it('merges locally discovered skills missing from OpenCode live discovery', () => {
     const merged = mergeDiscoveredSkills(
       [

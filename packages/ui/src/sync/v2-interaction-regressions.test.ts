@@ -14,12 +14,12 @@ test('system catalog instructions stay outside the transcript while identical as
   })?.parts[0]).toMatchObject({ type: 'text', text });
 });
 
-test('system-only projection pages retain the upstream history cursor', async () => {
+test('full system-only projection pages retain the upstream history cursor', async () => {
   const { normalizeSessionProjectionPage } = await import('./session-projection-api');
   const page = normalizeSessionProjectionPage({
     data: [{ id: 'msg_system', type: 'system', time: { created: 1000 }, text: 'internal instructions' }],
     cursor: { previous: null, next: 'older-history' },
-  }, 'session');
+  }, 'session', 'desc', 1);
   expect(page.records).toEqual([]);
   expect(page.cursor).toBe('older-history');
   expect(page.complete).toBe(false);

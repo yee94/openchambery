@@ -8,6 +8,8 @@ Keep `bridge.ts` as a thin orchestration layer that delegates message handling t
 
 ## Runtime modules
 
+Skill discovery uses the official V2 `skill.list` SDK with the selected directory and projects `id`/`path` onto the shared catalog's `name`/`path`. Local skill discovery also keys by path-derived ID. Combined first-message requests validate `skills: [{ id }]` and forward them as native prompt attachments, matching the Web/Electron/mobile route.
+
 - `bridge.ts`
   - Entry orchestration layer for bridge messages.
   - Delegates to specialized runtimes in order and handles only unmatched fallthrough cases.

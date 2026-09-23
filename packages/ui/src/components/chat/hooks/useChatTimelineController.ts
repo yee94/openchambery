@@ -95,6 +95,7 @@ export interface UseChatTimelineControllerResult {
     renderedMessages: ChatMessageEntry[];
     historySignals: TurnHistorySignals;
     isLoadingOlder: boolean;
+    historyRetryRequired: boolean;
     pendingRevealWork: boolean;
     activeTurnId: string | null;
     showScrollToBottom: boolean;
@@ -695,7 +696,7 @@ export const useChatTimelineController = ({
     const [activeTurnId, setActiveTurnId] = React.useState<string | null>(null);
     // Per-session short-viewport auto-fill block after no-growth / hard failure.
     const [autoFillBlocked, setAutoFillBlocked] = React.useState(false);
-    // A stationary page blocks automatic scroll retries; explicit intent stays available.
+    // A stationary/failed page pauses gestures and auto-fill; button retry stays available.
     const noGrowthBlockedRef = React.useRef(false);
     const runtimeKey = getRuntimeKey();
     const runtimeGeneration = getRuntimeGeneration();
@@ -779,6 +780,13 @@ export const useChatTimelineController = ({
     directoryRef.current = directory ?? null;
     messagesRef.current = messages;
     historyMetaRef.current = historyMeta;
+
+    useIsomorphicLayoutEffect(() => {
+        if (!historyMeta?.complete) return;
+        noGrowthBlockedRef.current = false;
+        setAutoFillBlocked(false);
+        toast.dismiss(historyErrorToastId);
+    }, [historyMeta?.complete, historyErrorToastId]);
 
     const beginHistoryInteraction = useEvent(() => {
         historyInteractionRef.current = true;
@@ -957,8 +965,9 @@ export const useChatTimelineController = ({
     });
 
     const startKeeper = useEvent(() => {
-        // Mobile keeps its momentum-defeating writer; the keeper is desktop.
-        if (isMobileSurfaceRuntime()) return;
+        // Mobile pagination is button-only. Keep its resting viewport through
+        // delayed markdown hydration too; external/user scroll still wins via
+        // the keeper's rebase rule rather than a competing animation loop.
         stopKeeper();
         const container = scrollRef.current;
         if (!container) return;
@@ -1441,6 +1450,10 @@ export const useChatTimelineController = ({
                 return true;
             }
         } catch (error) {
+            if (isCurrent()) {
+                noGrowthBlockedRef.current = true;
+                setAutoFillBlocked(true);
+            }
             releaseSnapshot();
             throw error;
         } finally {
@@ -1490,7 +1503,7 @@ export const useChatTimelineController = ({
 
     const loadEarlier = useEvent(async (options?: { userInitiated?: boolean }) => {
         const targetSessionId = sessionIdRef.current;
-        if (!targetSessionId) return;
+        if (!targetSessionId || !historySignalsRef.current.canLoadEarlier) return;
         const scope = historyScope;
         const errorToastId = historyErrorToastId;
         const isCurrent = () => historyScopeRef.current === scope && getRuntimeKey() === scope.runtimeKey
@@ -1637,6 +1650,9 @@ export const useChatTimelineController = ({
             if (!autoFillEnabledRef.current || isMobileRef.current) {
                 return { status: 'skip' };
             }
+            if (noGrowthBlockedRef.current || !isPinnedRef.current) {
+                return { status: 'skip' };
+            }
 
             const targetSessionId = sessionIdRef.current;
             if (!targetSessionId) return { status: 'skip' };
@@ -1714,7 +1730,7 @@ export const useChatTimelineController = ({
     });
 
     const decideAndLoadEarlier = useEvent((source: HistoryLoadSource) => {
-        if (source === 'scroll' && noGrowthBlockedRef.current) return;
+        if (noGrowthBlockedRef.current) return;
         // Mobile never loads history from scroll/gesture position: any prepend
         // racing an active touch gesture can be hijacked by the native scroll
         // animation. The user scrolls to the natural top and taps an explicit
@@ -1872,6 +1888,7 @@ export const useChatTimelineController = ({
         renderedMessages,
         historySignals,
         isLoadingOlder: isLoadingOlderUi,
+        historyRetryRequired: autoFillBlocked && historySignals.canLoadEarlier,
         pendingRevealWork,
         activeTurnId,
         showScrollToBottom: showScrollButton && !pendingRevealWork,

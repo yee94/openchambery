@@ -247,6 +247,30 @@ describe("form store + retry action (ticket 10)", () => {
     expect(useSessionFormStore.getState().formsForSession("ses_1")).toEqual([])
   })
 
+  test("question-tool forms are not stored as a second FormCard", async () => {
+    const { applySessionFormLiveEvent, useSessionFormStore } = await import("./session-form-store")
+    useSessionFormStore.setState({ forms: {} })
+    expect(applySessionFormLiveEvent({
+      type: "form.created",
+      properties: {
+        form: {
+          id: "frm_q",
+          sessionID: "ses_1",
+          title: "Questions",
+          metadata: { kind: "question", tool: { messageID: "msg_1", id: "call_1" } },
+          fields: [{
+            key: "q0",
+            type: "string",
+            title: "入口",
+            description: "从哪触发？",
+            options: [{ value: "compact", label: "压缩上下文 /compact" }],
+          }],
+        },
+      },
+    })).toBe(false)
+    expect(useSessionFormStore.getState().formsForSession("ses_1")).toEqual([])
+  })
+
   test("retry+action is a quota/account prompt, not an ordinary error toast", async () => {
     const { isSessionRetryAction, resolveRetryActionCopy, shouldToastSessionRetryAsError } = await import("./session-retry-action")
     const status = {

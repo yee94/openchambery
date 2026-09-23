@@ -472,6 +472,7 @@ export function normalizeSessionProjectionPage(
   payload: unknown,
   sessionID: string,
   order: "asc" | "desc" = SESSION_PROJECTION_PAGE_ORDER,
+  limit: number = SESSION_PROJECTION_PAGE_LIMIT,
 ): TranscriptTransportPage {
   if (!record(payload)) {
     throw new Error("session projection: expected JSON object")
@@ -496,12 +497,15 @@ export function normalizeSessionProjectionPage(
   const continuation = cursorObject
     ? asString(order === "asc" ? cursorObject.previous : cursorObject.next)
     : asString(payload.cursor)
-  const complete = !continuation
+  // Native cursors are positions, not evidence another row exists. Count the
+  // raw wire rows before filtering system/control messages: a short page is
+  // exhausted, whereas a full system-only page must retain its continuation.
+  const complete = !continuation || payload.data.length < limit
   const turnCount = records.filter((entry) => isAuthoredUserTurnRecord(entry.info, entry.parts)).length
 
   return {
     records,
-    cursor: continuation,
+    cursor: complete ? undefined : continuation,
     complete,
     turnCount,
   }
@@ -552,7 +556,7 @@ export async function fetchSessionProjectionPage(
     throw new Error("session projection: malformed JSON")
   }
 
-  return normalizeSessionProjectionPage(payload, input.sessionID, order)
+  return normalizeSessionProjectionPage(payload, input.sessionID, order, limit)
 }
 
 export type FetchSessionContextInput = {

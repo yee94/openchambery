@@ -1,6 +1,6 @@
 const ALLOWED_TOP_LEVEL_KEYS = new Set([
   'input', 'directory', 'messageID', 'model', 'parts',
-  'title', 'parentID', 'agent', 'variant', 'metadata',
+  'title', 'parentID', 'agent', 'variant', 'metadata', 'skills',
 ]);
 const ALLOWED_PART_TYPES = new Set(['text', 'file', 'agent']);
 
@@ -139,6 +139,15 @@ export const validateConversationInput = (body) => {
   }
 
   // Optional fields
+  let skills;
+  if (body.skills !== undefined) {
+    if (!Array.isArray(body.skills) || body.skills.some((skill) =>
+      !skill || typeof skill.id !== 'string' || !skill.id.trim())) {
+      errors.push('skills must be an array of non-empty skill ids');
+    } else {
+      skills = body.skills.map((skill) => ({ id: skill.id }));
+    }
+  }
   const title = asOptionalNonEmptyString(body.title);
   if (title === null) errors.push('title must be a non-empty string if provided');
 
@@ -168,6 +177,7 @@ export const validateConversationInput = (body) => {
         modelID: body.model.modelID.trim(),
       },
       parts: sanitizedParts,
+      ...(skills?.length ? { skills } : {}),
       title,
       parentID,
       agent,

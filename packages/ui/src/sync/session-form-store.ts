@@ -1,9 +1,13 @@
 /**
- * Pending session forms for the current conversation.
+ * Pending generic session forms for the current conversation.
  *
- * Forms are not questions. Live `form.created` / `form.replied` /
- * `form.cancelled` events update this store; list GET hydrates the
- * current session. Failures must not clear pending forms.
+ * Question-tool forms (`metadata.kind === "question"`) belong to the
+ * question store and QuestionCard. They are dropped here so the same
+ * prompt is not also rendered as FormCard.
+ *
+ * Live `form.created` / `form.replied` / `form.cancelled` events update
+ * this store; list GET hydrates the current session. Failures must not
+ * clear pending forms.
  */
 
 import { create } from "zustand"
@@ -13,6 +17,7 @@ import {
   parseSessionFormInfo,
   type SessionFormInfo,
 } from "./session-form-api"
+import { isQuestionFormMetadata } from "./v2-runtime"
 
 type SessionFormStore = {
   forms: Record<string, SessionFormInfo[]>
@@ -59,6 +64,7 @@ export function applySessionFormLiveEvent(event: { type?: string; properties?: u
   if (event.type === "form.created") {
     try {
       const form = parseSessionFormInfo(properties.form ?? properties)
+      if (isQuestionFormMetadata(form.metadata)) return false
       useSessionFormStore.getState().upsert(form)
       return true
     } catch {
@@ -82,6 +88,6 @@ export async function refreshSessionForms(input: {
   directory?: string | null
   signal?: AbortSignal
 }): Promise<void> {
-  const forms = await listSessionForms(input)
+  const forms = (await listSessionForms(input)).filter((form) => !isQuestionFormMetadata(form.metadata))
   useSessionFormStore.getState().replaceSession(input.sessionID, forms)
 }

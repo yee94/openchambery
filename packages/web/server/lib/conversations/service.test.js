@@ -393,6 +393,22 @@ describe('conversations service', () => {
 
   // --- success ---
 
+  it('validates and forwards skill ids with the first prompt', async () => {
+    const validated = validateConversationInput({
+      input: { type: 'prompt' },
+      ...baseInput({ parts: [{ type: 'text', text: '[skill:release] prepare notes' }], skills: [{ id: 'release', text: 'untrusted body' }] }),
+    });
+    expect(validated.valid).toBe(true);
+    expect(validated.sanitized.skills).toEqual([{ id: 'release' }]);
+    const prompt = vi.fn(async () => undefined);
+    mockMake.mockReturnValue({ session: { create: async () => ({ id: 'ses_skill' }), prompt } });
+    const result = await createService().createAndPrompt({ sanitizedInput: validated.sanitized });
+    expect(result.ok).toBe(true);
+    expect(prompt.mock.calls[0][0]).toMatchObject({
+      text: '[skill:release] prepare notes', skills: [{ id: 'release', name: 'release' }], delivery: 'steer',
+    });
+  });
+
   it('returns success when create + prompt succeed', async () => {
     const sessionData = { id: 'ses_created', title: 'Test' };
     mockMake.mockReturnValue({

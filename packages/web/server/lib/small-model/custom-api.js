@@ -1,5 +1,9 @@
 const TEST_TIMEOUT_MS = 15_000;
 const MODELS_TIMEOUT_MS = 8_000;
+const GENERATE_TIMEOUT_MS = 60_000;
+// Generous default: thinking models that can't be switched off spend part of
+// this budget on reasoning before the actual answer.
+const DEFAULT_MAX_OUTPUT_TOKENS = 4_000;
 
 const isRecord = (value) => value !== null && typeof value === 'object' && !Array.isArray(value);
 
@@ -94,6 +98,70 @@ export async function testCustomSummaryApi({
   } catch (error) {
     return { ok: false, code: classifyCustomSummaryApiFailure({ cause: error }) };
   }
+}
+
+/**
+ * Summary AI custom mode: one non-streaming chat completion against the
+ * user's own OpenAI-compatible endpoint. The token never leaves this process.
+ */
+export async function generateCustomSummaryText({
+  baseURL,
+  apiToken,
+  modelID,
+  prompt,
+  system,
+  maxOutputTokens,
+  fetchImpl = globalThis.fetch.bind(globalThis),
+}) {
+  const parsedBaseURL = parseCustomApiBaseURL(baseURL);
+  if (!parsedBaseURL) {
+    throw Object.assign(new Error('Custom summary API Base URL is invalid'), { statusCode: 400 });
+  }
+  const response = await fetchImpl(`${parsedBaseURL}/chat/completions`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Accept: 'application/json',
+      Authorization: `Bearer ${apiToken}`,
+    },
+    body: JSON.stringify({
+      model: modelID,
+      messages: [
+        ...(system ? [{ role: 'system', content: system }] : []),
+        { role: 'user', content: prompt },
+      ],
+      max_tokens: Number(maxOutputTokens) > 0 ? Number(maxOutputTokens) : DEFAULT_MAX_OUTPUT_TOKENS,
+      stream: false,
+    }),
+    signal: AbortSignal.timeout(GENERATE_TIMEOUT_MS),
+  });
+  const bodyText = await response.text().catch(() => '');
+  if (!response.ok) {
+    const snippet = bodyText ? `: ${bodyText.slice(0, 300)}` : '';
+    throw new Error(`Custom summary API request failed with ${response.status}${snippet}`);
+  }
+  const payload = parseJson(bodyText);
+  const message = payload?.choices?.[0]?.message;
+  // Providers disagree on the content shape: plain string, an array of typed
+  // parts, or (thinking models) empty content with the budget spent on
+  // reasoning_content.
+  let text = '';
+  if (typeof message?.content === 'string') {
+    text = message.content;
+  } else if (Array.isArray(message?.content)) {
+    text = message.content.map((part) => (typeof part?.text === 'string' ? part.text : '')).join('');
+  }
+  if (!text.trim() && typeof message?.reasoning_content === 'string' && message.reasoning_content.trim()) {
+    const finishReason = payload?.choices?.[0]?.finish_reason;
+    throw new Error(
+      'Custom summary API spent the output budget on reasoning and returned no answer'
+      + (finishReason ? ` (finish_reason: ${finishReason})` : ''),
+    );
+  }
+  if (!text.trim()) {
+    throw new Error('Custom summary API returned no message content');
+  }
+  return text;
 }
 
 export async function listCustomSummaryModels({

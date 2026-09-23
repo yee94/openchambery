@@ -124,12 +124,12 @@ describe("official revert stage / clear / commit (ticket 09)", () => {
     }
   })
 
-  test("clear POSTs /revert/clear and treats 204 as success", async () => {
+  test("clear DELETEs /revert and treats 204 as success", async () => {
     const { postSessionRevertClear } = await import("./session-revert-api")
     await postSessionRevertClear({ sessionID: "ses/a b", directory: "/repo a" })
     expect(calls).toHaveLength(1)
-    expect(calls[0]!.method).toBe("POST")
-    expect(calls[0]!.url.pathname).toBe(`/api/session/${encodeURIComponent("ses/a b")}/revert/clear`)
+    expect(calls[0]!.method).toBe("DELETE")
+    expect(calls[0]!.url.pathname).toBe(`/api/session/${encodeURIComponent("ses/a b")}/revert`)
     expect(calls[0]!.url.searchParams.get("directory")).toBe("/repo a")
   })
 
@@ -177,7 +177,7 @@ describe("ticket 09 source contracts", () => {
       || uiSource.includes("isSessionRevertBusyError"),
     ).toBe(true)
     const revertFn = actionsSource.slice(actionsSource.indexOf("export async function revertToMessage"))
-    const revertBody = revertFn.slice(0, revertFn.indexOf("function removeSessionMessageFromStore"))
+    const revertBody = revertFn.slice(0, revertFn.indexOf("function applyMessageEditCommit"))
     expect(revertBody.includes("removeSessionMessageFromStore(")).toBe(false)
     expect(revertBody.includes('type: "remove-message"')).toBe(false)
     expect(revertBody.includes("sdk().session.revert")).toBe(false)

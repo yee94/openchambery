@@ -2468,9 +2468,9 @@ const addSkillFromMdFile = (
 ) => {
   try {
     const parsed = parseMdFile(skillMdPath);
-    const name = typeof parsed.frontmatter?.name === 'string'
-      ? parsed.frontmatter.name.trim()
-      : '';
+    const name = path.basename(skillMdPath) === 'SKILL.md'
+      ? path.basename(path.dirname(skillMdPath))
+      : path.basename(skillMdPath, '.md');
     const description = typeof parsed.frontmatter?.description === 'string'
       ? parsed.frontmatter.description
       : '';

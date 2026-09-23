@@ -1,15 +1,11 @@
 import { getCatalogProvider } from './catalog.js';
 
-// Mirrors OpenCode's getSmallModel fallback chain, with OpenChamber's own
-// keyword + cheapest-first default when no session/family match applies:
+// Mirrors OpenCode's getSmallModel fallback chain over the connected OpenCode
+// catalog, with OpenChamber's own keyword + cheapest-first default when no
+// session/family match applies:
 // 1. `small_model` from the merged config layers ("provider/model").
-// 2. Family-priority / keyword scan of authenticated providers' catalog models.
-// 3. GitHub Copilot's hidden utility models when Copilot is logged in.
+// 2. Family-priority / keyword scan of connected providers' catalog models.
 const FAMILY_PRIORITY = ['gemini-flash', 'gpt-nano', 'claude-haiku'];
-const COPILOT_UTILITY_MODELS = ['gpt-5.4-nano', 'gpt-4.1', 'gpt-4o', 'gpt-4o-mini'];
-// The ChatGPT-plan codex backend only accepts a small allowlist of models
-// (nano/API-key models are rejected with 400) — this is its cheapest one.
-const OPENAI_OAUTH_SMALL_MODEL = 'gpt-5.4-mini';
 
 // Tokenize model ids so "mini" does not match inside "gemini".
 const modelIdTokens = (id) => String(id || '')
@@ -32,32 +28,6 @@ const SMALL_MODEL_KEYWORD_TIERS = Object.freeze([
   { tier: 7, test: (id) => idHasToken(id, 'small') },
   { tier: 8, test: (id) => idHasToken(id, 'chat') },
 ]);
-
-const AUTH_PROVIDER_ALIASES = {
-  'github-copilot': ['github-copilot', 'copilot'],
-};
-
-export function getAuthEntryForProvider(auth, providerID) {
-  const aliases = AUTH_PROVIDER_ALIASES[providerID] || [providerID];
-  for (const alias of aliases) {
-    const entry = auth?.[alias];
-    if (entry && typeof entry === 'object') {
-      return entry;
-    }
-  }
-  return null;
-}
-
-export function isUsableAuthEntry(entry) {
-  if (!entry || typeof entry !== 'object') return false;
-  if (entry.type === 'api') return typeof entry.key === 'string' && entry.key.length > 0;
-  if (entry.type === 'oauth') {
-    return (typeof entry.access === 'string' && entry.access.length > 0)
-      || (typeof entry.refresh === 'string' && entry.refresh.length > 0);
-  }
-  if (entry.type === 'wellknown') return typeof entry.token === 'string' && entry.token.length > 0;
-  return false;
-}
 
 export function parseModelRef(value) {
   if (typeof value !== 'string') return null;
@@ -115,71 +85,25 @@ export function rankSmallModelCandidates(models) {
     .map((entry) => entry.model);
 }
 
-// Small-model candidates within ONE provider, by family priority. Copilot and
-// ChatGPT-plan OpenAI have fixed small models that never appear in the
-// catalog; everyone else is scanned through the catalog families.
-// Auth-type constraints for the four minimal hardcoded providers:
-// OpenAI OAuth → hardcoded codex-small only; OpenAI API key → catalog families;
-// Anthropic/Google require API keys; Copilot supports auth aliases.
-const pickWithinProvider = (providerID, auth, catalog, family) => {
-  if (providerID === 'openai' && auth.openai?.type === 'oauth') {
-    if (!isUsableAuthEntry(auth.openai)) return null;
-    return family === 'gpt-nano'
-      ? { providerID, modelID: OPENAI_OAUTH_SMALL_MODEL, source: 'codex-small' }
-      : null;
-  }
-  if (providerID === 'github-copilot') {
-    if (!isUsableAuthEntry(getAuthEntryForProvider(auth, 'github-copilot'))) return null;
-    return family === 'gpt-nano'
-      ? { providerID, modelID: COPILOT_UTILITY_MODELS[0], source: 'copilot-utility' }
-      : null;
-  }
-  if (providerID === 'openai') {
-    if (auth.openai?.type !== 'api' || !isUsableAuthEntry(auth.openai)) return null;
-  }
-  if (providerID === 'anthropic') {
-    if (auth.anthropic?.type !== 'api' || !isUsableAuthEntry(auth.anthropic)) return null;
-  }
-  if (providerID === 'google') {
-    if (auth.google?.type !== 'api' || !isUsableAuthEntry(auth.google)) return null;
-  }
-  const provider = getCatalogProvider(catalog, providerID);
-  if (!provider || !provider.models || typeof provider.models !== 'object') return null;
-  const model = pickByFamily(provider.models, family);
+const catalogModels = (catalog, providerID) => {
+  const models = getCatalogProvider(catalog, providerID)?.models;
+  return models && typeof models === 'object' ? models : null;
+};
+
+const pickWithinProvider = (catalog, providerID, family) => {
+  const models = catalogModels(catalog, providerID);
+  const model = models ? pickByFamily(models, family) : null;
   return model?.id ? { providerID, modelID: model.id, source: 'family-scan' } : null;
 };
 
-const pickKeywordDefault = (auth, catalog, excludeProviderID) => {
+const pickKeywordDefault = (catalog, providerIDs) => {
   /** @type {Array<{ providerID: string, model: object }>} */
   const candidates = [];
-  const providerIDs = Object.keys(auth || {}).filter((providerID) => {
-    if (providerID === 'copilot') return false;
-    if (excludeProviderID && providerID === excludeProviderID) return false;
-    return isUsableAuthEntry(getAuthEntryForProvider(auth, providerID));
-  });
-  // Surface github-copilot when only the `copilot` alias is present.
-  if (
-    !providerIDs.includes('github-copilot')
-    && isUsableAuthEntry(getAuthEntryForProvider(auth, 'github-copilot'))
-    && excludeProviderID !== 'github-copilot'
-  ) {
-    providerIDs.push('github-copilot');
-  }
-
   for (const providerID of providerIDs) {
-    if (providerID === 'openai' && auth.openai?.type === 'oauth') continue;
-    if (providerID === 'github-copilot') continue;
-    if (providerID === 'openai' && (auth.openai?.type !== 'api' || !isUsableAuthEntry(auth.openai))) continue;
-    if (providerID === 'anthropic' && (auth.anthropic?.type !== 'api' || !isUsableAuthEntry(auth.anthropic))) continue;
-    if (providerID === 'google' && (auth.google?.type !== 'api' || !isUsableAuthEntry(auth.google))) continue;
-
-    const provider = getCatalogProvider(catalog, providerID);
-    if (!provider?.models) continue;
-    for (const model of rankSmallModelCandidates(provider.models)) {
+    for (const model of rankSmallModelCandidates(catalogModels(catalog, providerID))) {
       candidates.push({ providerID, model });
     }
   }
-
   if (candidates.length === 0) return null;
   candidates.sort((a, b) => {
     const tierDiff = smallModelKeywordTier(a.model) - smallModelKeywordTier(b.model);
@@ -190,7 +114,16 @@ const pickKeywordDefault = (auth, catalog, excludeProviderID) => {
   return { providerID: best.providerID, modelID: best.model.id, source: 'keyword-scan' };
 };
 
-export function resolveSmallModel({ auth, catalog, settingsSmallModel, configSmallModel, preferredProviderID, preferredModelID }) {
+/**
+ * @param {{
+ *   catalog: object | null,
+ *   settingsSmallModel?: string | null,
+ *   configSmallModel?: string | null,
+ *   preferredProviderID?: string,
+ *   preferredModelID?: string,
+ * }} input
+ */
+export function resolveSmallModel({ catalog, settingsSmallModel, configSmallModel, preferredProviderID, preferredModelID }) {
   // OpenChamber's own setting (Settings → Sessions → Small Model override)
   // outranks everything, including the OpenCode config.
   const fromSettings = parseModelRef(settingsSmallModel);
@@ -210,47 +143,29 @@ export function resolveSmallModel({ auth, catalog, settingsSmallModel, configSma
   const preferred = typeof preferredProviderID === 'string' && preferredProviderID
     ? preferredProviderID
     : null;
-  if (preferred && isUsableAuthEntry(getAuthEntryForProvider(auth, preferred))) {
+  if (preferred && getCatalogProvider(catalog, preferred)) {
     for (const family of FAMILY_PRIORITY) {
-      const match = pickWithinProvider(preferred, auth, catalog, family);
+      const match = pickWithinProvider(catalog, preferred, family);
       if (match) return match;
     }
-    const preferredCatalog = getCatalogProvider(catalog, preferred);
-    if (preferredCatalog?.models) {
-      const ranked = rankSmallModelCandidates(preferredCatalog.models);
-      if (ranked[0]?.id) {
-        return { providerID: preferred, modelID: ranked[0].id, source: 'keyword-scan' };
-      }
+    const ranked = rankSmallModelCandidates(catalogModels(catalog, preferred));
+    if (ranked[0]?.id) {
+      return { providerID: preferred, modelID: ranked[0].id, source: 'keyword-scan' };
     }
     if (typeof preferredModelID === 'string' && preferredModelID) {
       return { providerID: preferred, modelID: preferredModelID, source: 'session-model' };
     }
   }
 
-  // No session context (or its provider has no usable login): scan all
-  // authenticated providers by family priority, then keyword+cost default.
-  const authedProviders = Object.keys(auth || {}).filter((providerID) =>
-    providerID !== preferred && isUsableAuthEntry(auth[providerID]));
-
+  // No session context (or its provider is not connected): scan the other
+  // connected providers by family priority, then keyword+cost default.
+  const otherProviders = Object.keys(catalog || {}).filter((providerID) => providerID !== preferred);
   for (const family of FAMILY_PRIORITY) {
-    for (const providerID of authedProviders) {
-      const match = pickWithinProvider(providerID, auth, catalog, family);
+    for (const providerID of otherProviders) {
+      const match = pickWithinProvider(catalog, providerID, family);
       if (match) return match;
     }
   }
 
-  const keywordDefault = pickKeywordDefault(auth, catalog, preferred);
-  if (keywordDefault) return keywordDefault;
-
-  // Copilot's utility fallback for legacy auth aliases the loop above missed.
-  const copilotEntry = getAuthEntryForProvider(auth, 'github-copilot');
-  if (isUsableAuthEntry(copilotEntry)) {
-    return {
-      providerID: 'github-copilot',
-      modelID: COPILOT_UTILITY_MODELS[0],
-      source: 'copilot-utility',
-    };
-  }
-
-  return null;
+  return pickKeywordDefault(catalog, otherProviders);
 }

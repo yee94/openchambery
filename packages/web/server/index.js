@@ -64,6 +64,7 @@ import { createBootstrapRuntime } from './lib/opencode/bootstrap-runtime.js';
 import { createSessionRuntime } from './lib/opencode/session-runtime.js';
 import { createOpenCodeWatcherRuntime } from './lib/opencode/watcher.js';
 import { createSessionTitleRuntime } from './lib/session-title/runtime.js';
+import { createTitleSessionAccess } from './lib/session-title/session-access.js';
 import { createSessionIndexService } from './lib/session-index/service.js';
 import { createSessionIndexSyncRuntime } from './lib/session-index/sync-runtime.js';
 import { resolveSessionIndexDbPath } from './lib/session-index/resolve-db-path.js';
@@ -733,6 +734,8 @@ const getSmallModelService = async () => {
     smallModelServiceInstance = createSmallModelService({
       buildOpenCodeUrl,
       getOpenCodeAuthHeaders,
+      persistSessionMetadata: persistSessionMetadataToStore,
+      onSystemSessionPersisted: hideSystemSessionFromIndex,
     });
   }
   return smallModelServiceInstance;
@@ -743,6 +746,18 @@ const sessionTitleRuntime = createSessionTitleRuntime({
   getOpenCodeAuthHeaders,
   getSmallModelService,
   serverOpenCodeFetch,
+  sessionAccess: createTitleSessionAccess({
+    buildOpenCodeUrl,
+    getOpenCodeAuthHeaders,
+    readSessionMetadata: (sessionID) => sessionMetadataStore.get(sessionID),
+    persistSessionMetadata: (sessionID, patch) => persistSessionMetadataToStore(sessionID, patch),
+    publishSession: (session, directory) => {
+      const payload = { type: 'session.updated', properties: { info: session, directory } };
+      broadcastGlobalUiEvent(payload);
+      const changed = sessionIndexServiceRef?.upsertAndReportChange(session);
+      if (changed) sessionIndexSyncRuntimeRef?.publishChange();
+    },
+  }),
 });
 
 // Forward declaration: question auto-delegate is created after the event hub;
@@ -1995,6 +2010,10 @@ async function main(options = {}) {
     onSystemSessionPersisted: hideSystemSessionFromIndex,
     persistSessionGoal: persistSessionGoalToStore,
     onSessionMetadataWritten: ({ sessionID, directory, metadata }) => {
+      sessionTitleRuntime.processPayload({
+        type: 'openchamber:session-metadata',
+        properties: { sessionID, directory, metadata },
+      }, directory || '');
       sessionGoalRuntime.processPayload({
         type: 'session.updated',
         properties: {
@@ -2172,11 +2191,10 @@ async function main(options = {}) {
         // best-effort shutdown of the dictation worker
       }
       try {
-        if (smallModelServiceInstance?.stop) {
-          await smallModelServiceInstance.stop();
-        }
+        const { stopLlmTempDirectory } = await import('./lib/llm/temp-directory.js');
+        await stopLlmTempDirectory();
       } catch {
-        // best-effort cleanup of the small-model temp OpenCode directory
+        // best-effort cleanup of the LLM generator temp OpenCode directory
       }
       return gracefulShutdown({
         exitProcess: shutdownOptions.exitProcess ?? false,

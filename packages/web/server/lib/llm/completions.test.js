@@ -52,7 +52,7 @@ describe('createChatCompletion', () => {
   })
 
   it('returns a non-stream completion from generateText', async () => {
-    const generateText = vi.fn(async () => ({ text: 'done', source: 'generate.text' }))
+    const generateText = vi.fn(async () => ({ text: 'done', source: 'session.generate' }))
     const result = await createChatCompletion({
       generateText,
       loadCatalog: async () => ({
@@ -64,7 +64,7 @@ describe('createChatCompletion', () => {
     expect(result.completion.choices[0].message.content).toBe('done')
     expect(result.providerID).toBe('openai')
     expect(result.modelID).toBe('gpt-5.2')
-    expect(result.source).toBe('generate.text')
+    expect(result.source).toBe('session.generate')
   })
 
   it('forwards in-process onTextDelta and globalEventHub to generateText', async () => {
@@ -109,7 +109,7 @@ describe('createChatCompletion', () => {
   })
 
   it('asks generate to skip image bytes when the catalog model is not vision-capable', async () => {
-    const generateText = vi.fn(async () => ({ text: 'ok', source: 'generate.text' }))
+    const generateText = vi.fn(async () => ({ text: 'ok', source: 'session.generate' }))
     await createChatCompletion({
       generateText,
       loadCatalog: async () => ({

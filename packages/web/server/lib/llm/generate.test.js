@@ -72,60 +72,103 @@ describe('generate cancellation', () => {
     expect(interrupt).toHaveBeenCalledWith({ sessionID: 'ses_abort_fixture', continue: false })
   })
 
-  it('aborts an in-flight generate.text when the contact continuation is cancelled', async () => {
+  it('aborts an in-flight session.generate and still removes the throwaway session', async () => {
     const controller = new AbortController()
-    const text = vi.fn(async (_args, { signal }) => {
+    const generate = vi.fn(async (_args, { signal }) => {
       controller.abort()
       signal.throwIfAborted()
     })
+    const { client, remove, interrupt } = textSessionClient({ generate })
     await expect(generateOpenCodeText({
       buildOpenCodeUrl: () => 'http://127.0.0.1:4096',
       getOpenCodeAuthHeaders: () => ({}),
       providerID: 'opencode',
       modelID: 'gpt-5-nano',
       messages: [{ role: 'user', content: 'work' }],
-      clientFactory: () => ({ generate: { text } }),
+      clientFactory: () => client,
+      ensureTempDirectory: async () => '/tmp/openchamber-text',
       signal: controller.signal,
     })).rejects.toMatchObject({ name: 'AbortError' })
-    expect(text).toHaveBeenCalledTimes(1)
+    expect(generate).toHaveBeenCalledTimes(1)
+    expect(interrupt).toHaveBeenCalledWith({ sessionID: 'ses_text', continue: false })
+    expect(remove).toHaveBeenCalledExactlyOnceWith({ sessionID: 'ses_text' })
   })
 })
 
+const denyAllTextAgent = {
+  location: { directory: '/tmp/openchamber-text' },
+  data: {
+    id: 'openchamber-text',
+    name: 'openchamber-text',
+    mode: 'primary',
+    hidden: true,
+    permissions: [{ action: '*', resource: '*', effect: 'deny' }],
+  },
+}
+
+function textSessionClient({ generate = vi.fn(async () => ({ text: 'reply' })), agentGet } = {}) {
+  const create = vi.fn(async () => ({ id: 'ses_text' }))
+  const remove = vi.fn(async () => undefined)
+  const interrupt = vi.fn(async () => undefined)
+  const prompt = vi.fn()
+  const get = agentGet || vi.fn(async () => denyAllTextAgent)
+  return {
+    client: {
+      agent: { get },
+      session: { create, generate, remove, interrupt, prompt },
+    },
+    agentGet: get,
+    create,
+    generate,
+    remove,
+    interrupt,
+    prompt,
+  }
+}
+
 describe('generateOpenCodeText — text path', () => {
-  it('uses generate.text with model id/providerID and never opens a session', async () => {
-    const text = vi.fn(async () => ({ text: 'reply' }))
-    const create = vi.fn()
-    const prompt = vi.fn()
-    const clientFactory = () => ({
-      generate: { text },
-      session: { create, prompt },
-      agent: { get: vi.fn() },
+  it('runs session.generate in a verified deny-all throwaway session and removes it', async () => {
+    const { client, agentGet, create, generate, remove, prompt } = textSessionClient()
+    const ensureTempDirectory = vi.fn(async ({ agentName, agentMarkdown }) => {
+      expect(agentName).toBe(_test.TEXT_AGENT_NAME)
+      expect(agentMarkdown).toBe(_test.TEXT_AGENT_MARKDOWN)
+      return '/tmp/openchamber-text'
     })
 
     const result = await generateOpenCodeText({
       buildOpenCodeUrl: () => 'http://127.0.0.1:4096',
       getOpenCodeAuthHeaders: () => ({}),
-      providerID: 'opencode',
-      modelID: 'gpt-5-nano',
+      providerID: 'opencode-go',
+      modelID: 'deepseek-v4-flash',
       messages: [
         { role: 'system', content: 'Be brief' },
         { role: 'user', content: 'hi' },
       ],
-      clientFactory,
+      clientFactory: () => client,
+      ensureTempDirectory,
     })
 
-    expect(result).toEqual({ text: 'reply', source: 'generate.text' })
-    expect(text).toHaveBeenCalledWith(expect.objectContaining({
-      prompt: expect.stringContaining('Be brief'),
-      model: { id: 'gpt-5-nano', providerID: 'opencode' },
+    expect(result).toEqual({ text: 'reply', source: 'session.generate' })
+    expect(agentGet).toHaveBeenCalledWith(expect.objectContaining({
+      agentID: 'openchamber-text',
+      location: { directory: '/tmp/openchamber-text' },
     }), expect.anything())
-    expect(text.mock.calls[0][0].prompt).toContain('User: hi')
-    expect(create).not.toHaveBeenCalled()
+    expect(create).toHaveBeenCalledWith(expect.objectContaining({
+      agent: 'openchamber-text',
+      model: { id: 'deepseek-v4-flash', providerID: 'opencode-go' },
+      location: { directory: '/tmp/openchamber-text' },
+    }), expect.anything())
+    expect(agentGet.mock.invocationCallOrder[0]).toBeLessThan(create.mock.invocationCallOrder[0])
+    const generateArgs = generate.mock.calls[0][0]
+    expect(generateArgs.sessionID).toBe('ses_text')
+    expect(generateArgs.prompt.startsWith('Be brief')).toBe(true)
+    expect(generateArgs.prompt).toContain('User: hi')
     expect(prompt).not.toHaveBeenCalled()
+    expect(remove).toHaveBeenCalledExactlyOnceWith({ sessionID: 'ses_text' })
   })
 
-  it.each(['high', undefined])('passes variant %s to generate.text and returns only text', async (variant) => {
-    const text = vi.fn(async () => ({ text: 'public reply' }))
+  it.each(['high', undefined])('passes variant %s on the session model', async (variant) => {
+    const { client, create } = textSessionClient()
     const result = await generateOpenCodeText({
       buildOpenCodeUrl: () => 'http://127.0.0.1:4096',
       getOpenCodeAuthHeaders: () => ({}),
@@ -133,10 +176,11 @@ describe('generateOpenCodeText — text path', () => {
       modelID: 'gpt-5-nano',
       messages: [{ role: 'user', content: 'hi' }],
       variant,
-      clientFactory: () => ({ generate: { text } }),
+      clientFactory: () => client,
+      ensureTempDirectory: async () => '/tmp/openchamber-text',
     })
-    expect(result.text).toBe('public reply')
-    const model = text.mock.calls[0][0].model
+    expect(result.text).toBe('reply')
+    const model = create.mock.calls[0][0].model
     if (variant) {
       expect(model).toEqual({ id: 'gpt-5-nano', providerID: 'opencode', variant })
     } else {
@@ -144,7 +188,85 @@ describe('generateOpenCodeText — text path', () => {
     }
   })
 
-  it('does not invent deltas on the generate.text path', async () => {
+  it('blocks before creating a session when the text agent is not deny-all', async () => {
+    const { client, create, generate } = textSessionClient({
+      agentGet: vi.fn(async () => ({
+        data: { id: 'openchamber-text', permissions: [{ action: 'bash', resource: '*', effect: 'allow' }] },
+      })),
+    })
+    await expect(generateOpenCodeText({
+      buildOpenCodeUrl: () => 'http://127.0.0.1:4096',
+      getOpenCodeAuthHeaders: () => ({}),
+      providerID: 'opencode',
+      modelID: 'gpt-5-nano',
+      messages: [{ role: 'user', content: 'hi' }],
+      clientFactory: () => client,
+      ensureTempDirectory: async () => '/tmp/openchamber-text',
+    })).rejects.toMatchObject({ code: 'llm_attachment_generation_unavailable' })
+    expect(create).not.toHaveBeenCalled()
+    expect(generate).not.toHaveBeenCalled()
+  })
+
+  it('waits for a lazily loaded agent instead of failing on the first read', async () => {
+    let reads = 0
+    const agentGet = vi.fn(async () => {
+      reads += 1
+      if (reads < 3) throw new Error('Agent not found: openchamber-text')
+      return denyAllTextAgent
+    })
+    const client = { agent: { get: agentGet } }
+    const agent = await _test.assertLlmAgentDenyAll({
+      client,
+      location: { directory: '/tmp/openchamber-text' },
+      agentID: 'openchamber-text',
+      waitMs: 1_000,
+      pollMs: 1,
+    })
+    expect(agent.id).toBe('openchamber-text')
+    expect(agentGet).toHaveBeenCalledTimes(3)
+  })
+
+  it('fails when the agent never appears within the wait window', async () => {
+    const agentGet = vi.fn(async () => { throw new Error('Agent not found') })
+    await expect(_test.assertLlmAgentDenyAll({
+      client: { agent: { get: agentGet } },
+      agentID: 'openchamber-text',
+      waitMs: 0,
+      pollMs: 1,
+    })).rejects.toMatchObject({ code: 'llm_attachment_generation_unavailable' })
+    expect(agentGet).toHaveBeenCalledTimes(1)
+  })
+
+  it('surfaces session.generate errors and still removes the session', async () => {
+    const { client, remove } = textSessionClient({
+      generate: vi.fn(async () => { throw new Error('Request is missing x-opencode-session') }),
+    })
+    await expect(generateOpenCodeText({
+      buildOpenCodeUrl: () => 'http://127.0.0.1:4096',
+      getOpenCodeAuthHeaders: () => ({}),
+      providerID: 'opencode-go',
+      modelID: 'deepseek-v4-flash',
+      messages: [{ role: 'user', content: 'hi' }],
+      clientFactory: () => client,
+      ensureTempDirectory: async () => '/tmp/openchamber-text',
+    })).rejects.toMatchObject({ code: 'upstream_error', message: 'Request is missing x-opencode-session' })
+    expect(remove).toHaveBeenCalledWith({ sessionID: 'ses_text' })
+  })
+
+  it('rejects an empty session.generate reply instead of returning blank success', async () => {
+    const { client } = textSessionClient({ generate: vi.fn(async () => ({ text: '   ' })) })
+    await expect(generateOpenCodeText({
+      buildOpenCodeUrl: () => 'http://127.0.0.1:4096',
+      getOpenCodeAuthHeaders: () => ({}),
+      providerID: 'opencode',
+      modelID: 'gpt-5-nano',
+      messages: [{ role: 'user', content: 'hi' }],
+      clientFactory: () => client,
+      ensureTempDirectory: async () => '/tmp/openchamber-text',
+    })).rejects.toMatchObject({ message: 'OpenCode session.generate returned no text' })
+  })
+
+  it('does not invent deltas on the session.generate path', async () => {
     const onTextDelta = vi.fn()
     const subscribers = new Set()
     const globalEventHub = {
@@ -153,19 +275,19 @@ describe('generateOpenCodeText — text path', () => {
         return () => { subscribers.delete(fn) }
       },
     }
+    const { client } = textSessionClient({ generate: vi.fn(async () => ({ text: 'full reply' })) })
     const result = await generateOpenCodeText({
       buildOpenCodeUrl: () => 'http://127.0.0.1:4096',
       getOpenCodeAuthHeaders: () => ({}),
       providerID: 'opencode',
       modelID: 'gpt-5-nano',
       messages: [{ role: 'user', content: 'hi' }],
-      clientFactory: () => ({
-        generate: { text: async () => ({ text: 'full reply' }) },
-      }),
+      clientFactory: () => client,
+      ensureTempDirectory: async () => '/tmp/openchamber-text',
       onTextDelta,
       globalEventHub,
     })
-    expect(result).toEqual({ text: 'full reply', source: 'generate.text' })
+    expect(result).toEqual({ text: 'full reply', source: 'session.generate' })
     expect(onTextDelta).not.toHaveBeenCalled()
     expect(subscribers.size).toBe(0)
   })
@@ -176,23 +298,20 @@ describe('generateOpenCodeText — text path', () => {
     expect(_test.filesForPrompt([image, file], false)).toEqual([file])
     expect(_test.imageFilesForSession([image, file], false)).toEqual([])
 
-    const text = vi.fn(async () => ({ text: 'cannot see images' }))
-    const create = vi.fn()
+    const { client, generate, prompt } = textSessionClient({ generate: vi.fn(async () => ({ text: 'cannot see images' })) })
     await generateOpenCodeText({
       buildOpenCodeUrl: () => 'http://127.0.0.1:4096',
       getOpenCodeAuthHeaders: () => ({}),
       providerID: 'opencode',
       modelID: 'deepseek-v4-flash',
       messages: [{ role: 'user', content: 'look', parts: [image, file] }],
-      clientFactory: () => ({
-        generate: { text },
-        session: { create },
-      }),
+      clientFactory: () => client,
+      ensureTempDirectory: async () => '/tmp/openchamber-text',
       forwardImageParts: false,
     })
-    expect(create).not.toHaveBeenCalled()
-    expect(text.mock.calls[0][0].prompt).toContain('[image: shot.png (image/png)]')
-    expect(text.mock.calls[0][0].prompt).toContain('[file: notes.txt (text/plain)]')
+    expect(prompt).not.toHaveBeenCalled()
+    expect(generate.mock.calls[0][0].prompt).toContain('[image: shot.png (image/png)]')
+    expect(generate.mock.calls[0][0].prompt).toContain('[file: notes.txt (text/plain)]')
   })
 })
 
@@ -594,17 +713,39 @@ describe('data URL validation', () => {
 })
 
 describe('generateOpenCodeText — real OpenCode.make + fake HTTP', () => {
-  it('catalog-shaped generate.text completion through the real client', async () => {
+  it('session.generate text completion through the real client', async () => {
     const { OpenCode } = await import('@opencode/client')
+    const calls = []
+    const emptyOk = { ok: true, status: 204, headers: { get: () => null }, text: async () => '', json: async () => null, arrayBuffer: async () => new ArrayBuffer(0) }
     const fetchImpl = vi.fn(async (url, init) => {
       const path = String(url)
-      if (path.includes('/api/experimental/generate') && init?.method === 'POST') {
+      const method = init?.method || 'GET'
+      calls.push(`${method} ${path.replace(/^https?:\/\/[^/]+/, '').split('?')[0]}`)
+      if (path.includes('/api/agent/openchamber-text')) {
+        return jsonResponse(200, {
+          location: { directory: '/tmp/openchamber-text', project: { id: 'p', directory: '/tmp', canonical: '/tmp' } },
+          data: { ...denyAllTextAgent.data, request: {} },
+        })
+      }
+      if (path.endsWith('/api/session') && method === 'POST') {
+        return jsonResponse(200, {
+          data: {
+            id: 'ses_text',
+            projectID: 'p',
+            cost: 0,
+            tokens: {},
+            time: { created: 1, updated: 1 },
+            location: { directory: '/tmp/openchamber-text' },
+          },
+        })
+      }
+      if (path.includes('/api/session/ses_text/generate') && method === 'POST') {
         const body = JSON.parse(init.body)
-        expect(body.model).toEqual({ id: 'gpt-5-nano', providerID: 'opencode' })
         expect(body.prompt).toContain('User: hi')
         return jsonResponse(200, { data: { text: 'hello from generate' } })
       }
-      return jsonResponse(500, { _tag: 'UnknownError', message: `unexpected ${path}` })
+      if (path.includes('/api/session/ses_text') && method === 'DELETE') return emptyOk
+      return jsonResponse(500, { _tag: 'UnknownError', message: `unexpected ${method} ${path}` })
     })
 
     const result = await generateOpenCodeText({
@@ -618,10 +759,11 @@ describe('generateOpenCodeText — real OpenCode.make + fake HTTP', () => {
         headers: { Authorization: 'Basic test' },
         fetch: fetchImpl,
       }),
+      ensureTempDirectory: async () => '/tmp/openchamber-text',
     })
 
-    expect(result).toEqual({ text: 'hello from generate', source: 'generate.text' })
-    expect(fetchImpl).toHaveBeenCalled()
+    expect(result).toEqual({ text: 'hello from generate', source: 'session.generate' })
+    expect(calls.some((c) => c.startsWith('DELETE ') && c.includes('/api/session/ses_text'))).toBe(true)
   })
 
   it('attachment deny-all failure happens before prompt on the real client path shape', async () => {

@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
   classifyCustomSummaryApiFailure,
+  generateCustomSummaryText,
   listCustomSummaryModels,
   parseCustomApiBaseURL,
   testCustomSummaryApi,
@@ -97,5 +98,68 @@ describe('listCustomSummaryModels', () => {
       apiToken: 'sk-test',
       fetchImpl,
     })).toEqual([]);
+  });
+});
+
+describe('generateCustomSummaryText', () => {
+  const completion = (message, extra = {}) => new Response(JSON.stringify({
+    choices: [{ message, ...extra }],
+  }), { status: 200, headers: { 'content-type': 'application/json' } });
+
+  it('posts an OpenAI-compatible chat completion and returns the text', async () => {
+    const fetchImpl = vi.fn(async () => completion({ role: 'assistant', content: 'feat: add retries' }));
+    const text = await generateCustomSummaryText({
+      baseURL: 'https://summary.example.test/v1/',
+      apiToken: 'token',
+      modelID: 'summary-model',
+      prompt: 'Diff',
+      system: 'Return a commit subject.',
+      maxOutputTokens: 64,
+      fetchImpl,
+    });
+    expect(text).toBe('feat: add retries');
+    const [url, init] = fetchImpl.mock.calls[0];
+    expect(url).toBe('https://summary.example.test/v1/chat/completions');
+    expect(init.method).toBe('POST');
+    expect(JSON.parse(init.body)).toEqual({
+      model: 'summary-model',
+      messages: [
+        { role: 'system', content: 'Return a commit subject.' },
+        { role: 'user', content: 'Diff' },
+      ],
+      max_tokens: 64,
+      stream: false,
+    });
+  });
+
+  it('joins array content parts', async () => {
+    const fetchImpl = vi.fn(async () => completion({ content: [{ type: 'text', text: 'a' }, { type: 'text', text: 'b' }] }));
+    await expect(generateCustomSummaryText({
+      baseURL: 'https://summary.example.test/v1', apiToken: 't', modelID: 'm', prompt: 'p', fetchImpl,
+    })).resolves.toBe('ab');
+  });
+
+  it('rejects invalid base URLs before any request', async () => {
+    const fetchImpl = vi.fn();
+    await expect(generateCustomSummaryText({
+      baseURL: 'ftp://nope', apiToken: 't', modelID: 'm', prompt: 'p', fetchImpl,
+    })).rejects.toMatchObject({ statusCode: 400 });
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it('surfaces HTTP failures, reasoning-only replies, and empty content as errors', async () => {
+    const input = { baseURL: 'https://summary.example.test/v1', apiToken: 't', modelID: 'm', prompt: 'p' };
+    await expect(generateCustomSummaryText({
+      ...input,
+      fetchImpl: async () => new Response('rate limited', { status: 429 }),
+    })).rejects.toThrow(/failed with 429/);
+    await expect(generateCustomSummaryText({
+      ...input,
+      fetchImpl: async () => completion({ content: '', reasoning_content: 'thinking…' }, { finish_reason: 'length' }),
+    })).rejects.toThrow(/reasoning.*finish_reason: length/);
+    await expect(generateCustomSummaryText({
+      ...input,
+      fetchImpl: async () => completion({ content: '' }),
+    })).rejects.toThrow(/no message content/);
   });
 });
