@@ -1,5 +1,5 @@
 /**
- * Serialize session history mutations (revert / unrevert) per session so concurrent
+ * Serialize session history mutations (revert / unrevert / edit commit) per session so concurrent
  * HTTP cannot invert the server's final marker order.
  *
  * Key: [transportIdentity, generation, directory, sessionId].

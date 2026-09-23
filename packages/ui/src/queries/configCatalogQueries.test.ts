@@ -224,6 +224,35 @@ describe('configCatalogQueries', () => {
     }
   });
 
+  test('v2 fallback 把思考变体数组投影成 catalog record，并丢掉请求载荷', async () => {
+    providerFetchImpl = async () => new Response('unsupported', { status: 404 });
+    v2ModelResult = {
+      data: [{
+        id: 'model',
+        modelID: 'internal-pack',
+        providerID: 'legacy',
+        name: 'Model',
+        capabilities: { tools: true, input: ['text', 'image'], output: ['text'] },
+        variants: [
+          { id: 'low', settings: { apiKey: 'variant-settings-sentinel' } },
+          { id: 'high', headers: { Authorization: 'variant-headers-sentinel' } },
+        ],
+        time: { released: Date.parse('2026-01-02T00:00:00Z') },
+      }],
+    };
+
+    const result = await ensureProviderCatalogQuery('/workspace/project', runtimeKey);
+    expect(result.providers[0]?.models.model).toEqual({
+      id: 'model',
+      name: 'Model',
+      capabilities: { toolcall: true, input: { text: true, image: true }, output: { text: true } },
+      release_date: '2026-01-02',
+      variants: { low: {}, high: {} },
+    });
+    expect(JSON.stringify(result)).not.toContain('sentinel');
+    expect(JSON.stringify(result)).not.toContain('internal-pack');
+  });
+
   test('v2 catalog 缺少 provider.list data 时失败关闭', async () => {
     providerFetchImpl = async () => new Response('missing', { status: 404 });
     v2ProviderResult = { location: {} };
@@ -257,6 +286,34 @@ describe('configCatalogQueries', () => {
     expect(softOnly.providers[0]!.models.stable_key?.limit).toEqual({ output: 3 });
     expect(softOnly.providers[0]!.models.stable_key?.release_date).toBe(undefined);
     expect(softOnly.providers[0]!.models.stable_key?.variants).toEqual({ valid: {} });
+
+    const v2Variants = parseProviderCatalog({
+      schemaVersion: 1,
+      providers: [{
+        id: 'safe',
+        name: 'Safe',
+        models: {
+          stable_key: {
+            id: 'model',
+            name: 'Model',
+            capabilities: { tools: true, input: ['text', 'pdf', 'secret'], output: ['text'] },
+            cost: [{ tier: { type: 'context', size: 1 }, input: 9, output: 9 }, { input: 1, output: 2, cache: { read: 0.1, write: 0.2 } }],
+            variants: [{ id: 'low', settings: { token: 'secret' } }, { id: 'high' }, { id: 'constructor' }, 'max'],
+          },
+        },
+      }],
+      default: { safe: 'model' },
+      partial: false,
+    });
+    expect(v2Variants.partial).toBe(false);
+    expect(v2Variants.providers[0]!.models.stable_key).toEqual({
+      id: 'model',
+      name: 'Model',
+      capabilities: { toolcall: true, input: { text: true, pdf: true }, output: { text: true } },
+      cost: { input: 1, output: 2, cache: { read: 0.1, write: 0.2 } },
+      variants: { low: {}, high: {}, max: {} },
+    });
+    expect(JSON.stringify(v2Variants)).not.toContain('secret');
     expect(softOnly.default).toEqual({ safe: 'model' });
 
     const structural = parseProviderCatalog({

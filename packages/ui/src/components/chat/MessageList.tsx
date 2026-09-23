@@ -1,5 +1,5 @@
 import React from 'react';
-import { useEvent, useInterval, useIsomorphicLayoutEffect, useResizeObserver, useUnmount } from '@reactuses/core';
+import { useEvent, useEventListener, useInterval, useIsomorphicLayoutEffect, useResizeObserver, useUnmount } from '@reactuses/core';
 import type { Part } from '@/lib/opencode/v2-types';
 import { elementScroll, useVirtualizer as useTanstackVirtualizer, type ReactVirtualizer, type VirtualItem } from '@tanstack/react-virtual';
 import { isAssistantSessionDivider } from './hostedSessionHistory';
@@ -184,10 +184,6 @@ const ANCHOR_HOLD_MAX_FRAMES = 180;
 // are measured, and keep it inside sane turn-height bounds. Collapsed mode
 // converges with fewer samples so the first upward fling does not keep
 // correcting against the cold default.
-const TANSTACK_ESTIMATE_MIN_SAMPLES = 5;
-const TANSTACK_ESTIMATE_MIN_SAMPLES_COLLAPSED = 2;
-const TANSTACK_ESTIMATE_MIN = 120;
-const TANSTACK_ESTIMATE_MAX = 1200;
 // "At bottom" tolerance for resize-adjustment decisions.
 const TANSTACK_AT_END_THRESHOLD_PX = 80;
 
@@ -380,15 +376,6 @@ export const resolveMarkdownVisibleReleaseLimit = (
     activityRenderMode === 'collapsed'
         ? MARKDOWN_VISIBLE_RELEASE_IDLE_COLLAPSED
         : MARKDOWN_VISIBLE_RELEASE_IDLE
-);
-
-// eslint-disable-next-line react-refresh/only-export-components
-export const resolveTanstackEstimateMinSamples = (
-    activityRenderMode: 'collapsed' | 'summary',
-): number => (
-    activityRenderMode === 'collapsed'
-        ? TANSTACK_ESTIMATE_MIN_SAMPLES_COLLAPSED
-        : TANSTACK_ESTIMATE_MIN_SAMPLES
 );
 
 // eslint-disable-next-line react-refresh/only-export-components
@@ -1429,6 +1416,7 @@ MessageListEntry.displayName = 'MessageListEntry';
 // Inner component that renders staged turn entries.
 type StaticHistoryListProps = {
     entries: RenderEntry[];
+    historyAnchorToken?: number;
     engine: HistoryEngine;
     contentRef: React.RefObject<HTMLDivElement | null>;
     scrollRef?: React.RefObject<HTMLDivElement | null>;
@@ -1447,7 +1435,7 @@ type StaticHistoryListProps = {
     reviewTransferDirection?: ReviewTransferDirection | null;
 };
 
-const StaticHistoryList = React.memo(({ entries, engine, contentRef, scrollRef, registerTanstackVirtualizer, virtualizerKey, onMessageContentChange, getAnimationHandlers, scrollToBottom, stickyUserHeader, activityRenderMode, turnUiStates, onToggleTurnGroup, chatRenderMode, shouldAnimateUserMessage, onUserAnimationConsumed, reviewTransferDirection }: StaticHistoryListProps) => {
+const StaticHistoryList = React.memo(({ entries, historyAnchorToken, engine, contentRef, scrollRef, registerTanstackVirtualizer, virtualizerKey, onMessageContentChange, getAnimationHandlers, scrollToBottom, stickyUserHeader, activityRenderMode, turnUiStates, onToggleTurnGroup, chatRenderMode, shouldAnimateUserMessage, onUserAnimationConsumed, reviewTransferDirection }: StaticHistoryListProps) => {
     const isTanstack = engine === 'tanstack';
     // A prepend can move this list across the tiny-history virtualization
     // threshold. Capture from the old normal-flow DOM during render, then let
@@ -1578,11 +1566,32 @@ const StaticHistoryList = React.memo(({ entries, engine, contentRef, scrollRef, 
     ));
 
     const sizeContainerRef = React.useRef<HTMLDivElement | null>(null);
-    // Adaptive estimate: rows this session has actually measured are a far
-    // better predictor for the still-unmeasured ones than a fixed constant.
-    // Smaller estimate error → smaller anchor corrections when prepended rows
-    // measure in → less visible drift. The ref keeps estimateSize's identity
-    // stable so updating the average never triggers a global remeasure.
+    const historyReadingAnchorRef = React.useRef<ViewportMessageAnchor | null>(null);
+    const previousHistoryAnchorTokenRef = React.useRef(historyAnchorToken);
+    if (previousHistoryAnchorTokenRef.current !== historyAnchorToken) {
+        previousHistoryAnchorTokenRef.current = historyAnchorToken;
+        const container = scrollRef?.current;
+        const content = sizeContainerRef.current ?? contentRef.current;
+        historyReadingAnchorRef.current = container && content
+            ? captureViewportMessageAnchor(container, content)
+            : null;
+    }
+    const releaseHistoryReadingAnchor = useEvent(() => { historyReadingAnchorRef.current = null; });
+    useEventListener('wheel', releaseHistoryReadingAnchor, undefined, { passive: true, capture: true });
+    useEventListener('touchstart', releaseHistoryReadingAnchor, undefined, { passive: true, capture: true });
+    useEventListener('pointerdown', releaseHistoryReadingAnchor, undefined, { passive: true, capture: true });
+    useEventListener('click', releaseHistoryReadingAnchor, undefined, { capture: true });
+    useEventListener('keydown', releaseHistoryReadingAnchor, undefined, { capture: true });
+    const restoreHistoryReadingAnchor = useEvent(() => {
+        const anchor = historyReadingAnchorRef.current;
+        const container = scrollRef?.current;
+        if (!anchor || !container) return;
+        const element = findMessageElement(container, anchor.messageId);
+        if (!element) return;
+        const delta = element.getBoundingClientRect().top - container.getBoundingClientRect().top - anchor.offsetTop;
+        if (Math.abs(delta) > 0.5) container.scrollTop += delta;
+    });
+    // Unknown-row estimates stay fixed until the activity-density mode changes.
     const defaultEstimatedEntrySize = resolveTanstackEstimatedEntrySize(activityRenderMode);
     const estimatedEntrySizeRef = React.useRef(defaultEstimatedEntrySize);
     const estimateModeRef = React.useRef(activityRenderMode);
@@ -1672,7 +1681,7 @@ const StaticHistoryList = React.memo(({ entries, engine, contentRef, scrollRef, 
     });
     useIsomorphicLayoutEffect(() => {
         if (!isTanstack) return;
-        return installBatchedResizeItem(tanstackVirtualizer);
+        return installBatchedResizeItem(tanstackVirtualizer, restoreHistoryReadingAnchor);
     }, [isTanstack, tanstackVirtualizer]);
     const columnWidthRef = React.useRef<number | null>(null);
     const columnMeasureTimeoutRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -1856,19 +1865,9 @@ const StaticHistoryList = React.memo(({ entries, engine, contentRef, scrollRef, 
         setHydratedMarkdownEntryKeys((current) => pruneMarkdownHydratedKeys(current, entryKeys));
     }, [entryKeys]);
 
-    React.useEffect(() => {
-        if (!isTanstack) return;
-        const sizes = tanstackVirtualizer.itemSizeCache;
-        const minSamples = resolveTanstackEstimateMinSamples(activityRenderMode);
-        if (sizes.size >= minSamples) {
-            let total = 0;
-            for (const size of sizes.values()) total += size;
-            estimatedEntrySizeRef.current = Math.min(
-                TANSTACK_ESTIMATE_MAX,
-                Math.max(TANSTACK_ESTIMATE_MIN, Math.round(total / sizes.size)),
-            );
-        }
-    });
+    // Keep unknown-row estimates fixed within this timeline/mode. Changing the
+    // global estimate after one row is measured silently moves every other
+    // unmeasured row, outside the core's per-row scroll compensation.
 
     React.useEffect(() => {
         if (!isTanstack) return;
@@ -3128,6 +3127,7 @@ const MessageList = React.forwardRef<MessageListHandle, MessageListProps>(({
                                 <StaticHistoryList
                                     key={resolvedVirtualizerKey}
                                     entries={historyEntries}
+                                    historyAnchorToken={timelineHistoryAnchorToken}
                                     engine={historyEngine}
                                     contentRef={historyContentRef}
                                     scrollRef={scrollRef}

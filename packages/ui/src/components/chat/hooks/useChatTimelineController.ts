@@ -965,25 +965,22 @@ export const useChatTimelineController = ({
     });
 
     const startKeeper = useEvent(() => {
-        // Mobile pagination is button-only. Keep its resting viewport through
-        // delayed markdown hydration too; external/user scroll still wins via
-        // the keeper's rebase rule rather than a competing animation loop.
         stopKeeper();
+        // Virtual row measurements and scroll corrections commit together.
+        // A second DOM writer would apply the same height delta twice.
+        if (messageListRef.current?.isHistoryVirtualized()) return;
         const container = scrollRef.current;
         if (!container) return;
         const anchor = captureViewportAnchor();
         if (!anchor) return;
-        // Active in BOTH engines. In the non-virtualized window it owns all
-        // mutation compensation (materialization / hydration); across the
-        // none→tanstack flip and inside virtualized history it only bridges the
-        // 1-2 frame gap before TanStack core's measure adjustment (which
-        // round-trips through React onChange) writes scrollTop. The keeper's
-        // scroll-rebase accepts core's absolute write instead of fighting it —
-        // unlike the old multi-frame rAF hold, it never chases core.
+        // Non-virtualized content still needs pre-paint compensation for nested
+        // hydration. External/user scroll wins through the rebase rule.
         historyAnchorKeeperRef.current = createHistoryViewportAnchorKeeper({
             container,
             anchor,
+            pending: true,
         });
+        return historyAnchorKeeperRef.current;
     });
 
     // Tracks the timeline edges + height of the previous commit so a prepend
@@ -1018,6 +1015,7 @@ export const useChatTimelineController = ({
         if (!container) return;
 
         let snap = prePrependScrollRef.current;
+        if (messageListRef.current?.isHistoryVirtualized()) stopKeeper();
         // Fast wheel/fling during an in-flight load: scrollTop moves
         // synchronously while scroll events land per frame, so by the time the
         // history page commits the snapshot anchor describes a viewport the
@@ -1285,12 +1283,14 @@ export const useChatTimelineController = ({
             : null;
         const errorToastId = historyErrorToastId;
         let armedSnapshot: PrePrependSnapshot | null = null;
+        let armedKeeper: HistoryViewportAnchorKeeper | null = null;
         let historyViewportPreservationActive = Boolean(input.userInitiated);
         if (historyViewportPreservationActive) {
             beginHistoryViewportPreservation();
         }
         const releaseSnapshot = () => {
             if (!isCurrent()) return;
+            armedKeeper?.settle();
             if (armedSnapshot && prePrependScrollRef.current === armedSnapshot) {
                 prePrependScrollRef.current = null;
                 messageListRef.current?.cancelViewportAnchorHold();
@@ -1345,7 +1345,7 @@ export const useChatTimelineController = ({
                     newestId: beforeMessages[beforeMessages.length - 1]?.info?.id ?? null,
                 };
                 prePrependScrollRef.current = armedSnapshot;
-                startKeeper();
+                armedKeeper = startKeeper() ?? null;
             }
 
             let loadedMessageCount = beforeMessageCount;

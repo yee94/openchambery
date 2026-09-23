@@ -17,6 +17,7 @@ import type { Message, Part } from '@/lib/opencode/v2-types'
 import { runtimeFetch } from "../lib/runtime-fetch"
 import {
   isSessionCompactionCard,
+  messageIDFromEventID,
   type SessionCompactionPart,
   type SessionCompactionReason,
   type SessionCompactionStatus,
@@ -230,12 +231,11 @@ export function compactionOverlayMessageID(sessionID: string, inputID?: string):
 
 function findCompactionMessageID(draft: CompactionLiveDraft, sessionID: string): string | undefined {
   const messages = draft.message[sessionID] ?? []
-  for (const message of messages) {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index]!
     const parts = draft.part[message.id] ?? []
-    if (parts.some(isSessionCompactionCard)) return message.id
+    if (parts.some((part) => isSessionCompactionCard(part) && part.status === "running")) return message.id
   }
-  const overlay = `${COMPACTION_OVERLAY_PREFIX}${sessionID}`
-  if (messages.some((message) => message.id === overlay)) return overlay
   return undefined
 }
 
@@ -244,6 +244,7 @@ function upsertCompactionCard(
   sessionID: string,
   messageID: string,
   update: (current: SessionCompactionPart) => SessionCompactionPart,
+  created = Date.now(),
 ): void {
   const messages = draft.message[sessionID] ? [...draft.message[sessionID]!] : []
   if (!messages.some((message) => message.id === messageID)) {
@@ -252,7 +253,7 @@ function upsertCompactionCard(
       sessionID,
       role: "assistant",
       clientRole: "compaction",
-      time: { created: Date.now() },
+      time: { created },
     } as Message)
     draft.message[sessionID] = messages
   }
@@ -280,7 +281,7 @@ function upsertCompactionCard(
  */
 export function applySessionCompactionLiveEvent(
   draft: CompactionLiveDraft,
-  event: { type?: string; properties?: unknown },
+  event: { id?: string; type?: string; properties?: unknown },
 ): boolean {
   const type = String(event.type ?? "")
   if (!type.startsWith("session.compaction.")) return false
@@ -291,19 +292,23 @@ export function applySessionCompactionLiveEvent(
 
   const inputID = asString(props.inputID)
   const existingID = findCompactionMessageID(draft, sessionID)
-  const messageID = existingID ?? compactionOverlayMessageID(sessionID, inputID)
+  const messageID = type === "session.compaction.started"
+    ? inputID ?? messageIDFromEventID(event.id) ?? compactionOverlayMessageID(sessionID)
+    : inputID ?? existingID ?? messageIDFromEventID(event.id) ?? compactionOverlayMessageID(sessionID)
 
   if (type === "session.compaction.started") {
+    if (draft.part[messageID]?.some(isSessionCompactionCard)) return false
     upsertCompactionCard(draft, sessionID, messageID, (current) => ({
       ...current,
       status: "running",
       reason: props.reason === "auto" ? "auto" : "manual",
       ...(typeof props.recent === "string" ? { recent: props.recent } : {}),
-    }))
+    }), asNumber(props.eventCreated))
     setSessionCompactionBarrier(sessionID, true)
     return true
   }
   if (type === "session.compaction.delta") {
+    if (!existingID) return false
     const delta = typeof props.text === "string" ? props.text : ""
     if (!delta) return false
     upsertCompactionCard(draft, sessionID, messageID, (current) => ({
@@ -318,9 +323,10 @@ export function applySessionCompactionLiveEvent(
     upsertCompactionCard(draft, sessionID, messageID, (current) => ({
       ...current,
       status: "completed",
+      reason: props.reason === "auto" ? "auto" : "manual",
       summary: typeof props.text === "string" ? props.text : current.summary,
       ...(typeof props.recent === "string" ? { recent: props.recent } : {}),
-    }))
+    }), asNumber(props.eventCreated))
     setSessionCompactionBarrier(sessionID, false)
     return true
   }
@@ -329,11 +335,13 @@ export function applySessionCompactionLiveEvent(
     upsertCompactionCard(draft, sessionID, messageID, (current) => ({
       ...current,
       status: "failed",
+      reason: props.reason === "auto" ? "auto" : "manual",
       error: {
         type: asString(error.type) ?? "error",
         message: asString(error.message) ?? "",
+        ...(typeof error.status === "number" ? { status: error.status } : {}),
       },
-    }))
+    }), asNumber(props.eventCreated))
     setSessionCompactionBarrier(sessionID, false)
     return true
   }

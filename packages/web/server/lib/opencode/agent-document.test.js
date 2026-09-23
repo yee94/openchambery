@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { applyNativePatch, convertAgentConfig, inspectAgentConfig } from './agent-document.js';
+import { applyNativePatch, convertAgentConfig, inspectAgentConfig, writeAgentDocument } from './agent-document.js';
 
 describe('inspectAgentConfig', () => {
   it('treats a native file as current', () => {
@@ -77,7 +77,7 @@ describe('convertAgentConfig', () => {
 });
 
 describe('applyNativePatch', () => {
-  it('clears nullable fields and drops empty permissions', () => {
+  it('patches only the keys present in the update', () => {
     const next = applyNativePatch({
       frontmatter: {
         model: 'openai/gpt-5',
@@ -96,6 +96,42 @@ describe('applyNativePatch', () => {
     });
 
     expect(next.body).toBe('');
-    expect(next.frontmatter).toEqual({});
+    expect(next.frontmatter).toEqual({
+      temperature: 1,
+    });
+  });
+});
+
+describe('writeAgentDocument', () => {
+  it('leaves unmentioned fields alone on a prompt-only patch', () => {
+    const next = writeAgentDocument({
+      frontmatter: {
+        temperature: 1,
+        permission: { bash: 'allow' },
+      },
+      body: 'legacy prompt',
+    }, {
+      system: 'Only the prompt changed.',
+    }, false);
+
+    expect(next.body).toBe('Only the prompt changed.');
+    expect(next.frontmatter.temperature).toBe(1);
+    expect(next.frontmatter.permission).toEqual({ bash: 'allow' });
+  });
+
+  it('drops legacy fields when confirmDrop is true', () => {
+    const next = writeAgentDocument({
+      frontmatter: {
+        temperature: 1,
+        permission: { bash: 'allow' },
+      },
+      body: 'legacy prompt',
+    }, {
+      system: 'Only the prompt changed.',
+    }, true);
+
+    expect(next.body).toBe('Only the prompt changed.');
+    expect(next.frontmatter.temperature).toBeUndefined();
+    expect(next.frontmatter.permission).toEqual({ bash: 'allow' });
   });
 });

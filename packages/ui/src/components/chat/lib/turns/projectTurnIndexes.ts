@@ -39,14 +39,28 @@ export const projectTurnIndexes = (turns: TurnRecord[]): TurnProjectionResult =>
                 headerMessageId: turn.headerMessageId,
             });
         });
+        for (const record of turn.messages) {
+            if (record.messageId === turn.userMessageId || record.role === 'assistant') continue;
+            messageToTurnId.set(record.messageId, turn.turnId);
+            messageMetaById.set(record.messageId, {
+                turnId: turn.turnId,
+                messageId: record.messageId,
+                userMessageId: turn.userMessageId,
+                isUserMessage: false,
+                isAssistantMessage: false,
+                isFirstAssistantInTurn: false,
+                isLastAssistantInTurn: false,
+                headerMessageId: turn.headerMessageId,
+            });
+        }
     });
 
     const lastTurn = turns.length > 0 ? turns[turns.length - 1] : null;
     const lastTurnMessageIds = new Set<string>();
     if (lastTurn) {
         lastTurnMessageIds.add(lastTurn.userMessageId);
-        lastTurn.assistantMessageIds.forEach((messageId) => {
-            lastTurnMessageIds.add(messageId);
+        lastTurn.messages.forEach((record) => {
+            lastTurnMessageIds.add(record.messageId);
         });
     }
 

@@ -5,20 +5,53 @@ conversation's **main subject** (overall feature / goal) with the small model
 (`lib/small-model`), then PATCHes `title` plus `metadata.openchamber.titleRefresh`.
 
 OpenCode only auto-titles once from the first user message
-(`SessionPrompt.ensureTitle`). This module auto-refreshes sparsely (first idle
-of a new session, first newly-sent reply on a fork) and on explicit smart-title
+(`SessionPrompt.ensureTitle`). This module auto-refreshes sparsely (first user
+admission of a new session, first newly-sent reply on a fork) and on explicit smart-title
 requests, naming the durable work being done — not the last wrap-up utterance
 like "commit and push". Background auto refreshes still respect a 5-minute
 throttle (`TITLE_THROTTLE_MS`) when a refresh is armed.
 
 ## Flow
 
+### OpenCode 2 smart-title boundary
+
+Manual requests arrive as Host `openchamber:session-metadata` writes. The
+metadata route's committed-write callback explicitly notifies the title runtime;
+it must not rely on OpenCode echoing Host metadata as `session.updated`.
+`session-access.js` owns the production boundary: official client session reads
+and title updates, a bounded `message.list({ order: 'desc' })` page projected into
+chronological transcript records, and Host metadata reads/merge patches.
+Only changed `titleRefresh` fields are persisted. Transient fields are removed
+with RFC 7386 `null`, so `isGenerating` and `requestedAt` cannot survive a clear.
+Unrelated goal, archive, and ownership metadata is never replaced by a title read.
+
+After a successful title write or generation-state change, an authoritative full session row is published
+as `session.updated` and applied to the session index. Connected clients receive
+both loading metadata and the new title without reselecting the session. Neither
+event represents an execution-status transition: the original session's busy /
+retry status and subsequent execution events remain independently authoritative.
+Publishing the loading row also covers first-send admission arriving before the
+renderer inserts the new session: a metadata-only event would otherwise be ignored
+for that still-unknown row.
+This Host path serves web, Electron, and connected hosted/native mobile clients;
+extension-only VS Code retains the limitation below.
+
 1. `createSessionTitleRuntime` is a consumer of the server's global SSE
    fan-out (`index.js` → `globalMessageStreamHub.subscribeEvent`). Purely event-driven — dormant sessions never
    generate anything.
-  2. Auto title refresh is intentionally sparse (title stability first). A newly
-     observed root `session.created` generates its first title immediately on the
-     first `session.status: idle`. A fork title (`(fork #n)`) waits for its first
+   2. Auto title refresh is intentionally sparse (title stability first). A newly
+      observed root `session.created` generates its first title immediately on
+      the first native `session.inbox.enqueued` user item. Native `data` envelopes
+      are accepted alongside legacy `properties`. The admitted text is bounded
+      to the user-message limit and retained only until the generation starts;
+      it avoids a race with the not-yet-materialized message projection. Synthetic,
+      compaction, and move items cannot start this title. Busy/execution-start
+      events do not cancel this first-title timer: title generation and the main
+      assistant reply run concurrently. Generation publishes `isGenerating` via
+      the existing Host metadata path, then the final title through `session.updated`.
+      Later user admissions/idle events do not regenerate the initial title.
+      The legacy first-idle edge remains a fallback when no admission was observed.
+      A fork title (`(fork #n)`) waits for its first
      newly-created user message; the matching assistant completion triggers an
      immediate title refresh that bypasses inherited title metadata and throttle.
      If the fork's `session.created` was lost (SSE reconnect gap, server or
@@ -27,8 +60,8 @@ throttle (`TITLE_THROTTLE_MS`) when a refresh is armed.
      title + message created after the fork + activity timestamp not yet past
      the fork time), so the first-reply refresh still fires.
      Ordinary later idle transitions do **not** arm another refresh. Any
-     `busy`/`retry` status or a fresh user `message.updated` still clears an
-     already-armed timer (so initial/fork timers cancel if the user keeps going).
+      `busy`/`retry` status or a fresh user `message.updated` still clears an
+      ordinary already-armed timer; an admitted first-title timer is exempt.
      A sidebar smart-title request sets `titleRefresh.requestedAt`; its
      `session.updated` event arms the same flow immediately (forced / manual
      refresh is unaffected by the background gate).

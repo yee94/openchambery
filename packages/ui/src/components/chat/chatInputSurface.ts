@@ -26,14 +26,26 @@ export type ChatInputSelection = {
   flush: () => Promise<void>;
 };
 
-/** Provider catalogs expose variants as a Record; tolerate string[] too. */
+/** Provider catalogs expose variants as a Record. v2 ModelInfo uses `{ id }[]`; older callers may pass string[]. */
 export const resolveModelVariantKeys = (model: { variants?: unknown } | undefined | null): string[] => {
   const variants = model?.variants;
   if (!variants) {
     return [];
   }
   if (Array.isArray(variants)) {
-    return variants.filter((variant): variant is string => typeof variant === 'string' && variant.length > 0);
+    const keys: string[] = [];
+    const seen = new Set<string>();
+    for (const variant of variants) {
+      const id = typeof variant === 'string'
+        ? variant
+        : variant && typeof variant === 'object' && !Array.isArray(variant) && typeof (variant as { id?: unknown }).id === 'string'
+          ? (variant as { id: string }).id
+          : '';
+      if (!id || seen.has(id)) continue;
+      seen.add(id);
+      keys.push(id);
+    }
+    return keys;
   }
   if (typeof variants === 'object') {
     return Object.keys(variants);

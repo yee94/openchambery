@@ -154,7 +154,7 @@ export const QuestionCard: React.FC<QuestionCardProps> = ({ question }) => {
   const { t } = useI18n();
   const delegation = useQuestionDelegation(question);
   const respondToQuestion = sessionActions.respondToQuestion;
-  const rejectQuestion = sessionActions.rejectQuestion;
+  const dismissQuestion = sessionActions.dismissQuestion;
   const isMobile = useUIStore((state) => state.isMobile);
   const sessions = useSessions();
   const currentSessionId = useSessionUIStore((state) => state.currentSessionId);
@@ -351,7 +351,7 @@ export const QuestionCard: React.FC<QuestionCardProps> = ({ question }) => {
     const submittedScope = delegation.scope;
     setIsResponding(true);
     try {
-      await rejectQuestion(question.sessionID, question.id, delegation.request?.directory);
+      await dismissQuestion(question.sessionID, question.id, delegation.request?.directory);
       setHasResponded(true);
     } catch (error) {
       if (sessionActions.isQuestionSubmissionClaimedError(error)) {

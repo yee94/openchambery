@@ -20,7 +20,7 @@ import {
 import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuTrigger } from '@/components/ui/context-menu';
 import { useAgentsStore, isAgentBuiltIn, isAgentHidden, type AgentScope, type AgentDraft } from '@/stores/useAgentsStore';
 import { useAgentsQuery, type AgentWithExtras } from '@/queries/agentQueries';
-import { catalogModelSelection, isHexColor } from './agentSaveConfig';
+import { catalogModelSelection, formatAgentDisplayName, isHexColor } from './agentSaveConfig';
 import { toPermissionRuleset } from '@/sync/permission-rules';
 import { useShallow } from 'zustand/react/shallow';
 import { cn } from '@/lib/utils';
@@ -550,14 +550,18 @@ const AgentListItem: React.FC<AgentListItemProps> = ({
         >
           <div className="flex items-center gap-1.5">
             <span className="typography-ui-label font-normal truncate text-foreground">
-              {agent.name}
+              {formatAgentDisplayName(agent.name)}
             </span>
             {getAgentModeIcon(agent.mode)}
             {(extAgent.scope || isAgentBuiltIn(agent) || extAgent.disabledOverride) && (
               <span className="typography-micro text-muted-foreground bg-muted px-1 rounded flex-shrink-0 leading-none pb-px border border-border/50">
                 {extAgent.disabledOverride
                   ? t('settings.agents.sidebar.badge.disabled')
-                  : isAgentBuiltIn(agent) ? t('settings.agents.sidebar.badge.system') : extAgent.scope}
+                  : isAgentBuiltIn(agent)
+                    ? t('settings.agents.sidebar.badge.system')
+                    : extAgent.scope === 'project'
+                      ? t('settings.common.scope.project')
+                      : t('settings.common.scope.global')}
               </span>
             )}
           </div>

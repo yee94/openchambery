@@ -75,8 +75,8 @@ export const buildSharedServiceStartEnv = (baseEnv = {}) => {
 
 /**
  * `opencode service start` reuses a healthy compatible service or spawns a
- * detached one, then exits once it is ready. Never replaces a newer service
- * with the version OpenChamber resolved (no version pin is passed).
+ * detached one, then exits once it is ready. Normal recovery does not replace
+ * a healthy service; explicit upgrades use `service restart` with the target.
  */
 export const startSharedOpenCodeService = ({
   binary,
@@ -84,8 +84,10 @@ export const startSharedOpenCodeService = ({
   env,
   spawnImpl = spawn,
   timeoutMs = SERVICE_START_TIMEOUT_MS,
+  replace = false,
 }) => new Promise((resolve, reject) => {
-  const child = spawnImpl(binary, [...args, 'service', 'start'], {
+  const action = replace ? 'restart' : 'start';
+  const child = spawnImpl(binary, [...args, 'service', action], {
     env,
     stdio: ['ignore', 'ignore', 'pipe'],
     windowsHide: true,
@@ -104,7 +106,7 @@ export const startSharedOpenCodeService = ({
       child.kill('SIGTERM');
     } catch {
     }
-    finish(new Error('Timed out waiting for `opencode service start`'));
+    finish(new Error(`Timed out waiting for \`opencode service ${action}\``));
   }, timeoutMs);
   child.stderr?.on('data', (chunk) => {
     stderr = (stderr + chunk.toString()).slice(-2000);
@@ -116,7 +118,7 @@ export const startSharedOpenCodeService = ({
       return;
     }
     const detail = stderr.trim();
-    finish(new Error(`\`opencode service start\` exited with code ${code}${detail ? `: ${detail}` : ''}`));
+    finish(new Error(`\`opencode service ${action}\` exited with code ${code}${detail ? `: ${detail}` : ''}`));
   });
 });
 
@@ -139,7 +141,7 @@ export const createSharedOpenCodeService = ({
   return {
     registrationFile: file,
     buildStartEnv: buildSharedServiceStartEnv,
-    start: ({ binary, args, env }) => startSharedOpenCodeService({ binary, args, env, spawnImpl }),
+    start: ({ binary, args, env, replace }) => startSharedOpenCodeService({ binary, args, env, replace, spawnImpl }),
     readRegistration: () => readSharedServiceRegistration({ file, fsLike }),
   };
 };

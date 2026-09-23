@@ -110,6 +110,7 @@ const TurnItem: React.FC<TurnItemProps> = ({
 
             <TurnAssistantBlock
                 assistantMessages={turn.assistantMessages}
+                messages={turn.messages}
                 activityExpanded={activityExpanded}
                 renderMessage={renderMessage}
             />

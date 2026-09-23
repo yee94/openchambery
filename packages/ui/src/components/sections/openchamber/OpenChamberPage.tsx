@@ -159,6 +159,7 @@ const VisualSectionContent: React.FC<VisualSectionContentProps> = ({ mobile }) =
         "mobileKeyboardMode",
         "timeFormat",
         ...(!isVSCode ? ["weekStart" as const] : []),
+        "iosNativeUi",
         "fontSize",
         "codeFontSize",
         "terminalFontSize",

@@ -29,8 +29,7 @@ const toolPresentationSource = readFileSync(join(__dirname, 'toolPresentation.ts
 
 describe('edit slim line counts', () => {
     test('prefers metadata additions/deletions over parsing a dropped patch', () => {
-        expect(toolPartSource).toContain('const addedFromMeta = parseDiffCount(metadata?.additions);');
-        expect(toolPartSource).toContain('const removedFromMeta = parseDiffCount(metadata?.deletions);');
+        expect(toolPartSource).toContain('getToolPartLineDiffTotals({ state: { metadata } })');
     });
 });
 

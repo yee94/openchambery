@@ -138,7 +138,7 @@ describe("official session.step lifecycle (envelope → normalizer → reducer)"
     const failed = normalizeOpenCodeEvent(officialEnvelope("session.step.failed", {
       sessionID: SESSION,
       assistantMessageID: "msg_a",
-      error: { type: "ProviderError", message: "rate limited" },
+      error: { type: "provider.rate-limit", message: "rate limited", status: 429 },
       cost: 0.0001,
       tokens: { input: 2, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
     }, STEP_ENDED_AT + 1))
@@ -216,14 +216,14 @@ describe("official session.step lifecycle (envelope → normalizer → reducer)"
     reduceNormalized(officialEnvelope("session.step.failed", {
       sessionID: SESSION,
       assistantMessageID: "msg_fail",
-      error: { type: "ProviderError", message: "rate limited" },
+      error: { type: "provider.rate-limit", message: "rate limited", status: 429 },
     }, STEP_ENDED_AT), failedState)
     const failed = failedState.message[SESSION]?.find((message) => message.id === "msg_fail") as Message & {
       finish?: string
       error?: { type?: string; message?: string }
     }
     expect(failed?.finish).toBe("error")
-    expect(failed?.error).toEqual({ type: "ProviderError", message: "rate limited" })
+    expect(failed?.error).toEqual({ type: "provider.rate-limit", message: "rate limited", status: 429 })
   })
 
   test("live assistant without parentID still attaches to the preceding user turn", () => {

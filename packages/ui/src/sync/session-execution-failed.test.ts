@@ -124,6 +124,7 @@ describe("session.execution.failed error settle", () => {
       message: 'Agent not found: "Build"',
     })).toEqual({
       name: "unknown",
+      type: "unknown",
       message: 'Agent not found: "Build"',
     });
   });

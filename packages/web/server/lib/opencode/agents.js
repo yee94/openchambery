@@ -17,10 +17,8 @@ import {
   writePromptFile,
 } from './shared.js';
 import {
-  DropConfirmationRequired,
-  applyNativePatch,
-  convertAgentConfig,
   inspectAgentConfig,
+  writeAgentDocument,
 } from './agent-document.js';
 
 // ============== AGENT SCOPE HELPERS ==============
@@ -399,45 +397,26 @@ function listDisabledAgentOverrides(workingDirectory) {
   return found;
 }
 
-function storedAgentConfig(agentName, workingDirectory, lookupCache = createAgentLookupCache()) {
-  const layers = readConfigLayers(workingDirectory);
-  const jsonSource = getJsonEntrySource(layers, 'agent', agentName);
-  const stored = {};
-  if (jsonSource.section && typeof jsonSource.section === 'object') {
-    Object.assign(stored, jsonSource.section);
+function nativeWritePath(agentName, workingDirectory, scope, lookupCache) {
+  if (scope === AGENT_SCOPE.PROJECT && workingDirectory) {
+    ensureProjectAgentDir(workingDirectory);
+    return getProjectAgentPath(workingDirectory, agentName);
   }
-  const { path: mdPath } = getAgentWritePath(agentName, workingDirectory, undefined, lookupCache);
-  if (mdPath && fs.existsSync(mdPath)) {
-    const { frontmatter, body } = parseMdFile(mdPath);
-    Object.assign(stored, frontmatter);
-    if (typeof body === 'string' && body.trim()) stored.prompt = body.trim();
+  if (scope === AGENT_SCOPE.USER) {
+    return getUserAgentPath(agentName, lookupCache);
   }
-  return { stored, jsonSource };
+  const existing = getAgentWritePath(agentName, workingDirectory, undefined, lookupCache);
+  if (existing.path && fs.existsSync(existing.path)) return existing.path;
+  return getUserAgentPath(agentName, lookupCache);
 }
 
 function writeNativeAgent(agentName, patch, workingDirectory, scope, confirmDrop) {
   ensureDirs();
   const lookupCache = createAgentLookupCache();
-  const { stored, jsonSource } = storedAgentConfig(agentName, workingDirectory, lookupCache);
-  const converted = convertAgentConfig(stored);
-  if (converted.dropped.length > 0 && confirmDrop !== true) {
-    throw new DropConfirmationRequired(converted.dropped);
-  }
-  const next = applyNativePatch(converted, patch && typeof patch === 'object' ? patch : {});
-  const { path: existingPath } = getAgentWritePath(agentName, workingDirectory, scope, lookupCache);
-  let targetPath = existingPath;
-  if (!targetPath || !fs.existsSync(targetPath)) {
-    if (scope === AGENT_SCOPE.PROJECT && workingDirectory) {
-      ensureProjectAgentDir(workingDirectory);
-      targetPath = getProjectAgentPath(workingDirectory, agentName);
-    } else {
-      targetPath = getUserAgentPath(agentName, lookupCache);
-    }
-  }
+  const targetPath = nativeWritePath(agentName, workingDirectory, scope, lookupCache);
+  const existing = fs.existsSync(targetPath) ? parseMdFile(targetPath) : { frontmatter: {}, body: '' };
+  const next = writeAgentDocument(existing, patch && typeof patch === 'object' ? patch : {}, confirmDrop === true);
   writeMdFile(targetPath, next.frontmatter, next.body);
-  if (jsonSource.exists && jsonSource.config && jsonSource.path && deleteJsonAgentEntry(jsonSource.config, agentName)) {
-    writeConfig(jsonSource.config, jsonSource.path);
-  }
 }
 
 function getAgentConfig(agentName, workingDirectory, lookupCache = createAgentLookupCache()) {
@@ -530,7 +509,7 @@ function createAgent(agentName, config, workingDirectory, scope) {
 
 function updateAgent(agentName, updates, workingDirectory) {
   if (updates && Object.prototype.hasOwnProperty.call(updates, 'native')) {
-    writeNativeAgent(agentName, updates.native, workingDirectory, undefined, updates.confirmDrop === true);
+    writeNativeAgent(agentName, updates.native, workingDirectory, updates.scope, updates.confirmDrop === true);
     console.log(`Updated agent: ${agentName}`);
     return;
   }

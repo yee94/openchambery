@@ -56,20 +56,37 @@ const projectModalities = (source) => {
   return ownKeys(projected).length > 0 ? projected : undefined;
 };
 
+// v2 ModelCapabilities.input/output are modality name arrays, not boolean maps.
+const projectModalityList = (source) => {
+  if (!Array.isArray(source)) return undefined;
+  const projected = createDictionary();
+  for (const item of source) {
+    if (typeof item !== 'string' || !MODALITIES.has(item) || !isSafeIdentifier(item)) continue;
+    projected[item] = true;
+  }
+  return ownKeys(projected).length > 0 ? projected : undefined;
+};
+
 const projectCapabilities = (source) => {
   if (!isRecord(source)) return undefined;
   const capabilities = createDictionary();
   const flags = projectBooleanFields(source, ['temperature', 'reasoning', 'attachment', 'toolcall']);
   if (flags) Object.assign(capabilities, flags);
+  // v2 names tool support `tools`. Keep an explicit catalog `toolcall` flag when both exist.
+  if (!Object.hasOwn(capabilities, 'toolcall') && typeof source.tools === 'boolean') {
+    capabilities.toolcall = source.tools;
+  }
   for (const field of ['input', 'output']) {
     if (!Object.hasOwn(source, field)) continue;
-    const modalities = projectModalities(source[field]);
+    const modalities = Array.isArray(source[field])
+      ? projectModalityList(source[field])
+      : projectModalities(source[field]);
     if (modalities) capabilities[field] = modalities;
   }
   return ownKeys(capabilities).length > 0 ? capabilities : undefined;
 };
 
-const projectCost = (source) => {
+const projectCostEntry = (source) => {
   if (!isRecord(source)) return undefined;
   const cost = createDictionary();
   for (const field of ['input', 'output']) {
@@ -85,6 +102,30 @@ const projectCost = (source) => {
     if (ownKeys(cache).length > 0) cost.cache = cache;
   }
   return ownKeys(cost).length > 0 ? cost : undefined;
+};
+
+// v2 ModelInfo.cost is a tier array. The untiered entry is the base price.
+const projectCost = (source) => {
+  if (Array.isArray(source)) {
+    const base = source.find((item) => isRecord(item) && !isRecord(item.tier))
+      || source.find((item) => isRecord(item));
+    return projectCostEntry(base);
+  }
+  return projectCostEntry(source);
+};
+
+// v2 ModelInfo.variants is `{ id, settings?, headers?, body? }[]`. Catalog consumers
+// still read a name→{} record. Request payloads stay server-side.
+const projectVariantNames = (source) => {
+  if (Array.isArray(source)) {
+    return source.map((item) => {
+      if (typeof item === 'string') return item;
+      if (isRecord(item) && typeof item.id === 'string') return item.id;
+      return undefined;
+    });
+  }
+  if (isRecord(source)) return ownKeys(source);
+  return null;
 };
 
 function projectModel(source) {
@@ -113,18 +154,23 @@ function projectModel(source) {
   if (Object.hasOwn(source, 'release_date') && source.release_date !== '' && source.release_date !== null) {
     if (isSafeReleaseDate(source.release_date)) model.release_date = source.release_date;
   }
-  if (Object.hasOwn(source, 'variants') && isRecord(source.variants)) {
-    const variants = createDictionary();
-    let variantCount = 0;
-    for (const variantName of ownKeys(source.variants)) {
-      if (variantCount >= MAX_VARIANTS_PER_MODEL) {
-        partial = true;
-        break;
+  if (Object.hasOwn(source, 'variants')) {
+    const names = projectVariantNames(source.variants);
+    if (names) {
+      const variants = createDictionary();
+      let variantCount = 0;
+      for (const variantName of names) {
+        if (variantCount >= MAX_VARIANTS_PER_MODEL) {
+          partial = true;
+          break;
+        }
+        variantCount += 1;
+        if (typeof variantName === 'string' && isSafeIdentifier(variantName) && !Object.hasOwn(variants, variantName)) {
+          variants[variantName] = createDictionary();
+        }
       }
-      variantCount += 1;
-      if (isSafeIdentifier(variantName)) variants[variantName] = createDictionary();
+      if (ownKeys(variants).length > 0) model.variants = variants;
     }
-    if (ownKeys(variants).length > 0) model.variants = variants;
   }
   return { value: model, partial };
 }

@@ -32,7 +32,7 @@ export type SessionCompactionPart = {
   reason: SessionCompactionReason
   summary?: string
   recent?: string
-  error?: { type: string; message: string }
+  error?: { type: string; message: string; status?: number }
 }
 
 export function isSessionCompactionCard(part: unknown): part is SessionCompactionPart {
@@ -443,6 +443,7 @@ export function normalizeSessionProjectionMessage(
       ? {
         type: asString(item.error.type) ?? "error",
         message: asString(item.error.message) ?? "",
+        ...(typeof item.error.status === "number" ? { status: item.error.status } : {}),
       }
       : undefined
     const parts: Part[] = [{
@@ -641,8 +642,10 @@ export type ReconcileFetchedInput = {
   previous: readonly ReconcileFetchedRecord[]
   /** Message ids SSE changed while this GET was in flight. */
   touched?: ReadonlySet<string>
+  /** Only projection rows establish the covered range; context/parent additions do not. */
+  coverageMessageIDs?: readonly string[]
   /**
-   * True when the GET is the entire session (no older cursor).
+   * True when the GET positively covers the entire session.
    * Complete tails take the GET id set as authority; incomplete pages keep
    * earlier local rows the GET did not return.
    */
@@ -659,8 +662,8 @@ export function reconcileFetched(input: ReconcileFetchedInput): ReconcileFetched
   const touched = input.touched ?? new Set<string>()
   const result = new Map(fetched.map((record) => [record.info.id, record]))
   const live = new Map(previous.map((record) => [record.info.id, record]))
-  const fetchedIDs = new Set(fetched.map((record) => record.info.id))
-  const firstFetchedIndex = previous.findIndex((record) => fetchedIDs.has(record.info.id))
+  const coveredIDs = new Set(input.coverageMessageIDs ?? fetched.map((record) => record.info.id))
+  const firstFetchedIndex = previous.findIndex((record) => coveredIDs.has(record.info.id))
 
   if (!input.completeTail) {
     for (const [index, record] of previous.entries()) {

@@ -4,7 +4,7 @@
 [![GitHub release](https://img.shields.io/github/v/release/yee94/openchamber?style=flat&logo=data%3Aimage%2Fsvg%2Bxml%3Bbase64%2CPHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIzMiIgaGVpZ2h0PSIzMiIgZmlsbD0iI2YxZWNlYyIgdmlld0JveD0iMCAwIDI1NiAyNTYiPjxwYXRoIGQ9Ik0xMjgsMTI5LjA5VjIzMmE4LDgsMCwwLDEtMy44NC0xbC04OC00OC4xOGE4LDgsMCwwLDEtNC4xNi03VjgwLjE4YTgsOCwwLDAsMSwuNy0zLjI1WiIgb3BhY2l0eT0iMC4yIj48L3BhdGg%2BPHBhdGggZD0iTTIyMy42OCw2Ni4xNSwxMzUuNjgsMThhMTUuODgsMTUuODgsMCwwLDAtMTUuMzYsMGwtODgsNDguMTdhMTYsMTYsMCwwLDAtOC4zMiwxNHY5NS42NGExNiwxNiwwLDAsMCw4LjMyLDE0bDg4LDQ4LjE3YTE1Ljg4LDE1Ljg4LDAsMCwwLDE1LjM2LDBsODgtNDguMTdhMTYsMTYsMCwwLDAsOC4zMi0xNFY4MC4xOEExNiwxNiwwLDAsMCwyMjMuNjgsNjYuMTVaTTEyOCwzMmw4MC4zNCw0NC0yOS43NywxNi4zLTgwLjM1LTQ0Wk0xMjgsMTIwLDQ3LjY2LDc2bDMzLjktMTguNTYsODAuMzQsNDRaTTQwLDkwbDgwLDQzLjc4djg1Ljc5TDQwLDE3NS44MlptMTc2LDg1Ljc4aDBsLTgwLDQzLjc5VjEzMy44MmwzMi0xNy41MVYxNTJhOCw4LDAsMCwwLDE2LDBWMTA3LjU1TDIxNiw5MHY4NS43N1oiPjwvcGF0aD48L3N2Zz4%3D&logoColor=FFFCF0&labelColor=100F0F&color=205EA6)](https://github.com/yee94/openchamber/releases/latest)
 [![Discord](https://img.shields.io/badge/Discord-join.svg?style=flat&labelColor=100F0F&color=8B7EC8&logo=discord&logoColor=FFFCF0)](https://discord.gg/ZYRSdnwwKA)
 
-Run [OpenCode](https://opencode.ai) in your browser. Install the `opencode2` CLI, open `localhost:3000`, done. Works on desktop browsers, tablets, and phones as a PWA.
+Run [OpenCode](https://opencode.ai) in your browser. Install the `opencode` v2 CLI, open `localhost:3000`, done. Works on desktop browsers, tablets, and phones as a PWA.
 
 Full project overview, screenshots, and all features: [github.com/yee94/openchamber](https://github.com/yee94/openchamber)
 
@@ -16,9 +16,13 @@ curl -fsSL https://raw.githubusercontent.com/yee94/openchamber/main/scripts/inst
 
 Or install manually: `bun add -g @openchambery/web` (or npm, pnpm, yarn).
 
-> **Prerequisites:** [`opencode2`](https://opencode.ai) CLI installed (PATH or `OPENCODE_BINARY`; `opencode` / `opencode.exe` / `opencode.cmd` are rejected), Node.js 22+.
+> **Prerequisites:** [`opencode`](https://opencode.ai/v2/docs/) v2 CLI installed (PATH or `OPENCODE_BINARY`; 1.x versions are rejected), Node.js 22+.
 
 ## Usage
+
+By default, OpenChamber connects to the official shared OpenCode background service used by Desktop and TUI. Closing OpenChamber leaves OpenCode running, and the next launch reuses it. If the service cannot start, OpenChamber reports the failure for retry instead of launching a private fallback. In-app OpenCode upgrades install into OpenChamber's own cache and replace the shared service through the official service command; this also reconnects other clients using that service. User-installed CLI files are not overwritten.
+
+Explicit `OPENCODE_HOST` / `OPENCODE_PORT` connections keep their existing behavior. `OPENCHAMBER_OPENCODE_SHARED_SERVICE=0` selects the private managed lifecycle when required by an existing deployment.
 
 ```bash
 openchamber                          # Start on port 3000
@@ -33,7 +37,7 @@ openchamber connect-url --port 3000  # Add this server to OpenChamber Desktop
 openchamber connect-url --server http://host:3000 --qr
 openchamber connect-url --port 3000 --qr
 openchamber logs                     # Follow latest instance logs
-OPENCODE_PORT=4096 OPENCODE_SKIP_START=true openchamber                    # Connect to external opencode2 server
+OPENCODE_PORT=4096 OPENCODE_SKIP_START=true openchamber                    # Connect to external opencode v2 server
 OPENCODE_HOST=https://myhost:4096 OPENCODE_SKIP_START=true openchamber  # Connect via custom host/HTTPS
 openchamber stop                     # Stop server
 openchamber update                   # Update to latest version
@@ -109,7 +113,7 @@ Generating a client token does not automatically password-protect the hosted bro
 <details>
 <summary>Connect to external OpenCode server</summary>
 
-The external host must be **opencode2**. OpenChamber still runs v2 health (`GET /api/health`) and V1 migration (`GET /api/experimental/migration/v1`) checks; a 1.x `opencode` server will not pass. `OPENCODE_BINARY` and `settings.opencodeBinary` must resolve to `opencode2`, not `opencode` / `opencode.exe` / `opencode.cmd`.
+The external host must be **OpenCode v2**. OpenChamber runs v2 health (`GET /api/info`) and V1 migration (`GET /api/experimental/migration/v1`) checks; a 1.x server will not pass. Automatic discovery uses the official `opencode` command only. `OPENCODE_BINARY` and `settings.opencodeBinary` can override the executable path; admission is checked by version.
 
 ```bash
 OPENCODE_PORT=4096 OPENCODE_SKIP_START=true openchamber
@@ -118,8 +122,8 @@ OPENCODE_HOST=https://myhost:4096 OPENCODE_SKIP_START=true openchamber
 
 | Variable | Description |
 |----------|-------------|
-| `OPENCODE_HOST` | Full base URL of external opencode2 server (overrides `OPENCODE_PORT`) |
-| `OPENCODE_PORT` | Port of external opencode2 server |
+| `OPENCODE_HOST` | Full base URL of external OpenCode v2 server (overrides `OPENCODE_PORT`) |
+| `OPENCODE_PORT` | Port of external OpenCode v2 server |
 | `OPENCODE_SKIP_START` | Skip starting embedded OpenCode server |
 | `OPENCHAMBER_OPENCODE_HOSTNAME` | Bind hostname for managed OpenCode server (default: `127.0.0.1`, use `0.0.0.0` for LAN/remote access — trusted networks only) |
 | `OPENCHAMBER_HOST` | Bind hostname for the OpenChamber web server (default: `127.0.0.1`; use `0.0.0.0` for LAN/remote access — trusted networks only) |
@@ -168,16 +172,16 @@ openchamber stop        # Stop background server
 <details>
 <summary>systemd service (VPN / LAN access)</summary>
 
-Use `--foreground` to keep the CLI process alive so systemd (or any other process manager) can track and restart it. Combine with `OPENCODE_HOST` to connect to an opencode2 instance running as a separate service.
+Use `--foreground` to keep the CLI process alive so systemd (or any other process manager) can track and restart it. Combine with `OPENCODE_HOST` to connect to an OpenCode v2 instance running as a separate service.
 
-**`~/.config/systemd/user/opencode2.service`**
+**`~/.config/systemd/user/opencode.service`**
 ```ini
 [Unit]
 Description=OpenCode 2 Server
 
 [Service]
 Type=simple
-ExecStart=opencode2 serve --port 4095
+ExecStart=opencode serve --port 4095
 Environment="PATH=/home/linuxbrew/.linuxbrew/bin:/home/linuxbrew/.linuxbrew/sbin:/home/YOU/.local/bin:/home/YOU/.npm-global/bin:/usr/local/bin:/usr/bin:/bin"
 Environment=SSH_AUTH_SOCK=%t/ssh-agent.socket
 Restart=on-failure
@@ -197,7 +201,7 @@ WantedBy=default.target
 ```ini
 [Unit]
 Description=OpenChamber Web Server
-After=opencode2.service
+After=opencode.service
 
 [Service]
 Type=simple
@@ -213,7 +217,7 @@ WantedBy=default.target
 
 ```bash
 systemctl --user daemon-reload
-systemctl --user enable --now opencode2 openchamber
+systemctl --user enable --now opencode openchamber
 ```
 
 `--host 0.0.0.0` is required to listen on all interfaces (the default is `127.0.0.1`). Use `--host <ip>` or `OPENCHAMBER_HOST=<ip>` to bind to a specific interface instead.

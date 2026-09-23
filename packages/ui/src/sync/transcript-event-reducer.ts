@@ -675,6 +675,7 @@ function applyStepLifecycle(
           error: {
             type: asString(error.type) ?? "error",
             message: asString(error.message) ?? "",
+            ...(typeof error.status === "number" ? { status: error.status } : {}),
           },
         }
         : asString(props.error)

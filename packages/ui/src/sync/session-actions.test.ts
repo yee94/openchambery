@@ -43,6 +43,7 @@ const mocks = vi.hoisted(() => {
     sessionUnrevertResult: {} as { data?: unknown; error?: unknown; response?: { status?: number } },
     questionReplyError: null as unknown | null,
     questionRejectError: null as unknown | null,
+    questionInterruptResult: true,
     sessionShareResult: {} as { data?: unknown; error?: unknown; response?: { status?: number } },
     sessionUpdateResult: {} as { data?: unknown; error?: unknown; response?: { status?: number } },
     sessionMessagesResult: { data: [] } as { data?: unknown; error?: unknown; response?: { status?: number } },
@@ -146,6 +147,12 @@ const mocks = vi.hoisted(() => {
     },
     session: {
       form: mockSessionForm,
+      interrupt: vi.fn(async (params: Record<string, unknown>) => {
+        replyCalls.push({ method: "session.interrupt", params })
+        if (state.abortReject) throw new Error("interrupt failed")
+        state.onInterrupt?.()
+        return { interrupted: state.questionInterruptResult }
+      }),
     },
   }
 
@@ -3176,10 +3183,21 @@ describe("message edit staging", () => {
       .toEqual(["msg_edit", "msg_old"])
   })
 
+  test("an existing file rollback cannot be silently undone by editing a message", async () => {
+    const { sessionStore, commitMessageEdit } = await editFixture()
+    sessionStore.setState({ session: [{ ...sessionStore.getState().session[0], revert: {
+      messageID: "msg_old", files: [{ file: "src/example.ts", status: "modified", additions: 1, deletions: 0, patch: "diff" }],
+    } }] })
+    await expect(commitMessageEdit("session-a", "msg_edit")).rejects.toThrow("unavailable")
+    expect(replyCalls).toEqual([])
+    expect(sessionStore.getState().message["session-a"]).toHaveLength(3)
+    expect(sessionStore.getState().session[0].revert?.messageID).toBe("msg_old")
+  })
+
   test("lost commit response uses authoritative absence to finish the edit instead of restoring deleted history", async () => {
     const { sessionStore, commitMessageEdit } = await editFixture()
     mocks.state.revertCommitHook = async () => { throw new TypeError("Failed to fetch") }
-    mocks.state.editConfirmationHook = async () => { throw Object.assign(new Error("Message not found"), { status: 404 }) }
+    mocks.state.editConfirmationHook = async () => { throw { _tag: "MessageNotFoundError", sessionID: "session-a", messageID: "msg_edit", message: "Message not found" } }
     await commitMessageEdit("session-a", "msg_edit")
     expect(sessionStore.getState().message["session-a"].map((message) => message.id)).toEqual(["msg_old"])
     expect(sessionStore.getState().session[0].revert).toBeUndefined()
@@ -4048,6 +4066,70 @@ describe("rejectQuestion passes directory", () => {
     await rejectQuestion("child", "child-question", "/child-project")
     expect(scopedClientDirectories).toEqual(["/child-project"])
     expect(replyCalls[0].params.formID).toBe("child-question")
+  })
+})
+
+describe("dismissQuestion stops execution instead of cancelling the tool", () => {
+  beforeEach(() => {
+    replyCalls.length = 0
+    scopedClientDirectories.length = 0
+    mocks.abortReject = false
+    mocks.questionRejectError = null
+    mocks.state.questionInterruptResult = true
+    mocks.state.onInterrupt = null
+  })
+
+  test("interrupts the owning session without continuation or form.cancel", async () => {
+    const actions = await import("./session-actions")
+    const store = createStore({}, { question: { child: [buildQuestion("q-stop", "child")] } })
+    actions.setActionRefs(mockSdk as unknown as OpencodeClient, createChildStores([["/child-project", store]]), () => "/parent")
+    await actions.dismissQuestion("child", "q-stop", "/child-project")
+    expect(replyCalls).toEqual([{ method: "session.interrupt", params: { sessionID: "child", resume: false } }])
+    expect(scopedClientDirectories).toEqual(["/child-project"])
+    expect(store.getState().question.child).toBeUndefined()
+  })
+
+  test("failed interruption leaves the question available and propagates failure", async () => {
+    const actions = await import("./session-actions")
+    const store = createStore({}, { question: { child: [buildQuestion("q-stop", "child")] } })
+    actions.setActionRefs(mockSdk as unknown as OpencodeClient, createChildStores([["/child-project", store]]), () => "/parent")
+    mocks.abortReject = true
+    await expect(actions.dismissQuestion("child", "q-stop", "/child-project")).rejects.toThrow("interrupt failed")
+    expect(store.getState().question.child).toHaveLength(1)
+    expect(replyCalls.some((call) => call.method === "session.form.cancel")).toBe(false)
+    mocks.abortReject = false
+  })
+
+  test("only cancels an orphan form after the server confirms there is no active execution", async () => {
+    const actions = await import("./session-actions")
+    const store = createStore({}, { question: { child: [buildQuestion("q-stop", "child")] } })
+    actions.setActionRefs(mockSdk as unknown as OpencodeClient, createChildStores([["/child-project", store]]), () => "/parent")
+    mocks.state.questionInterruptResult = false
+    await actions.dismissQuestion("child", "q-stop", "/child-project")
+    expect(replyCalls.map((call) => call.method)).toEqual(["session.interrupt", "session.form.cancel"])
+    expect(store.getState().question.child).toBeUndefined()
+  })
+
+  test("the user-interrupt event settles activity and clears recovery while keeping other sessions", async () => {
+    const actions = await import("./session-actions")
+    const { applyDirectoryEvent } = await import("./event-reducer")
+    const store = createStore({}, {
+      question: { child: [buildQuestion("q-stop", "child")], other: [buildQuestion("q-other", "other")] },
+      session_status: { child: { type: "busy" }, other: { type: "busy" } },
+      session_execution_recovery: { child: { reason: "shutdown", observedAt: 1 } },
+    })
+    actions.setActionRefs(mockSdk as unknown as OpencodeClient, createChildStores([["/child-project", store]]), () => "/parent")
+    mocks.state.onInterrupt = () => {
+      const next = { ...store.getState() }
+      applyDirectoryEvent(next, { type: "session.execution.interrupted", properties: { sessionID: "child", reason: "user" } }, { now: () => 20 })
+      store.setState(next)
+    }
+    await actions.dismissQuestion("child", "q-stop", "/child-project")
+    expect(store.getState().session_status.child).toEqual({ type: "idle" })
+    expect(store.getState().session_execution_recovery.child).toBeUndefined()
+    expect(store.getState().question.other).toHaveLength(1)
+    expect(store.getState().session_status.other).toEqual({ type: "busy" })
+    mocks.state.onInterrupt = null
   })
 })
 

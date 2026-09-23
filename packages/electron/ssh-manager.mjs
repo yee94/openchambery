@@ -64,7 +64,7 @@ export const buildRemoteSyncPrepareScript = (plan, options = {}) => buildRemoteS
 });
 
 const OPENCHAMBER_NPM_PACKAGE = '@openchambery/web';
-// v2 CLI package installs the `opencode2` binary. Never install 1.x `opencode-ai`.
+// v2 CLI package installs the `opencode` binary. Never install 1.x `opencode-ai`.
 const OPENCODE_NPM_PACKAGE = '@opencode/cli';
 export const REMOTE_NODE_MIN_MAJOR = 22;
 const REMOTE_NODE_CANDIDATE_GLOBS = [
@@ -1736,7 +1736,7 @@ export class ElectronSshManager {
         ) {
           return;
         }
-        lastError = new Error('OpenCode CLI installation completed but the expected opencode2 version is unavailable');
+        lastError = new Error('OpenCode CLI installation completed but the expected opencode v2 version is unavailable');
       } catch (error) {
         lastError = error;
       }
@@ -1760,7 +1760,7 @@ export class ElectronSshManager {
       const output = await this.runManagedRemoteCommand(
         parsed,
         controlPath,
-        'opencode2 --version 2>/dev/null || true',
+        'opencode --version 2>/dev/null || true',
       );
       const version = parseVersionToken(output);
       if (!version || isOpenCode1xVersionToken(version)) return null;

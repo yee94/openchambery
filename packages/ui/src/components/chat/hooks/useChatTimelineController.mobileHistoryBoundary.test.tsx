@@ -454,7 +454,7 @@ describe('history failure feedback with production toast store', () => {
 });
 
 describe('useChatTimelineController mobile history boundary', () => {
-    test('mobile explicit load preserves its anchor through delayed DOM hydration before paint', async () => {
+    test('non-virtual mobile explicit load preserves its anchor through delayed DOM hydration before paint', async () => {
         runtimeSurface.mobileProbe = true;
         let settle!: () => void;
         const handle = await mountController({
@@ -472,11 +472,13 @@ describe('useChatTimelineController mobile history boundary', () => {
         await handle.setState({ messageListApi: {
             captureViewportAnchor: () => ({ messageId: 'msg_1', offsetTop: 20 }),
             restoreViewportAnchor: () => true,
-            isHistoryVirtualized: () => true,
+            isHistoryVirtualized: () => false,
             cancelViewportAnchorHold: () => undefined,
         } as unknown as MessageListHandle });
         let flight!: Promise<void>;
         await act(async () => { flight = handle.api!.loadEarlier({ userInitiated: true }); });
+        // Network latency must not consume the keeper's post-render quiet window.
+        await waitMs(700);
         // A nested markdown commit has no new message array: only the DOM
         // keeper can bridge the interval before the virtualizer measures it.
         contentOffset += 132.5;

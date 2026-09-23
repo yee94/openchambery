@@ -266,8 +266,8 @@ Skill discovery uses the official V2 `skill.list` SDK with the selected director
 
 - `opencode-sidecar.ts`
   - Shared OpenCode 2 sidecar contract used by the extension host (same parse/health rules as web).
-  - Auto-discovery looks for `opencode2` (PATH, `~/.bun/bin/opencode2`, `~/.opencode/bin/opencode2`, Homebrew). PATH 1.x `opencode` is not a hit.
-  - A resolved basename of `opencode` / `opencode.exe` / `opencode.cmd` fails closed with `OPENCODE_BINARY_INVALID` and names `opencode2`.
+  - Auto-discovery looks only for the official `opencode` executable (PATH, `~/.bun/bin/opencode`, `~/.opencode/bin/opencode`, Homebrew, and Windows install locations).
+  - Admission uses `--version`, not basename: 2.x is accepted and an explicitly configured 1.x binary fails with `OPENCODE_BINARY_INVALID`.
   - Listening accepts `server listening on http://…` and the legacy `opencode server listening on …` line.
   - Health probes `GET /api/health` first, then `/global/health`, with Basic auth (username `opencode`). Admission requires `healthy: true` and a non-1.x version string; 1.15.0-style bodies fail closed. The password is never written to logs.
   - V1 migration gate (`GET /api/experimental/migration/v1`): `required` / `running` / `error` block transcript readiness; `completed` or HTTP 404 admit. Managed and external starts both wait on this gate; dispose/stop aborts an in-flight wait.

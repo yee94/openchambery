@@ -78,6 +78,42 @@ describe('VS Code provider catalog projection', () => {
     expect(() => projectProviderCatalog({ providers: {} })).toThrow('Malformed OpenCode provider catalog response');
   });
 
+  test('projects v2 variant arrays and capability lists without leaking request payloads', () => {
+    const result = projectProviderCatalog({
+      providers: [{
+        id: 'provider',
+        name: 'Provider',
+        models: {
+          model: {
+            id: 'model',
+            name: 'Model',
+            capabilities: { tools: true, input: ['text', 'image'], output: ['text'] },
+            cost: [
+              { tier: { type: 'context', size: 200000 }, input: 9, output: 9 },
+              { input: 1, output: 2, cache: { read: 0.1, write: 0.2 }, secret: 'SECRET_SENTINEL' },
+            ],
+            variants: [
+              { id: 'low', settings: { apiKey: 'SECRET_SENTINEL' } },
+              { id: 'high', headers: { Authorization: 'SECRET_SENTINEL' } },
+              { id: 'constructor' },
+            ],
+          },
+        },
+      }],
+      default: {},
+    });
+
+    expect(result.partial).toBe(false);
+    expect(result.providers[0].models.model).toEqual({
+      id: 'model',
+      name: 'Model',
+      capabilities: { toolcall: true, input: { text: true, image: true }, output: { text: true } },
+      cost: { input: 1, output: 2, cache: { read: 0.1, write: 0.2 } },
+      variants: { low: {}, high: {} },
+    });
+    expect(JSON.stringify(result)).not.toContain('SECRET_SENTINEL');
+  });
+
   test('isolates dangerous identifiers, duplicates, invalid defaults, variants, and modalities', () => {
     const models = Object.create(null);
     models.good = { id: 'model', name: 'Model', capabilities: { input: { text: true, binary: true } } };

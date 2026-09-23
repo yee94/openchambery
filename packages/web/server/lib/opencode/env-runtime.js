@@ -355,15 +355,15 @@ export const createOpenCodeEnvRuntime = (deps) => {
     }
 
     // Match master: reuse a globally installed CLI. Official v2 is `opencode`;
-    // `opencode2` remains a compatibility alias. Skip 1.x binaries by version.
-    for (const name of process.platform === 'win32' ? ['opencode', 'opencode2'] : ['opencode', 'opencode2']) {
+    // Skip 1.x binaries by version; auto-discovery uses only the official name.
+    for (const name of ['opencode']) {
       const resolvedFromPath = searchPathFor(name);
       const accepted = acceptOpenCodeV2Candidate(resolvedFromPath, 'path');
       if (accepted) return accepted;
     }
 
     const home = resolveHomeDir();
-    const unixFallbacks = ['opencode', 'opencode2'].flatMap((name) => [
+    const unixFallbacks = ['opencode'].flatMap((name) => [
       path.join(home, '.opencode', 'bin', name),
       path.join(home, '.bun', 'bin', name),
       path.join(home, '.local', 'bin', name),
@@ -381,7 +381,7 @@ export const createOpenCodeEnvRuntime = (deps) => {
       const localAppData = process.env.LOCALAPPDATA || '';
       const programData = process.env.ProgramData || 'C:\\ProgramData';
       const programFiles = process.env.ProgramFiles || 'C:\\Program Files';
-      const names = ['opencode.exe', 'opencode.cmd', 'opencode2.exe', 'opencode2.cmd'];
+      const names = ['opencode.exe', 'opencode.cmd'];
       const dirs = [
         path.join(userProfile, '.opencode', 'bin'),
         path.join(appData, 'npm'),
@@ -400,7 +400,7 @@ export const createOpenCodeEnvRuntime = (deps) => {
     }
 
     if (process.platform === 'win32') {
-      for (const name of ['opencode', 'opencode2']) {
+      for (const name of ['opencode']) {
         try {
           const result = runSpawnSync('where', [name], {
             encoding: 'utf8',
@@ -427,7 +427,7 @@ export const createOpenCodeEnvRuntime = (deps) => {
     }
 
     const shells = [process.env.SHELL, '/bin/zsh', '/bin/bash', '/bin/sh'].filter(Boolean);
-    for (const name of ['opencode', 'opencode2']) {
+    for (const name of ['opencode']) {
       for (const shell of shells) {
         if (!isExecutable(shell)) continue;
         try {
@@ -1106,8 +1106,8 @@ export const createOpenCodeEnvRuntime = (deps) => {
       dirs.push(path.join(process.resourcesPath, 'opencode-cli'));
     }
 
-    // Official v2 name + packaging contract name (see electron opencode2-bundle-contract).
-    const names = ['opencode', 'opencode.exe', 'opencode2', 'opencode2.exe'];
+    // Runtime and packaging use the official v2 executable name.
+    const names = ['opencode', 'opencode.exe'];
     for (const dir of dirs) {
       for (const name of names) {
         const accepted = acceptOpenCodeV2Candidate(path.join(dir, name), 'bundled');

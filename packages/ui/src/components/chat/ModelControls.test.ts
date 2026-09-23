@@ -36,6 +36,7 @@ describe('ModelControls selection adapter variants', () => {
     test('derives variant keys from Record-shaped provider model variants', () => {
         expect(resolveModelVariantKeys({ variants: { low: {}, high: {} } })).toEqual(['low', 'high']);
         expect(resolveModelVariantKeys({ variants: ['low', 'high'] })).toEqual(['low', 'high']);
+        expect(resolveModelVariantKeys({ variants: [{ id: 'low', settings: { reasoningEffort: 'low' } }, { id: 'high' }, { id: 'low' }, { settings: {} }] })).toEqual(['low', 'high']);
         expect(resolveModelVariantKeys({ variants: undefined })).toEqual([]);
     });
 

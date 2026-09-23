@@ -480,6 +480,20 @@ export const getToolPartLineDiffTotals = (part: unknown): LineDiffTotals => {
         }
     }
 
+    let filePatchAdded = 0;
+    let filePatchRemoved = 0;
+    for (const file of files) {
+        if (!isRecord(file)) continue;
+        const filePatch = getPatchText(file.patch) ?? getPatchText(file.diff);
+        if (!filePatch) continue;
+        const counts = countUnifiedDiffLines(filePatch);
+        filePatchAdded += counts.added;
+        filePatchRemoved += counts.removed;
+    }
+    if (filePatchAdded > 0 || filePatchRemoved > 0) {
+        return { added: filePatchAdded, removed: filePatchRemoved };
+    }
+
     const writeLines = countWriteContentLines(input);
     if (writeLines > 0) {
         return { added: writeLines, removed: 0 };

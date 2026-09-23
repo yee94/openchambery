@@ -1,7 +1,6 @@
 import React from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { NumberInput } from '@/components/ui/number-input';
 import { Textarea } from '@/components/ui/textarea';
 import { toast } from '@/components/ui';
 import { useAgentsStore, type AgentConfig, type AgentMutationResult, type AgentScope } from '@/stores/useAgentsStore';
@@ -25,8 +24,8 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Icon } from '@/components/icon/Icon';
-import { SettingsField, SettingsGroup, SettingsRow, SettingsToggleRow } from '@/components/sections/shared/SettingsGroup';
-import { buildAgentSaveConfig, catalogModelSelection, isHexColor, readStoredSystem, splitModelSelection, type AgentEditorSnapshot } from './agentSaveConfig';
+import { SettingsField, SettingsGroup, SettingsRow } from '@/components/sections/shared/SettingsGroup';
+import { buildAgentSaveConfig, catalogModelSelection, formatAgentDisplayName, readStoredSystem, splitModelSelection, type AgentEditorSnapshot } from './agentSaveConfig';
 import { displayPermissionRulesLastMatch, toPermissionRuleset } from '@/sync/permission-rules';
 import { SavedPermissionsSection } from './SavedPermissionsSection';
 
@@ -225,10 +224,6 @@ export const AgentsPage: React.FC = () => {
   const [mode, setMode] = React.useState<'primary' | 'subagent' | 'all'>('subagent');
   const [model, setModel] = React.useState('');
   const [systemPrompt, setSystemPrompt] = React.useState('');
-  const [steps, setSteps] = React.useState<number | undefined>(undefined);
-  const [hidden, setHidden] = React.useState(false);
-  const [disabledAgent, setDisabledAgent] = React.useState(false);
-  const [color, setColor] = React.useState('');
   const [confirmDrop, setConfirmDrop] = React.useState(false);
   const [globalPermission, setGlobalPermission] = React.useState<PermissionAction>('allow');
   const [permissionBaseline, setPermissionBaseline] = React.useState<PermissionRule[]>([]);
@@ -244,10 +239,6 @@ export const AgentsPage: React.FC = () => {
     mode: 'primary' | 'subagent' | 'all';
     model: string;
     system: string;
-    steps: number | undefined;
-    hidden: boolean;
-    disabled: boolean;
-    color: string;
     globalPermission: PermissionAction;
     permissionRules: PermissionRule[];
   } | null>(null);
@@ -473,10 +464,6 @@ export const AgentsPage: React.FC = () => {
       const modeValue = agentDraft.mode || 'subagent';
       const modelValue = agentDraft.model || '';
       const systemValue = agentDraft.system || '';
-      const stepsValue = typeof agentDraft.steps === 'number' ? agentDraft.steps : undefined;
-      const hiddenValue = agentDraft.hidden === true;
-      const disabledValue = agentDraft.disabled === true;
-      const colorValue = agentDraft.color && isHexColor(agentDraft.color) ? agentDraft.color : '';
 
       setDraftName(draftNameValue);
       setDraftScope(draftScopeValue);
@@ -484,10 +471,6 @@ export const AgentsPage: React.FC = () => {
       setMode(modeValue);
       setModel(modelValue);
       setSystemPrompt(systemValue);
-      setSteps(stepsValue);
-      setHidden(hiddenValue);
-      setDisabledAgent(disabledValue);
-      setColor(colorValue);
       setConfirmDrop(false);
 
       const parsedRules = permissionConfigToRuleset(agentDraft.permissions);
@@ -500,10 +483,6 @@ export const AgentsPage: React.FC = () => {
         mode: modeValue,
         model: modelValue,
         system: systemValue,
-        steps: stepsValue,
-        hidden: hiddenValue,
-        disabled: disabledValue,
-        color: colorValue,
         globalPermission: permissionState.global,
         permissionRules: permissionState.rules,
       };
@@ -511,32 +490,17 @@ export const AgentsPage: React.FC = () => {
     }
 
     if (selectedAgent && selectedAgentName === selectedAgent.name) {
-      const extended = selectedAgent as typeof selectedAgent & {
-        steps?: number;
-        color?: string;
-        permissions?: unknown;
-        document?: { dropped?: Array<{ key: string }> };
-        disabledOverride?: boolean;
-      };
+      const extended = selectedAgent as AgentWithExtras & { permissions?: unknown };
       const descriptionValue = selectedAgent.description || '';
       const modeValue = selectedAgent.mode || 'subagent';
       const modelValue = catalogModelSelection(selectedAgent);
-      const stepsValue = typeof extended.steps === 'number' ? extended.steps : undefined;
-      const hiddenValue = selectedAgent.hidden === true;
-      const disabledValue = extended.disabledOverride === true;
-      const colorDropped = extended.document?.dropped?.some((item) => item.key === 'color') === true;
-      const colorValue = !colorDropped && typeof extended.color === 'string' && isHexColor(extended.color)
-        ? extended.color
-        : '';
+      const scopeValue: AgentScope = extended.scope === 'project' ? 'project' : 'user';
 
+      setDraftScope(scopeValue);
       setDescription(descriptionValue);
       setMode(modeValue);
       setModel(modelValue);
       setSystemPrompt('');
-      setSteps(stepsValue);
-      setHidden(hiddenValue);
-      setDisabledAgent(disabledValue);
-      setColor(colorValue);
       setConfirmDrop(false);
 
       const permissionState = applyPermissionState(
@@ -545,15 +509,11 @@ export const AgentsPage: React.FC = () => {
 
       initialStateRef.current = {
         draftName: '',
-        draftScope: 'user',
+        draftScope: scopeValue,
         description: descriptionValue,
         mode: modeValue,
         model: modelValue,
         system: '',
-        steps: stepsValue,
-        hidden: hiddenValue,
-        disabled: disabledValue,
-        color: colorValue,
         globalPermission: permissionState.global,
         permissionRules: permissionState.rules,
       };
@@ -584,31 +544,24 @@ export const AgentsPage: React.FC = () => {
       return false;
     }
 
-    if (isNewAgent) {
-      if (draftName !== initial.draftName) return true;
-      if (draftScope !== initial.draftScope) return true;
-    }
+    if (isNewAgent && draftName !== initial.draftName) return true;
+    if (draftScope !== initial.draftScope) return true;
 
     if (description !== initial.description) return true;
     if (mode !== initial.mode) return true;
     if (model !== initial.model) return true;
     if (systemPrompt !== initial.system) return true;
-    if (steps !== initial.steps) return true;
-    if (hidden !== initial.hidden) return true;
-    if (disabledAgent !== initial.disabled) return true;
-    if (color !== initial.color) return true;
     if (globalPermission !== initial.globalPermission) return true;
     if (!areRulesEqual(permissionRules, initial.permissionRules)) return true;
 
     return false;
-  }, [color, description, disabledAgent, draftName, draftScope, globalPermission, hidden, isNewAgent, mode, model, permissionRules, steps, systemPrompt]);
+  }, [description, draftName, draftScope, globalPermission, isNewAgent, mode, model, permissionRules, systemPrompt]);
 
   const sourceDocument = !isNewAgent && selectedAgent
     ? (selectedAgent as AgentWithExtras).document
     : undefined;
   const droppedKeys = sourceDocument?.dropped?.map((item) => item.key) ?? [];
-  const legacyFile = sourceDocument?.legacy === true;
-  const canSave = !isSaving && (isDirty || legacyFile) && (droppedKeys.length === 0 || confirmDrop);
+  const canSave = !isSaving && isDirty;
 
   const handleSave = async () => {
     const agentName = isNewAgent ? draftName.trim().replace(/\s+/g, '-') : selectedAgentName?.trim();
@@ -624,11 +577,6 @@ export const AgentsPage: React.FC = () => {
       return;
     }
 
-    if (color.trim() && !isHexColor(color)) {
-      toast.error(t('settings.agents.page.field.colorInvalid'));
-      return;
-    }
-
     setIsSaving(true);
 
     try {
@@ -637,10 +585,6 @@ export const AgentsPage: React.FC = () => {
         mode,
         model,
         system: systemPrompt,
-        steps,
-        hidden,
-        disabled: disabledAgent,
-        color,
         globalPermission,
         permissionRules,
       };
@@ -651,10 +595,6 @@ export const AgentsPage: React.FC = () => {
           mode: initial.mode,
           model: initial.model,
           system: initial.system,
-          steps: initial.steps,
-          hidden: initial.hidden,
-          disabled: initial.disabled,
-          color: initial.color,
           globalPermission: initial.globalPermission,
           permissionRules: initial.permissionRules,
         }
@@ -663,7 +603,8 @@ export const AgentsPage: React.FC = () => {
       const config = buildAgentSaveConfig({
         isNewAgent,
         agentName,
-        draftScope: isNewAgent ? draftScope : undefined,
+        draftScope,
+        initialScope: initial?.draftScope,
         draftHasExplicitPermission: isNewAgent && agentDraft?.permissions !== undefined,
         current: currentSnapshot,
         initial: initialSnapshot,
@@ -725,22 +666,17 @@ export const AgentsPage: React.FC = () => {
         <div className="mb-4 flex items-center justify-between gap-4">
           <div className="min-w-0">
             <h2 className="typography-ui-header font-semibold text-foreground truncate">
-              {isNewAgent ? t('settings.agents.page.title.new') : selectedAgentName}
+              {isNewAgent ? t('settings.agents.page.title.new') : formatAgentDisplayName(selectedAgentName ?? '')}
             </h2>
             <p className="typography-meta text-muted-foreground truncate">
               {isNewAgent ? t('settings.agents.page.subtitle.new') : t('settings.agents.page.subtitle.edit')}
             </p>
           </div>
+          <Button type="button" onClick={handleSave} disabled={!canSave}>
+            {isSaving ? t('settings.common.actions.saving') : t('settings.common.actions.saveChanges')}
+          </Button>
         </div>
 
-        <p className="typography-meta text-muted-foreground">
-          {t('settings.agents.page.apply.hint')}
-        </p>
-        {legacyFile ? (
-          <p className="typography-meta text-muted-foreground mt-2">
-            {t('settings.agents.page.legacy.convertible')}
-          </p>
-        ) : null}
         {droppedKeys.length > 0 ? (
           <div className="mt-3 flex flex-col gap-2">
             <p className="typography-meta text-muted-foreground">
@@ -760,6 +696,39 @@ export const AgentsPage: React.FC = () => {
         {/* Identity & Role */}
         <SettingsGroup label={t('settings.agents.page.section.identityRole')}>
 
+            <SettingsRow itemId="agents.scope" label={t('settings.agents.page.field.scope')}>
+              <Select value={draftScope} onValueChange={(v) => setDraftScope(v as AgentScope)}>
+                <SelectTrigger className="w-fit min-w-[100px]">
+                  <SelectValue placeholder={t('settings.agents.page.field.scopePlaceholder')}>
+                    {(value) => (
+                      <div className="flex items-center gap-2">
+                        <Icon name={value === 'project' ? 'folder' : 'user-3'} className="h-3.5 w-3.5" />
+                        <span>
+                          {value === 'project'
+                            ? t('settings.common.scope.project')
+                            : t('settings.common.scope.global')}
+                        </span>
+                      </div>
+                    )}
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectContent align="end">
+                  <SelectItem value="user">
+                    <div className="flex items-center gap-2">
+                      <Icon name="user-3" className="h-3.5 w-3.5" />
+                      <span>{t('settings.common.scope.global')}</span>
+                    </div>
+                  </SelectItem>
+                  <SelectItem value="project">
+                    <div className="flex items-center gap-2">
+                      <Icon name="folder" className="h-3.5 w-3.5" />
+                      <span>{t('settings.common.scope.project')}</span>
+                    </div>
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+            </SettingsRow>
+
             {isNewAgent && (
               <SettingsRow itemId="agents.name" label={t('settings.agents.page.field.agentName')}>
                   <div className="flex items-center">
@@ -771,25 +740,6 @@ export const AgentsPage: React.FC = () => {
                       className="h-7 w-40 px-2"
                     />
                   </div>
-                  <Select value={draftScope} onValueChange={(v) => setDraftScope(v as AgentScope)}>
-                    <SelectTrigger className="w-fit min-w-[100px]">
-                      <SelectValue placeholder={t('settings.agents.page.field.scopePlaceholder')} />
-                    </SelectTrigger>
-                    <SelectContent align="end">
-                      <SelectItem value="user">
-                        <div className="flex items-center gap-2">
-                          <Icon name="user-3" className="h-3.5 w-3.5" />
-                          <span>{t('settings.common.scope.global')}</span>
-                        </div>
-                      </SelectItem>
-                      <SelectItem value="project">
-                        <div className="flex items-center gap-2">
-                          <Icon name="folder" className="h-3.5 w-3.5" />
-                          <span>{t('settings.common.scope.project')}</span>
-                        </div>
-                      </SelectItem>
-                    </SelectContent>
-                  </Select>
               </SettingsRow>
             )}
 
@@ -859,7 +809,6 @@ export const AgentsPage: React.FC = () => {
             <SettingsRow
               itemId="agents.model"
               label={t('settings.agents.page.field.overrideModel')}
-              description={t('settings.agents.page.field.modelHint')}
             >
                 <ModelSelector
                   providerId={splitModelSelection(model)?.providerId ?? ''}
@@ -880,7 +829,6 @@ export const AgentsPage: React.FC = () => {
         <SettingsField
           itemId="agents.system-prompt"
           label={t('settings.agents.page.section.systemPrompt')}
-          description={t('settings.agents.page.system.inheritHint')}
           className="oc-settings-split-row-stacked"
         >
             <Textarea
@@ -892,68 +840,6 @@ export const AgentsPage: React.FC = () => {
               className="w-full font-mono typography-meta min-h-[120px] max-h-[60vh] bg-transparent resize-y"
             />
         </SettingsField>
-
-        <SettingsGroup label={t('settings.agents.page.section.runtime')}>
-          <SettingsRow
-            itemId="agents.steps"
-            label={t('settings.agents.page.field.steps')}
-            description={t('settings.agents.page.field.stepsHint')}
-          >
-            <NumberInput
-              value={steps}
-              fallbackValue={1}
-              onValueChange={setSteps}
-              onClear={() => setSteps(undefined)}
-              min={1}
-              step={1}
-              inputMode="numeric"
-              placeholder="—"
-              emptyLabel="—"
-              className="w-16"
-            />
-          </SettingsRow>
-          <SettingsRow
-            itemId="agents.color"
-            label={t('settings.agents.page.field.color')}
-            description={t('settings.agents.page.field.colorHint')}
-          >
-            <Input
-              value={color}
-              onChange={(event) => setColor(event.target.value)}
-              placeholder=""
-              className="h-7 w-28 font-mono"
-            />
-            {color ? (
-              <Button
-                size="sm"
-                type="button"
-                variant="ghost"
-                onClick={() => setColor('')}
-                className="h-7 w-7 px-0 text-muted-foreground hover:text-foreground"
-                aria-label={t('settings.agents.page.field.clearColorAria')}
-                title={t('settings.common.actions.clear')}
-              >
-                <Icon name="close" className="h-3.5 w-3.5" />
-              </Button>
-            ) : null}
-          </SettingsRow>
-          <SettingsToggleRow
-            itemId="agents.hidden"
-            checked={hidden}
-            onChange={setHidden}
-            label={t('settings.agents.page.field.hidden')}
-            description={t('settings.agents.page.field.hiddenHint')}
-            ariaLabel={t('settings.agents.page.field.hidden')}
-          />
-          <SettingsToggleRow
-            itemId="agents.disabled"
-            checked={disabledAgent}
-            onChange={setDisabledAgent}
-            label={t('settings.agents.page.field.disabled')}
-            description={t('settings.agents.page.field.disabledHint')}
-            ariaLabel={t('settings.agents.page.field.disabled')}
-          />
-        </SettingsGroup>
 
         {/* Tool Permissions */}
         <div data-settings-item="agents.permissions">
@@ -1163,18 +1049,6 @@ export const AgentsPage: React.FC = () => {
             </div>
           )}
           </SettingsGroup>
-        </div>
-
-        {/* Save action */}
-        <div className="px-2 py-1">
-          <Button
-            onClick={handleSave}
-            disabled={!canSave}
-            size="xs"
-            className="!font-normal"
-          >
-            {isSaving ? t('settings.common.actions.saving') : t('settings.common.actions.saveChanges')}
-          </Button>
         </div>
 
       </div>

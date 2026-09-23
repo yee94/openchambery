@@ -14,6 +14,8 @@ const MAX_MESSAGE_LENGTH = 400;
 export type OpenCodeErrorSummary = {
   name: string | null;
   message: string | null;
+  type?: string;
+  status?: number;
 };
 
 export type SessionErrorRecord = OpenCodeErrorSummary & {
@@ -23,14 +25,14 @@ export type SessionErrorRecord = OpenCodeErrorSummary & {
 };
 
 /**
- * v2 failed turns carry `{ type, message }`. Keep both: `type` names the
+ * v2 failed turns carry `{ type, message, status? }`. Keep both: `type` names the
  * failure class, `message` is the text worth showing. Nulls mean "no details".
  */
 export function summarizeOpenCodeError(error: unknown): OpenCodeErrorSummary {
   if (!error || typeof error !== "object" || Array.isArray(error)) {
     return { name: null, message: null };
   }
-  const record = error as { type?: unknown; name?: unknown; message?: unknown };
+  const record = error as { type?: unknown; name?: unknown; message?: unknown; status?: unknown };
   const type = typeof record.type === "string" ? record.type.trim() : "";
   const nameField = typeof record.name === "string" ? record.name.trim() : "";
   const name = type || nameField || null;
@@ -38,6 +40,9 @@ export function summarizeOpenCodeError(error: unknown): OpenCodeErrorSummary {
   return {
     name,
     message: rawMessage ? rawMessage.slice(0, MAX_MESSAGE_LENGTH) : null,
+    ...(type ? { type } : {}),
+    ...(typeof record.status === "number" && Number.isInteger(record.status) && record.status >= 100 && record.status <= 599
+      ? { status: record.status } : {}),
   };
 }
 

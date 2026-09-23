@@ -207,14 +207,23 @@ export const fetchProviderCatalogFromApi = async (
     throw new Error('OpenCode provider catalog request failed');
   }
 
-  const modelsByProvider = new Map<string, Record<string, { id: string; name: string }>>();
+  const modelsByProvider = new Map<string, Record<string, Record<string, unknown>>>();
   for (const model of models.data) {
     const providerID = typeof model?.providerID === 'string' ? model.providerID : '';
     const modelID = typeof model?.id === 'string' ? model.id : typeof model?.modelID === 'string' ? model.modelID : '';
     const name = typeof model?.name === 'string' ? model.name : modelID;
     if (!providerID || !modelID) continue;
-    const bucket = modelsByProvider.get(providerID) ?? Object.create(null) as Record<string, { id: string; name: string }>;
-    bucket[modelID] = { id: modelID, name };
+    const bucket = modelsByProvider.get(providerID) ?? Object.create(null) as Record<string, Record<string, unknown>>;
+    const entry: Record<string, unknown> = { id: modelID, name };
+    if (model.capabilities) entry.capabilities = model.capabilities;
+    if (model.cost && typeof model.cost === 'object') entry.cost = model.cost;
+    if (model.limit && typeof model.limit === 'object') entry.limit = model.limit;
+    if (model.variants && typeof model.variants === 'object') entry.variants = model.variants;
+    const released = model.time && typeof model.time === 'object' ? model.time.released : undefined;
+    if (typeof released === 'number' && Number.isFinite(released)) {
+      entry.release_date = new Date(released).toISOString().slice(0, 10);
+    }
+    bucket[modelID] = entry;
     modelsByProvider.set(providerID, bucket);
   }
 

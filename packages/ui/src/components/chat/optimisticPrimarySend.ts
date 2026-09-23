@@ -8,6 +8,7 @@ export const shouldOptimisticPrimarySend = (input: {
     surfaceKind: 'primary' | 'secondary';
     currentSessionId: string | null | undefined;
     queuedOnly: boolean;
+    delivery?: 'steer' | 'queue';
     resourcePolicy: boolean;
     inputMode: 'normal' | 'shell';
     localCommand: string | null;
@@ -15,6 +16,7 @@ export const shouldOptimisticPrimarySend = (input: {
     input.surfaceKind === 'primary'
     && !!input.currentSessionId
     && !input.queuedOnly
+    && input.delivery !== 'queue'
     && !input.resourcePolicy
     && input.inputMode !== 'shell'
     && !input.localCommand

@@ -20,3 +20,9 @@ export function applyNativePatch(
   current: { frontmatter: Record<string, unknown>; body: string },
   patch: Record<string, unknown>,
 ): { frontmatter: Record<string, unknown>; body: string };
+
+export function writeAgentDocument(
+  existing: { frontmatter?: Record<string, unknown>; body?: string },
+  patch: Record<string, unknown>,
+  confirmDrop: boolean,
+): { frontmatter: Record<string, unknown>; body: string };

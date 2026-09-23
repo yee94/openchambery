@@ -4,10 +4,8 @@ import os from 'node:os';
 import yaml from 'yaml';
 import { parse as parseJsonc } from 'jsonc-parser';
 import {
-  DropConfirmationRequired,
-  applyNativePatch,
-  convertAgentConfig,
   inspectAgentConfig,
+  writeAgentDocument,
 } from '../../web/server/lib/opencode/agent-document.js';
 
 const OPENCODE_CONFIG_DIR = path.join(os.homedir(), '.config', 'opencode');
@@ -1703,8 +1701,11 @@ export const createAgent = (agentName: string, config: Record<string, unknown>, 
 
   if (Object.prototype.hasOwnProperty.call(config, 'native')) {
     const native = config.native;
-    const converted = convertAgentConfig({});
-    const next = applyNativePatch(converted, native && typeof native === 'object' ? native as Record<string, unknown> : {});
+    const next = writeAgentDocument(
+      { frontmatter: {}, body: '' },
+      native && typeof native === 'object' ? native as Record<string, unknown> : {},
+      false,
+    );
     writeMdFile(targetPath, next.frontmatter, next.body);
     resetAgentLookupCache(globalAgentLookupCache);
     return;
@@ -1739,35 +1740,26 @@ export const updateAgent = (agentName: string, updates: Record<string, unknown>,
   if (Object.prototype.hasOwnProperty.call(updates, 'native')) {
     ensureDirs();
     const native = updates.native;
-    const layers = readConfigLayers(workingDirectory);
-    const jsonSource = getJsonEntrySource(layers, 'agent', agentName);
-    const stored: Record<string, unknown> = {};
-    if (jsonSource.section && typeof jsonSource.section === 'object') {
-      Object.assign(stored, jsonSource.section as Record<string, unknown>);
-    }
-    const existing = getAgentWritePath(agentName, workingDirectory);
-    if (existing.path && fs.existsSync(existing.path)) {
-      const parsed = parseMdFile(existing.path);
-      Object.assign(stored, parsed.frontmatter);
-      if (parsed.body.trim()) stored.prompt = parsed.body.trim();
-    }
-    const converted = convertAgentConfig(stored);
-    if (converted.dropped.length > 0 && updates.confirmDrop !== true) {
-      throw new DropConfirmationRequired(converted.dropped);
-    }
-    const next = applyNativePatch(converted, native && typeof native === 'object' ? native as Record<string, unknown> : {});
-    let targetPath = existing.path;
-    if (!targetPath || !fs.existsSync(targetPath)) {
+    const requestedScope = updates.scope === AGENT_SCOPE.PROJECT || updates.scope === AGENT_SCOPE.USER
+      ? updates.scope
+      : undefined;
+    let targetPath: string;
+    if (requestedScope === AGENT_SCOPE.PROJECT && workingDirectory) {
+      ensureProjectAgentDir(workingDirectory);
+      targetPath = getProjectAgentPath(workingDirectory, agentName);
+    } else if (requestedScope === AGENT_SCOPE.USER) {
       targetPath = getUserAgentPath(agentName);
+    } else {
+      const existing = getAgentWritePath(agentName, workingDirectory);
+      targetPath = existing.path && fs.existsSync(existing.path) ? existing.path : getUserAgentPath(agentName);
     }
+    const existingDocument = fs.existsSync(targetPath) ? parseMdFile(targetPath) : { frontmatter: {}, body: '' };
+    const next = writeAgentDocument(
+      existingDocument,
+      native && typeof native === 'object' ? native as Record<string, unknown> : {},
+      updates.confirmDrop === true,
+    );
     writeMdFile(targetPath, next.frontmatter, next.body);
-    const config = jsonSource.config as Record<string, unknown> | undefined;
-    const agentMap = config?.agent as Record<string, unknown> | undefined;
-    if (jsonSource.exists && config && jsonSource.path && agentMap?.[agentName]) {
-      delete agentMap[agentName];
-      if (Object.keys(agentMap).length === 0) delete config.agent;
-      writeConfig(config, jsonSource.path);
-    }
     resetAgentLookupCache(globalAgentLookupCache);
     return;
   }

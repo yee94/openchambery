@@ -94,7 +94,7 @@ describe('MessageList render props', () => {
         // If this ever moves into an effect or a memo the hook choice above
         // stops mattering, and the reasoning recorded here goes stale.
         expect(turnAssistantBlockSource).toContain(
-            'assistantMessages.map((message) => renderMessage(message, activityExpanded))',
+            'rows.map((message) => renderMessage(message, activityExpanded))',
         );
     });
 
@@ -128,7 +128,7 @@ describe('MessageList render props', () => {
         );
         expect(turnItemSource).toContain('renderMessage(turn.userMessage, activityExpanded)');
         expect(turnAssistantBlockSource).toContain(
-            'assistantMessages.map((message) => renderMessage(message, activityExpanded))',
+            'rows.map((message) => renderMessage(message, activityExpanded))',
         );
         expect(messageListSource).toContain(
             'const renderMessage = useRenderPhaseCallback((message: ChatMessageEntry, activityExpanded: boolean) => {',

@@ -435,6 +435,7 @@
   'settings.agents.page.section.toolPermissions': '工具權限',
   'settings.agents.page.field.agentName': 'Agent 名稱',
   'settings.agents.page.field.agentNamePlaceholder': 'agent-name',
+  'settings.agents.page.field.scope': '範圍',
   'settings.agents.page.field.scopePlaceholder': '作用域',
   'settings.agents.page.field.descriptionPlaceholder': '這個 agent 的作用是什麼？',
   'settings.agents.page.field.mode': '模式',

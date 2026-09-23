@@ -46,7 +46,15 @@ const loadProviderCatalogFromV2 = async (directory: string | null, signal: Abort
     throw new Error('v2 provider catalog request failed');
   }
 
-  const modelsByProvider = new Map<string, Record<string, { id: string; name: string }>>();
+  const modelsByProvider = new Map<string, Record<string, {
+    id: string;
+    name: string;
+    capabilities?: unknown;
+    cost?: unknown;
+    limit?: unknown;
+    release_date?: string;
+    variants?: unknown;
+  }>>();
   for (const model of modelsResult.data) {
     const providerID = typeof model?.providerID === 'string' ? model.providerID : '';
     // ModelInfo.id is the external model id used in generate/session refs.
@@ -57,7 +65,25 @@ const loadProviderCatalogFromV2 = async (directory: string | null, signal: Abort
     const name = typeof model?.name === 'string' ? model.name : modelID;
     if (!providerID || !modelID || !name) continue;
     const bucket = modelsByProvider.get(providerID) ?? {};
-    bucket[modelID] = { id: modelID, name };
+    const entry: {
+      id: string;
+      name: string;
+      capabilities?: unknown;
+      cost?: unknown;
+      limit?: unknown;
+      release_date?: string;
+      variants?: unknown;
+    } = { id: modelID, name };
+    if (model.capabilities) entry.capabilities = model.capabilities;
+    if (model.cost && typeof model.cost === 'object') entry.cost = model.cost;
+    if (model.limit && typeof model.limit === 'object') entry.limit = model.limit;
+    // v2 variants are `{ id }[]`. The parser projects ids and drops request payloads.
+    if (model.variants && typeof model.variants === 'object') entry.variants = model.variants;
+    const released = model.time && typeof model.time === 'object' ? model.time.released : undefined;
+    if (typeof released === 'number' && Number.isFinite(released)) {
+      entry.release_date = new Date(released).toISOString().slice(0, 10);
+    }
+    bucket[modelID] = entry;
     modelsByProvider.set(providerID, bucket);
   }
 

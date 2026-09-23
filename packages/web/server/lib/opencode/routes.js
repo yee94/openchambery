@@ -42,6 +42,7 @@ export const registerOpenCodeRoutes = (app, dependencies) => {
     getOpenCodeAuthHeaders,
     onSettingsPersisted,
     getIsExternalOpenCode = () => false,
+    getIsSharedOpenCodeService = () => false,
     forceResolvedOpenCodeBinary = null,
     restartOpenCode = null,
     waitForOpenCodeReady = null,
@@ -123,17 +124,18 @@ export const registerOpenCodeRoutes = (app, dependencies) => {
     }
     return classifyRuntimeOwnership({
       isExternal,
+      isSharedService: getIsSharedOpenCodeService() === true,
       binarySource,
       binaryPath,
       dataDir: resolveDataDir(),
     });
   };
 
-  const buildLiveContract = async () => {
+  const buildLiveContract = async ({ fresh = false } = {}) => {
     const cached = typeof getRuntimeContract === 'function' ? getRuntimeContract() : null;
     const serveProbe = await readOpenCodeCurrentVersion().catch(() => ({ ok: false, currentVersion: null }));
     const serveVersion = serveProbe.currentVersion
-      || (typeof getOpenCodeServeVersion === 'function' ? getOpenCodeServeVersion() : null);
+      || (!fresh && typeof getOpenCodeServeVersion === 'function' ? getOpenCodeServeVersion() : null);
     const binaryPath = typeof getResolvedOpenCodeBinary === 'function' ? getResolvedOpenCodeBinary() : null;
     const cliVersion = (typeof getOpenCodeCliVersion === 'function' ? getOpenCodeCliVersion() : null)
       || (binaryPath ? readOpenCode2BinaryVersion(binaryPath) : null)
@@ -141,9 +143,9 @@ export const registerOpenCodeRoutes = (app, dependencies) => {
     return evaluateRuntimeContract({
       serveVersion,
       cliVersion,
-      reachable: serveProbe.ok === true || Boolean(serveVersion) || Boolean(cached?.reachable),
-      authenticated: serveProbe.authenticated ?? cached?.authenticated ?? null,
-      healthOk: serveProbe.healthOk ?? serveProbe.ok ?? cached?.healthOk ?? null,
+      reachable: fresh ? serveProbe.ok === true : serveProbe.ok === true || Boolean(serveVersion) || Boolean(cached?.reachable),
+      authenticated: serveProbe.authenticated ?? (fresh ? null : cached?.authenticated) ?? null,
+      healthOk: serveProbe.healthOk ?? serveProbe.ok ?? (fresh ? false : cached?.healthOk) ?? null,
       migrationAdmitTranscript: cached?.migrationExecutable ?? null,
       migrationPhase: cached?.migrationPhase ?? null,
       migrationError: cached?.migrationError ?? null,
@@ -330,6 +332,8 @@ export const registerOpenCodeRoutes = (app, dependencies) => {
 
       const expectedBinaryPath = resolveOwnedCacheBinaryPath(target, { dataDir: resolveDataDir() });
       let installedPath = expectedBinaryPath;
+      const previousBinary = getResolvedOpenCodeBinary();
+      const previousSource = getResolvedOpenCodeBinarySource();
 
       try {
         upgradeOperation.setPhase('download');
@@ -357,7 +361,7 @@ export const registerOpenCodeRoutes = (app, dependencies) => {
 
         upgradeOperation.setPhase('restart');
         if (typeof restartOpenCode === 'function') {
-          await restartOpenCode();
+          await restartOpenCode(ownership.ownership === 'shared-service' ? { binaryPath: installedPath } : undefined);
         } else if (typeof refreshOpenCodeAfterConfigChange === 'function') {
           // Fallback: still pin binary first so restart prefers owned cache.
           await refreshOpenCodeAfterConfigChange('OpenCode owned-cache upgrade');
@@ -375,7 +379,7 @@ export const registerOpenCodeRoutes = (app, dependencies) => {
         upgradeOperation.setPhase('verify');
         // Re-pin after restart helpers that may clear resolution.
         forceResolvedOpenCodeBinary(installedPath, 'installed');
-        const contract = await buildLiveContract();
+        const contract = await buildLiveContract({ fresh: true });
         const verification = evaluateOwnedUpgradeResult({
           targetVersion: target,
           serveVersion: contract.serveVersion,
@@ -406,12 +410,15 @@ export const registerOpenCodeRoutes = (app, dependencies) => {
           targetVersion: target,
           pinned: true,
           supplySource: 'owned-cache',
-          ownership: 'owned-cache',
+          ownership: ownership.ownership === 'shared-service' ? 'shared-service' : 'owned-cache',
           binaryPath: installedPath,
           contract: verification.contract,
           operation: upgradeOperation.getState(),
         });
       } catch (upgradeError) {
+        if (previousBinary && typeof forceResolvedOpenCodeBinary === 'function') {
+          forceResolvedOpenCodeBinary(previousBinary, previousSource);
+        }
         const message = upgradeError instanceof Error ? upgradeError.message : 'Failed to upgrade OpenCode';
         const errorCode = upgradeError?.code || 'UPGRADE_FAILED';
         upgradeOperation.fail({

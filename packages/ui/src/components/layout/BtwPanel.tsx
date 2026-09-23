@@ -24,7 +24,9 @@ import {
   type SessionBtwTurn,
 } from '@/stores/useSessionBtwStore';
 
+/** Same surface radius ChatInput applies to the primary composer pill. */
 const BTW_COMPOSER_RADIUS = '1.5rem';
+const BTW_COMPOSER_TEXT_CLASS = 'box-border w-full whitespace-pre-wrap break-words px-3 typography-markdown [font-family:inherit] [font-style:inherit] [font-weight:inherit] leading-[inherit] tracking-[inherit] md:typography-ui-label pt-4 pb-2';
 
 function BtwTurnView({ turn, isLast, scope }: { turn: SessionBtwTurn; isLast: boolean; scope: SessionBtwScope }) {
   const { t } = useI18n();
@@ -87,8 +89,8 @@ function BtwComposer({ scope, pending, quotes }: { scope: SessionBtwScope; pendi
   });
   const modelControl = selection && modelLabel ? (
     <span className="inline-flex min-w-0 items-center gap-1.5 rounded-lg px-2.5 py-1" aria-label={modelLabel}>
-      <ModelLogo modelId={selection.modelID} providerId={selection.providerID} className="size-3.5 shrink-0" />
-      <span className="min-w-0 truncate typography-micro font-medium text-foreground">{modelLabel}</span>
+      <ModelLogo modelId={selection.modelID} providerId={selection.providerID} className="size-4 shrink-0" />
+      <span className="min-w-0 truncate typography-meta font-medium text-foreground">{modelLabel}</span>
     </span>
   ) : null;
   return <form data-btw-composer className="shrink-0 px-3 pb-3 pt-1" onSubmit={(event) => { event.preventDefault(); send(); }}>
@@ -105,7 +107,12 @@ function BtwComposer({ scope, pending, quotes }: { scope: SessionBtwScope; pendi
       inputRef={textareaRef}
       textareaProps={{ autoFocus: true }}
       leftControls={modelControl}
+      className="relative z-10"
       style={{ borderRadius: BTW_COMPOSER_RADIUS }}
+      textLayoutClassName={BTW_COMPOSER_TEXT_CLASS}
+      inputStyle={{ borderTopLeftRadius: BTW_COMPOSER_RADIUS, borderTopRightRadius: BTW_COMPOSER_RADIUS }}
+      footerClassName="z-30 bg-transparent flex-shrink-0 px-2.5 py-1.5"
+      footerStyle={{ borderBottomLeftRadius: BTW_COMPOSER_RADIUS, borderBottomRightRadius: BTW_COMPOSER_RADIUS }}
       inputHeader={<ComposerQuoteChips quotes={quotes} removeLabel={t('chat.btw.removeQuoteAria')} onRemove={(index) => useSessionBtwStore.getState().removeQuote(scope, index)} />}
     />
   </form>;

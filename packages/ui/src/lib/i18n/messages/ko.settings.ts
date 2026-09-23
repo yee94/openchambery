@@ -437,6 +437,7 @@ export const settingsDict = {
   'settings.agents.page.section.toolPermissions': '도구 권한',
   'settings.agents.page.field.agentName': '에이전트 이름',
   'settings.agents.page.field.agentNamePlaceholder': 'agent-name (예: code-reviewer)',
+  'settings.agents.page.field.scope': '범위',
   'settings.agents.page.field.scopePlaceholder': '범위',
   'settings.agents.page.field.descriptionPlaceholder': '이 에이전트는 어떤 작업을 하나요?',
   'settings.agents.page.field.mode': '모드',

@@ -304,6 +304,8 @@ export type TranscriptTransportPage = {
   }[]
   readonly cursor?: string
   readonly complete: boolean
+  /** Projection coverage before context/parent enrichment; [] means no chat rows were covered. */
+  readonly coverageMessageIDs?: readonly string[]
   /** Authored-user turns in this page (Host turnCount). */
   readonly turnCount?: number
   /** Requested product turn limit for this page. */

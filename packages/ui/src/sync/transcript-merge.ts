@@ -604,6 +604,10 @@ function partPayloadEqual(left: Part, right: Part): boolean {
   if (left === right) return true
   if (!left || !right) return false
   if (left.id !== right.id || left.type !== right.type) return false
+  if (left.type === "compaction" && right.type === "compaction") {
+    return left.status === right.status && left.reason === right.reason
+      && left.summary === right.summary && left.recent === right.recent && left.error === right.error
+  }
   if ((left as { text?: string }).text !== (right as { text?: string }).text) return false
   if ((left as { state?: unknown }).state !== (right as { state?: unknown }).state) return false
   if ((left as { shellAction?: unknown }).shellAction !== (right as { shellAction?: unknown }).shellAction) return false
@@ -647,6 +651,7 @@ function extractEventMessageID(
     info?: { id?: string }
     part?: { messageID?: string }
     shell?: { id?: string }
+    inputID?: string
   } | undefined
   if (!props) return undefined
   if (typeof props.messageID === "string") return props.messageID
@@ -654,6 +659,14 @@ function extractEventMessageID(
   if (typeof props.info?.id === "string") return props.info.id
   if (typeof props.part?.messageID === "string") return props.part.messageID
   if (typeof props.shell?.id === "string") return findShellMessageID(draft, sessionID, props.shell.id)
+  if (event.type.startsWith("session.compaction.")) {
+    if (props.inputID) return props.inputID
+    const messages = draft.message[sessionID] ?? []
+    for (let index = messages.length - 1; index >= 0; index -= 1) {
+      const message = messages[index]!
+      if (draft.part[message.id]?.some((part) => part.type === "compaction")) return message.id
+    }
+  }
   return undefined
 }
 

@@ -180,8 +180,7 @@ export async function installPinnedOpenCode2Cli(options = {}) {
     });
   }
 
-  const extractedBinary = findBinary(extractDir, binaryName)
-    || findBinary(extractDir, platform === 'win32' ? 'opencode2.exe' : 'opencode2');
+  const extractedBinary = findBinary(extractDir, binaryName);
   if (!extractedBinary) {
     throw new Error(`Archive ${archivePath} did not contain ${binaryName} or opencode`);
   }

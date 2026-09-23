@@ -226,7 +226,7 @@ describe('OpenCode env runtime', () => {
 
   it('prefers a user-installed OpenCode from PATH over the bundled CLI', () => {
     const bundledDir = createTempDir('openchamber-bundled-opencode-');
-    const bundledBinary = path.join(bundledDir, process.platform === 'win32' ? 'opencode2.exe' : 'opencode2');
+    const bundledBinary = path.join(bundledDir, process.platform === 'win32' ? 'opencode.exe' : 'opencode');
     const pathDir = createTempDir('openchamber-path-opencode-');
     const pathBinary = path.join(pathDir, process.platform === 'win32' ? 'opencode.exe' : 'opencode');
     fs.writeFileSync(bundledBinary, '#!/bin/sh\nexit 0\n');
@@ -245,7 +245,7 @@ describe('OpenCode env runtime', () => {
 
   it('keeps explicit OpenCode binary ahead of bundled CLI', () => {
     const bundledDir = createTempDir('openchamber-bundled-opencode-');
-    const bundledBinary = path.join(bundledDir, process.platform === 'win32' ? 'opencode2.exe' : 'opencode2');
+    const bundledBinary = path.join(bundledDir, process.platform === 'win32' ? 'opencode.exe' : 'opencode');
     const explicitDir = createTempDir('openchamber-explicit-opencode-');
     const explicitBinary = path.join(explicitDir, process.platform === 'win32' ? 'opencode2.exe' : 'opencode2');
     fs.writeFileSync(bundledBinary, '#!/bin/sh\nexit 0\n');
@@ -264,7 +264,7 @@ describe('OpenCode env runtime', () => {
   it('does not use a bundled OpenCode CLI from Electron resourcesPath', () => {
     const resourcesPath = createTempDir('openchamber-resources-');
     const bundledDir = path.join(resourcesPath, 'opencode-cli');
-    const bundledBinary = path.join(bundledDir, process.platform === 'win32' ? 'opencode2.exe' : 'opencode2');
+    const bundledBinary = path.join(bundledDir, process.platform === 'win32' ? 'opencode.exe' : 'opencode');
     fs.mkdirSync(bundledDir, { recursive: true });
     fs.writeFileSync(bundledBinary, '#!/bin/sh\nexit 0\n');
     if (process.platform !== 'win32') {
@@ -339,7 +339,7 @@ describe('OpenCode env runtime', () => {
 
   it('falls back to a bundled 2.x CLI only after pin install fails', async () => {
     const bundledDir = createTempDir('openchamber-bundled-fallback-');
-    const bundledName = process.platform === 'win32' ? 'opencode2.exe' : 'opencode2';
+    const bundledName = process.platform === 'win32' ? 'opencode.exe' : 'opencode';
     const bundledBinary = path.join(bundledDir, bundledName);
     writeVersionBinary(bundledBinary, '2.0.12');
     process.env.OPENCHAMBER_BUNDLED_OPENCODE_CLI_DIR = bundledDir;
@@ -388,7 +388,7 @@ describe('OpenCode env runtime', () => {
 
   it('does not adopt a bundled 1.x CLI after pin install fails', async () => {
     const bundledDir = createTempDir('openchamber-bundled-1x-');
-    const bundledName = process.platform === 'win32' ? 'opencode2.exe' : 'opencode2';
+    const bundledName = process.platform === 'win32' ? 'opencode.exe' : 'opencode';
     const bundledBinary = path.join(bundledDir, bundledName);
     writeVersionBinary(bundledBinary, '1.18.4');
     process.env.OPENCHAMBER_BUNDLED_OPENCODE_CLI_DIR = bundledDir;

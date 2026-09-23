@@ -18,6 +18,7 @@ describe('resolveToolDisplayName', () => {
     expect(canonicalizeBuiltInToolName('runtime.grep:3')).toBe('grep');
     expect(canonicalizeBuiltInToolName('shell')).toBe('bash');
     expect(canonicalizeBuiltInToolName('patch')).toBe('apply_patch');
+    expect(canonicalizeBuiltInToolName('multiedit')).toBe('edit');
     expect(canonicalizeBuiltInToolName('StructuredOutput')).toBe('structuredoutput');
   });
 
@@ -29,6 +30,7 @@ describe('resolveToolDisplayName', () => {
     expect(resolveToolDisplayName('runtime.grep:3', tZh)).toBe('搜索文件');
     expect(resolveToolDisplayName('shell', tZh)).toBe('运行');
     expect(resolveToolDisplayName('patch', tZh)).toBe('批量修改');
+    expect(resolveToolDisplayName('multiedit', tZh)).toBe('编辑');
     expect(resolveToolDisplayName('execute', tZh)).toBe('执行代码');
     expect(resolveToolDisplayName('session_rename', tZh)).toBe('重命名会话');
     expect(resolveToolDisplayName('session_move', tEn)).toBe('Move Session');

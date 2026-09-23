@@ -131,14 +131,18 @@ const buildTitleSystemPrompt = () => [
 ].join('\n');
 
 const extractSessionStatus = (payload) => {
-  if (!payload || payload.type !== 'session.status') return null;
-  const properties = payload.properties && typeof payload.properties === 'object' ? payload.properties : {};
+  if (!payload) return null;
+  const executionType = payload.type === 'session.execution.started' ? 'busy'
+    : payload.type === 'session.execution.succeeded' || payload.type === 'session.execution.failed' ? 'idle'
+      : null;
+  if (payload.type !== 'session.status' && !executionType) return null;
+  const properties = payload.properties ?? payload.data ?? {};
   const status = properties.status && typeof properties.status === 'object' ? properties.status : {};
   const info = properties.info && typeof properties.info === 'object' ? properties.info : {};
   const sessionId = typeof properties.sessionID === 'string' ? properties.sessionID.trim() : '';
-  const type = typeof status.type === 'string'
+  const type = executionType ?? (typeof status.type === 'string'
     ? status.type.trim()
-    : (typeof info.type === 'string' ? info.type.trim() : '');
+    : (typeof info.type === 'string' ? info.type.trim() : ''));
   if (!sessionId || !type) return null;
   const directory = typeof properties.directory === 'string' && properties.directory
     ? properties.directory
@@ -178,20 +182,35 @@ const extractTitleRefreshRequest = (payload) => {
 
 const extractCreatedSession = (payload) => {
   if (!payload || payload.type !== 'session.created') return null;
-  const properties = payload.properties && typeof payload.properties === 'object' ? payload.properties : {};
-  const info = properties.info && typeof properties.info === 'object' ? properties.info : {};
+  const properties = payload.properties ?? payload.data ?? {};
+  const info = properties.info ?? { ...properties, id: properties.sessionID };
   const sessionId = typeof info.id === 'string' ? info.id.trim() : '';
   if (!sessionId || (typeof info.parentID === 'string' && info.parentID)) return null;
   if (isSystemOwnedSession(info)) return null;
   const directory = typeof properties.directory === 'string' && properties.directory
     ? properties.directory
-    : (typeof info.directory === 'string' ? info.directory : '');
-  const createdAt = typeof info.time?.created === 'number' ? info.time.created : Date.now();
+    : (typeof info.location?.directory === 'string' ? info.location.directory : (typeof info.directory === 'string' ? info.directory : ''));
+  const createdAt = typeof info.time?.created === 'number' ? info.time.created : (payload.created ?? Date.now());
   const title = typeof info.title === 'string' ? info.title : '';
   return { sessionId, directory, createdAt, title };
 };
 
 const extractUserMessage = (payload) => {
+  if (payload?.type === 'session.inbox.enqueued') {
+    const properties = payload.properties ?? payload.data ?? {};
+    const item = properties.item;
+    if (typeof properties.sessionID !== 'string' || item?.type !== 'user') return null;
+    const text = typeof item.payload?.text === 'string' ? item.payload.text.slice(0, TRANSCRIPT_USER_CHAR_LIMIT) : '';
+    return {
+      sessionId: properties.sessionID,
+      createdAt: payload.created ?? 0,
+      directory: payload.location?.directory ?? '',
+      initialRecord: text.trim() ? {
+        info: { id: properties.inboxID, role: 'user' },
+        parts: [{ type: 'text', text }],
+      } : null,
+    };
+  }
   if (!payload || payload.type !== 'message.updated') return null;
   const info = payload.properties?.info;
   if (!info || typeof info !== 'object' || info.role !== 'user') return null;
@@ -367,6 +386,7 @@ export const createSessionTitleRuntime = ({
   const forcedRefreshes = new Set();
   const initialRefreshes = new Set();
   const newSessions = new Set();
+  const initialUserMessages = new Map();
   const forkFirstSendPending = new Map();
   const forkFirstRefreshes = new Set();
   /** In-memory throttle timestamps (metadata also persists across restarts). */
@@ -530,6 +550,8 @@ export const createSessionTitleRuntime = ({
   const generateTitle = async (sessionId, directory) => {
     const forceRefresh = forcedRefreshes.delete(sessionId);
     const initialRefresh = initialRefreshes.delete(sessionId);
+    const initialUserMessage = initialUserMessages.get(sessionId);
+    initialUserMessages.delete(sessionId);
     const forkFirstRefresh = forkFirstRefreshes.delete(sessionId);
     if (!forceRefresh && !isTitleRefreshEnabled()) return;
 
@@ -564,15 +586,14 @@ export const createSessionTitleRuntime = ({
       return;
     }
 
-    const messages = await fetchRecentMessages(sessionId, directory);
+    const messages = initialUserMessage ? [initialUserMessage] : await fetchRecentMessages(sessionId, directory);
     if (!messages || messages.length === 0) return;
 
     const { transcript, lastAssistantId, realUserCount, languageSample } = buildLatestTitleTranscript(messages);
     if (!transcript) return;
 
-    // Let OpenCode's first-message title land first. We only refresh once the
-    // conversation has moved on (2+ real user turns), unless the title is
-    // still the default placeholder.
+    // Initial titles use the admitted first user message immediately; ordinary
+    // later refreshes still require a moved-on conversation or placeholder.
     if (!forceRefresh && !initialRefresh && !forkFirstRefresh && realUserCount < 2 && !isDefaultSessionTitle(currentTitle)) {
       return;
     }
@@ -720,6 +741,7 @@ export const createSessionTitleRuntime = ({
 
   const processPayload = (payload, directoryHint = '') => {
     if (stopped) return;
+    directoryHint = directoryHint || payload?.location?.directory || '';
     const createdSession = extractCreatedSession(payload);
     if (createdSession) {
       if (isForkedSessionTitle(createdSession.title)) {
@@ -755,13 +777,18 @@ export const createSessionTitleRuntime = ({
           initialRefreshes.add(status.sessionId);
           armTimer(status.sessionId, status.directory || directoryHint, 0);
         }
-      } else {
+      } else if (!initialRefreshes.has(status.sessionId)) {
         clearTimer(status.sessionId);
       }
       return;
     }
     const userMessage = extractUserMessage(payload);
     if (userMessage) {
+      if (userMessage.initialRecord && newSessions.delete(userMessage.sessionId)) {
+        initialRefreshes.add(userMessage.sessionId);
+        initialUserMessages.set(userMessage.sessionId, userMessage.initialRecord);
+        armTimer(userMessage.sessionId, userMessage.directory || directoryHint, 0);
+      }
       const pendingFork = forkFirstSendPending.get(userMessage.sessionId);
       if (pendingFork && userMessage.createdAt > pendingFork.createdAt) {
         pendingFork.hasNewUserMessage = true;
@@ -777,7 +804,7 @@ export const createSessionTitleRuntime = ({
       // session settles. Only a message created after the timer was armed
       // means the user actually moved on.
       const armed = timers.get(userMessage.sessionId);
-      if (armed && userMessage.createdAt >= armed.armedAt) {
+      if (armed && !initialRefreshes.has(userMessage.sessionId) && userMessage.createdAt >= armed.armedAt) {
         clearTimer(userMessage.sessionId);
       }
     }
@@ -789,6 +816,7 @@ export const createSessionTitleRuntime = ({
       clearTimeout(timer);
     }
     timers.clear();
+    initialUserMessages.clear();
   };
 
   return { processPayload, stop, armTimer };

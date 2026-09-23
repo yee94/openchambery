@@ -251,6 +251,40 @@ describe('provider catalog route', () => {
     expect(JSON.stringify(response.body)).not.toContain('internal-pack');
   });
 
+  it('projects v2 thinking variants into the provider catalog and strips request payloads', async () => {
+    const app = express();
+    createOpencodeClient.mockReturnValue({
+      provider: { list: vi.fn(async () => ({ data: [{ id: 'openai', name: 'OpenAI' }] })) },
+      model: {
+        list: vi.fn(async () => ({
+          data: [{
+            id: 'gpt-5.4',
+            modelID: 'internal-pack',
+            providerID: 'openai',
+            name: 'GPT 5.4',
+            capabilities: { tools: true, input: ['text', 'image'], output: ['text'] },
+            variants: [
+              { id: 'low', settings: { reasoningEffort: 'low', apiKey: 'variant-settings-sentinel' } },
+              { id: 'high', headers: { Authorization: 'variant-headers-sentinel' }, body: { store: false } },
+            ],
+          }],
+        })),
+        default: vi.fn(async () => ({ data: null })),
+      },
+    });
+    registerConfigEntityRoutes(app, createDependencies(vi.fn()));
+
+    const response = await request(app).get('/api/config/catalog/providers').expect(200);
+    expect(response.body.providers[0].models['gpt-5.4'].variants).toEqual({ low: {}, high: {} });
+    expect(response.body.providers[0].models['gpt-5.4'].capabilities).toEqual({
+      toolcall: true,
+      input: { text: true, image: true },
+      output: { text: true },
+    });
+    expect(JSON.stringify(response.body)).not.toContain('sentinel');
+    expect(JSON.stringify(response.body)).not.toContain('internal-pack');
+  });
+
   it('returns 502 for SDK failure and malformed catalog responses', async () => {
     const app = express();
     createOpencodeClient.mockReturnValue({

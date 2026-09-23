@@ -760,7 +760,7 @@ describe('ensureRemoteOpenCodeCli opencode2 pin', () => {
     const commands = [];
     manager.runManagedRemoteCommand = async (_parsed, _controlPath, script) => {
       commands.push(script);
-      if (script.includes('opencode2 --version')) {
+      if (script.includes('opencode --version')) {
         // First probes empty, after install returns pin.
         const installs = commands.filter((c) => c.includes('@opencode/cli@')).length;
         return installs > 0 ? 'opencode2 v2.0.12\n' : '';
@@ -774,9 +774,9 @@ describe('ensureRemoteOpenCodeCli opencode2 pin', () => {
 
     await manager.ensureRemoteOpenCodeCli({ user: 'u', host: 'h' }, '/tmp/cp', 'npm');
 
-    expect(commands.some((c) => c.includes('opencode2 --version'))).toBe(true);
+    expect(commands.some((c) => c.includes('opencode --version'))).toBe(true);
     expect(commands.some((c) => c.includes('@opencode/cli@2.0.12'))).toBe(true);
-    expect(commands.every((c) => !c.includes('opencode-ai@') && !/\bopencode --version\b/.test(c))).toBe(true);
+    expect(commands.every((c) => !c.includes('opencode-ai@') && !/\bopencode2 --version\b/.test(c))).toBe(true);
   });
 
   test('1.x leftover is not accepted and triggers opencode2 reinstall', async () => {
@@ -785,7 +785,7 @@ describe('ensureRemoteOpenCodeCli opencode2 pin', () => {
     const commands = [];
     manager.runManagedRemoteCommand = async (_parsed, _controlPath, script) => {
       commands.push(script);
-      if (script.includes('opencode2 --version')) {
+      if (script.includes('opencode --version')) {
         versionCalls += 1;
         return versionCalls === 1 ? '1.18.18\n' : 'opencode2 v2.0.12\n';
       }
@@ -803,7 +803,7 @@ describe('ensureRemoteOpenCodeCli opencode2 pin', () => {
     const commands = [];
     manager.runManagedRemoteCommand = async (_parsed, _controlPath, script) => {
       commands.push(script);
-      if (script.includes('opencode2 --version')) return 'opencode2 v2.0.12\n';
+      if (script.includes('opencode --version')) return 'opencode v2.0.12\n';
       return '';
     };
     manager.remoteCommandExists = async () => true;

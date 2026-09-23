@@ -27,16 +27,16 @@ export function createTitleSessionAccess({
       return projectSessionMessageRecords([...page.data].reverse());
     },
     async update(sessionID, directory, patch) {
+      if (typeof patch.title === 'string') {
+        await client().session.update({ sessionID, title: patch.title }, options());
+      }
       // Never write the complete metadata snapshot back: goal/archive/ownership
       // may have changed while the title model was running.
       const refresh = patch.metadata?.openchamber?.titleRefresh;
       if (refresh) {
-        await persistSessionMetadata(sessionID, { openchamber: { titleRefresh: {
-          ...refresh,
-        } } });
+        await persistSessionMetadata(sessionID, { openchamber: { titleRefresh: refresh } });
       }
-      if (typeof patch.title === 'string') {
-        await client().session.update({ sessionID, title: patch.title }, options());
+      if (typeof patch.title === 'string' || (refresh && Object.hasOwn(refresh, 'isGenerating'))) {
         const session = await get(sessionID);
         await publishSession(session, directory);
         return session;

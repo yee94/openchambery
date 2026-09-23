@@ -71,7 +71,7 @@ import { shouldSuppressTaskLoading } from './shouldSuppressTaskLoading';
 import { opencodeClient } from '@/lib/opencode/client';
 import { areRenderRelevantPartsEqual } from '../renderCompare';
 import { useI18n } from '@/lib/i18n';
-import { getDiffPatchEntries, getPatchText, getToolNavigationDiffEntries, patchFilePath } from './toolDiffUtils';
+import { getDiffPatchEntries, getPatchText, getToolNavigationDiffEntries, getToolPartLineDiffTotals, patchFilePath } from './toolDiffUtils';
 import { useDeferredToolHydration } from './deferredToolHydrationContext';
 import { scheduleAfterPaintTask } from '@/lib/afterPaintTaskQueue';
 import { DualLimitLru } from '@/lib/dualLimitLru';
@@ -299,50 +299,10 @@ const LiveDuration: React.FC<{ start: number; end?: number; active: boolean }> =
     return <>{formatDuration(start, end, now)}</>;
 };
 
-const parseDiffCount = (value: unknown): number | null => {
-    if (typeof value === 'number' && Number.isFinite(value)) {
-        return Math.max(0, Math.trunc(value));
-    }
-    if (typeof value === 'string') {
-        const parsed = Number.parseInt(value, 10);
-        if (Number.isFinite(parsed)) {
-            return Math.max(0, parsed);
-        }
-    }
-    return null;
-};
-
 const parseDiffStats = (metadata?: Record<string, unknown>): { added: number; removed: number } | null => {
-    const addedFromMeta = parseDiffCount(metadata?.additions);
-    const removedFromMeta = parseDiffCount(metadata?.deletions);
-    if (addedFromMeta !== null || removedFromMeta !== null) {
-        const added = addedFromMeta ?? 0;
-        const removed = removedFromMeta ?? 0;
-        if (added === 0 && removed === 0) return null;
-        return { added, removed };
-    }
-
-    const diffText = getPatchText((metadata as { patch?: unknown } | undefined)?.patch)
-        ?? getPatchText(metadata?.diff);
-    if (!diffText) return null;
-
-    let added = 0;
-    let removed = 0;
-    let lineStart = 0;
-
-    for (let index = 0; index <= diffText.length; index += 1) {
-        if (index < diffText.length && diffText.charCodeAt(index) !== 10) {
-            continue;
-        }
-
-        const line = diffText.slice(lineStart, index);
-        if (line.startsWith('+') && !line.startsWith('+++')) added++;
-        if (line.startsWith('-') && !line.startsWith('---')) removed++;
-        lineStart = index + 1;
-    }
-
-    if (added === 0 && removed === 0) return null;
-    return { added, removed };
+    const totals = getToolPartLineDiffTotals({ state: { metadata } });
+    if (totals.added === 0 && totals.removed === 0) return null;
+    return totals;
 };
 
 const parseWriteLineCount = (input?: Record<string, unknown>): number | null => {

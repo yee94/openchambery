@@ -104,6 +104,29 @@ describe('createHistoryViewportAnchorKeeper', () => {
         document.body.innerHTML = '';
     });
 
+    test('pending request outlives idle limits, then settlement restores bounded retirement', async () => {
+        const keeper = createHistoryViewportAnchorKeeper({
+            container,
+            anchor: { messageId: 'msg-b', offsetTop: 80 },
+            pending: true,
+        });
+        await vi.advanceTimersByTimeAsync(30_000);
+        setRect(msgB, { top: 130, height: 100 });
+        aboveSpacer.style.height = '150px';
+        await vi.advanceTimersByTimeAsync(0);
+        await flushMicrotasks();
+        expect(container.scrollTop).toBe(250);
+        setRect(msgB, { top: 80, height: 100 });
+        keeper.settle();
+        await vi.advanceTimersByTimeAsync(700);
+        setRect(msgB, { top: 180, height: 100 });
+        aboveSpacer.style.height = '250px';
+        await vi.advanceTimersByTimeAsync(0);
+        await flushMicrotasks();
+        expect(container.scrollTop).toBe(250);
+        keeper.dispose();
+    });
+
     test('grows content above the anchor → scrollTop compensates in the mutation microtask', async () => {
         const keeper = createHistoryViewportAnchorKeeper({
             container,

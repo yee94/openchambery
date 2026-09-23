@@ -6,6 +6,7 @@
 // ---------------------------------------------------------------------------
 
 import { create } from "zustand"
+import type { OpenCodeErrorSummary } from "./session-error-log"
 
 // ---------------------------------------------------------------------------
 // Types
@@ -25,7 +26,7 @@ type TurnCompleteNotification = NotificationBase & {
 type ErrorNotification = NotificationBase & {
   type: "error"
   /** What OpenCode reported for the failed turn; both null when it gave no details. */
-  error?: { name: string | null; message: string | null; code?: string }
+  error?: OpenCodeErrorSummary & { code?: string }
 }
 
 export type Notification = TurnCompleteNotification | ErrorNotification
@@ -193,4 +194,3 @@ export function useLatestSessionError(sessionId: string): ErrorNotification | nu
     return null
   })
 }
-
