@@ -2189,13 +2189,13 @@ export async function respondToQuestion(
       : Array.isArray(answers[0])
         ? answers as string[][]
         : [answers as string[]]
-    // Official 2.0.12: questions → session.form.reply (no directory body field;
-    // directory scopes the client). Field keys fall back to synthetic keys when
-    // the list cache is unavailable from this path.
-    await getRequestReplyClient("question", sessionId, requestId, directoryHint).session.form.reply({
+    // Read the authoritative schema on the same scoped client used to submit.
+    const client = getRequestReplyClient("question", sessionId, requestId, directoryHint)
+    const form = await client.session.form.get({ sessionID: sessionId, formID: requestId })
+    await client.session.form.reply({
       sessionID: sessionId,
       formID: requestId,
-      answer: answersToFormAnswer(normalizedAnswers),
+      answer: answersToFormAnswer(normalizedAnswers, form.fields),
     })
   } catch (error) {
     if (isQuestionRequestNotFoundError(error)) {

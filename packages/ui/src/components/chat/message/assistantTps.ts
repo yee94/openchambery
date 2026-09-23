@@ -3,15 +3,16 @@ import type { Part } from '@/lib/opencode/v2-types';
 /**
  * Assistant TPS (tokens per second) from generation time only.
  *
- * Wall-clock message duration includes tool execution. TPS should measure
- * model generation rate, so tool intervals are subtracted from the span
- * between message `created` and `completed`.
+ * OpenCode 2 supplies `time.streamed` and `time.completed`; their interval
+ * measures generation after the first streamed token. Historical records
+ * without that clock retain the legacy created/completed minus tools estimate.
  *
  * Token numerator uses output + reasoning (generated tokens), not input/cache.
  */
 
 export type AssistantTpsInput = {
   createdAt?: number | null;
+  streamedAt?: number | null;
   completedAt?: number | null;
   /**
    * Settled interrupted turns can retain a turn duration while OpenCode omits
@@ -98,11 +99,16 @@ export const computeGenerationDurationMs = (
 };
 
 /**
- * Compute assistant tokens/sec excluding tool call wall time.
+ * Compute assistant tokens/sec from upstream stream timing when available.
  * Returns null when TPS cannot be measured.
  */
 export const computeAssistantTps = (input: AssistantTpsInput): number | null => {
-  const generationMs = computeGenerationDurationMs(
+  const generationMs = input.streamedAt != null
+    ? (typeof input.streamedAt === 'number' && Number.isFinite(input.streamedAt)
+      && typeof input.completedAt === 'number' && Number.isFinite(input.completedAt)
+      && input.completedAt > input.streamedAt
+      ? input.completedAt - input.streamedAt : null)
+    : computeGenerationDurationMs(
     input.createdAt,
     input.completedAt,
     input.parts,

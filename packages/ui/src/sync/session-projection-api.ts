@@ -154,6 +154,7 @@ function messageTime(value: unknown): Message["time"] {
   if (!record(value)) return { created: 0 }
   return {
     created: typeof value.created === "number" ? value.created : 0,
+    ...(typeof value.streamed === "number" ? { streamed: value.streamed } : {}),
     ...(typeof value.completed === "number" ? { completed: value.completed } : {}),
     ...(typeof value.start === "number" ? { start: value.start } : {}),
     ...(typeof value.end === "number" ? { end: value.end } : {}),
@@ -328,6 +329,21 @@ export function normalizeSessionProjectionMessage(
       }
     }
     return { info, parts }
+  }
+
+  if (type === "shell") {
+    const info = baseMessage(sessionID, item, "user")
+    const command = asString(item.command) ?? ""
+    const output = record(item.output) && typeof item.output.output === "string" ? item.output.output : ""
+    const status = item.status === "running" ? "running"
+      : item.status === "exited" && item.exit === 0 ? "completed" : "error"
+    return {
+      info,
+      parts: [{
+        id: partID(id, "text", 0), sessionID, messageID: id, type: "text", text: command,
+        shellAction: { command, output, status, shellID: asString(item.shellID) },
+      }],
+    }
   }
 
   if (type === "synthetic") {

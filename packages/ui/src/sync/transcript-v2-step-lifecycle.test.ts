@@ -82,6 +82,32 @@ function reduceNormalized(raw: unknown, state: TranscriptEventDraft = draft()): 
 }
 
 describe("official session.step lifecycle (envelope → normalizer → reducer)", () => {
+  test("streamed event preserves upstream first-token timing through completion", () => {
+    const state = draft()
+    reduceNormalized(officialEnvelope("session.step.started", { sessionID: SESSION, assistantMessageID: "msg_a" }, 1000), state)
+    expect(isTranscriptSseEventType("session.step.streamed")).toBe(true)
+    reduceNormalized(officialEnvelope("session.step.streamed", { sessionID: SESSION, assistantMessageID: "msg_a" }, 9000), state)
+    reduceNormalized(officialEnvelope("session.step.ended", { sessionID: SESSION, assistantMessageID: "msg_a", tokens: TOKENS }, 10000), state)
+    expect(state.message[SESSION][0].time).toMatchObject({ created: 1000, streamed: 9000, completed: 10000 })
+  })
+
+  test("shell start and end keep one user card with authoritative output", () => {
+    const state = draft()
+    const shell = { id: "shell_1", command: "pwd", status: "running" }
+    expect(isTranscriptSseEventType("session.shell.started")).toBe(true)
+    expect(isTranscriptSseEventType("session.shell.ended")).toBe(true)
+    reduceNormalized(officialEnvelope("session.shell.started", { sessionID: SESSION, shell }, 1000), state)
+    const id = state.message[SESSION][0].id
+    expect(id).toBe("msg_session_shell_started")
+    reduceNormalized(officialEnvelope("session.shell.ended", {
+      sessionID: SESSION, shell: { ...shell, status: "exited", exit: 0 },
+      output: { output: "/workspace\n", cursor: 11, size: 11, truncated: false },
+    }, 2000), state)
+    expect(state.message[SESSION]).toHaveLength(1)
+    expect(state.message[SESSION][0]).toMatchObject({ id, role: "user", time: { completed: 2000 } })
+    expect(state.part[id][0]).toMatchObject({ shellAction: { output: "/workspace\n", status: "completed" } })
+  })
+
   test("normalizer keeps session.step.* and stamps eventCreated from envelope", () => {
     const started = normalizeOpenCodeEvent(officialEnvelope("session.step.started", {
       sessionID: SESSION,

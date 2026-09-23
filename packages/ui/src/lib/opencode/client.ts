@@ -77,25 +77,6 @@ import {
   recordProviderError,
 } from "./provider-tracker";
 
-/** Cache form field keys from list so reply can map string[][] onto form answer keys. */
-const pendingFormFieldKeys = new Map<string, string[]>();
-
-function rememberFormFieldKeys(formID: string, fields: ReadonlyArray<{ key?: unknown }> | undefined): void {
-  if (!formID) return;
-  const keys = (fields ?? [])
-    .map((field) => (typeof field?.key === "string" ? field.key : ""))
-    .filter((key) => key.length > 0);
-  if (keys.length > 0) {
-    pendingFormFieldKeys.set(formID, keys);
-  }
-}
-
-function takeFormFieldKeys(formID: string): string[] | undefined {
-  const keys = pendingFormFieldKeys.get(formID);
-  pendingFormFieldKeys.delete(formID);
-  return keys;
-}
-
 // Use relative path by default (works with both dev and nginx proxy server)
 // Can be overridden with VITE_OPENCODE_URL for absolute URLs in special deployments
 const DEFAULT_BASE_URL = import.meta.env.VITE_OPENCODE_URL || "/api";
@@ -1718,11 +1699,12 @@ class OpencodeService {
     if (!sessionID) {
       throw v2CapabilityUnavailable('session.form.reply (sessionID required)');
     }
-    const fieldKeys = takeFormFieldKeys(requestId);
-    await this.client.session.form.reply({
+    const client = this.client;
+    const form = await client.session.form.get({ sessionID, formID: requestId });
+    await client.session.form.reply({
       sessionID,
       formID: requestId,
-      answer: answersToFormAnswer(normalizedAnswers, fieldKeys),
+      answer: answersToFormAnswer(normalizedAnswers, form.fields),
     });
     return true;
   }
@@ -1731,7 +1713,6 @@ class OpencodeService {
     if (!sessionID) {
       throw v2CapabilityUnavailable('session.form.cancel (sessionID required)');
     }
-    pendingFormFieldKeys.delete(requestId);
     await this.client.session.form.cancel({
       sessionID,
       formID: requestId,
@@ -1756,7 +1737,6 @@ class OpencodeService {
         throw new Error(`form.list failed: ${formatSdkError(result)}`);
       }
       return result.data.map((form) => {
-        rememberFormFieldKeys(form.id, form.fields);
         return mapV2QuestionRequest({
           id: form.id,
           sessionID: form.sessionID,
