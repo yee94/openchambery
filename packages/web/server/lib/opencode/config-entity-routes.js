@@ -14,9 +14,11 @@ const composeV2ProviderCatalogSource = (providers, models, defaultModel) => {
   for (const model of models) {
     if (!model || typeof model !== 'object') continue;
     const providerID = typeof model.providerID === 'string' ? model.providerID : '';
-    const modelID = typeof model.modelID === 'string' && model.modelID
-      ? model.modelID
-      : (typeof model.id === 'string' ? model.id : '');
+    // ModelInfo.id is the external model id used in generate/session refs.
+    // ModelInfo.modelID is a separate internal field and must not be preferred.
+    const modelID = typeof model.id === 'string' && model.id
+      ? model.id
+      : (typeof model.modelID === 'string' ? model.modelID : '');
     if (!providerID || !modelID) continue;
     if (!modelsByProvider.has(providerID)) modelsByProvider.set(providerID, Object.create(null));
     const entry = { id: modelID };
@@ -45,8 +47,11 @@ const composeV2ProviderCatalogSource = (providers, models, defaultModel) => {
   }
 
   const defaults = Object.create(null);
-  if (defaultModel && typeof defaultModel.providerID === 'string' && typeof defaultModel.modelID === 'string') {
-    defaults[defaultModel.providerID] = defaultModel.modelID;
+  const defaultModelID = typeof defaultModel?.id === 'string' && defaultModel.id
+    ? defaultModel.id
+    : (typeof defaultModel?.modelID === 'string' ? defaultModel.modelID : '');
+  if (defaultModel && typeof defaultModel.providerID === 'string' && defaultModelID) {
+    defaults[defaultModel.providerID] = defaultModelID;
   }
   return { providers: list, default: defaults };
 };
@@ -130,11 +135,10 @@ export const registerConfigEntityRoutes = (app, dependencies) => {
   const {
     resolveProjectDirectory,
     resolveOptionalProjectDirectory,
-    refreshOpenCodeAfterConfigChange,
-    clientReloadDelayMs,
     waitForOpenCodeReady,
     getAgentSources,
     getAgentConfig,
+    listDisabledAgentOverrides,
     createAgent,
     updateAgent,
     deleteAgent,
@@ -259,7 +263,8 @@ export const registerConfigEntityRoutes = (app, dependencies) => {
         target: req.params.target,
         fileName: target.fileName,
         content,
-        requiresManualRestart: true,
+        requiresManualRestart: req.params.target !== 'opencode',
+        application: req.params.target === 'opencode' ? 'watch' : 'manual',
       });
     } catch (error) {
       console.error('Failed to write global configuration:', error);
@@ -267,29 +272,9 @@ export const registerConfigEntityRoutes = (app, dependencies) => {
     }
   });
 
-  // Build the response for a config mutation based on whether OpenCode actually
-  // reloaded the change. When connected to an external OpenCode server that
-  // OpenChamber cannot restart, the change is persisted to disk but the running
-  // server will not serve it until the user restarts that server. We must not
-  // report a clean "reloading" success in that case, otherwise the UI silently
-  // reverts the edit to the stale value on the next refresh.
-  const buildConfigMutationResponse = (refreshResult, { liveMessage, manualRestartMessage }) => {
-    if (refreshResult && refreshResult.external) {
-      return {
-        success: true,
-        requiresReload: false,
-        requiresManualRestart: true,
-        message: manualRestartMessage,
-      };
-    }
-
-    return {
-      success: true,
-      requiresReload: true,
-      message: liveMessage,
-      reloadDelayMs: clientReloadDelayMs,
-    };
-  };
+  // A receipt confirms persistence, not runtime activation. V2 watches local
+  // configuration; domain events confirm changes without rebuilding locations.
+  const configSaved = () => ({ success: true, requiresReload: false, application: 'watch' });
 
   const readMutationBody = (req) => (
     req.body && typeof req.body === 'object' && !Array.isArray(req.body) ? req.body : {}
@@ -298,24 +283,7 @@ export const registerConfigEntityRoutes = (app, dependencies) => {
   const completeMcpMutation = async (res, action, name, applyChange) => {
     applyChange();
 
-    try {
-      await refreshOpenCodeAfterConfigChange(`mcp ${action}`);
-      return res.json({
-        success: true,
-        requiresReload: true,
-        message: `MCP server "${name}" ${action}d. Reloading interface…`,
-        reloadDelayMs: clientReloadDelayMs,
-      });
-    } catch (error) {
-      console.error(`[API:MCP ${action}] Reload failed after config write:`, error);
-      return res.json({
-        success: true,
-        requiresReload: false,
-        reloadFailed: true,
-        message: `MCP server "${name}" ${action}d, but OpenCode reload failed.`,
-        warning: error.message || 'OpenCode reload failed after the MCP configuration changed',
-      });
-    }
+    return res.json({ ...configSaved(), message: `MCP server "${name}" ${action}d.` });
   };
 
   app.post('/api/config/agents/metadata', async (req, res) => {
@@ -345,7 +313,10 @@ export const registerConfigEntityRoutes = (app, dependencies) => {
           sources,
         };
       }
-      return res.json({ agents });
+      const disabled = typeof listDisabledAgentOverrides === 'function'
+        ? listDisabledAgentOverrides(directory)
+        : [];
+      return res.json(disabled.length > 0 ? { agents, disabled } : { agents });
     } catch (error) {
       console.error('Failed to get agent metadata batch:', error);
       return res.status(500).json({ error: 'Failed to get agent configuration metadata' });
@@ -405,15 +376,11 @@ export const registerConfigEntityRoutes = (app, dependencies) => {
       console.log('[Server] Creating agent');
 
       createAgent(agentName, config, directory, scope);
-      const refreshResult = await refreshOpenCodeAfterConfigChange('agent creation', {
-        agentName
-      });
-
-      res.json(buildConfigMutationResponse(refreshResult, {
-        liveMessage: `Agent ${agentName} created successfully. Reloading interface…`,
-        manualRestartMessage: `Agent ${agentName} saved. Restart your connected OpenCode server to apply the change.`,
-      }));
+      res.json(configSaved());
     } catch (error) {
+      if (error?.code === 'drop-confirmation') {
+        return res.status(409).json({ code: 'drop-confirmation', dropped: error.dropped, error: error.message });
+      }
       console.error('Failed to create agent');
       res.status(500).json({ error: error.message || 'Failed to create agent' });
     }
@@ -431,15 +398,14 @@ export const registerConfigEntityRoutes = (app, dependencies) => {
       console.log('[Server] Updating agent');
 
       updateAgent(agentName, updates, directory);
-      const refreshResult = await refreshOpenCodeAfterConfigChange('agent update');
 
       console.log('[Server] Agent updated successfully');
 
-      res.json(buildConfigMutationResponse(refreshResult, {
-        liveMessage: `Agent ${agentName} updated successfully. Reloading interface…`,
-        manualRestartMessage: `Agent ${agentName} saved. Restart your connected OpenCode server to apply the change.`,
-      }));
+      res.json(configSaved());
     } catch (error) {
+      if (error?.code === 'drop-confirmation') {
+        return res.status(409).json({ code: 'drop-confirmation', dropped: error.dropped, error: error.message });
+      }
       console.error('[Server] Failed to update agent');
       res.status(500).json({ error: error.message || 'Failed to update agent' });
     }
@@ -455,12 +421,7 @@ export const registerConfigEntityRoutes = (app, dependencies) => {
 
       const scope = req.body?.scope;
       deleteAgent(agentName, directory, scope);
-      const refreshResult = await refreshOpenCodeAfterConfigChange('agent deletion');
-
-      res.json(buildConfigMutationResponse(refreshResult, {
-        liveMessage: `Agent ${agentName} deleted successfully. Reloading interface…`,
-        manualRestartMessage: `Agent ${agentName} deleted. Restart your connected OpenCode server to apply the change.`,
-      }));
+      res.json(configSaved());
     } catch (error) {
       console.error('Failed to delete agent');
       res.status(500).json({ error: error.message || 'Failed to delete agent' });
@@ -669,16 +630,7 @@ export const registerConfigEntityRoutes = (app, dependencies) => {
       console.log('[Server] Creating command');
 
       createCommand(commandName, config, directory, scope);
-      await refreshOpenCodeAfterConfigChange('command creation', {
-        commandName
-      });
-
-      res.json({
-        success: true,
-        requiresReload: true,
-        message: `Command ${commandName} created successfully. Reloading interface…`,
-        reloadDelayMs: clientReloadDelayMs,
-      });
+      res.json(configSaved());
     } catch (error) {
       console.error('Failed to create command');
       res.status(500).json({ error: error.message || 'Failed to create command' });
@@ -697,16 +649,10 @@ export const registerConfigEntityRoutes = (app, dependencies) => {
       console.log('[Server] Updating command');
 
       updateCommand(commandName, updates, directory);
-      await refreshOpenCodeAfterConfigChange('command update');
 
       console.log('[Server] Command updated successfully');
 
-      res.json({
-        success: true,
-        requiresReload: true,
-        message: `Command ${commandName} updated successfully. Reloading interface…`,
-        reloadDelayMs: clientReloadDelayMs,
-      });
+      res.json(configSaved());
     } catch (error) {
       console.error('[Server] Failed to update command');
       res.status(500).json({ error: error.message || 'Failed to update command' });
@@ -722,14 +668,7 @@ export const registerConfigEntityRoutes = (app, dependencies) => {
       }
 
       deleteCommand(commandName, directory);
-      await refreshOpenCodeAfterConfigChange('command deletion');
-
-      res.json({
-        success: true,
-        requiresReload: true,
-        message: `Command ${commandName} deleted successfully. Reloading interface…`,
-        reloadDelayMs: clientReloadDelayMs,
-      });
+      res.json(configSaved());
     } catch (error) {
       console.error('Failed to delete command');
       res.status(500).json({ error: error.message || 'Failed to delete command' });

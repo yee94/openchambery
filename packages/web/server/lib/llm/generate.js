@@ -1,4 +1,5 @@
 import { OpenCode } from '@opencode/client';
+import { buildLlmSessionMetadata } from '../session-metadata/system-session.js';
 
 const LLM_AGENT_NAME = 'openchamber-llm';
 const GENERATE_TIMEOUT_MS = 90_000;
@@ -380,6 +381,8 @@ async function generateViaAttachmentSession({
   signal,
   onTextDelta,
   globalEventHub,
+  persistSessionMetadata,
+  onSystemSessionPersisted,
 }) {
   const location = { directory: workingDirectory };
 
@@ -390,12 +393,14 @@ async function generateViaAttachmentSession({
   let unsubscribeDeltas = null;
   try {
     let created;
+    const isolationMetadata = buildLlmSessionMetadata();
     try {
       created = await client.session.create({
         title: '[openchamber-llm] generate',
         agent: LLM_AGENT_NAME,
         model: modelRef(providerID, modelID, variant),
         location,
+        metadata: isolationMetadata,
       }, { signal });
     } catch (error) {
       // Temp workspace invisible to OpenCode must fail explicitly.
@@ -407,6 +412,18 @@ async function generateViaAttachmentSession({
     sessionID = created?.id ?? created?.data?.id;
     if (!sessionID) {
       failGenerate('OpenCode LLM session create returned no id', 'llm_attachment_generation_unavailable');
+    }
+    if (typeof persistSessionMetadata === 'function') {
+      try {
+        await persistSessionMetadata(sessionID, isolationMetadata);
+        onSystemSessionPersisted?.({
+          sessionID,
+          directory: workingDirectory,
+          metadata: isolationMetadata,
+        });
+      } catch (error) {
+        console.warn('[llm] failed to persist system session metadata:', error?.message || error);
+      }
     }
 
     if (system) {
@@ -520,6 +537,8 @@ export async function generateOpenCodeText({
   forwardImageParts = false,
   onTextDelta = null,
   globalEventHub = null,
+  persistSessionMetadata = null,
+  onSystemSessionPersisted = null,
   signal: parentSignal = null,
   timeoutMs = GENERATE_TIMEOUT_MS,
 }) {
@@ -593,6 +612,8 @@ export async function generateOpenCodeText({
         signal: requestSignal,
         onTextDelta,
         globalEventHub,
+        persistSessionMetadata,
+        onSystemSessionPersisted,
       });
     }
 

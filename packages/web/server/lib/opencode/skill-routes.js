@@ -16,8 +16,6 @@ export const registerSkillRoutes = (app, dependencies) => {
     readSettingsFromDisk,
     sanitizeSkillCatalogs,
     isUnsafeSkillRelativePath,
-    refreshOpenCodeAfterConfigChange,
-    clientReloadDelayMs,
     buildOpenCodeUrl,
     getOpenCodeAuthHeaders,
     getOpenCodePort,
@@ -461,19 +459,14 @@ export const registerSkillRoutes = (app, dependencies) => {
 
         const installed = result.installed || [];
         const skipped = result.skipped || [];
-        const requiresReload = installed.length > 0;
-
-        if (requiresReload) {
-          await refreshOpenCodeAfterConfigChange('skills install');
-        }
 
         return res.json({
           ok: true,
           installed,
           skipped,
-          requiresReload,
-          message: requiresReload ? 'Skills installed successfully. Reloading interface…' : 'No skills were installed',
-          reloadDelayMs: requiresReload ? clientReloadDelayMs : undefined,
+          requiresReload: false,
+          application: 'watch',
+          message: installed.length > 0 ? 'Skills installed successfully.' : 'No skills were installed',
         });
       }
 
@@ -512,19 +505,14 @@ export const registerSkillRoutes = (app, dependencies) => {
 
       const installed = result.installed || [];
       const skipped = result.skipped || [];
-      const requiresReload = installed.length > 0;
-
-      if (requiresReload) {
-        await refreshOpenCodeAfterConfigChange('skills install');
-      }
 
       res.json({
         ok: true,
         installed,
         skipped,
-        requiresReload,
-        message: requiresReload ? 'Skills installed successfully. Reloading interface…' : 'No skills were installed',
-        reloadDelayMs: requiresReload ? clientReloadDelayMs : undefined,
+        requiresReload: false,
+        application: 'watch',
+        message: installed.length > 0 ? 'Skills installed successfully.' : 'No skills were installed',
       });
     } catch (error) {
       console.error('Failed to install skills:', error);
@@ -605,13 +593,12 @@ export const registerSkillRoutes = (app, dependencies) => {
       console.log('[Server] Scope:', scope, 'Working directory:', directory);
 
       createSkill(skillName, { ...config, source: skillSource }, directory, scope);
-      await refreshOpenCodeAfterConfigChange('skill creation');
 
       res.json({
         success: true,
-        requiresReload: true,
-        message: `Skill ${skillName} created successfully. Reloading interface…`,
-        reloadDelayMs: clientReloadDelayMs,
+        requiresReload: false,
+        application: 'watch',
+        message: `Skill ${skillName} created successfully.`,
       });
     } catch (error) {
       console.error('Failed to create skill:', error);
@@ -632,13 +619,12 @@ export const registerSkillRoutes = (app, dependencies) => {
       console.log('[Server] Working directory:', directory);
 
       updateSkill(skillName, updates, directory, updates?.targetPath);
-      await refreshOpenCodeAfterConfigChange('skill update');
 
       res.json({
         success: true,
-        requiresReload: true,
-        message: `Skill ${skillName} updated successfully. Reloading interface…`,
-        reloadDelayMs: clientReloadDelayMs,
+        requiresReload: false,
+        application: 'watch',
+        message: `Skill ${skillName} updated successfully.`,
       });
     } catch (error) {
       console.error('[Server] Failed to update skill:', error);
@@ -724,13 +710,12 @@ export const registerSkillRoutes = (app, dependencies) => {
       }
 
       deleteSkill(skillName, directory);
-      await refreshOpenCodeAfterConfigChange('skill deletion');
 
       res.json({
         success: true,
-        requiresReload: true,
-        message: `Skill ${skillName} deleted successfully. Reloading interface…`,
-        reloadDelayMs: clientReloadDelayMs,
+        requiresReload: false,
+        application: 'watch',
+        message: `Skill ${skillName} deleted successfully.`,
       });
     } catch (error) {
       console.error('Failed to delete skill:', error);

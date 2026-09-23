@@ -833,13 +833,6 @@ export const registerOpenCodeRoutes = (app, dependencies) => {
 
       await fs.promises.writeFile(AGENTS_MD_PATH, content, 'utf8');
 
-      // Refresh OpenCode so it picks up the new AGENTS.md without a full restart
-      try {
-        await refreshOpenCodeAfterConfigChange('global behavior (AGENTS.md) updated');
-      } catch {
-        // Non-fatal: file was written successfully
-      }
-
       return res.json({ success: true });
     } catch (error) {
       console.error('Failed to write AGENTS.md:', error);

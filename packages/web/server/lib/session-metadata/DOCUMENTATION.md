@@ -29,6 +29,7 @@ decision about authority, conditional writes, and archive protection.
 | `session-metadata-store.js` | Durable store: one JSON file per data dir, `{ [sessionID]: metadata }`, RFC 7386 merge patch, full RMW serialization, refuse-failed-read refuses write/read-as-empty |
 | `session-projection.js` | Pure Host authority projection (metadata deep-merge + archive → `time.archived`) |
 | `session-archive.js` | Domain archive/unarchive: validate upstream session + directory, persist, project, best-effort index/broadcast |
+| `system-session.js` | Isolation patches for system session creators: `buildScheduledTaskMetadata`, `buildLlmSessionMetadata`, `buildAssistantSessionMetadata`. Title prefixes are labels and never ownership. |
 | `routes.js` | `PUT .../metadata`, `PUT .../archive`, re-exports store/archive/projection |
 | `*.d.ts` | Sibling type surfaces for Extension Host (`packages/vscode` facades) — runtime stays in `.js` |
 | `*.test.js` | Store + route + archive contracts |
@@ -66,8 +67,20 @@ Wired from `packages/web/server/index.js` + `feature-routes-runtime.js`:
 6. session-goal `readSessionMetadata` / `mutateSessionMetadata` / `persistSessionGoal`
 7. `registerSessionMetadataRoutes` (metadata + archive)
 8. assistants `archiveSessionHost` → shared Host archive (not upstream `session.update`)
+9. system session creators persist isolation through `persistSessionMetadata`
+   (`setSessionMetadata` + `openchamber:session-metadata` broadcast) and then
+   `onSystemSessionPersisted` (index upsert that removes the row). Wired from
+   `index.js` into scheduled-task runtime, LLM attachment generate, and
+   Assistant binding create. OpenCode create-time `metadata` is a hint only.
 
 Capability is open (`supported: true`). Manual UI metadata writes, session-goal
 routes, and scheduled-task goal create all persist `openchamber.goal` through
 this store. After first create/resume persist, the server notifies the goal
 runtime with a synthetic `session.updated` so the loop can arm.
+
+Sidebar / session-index / notifications hide a session only when Host metadata
+carries a non-empty `openchamber.assistant.assistantID` (unless
+`assigned.from === 'contact'`), `openchamber.scheduledTask.taskID`,
+`openchamber.smallModel.purpose`, or `openchamber.llm.purpose`. Title prefixes
+are human labels and never participate. Every system session creator must
+persist the matching patch through this store.

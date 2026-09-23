@@ -8,6 +8,7 @@ import {
   isSessionGoalSupported,
   sessionGoalUnavailableMessage,
 } from '../session-goal/capability.js';
+import { buildScheduledTaskMetadata } from '../session-metadata/system-session.js';
 import { SCHEDULED_SLOT_CLAIMED_CODE } from './run-history-store.js';
 
 const DEFAULT_GLOBAL_CONCURRENCY = 4;
@@ -532,6 +533,14 @@ export const createScheduledTasksRuntime = (deps) => {
     maxRunDurationMs = DEFAULT_MAX_RUN_MS,
     /** Host store write: (sessionId, directory, goal) => Promise */
     persistSessionGoal = null,
+    /** Host store write: (sessionId, patch) => Promise — required for sidebar isolation */
+    persistSessionMetadata = null,
+    /**
+     * After Host isolation metadata is committed. Used to drop the session
+     * from the sidebar index immediately (do not wait for the next list sync).
+     * @type {null | ((event: { sessionID: string, directory?: string, metadata: object }) => void)}
+     */
+    onSystemSessionPersisted = null,
     /** Host store read: (sessionId) => Promise<metadata|null> */
     readSessionMetadata = null,
     /**
@@ -815,9 +824,10 @@ export const createScheduledTasksRuntime = (deps) => {
       + '\n</system-reminder>';
   };
 
-  const buildSessionCreateInput = (task, projectPath, title) => ({
+  const buildSessionCreateInput = (task, projectPath, title, metadata) => ({
     title,
     location: { directory: projectPath },
+    metadata,
     ...(task.execution.agent ? { agent: task.execution.agent } : {}),
     model: {
       id: task.execution.modelID,
@@ -825,6 +835,18 @@ export const createScheduledTasksRuntime = (deps) => {
       ...(task.execution.variant ? { variant: task.execution.variant } : {}),
     },
   });
+
+  const persistScheduledTaskIsolation = async (sessionID, directory, metadata) => {
+    if (typeof persistSessionMetadata !== 'function') {
+      throw new Error('scheduled-task session metadata persist is not configured');
+    }
+    await persistSessionMetadata(sessionID, metadata);
+    try {
+      onSystemSessionPersisted?.({ sessionID, directory, metadata });
+    } catch {
+      // Index/live hide is compensatory; Host persist is the authority.
+    }
+  };
 
   const buildPromptText = (task, projectPath) => {
     const promptText = expandSnippets(task.execution.prompt, projectPath);
@@ -1122,6 +1144,10 @@ export const createScheduledTasksRuntime = (deps) => {
       }
     }
 
+    if (typeof persistSessionMetadata !== 'function') {
+      throw new Error('scheduled-task session metadata persist is not configured');
+    }
+
     if (typeof waitForOpenCodeReady === 'function') {
       await waitForOpenCodeReady(10_000, 250);
       signal?.throwIfAborted?.();
@@ -1156,14 +1182,21 @@ export const createScheduledTasksRuntime = (deps) => {
     };
 
     try {
+      const isolationMetadata = buildScheduledTaskMetadata({
+        projectID,
+        taskID: task.id,
+        runID,
+        name: task.name,
+      });
       const session = await client.session.create(
-        buildSessionCreateInput(task, projectPath, title),
+        buildSessionCreateInput(task, projectPath, title, isolationMetadata),
         requestOptions,
       );
       sessionID = session?.id;
       if (!sessionID) {
         throw new Error('failed to create session');
       }
+      await persistScheduledTaskIsolation(sessionID, projectPath, isolationMetadata);
 
       if (signal) {
         if (signal.aborted) {

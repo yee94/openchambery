@@ -77,6 +77,7 @@ import {
 } from './assign.js';
 import { runContactTurn as defaultRunContactTurn } from './harness.js';
 import { loadConnectedCatalog } from '../llm/catalog.js';
+import { buildAssistantSessionMetadata } from '../session-metadata/system-session.js';
 
 const require = createRequire(import.meta.url);
 const SCHEMA_VERSION = 13;
@@ -235,7 +236,7 @@ const awaitWithDeadline = async (work, ms = CONTACT_CATALOG_DEADLINE_MS, code = 
   }
 };
 
-export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, getOpenCodeAuthHeaders, getServerId = async () => null, getAllowedRoots = () => [], listProjects = async () => [], readModelPreferences = async () => null, listScheduledTasks = null, sessionIndexService = null, upsertScheduledTask = null, syncScheduledTaskProject = null, globalEventHub = null, onRevisionTip = null, onContactTurnEvent = null, onContactTurnComplete = null, /** Host archive op: ({ sessionID, directory, archivedAt }) => Promise */ archiveSessionHost = null, /** Idempotent Host metadata drop after successful SDK delete */ forgetSessionHost = null, clock = () => Date.now(), setIntervalFn = setInterval, clearIntervalFn = clearInterval, setImmediateFn = setImmediate, reconcileIntervalMs = 60_000, clientFactory, fetchImpl, createChatCompletion = null, runContactTurn = defaultRunContactTurn, listWorktrees = defaultListWorktrees } = {}) => {
+export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, getOpenCodeAuthHeaders, getServerId = async () => null, getAllowedRoots = () => [], listProjects = async () => [], readModelPreferences = async () => null, listScheduledTasks = null, sessionIndexService = null, upsertScheduledTask = null, syncScheduledTaskProject = null, globalEventHub = null, onRevisionTip = null, onContactTurnEvent = null, onContactTurnComplete = null, /** Host archive op: ({ sessionID, directory, archivedAt }) => Promise */ archiveSessionHost = null, /** Idempotent Host metadata drop after successful SDK delete */ forgetSessionHost = null, /** Host store write: (sessionId, patch) => Promise */ persistSessionMetadata = null, /** After Host isolation metadata is committed. */ onSystemSessionPersisted = null, clock = () => Date.now(), setIntervalFn = setInterval, clearIntervalFn = clearInterval, setImmediateFn = setImmediate, reconcileIntervalMs = 60_000, clientFactory, fetchImpl, createChatCompletion = null, runContactTurn = defaultRunContactTurn, listWorktrees = defaultListWorktrees } = {}) => {
   if (!dbPath || !dataDir) return null;
   const Database = require('better-sqlite3');
   fs.mkdirSync(path.dirname(dbPath), { recursive: true });
@@ -425,20 +426,34 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
       baseUrl: buildOpenCodeUrl('/', '').replace(/\/$/, ''),
       authHeaders: getOpenCodeAuthHeaders(),
     });
-  const metadata = (row) => ({ openchamber: { assistant: { assistantID: row.assistant_id, name: row.name } } });
+  const metadata = (row) => buildAssistantSessionMetadata({
+    assistantID: row.assistant_id,
+    name: row.name,
+  });
+  const persistAssistantIsolation = async (sessionID, directory, isolation) => {
+    if (typeof persistSessionMetadata !== 'function') return;
+    try {
+      await persistSessionMetadata(sessionID, isolation);
+      onSystemSessionPersisted?.({ sessionID, directory, metadata: isolation });
+    } catch {
+      // Archive still isolates; Host persist is the sidebar authority when it succeeds.
+    }
+  };
   const createSession = async (row) => {
     const directory = effectiveWorkspace(row);
+    const isolation = metadata(row);
     const result = await invokeSession(() => client().session.create({
       title: `[Assistant] ${row.name}`,
       location: { directory },
+      metadata: isolation,
       ...(row.agent ? { agent: row.agent } : {}),
       ...(row.provider_id && row.model_id ? { model: { id: row.model_id, providerID: row.provider_id, ...(row.variant ? { variant: row.variant } : {}) } } : {}),
     }));
     const sessionID = sessionIDOf(result);
     if (result?.error || !sessionID) fail('upstream_error');
+    // Host metadata isolates the session if archive is delayed or unavailable.
+    await persistAssistantIsolation(sessionID, directory, isolation);
     // Archive before binding so ordinary session lists never flash system sessions.
-    // Metadata still isolates the session if archive fails after create.
-    // v2 has no session.update archive-metadata write; local history + title prefix are the equivalent isolation.
     return { sessionID, directory };
   };
   const sessionExists = async (row) => { if (!row.current_session_id) return false; const result = await invokeSession(() => client().session.get({ sessionID: row.current_session_id })); if (isMissing(result)) return false; if (result.error) fail('upstream_error'); return Boolean(sessionIDOf(result) || result); };

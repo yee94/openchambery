@@ -12,8 +12,6 @@ const BAD_REQUEST_CODES = new Set(['INVALID_FILENAME', 'INVALID_SCOPE', 'INVALID
 export const registerPluginRoutes = (app, dependencies) => {
   const {
     resolveOptionalProjectDirectory,
-    refreshOpenCodeAfterConfigChange,
-    clientReloadDelayMs,
     listPluginEntries,
     getPluginEntry,
     createPluginEntry,
@@ -45,9 +43,9 @@ export const registerPluginRoutes = (app, dependencies) => {
 
   const successPayload = (message) => ({
     success: true,
-    requiresReload: true,
+    requiresReload: false,
+    application: 'watch',
     message,
-    reloadDelayMs: clientReloadDelayMs,
     reloadFailed: false,
     warning: undefined,
   });
@@ -57,20 +55,7 @@ export const registerPluginRoutes = (app, dependencies) => {
 
     const pastTense = operation.replace(/ion$/, 'ed').replace(/update$/, 'updated');
 
-    try {
-      await refreshOpenCodeAfterConfigChange(`plugin ${operation}`);
-      return res.json(successPayload(`Plugin ${pastTense}. Reloading interface…`));
-    } catch (error) {
-      console.error(`[API:plugin ${operation}] Reload failed after config write:`, error);
-      return res.json({
-        success: true,
-        requiresReload: false,
-        message: `Plugin ${pastTense}, but OpenCode reload failed.`,
-        reloadDelayMs: clientReloadDelayMs,
-        reloadFailed: true,
-        warning: error.message || 'OpenCode reload failed after plugin config changed',
-      });
-    }
+    return res.json(successPayload(`Plugin ${pastTense}.`));
   };
 
   const validateEntryId = (id) => {

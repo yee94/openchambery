@@ -25,7 +25,7 @@ import { getNpmInfo, clearCache as clearNpmCache } from './npm-registry.js';
 import { parseNpmSpec, parsePathSpec, isExactSemver } from './plugin-spec.js';
 import { registerOpenCodeRoutes } from './routes.js';
 import { getProviderSources, removeProviderConfig } from './providers.js';
-import { getAgentSources, getAgentConfig, createAgent, updateAgent, deleteAgent } from './agents.js';
+import { getAgentSources, getAgentConfig, listDisabledAgentOverrides, createAgent, updateAgent, deleteAgent } from './agents.js';
 import { getCommandSources, createCommand, updateCommand, deleteCommand } from './commands.js';
 import { listMcpConfigs, getMcpConfig, createMcpConfig, updateMcpConfig, deleteMcpConfig } from './mcp.js';
 import { listSnippets, getSnippet, createSnippet, updateSnippet, deleteSnippet, expandSnippets } from './snippets.js';
@@ -146,6 +146,8 @@ export const createFeatureRoutesRuntime = (dependencies) => {
       sessionArchiveService = null,
       onSessionMetadataWritten = null,
       persistSessionGoal = null,
+      persistSessionMetadata = null,
+      onSystemSessionPersisted = null,
       readSessionMetadata = null,
     } = routeDependencies;
 
@@ -273,6 +275,8 @@ export const createFeatureRoutesRuntime = (dependencies) => {
     registerLlmRoutes(app, {
       buildOpenCodeUrl,
       getOpenCodeAuthHeaders,
+      persistSessionMetadata,
+      onSystemSessionPersisted,
     });
     assistantRoutesRuntime = registerAssistantRoutes(app, {
       openchamberDataDir,
@@ -309,6 +313,8 @@ export const createFeatureRoutesRuntime = (dependencies) => {
       forgetSessionHost: sessionArchiveService
         ? (sessionID) => sessionArchiveService.forgetSession(sessionID)
         : null,
+      persistSessionMetadata,
+      onSystemSessionPersisted,
       upsertScheduledTask: (projectID, task) => projectConfigRuntime.upsertScheduledTask(projectID, task),
       syncScheduledTaskProject: (projectID) => scheduledTasksRuntime.syncProject(projectID),
       refreshAllowedRoots: refreshAssistantAllowedRoots,
@@ -330,9 +336,10 @@ export const createFeatureRoutesRuntime = (dependencies) => {
       refreshOpenCodeAfterConfigChange,
       clientReloadDelayMs,
       waitForOpenCodeReady,
-      getAgentSources,
-      getAgentConfig,
-      createAgent,
+    getAgentSources,
+    getAgentConfig,
+    listDisabledAgentOverrides,
+    createAgent,
       updateAgent,
       deleteAgent,
       getCommandSources,

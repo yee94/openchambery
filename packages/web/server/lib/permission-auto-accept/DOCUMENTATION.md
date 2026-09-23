@@ -27,9 +27,9 @@ These are normal authenticated OpenChamber runtime routes. They must not be adde
 
 `packages/ui/src/stores/permissionStore.ts` is a projection of server policy and does not persist an independent policy. The server is the sole responder and the UI renders pending requests until the authoritative `permission.replied` event arrives.
 
-`ChatInput` derives control visibility from the persisted, directory-scoped `useConfigStore` agent snapshot. A selected agent with a final global `allow` or `deny` rule has no remaining prompt path and hides the control. Unknown snapshots, missing selected agents, and rules that can ask keep the control visible. This path issues no additional request.
+`ChatInput` derives control visibility from the persisted, directory-scoped `useConfigStore` agent snapshot via `shouldShowPermissionAutoAcceptControl`. It reads the V2 wire `permissions` field when present (OpenCode `AgentInfo.permissions`), otherwise the legacy singular `permission` document. Rule normalization reuses `toPermissionRuleset` so both V2 `{ action, resource, effect }` and V1 `{ permission, pattern, action }` / tool-map shapes are recognized. A selected agent with a final global `allow` or `deny` rule has no remaining prompt path and hides the control. Unknown snapshots, missing selected agents, unparseable rules, and rules that can still ask keep the control visible. This path issues no additional request and does not change server auto-accept policy.
 
-VS Code retains its foreground-only implementation because it does not run the web server runtime.
+VS Code retains its foreground-only implementation because it does not run the web server runtime (`isVSCodeRuntime()` always shows the control).
 
 ## Tests
 

@@ -29,28 +29,41 @@ const { callSmallModel } = await import('./call.js');
 const { generateViaOpenCodeSession } = await import('./opencode-session.js');
 const { readAuthFile } = await import('../opencode/auth.js');
 
-const createService = (catalog = {}, connected = null) => createSmallModelService({
-  buildOpenCodeUrl: () => 'http://127.0.0.1:4096/',
-  getOpenCodeAuthHeaders: () => ({}),
-  getModelCatalog: async () => catalog,
-  getConnectedCatalog: async () => {
-    if (connected === null) throw new Error('connected catalog unavailable');
-    return { connected, providers: [], models: [] };
-  },
+const writeSettings = (settings) => fsPromises.writeFile(
+  path.join(tempRoot, 'settings.json'),
+  JSON.stringify(settings),
+  'utf8',
+);
+
+const completionOf = (text) => ({
+  completion: { choices: [{ message: { role: 'assistant', content: text } }] },
 });
+
+const createService = ({ catalog = {}, defaultModel = null } = {}) => {
+  const createChatCompletion = vi.fn(async () => completionOf('Gateway summary'));
+  const modelDefault = vi.fn(async () => ({ data: defaultModel }));
+  const service = createSmallModelService({
+    buildOpenCodeUrl: () => 'http://127.0.0.1:4096/',
+    getOpenCodeAuthHeaders: () => ({}),
+    getModelCatalog: async () => catalog,
+    openCodeClientFactory: () => ({ model: { default: modelDefault } }),
+    createChatCompletion,
+  });
+  return { ...service, createChatCompletion, modelDefault };
+};
 
 describe('summary AI settings', () => {
   beforeEach(async () => {
     vi.mocked(callSmallModel).mockClear();
     vi.mocked(generateViaOpenCodeSession).mockClear();
     vi.mocked(readAuthFile).mockReturnValue({});
-    await fsPromises.writeFile(path.join(tempRoot, 'settings.json'), JSON.stringify({
+    await writeSettings({
       summaryModelMode: 'custom',
       summaryCustomBaseURL: 'https://summary.example.test/v1',
       summaryModelID: 'summary-model',
       summaryCustomAPIToken: 'summary-token',
       summaryCommitPrompt: 'Return commit JSON.',
-    }), 'utf8');
+    });
   });
 
   afterAll(async () => {
@@ -63,7 +76,7 @@ describe('summary AI settings', () => {
   });
 
   it('uses a persisted custom API and prompt for commit summaries', async () => {
-    const { generateSmallModelText } = createService();
+    const { generateSmallModelText, createChatCompletion } = createService();
     const result = await generateSmallModelText({
       purpose: 'commit',
       prompt: 'Diff content',
@@ -71,6 +84,7 @@ describe('summary AI settings', () => {
       maxOutputTokens: 64,
     });
 
+    expect(createChatCompletion).not.toHaveBeenCalled();
     expect(callSmallModel).toHaveBeenCalledWith(expect.objectContaining({
       providerID: 'custom',
       modelID: 'summary-model',
@@ -90,251 +104,107 @@ describe('summary AI settings', () => {
     expect(JSON.stringify(result)).not.toContain('summary-token');
   });
 
-  it('uses the displayed default Summary AI model across session providers', async () => {
-    vi.mocked(readAuthFile).mockReturnValue({
-      openai: {
-        type: 'oauth',
-        access: 'openai-access-token',
-      },
-    });
-    await fsPromises.writeFile(path.join(tempRoot, 'settings.json'), JSON.stringify({}), 'utf8');
-
-    const { generateSmallModelText } = createService();
-    const result = await generateSmallModelText({
-      purpose: 'session-title',
-      prompt: 'Conversation content',
-      preferredProviderID: 'anthropic',
-      preferredModelID: 'claude-sonnet-4-5',
-      restrictToPreferredProvider: true,
-    });
-
-    expect(callSmallModel).toHaveBeenCalledWith(expect.objectContaining({
-      providerID: 'openai',
-      modelID: 'gpt-5.4-mini',
-    }));
-    expect(result).toEqual({
-      text: 'Generated summary',
-      providerID: 'openai',
-      modelID: 'gpt-5.4-mini',
-      source: 'summary-default',
-    });
-  });
-
-  it('excludes dedicated providers with unsupported auth types from callable lists', async () => {
-    vi.mocked(readAuthFile).mockReturnValue({
-      openai: { type: 'wellknown', token: 'openai-wellknown-token' },
-      anthropic: { type: 'oauth', access: 'anthropic-access', refresh: 'anthropic-refresh', expires: 0 },
-      google: { type: 'oauth', access: 'google-access', refresh: 'google-refresh', expires: 0 },
-      mistral: { type: 'api', key: 'mistral-key' },
-    });
-
-    const catalog = {
-      mistral: {
-        id: 'mistral',
-        name: 'Mistral',
-        models: {
-          'mistral-small': {
-            id: 'mistral-small',
-            api: { url: 'https://api.mistral.ai/v1' },
-          },
-        },
-      },
-      anthropic: {
-        id: 'anthropic',
-        name: 'Anthropic',
-        models: {
-          'claude-haiku-4-5': { id: 'claude-haiku-4-5', family: 'claude-haiku' },
-        },
-      },
-    };
-
-    const { listCallableProviders, listCallableModels } = createService(catalog);
-    const providers = await listCallableProviders();
-    const models = await listCallableModels();
-
-    expect(providers).toEqual(['mistral']);
-    expect(models).toEqual({ mistral: ['mistral-small'] });
-    expect(providers).not.toContain('openai');
-    expect(providers).not.toContain('anthropic');
-    expect(providers).not.toContain('google');
-  });
-
-  it('lists OpenAI api/oauth, Anthropic/Google api keys, and Copilot aliases as callable', async () => {
-    vi.mocked(readAuthFile).mockReturnValue({
-      openai: { type: 'api', key: 'sk-openai' },
-      anthropic: { type: 'api', key: 'sk-anthropic' },
-      google: { type: 'api', key: 'google-key' },
-      copilot: { type: 'oauth', access: 'copilot-token', refresh: 'copilot-token', expires: 0 },
-    });
-
-    const catalog = {
-      openai: {
-        id: 'openai',
-        name: 'OpenAI',
-        models: { 'gpt-4.1-nano': { id: 'gpt-4.1-nano', family: 'gpt-nano' } },
-      },
-      anthropic: {
-        id: 'anthropic',
-        name: 'Anthropic',
-        models: { 'claude-haiku-4-5': { id: 'claude-haiku-4-5', family: 'claude-haiku' } },
-      },
-      google: {
-        id: 'google',
-        name: 'Google',
-        models: { 'gemini-2.5-flash': { id: 'gemini-2.5-flash', family: 'gemini-flash' } },
-      },
-    };
-
-    const { listCallableProviders, listCallableModels } = createService(catalog);
-    const providers = await listCallableProviders();
-    const models = await listCallableModels();
-
-    expect(providers.sort()).toEqual(['anthropic', 'github-copilot', 'google', 'openai']);
-    expect(models.openai).toEqual(['gpt-4.1-nano']);
-    expect(models.anthropic).toEqual(['claude-haiku-4-5']);
-    expect(models.google).toEqual(['gemini-2.5-flash']);
-    expect(models['github-copilot']).toEqual(['gpt-5.4-nano']);
-  });
-
-  it('keeps OpenAI oauth callable with the codex small model only', async () => {
-    vi.mocked(readAuthFile).mockReturnValue({
-      openai: { type: 'oauth', access: 'openai-access', refresh: 'openai-refresh', expires: 0 },
-    });
-
-    const { listCallableProviders, listCallableModels } = createService({});
-    expect(await listCallableProviders()).toEqual(['openai']);
-    expect(await listCallableModels()).toEqual({ openai: ['gpt-5.4-mini'] });
-  });
-
-  it('lists logged-in providers with catalog models even without api.url', async () => {
-    vi.mocked(readAuthFile).mockReturnValue({
-      mistral: { type: 'api', key: 'mistral-key' },
-      deepseek: { type: 'api', key: 'deepseek-key' },
-      emptyplug: { type: 'api', key: 'empty-key' },
-    });
-
-    const catalog = {
-      mistral: {
-        id: 'mistral',
-        name: 'Mistral',
-        models: {
-          'mistral-small': { id: 'mistral-small' },
-        },
-      },
-      deepseek: {
-        id: 'deepseek',
-        name: 'DeepSeek',
-        models: {
-          'deepseek-chat': {
-            id: 'deepseek-chat',
-            api: { url: 'https://api.deepseek.com/v1' },
-          },
-        },
-      },
-      emptyplug: {
-        id: 'emptyplug',
-        name: 'Empty',
-        models: {},
-      },
-    };
-
-    const { listCallableProviders, listCallableModels } = createService(catalog);
-    expect((await listCallableProviders()).sort()).toEqual(['deepseek', 'mistral']);
-    expect(await listCallableModels()).toEqual({
-      mistral: ['mistral-small'],
-      deepseek: ['deepseek-chat'],
-    });
-  });
-
-  it('routes non-dedicated providers through the OpenCode session path', async () => {
-    vi.mocked(readAuthFile).mockReturnValue({
-      codebuddy: { type: 'api', key: 'codebuddy-key' },
-    });
-    await fsPromises.writeFile(path.join(tempRoot, 'settings.json'), JSON.stringify({
+  it('routes a saved provider model through the Assistant LLM gateway', async () => {
+    await writeSettings({
       summaryModelMode: 'provider',
-      summaryProviderID: 'codebuddy',
-      summaryModelID: 'codebuddy-flash',
-    }), 'utf8');
+      summaryProviderID: 'openai',
+      summaryModelID: 'gpt-5.4-mini',
+      summaryCommitPrompt: 'Return commit JSON.',
+    });
+    vi.mocked(readAuthFile).mockReturnValue({ openai: { type: 'oauth', access: 'openai-access' } });
 
-    const catalog = {
-      codebuddy: {
-        id: 'codebuddy',
-        name: 'CodeBuddy',
-        models: {
-          'codebuddy-flash': { id: 'codebuddy-flash' },
-        },
-      },
-    };
-
-    const { generateSmallModelText } = createService(catalog);
+    const { generateSmallModelText, createChatCompletion, modelDefault } = createService();
     const result = await generateSmallModelText({
       purpose: 'commit',
       prompt: 'Diff content',
       system: 'Fallback system prompt',
     });
 
+    expect(modelDefault).not.toHaveBeenCalled();
     expect(callSmallModel).not.toHaveBeenCalled();
-    expect(generateViaOpenCodeSession).toHaveBeenCalledWith(expect.objectContaining({
-      providerID: 'codebuddy',
-      modelID: 'codebuddy-flash',
-      purpose: 'commit',
+    expect(generateViaOpenCodeSession).not.toHaveBeenCalled();
+    expect(createChatCompletion).toHaveBeenCalledWith(expect.objectContaining({
+      body: {
+        providerID: 'openai',
+        modelID: 'gpt-5.4-mini',
+        messages: [
+          { role: 'system', content: 'Return commit JSON.' },
+          { role: 'user', content: 'Diff content' },
+        ],
+      },
     }));
     expect(result).toEqual({
-      text: 'Session path summary',
-      providerID: 'codebuddy',
-      modelID: 'codebuddy-flash',
+      text: 'Gateway summary',
+      providerID: 'openai',
+      modelID: 'gpt-5.4-mini',
       source: 'summary-provider',
     });
   });
 
-  it('lists connected plugin providers that have no auth.json entry', async () => {
-    vi.mocked(readAuthFile).mockReturnValue({});
-    const catalog = {
-      codebuddy: {
-        id: 'codebuddy',
-        name: 'CodeBuddy',
-        models: { 'codebuddy-flash': { id: 'codebuddy-flash' } },
-      },
-    };
-
-    const { listCallableProviders, listCallableModels } = createService(catalog, ['codebuddy']);
-    expect(await listCallableProviders()).toEqual(['codebuddy']);
-    expect(await listCallableModels()).toEqual({ codebuddy: ['codebuddy-flash'] });
-  });
-
-  it('does not list auth.json plugin providers that are not connected', async () => {
-    vi.mocked(readAuthFile).mockReturnValue({
-      mistral: { type: 'api', key: 'mistral-key' },
-    });
-    const catalog = {
-      mistral: {
-        id: 'mistral',
-        name: 'Mistral',
-        models: { 'mistral-small': { id: 'mistral-small' } },
-      },
-    };
-
-    const { listCallableProviders, listCallableModels } = createService(catalog, []);
-    expect(await listCallableProviders()).toEqual([]);
-    expect(await listCallableModels()).toEqual({});
-  });
-
-  it('keeps dedicated providers callable from auth.json even when they are not connected', async () => {
-    vi.mocked(readAuthFile).mockReturnValue({
-      openai: { type: 'oauth', access: 'openai-access', refresh: 'openai-refresh', expires: 0 },
+  it('follows the OpenCode default model when no summary model is saved', async () => {
+    await writeSettings({});
+    const { generateSmallModelText, createChatCompletion } = createService({
+      defaultModel: { id: 'claude-sonnet-4-5', modelID: 'internal-pack', providerID: 'anthropic' },
     });
 
-    const { listCallableProviders, listCallableModels } = createService({}, []);
-    expect(await listCallableProviders()).toEqual(['openai']);
-    expect(await listCallableModels()).toEqual({ openai: ['gpt-5.4-mini'] });
+    const result = await generateSmallModelText({
+      purpose: 'session-title',
+      prompt: 'Conversation content',
+      system: 'Title system prompt',
+      preferredProviderID: 'openai',
+      restrictToPreferredProvider: true,
+    });
+
+    expect(createChatCompletion).toHaveBeenCalledWith(expect.objectContaining({
+      body: expect.objectContaining({ providerID: 'anthropic', modelID: 'claude-sonnet-4-5' }),
+    }));
+    expect(result).toMatchObject({
+      providerID: 'anthropic',
+      modelID: 'claude-sonnet-4-5',
+      source: 'summary-default',
+    });
+  });
+
+  it('fails explicitly when OpenCode has no default model', async () => {
+    await writeSettings({ summaryModelMode: 'provider' });
+    const { generateSmallModelText, createChatCompletion } = createService();
+
+    await expect(generateSmallModelText({
+      purpose: 'commit',
+      prompt: 'Diff content',
+    })).rejects.toMatchObject({
+      message: 'No OpenCode default model is configured',
+      statusCode: 404,
+    });
+    expect(createChatCompletion).not.toHaveBeenCalled();
+  });
+
+  it('surfaces gateway failures instead of falling back to another model', async () => {
+    await writeSettings({
+      summaryModelMode: 'provider',
+      summaryProviderID: 'openai',
+      summaryModelID: 'missing-model',
+    });
+    const { generateSmallModelText, createChatCompletion } = createService();
+    createChatCompletion.mockRejectedValueOnce(Object.assign(
+      new Error('No connected OpenCode provider for openai/missing-model'),
+      { statusCode: 400, code: 'no_provider' },
+    ));
+
+    await expect(generateSmallModelText({
+      purpose: 'commit',
+      prompt: 'Diff content',
+    })).rejects.toMatchObject({ statusCode: 400, code: 'no_provider' });
+    expect(callSmallModel).not.toHaveBeenCalled();
+    expect(generateViaOpenCodeSession).not.toHaveBeenCalled();
   });
 
   it('requires a custom base URL, model ID, and token before enabling custom mode', async () => {
-    await fsPromises.writeFile(path.join(tempRoot, 'settings.json'), JSON.stringify({
+    await writeSettings({
       summaryModelMode: 'custom',
       summaryCustomBaseURL: 'https://summary.example.test/v1',
       summaryModelID: 'summary-model',
-    }), 'utf8');
+    });
 
     const { generateSmallModelText } = createService();
     await expect(generateSmallModelText({
@@ -347,13 +217,13 @@ describe('summary AI settings', () => {
   });
 
   it('prefers summaryCustomModelID over the shared summaryModelID for custom calls', async () => {
-    await fsPromises.writeFile(path.join(tempRoot, 'settings.json'), JSON.stringify({
+    await writeSettings({
       summaryModelMode: 'custom',
       summaryCustomBaseURL: 'https://summary.example.test/v1',
       summaryModelID: 'provider-model',
       summaryCustomModelID: 'custom-model',
       summaryCustomAPIToken: 'summary-token',
-    }), 'utf8');
+    });
 
     const { generateSmallModelText } = createService();
     await generateSmallModelText({
@@ -364,6 +234,26 @@ describe('summary AI settings', () => {
     expect(callSmallModel).toHaveBeenCalledWith(expect.objectContaining({
       modelID: 'custom-model',
       custom: expect.objectContaining({ modelID: 'custom-model' }),
+    }));
+  });
+
+  it('keeps non-summary purposes on small-model resolution', async () => {
+    await writeSettings({ summaryModelMode: 'provider', summaryProviderID: 'openai', summaryModelID: 'gpt-5.4' });
+    vi.mocked(readAuthFile).mockReturnValue({ codebuddy: { type: 'api', key: 'codebuddy-key' } });
+
+    const { generateSmallModelText, createChatCompletion } = createService({
+      catalog: { codebuddy: { id: 'codebuddy', name: 'CodeBuddy', models: { 'codebuddy-flash': { id: 'codebuddy-flash' } } } },
+    });
+    await generateSmallModelText({
+      purpose: 'goal',
+      prompt: 'Goal content',
+      model: 'codebuddy/codebuddy-flash',
+    });
+
+    expect(createChatCompletion).not.toHaveBeenCalled();
+    expect(generateViaOpenCodeSession).toHaveBeenCalledWith(expect.objectContaining({
+      providerID: 'codebuddy',
+      modelID: 'codebuddy-flash',
     }));
   });
 });

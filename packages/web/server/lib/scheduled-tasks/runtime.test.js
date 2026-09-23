@@ -45,6 +45,7 @@ const createRuntime = (updateScheduledTaskState, overrides = {}) => createSchedu
   waitForOpenCodeReady: vi.fn(async () => {
     throw new Error('OpenCode unavailable');
   }),
+  persistSessionMetadata: vi.fn(async () => ({})),
   logger: { info: vi.fn(), warn: vi.fn() },
   ...overrides,
 });
@@ -443,12 +444,16 @@ describe('scheduled-tasks run history and session lifecycle', () => {
   it('creates session with Scheduled title and location, attaches history, then prompts via session.prompt', async () => {
     const history = createHistoryStore();
     const client = createSuccessfulClient();
+    const persistSessionMetadata = vi.fn(async () => ({}));
+    const onSystemSessionPersisted = vi.fn();
 
     const updateScheduledTaskState = vi.fn(async (_projectID, _taskID, state) => ({
       task: { ...scheduledTask, state: { ...scheduledTask.state, ...state } },
     }));
     const runtime = createRuntime(updateScheduledTaskState, {
       runHistoryStore: history,
+      persistSessionMetadata,
+      onSystemSessionPersisted,
       waitForOpenCodeReady: vi.fn(async () => {}),
     });
     await runtime.syncProject('project-1');
@@ -474,9 +479,37 @@ describe('scheduled-tasks run history and session lifecycle', () => {
       location: { directory: '/tmp/project-1' },
       title: expect.stringMatching(/^\[Scheduled\] Task /),
       model: { id: 'gpt-4.1', providerID: 'openai' },
+      metadata: {
+        openchamber: {
+          scheduledTask: expect.objectContaining({
+            projectID: 'project-1',
+            taskID: 'task-1',
+            runID: started.id,
+            name: 'Task',
+          }),
+        },
+      },
     }), expect.objectContaining({ signal: expect.any(AbortSignal) }));
-    expect(client.create.mock.calls[0][0].metadata).toBeUndefined();
     expect(client.create.mock.calls[0][0].directory).toBeUndefined();
+    expect(persistSessionMetadata).toHaveBeenCalledWith('ses_1', {
+      openchamber: {
+        scheduledTask: expect.objectContaining({
+          projectID: 'project-1',
+          taskID: 'task-1',
+          runID: started.id,
+          name: 'Task',
+        }),
+      },
+    });
+    expect(onSystemSessionPersisted).toHaveBeenCalledWith({
+      sessionID: 'ses_1',
+      directory: '/tmp/project-1',
+      metadata: expect.objectContaining({
+        openchamber: expect.objectContaining({
+          scheduledTask: expect.objectContaining({ taskID: 'task-1' }),
+        }),
+      }),
+    });
     expect(history.attachSession).toHaveBeenCalledWith(started.id, 'ses_1');
     expect(client.prompt).toHaveBeenCalledWith({
       sessionID: 'ses_1',
@@ -490,6 +523,48 @@ describe('scheduled-tasks run history and session lifecycle', () => {
     expect(client.active).toHaveBeenCalled();
     expect(client.messageList).toHaveBeenCalled();
     expect(client.active.mock.invocationCallOrder[0]).toBeGreaterThan(client.prompt.mock.invocationCallOrder[0]);
+  });
+
+  it('refuses before session create when Host metadata persist is not configured', async () => {
+    const history = createHistoryStore();
+    const client = createSuccessfulClient();
+    const updateScheduledTaskState = vi.fn(async (_projectID, _taskID, state) => ({
+      task: { ...scheduledTask, state: { ...scheduledTask.state, ...state } },
+    }));
+    const runtime = createRuntime(updateScheduledTaskState, {
+      runHistoryStore: history,
+      persistSessionMetadata: null,
+      waitForOpenCodeReady: vi.fn(async () => {}),
+    });
+    await runtime.syncProject('project-1');
+    const result = await runtime.runNow('project-1', 'task-1');
+
+    expect(result.ok).toBe(false);
+    expect(result.error).toMatch(/session metadata persist is not configured/);
+    expect(client.create).not.toHaveBeenCalled();
+    expect(client.prompt).not.toHaveBeenCalled();
+  });
+
+  it('fails the run before prompt when Host metadata persist throws', async () => {
+    const history = createHistoryStore();
+    const client = createSuccessfulClient();
+    const updateScheduledTaskState = vi.fn(async (_projectID, _taskID, state) => ({
+      task: { ...scheduledTask, state: { ...scheduledTask.state, ...state } },
+    }));
+    const runtime = createRuntime(updateScheduledTaskState, {
+      runHistoryStore: history,
+      persistSessionMetadata: vi.fn(async () => {
+        throw new Error('store unavailable');
+      }),
+      waitForOpenCodeReady: vi.fn(async () => {}),
+    });
+    await runtime.syncProject('project-1');
+    const result = await runtime.runNow('project-1', 'task-1');
+
+    expect(result.ok).toBe(false);
+    expect(result.error).toMatch(/store unavailable/);
+    expect(client.create).toHaveBeenCalled();
+    expect(client.prompt).not.toHaveBeenCalled();
   });
 
   it('records error outcome and real duration when the assistant turn fails after admission', async () => {
@@ -763,6 +838,7 @@ describe('scheduled-tasks run history and session lifecycle', () => {
       buildOpenCodeUrl: vi.fn(() => 'http://127.0.0.1:4096'),
       getOpenCodeAuthHeaders: vi.fn(() => ({})),
       waitForOpenCodeReady: vi.fn(async () => {}),
+      persistSessionMetadata: vi.fn(async () => ({})),
       logger: { info: vi.fn(), warn: vi.fn() },
       runHistoryStore: history,
       maxRunDurationMs: 500,
@@ -948,6 +1024,7 @@ describe('scheduled-tasks run history and session lifecycle', () => {
       buildOpenCodeUrl: vi.fn(() => 'http://127.0.0.1:4096'),
       getOpenCodeAuthHeaders: vi.fn(() => ({})),
       waitForOpenCodeReady: vi.fn(async () => {}),
+      persistSessionMetadata: vi.fn(async () => ({})),
       logger: { info: vi.fn(), warn: vi.fn() },
       runHistoryStore: history,
       persistSessionGoal,
@@ -1016,6 +1093,7 @@ describe('scheduled-tasks run history and session lifecycle', () => {
       buildOpenCodeUrl: vi.fn(() => 'http://127.0.0.1:4096'),
       getOpenCodeAuthHeaders: vi.fn(() => ({})),
       waitForOpenCodeReady: vi.fn(async () => {}),
+      persistSessionMetadata: vi.fn(async () => ({})),
       logger: { info: vi.fn(), warn: vi.fn() },
       runHistoryStore: history,
       persistSessionGoal,
@@ -1581,6 +1659,7 @@ describe('scheduled-tasks cross-process slot occupancy', () => {
         waitForOpenCodeReady: vi.fn(async () => {
           throw new Error('OpenCode unavailable');
         }),
+        persistSessionMetadata: vi.fn(async () => ({})),
         logger: { info: vi.fn(), warn: vi.fn() },
         runHistoryStore: store,
         notifyTaskRun,

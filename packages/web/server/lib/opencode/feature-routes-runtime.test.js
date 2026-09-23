@@ -3,6 +3,12 @@ import { describe, expect, it, vi } from 'vitest';
 import { createWorktreeTopologyBroadcaster } from './feature-routes-runtime.js';
 
 describe('feature routes runtime composition', () => {
+  it('wires Host isolation persist into scheduled-task runtime from the composition root', async () => {
+    const source = await fs.readFile(new URL('../../index.js', import.meta.url), 'utf8');
+    expect(source).toMatch(/createScheduledTasksRuntime\(\{[\s\S]*persistSessionMetadata: persistSessionMetadataToStore/);
+    expect(source).toMatch(/createScheduledTasksRuntime\(\{[\s\S]*onSystemSessionPersisted: hideSystemSessionFromIndex/);
+  });
+
   it('wires scheduled-task upsert into assistant contact tools', async () => {
     const source = await fs.readFile(new URL('./feature-routes-runtime.js', import.meta.url), 'utf8');
     expect(source).toMatch(/registerAssistantRoutes\(app, \{[\s\S]*upsertScheduledTask:[\s\S]*projectConfigRuntime\.upsertScheduledTask/);
@@ -10,6 +16,10 @@ describe('feature routes runtime composition', () => {
     expect(source).toMatch(/registerAssistantRoutes\(app, \{[\s\S]*listProjects:/);
     expect(source).toMatch(/registerAssistantRoutes\(app, \{[\s\S]*listScheduledTasks:[\s\S]*projectConfigRuntime\.listScheduledTasks/);
     expect(source).toMatch(/registerAssistantRoutes\(app, \{[\s\S]*sessionIndexService/);
+    expect(source).toMatch(/registerAssistantRoutes\(app, \{[\s\S]*persistSessionMetadata/);
+    expect(source).toMatch(/registerAssistantRoutes\(app, \{[\s\S]*onSystemSessionPersisted/);
+    expect(source).toMatch(/registerLlmRoutes\(app, \{[\s\S]*persistSessionMetadata/);
+    expect(source).toMatch(/registerLlmRoutes\(app, \{[\s\S]*onSystemSessionPersisted/);
     expect(source).toMatch(/label: project\.label\.trim\(\)/);
   });
 

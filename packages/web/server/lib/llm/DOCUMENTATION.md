@@ -49,8 +49,11 @@ data-URL file parts:
 2. `agent.get({ agentID: 'openchamber-llm', location })` and require the **final**
    permissions rule to be deny-all. Failure → `llm_attachment_generation_unavailable`
    **before** any `session.prompt`. Title is never treated as permission isolation.
-3. `session.create({ location, agent, model: { id, providerID, variant? } })`
-   (bare session id).
+3. `session.create({ location, agent, model: { id, providerID, variant? },
+   metadata: { openchamber: { llm: { purpose: 'chat-completions' } } } })`
+   (bare session id). Host `persistSessionMetadata` then commits the same
+   isolation patch; `onSystemSessionPersisted` drops the throwaway session
+   from the sidebar index. Create-time `metadata` is a hint only.
 4. Optional `session.instructions.entry.put` for the system prompt.
 5. Subscribe for `session.text.delta` (`data.sessionID` / `assistantMessageID` /
    `ordinal` / `delta`) before prompt; unsubscribe in `finally`.

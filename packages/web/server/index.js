@@ -39,6 +39,7 @@ import { resolveOpenCodeEnvConfig } from './lib/opencode/env-config.js';
 import { createHmrStateRuntime } from './lib/opencode/hmr-state-runtime.js';
 import { createOpenCodeNetworkRuntime } from './lib/opencode/network-runtime.js';
 import { createOpenCodeAuthStateRuntime } from './lib/opencode/auth-state-runtime.js';
+import { createSharedOpenCodeService, isSharedServiceEnabled } from './lib/opencode/shared-service.js';
 import { createProjectDirectoryRuntime } from './lib/opencode/project-directory-runtime.js';
 import { createSettingsNormalizationRuntime } from './lib/opencode/settings-normalization-runtime.js';
 import { createSettingsHelpers } from './lib/opencode/settings-helpers.js';
@@ -573,6 +574,7 @@ const openCodeAuthStateRuntime = createOpenCodeAuthStateRuntime({
 const getOpenCodeAuthHeaders = (...args) => openCodeAuthStateRuntime.getOpenCodeAuthHeaders(...args);
 const isOpenCodeConnectionSecure = (...args) => openCodeAuthStateRuntime.isOpenCodeConnectionSecure(...args);
 const ensureLocalOpenCodeServerPassword = (...args) => openCodeAuthStateRuntime.ensureLocalOpenCodeServerPassword(...args);
+const adoptOpenCodeServerPassword = (...args) => openCodeAuthStateRuntime.adoptOpenCodeServerPassword(...args);
 
 const openCodeNetworkState = {};
 Object.defineProperties(openCodeNetworkState, {
@@ -799,6 +801,40 @@ const persistSessionGoalToStore = async (sessionId, _directory, goal) => {
     console.warn('[session-metadata] broadcast failed:', error?.message ?? error);
   }
   return metadata;
+};
+
+/**
+ * Isolation / Host metadata write. Same store + broadcast seam as goal persist.
+ * Callers pass an RFC 7386 merge patch; the store returns the committed object.
+ */
+const persistSessionMetadataToStore = async (sessionId, patch) => {
+  const metadata = await sessionMetadataStore.setSessionMetadata(sessionId, patch);
+  try {
+    broadcastGlobalUiEvent({
+      type: 'openchamber:session-metadata',
+      properties: { sessionID: sessionId, metadata },
+    });
+  } catch (error) {
+    console.warn('[session-metadata] broadcast failed:', error?.message ?? error);
+  }
+  return metadata;
+};
+
+/**
+ * After Host isolation metadata is committed, drop the session from the
+ * sidebar index immediately. Do not wait for the next directory list sync.
+ * Reads refs at call time — scheduled-task runtime is constructed before main().
+ */
+const hideSystemSessionFromIndex = ({ sessionID, directory, metadata } = {}) => {
+  if (!sessionIndexServiceRef || typeof sessionID !== 'string' || !sessionID) return;
+  const changed = sessionIndexServiceRef.upsertAndReportChange({
+    id: sessionID,
+    directory: directory || '',
+    metadata,
+  });
+  if (changed) {
+    sessionIndexSyncRuntimeRef?.publishChange();
+  }
 };
 
 /** Filled in main() once the session index + broadcast sinks exist. */
@@ -1199,6 +1235,8 @@ const openCodeLifecycleRuntime = createOpenCodeLifecycleRuntime({
   ensureOpencodeCliEnv,
   ensurePinnedOpenCode2CliEnv,
   ensureLocalOpenCodeServerPassword,
+  adoptOpenCodeServerPassword,
+  sharedService: isSharedServiceEnabled() ? createSharedOpenCodeService() : null,
   resolveManagedOpenCodeLaunchSpec,
   setOpenCodePort,
   setDetectedOpenCodeApiPrefix,
@@ -1254,6 +1292,8 @@ const scheduledTasksRuntime = createScheduledTasksRuntime({
   runHistoryStore: scheduledTaskRunHistoryStore,
   // Same Host store seam as session-goal / manual UI metadata writes.
   readSessionMetadata: (sessionId) => sessionMetadataStore.get(sessionId),
+  persistSessionMetadata: persistSessionMetadataToStore,
+  onSystemSessionPersisted: hideSystemSessionFromIndex,
   persistSessionGoal: persistSessionGoalToStore,
   // Arm the goal loop after first persist only — do not feed progress writes
   // back through processPayload (session-goal runtime already broadcasts those).
@@ -1318,7 +1358,10 @@ const ensureGlobalWatcherStarted = async () => {
 
 const completeOpenCodeStartup = () => {
   scheduleOpenCodeApiDetection();
-  if (openCodeLifecycleState.openCodeProcess && !openCodeLifecycleState.isExternalOpenCode) {
+  if (
+    (openCodeLifecycleState.openCodeProcess && !openCodeLifecycleState.isExternalOpenCode)
+    || openCodeLifecycleRuntime.isSharedOpenCodeService()
+  ) {
     startHealthMonitoring();
   }
   // The global watcher used to start only for desktop notifications; session-title
@@ -1948,6 +1991,8 @@ async function main(options = {}) {
     },
     // Same store seam as sessionGoalRuntime / scheduledTasksRuntime.
     readSessionMetadata: (sessionId) => sessionMetadataStore.get(sessionId),
+    persistSessionMetadata: persistSessionMetadataToStore,
+    onSystemSessionPersisted: hideSystemSessionFromIndex,
     persistSessionGoal: persistSessionGoalToStore,
     onSessionMetadataWritten: ({ sessionID, directory, metadata }) => {
       sessionGoalRuntime.processPayload({

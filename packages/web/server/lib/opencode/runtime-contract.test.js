@@ -1,27 +1,28 @@
 import { describe, expect, it } from 'vitest';
 import {
-  RUNTIME_CONTRACT_MAX_VERIFIED,
   RUNTIME_CONTRACT_MIN_VERIFIED,
   classifyRuntimeVersionBand,
   createRevokedRuntimeContract,
   evaluateRuntimeContract,
+  formatRuntimeContractBlockedError,
   isRuntimeContractDiagnosticPath,
   isRuntimeContractExecutionPath,
+  runtimeContractExecutionBlockedBody,
   shouldBlockRuntimeContractExecution,
   versionMeetsMinimum,
 } from './runtime-contract.js';
 
 describe('runtime contract admission (ticket 11)', () => {
-  it('records verified bounds from pin and source review', () => {
+  it('records minimum verified bound from pin', () => {
     expect(RUNTIME_CONTRACT_MIN_VERIFIED).toBe('2.0.12');
-    expect(RUNTIME_CONTRACT_MAX_VERIFIED).toBe('2.0.14');
   });
 
-  it('classifies version bands without hard-rejecting unverified newer 2.x', () => {
+  it('classifies version bands with a 2.x floor only', () => {
     expect(classifyRuntimeVersionBand('2.0.12')).toBe('verified');
     expect(classifyRuntimeVersionBand('2.0.14')).toBe('verified');
+    expect(classifyRuntimeVersionBand('2.0.15')).toBe('verified');
+    expect(classifyRuntimeVersionBand('2.1.0')).toBe('verified');
     expect(classifyRuntimeVersionBand('2.0.5')).toBe('below-min');
-    expect(classifyRuntimeVersionBand('2.1.0')).toBe('unverified-newer');
     expect(classifyRuntimeVersionBand('1.18.18')).toBe('1x');
     expect(classifyRuntimeVersionBand('not-a-version')).toBe('invalid');
     expect(classifyRuntimeVersionBand(null)).toBe('unknown');
@@ -62,21 +63,20 @@ describe('runtime contract admission (ticket 11)', () => {
     expect(result.capabilities['core.protocol'].available).toBe(false);
   });
 
-  it('keeps unverified newer 2.x connected but blocks execution until verified', () => {
+  it('admits newer 2.x above the documented floor for execution', () => {
     const result = evaluateRuntimeContract({
-      serveVersion: '2.1.0',
+      serveVersion: '2.0.15',
       reachable: true,
       authenticated: true,
       healthOk: true,
       migrationAdmitTranscript: true,
     });
-    expect(result.versionBand).toBe('unverified-newer');
-    expect(result.phase).toBe('ready-unverified');
+    expect(result.versionBand).toBe('verified');
+    expect(result.phase).toBe('ready');
     expect(result.protocolCompatible).toBe(true);
-    expect(result.executionAllowed).toBe(false);
-    expect(result.capabilities['core.protocol'].available).toBe(false);
-    expect(result.capabilities['session.queuedInput'].available).toBe(false);
-    expect(result.reasons).toContain('unverified-newer');
+    expect(result.executionAllowed).toBe(true);
+    expect(result.capabilities['core.protocol'].available).toBe(true);
+    expect(result.maxVerifiedVersion).toBeNull();
   });
 
   it('rejects 1.x and unparseable versions for execution', () => {
@@ -170,11 +170,18 @@ describe('runtime contract admission (ticket 11)', () => {
     expect(shouldBlockRuntimeContractExecution('PATCH', '/api/session/ses_1/inbox/msg_1', contract)).toBe(true);
   });
 
-  it('closes optional execution capabilities along with the unverified execution gate', () => {
-    const contract = evaluateRuntimeContract({ serveVersion: '2.1.0', reachable: true, authenticated: true, healthOk: true });
-    for (const key of ['session.queuedInput', 'session.background', 'session.generationFallback']) {
-      expect(contract.capabilities[key].available).toBe(false);
-    }
+  it('exposes upgrade guidance in blocked execution responses for below-min serve', () => {
+    const contract = evaluateRuntimeContract({
+      serveVersion: '2.0.5',
+      reachable: true,
+      authenticated: true,
+      healthOk: true,
+      migrationAdmitTranscript: true,
+    });
+    const body = runtimeContractExecutionBlockedBody(contract);
+    expect(body.error).toContain('2.0.12');
+    expect(body.error).toMatch(/Settings → About/i);
+    expect(formatRuntimeContractBlockedError(contract)).toBe(body.error);
   });
 
   it('production default blocks execution when contract is null (no silent bypass)', () => {

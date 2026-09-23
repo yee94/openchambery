@@ -78,8 +78,11 @@ every other runtime API.
   take the OpenCode session path instead. The helper remains in `call.js` for
   the dedicated adapters and custom mode.
 - `catalog.js` — directory-scoped provider catalog via official
-  `@opencode-ai/sdk/v2` `client.config.providers()`. Base URL/auth come from
-  the composition root (`buildOpenCodeUrl` / `getOpenCodeAuthHeaders`).
+  `@opencode/client` `provider.list` + `model.list`. Model ids are `ModelInfo.id`
+  (external generate/session id). `ModelInfo.modelID` is internal and is not
+  preferred. v2 `cost` arrays keep the base tier's `input` / `output`. Base
+  URL/auth come from the composition root (`buildOpenCodeUrl` /
+  `getOpenCodeAuthHeaders`).
   Per-directory short TTL (~30s) with single-flight. OpenCode failure returns
   an **explicit** minimal fallback catalog (OpenAI OAuth / GitHub Copilot /
   Google API / Anthropic API candidates only) — never an authoritative empty
@@ -92,10 +95,7 @@ every other runtime API.
   model?, directory? }` → `{ text, providerID, modelID, source }`),
   `POST /api/small-model/test` (custom OpenAI-compatible probe → `{ ok, code? }`),
   and `POST /api/small-model/custom-models` (best-effort `{baseURL}/models`
-  suggestions → `{ models }`). The preview response includes `callableModels`,
-  the Provider/model allowlist consumed by Settings → Summary AI. Callable
-  lists receive the same `directory` as describe/generate so they share the
-  directory catalog.
+  suggestions → `{ models }`).
 - `custom-api.js` — custom Summary AI probe and model listing. Failure codes
   are `incomplete`, `token` (401/403), `model` (404 / `model_not_found`), or
   `baseURL` (network / non-OpenAI-compatible). Tokens are never logged.
@@ -105,19 +105,14 @@ every other runtime API.
 | Mode / provider | Path |
 |---|---|
 | Summary AI `custom` | Direct OpenAI-compatible call (`call.js`) |
-| `openai` / `anthropic` / `google` / `github-copilot` with usable dedicated auth | Direct dedicated adapter (`call.js`) |
-| Any other usable auth + catalog model (plugin providers, …) | Temporary OpenCode session (`opencode-session.js`) |
+| Summary AI provider mode (`commit` / `session-title`) | Assistant LLM gateway (`llm/completions.js` `createChatCompletion`: connected-catalog check, then `generate.text`) |
+| Other purposes: `openai` / `anthropic` / `google` / `github-copilot` with usable dedicated auth | Direct dedicated adapter (`call.js`) |
+| Other purposes: any other usable auth + catalog model (plugin providers, …) | Temporary OpenCode session (`opencode-session.js`) |
 
-Callable Settings lists:
-- Dedicated adapters (`openai`, `anthropic`, `google`, `github-copilot`) stay
-  gated by usable `auth.json` entries and the existing small-model whitelist
-  (OpenAI OAuth → `gpt-5.4-mini`; Copilot → `gpt-5.4-nano`).
-- Every other provider is taken from the connected catalog (plugin / env
-  credentials that OpenCode reports as connected), intersected with catalog
-  model ids. No `api.url` gate. If the connected catalog request fails, the
-  list falls back to usable `auth.json` plugin entries rather than pretending
-  none exist.
-Copilot auth aliases merge to `github-copilot`.
+Summary AI provider mode never uses the dedicated adapters, the small-model
+whitelist, or family-scan fallback. A model that is not in the connected
+catalog fails with the gateway's `no_provider` error instead of silently
+switching models.
 
 ## OpenCode session lifecycle
 
@@ -164,7 +159,8 @@ directly.
 
 Commit-message generation and session-title refresh pass `purpose: 'commit'`
 or `purpose: 'session-title'` to `generateSmallModelText`. Settings → Summary
-AI can select an authenticated OpenCode provider/model or a custom
+AI can select an OpenCode provider/model from the same catalog and picker as
+Assistants (`useScopedProvidersQuery(null)` + `ModelSelector`) or a custom
 OpenAI-compatible `baseURL`, model ID, and API token. Custom mode stores the
 model id in `summaryCustomModelID` (legacy `summaryModelID` is still read when
 that field is absent). Custom mode is enabled only when base URL, model ID,
@@ -174,10 +170,11 @@ can probe the custom API (`POST /api/small-model/test`) and load model
 suggestions from `{baseURL}/models` without blocking free-form entry.
 
 `summaryCommitPrompt` and `summarySessionTitlePrompt` replace the respective
-call's system prompt when non-empty. With no persisted provider choice, summary
-calls use the same effective default shown by Settings: authenticated OpenAI
-when available, otherwise the first callable provider/model. This effective
-default remains authoritative when the active session uses another provider.
+call's system prompt when non-empty. With no persisted provider choice (the
+picker shows "OpenCode default model"), summary calls use OpenCode's
+`model.default`. No default model is an explicit 404, not a fallback guess.
+The chosen or default model stays authoritative when the active session uses
+another provider.
 
 ## Known limitations
 

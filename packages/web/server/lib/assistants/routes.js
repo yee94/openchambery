@@ -20,6 +20,8 @@ export const registerAssistantRoutes = (app, dependencies) => {
     ensureTempDirectory: ensureLlmTempDirectory,
     // Attachment-session generate may subscribe for session.text.delta (contact harness).
     globalEventHub: input?.globalEventHub ?? dependencies.globalEventHub,
+    persistSessionMetadata: dependencies.persistSessionMetadata,
+    onSystemSessionPersisted: dependencies.onSystemSessionPersisted,
   });
   const service = createAssistantsService({
     dbPath: dependencies.dbPath,
@@ -40,6 +42,8 @@ export const registerAssistantRoutes = (app, dependencies) => {
     onContactTurnComplete: dependencies.onContactTurnComplete,
     archiveSessionHost: dependencies.archiveSessionHost,
     forgetSessionHost: dependencies.forgetSessionHost,
+    persistSessionMetadata: dependencies.persistSessionMetadata,
+    onSystemSessionPersisted: dependencies.onSystemSessionPersisted,
     createChatCompletion: boundCompletion,
   });
   setAssignedSessionSettleHandler(({ sessionId, status }) => service.reportAssignedSessionSettle(sessionId, status));

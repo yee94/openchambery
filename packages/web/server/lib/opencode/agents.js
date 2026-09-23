@@ -16,6 +16,12 @@ import {
   resolvePromptFilePath,
   writePromptFile,
 } from './shared.js';
+import {
+  DropConfirmationRequired,
+  applyNativePatch,
+  convertAgentConfig,
+  inspectAgentConfig,
+} from './agent-document.js';
 
 // ============== AGENT SCOPE HELPERS ==============
 
@@ -321,19 +327,117 @@ function getAgentSources(agentName, workingDirectory, lookupCache = createAgentL
     }
   };
 
+  const stored = {};
+  if (jsonSection && typeof jsonSection === 'object') {
+    Object.assign(stored, jsonSection);
+  }
   if (mdExists) {
     const { frontmatter, body } = parseMdFile(mdPath);
     sources.md.fields = Object.keys(frontmatter);
     if (body) {
       sources.md.fields.push('prompt');
     }
+    Object.assign(stored, frontmatter);
+    if (typeof body === 'string' && body.trim()) stored.prompt = body.trim();
   }
 
   if (jsonSection) {
     sources.json.fields = Object.keys(jsonSection);
   }
+  sources.document = inspectAgentConfig(stored);
 
   return sources;
+}
+
+function listDisabledAgentOverrides(workingDirectory) {
+  /** @type {Array<{ name: string, scope: string, description?: string, mode?: string }>} */
+  const found = [];
+  const visit = (directory, scope) => {
+    if (!directory || !fs.existsSync(directory)) return;
+    const walk = (current, prefix) => {
+      let entries = [];
+      try {
+        entries = fs.readdirSync(current, { withFileTypes: true });
+      } catch {
+        return;
+      }
+      for (const entry of entries) {
+        if (found.length >= 200) return;
+        const full = path.join(current, entry.name);
+        if (entry.isDirectory()) {
+          walk(full, prefix ? `${prefix}/${entry.name}` : entry.name);
+          continue;
+        }
+        if (!entry.isFile() || !entry.name.endsWith('.md')) continue;
+        const base = entry.name.slice(0, -3);
+        const name = prefix ? `${prefix}/${base}` : base;
+        let frontmatter = {};
+        try {
+          frontmatter = parseMdFile(full).frontmatter || {};
+        } catch {
+          continue;
+        }
+        if (frontmatter.disabled !== true && frontmatter.disable !== true) continue;
+        found.push({
+          name,
+          scope,
+          ...(typeof frontmatter.description === 'string' ? { description: frontmatter.description } : {}),
+          ...(frontmatter.mode === 'primary' || frontmatter.mode === 'subagent' || frontmatter.mode === 'all'
+            ? { mode: frontmatter.mode }
+            : {}),
+        });
+      }
+    };
+    walk(directory, '');
+  };
+
+  visit(AGENT_DIR, AGENT_SCOPE.USER);
+  if (workingDirectory) {
+    visit(path.join(workingDirectory, '.opencode', 'agents'), AGENT_SCOPE.PROJECT);
+    visit(path.join(workingDirectory, '.opencode', 'agent'), AGENT_SCOPE.PROJECT);
+  }
+  return found;
+}
+
+function storedAgentConfig(agentName, workingDirectory, lookupCache = createAgentLookupCache()) {
+  const layers = readConfigLayers(workingDirectory);
+  const jsonSource = getJsonEntrySource(layers, 'agent', agentName);
+  const stored = {};
+  if (jsonSource.section && typeof jsonSource.section === 'object') {
+    Object.assign(stored, jsonSource.section);
+  }
+  const { path: mdPath } = getAgentWritePath(agentName, workingDirectory, undefined, lookupCache);
+  if (mdPath && fs.existsSync(mdPath)) {
+    const { frontmatter, body } = parseMdFile(mdPath);
+    Object.assign(stored, frontmatter);
+    if (typeof body === 'string' && body.trim()) stored.prompt = body.trim();
+  }
+  return { stored, jsonSource };
+}
+
+function writeNativeAgent(agentName, patch, workingDirectory, scope, confirmDrop) {
+  ensureDirs();
+  const lookupCache = createAgentLookupCache();
+  const { stored, jsonSource } = storedAgentConfig(agentName, workingDirectory, lookupCache);
+  const converted = convertAgentConfig(stored);
+  if (converted.dropped.length > 0 && confirmDrop !== true) {
+    throw new DropConfirmationRequired(converted.dropped);
+  }
+  const next = applyNativePatch(converted, patch && typeof patch === 'object' ? patch : {});
+  const { path: existingPath } = getAgentWritePath(agentName, workingDirectory, scope, lookupCache);
+  let targetPath = existingPath;
+  if (!targetPath || !fs.existsSync(targetPath)) {
+    if (scope === AGENT_SCOPE.PROJECT && workingDirectory) {
+      ensureProjectAgentDir(workingDirectory);
+      targetPath = getProjectAgentPath(workingDirectory, agentName);
+    } else {
+      targetPath = getUserAgentPath(agentName, lookupCache);
+    }
+  }
+  writeMdFile(targetPath, next.frontmatter, next.body);
+  if (jsonSource.exists && jsonSource.config && jsonSource.path && deleteJsonAgentEntry(jsonSource.config, agentName)) {
+    writeConfig(jsonSource.config, jsonSource.path);
+  }
 }
 
 function getAgentConfig(agentName, workingDirectory, lookupCache = createAgentLookupCache()) {
@@ -409,6 +513,12 @@ function createAgent(agentName, config, workingDirectory, scope) {
     targetScope = AGENT_SCOPE.USER;
   }
 
+  if (config && Object.prototype.hasOwnProperty.call(config, 'native')) {
+    writeNativeAgent(agentName, config.native, workingDirectory, targetScope, config.confirmDrop === true);
+    console.log(`Created new agent: ${agentName} (scope: ${targetScope})`);
+    return;
+  }
+
   const { prompt, scope: _scopeFromConfig, ...rawFrontmatter } = config;
   const frontmatter = Object.fromEntries(
     Object.entries(rawFrontmatter).filter(([, value]) => value !== null && value !== undefined)
@@ -419,6 +529,12 @@ function createAgent(agentName, config, workingDirectory, scope) {
 }
 
 function updateAgent(agentName, updates, workingDirectory) {
+  if (updates && Object.prototype.hasOwnProperty.call(updates, 'native')) {
+    writeNativeAgent(agentName, updates.native, workingDirectory, undefined, updates.confirmDrop === true);
+    console.log(`Updated agent: ${agentName}`);
+    return;
+  }
+
   ensureDirs();
   const lookupCache = createAgentLookupCache();
 
@@ -693,6 +809,7 @@ function deleteAgent(agentName, workingDirectory, scope) {
 export {
   getAgentSources,
   getAgentConfig,
+  listDisabledAgentOverrides,
   createAgent,
   updateAgent,
   deleteAgent,

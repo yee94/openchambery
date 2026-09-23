@@ -50,6 +50,24 @@ const createDependencies = (getCommandSources, configDirectory, getAgentSources 
   getOpenCodePort: () => 4096,
 });
 
+describe('V2 configuration persistence', () => {
+  it.each(['agents', 'commands', 'mcp'])('%s CRUD never restarts or reloads OpenCode', async (entity) => {
+    const dependencies = createDependencies(vi.fn());
+    dependencies.refreshOpenCodeAfterConfigChange.mockRejectedValue(new Error('must not manage the service'));
+    const app = express();
+    app.use(express.json());
+    registerConfigEntityRoutes(app, dependencies);
+    for (const method of ['post', 'patch', 'delete']) {
+      const response = await request(app)[method](`/api/config/${entity}/example?directory=%2Frepo`)
+        .send({ name: 'example', scope: 'project', type: 'local', command: ['example'] });
+      expect(response.status).toBe(200);
+      expect(response.body).toMatchObject({ success: true, requiresReload: false, application: 'watch' });
+      expect(response.body.requiresManualRestart).not.toBe(true);
+    }
+    expect(dependencies.refreshOpenCodeAfterConfigChange).not.toHaveBeenCalled();
+  });
+});
+
 describe('config entity command metadata route', () => {
   it('returns metadata for many commands through one request', async () => {
     const app = express();
@@ -201,6 +219,36 @@ describe('provider catalog route', () => {
     expect(models).toHaveBeenCalledWith({ location });
     expect(modelDefault).toHaveBeenCalledWith({ location });
     expect(response.body).toEqual({ schemaVersion: 1, providers: [], default: {}, partial: false });
+  });
+
+  it('projects ModelInfo.id as the catalog model id and default', async () => {
+    const app = express();
+    createOpencodeClient.mockReturnValue({
+      provider: { list: vi.fn(async () => ({ data: [{ id: 'openai', name: 'OpenAI' }] })) },
+      model: {
+        list: vi.fn(async () => ({
+          data: [{
+            id: 'gpt-5.4-mini',
+            modelID: 'internal-pack',
+            providerID: 'openai',
+            name: 'GPT-5.4 Mini',
+          }],
+        })),
+        default: vi.fn(async () => ({
+          data: { id: 'gpt-5.4-mini', modelID: 'internal-pack', providerID: 'openai', name: 'GPT-5.4 Mini' },
+        })),
+      },
+    });
+    registerConfigEntityRoutes(app, createDependencies(vi.fn()));
+
+    const response = await request(app).get('/api/config/catalog/providers').expect(200);
+    expect(response.body.providers).toEqual([{
+      id: 'openai',
+      name: 'OpenAI',
+      models: { 'gpt-5.4-mini': { id: 'gpt-5.4-mini', name: 'GPT-5.4 Mini' } },
+    }]);
+    expect(response.body.default).toEqual({ openai: 'gpt-5.4-mini' });
+    expect(JSON.stringify(response.body)).not.toContain('internal-pack');
   });
 
   it('returns 502 for SDK failure and malformed catalog responses', async () => {

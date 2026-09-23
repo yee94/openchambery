@@ -40,6 +40,8 @@ export const registerLlmRoutes = (app, dependencies) => {
         getOpenCodeAuthHeaders: dependencies.getOpenCodeAuthHeaders,
         clientFactory: client,
         ensureTempDirectory: ensureLlmTempDirectory,
+        persistSessionMetadata: dependencies.persistSessionMetadata,
+        onSystemSessionPersisted: dependencies.onSystemSessionPersisted,
       }))
       .then(({ completion }) => {
         res.status(200).json(completion);
