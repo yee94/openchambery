@@ -57,6 +57,26 @@ describe('toolDiffUtils', () => {
         expect(entries[0]?.title).toBe('src/file.ts');
     });
 
+    test('reads the OpenCode 2 patch file path from metadata.files[].file', () => {
+        const metadata = {
+            files: [{
+                file: 'packages/ui/src/stores/useSkillsStore.ts',
+                patch: [
+                    '--- a/packages/ui/src/stores/useSkillsStore.ts',
+                    '+++ b/packages/ui/src/stores/useSkillsStore.ts',
+                    '@@ -1 +1 @@',
+                    '-old',
+                    '+new',
+                ].join('\n'),
+                additions: 1,
+                deletions: 1,
+            }],
+        };
+        const entries = getToolNavigationDiffEntries('apply_patch', metadata, undefined, 'packages/ui/src/stores/useSkillsStore.ts', identity);
+        expect(entries.map((entry) => entry.title)).toEqual(['packages/ui/src/stores/useSkillsStore.ts']);
+        expect(entries[0]?.renderMode).toBe('diff');
+    });
+
     test('synthesizes headers for valid headerless hunks', () => {
         const entries = getDiffPatchEntries(undefined, [
             '@@ -1 +1 @@',

@@ -525,7 +525,12 @@ export function createEventPipeline(input: EventPipelineInput): EventPipeline {
     onFlushStart?.()
     try {
       for (const payload of events) {
-        onEvent(directory, payload)
+        // One malformed event must not drop the rest of the batch.
+        try {
+          onEvent(directory, payload)
+        } catch (error) {
+          console.error("[sync] event handler failed", payload.type, error)
+        }
       }
     } finally {
       onFlushEnd?.()

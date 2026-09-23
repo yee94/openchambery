@@ -17,6 +17,7 @@ describe('resolveToolDisplayName', () => {
   test('canonicalizes indexed, dotted, and aliased built-in names', () => {
     expect(canonicalizeBuiltInToolName('runtime.grep:3')).toBe('grep');
     expect(canonicalizeBuiltInToolName('shell')).toBe('bash');
+    expect(canonicalizeBuiltInToolName('patch')).toBe('apply_patch');
     expect(canonicalizeBuiltInToolName('StructuredOutput')).toBe('structuredoutput');
   });
 
@@ -27,6 +28,11 @@ describe('resolveToolDisplayName', () => {
     expect(resolveToolDisplayName('read', tEn)).toBe('Read File');
     expect(resolveToolDisplayName('runtime.grep:3', tZh)).toBe('搜索文件');
     expect(resolveToolDisplayName('shell', tZh)).toBe('运行');
+    expect(resolveToolDisplayName('patch', tZh)).toBe('批量修改');
+    expect(resolveToolDisplayName('execute', tZh)).toBe('执行代码');
+    expect(resolveToolDisplayName('session_rename', tZh)).toBe('重命名会话');
+    expect(resolveToolDisplayName('session_move', tEn)).toBe('Move Session');
+    expect(resolveToolDisplayName('browser', tZh)).toBe('浏览器');
     expect(resolveToolDisplayName('mcp_custom_thing', tZh)).toBe('Mcp custom thing');
   });
 });

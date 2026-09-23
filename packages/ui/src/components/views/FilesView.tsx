@@ -77,7 +77,7 @@ import { ensurePierreThemeRegistered } from '@/lib/shiki/appThemeRegistry';
 import { getDefaultTheme } from '@/lib/theme/themes';
 import { openDesktopFileInApp, openDesktopPath } from '@/lib/desktop';
 import { useOpenInAppsStore } from '@/stores/useOpenInAppsStore';
-import { eventMatchesShortcut, getEffectiveShortcutCombo } from '@/lib/shortcuts';
+import { eventMatchesShortcut, formatShortcutForDisplay, getEffectiveShortcutCombo } from '@/lib/shortcuts';
 import { useI18n } from '@/lib/i18n';
 import { ShortcutKbd } from '@/components/ui/kbd';
 
@@ -3059,7 +3059,7 @@ export const FilesView: React.FC<FilesViewProps> = ({ mode = 'full', isActive = 
         return;
       }
 
-      if (event.metaKey && !event.ctrlKey && !event.altKey && !event.shiftKey && event.key.toLowerCase() === 'i') {
+      if (eventMatchesShortcut(event, 'mod+l')) {
         const selection = editorViewRef.current?.state.selection.main;
         if (selection && !selection.empty) {
           event.preventDefault();
@@ -3444,18 +3444,18 @@ export const FilesView: React.FC<FilesViewProps> = ({ mode = 'full', isActive = 
         )}
 
         {isTextFile && hasEditorSelection ? withTooltip(
-          `${t('chat.textSelection.title.addToCurrentChat')} (⌘I)`,
+          `${t('chat.textSelection.title.addToCurrentChat')} (${formatShortcutForDisplay('mod+l')})`,
           <Button
             variant="ghost"
             size="sm"
             onClick={addEditorSelectionToChat}
             className="h-6 gap-1 px-1 text-muted-foreground opacity-80 hover:bg-transparent hover:opacity-100 focus-visible:bg-transparent active:bg-transparent"
-            title={`${t('chat.textSelection.title.addToCurrentChat')} (⌘I)`}
-            aria-label={`${t('chat.textSelection.title.addToCurrentChat')} (⌘I)`}
+            title={`${t('chat.textSelection.title.addToCurrentChat')} (${formatShortcutForDisplay('mod+l')})`}
+            aria-label={`${t('chat.textSelection.title.addToCurrentChat')} (${formatShortcutForDisplay('mod+l')})`}
           >
             <Icon name="chat-new" className="size-4" />
             <span>{t('chat.textSelection.actions.addToChat')}</span>
-            <ShortcutKbd shortcut="⌘+I" />
+            <ShortcutKbd shortcut={formatShortcutForDisplay('mod+l')} />
           </Button>,
         ) : null}
 

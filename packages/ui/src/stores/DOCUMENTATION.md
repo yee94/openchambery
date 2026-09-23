@@ -15,6 +15,23 @@ Use a store when state is:
 
 Do not put high-frequency local component state here just because it is convenient.
 
+## V2 configuration changes
+
+Ordinary Provider, Agent, Command, Skill, MCP and Plugin mutations do not start a
+blocking config-reload overlay or manage the OpenCode service lifecycle. Writes
+confirm persistence; Config/Credential/PluginSupervisor own runtime activation.
+`refreshOpenCodeConfiguration` only refreshes UI catalogs. Explicit Settings and
+chat reload use `reloadOpenCodeLocations`; binary changes, upgrades and opaque
+plugin-owned config may use `restartOpenCodeService` (legacy `/api/config/reload`
+host/bridge endpoint). Do not substitute location reload for automatic hot updates.
+
+`sync/config-live-refresh.ts` batches V2 domain events, invalidates matching
+transport/directory Query entries and refreshes existing composer projections.
+Inactive queries stay stale until observed; failed reads retain previous data.
+Plugin Settings page/sidebar observe `pluginQueries.ts`, including external
+plugin/config changes, while the legacy store mirrors explicit list loads for
+imperative selection/mutation callers. The store loader now shares Query IO.
+
 ## Architecture
 
 There are multiple store categories in this directory.
@@ -73,7 +90,8 @@ transport identity, configuration directory, and source ID for source pages.
 `useSkillsCatalogStore` owns source selection and scan/install mutation state.
 Skills mutations capture their directory and transport before dispatch. Successful
 mutations refresh the matching installed-skills query and invalidate matching
-Catalog queries after OpenCode is ready. The installed-skills query is the sole
+Catalog queries without waiting for a service restart. V2 domain events close the
+save-to-activation gap. The installed-skills query is the sole
 owner of the installed list; `useSkillsStore` retains selection, drafts, detail
 reads, and mutations. Concurrent reads and mutation refreshes for one transport
 and configuration directory share the same TanStack Query flight.
@@ -252,24 +270,38 @@ Examples:
 
 These stores coordinate persistent project/session metadata across multiple views.
 
+`useComposerQuoteStore.ts` holds the main composer's staged selection quotes, keyed by
+`composerQuoteKey` (`session:<id>` or `draft:<id>`). Quotes are memory-only,
+deduped, and capped. Send paths in `ChatInput` prepend them and clear the key;
+a failed send restores the same list. Backspace at caret 0 removes the last quote.
+
 `useSessionBtwStore.ts` owns in-memory `/btw` side-question state shared by
 desktop and mobile. Keys are `getSessionBtwKey(scope)` =
-transport identity + normalized directory + sessionId. Entries are
-`{ question, answer, error, pending }` with a stable frozen
-`EMPTY_SESSION_BTW_ENTRY` for missing keys. `ask` / `retry` / `cancel` are
-module-stable methods: empty questions never leave the client; same-scope
-re-asks abort the previous controller and use controller identity so late
-success/failure cannot clobber the newer turn; cancel clears pending and
-leaves the question for retry. Runtime identity switches call
+transport identity + normalized directory + sessionId. Entries are a side
+conversation `{ turns: { id, quotes, question, answer, error, pending }[], quotes }`
+(bounded to 50 turns) with a stable frozen `EMPTY_SESSION_BTW_ENTRY` for missing keys.
+Entry-level `quotes` are staged text selections (`addQuote` trims/dedupes, capped
+at 10; `removeQuote` by index); they never request anything and are consumed into
+the next `ask` turn, whose prompt carries them as `>`-quoted blocks.
+`ask` / `retry` / `cancel` / `clear` are module-stable methods: empty questions
+never leave the client; `ask` appends a turn, and a same-scope send settles and
+aborts the previous in-flight turn, with controller identity keeping late
+success/failure from writing; `retry` re-runs the last turn in place; `cancel`
+clears pending and keeps the turn for retry; `clear` aborts and drops the whole
+conversation (later completions stay dropped). Runtime identity switches call
 `resetSessionBtwStoreForRuntimeSwitch` from `runtimeEndpointReset` (abort
-in-flight + drop entries). The store joins upstream side-question
-  instructions (no tools / no actions) and calls
-`opencodeClient.generateSessionAside` only (call-time scoped SDK client; no
-`withDirectory` / directory queue) — no prompt/inbox/queue path.
-Empty generate text is a failure, never a successful empty answer. Entry
-count is bounded (LRU-ish eviction of non-pending keys). The primary Composer's
-`BtwComposerSurface` owns scope/unmount cancellation with StrictMode-safe cleanup.
-Closing the answer panel cancels pending work; switching desktop tabs retains it.
+in-flight + drop entries). Each turn is one upstream `session.generate` call
+through `opencodeClient.generateSessionAside` only (call-time scoped SDK
+client; no `withDirectory` / directory queue) — no session is created or
+mutated, and no prompt/inbox/queue path runs. Generate is stateless, so the
+prompt joins upstream side-question instructions (no tools / no actions) with
+up to 12 earlier answered side turns; the main session history is server-side
+context only and is never loaded into the UI. Empty generate text is a failure,
+never a successful empty answer. Conversation count is bounded (LRU-ish
+eviction of non-pending keys). The primary Composer's `BtwComposerSurface`
+owns scope/unmount cancellation with StrictMode-safe cleanup. Closing the btw
+tab, the panel, or the mobile sheet clears the conversation; switching desktop
+tabs retains it.
 The leaf `BtwPanel` subscribes to one entry. `useUIStore` accepts the transient
 `btw` ContextPanel mode in memory and filters it from persistence/migration,
 resolving a surviving active tab or closing an otherwise empty persisted panel.

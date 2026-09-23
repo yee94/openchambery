@@ -14,6 +14,11 @@ describe('shouldSubmitCommandOnSelection', () => {
     }
   });
 
+  test('/reload runs on Enter like /compact', () => {
+    expect(shouldSubmitCommandOnSelection({ name: 'reload', source: 'openchamber', isBuiltIn: true }, true)).toBe(true);
+    expect(shouldSubmitCommandOnSelection({ name: 'reload', source: 'openchamber', isBuiltIn: true }, false)).toBe(false);
+  });
+
   test('inserts draft-style and confirm-first commands instead of auto-sending', () => {
     for (const name of [
       // Custom / prompt templates

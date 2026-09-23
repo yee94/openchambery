@@ -6,7 +6,7 @@
 
 ### Synthetic message identity (Ticket 03)
 
-Native `type: "synthetic"` rows (history GET and live `session.synthetic`) project through the shared `normalizeSessionProjectionMessage` rule: user-shaped Message/Part view model, `nativeType: "synthetic"`, text parts marked `synthetic: true`, plus description/metadata/association ids when present. `isAuthoredUserTurnRecord` / recovery anchors / page `turnCount` treat them as system-produced input, not authored user turns. Compact/fold/hide display choices stay downstream of this domain identity.
+Native `type: "synthetic"` rows (history GET and live `session.synthetic`) project through the shared `normalizeSessionProjectionMessage` rule: user-shaped Message/Part view model, `nativeType: "synthetic"`, text parts marked `synthetic: true`, plus description/metadata/association ids when present. `isAuthoredUserTurnRecord` / recovery anchors / page `turnCount` treat them as system-produced input, not authored user turns. Compact/fold/hide display choices stay downstream of this domain identity. Their ids are not chronological: persisted background notices keep the id minted at backgrounding while `time.created` is stamped at completion, and the live row derives its id from the completion event. OpenCode 2 tool name `patch` (same `patchText` input and `metadata.files` as `apply_patch`) projects as `apply_patch` in both GET and live tool parts (`normalizeProjectionToolName`), so patch rendering, edit counts, and diff navigation stay keyed on one name.
 
 ### Shutdown execution recovery (Ticket 07)
 
@@ -272,7 +272,9 @@ them before `session.deleted` arrives. The same title blacklist is shared with
 Catalog visibility must not destroy live transcript caches. `session.created` /
 `session.updated` remove system, subagent, and archived sessions from the live
 directory list only; they do **not** call `dropSessionCaches` / Query
-`purgeSession` for those rows. Wiping status on hide is reserved for temporary
+`purgeSession` for those rows. `openchamber:session-metadata` replaces metadata
+on an already-known row and applies the same list-only hide when the committed
+patch makes the session system-owned (create-before-persist race). Wiping status on hide is reserved for temporary
 SmartFetch secondaries and for `session.deleted`. Scheduled tasks and assistants
 archive while still streaming — wiping on archive is what made mid-run viewing
 look nothing like a normal live session. When caches are wiped,
@@ -1149,7 +1151,16 @@ both readers agree on when a frame may shrink.
   `session-message-policy.ts`. Incomplete Host pages may recover missing parent
   user messages by exact ID (up to eight). A missing or failed parent fetch is a
   miss: the Host page stays, and one 404 must not fail the initial transcript.
-  Authoritative complete pages skip parent recovery. Loading failures are
+  Authoritative complete pages skip parent recovery. OpenCode 2 stores each
+  assistant step as its own message, so one long turn (typical for subagents)
+  can fill the 20-message first projection page with no authored user row;
+  turn projection would then render nothing. The initial fetch walks older
+  projection pages by cursor until an authored user turn appears, history is
+  exhausted, or four extra pages (100 messages) were scanned
+  (`extendInitialPageToAuthoredUserTurn`); the page keeps the oldest cursor.
+  OpenCode 2 `session.created` / `session.updated` carry only ids (no `info`);
+  the directory reducer ignores them, and `flushDir` isolates each event so one
+  handler failure cannot drop the rest of its batch. Loading failures are
   subscribable via repository request state and preserve prior ready records.
 - Message loading status is runtime-scoped on the Query repository. Reactive
   ensure/selection share Query single-flight so a remounted provider does not
@@ -1857,6 +1868,24 @@ Transport retries reuse one request ID, revision-conflict retries use a new requ
 ID, and runtime changes abort both observers and writes.
 Shared ordering covers worktree row order; expanded groups, selected sessions,
 and other local navigation state retain their existing local ownership.
+
+## V2 configuration hot-update events
+
+`config-live-refresh.ts` consumes configuration-domain events before session
+routing. Credential events are runtime-global; other events retain their location.
+It batches bursts over 100ms and retains a trailing batch when an event arrives
+during a pull. Unrelated streaming events schedule no work. Runtime transport and
+generation are checked before delayed work and after asynchronous invalidation.
+
+Provider/integration/model events invalidate connection/model catalogs; agent,
+command, skill, MCP and plugin events invalidate their own Query families. Only
+active observers refetch. Existing composer store projections are refreshed for
+known directories, not the project catalog. Connection recovery invalidates all
+configuration families to recover events missed while offline. Failed pulls keep
+prior snapshots; successful authoritative empty Provider catalogs may clear a
+disconnected provider. Config-updated is not a claim that every domain has finished
+activation: later domain events close that gap. No event restarts the process or
+reloads locations.
 
 ## The golden rule
 

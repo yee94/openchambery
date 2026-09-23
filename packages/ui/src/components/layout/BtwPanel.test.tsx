@@ -4,10 +4,47 @@ import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 
 const api = vi.hoisted(() => ({ generateSessionAside: vi.fn() }));
 const language = vi.hoisted(() => ({ locale: 'en' }));
-vi.mock('@/lib/opencode/client', () => ({ opencodeClient: api }));
+vi.mock('@/lib/opencode/client', () => ({
+  opencodeClient: {
+    generateSessionAside: api.generateSessionAside,
+    setDirectory: vi.fn(),
+    applySendSelection: vi.fn(async () => {}),
+  },
+}));
 vi.mock('@/components/chat/MarkdownRenderer', () => ({ SimpleMarkdownRenderer: ({ content }: { content: string }) => <div data-markdown>{content}</div> }));
 vi.mock('@/components/ui', () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 vi.mock('@/lib/clipboard', () => ({ copyTextToClipboard: vi.fn(async () => ({ ok: true })) }));
+vi.mock('@/components/ui/ModelLogo', () => ({ ModelLogo: () => <span data-model-logo /> }));
+vi.mock('@/sync/selection-store', () => ({
+  useSelectionStore: {
+    getState: () => ({
+      getSessionModelSelection: () => null,
+      getSessionAgentSelection: () => null,
+      saveSessionModelSelection: vi.fn(),
+      saveSessionAgentSelection: vi.fn(),
+    }),
+  },
+}));
+vi.mock('@/stores/useConfigStore', () => {
+  const configState = {
+    providers: [],
+    getVisibleAgents: () => [],
+    activeDirectoryKey: 'default',
+    providerConfigLoadingByDirectory: {} as Record<string, boolean>,
+    agentConfigLoadingByDirectory: {} as Record<string, boolean>,
+    currentProviderId: 'provider-a',
+    currentModelId: 'model-a',
+    currentAgentName: undefined as string | undefined,
+    currentVariant: null as string | null,
+  };
+  const useConfigStore = ((selector?: (state: typeof configState) => unknown) =>
+    (selector ? selector(configState) : configState)) as {
+    (selector: (state: typeof configState) => unknown): unknown;
+    getState: () => typeof configState;
+  };
+  useConfigStore.getState = () => configState;
+  return { useConfigStore };
+});
 vi.mock('@/lib/i18n', async (importOriginal) => {
   const original = await importOriginal<typeof import('@/lib/i18n')>();
   const { dict } = await import('@/lib/i18n/messages/en');
@@ -42,15 +79,60 @@ afterEach(async () => {
 });
 
 const button = (label: string) => Array.from(document.querySelectorAll('button')).find((node) => node.textContent?.includes(label) || node.getAttribute('aria-label') === label);
+const turnsOf = (target = scope) => useSessionBtwStore.getState().entries[getSessionBtwKey(target)]?.turns ?? [];
+const typeAndEnter = async (text: string) => {
+  const textarea = document.querySelector<HTMLTextAreaElement>('[data-btw-composer] textarea')!;
+  await act(async () => {
+    const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')!.set!;
+    setter.call(textarea, text);
+    textarea.dispatchEvent(new Event('input', { bubbles: true }));
+  });
+  await act(async () => {
+    textarea.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+  });
+};
 
-describe('Btw presentation and ownership', () => {
-  test.each(['empty response', 'session.btw failed'])('localizes internal fallback %s and keeps retry available', async (error) => {
+describe('Btw side conversation panel', () => {
+  test('opens as an empty mini chat without requesting or loading anything', async () => {
+    await act(async () => root.render(<BtwPanel scope={scope} />));
+    expect(host.textContent).toContain('Ask about the conversation while keeping its history unchanged.');
+    expect(host.querySelector('[data-btw-composer] textarea')).toBeTruthy();
+    expect(api.generateSessionAside).not.toHaveBeenCalled();
+    expect(useSessionBtwStore.getState().entries).toEqual({});
+  });
+
+  test('Enter in the panel composer sends; follow-ups append as a conversation', async () => {
+    api.generateSessionAside.mockResolvedValueOnce({ text: 'First answer' }).mockResolvedValueOnce({ text: 'Second answer' });
+    await act(async () => root.render(<BtwPanel scope={scope} />));
+    await typeAndEnter('Why?');
+    await typeAndEnter('And then?');
+    expect(api.generateSessionAside).toHaveBeenCalledTimes(2);
+    expect(api.generateSessionAside.mock.calls[1][0].prompt).toContain('User: Why?\n\nAssistant: First answer');
+    expect(Array.from(host.querySelectorAll('[data-markdown]')).map((node) => node.textContent)).toEqual(['First answer', 'Second answer']);
+    expect(document.querySelector<HTMLTextAreaElement>('[data-btw-composer] textarea')!.value).toBe('');
+  });
+
+  test('staged selection quotes render as removable chips and ride along with the next question', async () => {
+    useSessionBtwStore.getState().addQuote(scope, 'keep this');
+    useSessionBtwStore.getState().addQuote(scope, 'drop this');
+    await act(async () => root.render(<BtwPanel scope={scope} />));
+    expect(Array.from(host.querySelectorAll('[data-composer-quote-chip]')).map((node) => node.textContent)).toEqual(['keep this', 'drop this']);
+    const removeButtons = host.querySelectorAll<HTMLButtonElement>('[data-composer-quote-chip] button[aria-label="Remove quote"]');
+    await act(async () => removeButtons[1]!.click());
+    expect(host.querySelectorAll('[data-composer-quote-chip]')).toHaveLength(1);
+    expect(api.generateSessionAside).not.toHaveBeenCalled();
+    await typeAndEnter('Explain');
+    expect(api.generateSessionAside.mock.calls[0][0].prompt).toContain('> keep this\n\nExplain');
+    expect(api.generateSessionAside.mock.calls[0][0].prompt).not.toContain('drop this');
+    expect(host.querySelectorAll('[data-btw-composer] [data-composer-quote-chip]')).toHaveLength(0);
+  });
+
+  test('localizes internal failures and retries the last turn through the same scope', async () => {
     useSessionBtwStore.setState({ entries: {
-      [getSessionBtwKey(scope)]: { question: 'Why?', answer: '', error, pending: false },
+      [getSessionBtwKey(scope)]: { quotes: [], turns: [{ id: 't1', quotes: [], question: 'Why?', answer: '', error: 'empty response', pending: false }] },
     } });
     await act(async () => root.render(<BtwPanel scope={scope} />));
     expect(host.querySelector('[role="alert"]')?.textContent).toBe('Answer generation failed. Please retry.');
-    expect(button('Retry')?.disabled).toBe(false);
     language.locale = 'zh-CN';
     await act(async () => root.render(<BtwPanel scope={{ ...scope }} />));
     expect(host.querySelector('[role="alert"]')?.textContent).toBe('生成回答失败，请重试。');
@@ -58,20 +140,35 @@ describe('Btw presentation and ownership', () => {
     expect(api.generateSessionAside).toHaveBeenCalledWith(expect.objectContaining(scope));
   });
 
-  test('fresh equal scope objects preserve pending ownership; a directory switch cancels the captured scope', async () => {
-    void useSessionBtwStore.getState().ask(scope, 'Why?');
-    await act(async () => root.render(<BtwComposerSurface scope={{ ...scope }} active mobile={false} />));
-    const signal = api.generateSessionAside.mock.calls[0][0].signal as AbortSignal;
-    for (let index = 0; index < 3; index += 1) {
-      await act(async () => root.render(<BtwComposerSurface scope={{ ...scope }} active mobile={false} />));
-      expect(signal.aborted).toBe(false);
-      expect(useSessionBtwStore.getState().entries[getSessionBtwKey(scope)].pending).toBe(true);
-    }
-    await act(async () => root.render(<BtwComposerSurface scope={{ ...scope, directory: '/other' }} active mobile={false} />));
-    expect(signal.aborted).toBe(true);
+  test('copies an answer and hides other sessions’ turns', async () => {
+    useSessionBtwStore.setState({ entries: {
+      [getSessionBtwKey(scope)]: { quotes: [], turns: [{ id: 't1', quotes: [], question: 'Why?', answer: 'Long answer', error: null, pending: false }] },
+    } });
+    await act(async () => root.render(<BtwPanel scope={scope} />));
+    await act(async () => button('Copy')!.click());
+    expect(copyTextToClipboard).toHaveBeenCalledWith('Long answer');
+    await act(async () => root.render(<BtwPanel scope={{ ...scope, sessionId: 'session-b' }} />));
+    expect(host.textContent).not.toContain('Why?');
   });
 
-  test('narrow mobile opens the real resizable sheet, shows pending, closes and allows reopening', async () => {
+  test('tab switching keeps the conversation; closing the btw tab clears it and leaves no composer chip', async () => {
+    useUIStore.setState({ isMobile: false });
+    await act(async () => root.render(<BtwComposerSurface scope={scope} active mobile={false} />));
+    await act(async () => {
+      void useSessionBtwStore.getState().ask(scope, 'Why?');
+      useUIStore.getState().openContextPanelTab('/repo', { mode: 'btw' });
+    });
+    const tab = useUIStore.getState().contextPanelByDirectory['/repo'].tabs[0];
+    await act(async () => useUIStore.getState().openContextPanelTab('/repo', { mode: 'context' }));
+    expect(api.generateSessionAside.mock.calls[0][0].signal.aborted).toBe(false);
+    expect(turnsOf()).toHaveLength(1);
+    await act(async () => useUIStore.getState().closeContextPanelTab('/repo', tab.id));
+    expect(api.generateSessionAside.mock.calls[0][0].signal.aborted).toBe(true);
+    expect(useSessionBtwStore.getState().entries).toEqual({});
+    expect(host.querySelector('button')).toBeNull();
+  });
+
+  test('closing the mobile sheet closes the panel and clears the conversation', async () => {
     await act(async () => root.render(<BtwComposerSurface scope={scope} active mobile />));
     await act(async () => {
       void useSessionBtwStore.getState().ask(scope, 'Why?');
@@ -79,17 +176,13 @@ describe('Btw presentation and ownership', () => {
     });
     expect(document.querySelector('[role="dialog"]')).toBeTruthy();
     expect(document.body.textContent).toContain('Why?');
-    expect(document.querySelector('[role="status"]')?.textContent).toBeTruthy();
-    expect(document.querySelector('.overflow-y-auto')).toBeTruthy();
     await act(async () => button('Close')!.click());
     expect(useUIStore.getState().contextPanelByDirectory['/repo'].isOpen).toBe(false);
     expect(api.generateSessionAside.mock.calls[0][0].signal.aborted).toBe(true);
-    await act(async () => button('Side question')!.click());
-    expect(useUIStore.getState().contextPanelByDirectory['/repo'].isOpen).toBe(true);
-    expect(document.body.textContent).toContain('Answer cancelled');
+    expect(useSessionBtwStore.getState().entries).toEqual({});
   });
 
-  test('StrictMode initial mount preserves an accepted request; leaving its scope cancels only that request', async () => {
+  test('StrictMode keeps an accepted request; leaving its session cancels only that request', async () => {
     void useSessionBtwStore.getState().ask(scope, 'First?');
     await act(async () => root.render(<React.StrictMode><BtwComposerSurface scope={scope} active mobile={false} /></React.StrictMode>));
     const firstSignal = api.generateSessionAside.mock.calls[0][0].signal as AbortSignal;
@@ -101,35 +194,5 @@ describe('Btw presentation and ownership', () => {
     expect(api.generateSessionAside.mock.calls[1][0].signal.aborted).toBe(false);
     await act(async () => root.render(<div />));
     expect(api.generateSessionAside.mock.calls[1][0].signal.aborted).toBe(true);
-  });
-
-  test('tab switching keeps the request; closing its tab cancels it', async () => {
-    await act(async () => root.render(<BtwComposerSurface scope={scope} active mobile={false} />));
-    await act(async () => {
-      void useSessionBtwStore.getState().ask(scope, 'Why?');
-      useUIStore.getState().openContextPanelTab('/repo', { mode: 'btw' });
-    });
-    const tab = useUIStore.getState().contextPanelByDirectory['/repo'].tabs[0];
-    await act(async () => useUIStore.getState().openContextPanelTab('/repo', { mode: 'context' }));
-    expect(api.generateSessionAside.mock.calls[0][0].signal.aborted).toBe(false);
-    await act(async () => useUIStore.getState().closeContextPanelTab('/repo', tab.id));
-    expect(api.generateSessionAside.mock.calls[0][0].signal.aborted).toBe(true);
-  });
-
-  test('shows scoped answer and errors, copies answer and retries through the same scope', async () => {
-    useSessionBtwStore.setState({ entries: {
-      [getSessionBtwKey(scope)]: { question: 'Why?', answer: 'Long answer\n'.repeat(200), error: null, pending: false },
-    } });
-    await act(async () => root.render(<BtwPanel scope={scope} />));
-    expect(host.querySelector('[data-markdown]')?.textContent).toContain('Long answer');
-    await act(async () => button('Copy')!.click());
-    expect(copyTextToClipboard).toHaveBeenCalledWith('Long answer\n'.repeat(200));
-    api.generateSessionAside.mockRejectedValueOnce(new Error('Provider unavailable'));
-    await act(async () => button('Retry')!.click());
-    expect(document.querySelector('[role="alert"]')?.textContent).toBe('Provider unavailable');
-    expect(api.generateSessionAside).toHaveBeenCalledWith(expect.objectContaining(scope));
-    await act(async () => root.render(<BtwPanel scope={{ ...scope, sessionId: 'session-b' }} />));
-    expect(host.textContent).not.toContain('Why?');
-    expect(host.querySelector('[data-markdown]')).toBeNull();
   });
 });

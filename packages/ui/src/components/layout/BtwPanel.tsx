@@ -1,57 +1,154 @@
 import React from 'react';
 import { useEvent } from '@reactuses/core';
+import { ChatPromptComposer } from '@/components/chat/ChatPromptComposer';
+import { ComposerQuoteChips } from '@/components/chat/ComposerQuoteChips';
 import { SimpleMarkdownRenderer } from '@/components/chat/MarkdownRenderer';
+import { Icon } from '@/components/icon/Icon';
 import { Button } from '@/components/ui/button';
-import { MobileResizableSheet, MobileSheetHeaderActions } from '@/components/ui/MobileResizableSheet';
+import { MobileResizableSheet } from '@/components/ui/MobileResizableSheet';
 import { toast } from '@/components/ui';
 import { copyTextToClipboard } from '@/lib/clipboard';
+import { isPhoneBtwScopeOpen } from '@/mobile/useMobileNavigationStore';
 import { useI18n } from '@/lib/i18n';
 import { normalizeDirectoryKey } from '@/lib/pathNormalization';
 import { useUIStore } from '@/stores/useUIStore';
-import { EMPTY_SESSION_BTW_ENTRY, getSessionBtwKey, useSessionBtwStore, type SessionBtwScope } from '@/stores/useSessionBtwStore';
+import { ModelLogo } from '@/components/ui/ModelLogo';
+import { getProviderModelDisplayName } from '@/lib/modelDisplay';
+import { useConfigStore } from '@/stores/useConfigStore';
+import {
+  EMPTY_SESSION_BTW_ENTRY,
+  getSessionBtwKey,
+  resolveSessionBtwSendSelection,
+  useSessionBtwStore,
+  type SessionBtwScope,
+  type SessionBtwTurn,
+} from '@/stores/useSessionBtwStore';
 
-export function BtwPanel({ scope, mobile = false }: { scope: SessionBtwScope; mobile?: boolean }) {
+const BTW_COMPOSER_RADIUS = '1.5rem';
+
+function BtwTurnView({ turn, isLast, scope }: { turn: SessionBtwTurn; isLast: boolean; scope: SessionBtwScope }) {
   const { t } = useI18n();
-  const key = getSessionBtwKey(scope);
-  const entry = useSessionBtwStore((state) => state.entries[key] ?? EMPTY_SESSION_BTW_ENTRY);
-  const error = entry.error === 'empty response' || entry.error === 'session.btw failed'
+  const error = turn.error === 'empty response' || turn.error === 'session.btw failed'
     ? t('chat.btw.failed')
-    : entry.error;
+    : turn.error;
+  const cancelled = !turn.pending && !turn.error && !turn.answer;
   const copy = useEvent(async () => {
-    const result = await copyTextToClipboard(entry.answer);
+    const result = await copyTextToClipboard(turn.answer);
     if (result.ok) toast.success(t('contextSidebar.actions.copied'));
     else toast.error(t('filesView.toast.copyFailed'));
   });
-  const actions = <>
-    <Button type="button" variant="ghost" size="sm" disabled={entry.pending || !entry.question}
-      onClick={() => void useSessionBtwStore.getState().retry(scope)}>{t('contextPanel.preview.actions.retry')}</Button>
-    <Button type="button" variant="ghost" size="sm" disabled={!entry.answer} onClick={copy}>
-      {t('contextSidebar.actions.copy')}
-    </Button>
-  </>;
-  return <section className="flex h-full min-h-0 min-w-0 flex-col text-foreground" aria-label={t('chat.btw.title')}>
-    {mobile ? <MobileSheetHeaderActions>{actions}</MobileSheetHeaderActions> :
-      <div className="flex shrink-0 items-center justify-end gap-1 border-b border-border/40 px-3 py-2">{actions}</div>}
-    <div key={`${key}\u0000${entry.question}`} className="overlay-scrollbar-container min-h-0 flex-1 overflow-y-auto overscroll-contain p-4" tabIndex={0}>
-      <p className="mb-4 typography-meta text-muted-foreground">{t('chat.btw.description')}</p>
-      {entry.question ? <h2 className="mb-4 whitespace-pre-wrap break-words typography-ui-header">{entry.question}</h2> :
-        <p className="typography-ui-label text-muted-foreground">{t('chat.btw.questionRequired')}</p>}
-      {entry.pending ? <p role="status" className="typography-ui-label text-muted-foreground">{t('chat.btw.pending')}</p> : null}
-      {error ? <p role="alert" className="mb-3 whitespace-pre-wrap break-words typography-ui-label text-[var(--status-error)]">{error}</p> : null}
-      {entry.answer ? <SimpleMarkdownRenderer content={entry.answer} enableFileReferences={false} /> : null}
-      {entry.question && !entry.pending && !entry.error && !entry.answer ?
-        <p role="status" className="typography-ui-label text-muted-foreground">{t('chat.btw.cancelled')}</p> : null}
+  return <div className="flex flex-col gap-2" data-btw-turn={turn.id}>
+    <div className="ml-8 flex flex-col gap-1.5 self-end rounded-xl bg-[var(--surface-elevated)] px-3 py-2">
+      {turn.quotes.map((quote, index) => <p key={index} data-btw-quote
+        className="line-clamp-3 whitespace-pre-wrap break-words border-l-2 border-border pl-2 typography-meta text-muted-foreground">{quote}</p>)}
+      <div className="whitespace-pre-wrap break-words typography-markdown text-foreground">{turn.question}</div>
     </div>
+    {turn.pending ? <p role="status" className="flex items-center gap-1.5 typography-meta text-muted-foreground">
+      <Icon name="loader-4" className="size-3.5 animate-spin" aria-hidden="true" />
+      {t('chat.btw.pending')}
+    </p> : null}
+    {error ? <p role="alert" className="whitespace-pre-wrap break-words typography-meta text-muted-foreground">
+      <Icon name="error-warning" className="mr-1.5 inline size-3.5 align-[-2px] text-[var(--status-error)]/85" aria-hidden="true" />
+      {error}
+    </p> : null}
+    {cancelled ? <p role="status" className="typography-meta text-muted-foreground">{t('chat.btw.cancelled')}</p> : null}
+    {turn.answer ? <div className="min-w-0 text-foreground">
+      <SimpleMarkdownRenderer content={turn.answer} enableFileReferences={false} />
+    </div> : null}
+    {!turn.pending && (turn.answer || (isLast && (error || cancelled))) ? <div className="-ml-2 flex items-center gap-0.5">
+      {turn.answer ? <Button type="button" variant="ghost" size="xs" onClick={copy} aria-label={t('contextSidebar.actions.copy')}>
+        <Icon name="file-copy" className="size-3.5" />
+      </Button> : null}
+      {isLast ? <Button type="button" variant="ghost" size="xs" onClick={() => void useSessionBtwStore.getState().retry(scope)}
+        aria-label={t('contextPanel.preview.actions.retry')}>
+        <Icon name="refresh" className="size-3.5" />
+      </Button> : null}
+    </div> : null}
+  </div>;
+}
+
+function BtwComposer({ scope, pending, quotes }: { scope: SessionBtwScope; pending: boolean; quotes: readonly string[] }) {
+  const { t } = useI18n();
+  const storedSelection = useSessionBtwStore((state) => state.sendSelection[getSessionBtwKey(scope)]);
+  const selection = storedSelection ?? resolveSessionBtwSendSelection(scope);
+  const providers = useConfigStore((state) => state.providers);
+  const modelLabel = React.useMemo(() => {
+    if (!selection?.providerID || !selection?.modelID) return null;
+    const provider = providers.find((entry) => entry.id === selection.providerID);
+    return getProviderModelDisplayName(provider, selection.modelID) || selection.modelID;
+  }, [providers, selection]);
+  const [draft, setDraft] = React.useState('');
+  const textareaRef = React.useRef<HTMLTextAreaElement | null>(null);
+  const send = useEvent(() => {
+    const question = draft.trim();
+    if (!question || pending) return;
+    setDraft('');
+    void useSessionBtwStore.getState().ask(scope, question);
+  });
+  const modelControl = selection && modelLabel ? (
+    <span className="inline-flex min-w-0 items-center gap-1.5 rounded-lg px-2.5 py-1" aria-label={modelLabel}>
+      <ModelLogo modelId={selection.modelID} providerId={selection.providerID} className="size-3.5 shrink-0" />
+      <span className="min-w-0 truncate typography-micro font-medium text-foreground">{modelLabel}</span>
+    </span>
+  ) : null;
+  return <form data-btw-composer className="shrink-0 px-3 pb-3 pt-1" onSubmit={(event) => { event.preventDefault(); send(); }}>
+    <ChatPromptComposer
+      value={draft}
+      onChange={(value) => setDraft(value)}
+      onSubmit={send}
+      onStop={() => useSessionBtwStore.getState().cancel(scope)}
+      pending={pending}
+      disableInputWhilePending={false}
+      placeholder={t('chat.btw.placeholder')}
+      sendLabel={t('chat.chatInput.actions.sendMessageAria')}
+      stopLabel={t('chat.statusRow.actions.stopGeneratingAria')}
+      inputRef={textareaRef}
+      textareaProps={{ autoFocus: true }}
+      leftControls={modelControl}
+      style={{ borderRadius: BTW_COMPOSER_RADIUS }}
+      inputHeader={<ComposerQuoteChips quotes={quotes} removeLabel={t('chat.btw.removeQuoteAria')} onRemove={(index) => useSessionBtwStore.getState().removeQuote(scope, index)} />}
+    />
+  </form>;
+}
+
+/**
+ * Self-contained side conversation. Only the side turns render here; the main
+ * session history is never loaded, and nothing is requested until a send.
+ */
+export function BtwPanel({ scope }: { scope: SessionBtwScope }) {
+  const { t } = useI18n();
+  const key = getSessionBtwKey(scope);
+  const turns = useSessionBtwStore((state) => (state.entries[key] ?? EMPTY_SESSION_BTW_ENTRY).turns);
+  const quotes = useSessionBtwStore((state) => (state.entries[key] ?? EMPTY_SESSION_BTW_ENTRY).quotes);
+  const pending = turns.some((turn) => turn.pending);
+  const scrollRef = React.useRef<HTMLDivElement | null>(null);
+  const lastTurn = turns[turns.length - 1];
+  React.useLayoutEffect(() => {
+    const element = scrollRef.current;
+    if (element) element.scrollTop = element.scrollHeight;
+  }, [turns.length, lastTurn?.answer, lastTurn?.pending]);
+  return <section className="flex h-full min-h-0 min-w-0 flex-col text-foreground" aria-label={t('chat.btw.title')}>
+    <div ref={scrollRef} className="overlay-scrollbar-container min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-3">
+      {turns.length === 0
+        ? <p className="typography-meta text-muted-foreground">{t('chat.btw.description')}</p>
+        : <div className="flex flex-col gap-5">
+          {turns.map((turn, index) => <BtwTurnView key={turn.id} turn={turn} isLast={index === turns.length - 1} scope={scope} />)}
+        </div>}
+    </div>
+    <BtwComposer key={key} scope={scope} pending={pending} quotes={quotes} />
   </section>;
 }
 
-/** The composer owns request lifetime; panel presence and tab changes only own presentation. */
+/**
+ * The composer-side owner of the side conversation lifetime: closing the btw
+ * tab or the panel clears it; switching tabs keeps it; leaving its session
+ * cancels only an in-flight answer.
+ */
 export function BtwComposerSurface({ scope, active, mobile }: { scope: SessionBtwScope; active: boolean; mobile: boolean }) {
   const { t } = useI18n();
   const { sessionId, directory: scopeDirectory } = scope;
   const key = getSessionBtwKey(scope);
   const directory = normalizeDirectoryKey(scopeDirectory);
-  const hasQuestion = useSessionBtwStore((state) => Boolean(state.entries[key]?.question));
   const panel = useUIStore((state) => state.contextPanelByDirectory[directory]);
   const open = active && Boolean(panel?.isOpen && panel.tabs.find((tab) => tab.id === panel.activeTabId)?.mode === 'btw');
   const retained = Boolean(panel?.isOpen && panel.tabs.some((tab) => tab.mode === 'btw'));
@@ -60,14 +157,15 @@ export function BtwComposerSurface({ scope, active, mobile }: { scope: SessionBt
     const capturedScope = { sessionId, directory: scopeDirectory };
     const previous = previousPresentation.current;
     previousPresentation.current = { key, retained };
-    if (previous.key === key && previous.retained && !retained) useSessionBtwStore.getState().cancel(capturedScope);
+    if (previous.key === key && previous.retained && !retained) useSessionBtwStore.getState().clear(capturedScope);
   }, [key, retained, sessionId, scopeDirectory]);
   const lease = React.useRef<{ key: string; active: boolean } | null>(null);
   React.useEffect(() => {
     const capturedScope = { sessionId, directory: scopeDirectory };
     const owner = { key, active };
     lease.current = owner;
-    if (!active) useSessionBtwStore.getState().cancel(capturedScope);
+    const phoneOwned = () => isPhoneBtwScopeOpen({ sessionId, directory: scopeDirectory ?? null });
+    if (!active && !phoneOwned()) useSessionBtwStore.getState().cancel(capturedScope);
     return () => {
       const entry = useSessionBtwStore.getState().entries[key];
       // StrictMode's same-scope setup replaces the lease before this microtask.
@@ -75,6 +173,7 @@ export function BtwComposerSurface({ scope, active, mobile }: { scope: SessionBt
       queueMicrotask(() => {
         const current = lease.current;
         if (current !== owner && current?.key === key && current.active) return;
+        if (phoneOwned()) return;
         if (getSessionBtwKey(capturedScope) === key && useSessionBtwStore.getState().entries[key] === entry) {
           useSessionBtwStore.getState().cancel(capturedScope);
         }
@@ -82,18 +181,12 @@ export function BtwComposerSurface({ scope, active, mobile }: { scope: SessionBt
     };
   }, [key, active, sessionId, scopeDirectory]);
   const close = useEvent(() => {
-    useSessionBtwStore.getState().cancel(scope);
+    useSessionBtwStore.getState().clear(scope);
     useUIStore.getState().closeContextPanel(directory);
   });
-  return <>
-    {active && hasQuestion ? <div className="chat-input-column flex justify-end pb-1">
-      <Button type="button" variant="ghost" size="sm" onClick={() => useUIStore.getState().openContextPanelTab(directory, { mode: 'btw' })}>
-        {t('chat.btw.title')}
-      </Button>
-    </div> : null}
-    {mobile ? <MobileResizableSheet id="session-btw" open={open} onOpenChange={(next) => { if (!next) close(); }}
-      title={t('chat.btw.title')} ariaLabel={t('chat.btw.title')} closeAriaLabel={t('gitView.common.close')} resizeAriaLabel={t('chat.btw.resize')}>
-      <BtwPanel scope={scope} mobile />
-    </MobileResizableSheet> : null}
-  </>;
+  if (!mobile) return null;
+  return <MobileResizableSheet id="session-btw" open={open} onOpenChange={(next) => { if (!next) close(); }}
+    title={t('chat.btw.title')} ariaLabel={t('chat.btw.title')} closeAriaLabel={t('gitView.common.close')} resizeAriaLabel={t('chat.btw.resize')}>
+    <BtwPanel scope={scope} />
+  </MobileResizableSheet>;
 }

@@ -6,7 +6,7 @@ export const getToolIcon = (toolName: string) => {
     const editIconClass = 'h-[13px] w-[13px] flex-shrink-0';
     const tool = toolName.toLowerCase();
 
-    if (tool === 'edit' || tool === 'multiedit' || tool === 'apply_patch' || tool === 'str_replace' || tool === 'str_replace_based_edit_tool') {
+    if (tool === 'edit' || tool === 'multiedit' || tool === 'apply_patch' || tool === 'patch' || tool === 'str_replace' || tool === 'str_replace_based_edit_tool') {
         return <Icon name="pencil" className={editIconClass} />;
     }
     if (tool === 'write' || tool === 'create' || tool === 'file_write') {
@@ -18,6 +18,9 @@ export const getToolIcon = (toolName: string) => {
     if (tool === 'bash' || tool === 'shell' || tool === 'cmd' || tool === 'terminal') {
         return <Icon name="terminal-box" className={iconClass} />;
     }
+    if (tool === 'execute') {
+        return <Icon name="code-box" className={iconClass} />;
+    }
     if (tool === 'list' || tool === 'ls' || tool === 'dir' || tool === 'list_files') {
         return <Icon name="folder-6" className={iconClass} />;
     }
@@ -27,7 +30,7 @@ export const getToolIcon = (toolName: string) => {
     if (tool === 'glob') {
         return <Icon name="file-search" className={iconClass} />;
     }
-    if (tool === 'fetch' || tool === 'curl' || tool === 'wget' || tool === 'webfetch') {
+    if (tool === 'fetch' || tool === 'curl' || tool === 'wget' || tool === 'webfetch' || tool === 'browser') {
         return <Icon name="global" className={iconClass} />;
     }
     if (

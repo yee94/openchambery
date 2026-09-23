@@ -1,18 +1,22 @@
-import { describe, expect, test } from 'bun:test';
+import { describe, expect, test } from 'vitest';
 import {
   buildAgentSaveConfig,
+  catalogModelSelection,
   hasPermissionChanged,
+  readStoredSystem,
+  splitModelSelection,
   type AgentEditorSnapshot,
 } from './agentSaveConfig';
 
 const baseSnapshot = (overrides: Partial<AgentEditorSnapshot> = {}): AgentEditorSnapshot => ({
   description: 'Helper',
   mode: 'subagent',
-  model: 'openai/gpt-5',
-  variant: 'high',
-  temperature: 0.2,
-  topP: 0.9,
-  prompt: 'You are helpful.',
+  model: 'openai/gpt-5#high',
+  system: 'You are helpful.',
+  steps: undefined,
+  hidden: false,
+  disabled: false,
+  color: '',
   globalPermission: 'allow',
   permissionRules: [],
   ...overrides,
@@ -23,27 +27,18 @@ describe('hasPermissionChanged', () => {
     expect(hasPermissionChanged(baseSnapshot(), null)).toBe(false);
   });
 
-  test('returns true when global permission changes', () => {
-    expect(hasPermissionChanged(
-      baseSnapshot({ globalPermission: 'ask' }),
-      baseSnapshot({ globalPermission: 'allow' }),
-    )).toBe(true);
-  });
-
   test('returns true when rules change', () => {
     expect(hasPermissionChanged(
-      baseSnapshot({
-        permissionRules: [{ permission: 'bash', pattern: '*', action: 'ask' }],
-      }),
+      baseSnapshot({ permissionRules: [{ permission: 'shell', pattern: '*', action: 'ask' }] }),
       baseSnapshot(),
     )).toBe(true);
   });
 });
 
 describe('buildAgentSaveConfig', () => {
-  test('update sends only changed prompt and leaves permission out', () => {
+  test('update sends only the changed system prompt', () => {
     const initial = baseSnapshot();
-    const current = baseSnapshot({ prompt: 'Only prompt changed.' });
+    const current = baseSnapshot({ system: 'Only the prompt changed.' });
 
     expect(buildAgentSaveConfig({
       isNewAgent: false,
@@ -51,20 +46,18 @@ describe('buildAgentSaveConfig', () => {
       draftHasExplicitPermission: false,
       current,
       initial,
-      permissionConfig: { bash: 'ask' },
     })).toEqual({
       name: 'build',
-      prompt: 'Only prompt changed.',
+      system: 'Only the prompt changed.',
     });
   });
 
-  test('update includes permission only when permission fields change', () => {
+  test('update writes native permissions and renames legacy tool names', () => {
     const initial = baseSnapshot();
     const current = baseSnapshot({
       globalPermission: 'ask',
       permissionRules: [{ permission: 'bash', pattern: '*', action: 'deny' }],
     });
-    const permissionConfig = { '*': 'ask', bash: 'deny' };
 
     expect(buildAgentSaveConfig({
       isNewAgent: false,
@@ -72,23 +65,18 @@ describe('buildAgentSaveConfig', () => {
       draftHasExplicitPermission: false,
       current,
       initial,
-      permissionConfig,
     })).toEqual({
       name: 'build',
-      permission: permissionConfig,
+      permissions: [
+        { action: '*', resource: '*', effect: 'ask' },
+        { action: 'shell', resource: '*', effect: 'deny' },
+      ],
     });
   });
 
-  test('update includes each changed field independently', () => {
-    const initial = baseSnapshot();
-    const current = baseSnapshot({
-      description: 'New description',
-      mode: 'primary',
-      model: '',
-      variant: '',
-      temperature: undefined,
-      topP: 0.5,
-    });
+  test('update clears model, steps, and color when they are removed', () => {
+    const initial = baseSnapshot({ steps: 4, color: '#112233' });
+    const current = baseSnapshot({ model: '', steps: undefined, color: '' });
 
     expect(buildAgentSaveConfig({
       isNewAgent: false,
@@ -96,27 +84,19 @@ describe('buildAgentSaveConfig', () => {
       draftHasExplicitPermission: false,
       current,
       initial,
-      permissionConfig: 'allow',
     })).toEqual({
       name: 'build',
-      description: 'New description',
-      mode: 'primary',
       model: null,
-      variant: null,
-      temperature: null,
-      top_p: 0.5,
+      steps: null,
+      color: null,
     });
   });
 
-  test('create omits default permission for blank agent', () => {
+  test('create omits permission until the user edits it', () => {
     const current = baseSnapshot({
       description: '',
       model: '',
-      variant: '',
-      temperature: undefined,
-      topP: undefined,
-      prompt: 'New agent prompt',
-      permissionRules: [],
+      system: 'New agent prompt',
     });
 
     expect(buildAgentSaveConfig({
@@ -126,21 +106,19 @@ describe('buildAgentSaveConfig', () => {
       draftHasExplicitPermission: false,
       current,
       initial: current,
-      permissionConfig: 'allow',
     })).toEqual({
       name: 'custom',
       mode: 'subagent',
-      prompt: 'New agent prompt',
+      system: 'New agent prompt',
       scope: 'user',
     });
   });
 
-  test('create keeps draft permission for duplicate even when unchanged', () => {
+  test('create keeps an explicit permission draft', () => {
     const current = baseSnapshot({
       globalPermission: 'ask',
-      permissionRules: [{ permission: 'bash', pattern: '*', action: 'ask' }],
+      permissionRules: [{ permission: 'task', pattern: 'review', action: 'deny' }],
     });
-    const permissionConfig = { '*': 'ask', bash: 'ask' };
 
     expect(buildAgentSaveConfig({
       isNewAgent: true,
@@ -149,50 +127,40 @@ describe('buildAgentSaveConfig', () => {
       draftHasExplicitPermission: true,
       current,
       initial: current,
-      permissionConfig,
+      confirmDrop: true,
     })).toEqual({
       name: 'custom-copy',
       mode: 'subagent',
       description: 'Helper',
-      model: 'openai/gpt-5',
-      variant: 'high',
-      temperature: 0.2,
-      top_p: 0.9,
-      prompt: 'You are helpful.',
-      permission: permissionConfig,
+      model: 'openai/gpt-5#high',
+      system: 'You are helpful.',
+      permissions: [
+        { action: '*', resource: '*', effect: 'ask' },
+        { action: 'subagent', resource: 'review', effect: 'deny' },
+      ],
       scope: 'project',
+      confirmDrop: true,
+    });
+  });
+});
+
+describe('stored agent readers', () => {
+  test('joins catalog variant into the model selection', () => {
+    expect(catalogModelSelection({
+      model: { providerID: 'openai', modelID: 'gpt-5', variant: 'high' },
+    })).toBe('openai/gpt-5#high');
+  });
+
+  test('splits a model selection for the picker', () => {
+    expect(splitModelSelection('openai/gpt-5#high')).toEqual({
+      providerId: 'openai',
+      modelId: 'gpt-5',
+      variant: 'high',
     });
   });
 
-  test('create includes permission when user customizes it', () => {
-    const initial = baseSnapshot({
-      description: '',
-      model: '',
-      variant: '',
-      temperature: undefined,
-      topP: undefined,
-      prompt: '',
-      globalPermission: 'allow',
-      permissionRules: [],
-    });
-    const current = {
-      ...initial,
-      globalPermission: 'deny' as const,
-    };
-
-    expect(buildAgentSaveConfig({
-      isNewAgent: true,
-      agentName: 'custom',
-      draftScope: 'user',
-      draftHasExplicitPermission: false,
-      current,
-      initial,
-      permissionConfig: 'deny',
-    })).toEqual({
-      name: 'custom',
-      mode: 'subagent',
-      permission: 'deny',
-      scope: 'user',
-    });
+  test('ignores a prompt file reference', () => {
+    expect(readStoredSystem({ prompt: '{file:./prompts/review.txt}' })).toBeUndefined();
+    expect(readStoredSystem({ prompt: 'Review carefully.' })).toBe('Review carefully.');
   });
 });

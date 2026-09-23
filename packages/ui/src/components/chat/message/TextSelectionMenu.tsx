@@ -1,13 +1,16 @@
 import React from 'react';
 import { createPortal, flushSync } from 'react-dom';
 import { useSessionUIStore } from '@/sync/session-ui-store';
-import { useInputStore } from '@/sync/input-store';
 import { useUIStore } from '@/stores/useUIStore';
-import { cn } from '@/lib/utils';
-import { copyTextToClipboard } from '@/lib/clipboard';
-import { Icon } from "@/components/icon/Icon";
+import { cn, isMacOS } from '@/lib/utils';
+import { useEvent } from '@reactuses/core';
 import { useI18n } from '@/lib/i18n';
-import { ShortcutKbd } from '@/components/ui/kbd';
+import { eventMatchesShortcut, formatShortcutForDisplay } from '@/lib/shortcuts';
+import { useEffectiveDirectory } from '@/hooks/useEffectiveDirectory';
+import { composerQuoteKey } from '@/stores/composerQuotes';
+import { useComposerQuoteStore } from '@/stores/useComposerQuoteStore';
+import { useSessionBtwStore } from '@/stores/useSessionBtwStore';
+import { openSessionBtw } from '@/components/layout/btwComposerFocus';
 import { subscribeSessionSwitchIntent } from '@/lib/sessionSwitchIntent';
 import { getSessionSurfaceActionAvailability, useSessionSurface } from '../SessionSurfaceContext';
 
@@ -28,6 +31,17 @@ interface SelectionPayload {
 }
 
 const DESKTOP_MENU_SIDE_MARGIN_PX = 8;
+const ADD_TO_CHAT_SHORTCUT = 'mod+l';
+const ADD_TO_SIDE_CHAT_SHORTCUT = 'mod+shift+s';
+const MAC_MODIFIER_ORDER = ['⌃', '⌥', '⇧', '⌘'];
+
+const formatCompactShortcut = (combo: string): string => {
+  const tokens = formatShortcutForDisplay(combo).split(' + ');
+  if (!isMacOS()) return tokens.join('+');
+  const key = tokens[tokens.length - 1];
+  const modifiers = tokens.slice(0, -1).sort((a, b) => MAC_MODIFIER_ORDER.indexOf(a) - MAC_MODIFIER_ORDER.indexOf(b));
+  return [...modifiers, key].join('');
+};
 const DESKTOP_MENU_FALLBACK_WIDTH_PX = 280;
 let dismissVisibleTextSelectionMenu: (() => void) | null = null;
 
@@ -247,7 +261,6 @@ const rangeToMarkdown = (range: Range, plainText: string): string => {
 export const TextSelectionMenu: React.FC<TextSelectionMenuProps> = ({ containerRef }) => {
   const { t } = useI18n();
   const [position, setPosition] = React.useState<MenuPosition>({ x: 0, y: 0, show: false });
-  const [selectedText, setSelectedText] = React.useState('');
   const [selectedTextMarkdown, setSelectedTextMarkdown] = React.useState('');
   const isDraggingRef = React.useRef(false);
   const [isOpening, setIsOpening] = React.useState(false);
@@ -257,11 +270,12 @@ export const TextSelectionMenu: React.FC<TextSelectionMenuProps> = ({ containerR
   const openRafRef = React.useRef<number | null>(null);
   const mouseUpTimeoutRef = React.useRef<number | null>(null);
   const isMenuVisibleRef = React.useRef(false);
-  const createSession = useSessionUIStore((state) => state.createSession);
-  const setPendingInputText = useInputStore((state) => state.setPendingInputText);
+  const currentSessionId = useSessionUIStore((state) => state.currentSessionId);
+  const effectiveDirectory = useEffectiveDirectory() ?? null;
   const isMobile = useUIStore((state) => state.isMobile);
   const sessionSurface = useSessionSurface();
   const canUseTextSelectionActions = getSessionSurfaceActionAvailability(sessionSurface).textSelectionMutation;
+  const canAddToSideChat = sessionSurface.kind === 'primary' && Boolean(currentSessionId);
 
   React.useEffect(() => {
     isMenuVisibleRef.current = position.show;
@@ -297,7 +311,6 @@ export const TextSelectionMenu: React.FC<TextSelectionMenuProps> = ({ containerR
     setIsOpening(false);
 
     setPosition((prev) => ({ ...prev, show: false }));
-    setSelectedText('');
     setSelectedTextMarkdown('');
     isMenuVisibleRef.current = false;
   }, []);
@@ -334,7 +347,7 @@ export const TextSelectionMenu: React.FC<TextSelectionMenuProps> = ({ containerR
       dismissVisibleTextSelectionMenu = hideMenu;
     }
 
-    const { plainText, markdownText, rect } = pendingSelectionRef.current;
+    const { markdownText, rect } = pendingSelectionRef.current;
     const shouldAnimateIn = !position.show;
 
     // Position menu above the selection
@@ -343,7 +356,6 @@ export const TextSelectionMenu: React.FC<TextSelectionMenuProps> = ({ containerR
       : getDesktopClampedX(rect.left + rect.width / 2);
     const menuY = rect.top - 10;
 
-    setSelectedText(plainText);
     setSelectedTextMarkdown(markdownText);
     setPosition({
       x: menuX,
@@ -539,149 +551,100 @@ export const TextSelectionMenu: React.FC<TextSelectionMenuProps> = ({ containerR
     };
   }, [position.show, hideMenu]);
 
-  const addSelectionToChat = React.useCallback((markdownText: string) => {
-    if (!markdownText) return;
-
-    const markdownBlock = `\`\`\`md\n${markdownText}\n\`\`\``;
-    setPendingInputText(markdownBlock, 'append');
-
+  const clearSelection = () => {
     hideMenu();
     window.getSelection()?.removeAllRanges();
-  }, [setPendingInputText, hideMenu]);
+  };
 
-  const handleAddToChat = React.useCallback(() => {
-    addSelectionToChat(selectedTextMarkdown);
-  }, [addSelectionToChat, selectedTextMarkdown]);
+  const addSelectionToChat = useEvent((markdownText: string) => {
+    if (!markdownText) return;
+    const draftId = useSessionUIStore.getState().newSessionDraft.draftID;
+    const key = composerQuoteKey(currentSessionId, draftId);
+    if (!key) return;
+    useComposerQuoteStore.getState().addQuote(key, markdownText);
+    clearSelection();
+    requestAnimationFrame(() => {
+      const composer = Array.from(document.querySelectorAll<HTMLTextAreaElement>('textarea[data-chat-input="true"]'))
+        .find((node) => !node.closest('[data-btw-composer]'));
+      composer?.focus();
+    });
+  });
+
+  const addSelectionToSideChat = useEvent((markdownText: string) => {
+    if (!markdownText || !currentSessionId) return;
+    const scope = { sessionId: currentSessionId, directory: effectiveDirectory };
+    useSessionBtwStore.getState().addQuote(scope, markdownText);
+    clearSelection();
+    openSessionBtw(scope);
+  });
 
   React.useEffect(() => {
+    if (!canUseTextSelectionActions) return;
+    // Capture phase: with a live selection these win over global bindings (mod+shift+s services menu).
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (!canUseTextSelectionActions) {
-        return;
-      }
-      if (!event.metaKey || event.ctrlKey || event.altKey || event.shiftKey || event.key.toLowerCase() !== 'i') {
-        return;
-      }
-
+      const toChat = eventMatchesShortcut(event, ADD_TO_CHAT_SHORTCUT);
+      const toSideChat = canAddToSideChat && eventMatchesShortcut(event, ADD_TO_SIDE_CHAT_SHORTCUT);
+      if (!toChat && !toSideChat) return;
       const selection = window.getSelection();
       const container = containerRef.current;
-      if (!selection || !container || !selection.toString().trim()) {
-        return;
-      }
-
+      if (!selection || !container || !selection.toString().trim()) return;
       const range = getSelectionRangeWithinContainer(selection, container);
-      if (!range) {
-        return;
-      }
-
+      if (!range) return;
       event.preventDefault();
-      addSelectionToChat(rangeToMarkdown(range, selection.toString()));
+      event.stopPropagation();
+      const markdown = rangeToMarkdown(range, selection.toString());
+      if (toChat) addSelectionToChat(markdown);
+      else addSelectionToSideChat(markdown);
     };
+    window.addEventListener('keydown', handleKeyDown, true);
+    return () => window.removeEventListener('keydown', handleKeyDown, true);
+  }, [addSelectionToChat, addSelectionToSideChat, canAddToSideChat, canUseTextSelectionActions, containerRef]);
 
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [addSelectionToChat, canUseTextSelectionActions, containerRef]);
+  if (!position.show || !canUseTextSelectionActions) return null;
 
-  const handleCreateNewSession = React.useCallback(async () => {
-    if (!selectedText) return;
+  const actions = [
+    { id: 'chat', label: t('chat.textSelection.actions.addToChat'), shortcut: ADD_TO_CHAT_SHORTCUT, run: () => addSelectionToChat(selectedTextMarkdown) },
+    ...(canAddToSideChat
+      ? [{ id: 'side', label: t('chat.textSelection.actions.addToSideChat'), shortcut: ADD_TO_SIDE_CHAT_SHORTCUT, run: () => addSelectionToSideChat(selectedTextMarkdown) }]
+      : []),
+  ];
 
-    const session = await createSession(undefined, null, null);
-    if (session) {
-      setPendingInputText(selectedText, 'replace');
-    }
-
-    hideMenu();
-    window.getSelection()?.removeAllRanges();
-  }, [selectedText, createSession, setPendingInputText, hideMenu]);
-
-  const handleCopy = React.useCallback(async () => {
-    if (!selectedText) return;
-
-    const result = await copyTextToClipboard(selectedText);
-    if (!result.ok) {
-      console.error('Failed to copy:', result.error);
-    }
-
-    hideMenu();
-    window.getSelection()?.removeAllRanges();
-  }, [selectedText, hideMenu]);
-
-  if (!position.show) return null;
-
-  // Mobile: Show as a bar at the bottom of the screen, above the keyboard
+  // Mobile: a slim bar at the bottom of the screen, above the keyboard
   if (isMobile) {
     return createPortal(
       <div
         ref={menuRef}
+        data-text-selection-menu
         className={cn(
-          'fixed left-3 right-3 bottom-0 z-50 mx-auto max-w-[420px]',
-          'rounded-2xl border border-[var(--interactive-border)]',
-          'bg-[var(--surface-elevated)] p-2 shadow-lg',
-          'safe-area-bottom',
+          'fixed left-3 right-3 z-50 mx-auto flex max-w-[420px] items-center gap-1',
+          'rounded-lg border border-[var(--interactive-border)] bg-[var(--surface-elevated)] p-0.5 shadow-sm',
           'transition-[opacity,transform] duration-200 ease-out will-change-[opacity,transform]',
           isOpening ? 'opacity-0 translate-y-[4px]' : 'opacity-100 translate-y-0'
         )}
-        style={{
-          bottom: 'calc(0.5rem + env(safe-area-inset-bottom, 0px))',
-        }}
+        style={{ bottom: 'calc(0.5rem + env(safe-area-inset-bottom, 0px))' }}
       >
-        <div className="grid grid-cols-2 gap-2">
-          {canUseTextSelectionActions ? <button
-            onClick={handleAddToChat}
-            className={cn(
-              'flex min-w-0 items-center gap-2 rounded-xl px-3 py-2.5 text-left',
-              'text-sm font-medium leading-tight',
-              'bg-[var(--primary-base)] text-[var(--primary-foreground)]',
-              'active:opacity-80',
-              'transition-opacity duration-150'
-            )}
-            title={t('chat.textSelection.title.addToCurrentChat')}
-            type="button"
-          >
-            <Icon name="add" className="h-5 w-5 flex-shrink-0" />
-            <span className="min-w-0 whitespace-normal">{t('chat.textSelection.actions.addToChat')}</span>
-          </button> : null}
-
-          {canUseTextSelectionActions ? <button
-            onClick={handleCreateNewSession}
-            className={cn(
-              'flex min-w-0 items-center gap-2 rounded-xl px-3 py-2.5 text-left',
-              'text-sm font-medium leading-tight',
-              'bg-[var(--interactive-selection)] text-[var(--interactive-selection-foreground)]',
-              'active:opacity-80',
-              'transition-opacity duration-150'
-            )}
-            title={t('chat.textSelection.title.newSessionWithSelection')}
-            type="button"
-          >
-            <Icon name="chat-new" className="h-5 w-5 flex-shrink-0" />
-            <span className="min-w-0 whitespace-normal">{t('chat.textSelection.actions.newSession')}</span>
-          </button> : null}
-
-          <button
-            onClick={handleCopy}
-            className={cn(
-              'col-span-2 flex min-w-0 items-center gap-2 rounded-xl px-3 py-2.5 text-left',
-              'text-sm font-medium leading-tight',
-              'bg-[var(--surface-muted)] text-[var(--surface-foreground)]',
-              'active:opacity-80',
-              'transition-opacity duration-150'
-            )}
-            title={t('chat.textSelection.actions.copy')}
-            type="button"
-          >
-            <Icon name="file-copy" className="h-5 w-5 flex-shrink-0" />
-            <span className="min-w-0 whitespace-normal">{t('chat.textSelection.actions.copy')}</span>
-          </button>
-        </div>
+        {actions.map((action, index) => (
+          <React.Fragment key={action.id}>
+            {index > 0 ? <div className="h-4 w-px shrink-0 bg-[var(--interactive-border)]" /> : null}
+            <button
+              type="button"
+              onClick={action.run}
+              className="h-8 min-w-0 flex-1 truncate rounded-md px-3 typography-meta text-[var(--surface-foreground)] active:bg-[var(--interactive-hover)]"
+            >
+              {action.label}
+            </button>
+          </React.Fragment>
+        ))}
       </div>,
       document.body
     );
   }
 
-  // Desktop: Show as a popup above the selection
+  // Desktop: a compact pill above the selection
   return createPortal(
     <div
       ref={menuRef}
+      data-text-selection-menu
       className="fixed z-50"
       style={{
         left: position.x,
@@ -691,66 +654,27 @@ export const TextSelectionMenu: React.FC<TextSelectionMenuProps> = ({ containerR
     >
       <div
         className={cn(
-          'flex items-center gap-1 whitespace-nowrap',
-          'rounded-lg border border-[var(--interactive-border)]',
-          'bg-[var(--surface-elevated)] shadow-none',
-          'px-1.5 py-1',
+          'flex items-center gap-0.5 whitespace-nowrap rounded-lg p-0.5',
+          'border border-[var(--interactive-border)] bg-[var(--surface-elevated)] shadow-sm',
           'transition-[opacity,transform] duration-200 ease-out will-change-[opacity,transform]',
           isOpening ? 'opacity-0 translate-y-[4px]' : 'opacity-100 translate-y-0'
         )}
       >
-        {canUseTextSelectionActions ? <button
-          onClick={handleAddToChat}
-          className={cn(
-            'flex items-center gap-1.5 px-2 py-1 rounded-md',
-            'text-sm font-medium',
-            'text-[var(--surface-foreground)]',
-            'hover:bg-[var(--interactive-hover)]',
-            'transition-colors duration-150'
-          )}
-          title={t('chat.textSelection.title.addToCurrentChat')}
-          type="button"
-        >
-          <Icon name="add" className="h-4 w-4" />
-          <span className="whitespace-nowrap">{t('chat.textSelection.actions.addToChat')}</span>
-          <ShortcutKbd shortcut="⌘+I" />
-        </button> : null}
-      
-        {canUseTextSelectionActions ? <div className="w-px h-4 bg-[var(--interactive-border)]" /> : null}
-      
-        {canUseTextSelectionActions ? <button
-          onClick={handleCreateNewSession}
-          className={cn(
-            'flex items-center gap-1.5 px-2 py-1 rounded-md',
-            'text-sm font-medium',
-            'text-[var(--surface-foreground)]',
-            'hover:bg-[var(--interactive-hover)]',
-            'transition-colors duration-150'
-          )}
-          title={t('chat.textSelection.title.newSessionWithSelection')}
-          type="button"
-        >
-          <Icon name="chat-new" className="h-4 w-4" />
-          <span className="whitespace-nowrap">{t('chat.textSelection.actions.newSession')}</span>
-        </button> : null}
-
-        {canUseTextSelectionActions ? <div className="w-px h-4 bg-[var(--interactive-border)]" /> : null}
-
-        <button
-          onClick={handleCopy}
-          className={cn(
-            'flex items-center gap-1.5 px-2 py-1 rounded-md',
-            'text-sm font-medium',
-            'text-[var(--surface-foreground)]',
-            'hover:bg-[var(--interactive-hover)]',
-            'transition-colors duration-150'
-          )}
-          title={t('chat.textSelection.actions.copy')}
-          type="button"
-        >
-          <Icon name="file-copy" className="h-4 w-4" />
-          <span className="whitespace-nowrap">{t('chat.textSelection.actions.copy')}</span>
-        </button>
+        {actions.map((action, index) => (
+          <React.Fragment key={action.id}>
+            {index > 0 ? <div className="h-3 w-px shrink-0 bg-[var(--interactive-border)]" /> : null}
+            <button
+              type="button"
+              onClick={action.run}
+              className="flex h-6 items-center gap-1.5 rounded-md px-2 typography-meta text-[var(--surface-foreground)] transition-colors duration-150 hover:bg-[var(--interactive-hover)]"
+            >
+              <span>{action.label}</span>
+              <span className="tracking-[0.08em] text-[var(--surface-muted-foreground)]" aria-hidden="true">
+                {formatCompactShortcut(action.shortcut)}
+              </span>
+            </button>
+          </React.Fragment>
+        ))}
       </div>
     </div>,
     document.body

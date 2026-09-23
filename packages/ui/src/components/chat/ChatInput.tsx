@@ -10,6 +10,7 @@ import { applyNativeComposerAccessoryVar, canUseNativeIosComposer, getNativeIosC
 import { ComposerDictation } from '@/components/dictation/ComposerDictation';
 // sessionStore removed — currentSessionId comes from useSessionUIStore
 import { getConfigDirectoryKey, useConfigStore } from '@/stores/useConfigStore';
+import { reloadOpenCodeLocations } from '@/stores/useAgentsStore';
 import { useUIStore } from '@/stores/useUIStore';
 import { useLeaderKeyStore } from '@/stores/useLeaderKeyStore';
 import { useMessageQueueStore, getPendingAdmissionsForScope, getQueueForScope, legacyQueueScope, queueScopeKey, type QueueItem, type QueueScope, type QueuedMessage } from '@/stores/messageQueueStore';
@@ -52,7 +53,10 @@ import { dispatchQueuedMessage } from '@/hooks/useQueuedMessageAutoSend';
 import { useMessageQueueServerScope } from '@/sync/use-message-queue-server';
 import { lazyWithChunkRecovery } from '@/lib/chunkLoadRecovery';
 import { ReviewFlowDialog, type ReviewFlowExecution } from '@/components/session/ReviewFlowDialog';
+import { ComposerQuoteChips } from './ComposerQuoteChips';
 import { ActiveEditorFileSuggestion, AttachedFilesList, AttachedVSCodeFileChips } from './FileAttachment';
+import { composerQuoteKey, documentWithComposerQuotes, messageWithComposerQuotes } from '@/stores/composerQuotes';
+import { selectComposerQuotes, useComposerQuoteStore } from '@/stores/useComposerQuoteStore';
 import { QueuedMessageChips } from './QueuedMessageChips';
 import { SessionRecoveryNotice } from './SessionRecoveryNotice';
 import { AutoReviewBanner } from './AutoReviewBanner';
@@ -175,6 +179,7 @@ import { consumesImmediateCommandText, getGoalCommandObjective, getLocalChatComm
 import { submitBtwCommand } from './btwCommand';
 import { useSessionBtwStore } from '@/stores/useSessionBtwStore';
 import { BtwComposerSurface } from '@/components/layout/BtwPanel';
+import { openSessionBtw } from '@/components/layout/btwComposerFocus';
 import { promoteTypedSlashChipSlots, stripLeadingSlashCommandSlot } from './typedSlashChipPromotion';
 import { consumeImmediateCommandText } from './immediateCommandTextConsumption';
 import { runImmediateSessionCommand } from './immediateSessionCommandAction';
@@ -1999,7 +2004,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
     );
     const knownSlashNames = React.useMemo(() => {
         const names = new Set<string>([
-            'init', 'review', 'undo', 'redo', 'fork', 'timeline', 'model', 'compact', 'summary', 'workspace-review', 'craft-goal', 'goal', 'catch-up', 'debug', 'weigh', 'explore',
+            'init', 'review', 'undo', 'redo', 'fork', 'timeline', 'model', 'compact', 'reload', 'summary', 'workspace-review', 'craft-goal', 'goal', 'catch-up', 'debug', 'weigh', 'explore',
         ]);
         if (!isMobile && !isVSCodeRuntime()) names.add('handoff-review');
         for (const command of availableCommands) names.add(command.name.toLowerCase());
@@ -2358,7 +2363,9 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
         }, 0);
     }, [pendingInput, consumePendingInput, replacePlainDocument, applyProgrammaticEdit]);
 
-    const hasContent = message.trim().length > 0 || sendableAttachedFiles.length > 0 || hasDrafts;
+    const composerQuoteScope = composerQuoteKey(currentSessionId, newSessionDraft.draftID);
+    const composerQuotes = useComposerQuoteStore(selectComposerQuotes(composerQuoteScope));
+    const hasContent = message.trim().length > 0 || sendableAttachedFiles.length > 0 || hasDrafts || composerQuotes.length > 0;
     const isBtwCommand = surface.kind === 'primary' && getLocalChatCommand(message, inputMode) === 'btw';
     const hasQueuedMessages = serverQueue.mode === 'server'
         ? serverQueue.items.length > 0
@@ -2383,9 +2390,9 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
         return {
             message: document.text,
             document,
-            hasContent: document.text.trim().length > 0 || sendableAttachedFiles.length > 0 || hasDrafts,
+            hasContent: document.text.trim().length > 0 || sendableAttachedFiles.length > 0 || hasDrafts || composerQuotes.length > 0,
         };
-    }, [applyBrowserEdit, getDocument, hasDrafts, sendableAttachedFiles.length]);
+    }, [applyBrowserEdit, composerQuotes.length, getDocument, hasDrafts, sendableAttachedFiles.length]);
 
     // Keep a ref to handleSubmit so callbacks don't depend on it.
     type SubmitOptions = {
@@ -2476,7 +2483,10 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
         if (!draftID || !useComposerSendStore.getState().isEstablishing(draftID)) return false;
         const inputSnapshot = getCurrentInputSnapshot();
         if (!inputSnapshot.hasContent) return false;
-        const serialization = serializeComposerDocument(inputSnapshot.document, 'queue-canonical');
+        const quoteScope = composerQuoteKey(null, draftID);
+        const stagedQuotes = quoteScope ? (useComposerQuoteStore.getState().quotesByKey[quoteScope] ?? []) : [];
+        const quotedDocument = documentWithComposerQuotes(inputSnapshot.document, stagedQuotes);
+        const serialization = serializeComposerDocument(quotedDocument, 'queue-canonical');
         if (!serialization.ok) {
             toast.error(t('chat.chatInput.toast.messageSendFailed'));
             return false;
@@ -2500,10 +2510,11 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
                 ...(sendConfig.variant ? { variant: sendConfig.variant } : {}),
             },
             attachments,
-            composerDocument: inputSnapshot.document,
+            composerDocument: quotedDocument,
         });
         if (!staged) return false;
         replacePlainDocument('');
+        if (quoteScope && quotedDocument !== inputSnapshot.document) useComposerQuoteStore.getState().clear(quoteScope);
         setHistoryIndex(-1);
         setExpandedInput(false);
         if (attachments.length > 0) {
@@ -2597,7 +2608,10 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
         const documentToQueue = drafts.length > 0
             ? validateComposerDocument(appendInlineComments(inputSnapshot.document.text, drafts), inputSnapshot.document.references).document
             : inputSnapshot.document;
-        const serialized = serializeComposerDocument(documentToQueue, 'queue-canonical');
+        const stagedQuotes = composerQuoteScope ? (useComposerQuoteStore.getState().quotesByKey[composerQuoteScope] ?? []) : [];
+        const quotedDocument = documentWithComposerQuotes(documentToQueue, stagedQuotes);
+        const quotesQueued = quotedDocument !== documentToQueue;
+        const serialized = serializeComposerDocument(quotedDocument, 'queue-canonical');
         if (!serialized.ok) {
             endSubmissionFlight();
             toast.error(t('chat.chatInput.toast.messageSendFailed'));
@@ -2632,6 +2646,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
             }
             if (assistantSyntheticParts) surfaceResources.restoreSyntheticParts(assistantSyntheticParts);
             if (drafts.length > 0) surfaceResources.restoreInlineDrafts(drafts);
+            if (quotesQueued && composerQuoteScope) useComposerQuoteStore.getState().restore(composerQuoteScope, stagedQuotes);
         };
         try {
             if (!queueScopeAtStart) {
@@ -2655,7 +2670,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
                                 content: serialized.text,
                                 createdAt: identity.createdAt,
                                 attachmentCount: attachmentsToQueue.length,
-                                composerDocument: documentToQueue,
+                                composerDocument: quotedDocument,
                                 composerMentions,
                             },
                         });
@@ -2663,6 +2678,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
                     },
                     clearComposer: () => {
                         replacePlainDocument('');
+                        if (quotesQueued && composerQuoteScope) useComposerQuoteStore.getState().clear(composerQuoteScope);
                         setHistoryIndex(-1);
                         setExpandedInput(false);
                     },
@@ -2680,13 +2696,14 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
                             content: serialized.text,
                             createdAt: identity.createdAt,
                             attachmentCount: attachmentsToQueue.length,
-                            composerDocument: documentToQueue,
+                            composerDocument: quotedDocument,
                             composerMentions,
                         });
                         stagedLegacyRequestID = identity.requestID;
                     },
                     clearComposer: () => {
                         replacePlainDocument('');
+                        if (quotesQueued && composerQuoteScope) useComposerQuoteStore.getState().clear(composerQuoteScope);
                         setHistoryIndex(-1);
                         setExpandedInput(false);
                     },
@@ -2821,7 +2838,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
                                     operationID: identity.operationID,
                                     messageID: identity.messageID,
                                     content: serialized.text,
-                                    composerDocument: documentToQueue,
+                                    composerDocument: quotedDocument,
                                     composerMentions,
                                     sendConfig,
                                     deliveryTarget: scope.deliveryTarget,
@@ -2975,8 +2992,8 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
                 ask: useSessionBtwStore.getState().ask,
                 clearText: () => { replacePlainDocument(''); setShowCommandAutocomplete(false); setCommandQuery(''); },
                 open: () => {
-                    useUIStore.getState().openContextPanelTab(currentDirectory ?? '', { mode: 'btw' });
                     if (isMobile) { markComposerActionGesture(); textareaRef.current?.blur(); }
+                    if (currentSessionId) openSessionBtw({ sessionId: currentSessionId, directory: currentDirectory ?? null });
                 },
                 notify: (reason) => toast.error(t(`chat.btw.${reason}`)),
             })) return;
@@ -3154,8 +3171,20 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
         // starts. The captured submission restores this exact draft if dispatch
         // cannot proceed. Local commands retain their existing resource policy.
         const clearedComposerBeforeDispatch = !queuedOnly && !resourcePolicy;
+        const quotesAtSubmit = composerQuoteScope ? (useComposerQuoteStore.getState().quotesByKey[composerQuoteScope] ?? []) : [];
+        const quotesRideAlong = messageWithComposerQuotes(quotesAtSubmit, logicalInputMessage) !== logicalInputMessage;
+        let quotesClearedForSubmit = false;
+        const restoreSubmitQuotes = () => {
+            if (!quotesClearedForSubmit || !composerQuoteScope) return;
+            useComposerQuoteStore.getState().restore(composerQuoteScope, quotesAtSubmit);
+            quotesClearedForSubmit = false;
+        };
         if (clearedComposerBeforeDispatch) {
             replacePlainDocument('');
+            if (quotesRideAlong && composerQuoteScope) {
+                useComposerQuoteStore.getState().clear(composerQuoteScope);
+                quotesClearedForSubmit = true;
+            }
             setHistoryIndex(-1);
             setExpandedInput(false);
         }
@@ -3465,14 +3494,15 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
                 agentMentionName = compiled.agent;
             }
 
+            const outboundText = quotesRideAlong ? messageWithComposerQuotes(quotesAtSubmit, compiled.text) : compiled.text;
             if (queuedMessagesToSend.length === 0) {
                 // No queue - current input is primary
-                primaryText = compiled.text;
+                primaryText = outboundText;
                 primaryAttachments = dedupeDeliveryAttachments([...attachmentsToSend, ...compiled.attachments]);
             } else {
                 // Has queue - current input is additional part
                 additionalParts.push({
-                    text: compiled.text,
+                    text: outboundText,
                     attachments: dedupeDeliveryAttachments([...attachmentsToSend, ...compiled.attachments]),
                 });
             }
@@ -3550,6 +3580,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
         }
 
         const restoreFailedSubmission = async (): Promise<boolean> => {
+            restoreSubmitQuotes();
             // Drop the establishing prelude if claim never took over (or send aborted).
             abortEstablishing();
             if (currentQueueScope && queuedMessagesToSend.length > 0) {
@@ -3691,6 +3722,18 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
             }
             else if (commandName === 'timeline' && currentSessionId && sessionSurfaceActions.timeline) {
                 setTimelineDialogOpen(true);
+                return;
+            }
+            else if (commandName === 'reload') {
+                // Like /compact: consume the text synchronously, then reload in
+                // the background so the composer stays free while OpenCode
+                // rebuilds its locations.
+                consumeImmediateCommand();
+                toast.info(t('chat.chatInput.toast.reloadStarted'));
+                void reloadOpenCodeLocations().then(
+                    () => { toast.success(t('chat.chatInput.toast.reloadSucceeded')); },
+                    () => { toast.error(t('chat.chatInput.toast.reloadFailed')); },
+                );
                 return;
             }
             else if (commandName === 'compact' && currentSessionId) {
@@ -4060,6 +4103,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
             if (!transferFlightToSendPromise) {
                 if (clearedComposerBeforeDispatch && submissionCapture) {
                     recoverSubmission(submissionCapture);
+                    restoreSubmitQuotes();
                 }
                 endSubmissionFlight();
                 // Early-exit / awaited magic-prompt paths do not use sendPromise.then
@@ -4206,6 +4250,17 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
             e.preventDefault();
             setInputMode('normal');
             return;
+        }
+
+        if (e.key === 'Backspace' && !e.metaKey && !e.ctrlKey && !e.altKey && !e.shiftKey && composerQuotes.length > 0) {
+            const quoteTextarea = textareaRef.current;
+            const quoteStart = quoteTextarea?.selectionStart ?? 0;
+            const quoteEnd = quoteTextarea?.selectionEnd ?? 0;
+            if (quoteStart === 0 && quoteEnd === 0 && composerQuoteScope) {
+                e.preventDefault();
+                useComposerQuoteStore.getState().removeLast(composerQuoteScope);
+                return;
+            }
         }
 
         if ((e.key === 'Backspace' || e.key === 'Delete') && !e.metaKey && !e.ctrlKey) {
@@ -6743,7 +6798,13 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
         };
     }, []);
 
-    const composerInputHeader = undefined;
+    const composerInputHeader = (
+        <ComposerQuoteChips
+            quotes={composerQuotes}
+            removeLabel={t('chat.btw.removeQuoteAria')}
+            onRemove={(index) => { if (composerQuoteScope) useComposerQuoteStore.getState().removeQuote(composerQuoteScope, index); }}
+        />
+    );
 
     // gap-x-1.5 matches the send-button cluster so agent → model → send reads evenly.
     const mobileComposerControls = isMobile ? (

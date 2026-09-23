@@ -96,7 +96,7 @@ describe('configCatalogQueries', () => {
     v2ProviderDirectory = undefined;
     v2ProviderSignal = undefined;
     v2ProviderResult = { data: [{ id: 'legacy', name: 'Legacy' }] };
-    v2ModelResult = { data: [{ id: 'model', modelID: 'model', providerID: 'legacy', name: 'Model' }] };
+    v2ModelResult = { data: [{ id: 'model', modelID: 'internal-pack', providerID: 'legacy', name: 'Model' }] };
     v2ConfigResult = [{ type: 'document', info: { model: { providerID: 'legacy', model: 'model' } } }];
     resolveAgents = undefined;
   });

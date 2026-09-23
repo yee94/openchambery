@@ -14,6 +14,7 @@ import { isCompactionCommandParts } from '@/components/chat/lib/messageDisplayNo
 import { hasConfirmedFinalBody } from '@/components/chat/lib/turns/assistantMessageLifecycle';
 import { isFullySyntheticMessage } from '@/lib/messages/synthetic';
 import { useI18n, type I18nKey, type I18nParams } from '@/lib/i18n';
+import { canonicalizeBuiltInToolName } from '@/lib/toolHelpers';
 import { useSessionActivity } from './useSessionActivity';
 
 type AssistantActivity = 'idle' | 'streaming' | 'tooling' | 'cooldown' | 'permission';
@@ -102,6 +103,10 @@ const TOOL_STATUS_KEYS: Record<string, I18nKey> = {
     todoread: 'chat.assistantStatus.readingTodos',
     skill: 'chat.assistantStatus.learningSkill',
     question: 'chat.assistantStatus.askingQuestion',
+    execute: 'chat.assistantStatus.executing',
+    session_rename: 'chat.assistantStatus.renamingSession',
+    session_move: 'chat.assistantStatus.movingSession',
+    browser: 'chat.assistantStatus.usingBrowser',
 };
 const WORKING_PHRASE_KEYS: I18nKey[] = [
     'chat.assistantStatus.working',
@@ -128,7 +133,7 @@ type ParsedStatusResult = {
 };
 
 const getToolStatusPhrase = (toolName: string, t: (key: I18nKey, params?: I18nParams) => string): string => {
-    const key = TOOL_STATUS_KEYS[toolName];
+    const key = TOOL_STATUS_KEYS[canonicalizeBuiltInToolName(toolName)];
     return key ? t(key) : t('chat.assistantStatus.usingTool', { tool: toolName });
 };
 
@@ -170,7 +175,7 @@ const createParsedStatus = (
                 case 'tool': {
                     const toolStatus = part.state?.status;
                     if ((toolStatus === 'running' || toolStatus === 'pending') && !activePartType) {
-                        const toolName = getToolDisplayName(part);
+                        const toolName = canonicalizeBuiltInToolName(getToolDisplayName(part));
                         if (EDITING_TOOLS.has(toolName)) {
                             activePartType = 'editing';
                             activeToolName = toolName;
@@ -300,12 +305,13 @@ export function useAssistantStatus(
             if (message.role === 'assistant') {
                 return {
                     id: message.id,
+                    index: i,
                     finish: (message as { finish?: unknown }).finish,
                     error: (message as { error?: unknown }).error,
                 };
             }
         }
-        return { id: null as string | null, finish: undefined as unknown, error: undefined as unknown };
+        return { id: null as string | null, index: -1, finish: undefined as unknown, error: undefined as unknown };
     }, [rawSessionMessages]);
     const lastAssistantId = lastAssistant.id;
 
@@ -315,11 +321,12 @@ export function useAssistantStatus(
             if (message.role === 'user') {
                 return {
                     id: message.id,
+                    index: i,
                     turnStartedAt: Number.isFinite(message.time.created) ? message.time.created : undefined,
                 };
             }
         }
-        return { id: null, turnStartedAt: undefined };
+        return { id: null, index: -1, turnStartedAt: undefined };
     }, [rawSessionMessages]);
     const lastUserId = lastUser.id;
 
@@ -335,8 +342,11 @@ export function useAssistantStatus(
         currentSessionId ?? undefined,
     );
     const lastUserIsCompaction = Boolean(lastUserId) && isCompactionCommandParts(lastUserParts);
+    // A user row after the last assistant opens a new turn; the previous
+    // assistant's final body must not settle it before the reply arrives.
     const isTurnSettled = Boolean(
         lastAssistantId
+        && lastAssistant.index > lastUser.index
         && hasConfirmedFinalBody(lastAssistant.finish, lastAssistantParts, lastAssistant.error),
     );
     const lastAssistantStatusSignature = React.useMemo(() => {

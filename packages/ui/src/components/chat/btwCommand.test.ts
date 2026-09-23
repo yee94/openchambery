@@ -7,7 +7,13 @@ import { getLocalChatCommand, consumesImmediateCommandText, preservesComposerRes
 import { shouldSubmitCommandOnSelection } from './commandSelection';
 
 const api = vi.hoisted(() => ({ generateSessionAside: vi.fn(), sendMessage: vi.fn(), sendCommand: vi.fn() }));
-vi.mock('@/lib/opencode/client', () => ({ opencodeClient: api }));
+vi.mock('@/lib/opencode/client', () => ({ opencodeClient: { ...api, applySendSelection: vi.fn(async () => {}) } }));
+vi.mock('@/stores/useConfigStore', () => ({
+  useConfigStore: { getState: () => ({ currentProviderId: '', currentModelId: '', currentAgentName: undefined, currentVariant: null }) },
+}));
+vi.mock('@/sync/selection-store', () => ({
+  useSelectionStore: { getState: () => ({ getSessionModelSelection: () => null, getSessionAgentSelection: () => null }) },
+}));
 import { useSessionBtwStore, getSessionBtwKey, resetSessionBtwStoreForRuntimeSwitch } from '@/stores/useSessionBtwStore';
 
 const scope = { sessionId: 'session-a', directory: '/repo' };
@@ -24,17 +30,19 @@ describe('/btw composer contract', () => {
     expect(getLocalChatCommand('/btw why', 'shell')).toBeNull();
     expect(consumesImmediateCommandText('/btw', 'normal')).toBe(false);
     expect(preservesComposerResources('/btw why', 'normal')).toBe(true);
-    expect(shouldSubmitCommandOnSelection({ name: 'btw', source: 'openchamber', isBuiltIn: true }, true)).toBe(false);
+    expect(shouldSubmitCommandOnSelection({ name: 'btw', source: 'openchamber', isBuiltIn: true }, true)).toBe(true);
     const autocomplete = readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), 'CommandAutocomplete.tsx'), 'utf8');
     expect(autocomplete).toContain("id: 'openchamber:btw'");
   });
 
-  test.each(['/btw', '/BTW  ', '/\u2003btw\n'])('retains empty question %s', (text) => {
+  test.each(['/btw', '/BTW  ', '/\u2003btw\n'])('bare %s only opens the side conversation', (text) => {
     const input = { ...options(), text };
     expect(submitBtwCommand(input)).toBe(true);
-    expect(input.notify).toHaveBeenCalledWith('questionRequired');
-    expect(input.clearText).not.toHaveBeenCalled();
+    expect(input.notify).not.toHaveBeenCalled();
+    expect(input.clearText).toHaveBeenCalledOnce();
+    expect(input.open).toHaveBeenCalledOnce();
     expect(api.generateSessionAside).not.toHaveBeenCalled();
+    expect(useSessionBtwStore.getState().entries).toEqual({});
   });
 
   test('requires a session and preserves reference-bearing documents', () => {
@@ -51,13 +59,13 @@ describe('/btw composer contract', () => {
   test('generates independently and clears only accepted text', async () => {
     const input = options();
     submitBtwCommand(input);
-    await Promise.resolve();
+    await new Promise((resolve) => setTimeout(resolve, 0));
     expect(api.generateSessionAside).toHaveBeenCalledWith(expect.objectContaining({ ...scope, prompt: expect.stringContaining('Why?'), signal: expect.any(AbortSignal) }));
     expect(api.sendMessage).not.toHaveBeenCalled();
     expect(api.sendCommand).not.toHaveBeenCalled();
     expect(input.clearText).toHaveBeenCalledOnce();
     expect(input.open).toHaveBeenCalledOnce();
-    expect(useSessionBtwStore.getState().entries[getSessionBtwKey(scope)].answer).toBe('Because.');
+    expect(useSessionBtwStore.getState().entries[getSessionBtwKey(scope)].turns[0]?.answer).toBe('Because.');
   });
 
   test('all production submit entrances claim btw before busy/flight/queue and transcript work', () => {

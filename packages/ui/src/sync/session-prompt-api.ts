@@ -139,7 +139,20 @@ function throwHttp(label: string, status: number, detail?: string): never {
 
 async function readFailedDetail(response: Response): Promise<string> {
   try {
-    return (await response.text()).trim()
+    const text = (await response.text()).trim()
+    if (!text) return ""
+    try {
+      const body = JSON.parse(text) as Record<string, unknown>
+      if (typeof body.error === "string" && body.error.trim()) {
+        return body.error.trim()
+      }
+      if (typeof body.message === "string" && body.message.trim()) {
+        return body.message.trim()
+      }
+    } catch {
+      // Plain-text upstream body
+    }
+    return text
   } catch {
     return ""
   }

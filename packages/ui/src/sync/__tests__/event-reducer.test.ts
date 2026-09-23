@@ -597,6 +597,67 @@ describe("applyDirectoryEvent (non-transcript production domains)", () => {
     expect(draft.session.some((s) => s.id === "ses_1")).toBe(true)
   })
 
+  test("OpenCode 2 session.created / session.updated without info are no-ops", () => {
+    const draft = directoryState()
+    const before = draft.session.map((s) => s.id)
+    for (const type of ["session.created", "session.updated"] as const) {
+      expect(applyDirectoryEvent(draft, {
+        type,
+        properties: { sessionID: "ses_child" },
+      } as unknown as Event)).toBe(false)
+    }
+    expect(draft.session.map((s) => s.id)).toEqual(before)
+  })
+
+  test("openchamber:session-metadata hides a system-owned session from the live list", () => {
+    const draft = directoryState()
+    const session = {
+      id: "ses_sched",
+      title: "[Scheduled] Task 2026-09-23 12:00",
+      time: { created: 1, updated: 1 },
+      version: "1",
+    } as Session
+    expect(applyDirectoryEvent(draft, {
+      type: "session.created",
+      properties: { info: session },
+    } as Event)).toBe(true)
+    expect(draft.session.some((s) => s.id === "ses_sched")).toBe(true)
+
+    expect(applyDirectoryEvent(draft, {
+      type: "openchamber:session-metadata",
+      properties: {
+        sessionID: "ses_sched",
+        metadata: { openchamber: { scheduledTask: { taskID: "task_1" } } },
+      },
+    } as Event)).toBe(true)
+    expect(draft.session.some((s) => s.id === "ses_sched")).toBe(false)
+  })
+
+  test("openchamber:session-metadata keeps a visible session and replaces metadata", () => {
+    const draft = directoryState()
+    const session = {
+      id: "ses_1",
+      title: "Hello",
+      time: { created: 1, updated: 1 },
+      version: "1",
+    } as Session
+    expect(applyDirectoryEvent(draft, {
+      type: "session.created",
+      properties: { info: session },
+    } as Event)).toBe(true)
+
+    expect(applyDirectoryEvent(draft, {
+      type: "openchamber:session-metadata",
+      properties: {
+        sessionID: "ses_1",
+        metadata: { openchamber: { goal: { id: "g1" } } },
+      },
+    } as Event)).toBe(true)
+    expect(draft.session.find((s) => s.id === "ses_1")?.metadata).toEqual({
+      openchamber: { goal: { id: "g1" } },
+    })
+  })
+
   test("session.diff stores summarized file diffs without large body fields", () => {
     const draft = directoryState()
     const heavyDiff = {

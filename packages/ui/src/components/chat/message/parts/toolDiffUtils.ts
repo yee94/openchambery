@@ -287,6 +287,16 @@ const getPatchEntriesFromText = (
     }];
 };
 
+/** Path on one patch file row. OpenCode 2 uses `file`; older rows use the other keys. */
+export const patchFilePath = (file: unknown): string => {
+    if (!isRecord(file)) return '';
+    for (const key of ['movePath', 'relativePath', 'filePath', 'file'] as const) {
+        const value = file[key];
+        if (typeof value === 'string' && value.length > 0) return value;
+    }
+    return '';
+};
+
 const getFilePatch = (file: unknown): { patch: string; title: string } | null => {
     if (!isRecord(file)) {
         return null;
@@ -297,17 +307,9 @@ const getFilePatch = (file: unknown): { patch: string; title: string } | null =>
         return null;
     }
 
-    const rawPath = typeof file.movePath === 'string'
-        ? file.movePath
-        : typeof file.relativePath === 'string'
-            ? file.relativePath
-            : typeof file.filePath === 'string'
-                ? file.filePath
-                : '';
-
     return {
         patch,
-        title: rawPath,
+        title: patchFilePath(file),
     };
 };
 

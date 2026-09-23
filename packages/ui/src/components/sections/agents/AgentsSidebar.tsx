@@ -19,7 +19,9 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuTrigger } from '@/components/ui/context-menu';
 import { useAgentsStore, isAgentBuiltIn, isAgentHidden, type AgentScope, type AgentDraft } from '@/stores/useAgentsStore';
-import { useAgentsQuery } from '@/queries/agentQueries';
+import { useAgentsQuery, type AgentWithExtras } from '@/queries/agentQueries';
+import { catalogModelSelection, isHexColor } from './agentSaveConfig';
+import { toPermissionRuleset } from '@/sync/permission-rules';
 import { useShallow } from 'zustand/react/shallow';
 import { cn } from '@/lib/utils';
 import type { Agent } from '@/lib/opencode/v2-types';
@@ -34,72 +36,42 @@ interface AgentsSidebarProps {
 }
 
 type PermissionAction = 'allow' | 'ask' | 'deny';
-type PermissionRule = { permission: string; pattern: string; action: PermissionAction };
 
-type PermissionConfigValue = PermissionAction | Record<string, PermissionAction>;
-
-const toPermissionRuleset = (ruleset: unknown): PermissionRule[] => {
-  if (!Array.isArray(ruleset)) {
-    return [];
-  }
-
-  const parsed: PermissionRule[] = [];
-  for (const entry of ruleset) {
-    if (!entry || typeof entry !== 'object') {
-      continue;
-    }
-    const candidate = entry as Partial<PermissionRule>;
-    if (typeof candidate.permission !== 'string' || typeof candidate.pattern !== 'string' || typeof candidate.action !== 'string') {
-      continue;
-    }
-    if (candidate.action !== 'allow' && candidate.action !== 'ask' && candidate.action !== 'deny') {
-      continue;
-    }
-    parsed.push({ permission: candidate.permission, pattern: candidate.pattern, action: candidate.action });
-  }
-
-  return parsed;
+const renamePermission = (name: string): string => {
+  if (name === 'bash') return 'shell';
+  if (name === 'task') return 'subagent';
+  if (name === 'write' || name === 'patch') return 'edit';
+  return name;
 };
 
-const normalizeRuleset = (ruleset: PermissionRule[]): PermissionRule[] => {
-  const map = new Map<string, PermissionRule>();
-  for (const rule of ruleset) {
-    if (!rule.permission || rule.permission === 'invalid') {
-      continue;
-    }
-    if (!rule.pattern) {
-      continue;
-    }
-    map.set(`${rule.permission}::${rule.pattern}`, rule);
-  }
-  return Array.from(map.values());
+const nativePermissions = (value: unknown): AgentDraft['permissions'] => {
+  const rules = toPermissionRuleset(value).map((rule) => ({
+    action: renamePermission(rule.action),
+    resource: rule.resource,
+    effect: rule.effect as PermissionAction,
+  }));
+  return rules.length > 0 ? rules : undefined;
 };
 
-const rulesetToPermissionConfig = (ruleset: unknown): AgentDraft['permission'] => {
-  const parsed = normalizeRuleset(toPermissionRuleset(ruleset));
-  if (parsed.length === 0) {
-    return undefined;
-  }
-
-  const byPermission: Record<string, Record<string, PermissionAction>> = {};
-  for (const rule of parsed) {
-    if (!rule.permission) {
-      continue;
-    }
-    (byPermission[rule.permission] ||= {})[rule.pattern] = rule.action;
-  }
-
-  const result: Record<string, PermissionConfigValue> = {};
-  for (const [permissionName, map] of Object.entries(byPermission)) {
-    const patterns = Object.keys(map);
-    if (patterns.length === 1 && patterns[0] === '*') {
-      result[permissionName] = map['*'];
-      continue;
-    }
-    result[permissionName] = map;
-  }
-
-  return Object.keys(result).length > 0 ? (result as AgentDraft['permission']) : undefined;
+const copyAgentDraft = (agent: Agent, name: string): AgentDraft => {
+  const extended = agent as AgentWithExtras & { steps?: number; color?: string; system?: string; permissions?: unknown };
+  const storedSystem = !isAgentBuiltIn(agent)
+    ? (typeof extended.system === 'string' ? extended.system : typeof agent.prompt === 'string' ? agent.prompt : undefined)
+    : undefined;
+  const color = typeof extended.color === 'string' && isHexColor(extended.color) ? extended.color : undefined;
+  return {
+    name,
+    scope: extended.scope || 'user',
+    description: agent.description,
+    model: catalogModelSelection(agent) || null,
+    ...(storedSystem ? { system: storedSystem } : {}),
+    mode: agent.mode,
+    ...(typeof extended.steps === 'number' ? { steps: extended.steps } : {}),
+    ...(agent.hidden === true ? { hidden: true } : {}),
+    ...(extended.disabledOverride ? { disabled: true } : {}),
+    ...(color ? { color } : {}),
+    permissions: nativePermissions(extended.permissions ?? agent.permission),
+  };
 };
 
 export const AgentsSidebar: React.FC<AgentsSidebarProps> = ({ onItemSelect }) => {
@@ -222,24 +194,7 @@ export const AgentsSidebar: React.FC<AgentsSidebarProps> = ({ onItemSelect }) =>
     }
 
     // Set draft with prefilled values from source agent
-    const extAgent = agent as Agent & { scope?: AgentScope };
-    const modelStr = agent.model?.providerID && agent.model?.modelID
-      ? `${agent.model.providerID}/${agent.model.modelID}`
-      : null;
-    const draftAgent = agent as Agent & { disable?: boolean };
-    setAgentDraft({
-      name: newName,
-      scope: extAgent.scope || 'user',
-      description: agent.description,
-      model: modelStr,
-      variant: agent.variant,
-      temperature: agent.temperature,
-      top_p: agent.topP,
-      prompt: agent.prompt,
-      mode: agent.mode,
-      permission: rulesetToPermissionConfig(agent.permission),
-      disable: draftAgent.disable,
-    });
+    setAgentDraft(copyAgentDraft(agent, newName));
     setSelectedAgent(newName);
 
   };
@@ -270,21 +225,9 @@ export const AgentsSidebar: React.FC<AgentsSidebarProps> = ({ onItemSelect }) =>
     }
 
     // Create new agent with new name and all existing config
-    const renameModelStr = renameDialogAgent.model?.providerID && renameDialogAgent.model?.modelID
-      ? `${renameDialogAgent.model.providerID}/${renameDialogAgent.model.modelID}`
-      : null;
-    const renameExt = renameDialogAgent as Agent & { scope?: AgentScope; disable?: boolean };
+    const renameExt = renameDialogAgent as AgentWithExtras;
     const createResult = await createAgent({
-      name: sanitizedName,
-      description: renameDialogAgent.description,
-      model: renameModelStr,
-      variant: renameDialogAgent.variant,
-      temperature: renameDialogAgent.temperature,
-      top_p: renameDialogAgent.topP,
-      prompt: renameDialogAgent.prompt,
-      mode: renameDialogAgent.mode,
-      permission: rulesetToPermissionConfig(renameDialogAgent.permission),
-      disable: renameExt.disable,
+      ...copyAgentDraft(renameDialogAgent, sanitizedName),
       scope: renameExt.scope,
     });
 
@@ -322,7 +265,10 @@ export const AgentsSidebar: React.FC<AgentsSidebarProps> = ({ onItemSelect }) =>
   };
 
   // Filter out hidden agents (internal agents like title, compaction, summary)
-  const visibleAgents = agents.filter((agent) => !isAgentHidden(agent));
+  const visibleAgents = agents.filter((agent) => {
+    const extended = agent as AgentWithExtras;
+    return !isAgentHidden(agent) || Boolean(extended.scope) || extended.disabledOverride === true;
+  });
   const builtInAgents = visibleAgents.filter(isAgentBuiltIn);
   const customAgents = visibleAgents.filter((agent) => !isAgentBuiltIn(agent));
 
@@ -563,7 +509,7 @@ const AgentListItem: React.FC<AgentListItemProps> = ({
   onMenuOpenChange,
 }) => {
   const { t } = useI18n();
-  const extAgent = agent as Agent & { scope?: AgentScope };
+  const extAgent = agent as AgentWithExtras;
   const isMobile = isMobileDeviceViaCSS();
   const [isContextMenuOpen, setIsContextMenuOpen] = React.useState(false);
   const renderMenuItems = (Item: React.ElementType) => (
@@ -607,9 +553,11 @@ const AgentListItem: React.FC<AgentListItemProps> = ({
               {agent.name}
             </span>
             {getAgentModeIcon(agent.mode)}
-            {(extAgent.scope || isAgentBuiltIn(agent)) && (
+            {(extAgent.scope || isAgentBuiltIn(agent) || extAgent.disabledOverride) && (
               <span className="typography-micro text-muted-foreground bg-muted px-1 rounded flex-shrink-0 leading-none pb-px border border-border/50">
-                {isAgentBuiltIn(agent) ? t('settings.agents.sidebar.badge.system') : extAgent.scope}
+                {extAgent.disabledOverride
+                  ? t('settings.agents.sidebar.badge.disabled')
+                  : isAgentBuiltIn(agent) ? t('settings.agents.sidebar.badge.system') : extAgent.scope}
               </span>
             )}
           </div>

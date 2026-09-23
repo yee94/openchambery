@@ -12,6 +12,7 @@ describe('composer autocomplete icons and rows', () => {
   test('maps slash command names to sprite icons', () => {
     expect(resolveSlashCommandIconName({ name: 'undo' })).toBe('arrow-go-back');
     expect(resolveSlashCommandIconName({ name: 'new' })).toBe('add');
+    expect(resolveSlashCommandIconName({ name: 'reload', isBuiltIn: true })).toBe('refresh');
     expect(resolveSlashCommandIconName({ name: 'mystery', isBuiltIn: true })).toBe('flashlight');
     expect(resolveSlashCommandIconName({ name: 'loop' })).toBe('command');
     expect(resolveSkillIconName()).toBe('book-open');

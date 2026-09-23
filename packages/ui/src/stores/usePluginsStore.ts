@@ -1,14 +1,12 @@
 import { create } from 'zustand';
 import { devtools, persist } from 'zustand/middleware';
 import { createDeferredSafeJSONStorage } from './utils/safeStorage';
-import {
-  startConfigUpdate,
-  finishConfigUpdate,
-} from '@/lib/configUpdate';
-import { refreshAfterOpenCodeRestart } from '@/stores/useAgentsStore';
 import { useProjectsStore } from '@/stores/useProjectsStore';
 import { opencodeClient } from '@/lib/opencode/client';
 import { runtimeFetch } from '@/lib/runtime-fetch';
+import { getRuntimeGeneration, getRuntimeTransportIdentity } from '@/lib/runtime-switch';
+import { queryClient } from '@/lib/queryRuntime';
+import { pluginsListQueryOptions, refreshPluginsQuery } from '@/queries/pluginQueries';
 
 export type PluginScope = 'user' | 'project';
 type PluginParsedKind = 'npm' | 'path';
@@ -83,10 +81,6 @@ export interface PluginsStore {
   getById: (id: string) => PluginEntry | PluginFile | undefined;
 }
 
-type PluginsListResponse = {
-  entries?: PluginEntry[];
-  files?: PluginFile[];
-};
 
 type RegistryInfoResponse = {
   results?: RegistryResult[];
@@ -126,7 +120,6 @@ const getConfigDirectory = (): string | null => {
   return null;
 };
 
-const CLIENT_RELOAD_DELAY_MS = 800;
 const PLUGINS_LOAD_CACHE_TTL_MS = 5000;
 const DEFAULT_PLUGINS_CACHE_KEY = '__default__';
 const pluginsLastLoadedAt = new Map<string, number>();
@@ -159,6 +152,10 @@ export const usePluginsStore = create<PluginsStore>()(
 
         loadPlugins: async (options) => {
           const configDirectory = getConfigDirectory();
+          const transport = getRuntimeTransportIdentity();
+          const generation = getRuntimeGeneration();
+          const isCurrent = () => transport === getRuntimeTransportIdentity()
+            && generation === getRuntimeGeneration() && configDirectory === getConfigDirectory();
           const cacheKey = getPluginCacheKey(configDirectory);
           const now = Date.now();
           const loadedAt = pluginsLastLoadedAt.get(cacheKey) ?? 0;
@@ -176,13 +173,10 @@ export const usePluginsStore = create<PluginsStore>()(
           const request = (async () => {
             set({ isLoading: true });
             try {
-              const response = await runtimeFetch(buildPluginsUrl('/api/config/plugins', configDirectory), {
-                headers: buildDirectoryHeaders(configDirectory),
-              });
-              if (!response.ok) {
-                throw new Error('Failed to load plugins');
-              }
-              const data = await readJson<PluginsListResponse>(response);
+              const data = options?.force
+                ? await refreshPluginsQuery(queryClient, configDirectory, transport)
+                : await queryClient.fetchQuery(pluginsListQueryOptions(configDirectory, transport));
+              if (!isCurrent()) return false;
               set({ entries: data.entries ?? [], files: data.files ?? [], isLoading: false });
               pluginsLastLoadedAt.set(cacheKey, Date.now());
               if (!options?.force) {
@@ -191,7 +185,7 @@ export const usePluginsStore = create<PluginsStore>()(
               return true;
             } catch (error) {
               console.error('[PluginsStore] Failed to load plugins:', error);
-              set({ isLoading: false });
+              if (isCurrent()) set({ isLoading: false });
               return false;
             }
           })();
@@ -245,14 +239,14 @@ export const usePluginsStore = create<PluginsStore>()(
         },
 
         createEntry: async (input) => {
-          const result = await runPluginMutation('Creating plugin entry…', async (configDirectory) => {
+          const result = await runPluginMutation(async (configDirectory) => {
             const response = await runtimeFetch(buildPluginsUrl('/api/config/plugins/entry', configDirectory), {
               method: 'POST',
               headers: buildJsonHeaders(configDirectory),
               body: JSON.stringify(buildEntryBody(input)),
             });
             return response;
-          }, get);
+          });
           if (result.ok) {
             void get().loadRegistryInfo({ specs: [input.spec], force: true });
           }
@@ -262,14 +256,14 @@ export const usePluginsStore = create<PluginsStore>()(
         updateEntry: async (id, input) => {
           const existingSpec = get().entries.find((plugin) => plugin.id === id)?.spec;
           const nextSpec = input.spec ?? existingSpec;
-          const result = await runPluginMutation('Updating plugin entry…', async (configDirectory) => {
+          const result = await runPluginMutation(async (configDirectory) => {
             const response = await runtimeFetch(buildPluginsUrl(`/api/config/plugins/entry/${encodeURIComponent(id)}`, configDirectory), {
               method: 'PATCH',
               headers: buildJsonHeaders(configDirectory),
               body: JSON.stringify(buildEntryBody(input)),
             });
             return response;
-          }, get);
+          });
           if (result.ok && nextSpec) {
             void get().loadRegistryInfo({ specs: [nextSpec], force: true });
           }
@@ -278,13 +272,13 @@ export const usePluginsStore = create<PluginsStore>()(
 
         deleteEntry: async (id) => {
           const entryToDelete = get().entries.find((plugin) => plugin.id === id);
-          const result = await runPluginMutation('Deleting plugin entry…', async (configDirectory) => {
+          const result = await runPluginMutation(async (configDirectory) => {
             const response = await runtimeFetch(buildPluginsUrl(`/api/config/plugins/entry/${encodeURIComponent(id)}`, configDirectory), {
               method: 'DELETE',
               headers: buildDirectoryHeaders(configDirectory),
             });
             return response;
-          }, get);
+          });
 
           if (result.ok && get().selectedId === id) {
             set({ selectedId: null });
@@ -314,35 +308,35 @@ export const usePluginsStore = create<PluginsStore>()(
         },
 
         createFile: async (input) => {
-          return runPluginMutation('Creating plugin file…', async (configDirectory) => {
+          return runPluginMutation(async (configDirectory) => {
             const response = await runtimeFetch(buildPluginsUrl('/api/config/plugins/file', configDirectory), {
               method: 'POST',
               headers: buildJsonHeaders(configDirectory),
               body: JSON.stringify(input),
             });
             return response;
-          }, get);
+          });
         },
 
         updateFile: async (id, input) => {
-          return runPluginMutation('Updating plugin file…', async (configDirectory) => {
+          return runPluginMutation(async (configDirectory) => {
             const response = await runtimeFetch(buildPluginsUrl(`/api/config/plugins/file/${encodeURIComponent(id)}`, configDirectory), {
               method: 'PUT',
               headers: buildJsonHeaders(configDirectory),
               body: JSON.stringify(input),
             });
             return response;
-          }, get);
+          });
         },
 
         deleteFile: async (id) => {
-          const result = await runPluginMutation('Deleting plugin file…', async (configDirectory) => {
+          const result = await runPluginMutation(async (configDirectory) => {
             const response = await runtimeFetch(buildPluginsUrl(`/api/config/plugins/file/${encodeURIComponent(id)}`, configDirectory), {
               method: 'DELETE',
               headers: buildDirectoryHeaders(configDirectory),
             });
             return response;
-          }, get);
+          });
 
           if (result.ok && get().selectedId === id) {
             set({ selectedId: null });
@@ -426,12 +420,10 @@ function buildEntryBody(input: { spec?: string; options?: Record<string, unknown
 }
 
 async function runPluginMutation(
-  progressMessage: string,
   request: (configDirectory: string | null) => Promise<Response>,
-  get: () => PluginsStore,
 ): Promise<PluginMutationResult> {
-  startConfigUpdate(progressMessage);
-  let requiresReload = false;
+  const transport = getRuntimeTransportIdentity();
+  const generation = getRuntimeGeneration();
   try {
     const configDirectory = getConfigDirectory();
     const response = await request(configDirectory);
@@ -441,18 +433,16 @@ async function runPluginMutation(
       throw new Error(payload?.error || 'Failed to update plugin configuration');
     }
 
+    if (transport !== getRuntimeTransportIdentity() || generation !== getRuntimeGeneration()) return { ok: true };
+
     invalidatePluginCache(configDirectory);
 
-    if (payload?.requiresReload) {
-      requiresReload = true;
-      await refreshAfterOpenCodeRestart({
-        message: payload.message,
-        delayMs: payload.reloadDelayMs ?? CLIENT_RELOAD_DELAY_MS,
-        scopes: ['all'],
-      });
+    const plugins = await refreshPluginsQuery(queryClient, configDirectory, transport);
+    if (configDirectory === getConfigDirectory() && transport === getRuntimeTransportIdentity()
+      && generation === getRuntimeGeneration()) {
+      usePluginsStore.setState({ entries: plugins.entries, files: plugins.files });
+      pluginsLastLoadedAt.set(getPluginCacheKey(configDirectory), Date.now());
     }
-
-    await get().loadPlugins({ force: true });
     return {
       ok: true,
       reloadFailed: payload?.reloadFailed === true,
@@ -462,8 +452,6 @@ async function runPluginMutation(
   } catch (error) {
     console.error('[PluginsStore] Failed to update plugin configuration:', error);
     return { ok: false };
-  } finally {
-    if (!requiresReload) finishConfigUpdate();
   }
 }
 

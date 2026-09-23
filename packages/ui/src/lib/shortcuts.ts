@@ -33,7 +33,7 @@ const MODIFIER_KEY_MAP: Record<string, ShortcutModifier> = {
 };
 
 const DISPLAY_LABEL_MAP: Record<ShortcutModifier, string> = {
-  'mod': isMacOS() && isDesktopShell() ? '⌘' : 'Ctrl',
+  'mod': isMacOS() ? '⌘' : 'Ctrl',
   'shift': '⇧',
   'alt': '⌥',
   'option': '⌥',
@@ -732,7 +732,7 @@ export function eventMatchesShortcut(
 }
 
 export function getModifierLabel(): string {
-  return isMacOS() && isDesktopShell() ? '⌘' : 'Ctrl';
+  return isMacOS() ? '⌘' : 'Ctrl';
 }
 
 /**

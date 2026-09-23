@@ -1,7 +1,7 @@
 import { create } from "zustand";
 import type { StoreApi, UseBoundStore } from "zustand";
 import { devtools, persist } from "zustand/middleware";
-import type { Agent, PermissionConfig } from '@/lib/opencode/v2-types';
+import type { Agent } from '@/lib/opencode/v2-types';
 import { opencodeClient } from "@/lib/opencode/client";
 import { emitConfigChange, scopeMatches, subscribeToConfigChanges, type ConfigChangeScope } from "@/lib/configSync";
 import {
@@ -54,17 +54,17 @@ export type { AgentScope } from "@/queries/agentQueries";
 
 export interface AgentConfig {
   name: string;
-  description?: string;
+  description?: string | null;
   model?: string | null;
-  variant?: string | null;
-  temperature?: number | null;
-  top_p?: number | null;
-  prompt?: string | null;
+  system?: string | null;
   mode?: "primary" | "subagent" | "all";
-  permission?: PermissionConfig | null;
-
-  disable?: boolean;
+  steps?: number | null;
+  hidden?: boolean;
+  disabled?: boolean;
+  color?: string | null;
+  permissions?: Array<{ action: string; resource: string; effect: "allow" | "ask" | "deny" }> | null;
   scope?: AgentScope;
+  confirmDrop?: boolean;
 }
 
 /**
@@ -104,20 +104,18 @@ const SLOW_HEALTH_POLL_BASE_MS = 800;
 const SLOW_HEALTH_POLL_INCREMENT_MS = 200;
 const SLOW_HEALTH_POLL_MAX_MS = 2000;
 
-const hasValue = <T>(value: T | null | undefined): value is T => value !== null && value !== undefined;
-
 export interface AgentDraft {
   name: string;
   scope: AgentScope;
   description?: string;
   model?: string | null;
-  variant?: string;
-  temperature?: number | null;
-  top_p?: number | null;
-  prompt?: string;
+  system?: string;
   mode?: "primary" | "subagent" | "all";
-  permission?: PermissionConfig;
-  disable?: boolean;
+  steps?: number | null;
+  hidden?: boolean;
+  disabled?: boolean;
+  color?: string | null;
+  permissions?: AgentConfig["permissions"];
 }
 
 interface AgentsStore {
@@ -197,37 +195,20 @@ async function mutateAgent(
   config: Partial<AgentConfig> | undefined,
   set: (partial: Partial<AgentsStore>) => void,
 ): Promise<AgentMutationResult> {
-  const labels = { POST: 'Creating', PATCH: 'Updating', DELETE: 'Deleting' };
-  startConfigUpdate(`${labels[method]} agent configuration…`);
   const directory = getConfigDirectory();
   const transport = getRuntimeTransportIdentity();
   try {
-    const agentConfig: Record<string, unknown> = {};
-    if (method === 'POST') {
-      agentConfig.mode = config?.mode || 'subagent';
-      if (config?.description) agentConfig.description = config.description;
-      if (config?.model) agentConfig.model = config.model;
-      if (config?.variant) agentConfig.variant = config.variant;
-      if (hasValue(config?.temperature)) agentConfig.temperature = config.temperature;
-      if (hasValue(config?.top_p)) agentConfig.top_p = config.top_p;
-      if (config?.prompt) agentConfig.prompt = config.prompt;
-      if (config?.permission) agentConfig.permission = config.permission;
-      if (config?.disable !== undefined) agentConfig.disable = config.disable;
-      if (config?.scope) agentConfig.scope = config.scope;
-    }
-    if (method === 'PATCH') {
-      for (const key of ['mode', 'description', 'model', 'prompt', 'permission', 'disable'] as const) {
-        if (config?.[key] !== undefined) agentConfig[key] = config[key];
-      }
-      for (const key of ['variant', 'temperature', 'top_p'] as const) {
-        if (key in (config ?? {})) agentConfig[key] = config?.[key] ?? null;
-      }
+    const native: Record<string, unknown> = {};
+    for (const key of ['description', 'mode', 'model', 'system', 'steps', 'hidden', 'disabled', 'color', 'permissions'] as const) {
+      if (config && key in config && config[key] !== undefined) native[key] = config[key];
     }
     const query = directory ? `?directory=${encodeURIComponent(directory)}` : '';
     const response = await runtimeFetch(`/api/config/agents/${encodeURIComponent(name)}${query}`, {
       method,
       headers: { 'Content-Type': 'application/json', ...(directory ? { 'x-opencode-directory': directory } : {}) },
-      body: JSON.stringify(method === 'DELETE' ? { scope: config?.scope } : agentConfig),
+      body: JSON.stringify(method === 'DELETE'
+        ? { scope: config?.scope }
+        : { native, ...(config?.scope ? { scope: config.scope } : {}), ...(config?.confirmDrop ? { confirmDrop: true } : {}) }),
     });
     const payload = await response.json().catch(() => null);
     if (!response.ok) throw new Error(payload?.error || `Failed to ${method.toLowerCase()} agent`);
@@ -238,24 +219,11 @@ async function mutateAgent(
       set({ selectedAgentName: null });
     }
     if (payload?.requiresManualRestart) return { ok: true, requiresManualRestart: true };
-    if (payload?.requiresReload ?? true) {
-      await refreshAfterOpenCodeRestart({
-        message: payload?.message,
-        delayMs: payload?.reloadDelayMs,
-        scopes: ['agents'],
-        mode: 'projects',
-        transportIdentity: transport,
-        queryDirectory: directory,
-      });
-    } else {
-      await refreshMutationAgents(directory, transport);
-    }
+    await refreshMutationAgents(directory, transport);
     return { ok: true };
   } catch (error) {
     console.error(`[AgentsStore] ${method} agent failed:`, error);
     return { ok: false };
-  } finally {
-    finishConfigUpdate();
   }
 }
 
@@ -312,6 +280,9 @@ interface ConfigRefreshOptions {
   mode?: ConfigRefreshMode;
   transportIdentity?: string;
   queryDirectory?: string | null;
+  /** Refresh catalogs without driving the blocking config-update overlay. */
+  silent?: boolean;
+  waitForConnection?: boolean;
 }
 
 const normalizeRefreshScopes = (scopes?: ConfigChangeScope[]): ConfigChangeScope[] => {
@@ -333,16 +304,19 @@ async function performConfigRefresh(options: ConfigRefreshOptions = {}) {
   const queryDirectory = options.queryDirectory ?? getConfigDirectory();
   const scopes = normalizeRefreshScopes(options.scopes);
   const mode: ConfigRefreshMode = options.mode ?? (scopes.includes("all") ? "projects" : "active");
+  const silent = options.silent === true;
 
-  try {
-    updateConfigUpdateMessage(message || "Refreshing configuration…");
-  } catch {
-    // ignore
+  if (!silent) {
+    try {
+      updateConfigUpdateMessage(message || "Refreshing configuration…");
+    } catch {
+      // ignore
+    }
   }
 
   try {
     if (getRuntimeTransportIdentity() !== transport) return;
-    await waitForOpenCodeConnection(delayMs);
+    if (options.waitForConnection !== false) await waitForOpenCodeConnection(delayMs);
     if (getRuntimeTransportIdentity() !== transport) return;
 
     const configStore = useConfigStore.getState();
@@ -352,12 +326,13 @@ async function performConfigRefresh(options: ConfigRefreshOptions = {}) {
     const refreshAgentConfigs = scopes.includes("all") || scopes.includes("agents");
     const refreshCommands = scopes.includes("all") || scopes.includes("commands");
     const refreshSkills = scopes.includes("all") || scopes.includes("skills");
+    const refreshMcp = scopes.includes("all") || scopes.includes("mcp");
 
     const currentDirectory = getCurrentDirectory();
     const projects = mode === "projects" ? useProjectsStore.getState().projects : [];
     const directoriesToRefresh = Array.from(
       new Set([
-        ...(currentDirectory ? [currentDirectory] : []),
+         ...(queryDirectory ? [queryDirectory] : currentDirectory ? [currentDirectory] : []),
         ...projects.map((project) => project.path).filter(Boolean),
       ]),
     );
@@ -373,10 +348,10 @@ async function performConfigRefresh(options: ConfigRefreshOptions = {}) {
     const sdkRefreshTasks: Promise<void>[] = [];
     for (const directory of directoriesToRefresh) {
       if (refreshProviders) {
-        sdkRefreshTasks.push(configStore.loadProviders({ directory, source: 'agentsStore:refreshConfig' }).then(() => undefined));
+        sdkRefreshTasks.push(configStore.loadProviders({ directory, source: 'agentsStore:refreshConfig', forceRefresh: true, allowEmpty: true }).then(() => undefined));
       }
       if (refreshSdkAgents) {
-        sdkRefreshTasks.push(configStore.loadAgents({ directory, source: 'agentsStore:refreshConfig' }).then(() => undefined));
+        sdkRefreshTasks.push(configStore.loadAgents({ directory, source: 'agentsStore:refreshConfig', forceRefresh: true }).then(() => undefined));
       }
     }
 
@@ -391,15 +366,23 @@ async function performConfigRefresh(options: ConfigRefreshOptions = {}) {
       uiRefreshTasks.push(refreshInstalledSkillsQuery(queryClient, queryDirectory, transport).then(() => undefined));
       uiRefreshTasks.push(invalidateSkillsCatalogQueries(queryClient, queryDirectory, transport).then(() => undefined));
     }
+    if (refreshMcp) {
+      const { refreshMcpConfigsQuery, refreshMcpStatusQuery } = await import("@/queries/mcpQueries");
+      if (getRuntimeTransportIdentity() !== transport) return;
+      uiRefreshTasks.push(refreshMcpConfigsQuery(queryClient, queryDirectory, transport).then(() => undefined));
+      uiRefreshTasks.push(refreshMcpStatusQuery(queryClient, queryDirectory, transport).then(() => undefined));
+    }
 
-    updateConfigUpdateMessage("Refreshing configuration…");
+    if (!silent) updateConfigUpdateMessage("Refreshing configuration…");
     await Promise.all([...sdkRefreshTasks, ...uiRefreshTasks]);
   } catch (error) {
-    updateConfigUpdateMessage("OpenCode refresh failed. Please retry.");
-    await sleep(1500);
+    if (!silent) {
+      updateConfigUpdateMessage("OpenCode refresh failed. Please retry.");
+      await sleep(1500);
+    }
     throw error;
   } finally {
-    finishConfigUpdate();
+    if (!silent) finishConfigUpdate();
   }
 }
 
@@ -407,7 +390,24 @@ export async function refreshAfterOpenCodeRestart(options?: ConfigRefreshOptions
   await performConfigRefresh(options);
 }
 
-export async function reloadOpenCodeConfiguration(options?: ConfigRefreshOptions) {
+/** Refresh UI data after a V2 mutation; never reload locations or the service. */
+export async function refreshOpenCodeConfiguration(options?: ConfigRefreshOptions) {
+  await performConfigRefresh({ ...options, silent: true, waitForConnection: false });
+}
+
+/**
+ * Chat `/reload`: OpenCode `location.reload` rebuilds every loaded location in
+ * place (running sessions continue at the next step boundary), unlike
+ * `restartOpenCodeService`, which restarts the managed process.
+ */
+export async function reloadOpenCodeLocations(): Promise<void> {
+  const transport = getRuntimeTransportIdentity();
+  await opencodeClient.getSdkClient().location.reload();
+  if (getRuntimeTransportIdentity() !== transport) return;
+  await performConfigRefresh({ transportIdentity: transport, scopes: ["all"], mode: "projects", silent: true });
+}
+
+export async function restartOpenCodeService(options?: ConfigRefreshOptions) {
   startConfigUpdate(options?.message || "Reloading OpenCode configuration…");
   const transport = options?.transportIdentity ?? getRuntimeTransportIdentity();
   const queryDirectory = options?.queryDirectory ?? getConfigDirectory();
@@ -449,7 +449,7 @@ export async function reloadOpenCodeConfiguration(options?: ConfigRefreshOptions
       await refreshAfterOpenCodeRestart(refreshOptions);
     }
   } catch (error) {
-    console.error('[reloadOpenCodeConfiguration] Failed:', error);
+    console.error('[restartOpenCodeService] Failed:', error);
     updateConfigUpdateMessage('Failed to reload configuration. Please try again.');
     await sleep(2000);
     finishConfigUpdate();

@@ -18,6 +18,15 @@ const resolveMessageRole = (message: ChatMessageEntry): string => {
     return typeof role === 'string' ? role : '';
 };
 
+/**
+ * OpenCode 2 native synthetic rows (background / `<subagent …>` / `<shell …>`
+ * notices) continue the current turn. Their ids are minted when the work is
+ * backgrounded and `time.created` is stamped on completion, so as turn anchors
+ * they split one reply and move later steps between blocks.
+ */
+const isNativeSyntheticNotice = (message: ChatMessageEntry): boolean =>
+    (message.info as { nativeType?: unknown }).nativeType === 'synthetic';
+
 const getMessageParentId = (message: ChatMessageEntry): string | undefined => {
     const parentId = (message.info as { parentID?: unknown }).parentID;
     if (typeof parentId !== 'string' || parentId.trim().length === 0) {
@@ -380,6 +389,10 @@ export const projectTurnRecords = (
     messages.forEach((message, index) => {
         const role = resolveMessageRole(message);
         if (role !== 'user') {
+            return;
+        }
+        if (turns.length > 0 && isNativeSyntheticNotice(message)) {
+            groupedMessageIds.add(message.info.id);
             return;
         }
 

@@ -7,26 +7,34 @@ export type AgentEditorSnapshot = {
   description: string;
   mode: AgentMode;
   model: string;
-  variant: string;
-  temperature: number | undefined;
-  topP: number | undefined;
-  prompt: string;
+  system: string;
+  steps: number | undefined;
+  hidden: boolean;
+  disabled: boolean;
+  color: string;
   globalPermission: PermissionAction;
   permissionRules: PermissionRule[];
 };
 
+export type NativePermission = { action: string; resource: string; effect: PermissionAction };
+
 type AgentSaveConfig = {
   name: string;
-  description?: string;
+  description?: string | null;
   mode?: AgentMode;
   model?: string | null;
-  variant?: string | null;
-  temperature?: number | null;
-  top_p?: number | null;
-  prompt?: string | null;
-  permission?: unknown;
+  system?: string | null;
+  steps?: number | null;
+  hidden?: boolean;
+  disabled?: boolean;
+  color?: string | null;
+  permissions?: NativePermission[] | null;
   scope?: AgentScope;
+  confirmDrop?: boolean;
 };
+
+const HEX_COLOR = /^#[0-9a-fA-F]{6}$/;
+const PROMPT_FILE = /^\{file:.+\}$/i;
 
 const sortRules = (rules: PermissionRule[]): PermissionRule[] => (
   [...rules].sort((a, b) => {
@@ -36,12 +44,10 @@ const sortRules = (rules: PermissionRule[]): PermissionRule[] => (
   })
 );
 
-export const arePermissionRulesEqual = (a: PermissionRule[], b: PermissionRule[]): boolean => {
+const arePermissionRulesEqual = (a: PermissionRule[], b: PermissionRule[]): boolean => {
   const sortedA = sortRules(a);
   const sortedB = sortRules(b);
-  if (sortedA.length !== sortedB.length) {
-    return false;
-  }
+  if (sortedA.length !== sortedB.length) return false;
   return sortedA.every((rule, index) => {
     const other = sortedB[index];
     return rule.permission === other.permission
@@ -54,11 +60,33 @@ export const hasPermissionChanged = (
   current: Pick<AgentEditorSnapshot, 'globalPermission' | 'permissionRules'>,
   initial: Pick<AgentEditorSnapshot, 'globalPermission' | 'permissionRules'> | null | undefined,
 ): boolean => {
-  if (!initial) {
-    return false;
-  }
+  if (!initial) return false;
   return current.globalPermission !== initial.globalPermission
     || !arePermissionRulesEqual(current.permissionRules, initial.permissionRules);
+};
+
+const renamePermission = (name: string): string => {
+  if (name === 'bash') return 'shell';
+  if (name === 'task') return 'subagent';
+  if (name === 'write' || name === 'patch') return 'edit';
+  return name;
+};
+
+const toNativePermissions = (
+  globalPermission: PermissionAction,
+  rules: PermissionRule[],
+): NativePermission[] => {
+  const native: NativePermission[] = [{ action: '*', resource: '*', effect: globalPermission }];
+  for (const rule of rules) {
+    if (!rule.permission || !rule.pattern) continue;
+    if (rule.permission === '*' && rule.pattern === '*') continue;
+    native.push({
+      action: renamePermission(rule.permission),
+      resource: rule.pattern,
+      effect: rule.action,
+    });
+  }
+  return native;
 };
 
 const encodeModel = (model: string): string | null => {
@@ -66,32 +94,15 @@ const encodeModel = (model: string): string | null => {
   return trimmed === '' ? null : trimmed;
 };
 
-const encodeVariant = (variant: string): string | null | undefined => {
-  const trimmed = variant.trim();
-  if (trimmed === '') {
-    return null;
-  }
-  return trimmed;
-};
-
-const encodePromptForCreate = (prompt: string): string | undefined => {
-  const trimmed = prompt.trim();
-  return trimmed || undefined;
-};
-
-const encodePromptForUpdate = (prompt: string): string | null => {
-  const trimmed = prompt.trim();
-  return trimmed || null;
+const encodeColor = (color: string): string | null => {
+  const trimmed = color.trim();
+  return HEX_COLOR.test(trimmed) ? trimmed : null;
 };
 
 /**
- * Build the agent mutation payload from only intentional values.
- *
- * - Create: send the drafted agent values, but omit permission unless the draft
- *   already carried one (duplicate) or the user edited permissions.
- * - Update: send only fields that differ from the loaded baseline. Server-side
- *   config merge already owns unchanged fields, so prompt-only edits must not
- *   rewrite permission/model/etc.
+ * Build a native agent patch.
+ * Create sends the drafted values. Update sends only fields that differ.
+ * Permission is omitted on create unless the draft already had rules or the user edited them.
  */
 export const buildAgentSaveConfig = ({
   isNewAgent,
@@ -100,7 +111,7 @@ export const buildAgentSaveConfig = ({
   draftHasExplicitPermission,
   current,
   initial,
-  permissionConfig,
+  confirmDrop,
 }: {
   isNewAgent: boolean;
   agentName: string;
@@ -108,70 +119,87 @@ export const buildAgentSaveConfig = ({
   draftHasExplicitPermission: boolean;
   current: AgentEditorSnapshot;
   initial: AgentEditorSnapshot | null;
-  permissionConfig: unknown;
+  confirmDrop?: boolean;
 }): AgentSaveConfig => {
+  const permissions = toNativePermissions(current.globalPermission, current.permissionRules);
+
   if (isNewAgent) {
-    const permissionsChanged = hasPermissionChanged(current, initial);
-    const shouldWritePermission = permissionsChanged || draftHasExplicitPermission;
     const description = current.description.trim();
     const model = encodeModel(current.model);
-    const variant = encodeVariant(current.variant);
-    const prompt = encodePromptForCreate(current.prompt);
-
+    const system = current.system.trim();
+    const color = encodeColor(current.color);
+    const permissionsChanged = hasPermissionChanged(current, initial);
+    const shouldWritePermission = permissionsChanged || draftHasExplicitPermission;
     return {
       name: agentName,
       mode: current.mode,
       ...(description ? { description } : {}),
       ...(model ? { model } : {}),
-      ...(variant ? { variant } : {}),
-      ...(current.temperature !== undefined ? { temperature: current.temperature } : {}),
-      ...(current.topP !== undefined ? { top_p: current.topP } : {}),
-      ...(prompt ? { prompt } : {}),
-      ...(shouldWritePermission ? { permission: permissionConfig } : {}),
+      ...(system ? { system } : {}),
+      ...(current.steps !== undefined ? { steps: current.steps } : {}),
+      ...(current.hidden ? { hidden: true } : {}),
+      ...(current.disabled ? { disabled: true } : {}),
+      ...(color ? { color } : {}),
+      ...(shouldWritePermission ? { permissions } : {}),
       ...(draftScope ? { scope: draftScope } : {}),
+      ...(confirmDrop ? { confirmDrop: true } : {}),
     };
   }
 
-  // Update: only fields that actually changed from the loaded baseline.
-  const config: AgentSaveConfig = { name: agentName };
-  if (!initial) {
-    return config;
-  }
+  const config: AgentSaveConfig = {
+    name: agentName,
+    ...(confirmDrop ? { confirmDrop: true } : {}),
+  };
+  if (!initial) return config;
 
   if (current.description !== initial.description) {
     const description = current.description.trim();
-    if (description) {
-      config.description = description;
-    }
+    config.description = description || null;
   }
-
-  if (current.mode !== initial.mode) {
-    config.mode = current.mode;
+  if (current.mode !== initial.mode) config.mode = current.mode;
+  if (current.model !== initial.model) config.model = encodeModel(current.model);
+  if (current.system !== initial.system) {
+    const system = current.system.trim();
+    config.system = system || null;
   }
-
-  if (current.model !== initial.model) {
-    config.model = encodeModel(current.model);
-  }
-
-  if (current.variant !== initial.variant) {
-    config.variant = encodeVariant(current.variant) ?? null;
-  }
-
-  if (current.temperature !== initial.temperature) {
-    config.temperature = current.temperature ?? null;
-  }
-
-  if (current.topP !== initial.topP) {
-    config.top_p = current.topP ?? null;
-  }
-
-  if (current.prompt !== initial.prompt) {
-    config.prompt = encodePromptForUpdate(current.prompt);
-  }
-
-  if (hasPermissionChanged(current, initial)) {
-    config.permission = permissionConfig;
-  }
-
+  if (current.steps !== initial.steps) config.steps = current.steps ?? null;
+  if (current.hidden !== initial.hidden) config.hidden = current.hidden;
+  if (current.disabled !== initial.disabled) config.disabled = current.disabled;
+  if (current.color !== initial.color) config.color = encodeColor(current.color);
+  if (hasPermissionChanged(current, initial)) config.permissions = permissions;
   return config;
 };
+
+export const readStoredSystem = (config: Record<string, unknown> | null | undefined): string | undefined => {
+  if (!config) return undefined;
+  if (typeof config.prompt === 'string') {
+    if (PROMPT_FILE.test(config.prompt.trim())) return undefined;
+    return config.prompt;
+  }
+  if (typeof config.system === 'string') return config.system;
+  return undefined;
+};
+
+export const catalogModelSelection = (agent: {
+  model?: { providerID?: string; modelID?: string; id?: string; variant?: string } | null;
+  variant?: string | null;
+} | null | undefined): string => {
+  const providerID = agent?.model?.providerID;
+  const modelID = agent?.model?.modelID || agent?.model?.id;
+  if (!providerID || !modelID) return '';
+  const variant = agent?.model?.variant || agent?.variant;
+  return variant ? `${providerID}/${modelID}#${variant}` : `${providerID}/${modelID}`;
+};
+
+export const splitModelSelection = (value: string): { providerId: string; modelId: string; variant: string } | null => {
+  const trimmed = value.trim();
+  const separator = trimmed.indexOf('/');
+  if (separator <= 0 || separator >= trimmed.length - 1) return null;
+  const providerId = trimmed.slice(0, separator);
+  const rest = trimmed.slice(separator + 1);
+  const hash = rest.indexOf('#');
+  if (hash === -1) return { providerId, modelId: rest, variant: '' };
+  return { providerId, modelId: rest.slice(0, hash), variant: rest.slice(hash + 1) };
+};
+
+export const isHexColor = (value: string): boolean => HEX_COLOR.test(value.trim());

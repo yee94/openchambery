@@ -17,7 +17,7 @@ import { toast } from '@/components/ui';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { Icon } from "@/components/icon/Icon";
 import type { IconName } from "@/components/icon/icons";
-import { reloadOpenCodeConfiguration } from '@/stores/useAgentsStore';
+import { refreshOpenCodeConfiguration } from '@/stores/useAgentsStore';
 import { cn } from '@/lib/utils';
 import { copyTextToClipboard } from '@/lib/clipboard';
 import { openExternalUrl } from '@/lib/url';
@@ -368,7 +368,7 @@ const ProvidersPageContent: React.FC = () => {
       if (!scope.isCurrent()) return;
 
       setApiKeyInputs((prev) => ({ ...prev, [providerId]: '' }));
-      await reloadOpenCodeConfiguration({ scopes: ['providers'], mode: 'active', queryDirectory: scope.directory, transportIdentity: scope.transportIdentity });
+      await refreshOpenCodeConfiguration({ scopes: ['providers'], mode: 'active', queryDirectory: scope.directory, transportIdentity: scope.transportIdentity });
       if (!scope.isCurrent()) return;
       const refreshed = await connectionQuery.refetch({ throwOnError: true });
       if (!scope.isCurrent()) return;
@@ -410,7 +410,7 @@ const ProvidersPageContent: React.FC = () => {
         setPendingOAuth(null);
         setOauthDetails({});
         setOauthCodes({});
-        await reloadOpenCodeConfiguration({ scopes: ['providers'], mode: 'active' });
+        await refreshOpenCodeConfiguration({ scopes: ['providers'], mode: 'active' });
         if (!flow.isCurrent() || oauthFlow.current !== flow) return;
         const refreshed = await connectionQuery.refetch({ throwOnError: true });
         if (!flow.isCurrent() || oauthFlow.current !== flow) return;
@@ -483,7 +483,7 @@ const ProvidersPageContent: React.FC = () => {
       await Promise.all(credentialIds.map((credentialID) => client.credential.remove({ credentialID }, { signal: scope.signal })));
       if (!scope.isCurrent()) return;
 
-      await reloadOpenCodeConfiguration({ scopes: ['providers'], mode: 'active', queryDirectory: scope.directory, transportIdentity: scope.transportIdentity });
+      await refreshOpenCodeConfiguration({ scopes: ['providers'], mode: 'active', queryDirectory: scope.directory, transportIdentity: scope.transportIdentity });
       if (!scope.isCurrent()) return;
       await connectionQuery.refetch({ throwOnError: true });
       if (!scope.isCurrent()) return;

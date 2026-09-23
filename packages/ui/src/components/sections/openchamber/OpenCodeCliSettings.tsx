@@ -6,7 +6,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { Icon } from "@/components/icon/Icon";
 import { isDesktopShell, requestFileAccess } from '@/lib/desktop';
 import { updateDesktopSettings } from '@/lib/persistence';
-import { reloadOpenCodeConfiguration } from '@/stores/useAgentsStore';
+import { restartOpenCodeService } from '@/stores/useAgentsStore';
 import { useUIStore } from '@/stores/useUIStore';
 import { useI18n } from '@/lib/i18n';
 import { runtimeFetch } from '@/lib/runtime-fetch';
@@ -81,7 +81,7 @@ export const OpenCodeCliSettings: React.FC = () => {
         ? trimmed.slice(1, -1).trim()
         : trimmed;
       await updateDesktopSettings({ opencodeBinary: unquoted });
-      await reloadOpenCodeConfiguration({
+      await restartOpenCodeService({
         message: t('settings.openchamber.opencodeCli.actions.restartingOpenCode'),
         mode: 'projects',
         scopes: ['all'],

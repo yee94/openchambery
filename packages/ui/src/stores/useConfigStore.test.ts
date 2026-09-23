@@ -645,6 +645,15 @@ describe('useConfigStore provider persistence', () => {
     expect(useConfigStore.getState().directoryScoped[DIRECTORY]?.providers.map((entry) => entry.id)).toEqual(['warm']);
   });
 
+  test('an authoritative credential refresh can clear the last provider', async () => {
+    liveProviderId = 'warm';
+    await useConfigStore.getState().loadProviders({ directory: DIRECTORY });
+    getProvidersForConfigImpl = async () => ({ providers: [], default: {} });
+    await useConfigStore.getState().loadProviders({ directory: DIRECTORY, forceRefresh: true, allowEmpty: true });
+    expect(useConfigStore.getState().providers).toEqual([]);
+    expect(useConfigStore.getState().directoryScoped[DIRECTORY]?.providers).toEqual([]);
+  });
+
   test('partialize 在 providers 为空时以 providerCatalogPartial=true 落盘', () => {
     useConfigStore.setState({
       activeDirectoryKey: DIRECTORY,

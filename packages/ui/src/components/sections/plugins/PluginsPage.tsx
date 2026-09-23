@@ -1,4 +1,5 @@
 import React from 'react';
+import { usePluginsQuery } from '@/queries/pluginQueries';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -87,8 +88,9 @@ export const PluginsPage: React.FC = () => {
   const { t } = useI18n();
 
   const selectedId = usePluginsStore((s) => s.selectedId);
-  const entries = usePluginsStore((s) => s.entries);
-  const files = usePluginsStore((s) => s.files);
+  const pluginsQuery = usePluginsQuery();
+  const entries = React.useMemo(() => pluginsQuery.data?.entries ?? [], [pluginsQuery.data?.entries]);
+  const files = React.useMemo(() => pluginsQuery.data?.files ?? [], [pluginsQuery.data?.files]);
   const draft = usePluginsStore((s) => s.draft);
   const setDraft = usePluginsStore((s) => s.setDraft);
   const updateEntry = usePluginsStore((s) => s.updateEntry);

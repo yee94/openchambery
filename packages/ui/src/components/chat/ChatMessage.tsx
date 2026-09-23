@@ -738,6 +738,7 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
 
     const assistantErrorText = assistantError?.text;
     const assistantErrorVariant = assistantError?.variant;
+    const assistantErrorDetail = assistantError?.detail;
 
     const messageTextContent = React.useMemo(() => {
         if (isUser) {
@@ -1190,6 +1191,7 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
                                                 onCancelEdit={isEditStaged ? handleCancelEdit : undefined}
                                                 pendingMessageAction={pendingMessageAction}
                                                 errorMessage={assistantErrorText}
+                                                errorDetail={assistantErrorDetail}
                                                 errorVariant={assistantErrorVariant}
                                                 userActionsMode={useExternalUserActionsRow ? 'external-content' : 'inline'}
                                                 stickyUserHeaderEnabled={stickyUserHeader && !isShellResult}
@@ -1230,6 +1232,7 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
                                                 onCancelEdit={isEditStaged ? handleCancelEdit : undefined}
                                                 pendingMessageAction={pendingMessageAction}
                                                 errorMessage={assistantErrorText}
+                                                errorDetail={assistantErrorDetail}
                                                 errorVariant={assistantErrorVariant}
                                                 userActionsMode="external-actions"
                                                 stickyUserHeaderEnabled={stickyUserHeader}
@@ -1285,6 +1288,7 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
                                 agentMention={agentMention}
                                 turnGroupingContext={turnGroupingContext}
                                 errorMessage={assistantErrorText}
+                                errorDetail={assistantErrorDetail}
                                 errorVariant={assistantErrorVariant}
                                 reviewTransferDirection={reviewTransferDirection}
                             />

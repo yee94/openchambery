@@ -2253,7 +2253,7 @@ export const ContextPanel: React.FC<{ directory?: string | null }> = ({ director
     if (!directoryKey) return;
     if (useUIStore.getState().contextPanelByDirectory[directoryKey]?.tabs.find((tab) => tab.id === tabId)?.mode === 'btw') {
       const sessionId = useSessionUIStore.getState().currentSessionId;
-      if (sessionId) useSessionBtwStore.getState().cancel({ sessionId, directory: directoryKey });
+      if (sessionId) useSessionBtwStore.getState().clear({ sessionId, directory: directoryKey });
     }
     dispatchSessionCache({ type: 'close-tab', tabId });
     const surfaceId = createContextPanelSessionSurfaceId(directoryKey, tabId);

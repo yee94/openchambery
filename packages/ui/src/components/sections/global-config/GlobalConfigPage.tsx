@@ -18,7 +18,7 @@ import { createFlexokiCodeMirrorTheme } from '@/lib/codemirror/flexokiTheme';
 import { shikiHighlightExtension } from '@/lib/codemirror/shikiHighlight';
 import { getResolvedShikiTheme } from '@/lib/shiki/appThemeRegistry';
 import { useThemeSystem } from '@/contexts/useThemeSystem';
-import { reloadOpenCodeConfiguration } from '@/stores/useAgentsStore';
+import { restartOpenCodeService } from '@/stores/useAgentsStore';
 import type { Extension } from '@codemirror/state';
 import { SettingsGroup } from '@/components/sections/shared/SettingsGroup';
 
@@ -141,12 +141,12 @@ export function GlobalConfigPage() {
       if (!response.ok) {
         throw new Error(await readError(response, t('settings.globalConfig.toast.saveFailed')));
       }
-      const data = await response.json() as { content?: unknown };
+      const data = await response.json() as { content?: unknown; requiresManualRestart?: boolean };
       const nextContent = typeof data.content === 'string' ? data.content : content;
       setContent(nextContent);
       setSavedContent(nextContent);
       toast.success(t('settings.globalConfig.toast.saved'));
-      setIsRestartDialogOpen(true);
+      setIsRestartDialogOpen(data.requiresManualRestart === true);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : t('settings.globalConfig.toast.saveFailed'));
     } finally {
@@ -157,7 +157,7 @@ export function GlobalConfigPage() {
   const handleRestart = async () => {
     setIsRestarting(true);
     try {
-      await reloadOpenCodeConfiguration({
+      await restartOpenCodeService({
         message: t('settings.view.actions.reloadOpenCode'),
         mode: 'projects',
         scopes: ['all'],
@@ -218,7 +218,7 @@ export function GlobalConfigPage() {
                       <Button onClick={handleSave} disabled={isLoading || isSaving || content === savedContent} size="sm">
                         {isSaving ? t('settings.common.actions.saving') : t('settings.common.actions.saveChanges')}
                       </Button>
-                      <p className="typography-meta text-muted-foreground">{t('settings.globalConfig.restartHint')}</p>
+                      {target !== 'opencode' && <p className="typography-meta text-muted-foreground">{t('settings.globalConfig.restartHint')}</p>}
                     </div>
                   </>
                 )}
