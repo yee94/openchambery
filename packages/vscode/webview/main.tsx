@@ -1506,12 +1506,11 @@ onCommand('showSettings', () => {
   window.dispatchEvent(new CustomEvent('openchamber:navigate', { detail: { view: 'settings' } }));
 });
 
-// Run the same full OpenCode reload flow the app uses after an update: shows the
-// reload overlay, restarts the managed OpenCode (via the bridge's /api/config/reload),
-// and refreshes config/data. Triggered by the "Restart API Connection" command.
+// Explicit configuration reload rebuilds locations in place. Binary updates and
+// startup recovery keep the separate managed-service restart bridge.
 onCommand('reloadOpenCode', () => {
-  void import('@openchamber/ui/stores/useAgentsStore').then(({ reloadOpenCodeConfiguration }) => {
-    void reloadOpenCodeConfiguration().catch(() => undefined);
+  void import('@openchamber/ui/stores/useAgentsStore').then(({ reloadOpenCodeLocations }) => {
+    void reloadOpenCodeLocations().catch(() => undefined);
   });
 });
 

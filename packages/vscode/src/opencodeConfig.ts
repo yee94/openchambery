@@ -3,6 +3,12 @@ import path from 'node:path';
 import os from 'node:os';
 import yaml from 'yaml';
 import { parse as parseJsonc } from 'jsonc-parser';
+import {
+  DropConfirmationRequired,
+  applyNativePatch,
+  convertAgentConfig,
+  inspectAgentConfig,
+} from '../../web/server/lib/opencode/agent-document.js';
 
 const OPENCODE_CONFIG_DIR = path.join(os.homedir(), '.config', 'opencode');
 const AGENT_DIR = path.join(OPENCODE_CONFIG_DIR, 'agents');
@@ -78,6 +84,7 @@ export type ConfigSources = {
   json: { exists: boolean; path: string; fields: string[]; scope?: AgentScope | CommandScope | null };
   projectMd?: { exists: boolean; path: string | null };
   userMd?: { exists: boolean; path: string | null };
+  document?: { legacy: boolean; dropped: Array<{ key: string; reason: string }> };
 };
 
 const ensureDirs = () => {
@@ -1572,7 +1579,97 @@ export const getAgentSources = (agentName: string, workingDirectory?: string): C
     sources.json.fields = Object.keys(agentSection);
   }
 
+  const stored: Record<string, unknown> = {};
+  if (agentSection) Object.assign(stored, agentSection);
+  if (mdExists && mdPath) {
+    const parsed = parseMdFile(mdPath);
+    Object.assign(stored, parsed.frontmatter);
+    if (parsed.body.trim()) stored.prompt = parsed.body.trim();
+  }
+  sources.document = inspectAgentConfig(stored);
+
   return sources;
+};
+
+export const getAgentConfig = (agentName: string, workingDirectory?: string) => {
+  const projectPath = workingDirectory ? getProjectAgentPath(workingDirectory, agentName) : null;
+  if (projectPath && fs.existsSync(projectPath)) {
+    const parsed = parseMdFile(projectPath);
+    return {
+      source: 'md',
+      scope: AGENT_SCOPE.PROJECT,
+      config: {
+        ...parsed.frontmatter,
+        ...(parsed.body.trim() ? { prompt: parsed.body.trim() } : {}),
+      },
+    };
+  }
+  const userPath = getUserAgentPath(agentName);
+  if (fs.existsSync(userPath)) {
+    const parsed = parseMdFile(userPath);
+    return {
+      source: 'md',
+      scope: AGENT_SCOPE.USER,
+      config: {
+        ...parsed.frontmatter,
+        ...(parsed.body.trim() ? { prompt: parsed.body.trim() } : {}),
+      },
+    };
+  }
+  const layers = readConfigLayers(workingDirectory);
+  const jsonSource = getJsonEntrySource(layers, 'agent', agentName);
+  if (jsonSource.exists && jsonSource.section && typeof jsonSource.section === 'object') {
+    const scope = jsonSource.path === layers.paths.projectPath ? AGENT_SCOPE.PROJECT : AGENT_SCOPE.USER;
+    return { source: 'json', scope, config: { ...(jsonSource.section as Record<string, unknown>) } };
+  }
+  return { source: 'none', scope: null, config: {} };
+};
+
+export const listDisabledAgentOverrides = (workingDirectory?: string) => {
+  const found: Array<{ name: string; scope: AgentScope; description?: string; mode?: string }> = [];
+  const visit = (directory: string | null, scope: AgentScope) => {
+    if (!directory || !fs.existsSync(directory)) return;
+    const walk = (current: string, prefix: string) => {
+      let entries: fs.Dirent[] = [];
+      try {
+        entries = fs.readdirSync(current, { withFileTypes: true });
+      } catch {
+        return;
+      }
+      for (const entry of entries) {
+        if (found.length >= 200) return;
+        const full = path.join(current, entry.name);
+        if (entry.isDirectory()) {
+          walk(full, prefix ? `${prefix}/${entry.name}` : entry.name);
+          continue;
+        }
+        if (!entry.isFile() || !entry.name.endsWith('.md')) continue;
+        const name = prefix ? `${prefix}/${entry.name.slice(0, -3)}` : entry.name.slice(0, -3);
+        let frontmatter: Record<string, unknown> = {};
+        try {
+          frontmatter = parseMdFile(full).frontmatter;
+        } catch {
+          continue;
+        }
+        if (frontmatter.disabled !== true && frontmatter.disable !== true) continue;
+        found.push({
+          name,
+          scope,
+          ...(typeof frontmatter.description === 'string' ? { description: frontmatter.description } : {}),
+          ...(frontmatter.mode === 'primary' || frontmatter.mode === 'subagent' || frontmatter.mode === 'all'
+            ? { mode: frontmatter.mode }
+            : {}),
+        });
+      }
+    };
+    walk(directory, '');
+  };
+  visit(AGENT_DIR, AGENT_SCOPE.USER);
+  if (workingDirectory) {
+    visit(path.join(workingDirectory, '.opencode', 'agents'), AGENT_SCOPE.PROJECT);
+    visit(path.join(workingDirectory, '.opencode', 'agent'), AGENT_SCOPE.PROJECT);
+  }
+  return found;
 };
 
 export const createAgent = (agentName: string, config: Record<string, unknown>, workingDirectory?: string, scope?: AgentScope) => {
@@ -1604,6 +1701,15 @@ export const createAgent = (agentName: string, config: Record<string, unknown>, 
     targetPath = userPath;
   }
 
+  if (Object.prototype.hasOwnProperty.call(config, 'native')) {
+    const native = config.native;
+    const converted = convertAgentConfig({});
+    const next = applyNativePatch(converted, native && typeof native === 'object' ? native as Record<string, unknown> : {});
+    writeMdFile(targetPath, next.frontmatter, next.body);
+    resetAgentLookupCache(globalAgentLookupCache);
+    return;
+  }
+
   // Extract scope and prompt from config - scope is only used for path determination, not written to file
   const { prompt, scope: _ignored, ...rawFrontmatter } = config as Record<string, unknown> & { prompt?: unknown; scope?: unknown };
   void _ignored; // Scope is only used for path determination
@@ -1630,6 +1736,42 @@ const deleteAgentJsonField = (config: Record<string, unknown>, agentName: string
 };
 
 export const updateAgent = (agentName: string, updates: Record<string, unknown>, workingDirectory?: string) => {
+  if (Object.prototype.hasOwnProperty.call(updates, 'native')) {
+    ensureDirs();
+    const native = updates.native;
+    const layers = readConfigLayers(workingDirectory);
+    const jsonSource = getJsonEntrySource(layers, 'agent', agentName);
+    const stored: Record<string, unknown> = {};
+    if (jsonSource.section && typeof jsonSource.section === 'object') {
+      Object.assign(stored, jsonSource.section as Record<string, unknown>);
+    }
+    const existing = getAgentWritePath(agentName, workingDirectory);
+    if (existing.path && fs.existsSync(existing.path)) {
+      const parsed = parseMdFile(existing.path);
+      Object.assign(stored, parsed.frontmatter);
+      if (parsed.body.trim()) stored.prompt = parsed.body.trim();
+    }
+    const converted = convertAgentConfig(stored);
+    if (converted.dropped.length > 0 && updates.confirmDrop !== true) {
+      throw new DropConfirmationRequired(converted.dropped);
+    }
+    const next = applyNativePatch(converted, native && typeof native === 'object' ? native as Record<string, unknown> : {});
+    let targetPath = existing.path;
+    if (!targetPath || !fs.existsSync(targetPath)) {
+      targetPath = getUserAgentPath(agentName);
+    }
+    writeMdFile(targetPath, next.frontmatter, next.body);
+    const config = jsonSource.config as Record<string, unknown> | undefined;
+    const agentMap = config?.agent as Record<string, unknown> | undefined;
+    if (jsonSource.exists && config && jsonSource.path && agentMap?.[agentName]) {
+      delete agentMap[agentName];
+      if (Object.keys(agentMap).length === 0) delete config.agent;
+      writeConfig(config, jsonSource.path);
+    }
+    resetAgentLookupCache(globalAgentLookupCache);
+    return;
+  }
+
   ensureDirs();
 
   // Determine correct path: project level takes precedence

@@ -228,6 +228,14 @@ Keep `bridge.ts` as a thin orchestration layer that delegates message handling t
 
 - `bridge-config-runtime.ts`
   - Config and skills message handlers (`api:config/*`).
+  - V2 Agent/Command/MCP/Plugin/Skill and AGENTS.md writes no longer call
+    `manager.restart()`. Mutation receipts describe persistence (`application:
+    'watch'`), not confirmed activation. OpenCode domain events refresh the shared
+    webview Query data. Raw OpenCode config saves do not prompt for restart;
+    opaque plugin-owned configs retain manual restart guidance.
+  - The explicit webview reload command uses SDK `location.reload`. The legacy
+    `api:config/reload` bridge remains a process restart capability for binary
+    changes and startup recovery, not ordinary configuration writes.
   - Includes OpenCode resolution diagnostics parity handler used by shared UI (`/api/config/opencode-resolution`).
   - Skills list, detail/CRUD, files, catalog, scan, and install requests carry the
     webview directory hint. Directory-sensitive handlers resolve that payload at

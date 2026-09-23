@@ -279,7 +279,7 @@ describe('VS Code config bridge plugin parity', () => {
     }, ctx, deps);
 
     expect(created?.success).toBe(true);
-    expect(ctx.restart).toHaveBeenCalledTimes(1);
+    expect(ctx.restart).not.toHaveBeenCalled();
 
     const listed = await handleConfigBridgeMessage({
       id: 'list',
@@ -428,7 +428,7 @@ describe('VS Code config bridge plugin parity', () => {
     expect(fs.readFileSync(path.join(configDir, 'plugins', 'demo-plugin.ts'), 'utf8')).toBe('export default {}');
   });
 
-  test('reports plugin mutation success when restart fails after writing config', async () => {
+  test('persists plugin configuration without invoking the restart capability', async () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'openchamber-vscode-plugin-restart-'));
     tempRoots.push(root);
     const ctx = createCtx(root, async () => {
@@ -447,8 +447,9 @@ describe('VS Code config bridge plugin parity', () => {
     }, ctx, deps);
 
     expect(created?.success).toBe(true);
-    expect(created?.data).toMatchObject({ success: true, requiresReload: false, reloadFailed: true });
-    expect(created?.data?.warning).toContain('restart failed');
+    expect(created?.data).toMatchObject({ success: true, requiresReload: false, application: 'watch' });
+    expect(created?.data?.warning).toBeUndefined();
+    expect(ctx.restart).not.toHaveBeenCalled();
     expect(readJson(path.join(root, '.opencode', 'opencode.json')).plugin).toEqual(['plugin-restart']);
   });
 });

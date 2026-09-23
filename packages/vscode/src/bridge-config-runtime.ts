@@ -11,6 +11,8 @@ import {
   deleteCommand,
   deleteSnippet,
   getAgentSources,
+  getAgentConfig,
+  listDisabledAgentOverrides,
   getCommandSources,
   getSnippet,
   updateAgent,
@@ -139,29 +141,11 @@ const resolveWorkingDirectory = (ctx: BridgeContext | undefined, directory?: str
 );
 
 const pluginMutationPayload = async (
-  ctx: BridgeContext | undefined,
-  deps: ConfigRuntimeDeps,
+  _ctx: BridgeContext | undefined,
+  _deps: ConfigRuntimeDeps,
   label: string,
 ) => {
-  try {
-    await ctx?.manager?.restart();
-    return {
-      success: true,
-      requiresReload: true,
-      message: `${label}. Reloading interface…`,
-      reloadDelayMs: deps.clientReloadDelayMs,
-      reloadFailed: false,
-    };
-  } catch (error) {
-    return {
-      success: true,
-      requiresReload: false,
-      message: `${label}, but OpenCode reload failed.`,
-      reloadDelayMs: deps.clientReloadDelayMs,
-      reloadFailed: true,
-      warning: error instanceof Error ? error.message : String(error),
-    };
-  }
+  return { success: true, requiresReload: false, application: 'watch', message: `${label}.` };
 };
 
 const parseSkillsCatalogSources = (settings: Record<string, unknown>): SkillsCatalogSourceConfig[] => {
@@ -255,7 +239,7 @@ export async function handleConfigBridgeMessage(
       const temporaryPath = `${target.filePath}.${process.pid}.${Date.now()}.tmp`;
       await fs.promises.writeFile(temporaryPath, request.content, 'utf8');
       await fs.promises.rename(temporaryPath, target.filePath);
-      return { id, type, success: true, data: { fileName: target.fileName, content: request.content, requiresManualRestart: true } };
+      return { id, type, success: true, data: { fileName: target.fileName, content: request.content, requiresManualRestart: request.target !== 'opencode', application: request.target === 'opencode' ? 'watch' : 'manual' } };
     }
 
     case 'api:config/opencode-resolution:get': {
@@ -341,7 +325,6 @@ export async function handleConfigBridgeMessage(
       }
       await fs.promises.mkdir(path.dirname(AGENTS_MD_PATH), { recursive: true });
       await fs.promises.writeFile(AGENTS_MD_PATH, content, 'utf8');
-      await ctx?.manager?.restart();
       return { id, type, success: true, data: { success: true } };
     }
 
@@ -405,11 +388,18 @@ export async function handleConfigBridgeMessage(
             : (sources.json.exists ? sources.json.scope : null);
           agents[agentName] = { scope, isBuiltIn: !sources.md.exists && !sources.json.exists, sources };
         }
-        return { id, type, success: true, data: { agents } };
+        const disabled = listDisabledAgentOverrides(workingDirectory);
+        return { id, type, success: true, data: disabled.length > 0 ? { agents, disabled } : { agents } };
       }
-      const agentName = typeof name === 'string' ? name.trim() : '';
+      const rawName = typeof name === 'string' ? name.trim() : '';
+      const wantsConfig = rawName.endsWith('/config');
+      const agentName = wantsConfig ? rawName.slice(0, -'/config'.length) : rawName;
       if (!agentName) {
         return { id, type, success: false, error: 'Agent name is required' };
+      }
+
+      if (normalizedMethod === 'GET' && wantsConfig) {
+        return { id, type, success: true, data: getAgentConfig(agentName, workingDirectory) };
       }
 
       if (normalizedMethod === 'GET') {
@@ -428,33 +418,43 @@ export async function handleConfigBridgeMessage(
       if (normalizedMethod === 'POST') {
         const scopeValue = body?.scope as string | undefined;
         const scope: AgentScope | undefined = scopeValue === 'project' ? AGENT_SCOPE.PROJECT : scopeValue === 'user' ? AGENT_SCOPE.USER : undefined;
-        createAgent(agentName, (body || {}) as Record<string, unknown>, workingDirectory, scope);
-        await ctx?.manager?.restart();
+        try {
+          createAgent(agentName, (body || {}) as Record<string, unknown>, workingDirectory, scope);
+        } catch (error) {
+          if (error && typeof error === 'object' && 'code' in error && error.code === 'drop-confirmation') {
+            return { id, type, success: false, error: 'Drop confirmation required' };
+          }
+          throw error;
+        }
         return {
           id,
           type,
           success: true,
           data: {
             success: true,
-            requiresReload: true,
-            message: `Agent ${agentName} created successfully. Reloading interface…`,
-            reloadDelayMs: deps.clientReloadDelayMs,
+            requiresReload: false,
+            application: 'watch',
           },
         };
       }
 
       if (normalizedMethod === 'PATCH') {
-        updateAgent(agentName, (body || {}) as Record<string, unknown>, workingDirectory);
-        await ctx?.manager?.restart();
+        try {
+          updateAgent(agentName, (body || {}) as Record<string, unknown>, workingDirectory);
+        } catch (error) {
+          if (error && typeof error === 'object' && 'code' in error && error.code === 'drop-confirmation') {
+            return { id, type, success: false, error: 'Drop confirmation required' };
+          }
+          throw error;
+        }
         return {
           id,
           type,
           success: true,
           data: {
             success: true,
-            requiresReload: true,
-            message: `Agent ${agentName} updated successfully. Reloading interface…`,
-            reloadDelayMs: deps.clientReloadDelayMs,
+            requiresReload: false,
+            application: 'watch',
           },
         };
       }
@@ -463,16 +463,14 @@ export async function handleConfigBridgeMessage(
         const scopeValue = body?.scope as string | undefined;
         const scope: AgentScope | undefined = scopeValue === 'project' ? AGENT_SCOPE.PROJECT : scopeValue === 'user' ? AGENT_SCOPE.USER : undefined;
         deleteAgent(agentName, workingDirectory, scope);
-        await ctx?.manager?.restart();
         return {
           id,
           type,
           success: true,
           data: {
             success: true,
-            requiresReload: true,
-            message: `Agent ${agentName} deleted successfully. Reloading interface…`,
-            reloadDelayMs: deps.clientReloadDelayMs,
+            requiresReload: false,
+            application: 'watch',
           },
         };
       }
@@ -553,48 +551,42 @@ export async function handleConfigBridgeMessage(
         const scopeValue = body?.scope as string | undefined;
         const scope: CommandScope | undefined = scopeValue === 'project' ? COMMAND_SCOPE.PROJECT : scopeValue === 'user' ? COMMAND_SCOPE.USER : undefined;
         createCommand(commandName, (body || {}) as Record<string, unknown>, workingDirectory, scope);
-        await ctx?.manager?.restart();
         return {
           id,
           type,
           success: true,
           data: {
             success: true,
-            requiresReload: true,
-            message: `Command ${commandName} created successfully. Reloading interface…`,
-            reloadDelayMs: deps.clientReloadDelayMs,
+            requiresReload: false,
+            application: 'watch',
           },
         };
       }
 
       if (normalizedMethod === 'PATCH') {
         updateCommand(commandName, (body || {}) as Record<string, unknown>, workingDirectory);
-        await ctx?.manager?.restart();
         return {
           id,
           type,
           success: true,
           data: {
             success: true,
-            requiresReload: true,
-            message: `Command ${commandName} updated successfully. Reloading interface…`,
-            reloadDelayMs: deps.clientReloadDelayMs,
+            requiresReload: false,
+            application: 'watch',
           },
         };
       }
 
       if (normalizedMethod === 'DELETE') {
         deleteCommand(commandName, workingDirectory);
-        await ctx?.manager?.restart();
         return {
           id,
           type,
           success: true,
           data: {
             success: true,
-            requiresReload: true,
-            message: `Command ${commandName} deleted successfully. Reloading interface…`,
-            reloadDelayMs: deps.clientReloadDelayMs,
+            requiresReload: false,
+            application: 'watch',
           },
         };
       }
@@ -633,48 +625,42 @@ export async function handleConfigBridgeMessage(
       if (normalizedMethod === 'POST') {
         const scope = body?.scope as 'user' | 'project' | undefined;
         createMcpConfig(mcpName, (body || {}) as Record<string, unknown>, workingDirectory, scope);
-        await ctx?.manager?.restart();
         return {
           id,
           type,
           success: true,
           data: {
             success: true,
-            requiresReload: true,
-            message: `MCP server "${mcpName}" created. Reloading interface…`,
-            reloadDelayMs: deps.clientReloadDelayMs,
+            requiresReload: false,
+            application: 'watch',
           },
         };
       }
 
       if (normalizedMethod === 'PATCH') {
         updateMcpConfig(mcpName, (body || {}) as Record<string, unknown>, workingDirectory);
-        await ctx?.manager?.restart();
         return {
           id,
           type,
           success: true,
           data: {
             success: true,
-            requiresReload: true,
-            message: `MCP server "${mcpName}" updated. Reloading interface…`,
-            reloadDelayMs: deps.clientReloadDelayMs,
+            requiresReload: false,
+            application: 'watch',
           },
         };
       }
 
       if (normalizedMethod === 'DELETE') {
         deleteMcpConfig(mcpName, workingDirectory);
-        await ctx?.manager?.restart();
         return {
           id,
           type,
           success: true,
           data: {
             success: true,
-            requiresReload: true,
-            message: `MCP server "${mcpName}" deleted. Reloading interface…`,
-            reloadDelayMs: deps.clientReloadDelayMs,
+            requiresReload: false,
+            application: 'watch',
           },
         };
       }
@@ -874,48 +860,42 @@ export async function handleConfigBridgeMessage(
         const scope: SkillScope | undefined = scopeValue === 'project' ? SKILL_SCOPE.PROJECT : scopeValue === 'user' ? SKILL_SCOPE.USER : undefined;
         const normalizedSource = sourceValue === 'agents' ? 'agents' : 'opencode';
         createSkill(skillName, { ...(body || {}), source: normalizedSource } as Record<string, unknown>, workingDirectory, scope);
-        await ctx?.manager?.restart();
         return {
           id,
           type,
           success: true,
           data: {
             success: true,
-            requiresReload: true,
-            message: `Skill ${skillName} created successfully. Reloading interface…`,
-            reloadDelayMs: deps.clientReloadDelayMs,
+            requiresReload: false,
+            application: 'watch',
           },
         };
       }
 
       if (normalizedMethod === 'PATCH') {
         updateSkill(skillName, (body || {}) as Record<string, unknown>, workingDirectory);
-        await ctx?.manager?.restart();
         return {
           id,
           type,
           success: true,
           data: {
             success: true,
-            requiresReload: true,
-            message: `Skill ${skillName} updated successfully. Reloading interface…`,
-            reloadDelayMs: deps.clientReloadDelayMs,
+            requiresReload: false,
+            application: 'watch',
           },
         };
       }
 
       if (normalizedMethod === 'DELETE') {
         deleteSkill(skillName, workingDirectory);
-        await ctx?.manager?.restart();
         return {
           id,
           type,
           success: true,
           data: {
             success: true,
-            requiresReload: true,
-            message: `Skill ${skillName} deleted successfully. Reloading interface…`,
-            reloadDelayMs: deps.clientReloadDelayMs,
+            requiresReload: false,
+            application: 'watch',
           },
         };
       }
@@ -971,11 +951,6 @@ export async function handleConfigBridgeMessage(
       if (data.ok) {
         const installed = data.installed || [];
         const skipped = data.skipped || [];
-        const requiresReload = installed.length > 0;
-
-        if (requiresReload) {
-          await ctx?.manager?.restart();
-        }
 
         return {
           id,
@@ -985,9 +960,9 @@ export async function handleConfigBridgeMessage(
             ok: true,
             installed,
             skipped,
-            requiresReload,
-            message: requiresReload ? 'Skills installed successfully. Reloading interface…' : 'No skills were installed',
-            reloadDelayMs: requiresReload ? deps.clientReloadDelayMs : undefined,
+            requiresReload: false,
+            application: 'watch',
+            message: installed.length > 0 ? 'Skills installed successfully.' : 'No skills were installed',
           },
         };
       }

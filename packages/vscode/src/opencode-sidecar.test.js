@@ -12,7 +12,6 @@ import {
   isLegacyOpenCodeCliBasename,
   parseOpenCodeListeningLine,
   resolveDetectedOpencodeCliPath,
-  RUNTIME_CONTRACT_MAX_VERIFIED,
   RUNTIME_CONTRACT_MIN_VERIFIED,
 } from './opencode-sidecar.ts';
 
@@ -114,18 +113,17 @@ describe('evaluateSidecarExecutionAdmission (ticket 11)', () => {
     expect(result.phase).toBe('ready');
     expect(result.versionBand).toBe('verified');
     expect(result.minVerifiedVersion).toBe(RUNTIME_CONTRACT_MIN_VERIFIED);
-    expect(result.maxVerifiedVersion).toBe(RUNTIME_CONTRACT_MAX_VERIFIED);
   });
 
-  test('blocks unverified-newer and below-min while keeping diagnostics phase', () => {
+  test('admits newer 2.x and blocks below-min', () => {
     const newer = evaluateSidecarExecutionAdmission({
-      serveVersion: '2.1.0',
+      serveVersion: '2.0.15',
       reachable: true,
       healthOk: true,
       migrationAdmitTranscript: true,
     });
-    expect(newer.phase).toBe('ready-unverified');
-    expect(newer.executionAllowed).toBe(false);
+    expect(newer.phase).toBe('ready');
+    expect(newer.executionAllowed).toBe(true);
     expect(newer.protocolCompatible).toBe(true);
 
     const older = evaluateSidecarExecutionAdmission({

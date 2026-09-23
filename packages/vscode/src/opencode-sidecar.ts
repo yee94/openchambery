@@ -284,7 +284,6 @@ export type OpenCodeHealthResult = {
 // runtime-contract.js (ticket 11). Sidecar must not treat any 2.x health as
 // full execution; only the verified band opens core protocol writes.
 export const RUNTIME_CONTRACT_MIN_VERIFIED = '2.0.12';
-export const RUNTIME_CONTRACT_MAX_VERIFIED = '2.0.14';
 
 export function isOpenCode1xVersion(value: unknown): boolean {
   if (typeof value !== 'string') return false;
@@ -331,7 +330,6 @@ export type RuntimeVersionBand =
   | 'invalid'
   | 'below-min'
   | 'verified'
-  | 'unverified-newer'
   | 'unknown';
 
 export function classifyRuntimeVersionBand(version: unknown): RuntimeVersionBand {
@@ -340,13 +338,12 @@ export function classifyRuntimeVersionBand(version: unknown): RuntimeVersionBand
   if (isOpenCode1xVersion(normalized)) return '1x';
   if (!isAcceptableOpenCode2HealthVersion(normalized)) return 'invalid';
   if (compareOpenCode2Versions(normalized, RUNTIME_CONTRACT_MIN_VERIFIED) < 0) return 'below-min';
-  if (compareOpenCode2Versions(normalized, RUNTIME_CONTRACT_MAX_VERIFIED) > 0) return 'unverified-newer';
   return 'verified';
 }
 
 /**
  * Core execution admission for the VS Code direct sidecar (not CLI pin alone).
- * Verified band only; unverified-newer keeps diagnostics but blocks execution.
+ * Any acceptable OpenCode 2.x at or above MIN_VERIFIED may execute.
  */
 export function evaluateSidecarExecutionAdmission(input: {
   serveVersion?: string | null;
@@ -361,7 +358,6 @@ export function evaluateSidecarExecutionAdmission(input: {
   reasons: string[];
   serveVersion: string | null;
   minVerifiedVersion: string;
-  maxVerifiedVersion: string;
 } {
   const serveVersion = normalizeRuntimeVersion(input.serveVersion);
   const reachable = input.reachable === true;
@@ -378,12 +374,11 @@ export function evaluateSidecarExecutionAdmission(input: {
   else if (versionBand === '1x') reasons.push('1x-version');
   else if (versionBand === 'invalid') reasons.push('invalid-version');
   else if (versionBand === 'below-min') reasons.push('below-min-verified');
-  else if (versionBand === 'unverified-newer') reasons.push('unverified-newer');
   if (migrationAdmit === false) reasons.push('migration-blocked');
 
   const protocolCompatible = reachable
     && healthOk !== false
-    && (versionBand === 'verified' || versionBand === 'unverified-newer');
+    && versionBand === 'verified';
 
   const executionAllowed = reachable
     && healthOk !== false
@@ -397,7 +392,6 @@ export function evaluateSidecarExecutionAdmission(input: {
   else if (versionBand === '1x' || versionBand === 'below-min') phase = 'incompatible';
   else if (migrationAdmit === false) phase = 'migration-blocked';
   else if (healthOk === false) phase = 'unhealthy';
-  else if (versionBand === 'unverified-newer') phase = 'ready-unverified';
 
   return {
     versionBand,
@@ -407,7 +401,6 @@ export function evaluateSidecarExecutionAdmission(input: {
     reasons,
     serveVersion,
     minVerifiedVersion: RUNTIME_CONTRACT_MIN_VERIFIED,
-    maxVerifiedVersion: RUNTIME_CONTRACT_MAX_VERIFIED,
   };
 }
 
