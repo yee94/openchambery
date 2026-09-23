@@ -7,7 +7,6 @@
 import type { Message, Part } from '@/lib/opencode/v2-types'
 import type { Event } from '@/sync/types'
 
-import { Binary } from "./binary"
 import { conversationIndexOf } from "./conversation-order"
 import { syncDebug } from "./debug"
 import type { DirectoryEventResult, SessionMaterializationReason } from "./event-reducer"
@@ -330,14 +329,14 @@ export function applyTranscriptDirectoryEvent(
           : true
       }
       const next = [...parts]
-      const result = Binary.search(next, part.id, (p) => p.id)
-      if (result.found) {
-        const previous = next[result.index]
+      const index = next.findIndex((p) => p.id === part.id)
+      if (index >= 0) {
+        const previous = next[index]
         if (shouldPreserveExistingPart(previous, part)) {
           return false
         }
         const dedupeFields = getUpdatedDeltaFields(previous, part)
-        next[result.index] = dedupeFields.length > 0
+        next[index] = dedupeFields.length > 0
           ? { ...part, __dedupeNextDeltaFields: dedupeFields } as unknown as Part
           : part
       } else {
@@ -349,10 +348,10 @@ export function applyTranscriptDirectoryEvent(
           ? next.findIndex((p) => p.type === part.type && (p as { __openchamberOptimistic?: boolean }).__openchamberOptimistic === true)
           : -1
         if (optimisticIdx >= 0) {
-          next.splice(optimisticIdx, 1)
+          next[optimisticIdx] = part
+        } else {
+          next.push(part)
         }
-        const insertResult = Binary.search(next, part.id, (p) => p.id)
-        next.splice(insertResult.index, 0, part)
       }
       draft.part[messageID] = next
       return missingOwningMessage
@@ -367,10 +366,10 @@ export function applyTranscriptDirectoryEvent(
       const props = event.properties as { messageID: string; partID: string }
       const parts = draft.part[props.messageID]
       if (!parts) return false
-      const result = Binary.search(parts, props.partID, (p) => p.id)
-      if (result.found) {
+      const index = parts.findIndex((p) => p.id === props.partID)
+      if (index >= 0) {
         const next = [...parts]
-        next.splice(result.index, 1)
+        next.splice(index, 1)
         if (next.length === 0) {
           delete draft.part[props.messageID]
         } else {
@@ -397,21 +396,21 @@ export function applyTranscriptDirectoryEvent(
           materialization: { type: "incomplete-session-snapshot", reason: "orphan-delta", sessionID: props.sessionID, messageID: props.messageID, partID: props.partID },
         }
       }
-      const result = Binary.search(parts, props.partID, (p) => p.id)
-      if (!result.found) {
+      const index = parts.findIndex((p) => p.id === props.partID)
+      if (index < 0) {
         syncDebug.reducer.partDeltaNotFound(props.messageID, props.partID)
         return {
           changed: false,
           materialization: { type: "incomplete-session-snapshot", reason: "missing-delta-part", sessionID: props.sessionID, messageID: props.messageID, partID: props.partID },
         }
       }
-      const existing = parts[result.index] as Record<string, unknown>
+      const existing = parts[index] as Record<string, unknown>
       const existingValue = existing[props.field] as string | undefined
       const dedupeFields = (existing as DedupeMetadata).__dedupeNextDeltaFields ?? []
       const shouldDedupe = dedupeFields.includes(props.field)
       // Create new Part object + new array so React detects the change
       const next = [...parts]
-      next[result.index] = {
+      next[index] = {
         ...existing,
         [props.field]: shouldDedupe ? appendNonOverlappingDelta(existingValue, props.delta) : (existingValue ?? "") + props.delta,
         __dedupeNextDeltaFields: dedupeFields.filter((field) => field !== props.field),

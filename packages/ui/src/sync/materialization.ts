@@ -16,7 +16,6 @@ import {
   mergeTranscriptMessageUpdate,
 } from "./transcript-event-reducer"
 
-const cmp = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0)
 const STREAMING_PART_FIELDS = ["text", "output"] as const
 
 /** Tool status rank: higher means further along the lifecycle. */
@@ -79,10 +78,9 @@ export type SessionMaterializationProjection = {
   parts: Readonly<Record<string, readonly Part[] | undefined>>
 }
 
-function sortParts(parts: Part[], skipPartTypes: ReadonlySet<string>) {
+function normalizeParts(parts: Part[], skipPartTypes: ReadonlySet<string>) {
   return parts
     .filter((part) => !!part?.id && !skipPartTypes.has(part.type))
-    .sort((a, b) => cmp(a.id, b.id))
 }
 
 function haveEquivalentPartSnapshots(left: Part[] | undefined, right: Part[]): boolean {
@@ -377,7 +375,26 @@ function mergeMaterializedParts(
   )
   if (missingLiveParts.length === 0) return mergedParts
 
-  return [...mergedParts, ...missingLiveParts].sort((a, b) => cmp(a.id, b.id))
+  // Incoming content order is authoritative. Keep omitted live parts before
+  // their next surviving neighbor; an unanchored live tail stays at the end.
+  const missingIDs = new Set(missingLiveParts.map((part) => part.id))
+  const before = new Map<string, Part[]>()
+  let pending: Part[] = []
+  for (const part of existing) {
+    if (missingIDs.has(part.id)) {
+      pending.push(part)
+    } else if (snapshotIDs.has(part.id) && pending.length > 0) {
+      before.set(part.id, pending)
+      pending = []
+    }
+  }
+  const ordered: Part[] = []
+  for (const part of mergedParts) {
+    for (const missing of before.get(part.id) ?? []) ordered.push(missing)
+    ordered.push(part)
+  }
+  for (const missing of pending) ordered.push(missing)
+  return ordered
 }
 
 type MessageTerminalFields = {
@@ -584,7 +601,7 @@ export function materializeSessionSnapshots(
     const existing = nextPartState[messageID]
     const nextParts = mergeMaterializedParts(
       existing,
-      sortParts(record.parts ?? [], skipPartTypes),
+      normalizeParts(record.parts ?? [], skipPartTypes),
       skipPartTypes,
       shouldPreserveStreamingParts(merge, record.info.role),
       isMessageSnapshotOpen(record.info),

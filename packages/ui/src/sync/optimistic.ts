@@ -2,8 +2,8 @@ import type { Message, Part } from '@/lib/opencode/v2-types'
 
 const cmp = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0)
 
-function sortParts(parts: Part[]) {
-  return parts.filter((part) => !!part?.id).sort((a, b) => cmp(a.id, b.id))
+function normalizeParts(parts: Part[]) {
+  return parts.filter((part) => !!part?.id)
 }
 
 export type OptimisticItem = {
@@ -22,7 +22,7 @@ export function mergeOptimisticPage(page: MessagePage, items: OptimisticItem[]) 
   if (items.length === 0) return { ...page, confirmed: [] as string[] }
 
   const session = [...page.session]
-  const part = new Map(page.part.map((item) => [item.id, sortParts(item.part)]))
+  const part = new Map(page.part.map((item) => [item.id, normalizeParts(item.part)]))
   const confirmed: string[] = []
 
   for (const item of items) {
@@ -31,7 +31,7 @@ export function mergeOptimisticPage(page: MessagePage, items: OptimisticItem[]) 
       // Not on the server yet — keep the optimistic message at the conversation
       // tail. Id-insert drops a mid-turn-minted messageID into history.
       session.push(item.message)
-      part.set(item.message.id, sortParts(item.parts))
+      part.set(item.message.id, normalizeParts(item.parts))
       continue
     }
 
@@ -46,7 +46,7 @@ export function mergeOptimisticPage(page: MessagePage, items: OptimisticItem[]) 
     }
 
     // Message shell arrived without parts yet — keep optimistic placeholders.
-    part.set(item.message.id, sortParts(item.parts))
+    part.set(item.message.id, normalizeParts(item.parts))
   }
 
   return {

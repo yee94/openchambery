@@ -55,10 +55,8 @@ import type { ChildStoreManager } from "./child-store"
 import type { TranscriptDurableStore } from "./transcript-durable-store"
 import { createRuntimeTranscriptDurableStore } from "./transcript-durable-store-runtime"
 
-const cmp = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0)
-
-function sortParts(parts: Part[]): Part[] {
-  return parts.filter((part) => !!part?.id).sort((a, b) => cmp(a.id, b.id))
+function normalizeParts(parts: Part[]): Part[] {
+  return parts.filter((part) => !!part?.id)
 }
 
 type OrderedRecord = TranscriptTransportPage["records"][number]
@@ -234,7 +232,7 @@ export async function fetchProductionTranscriptTransportPage(input: {
 
   let records = page.records.map((record) => ({
     info: stripMessageDiffSnapshots(record.info),
-    parts: sortParts((record.parts ?? []) as Part[]),
+    parts: normalizeParts((record.parts ?? []) as Part[]),
   }))
 
   // Incomplete tails may omit parent user rows; recover by exact message ID.
@@ -261,19 +259,19 @@ export async function fetchProductionTranscriptTransportPage(input: {
               if (!data?.info?.id) throw new Error("session.message failed: empty response")
               return {
                 info: stripMessageDiffSnapshots(data.info),
-                parts: sortParts(data.parts ?? []),
+                parts: normalizeParts(data.parts ?? []),
               }
             },
           })
           return {
             info: record.info,
-            parts: sortParts(record.parts ?? []),
+            parts: normalizeParts(record.parts ?? []),
           }
         },
       })
       records = recovered.records.map((record) => ({
         info: record.info,
-        parts: sortParts((record.parts ?? []) as Part[]),
+        parts: normalizeParts((record.parts ?? []) as Part[]),
       }))
     }
   }
