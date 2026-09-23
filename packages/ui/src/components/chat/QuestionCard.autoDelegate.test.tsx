@@ -167,6 +167,26 @@ describe('QuestionCard auto delegation', () => {
     await click('Submit');
     expect(mocks.reply).toHaveBeenCalledWith('child', 'q-1', [['Option A'], ['Option B']], '/child-project');
   });
+  test('custom textarea keystrokes do not re-pause after the first interaction hold', async () => {
+    await mount();
+    await click('Other…');
+    expect(posts()).toHaveLength(1);
+    expect(host.textContent).toContain('Countdown paused');
+    const textarea = host.querySelector('textarea')!;
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')!.set!.call(textarea, 'a');
+      textarea.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    await flush();
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')!.set!.call(textarea, 'ab');
+      textarea.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    await flush();
+    expect(posts()).toHaveLength(1);
+    expect(host.textContent).not.toContain('Pausing countdown');
+    expect(host.textContent).toContain('Countdown paused');
+  });
   test.each(['input', 'paste', 'compositionstart', 'keydown'])('%s pauses while programmatic focus remains inert', async (type) => {
     await mount();
     const card = host.querySelector<HTMLElement>('[data-question-card]')!;

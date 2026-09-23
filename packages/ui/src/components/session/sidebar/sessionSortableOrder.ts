@@ -23,14 +23,69 @@ export const buildSessionActivitySnapshot = (
   sessions.map((session) => [session.id, getSessionActivityUpdatedAt(session)]),
 );
 
+/**
+ * Manual drag order and later session activity are peers on one list:
+ * start from the saved order, then promote only members whose activity advanced
+ * past the drag-time baseline (or that are new to the scope). Unchanged members
+ * keep their relative order. Duplicate/stale activity does not reshuffle.
+ */
+const buildEffectiveSessionOrder = (
+  memberIds: readonly string[],
+  sessionOrder: readonly string[] | undefined,
+  activityBySessionId: Readonly<Record<string, number>>,
+  savedActivity: Readonly<Record<string, number>> | undefined,
+): string[] => {
+  if (!sessionOrder || sessionOrder.length === 0 || !savedActivity) return [];
+
+  const memberIdSet = new Set(memberIds);
+  const orderIdSet = new Set(sessionOrder);
+  const baseOrder = [
+    ...sessionOrder.filter((id) => memberIdSet.has(id)),
+    ...memberIds.filter((id) => !orderIdSet.has(id)),
+  ];
+  if (baseOrder.length === 0) return [];
+
+  if (sessionOrderActivityMatches(activityBySessionId, savedActivity)) {
+    return baseOrder;
+  }
+
+  const isBumped = (id: string): boolean => {
+    const saved = savedActivity[id];
+    // The baseline includes folded rows outside the draggable slice.
+    if (saved === undefined) return !orderIdSet.has(id);
+    return (activityBySessionId[id] ?? 0) > saved;
+  };
+
+  const bumped: string[] = [];
+  const stable: string[] = [];
+  baseOrder.forEach((id) => {
+    if (isBumped(id)) bumped.push(id);
+    else stable.push(id);
+  });
+  if (bumped.length === 0) return baseOrder;
+
+  const baseIndex = new Map(baseOrder.map((id, index) => [id, index]));
+  bumped.sort((left, right) => {
+    const activityDelta = (activityBySessionId[right] ?? 0) - (activityBySessionId[left] ?? 0);
+    if (activityDelta !== 0) return activityDelta;
+    return (baseIndex.get(left) ?? 0) - (baseIndex.get(right) ?? 0);
+  });
+  return [...bumped, ...stable];
+};
+
 export const buildEffectiveSessionOrderIndex = (
   nodes: readonly SessionNodeLike[],
   sessionOrder: readonly string[] | undefined,
   savedActivity: Readonly<Record<string, number>> | undefined,
 ): Map<string, number> => {
   const activity = buildSessionActivitySnapshot(nodes.map((node) => node.session));
-  if (!sessionOrderActivityMatches(activity, savedActivity)) return new Map();
-  return new Map((sessionOrder ?? []).map((id, index) => [id, index]));
+  const effectiveOrder = buildEffectiveSessionOrder(
+    nodes.map((node) => node.session.id),
+    sessionOrder,
+    activity,
+    savedActivity,
+  );
+  return new Map(effectiveOrder.map((id, index) => [id, index]));
 };
 
 export const createSessionNodeComparator = (

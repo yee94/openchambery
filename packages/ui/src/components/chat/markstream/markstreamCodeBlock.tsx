@@ -27,6 +27,28 @@ type MarkstreamCodeBlockProps = NodeComponentProps<CodeBlockNodeShape> & {
  * the compact OpenChamber code card instead of markstream-react's default
  * multi-control toolbar. Body nodes stay on Markstream.
  */
+/** Stable enough to separate two fences; length breaks trivial hash ties. */
+function interceptedFenceIndexKey(language: string, code: string): string {
+  let hash = 5381;
+  for (let i = 0; i < code.length; i += 1) {
+    hash = Math.imul(hash, 33) ^ code.charCodeAt(i);
+  }
+  return `${language}:${(hash >>> 0).toString(36)}:${code.length}`;
+}
+
+/**
+ * markstream-react resolves mermaid / d2 / infographic before the code_block
+ * override and renders its own diagram nodes. Those need optional peers we do
+ * not install. Send them through MarkdownRendererImpl instead: mermaid still
+ * becomes a beautiful-mermaid diagram; d2 and infographic stay code cards,
+ * matching the previous renderer. The library calls this without indexKey.
+ */
+export function MarkstreamInterceptedFenceNode(props: MarkstreamCodeBlockProps) {
+  const language = (props.node.language ?? '').trim().toLowerCase() || 'diagram';
+  const indexKey = props.indexKey ?? interceptedFenceIndexKey(language, props.node.code ?? '');
+  return <MarkstreamCodeBlockNode {...props} indexKey={indexKey} />;
+}
+
 export function MarkstreamCodeBlockNode(props: MarkstreamCodeBlockProps) {
   const host = useMarkstreamHostContext();
   const language = props.node.language ?? '';

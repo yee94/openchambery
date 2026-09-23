@@ -81,8 +81,10 @@ export function useQuestionDelegation(question: QuestionRequest) {
   });
   const interaction = useEvent((event: React.SyntheticEvent<HTMLElement>) => {
     if ((event.target as Element).closest('[data-question-delegation-controls]')) return;
+    // First interaction holds locally and the effect below sends one pause.
+    // Further input (e.g. custom textarea keystrokes) must not re-enter pause.
+    if (heldForScope) return;
     hold();
-    void run('pause', 'interaction');
   });
   const submissionClaimed = useEvent(async (submittedScope: string) => {
     if (submittedScope !== `${getRuntimeGeneration()}:${question.sessionID}:${question.id}`) return;
