@@ -128,11 +128,12 @@ export const registerSkillRoutes = (app, dependencies) => {
       const client = OpenCode.make({
         baseUrl: buildOpenCodeUrl('/', '').replace(/\/$/, ''),
         headers: getOpenCodeAuthHeaders(),
-        fetch: (request) => fetch(request, { signal: AbortSignal.timeout(8_000) }),
+        fetch: globalThis.fetch,
       });
 
       const response = await client.skill.list(
         workingDirectory ? { location: { directory: workingDirectory } } : undefined,
+        { signal: AbortSignal.timeout(8_000) },
       );
       const payload = response?.data;
       if (!Array.isArray(payload)) {
@@ -141,8 +142,9 @@ export const registerSkillRoutes = (app, dependencies) => {
 
       return payload
         .map((item) => {
-          const name = typeof item?.name === 'string' ? item.name.trim() : '';
-          const location = typeof item?.location === 'string' ? item.location : '';
+          // OpenChamber's name is the invocation key, not the V2 display label.
+          const name = typeof item?.id === 'string' ? item.id : '';
+          const location = typeof item?.path === 'string' ? item.path : '';
           const description = typeof item?.description === 'string' ? item.description : '';
           const content = typeof item?.content === 'string' ? item.content : '';
           if (!name || !location) {

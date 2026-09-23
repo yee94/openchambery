@@ -91,11 +91,12 @@ import { useSessionWorktreeStore } from "./session-worktree-store"
 import { getAttachedSessionDirectory } from "./session-worktree-contract"
 import { queueScopeKey, type QueueScope } from "@/stores/messageQueueStore"
 import { setSessionOpener } from "./session-opener"
-import { getRuntimeKey, getRuntimeTransportIdentity } from "@/lib/runtime-switch"
+import { getRuntimeGeneration, getRuntimeKey, getRuntimeTransportIdentity } from "@/lib/runtime-switch"
 import { rememberRuntimeLiveStatus } from "./runtime-live-memory"
 import { isSessionRevertBusyError } from "./session-revert-api"
 import { beginSessionSwitchMeasure } from "@/lib/sessionSwitchPerf"
 import { parseSlashCommandInvocation } from "@/composer/inline-visual"
+import { skillAttachmentsFromText } from "@/composer/skill-attachments"
 import { announceSessionSwitchIntent } from "@/lib/sessionSwitchIntent"
 
 /** Fallback abort-block duration when server idle is delayed or missing. */
@@ -295,9 +296,8 @@ export async function routeMessage(params: {
     const cmdNameLower = slashInvocation.commandName.toLowerCase()
     const argumentsText = slashInvocation.argumentsText
 
-    // OpenCode also exposes skills through its command catalog. Resolve the
-    // installed skill catalog first so slash-invoked skills stay on the prompt
-    // path and reach the model through the skill tool.
+    // Resolve installed skills before commands and serialize the invocation as
+    // a canonical chip; the client converts it to a native V2 skill attachment.
     const queryDirectory = requestDirectory ?? useDirectoryStore.getState().currentDirectory ?? null
     const transport = getRuntimeTransportIdentity()
     const commandsQuery = commandQueryOptions(queryDirectory, transport)
@@ -319,8 +319,9 @@ export async function routeMessage(params: {
       throw new Error("Runtime changed while resolving slash command")
     }
 
-    const isSkill = installedSkills.some((skill) => skill.name.toLowerCase() === cmdNameLower)
-    const command = isSkill
+    const skill = installedSkills.find((skill) => skill.name.toLowerCase() === cmdNameLower)
+    if (skill) content = `[skill:${skill.name}]${argumentsText ? ` ${argumentsText}` : ""}`
+    const command = skill
       ? undefined
       : commands.find((candidate) => candidate.name.toLowerCase() === cmdNameLower)
 
@@ -1187,6 +1188,7 @@ async function handleCombinedDraftSend(params: {
     const agentMentions = agentMentionName ? [{ name: agentMentionName }] : undefined
     const { directory } = await resolveDraftDirectory(draft)
     const parts = await opencodeClient.buildMessageParts({ text: content, files: files.length > 0 ? files : undefined, additionalParts: mappedAdditionalParts, agentMentions })
+    const skills = skillAttachmentsFromText(parts.flatMap((part) => part.type === 'text' && !part.synthetic ? [part.text] : []).join('\n'))
     const api = getRegisteredRuntimeAPIs()?.conversations
     if (!api?.createWithPrompt) { throw await localizedSendError("chat.chatInput.toast.messageSendFailed") }
     const resolvedDir = directory ?? opencodeClient.getDirectory() ?? ""
@@ -1202,7 +1204,7 @@ async function handleCombinedDraftSend(params: {
     for (let attempt = 0; attempt <= COMBINED_RETRY_MAX; attempt++) {
       if (attempt > 0) await new Promise<void>((resolve) => setTimeout(resolve, COMBINED_RETRY_DELAY_MS))
       try {
-        result = await api.createWithPrompt({ input: { type: 'prompt' }, directory: resolvedDir, ...(draft.title ? { title: draft.title } : {}), ...(draft.parentID ? { parentID: draft.parentID } : {}), messageID, model: { providerID, modelID }, ...(effectiveAgent ? { agent: effectiveAgent } : {}), ...(variant ? { variant } : {}), parts: parts as ConversationCreateWithPromptInput['parts'] })
+        result = await api.createWithPrompt({ input: { type: 'prompt' }, directory: resolvedDir, ...(draft.title ? { title: draft.title } : {}), ...(draft.parentID ? { parentID: draft.parentID } : {}), messageID, model: { providerID, modelID }, ...(effectiveAgent ? { agent: effectiveAgent } : {}), ...(variant ? { variant } : {}), ...(skills.length ? { skills } : {}), parts: parts as ConversationCreateWithPromptInput['parts'] })
         // Only `unavailable` (server busy) is retryable amongst structured failures
         if (!result || result.ok || (result as { phase?: string }).phase !== 'unavailable') break
         result = undefined
@@ -2083,8 +2085,8 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
   ) => {
     const stagedMessageEdit = get().stagedMessageEdit
     const requestedSessionId = options?.sessionId ?? get().currentSessionId
-    // OpenCode rejects deleteMessage while the session is busy (HTTP 409).
-    // Keep `messageEditCommitting` painted, abort → wait idle → delete old tail,
+    // OpenCode rejects revert while the session is busy (HTTP 409).
+    // Keep `messageEditCommitting` painted, interrupt → idle → commit old tail,
     // then dispatch the replacement. Waiting is expected UX for edit commit.
     const pendingStagedEdit =
       options?.commitStagedMessageEdit
@@ -2284,20 +2286,27 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
       filename: a.filename,
     }))
 
-    // Delete the edited target + old forward tail while still idle, then send.
-    // `messageEditCommitting` stays set through abort/wait/delete (ChatInput
+    // Commit the edited target + old forward tail while still idle, then send.
+    // `messageEditCommitting` stays set through interrupt/stage/commit (ChatInput
     // paints it before calling sendMessage).
     if (pendingStagedEdit) {
+      const transport = getRuntimeTransportIdentity()
+      const generation = getRuntimeGeneration()
       try {
         await commitMessageEdit(pendingStagedEdit.sessionId, pendingStagedEdit.messageId, {
           directory: currentSessionDirectory ?? undefined,
         })
+        if (transport !== getRuntimeTransportIdentity() || generation !== getRuntimeGeneration()) {
+          throw new Error("Session history mutation aborted because the runtime changed")
+        }
         if (get().stagedMessageEdit === pendingStagedEdit) {
           set({ stagedMessageEdit: null })
         }
       } catch (error) {
-        // Abort/wait/delete failed: keep staged edit + old tail for retry.
-        get().endMessageEditCommit(pendingStagedEdit.sessionId, pendingStagedEdit.messageId)
+        // A stale completion must not clear a newer runtime's editing indicator.
+        if (transport === getRuntimeTransportIdentity() && generation === getRuntimeGeneration()) {
+          get().endMessageEditCommit(pendingStagedEdit.sessionId, pendingStagedEdit.messageId)
+        }
         throw error
       }
     }

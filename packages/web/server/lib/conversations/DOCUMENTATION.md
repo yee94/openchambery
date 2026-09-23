@@ -33,7 +33,7 @@ The service calls `waitForOpenCodeReady(6000, 75)` (6s, matching proxy gate `REA
 - `packages/web/server/lib/conversations/validation.js`
   - Request validation and sanitization with strict whitelist
   - Required: `input.type='prompt'`, `directory`, `messageID`, `model` (providerID/modelID), `parts` (non-empty array)
-  - Optional: `title`, `parentID`, `agent`, `variant`, `metadata`
+   - Optional: `title`, `parentID`, `agent`, `variant`, `metadata`, `skills` (array of `{ id }`, sanitized before forwarding as native V2 skill attachments)
   - **Rejected**: `delivery`, `format`, unknown top-level keys (whitelist enforcement)
   - Part types: `text` (requires non-empty `text`), `file` (requires `mime`+`url`), `agent` (requires `name`)
   - At least one content-carrying part (text/file/agent) required

@@ -650,6 +650,18 @@ describe('opencodeClient prompt retry behavior', () => {
     expect(body.files?.some((file) => file.uri?.startsWith('data:'))).toBe(false);
   });
 
+  for (const delivery of ['steer', 'queue'] as const) test(`sends canonical skills as native attachments for ${delivery} delivery`, async () => {
+    healthFetchResults.push(new Response(JSON.stringify({ id: 'msg_skill', sessionID: 'ses_1' }), { headers: { 'Content-Type': 'application/json' } }));
+    await opencodeClient.sendMessage({
+      id: 'ses_1', providerID: 'skill-test', modelID: 'model', messageId: 'msg_skill',
+      text: '[skill:release] prepare notes [skill:release]', delivery,
+      additionalParts: [{ text: '[skill:synthetic-example]', synthetic: true }],
+    });
+    expect(readPromptRequestBody()).toMatchObject({
+      skills: [{ id: 'release', name: 'release' }], delivery,
+    });
+  });
+
   test('expands image citations to the uploaded host path in authored text', async () => {
     healthFetchResults.push(new Response(JSON.stringify({ id: 'inbox_1', sessionID: 'ses_1' }), { headers: { 'Content-Type': 'application/json' } }));
 

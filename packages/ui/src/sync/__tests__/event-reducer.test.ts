@@ -582,6 +582,52 @@ describe("applyDirectoryEvent (non-transcript production domains)", () => {
     expect(draft.question.ses_1?.[0]?.id).toBe("q_1")
   })
 
+  test("form.created for a question tool becomes one question card and form.replied clears it", () => {
+    const draft = directoryState({ question: {} })
+    expect(applyDirectoryEvent(draft, eventOf("form.created", {
+      form: {
+        id: "frm_1",
+        sessionID: "ses_1",
+        title: "Questions",
+        metadata: { kind: "question", tool: { messageID: "msg_1", id: "call_1" } },
+        fields: [{
+          key: "q0",
+          type: "string",
+          title: "确认摘要入口",
+          description: "从哪个入口触发？",
+          options: [{ value: "压缩上下文 /compact", label: "压缩上下文 /compact", description: "生成摘要检查点" }],
+        }],
+      },
+    }))).toBe(true)
+    expect(draft.question.ses_1).toEqual([{
+      id: "frm_1",
+      sessionID: "ses_1",
+      questions: [{
+        question: "从哪个入口触发？",
+        header: "确认摘要入口",
+        options: [{ label: "压缩上下文 /compact", description: "生成摘要检查点" }],
+      }],
+      tool: { messageID: "msg_1", callID: "call_1" },
+    }])
+
+    expect(applyDirectoryEvent(draft, eventOf("form.created", {
+      form: {
+        id: "frm_generic",
+        sessionID: "ses_1",
+        title: "Confirm",
+        fields: [{ key: "ok", type: "boolean", title: "Confirm" }],
+      },
+    }))).toBe(false)
+    expect(draft.question.ses_1?.map((question) => question.id)).toEqual(["frm_1"])
+
+    expect(applyDirectoryEvent(draft, eventOf("form.replied", {
+      id: "frm_1",
+      sessionID: "ses_1",
+      answer: { q0: "压缩上下文 /compact" },
+    }))).toBe(true)
+    expect(draft.question.ses_1).toEqual([])
+  })
+
   test("session.created inserts visible session into catalog", () => {
     const draft = directoryState()
     const session = {

@@ -11,10 +11,13 @@ import type { Message, Part } from '@/lib/opencode/v2-types';
 import { toast as sonnerToast, type ToastT } from 'sonner';
 import { createQueryTranscriptRepository } from '@/sync/transcript-repository-query-adapter';
 import type { TranscriptRepository } from '@/sync/transcript-repository';
+import { normalizeSessionProjectionPage } from '@/sync/session-projection-api';
+import { resolveChatHistoryLoadState } from '../chatContainerHost';
 
 import type { ChatMessageEntry } from '../lib/turns/types';
 import type { SessionHistoryMeta } from '@/stores/types/sessionTypes';
 import type { UseChatTimelineControllerResult } from './useChatTimelineController';
+import type { MessageListHandle } from '../MessageList';
 
 const runtimeSurface = vi.hoisted(() => ({
     mobileProbe: false,
@@ -122,6 +125,7 @@ type HarnessState = {
     isPinned: boolean;
     historyMeta: SessionHistoryMeta;
     messages: ChatMessageEntry[];
+    messageListApi?: MessageListHandle;
     loadMoreMessages: (sessionId: string, direction: 'up' | 'down') => Promise<void>;
 };
 
@@ -138,12 +142,14 @@ const TimelineHarness: React.FC<TimelineHarnessProps> = ({
     isPinned,
     historyMeta,
     messages,
+    messageListApi,
     loadMoreMessages,
     scrollRef,
     geometry,
     onApi,
 }) => {
-    const messageListRef = React.useRef(null);
+    const messageListRef = React.useRef<MessageListHandle | null>(null);
+    messageListRef.current = messageListApi ?? null;
     // Apply geometry before the controller's layout-phase metrics publish so
     // short-viewport auto-fill can arm on the first commit.
     const bindScrollNode = (node: HTMLDivElement | null) => {
@@ -183,6 +189,7 @@ type Mounted = {
     state: HarnessState;
     geometry: { scrollHeight: number; clientHeight: number; scrollTop: number };
     api: UseChatTimelineControllerResult | null;
+    loadingStates: boolean[];
     render: () => Promise<void>;
     setState: (patch: Partial<HarnessState>) => Promise<void>;
 };
@@ -228,6 +235,7 @@ const mountController = async (input: {
             scrollTop: 0,
         },
         api: null,
+        loadingStates: [],
         render: async () => undefined,
         setState: async () => undefined,
     };
@@ -242,6 +250,7 @@ const mountController = async (input: {
                         geometry={handle.geometry}
                         onApi={(api) => {
                             handle.api = api;
+                            handle.loadingStates.push(api.isLoadingOlder);
                         }}
                     />
                 </QueryClientProvider>,
@@ -292,22 +301,26 @@ describe('history failure feedback with production toast store', () => {
     const activeErrors = () => sonnerToast.getToasts().filter((toast): toast is ToastT => 'type' in toast && toast.type === 'error');
     const fail = async () => { throw new Error('HTTP 400'); };
 
-    test('three upward retries keep one active error and Copy action; success clears it', async () => {
+    test('failed upward load stops gesture retries; explicit retry remains available and success clears feedback', async () => {
         const load = vi.fn(fail);
         const handle = await mountController({ isMobile: false, autoFillEnabled: false, loadMoreMessages: load });
         for (let index = 0; index < 3; index += 1) {
             await act(async () => handle.api!.handleHistoryUpwardIntent());
             await waitMs(10);
         }
-        expect(load).toHaveBeenCalledTimes(3);
+        expect(load).toHaveBeenCalledTimes(1);
         expect(activeErrors()).toHaveLength(1);
+        expect(handle.api!.historyRetryRequired).toBe(true);
         expect(activeErrors()[0].title).toBe('chat.history.loadOlderFailed');
         expect(activeErrors()[0].action).toMatchObject({ label: 'Copy' });
+        await act(async () => { await handle.api!.loadEarlier({ userInitiated: true }); });
+        expect(load).toHaveBeenCalledTimes(2);
         await handle.setState({ loadMoreMessages: async () => {
             await handle.setState({ historyMeta: { ...historyMetaReady(), complete: true, canLoadEarlier: false } });
         } });
         await act(async () => { await handle.api!.loadEarlier({ userInitiated: true }); });
         expect(activeErrors()).toHaveLength(0);
+        expect(handle.api!.historyRetryRequired).toBe(false);
     });
 
     test.each(['session', 'runtime'] as const)('%s switch isolates late failure from new error', async (scope) => {
@@ -376,6 +389,7 @@ describe('history failure feedback with production toast store', () => {
         expect(handle.api!.historySignals.canLoadEarlier).toBe(true);
         for (let index = 0; index < 3; index += 1) {
             await act(async () => handle.api!.handleHistoryScroll());
+            await act(async () => handle.api!.handleHistoryUpwardIntent());
         }
         await handle.setState({ isPinned: true, autoFillEnabled: true });
         await waitMs(350);
@@ -440,6 +454,80 @@ describe('history failure feedback with production toast store', () => {
 });
 
 describe('useChatTimelineController mobile history boundary', () => {
+    test('mobile explicit load preserves its anchor through delayed DOM hydration before paint', async () => {
+        runtimeSurface.mobileProbe = true;
+        let settle!: () => void;
+        const handle = await mountController({
+            isMobile: true,
+            isPinned: false,
+            loadMoreMessages: () => new Promise<void>((resolve) => { settle = resolve; }),
+            geometry: { scrollHeight: 4000, clientHeight: 400, scrollTop: 0 },
+        });
+        const container = handle.scrollRef.current!;
+        const anchor = container.firstElementChild as HTMLElement;
+        anchor.dataset.messageId = 'msg_1';
+        let contentOffset = 20;
+        container.getBoundingClientRect = () => ({ top: 0, bottom: 400 }) as DOMRect;
+        anchor.getBoundingClientRect = () => ({ top: contentOffset - container.scrollTop, bottom: contentOffset - container.scrollTop + 200 }) as DOMRect;
+        await handle.setState({ messageListApi: {
+            captureViewportAnchor: () => ({ messageId: 'msg_1', offsetTop: 20 }),
+            restoreViewportAnchor: () => true,
+            isHistoryVirtualized: () => true,
+            cancelViewportAnchorHold: () => undefined,
+        } as unknown as MessageListHandle });
+        let flight!: Promise<void>;
+        await act(async () => { flight = handle.api!.loadEarlier({ userInitiated: true }); });
+        // A nested markdown commit has no new message array: only the DOM
+        // keeper can bridge the interval before the virtualizer measures it.
+        contentOffset += 132.5;
+        anchor.textContent = 'hydrated markdown';
+        await waitMs(0);
+        expect(anchor.getBoundingClientRect().top).toBe(20);
+        expect(container.scrollTop).toBe(132.5);
+        await handle.setState({ historyMeta: { limit: 6, complete: true, canLoadEarlier: false, loading: false } });
+        await act(async () => { settle(); await flight; });
+        expect(anchor.getBoundingClientRect().top).toBe(20);
+    });
+
+    test.each([false, true])('first send with an exhausted native short page never loads older (mobile=%s)', async (isMobile) => {
+        const client = new QueryClient();
+        const repo = createQueryTranscriptRepository({ client, transport: 'test-runtime', generation: 1 });
+        runtimeSurface.repository = repo;
+        const scope = { directory: '/workspace', sessionID: SESSION_ID };
+        // Native message.list emits both positional cursors on every non-empty
+        // page, even when this first user message is the entire conversation.
+        const page = normalizeSessionProjectionPage({
+            data: [{ id: 'msg_first', type: 'user', time: { created: 1 }, text: 'hello' }],
+            cursor: { previous: 'toward-newer', next: 'past-oldest' },
+        }, SESSION_ID);
+        repo.apply(scope, { type: 'http-page', purpose: 'initial', page });
+        const boundary = repo.getPagination(scope).boundary;
+        const load = vi.fn(async () => undefined);
+        const handle = await mountController({
+            isMobile,
+            messages: [...page.records] as ChatMessageEntry[],
+            historyMeta: { limit: 1, loading: false, ...resolveChatHistoryLoadState({ boundary, assistantComplete: true }) },
+            loadMoreMessages: load,
+        });
+        try {
+            await handle.setState({ messages: [...handle.state.messages, message('msg_reply')] });
+            await act(async () => {
+                handle.api!.handleHistoryScroll();
+                handle.api!.handleHistoryUpwardIntent();
+            });
+            await waitMs(100);
+            await act(async () => { await handle.api!.loadEarlier({ userInitiated: true }); });
+            expect(load).not.toHaveBeenCalled();
+            expect(handle.api!.historySignals.canLoadEarlier).toBe(false);
+            expect(handle.api!.isLoadingOlder).toBe(false);
+            expect(handle.loadingStates).not.toContain(true);
+            expect(handle.scrollRef.current?.scrollTop).toBe(0);
+        } finally {
+            repo.destroy();
+            client.clear();
+        }
+    });
+
     // isPinned false: scroll/upward only blocked by isMobile (auto-fill also
     // fails the pin gate). isPinned true: short-viewport auto-fill is armed on
     // every non-mobile gate — so zero fetches proves the mobile autofill guard.

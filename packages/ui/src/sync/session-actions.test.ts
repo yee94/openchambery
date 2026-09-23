@@ -62,6 +62,8 @@ const mocks = vi.hoisted(() => {
     onInterrupt: null as (() => void) | null,
     revertStageHook: null as ((params: Record<string, unknown>) => Promise<unknown>) | null,
     revertClearHook: null as ((params: Record<string, unknown>) => Promise<void>) | null,
+    revertCommitHook: null as (() => Promise<void>) | null,
+    editConfirmationHook: null as (() => Promise<unknown>) | null,
     sessionGetResult: null as Session | null,
     globalActiveSessions: [] as Session[],
     globalArchivedSessions: [] as Session[],
@@ -418,8 +420,8 @@ vi.mock("@/lib/runtime-fetch", () => ({
         headers: { "content-type": "application/json" },
       })
     }
-    if (urlText.includes("/revert/clear")) {
-      const match = urlText.match(/\/session\/([^/?]+)\/revert\/clear/)
+    if (urlText.endsWith("/revert") && init?.method === "DELETE") {
+      const match = urlText.match(/\/session\/([^/?]+)\/revert/)
       const sessionID = match ? decodeURIComponent(match[1]) : ""
       const directory = init?.query?.directory
       const params = { sessionID, directory }
@@ -432,6 +434,7 @@ vi.mock("@/lib/runtime-fetch", () => ({
     }
     if (urlText.includes("/revert/commit")) {
       mocks.replyCalls.push({ method: "session.revert.commit", params: { url: urlText, directory: init?.query?.directory } })
+      await mocks.state.revertCommitHook?.()
       return new Response(null, { status: 204 })
     }
     if (urlText.includes("/message") && !urlText.includes("/revert")) {
@@ -499,6 +502,10 @@ vi.mock("./session-turn-page-api", () => ({
 
 vi.mock("@/lib/opencode/client", () => ({
   opencodeClient: {
+    getApiClient: () => ({ session: { message: async () => {
+      if (!mocks.state.editConfirmationHook) throw new Error("message confirmation unavailable")
+      return mocks.state.editConfirmationHook()
+    } } }),
     getScopedSdkClient: (directory: string) => {
       mocks.scopedClientDirectories.push(directory)
       return mocks.mockScopedClient
@@ -696,6 +703,8 @@ describe("fetchMessagesForSession startup race", () => {
     mocks.state.onInterrupt = null
     mocks.state.revertStageHook = null
     mocks.state.revertClearHook = null
+    mocks.state.revertCommitHook = null
+    mocks.state.editConfirmationHook = null
     mocks.uiCurrentSessionId = "session-a"
   })
 
@@ -2957,9 +2966,17 @@ describe("revertToMessage passes session directory", () => {
 })
 
 describe("message edit staging", () => {
-  beforeEach(() => {
+  beforeEach(async () => {
+    const { getRuntimeTransportIdentity } = await import("../lib/runtime-switch")
+    inputState.captureDraftRuntime = () => ({ transportIdentity: getRuntimeTransportIdentity(), generation: 1 })
     replyCalls.length = 0
     mocks.sessionDeleteMessageFailureID = null
+    mocks.sessionRevertResult = {}
+    mocks.sessionUnrevertResult = {}
+    mocks.state.revertCommitHook = null
+    mocks.state.editConfirmationHook = null
+    mocks.state.revertStageHook = null
+    mocks.state.revertClearHook = null
     mocks.sessionMessagesResult = { data: [] }
     mocks.uiPendingSendMessageIDs = new Map()
     mocks.state.onInterrupt = null
@@ -3101,15 +3118,120 @@ describe("message edit staging", () => {
 
     await commitMessageEdit("session-a", "msg_2")
 
-    const deletedIDs = replyCalls
-      .filter((call) => call.method === "session.deleteMessage")
-      .map((call) => call.params.messageID)
-    expect(deletedIDs).toEqual(["msg_4", "msg_3", "msg_2"])
-    expect(replyCalls.filter((call) => call.method === "session.deleteMessage").every((call) => call.params.directory === "/test/project")).toBe(true)
+    expect(replyCalls.filter((call) => call.method === "session.deleteMessage")).toEqual([])
+    expect(replyCalls.filter((call) => call.method.startsWith("session.revert")).map((call) => call.method))
+      .toEqual(["session.revert", "session.revert.commit"])
+    expect(replyCalls.find((call) => call.method === "session.revert")?.params)
+      .toEqual({ sessionID: "session-a", messageID: "msg_2", directory: "/test/project", files: false })
     expect(sessionStore.getState().message["session-a"]).toEqual([])
   })
 
-  test("leaves rows whose delete never landed in the transcript", async () => {
+  async function editFixture() {
+    const sessionStore = createStore({}, {
+      session: [{ id: "session-a", time: { created: 1 } } as Session],
+      message: { "session-a": [
+        { id: "msg_old", sessionID: "session-a", role: "user", time: { created: 1 } } as Message,
+        { id: "msg_edit", sessionID: "session-a", role: "user", time: { created: 2 } } as Message,
+        { id: "msg_tail", sessionID: "session-a", role: "assistant", time: { created: 3 } } as Message,
+      ] },
+      part: {},
+    })
+    const actions = await import("./session-actions")
+    actions.setActionRefs(mockSdk as unknown as OpencodeClient, createChildStores([["/test/project", sessionStore]]), () => "/test/project")
+    return { sessionStore, ...actions }
+  }
+
+  test("interrupt failure and idle timeout preserve history without staging a revert", async () => {
+    const { sessionStore, commitMessageEdit, waitForSessionIdleForMessageEdit } = await editFixture()
+    sessionStore.setState({ session_status: { "session-a": { type: "busy" } } })
+    mocks.state.abortReject = true
+    await expect(commitMessageEdit("session-a", "msg_edit")).rejects.toThrow("abort failed")
+    await expect(waitForSessionIdleForMessageEdit("session-a", { timeoutMs: 0 })).rejects.toThrow("still busy")
+    expect(replyCalls.map((call) => call.method)).toEqual(["session.interrupt"])
+    expect(sessionStore.getState().message["session-a"]).toHaveLength(3)
+  })
+
+  test("failed cleanup retains the staged boundary and a retry commits without deleting messages individually", async () => {
+    const { sessionStore, commitMessageEdit } = await editFixture()
+    mocks.state.revertCommitHook = async () => { throw new Error("commit failed") }
+    mocks.state.revertClearHook = async () => { throw new Error("clear failed") }
+    await expect(commitMessageEdit("session-a", "msg_edit")).rejects.toThrow("commit failed")
+    expect(sessionStore.getState().session[0].revert?.messageID).toBe("msg_edit")
+    expect(sessionStore.getState().message["session-a"]).toHaveLength(3)
+    mocks.state.revertCommitHook = null
+    mocks.state.revertClearHook = null
+    await commitMessageEdit("session-a", "msg_edit")
+    expect(sessionStore.getState().session[0].revert).toBeUndefined()
+    expect(sessionStore.getState().message["session-a"].map((message) => message.id)).toEqual(["msg_old"])
+    expect(replyCalls.some((call) => call.method === "session.deleteMessage")).toBe(false)
+  })
+
+  test("failed commit restores an existing staged boundary", async () => {
+    const { sessionStore, commitMessageEdit } = await editFixture()
+    sessionStore.setState({ session: [{ ...sessionStore.getState().session[0], revert: { messageID: "msg_old" } }] })
+    mocks.state.revertCommitHook = async () => { throw new Error("commit failed") }
+    await expect(commitMessageEdit("session-a", "msg_edit")).rejects.toThrow("commit failed")
+    expect(sessionStore.getState().session[0].revert?.messageID).toBe("msg_old")
+    expect(replyCalls.filter((call) => call.method === "session.revert").map((call) => call.params.messageID))
+      .toEqual(["msg_edit", "msg_old"])
+  })
+
+  test("lost commit response uses authoritative absence to finish the edit instead of restoring deleted history", async () => {
+    const { sessionStore, commitMessageEdit } = await editFixture()
+    mocks.state.revertCommitHook = async () => { throw new TypeError("Failed to fetch") }
+    mocks.state.editConfirmationHook = async () => { throw Object.assign(new Error("Message not found"), { status: 404 }) }
+    await commitMessageEdit("session-a", "msg_edit")
+    expect(sessionStore.getState().message["session-a"].map((message) => message.id)).toEqual(["msg_old"])
+    expect(sessionStore.getState().session[0].revert).toBeUndefined()
+    expect(replyCalls.some((call) => call.method === "session.unrevert")).toBe(false)
+  })
+
+  test("unconfirmed commit outcome retains history and marker without pretending rollback succeeded", async () => {
+    const { sessionStore, commitMessageEdit } = await editFixture()
+    mocks.state.revertCommitHook = async () => { throw new TypeError("Failed to fetch") }
+    mocks.state.editConfirmationHook = async () => { throw new TypeError("offline") }
+    await expect(commitMessageEdit("session-a", "msg_edit")).rejects.toThrow("Failed to fetch")
+    expect(sessionStore.getState().message["session-a"]).toHaveLength(3)
+    expect(sessionStore.getState().session[0].revert?.messageID).toBe("msg_edit")
+    expect(replyCalls.some((call) => call.method === "session.unrevert")).toBe(false)
+  })
+
+  test.each(["stage", "commit"])("runtime switch during %s prevents stale follow-up requests and local truncation", async (phase) => {
+    const { switchRuntimeEndpoint } = await import("../lib/runtime-switch")
+    switchRuntimeEndpoint({ apiBaseUrl: "http://edit-a.test", runtimeKey: "edit-a" })
+    const { sessionStore, commitMessageEdit } = await editFixture()
+    const switchRuntime = () => switchRuntimeEndpoint({ apiBaseUrl: "http://edit-b.test", runtimeKey: "edit-b" })
+    if (phase === "stage") mocks.state.revertStageHook = async () => { switchRuntime(); return { messageID: "msg_edit" } }
+    else mocks.state.revertCommitHook = async () => { switchRuntime() }
+    try {
+      await expect(commitMessageEdit("session-a", "msg_edit")).rejects.toThrow("runtime changed")
+      expect(sessionStore.getState().message["session-a"]).toHaveLength(3)
+      expect(replyCalls.some((call) => call.method === "session.unrevert")).toBe(false)
+      expect(replyCalls.filter((call) => call.method === "session.revert.commit")).toHaveLength(phase === "stage" ? 0 : 1)
+    } finally {
+      switchRuntimeEndpoint({ apiBaseUrl: "http://edit-a.test", runtimeKey: "edit-a" })
+    }
+  })
+
+  test("ordinary revert commit waits for the whole edit transaction and cannot commit its temporary marker", async () => {
+    const { sessionStore, commitMessageEdit, commitStagedRevertBeforeSend } = await editFixture()
+    let release!: () => void
+    let entered!: () => void
+    const started = new Promise<void>((resolve) => { entered = resolve })
+    const gate = new Promise<void>((resolve) => { release = resolve })
+    mocks.state.revertCommitHook = async () => { entered(); await gate }
+    const edit = commitMessageEdit("session-a", "msg_edit")
+    await started
+    const ordinary = commitStagedRevertBeforeSend("session-a", "/test/project")
+    await Promise.resolve()
+    expect(replyCalls.filter((call) => call.method === "session.revert.commit")).toHaveLength(1)
+    release()
+    await Promise.all([edit, ordinary])
+    expect(replyCalls.filter((call) => call.method === "session.revert.commit")).toHaveLength(1)
+    expect(sessionStore.getState().message["session-a"].map((message) => message.id)).toEqual(["msg_old"])
+  })
+
+  test("failed commit clears the temporary boundary and preserves the full transcript and draft", async () => {
     const session = { id: "session-a", time: { created: 1 } } as Session
     const targetMessage = { id: "msg_2", sessionID: "session-a", role: "user", time: { created: 2 } } as Message
     const laterMessage = { id: "msg_3", sessionID: "session-a", role: "assistant", time: { created: 3 } } as Message
@@ -3124,7 +3246,7 @@ describe("message edit staging", () => {
       },
     })
     const childStores = createChildStores([["/test/project", sessionStore]])
-    mocks.sessionDeleteMessageFailureID = "msg_3"
+    mocks.state.revertCommitHook = async () => { throw new Error("commit rejected") }
     mocks.sessionMessagesResult = {
       data: [
         { info: targetMessage, parts: [] },
@@ -3136,10 +3258,11 @@ describe("message edit staging", () => {
     const { commitMessageEdit, setActionRefs } = await import("./session-actions")
     setActionRefs(mockSdk as unknown as OpencodeClient, childStores, () => "/current/project")
 
-    await expect(commitMessageEdit("session-a", "msg_2")).rejects.toThrow("session.deleteMessage failed (500)")
+    await expect(commitMessageEdit("session-a", "msg_2")).rejects.toThrow("commit rejected")
 
-    // No pre-hide: a row leaves the transcript only once its own delete lands.
-    expect(sessionStore.getState().message["session-a"].map((message) => message.id)).toEqual(["msg_2", "msg_3"])
+    expect(replyCalls.map((call) => call.method)).toEqual(["session.revert", "session.revert.commit", "session.unrevert"])
+    expect(sessionStore.getState().session[0].revert).toBeUndefined()
+    expect(sessionStore.getState().message["session-a"].map((message) => message.id)).toEqual(["msg_2", "msg_3", "msg_4"])
     expect(inputState.pendingInputText).toBe("previous draft")
     expect(inputState.pendingInputMode).toBe("normal")
     expect(inputState.attachedFiles).toEqual([{ url: "file:///previous.txt", mimeType: "text/plain", filename: "previous.txt" }])
@@ -3230,7 +3353,8 @@ describe("message edit staging", () => {
 
     await commitMessageEdit("session-a", "msg_2", { directory: "/assistant/workspace" })
 
-    expect(replyCalls.filter((call) => call.method === "session.deleteMessage").every((call) => call.params.directory === "/assistant/workspace")).toBe(true)
+    expect(replyCalls.filter((call) => call.method.startsWith("session.revert")).map((call) => call.params.directory))
+      .toEqual(["/assistant/workspace", "/assistant/workspace"])
     expect(sessionStore.getState().message["session-a"]).toEqual([])
     expect(wrongStore.getState().message["session-a"]).toBe(undefined)
   })
@@ -3265,9 +3389,9 @@ describe("message edit staging", () => {
 
     expect(
       replyCalls
-        .filter((call) => call.method === "session.deleteMessage")
+        .filter((call) => call.method === "session.revert")
         .map((call) => call.params.messageID),
-    ).toEqual(["msg_4", "msg_3"])
+    ).toEqual(["msg_3"])
     expect(sessionStore.getState().message["session-a"].map((message) => message.id)).toEqual(["msg_1", "msg_2"])
   })
 
@@ -3293,14 +3417,9 @@ describe("message edit staging", () => {
     const { commitMessageEdit, setActionRefs } = await import("./session-actions")
     setActionRefs(mockSdk as unknown as OpencodeClient, childStores, () => "/test/project")
 
-    await commitMessageEdit("session-a", "msg_3")
-
-    expect(
-      replyCalls
-        .filter((call) => call.method === "session.deleteMessage")
-        .map((call) => call.params.messageID),
-    ).toEqual(["msg_4", "msg_3"])
-    expect(sessionStore.getState().message["session-a"].map((message) => message.id)).toEqual(["msg_9"])
+    await expect(commitMessageEdit("session-a", "msg_3")).rejects.toThrow("before the replacement is admitted")
+    expect(replyCalls).toEqual([])
+    expect(sessionStore.getState().message["session-a"].map((message) => message.id)).toEqual(["msg_3", "msg_4", "msg_9"])
   })
 
   test("commitMessageEdit waits for idle after abort before deleting", async () => {
@@ -3335,9 +3454,9 @@ describe("message edit staging", () => {
     expect(replyCalls.some((call) => call.method === "session.interrupt")).toBe(true)
     expect(
       replyCalls
-        .filter((call) => call.method === "session.deleteMessage")
+        .filter((call) => call.method === "session.revert")
         .map((call) => call.params.messageID),
-    ).toEqual(["msg_4", "msg_3"])
+    ).toEqual(["msg_3"])
     expect(sessionStore.getState().message["session-a"]).toEqual([])
   })
 
@@ -3370,13 +3489,13 @@ describe("message edit staging", () => {
 
     expect(
       replyCalls
-        .filter((call) => call.method === "session.deleteMessage")
+        .filter((call) => call.method === "session.revert")
         .map((call) => call.params.messageID),
-    ).toEqual(["msg_3", "msg_2"])
+    ).toEqual(["msg_2"])
     expect(sessionStore.getState().message["session-a"].map((message) => message.id)).toEqual(["msg_9", "msg_1"])
   })
 
-  test("commitMessageEdit fails closed when the server snapshot omits the target", async () => {
+  test("commitMessageEdit preserves history when the server rejects a missing target", async () => {
     const session = { id: "session-a", time: { created: 1 } } as Session
     const targetMessage = { id: "msg_2", sessionID: "session-a", role: "user", time: { created: 2 } } as Message
     const targetReply = { id: "msg_3", sessionID: "session-a", role: "assistant", time: { created: 3 } } as Message
@@ -3392,7 +3511,8 @@ describe("message edit staging", () => {
     const { commitMessageEdit, setActionRefs } = await import("./session-actions")
     setActionRefs(mockSdk as unknown as OpencodeClient, childStores, () => "/test/project")
 
-    await expect(commitMessageEdit("session-a", "msg_2")).rejects.toThrow("The selected user message is unavailable")
+    mocks.sessionRevertResult = { error: "missing", response: { status: 404 } }
+    await expect(commitMessageEdit("session-a", "msg_2")).rejects.toThrow("session revert stage (404)")
     expect(replyCalls.filter((call) => call.method === "session.deleteMessage")).toEqual([])
     expect(sessionStore.getState().message["session-a"].map((message) => message.id)).toEqual(["msg_2", "msg_3"])
   })
@@ -3422,12 +3542,13 @@ describe("message edit staging", () => {
 
     expect(
       replyCalls
-        .filter((call) => call.method === "session.deleteMessage")
+        .filter((call) => call.method === "session.revert")
         .map((call) => call.params.messageID),
-    ).toEqual(["msg_3", "msg_2"])
+    ).toEqual(["msg_2"])
+    expect(replyCalls.some((call) => call.method === "session.projection")).toBe(false)
   })
 
-  test("commitMessageEdit cuts a preserved replacement by conversation position, not id order", async () => {
+  test("commitMessageEdit refuses an admitted replacement even when its id sorts before the target", async () => {
     const session = { id: "session-a", time: { created: 1 } } as Session
     const targetMessage = { id: "msg_3", sessionID: "session-a", role: "user", time: { created: 3 } } as Message
     const targetReply = { id: "msg_4", sessionID: "session-a", role: "assistant", time: { created: 4 } } as Message
@@ -3451,14 +3572,9 @@ describe("message edit staging", () => {
     const { commitMessageEdit, setActionRefs } = await import("./session-actions")
     setActionRefs(mockSdk as unknown as OpencodeClient, childStores, () => "/test/project")
 
-    await commitMessageEdit("session-a", "msg_3")
-
-    expect(
-      replyCalls
-        .filter((call) => call.method === "session.deleteMessage")
-        .map((call) => call.params.messageID),
-    ).toEqual(["msg_4", "msg_3"])
-    expect(sessionStore.getState().message["session-a"].map((message) => message.id)).toEqual(["msg_0", "msg_5"])
+    await expect(commitMessageEdit("session-a", "msg_3")).rejects.toThrow("before the replacement is admitted")
+    expect(replyCalls).toEqual([])
+    expect(sessionStore.getState().message["session-a"].map((message) => message.id)).toEqual(["msg_3", "msg_4", "msg_0", "msg_5"])
   })
 
   test("commitMessageEdit removes the deleted tail from every canonical scope of the session", async () => {
@@ -3544,6 +3660,8 @@ describe("message edit staging", () => {
           record.messageID === "msg_2" || record.messageID === "msg_3"
         ))
         return leftover(a).length === 0 && leftover(b).length === 0
+          && a.records.some((record) => record.messageID === "msg_1")
+          && b.records.some((record) => record.messageID === "msg_1")
       })
       expect((await durable.readSession(durableA)).records.map((record) => record.messageID)).toEqual(["msg_1"])
       expect((await durable.readSession(durableB)).records.map((record) => record.messageID)).toEqual(["msg_1"])

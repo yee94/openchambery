@@ -6,8 +6,7 @@
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
-import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
-import { vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 import { opencodeClient } from '@/lib/opencode/client'
 import { registerRuntimeAPIs } from '@/contexts/runtimeAPIRegistry'
 import { routeMessage, useSessionUIStore } from './session-ui-store'
@@ -1092,6 +1091,15 @@ describe('handleCombinedDraftSend', () => {
     expect(useSessionUIStore.getState().currentSessionId).not.toBe(SESSION_ID)
   })
 
+  test('passes canonical skill attachments on the first message', async () => {
+    let sent: ConversationCreateWithPromptInput | undefined
+    registerRuntimeAPIs(makeCombinedAPI(async (input) => { sent = input; return successResult() }))
+    useSessionUIStore.getState().openNewSessionDraft()
+    await useSessionUIStore.getState().sendMessage('[skill:release] prepare notes', 'openai', 'gpt-4o')
+    expect(sent?.skills).toEqual([{ id: 'release', name: 'release' }])
+    expect(sent?.parts.some((part) => part.type === 'text' && part.text === '[skill:release] prepare notes')).toBe(true)
+  })
+
   test('11) whitespace slash, shell, missing capability — not call combined endpoint', async () => {
     let count = 0
     registerRuntimeAPIs(makeCombinedAPI(async () => { count++; return successResult() }))
@@ -1297,6 +1305,29 @@ describe('handleCombinedDraftSend', () => {
 })
 
 describe('staged message edits', () => {
+  function installRevert(sequence: string[], options?: { beforeStage?: () => void; failCommit?: boolean }) {
+    const previous = globalThis.fetch
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = input instanceof Request ? input.url : String(input)
+      if (url.includes('/revert/stage')) {
+        options?.beforeStage?.()
+        const body = JSON.parse(input instanceof Request ? await input.clone().text() : String(init?.body))
+        expect(body.files).toBe(false)
+        sequence.push(`stage:${body.messageID}`)
+        return Response.json({ data: { messageID: body.messageID } })
+      }
+      if (url.includes('/revert/commit')) {
+        sequence.push('commit')
+        return new Response(null, { status: options?.failCommit ? 500 : 204 })
+      }
+      if (url.includes('/revert')) {
+        sequence.push('clear')
+        return new Response(null, { status: 204 })
+      }
+      return previous(input, init)
+    }) as typeof fetch
+  }
+
   test('commit the edit only for a direct composer send', async () => {
     const messages = {
       [SESSION_ID]: [
@@ -1333,10 +1364,7 @@ describe('staged message edits', () => {
     })
 
     const sequence: string[] = []
-    opencodeClient.deleteSessionMessage = (async (_sessionId: string, messageId: string) => {
-      sequence.push(`delete:${messageId}`)
-      return true
-    }) as any
+    installRevert(sequence)
     opencodeClient.sendMessage = (async (params: { text: string }) => {
       sequence.push(`send:${params.text}`)
     }) as any
@@ -1350,14 +1378,13 @@ describe('staged message edits', () => {
       commitStagedMessageEdit: true,
     })
 
-    // OpenCode rejects delete while busy: delete the old tail first (session
-    // still idle / after abort), then dispatch the replacement.
-    expect(sequence).toEqual(['send:programmatic', 'delete:msg_3', 'delete:msg_2', 'send:replacement'])
+    // V2 commit must settle before replacement admission.
+    expect(sequence).toEqual(['send:programmatic', 'stage:msg_2', 'commit', 'send:replacement'])
     expect(useSessionUIStore.getState().stagedMessageEdit).toBe(null)
     restoreMessages()
   })
 
-  test('staged edit waits for idle after abort before deleting the old tail', async () => {
+  test('staged edit waits for idle after abort before reverting the old tail', async () => {
     const messages = {
       [SESSION_ID]: [
         { id: 'msg_2', sessionID: SESSION_ID, role: 'user', time: { created: 2 } },
@@ -1388,7 +1415,7 @@ describe('staged message edits', () => {
     const restoreMessages = installSessionMessagesMock(async () => ({
       data: messages[SESSION_ID].map((info) => ({ info, parts: parts[info.id as 'msg_2' | 'msg_3'] ?? [] })),
     }))
-    // Interrupt is now postSessionInterrupt; drive idle independently so delete
+    // Interrupt is now postSessionInterrupt; drive idle independently so revert
     // still waits for the live status rather than the SDK abort mock.
     setTimeout(() => { status = { type: 'idle' } }, 30)
     setActionRefs({
@@ -1402,12 +1429,7 @@ describe('staged message edits', () => {
     })
 
     const sequence: string[] = []
-    opencodeClient.deleteSessionMessage = (async (_sessionId: string, messageId: string) => {
-      // Must only run after the session became idle.
-      expect(status.type).toBe('idle')
-      sequence.push(`delete:${messageId}`)
-      return true
-    }) as any
+    installRevert(sequence, { beforeStage: () => { expect(status.type).toBe('idle') } })
     opencodeClient.sendMessage = (async (params: { text: string }) => {
       sequence.push(`send:${params.text}`)
     }) as any
@@ -1416,13 +1438,13 @@ describe('staged message edits', () => {
       commitStagedMessageEdit: true,
     })
 
-    expect(sequence).toEqual(['delete:msg_3', 'delete:msg_2', 'send:replacement'])
+    expect(sequence).toEqual(['stage:msg_2', 'commit', 'send:replacement'])
     expect(useSessionUIStore.getState().stagedMessageEdit).toBe(null)
     expect(useSessionUIStore.getState().messageEditCommitting).toBe(null)
     restoreMessages()
   })
 
-  test('staged edit keeps the old tail when delete fails before send', async () => {
+  test('staged edit keeps the old tail when commit fails before send', async () => {
     const messages = {
       [SESSION_ID]: [
         { id: 'msg_2', sessionID: SESSION_ID, role: 'user', time: { created: 2 } },
@@ -1459,10 +1481,7 @@ describe('staged message edits', () => {
     })
 
     const sequence: string[] = []
-    opencodeClient.deleteSessionMessage = (async (_sessionId: string, messageId: string) => {
-      sequence.push(`delete:${messageId}`)
-      throw new Error('session.deleteMessage failed (500): rejected')
-    }) as any
+    installRevert(sequence, { failCommit: true })
     opencodeClient.sendMessage = (async () => {
       sequence.push('send:should-not-run')
     }) as any
@@ -1486,7 +1505,7 @@ describe('staged message edits', () => {
     }
     expect(failed).toBeTruthy()
 
-    expect(sequence).toEqual(['delete:msg_3'])
+    expect(sequence).toEqual(['stage:msg_2', 'commit', 'clear'])
     expect(useSessionUIStore.getState().stagedMessageEdit).toEqual({ sessionId: SESSION_ID, messageId: 'msg_2' })
     expect(useSessionUIStore.getState().messageEditCommitting).toBe(null)
     expect(messages[SESSION_ID].map((message) => message.id)).toEqual(['msg_2', 'msg_3'])

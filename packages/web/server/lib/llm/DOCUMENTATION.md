@@ -23,8 +23,8 @@ only model path the Assistant harness (`pi-agent-core` `streamFn`) talks to.
 
 `variant` is an optional OpenCode model variant string. Null, omitted, or empty
 values preserve the provider default. Other types fail validation before a model
-call. A selected variant is forwarded unchanged on `generate.text` and on the
-attachment-session `model` ref. OpenCode owns provider-specific variant
+call. A selected variant is forwarded unchanged on the throwaway session's
+`model` ref (both paths). OpenCode owns provider-specific variant
 semantics. Variant selection changes inference configuration only; completion
 output continues to include text parts and keeps reasoning parts private.
 
@@ -35,9 +35,25 @@ call Anthropic/OpenAI/plugin SDKs, and does not use the `openai` npm package.
 
 ### Text path (no vision image bytes)
 
-`client.generate.text({ location?, prompt, model: { id, providerID, variant? } },
-{ signal })` → `{ text }`. No session. System text is prepended into `prompt`.
+`session.generate` inside a throwaway session owned by the hidden deny-all
+`openchamber-text` agent (same temp root, same deny-all verification and
+`session.create` / `session.remove` lifecycle as the attachment path below):
+
+1. Ensure `.opencode/agent/openchamber-text.md` and verify its final
+   permission rule is deny-all before creating the session.
+2. `session.create({ location, agent: 'openchamber-text', model, metadata })`.
+3. `session.generate({ sessionID, prompt })` → `{ text }`. One model call with
+   the session's provider context, no tool loop, no messages written. System
+   text is prepended into `prompt`.
+4. Always `session.remove` in `finally` (interrupt first on abort/timeout).
+
+`generate.text` (sessionless) is not used: session-scoped providers such as
+OpenCode Go reject calls without a session (`x-opencode-session`).
 `onTextDelta` is skipped honestly (no fake typewriter).
+
+OpenCode loads a fresh location's config lazily, so `agent.get` can report the
+agent as missing on the first read. Deny-all verification polls within a
+bounded window (5s) before failing.
 
 ### Attachment / vision path
 
@@ -84,7 +100,7 @@ There is no `config.providers` catalog path.
 `onTextDelta(text: string)` and `globalEventHub`.
 
 - **Attachment session path:** real `session.text.delta` tokens for this session.
-- **`generate.text` path:** cannot emit live deltas — skip `onTextDelta`.
+- **`session.generate` text path:** cannot emit live deltas — skip `onTextDelta`.
 - **HTTP `POST .../chat/completions`:** does not pass these options and still
   rejects `stream: true`.
 
@@ -102,8 +118,13 @@ application tool catalog and actual results.
 The Assistant contact harness owns system prompt, OpenChamber transcript,
 bubble splitting, and OpenChamber API tools (`assign_session`). Those tools
 deliver through contact **cards**, not this completions payload. The gateway
-stays a text generator: OpenCode coding tools stay denied on the attachment path
-via the verified agent permissions ruleset.
+stays a text generator: OpenCode coding tools stay denied on both paths via the
+verified agent permissions ruleset.
+
+The gateway is also the single OpenCode-backed path for server utility calls
+(`small-model`: commit messages, session titles, goal audits, scheduled-task
+distill, TTS summaries, PR descriptions). No server module calls provider APIs
+directly with OpenCode credentials.
 
 Internal completion/generate calls accept an optional AbortSignal from the
 contact continuation. It is combined with the generator deadline and passed to

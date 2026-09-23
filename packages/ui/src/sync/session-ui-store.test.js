@@ -824,7 +824,7 @@ describe('routeMessage skill invocation', () => {
 
     expect(sendCommandCalls).toHaveLength(0);
     expect(sendMessageCalls).toHaveLength(1);
-    expect(sendMessageCalls[0].text).toBe('/grill-with-docs');
+    expect(sendMessageCalls[0].text).toBe('[skill:grill-with-docs]');
     expect(sendMessageCalls[0].additionalParts).toEqual([{ text: 'Use the corresponding skill tool.', synthetic: true }]);
   });
 
@@ -842,7 +842,7 @@ describe('routeMessage skill invocation', () => {
     expect(queryFetches).toHaveLength(2);
     expect(sendCommandCalls).toHaveLength(0);
     expect(sendMessageCalls).toHaveLength(1);
-    expect(sendMessageCalls[0].text).toBe('/cold-skill');
+    expect(sendMessageCalls[0].text).toBe('[skill:cold-skill]');
   });
 
   test('loads a cold command cache before classifying a slash token', async () => {
@@ -1006,7 +1006,7 @@ describe('routeMessage skill invocation', () => {
 
     expect(sendCommandCalls).toHaveLength(0);
     expect(sendMessageCalls).toHaveLength(1);
-    expect(sendMessageCalls[0].text).toBe('/grill-with-docs focus on auth');
+    expect(sendMessageCalls[0].text).toBe('[skill:grill-with-docs] focus on auth');
   });
 
   test('prefers an installed skill when a command shares its name', async () => {
@@ -1023,7 +1023,7 @@ describe('routeMessage skill invocation', () => {
 
     expect(sendCommandCalls).toHaveLength(0);
     expect(sendMessageCalls).toHaveLength(1);
-    expect(sendMessageCalls[0].text).toBe('/shared-name use this workflow');
+    expect(sendMessageCalls[0].text).toBe('[skill:shared-name] use this workflow');
   });
 
   test('sends an unknown slash token as a plain message', async () => {

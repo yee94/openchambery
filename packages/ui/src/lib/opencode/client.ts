@@ -22,6 +22,7 @@ import type {
   TextPartInput,
 } from "./v2-types";
 import { projectAgent } from "./agent-identity";
+import { skillAttachmentsFromText } from "@/composer/skill-attachments";
 import { mergeConfigDocuments, projectSession } from "./v2-types";
 import {
   patchLocalSessionSelection,
@@ -78,7 +79,7 @@ import { fetchSessionProjectionPage } from "@/sync/session-projection-api";
 import { postSessionCompact } from "@/sync/session-compaction-api";
 import { postSessionRevertClear, postSessionRevertStage } from "@/sync/session-revert-api";
 import { postSessionPermissionReply } from "@/sync/session-permission-api";
-import { answersToFormAnswer, mapV2QuestionRequest } from "@/sync/v2-runtime";
+import { answersToFormAnswer, isQuestionFormMetadata, mapV2QuestionRequest } from "@/sync/v2-runtime";
 import {
   assertProviderCircuitClosed,
   recordProviderSuccess,
@@ -1389,6 +1390,9 @@ class OpencodeService {
     const agents = parts.flatMap((part) => (
       part.type === "agent" && typeof part.name === "string" ? [{ name: part.name }] : []
     ));
+    const skills = skillAttachmentsFromText(parts.flatMap((part) =>
+      part.type === 'text' && !part.synthetic ? [part.text] : [],
+    ).join('\n'));
 
     try {
       // Serial session boundary: switch model/agent when needed, then prompt.
@@ -1426,6 +1430,7 @@ class OpencodeService {
           commit,
           ...(files.length > 0 ? { files } : {}),
           ...(agents.length > 0 ? { agents } : {}),
+          ...(skills.length > 0 ? { skills } : {}),
           ...(params.agent || params.variant || params.format || params.providerID
             ? {
                 metadata: {
@@ -1964,8 +1969,8 @@ class OpencodeService {
    * rationale — resync paths preserve state on throw via outer try/catch
    * instead of conflating failure with an empty server response.
    *
-   * Official 2.0.12: pending interactive prompts are forms (`client.form.list`),
-   * mapped onto the existing QuestionRequest UI contract.
+   * Official 2.0.12: the question tool is a form with `metadata.kind === "question"`.
+   * Only those rows map onto QuestionRequest. Other forms stay on FormCard.
    */
   async listPendingQuestions(options?: { directories?: Array<string | null | undefined> }): Promise<QuestionRequest[]> {
     const fetches: Array<Promise<QuestionRequest[]>> = [];
@@ -1975,14 +1980,15 @@ class OpencodeService {
       if (!result || !Array.isArray(result.data)) {
         throw new Error(`form.list failed: ${formatSdkError(result)}`);
       }
-      return result.data.map((form) => {
-        return mapV2QuestionRequest({
+      return result.data.flatMap((form) => {
+        if (!isQuestionFormMetadata(form.metadata)) return [];
+        return [mapV2QuestionRequest({
           id: form.id,
           sessionID: form.sessionID,
           title: form.title,
           fields: form.fields,
           ...(form.metadata ? { metadata: form.metadata as Record<string, unknown> } : {}),
-        });
+        })];
       });
     };
 
@@ -2290,7 +2296,7 @@ class OpencodeService {
 
       const skills: Array<{ name: string; description?: string; location: string; content?: string }> = [];
       for (const item of data) {
-          const name = typeof item.name === 'string' ? item.name.trim() : '';
+          const name = typeof item.id === 'string' ? item.id : '';
           // SkillInfo uses `path`, not `location`.
           const location = typeof item.path === 'string' ? item.path : '';
           if (!name || !location) {

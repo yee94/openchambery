@@ -57,7 +57,7 @@ export function projectConnectedModels(source) {
   for (const model of modelsIn) {
     if (!isRecord(model)) continue;
     const providerID = stringID(model.providerID);
-    // External model id for generate.text / session model refs.
+    // External model id for session model refs.
     const modelID = stringID(model.id);
     if (!providerID || !modelID) continue;
     if (providerMeta.size > 0 && !providerMeta.has(providerID)) continue;

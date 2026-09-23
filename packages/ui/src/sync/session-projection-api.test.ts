@@ -134,8 +134,8 @@ describe("fetchSessionProjectionPage", () => {
     expect(call.url.searchParams.has("cursor")).toBe(false)
     expect(call.signal?.aborted).toBe(false)
 
-    expect(page.complete).toBe(false)
-    expect(page.cursor).toBe("cur_older")
+    expect(page.complete).toBe(true)
+    expect(page.cursor).toBeUndefined()
     expect(page.records.map((record) => record.info.id)).toEqual(["msg_user"])
   })
 
@@ -340,14 +340,14 @@ describe("fetchSessionProjectionPage", () => {
     expect(page.complete).toBe(true)
   })
 
-  test("order=desc incomplete pages use cursor.next (previous-only must not look complete)", async () => {
+  test("order=desc full pages retain cursor.next", async () => {
     responseImpl = async () =>
       jsonResponse({
         data: [USER_JSON],
         cursor: { previous: null, next: "older" },
       })
     const { fetchSessionProjectionPage, normalizeSessionProjectionPage } = await import("./session-projection-api")
-    const page = await fetchSessionProjectionPage({ sessionID: SESSION, directory: "/repo" })
+    const page = await fetchSessionProjectionPage({ sessionID: SESSION, directory: "/repo", limit: 1 })
     expect(page.complete).toBe(false)
     expect(page.cursor).toBe("older")
 
@@ -356,9 +356,31 @@ describe("fetchSessionProjectionPage", () => {
       { data: [USER_JSON], cursor: { previous: null, next: "older" } },
       SESSION,
       "desc",
+      1,
     )
     expect(normalized.complete).toBe(false)
     expect(normalized.cursor).toBe("older")
+  })
+
+  test("full system-only pages retain history; the last short page clears positional cursors", async () => {
+    const { fetchSessionProjectionPage } = await import("./session-projection-api")
+    responseImpl = async () => jsonResponse({
+      data: Array.from({ length: 3 }, (_, index) => ({ ...SYSTEM_JSON, id: `msg_system_${index}` })),
+      cursor: { previous: "newer", next: "older" },
+    })
+    const full = await fetchSessionProjectionPage({ sessionID: SESSION, directory: "/repo", limit: 3 })
+    expect(full.records).toEqual([])
+    expect(full.complete).toBe(false)
+    expect(full.cursor).toBe("older")
+    responseImpl = async () => jsonResponse({
+      data: [SYSTEM_JSON, USER_JSON],
+      cursor: { previous: "newer", next: "past-oldest" },
+    })
+    const last = await fetchSessionProjectionPage({ sessionID: SESSION, directory: "/repo", limit: 3, cursor: full.cursor })
+    expect(last.records.map((row) => row.info.id)).toEqual([USER_JSON.id])
+    expect(last.complete).toBe(true)
+    expect(last.cursor).toBeUndefined()
+    expect(calls).toHaveLength(2)
   })
 
   test("drops 2.0.12 idle/model-switched rows and keeps assistant text content", async () => {

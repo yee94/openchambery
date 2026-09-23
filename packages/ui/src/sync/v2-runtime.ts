@@ -120,6 +120,35 @@ type V2QuestionLike = {
   tool?: { messageID?: string; id?: string }
 }
 
+/** Official question tool forms (`metadata.kind === "question"`). Other forms stay on FormCard. */
+export function isQuestionFormMetadata(metadata: unknown): boolean {
+  return !!metadata
+    && typeof metadata === "object"
+    && !Array.isArray(metadata)
+    && (metadata as { kind?: unknown }).kind === "question"
+}
+
+function toolCallFromQuestionLike(item: V2QuestionLike): QuestionRequest["tool"] | undefined {
+  const metadataTool = item.metadata
+    && typeof item.metadata.tool === "object"
+    && item.metadata.tool
+    && !Array.isArray(item.metadata.tool)
+    ? item.metadata.tool as { messageID?: unknown; id?: unknown }
+    : undefined
+  const messageID = typeof item.tool?.messageID === "string" && item.tool.messageID.length > 0
+    ? item.tool.messageID
+    : typeof metadataTool?.messageID === "string" && metadataTool.messageID.length > 0
+      ? metadataTool.messageID
+      : undefined
+  if (!messageID) return undefined
+  const callID = typeof item.tool?.id === "string"
+    ? item.tool.id
+    : typeof metadataTool?.id === "string"
+      ? metadataTool.id
+      : ""
+  return { messageID, callID }
+}
+
 function questionsFromFormFields(item: V2QuestionLike): QuestionRequest["questions"] {
   const fields = item.fields
   if (!fields || fields.length === 0) {
@@ -159,13 +188,12 @@ export function mapV2QuestionRequest(item: V2QuestionLike): QuestionRequest {
       ...(question.multiple ? { multiple: true } : {}),
     }))
     : questionsFromFormFields(item)
+  const tool = toolCallFromQuestionLike(item)
   return {
     id: item.id,
     sessionID: item.sessionID,
     questions,
-    ...(item.tool?.messageID
-      ? { tool: { messageID: item.tool.messageID, callID: item.tool.id ?? "" } }
-      : {}),
+    ...(tool ? { tool } : {}),
   }
 }
 

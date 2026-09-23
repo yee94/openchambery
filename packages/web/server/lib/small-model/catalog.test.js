@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { createModelCatalogLoader, toSmallModelCatalog, MINIMAL_FALLBACK_CATALOG } from './catalog.js';
+import { createModelCatalogLoader, toSmallModelCatalog } from './catalog.js';
 
 describe('toSmallModelCatalog', () => {
   it('keeps family, release_date, limit, cost, model.api.url, and provider name', () => {
@@ -45,13 +45,15 @@ describe('toSmallModelCatalog', () => {
 });
 
 describe('createModelCatalogLoader', () => {
-  it('uses explicit minimal fallback when OpenCode is unreachable (not empty catalog)', async () => {
+  it('rejects with 502 when OpenCode is unreachable and does not cache the failure', async () => {
+    let calls = 0;
     const loader = createModelCatalogLoader({
       buildOpenCodeUrl: () => 'http://127.0.0.1:9/',
       getOpenCodeAuthHeaders: () => ({}),
       ttlMs: 30_000,
       timeoutMs: 50,
       fetchImpl: async () => {
+        calls += 1;
         throw new Error('network down');
       },
     });
@@ -59,13 +61,34 @@ describe('createModelCatalogLoader', () => {
     const a = loader.getModelCatalog('/proj');
     const b = loader.getModelCatalog('/proj/');
     // Single-flight + directory key normalization: same bucket for trailing slash.
-    const [catalogA, catalogB] = await Promise.all([a, b]);
-    expect(catalogA).toBe(MINIMAL_FALLBACK_CATALOG);
-    expect(catalogB).toBe(MINIMAL_FALLBACK_CATALOG);
-    expect(catalogA.google?.models?.['gemini-2.5-flash']?.family).toBe('gemini-flash');
-    expect(catalogA.anthropic?.models?.['claude-haiku-4-5']?.family).toBe('claude-haiku');
-    // Must not masquerade as authoritative empty success.
-    expect(Object.keys(catalogA).length).toBeGreaterThan(0);
+    const results = await Promise.allSettled([a, b]);
+    for (const result of results) {
+      expect(result.status).toBe('rejected');
+      expect(result.reason.statusCode).toBe(502);
+      expect(result.reason.message).toMatch(/provider catalog is unavailable/);
+    }
+    const callsAfterFirst = calls;
+    await expect(loader.getModelCatalog('/proj')).rejects.toMatchObject({ statusCode: 502 });
+    expect(calls).toBeGreaterThan(callsAfterFirst);
+  });
+
+  it('forwards OpenCode auth headers through the fetch wrapper', async () => {
+    const seen = [];
+    const loader = createModelCatalogLoader({
+      buildOpenCodeUrl: () => 'http://127.0.0.1:4096/',
+      getOpenCodeAuthHeaders: () => ({ Authorization: 'Basic test' }),
+      fetchImpl: async (url, init) => {
+        seen.push(new Headers(init?.headers).get('authorization'));
+        return new Response(JSON.stringify({ data: [] }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        });
+      },
+    });
+
+    await loader.getModelCatalog('/proj');
+    expect(seen.length).toBeGreaterThan(0);
+    expect(seen.every((value) => value === 'Basic test')).toBe(true);
   });
 
   it('composes official v2 provider.list + model.list into the small-model catalog', async () => {
@@ -99,7 +122,6 @@ describe('createModelCatalogLoader', () => {
     });
 
     const catalog = await loader.getModelCatalog('/proj');
-    expect(catalog).not.toBe(MINIMAL_FALLBACK_CATALOG);
     expect(catalog.google).toEqual({
       id: 'google',
       name: 'Google',

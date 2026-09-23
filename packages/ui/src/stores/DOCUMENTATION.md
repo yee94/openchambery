@@ -20,8 +20,9 @@ Do not put high-frequency local component state here just because it is convenie
 Ordinary Provider, Agent, Command, Skill, MCP and Plugin mutations do not start a
 blocking config-reload overlay or manage the OpenCode service lifecycle. Writes
 confirm persistence; Config/Credential/PluginSupervisor own runtime activation.
-`refreshOpenCodeConfiguration` only refreshes UI catalogs. Explicit Settings and
-chat reload use `reloadOpenCodeLocations`; binary changes, upgrades and opaque
+`refreshOpenCodeConfiguration` only refreshes UI catalogs. Explicit Settings
+reload, and the VS Code composer `/reload` command, use `reloadOpenCodeLocations`.
+Web, desktop, and mobile do not offer `/reload`. Binary changes, upgrades and opaque
 plugin-owned config may use `restartOpenCodeService` (legacy `/api/config/reload`
 host/bridge endpoint). Do not substitute location reload for automatic hot updates.
 

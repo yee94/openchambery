@@ -1,41 +1,13 @@
 import { OpenCode } from '@opencode/client';
 
 // Directory-scoped OpenCode provider catalog for small-model resolution.
-// Never contacts models.dev — source of truth is provider.list + model.list.
+// Never contacts models.dev — source of truth is provider.list + model.list,
+// the same connected catalog the LLM gateway checks before generating.
 // ModelInfo.id is the external model id; ModelInfo.modelID is internal.
-// On OpenCode failure the loader returns an explicit minimal fallback catalog
-// (not an authoritative empty map) so hardcoded candidates still resolve.
+// OpenCode failure is an explicit error, never a substitute catalog.
 
 const CATALOG_TTL_MS = 30_000;
 const CATALOG_TIMEOUT_MS = 8_000;
-
-// Minimal catalog when OpenCode is unreachable. OpenAI OAuth and Copilot use
-// fixed utility models outside the catalog; Google/Anthropic need family
-// entries so the family-priority scan can still pick a small model.
-const MINIMAL_FALLBACK_CATALOG = Object.freeze({
-  google: Object.freeze({
-    id: 'google',
-    name: 'Google',
-    models: Object.freeze({
-      'gemini-2.5-flash': Object.freeze({
-        id: 'gemini-2.5-flash',
-        family: 'gemini-flash',
-        release_date: '2025-06-01',
-      }),
-    }),
-  }),
-  anthropic: Object.freeze({
-    id: 'anthropic',
-    name: 'Anthropic',
-    models: Object.freeze({
-      'claude-haiku-4-5': Object.freeze({
-        id: 'claude-haiku-4-5',
-        family: 'claude-haiku',
-        release_date: '2025-10-01',
-      }),
-    }),
-  }),
-});
 
 const normalizeDirectoryKey = (directory) => {
   if (typeof directory !== 'string') return '';
@@ -183,7 +155,7 @@ export function createModelCatalogLoader({
   timeoutMs = CATALOG_TIMEOUT_MS,
   fetchImpl = globalThis.fetch.bind(globalThis),
 }) {
-  /** @type {Map<string, { catalog: object, cachedAt: number, source: string, inflight: Promise<object> | null }>} */
+  /** @type {Map<string, { catalog: object | null, cachedAt: number, inflight: Promise<object> | null }>} */
   const buckets = new Map();
 
   const fetchOpenCodeCatalog = async (directory) => {
@@ -191,7 +163,7 @@ export function createModelCatalogLoader({
     const client = OpenCode.make({
       baseUrl,
       headers: getOpenCodeAuthHeaders(),
-      fetch: (request) => fetchImpl(request, { signal: AbortSignal.timeout(timeoutMs) }),
+      fetch: (request, init) => fetchImpl(request, { ...init, signal: AbortSignal.timeout(timeoutMs) }),
     });
     const location = directory ? { directory } : undefined;
     const request = location ? { location } : undefined;
@@ -211,8 +183,8 @@ export function createModelCatalogLoader({
   };
 
   /**
-   * Load (or serve cached) directory-scoped catalog.
-   * OpenCode failure → explicit minimal fallback (never an authoritative empty map).
+   * Load (or serve cached) directory-scoped catalog. Failures are not cached
+   * and reject with statusCode 502 so callers never resolve against a guess.
    */
   const getModelCatalog = async (directory) => {
     const key = normalizeDirectoryKey(directory);
@@ -223,7 +195,7 @@ export function createModelCatalogLoader({
     }
 
     if (!bucket) {
-      bucket = { catalog: null, cachedAt: 0, source: 'none', inflight: null };
+      bucket = { catalog: null, cachedAt: 0, inflight: null };
       buckets.set(key, bucket);
     }
 
@@ -233,18 +205,12 @@ export function createModelCatalogLoader({
           const catalog = await fetchOpenCodeCatalog(key || undefined);
           bucket.catalog = catalog;
           bucket.cachedAt = Date.now();
-          bucket.source = 'opencode';
           return catalog;
         } catch (error) {
-          // Explicit failure path: minimal hardcoded candidates only.
-          console.warn(
-            '[small-model] OpenCode provider catalog failed; using minimal fallback:',
-            error?.message || error,
+          throw Object.assign(
+            new Error(`OpenCode provider catalog is unavailable (${error?.message || error})`),
+            { statusCode: 502 },
           );
-          bucket.catalog = MINIMAL_FALLBACK_CATALOG;
-          bucket.cachedAt = Date.now();
-          bucket.source = 'fallback';
-          return MINIMAL_FALLBACK_CATALOG;
         } finally {
           bucket.inflight = null;
         }
@@ -259,8 +225,5 @@ export function createModelCatalogLoader({
     getCatalogProvider,
     /** @internal test helpers */
     _normalizeDirectoryKey: normalizeDirectoryKey,
-    _minimalFallbackCatalog: MINIMAL_FALLBACK_CATALOG,
   };
 }
-
-export { MINIMAL_FALLBACK_CATALOG };

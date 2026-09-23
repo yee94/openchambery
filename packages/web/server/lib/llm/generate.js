@@ -1,8 +1,12 @@
 import { OpenCode } from '@opencode/client';
 import { buildLlmSessionMetadata } from '../session-metadata/system-session.js';
+import { ensureLlmTempDirectory } from './temp-directory.js';
 
 const LLM_AGENT_NAME = 'openchamber-llm';
+const TEXT_AGENT_NAME = 'openchamber-text';
 const GENERATE_TIMEOUT_MS = 90_000;
+const AGENT_READY_WAIT_MS = 5_000;
+const AGENT_READY_POLL_MS = 250;
 /** Single attachment payload cap (decoded bytes). Composer UI allows larger drafts; gateway enforces this. */
 export const MAX_ATTACHMENT_BYTES = 20 * 1024 * 1024;
 const MAX_INLINE_FILE_CHARS = 100_000;
@@ -30,6 +34,21 @@ The application executes its registered tools, including openchamber-tool JSON f
 Emit the requested application tool call when an action requires one. Your native tool permissions describe this generator process; the application's supplied tool catalog describes the assistant's capabilities.
 Report execution and failures from supplied tool results only.
 Do not call native OpenCode tools, MCP tools, or skill tools. Native permissions are denied for this generator session.
+`;
+
+/** Neutral deny-all agent for text-only `session.generate`; the caller's instructions travel in the prompt. */
+const TEXT_AGENT_MARKDOWN = `---
+mode: primary
+hidden: true
+permissions:
+  - action: "*"
+    resource: "*"
+    effect: deny
+---
+
+Follow the instructions in the request and respond in the requested format.
+Native OpenCode, MCP, and skill tools are denied for this generator session.
+When the request defines an application tool-call format (such as fenced JSON), write it as plain text in your reply; the application executes it.
 `;
 
 const failGenerate = (message, code = 'upstream_error') => {
@@ -268,26 +287,52 @@ export function subscribeThrowawayTextDeltas({ globalEventHub, sessionID, onText
 }
 
 /**
- * Verify the openchamber-llm agent ends with deny-all permissions.
+ * OpenCode loads a new location's config lazily: the first requests against a
+ * fresh temp directory can report no agents at all. Poll `agent.get` within a
+ * bounded window instead of failing on that first read.
+ */
+const readGeneratorAgent = async ({ client, location, signal, agentID, waitMs, pollMs }) => {
+  const deadline = Date.now() + waitMs;
+  for (;;) {
+    try {
+      return await client.agent.get({
+        agentID,
+        ...(location ? { location } : {}),
+      }, { signal });
+    } catch (error) {
+      rethrowIfAborted(error, signal);
+      if (Date.now() + pollMs > deadline) throw error;
+      await new Promise((resolve) => setTimeout(resolve, pollMs));
+    }
+  }
+};
+
+/**
+ * Verify the generator agent ends with deny-all permissions.
  * Title alone is never treated as isolation. Failure must happen before prompt.
  */
-export async function assertLlmAgentDenyAll({ client, location, signal }) {
+export async function assertLlmAgentDenyAll({
+  client,
+  location,
+  signal,
+  agentID = LLM_AGENT_NAME,
+  waitMs = AGENT_READY_WAIT_MS,
+  pollMs = AGENT_READY_POLL_MS,
+}) {
   let result;
   try {
-    result = await client.agent.get({
-      agentID: LLM_AGENT_NAME,
-      ...(location ? { location } : {}),
-    }, { signal });
+    result = await readGeneratorAgent({ client, location, signal, agentID, waitMs, pollMs });
   } catch (error) {
+    rethrowIfAborted(error, signal);
     failGenerate(
-      `OpenCode LLM agent is unavailable (${clientErrorMessage(error, 'agent.get failed')}); attachment generation blocked`,
+      `OpenCode LLM agent is unavailable (${clientErrorMessage(error, 'agent.get failed')}); generation blocked`,
       'llm_attachment_generation_unavailable',
     );
   }
   const permissions = result?.data?.permissions;
   if (!Array.isArray(permissions) || permissions.length === 0) {
     failGenerate(
-      'OpenCode LLM agent permissions are missing; attachment generation blocked',
+      'OpenCode LLM agent permissions are missing; generation blocked',
       'llm_attachment_generation_unavailable',
     );
   }
@@ -299,7 +344,7 @@ export async function assertLlmAgentDenyAll({ client, location, signal }) {
     || last.effect !== 'deny'
   ) {
     failGenerate(
-      'OpenCode LLM agent final permission is not deny-all; attachment generation blocked',
+      'OpenCode LLM agent final permission is not deny-all; generation blocked',
       'llm_attachment_generation_unavailable',
     );
   }
@@ -340,64 +385,54 @@ const makeClient = ({ baseUrl, headers, clientFactory }) => {
   return OpenCode.make({ baseUrl, headers });
 };
 
-async function generateViaTextApi({
-  client,
-  location,
-  providerID,
-  modelID,
-  variant,
-  prompt,
-  signal,
-}) {
-  let result;
+const prepareGeneratorDirectory = async ({ ensureTempDirectory, agentName, agentMarkdown }) => {
+  let workingDirectory;
   try {
-    result = await client.generate.text({
-      ...(location ? { location } : {}),
-      prompt,
-      model: modelRef(providerID, modelID, variant),
-    }, { signal });
+    workingDirectory = await ensureTempDirectory({ agentName, agentMarkdown });
   } catch (error) {
-    rethrowIfAborted(error, signal);
-    failGenerate(clientErrorMessage(error, 'OpenCode generate.text failed'));
+    failGenerate(
+      `LLM temp directory failed (${clientErrorMessage(error, 'ensure failed')})`,
+      'llm_attachment_generation_unavailable',
+    );
   }
-  const text = typeof result?.text === 'string'
-    ? result.text.trim()
-    : typeof result?.data?.text === 'string'
-      ? result.data.text.trim()
-      : '';
-  if (!text) failGenerate('OpenCode generate.text returned no text');
-  return { text, source: 'generate.text' };
-}
+  if (typeof workingDirectory !== 'string' || !workingDirectory.trim()) {
+    failGenerate(
+      'LLM temp directory is empty; generation blocked',
+      'llm_attachment_generation_unavailable',
+    );
+  }
+  return workingDirectory.trim();
+};
 
-async function generateViaAttachmentSession({
+/**
+ * Run `work(sessionID)` inside a throwaway OpenCode session owned by a
+ * verified deny-all agent. The session is always removed afterwards;
+ * cancellation interrupts it first.
+ */
+async function withThrowawaySession({
   client,
   workingDirectory,
+  agentName,
   providerID,
   modelID,
   variant,
-  system,
-  prompt,
-  imageFiles,
   signal,
-  onTextDelta,
-  globalEventHub,
   persistSessionMetadata,
   onSystemSessionPersisted,
-}) {
+}, work) {
   const location = { directory: workingDirectory };
 
   // Permission isolation must be verified before any prompt. Never use title as isolation.
-  await assertLlmAgentDenyAll({ client, location, signal });
+  await assertLlmAgentDenyAll({ client, location, signal, agentID: agentName });
 
   let sessionID = null;
-  let unsubscribeDeltas = null;
   try {
     let created;
     const isolationMetadata = buildLlmSessionMetadata();
     try {
       created = await client.session.create({
         title: '[openchamber-llm] generate',
-        agent: LLM_AGENT_NAME,
+        agent: agentName,
         model: modelRef(providerID, modelID, variant),
         location,
         metadata: isolationMetadata,
@@ -425,74 +460,8 @@ async function generateViaAttachmentSession({
         console.warn('[llm] failed to persist system session metadata:', error?.message || error);
       }
     }
-
-    if (system) {
-      try {
-        await client.session.instructions.entry.put({
-          sessionID,
-          key: 'system',
-          value: system,
-        }, { signal });
-      } catch (error) {
-        failGenerate(clientErrorMessage(error, 'instructions.entry.put failed'));
-      }
-    }
-
-    unsubscribeDeltas = subscribeThrowawayTextDeltas({
-      globalEventHub,
-      sessionID,
-      onTextDelta,
-    });
-
-    const files = imageFiles.map((part) => ({
-      uri: part.url,
-      ...(part.filename ? { name: part.filename } : {}),
-    }));
-
-    try {
-      await client.session.prompt({
-        sessionID,
-        text: prompt || '[attachment]',
-        ...(files.length > 0 ? { files } : {}),
-        delivery: 'steer',
-      }, { signal });
-    } catch (error) {
-      rethrowIfAborted(error, signal);
-      failGenerate(clientErrorMessage(error, 'session.prompt failed'));
-    }
-
-    try {
-      await client.session.wait({ sessionID }, { signal });
-    } catch (error) {
-      rethrowIfAborted(error, signal);
-      failGenerate(clientErrorMessage(error, 'session.wait failed'));
-    }
-
-    let listed;
-    try {
-      listed = await client.message.list({
-        sessionID,
-        limit: 20,
-        order: 'desc',
-      }, { signal });
-    } catch (error) {
-      rethrowIfAborted(error, signal);
-      failGenerate(clientErrorMessage(error, 'message.list failed'));
-    }
-
-    const messages = Array.isArray(listed?.data) ? listed.data : [];
-    const text = assistantTextFromMessages(messages);
-    if (!text.trim()) {
-      failGenerate('OpenCode LLM generator returned no assistant text');
-    }
-    return { text: text.trim(), source: 'attachment-session' };
+    return await work(sessionID);
   } finally {
-    try {
-      unsubscribeDeltas?.();
-    } catch {
-      // Unsubscribe must not mask generate errors or block session remove.
-    }
-    unsubscribeDeltas = null;
     if (sessionID) {
       if (signal?.aborted) {
         try {
@@ -511,16 +480,127 @@ async function generateViaAttachmentSession({
 }
 
 /**
+ * Text-only generation through `session.generate`: one model call with the
+ * session's provider context (so session-scoped providers such as OpenCode Go
+ * work), no tool loop, and no messages written to the session.
+ */
+async function generateViaSessionGenerate({ client, prompt, signal, ...sessionOptions }) {
+  return withThrowawaySession({ client, signal, ...sessionOptions }, async (sessionID) => {
+    let result;
+    try {
+      result = await client.session.generate({ sessionID, prompt }, { signal });
+    } catch (error) {
+      rethrowIfAborted(error, signal);
+      failGenerate(clientErrorMessage(error, 'OpenCode session.generate failed'));
+    }
+    const text = typeof result?.text === 'string'
+      ? result.text.trim()
+      : typeof result?.data?.text === 'string'
+        ? result.data.text.trim()
+        : '';
+    if (!text) failGenerate('OpenCode session.generate returned no text');
+    return { text, source: 'session.generate' };
+  });
+}
+
+async function generateViaAttachmentSession({
+  client,
+  system,
+  prompt,
+  imageFiles,
+  signal,
+  onTextDelta,
+  globalEventHub,
+  ...sessionOptions
+}) {
+  return withThrowawaySession({ client, signal, ...sessionOptions }, async (sessionID) => {
+    if (system) {
+      try {
+        await client.session.instructions.entry.put({
+          sessionID,
+          key: 'system',
+          value: system,
+        }, { signal });
+      } catch (error) {
+        failGenerate(clientErrorMessage(error, 'instructions.entry.put failed'));
+      }
+    }
+
+    const unsubscribeDeltas = subscribeThrowawayTextDeltas({
+      globalEventHub,
+      sessionID,
+      onTextDelta,
+    });
+    try {
+      return await promptAttachmentSession({ client, sessionID, prompt, imageFiles, signal });
+    } finally {
+      try {
+        unsubscribeDeltas?.();
+      } catch {
+        // Unsubscribe must not mask generate errors or block session remove.
+      }
+    }
+  });
+}
+
+async function promptAttachmentSession({ client, sessionID, prompt, imageFiles, signal }) {
+  const files = imageFiles.map((part) => ({
+    uri: part.url,
+    ...(part.filename ? { name: part.filename } : {}),
+  }));
+
+  try {
+    await client.session.prompt({
+      sessionID,
+      text: prompt || '[attachment]',
+      ...(files.length > 0 ? { files } : {}),
+      delivery: 'steer',
+    }, { signal });
+  } catch (error) {
+    rethrowIfAborted(error, signal);
+    failGenerate(clientErrorMessage(error, 'session.prompt failed'));
+  }
+
+  try {
+    await client.session.wait({ sessionID }, { signal });
+  } catch (error) {
+    rethrowIfAborted(error, signal);
+    failGenerate(clientErrorMessage(error, 'session.wait failed'));
+  }
+
+  let listed;
+  try {
+    listed = await client.message.list({
+      sessionID,
+      limit: 20,
+      order: 'desc',
+    }, { signal });
+  } catch (error) {
+    rethrowIfAborted(error, signal);
+    failGenerate(clientErrorMessage(error, 'message.list failed'));
+  }
+
+  const messages = Array.isArray(listed?.data) ? listed.data : [];
+  const text = assistantTextFromMessages(messages);
+  if (!text.trim()) {
+    failGenerate('OpenCode LLM generator returned no assistant text');
+  }
+  return { text: text.trim(), source: 'attachment-session' };
+}
+
+/**
  * Generate assistant text through OpenCode's connected providers via
  * `@opencode/client`.
  *
- * - Pure text: `generate.text` (no session).
- * - Vision image attachments: dedicated temp session after agent deny-all verify.
+ * Both paths run in a throwaway session owned by a verified deny-all agent in
+ * the LLM temp directory, and the session is removed afterwards.
+ * - Pure text: `session.generate` (single model call, nothing written).
+ * - Vision image attachments: `session.prompt` + wait + message list.
  * - Non-vision: keep `[image: …]` descriptions; never forward image bytes.
  *
  * Optional internal streaming: `onTextDelta` + `globalEventHub` forwards real
  * `session.text.delta` tokens on the attachment-session path only.
- * `generate.text` cannot emit live deltas (no fake typewriter).
+ * `session.generate` cannot emit live deltas (no fake typewriter).
  *
  * Optional `signal` from the contact continuation is combined with the generator
  * deadline. Cancellation still runs throwaway-session cleanup.
@@ -533,7 +613,7 @@ export async function generateOpenCodeText({
   messages,
   variant,
   clientFactory,
-  ensureTempDirectory,
+  ensureTempDirectory = ensureLlmTempDirectory,
   forwardImageParts = false,
   onTextDelta = null,
   globalEventHub = null,
@@ -574,58 +654,47 @@ export async function generateOpenCodeText({
   }, deadlineMs);
   timeout.unref?.();
 
+  const sessionOptions = {
+    client,
+    providerID,
+    modelID,
+    variant,
+    signal: requestSignal,
+    persistSessionMetadata,
+    onSystemSessionPersisted,
+  };
+
   try {
     if (imageFiles.length > 0) {
-      if (typeof ensureTempDirectory !== 'function') {
-        failGenerate(
-          'LLM temp directory is required for attachment generation',
-          'llm_attachment_generation_unavailable',
-        );
-      }
-      let workingDirectory;
-      try {
-        workingDirectory = await ensureTempDirectory({
-          agentName: LLM_AGENT_NAME,
-          agentMarkdown: AGENT_MARKDOWN,
-        });
-      } catch (error) {
-        failGenerate(
-          `LLM temp directory failed (${clientErrorMessage(error, 'ensure failed')})`,
-          'llm_attachment_generation_unavailable',
-        );
-      }
-      if (typeof workingDirectory !== 'string' || !workingDirectory.trim()) {
-        failGenerate(
-          'LLM temp directory is empty; attachment generation blocked',
-          'llm_attachment_generation_unavailable',
-        );
-      }
+      const workingDirectory = await prepareGeneratorDirectory({
+        ensureTempDirectory,
+        agentName: LLM_AGENT_NAME,
+        agentMarkdown: AGENT_MARKDOWN,
+      });
       return await generateViaAttachmentSession({
-        client,
-        workingDirectory: workingDirectory.trim(),
-        providerID,
-        modelID,
-        variant,
+        ...sessionOptions,
+        workingDirectory,
+        agentName: LLM_AGENT_NAME,
         system: flattened.system,
         prompt: flattened.prompt,
         imageFiles,
-        signal: requestSignal,
         onTextDelta,
         globalEventHub,
-        persistSessionMetadata,
-        onSystemSessionPersisted,
       });
     }
 
-    // Text path: no session. System prompt is prepended into the single prompt string.
+    // Text path: the system prompt is prepended into the single prompt string.
+    const workingDirectory = await prepareGeneratorDirectory({
+      ensureTempDirectory,
+      agentName: TEXT_AGENT_NAME,
+      agentMarkdown: TEXT_AGENT_MARKDOWN,
+    });
     const prompt = [flattened.system, flattened.prompt].filter((part) => String(part || '').trim()).join('\n\n');
-    return await generateViaTextApi({
-      client,
-      providerID,
-      modelID,
-      variant,
+    return await generateViaSessionGenerate({
+      ...sessionOptions,
+      workingDirectory,
+      agentName: TEXT_AGENT_NAME,
       prompt,
-      signal: requestSignal,
     });
   } finally {
     clearTimeout(timeout);
@@ -646,6 +715,8 @@ export const _test = {
   assertValidAttachmentParts,
   LLM_AGENT_NAME,
   AGENT_MARKDOWN,
+  TEXT_AGENT_NAME,
+  TEXT_AGENT_MARKDOWN,
   MAX_ATTACHMENT_BYTES,
   GENERATE_TIMEOUT_MS,
 };

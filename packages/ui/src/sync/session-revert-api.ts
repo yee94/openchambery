@@ -7,28 +7,17 @@
  *
  * - stage: POST `/api/session/:sessionID/revert/stage` — hide messages after
  *   the boundary without deleting them; `files:true` restores snapshot files.
- * - clear: POST `/api/session/:sessionID/revert/clear` — redo, restore files.
+ * - clear: DELETE `/api/session/:sessionID/revert` — redo, restore files.
  * - commit: POST `/api/session/:sessionID/revert/commit` — new send; no redo.
  */
 
 import { runtimeFetch } from "../lib/runtime-fetch"
+import type { Session } from "../lib/opencode/v2-types"
 
 export const SESSION_REVERT_BUSY_CODE = "session-revert-busy"
 
-export type SessionRevertFile = {
-  file: string
-  status?: "added" | "deleted" | "modified"
-  additions?: number
-  deletions?: number
-  patch?: string
-}
-
-export type SessionRevert = {
-  messageID: string
-  partID?: string
-  snapshot?: string
-  files?: SessionRevertFile[]
-}
+export type SessionRevert = NonNullable<Session["revert"]>
+export type SessionRevertFile = NonNullable<SessionRevert["files"]>[number]
 
 export type SessionRevertInput = {
   sessionID: string
@@ -122,17 +111,18 @@ export function parseSessionRevert(payload: unknown): SessionRevert {
   }
   const files = Array.isArray(item.files)
     ? item.files.flatMap((entry) => {
-      if (!record(entry)) return []
+      if (!record(entry)) throw new Error("session revert: invalid file diff")
       const file = asString(entry.file) ?? asString(entry.path)
-      if (!file) return []
+      if (!file || (entry.status !== "added" && entry.status !== "deleted" && entry.status !== "modified")
+        || typeof entry.additions !== "number" || typeof entry.deletions !== "number" || typeof entry.patch !== "string") {
+        throw new Error("session revert: invalid file diff")
+      }
       return [{
         file,
-        ...(entry.status === "added" || entry.status === "deleted" || entry.status === "modified"
-          ? { status: entry.status }
-          : {}),
-        ...(typeof entry.additions === "number" ? { additions: entry.additions } : {}),
-        ...(typeof entry.deletions === "number" ? { deletions: entry.deletions } : {}),
-        ...(typeof entry.patch === "string" ? { patch: entry.patch } : {}),
+        status: entry.status,
+        additions: entry.additions,
+        deletions: entry.deletions,
+        patch: entry.patch,
       } satisfies SessionRevertFile]
     })
     : undefined
@@ -176,8 +166,8 @@ export async function postSessionRevertStage(
 }
 
 export async function postSessionRevertClear(input: SessionRevertInput): Promise<void> {
-  const response = await runtimeFetch(revertPath(input.sessionID, "clear"), {
-    method: "POST",
+  const response = await runtimeFetch(`/api/session/${encodeURIComponent(input.sessionID)}/revert`, {
+    method: "DELETE",
     query: directoryQuery(input.directory),
     signal: input.signal,
   })

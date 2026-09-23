@@ -102,7 +102,7 @@ export async function createChatCompletion({
 }) {
   signal?.throwIfAborted();
   if (!isRecord(body)) throw new LlmError('validation_error', 400, 'JSON body is required');
-  // generate.text / attachment-session return a full turn. This HTTP gateway
+  // session.generate / attachment-session return a full turn. This HTTP gateway
   // does not token-stream. Do not emit fake SSE after the fact.
   // In-process onTextDelta (optional) is a separate internal callback path.
   if (body.stream === true) {

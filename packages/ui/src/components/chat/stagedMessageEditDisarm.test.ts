@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'bun:test';
+import { describe, expect, test } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { resolveStagedEditBlurDisarm } from './stagedMessageEditDisarm';
@@ -74,6 +74,14 @@ describe('ChatInput staged-edit wiring', () => {
         expect(queueHandler).toContain('beginMessageEditCommit(');
         expect(queueHandler).toContain('endMessageEditCommit(');
         expect(queueHandler).toContain('clearStagedMessageEdit(');
+        expect(queueHandler).toContain('if (!isEditRuntimeCurrent() || useSessionUIStore.getState().currentSessionId !== currentSessionId) return;');
+    });
+
+    test('defers the primary optimistic ticket until the staged edit is committed', () => {
+        const gate = chatInputSource.indexOf('if (!messageEditCommitTarget && optimisticConfig?.providerID && optimisticConfig?.modelID)');
+        const admission = chatInputSource.indexOf('optimisticTicket = sessionActions.beginOptimisticSend(');
+        expect(gate).toBeGreaterThan(0);
+        expect(gate).toBeLessThan(admission);
     });
 
     test('treats the whole composer shell and chrome-action windows as still inside the composer', () => {

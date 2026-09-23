@@ -159,9 +159,11 @@ export const isSystemOwnedSession = (sessionOrInfo) => {
 };
 
 const extractTitleRefreshRequest = (payload) => {
-  if (!payload || payload.type !== 'session.updated') return null;
+  if (!payload || (payload.type !== 'session.updated' && payload.type !== 'openchamber:session-metadata')) return null;
   const properties = payload.properties && typeof payload.properties === 'object' ? payload.properties : {};
-  const info = properties.info && typeof properties.info === 'object' ? properties.info : {};
+  const info = payload.type === 'openchamber:session-metadata'
+    ? { id: properties.sessionID, metadata: properties.metadata }
+    : (properties.info && typeof properties.info === 'object' ? properties.info : {});
   if (isSystemOwnedSession(info)) return null;
   const sessionId = typeof info.id === 'string' ? info.id.trim() : '';
   const titleRefresh = info.metadata?.openchamber?.titleRefresh;
@@ -353,6 +355,7 @@ export const createSessionTitleRuntime = ({
   getOpenCodeAuthHeaders,
   /** Ticket 11: Host write admission shared with proxy (optional). */
   serverOpenCodeFetch = null,
+  sessionAccess = null,
   getSmallModelService,
   quietMs = TITLE_QUIET_MS,
   throttleMs = TITLE_THROTTLE_MS,
@@ -379,6 +382,12 @@ export const createSessionTitleRuntime = ({
   };
 
   const openCodeFetch = async (pathname, { directory, method = 'GET', body } = {}) => {
+    if (sessionAccess) {
+      const sessionId = decodeURIComponent(pathname.slice('/session/'.length));
+      return method === 'PATCH'
+        ? sessionAccess.update(sessionId, directory, body)
+        : sessionAccess.get(sessionId, directory);
+    }
     if (typeof serverOpenCodeFetch === 'function') {
       return serverOpenCodeFetch(pathname, {
         directory,
@@ -406,6 +415,7 @@ export const createSessionTitleRuntime = ({
   };
 
   const fetchRecentMessages = async (sessionId, directory) => {
+    if (sessionAccess) return sessionAccess.messages(sessionId, directory, TRANSCRIPT_MESSAGE_LIMIT);
     const base = buildOpenCodeUrl(`/session/${encodeURIComponent(sessionId)}/message`, '');
     const params = new URLSearchParams({ limit: String(TRANSCRIPT_MESSAGE_LIMIT) });
     if (directory) params.set('directory', directory);
@@ -431,20 +441,13 @@ export const createSessionTitleRuntime = ({
 
     const meta = readTitleRefreshMeta(session);
     if (meta.titleRefresh.isGenerating !== true) return;
-    const {
-      isGenerating: _isGenerating,
-      requestedAt: _requestedAt,
-      ...titleRefresh
-    } = meta.titleRefresh;
     await openCodeFetch(`/session/${encodeURIComponent(sessionId)}`, {
       directory,
       method: 'PATCH',
       body: {
         metadata: {
-          ...meta.metadata,
           openchamber: {
-            ...meta.openchamber,
-            titleRefresh,
+            titleRefresh: { isGenerating: null, requestedAt: null },
           },
         },
       },
@@ -456,17 +459,13 @@ export const createSessionTitleRuntime = ({
       .catch(() => null);
     if (!session || typeof session !== 'object') return;
 
-    const meta = readTitleRefreshMeta(session);
     await openCodeFetch(`/session/${encodeURIComponent(sessionId)}`, {
       directory,
       method: 'PATCH',
       body: {
         metadata: {
-          ...meta.metadata,
           openchamber: {
-            ...meta.openchamber,
             titleRefresh: {
-              ...meta.titleRefresh,
               lastError: error instanceof Error ? error.message : String(error),
               failedAt: now(),
             },
@@ -515,11 +514,8 @@ export const createSessionTitleRuntime = ({
       method: 'PATCH',
       body: {
         metadata: {
-          ...meta.metadata,
           openchamber: {
-            ...meta.openchamber,
             titleRefresh: {
-              ...meta.titleRefresh,
               activityUpdatedAt,
             },
           },
@@ -607,14 +603,11 @@ export const createSessionTitleRuntime = ({
       method: 'PATCH',
       body: {
         metadata: {
-          ...meta.metadata,
           openchamber: {
-            ...meta.openchamber,
             titleRefresh: {
-              ...meta.titleRefresh,
               isGenerating: true,
-              lastError: undefined,
-              failedAt: undefined,
+              lastError: null,
+              failedAt: null,
             },
           },
         },
@@ -687,9 +680,6 @@ export const createSessionTitleRuntime = ({
     const generatedAt = now();
     lastGeneratedAtBySession.set(sessionId, generatedAt);
 
-    const currentMetadata = freshMeta.metadata;
-    const currentNamespace = freshMeta.openchamber;
-
     console.log(`[session-title] refreshed ${sessionId} → "${nextTitle}" via ${generated.providerID}/${generated.modelID}`);
     await openCodeFetch(`/session/${encodeURIComponent(sessionId)}`, {
       directory,
@@ -697,11 +687,8 @@ export const createSessionTitleRuntime = ({
       body: {
         title: nextTitle,
         metadata: {
-          ...currentMetadata,
           openchamber: {
-            ...currentNamespace,
             titleRefresh: {
-              ...freshMeta.titleRefresh,
               lastAutoTitle: nextTitle,
               forMessageID: lastAssistantId || latestAssistantId || '',
               generatedAt,

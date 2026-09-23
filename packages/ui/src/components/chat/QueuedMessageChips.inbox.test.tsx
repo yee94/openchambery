@@ -27,18 +27,43 @@ beforeEach(() => {
   host = document.createElement('div'); document.body.append(host); root = createRoot(host);
 });
 afterEach(async () => { await act(async () => root.unmount()); client.clear(); host.remove(); });
-async function render(items: SessionInboxChip[] = []) {
+async function render(items: SessionInboxChip[] = [], onSteerClientPending?: (id: string) => Promise<void>) {
   await act(async () => root.render(<QueryClientProvider client={client}><QueuedMessageChips
     onEditMessage={() => true} onSendMessage={() => {}} draftKey={null} draftTarget={null}
     scope={{ state: 'bound', transportIdentity: 'test', runtimeGeneration: 1, directory: '/a', sessionID: 's', deliveryTarget: { kind: 'primary' } }}
     clientPendingItems={items}
+    onSteerClientPending={onSteerClientPending}
   /></QueryClientProvider>));
 }
-it('shows inherited execution configuration on native queued inbox with accessible description', async () => {
+it('keeps queued inbox compact and offers Send without execution configuration hints', async () => {
   await render([inbox]);
-  const hint = Array.from(host.querySelectorAll('[id]')).find((node) => node.textContent === 'Inherits the session model, agent, and variant at execution.');
-  expect(hint).toBeDefined();
-  expect(host.querySelector(`[aria-describedby="${hint?.id}"]`)).not.toBeNull();
+  expect(host.textContent).toContain('Next task');
+  expect(host.textContent).not.toContain('Inherits');
+  expect(host.querySelector<HTMLButtonElement>('button[aria-label="send"]')?.disabled).toBe(false);
+});
+it('shows promotion pending immediately and keeps it until authoritative consumption', async () => {
+  let finish!: () => void;
+  const promote = vi.fn(() => new Promise<void>((resolve) => { finish = resolve; }));
+  await render([inbox], promote);
+  await act(async () => host.querySelector<HTMLButtonElement>('button[aria-label="send"]')!.click());
+  expect(promote).toHaveBeenCalledExactlyOnceWith('inbox');
+  await act(async () => { await new Promise((resolve) => setTimeout(resolve, 10)); });
+  expect(host.textContent).toContain(dict['chat.queuedMessage.sending']);
+  expect(host.querySelector('button[aria-label="send"]')).toBeNull();
+  await act(async () => { finish(); });
+  await render([{ ...inbox, delivery: 'steer' }], promote);
+  expect(host.textContent).toContain(dict['chat.queuedMessage.sending']);
+  expect(host.textContent).not.toContain('Queue');
+  await render([], promote);
+  expect(host.querySelector('[data-oc-queue-card]')).toBeNull();
+});
+it('restores Send when promotion fails and preserves the queued content', async () => {
+  const promote = vi.fn(async () => { throw new Error('offline'); });
+  await render([inbox], promote);
+  await act(async () => host.querySelector<HTMLButtonElement>('button[aria-label="send"]')!.click());
+  await act(async () => { await new Promise((resolve) => setTimeout(resolve, 10)); });
+  expect(host.textContent).toContain('Next task');
+  expect(host.querySelector<HTMLButtonElement>('button[aria-label="send"]')?.disabled).toBe(false);
 });
 it('keeps steer and captured Host/Assistant queue copy separate and empty shell collapsed', async () => {
   await render([{ ...inbox, delivery: 'steer' }]); expect(host.textContent).not.toContain('Inherits');

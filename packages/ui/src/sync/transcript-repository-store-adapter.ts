@@ -730,7 +730,7 @@ export function createStoreTranscriptRepository(
           if (!Array.isArray(messages) || messages.length === 0) {
             return { applied: true, changed: false }
           }
-          const cut = messages.findIndex((message) => message.id >= command.to)
+          const cut = messages.findIndex((message) => message.id === command.to)
           if (cut < 0) return { applied: true, changed: false }
           const removed = messages.slice(cut)
           const kept = messages.slice(0, cut)

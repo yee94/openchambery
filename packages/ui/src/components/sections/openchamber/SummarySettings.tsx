@@ -10,7 +10,6 @@ import { getRegisteredRuntimeAPIs } from '@/contexts/runtimeAPIRegistry';
 import { useI18n } from '@/lib/i18n';
 import { updateDesktopSettings } from '@/lib/persistence';
 import { runtimeFetch } from '@/lib/runtime-fetch';
-import { useScopedProvidersQuery } from '@/queries/agentQueries';
 import { useThemeSystem } from '@/contexts/useThemeSystem';
 import { createFlexokiCodeMirrorTheme } from '@/lib/codemirror/flexokiTheme';
 import type { Extension } from '@codemirror/state';
@@ -65,8 +64,6 @@ export const SummarySettings: React.FC = () => {
   const { currentTheme } = useThemeSystem();
   // Same catalog as the Assistant model picker; generation goes through the
   // same LLM gateway, which checks the location-less connected catalog.
-  const providersQuery = useScopedProvidersQuery(null, { enabled: true });
-  const catalogProviders = providersQuery.data ?? [];
   const [summaryModelMode, setSummaryModelMode] = React.useState<'provider' | 'custom'>('provider');
   const [summaryProviderID, setSummaryProviderID] = React.useState('');
   const [summaryModelID, setSummaryModelID] = React.useState('');
@@ -298,7 +295,6 @@ export const SummarySettings: React.FC = () => {
             <ModelSelector
               providerId={summaryProviderID}
               modelId={summaryModelID}
-              providers={catalogProviders}
               placeholder={t('settings.openchamber.defaults.summary.providerModelDefault')}
               onChange={(providerID, modelID) => { setSummaryProviderID(providerID); setSummaryModelID(modelID); }}
               className="oc-settings-inline-value"

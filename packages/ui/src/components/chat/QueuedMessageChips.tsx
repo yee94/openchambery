@@ -79,7 +79,7 @@ interface QueuedMessageChipProps {
     abortSendPending: boolean;
     isMobile: boolean;
     onEdit: (message: ChipMessage) => void;
-    onSend: (message: ChipMessage) => void;
+    onSend: (message: ChipMessage) => void | Promise<void>;
     onQueue?: (message: ChipMessage) => void;
     onRemove: (message: ChipMessage) => void;
     compactionBarrier?: boolean;
@@ -88,8 +88,7 @@ interface QueuedMessageChipProps {
 const QueuedMessageChip = memo(({ message, server, frozen, hasDispatchLock, pendingOperationKinds, sendPendingTimedOut, abortSendPending, isMobile, onEdit, onSend, onQueue, onRemove, compactionBarrier = false }: QueuedMessageChipProps) => {
     const { t } = useI18n();
     const inboxChip = isSessionInboxChip(message);
-    const inheritanceDescriptionId = React.useId();
-    const inheritsSessionSelection = inboxChip && message.delivery === 'queue';
+    const inboxSend = useMutation({ mutationFn: async () => { await onSend(message); } });
     const pendingAdmission = isMessageQueuePendingAdmissionItem(message);
     const queueItemID = message.queueItemID || (message as QueuedMessage).id;
     const editPending = server && pendingOperationKinds.has('edit');
@@ -100,7 +99,7 @@ const QueuedMessageChip = memo(({ message, server, frozen, hasDispatchLock, pend
     const legacyDispatchPending = Boolean(legacyMessage && isLegacyQueueItemDispatchPending(legacyMessage));
     const activeAttempt = server && !pendingAdmission && isServerQueueItemActiveAttempt(message as MessageQueueItem);
     const rawSendPending = (server && pendingOperationKinds.has('send')) || authoritativeDispatchPending || legacyDispatchPending;
-    const sendPending = abortSendPending || (rawSendPending && !sendPendingTimedOut);
+    const sendPending = (inboxChip && (inboxSend.isPending || message.delivery === 'steer')) || abortSendPending || (rawSendPending && !sendPendingTimedOut);
     // Client edit/remove remains authoritative even when delivery tracking is
     // stale. Sending and dragging an already-started attempt stay unavailable
     // because they would imply a second POST or a movable active slot.
@@ -110,7 +109,7 @@ const QueuedMessageChip = memo(({ message, server, frozen, hasDispatchLock, pend
     const isDragDisabled = inboxChip || legacyMessage?.owner?.state === 'unbound-legacy' || clientMutationBlocked || activeAttempt;
     const waitingForCompaction = inboxChip && compactionBarrier;
     const canSend = inboxChip
-        ? !frozen && message.delivery === 'queue' && !waitingForCompaction
+        ? !frozen && !sendPending && message.delivery === 'queue' && !waitingForCompaction
         : !clientMutationBlocked && !sendPending && (server
             ? canSendServerQueuedMessage(message as MessageQueueServerDisplayItem, hasDispatchLock, { allowManualDispatchRetry: sendPendingTimedOut })
             : canSendQueuedMessage(message as QueuedMessage, hasDispatchLock));
@@ -132,7 +131,7 @@ const QueuedMessageChip = memo(({ message, server, frozen, hasDispatchLock, pend
         composerDocument: visibleComposerDocument,
     }), [visibleAttachments, visibleComposerDocument, visibleContent]);
 
-    const attachmentCount = pendingAdmission ? message.attachmentCount : visibleAttachments?.length ?? 0;
+    const attachmentCount = pendingAdmission || inboxChip ? message.attachmentCount : visibleAttachments?.length ?? 0;
 
     const removeAction = (
         <button
@@ -155,7 +154,6 @@ const QueuedMessageChip = memo(({ message, server, frozen, hasDispatchLock, pend
         <div
             ref={setNodeRef}
             role="group"
-            aria-describedby={inheritsSessionSelection ? inheritanceDescriptionId : undefined}
             // Translate only (no scaleX/scaleY) so the lifted row keeps its size.
             style={{ transform: CSS.Translate.toString(transform), transition }}
             className={cn(
@@ -184,7 +182,6 @@ const QueuedMessageChip = memo(({ message, server, frozen, hasDispatchLock, pend
                 <Icon name={reorderPending ? 'loader-4' : 'draggable'} className={cn(isMobile ? 'size-3' : 'size-3.5', reorderPending && 'animate-spin')} aria-hidden="true" />
             </button>
             {isMobile ? removeAction : null}
-            <div className="min-w-0 flex-1">
             <span className={cn(
                 // items-baseline keeps chip labels on the same line as plain text
                 // ("hey") / "+N files". MessageReferenceChip exposes its label baseline
@@ -207,12 +204,6 @@ const QueuedMessageChip = memo(({ message, server, frozen, hasDispatchLock, pend
                     <span className="ml-1 shrink-0 text-muted-foreground">{t('chat.queuedMessage.attachments', { count: attachmentCount })}</span>
                 )}
             </span>
-            {inheritsSessionSelection ? (
-                <p id={inheritanceDescriptionId} className="whitespace-normal typography-meta text-muted-foreground">
-                    {t('chat.queuedMessage.inheritsSessionSelection')}
-                </p>
-            ) : null}
-            </div>
             <div className="flex shrink-0 items-center gap-1.5 text-muted-foreground">
                 {pendingAdmission ? (
                     <span
@@ -276,7 +267,8 @@ const QueuedMessageChip = memo(({ message, server, frozen, hasDispatchLock, pend
                             type="button"
                             onClick={() => {
                                 if (sendPending) return;
-                                onSend(message);
+                                if (inboxChip) inboxSend.mutate();
+                                else void onSend(message);
                             }}
                             disabled={!canSend || sendPending}
                             aria-busy={sendPending || undefined}
@@ -347,7 +339,7 @@ interface QueuedMessageChipsProps {
     clientPendingItems?: readonly SessionComposerPendingItem[];
     /** Remove a client-only pending chip (restoring content is caller-owned). */
     onRemoveClientPending?: (requestID: string) => void;
-    onSteerClientPending?: (inboxID: string) => void;
+    onSteerClientPending?: (inboxID: string) => void | Promise<void>;
     onQueueClientPending?: (inboxID: string) => void;
     compactionBarrier?: boolean;
     /**
@@ -746,8 +738,7 @@ export const QueuedMessageChips = memo(({ onEditMessage, onSendMessage, onEditCo
     const handleSend = useEvent((message: ChipMessage) => {
         if (isSessionInboxChip(message)) {
             if (compactionBarrier) return;
-            onSteerClientPending?.(message.queueItemID);
-            return;
+            return onSteerClientPending?.(message.queueItemID);
         }
         if (frozen || isMessageQueuePendingAdmissionItem(message)) return;
         if (serverQueue.mode === 'server') {

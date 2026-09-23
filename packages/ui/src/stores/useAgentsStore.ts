@@ -396,9 +396,11 @@ export async function refreshOpenCodeConfiguration(options?: ConfigRefreshOption
 }
 
 /**
- * Chat `/reload`: OpenCode `location.reload` rebuilds every loaded location in
- * place (running sessions continue at the next step boundary), unlike
- * `restartOpenCodeService`, which restarts the managed process.
+ * Settings "Reload OpenCode" and the VS Code `/reload` command: OpenCode
+ * `location.reload` rebuilds every loaded location in place (running sessions
+ * continue at the next step boundary), unlike `restartOpenCodeService`, which
+ * restarts the managed process. Web, desktop, and mobile keep only the
+ * Settings action.
  */
 export async function reloadOpenCodeLocations(): Promise<void> {
   const transport = getRuntimeTransportIdentity();

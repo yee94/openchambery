@@ -52,6 +52,7 @@ type ConversationCreateWithPromptInput = {
   agent?: string;
   variant?: string;
   parts: ConversationMessagePart[];
+  skills?: Array<{ id: string }>;
 };
 
 type ConversationSession = SessionInfo;
@@ -131,7 +132,7 @@ type BridgeMessageInput = {
 
 const ALLOWED_TOP_KEYS = new Set([
   'input', 'directory', 'messageID', 'model', 'parts',
-  'title', 'parentID', 'agent', 'variant', 'metadata',
+  'title', 'parentID', 'agent', 'variant', 'metadata', 'skills',
 ]);
 
 type ValidatedInput =
@@ -273,6 +274,15 @@ const validateConversationInput = (body: unknown): ValidatedInput => {
   }
 
   // Optional field validation
+  let skills: Array<{ id: string }> | undefined;
+  if (obj.skills !== undefined) {
+    if (!Array.isArray(obj.skills) || obj.skills.some((skill) =>
+      !skill || typeof skill.id !== 'string' || !skill.id.trim())) {
+      errors.push('skills must be an array of non-empty skill ids');
+    } else {
+      skills = obj.skills.map((skill) => ({ id: skill.id }));
+    }
+  }
   let title: string | undefined;
   if (obj.title !== undefined) {
     if (typeof obj.title !== 'string' || obj.title.trim().length === 0) {
@@ -330,6 +340,7 @@ const validateConversationInput = (body: unknown): ValidatedInput => {
       messageID: (obj.messageID as string).trim(),
       model: model!,
       parts: sanitizedParts,
+      ...(skills?.length ? { skills } : {}),
       title,
       parentID,
       agent,
@@ -379,6 +390,7 @@ const buildV2PromptInput = (
     delivery: 'steer' as const,
     ...(files.length > 0 ? { files } : {}),
     ...(agents.length > 0 ? { agents } : {}),
+    ...(input.skills?.length ? { skills: input.skills.map(({ id }) => ({ id, name: id })) } : {}),
     ...(input.metadata ? { metadata: input.metadata as { readonly [key: string]: JsonValue } } : {}),
   };
 };

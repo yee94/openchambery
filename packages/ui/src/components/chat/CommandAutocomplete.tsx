@@ -62,6 +62,27 @@ const NEUTRAL_BADGE_CLASS = cn(
   "bg-[var(--surface-muted)] text-muted-foreground border-[var(--interactive-border)]/60"
 );
 
+const highlightCommandMatch = (text: string, query: string): React.ReactNode => {
+  const needle = query.trim().toLowerCase();
+  if (!needle) return text;
+  const normalized = text.toLowerCase();
+  const parts: React.ReactNode[] = [];
+  let cursor = 0;
+  let match = normalized.indexOf(needle);
+  while (match !== -1) {
+    parts.push(text.slice(cursor, match));
+    parts.push(
+      <mark key={match} className="bg-transparent text-[var(--primary-base)] font-semibold">
+        {text.slice(match, match + needle.length)}
+      </mark>,
+    );
+    cursor = match + needle.length;
+    match = normalized.indexOf(needle, cursor);
+  }
+  parts.push(text.slice(cursor));
+  return parts;
+};
+
 /**
  * Explicit command availability context. Callers (ChatInput, MultiRun, agent
  * manager, scheduled task editor) supply these so CommandAutocomplete never
@@ -227,7 +248,9 @@ export const CommandAutocomplete = React.forwardRef<CommandAutocompleteHandle, C
           ),
           { id: 'openchamber:model', name: 'model', source: 'openchamber' as const, description: t('chat.commandAutocomplete.command.modelDescription'), isBuiltIn: true },
           { id: 'openchamber:compact', name: 'compact', source: 'openchamber' as const, description: t('chat.commandAutocomplete.command.compactDescription'), isBuiltIn: true },
-          { id: 'openchamber:reload', name: 'reload', source: 'openchamber' as const, description: t('chat.commandAutocomplete.command.reloadDescription'), isBuiltIn: true },
+          ...(isVSCodeRuntime()
+            ? [{ id: 'openchamber:reload', name: 'reload', source: 'openchamber' as const, description: t('chat.commandAutocomplete.command.reloadDescription'), isBuiltIn: true }]
+            : []),
           ...(hasSession
             ? [{ id: 'openchamber:summary', name: 'summary', source: 'openchamber' as const, description: t('chat.commandAutocomplete.command.summaryDescription'), isOpenChamber: true }]
             : []
@@ -294,7 +317,9 @@ export const CommandAutocomplete = React.forwardRef<CommandAutocompleteHandle, C
           ),
           { id: 'openchamber:model', name: 'model', source: 'openchamber' as const, description: t('chat.commandAutocomplete.command.modelDescription'), isBuiltIn: true },
           { id: 'openchamber:compact', name: 'compact', source: 'openchamber' as const, description: t('chat.commandAutocomplete.command.compactDescription'), isBuiltIn: true },
-          { id: 'openchamber:reload', name: 'reload', source: 'openchamber' as const, description: t('chat.commandAutocomplete.command.reloadDescription'), isBuiltIn: true },
+          ...(isVSCodeRuntime()
+            ? [{ id: 'openchamber:reload', name: 'reload', source: 'openchamber' as const, description: t('chat.commandAutocomplete.command.reloadDescription'), isBuiltIn: true }]
+            : []),
           ...(hasSession
             ? [{ id: 'openchamber:summary', name: 'summary', source: 'openchamber' as const, description: t('chat.commandAutocomplete.command.summaryDescription'), isOpenChamber: true }]
             : []
@@ -460,7 +485,7 @@ export const CommandAutocomplete = React.forwardRef<CommandAutocompleteHandle, C
       className="max-w-[450px] max-h-64"
       style={style}
     >
-      <ScrollableOverlay preventOverscroll outerClassName="flex-1 min-h-0" className="px-0 pb-2">
+      <ScrollableOverlay preventOverscroll outerClassName="flex-1 min-h-0" className="p-1">
         {loading ? (
           <div className="flex items-center justify-center py-4">
             <Icon name="refresh" className="h-4 w-4 animate-spin text-muted-foreground" />
@@ -475,9 +500,10 @@ export const CommandAutocomplete = React.forwardRef<CommandAutocompleteHandle, C
                   key={command.id}
                   ref={(el) => { itemRefs.current[index] = el; }}
                   className={cn(
-                    "flex gap-2 px-3 py-2 cursor-pointer rounded-lg",
+                    "flex gap-2 px-2 py-2 cursor-pointer rounded-lg",
                     isMobile ? "items-center" : "items-start",
                     composerAutocompleteRowClassName(isMobile, index === selectedIndex),
+                    !isMobile && index === selectedIndex && "bg-interactive-selection/35",
                   )}
                   // Block the focus transfer the tap would perform: the textarea
                   // must stay focused so selecting a command doesn't dismiss the
@@ -537,7 +563,7 @@ export const CommandAutocomplete = React.forwardRef<CommandAutocompleteHandle, C
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2">
-                      <span className="typography-ui-label font-medium">/{command.name}</span>
+                      <span className="typography-ui-label font-medium">/{highlightCommandMatch(command.name, searchQuery)}</span>
                       {command.isSkill ? (
                         <span className={TYPE_BADGE_CLASS}>
                           {t('chat.commandAutocomplete.badge.skill')}
@@ -568,7 +594,7 @@ export const CommandAutocomplete = React.forwardRef<CommandAutocompleteHandle, C
                     </div>
                     {command.description && !isMobile && (
                       <div className="typography-meta text-muted-foreground mt-0.5 truncate">
-                        {command.description}
+                        {highlightCommandMatch(command.description, searchQuery)}
                       </div>
                     )}
                   </div>

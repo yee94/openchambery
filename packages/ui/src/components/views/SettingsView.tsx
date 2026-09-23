@@ -22,7 +22,6 @@ import {
 import { useConfigStore } from "@/stores/useConfigStore";
 import {
   Tooltip,
-  TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { ErrorBoundary } from "@/components/ui/ErrorBoundary";
@@ -1550,34 +1549,27 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
         >
           <div
             className={cn(
-              "border-t border-border bg-sidebar px-2 py-1 space-y-0.5",
+              "border-t-[0.5px] border-border/40 bg-sidebar px-2 py-1 space-y-0.5",
               isMobile && "oc-mobile-floating-surface oc-mobile-settings-card",
             )}
           >
             {!runtimeCtx.isVSCode && (
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <button
-                    type="button"
-                    className={cn(
-                      isMobile
-                        ? "oc-mobile-settings-row"
-                        : "flex h-7 w-full items-center gap-2 rounded-md px-2 overflow-hidden whitespace-nowrap",
-                      "text-sm font-semibold text-sidebar-foreground/90",
-                      "hover:text-sidebar-foreground hover:bg-interactive-hover",
-                    )}
-                    onClick={() =>
-                      void reloadOpenCodeLocations().catch(() => toast.error(t('chat.chatInput.toast.reloadFailed')))
-                    }
-                  >
-                    <Icon name="restart" className="h-4 w-4 shrink-0" />
-                    <span>{t("settings.view.actions.reloadOpenCode")}</span>
-                  </button>
-                </TooltipTrigger>
-                <TooltipContent>
-                  {t("settings.view.actions.reloadOpenCodeTooltip")}
-                </TooltipContent>
-              </Tooltip>
+              <button
+                type="button"
+                className={cn(
+                  isMobile
+                    ? "oc-mobile-settings-row"
+                    : "flex h-7 w-full items-center gap-2 rounded-md px-2 overflow-hidden whitespace-nowrap",
+                  "text-sm font-semibold text-sidebar-foreground/90",
+                  "hover:text-sidebar-foreground hover:bg-interactive-hover",
+                )}
+                onClick={() =>
+                  void reloadOpenCodeLocations().catch(() => toast.error(t('chat.chatInput.toast.reloadFailed')))
+                }
+              >
+                <Icon name="restart" className="h-4 w-4 shrink-0" />
+                <span>{t("settings.view.actions.reloadOpenCode")}</span>
+              </button>
             )}
           </div>
         </div>
@@ -1670,10 +1662,9 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
         <div className="flex h-full min-h-0 overflow-hidden">
           <div
             className={cn(
-              "w-[264px] min-w-[264px] border-r",
+              "w-[264px] min-w-[264px] border-r-[0.5px] border-border/40",
               runtimeCtx.isVSCode ? "bg-background" : "bg-sidebar",
             )}
-            style={{ borderColor: "var(--interactive-border)" }}
           >
             <ErrorBoundary>{renderPageSidebar(settingsSlug, {})}</ErrorBoundary>
           </div>
@@ -1848,7 +1839,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
           <>
             <div
               className={cn(
-                "relative flex h-full min-h-0 flex-col overflow-hidden border-r",
+                "relative flex h-full min-h-0 flex-col overflow-hidden border-r-[0.5px] border-border/40",
                 isDesktopApp
                   ? "bg-sidebar"
                   : runtimeCtx.isVSCode
@@ -1861,7 +1852,6 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
               style={{
                 width: `${navWidth}px`,
                 minWidth: `${navWidth}px`,
-                borderColor: "var(--interactive-border)",
               }}
             >
               <div

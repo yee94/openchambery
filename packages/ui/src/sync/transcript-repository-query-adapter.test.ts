@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, test } from "bun:test"
+import { afterEach, beforeEach, describe, expect, test } from "vitest"
 import { readFileSync } from "node:fs"
 import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
@@ -2971,6 +2971,22 @@ describe("remote revert.committed retires late reads (ticket 08)", () => {
     client = new QueryClient({
       defaultOptions: { queries: { retry: false, retryDelay: 1 } },
     })
+  })
+
+  test.each(["http-first", "sse-first"])("%s revert acknowledgement cannot clear a replacement in a partial history window", (order) => {
+    const repo = createQueryTranscriptRepository({
+      client, transport: TRANSPORT, generation: GENERATION,
+      probe: { getTransport: () => TRANSPORT, getGeneration: () => GENERATION },
+    })
+    repo.apply(scope, { type: "http-page", purpose: "initial", page: transportPage(tailRecords, { cursor: "older", complete: false }) })
+    const local = { type: "revert-committed" as const, to: "msg_u4" }
+    repo.apply(scope, order === "http-first" ? local : remoteRevert("msg_u4"))
+    repo.apply(scope, { type: "optimistic-add", message: userMessage("msg_replacement", 5), parts: [textPart("p_new", "msg_replacement")] })
+    const before = repo.getTranscript(scope)
+    repo.apply(scope, order === "http-first" ? remoteRevert("msg_u4") : local)
+    expect(repo.getTranscript(scope).messageOrder).toEqual(["msg_u3", "msg_a3", "msg_replacement"])
+    expect(repo.getTranscript(scope)).toBe(before)
+    repo.destroy()
   })
 
   test("late older page released after another client's revert keeps the revert result", async () => {

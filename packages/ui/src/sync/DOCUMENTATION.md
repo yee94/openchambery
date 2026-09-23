@@ -2,7 +2,9 @@
 
 ## OpenCode 2 shell, form replies, and stream timing
 
-`session-projection-api.ts` excludes native `system` rows from the shared transcript projection. These rows carry model instructions such as Code Mode catalog updates. Filtering follows the authoritative row type, preserving user/assistant text even when it quotes those instructions. System-only pages preserve the upstream cursor and completeness so older conversation history remains reachable.
+`session-projection-api.ts` excludes native `system` rows from the shared transcript projection. These rows carry model instructions such as Code Mode catalog updates. Filtering follows the authoritative row type, preserving user/assistant text even when it quotes those instructions. Full system-only pages preserve the upstream cursor so older conversation history remains reachable.
+
+Native `message.list` cursors describe positions, not existence of another page: even a one-message session returns `cursor.next`. `normalizeSessionProjectionPage` receives the actual request limit and marks a short **raw wire** page exhausted before projecting/filtering records. It clears the continuation at exhaustion. A full page retains its cursor even if every row is filtered from chat. This boundary flows through TranscriptRepository to all shared chat surfaces; first-send/layout changes cannot turn an exhausted short session into a load-older request. Errors still throw rather than manufacturing an exhausted page.
 
 ### Synthetic message identity (Ticket 03)
 
@@ -23,6 +25,8 @@ Directory bootstrap phase 1 stays critical (location/config/active status). Phas
 `session-projection-api.ts` projects native `shell` rows into user-owned `shellAction` cards, preserving command, output, and running/success/failure state. The transcript reducer handles `session.shell.started` / `ended` using the SDK's event-to-message ID rule and shell identity. Query merge resolves a shell event's target card through the same `findShellMessageID` rule, and part equality compares `shellAction`, so an HTTP-loaded running card completes from the live end event or an authoritative page. Terminal shell events trigger the existing bounded active-session materialization to recover a missed start.
 
 Question reply adapters fetch `session.form.get` on the captured scoped client before `session.form.reply`. The form schema owns answer keys, option values, and scalar/array types; failures preserve the request for retry. No list-key cache or synthetic field keys participate in submission.
+
+Question-tool forms (`metadata.kind === "question"`, with `metadata.tool`) are the QuestionCard contract. `form.list` and live `form.created` project only those rows into the question store; `form.replied` and `form.cancelled` remove them by form id. Other pending forms stay on the session form store and render as FormCard. A question form is not also a FormCard.
 
 Projection and live `session.step.streamed` preserve the upstream `time.streamed` clock through completion. Footer and context TPS consume that clock with authoritative token usage. Historical rows without it retain their legacy timing fallback. OpenCode client 2.0.12 exposes these measurement inputs rather than a precomputed TPS field.
 

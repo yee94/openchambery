@@ -78,6 +78,15 @@ describe('bridge conversations runtime', () => {
 
   // --- routing ---
 
+  it('forwards validated skill ids in the first V2 prompt', async () => {
+    const result = await handleConversationsBridgeMessage({
+      id: 'skill-request', type: 'api:conversations:createWithPrompt',
+      payload: { ...validPayload, skills: [{ id: 'release', text: 'untrusted body' }] },
+    }, defaultCtx);
+    expect(result.data.ok).toBe(true);
+    expect(sdkClient.session.prompt.mock.calls[0][0].skills).toEqual([{ id: 'release', name: 'release' }]);
+  });
+
   it('returns null for non-conversations message type', async () => {
     const result = await handleConversationsBridgeMessage(
       { id: '1', type: 'other:message', payload: {} },

@@ -1428,6 +1428,7 @@ export interface ConversationCreateWithPromptInput {
   agent?: string;
   variant?: string;
   parts: ConversationMessagePart[];
+  skills?: Array<{ id: string }>;
 }
 
 // Part types: use the SDK-native types so callers can pass send-ready parts
