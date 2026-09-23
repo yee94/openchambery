@@ -11,6 +11,10 @@ import {
   addGlobalEventMessageSink,
 } from './sessionActivityWatcher';
 import { addQuestionAutoDelegateTipSink } from './question-auto-delegate-runtime';
+import {
+  addSessionMetadataEventSink,
+  configureSessionMetadataDataRoot,
+} from './session-metadata-runtime';
 import { setWorktreeBootstrapStatusNotifier } from './gitService';
 import { resolveWorkspaceFolders } from './workspaceResolver';
 
@@ -128,6 +132,10 @@ export async function activate(context: vscode.ExtensionContext) {
   if (/^https?:\/\/localhost:4768\d\/?$/.test(legacyApiUrl.trim())) {
     await config.update('apiUrl', '', vscode.ConfigurationTarget.Global);
   }
+
+  // Host session metadata / archive store lives under extension globalStorage,
+  // scoped further by OpenCode runtime identity inside the runtime module.
+  configureSessionMetadataDataRoot(context.globalStorageUri.fsPath);
 
   // Create OpenCode manager first
   openCodeManager = createOpenCodeManager(context);
@@ -731,8 +739,9 @@ export async function activate(context: vscode.ExtensionContext) {
     })
   );
 
-  // Extension-level sinks so host tips (session-activity, question-auto-delegate)
-  // reach chat + agent manager + session editor even when one panel is closed.
+  // Extension-level sinks so host tips (session-activity, question-auto-delegate,
+  // Host archive session.updated) reach chat + agent manager + session editor
+  // even when one panel is closed.
   const hostMessageSink = {
     postMessage: (message: unknown) => {
       chatViewProvider?.postMessage(message);
@@ -742,6 +751,7 @@ export async function activate(context: vscode.ExtensionContext) {
   };
   context.subscriptions.push({ dispose: addGlobalEventMessageSink(hostMessageSink) });
   context.subscriptions.push({ dispose: addQuestionAutoDelegateTipSink(hostMessageSink) });
+  context.subscriptions.push({ dispose: addSessionMetadataEventSink(hostMessageSink) });
 
   // Subscribe to status changes - this broadcasts to webview
   context.subscriptions.push(

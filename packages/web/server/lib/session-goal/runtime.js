@@ -18,6 +18,7 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 
+import { makeOpenCodeV2Client } from '../opencode/v2-client.js';
 import { GOAL_OBJECTIVE_CHAR_LIMIT, readObjective } from './objectives.js';
 
 const OPENCHAMBER_SETTINGS_FILE = path.join(
@@ -56,8 +57,61 @@ const MAX_AUTO_TURNS = 20;
 // goal settles as blocked — a one-off snag must not end the goal.
 const BLOCKED_STREAK_LIMIT = 3;
 const GOAL_STATUSES = ['active', 'paused', 'blocked', 'budgetLimited', 'complete'];
+/** Durable continuation admission phases on goal.pendingContinuation. */
+const PENDING_CONTINUATION_PHASES = ['reserved', 'transport', 'uncertain', 'accepted'];
+/** User-visible reason when upstream reconcile cannot decide delivery. */
+const CONTINUATION_UNCERTAIN_REASON = 'continuation delivery uncertain — paused auto-continue';
 
 const clampText = (value, limit) => String(value ?? '').trim().slice(0, limit);
+
+/** Durable execution generation on a goal record (missing → 0). */
+export const readGoalExecutionGeneration = (goal) => (
+  Number.isFinite(goal?.executionGeneration) && goal.executionGeneration >= 0
+    ? Math.floor(goal.executionGeneration)
+    : 0
+);
+
+export const nextGoalExecutionGeneration = (goal) => readGoalExecutionGeneration(goal) + 1;
+
+/**
+ * User-facing transitions that invalidate in-flight audit/dispatch work.
+ * Settle paths (active → complete/blocked/budgetLimited) keep the generation.
+ */
+export const shouldAdvanceGoalExecutionGeneration = (previous, next) => {
+  if (!previous || !next || typeof previous !== 'object' || typeof next !== 'object') return false;
+  if (previous.id !== next.id) return false;
+  if (next.status === 'active' && previous.status !== 'active') return true;
+  if (next.status === 'paused' && previous.status === 'active') return true;
+  if (previous.tokenBudget !== next.tokenBudget) return true;
+  if ((previous.objective || '') !== (next.objective || '')) return true;
+  if (Boolean(previous.objectiveFile) !== Boolean(next.objectiveFile)) return true;
+  return false;
+};
+
+/**
+ * Ensure a goal write carries a monotonic executionGeneration when the
+ * transition requires a new execution permit (pause / resume / conditions).
+ */
+export const withGoalExecutionGeneration = (previous, next) => {
+  const goal = next && typeof next === 'object' ? { ...next } : next;
+  if (!goal || typeof goal !== 'object') return goal;
+  if (!previous || previous.id !== goal.id) {
+    if (!Number.isFinite(goal.executionGeneration) || goal.executionGeneration < 0) {
+      goal.executionGeneration = 0;
+    } else {
+      goal.executionGeneration = Math.floor(goal.executionGeneration);
+    }
+    return goal;
+  }
+  const prevGen = readGoalExecutionGeneration(previous);
+  const nextGen = readGoalExecutionGeneration(goal);
+  if (shouldAdvanceGoalExecutionGeneration(previous, goal)) {
+    goal.executionGeneration = Math.max(nextGen, prevGen + 1);
+  } else {
+    goal.executionGeneration = Math.max(nextGen, prevGen);
+  }
+  return goal;
+};
 
 const escapeXmlText = (value) => String(value ?? '')
   .replace(/&/g, '&amp;')
@@ -158,15 +212,33 @@ const extractSessionStatus = (payload) => {
   return { sessionId, type, directory };
 };
 
-// A user abort lands as an assistant message carrying MessageAbortedError.
-const extractAbortedAssistant = (payload) => {
-  if (!payload || payload.type !== 'message.updated') return null;
-  const info = payload.properties?.info;
-  if (!info || typeof info !== 'object' || info.role !== 'assistant') return null;
-  if (info.error?.name !== 'MessageAbortedError') return null;
-  if (typeof info.sessionID !== 'string' || !info.sessionID) return null;
-  return { sessionId: info.sessionID };
-};
+  // A user abort lands as an assistant message carrying MessageAbortedError.
+  const extractAbortedAssistant = (payload) => {
+    if (!payload || payload.type !== 'message.updated') return null;
+    const info = payload.properties?.info ?? payload.data?.info;
+    if (!info || typeof info !== 'object' || (info.role !== 'assistant' && info.type !== 'assistant')) return null;
+    if (info.error?.name !== 'MessageAbortedError') return null;
+    if (typeof info.sessionID !== 'string' || !info.sessionID) return null;
+    return { sessionId: info.sessionID };
+  };
+
+  /**
+   * Official v2 `session.execution.interrupted` reason:
+   * user | shutdown | superseded | inactivity.
+   * Shutdown keeps the execution claim for restart recovery — do not settle or auto-continue.
+   */
+  const extractExecutionInterrupted = (payload) => {
+    if (!payload || payload.type !== 'session.execution.interrupted') return null;
+    const body = (payload.properties && typeof payload.properties === 'object')
+      ? payload.properties
+      : ((payload.data && typeof payload.data === 'object') ? payload.data : null);
+    if (!body) return null;
+    const sessionId = typeof body.sessionID === 'string' ? body.sessionID.trim() : '';
+    if (!sessionId) return null;
+    const reason = typeof body.reason === 'string' ? body.reason.trim() : '';
+    return { sessionId, reason };
+  };
+
 
 // QuestionRequest shape: properties.sessionID, optional properties.directory.
 const extractQuestionAsked = (payload, directoryHint = '') => {
@@ -221,18 +293,213 @@ const parseGoalMetadata = (session) => {
     note: typeof goal.note === 'string' ? goal.note.slice(0, NOTE_CHAR_LIMIT) : '',
     statusReason: typeof goal.statusReason === 'string' ? goal.statusReason.slice(0, REASON_CHAR_LIMIT) : '',
     lastAccountedMessageID: typeof goal.lastAccountedMessageID === 'string' ? goal.lastAccountedMessageID : '',
+    executionGeneration: readGoalExecutionGeneration(goal),
+    pendingContinuation: parsePendingContinuation(goal.pendingContinuation),
     createdAt: Number.isFinite(goal.createdAt) ? goal.createdAt : 0,
     updatedAt: Number.isFinite(goal.updatedAt) ? goal.updatedAt : 0,
   };
 };
 
+/**
+ * Official v2 `SessionMessagesResponse` is `{ data: SessionMessageInfo[], cursor }`.
+ * Legacy bare arrays and projected `{ info, parts }` still appear in tests/fixtures.
+ * Never treat a failed/malformed payload as authoritative empty success.
+ */
+export const unwrapSessionMessages = (payload) => {
+  if (Array.isArray(payload)) return payload;
+  if (payload && typeof payload === 'object') {
+    if (Array.isArray(payload.data)) return payload.data;
+    if (Array.isArray(payload.data?.items)) return payload.data.items;
+    if (Array.isArray(payload.messages)) return payload.messages;
+  }
+  return null;
+};
+
+/** Project one list entry to `{ info, parts }` for goal accounting / audit text. */
+export const projectGoalMessage = (entry, sessionID = '') => {
+  if (!entry || typeof entry !== 'object') return null;
+  if (entry.info && typeof entry.info === 'object') {
+    return {
+      info: entry.info,
+      parts: Array.isArray(entry.parts) ? entry.parts : [],
+    };
+  }
+  const id = typeof entry.id === 'string' ? entry.id : '';
+  if (!id) return null;
+  const role = entry.type === 'user' || entry.type === 'assistant' || entry.type === 'compaction'
+    ? (entry.type === 'compaction' ? 'assistant' : entry.type)
+    : (typeof entry.role === 'string' ? entry.role : entry.type);
+  const parts = [];
+  if (typeof entry.text === 'string' && entry.text) {
+    parts.push({ id: `${id}:text`, sessionID, messageID: id, type: 'text', text: entry.text });
+  }
+  if (Array.isArray(entry.content)) {
+    entry.content.forEach((item, index) => {
+      const partID = item?.id || `${id}:content:${index}`;
+      if (item?.type === 'text' && typeof item.text === 'string') {
+        parts.push({ id: partID, sessionID, messageID: id, type: 'text', text: item.text });
+      } else if (item?.type === 'reasoning' && typeof item.text === 'string') {
+        parts.push({ id: partID, sessionID, messageID: id, type: 'reasoning', text: item.text });
+      }
+    });
+  }
+  if (entry.type === 'compaction' && typeof entry.summary === 'string' && entry.summary) {
+    parts.push({ id: `${id}:summary`, sessionID, messageID: id, type: 'text', text: entry.summary });
+  }
+  const info = {
+    ...entry,
+    id,
+    role: role || entry.role,
+    // Compaction is the v2 summary turn; keep summary flag for existing tick rules.
+    ...(entry.type === 'compaction' ? { summary: true } : {}),
+  };
+  return { info, parts };
+};
+
+export const projectGoalMessages = (payload, sessionID = '') => {
+  const raw = unwrapSessionMessages(payload);
+  if (!raw) return null;
+  const projected = [];
+  for (const entry of raw) {
+    const message = projectGoalMessage(entry, sessionID);
+    if (message) projected.push(message);
+  }
+  return projected;
+};
+
+const messageRole = (info) => {
+  if (!info || typeof info !== 'object') return '';
+  if (typeof info.role === 'string' && info.role) return info.role;
+  if (info.type === 'user' || info.type === 'assistant') return info.type;
+  if (info.type === 'compaction') return 'assistant';
+  return typeof info.type === 'string' ? info.type : '';
+};
+
+const isSummaryMessage = (info) => (
+  info?.summary === true || info?.type === 'compaction'
+);
+
+/**
+ * Resolve provider/model for switchModel + continuation from last assistant.
+ * v2 uses `model: { id, providerID, variant? }`; legacy fixtures use flat fields.
+ */
+export const extractExecutionModel = (info) => {
+  if (!info || typeof info !== 'object') {
+    return { providerID: '', modelID: '', variant: '', agent: '' };
+  }
+  const model = info.model && typeof info.model === 'object' ? info.model : null;
+  const providerID = typeof model?.providerID === 'string' && model.providerID
+    ? model.providerID
+    : (typeof info.providerID === 'string' ? info.providerID : '');
+  const modelID = typeof model?.id === 'string' && model.id
+    ? model.id
+    : (typeof model?.modelID === 'string' && model.modelID
+      ? model.modelID
+      : (typeof info.modelID === 'string' ? info.modelID : ''));
+  const variant = typeof model?.variant === 'string' && model.variant
+    ? model.variant
+    : (typeof info.variant === 'string' ? info.variant : '');
+  const agent = typeof info.agent === 'string' && info.agent
+    ? info.agent
+    : (typeof info.mode === 'string' ? info.mode : '');
+  return { providerID, modelID, variant, agent };
+};
+
+/**
+ * Stable continuation message id for v2 `session.prompt` payload `id`.
+ * Official SessionMessage.ID requires `startsWith('msg_')`; suffix stays
+ * deterministic on goalId + generation + turnsUsed for idempotent re-dispatch.
+ */
+export const buildContinuationMessageID = ({ goalId, generation, turnsUsed }) => {
+  const safeGoal = String(goalId || 'goal')
+    .replace(/[^a-zA-Z0-9_-]/g, '')
+    .slice(0, 48) || 'goal';
+  const gen = Number.isFinite(generation) ? Math.floor(generation) : 0;
+  const turns = Number.isFinite(turnsUsed) ? Math.floor(turnsUsed) : 0;
+  return `msg_goalc_${safeGoal}_${gen}_${turns}`;
+};
+
+/**
+ * Parse durable continuation admission from goal metadata (ticket 10).
+ * Null when absent or malformed — never invent an empty success admission.
+ */
+export const parsePendingContinuation = (raw) => {
+  if (!raw || typeof raw !== 'object') return null;
+  const messageID = typeof raw.messageID === 'string' ? raw.messageID.trim() : '';
+  const goalId = typeof raw.goalId === 'string' ? raw.goalId.trim() : '';
+  const phase = PENDING_CONTINUATION_PHASES.includes(raw.phase) ? raw.phase : '';
+  if (!messageID || !goalId || !phase) return null;
+  const generation = Number.isFinite(raw.generation) && raw.generation >= 0
+    ? Math.floor(raw.generation)
+    : 0;
+  const turnsUsed = Number.isFinite(raw.turnsUsed) && raw.turnsUsed > 0
+    ? Math.floor(raw.turnsUsed)
+    : 0;
+  if (!turnsUsed) return null;
+  const text = typeof raw.text === 'string' ? raw.text : '';
+  const providerID = typeof raw.providerID === 'string' ? raw.providerID : '';
+  const modelID = typeof raw.modelID === 'string' ? raw.modelID : '';
+  if (!text || !providerID || !modelID) return null;
+  return {
+    messageID,
+    goalId,
+    generation,
+    turnsUsed,
+    phase,
+    text,
+    providerID,
+    modelID,
+    variant: typeof raw.variant === 'string' ? raw.variant : '',
+    agent: typeof raw.agent === 'string' ? raw.agent : '',
+    error: typeof raw.error === 'string' ? raw.error.slice(0, REASON_CHAR_LIMIT) : '',
+    at: Number.isFinite(raw.at) ? raw.at : 0,
+  };
+};
+
+/** Build a durable admission record for conditional metadata writes. */
+export const buildPendingContinuation = ({
+  messageID,
+  goalId,
+  generation,
+  turnsUsed,
+  phase,
+  text,
+  providerID,
+  modelID,
+  variant = '',
+  agent = '',
+  error = '',
+  at = Date.now(),
+}) => ({
+  messageID: String(messageID || ''),
+  goalId: String(goalId || ''),
+  generation: Number.isFinite(generation) ? Math.floor(generation) : 0,
+  turnsUsed: Number.isFinite(turnsUsed) ? Math.floor(turnsUsed) : 0,
+  phase: PENDING_CONTINUATION_PHASES.includes(phase) ? phase : 'reserved',
+  text: String(text || ''),
+  providerID: String(providerID || ''),
+  modelID: String(modelID || ''),
+  variant: typeof variant === 'string' ? variant : '',
+  agent: typeof agent === 'string' ? agent : '',
+  ...(error ? { error: clampText(error, REASON_CHAR_LIMIT) } : {}),
+  at: Number.isFinite(at) ? at : Date.now(),
+});
+
 const messagePartsToText = (message) => {
   const parts = Array.isArray(message?.parts) ? message.parts : [];
-  return parts
+  const fromParts = parts
     .map((part) => (part?.type === 'text' && typeof part.text === 'string' ? part.text : ''))
     .filter(Boolean)
-    .join('\n')
-    .slice(0, TRANSCRIPT_PART_CHAR_LIMIT);
+    .join('\n');
+  if (fromParts) return fromParts.slice(0, TRANSCRIPT_PART_CHAR_LIMIT);
+  // Raw v2 assistant/user may carry top-level text when parts were not projected.
+  if (typeof message?.info?.text === 'string' && message.info.text) {
+    return message.info.text.slice(0, TRANSCRIPT_PART_CHAR_LIMIT);
+  }
+  if (typeof message?.text === 'string' && message.text) {
+    return message.text.slice(0, TRANSCRIPT_PART_CHAR_LIMIT);
+  }
+  return '';
 };
 
 // Per-turn spend for goal accounting. Sum these across turns completed after
@@ -262,8 +529,8 @@ export const accountGoalTokenSpend = ({ messages, goal }) => {
   const createdAt = Number.isFinite(goal?.createdAt) ? goal.createdAt : 0;
   let addedSpend = 0;
   for (const message of messages || []) {
-    const info = message?.info;
-    if (info?.role !== 'assistant' || typeof info.id !== 'string') continue;
+    const info = message?.info ?? message;
+    if (messageRole(info) !== 'assistant' || typeof info?.id !== 'string') continue;
     if (!(info.time?.completed > 0)) continue;
     // First tick with an empty cursor: only charge turns that finished after
     // the goal was created so mid-session goals skip prior history.
@@ -273,7 +540,7 @@ export const accountGoalTokenSpend = ({ messages, goal }) => {
     if (lastAccountedMessageID && info.id <= lastAccountedMessageID) continue;
     // Summary turns report 0 tokens from OpenCode — skip without advancing
     // the counter, but still move the cursor so we do not re-scan them.
-    if (info.summary !== true) {
+    if (!isSummaryMessage(info)) {
       addedSpend += messageTokenSpend(info);
     }
     if (!lastAccountedMessageID || info.id > lastAccountedMessageID) {
@@ -301,6 +568,8 @@ const contactStatusFromGoal = (status) => {
 export const createSessionGoalRuntime = ({
   buildOpenCodeUrl,
   getOpenCodeAuthHeaders,
+  /** Ticket 11: Host write admission shared with proxy (optional; falls back to raw fetch). */
+  serverOpenCodeFetch = null,
   getSmallModelService,
   emitGoalNotification,
   idleQuietMs = IDLE_QUIET_MS,
@@ -324,16 +593,60 @@ export const createSessionGoalRuntime = ({
    * state is read/written only through the Host store (OpenCode 2.x has no
    * session-metadata PATCH). When either is missing, keep the legacy OpenCode
    * PATCH path so existing tests and unwired servers still work.
+   *
+   * `mutateSessionMetadata` (optional) is the preferred commit seam: decide runs
+   * on the store's exclusive serial boundary so generation/status checks and
+   * persist share one authority lock.
    */
   persistSessionGoal = null,
   readSessionMetadata = null,
+  mutateSessionMetadata = null,
 }) => {
   const timers = new Map();
   const inflight = new Set();
+  /** sessionId → AbortController for the in-flight audit (cancellable work). */
+  const auditControllers = new Map();
+  /**
+   * sessionId → monotonic dispatch epoch. Bumped synchronously on pause/cancel
+   * so a late audit cannot start a continuation after pause is confirmed in-process,
+   * even before the durable write lands.
+   */
+  const dispatchEpoch = new Map();
+  /**
+   * sessionId → last continuation dispatch identity that entered transport.
+   * Uncertain delivery is reconciled by identity; we never claim full revoke.
+   */
+  const dispatchedContinuations = new Map();
+  /**
+   * sessionId → shutdown recovery pending (ticket 07). Local runtime gate only —
+   * not a parallel durable store. Cleared on authoritative idle / non-shutdown terminal.
+   */
+  const shutdownRecoveryPending = new Map();
   let stopped = false;
 
+  const openCodeClient = () => makeOpenCodeV2Client({
+    baseUrl: buildOpenCodeUrl('/', '').replace(/\/$/, ''),
+    authHeaders: getOpenCodeAuthHeaders(),
+  });
+
+  const directoryRequestOptions = (directory, signal) => {
+    const headers = {};
+    if (typeof directory === 'string' && directory) {
+      headers['x-opencode-directory'] = encodeURIComponent(directory);
+      headers['x-opencode-directory-encoding'] = 'uri';
+    }
+    const options = {};
+    if (Object.keys(headers).length > 0) options.headers = headers;
+    if (signal) options.signal = signal;
+    return Object.keys(options).length > 0 ? options : undefined;
+  };
+
   const isMetadataStoreWired = () => (
-    typeof persistSessionGoal === 'function' && typeof readSessionMetadata === 'function'
+    typeof readSessionMetadata === 'function'
+    && (
+      typeof mutateSessionMetadata === 'function'
+      || typeof persistSessionGoal === 'function'
+    )
   );
 
   const clearTimer = (sessionId) => {
@@ -344,7 +657,39 @@ export const createSessionGoalRuntime = ({
     }
   };
 
+  const bumpDispatchEpoch = (sessionId) => {
+    const next = (dispatchEpoch.get(sessionId) || 0) + 1;
+    dispatchEpoch.set(sessionId, next);
+    return next;
+  };
+
+  const currentDispatchEpoch = (sessionId) => dispatchEpoch.get(sessionId) || 0;
+
+  /** Cancel timers + in-flight audit; bump dispatch epoch. Does not claim upstream revoke. */
+  const revokeLocalExecutionPermit = (sessionId) => {
+    clearTimer(sessionId);
+    bumpDispatchEpoch(sessionId);
+    const controller = auditControllers.get(sessionId);
+    if (controller) {
+      try {
+        controller.abort();
+      } catch {
+        // ignore
+      }
+      auditControllers.delete(sessionId);
+    }
+  };
+
   const openCodeFetch = async (fetchPath, { directory, method = 'GET', body, query } = {}) => {
+    if (typeof serverOpenCodeFetch === 'function') {
+      return serverOpenCodeFetch(fetchPath, {
+        directory,
+        method,
+        body,
+        query,
+        timeoutMs: FETCH_TIMEOUT_MS,
+      });
+    }
     const base = buildOpenCodeUrl(fetchPath, '');
     const params = new URLSearchParams(query || {});
     if (directory) params.set('directory', directory);
@@ -366,12 +711,110 @@ export const createSessionGoalRuntime = ({
     return response.json().catch(() => null);
   };
 
+  /**
+   * Latest-side message page via official v2 `message.list`
+   * (`SessionMessagesResponse` = `{ data, cursor }`). Projects raw
+   * `SessionMessageInfo` into `{ info, parts }` for the rest of the tick.
+   * Fetch failure returns null (never empty success).
+   */
   const fetchRecentMessages = async (sessionId, directory) => {
-    const messages = await openCodeFetch(`/session/${encodeURIComponent(sessionId)}/message`, {
+    try {
+      const client = openCodeClient();
+      if (typeof client?.message?.list === 'function') {
+        const listed = await client.message.list(
+          { sessionID: sessionId, limit: MESSAGE_FETCH_LIMIT, order: 'asc' },
+          directoryRequestOptions(directory),
+        );
+        const projected = projectGoalMessages(listed, sessionId);
+        if (projected) return projected;
+      }
+    } catch {
+      // Fall through to controlled HTTP seam for tests / older fixtures.
+    }
+    const raw = await openCodeFetch(`/session/${encodeURIComponent(sessionId)}/message`, {
       directory,
       query: { limit: String(MESSAGE_FETCH_LIMIT) },
     }).catch(() => null);
-    return Array.isArray(messages) ? messages : null;
+    return projectGoalMessages(raw, sessionId);
+  };
+
+  /**
+   * Reconcile a fixed continuation message id via official inbox.list then
+   * session.message.get (or projected message list). Failures are unavailable
+   * — never treat transport/API failure as authoritative empty.
+   *
+   * Individual SDK/HTTP seams may be missing in tests or older serves; each
+   * seam falls through. Only when the authoritative projected list itself
+   * cannot be read do we return `unavailable` (fail ≠ empty).
+   *
+   * @returns {{ status: 'found' | 'absent' | 'unavailable' }}
+   */
+  const findContinuationMessage = async (sessionId, directory, messageID) => {
+    if (!messageID) return { status: 'unavailable' };
+    const requestOptions = directoryRequestOptions(directory);
+    const identityOf = (item) => {
+      if (!item || typeof item !== 'object') return '';
+      if (typeof item.id === 'string' && item.id) return item.id;
+      if (typeof item.messageID === 'string' && item.messageID) return item.messageID;
+      if (item.info && typeof item.info.id === 'string') return item.info.id;
+      return '';
+    };
+
+    try {
+      const client = openCodeClient();
+      if (typeof client?.session?.inbox?.list === 'function') {
+        try {
+          const listed = await client.session.inbox.list({ sessionID: sessionId }, requestOptions);
+          const items = Array.isArray(listed)
+            ? listed
+            : (Array.isArray(listed?.data) ? listed.data : null);
+          // Malformed inbox is not authoritative empty — fall through.
+          if (items && items.some((item) => identityOf(item) === messageID)) {
+            return { status: 'found' };
+          }
+        } catch {
+          // Missing inbox / transient — try exact message next.
+        }
+      }
+      if (typeof client?.session?.message === 'function') {
+        try {
+          const record = await client.session.message(
+            { sessionID: sessionId, messageID },
+            requestOptions,
+          );
+          if (identityOf(record) === messageID) {
+            return { status: 'found' };
+          }
+        } catch {
+          // Not-found or unsupported — fall through to HTTP / projection.
+        }
+      }
+    } catch {
+      // Fall through to HTTP seams.
+    }
+
+    // Controlled HTTP exact message: only accept exact id match.
+    const exact = await openCodeFetch(
+      `/session/${encodeURIComponent(sessionId)}/message/${encodeURIComponent(messageID)}`,
+      { directory },
+    ).catch((error) => {
+      const status = Number(error?.status ?? error?.statusCode);
+      const message = String(error?.message || '');
+      if (message.includes('404') || status === 404) return { __absent: true };
+      return { __try_projection: true };
+    });
+    if (exact && !exact.__absent && !exact.__try_projection) {
+      if (identityOf(exact) === messageID) return { status: 'found' };
+    }
+
+    // Authoritative projection of recent messages. Fetch failure → unavailable
+    // (never invent absent). Successful empty/miss → absent.
+    const projected = await fetchRecentMessages(sessionId, directory);
+    if (!projected) return { status: 'unavailable' };
+    if (projected.some((entry) => identityOf(entry) === messageID || entry?.info?.id === messageID)) {
+      return { status: 'found' };
+    }
+    return { status: 'absent' };
   };
 
   // Live session status is authoritative for whether the session is actually
@@ -384,6 +827,17 @@ export const createSessionGoalRuntime = ({
   // 'busy' | 'retry' | null (null when the status cannot be read — callers
   // fall back to the message-tail heuristic).
   const fetchSessionLiveStatus = async (sessionId, directory) => {
+    try {
+      const client = openCodeClient();
+      if (typeof client?.session?.active === 'function') {
+        const activeMap = await client.session.active(directoryRequestOptions(directory));
+        if (activeMap && typeof activeMap === 'object' && !Array.isArray(activeMap)) {
+          return Object.prototype.hasOwnProperty.call(activeMap, sessionId) ? 'busy' : 'idle';
+        }
+      }
+    } catch {
+      // Fall through.
+    }
     const statusMap = await openCodeFetch('/session/status', { directory }).catch(() => null);
     const status = statusMap?.[sessionId];
     const type = typeof status?.type === 'string' ? status.type.trim() : '';
@@ -408,19 +862,91 @@ export const createSessionGoalRuntime = ({
     return parseGoalMetadata(session);
   };
 
-  const writeGoal = async (sessionId, directory, expectedGoalId, mutate) => {
+  /**
+   * Conditional goal commit. Validates goal id, optional execution generation,
+   * and optional allowed statuses on the same serial boundary when the Host
+   * mutate seam is wired. Returns the written goal or null when preconditions fail.
+   *
+   * @param {object} args
+   * @param {string} args.sessionId
+   * @param {string} args.directory
+   * @param {string} args.expectedGoalId
+   * @param {number} [args.expectedGeneration] when set, must match committed generation
+   * @param {string[]} [args.expectedStatuses] when set, status must be one of these
+   * @param {boolean} [args.advanceGeneration] bump executionGeneration on success
+   * @param {(current: object) => object} args.mutate partial fields to merge
+   */
+  const writeGoal = async (sessionId, directory, expectedGoalIdOrOptions, maybeMutate) => {
+    // Back-compat: writeGoal(sessionId, directory, goalId, mutate)
+    const options = typeof expectedGoalIdOrOptions === 'object' && expectedGoalIdOrOptions
+      ? expectedGoalIdOrOptions
+      : {
+        expectedGoalId: expectedGoalIdOrOptions,
+        mutate: maybeMutate,
+      };
+    const {
+      expectedGoalId,
+      expectedGeneration,
+      expectedStatuses = null,
+      advanceGeneration = false,
+      mutate,
+    } = options;
+    if (typeof mutate !== 'function' || typeof expectedGoalId !== 'string' || !expectedGoalId) {
+      return null;
+    }
+
+    const buildNextGoal = (currentGoal) => {
+      if (!currentGoal || currentGoal.id !== expectedGoalId) return null;
+      if (
+        expectedGeneration !== undefined
+        && readGoalExecutionGeneration(currentGoal) !== expectedGeneration
+      ) {
+        return null;
+      }
+      if (Array.isArray(expectedStatuses) && !expectedStatuses.includes(currentGoal.status)) {
+        return null;
+      }
+      const patch = mutate(currentGoal) || {};
+      let nextGoal = {
+        ...currentGoal,
+        ...patch,
+        updatedAt: Date.now(),
+      };
+      if (advanceGeneration) {
+        nextGoal.executionGeneration = nextGoalExecutionGeneration(currentGoal);
+      } else if (!Number.isFinite(nextGoal.executionGeneration)) {
+        nextGoal.executionGeneration = readGoalExecutionGeneration(currentGoal);
+      } else {
+        nextGoal.executionGeneration = readGoalExecutionGeneration(nextGoal);
+      }
+      return nextGoal;
+    };
+
+    if (typeof mutateSessionMetadata === 'function') {
+      const result = await mutateSessionMetadata(sessionId, (metadata) => {
+        const currentGoal = parseGoalMetadata({ metadata });
+        const nextGoal = buildNextGoal(currentGoal);
+        if (!nextGoal) {
+          return { ok: false, reason: 'goal_precondition_failed' };
+        }
+        return { ok: true, patch: { openchamber: { goal: nextGoal } } };
+      });
+      if (!result?.committed) return null;
+      return parseGoalMetadata({ metadata: result.metadata });
+    }
+
     if (isMetadataStoreWired()) {
       const currentGoal = await readGoal(sessionId, directory);
-      if (!currentGoal || currentGoal.id !== expectedGoalId) return null;
-      const nextGoal = { ...currentGoal, ...mutate(currentGoal), updatedAt: Date.now() };
+      const nextGoal = buildNextGoal(currentGoal);
+      if (!nextGoal) return null;
       await persistSessionGoal(sessionId, directory, nextGoal);
       return nextGoal;
     }
 
     const session = await openCodeFetch(`/session/${encodeURIComponent(sessionId)}`, { directory });
     const currentGoal = parseGoalMetadata(session);
-    if (!currentGoal || currentGoal.id !== expectedGoalId) return null;
-    const nextGoal = { ...currentGoal, ...mutate(currentGoal), updatedAt: Date.now() };
+    const nextGoal = buildNextGoal(currentGoal);
+    if (!nextGoal) return null;
     const currentMetadata = session?.metadata && typeof session.metadata === 'object' ? session.metadata : {};
     const currentNamespace = currentMetadata.openchamber && typeof currentMetadata.openchamber === 'object'
       ? currentMetadata.openchamber
@@ -438,18 +964,30 @@ export const createSessionGoalRuntime = ({
     return nextGoal;
   };
 
-  const settleGoal = async ({ sessionId, directory, goal, status, statusReason, note, tokensUsed, tokensBaseline, tokensCommitted, lastAccountedMessageID }) => {
-    const written = await writeGoal(sessionId, directory, goal.id, (current) => ({
-      status,
-      statusReason: clampText(statusReason, REASON_CHAR_LIMIT),
-      note: note !== undefined ? clampText(note, NOTE_CHAR_LIMIT) : current.note,
-      blockedStreak: 0,
-      auditFailStreak: 0,
-      ...(tokensUsed !== undefined ? { tokensUsed } : {}),
-      ...(tokensBaseline !== undefined ? { tokensBaseline } : {}),
-      ...(tokensCommitted !== undefined ? { tokensCommitted } : {}),
-      ...(lastAccountedMessageID ? { lastAccountedMessageID } : {}),
-    }));
+  const settleGoal = async ({ sessionId, directory, goal, status, statusReason, note, tokensUsed, tokensBaseline, tokensCommitted, lastAccountedMessageID, expectedGeneration, epochAtStart }) => {
+    if (epochAtStart !== undefined && currentDispatchEpoch(sessionId) !== epochAtStart) {
+      console.log(`[session-goal] ${sessionId} execution permit revoked before settle`);
+      return;
+    }
+    const generation = expectedGeneration !== undefined
+      ? expectedGeneration
+      : readGoalExecutionGeneration(goal);
+    const written = await writeGoal(sessionId, directory, {
+      expectedGoalId: goal.id,
+      expectedGeneration: generation,
+      expectedStatuses: ['active'],
+      mutate: (current) => ({
+        status,
+        statusReason: clampText(statusReason, REASON_CHAR_LIMIT),
+        note: note !== undefined ? clampText(note, NOTE_CHAR_LIMIT) : current.note,
+        blockedStreak: 0,
+        auditFailStreak: 0,
+        ...(tokensUsed !== undefined ? { tokensUsed } : {}),
+        ...(tokensBaseline !== undefined ? { tokensBaseline } : {}),
+        ...(tokensCommitted !== undefined ? { tokensCommitted } : {}),
+        ...(lastAccountedMessageID ? { lastAccountedMessageID } : {}),
+      }),
+    });
     if (!written) return;
     console.log(`[session-goal] ${sessionId} settled as ${status}${statusReason ? ` (${statusReason})` : ''}`);
     if (typeof emitGoalNotification === 'function') {
@@ -469,13 +1007,15 @@ export const createSessionGoalRuntime = ({
     }
   };
 
-  const runAudit = async ({ goal, assistantText, directory, lastAssistantInfo }) => {
+  const runAudit = async ({ sessionId, goal, assistantText, directory, lastAssistantInfo, signal }) => {
+    if (signal?.aborted) return null;
     let service;
     try {
       service = await getSmallModelService();
     } catch {
       return null;
     }
+    if (signal?.aborted) return null;
     const preferredProviderID = typeof lastAssistantInfo?.providerID === 'string' ? lastAssistantInfo.providerID : undefined;
     const preferredModelID = typeof lastAssistantInfo?.modelID === 'string' ? lastAssistantInfo.modelID : undefined;
     const prompt = `The goal objective:\n\n<objective>\n${goal.objective}\n</objective>\n\nThe agent's latest turn:\n\n${assistantText}\n\nReturn the verdict JSON. Write the note in the SAME language as this sample from the objective: "${goal.objective.slice(0, 200).replace(/\s+/g, ' ').trim()}"`;
@@ -491,65 +1031,499 @@ export const createSessionGoalRuntime = ({
       }
       return { verdict, note };
     };
+    const withAbort = async (work) => {
+      if (!signal) return work();
+      if (signal.aborted) {
+        const abortError = new Error('goal audit aborted');
+        abortError.name = 'AbortError';
+        throw abortError;
+      }
+      return new Promise((resolve, reject) => {
+        const onAbort = () => {
+          const abortError = new Error('goal audit aborted');
+          abortError.name = 'AbortError';
+          reject(abortError);
+        };
+        signal.addEventListener('abort', onAbort, { once: true });
+        work().then(
+          (value) => {
+            signal.removeEventListener('abort', onAbort);
+            resolve(value);
+          },
+          (error) => {
+            signal.removeEventListener('abort', onAbort);
+            reject(error);
+          },
+        );
+      });
+    };
     try {
       // Prefer staying on the session provider. If that provider has no
       // suitable small model (404), fall back to any authenticated small
       // model so simple goals can still settle instead of stranding as
       // "evaluating" then "blocked".
       try {
-        const generated = await service.generateSmallModelText({
+        const generated = await withAbort(() => service.generateSmallModelText({
           restrictToPreferredProvider: true,
           prompt,
           system,
           directory,
           preferredProviderID,
           preferredModelID,
-        });
+        }));
+        if (signal?.aborted) return null;
         return parseAudit(generated);
       } catch (restrictedError) {
+        if (restrictedError?.name === 'AbortError' || signal?.aborted) return null;
         if (Number(restrictedError?.statusCode) !== 404) throw restrictedError;
-        const generated = await service.generateSmallModelText({
+        const generated = await withAbort(() => service.generateSmallModelText({
           restrictToPreferredProvider: false,
           prompt,
           system,
           directory,
           preferredProviderID,
           preferredModelID,
-        });
+        }));
+        if (signal?.aborted) return null;
         return parseAudit(generated);
       }
     } catch (error) {
+      if (error?.name === 'AbortError' || signal?.aborted) return null;
       // No authenticated small model (404) or a transient failure — the loop
       // still terminates via budget and the turn cap.
       if (Number(error?.statusCode) !== 404) {
         console.warn('[session-goal] audit failed:', error?.message || error);
       }
       return null;
+    } finally {
+      if (sessionId && auditControllers.get(sessionId)?.signal === signal) {
+        auditControllers.delete(sessionId);
+      }
     }
   };
 
-  const sendContinuation = async ({ sessionId, directory, goal, lastAssistantInfo }) => {
-    const providerID = typeof lastAssistantInfo?.providerID === 'string' ? lastAssistantInfo.providerID : '';
-    const modelID = typeof lastAssistantInfo?.modelID === 'string' ? lastAssistantInfo.modelID : '';
+  /**
+   * Local dispatch still permitted for this captured epoch?
+   * Checked after every await and immediately before prompt leaves process.
+   */
+  const isContinuationDispatchLive = (sessionId, epoch) => {
+    if (stopped) return false;
+    if (currentDispatchEpoch(sessionId) !== epoch) return false;
+    if (shutdownRecoveryPending.has(sessionId)) return false;
+    return true;
+  };
+
+  /**
+   * Drop when epoch/shutdown/stopped moved (definite local revoke — not uncertain).
+   * @returns {{ ok: false, identity: *, uncertain: false } | null}
+   */
+  const dropContinuationIfRevoked = (sessionId, epoch, dispatchIdentity, reason) => {
+    if (isContinuationDispatchLive(sessionId, epoch)) return null;
+    console.log(`[session-goal] ${reason}, dropping continuation`);
+    return { ok: false, identity: dispatchIdentity, uncertain: false };
+  };
+
+  /**
+   * Durable generation/status still matches the committed dispatch identity.
+   * Runs once at the prompt boundary after selection awaits.
+   */
+  const dispatchIdentityStillActive = async (sessionId, directory, dispatchIdentity) => {
+    if (!dispatchIdentity) return true;
+    try {
+      const live = await readGoal(sessionId, directory);
+      if (!live || live.id !== dispatchIdentity.goalId) return false;
+      if (live.status !== 'active') return false;
+      if (readGoalExecutionGeneration(live) !== dispatchIdentity.generation) return false;
+      return true;
+    } catch {
+      // Metadata flake: fall back to epoch/shutdown only (caller re-checks).
+      return true;
+    }
+  };
+
+  /**
+   * Dispatch a continuation only while the captured dispatch epoch still matches.
+   * Official v2 path: switchAgent/switchModel then `session.prompt` with stable
+   * message `id` (msg_ + goalId + generation + turnsUsed). Selection awaits can
+   * race with pause/shutdown — re-validate after each await and only mark
+   * `phase: transport` at the actual prompt boundary. Selection failures must
+   * not be reported as prompt-uncertain. Never claims revoke of in-flight prompt.
+   *
+   * `pending` carries the durable fixed payload (text + selection + messageID).
+   * turnsUsed is NOT committed here — the caller commits turns + clears pending
+   * only after accept (or after reconcile proves receipt).
+   */
+  const sendContinuation = async ({
+    sessionId,
+    directory,
+    epoch,
+    dispatchIdentity,
+    pending,
+    persistPendingPhase,
+  }) => {
+    const revoked = dropContinuationIfRevoked(sessionId, epoch, dispatchIdentity, 'dispatch epoch/shutdown at entry');
+    if (revoked) return { ...revoked, phase: 'dropped' };
+
+    const providerID = pending?.providerID || '';
+    const modelID = pending?.modelID || '';
+    const variant = pending?.variant || '';
+    const agent = pending?.agent || '';
     if (!providerID || !modelID) {
       throw new Error('cannot continue goal: last assistant message has no provider/model');
     }
-    const agent = typeof lastAssistantInfo?.agent === 'string' && lastAssistantInfo.agent
-      ? lastAssistantInfo.agent
-      : (typeof lastAssistantInfo?.mode === 'string' ? lastAssistantInfo.mode : '');
-    const variant = typeof lastAssistantInfo?.variant === 'string' ? lastAssistantInfo.variant : '';
-    await openCodeFetch(`/session/${encodeURIComponent(sessionId)}/prompt_async`, {
-      directory,
-      method: 'POST',
-      body: {
-        model: { providerID, modelID },
-        ...(agent ? { agent } : {}),
-        ...(variant ? { variant } : {}),
-        // synthetic: hide the auto-continuation from the user transcript (same
-        // convention as goal-intro / scheduled-task system parts).
-        parts: [{ type: 'text', text: buildContinuationPrompt(goal), synthetic: true }],
+    const messageID = pending?.messageID
+      || (dispatchIdentity ? buildContinuationMessageID(dispatchIdentity) : undefined);
+    const requestOptions = directoryRequestOptions(directory);
+    const promptText = pending?.text || '';
+    if (!promptText) {
+      throw new Error('cannot continue goal: missing fixed continuation payload');
+    }
+    const promptBody = {
+      ...(messageID ? { id: messageID } : {}),
+      text: promptText,
+      delivery: 'steer',
+      metadata: {
+        openchamber: {
+          goalContinuation: true,
+          // User-boundary prompt (raw type remains user); synthetic is metadata only.
+          synthetic: true,
+          ...(dispatchIdentity ? {
+            goalId: dispatchIdentity.goalId,
+            generation: dispatchIdentity.generation,
+            turnsUsed: dispatchIdentity.turnsUsed,
+          } : {}),
+        },
       },
-    });
+    };
+
+    /** True only after identity is recorded at the prompt transport boundary. */
+    let enteredPromptTransport = false;
+    const markLocal = (phase, error) => {
+      if (!dispatchIdentity) return;
+      dispatchedContinuations.set(sessionId, {
+        ...dispatchIdentity,
+        messageID: messageID || null,
+        phase,
+        ...(error ? { error: error?.message || String(error) } : {}),
+        at: Date.now(),
+      });
+    };
+    const markPromptTransport = async () => {
+      markLocal('transport');
+      enteredPromptTransport = true;
+      if (typeof persistPendingPhase === 'function') {
+        await persistPendingPhase('transport');
+      }
+    };
+    const markPromptAccepted = () => {
+      markLocal('accepted');
+    };
+    const markPromptUncertain = async (error) => {
+      if (!dispatchIdentity || !enteredPromptTransport) return;
+      markLocal('uncertain', error);
+      if (typeof persistPendingPhase === 'function') {
+        await persistPendingPhase('uncertain', error?.message || String(error));
+      }
+    };
+
+    try {
+      const client = openCodeClient();
+      if (typeof client?.session?.prompt === 'function') {
+        if (typeof client.session.switchAgent === 'function' && agent) {
+          await client.session.switchAgent({ sessionID: sessionId, agent }, requestOptions);
+          const afterAgent = dropContinuationIfRevoked(
+            sessionId, epoch, dispatchIdentity, 'dispatch revoked after switchAgent',
+          );
+          if (afterAgent) return { ...afterAgent, phase: 'dropped' };
+        }
+        if (typeof client.session.switchModel === 'function') {
+          await client.session.switchModel({
+            sessionID: sessionId,
+            model: {
+              id: modelID,
+              providerID,
+              ...(variant ? { variant } : {}),
+            },
+          }, requestOptions);
+          const afterModel = dropContinuationIfRevoked(
+            sessionId, epoch, dispatchIdentity, 'dispatch revoked after switchModel',
+          );
+          if (afterModel) return { ...afterModel, phase: 'dropped' };
+        }
+
+        // Generation/status may have moved while selection awaited.
+        if (!(await dispatchIdentityStillActive(sessionId, directory, dispatchIdentity))) {
+          console.log('[session-goal] generation/status moved before prompt, dropping continuation');
+          return { ok: false, identity: dispatchIdentity, uncertain: false, phase: 'dropped' };
+        }
+        const beforePrompt = dropContinuationIfRevoked(
+          sessionId, epoch, dispatchIdentity, 'dispatch revoked before prompt',
+        );
+        if (beforePrompt) return { ...beforePrompt, phase: 'dropped' };
+
+        // Record identity only at the actual prompt boundary so selection
+        // failure cannot look like prompt-uncertain, and pause during
+        // switchAgent/switchModel does not claim transport began.
+        await markPromptTransport();
+        await client.session.prompt({
+          sessionID: sessionId,
+          ...promptBody,
+        }, requestOptions);
+      } else {
+        // Controlled HTTP seam (tests / clients without SDK prompt): POST /prompt
+        // with the same v2 body shape so id enters the payload.
+        if (!(await dispatchIdentityStillActive(sessionId, directory, dispatchIdentity))) {
+          console.log('[session-goal] generation/status moved before prompt, dropping continuation');
+          return { ok: false, identity: dispatchIdentity, uncertain: false, phase: 'dropped' };
+        }
+        const beforePrompt = dropContinuationIfRevoked(
+          sessionId, epoch, dispatchIdentity, 'dispatch revoked before prompt',
+        );
+        if (beforePrompt) return { ...beforePrompt, phase: 'dropped' };
+
+        await markPromptTransport();
+        await openCodeFetch(`/session/${encodeURIComponent(sessionId)}/prompt`, {
+          directory,
+          method: 'POST',
+          body: promptBody,
+        });
+      }
+      markPromptAccepted();
+      return { ok: true, identity: dispatchIdentity, uncertain: false, phase: 'accepted' };
+    } catch (error) {
+      // Only prompt-boundary failures are uncertain. switchAgent/switchModel
+      // (selection) errors must not pretend a prompt may have been accepted.
+      await markPromptUncertain(error);
+      if (enteredPromptTransport) {
+        return {
+          ok: false,
+          identity: dispatchIdentity,
+          uncertain: true,
+          phase: 'uncertain',
+          error,
+        };
+      }
+      throw error;
+    }
+  };
+
+  /**
+   * Commit turnsUsed + clear pendingContinuation under the same conditional write
+   * after upstream accept (or reconcile found). Returns written goal or null.
+   */
+  const commitContinuationAccepted = async ({
+    sessionId,
+    directory,
+    expectedGoalId,
+    expectedGeneration,
+    expectedStatuses = ['active'],
+    pendingTurnsUsed,
+    tokensUsed,
+    tokensBaseline,
+    tokensCommitted,
+    lastAccountedMessageID,
+    blockedStreak,
+    auditFailStreak,
+    note,
+    extraMutate,
+  }) => writeGoal(sessionId, directory, {
+    expectedGoalId,
+    expectedGeneration,
+    expectedStatuses,
+    mutate: (current) => {
+      const nextTurns = Math.max(
+        Number.isFinite(current.turnsUsed) ? current.turnsUsed : 0,
+        Number.isFinite(pendingTurnsUsed) ? pendingTurnsUsed : 0,
+      );
+      return {
+        ...(tokensUsed !== undefined ? { tokensUsed } : {}),
+        ...(tokensBaseline !== undefined ? { tokensBaseline } : {}),
+        ...(tokensCommitted !== undefined ? { tokensCommitted } : {}),
+        ...(lastAccountedMessageID ? { lastAccountedMessageID } : {}),
+        ...(blockedStreak !== undefined ? { blockedStreak } : {}),
+        ...(auditFailStreak !== undefined ? { auditFailStreak } : {}),
+        ...(note !== undefined ? { note: clampText(note, NOTE_CHAR_LIMIT) } : {}),
+        turnsUsed: nextTurns,
+        pendingContinuation: null,
+        statusReason: '',
+        ...(typeof extraMutate === 'function' ? (extraMutate(current) || {}) : {}),
+      };
+    },
+  });
+
+  /**
+   * Clear a reserved (pre-transport) admission without counting a turn.
+   * Used when selection fails or pause lands before prompt leaves process.
+   * Generation is intentionally not required — pause may have advanced it.
+   */
+  const clearReservedContinuation = async ({
+    sessionId,
+    directory,
+    expectedGoalId,
+    messageID,
+  }) => writeGoal(sessionId, directory, {
+    expectedGoalId,
+    // Only clear when pending still matches this reserved message id.
+    mutate: (current) => {
+      const pending = parsePendingContinuation(current.pendingContinuation);
+      if (!pending || pending.messageID !== messageID) return {};
+      if (pending.phase !== 'reserved') return {};
+      return { pendingContinuation: null };
+    },
+  });
+
+  /**
+   * Update durable pending phase (transport / uncertain) without bumping turns.
+   */
+  const updatePendingContinuationPhase = async ({
+    sessionId,
+    directory,
+    expectedGoalId,
+    expectedGeneration,
+    messageID,
+    phase,
+    error = '',
+  }) => writeGoal(sessionId, directory, {
+    expectedGoalId,
+    expectedGeneration,
+    expectedStatuses: ['active'],
+    mutate: (current) => {
+      const pending = parsePendingContinuation(current.pendingContinuation);
+      if (!pending || pending.messageID !== messageID) return {};
+      return {
+        pendingContinuation: buildPendingContinuation({
+          ...pending,
+          phase,
+          error,
+          at: Date.now(),
+        }),
+      };
+    },
+  });
+
+  /**
+   * Ticket 10: reconcile durable pendingContinuation before any new dispatch.
+   * found → count once + clear pending; absent + live gen → may re-dispatch;
+   * unavailable → pause auto-continue with stable identity retained.
+   *
+   * @returns {'clear' | 'dispatch' | 'pause' | 'skip'}
+   */
+  const reconcilePendingContinuation = async ({
+    sessionId,
+    directory,
+    goal,
+    epochAtStart,
+  }) => {
+    const pending = parsePendingContinuation(goal.pendingContinuation);
+    if (!pending) return 'clear';
+
+    // Stale admission from a prior goal id or superseded generation: drop without
+    // counting. Never let old goal pending overwrite newer user operations.
+    if (pending.goalId !== goal.id) {
+      await writeGoal(sessionId, directory, {
+        expectedGoalId: goal.id,
+        expectedGeneration: readGoalExecutionGeneration(goal),
+        mutate: () => ({ pendingContinuation: null }),
+      });
+      return 'clear';
+    }
+    if (pending.generation !== readGoalExecutionGeneration(goal)) {
+      // Generation advanced (pause/resume/replace). If upstream already has the
+      // message, count once under the current goal without re-dispatching.
+      const lookup = await findContinuationMessage(sessionId, directory, pending.messageID);
+      if (lookup.status === 'found') {
+        await commitContinuationAccepted({
+          sessionId,
+          directory,
+          expectedGoalId: goal.id,
+          expectedGeneration: readGoalExecutionGeneration(goal),
+          expectedStatuses: ['active', 'paused', 'blocked', 'budgetLimited', 'complete'],
+          pendingTurnsUsed: pending.turnsUsed,
+        });
+        console.log(`[session-goal] ${sessionId} stale-gen pending found upstream — counted once`);
+        return 'clear';
+      }
+      if (lookup.status === 'unavailable') {
+        // Keep identity; do not invent absent. Pause only when still active.
+        if (goal.status === 'active') {
+          await writeGoal(sessionId, directory, {
+            expectedGoalId: goal.id,
+            expectedGeneration: readGoalExecutionGeneration(goal),
+            expectedStatuses: ['active'],
+            advanceGeneration: true,
+            mutate: () => ({
+              status: 'paused',
+              statusReason: clampText(CONTINUATION_UNCERTAIN_REASON, REASON_CHAR_LIMIT),
+            }),
+          });
+          revokeLocalExecutionPermit(sessionId);
+          console.log(`[session-goal] ${sessionId} pending reconcile unavailable — paused`);
+          return 'pause';
+        }
+        return 'skip';
+      }
+      // Absent under new generation: clear stale reserved work, never re-dispatch.
+      await writeGoal(sessionId, directory, {
+        expectedGoalId: goal.id,
+        expectedGeneration: readGoalExecutionGeneration(goal),
+        mutate: () => ({ pendingContinuation: null }),
+      });
+      return 'clear';
+    }
+
+    const lookup = await findContinuationMessage(sessionId, directory, pending.messageID);
+    if (lookup.status === 'found') {
+      await commitContinuationAccepted({
+        sessionId,
+        directory,
+        expectedGoalId: goal.id,
+        expectedGeneration: readGoalExecutionGeneration(goal),
+        expectedStatuses: goal.status === 'active'
+          ? ['active']
+          : ['active', 'paused', 'blocked', 'budgetLimited', 'complete'],
+        pendingTurnsUsed: pending.turnsUsed,
+      });
+      console.log(`[session-goal] ${sessionId} pending continuation found — counted once`);
+      return 'clear';
+    }
+    if (lookup.status === 'unavailable') {
+      if (goal.status === 'active' && currentDispatchEpoch(sessionId) === epochAtStart) {
+        await writeGoal(sessionId, directory, {
+          expectedGoalId: goal.id,
+          expectedGeneration: readGoalExecutionGeneration(goal),
+          expectedStatuses: ['active'],
+          advanceGeneration: true,
+          mutate: () => ({
+            status: 'paused',
+            statusReason: clampText(CONTINUATION_UNCERTAIN_REASON, REASON_CHAR_LIMIT),
+            // Keep pendingContinuation so reboot can retry reconcile with stable id.
+          }),
+        });
+        revokeLocalExecutionPermit(sessionId);
+        console.log(`[session-goal] ${sessionId} pending reconcile unavailable — paused with identity`);
+        return 'pause';
+      }
+      return 'skip';
+    }
+
+    // Absent: reserved/transport/uncertain may legally re-dispatch same id + payload.
+    if (goal.status !== 'active') return 'skip';
+    if (pending.phase === 'accepted') {
+      // Accepted locally but not yet visible — treat as unavailable scope, not empty.
+      await writeGoal(sessionId, directory, {
+        expectedGoalId: goal.id,
+        expectedGeneration: readGoalExecutionGeneration(goal),
+        expectedStatuses: ['active'],
+        advanceGeneration: true,
+        mutate: () => ({
+          status: 'paused',
+          statusReason: clampText(CONTINUATION_UNCERTAIN_REASON, REASON_CHAR_LIMIT),
+        }),
+      });
+      revokeLocalExecutionPermit(sessionId);
+      return 'pause';
+    }
+    return 'dispatch';
   };
 
   const tick = async (sessionId, directory) => {
@@ -561,6 +1535,10 @@ export const createSessionGoalRuntime = ({
       return;
     }
 
+    // Capture dispatch epoch before any await so a concurrent pause cannot
+    // slip a continuation through after local permit revoke.
+    const epochAtStart = currentDispatchEpoch(sessionId);
+
     const session = await openCodeFetch(`/session/${encodeURIComponent(sessionId)}`, { directory })
       .catch((error) => {
         console.warn(`[session-goal] session fetch failed: ${error?.message || error}`);
@@ -570,10 +1548,131 @@ export const createSessionGoalRuntime = ({
     // Sub-agent/task sessions never carry user goals — skip them.
     if (typeof session.parentID === 'string' && session.parentID) return;
 
-    const goal = isMetadataStoreWired()
+    let goal = isMetadataStoreWired()
       ? await readGoal(sessionId, directory)
       : parseGoalMetadata(session);
     if (!goal || goal.status !== 'active') return;
+    if (currentDispatchEpoch(sessionId) !== epochAtStart) return;
+
+    // Shutdown recovery (ticket 07): keep auto-continue gated until an
+    // authoritative idle/terminal clears the local recovery marker.
+    if (shutdownRecoveryPending.has(sessionId)) {
+      console.log(`[session-goal] ${sessionId} shutdown recovery pending, skip tick`);
+      return;
+    }
+
+    // Ticket 10: durable pending admission — reconcile before any new work.
+    // found → turns counted once; unavailable → pause with stable identity;
+    // dispatch → re-send same id + fixed payload (legal SDK idempotency).
+    // Any pending handled this tick ends the tick (do not immediately open a
+    // new admission slot after counting/re-dispatching the prior one).
+    if (goal.pendingContinuation) {
+      const pendingAction = await reconcilePendingContinuation({
+        sessionId,
+        directory,
+        goal,
+        epochAtStart,
+      });
+      if (pendingAction === 'pause' || pendingAction === 'skip' || pendingAction === 'clear') {
+        // clear = counted once or dropped stale identity — wait for next idle.
+        return;
+      }
+      // Re-read after reconcile may have mutated pending phase only.
+      goal = isMetadataStoreWired()
+        ? await readGoal(sessionId, directory)
+        : parseGoalMetadata(session);
+      if (!goal || goal.status !== 'active') return;
+      if (currentDispatchEpoch(sessionId) !== epochAtStart) return;
+
+      if (pendingAction === 'dispatch' && goal.pendingContinuation) {
+        const pending = goal.pendingContinuation;
+        const dispatchIdentity = {
+          goalId: pending.goalId,
+          generation: pending.generation,
+          turnsUsed: pending.turnsUsed,
+        };
+        const goalGeneration = readGoalExecutionGeneration(goal);
+        const persistPendingPhase = async (phase, error) => {
+          await updatePendingContinuationPhase({
+            sessionId,
+            directory,
+            expectedGoalId: goal.id,
+            expectedGeneration: goalGeneration,
+            messageID: pending.messageID,
+            phase,
+            error,
+          });
+        };
+        console.log(`[session-goal] ${sessionId} re-dispatching pending continuation ${pending.messageID}`);
+        const result = await sendContinuation({
+          sessionId,
+          directory,
+          epoch: epochAtStart,
+          dispatchIdentity,
+          pending,
+          persistPendingPhase,
+        });
+        if (result?.ok) {
+          const committed = await commitContinuationAccepted({
+            sessionId,
+            directory,
+            expectedGoalId: goal.id,
+            expectedGeneration: goalGeneration,
+            pendingTurnsUsed: pending.turnsUsed,
+          });
+          if (!committed) {
+            // Accept landed but durable commit failed — keep pending as accepted
+            // so reboot reconcile can count once without blind new id.
+            await writeGoal(sessionId, directory, {
+              expectedGoalId: goal.id,
+              expectedGeneration: goalGeneration,
+              expectedStatuses: ['active'],
+              mutate: (current) => {
+                const live = parsePendingContinuation(current.pendingContinuation);
+                if (!live || live.messageID !== pending.messageID) return {};
+                return {
+                  pendingContinuation: buildPendingContinuation({
+                    ...live,
+                    phase: 'accepted',
+                    at: Date.now(),
+                  }),
+                };
+              },
+            }).catch(() => null);
+            console.warn(`[session-goal] ${sessionId} persist failure after accept — pending kept`);
+          }
+        } else if (result?.phase === 'dropped') {
+          await clearReservedContinuation({
+            sessionId,
+            directory,
+            expectedGoalId: goal.id,
+            messageID: pending.messageID,
+          });
+        } else if (result?.uncertain) {
+          // Durable phase already updated via persistPendingPhase; pause auto-continue.
+          await writeGoal(sessionId, directory, {
+            expectedGoalId: goal.id,
+            expectedGeneration: goalGeneration,
+            expectedStatuses: ['active'],
+            advanceGeneration: true,
+            mutate: () => ({
+              status: 'paused',
+              statusReason: clampText(CONTINUATION_UNCERTAIN_REASON, REASON_CHAR_LIMIT),
+            }),
+          });
+          revokeLocalExecutionPermit(sessionId);
+        }
+      }
+      return;
+    }
+
+    const goalGeneration = readGoalExecutionGeneration(goal);
+    const commitActive = (mutate) => writeGoal(sessionId, directory, {
+      expectedGoalId: goal.id,
+      expectedGeneration: goalGeneration,
+      expectedStatuses: ['active'],
+      mutate,
+    });
 
     // File-backed objectives: the metadata carries only a flag; the objective
     // TEXT lives under the OpenChamber data dir keyed by session id and is
@@ -598,7 +1697,7 @@ export const createSessionGoalRuntime = ({
 
     let lastAssistant = null;
     for (let i = messages.length - 1; i >= 0; i -= 1) {
-      if (messages[i]?.info?.role === 'assistant') {
+      if (messageRole(messages[i]?.info) === 'assistant') {
         lastAssistant = messages[i];
         break;
       }
@@ -613,7 +1712,7 @@ export const createSessionGoalRuntime = ({
     let executionInfo = null;
     for (let i = messages.length - 1; i >= 0; i -= 1) {
       const info = messages[i]?.info;
-      if (info?.role === 'assistant' && info.summary !== true) {
+      if (messageRole(info) === 'assistant' && !isSummaryMessage(info)) {
         executionInfo = info;
         break;
       }
@@ -631,7 +1730,7 @@ export const createSessionGoalRuntime = ({
     // goal on "evaluating". Corroborate against the live session status before
     // bailing — if the session is really idle, treat the orphan as a dead tail
     // and let the loop resume; only a genuinely busy session bails here.
-    if (lastMessageInfo?.role === 'user') return;
+    if (messageRole(lastMessageInfo) === 'user') return;
     if (lastAssistantInfo && !(lastAssistantInfo.time?.completed > 0) && !lastAssistantInfo.error) {
       const live = await fetchSessionLiveStatus(sessionId, directory);
       // live === 'idle' → restart orphan: resume past it. live === null →
@@ -669,14 +1768,21 @@ export const createSessionGoalRuntime = ({
     // aborted reply is not evidence of anything).
     const abortedTail = lastAssistantInfo.error?.name === 'MessageAbortedError';
     if (abortedTail && goal.statusReason !== 'resumed') {
-      await writeGoal(sessionId, directory, goal.id, () => ({
-        status: 'paused',
-        statusReason: 'paused after abort',
-        tokensUsed,
-        tokensBaseline,
-        tokensCommitted,
-        lastAccountedMessageID,
-      }));
+      revokeLocalExecutionPermit(sessionId);
+      await writeGoal(sessionId, directory, {
+        expectedGoalId: goal.id,
+        expectedGeneration: goalGeneration,
+        expectedStatuses: ['active'],
+        advanceGeneration: true,
+        mutate: () => ({
+          status: 'paused',
+          statusReason: 'paused after abort',
+          tokensUsed,
+          tokensBaseline,
+          tokensCommitted,
+          lastAccountedMessageID,
+        }),
+      });
       console.log(`[session-goal] ${sessionId} paused after user abort`);
       return;
     }
@@ -687,7 +1793,7 @@ export const createSessionGoalRuntime = ({
         ? lastAssistantInfo.error.name
         : 'assistant turn failed';
       await settleGoal({
-        sessionId, directory, goal, status: 'blocked', statusReason: reason, tokensUsed, tokensBaseline, tokensCommitted, lastAccountedMessageID,
+        sessionId, directory, goal, status: 'blocked', statusReason: reason, tokensUsed, tokensBaseline, tokensCommitted, lastAccountedMessageID, expectedGeneration: goalGeneration, epochAtStart,
       });
       return;
     }
@@ -695,7 +1801,7 @@ export const createSessionGoalRuntime = ({
     // Token budget crossed → budgetLimited.
     if (typeof goal.tokenBudget === 'number' && tokensUsed >= goal.tokenBudget) {
       await settleGoal({
-        sessionId, directory, goal, status: 'budgetLimited', statusReason: 'token budget reached', tokensUsed, tokensBaseline, tokensCommitted, lastAccountedMessageID,
+        sessionId, directory, goal, status: 'budgetLimited', statusReason: 'token budget reached', tokensUsed, tokensBaseline, tokensCommitted, lastAccountedMessageID, expectedGeneration: goalGeneration, epochAtStart,
       });
       return;
     }
@@ -703,7 +1809,7 @@ export const createSessionGoalRuntime = ({
     // Auto-continuation safety cap → blocked.
     if (goal.turnsUsed >= maxAutoTurns) {
       await settleGoal({
-        sessionId, directory, goal, status: 'blocked', statusReason: 'auto-continuation limit reached', tokensUsed, tokensBaseline, tokensCommitted, lastAccountedMessageID,
+        sessionId, directory, goal, status: 'blocked', statusReason: 'auto-continuation limit reached', tokensUsed, tokensBaseline, tokensCommitted, lastAccountedMessageID, expectedGeneration: goalGeneration, epochAtStart,
       });
       return;
     }
@@ -718,16 +1824,42 @@ export const createSessionGoalRuntime = ({
     let audit = null;
     let blockedStreak = 0;
     let auditFailStreak = goal.auditFailStreak;
-    if (lastAssistantInfo.summary === true || abortedTail) {
+    if (isSummaryMessage(lastAssistantInfo) || abortedTail) {
       blockedStreak = goal.blockedStreak;
     } else {
-      audit = await runAudit({ goal: { ...goal, objective: effectiveObjective }, assistantText, directory, lastAssistantInfo: executionInfo ?? lastAssistantInfo });
+      const auditController = new AbortController();
+      auditControllers.set(sessionId, auditController);
+      try {
+        audit = await runAudit({
+          sessionId,
+          goal: { ...goal, objective: effectiveObjective },
+          assistantText,
+          directory,
+          lastAssistantInfo: executionInfo ?? lastAssistantInfo,
+          signal: auditController.signal,
+        });
+      } finally {
+        if (auditControllers.get(sessionId) === auditController) {
+          auditControllers.delete(sessionId);
+        }
+      }
+
+      // Pause/cancel during audit: drop late results — generation/epoch checks
+      // below are the durable authority; this is the fast local path.
+      if (currentDispatchEpoch(sessionId) !== epochAtStart) {
+        console.log(`[session-goal] ${sessionId} execution permit revoked during audit, dropping result`);
+        return;
+      }
 
       // Audit unavailable: keep going under the hard turn/budget caps rather
       // than flipping to "blocked" after a couple of 404s — that left simple
       // completed goals stranded as evaluating→blocked when no small model
       // was available on the session provider. Resume still re-audits.
       if (!audit) {
+        if (auditController.signal.aborted) {
+          console.log(`[session-goal] ${sessionId} audit cancelled`);
+          return;
+        }
         auditFailStreak += 1;
         console.warn(`[session-goal] ${sessionId} audit unavailable, continuing under hard caps (${auditFailStreak} consecutive)`);
       } else {
@@ -736,7 +1868,7 @@ export const createSessionGoalRuntime = ({
 
       if (audit?.verdict === 'complete') {
         await settleGoal({
-          sessionId, directory, goal, status: 'complete', statusReason: 'verified by audit', note: audit.note, tokensUsed, tokensBaseline, tokensCommitted, lastAccountedMessageID,
+          sessionId, directory, goal, status: 'complete', statusReason: 'verified by audit', note: audit.note, tokensUsed, tokensBaseline, tokensCommitted, lastAccountedMessageID, expectedGeneration: goalGeneration, epochAtStart,
         });
         return;
       }
@@ -745,28 +1877,144 @@ export const createSessionGoalRuntime = ({
         blockedStreak = goal.blockedStreak + 1;
         if (blockedStreak >= BLOCKED_STREAK_LIMIT) {
           await settleGoal({
-            sessionId, directory, goal, status: 'blocked', statusReason: audit.note || 'blocked per audit', note: audit.note, tokensUsed, tokensBaseline, tokensCommitted, lastAccountedMessageID,
+            sessionId, directory, goal, status: 'blocked', statusReason: audit.note || 'blocked per audit', note: audit.note, tokensUsed, tokensBaseline, tokensCommitted, lastAccountedMessageID, expectedGeneration: goalGeneration, epochAtStart,
           });
           return;
         }
       }
     }
 
-    // --- Continue: persist accounting first, then re-prompt ---
-    // Order matters: if the write lands and the prompt fails, the goal just
-    // waits for the next idle tick; the reverse could double-charge a turn.
-    const written = await writeGoal(sessionId, directory, goal.id, (current) => ({
+    if (currentDispatchEpoch(sessionId) !== epochAtStart) {
+      console.log(`[session-goal] ${sessionId} execution permit revoked before continue commit`);
+      return;
+    }
+
+    // --- Continue (ticket 10 durable admission) ---
+    // 1. Persist accounting + reserved pendingContinuation (fixed msg_id + payload)
+    //    WITHOUT bumping turnsUsed.
+    // 2. Selection (switchAgent/switchModel); pause/fail → clear reserved, 0 count.
+    // 3. Prompt boundary → phase transport; accept → turnsUsed + clear pending
+    //    in the same conditional commit; uncertain → durable phase + pause.
+    const nextTurnsUsed = goal.turnsUsed + 1;
+    const dispatchIdentity = {
+      goalId: goal.id,
+      generation: goalGeneration,
+      turnsUsed: nextTurnsUsed,
+    };
+    const messageID = buildContinuationMessageID(dispatchIdentity);
+    const execution = extractExecutionModel(executionInfo ?? lastAssistantInfo);
+    if (!execution.providerID || !execution.modelID) {
+      console.warn('[session-goal] cannot continue: no provider/model on last assistant');
+      return;
+    }
+
+    // Upstream already holds this fixed id (prior accept / reboot) → count once.
+    const priorLookup = await findContinuationMessage(sessionId, directory, messageID);
+    if (priorLookup.status === 'found') {
+      await commitContinuationAccepted({
+        sessionId,
+        directory,
+        expectedGoalId: goal.id,
+        expectedGeneration: goalGeneration,
+        pendingTurnsUsed: nextTurnsUsed,
+        tokensUsed,
+        tokensBaseline,
+        tokensCommitted,
+        lastAccountedMessageID,
+        blockedStreak,
+        auditFailStreak,
+        note: audit?.note,
+      });
+      console.log(`[session-goal] ${sessionId} continuation ${messageID} already upstream — counted once`);
+      return;
+    }
+    if (priorLookup.status === 'unavailable') {
+      // Do not invent empty absence; pause with stable identity for later reconcile.
+      const pendingOnly = buildPendingContinuation({
+        messageID,
+        goalId: goal.id,
+        generation: goalGeneration,
+        turnsUsed: nextTurnsUsed,
+        phase: 'uncertain',
+        text: buildContinuationPrompt({
+          ...goal,
+          objective: effectiveObjective,
+          turnsUsed: nextTurnsUsed,
+        }),
+        providerID: execution.providerID,
+        modelID: execution.modelID,
+        variant: execution.variant,
+        agent: execution.agent,
+        error: 'pre-dispatch reconcile unavailable',
+      });
+      await writeGoal(sessionId, directory, {
+        expectedGoalId: goal.id,
+        expectedGeneration: goalGeneration,
+        expectedStatuses: ['active'],
+        advanceGeneration: true,
+        mutate: () => ({
+          status: 'paused',
+          statusReason: clampText(CONTINUATION_UNCERTAIN_REASON, REASON_CHAR_LIMIT),
+          tokensUsed,
+          tokensBaseline,
+          tokensCommitted,
+          lastAccountedMessageID,
+          blockedStreak,
+          auditFailStreak,
+          ...(audit?.note ? { note: clampText(audit.note, NOTE_CHAR_LIMIT) } : {}),
+          pendingContinuation: pendingOnly,
+        }),
+      });
+      revokeLocalExecutionPermit(sessionId);
+      console.log(`[session-goal] ${sessionId} pre-dispatch reconcile unavailable — paused`);
+      return;
+    }
+
+    const priorDispatch = dispatchedContinuations.get(sessionId);
+    if (
+      priorDispatch
+      && priorDispatch.goalId === dispatchIdentity.goalId
+      && priorDispatch.generation === dispatchIdentity.generation
+      && priorDispatch.turnsUsed === dispatchIdentity.turnsUsed
+      && (priorDispatch.phase === 'transport' || priorDispatch.phase === 'accepted' || priorDispatch.phase === 'uncertain')
+    ) {
+      console.log('[session-goal] continuation identity already dispatched, skipping duplicate');
+      return;
+    }
+
+    const promptText = buildContinuationPrompt({
+      ...goal,
+      objective: effectiveObjective,
+      turnsUsed: nextTurnsUsed,
+    });
+    const pending = buildPendingContinuation({
+      messageID,
+      goalId: goal.id,
+      generation: goalGeneration,
+      turnsUsed: nextTurnsUsed,
+      phase: 'reserved',
+      text: promptText,
+      providerID: execution.providerID,
+      modelID: execution.modelID,
+      variant: execution.variant,
+      agent: execution.agent,
+    });
+
+    // Reserve durable identity before selection; turnsUsed stays at prior value.
+    const reserved = await commitActive((current) => ({
       tokensUsed,
       tokensBaseline,
       tokensCommitted,
       lastAccountedMessageID,
-      turnsUsed: current.turnsUsed + 1,
       blockedStreak,
       auditFailStreak,
       statusReason: '',
       ...(audit?.note ? { note: audit.note } : {}),
+      pendingContinuation: pending,
+      // Explicit: do not bump turnsUsed until accept/reconcile.
+      turnsUsed: current.turnsUsed,
     }));
-    if (!written) {
+    if (!reserved) {
       console.log('[session-goal] goal changed during tick, dropping continuation');
       return;
     }
@@ -776,18 +2024,132 @@ export const createSessionGoalRuntime = ({
     const latest = await fetchRecentMessages(sessionId, directory);
     const latestLastInfo = latest && latest.length > 0 ? latest[latest.length - 1]?.info : null;
     if (!latestLastInfo || latestLastInfo.id !== lastMessageInfo?.id) {
-      console.log('[session-goal] tail moved on, dropping continuation');
+      console.log('[session-goal] tail moved on, clearing reserved continuation');
+      await clearReservedContinuation({
+        sessionId,
+        directory,
+        expectedGoalId: goal.id,
+        messageID,
+      });
       return;
     }
 
-    // Re-check question blockers immediately before dispatch (uncertain included).
+    // Re-check question blockers immediately before dispatch.
     if (typeof isQuestionBlockingGoal === 'function' && isQuestionBlockingGoal(sessionId) === true) {
-      console.log('[session-goal] question still blocking, dropping continuation');
+      console.log('[session-goal] question still blocking, clearing reserved continuation');
+      await clearReservedContinuation({
+        sessionId,
+        directory,
+        expectedGoalId: goal.id,
+        messageID,
+      });
       return;
     }
 
-    console.log(`[session-goal] continuing ${sessionId} (turn ${written.turnsUsed}/${maxAutoTurns}, tokens ${written.tokensUsed}${written.tokenBudget ? `/${written.tokenBudget}` : ''})`);
-    await sendContinuation({ sessionId, directory, goal: { ...written, objective: effectiveObjective }, lastAssistantInfo: executionInfo ?? lastAssistantInfo });
+    // Pause confirmation (local epoch) after reserve must still block new delivery.
+    if (currentDispatchEpoch(sessionId) !== epochAtStart) {
+      console.log('[session-goal] paused after reserve, not dispatching (0 count)');
+      await clearReservedContinuation({
+        sessionId,
+        directory,
+        expectedGoalId: goal.id,
+        messageID,
+      });
+      return;
+    }
+
+    console.log(`[session-goal] continuing ${sessionId} (pending turn ${nextTurnsUsed}/${maxAutoTurns}, tokens ${reserved.tokensUsed}${reserved.tokenBudget ? `/${reserved.tokenBudget}` : ''}, gen ${goalGeneration})`);
+
+    const persistPendingPhase = async (phase, error) => {
+      await updatePendingContinuationPhase({
+        sessionId,
+        directory,
+        expectedGoalId: goal.id,
+        messageID,
+        phase,
+        error,
+      });
+    };
+
+    let result;
+    try {
+      result = await sendContinuation({
+        sessionId,
+        directory,
+        epoch: epochAtStart,
+        dispatchIdentity,
+        pending,
+        persistPendingPhase,
+      });
+    } catch (error) {
+      // Selection failure (pre-transport): clear reserved, 0 count.
+      await clearReservedContinuation({
+        sessionId,
+        directory,
+        expectedGoalId: goal.id,
+        messageID,
+      });
+      console.warn('[session-goal] continuation selection failed:', error?.message || error);
+      return;
+    }
+
+    if (result?.ok) {
+      const committed = await commitContinuationAccepted({
+        sessionId,
+        directory,
+        expectedGoalId: goal.id,
+        expectedGeneration: goalGeneration,
+        pendingTurnsUsed: nextTurnsUsed,
+      });
+      if (!committed) {
+        // Persist failure after accept: keep phase=accepted so reboot can count once.
+        await writeGoal(sessionId, directory, {
+          expectedGoalId: goal.id,
+          expectedGeneration: goalGeneration,
+          expectedStatuses: ['active'],
+          mutate: (current) => {
+            const live = parsePendingContinuation(current.pendingContinuation);
+            if (!live || live.messageID !== messageID) return {};
+            return {
+              pendingContinuation: buildPendingContinuation({
+                ...live,
+                phase: 'accepted',
+                at: Date.now(),
+              }),
+            };
+          },
+        }).catch(() => null);
+        console.warn(`[session-goal] ${sessionId} persist failure after accept — pending kept as accepted`);
+      }
+      return;
+    }
+
+    if (result?.phase === 'dropped') {
+      // Selection-time pause/revoke: 0 count, clear reserved only.
+      await clearReservedContinuation({
+        sessionId,
+        directory,
+        expectedGoalId: goal.id,
+        messageID,
+      });
+      return;
+    }
+
+    if (result?.uncertain) {
+      // Transport left process; durable uncertain phase already persisted.
+      // Pause auto-continue with user-visible reason; keep stable identity.
+      await writeGoal(sessionId, directory, {
+        expectedGoalId: goal.id,
+        expectedGeneration: goalGeneration,
+        expectedStatuses: ['active'],
+        advanceGeneration: true,
+        mutate: () => ({
+          status: 'paused',
+          statusReason: clampText(CONTINUATION_UNCERTAIN_REASON, REASON_CHAR_LIMIT),
+        }),
+      });
+      revokeLocalExecutionPermit(sessionId);
+    }
   };
 
   const armTimer = (sessionId, directory, quietMs) => {
@@ -868,25 +2230,70 @@ export const createSessionGoalRuntime = ({
   // UI races: metadata may land as paused before the abort event. When the goal
   // is already paused for a non-question reason, still notify so question
   // auto-delegate timers are cancelled (abort path used to no-op on non-active).
-  const pauseAfterAbort = async (sessionId, directory) => {
-    const owner = await resolveGoalOwner(sessionId, directory);
+  /**
+   * Durable pause with generation advance + local permit revoke.
+   * Shared by abort, question, and explicit user pause seams.
+   */
+  const pauseGoal = async (sessionId, directory, statusReason = 'paused by user', {
+    notify = true,
+    resolveOwner = true,
+  } = {}) => {
+    const owner = resolveOwner
+      ? await resolveGoalOwner(sessionId, directory)
+      : { sessionId, directory, session: null };
+    if (!owner.sessionId) return null;
+
+    // Synchronous local revoke before any await on the durable write so a
+    // concurrent tick cannot dispatch after pause is requested in-process.
+    revokeLocalExecutionPermit(owner.sessionId);
+
     const goal = isMetadataStoreWired()
       ? await readGoal(owner.sessionId, owner.directory)
-      : parseGoalMetadata(owner.session);
-    if (!goal) return;
+      : parseGoalMetadata(owner.session ?? await openCodeFetch(
+        `/session/${encodeURIComponent(owner.sessionId)}`,
+        { directory: owner.directory },
+      ).catch(() => null));
+
+    if (!goal) return null;
     if (goal.status === 'paused') {
-      if (!isQuestionDrivenPause(goal)) {
+      if (notify && !isQuestionDrivenPause(goal)) {
         notifyGoalPaused(owner.sessionId, owner.directory);
       }
-      return;
+      return goal;
     }
-    if (goal.status !== 'active') return;
-    await writeGoal(owner.sessionId, owner.directory, goal.id, () => ({
-      status: 'paused',
-      statusReason: 'paused after abort',
-    }));
-    console.log(`[session-goal] ${owner.sessionId} paused after user abort`);
-    notifyGoalPaused(owner.sessionId, owner.directory);
+    if (goal.status !== 'active') return null;
+
+    const written = await writeGoal(owner.sessionId, owner.directory, {
+      expectedGoalId: goal.id,
+      expectedGeneration: readGoalExecutionGeneration(goal),
+      expectedStatuses: ['active'],
+      advanceGeneration: true,
+      mutate: (current) => {
+        // Reserved (pre-transport) pending is not yet upstream — drop it so
+        // pause→resume cannot re-dispatch old work. Transport/uncertain/accepted
+        // keep stable identity for reconcile (do not claim upstream revoke).
+        const pending = parsePendingContinuation(current.pendingContinuation);
+        const clearReserved = pending && pending.phase === 'reserved'
+          ? { pendingContinuation: null }
+          : {};
+        return {
+          status: 'paused',
+          statusReason: clampText(statusReason, REASON_CHAR_LIMIT),
+          ...clearReserved,
+        };
+      },
+    });
+    if (written) {
+      console.log(`[session-goal] ${owner.sessionId} paused (${statusReason}) gen=${written.executionGeneration}`);
+      if (notify && !isQuestionDrivenPause(written)) {
+        notifyGoalPaused(owner.sessionId, owner.directory);
+      }
+    }
+    return written;
+  };
+
+  const pauseAfterAbort = async (sessionId, directory) => {
+    await pauseGoal(sessionId, directory, 'paused after abort', { notify: true });
   };
 
   // Pause the active goal when the agent asks a question — without aborting
@@ -898,25 +2305,50 @@ export const createSessionGoalRuntime = ({
     // record — owner.session may be null only if the session itself is missing.
     if (!isMetadataStoreWired() && !owner.session) return;
     if (isMetadataStoreWired() && !owner.sessionId) return;
-    clearTimer(owner.sessionId);
-    const goal = isMetadataStoreWired()
-      ? await readGoal(owner.sessionId, owner.directory)
-      : parseGoalMetadata(owner.session);
-    if (!goal || goal.status !== 'active') return;
-    await writeGoal(owner.sessionId, owner.directory, goal.id, () => ({
-      status: 'paused',
-      statusReason: 'paused for question',
-    }));
-    console.log(`[session-goal] ${owner.sessionId} paused for question`);
+    await pauseGoal(owner.sessionId, owner.directory, 'paused for question', {
+      notify: false,
+      resolveOwner: false,
+    });
     // Takeover path already pauses questions; still notify for abort-style symmetry.
   };
 
   const processPayload = (payload, directoryHint = '') => {
     if (stopped) return;
 
+    const interrupted = extractExecutionInterrupted(payload);
+    if (interrupted) {
+      if (interrupted.reason === 'shutdown') {
+        // Keep goal active but close the auto-continue gate until recovery.
+        clearTimer(interrupted.sessionId);
+        shutdownRecoveryPending.set(interrupted.sessionId, { at: Date.now() });
+        console.log(`[session-goal] ${interrupted.sessionId} shutdown interrupt — recovery pending`);
+        return;
+      }
+      // user / superseded / inactivity: claim released upstream — clear recovery.
+      shutdownRecoveryPending.delete(interrupted.sessionId);
+      if (interrupted.reason === 'user') {
+        clearTimer(interrupted.sessionId);
+        // MessageAbortedError path usually pauses; do not double-settle here.
+      }
+      return;
+    }
+
+    if (
+      payload?.type === 'session.execution.succeeded'
+      || payload?.type === 'session.execution.failed'
+      || payload?.type === 'session.execution.started'
+    ) {
+      const body = (payload.properties && typeof payload.properties === 'object')
+        ? payload.properties
+        : ((payload.data && typeof payload.data === 'object') ? payload.data : null);
+      const sessionId = typeof body?.sessionID === 'string' ? body.sessionID.trim() : '';
+      if (sessionId) shutdownRecoveryPending.delete(sessionId);
+    }
+
     const aborted = extractAbortedAssistant(payload);
     if (aborted) {
       clearTimer(aborted.sessionId);
+      shutdownRecoveryPending.delete(aborted.sessionId);
       if (!inflight.has(aborted.sessionId)) {
         inflight.add(aborted.sessionId);
         pauseAfterAbort(aborted.sessionId, directoryHint)
@@ -954,6 +2386,8 @@ export const createSessionGoalRuntime = ({
     const status = extractSessionStatus(payload);
     if (status) {
       if (status.type === 'idle') {
+        // Authoritative idle after shutdown recovery reopens the continue gate.
+        shutdownRecoveryPending.delete(status.sessionId);
         armTimer(status.sessionId, status.directory || directoryHint, idleQuietMs);
       } else {
         clearTimer(status.sessionId);
@@ -964,11 +2398,12 @@ export const createSessionGoalRuntime = ({
     // session.updated carries goal create/resume/pause without a status event.
     const update = extractSessionUpdate(payload);
     if (update && !update.parentID && update.goal) {
-      // Explicit UI/user pause (not question-driven): cancel goal timer and
-      // reverse-pause related question auto-delegate timers. Question pauses
-      // keep auto-delegate counting so the agent can continue after auto-reply.
+      // Explicit UI/user pause (not question-driven): revoke local execution
+      // permit immediately so in-flight audits cannot dispatch, then notify.
+      // Question pauses keep auto-delegate counting so the agent can continue
+      // after auto-reply.
       if (update.goal.status === 'paused') {
-        clearTimer(update.sessionId);
+        revokeLocalExecutionPermit(update.sessionId);
         if (!isQuestionDrivenPause(update.goal)) {
           notifyGoalPaused(update.sessionId, update.directory || directoryHint);
         }
@@ -978,6 +2413,8 @@ export const createSessionGoalRuntime = ({
       // Kickoff path: a goal set (or resumed — the UI stamps statusReason
       // 'resumed') while the session is already idle. Arm a short timer; the
       // tick's quiescence check keeps this safe if the session is actually busy.
+      // Resume carries a new executionGeneration from the writer; old audits
+      // fail the generation precondition on commit.
       if (
         update.goal.status === 'active'
         && (update.goal.turnsUsed === 0 || update.goal.statusReason === 'resumed')
@@ -992,10 +2429,18 @@ export const createSessionGoalRuntime = ({
 
   const stop = () => {
     stopped = true;
-    for (const { timer } of timers.values()) {
-      clearTimeout(timer);
+    const sessionIds = new Set([
+      ...timers.keys(),
+      ...auditControllers.keys(),
+      ...dispatchEpoch.keys(),
+      ...shutdownRecoveryPending.keys(),
+    ]);
+    for (const sessionId of sessionIds) {
+      revokeLocalExecutionPermit(sessionId);
     }
     timers.clear();
+    auditControllers.clear();
+    shutdownRecoveryPending.clear();
   };
 
   return {
@@ -1003,5 +2448,22 @@ export const createSessionGoalRuntime = ({
     stop,
     /** Used by question auto-delegate user takeover / disable paths. */
     pauseForQuestion: (sessionId, directory) => pauseForQuestion(sessionId, directory),
+    /**
+     * Public pause seam (user pause / tests): durable status=paused + generation
+     * advance + local dispatch revoke. Does not abort upstream turns — callers
+     * use the existing stop operation for that.
+     */
+    pauseGoal: (sessionId, directory, statusReason = 'paused by user') => (
+      pauseGoal(sessionId, directory, statusReason, { notify: true })
+    ),
+    /**
+     * Public tick seam for tests and controlled async reproduction.
+     * Runs one goal evaluation cycle immediately (no idle timer).
+     */
+    runTick: (sessionId, directory) => tick(sessionId, directory),
+    /** Latest continuation dispatch identity for a session (test/reconcile). */
+    getDispatchedContinuation: (sessionId) => dispatchedContinuations.get(sessionId) || null,
+    /** Current local dispatch epoch (test seam). */
+    getDispatchEpoch: (sessionId) => currentDispatchEpoch(sessionId),
   };
 };

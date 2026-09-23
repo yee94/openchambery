@@ -70,8 +70,11 @@ const sessionUpdatedAt = (session: { time?: { updated?: number } }): number => {
     return typeof updated === "number" && Number.isFinite(updated) ? updated : 0;
 };
 
-const isArchivedSession = (session: { time?: { archived?: number } }): boolean =>
-    typeof session.time?.archived === "number";
+/** Positive `time.archived` only — Host unarchive uses 0 which must stay active. */
+const isArchivedSession = (session: { time?: { archived?: number } }): boolean => {
+    const archived = session.time?.archived;
+    return typeof archived === "number" && Number.isFinite(archived) && archived > 0;
+};
 
 /** Project a v2 list row and keep a directory fallback for fixture/legacy rows. */
 const projectListedSession = (info: SessionInfo & { directory?: string }): GlobalSessionRecord => {

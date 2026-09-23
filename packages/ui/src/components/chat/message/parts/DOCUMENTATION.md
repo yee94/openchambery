@@ -102,13 +102,13 @@ Use this doc when you ask an agent to change tool/header/description behavior.
   - A successful session-status snapshot stops stale task loading when the child session is idle
     or when the task started before the snapshot request. Tasks created after that boundary wait
     for live status. The original tool part remains unchanged for history and diagnostics.
-  - Background subagent tasks settle the tool part immediately (tool success with a running hint
-    in metadata/output). While the resolved child session status is not `idle`, the settled row
-    keeps observing the child and stays in the busy shimmer state. Observation is one-shot
-    latched: once an authoritative idle newer than the task start is observed (live entry or
-    directory snapshot, same freshness guard as `shouldSuppressTaskLoading`), the row
-    unsubscribes and renders as an ordinary settled row. Completion itself is announced by the
-    synthetic `<subagent …>` notification message (see `MessageBody.tsx`).
+  - Background subagent / shell tasks settle the tool part immediately (tool success with a
+    historical `metadata.status=running` hint). That hint is **not** permanent live proof —
+    official shell background never terminal-patches the tool part. Live busy chrome is driven by
+    `resolveBackgroundToolActivity`: synthetic completion notices (`<shell …>` / `<subagent …>` or
+    metadata `source=shell|subagent`) and authoritative child session status. Observation is
+    one-shot latched: terminal notice or authoritative child idle ends the busy state and drops
+    the narrow parent/child subscriptions.
   - Nested task-session navigation delegates to `SessionSurfaceContext`. In an
     ContextPanel transcript, the strict read-only panel surface accepts
     same-directory local navigation and preserves the primary session selection.
@@ -121,13 +121,35 @@ Use this doc when you ask an agent to change tool/header/description behavior.
 
 - `taskToolModel.ts`
   - Owns Task metadata parsing and child-session summary projection.
-  - `part.state.metadata.sessionId` is the only live identity contract between a Task and its child session.
-  - A running Task may briefly have no `sessionId`; render it as waiting until the authoritative part update arrives. Never match parallel children by order, title, timestamp, or status.
+  - Plugin tool name `task` and native OpenCode tool name `subagent` share the same task-row
+    family via `isTaskToolName` (standalone Activity rows, avatars, child-session navigation).
+  - Live identity prefers structured metadata `sessionId` / `sessionID` (native publishes
+    `sessionID`). A running Task may briefly have no id; render waiting until the authoritative
+    part update arrives. Never match parallel children by order, title, timestamp, or status.
+  - Native agent name is `input.agent`; plugin may use `subagent_type`. Both are accepted by
+    `resolveTaskAgentName` in `ToolPart.tsx`.
   - Part-level metadata and output parsing exist only for older persisted records and never override state metadata.
   - `readTaskStatusFromRecord` / `readTaskRunningFromOutput` detect the background-subagent
-    running hint (settled output that still says `status: running`).
+    running hint (settled output that still says `status: running`) — hint only, not live proof.
   - `parseSubagentNotification` parses the synthetic `<subagent sessionID state description>`
     completion notification injected into the parent session; non-matching text returns undefined.
+  - `parseShellNotification` parses official `<shell id state command>` completion notices
+    (`core/shell/result.ts`); non-matching text returns undefined.
+
+- `sessionBackgroundModel.ts`
+  - Pure projection of blocking vs already-background work from parent transcript tools.
+  - Blocking = backgroundable tool (`subagent` / `task` / `shell` / `bash` …) with
+    `state.status` still running/pending/started.
+  - `hasSettledBackgroundRunningHint` = tool settled (`completed`) while metadata still says
+    `running` (official shell/subagent background return shape). Never alone drives permanent busy.
+  - `collectBackgroundCompletions` + `resolveBackgroundToolActivity` project terminal facts from
+    synthetic notices and (for subagent) live child session status; background-running only while
+    those authorities have not settled.
+  - Move action calls official `session.background({ sessionID })` on the **parent** session
+    (whole-session detach of every currently blocking backgroundable tool). Idle is a no-op.
+  - `ToolPart` shows a "Move to background" control only while that row is blocking; failures
+    toast without clearing authoritative state. Shell/subagent background rows keep busy chrome
+    only while activity resolves to `background-running`.
 
 - `toolPresentation.tsx`
   - Shared icon mapping for tool names (`getToolIcon`).

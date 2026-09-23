@@ -124,16 +124,18 @@ describe('createSessionMetadataStore', () => {
     expect(JSON.parse(readFile(dataDir))).toEqual({ ses_1: { a: 1 }, ses_2: { b: 2 } });
   });
 
-  it('treats a malformed file as empty, keeps a backup, and still accepts writes', async () => {
+  it('refuses corrupt JSON as empty success and does not overwrite the file', async () => {
     const dataDir = makeDataDir();
-    fs.writeFileSync(path.join(dataDir, 'sessions-metadata.json'), '{ not json', 'utf8');
+    const corruptPath = path.join(dataDir, 'sessions-metadata.json');
+    fs.writeFileSync(corruptPath, '{ not json', 'utf8');
     vi.spyOn(console, 'warn').mockImplementation(() => {});
 
     const store = createSessionMetadataStore({ dataDir });
-    await expect(store.getAll()).resolves.toEqual({});
-    await expect(store.setSessionMetadata('ses_1', { a: 1 })).resolves.toEqual({ a: 1 });
-    expect(JSON.parse(readFile(dataDir))).toEqual({ ses_1: { a: 1 } });
-    expect(fs.readdirSync(dataDir).some((name) => name.includes('sessions-metadata.json.'))).toBe(true);
+    await expect(store.getAll()).rejects.toThrow(/unavailable|corrupt/i);
+    await expect(store.setSessionMetadata('ses_1', { a: 1 })).rejects.toThrow(/unavailable|corrupt/i);
+    expect(fs.readFileSync(corruptPath, 'utf8')).toBe('{ not json');
+    expect(store.isLoaded()).toBe(false);
+    expect(store.getSnapshotSync()).toBeNull();
   });
 
   it('drops entries that are not metadata objects', async () => {
@@ -159,17 +161,70 @@ describe('createSessionMetadataStore', () => {
     vi.spyOn(console, 'warn').mockImplementation(() => {});
 
     const store = createSessionMetadataStore({ dataDir, fsPromises });
-    await expect(store.setSessionMetadata('ses_1', { a: 1 })).rejects.toThrow(/could not be read/);
+    await expect(store.setSessionMetadata('ses_1', { a: 1 })).rejects.toThrow(/unavailable/);
     expect(readFile(dataDir)).toBe('{}');
   });
 
-  it('rolls memory back and reports failure when persisting fails', async () => {
+  it('does not publish uncommitted drafts while persist is blocked (set)', async () => {
     const dataDir = makeDataDir();
-    const fsPromises = { ...fs.promises, writeFile: async () => { throw new Error('disk full'); } };
-
+    let releaseWrite;
+    const writeGate = new Promise((resolve) => { releaseWrite = resolve; });
+    const fsPromises = {
+      ...fs.promises,
+      writeFile: async (target, payload, encoding) => {
+        await writeGate;
+        return fs.promises.writeFile(target, payload, encoding);
+      },
+    };
     const store = createSessionMetadataStore({ dataDir, fsPromises });
-    await expect(store.setSessionMetadata('ses_1', { a: 1 })).rejects.toThrow('disk full');
+    const pending = store.setSessionMetadata('ses_1', { a: 1 });
+    // Concurrent readers must still see committed empty — not the in-flight draft.
     await expect(store.get('ses_1')).resolves.toEqual({});
+    expect(store.getSnapshotSync()).toEqual({});
+    releaseWrite();
+    await expect(pending).resolves.toEqual({ a: 1 });
+    await expect(store.get('ses_1')).resolves.toEqual({ a: 1 });
+  });
+
+  it('does not publish uncommitted deletes while persist is blocked (remove)', async () => {
+    const dataDir = makeDataDir();
+    const storeWarm = createSessionMetadataStore({ dataDir });
+    await storeWarm.setSessionMetadata('ses_1', { a: 1 });
+
+    let releaseWrite = null;
+    const fsPromises = {
+      ...fs.promises,
+      writeFile: async (target, payload, encoding) => {
+        if (releaseWrite) await new Promise((resolve) => { releaseWrite = resolve; });
+        return fs.promises.writeFile(target, payload, encoding);
+      },
+    };
+    const store = createSessionMetadataStore({ dataDir, fsPromises });
+    await store.load();
+    // Arm the gate only for the remove persist.
+    releaseWrite = () => {};
+    let unlock;
+    const gate = new Promise((resolve) => { unlock = resolve; });
+    fsPromises.writeFile = async (target, payload, encoding) => {
+      await gate;
+      return fs.promises.writeFile(target, payload, encoding);
+    };
+    const pending = store.removeSession('ses_1');
+    await expect(store.get('ses_1')).resolves.toEqual({ a: 1 });
+    unlock();
+    await expect(pending).resolves.toBe(true);
+    await expect(store.get('ses_1')).resolves.toEqual({});
+  });
+
+  it('keeps committed entries when persist fails (set never published)', async () => {
+    const dataDir = makeDataDir();
+    const storeOk = createSessionMetadataStore({ dataDir });
+    await storeOk.setSessionMetadata('ses_1', { a: 1 });
+
+    const fsPromises = { ...fs.promises, writeFile: async () => { throw new Error('disk full'); } };
+    const store = createSessionMetadataStore({ dataDir, fsPromises });
+    await expect(store.setSessionMetadata('ses_1', { b: 2 })).rejects.toThrow('disk full');
+    await expect(store.get('ses_1')).resolves.toEqual({ a: 1 });
   });
 
   it('forgets a session on request', async () => {
@@ -180,5 +235,145 @@ describe('createSessionMetadataStore', () => {
     await expect(store.removeSession('ses_1')).resolves.toBe(true);
     await expect(store.removeSession('ses_1')).resolves.toBe(false);
     expect(JSON.parse(readFile(dataDir))).toEqual({});
+  });
+
+  it('serializes concurrent writes so neighboring keys are not lost', async () => {
+    const store = createSessionMetadataStore({ dataDir: makeDataDir() });
+    await Promise.all([
+      store.setSessionMetadata('ses_1', { openchamber: { goal: { id: 'g1' } } }),
+      store.setSessionMetadata('ses_1', { openchamber: { assist: { recap: 'a' } } }),
+    ]);
+    await expect(store.get('ses_1')).resolves.toEqual({
+      openchamber: { goal: { id: 'g1' }, assist: { recap: 'a' } },
+    });
+  });
+
+  it('protects Host archive from generic metadata null ancestor deletes', async () => {
+    const store = createSessionMetadataStore({ dataDir: makeDataDir() });
+    await store.setSessionMetadata('ses_1', { openchamber: { archive: { archivedAt: 9 } } }, { allowArchive: true });
+    await store.setSessionMetadata('ses_1', { openchamber: { goal: { id: 'g1' } } });
+    await expect(store.get('ses_1')).resolves.toEqual({
+      openchamber: { archive: { archivedAt: 9 }, goal: { id: 'g1' } },
+    });
+    await store.setSessionMetadata('ses_1', { openchamber: null });
+    await expect(store.get('ses_1')).resolves.toEqual({
+      openchamber: { archive: { archivedAt: 9 } },
+    });
+    await store.setSessionMetadata('ses_1', { openchamber: { archive: { archivedAt: 1 } } });
+    await expect(store.get('ses_1')).resolves.toEqual({
+      openchamber: { archive: { archivedAt: 9 } },
+    });
+  });
+
+  it('does not treat a failed load as empty success on get/getAll', async () => {
+    const dataDir = makeDataDir();
+    fs.writeFileSync(path.join(dataDir, 'sessions-metadata.json'), '{}', 'utf8');
+    const unreadable = Object.assign(new Error('EACCES'), { code: 'EACCES' });
+    const fsPromises = {
+      ...fs.promises,
+      readFile: async () => { throw unreadable; },
+    };
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const store = createSessionMetadataStore({ dataDir, fsPromises });
+    await expect(store.get('ses_1')).rejects.toThrow(/unavailable|could not be read|EACCES/i);
+    await expect(store.getAll()).rejects.toThrow(/unavailable|could not be read|EACCES/i);
+    expect(store.getSnapshotSync()).toBeNull();
+  });
+
+  it('mutateSessionMetadata commits only when decide returns ok with a patch', async () => {
+    const store = createSessionMetadataStore({ dataDir: makeDataDir() });
+    await store.setSessionMetadata('ses_1', {
+      openchamber: { goal: { id: 'g1', status: 'active', executionGeneration: 2 }, assist: { recap: 'keep' } },
+    });
+
+    const rejected = await store.mutateSessionMetadata('ses_1', (current) => {
+      const gen = current?.openchamber?.goal?.executionGeneration;
+      if (gen !== 2) return { ok: false, reason: 'generation_mismatch' };
+      return {
+        ok: false,
+        reason: 'status_not_active',
+      };
+    });
+    expect(rejected).toEqual({
+      committed: false,
+      reason: 'status_not_active',
+      metadata: {
+        openchamber: { goal: { id: 'g1', status: 'active', executionGeneration: 2 }, assist: { recap: 'keep' } },
+      },
+    });
+    await expect(store.get('ses_1')).resolves.toEqual({
+      openchamber: { goal: { id: 'g1', status: 'active', executionGeneration: 2 }, assist: { recap: 'keep' } },
+    });
+
+    const accepted = await store.mutateSessionMetadata('ses_1', (current) => {
+      if (current?.openchamber?.goal?.executionGeneration !== 2) {
+        return { ok: false, reason: 'generation_mismatch' };
+      }
+      return {
+        ok: true,
+        patch: { openchamber: { goal: { status: 'paused', executionGeneration: 3 } } },
+      };
+    });
+    expect(accepted.committed).toBe(true);
+    expect(accepted.metadata.openchamber.goal).toEqual({
+      id: 'g1',
+      status: 'paused',
+      executionGeneration: 3,
+    });
+    expect(accepted.metadata.openchamber.assist).toEqual({ recap: 'keep' });
+  });
+
+  it('mutateSessionMetadata does not publish drafts while persist is blocked', async () => {
+    const dataDir = makeDataDir();
+    await createSessionMetadataStore({ dataDir }).setSessionMetadata('ses_1', {
+      openchamber: { goal: { id: 'g1', status: 'active', executionGeneration: 1 } },
+    });
+
+    let unlock;
+    const gate = new Promise((resolve) => { unlock = resolve; });
+    const fsPromises = {
+      ...fs.promises,
+      writeFile: async (target, payload, encoding) => {
+        await gate;
+        return fs.promises.writeFile(target, payload, encoding);
+      },
+    };
+    const store = createSessionMetadataStore({ dataDir, fsPromises });
+    await store.load();
+
+    const pending = store.mutateSessionMetadata('ses_1', () => ({
+      ok: true,
+      patch: { openchamber: { goal: { status: 'paused', executionGeneration: 2 } } },
+    }));
+    await expect(store.get('ses_1')).resolves.toEqual({
+      openchamber: { goal: { id: 'g1', status: 'active', executionGeneration: 1 } },
+    });
+    expect(store.getSnapshotSync()?.ses_1?.openchamber?.goal?.status).toBe('active');
+    unlock();
+    await expect(pending).resolves.toMatchObject({
+      committed: true,
+      metadata: { openchamber: { goal: { status: 'paused', executionGeneration: 2 } } },
+    });
+  });
+
+  it('mutateSessionMetadata preserves Host archive and serializes with setSessionMetadata', async () => {
+    const store = createSessionMetadataStore({ dataDir: makeDataDir() });
+    await store.setSessionMetadata('ses_1', { openchamber: { archive: { archivedAt: 42 } } }, { allowArchive: true });
+
+    const [mutated] = await Promise.all([
+      store.mutateSessionMetadata('ses_1', () => ({
+        ok: true,
+        patch: { openchamber: { goal: { id: 'g1', status: 'active', executionGeneration: 0 } } },
+      })),
+      store.setSessionMetadata('ses_1', { openchamber: { assist: { recap: 'a' } } }),
+    ]);
+    expect(mutated.committed).toBe(true);
+    await expect(store.get('ses_1')).resolves.toEqual({
+      openchamber: {
+        archive: { archivedAt: 42 },
+        goal: { id: 'g1', status: 'active', executionGeneration: 0 },
+        assist: { recap: 'a' },
+      },
+    });
   });
 });

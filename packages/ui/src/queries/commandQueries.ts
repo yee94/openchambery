@@ -64,9 +64,10 @@ export const commandQueryOptions = (
 export const useCommandsQuery = (options: { enabled?: boolean; directory?: string | null } = {}) => {
   const activeProjectPath = useProjectsStore((state) => state.getActiveProject?.()?.path ?? null);
   const directory = normalizeDirectory(options.directory) ?? normalizeDirectory(activeProjectPath) ?? normalizeDirectory(opencodeClient.getDirectory());
+  const enabled = options.enabled !== false && Boolean(directory);
   return useQuery({
     ...commandQueryOptions(directory),
-    enabled: options.enabled,
+    enabled,
   });
 };
 

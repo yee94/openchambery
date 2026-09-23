@@ -724,6 +724,28 @@ export function createStoreTranscriptRepository(
           return applyMaterializeSnapshots(store, sessionID, command)
         case "remove-message":
           return applyRemoveMessage(store, sessionID, command.messageID)
+        case "revert-committed": {
+          const current = store.getState()
+          const messages = current.message?.[sessionID]
+          if (!Array.isArray(messages) || messages.length === 0) {
+            return { applied: true, changed: false }
+          }
+          const cut = messages.findIndex((message) => message.id >= command.to)
+          if (cut < 0) return { applied: true, changed: false }
+          const removed = messages.slice(cut)
+          const kept = messages.slice(0, cut)
+          const nextMessage = { ...(current.message ?? {}) }
+          nextMessage[sessionID] = kept
+          const nextPart = { ...(current.part ?? {}) }
+          for (const message of removed) {
+            delete nextPart[message.id]
+          }
+          store.setState({
+            message: nextMessage as SessionMessageReducerState["message"],
+            part: nextPart as SessionMessageReducerState["part"],
+          })
+          return { applied: true, changed: removed.length > 0 }
+        }
         default: {
           const _exhaustive: never = command
           void _exhaustive

@@ -73,12 +73,22 @@ export const applyGlobalSessionStatusEvent = (
     case 'session.idle':
     case 'session.error':
     case 'session.execution.succeeded':
-    case 'session.execution.failed':
-    case 'session.execution.interrupted': {
+    case 'session.execution.failed': {
       const props = payload.properties as { sessionID?: string } | undefined;
       if (typeof props?.sessionID === 'string' && props.sessionID) {
         setStatus(props.sessionID, normalizeDirectory(directory), 'idle');
       }
+      return;
+    }
+    case 'session.execution.interrupted': {
+      const props = payload.properties as { sessionID?: string; reason?: string } | undefined;
+      if (typeof props?.sessionID !== 'string' || !props.sessionID) return;
+      // Shutdown preserves the execution claim — keep non-idle until authority.
+      if (props.reason === 'shutdown') {
+        setStatus(props.sessionID, normalizeDirectory(directory), 'busy');
+        return;
+      }
+      setStatus(props.sessionID, normalizeDirectory(directory), 'idle');
       return;
     }
     case 'session.execution.started': {

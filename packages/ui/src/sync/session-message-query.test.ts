@@ -2,6 +2,8 @@ import { beforeEach, describe, expect, test } from "bun:test"
 import { QueryClient } from "@tanstack/react-query"
 
 import {
+  assertTransportPageCursorProgress,
+  createSessionTranscriptController,
   ensureSessionMessagePage,
   isRetryableSessionMessagePageError,
   readSessionMessagePage,
@@ -14,6 +16,7 @@ import {
   type SessionMessageHttpPage,
   type SessionMessagePageFetcher,
   type SessionMessageRuntimeProbe,
+  type SessionTranscriptFetcher,
 } from "./session-message-query"
 
 const page = (label: string, cursor?: string): SessionMessageHttpPage => ({
@@ -234,5 +237,212 @@ describe("ensureSessionMessagePage", () => {
       ({ records: "nope", complete: true } as unknown as SessionMessageHttpPage)
     await expect(fetchWith(fetcher)).rejects.toThrow(SessionMessagePageContractError)
     expect(readCached()).toBe(undefined)
+  })
+})
+
+describe("assertTransportPageCursorProgress", () => {
+  test("rejects same continuation as request.before (non-retryable contract)", () => {
+    let thrown: unknown
+    try {
+      assertTransportPageCursorProgress("older1", {
+        records: [{ info: { id: "msg_1" } }],
+        complete: false,
+        cursor: "older1",
+      })
+    } catch (error) {
+      thrown = error
+    }
+    expect(thrown instanceof SessionMessagePageContractError).toBe(true)
+    expect(
+      isRetryableSessionMessagePageError(
+        new SessionMessagePageContractError("same cursor"),
+      ),
+    ).toBe(false)
+  })
+
+  test("allows advanced continuation and initial pages", () => {
+    assertTransportPageCursorProgress("older1", {
+      records: [],
+      complete: false,
+      cursor: "older2",
+    })
+    assertTransportPageCursorProgress(undefined, {
+      records: [{ info: { id: "msg_1" } }],
+      complete: false,
+      cursor: "older1",
+    })
+    assertTransportPageCursorProgress("older1", {
+      records: [],
+      complete: true,
+    })
+  })
+})
+
+describe("transport page repeated-cursor cache barrier", () => {
+  test("same→same older page is not cached; explicit retry after Host fix issues another HTTP", async () => {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    let calls = 0
+    let mode: "stuck" | "fixed" = "stuck"
+    const params = {
+      directory: "/repo",
+      sessionID: "ses_cursor",
+      limit: 20,
+      before: "older1",
+    } as const
+    const fetcher: SessionMessagePageFetcher = async () => {
+      calls += 1
+      if (mode === "stuck") {
+        return {
+          records: Object.freeze([{ info: Object.freeze({ id: "msg_x" }), parts: Object.freeze([]) }]),
+          complete: false,
+          cursor: "older1",
+        }
+      }
+      return {
+        records: Object.freeze([{ info: Object.freeze({ id: "msg_y" }), parts: Object.freeze([]) }]),
+        complete: false,
+        cursor: "older2",
+      }
+    }
+    const probe: SessionMessageRuntimeProbe = {
+      getTransport: () => "runtime-a",
+      getGeneration: () => 1,
+    }
+
+    await expect(
+      ensureSessionMessagePage(params, fetcher, client, "runtime-a", probe, 1),
+    ).rejects.toThrow(/same cursor|without progress/)
+    expect(calls).toBe(1)
+    expect(readSessionMessagePage(params, client, "runtime-a", 1)).toBe(undefined)
+
+    mode = "fixed"
+    const recovered = await ensureSessionMessagePage(params, fetcher, client, "runtime-a", probe, 1)
+    expect(calls).toBe(2)
+    expect(recovered.cursor).toBe("older2")
+    expect(readSessionMessagePage(params, client, "runtime-a", 1)?.cursor).toBe("older2")
+    client.clear()
+  })
+
+  test("repository fetchPreviousPage keeps canonical tail after stuck older and recovers on retry", async () => {
+    const { createQueryTranscriptRepository } = await import("./transcript-repository-query-adapter")
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false, retryDelay: 1 } } })
+    let olderCalls = 0
+    let olderMode: "stuck" | "fixed" = "stuck"
+    const repo = createQueryTranscriptRepository({
+      client,
+      transport: "runtime-a",
+      generation: 1,
+      initialLimit: 20,
+      historyLimit: 20,
+      fetcher: async ({ before }) => {
+        if (!before) {
+          return {
+            records: Array.from({ length: 25 }, (_, i) => {
+              const n = i + 1
+              return {
+                info: { id: `u${n}`, role: "user", sessionID: "ses_1", time: { created: n } },
+                parts: [],
+              }
+            }),
+            complete: false,
+            cursor: "older26",
+            turnCount: 25,
+          }
+        }
+        olderCalls += 1
+        if (olderMode === "stuck") {
+          return {
+            records: Array.from({ length: 20 }, (_, i) => {
+              const n = 25 - i
+              return {
+                info: { id: `u${n}`, role: "user", sessionID: "ses_1", time: { created: n } },
+                parts: [],
+              }
+            }),
+            complete: false,
+            cursor: "older26",
+            turnCount: 20,
+          }
+        }
+        return {
+          records: Array.from({ length: 5 }, (_, i) => {
+            const n = i + 1
+            return {
+              info: { id: `u${n}`, role: "user", sessionID: "ses_1", time: { created: n } },
+              parts: [],
+            }
+          }),
+          complete: false,
+          cursor: "older6",
+          turnCount: 5,
+        }
+      },
+      probe: {
+        getTransport: () => "runtime-a",
+        getGeneration: () => 1,
+      },
+    })
+    const scope = {
+      directory: "/repo",
+      sessionID: "ses_1",
+      transport: "runtime-a",
+      generation: 1,
+    }
+    await repo.ensureInitial(scope)
+    const beforeOlder = repo.getTranscript(scope).messageOrder
+    expect(beforeOlder).toHaveLength(25)
+
+    await expect(repo.fetchPreviousPage(scope)).rejects.toThrow(/same cursor|without progress|failed/)
+    expect(olderCalls).toBe(1)
+    // Canonical first-screen data retained.
+    expect(repo.getTranscript(scope).messageOrder).toEqual(beforeOlder)
+
+    olderMode = "fixed"
+    // Explicit retry must hit Host again (no warm same-cursor success cache).
+    const after = await repo.fetchPreviousPage(scope)
+    expect(olderCalls).toBe(2)
+    expect(after.messageOrder).toEqual(beforeOlder)
+    expect(after.messageOrder).toHaveLength(25)
+    repo.destroy()
+    client.clear()
+  })
+})
+
+describe("session transcript InfiniteQuery retry budget", () => {
+  test("single 503 through ensureInitial uses transport-page retry only (<=3 HTTP)", async () => {
+    const client = new QueryClient({
+      defaultOptions: {
+        queries: {
+          // Keep default delay short so the test finishes quickly.
+          retryDelay: 1,
+        },
+      },
+    })
+    let calls = 0
+    const fetcher: SessionTranscriptFetcher = async () => {
+      calls += 1
+      const error = new SessionMessageHttpError(503, "session projection failed (503)")
+      throw error
+    }
+    const controller = createSessionTranscriptController({
+      directory: "/repo",
+      sessionID: "ses_retry",
+      fetcher,
+      transport: "runtime-a",
+      generation: 1,
+      client,
+      initialLimit: 2,
+      historyLimit: 2,
+      probe: {
+        getTransport: () => "runtime-a",
+        getGeneration: () => 1,
+      },
+    })
+    await expect(controller.ensureInitial()).rejects.toThrow(/503/)
+    // Transport page: 1 attempt + 2 retries. Infinite must not multiply that.
+    expect(calls).toBeLessThanOrEqual(3)
+    expect(calls).toBeGreaterThanOrEqual(1)
+    controller.destroy()
+    client.clear()
   })
 })

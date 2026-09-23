@@ -351,6 +351,8 @@ export const buildLatestTitleTranscript = (
 export const createSessionTitleRuntime = ({
   buildOpenCodeUrl,
   getOpenCodeAuthHeaders,
+  /** Ticket 11: Host write admission shared with proxy (optional). */
+  serverOpenCodeFetch = null,
   getSmallModelService,
   quietMs = TITLE_QUIET_MS,
   throttleMs = TITLE_THROTTLE_MS,
@@ -377,6 +379,14 @@ export const createSessionTitleRuntime = ({
   };
 
   const openCodeFetch = async (pathname, { directory, method = 'GET', body } = {}) => {
+    if (typeof serverOpenCodeFetch === 'function') {
+      return serverOpenCodeFetch(pathname, {
+        directory,
+        method,
+        body,
+        timeoutMs: FETCH_TIMEOUT_MS,
+      });
+    }
     const base = buildOpenCodeUrl(pathname, '');
     const url = directory ? `${base}?directory=${encodeURIComponent(directory)}` : base;
     const response = await fetch(url, {

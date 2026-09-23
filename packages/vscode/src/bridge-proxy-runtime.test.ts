@@ -1,11 +1,20 @@
 import { describe, test } from 'vitest';
 import assert from 'node:assert/strict';
 import type { BridgeContext } from './bridge';
-import { ensureOpenCodeApiUpstreamPath, handleProxyBridgeMessage } from './bridge-proxy-runtime';
+import type { ConnectionStatus, OpenCodeManager } from './opencode';
+import {
+  ensureOpenCodeApiUpstreamPath,
+  handleProxyBridgeMessage,
+  isBridgeExecutionWritePath,
+} from './bridge-proxy-runtime';
 
 const deps = {
   tryHandleLocalFsProxy: async () => null,
-  buildUnavailableApiResponse: () => ({ status: 503, headers: {}, bodyText: '' }),
+  buildUnavailableApiResponse: () => ({
+    status: 503,
+    headers: { 'content-type': 'application/json' },
+    bodyText: JSON.stringify({ error: 'unavailable' }),
+  }),
   sanitizeForwardHeaders: (input: Record<string, string> | undefined) => input ?? {},
   collectHeaders: (headers: Headers) => {
     const result: Record<string, string> = {};
@@ -17,17 +26,32 @@ const deps = {
   base64EncodeUtf8: (text: string) => Buffer.from(text, 'utf8').toString('base64'),
 };
 
-const ctx = {
-  manager: {
-    getStatus: () => 'connected',
-    getApiUrl: () => 'http://127.0.0.1:3902',
+const createManagerCtx = (initial: { status: ConnectionStatus; url: string | null }) => {
+  let status = initial.status;
+  let url = initial.url;
+  const listeners = new Set<(s: ConnectionStatus) => void>();
+  const manager = {
+    getStatus: () => status,
+    getApiUrl: () => url,
     getOpenCodeAuthHeaders: () => ({}),
-    onStatusChange: (cb: (status: string) => void) => {
-      cb('connected');
-      return { dispose: () => {} };
+    onStatusChange: (cb: (s: ConnectionStatus) => void) => {
+      listeners.add(cb);
+      cb(status);
+      return { dispose: () => listeners.delete(cb) };
     },
-  },
-} as unknown as BridgeContext;
+  } as unknown as OpenCodeManager;
+  const transition = (next: ConnectionStatus, nextUrl: string | null) => {
+    status = next;
+    url = nextUrl;
+    listeners.forEach((cb) => cb(status));
+  };
+  return {
+    ctx: { manager } as unknown as BridgeContext,
+    transition,
+  };
+};
+
+const ctx = createManagerCtx({ status: 'connected', url: 'http://127.0.0.1:3902' }).ctx;
 
 describe('VS Code OpenCode upstream /api path restore', () => {
   test('keeps /api paths and restores missing prefix for legacy roots', () => {
@@ -59,6 +83,87 @@ describe('VS Code OpenCode upstream /api path restore', () => {
         deps,
       );
       assert.equal(fetchInput, 'http://127.0.0.1:3902/api/config?directory=/x');
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+});
+
+describe('VS Code execution write permit at dispatch', () => {
+  test('classifies prompt writes vs interrupt and reads', () => {
+    assert.equal(isBridgeExecutionWritePath('POST', '/api/session/x/prompt_async'), true);
+    assert.equal(isBridgeExecutionWritePath('POST', '/api/session/x/interrupt'), false);
+    assert.equal(isBridgeExecutionWritePath('GET', '/api/session/x/message'), false);
+  });
+
+  test('blocks write dispatch when status leaves connected after wait', async () => {
+    const originalFetch = globalThis.fetch;
+    let fetchCalled = false;
+    try {
+      globalThis.fetch = (async () => {
+        fetchCalled = true;
+        return new Response('{}', { status: 200, headers: { 'content-type': 'application/json' } });
+      }) as typeof fetch;
+
+      // waitForApiUrl sees connected; subsequent permit checks see connecting
+      // (restart race after wait settled, before upstream dispatch).
+      let statusCalls = 0;
+      const manager = {
+        getStatus: () => {
+          statusCalls += 1;
+          return statusCalls <= 2 ? 'connected' : 'connecting';
+        },
+        getApiUrl: () => 'http://127.0.0.1:3902',
+        getOpenCodeAuthHeaders: () => ({}),
+        onStatusChange: (cb: (s: string) => void) => {
+          cb('connected');
+          return { dispose: () => {} };
+        },
+      } as unknown as OpenCodeManager;
+      const localCtx = { manager } as unknown as BridgeContext;
+
+      const response = await handleProxyBridgeMessage(
+        {
+          id: 'w1',
+          type: 'api:proxy',
+          payload: {
+            method: 'POST',
+            path: '/api/session/ses_1/prompt_async',
+            bodyBase64: Buffer.from('{}').toString('base64'),
+          },
+        },
+        localCtx,
+        deps,
+      );
+      assert.equal(response?.success, true);
+      assert.equal((response?.data as { status?: number }).status, 503);
+      assert.equal(fetchCalled, false);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  test('still allows GET diagnostics without connected permit after timeout path', async () => {
+    // When never connected, waitForApiUrl returns null → unavailable for all.
+    // When connected, GET proceeds.
+    const originalFetch = globalThis.fetch;
+    let fetchInput: string | undefined;
+    try {
+      globalThis.fetch = (async (input: Parameters<typeof fetch>[0]) => {
+        fetchInput = String(input);
+        return new Response('{"ok":true}', { status: 200, headers: { 'content-type': 'application/json' } });
+      }) as typeof fetch;
+
+      const { ctx: localCtx } = createManagerCtx({
+        status: 'connected',
+        url: 'http://127.0.0.1:3902',
+      });
+      await handleProxyBridgeMessage(
+        { id: 'r1', type: 'api:proxy', payload: { method: 'GET', path: '/api/session/ses_1/message' } },
+        localCtx,
+        deps,
+      );
+      assert.equal(fetchInput, 'http://127.0.0.1:3902/api/session/ses_1/message');
     } finally {
       globalThis.fetch = originalFetch;
     }

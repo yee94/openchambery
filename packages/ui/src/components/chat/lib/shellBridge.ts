@@ -32,6 +32,14 @@ export type ShellBridgeDetails = {
     status?: string;
 };
 
+export const isUserShellMessage = (message: ChatMessageEntry): boolean => {
+    if (resolveMessageRole(message) !== 'user') return false;
+    return isUserShellMarkerMessage(message) || message.parts.some((part) => {
+        const shellAction = (part as { shellAction?: unknown }).shellAction;
+        return part.type === 'text' && typeof shellAction === 'object' && shellAction !== null;
+    });
+};
+
 export const getShellBridgeAssistantDetails = (
     message: ChatMessageEntry,
     expectedParentId: string | null,

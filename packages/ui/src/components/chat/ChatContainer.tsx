@@ -49,7 +49,6 @@ import { FormCard } from './FormCard';
 import { refreshSessionForms, useSessionFormStore } from '@/sync/session-form-store';
 import { isSessionRetryAction, resolveRetryActionCopy } from '@/sync/session-retry-action';
 import { StatusRowContainer } from './StatusRowContainer';
-import { SessionErrorNotice } from './SessionErrorNotice';
 import ScrollToBottomButton from './components/ScrollToBottomButton';
 import { PromptNavigatorRail } from './components/PromptNavigatorRail';
 import { ScrollShadow } from '@/components/ui/ScrollShadow';
@@ -1758,20 +1757,11 @@ const ChatContainerContent: React.FC<ChatContainerContentProps> = ({
     });
     // Expanded scroll-to-bottom stays a foot sibling (original bottom-full mb-2).
     // Compact scroll-to-bottom is mounted on the pill inside ChatInput.
-    const tailMessageInfo = sessionMessages.at(-1)?.info;
     const promptSurface = promptAvailability.showReadOnlyBanner
         ? readOnlyPromptBanner
         : readOnly
             ? null
             : (
-                <>
-                {active && currentSessionId && (
-                    <SessionErrorNotice
-                        sessionId={currentSessionId}
-                        directory={effectiveSessionDirectory}
-                        hasInlineError={tailMessageInfo?.role === 'assistant' && Boolean(tailMessageInfo.error)}
-                    />
-                )}
                 <ChatInput
                     surface={composerSurface}
                     scrollToBottom={scrollViewportOnSend}
@@ -1779,7 +1769,6 @@ const ChatContainerContent: React.FC<ChatContainerContentProps> = ({
                     onScrollToBottom={navigation.resumeToLatest}
                     submissionBlocked={promptAvailability.blockSubmission}
                 />
-                </>
             );
     const handlePromptNavigatorSelect = useEvent((turnId: string) => {
         void navigation.scrollToTurnId(turnId, { behavior: 'smooth' });

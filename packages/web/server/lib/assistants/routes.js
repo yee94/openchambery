@@ -38,6 +38,8 @@ export const registerAssistantRoutes = (app, dependencies) => {
     onRevisionTip: dependencies.onRevisionTip,
     onContactTurnEvent: dependencies.onContactTurnEvent,
     onContactTurnComplete: dependencies.onContactTurnComplete,
+    archiveSessionHost: dependencies.archiveSessionHost,
+    forgetSessionHost: dependencies.forgetSessionHost,
     createChatCompletion: boundCompletion,
   });
   setAssignedSessionSettleHandler(({ sessionId, status }) => service.reportAssignedSessionSettle(sessionId, status));

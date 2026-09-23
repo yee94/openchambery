@@ -30,7 +30,16 @@ export async function runIndexedDbEvidence() {
     await fs.writeFile(fixturePath, "<!doctype html><script src=\"./renderer.js\"></script>")
     const environment = { ...process.env }
     delete environment.ELECTRON_RUN_AS_NODE
-    const child = spawn(electronBinary, [electronHarness, "--", fixturePath, userDataDirectory], {
+    // Align with transcript durable evidence: headless Chromium flags so
+    // no-GUI / agent environments can reach app.ready (GUI-only path times out).
+    const child = spawn(electronBinary, [
+      "--headless",
+      "--disable-gpu",
+      electronHarness,
+      "--",
+      fixturePath,
+      userDataDirectory,
+    ], {
       cwd: packageRoot,
       env: environment,
       stdio: "inherit",

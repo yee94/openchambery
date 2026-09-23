@@ -276,7 +276,7 @@ describe("first paint prefers context; prepend stays on projection", () => {
           { id: "msg_after", type: "user", time: { created: 20 }, text: "after compact" },
           { id: "msg_before", type: "user", time: { created: 10 }, text: "before compact" },
         ],
-        cursor: { previous: "cur_older", next: null },
+        cursor: { previous: null, next: "cur_older" },
       })
     }) as typeof fetch
   })
@@ -287,7 +287,7 @@ describe("first paint prefers context; prepend stays on projection", () => {
     globalThis.fetch = originalFetch
   })
 
-  test("initial open uses context records and keeps the projection cursor for older history", async () => {
+  test("initial open overlays context onto the projection window and keeps its cursor", async () => {
     const { fetchProductionTranscriptTransportPage } = await import("./transcript-repository-production")
     const page = await fetchProductionTranscriptTransportPage({
       directory: "/repo",
@@ -297,7 +297,8 @@ describe("first paint prefers context; prepend stays on projection", () => {
     })
     expect(calls.some((call) => call.url.pathname === `/api/session/${SESSION}/context`)).toBe(true)
     expect(calls.some((call) => call.url.pathname === `/api/session/${SESSION}/message`)).toBe(true)
-    expect(page.records.map((record) => record.info.id)).toEqual(["msg_after"])
+    // Projection window stays authoritative so older cursor still covers every first-page id.
+    expect(page.records.map((record) => record.info.id)).toEqual(["msg_before", "msg_after"])
     expect(page.cursor).toBe("cur_older")
     expect(page.complete).toBe(false)
   })
@@ -314,6 +315,172 @@ describe("first paint prefers context; prepend stays on projection", () => {
     expect(calls.every((call) => !call.url.pathname.endsWith("/context"))).toBe(true)
     expect(calls[0]!.url.pathname).toBe(`/api/session/${SESSION}/message`)
     expect(calls[0]!.url.searchParams.get("cursor")).toBe("cur_older")
+  })
+
+  test("context subset overlay keeps projection ids covered by the older cursor", async () => {
+    const { mergeInitialProjectionAndContext } = await import("./transcript-repository-production")
+    const projection = {
+      records: [
+        { info: { id: "2", role: "user", sessionID: SESSION, time: { created: 2 } }, parts: [] },
+        { info: { id: "3", role: "user", sessionID: SESSION, time: { created: 3 } }, parts: [] },
+      ],
+      cursor: "older",
+      complete: false,
+      turnCount: 2,
+    }
+    const context = {
+      records: [
+        { info: { id: "3", role: "user", sessionID: SESSION, time: { created: 3 } }, parts: [] },
+      ],
+      complete: true,
+      turnCount: 1,
+    }
+    const page = mergeInitialProjectionAndContext(projection as never, context as never)
+    expect(page.records.map((record) => record.info.id)).toEqual(["2", "3"])
+    expect(page.cursor).toBe("older")
+    expect(page.complete).toBe(false)
+  })
+
+  test("context same-id update + newer tail append + older prefix left to cursor", async () => {
+    const { mergeInitialProjectionAndContext } = await import("./transcript-repository-production")
+    // Projection window 2..21 (oldest→newest), continuation older2.
+    const projection = {
+      records: Array.from({ length: 20 }, (_, i) => {
+        const n = i + 2
+        return {
+          info: { id: `u${n}`, role: "user", sessionID: SESSION, time: { created: n }, title: "proj" },
+          parts: [],
+        }
+      }),
+      cursor: "older2",
+      complete: false,
+      turnCount: 20,
+    }
+    // Context: older prefix u1, refreshed u10 body, newer tail u22.
+    const context = {
+      records: [
+        { info: { id: "u1", role: "user", sessionID: SESSION, time: { created: 1 } }, parts: [] },
+        ...Array.from({ length: 20 }, (_, i) => {
+          const n = i + 2
+          return {
+            info: {
+              id: `u${n}`,
+              role: "user",
+              sessionID: SESSION,
+              time: { created: n },
+              ...(n === 10 ? { title: "ctx-updated" } : {}),
+            },
+            parts: [],
+          }
+        }),
+        { info: { id: "u22", role: "user", sessionID: SESSION, time: { created: 22 } }, parts: [] },
+      ],
+      complete: true,
+      turnCount: 22,
+    }
+    const page = mergeInitialProjectionAndContext(projection as never, context as never)
+    const ids = page.records.map((record) => record.info.id)
+    expect(ids).toEqual([
+      ...Array.from({ length: 20 }, (_, i) => `u${i + 2}`),
+      "u22",
+    ])
+    expect(ids).not.toContain("u1")
+    expect(page.cursor).toBe("older2")
+    expect((page.records.find((r) => r.info.id === "u10")?.info as { title?: string }).title).toBe("ctx-updated")
+  })
+
+  test("newer tail keeps context traversal order when created timestamps tie", async () => {
+    const { mergeInitialProjectionAndContext } = await import("./transcript-repository-production")
+    // Real schema: projection window ends at created 21; context has two newer
+    // rows both at created 22. Host context order is authoritative — id tie-break
+    // must not invent rank (tail_a before tail_z would be wrong).
+    const projection = {
+      records: Array.from({ length: 20 }, (_, i) => {
+        const n = i + 2
+        return {
+          info: { id: `u${n}`, role: "user", sessionID: SESSION, time: { created: n } },
+          parts: [],
+        }
+      }),
+      cursor: "older2",
+      complete: false,
+      turnCount: 20,
+    }
+    const context = {
+      records: [
+        ...Array.from({ length: 20 }, (_, i) => {
+          const n = i + 2
+          return {
+            info: { id: `u${n}`, role: "user", sessionID: SESSION, time: { created: n } },
+            parts: [],
+          }
+        }),
+        { info: { id: "tail_z", role: "user", sessionID: SESSION, time: { created: 22 } }, parts: [] },
+        { info: { id: "tail_a", role: "user", sessionID: SESSION, time: { created: 22 } }, parts: [] },
+      ],
+      complete: true,
+      turnCount: 22,
+    }
+    const page = mergeInitialProjectionAndContext(projection as never, context as never)
+    const ids = page.records.map((record) => record.info.id)
+    expect(ids.slice(-2)).toEqual(["tail_z", "tail_a"])
+    expect(ids).toEqual([
+      ...Array.from({ length: 20 }, (_, i) => `u${i + 2}`),
+      "tail_z",
+      "tail_a",
+    ])
+    expect(page.cursor).toBe("older2")
+  })
+
+  test("newer tail with equal created and a smaller id than the window end is not dropped", async () => {
+    const { mergeInitialProjectionAndContext } = await import("./transcript-repository-production")
+    const row = (id: string, created: number) => ({
+      info: { id, role: "user", sessionID: SESSION, time: { created } },
+      parts: [],
+    })
+    const projection = { records: [row("z", 100)], cursor: "older", complete: false, turnCount: 1 }
+    const context = { records: [row("z", 100), row("a", 100)], complete: false, turnCount: 2 }
+    const page = mergeInitialProjectionAndContext(projection as never, context as never)
+    expect(page.records.map((record) => record.info.id)).toEqual(["z", "a"])
+    expect(page.cursor).toBe("older")
+  })
+
+  test("context rows before the overlap anchor stay off the first page regardless of id or created", async () => {
+    const { mergeInitialProjectionAndContext } = await import("./transcript-repository-production")
+    const row = (id: string, created: number) => ({
+      info: { id, role: "user", sessionID: SESSION, time: { created } },
+      parts: [],
+    })
+    const projection = {
+      records: [row("m", 100), row("b", 100)],
+      cursor: "older",
+      complete: false,
+      turnCount: 2,
+    }
+    // "zz_gap" sits between the two overlap rows; "zz_prefix" precedes the window.
+    const context = {
+      records: [row("zz_prefix", 100), row("m", 100), row("zz_gap", 100), row("b", 100), row("c", 90)],
+      complete: false,
+      turnCount: 5,
+    }
+    const page = mergeInitialProjectionAndContext(projection as never, context as never)
+    expect(page.records.map((record) => record.info.id)).toEqual(["m", "b", "c"])
+  })
+
+  test("without overlap, only rows not created before the window end are appended in context order", async () => {
+    const { mergeInitialProjectionAndContext } = await import("./transcript-repository-production")
+    const row = (id: string, created: number) => ({
+      info: { id, role: "user", sessionID: SESSION, time: { created } },
+      parts: [],
+    })
+    const projection = { records: [row("p1", 90), row("p2", 100)], cursor: "older", complete: false, turnCount: 2 }
+    const context = {
+      records: [row("old", 95), row("z_new", 100), row("a_new", 100), row("later", 101)],
+      complete: false,
+      turnCount: 4,
+    }
+    const page = mergeInitialProjectionAndContext(projection as never, context as never)
+    expect(page.records.map((record) => record.info.id)).toEqual(["p1", "p2", "z_new", "a_new", "later"])
   })
 })
 

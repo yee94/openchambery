@@ -962,11 +962,11 @@ describe('Assistant UI product contract', () => {
     expect(mobileTab).toContain('useAssistantWorking(assistantID, serverWorking)');
     expect(card).toContain("persisted === 'error' || persisted === 'question' || persisted === 'complete'");
     expect(card).toContain("if (liveType === 'idle') return 'complete'");
-    expect(generate).toContain('client.session.promptAsync');
-    expect(generate).not.toContain('client.session.prompt(');
-    expect(generate).toContain('V2 session.prompt only forwards');
-    expect(generate).toContain('isJsonContentType');
-    expect(generate).toContain('looksLikeJsonObject');
+    // Attachment LLM path uses official v2 session.prompt (steer), not promptAsync.
+    expect(generate).toContain('client.session.prompt({');
+    expect(generate).toContain("delivery: 'steer'");
+    expect(generate).not.toContain('client.session.promptAsync');
+    expect(generate).toContain('session.prompt failed');
   });
 
 });

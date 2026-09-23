@@ -1,7 +1,11 @@
 import { describe, test } from 'vitest';
 import assert from 'node:assert/strict';
 import type { ConnectionStatus, OpenCodeManager } from './opencode';
-import { waitForApiUrl } from './opencode-ready';
+import {
+  isOpenCodeExecutionPermitted,
+  resolveConnectedApiUrl,
+  waitForApiUrl,
+} from './opencode-ready';
 
 type Listener = (status: ConnectionStatus, error?: string) => void;
 
@@ -67,8 +71,20 @@ describe('waitForApiUrl readiness gating', () => {
     assert.equal(await pending, null);
   });
 
-  test('falls back to whatever URL exists after the timeout', async () => {
-    const { manager } = createManager({ status: 'connecting', url: null });
+  test('deadline fails with null even when a pre-ready URL exists (no permit bypass)', async () => {
+    // getApiUrl is already set while still connecting — must NOT be returned.
+    const { manager } = createManager({ status: 'connecting', url: 'http://127.0.0.1:3902' });
     assert.equal(await waitForApiUrl(manager, 20), null);
+  });
+});
+
+describe('resolveConnectedApiUrl / execution permit', () => {
+  test('returns URL only while connected', () => {
+    const { manager, transition } = createManager({ status: 'connecting', url: 'http://127.0.0.1:1' });
+    assert.equal(resolveConnectedApiUrl(manager), null);
+    assert.equal(isOpenCodeExecutionPermitted(manager), false);
+    transition('connected', 'http://127.0.0.1:4096');
+    assert.equal(resolveConnectedApiUrl(manager), 'http://127.0.0.1:4096');
+    assert.equal(isOpenCodeExecutionPermitted(manager), true);
   });
 });

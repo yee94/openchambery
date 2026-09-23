@@ -104,6 +104,16 @@ export async function bootstrapGlobal(
         const health = await healthRes.json()
         if (health.lastOpenCodeError) {
           message = health.lastOpenCodeError
+        } else if (health.runtimeContract?.executionAllowed === false) {
+          const phase = typeof health.runtimeContract?.phase === 'string'
+            ? health.runtimeContract.phase
+            : 'incompatible'
+          const serve = typeof health.runtimeContract?.serveVersion === 'string'
+            ? health.runtimeContract.serveVersion
+            : null
+          message = serve
+            ? `OpenCode runtime contract limits execution (phase=${phase}, serve=${serve})`
+            : `OpenCode runtime contract limits execution (phase=${phase})`
         } else if (!health.openCodeRunning) {
           message = "OpenCode process is not running"
         }
@@ -218,22 +228,18 @@ export async function bootstrapDirectory(input: {
 
   // ---------------------------------------------------------------------------
   // Phase 2: Deferrable — fetch after first paint without blocking.
-  // These enrich the UI but aren't required for basic functionality.
+  // Form + permission stay here so background sessions keep blocking requests
+  // reachable without a visible MCP/command surface (Ticket 09).
+  // MCP / command catalogs are demand-driven: mounted TanStack Query observers
+  // own them (`location-services-demand.ts`), not directory bootstrap.
   // ---------------------------------------------------------------------------
   void Promise.allSettled([
-    retry(async () => {
-      const listed = await sdk.mcp.list(locationOf(directory))
-      const mcp: State["mcp"] = {}
-      for (const server of listed.data) {
-        if (!server?.name) continue
-        mcp[server.name] = server.status
-      }
-      set({ mcp })
-    }),
     retry(async () => {
       throw v2CapabilityUnavailable("lsp.status")
     }),
     retry(async () => {
+      // VCS is work-directory enrichment: fetch on first open of a bootstrapped
+      // directory. Pure sidebar index browse never reaches bootstrapDirectory.
       const result = await sdk.vcs.get(locationOf(directory))
       if (!result?.data) {
         throw new Error("vcs.get returned no data")
@@ -314,3 +320,4 @@ export async function bootstrapDirectory(input: {
   // coordinator owns one bounded SQLite-backed list per project, avoiding a
   // second active-directory `experimental.session.list` request.
 }
+

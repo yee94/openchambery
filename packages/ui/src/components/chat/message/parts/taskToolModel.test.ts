@@ -5,6 +5,8 @@ import {
     applyAuthoritativeTaskSessionIdToSubtaskParts,
     buildTaskSummaryEntriesFromSession,
     formatTaskStructuredOutputForMarkdown,
+    isTaskToolName,
+    parseShellNotification,
     parseSubagentNotification,
     parseTaskMetadataBlock,
     prepareTaskOutputForDisplay,
@@ -16,8 +18,16 @@ import {
 } from './taskToolModel';
 
 describe('taskToolModel', () => {
+    test('classifies native subagent and plugin task as shared task tools', () => {
+        expect(isTaskToolName('task')).toBe(true);
+        expect(isTaskToolName('subagent')).toBe(true);
+        expect(isTaskToolName('SubAgent')).toBe(true);
+        expect(isTaskToolName('read')).toBe(false);
+    });
+
     test('reads the current OpenCode running-state identity contract', () => {
         expect(readTaskSessionIdFromRecord({ sessionId: 'child-live' })).toBe('child-live');
+        expect(readTaskSessionIdFromRecord({ sessionID: 'child-native' })).toBe('child-native');
         expect(readTaskSessionIdFromRecord({})).toBe(undefined);
     });
 
@@ -68,12 +78,29 @@ describe('taskToolModel', () => {
         expect(parseSubagentNotification(undefined)).toBe(undefined);
     });
 
-    test('projects tool calls while excluding nested task and todo bookkeeping', () => {
+    test('parses official shell background completion notifications', () => {
+        // core/shell/result.ts notification shape
+        const completed = '<shell id="sh_1" state="completed" command="npm test">\nok\n\n</shell>';
+        expect(parseShellNotification(completed)).toEqual({
+            id: 'sh_1',
+            state: 'completed',
+            command: 'npm test',
+            body: 'ok',
+        });
+        expect(parseShellNotification('<shell id="job_9" state="cancelled" command="sleep 9">killed</shell>')?.state).toBe('cancelled');
+        expect(parseShellNotification('<shell id="sh_err" state="error">boom</shell>')?.state).toBe('error');
+        expect(parseShellNotification('普通 shell 输出')).toBe(undefined);
+        expect(parseShellNotification('<shell id="sh_x">缺 state</shell>')).toBe(undefined);
+        expect(parseShellNotification(undefined)).toBe(undefined);
+    });
+
+    test('projects tool calls while excluding nested task/subagent and todo bookkeeping', () => {
         const message = {
             info: { id: 'message-1', role: 'assistant' } as Message,
             parts: [
                 { id: 'read-1', type: 'tool', tool: 'read', state: { status: 'completed', input: { filePath: 'a.ts' } } },
                 { id: 'task-1', type: 'tool', tool: 'task', state: { status: 'running' } },
+                { id: 'subagent-1', type: 'tool', tool: 'subagent', state: { status: 'running' } },
                 { id: 'todo-1', type: 'tool', tool: 'todowrite', state: { status: 'completed' } },
             ] as unknown as Part[],
         };
@@ -83,6 +110,14 @@ describe('taskToolModel', () => {
             tool: 'read',
             state: { status: 'completed', title: undefined, input: { filePath: 'a.ts' } },
         }]);
+    });
+
+    test('native subagent fixtures resolve structured session identity and running status', () => {
+        expect(readTaskSessionIdFromRecord({ sessionID: 'ses_native_1' })).toBe('ses_native_1');
+        expect(readTaskStatusFromRecord({ sessionID: 'ses_native_1', status: 'running' })).toBe('running');
+        expect(readTaskRunningFromOutput(
+            'The subagent is working in the background (sessionID: ses_native_1).\nstatus: running',
+        )).toBe(true);
     });
 
     test('applies the bridge session ID over a synthesized subtask ID', () => {

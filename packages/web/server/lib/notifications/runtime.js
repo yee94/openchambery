@@ -412,6 +412,11 @@ export const createNotificationTriggerRuntime = (deps) => {
         }
       }
     }
+    // Ticket 07: shutdown interrupt is not a completion terminal — no ready push.
+    if (payload.type === 'session.execution.interrupted') {
+      const reason = payload.properties?.reason ?? payload.data?.reason;
+      if (reason === 'shutdown') return;
+    }
     if ((payload.type === 'session.idle' || payload.type === 'session.error') && sessionId) {
       const error = payload.properties?.error;
       const errorText = typeof error?.message === 'string'

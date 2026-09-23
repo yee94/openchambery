@@ -12,25 +12,28 @@ let stage = "boot"
 let window
 let failed = false
 
-const waitFor = async (promise, description, timeout = 45_000) => {
+const waitFor = (promise, description, timeout = 45_000) => {
   let timeoutID
-  try {
-    return await Promise.race([
-      promise,
-      new Promise((_, reject) => {
-        timeoutID = setTimeout(() => reject(new Error(`${description} timed out after ${timeout / 1_000} seconds during ${stage}`)), timeout)
-      }),
-    ])
-  } finally {
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => {
+      timeoutID = setTimeout(() => reject(new Error(`${description} timed out after ${timeout / 1_000} seconds during ${stage}`)), timeout)
+    }),
+  ]).finally(() => {
     clearTimeout(timeoutID)
-  }
+  })
 }
 
 console.log("IndexedDB harness: boot")
+// Match transcript durable harness: headless Chromium so CI / no-GUI agents can
+// reach app.ready without a macOS interactive display session.
+app.disableHardwareAcceleration()
+app.commandLine.appendSwitch("headless")
+app.commandLine.appendSwitch("disable-gpu")
 app.once("will-finish-launching", () => console.log("IndexedDB harness: will-finish-launching"))
 app.once("ready", () => console.log("IndexedDB harness: ready"))
 
-try {
+const run = async () => {
   if (harnessArgumentIndex < 0 || !fixturePath || !userDataPath) {
     throw new Error(`Expected fixture and temporary user-data paths; received argv: ${JSON.stringify(process.argv)}`)
   }
@@ -49,6 +52,7 @@ try {
     webPreferences: {
       contextIsolation: true,
       nodeIntegration: false,
+      offscreen: true,
     },
   })
   window.webContents.once("did-finish-load", () => console.log("IndexedDB harness: window load"))
@@ -58,15 +62,17 @@ try {
   const result = await window.webContents.executeJavaScript("window.__OPENCHAMBER_INPUT_DRAFT_INDEXEDDB_EVIDENCE__")
   if (!result?.ok) throw new Error(result?.error ?? "Renderer did not return IndexedDB evidence")
   console.log(`Chromium IndexedDB evidence passed: ${result.evidence.map(({ name }) => name).join(", ")}`)
-} catch (error) {
+}
+
+run().catch((error) => {
   failed = true
   const detail = error instanceof Error ? error.stack ?? error.message : String(error)
   console.error(`IndexedDB harness failed during ${stage}: ${detail}`)
   if (stage === "waiting for app ready") {
-    console.error("IndexedDB harness requires an Electron-capable macOS GUI session; this environment delivered no Electron lifecycle events after boot.")
+    console.error("IndexedDB harness applied --headless/--disable-gpu and app.disableHardwareAcceleration() before ready; this environment still delivered no Electron lifecycle events after boot.")
   }
-} finally {
+}).finally(() => {
   window?.destroy()
   app.releaseSingleInstanceLock()
   app.exit(failed ? 1 : 0)
-}
+})

@@ -28,6 +28,7 @@ import { getProviderModelDisplayName } from '@/lib/modelDisplay';
 import { lazyWithChunkRecovery } from '@/lib/chunkLoadRecovery';
 import type { TurnGroupingContext } from './lib/turns/types';
 import { shouldTightenWorkingBottomGap } from './lib/activityExpansion';
+import { isUserShellMessage } from './lib/shellBridge';
 import { copyTextToClipboard } from '@/lib/clipboard';
 import { resolveAssistantErrorPresentation, shouldSuppressAssistantError } from './message/assistantErrorPresentation';
 import { FadeInOnReveal } from './message/FadeInOnReveal';
@@ -1120,6 +1121,7 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
         ? (isMobile ? (stickyUserHeader ? 'pt-4' : 'pt-0') : 'pt-6')
         : 'pt-0';
     const userMessageRadius = 'var(--radius-xl)';
+    const isShellResult = isUserShellMessage(message);
 
     return (
         <>
@@ -1142,16 +1144,17 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
                                 ignoreContextDisabled
                                 respectReducedMotion
                             >
-                                <div className={cn('relative flex justify-end', !isMobile ? 'group/user-shell' : undefined)}>
-                                    <div className={cn('max-w-[85%]', showStickyInlineHoverRow ? 'pb-5' : undefined)}>
+                                <div className={cn('relative flex', isShellResult ? 'justify-start' : 'justify-end', !isMobile ? 'group/user-shell' : undefined)}>
+                                    <div className={cn(isShellResult ? 'w-full min-w-0' : 'max-w-[85%]', showStickyInlineHoverRow && !isShellResult ? 'pb-5' : undefined)}>
                                         <div
-                                            style={{
+                                            style={isShellResult ? undefined : {
                                                 backgroundColor: 'var(--chat-user-message-bg)',
                                                 borderRadius: userMessageRadius,
                                                 borderBottomRightRadius: 'var(--radius-sm)',
                                             }}
-                                            className="px-3 py-1.5 shadow-none border border-primary/5"
-                                            data-user-message-bubble="true"
+                                            className={isShellResult ? 'min-w-0 text-left' : 'px-3 py-1.5 shadow-none border border-primary/5'}
+                                            data-user-message-bubble={isShellResult ? undefined : 'true'}
+                                            data-shell-result={isShellResult ? 'true' : undefined}
                                         >
                                             <MessageBody
                                                 messageId={message.info.id}
@@ -1189,7 +1192,7 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
                                                 errorMessage={assistantErrorText}
                                                 errorVariant={assistantErrorVariant}
                                                 userActionsMode={useExternalUserActionsRow ? 'external-content' : 'inline'}
-                                                stickyUserHeaderEnabled={stickyUserHeader}
+                                                stickyUserHeaderEnabled={stickyUserHeader && !isShellResult}
                                             />
                                         </div>
                                         {useExternalUserActionsRow ? (

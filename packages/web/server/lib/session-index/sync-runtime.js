@@ -1,4 +1,6 @@
 const SESSION_LIMIT = 20;
+/** Max upstream list pages while skipping consecutive Host-archived rows. */
+const ARCHIVE_SKIP_PAGE_BUDGET = 5;
 const FULL_RECONCILE_INTERVAL_MS = 24 * 60 * 60 * 1000;
 const FETCH_TIMEOUT_MS = 6_000;
 const INTERACTIVE_YIELD_MS = 1_000;
@@ -15,12 +17,55 @@ const updatedAt = (session) => {
   return typeof value === 'number' && Number.isFinite(value) ? value : 0;
 };
 
+const isArchivedSession = (session) => {
+  const archived = session?.time?.archived;
+  return typeof archived === 'number' && Number.isFinite(archived) && archived > 0;
+};
+
+const nonEmptySystemID = (value) => typeof value === 'string' && value.length > 0;
+
+/** Match session-index service: system sessions never consume the active-20 budget. */
+const isSystemSession = (session) => {
+  const openchamber = session?.metadata?.openchamber;
+  if (!openchamber || typeof openchamber !== 'object') return false;
+  if (openchamber.assigned?.from === 'contact') return false;
+  if (nonEmptySystemID(openchamber.assistant?.assistantID)) return true;
+  if (nonEmptySystemID(openchamber.scheduledTask?.taskID)) return true;
+  if (nonEmptySystemID(openchamber.smallModel?.purpose)) return true;
+  if (nonEmptySystemID(openchamber.llm?.purpose)) return true;
+  return false;
+};
+
+const isRootActiveCandidate = (session) => {
+  if (!session?.id || isArchivedSession(session)) return false;
+  if (typeof session.parentID === 'string' && session.parentID) return false;
+  if (session.title === 'smartfetch-secondary') return false;
+  if (isSystemSession(session)) return false;
+  return true;
+};
+
+/**
+ * v2 list cursor may be a string/number or `{ next }`. Never String(object).
+ * @returns {string | null}
+ */
+export const extractSessionListCursorToken = (cursor) => {
+  if (cursor == null || cursor === '') return null;
+  if (typeof cursor === 'string' || typeof cursor === 'number' || typeof cursor === 'bigint') {
+    const token = String(cursor).trim();
+    return token.length > 0 ? token : null;
+  }
+  if (typeof cursor === 'object' && cursor.next != null && cursor.next !== '') {
+    return extractSessionListCursorToken(cursor.next);
+  }
+  return null;
+};
+
 const mergeIncrementalSessions = (cached, changed) => {
   const byID = new Map();
   for (const session of cached ?? []) byID.set(session.id, session);
   for (const session of changed ?? []) {
     if (!session?.id) continue;
-    if (session.time?.archived) byID.delete(session.id);
+    if (isArchivedSession(session)) byID.delete(session.id);
     else byID.set(session.id, session);
   }
   return [...byID.values()]
@@ -35,6 +80,12 @@ export const createSessionIndexSyncRuntime = ({
   waitForOpenCodeReady,
   /** Optional tip sink: ({ revision, sync }) after each revision bump. */
   onRevisionTip = null,
+  /**
+   * Optional Host authority projection applied to each upstream list page
+   * before active-only filtering (archive / metadata). Sync — no await.
+   * @type {((sessions: object[]) => object[]) | null}
+   */
+  projectSessions = null,
   fetchFn = globalThis.fetch,
   now = Date.now,
   setTimer = setTimeout,
@@ -116,49 +167,125 @@ export const createSessionIndexSyncRuntime = ({
     .find((entry) => entry.directory === directory);
 
   const fetchDirectory = async (task) => {
-    const cached = readDirectory(task.directory);
-    // v2 `session.list` (`GET /api/session`) exposes cursor pagination only —
-    // no timestamp-incremental (`start`) or `roots` filter. Sync therefore
-    // always fetches a fresh full page and lets replaceDirectory reconcile.
-    // Empty snapshots still store lastSyncedAt as a worktree topology hint.
-    const useIncremental = false;
-    const url = new URL(buildOpenCodeUrl('/session'));
-    url.searchParams.set('directory', task.directory);
-    url.searchParams.set('limit', String(SESSION_LIMIT));
-
+    // v2 `session.list` cursor pagination. Collect candidates across pages,
+    // then re-project once before commit so a Host archive that lands mid-sync
+    // cannot resurrect a row. Root/system filters run before the 20-slot budget.
+    // projectSessions failure aborts the refresh and keeps prior directory rows.
     const controller = new AbortController();
     currentController = controller;
     currentWasPreempted = false;
     const timeout = setTimer(() => controller.abort(), FETCH_TIMEOUT_MS);
     try {
-      const response = await fetchFn(url, {
-        method: 'GET',
-        headers: { Accept: 'application/json', ...getOpenCodeAuthHeaders() },
-        signal: controller.signal,
-      });
-      if (!response.ok) {
-        const error = new Error(`OpenCode session list failed (${response.status})`);
-        error.status = response.status;
-        throw error;
+      /** @type {object[]} raw upstream sessions collected across pages */
+      const collected = [];
+      let pages = 0;
+      let cursorToken = null;
+      let upstreamHasMore = false;
+      let hitPageBudget = false;
+      let lastCursorToken = null;
+      let seenCursor = new Set();
+
+      while (collected.length < SESSION_LIMIT * 3 && pages < ARCHIVE_SKIP_PAGE_BUDGET) {
+        const url = new URL(buildOpenCodeUrl('/session'));
+        url.searchParams.set('directory', task.directory);
+        url.searchParams.set('limit', String(SESSION_LIMIT));
+        if (cursorToken) {
+          url.searchParams.set('cursor', cursorToken);
+        }
+
+        const response = await fetchFn(url, {
+          method: 'GET',
+          headers: { Accept: 'application/json', ...getOpenCodeAuthHeaders() },
+          signal: controller.signal,
+        });
+        if (!response.ok) {
+          const error = new Error(`OpenCode session list failed (${response.status})`);
+          error.status = response.status;
+          throw error;
+        }
+        const payload = await response.json();
+        const sessions = Array.isArray(payload) ? payload : payload?.data;
+        if (!Array.isArray(sessions)) throw new Error('Invalid OpenCode session list payload');
+        pages += 1;
+
+        for (const session of sessions) {
+          if (session?.id) collected.push(session);
+        }
+
+        // v2: exhaust by cursor.next when present. A short page with next is
+        // still more data (archived skips / filtered upstream). Bare arrays
+        // have no cursor — length < limit means end of list.
+        const isEnvelope = payload && typeof payload === 'object' && !Array.isArray(payload);
+        const nextToken = isEnvelope
+          ? extractSessionListCursorToken(payload.cursor)
+          : null;
+        const pageFull = sessions.length === SESSION_LIMIT;
+        if (nextToken) lastCursorToken = nextToken;
+
+        if (nextToken) {
+          upstreamHasMore = true;
+          if (seenCursor.has(nextToken)) {
+            // Duplicate cursor → stop (broken upstream) rather than loop forever.
+            hitPageBudget = true;
+            break;
+          }
+          seenCursor.add(nextToken);
+          if (pages >= ARCHIVE_SKIP_PAGE_BUDGET) {
+            hitPageBudget = true;
+            break;
+          }
+          cursorToken = nextToken;
+          continue;
+        }
+
+        // No next token: bare-array / terminal page.
+        if (!pageFull) {
+          upstreamHasMore = false;
+          break;
+        }
+        // Full page without cursor — cannot continue safely.
+        upstreamHasMore = true;
+        hitPageBudget = true;
+        break;
       }
-      const payload = await response.json();
-      // v2 responds `{ data: Session[], cursor }`; tolerate a bare array for
-      // non-v2 test doubles.
-      const sessions = Array.isArray(payload) ? payload : payload?.data;
-      if (!Array.isArray(sessions)) throw new Error('Invalid OpenCode session list payload');
-      const nextSessions = useIncremental
-        ? mergeIncrementalSessions(cached?.sessions, sessions)
-        : sessions.slice(0, SESSION_LIMIT);
-      const oldest = nextSessions[nextSessions.length - 1];
+
+      // Re-project the full collected set at commit time (current Host authority).
+      let projected = collected;
+      if (typeof projectSessions === 'function') {
+        try {
+          const next = projectSessions(collected);
+          if (!Array.isArray(next)) {
+            throw new Error('projectSessions must return an array');
+          }
+          projected = next;
+        } catch (error) {
+          // Failure is not empty success — keep prior directory rows.
+          console.warn('[session-index] projectSessions failed; keeping prior directory:', error?.message ?? error);
+          throw error;
+        }
+      }
+
+      // Root + system filters before filling the active-20 capacity.
+      const active = [];
+      for (const session of projected) {
+        if (!isRootActiveCandidate(session)) continue;
+        if (active.length >= SESSION_LIMIT) break;
+        active.push(session);
+      }
+
+      const oldest = active[active.length - 1];
+      const cursorNumber = lastCursorToken && Number.isFinite(Number(lastCursorToken))
+        ? Number(lastCursorToken)
+        : (updatedAt(oldest) || null);
       sessionIndexService.replaceDirectory({
         directory: task.directory,
-        sessions: nextSessions,
-        cursor: useIncremental ? (cached?.cursor ?? null) : (updatedAt(oldest) || null),
-        hasMore: useIncremental ? Boolean(cached?.hasMore) : sessions.length === SESSION_LIMIT,
-        fullSync: !useIncremental,
+        sessions: active,
+        cursor: cursorNumber,
+        hasMore: upstreamHasMore || hitPageBudget || active.length === SESSION_LIMIT,
+        fullSync: true,
         now: now(),
       });
-      for (const session of nextSessions) {
+      for (const session of active) {
         if (!session?.id) continue;
         const key = `${task.runtimeKey}\n${task.directory}\n${session.id}`;
         if (queuedChildFlagKeys.has(key)) continue;

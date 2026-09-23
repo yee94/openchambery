@@ -143,7 +143,7 @@ describe('Assistant history and ensure startup gate', () => {
     expect(fetchCalls).toEqual([]);
     releaseBarrier();
     await flight;
-    expect(page).toEqual({ entries: [], complete: true, nextCursor: null });
+    expect(page).toEqual({ entries: [], complete: true, nextCursor: null, partial: false });
     expect(fetchCalls).toHaveLength(1);
     expect(fetchCalls[0]).toContain('/api/openchamber/assistants/assistant_1/messages?');
   });
@@ -244,7 +244,7 @@ describe('Assistant query contract', () => {
 
   test('retains same-assistant history placeholder across binding key advances only', () => {
     const previousData = {
-      pages: [{ entries: [], nextCursor: null, complete: true }],
+      pages: [{ entries: [], nextCursor: null, complete: true, partial: false }],
       pageParams: [null],
     };
     const sameAssistantKey = ['runtime-a', 1, 'assistants', 'history', 'assistant_1', 'ses_old', 1] as const;

@@ -2933,3 +2933,183 @@ describe("Query repository durable byte-budget eviction", () => {
     expect((await inner.readSession(durableScope)).records).toHaveLength(1)
   })
 })
+
+describe("remote revert.committed retires late reads (ticket 08)", () => {
+  const scope = {
+    directory: DIRECTORY,
+    sessionID: SESSION,
+    transport: TRANSPORT,
+    generation: GENERATION,
+  }
+  const tailRecords = [
+    { info: userMessage("msg_u3", 3), parts: [textPart("p_u3", "msg_u3")] },
+    { info: assistantMessage("msg_a3", 3), parts: [textPart("p_a3", "msg_a3")] },
+    { info: userMessage("msg_u4", 4), parts: [textPart("p_u4", "msg_u4")] },
+    { info: assistantMessage("msg_a4", 4), parts: [textPart("p_a4", "msg_a4")] },
+  ]
+  const olderRecords = [
+    { info: userMessage("msg_u1", 1), parts: [textPart("p_u1", "msg_u1")] },
+    { info: assistantMessage("msg_a1", 1), parts: [textPart("p_a1", "msg_a1")] },
+  ]
+  const remoteRevert = (to: string) => ({
+    type: "sse-event" as const,
+    event: {
+      type: "session.revert.committed",
+      properties: { sessionID: SESSION, to },
+    } as unknown as Event,
+  })
+  const waitUntil = async (predicate: () => boolean, timeout = 800) => {
+    const started = Date.now()
+    while (!predicate()) {
+      if (Date.now() - started > timeout) throw new Error("timed out waiting for gated read")
+      await new Promise((resolve) => setTimeout(resolve, 5))
+    }
+  }
+  let client: QueryClient
+
+  beforeEach(() => {
+    client = new QueryClient({
+      defaultOptions: { queries: { retry: false, retryDelay: 1 } },
+    })
+  })
+
+  test("late older page released after another client's revert keeps the revert result", async () => {
+    let releaseOlder: ((page: TranscriptTransportPage) => void) | undefined
+    let olderCalls = 0
+    const repo = createQueryTranscriptRepository({
+      client,
+      transport: TRANSPORT,
+      generation: GENERATION,
+      fetcher: async ({ before }) => {
+        if (!before) return transportPage(tailRecords, { cursor: "cur_older", complete: false })
+        olderCalls += 1
+        if (olderCalls === 1) {
+          return new Promise<TranscriptTransportPage>((resolve) => {
+            releaseOlder = resolve
+          })
+        }
+        return transportPage(olderRecords, { complete: true })
+      },
+      probe: {
+        getTransport: () => TRANSPORT,
+        getGeneration: () => GENERATION,
+      },
+    })
+    repo.subscribe(scope, () => {})
+    await repo.ensureInitial(scope)
+
+    const pendingOlder = repo.fetchPreviousPage(scope)
+    await waitUntil(() => typeof releaseOlder === "function")
+    expect(repo.apply(scope, remoteRevert("msg_u4")).applied).toBe(true)
+    expect(repo.getTranscript(scope).messageOrder).toEqual(["msg_u3", "msg_a3"])
+
+    releaseOlder!(transportPage(olderRecords, { complete: true }))
+    await pendingOlder
+
+    // The retired prepend commits nothing and is not reported as a failure.
+    expect(repo.getTranscript(scope).messageOrder).toEqual(["msg_u3", "msg_a3"])
+    expect(repo.getMessage(scope, "msg_u4")).toBeUndefined()
+    expect(repo.getRequestState?.(scope).status).not.toBe("error")
+
+    // Older history stays reachable through a fresh read after the revert.
+    expect(repo.getPagination(scope).hasPreviousPage).toBe(true)
+    await repo.fetchPreviousPage(scope)
+    expect(olderCalls).toBe(2)
+    expect(repo.getTranscript(scope).messageOrder).toEqual(["msg_u1", "msg_a1", "msg_u3", "msg_a3"])
+    repo.destroy()
+  })
+
+  test("late older page holding the revert boundary cannot resurrect reverted history", async () => {
+    let reverted = false
+    let releaseOlder: ((page: TranscriptTransportPage) => void) | undefined
+    const olderWithBoundary = [
+      { info: userMessage("msg_u0", 0), parts: [textPart("p_u0", "msg_u0")] },
+      { info: assistantMessage("msg_a0", 0), parts: [textPart("p_a0", "msg_a0")] },
+      ...olderRecords,
+    ]
+    const repo = createQueryTranscriptRepository({
+      client,
+      transport: TRANSPORT,
+      generation: GENERATION,
+      fetcher: async ({ before }) => {
+        if (!before) {
+          return reverted
+            ? transportPage(olderWithBoundary.slice(0, 2), { complete: true })
+            : transportPage(tailRecords, { cursor: "cur_older", complete: false })
+        }
+        return new Promise<TranscriptTransportPage>((resolve) => {
+          releaseOlder = resolve
+        })
+      },
+      probe: {
+        getTransport: () => TRANSPORT,
+        getGeneration: () => GENERATION,
+      },
+    })
+    repo.subscribe(scope, () => {})
+    await repo.ensureInitial(scope)
+
+    const pendingOlder = repo.fetchPreviousPage(scope)
+    await waitUntil(() => typeof releaseOlder === "function")
+    // Boundary msg_u1 is outside the loaded window → authority recovery.
+    reverted = true
+    repo.apply(scope, remoteRevert("msg_u1"))
+    await waitUntil(() => repo.getTranscript(scope).messageOrder.join() === "msg_u0,msg_a0")
+
+    releaseOlder!(transportPage(olderWithBoundary, { cursor: undefined, complete: true }))
+    await pendingOlder.catch(() => undefined)
+
+    expect(repo.getTranscript(scope).messageOrder).toEqual(["msg_u0", "msg_a0"])
+    expect(repo.getMessage(scope, "msg_u1")).toBeUndefined()
+    expect(repo.getMessage(scope, "msg_u3")).toBeUndefined()
+    repo.destroy()
+  })
+
+  test("late authority refresh released after another client's revert cannot resurrect rows", async () => {
+    let releaseRefresh: ((page: TranscriptTransportPage) => void) | undefined
+    let tailCalls = 0
+    const repo = createQueryTranscriptRepository({
+      client,
+      transport: TRANSPORT,
+      generation: GENERATION,
+      fetcher: async () => {
+        tailCalls += 1
+        if (tailCalls === 1) return transportPage(tailRecords, { complete: true })
+        if (tailCalls === 2) {
+          return new Promise<TranscriptTransportPage>((resolve) => {
+            releaseRefresh = resolve
+          })
+        }
+        return transportPage(tailRecords.slice(0, 2), { complete: true })
+      },
+      probe: {
+        getTransport: () => TRANSPORT,
+        getGeneration: () => GENERATION,
+      },
+    })
+    repo.subscribe(scope, () => {})
+    await repo.ensureInitial(scope)
+
+    const pendingRefresh = repo.refreshFromAuthority(scope)
+    await waitUntil(() => typeof releaseRefresh === "function")
+    repo.apply(scope, remoteRevert("msg_u4"))
+    expect(repo.getTranscript(scope).messageOrder).toEqual(["msg_u3", "msg_a3"])
+
+    releaseRefresh!(transportPage(tailRecords, { complete: true }))
+    await pendingRefresh.catch(() => undefined)
+
+    expect(repo.getTranscript(scope).messageOrder).toEqual(["msg_u3", "msg_a3"])
+    expect(repo.getMessage(scope, "msg_a4")).toBeUndefined()
+
+    // New input after the revert still enters history.
+    repo.apply(scope, {
+      type: "sse-event",
+      event: {
+        type: "message.updated",
+        properties: { sessionID: SESSION, info: userMessage("msg_u5", 5) },
+      } as Event,
+    })
+    expect(repo.getTranscript(scope).messageOrder).toEqual(["msg_u3", "msg_a3", "msg_u5"])
+    repo.destroy()
+  })
+})

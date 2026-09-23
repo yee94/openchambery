@@ -75,6 +75,7 @@ describe('process tool grouping', () => {
         expect(isProcessSuccessorPart({ kind: 'tool', toolName: 'edit' })).toBe(false);
         expect(isProcessSuccessorPart({ kind: 'tool', toolName: 'skill' })).toBe(true);
         expect(isProcessSuccessorPart({ kind: 'tool', toolName: 'task' })).toBe(true);
+        expect(isProcessSuccessorPart({ kind: 'tool', toolName: 'subagent' })).toBe(true);
         expect(isProcessSuccessorPart({ kind: 'tool', toolName: 'question' })).toBe(true);
 
         const timeline = [

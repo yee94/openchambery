@@ -6,8 +6,10 @@ import type { Message, Part } from '@/lib/opencode/v2-types';
 import MessageList from './MessageList';
 import { I18nProvider } from '@/lib/i18n';
 import { useUIStore } from '@/stores/useUIStore';
+import { useNotificationStore } from '@/sync/notification-store';
+import { setFixtureSessionErrorAt } from './pendingAssistantHeaderContinuity.chrome.sync.fixture';
 
-type ReplayFrame = 'pending' | 'empty' | 'streaming' | 'idle' | 'completed';
+type ReplayFrame = 'pending' | 'empty' | 'streaming' | 'idle' | 'completed' | 'error';
 
 class FixtureErrorBoundary extends React.Component<React.PropsWithChildren, { error: string | null }> {
   state = { error: null };
@@ -95,8 +97,13 @@ const afterPaint = () => new Promise<void>((resolve) => {
 });
 
 const replay = async (label: string, frame: ReplayFrame) => {
-  const assistant = frame === 'pending' ? null : assistantMessage(frame);
+  const assistant = frame === 'pending' || frame === 'error' ? null : assistantMessage(frame);
   flushSync(() => {
+    setFixtureSessionErrorAt(frame === 'error' ? Date.now() : undefined);
+    if (frame === 'error') useNotificationStore.getState().append({
+      type: 'error', session: sessionID, time: Date.now(), viewed: true,
+      error: { name: 'provider', message: 'xAI request failed (400): invalid_grant — Invalid or unknown refresh token' },
+    });
     root.render(
       <FixtureErrorBoundary>
         <I18nProvider>
@@ -124,11 +131,15 @@ const replay = async (label: string, frame: ReplayFrame) => {
   const wrapper = column?.parentElement;
   const turn = host.querySelector('[data-turn-id="user-1"]');
   const body = host.querySelector('[data-chrome-message-body="assistant-1"]');
-  if (!user || !heading || !header || !wrapper || !turn || (frame !== 'pending' && !body)) {
+  if (!user || !heading || !header || !wrapper || !turn || (frame !== 'pending' && frame !== 'error' && !body)) {
     throw new Error(`pending header Chrome fixture structure missing user=${Boolean(user)} heading=${Boolean(heading)} header=${Boolean(header)} wrapper=${Boolean(wrapper)} body=${Boolean(body)} turn=${Boolean(turn)} html=${host.innerHTML.slice(0, 1200)}`);
   }
   const rect = (node: Element) => node.getBoundingClientRect();
+  const error = turn.querySelector('[role="alert"]');
   return {
+    errorTop: error ? rect(error).top : null,
+    errorBottom: error ? rect(error).bottom : null,
+    errorCount: host.querySelectorAll('[role="alert"]').length,
     label,
     userTop: rect(user).top,
     userHeight: rect(user).height,

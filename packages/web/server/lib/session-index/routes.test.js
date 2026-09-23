@@ -24,24 +24,24 @@ const response = () => ({
 });
 
 describe('session index routes', () => {
-  it('returns deterministic unsupported state outside Electron', () => {
+  it('returns deterministic unsupported state outside Electron', async () => {
     const { app, route } = registry();
     registerSessionIndexRoutes(app, { sessionIndexService: null });
     const res = response();
 
-    route('GET', '/api/openchamber/session-index')({}, res);
+    await route('GET', '/api/openchamber/session-index')({}, res);
 
     expect(res.statusCode).toBe(501);
     expect(res.body).toMatchObject({ error: expect.stringContaining('unavailable') });
   });
 
-  it('returns an Electron snapshot through the OpenChamber route', () => {
+  it('returns an Electron snapshot through the OpenChamber route', async () => {
     const { app, route } = registry();
     const sessionIndexService = { snapshot: () => ({ directories: [{ directory: '/repo', sessions: [] }] }) };
     registerSessionIndexRoutes(app, { sessionIndexService });
     const res = response();
 
-    route('GET', '/api/openchamber/session-index')({}, res);
+    await route('GET', '/api/openchamber/session-index')({}, res);
 
     expect(res.statusCode).toBe(200);
     expect(res.body).toEqual({ available: true, directories: [{ directory: '/repo', sessions: [] }] });
@@ -91,7 +91,7 @@ describe('session index routes', () => {
     expect(route('GET', '/api/openchamber/session-index/changes')).toBeUndefined();
   });
 
-  it('looks up a session by id for deep links', () => {
+  it('looks up a session by id for deep links', async () => {
     const { app, route } = registry();
     const findBySessionId = vi.fn(() => ({
       id: 'ses_abc',
@@ -106,7 +106,7 @@ describe('session index routes', () => {
     });
     const res = response();
 
-    route('GET', '/api/openchamber/session-index/session/:sessionId')(
+    await route('GET', '/api/openchamber/session-index/session/:sessionId')(
       { params: { sessionId: 'ses_abc' } },
       res,
     );
@@ -119,7 +119,7 @@ describe('session index routes', () => {
     });
   });
 
-  it('returns 404 when session id is unknown', () => {
+  it('returns 404 when session id is unknown', async () => {
     const { app, route } = registry();
     registerSessionIndexRoutes(app, {
       sessionIndexService: {
@@ -129,7 +129,7 @@ describe('session index routes', () => {
     });
     const res = response();
 
-    route('GET', '/api/openchamber/session-index/session/:sessionId')(
+    await route('GET', '/api/openchamber/session-index/session/:sessionId')(
       { params: { sessionId: 'ses_missing' } },
       res,
     );

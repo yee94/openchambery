@@ -15,6 +15,7 @@
  */
 
 import type { Message, Part } from '@/lib/opencode/v2-types'
+import type { Event } from '@/sync/types'
 
 import type { QueryClient } from "@tanstack/react-query"
 
@@ -426,6 +427,30 @@ export function createQueryTranscriptRepository(
   const p0Painted = new Set<string>()
   /** In-flight older-history prepends (P1). */
   const prependFlights = new Set<string>()
+  /**
+   * Per-scope read epoch (Ticket 08). Bumped on revert.committed so in-flight
+   * HTTP pages and materialize completions lose commit eligibility.
+   */
+  const sessionReadEpoch = new Map<string, number>()
+  /** Epoch captured when an authority/history fetch started. */
+  const inflightReadEpoch = new Map<string, number>()
+
+  const currentReadEpoch = (key: string): number => sessionReadEpoch.get(key) ?? 0
+
+  const bumpReadEpoch = (key: string): number => {
+    const next = currentReadEpoch(key) + 1
+    sessionReadEpoch.set(key, next)
+    return next
+  }
+
+  const captureInflightReadEpoch = (key: string): number => {
+    const epoch = currentReadEpoch(key)
+    inflightReadEpoch.set(key, epoch)
+    return epoch
+  }
+
+  const isInflightReadCurrent = (key: string, captured: number): boolean =>
+    currentReadEpoch(key) === captured
 
   const recordHydrationPaint = (
     scope: TranscriptScope,
@@ -516,13 +541,24 @@ export function createQueryTranscriptRepository(
     const key = scopeKey(identity)
     const existing = controllers.get(key)
     if (existing) return existing
-    if (!deps.fetcher) {
+    const fetcher = deps.fetcher
+    if (!fetcher) {
       throw new Error("Query transcript repository requires a fetcher for HTTP loads")
     }
     const controller = createSessionTranscriptController({
       directory: identity.directory,
       sessionID: identity.sessionID,
-      fetcher: deps.fetcher,
+      // InfiniteQuery prepends onto the pages captured at fetch start, so a
+      // prepend that outlives revert.committed must fail before Query commits it.
+      fetcher: async (args) => {
+        if (!args.before) return fetcher(args)
+        const readEpoch = currentReadEpoch(key)
+        const page = await fetcher(args)
+        if (!isInflightReadCurrent(key, readEpoch)) {
+          throw new SessionMessageRuntimeStaleError("read_epoch_retired")
+        }
+        return page
+      },
       // Pass live probes; controller options capture generation at create for
       // assertRuntimeCurrent, re-created after purgeGeneration/runtime switch.
       transport: identity.transport,
@@ -792,9 +828,9 @@ export function createQueryTranscriptRepository(
       void durableQueue.removeMessage(durableScope, command.messageID)
       return
     }
-    if (command.type === "reset") {
+    if (command.type === "reset" || command.type === "revert-committed") {
       void durableQueue.clearSession(durableScope)
-      if (command.page) {
+      if (command.type === "reset" && command.page) {
         const transcript = projectTranscript(scope)
         for (const record of command.page.records) {
           const info = transcript.messagesByID[record.info.id] ?? record.info
@@ -803,6 +839,14 @@ export function createQueryTranscriptRepository(
             info,
             transcript.partsByMessageID[record.info.id] ?? record.parts,
           )
+        }
+      } else if (command.type === "revert-committed") {
+        // Persist the kept tail after truncation so durable cannot resurrect.
+        const transcript = projectTranscript(scope)
+        for (const id of transcript.messageOrder) {
+          const info = transcript.messagesByID[id]
+          if (!info) continue
+          persistSettledRecord(identity, info, transcript.partsByMessageID[id])
         }
       }
       return
@@ -925,6 +969,7 @@ export function createQueryTranscriptRepository(
     const existing = authorityTailInflight.get(flightKey)
     if (existing) return existing
     const capturedProjectionRevision = getReasoningProjectionRevision()
+    const readEpoch = captureInflightReadEpoch(flightKey)
     const run = (async () => {
       const startedAt = Date.now()
       authorityFlights.set(flightKey, { status: "loading" })
@@ -933,6 +978,7 @@ export function createQueryTranscriptRepository(
         if (
           !liveIdentityMatches(captured)
           || getReasoningProjectionRevision() !== capturedProjectionRevision
+          || !isInflightReadCurrent(flightKey, readEpoch)
         ) {
           authorityFlights.delete(flightKey)
           return repository.getTranscript(scope)
@@ -1009,6 +1055,7 @@ export function createQueryTranscriptRepository(
     const existing = authorityTailInflight.get(flightKey)
     if (existing) return existing
     const capturedProjectionRevision = getReasoningProjectionRevision()
+    const readEpoch = captureInflightReadEpoch(flightKey)
     const run = (async () => {
       const startedAt = Date.now()
       const capturedLiveRevision = repository.getTranscript(scope).liveRevision
@@ -1018,6 +1065,7 @@ export function createQueryTranscriptRepository(
         if (
           !liveIdentityMatches(captured)
           || getReasoningProjectionRevision() !== capturedProjectionRevision
+          || !isInflightReadCurrent(flightKey, readEpoch)
         ) {
           authorityFlights.delete(flightKey)
           return repository.getTranscript(scope)
@@ -1347,6 +1395,12 @@ export function createQueryTranscriptRepository(
       const result = ((): TranscriptCommandResult => {
       switch (command.type) {
         case "http-page": {
+          // Stale completion after revert.committed / read retirement.
+          const key = scopeKey(identity)
+          const captured = inflightReadEpoch.get(key)
+          if (typeof captured === "number" && !isInflightReadCurrent(key, captured)) {
+            return { applied: false, changed: false, error: "stale-read-epoch" }
+          }
           const merge = applySessionTranscriptMerge(
             client,
             queryKey,
@@ -1361,7 +1415,7 @@ export function createQueryTranscriptRepository(
               optimistic: command.optimistic,
             },
           )
-          if (merge.result.applied) seededAuthorityPending.delete(scopeKey(identity))
+          if (merge.result.applied) seededAuthorityPending.delete(key)
           if (merge.result.changed) {
             notify(scope)
             enforceBudgetAfterWrite(scope)
@@ -1369,6 +1423,13 @@ export function createQueryTranscriptRepository(
           return merge.result
         }
         case "sse-event": {
+          if (command.event.type === "session.revert.committed") {
+            const to = typeof (command.event.properties as { to?: unknown })?.to === "string"
+              ? (command.event.properties as { to: string }).to
+              : undefined
+            if (!to) return { applied: false, changed: false }
+            return repository.apply(scope, { type: "revert-committed", to })
+          }
           const merge = applySessionTranscriptMerge(
             client,
             queryKey,
@@ -1380,15 +1441,46 @@ export function createQueryTranscriptRepository(
           return merge.result
         }
         case "sse-event-batch": {
-          const merge = applySessionTranscriptMerge(
-            client,
-            queryKey,
-            identity.sessionID,
-            { type: "sse-event-batch", events: command.events },
-          )
-          if (merge.result.applied) seededAuthorityPending.delete(scopeKey(identity))
-          if (merge.result.changed) notify(scope)
-          return merge.result
+          // Expand revert.committed into the dedicated command so epoch bumps
+          // and authority recovery run once per scope.
+          const events = command.events
+          let anyChanged = false
+          let anyApplied = false
+          let nonRevert: Event[] = []
+          const flushNonRevert = () => {
+            if (nonRevert.length === 0) return
+            const merge = applySessionTranscriptMerge(
+              client,
+              queryKey,
+              identity.sessionID,
+              { type: "sse-event-batch", events: nonRevert },
+            )
+            nonRevert = []
+            if (merge.result.applied) {
+              anyApplied = true
+              seededAuthorityPending.delete(scopeKey(identity))
+            }
+            if (merge.result.changed) {
+              anyChanged = true
+              notify(scope)
+            }
+          }
+          for (const event of events) {
+            if (event.type === "session.revert.committed") {
+              flushNonRevert()
+              const to = typeof (event.properties as { to?: unknown })?.to === "string"
+                ? (event.properties as { to: string }).to
+                : undefined
+              if (!to) continue
+              const result = repository.apply(scope, { type: "revert-committed", to })
+              if (result.applied) anyApplied = true
+              if (result.changed) anyChanged = true
+              continue
+            }
+            nonRevert.push(event)
+          }
+          flushNonRevert()
+          return { applied: anyApplied, changed: anyChanged }
         }
         case "optimistic-add": {
           deps.setOptimisticShadow?.({
@@ -1486,6 +1578,47 @@ export function createQueryTranscriptRepository(
           )
           if (merge.result.changed) notify(scope)
           return merge.result
+        }
+        case "revert-committed": {
+          const key = scopeKey(identity)
+          bumpReadEpoch(key)
+          // Cancel in-flight authority/prepend so they cannot resurrect rows.
+          authorityTailInflight.delete(key)
+          authorityFlights.delete(key)
+          prependFlights.delete(key)
+          controllers.delete(key)
+          clearMessageMaterialization(`${key}\n`)
+          const merge = applySessionTranscriptMerge(
+            client,
+            queryKey,
+            identity.sessionID,
+            { type: "revert-committed", to: command.to },
+          )
+          const needsRecovery = Boolean(
+            (merge as { needsAuthorityRecovery?: boolean }).needsAuthorityRecovery,
+          )
+          if (needsRecovery) {
+            cacheBudget.purgeSession(toCacheScope(scope))
+            seededAuthorityPending.delete(key)
+            durableSeededExact.delete(key)
+            if (deps.durableStore) {
+              void deps.durableStore.clearSession(toTranscriptDurableScope(identity)).catch(() => undefined)
+            }
+            notify(scope)
+            // Schedule authority tail when a fetcher exists (best-effort).
+            if (deps.fetcher) {
+              void repository.ensureInitial(scope).catch(() => undefined)
+            }
+            return { applied: true, changed: true }
+          }
+          if (merge.result.applied) seededAuthorityPending.delete(key)
+          if (merge.result.changed) {
+            notify(scope)
+            enforceBudgetAfterWrite(scope)
+          }
+          // Always mark applied so epoch bump is observable even if window
+          // already matched the post-revert set.
+          return { applied: true, changed: merge.result.changed }
         }
         default: {
           const _exhaustive: never = command
@@ -1728,12 +1861,16 @@ export function createQueryTranscriptRepository(
       }
       const captured = resolveScopeIdentity(scope, deps)
       const flightKey = scopeKey(captured)
+      const readEpoch = captureInflightReadEpoch(flightKey)
       prependFlights.add(flightKey)
       notify(scope)
       const startedAt = Date.now()
       try {
         const controller = ensureController(scope)
         await controller.fetchPreviousPage()
+        if (!isInflightReadCurrent(flightKey, readEpoch)) {
+          return repository.getTranscript(scope)
+        }
         // Active transcript retains all pages; enforce only bounds inactive peers.
         enforceBudgetAfterWrite(scope)
         const transcript = repository.getTranscript(scope)
@@ -1753,6 +1890,13 @@ export function createQueryTranscriptRepository(
         }))
         return transcript
       } catch (error) {
+        if (!isInflightReadCurrent(flightKey, readEpoch)) {
+          // Retired prepend is not a user-facing failure: restore success status
+          // on the post-revert data so request state does not report an error.
+          const current = readData(scope)
+          if (current) client.setQueryData(queryKeyFor(scope), current)
+          return repository.getTranscript(scope)
+        }
         recordTranscriptDiagnostics(snapshotTranscriptDiagnostics({
           kind: "request-error",
           sessionID: captured.sessionID,

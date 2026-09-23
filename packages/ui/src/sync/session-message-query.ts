@@ -266,6 +266,32 @@ export function validateSessionMessageHttpPage(page: unknown): SessionMessageHtt
   return page as SessionMessageHttpPage
 }
 
+/**
+ * Reject a Host older-page that did not advance the continuation token.
+ * Must run before the transport-page Query caches a "success" (staleTime Infinity),
+ * otherwise a same→same response stays warm forever and a later fixed Host never
+ * gets another HTTP attempt for that cursor key.
+ */
+export function assertTransportPageCursorProgress(
+  requestBefore: string | undefined,
+  page: SessionMessageHttpPage,
+): void {
+  const requested = typeof requestBefore === "string" ? requestBefore.trim() : ""
+  if (!requested) return
+  if (page.complete === true) return
+  const continuation = typeof page.cursor === "string" ? page.cursor.trim() : ""
+  if (!continuation) {
+    throw new SessionMessagePageContractError(
+      "session message page: complete=false requires non-empty cursor",
+    )
+  }
+  if (continuation === requested) {
+    throw new SessionMessagePageContractError(
+      "session message page: prepend returned the same cursor without progress",
+    )
+  }
+}
+
 const freezePage = (page: SessionMessageHttpPage): SessionMessageHttpPage => {
   const records = page.records.map((record) =>
     Object.freeze({
@@ -324,7 +350,9 @@ export const sessionMessagePageQueryOptions = (
       // Direct fetcher — no page-loader, reducer, or prefetch lifecycle.
       const raw = await fetcher({ directory, sessionID, limit, before, signal })
       assertRuntimeCurrent(transport, generation, probe)
-      return freezePage(validateSessionMessageHttpPage(raw))
+      const validated = validateSessionMessageHttpPage(raw)
+      assertTransportPageCursorProgress(before, validated)
+      return freezePage(validated)
     },
     staleTime: Infinity,
     gcTime: 5 * 60_000,
@@ -479,8 +507,9 @@ function sessionTranscriptInfiniteQueryOptions(
     getNextPageParam: () => undefined,
     staleTime: Infinity,
     gcTime: 5 * 60_000,
-    retry: sessionMessagePageRetry,
-    retryDelay: (attemptIndex: number) => Math.min(500 * 2 ** attemptIndex, 4_000),
+    // Transport-page Query owns classified retry. Infinite must not stack a
+    // second budget on top of ensureSessionMessagePage (1+2 attempts).
+    retry: false,
     maxPages: undefined,
     structuralSharing: (
       oldData: unknown,
@@ -530,19 +559,23 @@ export function createSessionTranscriptController(
   })
 
   const ensureInitial = async (): Promise<SessionTranscriptData> => {
-    const result = await observer.fetchNextPage()
-    // initialPageParam is null and we only use fetchPreviousPage for history;
-    // first ensure uses refetch / fetch when empty.
-    const data = result.data as SessionTranscriptData | undefined
+    const existing = observer.getCurrentResult().data as SessionTranscriptData | undefined
+    if (existing && existing.pages.length > 0) {
+      return freezeSessionTranscriptData(existing)
+    }
+    // Single fetch path. Transport-page Query owns classified retries; do not
+    // chain fetchNextPage + refetch (that multiplied 503 budgets ~2×).
+    // initialPageParam is null; history uses fetchPreviousPage only.
+    const result = await observer.refetch()
+    const data = (result.data ?? observer.getCurrentResult().data) as SessionTranscriptData | undefined
     if (data && data.pages.length > 0) {
       return freezeSessionTranscriptData(data)
     }
-    await observer.refetch()
-    const after = observer.getCurrentResult().data as SessionTranscriptData | undefined
-    if (!after) {
-      throw observer.getCurrentResult().error ?? new Error("transcript initial fetch failed")
-    }
-    return freezeSessionTranscriptData(after)
+    throw (
+      result.error
+      ?? observer.getCurrentResult().error
+      ?? new Error("transcript initial fetch failed")
+    )
   }
 
   const fetchPreviousPage = async (): Promise<SessionTranscriptData> => {

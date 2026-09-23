@@ -1,8 +1,20 @@
 import { afterEach, beforeEach, describe, expect, it, mock } from 'bun:test';
 import { vi } from 'vitest';
+import * as fs from 'node:fs';
+import * as os from 'node:os';
+import * as path from 'node:path';
 
 const originalFetch = globalThis.fetch;
-const { openSseProxy } = await import('./sseProxy');
+const {
+  openSseProxy,
+  __setSseMetadataReadyWaitForTests,
+} = await import('./sseProxy');
+const {
+  __resetSessionMetadataRuntimeForTests,
+  __setSessionMetadataDataRootForTests,
+  startSessionMetadataRuntime,
+  stopSessionMetadataRuntime,
+} = await import('./session-metadata-runtime');
 
 const createManager = () => ({
   getStatus: () => 'connected',
@@ -30,6 +42,9 @@ const createSseResponse = (chunks) => {
 describe('VS Code SSE proxy', () => {
   afterEach(() => {
     globalThis.fetch = originalFetch;
+    __setSseMetadataReadyWaitForTests(null);
+    stopSessionMetadataRuntime();
+    __resetSessionMetadataRuntimeForTests();
   });
 
   it('forwards upstream SSE chunks without reserializing event data', async () => {
@@ -309,5 +324,133 @@ describe('VS Code SSE proxy', () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  describe('Host metadata readiness gate (per connect)', () => {
+    it('does not fetch upstream while readiness is pending', async () => {
+      let resolveReady;
+      const readyPromise = new Promise((resolve) => {
+        resolveReady = resolve;
+      });
+      let fetchCalls = 0;
+      globalThis.fetch = mock(() => {
+        fetchCalls += 1;
+        return Promise.resolve(createSseResponse(['data: {"type":"server.connected"}\n\n']));
+      });
+      __setSseMetadataReadyWaitForTests(async ({ signal }) => {
+        await readyPromise;
+        if (signal?.aborted) return { ok: false, error: 'aborted', retryable: true };
+        return { ok: true };
+      });
+
+      const abort = new AbortController();
+      const openPromise = openSseProxy({
+        manager: createManager(),
+        path: '/global/event',
+        signal: abort.signal,
+        onChunk: () => {},
+      });
+
+      // Yield so connect reaches the readiness wait.
+      await Promise.resolve();
+      await Promise.resolve();
+      expect(fetchCalls).toBe(0);
+
+      resolveReady({ ok: true });
+      const proxy = await openPromise;
+      await proxy.run;
+      expect(fetchCalls).toBe(1);
+    });
+
+    it('delivers first lifecycle event after readiness succeeds (not dropped)', async () => {
+      const dataRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'oc-sse-meta-'));
+      try {
+        __setSessionMetadataDataRootForTests(dataRoot);
+        startSessionMetadataRuntime(createManager());
+        // Real ready wait (store empty but loadable).
+        __setSseMetadataReadyWaitForTests(null);
+
+        const lifecycle = 'data: {"type":"session.updated","properties":{"info":{"id":"ses_1","time":{"created":1,"updated":2}}}}\n\n';
+        globalThis.fetch = mock(() => Promise.resolve(createSseResponse([lifecycle])));
+
+        const received = [];
+        const proxy = await openSseProxy({
+          manager: createManager(),
+          path: '/global/event',
+          signal: new AbortController().signal,
+          onChunk: (chunk) => received.push(chunk),
+        });
+        await proxy.run;
+
+        const joined = received.join('');
+        expect(joined).toContain('session.updated');
+        expect(joined).toContain('ses_1');
+      } finally {
+        fs.rmSync(dataRoot, { recursive: true, force: true });
+      }
+    });
+
+    it('retries connect when readiness fails, then succeeds (controlled retry)', async () => {
+      let readyAttempts = 0;
+      let fetchCalls = 0;
+      __setSseMetadataReadyWaitForTests(async () => {
+        readyAttempts += 1;
+        if (readyAttempts < 2) {
+          return { ok: false, error: 'session metadata is unavailable', retryable: true };
+        }
+        return { ok: true };
+      });
+      globalThis.fetch = mock(() => {
+        fetchCalls += 1;
+        return Promise.resolve(createSseResponse([
+          'data: {"type":"session.created","properties":{"info":{"id":"ses_new","time":{}}}}\n\n',
+        ]));
+      });
+
+      const received = [];
+      // Real timers: BASE_RECONNECT_DELAY is 1s for first retry.
+      const proxy = await openSseProxy({
+        manager: createManager(),
+        path: '/global/event',
+        signal: new AbortController().signal,
+        onChunk: (chunk) => received.push(chunk),
+      });
+      await proxy.run;
+
+      expect(readyAttempts).toBeGreaterThanOrEqual(2);
+      expect(fetchCalls).toBe(1);
+      expect(received.join('')).toContain('session.created');
+      expect(received.join('')).toContain('ses_new');
+    });
+
+    it('aborts during readiness wait without opening upstream (late cancel)', async () => {
+      let fetchCalls = 0;
+      globalThis.fetch = mock(() => {
+        fetchCalls += 1;
+        return Promise.resolve(createSseResponse(['data: {"type":"server.connected"}\n\n']));
+      });
+      __setSseMetadataReadyWaitForTests(async ({ signal }) => {
+        await new Promise((resolve) => {
+          if (signal?.aborted) {
+            resolve(undefined);
+            return;
+          }
+          signal?.addEventListener('abort', () => resolve(undefined), { once: true });
+        });
+        return { ok: false, error: 'aborted', retryable: true };
+      });
+
+      const abort = new AbortController();
+      const openPromise = openSseProxy({
+        manager: createManager(),
+        path: '/global/event',
+        signal: abort.signal,
+        onChunk: () => {},
+      });
+      await Promise.resolve();
+      abort.abort();
+      await expect(openPromise).rejects.toBeTruthy();
+      expect(fetchCalls).toBe(0);
+    });
   });
 });

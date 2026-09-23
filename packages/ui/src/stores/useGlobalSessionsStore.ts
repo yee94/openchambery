@@ -420,8 +420,11 @@ const sameSessionList = (prev: Session[], next: Session[]): boolean => {
   return true;
 };
 
-/** Archive membership is `time.archived`, not the OpenCode `session.list({ archived })` label. */
-const isArchivedByTimeField = (session: Session): boolean => Boolean(session.time?.archived);
+/** Archive membership is positive `time.archived` only (0 = explicit unarchive / active). */
+const isArchivedByTimeField = (session: Session): boolean => {
+  const archived = session.time?.archived;
+  return typeof archived === 'number' && Number.isFinite(archived) && archived > 0;
+};
 
 /**
  * Re-cut active/archived buckets by `time.archived` and collapse duplicate ids.

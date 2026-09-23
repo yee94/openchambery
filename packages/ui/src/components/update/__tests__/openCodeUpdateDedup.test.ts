@@ -238,6 +238,28 @@ describe('resolveOpenCodeUpgradeStatusVersion', () => {
             }),
         ).toBe('');
     });
+
+    test('returns empty string when canManage is false (global/external/bundled)', () => {
+        expect(
+            resolveOpenCodeUpgradeStatusVersion({
+                available: true,
+                canManage: false,
+                latestVersion: '2.0.14',
+                management: 'manual-global',
+            }),
+        ).toBe('');
+    });
+
+    test('returns latestVersion when available and canManage is true', () => {
+        expect(
+            resolveOpenCodeUpgradeStatusVersion({
+                available: true,
+                canManage: true,
+                latestVersion: '2.0.14',
+                management: 'in-app',
+            }),
+        ).toBe('2.0.14');
+    });
 });
 
 describe('buildOpenCodeUpgradeRequestBody', () => {

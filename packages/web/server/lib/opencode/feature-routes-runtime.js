@@ -115,6 +115,14 @@ export const createFeatureRoutesRuntime = (dependencies) => {
       buildOpenCodeUrl,
       getOpenCodeAuthHeaders,
       getIsExternalOpenCode = () => false,
+      forceResolvedOpenCodeBinary = null,
+      restartOpenCode = null,
+      getRuntimeContract = () => null,
+      getOpenCodeServeVersion = () => null,
+      getOpenCodeCliVersion = () => null,
+      getResolvedOpenCodeBinary = () => null,
+      getResolvedOpenCodeBinarySource = () => null,
+      getActiveSessionCount = () => 0,
       getSmallModelService: routeGetSmallModelService,
       getOpenCodePort,
       buildAugmentedPath,
@@ -135,6 +143,7 @@ export const createFeatureRoutesRuntime = (dependencies) => {
       sessionIndexService,
       notifyContactTurnComplete,
       sessionMetadataStore = null,
+      sessionArchiveService = null,
       onSessionMetadataWritten = null,
       persistSessionGoal = null,
       readSessionMetadata = null,
@@ -171,6 +180,16 @@ export const createFeatureRoutesRuntime = (dependencies) => {
       buildOpenCodeUrl,
       getOpenCodeAuthHeaders,
       getIsExternalOpenCode,
+      forceResolvedOpenCodeBinary,
+      restartOpenCode,
+      waitForOpenCodeReady,
+      getRuntimeContract,
+      getOpenCodeServeVersion,
+      getOpenCodeCliVersion,
+      getResolvedOpenCodeBinary,
+      getResolvedOpenCodeBinarySource,
+      getActiveSessionCount,
+      openchamberDataDir,
       onSettingsPersisted: (updated, changes) => {
         if (!questionAutoDelegateRuntime) return;
         if (!Object.prototype.hasOwnProperty.call(changes ?? {}, 'questionAutoDelegateEnabled')) return;
@@ -280,6 +299,16 @@ export const createFeatureRoutesRuntime = (dependencies) => {
       },
       listScheduledTasks: (projectID) => projectConfigRuntime.listScheduledTasks(projectID),
       sessionIndexService,
+      archiveSessionHost: sessionArchiveService
+        ? async ({ sessionID, directory, archivedAt }) => sessionArchiveService.archiveSession(
+          sessionID,
+          directory,
+          archivedAt,
+        )
+        : null,
+      forgetSessionHost: sessionArchiveService
+        ? (sessionID) => sessionArchiveService.forgetSession(sessionID)
+        : null,
       upsertScheduledTask: (projectID, task) => projectConfigRuntime.upsertScheduledTask(projectID, task),
       syncScheduledTaskProject: (projectID) => scheduledTasksRuntime.syncProject(projectID),
       refreshAllowedRoots: refreshAssistantAllowedRoots,
@@ -420,6 +449,7 @@ export const createFeatureRoutesRuntime = (dependencies) => {
     if (sessionMetadataStore) {
       registerSessionMetadataRoutes(app, {
         sessionMetadataStore,
+        sessionArchiveService,
         broadcastGlobalUiEvent,
         onMetadataWritten: onSessionMetadataWritten,
       });

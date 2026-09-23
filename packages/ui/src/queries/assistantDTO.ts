@@ -67,7 +67,20 @@ export interface CompactResponse { binding: SessionBinding; summarized: true; }
 export interface MessageAdmission { binding: SessionBinding; messageID: string; admitted: true; revision: number | null; replayed?: boolean; }
 export interface ShareOperation { operationID: string; assistantID: string; sessionID: string | null; messageID: string | null; state: 'submitting' | 'running' | 'completed' | 'failed' | 'unresolved'; phase: string; attempt: number; leaseExpiresAt: number | null; errorCode: string | null; }
 export interface AssistantHistoryEntry { sessionID: string; directory: string | null; info: Message; parts: Part[]; }
-export interface AssistantHistoryPage { entries: AssistantHistoryEntry[]; nextCursor: string | null; complete: boolean; }
+/** One binding that failed while siblings still delivered (retry via nextCursor). */
+export interface AssistantHistoryFailedBinding {
+  sessionID: string;
+  sessionOrdinal: number;
+  status: number;
+}
+export interface AssistantHistoryPage {
+  entries: AssistantHistoryEntry[];
+  nextCursor: string | null;
+  complete: boolean;
+  /** True when at least one binding failed; complete is always false and nextCursor retries it. */
+  partial: boolean;
+  failed?: AssistantHistoryFailedBinding[];
+}
 export type AssistantContactCardType = 'session' | 'assistant' | 'schedule';
 export type AssistantContactTextPart = { type: 'text'; text: string };
 /** Legacy inline data-URL file part. */
@@ -259,9 +272,27 @@ export const parseAssistantHistoryPage = (payload: unknown): AssistantHistoryPag
   const value = record(payload, 'assistant_history');
   const nextCursor = nullableString(value.nextCursor, 'assistant_history');
   const complete = bool(value.complete, 'assistant_history');
+  // partial defaults false for older servers; when true, complete must be false and cursor retries.
+  const partial = value.partial === undefined || value.partial === null
+    ? false
+    : bool(value.partial, 'assistant_history');
+  if (partial && complete) return invalid('assistant_history');
   if (!complete && !nextCursor) return invalid('assistant_history');
   if (complete && nextCursor) return invalid('assistant_history');
   if (!Array.isArray(value.entries)) return invalid('assistant_history');
+  let failed: AssistantHistoryFailedBinding[] | undefined;
+  if (value.failed !== undefined && value.failed !== null) {
+    if (!Array.isArray(value.failed)) return invalid('assistant_history');
+    failed = value.failed.map((item) => {
+      const row = record(item, 'assistant_history_failed');
+      return {
+        sessionID: string(row.sessionID, 'assistant_history_failed'),
+        sessionOrdinal: number(row.sessionOrdinal, 'assistant_history_failed'),
+        status: number(row.status, 'assistant_history_failed'),
+      };
+    });
+    if (!partial) return invalid('assistant_history');
+  }
   return {
     entries: value.entries.map((entry) => {
       const item = record(entry, 'assistant_history_entry');
@@ -285,6 +316,8 @@ export const parseAssistantHistoryPage = (payload: unknown): AssistantHistoryPag
     }),
     nextCursor,
     complete,
+    partial,
+    ...(failed ? { failed } : {}),
   };
 };
 const parseContactPart = (value: unknown): AssistantContactPart => {

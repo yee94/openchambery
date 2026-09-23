@@ -9,6 +9,7 @@ import { useAutoReviewStore } from '@/stores/useAutoReviewStore';
 import { useUIStore } from '@/stores/useUIStore';
 import { usePermissionStore } from '@/stores/permissionStore';
 import { resetQuotaStoreForRuntimeSwitch } from '@/stores/useQuotaStore';
+import { resetSessionBtwStoreForRuntimeSwitch } from '@/stores/useSessionBtwStore';
 import { useSessionUIStore } from '@/sync/session-ui-store';
 import { resetStreamingState } from '@/sync/streaming';
 
@@ -100,6 +101,7 @@ export const resetAppForRuntimeEndpointChange = (detail: RuntimeEndpointChangedD
   useGlobalSessionsStore.getState().resetForRuntimeSwitch();
   usePermissionStore.getState().reset();
   resetQuotaStoreForRuntimeSwitch();
+  resetSessionBtwStoreForRuntimeSwitch();
   useSessionUIStore.getState().restoreForRuntimeSwitch(detail.runtimeKey);
   useUIStore.getState().restoreForRuntimeSwitch(detail.runtimeKey);
   clearStaleSessionPathAfterRuntimeSwitch();

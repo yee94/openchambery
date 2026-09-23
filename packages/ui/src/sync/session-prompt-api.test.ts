@@ -46,7 +46,7 @@ describe("idle prompt + interrupt (ticket 06)", () => {
   let calls: FetchCall[]
   let responseImpl: (call: FetchCall) => Promise<Response>
 
-  beforeEach(() => {
+  beforeEach(async () => {
     previousResolver = getRuntimeUrlResolver()
     configureRuntimeUrlResolver({ apiBaseUrl: "http://127.0.0.1:57123" })
     Object.defineProperty(globalThis, "window", {
@@ -72,9 +72,14 @@ describe("idle prompt + interrupt (ticket 06)", () => {
       calls.push(call)
       return responseImpl(call)
     }) as typeof fetch
+    const { resetInboxTerminalReceiptsForTests, useSessionInboxOverlayStore } = await import("./session-inbox-overlay")
+    resetInboxTerminalReceiptsForTests()
+    useSessionInboxOverlayStore.setState({ bySession: {} })
   })
 
-  afterEach(() => {
+  afterEach(async () => {
+    const { resetInboxTerminalReceiptsForTests } = await import("./session-inbox-overlay")
+    resetInboxTerminalReceiptsForTests()
     setRuntimeUrlResolver(previousResolver)
     Object.defineProperty(globalThis, "window", { configurable: true, value: originalWindow })
     globalThis.fetch = originalFetch
@@ -237,11 +242,14 @@ describe("busy inbox queue / steer / cancel (ticket 07)", () => {
       calls.push(call)
       return responseImpl(call)
     }) as typeof fetch
-    const { useSessionInboxOverlayStore } = await import("./session-inbox-overlay")
+    const { resetInboxTerminalReceiptsForTests, useSessionInboxOverlayStore } = await import("./session-inbox-overlay")
+    resetInboxTerminalReceiptsForTests()
     useSessionInboxOverlayStore.setState({ bySession: {} })
   })
 
-  afterEach(() => {
+  afterEach(async () => {
+    const { resetInboxTerminalReceiptsForTests } = await import("./session-inbox-overlay")
+    resetInboxTerminalReceiptsForTests()
     setRuntimeUrlResolver(previousResolver)
     Object.defineProperty(globalThis, "window", { configurable: true, value: originalWindow })
     globalThis.fetch = originalFetch
@@ -277,34 +285,47 @@ describe("busy inbox queue / steer / cancel (ticket 07)", () => {
     expect(inbox.type).toBe("user")
   })
 
-  test("steer / queue / cancel use official inbox method and path", async () => {
+  test("steer / queue / cancel use official inbox method and path (PATCH delivery → 204)", async () => {
     const {
       steerSessionInbox,
       queueSessionInbox,
       cancelSessionInbox,
     } = await import("./session-prompt-api")
+    const {
+      rememberUnpromotedInbox,
+      useSessionInboxOverlayStore,
+    } = await import("./session-inbox-overlay")
 
     responseImpl = async (call) => {
       if (call.method === "DELETE") return emptyResponse(204)
-      if (call.url.pathname.endsWith("/steer")) {
-        return jsonResponse({ data: { ...INBOX_QUEUED, delivery: "steer" } })
-      }
-      if (call.url.pathname.endsWith("/queue")) {
-        return jsonResponse({ data: { ...INBOX_QUEUED, delivery: "queue" } })
-      }
+      if (call.method === "PATCH") return emptyResponse(204)
       return jsonResponse({ data: INBOX_QUEUED })
     }
 
-    const steered = await steerSessionInbox({
+    rememberUnpromotedInbox({
+      id: "msg/q 1",
+      sessionID: "ses/a b",
+      timeCreated: 1,
+      type: "user",
+      delivery: "queue",
+      payload: { text: "busy follow-up" },
+    })
+    expect(useSessionInboxOverlayStore.getState().list("ses/a b")).toHaveLength(1)
+
+    await steerSessionInbox({
       sessionID: "ses/a b",
       inboxID: "msg/q 1",
       directory: "/repo a",
     })
-    const queued = await queueSessionInbox({
+    expect(useSessionInboxOverlayStore.getState().list("ses/a b")[0]?.delivery).toBe("steer")
+
+    await queueSessionInbox({
       sessionID: "ses/a b",
       inboxID: "msg/q 1",
       directory: "/repo a",
     })
+    expect(useSessionInboxOverlayStore.getState().list("ses/a b")[0]?.delivery).toBe("queue")
+
     await cancelSessionInbox({
       sessionID: "ses/a b",
       inboxID: "msg/q 1",
@@ -312,23 +333,19 @@ describe("busy inbox queue / steer / cancel (ticket 07)", () => {
     })
 
     expect(calls).toHaveLength(3)
-    expect(calls[0]!.method).toBe("POST")
-    expect(calls[0]!.url.pathname).toBe(
-      `/api/session/${encodeURIComponent("ses/a b")}/inbox/${encodeURIComponent("msg/q 1")}/steer`,
-    )
-    expect(calls[0]!.url.searchParams.get("directory")).toBe("/repo a")
-    expect(steered.delivery).toBe("steer")
+    const itemPath = `/api/session/${encodeURIComponent("ses/a b")}/inbox/${encodeURIComponent("msg/q 1")}`
 
-    expect(calls[1]!.method).toBe("POST")
-    expect(calls[1]!.url.pathname).toBe(
-      `/api/session/${encodeURIComponent("ses/a b")}/inbox/${encodeURIComponent("msg/q 1")}/queue`,
-    )
-    expect(queued.delivery).toBe("queue")
+    expect(calls[0]!.method).toBe("PATCH")
+    expect(calls[0]!.url.pathname).toBe(itemPath)
+    expect(calls[0]!.url.searchParams.get("directory")).toBe("/repo a")
+    expect(calls[0]!.body).toEqual({ delivery: "steer" })
+
+    expect(calls[1]!.method).toBe("PATCH")
+    expect(calls[1]!.url.pathname).toBe(itemPath)
+    expect(calls[1]!.body).toEqual({ delivery: "queue" })
 
     expect(calls[2]!.method).toBe("DELETE")
-    expect(calls[2]!.url.pathname).toBe(
-      `/api/session/${encodeURIComponent("ses/a b")}/inbox/${encodeURIComponent("msg/q 1")}`,
-    )
+    expect(calls[2]!.url.pathname).toBe(itemPath)
   })
 
   test("cancel removes overlay and leaves no transcript residue", async () => {
@@ -371,7 +388,7 @@ describe("busy inbox queue / steer / cancel (ticket 07)", () => {
   })
 
   test("GET inbox replaces overlay by id, not by scanning local message text", async () => {
-    const { fetchSessionInbox, replaceInboxOverlayFromAuthority } = await import("./session-prompt-api")
+    const { fetchSessionInboxAuthority, replaceInboxOverlayFromAuthority } = await import("./session-prompt-api")
     const { rememberUnpromotedInbox, useSessionInboxOverlayStore } = await import("./session-inbox-overlay")
 
     rememberUnpromotedInbox({
@@ -398,8 +415,8 @@ describe("busy inbox queue / steer / cancel (ticket 07)", () => {
       ],
     })
 
-    const items = await fetchSessionInbox({ sessionID: SESSION, directory: "/repo" })
-    replaceInboxOverlayFromAuthority(SESSION, items)
+    const snap = await fetchSessionInboxAuthority({ sessionID: SESSION, directory: "/repo" })
+    replaceInboxOverlayFromAuthority(SESSION, snap.items, { startedMark: snap.startedMark })
 
     const ids = useSessionInboxOverlayStore.getState().list(SESSION).map((item) => item.id)
     expect(ids).toEqual(["msg_keep", "msg_server"])
@@ -407,6 +424,122 @@ describe("busy inbox queue / steer / cancel (ticket 07)", () => {
     const overlaySource = readHere("./session-inbox-overlay.ts")
     expect(overlaySource).not.toMatch(/payload\.text\s*===/)
     expect(overlaySource).not.toMatch(/content\s*===\s*item/)
+  })
+
+  test("stale GET started before terminal cannot clear receipt or re-admit chip", async () => {
+    const { fetchSessionInboxAuthority, replaceInboxOverlayFromAuthority } = await import("./session-prompt-api")
+    const {
+      captureInboxAuthorityMark,
+      forgetUnpromotedInbox,
+      getInboxTerminal,
+      rememberUnpromotedInbox,
+      useSessionInboxOverlayStore,
+    } = await import("./session-inbox-overlay")
+
+    rememberUnpromotedInbox({
+      id: "msg_race",
+      sessionID: SESSION,
+      timeCreated: 1,
+      type: "user",
+      delivery: "queue",
+      payload: { text: "pending" },
+    })
+
+    let releaseGet!: (response: Response) => void
+    const getGate = new Promise<Response>((resolve) => {
+      releaseGet = resolve
+    })
+    responseImpl = async (call) => {
+      if (call.method === "GET" && call.url.pathname.endsWith("/inbox")) {
+        return getGate
+      }
+      return jsonResponse({ data: [] })
+    }
+
+    const pending = fetchSessionInboxAuthority({ sessionID: SESSION, directory: "/repo" })
+    await new Promise((r) => setTimeout(r, 0))
+    const startedBeforeTerminal = captureInboxAuthorityMark()
+
+    forgetUnpromotedInbox(SESSION, "msg_race", "cancelled")
+    expect(getInboxTerminal(SESSION, "msg_race")).toBe("cancelled")
+
+    releaseGet(jsonResponse({
+      data: [{
+        ...INBOX_QUEUED,
+        id: "msg_race",
+        payload: { text: "stale still pending" },
+      }],
+    }))
+
+    const snap = await pending
+    expect(snap.startedMark).toBeLessThanOrEqual(startedBeforeTerminal)
+    replaceInboxOverlayFromAuthority(SESSION, snap.items, { startedMark: snap.startedMark })
+
+    expect(getInboxTerminal(SESSION, "msg_race")).toBe("cancelled")
+    expect(useSessionInboxOverlayStore.getState().list(SESSION).map((row) => row.id)).not.toContain("msg_race")
+  })
+
+  test("parseSessionInboxList skips synthetic/compaction; enqueued non-user is not an empty chip", async () => {
+    const {
+      applySessionInboxEvent,
+      parseSessionInboxList,
+      parseSessionInboxUser,
+    } = await import("./session-prompt-api")
+    const {
+      resetInboxTerminalReceiptsForTests,
+      useSessionInboxOverlayStore,
+    } = await import("./session-inbox-overlay")
+    resetInboxTerminalReceiptsForTests()
+    useSessionInboxOverlayStore.setState({ bySession: {} })
+
+    const list = parseSessionInboxList({
+      data: [
+        { ...INBOX_QUEUED, id: "msg_user", type: "user" },
+        {
+          id: "msg_syn",
+          sessionID: SESSION,
+          type: "synthetic",
+          delivery: "steer",
+          payload: { text: "sys" },
+        },
+        {
+          id: "msg_cmp",
+          sessionID: SESSION,
+          type: "compaction",
+          delivery: "steer",
+          payload: {},
+        },
+      ],
+    })
+    expect(list.map((row) => row.id)).toEqual(["msg_user"])
+
+    expect(() => parseSessionInboxUser({
+      id: "msg_cmp",
+      sessionID: SESSION,
+      type: "compaction",
+      delivery: "steer",
+      payload: {},
+    })).toThrow(/user inbox item/)
+
+    expect(applySessionInboxEvent({
+      type: "session.inbox.enqueued",
+      properties: {
+        sessionID: SESSION,
+        inboxID: "msg_cmp",
+        item: { type: "compaction", delivery: "steer", payload: {} },
+      },
+    })).toBe(false)
+    expect(useSessionInboxOverlayStore.getState().list(SESSION)).toEqual([])
+
+    expect(applySessionInboxEvent({
+      type: "session.inbox.enqueued",
+      properties: {
+        sessionID: SESSION,
+        inboxID: "msg_syn",
+        item: { type: "synthetic", delivery: "queue", payload: { text: "x" } },
+      },
+    })).toBe(false)
+    expect(useSessionInboxOverlayStore.getState().list(SESSION)).toEqual([])
   })
 
   test("inbox mutations that fail are not empty successes", async () => {
@@ -463,7 +596,8 @@ describe("busy inbox queue / steer / cancel (ticket 07)", () => {
     const store = readHere("./session-ui-store.ts")
     const chatInput = readHere("../components/chat/ChatInput.tsx")
     const wiring = readHere("../components/chat/chatInputSurfaceWiring.ts")
-    expect(client).toMatch(/delivery:\s*params\.delivery/)
+    expect(client).toContain('const delivery = params.delivery === "queue" ? "queue" : "steer"')
+    expect(client).toContain("delivery,")
     expect(client).toContain("postSessionPrompt")
     expect(promptApi).toContain("cancelUnpromotedInboxItem")
     expect(promptApi).toContain("steerSessionInbox")

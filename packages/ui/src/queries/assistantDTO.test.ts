@@ -70,9 +70,26 @@ describe('Assistant DTO parsing', () => {
     expect(page.entries[0]?.parts[0]).toBe(part);
     expect(page.entries[0]?.directory).toBe('/workspace-a');
     expect(page.entries[0]?.info.sessionID).toBe('ses_1');
+    expect(page.partial).toBe(false);
     expect(parseAssistantHistoryPage({ entries: [{ sessionID: 'ses_1', directory: null, info, parts: [] }], nextCursor: null, complete: true }).entries[0]?.directory).toBeNull();
+    const partial = parseAssistantHistoryPage({
+      entries: [{ sessionID: 'ses_3', directory: null, info: { id: 'msg_3', sessionID: 'ses_3', role: 'assistant', time: { created: 3 } }, parts: [] }],
+      nextCursor: 'retry_mid',
+      complete: false,
+      partial: true,
+      failed: [{ sessionID: 'ses_2', sessionOrdinal: 2, status: 503 }],
+    });
+    expect(partial.partial).toBe(true);
+    expect(partial.complete).toBe(false);
+    expect(partial.failed).toEqual([{ sessionID: 'ses_2', sessionOrdinal: 2, status: 503 }]);
     expect(() => parseAssistantHistoryPage({ entries: [], nextCursor: null, complete: false })).toThrow(AssistantAPIError);
     expect(() => parseAssistantHistoryPage({ entries: [], nextCursor: 'msg_0', complete: true })).toThrow(AssistantAPIError);
+    expect(() => parseAssistantHistoryPage({
+      entries: [],
+      nextCursor: 'retry',
+      complete: true,
+      partial: true,
+    })).toThrow(AssistantAPIError);
     expect(() => parseAssistantHistoryPage({ entries: [{ sessionID: 'ses_1', directory: '/workspace-a', info, parts: [{}] }], nextCursor: null, complete: true })).toThrow(AssistantAPIError);
     expect(() => parseAssistantHistoryPage({ entries: [{ sessionID: 'ses_1', info, parts: [] }], nextCursor: null, complete: true })).toThrow(AssistantAPIError);
     expect(() => parseAssistantHistoryPage({ entries: [{ sessionID: 'ses_2', directory: '/workspace-a', info, parts: [] }], nextCursor: null, complete: true })).toThrow(AssistantAPIError);

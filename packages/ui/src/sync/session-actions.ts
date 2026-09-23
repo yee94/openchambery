@@ -61,8 +61,20 @@ import {
 } from "./session-message-policy"
 import { resolveSessionMergeStrategy, SEND_GAP_FILL_SESSION_MERGE_STRATEGY } from "./session-merge-strategy"
 import { postSessionPermissionReply } from "./session-permission-api"
-import { fetchSessionProjectionPage } from "./session-projection-api"
-import { confirmOptimisticAgainstPromoted, fetchSessionInbox, postSessionInterrupt } from "./session-prompt-api"
+import {
+  fetchSessionProjectionPage,
+  isAuthoredUserTurnRecord,
+} from "./session-projection-api"
+import {
+  confirmOptimisticAgainstPromoted,
+  fetchSessionInboxAuthority,
+  postSessionInterrupt,
+} from "./session-prompt-api"
+import {
+  forgetUnpromotedInbox,
+  rememberUnpromotedInbox,
+  rememberUnpromotedInboxFromAuthority,
+} from "./session-inbox-overlay"
 import { postSessionRevertClear, postSessionRevertCommit, postSessionRevertStage } from "./session-revert-api"
 import { isSessionSharingAvailable } from "./session-sharing-availability"
 import { answersToFormAnswer, v2CapabilityUnavailable } from "./v2-runtime"
@@ -268,7 +280,11 @@ async function fetchSessionProjectionRecords(input: {
   return page.records.filter((record) => !!record?.info?.id) as Array<{ info: Message; parts?: Part[] }>
 }
 
-/** Confirm an idle/queue prompt against inbox + projection after send. */
+/**
+ * Post-admission sync only. HTTP prompt success already established the stable
+ * input id; inbox absence means consumed-or-pending-reconcile, never a throw.
+ * Projection failures keep admission + optimistic content for a later recover.
+ */
 export async function settleSessionPromptAfterSend(input: {
   sessionId: string
   directory?: string | null
@@ -277,36 +293,84 @@ export async function settleSessionPromptAfterSend(input: {
   text?: string
   delivery?: "steer" | "queue"
 }): Promise<void> {
-  void input.text
-  void input.delivery
-  if (input.inboxID) {
-    const inbox = await fetchSessionInbox({
+  const transport = captureRuntimeTransport()
+  const isSameRuntime = () => isCurrentRuntimeTransport(transport)
+
+  // Seed overlay only when no terminal receipt owns the id (cancelled/consumed
+  // already won). rememberUnpromotedInbox is a no-op under terminal ownership.
+  if (input.inboxID && isSameRuntime()) {
+    rememberUnpromotedInbox({
+      id: input.inboxID,
       sessionID: input.sessionId,
-      directory: input.directory,
+      timeCreated: Date.now(),
+      type: "user",
+      delivery: input.delivery === "queue" ? "queue" : "steer",
+      payload: { text: input.text ?? "" },
     })
-    if (!inbox.some((item) => item.id === input.inboxID)) {
-      throw new Error("session prompt inbox item was not found after send")
-    }
   }
-  const records = await fetchSessionProjectionRecords({
-    sessionID: input.sessionId,
-    directory: input.directory,
-    limit: getSendConfirmationRefetchLimit(),
-  })
-  await confirmOptimisticAgainstPromoted({
-    optimisticID: input.optimisticID,
-    promotedIDs: records.map((record) => record.info.id),
-    removeOptimistic: (id) => {
-      _optimisticRemove?.({
+
+  let pendingInInbox = Boolean(input.inboxID)
+  if (input.inboxID) {
+    try {
+      const snap = await fetchSessionInboxAuthority({
         sessionID: input.sessionId,
         directory: input.directory,
-        messageID: id,
       })
-    },
-    refreshFromAuthority: async () => {
-      await refetchSessionMessages(input.sessionId, input.directory ?? undefined)
-    },
-  })
+      if (!isSameRuntime() || !snap.current) return
+      const match = snap.items.find((item) => item.id === input.inboxID)
+      if (match) {
+        // Authority pending clears a stale terminal only when GET is not older
+        // than the terminal receipt (startedMark ordering).
+        rememberUnpromotedInboxFromAuthority(match, { startedMark: snap.startedMark })
+        pendingInInbox = true
+      } else {
+        pendingInInbox = false
+      }
+    } catch {
+      // Keep local admission fact; do not treat fetch failure as missing success.
+      // Success-but-sync-failed stays explicit pending when seed remember stuck.
+      pendingInInbox = true
+    }
+  }
+
+  let promotedIDs: string[] = []
+  try {
+    const records = await fetchSessionProjectionRecords({
+      sessionID: input.sessionId,
+      directory: input.directory,
+      limit: getSendConfirmationRefetchLimit(),
+    })
+    if (!isSameRuntime()) return
+    promotedIDs = records.map((record) => record.info.id)
+  } catch {
+    // Admission stands; sync can recover later without rolling back the user row.
+    return
+  }
+
+  if (input.inboxID && !pendingInInbox && promotedIDs.includes(input.inboxID)) {
+    forgetUnpromotedInbox(input.sessionId, input.inboxID, "consumed")
+  }
+
+  try {
+    await confirmOptimisticAgainstPromoted({
+      optimisticID: input.optimisticID,
+      promotedIDs,
+      removeOptimistic: (id) => {
+        if (!isSameRuntime()) return
+        _optimisticRemove?.({
+          sessionID: input.sessionId,
+          directory: input.directory,
+          messageID: id,
+        })
+      },
+      refreshFromAuthority: async () => {
+        if (!isSameRuntime()) return
+        await refetchSessionMessages(input.sessionId, input.directory ?? undefined)
+      },
+    })
+  } catch {
+    // Soft: keep optimistic until a later authority path confirms.
+  }
 }
 
 export function setActionRefs(
@@ -1078,6 +1142,7 @@ const pendingDeleteBatches = new Map<string, PendingDeleteBatch>()
 let pendingDeleteBatchSeq = 0
 
 function clearArchivedTimestamp(session: Session): Session {
+  // Strip any archived stamp, including Host explicit unarchive `0`.
   if (session.time?.archived === undefined) return session
   const restTime = { ...session.time }
   delete restTime.archived
@@ -1243,6 +1308,11 @@ export async function archiveSession(sessionId: string): Promise<boolean> {
   const snapshots = optimisticRemoveSession(sessionId, sessionDirectory)
   const globalSnapshot = getGlobalSessionSnapshot(sessionId)
   const archivedAt = Date.now()
+  const transport = captureRuntimeTransport()
+  const isSameRuntime = () => (
+    getRuntimeGeneration() === transport.generation
+    && getRuntimeTransportIdentity() === transport.identity
+  )
   useGlobalSessionsStore.getState().archiveSessions([sessionId], archivedAt)
   const ui = useSessionUIStore.getState()
   if (ui.currentSessionId === sessionId) {
@@ -1250,7 +1320,13 @@ export async function archiveSession(sessionId: string): Promise<boolean> {
   }
   try {
     await cleanupReviewMetadataBeforeDelete(sessionId, sessionDirectory)
+    if (!isSameRuntime()) {
+      throw new Error("session archive aborted because the runtime changed")
+    }
     const archived = await opencodeClient.updateSession(sessionId, { time: { archived: archivedAt } }, sessionDirectory)
+    if (!isSameRuntime()) {
+      throw new Error("session archive aborted because the runtime changed")
+    }
     if (!archived) {
       throw new Error("session.update failed: server did not return the archived session")
     }
@@ -1258,6 +1334,8 @@ export async function archiveSession(sessionId: string): Promise<boolean> {
     return true
   } catch (error) {
     console.error("[session-actions] archiveSession failed", error)
+    // Never restore A-era snapshots into a post-switch runtime B store.
+    if (!isSameRuntime()) return false
     restoreSessionListSnapshots(snapshots)
     restoreGlobalSessionSnapshot(globalSnapshot)
     return false
@@ -1269,6 +1347,11 @@ export async function unarchiveSession(sessionId: string): Promise<boolean> {
   const sessionDirectory = getSessionDirectory(sessionId)
   const globalSnapshot = getGlobalSessionSnapshot(sessionId)
   const optimistic = globalSnapshot ? clearArchivedTimestamp(globalSnapshot) : null
+  const transport = captureRuntimeTransport()
+  const isSameRuntime = () => (
+    getRuntimeGeneration() === transport.generation
+    && getRuntimeTransportIdentity() === transport.identity
+  )
 
   if (optimistic) {
     useGlobalSessionsStore.getState().upsertSession(optimistic)
@@ -1286,6 +1369,9 @@ export async function unarchiveSession(sessionId: string): Promise<boolean> {
       { time: { archived: 0 } },
       sessionDirectory,
     )
+    if (!isSameRuntime()) {
+      throw new Error("session unarchive aborted because the runtime changed")
+    }
     if (!updated) {
       throw new Error("session.update failed: server did not return the unarchived session")
     }
@@ -1304,9 +1390,11 @@ export async function unarchiveSession(sessionId: string): Promise<boolean> {
     return true
   } catch (error) {
     console.error("[session-actions] unarchiveSession failed", error)
+    // Never restore A-era snapshots into a post-switch runtime B store.
+    if (!isSameRuntime()) return false
     if (globalSnapshot) {
       useGlobalSessionsStore.getState().upsertSession(globalSnapshot)
-      if (globalSnapshot.time?.archived) {
+      if (typeof globalSnapshot.time?.archived === "number" && globalSnapshot.time.archived > 0) {
         optimisticRemoveSession(sessionId, sessionDirectory)
       }
     }
@@ -1391,12 +1479,34 @@ export async function commitStagedRevertBeforeSend(sessionId: string, directoryO
   // catalog; without it there is no staged revert to commit.
   const session = store.getState().session?.find((item) => item.id === sessionId)
   if (!session?.revert) return
+  const revertTo = typeof session.revert.messageID === "string" && session.revert.messageID.length > 0
+    ? session.revert.messageID
+    : null
+  const transport = captureRuntimeTransport()
   await postSessionRevertCommit({ sessionID: sessionId, directory })
+  if (!isCurrentRuntimeTransport(transport)) return
   const next = [...store.getState().session]
   const idx = next.findIndex((item) => item.id === sessionId)
   if (idx >= 0) {
     next[idx] = { ...next[idx], revert: undefined } as Session
     store.setState({ session: next })
+  }
+  // Local commit must not wait only on SSE: apply the same repository boundary
+  // as `session.revert.committed` so the visible range drops immediately.
+  if (revertTo) {
+    try {
+      const { repository, directory: resolvedDirectory } = transcriptRepositoryForSession(
+        sessionId,
+        directory,
+      )
+      if (!isCurrentRuntimeTransport(transport)) return
+      repository.apply(transcriptScope(resolvedDirectory, sessionId), {
+        type: "revert-committed",
+        to: revertTo,
+      })
+    } catch {
+      // Catalog marker already cleared; SSE / next authority pull can finish.
+    }
   }
 }
 
@@ -1445,10 +1555,13 @@ function captureRuntimeTransport(): RuntimeTransportCapture {
   return { identity: getRuntimeTransportIdentity(), generation: getRuntimeGeneration() }
 }
 
-function isCurrentSendTarget(target: SendTargetCapture, transport: RuntimeTransportCapture): boolean {
-  return target.isCurrent()
-    && getRuntimeTransportIdentity() === transport.identity
+function isCurrentRuntimeTransport(transport: RuntimeTransportCapture): boolean {
+  return getRuntimeTransportIdentity() === transport.identity
     && getRuntimeGeneration() === transport.generation
+}
+
+function isCurrentSendTarget(target: SendTargetCapture, transport: RuntimeTransportCapture): boolean {
+  return target.isCurrent() && isCurrentRuntimeTransport(transport)
 }
 
 function assertCurrentSendTarget(target: SendTargetCapture, transport: RuntimeTransportCapture): void {
@@ -3089,8 +3202,9 @@ export async function forkSession(sessionId: string, operationId: number, messag
   })
 
   // Extract message text and file attachments for input restoration.
-  // Only restore the composer when forking from a user message — assistant
-  // forks keep conversation context but should not dump model output into input.
+  // Only restore the composer for authored user turns (ticket 03) — assistant
+  // forks and native synthetic rows keep conversation context but must not dump
+  // system/model text into input.
   // Only non-synthetic text parts — the server adds file content as synthetic
   // text parts that should not be restored. File parts (images, pasted
   // screenshots) are user-originated and must be restored.
@@ -3098,10 +3212,11 @@ export async function forkSession(sessionId: string, operationId: number, messag
   const forkSourceMessage = messageId
     ? forkData.messagesByID[messageId] ?? sourceMessages.find((message) => message.id === messageId)
     : undefined
-  const shouldRestoreComposer = forkSourceMessage?.role === "user"
-  const parts = shouldRestoreComposer && messageId
+  const forkSourceParts = messageId
     ? [...forkRepo.getParts(transcriptScope(directory, sessionId), messageId)]
     : []
+  const shouldRestoreComposer = isAuthoredUserTurnRecord(forkSourceMessage, forkSourceParts)
+  const parts = shouldRestoreComposer ? forkSourceParts : []
   let messageText = ""
   const textParts = parts.filter((p) => p.type === "text" && !isSyntheticPart(p))
   messageText = textParts

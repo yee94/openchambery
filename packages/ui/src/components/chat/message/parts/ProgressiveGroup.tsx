@@ -429,7 +429,8 @@ const getTaskAvatarSeeds = (parts: TurnActivityPart[]): { active: string[]; all:
     for (const activity of parts) {
         if (activity.kind !== 'tool') continue;
         const part = activity.part as ToolPartType;
-        if (part.tool?.trim().toLowerCase() !== 'task') continue;
+        const toolName = part.tool?.trim().toLowerCase() ?? '';
+        if (toolName !== 'task' && toolName !== 'subagent') continue;
 
         const taskId = typeof part.id === 'string' ? part.id.trim() : '';
         if (!taskId) continue;

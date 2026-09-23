@@ -61,11 +61,19 @@ export type SessionActiveResult =
   | { state: "unknown" };
 import { getRuntimeUrlResolver } from "@/lib/runtime-url";
 import { runtimeFetch } from "@/lib/runtime-fetch";
-import { getRuntimeKey } from "@/lib/runtime-switch";
+import { getRuntimeGeneration, getRuntimeKey } from "@/lib/runtime-switch";
 import { getRegisteredRuntimeAPIs } from "@/contexts/runtimeAPIRegistry";
 import { markStartupTrace } from "@/lib/startupTrace";
 import { ascendingId } from "@/sync/message-id";
-import { postSessionPrompt, postSessionInterrupt } from "@/sync/session-prompt-api";
+import {
+  capturePromptCommitScope,
+  isCurrentPromptCommitScope,
+  isPromptAdmissionRejected,
+  postSessionInterrupt,
+  postSessionPrompt,
+  reconcilePromptAdmission,
+  type PromptCommitScope,
+} from "@/sync/session-prompt-api";
 import { fetchSessionProjectionPage } from "@/sync/session-projection-api";
 import { postSessionCompact } from "@/sync/session-compaction-api";
 import { postSessionRevertClear, postSessionRevertStage } from "@/sync/session-revert-api";
@@ -645,11 +653,21 @@ class OpencodeService {
    * Official 2.0.12: POST /api/session/:id/model
    * body `{ model: { id, providerID, variant? } }` — field is `id`, not modelID.
    */
+  private assertCapturedRuntime(generation: number, runtimeKey: string, label: string): void {
+    if (getRuntimeGeneration() !== generation || getRuntimeKey() !== runtimeKey) {
+      const error = new Error(`${label}: runtime switched`)
+      error.name = "RuntimeGenerationMismatchError"
+      throw error
+    }
+  }
+
   async switchSessionModel(
     sessionID: string,
     model: OfficialModelRef | ModelRef,
     directory?: string | null,
   ): Promise<void> {
+    const generation = getRuntimeGeneration()
+    const runtimeKey = getRuntimeKey()
     const id = "id" in model && typeof model.id === "string" && model.id
       ? model.id
       : (model as { modelID?: string }).modelID
@@ -665,12 +683,15 @@ class OpencodeService {
       providerID,
       ...(variant ? { variant } : {}),
     }
+    // Directory + scoped client captured at entry — never re-read after await.
     const scopedDir = this.normalizeCandidatePath(directory) ?? this.currentDirectory ?? ""
     const client = this.getScopedSdkClient(scopedDir)
+    this.assertCapturedRuntime(generation, runtimeKey, "session model switch")
     await client.session.switchModel({
       sessionID,
       model: body,
     })
+    this.assertCapturedRuntime(generation, runtimeKey, "session model switch")
     patchLocalSessionSelection(sessionID, scopedDir || directory, { model: body })
   }
 
@@ -679,17 +700,51 @@ class OpencodeService {
     agent: string,
     directory?: string | null,
   ): Promise<void> {
+    const generation = getRuntimeGeneration()
+    const runtimeKey = getRuntimeKey()
     const name = typeof agent === "string" ? agent.trim() : ""
     if (!sessionID || !name) {
       throw new Error("switchSessionAgent requires sessionID and agent")
     }
     const scopedDir = this.normalizeCandidatePath(directory) ?? this.currentDirectory ?? ""
     const client = this.getScopedSdkClient(scopedDir)
+    this.assertCapturedRuntime(generation, runtimeKey, "session agent switch")
     await client.session.switchAgent({
       sessionID,
       agent: name,
     })
+    this.assertCapturedRuntime(generation, runtimeKey, "session agent switch")
     patchLocalSessionSelection(sessionID, scopedDir || directory, { agent: name })
+  }
+
+  /**
+   * Official 2.0.12: session.generate — one-shot side answer (no tool loop).
+   * Used by /btw. Captures scopedDir at call time and uses getScopedSdkClient
+   * only — never withDirectory / directoryContextQueue, and never mutates
+   * currentDirectory. v2 generate is sessionID-owned (no location param);
+   * AbortSignal is passed through request options.
+   */
+  async generateSessionAside(params: {
+    sessionId: string
+    directory?: string | null
+    prompt: string
+    signal?: AbortSignal
+  }): Promise<{ text: string }> {
+    const sessionID = typeof params.sessionId === "string" ? params.sessionId.trim() : ""
+    if (!sessionID) {
+      throw new Error("generateSessionAside requires sessionId")
+    }
+    const prompt = typeof params.prompt === "string" ? params.prompt : ""
+    const scopedDir = this.normalizeCandidatePath(params.directory) ?? this.currentDirectory ?? ""
+    const client = this.getScopedSdkClient(scopedDir)
+    const result = await client.session.generate(
+      { sessionID, prompt },
+      params.signal ? { signal: params.signal } : undefined,
+    )
+    if (!result || typeof result.text !== "string") {
+      throw new Error("session.generate returned invalid payload")
+    }
+    return { text: result.text }
   }
 
   /**
@@ -877,57 +932,144 @@ class OpencodeService {
     patch: { title?: string; metadata?: Record<string, unknown>; time?: { archived?: number | null } },
     directory?: string | null,
   ): Promise<Session> {
-    // OpenCode 2.x has no archive stamp write; keep refusing until Host archive
-    // store is wired on this branch.
-    if (patch.time?.archived !== undefined) {
-      throw v2CapabilityUnavailable('session.update.metadata|archive');
-    }
+    const wantsTitle = patch.title !== undefined;
+    const wantsMetadata = patch.metadata !== undefined;
+    const wantsArchive = patch.time !== undefined
+      && Object.prototype.hasOwnProperty.call(patch.time, 'archived');
 
-    // Metadata-only: Host-owned store (OpenCode accepts metadata only at create).
-    // Title-only still uses session.update so ordinary renames keep working even
-    // before the metadata routes are registered on the server.
-    if (patch.metadata !== undefined && patch.title === undefined) {
-      const requestDirectory = this.normalizeCandidatePath(directory) ?? this.currentDirectory;
-      const body: Record<string, unknown> = { patch: patch.metadata };
-      if (requestDirectory) body.directory = requestDirectory;
-      const response = await runtimeFetch(
-        `${this.baseUrl}/openchamber/sessions/${encodeURIComponent(id)}/metadata`,
-        {
-          method: 'PUT',
-          headers: {
-            Accept: 'application/json',
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify(body),
-        },
-      );
-      if (!response.ok) {
-        const error = new Error(`session.metadata update failed (${response.status})`) as Error & { status?: number };
-        error.status = response.status;
-        throw error;
-      }
-      const payload: unknown = await response.json().catch(() => null);
-      const returnedMetadata = payload !== null
-        && typeof payload === 'object'
-        && !Array.isArray(payload)
-        && 'metadata' in payload
-        && (payload as { metadata?: unknown }).metadata !== null
-        && typeof (payload as { metadata?: unknown }).metadata === 'object'
-        && !Array.isArray((payload as { metadata: unknown }).metadata)
-        ? (payload as { metadata: Record<string, unknown> }).metadata
-        : null;
-      const session = await this.getSession(id, directory);
-      if (returnedMetadata) {
-        return { ...session, metadata: returnedMetadata as Session['metadata'] };
-      }
-      return session;
-    }
-
-    if (patch.title === undefined) {
+    if (!wantsTitle && !wantsMetadata && !wantsArchive) {
       throw v2CapabilityUnavailable('session.update');
     }
-    await this.client.session.update({ sessionID: id, title: patch.title });
-    return projectSession(await this.client.session.get({ sessionID: id }));
+
+    const requestDirectory = this.normalizeCandidatePath(directory) ?? this.currentDirectory;
+    const generation = getRuntimeGeneration();
+    const runtimeKey = getRuntimeKey();
+    const assertSameRuntime = () => {
+      if (getRuntimeGeneration() !== generation || getRuntimeKey() !== runtimeKey) {
+        const error = new Error('session.update discarded: runtime switched');
+        error.name = 'RuntimeGenerationMismatchError';
+        throw error;
+      }
+    };
+
+    const completed: string[] = [];
+    let latest: Session | null = null;
+    let returnedMetadata: Record<string, unknown> | null = null;
+
+    const failPartial = (error: unknown): never => {
+      if (completed.length === 0) throw error;
+      const detail = formatSdkError(error);
+      const partial = new Error(
+        `session.update partial failure after ${completed.join(',')}: ${detail}`,
+      ) as Error & { cause?: unknown; completed?: string[] };
+      partial.name = 'SessionUpdatePartialFailureError';
+      partial.cause = error;
+      partial.completed = [...completed];
+      throw partial;
+    };
+
+    try {
+      // Title stays on official OpenCode session.update.
+      if (wantsTitle) {
+        await this.client.session.update({ sessionID: id, title: patch.title });
+        assertSameRuntime();
+        completed.push('title');
+        latest = projectSession(await this.client.session.get({ sessionID: id }));
+        assertSameRuntime();
+      }
+
+      // Metadata-only Host store (OpenCode accepts metadata only at create).
+      if (wantsMetadata) {
+        const body: Record<string, unknown> = { patch: patch.metadata };
+        if (requestDirectory) body.directory = requestDirectory;
+        const response = await runtimeFetch(
+          `${this.baseUrl}/openchamber/sessions/${encodeURIComponent(id)}/metadata`,
+          {
+            method: 'PUT',
+            headers: {
+              Accept: 'application/json',
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(body),
+          },
+        );
+        assertSameRuntime();
+        if (!response.ok) {
+          const error = new Error(`session.metadata update failed (${response.status})`) as Error & { status?: number };
+          error.status = response.status;
+          throw error;
+        }
+        const payload: unknown = await response.json().catch(() => null);
+        assertSameRuntime();
+        returnedMetadata = payload !== null
+          && typeof payload === 'object'
+          && !Array.isArray(payload)
+          && 'metadata' in payload
+          && (payload as { metadata?: unknown }).metadata !== null
+          && typeof (payload as { metadata?: unknown }).metadata === 'object'
+          && !Array.isArray((payload as { metadata: unknown }).metadata)
+          ? (payload as { metadata: Record<string, unknown> }).metadata
+          : null;
+        completed.push('metadata');
+      }
+
+      // Host archive: positive archivedAt archives, 0 / null explicit unarchive.
+      if (wantsArchive) {
+        const rawArchived = patch.time?.archived;
+        let archivedAt: number;
+        if (rawArchived === null || rawArchived === undefined) {
+          archivedAt = 0;
+        } else if (typeof rawArchived === 'number' && Number.isFinite(rawArchived)) {
+          archivedAt = rawArchived > 0 ? Math.trunc(rawArchived) : 0;
+        } else {
+          throw new Error('archivedAt must be a finite number or null');
+        }
+        const body: Record<string, unknown> = { archivedAt };
+        if (requestDirectory) body.directory = requestDirectory;
+        const response = await runtimeFetch(
+          `${this.baseUrl}/openchamber/sessions/${encodeURIComponent(id)}/archive`,
+          {
+            method: 'PUT',
+            headers: {
+              Accept: 'application/json',
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(body),
+          },
+        );
+        assertSameRuntime();
+        if (!response.ok) {
+          const error = new Error(`session.archive update failed (${response.status})`) as Error & { status?: number };
+          error.status = response.status;
+          throw error;
+        }
+        const payload: unknown = await response.json().catch(() => null);
+        assertSameRuntime();
+        const sessionPayload = payload !== null
+          && typeof payload === 'object'
+          && !Array.isArray(payload)
+          && 'session' in payload
+          ? (payload as { session?: unknown }).session
+          : null;
+        if (!sessionPayload || typeof sessionPayload !== 'object' || Array.isArray(sessionPayload)) {
+          throw new Error('session.archive update failed: empty response');
+        }
+        latest = projectSession(sessionPayload as Parameters<typeof projectSession>[0]);
+        completed.push('archive');
+      }
+
+      if (!latest) {
+        latest = await this.getSession(id, directory);
+        assertSameRuntime();
+      }
+
+      if (returnedMetadata && !wantsArchive) {
+        return { ...latest, metadata: returnedMetadata as Session['metadata'] };
+      }
+      return latest;
+    } catch (error) {
+      return failPartial(error);
+    }
   }
 
   async getSessionMessages(id: string, limit?: number): Promise<ProjectedSessionMessage[]> {
@@ -1109,8 +1251,14 @@ class OpencodeService {
     };
   }
 
-  private async toNormalizedFilePartInput(file: FileInputLite): Promise<FilePartInput> {
+  private async toNormalizedFilePartInput(
+    file: FileInputLite,
+    runtime?: { generation: number; runtimeKey: string },
+  ): Promise<FilePartInput> {
+    const generation = runtime?.generation ?? getRuntimeGeneration();
+    const runtimeKey = runtime?.runtimeKey ?? getRuntimeKey();
     const normalized = await this.normalizeFilePart(file);
+    this.assertCapturedRuntime(generation, runtimeKey, "prompt attachment normalize");
     let url = normalized.url;
     // Inline data/blob URLs must leave the prompt JSON before promptAsync /
     // createWithPrompt. Upload the bytes first and keep only a host file://
@@ -1120,11 +1268,14 @@ class OpencodeService {
       if (!body) {
         throw new Error(`Failed to materialize attachment bytes for ${normalized.filename ?? 'file'}`);
       }
+      this.assertCapturedRuntime(generation, runtimeKey, "prompt attachment upload");
       const uploaded = await uploadPromptAttachmentBytes({
         body,
         mime: normalized.mime,
         filename: normalized.filename,
       });
+      // Stale runtime must not keep the uploaded host path for a new target.
+      this.assertCapturedRuntime(generation, runtimeKey, "prompt attachment upload");
       url = uploaded.url;
     }
     return {
@@ -1142,8 +1293,13 @@ class OpencodeService {
    * normalization (MIME correction, HEIC conversion, inline blob handling)
    * stays consistent across both paths.
    */
-  async buildMessageParts(params: Omit<Parameters<typeof _buildPromptParts>[0], never>): Promise<Array<TextPartInput | FilePartInput | AgentPartInputLite>> {
-    return _buildPromptParts(params, (file) => this.toNormalizedFilePartInput(file));
+  async buildMessageParts(
+    params: Omit<Parameters<typeof _buildPromptParts>[0], never>,
+    runtime?: { generation: number; runtimeKey: string },
+  ): Promise<Array<TextPartInput | FilePartInput | AgentPartInputLite>> {
+    const generation = runtime?.generation ?? getRuntimeGeneration();
+    const runtimeKey = runtime?.runtimeKey ?? getRuntimeKey();
+    return _buildPromptParts(params, (file) => this.toNormalizedFilePartInput(file, { generation, runtimeKey }));
   }
 
   async sendMessage(params: {
@@ -1179,11 +1335,22 @@ class OpencodeService {
     };
     directory?: string | null;
   }): Promise<string> {
+    // Earliest entry: pin runtime + directory before any async upload / boundary /
+    // selection / prompt so a mid-flight runtime switch cannot retarget the send.
+    const runtimeGeneration = getRuntimeGeneration();
+    const runtimeKey = getRuntimeKey();
+    const assertSameRuntime = () => {
+      this.assertCapturedRuntime(runtimeGeneration, runtimeKey, "session prompt discarded");
+    };
+    assertSameRuntime();
+
     // Use the optimistic/client-generated ID as the real user message ID so SSE
     // can reconcile the echoed server message in-place.
     const messageId = params.messageId ?? ascendingId("msg");
+    const requestDirectory = this.normalizeCandidatePath(params.directory ?? null) ?? this.currentDirectory;
+    const commit: PromptCommitScope = capturePromptCommitScope(requestDirectory ?? "");
 
-    // Build parts using the shared builder
+    // Build parts using the shared builder (uploads check the same capture).
     const parts = await this.buildMessageParts({
       text: params.text,
       prefaceText: params.prefaceText,
@@ -1191,9 +1358,11 @@ class OpencodeService {
       files: params.files,
       additionalParts: params.additionalParts,
       agentMentions: params.agentMentions,
-    });
-
-    const requestDirectory = this.normalizeCandidatePath(params.directory ?? null) ?? this.currentDirectory;
+    }, { generation: runtimeGeneration, runtimeKey });
+    assertSameRuntime();
+    if (!isCurrentPromptCommitScope(commit)) {
+      this.assertCapturedRuntime(runtimeGeneration, runtimeKey, "session prompt discarded");
+    }
 
     if (params.format) {
       console.info('[git-generation][browser] send structured message', {
@@ -1225,26 +1394,36 @@ class OpencodeService {
       // Serial session boundary: switch model/agent when needed, then prompt.
       // OpenCode 2.x runs the turn from session.model — metadata.model alone
       // does not change the runner (MODEL-SWITCH-DIAGNOSIS).
+      //
+      // Ticket 01: native queue delivery must NOT apply composer selection —
+      // runner re-reads session.model/agent at consumption time. Steer (and
+      // default idle) still apply selection before prompt.
       return await this.runSessionBoundary(params.id, async () => {
-        await this.applySendSelection(
-          params.id,
-          {
-            model: params.switchModel,
-            agent: params.switchAgent,
-          },
-          requestDirectory,
-        )
+        assertSameRuntime()
+        const delivery = params.delivery === "queue" ? "queue" : "steer"
+        const applySelection = delivery !== "queue"
+        if (applySelection) {
+          await this.applySendSelection(
+            params.id,
+            {
+              model: params.switchModel,
+              agent: params.switchAgent,
+            },
+            requestDirectory,
+          )
+          assertSameRuntime()
+        }
 
-        // Ticket 06/07: v2 prompt via Host shallow proxy. Idle uses delivery=steer;
-        // busy same-session follow-up uses delivery=queue. Do not retry after a
-        // transport failure: through a remote tunnel the POST may already be
-        // running server-side even though the client lost the response.
-        const inbox = await postSessionPrompt({
+        // Ticket 02: stable input id + captured prompt payload. Lost responses
+        // reconcile by fixed id (inbox pending or already projected), then at
+        // most one prompt-only retry — never re-run model/agent switch.
+        const promptInput = {
           sessionID: params.id,
-          directory: requestDirectory ?? "",
+          directory: commit.directory,
           messageID: messageId,
           text,
-          delivery: params.delivery,
+          delivery,
+          commit,
           ...(files.length > 0 ? { files } : {}),
           ...(agents.length > 0 ? { agents } : {}),
           ...(params.agent || params.variant || params.format || params.providerID
@@ -1252,15 +1431,75 @@ class OpencodeService {
                 metadata: {
                   ...(params.agent ? { agent: params.agent } : {}),
                   ...(params.variant ? { variant: params.variant } : {}),
-                  // Observability only — runner uses session.model after switch.
+                  // Observability / diagnostic only — runner uses session.model
+                  // after steer switch; queue inherits session config at consume.
                   model: { providerID: params.providerID, modelID: params.modelID },
                   ...(params.format ? { format: params.format } : {}),
                 },
               }
             : {}),
-        });
-        recordProviderSuccess(params.providerID);
-        return inbox.id;
+        } as const
+
+        const admitOnce = async () => {
+          assertSameRuntime()
+          const inbox = await postSessionPrompt(promptInput)
+          assertSameRuntime()
+          return inbox.id
+        }
+
+        try {
+          const admittedID = await admitOnce()
+          recordProviderSuccess(params.providerID)
+          return admittedID
+        } catch (error) {
+          assertSameRuntime()
+          if (isPromptAdmissionRejected(error)) {
+            throw error
+          }
+          if ((error as { name?: string } | null)?.name === "RuntimeGenerationMismatchError") {
+            throw error
+          }
+          // Ambiguous transport / 5xx: fixed-id reconcile first (2.0.12 inbox
+          // admit is idempotent on matching session+id).
+          const reconciled = await reconcilePromptAdmission({
+            sessionID: params.id,
+            directory: commit.directory,
+            inputID: messageId,
+            commit,
+          })
+          assertSameRuntime()
+          if (reconciled.status === "pending" || reconciled.status === "promoted") {
+            recordProviderSuccess(params.providerID)
+            return messageId
+          }
+          // unknown: do not mint a new draft identity — same id/payload retry only.
+          // One bounded prompt-only retry with the same id + payload.
+          try {
+            const admittedID = await admitOnce()
+            recordProviderSuccess(params.providerID)
+            return admittedID
+          } catch (retryError) {
+            assertSameRuntime()
+            if (isPromptAdmissionRejected(retryError)) {
+              throw retryError
+            }
+            if ((retryError as { name?: string } | null)?.name === "RuntimeGenerationMismatchError") {
+              throw retryError
+            }
+            const again = await reconcilePromptAdmission({
+              sessionID: params.id,
+              directory: commit.directory,
+              inputID: messageId,
+              commit,
+            })
+            assertSameRuntime()
+            if (again.status === "pending" || again.status === "promoted") {
+              recordProviderSuccess(params.providerID)
+              return messageId
+            }
+            throw retryError
+          }
+        }
       })
     } catch (error) {
       recordProviderError(params.providerID, (error as Error & { status?: number }).status);

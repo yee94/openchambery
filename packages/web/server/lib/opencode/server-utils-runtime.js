@@ -1,5 +1,10 @@
 import { registerOpenCodeProxy } from './proxy.js';
 import { pathLooksUserConfigured, mergePathValues } from './path-utils.js';
+import {
+  configureServerOpenCodeFetchGate,
+  createServerOpenCodeFetch,
+  wrapFetchWithRuntimeContractGate,
+} from './server-opencode-fetch.js';
 
 export const createServerUtilsRuntime = (dependencies) => {
   const {
@@ -22,7 +27,29 @@ export const createServerUtilsRuntime = (dependencies) => {
     clearLastOpenCodeError,
     getLoginShellPath,
     getStoredSessionMetadata = null,
+    getStoredSessionMetadataSync = null,
+    ensureSessionMetadataReady = null,
+    onSessionDeleted = null,
   } = dependencies;
+
+  const getRuntimeContract = () => {
+    try {
+      return getRuntime()?.runtimeContract ?? null;
+    } catch {
+      return null;
+    }
+  };
+
+  // Shared Host transport gate for SDK clients + raw serverOpenCodeFetch.
+  configureServerOpenCodeFetchGate(getRuntimeContract);
+
+  const serverOpenCodeFetch = createServerOpenCodeFetch({
+    buildOpenCodeUrl,
+    getOpenCodeAuthHeaders,
+    getRuntimeContract,
+  });
+
+  const gatedOpenCodeFetchImpl = wrapFetchWithRuntimeContractGate(fetch, { getRuntimeContract });
 
   const setOpenCodePort = (port) => {
     if (!Number.isFinite(port) || port <= 0) {
@@ -217,6 +244,9 @@ export const createServerUtilsRuntime = (dependencies) => {
       onInteractiveSessionRequest: options.onInteractiveSessionRequest,
       onSessionTurnAdmission: options.onSessionTurnAdmission,
       getStoredSessionMetadata,
+      getStoredSessionMetadataSync,
+      ensureSessionMetadataReady,
+      onSessionDeleted,
     });
   };
 
@@ -230,5 +260,8 @@ export const createServerUtilsRuntime = (dependencies) => {
     fetchProvidersSnapshot,
     fetchModelsSnapshot,
     setupProxy,
+    serverOpenCodeFetch,
+    gatedOpenCodeFetchImpl,
+    getRuntimeContract,
   };
 };

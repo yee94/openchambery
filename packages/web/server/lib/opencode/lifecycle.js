@@ -2,6 +2,8 @@ import { spawn, spawnSync } from 'node:child_process';
 import net from 'node:net';
 import { registerManagedProcess, unregisterManagedProcess, reapOrphanedProcesses } from './managed-process-registry.js';
 import { evaluateOpenCodeHealthBody } from './opencode2-pin.js';
+import { readOpenCode2BinaryVersion } from './ensure-cli.js';
+import { createRevokedRuntimeContract, evaluateRuntimeContract } from './runtime-contract.js';
 import { OPENCODE_V1_MIGRATION_PATH, fetchV1MigrationGate } from './v1-migration-gate.js';
 
 const parsePositiveInt = (value, fallback) => {
@@ -469,14 +471,18 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
   // v2 readiness lives at /api/info (ServerInfo.version); /global/health remains
   // a probe fallback for older sidecars. Both require Basic auth from
   // getOpenCodeAuthHeaders(). Version admission rejects 1.x / missing / noise.
-  const fetchOpenCodeHealthOk = async (urlForPath, signal, options = {}) => {
+  // Health ok is reachability only — execution semantics live on runtimeContract.
+  const fetchOpenCodeHealthResult = async (urlForPath, signal, options = {}) => {
     const headerCandidates = [
-      { Accept: 'application/json', ...getOpenCodeAuthHeaders() },
+      { Accept: 'application/json', ...getOpenCodeAuthHeaders(), authenticated: true },
     ];
     if (options.allowUnauthenticated) {
-      headerCandidates.push({ Accept: 'application/json' });
+      headerCandidates.push({ Accept: 'application/json', authenticated: false });
     }
-    for (const headers of headerCandidates) {
+    let sawUnauthorized = false;
+    let lastGate = null;
+    for (const headerCandidate of headerCandidates) {
+      const { authenticated, ...headers } = headerCandidate;
       for (const healthPath of [OPENCODE_HEALTH_PATH, OPENCODE_HEALTH_FALLBACK_PATH]) {
         try {
           const response = await fetch(urlForPath(healthPath), {
@@ -484,15 +490,98 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
             headers,
             signal,
           });
+          if (response.status === 401 || response.status === 403) {
+            sawUnauthorized = true;
+            continue;
+          }
           if (!response.ok) continue;
           const body = await response.json().catch(() => null);
           const gate = evaluateOpenCodeHealthBody(body);
-          if (gate.ok) return true;
+          lastGate = gate;
+          if (gate.ok) {
+            return {
+              ok: true,
+              version: gate.version,
+              authenticated: authenticated !== false,
+              healthOk: true,
+            };
+          }
         } catch {
         }
       }
     }
-    return false;
+    if (sawUnauthorized && !lastGate?.ok) {
+      return { ok: false, version: null, authenticated: false, healthOk: false, reason: 'auth-failed' };
+    }
+    return {
+      ok: false,
+      version: lastGate?.version ?? null,
+      authenticated: sawUnauthorized ? false : null,
+      healthOk: false,
+      reason: lastGate?.reason || 'unhealthy',
+    };
+  };
+
+  const fetchOpenCodeHealthOk = async (urlForPath, signal, options = {}) => {
+    const result = await fetchOpenCodeHealthResult(urlForPath, signal, options);
+    return result.ok === true;
+  };
+
+  /**
+   * Invalidate any prior execution permit. Start / restart / target changes must
+   * bump generation so in-flight async health probes cannot publish for a newer
+   * instance, and Host/proxy gates stop holding a stale `executionAllowed: true`.
+   * @param {string} [reason]
+   */
+  const revokeRuntimeExecutionPermit = (reason = 'instance-revoked') => {
+    const nextGeneration = (Number(state.runtimeContractGeneration) || 0) + 1;
+    state.runtimeContractGeneration = nextGeneration;
+    state.openCodeServeVersion = null;
+    state.openCodeCliVersion = null;
+    state.runtimeContract = createRevokedRuntimeContract(reason, {
+      instanceGeneration: nextGeneration,
+    });
+    return nextGeneration;
+  };
+
+  /**
+   * Publish contract only for the generation that started the probe.
+   * @param {object | null | undefined} probe
+   * @param {object | null | undefined} migrationGate
+   * @param {number | null | undefined} expectedGeneration
+   */
+  const refreshRuntimeContractFromProbe = (
+    probe,
+    migrationGate = state.v1Migration,
+    expectedGeneration = state.runtimeContractGeneration,
+  ) => {
+    const currentGeneration = Number(state.runtimeContractGeneration) || 0;
+    if (
+      expectedGeneration != null
+      && Number(expectedGeneration) !== currentGeneration
+    ) {
+      // Stale async health / migration result for a superseded instance.
+      return state.runtimeContract;
+    }
+    const binaryPath = typeof process.env.OPENCODE_BINARY === 'string'
+      ? process.env.OPENCODE_BINARY.trim()
+      : '';
+    const cliVersion = binaryPath ? (readOpenCode2BinaryVersion(binaryPath) || null) : null;
+    const contract = evaluateRuntimeContract({
+      serveVersion: probe?.version ?? null,
+      cliVersion,
+      reachable: probe?.ok === true || Boolean(state.openCodePort),
+      authenticated: probe?.authenticated ?? null,
+      healthOk: probe?.healthOk ?? probe?.ok ?? null,
+      migrationAdmitTranscript: migrationGate?.admitTranscript ?? null,
+      migrationPhase: migrationGate?.phase ?? null,
+      migrationError: migrationGate?.error ?? null,
+    });
+    contract.instanceGeneration = currentGeneration;
+    state.openCodeServeVersion = contract.serveVersion;
+    state.openCodeCliVersion = contract.cliVersion;
+    state.runtimeContract = contract;
+    return contract;
   };
 
   const isOpenCodeProcessHealthy = async () => {
@@ -500,11 +589,16 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
       return false;
     }
 
+    const generationAtStart = Number(state.runtimeContractGeneration) || 0;
     try {
-      return await fetchOpenCodeHealthOk(
+      const result = await fetchOpenCodeHealthResult(
         (healthPath) => buildOpenCodeUrl(healthPath, ''),
         AbortSignal.timeout(HEALTH_CHECK_TIMEOUT_MS)
       );
+      if (result.ok) {
+        refreshRuntimeContractFromProbe(result, state.v1Migration, generationAtStart);
+      }
+      return result.ok;
     } catch {
       return false;
     }
@@ -515,17 +609,21 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
       return false;
     }
 
+    const generationAtStart = Number(state.runtimeContractGeneration) || 0;
     try {
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), 3000);
       const base = origin ?? `http://127.0.0.1:${port}`;
-      const healthy = await fetchOpenCodeHealthOk(
+      const result = await fetchOpenCodeHealthResult(
         (healthPath) => `${base}${healthPath}`,
         controller.signal,
         { allowUnauthenticated: true },
       );
       clearTimeout(timeout);
-      return healthy;
+      if (result.ok) {
+        refreshRuntimeContractFromProbe(result, state.v1Migration, generationAtStart);
+      }
+      return result.ok;
     } catch {
       return false;
     }
@@ -552,6 +650,8 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
   const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
   const startOpenCodeOnce = async () => {
+    // New managed instance — drop any prior permit before spawn/probes.
+    const generationAtStart = revokeRuntimeExecutionPermit('managed-start');
     const requestedPort = env.ENV_CONFIGURED_OPENCODE_PORT;
     const defaultPortFree = requestedPort
       ? false
@@ -611,8 +711,15 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
         setOpenCodePort(port);
         setDetectedOpenCodeApiPrefix(prefix);
 
+        // Evaluate contract for THIS generation from live health + migration.
+        const healthResult = await fetchOpenCodeHealthResult(
+          (healthPath) => buildOpenCodeUrl(healthPath, ''),
+          AbortSignal.timeout(HEALTH_CHECK_TIMEOUT_MS),
+        );
         const gate = await probeV1MigrationGate(AbortSignal.timeout(HEALTH_CHECK_TIMEOUT_MS));
+        refreshRuntimeContractFromProbe(healthResult, gate, generationAtStart);
         if (applyV1MigrationGate(gate)) {
+          refreshRuntimeContractFromProbe(healthResult, gate, generationAtStart);
           state.lastOpenCodeError = null;
         }
 
@@ -628,6 +735,14 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
       const message = error instanceof Error ? error.message : String(error);
       state.lastOpenCodeError = message;
       state.openCodePort = null;
+      // Keep revoked/pending contract — do not resurrect the prior permit.
+      if ((Number(state.runtimeContractGeneration) || 0) === generationAtStart) {
+        refreshRuntimeContractFromProbe(
+          { ok: false, version: null, authenticated: null, healthOk: false },
+          state.v1Migration,
+          generationAtStart,
+        );
+      }
       syncToHmrState();
       console.error(`Failed to start OpenCode: ${message}`);
       throw error;
@@ -672,6 +787,8 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
       state.isRestartingOpenCode = true;
       state.isOpenCodeReady = false;
       state.openCodeNotReadySince = Date.now();
+      // Drop prior instance permit before any probe / respawn.
+      const restartGeneration = revokeRuntimeExecutionPermit('managed-restart');
       console.log('Restarting OpenCode process...');
 
       if (state.isExternalOpenCode) {
@@ -682,8 +799,14 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
         if (healthy) {
           console.log(`External OpenCode server on port ${probePort} is healthy`);
           setOpenCodePort(probePort);
+          const healthResult = await fetchOpenCodeHealthResult(
+            (healthPath) => buildOpenCodeUrl(healthPath, ''),
+            AbortSignal.timeout(HEALTH_CHECK_TIMEOUT_MS),
+          );
           const gate = await probeV1MigrationGate(AbortSignal.timeout(HEALTH_CHECK_TIMEOUT_MS));
+          refreshRuntimeContractFromProbe(healthResult, gate, restartGeneration);
           if (applyV1MigrationGate(gate)) {
+            refreshRuntimeContractFromProbe(healthResult, gate, restartGeneration);
             state.lastOpenCodeError = null;
           }
           syncToHmrState();
@@ -775,28 +898,42 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
 
     const deadline = Date.now() + timeoutMs;
     let lastError = null;
+    // Pin generation for this wait loop so a concurrent restart cannot have our
+    // late probe overwrite the newer instance contract.
+    const generationAtStart = Number(state.runtimeContractGeneration) || 0;
 
     while (Date.now() < deadline) {
       let timeout = null;
       try {
+        if ((Number(state.runtimeContractGeneration) || 0) !== generationAtStart) {
+          throw new Error('OpenCode instance changed while waiting for ready');
+        }
         // One timer covers health + migration for this attempt. Clearing after
         // health alone let a hung migration outrun HEALTH_CHECK_TIMEOUT_MS and
         // the outer deadline when the probe never settled.
         const controller = new AbortController();
         timeout = setTimeout(() => controller.abort(), HEALTH_CHECK_TIMEOUT_MS);
-        const healthy = await fetchOpenCodeHealthOk(
+        const healthResult = await fetchOpenCodeHealthResult(
           (healthPath) => buildOpenCodeUrl(healthPath, ''),
           controller.signal
         );
 
-        if (!healthy) {
-          lastError = new Error('OpenCode health endpoint returned unhealthy response');
+        if (!healthResult.ok) {
+          refreshRuntimeContractFromProbe(healthResult, state.v1Migration, generationAtStart);
+          lastError = new Error(
+            healthResult.reason === 'auth-failed'
+              ? 'OpenCode health endpoint rejected authentication'
+              : 'OpenCode health endpoint returned unhealthy response',
+          );
           await new Promise((resolve) => setTimeout(resolve, intervalMs));
           continue;
         }
 
         const gate = await probeV1MigrationGate(controller.signal);
+        refreshRuntimeContractFromProbe(healthResult, gate, generationAtStart);
         if (applyV1MigrationGate(gate)) {
+          // Re-publish contract after admitTranscript flips ready.
+          refreshRuntimeContractFromProbe(healthResult, gate, generationAtStart);
           state.lastOpenCodeError = null;
           return;
         }
@@ -925,6 +1062,7 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
         state.openCodeBaseUrl = env.ENV_CONFIGURED_OPENCODE_HOST?.origin ?? null;
         setOpenCodePort(env.ENV_EFFECTIVE_PORT);
         // External attach is not ready until version + V1 migration admit.
+        revokeRuntimeExecutionPermit('external-attach');
         state.isOpenCodeReady = false;
         state.openCodeNotReadySince = Date.now();
         state.isExternalOpenCode = true;
@@ -1219,5 +1357,7 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
     startHealthMonitoring,
     triggerHealthCheck,
     waitForPortRelease,
+    revokeRuntimeExecutionPermit,
+    refreshRuntimeContractFromProbe,
   };
 };

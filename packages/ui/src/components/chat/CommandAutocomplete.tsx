@@ -75,7 +75,7 @@ export type CommandAutocompleteContext = {
 };
 
 const sameCommandList = (left: readonly CommandInfo[], right: readonly CommandInfo[]): boolean => (
-  left.length === right.length && left.every((command, index) => command.id === right[index]?.id)
+  left.length === right.length && left.every((command, index) => command.id === right[index]?.id && command.description === right[index]?.description)
 );
 
 /**
@@ -217,6 +217,7 @@ export const CommandAutocomplete = React.forwardRef<CommandAutocompleteHandle, C
           ),
           ...(hasSession  // Show when session exists, not when hasMessages
             ? [
+                { id: 'openchamber:btw', name: 'btw', source: 'openchamber' as const, description: t('chat.btw.description'), isBuiltIn: true },
                 { id: 'openchamber:undo', name: 'undo', source: 'openchamber' as const, description: t('chat.commandAutocomplete.command.undoDescription'), isBuiltIn: true },
                 { id: 'openchamber:redo', name: 'redo', source: 'openchamber' as const, description: t('chat.commandAutocomplete.command.redoDescription'), isBuiltIn: true },
                 { id: 'openchamber:fork', name: 'fork', source: 'openchamber' as const, description: t('chat.commandAutocomplete.command.forkDescription'), isBuiltIn: true },
@@ -282,6 +283,7 @@ export const CommandAutocomplete = React.forwardRef<CommandAutocompleteHandle, C
           ),
           ...(hasSession  // Show when session exists, not when hasMessages
             ? [
+                { id: 'openchamber:btw', name: 'btw', source: 'openchamber' as const, description: t('chat.btw.description'), isBuiltIn: true },
                 { id: 'openchamber:undo', name: 'undo', source: 'openchamber' as const, description: t('chat.commandAutocomplete.command.undoDescription'), isBuiltIn: true },
                 { id: 'openchamber:redo', name: 'redo', source: 'openchamber' as const, description: t('chat.commandAutocomplete.command.redoDescription'), isBuiltIn: true },
                 { id: 'openchamber:fork', name: 'fork', source: 'openchamber' as const, description: t('chat.commandAutocomplete.command.forkDescription'), isBuiltIn: true },

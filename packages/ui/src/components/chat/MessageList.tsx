@@ -577,7 +577,8 @@ const isSyntheticSubtaskBridgeAssistant = (message: ChatMessageEntry): { hide: b
     }
 
     const toolName = typeof onlyPart.tool === 'string' ? onlyPart.tool.toLowerCase() : '';
-    if (toolName !== 'task') {
+    // Plugin task + native subagent both own the synthetic subtask prompt bubble.
+    if (toolName !== 'task' && toolName !== 'subagent') {
         return { hide: false, taskSessionId: null };
     }
 
@@ -1257,6 +1258,7 @@ const TurnBlock = React.memo(({
     return (
         <TurnItem
             turn={renderableTurn}
+            showSessionError={isLastTurn}
             activityExpanded={isGroupExpandedByDefault}
             onToggleActivity={handleToggleTurnGroup}
             showCompactionStatus={shouldShowCompactionStatus({

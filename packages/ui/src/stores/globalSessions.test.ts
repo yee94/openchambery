@@ -113,6 +113,34 @@ describe('listGlobalSessionPages', () => {
     expect(session.summary).toEqual({ additions: 5, deletions: 3, files: 2 })
   })
 
+  test('treats time.archived 0 as active when filtering archived list pages', async () => {
+    const apiClient = {
+      session: {
+        list: async () => ({
+          data: [
+            {
+              id: 'ses_zero',
+              directory: '/repo/app',
+              time: { created: 1, updated: 2, archived: 0 },
+            },
+            {
+              id: 'ses_true',
+              directory: '/repo/app',
+              time: { created: 1, updated: 2, archived: 9 },
+            },
+          ],
+          cursor: {},
+        }),
+      },
+    } as unknown as OpenCodeClient
+
+    const active = await listGlobalSessionPages(apiClient, { archived: false, pageSize: 50 })
+    const archived = await listGlobalSessionPages(apiClient, { archived: true, pageSize: 50 })
+
+    expect(active.map((session) => session.id)).toEqual(['ses_zero'])
+    expect(archived.map((session) => session.id)).toEqual(['ses_true'])
+  })
+
   test('hides system sessions by metadata and keeps ordinary sessions visible', () => {
     expect(isVisibleGlobalSession({
       title: '[Assistant] Ops',

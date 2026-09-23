@@ -1,14 +1,17 @@
 /**
  * Bridge handler for `api:session-turn-page`.
  *
- * Reads OpenCode base URL + auth from the manager, requests official
- * `/session/:id/message?limit=&before=&directory=`, reads `x-next-cursor`,
- * and aggregates via session-turn-page-runtime into unified JSON
+ * Reads OpenCode base URL + auth from the manager, requests OpenCode v2
+ * `/api/session/:id/message` (first page `order=desc`, continuation
+ * `cursor=` only — upstream 400s on both), projects `{ data, cursor.next }`
+ * rows oldest→newest into `{ info, parts }`, and aggregates via
+ * session-turn-page-runtime into unified JSON
  * `{ records, cursor, complete, turnCount }`.
  *
  * Never logs message contents, tokens, or secrets.
  */
 
+import { projectSessionMessageRecords } from '../../web/server/lib/session-turn-pages/session-message-projection.js';
 import type { BridgeContext, BridgeResponse } from './bridge';
 import {
   projectMessagesPayloadForReasoning,
@@ -119,7 +122,6 @@ const timeoutSignal = (ms: number) => {
 const createManagerFetchPage = (ctx: BridgeContext | undefined) => {
   return async ({
     sessionID,
-    directory,
     before,
     limit,
     signal,
@@ -137,10 +139,9 @@ const createManagerFetchPage = (ctx: BridgeContext | undefined) => {
       url.searchParams.set('limit', String(Math.floor(limit as number)));
     }
     if (typeof before === 'string' && before.length > 0) {
-      url.searchParams.set('before', before);
-    }
-    if (typeof directory === 'string' && directory.length > 0) {
-      url.searchParams.set('directory', directory);
+      url.searchParams.set('cursor', before);
+    } else {
+      url.searchParams.set('order', 'desc');
     }
 
     const authHeaders =
@@ -172,23 +173,20 @@ const createManagerFetchPage = (ctx: BridgeContext | undefined) => {
       throw error;
     }
 
-    const records = Array.isArray(data)
-      ? data
-      : data && typeof data === 'object' && Array.isArray((data as { items?: unknown }).items)
-        ? (data as { items: unknown[] }).items
-        : null;
-    if (!records) {
+    const page = data && typeof data === 'object'
+      ? data as { data?: unknown; cursor?: { next?: unknown } }
+      : null;
+    if (!page || !Array.isArray(page.data)) {
       const error = new Error('upstream');
       (error as Error & { code?: string }).code = 'upstream';
       throw error;
     }
 
-    const headerCursor = response.headers.get('x-next-cursor');
-    const nextCursor =
-      typeof headerCursor === 'string' && headerCursor.length > 0 ? headerCursor : null;
+    const next = page.cursor?.next;
+    const nextCursor = typeof next === 'string' && next.length > 0 ? next : null;
 
     return {
-      records,
+      records: projectSessionMessageRecords(page.data.slice().reverse()),
       nextCursor,
       complete: nextCursor == null,
     };

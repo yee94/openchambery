@@ -19,6 +19,8 @@ import { useInputStore } from '@/sync/input-store';
 import { markSessionViewed } from '@/sync/notification-store';
 import { setContextPanelViewedSession, setExternallyViewedSession, useDirectoryStore } from '@/sync/sync-context';
 import { ContextPanelContent } from './ContextSidebarTab';
+import { BtwPanel } from './BtwPanel';
+import { useSessionBtwStore } from '@/stores/useSessionBtwStore';
 import { toast } from '@/components/ui';
 import { runtimeFetch } from '@/lib/runtime-fetch';
 import { refreshRuntimeUrlAuthToken } from '@/lib/runtime-auth';
@@ -182,6 +184,7 @@ const getModeLabel = (
   t: TranslateFn
 ): string => {
   if (mode === 'chat') return t('contextPanel.mode.chat');
+  if (mode === 'btw') return t('chat.btw.title');
   if (mode === 'file') return t('contextPanel.mode.files');
   if (mode === 'diff') return t('contextPanel.mode.diff');
   if (mode === 'file-diff') return t('contextPanel.mode.diff');
@@ -2183,6 +2186,7 @@ const DesktopBrowserPane: React.FC<DesktopBrowserPaneProps> = ({ initialUrl, dir
 
 export const ContextPanel: React.FC<{ directory?: string | null }> = ({ directory: directoryOverride }) => {
   const { t } = useI18n();
+  const btwSessionId = useSessionUIStore((state) => state.currentSessionId);
   const fallbackDirectory = useEffectiveDirectory() ?? '';
   const effectiveDirectory = directoryOverride?.trim() || fallbackDirectory;
   const directoryKey = React.useMemo(() => normalizeDirectoryKey(effectiveDirectory), [effectiveDirectory]);
@@ -2247,6 +2251,10 @@ export const ContextPanel: React.FC<{ directory?: string | null }> = ({ director
 
   const closePanelTab = React.useCallback((tabId: string) => {
     if (!directoryKey) return;
+    if (useUIStore.getState().contextPanelByDirectory[directoryKey]?.tabs.find((tab) => tab.id === tabId)?.mode === 'btw') {
+      const sessionId = useSessionUIStore.getState().currentSessionId;
+      if (sessionId) useSessionBtwStore.getState().cancel({ sessionId, directory: directoryKey });
+    }
     dispatchSessionCache({ type: 'close-tab', tabId });
     const surfaceId = createContextPanelSessionSurfaceId(directoryKey, tabId);
     commitSessionNavigation((current) => {
@@ -2379,6 +2387,8 @@ export const ContextPanel: React.FC<{ directory?: string | null }> = ({ director
     if (!directoryKey) {
       return;
     }
+    const sessionId = useSessionUIStore.getState().currentSessionId;
+    if (sessionId) useSessionBtwStore.getState().cancel({ sessionId, directory: directoryKey });
     closeContextPanel(directoryKey);
   }, [closeContextPanel, directoryKey]);
 
@@ -2669,7 +2679,9 @@ export const ContextPanel: React.FC<{ directory?: string | null }> = ({ director
     };
   }), [effectiveDirectory, sessionTitleById, t, tabs]);
 
-  const activeNonChatContent = activeTab?.mode === 'context'
+  const activeNonChatContent = activeTab?.mode === 'btw'
+        ? (btwSessionId ? <BtwPanel scope={{ sessionId: btwSessionId, directory: directoryKey }} /> : <p className="p-4 text-muted-foreground">{t('chat.btw.sessionRequired')}</p>)
+        : activeTab?.mode === 'context'
         ? <ContextPanelContent />
         : activeTab?.mode === 'preview'
                 ? <PreviewPane rawUrl={activeTab.targetPath ?? ''} onNavigate={(url) => openContextPreview(effectiveDirectory, url)} />

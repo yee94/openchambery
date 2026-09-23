@@ -30,6 +30,7 @@ import type {
 } from "./session-merge-strategy"
 import type { SessionMessagePageMeta } from "./session-message-reducer"
 import type { SessionMaterializationReason } from "./event-reducer"
+import { isAuthoredUserTurnRecord } from "./session-projection-api"
 import { hasAnyPositiveTokenCount } from "./transcript-event-reducer"
 
 // ---------------------------------------------------------------------------
@@ -168,16 +169,15 @@ const messageRole = (info: Message | undefined): string => {
 }
 
 /**
- * Authored user turn used as the P0 tail boundary. Subtask / compaction rows
- * are not turns; empty user parts still count so a just-sent prompt can latch.
+ * Authored user turn used as the P0 tail boundary. Native synthetic rows,
+ * subtask / compaction rows are not turns; empty real user parts still count
+ * so a just-sent prompt can latch.
  */
 export function isTranscriptHydrationAuthoredUser(
   info: Message | undefined,
   parts: readonly Part[] | undefined,
 ): boolean {
-  if (!info?.id || messageRole(info) !== "user") return false
-  if (!parts || parts.length === 0) return true
-  return !parts.some((part) => part.type === "subtask" || part.type === "compaction")
+  return isAuthoredUserTurnRecord(info, parts)
 }
 
 export function countTranscriptAuthoredUserTurns(
@@ -394,6 +394,19 @@ export type TranscriptRemoveMessageCommand = {
   readonly messageID: string
 }
 
+/**
+ * Official `session.revert.committed`: drop messages at/after `to` (message id
+ * order), retire prior read generations, and clear in-window pagination that
+ * depended on the removed tail. When the boundary message is missing from an
+ * incomplete window, adapters force an authoritative tail recovery instead of
+ * inventing a range from partial IDs alone.
+ */
+export type TranscriptRevertCommittedCommand = {
+  readonly type: "revert-committed"
+  /** Inclusive lower bound message id from upstream `data.to`. */
+  readonly to: string
+}
+
 export type TranscriptCommand =
   | TranscriptHttpPageCommand
   | TranscriptSseEventCommand
@@ -404,6 +417,7 @@ export type TranscriptCommand =
   | TranscriptResetCommand
   | TranscriptMaterializeSnapshotsCommand
   | TranscriptRemoveMessageCommand
+  | TranscriptRevertCommittedCommand
 
 export type TranscriptMaterializationHint = {
   readonly type: "incomplete-session-snapshot"
@@ -601,6 +615,8 @@ export const TRANSCRIPT_SSE_EVENT_TYPES = [
   "session.compaction.delta",
   "session.compaction.ended",
   "session.compaction.failed",
+  "session.synthetic",
+  "session.revert.committed",
 ] as const
 
 export type TranscriptSseEventType = (typeof TRANSCRIPT_SSE_EVENT_TYPES)[number]

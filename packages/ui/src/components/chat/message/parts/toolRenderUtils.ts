@@ -3,7 +3,8 @@
 // and output through the common expandable renderer.
 const STATIC_TOOL_NAMES = new Set<string>(['read', 'skill']);
 
-const STANDALONE_TOOL_NAMES = new Set<string>(['task']);
+// Plugin `task` and native OpenCode `subagent` share the standalone task-row path.
+const STANDALONE_TOOL_NAMES = new Set<string>(['task', 'subagent']);
 
 const CONTEXT_GROUP_TOOL_NAMES = new Set<string>(['read', 'glob', 'grep', 'list']);
 

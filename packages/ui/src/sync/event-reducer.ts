@@ -112,6 +112,34 @@ function clearSessionErrorAt(draft: State, sessionID: string): boolean {
   return true
 }
 
+function assignSessionExecutionRecovery(
+  draft: State,
+  sessionID: string,
+  value: { reason: "shutdown"; observedAt: number },
+): boolean {
+  const current = draft.session_execution_recovery?.[sessionID]
+  if (
+    current
+    && current.reason === value.reason
+    && current.observedAt === value.observedAt
+  ) {
+    return false
+  }
+  draft.session_execution_recovery = {
+    ...draft.session_execution_recovery,
+    [sessionID]: value,
+  }
+  return true
+}
+
+function clearSessionExecutionRecovery(draft: State, sessionID: string): boolean {
+  if (draft.session_execution_recovery?.[sessionID] === undefined) return false
+  const next = { ...draft.session_execution_recovery }
+  delete next[sessionID]
+  draft.session_execution_recovery = next
+  return true
+}
+
 function areSessionStatusesEqual(left: SessionStatus | undefined, right: SessionStatus): boolean {
   if (left === right) return true
   if (!left || left.type !== right.type) return false
@@ -280,8 +308,12 @@ export function applyDirectoryEvent(
       // system-owned, subagent, or archived sessions — scheduled tasks and
       // assistants archive before/while prompting, and wiping caches is what
       // made in-progress viewing look nothing like a normal live session.
-      if (!isVisibleGlobalSession(info) || info.time?.archived) {
-        return removeFromLiveDirectoryList(draft, info, result, callbacks?.onSetSessionTodo)
+      {
+        const archivedAt = info.time?.archived
+        const isArchived = typeof archivedAt === "number" && Number.isFinite(archivedAt) && archivedAt > 0
+        if (!isVisibleGlobalSession(info) || isArchived) {
+          return removeFromLiveDirectoryList(draft, info, result, callbacks?.onSetSessionTodo)
+        }
       }
 
       if (result.found) {
@@ -341,9 +373,11 @@ export function applyDirectoryEvent(
       if (props.status.type === "busy" || props.status.type === "retry") {
         errorChanged = clearSessionErrorAt(draft, props.sessionID)
       }
+      // Authoritative status snapshot ends shutdown-recovery pending.
+      const recoveryCleared = clearSessionExecutionRecovery(draft, props.sessionID)
       if (callbacks?.now) draft.session_status_observed_at[props.sessionID] = callbacks.now()
       if (areSessionStatusesEqual(draft.session_status[props.sessionID], props.status)) {
-        return Boolean(callbacks?.now) || errorChanged
+        return Boolean(callbacks?.now) || errorChanged || recoveryCleared
       }
       draft.session_status[props.sessionID] = props.status
       return true
@@ -352,10 +386,11 @@ export function applyDirectoryEvent(
     case "session.idle": {
       const props = event.properties as { sessionID: string }
       callbacks?.onServerSessionIdle?.(props.sessionID)
+      const recoveryCleared = clearSessionExecutionRecovery(draft, props.sessionID)
       const status = { type: "idle" } as const
       if (callbacks?.now) draft.session_status_observed_at[props.sessionID] = callbacks.now()
       if (areSessionStatusesEqual(draft.session_status[props.sessionID], status)) {
-        return callbacks?.now ? true : false
+        return Boolean(callbacks?.now) || recoveryCleared
       }
       draft.session_status[props.sessionID] = status
       return true
@@ -382,24 +417,62 @@ export function applyDirectoryEvent(
       const props = event.properties as { sessionID: string }
       const status = { type: "busy" } as const
       const errorChanged = clearSessionErrorAt(draft, props.sessionID)
+      const recoveryCleared = clearSessionExecutionRecovery(draft, props.sessionID)
       if (callbacks?.now) draft.session_status_observed_at[props.sessionID] = callbacks.now()
       if (areSessionStatusesEqual(draft.session_status[props.sessionID], status)) {
-        return Boolean(callbacks?.now) || errorChanged
+        return Boolean(callbacks?.now) || errorChanged || recoveryCleared
       }
       draft.session_status[props.sessionID] = status
       return true
     }
 
-    case "session.execution.succeeded":
-    case "session.execution.interrupted": {
+    case "session.execution.succeeded": {
       const props = event.properties as { sessionID: string }
       // Same release path as legacy session.idle / status idle — queue abort
       // blocks and idle materialization hooks depend on this callback.
       callbacks?.onServerSessionIdle?.(props.sessionID)
+      const recoveryCleared = clearSessionExecutionRecovery(draft, props.sessionID)
       const status = { type: "idle" } as const
       if (callbacks?.now) draft.session_status_observed_at[props.sessionID] = callbacks.now()
       if (areSessionStatusesEqual(draft.session_status[props.sessionID], status)) {
-        return callbacks?.now ? true : false
+        return Boolean(callbacks?.now) || recoveryCleared
+      }
+      draft.session_status[props.sessionID] = status
+      return true
+    }
+
+    case "session.execution.interrupted": {
+      // Official reason: user | shutdown | superseded | inactivity.
+      // Shutdown keeps the execution claim for restart recovery — do not open
+      // queue/auto-continue gates (onServerSessionIdle) and surface recovery.
+      const props = event.properties as {
+        sessionID: string
+        reason?: "user" | "shutdown" | "superseded" | "inactivity" | string
+      }
+      const reason = props.reason
+      const now = callbacks?.now?.()
+      if (now !== undefined) draft.session_status_observed_at[props.sessionID] = now
+
+      if (reason === "shutdown") {
+        const status = { type: "busy" } as const
+        const recoveryChanged = assignSessionExecutionRecovery(draft, props.sessionID, {
+          reason: "shutdown",
+          observedAt: now ?? Date.now(),
+        })
+        // Keep busy so UI is not a permanent false idle; recovery marker
+        // distinguishes restart-pending from a live running turn.
+        if (areSessionStatusesEqual(draft.session_status[props.sessionID], status)) {
+          return recoveryChanged || now !== undefined
+        }
+        draft.session_status[props.sessionID] = status
+        return true
+      }
+
+      callbacks?.onServerSessionIdle?.(props.sessionID)
+      const recoveryCleared = clearSessionExecutionRecovery(draft, props.sessionID)
+      const status = { type: "idle" } as const
+      if (areSessionStatusesEqual(draft.session_status[props.sessionID], status)) {
+        return recoveryCleared || now !== undefined
       }
       draft.session_status[props.sessionID] = status
       return true
@@ -415,10 +488,55 @@ export function applyDirectoryEvent(
       const now = callbacks?.now?.()
       if (now !== undefined) draft.session_status_observed_at[props.sessionID] = now
       const errorChanged = now !== undefined ? assignSessionErrorAt(draft, props.sessionID, now) : false
+      const recoveryCleared = clearSessionExecutionRecovery(draft, props.sessionID)
       if (areSessionStatusesEqual(draft.session_status[props.sessionID], status)) {
-        return now !== undefined || errorChanged
+        return now !== undefined || errorChanged || recoveryCleared
       }
       draft.session_status[props.sessionID] = status
+      return true
+    }
+
+    case "session.revert.staged": {
+      const props = event.properties as {
+        sessionID?: string
+        revert?: { messageID?: string; partID?: string }
+      }
+      const sessionID = typeof props.sessionID === "string" ? props.sessionID : undefined
+      const messageID = typeof props.revert?.messageID === "string" ? props.revert.messageID : undefined
+      if (!sessionID || !messageID) return false
+      const sessions = draft.session
+      const result = Binary.search(sessions, sessionID, (s) => s.id)
+      if (!result.found) return false
+      const current = sessions[result.index]!
+      const nextRevert = {
+        messageID,
+        ...(typeof props.revert?.partID === "string" ? { partID: props.revert.partID } : {}),
+      }
+      const prev = current.revert
+      if (
+        prev
+        && prev.messageID === nextRevert.messageID
+        && (prev as { partID?: string }).partID === nextRevert.partID
+      ) {
+        return false
+      }
+      sessions[result.index] = { ...current, revert: nextRevert } as typeof current
+      return true
+    }
+
+    case "session.revert.cleared":
+    case "session.revert.committed": {
+      // Catalog marker only. Transcript truncation + read retirement live in
+      // TranscriptRepository (`session.revert.committed` SSE / revert-committed).
+      const props = event.properties as { sessionID?: string }
+      const sessionID = typeof props.sessionID === "string" ? props.sessionID : undefined
+      if (!sessionID) return false
+      const sessions = draft.session
+      const result = Binary.search(sessions, sessionID, (s) => s.id)
+      if (!result.found) return false
+      const current = sessions[result.index]!
+      if (!current.revert) return false
+      sessions[result.index] = { ...current, revert: undefined } as typeof current
       return true
     }
 

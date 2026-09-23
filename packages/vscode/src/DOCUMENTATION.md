@@ -56,11 +56,29 @@ Keep `bridge.ts` as a thin orchestration layer that delegates message handling t
     upstream OpenCode fetch. When `'false'`, parse-filters SSE blocks before
     `api:sse:chunk` postMessage, and emits `:heartbeat\n\n` every 10s while no
     downstream chunk was sent (keeps the webview 30s SSE idle timeout alive
-    during pure-reasoning upstream). Enabled path remains byte passthrough with
-    no synthetic heartbeat.
+    during pure-reasoning upstream).
+  - Always composes Host session lifecycle projection (`session.created` /
+    `session.updated` archive authority) onto outbound blocks when the session
+    metadata store is loaded; registers each stream with `host-sse-fanout` for
+    Host-injected archive events.
+  - Every `connect` / socket-reconnect awaits
+    `ensureSessionMetadataReadyForOutboundSse` (signal-aware) **before**
+    upstream `fetchSseResponse`. Unconfigured store skips the gate; wired-but-
+    unavailable failures use the existing exponential reconnect path. Abort /
+    runtime switch during the wait never opens a late upstream stream.
+
+- `opencode-ready.ts`
+  - `waitForApiUrl` returns an origin only while `status === 'connected'` (after
+    verified-band sidecar admission). **Deadline returns `null`** — never falls
+    back to pre-ready `getApiUrl()`.
+  - `resolveConnectedApiUrl` / `isOpenCodeExecutionPermitted` re-check the current
+    instance permit at write dispatch time.
 
 - `bridge-proxy-runtime.ts`
   - Proxy route handlers (`api:proxy`, `api:session:message`) with injected helper dependencies.
+  - Execution writes (`prompt`, `message`, …) re-check the current connected
+    permit immediately before upstream fetch; interrupt/abort and reads keep the
+    waited URL path. Status leaving `connected` after wait must not forward writes.
   - `ensureOpenCodeApiUpstreamPath` restores the v2 `/api` prefix for bare root
     paths; webview local OpenChamber routes still win before this generic proxy.
   - Exact `GET /api/session/:sessionID/message/:messageID` responses are L1-projected
@@ -75,6 +93,46 @@ Keep `bridge.ts` as a thin orchestration layer that delegates message handling t
     `/question/:id/reply|reject` claim intercepts are handled here via
     `tryHandleQuestionAutoDelegateProxy` **before** OpenCode upstream, so the
     shared UI can keep using `runtimeFetch` without new `RuntimeAPIs` fields.
+  - OpenChamber-owned session metadata + Host archive routes
+    (`PUT /openchamber/sessions/:id/metadata|archive`) and GET session list/detail
+    Host overlay run via `tryHandleSessionMetadataProxy` /
+    `overlaySessionProxyBodyText` before or after upstream as appropriate.
+
+- `session-metadata-runtime.ts`
+  - Extension Host authority for per-session Host metadata and archive stamps.
+  - Imports shared core from `packages/web/server/lib/session-metadata/`
+    (store, archive service, projection) — do not vendor copies.
+  - Durable file under extension `globalStorage` (or `OPENCHAMBER_DATA_DIR` /
+    `~/.config/openchamber`), scoped by OpenCode runtime identity
+    (`loopback:` vs external `host:port`) so multi-webview clients share one store
+    while runtime switches isolate data (generation bumps drop late IO/broadcast).
+  - Upstream archive `session.get` builds
+    `buildUpstreamSessionGetUrl(origin, id)` → `/api/session/:id` (origin-only
+    `getApiUrl()` never hits bare `/session/:id`). Base ending in `/api` is
+    normalized once.
+  - `PUT .../archive` body `{ archivedAt: number, directory? }` → `{ session, index? }`
+    with Host `metadata.openchamber.archive.archivedAt` projected onto
+    `time.archived` (positive = archive, `0` = explicit unarchive, missing =
+    fall back to upstream). Successful archive broadcasts full `session.updated`
+    via sinks + active SSE inject.
+  - GET `/session` list + GET `/session/:id`: when Host store is wired,
+    `resolveSessionProxyOverlay` folds committed metadata; load/read failure →
+    **503** `{ code: session_metadata_unavailable, retryable: true }` (never
+    silent un-overlaid upstream that clients treat as authoritative empty Host).
+  - SSE lifecycle (`session.created|updated|deleted` + `.v2` suffixes,
+    `properties.info` / `data.info`): until `isHostSessionMetadataReady()`,
+    lifecycle frames are suppressed (`hostReady: false`); message paths stay open.
+  - `waitForSessionMetadataReady` / `ensureSessionMetadataReadyForOutboundSse`
+    (watcher + **webview `openSseProxy` connect/reconnect**) block until committed
+    load `{ ok: true }` or timeout; unconfigured store skips the SSE gate; load
+    `{ ok: false }` (corrupt) stays unavailable with background retry — avoids
+    permanently missing unique lifecycle frames during a cold unknown window.
+  - Successful `DELETE /session/:id` (bridge) + `session.deleted(.v2)` events run
+    idempotent `forgetSession` cleanup.
+
+- `host-sse-fanout.ts`
+  - Thin registry of active webview SSE chunk emitters so Host-owned events
+    (archive `session.updated`) reach every open `openSseProxy` stream.
 
 - `question-auto-delegate-runtime.ts`
   - Extension Host authority for automatic question handling (default on,
@@ -137,10 +195,14 @@ Keep `bridge.ts` as a thin orchestration layer that delegates message handling t
 
 - `bridge-session-turn-page-runtime.ts`
   - Bridge handler for `api:session-turn-page`.
-  - Reads OpenCode base URL + auth from the manager, requests official
-    `/session/:id/message?limit=&before=&directory=` with **raw** OpenCode cursors
-    only (Host tokens are decoded in the aggregator; never forwarded upstream),
-    reads `x-next-cursor`, and returns unified
+  - Reads OpenCode base URL + auth from the manager and requests OpenCode v2
+    `/api/session/:id/message?limit=`: first page adds `order=desc`, continuation
+    adds only `cursor=<raw upstream cursor>` (upstream 400s on both; Host tokens
+    are decoded in the aggregator and never forwarded). Reads
+    `{ data, cursor: { next } }`, reverses `data` to old→new, projects native
+    rows to `{ info, parts }` through the web
+    `session-turn-pages/session-message-projection.js` module (control rows
+    dropped; a non-v2 body fails as `upstream`), and returns unified
     `{ records, cursor, complete, turnCount, partsProjection }` where `cursor`
     is an opaque Host token when history remains. `partsProjection` is
     `slim-v1` on every turn-page response (first packet and prepend).
@@ -254,6 +316,30 @@ returns `{ files }` (L2) or `{ diff }` (L3). Non-GET → 405; illegal query → 
 The exact `GET /api/config/settings/bootstrap` webview route dispatches to
 `api:config/settings:bootstrap` before the generic settings route. The legacy
 `GET /api/config/settings?bootstrap=true` form remains supported.
+
+## Session metadata + Host archive (Extension Host)
+
+Contract source of truth (do not vendor/copy):
+`packages/web/server/lib/session-metadata/` (`session-metadata-store.js`,
+`session-archive.js`, `session-projection.js`, `routes.js`, `DOCUMENTATION.md`).
+
+| Path (after webview strips `/api`) | Behavior |
+|---|---|
+| `PUT /openchamber/sessions/:id/metadata` | RFC 7386 merge patch → `{ metadata }` |
+| `PUT /openchamber/sessions/:id/archive` | `{ archivedAt, directory? }` → `{ session, index? }` |
+| GET `/session` / `/experimental/session` | Overlay committed Host map; 503 retryable if unavailable |
+| GET `/session/:id` | Same overlay / 503 contract |
+| `DELETE /session/:id` | On upstream 2xx → idempotent Host forget |
+| SSE lifecycle (+ `.v2`, `data.info`) | Overlay when ready; suppress until ready |
+| SSE `session.deleted(.v2)` | Compensatory Host metadata drop |
+
+Archive authority: positive `archivedAt` → Host wins; `0` → clear even if
+upstream still has history; missing Host key → upstream `time.archived`.
+Directory match prefers `location.directory`. Successful archive does not reverse
+on post-commit broadcast failure. Runtime switch (different OpenCode endpoint
+key) swaps the durable store directory and invalidates in-flight generation.
+Full dispose on extension deactivate. `isHostSessionMetadataReady()` is the
+explicit readiness gate (committed snapshot only).
 
 ## Question auto-delegate (Extension Host)
 

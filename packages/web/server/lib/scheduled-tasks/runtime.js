@@ -481,12 +481,26 @@ const snapshotSessionOutcome = async ({
 
 const parseSessionEventPhase = (event) => {
   const payload = event?.payload?.payload ?? event?.payload;
-  const properties = payload?.properties;
+  // Accept bridge `{ properties }` and native v2 `{ data }` envelopes.
+  const properties = (payload?.properties && typeof payload.properties === 'object')
+    ? payload.properties
+    : ((payload?.data && typeof payload.data === 'object') ? payload.data : null);
   const sessionID = typeof properties?.sessionID === 'string' ? properties.sessionID : '';
   if (!sessionID) {
     return { phase: '', sessionID: '' };
   }
-  if (payload?.type === 'session.idle') {
+  // Ticket 07: shutdown interrupt is not an idle terminal — keep run open.
+  if (payload?.type === 'session.execution.interrupted' && properties?.reason === 'shutdown') {
+    return { phase: 'busy', sessionID };
+  }
+  if (payload?.type === 'session.idle' || payload?.type === 'session.execution.succeeded') {
+    return { phase: 'idle', sessionID };
+  }
+  if (payload?.type === 'session.execution.failed') {
+    return { phase: 'error', sessionID };
+  }
+  if (payload?.type === 'session.execution.interrupted') {
+    // user / superseded / inactivity — claim released; treat as idle for settlement.
     return { phase: 'idle', sessionID };
   }
   if (payload?.type === 'session.status') {
@@ -915,6 +929,7 @@ export const createScheduledTasksRuntime = (deps) => {
       note: '',
       statusReason: '',
       lastAccountedMessageID: '',
+      executionGeneration: 0,
       createdAt: now,
       updatedAt: now,
     };

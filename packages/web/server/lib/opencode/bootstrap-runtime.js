@@ -64,6 +64,7 @@ export const createBootstrapRuntime = (dependencies) => {
       setAutoAcceptSession,
       sessionIndexService,
       sessionIndexSyncRuntime,
+      getCommittedHostMetadata = null,
       transcriptCacheService,
     } = options;
 
@@ -156,6 +157,7 @@ export const createBootstrapRuntime = (dependencies) => {
       getCachedZenModels,
       sessionIndexService,
       sessionIndexSyncRuntime,
+      getCommittedHostMetadata,
       transcriptCacheService,
       express,
     });

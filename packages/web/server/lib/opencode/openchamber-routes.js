@@ -14,11 +14,17 @@ export const registerOpenChamberRoutes = (app, dependencies) => {
     getCachedZenModels,
     sessionIndexService,
     sessionIndexSyncRuntime,
+    /** Production: committed Host metadata for archive-aware snapshot/lookup. */
+    getCommittedHostMetadata = null,
     transcriptCacheService,
     express,
   } = dependencies;
 
-  registerSessionIndexRoutes(app, { sessionIndexService, sessionIndexSyncRuntime });
+  registerSessionIndexRoutes(app, {
+    sessionIndexService,
+    sessionIndexSyncRuntime,
+    getCommittedHostMetadata,
+  });
   registerTranscriptCacheRoutes(app, { transcriptCacheService });
   registerConfigSyncRoutes(app, { express });
 

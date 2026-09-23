@@ -51,7 +51,7 @@ export const getToolIcon = (toolName: string) => {
     if (tool === 'skill') {
         return <Icon name="book" className={iconClass} />;
     }
-    if (tool === 'task') {
+    if (tool === 'task' || tool === 'subagent') {
         return <Icon name="ai-agent" className={iconClass} />;
     }
     if (tool === 'question') {

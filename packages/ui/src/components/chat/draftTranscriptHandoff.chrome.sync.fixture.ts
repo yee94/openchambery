@@ -55,6 +55,7 @@ export const useSessionStatusSnapshotAt = () => 10_000;
 export const useSessionParts = (messageID: string) => (
   useFrame().messages.find((entry) => entry.info.id === messageID)?.parts ?? []
 );
+export const useSessionErrorAt = (_sessionID?: string, _directory?: string) => undefined;
 export const useSessionPermissions = () => [];
 export const useSessionQuestions = () => [];
 export const useScopedBlockingPermissions = () => [];

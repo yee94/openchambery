@@ -249,7 +249,8 @@ describe('progressive activity presentation', () => {
         expect(messageListSource).toContain("if (input.completionDisposition === 'active')");
         expect(messageListSource).toContain('return input.isLastTurn && input.sessionIsWorking;');
         expect(turnItemSource).toContain("const hideUserMessage = turn.activityPresentationKind === 'compaction'");
-        expect(turnItemSource).toContain('{hideUserMessage ? null : stickyUserHeader ? (');
+        // Shell turns skip sticky header; compaction still hides the user bubble.
+        expect(turnItemSource).toContain('{hideUserMessage ? null : stickyUserHeader && !isShellTurn ? (');
         expect(turnItemSource).toContain('{showCompactionStatus ? (');
         expect(turnItemSource).toContain('parts={[]}');
         expect(turnItemSource).toContain('activityPresentationKind="compaction"');
@@ -260,7 +261,7 @@ describe('progressive activity presentation', () => {
         expect(messageListSource).toContain('onToggleActivity={handleToggleTurnGroup}');
         expect(progressiveGroupSource).not.toContain('role="status"');
         expect(turnItemSource.indexOf('{showCompactionStatus ? (')).toBeLessThan(turnItemSource.indexOf('<TurnAssistantBlock'));
-        expect(turnItemSource.indexOf('{pendingAssistantHeader || assistantHeaderMessage ? (')).toBeLessThan(turnItemSource.indexOf('{showCompactionStatus ? ('));
+        expect(turnItemSource.indexOf('pendingAssistantHeader || assistantHeaderMessage')).toBeLessThan(turnItemSource.indexOf('{showCompactionStatus ? ('));
         expect(turnItemSource).toContain('<TurnAssistantHeader');
         expect(turnAssistantHeaderSource).toContain('<MessageHeader');
         expect(messageListSource).toContain('pendingAssistantHeader={pendingAssistantHeader}');
@@ -459,7 +460,7 @@ describe('progressive activity presentation', () => {
     });
 
     test('summarizes active task agents while retaining every completed participant', () => {
-        expect(progressiveGroupSource).toContain("part.tool?.trim().toLowerCase() !== 'task'");
+        expect(progressiveGroupSource).toContain("if (toolName !== 'task' && toolName !== 'subagent') continue;");
         expect(progressiveGroupSource).toContain("stateRecord.status === 'pending' || stateRecord.status === 'running'");
         expect(progressiveGroupSource).toContain('const taskId = typeof part.id === \'string\' ? part.id.trim() : \'\'');
         expect(progressiveGroupSource).toContain('return { active, all };');

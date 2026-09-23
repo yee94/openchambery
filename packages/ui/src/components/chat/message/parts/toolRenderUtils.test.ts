@@ -58,10 +58,20 @@ describe('tool rendering classification', () => {
         expect(isUsedGroupTool('read')).toBe(false);
         expect(isProcessGroupTool('skill')).toBe(false);
         expect(isProcessGroupTool('task')).toBe(false);
+        expect(isProcessGroupTool('subagent')).toBe(false);
         expect(isProcessGroupTool('question')).toBe(false);
         expect(isUsedGroupTool('skill')).toBe(false);
         expect(isUsedGroupTool('task')).toBe(false);
+        expect(isUsedGroupTool('subagent')).toBe(false);
         expect(isUsedGroupTool('question')).toBe(false);
+    });
+
+    test('keeps native subagent on the standalone task-row path', async () => {
+        const { isStandaloneTool } = await import('./toolRenderUtils');
+        expect(isStandaloneTool('task')).toBe(true);
+        expect(isStandaloneTool('subagent')).toBe(true);
+        expect(isStandaloneTool('runtime.subagent:1')).toBe(true);
+        expect(isStandaloneTool('bash')).toBe(false);
     });
 
     test('marks skill tools as skill-group members', () => {

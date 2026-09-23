@@ -4,7 +4,6 @@ import { createRequire } from 'node:module';
 import path from 'node:path';
 import { makeOpenCodeV2Client } from '../opencode/v2-client.js';
 import { validAssistantDeliveryParts } from '../assistant-delivery-parts.js';
-import { reduceBackfillState } from './history-state.js';
 import { createContactMemoryReader } from './memory.js';
 import { getWorktrees as defaultListWorktrees } from '../git/service.js';
 import { contactCardIdentity, parseContactCard, parseContactPart } from './cards.js';
@@ -236,7 +235,7 @@ const awaitWithDeadline = async (work, ms = CONTACT_CATALOG_DEADLINE_MS, code = 
   }
 };
 
-export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, getOpenCodeAuthHeaders, getServerId = async () => null, getAllowedRoots = () => [], listProjects = async () => [], readModelPreferences = async () => null, listScheduledTasks = null, sessionIndexService = null, upsertScheduledTask = null, syncScheduledTaskProject = null, globalEventHub = null, onRevisionTip = null, onContactTurnEvent = null, onContactTurnComplete = null, clock = () => Date.now(), setIntervalFn = setInterval, clearIntervalFn = clearInterval, setImmediateFn = setImmediate, reconcileIntervalMs = 60_000, clientFactory, fetchImpl, createChatCompletion = null, runContactTurn = defaultRunContactTurn, listWorktrees = defaultListWorktrees } = {}) => {
+export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, getOpenCodeAuthHeaders, getServerId = async () => null, getAllowedRoots = () => [], listProjects = async () => [], readModelPreferences = async () => null, listScheduledTasks = null, sessionIndexService = null, upsertScheduledTask = null, syncScheduledTaskProject = null, globalEventHub = null, onRevisionTip = null, onContactTurnEvent = null, onContactTurnComplete = null, /** Host archive op: ({ sessionID, directory, archivedAt }) => Promise */ archiveSessionHost = null, /** Idempotent Host metadata drop after successful SDK delete */ forgetSessionHost = null, clock = () => Date.now(), setIntervalFn = setInterval, clearIntervalFn = clearInterval, setImmediateFn = setImmediate, reconcileIntervalMs = 60_000, clientFactory, fetchImpl, createChatCompletion = null, runContactTurn = defaultRunContactTurn, listWorktrees = defaultListWorktrees } = {}) => {
   if (!dbPath || !dataDir) return null;
   const Database = require('better-sqlite3');
   fs.mkdirSync(path.dirname(dbPath), { recursive: true });
@@ -320,15 +319,11 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
     const existing = db.prepare('SELECT directory FROM assistant_session_history WHERE assistant_id=? AND session_id=?').get(assistantID, sessionID);
     if (existing) {
       if (existing.directory == null && directory != null) db.prepare('UPDATE assistant_session_history SET directory=? WHERE assistant_id=? AND session_id=?').run(directory, assistantID, sessionID);
-      db.prepare('DELETE FROM assistant_message_backfill WHERE assistant_id=? AND session_id=?').run(assistantID, sessionID);
-      db.prepare("UPDATE assistant_message_mirror SET covered=0 WHERE assistant_id=? AND session_id=? AND COALESCE(json_extract(info_json,'$.role'),'')<>'user' AND COALESCE(json_extract(info_json,'$.openchamberAssistantAdmission'),0)<>1").run(assistantID, sessionID);
       return;
     }
     const effectiveDirectory = directory ?? effectiveWorkspace(editable(assistantID));
     const ordinal = Number(db.prepare('SELECT COALESCE(MAX(ordinal), 0) + 1 AS next FROM assistant_session_history WHERE assistant_id=?').get(assistantID).next);
     db.prepare('INSERT INTO assistant_session_history(assistant_id, session_id, ordinal, directory, created_at) VALUES (?,?,?,?,?)').run(assistantID, sessionID, ordinal, effectiveDirectory, now());
-    db.prepare('DELETE FROM assistant_message_backfill WHERE assistant_id=? AND session_id=?').run(assistantID, sessionID);
-    db.prepare("UPDATE assistant_message_mirror SET covered=0 WHERE assistant_id=? AND session_id=? AND COALESCE(json_extract(info_json,'$.role'),'')<>'user' AND COALESCE(json_extract(info_json,'$.openchamberAssistantAdmission'),0)<>1").run(assistantID, sessionID);
   };
   const activeContactTurnsFor = (assistantID) => activeContactTurnsByAssistant.get(assistantID) ?? new Map();
   const rememberActiveContactTurn = (assistantID, input) => {
@@ -488,73 +483,10 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
     db.prepare("INSERT OR REPLACE INTO assistant_meta(key,value) VALUES ('schema_version',?)").run(String(SCHEMA_VERSION));
   };
   migrate();
-  const mirrorMessage = (assistantID, sessionID, info, ordinal, covered = false) => {
-    const messageID = info?.id;
-    if (!nonEmptyString(assistantID) || !nonEmptyString(sessionID) || !nonEmptyString(messageID) || !plainObject(info)) return;
-    const existing = db.prepare('SELECT ordinal FROM assistant_message_mirror WHERE assistant_id=? AND session_id=? AND message_id=?').get(assistantID, sessionID, messageID);
-    const nextOrdinal = Number.isSafeInteger(ordinal) ? ordinal : existing?.ordinal ?? Number(db.prepare('SELECT COALESCE(MAX(ordinal), 0) + 1 AS next FROM assistant_message_mirror WHERE assistant_id=? AND session_id=?').get(assistantID, sessionID).next);
-    db.prepare('INSERT INTO assistant_message_mirror(assistant_id,session_id,message_id,info_json,ordinal,covered,updated_at) VALUES (?,?,?,?,?,?,?) ON CONFLICT(assistant_id,session_id,message_id) DO UPDATE SET info_json=excluded.info_json,ordinal=excluded.ordinal,covered=CASE WHEN assistant_message_mirror.covered=1 OR excluded.covered=1 THEN 1 ELSE 0 END,updated_at=excluded.updated_at').run(assistantID, sessionID, messageID, json(info), nextOrdinal, covered ? 1 : 0, now());
-  };
-  const mirrorPart = (assistantID, sessionID, part, ordinal) => {
-    const messageID = part?.messageID; const partID = part?.id;
-    if (!nonEmptyString(assistantID) || !nonEmptyString(sessionID) || !nonEmptyString(messageID) || !nonEmptyString(partID) || !plainObject(part)) return;
-    const existing = db.prepare('SELECT ordinal FROM assistant_message_part_mirror WHERE assistant_id=? AND session_id=? AND message_id=? AND part_id=?').get(assistantID, sessionID, messageID, partID);
-    const nextOrdinal = Number.isSafeInteger(ordinal) ? ordinal : existing?.ordinal ?? Number(db.prepare('SELECT COALESCE(MAX(ordinal), 0) + 1 AS next FROM assistant_message_part_mirror WHERE assistant_id=? AND session_id=? AND message_id=?').get(assistantID, sessionID, messageID).next);
-    db.prepare('INSERT INTO assistant_message_part_mirror(assistant_id,session_id,message_id,part_id,part_json,ordinal,updated_at) VALUES (?,?,?,?,?,?,?) ON CONFLICT(assistant_id,session_id,message_id,part_id) DO UPDATE SET part_json=excluded.part_json,ordinal=excluded.ordinal,updated_at=excluded.updated_at').run(assistantID, sessionID, messageID, partID, json(part), nextOrdinal, now());
-  };
-  const mirrorAdmittedUserMessage = (row, sessionID, messageID, parts, config) => {
-    const existingMessage = db.prepare('SELECT info_json FROM assistant_message_mirror WHERE assistant_id=? AND session_id=? AND message_id=?').get(row.assistant_id, sessionID, messageID);
-    const existingInfo = existingMessage ? parse(existingMessage.info_json) : null;
-    const info = plainObject(existingInfo) && existingInfo.role === 'user'
-      ? existingInfo
-      : {
-          id: messageID,
-          sessionID,
-          role: 'user',
-          time: { created: now() },
-          ...(config?.agent ? { agent: config.agent } : {}),
-          ...(plainObject(config?.model) ? { model: config.model } : {}),
-          ...(typeof config?.system === 'string' && config.system ? { system: config.system } : {}),
-          summary: { diffs: [] },
-          openchamberAssistantAdmission: true,
-        };
-    db.exec('BEGIN IMMEDIATE');
-    try {
-      mirrorMessage(row.assistant_id, sessionID, info, undefined, true);
-      const hasAuthoritativeParts = Number(db.prepare("SELECT COUNT(*) AS count FROM assistant_message_part_mirror WHERE assistant_id=? AND session_id=? AND message_id=? AND part_id NOT GLOB 'oc_asst_admission:*'").get(row.assistant_id, sessionID, messageID).count) > 0;
-      if (!hasAuthoritativeParts) {
-        db.prepare("DELETE FROM assistant_message_part_mirror WHERE assistant_id=? AND session_id=? AND message_id=? AND part_id GLOB 'oc_asst_admission:*'").run(row.assistant_id, sessionID, messageID);
-        parts.forEach((part, index) => mirrorPart(row.assistant_id, sessionID, {
-          ...part,
-          id: `oc_asst_admission:${index + 1}`,
-          sessionID,
-          messageID,
-        }, index + 1));
-      }
-      db.exec('COMMIT');
-    } catch (error) {
-      db.exec('ROLLBACK');
-      throw error;
-    }
-    bump();
-  };
+  // V2: OpenCode projection is the sole message-body authority. Legacy mirror /
+  // backfill tables may still exist for leftover rows but are never written or
+  // read for history serving.
   const mappedAssistants = (sessionID) => db.prepare("SELECT assistant_id FROM assistant_v2 WHERE current_session_id=? AND tombstone_at IS NULL UNION SELECT h.assistant_id FROM assistant_session_history h JOIN assistant_v2 a ON a.assistant_id=h.assistant_id WHERE h.session_id=? AND a.tombstone_at IS NULL").all(sessionID, sessionID).map((row) => row.assistant_id);
-  const invalidateCoverage = (assistantID, sessionID) => {
-    db.prepare('UPDATE assistant_message_mirror SET covered=0 WHERE assistant_id=? AND session_id=?').run(assistantID, sessionID);
-    db.prepare('INSERT INTO assistant_message_backfill(assistant_id,session_id,cursor,complete,updated_at) VALUES (?,?,?,?,?) ON CONFLICT(assistant_id,session_id) DO UPDATE SET cursor=NULL,complete=0,updated_at=excluded.updated_at').run(assistantID, sessionID, null, 0, now());
-  };
-  // Reopen demand backfill without clearing covered/provisional mirrors.
-  const invalidateBackfill = (assistantID, sessionID) => {
-    const current = db.prepare('SELECT cursor,complete FROM assistant_message_backfill WHERE assistant_id=? AND session_id=?').get(assistantID, sessionID);
-    const next = reduceBackfillState({ cursor: current?.cursor ?? null, complete: Boolean(current?.complete) }, 'invalidate');
-    db.prepare('INSERT INTO assistant_message_backfill(assistant_id,session_id,cursor,complete,updated_at) VALUES (?,?,?,?,?) ON CONFLICT(assistant_id,session_id) DO UPDATE SET cursor=excluded.cursor,complete=excluded.complete,updated_at=excluded.updated_at').run(assistantID, sessionID, next.cursor, next.complete ? 1 : 0, now());
-  };
-  // Structural part deletes may leave a covered message incomplete; re-demand that session only.
-  // Do not blanket-uncover on ordinary message/part upserts — that blanks served history until re-backfill.
-  const invalidateMessageCoverage = (assistantID, sessionID, messageID) => {
-    db.prepare('UPDATE assistant_message_mirror SET covered=0 WHERE assistant_id=? AND session_id=? AND message_id=?').run(assistantID, sessionID, messageID);
-    db.prepare('INSERT INTO assistant_message_backfill(assistant_id,session_id,cursor,complete,updated_at) VALUES (?,?,?,?,?) ON CONFLICT(assistant_id,session_id) DO UPDATE SET cursor=NULL,complete=0,updated_at=excluded.updated_at').run(assistantID, sessionID, null, 0, now());
-  };
   // Accept bridge/legacy `{ properties }` and native v2 `{ data }` envelopes.
   const eventBody = (payload) => {
     if (!plainObject(payload)) return null;
@@ -608,9 +540,14 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
     if (type === 'session.error' || type === 'session.execution.failed') {
       return isUserAbort(body?.error) ? 'cancelled' : 'error';
     }
-    // User interrupt: prefer cancelled so contact resume path can notify.
+    // Official reason: user | shutdown | superseded | inactivity (ticket 07).
+    // Shutdown keeps the upstream execution claim for restart recovery — do not
+    // settle the watch or schedule contact resume; wait for authoritative terminal.
     if (type === 'session.execution.interrupted') {
-      return isUserAbort(body?.error) ? 'cancelled' : 'error';
+      const reason = typeof body?.reason === 'string' ? body.reason.trim() : '';
+      if (reason === 'shutdown') return null;
+      if (reason === 'user' || isUserAbort(body?.error)) return 'cancelled';
+      return 'error';
     }
     if (type === 'session.execution.succeeded') return 'complete';
     if (type === 'session.execution.started' || type === 'session.retry.scheduled') return 'busy';
@@ -909,25 +846,26 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
       if (!nonEmptyString(sessionID) || !plainObject(info)) return false;
       const cancelled = info.role === 'assistant' && isUserAbort(info.error)
         ? reportAssignedSession(sessionID, 'cancelled') : false;
-      const assistants = mappedAssistants(sessionID); for (const assistantID of assistants) { const current = assistant(assistantID)?.current_session_id === sessionID; mirrorMessage(assistantID, sessionID, info, undefined, current); if (!current) invalidateBackfill(assistantID, sessionID); } return cancelled || assistants.length > 0;
+      // Body authority is OpenCode projection GET — do not mirror message bodies.
+      return cancelled || mappedAssistants(sessionID).length > 0;
     }
     if (payload.type === 'message.part.updated') {
       if (!plainObject(body)) return false;
       const part = body.part; const sessionID = body.sessionID ?? part?.sessionID;
       if (!nonEmptyString(sessionID) || !plainObject(part)) return false;
-      const assistants = mappedAssistants(sessionID); for (const assistantID of assistants) { db.prepare("DELETE FROM assistant_message_part_mirror WHERE assistant_id=? AND session_id=? AND message_id=? AND part_id GLOB 'oc_asst_admission:*'").run(assistantID, sessionID, part.messageID); mirrorPart(assistantID, sessionID, part); if (assistant(assistantID)?.current_session_id !== sessionID) invalidateBackfill(assistantID, sessionID); } return assistants.length > 0;
+      return mappedAssistants(sessionID).length > 0;
     }
     if (payload.type === 'message.removed') {
       if (!plainObject(body)) return false;
       const sessionID = body.sessionID; const messageID = body.messageID;
       if (!nonEmptyString(sessionID) || !nonEmptyString(messageID)) return false;
-      const assistants = mappedAssistants(sessionID); for (const assistantID of assistants) { db.prepare('DELETE FROM assistant_message_part_mirror WHERE assistant_id=? AND session_id=? AND message_id=?').run(assistantID, sessionID, messageID); db.prepare('DELETE FROM assistant_message_mirror WHERE assistant_id=? AND session_id=? AND message_id=?').run(assistantID, sessionID, messageID); } return assistants.length > 0;
+      return mappedAssistants(sessionID).length > 0;
     }
     if (payload.type === 'message.part.removed') {
       if (!plainObject(body)) return false;
       const sessionID = body.sessionID; const messageID = body.messageID ?? body.part?.messageID; const partID = body.partID ?? body.part?.id;
       if (!nonEmptyString(sessionID) || !nonEmptyString(messageID) || !nonEmptyString(partID)) return false;
-      const assistants = mappedAssistants(sessionID); for (const assistantID of assistants) { db.prepare('DELETE FROM assistant_message_part_mirror WHERE assistant_id=? AND session_id=? AND message_id=? AND part_id=?').run(assistantID, sessionID, messageID, partID); if (assistant(assistantID)?.current_session_id !== sessionID) invalidateMessageCoverage(assistantID, sessionID, messageID); } return assistants.length > 0;
+      return mappedAssistants(sessionID).length > 0;
     }
     const sessionID = plainObject(body) ? eventSessionID(body) : '';
     if (payload.type === 'session.execution.started' || payload.type === 'session.retry.scheduled') {
@@ -939,9 +877,13 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
       || payload.type === 'session.execution.interrupted') {
       if (!sessionID) return false;
       const status = settleStatusFromEvent(payload, body);
-      if (!status) return false;
+      // shutdown interrupt: status null — keep watch in-flight (pending recovery).
+      if (!status) {
+        return listWatchesBySession(db, sessionID).length > 0
+          || mappedAssistants(sessionID).length > 0;
+      }
       const reported = reportAssignedSession(sessionID, status);
-      const assistants = mappedAssistants(sessionID); for (const assistantID of assistants) { if (assistant(assistantID)?.current_session_id !== sessionID) invalidateBackfill(assistantID, sessionID); }
+      const assistants = mappedAssistants(sessionID);
       return reported || assistants.some((assistantID) => assistant(assistantID)?.current_session_id !== sessionID);
     }
     if (payload.type === 'session.idle' || payload.type === 'session.error') {
@@ -949,7 +891,7 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
       // session.idle is a weak fallback: watermarked watches need execution.* or reconcile.
       const status = settleStatusFromEvent(payload, body);
       const reported = reportAssignedSession(sessionID, status, { requireExecutionOwned: payload.type === 'session.idle' });
-      const assistants = mappedAssistants(sessionID); for (const assistantID of assistants) { if (assistant(assistantID)?.current_session_id !== sessionID) invalidateBackfill(assistantID, sessionID); }
+      const assistants = mappedAssistants(sessionID);
       return reported || assistants.some((assistantID) => assistant(assistantID)?.current_session_id !== sessionID);
     }
     if (payload.type === 'session.status') {
@@ -957,7 +899,7 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
       const status = settleStatusFromEvent(payload, body);
       if (!status) return false;
       const reported = reportAssignedSession(sessionID, status, { requireExecutionOwned: status === 'complete' });
-      const assistants = mappedAssistants(sessionID); for (const assistantID of assistants) { if (assistant(assistantID)?.current_session_id !== sessionID) invalidateBackfill(assistantID, sessionID); }
+      const assistants = mappedAssistants(sessionID);
       return reported || assistants.some((assistantID) => assistant(assistantID)?.current_session_id !== sessionID);
     }
     if (payload.type === 'question.asked' || payload.type === 'permission.asked'
@@ -975,162 +917,364 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
     }
     return null;
   };
-  const clearUncoveredSessionMirror = (assistantID, sessionID) => {
-    db.prepare('DELETE FROM assistant_message_part_mirror WHERE assistant_id=? AND session_id=? AND message_id IN (SELECT message_id FROM assistant_message_mirror WHERE assistant_id=? AND session_id=? AND covered=0)').run(assistantID, sessionID, assistantID, sessionID);
-    db.prepare('DELETE FROM assistant_message_mirror WHERE assistant_id=? AND session_id=? AND covered=0').run(assistantID, sessionID);
-  };
-  const writeBackfillState = (assistantID, sessionID, next) => {
-    db.prepare('INSERT INTO assistant_message_backfill(assistant_id,session_id,cursor,complete,updated_at) VALUES (?,?,?,?,?) ON CONFLICT(assistant_id,session_id) DO UPDATE SET cursor=excluded.cursor,complete=excluded.complete,updated_at=excluded.updated_at').run(assistantID, sessionID, next.cursor, next.complete ? 1 : 0, now());
-  };
-  // Authoritative 404 means this session ID is gone from OpenCode. Converge its
-  // backfill so one deleted archive cannot block demand scans of other sessions.
-  // Covered/admitted rows stay; only uncovered event mirrors are dropped. Safe
-  // under concurrent ensure: a replaced current binding archives under its old
-  // ID, while a still-current missing ID is recreated with a new session ID.
-  const completeMissingSessionBackfill = (assistantID, sessionID) => {
-    db.exec('BEGIN IMMEDIATE');
+  // Host history cursor: binding ordinal + official opaque upstream cursor +
+  // page-local skip. Carries positions/IDs only — never message bodies.
+  const decodeCursor = (value) => {
+    if (value == null || value === '') return null;
     try {
-      const current = db.prepare('SELECT cursor,complete FROM assistant_message_backfill WHERE assistant_id=? AND session_id=?').get(assistantID, sessionID);
-      const next = reduceBackfillState({ cursor: current?.cursor ?? null, complete: Boolean(current?.complete) }, 'session-missing');
-      if (next.disposition === 'discard-provisional') clearUncoveredSessionMirror(assistantID, sessionID);
-      writeBackfillState(assistantID, sessionID, next);
-      db.exec('COMMIT');
-      return true;
-    } catch (error) { db.exec('ROLLBACK'); throw error; }
+      const parsed = parse(Buffer.from(String(value), 'base64url').toString('utf8'));
+      if (!Number.isSafeInteger(parsed?.sessionOrdinal)) fail('validation_error');
+      if (parsed.upstream != null && !nonEmptyString(parsed.upstream)) fail('validation_error');
+      const skip = parsed.skip == null ? 0 : parsed.skip;
+      if (!Number.isSafeInteger(skip) || skip < 0) fail('validation_error');
+      return {
+        sessionOrdinal: parsed.sessionOrdinal,
+        upstream: parsed.upstream ?? null,
+        skip,
+      };
+    } catch (error) {
+      if (error instanceof AssistantError) throw error;
+      fail('validation_error');
+    }
   };
-  const fetchBackfillMessages = async (history, directory, cursor) => {
+  const encodeCursor = (state) => Buffer.from(json({
+    sessionOrdinal: state.sessionOrdinal,
+    upstream: state.upstream ?? null,
+    skip: state.skip ?? 0,
+  })).toString('base64url');
+  // Official v2: GET /api/session/:id/message — first page order=desc; continuation
+  // cursor only (never combine order+cursor). Prefer fetchImpl when injected.
+  const fetchProjectionMessages = async (sessionID, directory, cursor, pageLimit = BACKFILL_PAGE_SIZE) => {
     for (let attempt = 0; attempt < BACKFILL_MESSAGES_ATTEMPTS; attempt++) {
       try {
-        const result = await invokeSession(() => client().message.list({ sessionID: history.session_id, limit: BACKFILL_PAGE_SIZE, order: 'desc', ...(cursor ? { cursor } : {}) }));
-        if (!result?.error || isMissing(result)) return result;
-        if (!isTransientMessagesFailure(result, null) || attempt === BACKFILL_MESSAGES_ATTEMPTS - 1) fail('upstream_error');
+        if (typeof fetchImpl === 'function') {
+          const base = String(buildOpenCodeUrl('/', '') || '').replace(/\/$/, '') || 'http://opencode.local';
+          const url = new URL(`${base}/api/session/${encodeURIComponent(sessionID)}/message`);
+          url.searchParams.set('limit', String(pageLimit));
+          // Official contract: do not combine order with cursor.
+          if (cursor) url.searchParams.set('cursor', cursor);
+          else url.searchParams.set('order', 'desc');
+          if (directory) url.searchParams.set('directory', directory);
+          const headers = {
+            Accept: 'application/json',
+            ...(typeof getOpenCodeAuthHeaders === 'function' ? getOpenCodeAuthHeaders() : {}),
+          };
+          const response = await fetchImpl(url, { method: 'GET', headers });
+          const status = response?.status ?? response?.statusCode;
+          if (status === 404) return { error: { status: 404 }, status: 404 };
+          if (status != null && status >= 400) {
+            const errBody = { error: { status }, status };
+            if (!isTransientMessagesFailure(errBody, null) || attempt === BACKFILL_MESSAGES_ATTEMPTS - 1) return errBody;
+          } else {
+            const payload = typeof response?.json === 'function' ? await response.json() : null;
+            return {
+              data: Array.isArray(payload?.data) ? payload.data : (Array.isArray(payload) ? payload : payload?.data),
+              cursor: payload?.cursor,
+              response: {
+                status: status ?? 200,
+                headers: {
+                  get: (name) => {
+                    if (typeof response?.headers?.get === 'function') return response.headers.get(name);
+                    return null;
+                  },
+                },
+              },
+            };
+          }
+        } else {
+          const result = await invokeSession(() => client().message.list({
+            sessionID,
+            limit: pageLimit,
+            // First page: order=desc. Continuation: opaque cursor only.
+            ...(cursor ? { cursor } : { order: 'desc' }),
+          }));
+          if (!result?.error || isMissing(result)) return result;
+          if (!isTransientMessagesFailure(result, null) || attempt === BACKFILL_MESSAGES_ATTEMPTS - 1) return result;
+        }
       } catch (error) {
         if (error instanceof AssistantError) throw error;
-        if (!isTransientMessagesFailure(null, error) || attempt === BACKFILL_MESSAGES_ATTEMPTS - 1) fail('upstream_error');
+        if (isMissingError(error)) return { error: { status: 404 }, status: 404 };
+        if (!isTransientMessagesFailure(null, error) || attempt === BACKFILL_MESSAGES_ATTEMPTS - 1) {
+          const status = getHttpStatus(error);
+          return { error: { status: status ?? 500 }, status: status ?? 500 };
+        }
       }
       await sleep(BACKFILL_RETRY_MS[Math.min(attempt, BACKFILL_RETRY_MS.length - 1)]);
     }
-    fail('upstream_error');
+    return { error: { status: 500 }, status: 500 };
   };
-  const backfillSession = async (history) => {
-    const state = db.prepare('SELECT cursor,complete FROM assistant_message_backfill WHERE assistant_id=? AND session_id=?').get(history.assistant_id, history.session_id);
-    if (state?.complete) return true;
-    const cursor = state?.cursor ?? null;
-    let directory = history.directory ?? null;
-    if (directory == null) {
-      const session = await client().session.get({ sessionID: history.session_id }).catch(() => null);
-      const resolved = resolveArchivedDirectory(history.assistant_id, session?.data?.directory, session?.data?.project?.worktree);
+  const resolveBindingDirectory = async (binding) => {
+    let directory = binding.directory ?? null;
+    if (directory != null) return directory;
+    const session = await invokeSession(() => client().session.get({ sessionID: binding.session_id })).catch(() => null);
+    if (!session?.error) {
+      const resolved = resolveArchivedDirectory(
+        binding.assistant_id,
+        sessionDirectoryOf(session),
+        session?.data?.directory,
+        session?.data?.project?.worktree,
+      );
       if (resolved) {
-        db.prepare('UPDATE assistant_session_history SET directory=? WHERE assistant_id=? AND session_id=? AND directory IS NULL').run(resolved, history.assistant_id, history.session_id);
+        db.prepare('UPDATE assistant_session_history SET directory=? WHERE assistant_id=? AND session_id=? AND directory IS NULL')
+          .run(resolved, binding.assistant_id, binding.session_id);
         directory = resolved;
       }
     }
-    const result = await fetchBackfillMessages(history, directory, cursor);
-    if (isMissing(result)) return completeMissingSessionBackfill(history.assistant_id, history.session_id);
-    if (result?.error) fail('upstream_error');
-    const entries = projectionEntries(result, history.session_id);
-    if (!entries) fail('upstream_error');
-    db.exec('BEGIN IMMEDIATE');
-    try {
-      entries.forEach((entry) => { const info = entry?.info ?? entry; if (nonEmptyString(info?.sessionID) && info.sessionID !== history.session_id) return; const parts = Array.isArray(entry?.parts) ? entry.parts : []; const messageOrdinal = Number.isSafeInteger(info?.time?.created) ? info.time.created : undefined; mirrorMessage(history.assistant_id, history.session_id, info, messageOrdinal, true); const partIDs = parts.filter((part) => nonEmptyString(part?.id)).map((part) => part.id); if (partIDs.length) db.prepare(`DELETE FROM assistant_message_part_mirror WHERE assistant_id=? AND session_id=? AND message_id=? AND part_id NOT IN (${partIDs.map(() => '?').join(',')})`).run(history.assistant_id, history.session_id, info?.id, ...partIDs); else db.prepare('DELETE FROM assistant_message_part_mirror WHERE assistant_id=? AND session_id=? AND message_id=?').run(history.assistant_id, history.session_id, info?.id); parts.forEach((part, partIndex) => mirrorPart(history.assistant_id, history.session_id, part, partIndex + 1)); });
-      const nextCursor = projectionCursor(result) ?? result?.response?.headers?.get?.('x-next-cursor') ?? null;
-      const next = reduceBackfillState({ cursor, complete: false }, { type: 'page', nextCursor });
-      // Successful pages only upsert authoritative rows; never delete provisional
-      // event mirrors that the snapshot omitted — only 404 / message.removed /
-      // assistant deletion may shrink the message set.
-      writeBackfillState(history.assistant_id, history.session_id, next);
-      db.exec('COMMIT');
-      return next.complete;
-    } catch (error) { db.exec('ROLLBACK'); throw error; }
+    return directory;
   };
-  const decodeCursor = (value) => { if (value == null || value === '') return null; try { const parsed = parse(Buffer.from(String(value), 'base64url').toString('utf8')); return Number.isSafeInteger(parsed?.sessionOrdinal) && Number.isSafeInteger(parsed?.messageOrdinal) && nonEmptyString(parsed?.messageID) && (parsed.scanSessionOrdinal == null || Number.isSafeInteger(parsed.scanSessionOrdinal)) ? parsed : fail('validation_error'); } catch (error) { if (error instanceof AssistantError) throw error; fail('validation_error'); } };
-  const encodeCursor = (row, scanSessionOrdinal = row.session_ordinal) => Buffer.from(json({ sessionOrdinal: row.session_ordinal, messageOrdinal: row.message_ordinal, messageID: row.message_id, scanSessionOrdinal })).toString('base64url');
-  const loadProjectionSession = async (history, pageLimit = BACKFILL_PAGE_SIZE) => {
-    let directory = history.directory ?? null;
-    if (directory == null) {
-      const session = await invokeSession(() => client().session.get({ sessionID: history.session_id })).catch(() => null);
-      const resolved = resolveArchivedDirectory(history.assistant_id, sessionDirectoryOf(session), session?.data?.directory, session?.data?.project?.worktree);
-      if (resolved) {
-        db.prepare('UPDATE assistant_session_history SET directory=? WHERE assistant_id=? AND session_id=? AND directory IS NULL').run(resolved, history.assistant_id, history.session_id);
-        directory = resolved;
-      }
-    }
+  /**
+   * Walk one binding from an official upstream position (tip or opaque cursor).
+   * Emits rows in authoritative projection order (order=desc ⇒ newest first).
+   * Host page boundary is `skip` within the current upstream page — no tip rescan.
+   */
+  const loadProjectionBinding = async (binding, {
+    upstream = null,
+    skip = 0,
+    need = BACKFILL_PAGE_SIZE,
+    maxPages = BACKFILL_MAX_PAGES,
+    pageLimit = BACKFILL_PAGE_SIZE,
+  } = {}) => {
+    const directory = await resolveBindingDirectory(binding);
     const collected = [];
-    let cursor = null;
-    for (let page = 0; page < BACKFILL_MAX_PAGES; page++) {
-      const result = await fetchBackfillMessages(history, directory, cursor);
-      if (isMissing(result)) return { entries: collected, directory, missing: true };
-      if (result?.error) fail('upstream_error');
-      const entries = projectionEntries(result, history.session_id);
-      if (!entries) fail('upstream_error');
-      collected.push(...entries);
-      cursor = projectionCursor(result);
-      if (!cursor) break;
-      if (collected.length >= pageLimit) break;
-    }
-    return { entries: collected.slice(0, pageLimit), directory, missing: false };
-  };
-  const historicalMessages = async (assistantID, input = {}) => {
-    const row = editable(assistantID); const limit = input.limit == null ? 50 : Number(input.limit); if (!Number.isInteger(limit) || limit < 1 || limit > 100) fail('validation_error'); const before = decodeCursor(input.before);
-    const currentSessionOrdinal = Number(db.prepare('SELECT COALESCE(MAX(ordinal), 0) + 1 AS next FROM assistant_session_history WHERE assistant_id=?').get(row.assistant_id).next);
-    const currentIsArchived = row.current_session_id != null && Boolean(db.prepare('SELECT 1 FROM assistant_session_history WHERE assistant_id=? AND session_id=?').get(row.assistant_id, row.current_session_id));
-    const beforeIncludes = (sessionOrdinal, messageOrdinal, messageID) => before == null || sessionOrdinal < before.sessionOrdinal || (sessionOrdinal === before.sessionOrdinal && (messageOrdinal < before.messageOrdinal || (messageOrdinal === before.messageOrdinal && messageID < before.messageID)));
-    const pageRows = () => {
-      // Archived mirrors include covered=1 authoritative rows and covered=0
-      // provisional event mirrors so a partial REST snapshot cannot hide a reply
-      // already observed on the live channel.
-      const historical = db.prepare(`SELECT h.ordinal AS session_ordinal,h.directory,m.ordinal AS message_ordinal,m.message_id,m.info_json,m.session_id FROM assistant_session_history h JOIN assistant_message_mirror m ON m.assistant_id=h.assistant_id AND m.session_id=h.session_id WHERE h.assistant_id=? AND (? IS NULL OR h.ordinal<? OR (h.ordinal=? AND (m.ordinal<? OR (m.ordinal=? AND m.message_id<?)))) ORDER BY h.ordinal DESC,m.ordinal DESC,m.message_id DESC LIMIT ?`).all(row.assistant_id, before?.sessionOrdinal ?? null, before?.sessionOrdinal ?? 0, before?.sessionOrdinal ?? 0, before?.messageOrdinal ?? 0, before?.messageOrdinal ?? 0, before?.messageID ?? '', limit + 1);
-      const current = row.current_session_id && !currentIsArchived
-        ? db.prepare('SELECT ? AS session_ordinal,? AS directory,ordinal AS message_ordinal,message_id,info_json,session_id FROM assistant_message_mirror WHERE assistant_id=? AND session_id=? AND covered=1 ORDER BY ordinal DESC,message_id DESC LIMIT ?').all(currentSessionOrdinal, effectiveWorkspace(row), row.assistant_id, row.current_session_id, limit + 1).filter((message) => beforeIncludes(message.session_ordinal, message.message_ordinal, message.message_id))
-        : [];
-      return [...historical, ...current].sort((left, right) => right.session_ordinal - left.session_ordinal || right.message_ordinal - left.message_ordinal || right.message_id.localeCompare(left.message_id)).slice(0, limit + 1);
-    };
-    const nextIncomplete = (boundary = before?.scanSessionOrdinal ?? before?.sessionOrdinal ?? null) => db.prepare(`SELECT h.* FROM assistant_session_history h LEFT JOIN assistant_message_backfill b ON b.assistant_id=h.assistant_id AND b.session_id=h.session_id WHERE h.assistant_id=? AND (b.complete IS NULL OR b.complete=0) AND (? IS NULL OR h.ordinal<=?) ORDER BY h.ordinal DESC LIMIT 1`).get(row.assistant_id, boundary, boundary ?? 0);
-    let rows = pageRows();
-    // Demand-backfill incomplete archived sessions even when provisional
-    // mirrors already fill the page, so authoritative upserts can elevate
-    // covered=0 fallbacks. Cap remains BACKFILL_MAX_PAGES per request.
-    for (let page = 0; page < BACKFILL_MAX_PAGES; page++) {
-      const target = nextIncomplete();
-      if (!target) break;
-      try {
-        await backfillSession(target);
-      } catch (error) {
-        // Partial-result scope is this request's pageRows() only: any already
-        // visible covered or provisional row keeps the page usable and the
-        // incomplete cursor retryable. An empty current page still throws.
-        if (rows.length === 0) throw error;
+    let cursor = upstream;
+    let pageSkip = Math.max(0, skip);
+    let exhausted = false;
+    let failed = false;
+    let failedStatus = null;
+    let pagesUsed = 0;
+    let resumeUpstream = upstream;
+    let resumeSkip = pageSkip;
+    const pageSize = Math.min(BACKFILL_PAGE_SIZE, Math.max(1, pageLimit));
+
+    for (let page = 0; page < maxPages; page++) {
+      resumeUpstream = cursor;
+      resumeSkip = pageSkip;
+      const result = await fetchProjectionMessages(binding.session_id, directory, cursor, pageSize);
+      pagesUsed += 1;
+      if (isMissing(result)) {
+        exhausted = true;
+        return {
+          entries: collected, directory, missing: true, failed: false, failedStatus: null,
+          exhausted: true, pagesUsed, resumeUpstream: null, resumeSkip: 0,
+        };
+      }
+      if (result?.error) {
+        failed = true;
+        failedStatus = messagesErrorStatus(result) ?? result.status ?? 500;
         break;
       }
-      rows = pageRows();
-    }
-    const page = rows.slice(0, limit); const oldest = page[page.length - 1]; const remaining = nextIncomplete(oldest?.session_ordinal ?? before?.scanSessionOrdinal ?? before?.sessionOrdinal ?? null); const nextCursor = oldest ? (rows.length > limit || remaining ? encodeCursor(oldest, oldest.session_ordinal) : null) : remaining ? encodeCursor({ session_ordinal: remaining.ordinal, message_ordinal: Number.MAX_SAFE_INTEGER, message_id: '\uffff' }, remaining.ordinal) : null;
-    let ordered = [...page].reverse().map((message) => ({ sessionID: message.session_id, directory: message.directory, info: parse(message.info_json), parts: db.prepare('SELECT part_json FROM assistant_message_part_mirror WHERE assistant_id=? AND session_id=? AND message_id=? ORDER BY ordinal ASC,part_id ASC').all(row.assistant_id, message.session_id, message.message_id).map((part) => parse(part.part_json)) }));
-    // Current binding may still be live-only: if the mirror page has no
-    // current-session rows, read the v2 projection instead of returning empty.
-    if (page.length === 0 && row.current_session_id && !currentIsArchived) {
-      try {
-        const loaded = await loadProjectionSession({ assistant_id: row.assistant_id, session_id: row.current_session_id, directory: effectiveWorkspace(row), ordinal: currentSessionOrdinal }, limit);
-        const live = [];
-        for (const entry of loaded.entries) {
-          const info = entry?.info ?? entry;
-          if (!plainObject(info) || !nonEmptyString(info.id)) continue;
-          if (nonEmptyString(info.sessionID) && info.sessionID !== row.current_session_id) continue;
-          live.push({
-            sessionID: row.current_session_id,
-            directory: loaded.directory,
-            info,
-            parts: Array.isArray(entry?.parts) ? entry.parts : [],
-          });
-        }
-        ordered = [...live, ...ordered];
-      } catch {
-        // Keep archived/mirror rows; current live projection is best-effort.
+      const entries = projectionEntries(result, binding.session_id);
+      if (!entries) {
+        failed = true;
+        failedStatus = 500;
+        break;
       }
+      // Empty page is the authoritative end (non-empty pages may still carry next).
+      if (entries.length === 0) {
+        exhausted = true;
+        resumeUpstream = null;
+        resumeSkip = 0;
+        break;
+      }
+      let index = 0;
+      let stoppedEarly = false;
+      for (; index < entries.length; index++) {
+        if (index < pageSkip) continue;
+        const entry = entries[index];
+        const info = entry?.info ?? entry;
+        if (!plainObject(info) || !nonEmptyString(info.id)) continue;
+        if (nonEmptyString(info.sessionID) && info.sessionID !== binding.session_id) continue;
+        collected.push({
+          session_id: binding.session_id,
+          session_ordinal: binding.ordinal,
+          directory,
+          message_id: info.id,
+          // Source seq within authoritative page order (not time.created).
+          seq: collected.length,
+          info,
+          parts: Array.isArray(entry?.parts) ? entry.parts : [],
+        });
+        if (collected.length >= need) {
+          // Keep resumeSkip on this row when it is the probe past `limit`.
+          stoppedEarly = true;
+          break;
+        }
+      }
+      pageSkip = 0;
+      if (collected.length >= need) {
+        // Page boundary: resume at the probe row (or next upstream page if none left).
+        if (stoppedEarly && index < entries.length) {
+          resumeUpstream = cursor;
+          resumeSkip = index;
+        } else {
+          const next = projectionCursor(result);
+          resumeUpstream = next || null;
+          resumeSkip = 0;
+          // Official: last non-empty page may still expose next; empty follow-up ends.
+          if (!next) exhausted = true;
+        }
+        break;
+      }
+      const next = projectionCursor(result);
+      if (!next) {
+        exhausted = true;
+        resumeUpstream = null;
+        resumeSkip = 0;
+        break;
+      }
+      cursor = next;
+      pageSkip = 0;
+      resumeUpstream = next;
+      resumeSkip = 0;
     }
-    return { entries: ordered, nextCursor, complete: nextCursor === null };
+
+    return {
+      entries: collected,
+      directory,
+      missing: false,
+      failed,
+      failedStatus,
+      exhausted: exhausted && !failed,
+      pagesUsed,
+      resumeUpstream,
+      resumeSkip,
+    };
   };
-  for (const current of db.prepare('SELECT * FROM assistant_v2 WHERE current_session_id IS NOT NULL AND tombstone_at IS NULL').all()) void backfillSession({ assistant_id: current.assistant_id, session_id: current.current_session_id, directory: effectiveWorkspace(current) }).catch(() => {});
+  const listHistoryBindings = (row) => {
+    const history = db.prepare('SELECT session_id, directory, ordinal FROM assistant_session_history WHERE assistant_id=? ORDER BY ordinal ASC')
+      .all(row.assistant_id);
+    const bindings = history.map((item) => ({
+      assistant_id: row.assistant_id,
+      session_id: item.session_id,
+      directory: item.directory ?? null,
+      ordinal: item.ordinal,
+    }));
+    const currentIsArchived = row.current_session_id != null
+      && Boolean(db.prepare('SELECT 1 FROM assistant_session_history WHERE assistant_id=? AND session_id=?').get(row.assistant_id, row.current_session_id));
+    if (row.current_session_id && !currentIsArchived) {
+      const nextOrdinal = Number(db.prepare('SELECT COALESCE(MAX(ordinal), 0) + 1 AS next FROM assistant_session_history WHERE assistant_id=?').get(row.assistant_id).next);
+      bindings.push({
+        assistant_id: row.assistant_id,
+        session_id: row.current_session_id,
+        directory: effectiveWorkspace(row),
+        ordinal: nextOrdinal,
+      });
+    }
+    return bindings;
+  };
+  const historicalMessages = async (assistantID, input = {}) => {
+    const row = editable(assistantID);
+    const limit = input.limit == null ? 50 : Number(input.limit);
+    if (!Number.isInteger(limit) || limit < 1 || limit > 100) fail('validation_error');
+    const before = decodeCursor(input.before);
+    const bindings = listHistoryBindings(row);
+    // Newest bindings first; within a binding keep official projection order.
+    const scanOrder = [...bindings].sort((left, right) => right.ordinal - left.ordinal);
+    let startIndex = 0;
+    if (before != null) {
+      const found = scanOrder.findIndex((binding) => binding.ordinal === before.sessionOrdinal);
+      // Binding disappeared (archive GC) — resume at the nearest older binding.
+      startIndex = found >= 0 ? found : scanOrder.findIndex((binding) => binding.ordinal < before.sessionOrdinal);
+      if (startIndex < 0) startIndex = scanOrder.length;
+    }
+    const collected = [];
+    const failedScope = [];
+    let anySuccess = false;
+    let pagesUsed = 0;
+    let nextState = null;
+
+    for (let index = startIndex; index < scanOrder.length; index++) {
+      if (collected.length > limit) break;
+      if (pagesUsed >= BACKFILL_MAX_PAGES) {
+        const binding = scanOrder[index];
+        nextState = {
+          sessionOrdinal: binding.ordinal,
+          upstream: index === startIndex && before ? before.upstream : null,
+          skip: index === startIndex && before ? before.skip : 0,
+        };
+        break;
+      }
+      const binding = scanOrder[index];
+      const resumeHere = index === startIndex && before != null;
+      const loaded = await loadProjectionBinding(binding, {
+        upstream: resumeHere ? before.upstream : null,
+        skip: resumeHere ? before.skip : 0,
+        need: limit + 1 - collected.length,
+        maxPages: BACKFILL_MAX_PAGES - pagesUsed,
+        pageLimit: limit,
+      });
+      pagesUsed += loaded.pagesUsed;
+      if (loaded.failed) {
+        failedScope.push({
+          sessionID: binding.session_id,
+          sessionOrdinal: binding.ordinal,
+          status: loaded.failedStatus ?? 500,
+        });
+        // Do not advance past a failed binding — cursor stays retryable here.
+        // Newer successes already in `collected` are still delivered.
+        nextState = {
+          sessionOrdinal: binding.ordinal,
+          upstream: loaded.resumeUpstream,
+          skip: loaded.resumeSkip,
+        };
+        break;
+      }
+      if (loaded.missing) {
+        anySuccess = true;
+        continue;
+      }
+      anySuccess = true;
+      collected.push(...loaded.entries);
+      if (collected.length > limit) {
+        // Overshot: drop the probe row and resume at the page boundary of the last binding load.
+        nextState = {
+          sessionOrdinal: binding.ordinal,
+          upstream: loaded.resumeUpstream,
+          skip: loaded.resumeSkip,
+        };
+        break;
+      }
+      if (!loaded.exhausted) {
+        nextState = {
+          sessionOrdinal: binding.ordinal,
+          upstream: loaded.resumeUpstream,
+          skip: loaded.resumeSkip,
+        };
+        break;
+      }
+      // Binding exhausted — fall through to the next older binding.
+    }
+
+    // Total failure must not masquerade as authoritative empty success.
+    if (collected.length === 0 && failedScope.length > 0 && !anySuccess) fail('upstream_error');
+
+    const partial = failedScope.length > 0;
+    // collected is newest-first (binding order + desc projection). Public page is ascending.
+    const pageDesc = collected.slice(0, limit);
+    let nextCursor = nextState != null ? encodeCursor(nextState) : null;
+    if (nextCursor == null && partial && failedScope[0]) {
+      nextCursor = encodeCursor({
+        sessionOrdinal: failedScope[0].sessionOrdinal,
+        upstream: null,
+        skip: 0,
+      });
+    }
+    // complete only when nothing remains and no partial failure left to retry.
+    const complete = nextCursor == null && !partial;
+    const ordered = [...pageDesc].reverse().map((entry) => ({
+      sessionID: entry.session_id,
+      directory: entry.directory,
+      info: entry.info,
+      parts: entry.parts,
+    }));
+    return {
+      entries: ordered,
+      nextCursor: complete ? null : nextCursor,
+      complete,
+      partial,
+      ...(partial ? { failed: failedScope } : {}),
+    };
+  };
   const unsubscribeEvents = typeof globalEventHub?.subscribeEvent === 'function' ? globalEventHub.subscribeEvent(processEvent) : null;
   const createAssistant = (input) => { const allowed = new Set(['enabled', 'name', 'defaultPrompt', 'providerID', 'modelID', 'agent', 'variant', 'mode', 'workspacePath']); if (!plainObject(input) || Object.keys(input).some((key) => !allowed.has(key))) fail('validation_error'); const mode = input.mode == null ? 'continuous' : input.mode === 'stateless' || input.mode === 'continuous' ? input.mode : fail('validation_error'); const assistantID = id(); const workspacePath = input.workspacePath == null ? null : workspace(input.workspacePath, assistantID); effectiveWorkspace({ assistant_id: assistantID, workspace_path: workspacePath }); const at = now(); db.exec('BEGIN IMMEDIATE'); try { if (Number(db.prepare('SELECT COUNT(*) AS count FROM assistant_v2 WHERE tombstone_at IS NULL').get().count) >= 100) fail('assistant_limit'); db.prepare('INSERT INTO assistant_v2 (assistant_id,revision,enabled,name,default_prompt,workspace_path,provider_id,model_id,agent,variant,mode,current_session_id,session_generation,created_at,updated_at,tombstone_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)').run(assistantID, 1, input.enabled === false ? 0 : 1, string(input.name, 256, true), input.defaultPrompt ? string(input.defaultPrompt, 200_000) : '', workspacePath, string(input.providerID, 256, true), string(input.modelID, 256, true), input.agent == null ? null : string(input.agent, 256), input.variant == null ? null : string(input.variant, 256), mode, null, 0, at, at, null); bump(); db.exec('COMMIT'); return output(assistant(assistantID)); } catch (error) { db.exec('ROLLBACK'); throw error; } };
   const updateAssistant = async (assistantID, input) => { const row = editable(assistantID); const allowed = new Set(['expectedRevision', 'enabled', 'name', 'defaultPrompt', 'providerID', 'modelID', 'agent', 'variant', 'mode', 'workspacePath']); if (!plainObject(input) || !Number.isInteger(input.expectedRevision) || Object.keys(input).some((key) => !allowed.has(key))) fail('validation_error'); const next = { enabled: input.enabled === undefined ? row.enabled : input.enabled ? 1 : 0, name: input.name === undefined ? row.name : string(input.name, 256, true), prompt: input.defaultPrompt === undefined ? row.default_prompt : string(input.defaultPrompt, 200_000), provider: input.providerID === undefined ? row.provider_id : string(input.providerID, 256, true), model: input.modelID === undefined ? row.model_id : string(input.modelID, 256, true), agent: input.agent === undefined ? row.agent : input.agent === null ? null : string(input.agent, 256), variant: input.variant === undefined ? row.variant : input.variant === null ? null : string(input.variant, 256), mode: input.mode === undefined ? (row.mode === 'stateless' ? 'stateless' : 'continuous') : input.mode === 'continuous' || input.mode === 'stateless' ? input.mode : fail('validation_error'), workspacePath: input.workspacePath === undefined ? row.workspace_path : input.workspacePath == null ? null : workspace(input.workspacePath, assistantID) }; const nextRow = { ...row, workspace_path: next.workspacePath, name: next.name }; effectiveWorkspace(nextRow); const workspaceChanged = next.workspacePath !== row.workspace_path; if (workspaceChanged && row.current_session_id) archiveSession(assistantID, row.current_session_id); const created = workspaceChanged ? await createSession(nextRow) : null; const result = db.prepare('UPDATE assistant_v2 SET enabled=?,name=?,default_prompt=?,provider_id=?,model_id=?,agent=?,variant=?,mode=?,workspace_path=?,current_session_id=?,session_generation=session_generation+?,revision=revision+1,updated_at=? WHERE assistant_id=? AND revision=? AND session_generation=? AND tombstone_at IS NULL').run(next.enabled, next.name, next.prompt, next.provider, next.model, next.agent, next.variant, next.mode, next.workspacePath, created?.sessionID ?? row.current_session_id, workspaceChanged ? 1 : 0, now(), assistantID, input.expectedRevision, row.session_generation); if (!result.changes) fail('revision_conflict'); bump(); return output(assistant(assistantID)); };
@@ -1149,10 +1293,8 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
       const target = active(row.assistant_id);
       const targetConfig = configuration(target);
       result = await sendPrompt(restored.sessionID, targetConfig);
-      if (promptAdmitted(result)) mirrorAdmittedUserMessage(target, restored.sessionID, messageID, parts, targetConfig);
       return { result, binding: restored };
     }
-    if (promptAdmitted(result)) mirrorAdmittedUserMessage(row, sessionID, messageID, parts, config);
     return { result, binding: binding(row) };
   };
   const extractUserText = (input) => {
@@ -1823,14 +1965,17 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
     const { signal } = params;
     signal?.throwIfAborted();
     const resolved = await resolveReferencedSession({ sessionID: params.sessionID, signal, includeMessages: false });
+    // First page: order=desc. Continuation: opaque cursor only (upstream 400s on both).
     const result = await invokeSession(() => client().message.list({
-      sessionID: resolved.sessionID, limit, order: 'desc',
-      ...(params.before ? { cursor: params.before } : {}),
+      sessionID: resolved.sessionID, limit,
+      ...(params.before ? { cursor: params.before } : { order: 'desc' }),
     }));
     signal?.throwIfAborted();
     if (isMissing(result)) throw new AssignError(ASSIGN_CODES.NOT_FOUND, 'That session no longer exists.');
-    if (result?.error || !Array.isArray(result?.data)) throw new AssignError(ASSIGN_CODES.UPSTREAM, 'Could not read session messages.');
-    const rows = result.data;
+    const projected = result?.error ? null : projectionEntries(result, resolved.sessionID);
+    if (!projected) throw new AssignError(ASSIGN_CODES.UPSTREAM, 'Could not read session messages.');
+    // Desc pages arrive newest-first; quote them oldest→newest.
+    const rows = projected.slice().reverse();
     if (rows.some((entry) => (entry?.info?.sessionID && entry.info.sessionID !== resolved.sessionID))) throw new AssignError(ASSIGN_CODES.UPSTREAM, 'Session message identity mismatch.');
     let remaining = 24000;
     let partial = rows.length > limit;
@@ -1856,8 +2001,7 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
       }
       return { messageID: info.id, role: info.role, parts };
     });
-    const cursor = result.response?.headers?.get('x-next-cursor');
-    const nextCursor = typeof cursor === 'string' && cursor ? cursor : null;
+    const nextCursor = projectionCursor(result);
     return { sessionID: resolved.sessionID, directory: resolved.directory, title: resolved.title.slice(0, 500), messages, nextCursor, partial: partial || nextCursor !== null };
   };
   const assignWork = async (row, params = {}) => {
@@ -2148,10 +2292,16 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
         return { sessionID, directory: resolved.directory, operation, messageID, admitted: true };
       }
       if (operation === 'archive') {
-        if (typeof api.session.update !== 'function') {
+        // OC2: Host owns archive stamps (openchamber.archive.archivedAt). Do not
+        // call upstream session.update time.archived — it is unavailable.
+        if (typeof archiveSessionHost !== 'function') {
           throw new AssignError(ASSIGN_CODES.UPSTREAM, 'Session archive is unavailable.');
         }
-        result = await invokeSession(() => api.session.update({ sessionID, directory: resolved.directory, time: { archived: now() } }));
+        result = await archiveSessionHost({
+          sessionID,
+          directory: resolved.directory,
+          archivedAt: now(),
+        });
       } else if (operation === 'delete') {
         if (typeof api.session.remove !== 'function') {
           throw new AssignError(ASSIGN_CODES.UPSTREAM, 'Session delete is unavailable.');
@@ -2164,12 +2314,33 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
       if (error instanceof AssignError) throw error;
       throw new AssignError(ASSIGN_CODES.UPSTREAM, error?.message || `Session ${operation} failed.`);
     }
+    if (operation === 'archive') {
+      if (!result?.session?.id) {
+        throw new AssignError(ASSIGN_CODES.UPSTREAM, `Session ${operation} was not confirmed. Do not resend automatically.`);
+      }
+      reportAssignedSession(sessionID, 'cancelled', false);
+      return { sessionID, directory: resolved.directory, operation, archived: true };
+    }
     if (isMissing(result)) throw new AssignError(ASSIGN_CODES.NOT_FOUND, `No coding session ${sessionID} was found.`);
     if (result?.error || result?.data === false) {
       throw new AssignError(ASSIGN_CODES.UPSTREAM, `Session ${operation} was not confirmed. Do not resend automatically.`);
     }
+    // Successful delete: direct idempotent Host metadata cleanup; session.deleted
+    // events remain compensatory. Upstream failure never reaches here.
+    if (typeof forgetSessionHost === 'function') {
+      try {
+        const cleanup = forgetSessionHost(sessionID);
+        if (cleanup && typeof cleanup.catch === 'function') {
+          cleanup.catch((error) => {
+            console.warn('[assistants] metadata cleanup after delete failed (retry via event):', error?.message ?? error);
+          });
+        }
+      } catch (error) {
+        console.warn('[assistants] metadata cleanup after delete failed (retry via event):', error?.message ?? error);
+      }
+    }
     reportAssignedSession(sessionID, 'cancelled', false);
-    return { sessionID, directory: resolved.directory, operation, ...(operation === 'archive' ? { archived: true } : { deleted: true }) };
+    return { sessionID, directory: resolved.directory, operation, deleted: true };
   };
   const matchRegisteredProject = async (directory) => {
     const projects = await listProjects();
@@ -3523,7 +3694,7 @@ export const createAssistantsService = ({ dbPath, dataDir, buildOpenCodeUrl, get
       )),
     };
   };
-  return { capability: async () => ({ supported: true, enabled: enabled(), revision: revision(), serverInstanceID: await getServerId(), sharingAvailable: false, archiveMetadataAvailable: false, sessionMetadataAvailable: false }), snapshot, createAssistant, updateAssistant, setEnabled: (input) => { if (!plainObject(input) || typeof input.enabled !== 'boolean' || input.expectedRevision !== revision()) fail('revision_conflict'); db.prepare("UPDATE assistant_meta SET value=? WHERE key='enabled'").run(input.enabled ? '1' : '0'); return { enabled: input.enabled, revision: bump() }; }, removeAssistant: (assistantID, expectedRevision) => {
+  return { capability: async () => ({ supported: true, enabled: enabled(), revision: revision(), serverInstanceID: await getServerId(), sharingAvailable: false, archiveMetadataAvailable: typeof archiveSessionHost === 'function', sessionMetadataAvailable: false }), snapshot, createAssistant, updateAssistant, setEnabled: (input) => { if (!plainObject(input) || typeof input.enabled !== 'boolean' || input.expectedRevision !== revision()) fail('revision_conflict'); db.prepare("UPDATE assistant_meta SET value=? WHERE key='enabled'").run(input.enabled ? '1' : '0'); return { enabled: input.enabled, revision: bump() }; }, removeAssistant: (assistantID, expectedRevision) => {
     db.exec('BEGIN IMMEDIATE');
     try {
       const result = db.prepare('UPDATE assistant_v2 SET tombstone_at=?,revision=revision+1,updated_at=? WHERE assistant_id=? AND revision=? AND tombstone_at IS NULL').run(now(), now(), assistantID, expectedRevision);

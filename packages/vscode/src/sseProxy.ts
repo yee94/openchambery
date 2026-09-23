@@ -1,5 +1,6 @@
 import type { OpenCodeManager } from './opencode';
 import { waitForApiUrl } from './opencode-ready';
+import { registerHostSseEmitter } from './host-sse-fanout';
 import {
   createReasoningOutboundFilter,
   createSseBlockSplitter,
@@ -8,6 +9,11 @@ import {
   stripIncludeReasoningParam,
   type ReasoningOutboundFilter,
 } from './reasoning-projection';
+import {
+  ensureSessionMetadataReadyForOutboundSse,
+  projectOutboundSessionLifecycleEvent,
+  type SessionMetadataReadyResult,
+} from './session-metadata-runtime';
 
 type OpenSseProxyOptions = {
   manager: OpenCodeManager;
@@ -16,6 +22,21 @@ type OpenSseProxyOptions = {
   signal: AbortSignal;
   onChunk: (chunk: string) => void;
 };
+
+type MetadataReadyWait = (options: {
+  timeoutMs?: number;
+  signal?: AbortSignal;
+}) => Promise<SessionMetadataReadyResult>;
+
+/** Default: Host store gate. Tests may replace without mocking the whole module. */
+let metadataReadyWaitForSse: MetadataReadyWait = ensureSessionMetadataReadyForOutboundSse;
+
+/** Test seam: inject readiness wait (restore with `null`). */
+export const __setSseMetadataReadyWaitForTests = (fn: MetadataReadyWait | null): void => {
+  metadataReadyWaitForSse = fn ?? ensureSessionMetadataReadyForOutboundSse;
+};
+
+const SSE_METADATA_READY_TIMEOUT_MS = 12_000;
 
 type OpenSseProxyResult = {
   headers: Record<string, string>;
@@ -38,6 +59,41 @@ const BASE_RECONNECT_DELAY = 1000; // 1 second
  */
 const FILTERED_SSE_HEARTBEAT_INTERVAL_MS = 10_000;
 const FILTERED_SSE_HEARTBEAT_CHUNK = ':heartbeat\n\n';
+
+type OutboundSseFilter = {
+  projectEvent: (payload: unknown) => unknown | null;
+  dispose?: () => void;
+};
+
+/**
+ * Compose reasoning strip + Host session archive projection.
+ * Session lifecycle overlay always runs when present so upstream session.updated
+ * cannot wipe Host `time.archived` authority.
+ */
+const composeOutboundSseFilters = (
+  ...filters: Array<OutboundSseFilter | null | undefined>
+): OutboundSseFilter | null => {
+  const active = filters.filter((filter): filter is OutboundSseFilter => Boolean(filter));
+  if (active.length === 0) return null;
+  if (active.length === 1) return active[0];
+  return {
+    projectEvent: (payload) => {
+      let current: unknown = payload;
+      for (const filter of active) {
+        current = filter.projectEvent(current);
+        if (current == null) return null;
+      }
+      return current;
+    },
+    dispose: () => {
+      for (const filter of active) filter.dispose?.();
+    },
+  };
+};
+
+const createHostSessionSseFilter = (): OutboundSseFilter => ({
+  projectEvent: (payload) => projectOutboundSessionLifecycleEvent(payload),
+});
 
 const sleep = (ms: number, signal: AbortSignal) => new Promise<void>((resolve) => {
   if (signal.aborted) {
@@ -151,7 +207,9 @@ const pipeSseResponse = async (
   response: Response,
   signal: AbortSignal,
   onChunk: (chunk: string) => void,
-  reasoningFilter: ReasoningOutboundFilter | null,
+  outboundFilter: OutboundSseFilter | null,
+  /** Heartbeat only when reasoning strip can drop long pure-reasoning stretches. */
+  enableFilteredHeartbeat: boolean,
 ): Promise<void> => {
   if (!response.body) {
     throw new Error('OpenCode SSE response missing body');
@@ -159,7 +217,7 @@ const pipeSseResponse = async (
 
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
-  const splitter = reasoningFilter ? createSseBlockSplitter() : null;
+  const splitter = outboundFilter ? createSseBlockSplitter() : null;
 
   // Filtered-only keepalive: last real downstream emission timestamp.
   let lastDownstreamEmissionMs = Date.now();
@@ -178,7 +236,7 @@ const pipeSseResponse = async (
     }
   };
 
-  if (reasoningFilter) {
+  if (enableFilteredHeartbeat && outboundFilter) {
     heartbeatTimer = setInterval(() => {
       if (signal.aborted) {
         clearHeartbeat();
@@ -202,9 +260,9 @@ const pipeSseResponse = async (
   }
 
   const emitFilteredBlocks = (blocks: string[]) => {
-    if (!reasoningFilter) return;
+    if (!outboundFilter) return;
     for (const block of blocks) {
-      const filtered = filterSseBlock(block, reasoningFilter);
+      const filtered = filterSseBlock(block, outboundFilter);
       if (filtered && filtered.length > 0) {
         emitDownstream(filtered);
       }
@@ -218,11 +276,11 @@ const pipeSseResponse = async (
         break;
       }
       if (value && value.length > 0) {
-        if (reasoningFilter && splitter) {
-          // Disabled path: parse SSE blocks, drop reasoning, re-serialize.
+        if (outboundFilter && splitter) {
+          // Host projection path: parse SSE blocks, apply filters, re-serialize.
           emitFilteredBlocks(splitter.push(value));
         } else {
-          // Enabled path: byte-identical passthrough (no synthetic heartbeat).
+          // No Host filters: byte-identical passthrough (no synthetic heartbeat).
           const chunk = decoder.decode(value, { stream: true });
           if (chunk.length > 0) {
             onChunk(chunk);
@@ -231,7 +289,7 @@ const pipeSseResponse = async (
       }
     }
 
-    if (reasoningFilter && splitter) {
+    if (outboundFilter && splitter) {
       emitFilteredBlocks(splitter.finish());
     } else {
       const remaining = decoder.decode();
@@ -268,14 +326,54 @@ export const openSseProxy = async ({
   // Per openSseProxy lifecycle: includeReasoning from webview URL query.
   // Default (missing/other) keeps full stream; only strict 'false' filters.
   const includeReasoning = readIncludeReasoningFromUrl(path);
-  const reasoningFilter = includeReasoning
+  const reasoningFilter: ReasoningOutboundFilter | null = includeReasoning
     ? null
     : createReasoningOutboundFilter();
+  // Host archive authority always overlays session.created / session.updated.
+  const hostSessionFilter = createHostSessionSseFilter();
+  const outboundFilter = composeOutboundSseFilters(reasoningFilter, hostSessionFilter);
+  const unregisterEmitter = registerHostSseEmitter(onChunk);
 
   const connect = async (): Promise<Response> => {
     try {
+      if (signal.aborted) {
+        throw getAbortReason(signal);
+      }
+
       const { pathname } = normalizeSsePath(stripIncludeReasoningParam(path));
       console.log(`[SSE] Connecting to ${pathname} (attempt ${reconnectAttempts + 1}/${MAX_RECONNECTS + 1})`);
+
+      // Webview SSE is independent of the extension global watcher. Gate Host
+      // metadata readiness on every connect/reconnect so lifecycle frames are not
+      // dropped while the committed snapshot is still unknown.
+      const ready = await metadataReadyWaitForSse({
+        timeoutMs: SSE_METADATA_READY_TIMEOUT_MS,
+        signal,
+      });
+      if (signal.aborted) {
+        throw getAbortReason(signal);
+      }
+      if (!ready.ok) {
+        if (ready.error === 'aborted') {
+          throw getAbortReason(signal);
+        }
+        // Runtime switch / stop during wait — treat as abort, do not retry as fetch.
+        if (ready.error === 'session metadata runtime switched') {
+          throw getAbortReason(signal);
+        }
+        const error = new Error(ready.error || 'session metadata not ready') as Error & {
+          code?: string;
+          retryable?: boolean;
+        };
+        error.code = 'session_metadata_unavailable';
+        error.retryable = ready.retryable === true;
+        throw error;
+      }
+
+      // Late cancel after readiness: never open upstream for a disposed stream.
+      if (signal.aborted) {
+        throw getAbortReason(signal);
+      }
 
       const result = await fetchSseResponse(manager, path, headers, signal);
       reconnectAttempts = 0;
@@ -285,7 +383,7 @@ export const openSseProxy = async ({
         throw error;
       }
 
-      // Implement reconnect logic
+      // Implement reconnect logic (includes Host readiness failure — controlled retry).
       if (!signal.aborted && reconnectAttempts < MAX_RECONNECTS) {
         reconnectAttempts++;
         const delay = BASE_RECONNECT_DELAY * Math.pow(2, reconnectAttempts - 1); // Exponential backoff
@@ -313,7 +411,13 @@ export const openSseProxy = async ({
   const run = (async () => {
     let activeResponse = response;
     try {
-      await pipeSseResponse(activeResponse, signal, onChunk, reasoningFilter);
+      await pipeSseResponse(
+        activeResponse,
+        signal,
+        onChunk,
+        outboundFilter,
+        Boolean(reasoningFilter),
+      );
     } catch (error: unknown) {
       const cause = (error as { cause?: { code?: string } } | null)?.cause;
 
@@ -333,7 +437,13 @@ export const openSseProxy = async ({
             // Attempt to reconnect
             try {
               activeResponse = await connect();
-              await pipeSseResponse(activeResponse, signal, onChunk, reasoningFilter);
+              await pipeSseResponse(
+                activeResponse,
+                signal,
+                onChunk,
+                outboundFilter,
+                Boolean(reasoningFilter),
+              );
               return; // Successfully reconnected
             } catch (reconnectError) {
               console.error('[SSE] Reconnect failed', reconnectError);
@@ -345,7 +455,8 @@ export const openSseProxy = async ({
         throw error;
       }
     } finally {
-      reasoningFilter?.dispose();
+      unregisterEmitter();
+      outboundFilter?.dispose?.();
     }
   })();
 

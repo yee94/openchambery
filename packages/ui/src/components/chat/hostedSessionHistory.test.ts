@@ -81,6 +81,31 @@ describe('hostedSessionHistory', () => {
     ]);
   });
 
+  test('partial retry merge keeps already-delivered siblings and dedupes by id', () => {
+    const pages = [
+      // Newest infinite page after middle recovery
+      { entries: [historyEntry('ses_b', 'b1')], nextCursor: 'cursor_a', complete: false, partial: false },
+      // Prior page that already delivered ses_c while ses_b failed
+      {
+        entries: [historyEntry('ses_c', 'c1')],
+        nextCursor: 'retry_b',
+        complete: false,
+        partial: true,
+      },
+    ];
+    // Refresh re-delivers c1 alongside b1 — dedupe must not drop c1 or duplicate it.
+    const refreshed = [
+      {
+        entries: [historyEntry('ses_b', 'b1'), historyEntry('ses_c', 'c1')],
+        nextCursor: 'cursor_a',
+        complete: false,
+      },
+      pages[1],
+    ];
+    expect(flattenAssistantHistoryPages(pages).map((item) => item.info.id)).toEqual(['c1', 'b1']);
+    expect(flattenAssistantHistoryPages(refreshed).map((item) => item.info.id)).toEqual(['c1', 'b1']);
+  });
+
   test('reuses an unchanged stitched prefix containing session dividers', () => {
     const entries = [historyEntry('ses_a', 'a1'), historyEntry('ses_b', 'b1')];
     const first = stitchHostedSessionHistory(entries, 'ses_live');

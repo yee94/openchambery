@@ -6,6 +6,10 @@ import { useUIStore } from '@/stores/useUIStore';
 import TurnAssistantHeader from './TurnAssistantHeader';
 import TurnActivity from './TurnActivity';
 import TurnAssistantBlock from './TurnAssistantBlock';
+import { isUserShellMessage } from '../lib/shellBridge';
+import { SessionErrorNotice } from '../SessionErrorNotice';
+import { useSessionSurface } from '../SessionSurfaceContext';
+import { readUserMessageHeaderIdentity, resolvePendingAssistantHeader } from '../lib/pendingAssistantHeader';
 
 const EMPTY_EXPANDED_TOOLS = new Set<string>();
 const ignoreCompactionToolToggle = () => {};
@@ -13,6 +17,7 @@ const ignoreCompactionPopup = () => {};
 
 interface TurnItemProps {
     turn: TurnRecord;
+    showSessionError?: boolean;
     activityExpanded: boolean;
     showCompactionStatus: boolean;
     pendingAssistantHeader?: PendingAssistantHeaderPresentation | null;
@@ -26,6 +31,7 @@ interface TurnItemProps {
 
 const TurnItem: React.FC<TurnItemProps> = ({
     turn,
+    showSessionError = false,
     activityExpanded,
     showCompactionStatus,
     pendingAssistantHeader = null,
@@ -37,10 +43,12 @@ const TurnItem: React.FC<TurnItemProps> = ({
     renderMessage,
 }) => {
     const isMobile = useUIStore((state) => state.isMobile);
+    const surface = useSessionSurface();
     const userMessageCreatedAt = (turn.userMessage.info.time as { created?: number } | undefined)?.created;
     // Compact is a session command, not a user-authored bubble. Keep the turn
     // identity so the previous assistant stream does not remount.
     const hideUserMessage = turn.activityPresentationKind === 'compaction';
+    const isShellTurn = isUserShellMessage(turn.userMessage);
 
     return (
         <section
@@ -50,7 +58,7 @@ const TurnItem: React.FC<TurnItemProps> = ({
             data-turn-activity-expanded={activityExpanded}
             data-scroll-spy-id={turn.turnId}
         >
-            {hideUserMessage ? null : stickyUserHeader ? (
+            {hideUserMessage ? null : stickyUserHeader && !isShellTurn ? (
                 <div className="sticky top-0 z-20 relative bg-[var(--surface-background)] [overflow-anchor:none]">
                     <div className="relative z-10">
                         {renderMessage(turn.userMessage, activityExpanded)}
@@ -64,7 +72,7 @@ const TurnItem: React.FC<TurnItemProps> = ({
                 renderMessage(turn.userMessage, activityExpanded)
             )}
 
-            {pendingAssistantHeader || assistantHeaderMessage ? (
+            {!isShellTurn && (pendingAssistantHeader || assistantHeaderMessage) ? (
                 <div className={`group w-full ${isMobile ? (stickyUserHeader ? 'pt-4' : 'pt-0') : 'pt-6'} pb-0`}>
                     <div className="chat-message-column relative">
                         <TurnAssistantHeader
@@ -105,6 +113,22 @@ const TurnItem: React.FC<TurnItemProps> = ({
                 activityExpanded={activityExpanded}
                 renderMessage={renderMessage}
             />
+            {showSessionError && surface.active && surface.capabilities.compose
+                && (!surface.sessionId || surface.sessionId === turn.userMessage.info.sessionID) ? (
+                <SessionErrorNotice
+                    sessionId={turn.userMessage.info.sessionID}
+                    directory={turn.userMessage.sourceDirectory ?? surface.directory}
+                    hasInlineError={Boolean(turn.assistantMessages.at(-1)?.info.error)}
+                    fallbackHeader={!isShellTurn && !pendingAssistantHeader && !assistantHeaderMessage ? (
+                        <TurnAssistantHeader
+                            userMessage={turn.userMessage}
+                            pendingPresentation={resolvePendingAssistantHeader(readUserMessageHeaderIdentity(turn.userMessage.info))}
+                            assistantIsInActiveTurn={false}
+                            isMobile={isMobile}
+                        />
+                    ) : undefined}
+                />
+            ) : null}
         </section>
     );
 };

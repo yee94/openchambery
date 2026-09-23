@@ -299,39 +299,64 @@ describe("reduceSessionMessagePage — cursor progress invariant", () => {
     expect(result.meta).toBeUndefined()
   })
 
-  test("an empty incomplete page is a no-progress page contract error", () => {
+  test("an empty incomplete prepend with an advanced cursor keeps records and advances the boundary", () => {
     const existing = userMessage("msg_2")
     const state: SessionMessageReducerState = {
       message: { ses_1: [existing] },
       part: {},
-      session_history_boundary: boundaryState("ses_1", { kind: "has-more", cursor: "msg_2", loadedTurns: 2 }),
+      session_history_boundary: boundaryState("ses_1", { kind: "has-more", cursor: "older1", loadedTurns: 2 }),
     }
 
     const result = reduceSessionMessagePage(
       state,
       "ses_1",
-      page([], { cursor: "msg_0", complete: false, turnCount: 0 }),
+      page([], { cursor: "older2", complete: false, turnCount: 0 }),
+      { purpose: "prepend", skipPartTypes: SKIP_PARTS },
+    )
+
+    expect(result.applied).toBe(true)
+    expect(result.error).toBeUndefined()
+    expect(result.message).toBe(state.message)
+    expect(result.messages.map((item) => item.id)).toEqual(["msg_2"])
+    expect(result.boundary).toEqual({ kind: "has-more", cursor: "older2", loadedTurns: 2 })
+    expect(result.boundaryChanged).toBe(true)
+    expect(result.meta?.cursor).toBe("older2")
+    expect(result.meta?.complete).toBe(false)
+  })
+
+  test("an empty incomplete prepend that repeats the prior cursor is still a contract error", () => {
+    const existing = userMessage("msg_2")
+    const state: SessionMessageReducerState = {
+      message: { ses_1: [existing] },
+      part: {},
+      session_history_boundary: boundaryState("ses_1", { kind: "has-more", cursor: "older1", loadedTurns: 2 }),
+    }
+
+    const result = reduceSessionMessagePage(
+      state,
+      "ses_1",
+      page([], { cursor: "older1", complete: false, turnCount: 0 }),
       { purpose: "prepend", skipPartTypes: SKIP_PARTS },
     )
 
     expect(result.applied).toBe(false)
-    expect(result.error).toContain("no progress")
+    expect(result.error).toContain("same cursor")
     expect(result.message).toBe(state.message)
     expect(result.boundary).toBeUndefined()
-    expect(result.meta).toBeUndefined()
   })
 
-  test("an empty incomplete initial page is also rejected (no phantom has-more)", () => {
+  test("an empty incomplete initial page still exposes the Host continuation cursor", () => {
     const result = reduceSessionMessagePage(
       emptyState(),
       "ses_1",
-      page([], { cursor: "msg_0", complete: false, turnCount: 0 }),
+      page([], { cursor: "older1", complete: false, turnCount: 0 }),
       { purpose: "initial", skipPartTypes: SKIP_PARTS },
     )
 
-    expect(result.applied).toBe(false)
-    expect(result.error).toContain("no progress")
-    expect(result.boundary).toBeUndefined()
+    expect(result.applied).toBe(true)
+    expect(result.boundary).toEqual({ kind: "has-more", cursor: "older1", loadedTurns: 0 })
+    expect(result.meta?.cursor).toBe("older1")
+    expect(result.meta?.complete).toBe(false)
   })
 
   test("a legal prepend with a new cursor accumulates loadedTurns and advances the boundary", () => {

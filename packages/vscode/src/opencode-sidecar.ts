@@ -280,7 +280,12 @@ export type OpenCodeHealthResult = {
   path: string;
 };
 
-// Keep health version admission aligned with web opencode2-pin.js.
+// Keep health + execution admission aligned with web opencode2-pin.js /
+// runtime-contract.js (ticket 11). Sidecar must not treat any 2.x health as
+// full execution; only the verified band opens core protocol writes.
+export const RUNTIME_CONTRACT_MIN_VERIFIED = '2.0.12';
+export const RUNTIME_CONTRACT_MAX_VERIFIED = '2.0.14';
+
 export function isOpenCode1xVersion(value: unknown): boolean {
   if (typeof value !== 'string') return false;
   const normalized = value.trim().replace(/^v/i, '');
@@ -292,8 +297,118 @@ export function isAcceptableOpenCode2HealthVersion(value: unknown): boolean {
   if (typeof value !== 'string') return false;
   const normalized = value.trim().replace(/^v/i, '');
   if (!normalized) return false;
-  if (isOpenCode1xVersion(normalized)) return false;
+  // Official CLI is 2.x (match web opencode2-pin).
+  if (!/^2(?:\.|$)/.test(normalized)) return false;
   return /^\d+(?:\.\d+)*(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/.test(normalized);
+}
+
+function normalizeRuntimeVersion(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim().replace(/^v/i, '');
+  return trimmed || null;
+}
+
+function compareOpenCode2Versions(left: string, right: string): number {
+  const parse = (value: string) => {
+    const [core] = value.split('-');
+    return core.split('.').map((part) => {
+      const n = Number.parseInt(part, 10);
+      return Number.isFinite(n) ? n : 0;
+    });
+  };
+  const a = parse(left);
+  const b = parse(right);
+  const len = Math.max(a.length, b.length);
+  for (let i = 0; i < len; i += 1) {
+    const d = (a[i] || 0) - (b[i] || 0);
+    if (d !== 0) return d < 0 ? -1 : 1;
+  }
+  return 0;
+}
+
+export type RuntimeVersionBand =
+  | '1x'
+  | 'invalid'
+  | 'below-min'
+  | 'verified'
+  | 'unverified-newer'
+  | 'unknown';
+
+export function classifyRuntimeVersionBand(version: unknown): RuntimeVersionBand {
+  const normalized = normalizeRuntimeVersion(version);
+  if (!normalized) return 'unknown';
+  if (isOpenCode1xVersion(normalized)) return '1x';
+  if (!isAcceptableOpenCode2HealthVersion(normalized)) return 'invalid';
+  if (compareOpenCode2Versions(normalized, RUNTIME_CONTRACT_MIN_VERIFIED) < 0) return 'below-min';
+  if (compareOpenCode2Versions(normalized, RUNTIME_CONTRACT_MAX_VERIFIED) > 0) return 'unverified-newer';
+  return 'verified';
+}
+
+/**
+ * Core execution admission for the VS Code direct sidecar (not CLI pin alone).
+ * Verified band only; unverified-newer keeps diagnostics but blocks execution.
+ */
+export function evaluateSidecarExecutionAdmission(input: {
+  serveVersion?: string | null;
+  reachable?: boolean;
+  healthOk?: boolean;
+  migrationAdmitTranscript?: boolean | null;
+}): {
+  versionBand: RuntimeVersionBand;
+  protocolCompatible: boolean;
+  executionAllowed: boolean;
+  phase: string;
+  reasons: string[];
+  serveVersion: string | null;
+  minVerifiedVersion: string;
+  maxVerifiedVersion: string;
+} {
+  const serveVersion = normalizeRuntimeVersion(input.serveVersion);
+  const reachable = input.reachable === true;
+  const healthOk = typeof input.healthOk === 'boolean' ? input.healthOk : null;
+  const migrationAdmit = typeof input.migrationAdmitTranscript === 'boolean'
+    ? input.migrationAdmitTranscript
+    : null;
+  const versionBand = classifyRuntimeVersionBand(serveVersion);
+  const reasons: string[] = [];
+
+  if (!reachable) reasons.push('unreachable');
+  if (healthOk === false) reasons.push('health-failed');
+  if (!serveVersion) reasons.push('serve-version-unknown');
+  else if (versionBand === '1x') reasons.push('1x-version');
+  else if (versionBand === 'invalid') reasons.push('invalid-version');
+  else if (versionBand === 'below-min') reasons.push('below-min-verified');
+  else if (versionBand === 'unverified-newer') reasons.push('unverified-newer');
+  if (migrationAdmit === false) reasons.push('migration-blocked');
+
+  const protocolCompatible = reachable
+    && healthOk !== false
+    && (versionBand === 'verified' || versionBand === 'unverified-newer');
+
+  const executionAllowed = reachable
+    && healthOk !== false
+    && protocolCompatible
+    && migrationAdmit !== false
+    && versionBand === 'verified';
+
+  let phase = 'ready';
+  if (!reachable) phase = 'unreachable';
+  else if (!serveVersion || versionBand === 'invalid' || versionBand === 'unknown') phase = 'unknown';
+  else if (versionBand === '1x' || versionBand === 'below-min') phase = 'incompatible';
+  else if (migrationAdmit === false) phase = 'migration-blocked';
+  else if (healthOk === false) phase = 'unhealthy';
+  else if (versionBand === 'unverified-newer') phase = 'ready-unverified';
+
+  return {
+    versionBand,
+    protocolCompatible,
+    executionAllowed,
+    phase,
+    reasons,
+    serveVersion,
+    minVerifiedVersion: RUNTIME_CONTRACT_MIN_VERIFIED,
+    maxVerifiedVersion: RUNTIME_CONTRACT_MAX_VERIFIED,
+  };
 }
 
 export function evaluateOpenCodeHealthBody(body: { healthy?: unknown; version?: unknown } | null | undefined): {

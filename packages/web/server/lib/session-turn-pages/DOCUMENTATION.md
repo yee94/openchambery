@@ -4,7 +4,7 @@
 
 OpenChamber-owned turn-window pagination and anchor reconcile for session messages.
 
-1. **Turn pages** — clients request the last N **authored user turns** (default 3) rather than a raw message count. The host loops official OpenCode `session.messages` pages (`limit` / `before` / `x-next-cursor`) until the turn budget is met or history is exhausted.
+1. **Turn pages** — clients request the last N **authored user turns** (default 3) rather than a raw message count. The host loops OpenCode v2 `message.list` pages (first page `limit` + `order=desc`; continuation `limit` + `cursor` from the previous body `cursor.next` — upstream rejects `order` together with `cursor` with 400) until the turn budget is met or history is exhausted.
 2. **Anchor reconcile** — after SSE reconnect, clients request the gap from a stable turn-boundary anchor to the current head. The host scans newest→older, returns chronological gap records (including the anchor's overlap turn), and paginates via host-owned continuation tokens with page/byte/total budgets.
 
 Exposed as:
@@ -16,7 +16,7 @@ Exposed as:
 
 ## Why this exists
 
-Official OpenCode pagination is message-count based and uses **opaque** cursors (not message ids). Each upstream page is chronological **old→new** (including the latest slice). UI prepend/load-more needs a stable turn boundary so synthetic loop messages, subtasks, and compaction rows do not consume the turn budget. This module aggregates upstream pages on the host, returns chronological records, and exposes a continuous **host-owned opaque cursor** that points just before the earliest returned authored user.
+Official OpenCode pagination is message-count based and uses **opaque** cursors (not message ids). v2 pages arrive **newest-first**; `fetchPage` reverses each page to chronological **old→new** before aggregation. UI prepend/load-more needs a stable turn boundary so synthetic loop messages, subtasks, and compaction rows do not consume the turn budget. This module aggregates upstream pages on the host, returns chronological records, and exposes a continuous **host-owned opaque cursor** that points just before the earliest returned authored user.
 
 ## Scope
 
@@ -126,7 +126,7 @@ On resume:
 1. Strict decode / shape / length validation of the host token.
 2. First `fetchPage` uses the token’s raw upstream `before`.
 3. Locate `boundaryID` in that page; keep only records strictly older than it (`slice(0, index)` in old→new order). Boundary and newer rows are excluded.
-4. If fewer than N turns remain, continue with that raw page’s `x-next-cursor` for older pages.
+4. If fewer than N turns remain, continue with that raw page’s `cursor.next` for older pages.
 5. Each accumulated record records its upstream page’s request-before origin; when `complete=false`, the next host cursor encodes the earliest selected authored user’s origin + id.
 
 A raw OpenCode SDK cursor (no `oc1.` prefix) is still accepted as the first `before` and is passed through unchanged to `fetchPage`.
@@ -146,14 +146,15 @@ A message is an authored user turn boundary when:
 
 ## Aggregation rules
 
-- Upstream pages are chronological **old→new** within each page; **do not reverse**. Older pages are **prepended** while deduping by `info.id` (global order remains old→new).
-- Continues paging with raw upstream `before` until `turns` authored boundaries are collected or upstream reports no next cursor.
-- **Suspicious truncation:** an upstream page whose `records.length >= scanLimit` (full page) but `nextCursor == null` is treated as a non-authoritative cut (observed OpenCode `x-next-cursor` race), not as end-of-history. The host stops scanning that round with `upstreamComplete=false`, so the response stays `complete=false` and still emits a boundary host cursor the client can retry. A short page (`records.length < scanLimit`) with no cursor, an empty page with no cursor, or an explicit `page.complete === true` remain authoritative exhaustion. Client no-growth handling still bounds retries if the upstream view stays truncated.
+- `fetchPage` returns each page chronological **old→new** (v2 `data` is newest-first and is reversed there). Older pages are **prepended** while deduping by `info.id` (global order remains old→new).
+- Continues paging with the raw upstream `cursor.next` (sent as `cursor`, never with `order`) until `turns` authored boundaries are collected or upstream reports no next cursor.
+- **Suspicious truncation:** an upstream page whose `records.length >= scanLimit` (full page) but `nextCursor == null` is treated as a non-authoritative cut (observed OpenCode next-cursor race), not as end-of-history. The host stops scanning that round with `upstreamComplete=false`, so the response stays `complete=false` and still emits a boundary host cursor the client can retry. A short page (`records.length < scanLimit`) with no cursor, an empty page with no cursor, or an explicit `page.complete === true` remain authoritative exhaustion. Client no-growth handling still bounds retries if the upstream view stays truncated.
 - Every upstream record must have a non-empty `info.id`; otherwise structured error, no partial `records`, HTTP 502.
 - Hard scan caps (no partial success): **50 pages** / **5000 messages** → structured error, HTTP 413.
 - Repeated / stalled cursor, or empty page that still carries a next cursor → structured error, no partial `records`, HTTP 502.
 - Malformed upstream payloads and SDK/transport failures → HTTP 502 (`error: "upstream"`).
-- `AbortSignal` is forwarded to each `session.messages` call; route also applies a 45s linked timeout.
+- Native v2 `SessionMessageInfo` rows are projected to the external `{ info, parts }` record contract by `session-message-projection.js` (control rows such as `idle` / `model-switched` are dropped). The VS Code turn-page bridge imports the same module so both runtimes emit identical records.
+- `AbortSignal` is forwarded to each `message.list` call; route also applies a 45s linked timeout.
 - Request abort only when the client disconnects mid-flight: `req` aborted, or `res` `close` while `!res.writableEnded`. A normal GET request `close` after the response has ended must not abort.
 
 ## Anchor reconcile API

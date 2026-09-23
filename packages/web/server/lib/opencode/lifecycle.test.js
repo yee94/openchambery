@@ -839,6 +839,54 @@ describe('OpenCode lifecycle', () => {
     expect(stateRef.current.isOpenCodeReady).toBe(false);
   }, 15_000);
 
+  it('revokes execution permit on restart and ignores stale async health for a new generation', async () => {
+    const stateRef = {};
+    const runtime = createRuntime({}, stateRef);
+    stateRef.current.openCodePort = 45678;
+    stateRef.current.runtimeContractGeneration = 1;
+    stateRef.current.runtimeContract = {
+      executionAllowed: true,
+      phase: 'ready',
+      serveVersion: '2.0.12',
+      instanceGeneration: 1,
+    };
+
+    const genBefore = runtime.revokeRuntimeExecutionPermit('test-restart');
+    expect(genBefore).toBe(2);
+    expect(stateRef.current.runtimeContract.executionAllowed).toBe(false);
+    expect(stateRef.current.runtimeContract.phase).toBe('pending');
+    expect(stateRef.current.runtimeContract.instanceGeneration).toBe(2);
+
+    // Stale probe from generation 1 must not re-open execution on generation 2.
+    runtime.refreshRuntimeContractFromProbe(
+      {
+        ok: true,
+        version: '2.0.12',
+        authenticated: true,
+        healthOk: true,
+      },
+      { admitTranscript: true, phase: 'done', error: null },
+      1,
+    );
+    expect(stateRef.current.runtimeContract.executionAllowed).toBe(false);
+    expect(stateRef.current.runtimeContract.instanceGeneration).toBe(2);
+
+    // Matching generation publishes verified permit.
+    runtime.refreshRuntimeContractFromProbe(
+      {
+        ok: true,
+        version: '2.0.12',
+        authenticated: true,
+        healthOk: true,
+      },
+      { admitTranscript: true, phase: 'done', error: null },
+      2,
+    );
+    expect(stateRef.current.runtimeContract.executionAllowed).toBe(true);
+    expect(stateRef.current.runtimeContract.instanceGeneration).toBe(2);
+    expect(stateRef.current.runtimeContract.serveVersion).toBe('2.0.12');
+  });
+
   it('does not mark external skip-start ready before version and migration admit', async () => {
     const stateRef = {};
     const runtime = createRuntime({

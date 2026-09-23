@@ -12,7 +12,10 @@ import { conversationIndexOf } from "./conversation-order"
 import { syncDebug } from "./debug"
 import type { DirectoryEventResult, SessionMaterializationReason } from "./event-reducer"
 import { applySessionCompactionLiveEvent } from "./session-compaction-api"
-import { normalizeSessionProjectionMessage } from "./session-projection-api"
+import {
+  messageIDFromEventID,
+  normalizeSessionProjectionMessage,
+} from "./session-projection-api"
 
 export type TranscriptEventDraft = {
   message: Record<string, Message[]>
@@ -776,6 +779,17 @@ function upsertToolPart(
   return true
 }
 
+/** Shell cards are keyed by upstream shell identity, not by the event's message ID. */
+export function findShellMessageID(
+  draft: TranscriptEventDraft,
+  sessionID: string,
+  shellID: string,
+): string | undefined {
+  return draft.message[sessionID]?.find((message) => draft.part[message.id]?.some(
+    (part) => part.type === "text" && part.shellAction?.shellID === shellID,
+  ))?.id
+}
+
 /**
  * Overlay official v2 live events onto the existing Message+Part draft.
  * Deltas are incremental; they are not treated as replayable history.
@@ -793,11 +807,10 @@ function applyV2LiveOverlay(draft: TranscriptEventDraft, event: Event): Director
     const shellID = asString(shell?.id)
     if (!shell || !shellID) return false
     const messages = draft.message[sessionID] ?? []
-    const existing = messages.find((message) => draft.part[message.id]?.some(
-      (part) => part.type === "text" && part.shellAction?.shellID === shellID,
-    ))
+    const existingID = findShellMessageID(draft, sessionID, shellID)
+    const existing = existingID ? messages.find((message) => message.id === existingID) : undefined
     // End events carry shell identity; a missed start is recovered by the terminal GET.
-    const id = existing?.id ?? (type === "session.shell.started" && event.id ? event.id.replace(/^evt_/, "msg_") : undefined)
+    const id = existing?.id ?? (type === "session.shell.started" ? messageIDFromEventID(event.id) : undefined)
     if (!id) return false
     if (type === "session.shell.started" && existing) return false
     const row = normalizeSessionProjectionMessage(sessionID, {
@@ -811,6 +824,35 @@ function applyV2LiveOverlay(draft: TranscriptEventDraft, event: Event): Director
     draft.message[sessionID] = existing ? messages.map((message) => message.id === id ? row.info : message) : [...messages, row.info]
     draft.part[id] = row.parts
     return true
+  }
+  // Official session.synthetic → same normalize rule as GET projection rows.
+  if (sessionID && type === "session.synthetic") {
+    const id = messageIDFromEventID(event.id)
+    if (!id) return false
+    const row = normalizeSessionProjectionMessage(sessionID, {
+      id,
+      type: "synthetic",
+      text: props.text,
+      description: props.description,
+      metadata: props.metadata,
+      time: { created: readEventCreated(props) },
+    })
+    if (!row) return false
+    const messages = draft.message[sessionID] ?? []
+    const existing = messages.find((message) => message.id === id)
+    if (existing && areJsonEquivalent(existing, row.info) && areJsonEquivalent(draft.part[id], row.parts)) {
+      return false
+    }
+    draft.message[sessionID] = existing
+      ? messages.map((message) => (message.id === id ? row.info : message))
+      : [...messages, row.info]
+    draft.part[id] = row.parts
+    return true
+  }
+  // Revert commit range is owned by merge `revert-committed` (with read epoch).
+  // Keep the SSE type recognized so batch routing reaches the repository.
+  if (type === "session.revert.committed") {
+    return false
   }
   const messageID = asString(props.assistantMessageID)
   if (!sessionID || !messageID) return false

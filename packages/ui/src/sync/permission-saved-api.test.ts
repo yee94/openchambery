@@ -1,8 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const sdk = vi.hoisted(() => ({ current: vi.fn(), list: vi.fn(), remove: vi.fn() }));
+const sdk = vi.hoisted(() => ({ locationGet: vi.fn(), list: vi.fn(), remove: vi.fn() }));
 vi.mock('@/lib/opencode/client', () => ({ opencodeClient: { getApiClient: () => ({
-  project: { current: sdk.current }, permission: { saved: { list: sdk.list, remove: sdk.remove } },
+  location: { get: sdk.locationGet }, permission: { saved: { list: sdk.list, remove: sdk.remove } },
 }) } }));
 
 import { deletePermissionSaved, listPermissionSaved, resolvePermissionSavedProject } from './permission-saved-api';
@@ -11,10 +11,10 @@ describe('saved permission official client boundary', () => {
   beforeEach(() => vi.resetAllMocks());
 
   it('resolves the upstream ID through the explicit directory and forwards cancellation', async () => {
-    sdk.current.mockResolvedValue({ id: 'upstream-project' });
+    sdk.locationGet.mockResolvedValue({ project: { id: 'upstream-project' } });
     const signal = new AbortController().signal;
     expect(await resolvePermissionSavedProject('/workspace/project', signal)).toBe('upstream-project');
-    expect(sdk.current).toHaveBeenCalledWith({ location: { directory: '/workspace/project' } }, { signal });
+    expect(sdk.locationGet).toHaveBeenCalledWith({ location: { directory: '/workspace/project' } }, { signal });
   });
 
   it('forwards the authoritative project ID and signal to the saved list', async () => {
@@ -28,7 +28,7 @@ describe('saved permission official client boundary', () => {
   });
 
   it('rejects missing identities, malformed lists and cross-project results', async () => {
-    sdk.current.mockResolvedValue({});
+    sdk.locationGet.mockResolvedValue({});
     await expect(resolvePermissionSavedProject('/repo')).rejects.toThrow('project ID');
     for (const payload of [null, {}, [null], [{ id: 'saved' }], [{ id: 'saved', projectID: 'other', action: 'bash', resource: '*' }]]) {
       sdk.list.mockResolvedValue(payload);
@@ -42,9 +42,9 @@ describe('saved permission official client boundary', () => {
     sdk.remove.mockRejectedValue(new Error('denied'));
     await expect(deletePermissionSaved({ id: 'saved' })).rejects.toThrow('denied');
     const controller = new AbortController();
-    sdk.current.mockImplementation(async () => {
+    sdk.locationGet.mockImplementation(async () => {
       controller.abort();
-      return { id: 'upstream' };
+      return { project: { id: 'upstream' } };
     });
     await expect(resolvePermissionSavedProject('/repo', controller.signal)).rejects.toThrow();
   });

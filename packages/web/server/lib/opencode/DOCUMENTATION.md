@@ -27,7 +27,7 @@ This module provides OpenCode server integration utilities for the web server ru
 - `packages/web/server/lib/opencode/core-routes.js`: server status/system routes, auth/access guard routes, and settings utility route registration.
 - `packages/web/server/lib/opencode/shutdown-runtime.js`: graceful shutdown orchestration runtime for watcher/session/terminal/process/server teardown.
 - `packages/web/server/lib/opencode/server-startup-runtime.js`: server listen/startup flow and process/signal handler orchestration runtime.
-- `packages/web/server/lib/opencode/static-routes-runtime.js`: static asset/SPA fallback route registration and manifest route wiring.
+- `packages/web/server/lib/opencode/static-routes-runtime.js`: static asset/SPA fallback route registration and manifest route wiring. The SPA fallback sends `index.html` relative to `root`, so deep links keep working when the install lives under a dot directory.
 - `packages/web/server/lib/opencode/feature-routes-runtime.js`: feature route composition runtime for dynamic import-backed config/skill/provider route registration.
 - `packages/web/server/lib/conversations/`: combined create-session-and-prompt orchestration (OpenChamber-owned, registered before generic proxy).
 - `packages/web/server/lib/session-turn-pages/`: turn-window session message pagination (`GET /api/openchamber/sessions/:sessionID/messages`), anchor reconcile (`GET .../messages/reconcile`), Changes L2/L3 (`GET .../changes`), and exact message L1 projection (`GET /api/session/:sessionID/message/:messageID`); loops official OpenCode `session.messages` for turn pages and head→anchor gap recovery with continuation/budgets/`resetRequired`; all registered before generic proxy. L1 first-packet / SSE / exact-message paths keep `summary.diffs` as a slim `{ file, status?, additions, deletions }` list plus additive `diffCount`/`hasDiffs` (patch bodies stay on L3). See `session-turn-pages/DOCUMENTATION.md`.
@@ -85,10 +85,11 @@ This module provides OpenCode server integration utilities for the web server ru
   - `GET /api/config/opencode-resolution`
   - `GET /api/behavior/agents-md`: returns an authoritative empty document only when the file is absent (`ENOENT`); permission and I/O failures return HTTP 500.
   - `PUT /api/behavior/agents-md`
-  - `POST /api/opencode/upgrade` (proxies OpenCode `POST /global/upgrade` with a required semantic version `target`, then restarts managed OpenCode so the new binary is active)
-  - `GET /api/opencode/upgrade-status`
-  - `GET /api/opencode/health`: probes managed OpenCode `GET /api/info` (Basic auth, 4s timeout) and returns `{ healthy }` via `evaluateOpenCodeHealthBody`. Admits official 2.x `ServerInfo` (`version`/`pid`/`urls`/`paths` without `healthy`) and classic `{ healthy: true, version }`; rejects 1.x, missing/unknown versions, and `healthy: false`. Upstream non-OK responses pass through status with `{ healthy: false, error }`; transport failures return HTTP 503.
-  - `GET /api/opencode/version`
+  - `POST /api/opencode/upgrade` (ticket 12): in-app upgrade is **owned-cache only**. Installs the pinned/target `@opencode/cli` into `~/.config/openchamber/opencode-cli/<version>/`, force-pins that binary, restarts the managed process, and succeeds only after the running serve version + runtime contract verify. Global CLI / external serve / bundled return HTTP 409 with `management` + `guidance` and never mutate user installs. Concurrent upgrades are single-flight (`operation` state). Active sessions require `confirmActiveTasks`/`force`.
+  - `GET /api/opencode/upgrade-status`: returns `currentVersion`/`serveVersion`/`cliVersion`, `targetVersion`/`latestVersion` (pin), `supplySource`, `ownership`, `canManage`, `management`, `guidance`, `contract`, and `operation`. `available` is true only when `canManage` and target > current; global/external report `available: null` plus manual guidance.
+  - `GET /api/opencode/contract` (ticket 11): runtime contract admission for the **running serve** (not health alone). Dimensions: reachable / authenticated / protocolCompatible / executionAllowed / capabilities / migration / CLI↔serve mismatch. Verified band `2.0.12`–`2.0.14`; older 2.x limited; unverified newer 2.x stays connected (`ready-unverified`) with diagnostics but **`executionAllowed: false`** until the band is verified.
+  - `GET /api/opencode/health`: probes managed OpenCode `GET /api/info` (Basic auth, 4s timeout). `healthy` is reachability/version shape via `evaluateOpenCodeHealthBody` (admits official 2.x `ServerInfo` and classic `{ healthy: true, version }`; rejects 1.x / missing / `healthy: false`). Response also includes `executionAllowed`, `protocolCompatible`, and `contract` so clients do not treat health success as full execution semantics. Upstream non-OK responses pass through status with `{ healthy: false, error, contract }`; transport failures return HTTP 503.
+  - `GET /api/opencode/version`: serve + CLI versions, mismatch flag, and contract snapshot
   - `POST /api/opencode/directory`
   - `GET /api/provider/:providerId/source`
   - `DELETE /api/provider/:providerId/auth`
@@ -123,6 +124,19 @@ This module provides OpenCode server integration utilities for the web server ru
 - `openCode2BinaryName(platform)` / `npmPackageForOpenCode2(platform, arch)`: staged binary name `opencode2` and official platform package `@opencode/cli-<os>-<arch>[-baseline]`.
 - `isOpenCode1xVersion(value)` / `isAcceptableOpenCode2HealthVersion(value)` / `evaluateOpenCodeHealthBody(body)`: health admission accepts only 2.x. 1.x, `0.x` pre-2 binaries, and missing/unknown versions are rejected even when `healthy: true`.
 - `resolveOpenCode2UpgradeTarget(target)` / `rejectOpenCode1xUpgradeTarget(target)`: upgrade targets default to the pin and refuse 1.x.
+
+## Public exports (runtime-contract.js)
+- Ticket 11 pure admission matrix. `RUNTIME_CONTRACT_MIN_VERIFIED` (`2.0.12`) / `RUNTIME_CONTRACT_MAX_VERIFIED` (`2.0.14`) bound documented evidence; capabilities include `core.protocol`, `session.prompt`, `session.queuedInput`, `session.background`, `session.generationFallback`, `migration.v1Read`.
+- `evaluateRuntimeContract(input)`: separate reachable / auth / protocol / execution / migration / CLI↔serve mismatch reasons for UI and diagnostics. **`executionAllowed` requires `versionBand === 'verified'`** (unverified-newer is diagnostic-only).
+- `isRuntimeContractExecutionPath` / `isRuntimeContractDiagnosticPath` / `isRuntimeContractStopPath` / `shouldBlockRuntimeContractExecution` / `createRevokedRuntimeContract`: proxy + Host transport gate helpers. **Execution paths require `executionAllowed === true` on the current contract**; null/pending/false all block (no silent bypass). Unit/DI factories may pass `{ allowMissingContract: true }` only when no lifecycle is wired. Interrupt/abort and reads stay available when execution is limited. Health success is not full execution semantics.
+
+## Public exports (server-opencode-fetch.js)
+- Host transport boundary so queue / goal / scheduled / assistants / session-title cannot bypass the proxy write gate.
+- `configureServerOpenCodeFetchGate(getter, options?)` / `createServerOpenCodeFetch` / `wrapFetchWithRuntimeContractGate`: shared admission; `makeOpenCodeV2Client` always wraps fetch with the gate. Production must not set `allowMissingContract`.
+
+## Public exports (owned-runtime-upgrade.js)
+- Ticket 12 ownership model: `classifyRuntimeOwnership` separates process ownership (external vs managed) from binary ownership (owned-cache / global-cli / bundled / env / settings). External serve using an owned file stays external; managed process using a global file stays global-cli.
+- `buildUpgradeStatusSnapshot` / `evaluateOwnedUpgradeResult` / `createUpgradeOperationState` / `resolveOwnedCacheBinaryPath`.
 
 ## Public exports (ensure-cli.js)
 - `ensurePinnedOpenCode2Cli({ discoveredPath, pin, autoInstall, install, readVersion })`: reuse any discovered acceptable 2.x CLI (official name `opencode`, alias `opencode2`). Install the pin into `~/.config/openchamber/opencode-cli/<pin>/opencode` only when nothing usable is installed. `OPENCHAMBER_OPENCODE2_AUTO_INSTALL=0` disables download (`OPENCODE_CLI_MISSING`).
@@ -166,6 +180,7 @@ This module provides OpenCode server integration utilities for the web server ru
   - `isExecutable(filePath)`
   - `searchPathFor(binaryName)`
   - `clearResolvedOpenCodeBinary()`
+  - `forceResolvedOpenCodeBinary(path, source?)`: pin managed launch to an explicit binary (owned-cache upgrade) so restart does not rediscover a global CLI
 
 ## Public exports (managed-capabilities-runtime.js)
 - `createManagedCapabilitiesRuntime(dependencies?)`: returns resource publishing, bridge-origin, child-environment, identity, and bridge-authorization APIs for managed OpenCode only.
@@ -414,6 +429,7 @@ When adding or changing Host HTTP APIs that mobile/desktop clients reach over Pr
   - Generic `/api/*` forwarding with hop-by-hop header filtering. v2 upstream routes live under `/api` (`@opencode-ai/protocol`); the proxy restores that prefix after Express strips the `/api` mount. Forwarding `/agent` (v1 root) hits the v2 Web UI HTML fallback.
   - Windows `/session` merge fallback path behavior
   - OpenCode readiness gate for proxied `/api` requests: process warmup still uses `OPEN_CODE_READY_GRACE_MS`; `state.v1Migration.admitTranscript !== true` holds with no grace until the gate admits or the client cancels, so a `running` migration past 12s cannot `next()` an empty session list through as success
+  - Runtime contract execution gate (ticket 11): mutating session/turn paths require **current-instance** `executionAllowed === true` (null/pending/false → HTTP 409 `RUNTIME_CONTRACT_EXECUTION_BLOCKED`). The gate runs before readiness hold and **again after hold** so a stale permit cannot forward once the new instance is incompatible. Lifecycle **revokes** the permit (generation bump + pending contract) on start/restart; async health probes only publish when their generation still matches. Diagnostic GET health/info/migration paths, ordinary reads, and **interrupt/abort (stop-task)** stay available. Host background clients share the same gate via `server-opencode-fetch` / gated `makeOpenCodeV2Client`.
 
 ## Public exports (watcher.js)
 - `createOpenCodeWatcherRuntime(dependencies)`: creates global event watcher runtime backed by the shared upstream SSE reader.

@@ -4,10 +4,10 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { create } from 'zustand';
 
-const sdk = vi.hoisted(() => ({ current: vi.fn(), list: vi.fn(), remove: vi.fn() }));
+const sdk = vi.hoisted(() => ({ locationGet: vi.fn(), list: vi.fn(), remove: vi.fn() }));
 const runtime = vi.hoisted(() => ({ transport: 'runtime-a', generation: 0, listeners: new Set<() => void>() }));
 vi.mock('@/lib/opencode/client', () => ({ opencodeClient: { getApiClient: () => ({
-  project: { current: sdk.current }, permission: { saved: { list: sdk.list, remove: sdk.remove } },
+  location: { get: sdk.locationGet }, permission: { saved: { list: sdk.list, remove: sdk.remove } },
 }) } }));
 vi.mock('@/lib/runtime-switch', () => ({
   getRuntimeGeneration: () => runtime.generation,
@@ -49,7 +49,9 @@ describe('SavedPermissionsSection scope ownership', () => {
     runtime.transport = 'runtime-a';
     runtime.generation = 0;
     useDirectoryStore.setState({ currentDirectory: '/a' });
-    sdk.current.mockImplementation(async ({ location }: { location: { directory: string } }) => ({ id: `upstream-${location.directory.slice(1)}` }));
+    sdk.locationGet.mockImplementation(async ({ location }: { location: { directory: string } }) => ({
+      project: { id: `upstream-${location.directory.slice(1)}` },
+    }));
     sdk.list.mockImplementation(async ({ projectID }: { projectID: string }) => [rule(projectID)]);
     sdk.remove.mockResolvedValue(undefined);
     client = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity }, mutations: { retry: false } } });
@@ -81,20 +83,20 @@ describe('SavedPermissionsSection scope ownership', () => {
 
   it('loads by upstream project ID while the local project ID is path_base64', async () => {
     await mount();
-    expect(sdk.current).toHaveBeenCalledWith({ location: { directory: '/a' } }, { signal: expect.any(AbortSignal) });
+    expect(sdk.locationGet).toHaveBeenCalledWith({ location: { directory: '/a' } }, { signal: expect.any(AbortSignal) });
     expect(sdk.list).toHaveBeenCalledWith({ projectID: 'upstream-a' }, { signal: expect.any(AbortSignal) });
     expect(container.textContent).toContain('upstream-a');
   });
 
   it('cancels an old project lookup before listing rules for the next directory', async () => {
-    const old = deferred<{ id: string }>();
-    sdk.current.mockImplementationOnce(() => old.promise);
+    const old = deferred<{ project: { id: string } }>();
+    sdk.locationGet.mockImplementationOnce(() => old.promise);
     await mount();
     expect(container.textContent).toContain('common.loading');
-    const signal = sdk.current.mock.calls[0][1].signal as AbortSignal;
+    const signal = sdk.locationGet.mock.calls[0][1].signal as AbortSignal;
     await switchDirectory('/b');
     expect(signal.aborted).toBe(true);
-    await act(async () => old.resolve({ id: 'upstream-a' }));
+    await act(async () => old.resolve({ project: { id: 'upstream-a' } }));
     await settle();
     expect(sdk.list).toHaveBeenCalledTimes(1);
     expect(container.textContent).toContain('upstream-b');
@@ -115,7 +117,7 @@ describe('SavedPermissionsSection scope ownership', () => {
   });
 
   it('shows first-load errors and retries, reserving empty copy for successful empty results', async () => {
-    sdk.current.mockRejectedValueOnce(new Error('offline'));
+    sdk.locationGet.mockRejectedValueOnce(new Error('offline'));
     await mount();
     expect(container.querySelector('[role="alert"]')?.textContent).toContain('saved.loadFailed');
     expect(container.textContent).not.toContain('saved.empty');
@@ -178,7 +180,7 @@ describe('SavedPermissionsSection scope ownership', () => {
     await settle();
     await act(async () => deletion.resolve());
     await settle();
-    expect(sdk.current).toHaveBeenCalledTimes(2);
+    expect(sdk.locationGet).toHaveBeenCalledTimes(2);
     expect(container.textContent).toContain('runtime-b-resource');
     expect(client.getQueryCache().getAll().every((query) => query.queryKey[0] === 'runtime-b')).toBe(true);
   });
