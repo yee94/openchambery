@@ -2380,7 +2380,7 @@ export const dict: Record<I18nKey, string> = {
   "chat.messageBody.subagent.errorDescription": "El subagente en segundo plano ha fallado",
   "chat.messageBody.subagent.cancelledDescription": "El subagente en segundo plano se ha cancelado",
   "chat.messageBody.subagent.openSession": "Abrir sesión del subagente: {label}",
-  "chat.messageBody.shellCommand.title": "Comando de shell",
+  "chat.messageBody.shellCommand.title": "Resultado del shell",
   "chat.messageBody.shellCommand.hideOutput": "Ocultar salida",
   "chat.messageBody.shellCommand.showOutput": "Mostrar salida",
   "chat.messageBody.shellCommand.copied": "Copiado",

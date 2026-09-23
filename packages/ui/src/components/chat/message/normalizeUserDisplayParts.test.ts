@@ -1,8 +1,16 @@
-import { describe, expect, test } from 'bun:test';
+import { describe, expect, test } from 'vitest';
 import type { Part } from '@opencode-ai/sdk/v2';
 import { hasUserDisplayableParts, normalizeUserDisplayParts } from './normalizeUserDisplayParts';
 
 describe('normalizeUserDisplayParts', () => {
+  test('preserves native shell payload and identity when replacing the user marker', () => {
+    const part = {
+      id: 'shell-part', type: 'text', synthetic: true,
+      text: 'The following tool was executed by the user',
+      shellAction: { command: 'pwd', output: '/workspace\n', status: 'completed' },
+    } as unknown as Part;
+    expect(normalizeUserDisplayParts([part])).toEqual([{ ...part, text: '/shell' }]);
+  });
   test('hides session-goal auto-continuation prompts even without synthetic flag', () => {
     const parts = [
       {

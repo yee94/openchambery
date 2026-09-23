@@ -2380,7 +2380,7 @@ export const dict: Record<I18nKey, string> = {
   'chat.messageBody.subagent.errorDescription': '后台子代理失败',
   'chat.messageBody.subagent.cancelledDescription': '后台子代理已取消',
   'chat.messageBody.subagent.openSession': '打开子代理会话：{label}',
-  'chat.messageBody.shellCommand.title': '运行',
+  'chat.messageBody.shellCommand.title': '命令结果',
   'chat.messageBody.shellCommand.hideOutput': '隐藏输出',
   'chat.messageBody.shellCommand.showOutput': '显示输出',
   'chat.messageBody.shellCommand.copied': '已复制',

@@ -2384,7 +2384,7 @@ export const dict: Record<I18nKey, string> = {
   'chat.messageBody.subagent.errorDescription': '背景子代理失敗',
   'chat.messageBody.subagent.cancelledDescription': '背景子代理已取消',
   'chat.messageBody.subagent.openSession': '開啟子代理工作階段：{label}',
-  'chat.messageBody.shellCommand.title': '執行',
+  'chat.messageBody.shellCommand.title': '命令結果',
   'chat.messageBody.shellCommand.hideOutput': '隱藏輸出',
   'chat.messageBody.shellCommand.showOutput': '顯示輸出',
   'chat.messageBody.shellCommand.copied': '已複製',

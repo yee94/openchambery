@@ -2413,7 +2413,7 @@ export const dict: Record<I18nKey, string> = {
   'chat.messageBody.subagent.errorDescription': 'バックグラウンドのサブエージェントが失敗しました',
   'chat.messageBody.subagent.cancelledDescription': 'バックグラウンドのサブエージェントがキャンセルされました',
   'chat.messageBody.subagent.openSession': 'サブエージェントのセッションを開く: {label}',
-  'chat.messageBody.shellCommand.title': 'シェルコマンド',
+  'chat.messageBody.shellCommand.title': 'シェル実行結果',
   'chat.messageBody.shellCommand.hideOutput': '出力を非表示',
   'chat.messageBody.shellCommand.showOutput': '出力を表示',
   'chat.messageBody.shellCommand.copied': 'コピーしました',

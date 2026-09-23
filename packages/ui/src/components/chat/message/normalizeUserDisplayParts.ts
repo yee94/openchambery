@@ -142,7 +142,7 @@ export const normalizeUserDisplayParts = (parts: Part[]): Part[] => {
                 }
 
                 if (text.startsWith('The following tool was executed by the user')) {
-                    return { type: 'text', text: '/shell' } as Part;
+                    return { ...part, type: 'text', text: '/shell' } as Part;
                 }
             }
             return part;

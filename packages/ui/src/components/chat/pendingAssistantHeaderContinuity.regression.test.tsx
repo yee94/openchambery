@@ -9,7 +9,7 @@ const mocks = vi.hoisted(() => ({
   uiState: {
     isMobile: false,
     stickyUserHeader: true,
-    chatRenderMode: 'live' as const,
+    chatRenderMode: 'live' as 'live' | 'sorted',
     activityRenderMode: 'summary' as const,
     showTurnChangedFiles: false,
     showReasoningTraces: true,
@@ -211,6 +211,8 @@ describe('new conversation assistant header continuity', () => {
   let root: Root;
 
   beforeEach(() => {
+    mocks.uiState.isMobile = false;
+    mocks.uiState.chatRenderMode = 'live';
     container = document.createElement('div');
     document.body.appendChild(container);
     root = createRoot(container);
@@ -275,6 +277,53 @@ describe('new conversation assistant header continuity', () => {
       );
     });
   };
+
+  test.each([
+    [false, 'live'], [true, 'live'], [false, 'sorted'], [true, 'sorted'],
+  ] as const)('keeps native shell turns neutral (mobile=%s, mode=%s), then restores ordinary headers', async (mobile, mode) => {
+    mocks.uiState.isMobile = mobile;
+    mocks.uiState.chatRenderMode = mode;
+    for (const status of ['pending', 'running', 'completed', 'error']) {
+      const shell = userMessage();
+      const shellPart = { id: shell.parts[0].id, sessionID, messageID: shell.info.id, type: 'text' as const, text: '/shell', shellAction: { command: 'pwd', output: '/workspace\n', status } };
+      shell.parts = [shellPart];
+      await renderMessages([shell], status === 'pending' || status === 'running');
+      expect(container.querySelector('h3')).toBeNull();
+      expect(container.querySelector('[data-user-message-bubble]')).toBeNull();
+      const result = container.querySelector('[data-shell-result]');
+      expect(result).toBeTruthy();
+      expect(result?.parentElement?.classList.contains('w-full')).toBe(true);
+      expect(result?.closest('.sticky')).toBeNull();
+    }
+    const shellWithMetadata = userMessage();
+    const completedShellPart = { id: shellWithMetadata.parts[0].id, sessionID, messageID: shellWithMetadata.info.id, type: 'text' as const, text: '/shell', shellAction: { command: 'pwd', status: 'completed' } };
+    shellWithMetadata.parts = [completedShellPart];
+    await renderMessages([shellWithMetadata, assistantMessage({ completed: true })], false);
+    expect(container.querySelector('h3')).toBeNull();
+    await renderMessages([userMessage()], true);
+    expect(container.querySelectorAll('h3')).toHaveLength(1);
+    expect(container.querySelector('[data-user-message-bubble]')).toBeTruthy();
+  });
+
+  test('hides the shell marker pending header and completed bridge header while preserving ordinary bash tools', async () => {
+    const shell = userMessage();
+    shell.parts = [{ ...shell.parts[0], text: 'The following tool was executed by the user', synthetic: true } as Part];
+    await renderMessages([shell], true);
+    expect(container.querySelector('h3')).toBeNull();
+    expect(container.querySelector('[data-user-message-bubble]')).toBeNull();
+    const bash = assistantMessage({ completed: true, parts: [{
+      id: 'bash-1', sessionID, messageID: 'assistant-1', type: 'tool', tool: 'bash', callID: 'call-1',
+      state: { status: 'completed', input: { command: 'pwd' }, output: '/workspace\n', title: 'pwd', metadata: {}, time: { start: 2, end: 3 } },
+    } as Part] });
+    await renderMessages([shell, bash], false);
+    expect(container.querySelector('h3')).toBeNull();
+    expect(container.querySelector('[data-shell-result]')).toBeTruthy();
+    expect(container.querySelector('[data-message-id="assistant-1"]')).toBeNull();
+    await renderMessages([userMessage(), bash], false);
+    expect(container.querySelectorAll('h3')).toHaveLength(1);
+    expect(container.querySelector('[data-message-id="assistant-1"]')).toBeTruthy();
+    expect(container.querySelector('[data-user-message-bubble]')).toBeTruthy();
+  });
 
   test('keeps the painted user row and one header shell through metadata, streaming, status flaps, and completion', async () => {
     await renderFrame({ working: true, streaming: false });

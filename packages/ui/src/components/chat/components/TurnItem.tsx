@@ -6,6 +6,7 @@ import { useUIStore } from '@/stores/useUIStore';
 import TurnAssistantHeader from './TurnAssistantHeader';
 import TurnActivity from './TurnActivity';
 import TurnAssistantBlock from './TurnAssistantBlock';
+import { isUserShellMessage } from '../lib/shellBridge';
 
 const EMPTY_EXPANDED_TOOLS = new Set<string>();
 const ignoreCompactionToolToggle = () => {};
@@ -41,6 +42,7 @@ const TurnItem: React.FC<TurnItemProps> = ({
     // Compact is a session command, not a user-authored bubble. Keep the turn
     // identity so the previous assistant stream does not remount.
     const hideUserMessage = turn.activityPresentationKind === 'compaction';
+    const isShellTurn = isUserShellMessage(turn.userMessage);
 
     return (
         <section
@@ -50,7 +52,7 @@ const TurnItem: React.FC<TurnItemProps> = ({
             data-turn-activity-expanded={activityExpanded}
             data-scroll-spy-id={turn.turnId}
         >
-            {hideUserMessage ? null : stickyUserHeader ? (
+            {hideUserMessage ? null : stickyUserHeader && !isShellTurn ? (
                 <div className="sticky top-0 z-20 relative bg-[var(--surface-background)] [overflow-anchor:none]">
                     <div className="relative z-10">
                         {renderMessage(turn.userMessage, activityExpanded)}
@@ -64,7 +66,7 @@ const TurnItem: React.FC<TurnItemProps> = ({
                 renderMessage(turn.userMessage, activityExpanded)
             )}
 
-            {pendingAssistantHeader || assistantHeaderMessage ? (
+            {!isShellTurn && (pendingAssistantHeader || assistantHeaderMessage) ? (
                 <div className={`group w-full ${isMobile ? (stickyUserHeader ? 'pt-4' : 'pt-0') : 'pt-6'} pb-0`}>
                     <div className="chat-message-column relative">
                         <TurnAssistantHeader
