@@ -166,18 +166,21 @@ describe('buildProjectNavigationTargets', () => {
     expect(targets.map((target) => target.sessionId)).toEqual(['root-a', 'root-b', 'worktree-b', 'worktree-a']);
   });
 
-  test('restores natural navigation order after activity changes while matching snapshots keep manual order', () => {
+  test('keeps matching manual navigation order and promotes only newer activity on the current order', () => {
     const buildTargets = (rootAUpdatedAt: number, activity: Record<string, number>) => buildProjectNavigationTargets({
-      sections: [{ project: { id: 'project-a' }, groups: [group('root', [node('a', rootAUpdatedAt), node('b', 100)], { main: true })] }],
+      sections: [{ project: { id: 'project-a' }, groups: [group('root', [node('a', rootAUpdatedAt), node('b', 100), node('c', 50)], { main: true })] }],
       foldersMap: {},
       getOrderedGroups: (_projectId, groups) => groups,
       pinnedSessionIds: new Set(),
-      sessionOrderByScope: { '/project': ['b', 'a'] },
+      sessionOrderByScope: { '/project': ['b', 'c', 'a'] },
       sessionOrderActivityByScope: { '/project': activity },
     });
 
-    expect(buildTargets(200, { a: 200, b: 100 }).map((target) => target.sessionId)).toEqual(['b', 'a']);
-    expect(buildTargets(300, { a: 200, b: 100 }).map((target) => target.sessionId)).toEqual(['a', 'b']);
+    expect(buildTargets(200, { a: 200, b: 100, c: 50 }).map((target) => target.sessionId)).toEqual(['b', 'c', 'a']);
+    // Newer activity on `a` pins it on the current order; b/c relative order stays.
+    expect(buildTargets(300, { a: 200, b: 100, c: 50 }).map((target) => target.sessionId)).toEqual(['a', 'b', 'c']);
+    // Same-session activity tick while already ordered first must not reshuffle the rest.
+    expect(buildTargets(350, { a: 200, b: 100, c: 50 }).map((target) => target.sessionId)).toEqual(['a', 'b', 'c']);
   });
 
   test('resolves a validated group-virtualizer index without clamping an unavailable target', () => {

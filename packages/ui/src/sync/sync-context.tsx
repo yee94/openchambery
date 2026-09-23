@@ -113,7 +113,7 @@ import { opencodeClient } from "@/lib/opencode/client"
 import { usePermissionStore } from "@/stores/permissionStore"
 import { useConfigStore } from "@/stores/useConfigStore"
 import { useTodosPersistStore } from "@/stores/useTodosPersistStore"
-import { useSessionUIStore } from "./session-ui-store"
+import { promoteProjectForConversation, useSessionUIStore } from "./session-ui-store"
 import { toast } from "@/components/ui"
 import { appendNotification, clearSessionErrorNotifications } from "./notification-store"
 import { recordSessionError, summarizeOpenCodeError } from "./session-error-log"
@@ -2107,7 +2107,21 @@ export function handleEvent(
   // global-session handling above). Child stores remain the primary source for
   // synced directories; this map covers sessions a child store doesn't list
   // (unopened directories, or list/status races for just-created sessions).
+  const statusSessionID = payload.type === "session.status" || payload.type === "session.idle" || payload.type === "session.error"
+    ? payload.properties.sessionID
+    : undefined
+  const previousStatus = statusSessionID
+    ? childStores.getChild(directory)?.getState().session_status[statusSessionID]?.type
+      ?? useGlobalSessionStatusStore.getState().statusById.get(statusSessionID)?.status
+      ?? "idle"
+    : undefined
   applyGlobalSessionStatusEvent(directory, payload)
+  if (statusSessionID && directory && directory !== "global") {
+    const nextStatus = useGlobalSessionStatusStore.getState().statusById.get(statusSessionID)?.status ?? "idle"
+    if (previousStatus !== nextStatus) {
+      promoteProjectForConversation(directory, useSessionUIStore.getState().availableWorktreesByProject)
+    }
+  }
 
   // Global events
   if (directory === "global" || !directory) {

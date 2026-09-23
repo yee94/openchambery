@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, test } from 'bun:test';
+import { beforeEach, describe, expect, test } from 'vitest';
 import { createProjectIdFromPath } from '@/lib/projectId';
 import { switchRuntimeEndpoint } from '@/lib/runtime-switch';
 import { reorderProjectEntriesById, useProjectsStore } from './useProjectsStore';
@@ -37,19 +37,43 @@ describe('useProjectsStore moveProjectToTop', () => {
     expect(useProjectsStore.getState().projects).toBe(initial);
   });
 
-  test('leaves manual drag order alone so activity does not reset a user-set sort', () => {
+  test('promotes on the current manual order so activity can pin after a drag without reshuffling the rest', () => {
     useProjectsStore.setState({
       manualProjectOrder: ['alpha', 'beta', 'gamma'],
     });
 
     useProjectsStore.getState().moveProjectToTop('gamma');
 
-    expect(useProjectsStore.getState().manualProjectOrder).toEqual(['alpha', 'beta', 'gamma']);
+    expect(useProjectsStore.getState().manualProjectOrder).toEqual(['gamma', 'alpha', 'beta']);
     expect(useProjectsStore.getState().projects.map((project) => project.id)).toEqual([
       'gamma',
       'alpha',
       'beta',
     ]);
+  });
+
+  test('leaves an empty manual order empty while still promoting the registry', () => {
+    useProjectsStore.setState({
+      manualProjectOrder: [],
+    });
+
+    useProjectsStore.getState().moveProjectToTop('gamma');
+
+    expect(useProjectsStore.getState().manualProjectOrder).toEqual([]);
+    expect(useProjectsStore.getState().projects.map((project) => project.id)).toEqual([
+      'gamma',
+      'alpha',
+      'beta',
+    ]);
+  });
+
+  test('promotes a registered project absent from a partial persisted manual order', () => {
+    useProjectsStore.setState({ manualProjectOrder: ['beta', 'gamma'] });
+    useProjectsStore.getState().moveProjectToTop('alpha');
+    expect(useProjectsStore.getState().manualProjectOrder).toEqual(['alpha', 'beta', 'gamma']);
+    const before = useProjectsStore.getState();
+    useProjectsStore.getState().moveProjectToTop('alpha');
+    expect(useProjectsStore.getState()).toBe(before);
   });
 });
 
@@ -69,6 +93,16 @@ describe('useProjectsStore instance-scoped order', () => {
     });
     return { alpha, beta, gamma };
   };
+
+  test('restores the activity-promoted drag order from persisted storage', () => {
+    const ids = seedProjects();
+    useProjectsStore.getState().reorderProjectsById(ids.gamma, ids.alpha);
+    useProjectsStore.getState().moveProjectToTop(ids.beta);
+    useProjectsStore.setState({ projects: [], manualProjectOrder: [] });
+    useProjectsStore.getState().resetForRuntimeSwitch();
+    expect(useProjectsStore.getState().manualProjectOrder).toEqual([ids.beta, ids.gamma, ids.alpha]);
+    expect(useProjectsStore.getState().projects.map(({ id }) => id)).toEqual([ids.beta, ids.gamma, ids.alpha]);
+  });
 
   test('keeps independent manual order across two relay instances that share the UI origin', () => {
     switchRuntimeEndpoint({

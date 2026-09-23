@@ -878,20 +878,37 @@ export const useProjectsStore = create<ProjectsStore>()(
       if (isVSCodeProjectsRuntime) {
         return;
       }
-      const { projects, activeProjectId } = get();
+      const { projects, activeProjectId, manualProjectOrder } = get();
       const projectIndex = projects.findIndex((project) => project.id === id);
-      // Activity promotion only advances the registry. Manual sort reads
-      // manualProjectOrder, so a successful send must not clobber a drag order.
-      if (projectIndex <= 0) {
+      if (projectIndex === -1) return;
+      const manualIndex = manualProjectOrder.indexOf(id);
+      // Activity promotion and manual drag are peers on the current order:
+      // advance the registry always, and when a drag order exists promote on
+      // that list too so manual sort mode still pins after a send.
+      const registryNeedsMove = projectIndex > 0;
+      const manualNeedsMove = manualProjectOrder.length > 0 && manualIndex !== 0;
+      if (!registryNeedsMove && !manualNeedsMove) {
         return;
       }
 
-      const nextProjects = [...projects];
-      const [project] = nextProjects.splice(projectIndex, 1);
-      nextProjects.unshift(project);
+      const nextProjects = registryNeedsMove
+        ? (() => {
+          const moved = [...projects];
+          const [project] = moved.splice(projectIndex, 1);
+          moved.unshift(project);
+          return moved;
+        })()
+        : projects;
+      const nextManualOrder = manualNeedsMove
+        ? [id, ...manualProjectOrder.filter((projectId) => projectId !== id)]
+        : manualProjectOrder;
 
-      set({ projects: nextProjects });
-      persistProjects(nextProjects, activeProjectId);
+      if (nextProjects === projects && nextManualOrder === manualProjectOrder) {
+        return;
+      }
+
+      set({ projects: nextProjects, manualProjectOrder: nextManualOrder });
+      persistProjects(nextProjects, activeProjectId, nextManualOrder);
     },
 
     resetForRuntimeSwitch: () => {

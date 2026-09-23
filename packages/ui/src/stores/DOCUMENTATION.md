@@ -315,10 +315,15 @@ reuses the same bucket. Relay instances never fall back to the old
 API-URL or unscoped `projects` keys. `resetForRuntimeSwitch` reloads the
 new instance's list, active project, and manual order. Drag reorders write
 both the registry and `manualProjectOrder` (and PUT the registry to server
-settings). Activity promotions only advance the registry so a user-set
-manual sort is not clobbered by a successful send. `synchronizeFromSettings`
-adopts the incoming registry and drops removed ids from the local manual
-order, but does not rebase that drag order onto the server projects array.
+settings). Activity promotions (`moveProjectToTop`) advance the registry and,
+when a manual drag order exists, promote on that list too so manual sort mode
+still pins after a successful send or a live session status transition while
+preserving the remaining relative order. Duplicate status events preserve a
+later drag; child-store status supplies the baseline for synced directories,
+and the global live status map covers unopened directories.
+`synchronizeFromSettings` adopts the incoming registry and drops
+removed ids from the local manual order, but does not rebase that drag order
+onto the server projects array.
 
 `useSessionDisplayStore` (`projectSortOrder`) and `useMobileSessionTreeStore`
 use the same instance-scoped persist helper and rehydrate when `runtimeKey`

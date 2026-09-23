@@ -73,6 +73,10 @@ describe('markstream-react trial path', () => {
     expect(custom).toContain('MarkstreamTextNode,');
     expect(custom).toContain('inline_code: MarkstreamInlineCodeNode');
     expect(custom).toContain('code_block:');
+    expect(custom).toContain('mermaid:');
+    expect(custom).toContain('d2:');
+    expect(custom).toContain('d2lang:');
+    expect(custom).toContain('infographic:');
     expect(custom).toContain('withMarkstreamComponentDisplay(MarkstreamCodeBlockNode');
   });
 
