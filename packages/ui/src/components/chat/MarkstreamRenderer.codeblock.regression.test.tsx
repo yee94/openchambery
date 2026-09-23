@@ -183,6 +183,27 @@ describe('MarkstreamRenderer fenced code blocks (OpenChamber chrome)', () => {
     return codeText();
   };
 
+  test.each(['d2', 'infographic'])('%s fences stay OpenChamber code cards, not library diagram shells', async (language) => {
+    const fence = ['```' + language, 'x -> y', '```'].join('\n');
+    await render({ content: fence });
+    await flush(200);
+
+    expect(container.querySelector('[data-markdown="mermaid-block"]')).toBeNull();
+    expect(container.querySelector('[data-component="markdown-code"]')).toBeTruthy();
+    expect(codeText()).toContain('x -> y');
+  });
+
+  test('renders mermaid fences through OpenChamber diagram decorate, not the library source card', async () => {
+    const diagram = ['```mermaid', 'flowchart LR', 'A["用户输入"] --> B{"held?"}', '```'].join('\n');
+    await render({ content: diagram });
+    await flush(200);
+
+    const block = container.querySelector('[data-markdown="mermaid-block"]');
+    expect(block).toBeTruthy();
+    expect(block?.getAttribute('data-md-source')).toContain('flowchart LR');
+    expect(container.querySelector('[data-component="markdown-code"]')).toBeNull();
+  });
+
   test('uses OpenChamber markdown-code chrome, not markstream default toolbar, and keeps source text', async () => {
     await render({ content: `Before\n\n${FENCE}\n\nAfter` });
     await flush(120);
