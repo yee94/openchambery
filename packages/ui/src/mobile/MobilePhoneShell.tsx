@@ -4,19 +4,21 @@ import { useEvent } from '@reactuses/core';
 import { AssistantView } from '@/components/assistants/AssistantView';
 import { useI18n } from '@/lib/i18n';
 import { normalizePath } from '@/lib/pathNormalization';
+import { useSessionBtwStore } from '@/stores/useSessionBtwStore';
 import { useUIStore } from '@/stores/useUIStore';
 import { useSessionUIStore } from '@/sync/session-ui-store';
 
 import { MobileAssistantTab } from './assistant/MobileAssistantTab';
 import { MobileAssistantSettingsPage } from './assistant/MobileAssistantSettingsPage';
-import type { MobileParentSessionTarget } from './mobileNavigation';
+import { MobileBtwPage } from './MobileBtwPage';
+import type { MobileBtwRoute, MobileParentSessionTarget } from './mobileNavigation';
 import type { MobileTabId } from './mobileTabs';
 import { MobileTabsRoot } from './MobileTabsRoot';
 import { mobileBackNavigationCoordinator } from './mobileBackNavigation';
 import { MobileProjectsHomeContainer } from './projects';
 import { MobileScheduledTab } from './scheduled/MobileScheduledTab';
 import { MobileSettingsTab } from './settings/MobileSettingsTab';
-import { acknowledgeMobileSessionMirror, useMobileNavigationStore } from './useMobileNavigationStore';
+import { acknowledgeMobileSessionMirror, registerPhoneShellMount, useMobileNavigationStore } from './useMobileNavigationStore';
 
 export type MobilePhoneShellProps = {
   /** Opens the directory explorer so the user can add a project. */
@@ -86,6 +88,21 @@ export function MobilePhoneShell({
   const reconcileChatPredecessor = useMobileNavigationStore((state) => state.reconcileChatPredecessor);
   const materializeDraftSession = useMobileNavigationStore((state) => state.materializeDraftSession);
   const replaceChatSession = useMobileNavigationStore((state) => state.replaceChatSession);
+  const popBtw = useMobileNavigationStore((state) => state.popBtw);
+
+  React.useEffect(() => registerPhoneShellMount(), []);
+
+  // The `/btw` page owns its side conversation: whenever that page goes away
+  // (back, chat navigation, tab switch, reset) the conversation is cleared.
+  const btwRoute = navigation.secondary?.kind === 'chat' ? navigation.secondary.btw ?? null : null;
+  const previousBtwRoute = React.useRef<MobileBtwRoute | null>(null);
+  React.useEffect(() => {
+    const previous = previousBtwRoute.current;
+    previousBtwRoute.current = btwRoute;
+    if (previous && previous !== btwRoute) {
+      useSessionBtwStore.getState().clear({ sessionId: previous.sessionId, directory: previous.directory });
+    }
+  }, [btwRoute]);
 
   const setActiveTab = useEvent((tab: MobileTabId) => {
     if (tab === 'settings') {
@@ -126,6 +143,10 @@ export function MobilePhoneShell({
   const handleSecondaryBack = useEvent(() => {
     if (scheduledEditorBackRef.current?.()) return true;
     const secondary = useMobileNavigationStore.getState().secondary;
+    if (secondary?.kind === 'chat' && secondary.btw) {
+      popBtw();
+      return true;
+    }
     if (secondary?.kind === 'assistant' && secondary.settingsAssistantID) {
       popAssistantSettings();
       return true;
@@ -265,10 +286,11 @@ export function MobilePhoneShell({
     }
     if (navigation.secondary?.kind !== 'chat') return [];
     const routeStack = navigation.secondary.routes;
-    const routes = routeStack.slice(-2);
+    const btw = navigation.secondary.btw;
+    const routes = routeStack.slice(btw ? -1 : -2);
     const firstVisibleDepth = routeStack.length - routes.length + 1;
-    return routes.map((route, index) => {
-      const active = index === routes.length - 1;
+    const chatPages = routes.map((route, index) => {
+      const active = !btw && index === routes.length - 1;
       return {
         key: route.key,
         depth: firstVisibleDepth + index,
@@ -282,6 +304,13 @@ export function MobilePhoneShell({
         }),
       };
     });
+    return btw ? [...chatPages, {
+      key: 'chat-btw',
+      depth: routeStack.length + 1,
+      ariaLabel: t('chat.btw.title'),
+      onBack: handleSecondaryBack,
+      content: <MobileBtwPage route={btw} />,
+    }] : chatPages;
   }, [secondaryKind, navigation.secondary, handleSecondaryBack, pushAssistantSettings, instancesSecondaryPage, renderChat, t]);
 
   return (

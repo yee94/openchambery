@@ -80,6 +80,8 @@ import {
 import { listTranscriptEventBroadcastScopes } from "./transcript-event-broadcast"
 import { queryClient } from "@/lib/queryRuntime"
 import { locationShutdownDirectory, refreshDemandedLocationServices } from "./location-services-demand"
+import { createConfigLiveRefresh } from "./config-live-refresh"
+import { normalizePath } from "@/lib/pathNormalization"
 import {
   materializationStatusFromTranscriptData,
   messagesFromTranscriptData,
@@ -2019,6 +2021,31 @@ function commitTranscriptSseEvent(
   updateRoutingIndexFromEvent(routingIndex, resolvedDirectory, payload)
 }
 
+const configLiveRefresh = createConfigLiveRefresh({
+  client: queryClient,
+  identity: () => ({ transport: getRuntimeTransportIdentity(), generation: getRuntimeGeneration() }),
+  refreshProjections: async (directory, domains) => {
+    if (!domains.has('providers') && !domains.has('agents')) return;
+    const store = useConfigStore.getState();
+    const transport = getRuntimeTransportIdentity();
+    const generation = getRuntimeGeneration();
+    const directories = new Set([
+      ...Object.keys(store.directoryScoped),
+      ...(opencodeClient.getDirectory() ? [opencodeClient.getDirectory()!] : []),
+    ]);
+    const loaded = [...directories].filter((value) => value && value !== '__global__'
+      && (!directory || normalizePath(value) === normalizePath(directory)));
+    for (let index = 0; index < loaded.length; index += 4) {
+      if (getRuntimeTransportIdentity() !== transport || getRuntimeGeneration() !== generation) return;
+      await Promise.all(loaded.slice(index, index + 4).flatMap((value) => [
+        ...(domains.has('providers') ? [store.loadProviders({ directory: value, source: 'config-event', forceRefresh: true, allowEmpty: true })] : []),
+        ...(domains.has('agents') ? [store.loadAgents({ directory: value, source: 'config-event', forceRefresh: true })] : []),
+      ]));
+    }
+  },
+  onError: () => console.warn('[sync] Configuration refresh failed; retaining previous catalogs'),
+});
+
 /** Directory event dispatch. Exported as a minimal test seam for idle materialization. */
 export function handleEvent(
   rawDirectory: string,
@@ -2026,6 +2053,7 @@ export function handleEvent(
   childStores: ChildStoreManager,
   routingIndex: EventRoutingIndex,
 ) {
+  if (configLiveRefresh.event(payload.type, rawDirectory) && payload.type !== 'server.connected') return
   if ((payload as { type?: unknown }).type === "openchamber:worktree-bootstrap-status") {
     const properties = (payload as unknown as { properties?: unknown }).properties
     if (properties && typeof properties === "object" && !Array.isArray(properties)) {
@@ -2826,6 +2854,7 @@ export function SyncProvider(props: {
         noteStreamActivity(now)
       },
       onReconnect: () => {
+        configLiveRefresh.event('server.connected')
         useConfigStore.setState({
           isConnected: true,
           hasEverConnected: true,

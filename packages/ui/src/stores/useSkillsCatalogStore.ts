@@ -9,8 +9,6 @@ import type {
   SkillsInstallError,
 } from '@/lib/api/types';
 
-import { refreshSkillsAfterOpenCodeRestart } from '@/stores/useSkillsStore';
-import { startConfigUpdate, finishConfigUpdate, updateConfigUpdateMessage } from '@/lib/configUpdate';
 import { queryClient } from '@/lib/queryRuntime';
 import { FALLBACK_SKILLS_CATALOG_SOURCES, invalidateSkillsCatalogQueries } from '@/queries/skillsCatalogQueries';
 import { refreshInstalledSkillsQuery } from '@/queries/installedSkillsQueries';
@@ -97,9 +95,7 @@ export const useSkillsCatalogStore = create<SkillsCatalogState>()(
         if (getRuntimeTransportIdentity() !== transport) {
           return { ok: false, error: { kind: 'unknown', message: 'Failed to install skills' } as SkillsInstallError };
         }
-        startConfigUpdate('Installing skills…');
         set({ isInstalling: true, lastInstallError: null });
-        let requiresReload = false;
         try {
           const queryParams = directory ? `?directory=${encodeURIComponent(directory)}` : '';
           const response = await runtimeFetch(`/api/config/skills/install${queryParams}`, {
@@ -111,39 +107,24 @@ export const useSkillsCatalogStore = create<SkillsCatalogState>()(
           if (!payload) {
             const error = { kind: 'unknown', message: 'Failed to install skills' } as SkillsInstallError;
             set({ lastInstallError: error });
-            updateConfigUpdateMessage('Failed to install skills. Please retry.');
             return { ok: false, error };
           }
           if (!response.ok || !payload.ok) {
             const error = payload.error || ({ kind: 'unknown', message: 'Failed to install skills' } as SkillsInstallError);
             set({ lastInstallError: error });
-            updateConfigUpdateMessage(error.message || 'Failed to install skills. Please retry.');
             return { ok: false, error };
           }
           if (getRuntimeTransportIdentity() !== transport) return payload;
 
-          if (payload.requiresReload) {
-            requiresReload = true;
-            await refreshSkillsAfterOpenCodeRestart({
-              message: payload.message,
-              delayMs: payload.reloadDelayMs,
-              directory,
-              transportIdentity: transport,
-            });
-          } else {
-            updateConfigUpdateMessage(payload.message || 'Refreshing skills…');
-            await refreshInstalledSkillsQuery(queryClient, directory, transport);
-            await invalidateSkillsCatalogQueries(queryClient, directory, transport);
-          }
+          await refreshInstalledSkillsQuery(queryClient, directory, transport);
+          if (getRuntimeTransportIdentity() === transport) await invalidateSkillsCatalogQueries(queryClient, directory, transport);
           return payload;
         } catch (error) {
           const err = { kind: 'unknown', message: error instanceof Error ? error.message : String(error) } as SkillsInstallError;
           set({ lastInstallError: err });
-          updateConfigUpdateMessage('Failed to install skills. Please retry.');
           return { ok: false, error: err };
         } finally {
           set({ isInstalling: false });
-          if (!requiresReload) finishConfigUpdate();
         }
       },
     }),

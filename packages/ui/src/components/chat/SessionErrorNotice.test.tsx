@@ -26,7 +26,7 @@ it('renders a viewed execution failure even when the failed turn has no assistan
   await render(); await report();
   expect(host.querySelector('[role="alert"]')?.textContent).toContain('Agent not found: "Build"');
 });
-it('uses the transcript column and workspace chip styling for long errors', async () => {
+it('uses the transcript column and a quiet full-width row for long errors', async () => {
   const message = `xAI request failed (400): ${'long_error_detail_'.repeat(40)}`;
   await render(); await report(message);
   const notice = host.querySelector('[data-session-error="test-session"]');
@@ -34,9 +34,10 @@ it('uses the transcript column and workspace chip styling for long errors', asyn
   expect(notice?.className).toBe('chat-message-column py-1.5');
   expect(alert?.classList.contains('typography-meta')).toBe(true);
   expect(alert?.classList.contains('text-muted-foreground')).toBe(true);
-  expect(alert?.classList.contains('rounded-lg')).toBe(true);
-  expect(alert?.classList.contains('py-0.5')).toBe(true);
-  expect(alert?.querySelector('span')?.classList.contains('[overflow-wrap:anywhere]')).toBe(true);
+  expect(alert?.classList.contains('w-full')).toBe(true);
+  expect(alert?.classList.contains('border')).toBe(false);
+  expect(alert?.classList.contains('rounded-lg')).toBe(false);
+  expect(alert?.querySelector('span.flex-1')?.classList.contains('[overflow-wrap:anywhere]')).toBe(true);
   expect(alert?.textContent).toBe(message);
 });
 it('clears the error when authoritative activity clears error_at', async () => {

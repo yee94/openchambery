@@ -24,6 +24,8 @@ export const resolveSlashCommandIconName = (command: SlashCommandIconInput): Ico
       return 'time';
     case 'compact':
       return 'scissors';
+    case 'reload':
+      return 'refresh';
     case 'goal':
       return 'target';
     case 'review':

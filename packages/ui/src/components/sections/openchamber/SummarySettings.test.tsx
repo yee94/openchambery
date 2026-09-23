@@ -10,8 +10,9 @@ const mocks = vi.hoisted(() => ({
 vi.mock('@/lib/runtime-fetch', () => ({ runtimeFetch: mocks.fetch }));
 vi.mock('@/lib/persistence', () => ({ updateDesktopSettings: mocks.updateDesktopSettings }));
 vi.mock('@/contexts/runtimeAPIRegistry', () => ({ getRegisteredRuntimeAPIs: () => null }));
-vi.mock('@/stores/useConfigStore', () => ({
-  useConfigStore: (selector: (state: { providers: readonly unknown[] }) => unknown) => selector({ providers: [] }),
+vi.mock('@/queries/agentQueries', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/queries/agentQueries')>()),
+  useScopedProvidersQuery: () => ({ data: [] }),
 }));
 vi.mock('@/contexts/useThemeSystem', () => ({
   useThemeSystem: () => ({ currentTheme: {} }),
@@ -61,9 +62,6 @@ beforeEach(async () => {
   mocks.updateDesktopSettings.mockReset();
   mocks.fetch.mockImplementation(async (path: string) => {
     if (path === '/api/config/settings') return Response.json(settings);
-    if (path === '/api/small-model') {
-      return Response.json({ callableModels: { openai: ['gpt-5.4-mini'] } });
-    }
     if (path === '/api/small-model/custom-models') return Response.json({ models: [] });
     return Response.json({});
   });
@@ -97,6 +95,21 @@ test('custom mode model ID stays editable and is not snapped back to a callable 
   await flush();
 
   expect(modelInput()?.value).toBe('my-custom-model');
+});
+
+test('an unsaved provider model stays empty so the server follows the OpenCode default model', async () => {
+  settings = { summaryModelMode: 'provider' };
+  await act(async () => {
+    root.unmount();
+  });
+  root = createRoot(host);
+  await act(async () => {
+    root.render(<SummarySettings />);
+  });
+  await flush();
+
+  expect(host.querySelector('[data-testid="provider-model"]')?.textContent).toBe('');
+  expect(mocks.fetch).not.toHaveBeenCalledWith('/api/small-model', expect.anything());
 });
 
 test('switching modes round-trips without losing custom or provider configuration', async () => {

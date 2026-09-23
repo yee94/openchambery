@@ -24,7 +24,7 @@ vi.mock('@/stores/useConfigStore', () => ({ useConfigStore: (select: (s: unknown
 }) }));
 vi.mock('@/stores/useUIStore', () => ({ useUIStore: (select: (s: unknown) => unknown) => select({ hiddenModels: {} }) }));
 vi.mock('@/stores/useDirectoryStore', () => ({ useDirectoryStore: (select: (s: unknown) => unknown) => select({ currentDirectory: state.directory }) }));
-vi.mock('@/stores/useAgentsStore', () => ({ reloadOpenCodeConfiguration: state.reload }));
+vi.mock('@/stores/useAgentsStore', () => ({ refreshOpenCodeConfiguration: state.reload }));
 vi.mock('@/lib/runtime-fetch', () => ({ runtimeFetch: async () => new Response('{}') }));
 vi.mock('@/lib/i18n', () => ({ useI18n: () => ({ t: translate }), getCurrentIntlLocale: () => 'en' }));
 function translate(key: string) { return key; }

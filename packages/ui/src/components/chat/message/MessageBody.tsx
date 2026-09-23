@@ -45,7 +45,7 @@ import { computeAssistantTps, formatAssistantTps } from './assistantTps';
 import { ContextToolGroup } from './parts/ContextToolGroup';
 import { SkillToolGroup } from './parts/SkillToolGroup';
 import { StaticToolRow } from './parts/ProgressiveGroup';
-import { getToolRowBlockClass, TOOL_ROW_CHIP_GEOMETRY_CLASS } from './parts/toolRowChrome';
+import { getToolRowBlockClass } from './parts/toolRowChrome';
 import { collectConsecutiveProcessTools, hasProcessSuccessor } from './parts/processToolGrouping';
 import { collectConsecutiveSkillTools } from './parts/skillToolGrouping';
 import { isContextGroupTool, isExpandableTool, isProcessGroupTool, isSkillGroupTool, isToolPartActive, isToolPartSettled } from './parts/toolRenderUtils';
@@ -742,6 +742,7 @@ interface MessageBodyProps {
     editStaged?: boolean;
     onCancelEdit?: () => void;
     errorMessage?: string;
+    errorDetail?: string;
     errorVariant?: 'error' | 'info' | 'muted';
     userActionsMode?: 'inline' | 'external-content' | 'external-actions';
     stickyUserHeaderEnabled?: boolean;
@@ -1465,6 +1466,7 @@ const AssistantMessageBody = React.memo(({
     showReasoningTraces = false,
     turnGroupingContext,
     errorMessage,
+    errorDetail,
     errorVariant = 'error',
     reviewTransferDirection = null,
 }: Omit<MessageBodyProps, 'isUser'>) => {
@@ -1850,8 +1852,9 @@ const AssistantMessageBody = React.memo(({
         && !canRevealSortedBody
         && !(isCompactionTurn && isActivityExpanded);
     const showErrorMessage = Boolean(errorMessage);
-    const errorIconName = errorVariant === 'info' ? 'information' : 'error-warning';
-    const isMutedError = errorVariant === 'muted';
+    const errorIconName = errorVariant === 'muted'
+        ? 'stop-circle'
+        : errorVariant === 'info' ? 'information' : 'error-warning';
     const shouldShowMessageActions = hasCopyableText;
     // Settled turns (stop / completed / interrupt-error) get the footer even
     // when text is empty, so duration + TPS still show after user abort.
@@ -2402,58 +2405,28 @@ const AssistantMessageBody = React.memo(({
                     {renderedParts}
                     {showErrorMessage && (
                         <FadeInOnReveal key="assistant-error">
-                            {isMutedError ? (
-                                <div
-                                    role="status"
-                                    className="my-1.5 flex max-w-full items-center gap-1.5 break-words typography-meta text-muted-foreground"
-                                >
-                                    <Icon
-                                        name="stop-circle"
-                                        className="size-3.5 shrink-0"
-                                        aria-hidden="true"
-                                    />
-                                    <span className="min-w-0">{errorMessage}</span>
-                                </div>
-                            ) : (
                             <div
                                 role={errorVariant === 'error' ? 'alert' : 'status'}
-                                className={cn(
-                                    'my-1.5 inline-flex w-fit max-w-full gap-1.5 break-words typography-meta text-muted-foreground',
-                                    // Info/error share tool-row chip geometry. Mobile keeps a full
-                                    // chip boundary aligned to the message content column.
-                                    isMobile
-                                        ? 'items-start rounded-lg px-2.5 py-1.5'
-                                        : cn('items-center', TOOL_ROW_CHIP_GEOMETRY_CLASS),
-                                    errorVariant === 'info'
-                                        ? 'border border-[var(--status-info-border)]/45 bg-[var(--status-info-background)]/40'
-                                        : 'border border-[var(--status-error-border)]/45 bg-[var(--status-error-background)]/50',
-                                )}
+                                data-assistant-error={errorVariant}
+                                className="my-1.5 flex w-full min-w-0 items-start gap-1.5 typography-meta leading-5 text-muted-foreground"
                             >
-                                {isMobile ? (
-                                    <span className="inline-flex h-5 w-3.5 shrink-0 items-center justify-center translate-y-[2px]" aria-hidden="true">
-                                        <Icon
-                                            name={errorIconName}
-                                            weight={MESSAGE_ACTION_ICON_WEIGHT}
-                                            className={cn(
-                                                MESSAGE_ACTION_ICON_CLASS,
-                                                errorVariant === 'info' ? 'text-[var(--status-info)]/80' : 'text-[var(--status-error)]',
-                                            )}
-                                        />
-                                    </span>
-                                ) : (
+                                <span className="inline-flex h-5 shrink-0 items-center" aria-hidden="true">
                                     <Icon
                                         name={errorIconName}
-                                        weight={MESSAGE_ACTION_ICON_WEIGHT}
                                         className={cn(
-                                            'shrink-0',
-                                            MESSAGE_ACTION_ICON_CLASS,
-                                            errorVariant === 'info' ? 'text-[var(--status-info)]/80' : 'text-[var(--status-error)]',
+                                            'size-3.5',
+                                            errorVariant === 'error' && 'text-[var(--status-error)]/85',
+                                            errorVariant === 'info' && 'text-[var(--status-info)]/80',
                                         )}
                                     />
-                                )}
-                                <span className="min-w-0">{errorMessage}</span>
+                                </span>
+                                <span className="min-w-0 flex-1 whitespace-pre-wrap [overflow-wrap:anywhere]">
+                                    {errorMessage}
+                                    {errorDetail ? (
+                                        <span className="ml-1.5 text-muted-foreground/60">{errorDetail}</span>
+                                    ) : null}
+                                </span>
                             </div>
-                            )}
                         </FadeInOnReveal>
                     )}
                 </div>

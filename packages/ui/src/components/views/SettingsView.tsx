@@ -72,7 +72,8 @@ import { useI18n } from "@/lib/i18n";
 import { Icon } from "@/components/icon/Icon";
 import type { IconName } from "@/components/icon/icons";
 import { McpIcon } from "@/components/icons/McpIcon";
-import { reloadOpenCodeConfiguration } from "@/stores/useAgentsStore";
+import { reloadOpenCodeLocations } from "@/stores/useAgentsStore";
+import { toast } from "sonner";
 import {
   SETTINGS_PAGE_METADATA,
   getSettingsPageMeta,
@@ -1566,11 +1567,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                       "hover:text-sidebar-foreground hover:bg-interactive-hover",
                     )}
                     onClick={() =>
-                      void reloadOpenCodeConfiguration({
-                        message: "Restarting OpenCode…",
-                        mode: "projects",
-                        scopes: ["all"],
-                      }).catch(() => undefined)
+                      void reloadOpenCodeLocations().catch(() => toast.error(t('chat.chatInput.toast.reloadFailed')))
                     }
                   >
                     <Icon name="restart" className="h-4 w-4 shrink-0" />

@@ -49,9 +49,11 @@ const loadProviderCatalogFromV2 = async (directory: string | null, signal: Abort
   const modelsByProvider = new Map<string, Record<string, { id: string; name: string }>>();
   for (const model of modelsResult.data) {
     const providerID = typeof model?.providerID === 'string' ? model.providerID : '';
-    const modelID = typeof model?.modelID === 'string' && model.modelID
-      ? model.modelID
-      : typeof model?.id === 'string' ? model.id : '';
+    // ModelInfo.id is the external model id used in generate/session refs.
+    // ModelInfo.modelID is a separate internal field and must not be preferred.
+    const modelID = typeof model?.id === 'string' && model.id
+      ? model.id
+      : typeof model?.modelID === 'string' ? model.modelID : '';
     const name = typeof model?.name === 'string' ? model.name : modelID;
     if (!providerID || !modelID || !name) continue;
     const bucket = modelsByProvider.get(providerID) ?? {};

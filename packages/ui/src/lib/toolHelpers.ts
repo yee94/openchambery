@@ -202,6 +202,40 @@ const TOOL_METADATA: Record<string, ToolMetadata> = {
       category: 'ai',
       outputLanguage: 'json',
       inputFields: []
+    },
+
+    execute: {
+      displayName: 'Execute',
+      category: 'code',
+      outputLanguage: 'text',
+      inputFields: [
+        { key: 'code', label: 'Code', type: 'code', language: 'javascript' }
+      ]
+    },
+
+    session_rename: {
+      displayName: 'Rename Session',
+      category: 'system',
+      outputLanguage: 'text',
+      inputFields: [
+        { key: 'title', label: 'Title', type: 'text' }
+      ]
+    },
+
+    session_move: {
+      displayName: 'Move Session',
+      category: 'system',
+      outputLanguage: 'text',
+      inputFields: [
+        { key: 'directory', label: 'Directory', type: 'file' }
+      ]
+    },
+
+    browser: {
+      displayName: 'Browser',
+      category: 'web',
+      outputLanguage: 'text',
+      inputFields: []
     }
   };
 
@@ -217,6 +251,9 @@ const BUILT_IN_TOOL_ALIASES: Record<string, string> = {
   shell: 'bash',
   cmd: 'bash',
   terminal: 'bash',
+  // OpenCode 2 renamed `apply_patch` to `patch`; transcript projection does the
+  // same, and this alias covers any raw name that still reaches the UI.
+  patch: 'apply_patch',
   // Native OpenCode tool name — same display / task-row family as plugin `task`.
   subagent: 'task',
   structuredoutput: 'structuredoutput',
@@ -242,6 +279,10 @@ const BUILT_IN_TOOL_DISPLAY_KEYS = {
   question: 'chat.tools.display.question',
   lsp: 'chat.tools.display.lsp',
   structuredoutput: 'chat.tools.display.structuredoutput',
+  execute: 'chat.tools.display.execute',
+  session_rename: 'chat.tools.display.session_rename',
+  session_move: 'chat.tools.display.session_move',
+  browser: 'chat.tools.display.browser',
 } as const satisfies Record<string, I18nKey>;
 
 type BuiltInToolDisplayId = keyof typeof BUILT_IN_TOOL_DISPLAY_KEYS;

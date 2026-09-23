@@ -1,4 +1,5 @@
 import type { Part } from '@/lib/opencode/v2-types';
+import { stripSystemReminders } from '@/lib/systemReminder';
 import { isCodeSelectionFilePart } from '../attachmentCitations';
 import { isEmptyTextPart } from './partUtils';
 
@@ -111,6 +112,7 @@ export const normalizeUserDisplayParts = (parts: Part[]): Part[] => {
                 if (typeof text === 'string' && (
                     isSessionGoalContinuationText(text)
                     || isCompactionCommandText(text)
+                    || (text.includes('<system-reminder>') && stripSystemReminders(text).length === 0)
                 )) {
                     return false;
                 }
@@ -143,6 +145,10 @@ export const normalizeUserDisplayParts = (parts: Part[]): Part[] => {
 
                 if (text.startsWith('The following tool was executed by the user')) {
                     return { ...part, type: 'text', text: '/shell' } as Part;
+                }
+
+                if (text.includes('<system-reminder>')) {
+                    return { ...part, type: 'text', text: stripSystemReminders(text) } as Part;
                 }
             }
             return part;

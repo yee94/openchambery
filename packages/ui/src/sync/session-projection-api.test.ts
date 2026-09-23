@@ -393,6 +393,26 @@ describe("fetchSessionProjectionPage", () => {
     expect(assistant?.parts.map((part) => (part as { type?: string; text?: string }).text)).toEqual(["think", "正常"])
   })
 
+  test("v2 patch tool projects as apply_patch with its patch metadata", async () => {
+    const { normalizeSessionProjectionMessage } = await import("./session-projection-api")
+    const files = [{ file: "src/a.ts", patch: "--- a\n+++ b\n", status: "modified", additions: 1, deletions: 2 }]
+    const assistant = normalizeSessionProjectionMessage(SESSION, {
+      id: "msg_patch",
+      type: "assistant",
+      time: { created: 1 },
+      content: [{
+        type: "tool",
+        id: "call_patch",
+        name: "patch",
+        state: { status: "completed", input: { patchText: "*** Begin Patch" }, metadata: { files } },
+      }],
+    })
+    const tool = assistant?.parts[0] as { tool?: string; state?: { input?: unknown; metadata?: unknown } }
+    expect(tool.tool).toBe("apply_patch")
+    expect(tool.state?.input).toEqual({ patchText: "*** Begin Patch" })
+    expect(tool.state?.metadata).toEqual({ files })
+  })
+
   test("real wire reload page: user + assistant content, no idle control row", async () => {
     const { normalizeSessionProjectionPage } = await import("./session-projection-api")
     // Shape captured from isolated backend GET /session/.../message for

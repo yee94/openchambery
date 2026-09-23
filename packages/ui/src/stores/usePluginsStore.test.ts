@@ -44,6 +44,7 @@ mock.module('@/lib/runtime-fetch', () => ({
 }));
 
 const { usePluginsStore } = await import('./usePluginsStore');
+const { queryClient } = await import('@/lib/queryRuntime');
 
 const entry: PluginEntry = {
   id: 'config:user:plugin-a',
@@ -132,6 +133,7 @@ const flushPluginFollowUps = async (): Promise<void> => {
 
 describe('usePluginsStore', () => {
   beforeEach(() => {
+    queryClient.clear();
     resetStore();
     fetchCalls.length = 0;
     queuedResponses = [];

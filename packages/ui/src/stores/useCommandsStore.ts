@@ -1,7 +1,6 @@
 import { create } from 'zustand';
 import type { StoreApi, UseBoundStore } from 'zustand';
 import { devtools, persist } from 'zustand/middleware';
-import { startConfigUpdate, finishConfigUpdate, updateConfigUpdateMessage } from '@/lib/configUpdate';
 import { emitConfigChange, scopeMatches, subscribeToConfigChanges } from '@/lib/configSync';
 import { getRuntimeTransportIdentity } from '@/lib/runtime-switch';
 import { runtimeFetch } from '@/lib/runtime-fetch';
@@ -20,7 +19,6 @@ export type { Command, CommandConfig, CommandScope } from '@/queries/commandQuer
 
 const CONFIG_EVENT_SOURCE = 'useCommandsStore';
 const BUILTIN_COMMAND_NAMES = new Set(['init', 'review']);
-const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 export const isCommandBuiltIn = (command: Command): boolean => BUILTIN_COMMAND_NAMES.has(command.name);
 
@@ -89,11 +87,8 @@ async function mutateCommand(
   config: CommandConfig | Partial<CommandConfig> | undefined,
   set: (partial: Partial<CommandsStore>) => void,
 ): Promise<boolean> {
-  const labels = { POST: 'Creating', PATCH: 'Updating', DELETE: 'Deleting' };
-  startConfigUpdate(`${labels[method]} command configuration…`);
   const directory = resolveConfigQueryDirectory();
   const transport = getRuntimeTransportIdentity();
-  let requiresReload = false;
   try {
     const commandConfig: Record<string, unknown> = {};
     if (method === 'POST') {
@@ -118,26 +113,15 @@ async function mutateCommand(
     });
     const payload = await response.json().catch(() => null);
     if (!response.ok) throw new Error(payload?.error || `Failed to ${method.toLowerCase()} command`);
-    requiresReload = payload?.requiresReload ?? true;
-    if (requiresReload) {
-      await performFullConfigRefresh(directory, transport, { message: payload?.message, delayMs: payload?.reloadDelayMs });
-    } else {
-      await refreshMutationCommands(directory, transport);
-    }
+    if (getRuntimeTransportIdentity() !== transport) return true;
+    await refreshMutationCommands(directory, transport);
+    if (getRuntimeTransportIdentity() !== transport) return true;
     if (method === 'DELETE') set({ selectedCommandName: null });
     return true;
   } catch (error) {
     console.error('[CommandsStore] Command mutation failed:', error);
     return false;
-  } finally {
-    finishConfigUpdate();
   }
-}
-
-async function performFullConfigRefresh(directory: string | null, transport: string, options: { message?: string; delayMs?: number }) {
-  if (options.delayMs) await sleep(options.delayMs);
-  updateConfigUpdateMessage(options.message || 'Refreshing commands…');
-  await refreshMutationCommands(directory, transport);
 }
 
 if (typeof window !== 'undefined') window.__zustand_commands_store__ = useCommandsStore;

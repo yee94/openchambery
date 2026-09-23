@@ -52,13 +52,13 @@ describe('useSkillsCatalogStore', () => {
     expect(catalogInvalidations).toEqual([['/active-project', 'runtime-a']]);
   });
 
-  test('passes captured scope to restart refresh without an early installed query fetch', async () => {
+  test('refreshes captured queries without a restart flow even for a legacy reload hint', async () => {
     installPayload = { ok: true, requiresReload: true };
 
     await useSkillsCatalogStore.getState().installSkills({ source: 'owner/repo', scope: 'user', targetSource: 'opencode', selections: [] }, { directory: '/active-project' });
 
-    expect(restartRefreshes).toEqual([{ directory: '/active-project', transportIdentity: 'runtime-a' }]);
-    expect(installedRefreshes).toEqual([]);
+    expect(restartRefreshes).toEqual([]);
+    expect(installedRefreshes).toEqual([['/active-project', 'runtime-a']]);
   });
 
   test('does not dispatch an install captured for an inactive transport', async () => {

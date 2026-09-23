@@ -34,6 +34,17 @@ describe('resolveAssistantErrorPresentation', () => {
         )).toEqual({ text: abortedText, variant: 'muted' });
     });
 
+    test('renders the OpenCode 2 step interrupt as muted short copy, not an error chip', () => {
+        expect(resolveAssistantErrorPresentation(
+            { type: 'aborted', message: 'Step interrupted' },
+            abortedText,
+        )).toEqual({ text: abortedText, variant: 'muted' });
+        expect(resolveAssistantErrorPresentation(
+            { type: 'aborted', message: 'Tool execution interrupted' },
+            abortedText,
+        )).toEqual({ text: abortedText, variant: 'muted' });
+    });
+
     test('keeps retry notices as info and failures as error', () => {
         expect(resolveAssistantErrorPresentation(
             { name: 'SessionRetry', message: 'retrying' },
@@ -53,11 +64,26 @@ describe('resolveAssistantErrorPresentation', () => {
         expect(resolveAssistantErrorPresentation(
             { type: 'provider.no-route', message: 'Model unavailable: xai/grok-4.5' },
             abortedText,
-        )).toEqual({ text: 'Model unavailable: xai/grok-4.5', variant: 'error' });
+        )).toEqual({ text: 'Model unavailable: xai/grok-4.5', variant: 'error', detail: 'provider.no-route' });
         expect(resolveAssistantErrorPresentation(
             { type: 'unknown', message: 'Generation credentials are unavailable' },
             abortedText,
         )).toEqual({ text: 'Generation credentials are unavailable', variant: 'error' });
+    });
+
+    test('keeps the structured error code and HTTP status as a dimmed detail', () => {
+        expect(resolveAssistantErrorPresentation(
+            { type: 'provider.rate-limit', message: 'Too many requests', status: 429 },
+            abortedText,
+        )).toEqual({ text: 'Too many requests', variant: 'error', detail: 'provider.rate-limit · 429' });
+        expect(resolveAssistantErrorPresentation(
+            { type: 'provider.auth', message: 'Missing bearer or basic authentication in header', status: 401 },
+            abortedText,
+        )).toMatchObject({ variant: 'error', detail: 'provider.auth · 401' });
+        expect(resolveAssistantErrorPresentation(
+            { type: 'error', message: 'upstream closed', status: 502 },
+            abortedText,
+        )).toEqual({ text: 'upstream closed', variant: 'error', detail: '502' });
     });
 });
 
@@ -68,31 +94,26 @@ describe('shouldSuppressAssistantError', () => {
     });
 });
 
-describe('assistant abort presentation', () => {
-    test('muted abort copy is gray text, not an info alert', () => {
-        const mutedStart = messageBodySource.indexOf('isMutedError ? (');
-        const mutedEnd = messageBodySource.indexOf(') : (', mutedStart);
-        const mutedBranch = messageBodySource.slice(mutedStart, mutedEnd);
-        expect(mutedStart).toBeGreaterThan(-1);
-        expect(mutedEnd).toBeGreaterThan(mutedStart);
-        expect(mutedBranch).toContain('typography-meta text-muted-foreground');
-        expect(mutedBranch).toContain('name="stop-circle"');
-        expect(mutedBranch).not.toContain('status-info-border');
-        expect(mutedBranch).not.toContain('information');
-        expect(mutedBranch).not.toContain('SimpleMarkdownRenderer');
+describe('assistant error presentation', () => {
+    const errorStart = messageBodySource.indexOf('<FadeInOnReveal key="assistant-error">');
+    const errorEnd = messageBodySource.indexOf('</FadeInOnReveal>', errorStart);
+    const errorBlock = messageBodySource.slice(errorStart, errorEnd);
+
+    test('every variant is one quiet full-width meta row without a chip box', () => {
+        expect(errorStart).toBeGreaterThan(-1);
+        expect(errorEnd).toBeGreaterThan(errorStart);
+        expect(errorBlock).toContain('flex w-full min-w-0');
+        expect(errorBlock).toContain('typography-meta leading-5 text-muted-foreground');
+        expect(errorBlock).not.toMatch(/\bborder\b/);
+        expect(errorBlock).not.toContain('status-error-background');
+        expect(errorBlock).not.toContain('status-info-background');
+        expect(errorBlock).not.toContain('SimpleMarkdownRenderer');
     });
 
-    test('error and info chips are compact meta text, not a markdown callout', () => {
-        const mutedStart = messageBodySource.indexOf('isMutedError ? (');
-        const errorBlockEnd = messageBodySource.indexOf('</FadeInOnReveal>', mutedStart);
-        const errorBlock = messageBodySource.slice(mutedStart, errorBlockEnd);
-        expect(mutedStart).toBeGreaterThan(-1);
-        expect(errorBlockEnd).toBeGreaterThan(mutedStart);
-        expect(errorBlock).toContain('typography-meta');
-        expect(errorBlock).toContain('status-error-border');
-        expect(errorBlock).toContain('status-info-border');
-        expect(errorBlock).not.toContain('SimpleMarkdownRenderer');
-        expect(errorBlock).not.toContain('p-3');
+    test('status color stays on the icon; muted abort keeps the stop icon', () => {
+        expect(errorBlock).toContain("errorVariant === 'error' && 'text-[var(--status-error)]/85'");
+        expect(messageBodySource).toContain("? 'stop-circle'");
+        expect(errorBlock).toContain('{errorDetail ? (');
     });
 
     test('ChatMessage suppresses non-terminal assistant errors and unmounts empty recovered rows', () => {

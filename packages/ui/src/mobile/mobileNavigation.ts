@@ -12,11 +12,19 @@ export type MobileChatRoute = {
   directory: string | null;
 };
 
+/** `/btw` side conversation pushed above the chat page it was opened from. */
+export type MobileBtwRoute = {
+  sessionId: string;
+  directory: string | null;
+};
+
 export type MobileSecondaryState =
   | {
       /** Chat routes are metadata-only; the phone host renders the top two. */
       kind: 'chat';
       routes: MobileChatRoute[];
+      /** Page above the top chat route; any chat route change drops it. */
+      btw?: MobileBtwRoute;
     }
   | {
       /** New-session draft composer: the primary ChatView renders the draft

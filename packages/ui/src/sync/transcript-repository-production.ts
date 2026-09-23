@@ -136,6 +136,50 @@ export function mergeInitialProjectionAndContext(
 }
 
 /**
+ * Extra projection pages an unanchored first page may walk back. With the
+ * 20-message page this bounds the scan at 100 messages (Host scan default).
+ */
+export const INITIAL_ANCHOR_SCAN_EXTRA_PAGES = 4
+
+/**
+ * OpenCode 2 stores each assistant step as its own message, so one long turn
+ * (typical for subagents) can fill the whole first page without its authored
+ * user row. The transcript renders turns from that anchor, so walk older
+ * projection pages until one appears, history ends, or the bound is reached.
+ */
+export async function extendInitialPageToAuthoredUserTurn(
+  page: TranscriptTransportPage,
+  input: { sessionID: string; directory: string; signal: AbortSignal },
+): Promise<TranscriptTransportPage> {
+  let current = page
+  for (
+    let scanned = 0;
+    scanned < INITIAL_ANCHOR_SCAN_EXTRA_PAGES && current.turnCount === 0 && current.cursor && !current.complete;
+    scanned += 1
+  ) {
+    const older = await fetchSessionProjectionPage({
+      sessionID: input.sessionID,
+      directory: input.directory,
+      cursor: current.cursor,
+      signal: input.signal,
+    })
+    const known = new Set(current.records.map((record) => record.info.id))
+    const records = [
+      ...older.records.filter((record) => !known.has(record.info.id)),
+      ...current.records,
+    ]
+    current = {
+      ...current,
+      records,
+      cursor: older.cursor,
+      complete: older.complete,
+      turnCount: records.filter((entry) => isAuthoredUserTurnRecord(entry.info, entry.parts)).length,
+    }
+  }
+  return current
+}
+
+/**
  * Production HTTP fetcher for transcript InfiniteQuery / tail tasks.
  * Uses Host turn-page + assistant parent recovery; strips message diffs.
  */
@@ -177,7 +221,10 @@ export async function fetchProductionTranscriptTransportPage(input: {
   // but pagination authority stays on projection: its cursor covers every
   // first-page id. Replacing records with a strict context subset while keeping
   // the projection cursor would skip intermediate ids on the next older page.
-  const page = mergeInitialProjectionAndContext(projection, context)
+  const merged = mergeInitialProjectionAndContext(projection, context)
+  const page = input.before
+    ? merged
+    : await extendInitialPageToAuthoredUserTurn(merged, input)
 
   let records = page.records.map((record) => ({
     info: stripMessageDiffSnapshots(record.info),

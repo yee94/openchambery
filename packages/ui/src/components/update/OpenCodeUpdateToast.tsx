@@ -2,7 +2,7 @@ import * as React from 'react';
 import { useEvent } from '@reactuses/core';
 import { Icon } from '@/components/icon/Icon';
 import { toast } from '@/components/ui/toast';
-import { reloadOpenCodeConfiguration } from '@/stores/useAgentsStore';
+import { restartOpenCodeService } from '@/stores/useAgentsStore';
 import { useUIStore } from '@/stores/useUIStore';
 import { useI18n } from '@/lib/i18n';
 import { runtimeFetch } from '@/lib/runtime-fetch';
@@ -35,7 +35,7 @@ export const OpenCodeUpdateToast: React.FC = () => {
 
   const reloadOpenCode = useEvent(() => {
     toast.dismiss(UPGRADE_TOAST_ID);
-    void reloadOpenCodeConfiguration({
+    void restartOpenCodeService({
       message: t('opencodeUpdate.toast.reload.message'),
       mode: 'projects',
       scopes: ['all'],

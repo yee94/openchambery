@@ -70,7 +70,7 @@ import { shouldSuppressTaskLoading } from './shouldSuppressTaskLoading';
 import { opencodeClient } from '@/lib/opencode/client';
 import { areRenderRelevantPartsEqual } from '../renderCompare';
 import { useI18n } from '@/lib/i18n';
-import { getDiffPatchEntries, getPatchText, getToolNavigationDiffEntries } from './toolDiffUtils';
+import { getDiffPatchEntries, getPatchText, getToolNavigationDiffEntries, patchFilePath } from './toolDiffUtils';
 import { useDeferredToolHydration } from './deferredToolHydrationContext';
 import { scheduleAfterPaintTask } from '@/lib/afterPaintTaskQueue';
 import { DualLimitLru } from '@/lib/dualLimitLru';
@@ -191,8 +191,8 @@ const getMultiFileDescription = (
     const entriesByPath = new Map<string, { path: string; name: string; added: number | null; removed: number | null }>();
 
     for (const file of files) {
-        const fileObj = file as { relativePath?: string; filePath?: string; additions?: unknown; deletions?: unknown };
-        const filePath = fileObj.relativePath || fileObj.filePath || '';
+        const fileObj = file as { additions?: unknown; deletions?: unknown };
+        const filePath = patchFilePath(file);
         if (!filePath) continue;
         const fileName = filePath.split('/').pop() || filePath;
         const added = parseCount(fileObj.additions);
@@ -249,13 +249,14 @@ const normalizeToolName = (toolName: string | undefined | null): string => {
         return '';
     }
 
-    if (trimmed.includes('.')) {
-        const dotParts = trimmed.split('.').filter(Boolean);
-        const last = dotParts[dotParts.length - 1];
-        if (last) return last;
-    }
-
-    return trimmed;
+    const last = trimmed.includes('.')
+        ? (trimmed.split('.').filter(Boolean).pop() ?? trimmed)
+        : trimmed;
+    // OpenCode 2 names the shell tool `shell`. Display and command rendering key on `bash`.
+    if (last === 'shell' || last === 'cmd' || last === 'terminal') return 'bash';
+    // OpenCode 2 names the multi-file patch tool `patch`. Diff rendering keys on `apply_patch`.
+    if (last === 'patch') return 'apply_patch';
+    return last;
 };
 
 const MAX_DURATION_MS = 5 * 60 * 1000; // 5 minutes cap
@@ -467,8 +468,7 @@ const getPrimaryDiffFromMetadata = (
                 if (!file || typeof file !== 'object') {
                     return false;
                 }
-                const candidate = file as { relativePath?: unknown; filePath?: unknown; movePath?: unknown };
-                return candidate.relativePath === preferred || candidate.filePath === preferred || candidate.movePath === preferred;
+                return patchFilePath(file) === preferred;
             })
             : files[0];
 
@@ -587,23 +587,9 @@ const getPrimaryToolPath = (
 
     if (toolName === 'apply_patch') {
         const files = Array.isArray(metadata?.files) ? metadata.files : [];
-        const first = files.find((entry) => {
-            if (!isRecord(entry)) {
-                return false;
-            }
-            return typeof entry.movePath === 'string'
-                || typeof entry.filePath === 'string'
-                || typeof entry.relativePath === 'string';
-        });
-        if (isRecord(first)) {
-            return typeof first.movePath === 'string'
-                ? first.movePath
-                : typeof first.filePath === 'string'
-                    ? first.filePath
-                    : typeof first.relativePath === 'string'
-                        ? first.relativePath
-                        : fileDiffPath;
-        }
+        const first = files.find((entry) => patchFilePath(entry).length > 0);
+        const firstPath = patchFilePath(first);
+        if (firstPath) return firstPath;
         const fallbackDiff = getPatchText(metadata?.patch) ?? getPatchText(metadata?.diff);
         const firstPatchEntry = fallbackDiff
             ? getDiffPatchEntries(undefined, fallbackDiff, (path) => path)
@@ -744,10 +730,9 @@ const getToolDescriptionPath = (part: ToolPartType, state: ToolStateUnion, curre
 
     if (part.tool === 'apply_patch') {
         const files = Array.isArray(metadata?.files) ? metadata?.files : [];
-        const firstFile = files[0] as { relativePath?: string; filePath?: string } | undefined;
-        const filePath = firstFile?.relativePath || firstFile?.filePath;
+        const filePath = patchFilePath(files[0]);
         if (files.length > 1) return null;
-        if (typeof filePath === 'string') {
+        if (filePath) {
             return getRelativePath(filePath, currentDirectory);
         }
         return null;
@@ -2968,7 +2953,7 @@ const ToolPartContent: React.FC<ToolPartProps> = ({
                                 style={{ backgroundColor: 'var(--tools-border)' }}
                             />
                             <ToolExpandedContent
-                                part={part}
+                                part={normalizedPart}
                                 state={state}
                                 currentDirectory={currentDirectory}
                                 isExpanded={isExpanded}

@@ -1,4 +1,5 @@
 import type { Part } from '@/lib/opencode/v2-types';
+import { stripSystemReminders } from '@/lib/systemReminder';
 
 type PartWithText = Part & { text?: string; content?: string; value?: string };
 
@@ -47,9 +48,9 @@ export const filterVisibleParts = (parts: Part[], options: VisibleFilterOptions 
         const partWithSynthetic = part as PartWithSynthetic;
         const isSynthetic = Boolean(partWithSynthetic.synthetic);
 
-        if (isSynthetic && part.type === 'text') {
+        if (part.type === 'text') {
             const text = extractTextContent(part);
-            if (text.includes('<system-reminder>')) {
+            if (text.includes('<system-reminder>') && stripSystemReminders(text).length === 0) {
                 return false;
             }
         }

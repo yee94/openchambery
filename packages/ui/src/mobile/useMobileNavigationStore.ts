@@ -12,6 +12,7 @@ import {
   pushMobileChatRoute,
   reconcileMobileChatPredecessor,
   replaceMobileChatRoute,
+  type MobileBtwRoute,
   type MobileChatRoute,
   type MobileNavigationState,
   type MobileSettingsReturnTo,
@@ -64,6 +65,9 @@ type MobileNavigationStore = MobileNavigationState & {
   openDraft: (options?: OpenDraftOptions) => void;
   /** Select an Assistant, then open its conversation as the second-level page. */
   openAssistant: (assistantID: string) => void;
+  /** Push the `/btw` page above the top chat route. False when no chat page is open. */
+  pushBtw: (target: MobileBtwRoute) => boolean;
+  popBtw: () => void;
   pushAssistantSettings: (assistantID: string) => void;
   popAssistantSettings: () => void;
   /** Open instance management as a second-level page above the current root tab. */
@@ -199,7 +203,7 @@ export const useMobileNavigationStore = create<MobileNavigationStore>((set, get)
       state.secondary.routes,
       createChatRoute(target, 'parent'),
     );
-    return routes === state.secondary.routes ? state : { secondary: { kind: 'chat', routes } };
+    return routes === state.secondary.routes ? state : { secondary: { ...state.secondary, routes } };
   }),
   replaceChatSession: (target) => set((state) => {
     if (state.secondary?.kind !== 'chat') return state;
@@ -240,6 +244,16 @@ export const useMobileNavigationStore = create<MobileNavigationStore>((set, get)
     resetMobileSessionMirror();
     set({ secondary: { kind: 'instances' } });
   },
+  pushBtw: (target) => {
+    const secondary = get().secondary;
+    if (secondary?.kind !== 'chat') return false;
+    set({ secondary: { ...secondary, btw: { sessionId: target.sessionId, directory: target.directory ?? null } } });
+    return true;
+  },
+  popBtw: () => set((state) => {
+    if (state.secondary?.kind !== 'chat' || !state.secondary.btw) return state;
+    return { secondary: { kind: 'chat', routes: state.secondary.routes } };
+  }),
   pushAssistantSettings: (assistantID) => set((state) => {
     if (state.secondary?.kind !== 'assistant' || state.secondary.settingsAssistantID === assistantID) return state;
     return { secondary: { ...state.secondary, settingsAssistantID: assistantID } };
@@ -265,6 +279,26 @@ const createChatRoute = (target: OpenSessionTarget, source: 'root' | 'push' | 'p
   sessionId: target.sessionId,
   directory: target.directory ?? null,
 });
+
+let phoneShellMounts = 0;
+
+/** MobilePhoneShell presence; hosted mobile web and Capacitor phones both mount it. */
+export const registerPhoneShellMount = (): (() => void) => {
+  phoneShellMounts += 1;
+  return () => { phoneShellMounts -= 1; };
+};
+
+/** Phone shell pushes `/btw` as a page; every other layout keeps the ContextPanel tab / sheet. */
+export const pushPhoneBtw = (target: MobileBtwRoute): boolean =>
+  phoneShellMounts > 0 && useMobileNavigationStore.getState().pushBtw(target);
+
+/** True while the phone `/btw` page owns this scope's conversation lifetime. */
+export const isPhoneBtwScopeOpen = (target: MobileBtwRoute): boolean => {
+  const secondary = useMobileNavigationStore.getState().secondary;
+  return secondary?.kind === 'chat'
+    && secondary.btw?.sessionId === target.sessionId
+    && normalizePath(secondary.btw.directory) === normalizePath(target.directory);
+};
 
 /** Routes nested sessions through the native phone stack while other runtimes keep their owner. */
 export const pushPhoneNestedSession = (target: OpenSessionTarget): boolean => {

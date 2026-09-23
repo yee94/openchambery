@@ -166,9 +166,17 @@ function toolOutput(state: Record<string, unknown>): string | undefined {
     .join("\n")
 }
 
+/**
+ * OpenCode 2 renamed `apply_patch` to `patch` with the same `patchText` input
+ * and `metadata.files` shape; the transcript keys patch rendering on `apply_patch`.
+ */
+export function normalizeProjectionToolName(name: string | undefined): string | undefined {
+  return name === "patch" ? "apply_patch" : name
+}
+
 function toolPart(sessionID: string, messageID: string, tool: Record<string, unknown>): ToolPart {
   const id = asString(tool.id) ?? `${messageID}:tool`
-  const name = asString(tool.name) ?? "tool"
+  const name = normalizeProjectionToolName(asString(tool.name)) ?? "tool"
   const state = record(tool.state) ? tool.state : {}
   const status = asString(state.status) ?? "completed"
   const mappedStatus = status === "streaming" ? "pending" : status

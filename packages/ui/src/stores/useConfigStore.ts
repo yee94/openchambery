@@ -1059,7 +1059,7 @@ interface ConfigStore {
 
     activateDirectory: (directory: string | null | undefined, options?: { refreshProviders?: boolean; source?: string }) => Promise<void>;
 
-    loadProviders: (options?: { directory?: string | null; source?: string; forceRefresh?: boolean }) => Promise<void>;
+    loadProviders: (options?: { directory?: string | null; source?: string; forceRefresh?: boolean; allowEmpty?: boolean }) => Promise<void>;
     loadAgents: (options?: { directory?: string | null; source?: string; forceRefresh?: boolean }) => Promise<boolean>;
     /**
      * Cold-start recovery for catalogs that are still empty after a successful
@@ -1486,9 +1486,9 @@ export const useConfigStore = create<ConfigStore>()(
                     }
                 },
 
-                invalidateProviderCache: (_directory) => {
+                invalidateProviderCache: (directory) => {
                     const transport = getRuntimeTransportIdentity();
-                    void invalidateProviderCatalogQuery(null, transport);
+                    void invalidateProviderCatalogQuery(directory ?? null, transport);
                 },
 
                 loadProviders: async (options) => {
@@ -1549,8 +1549,9 @@ export const useConfigStore = create<ConfigStore>()(
                                 return;
                             }
                             if (apiResult.partial && previousProviders.length > 0) return;
-                            // 空响应一律不写 store、不更新快照、不覆盖已有非空数据。
-                            if (processedProviders.length === 0) return;
+                            // Bootstrap empty snapshots remain provisional. An explicit V2
+                            // domain/credential refresh can authoritatively disconnect the last provider.
+                            if (processedProviders.length === 0 && (!options?.allowEmpty || apiResult.partial)) return;
 
                             set((state) => {
                                 if (!isCurrent() || state.catalogTransportIdentity !== transport) return state;

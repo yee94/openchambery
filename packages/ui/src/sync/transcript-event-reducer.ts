@@ -14,6 +14,7 @@ import type { DirectoryEventResult, SessionMaterializationReason } from "./event
 import { applySessionCompactionLiveEvent } from "./session-compaction-api"
 import {
   messageIDFromEventID,
+  normalizeProjectionToolName,
   normalizeSessionProjectionMessage,
 } from "./session-projection-api"
 
@@ -768,7 +769,7 @@ function upsertToolPart(
       sessionID,
       messageID,
       type: "tool",
-      tool: name ?? "tool",
+      tool: normalizeProjectionToolName(name) ?? "tool",
       callID: toolID,
       state: { status: "pending", input: "", output: undefined, metadata: {} },
     } as Part)

@@ -5,18 +5,18 @@ import { NumberInput } from '@/components/ui/number-input';
 import { Textarea } from '@/components/ui/textarea';
 import { toast } from '@/components/ui';
 import { useAgentsStore, type AgentConfig, type AgentMutationResult, type AgentScope } from '@/stores/useAgentsStore';
-import { useAgentsQuery } from '@/queries/agentQueries';
+import { useAgentsQuery, resolveConfigQueryDirectory, type AgentWithExtras } from '@/queries/agentQueries';
 import { useShallow } from 'zustand/react/shallow';
 import { useDirectorySync } from '@/sync/sync-context';
 import { useDirectoryStore } from '@/stores/useDirectoryStore';
 import { opencodeClient } from '@/lib/opencode/client';
 import { cn } from '@/lib/utils';
+import { Checkbox } from '@/components/ui/checkbox';
 import { ModelSelector } from './ModelSelector';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { ScrollableOverlay } from '@/components/ui/ScrollableOverlay';
-import { useI18n } from '@/lib/i18n';
-import { parseModelIdentifier } from '@/lib/modelIdentifier';
-import { useConfigStore } from '@/stores/useConfigStore';
+import { useI18n, type I18nKey } from '@/lib/i18n';
+import { runtimeFetch } from '@/lib/runtime-fetch';
 import {
   Select,
   SelectContent,
@@ -25,8 +25,8 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Icon } from '@/components/icon/Icon';
-import { SettingsField, SettingsGroup, SettingsRow } from '@/components/sections/shared/SettingsGroup';
-import { buildAgentSaveConfig, type AgentEditorSnapshot } from './agentSaveConfig';
+import { SettingsField, SettingsGroup, SettingsRow, SettingsToggleRow } from '@/components/sections/shared/SettingsGroup';
+import { buildAgentSaveConfig, catalogModelSelection, isHexColor, readStoredSystem, splitModelSelection, type AgentEditorSnapshot } from './agentSaveConfig';
 import { displayPermissionRulesLastMatch, toPermissionRuleset } from '@/sync/permission-rules';
 import { SavedPermissionsSection } from './SavedPermissionsSection';
 
@@ -40,20 +40,41 @@ const STANDARD_PERMISSION_KEYS = [
   'edit',
   'glob',
   'grep',
-  'list',
-  'bash',
-  'task',
+  'shell',
+  'subagent',
   'skill',
-  'lsp',
-  'todoread',
-  'todowrite',
   'webfetch',
   'websearch',
-  'codesearch',
-  'external_directory',
-  'doom_loop',
   'question',
+  'external_directory',
+  'execute',
+  'browser',
 ] as const;
+
+const PERMISSION_LABEL_KEYS: Record<string, I18nKey> = {
+  '*': 'settings.agents.page.permissions.defaultLabel',
+  shell: 'settings.agents.page.permissions.shell',
+  bash: 'settings.agents.page.permissions.shell',
+  subagent: 'settings.agents.page.permissions.subagent',
+  task: 'settings.agents.page.permissions.subagent',
+  edit: 'settings.agents.page.permissions.edit',
+  write: 'settings.agents.page.permissions.edit',
+  patch: 'settings.agents.page.permissions.edit',
+  apply_patch: 'settings.agents.page.permissions.edit',
+  multiedit: 'settings.agents.page.permissions.edit',
+  external_directory: 'settings.agents.page.permissions.externalDirectory',
+  question: 'settings.agents.page.permissions.question',
+  read: 'settings.agents.page.permissions.read',
+  glob: 'settings.agents.page.permissions.glob',
+  grep: 'settings.agents.page.permissions.grep',
+  skill: 'settings.agents.page.permissions.skill',
+  webfetch: 'settings.agents.page.permissions.webfetch',
+  websearch: 'settings.agents.page.permissions.websearch',
+  execute: 'settings.agents.page.permissions.execute',
+  browser: 'settings.agents.page.permissions.browser',
+  session_rename: 'chat.tools.display.session_rename',
+  session_move: 'chat.tools.display.session_move',
+};
 
 const isPermissionAction = (value: unknown): value is PermissionAction =>
   value === 'allow' || value === 'ask' || value === 'deny';
@@ -61,10 +82,18 @@ const isPermissionAction = (value: unknown): value is PermissionAction =>
 const buildRuleKey = (permission: string, pattern: string): PermissionRuleKey =>
   `${permission}::${pattern}`;
 
+const renamePermissionName = (permission: string): string => {
+  if (permission === 'bash') return 'shell';
+  if (permission === 'task') return 'subagent';
+  if (permission === 'write' || permission === 'patch') return 'edit';
+  return permission;
+};
+
 const normalizeRuleset = (ruleset: PermissionRule[]): PermissionRule[] => {
   const map = new Map<PermissionRuleKey, PermissionRule>();
   for (const rule of ruleset) {
-    if (!rule.permission || rule.permission === 'invalid') {
+    const permission = renamePermissionName(rule.permission);
+    if (!permission || permission === 'invalid') {
       continue;
     }
     if (!rule.pattern) {
@@ -73,8 +102,8 @@ const normalizeRuleset = (ruleset: PermissionRule[]): PermissionRule[] => {
     if (!isPermissionAction(rule.action)) {
       continue;
     }
-    map.set(buildRuleKey(rule.permission, rule.pattern), {
-      permission: rule.permission,
+    map.set(buildRuleKey(permission, rule.pattern), {
+      permission,
       pattern: rule.pattern,
       action: rule.action,
     });
@@ -168,44 +197,8 @@ const permissionConfigToRuleset = (value: unknown): PermissionRule[] => {
   return rules;
 };
 
-const buildPermissionConfigWithGlobal = (
-  globalAction: PermissionAction,
-  ruleset: PermissionRule[],
-): AgentConfig['permission'] => [
-  { action: '*', resource: '*', effect: globalAction },
-  ...normalizeRuleset(ruleset)
-    .filter((rule) => !(rule.permission === '*' && rule.pattern === '*'))
-    .map((rule) => ({
-      action: rule.permission,
-      resource: rule.pattern,
-      effect: rule.action,
-    })),
-];
-
-type AgentVariantProvider = {
-  id: string;
-  models?: Array<{
-    id?: string;
-    variants?: Record<string, unknown>;
-  }>;
-};
-
-const getVariantOptionsForModel = (
-  providers: AgentVariantProvider[],
-  modelValue: string,
-): string[] => {
-  const parsedModel = parseModelIdentifier(modelValue);
-  if (!parsedModel) {
-    return [];
-  }
-
-  const provider = providers.find((item) => item.id === parsedModel.providerId);
-  const model = provider?.models?.find((item) => item.id === parsedModel.modelId);
-  return model?.variants ? Object.keys(model.variants) : [];
-};
 export const AgentsPage: React.FC = () => {
   const { t } = useI18n();
-  const providers = useConfigStore((state) => state.providers) as AgentVariantProvider[];
   const {
     selectedAgentName,
     getAgentByName,
@@ -231,10 +224,12 @@ export const AgentsPage: React.FC = () => {
   const [description, setDescription] = React.useState('');
   const [mode, setMode] = React.useState<'primary' | 'subagent' | 'all'>('subagent');
   const [model, setModel] = React.useState('');
-  const [variant, setVariant] = React.useState('');
-  const [temperature, setTemperature] = React.useState<number | undefined>(undefined);
-  const [topP, setTopP] = React.useState<number | undefined>(undefined);
-  const [prompt, setPrompt] = React.useState('');
+  const [systemPrompt, setSystemPrompt] = React.useState('');
+  const [steps, setSteps] = React.useState<number | undefined>(undefined);
+  const [hidden, setHidden] = React.useState(false);
+  const [disabledAgent, setDisabledAgent] = React.useState(false);
+  const [color, setColor] = React.useState('');
+  const [confirmDrop, setConfirmDrop] = React.useState(false);
   const [globalPermission, setGlobalPermission] = React.useState<PermissionAction>('allow');
   const [permissionBaseline, setPermissionBaseline] = React.useState<PermissionRule[]>([]);
   const [permissionRules, setPermissionRules] = React.useState<PermissionRule[]>([]);
@@ -248,25 +243,17 @@ export const AgentsPage: React.FC = () => {
     description: string;
     mode: 'primary' | 'subagent' | 'all';
     model: string;
-    variant: string;
-    temperature: number | undefined;
-    topP: number | undefined;
-    prompt: string;
+    system: string;
+    steps: number | undefined;
+    hidden: boolean;
+    disabled: boolean;
+    color: string;
     globalPermission: PermissionAction;
     permissionRules: PermissionRule[];
   } | null>(null);
 
   const currentDirectory = useDirectoryStore((state) => state.currentDirectory ?? null);
   const [toolIds, setToolIds] = React.useState<string[]>([]);
-  const variantOptions = React.useMemo(() => getVariantOptionsForModel(providers, model), [model, providers]);
-  const hasVariantOptions = variantOptions.length > 0;
-  const selectedVariantValue = React.useMemo(() => {
-    if (!variant || !variantOptions.includes(variant)) {
-      return '__default';
-    }
-    return variant;
-  }, [variant, variantOptions]);
-  const shouldUseVariantSelect = hasVariantOptions && (!variant || variantOptions.includes(variant));
 
   const permissionsBySession = useDirectorySync((state) => state.permission);
 
@@ -304,7 +291,8 @@ export const AgentsPage: React.FC = () => {
     const names = new Set<string>();
 
     for (const agent of agents) {
-      const rules = normalizeRuleset(permissionConfigToRuleset(agent.permission));
+      const extended = agent as AgentWithExtras & { permissions?: unknown };
+      const rules = normalizeRuleset(permissionConfigToRuleset(extended.permissions ?? agent.permission));
       for (const rule of rules) {
         if (rule.permission && rule.permission !== '*' && rule.permission !== 'invalid') {
           names.add(rule.permission);
@@ -331,15 +319,15 @@ export const AgentsPage: React.FC = () => {
   const baselineRuleMap = React.useMemo(() => buildRuleMap(permissionBaseline), [permissionBaseline]);
   const currentRuleMap = React.useMemo(() => buildRuleMap(permissionRules), [permissionRules]);
 
-  const getWildcardOverride = React.useCallback((permissionName: string): PermissionAction | undefined => (
+  const getWildcardOverride = (permissionName: string): PermissionAction | undefined => (
     currentRuleMap.get(buildRuleKey(permissionName, '*'))?.action
-  ), [currentRuleMap]);
+  );
 
-  const getPatternRules = React.useCallback((permissionName: string): PermissionRule[] => (
+  const getPatternRules = (permissionName: string): PermissionRule[] => (
     permissionRules
       .filter((rule) => rule.permission === permissionName && rule.pattern !== '*')
       .sort((a, b) => a.pattern.localeCompare(b.pattern))
-  ), [permissionRules]);
+  );
 
   const summaryPermissionNames = React.useMemo(() => {
     const names = new Set<string>();
@@ -352,7 +340,7 @@ export const AgentsPage: React.FC = () => {
     return Array.from(names).sort((a, b) => a.localeCompare(b));
   }, [knownPermissionNames]);
 
-  const getPermissionSummary = React.useCallback((permissionName: string) => {
+  const getPermissionSummary = (permissionName: string) => {
     const defaultAction = permissionName === '*'
       ? globalPermission
       : (getWildcardOverride(permissionName) ?? globalPermission);
@@ -372,16 +360,16 @@ export const AgentsPage: React.FC = () => {
       patternSummary,
       hasDefaultHint,
     };
-  }, [getPatternRules, getWildcardOverride, globalPermission]);
-  const permissionActionLabel = React.useCallback((value: PermissionAction): string => {
+  };
+  const permissionActionLabel = (value: PermissionAction): string => {
     if (value === 'allow') return t('settings.common.permission.allow');
     if (value === 'deny') return t('settings.common.permission.deny');
     return t('settings.common.permission.ask');
-  }, [t]);
-  const permissionScopeLabel = React.useCallback((value: PermissionAction | 'global'): string => {
+  };
+  const permissionScopeLabel = (value: PermissionAction | 'global'): string => {
     if (value === 'global') return t('settings.common.scope.global');
     return permissionActionLabel(value);
-  }, [permissionActionLabel, t]);
+  };
 
   const availablePermissionNames = React.useMemo(() => {
     const names = new Set<string>();
@@ -396,41 +384,41 @@ export const AgentsPage: React.FC = () => {
     return Array.from(names).sort((a, b) => a.localeCompare(b));
   }, [knownPermissionNames]);
 
-  const upsertRule = React.useCallback((permissionName: string, pattern: string, action: PermissionAction) => {
+  const upsertRule = (permissionName: string, pattern: string, action: PermissionAction) => {
     setPermissionRules((prev) => {
       const map = buildRuleMap(prev);
       map.set(buildRuleKey(permissionName, pattern), { permission: permissionName, pattern, action });
       return Array.from(map.values());
     });
-  }, []);
+  };
 
-  const removeRule = React.useCallback((permissionName: string, pattern: string) => {
+  const removeRule = (permissionName: string, pattern: string) => {
     setPermissionRules((prev) => {
       const map = buildRuleMap(prev);
       map.delete(buildRuleKey(permissionName, pattern));
       return Array.from(map.values());
     });
-  }, []);
+  };
 
-  const revertRule = React.useCallback((permissionName: string, pattern: string) => {
+  const revertRule = (permissionName: string, pattern: string) => {
     const baseline = baselineRuleMap.get(buildRuleKey(permissionName, pattern));
     if (baseline) {
       upsertRule(permissionName, pattern, baseline.action);
       return;
     }
     removeRule(permissionName, pattern);
-  }, [baselineRuleMap, removeRule, upsertRule]);
+  };
 
-  const setRuleAction = React.useCallback((permissionName: string, pattern: string, action: PermissionAction) => {
+  const setRuleAction = (permissionName: string, pattern: string, action: PermissionAction) => {
     upsertRule(permissionName, pattern, action);
-  }, [upsertRule]);
+  };
 
-  const setGlobalPermissionAndPrune = React.useCallback((next: PermissionAction) => {
+  const setGlobalPermissionAndPrune = (next: PermissionAction) => {
     setGlobalPermission(next);
     setPermissionRules((prev) => prev.filter((rule) => !(rule.pattern === '*' && rule.action === next)));
-  }, []);
+  };
 
-  const applyPendingRule = React.useCallback((action: PermissionAction) => {
+  const applyPendingRule = (action: PermissionAction) => {
     const name = pendingRuleName.trim();
     if (!name) {
       toast.error(t('settings.agents.page.toast.permissionNameRequired'));
@@ -451,24 +439,18 @@ export const AgentsPage: React.FC = () => {
     }
     setPendingRuleName('');
     setPendingRulePattern('*');
-  }, [globalPermission, pendingRuleName, pendingRulePattern, removeRule, setGlobalPermissionAndPrune, t, upsertRule]);
+  };
 
-  const formatPermissionLabel = React.useCallback((permissionName: string): string => {
-    if (permissionName === '*') return t('settings.agents.page.permissions.defaultLabel');
-    if (permissionName === 'webfetch') return 'WebFetch';
-    if (permissionName === 'websearch') return 'WebSearch';
-    if (permissionName === 'codesearch') return 'CodeSearch';
-    if (permissionName === 'doom_loop') return 'Doom Loop';
-    if (permissionName === 'external_directory') return 'External Directory';
-    if (permissionName === 'todowrite') return 'TodoWrite';
-    if (permissionName === 'todoread') return 'TodoRead';
+  const formatPermissionLabel = (permissionName: string): string => {
+    const labelKey = PERMISSION_LABEL_KEYS[permissionName];
+    if (labelKey) return t(labelKey);
 
     return permissionName
       .split(/[_-]+/g)
       .filter(Boolean)
       .map((segment) => segment.charAt(0).toUpperCase() + segment.slice(1))
       .join(' ');
-  }, [t]);
+  };
 
   React.useEffect(() => {
     setPendingRuleName('');
@@ -490,22 +472,25 @@ export const AgentsPage: React.FC = () => {
       const descriptionValue = agentDraft.description || '';
       const modeValue = agentDraft.mode || 'subagent';
       const modelValue = agentDraft.model || '';
-      const variantValue = agentDraft.variant || '';
-      const temperatureValue = agentDraft.temperature ?? undefined;
-      const topPValue = agentDraft.top_p ?? undefined;
-      const promptValue = agentDraft.prompt || '';
+      const systemValue = agentDraft.system || '';
+      const stepsValue = typeof agentDraft.steps === 'number' ? agentDraft.steps : undefined;
+      const hiddenValue = agentDraft.hidden === true;
+      const disabledValue = agentDraft.disabled === true;
+      const colorValue = agentDraft.color && isHexColor(agentDraft.color) ? agentDraft.color : '';
 
       setDraftName(draftNameValue);
       setDraftScope(draftScopeValue);
       setDescription(descriptionValue);
       setMode(modeValue);
       setModel(modelValue);
-      setVariant(variantValue);
-      setTemperature(temperatureValue);
-      setTopP(topPValue);
-      setPrompt(promptValue);
+      setSystemPrompt(systemValue);
+      setSteps(stepsValue);
+      setHidden(hiddenValue);
+      setDisabledAgent(disabledValue);
+      setColor(colorValue);
+      setConfirmDrop(false);
 
-      const parsedRules = permissionConfigToRuleset(agentDraft.permission);
+      const parsedRules = permissionConfigToRuleset(agentDraft.permissions);
       const permissionState = applyPermissionState(parsedRules);
 
       initialStateRef.current = {
@@ -514,10 +499,11 @@ export const AgentsPage: React.FC = () => {
         description: descriptionValue,
         mode: modeValue,
         model: modelValue,
-        variant: variantValue,
-        temperature: temperatureValue,
-        topP: topPValue,
-        prompt: promptValue,
+        system: systemValue,
+        steps: stepsValue,
+        hidden: hiddenValue,
+        disabled: disabledValue,
+        color: colorValue,
         globalPermission: permissionState.global,
         permissionRules: permissionState.rules,
       };
@@ -525,27 +511,36 @@ export const AgentsPage: React.FC = () => {
     }
 
     if (selectedAgent && selectedAgentName === selectedAgent.name) {
+      const extended = selectedAgent as typeof selectedAgent & {
+        steps?: number;
+        color?: string;
+        permissions?: unknown;
+        document?: { dropped?: Array<{ key: string }> };
+        disabledOverride?: boolean;
+      };
       const descriptionValue = selectedAgent.description || '';
       const modeValue = selectedAgent.mode || 'subagent';
-      const modelValue = selectedAgent.model?.providerID && selectedAgent.model?.modelID
-        ? `${selectedAgent.model.providerID}/${selectedAgent.model.modelID}`
+      const modelValue = catalogModelSelection(selectedAgent);
+      const stepsValue = typeof extended.steps === 'number' ? extended.steps : undefined;
+      const hiddenValue = selectedAgent.hidden === true;
+      const disabledValue = extended.disabledOverride === true;
+      const colorDropped = extended.document?.dropped?.some((item) => item.key === 'color') === true;
+      const colorValue = !colorDropped && typeof extended.color === 'string' && isHexColor(extended.color)
+        ? extended.color
         : '';
-      const variantValue = selectedAgent.variant || '';
-      const temperatureValue = selectedAgent.temperature ?? undefined;
-      const topPValue = selectedAgent.topP ?? undefined;
-      const promptValue = selectedAgent.prompt || '';
 
       setDescription(descriptionValue);
       setMode(modeValue);
-
       setModel(modelValue);
-      setVariant(variantValue);
-      setTemperature(temperatureValue);
-      setTopP(topPValue);
-      setPrompt(promptValue);
+      setSystemPrompt('');
+      setSteps(stepsValue);
+      setHidden(hiddenValue);
+      setDisabledAgent(disabledValue);
+      setColor(colorValue);
+      setConfirmDrop(false);
 
       const permissionState = applyPermissionState(
-        permissionConfigToRuleset(selectedAgent.permission),
+        permissionConfigToRuleset(extended.permissions ?? selectedAgent.permission),
       );
 
       initialStateRef.current = {
@@ -554,15 +549,34 @@ export const AgentsPage: React.FC = () => {
         description: descriptionValue,
         mode: modeValue,
         model: modelValue,
-        variant: variantValue,
-        temperature: temperatureValue,
-        topP: topPValue,
-        prompt: promptValue,
+        system: '',
+        steps: stepsValue,
+        hidden: hiddenValue,
+        disabled: disabledValue,
+        color: colorValue,
         globalPermission: permissionState.global,
         permissionRules: permissionState.rules,
       };
     }
   }, [agentDraft, isNewAgent, selectedAgent, selectedAgentName]);
+
+  React.useEffect(() => {
+    if (!selectedAgentName || isNewAgent) return undefined;
+    const controller = new AbortController();
+    const directory = resolveConfigQueryDirectory();
+    void runtimeFetch(`/api/config/agents/${encodeURIComponent(selectedAgentName)}/config`, {
+      signal: controller.signal,
+      headers: directory ? { 'x-opencode-directory': directory } : {},
+    }).then(async (response) => {
+      if (!response.ok || controller.signal.aborted) return;
+      const payload = await response.json() as { config?: Record<string, unknown> };
+      const stored = readStoredSystem(payload.config);
+      if (controller.signal.aborted || stored === undefined || !initialStateRef.current) return;
+      setSystemPrompt(stored);
+      initialStateRef.current = { ...initialStateRef.current, system: stored };
+    }).catch(() => undefined);
+    return () => controller.abort();
+  }, [isNewAgent, selectedAgentName]);
 
   const isDirty = React.useMemo(() => {
     const initial = initialStateRef.current;
@@ -578,15 +592,23 @@ export const AgentsPage: React.FC = () => {
     if (description !== initial.description) return true;
     if (mode !== initial.mode) return true;
     if (model !== initial.model) return true;
-    if (variant !== initial.variant) return true;
-    if (temperature !== initial.temperature) return true;
-    if (topP !== initial.topP) return true;
-    if (prompt !== initial.prompt) return true;
+    if (systemPrompt !== initial.system) return true;
+    if (steps !== initial.steps) return true;
+    if (hidden !== initial.hidden) return true;
+    if (disabledAgent !== initial.disabled) return true;
+    if (color !== initial.color) return true;
     if (globalPermission !== initial.globalPermission) return true;
     if (!areRulesEqual(permissionRules, initial.permissionRules)) return true;
 
     return false;
-  }, [description, draftName, draftScope, globalPermission, isNewAgent, mode, model, permissionRules, prompt, temperature, topP, variant]);
+  }, [color, description, disabledAgent, draftName, draftScope, globalPermission, hidden, isNewAgent, mode, model, permissionRules, steps, systemPrompt]);
+
+  const sourceDocument = !isNewAgent && selectedAgent
+    ? (selectedAgent as AgentWithExtras).document
+    : undefined;
+  const droppedKeys = sourceDocument?.dropped?.map((item) => item.key) ?? [];
+  const legacyFile = sourceDocument?.legacy === true;
+  const canSave = !isSaving && (isDirty || legacyFile) && (droppedKeys.length === 0 || confirmDrop);
 
   const handleSave = async () => {
     const agentName = isNewAgent ? draftName.trim().replace(/\s+/g, '-') : selectedAgentName?.trim();
@@ -602,6 +624,11 @@ export const AgentsPage: React.FC = () => {
       return;
     }
 
+    if (color.trim() && !isHexColor(color)) {
+      toast.error(t('settings.agents.page.field.colorInvalid'));
+      return;
+    }
+
     setIsSaving(true);
 
     try {
@@ -609,10 +636,11 @@ export const AgentsPage: React.FC = () => {
         description,
         mode,
         model,
-        variant,
-        temperature,
-        topP,
-        prompt,
+        system: systemPrompt,
+        steps,
+        hidden,
+        disabled: disabledAgent,
+        color,
         globalPermission,
         permissionRules,
       };
@@ -622,10 +650,11 @@ export const AgentsPage: React.FC = () => {
           description: initial.description,
           mode: initial.mode,
           model: initial.model,
-          variant: initial.variant,
-          temperature: initial.temperature,
-          topP: initial.topP,
-          prompt: initial.prompt,
+          system: initial.system,
+          steps: initial.steps,
+          hidden: initial.hidden,
+          disabled: initial.disabled,
+          color: initial.color,
           globalPermission: initial.globalPermission,
           permissionRules: initial.permissionRules,
         }
@@ -635,10 +664,10 @@ export const AgentsPage: React.FC = () => {
         isNewAgent,
         agentName,
         draftScope: isNewAgent ? draftScope : undefined,
-        draftHasExplicitPermission: isNewAgent && agentDraft?.permission !== undefined,
+        draftHasExplicitPermission: isNewAgent && agentDraft?.permissions !== undefined,
         current: currentSnapshot,
         initial: initialSnapshot,
-        permissionConfig: buildPermissionConfigWithGlobal(globalPermission, permissionRules),
+        confirmDrop,
       }) as AgentConfig;
 
       let result: AgentMutationResult;
@@ -655,7 +684,7 @@ export const AgentsPage: React.FC = () => {
         if (result.requiresManualRestart) {
           toast.warning(t('settings.agents.page.toast.savedManualRestart'));
         } else {
-          toast.success(isNewAgent ? t('settings.agents.page.toast.created') : t('settings.agents.page.toast.updated'));
+          toast.success(t('settings.agents.page.toast.savedNextRequest'));
         }
       } else {
         toast.error(isNewAgent ? t('settings.agents.page.toast.createFailed') : t('settings.agents.page.toast.updateFailed'));
@@ -703,6 +732,30 @@ export const AgentsPage: React.FC = () => {
             </p>
           </div>
         </div>
+
+        <p className="typography-meta text-muted-foreground">
+          {t('settings.agents.page.apply.hint')}
+        </p>
+        {legacyFile ? (
+          <p className="typography-meta text-muted-foreground mt-2">
+            {t('settings.agents.page.legacy.convertible')}
+          </p>
+        ) : null}
+        {droppedKeys.length > 0 ? (
+          <div className="mt-3 flex flex-col gap-2">
+            <p className="typography-meta text-muted-foreground">
+              {t('settings.agents.page.legacy.dropped', { fields: droppedKeys.join(', ') })}
+            </p>
+            <label className="flex items-center gap-2 typography-meta text-foreground">
+              <Checkbox
+                checked={confirmDrop}
+                onChange={setConfirmDrop}
+                ariaLabel={t('settings.agents.page.legacy.confirmDrop')}
+              />
+              {t('settings.agents.page.legacy.confirmDrop')}
+            </label>
+          </div>
+        ) : null}
 
         {/* Identity & Role */}
         <SettingsGroup label={t('settings.agents.page.section.identityRole')}>
@@ -800,193 +853,107 @@ export const AgentsPage: React.FC = () => {
             </SettingsRow>
         </SettingsGroup>
 
-        {/* Model & Parameters */}
         <SettingsGroup
           label={t('settings.agents.page.section.modelParameters')}
         >
             <SettingsRow
               itemId="agents.model"
               label={t('settings.agents.page.field.overrideModel')}
+              description={t('settings.agents.page.field.modelHint')}
             >
                 <ModelSelector
-                  providerId={parseModelIdentifier(model)?.providerId ?? ''}
-                  modelId={parseModelIdentifier(model)?.modelId ?? ''}
-                  onChange={(providerId: string, modelId: string) => {
+                  providerId={splitModelSelection(model)?.providerId ?? ''}
+                  modelId={splitModelSelection(model)?.modelId ?? ''}
+                  variant={splitModelSelection(model)?.variant ?? ''}
+                  onChange={(providerId: string, modelId: string, nextVariant?: string) => {
                     if (providerId && modelId) {
-                      setModel(`${providerId}/${modelId}`);
+                      setModel(nextVariant ? `${providerId}/${modelId}#${nextVariant}` : `${providerId}/${modelId}`);
                     } else {
                       setModel('');
                     }
-                    setVariant('');
                   }}
                   className="oc-settings-inline-value"
                 />
             </SettingsRow>
-
-            <SettingsRow
-              itemId="agents.variant"
-              label={(
-                <div className="flex items-center gap-1.5">
-                  <span>{t('settings.agents.page.field.variant')}</span>
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <Icon name="information" className="h-3.5 w-3.5 text-muted-foreground/60 cursor-help" />
-                    </TooltipTrigger>
-                    <TooltipContent sideOffset={8} className="max-w-xs">
-                      {t('settings.agents.page.field.variantTooltip')}
-                    </TooltipContent>
-                  </Tooltip>
-                </div>
-              )}
-              description={t('settings.agents.page.field.variantHint')}
-            >
-                {shouldUseVariantSelect ? (
-                  <Select
-                    value={selectedVariantValue}
-                    onValueChange={(value) => setVariant(value === '__default' ? '' : value)}
-                  >
-                    <SelectTrigger className="w-fit min-w-[10rem] max-w-full">
-                      <SelectValue placeholder={t('settings.agents.page.field.variantPlaceholder')}>
-                        {(value) => value === '__default' ? t('chat.modelControls.default') : value}
-                      </SelectValue>
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="__default">{t('chat.modelControls.default')}</SelectItem>
-                      {variantOptions.map((variantOption) => (
-                        <SelectItem key={variantOption} value={variantOption}>{variantOption}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                ) : (
-                  <>
-                    <Input
-                      value={variant}
-                      onChange={(event) => setVariant(event.target.value)}
-                      placeholder={t('settings.agents.page.field.variantPlaceholder')}
-                      disabled={!model && !variant}
-                      className="h-7 w-40 max-w-full"
-                    />
-                    {variant && (
-                      <Button
-                        size="sm"
-                        type="button"
-                        variant="ghost"
-                        onClick={() => setVariant('')}
-                        className="h-7 w-7 px-0 text-muted-foreground hover:text-foreground"
-                        aria-label={t('settings.common.actions.clear')}
-                        title={t('settings.common.actions.clear')}
-                      >
-                        <Icon name="close" className="h-3.5 w-3.5" />
-                      </Button>
-                    )}
-                  </>
-                )}
-            </SettingsRow>
-
-            <SettingsRow
-              itemId="agents.temperature"
-              label={(
-                <div className="flex items-center gap-1.5">
-                  <span>{t('settings.agents.page.field.temperature')}</span>
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <Icon name="information" className="h-3.5 w-3.5 text-muted-foreground/60 cursor-help" />
-                    </TooltipTrigger>
-                    <TooltipContent sideOffset={8} className="max-w-xs">
-                      {t('settings.agents.page.field.temperatureTooltip')}
-                    </TooltipContent>
-                  </Tooltip>
-                </div>
-              )}
-              description={t('settings.agents.page.field.temperatureRange')}
-            >
-                <NumberInput
-                  value={temperature}
-                  fallbackValue={0.7}
-                  onValueChange={setTemperature}
-                  onClear={() => setTemperature(undefined)}
-                  min={0}
-                  max={2}
-                  step={0.1}
-                  inputMode="decimal"
-                  placeholder="—"
-                  emptyLabel="—"
-                  className="w-16"
-                />
-                {temperature !== undefined && (
-                  <Button size="sm"
-                    type="button"
-                    variant="ghost"
-                    onClick={() => setTemperature(undefined)}
-                    className="h-7 w-7 px-0 text-muted-foreground hover:text-foreground"
-                    aria-label={t('settings.agents.page.field.clearTemperatureAria')}
-                    title={t('settings.common.actions.clear')}
-                  >
-                    <Icon name="close" className="h-3.5 w-3.5" />
-                  </Button>
-                )}
-            </SettingsRow>
-
-            <SettingsRow
-              itemId="agents.top-p"
-              label={(
-                <div className="flex items-center gap-1.5">
-                  <span>{t('settings.agents.page.field.topP')}</span>
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <Icon name="information" className="h-3.5 w-3.5 text-muted-foreground/60 cursor-help" />
-                    </TooltipTrigger>
-                    <TooltipContent sideOffset={8} className="max-w-xs">
-                      {t('settings.agents.page.field.topPTooltip')}
-                    </TooltipContent>
-                  </Tooltip>
-                </div>
-              )}
-              description={t('settings.agents.page.field.topPRange')}
-            >
-                <NumberInput
-                  value={topP}
-                  fallbackValue={0.9}
-                  onValueChange={setTopP}
-                  onClear={() => setTopP(undefined)}
-                  min={0}
-                  max={1}
-                  step={0.1}
-                  inputMode="decimal"
-                  placeholder="—"
-                  emptyLabel="—"
-                  className="w-16"
-                />
-                {topP !== undefined && (
-                  <Button size="sm"
-                    type="button"
-                    variant="ghost"
-                    onClick={() => setTopP(undefined)}
-                    className="h-7 w-7 px-0 text-muted-foreground hover:text-foreground"
-                    aria-label={t('settings.agents.page.field.clearTopPAria')}
-                    title={t('settings.common.actions.clear')}
-                  >
-                    <Icon name="close" className="h-3.5 w-3.5" />
-                  </Button>
-                )}
-            </SettingsRow>
         </SettingsGroup>
 
-        {/* System Prompt */}
         <SettingsField
           itemId="agents.system-prompt"
           label={t('settings.agents.page.section.systemPrompt')}
+          description={t('settings.agents.page.system.inheritHint')}
           className="oc-settings-split-row-stacked"
         >
             <Textarea
               embedded
-              value={prompt}
-              onChange={(e) => setPrompt(e.target.value)}
+              value={systemPrompt}
+              onChange={(e) => setSystemPrompt(e.target.value)}
               placeholder={t('settings.agents.page.field.systemPromptPlaceholder')}
               rows={8}
               className="w-full font-mono typography-meta min-h-[120px] max-h-[60vh] bg-transparent resize-y"
             />
         </SettingsField>
+
+        <SettingsGroup label={t('settings.agents.page.section.runtime')}>
+          <SettingsRow
+            itemId="agents.steps"
+            label={t('settings.agents.page.field.steps')}
+            description={t('settings.agents.page.field.stepsHint')}
+          >
+            <NumberInput
+              value={steps}
+              fallbackValue={1}
+              onValueChange={setSteps}
+              onClear={() => setSteps(undefined)}
+              min={1}
+              step={1}
+              inputMode="numeric"
+              placeholder="—"
+              emptyLabel="—"
+              className="w-16"
+            />
+          </SettingsRow>
+          <SettingsRow
+            itemId="agents.color"
+            label={t('settings.agents.page.field.color')}
+            description={t('settings.agents.page.field.colorHint')}
+          >
+            <Input
+              value={color}
+              onChange={(event) => setColor(event.target.value)}
+              placeholder=""
+              className="h-7 w-28 font-mono"
+            />
+            {color ? (
+              <Button
+                size="sm"
+                type="button"
+                variant="ghost"
+                onClick={() => setColor('')}
+                className="h-7 w-7 px-0 text-muted-foreground hover:text-foreground"
+                aria-label={t('settings.agents.page.field.clearColorAria')}
+                title={t('settings.common.actions.clear')}
+              >
+                <Icon name="close" className="h-3.5 w-3.5" />
+              </Button>
+            ) : null}
+          </SettingsRow>
+          <SettingsToggleRow
+            itemId="agents.hidden"
+            checked={hidden}
+            onChange={setHidden}
+            label={t('settings.agents.page.field.hidden')}
+            description={t('settings.agents.page.field.hiddenHint')}
+            ariaLabel={t('settings.agents.page.field.hidden')}
+          />
+          <SettingsToggleRow
+            itemId="agents.disabled"
+            checked={disabledAgent}
+            onChange={setDisabledAgent}
+            label={t('settings.agents.page.field.disabled')}
+            description={t('settings.agents.page.field.disabledHint')}
+            ariaLabel={t('settings.agents.page.field.disabled')}
+          />
+        </SettingsGroup>
 
         {/* Tool Permissions */}
         <div data-settings-item="agents.permissions">
@@ -1202,7 +1169,7 @@ export const AgentsPage: React.FC = () => {
         <div className="px-2 py-1">
           <Button
             onClick={handleSave}
-            disabled={isSaving || !isDirty}
+            disabled={!canSave}
             size="xs"
             className="!font-normal"
           >

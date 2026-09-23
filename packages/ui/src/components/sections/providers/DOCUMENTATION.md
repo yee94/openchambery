@@ -19,7 +19,12 @@ state. Key connection and integration lookup carry explicit `location`. OpenCode
 2.0.12's `credential.remove` is runtime-global and accepts only `credentialID`;
 disconnect takes those IDs from the scoped integration lookup and passes the
 lifetime's AbortSignal to deletion. Successful mutations refresh the current
-connection Query after scoped provider configuration refresh. Key connection
+connection Query after scoped provider/model catalog refresh. These mutations
+never call `/api/config/reload`, `location.reload`, or the service lifecycle.
+Global credential and location provider/model events also refresh other loaded
+directories through `sync/config-live-refresh.ts`. A complete empty catalog after
+an explicit credential/domain refresh may clear the last disconnected provider;
+bootstrap-empty and failed/partial reads retain their existing safeguards. Key connection
 selects the refreshed provider's actual ID through its `integrationID` mapping.
 
 `providerOAuth.ts` owns one attempt and its request/timer lifecycle:

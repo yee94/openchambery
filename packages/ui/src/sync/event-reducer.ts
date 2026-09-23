@@ -252,6 +252,13 @@ function removeFromLiveDirectoryList(
   return true
 }
 
+/** OpenCode 2 `session.created` / `session.updated` carry only ids, no `info`. */
+function readSessionEventInfo(event: Event): Session | undefined {
+  const info = (event.properties as { info?: unknown } | undefined)?.info
+  if (!info || typeof info !== "object") return undefined
+  return typeof (info as { id?: unknown }).id === "string" ? info as Session : undefined
+}
+
 export function applyDirectoryEvent(
   draft: State,
   event: Event,
@@ -270,7 +277,9 @@ export function applyDirectoryEvent(
     }
 
     case "session.created": {
-      const info = stripSessionDiffSnapshots((event.properties as { info: Session }).info)
+      const rawInfo = readSessionEventInfo(event)
+      if (!rawInfo) return false
+      const info = stripSessionDiffSnapshots(rawInfo)
       const sessions = draft.session
       const result = Binary.search(sessions, info.id, (s) => s.id)
       // Catalog hide ≠ message-cache lifetime. System/subagent/archived sessions
@@ -293,7 +302,9 @@ export function applyDirectoryEvent(
     }
 
     case "session.updated": {
-      const info = stripSessionDiffSnapshots((event.properties as { info: Session }).info)
+      const rawInfo = readSessionEventInfo(event)
+      if (!rawInfo) return false
+      const info = stripSessionDiffSnapshots(rawInfo)
       const sessions = draft.session
       const result = Binary.search(sessions, info.id, (s) => s.id)
       // Keep the freshness check ahead of the archive branch: direct archive
@@ -326,7 +337,9 @@ export function applyDirectoryEvent(
     }
 
     // Host session-metadata store: replace metadata on an already-known session.
-    // Do not create rows or clear the list when the session is absent.
+    // Do not create rows when the session is absent. A later isolation patch
+    // (scheduled-task / assistant / llm) must hide the row the same way
+    // session.updated does — otherwise a create-before-persist race stays visible.
     case "openchamber:session-metadata": {
       const props = event.properties as { sessionID?: string; metadata?: Session["metadata"] }
       const sessionID = typeof props.sessionID === "string" ? props.sessionID : ""
@@ -334,9 +347,13 @@ export function applyDirectoryEvent(
       const sessions = draft.session
       const result = Binary.search(sessions, sessionID, (s) => s.id)
       if (!result.found) return false
-      sessions[result.index] = {
+      const next = {
         ...sessions[result.index],
         metadata: props.metadata,
+      }
+      sessions[result.index] = next
+      if (!isVisibleGlobalSession(next)) {
+        return removeFromLiveDirectoryList(draft, next, result, callbacks?.onSetSessionTodo)
       }
       return true
     }

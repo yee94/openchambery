@@ -22,9 +22,11 @@ export const SessionErrorNotice = ({ sessionId, directory, hasInlineError = fals
   return (
     <div className="chat-message-column py-1.5" data-session-error={sessionId}>
       {fallbackHeader ? <div className="pb-2">{fallbackHeader}</div> : null}
-      <div role="alert" className="inline-flex w-fit max-w-full items-start gap-1.5 rounded-lg border border-[var(--status-error-border)]/45 bg-[var(--status-error-background)]/50 px-2 py-0.5 typography-meta text-muted-foreground">
-        <Icon name="error-warning" className="mt-0.5 size-3.5 shrink-0 text-[var(--status-error)]" aria-hidden="true" />
-        <span className="min-w-0 whitespace-pre-wrap [overflow-wrap:anywhere]">{text}</span>
+      <div role="alert" className="flex w-full min-w-0 items-start gap-1.5 typography-meta leading-5 text-muted-foreground">
+        <span className="inline-flex h-5 shrink-0 items-center" aria-hidden="true">
+          <Icon name="error-warning" className="size-3.5 text-[var(--status-error)]/85" />
+        </span>
+        <span className="min-w-0 flex-1 whitespace-pre-wrap [overflow-wrap:anywhere]">{text}</span>
       </div>
     </div>
   );

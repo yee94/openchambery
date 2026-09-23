@@ -1,3 +1,5 @@
+import { toPermissionRuleset } from '@/sync/permission-rules';
+
 export type PermissionAutoAcceptToggleArgs = {
     permissionScopeSessionId: string | null;
     newSessionDraftOpen: boolean;
@@ -9,63 +11,37 @@ export type PermissionAutoAcceptToggleArgs = {
     onToggleFailed: () => void;
 };
 
-type PermissionAction = 'allow' | 'ask' | 'deny';
-
-type PermissionRule = {
-    permission: string;
-    pattern: string;
-    action: PermissionAction;
-};
-
 type PermissionAgent = {
     name?: unknown;
+    /** Legacy / editor singular field (V1 map or flattened rules). */
     permission?: unknown;
+    /** OpenCode v2 wire catalog field (`AgentInfo.permissions`). */
+    permissions?: unknown;
 };
 
-const isPermissionAction = (value: unknown): value is PermissionAction => (
-    value === 'allow' || value === 'ask' || value === 'deny'
+/**
+ * Prefer the V2 wire `permissions` field when present; otherwise the legacy
+ * singular `permission` document. Empty arrays still count as present so a V2
+ * agent with no rules does not fall through to a stale singular field.
+ */
+const agentPermissionConfig = (agent: PermissionAgent): unknown => (
+    Object.prototype.hasOwnProperty.call(agent, 'permissions')
+        ? agent.permissions
+        : agent.permission
 );
 
-const normalizePermissionRules = (value: unknown): PermissionRule[] => {
-    if (isPermissionAction(value)) {
-        return [{ permission: '*', pattern: '*', action: value }];
-    }
-
-    if (Array.isArray(value)) {
-        return value.flatMap((entry): PermissionRule[] => {
-            if (!entry || typeof entry !== 'object') return [];
-            const rule = entry as Partial<PermissionRule>;
-            return typeof rule.permission === 'string'
-                && typeof rule.pattern === 'string'
-                && isPermissionAction(rule.action)
-                ? [{ permission: rule.permission, pattern: rule.pattern, action: rule.action }]
-                : [];
-        });
-    }
-
-    if (!value || typeof value !== 'object') return [];
-
-    const rules: PermissionRule[] = [];
-    for (const [permission, config] of Object.entries(value)) {
-        if (permission === '__originalKeys') continue;
-        if (isPermissionAction(config)) {
-            rules.push({ permission, pattern: '*', action: config });
-            continue;
-        }
-        if (!config || typeof config !== 'object' || Array.isArray(config)) continue;
-        for (const [pattern, action] of Object.entries(config)) {
-            if (isPermissionAction(action)) rules.push({ permission, pattern, action });
-        }
-    }
-    return rules;
-};
-
+/**
+ * True when any permission request can still reach the user (ask path remains).
+ * Last-match: a trailing global action/resource wildcard allow or deny closes
+ * every prompt path. Unrecognized or empty configs keep the control visible.
+ */
 const canPermissionRulesPrompt = (permission: unknown): boolean => {
-    const rules = normalizePermissionRules(permission);
+    const rules = toPermissionRuleset(permission);
     for (let index = rules.length - 1; index >= 0; index -= 1) {
         const rule = rules[index];
-        if (rule.permission === '*' && rule.pattern === '*') return rule.action === 'ask';
-        if (rule.action === 'ask') return true;
+        if (!rule) continue;
+        if (rule.action === '*' && rule.resource === '*') return rule.effect === 'ask';
+        if (rule.effect === 'ask') return true;
     }
     return true;
 };
@@ -77,10 +53,10 @@ export const shouldShowPermissionAutoAcceptControl = (
 ): boolean => {
     const name = currentAgentName?.trim();
     if (!name) {
-        return agents.length === 0 || agents.some((agent) => canPermissionRulesPrompt(agent.permission));
+        return agents.length === 0 || agents.some((agent) => canPermissionRulesPrompt(agentPermissionConfig(agent)));
     }
     const agent = agents.find((entry) => entry?.name === name);
-    return agent ? canPermissionRulesPrompt(agent.permission) : true;
+    return agent ? canPermissionRulesPrompt(agentPermissionConfig(agent)) : true;
 };
 
 export const togglePermissionAutoAccept = (args: PermissionAutoAcceptToggleArgs): void => {

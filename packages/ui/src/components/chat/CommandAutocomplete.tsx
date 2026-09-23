@@ -227,6 +227,7 @@ export const CommandAutocomplete = React.forwardRef<CommandAutocompleteHandle, C
           ),
           { id: 'openchamber:model', name: 'model', source: 'openchamber' as const, description: t('chat.commandAutocomplete.command.modelDescription'), isBuiltIn: true },
           { id: 'openchamber:compact', name: 'compact', source: 'openchamber' as const, description: t('chat.commandAutocomplete.command.compactDescription'), isBuiltIn: true },
+          { id: 'openchamber:reload', name: 'reload', source: 'openchamber' as const, description: t('chat.commandAutocomplete.command.reloadDescription'), isBuiltIn: true },
           ...(hasSession
             ? [{ id: 'openchamber:summary', name: 'summary', source: 'openchamber' as const, description: t('chat.commandAutocomplete.command.summaryDescription'), isOpenChamber: true }]
             : []
@@ -293,6 +294,7 @@ export const CommandAutocomplete = React.forwardRef<CommandAutocompleteHandle, C
           ),
           { id: 'openchamber:model', name: 'model', source: 'openchamber' as const, description: t('chat.commandAutocomplete.command.modelDescription'), isBuiltIn: true },
           { id: 'openchamber:compact', name: 'compact', source: 'openchamber' as const, description: t('chat.commandAutocomplete.command.compactDescription'), isBuiltIn: true },
+          { id: 'openchamber:reload', name: 'reload', source: 'openchamber' as const, description: t('chat.commandAutocomplete.command.reloadDescription'), isBuiltIn: true },
           ...(hasSession
             ? [{ id: 'openchamber:summary', name: 'summary', source: 'openchamber' as const, description: t('chat.commandAutocomplete.command.summaryDescription'), isOpenChamber: true }]
             : []
@@ -431,6 +433,7 @@ export const CommandAutocomplete = React.forwardRef<CommandAutocompleteHandle, C
       case 'redo':
         return <Icon name={iconName} className="h-3.5 w-3.5 text-orange-500" />;
       case 'timeline':
+      case 'reload':
         return <Icon name={iconName} className="h-3.5 w-3.5" />;
       case 'compact':
         return <Icon name={iconName} className="h-3.5 w-3.5 text-purple-500" />;

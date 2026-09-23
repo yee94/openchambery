@@ -26,6 +26,18 @@ describe('normalizeUserDisplayParts', () => {
         expect(normalizeUserDisplayParts(parts)).toEqual(parts);
     });
 
+    test('hides response-style system reminders even when the server drops synthetic', () => {
+        const reminder = '<system-reminder>\nKeep replies short.\n</system-reminder>';
+        expect(normalizeUserDisplayParts([
+            { type: 'text', text: '哈喽啊' } as Part,
+            { type: 'text', text: reminder } as Part,
+        ])).toEqual([{ type: 'text', text: '哈喽啊' } as Part]);
+        expect(normalizeUserDisplayParts([
+            { type: 'text', text: `哈喽啊\n${reminder}` } as Part,
+        ])).toEqual([{ type: 'text', text: '哈喽啊' } as Part]);
+        expect(hasUserDisplayableParts([{ type: 'text', text: reminder } as Part])).toBe(false);
+    });
+
     test('hides compaction command parts so /compact is not a user bubble', () => {
         expect(normalizeUserDisplayParts([{ type: 'compaction' } as Part])).toEqual([]);
         expect(normalizeUserDisplayParts([{ type: 'text', text: '/compact' } as Part])).toEqual([]);

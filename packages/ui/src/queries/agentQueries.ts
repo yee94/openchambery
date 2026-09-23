@@ -18,6 +18,11 @@ export type AgentWithExtras = Agent & {
   options?: { hidden?: boolean };
   scope?: AgentScope;
   group?: string;
+  document?: {
+    legacy?: boolean;
+    dropped?: Array<{ key: string; reason: string }>;
+  };
+  disabledOverride?: boolean;
 };
 
 export type ProviderWithModelList = Omit<Provider, 'models'> & { models: Array<NonNullable<Provider['models']>[string]> };
@@ -61,9 +66,17 @@ export const agentQueryOptions = (
       });
       if (!response.ok) throw new Error('Failed to fetch agent metadata');
       const data = await response.json() as {
-        agents?: Record<string, { scope?: unknown; sources?: { md?: { exists?: boolean; scope?: unknown; path?: string | null }; json?: { exists?: boolean; scope?: unknown } } }>;
+        agents?: Record<string, {
+          scope?: unknown;
+          sources?: {
+            document?: AgentWithExtras['document'];
+            md?: { exists?: boolean; scope?: unknown; path?: string | null };
+            json?: { exists?: boolean; scope?: unknown };
+          };
+        }>;
+        disabled?: Array<{ name?: unknown; scope?: unknown; description?: unknown; mode?: unknown }>;
       };
-      return agents.map((agent) => {
+      const listed = agents.map((agent) => {
         const metadata = data.agents?.[agent.name] ?? {};
         const scope = metadata.scope
           ?? (metadata.sources?.md?.exists ? metadata.sources.md.scope : undefined)
@@ -71,8 +84,28 @@ export const agentQueryOptions = (
           ?? metadata.sources?.md?.scope
           ?? metadata.sources?.json?.scope;
         const group = parseAgentGroup(metadata.sources?.md?.path);
-        return scope === 'project' || scope === 'user' ? { ...agent, scope, group } : { ...agent, group };
+        const withScope = scope === 'project' || scope === 'user' ? { ...agent, scope, group } : { ...agent, group };
+        return metadata.sources?.document ? { ...withScope, document: metadata.sources.document } : withScope;
       });
+      const known = new Set(listed.map((agent) => agent.name));
+      const disabled = (data.disabled ?? []).flatMap((entry) => {
+        if (typeof entry.name !== 'string' || !entry.name.trim() || known.has(entry.name)) return [];
+        const mode = entry.mode === 'primary' || entry.mode === 'subagent' || entry.mode === 'all' ? entry.mode : 'primary';
+        const scope = entry.scope === 'project' || entry.scope === 'user' ? entry.scope : undefined;
+        return [{
+          id: entry.name,
+          name: entry.name,
+          displayName: entry.name,
+          mode,
+          hidden: false,
+          permissions: [],
+          request: { settings: {}, headers: {}, body: {} },
+          description: typeof entry.description === 'string' ? entry.description : undefined,
+          disabledOverride: true,
+          ...(scope ? { scope } : {}),
+        } satisfies AgentWithExtras];
+      });
+      return [...listed, ...disabled];
     },
     retry: 2,
     staleTime: ((query: { state: { data: unknown } }) => {

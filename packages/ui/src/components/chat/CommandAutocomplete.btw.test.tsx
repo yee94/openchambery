@@ -24,7 +24,7 @@ beforeEach(() => {
 });
 afterEach(async () => { await act(async () => root.unmount()); document.body.innerHTML = ''; });
 
-test.each([false, true])('btw discovery and Enter/tap remain insert-only (mobile=%s)', async (isMobile) => {
+test.each([false, true])('btw discovery and Enter/tap open the side conversation directly (mobile=%s)', async (isMobile) => {
   useUIStore.setState({ isMobile });
   const ref = React.createRef<CommandAutocompleteHandle>();
   const select = vi.fn();
@@ -32,9 +32,9 @@ test.each([false, true])('btw discovery and Enter/tap remain insert-only (mobile
     commandContext={{ sessionID: 'session-a', hasMessages: true, hasNewDraft: false }} />));
   expect(document.body.textContent).toContain('/btw');
   await act(async () => ref.current!.handleKeyDown('Enter'));
-  expect(select).toHaveBeenLastCalledWith(expect.objectContaining({ name: 'btw', source: 'openchamber' }), false);
+  expect(select).toHaveBeenLastCalledWith(expect.objectContaining({ name: 'btw', source: 'openchamber' }), true);
   await act(async () => ref.current!.acceptIndex(0, true));
-  expect(select).toHaveBeenLastCalledWith(expect.objectContaining({ name: 'btw' }), false);
+  expect(select).toHaveBeenLastCalledWith(expect.objectContaining({ name: 'btw' }), true);
 });
 
 test('btw discovery requires an existing session', async () => {

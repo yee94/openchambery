@@ -114,6 +114,23 @@ describe('useAssistantStatus turn settle', () => {
     expect(working.statusText).toBe('chat.assistantStatus.composing');
   });
 
+  test('a newer user row keeps the working hint after the send request settles', async () => {
+    mocks.messages = [
+      { id: 'user-1', role: 'user', time: { created: 1 } },
+      { id: 'assistant-1', role: 'assistant', time: { created: 2 }, finish: 'stop' },
+      { id: 'user-2', role: 'user', time: { created: 3 } },
+    ];
+    mocks.partsByMessageId = {
+      'assistant-1': [{ id: 'text-1', type: 'text', text: 'the answer' }],
+    };
+
+    const working = await renderWorking();
+    expect(working.isTurnSettled).toBe(false);
+    expect(working.isWorking).toBe(true);
+    expect(working.statusText).toEqual(expect.any(String));
+    expect(working.statusText).not.toBe('chat.assistantStatus.sendingMessage');
+  });
+
   test('pending send starts a new turn even when the previous assistant is settled', async () => {
     mocks.messages = [
       { id: 'user-1', role: 'user', time: { created: 1 } },

@@ -10,7 +10,7 @@ import { getRegisteredRuntimeAPIs } from '@/contexts/runtimeAPIRegistry';
 import { useI18n } from '@/lib/i18n';
 import { updateDesktopSettings } from '@/lib/persistence';
 import { runtimeFetch } from '@/lib/runtime-fetch';
-import { useConfigStore } from '@/stores/useConfigStore';
+import { useScopedProvidersQuery } from '@/queries/agentQueries';
 import { useThemeSystem } from '@/contexts/useThemeSystem';
 import { createFlexokiCodeMirrorTheme } from '@/lib/codemirror/flexokiTheme';
 import type { Extension } from '@codemirror/state';
@@ -63,7 +63,10 @@ const parseCustomApiBaseURL = (value: string): string | null => {
 export const SummarySettings: React.FC = () => {
   const { t } = useI18n();
   const { currentTheme } = useThemeSystem();
-  const providers = useConfigStore((state) => state.providers);
+  // Same catalog as the Assistant model picker; generation goes through the
+  // same LLM gateway, which checks the location-less connected catalog.
+  const providersQuery = useScopedProvidersQuery(null, { enabled: true });
+  const catalogProviders = providersQuery.data ?? [];
   const [summaryModelMode, setSummaryModelMode] = React.useState<'provider' | 'custom'>('provider');
   const [summaryProviderID, setSummaryProviderID] = React.useState('');
   const [summaryModelID, setSummaryModelID] = React.useState('');
@@ -73,7 +76,6 @@ export const SummarySettings: React.FC = () => {
   const [hasSummaryCustomAPIToken, setHasSummaryCustomAPIToken] = React.useState(false);
   const [summaryCommitPrompt, setSummaryCommitPrompt] = React.useState(DEFAULT_SUMMARY_COMMIT_PROMPT);
   const [summarySessionTitlePrompt, setSummarySessionTitlePrompt] = React.useState(DEFAULT_SESSION_TITLE_PROMPT);
-  const [callableModelsByProvider, setCallableModelsByProvider] = React.useState<Record<string, readonly string[]> | null>(null);
   const [customModelSuggestions, setCustomModelSuggestions] = React.useState<readonly string[]>([]);
   const [isLoading, setIsLoading] = React.useState(true);
   const [isSaving, setIsSaving] = React.useState(false);
@@ -125,62 +127,6 @@ export const SummarySettings: React.FC = () => {
       active = false;
     };
   }, []);
-
-  React.useEffect(() => {
-    let active = true;
-    const loadCapabilities = async () => {
-      try {
-        const response = await runtimeFetch('/api/small-model', {
-          method: 'GET',
-          headers: { Accept: 'application/json' },
-        });
-        const payload = await response.json().catch(() => null) as { callableModels?: unknown } | null;
-        if (!response.ok || !payload?.callableModels || typeof payload.callableModels !== 'object') {
-          throw new Error('Summary provider capabilities are unavailable');
-        }
-        const models = Object.fromEntries(
-          Object.entries(payload.callableModels)
-            .map(([providerID, modelIDs]) => [
-              providerID,
-              Array.isArray(modelIDs) ? modelIDs.filter((modelID): modelID is string => typeof modelID === 'string') : [],
-            ])
-            .filter(([, modelIDs]) => modelIDs.length > 0),
-        );
-        if (active) setCallableModelsByProvider(models);
-      } catch {
-        if (active) setCallableModelsByProvider({});
-      }
-    };
-    void loadCapabilities();
-    return () => {
-      active = false;
-    };
-  }, []);
-
-  const defaultSummaryProvider = React.useMemo(
-    () => providers.find((provider) => provider.id === 'openai') ?? providers[0],
-    [providers],
-  );
-
-  React.useEffect(() => {
-    if (!summaryProviderID && defaultSummaryProvider?.id) {
-      setSummaryProviderID(defaultSummaryProvider.id);
-    }
-  }, [defaultSummaryProvider?.id, summaryProviderID]);
-
-  React.useEffect(() => {
-    if (summaryModelMode !== 'provider') return;
-    if (!callableModelsByProvider) return;
-    const providerIDs = Object.keys(callableModelsByProvider);
-    if (providerIDs.length === 0) return;
-    const providerID = callableModelsByProvider[summaryProviderID]
-      ? summaryProviderID
-      : (callableModelsByProvider.openai ? 'openai' : providerIDs[0]);
-    const modelIDs = callableModelsByProvider[providerID] ?? [];
-    const modelID = modelIDs.includes(summaryModelID) ? summaryModelID : (modelIDs[0] ?? '');
-    if (providerID !== summaryProviderID) setSummaryProviderID(providerID);
-    if (modelID !== summaryModelID) setSummaryModelID(modelID);
-  }, [callableModelsByProvider, summaryModelID, summaryModelMode, summaryProviderID]);
 
   React.useEffect(() => {
     if (summaryModelMode !== 'custom') {
@@ -349,18 +295,14 @@ export const SummarySettings: React.FC = () => {
 
         {summaryModelMode === 'provider' ? (
           <SettingsRow label={t('settings.openchamber.defaults.summary.providerModel')}>
-            {callableModelsByProvider === null ? null : Object.keys(callableModelsByProvider).length > 0 ? (
-              <ModelSelector
-                providerId={summaryProviderID}
-                modelId={summaryModelID}
-                onChange={(providerID, modelID) => { setSummaryProviderID(providerID); setSummaryModelID(modelID); }}
-                allowedProviderIds={Object.keys(callableModelsByProvider)}
-                allowedModelIdsByProvider={callableModelsByProvider}
-                className="oc-settings-inline-value"
-              />
-            ) : (
-              <span className="typography-meta text-muted-foreground">{t('settings.openchamber.defaults.summary.providerUnavailable')}</span>
-            )}
+            <ModelSelector
+              providerId={summaryProviderID}
+              modelId={summaryModelID}
+              providers={catalogProviders}
+              placeholder={t('settings.openchamber.defaults.summary.providerModelDefault')}
+              onChange={(providerID, modelID) => { setSummaryProviderID(providerID); setSummaryModelID(modelID); }}
+              className="oc-settings-inline-value"
+            />
           </SettingsRow>
         ) : (
           <>

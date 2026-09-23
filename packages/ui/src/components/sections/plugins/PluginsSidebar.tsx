@@ -23,6 +23,7 @@ import {
   refreshPluginRegistryQuery,
   resolveConfigQueryDirectory,
   usePluginRegistryQuery,
+  usePluginsQuery,
 } from '@/queries/pluginQueries';
 import {
   usePluginsStore,
@@ -49,11 +50,9 @@ export const PluginsSidebar: React.FC<PluginsSidebarProps> = ({
 }) => {
   const { t } = useI18n();
 
-  const { entries, files, selectedId, setSelected, deleteEntry, deleteFile, loadPlugins, updateEntry } =
+  const { selectedId, setSelected, deleteEntry, deleteFile, loadPlugins, updateEntry } =
     usePluginsStore(
       useShallow((s) => ({
-        entries: s.entries,
-        files: s.files,
         selectedId: s.selectedId,
         setSelected: s.setSelected,
         deleteEntry: s.deleteEntry,
@@ -62,6 +61,10 @@ export const PluginsSidebar: React.FC<PluginsSidebarProps> = ({
         updateEntry: s.updateEntry,
       })),
     );
+
+  const pluginsQuery = usePluginsQuery();
+  const entries = React.useMemo(() => pluginsQuery.data?.entries ?? [], [pluginsQuery.data?.entries]);
+  const files = React.useMemo(() => pluginsQuery.data?.files ?? [], [pluginsQuery.data?.files]);
 
   const specs = React.useMemo(() => entries.map((entry) => entry.spec), [entries]);
   const { data, isFetching } = usePluginRegistryQuery(specs, false);

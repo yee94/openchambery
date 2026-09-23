@@ -95,6 +95,42 @@ describe('projectTurnRecords', () => {
         expect(projection.ungroupedMessageIds.size).toBe(0);
     });
 
+    test('keeps v2 native synthetic notices inside the current turn instead of splitting it', () => {
+        const notice = (id: string, createdAt: number): ChatMessageEntry => ({
+            info: { id, role: 'user', nativeType: 'synthetic', time: { created: createdAt } } as unknown as Message,
+            parts: [{ id: `${id}:text:0`, type: 'text', text: '<subagent state="completed">', synthetic: true } as unknown as Part],
+        });
+        const user = createMessageEntry({ id: 'u1', role: 'user', createdAt: 1 });
+        const background = createMessageEntry({ id: 'a1', role: 'assistant', createdAt: 3, finish: 'stop', completedAt: 4 });
+        const firstResult = createMessageEntry({ id: 'a2', role: 'assistant', createdAt: 11, finish: 'stop', completedAt: 12 });
+        const streaming = createMessageEntry({ id: 'a3', role: 'assistant', createdAt: 21 });
+
+        // Notice ids are minted at backgrounding, so they sort before the replies they precede.
+        const projection = projectTurnRecords([
+            user,
+            notice('n0', 2),
+            background,
+            notice('n1', 10),
+            firstResult,
+            notice('n2', 20),
+            streaming,
+        ]);
+
+        expect(projection.turns).toHaveLength(1);
+        expect(projection.turns[0]?.assistantMessageIds).toEqual(['a1', 'a2', 'a3']);
+        expect(projection.ungroupedMessageIds.size).toBe(0);
+    });
+
+    test('a leading native synthetic row still anchors a turn', () => {
+        const leading: ChatMessageEntry = {
+            info: { id: 'n0', role: 'user', nativeType: 'synthetic', time: { created: 1 } } as unknown as Message,
+            parts: [],
+        };
+        const assistant = createMessageEntry({ id: 'a1', role: 'assistant', createdAt: 2 });
+
+        expect(projectTurnRecords([leading, assistant]).turns[0]?.assistantMessageIds).toEqual(['a1']);
+    });
+
     test('does not render orphan assistant messages as standalone ungrouped entries', () => {
         const assistant = createMessageEntry({ id: 'a1', role: 'assistant', parentID: 'missing-user', createdAt: 1 });
 
