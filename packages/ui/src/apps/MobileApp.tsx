@@ -2199,7 +2199,7 @@ const MobileSessionMetadataButton = React.memo(function MobileSessionMetadataBut
   React.useEffect(() => {
     if (!open || isQuotaLoading) return;
     const missingEnabledProvider = dropdownProviderIds.some((providerId) => (
-      !quotaResults.some((result) => result.providerId === providerId)
+      !quotaResults.some((result) => result?.providerId === providerId)
     ));
     if (!missingEnabledProvider) return;
     void fetchAllQuotas();
@@ -2235,7 +2235,7 @@ const MobileSessionMetadataButton = React.memo(function MobileSessionMetadataBut
     : t('common.unavailable');
 
   const usageGroups = React.useMemo<MobileUsageProviderGroup[]>(() => {
-    const resultsByProvider = new Map(quotaResults.map((result) => [result.providerId, result]));
+    const resultsByProvider = new Map(quotaResults.map((result) => [result?.providerId, result]));
     return QUOTA_PROVIDERS
       .filter((providerMeta) => dropdownProviderIds.includes(providerMeta.id))
       .filter((providerMeta) => resultsByProvider.get(providerMeta.id)?.configured === true)

@@ -91,6 +91,38 @@ describe('useQuotaStore quota queries', () => {
     }
   });
 
+  test('does not store a null quota payload that crashes providerId lookups', async () => {
+    useQuotaStore.setState({ results: [result('claude')] });
+    globalThis.fetch = async () => new Response('null', {
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+    });
+
+    await useQuotaStore.getState().fetchProviderQuota('openai');
+
+    const results = useQuotaStore.getState().results;
+    expect(() => results.find((entry) => entry.providerId === 'openai')).not.toThrow();
+    expect(results).toEqual([result('claude')]);
+    expect(useQuotaStore.getState().error).toBeTruthy();
+
+    useQuotaStore.setState({ results: [result('openai')], error: null });
+    await useQuotaStore.getState().fetchProviderQuota('openai');
+    expect(useQuotaStore.getState().results).toEqual([result('openai')]);
+    expect(useQuotaStore.getState().error).toBe('Invalid quota response');
+  });
+
+  test('drops null quota entries instead of crashing the next refresh', async () => {
+    useQuotaStore.setState({ results: [null as unknown as ProviderResult, result('claude')] });
+    globalThis.fetch = async () => new Response(JSON.stringify(result('openai')));
+
+    await useQuotaStore.getState().fetchProviderQuota('openai');
+
+    const results = useQuotaStore.getState().results;
+    expect(results.every((entry) => entry.providerId)).toBe(true);
+    expect(results.find((entry) => entry.providerId === 'claude')).toEqual(result('claude'));
+    expect(results.find((entry) => entry.providerId === 'openai')).toEqual(result('openai'));
+  });
+
   test('clears runtime state and ignores a previous runtime completion', async () => {
     let resolveRequest: ((response: Response) => void) | undefined;
     globalThis.fetch = () => new Promise<Response>((resolve) => {

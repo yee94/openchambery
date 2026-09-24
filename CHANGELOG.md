@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [2.0.0-beta.11] - 2026-09-24
+
+这是 OpenCode 2 预览版。本次发布桌面、Android 安装包及同版本 Beta OTA；iOS 不上 TestFlight，不进入外测组或稳定自动更新通道。
+
+### 用量
+
+- 修复额度接口返回空数据时，顶栏用量菜单因读取空结果的 providerId 而崩溃的问题。无效响应不再写入结果，并保留上一次有效额度。
+
 ## [2.0.0-beta.10] - 2026-09-24
 
 这是 OpenCode 2 预览版。本次发布桌面、Android 安装包及同版本 Beta OTA；iOS 不上 TestFlight，不进入外测组或稳定自动更新通道。

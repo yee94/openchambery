@@ -299,6 +299,13 @@ const fileQueryReadKey = (
   normalizeQueryPath(options?.directory),
 ];
 
+export const isProviderResult = (value: unknown): value is ProviderResult => (
+  Boolean(value)
+  && typeof value === 'object'
+  && typeof (value as ProviderResult).providerId === 'string'
+  && (value as ProviderResult).providerId.length > 0
+);
+
 export const fetchQuotaProvider = async (
   providerId: QuotaProviderId,
   signal: AbortSignal,
@@ -306,9 +313,15 @@ export const fetchQuotaProvider = async (
   const response = await runtimeFetch(`/api/quota/${encodeURIComponent(providerId)}`, { signal });
   const payload = await response.json().catch(() => null);
   if (!response.ok) {
-    throw new Error(payload?.error || 'Failed to fetch quota');
+    const error = payload && typeof payload === 'object' && typeof (payload as { error?: unknown }).error === 'string'
+      ? (payload as { error: string }).error
+      : 'Failed to fetch quota';
+    throw new Error(error);
   }
-  return payload as ProviderResult;
+  if (!isProviderResult(payload)) {
+    throw new Error('Invalid quota response');
+  }
+  return payload;
 };
 
 export const installQueryRuntimeLifecycle = (client: Pick<QueryClient, 'clear'>): (() => void) => (

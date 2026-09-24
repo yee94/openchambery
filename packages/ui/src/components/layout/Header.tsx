@@ -1005,7 +1005,7 @@ export const Header: React.FC<HeaderProps> = ({
       if (!dropdownProviderIds.includes(provider.id)) {
         continue;
       }
-      const result = quotaResults.find((entry) => entry.providerId === provider.id);
+      const result = quotaResults.find((entry) => entry?.providerId === provider.id);
       const windows = (result?.usage?.windows ?? {}) as Record<string, UsageWindow>;
       const models = result?.usage?.models;
       const entries = Object.entries(windows);

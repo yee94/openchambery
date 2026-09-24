@@ -8,7 +8,7 @@ import { getRegisteredRuntimeAPIs } from '@/contexts/runtimeAPIRegistry';
 import { getDefaultModels } from '@/lib/quota/model-families';
 import { updateDesktopSettings } from '@/lib/persistence';
 import { runtimeFetch } from '@/lib/runtime-fetch';
-import { fetchQuotaProvider, queryClient, queryKeys } from '@/lib/queryRuntime';
+import { fetchQuotaProvider, isProviderResult, queryClient, queryKeys } from '@/lib/queryRuntime';
 
 const DEFAULT_REFRESH_INTERVAL_MS = 60000;
 let refreshGeneration = 0;
@@ -144,6 +144,16 @@ type ProviderRefreshOutcome =
   | { providerId: QuotaProviderId; error: string }
   | { providerId: QuotaProviderId; stale: true };
 
+const replaceProviderResult = (
+  results: ProviderResult[],
+  providerId: QuotaProviderId,
+  result: unknown,
+): ProviderResult[] => {
+  const next = results.filter((entry) => entry?.providerId && entry.providerId !== providerId);
+  if (isProviderResult(result)) next.push(result);
+  return next;
+};
+
 const refreshProviderQuota = async (
   providerId: QuotaProviderId,
   set: (partial: Partial<QuotaStore> | ((state: QuotaStore) => Partial<QuotaStore>)) => void,
@@ -164,16 +174,19 @@ const refreshProviderQuota = async (
     if (runtimeGeneration !== quotaRuntimeGeneration) {
       return { providerId, stale: true };
     }
-    set((state) => {
-      const next = state.results.filter((entry) => entry.providerId !== providerId);
-      next.push(result);
-      return { results: next };
-    });
+    if (!isProviderResult(result)) {
+      throw new Error('Invalid quota response');
+    }
+    set((state) => ({ results: replaceProviderResult(state.results, providerId, result) }));
     return { providerId, result };
   } catch (error) {
     if (runtimeGeneration !== quotaRuntimeGeneration) {
       return { providerId, stale: true };
     }
+    set((state) => {
+      if (state.results.every((entry) => entry?.providerId)) return {};
+      return { results: state.results.filter((entry) => entry?.providerId) };
+    });
     return {
       providerId,
       error: error instanceof Error ? error.message : 'Failed to fetch quota',

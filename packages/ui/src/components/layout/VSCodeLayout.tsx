@@ -800,7 +800,7 @@ const VSCodeHeader: React.FC<VSCodeHeaderProps> = ({ title, showBack, onBack, on
       if (!dropdownProviderIds.includes(provider.id)) {
         continue;
       }
-      const result = quotaResults.find((entry) => entry.providerId === provider.id);
+      const result = quotaResults.find((entry) => entry?.providerId === provider.id);
       const windows = (result?.usage?.windows ?? {}) as Record<string, UsageWindow>;
       const entries = Object.entries(windows);
       const error = (result && !result.ok && result.configured) ? result.error : undefined;
