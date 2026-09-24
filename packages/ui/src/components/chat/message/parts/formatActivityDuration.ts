@@ -1,6 +1,7 @@
 /**
  * Settled activity-header duration label (ProgressiveGroup completed turns).
  * Live elapsed while working is owned only by WorkingPlaceholder.
+ * Live non-compaction Activity omits the Working disclosure header.
  */
 export const formatActivityDuration = (durationMs: number): string => {
   const totalSeconds = Math.max(0, Math.round(durationMs / 1000));

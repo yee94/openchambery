@@ -4,6 +4,19 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [2.0.0-beta.7] - 2026-09-24
+
+这是 OpenCode 2 预览版，需要手动下载安装包。本次不发布 OTA；iOS 仅上传 TestFlight 内测，不进入外测组或稳定自动更新通道。
+
+### 对话与输入
+
+- Ctrl/Cmd+Enter 在生成中提交时改为先入队再引导：消息会留在队列界面显示为「引导中…」，而不是直接并入当前轮次。
+- 队列条目的操作与状态文案由「发送」统一改为「引导」，与新的引导语义一致。
+
+### 活动展示
+
+- 正在生成的非压缩轮次不再绘制可折叠的 Working 标题，只展开工具与推理行；压缩过程仍显示 Compacting 标题，完成的轮次保留可折叠标题与时长。
+
 ## [2.0.0-beta.6] - 2026-09-24
 
 这是 OpenCode 2 预览版，需要手动下载安装包。本次不发布 OTA；iOS 仅上传 TestFlight 内测，不进入外测组或稳定自动更新通道。
