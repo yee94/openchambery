@@ -1,4 +1,5 @@
 import { isCompactionCommandMessage } from '../messageDisplayNormalization';
+import { isSessionCompactionCard } from '@/sync/session-projection-api';
 import { countContinuationToolParts, hasConfirmedFinalBody } from './assistantMessageLifecycle';
 import { projectTurnActivity } from './projectTurnActivity';
 import { projectTurnIndexes } from './projectTurnIndexes';
@@ -261,6 +262,20 @@ const hydrateTurnRecord = (
 
     turn.completionDisposition = resolveTurnCompletionDisposition(turn.assistantMessages);
     turn.hasConfirmedFinalBody = resolveHasConfirmedFinalBody(turn.assistantMessages);
+    // An automatic checkpoint after the last step is a continuation boundary,
+    // not the terminal finish of the user's request. Live status still gates
+    // the working presentation; a later assistant owns its own terminal result.
+    for (let index = turn.messages.length - 1; index > 0; index -= 1) {
+        const record = turn.messages[index];
+        if (record.role === 'assistant') break;
+        if (record.role !== 'compaction') continue;
+        const checkpoint = record.message.parts.find(isSessionCompactionCard);
+        if (checkpoint?.reason === 'auto' && checkpoint.status !== 'failed') {
+            turn.completionDisposition = 'active';
+            turn.hasConfirmedFinalBody = false;
+        }
+        break;
+    }
     turn.activityPresentationKind = resolveTurnActivityPresentationKind(turn.userMessage);
 
     const activity = projectTurnActivity({
@@ -389,6 +404,11 @@ export const projectTurnRecords = (
 
     messages.forEach((message, index) => {
         const role = resolveMessageRole(message);
+        if (role === 'compaction' && turns.length > 0) {
+            noticeOwnerById.set(message.info.id, turns[turns.length - 1]);
+            groupedMessageIds.add(message.info.id);
+            return;
+        }
         if (role !== 'user') {
             return;
         }

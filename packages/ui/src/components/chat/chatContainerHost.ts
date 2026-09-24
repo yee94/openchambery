@@ -167,7 +167,7 @@ export const resolveDesktopLoadOlderStatusVisibility = (input: {
  *
  * - `hydrating`: stable skeleton — loading, user retry, or cold with no settled failure
  * - `load-error`: settled failure only (error + not loading + not retrying + no shell)
- * - `pass`: any landed/pending/hosted shell, a previously painted transcript on
+ * - `pass`: a renderable/pending/hosted shell, a previously painted transcript on
  *   this mount, or a ready empty snapshot
  *
  * Retry from the load-error wall sets `userRetrying` so the gate returns to
@@ -214,9 +214,10 @@ export const resolveChatSessionTranscriptGate = (input: {
   /** This session already painted a transcript under the current mount. */
   hasPaintedTranscript?: boolean
 }): ChatSessionTranscriptGate => {
-  // Visible rows always win. P0 without a shell must not: that latch outlives
-  // Query data, and passing here flashes the empty-chat welcome on remount.
-  if (input.hasTranscriptShell || input.hasBusyShell || input.hasImmediateShell) return 'pass'
+  // V2 step metadata can arrive before history/content. Row count, busy status
+  // and the P0 latch do not prove those rows have bodies. Only a renderable
+  // snapshot may claim the first paint; retained user sends stay immediate.
+  if (input.hasImmediateShell || (input.hasTranscriptShell && input.hasRenderableSessionSnapshot)) return 'pass'
 
   // Retained content outranks both the skeleton and the failure wall: a
   // refetch that errors must not blank a transcript the user is reading.

@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test"
+import { describe, expect, test } from "vitest"
 import { QueryClient } from "@tanstack/react-query"
 import type { Message, Part } from "@/lib/opencode/v2-types"
 
@@ -20,6 +20,11 @@ import {
 import { readTranscriptHydrationState } from "./transcript-repository-observers"
 import { UNKNOWN_SESSION_HISTORY_BOUNDARY } from "./types"
 import type { SessionHistoryBoundary } from "./types"
+import { normalizeOpenCodeEvent, toLegacyEventShape } from "./opencode-event-normalizer"
+import { normalizeSessionProjectionPage } from "./session-projection-api"
+import { materializationStatusFromTranscriptData } from "./transcript-repository-observers"
+import { resolveChatSessionTranscriptGate } from "../components/chat/chatContainerHost"
+import type { Event } from "./types"
 
 const DIRECTORY = "/repo"
 const SESSION = "ses_1"
@@ -167,6 +172,68 @@ describe("evaluateTranscriptP0Satisfied", () => {
 
 describe("Query repository hydration phases", () => {
   const client = () => new QueryClient({ defaultOptions: { queries: { retry: false, retryDelay: 1 } } })
+
+  test("V2 metadata ahead of a delayed history GET stays hydrating until authoritative content arrives", async () => {
+    let release!: () => void
+    const pending = new Promise<void>((resolve) => { release = resolve })
+    const queryClient = client()
+    const repo = createQueryTranscriptRepository({
+      client: queryClient,
+      transport: TRANSPORT,
+      generation: GENERATION,
+      fetcher: async () => {
+        await pending
+        return normalizeSessionProjectionPage({ data: [
+          { id: "u1", type: "user", text: "continue", time: { created: 1 } },
+          ...Array.from({ length: 7 }, (_, index) => ({
+            id: `a${index}`, type: "assistant", agent: "build",
+            model: { id: "model", providerID: "provider" },
+            time: { created: index + 2, completed: index + 3 }, finish: "stop",
+            content: [{ type: "text", text: `reply ${index}` }],
+          })),
+        ] }, SESSION, "asc", 20)
+      },
+      probe: { getTransport: () => TRANSPORT, getGeneration: () => GENERATION },
+    })
+    try {
+      for (let index = 0; index < 7; index += 1) {
+        const result = normalizeOpenCodeEvent({
+          id: `evt_${index}`, created: index + 2, type: "session.step.started",
+          location: { directory: DIRECTORY },
+          data: { sessionID: SESSION, assistantMessageID: `a${index}`, agent: "build", model: { id: "model", providerID: "provider" } },
+        })
+        expect(result.action).toBe("emit")
+        if (result.action !== "emit") throw new Error("expected native step event")
+        repo.apply(scope, { type: "sse-event", event: toLegacyEventShape(result.event) as Event })
+      }
+      const readGate = () => {
+        const data = repo.getTranscript(scope)
+        const materialization = materializationStatusFromTranscriptData(data)
+        return resolveChatSessionTranscriptGate({
+          hasTranscriptShell: data.messageOrder.length > 0,
+          hasBusyShell: true,
+          hasRenderableSessionSnapshot: materialization.renderable,
+          p0Satisfied: repo.getHydrationState?.(scope).p0Satisfied,
+          prefetchStatus: repo.getRequestState?.(scope).status === "loading" ? "loading" : "ready",
+          syncLoading: false,
+        })
+      }
+      expect(repo.hasSession?.(scope)).toBe(true)
+      expect(materializationStatusFromTranscriptData(repo.getTranscript(scope)).missingPartMessageIDs).toHaveLength(6)
+      const loading = repo.ensureInitial(scope)
+      await waitUntil(() => repo.getRequestState?.(scope).status === "loading")
+      expect(readGate()).toBe("hydrating")
+      release()
+      await loading
+      expect(readGate()).toBe("pass")
+      expect(repo.getTranscript(scope).messageOrder).toEqual(["u1", "a0", "a1", "a2", "a3", "a4", "a5", "a6"])
+      expect(repo.getTranscript(scope).partsByMessageID.a0?.[0]).toMatchObject({ type: "text", text: "reply 0" })
+    } finally {
+      release()
+      repo.destroy()
+      queryClient.clear()
+    }
+  })
 
   test("durable seed that satisfies P0 latches p0 before the authority tail returns", async () => {
     const inner = createMemoryTranscriptDurableStore()

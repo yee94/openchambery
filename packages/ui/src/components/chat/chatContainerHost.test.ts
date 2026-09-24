@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'bun:test';
+import { describe, expect, test } from 'vitest';
 import {
     mergePendingUserMessagePresentations,
     pendingUserMessagesImplyWorking,
@@ -428,6 +428,31 @@ describe('hasChatTranscriptShell', () => {
 });
 
 describe('resolveChatSessionTranscriptGate', () => {
+  test('V2 metadata-only rows do not expose a stack of model headers during cold synchronization', () => {
+    expect(resolveChatSessionTranscriptGate({
+      hasTranscriptShell: true,
+      hasBusyShell: true,
+      hasRenderableSessionSnapshot: false,
+      p0Satisfied: false,
+      prefetchStatus: 'loading',
+      syncLoading: true,
+      hasPaintedTranscript: false,
+    })).toBe('hydrating');
+  });
+
+  test('a metadata-only cold failure shows the error wall and retry restores hydration', () => {
+    const input = {
+      hasTranscriptShell: true,
+      hasRenderableSessionSnapshot: false,
+      prefetchStatus: 'error' as const,
+      syncLoading: false,
+    };
+    expect(resolveChatSessionTranscriptGate(input)).toBe('load-error');
+    expect(resolveChatSessionTranscriptGate({ ...input, userRetrying: true })).toBe('hydrating');
+    expect(resolveChatSessionTranscriptGate({ ...input, hasPaintedTranscript: true })).toBe('pass');
+    expect(resolveChatSessionTranscriptGate({ ...input, hasImmediateShell: true })).toBe('pass');
+  });
+
   test('keeps a stable skeleton while cold or loading — never invents load-error', () => {
     expect(resolveChatSessionTranscriptGate({
       hasTranscriptShell: false,
@@ -470,14 +495,14 @@ describe('resolveChatSessionTranscriptGate', () => {
     })).toBe('hydrating');
   });
 
-  test('passes as soon as durable or authority hydration satisfies P0', () => {
+  test('P0 alone does not expose metadata rows before content is renderable', () => {
     expect(resolveChatSessionTranscriptGate({
       hasTranscriptShell: true,
       hasRenderableSessionSnapshot: false,
       prefetchStatus: 'loading',
       syncLoading: false,
       p0Satisfied: true,
-    })).toBe('pass');
+    })).toBe('hydrating');
 
     expect(resolveChatSessionTranscriptGate({
       hasTranscriptShell: true,
@@ -491,7 +516,7 @@ describe('resolveChatSessionTranscriptGate', () => {
   test('keeps a live user-tail shell visible while the session is busy', () => {
     expect(resolveChatSessionTranscriptGate({
       hasTranscriptShell: true,
-      hasRenderableSessionSnapshot: false,
+      hasRenderableSessionSnapshot: true,
       prefetchStatus: 'loading',
       syncLoading: true,
       p0Satisfied: false,
@@ -499,13 +524,14 @@ describe('resolveChatSessionTranscriptGate', () => {
     })).toBe('pass');
   });
 
-  test('landed rows stay visible while a refetch is in flight, even before P0', () => {
+  test('previously painted rows stay visible while a refetch is in flight, even before P0', () => {
     expect(resolveChatSessionTranscriptGate({
       hasTranscriptShell: true,
       hasRenderableSessionSnapshot: false,
       prefetchStatus: 'loading',
       syncLoading: true,
       p0Satisfied: false,
+      hasPaintedTranscript: true,
     })).toBe('pass');
   });
 
@@ -551,13 +577,14 @@ describe('resolveChatSessionTranscriptGate', () => {
     })).toBe('pass');
   });
 
-  test('a latched P0 result remains visible through a later fetch failure when rows still exist', () => {
+  test('a painted P0 result remains visible through a later fetch failure when rows still exist', () => {
     expect(resolveChatSessionTranscriptGate({
       hasTranscriptShell: true,
       hasRenderableSessionSnapshot: false,
       prefetchStatus: 'error',
       syncLoading: false,
       p0Satisfied: true,
+      hasPaintedTranscript: true,
     })).toBe('pass');
   });
 

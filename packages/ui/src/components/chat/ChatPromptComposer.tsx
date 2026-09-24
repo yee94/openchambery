@@ -3,7 +3,7 @@ import { useEvent, useResizeObserver } from '@reactuses/core';
 import { toast } from '@/components/ui';
 import { isIMECompositionEvent } from '@/lib/ime';
 import { useI18n } from '@/lib/i18n';
-import { canUseNativeMediaPick, NATIVE_MEDIA_PICK_LIMIT, pickNativeMediaFiles } from '@/lib/native-media-pick';
+import { canUseNativeMediaPick, NATIVE_MEDIA_PICK_LIMIT, pickNativeMediaFiles, usesAndroidAttachPickSheet } from '@/lib/native-media-pick';
 import { cn } from '@/lib/utils';
 import { Icon } from '@/components/icon/Icon';
 import { SendCircleIcon, StopIcon } from '@/components/icons/StopIcon';
@@ -129,6 +129,7 @@ export const ChatPromptComposer: React.FC<ChatPromptComposerProps> = ({
   const inline = layout === 'inline';
   const [inlineGrown, setInlineGrown] = React.useState(false);
   const [attachSheetOpen, setAttachSheetOpen] = React.useState(false);
+  const androidAttachSheet = usesAndroidAttachPickSheet();
   const inlineAlignEnd = attachments.length > 0 || inlineGrown;
   const localInputRef = React.useRef<HTMLTextAreaElement | null>(null);
   const fileInputRef = React.useRef<HTMLInputElement>(null);
@@ -211,13 +212,13 @@ export const ChatPromptComposer: React.FC<ChatPromptComposerProps> = ({
   const defaultLeftControls = onAddFiles ? (
     <>
       <input ref={fileInputRef} type="file" accept={fileAccept} multiple className="hidden" onChange={handleFileChange} />
-      {isMobile ? (
+      {androidAttachSheet ? (
         <input ref={imageInputRef} type="file" accept="image/*" multiple className="hidden" onChange={handleFileChange} />
       ) : null}
       <button
         type="button"
         className="flex size-8 shrink-0 items-center justify-center rounded-md text-foreground outline-none hover:bg-[var(--interactive-hover)] disabled:cursor-not-allowed disabled:opacity-40"
-        onClick={() => (isMobile ? openAttachSheet() : fileInputRef.current?.click())}
+        onClick={() => (androidAttachSheet ? openAttachSheet() : fileInputRef.current?.click())}
         onMouseDown={isMobile ? (event) => event.preventDefault() : undefined}
         onPointerDownCapture={isMobile ? (event) => event.preventDefault() : undefined}
         disabled={disabled || pending}
@@ -442,7 +443,7 @@ export const ChatPromptComposer: React.FC<ChatPromptComposerProps> = ({
           </ChatPromptFooter>
         )}
       </div>
-      {isMobile && onAddFiles ? (
+      {androidAttachSheet && onAddFiles ? (
         <MobileAttachPickSheet
           id={`mobile-attach-pick-${attachSheetId}`}
           open={attachSheetOpen}

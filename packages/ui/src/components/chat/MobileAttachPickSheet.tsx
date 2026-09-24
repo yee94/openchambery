@@ -15,7 +15,7 @@ type MobileAttachPickSheetProps = {
   onPickFiles: () => void;
 };
 
-/** Mobile half-sheet that chooses photos vs files before the system picker opens. */
+/** Android half-sheet that chooses photos vs files before the system picker opens. */
 export const MobileAttachPickSheet: React.FC<MobileAttachPickSheetProps> = ({
   id,
   open,

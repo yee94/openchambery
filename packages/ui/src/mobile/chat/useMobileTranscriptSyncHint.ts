@@ -1,8 +1,8 @@
-import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { useEffect, useMemo, useState, useSyncExternalStore } from 'react';
 
 import { useI18n } from '@/lib/i18n';
 import { useConfigStore } from '@/stores/useConfigStore';
-import { useSessionMessageLoadState, useSessionMessagesResolved } from '@/sync/sync-context';
+import { useSessionMessageLoadState, useSessionMaterializationStatus } from '@/sync/sync-context';
 import {
   isTranscriptAuthorityRefreshInFlight,
   subscribeTranscriptAuthorityRefresh,
@@ -16,7 +16,7 @@ export type MobileTranscriptSyncHintKind = 'syncing';
 
 export type MobileTranscriptSyncHintInput = {
   sessionId: string;
-  hasTranscript: boolean;
+  hasRenderableTranscript: boolean;
   loadStatus?: 'loading' | 'ready' | 'error';
   userRefreshInFlight: boolean;
   backgroundResyncInFlight: boolean;
@@ -34,8 +34,9 @@ export type MobileTranscriptSyncHintInput = {
  * pull, compensation reconcile, observe-time head check). When those clear,
  * the visible transcript has been reconciled against the server. Socket-level
  * `reconnecting` alone stays hidden for warm transcripts — HTTP catch-up can
- * finish while the socket is still backing off. Cold first paint and
- * reconnect-before-any-messages keep their original signals.
+ * finish while the socket is still backing off. V2 metadata-only rows are not
+ * warm: the repository's content materialization status owns that decision,
+ * including the idle-before-first-request and metadata-before-parts gaps.
  */
 export function resolveMobileTranscriptSyncHint(
   input: MobileTranscriptSyncHintInput,
@@ -43,9 +44,9 @@ export function resolveMobileTranscriptSyncHint(
   if (!input.sessionId) return null;
   if (input.userRefreshInFlight) return 'syncing';
   if (input.backgroundResyncInFlight) return 'syncing';
-  if (input.hasTranscript) return null;
+  if (input.hasRenderableTranscript) return null;
   if (!input.isConnected && input.connectionPhase === 'reconnecting') return 'syncing';
-  if (input.loadStatus === 'loading') return 'syncing';
+  if (input.loadStatus !== 'error') return 'syncing';
   return null;
 }
 
@@ -96,18 +97,19 @@ export function createSyncHintSmoother(
   };
 }
 
-function useSmoothedSyncHintActive(raw: boolean): boolean {
-  const [visible, setVisible] = useState(false);
-  const smootherRef = useRef<ReturnType<typeof createSyncHintSmoother> | null>(null);
-  if (!smootherRef.current) smootherRef.current = createSyncHintSmoother(setVisible);
-  const smoother = smootherRef.current;
+function useSmoothedSyncHintActive(raw: boolean, scopeKey: string): boolean {
+  const scope = useMemo(() => ({ key: scopeKey }), [scopeKey]);
+  const [state, setState] = useState({ scope, visible: false });
+  const smoother = useMemo(() => createSyncHintSmoother(
+    (visible) => setState({ scope, visible }),
+  ), [scope]);
 
   useEffect(() => {
     smoother.setRaw(raw);
     return () => smoother.cancel();
   }, [raw, smoother]);
 
-  return visible;
+  return state.scope === scope && state.visible;
 }
 
 export function useMobileTranscriptSyncHint(
@@ -116,7 +118,7 @@ export function useMobileTranscriptSyncHint(
 ): string | null {
   const { t } = useI18n();
   const load = useSessionMessageLoadState(sessionId, directory);
-  const hasTranscript = useSessionMessagesResolved(sessionId, directory);
+  const { renderable: hasRenderableTranscript } = useSessionMaterializationStatus(sessionId, directory);
   const isConnected = useConfigStore((state) => state.isConnected);
   const connectionPhase = useConfigStore((state) => state.connectionPhase);
   const userRefreshInFlight = useSyncExternalStore(
@@ -132,13 +134,13 @@ export function useMobileTranscriptSyncHint(
 
   const kind = resolveMobileTranscriptSyncHint({
     sessionId,
-    hasTranscript,
+    hasRenderableTranscript,
     loadStatus: load?.status,
     userRefreshInFlight,
     backgroundResyncInFlight,
     isConnected,
     connectionPhase,
   });
-  const visible = useSmoothedSyncHintActive(kind === 'syncing');
+  const visible = useSmoothedSyncHintActive(kind === 'syncing', JSON.stringify([directory, sessionId]));
   return visible ? t('mobile.chat.syncingMessages') : null;
 }
