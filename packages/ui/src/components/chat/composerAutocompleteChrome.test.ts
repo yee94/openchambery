@@ -13,21 +13,22 @@ const mobileStyles = readFileSync(join(here, '../../styles/mobile.css'), 'utf8')
 const layerSource = readFileSync(join(here, './ComposerAutocompleteLayer.tsx'), 'utf8');
 
 describe('composerAutocompleteChrome', () => {
-  test('mobile surface is glass; desktop keeps the bordered panel', () => {
+  test('mobile and desktop share the glass surface', () => {
     expect(composerAutocompleteSurfaceClassName(true)).toContain('oc-mobile-overlay-surface');
     expect(composerAutocompleteSurfaceClassName(true)).toContain('oc-mobile-overlay-surface--translucent');
     expect(composerAutocompleteSurfaceClassName(true)).toContain('oc-composer-autocomplete-surface');
     expect(composerAutocompleteSurfaceClassName(true)).not.toContain('bottom-full');
     expect(composerAutocompleteSurfaceClassName(true)).not.toContain('border-2');
-    expect(composerAutocompleteSurfaceClassName(false)).toContain('border-2');
-    expect(composerAutocompleteSurfaceClassName(false)).not.toContain('oc-mobile-overlay-surface');
+    expect(composerAutocompleteSurfaceClassName(false)).not.toContain('border-2');
+    expect(composerAutocompleteSurfaceClassName(false)).toContain('oc-mobile-overlay-surface');
   });
 
   test('mobile rows drop the persisted selected slab', () => {
     expect(composerAutocompleteRowClassName(true, true)).toBe('oc-composer-autocomplete-row');
     expect(composerAutocompleteRowClassName(true, false)).toBe('oc-composer-autocomplete-row');
-    expect(composerAutocompleteRowClassName(false, true)).toBe('bg-interactive-selection');
-    expect(composerAutocompleteRowClassName(false, false)).toBeUndefined();
+    expect(composerAutocompleteRowClassName(false, true)).toContain('mx-1.5');
+    expect(composerAutocompleteRowClassName(false, true)).toContain('_40%,transparent)');
+    expect(composerAutocompleteRowClassName(false, false)).toContain('hover:bg-');
   });
 
   test('glass recipe uses shared tokens and momentary press fill', () => {

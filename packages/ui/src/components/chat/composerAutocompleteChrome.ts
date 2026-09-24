@@ -13,7 +13,7 @@ export function composerAutocompleteSurfaceClassName(isMobile: boolean, classNam
       // translucent fill. The catalog is viewport-fixed so iOS can frost the
       // transcript; `absolute` inside the composer cannot.
       ? 'oc-mobile-overlay-surface oc-mobile-overlay-surface--translucent oc-composer-autocomplete-surface'
-      : 'bg-background border-2 border-border/60 shadow-none',
+       : 'oc-mobile-overlay-surface oc-mobile-overlay-surface--translucent oc-composer-autocomplete-surface',
     className,
   );
 }
@@ -21,5 +21,6 @@ export function composerAutocompleteSurfaceClassName(isMobile: boolean, classNam
 /** Mobile rows skip the persisted selected slab; press fill lives in CSS `:active`. */
 export function composerAutocompleteRowClassName(isMobile: boolean, selected: boolean) {
   if (isMobile) return 'oc-composer-autocomplete-row';
-  return selected ? 'bg-interactive-selection' : undefined;
+  return cn('mx-1.5 hover:bg-[color-mix(in_srgb,var(--interactive-selection)_40%,transparent)]',
+    selected && 'bg-[color-mix(in_srgb,var(--interactive-selection)_40%,transparent)]');
 }
