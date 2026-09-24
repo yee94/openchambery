@@ -518,7 +518,7 @@ describe('registerOpenCodeProxy session metadata overlay', () => {
     return app;
   };
 
-  it('merges Host store metadata onto session list and detail (store keys win)', async () => {
+  it('merges side-store gaps onto the OpenCode record without letting the side row win conflicts', async () => {
     globalThis.fetch = vi.fn(async (url) => {
       const path = String(url).split('?')[0];
       if (path.endsWith('/api/session') || path.endsWith('/session')) {
@@ -566,7 +566,7 @@ describe('registerOpenCodeProxy session metadata overlay', () => {
       id: 'ses_1',
       metadata: {
         fromOpenCode: true,
-        shared: 'ours',
+        shared: 'theirs',
         openchamber: { goal: { status: 'active' } },
       },
     });
@@ -578,7 +578,7 @@ describe('registerOpenCodeProxy session metadata overlay', () => {
       id: 'ses_1',
       metadata: {
         fromOpenCode: true,
-        shared: 'ours',
+        shared: 'theirs',
         openchamber: { goal: { status: 'active' } },
       },
     });

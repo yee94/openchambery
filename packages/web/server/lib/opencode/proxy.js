@@ -957,7 +957,9 @@ export const registerOpenCodeProxy = (app, deps) => {
       req.path === '/opencode/version' ||
       req.path === '/opencode/contract' ||
       req.path === '/opencode/upgrade-status' ||
-      req.path === '/opencode/upgrade'
+      req.path === '/opencode/upgrade' ||
+      req.path === '/opencode/compatibility' ||
+      req.path === '/opencode/install-required'
     ) {
       return next();
     }

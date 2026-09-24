@@ -71,7 +71,7 @@ import { shouldSuppressTaskLoading } from './shouldSuppressTaskLoading';
 import { opencodeClient } from '@/lib/opencode/client';
 import { areRenderRelevantPartsEqual } from '../renderCompare';
 import { useI18n } from '@/lib/i18n';
-import { getDiffPatchEntries, getPatchText, getToolNavigationDiffEntries, getToolPartLineDiffTotals, patchFilePath } from './toolDiffUtils';
+import { findMetadataPatchFile, getDiffPatchEntries, getPatchText, getToolNavigationDiffEntries, getToolPartLineDiffTotals, patchFilePath } from './toolDiffUtils';
 import { useDeferredToolHydration } from './deferredToolHydrationContext';
 import { scheduleAfterPaintTask } from '@/lib/afterPaintTaskQueue';
 import { DualLimitLru } from '@/lib/dualLimitLru';
@@ -424,14 +424,7 @@ const getPrimaryDiffFromMetadata = (
         const preferred = typeof preferredPath === 'string' && preferredPath.length > 0
             ? preferredPath
             : undefined;
-        const matched = preferred
-            ? files.find((file) => {
-                if (!file || typeof file !== 'object') {
-                    return false;
-                }
-                return patchFilePath(file) === preferred;
-            })
-            : files[0];
+        const matched = findMetadataPatchFile(files, preferred);
 
         if (matched && typeof matched === 'object') {
             const patch = getPatchText((matched as { patch?: unknown; diff?: unknown }).patch)
@@ -2547,34 +2540,40 @@ const ToolPartContent: React.FC<ToolPartProps> = ({
 
             if (isFileNavTool) {
                 const relativePath = getRelativePath(absolutePath, currentDirectory);
+                const insideWorkspace = isFilePathWithinDirectory(absolutePath, currentDirectory);
+                // /tmp 这类工作区外路径没有相对路径；更改视图用绝对路径寻址。
+                const navigationPath = insideWorkspace ? relativePath : absolutePath;
                 const selectedToolDiffs = toolDiff
                     ? getToolNavigationDiffEntries(
                         normalizedPartTool,
                         metadata,
                         toolDiff,
-                        relativePath,
+                        navigationPath,
                         (path) => getRelativePath(path, currentDirectory),
                     )
                     : [];
-                // 写入是单文件补丁：打开视图按点击目标寻址，把补丁路径统一成
-                // relativePath，避免绝对路径 / a-b 前缀让单文件视图找不到该文件。
+                // 单文件补丁按点击目标寻址。工作区外文件同样改写成绝对路径，
+                // 避免 metadata 里的另一套路径让更改视图找不到该文件。
                 const toolPatches = (isWriteLikeNavTool(normalizedPartTool)
+                    || !insideWorkspace)
                     && selectedToolDiffs.length === 1
-                    && selectedToolDiffs[0])
-                    ? [{ path: relativePath, patch: selectedToolDiffs[0].patch }]
+                    && selectedToolDiffs[0]
+                    ? [{ path: navigationPath, patch: selectedToolDiffs[0].patch }]
                     : selectedToolDiffs.map((entry) => ({ path: entry.title, patch: entry.patch }));
 
                 if (runtime?.runtime.isVSCode && runtime.editor && toolDiff) {
-                    const label = `${relativePath} (changes)`;
+                    const label = `${navigationPath} (changes)`;
                     void runtime.editor.openDiff('', absolutePath, label, { line: targetLine, patch: toolDiff });
                     return;
                 }
 
-                if (isFilePathWithinDirectory(absolutePath, currentDirectory)) {
+                // 补丁在会话里，不读磁盘。工作区外的 /tmp 编辑也能打开更改。
+                // 没有补丁时，工作区外仍走下面的文件打开。
+                if (toolPatches.length > 0 || insideWorkspace) {
                     if (mobileActions) {
                         if (toolPatches.length > 0) {
                             mobileActions.openToolDiff({
-                                diffPath: relativePath,
+                                diffPath: navigationPath,
                                 patches: toolPatches,
                                 targetLine,
                             });
@@ -2583,21 +2582,19 @@ const ToolPartContent: React.FC<ToolPartProps> = ({
                         } else {
                             mobileActions.openChanges({ diffPath: relativePath, staged: false, targetLine });
                         }
-                    } else if (isMobile) {
+                    } else if (isMobile && toolPatches.length === 0) {
                         navigateToDiff(relativePath, false, isWriteLikeNavTool(normalizedPartTool) ? 'working' : 'turn', targetLine);
+                    } else if (toolPatches.length > 0) {
+                        openContextToolDiff(
+                            currentDirectory,
+                            navigationPath,
+                            toolPatches,
+                            targetLine,
+                            messageId,
+                            sessionSurface.sessionId,
+                        );
                     } else {
-                        if (toolPatches.length > 0) {
-                            openContextToolDiff(
-                                currentDirectory,
-                                relativePath,
-                                toolPatches,
-                                targetLine,
-                                messageId,
-                                sessionSurface.sessionId,
-                            );
-                        } else {
-                            openContextDiff(currentDirectory, relativePath, false, isWriteLikeNavTool(normalizedPartTool) ? 'working' : 'turn', targetLine, messageId, sessionSurface.sessionId);
-                        }
+                        openContextDiff(currentDirectory, relativePath, false, isWriteLikeNavTool(normalizedPartTool) ? 'working' : 'turn', targetLine, messageId, sessionSurface.sessionId);
                     }
                     return;
                 }

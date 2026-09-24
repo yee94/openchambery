@@ -3,6 +3,11 @@ import { queryClient, queryKeys, normalizePluginRegistrySpecs } from '@/lib/quer
 import { runtimeFetch } from '@/lib/runtime-fetch';
 import { getRuntimeTransportIdentity } from '@/lib/runtime-switch';
 import { opencodeClient } from '@/lib/opencode/client';
+import {
+  checkPluginUpdates,
+  listPluginRuntime,
+  type PluginRuntimeInfo,
+} from '@/lib/opencode/plugins';
 import { useProjectsStore } from '@/stores/useProjectsStore';
 import type { PluginEntry, PluginFile, PluginScope, RegistryResult } from '@/stores/usePluginsStore';
 import { resolveConfigQueryDirectory } from './commandQueries';
@@ -36,6 +41,31 @@ const pluginRegistryQueryKey = (
 
 const pluginFileQueryKey = (directory: string | null, id: string, transport = getRuntimeTransportIdentity()) =>
   queryKeys.plugins.file(directory, id, transport);
+
+const pluginRuntimeQueryKey = (directory: string | null, transport = getRuntimeTransportIdentity()) =>
+  queryKeys.plugins.runtime(directory, transport);
+
+/**
+ * Only the newest runtime read may commit. A slower list must not replace a
+ * check that already landed, and a failed read must not write an empty list.
+ */
+let runtimeReadGeneration = 0;
+
+const beginRuntimeRead = (): number => {
+  runtimeReadGeneration += 1;
+  return runtimeReadGeneration;
+};
+
+const claimRuntimeRead = (): void => {
+  runtimeReadGeneration += 1;
+};
+
+const currentRuntimeInventory = (
+  client: Pick<QueryClient, 'getQueryData'>,
+  directory: string | null,
+  transport: string,
+): PluginRuntimeInfo[] | undefined =>
+  client.getQueryData<PluginRuntimeInfo[]>(pluginRuntimeQueryKey(directory, transport));
 
 export const pluginsListQueryOptions = (
   directory: string | null = resolveConfigQueryDirectory(),
@@ -108,6 +138,34 @@ export const pluginFileQueryOptions = (
   };
 };
 
+export const pluginRuntimeQueryOptions = (
+  directory: string | null = resolveConfigQueryDirectory(),
+  transport = getRuntimeTransportIdentity(),
+) => {
+  const normalizedDirectory = normalizeDirectory(directory);
+  return {
+    queryKey: pluginRuntimeQueryKey(normalizedDirectory, transport),
+    queryFn: async ({ signal }: { signal: AbortSignal }): Promise<PluginRuntimeInfo[]> => {
+      const generation = beginRuntimeRead();
+      const plugins = await listPluginRuntime(normalizedDirectory, signal);
+      if (generation !== runtimeReadGeneration) {
+        const current = currentRuntimeInventory(queryClient, normalizedDirectory, transport);
+        if (current) return current;
+        throw new Error('Stale plugin runtime read');
+      }
+      return plugins;
+    },
+    staleTime: 5_000,
+    retry: false,
+  };
+};
+
+export const pluginPackageUpdateKey = (
+  directory: string | null,
+  target: string,
+  transport = getRuntimeTransportIdentity(),
+): string => JSON.stringify([transport, normalizeDirectory(directory) ?? '', target]);
+
 export const usePluginsQuery = (options: { enabled?: boolean } = {}) => {
   const activeProjectPath = useProjectsStore((state) => state.getActiveProject?.()?.path ?? null);
   return useQuery({
@@ -123,6 +181,19 @@ export const usePluginRegistryQuery = (
   const activeProjectPath = useProjectsStore((state) => state.getActiveProject?.()?.path ?? null);
   return useQuery({
     ...pluginRegistryQueryOptions(normalizeDirectory(activeProjectPath) ?? normalizeDirectory(opencodeClient.getDirectory()), specs, force),
+  });
+};
+
+export const usePluginConfigDirectory = (): string | null => {
+  const activeProjectPath = useProjectsStore((state) => state.getActiveProject?.()?.path ?? null);
+  return normalizeDirectory(activeProjectPath) ?? normalizeDirectory(opencodeClient.getDirectory());
+};
+
+export const usePluginRuntimeQuery = (options: { enabled?: boolean } = {}) => {
+  const directory = usePluginConfigDirectory();
+  return useQuery({
+    ...pluginRuntimeQueryOptions(directory),
+    enabled: options.enabled,
   });
 };
 
@@ -190,6 +261,42 @@ export const refreshPluginFileQuery = async (
     return client.getQueryData<PluginFileContent>(pluginFileQueryKey(normalizedDirectory, id, transport));
   }
   return client.fetchQuery({ ...pluginFileQueryOptions(normalizedDirectory, id, transport), staleTime: 0 });
+};
+
+export const refreshPluginRuntimeQuery = async (
+  client: Pick<QueryClient, 'setQueryData' | 'getQueryData'>,
+  directory: string | null,
+  transport: string,
+): Promise<PluginRuntimeInfo[] | undefined> => {
+  const normalizedDirectory = normalizeDirectory(directory);
+  if (getRuntimeTransportIdentity() !== transport) {
+    return currentRuntimeInventory(client, normalizedDirectory, transport);
+  }
+  const generation = beginRuntimeRead();
+  const plugins = await listPluginRuntime(normalizedDirectory);
+  if (generation !== runtimeReadGeneration || getRuntimeTransportIdentity() !== transport) {
+    return currentRuntimeInventory(client, normalizedDirectory, transport);
+  }
+  client.setQueryData(pluginRuntimeQueryKey(normalizedDirectory, transport), plugins);
+  return plugins;
+};
+
+/**
+ * Writes a successful check over the runtime inventory. A failed check throws
+ * and leaves the previous inventory in place.
+ */
+export const checkPluginRuntimeUpdates = async (
+  directory: string | null = resolveConfigQueryDirectory(),
+  client: Pick<QueryClient, 'setQueryData'> = queryClient,
+): Promise<PluginRuntimeInfo[]> => {
+  const normalizedDirectory = normalizeDirectory(directory);
+  const transport = getRuntimeTransportIdentity();
+  const plugins = await checkPluginUpdates(normalizedDirectory);
+  claimRuntimeRead();
+  if (getRuntimeTransportIdentity() === transport) {
+    client.setQueryData(pluginRuntimeQueryKey(normalizedDirectory, transport), plugins);
+  }
+  return plugins;
 };
 
 export const fetchPluginsListQuery = (directory: string | null = resolveConfigQueryDirectory()) =>

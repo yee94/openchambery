@@ -178,6 +178,22 @@ function useTranscriptSelector<T>(
 }
 
 /**
+ * Subscribe to one session transcript and keep the last projection whose
+ * `isEqual` result still matches. Streaming text that does not change the
+ * projection keeps the same reference.
+ */
+export function useTranscriptProjection<T>(
+  sessionID: string,
+  directory: string,
+  store: StoreApi<DirectoryStore>,
+  select: (data: TranscriptData) => T,
+  isEqual: (a: T, b: T) => boolean = Object.is,
+  options?: { enabled?: boolean },
+): T {
+  return useTranscriptSelector(sessionID, directory, store, select, isEqual, options)
+}
+
+/**
  * Build a chronological message array from TranscriptData (stable empty ref).
  * When `previous` has the same length and the same message object refs in
  * messageOrder, reuse it so useSyncExternalStore getSnapshot stays Object.is-stable.

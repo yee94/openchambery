@@ -476,12 +476,23 @@ export const projectTurnRecords = (
     const projection = projectTurnIndexes(stableTurns);
     const ungroupedMessageIds = new Set<string>();
     messages.forEach((message) => {
-        if (resolveMessageRole(message) === 'assistant') {
+        if (groupedMessageIds.has(message.info.id)) {
             return;
         }
-        if (!groupedMessageIds.has(message.info.id)) {
-            ungroupedMessageIds.add(message.info.id);
+        if (resolveMessageRole(message) === 'assistant') {
+            // Explicit parentID that did not resolve: wait for the user turn
+            // (pagination). Do not flash orphan replies as standalone rows.
+            if (getMessageParentId(message)) {
+                return;
+            }
+            // Parentless v2 assistants attach to a preceding user turn when one
+            // exists. If this page has no user turn at all (OpenCode 2 subagent
+            // sessions), there is nothing to wait for — keep them on the timeline.
+            if (turns.length > 0) {
+                return;
+            }
         }
+        ungroupedMessageIds.add(message.info.id);
     });
 
     return {

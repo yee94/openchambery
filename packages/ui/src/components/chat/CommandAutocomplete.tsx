@@ -11,7 +11,6 @@ import { cn } from '@/lib/utils';
 import { useSessionUIStore } from '@/sync/session-ui-store';
 import { useSessionMessages } from '@/sync/sync-context';
 import { useCommandsQuery } from '@/queries/commandQueries';
-import { useInstalledSkillsQuery } from '@/queries/installedSkillsQueries';
 import { ScrollableOverlay } from '@/components/ui/ScrollableOverlay';
 import { Icon } from "@/components/icon/Icon";
 import { useI18n } from '@/lib/i18n';
@@ -22,6 +21,7 @@ import { ComposerAutocompleteLayer } from './ComposerAutocompleteLayer';
 import {
   composerAutocompleteRowClassName,
 } from './composerAutocompleteChrome';
+import { highlightAutocompleteQuery } from './autocompleteQueryHighlight';
 
 type CommandSource = 'openchamber' | 'opencode' | 'skill';
 
@@ -61,27 +61,6 @@ const NEUTRAL_BADGE_CLASS = cn(
   BASE_BADGE_CLASS,
   "bg-[var(--surface-muted)] text-muted-foreground border-[var(--interactive-border)]/60"
 );
-
-const highlightCommandMatch = (text: string, query: string): React.ReactNode => {
-  const needle = query.trim().toLowerCase();
-  if (!needle) return text;
-  const normalized = text.toLowerCase();
-  const parts: React.ReactNode[] = [];
-  let cursor = 0;
-  let match = normalized.indexOf(needle);
-  while (match !== -1) {
-    parts.push(text.slice(cursor, match));
-    parts.push(
-      <mark key={match} className="bg-transparent text-[var(--primary-base)] font-semibold">
-        {text.slice(match, match + needle.length)}
-      </mark>,
-    );
-    cursor = match + needle.length;
-    match = normalized.indexOf(needle, cursor);
-  }
-  parts.push(text.slice(cursor));
-  return parts;
-};
 
 /**
  * Explicit command availability context. Callers (ChatInput, MultiRun, agent
@@ -175,8 +154,6 @@ export const CommandAutocomplete = React.forwardRef<CommandAutocompleteHandle, C
   const commandsQuery = useCommandsQuery({ directory });
   const commandsWithMetadata = React.useMemo(() => commandsQuery.data ?? [], [commandsQuery.data]);
   const isCommandsFetching = commandsQuery.isFetching;
-  const skillsQuery = useInstalledSkillsQuery({ directory });
-  const skills = React.useMemo(() => skillsQuery.data ?? [], [skillsQuery.data]);
   const [selectedIndex, setSelectedIndex] = React.useState(0);
   const selectedIndexRef = React.useRef(0);
   const keyboardNavigationRef = React.useRef(false);
@@ -209,26 +186,20 @@ export const CommandAutocomplete = React.forwardRef<CommandAutocompleteHandle, C
     const loadCommands = async () => {
       setLoading(isCommandsFetching);
       try {
-        const customCommands: CommandInfo[] = commandsWithMetadata.map((cmd, index) => ({
-          id: `opencode:${cmd.scope ?? 'global'}:${cmd.name}:${cmd.agent ?? ''}:${cmd.model ?? ''}:${index}`,
-          name: cmd.name,
-          source: 'opencode',
-          description: cmd.description,
-          agent: cmd.agent ?? undefined,
-          model: cmd.model ?? undefined,
-          isBuiltIn: cmd.isBuiltIn,
-          isSkill: cmd.source === 'skill',
-          scope: cmd.scope,
-          reference: cmd.reference,
-        }));
-        const skillCommands: CommandInfo[] = skills.map((skill, index) => ({
-          id: `skill:${skill.scope}:${skill.source ?? 'opencode'}:${skill.name}:${index}`,
-          name: skill.name,
-          source: 'skill',
-          description: skill.description,
-          isSkill: true,
-          scope: skill.scope,
-        }));
+        const customCommands: CommandInfo[] = commandsWithMetadata.flatMap((cmd, index) => {
+          if (cmd.source === 'skill') return [];
+          return [{
+            id: `opencode:${cmd.scope ?? 'global'}:${cmd.name}:${cmd.agent ?? ''}:${cmd.model ?? ''}:${index}`,
+            name: cmd.name,
+            source: 'opencode' as const,
+            description: cmd.description,
+            agent: cmd.agent ?? undefined,
+            model: cmd.model ?? undefined,
+            isBuiltIn: cmd.isBuiltIn,
+            scope: cmd.scope,
+            reference: cmd.reference,
+          }];
+        });
 
         const builtInCommands: CommandInfo[] = [
           { id: 'openchamber:new', name: 'new', source: 'openchamber' as const, description: t('chat.commandAutocomplete.command.newDescription'), isBuiltIn: true },
@@ -288,7 +259,7 @@ export const CommandAutocomplete = React.forwardRef<CommandAutocompleteHandle, C
             : []
           ),
         ];
-        const allCommands = [...builtInCommands, ...customCommands, ...skillCommands];
+        const allCommands = [...builtInCommands, ...customCommands];
 
         const allowInitCommand = !hasMessagesInCurrentSession;
         const eligible = allCommands.filter(
@@ -369,7 +340,7 @@ export const CommandAutocomplete = React.forwardRef<CommandAutocompleteHandle, C
     };
 
     loadCommands();
-  }, [searchQuery, hasMessagesInCurrentSession, hasSession, canStartSessionCommand, canUseReviewHandoffFlow, commandsWithMetadata, isCommandsFetching, skills, t, commandPolicy]);
+  }, [searchQuery, hasMessagesInCurrentSession, hasSession, canStartSessionCommand, canUseReviewHandoffFlow, commandsWithMetadata, isCommandsFetching, t, commandPolicy]);
 
   React.useEffect(() => {
     setSelectedIndex(0);
@@ -563,7 +534,7 @@ export const CommandAutocomplete = React.forwardRef<CommandAutocompleteHandle, C
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2">
-                      <span className="typography-ui-label font-medium">/{highlightCommandMatch(command.name, searchQuery)}</span>
+                      <span className="typography-ui-label font-medium">/{highlightAutocompleteQuery(command.name, searchQuery)}</span>
                       {command.isSkill ? (
                         <span className={TYPE_BADGE_CLASS}>
                           {t('chat.commandAutocomplete.badge.skill')}
@@ -594,7 +565,7 @@ export const CommandAutocomplete = React.forwardRef<CommandAutocompleteHandle, C
                     </div>
                     {command.description && !isMobile && (
                       <div className="typography-meta text-muted-foreground mt-0.5 truncate">
-                        {highlightCommandMatch(command.description, searchQuery)}
+                        {highlightAutocompleteQuery(command.description, searchQuery)}
                       </div>
                     )}
                   </div>

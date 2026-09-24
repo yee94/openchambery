@@ -16,6 +16,10 @@ import {
   type SessionMetadataStore,
 } from '../../web/server/lib/session-metadata/session-metadata-store.js';
 import {
+  createHttpSessionRecordClient,
+  startSideStoreMigration,
+} from '../../web/server/lib/session-metadata/opencode-session-record.js';
+import {
   extractSessionInfoFromPayload,
   isSessionLifecycleEventType,
   normalizeSessionEventType,
@@ -48,6 +52,8 @@ export const isSessionArchiveError = (error: unknown): error is SessionArchiveEr
 export {
   SessionArchiveError,
   createSessionMetadataStore,
+  createHttpSessionRecordClient,
+  startSideStoreMigration,
   createSessionArchiveService,
   projectSessionWithStoredMap,
   projectSessionLifecyclePayload,

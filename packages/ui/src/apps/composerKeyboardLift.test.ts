@@ -123,11 +123,8 @@ describe('composerKeyboardLift', () => {
   });
 
   test('native iOS composer still yields keyboard lift to the Side Chat web field', () => {
-    const btwField = {
-      closest(selector: string) {
-        return selector === '[data-btw-composer]' ? btwField : null;
-      },
-    };
+    const btwField = createElement('div');
+    btwField.setAttribute('data-btw-composer', '');
 
     expect(shouldDeferWebKeyboardToNativeComposer(false, btwField)).toBe(false);
     expect(shouldDeferWebKeyboardToNativeComposer(true, btwField)).toBe(false);

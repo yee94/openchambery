@@ -16,6 +16,7 @@ import { useMcpConfigStore } from "@/stores/useMcpConfigStore";
 import { readMcpConfigsSnapshot } from "@/queries/mcpQueries";
 import { useSnippetsStore } from "@/stores/useSnippetsStore";
 import { useSkillsStore } from "@/stores/useSkillsStore";
+import { useBrowserProviderCatalogQuery } from "@/queries/browserProviderQueries";
 import { queryClient } from "@/lib/queryRuntime";
 import {
   readInstalledSkillsSnapshot,
@@ -404,6 +405,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   );
   const setSettingsPage = useUIStore((state) => state.setSettingsPage);
   const settingsSlug = resolveSettingsSlug(settingsPageRaw);
+  const browserProviderCatalog = useBrowserProviderCatalogQuery();
   const commandsQuery = useCommandsQuery({
     enabled: settingsSlug === "commands",
   });
@@ -737,6 +739,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     isMac,
     isWindows,
     runtimeCtx,
+    browserProviderCatalog.dataUpdatedAt,
     settingsSearchQuery,
     t,
     visiblePages,

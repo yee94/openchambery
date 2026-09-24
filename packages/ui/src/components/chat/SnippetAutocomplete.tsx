@@ -11,6 +11,7 @@ import { ComposerAutocompleteLayer } from './ComposerAutocompleteLayer';
 import {
   composerAutocompleteRowClassName,
 } from './composerAutocompleteChrome';
+import { highlightAutocompleteQuery } from './autocompleteQueryHighlight';
 
 export interface SnippetAutocompleteHandle {
   handleKeyDown: (key: string) => void;
@@ -162,11 +163,11 @@ export const SnippetAutocomplete = React.forwardRef<SnippetAutocompleteHandle, S
           >
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-2">
-                <span className="font-semibold truncate">#{snippet.name}</span>
+                <span className="truncate">#{highlightAutocompleteQuery(snippet.name, searchQuery)}</span>
                 <span className="text-[10px] leading-none uppercase font-bold tracking-tight px-1.5 py-1 rounded border flex-shrink-0 bg-[var(--surface-muted)] text-muted-foreground border-[var(--interactive-border)]/60">{t(`snippets.source.${snippet.source}`)}</span>
               </div>
               {!isMobile && (
-                <div className="typography-meta text-muted-foreground mt-0.5 truncate">{snippetPreview(snippet)}</div>
+                <div className="typography-meta text-muted-foreground mt-0.5 truncate">{highlightAutocompleteQuery(snippetPreview(snippet), searchQuery)}</div>
               )}
             </div>
           </div>

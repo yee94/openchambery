@@ -229,6 +229,35 @@ function projectionTokens(value: unknown): Message["tokens"] | undefined {
   return Object.keys(tokens).length > 0 ? tokens : undefined
 }
 
+function applyProjectedUserIdentity(info: Message, item: SessionProjectionRecord): void {
+  const metadata = record(item.metadata) ? item.metadata : undefined
+  const metadataModel = metadata && record(metadata.model) ? metadata.model : undefined
+  const model = record(item.model) ? item.model : metadataModel
+  const modelID = model
+    ? asString(model.id) ?? asString(model.modelID) ?? asString(item.modelID)
+    : asString(item.modelID)
+  const providerID = model
+    ? asString(model.providerID) ?? asString(item.providerID)
+    : asString(item.providerID)
+  const variant = (model ? asString(model.variant) : undefined)
+    ?? asString(item.variant)
+    ?? (metadata ? asString(metadata.variant) : undefined)
+  if (modelID) info.modelID = modelID
+  if (providerID) info.providerID = providerID
+  if (variant) info.variant = variant
+  if (modelID || providerID || variant) {
+    info.model = {
+      ...(providerID ? { providerID } : {}),
+      ...(modelID ? { modelID } : {}),
+      ...(variant ? { variant } : {}),
+    }
+  }
+  const agent = asString(item.agent)
+    ?? asString(item.mode)
+    ?? (metadata ? asString(metadata.agent) : undefined)
+  if (agent) info.agent = agent
+}
+
 function baseMessage(
   sessionID: string,
   item: SessionProjectionRecord,
@@ -273,6 +302,9 @@ export function normalizeSessionProjectionMessage(
 
   if (type === "user") {
     const info = baseMessage(sessionID, item, "user")
+    // v2 user rows omit top-level provider/model. Prompt metadata and an
+    // official ModelRef still name the model the client just sent.
+    applyProjectedUserIdentity(info, item)
     const parts: Part[] = []
     const text = asString(item.text)
     if (text) parts.push(textPart(sessionID, id, 0, text))

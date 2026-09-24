@@ -99,7 +99,7 @@ Owning modules: `session-send-selection.ts`, `lib/opencode/client.ts`
 
 ## Prompt admission lifecycle — Ticket 02
 
-Verified on **2.0.12** / **2.0.14** core inbox: `admit` is idempotent for the
+Verified on **2.0.12** / **2.0.14** core inbox. Installed `@opencode/client` / `@opencode/schema` are **2.0.15**; the generated prompt and message routes are unchanged from that verification. `admit` is idempotent for the
 same session + message id (fixed id + fixed payload; reconcile returns existing
 pending or promoted-from-message). Empty inbox + empty projection after a lost
 response is **unknown** (pending-not-visible vs cancelled) — never a new draft.
@@ -547,6 +547,15 @@ Modules:
    concurrency (≤4 FIFO) after the authority tail lands. Authority-tail pull
    itself is gated by `seededAuthorityPending`, independent of the exact-fill
    pending set.
+   An `http-page initial` (authority tail, recovery) normally collapses the
+   chain to one tail page with the tail's cursor. When the tail's oldest
+   record is already held by an existing page, the chain is paged history
+   the tail cannot extend: `rebuildFromReducedState` keeps the page layout
+   and the chain's existing older boundary
+   (`resolveOverlappingTailBoundary`). Collapsing there rewinds the cursor
+   onto rows the client holds, so each following prepend re-downloads them
+   and a user scroll-load adds nothing. A tail that overlaps nothing (gap or
+   durable-only seed) still collapses so older fetches fill the gap.
    Slim text parts take the on-demand exact-fill path
    (`messageNeedsExactMaterialization` requires `isSlimPart`, and the set
    includes `text`) so an explicit `materializeMessage` replaces a summary
@@ -1105,6 +1114,13 @@ both readers agree on when a frame may shrink.
     is authoritative that the turn has not settled; membership alone may be
     incomplete in a reconnect window)
   - active unknown / unsupported → legacy only
+  - directory reconnect restore IDs are the child-store catalog, the viewed
+    session (even before its row is stored), and global-index sessions for
+    that directory. Bootstrap does not publish `session_status_snapshot_at`
+    when that directory still has no known session IDs.
+  - a live step/text/tool/reasoning frame (`noteLiveSessionActivity`) marks a
+    missing or idle session busy. Restart can miss `session.execution.started`
+    while those frames continue.
   - both unusable → preserve prior status; **do not** advance
     `session_status_snapshot_at`
   - active supported with a failed legacy load still fuses (empty legacy map)

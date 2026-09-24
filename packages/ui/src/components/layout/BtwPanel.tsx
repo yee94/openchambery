@@ -45,8 +45,8 @@ function BtwTurnView({ turn, isLast, scope }: { turn: SessionBtwTurn; isLast: bo
   });
   return <div className="flex flex-col gap-2" data-btw-turn={turn.id}>
     <div className="ml-8 flex flex-col gap-1.5 self-end rounded-xl bg-[var(--surface-elevated)] px-3 py-2">
-      {turn.quotes.map((quote, index) => <p key={index} data-btw-quote
-        className="line-clamp-3 whitespace-pre-wrap break-words border-l-2 border-border pl-2 typography-meta text-muted-foreground">{quote}</p>)}
+      {turn.quotes.map((quote, index) => <p key={index} data-btw-quote data-conversation-quote
+        className="m-0 whitespace-pre-wrap break-words border-l-2 border-border pl-1.5 typography-meta text-muted-foreground">{quote}</p>)}
       <div className="whitespace-pre-wrap break-words typography-markdown text-foreground">{turn.question}</div>
     </div>
     {turn.pending ? <p role="status" className="flex items-center gap-1.5 typography-meta text-muted-foreground">

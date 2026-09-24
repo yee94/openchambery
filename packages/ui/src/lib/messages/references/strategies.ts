@@ -44,7 +44,7 @@ const pushSpan = (
 export const skillReferenceStrategy: MessageReferenceStrategy = {
     kind: 'skill',
     priority: 120,
-    shouldScan: (text) => text.includes('/') || text.includes('[skill:'),
+    shouldScan: (text) => text.includes('/') || text.includes('@') || text.includes('[skill:'),
     detect: (text, context) => {
         const spans: MessageReferenceSpan[] = [];
         const known = context.skillNames;
@@ -60,7 +60,7 @@ export const skillReferenceStrategy: MessageReferenceStrategy = {
                 end: match.index + match[0].length,
                 kind: 'skill',
                 raw: match[0],
-                label: `/${skillName}`,
+                label: `@${skillName}`,
                 payload: { kind: 'skill', skillName },
             });
         }
@@ -84,6 +84,26 @@ export const skillReferenceStrategy: MessageReferenceStrategy = {
                 kind: 'skill',
                 raw: text.slice(start, end),
                 label: `/${skillName}`,
+                payload: { kind: 'skill', skillName },
+            });
+        }
+
+        const agentNames = context.agentNames;
+        const atPattern = /(^|\s)@(\u2003)?([A-Za-z0-9][A-Za-z0-9_-]*)(?=$|[\s)\]},.!?;:])/g;
+        while ((match = atPattern.exec(text)) !== null) {
+            const slot = match[2] ?? '';
+            const token = match[3] || '';
+            const skillName = knownLower.get(token.toLowerCase());
+            if (!skillName || agentNames?.has(token.toLowerCase())) continue;
+            const start = match.index + match[1].length;
+            const end = start + 1 + slot.length + token.length;
+            if (spans.some((span) => span.start < end && span.end > start)) continue;
+            pushSpan(spans, {
+                start,
+                end,
+                kind: 'skill',
+                raw: text.slice(start, end),
+                label: `@${skillName}`,
                 payload: { kind: 'skill', skillName },
             });
         }

@@ -7,7 +7,7 @@ import { useContextStore } from '@/stores/contextStore';
 import { useSelectionStore } from '@/sync/selection-store';
 import type { ChatMessageEntry } from '../lib/turns/types';
 import type { PendingAssistantHeaderPresentation } from '../lib/pendingAssistantHeader';
-import { readUserMessageHeaderIdentity } from '../lib/pendingAssistantHeader';
+import { readUserMessageHeaderIdentity, resolveAssistantHeaderModel } from '../lib/pendingAssistantHeader';
 import MessageHeader from '../message/MessageHeader';
 
 const readInfoString = (info: unknown, key: string): string | undefined => {
@@ -42,6 +42,10 @@ const TurnAssistantHeader: React.FC<TurnAssistantHeaderProps> = ({
     isMobile,
 }) => {
     const providers = useConfigStore((state) => state.providers);
+    const composerSelection = useConfigStore(useShallow((state) => ({
+        providerId: state.currentProviderId,
+        modelId: state.currentModelId,
+    })));
     const sessionId = assistantMessage?.info.sessionID ?? userMessage.info.sessionID;
     const getAgentModelForSession = useSelectionStore((state) => state.getAgentModelForSession);
     const getSessionModelSelection = useSelectionStore((state) => state.getSessionModelSelection);
@@ -59,6 +63,10 @@ const TurnAssistantHeader: React.FC<TurnAssistantHeaderProps> = ({
         () => readUserMessageHeaderIdentity(userMessage.info),
         [userMessage.info],
     );
+    const assistantIdentity = React.useMemo(
+        () => (assistantMessage ? readUserMessageHeaderIdentity(assistantMessage.info) : null),
+        [assistantMessage],
+    );
 
     const agentName = React.useMemo(() => {
         if (!assistantMessage) return pendingPresentation?.agentName ?? userIdentity?.agentName;
@@ -69,10 +77,7 @@ const TurnAssistantHeader: React.FC<TurnAssistantHeaderProps> = ({
             ?? savedSessionAgentSelection;
     }, [assistantMessage, currentContextAgent, pendingPresentation?.agentName, savedSessionAgentSelection, userIdentity?.agentName]);
 
-    const contextModelSelection = React.useMemo(() => {
-        if (userIdentity?.providerId && userIdentity.modelId) {
-            return { providerId: userIdentity.providerId, modelId: userIdentity.modelId };
-        }
+    const sessionModelSelection = React.useMemo(() => {
         if (sessionId && agentName) {
             const agentSelection = getAgentModelForSession(sessionId, agentName);
             if (agentSelection?.providerId && agentSelection.modelId) return agentSelection;
@@ -80,14 +85,19 @@ const TurnAssistantHeader: React.FC<TurnAssistantHeaderProps> = ({
         if (!sessionId) return null;
         const sessionSelection = getSessionModelSelection(sessionId);
         return sessionSelection?.providerId && sessionSelection.modelId ? sessionSelection : null;
-    }, [agentName, getAgentModelForSession, getSessionModelSelection, sessionId, userIdentity?.modelId, userIdentity?.providerId]);
+    }, [agentName, getAgentModelForSession, getSessionModelSelection, sessionId]);
 
-    const providerID = assistantMessage
-        ? readInfoString(assistantMessage.info, 'providerID') ?? contextModelSelection?.providerId
-        : pendingPresentation?.providerID ?? userIdentity?.providerId;
-    const modelID = assistantMessage
-        ? readInfoString(assistantMessage.info, 'modelID') ?? contextModelSelection?.modelId
-        : pendingPresentation?.modelID ?? userIdentity?.modelId;
+    const resolvedModel = resolveAssistantHeaderModel({
+        assistantIdentity,
+        userIdentity,
+        sessionSelection: sessionModelSelection,
+        composerSelection,
+        // Pending shell and the live streaming row still belong to the model
+        // the composer just sent. Settled history must not borrow that pick.
+        allowComposerFallback: !assistantMessage || assistantIsInActiveTurn,
+    });
+    const providerID = resolvedModel?.providerId;
+    const modelID = resolvedModel?.modelId;
     const stableAgentName = useStickyValue(agentName);
     const stableProviderID = useStickyValue(providerID);
     const stableModelID = useStickyValue(modelID);

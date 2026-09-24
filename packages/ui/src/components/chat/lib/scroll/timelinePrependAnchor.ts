@@ -152,6 +152,31 @@ export const captureTimelineAnchorArm = (
 };
 
 /**
+ * Arm a history load during the render that first sees its request token.
+ *
+ * `committedEntryKeys` must be the keys from the previous commit. A fast page
+ * can land in that same render; capturing `entryKeys` then would treat the
+ * estimated newcomers as the rows the reader was looking at, and the list
+ * holds those estimates while they measure — the new text overlaps the
+ * transcript and then jumps away.
+ *
+ * Returns null when this token was already armed. A null `arm` still advances
+ * `armedToken` so an empty list does not retry the capture every render.
+ */
+export const resolveRequestedHistoryAnchorArm = (input: {
+    historyAnchorToken: number;
+    armedToken: number;
+    list: TimelineAnchorReadState | null;
+    committedEntryKeys: readonly string[];
+}): { armedToken: number; arm: TimelineAnchorArm | null } | null => {
+    if (input.historyAnchorToken <= input.armedToken) return null;
+    const arm = input.list && input.committedEntryKeys.length > 0
+        ? captureTimelineAnchorArm(input.list, input.committedEntryKeys)
+        : null;
+    return { armedToken: input.historyAnchorToken, arm };
+};
+
+/**
  * How long an arm waits for its rows before giving up.
  *
  * End maintenance stays off while armed, so an arm whose request fails, returns

@@ -1,32 +1,42 @@
 # Session metadata store
 
-OpenChamber-owned per-session metadata for Host features that used to live on
-OpenCode `session.metadata`.
+OpenChamber session metadata whose durable copy lives on the OpenCode session
+record. The side JSON file is the cache and the pre-migration source.
 
 ## Why
 
-Session goal progress, Host archive stamps, and later other Host state under the
-`openchamber` namespace are OpenChamber product state. The Host owns their
-authority: it serializes conditional writes, publishes only persisted values,
-and protects archive fields from generic patches. They therefore live in this
-Host store and are folded back onto proxy session list/detail/SSE responses so
-clients still read `session.metadata` and `time.archived`.
+Session goal progress, Host archive stamps, titles, and other Host state under
+the `openchamber` namespace travel with the OpenCode session. `session.update`
+(`PATCH /api/session/:id`, body `{ title?, metadata?, permissions? }`) replaces
+`metadata` wholesale. Archive is `metadata.openchamber.archive.archivedAt` on
+that record and is still projected onto `time.archived`. Title is the record's
+`title` field and is not sent when only metadata changes.
 
-Upstream capability is tracked per version and does not change that ownership:
+`opencode-session-record.js` is the only module that knows that call. A client
+whose types omit `session.update` metadata still goes through that module;
+a missing API throws and is never an empty write.
+
+The side file remains until each row has been copied or OpenCode has confirmed
+the session is gone. Until that load succeeds, the file is not an authoritative
+empty catalog: a failed read stays unwritable and does not clear other sessions.
+A session OpenCode still has is listed even when the side file has no row.
+One failed copy does not delete the other rows or the other OpenCode sessions.
+
+Fork-specific fields (`goal`, `assistant`, `scheduledTask`, `llm`, `smallModel`,
+and the rest of `openchamber`) are merged onto the record. They are not dropped
+to match a narrower upstream metadata shape.
 
 | OpenCode client | Session metadata update |
 |---|---|
 | Earlier 2.x releases used during the migration | `metadata` accepted at create time only |
-| 2.0.14 | `PATCH /api/session/:id` with body `{ title, metadata, permissions }` (`session.update`) |
-
-Adopting the upstream update API for Host-owned fields requires a separate
-decision about authority, conditional writes, and archive protection.
+| 2.0.14+ / 2.0.15 | `PATCH /api/session/:id` with body `{ title, metadata, permissions }` (`session.update`) |
 
 ## Layout
 
 | File | Role |
 |---|---|
-| `session-metadata-store.js` | Durable store: one JSON file per data dir, `{ [sessionID]: metadata }`, RFC 7386 merge patch, full RMW serialization, refuse-failed-read refuses write/read-as-empty |
+| `opencode-session-record.js` | Read/write title and metadata on the OpenCode session record; migrate the side file without treating a failed load as empty or dropping other sessions |
+| `session-metadata-store.js` | Side-file cache and migration source: `{ [sessionID]: metadata }`, RFC 7386 merge patch, full RMW serialization, refuse-failed-read refuses write/read-as-empty. When a record reader/writer is wired, commits the merged object onto the OpenCode session first |
 | `session-projection.js` | Pure Host authority projection (metadata deep-merge + archive → `time.archived`) |
 | `session-archive.js` | Domain archive/unarchive: validate upstream session + directory, persist, project, best-effort index/broadcast |
 | `system-session.js` | Isolation patches for system session creators: `buildScheduledTaskMetadata`, `buildLlmSessionMetadata`, `buildAssistantSessionMetadata`. Title prefixes are labels and never ownership. |
@@ -59,19 +69,19 @@ decision about authority, conditional writes, and archive protection.
 
 Wired from `packages/web/server/index.js` + `feature-routes-runtime.js`:
 
-1. `createSessionMetadataStore({ dataDir: OPENCHAMBER_DATA_DIR })` + initial `load()`
+1. `createHttpSessionRecordClient` + `createSessionMetadataStore({ dataDir, recordReader, recordWriter })` + initial `load()`, then `startSideStoreMigration`
 2. proxy `getStoredSessionMetadata` / `getStoredSessionMetadataSync` → list/get + direct SSE overlay
 3. global hub `projectOutboundSessionPayload` → live + replay session lifecycle authority
 4. session-index sync `projectSessions` + event-ingest `projectSession` / `onSessionDeleted`
 5. `createSessionArchiveService` after session index exists
 6. session-goal `readSessionMetadata` / `mutateSessionMetadata` / `persistSessionGoal`
 7. `registerSessionMetadataRoutes` (metadata + archive)
-8. assistants `archiveSessionHost` → shared Host archive (not upstream `session.update`)
+8. assistants `archiveSessionHost` → shared Host archive, which write-throughs `metadata` onto the OpenCode session record without clearing `title`
 9. system session creators persist isolation through `persistSessionMetadata`
    (`setSessionMetadata` + `openchamber:session-metadata` broadcast) and then
    `onSystemSessionPersisted` (index upsert that removes the row). Wired from
    `index.js` into scheduled-task runtime, LLM attachment generate, and
-   Assistant binding create. OpenCode create-time `metadata` is a hint only.
+   Assistant binding create. Create-time `metadata` is merged onto the session record; it is not a second authority.
 
 Capability is open (`supported: true`). Manual UI metadata writes, session-goal
 routes, and scheduled-task goal create all persist `openchamber.goal` through

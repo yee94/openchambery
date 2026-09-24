@@ -8,7 +8,7 @@ export function ComposerQuoteChips({ quotes, onRemove, removeLabel }: {
 }) {
   if (quotes.length === 0) return null;
   return (
-    <div className="flex flex-col gap-1 px-3 pt-3">
+    <div className="flex flex-col gap-1 px-3 pt-3" data-composer-quote-list>
       {quotes.map((quote, index) => (
         <div
           key={quote}

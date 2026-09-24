@@ -9,9 +9,10 @@ import { useUIStore } from '@/stores/useUIStore';
 
 interface GlobalSearchButtonProps {
   className?: string;
+  mobile?: boolean;
 }
 
-export const GlobalSearchButton: React.FC<GlobalSearchButtonProps> = ({ className }) => {
+export const GlobalSearchButton: React.FC<GlobalSearchButtonProps> = ({ className, mobile = false }) => {
   const { t } = useI18n();
   const setCommandPaletteOpen = useUIStore((state) => state.setCommandPaletteOpen);
   const shortcutOverrides = useUIStore((state) => state.shortcutOverrides);
@@ -23,12 +24,13 @@ export const GlobalSearchButton: React.FC<GlobalSearchButtonProps> = ({ classNam
     <Tooltip>
       <TooltipTrigger asChild>
         <Button
-          variant="ghost"
-          size="icon"
+          variant={mobile ? 'mobileGlass' : 'ghost'}
+          size={mobile ? 'mobileIcon' : 'icon'}
           onClick={() => setCommandPaletteOpen(true)}
           aria-label={t('commandPalette.title')}
           className={cn(
-            'app-region-no-drag size-7 rounded-md text-muted-foreground/75 focus-visible:ring-2 focus-visible:ring-primary',
+            'app-region-no-drag',
+            !mobile && 'size-7 rounded-md text-muted-foreground/75 focus-visible:ring-2 focus-visible:ring-primary',
             className,
           )}
         >
@@ -41,7 +43,7 @@ export const GlobalSearchButton: React.FC<GlobalSearchButtonProps> = ({ classNam
       <TooltipContent>
         <p className="flex items-center gap-2">
           <span>{t('commandPalette.title')}</span>
-          <span className="text-muted-foreground">{searchShortcut}</span>
+          {!mobile ? <span className="text-muted-foreground">{searchShortcut}</span> : null}
         </p>
       </TooltipContent>
     </Tooltip>

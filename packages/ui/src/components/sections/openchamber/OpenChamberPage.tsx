@@ -9,6 +9,7 @@ import { GitSettings } from "./GitSettings";
 import { NotificationSettings } from "./NotificationSettings";
 import { GitHubSettings } from "./GitHubSettings";
 import { VoiceSettings } from "./VoiceSettings";
+import { BrowserProviderSettings } from "./BrowserProviderSettings";
 import { OpenCodeCliSettings } from "./OpenCodeCliSettings";
 import { DesktopNetworkSettings } from "./DesktopNetworkSettings";
 import { KeyboardShortcutsSettings } from "./KeyboardShortcutsSettings";
@@ -78,6 +79,7 @@ export const OpenChamberPage: React.FC<OpenChamberPageProps> = ({
               <OpenCodeCliSettings />
             </div>
           )}
+          <BrowserProviderSettings className="oc-settings-page-section" />
           <div className="oc-settings-page-section">
             <SessionRetentionSettings />
           </div>
@@ -231,6 +233,7 @@ const SessionsSectionContent: React.FC = () => {
           <OpenCodeCliSettings />
         </div>
       )}
+      <BrowserProviderSettings />
       <div className="oc-settings-page-section">
         <SessionRetentionSettings />
       </div>

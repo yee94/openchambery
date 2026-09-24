@@ -28,7 +28,9 @@ import { injectHostSseEvent } from './host-sse-fanout';
 import type { OpenCodeManager } from './opencode';
 import {
   createSessionArchiveService,
+  createHttpSessionRecordClient,
   createSessionMetadataStore,
+  startSideStoreMigration,
   extractSessionInfoFromPayload,
   isSessionArchiveError,
   isSessionLifecycleEventType,
@@ -64,6 +66,7 @@ let boundRuntimeScope: string | null = null;
 /** Bumps on every scope dispose/create so late IO cannot touch a new identity. */
 let runtimeGeneration = 0;
 let storeRef: SessionMetadataStore | null = null;
+let stopSessionRecordMigration: (() => void) | null = null;
 let archiveRef: SessionArchiveService | null = null;
 /** True once startSessionMetadataRuntime has bound a store for the active scope. */
 let storeConfigured = false;
@@ -478,6 +481,10 @@ const buildFetchUpstreamSession = (scope: string, generation: number) => {
 const disposeScopedRuntime = (): void => {
   clearReadinessRetry();
   stopArchiveService();
+  if (stopSessionRecordMigration) {
+    stopSessionRecordMigration();
+    stopSessionRecordMigration = null;
+  }
   runtimeGeneration += 1;
   storeRef = null;
   archiveRef = null;
@@ -499,7 +506,40 @@ const ensureScopedRuntime = (scope: string): { store: SessionMetadataStore; arch
     // store persist will mkdir again; ignore here
   }
 
-  const store = createSessionMetadataStore({ dataDir });
+  const recordClient = createHttpSessionRecordClient({
+    buildSessionUrl: (sessionID, directory) => {
+      const baseUrl = asTrimmedString(managerRef?.getApiUrl());
+      if (!baseUrl) {
+        const error = new Error('OpenCode API unavailable') as Error & { status?: number };
+        error.status = 503;
+        throw error;
+      }
+      return buildUpstreamSessionGetUrl(baseUrl, sessionID, directory);
+    },
+    getHeaders: () => managerRef?.getOpenCodeAuthHeaders() ?? {},
+  });
+  const store = createSessionMetadataStore({
+    dataDir,
+    recordReader: (sessionID, directory) => recordClient.read(sessionID, directory),
+    recordWriter: (sessionID, metadata, directory) => recordClient.write({
+      sessionID,
+      metadata: { ...metadata },
+      directory,
+    }),
+  });
+  stopSessionRecordMigration = startSideStoreMigration({
+    load: async () => {
+      const result = await store.load();
+      return result.ok ? result : { ok: false };
+    },
+    readSession: (sessionID) => recordClient.read(sessionID),
+    writeMetadata: async (sessionID, metadata, record) => {
+      const directory = typeof record === 'object' && record && 'directory' in record
+        ? (record as { directory?: string | null }).directory
+        : undefined;
+      await recordClient.write({ sessionID, metadata: { ...metadata }, directory });
+    },
+  });
   void store.load().then((result) => {
     if (generation !== runtimeGeneration) return;
     if (result.ok && store.isLoaded()) return;

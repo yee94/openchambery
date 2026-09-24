@@ -56,6 +56,7 @@ import { createServerUtilsRuntime } from './lib/opencode/server-utils-runtime.js
 import {
   configureServerOpenCodeFetchGate,
   createServerOpenCodeFetch,
+  wrapFetchWithRuntimeContractGate,
 } from './lib/opencode/server-opencode-fetch.js';
 import { createStaticRoutesRuntime } from './lib/opencode/static-routes-runtime.js';
 import { createSettingsRuntime } from './lib/opencode/settings-runtime.js';
@@ -80,12 +81,16 @@ import {
 } from './lib/session-goal/runtime.js';
 import { createSessionMetadataStore } from './lib/session-metadata/session-metadata-store.js';
 import {
+  createHttpSessionRecordClient,
+  retainOpenCodeSessions,
+  startSideStoreMigration,
+} from './lib/session-metadata/opencode-session-record.js';
+import {
   createSessionArchiveService,
   createUpstreamSessionFetcher,
 } from './lib/session-metadata/session-archive.js';
 import {
   projectSessionLifecyclePayload,
-  projectSessionWithHostMetadata,
   projectSessionWithStoredMap,
 } from './lib/session-metadata/session-projection.js';
 import { createScheduledTasksRuntime } from './lib/scheduled-tasks/runtime.js';
@@ -766,7 +771,32 @@ let questionAutoDelegateRuntime = null;
 /** Filled inside main() once the SQLite session index is constructed. */
 let sessionIndexServiceRef = null;
 
-const sessionMetadataStore = createSessionMetadataStore({ dataDir: OPENCHAMBER_DATA_DIR });
+const sessionRecordClient = createHttpSessionRecordClient({
+  buildSessionUrl: (sessionID, directory) => {
+    const url = new URL(buildOpenCodeUrl(`/session/${encodeURIComponent(sessionID)}`));
+    if (directory) url.searchParams.set('directory', directory);
+    return url.toString();
+  },
+  getHeaders: () => getOpenCodeAuthHeaders(),
+  fetchFn: wrapFetchWithRuntimeContractGate(fetch),
+});
+const sessionMetadataStore = createSessionMetadataStore({
+  dataDir: OPENCHAMBER_DATA_DIR,
+  recordReader: (sessionID, directory) => sessionRecordClient.read(sessionID, directory),
+  recordWriter: (sessionID, metadata, directory) => sessionRecordClient.write({
+    sessionID,
+    metadata,
+    directory,
+  }),
+});
+const stopSessionRecordMigration = startSideStoreMigration({
+  load: () => sessionMetadataStore.load(),
+  readSession: (sessionID) => sessionRecordClient.read(sessionID),
+  writeMetadata: async (sessionID, metadata, record) => {
+    const directory = record?.location?.directory || record?.directory || undefined;
+    await sessionRecordClient.write({ sessionID, metadata, directory });
+  },
+});
 /**
  * load() resolves `{ ok:false }` on read/corrupt failure (does not reject).
  * Callers must check ok / isLoaded — never treat unresolved as empty success.
@@ -1621,10 +1651,11 @@ async function main(options = {}) {
     projectSessions: (sessions) => {
       const snap = sessionMetadataStore.getSnapshotSync();
       // Not ready / unavailable — throw so sync keeps prior directory rows.
+      // A missing side-store row must not drop a session OpenCode still has.
       if (!snap) {
         throw new Error('session metadata is unavailable: Host store not ready');
       }
-      return sessions.map((session) => projectSessionWithStoredMap(session, snap));
+      return retainOpenCodeSessions(sessions, snap);
     },
     onRevisionTip: (tip) => {
       broadcastOpenChamberEvent({
@@ -1664,10 +1695,9 @@ async function main(options = {}) {
       isHostReady: () => sessionMetadataStore.isLoaded(),
       projectSession: (session) => {
         if (!sessionMetadataStore.isLoaded()) return null;
-        return projectSessionWithHostMetadata(
-          session,
-          readHostMetadataForSession(session?.id),
-        );
+        const snap = sessionMetadataStore.getSnapshotSync();
+        if (!snap) return null;
+        return projectSessionWithStoredMap(session, snap);
       },
       onSessionDeleted: (sessionID) => sessionArchiveServiceRef?.forgetSession(sessionID),
     })) {
@@ -2165,6 +2195,7 @@ async function main(options = {}) {
         sessionIndexSyncRuntime?.stop();
         sessionIndexService?.close();
         sessionArchiveServiceRef?.stop?.();
+        stopSessionRecordMigration();
       } catch {
         // The index is a local cache; a failed close must not block shutdown.
       }

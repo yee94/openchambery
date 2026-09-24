@@ -14,8 +14,9 @@ import {
 import { collectSessionMentionIds, replaceSessionMentionTokens } from './fileMentionAutocompleteState';
 import { COMPOSER_TRIGGER_ICON_SLOT } from '@/composer/inline-visual';
 
-// Optional reserved icon em-space between `/` and the skill name.
-const INLINE_SKILL_TOKEN_PATTERN = /(^|\s)\/\u2003?([a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?)/g;
+// Optional reserved icon em-space between `/` or `@` and the skill name.
+// `@` requires a trailing boundary so `@src/a.ts` is not read as skill `src`.
+const INLINE_SKILL_TOKEN_PATTERN = /(^|\s)\/\u2003?([a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?)|(^|\s)@\u2003?([a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?)(?=$|\s|[),.;:!?])/g;
 
 /** Normalize filesystem paths with pathe (POSIX + Windows drive + UNC → `/` separators). */
 const normalizeFsPath = (path: string): string => normalize(path.trim());
@@ -118,7 +119,7 @@ const collectSkillSemantics = (text: string, installedSkillNames: ReadonlySet<st
     INLINE_SKILL_TOKEN_PATTERN.lastIndex = 0;
     let match: RegExpExecArray | null;
     while ((match = INLINE_SKILL_TOKEN_PATTERN.exec(text)) !== null) {
-        const name = match[2] || '';
+        const name = match[2] || match[4] || '';
         if (installedSkillNames.has(name) && !seen.has(name)) {
             seen.add(name);
             semantics.push({ type: 'skill', skillName: name });

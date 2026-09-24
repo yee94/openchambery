@@ -20,7 +20,7 @@ import { setIncludeReasoningProjection } from '@/lib/reasoning-projection-client
 /** Main column tab. Product exclusive primaries: chat(session) | schedule | assistant. */
 export type MainTab = 'chat' | 'git' | 'diff' | 'terminal' | 'files' | 'diagram' | 'schedule' | 'assistant';
 export type PendingDiffScope = 'working' | 'staged' | 'turn';
-export type RightSidebarTab = 'git' | 'files';
+export type RightSidebarTab = 'git' | 'files' | 'browser';
 export type ContextPanelMode = 'diff' | 'file-diff' | 'file' | 'context' | 'chat' | 'preview' | 'browser' | 'btw';
 export type MermaidRenderingMode = 'svg' | 'ascii';
 export type UserMessageRenderingMode = 'markdown' | 'plain';
@@ -203,7 +203,7 @@ const runtimeMemoryKey = (value?: string | null): string => {
   return key || 'default';
 };
 
-const normalizeDirectoryPath = (value: string): string => {
+export const normalizeContextPanelDirectoryKey = (value: string): string => {
   if (!value) return '';
 
   const raw = value.replace(/\\/g, '/');
@@ -575,7 +575,7 @@ const sanitizeContextPanelByDirectory = (
   const next: Record<string, ContextPanelDirectoryState> = {};
 
   for (const [rawDirectory, rawState] of Object.entries(source)) {
-    const directory = normalizeDirectoryPath(rawDirectory);
+    const directory = normalizeContextPanelDirectoryKey(rawDirectory);
     if (!directory || !rawState || typeof rawState !== 'object') {
       continue;
     }
@@ -666,7 +666,7 @@ const captureSessionWorkspacePanelState = (
   },
   directory: string | null | undefined,
 ): SessionWorkspacePanelState => {
-  const normalizedDirectory = normalizeDirectoryPath((directory || '').trim()) || null;
+  const normalizedDirectory = normalizeContextPanelDirectoryKey((directory || '').trim()) || null;
   const panel = normalizedDirectory ? state.contextPanelByDirectory[normalizedDirectory] : undefined;
   return {
     isRightSidebarOpen: state.isRightSidebarOpen,
@@ -684,7 +684,7 @@ const applySessionWorkspacePanelToDirectory = (
   directory: string | null | undefined,
   snapshot: SessionWorkspacePanelState | undefined,
 ): Record<string, ContextPanelDirectoryState> => {
-  const normalizedDirectory = normalizeDirectoryPath((directory || '').trim());
+  const normalizedDirectory = normalizeContextPanelDirectoryKey((directory || '').trim());
   if (!normalizedDirectory) {
     return byDirectory;
   }
@@ -885,6 +885,16 @@ interface UIStore {
   /** User-selected mobile OTA update channel override; null follows the baked channel. */
   otaChannelOverride: OtaChannelOverride;
   isExpandedInput: boolean;
+  /** User switch for the chat work-status card. Layout may still hide it. */
+  workStatusPanelEnabled: boolean;
+  workStatusHiddenSections: string[];
+  workStatusSectionOrder: string[];
+  workStatusExpandedSections: Record<string, boolean>;
+  workStatusScrollTop: number;
+  /** Current frame only. Not persisted. */
+  workStatusPanelVisible: boolean;
+  workStatusPanelFits: boolean;
+  workStatusOverlayOpen: boolean;
   reportUsage: boolean;
   shortcutOverrides: Record<string, ShortcutCombo>;
   fileEditorKeymap: FileEditorKeymap;
@@ -1063,6 +1073,15 @@ interface UIStore {
   setViewPagerPage: (page: 'left' | 'center' | 'right') => void;
   toggleExpandedInput: () => void;
   setExpandedInput: (value: boolean) => void;
+  setWorkStatusPanelEnabled: (enabled: boolean) => void;
+  setWorkStatusPanelVisible: (visible: boolean) => void;
+  setWorkStatusPanelFits: (fits: boolean) => void;
+  setWorkStatusOverlayOpen: (open: boolean) => void;
+  setWorkStatusSectionVisible: (id: string, visible: boolean) => void;
+  setWorkStatusHiddenSections: (ids: string[]) => void;
+  setWorkStatusSectionOrder: (ids: string[]) => void;
+  setWorkStatusSectionExpanded: (id: string, expanded: boolean) => void;
+  setWorkStatusScrollTop: (scrollTop: number) => void;
   openMultiRunLauncher: () => void;
   setReportUsage: (value: boolean) => void;
   setShortcutOverride: (actionId: string, combo: ShortcutCombo) => void;
@@ -1229,6 +1248,14 @@ export const useUIStore = create<UIStore>()(
         mobileSessionFilterProjectId: null,
         otaChannelOverride: null,
         isExpandedInput: false,
+        workStatusPanelEnabled: true,
+        workStatusHiddenSections: [],
+        workStatusSectionOrder: [],
+        workStatusExpandedSections: {},
+        workStatusScrollTop: 0,
+        workStatusPanelVisible: false,
+        workStatusPanelFits: false,
+        workStatusOverlayOpen: false,
         reportUsage: false,
         shortcutOverrides: {},
         fileEditorKeymap: 'default',
@@ -1385,8 +1412,8 @@ export const useUIStore = create<UIStore>()(
             // Also close a previously open panel when leaving that directory for
             // another session in a different root, so stale isOpen does not
             // reappear on directory-only navigation without a session restore.
-            const previousDir = normalizeDirectoryPath((previousDirectory || '').trim());
-            const nextDir = normalizeDirectoryPath((nextDirectory || '').trim());
+            const previousDir = normalizeContextPanelDirectoryKey((previousDirectory || '').trim());
+            const nextDir = normalizeContextPanelDirectoryKey((nextDirectory || '').trim());
             let nextContextPanelByDirectory = contextPanelByDirectory;
             if (previousDir && previousDir !== nextDir) {
               const previousPanel = nextContextPanelByDirectory[previousDir];
@@ -1419,7 +1446,7 @@ export const useUIStore = create<UIStore>()(
         },
 
         openContextPanelTab: (directory, tab) => {
-          const normalizedDirectory = normalizeDirectoryPath((directory || '').trim());
+          const normalizedDirectory = normalizeContextPanelDirectoryKey((directory || '').trim());
           if (!normalizedDirectory) {
             return;
           }
@@ -1446,7 +1473,7 @@ export const useUIStore = create<UIStore>()(
         },
 
         openContextDiff: (directory, filePath, staged = false, scope = null, targetLine, turnMessageId, sessionId) => {
-          const normalizedDirectory = normalizeDirectoryPath((directory || '').trim());
+          const normalizedDirectory = normalizeContextPanelDirectoryKey((directory || '').trim());
           const normalizedFilePath = (filePath || '').trim();
           if (!normalizedDirectory || !normalizedFilePath) {
             return;
@@ -1466,7 +1493,7 @@ export const useUIStore = create<UIStore>()(
         },
 
         openContextToolDiff: (directory, filePath, patches, targetLine, turnMessageId, sessionId) => {
-          const normalizedDirectory = normalizeDirectoryPath((directory || '').trim());
+          const normalizedDirectory = normalizeContextPanelDirectoryKey((directory || '').trim());
           const normalizedFilePath = (filePath || '').trim();
           const normalizedPatches = patches.flatMap((entry) => {
             const path = normalizeContextTargetPath(entry.path);
@@ -1513,7 +1540,7 @@ export const useUIStore = create<UIStore>()(
         },
 
         openContextFileDiff: (directory, filePath, staged = false, scope = null) => {
-          const normalizedDirectory = normalizeDirectoryPath((directory || '').trim());
+          const normalizedDirectory = normalizeContextPanelDirectoryKey((directory || '').trim());
           const normalizedFilePath = (filePath || '').trim();
           if (!normalizedDirectory || !normalizedFilePath) {
             return;
@@ -1529,7 +1556,7 @@ export const useUIStore = create<UIStore>()(
         },
 
         openContextFile: (directory, filePath, options) => {
-          const normalizedDirectory = normalizeDirectoryPath((directory || '').trim());
+          const normalizedDirectory = normalizeContextPanelDirectoryKey((directory || '').trim());
           const normalizedFilePath = normalizeContextTargetPath(filePath);
           if (!normalizedDirectory || !normalizedFilePath) {
             return;
@@ -1549,7 +1576,7 @@ export const useUIStore = create<UIStore>()(
         },
 
         openContextFileAtLine: (directory, filePath, line, column) => {
-          const normalizedDirectory = normalizeDirectoryPath((directory || '').trim());
+          const normalizedDirectory = normalizeContextPanelDirectoryKey((directory || '').trim());
           const normalizedFilePath = normalizeContextTargetPath(filePath);
           const normalizedLine = Number.isFinite(line) ? Math.max(1, Math.trunc(line)) : 1;
           const normalizedColumn = Number.isFinite(column) ? Math.max(1, Math.trunc(column as number)) : 1;
@@ -1570,7 +1597,7 @@ export const useUIStore = create<UIStore>()(
         },
 
         openContextOverview: (directory) => {
-          const normalizedDirectory = normalizeDirectoryPath((directory || '').trim());
+          const normalizedDirectory = normalizeContextPanelDirectoryKey((directory || '').trim());
           if (!normalizedDirectory) {
             return;
           }
@@ -1579,7 +1606,7 @@ export const useUIStore = create<UIStore>()(
         },
 
         openContextPreview: (directory, url) => {
-          const normalizedDirectory = normalizeDirectoryPath((directory || '').trim());
+          const normalizedDirectory = normalizeContextPanelDirectoryKey((directory || '').trim());
           const normalizedUrl = (url || '').trim();
           if (!normalizedDirectory || !normalizedUrl) {
             return;
@@ -1603,7 +1630,7 @@ export const useUIStore = create<UIStore>()(
           });
         },
         openContextBrowser: (directory, url = '') => {
-          const normalizedDirectory = normalizeDirectoryPath((directory || '').trim());
+          const normalizedDirectory = normalizeContextPanelDirectoryKey((directory || '').trim());
           if (!normalizedDirectory) return;
           const targetUrl = typeof url === 'string' && url.trim().length > 0 ? url.trim() : '';
           get().openContextPanelTab(normalizedDirectory, {
@@ -1615,7 +1642,7 @@ export const useUIStore = create<UIStore>()(
         },
 
         setContextPanelTabTargetPath: (directory, tabID, targetPath) => {
-          const normalizedDirectory = normalizeDirectoryPath((directory || '').trim());
+          const normalizedDirectory = normalizeContextPanelDirectoryKey((directory || '').trim());
           const normalizedTabID = (tabID || '').trim();
           if (!normalizedDirectory || !normalizedTabID) return;
           set((state) => {
@@ -1631,7 +1658,7 @@ export const useUIStore = create<UIStore>()(
         },
 
         setActiveContextPanelTab: (directory, tabID) => {
-          const normalizedDirectory = normalizeDirectoryPath((directory || '').trim());
+          const normalizedDirectory = normalizeContextPanelDirectoryKey((directory || '').trim());
           const normalizedTabID = (tabID || '').trim();
           if (!normalizedDirectory || !normalizedTabID) {
             return;
@@ -1670,7 +1697,7 @@ export const useUIStore = create<UIStore>()(
         },
 
         reorderContextPanelTabs: (directory, activeTabID, overTabID) => {
-          const normalizedDirectory = normalizeDirectoryPath((directory || '').trim());
+          const normalizedDirectory = normalizeContextPanelDirectoryKey((directory || '').trim());
           const normalizedActiveTabID = (activeTabID || '').trim();
           const normalizedOverTabID = (overTabID || '').trim();
           if (!normalizedDirectory || !normalizedActiveTabID || !normalizedOverTabID) {
@@ -1699,7 +1726,7 @@ export const useUIStore = create<UIStore>()(
         },
 
         closeContextPanelTab: (directory, tabID) => {
-          const normalizedDirectory = normalizeDirectoryPath((directory || '').trim());
+          const normalizedDirectory = normalizeContextPanelDirectoryKey((directory || '').trim());
           const normalizedTabID = (tabID || '').trim();
           if (!normalizedDirectory || !normalizedTabID) {
             return;
@@ -1733,7 +1760,7 @@ export const useUIStore = create<UIStore>()(
         // Close the active context-panel tab for a directory (Cmd/Ctrl+W).
         // Returns true when a tab was closed. Closing the last tab also sets isOpen=false.
         closeActiveContextPanelTab: (directory) => {
-          const normalizedDirectory = normalizeDirectoryPath((directory || '').trim());
+          const normalizedDirectory = normalizeContextPanelDirectoryKey((directory || '').trim());
           if (!normalizedDirectory) {
             return false;
           }
@@ -1753,7 +1780,7 @@ export const useUIStore = create<UIStore>()(
         },
 
         closeContextPanel: (directory) => {
-          const normalizedDirectory = normalizeDirectoryPath((directory || '').trim());
+          const normalizedDirectory = normalizeContextPanelDirectoryKey((directory || '').trim());
           if (!normalizedDirectory) {
             return;
           }
@@ -1777,7 +1804,7 @@ export const useUIStore = create<UIStore>()(
         },
 
         toggleContextPanelExpanded: (directory) => {
-          const normalizedDirectory = normalizeDirectoryPath((directory || '').trim());
+          const normalizedDirectory = normalizeContextPanelDirectoryKey((directory || '').trim());
           if (!normalizedDirectory) {
             return;
           }
@@ -1798,7 +1825,7 @@ export const useUIStore = create<UIStore>()(
         },
 
         setContextPanelWidth: (directory, width) => {
-          const normalizedDirectory = normalizeDirectoryPath((directory || '').trim());
+          const normalizedDirectory = normalizeContextPanelDirectoryKey((directory || '').trim());
           if (!normalizedDirectory) {
             return;
           }
@@ -2764,6 +2791,48 @@ export const useUIStore = create<UIStore>()(
         setExpandedInput: (value) => {
           set({ isExpandedInput: value });
         },
+
+        setWorkStatusPanelEnabled: (enabled) => {
+          set({ workStatusPanelEnabled: enabled, workStatusOverlayOpen: false });
+        },
+
+        setWorkStatusPanelVisible: (visible) => {
+          set((state) => (state.workStatusPanelVisible === visible ? state : { workStatusPanelVisible: visible }));
+        },
+
+        setWorkStatusPanelFits: (fits) => {
+          set((state) => (state.workStatusPanelFits === fits ? state : { workStatusPanelFits: fits }));
+        },
+
+        setWorkStatusOverlayOpen: (open) => {
+          set({ workStatusOverlayOpen: open });
+        },
+
+        setWorkStatusSectionVisible: (id, visible) => {
+          set((state) => {
+            const hidden = state.workStatusHiddenSections.filter((entry) => entry !== id);
+            if (!visible) hidden.push(id);
+            return { workStatusHiddenSections: hidden };
+          });
+        },
+
+        setWorkStatusHiddenSections: (ids) => {
+          set({ workStatusHiddenSections: ids });
+        },
+
+        setWorkStatusSectionOrder: (ids) => {
+          set({ workStatusSectionOrder: ids });
+        },
+
+        setWorkStatusSectionExpanded: (id, expanded) => {
+          set((state) => ({
+            workStatusExpandedSections: { ...state.workStatusExpandedSections, [id]: expanded },
+          }));
+        },
+
+        setWorkStatusScrollTop: (scrollTop) => {
+          set({ workStatusScrollTop: scrollTop });
+        },
       }),
       {
         name: 'ui-store',
@@ -2836,7 +2905,7 @@ export const useUIStore = create<UIStore>()(
 
           if (
             typeof state.rightSidebarTab !== 'string'
-            || (state.rightSidebarTab !== 'git' && state.rightSidebarTab !== 'files')
+            || (state.rightSidebarTab !== 'git' && state.rightSidebarTab !== 'files' && state.rightSidebarTab !== 'browser')
           ) {
             state.rightSidebarTab = 'files';
           }
@@ -2953,6 +3022,11 @@ export const useUIStore = create<UIStore>()(
           showOpenCodeUpdateNotifications: state.showOpenCodeUpdateNotifications,
           inputSpellcheckEnabled: state.inputSpellcheckEnabled,
           wideChatLayoutEnabled: state.wideChatLayoutEnabled,
+          workStatusPanelEnabled: state.workStatusPanelEnabled,
+          workStatusHiddenSections: state.workStatusHiddenSections,
+          workStatusSectionOrder: state.workStatusSectionOrder,
+          workStatusExpandedSections: state.workStatusExpandedSections,
+          workStatusScrollTop: state.workStatusScrollTop,
           codeBlockLineWrap: state.codeBlockLineWrap,
           showToolFileIcons: state.showToolFileIcons,
           showTurnChangedFiles: state.showTurnChangedFiles,

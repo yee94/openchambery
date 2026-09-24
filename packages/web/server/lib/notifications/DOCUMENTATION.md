@@ -107,7 +107,9 @@ This module provides notification message preparation utilities for the web serv
   - `extractLastMessageText(payload, maxLength?)`
   - `fetchLastAssistantMessageText(sessionId, messageId, maxLength?)`
   - `maybeCacheSessionInfoFromEvent(payload)`
-  - `buildTemplateVariables(payload, sessionId)`
+  - `buildTemplateVariables(payload, sessionId)` — `session_name` is the session title. OpenCode 2 returns that title on `GET /api/session/:id` as `{ data: { title } }` and on `session.created` / `session.renamed` as `data.title`. Legacy `properties.info.title` still counts. An empty title stays empty so push can fall back to the localized "Session" label. `agent_name` / `model_name` fall back to that same session record when the triggering event has none. `fetchLastAssistantMessageText` accepts a legacy message array and an OpenCode 2 `{ data }` page (`order=desc`).
+- Question prompts come from legacy `question.asked` or OpenCode 2 `form.created` (`data.form`). Permission prompts read `permission.asked` from `properties` or `data` (`action`, `message`, `id`). `form.replied` / `form.cancelled` cancel a pending question notification the same way `permission.replied` cancels a permission notification.
+- iOS APNs and Android FCM share this payload: native banners stay scenario title + session name. Desktop, in-app, and web-push use the resolved template title and body.
   - `getCachedZenModels()`
 
 ## Constants

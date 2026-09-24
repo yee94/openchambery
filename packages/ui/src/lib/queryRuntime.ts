@@ -53,12 +53,18 @@ export const queryKeys = {
   github: {
     auth: (transport = getRuntimeTransportIdentity()): readonly [string, 'github', 'auth'] => [transport, 'github', 'auth'],
   },
+  browserProviders: {
+    catalog: (transport = getRuntimeTransportIdentity()): readonly [string, 'browserProviders', 'catalog'] => [transport, 'browserProviders', 'catalog'],
+  },
   git: {
     branches: (directory: string | null | undefined, transport = getRuntimeTransportIdentity()): readonly [string, 'git', 'branches', string | null] => [transport, 'git', 'branches', normalizeQueryDirectory(directory)],
     remotes: (directory: string | null | undefined, transport = getRuntimeTransportIdentity()): readonly [string, 'git', 'remotes', string | null] => [transport, 'git', 'remotes', normalizeQueryDirectory(directory)],
   },
   sessionIndex: {
     snapshot: (transport = getRuntimeTransportIdentity()): readonly [string, 'sessionIndex', 'snapshot'] => [transport, 'sessionIndex', 'snapshot'],
+  },
+  sessionTitleSearch: {
+    query: (search: string, transport = getRuntimeTransportIdentity()): readonly [string, 'sessionTitleSearch', string] => [transport, 'sessionTitleSearch', search],
   },
   sessionStatus: {
     snapshot: (directory: string, transport = getRuntimeTransportIdentity()): readonly [string, 'sessionStatus', 'snapshot', string | null] => [transport, 'sessionStatus', 'snapshot', normalizeQueryDirectory(directory)],
@@ -196,6 +202,7 @@ export const queryKeys = {
       force,
     ],
     file: (directory: string | null, id: string, transport = getRuntimeTransportIdentity()): readonly [string, 'plugins', 'file', string | null, string] => [transport, 'plugins', 'file', directory, id],
+    runtime: (directory: string | null, transport = getRuntimeTransportIdentity()): readonly [string, 'plugins', 'runtime', string | null] => [transport, 'plugins', 'runtime', directory],
   },
   files: {
     directory: (

@@ -30,6 +30,7 @@ import { getRuntimeGeneration, getRuntimeTransportIdentity, subscribeRuntimeEndp
 import { useDirectoryStore } from '@/stores/useDirectoryStore';
 import { providerConnectionQueryOptions } from './providerConnectionQueries';
 import { createProviderOAuthFlow } from './providerOAuth';
+import { methodsForSignIn, signInIntegrationIdForOAuth } from './providerSignIn';
 import { QuotaCredentials } from './QuotaCredentials';
 import { SettingsGroup } from '@/components/sections/shared/SettingsGroup';
 
@@ -387,14 +388,15 @@ const ProvidersPageContent: React.FC = () => {
     clearOAuth();
     const busyKey = `oauth:${providerId}:${methodIndex}`;
     setAuthBusyKey(busyKey);
-    const method = authMethodsByProvider[providerId]?.[methodIndex];
+    const method = methodsForSignIn(providerId, authMethodsByProvider)[methodIndex];
     const methodID = typeof method?.id === 'string' ? method.id : '';
     if (!methodID) {
       setAuthBusyKey(null);
       toast.error(t('settings.providers.page.toast.oauthStartFailed'));
       return;
     }
-    const integrationID = integrationIdByProvider[providerId] || providerId;
+    const integrationID = signInIntegrationIdForOAuth(providerId, integrationIdByProvider);
+    const ownIntegrationID = integrationIdByProvider[providerId] || providerId;
     const flow = createProviderOAuthFlow({
       integrationID,
       onAttempt: ({ attemptID, mode, url, instructions }) => {
@@ -416,8 +418,10 @@ const ProvidersPageContent: React.FC = () => {
         if (!flow.isCurrent() || oauthFlow.current !== flow) return;
         toast.success(t('settings.providers.page.toast.oauthCompleted'));
         // Integration IDs can differ from the activated provider ID.
-        const connected = refreshed.data?.providers.find((provider) =>
-          provider.id === providerId || provider.integrationID === integrationID);
+        const connected = refreshed.data?.providers.find((provider) => provider.id === providerId)
+          ?? (integrationID === ownIntegrationID
+            ? refreshed.data?.providers.find((provider) => provider.integrationID === integrationID)
+            : undefined);
         if (connected) setSelectedProvider(connected.id);
         setAuthBusyKey(null);
       },
@@ -647,7 +651,7 @@ const ProvidersPageContent: React.FC = () => {
                   </div>
 
                   {(() => {
-                    const candidateAuthMethods = authMethodsByProvider[candidateProviderId] ?? [];
+                    const candidateAuthMethods = methodsForSignIn(candidateProviderId, authMethodsByProvider);
                     const candidateOAuthMethods = filterMethodsWithIndex(
                       candidateAuthMethods,
                       (method) => normalizeAuthType(method) === 'oauth'
@@ -765,7 +769,7 @@ const ProvidersPageContent: React.FC = () => {
   }
 
   const providerModels = Array.isArray(selectedProvider.models) ? selectedProvider.models : [];
-  const providerAuthMethods = authMethodsByProvider[selectedProvider.id] ?? [];
+  const providerAuthMethods = methodsForSignIn(selectedProvider.id, authMethodsByProvider);
   const oauthAuthMethods = filterMethodsWithIndex(
     providerAuthMethods,
     (method) => normalizeAuthType(method) === 'oauth'

@@ -80,6 +80,15 @@ export const isValidComposerSessionId = (value: unknown): value is string => typ
 const commandNameFromReference = (reference: string): string => reference.replaceAll('\\', '/').split('/').at(-1)?.replace(/\.md$/, '') ?? '';
 const sessionIconSpec = (label: string) => ({ trigger: '@', icon: 'chat-thread', label });
 const slashIconSpec = (label: string, icon: string) => ({ trigger: '/', icon, label });
+const skillIconSpec = (label: string, trigger: '/' | '@') => ({ trigger, icon: 'book-open', label });
+const isSkillTriggerDisplay = (display: string, skillName: string): boolean => (
+    (['/', '@'] as const).some((trigger) => isComposerTriggerIconDisplay(display, skillIconSpec(skillName, trigger)))
+);
+const skillSpecForDisplay = (display: string, skillName: string) => (
+    isComposerTriggerIconDisplay(display, skillIconSpec(skillName, '@'))
+        ? skillIconSpec(skillName, '@')
+        : skillIconSpec(skillName, '/')
+);
 
 const COMPOSER_REFERENCE_EXTENSIONS = {
     session: {
@@ -126,18 +135,18 @@ const COMPOSER_REFERENCE_EXTENSIONS = {
         kind: 'skill',
         validatePayload: (value) => isValidDraftComposerSkillName(value.skillName)
             && typeof value.display === 'string'
-            && isComposerTriggerIconDisplay(value.display, slashIconSpec(value.skillName, 'book-open')),
+            && isSkillTriggerDisplay(value.display, value.skillName),
         contributeCanonical: (reference) => ({ text: `[skill:${reference.skillName}]` }),
         contributeDirectSend: (reference) => ({ text: `[skill:${reference.skillName}]` }),
         decorate: (reference) => ({
             style: 'mentionCommand',
             skillName: reference.skillName,
-            visual: composerTriggerIconVisual(slashIconSpec(reference.skillName, 'book-open'), reference.display),
+            visual: composerTriggerIconVisual(skillSpecForDisplay(reference.display, reference.skillName), reference.display),
         }),
         payloadBudget: () => undefined,
         canonical: {
             matcher: /\[skill:([A-Za-z0-9][A-Za-z0-9_-]*)\]/g,
-            resolveDisplay: (match) => composerTriggerIconDisplay(slashIconSpec(match[1], 'book-open')),
+            resolveDisplay: (match) => composerTriggerIconDisplay(skillIconSpec(match[1], '@')),
             materialize: (match, display, start) => ({ id: `skill:${start}`, kind: 'skill', skillName: match[1], display, start, end: start + display.length }),
         },
     },

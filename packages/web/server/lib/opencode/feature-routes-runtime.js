@@ -19,6 +19,9 @@ import { registerSessionTurnPageRoutes } from '../session-turn-pages/routes.js';
 import { registerAssistantRoutes } from '../assistants/routes.js';
 import { registerLlmRoutes } from '../llm/routes.js';
 import { registerMessageQueueRoutes } from '../message-queue/routes.js';
+import { getBrowserProviderHost } from '../browser-provider/host.js';
+import { registerBrowserProviderRoutes } from '../browser-provider/routes.js';
+import { createBrowserProviderSelectionStore } from '../browser-provider/selection-store.js';
 import { registerSkillRoutes } from './skill-routes.js';
 import { registerPluginRoutes } from './plugin-routes.js';
 import { getNpmInfo, clearCache as clearNpmCache } from './npm-registry.js';
@@ -513,6 +516,13 @@ export const createFeatureRoutesRuntime = (dependencies) => {
       openchamberUserConfigRoot,
       openchamberDataDir,
     });
+    const browserProviderHost = getBrowserProviderHost();
+    if (typeof openchamberDataDir === 'string' && openchamberDataDir) {
+      browserProviderHost.attachSelectionStore(createBrowserProviderSelectionStore(
+        path.join(openchamberDataDir, 'browser-provider-selection.json'),
+      ));
+    }
+    registerBrowserProviderRoutes(app, { host: browserProviderHost });
   };
 
   return {

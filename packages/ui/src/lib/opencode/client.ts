@@ -888,6 +888,34 @@ class OpencodeService {
     return Array.isArray(response.data) ? response.data.map(projectSession) : [];
   }
 
+  /**
+   * Official title search. `session.list` `search` is a SQL LIKE on
+   * `session_v2.title` only — it does not search message bodies. Omit
+   * directory/project so the match is instance-wide. A missing payload is a
+   * failure, not an empty result.
+   */
+  async searchSessionsByTitle(params: {
+    search: string
+    limit?: number
+    signal?: AbortSignal
+  }): Promise<Session[]> {
+    const search = params.search.trim()
+    if (!search) return []
+    const response = await this.client.session.list(
+      {
+        search,
+        parentID: null,
+        limit: params.limit ?? 30,
+        order: "desc",
+      },
+      params.signal ? { signal: params.signal } : undefined,
+    )
+    if (!Array.isArray(response?.data)) {
+      throw new Error("session.list search returned no data")
+    }
+    return response.data.map(projectSession)
+  }
+
   async createSession(params?: { parentID?: string; title?: string; metadata?: Record<string, unknown> }, directory?: string | null): Promise<Session> {
     const requestDirectory = this.normalizeCandidatePath(directory) ?? this.currentDirectory;
     void params?.metadata;

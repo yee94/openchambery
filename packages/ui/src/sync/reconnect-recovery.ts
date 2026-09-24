@@ -77,3 +77,27 @@ export function getReconnectCandidateSessionIds(state: ReconnectMaterializationS
 
   return Array.from(ids)
 }
+
+/**
+ * Session IDs whose busy/idle must be restored from `session.active`.
+ * Includes every catalog row in this directory, the viewed session even when
+ * its row is not in the child store yet, and caller-supplied index IDs.
+ * Status-only: this set is not a transcript materialization list.
+ */
+export function collectDirectoryStatusRestoreSessionIds(
+  state: ReconnectMaterializationState,
+  options?: ReconnectCandidateOptions & { extraSessionIds?: Iterable<string> },
+): string[] {
+  const ids = new Set(getReconnectCandidateSessionIds(state, options))
+  for (const session of state.session) {
+    if (session?.id) ids.add(session.id)
+  }
+  const viewed = options?.viewedSession
+  if (viewed?.sessionId && viewed.directory === options?.directory) {
+    ids.add(viewed.sessionId)
+  }
+  for (const sessionId of options?.extraSessionIds ?? []) {
+    if (sessionId) ids.add(sessionId)
+  }
+  return Array.from(ids)
+}

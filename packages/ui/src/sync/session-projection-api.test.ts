@@ -598,3 +598,38 @@ describe("reconcileFetched", () => {
     expect((next[0]?.parts[0] as { text?: string })?.text).toBe("live-sse")
   })
 })
+
+describe("user message header identity", () => {
+  test("copies prompt metadata and official model.id onto the user row", async () => {
+    const { normalizeSessionProjectionMessage } = await import("./session-projection-api")
+    const fromMetadata = normalizeSessionProjectionMessage(SESSION, {
+      id: "msg_user_meta",
+      type: "user",
+      time: { created: 1 },
+      text: "hello",
+      metadata: {
+        agent: "build",
+        variant: "high",
+        model: { providerID: "openai", modelID: "gpt-5.6" },
+      },
+    })
+    expect(fromMetadata?.info.providerID).toBe("openai")
+    expect(fromMetadata?.info.modelID).toBe("gpt-5.6")
+    expect(fromMetadata?.info.agent).toBe("build")
+    expect(fromMetadata?.info.model).toEqual({
+      providerID: "openai",
+      modelID: "gpt-5.6",
+      variant: "high",
+    })
+
+    const fromModelRef = normalizeSessionProjectionMessage(SESSION, {
+      id: "msg_user_ref",
+      type: "user",
+      time: { created: 2 },
+      text: "hello",
+      model: { id: "claude-sonnet-4-5", providerID: "anthropic" },
+    })
+    expect(fromModelRef?.info.modelID).toBe("claude-sonnet-4-5")
+    expect(fromModelRef?.info.providerID).toBe("anthropic")
+  })
+})

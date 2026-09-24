@@ -1,4 +1,74 @@
+import { projectSessionMessageRecords } from '../session-turn-pages/session-message-projection.js';
 import { summarizeText as summarizeSharedText } from '../text/summarization.js';
+
+const trimmedText = (value) => (typeof value === 'string' && value.trim() ? value.trim() : '');
+
+const isSessionRecord = (value) => {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  return typeof value.id === 'string'
+    || typeof value.sessionID === 'string'
+    || typeof value.title === 'string'
+    || typeof value.parentID === 'string'
+    || (value.metadata && typeof value.metadata === 'object');
+};
+
+/**
+ * OpenCode 2 `GET /api/session/:id` returns `{ data: Session }`.
+ * Legacy responses and tests still return the session object itself.
+ * @param {unknown} payload
+ * @returns {object | null}
+ */
+export const readNotificationSessionRecord = (payload) => {
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return null;
+  if (isSessionRecord(payload.data)) return payload.data;
+  return isSessionRecord(payload) ? payload : null;
+};
+
+const TITLE_EVENT_TYPES = new Set(['session.created', 'session.updated', 'session.renamed']);
+
+/**
+ * Title carried by a session lifecycle event.
+ * v2 puts it on `data.title` (`session.created` / `session.renamed`).
+ * Legacy events put it on `properties.info.title`.
+ * @param {object | null | undefined} payload
+ * @returns {{ sessionId: string, title: string } | null}
+ */
+export const readSessionTitleFromEvent = (payload) => {
+  if (!payload || typeof payload !== 'object' || !TITLE_EVENT_TYPES.has(payload.type)) return null;
+  const bodies = [payload.properties, payload.data].filter((body) => body && typeof body === 'object' && !Array.isArray(body));
+  for (const body of bodies) {
+    const info = body.info && typeof body.info === 'object' ? body.info : null;
+    const title = trimmedText(info?.title) || trimmedText(body.title);
+    const sessionId = trimmedText(info?.id)
+      || trimmedText(info?.sessionID)
+      || trimmedText(body.sessionID)
+      || trimmedText(body.id);
+    if (title && sessionId) return { sessionId, title };
+  }
+  return null;
+};
+
+const readNotificationDirectory = (payload) => {
+  const properties = payload?.properties && typeof payload.properties === 'object' ? payload.properties : {};
+  const data = payload?.data && typeof payload.data === 'object' && !Array.isArray(payload.data) ? payload.data : {};
+  const info = properties.info && typeof properties.info === 'object' ? properties.info : {};
+  const dataInfo = data.info && typeof data.info === 'object' ? data.info : {};
+  const candidates = [
+    properties.directory,
+    info.directory,
+    info.location?.directory,
+    payload?.location?.directory,
+    data.directory,
+    data.location?.directory,
+    dataInfo.directory,
+    dataInfo.location?.directory,
+  ];
+  for (const value of candidates) {
+    const directory = trimmedText(value);
+    if (directory) return directory;
+  }
+  return '';
+};
 
 export const createNotificationTemplateRuntime = (deps) => {
   const {
@@ -133,37 +203,45 @@ export const createNotificationTemplateRuntime = (deps) => {
     return '';
   };
 
-  const fetchLastAssistantMessageText = async (sessionId, messageId, maxLength = NOTIFICATION_BODY_MAX_CHARS) => {
+  const fetchLastAssistantMessageText = async (sessionId, messageId, maxLength = NOTIFICATION_BODY_MAX_CHARS, directory) => {
     if (!sessionId) return '';
 
     try {
-      const url = buildOpenCodeUrl(`/session/${encodeURIComponent(sessionId)}/message`, '');
-      const response = await fetch(`${url}?limit=5`, {
+      const base = buildOpenCodeUrl(`/session/${encodeURIComponent(sessionId)}/message`, '');
+      const params = new URLSearchParams({ limit: '5', order: 'desc' });
+      const scopedDirectory = trimmedText(directory);
+      if (scopedDirectory) params.set('directory', scopedDirectory);
+      const response = await fetch(`${base}?${params.toString()}`, {
         method: 'GET',
         headers: {
           Accept: 'application/json',
-          ...getOpenCodeAuthHeaders(),
+          ...(typeof getOpenCodeAuthHeaders === 'function' ? getOpenCodeAuthHeaders() : {}),
         },
         signal: AbortSignal.timeout(3000),
       });
 
       if (!response.ok) return '';
 
-      const messages = await response.json().catch(() => null);
-      if (!Array.isArray(messages)) return '';
+      const payload = await response.json().catch(() => null);
+      // Legacy lists are a chronological array. OpenCode 2 returns `{ data }`
+      // and `order=desc` puts the newest turn first.
+      const newestFirst = !Array.isArray(payload);
+      const records = Array.isArray(payload)
+        ? payload
+        : (Array.isArray(payload?.data) ? payload.data : null);
+      if (!records) return '';
+      const projected = projectSessionMessageRecords(records);
+      const messages = newestFirst ? projected : [...projected].reverse();
 
       let target = null;
       if (messageId) {
         target = messages.find((message) => message?.info?.id === messageId && message?.info?.role === 'assistant');
       }
       if (!target) {
-        for (let i = messages.length - 1; i >= 0; i -= 1) {
-          const message = messages[i];
-          if (message?.info?.role === 'assistant' && message?.info?.finish === 'stop') {
-            target = message;
-            break;
-          }
-        }
+        target = messages.find((message) => (
+          message?.info?.role === 'assistant'
+          && extractTextFromParts(message.parts, maxLength).length > 0
+        ));
       }
 
       if (!target || !Array.isArray(target.parts)) return '';
@@ -175,9 +253,9 @@ export const createNotificationTemplateRuntime = (deps) => {
   };
 
   const cacheSessionTitle = (sessionId, title) => {
-    if (typeof sessionId === 'string' && sessionId.length > 0 && typeof title === 'string' && title.length > 0) {
-      sessionTitleCache.set(sessionId, title);
-    }
+    const id = trimmedText(sessionId);
+    const name = trimmedText(title);
+    if (id && name) sessionTitleCache.set(id, name);
   };
 
   const getCachedSessionTitle = (sessionId) => {
@@ -185,15 +263,12 @@ export const createNotificationTemplateRuntime = (deps) => {
   };
 
   const maybeCacheSessionInfoFromEvent = (payload) => {
-    if (!payload || typeof payload !== 'object') return;
-    const type = payload.type;
-    if (type !== 'session.updated' && type !== 'session.created') return;
-    const info = payload.properties?.info;
-    if (!info || typeof info !== 'object') return;
-    cacheSessionTitle(info.id, info.title);
+    const titled = readSessionTitleFromEvent(payload);
+    if (!titled) return;
+    cacheSessionTitle(titled.sessionId, titled.title);
   };
 
-  const fetchSessionInfo = async (sessionId) => {
+  const fetchSessionInfo = async (sessionId, directory) => {
     if (!sessionId) return null;
 
     const cached = sessionInfoCache.get(sessionId);
@@ -202,20 +277,24 @@ export const createNotificationTemplateRuntime = (deps) => {
     }
 
     try {
-      const url = buildOpenCodeUrl(`/session/${encodeURIComponent(sessionId)}`, '');
+      const base = buildOpenCodeUrl(`/session/${encodeURIComponent(sessionId)}`, '');
+      const url = directory ? `${base}?directory=${encodeURIComponent(directory)}` : base;
       const response = await fetch(url, {
         method: 'GET',
-        headers: { Accept: 'application/json' },
+        headers: {
+          Accept: 'application/json',
+          ...(typeof getOpenCodeAuthHeaders === 'function' ? getOpenCodeAuthHeaders() : {}),
+        },
         signal: AbortSignal.timeout(2000),
       });
       if (!response.ok) {
         console.warn(`[Notification] fetchSessionInfo: ${response.status} for session ${sessionId}`);
         return null;
       }
-      const data = await response.json().catch(() => null);
-      if (data && typeof data === 'object') {
-        sessionInfoCache.set(sessionId, { data, at: Date.now() });
-        return data;
+      const session = readNotificationSessionRecord(await response.json().catch(() => null));
+      if (session) {
+        sessionInfoCache.set(sessionId, { data: session, at: Date.now() });
+        return session;
       }
       return null;
     } catch (error) {
@@ -227,7 +306,11 @@ export const createNotificationTemplateRuntime = (deps) => {
   const buildTemplateVariables = async (payload, sessionId) => {
     const info = payload?.properties?.info || {};
 
-    let sessionTitle = payload?.properties?.sessionTitle || payload?.properties?.session?.title || (typeof info.sessionTitle === 'string' ? info.sessionTitle : '') || '';
+    const fromEvent = readSessionTitleFromEvent(payload);
+    let sessionTitle = trimmedText(payload?.properties?.sessionTitle)
+      || trimmedText(payload?.properties?.session?.title)
+      || trimmedText(info.sessionTitle)
+      || (fromEvent && (!sessionId || fromEvent.sessionId === sessionId) ? fromEvent.title : '');
 
     if (!sessionTitle && sessionId) {
       const cached = getCachedSessionTitle(sessionId);
@@ -238,25 +321,34 @@ export const createNotificationTemplateRuntime = (deps) => {
 
     let sessionInfo = null;
     if (!sessionTitle && sessionId) {
-      sessionInfo = await fetchSessionInfo(sessionId);
-      if (sessionInfo && typeof sessionInfo.title === 'string') {
-        sessionTitle = sessionInfo.title;
+      sessionInfo = await fetchSessionInfo(sessionId, readNotificationDirectory(payload));
+      const fetchedTitle = trimmedText(sessionInfo?.title);
+      if (fetchedTitle) {
+        sessionTitle = fetchedTitle;
         cacheSessionTitle(sessionId, sessionTitle);
       }
     }
 
+    const eventAgent = trimmedText(info.agent) || trimmedText(info.mode);
+    const eventModel = trimmedText(info.modelID)
+      || trimmedText(info.model?.modelID)
+      || trimmedText(info.model?.id);
+    if ((!eventAgent || !eventModel) && sessionId && !sessionInfo) {
+      sessionInfo = await fetchSessionInfo(sessionId, readNotificationDirectory(payload));
+    }
+
     const agentName = (() => {
-      const mode = typeof info.agent === 'string' && info.agent.trim().length > 0
-        ? info.agent.trim()
-        : (typeof info.mode === 'string' ? info.mode.trim() : '');
+      const mode = eventAgent || trimmedText(sessionInfo?.agent) || trimmedText(sessionInfo?.mode);
       if (!mode) return 'Agent';
       return mode.split(/[-_\s]+/).filter(Boolean)
         .map((token) => token.charAt(0).toUpperCase() + token.slice(1)).join(' ');
     })();
 
     const modelName = (() => {
-      const raw = typeof info.modelID === 'string' ? info.modelID.trim()
-        : (typeof info.model?.modelID === 'string' ? info.model.modelID.trim() : '');
+      const raw = eventModel
+        || trimmedText(sessionInfo?.model?.modelID)
+        || trimmedText(sessionInfo?.model?.id)
+        || trimmedText(sessionInfo?.modelID);
       if (!raw) return 'Assistant';
       return raw.split(/[-_]+/).filter(Boolean)
         .map((part) => part.charAt(0).toUpperCase() + part.slice(1)).join(' ');

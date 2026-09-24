@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import { aggregateToolPartLineDiffTotals, getDiffPatchEntries, getRenderablePatchInfo, getToolNavigationDiffEntries, getToolPartLineDiffTotals } from './toolDiffUtils';
+import { aggregateToolPartLineDiffTotals, findMetadataPatchFile, getDiffPatchEntries, getRenderablePatchInfo, getToolNavigationDiffEntries, getToolPartLineDiffTotals, toolFilePathsMatch } from './toolDiffUtils';
 
 const identity = (path: string) => path;
 
@@ -174,6 +174,42 @@ describe('toolDiffUtils', () => {
         expect(entries[0]?.title).toBe('app/service/__typeprobe.ts');
         expect(entries[0]?.patch).toContain('--- /dev/null');
         expect(entries[0]?.patch).toContain('+line one');
+    });
+
+    test('matches an absolute edit input path to the workspace-relative patch file', () => {
+        const relative = 'packages/ui/src/components/ui/CommandPalette.tsx';
+        const absolute = `/Users/dev/repo/${relative}`;
+        const patch = `--- a/${relative}\n+++ b/${relative}\n@@ -1 +1 @@\n-old\n+new`;
+        const other = 'packages/ui/src/components/ui/Other.tsx';
+
+        expect(toolFilePathsMatch(absolute, relative)).toBe(true);
+        expect(toolFilePathsMatch(relative, absolute)).toBe(true);
+        expect(toolFilePathsMatch('src/a.ts', 'src/b.ts')).toBe(false);
+        expect(toolFilePathsMatch('file.ts', 'src/file.ts')).toBe(false);
+        expect(toolFilePathsMatch('/tmp/upload-replay.js', '/private/tmp/upload-replay.js')).toBe(true);
+
+        const files = [
+            { file: other, patch: '--- a/other\n+++ b/other\n@@ -1 +1 @@\n-a\n+b' },
+            { file: relative, patch },
+        ];
+        expect(findMetadataPatchFile(files, absolute)).toEqual(files[1]);
+        expect(findMetadataPatchFile([{ file: relative, patch }], absolute)).toEqual({ file: relative, patch });
+
+        const entries = getToolNavigationDiffEntries('edit', { files }, patch, absolute, identity);
+        expect(entries).toHaveLength(1);
+        expect(entries[0]?.title).toBe(relative);
+        expect(entries[0]?.patch).toBe(patch);
+    });
+
+    test('keeps an outside /tmp edit patch selectable from either absolute form', () => {
+        const patch = '--- a/tmp/upload-replay.js\n+++ b/tmp/upload-replay.js\n@@ -1 +1 @@\n-old\n+new';
+        const entries = getToolNavigationDiffEntries('edit', {
+            files: [{ file: '/private/tmp/upload-replay.js', patch }],
+        }, patch, '/tmp/upload-replay.js', identity);
+
+        expect(entries).toHaveLength(1);
+        expect(entries[0]?.patch).toContain('+new');
+        expect(toolFilePathsMatch(entries[0]?.title ?? '', '/tmp/upload-replay.js')).toBe(true);
     });
 
     test('keeps edit navigation scoped to its selected file', () => {

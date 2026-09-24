@@ -23,10 +23,14 @@ import type { Session } from '@/lib/opencode/v2-types';
 import {
   buildMentionRows,
   emitComposerAutocompleteRows,
+  rankSkillsForQuery,
   resetComposerAutocompleteRows,
   resolveFileMentionIconName,
+  resolveSkillIconName,
   type ComposerAutocompleteVisibleRows,
 } from '@/lib/composer-autocomplete';
+import { useInstalledSkillsQuery } from '@/queries/installedSkillsQueries';
+import { highlightAutocompleteQuery } from './autocompleteQueryHighlight';
 import {
   getVisibleSessionMentionCandidates,
   mergeAndRankFileMentionPathHits,
@@ -47,6 +51,13 @@ type AgentInfo = {
   mode?: string | null;
 };
 
+export type MentionSkillInfo = {
+  name: string;
+  scope: string;
+  source?: string;
+  description?: string;
+};
+
 export interface FileMentionHandle {
   handleKeyDown: (key: string) => void;
   acceptIndex: (index: number) => void;
@@ -56,6 +67,7 @@ interface FileMentionAutocompleteProps {
   searchQuery: string;
   onFileSelect: (file: FileInfo) => void;
   onAgentSelect?: (agentName: string) => void;
+  onSkillSelect?: (skill: MentionSkillInfo) => void;
   onSessionSelect?: (session: Session) => void;
   onClose: () => void;
   style?: React.CSSProperties;
@@ -66,6 +78,7 @@ export const FileMentionAutocomplete = React.forwardRef<FileMentionHandle, FileM
   searchQuery,
   onFileSelect,
   onAgentSelect,
+  onSkillSelect,
   onSessionSelect,
   onClose,
   style,
@@ -110,6 +123,11 @@ export const FileMentionAutocomplete = React.forwardRef<FileMentionHandle, FileM
   }
   const isMobile = useUIStore((state) => state.isMobile);
   const normalizedSearchQuery = (searchQuery ?? '').trim();
+  const skillsQuery = useInstalledSkillsQuery({ directory: currentDirectory || null });
+  const visibleSkills = React.useMemo(
+    () => onSkillSelect ? rankSkillsForQuery(skillsQuery.data ?? [], normalizedSearchQuery) : [],
+    [normalizedSearchQuery, onSkillSelect, skillsQuery.data],
+  );
   const recentFiles = React.useMemo(() => {
     if (!projectRoot || !projectTabs) {
       return [] as FileInfo[];
@@ -254,7 +272,7 @@ export const FileMentionAutocomplete = React.forwardRef<FileMentionHandle, FileM
     setSelectedIndex(0);
     setOverflowMap({});
     setMarqueeDurations({});
-  }, [visiblePathHits, visibleRecentFiles.length, visibleAgents.length, visibleSessions.length]);
+  }, [visiblePathHits, visibleRecentFiles.length, visibleAgents.length, visibleSessions.length, visibleSkills.length]);
 
   React.useEffect(() => {
     selectedIndexRef.current = selectedIndex;
@@ -345,6 +363,16 @@ export const FileMentionAutocomplete = React.forwardRef<FileMentionHandle, FileM
     onSessionSelect?.(session);
   });
 
+  const handleSkillPick = useEvent((skill: MentionSkillInfo) => {
+    onSkillSelect?.(skill);
+  });
+
+  const skillCount = visibleSkills.length;
+  const agentOffset = skillCount;
+  const sessionOffset = agentOffset + visibleAgents.length;
+  const recentOffset = sessionOffset + visibleSessions.length;
+  const pathOffset = recentOffset + visibleRecentFiles.length;
+
   const getItemInteractionHandlers = (index: number, select: () => void) => ({
     onMouseDown: (event: React.MouseEvent<HTMLDivElement>) => event.preventDefault(),
     onPointerDown: (event: React.PointerEvent<HTMLDivElement>) => {
@@ -373,21 +401,25 @@ export const FileMentionAutocomplete = React.forwardRef<FileMentionHandle, FileM
   });
 
   const acceptMentionIndex = (index: number) => {
-    const total = visibleAgents.length + visibleSessions.length + visibleRecentFiles.length + visiblePathHits.length;
+    const total = skillCount + visibleAgents.length + visibleSessions.length + visibleRecentFiles.length + visiblePathHits.length;
     if (total === 0) return;
     const safeIndex = ((index % total) + total) % total;
-    if (safeIndex < visibleAgents.length) {
-      const agent = visibleAgents[safeIndex];
+    if (safeIndex < skillCount) {
+      const skill = visibleSkills[safeIndex];
+      if (skill) handleSkillPick(skill);
+      return;
+    }
+    if (safeIndex < sessionOffset) {
+      const agent = visibleAgents[safeIndex - agentOffset];
       if (agent) handleAgentPick(agent.name);
       return;
     }
-    const sessionIndex = safeIndex - visibleAgents.length;
-    if (sessionIndex < visibleSessions.length) {
-      const session = visibleSessions[sessionIndex];
+    if (safeIndex < recentOffset) {
+      const session = visibleSessions[safeIndex - sessionOffset];
       if (session) handleSessionPick(session);
       return;
     }
-    const pathIndex = sessionIndex - visibleSessions.length;
+    const pathIndex = safeIndex - recentOffset;
     const selectedPath = pathIndex < visibleRecentFiles.length
       ? visibleRecentFiles[pathIndex]
       : visiblePathHits[pathIndex - visibleRecentFiles.length];
@@ -397,12 +429,14 @@ export const FileMentionAutocomplete = React.forwardRef<FileMentionHandle, FileM
   React.useEffect(() => {
     emitComposerAutocompleteRows(onRowsChange, lastVisibleRowsRef, {
       rows: buildMentionRows({
+        skills: visibleSkills,
         agents: visibleAgents,
         sessions: visibleSessions,
         recentFiles: visibleRecentFiles,
         pathHits: visiblePathHits,
         untitledSession: t('chat.fileMentionAutocomplete.untitledSession'),
         sessionBadge: t('chat.fileMentionAutocomplete.sessionType'),
+        skillBadge: t('chat.commandAutocomplete.badge.skill'),
       }),
       highlightedIndex: selectedIndex,
     });
@@ -414,6 +448,7 @@ export const FileMentionAutocomplete = React.forwardRef<FileMentionHandle, FileM
     visiblePathHits,
     visibleRecentFiles,
     visibleSessions,
+    visibleSkills,
   ]);
 
   const onRowsChangeRef = React.useRef(onRowsChange);
@@ -432,7 +467,7 @@ export const FileMentionAutocomplete = React.forwardRef<FileMentionHandle, FileM
         return;
       }
 
-      const total = visibleAgents.length + visibleSessions.length + visibleRecentFiles.length + visiblePathHits.length;
+      const total = skillCount + visibleAgents.length + visibleSessions.length + visibleRecentFiles.length + visiblePathHits.length;
       if (total === 0) {
         return;
       }
@@ -451,7 +486,7 @@ export const FileMentionAutocomplete = React.forwardRef<FileMentionHandle, FileM
         acceptMentionIndex(selectedIndexRef.current);
       }
     }
-  }), [visiblePathHits, visibleRecentFiles, visibleAgents, visibleSessions, onClose, handleFileSelect, handleAgentPick, handleSessionPick]);
+  }), [skillCount, visiblePathHits, visibleRecentFiles, visibleAgents, visibleSessions, visibleSkills, onClose, handleFileSelect, handleAgentPick, handleSessionPick, handleSkillPick]);
 
   const getPathIcon = (file: FileInfo) => (
     <Icon name={resolveFileMentionIconName(file)} className="h-3.5 w-3.5 text-current" />
@@ -466,16 +501,16 @@ export const FileMentionAutocomplete = React.forwardRef<FileMentionHandle, FileM
       >
         <ScrollableOverlay preventOverscroll outerClassName="flex-1 min-h-0" className="px-0">
           <div className="pb-2">
-            {visibleAgents.length > 0 && (
+            {visibleSkills.length > 0 && (
               <div className="px-3 pb-1 pt-2 typography-meta font-medium text-muted-foreground">
-                {t('chat.fileMentionAutocomplete.groups.agents')}
+                {t('chat.fileMentionAutocomplete.groups.skills')}
               </div>
             )}
-            {visibleAgents.map((agent, index) => {
+            {visibleSkills.map((skill, index) => {
               const isSelected = selectedIndex === index;
               return (
                 <div
-                  key={`agent-${agent.name}`}
+                  key={`skill-${skill.name}-${skill.scope}`}
                   ref={(el) => { itemRefs.current[index] = el; }}
                   className={cn(
                     'flex items-start gap-2 px-3 py-1.5 cursor-pointer typography-ui-label rounded-lg',
@@ -483,12 +518,49 @@ export const FileMentionAutocomplete = React.forwardRef<FileMentionHandle, FileM
                     composerAutocompleteRowClassName(isMobile, isSelected),
                     !isMobile && isSelected && 'text-interactive-selection-foreground',
                   )}
-                  {...getItemInteractionHandlers(index, () => handleAgentPick(agent.name))}
+                  {...getItemInteractionHandlers(index, () => handleSkillPick(skill))}
+                >
+                  <Icon name={resolveSkillIconName()} className="mt-0.5 h-3.5 w-3.5 flex-shrink-0 text-current" />
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2">
+                      <span className="truncate">@{highlightAutocompleteQuery(skill.name, normalizedSearchQuery)}</span>
+                      {!isMobile ? (
+                        <span className="flex-shrink-0 typography-meta text-muted-foreground">{skill.scope}</span>
+                      ) : null}
+                    </div>
+                    {skill.description && !isMobile ? (
+                      <div className="typography-meta text-muted-foreground truncate">
+                        {highlightAutocompleteQuery(skill.description, normalizedSearchQuery)}
+                      </div>
+                    ) : null}
+                  </div>
+                </div>
+              );
+            })}
+            {visibleAgents.length > 0 && (
+              <div className="px-3 pb-1 pt-2 typography-meta font-medium text-muted-foreground">
+                {t('chat.fileMentionAutocomplete.groups.agents')}
+              </div>
+            )}
+            {visibleAgents.map((agent, index) => {
+              const rowIndex = agentOffset + index;
+              const isSelected = selectedIndex === rowIndex;
+              return (
+                <div
+                  key={`agent-${agent.name}`}
+                  ref={(el) => { itemRefs.current[rowIndex] = el; }}
+                  className={cn(
+                    'flex items-start gap-2 px-3 py-1.5 cursor-pointer typography-ui-label rounded-lg',
+                    isMobile && 'min-h-11',
+                    composerAutocompleteRowClassName(isMobile, isSelected),
+                    !isMobile && isSelected && 'text-interactive-selection-foreground',
+                  )}
+                  {...getItemInteractionHandlers(rowIndex, () => handleAgentPick(agent.name))}
                 >
                   <div className="min-w-0 flex-1">
-                    <div className="font-semibold truncate">@{agent.name}</div>
+                    <div className="truncate">@{highlightAutocompleteQuery(agent.name, normalizedSearchQuery)}</div>
                     {agent.description && !isMobile ? (
-                      <div className="typography-meta text-muted-foreground truncate">{agent.description}</div>
+                      <div className="typography-meta text-muted-foreground truncate">{highlightAutocompleteQuery(agent.description, normalizedSearchQuery)}</div>
                     ) : null}
                   </div>
                 </div>
@@ -505,7 +577,7 @@ export const FileMentionAutocomplete = React.forwardRef<FileMentionHandle, FileM
               </div>
             )}
             {visibleSessions.map((session, index) => {
-              const rowIndex = visibleAgents.length + index;
+              const rowIndex = sessionOffset + index;
               const isSelected = selectedIndex === rowIndex;
               return (
                 <div
@@ -524,7 +596,7 @@ export const FileMentionAutocomplete = React.forwardRef<FileMentionHandle, FileM
                     className="min-w-0 flex-1 truncate"
                     title={session.title || t('chat.fileMentionAutocomplete.untitledSession')}
                   >
-                    {session.title || t('chat.fileMentionAutocomplete.untitledSession')}
+                    {highlightAutocompleteQuery(session.title || t('chat.fileMentionAutocomplete.untitledSession'), normalizedSearchQuery)}
                   </span>
                   {!isMobile ? (
                     <span className="flex-shrink-0 typography-meta text-muted-foreground">
@@ -540,7 +612,7 @@ export const FileMentionAutocomplete = React.forwardRef<FileMentionHandle, FileM
               </div>
             )}
             {visibleRecentFiles.map((file, index) => {
-              const rowIndex = visibleAgents.length + visibleSessions.length + index;
+              const rowIndex = recentOffset + index;
               const relativePath = file.relativePath || file.name;
               const displayPath = truncatePathMiddle(relativePath, { maxLength: 60 });
               const isSelected = selectedIndex === rowIndex;
@@ -578,11 +650,11 @@ export const FileMentionAutocomplete = React.forwardRef<FileMentionHandle, FileM
                     </span>
                     {isOverflowing && isSelected ? (
                       <span className="inline-block whitespace-nowrap file-mention-marquee">
-                        {relativePath}
+                        {highlightAutocompleteQuery(relativePath, normalizedSearchQuery)}
                       </span>
                     ) : (
                       <span className="block truncate">
-                        {displayPath}
+                        {highlightAutocompleteQuery(displayPath, normalizedSearchQuery)}
                       </span>
                     )}
                   </span>
@@ -595,7 +667,7 @@ export const FileMentionAutocomplete = React.forwardRef<FileMentionHandle, FileM
               </div>
             )}
             {visiblePathHits.map((file, index) => {
-              const rowIndex = visibleAgents.length + visibleSessions.length + visibleRecentFiles.length + index;
+              const rowIndex = pathOffset + index;
               const relativePath = file.relativePath || file.name;
               const displayPath = truncatePathMiddle(relativePath, { maxLength: 60 });
               const isSelected = selectedIndex === rowIndex;
@@ -633,11 +705,11 @@ export const FileMentionAutocomplete = React.forwardRef<FileMentionHandle, FileM
                     </span>
                     {isOverflowing && isSelected ? (
                       <span className="inline-block whitespace-nowrap file-mention-marquee">
-                        {relativePath}
+                        {highlightAutocompleteQuery(relativePath, normalizedSearchQuery)}
                       </span>
                     ) : (
                       <span className="block truncate">
-                        {displayPath}
+                        {highlightAutocompleteQuery(displayPath, normalizedSearchQuery)}
                       </span>
                     )}
                   </span>
@@ -649,7 +721,7 @@ export const FileMentionAutocomplete = React.forwardRef<FileMentionHandle, FileM
                 <Icon name="refresh" className="h-4 w-4 animate-spin text-muted-foreground" />
               </div>
             ) : null}
-            {!loading && visiblePathHits.length === 0 && visibleRecentFiles.length === 0 && visibleAgents.length === 0 && visibleSessions.length === 0 && (
+            {!loading && visiblePathHits.length === 0 && visibleRecentFiles.length === 0 && visibleAgents.length === 0 && visibleSessions.length === 0 && visibleSkills.length === 0 && (
               <div className="px-3 py-2 typography-ui-label text-muted-foreground">
                 {t('chat.fileMentionAutocomplete.empty')}
               </div>

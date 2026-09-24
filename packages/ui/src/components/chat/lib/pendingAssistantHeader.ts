@@ -36,12 +36,28 @@ export const readUserMessageHeaderIdentity = (info: unknown): UserMessageHeaderI
         providerID?: unknown;
         modelID?: unknown;
         variant?: unknown;
-        model?: { variant?: unknown; providerID?: unknown; modelID?: unknown };
+        model?: { variant?: unknown; providerID?: unknown; modelID?: unknown; id?: unknown };
+        metadata?: { agent?: unknown; variant?: unknown; model?: { variant?: unknown; providerID?: unknown; modelID?: unknown; id?: unknown } };
     };
-    const agentName = readTrimmedString(record.mode) ?? readTrimmedString(record.agent);
-    const providerId = readTrimmedString(record.providerID) ?? readTrimmedString(record.model?.providerID);
-    const modelId = readTrimmedString(record.modelID) ?? readTrimmedString(record.model?.modelID);
-    const variant = readTrimmedString(record.model?.variant) ?? readTrimmedString(record.variant);
+    const model = typeof record.model === 'object' && record.model !== null ? record.model : undefined;
+    const metadata = typeof record.metadata === 'object' && record.metadata !== null ? record.metadata : undefined;
+    const metadataModel = typeof metadata?.model === 'object' && metadata.model !== null ? metadata.model : undefined;
+    // Official ModelRef uses `id`. Prompt metadata keeps `{ providerID, modelID }`.
+    const agentName = readTrimmedString(record.mode)
+        ?? readTrimmedString(record.agent)
+        ?? readTrimmedString(metadata?.agent);
+    const providerId = readTrimmedString(record.providerID)
+        ?? readTrimmedString(model?.providerID)
+        ?? readTrimmedString(metadataModel?.providerID);
+    const modelId = readTrimmedString(record.modelID)
+        ?? readTrimmedString(model?.modelID)
+        ?? readTrimmedString(model?.id)
+        ?? readTrimmedString(metadataModel?.modelID)
+        ?? readTrimmedString(metadataModel?.id);
+    const variant = readTrimmedString(model?.variant)
+        ?? readTrimmedString(metadataModel?.variant)
+        ?? readTrimmedString(record.variant)
+        ?? readTrimmedString(metadata?.variant);
 
     if (!agentName && !providerId && !modelId && !variant) {
         return null;
@@ -49,6 +65,40 @@ export const readUserMessageHeaderIdentity = (info: unknown): UserMessageHeaderI
 
     return { agentName, providerId, modelId, variant };
 };
+
+type CompleteModelSelection = {
+    providerId?: string;
+    modelId?: string;
+};
+
+const completeModelSelection = (
+    selection: CompleteModelSelection | null | undefined,
+): { providerId: string; modelId: string } | null => {
+    const providerId = selection?.providerId?.trim();
+    const modelId = selection?.modelId?.trim();
+    if (!providerId || !modelId) return null;
+    return { providerId, modelId };
+};
+
+/**
+ * Model shown on the turn assistant header before (and while) execution
+ * identity arrives. Assistant wire identity wins, then the user row the
+ * client just stamped. A still-open turn uses the live composer pick before
+ * session memory, because that pick is what the send already used. Settled
+ * history does not borrow the composer. OpenCode 2 user rows often omit model.
+ */
+export const resolveAssistantHeaderModel = (input: {
+    assistantIdentity: UserMessageHeaderIdentity | null;
+    userIdentity: UserMessageHeaderIdentity | null;
+    sessionSelection: CompleteModelSelection | null;
+    composerSelection: CompleteModelSelection | null;
+    allowComposerFallback: boolean;
+}): { providerId: string; modelId: string } | null => (
+    completeModelSelection(input.assistantIdentity)
+    ?? completeModelSelection(input.userIdentity)
+    ?? (input.allowComposerFallback ? completeModelSelection(input.composerSelection) : null)
+    ?? completeModelSelection(input.sessionSelection)
+);
 
 export const resolvePendingAssistantHeader = (
     identity: UserMessageHeaderIdentity | null,

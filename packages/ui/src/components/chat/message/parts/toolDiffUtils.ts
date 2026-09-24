@@ -341,7 +341,37 @@ export const getDiffPatchEntries = (
 };
 
 const normalizeComparablePath = (value: string): string =>
-    value.trim().replace(/\\/g, '/').replace(/\/{2,}/g, '/').replace(/\/+$/, '');
+    value.trim().replace(/\\/g, '/').replace(/\/{2,}/g, '/').replace(/\/+$/, '').replace(/^\.\//, '');
+
+/**
+ * OpenCode 2 edit input `path` is absolute. `metadata.files[].file` is the
+ * workspace-relative path. Treat either form as the same file when one path
+ * is a directory-bounded suffix of the other. Basename-only values do not match.
+ */
+export const toolFilePathsMatch = (left: string, right: string): boolean => {
+    const a = normalizeComparablePath(left);
+    const b = normalizeComparablePath(right);
+    if (!a || !b) return false;
+    if (a === b) return true;
+    const longer = a.length >= b.length ? a : b;
+    const shorter = a.length >= b.length ? b : a;
+    if (!shorter.includes('/')) return false;
+    // Absolute shorter paths already start with `/`; prefixing another slash
+    // would miss macOS `/tmp` ↔ `/private/tmp`.
+    const suffix = shorter.startsWith('/') ? shorter : `/${shorter}`;
+    return longer.endsWith(suffix);
+};
+
+/** File row whose patch should open for a clicked edit. One-file edits still match when the input path is absolute and `file` is workspace-relative. */
+export const findMetadataPatchFile = (
+    files: readonly unknown[],
+    preferredPath: string | undefined,
+): unknown => {
+    if (files.length === 0) return undefined;
+    if (!preferredPath) return files[0];
+    return files.find((file) => toolFilePathsMatch(patchFilePath(file), preferredPath))
+        ?? (files.length === 1 ? files[0] : undefined);
+};
 
 export const getToolNavigationDiffEntries = (
     toolName: string,
@@ -372,10 +402,7 @@ export const getToolNavigationDiffEntries = (
         return entries;
     }
 
-    const normalizedPreferredPath = normalizeComparablePath(preferredPath);
-    const selected = entries.find((entry) => (
-        normalizeComparablePath(entry.title) === normalizedPreferredPath
-    )) ?? entries[0];
+    const selected = entries.find((entry) => toolFilePathsMatch(entry.title, preferredPath)) ?? entries[0];
     return selected ? [selected] : [];
 };
 

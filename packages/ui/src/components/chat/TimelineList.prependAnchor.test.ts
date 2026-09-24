@@ -32,14 +32,16 @@ describe('TimelineList prepend anchor contracts', () => {
      * live edge, which is a whole conversation away rather than a few pixels.
      */
     test('the read position is captured when the load is requested', () => {
-        const armStart = source.indexOf('if (historyAnchorToken <= 0) return;');
+        const armStart = source.indexOf('if (historyAnchorToken > armedHistoryToken)');
         expect(armStart).toBeGreaterThan(-1);
 
-        // Before paint, and from a fresh read: nothing has moved yet, so this
-        // is the position the reader is actually looking at.
-        expect(source.slice(0, armStart)).toMatch(/React\.useLayoutEffect\(\(\) => \{\s*$/m);
-        const armBody = source.slice(armStart, armStart + 600);
-        expect(armBody).toContain('captureTimelineAnchorArm(list.getState(), entryKeysRef.current)');
+        // During render, before LegendList applies the prepend. An effect
+        // after that commit reads the newcomers' estimated positions.
+        expect(source.slice(0, armStart)).not.toMatch(/useLayoutEffect\(\(\) => \{\s*if \(historyAnchorToken/);
+        const armBody = source.slice(armStart, armStart + 900);
+        expect(armBody).toContain('resolveRequestedHistoryAnchorArm');
+        expect(armBody).toContain('committedEntryKeys: committedEntryKeysRef.current');
+        expect(armBody).not.toContain('entryKeysRef.current');
         expect(armBody).toContain('holding: false');
     });
 

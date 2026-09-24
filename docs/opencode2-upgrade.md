@@ -42,7 +42,7 @@
 
 ### 2.3 硬约束
 
-- 钉死 OpenCode 版本为官方 `@opencode/cli@2.0.12`（client `@opencode/client@2.0.12`）。正式 CLI 名是 `opencode`（`opencode2` 只是别名）。本机管理进程不使用 Electron extraResource：优先复用全局已装的 v2，没有才把官方平台包装到 `~/.config/openchamber/opencode-cli/<pin>/opencode`。启动时复用已在 4096 上的健康 `opencode serve`，否则自己 `serve`。
+- 钉死托管 CLI 为官方 `@opencode/cli@2.0.12`。HTTP 客户端与 schema 钉在 `@opencode/client@2.0.15` / `@opencode/schema@2.0.15`（prompt / message 路由相对 2.0.12 未改）。正式 CLI 名是 `opencode`（`opencode2` 只是别名）。本机管理进程不使用 Electron extraResource：优先复用全局已装的 v2，没有才把官方平台包装到 `~/.config/openchamber/opencode-cli/<pin>/opencode`。启动时复用已在 4096 上的健康 `opencode serve`，否则自己 `serve`。
 - 官方故意打破的只有三块：plugin API、server API、TUI `tui.json` → `cli.json`。配置和 `.opencode/` 尽量兼容，但 **V1 subtask 不会投影进 v2**，要进行中的 tool 会变成 `tool.interrupted`。
 - Web / Electron / VS Code / mobile / Relay 一次换契约。
 - 不新增依赖，除非本方案进入实施并明确批准 `@opencode/client`。

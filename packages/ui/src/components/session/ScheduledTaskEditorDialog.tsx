@@ -1706,6 +1706,7 @@ export function ScheduledTaskEditorDialog(props: {
                   searchQuery={mentionQuery}
                   onFileSelect={handleFileSelect}
                   onAgentSelect={handleAgentSelect}
+                  onSkillSelect={(skill) => handleAgentSelect(skill.name)}
                   onClose={() => setShowFileMention(false)}
                   style={{
                     left: 0,

@@ -9,6 +9,8 @@ import { useI18n } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
 import { SettingsPageLayout } from '@/components/sections/shared/SettingsPageLayout';
 import { RegistryBanner } from './RegistryBanner';
+import { PluginStatusBanner } from './PluginStatusBanner';
+import { configEntryRuntimeTarget, pluginFileRuntimeTarget } from './pluginLoadState';
 import { isV1IncompatiblePlugin } from '@/lib/plugin-v1-compatibility';
 import { SettingsGroup } from '@/components/sections/shared/SettingsGroup';
 import {
@@ -104,6 +106,14 @@ export const PluginsPage: React.FC = () => {
   const selectedFile = React.useMemo(
     () => (selectedId ? files.find((f) => f.id === selectedId) ?? null : null),
     [files, selectedId],
+  );
+  const selectedEntryTarget = React.useMemo(
+    () => (selectedEntry ? configEntryRuntimeTarget(selectedEntry.spec, selectedEntry.sourcePath) : null),
+    [selectedEntry],
+  );
+  const selectedFileTarget = React.useMemo(
+    () => (selectedFile ? pluginFileRuntimeTarget(selectedFile.absolutePath) : null),
+    [selectedFile],
   );
 
   const [isSaving, setIsSaving] = React.useState(false);
@@ -214,6 +224,8 @@ export const PluginsPage: React.FC = () => {
             />
           </div>
         </div>
+
+        <PluginStatusBanner target={selectedEntryTarget} name={selectedEntry.spec} />
 
         {isV1IncompatiblePlugin(selectedEntry) ? (
           <div className="rounded-md border border-[var(--status-warning)] bg-card p-3">
@@ -350,6 +362,8 @@ export const PluginsPage: React.FC = () => {
             </span>
           </div>
         </div>
+
+        <PluginStatusBanner target={selectedFileTarget} name={selectedFile.fileName} />
 
         {isV1IncompatiblePlugin(selectedFile) ? (
           <div className="rounded-md border border-[var(--status-warning)] bg-card p-3">

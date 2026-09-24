@@ -2,6 +2,7 @@ import { describe, expect, test } from 'vitest';
 
 import {
     readUserMessageHeaderIdentity,
+    resolveAssistantHeaderModel,
     resolvePendingAssistantHeader,
     shouldShowPendingAssistantHeader,
 } from './pendingAssistantHeader';
@@ -66,6 +67,28 @@ describe('readUserMessageHeaderIdentity', () => {
         });
     });
 
+    test('reads official ModelRef id and prompt metadata', () => {
+        expect(readUserMessageHeaderIdentity({
+            agent: 'build',
+            model: { id: 'gpt-5.6', providerID: 'openai', variant: 'high' },
+        })).toEqual({
+            agentName: 'build',
+            providerId: 'openai',
+            modelId: 'gpt-5.6',
+            variant: 'high',
+        });
+        expect(readUserMessageHeaderIdentity({
+            metadata: {
+                agent: 'build',
+                model: { providerID: 'anthropic', modelID: 'claude-sonnet-4-5' },
+            },
+        })).toMatchObject({
+            agentName: 'build',
+            providerId: 'anthropic',
+            modelId: 'claude-sonnet-4-5',
+        });
+    });
+
     test('reads provider and model from the current nested user-message shape', () => {
         expect(readUserMessageHeaderIdentity({
             agent: 'build',
@@ -85,6 +108,48 @@ describe('readUserMessageHeaderIdentity', () => {
     test('returns null when the user row has no header identity', () => {
         expect(readUserMessageHeaderIdentity({ role: 'user' })).toBeNull();
         expect(readUserMessageHeaderIdentity(null)).toBeNull();
+    });
+});
+
+describe('resolveAssistantHeaderModel', () => {
+    test('uses the composer pick while the assistant row has no model yet', () => {
+        expect(resolveAssistantHeaderModel({
+            assistantIdentity: null,
+            userIdentity: null,
+            sessionSelection: null,
+            composerSelection: { providerId: 'openai', modelId: 'gpt-5.6' },
+            allowComposerFallback: true,
+        })).toEqual({ providerId: 'openai', modelId: 'gpt-5.6' });
+    });
+
+    test('keeps a stamped user row ahead of a later composer change', () => {
+        expect(resolveAssistantHeaderModel({
+            assistantIdentity: null,
+            userIdentity: { providerId: 'anthropic', modelId: 'claude-sonnet-4-5' },
+            sessionSelection: { providerId: 'openai', modelId: 'gpt-5.6' },
+            composerSelection: { providerId: 'openai', modelId: 'gpt-5.6' },
+            allowComposerFallback: true,
+        })).toEqual({ providerId: 'anthropic', modelId: 'claude-sonnet-4-5' });
+    });
+
+    test('prefers the live composer over older session memory while the turn is open', () => {
+        expect(resolveAssistantHeaderModel({
+            assistantIdentity: null,
+            userIdentity: null,
+            sessionSelection: { providerId: 'openai', modelId: 'gpt-4.1' },
+            composerSelection: { providerId: 'anthropic', modelId: 'claude-sonnet-4-5' },
+            allowComposerFallback: true,
+        })).toEqual({ providerId: 'anthropic', modelId: 'claude-sonnet-4-5' });
+    });
+
+    test('does not borrow the live composer for a settled assistant that omitted model', () => {
+        expect(resolveAssistantHeaderModel({
+            assistantIdentity: { agentName: 'build' },
+            userIdentity: null,
+            sessionSelection: null,
+            composerSelection: { providerId: 'openai', modelId: 'gpt-5.6' },
+            allowComposerFallback: false,
+        })).toBeNull();
     });
 });
 

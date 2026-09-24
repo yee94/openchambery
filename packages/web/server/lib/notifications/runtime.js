@@ -1,3 +1,41 @@
+import { readNotificationSessionRecord } from './template-runtime.js';
+
+const trimmedText = (value) => (typeof value === 'string' && value.trim() ? value.trim() : '');
+
+const readNotificationEventFields = (payload) => {
+  const properties = payload?.properties && typeof payload.properties === 'object' && !Array.isArray(payload.properties)
+    ? payload.properties
+    : {};
+  const data = payload?.data && typeof payload.data === 'object' && !Array.isArray(payload.data)
+    ? payload.data
+    : {};
+  const form = (properties.form && typeof properties.form === 'object' ? properties.form : null)
+    || (data.form && typeof data.form === 'object' ? data.form : null);
+  const questions = Array.isArray(properties.questions)
+    ? properties.questions
+    : (Array.isArray(data.questions) ? data.questions : []);
+  const firstQuestion = questions[0] && typeof questions[0] === 'object' ? questions[0] : null;
+  const field = Array.isArray(form?.fields)
+    ? form.fields.find((item) => item && typeof item === 'object' && item.hidden !== true)
+    : null;
+  return {
+    requestId: trimmedText(properties.id)
+      || trimmedText(properties.requestID)
+      || trimmedText(properties.requestId)
+      || trimmedText(data.id)
+      || trimmedText(data.requestID)
+      || trimmedText(data.requestId)
+      || trimmedText(form?.id),
+    permission: trimmedText(properties.permission) || trimmedText(data.permission) || trimmedText(data.action),
+    message: trimmedText(data.message) || trimmedText(properties.message),
+    header: trimmedText(firstQuestion?.header) || trimmedText(field?.title) || trimmedText(form?.title),
+    questionText: trimmedText(firstQuestion?.question)
+      || trimmedText(field?.description)
+      || trimmedText(field?.title)
+      || trimmedText(form?.title),
+  };
+};
+
 export const createNotificationTriggerRuntime = (deps) => {
   const {
     readSettingsFromDisk,
@@ -255,14 +293,14 @@ export const createNotificationTriggerRuntime = (deps) => {
       if (!response.ok) {
         return cached;
       }
-      const session = await response.json().catch(() => null);
-      if (!session || typeof session !== 'object') {
+      const session = readNotificationSessionRecord(await response.json().catch(() => null));
+      if (!session) {
         return cached;
       }
 
       const meta = {
         parentID: normalizeParentID(session.parentID),
-        title: typeof session.title === 'string' ? session.title : null,
+        title: trimmedText(session.title) || null,
         complete: true,
         ...metaFromOpenchamber(session.metadata?.openchamber),
       };
@@ -350,11 +388,20 @@ export const createNotificationTriggerRuntime = (deps) => {
       ? payload.properties
       : (payload.data && typeof payload.data === 'object' ? payload.data : null);
     const info = props?.info;
+    const data = payload.data && typeof payload.data === 'object' && !Array.isArray(payload.data)
+      ? payload.data
+      : null;
     const sessionId =
       info?.sessionID ??
       info?.sessionId ??
       props?.sessionID ??
       props?.sessionId ??
+      props?.form?.sessionID ??
+      props?.form?.sessionId ??
+      data?.sessionID ??
+      data?.sessionId ??
+      data?.form?.sessionID ??
+      data?.form?.sessionId ??
       props?.session ??
       null;
     return typeof sessionId === 'string' && sessionId.length > 0 ? sessionId : null;
@@ -362,11 +409,32 @@ export const createNotificationTriggerRuntime = (deps) => {
 
   const extractDirectoryFromPayload = (payload) => {
     if (!payload || typeof payload !== 'object') return undefined;
-    const props = payload.properties;
-    const directory = props?.directory ?? props?.info?.directory;
-    if (typeof directory !== 'string') return undefined;
-    const trimmed = directory.trim();
-    return trimmed.length > 0 ? trimmed : undefined;
+    const props = payload.properties && typeof payload.properties === 'object' ? payload.properties : {};
+    const data = payload.data && typeof payload.data === 'object' && !Array.isArray(payload.data) ? payload.data : {};
+    const info = props.info && typeof props.info === 'object' ? props.info : {};
+    const dataInfo = data.info && typeof data.info === 'object' ? data.info : {};
+    const candidates = [
+      props.directory,
+      info.directory,
+      info.location?.directory,
+      payload.location?.directory,
+      data.directory,
+      data.location?.directory,
+      dataInfo.directory,
+      dataInfo.location?.directory,
+    ];
+    for (const value of candidates) {
+      const directory = trimmedText(value);
+      if (directory) return directory;
+    }
+    return undefined;
+  };
+
+  const resolvePushSessionName = async (variables, sessionId, directory) => {
+    const fromTemplate = trimmedText(variables?.session_name);
+    if (fromTemplate) return fromTemplate;
+    const meta = await fetchSessionMeta(sessionId, directory);
+    return trimmedText(meta?.title);
   };
 
   // A session with an ACTIVE goal suppresses per-turn ready notifications;
@@ -383,7 +451,7 @@ export const createNotificationTriggerRuntime = (deps) => {
         signal: AbortSignal.timeout(2000),
       });
       if (!response.ok) return false;
-      const session = await response.json().catch(() => null);
+      const session = readNotificationSessionRecord(await response.json().catch(() => null));
       const goal = session?.metadata?.openchamber?.goal;
       return Boolean(goal && typeof goal === 'object' && goal.status === 'active');
     } catch {
@@ -505,12 +573,12 @@ export const createNotificationTriggerRuntime = (deps) => {
           const completionTemplate = templates.completion || { title: 'Task completed', message: '{session_name}' };
 
           const variables = await buildTemplateVariables(payload, sessionId);
-          sessionName = typeof variables.session_name === 'string' ? variables.session_name : sessionName;
+          sessionName = await resolvePushSessionName(variables, sessionId, notificationDirectory);
 
           const messageId = info?.id;
           let lastMessage = extractLastMessageText(payload);
           if (!lastMessage) {
-            lastMessage = await fetchLastAssistantMessageText(sessionId, messageId);
+            lastMessage = await fetchLastAssistantMessageText(sessionId, messageId, undefined, notificationDirectory);
           }
 
           variables.last_message = await prepareNotificationLastMessage({
@@ -561,7 +629,21 @@ export const createNotificationTriggerRuntime = (deps) => {
       return;
     }
 
-    if (payload.type === 'question.asked' && sessionId) {
+    if ((
+      payload.type === 'form.replied'
+      || payload.type === 'form.cancelled'
+      || payload.type === 'question.replied'
+      || payload.type === 'question.rejected'
+    ) && sessionId) {
+      const existingTimer = pushQuestionDebounceTimers.get(sessionId);
+      if (existingTimer) {
+        clearTimeout(existingTimer);
+        pushQuestionDebounceTimers.delete(sessionId);
+      }
+      return;
+    }
+
+    if ((payload.type === 'question.asked' || payload.type === 'form.created') && sessionId) {
       if (await shouldSkipSystemSessionNotification(sessionId, notificationDirectory)) {
         return;
       }
@@ -582,9 +664,9 @@ export const createNotificationTriggerRuntime = (deps) => {
           return;
         }
 
-        const firstQuestion = payload.properties?.questions?.[0];
-        const header = typeof firstQuestion?.header === 'string' ? firstQuestion.header.trim() : '';
-        const questionText = typeof firstQuestion?.question === 'string' ? firstQuestion.question.trim() : '';
+        const prompt = readNotificationEventFields(payload);
+        const header = prompt.header;
+        const questionText = prompt.questionText;
 
         let title = 'Needs your answer';
         let body = '';
@@ -592,7 +674,7 @@ export const createNotificationTriggerRuntime = (deps) => {
 
         try {
           const variables = await buildTemplateVariables(payload, sessionId);
-          sessionName = typeof variables.session_name === 'string' ? variables.session_name : sessionName;
+          sessionName = await resolvePushSessionName(variables, sessionId, notificationDirectory);
           variables.last_message = questionText || header || '';
 
           const templates = settings.notificationTemplates || {};
@@ -643,8 +725,8 @@ export const createNotificationTriggerRuntime = (deps) => {
     }
 
     if (payload.type === 'permission.replied' && sessionId) {
-      const requestId = payload.properties?.requestID ?? payload.properties?.requestId ?? payload.properties?.id;
-      const requestKey = typeof requestId === 'string' ? `${sessionId}:${requestId}` : null;
+      const requestId = readNotificationEventFields(payload).requestId;
+      const requestKey = requestId ? `${sessionId}:${requestId}` : null;
       const pendingNotification = pushPermissionDebounceTimers.get(sessionId);
       if (!pendingNotification) {
         return;
@@ -664,9 +746,10 @@ export const createNotificationTriggerRuntime = (deps) => {
       if (await shouldSkipSystemSessionNotification(sessionId, notificationDirectory)) {
         return;
       }
-      const requestId = payload.properties?.id ?? payload.properties?.requestID ?? payload.properties?.requestId;
-      const permission = payload.properties?.permission;
-      const requestKey = typeof requestId === 'string' ? `${sessionId}:${requestId}` : null;
+      const permissionFields = readNotificationEventFields(payload);
+      const requestId = permissionFields.requestId;
+      const permission = permissionFields.permission;
+      const requestKey = requestId ? `${sessionId}:${requestId}` : null;
       if (requestKey && notifiedPermissionRequests.has(requestKey)) {
         return;
       }
@@ -704,11 +787,12 @@ export const createNotificationTriggerRuntime = (deps) => {
           return;
         }
 
-        const sessionTitle = payload.properties?.sessionTitle;
+        const sessionTitle = payload.properties?.sessionTitle ?? payload.data?.sessionTitle;
         const permissionText = typeof permission === 'string' && permission.length > 0 ? permission : '';
+        const detail = permissionFields.message;
         const fallbackMessage = typeof sessionTitle === 'string' && sessionTitle.trim().length > 0
           ? sessionTitle.trim()
-          : permissionText || 'Agent is waiting for your approval';
+          : detail || permissionText || 'Agent is waiting for your approval';
 
         let title = 'Needs permission';
         let body = '';
@@ -716,7 +800,7 @@ export const createNotificationTriggerRuntime = (deps) => {
 
         try {
           const variables = await buildTemplateVariables(payload, sessionId);
-          sessionName = typeof variables.session_name === 'string' ? variables.session_name : sessionName;
+          sessionName = await resolvePushSessionName(variables, sessionId, notificationDirectory);
           variables.last_message = fallbackMessage;
 
           const templates = settings.notificationTemplates || {};
@@ -784,8 +868,8 @@ export const createNotificationTriggerRuntime = (deps) => {
         signal: AbortSignal.timeout(2000),
       });
       if (response.ok) {
-        const session = await response.json().catch(() => null);
-        if (typeof session?.title === 'string') sessionName = session.title.trim();
+        const session = readNotificationSessionRecord(await response.json().catch(() => null));
+        sessionName = trimmedText(session?.title);
       }
     } catch {
       // Session name is presentation sugar for the mobile push — never block on it.

@@ -64,8 +64,8 @@ import { mergeMarkdownPinRevealStyle, resolveMarkdownPinRevealKeys } from './lib
 import { createSharedElementSizeBatch } from './lib/batchResizeUpdates';
 import { useMarkdownPinReveal } from './hooks/useMarkdownPinReveal';
 import {
-    captureTimelineAnchorArm,
     measureTimelineAnchorDrift,
+    resolveRequestedHistoryAnchorArm,
     resolveTimelineAnchorHoldStep,
     resolveTimelineAnchorScrollTarget,
     TIMELINE_ANCHOR_ARM_EXPIRY_MS,
@@ -408,6 +408,10 @@ const TimelineListInner = <TEntry extends TimelineRowEntry>({
     const entryKeys = React.useMemo(() => entries.map((entry) => entry.key), [entries]);
     const entryKeysRef = React.useRef(entryKeys);
     entryKeysRef.current = entryKeys;
+    // Previous commit's keys. Updated after paint so a render that delivers
+    // both the request token and the new rows still arms against the keys
+    // the reader was looking at.
+    const committedEntryKeysRef = React.useRef(entryKeys);
 
     const tuningRef = React.useRef(hydrationTuning);
     tuningRef.current = hydrationTuning;
@@ -556,9 +560,32 @@ const TimelineListInner = <TEntry extends TimelineRowEntry>({
         readonly holding: boolean;
     };
     const [historyAnchor, setHistoryAnchor] = React.useState<HistoryAnchorState | null>(null);
+    const [armedHistoryToken, setArmedHistoryToken] = React.useState(0);
     const clearHistoryAnchor = useEvent((token: number) => {
         setHistoryAnchor((current) => (current?.token === token ? null : current));
     });
+    // Before paint, and before LegendList applies the prepend: list state and
+    // committed keys are still the pre-request transcript. An effect after
+    // this render is one frame late — the list has already anchored to the
+    // estimated newcomers, which overlap the rows below and then jump away.
+    if (historyAnchorToken > armedHistoryToken) {
+        const requested = resolveRequestedHistoryAnchorArm({
+            historyAnchorToken,
+            armedToken: armedHistoryToken,
+            list: listRef.current?.getState() ?? null,
+            committedEntryKeys: committedEntryKeysRef.current,
+        });
+        if (requested) {
+            setArmedHistoryToken(requested.armedToken);
+            if (requested.arm) {
+                setHistoryAnchor({
+                    token: historyAnchorToken,
+                    arm: requested.arm,
+                    holding: false,
+                });
+            }
+        }
+    }
 
     // Resume-to-latest re-arms follow. A held prepend anchor would then fight
     // the jump: its correction loop keeps restoring the old read position.
@@ -566,17 +593,6 @@ const TimelineListInner = <TEntry extends TimelineRowEntry>({
         if (!followEnabled) return;
         setHistoryAnchor(null);
     }, [followEnabled]);
-
-    React.useLayoutEffect(() => {
-        if (historyAnchorToken <= 0) return;
-        const list = listRef.current;
-        if (!list) return;
-        // Nothing has moved yet, so this reads the position the reader is
-        // actually looking at rather than a remembered one.
-        const arm = captureTimelineAnchorArm(list.getState(), entryKeysRef.current);
-        if (!arm) return;
-        setHistoryAnchor({ token: historyAnchorToken, arm, holding: false });
-    }, [historyAnchorToken]);
 
     // An arm holds end maintenance down, so one whose rows never arrive — a
     // failed request, or history that turned out to have nothing older — has to
@@ -592,7 +608,6 @@ const TimelineListInner = <TEntry extends TimelineRowEntry>({
         return () => window.clearTimeout(timer);
     }, [historyAnchor]);
 
-    const committedEntryKeysRef = React.useRef(entryKeys);
     React.useLayoutEffect(() => {
         const previous = committedEntryKeysRef.current;
         committedEntryKeysRef.current = entryKeys;

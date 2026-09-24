@@ -1,4 +1,4 @@
-export type ComposerAutocompleteKind = 'slash-command' | 'slash-skill' | 'mention' | 'snippet';
+export type ComposerAutocompleteKind = 'slash-command' | 'mention' | 'snippet';
 
 export type ComposerAutocompleteTrigger = {
   kind: ComposerAutocompleteKind;

@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const state = vi.hoisted(() => ({
   selected: 'openai', directory: '/workspace', generation: 0, listeners: new Set<() => void>(),
+  providers: [{ id: 'openai', name: 'OpenAI', models: [] as Array<{ id: string }> }],
   list: vi.fn(), integrations: vi.fn(), connect: vi.fn(), status: vi.fn(), complete: vi.fn(), cancel: vi.fn(),
   key: vi.fn(), getIntegration: vi.fn(), removeCredential: vi.fn(),
   reload: vi.fn(), success: vi.fn(), error: vi.fn(), open: vi.fn(), select: vi.fn(),
@@ -19,7 +20,7 @@ vi.mock('@/lib/runtime-switch', () => ({
   subscribeRuntimeEndpointChanged: (fn: () => void) => { state.listeners.add(fn); return () => state.listeners.delete(fn); },
 }));
 vi.mock('@/stores/useConfigStore', () => ({ useConfigStore: (select: (s: unknown) => unknown) => select({
-  providers: [{ id: 'openai', name: 'OpenAI', models: [] }], selectedProviderId: state.selected,
+  providers: state.providers, selectedProviderId: state.selected,
   setSelectedProvider: state.select, getModelMetadata: () => undefined,
 }) }));
 vi.mock('@/stores/useUIStore', () => ({ useUIStore: (select: (s: unknown) => unknown) => select({ hiddenModels: {} }) }));
@@ -83,6 +84,7 @@ beforeEach(() => {
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
   vi.useFakeTimers(); vi.clearAllMocks();
   state.selected = 'openai'; state.generation = 0; state.directory = '/workspace';
+  state.providers = [{ id: 'openai', name: 'OpenAI', models: [] }];
   state.key.mockResolvedValue(undefined); state.removeCredential.mockResolvedValue(undefined);
   state.getIntegration.mockResolvedValue({ data: { connections: [{ type: 'credential', id: 'credential-1' }] } });
   state.list.mockResolvedValue({ data: [{ id: 'openai', integrationID: 'openai' }] });
@@ -355,5 +357,28 @@ describe('provider connection regressions', () => {
     await act(async () => { await vi.advanceTimersByTimeAsync(1500); });
     expect(state.select).toHaveBeenCalledWith('openai-activated');
     expect(state.success).toHaveBeenCalledTimes(1);
+  });
+  it('signs OpenCode Go in through the Console integration and keeps key connect on Go', async () => {
+    state.selected = 'opencode-go';
+    state.providers = [{ id: 'opencode-go', name: 'OpenCode Go', models: [] }];
+    state.list.mockResolvedValue({ data: [{ id: 'opencode-go', integrationID: 'opencode-go' }] });
+    state.integrations.mockResolvedValue({ data: [
+      { id: 'opencode', name: 'OpenCode Console', connections: [], methods: [{ id: 'device', type: 'oauth', label: 'OpenCode Console account' }] },
+      { id: 'opencode-go', name: 'OpenCode Go', connections: [], methods: [{ id: 'go-key', type: 'key', label: 'Service account' }] },
+    ] });
+    await mount();
+    await click('settings.providers.page.actions.reconnect');
+    await click('settings.providers.page.actions.connect');
+    expect(state.connect).toHaveBeenCalledWith(
+      expect.objectContaining({ integrationID: 'opencode', methodID: 'device' }),
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
+    );
+    expect(state.connect.mock.calls.some(([input]) => input.integrationID === 'opencode-go')).toBe(false);
+    await fill('input[type="password"]', 'service-account-key');
+    await click('settings.providers.page.actions.saveKey');
+    expect(state.key).toHaveBeenCalledWith(
+      expect.objectContaining({ integrationID: 'opencode-go', key: 'service-account-key' }),
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
+    );
   });
 });

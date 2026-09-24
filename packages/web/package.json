@@ -1,6 +1,6 @@
 {
   "name": "@openchambery/web",
-  "version": "2.0.0-beta.4",
+  "version": "2.0.0-beta.5",
   "private": false,
   "type": "module",
   "main": "./server/index.js",
@@ -27,7 +27,8 @@
     "@clack/prompts": "^1.1.0",
     "@earendil-works/pi-agent-core": "0.84.4",
     "@octokit/rest": "^22.0.1",
-    "@opencode/client": "2.0.12",
+    "@opencode/client": "2.0.15",
+    "@opencode/schema": "2.0.15",
     "@simplewebauthn/server": "13.3.1",
     "adm-zip": "^0.5.16",
     "better-sqlite3": "^12.10.0",

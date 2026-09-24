@@ -2104,6 +2104,10 @@ html.desktop-runtime .oc-tool-row,
 html.desktop-runtime .oc-tool-row[class*="cursor-pointer"] {
   cursor: pointer !important;
 }
+/* Work-status copy and changes controls stay a hand; static rows stay the arrow. */
+html.desktop-runtime .oc-work-status-action {
+  cursor: pointer !important;
+}
 html.desktop-runtime .markdown-content [data-openchamber-file-link="true"] {
   cursor: default;
 }

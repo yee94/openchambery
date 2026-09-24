@@ -103,9 +103,12 @@ Skill discovery uses the official V2 `skill.list` SDK with the selected director
     `overlaySessionProxyBodyText` before or after upstream as appropriate.
 
 - `session-metadata-runtime.ts`
-  - Extension Host authority for per-session Host metadata and archive stamps.
+  - Extension Host cache for per-session Host metadata and archive stamps.
+    Durable authority is the OpenCode session record (`session.update` metadata);
+    the globalStorage file is the migration source and must not be treated as an
+    empty catalog when its read fails.
   - Imports shared core from `packages/web/server/lib/session-metadata/`
-    (store, archive service, projection) — do not vendor copies.
+    (store, archive service, projection, `opencode-session-record.js`) — do not vendor copies.
   - Durable file under extension `globalStorage` (or `OPENCHAMBER_DATA_DIR` /
     `~/.config/openchamber`), scoped by OpenCode runtime identity
     (`loopback:` vs external `host:port`) so multi-webview clients share one store
@@ -277,6 +280,10 @@ Skill discovery uses the official V2 `skill.list` SDK with the selected director
 - `bridge-system-runtime.ts`
   - System/editor/provider/quota/notification/update-check message handlers.
   - Includes session activity snapshot bridge handler used by webview parity routes (`/api/session-activity`).
+  - `api:opencode/compatibility` and `api:opencode/install-required` back the startup upgrade screen. Install uses the web owned-cache installer, writes `openchamber.opencodeBinary`, and restarts the existing manager. A failed install returns the error and `upgraded: false`.
+
+- `opencode-upgrade-screen.ts`
+  - Extension-host adapter for the shared upgrade-screen module. It does not own sidecar lifecycle. External mode cannot install.
   - Includes Zen utility model parity handler used by shared notification settings (`/api/zen/models`).
   - `api:opencode/version` reads version from the sidecar health probe (`/api/health`, then `/global/health`) with the manager's Basic auth headers.
 

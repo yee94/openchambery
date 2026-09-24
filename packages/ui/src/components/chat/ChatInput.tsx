@@ -60,9 +60,8 @@ import { selectComposerQuotes, useComposerQuoteStore } from '@/stores/useCompose
 import { QueuedMessageChips } from './QueuedMessageChips';
 import { SessionRecoveryNotice } from './SessionRecoveryNotice';
 import { AutoReviewBanner } from './AutoReviewBanner';
-import { FileMentionAutocomplete, type FileMentionHandle } from './FileMentionAutocomplete';
+import { FileMentionAutocomplete, type FileMentionHandle, type MentionSkillInfo } from './FileMentionAutocomplete';
 import { CommandAutocomplete, type CommandAutocompleteHandle, type CommandInfo } from './CommandAutocomplete';
-import { SkillAutocomplete, type SkillAutocompleteHandle, type SkillInfo } from './SkillAutocomplete';
 import { SnippetAutocomplete, type SnippetAutocompleteHandle } from './SnippetAutocomplete';
 import { cn, formatDirectoryName } from '@/lib/utils';
 import { ModelControls } from './ModelControls';
@@ -253,17 +252,14 @@ const shouldEnableComposerSlashDirectoryQueries = ({
     inputMode,
     message,
     showCommandAutocomplete,
-    showSkillAutocomplete,
 }: {
     inputMode: 'normal' | 'shell';
     message: string;
     showCommandAutocomplete: boolean;
-    showSkillAutocomplete: boolean;
 }): boolean => (
     inputMode !== 'shell'
     && (
         showCommandAutocomplete
-        || showSkillAutocomplete
         || /(^|\s)\/[A-Za-z0-9_-]*/.test(message)
     )
 );
@@ -1092,8 +1088,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
     const [mentionQuery, setMentionQuery] = React.useState('');
     const [showCommandAutocomplete, setShowCommandAutocomplete] = React.useState(false);
     const [commandQuery, setCommandQuery] = React.useState('');
-    const [showSkillAutocomplete, setShowSkillAutocomplete] = React.useState(false);
-    const [skillQuery, setSkillQuery] = React.useState('');
+
     const [showSnippetAutocomplete, setShowSnippetAutocomplete] = React.useState(false);
     const [snippetQuery, setSnippetQuery] = React.useState('');
     const [nativeSuggestionRows, setNativeSuggestionRows] = React.useState<ComposerAutocompleteListRow[]>([]);
@@ -1842,7 +1837,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
     const mentionRef = React.useRef<FileMentionHandle>(null);
     const pendingSessionReferenceRef = React.useRef(false);
     const commandRef = React.useRef<CommandAutocompleteHandle>(null);
-    const skillRef = React.useRef<SkillAutocompleteHandle>(null);
+
     const snippetRef = React.useRef<SnippetAutocompleteHandle>(null);
     const messageRef = React.useRef(message);
     const pendingPastedAttachmentFilenamesRef = React.useRef<Set<string>>(new Set());
@@ -1982,17 +1977,16 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
     const knownAgentNamesRef = React.useRef(knownAgentNames);
     knownAgentNamesRef.current = knownAgentNames;
 
-    // Known slash-invocations (commands + skills + built-ins) used to highlight
-    // matching /tokens in the composer, the same way confirmed @files are.
+    // Known slash commands used to highlight matching /tokens in the composer.
+    // Skills are @ mentions, not slash chips.
     const shouldLoadSlashDirectories = shouldEnableComposerSlashDirectoryQueries({
         inputMode,
         message,
         showCommandAutocomplete,
-        showSkillAutocomplete,
     });
     const commandsQuery = useCommandsQuery({ directory: currentDirectory, enabled: shouldLoadSlashDirectories });
     const availableCommands = React.useMemo(() => commandsQuery.data ?? [], [commandsQuery.data]);
-    const installedSkillsQuery = useInstalledSkillsQuery({ directory: currentDirectory, enabled: shouldLoadSlashDirectories });
+    const installedSkillsQuery = useInstalledSkillsQuery({ directory: currentDirectory, enabled: inputMode !== 'shell' });
     const availableSkills = React.useMemo(() => installedSkillsQuery.data ?? [], [installedSkillsQuery.data]);
     const availableSkillNames = React.useMemo(
         () => new Map(availableSkills.map((skill) => [skill.name.toLowerCase(), skill.name])),
@@ -2004,12 +1998,13 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
         ]);
         if (isVSCodeRuntime()) names.add('reload');
         if (!isMobile && !isVSCodeRuntime()) names.add('handoff-review');
-        for (const command of availableCommands) names.add(command.name.toLowerCase());
-        for (const skill of availableSkills) names.add(skill.name.toLowerCase());
+        for (const command of availableCommands) {
+            if (command.source === 'skill') continue;
+            names.add(command.name.toLowerCase());
+        }
         return names;
-    }, [availableCommands, availableSkills, isMobile]);
+    }, [availableCommands, isMobile]);
 
-    // Known commands and installed skills use the shared reference color.
     const composerCommandRanges = React.useMemo<HighlightRange[]>(() => {
         if (!message || !message.includes('/') || inputMode === 'shell' || knownSlashNames.size === 0) {
             return [];
@@ -2025,31 +2020,18 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
             }
             const slashStart = match.index + match[1].length;
             const tokenLength = 1 + slot.length + name.length;
-            const skillName = availableSkillNames.get(name.toLowerCase());
-            ranges.push(skillName
-                ? {
-                    start: slashStart,
-                    end: slashStart + tokenLength,
-                    style: 'mentionCommand',
-                    priority: 102,
-                    skillName,
-                    visual: composerTriggerIconVisual(
-                        { trigger: '/', icon: 'book-open', label: skillName },
-                        message.slice(slashStart, slashStart + tokenLength),
-                    ),
-                }
-                : {
-                    start: slashStart,
-                    end: slashStart + tokenLength,
-                    style: 'mentionCommand',
-                    visual: composerTriggerIconVisual(
-                        { trigger: '/', icon: 'command', label: name },
-                        message.slice(slashStart, slashStart + tokenLength),
-                    ),
-                });
+            ranges.push({
+                start: slashStart,
+                end: slashStart + tokenLength,
+                style: 'mentionCommand',
+                visual: composerTriggerIconVisual(
+                    { trigger: '/', icon: 'command', label: name },
+                    message.slice(slashStart, slashStart + tokenLength),
+                ),
+            });
         }
         return ranges;
-    }, [availableSkillNames, inputMode, knownSlashNames, message]);
+    }, [inputMode, knownSlashNames, message]);
 
     // Snippet triggers (#name / #alias). Highlighted like commands once the
     // trigger matches a known snippet name or alias.
@@ -3268,19 +3250,28 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
                 useSessionUIStore.getState().beginMessageEditCommit(stagedEdit.sessionId, stagedEdit.messageId);
             }
             const configState = useConfigStore.getState();
-            const optimisticConfig = capturePrimaryComposerSendConfig(configState, {
-                expectedConfigKey: getConfigDirectoryKey(sessionDirectoryForOptimistic),
-                activeDirectoryKey: configState.activeDirectoryKey,
+            // Directory-key capture can miss while the composer already shows a
+            // model. The visible surface selection is that pick, and the
+            // pending assistant header reads it off the optimistic user row.
+            const optimisticConfig = resolvePrimaryComposerSendConfig({
+                captured: capturePrimaryComposerSendConfig(configState, {
+                    expectedConfigKey: getConfigDirectoryKey(sessionDirectoryForOptimistic),
+                    activeDirectoryKey: configState.activeDirectoryKey,
+                }),
+                surfaceSelection: surface.selection.value,
             });
             if (!messageEditCommitTarget && optimisticConfig?.providerID && optimisticConfig?.modelID) {
                 const rootAttachments = sanitizeAttachmentsForSend(sendableAttachedFiles);
                 optimisticTicket = sessionActions.beginOptimisticSend({
                     sessionId: currentSessionId,
                     directory: sessionDirectoryForOptimistic,
-                    content: inputSnapshot.message,
+                    content: quotesRideAlong
+                        ? messageWithComposerQuotes(quotesAtSubmit, logicalInputMessage)
+                        : inputSnapshot.message,
                     providerID: optimisticConfig.providerID,
                     modelID: optimisticConfig.modelID,
                     agent: optimisticConfig.agent,
+                    variant: optimisticConfig.variant,
                     files: rootAttachments.map((attachment) => ({
                         type: 'file' as const,
                         mime: attachment.mimeType,
@@ -4248,7 +4239,6 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
             clearQueue(currentQueueScope);
         }
         setShowCommandAutocomplete(false);
-        setShowSkillAutocomplete(false);
         setShowSnippetAutocomplete(false);
         setShowFileMention(false);
         if (inputMode === 'shell') {
@@ -4479,15 +4469,6 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
             }
         }
 
-        if (showSkillAutocomplete && skillRef.current) {
-            if (e.key === 'Enter' || e.key === 'Escape' || e.key === 'Tab' || isPlainArrowKey) {
-                e.preventDefault();
-                e.stopPropagation();
-                skillRef.current.handleKeyDown(e.key);
-                return;
-            }
-        }
-
         if (showSnippetAutocomplete && snippetRef.current) {
             if (e.key === 'Enter' || e.key === 'Escape' || e.key === 'Tab' || isPlainArrowKey) {
                 e.preventDefault();
@@ -4521,7 +4502,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
                 ? 1
                 : 0;
 
-        if (cycleAgentDirection !== 0 && !showCommandAutocomplete && !showSkillAutocomplete && !showSnippetAutocomplete && !showFileMention) {
+        if (cycleAgentDirection !== 0 && !showCommandAutocomplete && !showSnippetAutocomplete && !showFileMention) {
             e.preventDefault();
             e.stopPropagation();
             void controllerWiring?.shortcut('cycle', cycleAgentDirection);
@@ -4535,7 +4516,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
         // Handle ArrowUp/ArrowDown for message history navigation
         // ArrowUp: only when cursor at start (position 0) or input is empty
         // ArrowDown: also works when cursor at end (to cycle forward through history)
-        const isAnyAutocompleteOpen = showCommandAutocomplete || showSkillAutocomplete || showSnippetAutocomplete || showFileMention;
+        const isAnyAutocompleteOpen = showCommandAutocomplete || showSnippetAutocomplete || showFileMention;
         const cursorAtStart = textareaRef.current?.selectionStart === 0 && textareaRef.current?.selectionEnd === 0;
         const cursorAtEnd = textareaRef.current?.selectionStart === message.length && textareaRef.current?.selectionEnd === message.length;
         const canNavigateHistoryUp = !isAnyAutocompleteOpen && (message.length === 0 || cursorAtStart);
@@ -4726,7 +4707,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
             return;
         }
 
-        if (!showCommandAutocomplete && !showSkillAutocomplete && !showSnippetAutocomplete && !showFileMention) {
+        if (!showCommandAutocomplete && !showSnippetAutocomplete && !showFileMention) {
             setAutocompleteOverlayPosition(null);
             return;
         }
@@ -4772,7 +4753,6 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
         showCommandAutocomplete,
         showFileMention,
         showSnippetAutocomplete,
-        showSkillAutocomplete,
     ]);
 
     React.useLayoutEffect(() => {
@@ -4781,7 +4761,6 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
         updateAutocompleteOverlayPosition,
         message,
         showCommandAutocomplete,
-        showSkillAutocomplete,
         showSnippetAutocomplete,
         showFileMention,
         isDesktopExpanded,
@@ -4943,29 +4922,17 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
         if (!trigger) {
             setShowCommandAutocomplete(false);
             setShowFileMention(false);
-            setShowSkillAutocomplete(false);
             setShowSnippetAutocomplete(false);
-            setSkillQuery('');
             return;
         }
         if (trigger.kind === 'slash-command') {
             setCommandQuery(trigger.query);
             setShowCommandAutocomplete(true);
             setShowFileMention(false);
-            setShowSkillAutocomplete(false);
             setShowSnippetAutocomplete(false);
             return;
         }
         setShowCommandAutocomplete(false);
-        if (trigger.kind === 'slash-skill') {
-            setSkillQuery(trigger.query);
-            setShowSkillAutocomplete(true);
-            setShowFileMention(false);
-            setShowSnippetAutocomplete(false);
-            return;
-        }
-        setShowSkillAutocomplete(false);
-        setSkillQuery('');
         if (trigger.kind === 'snippet') {
             setSnippetQuery(trigger.query);
             setShowSnippetAutocomplete(true);
@@ -4981,9 +4948,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
         setMentionQuery,
         setShowCommandAutocomplete,
         setShowFileMention,
-        setShowSkillAutocomplete,
         setShowSnippetAutocomplete,
-        setSkillQuery,
         setSnippetQuery,
     ]);
 
@@ -5182,7 +5147,6 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
             replacePlainDocument(shellCommand);
             adjustTextareaHeight();
             setShowCommandAutocomplete(false);
-            setShowSkillAutocomplete(false);
             setShowFileMention(false);
             requestAnimationFrame(() => {
                 if (textareaRef.current) {
@@ -5637,20 +5601,45 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
             updateAutocompleteState(inserted.document.text, caret);
             if (insertedReference) {
                 setShowCommandAutocomplete(false);
-                setShowSkillAutocomplete(false);
+                setShowFileMention(false);
             }
         });
         restoreWebComposerFocus();
         return insertedReference;
     });
 
-    const handleSkillSelect = (skill: SkillInfo) => {
-        if (insertSlashReference({
+    const handleSkillSelect = (skill: MentionSkillInfo) => {
+        const document = getDocument();
+        const cursorPosition = readComposerInsertCaret(document.text.length);
+        const range = resolveComposerAutocompleteReplaceRange(
+            document.text,
+            cursorPosition,
+            autocompleteTriggerRef.current,
+        );
+        if (!range) return;
+        const inserted = insertReference(range.start, range.end, {
             id: `skill:${skill.name}:${createUuid()}`,
             kind: 'skill',
             skillName: skill.name,
-            display: composerTriggerIconDisplay({ trigger: '/', icon: 'book-open', label: skill.name }),
-        })) setSkillQuery('');
+            display: composerTriggerIconDisplay({ trigger: '@', icon: 'book-open', label: skill.name }),
+        }, {
+            inlineBoundaries: true,
+            padDocumentEdges: true,
+            padLeadingDocumentEdge: false,
+        });
+        const caret = advancePastTrailingBoundarySpace(inserted.document.text, inserted.caret);
+        cursorPosRef.current = caret;
+        requestAnimationFrame(() => {
+            if (textareaRef.current) {
+                textareaRef.current.selectionStart = caret;
+                textareaRef.current.selectionEnd = caret;
+            }
+            adjustTextareaHeight();
+            updateAutocompleteState(inserted.document.text, caret);
+            setShowFileMention(false);
+            setMentionQuery('');
+        });
+        restoreWebComposerFocus();
     };
 
     const handleSnippetSelect = (_snippet: unknown, trigger: string) => {
@@ -5691,7 +5680,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
                 id: `skill:${command.name}:${createUuid()}`,
                 kind: 'skill',
                 skillName: command.name,
-                display: composerTriggerIconDisplay({ trigger: '/', icon: 'book-open', label: command.name }),
+                display: composerTriggerIconDisplay({ trigger: '@', icon: 'book-open', label: command.name }),
             })) setCommandQuery('');
             return;
         }
@@ -6508,10 +6497,6 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
             commandRef.current?.acceptIndex(index, true);
             return;
         }
-        if (showSkillAutocomplete) {
-            skillRef.current?.acceptIndex(index);
-            return;
-        }
         if (showFileMention) {
             mentionRef.current?.acceptIndex(index);
         }
@@ -6519,7 +6504,6 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
     const handleNativeAutocompleteDismiss = useEvent(() => {
         autocompleteTriggerRef.current = null;
         setShowCommandAutocomplete(false);
-        setShowSkillAutocomplete(false);
         setShowSnippetAutocomplete(false);
         setShowFileMention(false);
         setNativeSuggestionRows([]);
@@ -6614,7 +6598,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
         scrollAria: t('chat.scrollToBottom.aria'),
         onScrollToBottom: onScrollToBottom ?? (() => {}),
         autocompleteOpen: nativeSuggestionRows.length > 0 && (
-            showCommandAutocomplete || showSkillAutocomplete || showFileMention
+            showCommandAutocomplete || showFileMention
         ),
         autocompleteHighlightedIndex: nativeSuggestionHighlight,
         autocompleteRows: nativeSuggestionRows,
@@ -7867,28 +7851,6 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
                                 : undefined}
                         />
                     )}
-                    { }
-                    {showSkillAutocomplete && (
-                        <SkillAutocomplete
-                            ref={skillRef}
-                            searchQuery={skillQuery}
-                            directory={currentDirectory}
-                            onSkillSelect={handleSkillSelect}
-                            onClose={() => setShowSkillAutocomplete(false)}
-                            onRowsChange={nativeIosComposerActive ? handleNativeSuggestionRows : undefined}
-                            style={isDesktopExpanded && autocompleteOverlayPosition
-                                ? {
-                                    left: `${autocompleteOverlayPosition.left}px`,
-                                    top: `${autocompleteOverlayPosition.top}px`,
-                                    bottom: 'auto',
-                                    width: `min(360px, calc(100% - ${autocompleteOverlayPosition.left + 8}px))`,
-                                    maxHeight: `${autocompleteOverlayPosition.maxHeight}px`,
-                                    transform: autocompleteOverlayPosition.place === 'above' ? 'translateY(-100%)' : undefined,
-                                }
-                                : undefined}
-                        />
-                    )}
-
                     {showSnippetAutocomplete && (
                         <SnippetAutocomplete
                             ref={snippetRef}
@@ -7915,6 +7877,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
                             searchQuery={mentionQuery}
                             onFileSelect={handleFileSelect}
                             onAgentSelect={handleAgentSelect}
+                            onSkillSelect={handleSkillSelect}
                             onSessionSelect={handleSessionSelect}
                             onClose={() => setShowFileMention(false)}
                             onRowsChange={nativeIosComposerActive ? handleNativeSuggestionRows : undefined}

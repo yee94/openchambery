@@ -1589,6 +1589,7 @@ export type BeginOptimisticSendInput = {
   providerID: string
   modelID: string
   agent?: string
+  variant?: string
   directory?: string | null
   files?: Array<{ type: "file"; mime: string; url: string; filename: string }>
   parts?: readonly Part[]
@@ -1635,6 +1636,7 @@ export function beginOptimisticSend(input: BeginOptimisticSendInput): Optimistic
       providerID: input.providerID,
       modelID: input.modelID,
       agent: input.agent,
+      variant: input.variant,
       directory: targetDirectory,
       files: input.files,
       parts: input.parts,
@@ -1870,6 +1872,7 @@ export function optimisticInsertUserMessage(input: {
   providerID: string
   modelID: string
   agent?: string
+  variant?: string
   directory?: string | null
   files?: Array<{ type: "file"; mime: string; url: string; filename: string }>
   parts?: readonly Part[]
@@ -1914,6 +1917,9 @@ export function optimisticInsertUserMessage(input: {
   }
 
   const now = Date.now()
+  const variant = typeof input.variant === "string" && input.variant.trim().length > 0
+    ? input.variant.trim()
+    : undefined
   const optimisticMessage = {
     id: input.messageID,
     role: "user" as const,
@@ -1923,7 +1929,14 @@ export function optimisticInsertUserMessage(input: {
     providerID: input.providerID,
     system: "",
     agent: input.agent ?? "",
-    model: `${input.providerID}/${input.modelID}`,
+    ...(variant ? { variant } : {}),
+    // Object form matches UserMessage.model so header readers and merge keep
+    // it. A provider/model string is dropped the first time a snapshot omits model.
+    model: {
+      providerID: input.providerID,
+      modelID: input.modelID,
+      ...(variant ? { variant } : {}),
+    },
     metadata: {} as Record<string, unknown>,
     time: { created: now, completed: 0 },
   } as unknown as Message

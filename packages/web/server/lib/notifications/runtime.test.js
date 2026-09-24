@@ -626,6 +626,97 @@ describe('notification event toggles', () => {
     expect(sendPushToAllUiSessions).not.toHaveBeenCalled();
   });
 
+  it('notifies on an OpenCode 2 question form and a permission request', async () => {
+    vi.useFakeTimers();
+    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse({
+      data: { id: 'ses_ask', parentID: null, title: '发布说明', metadata: {} },
+    })));
+    const resolveNotificationTemplate = vi.fn((template, variables) => (
+      typeof template === 'string'
+        ? template.replace(/\{(\w+)\}/g, (_match, key) => variables?.[key] ?? '')
+        : template
+    ));
+    const { runtime, emitDesktopNotification, sendApnsToAllUiSessions } = createRuntime({
+      buildTemplateVariables: vi.fn(async () => ({ session_name: '' })),
+      resolveNotificationTemplate,
+      readSettingsFromDisk: vi.fn(async () => ({
+        ...defaultSettings,
+        notificationTemplates: {
+          question: { title: 'Needs your answer', message: '{last_message}' },
+        },
+      })),
+    });
+
+    await runtime.maybeSendPushForTrigger({
+      type: 'form.created',
+      data: {
+        form: {
+          id: 'frm_1',
+          sessionID: 'ses_ask',
+          title: 'Questions',
+          metadata: { kind: 'question' },
+          fields: [{ key: 'q0', title: '确认入口', description: '从哪个入口触发？' }],
+        },
+      },
+    });
+    await vi.runAllTimersAsync();
+
+    expect(emitDesktopNotification).toHaveBeenCalledWith(expect.objectContaining({
+      kind: 'question',
+      body: '从哪个入口触发？',
+    }));
+    expect(sendApnsToAllUiSessions).toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'question', sessionName: '发布说明' }),
+      { requireNoSse: true },
+    );
+
+    emitDesktopNotification.mockClear();
+    sendApnsToAllUiSessions.mockClear();
+    await runtime.maybeSendPushForTrigger({
+      type: 'permission.asked',
+      data: {
+        id: 'per_1',
+        sessionID: 'ses_ask',
+        action: 'edit',
+        message: '修改 README',
+        resources: ['README.md'],
+      },
+    });
+    await vi.runAllTimersAsync();
+
+    expect(emitDesktopNotification).toHaveBeenCalledWith(expect.objectContaining({
+      kind: 'permission',
+      body: '修改 README',
+    }));
+    expect(sendApnsToAllUiSessions).toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'permission', sessionName: '发布说明' }),
+      { requireNoSse: true },
+    );
+  });
+
+  it('uses the wrapped OpenCode 2 session title when the template has none', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse({
+      data: {
+        id: 'ses_done',
+        parentID: null,
+        title: '发布说明',
+        metadata: {},
+      },
+    })));
+    const { runtime, sendApnsToAllUiSessions } = createRuntime({
+      buildTemplateVariables: vi.fn(async () => ({ session_name: '' })),
+    });
+    await runtime.maybeSendPushForTrigger({
+      type: 'session.execution.succeeded',
+      location: { directory: '/repo' },
+      data: { sessionID: 'ses_done' },
+    });
+    expect(sendApnsToAllUiSessions).toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'ready', sessionName: '发布说明' }),
+      { requireNoSse: true },
+    );
+  });
+
   it('still sends goal settle push by default', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => jsonResponse({ id: 'ses_goal', title: 'Goal run' })));
     const { runtime, sendPushToAllUiSessions } = createRuntime();
@@ -637,6 +728,7 @@ describe('notification event toggles', () => {
     });
     expect(sendPushToAllUiSessions).toHaveBeenCalledTimes(1);
     expect(sendPushToAllUiSessions.mock.calls[0][0]).toMatchObject({ tag: 'goal-ses_goal' });
+    expect(sendPushToAllUiSessions.mock.calls[0][0].data).toMatchObject({ sessionName: 'Goal run' });
   });
 });
 

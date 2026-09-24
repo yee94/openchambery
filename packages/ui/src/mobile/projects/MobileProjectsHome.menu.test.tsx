@@ -5,6 +5,7 @@ import { createRoot, type Root } from 'react-dom/client';
 
 import { I18nProvider } from '@/lib/i18n';
 import { MOBILE_PRESS_TARGET_SELECTOR } from '@/hooks/streamingHaptics';
+import { useUIStore } from '@/stores/useUIStore';
 
 import {
   MobileProjectsHome,
@@ -135,7 +136,7 @@ describe('MobileProjectsHome header menu', () => {
     document.body.innerHTML = '';
   });
 
-  test('all four actions use semantic active fill and one global menuitem haptic target', async () => {
+  test('menu actions use semantic active fill and one global menuitem haptic target', async () => {
     const { root, container } = mount({
       ...baseProps,
       onScanQr: noop,
@@ -151,7 +152,7 @@ describe('MobileProjectsHome header menu', () => {
     });
 
     const items = Array.from(document.body.querySelectorAll<HTMLElement>('[data-slot="dropdown-menu-item"]'));
-    expect(items).toHaveLength(4);
+    expect(items).toHaveLength(5);
     for (const item of items) {
       expect(item.getAttribute('role')).toBe('menuitem');
       expect(item.className).toContain('active:bg-interactive-active');
@@ -166,7 +167,7 @@ describe('MobileProjectsHome header menu', () => {
 });
 
 describe('MobileProjectsHome global pinned group', () => {
-  test('hides the global group while filtering projects', () => {
+  test('hides the global group while filtering projects', async () => {
     const { root, container } = mount({
       ...baseProps,
       pinnedSessions: [{
@@ -177,7 +178,9 @@ describe('MobileProjectsHome global pinned group', () => {
     });
 
     expect(container.textContent).toContain('Global pinned session');
-    const searchTrigger = container.querySelector<HTMLButtonElement>('button[aria-label="Search sessions"]');
+    clickMenuTrigger(container);
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)); });
+    const searchTrigger = findMenuItem('Search sessions');
     expect(searchTrigger).not.toBeNull();
     act(() => searchTrigger!.click());
 
@@ -192,5 +195,15 @@ describe('MobileProjectsHome global pinned group', () => {
     expect(container.textContent).not.toContain('Global pinned session');
     root.unmount();
     document.body.innerHTML = '';
+  });
+
+  test('exposes global search directly in the mobile header', () => {
+    const { root, container } = mount(baseProps);
+    const trigger = container.querySelector<HTMLButtonElement>('button[aria-label="Global search"]');
+    expect(trigger).not.toBeNull();
+    act(() => trigger!.click());
+    expect(useUIStore.getState().isCommandPaletteOpen).toBe(true);
+    act(() => { useUIStore.getState().setCommandPaletteOpen(false); root.unmount(); });
+    container.remove();
   });
 });

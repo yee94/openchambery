@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { appendComposerQuote, composerQuoteKey, documentWithComposerQuotes, messageWithComposerQuotes } from './composerQuotes';
+import { appendComposerQuote, composerQuoteKey, documentWithComposerQuotes, messageWithComposerQuotes, splitQuotedConversationMessage } from './composerQuotes';
 
 describe('composer quotes', () => {
   test('keys prefer the session and fall back to the new-session draft', () => {
@@ -20,6 +20,12 @@ describe('composer quotes', () => {
     expect(messageWithComposerQuotes(['line one\nline two'], 'explain')).toBe('Quoted from the conversation:\n\n> line one\n> line two\n\nexplain');
     expect(messageWithComposerQuotes(['keep'], '/compact')).toBe('/compact');
     expect(messageWithComposerQuotes([], 'explain')).toBe('explain');
+    expect(splitQuotedConversationMessage(messageWithComposerQuotes(['line one\nline two', 'alpha'], 'explain'))).toEqual({
+      quotes: ['line one\nline two', 'alpha'],
+      body: 'explain',
+    });
+    expect(splitQuotedConversationMessage('> not our prefix')).toBeNull();
+    expect(splitQuotedConversationMessage('Quoted from the conversation:\n\nplain paragraph')).toBeNull();
   });
 
   test('shifts reference ranges by the prefix and leaves commands unchanged', () => {

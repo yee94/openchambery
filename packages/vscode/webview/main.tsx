@@ -3,6 +3,7 @@ import { onCommand, onThemeChange, proxyApiRequest, proxySessionMessageRequest, 
 import { vscodeStreamPerfCount, vscodeStreamPerfMeasure, vscodeStreamPerfObserve } from './api/streamPerf';
 import { extractBodyBase64, extractBodyText, extractJsonBody, hasInitBody } from './requestBodyTransport';
 import { isMessageQueueRoute } from './messageQueueRoute';
+import { browserProviderUnsupportedBody, isBrowserProviderRoute } from './browserProviderRoute';
 import {
   handleSessionTurnPageRoute,
   isSessionTurnPageRoute,
@@ -407,6 +408,10 @@ const handleLocalApiRequest = async (input: RequestInfo | URL, url: URL, init: R
 
   if (normalizedPathname.startsWith('/api/openchamber/tunnel/')) {
     return unsupportedWebRouteResponse('Remote tunnel settings');
+  }
+
+  if (isBrowserProviderRoute(normalizedPathname)) {
+    return jsonResponse(browserProviderUnsupportedBody(), 501);
   }
 
   if (isMessageQueueRoute(normalizedPathname)) {
@@ -1076,6 +1081,33 @@ const handleLocalApiRequest = async (input: RequestInfo | URL, url: URL, init: R
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       return jsonResponse({ error: message }, pluginConfigErrorStatus(message));
+    }
+  }
+
+  if (pathname === '/api/opencode/compatibility' && method === 'GET') {
+    try {
+      const data = await sendBridgeMessage('api:opencode/compatibility');
+      return jsonResponse(data);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      return jsonResponse({ error: message }, 502);
+    }
+  }
+
+  if (pathname === '/api/opencode/install-required' && method === 'POST') {
+    try {
+      const data = await sendBridgeMessage<{ success?: boolean; upgraded?: boolean; version?: string; error?: string }>('api:opencode/install-required');
+      if (!data || data.upgraded !== true || data.success !== true) {
+        return jsonResponse({
+          success: false,
+          upgraded: false,
+          error: data?.error || 'OpenCode installation failed',
+        }, 500);
+      }
+      return jsonResponse(data);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      return jsonResponse({ success: false, upgraded: false, error: message }, 500);
     }
   }
 

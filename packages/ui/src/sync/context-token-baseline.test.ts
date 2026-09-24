@@ -2,6 +2,7 @@ import { describe, expect, test } from 'vitest';
 
 import {
   hasCompactionPartType,
+  isCompactionBaselineRow,
   readContextTokenCount,
   scanContextTokenBaseline,
   sumContextTokenRecord,
@@ -27,9 +28,26 @@ describe('scanContextTokenBaseline', () => {
   test('skips token-less assistants but never crosses a compaction row', () => {
     const messages = [
       { id: 'a1', role: 'assistant', tokens: TOKENS },
-      { id: 'u-compact', role: 'user' },
+      { id: 'c1', role: 'assistant', clientRole: 'compaction', type: 'compaction' },
       // Post-compaction assistant still streaming: all-zero token placeholder.
       { id: 'a2', role: 'assistant', tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } } },
+    ];
+
+    expect(scanContextTokenBaseline(messages, (id) => (id === 'c1' ? [{ type: 'compaction' }] : undefined))).toEqual({
+      compacted: true,
+    });
+  });
+
+  test('assistant-role v2 compaction resets even when it carries request tokens', () => {
+    const messages = [
+      { id: 'a1', role: 'assistant', tokens: TOKENS },
+      {
+        id: 'c1',
+        role: 'assistant',
+        clientRole: 'compaction',
+        type: 'compaction',
+        tokens: { input: 4000, output: 200, reasoning: 0, cache: { read: 0, write: 0 } },
+      },
     ];
 
     expect(scanContextTokenBaseline(messages, () => [{ type: 'compaction' }])).toEqual({ compacted: true });
@@ -38,7 +56,7 @@ describe('scanContextTokenBaseline', () => {
   test('compaction row newer than the last assistant resets the baseline', () => {
     const messages = [
       { id: 'a1', role: 'assistant', tokens: TOKENS },
-      { id: 'u-compact', role: 'user' },
+      { id: 'c1', role: 'assistant', clientRole: 'compaction' },
     ];
 
     expect(scanContextTokenBaseline(messages, () => [{ type: 'compaction' }])).toEqual({ compacted: true });
@@ -47,11 +65,11 @@ describe('scanContextTokenBaseline', () => {
   test('a post-compaction assistant with tokens wins over the compaction row', () => {
     const messages = [
       { id: 'a1', role: 'assistant', tokens: TOKENS },
-      { id: 'u-compact', role: 'user' },
+      { id: 'c1', role: 'assistant', clientRole: 'compaction', type: 'compaction' },
       { id: 'a2', role: 'assistant', tokens: { input: 12, output: 3, reasoning: 0, cache: { read: 0, write: 0 } } },
     ];
 
-    expect(scanContextTokenBaseline(messages, (id) => (id === 'u-compact' ? [{ type: 'compaction' }] : undefined))).toEqual({
+    expect(scanContextTokenBaseline(messages, (id) => (id === 'c1' ? [{ type: 'compaction' }] : undefined))).toEqual({
       messageId: 'a2',
       totalTokens: 15,
       tokens: { input: 12, output: 3, reasoning: 0, cache: { read: 0, write: 0 } },
@@ -87,5 +105,9 @@ describe('scanContextTokenBaseline', () => {
     expect(hasCompactionPartType([{ type: 'compaction' }])).toBe(true);
     expect(hasCompactionPartType(undefined)).toBe(false);
     expect(hasCompactionPartType([{ type: 'text', text: '/compact' }])).toBe(false);
+    expect(isCompactionBaselineRow({ role: 'assistant', clientRole: 'compaction' }, undefined)).toBe(true);
+    expect(isCompactionBaselineRow({ role: 'assistant', type: 'compaction' }, undefined)).toBe(true);
+    expect(isCompactionBaselineRow({ role: 'assistant' }, [{ type: 'compaction' }])).toBe(true);
+    expect(isCompactionBaselineRow({ role: 'assistant' }, [{ type: 'text' }])).toBe(false);
   });
 });

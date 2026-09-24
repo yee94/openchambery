@@ -10,7 +10,7 @@
  * Busy send: same path with `delivery: "queue"`. Success is an **inbox** item
  * (pending near the composer), not a transcript row — consumption moves the
  * same id into message projection.
- * Inbox (SDK 2.0.12 / verified through 2.0.14):
+ * Inbox (SDK 2.0.12 / verified through 2.0.15; prompt routes unchanged):
  * - GET `/api/session/:sessionID/inbox`
  * - PATCH `/api/session/:sessionID/inbox/:inboxID` body `{ delivery }` → 204
  * - DELETE `/api/session/:sessionID/inbox/:inboxID` → 204

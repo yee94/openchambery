@@ -2,6 +2,7 @@ import * as React from 'react';
 import { useEvent } from '@reactuses/core';
 
 import { Icon } from '@/components/icon/Icon';
+import { GlobalSearchButton } from '@/components/layout/GlobalSearchButton';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -561,18 +562,7 @@ export function MobileProjectsHome({
         title={t('mobile.sessions.section.projects')}
         trailing={(
           <>
-            <Button
-              type="button"
-              variant="mobileGlass"
-              size="mobileIcon"
-              aria-label={searchOpen
-                ? t('mobile.sessions.clearSearchAria')
-                : t('mobile.sessions.searchAria')}
-              aria-expanded={searchOpen}
-              onClick={handleToggleSearch}
-            >
-              <Icon name={searchOpen ? 'close' : 'search'} className="size-5" />
-            </Button>
+            <GlobalSearchButton mobile />
             <DropdownMenu open={menuOpen} onOpenChange={handleMenuOpenChange}>
               <DropdownMenuTrigger asChild>
                 <Button
@@ -591,6 +581,10 @@ export function MobileProjectsHome({
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" side="bottom" className="min-w-44">
+                <DropdownMenuItem className="min-h-11" onSelect={handleToggleSearch}>
+                  <Icon name={searchOpen ? 'close' : 'search'} className="size-4" />
+                  {searchOpen ? t('mobile.sessions.clearSearchAria') : t('mobile.sessions.searchAria')}
+                </DropdownMenuItem>
                 <DropdownMenuItem className="min-h-11" onSelect={handleNewSession}>
                   <Icon name="chat-new" className="size-4" />
                   {t('mobile.projects.menu.newChat')}

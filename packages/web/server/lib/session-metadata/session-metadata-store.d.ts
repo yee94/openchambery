@@ -33,4 +33,6 @@ export function createSessionMetadataStore(options: {
   fsPromises?: typeof import('node:fs').promises;
   path?: typeof import('node:path');
   now?: () => number;
+  recordReader?: (sessionID: string, directory?: string | null) => Promise<object | null>;
+  recordWriter?: (sessionID: string, metadata: object, directory?: string | null) => Promise<void>;
 }): SessionMetadataStore;

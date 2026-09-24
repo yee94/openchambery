@@ -181,7 +181,13 @@ describe('session metadata Host archive runtime', () => {
       undefined,
       encodeBody({ archivedAt: 1_700_000_000_123, directory: '/repo' }),
     );
-    assert.equal(fetchMock.mock.calls.length, 1);
+    // Upstream GET, record read, then metadata PATCH. Title stays off the PATCH.
+    assert.equal(fetchMock.mock.calls.length, 3);
+    const patchCall = fetchMock.mock.calls.find((call) => (call[1] as RequestInit | undefined)?.method === 'PATCH');
+    assert.ok(patchCall);
+    const patchBody = JSON.parse(String((patchCall![1] as RequestInit).body));
+    assert.equal(patchBody.metadata.openchamber.archive.archivedAt, 1_700_000_000_123);
+    assert.equal(patchBody.title, undefined);
     // First call must have used the real v2 URL + auth.
     {
       const firstUrl = String(fetchMock.mock.calls[0]![0]);

@@ -126,13 +126,11 @@ export function isRetryInBackoff(status: SessionStatus, now: number): boolean {
  * Live `session.next.*` / activity means the retry attempt already resumed.
  * Promote `retry` → `busy` so the retry overlay and retryInfo clear.
  */
-export function promoteRetryToBusyOnLiveActivity(
+function writeLiveBusy(
   store: StoreApi<DirectoryStore>,
   sessionID: string,
-  now: number = Date.now(),
-): boolean {
-  const status = store.getState().session_status?.[sessionID]
-  if (status?.type !== "retry") return false
+  now: number,
+): void {
   store.setState((state) => {
     const nextErrorAt = { ...state.session_error_at }
     delete nextErrorAt[sessionID]
@@ -148,6 +146,34 @@ export function promoteRetryToBusyOnLiveActivity(
       session_error_at: nextErrorAt,
     }
   })
+}
+
+export function promoteRetryToBusyOnLiveActivity(
+  store: StoreApi<DirectoryStore>,
+  sessionID: string,
+  now: number = Date.now(),
+): boolean {
+  const status = store.getState().session_status?.[sessionID]
+  if (status?.type !== "retry") return false
+  writeLiveBusy(store, sessionID, now)
+  return true
+}
+
+/**
+ * A live step/text/tool frame means this turn is running now.
+ * Restart can miss the earlier `session.execution.started` / `session.active`
+ * snapshot while those frames still arrive; missing or idle status must become
+ * busy. An existing busy entry is unchanged.
+ */
+export function noteLiveSessionActivity(
+  store: StoreApi<DirectoryStore>,
+  sessionID: string,
+  now: number = Date.now(),
+): boolean {
+  const status = store.getState().session_status?.[sessionID]
+  if (status?.type === "busy") return false
+  if (status?.type === "retry") return promoteRetryToBusyOnLiveActivity(store, sessionID, now)
+  writeLiveBusy(store, sessionID, now)
   return true
 }
 

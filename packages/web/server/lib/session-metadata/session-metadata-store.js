@@ -1,25 +1,27 @@
 /**
- * OpenChamber-owned session metadata.
+ * OpenChamber session metadata cache and migration source.
  *
- * OpenCode 2.x accepts `metadata` only when a session is created; the v1
- * `PATCH /session/{id}` route is gone and nothing replaces it. Session goal
- * progress (and later assist / pinned notes) live here: one JSON file per data
- * dir, `{ [sessionID]: metadata }`, folded back onto the sessions the proxy
- * serves so clients keep reading `session.metadata` where they always did.
+ * The OpenCode session record is the durable authority for title, archive, and
+ * other OpenChamber metadata (`opencode-session-record.js`). This JSON file
+ * remains the cache and the pre-migration source. A failed or corrupt read is
+ * never empty success: the store stays unwritable and does not overwrite
+ * unknown disk state or the OpenCode record.
  *
  * Writes are a JSON Merge Patch (RFC 7386): nested objects merge key by key and
- * a `null` deletes. That is what the old PATCH did, and it is what keeps two
- * features writing into the same `openchamber` namespace from erasing each
- * other — goal mode saving progress must not drop an assist recap.
+ * a `null` deletes. That keeps two features writing into the same `openchamber`
+ * namespace from erasing each other — goal mode saving progress must not drop
+ * an assist recap. When a record reader and writer are wired, the merged object
+ * is written onto the OpenCode session before the local cache commits. A failed
+ * record read is not treated as empty metadata.
  *
  * Mutations are fully serialized. Committed `entries` update only after a
  * successful persist so concurrent readers never observe uncommitted drafts.
- * A failed or corrupt file read is never empty success: the store stays
- * unwritable and reports the error instead of overwriting unknown disk state.
  */
 
 import fsDefault from 'node:fs';
 import pathDefault from 'node:path';
+
+import { mergeOwnedMetadata } from './opencode-session-record.js';
 
 const METADATA_FILE_NAME = 'sessions-metadata.json';
 const HOST_ARCHIVE_KEY = 'archive';
@@ -103,13 +105,22 @@ const applyReservedArchiveProtection = (previous, patch, merged, { allowArchive 
  * @param {typeof fsDefault.promises} [options.fsPromises]
  * @param {typeof pathDefault} [options.path]
  * @param {() => number} [options.now]
+ * @param {(sessionID: string, directory?: string | null) => Promise<object | null>} [options.recordReader]
+ *   OpenCode session read. Null means the session is gone. Any other failure throws.
+ * @param {(sessionID: string, metadata: object, directory?: string | null) => Promise<void>} [options.recordWriter]
+ *   Writes the full merged metadata onto the OpenCode session record. Must not send title.
  */
 export const createSessionMetadataStore = ({
   dataDir,
   fsPromises = fsDefault.promises,
   path = pathDefault,
   now = Date.now,
+  recordReader = null,
+  recordWriter = null,
 }) => {
+  if (typeof recordWriter === 'function' && typeof recordReader !== 'function') {
+    throw new Error('session record writer requires a record reader');
+  }
   const filePath = path.join(dataDir, METADATA_FILE_NAME);
 
   /** sessionID → metadata. Committed only — never holds an in-flight draft. */
@@ -218,11 +229,27 @@ export const createSessionMetadataStore = ({
     return next;
   };
 
-  const get = async (sessionID) => {
+  const readRecordMetadata = async (id, directory) => {
+    if (typeof recordReader !== 'function') return undefined;
+    try {
+      const record = await recordReader(id, directory);
+      if (record == null) return null;
+      return isPlainObject(record.metadata) ? record.metadata : {};
+    } catch (error) {
+      if (entries.has(id)) return undefined;
+      throw error;
+    }
+  };
+
+  const get = async (sessionID, options = {}) => {
     const id = asNonEmptyString(sessionID);
     if (!id) return {};
     await ensureReadable();
-    return entries.get(id) ?? {};
+    const side = entries.get(id);
+    const fromRecord = await readRecordMetadata(id, options.directory);
+    if (fromRecord === undefined) return side ?? {};
+    if (fromRecord === null) return side ?? {};
+    return mergeOwnedMetadata(fromRecord, side);
   };
 
   const has = async (sessionID) => {
@@ -243,16 +270,36 @@ export const createSessionMetadataStore = ({
    */
   const commitMergedPatch = async (id, previous, patch, options = {}) => {
     const allowArchive = options.allowArchive === true;
+    let base = previous;
+    if (typeof recordReader === 'function') {
+      let record;
+      try {
+        record = await recordReader(id, options.directory);
+      } catch (error) {
+        // A failed read is not an empty record. Do not replace metadata we could not see.
+        throw error;
+      }
+      if (record == null) {
+        const error = new Error(`session ${id} was not found`);
+        error.status = 404;
+        throw error;
+      }
+      base = mergeOwnedMetadata(record.metadata, previous);
+    }
     const effectivePatch = allowArchive ? patch : stripArchiveFromMetadataPatch(patch);
 
-    let merged = mergeMetadataPatch(previous, effectivePatch);
-    merged = applyReservedArchiveProtection(previous, patch, merged, { allowArchive });
+    let merged = mergeMetadataPatch(base, effectivePatch);
+    merged = applyReservedArchiveProtection(base, patch, merged, { allowArchive });
+
+    if (typeof recordWriter === 'function') {
+      await recordWriter(id, merged, options.directory);
+    }
 
     const nextMap = new Map(entries);
     if (Object.keys(merged).length === 0) nextMap.delete(id);
     else nextMap.set(id, merged);
 
-    // Persist draft snapshot first; publish to committed entries only on success.
+    // OpenCode write already landed. Publish the local cache only after its persist succeeds.
     await persistMap(nextMap);
 
     if (Object.keys(merged).length === 0) entries.delete(id);

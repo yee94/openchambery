@@ -11,6 +11,7 @@ import {
   readOpenCode2BinaryVersion,
   resolveOpenChamberDataDir,
 } from './ensure-cli.js';
+import { registerUpgradeScreenRoutes } from './upgrade-screen.js';
 import { evaluateRuntimeContract } from './runtime-contract.js';
 import {
   buildUpgradeStatusSnapshot,
@@ -252,6 +253,35 @@ export const registerOpenCodeRoutes = (app, dependencies) => {
     if (typeof payload?.message === 'string' && payload.message.trim()) return payload.message.trim();
     return fallback;
   };
+
+  registerUpgradeScreenRoutes(app, {
+    resolveOwnership: resolveOwnershipContext,
+    readServeVersion: async () => {
+      const probe = await readOpenCodeCurrentVersion().catch(() => ({ currentVersion: null }));
+      return probe.currentVersion || null;
+    },
+    readCliVersion: () => {
+      const fromRuntime = typeof getOpenCodeCliVersion === 'function' ? getOpenCodeCliVersion() : null;
+      if (fromRuntime) return fromRuntime;
+      const binaryPath = typeof getResolvedOpenCodeBinary === 'function' ? getResolvedOpenCodeBinary() : null;
+      return binaryPath ? readOpenCode2BinaryVersion(binaryPath) : null;
+    },
+    readConfiguredBinary: async () => {
+      const settings = await readSettingsFromDiskMigrated();
+      return typeof settings?.opencodeBinary === 'string' ? settings.opencodeBinary : null;
+    },
+    persistBinary: async (binaryPath) => {
+      await persistSettings({ opencodeBinary: binaryPath });
+    },
+    getResolvedBinary: getResolvedOpenCodeBinary,
+    getResolvedBinarySource: getResolvedOpenCodeBinarySource,
+    forceBinary: typeof forceResolvedOpenCodeBinary === 'function' ? forceResolvedOpenCodeBinary : null,
+    restart: typeof restartOpenCode === 'function' ? restartOpenCode : null,
+    waitReady: typeof waitForOpenCodeReady === 'function' ? waitForOpenCodeReady : null,
+    isSharedService: () => getIsSharedOpenCodeService() === true,
+    install: (options) => installPinnedOpenCode2Cli({ ...options, dataDir: resolveDataDir() }),
+    readBinaryVersion: readOpenCode2BinaryVersion,
+  });
 
   app.get('/api/config/settings', async (req, res) => {
     try {
