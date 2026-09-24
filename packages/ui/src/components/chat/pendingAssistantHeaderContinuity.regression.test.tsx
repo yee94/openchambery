@@ -325,6 +325,47 @@ describe('new conversation assistant header continuity', () => {
     expect(container.querySelector('[data-restart-notice]')?.getAttribute('data-message-id')).toBe('restart-2');
   });
 
+  test.each([
+    [false, 'live'], [true, 'live'], [false, 'sorted'], [true, 'sorted'],
+  ] as const)('keeps automatic compaction before the continuing reply (mobile=%s, mode=%s)', async (mobile, mode) => {
+    mocks.uiState.isMobile = mobile;
+    mocks.uiState.chatRenderMode = mode;
+    const before = assistantMessage({ completed: true, parts: [textPart('before checkpoint')] });
+    before.info.finish = 'length';
+    const checkpoint = normalizeSessionProjectionMessage(sessionID, {
+      id: 'compact-1', type: 'compaction', time: { created: 3 }, status: 'completed', reason: 'auto',
+    })!;
+    const running = normalizeSessionProjectionMessage(sessionID, {
+      id: 'compact-1', type: 'compaction', time: { created: 3 }, status: 'running', reason: 'auto',
+    })!;
+    await renderMessages([userMessage(), before, running], true);
+    const originalDivider = container.querySelector('[data-compaction-card]');
+    const originalTurn = getTurnLayout(container);
+    expect(container.querySelector('[data-turn-assistant-activity-expanded]')?.getAttribute('data-turn-assistant-activity-expanded')).toBe('true');
+    await renderMessages([userMessage(), before, checkpoint], true);
+    expect(container.querySelector('[data-compaction-card]')).toBe(originalDivider);
+    expect(container.querySelector('[data-turn-assistant-activity-expanded]')?.getAttribute('data-turn-assistant-activity-expanded')).toBe('true');
+    const continuation = assistantMessage({ completed: false, parts: [textPart('after checkpoint')] });
+    continuation.info = { ...continuation.info, id: 'assistant-2', time: { created: 4 } };
+    await renderMessages([userMessage(), before, checkpoint, continuation], true);
+    const divider = container.querySelector('[data-compaction-card]');
+    const reply = container.querySelector('[data-message-id="assistant-2"]');
+    expect(divider).toBeTruthy();
+    expect(reply).toBeTruthy();
+    expect(divider!.compareDocumentPosition(reply!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(container.querySelectorAll('[data-compaction-card]')).toHaveLength(1);
+    expect(divider).toBe(originalDivider);
+    expect(getTurnLayout(container)).toBe(originalTurn);
+    const final = { ...continuation, info: { ...continuation.info, finish: 'stop', time: { created: 4, completed: 5 } } };
+    await renderMessages([userMessage(), before, checkpoint, final], false);
+    expect(container.querySelector('[data-compaction-card]')).toBe(originalDivider);
+    await renderMessages([], false);
+    await renderMessages([userMessage(), before, checkpoint, final], false);
+    const reloadedDivider = container.querySelector('[data-compaction-card]');
+    const reloadedReply = container.querySelector('[data-message-id="assistant-2"]');
+    expect(reloadedDivider!.compareDocumentPosition(reloadedReply!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
   test.each(['live', 'sorted'] as const)('renders an execution failure inside its turn below the model header (%s)', async (mode) => {
     mocks.uiState.chatRenderMode = mode;
     mocks.errorAt = 100;

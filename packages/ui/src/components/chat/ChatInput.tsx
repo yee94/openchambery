@@ -2,7 +2,7 @@ import React from 'react';
 import { useEvent, useResizeObserver } from '@reactuses/core';
 import { isCapacitorApp } from '@/lib/platform';
 import { isMobileOverlayFocusRestoreSuppressed } from '@/lib/mobileOverlayFocusRestore';
-import { canUseNativeMediaPick, pickNativeMediaFiles, NATIVE_MEDIA_PICK_LIMIT } from '@/lib/native-media-pick';
+import { canUseNativeMediaPick, pickNativeMediaFiles, NATIVE_MEDIA_PICK_LIMIT, usesAndroidAttachPickSheet } from '@/lib/native-media-pick';
 import { MobileAttachPickSheet } from './MobileAttachPickSheet';
 import { useNativeIosComposer } from './useNativeIosComposer';
 import { useIosNativeUiEnabled } from '@/lib/iosNativeUi';
@@ -613,7 +613,7 @@ type ComposerAttachmentControlsProps = {
     onMenuOpenChange?: (open: boolean) => void;
     /** Mobile: open the attachment bottom sheet instead of the dropdown menu. */
     onOpenMobileSheet?: () => void;
-    /** Mobile: open the photos/files half-sheet instead of the system picker. */
+    /** Android: open the photos/files half-sheet instead of the system picker. */
     onOpenAndroidPickSheet?: () => void;
     withTooltip?: boolean;
 };
@@ -633,8 +633,8 @@ const ComposerAttachmentControls = React.memo(function ComposerAttachmentControl
 
     const isMobileAttach = Boolean(props.onOpenMobileSheet);
     const attachLabel = t('chat.chatInput.actions.attachFiles');
-    // Mobile opens the photos/files half-sheet. This fallback is the direct
-    // all-files picker for desktop and any surface without that sheet.
+    // Android opens the photos/files half-sheet. This fallback is the direct
+    // all-files picker for iOS, desktop, and any surface without that sheet.
     const handlePick = handlePickLocalFiles;
 
     const attachButton = (
@@ -1801,6 +1801,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
     );
     const mobileAgentControlsDisabled = !surface.active || !surface.selection.change || secondarySelectionUnavailable;
     const isMobile = useUIStore((state) => state.isMobile);
+    const androidAttachPickSheet = usesAndroidAttachPickSheet();
     const setImagePreviewOpen = useUIStore((state) => state.setImagePreviewOpen);
     const handleShowAttachmentPopup = React.useCallback((content: ToolPopupContent) => {
         if (!content.image) return;
@@ -6544,8 +6545,8 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
         textareaRef.current?.blur();
     }, [markComposerActionGesture]);
 
-    // Mobile photos/files half-sheet. Android Capacitor photos use the native
-    // picker; other mobile surfaces use the image file input.
+    // Android photos/files half-sheet. Capacitor photos use the native picker;
+    // other Android surfaces use the image file input. iOS must not open it.
     const openAndroidMediaPickSheet = React.useCallback(() => {
         markComposerActionGesture();
         setAndroidMediaPickSheetOpen(true);
@@ -7023,7 +7024,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
                         openIssuePicker={openIssuePicker}
                         openPrPicker={openPrPicker}
                         onOpenMobileSheet={openMobileAttachSheet}
-                        onOpenAndroidPickSheet={openAndroidMediaPickSheet}
+                        onOpenAndroidPickSheet={androidAttachPickSheet ? openAndroidMediaPickSheet : undefined}
                     />
                 </div>
                 <div
@@ -7091,7 +7092,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
                         openPrPicker={openPrPicker}
                         onOpenSettings={onOpenSettings}
                         onOpenMobileSheet={openMobileAttachSheet}
-                        onOpenAndroidPickSheet={openAndroidMediaPickSheet}
+                        onOpenAndroidPickSheet={androidAttachPickSheet ? openAndroidMediaPickSheet : undefined}
                     />
                     {showPermissionAutoAcceptControl ? (
                         <PermissionAutoAcceptButton
@@ -8214,9 +8215,9 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
             </MobileResizableSheet>
         ) : null}
 
-        {/* Mobile photos/files chooser. Native iOS composer keeps its own menu
-            and must not open this web sheet. */}
-        {isMobile ? (
+        {/* Android photos/files chooser. iOS keeps its native menu or the
+            system picker and must not open this web sheet. */}
+        {androidAttachPickSheet ? (
             <MobileAttachPickSheet
                 id="android-media-pick-sheet"
                 open={androidMediaPickSheetOpen}

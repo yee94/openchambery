@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'bun:test';
+import { describe, expect, test } from 'vitest';
 import type { Message, Part } from '@/lib/opencode/v2-types';
 import { projectTurnRecords } from './projectTurnRecords';
 import type { ChatMessageEntry } from './types';
@@ -198,6 +198,30 @@ describe('projectTurnRecords', () => {
 
         expect(projection.turns).toHaveLength(0);
         expect(projection.ungroupedMessageIds.has('msg_compact')).toBe(true);
+    });
+
+    test.each(['running', 'completed'] as const)('automatic compaction %s keeps the same turn open until continuation', (status) => {
+        const user = createMessageEntry({ id: 'u1', role: 'user', createdAt: 1 });
+        const before = createMessageEntry({ id: 'a1', role: 'assistant', createdAt: 2, completedAt: 3, finish: 'length' });
+        const compact: ChatMessageEntry = {
+            info: { id: 'c1', role: 'assistant', clientRole: 'compaction', time: { created: 4 } } as Message,
+            parts: [{ id: 'c1:compaction', type: 'compaction', status, reason: 'auto' } as Part],
+        };
+        const initial = projectTurnRecords([user, before]);
+        const compacting = projectTurnRecords([user, before, compact], { previousProjection: initial });
+        expect(compacting.turns).toHaveLength(1);
+        expect(compacting.turns[0].completionDisposition).toBe('active');
+        expect(compacting.turns[0].hasConfirmedFinalBody).toBe(false);
+        expect(compacting.turns[0].messages.map((message) => message.messageId)).toEqual(['u1', 'a1', 'c1']);
+        expect(compacting.turns[0].assistantMessageIds).toEqual(['a1']);
+        expect(compacting.ungroupedMessageIds.has('c1')).toBe(false);
+        const after = createMessageEntry({ id: 'a2', role: 'assistant', createdAt: 5 });
+        const continuing = projectTurnRecords([user, before, compact, after], { previousProjection: compacting });
+        expect(continuing.turns[0].completionDisposition).toBe('active');
+        const final = createMessageEntry({ id: 'a2', role: 'assistant', createdAt: 5, completedAt: 6, finish: 'stop' });
+        expect(projectTurnRecords([user, before, compact, final]).turns[0].completionDisposition).toBe('normal');
+        const failed = { ...compact, parts: [{ ...compact.parts[0], status: 'failed' } as Part] };
+        expect(projectTurnRecords([user, before, failed]).turns[0].completionDisposition).toBe('abnormal');
     });
 
     test('keeps non-assistant orphan messages available as ungrouped entries', () => {

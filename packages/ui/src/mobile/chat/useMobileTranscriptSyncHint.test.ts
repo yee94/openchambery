@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'bun:test';
+import { describe, expect, test } from 'vitest';
 
 import {
   createSyncHintSmoother,
@@ -7,7 +7,7 @@ import {
 
 const idle = {
   sessionId: 'ses_1',
-  hasTranscript: true,
+  hasRenderableTranscript: true,
   loadStatus: 'ready' as const,
   userRefreshInFlight: false,
   backgroundResyncInFlight: false,
@@ -16,6 +16,18 @@ const idle = {
 };
 
 describe('resolveMobileTranscriptSyncHint', () => {
+  test('V2 metadata rows are not a synchronized transcript while content is missing', () => {
+    const incomplete = { ...idle, hasRenderableTranscript: false, loadStatus: 'loading' as const };
+    expect(resolveMobileTranscriptSyncHint(incomplete)).toBe('syncing');
+  });
+
+  test('cold idle and ready metadata gaps keep syncing, but a settled failure does not', () => {
+    for (const loadStatus of [undefined, 'ready', 'loading'] as const) {
+      expect(resolveMobileTranscriptSyncHint({ ...idle, hasRenderableTranscript: false, loadStatus })).toBe('syncing');
+    }
+    expect(resolveMobileTranscriptSyncHint({ ...idle, hasRenderableTranscript: false, loadStatus: 'error' })).toBeNull();
+  });
+
   test('hides on drafts and idle connected chats', () => {
     expect(resolveMobileTranscriptSyncHint({ ...idle, sessionId: '' })).toBeNull();
     expect(resolveMobileTranscriptSyncHint(idle)).toBeNull();
@@ -29,7 +41,7 @@ describe('resolveMobileTranscriptSyncHint', () => {
 
     expect(resolveMobileTranscriptSyncHint({
       ...idle,
-      hasTranscript: false,
+      hasRenderableTranscript: false,
       loadStatus: 'error',
       isConnected: false,
       connectionPhase: 'reconnecting',
@@ -37,7 +49,7 @@ describe('resolveMobileTranscriptSyncHint', () => {
 
     expect(resolveMobileTranscriptSyncHint({
       ...idle,
-      hasTranscript: false,
+      hasRenderableTranscript: false,
       loadStatus: 'loading',
     })).toBe('syncing');
   });
@@ -45,7 +57,7 @@ describe('resolveMobileTranscriptSyncHint', () => {
   test('hides once messages are present after a finished refresh', () => {
     expect(resolveMobileTranscriptSyncHint({
       ...idle,
-      hasTranscript: true,
+      hasRenderableTranscript: true,
       loadStatus: 'loading',
       userRefreshInFlight: false,
       backgroundResyncInFlight: false,

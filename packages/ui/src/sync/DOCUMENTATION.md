@@ -978,7 +978,7 @@ both readers agree on when a frame may shrink.
    (`transcript-authority-refresh-flight`) for mobile title hints. The whisper
    stays up only while that refresh is in flight, during cold first paint
    (no transcript yet), or while reconnecting before any messages exist.
-   A loaded transcript hides it even if the socket is still reconnecting or
+   A content-renderable transcript hides it even if the socket is still reconnecting or
    the InfiniteQuery observer is still `isFetching`. Background catch-up has
    its own ref-counted signal (`transcript-resync-flight`): the reconnect
    recovery tail pull for materialized sessions in `resyncDirectoryAfterReconnect`,
@@ -992,13 +992,18 @@ both readers agree on when a frame may shrink.
    hot revalidation (`runAuthorityHotRevalidate`), idle materialization, and
    the observe-time head check almost never find a diff — whispering there
    would flash noise on every session switch past their revalidation windows.
-   The painted hint is smoothed at the display layer
+   Native V2 metadata-only message rows do not count as a loaded transcript:
+   the title uses `useSessionMaterializationStatus`, matching Chat's cold
+   first-paint gate. Missing content keeps the hint through idle/ready request
+   gaps; a settled error ends it until retry. The painted hint is smoothed at the display layer
    (`createSyncHintSmoother` in `useMobileTranscriptSyncHint`): it appears
    only after 250ms of sustained work and stays 1000ms past the last flight
    clear, because one foreground resume legitimately runs several relayed
    recovery/reconcise flights (visibilitychange, pageshow, system-resume,
    debounced online each trigger their own cycle). The flight registries stay
-   exact; only the whisper rendering is hysteresis-debounced. Desktop session context-menu
+   exact; only the whisper rendering is hysteresis-debounced. Smoother state and
+   timers reset on session/directory change, immediately dropping the old hint.
+   Desktop session context-menu
    "Sync messages", the dedicated-mobile overflow "Sync messages", and the
    mobile session row-actions sheet all call
    `refreshSessionTranscript`. Do not route those buttons through `ensureInitial`

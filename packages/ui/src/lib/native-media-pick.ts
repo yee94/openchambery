@@ -1,6 +1,6 @@
 import { Capacitor, registerPlugin } from '@capacitor/core';
 
-import { isCapacitorApp } from '@/lib/platform';
+import { getClientPlatform, isCapacitorApp, type ClientPlatform } from '@/lib/platform';
 
 export const NATIVE_MEDIA_PICK_LIMIT = 20;
 
@@ -19,6 +19,33 @@ type OpenChamberMediaPlugin = {
 };
 
 const OpenChamberMedia = registerPlugin<OpenChamberMediaPlugin>('OpenChamberMedia');
+
+export type AndroidAttachPickSheetInput = {
+  platform: ClientPlatform;
+  userAgent: string;
+  userAgentDataPlatform?: string;
+};
+
+/**
+ * Photos/files half-sheet is Android-only. iOS uses its native composer menu
+ * or the system picker; web, desktop, and VS Code open the file input directly.
+ * Hosted Android browsers count too — the sheet is not limited to Capacitor.
+ */
+export function evaluateAndroidAttachPickSheet(input: AndroidAttachPickSheetInput): boolean {
+  return input.platform === 'android'
+    || /Android/i.test(input.userAgent)
+    || input.userAgentDataPlatform === 'Android';
+}
+
+export function usesAndroidAttachPickSheet(): boolean {
+  if (typeof window === 'undefined') return false;
+  const userAgentData = (navigator as Navigator & { userAgentData?: { platform?: string } }).userAgentData;
+  return evaluateAndroidAttachPickSheet({
+    platform: getClientPlatform(),
+    userAgent: navigator.userAgent || '',
+    userAgentDataPlatform: userAgentData?.platform,
+  });
+}
 
 /**
  * True only on Capacitor Android when the OpenChamberMedia native picker is
