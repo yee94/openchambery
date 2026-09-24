@@ -6,7 +6,6 @@ import { useWorkStatusVisibility } from '@/components/chat/work-status/useWorkSt
 import { useEffectiveDirectory } from '@/hooks/useEffectiveDirectory';
 import { isVSCodeRuntime } from '@/lib/desktop';
 import { useUIStore } from '@/stores/useUIStore';
-import { useSessionMessages } from '@/sync/sync-context';
 import { useSessionUIStore } from '@/sync/session-ui-store';
 
 const WorkStatusHost: React.FC<{
@@ -16,15 +15,12 @@ const WorkStatusHost: React.FC<{
     overlay?: boolean;
     publishVisible?: boolean;
 }> = ({ sessionId, directory, visible, overlay = false, publishVisible = false }) => {
-    const transcript = useSessionMessages(sessionId ?? '', directory ?? undefined);
     const setWorkStatusPanelVisible = useUIStore((state) => state.setWorkStatusPanelVisible);
-    const hasConversation = Boolean(sessionId) && transcript.length > 0;
     React.useEffect(() => {
         if (!publishVisible) return undefined;
-        setWorkStatusPanelVisible(visible && hasConversation);
+        setWorkStatusPanelVisible(visible);
         return () => setWorkStatusPanelVisible(false);
-    }, [hasConversation, publishVisible, setWorkStatusPanelVisible, visible]);
-    if (!hasConversation) return null;
+    }, [publishVisible, setWorkStatusPanelVisible, visible]);
     return (
         <WorkStatusPanel
             overlay={overlay}
@@ -49,6 +45,10 @@ export const ChatView: React.FC<ChatViewProps> = ({ readOnly = false, active = t
     const currentSessionId = useSessionUIStore((state) => state.currentSessionId);
     const currentSessionDirectory = useSessionUIStore((state) => state.currentSessionDirectory);
     const isDraftOpen = useSessionUIStore((state) => Boolean(state.newSessionDraft?.open));
+    const isDraftConversation = useSessionUIStore((state) => Boolean(
+        state.newSessionDraft?.open && state.newSessionDraft.pendingUserMessage
+        && (state.newSessionDraft.draftEstablishing || state.newSessionDraft.draftSubmitting)
+    ));
     const effectiveDirectory = useEffectiveDirectory();
     const isMobile = useUIStore((state) => state.isMobile);
     const isExpandedInput = useUIStore((state) => state.isExpandedInput);
@@ -59,8 +59,10 @@ export const ChatView: React.FC<ChatViewProps> = ({ readOnly = false, active = t
     const errorSessionId = selectionOverride?.sessionId ?? currentSessionId;
     const sessionId = selectionOverride?.sessionId ?? currentSessionId;
     const directory = selectionOverride?.directory ?? currentSessionDirectory ?? effectiveDirectory ?? null;
-    const { rowRef, visible, fits, layoutAllows } = useWorkStatusVisibility({ isMobile, isVSCode, directory });
-    const mountable = active && layoutAllows && !isExpandedInput && (Boolean(selectionOverride) || !isDraftOpen) && Boolean(sessionId);
+    const { visible, fits, layoutAllows } = useWorkStatusVisibility({ isMobile, isVSCode, directory });
+    const hasConversation = selectionOverride ? Boolean(selectionOverride.sessionId)
+        : isDraftOpen ? isDraftConversation : Boolean(sessionId);
+    const mountable = active && layoutAllows && !isExpandedInput && hasConversation;
     const showInline = mountable && visible;
     const showOverlay = mountable && workStatusEnabled && !fits && workStatusOverlayOpen;
 
@@ -70,7 +72,7 @@ export const ChatView: React.FC<ChatViewProps> = ({ readOnly = false, active = t
     }, [fits, mountable, setWorkStatusPanelFits]);
 
     return (
-        <div ref={rowRef} className="relative flex h-full min-h-0 min-w-0">
+        <div className="relative flex h-full min-h-0 min-w-0">
             <div className="min-h-0 min-w-0 flex-1">
                 <ChatErrorBoundary sessionId={errorSessionId || undefined}>
                     <ChatContainer readOnly={readOnly} active={active} explicitSession={selectionOverride ? { ...selectionOverride, active } : undefined} />

@@ -39,6 +39,7 @@ vi.mock('@/sync/session-ui-store', () => {
 
 vi.mock('@/sync/sync-context', () => ({
   useSessionMessages: () => [],
+  useAllLiveSessions: () => [],
 }));
 
 vi.mock('@/queries/commandQueries', () => ({
@@ -99,6 +100,7 @@ vi.mock('@/stores/useGlobalSessionsStore', () => ({
   useGlobalSessionsStore: (selector: (state: { activeSessions: [] }) => unknown) => selector({
     activeSessions: [],
   }),
+  mergeLiveSessionCatalog: (globalSessions: unknown[]) => globalSessions,
 }));
 
 vi.mock('@/lib/directoryShowHidden', () => ({

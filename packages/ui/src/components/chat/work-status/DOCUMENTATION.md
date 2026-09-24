@@ -1,8 +1,10 @@
 # Work-status column
 
 A short column beside the transcript. It is not a card and not a context-panel
-surface. It appears only after the current session has a message, and it hides
-when the right sidebar or the context panel is open.
+surface. It occupies its final width as soon as a session is selected or the
+first-prompt draft enters its establishing/submitting transcript state. Message
+loading does not gate the column. Idle welcome drafts keep it hidden, as do an
+open right sidebar or context panel.
 
 Rows stay one line: project, current branch, secondary worktree name, and working
 tree changes. Every row shares the same leading-icon and text alignment; there
@@ -49,4 +51,10 @@ Changes opens the Git sidebar. Branch does not navigate.
 Layout exclusion applies to both inline and overlay modes, scoped to the displayed
 directory, without mutating the saved visibility preference.
 
-Width is fixed at 196px. The header toggle uses `settings-2`.
+Width is fixed at 196px. Inline display requires a window viewport of at least
+1440px, evaluated on the first render with `useMediaQuery`; it does not wait for
+chat-area measurements. Inline width and margins do not animate, so entering
+chat and crossing the breakpoint do not repeatedly reflow the transcript.
+Narrow windows retain the manually opened overlay with opacity/transform
+transitions. Mobile and VS Code keep the column disabled.
+The header toggle uses `settings-2`.

@@ -1,5 +1,4 @@
 import { Icon } from '@/components/icon/Icon';
-import { cn } from '@/lib/utils';
 import type { AssistantErrorPresentation } from './assistantErrorPresentation';
 
 export function ResponseStatusRow({ presentation }: { presentation: AssistantErrorPresentation }) {
@@ -11,10 +10,7 @@ export function ResponseStatusRow({ presentation }: { presentation: AssistantErr
             className="flex w-full min-w-0 items-start gap-1.5 typography-meta leading-5 text-muted-foreground"
         >
             <span className="inline-flex h-5 shrink-0 items-center" aria-hidden="true">
-                <Icon name={icon} className={cn('size-3.5',
-                    variant === 'error' && 'text-[var(--status-error)]/85',
-                    variant === 'info' && 'text-[var(--status-info)]/80',
-                )} />
+                <Icon name={icon} className="size-3.5" />
             </span>
             <span className="min-w-0 flex-1 whitespace-pre-wrap [overflow-wrap:anywhere]">
                 {text}

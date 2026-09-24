@@ -125,6 +125,24 @@ describe('session mentions', () => {
         }).map((session) => session.id)).toEqual(['ses_recent', 'ses_created', 'ses_without_time']);
     });
 
+    test('search matches the live overlay title, not a stale global title', async () => {
+        const { mergeLiveSessionCatalog } = await import('@/stores/useGlobalSessionsStore');
+        const global = { id: 'ses_restart', title: '重启更新消失', time: { created: 1, updated: 10 } } as Session;
+        const live = { id: 'ses_restart', title: '重启更新问题', time: { created: 1, updated: 10 } } as Session;
+        const sessions = mergeLiveSessionCatalog([global], [live]);
+
+        expect(getVisibleSessionMentionCandidates({
+            sessions,
+            currentSessionId: null,
+            searchQuery: '重启更新问题',
+        }).map((session) => session.title)).toEqual(['重启更新问题']);
+        expect(getVisibleSessionMentionCandidates({
+            sessions,
+            currentSessionId: null,
+            searchQuery: '重启更新消失',
+        })).toEqual([]);
+    });
+
     test('creates stable tokens and collects unique session IDs in message order', () => {
         expect(getSessionMentionToken('ses_123')).toBe('session:ses_123');
         expect(collectSessionMentionIds('Compare @session:ses_123 with @session:ses_456 and @session:ses_123.')).toEqual([

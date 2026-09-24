@@ -467,10 +467,13 @@ export async function reconcileActiveSessionStatusAfterMessagePull({
   transport,
   skipActive,
 }: MessagePullStatusReconciliationInput): Promise<DirectorySessionStatusSnapshot | null> {
-  if (!isTailPage || !hasMessages || !statusBeforePull || statusBeforePull.type === "idle" || isStale?.()) {
+  if (!isTailPage || !hasMessages || statusBeforePull?.type === "idle" || isStale?.()) {
     return null
   }
 
+  // Cold-start snapshots can precede discovery of this session. A missing
+  // status needs an active probe after its tail loads, including quiet tools
+  // that emit no live frames until they finish. Message shape is not authority.
   // A live status transition during the message pull already supplied newer
   // authority. Reconcile only the exact active snapshot that began the pull.
   const current = store.getState()

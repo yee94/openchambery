@@ -368,6 +368,89 @@ describe("applySessionStatusSnapshot", () => {
 })
 
 describe("reconcileActiveSessionStatusAfterMessagePull", () => {
+  test("restores a quiet running session after cold-start snapshots precede session discovery", async () => {
+    const store = createDirectoryStore({})
+    const queryClient = new QueryClient()
+    let activeLoads = 0
+    const options = {
+      queryClient,
+      now: () => 100,
+      loadSnapshot: async () => null,
+      loadActive: async (): Promise<SessionActiveResult> => {
+        activeLoads += 1
+        return { state: "supported", membership: { ses_a: { type: "running" }, foreign: { type: "running" } } }
+      },
+    }
+
+    // Stream ready precedes the restored route/catalog. No live tool frames
+    // arrive while the long command waits, so the later tail pull must recover.
+    await resyncDirectorySessionStatuses("/repo", store, [], options)
+    expect(store.getState().session_status.ses_a).toBeUndefined()
+    await reconcileActiveSessionStatusAfterMessagePull({
+      directory: "/repo",
+      sessionID: "ses_a",
+      store,
+      statusBeforePull: undefined,
+      statusObservedAtBeforePull: undefined,
+      hasMessages: true,
+      ...options,
+    })
+
+    expect(store.getState().session_status.ses_a).toEqual({ type: "busy" })
+    expect(store.getState().session_status.foreign).toBeUndefined()
+    expect(activeLoads).toBe(2)
+    queryClient.clear()
+  })
+
+  test.each([
+    { result: { state: "supported", membership: {} } as SessionActiveResult, expected: { type: "idle" }, snapshotAt: 100 },
+    { result: { state: "unknown" } as SessionActiveResult, expected: undefined, snapshotAt: undefined },
+  ])("cold-start tail uses active authority, not unfinished history: $result.state", async ({ result, expected, snapshotAt }) => {
+    const store = createDirectoryStore({ message: { ses_a: streamingMessage() } })
+    const queryClient = new QueryClient()
+    await reconcileActiveSessionStatusAfterMessagePull({
+      directory: "/repo",
+      sessionID: "ses_a",
+      store,
+      statusBeforePull: undefined,
+      statusObservedAtBeforePull: undefined,
+      hasMessages: true,
+      queryClient,
+      now: () => 100,
+      loadSnapshot: async () => null,
+      loadActive: async () => result,
+    })
+    expect(store.getState().session_status.ses_a).toEqual(expected)
+    expect(store.getState().session_status_snapshot_at).toBe(snapshotAt)
+    queryClient.clear()
+  })
+
+  test("cold-start recovery preserves an idle event arriving during the active probe", async () => {
+    const store = createDirectoryStore({})
+    const queryClient = new QueryClient()
+    await reconcileActiveSessionStatusAfterMessagePull({
+      directory: "/repo",
+      sessionID: "ses_a",
+      store,
+      statusBeforePull: undefined,
+      statusObservedAtBeforePull: undefined,
+      hasMessages: true,
+      queryClient,
+      now: () => 100,
+      loadSnapshot: async () => null,
+      loadActive: async () => {
+        store.setState({
+          session_status: { ses_a: { type: "idle" } },
+          session_status_observed_at: { ses_a: 101 },
+        })
+        return { state: "supported", membership: { ses_a: { type: "running" } } }
+      },
+    })
+    expect(store.getState().session_status.ses_a).toEqual({ type: "idle" })
+    expect(store.getState().session_status_observed_at.ses_a).toBe(101)
+    queryClient.clear()
+  })
+
   test("lowers an unchanged busy status to idle after a successful tail pull", async () => {
     const statusBeforePull: SessionStatus = { type: "busy" }
     const store = createDirectoryStore({

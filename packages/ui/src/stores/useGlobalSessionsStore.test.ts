@@ -28,6 +28,7 @@ mock.module('@/lib/openchamberEvents', () => ({
 
 // Load after the tip mock so waitForSessionIndexInvalidation binds the double.
 const {
+  mergeLiveSessionCatalog,
   mergeLiveSessionWithGlobalSession,
   refreshStartupGlobalSessionsForDirectories,
   resolveGlobalSessionDirectory,
@@ -2440,5 +2441,39 @@ describe('mergeLiveSessionWithGlobalSession', () => {
 
     const merged = mergeLiveSessionWithGlobalSession(live, global);
     expect(resolveGlobalSessionDirectory(merged)).toBe('/repo/worktree');
+  });
+});
+
+describe('mergeLiveSessionCatalog', () => {
+  test('prefers the live title over a stale global/index title', () => {
+    const global = buildSession('https://global.example/s', {
+      id: 'ses_restart',
+      title: '重启更新消失',
+      directory: '/repo/app',
+    });
+    const live = buildSession('https://live.example/s', {
+      id: 'ses_restart',
+      title: '重启更新问题',
+      directory: '/repo/app',
+    });
+
+    const merged = mergeLiveSessionCatalog([global], [live]);
+    expect(merged).toHaveLength(1);
+    expect(merged[0]?.title).toBe('重启更新问题');
+    expect(merged[0]?.share?.url).toBe('https://global.example/s');
+  });
+
+  test('keeps global-only sessions and appends live-only sessions', () => {
+    const globalOnly = buildSession('https://global.example/a', { id: 'ses_global', title: 'Global only' });
+    const sharedGlobal = buildSession('https://global.example/b', { id: 'ses_shared', title: 'Stale' });
+    const sharedLive = buildSession('https://live.example/b', { id: 'ses_shared', title: 'Fresh' });
+    const liveOnly = buildSession('https://live.example/c', { id: 'ses_live', title: 'Live only' });
+
+    const merged = mergeLiveSessionCatalog([globalOnly, sharedGlobal], [sharedLive, liveOnly]);
+    expect(merged.map((session) => `${session.id}:${session.title}`)).toEqual([
+      'ses_global:Global only',
+      'ses_shared:Fresh',
+      'ses_live:Live only',
+    ]);
   });
 });

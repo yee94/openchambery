@@ -287,7 +287,7 @@ describe('new conversation assistant header continuity', () => {
 
   test.each([
     [false, 'live'], [true, 'live'], [false, 'sorted'], [true, 'sorted'],
-  ] as const)('renders restart recovery as a notice across reload and resumed output (mobile=%s, mode=%s)', async (mobile, mode) => {
+  ] as const)('retires the restart notice on resumed output and history reload (mobile=%s, mode=%s)', async (mobile, mode) => {
     mocks.uiState.isMobile = mobile;
     mocks.uiState.chatRenderMode = mode;
     const restart = normalizeSessionProjectionMessage(sessionID, {
@@ -301,13 +301,28 @@ describe('new conversation assistant header continuity', () => {
     expect(container.querySelectorAll('[data-restart-notice]')).toHaveLength(1);
     expect(container.querySelector('[data-restart-notice]')?.textContent).toBe('chat.response.continuingAfterRestart');
     expect(container.querySelector('[data-restart-notice] use')?.getAttribute('href')).toBe('#oc-restart');
+    expect(container.querySelector('[data-restart-notice] svg')?.getAttribute('class')).not.toContain('--status-');
     expect(container.textContent).not.toContain('Continue from where you left off');
+    const streaming = assistantMessage({ completed: false, parts: [textPart('continuing')] });
+    streaming.info = { ...streaming.info, id: 'assistant-2', time: { created: 4 } };
+    await renderMessages([userMessage(), interrupted, restart, streaming], true);
+    expect(container.querySelectorAll('[data-restart-notice]')).toHaveLength(0);
     const resumed = assistantMessage({ completed: true, parts: [textPart('continued answer')] });
     resumed.info = { ...resumed.info, id: 'assistant-2', time: { created: 4, completed: 5 } };
     await renderMessages([userMessage(), interrupted, restart, resumed], false);
-    expect(container.querySelectorAll('[data-restart-notice]')).toHaveLength(1);
+    expect(container.querySelectorAll('[data-restart-notice]')).toHaveLength(0);
     expect(container.textContent).toContain('continued answer');
     expect(container.querySelector('[data-restart-notice] .animate-spin')).toBeNull();
+    await renderMessages([], false);
+    await renderMessages([userMessage(), interrupted, restart, resumed], false);
+    expect(container.querySelectorAll('[data-restart-notice]')).toHaveLength(0);
+    const nextRestart = normalizeSessionProjectionMessage(sessionID, {
+      id: 'restart-2', type: 'synthetic', time: { created: 6 },
+      description: 'Continuing after restart', text: 'Restart instruction',
+    })!;
+    await renderMessages([userMessage(), interrupted, restart, resumed, nextRestart], false);
+    expect(container.querySelectorAll('[data-restart-notice]')).toHaveLength(1);
+    expect(container.querySelector('[data-restart-notice]')?.getAttribute('data-message-id')).toBe('restart-2');
   });
 
   test.each(['live', 'sorted'] as const)('renders an execution failure inside its turn below the model header (%s)', async (mode) => {

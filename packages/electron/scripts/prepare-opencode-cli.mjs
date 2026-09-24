@@ -4,6 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { resolveTargetArchitecture } from './target-architecture.mjs';
+import { toGitBashPath } from './git-bash-path.mjs';
 import {
   PINNED_OPENCODE2_VERSION,
   bundledOpenCode2BinaryName,
@@ -132,9 +133,9 @@ const extractArchive = (archivePath, destination) => {
     return;
   }
   if (archivePath.endsWith('.tar.gz') || archivePath.endsWith('.tgz')) {
-    // Git Bash GNU tar treats "D:..." as a remote host. --force-local keeps the drive path local.
+    // Git Bash GNU tar needs POSIX drive paths, and --force-local prevents remote archive handling.
     const args = process.platform === 'win32'
-      ? ['--force-local', '-xzf', archivePath, '-C', destination]
+      ? ['--force-local', '-xzf', toGitBashPath(archivePath), '-C', toGitBashPath(destination)]
       : ['-xzf', archivePath, '-C', destination];
     run('tar', args);
     return;

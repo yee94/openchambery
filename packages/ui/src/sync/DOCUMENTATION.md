@@ -139,6 +139,8 @@ Owning modules: `session-prompt-api.ts`, `session-inbox-overlay.ts`,
 
 ## Scope
 
+After a successful transcript tail pull, `reconcileActiveSessionStatusAfterMessagePull` also probes `session.active` when the session's local status is missing. Cold-start bootstrap / stream-ready snapshots can run before the restored route or catalog discovers the session; a quiet long-running tool supplies no new live frames to repair that omission. The tail pull supplies the directory-local session ID, while the active snapshot alone supplies busy/idle authority. Explicit idle, history-only, empty, stale, and live-superseded pulls retain their existing skip behavior; failed probes preserve unknown state and newer live events win. This shared recovery applies to every UI runtime without periodic status polling or historical-tool activity inference.
+
 Production v2 transcript page flights retain the 30-second independent timer race from Host turn pages, including context/anchor enrichment. Abort is best-effort; a native bridge ignoring it cannot leave the caller pending forever. Failed flights do not publish partial pages.
 
 This document covers the current client-side session/data architecture in `packages/ui/src/sync` and the rules for updating stores safely.

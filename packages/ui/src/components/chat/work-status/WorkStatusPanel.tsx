@@ -63,13 +63,13 @@ export const WorkStatusPanel: React.FC<Props> = ({ sessionId, directory, visible
         width: overlay || visible ? WORK_STATUS_PANEL_WIDTH : 0,
         opacity: visible ? 1 : 0,
         transform: visible ? 'none' : overlay ? 'translateY(-6px)' : 'translateX(24px)',
-        transitionProperty: 'width, opacity, transform, margin',
+        transitionProperty: overlay ? 'opacity, transform' : 'none',
         transitionDuration: `${PANEL_TRANSITION_MS}ms`,
         transitionTimingFunction: 'cubic-bezier(0.22, 1, 0.36, 1)',
         pointerEvents: visible ? undefined : 'none',
       }}
     >
-      {contentMounted ? <WorkStatusCompact sessionId={sessionId} directory={directory} /> : null}
+      {visible || (overlay && contentMounted) ? <WorkStatusCompact sessionId={sessionId} directory={directory} /> : null}
     </aside>
   );
 };

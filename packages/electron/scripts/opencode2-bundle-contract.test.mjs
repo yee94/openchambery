@@ -38,6 +38,8 @@ test('prepare and verify scripts no longer pull 1.18.x or name the binary openco
   assert.match(verify, /opencode2/);
   assert.doesNotMatch(prepare, /binary:\s*'opencode'/);
   assert.match(prepare, /--force-local/);
+  assert.match(prepare, /toGitBashPath\(archivePath\)/);
+  assert.match(prepare, /toGitBashPath\(destination\)/);
 });
 
 test('ssh-manager installs @opencode/cli and probes opencode', () => {
