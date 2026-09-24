@@ -5,10 +5,11 @@ export type FollowUpEnterAction =
     | { kind: 'queue' };
 
 /**
- * Enter / Ctrl+Enter while the composer can address a session.
- * Ctrl/Cmd+Enter during a running primary turn admits through the queue and
- * then steers that item, so the message stays visible as steering instead of
- * being consumed off the queue surface.
+ * Enter / Send / Ctrl+Enter while the composer can address a session.
+ * Plain Enter and the Send button use `ctrlEnter: false` and follow
+ * `followUpBehavior` (default queue). Ctrl/Cmd+Enter during a running primary
+ * turn admits through the queue and then steers that item, so the message
+ * stays visible as steering instead of being consumed off the queue surface.
  */
 export const resolveFollowUpEnterAction = (input: {
     followUpBehavior: FollowUpBehavior;

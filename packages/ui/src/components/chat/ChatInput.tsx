@@ -196,7 +196,7 @@ import {
     type ComposerSendPhase,
 } from '@/sync/composer-send-manager';
 import { drainEstablishingFollowUps } from '@/sync/composer-send-drain';
-import { getInboxTerminal, updateInboxOverlayDelivery, useSessionInboxOverlayStore, toChip as toInboxChip, EMPTY_INBOX_CHIPS } from '@/sync/session-inbox-overlay';
+import { forgetUnpromotedInbox, getInboxTerminal, holdInboxSteering, listHeldInboxSteering, releaseInboxSteering, updateInboxOverlayDelivery, useSessionInboxOverlayStore, toChip as toInboxChip, EMPTY_INBOX_CHIPS } from '@/sync/session-inbox-overlay';
 import { cancelUnpromotedInboxItem, queueSessionInbox, steerSessionInbox } from '@/sync/session-prompt-api';
 import { canPromoteInboxItem, useSessionCompactionBarrierStore } from '@/sync/session-compaction-api';
 import { runQueueMessageFireAndForget } from './queueMessageFireAndForget';
@@ -821,6 +821,7 @@ type ComposerActionButtonsProps = {
     stopIconSizeClass: string;
     canSend: boolean;
     canAbort: boolean;
+    abortPending: boolean;
     hasContent: boolean;
     currentSessionId: string | null;
     newSessionDraftOpen: boolean;
@@ -844,7 +845,8 @@ const ComposerActionButtons = React.memo(function ComposerActionButtons(props: C
         sendIconSizeClass,
         stopIconSizeClass,
         canSend,
-        canAbort,
+        canAbort: sessionCanAbort,
+        abortPending,
         hasContent,
         currentSessionId,
         newSessionDraftOpen,
@@ -857,6 +859,7 @@ const ComposerActionButtons = React.memo(function ComposerActionButtons(props: C
         onAbort,
     } = props;
     const { t } = useI18n();
+    const canAbort = sessionCanAbort || abortPending;
     const actionAvailability = resolveComposerActionAvailability({
         canSend,
         hasSessionTarget: Boolean(currentSessionId || newSessionDraftOpen),
@@ -978,13 +981,15 @@ const ComposerActionButtons = React.memo(function ComposerActionButtons(props: C
                 type="button"
                 data-composer-stop="true"
                 onClick={onAbort}
+                disabled={abortPending}
+                aria-busy={abortPending || undefined}
                 className={cn(
                     circleButtonClass,
                     'relative z-30'
                 )}
                 aria-label={t('chat.chatInput.actions.stopGeneratingAria')}
             >
-                <StopIcon className={cn(circleGlyphClass)} />
+                {abortPending ? <SendCircleIcon className={circleGlyphClass} spinning /> : <StopIcon className={cn(circleGlyphClass)} />}
             </button>
         </div>
     );
@@ -998,6 +1003,7 @@ const ComposerActionButtons = React.memo(function ComposerActionButtons(props: C
     && prev.stopIconSizeClass === next.stopIconSizeClass
     && prev.canSend === next.canSend
     && prev.canAbort === next.canAbort
+    && prev.abortPending === next.abortPending
     && prev.hasContent === next.hasContent
     && prev.currentSessionId === next.currentSessionId
     && prev.newSessionDraftOpen === next.newSessionDraftOpen
@@ -2455,6 +2461,16 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
         item: QueuePendingAdmissionItem;
     } | null>(null);
     const [steeringMessageIDs, setSteeringMessageIDs] = React.useState<ReadonlySet<string>>(() => new Set());
+    // Drop 引导中 only after the running turn settles. Releasing mid-turn is what
+    // made steer recycle and the queue 引导 button eat the chip immediately.
+    React.useEffect(() => {
+        if (!currentSessionId || sessionIsRunning) return;
+        const held = listHeldInboxSteering(currentSessionId);
+        if (held.length === 0 && steeringMessageIDs.size === 0) return;
+        releaseInboxSteering(currentSessionId);
+        for (const inboxID of held) forgetUnpromotedInbox(currentSessionId, inboxID, 'consumed');
+        setSteeringMessageIDs((current) => (current.size === 0 ? current : new Set()));
+    }, [currentSessionId, sessionIsRunning, steeringMessageIDs.size]);
     const visibleNativeAdmission = nativeQueueAdmission
         && nativeQueueAdmission.sessionID === currentSessionId
         && isQueueAdmissionRuntimeCurrent(nativeQueueAdmission.runtime, surfaceResources.captureRuntime())
@@ -3209,6 +3225,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
         };
         if (nativeQueueMessageID && currentSessionId) {
             if (steerAfterAdmit) {
+                holdInboxSteering(currentSessionId, nativeQueueMessageID);
                 setSteeringMessageIDs((current) => {
                     if (current.has(nativeQueueMessageID)) return current;
                     const next = new Set(current);
@@ -4109,6 +4126,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
         void sendPromise.then(async () => {
             if (steerAfterAdmit && nativeQueueMessageID && primarySubmitSessionIdAtStart) {
                 const releaseSteering = () => {
+                    releaseInboxSteering(primarySubmitSessionIdAtStart, nativeQueueMessageID);
                     setSteeringMessageIDs((current) => {
                         if (!current.has(nativeQueueMessageID)) return current;
                         const next = new Set(current);
@@ -4223,7 +4241,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
     // Update ref with latest handleSubmit on every render
     handleSubmitRef.current = handleSubmit;
 
-    // Primary Send steers; Enter retains the selected follow-up behavior.
+    // Send matches Enter. Default follow-up is queue; Cmd/Ctrl+Enter is the steer shortcut.
     const handlePrimaryAction = useEvent(() => {
         if (getLocalChatCommand(getCurrentInputSnapshot().message, inputMode) === 'btw') {
             void handleSubmitRef.current();
@@ -4240,13 +4258,19 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
         const queueUsable = canQueue
             && queueModeAllowsMutations(serverQueue.mode)
             && assistantQueueAdmissionAvailable(surface.deliveryTarget?.kind, serverQueue.mode);
-        if (canQueue && surface.kind === 'primary') {
-            void handleSubmitRef.current({ delivery: 'steer' });
-        } else if (followUpBehavior === 'queue' && queueUsable) {
+        const followUpAction = resolveFollowUpEnterAction({
+            followUpBehavior,
+            ctrlEnter: false,
+            canQueue: Boolean(canQueue),
+            queueUsable: Boolean(queueUsable),
+            primary: surface.kind === 'primary',
+            sessionIsRunning,
+            autoReviewRunning,
+        });
+        if (followUpAction.kind === 'queue') {
             queueMessageFromEvent();
-        } else if ((followUpBehavior === 'steer' && canQueue) || (followUpBehavior === 'queue' && canQueue && !queueUsable)) {
-            // Queue-unavailable busy sessions steer into the captured running turn.
-            void handleSubmitRef.current(canQueue ? { delivery: 'steer' } : undefined);
+        } else if (followUpAction.delivery) {
+            void handleSubmitRef.current({ delivery: followUpAction.delivery });
         } else {
             void handleSubmitRef.current();
         }
@@ -4854,16 +4878,39 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
         }, 1800);
     }, []);
 
-    const handleAbort = React.useCallback(() => {
+    const abortFlightsRef = React.useRef(new Set<string>());
+    const [abortFlights, setAbortFlights] = React.useState<ReadonlySet<string>>(() => new Set());
+    const abortScope = JSON.stringify([surface.transportIdentity, surface.runtimeGeneration, surface.surfaceID, surface.directory, currentSessionId]);
+    const abortPending = abortFlights.has(abortScope);
+    const handleAbort = useEvent(async () => {
+        if (abortFlightsRef.current.has(abortScope)) return;
+        const scope = abortScope;
+        abortFlightsRef.current.add(scope);
+        setAbortFlights(new Set(abortFlightsRef.current));
         surfaceResources.abortPrompt.clear();
         startAbortIndicator();
 
-        if (surface.kind === 'secondary') {
-            void controllerWiring?.shortcut('abort');
-            return;
+        let timeout: ReturnType<typeof setTimeout> | undefined;
+        try {
+            const request = surface.kind === 'secondary'
+                ? controllerWiring?.shortcut('abort')
+                : abortCurrentOperation();
+            // Bound only the UI lock; a timeout does not confirm that execution stopped.
+            // The race settles once, so a late request cannot release a newer flight.
+            await Promise.race([
+                request,
+                new Promise<void>((resolve) => {
+                    timeout = setTimeout(resolve, 10_000);
+                }),
+            ]);
+        } catch (error) {
+            console.error('[ChatInput] abort failed', error);
+        } finally {
+            clearTimeout(timeout);
+            abortFlightsRef.current.delete(scope);
+            setAbortFlights(new Set(abortFlightsRef.current));
         }
-        void abortCurrentOperation();
-    }, [abortCurrentOperation, controllerWiring, startAbortIndicator, surface.kind, surfaceResources]);
+    });
 
     const handleCycleAgent = React.useCallback((direction: 1 | -1 = 1) => {
         if (secondarySelectionUnavailable) return;
@@ -6992,7 +7039,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
                             />
                         </div>
                     ) : null}
-                    {canAbort || canSend ? (
+                    {canAbort || canSend || abortPending ? (
                         <div
                             data-mobile-composer-compact-slot="action"
                             data-composer-action="true"
@@ -7008,6 +7055,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
                                 stopIconSizeClass={stopIconSizeClass}
                                 canSend={canSend}
                                 canAbort={canAbort}
+                                abortPending={abortPending}
                                 hasContent={false}
                                 currentSessionId={currentSessionId}
                                 newSessionDraftOpen={newSessionDraftOpen}
@@ -7077,6 +7125,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
                         stopIconSizeClass={stopIconSizeClass}
                         canSend={canSend}
                         canAbort={canAbort}
+                        abortPending={abortPending}
                         hasContent={!!hasContent}
                         currentSessionId={currentSessionId}
                         newSessionDraftOpen={newSessionDraftOpen}
@@ -7154,6 +7203,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
                     stopIconSizeClass={stopIconSizeClass}
                     canSend={canSend}
                     canAbort={canAbort}
+                    abortPending={abortPending}
                     hasContent={!!hasContent}
                     currentSessionId={currentSessionId}
                     newSessionDraftOpen={newSessionDraftOpen}
@@ -7234,10 +7284,25 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
                 if (!currentSessionId) return;
                 if (!canPromoteInboxItem({ sessionID: currentSessionId })) return;
                 const directory = currentSessionDirectoryForSync ?? currentDirectory ?? '';
-                // PATCH delivery=steer → 204; helper updates overlay under scope guard.
-                // The chip mutation owns immediate feedback until authority arrives.
-                return steerSessionInbox({ sessionID: currentSessionId, inboxID, directory })
+                const sessionID = currentSessionId;
+                // Same recycle as Cmd+Enter: keep the chip on 引导中 until the turn
+                // settles, instead of letting steer consumption eat it immediately.
+                holdInboxSteering(sessionID, inboxID);
+                setSteeringMessageIDs((current) => {
+                    if (current.has(inboxID)) return current;
+                    const next = new Set(current);
+                    next.add(inboxID);
+                    return next;
+                });
+                return steerSessionInbox({ sessionID, inboxID, directory })
                     .catch(() => {
+                        releaseInboxSteering(sessionID, inboxID);
+                        setSteeringMessageIDs((current) => {
+                            if (!current.has(inboxID)) return current;
+                            const next = new Set(current);
+                            next.delete(inboxID);
+                            return next;
+                        });
                         toast.error(t('chat.chatInput.toast.messageSendFailed'));
                     });
             }}

@@ -4,6 +4,15 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [2.0.0-beta.9] - 2026-09-24
+
+这是 OpenCode 2 预览版，需要手动下载安装包。本次不发布 OTA；iOS 不上 TestFlight，不进入外测组或稳定自动更新通道。
+
+### 对话与输入
+
+- 会话忙碌时，Enter 和发送按钮默认进入队列，不再直接引导；只有 Cmd/Ctrl+Enter 才会引导。
+- Cmd/Ctrl+Enter 的引导回收，以及队列里点「引导」，都会停在队列里显示「引导中…」，直到当前轮次结束，不会一进对话就被吃掉。
+
 ## [2.0.0-beta.8] - 2026-09-24
 
 这是 OpenCode 2 预览版，需要手动下载安装包。本次不发布 OTA；iOS 仅上传 TestFlight 内测，不进入外测组或稳定自动更新通道。

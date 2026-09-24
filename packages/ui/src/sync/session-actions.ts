@@ -347,7 +347,10 @@ export async function settleSessionPromptAfterSend(input: {
     return
   }
 
-  if (input.inboxID && !pendingInInbox && promotedIDs.includes(input.inboxID)) {
+  // Queue / steer-recycle stays on the composer until delivered or the turn
+  // settles. A projection hit is not consumption — the user message can land
+  // in history while the inbox chip is still 引导中.
+  if (input.delivery !== "queue" && input.inboxID && !pendingInInbox && promotedIDs.includes(input.inboxID)) {
     forgetUnpromotedInbox(input.sessionId, input.inboxID, "consumed")
   }
 

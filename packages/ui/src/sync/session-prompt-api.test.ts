@@ -363,6 +363,28 @@ describe("busy inbox queue / steer / cancel (ticket 07)", () => {
     expect(selectInboxOverlayChips(SESSION)).toEqual([])
   })
 
+  test("steer recycle stays on the queue when the transcript already has the message id", async () => {
+    const {
+      forgetPromotedInbox,
+      forgetUnpromotedInbox,
+      holdInboxSteering,
+      resetInboxTerminalReceiptsForTests,
+      selectInboxOverlayChips,
+      useSessionInboxOverlayStore,
+    } = await import('./session-inbox-overlay')
+    resetInboxTerminalReceiptsForTests()
+    const store = useSessionInboxOverlayStore.getState()
+    useSessionInboxOverlayStore.setState({ bySession: {} })
+    store.remember({ id: 'msg_waiting', sessionID: SESSION, timeCreated: 1, type: 'user', delivery: 'queue', payload: { text: 'stay' } })
+    store.updateDelivery(SESSION, 'msg_waiting', 'steer')
+    forgetPromotedInbox(SESSION, ['msg_older', 'msg_waiting'])
+    expect(selectInboxOverlayChips(SESSION).map((chip) => chip.messageID)).toEqual(['msg_waiting'])
+    expect(selectInboxOverlayChips(SESSION)[0]?.delivery).toBe('steer')
+    holdInboxSteering(SESSION, 'msg_waiting')
+    forgetUnpromotedInbox(SESSION, 'msg_waiting', 'consumed')
+    expect(selectInboxOverlayChips(SESSION).map((chip) => chip.messageID)).toEqual(['msg_waiting'])
+  })
+
   test("cancel removes overlay and leaves no transcript residue", async () => {
     const { cancelUnpromotedInboxItem, transcriptRowsFromIdlePromptResponse } = await import("./session-prompt-api")
     const {
@@ -618,7 +640,8 @@ describe("busy inbox queue / steer / cancel (ticket 07)", () => {
     expect(promptApi).toContain("steerSessionInbox")
     expect(promptApi).toContain("queueSessionInbox")
     expect(store).toMatch(/delivery\?:\s*'steer'\s*\|\s*'queue'/)
-    expect(chatInput).toContain("delivery: 'queue'")
+    expect(chatInput).toContain("steerAfterAdmit ? 'queue'")
+    expect(chatInput).toContain("holdInboxSteering")
     expect(chatInput).toContain("cancelUnpromotedInboxItem")
     expect(chatInput).toContain("steerSessionInbox")
     expect(chatInput).toContain("queueSessionInbox")
