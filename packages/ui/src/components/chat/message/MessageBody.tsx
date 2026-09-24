@@ -2226,6 +2226,31 @@ const AssistantMessageBody = React.memo(({
             i++;
         }
 
+        // Trailing markdown zeros last-paragraph margin so a process fold can
+        // sit on getToolRowBlockClass (py-1 / py-1.5). Live StatusRow has no
+        // such block padding, so a composing reply would stick to the text.
+        // Only the last painted assistant text needs this; a trailing tool row
+        // already owns that gap.
+        const lastElement = rendered.at(-1);
+        const lastIsAssistantText = React.isValidElement(lastElement)
+            && (lastElement.props as { 'data-message-text-export-source'?: string })['data-message-text-export-source'] === 'true';
+        if (
+            lastIsAssistantText
+            && effectiveStreamPhase !== 'completed'
+            && !isTurnSettled
+            && !errorPresentation
+            && (!turnGroupingContext || turnGroupingContext.isLastAssistantInTurn)
+        ) {
+            const lastText = lastElement as React.ReactElement<Record<string, unknown>>;
+            rendered[rendered.length - 1] = React.cloneElement(lastText, {
+                className: cn(
+                    typeof lastText.props.className === 'string' ? lastText.props.className : undefined,
+                    isMobile ? 'pb-1' : 'pb-1.5',
+                ),
+                'data-live-status-text-gap': '',
+            });
+        }
+
         return rendered;
     }, [
         activityByPart,
@@ -2251,7 +2276,9 @@ const AssistantMessageBody = React.memo(({
         shouldRenderActivityGroup,
         shouldShowStandaloneMessageActions,
         effectiveStreamPhase,
+        errorPresentation,
         hasStreamingHapticLifecycle,
+        isTurnSettled,
         showReasoningTraces,
         shouldDeferSortedInlineText,
         streamSortedFinalBody,

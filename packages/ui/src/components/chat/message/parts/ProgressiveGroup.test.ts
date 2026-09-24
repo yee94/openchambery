@@ -193,6 +193,19 @@ describe('progressive activity presentation', () => {
         expect(chatMessageSource).toContain('headerCompletionDisposition: turnGroupingContext?.completionDisposition');
     });
 
+    test('live composing text borrows the process-fold block gap before StatusRow', () => {
+        // Last markdown paragraph margin is zeroed so a process fold can sit on
+        // getToolRowBlockClass. StatusRow has no such padding, so a text-only
+        // composing reply would stick to the body without this gap.
+        expect(messageBodySource).toContain("['data-message-text-export-source'] === 'true'");
+        expect(messageBodySource).toContain("'data-live-status-text-gap': ''");
+        expect(messageBodySource).toContain("isMobile ? 'pb-1' : 'pb-1.5'");
+        expect(messageBodySource).toContain('!turnGroupingContext || turnGroupingContext.isLastAssistantInTurn');
+        expect(messageBodySource).toContain('effectiveStreamPhase !== \'completed\'');
+        expect(messageBodySource).toContain('!isTurnSettled');
+        expect(messageBodySource).toContain('!errorPresentation');
+    });
+
     test('uses one full-width disclosure with identical title geometry in both states', () => {
         const activityStatusSource = progressiveGroupSource.slice(
             progressiveGroupSource.indexOf('const activityStatusLabel = completionDisposition === undefined'),
