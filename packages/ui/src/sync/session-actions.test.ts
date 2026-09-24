@@ -761,6 +761,41 @@ describe("fetchMessagesForSession startup race", () => {
     expectSessionProjection(1)
   })
 
+  test("selection loads through the repository and keeps A cached after switching to B", async () => {
+    const { QueryClient } = await import("@tanstack/react-query")
+    const { createQueryTranscriptRepository } = await import("./transcript-repository-query-adapter")
+    const { bindTranscriptRepositoryInstance, unbindTranscriptRepository, transcriptScope } = await import("./transcript-repository-runtime")
+    const { fetchMessagesForSession, setActionRefs } = await import("./session-actions")
+    const client = new QueryClient()
+    let finish!: (page: import("./transcript-repository").TranscriptTransportPage) => void
+    let fetches = 0
+    const repo = createQueryTranscriptRepository({ client, fetcher: () => {
+      fetches += 1
+      return new Promise((resolve) => { finish = resolve })
+    } })
+    const store = createStore({}, { session: [{ id: "session-a", time: { created: 1 } } as Session] })
+    setActionRefs(mockSdk as unknown as OpencodeClient, createChildStores([["/test/project", store]]), () => "/test/project")
+    bindTranscriptRepositoryInstance(repo)
+    try {
+      const flight = fetchMessagesForSession("session-a", "/test/project")
+      await Promise.resolve()
+      expect(fetches).toBe(1)
+      mocks.uiCurrentSessionId = "session-b"
+      finish({ records: [{ info: { id: "msg_a", sessionID: "session-a", role: "user", time: { created: 1 } } as Message,
+        parts: [{ id: "part_a", messageID: "msg_a", sessionID: "session-a", type: "text", text: "cached A" } as Part] }], complete: true })
+      await flight
+      expect(repo.getTranscript(transcriptScope("/test/project", "session-a")).messageOrder).toEqual(["msg_a"])
+      expect(repo.getTranscript(transcriptScope("/test/project", "session-b")).messageOrder).toEqual([])
+      mocks.uiCurrentSessionId = "session-a"
+      await fetchMessagesForSession("session-a", "/test/project")
+      expect(fetches).toBe(1)
+    } finally {
+      unbindTranscriptRepository()
+      repo.destroy()
+      client.clear()
+    }
+  })
+
   test("selection materialize uses Host initial turn purpose on every surface", async () => {
     const store = createStore({}, {
       session: [
@@ -1246,7 +1281,10 @@ describe("fetchMessagesForSession startup race", () => {
       time: { created: 1 },
     } as Message
     mocks.sessionMessagesResult = {
-      data: [{ info: existingUser, parts: [{ id: "prt_cb", type: "text", text: "hi" } as Part] }],
+      data: Array.from({ length: 20 }, (_, index) => ({
+        info: { ...existingUser, id: `msg_cb_${index}`, time: { created: index + 1 } },
+        parts: [{ id: `prt_cb_${index}`, type: "text", text: "hi" } as Part],
+      })),
     }
     mocks.hostTurnPageBehavior = { cursor: "msg_cb_user", complete: false }
     const store = createStore({}, {
@@ -1262,7 +1300,7 @@ describe("fetchMessagesForSession startup race", () => {
     expect(store.getState().session_history_boundary[sessionID]).toEqual({
       kind: "has-more",
       cursor: "msg_cb_user",
-      loadedTurns: 1,
+      loadedTurns: 20,
     })
   })
 

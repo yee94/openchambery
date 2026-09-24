@@ -1878,6 +1878,7 @@ const ChatContainerContent: React.FC<ChatContainerContentProps> = ({
         });
     const sessionTranscriptGate = resolveChatSessionTranscriptGate({
         hasTranscriptShell,
+        transcriptRecords: sessionMessages,
         p0Satisfied: transcriptHydration.p0Satisfied,
         hasBusyShell: sessionIsWorking && hasTranscriptShell,
         hasImmediateShell: pendingUserMessages.length > 0 || historyPrefix.length > 0,
