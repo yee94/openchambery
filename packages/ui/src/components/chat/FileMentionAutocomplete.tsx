@@ -13,12 +13,13 @@ import { useDirectoryShowHidden } from '@/lib/directoryShowHidden';
 import { useFilesViewShowGitignored } from '@/lib/filesViewShowGitignored';
 import { useI18n } from '@/lib/i18n';
 import { useUIStore } from '@/stores/useUIStore';
+import { mergeLiveSessionCatalog, useGlobalSessionsStore } from '@/stores/useGlobalSessionsStore';
 import { ComposerAutocompleteLayer } from './ComposerAutocompleteLayer';
 import {
   composerAutocompleteRowClassName,
 } from './composerAutocompleteChrome';
 import { useSessionUIStore } from '@/sync/session-ui-store';
-import { useGlobalSessionsStore } from '@/stores/useGlobalSessionsStore';
+import { useAllLiveSessions } from '@/sync/sync-context';
 import type { Session } from '@/lib/opencode/v2-types';
 import {
   buildMentionRows,
@@ -88,6 +89,7 @@ export const FileMentionAutocomplete = React.forwardRef<FileMentionHandle, FileM
   const currentDirectory = useChatSearchDirectory() ?? '';
   const currentSessionId = useSessionUIStore((state) => state.currentSessionId);
   const activeSessions = useGlobalSessionsStore((state) => state.activeSessions);
+  const liveSessions = useAllLiveSessions({ enabled: Boolean(onSessionSelect) });
   const activeProjectId = useProjectsStore((state) => state.activeProjectId);
   const projects = useProjectsStore((state) => state.projects);
   const activeProjectPath = React.useMemo(
@@ -165,12 +167,14 @@ export const FileMentionAutocomplete = React.forwardRef<FileMentionHandle, FileM
   const visibleSessions = React.useMemo(() => {
     if (!onSessionSelect) return [];
 
+    // Sidebar rows overlay live directory titles onto the index/global catalog.
+    // Mentions must use the same catalog or @search shows a stale title.
     return getVisibleSessionMentionCandidates({
-      sessions: activeSessions,
+      sessions: mergeLiveSessionCatalog(activeSessions, liveSessions),
       currentSessionId,
       searchQuery: normalizedSearchQuery,
     });
-  }, [activeSessions, currentSessionId, normalizedSearchQuery, onSessionSelect]);
+  }, [activeSessions, currentSessionId, liveSessions, normalizedSearchQuery, onSessionSelect]);
   const visibleRecentFiles = recentFiles;
   const visiblePathHits = pathHits;
 

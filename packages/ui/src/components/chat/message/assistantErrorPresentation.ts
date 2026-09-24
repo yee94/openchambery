@@ -84,13 +84,17 @@ export function resolveAssistantErrorPresentation(
     return { ...result('chat.response.failed', 'error-warning'), ...(!message && name ? { rawMessage: name } : {}) };
 }
 
+export function isRestartNotice(info: unknown): boolean {
+    if (!info || typeof info !== 'object') return false;
+    const value = info as { nativeType?: unknown; description?: unknown };
+    return value.nativeType === 'synthetic' && value.description === 'Continuing after restart';
+}
+
 export function resolveRestartNotice(
     info: unknown,
     t: (key: I18nKey) => string,
 ): AssistantErrorPresentation | undefined {
-    if (!info || typeof info !== 'object') return undefined;
-    const value = info as { nativeType?: unknown; description?: unknown };
-    if (value.nativeType !== 'synthetic' || value.description !== 'Continuing after restart') return undefined;
+    if (!isRestartNotice(info)) return undefined;
     return { text: t('chat.response.continuingAfterRestart'), icon: 'restart', variant: 'info' };
 }
 

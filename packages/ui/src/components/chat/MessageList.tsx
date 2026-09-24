@@ -68,6 +68,7 @@ import {
     type ShellBridgeDetails,
 } from './lib/shellBridge';
 import { dropLiveRevealJustificationParts, isAssistantMessageCompleted, resolveLiveRevealBodyMessageId, resolveVisibleSortedAssistants, withholdLiveRevealActivitySegments } from './lib/visibleSortedAssistants';
+import { isRestartNotice } from './message/assistantErrorPresentation';
 import {
     readUserMessageHeaderIdentity,
     resolvePendingAssistantHeader,
@@ -2469,8 +2470,18 @@ const MessageList = React.forwardRef<MessageListHandle, MessageListProps>(({
 
         const output: ChatMessageEntry[] = [];
         const compactionCommandIds = new Set<string>();
+        // A later assistant row confirms execution resumed. Retire the notice
+        // in source order for both live output and reloaded history, without
+        // removing the model-facing synthetic record from the transcript.
+        let lastAssistantIndex = -1;
+        for (let index = dedupedMessages.length - 1; index >= 0; index -= 1) {
+            if (dedupedMessages[index].info.role !== 'assistant') continue;
+            lastAssistantIndex = index;
+            break;
+        }
         for (let index = 0; index < dedupedMessages.length; index += 1) {
             const current = dedupedMessages[index];
+            if (index < lastAssistantIndex && isRestartNotice(current.info)) continue;
             const currentWithRole = normalizeCompactionSummaryMessage(current, compactionCommandIds);
             if (isCompactionCommandMessage(current)) {
                 compactionCommandIds.add(current.info.id);

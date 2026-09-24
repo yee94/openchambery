@@ -5,6 +5,7 @@ import { isEmptyTextPart } from './partUtils';
 
 const GITHUB_ISSUE_CONTEXT_PREFIX = 'GitHub issue context (JSON)';
 const GITHUB_PR_CONTEXT_PREFIX = 'GitHub pull request context (JSON)';
+const SESSION_REFERENCE_CONTEXT_PREFIX = 'The user referenced these OpenCode sessions (id, title, owning directory).';
 
 type GitHubIssueContextPayload = {
     issue?: {
@@ -112,6 +113,7 @@ export const normalizeUserDisplayParts = (parts: Part[]): Part[] => {
                 if (typeof text === 'string' && (
                     isSessionGoalContinuationText(text)
                     || isCompactionCommandText(text)
+                    || text.trimStart().startsWith(SESSION_REFERENCE_CONTEXT_PREFIX)
                     || (text.includes('<system-reminder>') && stripSystemReminders(text).length === 0)
                 )) {
                     return false;

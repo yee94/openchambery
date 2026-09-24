@@ -339,6 +339,32 @@ export const mergeLiveSessionWithGlobalSession = (
   return merged;
 };
 
+/**
+ * Overlay bootstrapped live directory rows onto the global/index catalog.
+ * Live titles, times, and directory metadata win per id; global share is kept.
+ * Sessions that exist only in one source are retained.
+ */
+export const mergeLiveSessionCatalog = (
+  globalSessions: readonly Session[],
+  liveSessions: readonly Session[],
+): Session[] => {
+  if (liveSessions.length === 0) {
+    return globalSessions.slice();
+  }
+  const liveById = new Map(liveSessions.map((session) => [session.id, session]));
+  const merged = globalSessions.map((session) => {
+    const liveSession = liveById.get(session.id);
+    return liveSession ? mergeLiveSessionWithGlobalSession(liveSession, session) : session;
+  });
+  const seen = new Set(merged.map((session) => session.id));
+  for (const session of liveSessions) {
+    if (seen.has(session.id)) continue;
+    merged.push(session);
+    seen.add(session.id);
+  }
+  return merged;
+};
+
 const buildSessionsByDirectory = (sessions: Session[]): Map<string, Session[]> => {
   const next = new Map<string, Session[]>();
   for (const session of sessions) {

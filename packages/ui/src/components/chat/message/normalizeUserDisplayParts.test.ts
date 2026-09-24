@@ -3,6 +3,18 @@ import type { Part } from '@/lib/opencode/v2-types';
 import { hasUserDisplayableParts, normalizeUserDisplayParts } from './normalizeUserDisplayParts';
 
 describe('normalizeUserDisplayParts', () => {
+  test.each([undefined, false, true])('hides session reference context with synthetic=%s', (synthetic) => {
+    const authored = { type: 'text', text: '@重启更新问题 你看看这个问题，我也想让你修复' } as Part;
+    const context = {
+      type: 'text',
+      text: 'The user referenced these OpenCode sessions (id, title, owning directory). Entries may carry messages inlined from the client cache; sqlite3 "file:$HOME/.local/share/opencode/opencode.db?mode=ro"\n[{"id":"ses_1","title":"重启更新问题","messages":[]}]',
+      ...(synthetic !== undefined ? { synthetic } : {}),
+    } as Part;
+    expect(normalizeUserDisplayParts([authored, context])).toEqual([authored]);
+    expect(hasUserDisplayableParts([context])).toBe(false);
+    expect(context).toHaveProperty('text', expect.stringContaining('sqlite3'));
+  });
+
   test('preserves native shell payload and identity when replacing the user marker', () => {
     const part = {
       id: 'shell-part', type: 'text', synthetic: true,
