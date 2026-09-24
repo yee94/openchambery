@@ -61,7 +61,7 @@ function showSessionUndoToast(args: {
               {
                 variant: "secondary",
                 size: "sm",
-                className: "session-mutation-undo-action !h-[26px] !min-h-0 !min-w-0 shrink-0 !px-2 !text-[12px]",
+                className: "session-mutation-undo-action overflow-hidden !h-[26px] !min-h-0 !min-w-0 shrink-0 !px-2 !text-[12px]",
                 onClick: () => {
                   args.onSecondary?.()
                   toast.dismiss(id)
@@ -75,7 +75,7 @@ function showSessionUndoToast(args: {
           {
             variant: "default",
             size: "sm",
-            className: "session-mutation-undo-action !h-[26px] !min-h-0 !min-w-0 shrink-0 gap-1 !pl-2 !pr-1 !text-[12px]",
+            className: "session-mutation-undo-action overflow-hidden !h-[26px] !min-h-0 !min-w-0 shrink-0 gap-1 !pl-2 !pr-1 !text-[12px]",
             onClick: () => {
               args.onPrimary()
               toast.dismiss(id)

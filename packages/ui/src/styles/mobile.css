@@ -2085,23 +2085,22 @@ button.oc-mobile-worktree-label-trigger:active,
   height: 0;
 }
 
-/* Mobile notifications reuse dock glass fill (rgba, ~66–68%) so frost can
-   actually sample the page. Opaque elevated mixes hide backdrop-filter.
-   WebKit also refuses to blur through a transformed ancestor — Sonner
-   centers the toaster with translateX(-50%), so mobile drops that
-   transform and centers with inset/width instead. Collapsed rear cards
-   keep the same glass fill; short contact shadows and Sonner's 5% scale
-   / 0.5rem offset carry the stack. */
+/* Mobile notifications use the shared glass-control recipe (fill, blur,
+   saturate, shadow) — the same material as the dock and header discs.
+   sonner.tsx pins box-shadow from --oc-toast-shadow, so that token must
+   be --oc-mobile-glass-shadow or the pin replaces the elevation.
+   Material applies to every toast, including custom undo toasts
+   (data-styled=false). WebKit will not backdrop-filter through a
+   transformed ancestor or a transformed element: the toaster is centered
+   without translateX, and a mounted front toast rests at transform:none.
+   Swipe and removal keep Sonner's transforms. Collapsed rear cards keep
+   the glass fill and a shorter contact shadow; Sonner's 5% scale /
+   0.5rem offset separates the stack. */
 :root:is(.device-mobile, .device-tablet, .mobile-pointer):not(.desktop-runtime) {
   --oc-toast-background: var(--oc-mobile-glass-fill);
   --oc-toast-background-rear-near: var(--oc-mobile-glass-fill);
   --oc-toast-background-rear-far: var(--oc-mobile-glass-fill);
-  --oc-toast-shadow: 0 5px 12px -9px
-    color-mix(
-      in srgb,
-      var(--surface-foreground, var(--foreground)) 30%,
-      transparent
-    );
+  --oc-toast-shadow: var(--oc-mobile-glass-shadow);
   --oc-toast-shadow-rear-near: 0 3px 7px -5px
     color-mix(
       in srgb,
@@ -2119,12 +2118,6 @@ button.oc-mobile-worktree-label-trigger:active,
 :root.dark:is(.device-mobile, .device-tablet, .mobile-pointer):not(
     .desktop-runtime
   ) {
-  --oc-toast-shadow: 0 5px 12px -9px
-    color-mix(
-      in srgb,
-      var(--surface-background, var(--background)) 76%,
-      transparent
-    );
   --oc-toast-shadow-rear-near: 0 3px 7px -5px
     color-mix(
       in srgb,
@@ -2161,11 +2154,10 @@ button.oc-mobile-worktree-label-trigger:active,
   transform: none !important;
 }
 
+/* Glass lives on the toast element itself, including custom/unstyled
+   undo toasts. A child cannot frost through this element's transform. */
 :root:is(.device-mobile, .device-tablet, .mobile-pointer):not(.desktop-runtime)
-  [data-sonner-toast][data-styled="true"] {
-  min-height: 3.25rem;
-  padding: 0.5rem 0.625rem !important;
-  gap: 0.375rem !important;
+  [data-sonner-toast] {
   border: 0 !important;
   border-radius: var(--radius-xl) !important;
   background: var(--oc-toast-background) !important;
@@ -2176,6 +2168,22 @@ button.oc-mobile-worktree-label-trigger:active,
   backdrop-filter:
     blur(var(--oc-mobile-glass-blur))
     saturate(var(--oc-mobile-glass-saturate));
+}
+
+/* translateY(0) is still a transform. Resting front cards drop it so
+   backdrop-filter can sample the page. Swipe and removal opt back in. */
+:root:is(.device-mobile, .device-tablet, .mobile-pointer):not(.desktop-runtime)
+  [data-sonner-toast][data-mounted="true"][data-front="true"]:not(
+    [data-swiping="true"]
+  ):not([data-removed="true"]):not([data-swipe-out="true"]) {
+  transform: none !important;
+}
+
+:root:is(.device-mobile, .device-tablet, .mobile-pointer):not(.desktop-runtime)
+  [data-sonner-toast][data-styled="true"] {
+  min-height: 3.25rem;
+  padding: 0.5rem 0.625rem !important;
+  gap: 0.375rem !important;
 }
 
 :root:is(.device-mobile, .device-tablet, .mobile-pointer):not(.desktop-runtime)
@@ -2304,7 +2312,7 @@ button.oc-mobile-worktree-label-trigger:active,
   :root:is(.device-mobile, .device-tablet, .mobile-pointer):not(
       .desktop-runtime
     )
-    [data-sonner-toast][data-styled="true"] {
+    [data-sonner-toast] {
     background: var(--surface-elevated, var(--card)) !important;
     -webkit-backdrop-filter: none;
     backdrop-filter: none;
@@ -2409,7 +2417,13 @@ button.oc-mobile-worktree-label-trigger:active,
     min-width: 36px;
   }
 
+  /* Toast undo is a dense cluster. The 36px touch floor would inflate the
+     pill and let the countdown ring paint outside the glass. */
   :root.mobile-pointer:not(.desktop-runtime) .session-mutation-undo-action {
+    height: 26px !important;
+    min-height: 0 !important;
+    max-height: 26px !important;
+    min-width: 0 !important;
     font-size: 0.75rem !important;
   }
 

@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [2.0.0-beta.13] - 2026-09-25
+
+这是 OpenCode 2 预览版。本次发布桌面、Android 安装包及同版本 Beta OTA；iOS 不上 TestFlight，不进入外测组或稳定自动更新通道。
+
+### 移动端
+
+- 修复删除会话后的撤销提示：毛玻璃与底栏同一套材质，倒计时圆环留在撤销按钮内，不再透出标题或画出提示条。
+
 ## [2.0.0-beta.12] - 2026-09-24
 
 这是 OpenCode 2 预览版。本次发布桌面、Android 安装包及同版本 Beta OTA；iOS 不上 TestFlight，不进入外测组或稳定自动更新通道。

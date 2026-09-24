@@ -41,15 +41,15 @@ export function UndoCountdownRing({
 
   return (
     <span
-      className={cn("relative inline-flex shrink-0 items-center justify-center", className)}
-      style={{ width: size, height: size }}
+      className={cn("oc-undo-countdown", className)}
+      style={{ ["--oc-undo-countdown-size" as string]: `${size}px` }}
       aria-hidden="true"
     >
       <svg
         viewBox={`0 0 ${size} ${size}`}
         width={size}
         height={size}
-        className="-rotate-90"
+        className="oc-undo-countdown-svg"
       >
         <circle
           cx={size / 2}
@@ -72,7 +72,7 @@ export function UndoCountdownRing({
           style={{ transition: `stroke-dashoffset ${durationMs}ms linear` }}
         />
       </svg>
-      <span className="absolute inset-0 flex items-center justify-center !text-[8px] !leading-none font-semibold tabular-nums text-current">
+      <span className="oc-undo-countdown-digit text-current">
         {remainingSeconds}
       </span>
     </span>
