@@ -19,6 +19,7 @@ import { startModelPrefsAutoSave } from '@/lib/modelPrefsAutoSave';
 import { startTypographyWatcher } from '@/lib/typographyWatcher';
 import { preloadMarkdownRenderer } from '@/components/chat/markdownRendererLoader';
 import { SessionAuthGate } from '@/components/auth/SessionAuthGate';
+import { OpenCodeUpgradeScreen } from '@/components/update/OpenCodeUpgradeScreen';
 import { QueryRuntimeProvider } from '@/lib/QueryRuntimeProvider';
 import { MobileApp } from './MobileApp';
 import { useUIStore } from '@/stores/useUIStore';
@@ -95,7 +96,9 @@ export function renderMobileApp(apis: RuntimeAPIs) {
           <ThemeSystemProvider>
             <ThemeProvider>
               <DiffWorkerProvider>
-                {isNativeShell ? app : <SessionAuthGate>{app}</SessionAuthGate>}
+                <OpenCodeUpgradeScreen>
+                  {isNativeShell ? app : <SessionAuthGate>{app}</SessionAuthGate>}
+                </OpenCodeUpgradeScreen>
               </DiffWorkerProvider>
             </ThemeProvider>
           </ThemeSystemProvider>

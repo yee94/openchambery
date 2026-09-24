@@ -13,7 +13,11 @@ export const messageReferenceTriggerIconSpec = (
         case 'session':
             return { trigger: '@', icon: 'chat-thread', label: decoration.label };
         case 'skill':
-            return { trigger: '/', icon: 'book-open', label: decoration.label.replace(/^\//, '') };
+            return {
+                trigger: decoration.label.startsWith('/') ? '/' : '@',
+                icon: 'book-open',
+                label: decoration.label.replace(/^[@/]/, ''),
+            };
         case 'command':
             return { trigger: '/', icon: 'command', label: decoration.label.replace(/^\//, '') };
         case 'image':
@@ -67,7 +71,11 @@ export const toComposerHighlightRanges = (
                     priority: PRIORITY_BY_KIND.skill,
                     skillName: decoration.skillName,
                     visual: composerTriggerIconVisual(
-                        { trigger: '/', icon: 'book-open', label: decoration.skillName ?? decoration.label },
+                        {
+                            trigger: span.raw.startsWith('@') ? '@' : '/',
+                            icon: 'book-open',
+                            label: decoration.skillName ?? decoration.label.replace(/^[@/]/, ''),
+                        },
                         span.raw,
                     ),
                 };

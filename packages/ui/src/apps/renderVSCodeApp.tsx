@@ -4,6 +4,7 @@ import '@/styles/fonts';
 import '@/index.css';
 import '@/lib/debug';
 import { SessionAuthGate } from '@/components/auth/SessionAuthGate';
+import { OpenCodeUpgradeScreen } from '@/components/update/OpenCodeUpgradeScreen';
 import { ThemeProvider } from '@/components/providers/ThemeProvider';
 import { ThemeSystemProvider } from '@/contexts/ThemeSystemContext';
 import type { RuntimeAPIs } from '@/lib/api/types';
@@ -49,9 +50,11 @@ export function renderVSCodeApp(apis: RuntimeAPIs) {
         <I18nProvider>
           <ThemeSystemProvider>
             <ThemeProvider>
-              <SessionAuthGate>
-                <VSCodeApp apis={apis} />
-              </SessionAuthGate>
+              <OpenCodeUpgradeScreen>
+                <SessionAuthGate>
+                  <VSCodeApp apis={apis} />
+                </SessionAuthGate>
+              </OpenCodeUpgradeScreen>
             </ThemeProvider>
           </ThemeSystemProvider>
         </I18nProvider>

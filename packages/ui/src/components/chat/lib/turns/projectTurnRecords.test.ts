@@ -161,6 +161,22 @@ describe('projectTurnRecords', () => {
         expect(projection.indexes.messageToTurnId.has('a1')).toBe(false);
     });
 
+    test('renders parentless assistant-only sessions instead of dropping them', () => {
+        const first = createMessageEntry({ id: 'a1', role: 'assistant', createdAt: 1 });
+        const second = createMessageEntry({
+            id: 'a2',
+            role: 'assistant',
+            createdAt: 2,
+            parts: [{ type: 'tool', tool: 'read' } as Part],
+        });
+
+        const projection = projectTurnRecords([first, second]);
+
+        expect(projection.turns).toHaveLength(0);
+        expect(projection.ungroupedMessageIds.has('a1')).toBe(true);
+        expect(projection.ungroupedMessageIds.has('a2')).toBe(true);
+    });
+
     test('keeps v2 compaction cards as ungrouped timeline entries', () => {
         const compact = {
             info: {

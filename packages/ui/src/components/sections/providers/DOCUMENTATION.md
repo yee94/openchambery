@@ -47,6 +47,8 @@ selects the refreshed provider's actual ID through its `integrationID` mapping.
 - Claude Code owns opening its own sign-in browser; its informational URL remains
   available for explicit opening.
 
+OpenCode Go sign-in uses `getSignInIntegrationId`: `opencode-go` maps to the `opencode` Console integration. Go's own integration only accepts a service-account key, so Console OAuth never starts against `opencode-go`. An OAuth credential on `opencode` means the Go card already has Console credentials. Workspace ID and auth cookie saves stay on the quota credential route.
+
 All shared runtimes use the same SDK state machine and `openExternalUrl` boundary.
 Focused component tests cover catalog selection, pending-to-complete, pasted codes,
 failure, expiry, timeouts, cancellation, unmount, stale connect/status responses,

@@ -2,6 +2,7 @@ import { describe, expect, test } from 'vitest';
 
 import {
     captureTimelineAnchorArm,
+    resolveRequestedHistoryAnchorArm,
     captureTimelinePrependAnchor,
     measureTimelineAnchorDrift,
     resolveTimelineAnchorHoldStep,
@@ -58,6 +59,38 @@ describe('captureTimelineAnchorArm', () => {
             listState({ scroll: 0, start: 0, keys: [] }),
             [],
         )).toBeNull();
+    });
+});
+
+describe('resolveRequestedHistoryAnchorArm', () => {
+    test('arms against the keys committed before this render, once per token', () => {
+        const committed = ['c', 'd'];
+        const requested = resolveRequestedHistoryAnchorArm({
+            historyAnchorToken: 2,
+            armedToken: 1,
+            list: listState({ scroll: 40, start: 0, keys: committed }),
+            committedEntryKeys: committed,
+        });
+
+        expect(requested?.armedToken).toBe(2);
+        expect(requested?.arm?.anchor.key).toBe('c');
+        expect(requested?.arm?.knownKeys.has('c')).toBe(true);
+        expect(requested?.arm?.knownKeys.has('older-estimate')).toBe(false);
+        expect(resolveRequestedHistoryAnchorArm({
+            historyAnchorToken: 2,
+            armedToken: requested?.armedToken ?? 0,
+            list: listState({ scroll: 0, start: 0, keys: ['older-estimate', 'c', 'd'] }),
+            committedEntryKeys: ['older-estimate', 'c', 'd'],
+        })).toBeNull();
+    });
+
+    test('an empty transcript advances the token without an arm', () => {
+        expect(resolveRequestedHistoryAnchorArm({
+            historyAnchorToken: 1,
+            armedToken: 0,
+            list: null,
+            committedEntryKeys: [],
+        })).toEqual({ armedToken: 1, arm: null });
     });
 });
 

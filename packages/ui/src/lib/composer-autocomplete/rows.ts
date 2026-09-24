@@ -80,21 +80,34 @@ export type MentionPathRowSource = {
 };
 
 export const buildMentionRows = ({
+  skills = [],
   agents,
   sessions,
   recentFiles,
   pathHits,
   untitledSession,
   sessionBadge,
+  skillBadge,
 }: {
+  skills?: readonly SkillRowSource[];
   agents: readonly MentionAgentRowSource[];
   sessions: readonly MentionSessionRowSource[];
   recentFiles: readonly MentionPathRowSource[];
   pathHits: readonly MentionPathRowSource[];
   untitledSession: string;
   sessionBadge?: string;
+  skillBadge?: string;
 }): ComposerAutocompleteListRow[] => {
   const rows: ComposerAutocompleteListRow[] = [];
+  for (const skill of skills) {
+    rows.push({
+      id: `skill:${skill.name}-${skill.scope}`,
+      title: `@${skill.name}`,
+      subtitle: skill.description,
+      badge: skillBadge ?? skill.scope,
+      iconName: resolveSkillIconName(),
+    });
+  }
   for (const agent of agents) {
     rows.push({
       id: `agent:${agent.name}`,

@@ -1,0 +1,57 @@
+.oc-global-search {
+  max-height: min(42rem, 80dvh);
+}
+
+.oc-global-search [data-slot='command-input-wrapper'] {
+  flex-shrink: 0;
+  padding: 14px 16px 6px;
+}
+
+.oc-global-search [data-slot='command-input-field'] {
+  height: 36px;
+  padding: 0;
+  background: transparent !important;
+  box-shadow: none;
+}
+
+.oc-global-search [data-slot='command-input-field'] > svg {
+  display: none;
+}
+
+.oc-global-search [data-slot='command-input'] {
+  height: 36px;
+  font-size: 16px;
+  caret-color: var(--surface-foreground);
+}
+
+.oc-global-search:has([data-slot='command-input']:focus-visible) {
+  border-color: var(--interactive-focus-ring);
+}
+
+.oc-global-search[data-mobile='true'] [data-slot='command-input-wrapper'] {
+  padding-right: 48px;
+}
+
+.oc-global-search[data-mobile='true'] [data-slot='dialog-close'] {
+  min-width: 36px;
+  min-height: 36px;
+  display: grid;
+  place-items: center;
+}
+
+.oc-global-search[data-mobile='true'] {
+  left: calc(50% + (env(safe-area-inset-left, 0px) - env(safe-area-inset-right, 0px)) / 2);
+  top: calc(var(--search-viewport-top, 0px) + var(--oc-safe-area-top, env(safe-area-inset-top, 0px)) + 12px);
+  max-height: calc(min(var(--search-viewport-height, 100dvh), 100dvh - var(--oc-keyboard-inset, 0px)) - var(--oc-safe-area-top, env(safe-area-inset-top, 0px)) - var(--oc-safe-area-bottom, env(safe-area-inset-bottom, 0px)) - 24px);
+  width: calc(100% - 24px - env(safe-area-inset-left, 0px) - env(safe-area-inset-right, 0px));
+  transition-property: opacity, scale;
+}
+
+.oc-global-search[data-mobile='true'] [cmdk-item] {
+  min-height: 44px;
+}
+
+.oc-global-search [data-slot='command-list'] {
+  overscroll-behavior: contain;
+  touch-action: pan-y;
+}

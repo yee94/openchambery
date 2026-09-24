@@ -48,6 +48,7 @@ describe('composer autocomplete icons and rows', () => {
     }]);
 
     const mentionRows = buildMentionRows({
+      skills: [{ name: 'review', scope: 'project', description: 'look at the diff' }],
       agents: [{ name: 'explore', description: 'look around' }],
       sessions: [{ id: 'ses_1', title: 'Fix login' }],
       recentFiles: [{ path: '/repo/a.ts', name: 'a.ts', relativePath: 'a.ts', extension: 'ts' }],
@@ -56,13 +57,16 @@ describe('composer autocomplete icons and rows', () => {
       sessionBadge: 'Session',
     });
     expect(mentionRows.map((row) => row.id)).toEqual([
+      'skill:review-project',
       'agent:explore',
       'session:ses_1',
       'recent:/repo/a.ts',
       'file:/repo/src',
     ]);
-    expect(mentionRows[0]?.title).toBe('@explore');
-    expect(mentionRows[3]?.iconName).toBe('folder-3-fill');
+    expect(mentionRows[0]?.title).toBe('@review');
+    expect(mentionRows[0]?.iconName).toBe('book-open');
+    expect(mentionRows[1]?.title).toBe('@explore');
+    expect(mentionRows[4]?.iconName).toBe('folder-3-fill');
   });
 
   test('builds standalone SVG markup from the sprite', () => {

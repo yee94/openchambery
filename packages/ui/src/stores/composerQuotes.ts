@@ -13,12 +13,41 @@ export const appendComposerQuote = (quotes: readonly string[], text: string): re
   return [...quotes, quote].slice(-COMPOSER_QUOTE_LIMIT);
 };
 
+export const CONVERSATION_QUOTE_HEADER = 'Quoted from the conversation:';
+
 const quoteBlock = (quote: string): string => quote.split('\n').map((line) => `> ${line}`).join('\n');
+
+const isQuoteBlock = (block: string): boolean => {
+  const lines = block.split('\n');
+  return lines.length > 0 && lines.every((line) => line.startsWith('>'));
+};
+
+const unwrapQuoteBlock = (block: string): string => block.split('\n').map((line) => line.replace(/^>\s?/, '')).join('\n');
+
+/**
+ * Split a sent user message back into staged conversation quotes and the
+ * authored body. Returns null when the text is not our quote prefix, so
+ * ordinary messages that happen to contain `>` stay untouched.
+ */
+export const splitQuotedConversationMessage = (text: string): { quotes: readonly string[]; body: string } | null => {
+  if (!text.startsWith(CONVERSATION_QUOTE_HEADER)) return null;
+  const rest = text.slice(CONVERSATION_QUOTE_HEADER.length).replace(/^\n+/, '');
+  if (!rest) return { quotes: [], body: '' };
+  const blocks = rest.split(/\n\n/);
+  const quotes: string[] = [];
+  let index = 0;
+  while (index < blocks.length && isQuoteBlock(blocks[index] ?? '')) {
+    quotes.push(unwrapQuoteBlock(blocks[index] ?? ''));
+    index += 1;
+  }
+  if (quotes.length === 0) return null;
+  return { quotes, body: blocks.slice(index).join('\n\n') };
+};
 
 /** Slash commands keep their text; quotes stay staged for the next real message. */
 export const messageWithComposerQuotes = (quotes: readonly string[], message: string): string => {
   if (quotes.length === 0 || message.trimStart().startsWith('/')) return message;
-  const quoted = ['Quoted from the conversation:', ...quotes.map(quoteBlock)].join('\n\n');
+  const quoted = [CONVERSATION_QUOTE_HEADER, ...quotes.map(quoteBlock)].join('\n\n');
   return message ? `${quoted}\n\n${message}` : quoted;
 };
 

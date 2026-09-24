@@ -147,7 +147,14 @@ describe('composerReferences', () => {
         expect(canonical.ok && [canonical.text, canonical.semantics]).toEqual(['[skill:review] [command:run]', []]);
         expect(direct.ok && [direct.text, direct.semantics]).toEqual(['[skill:review] [command:run]', []]);
         const materialized = materializeComposerReferenceTokens('[skill:review] [command:run]', new Map());
-        expect(materialized).toEqual({ text: `${slashTriggerDisplay('review')} ${slashTriggerDisplay('run')}`, references: [skill('skill:0', 0), command('command:15', slashTriggerDisplay('review').length + 1)] });
+        const atSkillDisplay = composerTriggerIconDisplay({ trigger: '@', icon: 'book-open', label: 'review' });
+        expect(materialized).toEqual({
+            text: `${atSkillDisplay} ${slashTriggerDisplay('run')}`,
+            references: [
+                { id: 'skill:0', kind: 'skill', skillName: 'review', display: atSkillDisplay, start: 0, end: atSkillDisplay.length },
+                command('command:15', atSkillDisplay.length + 1),
+            ],
+        });
         const rematerialized = serializeComposerDocument(materialized);
         expect(rematerialized.ok && rematerialized.text).toBe('[skill:review] [command:run]');
         expect(resolveComposerReferenceDeletion(document, { key: 'Backspace', selectionStart: 3, selectionEnd: 3 })?.document).toEqual({ text: ` ${slashTriggerDisplay('run')}`, references: [command('command', 1)] });

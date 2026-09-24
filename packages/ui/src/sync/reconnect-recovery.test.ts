@@ -4,6 +4,7 @@ import type { SessionStatus } from '@/lib/opencode/v2-types'
 import type { Session } from '@/lib/opencode/v2-types'
 
 import {
+  collectDirectoryStatusRestoreSessionIds,
   getReconnectCandidateSessionIds,
   getReconnectMaterializationSessionIds,
   getReconnectTranscriptInvalidationSessionIds,
@@ -51,6 +52,17 @@ describe("getReconnectCandidateSessionIds", () => {
       session: [createSession("blank")],
       session_status: { blank: { type: "idle" } as SessionStatus },
     })).toEqual([])
+  })
+
+  test("restores every catalog session plus a viewed session that is not stored yet", () => {
+    expect(collectDirectoryStatusRestoreSessionIds({
+      session: [createSession("idle-row")],
+      session_status: { "idle-row": { type: "idle" } as SessionStatus },
+    }, {
+      directory: "/repo",
+      viewedSession: { directory: "/repo", sessionId: "still-running" },
+      extraSessionIds: ["indexed-running"],
+    }).sort()).toEqual(["idle-row", "indexed-running", "still-running"])
   })
 
   test("does not include a viewed session from another directory", () => {

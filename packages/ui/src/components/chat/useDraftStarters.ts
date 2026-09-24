@@ -122,7 +122,7 @@ export function useDraftStarters(directory?: string | null): UseDraftStartersRes
             return { id: chipId(group, ref), ref, group, label: normalizeStarterLabel(ref.name), icon: COMMAND_FALLBACK_ICON, submitText: `/${ref.name}` };
         }
         if (!skillNames.has(ref.name)) return null;
-        return { id: chipId(group, ref), ref, group, label: normalizeStarterLabel(ref.name), icon: SKILL_FALLBACK_ICON, submitText: `/${ref.name}` };
+        return { id: chipId(group, ref), ref, group, label: normalizeStarterLabel(ref.name), icon: SKILL_FALLBACK_ICON, submitText: `@${ref.name}` };
     }, [t, commandNames, skillNames, isVSCode]);
 
     const global = React.useMemo(

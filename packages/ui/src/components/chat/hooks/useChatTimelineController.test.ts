@@ -357,15 +357,17 @@ describe('resolveHistoryPageDecision', () => {
 });
 
 describe('HISTORY_INTERACTION_MAX_PAGES source contract', () => {
-    test('controller interaction page ceiling is 1 (single server turn page)', () => {
+    test('one interaction pages past invisible projection windows, bounded', () => {
         const source = readFileSync(
             join(here, 'useChatTimelineController.ts'),
             'utf8',
         );
         const match = source.match(/HISTORY_INTERACTION_MAX_PAGES\s*=\s*(\d+)/);
-        expect(match?.[1]).toBe('1');
-        // Guard against reintroducing multi-page while loops (3-page ceiling).
-        expect(/HISTORY_INTERACTION_MAX_PAGES\s*=\s*3\b/.test(source)).toBe(false);
+        const maxPages = Number(match?.[1]);
+        // A single 20-message window inside one long turn adds no height;
+        // a 1-page budget ended the gesture with nothing shown.
+        expect(maxPages).toBeGreaterThan(1);
+        expect(maxPages).toBeLessThanOrEqual(10);
     });
 });
 
@@ -645,11 +647,16 @@ describe('useChatTimelineController source contracts', () => {
         expect(String(calls[2]?.[0])).toContain('load older failed');
     });
 
-    test('no-growth pagination blocks automatic repetition and preserves authority', () => {
+    test('no-growth pagination refetches once, blocks auto-fill, and only cools gestures down', () => {
         expect(source).toContain("if (decision === 'stop-no-growth')");
+        expect(source).toContain('stalledRetries < HISTORY_STALLED_PAGE_RETRIES');
         expect(source).toContain('noGrowthBlockedRef.current = true');
         expect(source).toContain('setAutoFillBlocked(true)');
+        expect(source).toContain('Date.now() + HISTORY_STALL_COOLDOWN_MS');
+        expect(source).toContain('if (Date.now() < historyStallCooldownUntilRef.current) return;');
+        expect(source).not.toContain('if (noGrowthBlockedRef.current) return;');
         expect(source).not.toContain('hasMoreAboveTurns: false');
+        expect(source).not.toContain('historyRetryRequired');
     });
 
     test('handlers use useEvent; no React.useCallback', () => {

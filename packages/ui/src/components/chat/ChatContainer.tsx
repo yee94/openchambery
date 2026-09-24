@@ -324,7 +324,6 @@ type ChatViewportProps = {
     retryActionCopy: { title: string; message: string; label: string; link?: string } | null;
     isProgrammaticFollowActive: boolean;
     showLoadOlderButton: boolean;
-    historyRetryRequired: boolean;
     onLoadOlder: () => void;
     turnIds: string[];
     activeTurnId: string | null;
@@ -367,7 +366,6 @@ const ChatViewport = React.memo(({
     retryActionCopy,
     isProgrammaticFollowActive,
     showLoadOlderButton,
-    historyRetryRequired,
     onLoadOlder,
     turnIds,
     activeTurnId,
@@ -393,39 +391,26 @@ const ChatViewport = React.memo(({
     if (!sameHistorySlotScope || mobileHistorySlot.reserved !== reserveMobileHistorySlot) {
         setMobileHistorySlot({ sessionId: currentSessionId, directory, reserved: reserveMobileHistorySlot });
     }
-    // Desktop loads by scroll until failure/stall requires an explicit retry.
-    // Both states are overlays so their lifecycle cannot push the transcript.
+    // Desktop loads by scroll only; the loading disc is an overlay so its
+    // lifecycle cannot push the transcript.
     const showDesktopLoadOlderStatus = resolveDesktopLoadOlderStatusVisibility({
         isMobile,
         isLoadingOlder: loadOlderBusy,
     });
-    const desktopHistoryStatus = !isMobile && (showDesktopLoadOlderStatus || historyRetryRequired) ? (
+    const desktopHistoryStatus = showDesktopLoadOlderStatus ? (
         <div className="absolute inset-x-0 top-0 z-20 flex justify-center pointer-events-none" role="status" aria-live="polite">
             <div className="flex items-center justify-center gap-1.5 pt-3 pb-1">
-                {historyRetryRequired ? (
-                    <Button
-                        variant="secondary"
-                        size="sm"
-                        className="pointer-events-auto relative"
-                        onClick={onLoadOlder}
-                        disabled={loadOlderBusy}
-                        aria-busy={loadOlderBusy}
-                    >
-                        <Icon name="loader-4" className={cn('size-3.5', loadOlderBusy ? 'animate-spin' : 'invisible')} aria-hidden="true" />
-                        {t('chat.history.retry')}
-                        <span className="size-3.5" aria-hidden="true" />
-                    </Button>
-                ) : (
-                    <>
-                        <Icon name="loader-4" className="size-3.5 animate-spin text-[var(--surface-mutedForeground)]" aria-hidden="true" />
-                        <span className="typography-meta text-[var(--surface-mutedForeground)]">{t('chat.history.loadingMore')}</span>
-                    </>
-                )}
+                <span
+                    className="oc-mobile-glass-control flex size-8 items-center justify-center rounded-full text-[var(--surface-mutedForeground)]"
+                    aria-label={t('chat.history.loadingMore')}
+                >
+                    <Icon name="loader-4" className="size-4 animate-spin" aria-hidden="true" />
+                </span>
             </div>
         </div>
     ) : null;
-    // Same muted meta treatment as the desktop loading hint. A filled
-    // secondary chip is not the main-workspace load-older style.
+    // Main-workspace load-older is an in-flow control. Mobile keeps that
+    // text button; desktop scroll-load uses the glass disc above instead.
     const mobileLoadOlderControl = isMobile && reserveMobileHistorySlot ? (
         <div className={cn('flex justify-center pt-3 pb-1', !showLoadOlderButton && 'invisible')} aria-hidden={!showLoadOlderButton}>
             <Button
@@ -783,7 +768,6 @@ const ChatViewport = React.memo(({
         && prev.retryActionCopy === next.retryActionCopy
         && prev.isProgrammaticFollowActive === next.isProgrammaticFollowActive
         && prev.showLoadOlderButton === next.showLoadOlderButton
-        && prev.historyRetryRequired === next.historyRetryRequired
         && prev.onLoadOlder === next.onLoadOlder
         && prev.turnIds === next.turnIds
         && prev.activeTurnId === next.activeTurnId
@@ -2126,7 +2110,6 @@ const ChatContainerContent: React.FC<ChatContainerContentProps> = ({
 						retryActionCopy={null}
 						isProgrammaticFollowActive={isFollowingProgrammatically}
 						showLoadOlderButton={false}
-						historyRetryRequired={false}
 						onLoadOlder={handleLoadOlderClick}
 						turnIds={[]}
 						activeTurnId={null}
@@ -2410,7 +2393,6 @@ const ChatContainerContent: React.FC<ChatContainerContentProps> = ({
                 retryActionCopy={retryActionCopy}
                 isProgrammaticFollowActive={isFollowingProgrammatically}
                 showLoadOlderButton={showLoadOlderButton}
-                historyRetryRequired={timelineController.historyRetryRequired}
                 onLoadOlder={handleLoadOlderClick}
                 turnIds={timelineController.turnIds}
                 activeTurnId={timelineController.activeTurnId}

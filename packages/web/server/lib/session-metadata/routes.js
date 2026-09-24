@@ -83,13 +83,17 @@ export const registerSessionMetadataRoutes = (app, deps = {}) => {
               },
             },
           };
+        }, {
+          directory: asNonEmptyString(body.directory) || undefined,
         });
         if (!result?.committed) {
           throw new Error(result?.reason || 'session metadata mutate was rejected');
         }
         metadata = result.metadata;
       } else {
-        metadata = await sessionMetadataStore.setSessionMetadata(sessionId, patch);
+        metadata = await sessionMetadataStore.setSessionMetadata(sessionId, patch, {
+          directory: asNonEmptyString(body.directory) || undefined,
+        });
       }
       const directory = asNonEmptyString(body.directory) || '';
       if (typeof onMetadataWritten === 'function') {

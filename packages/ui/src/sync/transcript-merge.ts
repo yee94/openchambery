@@ -14,6 +14,7 @@ import type { InfiniteData } from "@tanstack/react-query"
 import {
   applyTranscriptDirectoryEvent,
   findShellMessageID,
+  mergeTranscriptMessageUpdate,
   type TranscriptEventDraft,
 } from "./transcript-event-reducer"
 import { materializeSessionSnapshots } from "./materialization"
@@ -338,7 +339,21 @@ function rebuildFromReducedState(
   const pageCursor = page.complete ? null : (page.cursor ?? null)
   const pageComplete = page.complete
 
-  if (!previous || previous.pages.length === 0 || purpose === "initial") {
+  // An authority tail that starts inside an already paged chain adds nothing
+  // older than that chain. Collapsing to the tail's cursor would rewind older
+  // history onto rows the client already holds, so every following prepend
+  // re-downloads them and the user sees scroll-loads that show nothing.
+  // Without that overlap (gap, durable-only seed) the tail cursor stays the
+  // continuation so older fetches fill the gap.
+  const preservedBoundary = purpose === "initial"
+    ? resolveOverlappingTailBoundary(previous, page)
+    : null
+
+  if (
+    !previous
+    || previous.pages.length === 0
+    || (purpose === "initial" && !preservedBoundary)
+  ) {
     const tail = pageFromMessages(
       "tail",
       nextMessages,
@@ -420,10 +435,10 @@ function rebuildFromReducedState(
     })
   }
 
-  // recovery / materialize / reconcile-page: keep page layout, update messages
-  // in place. Recovery/materialize append new rows to the tail. Reconcile
-  // continuation windows insert by (`time.created`, id) so a later older page
-  // cannot land after a newer gap page already merged in this round.
+  // recovery / materialize / reconcile-page / overlapping initial: keep page
+  // layout, update messages in place. Recovery/materialize append new rows to
+  // the tail. Reconcile continuation windows and overlapping authority tails
+  // insert by (`time.created`, id) so an in-range row cannot land after newer ones.
   const owned = new Map<string, number>()
   previous.pages.forEach((prevPage, index) => {
     for (const id of prevPage.messageOrder) {
@@ -445,7 +460,7 @@ function rebuildFromReducedState(
   const nextPages = previous.pages.map((prevPage, index) => {
     const bucket = pageBuckets[index] ?? []
     if (index === previous.pages.length - 1 && unowned.length > 0) {
-      const merged = purpose === "reconcile-page"
+      const merged = purpose === "reconcile-page" || purpose === "initial"
         ? insertPageMessagesByCreated(bucket, unowned)
         : [...bucket, ...unowned]
       return sharePageMessages(prevPage, merged, nextPart, liveRevision)
@@ -454,11 +469,12 @@ function rebuildFromReducedState(
   })
 
   // Boundary / older cursor lives on the first page; update from reduced boundary.
-  if (nextPages.length > 0 && reduced.boundary) {
+  const boundary = preservedBoundary ?? reduced.boundary
+  if (nextPages.length > 0 && boundary) {
     const first = nextPages[0]!
     const cursor =
-      reduced.boundary.kind === "has-more" ? reduced.boundary.cursor : null
-    const complete = reduced.boundary.kind === "exhausted"
+      boundary.kind === "has-more" ? boundary.cursor : null
+    const complete = boundary.kind === "exhausted"
     if (first.cursor !== cursor || first.complete !== complete) {
       nextPages[0] = freezePage({
         ...first,
@@ -473,6 +489,19 @@ function rebuildFromReducedState(
     pages: nextPages,
     pageParams: [...previous.pageParams],
   })
+}
+
+function resolveOverlappingTailBoundary(
+  previous: SessionTranscriptData | undefined,
+  page: TranscriptTransportPage,
+): SessionHistoryBoundary | null {
+  if (!previous || previous.pages.length === 0) return null
+  const boundary = boundaryFromTranscriptData(previous)
+  if (boundary.kind === "unknown") return null
+  const oldestID = page.records.find((record) => record.info?.id)?.info.id
+  if (!oldestID) return null
+  const owned = previous.pages.some((prevPage) => prevPage.messageOrder.includes(oldestID))
+  return owned ? boundary : null
 }
 
 function insertPageMessagesByCreated(
@@ -1118,6 +1147,10 @@ function applyOptimisticAdd(
     // turn. Inserting by id drops a mid-turn-minted messageID into history
     // and the bubble never appears at the tail.
     messages.push(message)
+  } else {
+    // A hydration shell can exist before parts. Keep that row, but fill the
+    // provider/model the optimistic send already knows.
+    messages[existing] = mergeTranscriptMessageUpdate(messages[existing]!, message)
   }
   const part = { ...flat.part, [message.id]: normalizeParts(parts) }
 
@@ -1607,8 +1640,7 @@ export function shareSessionTranscriptData(
   if (!newData) return oldData
   if (!oldData || oldData.pages.length === 0) {
     return freezeSessionTranscriptData(newData)
-  }
-  if (newData.pages.length === oldData.pages.length) {
+  }  if (newData.pages.length === oldData.pages.length) {
     const shared = shareEqualLength(oldData, newData)
     if (shared === oldData) return oldData
     // Same page count but different content. A Query tail refetch must go

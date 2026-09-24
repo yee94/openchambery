@@ -149,9 +149,9 @@ export const resolveMobileLoadOlderBusy = (input: {
  * Desktop (and non-mobile) load-older status line.
  *
  * Mobile already has the explicit top button + spinner. Desktop scroll / auto-fill
- * can wait on Host turn-page with no other affordance — show a restrained
- * muted status only while a real loadOlder flight is in progress. Never paint
- * from background historyLoading/prefetch.
+ * can wait on Host turn-page with no other affordance — show an icon-only glass
+ * disc only while a real loadOlder flight is in progress. Never paint from
+ * background historyLoading/prefetch, and never paint the loading label as text.
  */
 export const resolveDesktopLoadOlderStatusVisibility = (input: {
   isMobile: boolean

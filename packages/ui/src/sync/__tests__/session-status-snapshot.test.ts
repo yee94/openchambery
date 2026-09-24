@@ -9,6 +9,7 @@ import {
   applySessionStatusSnapshot,
   collectSessionStatusSnapshotApplyIds,
   fuseActiveWithLegacyStatus,
+  noteLiveSessionActivity,
   promoteRetryToBusyOnLiveActivity,
   reconcileActiveSessionStatusAfterMessagePull,
   resyncDirectorySessionStatuses,
@@ -208,6 +209,30 @@ describe("promoteRetryToBusyOnLiveActivity", () => {
   })
 })
 
+describe("noteLiveSessionActivity", () => {
+  test("marks a missing or idle session busy when a live frame arrives", () => {
+    const missing = createDirectoryStore({})
+    expect(noteLiveSessionActivity(missing, "ses_a", 50)).toBe(true)
+    expect(missing.getState().session_status.ses_a).toEqual({ type: "busy" })
+    expect(missing.getState().session_status_observed_at.ses_a).toBe(50)
+
+    const idle = createDirectoryStore({
+      session_status: { ses_a: { type: "idle" } },
+    })
+    expect(noteLiveSessionActivity(idle, "ses_a", 60)).toBe(true)
+    expect(idle.getState().session_status.ses_a).toEqual({ type: "busy" })
+  })
+
+  test("does not rewrite an existing busy status", () => {
+    const store = createDirectoryStore({
+      session_status: { ses_a: BUSY },
+      session_status_observed_at: { ses_a: 10 },
+    })
+    expect(noteLiveSessionActivity(store, "ses_a", 50)).toBe(false)
+    expect(store.getState().session_status_observed_at.ses_a).toBe(10)
+  })
+})
+
 describe("handleNormalizedOpenCodeHints", () => {
   test("live session.next activity clears a retry overlay status", () => {
     const manager = new ChildStoreManager()
@@ -218,6 +243,23 @@ describe("handleNormalizedOpenCodeHints", () => {
 
     handleNormalizedOpenCodeHints("/workspace", {
       type: "session.next.reasoning.delta",
+      properties: { sessionID: "ses_a" },
+      domainActivityHint: { sessionID: "ses_a", kind: "activity" },
+    }, manager)
+
+    expect(store.getState().session_status.ses_a).toEqual({ type: "busy" })
+    manager.disposeAll()
+  })
+
+  test("live text activity restores busy after a restart left the session idle", () => {
+    const manager = new ChildStoreManager()
+    const store = manager.ensureChild("/workspace", { bootstrap: false })
+    store.setState({
+      session_status: { ses_a: { type: "idle" } },
+    })
+
+    handleNormalizedOpenCodeHints("/workspace", {
+      type: "session.text.delta",
       properties: { sessionID: "ses_a" },
       domainActivityHint: { sessionID: "ses_a", kind: "activity" },
     }, manager)

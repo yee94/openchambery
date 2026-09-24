@@ -837,7 +837,24 @@ export const Header: React.FC<HeaderProps> = ({
   }, [desktopServicesTab, isDesktopApp]);
 
   const isVSCode = React.useMemo(() => isVSCodeRuntime(), []);
-  const showDesktopHeaderContextUsage = !isVSCode && activeMainTab === 'chat' && !!stableDesktopContextUsage && stableDesktopContextUsage.totalTokens > 0;
+  const workStatusPanelEnabled = useUIStore((state) => state.workStatusPanelEnabled);
+  const workStatusPanelFits = useUIStore((state) => state.workStatusPanelFits);
+  const workStatusOverlayOpen = useUIStore((state) => state.workStatusOverlayOpen);
+  const setWorkStatusPanelEnabled = useUIStore((state) => state.setWorkStatusPanelEnabled);
+  const setWorkStatusOverlayOpen = useUIStore((state) => state.setWorkStatusOverlayOpen);
+  const workStatusShownInline = workStatusPanelEnabled && workStatusPanelFits;
+  const workStatusToggleActive = workStatusShownInline || workStatusOverlayOpen;
+  const handleWorkStatusToggle = useEvent(() => {
+    if (workStatusPanelEnabled && !workStatusPanelFits) {
+      setWorkStatusOverlayOpen(!workStatusOverlayOpen);
+      return;
+    }
+    setWorkStatusPanelEnabled(!workStatusPanelEnabled);
+  });
+  const showDesktopHeaderContextUsage = !isVSCode
+    && activeMainTab === 'chat'
+    && !!stableDesktopContextUsage
+    && stableDesktopContextUsage.totalTokens > 0;
   const desktopHeaderDisplayPercentage = stableDesktopContextUsage && stableDesktopContextUsage.contextLimit > 0
     ? Math.min(999, (stableDesktopContextUsage.totalTokens / stableDesktopContextUsage.contextLimit) * 100)
     : 0;
@@ -1941,6 +1958,22 @@ export const Header: React.FC<HeaderProps> = ({
 
   const desktopSidebarActions = (
     <>
+      {!isMobile && !isVSCode && activeMainTab === 'chat' ? (
+        <button
+          type="button"
+          data-work-status-toggle="true"
+          aria-pressed={workStatusToggleActive}
+          aria-label={t('header.workStatusPanel.toggleAria')}
+          title={t('header.workStatusPanel.toggleAria')}
+          onClick={handleWorkStatusToggle}
+          className={cn(
+            'app-region-no-drag group mr-1 inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary hover:bg-interactive-hover transition-colors',
+            workStatusToggleActive ? 'text-foreground' : 'text-muted-foreground/50',
+          )}
+        >
+          <Icon name="settings-2" className="size-4" />
+        </button>
+      ) : null}
       <OpenInAppButton directory={actionDirectory} className="mr-1" />
       <HeaderIconActionButton
         title={t('header.actions.rightSidebarWithShortcut', { shortcut: shortcutLabel('toggle_right_sidebar') })}

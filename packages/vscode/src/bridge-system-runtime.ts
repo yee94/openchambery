@@ -11,6 +11,7 @@ import { credentialStatus, deleteCredential, importCursorCredential, normalizeCr
 import { getSessionActivitySnapshot } from './sessionActivityWatcher';
 import type { BridgeContext, BridgeResponse } from './bridge';
 import { fetchOpenCodeHealth } from './opencode-sidecar';
+import { installManagedRequiredOpenCode, readManagedUpgradeScreen } from './opencode-upgrade-screen';
 
 type BridgeMessageInput = {
   id: string;
@@ -231,6 +232,53 @@ export async function handleSystemBridgeMessage(
         return { id, type, success: false, error: 'OpenCode manager unavailable' };
       }
       return { id, type, success: true, data: result };
+    }
+
+    case 'api:opencode/compatibility': {
+      return { id, type, success: true, data: readManagedUpgradeScreen(ctx?.manager) };
+    }
+
+    case 'api:opencode/install-required': {
+      try {
+        const result = await installManagedRequiredOpenCode(ctx?.manager, {
+          persistBinary: async (binaryPath) => {
+            await vscode.workspace.getConfiguration('openchamber').update(
+              'opencodeBinary',
+              binaryPath,
+              vscode.ConfigurationTarget.Global,
+            );
+          },
+        });
+        if (!result?.upgraded || !result.version) {
+          return {
+            id,
+            type,
+            success: false,
+            error: 'OpenCode installation did not verify a new version',
+            data: { success: false, upgraded: false, error: 'OpenCode installation did not verify a new version' },
+          };
+        }
+        return {
+          id,
+          type,
+          success: true,
+          data: {
+            success: true,
+            upgraded: true,
+            version: result.version,
+            targetVersion: result.targetVersion,
+          },
+        };
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        return {
+          id,
+          type,
+          success: false,
+          error: errorMessage,
+          data: { success: false, upgraded: false, error: errorMessage },
+        };
+      }
     }
 
     case 'api:opencode/version': {

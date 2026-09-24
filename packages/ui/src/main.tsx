@@ -4,6 +4,7 @@ import './styles/fonts'
 import './index.css'
 import App from './App.tsx'
 import { SessionAuthGate } from './components/auth/SessionAuthGate'
+import { OpenCodeUpgradeScreen } from './components/update/OpenCodeUpgradeScreen'
 import { ThemeSystemProvider } from './contexts/ThemeSystemContext'
 import { ThemeProvider } from './components/providers/ThemeProvider'
 import './lib/debug'
@@ -84,9 +85,11 @@ createRoot(rootElement).render(
       <I18nProvider>
         <ThemeSystemProvider>
           <ThemeProvider>
-            <SessionAuthGate>
-              <App apis={runtimeAPIs} />
-            </SessionAuthGate>
+            <OpenCodeUpgradeScreen>
+              <SessionAuthGate>
+                <App apis={runtimeAPIs} />
+              </SessionAuthGate>
+            </OpenCodeUpgradeScreen>
           </ThemeProvider>
         </ThemeSystemProvider>
       </I18nProvider>

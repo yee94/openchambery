@@ -15,6 +15,7 @@ import type { ChatMessageEntry, TurnRecord, TurnGroupingContext } from './lib/tu
 import { useTurnRecords } from './hooks/useTurnRecords';
 import { applyRetryOverlay } from './lib/turns/applyRetryOverlay';
 import { buildLiveStreamingEntry } from './lib/turns/streamingTailEntry';
+import { splitTimelineRenderEntries } from './lib/turns/timelineRenderEntries';
 import { getNormalizedMessageForDisplay, isCompactionCommandMessage } from './lib/messageDisplayNormalization';
 import { useUIStore } from '@/stores/useUIStore';
 import { FadeInDisabledProvider } from './message/FadeInOnReveal';
@@ -117,9 +118,6 @@ export const resolveTurnActivityExpandedByDefault = (input: {
 };
 
 const MESSAGE_LIST_VIRTUALIZE_THRESHOLD = 5;
-const EMPTY_STATIC_ENTRY_MESSAGES: ChatMessageEntry[] = [];
-const EMPTY_UNGROUPED_MESSAGE_IDS = new Set<string>();
-const EMPTY_RENDER_ENTRIES: RenderEntry[] = [];
 const TIMELINE_CACHE_LIMIT = 16;
 
 const sameKeys = (a: readonly string[] | undefined, b: readonly string[] | undefined): boolean => {
@@ -2554,86 +2552,30 @@ const MessageList = React.forwardRef<MessageListHandle, MessageListProps>(({
         stickyLiveTailRef.current = true;
     }
 
-    const { projection, staticTurns, streamingTurns } = useTurnRecords(displayMessages, {
+    const { projection, streamingTurns } = useTurnRecords(displayMessages, {
         sessionKey: domainSessionKey,
         showTextJustificationActivity: chatRenderMode === 'sorted',
         showTurnChangedFiles,
         hasLiveTail: liveTailActive || stickyLiveTailRef.current,
         liveTailActive,
     });
-    const hasUngroupedStaticEntries = projection.ungroupedMessageIds.size > 0;
-    const staticEntryMessages = hasUngroupedStaticEntries ? displayMessages : EMPTY_STATIC_ENTRY_MESSAGES;
-    const staticEntryUngroupedIds = hasUngroupedStaticEntries ? projection.ungroupedMessageIds : EMPTY_UNGROUPED_MESSAGE_IDS;
-    const staticRenderEntries = React.useMemo<RenderEntry[]>(() => streamPerfMeasure('ui.message_list.render_entries_ms', () => {
-        const turnEntries = staticTurns.map((turn) => ({
-            kind: 'turn' as const,
-            key: `turn:${turn.turnId}`,
-            turn,
-            isLastTurn: turn.turnId === projection.lastTurnId,
-        }));
-
-        if (staticEntryUngroupedIds.size === 0) {
-            return turnEntries;
-        }
-
-        const turnEntryByUserMessageId = new Map<string, RenderEntry>();
-        turnEntries.forEach((entry) => {
-            turnEntryByUserMessageId.set(entry.turn.userMessage.info.id, entry);
+    const timelineEntries = React.useMemo(() => streamPerfMeasure('ui.message_list.render_entries_ms', () => {
+        return splitTimelineRenderEntries({
+            messages: displayMessages,
+            turns: projection.turns,
+            streamingTurns,
+            ungroupedMessageIds: projection.ungroupedMessageIds,
+            lastTurnId: projection.lastTurnId,
         });
-
-        const orderedEntries: RenderEntry[] = [];
-        staticEntryMessages.forEach((message, index) => {
-            const turnEntry = turnEntryByUserMessageId.get(message.info.id);
-            if (turnEntry) {
-                orderedEntries.push(turnEntry);
-                return;
-            }
-
-            if (!staticEntryUngroupedIds.has(message.info.id)) {
-                return;
-            }
-
-            orderedEntries.push({
-                kind: 'ungrouped',
-                key: `msg:${message.info.id}`,
-                message,
-                previousMessage: index > 0 ? staticEntryMessages[index - 1] : undefined,
-                nextMessage: index < staticEntryMessages.length - 1 ? staticEntryMessages[index + 1] : undefined,
-            });
-        });
-
-        return orderedEntries;
-    }), [projection.lastTurnId, staticEntryMessages, staticEntryUngroupedIds, staticTurns]);
-
-    const trailingStreamingEntries = React.useMemo<RenderEntry[]>(() => {
-        if (streamingTurns.length > 0) {
-            return streamingTurns.map((turn) => ({
-                kind: 'turn',
-                key: `turn:${turn.turnId}`,
-                turn,
-                isLastTurn: turn.turnId === projection.lastTurnId,
-            } satisfies RenderEntry));
-        }
-
-        if (projection.ungroupedMessageIds.size === 0) {
-            return EMPTY_RENDER_ENTRIES;
-        }
-
-        const lastMessage = displayMessages[displayMessages.length - 1];
-        if (!lastMessage || !projection.ungroupedMessageIds.has(lastMessage.info.id)) {
-            return EMPTY_RENDER_ENTRIES;
-        }
-
-        return [{
-            kind: 'ungrouped',
-            key: `msg:${lastMessage.info.id}`,
-            message: lastMessage,
-            previousMessage: displayMessages.length > 1
-                ? displayMessages[displayMessages.length - 2]
-                : undefined,
-            nextMessage: undefined,
-        } satisfies RenderEntry];
-    }, [displayMessages, projection.lastTurnId, projection.ungroupedMessageIds, streamingTurns]);
+    }), [
+        displayMessages,
+        projection.lastTurnId,
+        projection.turns,
+        projection.ungroupedMessageIds,
+        streamingTurns,
+    ]);
+    const staticRenderEntries = timelineEntries.history;
+    const trailingStreamingEntries = timelineEntries.tail;
     const hasTrailingStreamingEntries = trailingStreamingEntries.length > 0;
 
     // Counts live streaming renders only — the tail outlives the stream now

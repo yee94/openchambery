@@ -38,13 +38,8 @@ describe('resolveComposerAutocompleteTrigger', () => {
     expect(resolveComposerAutocompleteTrigger({ text: '/undo hello', cursor: 11 })).toBeNull();
   });
 
-  test('opens mid-line slash skills on a word-boundary slash', () => {
-    expect(resolveComposerAutocompleteTrigger({ text: 'please /rev', cursor: 11 })).toEqual({
-      kind: 'slash-skill',
-      query: 'rev',
-      tokenStart: 7,
-      tokenEnd: 11,
-    });
+  test('does not open a skill palette on a mid-line slash', () => {
+    expect(resolveComposerAutocompleteTrigger({ text: 'please /rev', cursor: 11 })).toBeNull();
   });
 
   test('does not open a skill when the slash is mid-word', () => {

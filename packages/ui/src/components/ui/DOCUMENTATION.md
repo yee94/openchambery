@@ -120,7 +120,7 @@ Canonical look is the bordered shared `Input` style, not a flat bottom divider.
 - Wrapper padding for the search row is `p-1.5 pb-1`.
 - Dense picker search fields are typically `h-8` with a leading search icon.
 - Keep the ring treatment: inset `ring-border/60`, hover subtle surface, focus `interactive-focus-ring`.
-- Do not force borderless overrides such as `ring-0`, `border-none`, `rounded-none`, or CSS that strips `command-input-wrapper` borders / hides the search icon. `CommandPalette` keeps its search field transparent so it inherits the palette surface while retaining its border and focus ring.
+- Shared searchable pickers retain their bordered input and search icon. `CommandPalette` is the intentional global-search exception: its locally scoped `command-palette.css` presents a plain text input, an opaque elevated rounded surface, and a surface-level focus border. Shared `CommandInput` styling stays unchanged.
 - Do not reintroduce the old `border-b border-border/40` search divider as the primary search-field affordance.
 - Keep search placeholders localized through `locale-ui-patterns`.
 
@@ -148,7 +148,11 @@ Searchable pickers that filter a long candidate list must rank by relevance, not
 
 - Popup stays inside the viewport with the shared collision defaults.
 - Search chrome matches bordered `Input` / `CommandInput`, including focus ring.
-- No local CSS undoes shared search borders, icons, or padding.
+- Search-border/icon overrides stay confined to the documented global-search exception.
 - Long lists scroll inside the popup instead of overflowing the window.
 - Matched results are relevance-ranked; exact / prefix hits stay above weak substring or fuzzy noise.
-- Nearby searchable pickers (project, branch, model, agent, command palette) remain visually consistent.
+- Nearby searchable pickers (project, branch, model, agent) remain visually consistent.
+
+### Global search
+
+`CommandPalette` chat results use OpenCode `session.list` title search (`search`, root sessions only, newest first). That API matches session titles only; it does not search message bodies. An empty query shows up to nine recent local sessions and does not call the API. A failed title search stays a failure and may still show in-memory title matches; a successful empty page is an authoritative no-match. Chat rows show a highlighted title, a reserved `data-search-summary` line, a truncated project label, and desktop Meta/Control+1–9 shortcuts. Commands, settings, files, and projects keep their previous local scope. The Projects header opens this palette; its menu keeps the local project/session filter. The popup tracks the visual viewport, reserves safe areas, and clamps against the keyboard inset. Loading and error feedback stay separate from a successful empty result.

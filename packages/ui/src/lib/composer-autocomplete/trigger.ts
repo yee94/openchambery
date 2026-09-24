@@ -17,8 +17,8 @@ export type ResolveComposerAutocompleteTriggerInput = {
 
 /**
  * Resolve the live composer autocomplete trigger at `cursor`.
- * Priority matches ChatInput: shell off, leading `/` commands, mid-line
- * `/` skills, `#` snippets, then `@` mentions.
+ * Priority matches ChatInput and OpenCode: shell off, leading `/` commands,
+ * `#` snippets, then `@` mentions (files, agents, sessions, and skills).
  */
 export const resolveComposerAutocompleteTrigger = (
   input: ResolveComposerAutocompleteTriggerInput,
@@ -49,22 +49,6 @@ export const resolveComposerAutocompleteTrigger = (
   }
 
   const textBeforeCursor = text.substring(0, cursor);
-  const lastSlashSymbol = textBeforeCursor.lastIndexOf('/');
-  if (lastSlashSymbol !== -1) {
-    const charBefore = lastSlashSymbol > 0 ? textBeforeCursor[lastSlashSymbol - 1] : null;
-    const textAfterSlash = stripLeadingSlashCommandSlot(textBeforeCursor.substring(lastSlashSymbol + 1));
-    const hasSeparator = textAfterSlash.includes(' ') || textAfterSlash.includes('\n');
-    const isWordBoundary = !charBefore || /\s/.test(charBefore);
-    if (isWordBoundary && !hasSeparator) {
-      return {
-        kind: 'slash-skill',
-        query: textAfterSlash,
-        tokenStart: lastSlashSymbol,
-        tokenEnd: cursor,
-      };
-    }
-  }
-
   const lastHashSymbol = textBeforeCursor.lastIndexOf('#');
   if (lastHashSymbol !== -1) {
     const charBefore = lastHashSymbol > 0 ? textBeforeCursor[lastHashSymbol - 1] : null;

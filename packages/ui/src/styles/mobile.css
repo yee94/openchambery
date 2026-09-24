@@ -2482,6 +2482,38 @@ button.oc-mobile-worktree-label-trigger:active,
     min-width: 0 !important;
   }
 
+  /* Conversation quote chips sit above the composer. The 36px touch floor
+     would stack a close button on every quote and cover the transcript. */
+  :root.mobile-pointer:not(.desktop-runtime)
+    [data-composer-quote-list] {
+    gap: 0.125rem;
+    padding: 0.25rem 0.5rem 0;
+  }
+
+  :root.mobile-pointer:not(.desktop-runtime)
+    [data-composer-quote-chip] {
+    padding-block: 0;
+    padding-inline: 0.375rem 0.125rem;
+  }
+
+  :root.mobile-pointer:not(.desktop-runtime)
+    [data-composer-quote-list]
+    button,
+  :root.mobile-pointer:not(.desktop-runtime)
+    [data-composer-quote-list]
+    [role="button"] {
+    width: 1.25rem !important;
+    height: 1.25rem !important;
+    min-height: 0 !important;
+    min-width: 0 !important;
+  }
+
+  :root.mobile-pointer:not(.desktop-runtime)
+    [data-conversation-quote] {
+    font-size: 0.75rem;
+    line-height: 1rem;
+  }
+
   /* Composer queue chips intentionally use compact icon-sized controls.
      The generic 36px touch-target rule would stretch drag/delete/edit/send
      and make left-cluster gaps look huge under mobile-pointer. */

@@ -26,8 +26,19 @@ describe('detectMessageReferences', () => {
     test('materializes canonical skill and command tags into display labels', () => {
         const spans = detectMessageReferences('[skill:review] then [command:/abs/run.md]');
         expect(spans.map((span) => [span.kind, span.label, span.raw])).toEqual([
-            ['skill', '/review', '[skill:review]'],
+            ['skill', '@review', '[skill:review]'],
             ['command', '/run', '[command:/abs/run.md]'],
+        ]);
+    });
+
+    test('highlights installed @ skills without stealing agent mentions', () => {
+        const spans = detectMessageReferences('use @review and @build', {
+            skillNames: new Set(['review', 'build']),
+            agentNames: new Set(['build']),
+        });
+        expect(spans.map((span) => [span.kind, span.label])).toEqual([
+            ['skill', '@review'],
+            ['agent', '@build'],
         ]);
     });
 

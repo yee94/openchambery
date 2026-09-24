@@ -600,7 +600,7 @@ type PrimaryComposerMessageRecord = {
   mode?: string;
   providerID?: string;
   modelID?: string;
-  model?: string | { providerID?: string; modelID?: string; variant?: string };
+  model?: string | { providerID?: string; modelID?: string; id?: string; variant?: string };
   variant?: string;
 };
 
@@ -624,7 +624,9 @@ const readUserMessageModel = (
   // Projected user rows carry authoritative identity alongside a string model label.
   const model = typeof message.model === 'object' ? message.model : undefined;
   const providerID = readNonEmptyMessageString(message.providerID) ?? readNonEmptyMessageString(model?.providerID);
-  const modelID = readNonEmptyMessageString(message.modelID) ?? readNonEmptyMessageString(model?.modelID);
+  const modelID = readNonEmptyMessageString(message.modelID)
+    ?? readNonEmptyMessageString(model?.modelID)
+    ?? readNonEmptyMessageString(model?.id);
   if (!providerID || !modelID) {
     return null;
   }

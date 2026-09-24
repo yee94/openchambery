@@ -67,6 +67,7 @@ Dense UI that intentionally uses sub-36px controls **must opt out**. Tailwind `h
 | Composer agent + model chips | `.composer-mobile-model-controls button` (locked to 26px so the revealed agent name stays vertically centered with the model chip) | `mobile.css` |
 | Message action / footer icons | `[data-message-action-group="true"] button` | `mobile.css` |
 | Composer queued-message chips | `.oc-composer-queue button` / `[role="button"]` | `mobile.css` |
+| Conversation quote chips | `[data-composer-quote-list] button` (1.25rem close control) | `mobile.css` |
 | Mobile load-older hint | `button[data-chat-load-older="true"]` | `mobile.css` |
 | Composer attachment thumbs | `[data-attachment-preview="true"] button` | `mobile.css` |
 

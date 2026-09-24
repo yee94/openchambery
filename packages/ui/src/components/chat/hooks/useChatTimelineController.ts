@@ -95,7 +95,6 @@ export interface UseChatTimelineControllerResult {
     renderedMessages: ChatMessageEntry[];
     historySignals: TurnHistorySignals;
     isLoadingOlder: boolean;
-    historyRetryRequired: boolean;
     pendingRevealWork: boolean;
     activeTurnId: string | null;
     showScrollToBottom: boolean;
@@ -130,6 +129,12 @@ const VSCODE_TURN_MODEL_CACHE_MAX_MESSAGES = 30
 const MOBILE_TURN_MODEL_CACHE_MAX = 4
 const MOBILE_TURN_MODEL_CACHE_MAX_MESSAGES = 30
 const HISTORY_RENDER_WAIT_TIMEOUT_MS = 250
+/**
+ * Pause after a stalled or failed older-history load before the next scroll
+ * gesture may try again. Bounds a wheel burst at the top to one request per
+ * window instead of latching loads off until an explicit retry.
+ */
+export const HISTORY_STALL_COOLDOWN_MS = 1_500
 const HISTORY_INTERACTION_GUARD_MS = 2000
 /**
  * Wait for an in-flight sync page (historyLoading) before user-initiated
@@ -331,8 +336,14 @@ export const resolveHistoryPageDecision = (input: {
     return 'continue';
 };
 
-// One Host 3-turn page per user interaction (single server turn-page request).
-const HISTORY_INTERACTION_MAX_PAGES = 1;
+// Older pages are raw OpenCode 2 projection windows (20 messages). One long
+// agent turn stores each step as a message, so a window often lands inside a
+// collapsed turn and adds no visible height. Keep paging within the same
+// interaction until something shows, bounded so one gesture stays one burst.
+const HISTORY_INTERACTION_MAX_PAGES = 8;
+// A page whose result was discarded (cursor and rows unchanged) is refetched
+// once from the settled cursor before the interaction gives up.
+const HISTORY_STALLED_PAGE_RETRIES = 1;
 
 /**
  * Scroll drift (px) between an armed load snapshot and the live scrollTop that
@@ -696,8 +707,10 @@ export const useChatTimelineController = ({
     const [activeTurnId, setActiveTurnId] = React.useState<string | null>(null);
     // Per-session short-viewport auto-fill block after no-growth / hard failure.
     const [autoFillBlocked, setAutoFillBlocked] = React.useState(false);
-    // A stationary/failed page pauses gestures and auto-fill; button retry stays available.
+    // A stationary/failed page stops auto-fill for the session; scroll gestures
+    // only pause until historyStallCooldownUntilRef passes.
     const noGrowthBlockedRef = React.useRef(false);
+    const historyStallCooldownUntilRef = React.useRef(0);
     const runtimeKey = getRuntimeKey();
     const runtimeGeneration = getRuntimeGeneration();
     const historyScope = React.useMemo(
@@ -753,6 +766,7 @@ export const useChatTimelineController = ({
         setActiveTurnId(null);
         setAutoFillBlocked(false);
         noGrowthBlockedRef.current = false;
+        historyStallCooldownUntilRef.current = 0;
         setViewportMetrics({ scrollHeight: 0, clientHeight: 0 });
     }
 
@@ -1352,6 +1366,7 @@ export const useChatTimelineController = ({
             let loadedOldestMessageId = beforeOldestMessageId;
             let loadedLimit = beforeLimit;
             let pagesLoaded = 0;
+            let stalledRetries = 0;
 
             while (true) {
                 // Do not start another Host turn-page while sync still marks
@@ -1391,31 +1406,32 @@ export const useChatTimelineController = ({
                 await waitForNextRenderCommitOrTimeout();
                 if (!isCurrent()) return false;
 
-                const afterMessages = messagesRef.current;
-                const afterMessageCount = afterMessages.length;
-                const afterOldestMessageId = afterMessages[0]?.info?.id ?? null;
-                const afterLimit = historyMetaRef.current?.limit ?? loadedLimit;
-                const scrollHeightAfter = scrollRef.current?.scrollHeight ?? scrollHeightBefore;
-                const decision = resolveHistoryPageDecision({
-                    scrollHeightBefore,
-                    scrollHeightAfter,
-                    messageCountBefore,
-                    messageCountAfter: afterMessageCount,
-                    oldestIdBefore,
-                    oldestIdAfter: afterOldestMessageId,
-                    limitBefore,
-                    limitAfter: afterLimit,
-                    cursorBefore,
-                    cursorAfter: readCursor(),
-                    hasMoreAbove: historySignalsRef.current.hasMoreAboveTurns,
-                    pagesLoaded,
-                    maxPages: HISTORY_INTERACTION_MAX_PAGES,
-                });
+                const readPageDecision = (): HistoryPageDecision => {
+                    const afterMessages = messagesRef.current;
+                    return resolveHistoryPageDecision({
+                        scrollHeightBefore,
+                        scrollHeightAfter: scrollRef.current?.scrollHeight ?? scrollHeightBefore,
+                        messageCountBefore,
+                        messageCountAfter: afterMessages.length,
+                        oldestIdBefore,
+                        oldestIdAfter: afterMessages[0]?.info?.id ?? null,
+                        limitBefore,
+                        limitAfter: historyMetaRef.current?.limit ?? loadedLimit,
+                        cursorBefore,
+                        cursorAfter: readCursor(),
+                        hasMoreAbove: historySignalsRef.current.hasMoreAboveTurns,
+                        pagesLoaded,
+                        maxPages: HISTORY_INTERACTION_MAX_PAGES,
+                    });
+                };
+
+                const decision = readPageDecision();
 
                 if (decision === 'continue') {
-                    loadedMessageCount = afterMessageCount;
-                    loadedOldestMessageId = afterOldestMessageId;
-                    loadedLimit = afterLimit;
+                    const continued = messagesRef.current;
+                    loadedMessageCount = continued.length;
+                    loadedOldestMessageId = continued[0]?.info?.id ?? null;
+                    loadedLimit = historyMetaRef.current?.limit ?? loadedLimit;
                     continue;
                 }
                 if (decision === 'stop-no-growth') {
@@ -1439,12 +1455,22 @@ export const useChatTimelineController = ({
                         releaseSnapshot();
                         return false;
                     }
+                    // Neither cursor nor rows moved: the fetched page was
+                    // discarded (it resolved into a cache another writer had
+                    // already replaced). Refetch from the settled cursor.
+                    if (stalledRetries < HISTORY_STALLED_PAGE_RETRIES) {
+                        stalledRetries += 1;
+                        pagesLoaded -= 1;
+                        continue;
+                    }
                     noGrowthBlockedRef.current = true;
+                    historyStallCooldownUntilRef.current = Date.now() + HISTORY_STALL_COOLDOWN_MS;
                     setAutoFillBlocked(true);
                     releaseSnapshot();
                     return false;
                 }
                 noGrowthBlockedRef.current = false;
+                historyStallCooldownUntilRef.current = 0;
                 setAutoFillBlocked(false);
                 toast.dismiss(errorToastId);
                 return true;
@@ -1452,6 +1478,7 @@ export const useChatTimelineController = ({
         } catch (error) {
             if (isCurrent()) {
                 noGrowthBlockedRef.current = true;
+                historyStallCooldownUntilRef.current = Date.now() + HISTORY_STALL_COOLDOWN_MS;
                 setAutoFillBlocked(true);
             }
             releaseSnapshot();
@@ -1530,8 +1557,9 @@ export const useChatTimelineController = ({
                 userInitiated: Boolean(options?.userInitiated),
             });
             // Silent no-op paths (missing cursor, stop-no-growth) return false
-            // without throwing. Always log when history still claims more;
-            // toast only on user-initiated so auto-fill stays quiet.
+            // without throwing. Log when history still claims more, but never
+            // toast: nothing failed, and the next gesture after the stall
+            // cooldown pages again on its own.
             if (!isCurrent()) return;
             if (grew === false && historySignalsRef.current.canLoadEarlier) {
                 const diagnostic = {
@@ -1550,9 +1578,6 @@ export const useChatTimelineController = ({
                     new Error('chat history pagination returned no growth'),
                     diagnostic,
                 );
-                if (options?.userInitiated) {
-                    toast.error(t('chat.history.loadOlderFailed'), { id: errorToastId });
-                }
             }
         } catch (error) {
             const diagnostic = {
@@ -1730,7 +1755,7 @@ export const useChatTimelineController = ({
     });
 
     const decideAndLoadEarlier = useEvent((source: HistoryLoadSource) => {
-        if (noGrowthBlockedRef.current) return;
+        if (Date.now() < historyStallCooldownUntilRef.current) return;
         // Mobile never loads history from scroll/gesture position: any prepend
         // racing an active touch gesture can be hijacked by the native scroll
         // animation. The user scrolls to the natural top and taps an explicit
@@ -1888,7 +1913,6 @@ export const useChatTimelineController = ({
         renderedMessages,
         historySignals,
         isLoadingOlder: isLoadingOlderUi,
-        historyRetryRequired: autoFillBlocked && historySignals.canLoadEarlier,
         pendingRevealWork,
         activeTurnId,
         showScrollToBottom: showScrollButton && !pendingRevealWork,

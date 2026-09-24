@@ -54,6 +54,13 @@ describe('feature routes runtime composition', () => {
     expect(source).toMatch(/registerScheduledTaskRoutes\(app, \{[\s\S]*runHistoryStore,/);
   });
 
+  it('registers browser provider routes on the shared host before proxy composition', async () => {
+    const source = await fs.readFile(new URL('./feature-routes-runtime.js', import.meta.url), 'utf8');
+    expect(source).toContain("import { registerBrowserProviderRoutes } from '../browser-provider/routes.js';");
+    expect(source).toContain('registerBrowserProviderRoutes(app, { host: browserProviderHost });');
+    expect(source).toContain('createBrowserProviderSelectionStore(');
+  });
+
   it('registers message queue routes with the injected service before proxy composition', async () => {
     const source = await fs.readFile(new URL('./feature-routes-runtime.js', import.meta.url), 'utf8');
     expect(source).toContain("import { registerMessageQueueRoutes } from '../message-queue/routes.js';");

@@ -112,9 +112,12 @@ describe('ChatContainer source contracts', () => {
         expect(source).toContain('const loadOlderBusy = resolveMobileLoadOlderBusy({ isLoadingOlder });');
         expect(source).toContain('aria-busy={loadOlderBusy}');
         expect(source).toContain("{t('chat.history.loadOlder')}");
-        // Desktop scroll/auto-fill needs a restrained status while wait can be long.
+        // Desktop scroll/auto-fill keeps a glass disc (icon only) while the
+        // flight is unresolved. The label is the accessible name, not painted text.
         expect(source).toContain('resolveDesktopLoadOlderStatusVisibility');
-        expect(source).toContain("{t('chat.history.loadingMore')}");
+        expect(source).toContain("aria-label={t('chat.history.loadingMore')}");
+        expect(source).toContain('oc-mobile-glass-control');
+        expect(source).not.toContain("typography-meta text-[var(--surface-mutedForeground)]\">{t('chat.history.loadingMore')}");
         expect(source).toContain('showDesktopLoadOlderStatus');
     });
 

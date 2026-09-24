@@ -48,9 +48,9 @@ describe('getContextUsage compaction baseline', () => {
   test('returns null after compaction until a post-compaction assistant publishes tokens', () => {
     refs.messages = [
       { id: 'a1', role: 'assistant', tokens: TOKENS },
-      { id: 'u-compact', role: 'user' },
+      { id: 'c1', role: 'assistant', clientRole: 'compaction', type: 'compaction' },
     ];
-    refs.partsByMessage.set('u-compact', [{ type: 'compaction' }]);
+    refs.partsByMessage.set('c1', [{ type: 'compaction' }]);
 
     expect(useSessionUIStore.getState().getContextUsage(200000, 1000)).toBeNull();
   });
@@ -58,10 +58,10 @@ describe('getContextUsage compaction baseline', () => {
   test('a post-compaction assistant with tokens becomes the new baseline', () => {
     refs.messages = [
       { id: 'a1', role: 'assistant', tokens: TOKENS },
-      { id: 'u-compact', role: 'user' },
+      { id: 'c1', role: 'assistant', clientRole: 'compaction', type: 'compaction' },
       { id: 'a2', role: 'assistant', tokens: { input: 1000, output: 50, reasoning: 0, cache: { read: 0, write: 0 } } },
     ];
-    refs.partsByMessage.set('u-compact', [{ type: 'compaction' }]);
+    refs.partsByMessage.set('c1', [{ type: 'compaction' }]);
 
     const usage = useSessionUIStore.getState().getContextUsage(200000, 1000);
     expect(usage?.totalTokens).toBe(1050);

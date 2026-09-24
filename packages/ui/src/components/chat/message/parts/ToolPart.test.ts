@@ -293,6 +293,8 @@ describe('apply_patch navigation', () => {
         expect(fileNavigation).toContain('getToolNavigationDiffEntries(');
         expect(fileNavigation).toContain('openContextToolDiff(');
         expect(fileNavigation).toContain('const toolPatches = (isWriteLikeNavTool(normalizedPartTool)');
+        expect(fileNavigation).toContain('if (toolPatches.length > 0 || insideWorkspace)');
+        expect(fileNavigation.indexOf('if (toolPatches.length > 0 || insideWorkspace)')).toBeLessThan(fileNavigation.indexOf('ensureOutsideFileGrantForDesktop'));
         expect(fileNavigation).not.toContain('supportsExactToolDiff');
         expect(fileNavigation).toMatch(/const selectedToolDiffs = toolDiff\s*\n\s+\? getToolNavigationDiffEntries/);
     });

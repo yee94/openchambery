@@ -16,36 +16,33 @@ beforeEach(() => {
 });
 afterEach(async () => { await act(async () => root.unmount()); host.remove(); });
 
-test('shows running feedback and preserves disclosure through completion', async () => {
-    const part: SessionCompactionPart = {
-        id: 'p', messageID: 'msg_compact', sessionID: 'ses_compact',
-        type: 'compaction', status: 'running', reason: 'auto',
-    };
-    await act(async () => root.render(<CompactionCard part={part} />));
-    expect(host.textContent).toContain(zh['chat.activity.compacting']);
-    expect(host.querySelector('.animate-text-shimmer')).not.toBeNull();
-    expect(host.querySelector('[data-compaction-card]')?.className).not.toMatch(/rounded-xl|border-border/);
-    await act(async () => root.render(<CompactionCard part={{ ...part, summary: 'checkpoint' }} />));
-    expect(host.querySelector('button')?.getAttribute('aria-expanded')).toBe('false');
-    await act(async () => host.querySelector('button')!.click());
-    expect(host.querySelector('button')?.getAttribute('aria-expanded')).toBe('true');
-    expect(host.textContent).toContain('checkpoint');
-    await act(async () => root.render(<CompactionCard part={{ ...part, status: 'completed', summary: 'final checkpoint' }} />));
-    expect(host.textContent).toContain(zh['chat.activity.compactionCompleted']);
-    expect(host.querySelector('.animate-text-shimmer')).toBeNull();
-    expect(host.querySelector('button')?.getAttribute('aria-expanded')).toBe('true');
-    expect(host.textContent).toContain('final checkpoint');
-    await act(async () => host.querySelector('button')!.click());
-    expect(host.querySelector('button')?.getAttribute('aria-expanded')).toBe('false');
+const part = (status: SessionCompactionPart['status']): SessionCompactionPart => ({
+    id: 'p', messageID: 'msg_compact', sessionID: 'ses_compact',
+    type: 'compaction', status, reason: 'auto',
 });
 
-test('native checkpoint without a text summary still shows completion', async () => {
-    await act(async () => root.render(<CompactionCard part={{
-        id: 'p', messageID: 'msg_compact', sessionID: 'ses_compact',
-        type: 'compaction', status: 'completed', reason: 'manual', summary: '',
-    }} />));
+test('running and completed are one-line style separators, not cards', async () => {
+    await act(async () => root.render(<CompactionCard part={part('running')} />));
+    expect(host.textContent).toContain(zh['chat.activity.compacting']);
+    expect(host.querySelector('.animate-text-shimmer')).not.toBeNull();
+    expect(host.querySelector('[data-compaction-card]')?.getAttribute('role')).toBe('separator');
+    expect(host.querySelector('[data-compaction-card]')?.className).not.toMatch(/rounded-xl|border-border|oc-tool-row/);
+    expect(host.querySelector('button')).toBeNull();
+
+    await act(async () => root.render(<CompactionCard part={{ ...part('completed'), summary: 'checkpoint' }} />));
     expect(host.textContent).toContain(zh['chat.activity.compactionCompleted']);
-    expect(host.querySelector('.oc-tool-row')).not.toBeNull();
-    await act(async () => host.querySelector('button')!.click());
-    expect(host.querySelector('button')?.getAttribute('aria-expanded')).toBe('false');
+    expect(host.textContent).not.toContain('checkpoint');
+    expect(host.querySelector('.animate-text-shimmer')).toBeNull();
+    expect(host.querySelector('button')).toBeNull();
+});
+
+test('failed stays a separator and does not open an error card', async () => {
+    await act(async () => root.render(<CompactionCard part={{
+        ...part('failed'),
+        error: { type: 'error', message: 'model refused' },
+    }} />));
+    expect(host.textContent).toContain(zh['chat.activity.compactionFailed']);
+    expect(host.textContent).not.toContain('model refused');
+    expect(host.querySelector('[data-compaction-card]')?.getAttribute('role')).toBe('separator');
+    expect(host.querySelector('button')).toBeNull();
 });

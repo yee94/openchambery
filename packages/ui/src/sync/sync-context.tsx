@@ -106,6 +106,7 @@ import {
 import { applySessionEventToGlobalSessions } from "./session-event-router"
 import { syncDebug } from "./debug"
 import {
+  collectDirectoryStatusRestoreSessionIds,
   getReconnectCandidateSessionIds,
   getReconnectMaterializationSessionIds,
   getStatusWatchdogCandidateSessionIds,
@@ -171,7 +172,7 @@ import {
 } from "./scoped-session-status"
 import { CURRENT_SESSION_ENTITY_CACHE_TTL_MS, resolveCurrentSessionEntity, resolveParentSessionTarget } from "./current-session-entity"
 import {
-  promoteRetryToBusyOnLiveActivity,
+  noteLiveSessionActivity,
   reconcileActiveSessionStatusAfterMessagePull,
   resyncDirectorySessionStatuses,
   setAuthoritativeGlobalSessionStatusConverge,
@@ -501,8 +502,8 @@ export function handleNormalizedOpenCodeHints(
   // Live step/text/reasoning/tool streams mean the retry attempt already
   // resumed. Promote retry → busy so the overlay does not stay pinned.
   if (normalized.domainActivityHint?.kind === "activity") {
-    const store = childStores.getChild(directory)
-    if (store) promoteRetryToBusyOnLiveActivity(store, sessionID)
+    const store = childStores.getChild(directory) ?? childStores.ensureChild(directory, { bootstrap: false })
+    noteLiveSessionActivity(store, sessionID)
   }
 
   // Admission confirmation + activity: Ticket 09 Query path relies on SSE merge
@@ -577,7 +578,10 @@ export async function materializeSessionFromServer(
     })
     if (page.records.length === 0) return "ready"
 
-    if (statusBeforeMaterialization && statusBeforeMaterialization.type !== "idle" && !options?.isStale?.()) {
+    // Missing status is not an authoritative idle. Confirm against session.active
+    // so a restart restores busy while the tail is still streaming. An explicit
+    // idle entry stays put until a live activity frame or a directory resync.
+    if (!options?.isStale?.() && statusBeforeMaterialization?.type !== "idle") {
       await resyncDirectorySessionStatuses(directory, store, [sessionID])
     }
     return "ready"
@@ -780,6 +784,26 @@ function getActiveSessionCandidateIds(directory: string, state: DirectoryStore):
   return getReconnectCandidateSessionIds(state, {
     directory,
     viewedSession: getViewedSessionMaterializationTarget(directory),
+  })
+}
+
+function globalSessionIdsForDirectory(directory: string): string[] {
+  const normalized = normalizeProjectPath(directory) ?? directory
+  const ids: string[] = []
+  for (const session of useGlobalSessionsStore.getState().activeSessions) {
+    const sessionDirectory = session.directory || session.location?.directory
+    if (!sessionDirectory) continue
+    const normalizedSessionDirectory = normalizeProjectPath(sessionDirectory) ?? sessionDirectory
+    if (normalizedSessionDirectory === normalized) ids.push(session.id)
+  }
+  return ids
+}
+
+function getDirectoryStatusRestoreSessionIds(directory: string, state: DirectoryStore): string[] {
+  return collectDirectoryStatusRestoreSessionIds(state, {
+    directory,
+    viewedSession: getViewedSessionMaterializationTarget(directory),
+    extraSessionIds: globalSessionIdsForDirectory(directory),
   })
 }
 
@@ -1666,11 +1690,13 @@ export async function resyncDirectoryAfterReconnect(
   options?: { statusOnly?: boolean },
 ) {
   const current = store.getState()
-  const candidateSessionIds = getActiveSessionCandidateIds(directory, current)
+  const candidateSessionIds = getDirectoryStatusRestoreSessionIds(directory, current)
 
   // Always take an authoritative status snapshot for initialized directories.
-  // An empty local candidate set must not skip the fetch — that is exactly how
-  // background idle→busy transitions are lost across reconnect.
+  // Include catalog rows and global-index sessions for this directory, not only
+  // sessions that were already non-idle. Otherwise a restart drops running
+  // sessions that were never in the child store when bootstrap fetched
+  // session.active, while their text frames keep streaming.
   await resyncDirectorySessionStatuses(directory, store, candidateSessionIds)
 
   // statusOnly suppresses extra reconnect work (full routing ingest) but must

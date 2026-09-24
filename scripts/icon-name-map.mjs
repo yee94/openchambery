@@ -17,7 +17,7 @@
  * sizes (closed Lucide folder collapses into a boxy rectangle at ~14–16px).
  */
 export const CODEX_FOLDER_SVG =
-  `<path d="m6 14 1.5-2.9A2 2 0 0 1 9.24 10H20a2 2 0 0 1 1.94 2.5l-1.54 6a2 2 0 0 1-1.95 1.5H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H18a2 2 0 0 1 2 2v2" />`
+  `<path d="M3 17V6a3 3 0 0 1 3-3h2.2c.9 0 1.7.4 2.2 1.1l.6.8c.5.7 1.3 1.1 2.2 1.1H18a3 3 0 0 1 3 3v1M3 17l3-5a3 3 0 0 1 2.6-1.5h10.6a2 2 0 0 1 1.9 2.6l-1.5 5a2.7 2.7 0 0 1-2.6 1.9H6a3 3 0 0 1-3-3Z" />`
 
 /** Open folder with a plus (new project / new folder). */
 export const CODEX_FOLDER_PLUS_SVG =
@@ -48,7 +48,15 @@ export const SOFT_COPY_SVG =
   `<rect width="14" height="14" x="8" y="8" rx="3.5" ry="3.5" /><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2" />`
 
 export const SOFT_GIT_BRANCH_SVG =
-  `<circle cx="18" cy="6" r="2.6" /><circle cx="6" cy="18" r="2.6" /><path d="M6 15.4V3" /><path d="M18 8.6c0 4.6-3.4 7.4-9.4 8" />`
+  `<circle cx="6" cy="17.5" r="2.75" /><circle cx="18" cy="6.5" r="2.75" /><path d="M6 14.75V3.5M18 9.25c0 4.75-3.5 8.25-9.25 8.25" />`
+
+/** Worktree: soft workspace nodes joined by a curved fork, legible at 14px. */
+const SOFT_WORKTREE_SVG =
+  `<rect x="9" y="3" width="6" height="5" rx="2" /><path d="M12 8v1.5c0 4-6 2-6 6.5M12 9.5c0 4 6 2 6 6.5" /><rect x="3" y="16" width="6" height="5" rx="2" /><rect x="15" y="16" width="6" height="5" rx="2" />`
+
+/** Rounded document and pencil, matching the project / branch / worktree set. */
+const SOFT_FILE_EDIT_SVG =
+  `<path d="M10 21H7a3 3 0 0 1-3-3V6a3 3 0 0 1 3-3h5.2c.8 0 1.6.3 2.1.9l2.8 2.8c.6.5.9 1.3.9 2.1V10M12 3.2V7a2 2 0 0 0 2 2h3.8" /><path d="m12 17 6-6a2.1 2.1 0 0 1 3 3l-6 6-4 1 1-4ZM17 12l3 3" />`
 
 /**
  * Cartoon hourglass: one closed outline, rounded top/bottom, soft middle.
@@ -82,6 +90,7 @@ export const REMIX_PUSHPIN_FILL_SVG =
 /** @type {Record<string, IconMapEntry>} */
 export const ICON_NAME_MAP = {
   "add": { lucide: "plus", fill: false },
+  "changes": { custom: '<path d="M6 8h12M12 2v12M6 21h12" />' },
   "add-circle": { lucide: "circle-plus", fill: false },
   "ai-agent": {
     custom: `<rect x="4" y="7.5" width="16" height="13" rx="4.5" /><path d="M12 7.5V4.75" /><circle cx="12" cy="3.5" r="1.25" /><path d="M1.75 12.5v3M22.25 12.5v3M9 12.5v2M15 12.5v2" />`,
@@ -178,7 +187,7 @@ export const ICON_NAME_MAP = {
   "file-copy": { custom: SOFT_COPY_SVG },
   "file-copy-2": { lucide: "files", fill: false },
   "file-download": { lucide: "file-down", fill: false },
-  "file-edit": { lucide: "file-pen", fill: false },
+  "file-edit": { custom: SOFT_FILE_EDIT_SVG },
   "file-image": { lucide: "file-image", fill: false },
   "file-list-2": { lucide: "file-text", fill: false },
   "file-music": { lucide: "file-music", fill: false },
@@ -249,7 +258,7 @@ export const ICON_NAME_MAP = {
   "more-2": { lucide: "ellipsis", fill: false },
   "more-2-fill": { lucide: "ellipsis", fill: true },
   "music": { lucide: "music", fill: false },
-  "node-tree": { lucide: "network", fill: false },
+  "node-tree": { custom: SOFT_WORKTREE_SVG },
   "notification-3": { lucide: "bell", fill: false },
   "palette": { lucide: "palette", fill: false },
   "pause-circle": { lucide: "circle-pause", fill: false },
@@ -283,6 +292,7 @@ export const ICON_NAME_MAP = {
   "send-plane": { lucide: "send", fill: false },
   "send-plane-2": { lucide: "send-horizontal", fill: false },
   "server": { lucide: "server", fill: false },
+  "settings-2": { lucide: "settings-2", fill: false },
   "settings-3": { lucide: "settings", fill: false },
   "share-2": { lucide: "share", fill: false },
   "shield": { lucide: "shield", fill: false },

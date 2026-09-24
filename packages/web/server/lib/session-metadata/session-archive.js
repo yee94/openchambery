@@ -451,7 +451,7 @@ export const createSessionArchiveService = (deps = {}) => {
     const metadata = await sessionMetadataStore.setSessionMetadata(
       sessionID,
       { openchamber: { archive: { archivedAt } } },
-      { allowArchive: true },
+      { allowArchive: true, directory: upstreamDirectory || directoryHint },
     );
 
     // New Host mutation wins: bump generation and cancel older repair timers

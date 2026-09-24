@@ -4,19 +4,16 @@ import { SortableTabsStrip } from '@/components/ui/sortable-tabs-strip';
 import { GitView } from '@/components/views/GitView';
 import { Icon } from "@/components/icon/Icon";
 import { useGitStore } from '@/stores/useGitStore';
-import { useUIStore } from '@/stores/useUIStore';
+import { useUIStore, type RightSidebarTab } from '@/stores/useUIStore';
 import { useRuntimeAPIs } from '@/hooks/useRuntimeAPIs';
 import { useEffectiveDirectory } from '@/hooks/useEffectiveDirectory';
 import { cn } from '@/lib/utils';
 import { useI18n } from '@/lib/i18n';
+import { shouldShowBrowserProviderRail } from '@/lib/browser-provider/contract';
+import { useBrowserProviderCatalogQuery } from '@/queries/browserProviderQueries';
+import { BrowserProviderRail } from './BrowserProviderRail';
 import { SidebarFilesTree } from './SidebarFilesTree';
-
-type RightTab = 'git' | 'files';
-
-const isRightTab = (value: string): value is RightTab =>
-  value === 'git' || value === 'files';
-
-const RIGHT_TAB_FALLBACK: RightTab = 'files';
+import { isRightSidebarTab, visibleRightSidebarTabs } from './visibleRightSidebarTabs';
 
 const isBrowserActive = (): boolean => {
   if (typeof document !== 'undefined' && document.hidden) return false;
@@ -40,7 +37,7 @@ const isBrowserActive = (): boolean => {
 function useRightSidebarGitSync(
   directory: string | undefined,
   isSidebarOpen: boolean,
-  rightTab: RightTab | undefined,
+  rightTab: RightSidebarTab | undefined,
   mainTab: string | undefined
 ) {
   const { git } = useRuntimeAPIs();
@@ -72,61 +69,52 @@ export const RightSidebarTabs: React.FC = () => {
   const isRightSidebarOpen = useUIStore((state) => state.isRightSidebarOpen);
   const activeMainTab = useUIStore((state) => state.activeMainTab);
   const directory = useEffectiveDirectory();
+  const browserCatalog = useBrowserProviderCatalogQuery();
+  const selectedProvider = browserCatalog.data?.providers.find((provider) => provider.id === browserCatalog.data?.selectedId) ?? null;
+  const showBrowser = shouldShowBrowserProviderRail(browserCatalog.data);
 
   useRightSidebarGitSync(directory, isRightSidebarOpen, rightSidebarTab, activeMainTab);
 
   // When the main view already hosts a right-tab equivalent (e.g. main tab
   // 'git' renders GitView in the secondary slot), the right sidebar's
   // matching tab is hidden to avoid two live GitView instances running
-  // effects. The map is small and stable; expand it if more shared
-  // secondary/right views are added.
-  const hiddenRightTab: RightTab | null =
-    activeMainTab === 'git'
-      ? 'git'
-      : null;
+  // effects. The browser tab exists only while a provider is actually selected.
+  const hideGit = activeMainTab === 'git';
+  const visibleTabs = React.useMemo(
+    () => visibleRightSidebarTabs({ hideGit, showBrowser }),
+    [hideGit, showBrowser],
+  );
 
   // Persisted right sidebar tab can be stale across main-tab switches (e.g.
-  // user opened main 'git' while right tab was 'git'). Snap to the fallback
-  // so the visible tab never equals the hidden one.
+  // user opened main 'git' while right tab was 'git'). Snap away from a tab
+  // that is not currently visible so an absent provider never looks connected.
   React.useEffect(() => {
-    if (hiddenRightTab && rightSidebarTab === hiddenRightTab) {
-      setRightSidebarTab(RIGHT_TAB_FALLBACK);
+    if (!visibleTabs.includes(rightSidebarTab)) {
+      setRightSidebarTab(visibleTabs[0] ?? 'files');
     }
-  }, [hiddenRightTab, rightSidebarTab, setRightSidebarTab]);
+  }, [rightSidebarTab, setRightSidebarTab, visibleTabs]);
 
-  const tabItems = React.useMemo(() => [
-    {
-      id: 'git',
-      label: t('layout.rightSidebar.git'),
-      icon: <Icon name="git-branch" className="h-3.5 w-3.5" />,
-    },
-    {
-      id: 'files',
-      label: t('layout.rightSidebar.files'),
-      icon: <Icon name="folder-3" className="h-3.5 w-3.5" />,
-    },
-  ], [t]);
-
-  const visibleTabItems = React.useMemo(
-    () => (hiddenRightTab ? tabItems.filter((item) => item.id !== hiddenRightTab) : tabItems),
-    [tabItems, hiddenRightTab]
-  );
-  const isRightGitTabActive = isRightSidebarOpen && rightSidebarTab === 'git' && hiddenRightTab !== 'git';
+  const tabItems = React.useMemo(() => visibleTabs.map((id) => ({
+    id,
+    label: t(id === 'git' ? 'layout.rightSidebar.git' : id === 'files' ? 'layout.rightSidebar.files' : 'layout.rightSidebar.browser'),
+    icon: <Icon name={id === 'git' ? 'git-branch' : id === 'files' ? 'folder-3' : 'global'} className="h-3.5 w-3.5" />,
+  })), [t, visibleTabs]);
+  const isRightGitTabActive = isRightSidebarOpen && rightSidebarTab === 'git' && !hideGit;
 
   const handleTabSelect = React.useCallback(
     (tabID: string) => {
-      if (isRightTab(tabID)) {
+      if (isRightSidebarTab(tabID) && visibleTabs.includes(tabID)) {
         setRightSidebarTab(tabID);
       }
     },
-    [setRightSidebarTab]
+    [setRightSidebarTab, visibleTabs]
   );
 
   return (
     <div className="flex h-full min-h-0 flex-col overflow-hidden bg-background">
       <div className="h-9 bg-background pt-1 px-2">
         <SortableTabsStrip
-          items={visibleTabItems}
+          items={tabItems}
           activeId={rightSidebarTab}
           onSelect={handleTabSelect}
           layoutMode="fit"
@@ -143,6 +131,11 @@ export const RightSidebarTabs: React.FC = () => {
         <div className={cn('h-full', rightSidebarTab !== 'files' && 'hidden')}>
           <SidebarFilesTree />
         </div>
+        {showBrowser && selectedProvider ? (
+          <div className={cn('h-full', rightSidebarTab !== 'browser' && 'hidden')}>
+            <BrowserProviderRail provider={selectedProvider} />
+          </div>
+        ) : null}
       </div>
     </div>
   );

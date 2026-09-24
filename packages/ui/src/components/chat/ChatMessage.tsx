@@ -25,6 +25,7 @@ import { filterVisibleParts, isEmptyTextPart, normalizeParts } from './message/p
 import { hasVisibleUserBubbleContent, normalizeUserDisplayParts } from './message/normalizeUserDisplayParts';
 import { flattenAssistantTextParts } from '@/lib/messages/messageText';
 import { getProviderModelDisplayName } from '@/lib/modelDisplay';
+import { readUserMessageHeaderIdentity } from './lib/pendingAssistantHeader';
 import { lazyWithChunkRecovery } from '@/lib/chunkLoadRecovery';
 import type { TurnGroupingContext } from './lib/turns/types';
 import { shouldTightenWorkingBottomGap } from './lib/activityExpansion';
@@ -302,45 +303,9 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
             return null;
         }
 
-        const mode = getMessageInfoProp(previousMessage.info, 'mode');
-        const agent = getMessageInfoProp(previousMessage.info, 'agent');
-        const providerID = getMessageInfoProp(previousMessage.info, 'providerID');
-        const modelID = getMessageInfoProp(previousMessage.info, 'modelID');
-        // OpenCode 1.4.0 moved variant from top-level to model.variant on UserMessage.
-        const model = getMessageInfoProp(previousMessage.info, 'model') as
-            | { variant?: unknown; providerID?: unknown; modelID?: unknown }
-            | undefined;
-        const nestedVariant = typeof model === 'object' && model !== null ? model.variant : undefined;
-        const topLevelVariant = getMessageInfoProp(previousMessage.info, 'variant');
-        const variant = nestedVariant ?? topLevelVariant;
-        const nestedProvider = typeof model === 'object' && model !== null ? model.providerID : undefined;
-        const nestedModelId = typeof model === 'object' && model !== null ? model.modelID : undefined;
-        const resolvedAgent =
-            typeof mode === 'string' && mode.trim().length > 0
-                ? mode
-                : (typeof agent === 'string' && agent.trim().length > 0 ? agent : undefined);
-        const resolvedProvider = (
-            typeof providerID === 'string' && providerID.trim().length > 0
-                ? providerID
-                : (typeof nestedProvider === 'string' && nestedProvider.trim().length > 0 ? nestedProvider : undefined)
-        );
-        const resolvedModel = (
-            typeof modelID === 'string' && modelID.trim().length > 0
-                ? modelID
-                : (typeof nestedModelId === 'string' && nestedModelId.trim().length > 0 ? nestedModelId : undefined)
-        );
-        const resolvedVariant = typeof variant === 'string' && variant.trim().length > 0 ? variant : undefined;
-
-        if (!resolvedAgent && !resolvedProvider && !resolvedModel && !resolvedVariant) {
-            return null;
-        }
-
-        return {
-            agentName: resolvedAgent,
-            providerId: resolvedProvider,
-            modelId: resolvedModel,
-            variant: resolvedVariant,
-        };
+        const identity = readUserMessageHeaderIdentity(previousMessage.info);
+        if (!identity) return null;
+        return identity;
     }, [isUser, previousMessage]);
 
     const agentName = React.useMemo(() => {
@@ -371,8 +336,9 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
         return savedSessionAgentSelection ?? undefined;
     }, [isUser, message.info, previousUserMetadata, sessionId, currentContextAgent, savedSessionAgentSelection]);
 
-    const messageProviderID = !isUser ? getMessageInfoProp(message.info, 'providerID') : null;
-    const messageModelID = !isUser ? getMessageInfoProp(message.info, 'modelID') : null;
+    const messageIdentity = !isUser ? readUserMessageHeaderIdentity(message.info) : null;
+    const messageProviderID = messageIdentity?.providerId ?? null;
+    const messageModelID = messageIdentity?.modelId ?? null;
 
     const contextModelSelection = React.useMemo(() => {
         if (isUser || !sessionId) return null;
@@ -1104,7 +1070,7 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
     if (compactionCard) {
         return (
             <div
-                className={cn('group w-full', isMobile ? 'pt-2 pb-2' : 'pt-4 pb-4')}
+                className={cn('group w-full', isMobile ? 'py-2' : 'py-3')}
                 id={`message-${message.info.id}`}
                 data-message-id={message.info.id}
                 data-compaction-status={compactionCard.status}

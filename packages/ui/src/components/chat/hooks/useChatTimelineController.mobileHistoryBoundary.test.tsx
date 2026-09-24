@@ -55,7 +55,7 @@ vi.mock('@/sync/transcript-repository-runtime', () => ({
     }),
 }));
 
-import { useChatTimelineController } from './useChatTimelineController';
+import { HISTORY_STALL_COOLDOWN_MS, useChatTimelineController } from './useChatTimelineController';
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -301,26 +301,60 @@ describe('history failure feedback with production toast store', () => {
     const activeErrors = () => sonnerToast.getToasts().filter((toast): toast is ToastT => 'type' in toast && toast.type === 'error');
     const fail = async () => { throw new Error('HTTP 400'); };
 
-    test('failed upward load stops gesture retries; explicit retry remains available and success clears feedback', async () => {
-        const load = vi.fn(fail);
-        const handle = await mountController({ isMobile: false, autoFillEnabled: false, loadMoreMessages: load });
-        for (let index = 0; index < 3; index += 1) {
+    test('failed upward load pauses gestures for the cooldown, then the next gesture retries and success clears feedback', async () => {
+        const realNow = Date.now.bind(Date);
+        let skew = 0;
+        const clock = vi.spyOn(Date, 'now').mockImplementation(() => realNow() + skew);
+        try {
+            const load = vi.fn(fail);
+            const handle = await mountController({ isMobile: false, autoFillEnabled: false, loadMoreMessages: load });
+            for (let index = 0; index < 3; index += 1) {
+                await act(async () => handle.api!.handleHistoryUpwardIntent());
+                await waitMs(10);
+            }
+            expect(load).toHaveBeenCalledTimes(1);
+            expect(activeErrors()).toHaveLength(1);
+            expect(activeErrors()[0].title).toBe('chat.history.loadOlderFailed');
+            expect(activeErrors()[0].action).toMatchObject({ label: 'Copy' });
+            expect(handle.api).not.toHaveProperty('historyRetryRequired');
+
+            skew += HISTORY_STALL_COOLDOWN_MS + 1;
+            const recovered = vi.fn(async () => undefined);
+            await handle.setState({ loadMoreMessages: recovered });
             await act(async () => handle.api!.handleHistoryUpwardIntent());
-            await waitMs(10);
-        }
-        expect(load).toHaveBeenCalledTimes(1);
-        expect(activeErrors()).toHaveLength(1);
-        expect(handle.api!.historyRetryRequired).toBe(true);
-        expect(activeErrors()[0].title).toBe('chat.history.loadOlderFailed');
-        expect(activeErrors()[0].action).toMatchObject({ label: 'Copy' });
-        await act(async () => { await handle.api!.loadEarlier({ userInitiated: true }); });
-        expect(load).toHaveBeenCalledTimes(2);
-        await handle.setState({ loadMoreMessages: async () => {
+            await waitMs(700);
+            expect(recovered).toHaveBeenCalled();
             await handle.setState({ historyMeta: { ...historyMetaReady(), complete: true, canLoadEarlier: false } });
-        } });
-        await act(async () => { await handle.api!.loadEarlier({ userInitiated: true }); });
-        expect(activeErrors()).toHaveLength(0);
-        expect(handle.api!.historyRetryRequired).toBe(false);
+            expect(activeErrors()).toHaveLength(0);
+        } finally {
+            clock.mockRestore();
+        }
+    });
+
+    test('a page that changes nothing is refetched once, stays toast-silent, and the next gesture pages again after the cooldown', async () => {
+        const realNow = Date.now.bind(Date);
+        let skew = 0;
+        const clock = vi.spyOn(Date, 'now').mockImplementation(() => realNow() + skew);
+        try {
+            const load = vi.fn(async () => undefined);
+            const handle = await mountController({ isMobile: false, autoFillEnabled: false, loadMoreMessages: load });
+            await act(async () => handle.api!.handleHistoryUpwardIntent());
+            await waitMs(700);
+            expect(load).toHaveBeenCalledTimes(2);
+            expect(activeErrors()).toHaveLength(0);
+
+            await act(async () => handle.api!.handleHistoryUpwardIntent());
+            await waitMs(50);
+            expect(load).toHaveBeenCalledTimes(2);
+
+            skew += HISTORY_STALL_COOLDOWN_MS + 1;
+            await act(async () => handle.api!.handleHistoryUpwardIntent());
+            await waitMs(700);
+            expect(load).toHaveBeenCalledTimes(4);
+            expect(activeErrors()).toHaveLength(0);
+        } finally {
+            clock.mockRestore();
+        }
     });
 
     test.each(['session', 'runtime'] as const)('%s switch isolates late failure from new error', async (scope) => {
@@ -381,11 +415,12 @@ describe('history failure feedback with production toast store', () => {
         expect(activeErrors()).toHaveLength(0);
     });
 
-    test('stationary page blocks repeated scroll and auto-fill, retaining explicit retry feedback', async () => {
+    test('stationary page is refetched once, then blocks auto-fill and cools scroll down without a toast', async () => {
         const load = vi.fn(async () => undefined);
         const handle = await mountController({ isMobile: false, isPinned: false, autoFillEnabled: false, loadMoreMessages: load });
         await act(async () => { await handle.api!.loadEarlier({ userInitiated: true }); });
-        expect(activeErrors()).toHaveLength(1);
+        expect(load).toHaveBeenCalledTimes(2);
+        expect(activeErrors()).toHaveLength(0);
         expect(handle.api!.historySignals.canLoadEarlier).toBe(true);
         for (let index = 0; index < 3; index += 1) {
             await act(async () => handle.api!.handleHistoryScroll());
@@ -393,13 +428,13 @@ describe('history failure feedback with production toast store', () => {
         }
         await handle.setState({ isPinned: true, autoFillEnabled: true });
         await waitMs(350);
-        expect(load).toHaveBeenCalledTimes(1);
-        await act(async () => { await handle.api!.loadEarlier({ userInitiated: true }); });
         expect(load).toHaveBeenCalledTimes(2);
-        expect(activeErrors()).toHaveLength(1);
+        await act(async () => { await handle.api!.loadEarlier({ userInitiated: true }); });
+        expect(load).toHaveBeenCalledTimes(4);
+        expect(activeErrors()).toHaveLength(0);
     });
 
-    test('empty records with advancing repository cursor make progress and keep one page per explicit request', async () => {
+    test('empty records with advancing repository cursor keep paging in one request until the cursor stops', async () => {
         const client = new QueryClient();
         const repo = createQueryTranscriptRepository({ client, transport: 'test-runtime', generation: 1 });
         runtimeSurface.repository = repo;
@@ -415,13 +450,11 @@ describe('history failure feedback with production toast store', () => {
         const handle = await mountController({ isMobile: true, loadMoreMessages: load });
         await act(async () => { await handle.api!.loadEarlier({ userInitiated: true }); });
         expect(repo.getPagination(scope).cursor).toBe('cursor-2');
-        expect(load).toHaveBeenCalledTimes(1);
+        // Cursor advance continues; the repeated cursor-2 page is refetched
+        // once and then the interaction stops quietly.
+        expect(load).toHaveBeenCalledTimes(3);
         expect(activeErrors()).toHaveLength(0);
         expect(handle.api!.historySignals.canLoadEarlier).toBe(true);
-        // A second explicit request receives the same cursor and surfaces the stall.
-        await act(async () => { await handle.api!.loadEarlier({ userInitiated: true }); });
-        expect(load).toHaveBeenCalledTimes(2);
-        expect(activeErrors()).toHaveLength(1);
         repo.destroy();
         client.clear();
     });
@@ -445,7 +478,9 @@ describe('history failure feedback with production toast store', () => {
         await waitMs(350);
         await handle.render();
         await waitMs(350);
-        expect(load).toHaveBeenCalledTimes(2);
+        await handle.render();
+        await waitMs(350);
+        expect(load).toHaveBeenCalledTimes(3);
         expect(handle.api!.historySignals.canLoadEarlier).toBe(true);
         expect(activeErrors()).toHaveLength(0);
         repo.destroy();
@@ -734,6 +769,8 @@ describe('useChatTimelineController mobile history boundary', () => {
                 resolveUserLoad?.();
             });
             // Grow on the next commit so fetchOlderHistory's render wait sees it.
+            // Visible growth ends the interaction after this one page.
+            handle.geometry.scrollHeight += 400;
             await handle.setState({
                 messages: grownMessages,
                 historyMeta: grownMeta,

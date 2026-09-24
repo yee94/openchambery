@@ -659,6 +659,7 @@ export const AgentManagerEmptyState: React.FC<AgentManagerEmptyStateProps> = ({
                 searchQuery={mentionQuery}
                 onFileSelect={handleAutocompleteFileSelect}
                 onAgentSelect={handleAutocompleteAgentSelect}
+                onSkillSelect={(skill) => handleAutocompleteAgentSelect(skill.name)}
                 onClose={() => setShowFileMention(false)}
                 style={{
                   left: 0,

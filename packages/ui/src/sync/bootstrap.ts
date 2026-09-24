@@ -188,6 +188,10 @@ export async function bootstrapDirectory(input: {
         ...Object.keys(before),
         ...getState().session.map((session) => session.id),
       ])
+      // The directory catalog is loaded after this phase. An empty known set
+      // cannot scope process-global session.active, and publishing snapshot_at
+      // anyway makes every later session look authoritatively idle.
+      if (knownIDs.size === 0) return
       const snapshot = activeMembershipToStatus(membership, knownIDs)
       const current = getState().session_status
       const observedAt = { ...getState().session_status_observed_at }

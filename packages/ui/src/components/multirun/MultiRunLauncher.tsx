@@ -948,6 +948,7 @@ const RunGroupCard: React.FC<RunGroupCardProps> = ({
               searchQuery={mentionQuery}
               onFileSelect={handleFileSelect}
               onAgentSelect={handleAgentSelect}
+              onSkillSelect={(skill) => handleAgentSelect(skill.name)}
               onClose={() => setShowFileMention(false)}
               style={{ left: 0, top: 'auto', bottom: 'calc(100% + 6px)', marginBottom: 0, maxWidth: '100%' }}
             />

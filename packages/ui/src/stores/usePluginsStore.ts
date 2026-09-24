@@ -6,7 +6,13 @@ import { opencodeClient } from '@/lib/opencode/client';
 import { runtimeFetch } from '@/lib/runtime-fetch';
 import { getRuntimeGeneration, getRuntimeTransportIdentity } from '@/lib/runtime-switch';
 import { queryClient } from '@/lib/queryRuntime';
-import { pluginsListQueryOptions, refreshPluginsQuery } from '@/queries/pluginQueries';
+import { pluginOperationErrorMessage, updatePluginPackage } from '@/lib/opencode/plugins';
+import {
+  pluginPackageUpdateKey,
+  pluginsListQueryOptions,
+  refreshPluginRuntimeQuery,
+  refreshPluginsQuery,
+} from '@/queries/pluginQueries';
 
 export type PluginScope = 'user' | 'project';
 type PluginParsedKind = 'npm' | 'path';
@@ -18,6 +24,8 @@ export interface PluginEntry {
   scope: PluginScope;
   kind: 'config';
   parsedKind: PluginParsedKind;
+  /** Config file that declares this spec. Relative paths cannot be matched without it. */
+  sourcePath?: string;
   compatibility?: 'v1-incompatible' | string;
   compatible?: boolean;
 }
@@ -27,6 +35,7 @@ export interface PluginFile {
   fileName: string;
   scope: PluginScope;
   kind: 'file';
+  absolutePath?: string;
   compatibility?: 'v1-incompatible' | string;
   compatible?: boolean;
 }
@@ -47,6 +56,11 @@ export type PluginMutationResult = {
   warning?: string;
 };
 
+/** An update this client started. Keyed by `pluginPackageUpdateKey`. */
+export type PluginPackageUpdate =
+  | { kind: 'running' }
+  | { kind: 'failed'; error: string };
+
 export type RegistryResult =
   | { kind: 'npm-ok'; spec: string; name: string; currentVersion: string | null; latestVersion: string | null; versions: string[]; hasUpdate: boolean }
   | { kind: 'npm-missing-version'; spec: string; name: string; currentVersion: string; latestVersion: string | null; versions: string[] }
@@ -65,12 +79,15 @@ export interface PluginsStore {
   registryInfo: Record<string, RegistryResult>;
   isLoadingRegistry: boolean;
   draft: PluginDraft | null;
+  packageUpdates: Record<string, PluginPackageUpdate>;
 
   setSelected: (id: string | null) => void;
   setDraft: (draft: PluginDraft | null) => void;
   loadPlugins: (options?: { force?: boolean }) => Promise<boolean>;
   loadRegistryInfo: (opts?: { specs?: string[]; force?: boolean }) => Promise<void>;
   updateToLatest: (id: string) => Promise<PluginMutationResult>;
+  /** Reinstalls one package spec in place. Does not rewrite the config spec. */
+  updatePackage: (target: string) => Promise<boolean>;
   createEntry: (input: { spec: string; options?: Record<string, unknown>; scope: PluginScope }) => Promise<PluginMutationResult>;
   updateEntry: (id: string, input: { spec?: string; options?: Record<string, unknown> }) => Promise<PluginMutationResult>;
   deleteEntry: (id: string) => Promise<PluginMutationResult>;
@@ -145,6 +162,7 @@ export const usePluginsStore = create<PluginsStore>()(
         registryInfo: {},
         isLoadingRegistry: false,
         draft: null,
+        packageUpdates: {},
 
         setSelected: (id) => set({ selectedId: id }),
 
@@ -236,6 +254,37 @@ export const usePluginsStore = create<PluginsStore>()(
             return { ok: false };
           }
           return await get().updateEntry(id, { spec: `${info.name}@${info.latestVersion}` });
+        },
+
+        updatePackage: async (target) => {
+          const configDirectory = getConfigDirectory();
+          const transport = getRuntimeTransportIdentity();
+          const key = pluginPackageUpdateKey(configDirectory, target, transport);
+          if (get().packageUpdates[key]?.kind === 'running') return false;
+          set({ packageUpdates: { ...get().packageUpdates, [key]: { kind: 'running' } } });
+          try {
+            await updatePluginPackage(configDirectory, target);
+            if (getRuntimeTransportIdentity() === transport) {
+              try {
+                await refreshPluginRuntimeQuery(queryClient, configDirectory, transport);
+              } catch (error) {
+                console.error('[PluginsStore] Plugin updated, but status could not be reread:', error);
+              }
+            }
+            const next = { ...get().packageUpdates };
+            delete next[key];
+            set({ packageUpdates: next });
+            return true;
+          } catch (error) {
+            console.error('[PluginsStore] Failed to update plugin package:', error);
+            set({
+              packageUpdates: {
+                ...get().packageUpdates,
+                [key]: { kind: 'failed', error: pluginOperationErrorMessage(error) },
+              },
+            });
+            return false;
+          }
         },
 
         createEntry: async (input) => {

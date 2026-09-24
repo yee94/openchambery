@@ -23,6 +23,7 @@ import {
 } from '@/lib/messages/references';
 import { MessageReferenceChip } from '../../MessageReferenceChip';
 import { prepareUserMarkdownContent, SKILL_TOKEN_PATTERN } from './userTextPartContent';
+import { splitQuotedConversationMessage } from '@/stores/composerQuotes';
 
 type PartWithText = Part & { text?: string; content?: string; value?: string };
 
@@ -61,7 +62,9 @@ const hasActiveSelectionInElement = (element: HTMLElement): boolean => {
 const UserTextPart: React.FC<UserTextPartProps> = ({ part, messageId, agentMention, messageParts }) => {
     const partWithText = part as PartWithText;
     const rawText = partWithText.text;
-    const textContent = typeof rawText === 'string' ? rawText : partWithText.content || partWithText.value || '';
+    const storedText = typeof rawText === 'string' ? rawText : partWithText.content || partWithText.value || '';
+    const quotedConversation = React.useMemo(() => splitQuotedConversationMessage(storedText), [storedText]);
+    const textContent = quotedConversation ? quotedConversation.body : storedText;
 
     const [isExpanded, setIsExpanded] = React.useState(false);
     const [isTruncated, setIsTruncated] = React.useState(false);
@@ -335,7 +338,7 @@ const UserTextPart: React.FC<UserTextPartProps> = ({ part, messageId, agentMenti
         });
     }, [agentMention, openSkill, referenceParts, renderReferenceParts, skillByName, textContent]);
 
-    if (!textContent || textContent.trim().length === 0) {
+    if ((!textContent || textContent.trim().length === 0) && !quotedConversation?.quotes.length) {
         return null;
     }
 
@@ -357,7 +360,24 @@ const UserTextPart: React.FC<UserTextPartProps> = ({ part, messageId, agentMenti
                     <Icon name="arrow-up-s" className="h-3.5 w-3.5" />
                 </button>
             )}
-            <div
+            {quotedConversation && quotedConversation.quotes.length > 0 ? (
+                <div
+                    className="mb-1 flex flex-col gap-0.5"
+                    data-conversation-quotes
+                    aria-label={t('chat.message.conversationQuotesLabel')}
+                >
+                    {quotedConversation.quotes.map((quote, index) => (
+                        <p
+                            key={`${part.id || messageId}-quote-${index}`}
+                            data-conversation-quote
+                            className="m-0 whitespace-pre-wrap break-words border-l-2 border-border pl-1.5 typography-meta text-muted-foreground"
+                        >
+                            {quote}
+                        </p>
+                    ))}
+                </div>
+            ) : null}
+            {textContent.trim().length > 0 ? <div
                 className={cn(
                     "break-words font-sans typography-markdown-body",
                     isExpanded && "pb-3",
@@ -398,7 +418,7 @@ const UserTextPart: React.FC<UserTextPartProps> = ({ part, messageId, agentMenti
                 ) : (
                     plainTextContent
                 )}
-            </div>
+            </div> : null}
         </div>
     );
 };

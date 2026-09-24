@@ -169,6 +169,30 @@ export const projectSessionWithHostMetadata = (session, hostMetadata) => {
 };
 
 /**
+ * OpenCode record keys win. Side-store keys the record does not have yet are
+ * filled in. A missing or empty side row does not wipe the record.
+ *
+ * @param {unknown} openCodeMetadata
+ * @param {unknown} sideMetadata
+ */
+export const mergeOwnedMetadata = (openCodeMetadata, sideMetadata) => {
+  const openCode = isPlainObject(openCodeMetadata) ? openCodeMetadata : {};
+  if (!isPlainObject(sideMetadata) || Object.keys(sideMetadata).length === 0) {
+    return { ...openCode };
+  }
+  return mergeMetadataPatch(sideMetadata, openCode);
+};
+
+const projectRecordMetadata = (session, sideMetadata) => {
+  const metadata = mergeOwnedMetadata(session.metadata, sideMetadata);
+  const hadMetadata = isPlainObject(session.metadata);
+  const withRecord = Object.keys(metadata).length === 0 && !hadMetadata
+    ? session
+    : { ...session, metadata };
+  return projectSessionWithHostMetadata(withRecord, null);
+};
+
+/**
  * @param {object | null | undefined} session
  * @param {Record<string, object> | null | undefined} storedBySessionId
  */
@@ -178,7 +202,7 @@ export const projectSessionWithStoredMap = (session, storedBySessionId) => {
     return projectSessionWithHostMetadata(session, null);
   }
   const host = storedBySessionId[session.id];
-  return projectSessionWithHostMetadata(session, isPlainObject(host) ? host : null);
+  return projectRecordMetadata(session, isPlainObject(host) ? host : null);
 };
 
 const projectLifecycleInner = (payload, readHostMetadata) => {
@@ -196,7 +220,7 @@ const projectLifecycleInner = (payload, readHostMetadata) => {
       host = null;
     }
   }
-  const projected = projectSessionWithHostMetadata(info, isPlainObject(host) ? host : null);
+  const projected = projectRecordMetadata(info, isPlainObject(host) ? host : null);
   if (projected === info) return payload;
 
   const next = { ...payload };

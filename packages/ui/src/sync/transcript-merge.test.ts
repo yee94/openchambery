@@ -107,6 +107,67 @@ describe("mergeSessionTranscript", () => {
     expect(flat.messageOrder[0]).toBe("msg_01")
   })
 
+  test("authority initial tail inside an already paged chain keeps the older cursor", () => {
+    const tail = mergeSessionTranscript(undefined, SESSION, {
+      type: "http-page",
+      purpose: "initial",
+      page: page(
+        [{ info: userMessage("msg_10", 10) }, { info: assistantMessage("msg_11", 11) }],
+        { cursor: "cur_tail", complete: false },
+      ),
+    }).data!
+    const paged = mergeSessionTranscript(tail, SESSION, {
+      type: "http-page",
+      purpose: "prepend",
+      page: page(
+        [{ info: userMessage("msg_01", 1) }, { info: assistantMessage("msg_02", 2) }],
+        { cursor: "cur_older", complete: false },
+      ),
+    }).data!
+
+    const { data, result } = mergeSessionTranscript(paged, SESSION, {
+      type: "http-page",
+      purpose: "initial",
+      page: page(
+        [
+          { info: userMessage("msg_10", 10) },
+          { info: assistantMessage("msg_11", 11) },
+          { info: userMessage("msg_12", 12) },
+        ],
+        { cursor: "cur_tail", complete: false },
+      ),
+    })
+
+    expect(result.applied).toBe(true)
+    expect(data?.pages[0]?.cursor).toBe("cur_older")
+    const flat = projectFlatFromTranscriptData(data, SESSION)
+    expect(flat.messageOrder).toEqual(["msg_01", "msg_02", "msg_10", "msg_11", "msg_12"])
+  })
+
+  test("authority initial tail that does not overlap the paged chain collapses to its own cursor", () => {
+    const tail = mergeSessionTranscript(undefined, SESSION, {
+      type: "http-page",
+      purpose: "initial",
+      page: page(
+        [{ info: userMessage("msg_10", 10) }, { info: assistantMessage("msg_11", 11) }],
+        { cursor: "cur_tail", complete: false },
+      ),
+    }).data!
+
+    const { data, result } = mergeSessionTranscript(tail, SESSION, {
+      type: "http-page",
+      purpose: "initial",
+      page: page(
+        [{ info: userMessage("msg_20", 20) }, { info: assistantMessage("msg_21", 21) }],
+        { cursor: "cur_gap", complete: false },
+      ),
+    })
+
+    expect(result.applied).toBe(true)
+    expect(data?.pages).toHaveLength(1)
+    expect(data?.pages[0]?.cursor).toBe("cur_gap")
+  })
+
   test("overlapping older page keeps prior placement and final order 1..25", () => {
     // First paint: users 1..25 (context-filled). Older page re-lists 6..25.
     const firstRecords = Array.from({ length: 25 }, (_, i) => {
@@ -487,6 +548,32 @@ describe("mergeSessionTranscript", () => {
     })
     expect(removed.result.changed).toBe(true)
     expect(projectFlatFromTranscriptData(removed.data, SESSION).messagesByID["msg_opt"]).toBeUndefined()
+  })
+
+  test("optimistic add fills model identity onto a shell that omitted it", () => {
+    const base = mergeSessionTranscript(undefined, SESSION, {
+      type: "http-page",
+      purpose: "initial",
+      page: page([{ info: userMessage("msg_shell"), parts: [] }], { complete: true }),
+    }).data!
+
+    const stamped = {
+      ...userMessage("msg_shell"),
+      providerID: "openai",
+      modelID: "gpt-5.6",
+      model: { providerID: "openai", modelID: "gpt-5.6" },
+    } as Message
+    const added = mergeSessionTranscript(base, SESSION, {
+      type: "optimistic-add",
+      message: stamped,
+      parts: [textPart("p_shell", "msg_shell", "hello")],
+    })
+    const info = projectFlatFromTranscriptData(added.data, SESSION).messagesByID["msg_shell"] as Message & {
+      providerID?: string
+      modelID?: string
+    }
+    expect(info.providerID).toBe("openai")
+    expect(info.modelID).toBe("gpt-5.6")
   })
 
   test("optimistic add of a queued message stays at the conversation tail, not the id slot", () => {

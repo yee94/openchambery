@@ -51,7 +51,7 @@ export interface HighlightRange {
     priority?: number;
     /** Shared trigger→icon→label chip visual for metric-safe overlay rendering. */
     visual?: ComposerTriggerIconVisual;
-    /** Skill name retained for authored slash-skill semantics and deletion helpers. */
+    /** Skill name retained for authored skill semantics and deletion helpers. */
     skillName?: string;
 }
 
@@ -365,15 +365,21 @@ export function findSkillMentionRanges(
 ): SkillMentionRange[] {
     const knownNames = new Set(Array.from(skillNames, (name) => name.toLowerCase()));
     const ranges: SkillMentionRange[] = [];
-    // Optional em-space slot between `/` and the skill name (reserved icon chips).
-    const pattern = /(^|\s)\/(\u2003)?([a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?)/gi;
-    let match: RegExpExecArray | null;
-    while ((match = pattern.exec(text)) !== null) {
-        const slot = match[2] ?? '';
-        const name = match[3] || '';
-        if (!knownNames.has(name.toLowerCase())) continue;
-        const start = match.index + (match[1]?.length ?? 0);
-        ranges.push({ start, end: start + 1 + slot.length + name.length, name });
+    // Optional em-space slot between the trigger and the skill name.
+    // `@` needs a trailing boundary so `@src/a.ts` is not skill `src`.
+    const patterns = [
+        /(^|\s)\/(\u2003)?([a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?)/gi,
+        /(^|\s)@(\u2003)?([a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?)(?=$|\s|[),.;:!?])/gi,
+    ];
+    for (const pattern of patterns) {
+        let match: RegExpExecArray | null;
+        while ((match = pattern.exec(text)) !== null) {
+            const slot = match[2] ?? '';
+            const name = match[3] || '';
+            if (!knownNames.has(name.toLowerCase())) continue;
+            const start = match.index + (match[1]?.length ?? 0);
+            ranges.push({ start, end: start + 1 + slot.length + name.length, name });
+        }
     }
     return ranges;
 }

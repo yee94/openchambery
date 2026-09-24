@@ -18,6 +18,8 @@ export type ContextTokenRecord = {
 export type ContextBaselineMessage = {
   id?: string
   role?: string
+  clientRole?: string
+  type?: string
   tokens?: ContextTokenRecord
 }
 
@@ -53,6 +55,20 @@ export const hasCompactionPartType = (parts: readonly unknown[] | undefined): bo
 )
 
 /**
+ * V2 compaction projects as `role: "assistant"` + `clientRole: "compaction"`.
+ * OpenCode also puts compaction-request tokens on that row; those measure the
+ * compact call, not the resulting window, so they must never win the scan.
+ */
+export const isCompactionBaselineRow = (
+  message: ContextBaselineMessage,
+  parts: readonly unknown[] | undefined,
+): boolean => (
+  message.clientRole === "compaction"
+  || message.type === "compaction"
+  || hasCompactionPartType(parts)
+)
+
+/**
  * Scan messages newest→oldest for the token baseline:
  *
  * - The first token-bearing assistant wins; older records never matter.
@@ -67,12 +83,10 @@ export const scanContextTokenBaseline = (
 ): ContextTokenBaselineResult => {
   for (let i = messages.length - 1; i >= 0; i -= 1) {
     const message = messages[i]
-    if (message.role !== "assistant") {
-      if (message.id && hasCompactionPartType(getParts(message.id))) {
-        return { compacted: true }
-      }
-      continue
+    if (isCompactionBaselineRow(message, message.id ? getParts(message.id) : undefined)) {
+      return { compacted: true }
     }
+    if (message.role !== "assistant") continue
     const tokens = message.tokens
     if (!tokens) continue
     const totalTokens = sumContextTokenRecord(tokens)

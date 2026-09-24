@@ -1,4 +1,6 @@
+import { shouldShowBrowserProviderSettings } from '@/lib/browser-provider/contract';
 import type { I18nKey } from '@/lib/i18n/store';
+import { readBrowserProviderCatalogSnapshot } from '@/queries/browserProviderQueries';
 import { canShowIosNativeUiSetting } from '@/lib/iosNativeUi';
 import { isCapacitorApp } from '@/lib/platform';
 import { isTranscriptDiagnosticsEnabled } from '@/sync/transcript-diagnostics-runtime';
@@ -411,6 +413,14 @@ const SETTINGS_SEARCH_ITEMS: readonly SettingsSearchItem[] = [
     page: 'sessions',
     titleKey: 'settings.openchamber.defaults.field.defaultAgent',
     keywords: ['agent', 'new sessions'],
+  },
+  {
+    id: 'sessions.browser-provider',
+    page: 'sessions',
+    titleKey: 'settings.openchamber.browserProvider.label',
+    descriptionKey: 'settings.openchamber.browserProvider.info',
+    keywords: ['browser', 'extension', 'provider', 'live view'],
+    isAvailable: () => shouldShowBrowserProviderSettings(readBrowserProviderCatalogSnapshot()),
   },
   {
     id: 'sessions.deletion-dialog',

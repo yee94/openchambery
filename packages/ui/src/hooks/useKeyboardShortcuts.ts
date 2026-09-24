@@ -3,6 +3,9 @@ import { useSessionUIStore } from '@/sync/session-ui-store';
 import { useSelectionStore } from '@/sync/selection-store';
 import * as sessionActions from '@/sync/session-actions';
 import { promoteQueueHeadOnAbort } from '@/sync/queue-abort-optimistic';
+import { shouldShowBrowserProviderRail } from '@/lib/browser-provider/contract';
+import { visibleRightSidebarTabs } from '@/components/layout/visibleRightSidebarTabs';
+import { readBrowserProviderCatalogSnapshot } from '@/queries/browserProviderQueries';
 import { useUIStore } from '@/stores/useUIStore';
 import { LEADER_KEY_TIMEOUT_MS, useLeaderKeyStore } from '@/stores/useLeaderKeyStore';
 import { useThemeSystem } from '@/contexts/useThemeSystem';
@@ -932,7 +935,10 @@ export const useKeyboardShortcuts = () => {
           return;
         }
 
-        const tabs = ['git', 'files'] as const;
+        const tabs = visibleRightSidebarTabs({
+          hideGit: useUIStore.getState().activeMainTab === 'git',
+          showBrowser: shouldShowBrowserProviderRail(readBrowserProviderCatalogSnapshot()),
+        });
         const currentIndex = tabs.indexOf(rightSidebarTab);
         const nextTab = tabs[(currentIndex + 1) % tabs.length];
 
