@@ -513,14 +513,14 @@ export const FileMentionAutocomplete = React.forwardRef<FileMentionHandle, FileM
                   key={`skill-${skill.name}-${skill.scope}`}
                   ref={(el) => { itemRefs.current[index] = el; }}
                   className={cn(
-                    'flex items-start gap-2 px-3 py-1.5 cursor-pointer typography-ui-label rounded-lg',
+                    'flex items-center gap-2 px-3 py-1.5 cursor-pointer typography-ui-label rounded-lg',
                     isMobile && 'min-h-11',
                     composerAutocompleteRowClassName(isMobile, isSelected),
                     !isMobile && isSelected && 'text-interactive-selection-foreground',
                   )}
                   {...getItemInteractionHandlers(index, () => handleSkillPick(skill))}
                 >
-                  <Icon name={resolveSkillIconName()} className="mt-0.5 h-3.5 w-3.5 flex-shrink-0 text-current" />
+                  <Icon name={resolveSkillIconName()} className="h-3.5 w-3.5 flex-shrink-0 text-current" />
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2">
                       <span className="truncate">@{highlightAutocompleteQuery(skill.name, normalizedSearchQuery)}</span>
