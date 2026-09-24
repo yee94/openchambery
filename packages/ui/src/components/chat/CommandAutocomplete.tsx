@@ -456,7 +456,7 @@ export const CommandAutocomplete = React.forwardRef<CommandAutocompleteHandle, C
       className="max-w-[450px] max-h-64"
       style={style}
     >
-      <ScrollableOverlay preventOverscroll outerClassName="flex-1 min-h-0" className="p-1">
+      <ScrollableOverlay preventOverscroll outerClassName="flex-1 min-h-0" className="px-0 py-1.5">
         {loading ? (
           <div className="flex items-center justify-center py-4">
             <Icon name="refresh" className="h-4 w-4 animate-spin text-muted-foreground" />

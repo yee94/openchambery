@@ -89,7 +89,7 @@ const CommandPaletteResult: React.FC<CommandPaletteResultProps> = ({ title, desc
   </>
 );
 
-const ITEM_CLASS = 'h-8 gap-2 rounded-md px-2.5 py-0 typography-meta';
+const ITEM_CLASS = 'min-h-9 gap-2 rounded-lg px-3 py-2 typography-meta';
 const GROUP_CLASS =
   'py-0 [&_[cmdk-group-heading]]:px-2.5 [&_[cmdk-group-heading]]:pb-2 [&_[cmdk-group-heading]]:pt-3 [&_[cmdk-group-heading]]:font-normal [&_[cmdk-group-heading]]:text-muted-foreground';
 
@@ -99,7 +99,7 @@ function highlightedTitle(title: string, query: string): React.ReactNode {
   const escaped = terms.map((term) => term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
   return title.split(new RegExp(`(${escaped.join('|')})`, 'gi')).map((part, index) =>
     terms.includes(part.toLowerCase())
-      ? <mark key={index} className="bg-transparent font-semibold text-foreground underline decoration-[var(--interactive-focus-ring)] underline-offset-2">{part}</mark>
+      ? <mark key={index} className="bg-transparent font-[inherit] text-[var(--primary-base)]">{part}</mark>
       : part,
   );
 }
@@ -563,7 +563,7 @@ export const CommandPalette: React.FC = () => {
         data-global-search="true"
         data-mobile={isMobile}
         data-page-scroll-lock="true"
-        className="oc-global-search fixed left-1/2 top-[12vh] z-50 w-[min(40rem,calc(100vw-1.5rem))] max-w-none -translate-x-1/2 translate-y-0 gap-0 overflow-hidden rounded-3xl border border-[var(--interactive-border)] bg-[var(--surface-elevated)] p-0 shadow-2xl"
+        className="oc-global-search oc-mobile-overlay-surface oc-mobile-overlay-surface--translucent oc-composer-autocomplete-surface fixed left-1/2 top-[12vh] z-50 w-[min(40rem,calc(100vw-1.5rem))] max-w-none -translate-x-1/2 translate-y-0 gap-0 overflow-hidden rounded-3xl border-0 p-0"
         containerClassName="block p-0"
         showCloseButton={isMobile}
       >
@@ -589,7 +589,7 @@ export const CommandPalette: React.FC = () => {
               event.stopPropagation();
             }
           }}
-          className="max-h-full min-h-0 rounded-[inherit] bg-transparent [&_[cmdk-group]]:px-0"
+          className="max-h-full min-h-0 rounded-[inherit] bg-transparent [&_[cmdk-group]]:px-0 [&_[cmdk-item][data-selected=true]]:!bg-[color-mix(in_srgb,var(--interactive-selection)_40%,transparent)] [&_[cmdk-item]:hover]:!bg-[color-mix(in_srgb,var(--interactive-selection)_40%,transparent)]"
         >
           <CommandInput
             ref={inputRef}
@@ -602,7 +602,7 @@ export const CommandPalette: React.FC = () => {
             onValueChange={setQuery}
             placeholder={t('commandPalette.input.placeholder')}
           />
-          <CommandList aria-label={t('commandPalette.title')} className="overscroll-contain px-1.5 pb-2">
+          <CommandList aria-label={t('commandPalette.title')} className="overscroll-contain p-1.5">
             {visibleSessions.length === 0 ? <div className="px-2.5 pb-2 pt-3 typography-meta text-muted-foreground">{t('layout.mainTab.chat')}</div> : null}
             {!waitingForFiles && !waitingForTitles && !fileSearchFailed && !titleSearchFailed && sessionsStatus !== 'loading' && sessionsStatus !== 'error' ? (
               <CommandEmpty className="py-10 text-center typography-meta text-muted-foreground">
@@ -661,7 +661,7 @@ export const CommandPalette: React.FC = () => {
                           key={session.id}
                           value={`session:${session.id}`}
                           onSelect={() => handleOpenSession(session)}
-                          className="min-h-14 flex-col items-stretch gap-1 rounded-2xl px-3 py-2"
+                          className="flex-col items-stretch gap-1 rounded-lg px-3 py-2"
                           aria-keyshortcuts={!isMobile && index < 9 ? `${mac ? 'Meta' : 'Control'}+${index + 1}` : undefined}
                         >
                           <div className="flex min-w-0 items-center gap-3">
@@ -669,7 +669,6 @@ export const CommandPalette: React.FC = () => {
                             <span className="max-w-[28%] shrink-0 truncate typography-meta text-muted-foreground" title={project}>{project}</span>
                             {!isMobile && index < 9 ? <Kbd className="h-5 min-w-8 shrink-0 rounded-full border-0 bg-interactive-selection px-2 text-muted-foreground shadow-none">{mac ? '⌘' : 'Ctrl+'}{index + 1}</Kbd> : null}
                           </div>
-                          <span data-search-summary="true" className="block min-h-4 truncate typography-meta leading-4 text-muted-foreground">{'\u00a0'}</span>
                         </CommandItem>
                       );
                     })}
@@ -693,8 +692,8 @@ export const CommandPalette: React.FC = () => {
                           className={ITEM_CLASS}
                         >
                           <CommandPaletteResult
-                            title={file.name}
-                            description={display !== file.name ? display : undefined}
+                            title={highlightedTitle(file.name, liveTrimmed)}
+                            description={display !== file.name ? highlightedTitle(display, liveTrimmed) : undefined}
                           />
                         </CommandItem>
                       );
@@ -714,7 +713,7 @@ export const CommandPalette: React.FC = () => {
                           onSelect={() => handleOpenProject(project.id, project.path)}
                           className={ITEM_CLASS}
                         >
-                          <CommandPaletteResult title={displayName} />
+                          <CommandPaletteResult title={highlightedTitle(displayName, liveTrimmed)} />
                         </CommandItem>
                       );
                     })}

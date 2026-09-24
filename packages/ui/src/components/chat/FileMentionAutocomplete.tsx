@@ -520,16 +520,16 @@ export const FileMentionAutocomplete = React.forwardRef<FileMentionHandle, FileM
                   )}
                   {...getItemInteractionHandlers(index, () => handleSkillPick(skill))}
                 >
-                  <Icon name={resolveSkillIconName()} className="h-3.5 w-3.5 flex-shrink-0 text-current" />
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2">
-                      <span className="truncate">@{highlightAutocompleteQuery(skill.name, normalizedSearchQuery)}</span>
+                      <Icon name={resolveSkillIconName()} className="h-3.5 w-3.5 translate-y-px flex-shrink-0 text-current" />
+                      <span className="min-w-0 truncate">@{highlightAutocompleteQuery(skill.name, normalizedSearchQuery)}</span>
                       {!isMobile ? (
                         <span className="flex-shrink-0 typography-meta text-muted-foreground">{skill.scope}</span>
                       ) : null}
                     </div>
                     {skill.description && !isMobile ? (
-                      <div className="typography-meta text-muted-foreground truncate">
+                      <div className="pl-5.5 typography-meta text-muted-foreground truncate">
                         {highlightAutocompleteQuery(skill.description, normalizedSearchQuery)}
                       </div>
                     ) : null}
