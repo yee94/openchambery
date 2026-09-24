@@ -131,4 +131,10 @@ describe('markstream-react trial path', () => {
     expect(fold).toContain('getToolRowBlockClass(isMobile)');
     expect(fold).not.toMatch(/className=\{getToolRowBlockClass[\s\S]*\bmt-/);
   });
+
+  test('live composing text restores the process-fold block gap before StatusRow', () => {
+    const messageBody = readFileSync(join(here, 'message/MessageBody.tsx'), 'utf8');
+    expect(messageBody).toContain("'data-live-status-text-gap': ''");
+    expect(messageBody).toContain("isMobile ? 'pb-1' : 'pb-1.5'");
+  });
 });

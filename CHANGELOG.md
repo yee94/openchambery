@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [2.0.0-beta.8] - 2026-09-24
+
+这是 OpenCode 2 预览版，需要手动下载安装包。本次不发布 OTA；iOS 仅上传 TestFlight 内测，不进入外测组或稳定自动更新通道。
+
+### 对话展示
+
+- 正在生成的纯文本回复在状态行前补上应有的块间距，不再和底部的运行状态贴在一起；最后一行是工具行时保持原样。
+
 ## [2.0.0-beta.7] - 2026-09-24
 
 这是 OpenCode 2 预览版，需要手动下载安装包。本次不发布 OTA；iOS 仅上传 TestFlight 内测，不进入外测组或稳定自动更新通道。
