@@ -1194,9 +1194,13 @@ const ProgressiveGroup: React.FC<ProgressiveGroupProps> = ({
 
     // Header-only turns (e.g. completed compaction with foldable body text outside
     // activity rows) must still paint the disclosure chrome when showHeader is set.
-    // Live non-compaction with zero rows stays hidden — the Working header alone
-    // above WorkingPlaceholder is empty chrome; show it once the first row exists.
-    if ((!showHeader || (disclosureLockedOpen && !isCompaction)) && rows.length === 0) {
+    // Live non-compaction never paints the Working disclosure header — only the
+    // expanded tool/reasoning rows. Zero-row live turns stay hidden so an empty
+    // "Working" chrome does not sit above WorkingPlaceholder. Compaction keeps
+    // its Compacting header even before assistant rows exist.
+    // Settled turns paint the foldable Processed / Compaction complete header.
+    const paintDisclosureHeader = Boolean(showHeader) && !(isActive && !isCompaction);
+    if ((!paintDisclosureHeader || (disclosureLockedOpen && !isCompaction)) && rows.length === 0) {
         return null;
     }
 
@@ -1341,7 +1345,10 @@ const ProgressiveGroup: React.FC<ProgressiveGroupProps> = ({
     // Empty expanded disclosures (e.g. compaction with only foldable body text
     // outside activity rows) keep the header and skip the empty rail.
     const shouldShowRowsContainer = visibleRows.length > 0;
-    if (!showHeader) {
+    // Live non-compaction: skip the Working header and render rows only (still
+    // force-expanded / no indent rail via disclosureLockedOpen). Settled and
+    // compaction keep the disclosure chrome.
+    if (!paintDisclosureHeader) {
         return (
             <div className={getToolRowBlockClass(isMobile)}>{renderedRows}</div>
         );

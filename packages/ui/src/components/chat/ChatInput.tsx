@@ -200,6 +200,7 @@ import { getInboxTerminal, updateInboxOverlayDelivery, useSessionInboxOverlaySto
 import { cancelUnpromotedInboxItem, queueSessionInbox, steerSessionInbox } from '@/sync/session-prompt-api';
 import { canPromoteInboxItem, useSessionCompactionBarrierStore } from '@/sync/session-compaction-api';
 import { runQueueMessageFireAndForget } from './queueMessageFireAndForget';
+import { resolveFollowUpEnterAction } from './followUpShortcut';
 import { admitServerQueueMessageAndConsumeResources, assistantQueueAdmissionAvailable, attachedFilesToQueueCandidates, beginQueueAdmissionOptimisticClear, createServerQueueAdmissionCapture, createServerQueueAdmissionIdentity, isCompleteQueueSendConfig, isQueueAdmissionRuntimeCurrent, shouldRouteComposerThroughQueue } from './queueAdmission';
 import { shouldShowPermissionAutoAcceptControl, togglePermissionAutoAccept } from './permissionAutoAccept';
 import { getSlashTokenRange } from './commandSelection';
@@ -2378,6 +2379,8 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
         queuedOnly?: boolean;
         queuedMessageId?: string;
         delivery?: 'steer' | 'queue';
+        /** Admit as queue, then promote that inbox item to steer so the chip stays visible. */
+        steerAfterAdmit?: boolean;
         /** Submit this text instead of the composer input. Used by preset
             starter chips: on mobile the collapsed pill has no mounted textarea,
             so the DOM-first input snapshot would read empty content. */
@@ -2451,6 +2454,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
         runtime: ReturnType<typeof surfaceResources.captureRuntime>;
         item: QueuePendingAdmissionItem;
     } | null>(null);
+    const [steeringMessageIDs, setSteeringMessageIDs] = React.useState<ReadonlySet<string>>(() => new Set());
     const visibleNativeAdmission = nativeQueueAdmission
         && nativeQueueAdmission.sessionID === currentSessionId
         && isQueueAdmissionRuntimeCurrent(nativeQueueAdmission.runtime, surfaceResources.captureRuntime())
@@ -2462,6 +2466,27 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
         () => [...establishingPendingItems, ...inboxOverlayChips, ...(visibleNativeAdmission ? [visibleNativeAdmission] : [])],
         [establishingPendingItems, inboxOverlayChips, visibleNativeAdmission],
     );
+    React.useEffect(() => {
+        setSteeringMessageIDs((current) => {
+            if (current.size === 0) return current;
+            const live = new Set<string>();
+            for (const item of inboxOverlayChips) live.add(item.messageID);
+            if (visibleNativeAdmission) live.add(visibleNativeAdmission.messageID);
+            let stale = false;
+            for (const id of current) {
+                if (!live.has(id)) {
+                    stale = true;
+                    break;
+                }
+            }
+            if (!stale) return current;
+            const next = new Set<string>();
+            for (const id of current) {
+                if (live.has(id)) next.add(id);
+            }
+            return next;
+        });
+    }, [inboxOverlayChips, visibleNativeAdmission]);
     const compactionBarrier = useSessionCompactionBarrierStore(
         React.useCallback((state) => (
             currentSessionId ? state.runningBySession[currentSessionId] === true : false
@@ -3000,9 +3025,14 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
         if (isSubmissionInFlight()) return;
         const queuedOnly = options?.queuedOnly ?? false;
         const queuedMessageId = options?.queuedMessageId;
-        const delivery = options?.delivery === 'queue' && (sessionIsRunning || autoReviewRunning)
+        const steerAfterAdmit = options?.steerAfterAdmit === true
+            && sessionIsRunning
+            && !autoReviewRunning
+            && surface.kind === 'primary';
+        const requestedDelivery = steerAfterAdmit ? 'queue' : options?.delivery;
+        const delivery = requestedDelivery === 'queue' && (sessionIsRunning || autoReviewRunning)
             ? 'queue'
-            : options?.delivery === 'steer' && sessionIsRunning ? 'steer' : undefined;
+            : requestedDelivery === 'steer' && sessionIsRunning ? 'steer' : undefined;
         const inputSnapshot = options?.presetText != null
             ? {
                 message: options.presetText,
@@ -3048,7 +3078,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
             }
             return;
         }
-        const routeThroughQueue = shouldRouteComposerThroughQueue({
+        const routeThroughQueue = !steerAfterAdmit && shouldRouteComposerThroughQueue({
             hasQueuedMessages, sessionIsRunning, autoReviewRunning, queuedOnly, delivery,
         });
         if (!queuedOnly && localCommand && localCommand !== 'model') {
@@ -3178,6 +3208,14 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
             setNativeQueueAdmission((pending) => pending?.item.messageID === nativeQueueMessageID ? null : pending);
         };
         if (nativeQueueMessageID && currentSessionId) {
+            if (steerAfterAdmit) {
+                setSteeringMessageIDs((current) => {
+                    if (current.has(nativeQueueMessageID)) return current;
+                    const next = new Set(current);
+                    next.add(nativeQueueMessageID);
+                    return next;
+                });
+            }
             setNativeQueueAdmission({
                 sessionID: currentSessionId,
                 runtime: surfaceResources.captureRuntime(),
@@ -4068,7 +4106,36 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
             });
         }
 
-        void sendPromise.then(() => {
+        void sendPromise.then(async () => {
+            if (steerAfterAdmit && nativeQueueMessageID && primarySubmitSessionIdAtStart) {
+                const releaseSteering = () => {
+                    setSteeringMessageIDs((current) => {
+                        if (!current.has(nativeQueueMessageID)) return current;
+                        const next = new Set(current);
+                        next.delete(nativeQueueMessageID);
+                        return next;
+                    });
+                };
+                if (!canPromoteInboxItem({ sessionID: primarySubmitSessionIdAtStart })) {
+                    releaseSteering();
+                } else {
+                    const steerDirectory = useSessionUIStore.getState().getDirectoryForSession(primarySubmitSessionIdAtStart)
+                        ?? currentDirectory
+                        ?? '';
+                    try {
+                        await steerSessionInbox({
+                            sessionID: primarySubmitSessionIdAtStart,
+                            inboxID: nativeQueueMessageID,
+                            directory: steerDirectory,
+                        });
+                    } catch {
+                        releaseSteering();
+                        const stillQueued = useSessionInboxOverlayStore.getState().list(primarySubmitSessionIdAtStart)
+                            .some((item) => item.id === nativeQueueMessageID);
+                        if (stillQueued) toast.error(t('chat.chatInput.toast.messageSendFailed'));
+                    }
+                }
+            }
             // Clear linked issue after successful message send
             if (linkedIssue) {
                 setLinkedIssue(null);
@@ -4631,25 +4698,23 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
             const queueUsable = canQueue
                 && queueModeAllowsMutations(serverQueue.mode)
                 && assistantQueueAdmissionAvailable(surface.deliveryTarget?.kind, serverQueue.mode);
-
-            if (followUpBehavior === 'queue') {
-                if (isCtrlEnter || !canQueue) {
-                    handleSubmit();
-                } else if (surface.kind === 'primary') {
-                    handleSubmit({ delivery: 'queue' });
-                } else if (queueUsable) {
-                    queueMessageFromEvent();
-                } else {
-                    // Queue-unavailable busy sessions steer into the captured turn.
-                    handleSubmit({ delivery: 'steer' });
-                }
+            const followUpAction = resolveFollowUpEnterAction({
+                followUpBehavior,
+                ctrlEnter: isCtrlEnter,
+                canQueue: Boolean(canQueue),
+                queueUsable: Boolean(queueUsable),
+                primary: surface.kind === 'primary',
+                sessionIsRunning,
+                autoReviewRunning,
+            });
+            if (followUpAction.kind === 'queue') {
+                queueMessageFromEvent();
+            } else if (followUpAction.steerAfterAdmit) {
+                void handleSubmit({ steerAfterAdmit: true });
+            } else if (followUpAction.delivery) {
+                void handleSubmit({ delivery: followUpAction.delivery });
             } else {
-                // steer: Enter steers into the running turn, Ctrl+Enter sends now.
-                if (isCtrlEnter || !canQueue) {
-                    handleSubmit();
-                } else {
-                    handleSubmit({ delivery: 'steer' });
-                }
+                void handleSubmit();
             }
         }
     };
@@ -7164,6 +7229,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
             } : null}
             clientPendingItems={composerPendingItems}
             compactionBarrier={compactionBarrier}
+            steeringMessageIDs={steeringMessageIDs}
             onSteerClientPending={(inboxID) => {
                 if (!currentSessionId) return;
                 if (!canPromoteInboxItem({ sessionID: currentSessionId })) return;

@@ -30,13 +30,14 @@ beforeEach(() => {
   host = document.createElement('div'); document.body.append(host); root = createRoot(host);
 });
 afterEach(async () => { await act(async () => root.unmount()); client.clear(); host.remove(); });
-async function render(items: SessionComposerPendingItem[] = [], onSteerClientPending?: (id: string) => Promise<void>) {
+async function render(items: SessionComposerPendingItem[] = [], onSteerClientPending?: (id: string) => Promise<void>, steeringMessageIDs?: ReadonlySet<string>) {
   const key = { transportIdentity: 'test', owner: { kind: 'session' as const, ownerID: 's' } };
   await act(async () => root.render(<QueryClientProvider client={client}><QueuedMessageChips
     onEditMessage={() => true} onSendMessage={() => {}} draftKey={key} draftTarget={{ key, expectedRevision: () => 1 }} onEditCommitted={fixture.focus}
     scope={{ state: 'bound', transportIdentity: 'test', runtimeGeneration: 1, directory: '/a', sessionID: 's', deliveryTarget: { kind: 'primary' } }}
     clientPendingItems={items}
     onSteerClientPending={onSteerClientPending}
+    steeringMessageIDs={steeringMessageIDs}
   /></QueryClientProvider>));
 }
 it('shows the original Chinese queuing state until admission becomes a queued item', async () => {
@@ -44,18 +45,18 @@ it('shows the original Chinese queuing state until admission becomes a queued it
   await render([{ ...inbox, kind: 'pending-admission', phase: 'admitting' }]);
   expect(host.textContent).toContain('Next task');
   expect(host.textContent).toContain('正在入队…');
-  expect(host.textContent).not.toContain('正在发送…');
-  expect(host.querySelector('button[aria-label="发送"]')).toBeNull();
+  expect(host.textContent).not.toContain('引导中');
+  expect(host.querySelector('button[aria-label="引导"]')).toBeNull();
   await render([inbox]);
   expect(host.textContent?.match(/Next task/g)).toHaveLength(1);
   expect(host.textContent).not.toContain('正在入队…');
-  expect(host.querySelector<HTMLButtonElement>('button[aria-label="发送"]')?.disabled).toBe(false);
+  expect(host.querySelector<HTMLButtonElement>('button[aria-label="引导"]')?.disabled).toBe(false);
 });
 it('keeps queued inbox compact and offers Send without execution configuration hints', async () => {
   await render([inbox]);
   expect(host.textContent).toContain('Next task');
   expect(host.textContent).not.toContain('Inherits');
-  expect(host.querySelector<HTMLButtonElement>('button[aria-label="send"]')?.disabled).toBe(false);
+  expect(host.querySelector<HTMLButtonElement>('button[aria-label="steer"]')?.disabled).toBe(false);
 });
 it.each([false, true])('allows editing a waiting native inbox item (mobile=%s)', async (mobile) => {
   fixture.mobile = mobile;
@@ -81,7 +82,7 @@ it('locks conflicting actions during restoration and unlocks after failure', asy
   await act(async () => host.querySelector<HTMLButtonElement>('button[aria-label="edit"]')!.click());
   await act(async () => { await new Promise((resolve) => setTimeout(resolve, 10)); });
   expect(host.querySelector<HTMLButtonElement>('button[aria-label="edit"]')?.disabled).toBe(true);
-  expect(host.querySelector<HTMLButtonElement>('button[aria-label="send"]')?.disabled).toBe(true);
+  expect(host.querySelector<HTMLButtonElement>('button[aria-label="steer"]')?.disabled).toBe(true);
   await act(async () => { reject(new Error('conflict')); });
   await act(async () => { await new Promise((resolve) => setTimeout(resolve, 10)); });
   expect(host.querySelector<HTMLButtonElement>('button[aria-label="edit"]')?.disabled).toBe(false);
@@ -91,11 +92,11 @@ it('shows promotion pending immediately and keeps it until authoritative consump
   let finish!: () => void;
   const promote = vi.fn(() => new Promise<void>((resolve) => { finish = resolve; }));
   await render([inbox], promote);
-  await act(async () => host.querySelector<HTMLButtonElement>('button[aria-label="send"]')!.click());
+  await act(async () => host.querySelector<HTMLButtonElement>('button[aria-label="steer"]')!.click());
   expect(promote).toHaveBeenCalledExactlyOnceWith('inbox');
   await act(async () => { await new Promise((resolve) => setTimeout(resolve, 10)); });
   expect(host.textContent).toContain(dict['chat.queuedMessage.sending']);
-  expect(host.querySelector('button[aria-label="send"]')).toBeNull();
+  expect(host.querySelector('button[aria-label="steer"]')).toBeNull();
   await act(async () => { finish(); });
   await render([{ ...inbox, delivery: 'steer' }], promote);
   expect(host.textContent).toContain(dict['chat.queuedMessage.sending']);
@@ -106,10 +107,18 @@ it('shows promotion pending immediately and keeps it until authoritative consump
 it('restores Send when promotion fails and preserves the queued content', async () => {
   const promote = vi.fn(async () => { throw new Error('offline'); });
   await render([inbox], promote);
-  await act(async () => host.querySelector<HTMLButtonElement>('button[aria-label="send"]')!.click());
+  await act(async () => host.querySelector<HTMLButtonElement>('button[aria-label="steer"]')!.click());
   await act(async () => { await new Promise((resolve) => setTimeout(resolve, 10)); });
   expect(host.textContent).toContain('Next task');
-  expect(host.querySelector<HTMLButtonElement>('button[aria-label="send"]')?.disabled).toBe(false);
+  expect(host.querySelector<HTMLButtonElement>('button[aria-label="steer"]')?.disabled).toBe(false);
+});
+it('shows steering copy while a queued item is being promoted from the composer', async () => {
+  await render([inbox], undefined, new Set(['inbox']));
+  expect(host.textContent).toContain(dict['chat.queuedMessage.sending']);
+  expect(host.querySelector('button[aria-label="steer"]')).toBeNull();
+  await render([{ ...inbox, kind: 'pending-admission', phase: 'admitting' }], undefined, new Set(['inbox']));
+  expect(host.textContent).toContain(dict['chat.queuedMessage.sending']);
+  expect(host.textContent).not.toContain(dict['chat.queuedMessage.queuing']);
 });
 it('keeps steer and captured Host/Assistant queue copy separate and empty shell collapsed', async () => {
   await render([{ ...inbox, delivery: 'steer' }]); expect(host.textContent).not.toContain('Inherits');

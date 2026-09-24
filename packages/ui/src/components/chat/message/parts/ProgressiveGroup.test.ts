@@ -296,13 +296,17 @@ describe('progressive activity presentation', () => {
         // return) so mid-reconcile cannot unmount the live disclosure.
         expect(messageBodySource).toContain('pushActivityHeader(segment.id, visibleSegmentParts, segment.parts)');
         expect(progressiveGroupSource).toContain('// Header-only turns (e.g. completed compaction with foldable body text outside');
-        expect(progressiveGroupSource).toContain('if ((!showHeader || (disclosureLockedOpen && !isCompaction)) && rows.length === 0)');
+        expect(progressiveGroupSource).toContain('if ((!paintDisclosureHeader || (disclosureLockedOpen && !isCompaction)) && rows.length === 0)');
         expect(progressiveGroupSource).not.toContain('statusOnly');
     });
 
-    test('hides live empty non-compaction activity headers until the first row exists', () => {
-        expect(progressiveGroupSource).toContain('Live non-compaction with zero rows stays hidden');
-        expect(progressiveGroupSource).toContain('if ((!showHeader || (disclosureLockedOpen && !isCompaction)) && rows.length === 0)');
+    test('hides the live non-compaction Working disclosure header; only settled/compaction paint it', () => {
+        // Live non-compaction expands tool rows without the "Working" chrome.
+        // Settled turns keep the foldable Processed header; compaction keeps Compacting.
+        expect(progressiveGroupSource).toContain('const paintDisclosureHeader = Boolean(showHeader) && !(isActive && !isCompaction)');
+        expect(progressiveGroupSource).toContain('if (!paintDisclosureHeader)');
+        expect(progressiveGroupSource).toContain('if ((!paintDisclosureHeader || (disclosureLockedOpen && !isCompaction)) && rows.length === 0)');
+        expect(progressiveGroupSource).toContain('Live non-compaction never paints the Working disclosure header');
     });
 
     test('shows expanded compaction summary body while still streaming (before stop)', () => {
