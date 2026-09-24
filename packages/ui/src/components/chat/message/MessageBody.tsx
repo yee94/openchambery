@@ -41,7 +41,7 @@ import { useChatSurfaceMode } from '@/components/chat/useChatSurfaceMode';
 import { isVSCodeRuntime } from '@/lib/desktop';
 import { Icon } from "@/components/icon/Icon";
 import { formatTimestampForDisplay } from './timeFormat';
-import { computeAssistantTps, formatAssistantTps } from './assistantTps';
+import { canPresentAssistantTps, formatAssistantTps } from './assistantTps';
 import { ContextToolGroup } from './parts/ContextToolGroup';
 import { SkillToolGroup } from './parts/SkillToolGroup';
 import { StaticToolRow } from './parts/ProgressiveGroup';
@@ -65,7 +65,7 @@ import { pushPhoneNestedSession } from '@/mobile/useMobileNavigationStore';
 import { useMobileAppActions } from '@/apps/mobileAppContext';
 import { isSyntheticPart } from '@/lib/messages/synthetic';
 import type { AssistantErrorPresentation } from './assistantErrorPresentation';
-import { ResponseStatusRow } from './ResponseStatusRow';
+import { AssistantResponseStatus } from './AssistantResponseStatus';
 import { parseSubagentNotification, type SubagentNotification } from './parts/taskToolModel';
 import { FileTypeIcon } from '@/components/icons/FileTypeIcon';
 import { openTurnChangedFilePreview } from '../openTurnChangedFile';
@@ -94,6 +94,24 @@ const MESSAGE_FOOTER_META_CLASS =
 const MESSAGE_FOOTER_META_ICON_CLASS = 'size-3.5!';
 /** Message-action icons: medium stroke — PC + mobile 同一套. */
 const MESSAGE_ACTION_ICON_WEIGHT = 'medium' as const;
+
+const AssistantTpsMeta = ({ label }: { label: string }) => {
+    const { t } = useI18n();
+    return (
+        <Tooltip>
+            <TooltipTrigger asChild>
+                <span
+                    className={MESSAGE_FOOTER_META_CLASS}
+                    aria-label={t('chat.messageBody.meta.tpsAria', { rate: label })}
+                >
+                    <Icon weight={MESSAGE_ACTION_ICON_WEIGHT} name="pulse" className={MESSAGE_FOOTER_META_ICON_CLASS} />
+                    <span className="message-footer__label">{label}</span>
+                </span>
+            </TooltipTrigger>
+            <TooltipContent>{t('chat.messageBody.meta.tpsTooltip')}</TooltipContent>
+        </Tooltip>
+    );
+};
 
 const getDisplayFileName = (file: string): string => {
     const normalized = file.replace(/\\/g, '/');
@@ -672,35 +690,6 @@ const formatTurnDuration = (durationMs: number): string => {
     return `${minutes}m ${seconds}s`;
 };
 
-const extractAssistantTokenCounts = (
-    parts: Part[],
-    messageTokens?: { output?: number; reasoning?: number } | null,
-): { output: number; reasoning: number } => {
-    if (messageTokens && typeof messageTokens === 'object') {
-        return {
-            output: typeof messageTokens.output === 'number' && Number.isFinite(messageTokens.output)
-                ? Math.max(0, messageTokens.output)
-                : 0,
-            reasoning: typeof messageTokens.reasoning === 'number' && Number.isFinite(messageTokens.reasoning)
-                ? Math.max(0, messageTokens.reasoning)
-                : 0,
-        };
-    }
-    for (const part of parts) {
-        const tokens = (part as { tokens?: { output?: number; reasoning?: number } }).tokens;
-        if (!tokens || typeof tokens !== 'object') continue;
-        return {
-            output: typeof tokens.output === 'number' && Number.isFinite(tokens.output)
-                ? Math.max(0, tokens.output)
-                : 0,
-            reasoning: typeof tokens.reasoning === 'number' && Number.isFinite(tokens.reasoning)
-                ? Math.max(0, tokens.reasoning)
-                : 0,
-        };
-    }
-    return { output: 0, reasoning: 0 };
-};
-
 interface MessageBodyProps {
     sessionId?: string;
     messageId: string;
@@ -710,9 +699,7 @@ interface MessageBodyProps {
     isMessageCompleted: boolean;
     messageFinish?: string;
     messageCompletedAt?: number;
-    messageStreamedAt?: number;
     messageCreatedAt?: number;
-    messageTokens?: { output?: number; reasoning?: number } | null;
 
     isMobile: boolean;
     alwaysShowActions?: boolean;
@@ -1443,13 +1430,10 @@ const AssistantMessageBody = React.memo(({
     sessionId,
     messageId,
     parts,
-    sourceParts,
     isMessageCompleted,
     messageFinish,
     messageCompletedAt,
-    messageStreamedAt,
     messageCreatedAt,
-    messageTokens,
 
     isMobile,
     alwaysShowActions,
@@ -2295,34 +2279,21 @@ const AssistantMessageBody = React.memo(({
     }, [messageCompletedAt, messageCreatedAt, timeFormatPreference, locale]);
 
     const assistantTpsText = React.useMemo(() => {
-        if (!showAssistantTps || !isLastAssistantInTurn || !isTurnSettled) return null;
-        // Prefer sourceParts so tool intervals remain available even when
-        // visible parts hide reasoning/aux content for display.
-        const timingParts = sourceParts ?? parts;
-        const counts = extractAssistantTokenCounts(timingParts, messageTokens);
-        const tps = computeAssistantTps({
-            streamedAt: messageStreamedAt,
-            createdAt: messageCreatedAt,
-            completedAt: messageCompletedAt,
-            fallbackDurationMs: turnGroupingContext?.durationMs,
-            outputTokens: counts.output,
-            reasoningTokens: counts.reasoning,
-            parts: timingParts,
-        });
-        if (tps === null) return null;
-        const label = formatAssistantTps(tps);
+        if (!showAssistantTps || !isLastAssistantInTurn) return null;
+        const tps = turnGroupingContext?.assistantTps;
+        // Interrupted and aborted turns stay visible once the streamed clocks
+        // can produce a rate. An active continuation must not flash one.
+        if (!canPresentAssistantTps({
+            completionDisposition: turnGroupingContext?.completionDisposition,
+            tps,
+        })) return null;
+        const label = formatAssistantTps(tps ?? 0);
         return label.length > 0 ? label : null;
     }, [
         showAssistantTps,
         isLastAssistantInTurn,
-        isTurnSettled,
-        parts,
-        sourceParts,
-        messageTokens,
-        messageCreatedAt,
-        messageCompletedAt,
-        messageStreamedAt,
-        turnGroupingContext?.durationMs,
+        turnGroupingContext?.assistantTps,
+        turnGroupingContext?.completionDisposition,
     ]);
 
     const canOpenMessagePreview = !isMiniChatSurface && !isMobile && !isVSCode;
@@ -2401,7 +2372,7 @@ const AssistantMessageBody = React.memo(({
                     {errorPresentation && (
                         <FadeInOnReveal key="assistant-error">
                             <div className="my-1.5" data-assistant-error={errorPresentation.variant}>
-                                <ResponseStatusRow presentation={errorPresentation} />
+                                <AssistantResponseStatus presentation={errorPresentation} sessionId={sessionId} messageId={messageId} directory={effectiveDirectory ?? undefined} />
                             </div>
                         </FadeInOnReveal>
                     )}
@@ -2435,20 +2406,7 @@ const AssistantMessageBody = React.memo(({
                         </div>
                         {(assistantTpsText || turnDurationText || footerTimestamp) ? (
                             <div className={MESSAGE_FOOTER_META_GROUP_CLASS}>
-                                {assistantTpsText ? (
-                                    <Tooltip>
-                                        <TooltipTrigger asChild>
-                                            <span
-                                                className={MESSAGE_FOOTER_META_CLASS}
-                                                aria-label={t('chat.messageBody.meta.tpsAria', { rate: assistantTpsText })}
-                                            >
-                                                <Icon weight={MESSAGE_ACTION_ICON_WEIGHT} name="pulse" className={MESSAGE_FOOTER_META_ICON_CLASS} />
-                                                <span className="message-footer__label">{assistantTpsText}</span>
-                                            </span>
-                                        </TooltipTrigger>
-                                        <TooltipContent>{t('chat.messageBody.meta.tpsTooltip')}</TooltipContent>
-                                    </Tooltip>
-                                ) : null}
+                                {assistantTpsText ? <AssistantTpsMeta label={assistantTpsText} /> : null}
                                 {turnDurationText ? (
                                     <Tooltip>
                                         <TooltipTrigger asChild>
@@ -2481,6 +2439,18 @@ const AssistantMessageBody = React.memo(({
                         ) : null}
                     </div>
                 )}
+                {!shouldShowTurnFooter && !hideCompactionBody && assistantTpsText ? (
+                    <div
+                        className={footerRowClass}
+                        data-message-footer="true"
+                        data-message-tps="interrupted"
+                        style={MESSAGE_FOOTER_CONTAINER_STYLE}
+                    >
+                        <div className={MESSAGE_FOOTER_META_GROUP_CLASS}>
+                            <AssistantTpsMeta label={assistantTpsText} />
+                        </div>
+                    </div>
+                ) : null}
 
             </div>
         </div>

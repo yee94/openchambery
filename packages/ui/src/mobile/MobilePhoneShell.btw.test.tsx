@@ -2,7 +2,13 @@ import React, { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 
-const api = vi.hoisted(() => ({ generateSessionAside: vi.fn() }));
+const api = vi.hoisted(() => ({
+  generateSessionAside: vi.fn(),
+  setDirectory: vi.fn(),
+  getDirectory: vi.fn(() => null),
+  getFilesystemHome: vi.fn(async () => ({ data: null })),
+  getSystemInfo: vi.fn(async () => ({ data: null })),
+}));
 vi.mock('@/lib/opencode/client', () => ({ opencodeClient: api }));
 vi.mock('@/lib/i18n', () => ({ useI18n: () => ({ t: (key: string) => key }) }));
 vi.mock('@/components/icon/Icon', () => ({ Icon: () => null }));
@@ -19,7 +25,9 @@ vi.mock('@/sync/session-ui-store', async () => {
 vi.mock('@/queries/assistantQueries', () => ({ useAssistantUnreadTotal: () => 0 }));
 vi.mock('@/lib/iosNativeUi', () => ({ useIosNativeUiEnabled: () => false }));
 vi.mock('./useNativeIosTabBar', () => ({ useNativeIosTabBar: () => 'web' }));
-vi.mock('@/lib/native-ios-composer-session', () => ({ nativeIosComposerSession: { shutdown: () => undefined } }));
+vi.mock('@/lib/native-ios-composer-session', () => ({
+  nativeIosComposerSession: { shutdown: () => undefined, conceal: () => undefined, reveal: () => undefined },
+}));
 vi.mock('./projects', () => ({ MobileProjectsHomeContainer: () => null }));
 vi.mock('./assistant/MobileAssistantTab', () => ({ MobileAssistantTab: () => null }));
 vi.mock('./scheduled/MobileScheduledTab', () => ({ MobileScheduledTab: () => null }));

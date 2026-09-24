@@ -1,3 +1,4 @@
+import { BTW_PAGE_NATIVE_COMPOSER_COVER, ensureNativeComposerCover } from '@/lib/nativeComposerCover';
 import { pushPhoneBtw } from '@/mobile/useMobileNavigationStore';
 import { useUIStore } from '@/stores/useUIStore';
 import type { SessionBtwScope } from '@/stores/useSessionBtwStore';
@@ -13,7 +14,9 @@ const focusBtwComposer = (): void => {
 /** Phone shell pushes the btw page; every other layout opens the ContextPanel tab / sheet. */
 export const openSessionBtw = (scope: SessionBtwScope): void => {
   const directory = scope.directory ?? null;
-  if (!pushPhoneBtw({ sessionId: scope.sessionId, directory })) {
+  if (pushPhoneBtw({ sessionId: scope.sessionId, directory })) {
+    ensureNativeComposerCover(BTW_PAGE_NATIVE_COMPOSER_COVER);
+  } else {
     useUIStore.getState().openContextPanelTab(directory ?? '', { mode: 'btw' });
   }
   focusBtwComposer();

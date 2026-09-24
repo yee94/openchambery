@@ -348,6 +348,21 @@ describe("busy inbox queue / steer / cancel (ticket 07)", () => {
     expect(calls[2]!.url.pathname).toBe(itemPath)
   })
 
+  test("direct inbox admission never becomes a queue chip, while promoted queue items stay visible", async () => {
+    const { useSessionInboxOverlayStore, selectInboxOverlayChips } = await import('./session-inbox-overlay')
+    const store = useSessionInboxOverlayStore.getState()
+    const item = { id: 'msg_direct', sessionID: SESSION, timeCreated: 1, type: 'user' as const, delivery: 'steer' as const, payload: { text: 'direct send' } }
+    store.remember(item)
+    expect(selectInboxOverlayChips(SESSION)).toEqual([])
+    store.remember({ ...item, id: 'msg_waiting', delivery: 'queue' })
+    store.updateDelivery(SESSION, 'msg_waiting', 'steer')
+    expect(selectInboxOverlayChips(SESSION).map((chip) => chip.messageID)).toEqual(['msg_waiting'])
+    store.replaceFromAuthority(SESSION, [item, { ...item, id: 'msg_waiting' }])
+    expect(selectInboxOverlayChips(SESSION).map((chip) => chip.messageID)).toEqual(['msg_waiting'])
+    store.forget(SESSION, 'msg_waiting', 'consumed')
+    expect(selectInboxOverlayChips(SESSION)).toEqual([])
+  })
+
   test("cancel removes overlay and leaves no transcript residue", async () => {
     const { cancelUnpromotedInboxItem, transcriptRowsFromIdlePromptResponse } = await import("./session-prompt-api")
     const {

@@ -937,7 +937,9 @@ function SessionNodeItemComponent(props: Props): React.ReactNode {
   // waiting on the user, so the trailing marker should read as a Question
   // tip (highlighted question icon) rather than a loading ring.
   const hasPendingQuestion = sessionQuestions.length > 0;
-  const showUnreadStatus = !hasPendingQuestion && !isStreaming && needsAttention && !isActive;
+  // Selected rows still show the unread dot. Completion must not look already
+  // read just because this session is the one open in the transcript.
+  const showUnreadStatus = !hasPendingQuestion && !isStreaming && needsAttention;
   const showStatusMarker = hasPendingQuestion || isStreaming || showUnreadStatus;
   // Trailing status owns a shrink-0 gutter on the right (same idea as hover
   // action padding): question tip while awaiting input, context-style ring

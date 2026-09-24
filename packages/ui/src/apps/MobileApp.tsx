@@ -78,6 +78,7 @@ import {
   isComposerKeyboardFocusTransfer,
   isComposerKeyboardTarget,
   shouldCorrectArmedImeLift,
+  shouldDeferWebKeyboardToNativeComposer,
   shouldReserveChatScrollInset,
 } from './composerKeyboardLift';
 import { MobileChangesSurface } from './MobileChangesSurface';
@@ -735,12 +736,20 @@ export const useNativeMobileChrome = (): void => {
         if (document.body.scrollTop !== 0) document.body.scrollTop = 0;
         // WebKit's default reveal is the caret. Pin the form's BOTTOM edge
         // (footer + padding) to the visible bottom instead.
-        findVisibleKbMover<HTMLElement>('.oc-mobile-composer')
+        const focusedComposer = document.activeElement instanceof Element
+          ? document.activeElement.closest<HTMLElement>('.oc-mobile-composer')
+          : null;
+        (focusedComposer && isVisibleKbMover(focusedComposer)
+          ? focusedComposer
+          : findVisibleKbMover<HTMLElement>('.oc-mobile-composer'))
           ?.scrollIntoView({ block: 'end', inline: 'nearest' });
         return slide;
       };
       const handleIosKeyboardIntent = (event: Event) => {
-        if (root.classList.contains('oc-native-ios-composer')) return;
+        if (shouldDeferWebKeyboardToNativeComposer(
+          root.classList.contains('oc-native-ios-composer'),
+          document.activeElement,
+        )) return;
         const detail = (event as CustomEvent<{ open?: boolean }>).detail;
         if (detail?.open !== true || layoutApplied) return;
         // Intent is composer-scoped (ChatInput). Skip when a non-composer field
@@ -764,7 +773,10 @@ export const useNativeMobileChrome = (): void => {
       window.addEventListener('oc:keyboard-intent', handleIosKeyboardIntent);
 
       const showHandle = await Keyboard.addListener('keyboardWillShow', (info) => {
-        if (root.classList.contains('oc-native-ios-composer')) return;
+        if (shouldDeferWebKeyboardToNativeComposer(
+          root.classList.contains('oc-native-ios-composer'),
+          document.activeElement,
+        )) return;
         clearSettle();
         keyboardHeight = info.keyboardHeight;
         persistIosImeHeight(keyboardHeight);

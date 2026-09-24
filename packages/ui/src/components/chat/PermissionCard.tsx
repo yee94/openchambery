@@ -11,6 +11,8 @@ import { Icon } from "@/components/icon/Icon";
 import { DiffPreview, WritePreview } from './DiffPreview';
 import { JsonSummaryView } from './message/parts/JsonSummaryView';
 import { useI18n } from '@/lib/i18n';
+import { useUIStore } from '@/stores/useUIStore';
+import { QuestionCardFrame } from './QuestionCardFrame';
 
 const PERMISSION_BASH_CUSTOM_STYLE: React.CSSProperties = {
   margin: 0,
@@ -97,6 +99,7 @@ export const PermissionCard: React.FC<PermissionCardProps> = ({
   onResponse
 }) => {
   const { t } = useI18n();
+  const isMobile = useUIStore((state) => state.isMobile);
   const [isResponding, setIsResponding] = React.useState(false);
   const [hasResponded, setHasResponded] = React.useState(false);
   const respondToPermission = sessionActions.respondToPermission;
@@ -292,11 +295,9 @@ export const PermissionCard: React.FC<PermissionCardProps> = ({
   };
 
   return (
-    <div className="group w-full pt-0 pb-2">
-      <div className="chat-column">
-        <div className="-mt-1 overflow-hidden border border-border/30 rounded-xl bg-muted/10">
-          {}
-          <div className="px-2.5 py-2 sm:px-2 sm:py-1.5 border-b border-border/20 bg-muted/5">
+    <QuestionCardFrame
+      mobile={isMobile}
+      header={(
             <div className="flex min-w-0 items-center justify-between gap-2">
               <div className="flex min-w-0 items-center gap-1.5 sm:gap-2">
                 <Icon name="question" className="h-3.5 w-3.5 text-[var(--status-warning)]" />
@@ -314,10 +315,56 @@ export const PermissionCard: React.FC<PermissionCardProps> = ({
                 <span className="truncate text-xs leading-4 sm:text-[length:var(--text-meta)] text-muted-foreground font-medium">{displayToolName}</span>
               </div>
             </div>
+      )}
+      footer={(
+        <>
+          <div className="grid w-full grid-cols-1 gap-1.5 sm:flex sm:items-center sm:flex-wrap">
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={() => handleResponse('once')}
+              disabled={isResponding}
+              className="min-h-9 min-w-0 w-full gap-1.5 px-2 !text-xs leading-4 text-foreground sm:w-auto"
+            >
+              <Icon name="check" className="size-3.5 shrink-0 text-[var(--status-success)] sm:size-3" />
+              <span className="truncate">{t('chat.permissionCard.allowOnce')}</span>
+            </Button>
+
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={() => handleResponse('always')}
+              disabled={isResponding}
+              className="min-h-9 min-w-0 w-full gap-1.5 px-2 !text-xs leading-4 text-foreground sm:w-auto"
+            >
+              <Icon name="arrow-right" className="size-3.5 shrink-0 text-[var(--status-success)] sm:size-3" />
+              <span className="truncate">{t('chat.permissionCard.alwaysAgree')}</span>
+            </Button>
+
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={() => handleResponse('reject')}
+              disabled={isResponding}
+              className="min-h-9 min-w-0 w-full gap-1.5 px-2 !text-xs leading-4 text-[var(--status-error)] sm:w-auto"
+            >
+              <Icon name="close" className="size-3.5 shrink-0 sm:size-3" />
+              <span className="truncate">{t('chat.permissionToast.actions.deny')}</span>
+            </Button>
           </div>
 
-          {}
-          <div className="px-2.5 py-2 sm:px-2 [&_.typography-meta]:!text-xs [&_.typography-micro]:!text-[0.6875rem]">
+          {isResponding ? (
+            <div className="flex justify-center w-full py-1 sm:w-auto sm:ml-auto typography-meta text-muted-foreground">
+              <div className="animate-spin h-3 w-3 border border-primary border-t-transparent rounded-full" />
+            </div>
+          ) : null}
+        </>
+      )}
+    >
+          <div className="[&_.typography-meta]:!text-xs [&_.typography-micro]:!text-[0.6875rem]">
             {permission.patterns.length > 0 && (
               <div className="mb-2">
                 <div className="typography-micro text-muted-foreground mb-1">{t('chat.permissionCard.patterns')}</div>
@@ -339,53 +386,6 @@ export const PermissionCard: React.FC<PermissionCardProps> = ({
 
             {renderToolContent()}
           </div>
-
-          {}
-          <div className="grid grid-cols-3 gap-1 border-t border-border/20 px-1.5 py-1.5 sm:flex sm:items-center sm:flex-wrap sm:px-2 sm:py-1">
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              onClick={() => handleResponse('once')}
-              disabled={isResponding}
-              className="h-8 min-w-0 w-full gap-1 px-1 !text-xs leading-4 text-foreground sm:h-6 sm:w-auto sm:px-2"
-            >
-              <Icon name="check" className="size-3.5 shrink-0 text-[var(--status-success)] sm:size-3" />
-              <span className="truncate">{t('chat.permissionCard.allowOnce')}</span>
-            </Button>
-
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              onClick={() => handleResponse('always')}
-              disabled={isResponding}
-              className="h-8 min-w-0 w-full gap-1 px-1 !text-xs leading-4 text-foreground sm:h-6 sm:w-auto sm:px-2"
-            >
-              <Icon name="arrow-right" className="size-3.5 shrink-0 text-[var(--status-success)] sm:size-3" />
-              <span className="truncate">{t('chat.permissionCard.alwaysAgree')}</span>
-            </Button>
-
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              onClick={() => handleResponse('reject')}
-              disabled={isResponding}
-              className="h-8 min-w-0 w-full gap-1 px-1 !text-xs leading-4 text-[var(--status-error)] sm:h-6 sm:w-auto sm:px-2"
-            >
-              <Icon name="close" className="size-3.5 shrink-0 sm:size-3" />
-              <span className="truncate">{t('chat.permissionToast.actions.deny')}</span>
-            </Button>
-
-            {isResponding && (
-              <div className="col-span-3 flex justify-center w-full sm:w-auto sm:ml-auto py-1 sm:py-0 typography-meta text-muted-foreground">
-                <div className="animate-spin h-3 w-3 border border-primary border-t-transparent rounded-full" />
-              </div>
-            )}
-          </div>
-        </div>
-      </div>
-    </div>
+    </QuestionCardFrame>
   );
 };

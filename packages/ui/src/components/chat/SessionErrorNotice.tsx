@@ -1,7 +1,7 @@
 import React from 'react';
 import { useI18n } from '@/lib/i18n';
 import { useLatestSessionError } from '@/sync/notification-store';
-import { useSessionErrorAt } from '@/sync/sync-context';
+import { useDirectorySync, useSessionErrorAt } from '@/sync/sync-context';
 import { resolveAssistantErrorPresentation } from './message/assistantErrorPresentation';
 import { ResponseStatusRow } from './message/ResponseStatusRow';
 
@@ -15,6 +15,10 @@ export const SessionErrorNotice = ({ sessionId, directory, hasInlineError = fals
   const { t } = useI18n();
   const notification = useLatestSessionError(sessionId);
   const errorAt = useSessionErrorAt(sessionId, directory ?? undefined);
+  const hasLiveRecovery = useDirectorySync((state) => Boolean(
+    state.session_execution_recovery[sessionId] || state.session_status[sessionId]?.type === 'retry'
+  ), directory ?? undefined);
+  if (hasLiveRecovery) return null;
   if (errorAt === undefined || !notification || hasInlineError) return null;
   if (notification.directory && directory && notification.directory !== directory) return null;
   const presentation = resolveAssistantErrorPresentation(notification.error, t)

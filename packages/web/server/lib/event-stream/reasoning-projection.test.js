@@ -13,6 +13,21 @@ import {
 } from './reasoning-projection.js';
 
 describe('shouldIncludeReasoning / query helpers', () => {
+  it('projects v2 list/context and exact snapshots without dropping rows or cursor', () => {
+    const row = { id: 'm', type: 'assistant', tokens: { reasoning: 12 }, content: [
+      { type: 'reasoning', text: 'hidden' }, { type: 'text', text: 'visible' },
+    ] };
+    const payload = { data: [row], cursor: { next: 'older' } };
+    const projected = projectMessagesPayloadForReasoning(payload, false);
+    expect(projected).toEqual({ data: [{ ...row, content: [row.content[1]] }], cursor: payload.cursor });
+    expect(projectMessagesPayloadForReasoning(row, false)).toEqual(projected.data[0]);
+    expect(projectMessagesPayloadForReasoning(payload, true)).toBe(payload);
+    expect(row.content).toHaveLength(2);
+    const filter = createReasoningOutboundFilter();
+    expect(filter.projectEvent({ type: 'session.reasoning.delta.1', data: { delta: 'hidden' } })).toBeNull();
+    const text = { type: 'session.text.delta', data: { delta: 'visible' } };
+    expect(filter.projectEvent(text)).toBe(text);
+  });
   it('only treats the strict string false as disabled', () => {
     expect(shouldIncludeReasoning(undefined)).toBe(true);
     expect(shouldIncludeReasoning(null)).toBe(true);

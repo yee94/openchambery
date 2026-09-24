@@ -457,6 +457,17 @@ describe('contact turn notifications', () => {
 });
 
 describe('notification trigger live activity end', () => {
+  it('treats session.execution.succeeded as completion, including a v2 data envelope', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => rootSessionResponse('ses_done')));
+    const { runtime, sendLiveActivityEnd, emitDesktopNotification } = createRuntime();
+    await runtime.maybeSendPushForTrigger({
+      type: 'session.execution.succeeded',
+      data: { sessionID: 'ses_done' },
+    });
+    expect(sendLiveActivityEnd).toHaveBeenCalledWith({ sessionId: 'ses_done', status: 'complete' });
+    expect(emitDesktopNotification).toHaveBeenCalled();
+  });
+
   it('ends the live activity on top-level completion and error', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => rootSessionResponse()));
     const { runtime, sendLiveActivityEnd } = createRuntime();

@@ -14,6 +14,8 @@ import {
   type SessionFormValue,
 } from '@/sync/session-form-api';
 import { useSessionFormStore } from '@/sync/session-form-store';
+import { useUIStore } from '@/stores/useUIStore';
+import { QuestionCardFrame } from './QuestionCardFrame';
 
 interface FormCardProps {
   form: SessionFormInfo;
@@ -30,6 +32,7 @@ function defaultValue(field: SessionFormField): SessionFormValue | undefined {
 
 export const FormCard: React.FC<FormCardProps> = ({ form, directory }) => {
   const { t } = useI18n();
+  const isMobile = useUIStore((state) => state.isMobile);
   const [busy, setBusy] = React.useState(false);
   const [failure, setFailure] = React.useState<'reply' | 'cancel' | null>(null);
   const [answers, setAnswers] = React.useState<SessionFormAnswer>(() => {
@@ -83,10 +86,33 @@ export const FormCard: React.FC<FormCardProps> = ({ form, directory }) => {
   });
 
   return (
-    <div className="mb-2 rounded-xl border border-border bg-[var(--surface-elevated)] text-foreground">
-      <div className="px-2.5 py-2 sm:px-3">
-        <div className="typography-ui-label text-foreground">{form.title || t('chat.form.title')}</div>
-        <div className="mt-2 space-y-2">
+    <QuestionCardFrame
+      mobile={isMobile}
+      header={<div className="typography-meta font-medium text-muted-foreground">{form.title || t('chat.form.title')}</div>}
+      footer={(
+        <>
+          <Button
+            type="button"
+            variant="default"
+            size="sm"
+            onClick={() => void handleReply()}
+            disabled={busy}
+          >
+            {t('chat.form.reply')}
+          </Button>
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            onClick={() => void handleCancel()}
+            disabled={busy}
+          >
+            {t('chat.form.cancel')}
+          </Button>
+        </>
+      )}
+    >
+      <div className="space-y-2">
           {form.fields.map((field) => {
             if (field.type === 'external') {
               return (
@@ -182,31 +208,10 @@ export const FormCard: React.FC<FormCardProps> = ({ form, directory }) => {
               </label>
             );
           })}
-        </div>
       </div>
-      {failure ? <div role="alert" className="px-3 pb-2 typography-meta text-[var(--status-error)]">
+      {failure ? <div role="alert" className="mt-2 typography-meta text-[var(--status-error)]">
         {t(failure === 'reply' ? 'chat.questionCard.submitFailed' : 'chat.questionCard.dismissFailed')}
       </div> : null}
-      <div className="flex items-center gap-1.5 border-t border-border px-2 py-1.5">
-        <Button
-          type="button"
-          variant="default"
-          size="sm"
-          onClick={() => void handleReply()}
-          disabled={busy}
-        >
-          {t('chat.form.reply')}
-        </Button>
-        <Button
-          type="button"
-          variant="ghost"
-          size="sm"
-          onClick={() => void handleCancel()}
-          disabled={busy}
-        >
-          {t('chat.form.cancel')}
-        </Button>
-      </div>
-    </div>
+    </QuestionCardFrame>
   );
 };

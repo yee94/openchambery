@@ -13,6 +13,19 @@ import {
 } from './reasoning-projection';
 
 describe('shouldIncludeReasoning / query helpers', () => {
+  it('filters native v2 snapshots and deltas while retaining text, rows and cursor', () => {
+    const row = { id: 'm', type: 'assistant', tokens: { reasoning: 12 }, content: [
+      { type: 'reasoning', text: 'hidden' }, { type: 'text', text: 'visible' },
+    ] };
+    const payload = { data: [row], cursor: { next: 'older' } };
+    expect(projectMessagesPayloadForReasoning(payload, false)).toEqual({
+      data: [{ ...row, content: [row.content[1]] }], cursor: payload.cursor,
+    });
+    expect(projectMessagesPayloadForReasoning(row, false)).toEqual({ ...row, content: [row.content[1]] });
+    expect(projectMessagesPayloadForReasoning(payload, true)).toBe(payload);
+    expect(row.content).toHaveLength(2);
+    expect(createReasoningOutboundFilter().projectEvent({ type: 'session.reasoning.delta.1', data: { delta: 'hidden' } })).toBeNull();
+  });
   it('only treats the strict string false as disabled', () => {
     expect(shouldIncludeReasoning(undefined)).toBe(true);
     expect(shouldIncludeReasoning('true')).toBe(true);

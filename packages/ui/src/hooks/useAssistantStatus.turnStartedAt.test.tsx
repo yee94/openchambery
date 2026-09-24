@@ -25,6 +25,7 @@ vi.mock('@/sync/session-ui-store', () => {
 });
 
 vi.mock('@/sync/sync-context', () => ({
+  useDirectorySync: () => false,
   useSessionMessages: () => mocks.messages,
   useSessionParts: () => [],
   useSessionPermissions: () => [],

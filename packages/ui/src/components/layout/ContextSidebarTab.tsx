@@ -3,6 +3,7 @@ import type { Message, Part } from '@/lib/opencode/v2-types';
 import { WorkerHighlightedCode } from '@/components/code/WorkerHighlightedCode';
 
 import { deriveMessageRole } from '@/components/chat/message/messageRole';
+import { projectTurnRecords } from '@/components/chat/lib/turns/projectTurnRecords';
 import { Icon } from "@/components/icon/Icon";
 import { useConfigStore } from '@/stores/useConfigStore';
 import { useUIStore } from '@/stores/useUIStore';
@@ -21,8 +22,9 @@ import {
 import type { TimeFormatPreference } from '@/stores/useUIStore';
 import { formatDateTimeForPreference } from '@/lib/timeFormat';
 import {
+  type AssistantTpsInput,
   computeAssistantTps,
-  computeGenerationDurationMs,
+  computeAssistantTpsByStep,
   formatAssistantTps,
 } from '@/components/chat/message/assistantTps';
 
@@ -324,6 +326,7 @@ export const ContextPanelContent: React.FC = () => {
 
     const assistantMessages = sessionMessages.filter((entry) => deriveMessageRole(entry.info).role === 'assistant');
     const userMessages = sessionMessages.filter((entry) => deriveMessageRole(entry.info).isUser);
+    const turnProjection = showAssistantTps ? projectTurnRecords(sessionMessages) : null;
 
     let contextMessage: SessionMessage | null = null;
     for (let i = assistantMessages.length - 1; i >= 0; i -= 1) {
@@ -349,41 +352,45 @@ export const ContextPanelContent: React.FC = () => {
       return sum + cost;
     }, 0);
 
-    // Generation-only TPS (excludes tool wall time). Session rate is a token-
-    // weighted average over every completed assistant message that has
-    // measurable generation duration — not a mean of per-message rates.
-    let sessionGeneratedTokens = 0;
-    let sessionGenerationMs = 0;
-    for (const message of assistantMessages) {
-      const breakdown = extractTokenBreakdown(message);
-      const createdAt = (message.info.time?.created ?? null) as number | null;
-      const completedAt = (
-        (message.info.time as { completed?: number } | undefined)?.completed ?? null
-      ) as number | null;
-      const generationMs = computeGenerationDurationMs(createdAt, completedAt, message.parts);
-      if (generationMs === null) continue;
-      const generated = breakdown.output + breakdown.reasoning;
-      if (generated <= 0) continue;
-      sessionGeneratedTokens += generated;
-      sessionGenerationMs += generationMs;
+    const assistantTpsByMessageID = new Map<string, string>();
+    const sessionTpsSteps: AssistantTpsInput[] = [];
+    for (const turn of turnProjection?.turns ?? []) {
+      const turnSteps = turn.assistantMessages.map(({ info }) => ({
+        createdAt: info.time.created,
+        streamedAt: info.time.streamed,
+        outputTokens: info.tokens?.output,
+        reasoningTokens: info.tokens?.reasoning,
+      }));
+      const turnRates = computeAssistantTpsByStep(turnSteps);
+
+      // The TUI computes each assistant footer from the start of the turn
+      // through that step, so raw-message rows use the same cumulative rate.
+      for (let index = 0; index < turnRates.length; index += 1) {
+        const tps = turnRates[index];
+        const assistantID = turn.assistantMessageIds[index];
+        if (tps !== null && assistantID) {
+          assistantTpsByMessageID.set(assistantID, formatAssistantTps(tps));
+        }
+      }
+
+      const turnRate = turnRates[turnRates.length - 1] ?? null;
+      // Interrupted and failed turns often omit time.completed. Include them
+      // when the streamed clocks already produce a rate; skip a live continuation.
+      if (turn.completionDisposition !== 'active' && turnRate !== null) {
+        sessionTpsSteps.push(...turnSteps);
+      }
     }
-    const sessionTps = sessionGenerationMs > 0 && sessionGeneratedTokens > 0
-      ? sessionGeneratedTokens / (sessionGenerationMs / 1000)
-      : null;
+    const sessionTps = computeAssistantTps(sessionTpsSteps);
     const sessionTpsLabel = sessionTps !== null ? formatAssistantTps(sessionTps) : null;
 
-    const lastAssistantTps = contextMessage
-      ? computeAssistantTps({
-          createdAt: (contextMessage.info.time?.created ?? null) as number | null,
-          completedAt: (
-            (contextMessage.info.time as { completed?: number } | undefined)?.completed ?? null
-          ) as number | null,
-          outputTokens: tokenBreakdown.output,
-          reasoningTokens: tokenBreakdown.reasoning,
-          parts: contextMessage.parts,
-        })
+    const contextTurnID = contextMessage
+      ? turnProjection?.indexes.messageToTurnId.get(contextMessage.info.id)
+      : undefined;
+    const contextTurn = contextTurnID ? turnProjection?.indexes.turnById.get(contextTurnID) : undefined;
+    const finalContextAssistantID = contextTurn?.assistantMessageIds[contextTurn.assistantMessageIds.length - 1];
+    const lastAssistantTpsLabel = finalContextAssistantID
+      ? assistantTpsByMessageID.get(finalContextAssistantID) ?? null
       : null;
-    const lastAssistantTpsLabel = lastAssistantTps !== null ? formatAssistantTps(lastAssistantTps) : null;
 
     const latestAssistantInfo = (contextMessage?.info ?? null) as (Message & { providerID?: string; modelID?: string }) | null;
     const providerModel = resolveProviderAndModel(
@@ -426,6 +433,7 @@ export const ContextPanelContent: React.FC = () => {
       usagePercent,
       cacheHitRate,
       totalAssistantCost,
+      assistantTpsByMessageID,
       sessionTpsLabel: sessionTpsLabel && sessionTpsLabel.length > 0 ? sessionTpsLabel : null,
       lastAssistantTpsLabel: lastAssistantTpsLabel && lastAssistantTpsLabel.length > 0 ? lastAssistantTpsLabel : null,
       contextLimit,
@@ -437,7 +445,7 @@ export const ContextPanelContent: React.FC = () => {
       },
       breakdownTotal,
     };
-  }, [currentSessionId, providers, sessionMessages, sessions, t]);
+  }, [currentSessionId, providers, sessionMessages, sessions, showAssistantTps, t]);
 
   if (!currentSessionId) {
     return (
@@ -611,9 +619,6 @@ export const ContextPanelContent: React.FC = () => {
               const isExpanded = expandedRawMessages[message.info.id] === true;
               const isCopied = copiedRawMessageId === message.info.id;
               const messageCreatedAt = (message.info.time?.created ?? null) as number | null;
-              const messageCompletedAt = (
-                (message.info.time as { completed?: number } | undefined)?.completed ?? null
-              ) as number | null;
               const partsLabel = derivePartsLabel(message.parts);
               const tokens = isAssistant ? extractTokenBreakdown({ info: message.info, parts: message.parts }) : null;
               const userSnippet = isUser ? deriveUserSnippet(message.parts) : '';
@@ -622,18 +627,8 @@ export const ContextPanelContent: React.FC = () => {
               // remaining space and truncates before it can push metrics.
               const assistantLeft = partsLabel || '\u2014';
               const assistantTpsLabel = (() => {
-                if (!showAssistantTps || !isAssistant || !tokens) return null;
-                const tps = computeAssistantTps({
-                  streamedAt: message.info.time?.streamed,
-                  createdAt: messageCreatedAt,
-                  completedAt: messageCompletedAt,
-                  outputTokens: tokens.output,
-                  reasoningTokens: tokens.reasoning,
-                  parts: message.parts,
-                });
-                if (tps === null) return null;
-                const label = formatAssistantTps(tps);
-                return label.length > 0 ? label : null;
+                if (!showAssistantTps || !isAssistant) return null;
+                return viewModel.assistantTpsByMessageID.get(message.info.id) ?? null;
               })();
               const assistantMiddle = tokens
                 ? formatAssistantTokensWithTps(tokens.input, tokens.output, formatNumber, assistantTpsLabel)

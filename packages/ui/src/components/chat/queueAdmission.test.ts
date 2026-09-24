@@ -1,4 +1,5 @@
-import { beforeEach, describe, expect, test } from 'bun:test';
+import { beforeEach, describe, expect, test } from 'vitest';
+import { shouldRouteComposerThroughQueue } from './queueAdmission';
 import { admitChatInputQueueMessageAndConsumeResources, admitQueueMessageAndConsumeResources, admitServerQueueMessageAndConsumeResources, assistantQueueAdmissionAvailable, attachedFilesToQueueCandidates, beginQueueAdmissionOptimisticClear, createServerQueueAdmissionCapture, createServerQueueAdmissionIdentity, enqueueServerQueueScopeMutation, isCompleteQueueSendConfig, isQueueAdmissionRuntimeCurrent, type ServerQueueScopeMutationFlights } from './queueAdmission';
 import { legacyQueueScope, setMessageQueueMutationFence, useMessageQueueStore, type QueueItem, type QueueScope } from '@/stores/messageQueueStore';
 import { sessionDraftKey, type DraftRecord } from '@/sync/input-draft-types';
@@ -11,6 +12,17 @@ const scope: Extract<QueueScope, { state: 'bound' }> = {
     directory: '/project',
     sessionID: 'session-a',
 };
+
+test('existing queue captures follow-ups only during active work, never idle sends or explicit steer', () => {
+    const state = { hasQueuedMessages: true, sessionIsRunning: true, autoReviewRunning: false, queuedOnly: false };
+    expect(shouldRouteComposerThroughQueue(state)).toBe(true);
+    expect(shouldRouteComposerThroughQueue({ ...state, sessionIsRunning: false })).toBe(false);
+    expect(shouldRouteComposerThroughQueue({ ...state, delivery: 'steer' })).toBe(false);
+    expect(shouldRouteComposerThroughQueue({ ...state, delivery: 'queue' })).toBe(true);
+    expect(shouldRouteComposerThroughQueue({ ...state, queuedOnly: true })).toBe(false);
+    expect(shouldRouteComposerThroughQueue({ ...state, sessionIsRunning: false, autoReviewRunning: true })).toBe(true);
+    expect(shouldRouteComposerThroughQueue({ ...state, hasQueuedMessages: false })).toBe(false);
+});
 const add = (target: QueueScope, content: string): QueueItem => {
     const result = useMessageQueueStore.getState().addToQueue(target, { content });
     if (!result.ok) throw new Error(result.reason);

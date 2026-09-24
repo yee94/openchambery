@@ -1207,6 +1207,9 @@ export const registerOpenCodeProxy = (app, deps) => {
   app.get('/api/session/:sessionID/message', (req, res, next) => {
     return forwardSessionMessagesListRequest(req, res, next);
   });
+  app.get('/api/session/:sessionID/context', (req, res, next) => {
+    return forwardSessionMessagesListRequest(req, res, next);
+  });
 
   app.get('/api/global/event', forwardSseRequest);
   app.get('/api/event', forwardSseRequest);

@@ -56,25 +56,31 @@ test('form answers preserve schema keys, option values and single-item multisele
   ])).toEqual({ environment: 'prod', targets: ['web'] });
 });
 
-test('TPS uses upstream stream timing and excludes prefill latency', () => {
+test('TPS uses the TUI provider-response interval and authoritative token usage', () => {
   const row = normalizeSessionProjectionMessage('session', {
     id: 'msg_a', type: 'assistant', agent: 'build', model: { providerID: 'test', id: 'model' },
     time: { created: 1000, streamed: 9000, completed: 10000 },
     tokens: { input: 10, output: 100, reasoning: 0 }, content: [],
   });
   expect(row?.info.time.streamed).toBe(9000);
-  expect(computeAssistantTps({
-    createdAt: row?.info.time.created, streamedAt: row?.info.time.streamed,
-    completedAt: row?.info.time.completed, outputTokens: row?.info.tokens?.output,
-  })).toBe(100);
+  expect(computeAssistantTps([{
+    createdAt: row?.info.time.created,
+    streamedAt: row?.info.time.streamed,
+    outputTokens: row?.info.tokens?.output,
+    reasoningTokens: row?.info.tokens?.reasoning,
+  }])).toBe(12.5);
 });
 
-test('native TPS ignores tool wall-time heuristics and rejects invalid native intervals', () => {
-  expect(computeAssistantTps({ streamedAt: 1000, completedAt: 2000, outputTokens: 80, reasoningTokens: 20,
-    parts: [{ id: 'tool', sessionID: 'session', messageID: 'message', type: 'tool', tool: 'bash', callID: 'tool',
-      state: { status: 'completed', input: {}, time: { start: 1000, end: 2000 } } }],
-  })).toBe(100);
-  expect(computeAssistantTps({ createdAt: 1, streamedAt: 2000, completedAt: 2000, outputTokens: 100 })).toBeNull();
+test('TUI TPS requires a streamed boundary for every step and rejects zero provider duration', () => {
+  expect(computeAssistantTps([
+    { createdAt: 1_000, streamedAt: 2_000, outputTokens: 80, reasoningTokens: 20 },
+  ])).toBe(100);
+  expect(computeAssistantTps([
+    { createdAt: 1_000, outputTokens: 100 },
+  ])).toBeNull();
+  expect(computeAssistantTps([
+    { createdAt: 2_000, streamedAt: 1_000, outputTokens: 100 },
+  ])).toBeNull();
 });
 
 test('custom string answers stay enabled after form parsing', () => {

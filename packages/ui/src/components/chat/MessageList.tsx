@@ -6,6 +6,7 @@ import { isAssistantSessionDivider } from './hostedSessionHistory';
 import { useI18n } from '@/lib/i18n';
 
 import ChatMessage from './ChatMessage';
+import { computeAssistantTps } from './message/assistantTps';
 import { StatusRowContainer } from './StatusRowContainer';
 import { areOptionalRenderRelevantMessagesEqual, areRelevantTurnGroupingContextsEqual, areRenderRelevantMessagesEqual } from './message/renderCompare';
 import TurnItem from './components/TurnItem';
@@ -1089,6 +1090,12 @@ const TurnBlock = React.memo(({
             : undefined;
         return {
             turnId: turn.turnId,
+            assistantTps: computeAssistantTps(turn.assistantMessages.map((assistant) => ({
+                createdAt: assistant.info.time.created,
+                streamedAt: assistant.info.time.streamed,
+                outputTokens: assistant.info.tokens?.output,
+                reasoningTokens: assistant.info.tokens?.reasoning,
+            }))),
             summaryBody: turn.summaryText,
             activityParts: visibleActivityParts,
             activityGroupSegments: visibleActivitySegments,
@@ -1101,7 +1108,7 @@ const TurnBlock = React.memo(({
             userMessageCreatedAt: typeof userCreatedAt === 'number' ? userCreatedAt : undefined,
             userMessageVariant,
         };
-    }, [turn.activityPresentationKind, turn.changedFiles, turn.diffStats, turn.hasReasoning, turn.hasTools, turn.headerMessageId, turn.summaryText, turn.turnId, turn.userMessage.info, visibleActivityParts, visibleActivitySegments]);
+    }, [turn.activityPresentationKind, turn.assistantMessages, turn.changedFiles, turn.diffStats, turn.hasReasoning, turn.hasTools, turn.headerMessageId, turn.summaryText, turn.turnId, turn.userMessage.info, visibleActivityParts, visibleActivitySegments]);
 
     // Called by `TurnAssistantBlock` during its render, so it must see this
     // render's values. Through `useEvent` it saw the previous render's, and a
@@ -1173,6 +1180,7 @@ const TurnBlock = React.memo(({
                 completionDisposition: activityPresentation.completionDisposition,
                 activityPresentationKind: turn.activityPresentationKind,
                 durationMs: activityPresentation.durationMs,
+                assistantTps: turnGroupingContextBase.assistantTps,
                 ...(shouldAttachFullTurnContext ? {
                     summaryBody: turnGroupingContextBase.summaryBody,
                     activityParts: turnGroupingContextBase.activityParts,

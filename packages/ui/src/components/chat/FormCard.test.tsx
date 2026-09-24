@@ -24,7 +24,9 @@ async function submit() {
   await act(async () => button?.click());
 }
 test('submits the visible initial option using its value', async () => {
-  await render(); await submit();
+  await render();
+  expect(host.querySelector('[data-interaction-card]')).not.toBeNull();
+  await submit();
   expect(mocks.reply).toHaveBeenCalledWith({ sessionID: 'session', formID: 'frm_choice', directory: '/workspace', answer: { target: 'web' } });
 });
 test('keeps the form and exposes submission failure for retry', async () => {

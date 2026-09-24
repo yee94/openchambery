@@ -305,6 +305,10 @@ configuration reload uses official SDK `location.reload`. The historical
 `/api/config/reload` host/bridge endpoint remains reserved for existing process
 startup/recovery/binary-change callers, not ordinary Settings mutations.
 
+Command catalog SDK fetch forwarding preserves the generated request options,
+including authentication headers, and combines caller cancellation with its
+eight-second request deadline.
+
 `config-hot-reload.integration.test.js` is opt-in via
 `OPENCHAMBER_TEST_OPENCODE_BINARY=<absolute-v2-cli>`. It starts a separate loopback
 server with isolated HOME/XDG/config/database, checks global command changes,

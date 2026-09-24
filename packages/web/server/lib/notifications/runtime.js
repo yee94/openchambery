@@ -346,7 +346,9 @@ export const createNotificationTriggerRuntime = (deps) => {
 
   const extractSessionIdFromPayload = (payload) => {
     if (!payload || typeof payload !== 'object') return null;
-    const props = payload.properties;
+    const props = payload.properties && typeof payload.properties === 'object'
+      ? payload.properties
+      : (payload.data && typeof payload.data === 'object' ? payload.data : null);
     const info = props?.info;
     const sessionId =
       info?.sessionID ??
@@ -417,20 +419,31 @@ export const createNotificationTriggerRuntime = (deps) => {
       const reason = payload.properties?.reason ?? payload.data?.reason;
       if (reason === 'shutdown') return;
     }
-    if ((payload.type === 'session.idle' || payload.type === 'session.error') && sessionId) {
-      const error = payload.properties?.error;
+    // v2 completion is session.execution.succeeded. session.idle is a deprecated
+    // fallback; the ready-notification cooldown below collapses the pair.
+    if ((
+      payload.type === 'session.idle'
+      || payload.type === 'session.execution.succeeded'
+      || payload.type === 'session.error'
+      || payload.type === 'session.execution.failed'
+    ) && sessionId) {
+      const body = payload.properties && typeof payload.properties === 'object'
+        ? payload.properties
+        : (payload.data && typeof payload.data === 'object' ? payload.data : {});
+      const error = body?.error;
       const errorText = typeof error?.message === 'string'
         ? error.message
         : typeof error === 'string' ? error : '';
+      const failed = payload.type === 'session.error' || payload.type === 'session.execution.failed';
       await maybeSendPushForTrigger({
         ...payload,
         type: 'message.updated',
         properties: {
-          ...payload.properties,
+          ...(payload.properties && typeof payload.properties === 'object' ? payload.properties : body),
           info: {
             sessionID: sessionId,
             role: 'assistant',
-            finish: payload.type === 'session.error' ? 'error' : 'stop',
+            finish: failed ? 'error' : 'stop',
             ...(errorText ? { parts: [{ type: 'text', text: errorText }] } : {}),
           },
         },

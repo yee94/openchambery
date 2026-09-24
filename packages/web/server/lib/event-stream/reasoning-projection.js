@@ -96,6 +96,10 @@ function projectParts(parts) {
  * @param {unknown} record
  */
 function projectRecord(record) {
+  if (isPlainObject(record) && record.type === 'assistant' && Array.isArray(record.content)) {
+    const content = projectParts(record.content);
+    return content === record.content ? record : { ...record, content };
+  }
   if (!isPlainObject(record) || !Array.isArray(record.parts)) return record;
   const parts = projectParts(record.parts);
   return parts === record.parts ? record : { ...record, parts };
@@ -125,6 +129,17 @@ export function projectMessagesPayloadWithoutReasoning(payload) {
 
   let next = payload;
   let changed = false;
+
+  if (Array.isArray(payload.data)) {
+    const data = projectMessagesPayloadWithoutReasoning(payload.data);
+    if (data !== payload.data) {
+      next = { ...next, data };
+      changed = true;
+    }
+  }
+  if (payload.type === 'assistant' && Array.isArray(payload.content)) {
+    return projectRecord(payload);
+  }
 
   if (Array.isArray(payload.records)) {
     const records = projectMessagesPayloadWithoutReasoning(payload.records);
@@ -222,7 +237,7 @@ export function createReasoningOutboundFilter() {
     const type = baseEventType(rawType);
 
     // session.next.reasoning.* (incl. versioned …reasoning.delta.1)
-    if (type.startsWith('session.next.reasoning.')) return null;
+    if (type.startsWith('session.next.reasoning.') || type.startsWith('session.reasoning.')) return null;
 
     if (type === 'message.part.updated') {
       const body = eventBodyOf(payload);

@@ -157,7 +157,9 @@
 - Session busy/unread/question status is a trailing shrink-0 marker on the right of the title
   (highlighted `question` icon while an ask-tool question is pending, ContextUsage-style
   track+arc ring while busy, info-colored unread dot when idle+unseen). Pending questions
-  outrank the busy spinner because the session is waiting on the user. It owns its own
+  outrank the busy spinner because the session is waiting on the user. The unread dot stays
+  on the selected row; opening the session does not by itself mean the just-finished turn
+  was seen. It owns its own
   gutter so long titles truncate before it, and hides instantly on row hover (no
   opacity/padding transition) when hover/always-visible row actions take that edge.
 - Archived groups are collapsed by default and support bulk deletion at group/folder level.

@@ -192,6 +192,7 @@ const runtimeRequestPathname = (rawUrl: string): string | null => {
  * Strict path match only — never POST/PATCH or unrelated GET surfaces.
  */
 const REASONING_PROJECTION_GET_PATHS: readonly RegExp[] = [
+  /^\/api\/session\/[^/]+\/context\/?$/,
   // Official SDK session.messages list
   /^\/api\/session\/(?!status$)[^/]+\/message\/?$/,
   // Exact session.message

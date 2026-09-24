@@ -56,16 +56,15 @@ const transportPage = (records: Array<{ info: Message; parts?: Part[] }>) => ({
 
 const readTpsInputs = (data: ReturnType<typeof projectFlatFromTranscriptData> | undefined) => {
   const info = data?.messagesByID.msg_a as
-    | (Message & { tokens?: { output?: number; reasoning?: number }; time?: { created?: number; completed?: number } })
+    | (Message & { tokens?: { output?: number; reasoning?: number }; time?: { created?: number; streamed?: number } })
     | undefined
   if (!info) return { info: null, tps: null }
-  const tps = computeAssistantTps({
+  const tps = computeAssistantTps([{
     createdAt: info.time?.created,
-    completedAt: info.time?.completed,
+    streamedAt: info.time?.streamed,
     outputTokens: info.tokens?.output,
     reasoningTokens: info.tokens?.reasoning,
-    parts: [],
-  })
+  }])
   return { info, tps }
 }
 
@@ -86,7 +85,7 @@ describe("settle tokens through sse-event-batch (mergeSessionTranscript)", () =>
           ...open,
           finish: "stop",
           tokens: { ...TOKENS_FINAL },
-          time: { created: 2000, completed: 21000 },
+          time: { created: 2000, streamed: 20000, completed: 21000 },
         } as Message),
       ],
     })
@@ -117,7 +116,7 @@ describe("settle tokens through sse-event-batch (mergeSessionTranscript)", () =>
           ...open,
           finish: "stop",
           tokens: { ...TOKENS_FINAL },
-          time: { created: 2000, completed: 21000 },
+          time: { created: 2000, streamed: 20000, completed: 21000 },
         } as Message),
       ],
     })
@@ -154,7 +153,7 @@ describe("settle tokens through sse-event-batch (mergeSessionTranscript)", () =>
           ...open,
           finish: "stop",
           tokens: { ...TOKENS_FINAL },
-          time: { created: 2000, completed: 21000 },
+          time: { created: 2000, streamed: 20000, completed: 21000 },
         } as Message),
       ],
     })
@@ -190,7 +189,7 @@ describe("settle tokens through sse-event-batch (mergeSessionTranscript)", () =>
           ...open,
           finish: "stop",
           tokens: { ...TOKENS_FINAL },
-          time: { created: 2000, completed: 21000 },
+          time: { created: 2000, streamed: 20000, completed: 21000 },
         } as Message),
       ],
     })
@@ -234,7 +233,7 @@ describe("settle tokens through production query adapter with sse-event-batch", 
           ...open,
           finish: "stop",
           tokens: { ...TOKENS_FINAL },
-          time: { created: 2000, completed: 21000 },
+          time: { created: 2000, streamed: 20000, completed: 21000 },
         } as Message),
       ],
     })
@@ -243,18 +242,17 @@ describe("settle tokens through production query adapter with sse-event-batch", 
 
     const info = repo.getMessage(scope, "msg_a") as Message & {
       tokens?: { output?: number; reasoning?: number }
-      time?: { created?: number; completed?: number }
+      time?: { created?: number; streamed?: number; completed?: number }
     }
     expect(info.time?.completed).toBe(21000)
     expect(info.tokens?.output).toBe(44)
 
-    const tps = computeAssistantTps({
+    const tps = computeAssistantTps([{
       createdAt: info.time?.created,
-      completedAt: info.time?.completed,
+      streamedAt: info.time?.streamed,
       outputTokens: info.tokens?.output,
       reasoningTokens: info.tokens?.reasoning,
-      parts: repo.getParts(scope, "msg_a") as Part[],
-    })
+    }])
     expect(tps).not.toBe(null)
 
     unsub()

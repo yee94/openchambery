@@ -2495,6 +2495,15 @@ button.oc-mobile-worktree-label-trigger:active,
     min-width: 0 !important;
   }
 
+  /* Mobile load-older matches the desktop muted hint, not a 36px filled chip. */
+  :root.mobile-pointer:not(.desktop-runtime)
+    button[data-chat-load-older="true"],
+  :root.mobile-pointer:not(.desktop-runtime)
+    [data-chat-load-older="true"][role="button"] {
+    min-height: 0 !important;
+    min-width: 0 !important;
+  }
+
   /* Improve input field touch targets */
   :root.mobile-pointer:not(.desktop-runtime) input,
   :root.mobile-pointer:not(.desktop-runtime) textarea,
@@ -3507,6 +3516,13 @@ button.oc-mobile-worktree-label-trigger:active,
    only exist on chat pages (home uses a floating dock instead).
    Sub-agent read-only banner reuses the same foot treatment via
    .oc-mobile-readonly-prompt-foot (no keyboard-lift hooks). */
+/* Selection actions replace the composer foot. The bar is only that foot's
+   box, so transcript selection above it stays interactive. */
+[data-text-selection-menu] {
+  background: var(--background) !important;
+  background-color: var(--background) !important;
+}
+
 .oc-mobile-composer,
 .oc-mobile-readonly-prompt-foot {
   background: var(--background) !important;

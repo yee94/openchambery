@@ -208,7 +208,7 @@ describe('MobileSessionStatusBar project correction on session open', () => {
 
 describe('MobileSessionStatusBar closed-sheet list gate', () => {
   test('groups sessions while open and retains last open list through exit presence', () => {
-    expect(statusBarSource).toContain('useSessionGrouping(\n    sessions,\n    sessionStatus,\n    open,\n    sheetPresent,');
+    expect(statusBarSource).toContain('useSessionGrouping(\n    sessions,\n    sessionStatus,\n    open || sheetPreview,\n    sheetPresent,');
     expect(statusBarSource).toContain('buildMobileSessionStatusList');
     expect(statusBarSource).toContain('if (!sheetPresent || !selectedProject) return [];');
     expect(statusBarSource).toContain('if (!sheetPresent) return sortedSessions;');

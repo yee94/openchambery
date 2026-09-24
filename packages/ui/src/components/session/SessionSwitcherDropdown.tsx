@@ -202,7 +202,7 @@ function SwitcherRow({ session, depth, variant, secondaryMeta, hasChildren, isEx
   const needsAttention = unseenCount > 0 && !isSubtask;
   const statusType = sessionStatus?.type ?? 'idle';
   const isStreaming = statusType === 'busy' || statusType === 'retry';
-  const showUnreadDot = !isStreaming && needsAttention && !isActive;
+  const showUnreadDot = !isStreaming && needsAttention;
 
   const timestamp = session.time?.updated || session.time?.created || Date.now();
   const timeLabel = formatSessionCompactDateLabel(timestamp);

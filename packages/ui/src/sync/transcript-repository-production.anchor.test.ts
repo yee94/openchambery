@@ -11,7 +11,7 @@ vi.mock("./session-projection-api", async (importOriginal) => {
   return { ...actual, fetchSessionProjectionPage: fetchPage }
 })
 
-const { extendInitialPageToAuthoredUserTurn, INITIAL_ANCHOR_SCAN_EXTRA_PAGES } = await import(
+const { extendInitialPageToAuthoredUserTurn, INITIAL_ANCHOR_SCAN_EXTRA_PAGES, fetchProductionTranscriptTransportPage } = await import(
   "./transcript-repository-production"
 )
 
@@ -26,6 +26,18 @@ const assistants = (from: number, count: number) =>
 const input = { sessionID: "ses_child", directory: "/repo", signal: new AbortController().signal }
 
 describe("extendInitialPageToAuthoredUserTurn", () => {
+  test("settles a native transport that ignores abort instead of loading forever", async () => {
+    vi.useFakeTimers()
+    try {
+      fetchPage.mockImplementation(() => new Promise(() => {}))
+      const request = fetchProductionTranscriptTransportPage({ ...input, limit: 20 })
+      const assertion = expect(request).rejects.toThrow("timed out")
+      await vi.advanceTimersByTimeAsync(30_001)
+      await assertion
+    } finally {
+      vi.useRealTimers()
+    }
+  });
   beforeEach(() => {
     fetchPage.mockReset()
   })

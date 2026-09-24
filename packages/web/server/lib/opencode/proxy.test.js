@@ -460,6 +460,21 @@ describe('registerOpenCodeProxy reasoning projection routes', () => {
     expect(JSON.stringify(res.body)).not.toContain('hidden');
   });
 
+  it.each(['message', 'context'])('filters native v2 %s before outbound transport', async (surface) => {
+    const upstreamUrls = [];
+    globalThis.fetch = vi.fn(async (url) => {
+      upstreamUrls.push(String(url));
+      return new Response(JSON.stringify({ data: [{ id: 'm', type: 'assistant', content: [
+        { type: 'reasoning', text: 'hidden' }, { type: 'text', text: 'visible' },
+      ] }], cursor: { next: 'older' } }), { headers: { 'content-type': 'application/json' } });
+    });
+    const res = await request(mountProxy()).get(`/api/session/ses_1/${surface}?includeReasoning=false`);
+    expect(res.status).toBe(200);
+    expect(res.body.data[0].content).toEqual([{ type: 'text', text: 'visible' }]);
+    expect(res.body.cursor.next).toBe('older');
+    expect(upstreamUrls[0]).not.toContain('includeReasoning');
+  });
+
   it('keeps reasoning parts on session.messages list when includeReasoning is omitted', async () => {
     globalThis.fetch = vi.fn(async () => ({
       ok: true,

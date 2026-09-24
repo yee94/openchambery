@@ -67,11 +67,12 @@ interface MobileWindowMotionProps {
   surfaceElementRef?: React.Ref<HTMLDivElement>;
   dismissGesture?: boolean | MobileWindowMotionDismissGestureConfig;
   onExitComplete?: () => void;
+  onPreviewChange?: (preview: boolean) => void;
   ariaLabel: string;
 }
 
 export const MobileWindowMotion: React.FC<MobileWindowMotionProps> = ({
-  id, open, onOpenChange, keepMounted = false, presentation = 'sheet', edge = 'bottom', children, className, scrimClassName, surfaceClassName, surfaceElementRef, dismissGesture = false, onExitComplete, ariaLabel,
+  id, open, onOpenChange, keepMounted = false, presentation = 'sheet', edge = 'bottom', children, className, scrimClassName, surfaceClassName, surfaceElementRef, dismissGesture = false, onExitComplete, onPreviewChange, ariaLabel,
 }) => {
   const overlayRootRef = React.useRef<HTMLElement | null>(null);
   const scrimRef = React.useRef<HTMLDivElement | null>(null);
@@ -79,6 +80,7 @@ export const MobileWindowMotion: React.FC<MobileWindowMotionProps> = ({
   const openRef = React.useRef(open);
   const onOpenChangeRef = React.useRef(onOpenChange);
   const onExitCompleteRef = React.useRef(onExitComplete);
+  const onPreviewChangeRef = React.useRef(onPreviewChange);
   const progressRef = React.useRef(0);
   const pendingProgressRef = React.useRef(0);
   const frameRef = React.useRef<number | null>(null);
@@ -126,6 +128,10 @@ export const MobileWindowMotion: React.FC<MobileWindowMotionProps> = ({
   openRef.current = open;
   onOpenChangeRef.current = onOpenChange;
   onExitCompleteRef.current = onExitComplete;
+  onPreviewChangeRef.current = onPreviewChange;
+  React.useLayoutEffect(() => {
+    onPreviewChangeRef.current?.(active && isPreview);
+  }, [active, isPreview]);
   if (typeof document !== 'undefined' && !overlayRootRef.current) overlayRootRef.current = ensureOverlayRoot();
 
   const applyFrame = React.useCallback((progress: number) => {

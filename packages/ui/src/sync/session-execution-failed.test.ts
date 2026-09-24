@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, test } from "vitest";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
 import { applyDirectoryEvent } from "./event-reducer";
 import { normalizeOpenCodeEvent, toLegacyEventShape } from "./opencode-event-normalizer";
@@ -14,7 +14,7 @@ import {
   useLatestSessionError,
   useNotificationStore,
 } from "./notification-store";
-import { handleEvent, setActiveSession } from "./sync-context";
+import { clearTurnCompleteNotificationGuardForTests, handleEvent, setActiveSession } from "./sync-context";
 import type { ChildStoreManager } from "./child-store";
 import { INITIAL_STATE, type Event, type State } from "./types";
 
@@ -86,6 +86,7 @@ function createFailedChildStore() {
 describe("session.execution.failed error settle", () => {
   beforeEach(() => {
     clearSessionErrorLogForTests();
+    clearTurnCompleteNotificationGuardForTests();
     useNotificationStore.setState({
       list: [],
       index: {
@@ -352,5 +353,92 @@ describe("session.execution.failed error settle", () => {
     } finally {
       setActiveSession("", "");
     }
+  });
+});
+
+describe("session.execution.succeeded unread marker", () => {
+  beforeEach(() => {
+    clearTurnCompleteNotificationGuardForTests();
+    useNotificationStore.setState({
+      list: [],
+      index: {
+        session: { unseenCount: {}, unseenHasError: {} },
+        project: { unseenCount: {}, unseenHasError: {} },
+      },
+    });
+  });
+
+  afterEach(() => {
+    clearTurnCompleteNotificationGuardForTests();
+    setActiveSession("", "");
+    vi.restoreAllMocks();
+  });
+
+  function dispatch(type: string, sessionID = SESSION, extra: Record<string, unknown> = {}) {
+    const store = createFailedChildStore();
+    const childStores = {
+      getChild: () => store,
+      children: new Map([[DIRECTORY, store]]),
+      ensureChild: () => store,
+      mark: () => undefined,
+    } as unknown as ChildStoreManager;
+    handleEvent(DIRECTORY, {
+      type,
+      properties: { sessionID, ...extra },
+    } as Event, childStores, emptyRoutingIndex);
+  }
+
+  test("records an unread turn-complete even when the session is selected and the window is focused", () => {
+    vi.spyOn(document, "hasFocus").mockReturnValue(true);
+    setActiveSession(DIRECTORY, SESSION);
+
+    dispatch("session.execution.succeeded");
+
+    const list = useNotificationStore.getState().list;
+    expect(list).toEqual([
+      expect.objectContaining({
+        type: "turn-complete",
+        session: SESSION,
+        viewed: false,
+      }),
+    ]);
+    expect(useNotificationStore.getState().sessionUnseenCount(SESSION)).toBe(1);
+  });
+
+  test("does not add a second unread marker when deprecated session.idle follows succeeded", () => {
+    setActiveSession(DIRECTORY, "ses_other");
+    dispatch("session.execution.succeeded");
+    dispatch("session.idle");
+
+    expect(useNotificationStore.getState().list.filter((n) => n.type === "turn-complete")).toHaveLength(1);
+    expect(useNotificationStore.getState().sessionUnseenCount(SESSION)).toBe(1);
+  });
+
+  test("legacy session.idle still leaves an unread marker, and the next run can notify again", () => {
+    setActiveSession(DIRECTORY, "ses_other");
+    dispatch("session.idle");
+    expect(useNotificationStore.getState().sessionUnseenCount(SESSION)).toBe(1);
+
+    dispatch("session.execution.started");
+    dispatch("session.execution.succeeded");
+    expect(useNotificationStore.getState().sessionUnseenCount(SESSION)).toBe(2);
+  });
+
+  test("does not mark a child session unread", () => {
+    const store = createFailedChildStore();
+    (store.getState() as { session: Array<{ parentID?: string }> }).session[0].parentID = "ses_parent";
+    const childStores = {
+      getChild: () => store,
+      children: new Map([[DIRECTORY, store]]),
+      ensureChild: () => store,
+      mark: () => undefined,
+    } as unknown as ChildStoreManager;
+
+    handleEvent(DIRECTORY, {
+      type: "session.execution.succeeded",
+      properties: { sessionID: SESSION },
+    } as Event, childStores, emptyRoutingIndex);
+
+    expect(useNotificationStore.getState().list).toEqual([]);
   });
 });

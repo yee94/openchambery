@@ -403,10 +403,7 @@ export async function refreshOpenCodeConfiguration(options?: ConfigRefreshOption
  * Settings action.
  */
 export async function reloadOpenCodeLocations(): Promise<void> {
-  const transport = getRuntimeTransportIdentity();
   await opencodeClient.getSdkClient().location.reload();
-  if (getRuntimeTransportIdentity() !== transport) return;
-  await performConfigRefresh({ transportIdentity: transport, scopes: ["all"], mode: "projects", silent: true });
 }
 
 export async function restartOpenCodeService(options?: ConfigRefreshOptions) {

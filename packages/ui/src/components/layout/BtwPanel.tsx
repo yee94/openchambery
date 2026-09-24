@@ -9,6 +9,7 @@ import { MobileResizableSheet } from '@/components/ui/MobileResizableSheet';
 import { toast } from '@/components/ui';
 import { copyTextToClipboard } from '@/lib/clipboard';
 import { isPhoneBtwScopeOpen } from '@/mobile/useMobileNavigationStore';
+import { ensureNativeComposerCover, releaseNativeComposerCover, BTW_SHEET_NATIVE_COMPOSER_COVER } from '@/lib/nativeComposerCover';
 import { useI18n } from '@/lib/i18n';
 import { normalizeDirectoryKey } from '@/lib/pathNormalization';
 import { useUIStore } from '@/stores/useUIStore';
@@ -27,6 +28,9 @@ import {
 /** Same surface radius ChatInput applies to the primary composer pill. */
 const BTW_COMPOSER_RADIUS = '1.5rem';
 const BTW_COMPOSER_TEXT_CLASS = 'box-border w-full whitespace-pre-wrap break-words px-3 typography-markdown [font-family:inherit] [font-style:inherit] [font-weight:inherit] leading-[inherit] tracking-[inherit] md:typography-ui-label pt-4 pb-2';
+const BTW_MOBILE_TEXT_CLASS = 'box-border w-full whitespace-pre-wrap break-words px-3 py-2.5 typography-markdown [font-family:inherit] [font-style:inherit] [font-weight:inherit] leading-[inherit] tracking-[inherit]';
+
+export type BtwComposerFoot = 'panel' | 'page' | 'sheet';
 
 function BtwTurnView({ turn, isLast, scope }: { turn: SessionBtwTurn; isLast: boolean; scope: SessionBtwScope }) {
   const { t } = useI18n();
@@ -69,7 +73,17 @@ function BtwTurnView({ turn, isLast, scope }: { turn: SessionBtwTurn; isLast: bo
   </div>;
 }
 
-function BtwComposer({ scope, pending, quotes }: { scope: SessionBtwScope; pending: boolean; quotes: readonly string[] }) {
+function BtwComposer({
+  scope,
+  pending,
+  quotes,
+  foot,
+}: {
+  scope: SessionBtwScope;
+  pending: boolean;
+  quotes: readonly string[];
+  foot: BtwComposerFoot;
+}) {
   const { t } = useI18n();
   const storedSelection = useSessionBtwStore((state) => state.sendSelection[getSessionBtwKey(scope)]);
   const selection = storedSelection ?? resolveSessionBtwSendSelection(scope);
@@ -93,7 +107,13 @@ function BtwComposer({ scope, pending, quotes }: { scope: SessionBtwScope; pendi
       <span className="min-w-0 truncate typography-meta font-medium text-foreground">{modelLabel}</span>
     </span>
   ) : null;
-  return <form data-btw-composer className="shrink-0 px-3 pb-3 pt-1" onSubmit={(event) => { event.preventDefault(); send(); }}>
+  const mobileFoot = foot !== 'panel';
+  return <form
+    data-btw-composer
+    data-btw-composer-foot={foot}
+    className={['shrink-0 px-3 pt-1', mobileFoot ? 'oc-mobile-composer' : 'pb-3', foot === 'page' ? 'bottom-safe-area' : ''].filter(Boolean).join(' ')}
+    onSubmit={(event) => { event.preventDefault(); send(); }}
+  >
     <ChatPromptComposer
       value={draft}
       onChange={(value) => setDraft(value)}
@@ -101,15 +121,16 @@ function BtwComposer({ scope, pending, quotes }: { scope: SessionBtwScope; pendi
       onStop={() => useSessionBtwStore.getState().cancel(scope)}
       pending={pending}
       disableInputWhilePending={false}
+      isMobile={mobileFoot}
       placeholder={t('chat.btw.placeholder')}
       sendLabel={t('chat.chatInput.actions.sendMessageAria')}
       stopLabel={t('chat.statusRow.actions.stopGeneratingAria')}
       inputRef={textareaRef}
       textareaProps={{ autoFocus: true }}
       leftControls={modelControl}
-      className="relative z-10"
+      className={mobileFoot ? 'relative z-10 oc-mobile-composer-surface' : 'relative z-10'}
       style={{ borderRadius: BTW_COMPOSER_RADIUS }}
-      textLayoutClassName={BTW_COMPOSER_TEXT_CLASS}
+      textLayoutClassName={mobileFoot ? BTW_MOBILE_TEXT_CLASS : BTW_COMPOSER_TEXT_CLASS}
       inputStyle={{ borderTopLeftRadius: BTW_COMPOSER_RADIUS, borderTopRightRadius: BTW_COMPOSER_RADIUS }}
       footerClassName="z-30 bg-transparent flex-shrink-0 px-2.5 py-1.5"
       footerStyle={{ borderBottomLeftRadius: BTW_COMPOSER_RADIUS, borderBottomRightRadius: BTW_COMPOSER_RADIUS }}
@@ -122,7 +143,7 @@ function BtwComposer({ scope, pending, quotes }: { scope: SessionBtwScope; pendi
  * Self-contained side conversation. Only the side turns render here; the main
  * session history is never loaded, and nothing is requested until a send.
  */
-export function BtwPanel({ scope }: { scope: SessionBtwScope }) {
+export function BtwPanel({ scope, foot = 'panel' }: { scope: SessionBtwScope; foot?: BtwComposerFoot }) {
   const { t } = useI18n();
   const key = getSessionBtwKey(scope);
   const turns = useSessionBtwStore((state) => (state.entries[key] ?? EMPTY_SESSION_BTW_ENTRY).turns);
@@ -142,7 +163,7 @@ export function BtwPanel({ scope }: { scope: SessionBtwScope }) {
           {turns.map((turn, index) => <BtwTurnView key={turn.id} turn={turn} isLast={index === turns.length - 1} scope={scope} />)}
         </div>}
     </div>
-    <BtwComposer key={key} scope={scope} pending={pending} quotes={quotes} />
+    <BtwComposer key={key} scope={scope} pending={pending} quotes={quotes} foot={foot} />
   </section>;
 }
 
@@ -191,9 +212,17 @@ export function BtwComposerSurface({ scope, active, mobile }: { scope: SessionBt
     useSessionBtwStore.getState().clear(scope);
     useUIStore.getState().closeContextPanel(directory);
   });
+  React.useEffect(() => {
+    if (!mobile || !open) {
+      releaseNativeComposerCover(BTW_SHEET_NATIVE_COMPOSER_COVER);
+      return;
+    }
+    ensureNativeComposerCover(BTW_SHEET_NATIVE_COMPOSER_COVER);
+    return () => releaseNativeComposerCover(BTW_SHEET_NATIVE_COMPOSER_COVER);
+  }, [mobile, open]);
   if (!mobile) return null;
   return <MobileResizableSheet id="session-btw" open={open} onOpenChange={(next) => { if (!next) close(); }}
     title={t('chat.btw.title')} ariaLabel={t('chat.btw.title')} closeAriaLabel={t('gitView.common.close')} resizeAriaLabel={t('chat.btw.resize')}>
-    <BtwPanel scope={scope} />
+    <BtwPanel scope={scope} foot="sheet" />
   </MobileResizableSheet>;
 }

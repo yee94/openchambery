@@ -22,6 +22,10 @@ blocking config-reload overlay or manage the OpenCode service lifecycle. Writes
 confirm persistence; Config/Credential/PluginSupervisor own runtime activation.
 `refreshOpenCodeConfiguration` only refreshes UI catalogs. Explicit Settings
 reload, and the VS Code composer `/reload` command, use `reloadOpenCodeLocations`.
+This action awaits only the official `location.reload()` acknowledgement. Existing
+location/domain events own demand-driven catalog refresh; the action must not poll
+service readiness, enumerate all projects, or join unrelated catalog reads into
+its success result. Catalog read failures remain owned by their queries.
 Web, desktop, and mobile do not offer `/reload`. Binary changes, upgrades and opaque
 plugin-owned config may use `restartOpenCodeService` (legacy `/api/config/reload`
 host/bridge endpoint). Do not substitute location reload for automatic hot updates.

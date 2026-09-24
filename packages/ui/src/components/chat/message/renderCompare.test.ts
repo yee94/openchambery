@@ -67,6 +67,16 @@ describe('areRelevantTurnGroupingContextsEqual', () => {
     };
     expect(areRelevantTurnGroupingContextsEqual(before, after, 'assistant-last', false)).toBe(false);
   });
+
+  test('treats turn TPS changes as relevant to the assistant footer', () => {
+    const before = createContext({ isLastAssistantInTurn: true, assistantTps: 20 });
+    expect(areRelevantTurnGroupingContextsEqual(
+      before,
+      { ...before, assistantTps: 24 },
+      'assistant-last',
+      false,
+    )).toBe(false);
+  });
 });
 
 describe('areRenderRelevantMessagesEqual — token counts', () => {

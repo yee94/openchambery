@@ -54,6 +54,7 @@ import { getInitialSessionTurnLimit, getHistorySessionTurnLimit } from "./sessio
 import type { ChildStoreManager } from "./child-store"
 import type { TranscriptDurableStore } from "./transcript-durable-store"
 import { createRuntimeTranscriptDurableStore } from "./transcript-durable-store-runtime"
+import { raceWithSessionTurnPageTimeout, SESSION_TURN_PAGE_TIMEOUT_MS } from "./session-turn-page-api"
 
 function normalizeParts(parts: Part[]): Part[] {
   return parts.filter((part) => !!part?.id)
@@ -195,6 +196,25 @@ export async function fetchProductionTranscriptTransportPage(input: {
   signal: AbortSignal
   purpose?: SessionMessagePagePurpose
 }): Promise<TranscriptTransportPage> {
+  const controller = new AbortController()
+  const abort = () => controller.abort(input.signal.reason)
+  if (input.signal.aborted) abort()
+  else input.signal.addEventListener("abort", abort, { once: true })
+  const timer = setTimeout(() => controller.abort(), SESSION_TURN_PAGE_TIMEOUT_MS)
+  try {
+    return await raceWithSessionTurnPageTimeout(
+      fetchProductionTranscriptPageInternal({ ...input, signal: controller.signal }),
+    )
+  } finally {
+    clearTimeout(timer)
+    input.signal.removeEventListener("abort", abort)
+    controller.abort()
+  }
+}
+
+async function fetchProductionTranscriptPageInternal(
+  input: Parameters<typeof fetchProductionTranscriptTransportPage>[0],
+): Promise<TranscriptTransportPage> {
   const rawPurpose = input.before ? "prepend" : (input.purpose ?? "initial")
   const purpose: "initial" | "prepend" | "recovery" | "materialize" =
     rawPurpose === "prepend"
@@ -214,6 +234,7 @@ export async function fetchProductionTranscriptTransportPage(input: {
     ...(input.before ? { cursor: input.before } : {}),
     signal: input.signal,
   })
+  input.signal.throwIfAborted()
   const context = input.before
     ? null
     : await fetchSessionContext({
@@ -225,6 +246,7 @@ export async function fetchProductionTranscriptTransportPage(input: {
   // but pagination authority stays on projection: its cursor covers every
   // first-page id. Replacing records with a strict context subset while keeping
   // the projection cursor would skip intermediate ids on the next older page.
+  input.signal.throwIfAborted()
   const merged = mergeInitialProjectionAndContext(projection, context)
   const page = input.before
     ? merged
@@ -276,6 +298,7 @@ export async function fetchProductionTranscriptTransportPage(input: {
     }
   }
 
+  input.signal.throwIfAborted()
   rememberCompactionBarrierFromRecords(input.sessionID, records)
 
   return {
