@@ -153,7 +153,7 @@ export const UsageSidebar: React.FC<UsageSidebarProps> = ({ onItemSelect }) => {
 
       <SettingsGroup>
         {QUOTA_PROVIDERS.map((provider) => {
-          const result = results.find((entry) => entry.providerId === provider.id);
+          const result = results.find((entry) => entry?.providerId === provider.id);
           const percent = getUsagePercent(result?.usage);
           const tone = resolveUsageTone(percent);
           const isSelected = provider.id === selectedProviderId;

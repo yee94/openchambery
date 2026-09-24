@@ -65,11 +65,11 @@ export const UsagePage: React.FC = () => {
     if (results.length === 0) {
       return;
     }
-    const firstConfigured = results.find((entry) => entry.configured)?.providerId;
+    const firstConfigured = results.find((entry) => entry?.configured)?.providerId;
     setSelectedProvider(firstConfigured ?? QUOTA_PROVIDERS[0]?.id ?? null);
   }, [results, selectedProviderId, setSelectedProvider]);
 
-  const selectedResult = results.find((entry) => entry.providerId === selectedProviderId) ?? null;
+  const selectedResult = results.find((entry) => entry?.providerId === selectedProviderId) ?? null;
 
   const providerMeta = QUOTA_PROVIDERS.find((provider) => provider.id === selectedProviderId);
   const providerName = providerMeta?.name ?? selectedProviderId ?? t('settings.usage.sidebar.title');

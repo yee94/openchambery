@@ -164,7 +164,7 @@ const buildUsage = (): TrayUsage => {
   const mode: TrayUsage['mode'] = displayMode === 'remaining' ? 'remaining' : 'usage';
   if (!dropdownProviderIds.length) return { mode, groups: [] };
 
-  const byProvider = new Map(results.map((result) => [result.providerId, result]));
+  const byProvider = new Map(results.map((result) => [result?.providerId, result]));
   const groups: TrayUsageGroup[] = [];
   for (const meta of QUOTA_PROVIDERS) {
     if (!dropdownProviderIds.includes(meta.id)) continue;
@@ -575,7 +575,7 @@ export const useTraySync = (): void => {
       if (disposed) return;
       const { dropdownProviderIds, results } = useQuotaStore.getState();
       const needsFetch = dropdownProviderIds.length > 0
-        && dropdownProviderIds.some((id) => !results.some((r) => r.providerId === id));
+        && dropdownProviderIds.some((id) => !results.some((r) => r?.providerId === id));
       if (needsFetch) void useQuotaStore.getState().fetchAllQuotas();
     });
     // Keep the Usage submenu current per the user's auto-refresh setting
