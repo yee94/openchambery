@@ -4,6 +4,7 @@ import type { Part, ReasoningPart, TextPart, ToolPart } from '@/lib/opencode/v2-
 import type { MessageStreamPhase } from '@/stores/types/sessionTypes';
 import { useSessionUIStore } from '@/sync/session-ui-store';
 import {
+    useDirectorySync,
     useSessionMessages,
     useSessionParts,
     useSessionPermissions,
@@ -20,6 +21,7 @@ import { useSessionActivity } from './useSessionActivity';
 type AssistantActivity = 'idle' | 'streaming' | 'tooling' | 'cooldown' | 'permission';
 
 interface WorkingSummary {
+    isRecovering?: boolean;
     activity: AssistantActivity;
     hasWorkingContext: boolean;
     hasActiveTools: boolean;
@@ -281,6 +283,10 @@ export function useAssistantStatus(
     const primarySessionDirectory = useSessionUIStore((state) => state.currentSessionDirectory);
     const currentSessionId = sessionId ?? primarySessionId;
     const currentSessionDirectory = directory ?? primarySessionDirectory;
+    const isRecovering = useDirectorySync(
+        (state) => Boolean(currentSessionId && state.session_execution_recovery[currentSessionId]),
+        currentSessionDirectory ?? undefined,
+    );
     const pendingSendMessageIDSelector = React.useMemo(() => (
         state: ReturnType<typeof useSessionUIStore.getState>
     ) => (
@@ -350,9 +356,9 @@ export function useAssistantStatus(
     );
     const lastAssistantStatusSignature = React.useMemo(() => {
         const genericKey = `${currentSessionId ?? ''}:${lastAssistantId ?? ''}`;
-        const parts = lastAssistantId ? lastAssistantParts : EMPTY_PARTS;
+        const parts = lastAssistantId && !lastAssistant.error && lastAssistant.index > lastUser.index ? lastAssistantParts : EMPTY_PARTS;
         return encodeParsedStatus(createParsedStatus(parts, genericKey, t));
-    }, [currentSessionId, lastAssistantId, lastAssistantParts, t]);
+    }, [currentSessionId, lastAssistantId, lastAssistant.error, lastAssistant.index, lastUser.index, lastAssistantParts, t]);
 
     const sessionPermissionRequests = useSessionPermissions(currentSessionId ?? '', currentSessionDirectory ?? undefined);
     const sessionQuestionRequests = useSessionQuestions(currentSessionId ?? '', currentSessionDirectory ?? undefined);
@@ -371,6 +377,7 @@ export function useAssistantStatus(
         currentSessionId,
         currentSessionDirectory ?? undefined,
     );
+    const hasTerminalError = Boolean(lastAssistant.error && lastAssistant.index > lastUser.index);
 
     const currentSessionStatus = useSessionStatus(currentSessionId ?? '', currentSessionDirectory ?? undefined);
 
@@ -392,6 +399,15 @@ export function useAssistantStatus(
     }, [sessionAbortRecord]);
 
     const baseWorking = React.useMemo<WorkingSummary>(() => {
+
+        // Recovery owns the feedback while the retained busy claim is awaiting
+        // confirmation. An errored step's unfinished parts are never live work.
+        if (isRecovering) {
+            return { ...DEFAULT_WORKING, isRecovering: true, canAbort: isPhaseWorking };
+        }
+        if (hasTerminalError && activityPhase !== 'retry') {
+            return { ...DEFAULT_WORKING, isTurnSettled: true, canAbort: isPhaseWorking };
+        }
 
         if (abortState.wasAborted) {
             return {
@@ -466,15 +482,15 @@ export function useAssistantStatus(
             retryInfo,
             turnStartedAt: lastUser.turnStartedAt,
         };
-    }, [activityPhase, isPhaseWorking, isTurnSettled, lastUserIsCompaction, lastUser.turnStartedAt, parsedStatus, abortState, sessionRetryAttempt, sessionRetryNext, t]);
+    }, [isRecovering, hasTerminalError, activityPhase, isPhaseWorking, isTurnSettled, lastUserIsCompaction, lastUser.turnStartedAt, parsedStatus, abortState, sessionRetryAttempt, sessionRetryNext, t]);
 
     const forming = React.useMemo<FormingSummary>(() => {
-        const isActive = isPhaseWorking && parsedStatus.activePartType === 'text';
+        const isActive = !isRecovering && !hasTerminalError && isPhaseWorking && parsedStatus.activePartType === 'text';
         return { isActive, characterCount: 0 };
-    }, [isPhaseWorking, parsedStatus.activePartType]);
+    }, [isRecovering, hasTerminalError, isPhaseWorking, parsedStatus.activePartType]);
 
     const working = React.useMemo<WorkingSummary>(() => {
-        if (baseWorking.wasAborted || baseWorking.abortActive) {
+        if (isRecovering || baseWorking.wasAborted || baseWorking.abortActive) {
             return baseWorking;
         }
 
@@ -527,7 +543,7 @@ export function useAssistantStatus(
             canAbort: false,
             retryInfo: null,
         };
-    }, [baseWorking, pendingSendMessageID, sessionPermissionRequests, sessionQuestionRequests, t]);
+    }, [isRecovering, baseWorking, pendingSendMessageID, sessionPermissionRequests, sessionQuestionRequests, t]);
 
     return {
         forming,

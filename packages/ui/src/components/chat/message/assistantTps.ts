@@ -1,27 +1,9 @@
-import type { Part } from '@/lib/opencode/v2-types';
-
-/**
- * Assistant TPS (tokens per second) from generation time only.
- *
- * OpenCode 2 supplies `time.streamed` and `time.completed`; their interval
- * measures generation after the first streamed token. Historical records
- * without that clock retain the legacy created/completed minus tools estimate.
- *
- * Token numerator uses output + reasoning (generated tokens), not input/cache.
- */
-
+/** One OpenCode assistant step's authoritative timing and generated-token usage. */
 export type AssistantTpsInput = {
   createdAt?: number | null;
   streamedAt?: number | null;
-  completedAt?: number | null;
-  /**
-   * Settled interrupted turns can retain a turn duration while OpenCode omits
-   * the terminal assistant message's completion timestamp.
-   */
-  fallbackDurationMs?: number | null;
   outputTokens?: number | null;
   reasoningTokens?: number | null;
-  parts?: Part[] | null;
 };
 
 const toNonNegativeFinite = (value: unknown): number => {
@@ -31,129 +13,63 @@ const toNonNegativeFinite = (value: unknown): number => {
   return value;
 };
 
-const partRecord = (part: Part): Record<string, unknown> => part as unknown as Record<string, unknown>;
-
 /**
- * Sum completed tool wall time for a message. Incomplete tools contribute 0
- * so partial streams do not invent duration.
+ * Match OpenCode TUI's average turn throughput: aggregate output + reasoning
+ * tokens across assistant steps, divided by summed provider-response intervals
+ * (`time.streamed - time.created`). A turn is unmeasurable if any step lacks
+ * that upstream interval.
  */
-export const sumToolDurationMs = (parts: Part[] | null | undefined): number => {
-  if (!Array.isArray(parts) || parts.length === 0) {
-    return 0;
-  }
+export const computeAssistantTpsByStep = (steps: readonly AssistantTpsInput[]): Array<number | null> => {
+  let generatedTokens = 0;
+  let providerDurationMs = 0;
+  let hasCompleteTiming = true;
 
-  let total = 0;
-  for (const part of parts) {
-    const record = partRecord(part);
-    if (record.type !== 'tool') {
-      continue;
+  return steps.map((step) => {
+    if (
+      typeof step.createdAt === 'number'
+      && Number.isFinite(step.createdAt)
+      && typeof step.streamedAt === 'number'
+      && Number.isFinite(step.streamedAt)
+    ) {
+      providerDurationMs += Math.max(0, step.streamedAt - step.createdAt);
+    } else {
+      hasCompleteTiming = false;
     }
-    const state = record.state as { time?: { start?: unknown; end?: unknown } } | undefined;
-    const start = state?.time?.start;
-    const end = state?.time?.end;
-    if (typeof start !== 'number' || !Number.isFinite(start)) {
-      continue;
-    }
-    if (typeof end !== 'number' || !Number.isFinite(end) || end < start) {
-      continue;
-    }
-    total += end - start;
-  }
-  return total;
+
+    generatedTokens += toNonNegativeFinite(step.outputTokens) + toNonNegativeFinite(step.reasoningTokens);
+
+    if (!hasCompleteTiming || generatedTokens <= 0 || providerDurationMs <= 0) return null;
+
+    const tps = generatedTokens / (providerDurationMs / 1000);
+    return Number.isFinite(tps) && tps > 0 ? tps : null;
+  });
 };
 
-/**
- * Generation-only duration in ms, or null when the message is not complete
- * enough to measure.
- */
-export const computeGenerationDurationMs = (
-  createdAt: number | null | undefined,
-  completedAt: number | null | undefined,
-  parts: Part[] | null | undefined,
-  fallbackDurationMs?: number | null,
-): number | null => {
-  const completedDurationMs = typeof createdAt === 'number'
-    && Number.isFinite(createdAt)
-    && createdAt > 0
-    && typeof completedAt === 'number'
-    && Number.isFinite(completedAt)
-    && completedAt > createdAt
-    ? completedAt - createdAt
-    : null;
-  const wallMs = completedDurationMs ?? (
-    typeof fallbackDurationMs === 'number'
-    && Number.isFinite(fallbackDurationMs)
-    && fallbackDurationMs > 0
-      ? fallbackDurationMs
-      : null
-  );
-  if (wallMs === null) {
-    return null;
-  }
-  const toolMs = sumToolDurationMs(parts);
-  const generationMs = wallMs - toolMs;
-  if (!Number.isFinite(generationMs) || generationMs <= 0) {
-    return null;
-  }
-  return generationMs;
+/** Return the turn's aggregate rate (the final cumulative assistant step). */
+export const computeAssistantTps = (steps: readonly AssistantTpsInput[]): number | null => {
+  const rates = computeAssistantTpsByStep(steps);
+  return rates[rates.length - 1] ?? null;
 };
 
+export type AssistantTurnDisposition = 'active' | 'normal' | 'abnormal';
+
 /**
- * Compute assistant tokens/sec from upstream stream timing when available.
- * Returns null when TPS cannot be measured.
+ * Publish a calculated rate for finished, interrupted, aborted, and failed turns.
+ * An in-flight continuation stays hidden: the next assistant step would replace it.
+ * Missing `time.completed` does not hide a rate the streamed clocks can already produce.
  */
-export const computeAssistantTps = (input: AssistantTpsInput): number | null => {
-  const generationMs = input.streamedAt != null
-    ? (typeof input.streamedAt === 'number' && Number.isFinite(input.streamedAt)
-      && typeof input.completedAt === 'number' && Number.isFinite(input.completedAt)
-      && input.completedAt > input.streamedAt
-      ? input.completedAt - input.streamedAt : null)
-    : computeGenerationDurationMs(
-    input.createdAt,
-    input.completedAt,
-    input.parts,
-    input.fallbackDurationMs,
-  );
-  if (generationMs === null) {
-    return null;
-  }
-
-  const generatedTokens =
-    toNonNegativeFinite(input.outputTokens) + toNonNegativeFinite(input.reasoningTokens);
-  if (generatedTokens <= 0) {
-    return null;
-  }
-
-  const seconds = generationMs / 1000;
-  if (seconds <= 0) {
-    return null;
-  }
-
-  const tps = generatedTokens / seconds;
-  if (!Number.isFinite(tps) || tps <= 0) {
-    return null;
-  }
-  return tps;
+export const canPresentAssistantTps = (input: {
+  completionDisposition?: AssistantTurnDisposition;
+  tps: number | null | undefined;
+}): boolean => {
+  if (input.completionDisposition === 'active') return false;
+  return typeof input.tps === 'number' && Number.isFinite(input.tps) && input.tps > 0;
 };
 
-/**
- * Compact display for footer / raw-message rows.
- * Examples: `12.4 tok/s`, `128 tok/s`, `1.2k tok/s`
- */
+/** OpenCode TUI renders assistant throughput with one decimal place. */
 export const formatAssistantTps = (tps: number): string => {
   if (!Number.isFinite(tps) || tps <= 0) {
     return '';
   }
-  if (tps >= 1000) {
-    const thousands = tps / 1000;
-    const rounded = thousands >= 10 ? thousands.toFixed(0) : thousands.toFixed(1);
-    return `${rounded}k tok/s`;
-  }
-  if (tps >= 100) {
-    return `${Math.round(tps)} tok/s`;
-  }
-  if (tps >= 10) {
-    return `${tps.toFixed(1)} tok/s`;
-  }
-  return `${tps.toFixed(2)} tok/s`;
+  return `${tps.toFixed(1)} tok/s`;
 };

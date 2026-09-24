@@ -764,6 +764,7 @@ describe('runtimeFetch reasoning projection query', () => {
       await runtimeFetch('/api/openchamber/transcript-cache/message', { method: 'GET' });
       await runtimeFetch('/api/global/event', { method: 'GET' });
       await runtimeFetch('/api/event', { method: 'GET' });
+      await runtimeFetch('/api/session/ses_1/context', { method: 'GET' });
 
       expect(calls.every((url) => url.includes('includeReasoning=false'))).toBe(true);
       expect(calls[0]).toContain('directory=%2Frepo');

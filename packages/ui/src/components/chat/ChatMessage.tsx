@@ -487,16 +487,6 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
         return typeof finish === 'string' ? finish : undefined;
     }, [message.info]);
 
-    const messageTokens = React.useMemo(() => {
-        if (isUser) return null;
-        const tokens = (message.info as { tokens?: { output?: number; reasoning?: number } }).tokens;
-        if (!tokens || typeof tokens !== 'object') return null;
-        return {
-            output: typeof tokens.output === 'number' ? tokens.output : undefined,
-            reasoning: typeof tokens.reasoning === 'number' ? tokens.reasoning : undefined,
-        };
-    }, [isUser, message.info]);
-
     const visibleParts = React.useMemo(
         () =>
             filterVisibleParts(normalizedParts, {
@@ -1114,13 +1104,13 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
     if (compactionCard) {
         return (
             <div
-                className="group w-full pt-4 pb-4"
+                className={cn('group w-full', isMobile ? 'pt-2 pb-2' : 'pt-4 pb-4')}
                 id={`message-${message.info.id}`}
                 data-message-id={message.info.id}
                 data-compaction-status={compactionCard.status}
             >
                 <div className="chat-message-column relative">
-                    <CompactionCard part={compactionCard} />
+                    <CompactionCard part={compactionCard} isMobile={isMobile} />
                 </div>
             </div>
         );
@@ -1269,9 +1259,7 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
                                 isMessageCompleted={isMessageCompleted}
                                 messageFinish={messageFinish}
                                 messageCompletedAt={messageCompletedAt ?? undefined}
-                                messageStreamedAt={message.info.time.streamed}
                                 messageCreatedAt={messageCreatedAt ?? undefined}
-                                messageTokens={messageTokens}
                                  isMobile={isMobile}
                                  alwaysShowActions={alwaysShowMessageActions}
                                  hasTouchInput={hasTouchInput}

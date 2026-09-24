@@ -531,7 +531,12 @@ export const registerConfigEntityRoutes = (app, dependencies) => {
         const client = createOpenCodeClient({
           baseUrl: buildOpenCodeUrl('/', '').replace(/\/$/, ''),
           headers: getOpenCodeAuthHeaders(),
-          fetch: (request) => fetch(request, { signal: AbortSignal.timeout(8_000) }),
+          fetch: (request, init) => fetch(request, {
+            ...init,
+            signal: init?.signal
+              ? AbortSignal.any([init.signal, AbortSignal.timeout(8_000)])
+              : AbortSignal.timeout(8_000),
+          }),
         });
         const response = await client.command.list({ location: { directory } });
         if (!Array.isArray(response?.data)) {

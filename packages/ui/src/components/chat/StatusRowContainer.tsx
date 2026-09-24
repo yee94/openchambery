@@ -49,6 +49,8 @@ export const StatusRowContainer: React.FC = React.memo(() => {
         || working.wasAborted
         || working.isWorking;
 
+    if (working.isRecovering) return null;
+
     return (
         <StatusRow
             isWorking={working.isWorking}

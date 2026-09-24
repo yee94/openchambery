@@ -18,7 +18,8 @@ import { useEvent } from '@reactuses/core';
 import { useMutation, useMutationState } from '@tanstack/react-query';
 import { getPendingAdmissionsForScope, getQueueForScope, legacyQueueScope, queueScopeKey, useMessageQueueStore, type QueueDeliveryTarget, type QueueItem, type QueuePendingAdmissionItem, type QueueScope, type QueuedMessage } from '@/stores/messageQueueStore';
 import { isSessionInboxChip, type SessionComposerPendingItem, type SessionInboxChip } from '@/sync/session-inbox-overlay';
-import type { DraftKey } from '@/sync/input-draft-types';
+import { draftKeyString, type DraftKey } from '@/sync/input-draft-types';
+import { editSessionInboxIntoDraft } from '@/sync/session-inbox-edit';
 import { useMessageQueueServerScope } from '@/sync/use-message-queue-server';
 import { MessageQueueServerError, type MessageQueueItem } from '@/lib/message-queue-server';
 import { isMessageQueuePendingAdmissionItem, type MessageQueueServerDisplayItem, type MessageQueueServerMutationResult, type MessageQueueServerRuntimeCapture } from '@/sync/message-queue-server-runtime';
@@ -78,20 +79,22 @@ interface QueuedMessageChipProps {
     /** Abort-after-queue keeps the chip in "Sending…" until OpenCode actually consumes it. */
     abortSendPending: boolean;
     isMobile: boolean;
-    onEdit: (message: ChipMessage) => void;
+    inboxEditable: boolean;
+    onEdit: (message: ChipMessage) => void | Promise<void>;
     onSend: (message: ChipMessage) => void | Promise<void>;
     onQueue?: (message: ChipMessage) => void;
     onRemove: (message: ChipMessage) => void;
     compactionBarrier?: boolean;
 }
 
-const QueuedMessageChip = memo(({ message, server, frozen, hasDispatchLock, pendingOperationKinds, sendPendingTimedOut, abortSendPending, isMobile, onEdit, onSend, onQueue, onRemove, compactionBarrier = false }: QueuedMessageChipProps) => {
+const QueuedMessageChip = memo(({ message, server, frozen, hasDispatchLock, pendingOperationKinds, sendPendingTimedOut, abortSendPending, isMobile, inboxEditable, onEdit, onSend, onQueue, onRemove, compactionBarrier = false }: QueuedMessageChipProps) => {
     const { t } = useI18n();
     const inboxChip = isSessionInboxChip(message);
     const inboxSend = useMutation({ mutationFn: async () => { await onSend(message); } });
+    const inboxEdit = useMutation({ mutationFn: async () => { await onEdit(message); } });
     const pendingAdmission = isMessageQueuePendingAdmissionItem(message);
     const queueItemID = message.queueItemID || (message as QueuedMessage).id;
-    const editPending = server && pendingOperationKinds.has('edit');
+    const editPending = inboxEdit.isPending || (server && pendingOperationKinds.has('edit'));
     const removePending = server && pendingOperationKinds.has('remove');
     const reorderPending = server && pendingOperationKinds.has('reorder');
     const legacyMessage = server || pendingAdmission ? undefined : message as QueuedMessage;
@@ -104,12 +107,12 @@ const QueuedMessageChip = memo(({ message, server, frozen, hasDispatchLock, pend
     // stale. Sending and dragging an already-started attempt stay unavailable
     // because they would imply a second POST or a movable active slot.
     const clientMutationBlocked = frozen || pendingAdmission;
-    const canEdit = inboxChip ? false : canEditQueuedMessage(message as QueuedMessage | MessageQueueServerDisplayItem, { frozen });
-    const canRemove = inboxChip ? !frozen : canRemoveQueuedMessage(message as QueuedMessage | MessageQueueServerDisplayItem, { frozen });
+    const canEdit = inboxChip ? inboxEditable && !frozen && !editPending && !sendPending && message.delivery === 'queue' : canEditQueuedMessage(message as QueuedMessage | MessageQueueServerDisplayItem, { frozen });
+    const canRemove = inboxChip ? !frozen && !editPending : canRemoveQueuedMessage(message as QueuedMessage | MessageQueueServerDisplayItem, { frozen });
     const isDragDisabled = inboxChip || legacyMessage?.owner?.state === 'unbound-legacy' || clientMutationBlocked || activeAttempt;
     const waitingForCompaction = inboxChip && compactionBarrier;
     const canSend = inboxChip
-        ? !frozen && !sendPending && message.delivery === 'queue' && !waitingForCompaction
+        ? !frozen && !editPending && !sendPending && message.delivery === 'queue' && !waitingForCompaction
         : !clientMutationBlocked && !sendPending && (server
             ? canSendServerQueuedMessage(message as MessageQueueServerDisplayItem, hasDispatchLock, { allowManualDispatchRetry: sendPendingTimedOut })
             : canSendQueuedMessage(message as QueuedMessage, hasDispatchLock));
@@ -245,7 +248,7 @@ const QueuedMessageChip = memo(({ message, server, frozen, hasDispatchLock, pend
                     <>
                         <button
                             type="button"
-                            onClick={() => onEdit(message)}
+                            onClick={() => { if (inboxChip) inboxEdit.mutate(); else void onEdit(message); }}
                             disabled={!canEdit}
                             aria-busy={editPending || undefined}
                             aria-label={t('chat.queuedMessage.edit')}
@@ -680,8 +683,37 @@ export const QueuedMessageChips = memo(({ onEditMessage, onSendMessage, onEditCo
         reorderQueue(activeScope, String(active.id), String(over.id), activeMessage.operationID);
     });
 
+    const inboxEditMounted = React.useRef(true);
+    React.useEffect(() => {
+        inboxEditMounted.current = true;
+        return () => { inboxEditMounted.current = false; };
+    }, []);
+    const isInboxEditScopeCurrent = useEvent((scope: BoundQueueScope, key: DraftKey) => inboxEditMounted.current && !frozen
+        && queueScope?.transportIdentity === scope.transportIdentity
+        && queueScope?.runtimeGeneration === scope.runtimeGeneration
+        && queueScope?.sessionID === scope.sessionID
+        && queueScope?.directory === scope.directory
+        && Boolean(draftTarget && draftKeyString(draftTarget.key) === draftKeyString(key)));
     const handleEdit = useEvent((message: ChipMessage) => {
-        if (frozen || isSessionInboxChip(message) || isMessageQueuePendingAdmissionItem(message)) return;
+        if (frozen || isMessageQueuePendingAdmissionItem(message)) return;
+        if (isSessionInboxChip(message)) {
+            if (!queueScope || !draftTarget || message.delivery !== 'queue') return;
+            const scope = queueScope;
+            const key = draftTarget.key;
+            return editSessionInboxIntoDraft({
+                sessionID: scope.sessionID,
+                inboxID: message.queueItemID,
+                directory: scope.directory,
+                targetKey: key,
+                expectedRevision: draftTarget.expectedRevision(),
+                runtimeGeneration: scope.runtimeGeneration,
+                isCurrent: () => isInboxEditScopeCurrent(scope, key),
+            }).then((committed) => {
+                if (committed && isInboxEditScopeCurrent(scope, key)) onEditCommitted?.();
+            }).catch(() => {
+                toast.error(t('chat.chatInput.toast.messageSendFailed'));
+            });
+        }
         if (serverQueue.mode === 'server') {
             if (!queueScope || !serverQueue.scope || !draftKey || !draftTarget) return;
             const serverMessage = message as MessageQueueItem;
@@ -886,6 +918,7 @@ export const QueuedMessageChips = memo(({ onEditMessage, onSendMessage, onEditCo
                                         sendPendingTimedOut={sendPendingTimedOutIDs.has(chipID)}
                                         abortSendPending={abortSendPendingIDs.has(chipID)}
                                         isMobile={isMobile}
+                                        inboxEditable={Boolean(queueScope && draftTarget)}
                                         onEdit={handleEdit}
                                         onSend={handleSend}
                                         onQueue={handleQueueInbox}

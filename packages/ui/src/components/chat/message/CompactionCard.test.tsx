@@ -23,7 +23,8 @@ test('shows running feedback and preserves disclosure through completion', async
     };
     await act(async () => root.render(<CompactionCard part={part} />));
     expect(host.textContent).toContain(zh['chat.activity.compacting']);
-    expect(host.querySelector('.animate-spin')).not.toBeNull();
+    expect(host.querySelector('.animate-text-shimmer')).not.toBeNull();
+    expect(host.querySelector('[data-compaction-card]')?.className).not.toMatch(/rounded-xl|border-border/);
     await act(async () => root.render(<CompactionCard part={{ ...part, summary: 'checkpoint' }} />));
     expect(host.querySelector('button')?.getAttribute('aria-expanded')).toBe('false');
     await act(async () => host.querySelector('button')!.click());
@@ -31,7 +32,7 @@ test('shows running feedback and preserves disclosure through completion', async
     expect(host.textContent).toContain('checkpoint');
     await act(async () => root.render(<CompactionCard part={{ ...part, status: 'completed', summary: 'final checkpoint' }} />));
     expect(host.textContent).toContain(zh['chat.activity.compactionCompleted']);
-    expect(host.querySelector('.animate-spin')).toBeNull();
+    expect(host.querySelector('.animate-text-shimmer')).toBeNull();
     expect(host.querySelector('button')?.getAttribute('aria-expanded')).toBe('true');
     expect(host.textContent).toContain('final checkpoint');
     await act(async () => host.querySelector('button')!.click());
@@ -44,6 +45,7 @@ test('native checkpoint without a text summary still shows completion', async ()
         type: 'compaction', status: 'completed', reason: 'manual', summary: '',
     }} />));
     expect(host.textContent).toContain(zh['chat.activity.compactionCompleted']);
+    expect(host.querySelector('.oc-tool-row')).not.toBeNull();
     await act(async () => host.querySelector('button')!.click());
     expect(host.querySelector('button')?.getAttribute('aria-expanded')).toBe('false');
 });

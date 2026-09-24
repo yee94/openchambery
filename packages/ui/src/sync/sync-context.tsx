@@ -595,6 +595,14 @@ let idleTranscriptSettleStores: ChildStoreManager | null = null
 let _contextPanelDirectory = ""
 let _contextPanelSession = ""
 const externallyViewedSessions = new Map<string, number>()
+
+/**
+ * Sessions whose latest successful turn already recorded an unread marker from
+ * `session.execution.succeeded`. Legacy `session.idle` still follows that event
+ * on some hosts and must not add a second marker. Cleared when the next run
+ * starts so a later turn can notify again.
+ */
+const turnCompleteNotified = new Set<string>()
 const EXTERNAL_VIEW_TTL_MS = 15_000
 
 const viewedSessionKey = (directory: string, sessionId: string) => `${directory}\n${sessionId}`
@@ -688,6 +696,11 @@ export function setActiveSession(directory: string, sessionId: string) {
   _activeDirectory = directory
   _activeSession = sessionId
   flushDeferredIdleTranscriptSettle(directory, sessionId)
+}
+
+/** Test-only: drop the succeeded/idle dedupe so cases do not leak across files. */
+export function clearTurnCompleteNotificationGuardForTests() {
+  turnCompleteNotified.clear()
 }
 
 export function setExternallyViewedSession(directory: string, sessionId: string, viewed: boolean) {
@@ -2337,21 +2350,39 @@ export function handleEvent(
   // after session.execution.started (reducer already clears session_error_at).
   if (payload.type === "session.execution.started") {
     const startedSessionID = (payload.properties as { sessionID?: string }).sessionID
-    if (startedSessionID) clearSessionErrorNotifications(startedSessionID)
+    if (startedSessionID) {
+      clearSessionErrorNotifications(startedSessionID)
+      turnCompleteNotified.delete(startedSessionID)
+    }
+  }
+  if (payload.type === "session.status") {
+    const statusProps = payload.properties as { sessionID?: string; status?: { type?: string } }
+    if (
+      statusProps.sessionID
+      && (statusProps.status?.type === "busy" || statusProps.status?.type === "retry")
+    ) {
+      turnCompleteNotified.delete(statusProps.sessionID)
+    }
   }
 
   // Notification dispatch for top-level turn-complete and execution failures.
+  // OpenCode 2 completes a turn with session.execution.succeeded; session.idle
+  // is deprecated and is only a fallback. Selecting the session, or having the
+  // window focused, must not mark that completion read — the blue unread dot
+  // stays until a later explicit view (open / window focus).
   // session.execution.failed is the v2 path that carries the error payload
   // (legacy session.error keeps the same shape). Reducer settles idle +
   // session_error_at; this store retains the message for live UI.
   if (
     payload.type === "session.idle"
+    || payload.type === "session.execution.succeeded"
     || payload.type === "session.error"
     || payload.type === "session.execution.failed"
   ) {
     const props = payload.properties as { sessionID?: string; error?: unknown }
     const sessionID = props.sessionID
-    const errorSummary = payload.type === "session.idle"
+    const isSuccessCompletion = payload.type === "session.idle" || payload.type === "session.execution.succeeded"
+    const errorSummary = isSuccessCompletion
       ? null
       : summarizeOpenCodeError(props.error)
     // Only record/retain when OpenCode actually supplied failure details.
@@ -2370,15 +2401,26 @@ export function handleEvent(
     const session = storeState.session.find((candidate) => candidate.id === sessionID)
       ?? useGlobalSessionsStore.getState().activeSessions.find((candidate) => candidate.id === sessionID)
     if (sessionID && session && !(session as Session & { parentID?: string | null }).parentID) {
-      appendNotification({
-        directory: resolvedDirectory,
-        session: sessionID,
-        time: Date.now(),
-        viewed: isViewedInCurrentSession(resolvedDirectory, sessionID),
-        ...(hasErrorDetails && errorSummary
-          ? { type: "error" as const, error: errorSummary }
-          : { type: "turn-complete" as const }),
-      })
+      // succeeded then idle is one completion. A lone idle (legacy) still notifies.
+      const duplicateSuccess = isSuccessCompletion && payload.type === "session.idle" && turnCompleteNotified.has(sessionID)
+      if (!duplicateSuccess) {
+        appendNotification({
+          directory: resolvedDirectory,
+          session: sessionID,
+          time: Date.now(),
+          // Success stays unread even when this session is selected and the
+          // window is focused. Errors keep the "user is looking" gate.
+          viewed: isSuccessCompletion
+            ? false
+            : isViewedInCurrentSession(resolvedDirectory, sessionID),
+          ...(hasErrorDetails && errorSummary
+            ? { type: "error" as const, error: errorSummary }
+            : { type: "turn-complete" as const }),
+        })
+        if (payload.type === "session.execution.succeeded") turnCompleteNotified.add(sessionID)
+      } else {
+        turnCompleteNotified.delete(sessionID)
+      }
     }
   }
 

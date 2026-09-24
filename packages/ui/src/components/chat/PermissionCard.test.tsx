@@ -50,8 +50,10 @@ describe('PermissionCard', () => {
 
     expect(markup).toContain('File Path');
     expect(markup).toContain('Parent Directory');
+    expect(markup).toContain('data-interaction-card');
     expect(markup).not.toContain('&quot;filepath&quot;');
-    expect(markup).toContain('grid-cols-3');
+    expect(markup).toContain('grid-cols-1');
+    expect(markup).toContain('sm:flex');
 
     const alwaysButton = markup.match(/<button[^>]*>(?:(?!<\/button>)[\s\S])*Always agree(?:(?!<\/button>)[\s\S])*<\/button>/)?.[0];
     expect(alwaysButton).toBeDefined();

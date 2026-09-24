@@ -44,7 +44,7 @@ Question reply adapters fetch `session.form.get` on the captured scoped client b
 
 Question-tool forms (`metadata.kind === "question"`, with `metadata.tool`) are the QuestionCard contract. `form.list` and live `form.created` project only those rows into the question store; `form.replied` and `form.cancelled` remove them by form id. Other pending forms stay on the session form store and render as FormCard. A question form is not also a FormCard.
 
-Projection and live `session.step.streamed` preserve the upstream `time.streamed` clock through completion. Footer and context TPS consume that clock with authoritative token usage. Historical rows without it retain their legacy timing fallback. OpenCode client 2.0.12 exposes these measurement inputs rather than a precomputed TPS field.
+Projection and live `session.step.streamed` preserve OpenCode's `time.streamed` clock through completion. It marks the provider response body ending, before tool settlement. TPS follows the OpenCode TUI contract: for each assistant turn, sum output + reasoning tokens across its assistant steps and divide by the sum of `max(0, time.streamed - time.created)`; omit the rate if any step lacks that clock. Formatting is one decimal place plus `tok/s`. The context panel uses the same per-step interval and authoritative message token usage for its latest-turn and session aggregates. Interrupted, aborted, and failed turns still publish that rate when every included step has the streamed clock; an in-flight continuation does not. There is no legacy wall-clock/tool-duration fallback. OpenCode client 2.0.12 exposes these measurement inputs rather than a precomputed TPS field.
 
 ## Session model switch on send (OpenCode 2.x)
 
@@ -78,6 +78,8 @@ settles; the **next steer** applies the new selection.
 
 ### Native queue (inherit session config at consume) — Ticket 01
 
+`session-inbox-edit.ts` owns native queue-to-draft editing. It fetches authoritative inbox content, reconstructs Composer resources with the shared restoration builder, and requires a current durable draft CAS before DELETE. Draft conflicts or invalid attachments leave the inbox untouched. HTTP 4xx cancellation rejection rolls back with the committed draft revision, preserving subsequent user edits; unknown cancellation outcomes retain the durable recovery draft. Confirmed DELETE records the existing cancelled terminal receipt. Runtime/session fences prevent cancellation on a switched target and late focus in another Composer.
+
 When `delivery: "queue"`, **do not** call `applySendSelection` / model+agent
 switch on enqueue. Composer picks may be recorded in prompt `metadata` for
 diagnostics only. The runner re-reads authoritative `session.model` /
@@ -88,6 +90,8 @@ per-item `sendConfig` contract (skill queue-capture clause); that does not
 override native OpenCode inbox queue.
 
 Queue admission must also skip optimistic transcript insertion and pending-user send animation. `optimisticSend` carries the delivery mode from `routeMessage`; native queue keeps the connection wait, fixed message ID, runtime/child-store fences, error classification, and confirmation callback, but creates no optimistic ticket and never changes live busy/idle state. Composer pending admission owns “Queuing…” until the native inbox takes over. Ordinary direct/steer sends retain their optimistic transcript path.
+
+The inbox overlay retains all admitted user items for reconciliation, but queue visibility uses per-item `wasQueued` provenance. Remember, authoritative replacement, and delivery updates set it on actual queue delivery and preserve it across queue→steer promotion. Fresh direct steer items never render queue chips; consumed/cancelled identities retire this presentation with the existing overlay lifecycle. The field is runtime memory only and introduces no persisted queue state.
 
 Owning modules: `session-send-selection.ts`, `lib/opencode/client.ts`
 (`applySendSelection` / `switchSessionModel` / `sendMessage`),
@@ -134,6 +138,8 @@ Owning modules: `session-prompt-api.ts`, `session-inbox-overlay.ts`,
 `sync-context` inbox event branch.
 
 ## Scope
+
+Production v2 transcript page flights retain the 30-second independent timer race from Host turn pages, including context/anchor enrichment. Abort is best-effort; a native bridge ignoring it cannot leave the caller pending forever. Failed flights do not publish partial pages.
 
 This document covers the current client-side session/data architecture in `packages/ui/src/sync` and the rules for updating stores safely.
 
@@ -1155,7 +1161,11 @@ both readers agree on when a frame may shrink.
   envelope `created` as `properties.eventCreated`. Canonical `session.status`
   still enters the reducer and coalesces per session. Execution terminals
   (`session.execution.succeeded|failed|interrupted`) call the same
-  `onServerSessionIdle` path as legacy idle. Projection GET keeps assistant
+  `onServerSessionIdle` path as legacy idle. Top-level unread (the blue dot)
+  is recorded from `session.execution.succeeded`; deprecated `session.idle`
+  is only a fallback and must not double-count that completion. A successful
+  completion stays unseen until a later explicit view — the selected session
+  and a focused window do not mark it read at completion time. Projection GET keeps assistant
   `tokens`/`cost` for TPS. `sync-context.handleNormalizedOpenCodeHints` issues
   **one** bounded repository materialize / ensure for the currently viewed
   session on terminal `session.step.ended` / `.failed` and

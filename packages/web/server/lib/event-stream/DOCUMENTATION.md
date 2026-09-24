@@ -33,7 +33,7 @@ The following APIs are exported by their owning modules. `event-stream/index.js`
 ### Reasoning projection helpers (`reasoning-projection.js`)
 Import from the module file (not the event-stream barrel). Public surface:
 - `shouldIncludeReasoning` / `readIncludeReasoningQuery` / `readIncludeReasoningFromUrl` / `stripIncludeReasoningParam`
-- `projectMessagesPayloadForReasoning` / `projectMessagesPayloadWithoutReasoning` — array / `{ records }` / `{ record }` / `{ parts }` only
+- `projectMessagesPayloadForReasoning` / `projectMessagesPayloadWithoutReasoning` — array / `{ records }` / `{ record }` / `{ parts }`, plus native v2 `{ data }` list/context envelopes and assistant `content[]`. Filtering preserves message identities, cursor, text/tool content and token totals.
 - `createReasoningOutboundFilter` — per-connection stream filter (version-suffix-aware type match; preserves original `type` on kept events)
 - `filterSseBlock` / `createSseBlockSplitter` — SSE disabled path (CR-safe chunk boundaries)
 
@@ -49,6 +49,8 @@ Import from the module file (not the event-stream barrel). Public surface:
 - `createUpstreamSseReader(...)`: creates a start/stop reader for OpenCode SSE streams. The reader parses SSE blocks, tracks the latest `Last-Event-ID`, reconnects after closed or stalled upstream streams, and reports events through callbacks.
 
 ## Runtime behavior
+
+Native v2 `session.reasoning.*` events are filtered at the same outbound boundary as legacy `session.next.reasoning.*`. Both `/api/session/:id/message` and `/api/session/:id/context` use the snapshot projection before relay encryption.
 - Browser clients connect to the WS endpoints above.
 - OpenChamber still fetches OpenCode upstream event streams over SSE.
 - The web server creates one shared global message-stream hub. OpenCode watcher side effects and global WS clients subscribe to that hub, so there is one upstream `/global/event` SSE reader for both server-side processing and browser fan-out.

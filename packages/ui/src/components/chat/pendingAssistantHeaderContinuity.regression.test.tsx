@@ -113,6 +113,7 @@ vi.mock('@/components/chat/AgentAvatar', () => ({
 }));
 
 vi.mock('@/sync/sync-context', () => ({
+  useDirectorySync: () => false,
   useSessionParts: () => [],
   useSessionErrorAt: () => mocks.errorAt,
 }));

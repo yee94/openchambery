@@ -9,6 +9,21 @@
  */
 
 export const COMPOSER_KEYBOARD_LIFT_SELECTOR = '.oc-mobile-composer';
+export const BTW_COMPOSER_KEYBOARD_SELECTOR = '[data-btw-composer]';
+
+/**
+ * Native iOS composer owns IME lift for the main chat field. Side Chat replaces
+ * that overlay with a web composer, so its focus must still run the web path.
+ */
+export function shouldDeferWebKeyboardToNativeComposer(
+  nativeComposerActive: boolean,
+  activeElement: EventTarget | null | undefined,
+): boolean {
+  if (!nativeComposerActive) return false;
+  const element = activeElement as { closest?: (selector: string) => unknown } | null | undefined;
+  if (!element || typeof element.closest !== 'function') return true;
+  return !element.closest(BTW_COMPOSER_KEYBOARD_SELECTOR);
+}
 
 export function isComposerKeyboardTarget(node: unknown): boolean {
   if (!node || typeof node !== 'object') return false;

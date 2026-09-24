@@ -9,6 +9,7 @@ import {
   isComposerKeyboardFocusTransfer,
   isComposerKeyboardTarget,
   shouldCorrectArmedImeLift,
+  shouldDeferWebKeyboardToNativeComposer,
   shouldReserveChatScrollInset,
 } from './composerKeyboardLift';
 
@@ -119,6 +120,20 @@ describe('composerKeyboardLift', () => {
     expect(shouldCorrectArmedImeLift(300, 280)).toBe(false);
     expect(shouldCorrectArmedImeLift(300, 0)).toBe(false);
     expect(shouldCorrectArmedImeLift(0, 360)).toBe(true);
+  });
+
+  test('native iOS composer still yields keyboard lift to the Side Chat web field', () => {
+    const btwField = {
+      closest(selector: string) {
+        return selector === '[data-btw-composer]' ? btwField : null;
+      },
+    };
+
+    expect(shouldDeferWebKeyboardToNativeComposer(false, btwField)).toBe(false);
+    expect(shouldDeferWebKeyboardToNativeComposer(true, btwField)).toBe(false);
+    expect(shouldDeferWebKeyboardToNativeComposer(true, createElement('textarea'))).toBe(true);
+    expect(shouldDeferWebKeyboardToNativeComposer(true, null)).toBe(true);
+    expect(mobileAppSource).toContain('shouldDeferWebKeyboardToNativeComposer');
   });
 
   test('iOS keyboard hide only blurs the bottom composer, not overlay search', () => {

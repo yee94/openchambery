@@ -1813,8 +1813,8 @@ window.addEventListener('openchamber:vscode-notification-event', (event) => {
 
     const isAssistantMessage = type === 'message.updated' && getPayloadString(info?.role) === 'assistant';
     const finish = isAssistantMessage ? getPayloadString(info?.finish) : '';
-    const isCompletion = type === 'session.idle' || finish === 'stop';
-    const isError = type === 'session.error' || finish === 'error';
+    const isCompletion = type === 'session.idle' || type === 'session.execution.succeeded' || finish === 'stop';
+    const isError = type === 'session.error' || type === 'session.execution.failed' || finish === 'error';
 
     if (isCompletion) {
       if (!settings.notifyOnCompletion) return;

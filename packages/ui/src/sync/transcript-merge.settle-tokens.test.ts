@@ -72,27 +72,26 @@ describe("transcript settle token merge", () => {
         ...open,
         finish: "stop",
         tokens: { ...TOKENS_FINAL },
-        time: { created: 2000, completed: 21000 },
+        time: { created: 2000, streamed: 20000, completed: 21000 },
       } as Message),
     })
 
     const flat = projectFlatFromTranscriptData(settled.data, SESSION)
     const info = flat.messagesByID.msg_a as Message & { tokens?: { output?: number; reasoning?: number } }
 
-    // TPS inputs as MessageBody.tsx:2253-2280 would read them.
+    // TPS inputs as the projected assistant step exposes them.
     const tokens = info.tokens
-    const completedAt = (info.time as { completed?: number })?.completed
+    const streamedAt = (info.time as { streamed?: number })?.streamed
     const createdAt = (info.time as { created?: number })?.created
 
-    const tps = computeAssistantTps({
+    const tps = computeAssistantTps([{
       createdAt,
-      completedAt,
+      streamedAt,
       outputTokens: tokens?.output,
       reasoningTokens: tokens?.reasoning,
-      parts: [],
-    })
+    }])
 
-    expect(completedAt).toBe(21000)
+    expect(streamedAt).toBe(20000)
     expect(tokens?.output ?? 0).toBeGreaterThan(0)
     expect(tps).not.toBe(null)
   })
@@ -123,7 +122,7 @@ describe("transcript settle token merge", () => {
         ...open,
         finish: "stop",
         tokens: { ...TOKENS_FINAL },
-        time: { created: 2000, completed: 21000 },
+        time: { created: 2000, streamed: 20000, completed: 21000 },
       } as Message),
     })
 
@@ -153,7 +152,7 @@ describe("transcript settle token merge", () => {
         ...open,
         finish: "stop",
         tokens: { ...TOKENS_FINAL },
-        time: { created: 2000, completed: 21000 },
+        time: { created: 2000, streamed: 20000, completed: 21000 },
       } as Message),
     }).data!
 
@@ -217,7 +216,7 @@ describe("production query adapter settle replay", () => {
         ...open,
         finish: "stop",
         tokens: { ...TOKENS_FINAL },
-        time: { created: 2000, completed: 21000 },
+        time: { created: 2000, streamed: 20000, completed: 21000 },
       } as Message),
     })
     expect(settleResult.changed).toBe(true)
@@ -225,18 +224,17 @@ describe("production query adapter settle replay", () => {
 
     const info = repo.getMessage(scope, "msg_a") as Message & {
       tokens?: { output?: number; reasoning?: number }
-      time?: { created?: number; completed?: number }
+      time?: { created?: number; streamed?: number; completed?: number }
     }
     expect(info.time?.completed).toBe(21000)
     expect(info.tokens?.output).toBe(44)
 
-    const tps = computeAssistantTps({
+    const tps = computeAssistantTps([{
       createdAt: info.time?.created,
-      completedAt: info.time?.completed,
+      streamedAt: info.time?.streamed,
       outputTokens: info.tokens?.output,
       reasoningTokens: info.tokens?.reasoning,
-      parts: repo.getParts(scope, "msg_a") as Part[],
-    })
+    }])
     expect(tps).not.toBe(null)
 
     unsub()

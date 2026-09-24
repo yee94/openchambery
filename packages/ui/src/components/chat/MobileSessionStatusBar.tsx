@@ -665,6 +665,11 @@ export const MobileSessionStatusBar: React.FC<MobileSessionStatusBarProps> = ({
   // Presence tracks open + exit animation so the last open list is retained
   // until MobileWindowMotion onExitComplete — not a guessed timeout.
   const [sheetPresent, setSheetPresent] = React.useState(open);
+  const [sheetPreview, setSheetPreview] = React.useState(false);
+  const handleSheetPreviewChange = useEvent((preview: boolean) => {
+    setSheetPreview(preview);
+    if (preview) setSheetPresent(true);
+  });
   React.useEffect(() => {
     if (open) setSheetPresent(true);
   }, [open]);
@@ -673,11 +678,11 @@ export const MobileSessionStatusBar: React.FC<MobileSessionStatusBarProps> = ({
     setSheetPresent(false);
   });
 
-  // Closed: badge totals live. Open: full list enrichment. Exit: last open rows.
+  // Closed: badge totals live. Preview/open: full list enrichment. Exit: last open rows.
   const { sessions: sortedSessions, totalRunning, totalUnread } = useSessionGrouping(
     sessions,
     sessionStatus,
-    open,
+    open || sheetPreview,
     sheetPresent,
   );
   const { getSessionTitle, needsAttention } = useSessionHelpers();
@@ -1670,6 +1675,7 @@ export const MobileSessionStatusBar: React.FC<MobileSessionStatusBarProps> = ({
         surfaceClassName={sessionSheetSnap.snapPoint === MOBILE_SHEET_EXPANDED_SNAP ? 'h-[98dvh] max-h-[98dvh]' : 'h-[72dvh] max-h-[98dvh]'}
         surfaceElementRef={sessionSheetSnap.surfaceRef}
         onExitComplete={handleSheetExitComplete}
+        onPreviewChange={handleSheetPreviewChange}
       >
         <div className="flex min-h-0 flex-1 flex-col">
           {renderHeader()}

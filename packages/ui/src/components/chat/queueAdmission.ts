@@ -30,6 +30,17 @@ type QueueAdmissionSelectionReader = {
 
 const nonEmptyString = (value: string | null | undefined): string | undefined => value?.trim() || undefined;
 
+export const shouldRouteComposerThroughQueue = (input: {
+    hasQueuedMessages: boolean;
+    sessionIsRunning: boolean;
+    autoReviewRunning: boolean;
+    queuedOnly: boolean;
+    delivery?: 'steer' | 'queue';
+}): boolean => input.hasQueuedMessages
+    && (input.sessionIsRunning || input.autoReviewRunning)
+    && !input.queuedOnly
+    && input.delivery !== 'steer';
+
 /**
  * Assistant deliveries only admit through the server-backed queue. Legacy and
  * frozen modes reject assistant queue admission (or no-op when frozen), so a

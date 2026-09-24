@@ -766,7 +766,8 @@ function App({ apis }: AppProps) {
 
   // useEventStream replaced by SyncProvider + SyncBridge
 
-  // Session attention now handled by notification-store via SSE events (session.idle/session.error)
+  // Session attention now handled by notification-store via SSE events
+  // (session.execution.succeeded, with session.idle / session.error as fallbacks).
 
   usePushVisibilityBeacon({ enabled: embeddedBackgroundWorkEnabled });
   useWebNotificationStream({ enabled: embeddedBackgroundWorkEnabled });

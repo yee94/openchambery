@@ -4,6 +4,11 @@ import { useEvent } from '@reactuses/core';
 import { AssistantView } from '@/components/assistants/AssistantView';
 import { useI18n } from '@/lib/i18n';
 import { normalizePath } from '@/lib/pathNormalization';
+import {
+  BTW_PAGE_NATIVE_COMPOSER_COVER,
+  ensureNativeComposerCover,
+  releaseNativeComposerCover,
+} from '@/lib/nativeComposerCover';
 import { useSessionBtwStore } from '@/stores/useSessionBtwStore';
 import { useUIStore } from '@/stores/useUIStore';
 import { useSessionUIStore } from '@/sync/session-ui-store';
@@ -102,7 +107,10 @@ export function MobilePhoneShell({
     if (previous && previous !== btwRoute) {
       useSessionBtwStore.getState().clear({ sessionId: previous.sessionId, directory: previous.directory });
     }
+    if (btwRoute) ensureNativeComposerCover(BTW_PAGE_NATIVE_COMPOSER_COVER);
+    else releaseNativeComposerCover(BTW_PAGE_NATIVE_COMPOSER_COVER);
   }, [btwRoute]);
+  React.useEffect(() => () => releaseNativeComposerCover(BTW_PAGE_NATIVE_COMPOSER_COVER), []);
 
   const setActiveTab = useEvent((tab: MobileTabId) => {
     if (tab === 'settings') {

@@ -7,7 +7,8 @@ import { dict as zh } from '@/lib/i18n/messages/zh-CN';
 import { QueuedMessageChips } from './QueuedMessageChips';
 import type { SessionComposerPendingItem, SessionInboxChip } from '@/sync/session-inbox-overlay';
 
-const fixture = vi.hoisted(() => ({ items: [] as unknown[], mode: 'legacy', chinese: false }));
+const fixture = vi.hoisted(() => ({ items: [] as unknown[], mode: 'legacy', chinese: false, mobile: false, edit: vi.fn(), focus: vi.fn() }));
+vi.mock('@/sync/session-inbox-edit', () => ({ editSessionInboxIntoDraft: fixture.edit }));
 vi.mock('@/lib/i18n', () => ({ useI18n: () => ({ t: (key: keyof typeof dict) => (fixture.chinese ? zh : dict)[key] }) }));
 vi.mock('@/components/ui', () => ({ toast: { error: vi.fn() } }));
 vi.mock('@/lib/persistence', () => ({ updateDesktopSettings: vi.fn() }));
@@ -15,7 +16,7 @@ vi.mock('@/sync/message-queue-server-runtime', () => ({ isMessageQueuePendingAdm
 vi.mock('@/sync/queue-abort-optimistic', () => ({ isQueueItemSendPendingByAbortOptimistic: () => false, subscribeQueueAbortOptimistic: () => () => {}, getQueueAbortOptimisticRevision: () => 0 }));
 vi.mock('@/sync/use-message-queue-server', () => ({ useMessageQueueServerScope: () => ({ mode: fixture.mode, items: fixture.items, runtimeCapture: { generation: 1 }, actions: {}, scope: null }) }));
 vi.mock('@/hooks/useQueuedMessageAutoSend', () => ({ useQueueScopeDispatchFlight: () => false }));
-vi.mock('@/stores/useUIStore', () => ({ useUIStore: (select: (state: { isMobile: boolean }) => unknown) => select({ isMobile: false }) }));
+vi.mock('@/stores/useUIStore', () => ({ useUIStore: (select: (state: { isMobile: boolean }) => unknown) => select({ isMobile: fixture.mobile }) }));
 vi.mock('./MessageReferenceChip', () => ({ MessageReferenceChip: () => null }));
 let root: Root;
 let host: HTMLDivElement;
@@ -23,14 +24,16 @@ let client: QueryClient;
 const inbox: SessionInboxChip = { kind: 'session-inbox', requestID: 'inbox', queueItemID: 'inbox', operationID: 'inbox', messageID: 'inbox', content: 'Next task', delivery: 'queue', createdAt: 1, attachmentCount: 0 };
 beforeEach(() => {
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
-  fixture.items = []; fixture.mode = 'legacy'; fixture.chinese = false;
+  fixture.items = []; fixture.mode = 'legacy'; fixture.chinese = false; fixture.mobile = false;
+  fixture.edit.mockReset().mockResolvedValue(true); fixture.focus.mockReset();
   client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   host = document.createElement('div'); document.body.append(host); root = createRoot(host);
 });
 afterEach(async () => { await act(async () => root.unmount()); client.clear(); host.remove(); });
 async function render(items: SessionComposerPendingItem[] = [], onSteerClientPending?: (id: string) => Promise<void>) {
+  const key = { transportIdentity: 'test', owner: { kind: 'session' as const, ownerID: 's' } };
   await act(async () => root.render(<QueryClientProvider client={client}><QueuedMessageChips
-    onEditMessage={() => true} onSendMessage={() => {}} draftKey={null} draftTarget={null}
+    onEditMessage={() => true} onSendMessage={() => {}} draftKey={key} draftTarget={{ key, expectedRevision: () => 1 }} onEditCommitted={fixture.focus}
     scope={{ state: 'bound', transportIdentity: 'test', runtimeGeneration: 1, directory: '/a', sessionID: 's', deliveryTarget: { kind: 'primary' } }}
     clientPendingItems={items}
     onSteerClientPending={onSteerClientPending}
@@ -53,6 +56,36 @@ it('keeps queued inbox compact and offers Send without execution configuration h
   expect(host.textContent).toContain('Next task');
   expect(host.textContent).not.toContain('Inherits');
   expect(host.querySelector<HTMLButtonElement>('button[aria-label="send"]')?.disabled).toBe(false);
+});
+it.each([false, true])('allows editing a waiting native inbox item (mobile=%s)', async (mobile) => {
+  fixture.mobile = mobile;
+  await render([inbox]);
+  expect(host.querySelector<HTMLButtonElement>('button[aria-label="edit"]')?.disabled).toBe(false);
+  await act(async () => host.querySelector<HTMLButtonElement>('button[aria-label="edit"]')!.click());
+  expect(fixture.edit).toHaveBeenCalledWith(expect.objectContaining({ sessionID: 's', inboxID: 'inbox', directory: '/a', expectedRevision: 1 }));
+  expect(fixture.focus).toHaveBeenCalledOnce();
+});
+it('keeps the captured edit scope across rerenders and invalidates it on unmount', async () => {
+  await render([inbox]);
+  await act(async () => host.querySelector<HTMLButtonElement>('button[aria-label="edit"]')!.click());
+  const { isCurrent } = fixture.edit.mock.calls[0][0];
+  await render([inbox]);
+  expect(isCurrent()).toBe(true);
+  await act(async () => root.render(null));
+  expect(isCurrent()).toBe(false);
+});
+it('locks conflicting actions during restoration and unlocks after failure', async () => {
+  let reject!: (error: Error) => void;
+  fixture.edit.mockImplementationOnce(() => new Promise((_resolve, fail) => { reject = fail; }));
+  await render([inbox]);
+  await act(async () => host.querySelector<HTMLButtonElement>('button[aria-label="edit"]')!.click());
+  await act(async () => { await new Promise((resolve) => setTimeout(resolve, 10)); });
+  expect(host.querySelector<HTMLButtonElement>('button[aria-label="edit"]')?.disabled).toBe(true);
+  expect(host.querySelector<HTMLButtonElement>('button[aria-label="send"]')?.disabled).toBe(true);
+  await act(async () => { reject(new Error('conflict')); });
+  await act(async () => { await new Promise((resolve) => setTimeout(resolve, 10)); });
+  expect(host.querySelector<HTMLButtonElement>('button[aria-label="edit"]')?.disabled).toBe(false);
+  expect(fixture.focus).not.toHaveBeenCalled();
 });
 it('shows promotion pending immediately and keeps it until authoritative consumption', async () => {
   let finish!: () => void;

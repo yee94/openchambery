@@ -4,14 +4,15 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { useNotificationStore } from '@/sync/notification-store';
 import { SessionErrorNotice } from './SessionErrorNotice';
 
-const state = vi.hoisted(() => ({ errorAt: 100 as number | undefined }));
-vi.mock('@/sync/sync-context', () => ({ useSessionErrorAt: () => state.errorAt }));
+const state = vi.hoisted(() => ({ errorAt: 100 as number | undefined, recovering: false }));
+vi.mock('@/sync/sync-context', () => ({ useSessionErrorAt: () => state.errorAt, useDirectorySync: () => state.recovering }));
 vi.mock('@/lib/i18n', () => ({ useI18n: () => ({ t: (key: string) => key }) }));
 let root: Root;
 let host: HTMLDivElement;
 beforeEach(() => {
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
   useNotificationStore.setState({ list: [] }); state.errorAt = 100;
+  state.recovering = false;
   host = document.createElement('div'); document.body.append(host); root = createRoot(host);
 });
 afterEach(async () => { await act(async () => root.unmount()); host.remove(); });
@@ -42,6 +43,13 @@ it('uses the transcript column and a quiet full-width row for long errors', asyn
 it('clears the error when authoritative activity clears error_at', async () => {
   await render(); await report(); state.errorAt = undefined; await render();
   expect(host.textContent).toBe('');
+});
+it('does not stack a session failure onto live recovery feedback', async () => {
+  await render(); await report();
+  state.recovering = true; await render();
+  expect(host.textContent).toBe('');
+  state.recovering = false; await render();
+  expect(host.textContent).toContain('Agent not found');
 });
 it('isolates session and directory and suppresses an existing inline assistant error', async () => {
   await render(); await report(); await render('another-session'); expect(host.textContent).toBe('');

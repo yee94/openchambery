@@ -1,140 +1,77 @@
 import { describe, expect, test } from 'bun:test';
-import type { Part } from '@/lib/opencode/v2-types';
 
 import {
+  canPresentAssistantTps,
   computeAssistantTps,
-  computeGenerationDurationMs,
+  computeAssistantTpsByStep,
   formatAssistantTps,
-  sumToolDurationMs,
 } from '../assistantTps';
 
-const part = (data: Record<string, unknown>): Part => data as unknown as Part;
-
-describe('sumToolDurationMs', () => {
-  test('returns 0 for empty parts', () => {
-    expect(sumToolDurationMs([])).toBe(0);
-    expect(sumToolDurationMs(null)).toBe(0);
-  });
-
-  test('sums completed tool intervals only', () => {
-    const parts = [
-      part({ type: 'tool', state: { time: { start: 1000, end: 1500 } } }),
-      part({ type: 'tool', state: { time: { start: 2000, end: 2300 } } }),
-      part({ type: 'tool', state: { time: { start: 3000 } } }),
-      part({ type: 'text', time: { start: 1000, end: 4000 } }),
-    ];
-    expect(sumToolDurationMs(parts)).toBe(800);
-  });
-
-  test('ignores inverted tool intervals', () => {
-    expect(
-      sumToolDurationMs([
-        part({ type: 'tool', state: { time: { start: 2000, end: 1000 } } }),
-      ]),
-    ).toBe(0);
-  });
-});
-
-describe('computeGenerationDurationMs', () => {
-  test('returns null without a completed interval or fallback duration', () => {
-    expect(computeGenerationDurationMs(null, 2000, [])).toBeNull();
-    expect(computeGenerationDurationMs(1000, null, [])).toBeNull();
-    expect(computeGenerationDurationMs(2000, 1000, [])).toBeNull();
-  });
-
-  test('uses a settled turn duration when an interrupted message lacks completion time', () => {
-    expect(computeGenerationDurationMs(1000, null, [], 2500)).toBe(2500);
-  });
-
-  test('subtracts tool duration from wall clock', () => {
-    const parts = [
-      part({ type: 'tool', state: { time: { start: 1100, end: 1600 } } }),
-    ];
-    // wall 2000ms, tool 500ms → generation 1500ms
-    expect(computeGenerationDurationMs(1000, 3000, parts)).toBe(1500);
-  });
-
-  test('returns null when tools consume the entire span', () => {
-    const parts = [
-      part({ type: 'tool', state: { time: { start: 1000, end: 3000 } } }),
-    ];
-    expect(computeGenerationDurationMs(1000, 3000, parts)).toBeNull();
-  });
-});
-
 describe('computeAssistantTps', () => {
-  test('uses output + reasoning over generation seconds', () => {
-    // 1000ms generation, 50 output + 50 reasoning → 100 tok/s
-    const tps = computeAssistantTps({
-      createdAt: 1_000,
-      completedAt: 2_000,
-      outputTokens: 50,
-      reasoningTokens: 50,
-      parts: [],
-    });
-    expect(tps).toBe(100);
+  test('matches OpenCode TUI by aggregating generated tokens and provider intervals across steps', () => {
+    const tps = computeAssistantTps([
+      { createdAt: 6_000, streamedAt: 10_000, outputTokens: 20, reasoningTokens: 5 },
+      { createdAt: 24_000, streamedAt: 30_000, outputTokens: 30, reasoningTokens: 10 },
+    ]);
+
+    // (20 + 5 + 30 + 10) tokens / ((4 + 6) seconds) = 6.5 tok/s.
+    expect(tps).toBe(6.5);
   });
 
-  test('excludes tool time from the rate', () => {
-    // wall 5s, tool 3s → generation 2s; 200 tokens → 100 tok/s
-    const tps = computeAssistantTps({
-      createdAt: 1_000,
-      completedAt: 6_000,
-      outputTokens: 200,
-      reasoningTokens: 0,
-      parts: [part({ type: 'tool', state: { time: { start: 2_000, end: 5_000 } } })],
-    });
-    expect(tps).toBe(100);
+  test('does not display a partial turn if any assistant step lacks a streamed boundary', () => {
+    expect(computeAssistantTps([
+      { createdAt: 1_000, streamedAt: 2_000, outputTokens: 50 },
+      { createdAt: 3_000, outputTokens: 50 },
+    ])).toBeNull();
   });
 
-  test('returns null when there are no generated tokens', () => {
-    expect(
-      computeAssistantTps({
-        createdAt: 1_000,
-        completedAt: 2_000,
-        outputTokens: 0,
-        reasoningTokens: 0,
-        parts: [],
-      }),
-    ).toBeNull();
+  test('computes the same cumulative rate at each assistant step as the TUI footer', () => {
+    expect(computeAssistantTpsByStep([
+      { createdAt: 1_000, streamedAt: 2_000, outputTokens: 40 },
+      { createdAt: 3_000, streamedAt: 5_000, outputTokens: 30, reasoningTokens: 10 },
+      { createdAt: 6_000, outputTokens: 20 },
+    ])).toEqual([40, 26.666666666666668, null]);
   });
 
-  test('returns null while still streaming (no completed)', () => {
-    expect(
-      computeAssistantTps({
-        createdAt: 1_000,
-        completedAt: null,
-        outputTokens: 100,
-        reasoningTokens: 0,
-        parts: [],
-      }),
-    ).toBeNull();
+  test('returns null when the turn has no generated tokens or provider duration', () => {
+    expect(computeAssistantTps([
+      { createdAt: 1_000, streamedAt: 2_000, outputTokens: 0, reasoningTokens: 0 },
+    ])).toBeNull();
+    expect(computeAssistantTps([
+      { createdAt: 1_000, streamedAt: 1_000, outputTokens: 100 },
+    ])).toBeNull();
+    expect(computeAssistantTps([])).toBeNull();
   });
 
-  test('uses settled turn duration for interrupted messages with generated tokens', () => {
-    expect(
-      computeAssistantTps({
-        createdAt: 1_000,
-        completedAt: null,
-        fallbackDurationMs: 2_000,
-        outputTokens: 100,
-        reasoningTokens: 0,
-        parts: [],
-      }),
-    ).toBe(50);
+  test('counts reasoning tokens and ignores invalid or negative token counts', () => {
+    expect(computeAssistantTps([
+      { createdAt: 1_000, streamedAt: 2_000, outputTokens: -5, reasoningTokens: 100 },
+    ])).toBe(100);
+  });
+});
+
+describe('canPresentAssistantTps', () => {
+  test('shows a calculated rate for interrupted and failed turns', () => {
+    expect(canPresentAssistantTps({ completionDisposition: 'abnormal', tps: 12.5 })).toBe(true);
+    expect(canPresentAssistantTps({ completionDisposition: 'normal', tps: 12.5 })).toBe(true);
+    expect(canPresentAssistantTps({ tps: 12.5 })).toBe(true);
+  });
+
+  test('hides an in-flight continuation and an uncalculable interrupt', () => {
+    expect(canPresentAssistantTps({ completionDisposition: 'active', tps: 12.5 })).toBe(false);
+    expect(canPresentAssistantTps({ completionDisposition: 'abnormal', tps: null })).toBe(false);
   });
 });
 
 describe('formatAssistantTps', () => {
-  test('formats small and large rates', () => {
-    expect(formatAssistantTps(3.456)).toBe('3.46 tok/s');
+  test('uses the TUI one-decimal format', () => {
+    expect(formatAssistantTps(3.456)).toBe('3.5 tok/s');
     expect(formatAssistantTps(12.34)).toBe('12.3 tok/s');
-    expect(formatAssistantTps(128.4)).toBe('128 tok/s');
-    expect(formatAssistantTps(1234)).toBe('1.2k tok/s');
-    expect(formatAssistantTps(12500)).toBe('13k tok/s');
+    expect(formatAssistantTps(128.4)).toBe('128.4 tok/s');
+    expect(formatAssistantTps(1234)).toBe('1234.0 tok/s');
   });
 
-  test('returns empty for non-positive', () => {
+  test('returns empty for non-positive and non-finite rates', () => {
     expect(formatAssistantTps(0)).toBe('');
     expect(formatAssistantTps(Number.NaN)).toBe('');
   });

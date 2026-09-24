@@ -15,8 +15,8 @@ export function MobileBtwPage({ route }: { route: MobileBtwRoute }) {
         backAriaLabel={t('header.actions.backAria')}
         onBack={() => { mobileBackNavigationCoordinator.requestAnimatedBack('root'); }}
       />
-      <div className="min-h-0 flex-1 pb-[var(--oc-safe-area-bottom,env(safe-area-inset-bottom,0px))]">
-        <BtwPanel scope={{ sessionId: route.sessionId, directory: route.directory }} />
+      <div className="min-h-0 flex-1">
+        <BtwPanel scope={{ sessionId: route.sessionId, directory: route.directory }} foot="page" />
       </div>
     </div>
   );

@@ -20,6 +20,8 @@ import type { SessionInboxDelivery, SessionInboxUser } from "./session-prompt-ap
 
 export type SessionInboxOverlayItem = SessionInboxUser & {
   requestID: string
+  /** Queue presentation survives promotion, but direct prompt admission is not a queue row. */
+  wasQueued: boolean
 }
 
 export type SessionInboxChip = {
@@ -234,7 +236,7 @@ export const useSessionInboxOverlayStore = create<SessionInboxOverlayState>((set
     set((state) => {
       const current = state.bySession[item.sessionID] ?? []
       const index = current.findIndex((entry) => entry.id === item.id)
-      const nextItem = { ...item, requestID: item.id }
+      const nextItem = { ...item, requestID: item.id, wasQueued: item.delivery === "queue" || current[index]?.wasQueued === true }
       if (index >= 0) {
         const next = current.slice()
         next[index] = nextItem
@@ -291,7 +293,12 @@ export const useSessionInboxOverlayStore = create<SessionInboxOverlayState>((set
       admitted.push(item)
     }
     set((state) => {
-      const next = admitted.map((item) => ({ ...item, requestID: item.id }))
+      const previous = new Map((state.bySession[sessionID] ?? []).map((item) => [item.id, item]))
+      const next = admitted.map((item) => ({
+        ...item,
+        requestID: item.id,
+        wasQueued: item.delivery === "queue" || previous.get(item.id)?.wasQueued === true,
+      }))
       return { bySession: writeSession(state.bySession, sessionID, next) }
     })
   },
@@ -303,7 +310,7 @@ export const useSessionInboxOverlayStore = create<SessionInboxOverlayState>((set
       const index = current.findIndex((entry) => entry.id === inboxID)
       if (index < 0 || current[index]!.delivery === delivery) return state
       const next = current.slice()
-      next[index] = { ...current[index]!, delivery }
+      next[index] = { ...current[index]!, delivery, wasQueued: delivery === "queue" || current[index]!.wasQueued }
       return { bySession: { ...state.bySession, [sessionID]: next } }
     })
   },
@@ -369,5 +376,5 @@ export function isSessionInboxChip(value: unknown): value is SessionInboxChip {
 
 export function selectInboxOverlayChips(sessionID: string | null | undefined): SessionInboxChip[] {
   if (!sessionID) return EMPTY_INBOX_CHIPS
-  return useSessionInboxOverlayStore.getState().list(sessionID).map(toChip)
+  return useSessionInboxOverlayStore.getState().list(sessionID).filter((item) => item.wasQueued).map(toChip)
 }

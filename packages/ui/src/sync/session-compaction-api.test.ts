@@ -275,6 +275,9 @@ describe("first paint prefers context; prepend stays on projection", () => {
         data: [
           { id: "msg_after", type: "user", time: { created: 20 }, text: "after compact" },
           { id: "msg_before", type: "user", time: { created: 10 }, text: "before compact" },
+          ...Array.from({ length: 18 }, (_, index) => ({
+            id: `msg_system_${index}`, type: "system", time: { created: 9 - index }, text: "instructions",
+          })),
         ],
         cursor: { previous: null, next: "cur_older" },
       })

@@ -12,7 +12,12 @@ import { useComposerQuoteStore } from '@/stores/useComposerQuoteStore';
 import { useSessionBtwStore } from '@/stores/useSessionBtwStore';
 import { openSessionBtw } from '@/components/layout/btwComposerFocus';
 import { subscribeSessionSwitchIntent } from '@/lib/sessionSwitchIntent';
+import { Button } from '@/components/ui/button';
+import { keyboardOverlapPx, parseCssPx } from '@/lib/keyboardOverlap';
+import { holdNativeComposerCover, TEXT_SELECTION_NATIVE_COMPOSER_COVER } from '@/lib/nativeComposerCover';
+import { NATIVE_IOS_COMPOSER_HEIGHT_VAR } from '@/lib/native-ios-composer';
 import { getSessionSurfaceActionAvailability, useSessionSurface } from '../SessionSurfaceContext';
+import { textSelectionBarFrame, type TextSelectionBarFrame } from './textSelectionBarFrame';
 
 interface TextSelectionMenuProps {
   containerRef: React.RefObject<HTMLElement | null>;
@@ -43,6 +48,40 @@ const formatCompactShortcut = (combo: string): string => {
   return [...modifiers, key].join('');
 };
 const DESKTOP_MENU_FALLBACK_WIDTH_PX = 280;
+
+const visibleComposerRect = (): { left: number; top: number; width: number; height: number } | null => {
+  if (typeof document === 'undefined') return null;
+  let best: { left: number; top: number; width: number; height: number } | null = null;
+  for (const element of document.querySelectorAll<HTMLElement>('.oc-mobile-composer')) {
+    const style = window.getComputedStyle(element);
+    if (style.display === 'none' || style.visibility === 'hidden') continue;
+    const rect = element.getBoundingClientRect();
+    if (rect.height < 48 || rect.width < 48) continue;
+    if (rect.bottom < 0 || rect.top > window.innerHeight) continue;
+    if (!best || rect.bottom > best.top + best.height) {
+      best = { left: rect.left, top: rect.top, width: rect.width, height: rect.height };
+    }
+  }
+  return best;
+};
+
+const readTextSelectionBarFrame = (lastHeightPx: number): TextSelectionBarFrame => {
+  const root = document.documentElement;
+  const visualViewport = window.visualViewport;
+  return textSelectionBarFrame({
+    composer: visibleComposerRect(),
+    viewportWidth: window.innerWidth,
+    viewportHeight: window.innerHeight,
+    keyboardOverlapPx: keyboardOverlapPx({
+      cssInsetPx: parseCssPx(root.style.getPropertyValue('--oc-keyboard-inset')),
+      innerHeight: window.innerHeight,
+      visualHeight: visualViewport?.height,
+      visualOffsetTop: visualViewport?.offsetTop,
+    }),
+    nativeComposerHeightPx: parseCssPx(root.style.getPropertyValue(NATIVE_IOS_COMPOSER_HEIGHT_VAR)),
+    lastHeightPx,
+  });
+};
 let dismissVisibleTextSelectionMenu: (() => void) | null = null;
 
 subscribeSessionSwitchIntent(() => {
@@ -270,6 +309,8 @@ export const TextSelectionMenu: React.FC<TextSelectionMenuProps> = ({ containerR
   const openRafRef = React.useRef<number | null>(null);
   const mouseUpTimeoutRef = React.useRef<number | null>(null);
   const isMenuVisibleRef = React.useRef(false);
+  const selectionBarHeightRef = React.useRef(0);
+  const [selectionBarFrame, setSelectionBarFrame] = React.useState<TextSelectionBarFrame | null>(null);
   const currentSessionId = useSessionUIStore((state) => state.currentSessionId);
   const effectiveDirectory = useEffectiveDirectory() ?? null;
   const isMobile = useUIStore((state) => state.isMobile);
@@ -528,13 +569,65 @@ export const TextSelectionMenu: React.FC<TextSelectionMenuProps> = ({ containerR
     };
   }, [containerRef, handleSelectionChange, hideMenu, showMenu]);
 
-  // The selection menu is viewport-fixed (mobile bottom bar and the desktop
+  // The selection menu is viewport-fixed (mobile composer foot and the desktop
   // popup alike), so it detaches from the selection the moment the underlying
   // content scrolls — dismiss it. Scroll events do not bubble, so listen in
   // the capture phase to catch scrolls inside nested containers and shadow
   // roots. Selection-handle drags that auto-scroll the container fire
   // selectionchange afterwards, which re-shows the bar for the adjusted
   // selection.
+  React.useLayoutEffect(() => {
+    if (!isMobile || !position.show) {
+      selectionBarHeightRef.current = 0;
+      setSelectionBarFrame(null);
+      return;
+    }
+    const releaseCover = holdNativeComposerCover(TEXT_SELECTION_NATIVE_COMPOSER_COVER);
+    let followFrame = 0;
+    let followUntil = 0;
+    const measure = () => {
+      const next = readTextSelectionBarFrame(selectionBarHeightRef.current);
+      selectionBarHeightRef.current = next.height;
+      setSelectionBarFrame((previous) => (
+        previous
+        && previous.left === next.left
+        && previous.top === next.top
+        && previous.width === next.width
+        && previous.height === next.height
+          ? previous
+          : next
+      ));
+    };
+    // Android lifts the composer with a transform; iOS shrinks the shell.
+    // Follow only through that short move, then stop.
+    const follow = (now: number) => {
+      measure();
+      if (now < followUntil) followFrame = window.requestAnimationFrame(follow);
+    };
+    const startFollow = () => {
+      followUntil = performance.now() + 320;
+      window.cancelAnimationFrame(followFrame);
+      followFrame = window.requestAnimationFrame(follow);
+    };
+    measure();
+    startFollow();
+    const visualViewport = window.visualViewport;
+    visualViewport?.addEventListener('resize', startFollow);
+    visualViewport?.addEventListener('scroll', startFollow);
+    window.addEventListener('resize', startFollow);
+    window.addEventListener('oc:keyboard-anim', startFollow);
+    window.addEventListener('oc:keyboard-settled', startFollow);
+    return () => {
+      window.cancelAnimationFrame(followFrame);
+      visualViewport?.removeEventListener('resize', startFollow);
+      visualViewport?.removeEventListener('scroll', startFollow);
+      window.removeEventListener('resize', startFollow);
+      window.removeEventListener('oc:keyboard-anim', startFollow);
+      window.removeEventListener('oc:keyboard-settled', startFollow);
+      releaseCover();
+    };
+  }, [isMobile, position.show]);
+
   React.useEffect(() => {
     if (!position.show) return;
 
@@ -609,31 +702,46 @@ export const TextSelectionMenu: React.FC<TextSelectionMenuProps> = ({ containerR
       : []),
   ];
 
-  // Mobile: a slim bar at the bottom of the screen, above the keyboard
+  // Mobile: a page-background foot that covers only the composer. The
+  // transcript above stays interactive so selection handles still work.
   if (isMobile) {
+    const frame = selectionBarFrame ?? {
+      left: 0,
+      top: Math.max(0, window.innerHeight - 88),
+      width: window.innerWidth,
+      height: 88,
+    };
     return createPortal(
       <div
         ref={menuRef}
         data-text-selection-menu
         className={cn(
-          'fixed left-3 right-3 z-50 mx-auto flex max-w-[420px] items-center gap-1',
-          'rounded-lg border border-[var(--interactive-border)] bg-[var(--surface-elevated)] p-0.5 shadow-sm',
-          'transition-[opacity,transform] duration-200 ease-out will-change-[opacity,transform]',
-          isOpening ? 'opacity-0 translate-y-[4px]' : 'opacity-100 translate-y-0'
+          'fixed z-50 flex items-center justify-center gap-2 bg-background px-4',
+          'transition-opacity duration-200 ease-out',
+          isOpening ? 'opacity-0' : 'opacity-100',
         )}
-        style={{ bottom: 'calc(0.5rem + env(safe-area-inset-bottom, 0px))' }}
+        style={{
+          left: frame.left,
+          top: frame.top,
+          width: frame.width,
+          height: frame.height,
+          paddingBottom: 'max(0.75rem, var(--oc-safe-area-bottom-visual, env(safe-area-inset-bottom, 0px)))',
+        }}
+        onPointerDown={(event) => {
+          event.preventDefault();
+        }}
       >
-        {actions.map((action, index) => (
-          <React.Fragment key={action.id}>
-            {index > 0 ? <div className="h-4 w-px shrink-0 bg-[var(--interactive-border)]" /> : null}
-            <button
-              type="button"
-              onClick={action.run}
-              className="h-8 min-w-0 flex-1 truncate rounded-md px-3 typography-meta text-[var(--surface-foreground)] active:bg-[var(--interactive-hover)]"
-            >
-              {action.label}
-            </button>
-          </React.Fragment>
+        {actions.map((action) => (
+          <Button
+            key={action.id}
+            type="button"
+            variant="secondary"
+            size="sm"
+            onClick={action.run}
+            className="max-w-[11rem] min-w-0"
+          >
+            <span className="truncate">{action.label}</span>
+          </Button>
         ))}
       </div>,
       document.body

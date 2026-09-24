@@ -201,7 +201,7 @@ import { getInboxTerminal, updateInboxOverlayDelivery, useSessionInboxOverlaySto
 import { cancelUnpromotedInboxItem, queueSessionInbox, steerSessionInbox } from '@/sync/session-prompt-api';
 import { canPromoteInboxItem, useSessionCompactionBarrierStore } from '@/sync/session-compaction-api';
 import { runQueueMessageFireAndForget } from './queueMessageFireAndForget';
-import { admitServerQueueMessageAndConsumeResources, assistantQueueAdmissionAvailable, attachedFilesToQueueCandidates, beginQueueAdmissionOptimisticClear, createServerQueueAdmissionCapture, createServerQueueAdmissionIdentity, isCompleteQueueSendConfig, isQueueAdmissionRuntimeCurrent } from './queueAdmission';
+import { admitServerQueueMessageAndConsumeResources, assistantQueueAdmissionAvailable, attachedFilesToQueueCandidates, beginQueueAdmissionOptimisticClear, createServerQueueAdmissionCapture, createServerQueueAdmissionIdentity, isCompleteQueueSendConfig, isQueueAdmissionRuntimeCurrent, shouldRouteComposerThroughQueue } from './queueAdmission';
 import { shouldShowPermissionAutoAcceptControl, togglePermissionAutoAccept } from './permissionAutoAccept';
 import { getSlashTokenRange } from './commandSelection';
     import {
@@ -2461,7 +2461,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
         ), [currentSessionId]),
     );
     const inboxOverlayChips = React.useMemo(
-        () => (inboxOverlayItems ? inboxOverlayItems.map(toInboxChip) : EMPTY_INBOX_CHIPS),
+        () => (inboxOverlayItems ? inboxOverlayItems.filter((item) => item.wasQueued).map(toInboxChip) : EMPTY_INBOX_CHIPS),
         [inboxOverlayItems],
     );
     const [nativeQueueAdmission, setNativeQueueAdmission] = React.useState<{
@@ -3018,7 +3018,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
         if (isSubmissionInFlight()) return;
         const queuedOnly = options?.queuedOnly ?? false;
         const queuedMessageId = options?.queuedMessageId;
-        const delivery = options?.delivery === 'queue'
+        const delivery = options?.delivery === 'queue' && (sessionIsRunning || autoReviewRunning)
             ? 'queue'
             : options?.delivery === 'steer' && sessionIsRunning ? 'steer' : undefined;
         const inputSnapshot = options?.presetText != null
@@ -3066,15 +3066,18 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
             }
             return;
         }
+        const routeThroughQueue = shouldRouteComposerThroughQueue({
+            hasQueuedMessages, sessionIsRunning, autoReviewRunning, queuedOnly, delivery,
+        });
         if (!queuedOnly && localCommand && localCommand !== 'model') {
             // Local command handlers run below with their existing business actions.
-        } else if (!queuedOnly && currentSessionId && hasQueuedMessages && queueFrozen) {
+        } else if (currentSessionId && routeThroughQueue && queueFrozen) {
             return;
-        } else if (!queuedOnly && currentSessionId && hasQueuedMessages && serverQueue.mode === 'server') {
+        } else if (currentSessionId && routeThroughQueue && serverQueue.mode === 'server') {
             // No flight yet: queue path claims its own before its first await.
             if (inputSnapshot.hasContent) queueMessageFromEvent();
             return;
-        } else if (!queuedOnly && currentSessionId && hasQueuedMessages) {
+        } else if (currentSessionId && routeThroughQueue) {
             if (inputSnapshot.hasContent) queueMessageFromEvent();
             const queuedHead = queuedMessages[0];
             if (queuedHead && controllerWiring) {
@@ -3082,7 +3085,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
             }
             return;
         }
-        const queuedMessagesToSend = resourcePolicy ? [] : queuedMessageId
+        const queuedMessagesToSend = resourcePolicy || (!queuedOnly && inputSnapshot.hasContent && !queuedMessageId) ? [] : queuedMessageId
             ? queuedMessages.filter((message) => message.id === queuedMessageId)
             : queuedMessages;
 
@@ -3670,7 +3673,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
             if (currentQueueScope && queuedItem?.queueItemID && queuedItem.operationID) {
                 removeFromQueue(currentQueueScope, queuedItem.queueItemID, queuedItem.operationID);
             }
-        } else if (!resourcePolicy && currentSessionId && hasQueuedMessages) {
+        } else if (!resourcePolicy && currentSessionId && queuedMessagesToSend.length > 0) {
             if (currentQueueScope) clearQueue(currentQueueScope);
         }
         if (!queuedOnly && !resourcePolicy) {

@@ -136,9 +136,9 @@ const isExactSessionMessagePath = (requestPath: string): boolean =>
 const isSessionMessagesListPath = (requestPath: string): boolean => {
   try {
     const parsed = new URL(requestPath, 'https://openchamber.invalid');
-    return /^\/(?:api\/)?session\/[^/]+\/message\/?$/.test(parsed.pathname);
+    return /^\/(?:api\/)?session\/[^/]+\/(?:message|context)\/?$/.test(parsed.pathname);
   } catch {
-    return /^\/(?:api\/)?session\/[^/]+\/message(?:\?.*)?$/.test(requestPath)
+    return /^\/(?:api\/)?session\/[^/]+\/(?:message|context)(?:\?.*)?$/.test(requestPath)
       && !isExactSessionMessagePath(requestPath);
   }
 };

@@ -424,6 +424,27 @@ const ChatViewport = React.memo(({
             </div>
         </div>
     ) : null;
+    // Same muted meta treatment as the desktop loading hint. A filled
+    // secondary chip is not the main-workspace load-older style.
+    const mobileLoadOlderControl = isMobile && reserveMobileHistorySlot ? (
+        <div className={cn('flex justify-center pt-3 pb-1', !showLoadOlderButton && 'invisible')} aria-hidden={!showLoadOlderButton}>
+            <Button
+                type="button"
+                variant="link"
+                size="sm"
+                data-chat-load-older="true"
+                className="h-auto gap-1.5 px-1 py-0 font-normal text-[var(--surface-mutedForeground)] no-underline hover:no-underline hover:text-[var(--surface-foreground)]"
+                onClick={onLoadOlder}
+                disabled={loadOlderBusy || !showLoadOlderButton}
+                aria-busy={loadOlderBusy}
+            >
+                {loadOlderBusy ? (
+                    <Icon name="loader-4" className="size-3.5 animate-spin" aria-hidden="true" />
+                ) : null}
+                <span className="typography-meta">{t('chat.history.loadOlder')}</span>
+            </Button>
+        </div>
+    ) : null;
     const promptPreviewsByTurnIdRef = React.useRef<Map<string, Part[]>>(new Map());
     // Cache normalized parts per source array so unchanged messages keep the
     // same reference and the memo below can bail out to the previous map.
@@ -569,21 +590,7 @@ const ChatViewport = React.memo(({
                                         aria-hidden="true"
                                     />
                                 )}
-                                {isMobile && reserveMobileHistorySlot && (
-                                    <div className={cn('flex justify-center pt-3 pb-1', !showLoadOlderButton && 'invisible')} aria-hidden={!showLoadOlderButton}>
-                                        <Button
-                                            variant="secondary"
-                                            size="sm"
-                                            onClick={onLoadOlder}
-                                            disabled={loadOlderBusy || !showLoadOlderButton}
-                                            aria-busy={loadOlderBusy}
-                                        >
-                                            <Icon name="loader-4" className={cn('size-4', loadOlderBusy ? 'animate-spin' : 'invisible')} aria-hidden="true" />
-                                            {t('chat.history.loadOlder')}
-                                            <span className="size-4" aria-hidden="true" />
-                                        </Button>
-                                    </div>
-                                )}
+                                {mobileLoadOlderControl}
                                 {desktopHistoryStatus}
                             </>
                         )}
@@ -658,21 +665,7 @@ const ChatViewport = React.memo(({
                     data-scrollbar="chat"
                 >
                     <div className={cn('oc-chat-scroll-content relative z-0 min-h-full', isMobile && 'chat-scroll-foot-inset')}>
-                        {isMobile && reserveMobileHistorySlot && (
-                            <div className={cn('flex justify-center pt-3 pb-1', !showLoadOlderButton && 'invisible')} aria-hidden={!showLoadOlderButton}>
-                                <Button
-                                    variant="secondary"
-                                    size="sm"
-                                    onClick={onLoadOlder}
-                                    disabled={loadOlderBusy || !showLoadOlderButton}
-                                    aria-busy={loadOlderBusy}
-                                >
-                                    <Icon name="loader-4" className={cn('size-4', loadOlderBusy ? 'animate-spin' : 'invisible')} aria-hidden="true" />
-                                    {t('chat.history.loadOlder')}
-                                    <span className="size-4" aria-hidden="true" />
-                                </Button>
-                            </div>
-                        )}
+                        {mobileLoadOlderControl}
                         {desktopHistoryStatus}
                         <MessageList
                             ref={messageListRef}

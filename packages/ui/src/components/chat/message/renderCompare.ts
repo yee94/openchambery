@@ -319,6 +319,7 @@ export const areRelevantTurnGroupingContextsEqual = (
   if (left.hasReasoning !== right.hasReasoning) return false;
   if (left.userMessageCreatedAt !== right.userMessageCreatedAt) return false;
   if (left.userMessageVariant !== right.userMessageVariant) return false;
+  if (left.assistantTps !== right.assistantTps) return false;
 
   const headerRelevant = left.headerMessageId === messageId || right.headerMessageId === messageId;
   if (headerRelevant && left.headerMessageId !== right.headerMessageId) {

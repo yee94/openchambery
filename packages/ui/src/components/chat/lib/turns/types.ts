@@ -169,6 +169,7 @@ export interface TurnGroupingContext {
     userMessageCreatedAt?: number;
     userMessageVariant?: string;
     durationMs?: number;
+    assistantTps?: number | null;
     isWorking: boolean;
     /**
      * The whole turn is finished, not merely the message rendering this row.

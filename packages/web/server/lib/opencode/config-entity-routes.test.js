@@ -69,6 +69,31 @@ describe('V2 configuration persistence', () => {
 });
 
 describe('config entity command metadata route', () => {
+  it('preserves real SDK authentication and request options when fetching the catalog', async () => {
+    const { OpenCode: realOpenCode } = await vi.importActual('@opencode/client');
+    createOpencodeClient.mockImplementation(realOpenCode.make);
+    const upstream = vi.spyOn(globalThis, 'fetch').mockImplementation(async (_input, init) => {
+      if (new Headers(init?.headers).get('Authorization') !== 'Basic example') {
+        return new Response('Unauthorized', { status: 401 });
+      }
+      return Response.json({ data: [{ name: 'review', description: 'Review changes' }] });
+    });
+    try {
+      const app = express();
+      app.use(express.json());
+      registerConfigEntityRoutes(app, createDependencies(() => ({ md: { exists: false }, json: { exists: false } })));
+      const response = await request(app).post('/api/config/commands/metadata').send({ catalog: true });
+      expect(response.status).toBe(200);
+      expect(response.body.commands).toEqual([expect.objectContaining({ name: 'review' })]);
+      const [url, init] = upstream.mock.calls[0];
+      expect(new URL(url).pathname).toBe('/api/command');
+      expect(init.method).toBe('GET');
+      expect(init.signal).toBeInstanceOf(AbortSignal);
+    } finally {
+      upstream.mockRestore();
+    }
+  });
+
   it('returns metadata for many commands through one request', async () => {
     const app = express();
     app.use(express.json());

@@ -1,6 +1,7 @@
 import { useStore } from 'zustand';
 import { useDirectoryStore } from '@/sync/sync-context';
 import { useI18n } from '@/lib/i18n';
+import { ResponseStatusRow } from './message/ResponseStatusRow';
 
 export function SessionRecoveryNotice({ sessionId, directory }: { sessionId: string; directory: string }) {
   const store = useDirectoryStore(directory, { bootstrap: false });
@@ -8,8 +9,12 @@ export function SessionRecoveryNotice({ sessionId, directory }: { sessionId: str
   const { t } = useI18n();
   if (!recovering) return null;
   return (
-    <div className="px-4 py-1.5 typography-meta text-[var(--status-warning)]" role="status" aria-live="polite">
-      {t('chat.sessionRecovery.awaitingConfirmation')}
+    <div className="px-4 py-1.5" aria-live="polite">
+      <ResponseStatusRow presentation={{
+        text: t('chat.sessionRecovery.awaitingConfirmation'),
+        icon: 'restart',
+        variant: 'info',
+      }} />
     </div>
   );
 }
