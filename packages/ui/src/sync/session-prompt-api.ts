@@ -320,7 +320,14 @@ export async function postSessionPrompt(
   if (!isCurrentPromptCommitScope(commit)) {
     throwRuntimeSwitched("session prompt")
   }
-  rememberUnpromotedInbox(admitted)
+  // A missing delivery field parses as steer. Queue admission must still paint
+  // a chip; echoing steer afterwards keeps wasQueued so 引导中 can take over.
+  if (input.delivery === "queue" && admitted.delivery !== "queue") {
+    rememberUnpromotedInbox({ ...admitted, delivery: "queue" })
+    updateInboxOverlayDelivery(admitted.sessionID, admitted.id, "steer")
+  } else {
+    rememberUnpromotedInbox(admitted)
+  }
   return admitted
 }
 

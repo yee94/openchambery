@@ -98,6 +98,42 @@ export const EMPTY_INBOX_CHIPS: SessionInboxChip[] = []
 /** Bounded terminal receipts: key = transport|generation|session|inbox. */
 const terminalReceipts = new Map<string, InboxTerminalReceipt>()
 const TERMINAL_RECEIPT_LIMIT = 512
+/**
+ * Steer recycle holds. A queued item promoted to steer must stay on the queue
+ * surface as "引导中" until the running turn settles. Transcript appearance and
+ * an immediate delivered event are not consumption — they used to eat the chip.
+ */
+const steeringHolds = new Set<string>()
+const steeringHoldKey = (sessionID: string, inboxID: string): string => `${sessionID}\0${inboxID}`
+
+export function holdInboxSteering(sessionID: string, inboxID: string): void {
+  if (!sessionID || !inboxID) return
+  steeringHolds.add(steeringHoldKey(sessionID, inboxID))
+}
+
+export function isInboxSteeringHeld(sessionID: string, inboxID: string): boolean {
+  return steeringHolds.has(steeringHoldKey(sessionID, inboxID))
+}
+
+export function listHeldInboxSteering(sessionID: string): string[] {
+  const prefix = `${sessionID}\0`
+  const ids: string[] = []
+  for (const key of steeringHolds) {
+    if (key.startsWith(prefix)) ids.push(key.slice(prefix.length))
+  }
+  return ids
+}
+
+export function releaseInboxSteering(sessionID: string, inboxID?: string): void {
+  if (!sessionID) return
+  if (inboxID) {
+    steeringHolds.delete(steeringHoldKey(sessionID, inboxID))
+    return
+  }
+  for (const id of listHeldInboxSteering(sessionID)) {
+    steeringHolds.delete(steeringHoldKey(sessionID, id))
+  }
+}
 
 /** Monotonic clock for terminal vs snapshot ordering. */
 let authorityClock = 0
@@ -212,6 +248,7 @@ export function getInboxTerminalReceipt(
 /** Test / runtime-switch seam: drop every terminal receipt. */
 export function resetInboxTerminalReceiptsForTests(): void {
   terminalReceipts.clear()
+  steeringHolds.clear()
   authorityClock = 0
 }
 
@@ -252,6 +289,9 @@ export const useSessionInboxOverlayStore = create<SessionInboxOverlayState>((set
     return true
   },
   forget(sessionID, inboxID, terminal) {
+    // Steer recycle stays visible until the turn settles. Recording consumed
+    // here would also block the later remember that paints 引导中.
+    if (terminal === "consumed" && isInboxSteeringHeld(sessionID, inboxID)) return
     if (terminal) recordInboxTerminal(sessionID, inboxID, terminal)
     set((state) => {
       const current = state.bySession[sessionID]
@@ -271,15 +311,17 @@ export const useSessionInboxOverlayStore = create<SessionInboxOverlayState>((set
   },
   forgetPromoted(sessionID, promotedIDs) {
     const promoted = new Set(promotedIDs)
-    for (const id of promoted) {
-      recordInboxTerminal(sessionID, id, "consumed")
-    }
     set((state) => {
       const current = state.bySession[sessionID]
       if (!current?.length) return state
-      const next = current.filter((entry) => !promoted.has(entry.id))
-      if (next.length === current.length) return state
-      return { bySession: writeSession(state.bySession, sessionID, next) }
+      // Transcript ids are not consumption for a queued/steering chip. Eating
+      // those rows is what made 引导中 disappear the moment the user message landed.
+      const removable = new Set(current.filter((entry) => (
+        promoted.has(entry.id) && !entry.wasQueued && !isInboxSteeringHeld(sessionID, entry.id)
+      )).map((entry) => entry.id))
+      if (removable.size === 0) return state
+      for (const id of removable) recordInboxTerminal(sessionID, id, "consumed")
+      return { bySession: writeSession(state.bySession, sessionID, current.filter((entry) => !removable.has(entry.id))) }
     })
   },
   replaceFromAuthority(sessionID, items, options) {
