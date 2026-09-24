@@ -510,11 +510,56 @@ svg.oc-icon {
   stroke-linejoin: round;
 }
 
-/* GPU acceleration for non-spinning SVGs */
-button svg:not(.animate-spin),
-[role="button"] svg:not(.animate-spin) {
+/* GPU acceleration for non-spinning SVGs. Countdown rings own their
+   rotation; this rule must not replace it with translateZ(0). */
+button svg:not(.animate-spin):not(.oc-undo-countdown-svg),
+[role="button"] svg:not(.animate-spin):not(.oc-undo-countdown-svg) {
   transform: translateZ(0);
   -webkit-transform: translateZ(0);
+}
+
+/* Undo countdown is an SVG inside Button. Button's size-4 descendant
+   rule and the translateZ workaround above otherwise stretch the ring
+   out of the toast. The box is locked to the component's size token. */
+.oc-undo-countdown {
+  --oc-undo-countdown-size: 15px;
+  position: relative;
+  display: inline-flex;
+  flex: 0 0 var(--oc-undo-countdown-size) !important;
+  width: var(--oc-undo-countdown-size) !important;
+  height: var(--oc-undo-countdown-size) !important;
+  min-width: var(--oc-undo-countdown-size) !important;
+  min-height: var(--oc-undo-countdown-size) !important;
+  max-width: var(--oc-undo-countdown-size) !important;
+  max-height: var(--oc-undo-countdown-size) !important;
+  overflow: hidden;
+}
+
+button svg.oc-undo-countdown-svg,
+[role="button"] svg.oc-undo-countdown-svg,
+.oc-undo-countdown-svg {
+  display: block;
+  flex: none !important;
+  width: 100% !important;
+  height: 100% !important;
+  min-width: 0 !important;
+  min-height: 0 !important;
+  max-width: 100% !important;
+  max-height: 100% !important;
+  transform: rotate(-90deg) !important;
+  -webkit-transform: rotate(-90deg) !important;
+}
+
+.oc-undo-countdown-digit {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 8px !important;
+  line-height: 1 !important;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
 }
 
 /* Fix SVG elements inside buttons - remove any rect/circle backgrounds */

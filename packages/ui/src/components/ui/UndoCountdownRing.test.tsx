@@ -8,6 +8,9 @@ describe("UndoCountdownRing", () => {
     const html = renderToString(<UndoCountdownRing durationMs={10_000} />)
 
     expect(html).toContain(">9</span>")
+    expect(html).toContain("oc-undo-countdown-svg")
+    expect(html).toContain("oc-undo-countdown-digit")
+    expect(html).toContain("--oc-undo-countdown-size:15px")
     expect(html.match(/<circle/g)).toHaveLength(2)
     expect(html).toContain("var(--interactive-border)")
     expect(html).toContain("var(--primary-base)")
