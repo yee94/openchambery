@@ -207,6 +207,8 @@ export const resolveChatSessionTranscriptGate = (input: {
   /** Retained pending presentation or authoritative hosted-history prefix. */
   hasImmediateShell?: boolean
   hasRenderableSessionSnapshot: boolean
+  /** Current-scope cached bodies may paint while other rows still need filling. */
+  transcriptRecords?: readonly SessionMessageRecord[]
   prefetchStatus?: 'loading' | 'ready' | 'error'
   syncLoading: boolean
   /** User clicked retry on the settled load-error wall for this session. */
@@ -218,6 +220,10 @@ export const resolveChatSessionTranscriptGate = (input: {
   // and the P0 latch do not prove those rows have bodies. Only a renderable
   // snapshot may claim the first paint; retained user sends stay immediate.
   if (input.hasImmediateShell || (input.hasTranscriptShell && input.hasRenderableSessionSnapshot)) return 'pass'
+
+  if (input.transcriptRecords?.some((record) => record.info.role === 'user'
+    ? hasUserDisplayableParts(record.parts)
+    : record.parts.some((part) => part.type === 'tool' || (part.type === 'text' && part.text.trim().length > 0)))) return 'pass'
 
   // Retained content outranks both the skeleton and the failure wall: a
   // refetch that errors must not blank a transcript the user is reading.

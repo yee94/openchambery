@@ -1,5 +1,9 @@
 # Chat components
 
+## Cached transcript first paint
+
+`ChatContainer` passes current-scope transcript records into `resolveChatSessionTranscriptGate`. A cached visible user body, assistant text, or tool row paints immediately on re-entry even if another message is missing parts or a background pull fails. Metadata-only rows still use the cold skeleton. Repository completeness continues to drive background filling; it is not a whole-conversation visibility gate. No rows from a different session are used as placeholders.
+
 ## OpenCode response status presentation
 
 Composer Stop shows a spinner and is disabled until its abort request settles or a 10-second UI timeout expires, shared across compact and expanded web controls. A synchronous, runtime/surface/directory/session-scoped flight guard suppresses repeated clicks before React paints. Success, failure, or timeout releases only that flight; queue submission remains independently available. Timeout permits retry without claiming execution stopped or cancelling the underlying request. Late completion cannot release a newer flight.

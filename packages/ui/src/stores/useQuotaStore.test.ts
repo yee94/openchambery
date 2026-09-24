@@ -101,7 +101,7 @@ describe('useQuotaStore quota queries', () => {
     await useQuotaStore.getState().fetchProviderQuota('openai');
 
     const results = useQuotaStore.getState().results;
-    expect(() => results.find((entry) => entry.providerId === 'openai')).not.toThrow();
+    expect(results.find((entry) => entry.providerId === 'openai')).toBe(undefined);
     expect(results).toEqual([result('claude')]);
     expect(useQuotaStore.getState().error).toBeTruthy();
 

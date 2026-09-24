@@ -535,6 +535,19 @@ describe('resolveChatSessionTranscriptGate', () => {
     })).toBe('pass');
   });
 
+  test('reopening cached content does not hide the conversation while another row lacks a body', () => {
+    const cached = [{ info: { id: 'user', sessionID: 'ses_a', role: 'user', time: { created: 1 } },
+      parts: [{ id: 'p_user', messageID: 'user', sessionID: 'ses_a', type: 'text', text: 'Already loaded' }] },
+      { info: { id: 'assistant', sessionID: 'ses_a', role: 'assistant', time: { created: 2 } }, parts: [] }];
+    for (const prefetchStatus of ['loading', 'error'] as const) {
+      expect(resolveChatSessionTranscriptGate({
+        hasTranscriptShell: true, hasRenderableSessionSnapshot: false,
+        transcriptRecords: cached as Parameters<typeof mergePendingUserMessagePresentations>[0],
+        hasPaintedTranscript: false, prefetchStatus, syncLoading: prefetchStatus === 'loading',
+      })).toBe('pass');
+    }
+  });
+
   test('keeps the original safe gate for an ordinary empty session', () => {
     expect(resolveChatSessionTranscriptGate({
       hasTranscriptShell: false,

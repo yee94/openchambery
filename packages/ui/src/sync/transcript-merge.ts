@@ -401,6 +401,21 @@ function rebuildFromReducedState(
       historyOrdered.push(message)
     }
 
+    const firstExistingID = previous.pages.find((entry) => entry.messageOrder.length > 0)?.messageOrder[0]
+    const firstExisting = firstExistingID ? nextMessages.find((message) => message.id === firstExistingID) : undefined
+    if (firstExisting && historyOrdered.some((message) => message.time.created > firstExisting.time.created)) {
+      // A native cursor can fill a disconnect gap inside retained history.
+      // Such rows belong between the cached prefix and tail, not before both.
+      const byID = new Map(nextMessages.map((message) => [message.id, message]))
+      const existing = previous.pages.flatMap((entry) => entry.messageOrder)
+        .map((id) => byID.get(id)).filter((message): message is Message => Boolean(message))
+      return freezeSessionTranscriptData({
+        pages: [pageFromMessages("tail", insertPageMessagesByCreated(existing, historyOrdered), nextPart,
+          pageCursor, pageComplete, reduced.boundary?.loadedTurns ?? pageTurnCount, liveRevision)],
+        pageParams: [null],
+      })
+    }
+
     const historyPage = pageFromMessages(
       "history",
       historyOrdered,

@@ -654,6 +654,71 @@ describe("createQueryTranscriptRepository", () => {
     repo.destroy()
   })
 
+  test("hot revalidation reconciles untouched rows while preserving concurrent live rows and stale paint", async () => {
+    let finish!: (page: TranscriptTransportPage) => void
+    const repo = createQueryTranscriptRepository({
+      client, transport: TRANSPORT, generation: GENERATION,
+      probe: { getTransport: () => TRANSPORT, getGeneration: () => GENERATION },
+      fetcher: () => new Promise((resolve) => { finish = resolve }),
+    })
+    repo.apply(scope, { type: "http-page", purpose: "initial", page: transportPage([
+      { info: userMessage("msg_1"), parts: [textPart("p1", "msg_1", "old")] },
+      { info: assistantMessage("msg_2"), parts: [textPart("p2", "msg_2", "live")] },
+      { info: userMessage("msg_removed"), parts: [textPart("p3", "msg_removed", "removed upstream")] },
+    ], { complete: true }) })
+    const refresh = repo.ensureInitial(scope)
+    expect(repo.getTranscript(scope).messageOrder).toHaveLength(3)
+    repo.apply(scope, { type: "sse-event", event: {
+      type: "message.part.updated",
+      properties: { part: textPart("p2", "msg_2", "new live") },
+    } as Event })
+    finish(transportPage([
+      { info: userMessage("msg_1"), parts: [textPart("p1", "msg_1", "fresh")] },
+      { info: assistantMessage("msg_2"), parts: [textPart("p2", "msg_2", "old server")] },
+    ], { complete: true }))
+    await refresh
+    expect((repo.getParts(scope, "msg_1")[0] as { text: string }).text).toBe("fresh")
+    expect((repo.getParts(scope, "msg_2")[0] as { text: string }).text).toBe("new live")
+    expect(repo.getTranscript(scope).messageOrder).toEqual(["msg_1", "msg_2"])
+    repo.destroy()
+  })
+
+  test("concurrent automatic and explicit refresh share one authority pull and keep unchanged references", async () => {
+    let finish!: (page: TranscriptTransportPage) => void
+    let fetches = 0
+    const page = transportPage([
+      { info: userMessage("msg_1"), parts: [textPart("p1", "msg_1", "keep")] },
+    ], { complete: true })
+    const repo = createQueryTranscriptRepository({
+      client, transport: TRANSPORT, generation: GENERATION,
+      probe: { getTransport: () => TRANSPORT, getGeneration: () => GENERATION },
+      fetcher: () => { fetches += 1; return new Promise((resolve) => { finish = resolve }) },
+    })
+    repo.apply(scope, { type: "http-page", purpose: "initial", page })
+    const before = repo.getTranscript(scope)
+    const flights = [repo.ensureInitial(scope), repo.refreshFromAuthority(scope), repo.refreshFromAuthority(scope)]
+    expect(fetches).toBe(1)
+    finish(page)
+    await Promise.all(flights)
+    expect(repo.getMessage(scope, "msg_1")).toBe(before.messagesByID.msg_1)
+    expect(repo.getParts(scope, "msg_1")).toBe(before.partsByMessageID.msg_1)
+    repo.destroy()
+  })
+
+  test("disposing the repository retires a pending authority refresh", async () => {
+    let finish!: (page: TranscriptTransportPage) => void
+    const repo = createQueryTranscriptRepository({ client, transport: TRANSPORT, generation: GENERATION,
+      probe: { getTransport: () => TRANSPORT, getGeneration: () => GENERATION },
+      fetcher: () => new Promise((resolve) => { finish = resolve }),
+    })
+    repo.apply(scope, { type: "http-page", purpose: "initial", page: transportPage([{ info: userMessage("old") }], { complete: true }) })
+    const refresh = repo.refreshFromAuthority(scope)
+    repo.destroy()
+    finish(transportPage([{ info: userMessage("late") }], { complete: true }))
+    await refresh
+    expect(repo.getTranscript(scope).messageOrder).toEqual(["old"])
+  })
+
   test("hot ensureInitial keeps the prior transcript when the fetch fails", async () => {
     let fetches = 0
     const repo = createQueryTranscriptRepository({

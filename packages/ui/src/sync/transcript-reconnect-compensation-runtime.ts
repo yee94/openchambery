@@ -38,7 +38,7 @@ export function hasTranscriptReconnectCompensationController(): boolean {
 }
 
 /**
- * Disconnect hook: fix recovery checkpoints before replay merge.
+ * Disconnect hook: mark cached scopes stale before replay merge.
  * No-op when no Query controller is registered.
  */
 export function notifyTranscriptReconnectDisconnect(input: {

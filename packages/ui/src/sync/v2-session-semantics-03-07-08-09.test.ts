@@ -19,7 +19,6 @@ import {
   normalizeSessionProjectionMessage,
   normalizeSessionProjectionPage,
 } from "./session-projection-api"
-import { isUserAuthoredTurnBoundaryMessage } from "./session-transcript-recovery-checkpoint"
 import { INITIAL_STATE, type State } from "./types"
 import { applyTranscriptDirectoryEvent } from "./transcript-event-reducer"
 import {
@@ -60,7 +59,6 @@ describe("03 synthetic message semantics", () => {
     expect(fromGet!.info.description).toBe("task done")
     expect(fromGet!.parts.every((part) => (part as { synthetic?: boolean }).synthetic === true)).toBe(true)
     expect(isAuthoredUserTurnRecord(fromGet!.info, fromGet!.parts)).toBe(false)
-    expect(isUserAuthoredTurnBoundaryMessage(fromGet!.info, fromGet!.parts)).toBe(false)
 
     const eventID = "evt_abc123"
     const draft: {
@@ -127,8 +125,8 @@ describe("03 synthetic message semantics", () => {
       text: "done",
       time: { created: 2 },
     })!
-    expect(isUserAuthoredTurnBoundaryMessage(user.info, user.parts)).toBe(true)
-    expect(isUserAuthoredTurnBoundaryMessage(syn.info, syn.parts)).toBe(false)
+    expect(isAuthoredUserTurnRecord(user.info, user.parts)).toBe(true)
+    expect(isAuthoredUserTurnRecord(syn.info, syn.parts)).toBe(false)
   })
 })
 

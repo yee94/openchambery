@@ -3420,7 +3420,7 @@ export async function fetchMessagesForSession(
 
   const runtimeKey = getRuntimeKey()
   const limit = getInitialSessionMessageLimit()
-  const loadingKey = `${runtimeKey}:${resolvedDir}:${sessionID}:${limit}`
+  const loadingKey = JSON.stringify([getRuntimeTransportIdentity(), getRuntimeGeneration(), resolvedDir, sessionID, limit])
   if (!_sdk || !_childStores) {
     PENDING_MESSAGE_FETCHES.set(loadingKey, { sessionID, directory: resolvedDir })
     return
@@ -3526,6 +3526,10 @@ async function fetchMessagesForSessionInternal(
 
   let recordCount = 0
   try {
+    if (getTranscriptRepository()) {
+      await ensureTranscriptInitial(resolvedDir, sessionID)
+      recordCount = repository.getTranscript(scope).messageOrder.length
+    } else {
     const page = await fetchProductionTranscriptTransportPage({
       directory: resolvedDir,
       sessionID,
@@ -3542,6 +3546,7 @@ async function fetchMessagesForSessionInternal(
     })
     recordCount = page.records.length
     markSessionAuthorityRevalidated(resolvedDir, sessionID)
+    }
   } catch {
     // Preserve prior transcript on failure (Query request state carries error).
     return

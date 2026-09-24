@@ -36,7 +36,6 @@ import {
   ensureSessionMessagePage,
   readSessionTranscriptData,
   SessionMessageRuntimeStaleError,
-  sessionMessagePageQueryOptions,
   sessionTranscriptQueryKey,
   type SessionMessagePageFetcher,
   type SessionMessageRuntimeProbe,
@@ -87,7 +86,6 @@ import {
 } from "./transcript-repository"
 import { getInitialSessionTurnLimit } from "./session-message-policy"
 import { markSessionAuthorityRevalidated } from "./session-authority-revalidate"
-import { isTranscriptAuthorityRefreshInFlight } from "./transcript-authority-refresh-flight"
 import {
   recordTranscriptCommandDiagnostics,
   recordTranscriptDiagnostics,
@@ -792,6 +790,7 @@ export function createQueryTranscriptRepository(
     return false
   }
 
+  let destroyed = false
   const liveIdentityMatches = (captured: {
     directory: string
     sessionID: string
@@ -802,7 +801,7 @@ export function createQueryTranscriptRepository(
       { directory: captured.directory, sessionID: captured.sessionID },
       deps,
     )
-    return live.transport === captured.transport && live.generation === captured.generation
+    return !destroyed && live.transport === captured.transport && live.generation === captured.generation
   }
 
   const persistSettledRecord = (
@@ -891,7 +890,6 @@ export function createQueryTranscriptRepository(
 
   const fetchAuthorityTail = async (
     identity: ReturnType<typeof resolveScopeIdentity>,
-    options?: { fresh?: boolean },
   ): Promise<TranscriptTransportPage> => {
     if (!deps.fetcher) {
       throw new Error("Query transcript repository requires a fetcher for HTTP loads")
@@ -924,19 +922,7 @@ export function createQueryTranscriptRepository(
       sessionID: identity.sessionID,
       limit: deps.initialLimit ?? getInitialSessionTurnLimit(),
     }
-    // Hot enter-and-sync must not reuse the Infinity-staleTime transport page.
-    const httpPage = options?.fresh
-      ? await client.fetchQuery({
-        ...sessionMessagePageQueryOptions(
-          params,
-          pageFetcher,
-          identity.transport,
-          probe,
-          identity.generation,
-        ),
-        staleTime: 0,
-      })
-      : await ensureSessionMessagePage(
+    const httpPage = await ensureSessionMessagePage(
         params,
         pageFetcher,
         client,
@@ -1051,6 +1037,8 @@ export function createQueryTranscriptRepository(
     return run
   }
 
+  const refreshFlights = new Map<string, Promise<TranscriptData>>()
+
   const runAuthorityHotRevalidate = (
     scope: TranscriptScope,
     captured: ReturnType<typeof resolveScopeIdentity>,
@@ -1062,10 +1050,9 @@ export function createQueryTranscriptRepository(
     const readEpoch = captureInflightReadEpoch(flightKey)
     const run = (async () => {
       const startedAt = Date.now()
-      const capturedLiveRevision = repository.getTranscript(scope).liveRevision
       authorityFlights.set(flightKey, { status: "loading" })
       try {
-        const page = await fetchAuthorityTail(captured, { fresh: true })
+        await repository.refreshFromAuthority(scope)
         if (
           !liveIdentityMatches(captured)
           || getReasoningProjectionRevision() !== capturedProjectionRevision
@@ -1074,31 +1061,6 @@ export function createQueryTranscriptRepository(
           authorityFlights.delete(flightKey)
           return repository.getTranscript(scope)
         }
-        const liveRevision = repository.getTranscript(scope).liveRevision
-        // An in-flight user refresh (or a writer that dropped liveRevision
-        // below the capture) must not lose to a lagging hot page.
-        if (
-          liveRevision < capturedLiveRevision
-          || isTranscriptAuthorityRefreshInFlight(captured.sessionID, captured.directory)
-        ) {
-          authorityFlights.delete(flightKey)
-          return repository.getTranscript(scope)
-        }
-        repository.apply(scope, {
-          type: "http-page",
-          purpose: "reconcile-page",
-          page: {
-            records: page.records.map((record) => ({
-              info: record.info,
-              parts: record.parts,
-            })),
-            complete: false,
-            cursor: undefined,
-            turnCount: 0,
-          },
-          capturedLiveRevision,
-          liveRevision,
-        })
         markSessionAuthorityRevalidated(captured.directory, captured.sessionID, {
           transport: captured.transport,
           generation: captured.generation,
@@ -1935,12 +1897,19 @@ export function createQueryTranscriptRepository(
     },
 
     async refreshFromAuthority(scope) {
-      if (!deps.fetcher) {
+      const fetcher = deps.fetcher
+      if (!fetcher) {
         throw new Error(
           "Query transcript repository requires a fetcher for refreshFromAuthority",
         )
       }
       const identity = resolveScopeIdentity(scope, deps)
+      const key = scopeKey(identity)
+      const readEpoch = captureInflightReadEpoch(key)
+      const refreshKey = `${key}\n${readEpoch}\n${getReasoningProjectionRevision()}`
+      const existing = refreshFlights.get(refreshKey)
+      if (existing) return existing
+      const flight = (async () => {
       const capturedProjectionRevision = getReasoningProjectionRevision()
       const refreshDiffBefore = tryCaptureTranscriptCanonicalSnapshot(() =>
         repository.getTranscript(scope),
@@ -1954,13 +1923,13 @@ export function createQueryTranscriptRepository(
       const beforeParts: Record<string, readonly Part[] | undefined> = {
         ...beforeTranscript.partsByMessageID,
       }
-      const page = await deps.fetcher({
+      const page = await fetcher({
         directory: identity.directory,
         sessionID: identity.sessionID,
         limit: deps.initialLimit ?? getInitialSessionTurnLimit(),
         signal: new AbortController().signal,
       })
-      if (getReasoningProjectionRevision() !== capturedProjectionRevision) {
+      if (getReasoningProjectionRevision() !== capturedProjectionRevision || !isInflightReadCurrent(key, readEpoch)) {
         return repository.getTranscript(scope)
       }
       // Runtime/endpoint switch: discard the lagging GET against the captured
@@ -1976,6 +1945,8 @@ export function createQueryTranscriptRepository(
       }
       const live = repository.getTranscript(scope)
       const touched = collectRequestTouchedMessageIDs(beforeMessages, beforeParts, live)
+      const coverage = page.coverageMessageIDs ?? page.records.map((record) => record.info.id)
+      const hasCoverageOverlap = coverage.some((id) => live.messagesByID[id] !== undefined)
       // Official GUI reconcileFetched: GET is the page base; touched keep local;
       // incomplete tails keep earlier local rows outside this page's coverage.
       const reconciled = reconcileFetched({
@@ -2017,7 +1988,24 @@ export function createQueryTranscriptRepository(
           messageID,
         })
       }
+      // A disjoint tail has a gap before it. Retain the visible old rows but
+      // resume paging from the new native cursor, not the old exhausted chain.
+      if (live.boundary.kind === "unknown" || (!page.complete && !hasCoverageOverlap)) {
+        const canonical = readData(scope)
+        if (canonical?.pages.length) {
+          client.setQueryData(queryKeyFor(scope), {
+            ...canonical,
+            pages: canonical.pages.map((entry, index) => index === 0
+              ? { ...entry, cursor: page.complete ? null : page.cursor ?? null, complete: page.complete }
+              : entry),
+          })
+          notify(scope)
+        }
+      }
       const next = repository.getTranscript(scope)
+      markSessionAuthorityRevalidated(identity.directory, identity.sessionID, {
+        transport: identity.transport, generation: identity.generation,
+      })
       cacheBudget.noteScopeObserved(toCacheScope(scope))
       forgetPromotedInbox(identity.sessionID, next.messageOrder)
       try {
@@ -2038,6 +2026,13 @@ export function createQueryTranscriptRepository(
         // Diagnostics must never affect authority refresh.
       }
       return next
+      })()
+      refreshFlights.set(refreshKey, flight)
+      try {
+        return await flight
+      } finally {
+        if (refreshFlights.get(refreshKey) === flight) refreshFlights.delete(refreshKey)
+      }
     },
 
     async destructiveReset(scope) {
@@ -2190,6 +2185,8 @@ export function createQueryTranscriptRepository(
     },
 
     destroy() {
+      destroyed = true
+      refreshFlights.clear()
       for (const controller of controllers.values()) controller.destroy()
       controllers.clear()
       for (const unsub of cacheUnsubs.values()) unsub()
