@@ -132,7 +132,11 @@ const extractArchive = (archivePath, destination) => {
     return;
   }
   if (archivePath.endsWith('.tar.gz') || archivePath.endsWith('.tgz')) {
-    run('tar', ['-xzf', archivePath, '-C', destination]);
+    // Git Bash GNU tar treats "D:..." as a remote host. --force-local keeps the drive path local.
+    const args = process.platform === 'win32'
+      ? ['--force-local', '-xzf', archivePath, '-C', destination]
+      : ['-xzf', archivePath, '-C', destination];
+    run('tar', args);
     return;
   }
   throw new Error(`Unsupported opencode2 CLI archive: ${archivePath}`);
