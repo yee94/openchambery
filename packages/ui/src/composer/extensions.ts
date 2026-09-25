@@ -2,6 +2,7 @@ import {
     DRAFT_COMPOSER_REFERENCE_LIMITS,
     isValidDraftComposerCommandName,
     isValidDraftComposerCommandReference,
+    draftComposerSkillIdTokenPattern,
     isValidDraftComposerSkillName,
     isValidDraftComposerSessionID,
     type DraftComposerReference,
@@ -145,7 +146,7 @@ const COMPOSER_REFERENCE_EXTENSIONS = {
         }),
         payloadBudget: () => undefined,
         canonical: {
-            matcher: /\[skill:([A-Za-z0-9][A-Za-z0-9_-]*)\]/g,
+            matcher: draftComposerSkillIdTokenPattern(),
             resolveDisplay: (match) => composerTriggerIconDisplay(skillIconSpec(match[1], '@')),
             materialize: (match, display, start) => ({ id: `skill:${start}`, kind: 'skill', skillName: match[1], display, start, end: start + display.length }),
         },

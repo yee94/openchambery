@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [2.0.0-beta.14] - 2026-09-25
+
+这是 OpenCode 2 预览版。本次发布桌面、Android 安装包、同版本 Beta OTA，以及 iOS 内测 TestFlight。不进入外测组或稳定自动更新通道。
+
+### 移动端
+
+- `@` 技能列表现在显示副标题，搜索命中会高亮，字号比标题小一号。iOS 原生补全同样高亮并缩小副标题。
+- `@` 会话引用会带上会话 ID 和检索说明。OpenCode 2 按 `session_message` 读取转录，不再使用旧的 `message`/`part` 查询。检索说明不会出现在对话气泡、复制或编辑草稿里。
+- 中文等 Unicode 技能名可以正确作为 OpenCode 2 技能附件发送。
+
 ## [2.0.0-beta.13] - 2026-09-25
 
 这是 OpenCode 2 预览版。本次发布桌面、Android 安装包及同版本 Beta OTA；iOS 不上 TestFlight，不进入外测组或稳定自动更新通道。

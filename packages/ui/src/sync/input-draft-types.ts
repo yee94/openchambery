@@ -234,7 +234,13 @@ export const parseDraftMentions = (text: string, value: unknown): DraftMention[]
 }
 
 export const isValidDraftComposerSessionID = (value: unknown): value is string => isBoundedString(value, DRAFT_COMPOSER_REFERENCE_LIMITS.sessionIDLength) && /^[A-Za-z0-9_-]+$/.test(value)
-export const isValidDraftComposerSkillName = (value: unknown): value is string => isBoundedString(value, DRAFT_COMPOSER_REFERENCE_LIMITS.skillNameLength) && /^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(value)
+/**
+ * Skill invocation id is the directory basename OpenCode 2 looks up.
+ * Unicode names such as `绘画` are valid ids; spaces and token delimiters are not.
+ */
+export const DRAFT_COMPOSER_SKILL_ID_PATTERN = /^[^\s/\\[\]\r\n]+$/u
+export const draftComposerSkillIdTokenPattern = (): RegExp => /\[skill:([^\s/\\\]\r\n]+)\]/gu
+export const isValidDraftComposerSkillName = (value: unknown): value is string => isBoundedString(value, DRAFT_COMPOSER_REFERENCE_LIMITS.skillNameLength) && DRAFT_COMPOSER_SKILL_ID_PATTERN.test(value)
 export const isValidDraftComposerCommandName = (value: unknown): value is string => isBoundedString(value, DRAFT_COMPOSER_REFERENCE_LIMITS.commandNameLength) && /^[\p{L}\p{N}._/-]+$/u.test(value)
 export const isValidDraftComposerCommandReference = (value: unknown): value is string => isBoundedString(value, DRAFT_COMPOSER_REFERENCE_LIMITS.commandReferenceLength) && !/[\]\r\n]/u.test(value)
 

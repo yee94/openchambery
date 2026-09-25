@@ -3,6 +3,7 @@
  * Path/mention/data-URL helpers live here; CAS commit/rollback is separate.
  */
 import { materializeComposerReferenceTokens } from '@/composer/document'
+import { stripSessionMentionInstruction } from '@/composer/delivery'
 import { isSyntheticPart } from '@/lib/messages/synthetic'
 import { createUuid } from '@/lib/uuid'
 import type { AttachedFile } from '@/stores/types/sessionTypes'
@@ -181,7 +182,7 @@ export const buildSentMessageComposerRestoration = async (
   const fileParts = authored.filter((part) => part.type === 'file')
 
   // Preserve leading/trailing whitespace from authored text parts; join multi-part with \n.
-  let text = textParts.map(partText).join('\n')
+  let text = textParts.map((part) => stripSessionMentionInstruction(partText(part))).filter((value) => value.trim().length > 0).join('\n')
   const agents: AgentToken[] = []
   for (const part of agentParts) {
     const agent = agentTokenFromPart(part)

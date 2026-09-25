@@ -11,6 +11,10 @@ describe('normalizeUserDisplayParts', () => {
       ...(synthetic !== undefined ? { synthetic } : {}),
     } as Part;
     expect(normalizeUserDisplayParts([authored, context])).toEqual([authored]);
+    expect(normalizeUserDisplayParts([{
+      type: 'text',
+      text: `${(authored as { text: string }).text}\n${(context as { text: string }).text}`,
+    } as Part])).toEqual([authored]);
     expect(hasUserDisplayableParts([context])).toBe(false);
     expect(context).toHaveProperty('text', expect.stringContaining('sqlite3'));
   });

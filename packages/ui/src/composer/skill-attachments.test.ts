@@ -9,5 +9,6 @@ describe('V2 skill attachments', () => {
 
     it('does not turn arbitrary slash text or display labels into skill ids', () => {
         expect(skillAttachmentsFromText('/unknown [skill:Git Release] ordinary text')).toEqual([]);
+        expect(skillAttachmentsFromText('@绘画 [skill:绘画]')).toEqual([{ id: '绘画', name: '绘画' }]);
     });
 });

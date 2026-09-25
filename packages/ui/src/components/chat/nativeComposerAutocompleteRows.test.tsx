@@ -10,7 +10,7 @@ import {
 
 const mocks = vi.hoisted(() => {
   const commands: never[] = [];
-  const skills: never[] = [];
+  const skills: Array<{ name: string; scope: string; description?: string }> = [];
   return {
     t: (key: string) => key,
     allowCommand: () => true,
@@ -257,5 +257,34 @@ describe('native composer autocomplete JS channel', () => {
     expect(document.body.querySelector('[class*="z-[100]"]')).not.toBeNull();
     expect(container.querySelector('[data-renders]')?.getAttribute('data-renders')).not.toBe('25');
     root.unmount();
+  });
+
+  test('mobile skill rows show a highlighted subtitle smaller than the title', async () => {
+    mocks.skillsQuery.data = [{
+      name: '绘画',
+      scope: 'user',
+      description: 'paint with an image model',
+    }];
+    const [, { FileMentionAutocomplete }] = await loadCatalogs();
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    await flush(root, (
+      <FileMentionAutocomplete
+        searchQuery="paint"
+        onFileSelect={mocks.noop}
+        onSkillSelect={mocks.noop}
+        onClose={mocks.noop}
+      />
+    ));
+
+    const subtitle = document.body.querySelector('.typography-micro');
+    expect(subtitle?.textContent).toBe('paint with an image model');
+    expect(subtitle?.querySelector('mark')?.textContent).toBe('paint');
+    expect(subtitle?.className).toContain('typography-micro');
+    expect(subtitle?.className).not.toContain('typography-meta');
+    root.unmount();
+    mocks.skillsQuery.data = [];
   });
 });

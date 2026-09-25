@@ -1,5 +1,5 @@
 import { skillAttachmentsFromText } from '@/composer/skill-attachments'
-import type { DraftKey } from './input-draft-types'
+import { isValidDraftComposerSkillName, type DraftKey } from './input-draft-types'
 import { buildSentMessageComposerRestoration, commitComposerRestoration, rollbackComposerRestoration } from './message-composer-restoration'
 import { captureInboxRuntimeScope, isCurrentInboxRuntimeScope, forgetUnpromotedInbox } from './session-inbox-overlay'
 import { cancelSessionInbox, fetchSessionInboxAuthority } from './session-prompt-api'
@@ -29,7 +29,7 @@ export async function editSessionInboxIntoDraft(input: {
     return value
   }
   for (const skill of entries(item.payload.skills)) {
-    if (typeof skill.id !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(skill.id)) throw new Error('inbox-edit-invalid-skill')
+    if (!isValidDraftComposerSkillName(skill.id)) throw new Error('inbox-edit-invalid-skill')
     if (!skillAttachmentsFromText(text).some((entry) => entry.id === skill.id)) text += `\n[skill:${skill.id}]`
   }
   parts.push({ type: 'text', text })

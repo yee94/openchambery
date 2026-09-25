@@ -532,8 +532,11 @@ export const FileMentionAutocomplete = React.forwardRef<FileMentionHandle, FileM
                         <span className="flex-shrink-0 typography-meta text-muted-foreground">{skill.scope}</span>
                       ) : null}
                     </div>
-                    {skill.description && !isMobile ? (
-                      <div className="pl-5.5 typography-meta text-muted-foreground truncate">
+                    {skill.description ? (
+                      <div className={cn(
+                        'pl-5.5 truncate text-muted-foreground',
+                        isMobile ? 'typography-micro' : 'typography-meta',
+                      )}>
                         {highlightAutocompleteQuery(skill.description, normalizedSearchQuery)}
                       </div>
                     ) : null}
