@@ -682,7 +682,18 @@ class OpenChamberComposerPlugin: CAPPlugin, CAPBridgedPlugin, OpenChamberCompose
             let icon = (object["iconBase64"] as? String).flatMap { OpenChamberComposerView.decodePreviewImage($0) }
             return ComposerAutocompleteRow(id: id, title: title, subtitle: subtitle, badge: badge, icon: icon)
         } ?? []
-        return ComposerAutocompleteState(open: open, highlightedIndex: highlighted, rows: rows)
+        let query = Self.jsString(raw, "query")
+        let highlightHex = Self.jsString(raw, "highlightColor")
+        let highlightColor = highlightHex.isEmpty
+            ? UIColor.label
+            : OpenChamberComposerView.parseColor(highlightHex)
+        return ComposerAutocompleteState(
+            open: open,
+            highlightedIndex: highlighted,
+            query: query,
+            highlightColor: highlightColor,
+            rows: rows
+        )
     }
 
     private static func parseCitationRanges(_ raw: JSArray) -> [NSRange] {

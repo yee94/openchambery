@@ -11,9 +11,17 @@ struct ComposerAutocompleteRow {
 struct ComposerAutocompleteState {
     let open: Bool
     let highlightedIndex: Int
+    let query: String
+    let highlightColor: UIColor
     let rows: [ComposerAutocompleteRow]
 
-    static let closed = ComposerAutocompleteState(open: false, highlightedIndex: 0, rows: [])
+    static let closed = ComposerAutocompleteState(
+        open: false,
+        highlightedIndex: 0,
+        query: "",
+        highlightColor: .label,
+        rows: []
+    )
 }
 
 /// Geometry shared with `computeMobileAutocompleteMaxHeight` in
@@ -61,6 +69,8 @@ final class OpenChamberComposerAutocompleteView: UIView, UITableViewDelegate, UI
     private let tableView = UITableView(frame: .zero, style: .plain)
     private var rows: [ComposerAutocompleteRow] = []
     private var highlightedIndex = 0
+    private var query = ""
+    private var highlightColor: UIColor = .label
     private var appearanceIsDark = true
 
     var contentHeight: CGFloat {
@@ -155,6 +165,8 @@ final class OpenChamberComposerAutocompleteView: UIView, UITableViewDelegate, UI
 
     func apply(_ state: ComposerAutocompleteState, expanded: Bool) {
         rows = state.rows
+        query = state.query
+        highlightColor = state.highlightColor
         highlightedIndex = rows.isEmpty ? 0 : min(max(0, state.highlightedIndex), rows.count - 1)
         let visible = state.open && expanded && !rows.isEmpty
         isHidden = !visible
@@ -198,7 +210,13 @@ final class OpenChamberComposerAutocompleteView: UIView, UITableViewDelegate, UI
             for: indexPath
         ) as? ComposerAutocompleteCell ?? ComposerAutocompleteCell()
         if let row = rows[safe: indexPath.row] {
-            cell.apply(row, highlighted: indexPath.row == highlightedIndex, isDark: appearanceIsDark)
+            cell.apply(
+                row,
+                highlighted: indexPath.row == highlightedIndex,
+                isDark: appearanceIsDark,
+                query: query,
+                highlightColor: highlightColor
+            )
         }
         return cell
     }
@@ -285,7 +303,13 @@ private final class ComposerAutocompleteCell: UITableViewCell {
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError("init(coder:) not used") }
 
-    func apply(_ row: ComposerAutocompleteRow, highlighted: Bool, isDark: Bool) {
+    func apply(
+        _ row: ComposerAutocompleteRow,
+        highlighted: Bool,
+        isDark: Bool,
+        query: String,
+        highlightColor: UIColor
+    ) {
         let color = ComposerAutocompleteMetrics.chromeColor(isDark: isDark)
         let muted = color.withAlphaComponent(0.58)
         iconView.image = row.icon?.withRenderingMode(.alwaysTemplate)
@@ -295,13 +319,17 @@ private final class ComposerAutocompleteCell: UITableViewCell {
             row.title,
             font: .systemFont(ofSize: 15, weight: .semibold),
             color: color,
+            query: query,
+            highlightColor: highlightColor,
             maxWidth: 280
         )
         titleView.isHidden = row.title.isEmpty
         subtitleView.image = Self.raster(
             row.subtitle,
-            font: .systemFont(ofSize: 12, weight: .regular),
+            font: .systemFont(ofSize: 11, weight: .regular),
             color: muted,
+            query: query,
+            highlightColor: highlightColor,
             maxWidth: 280
         )
         subtitleView.isHidden = row.subtitle.isEmpty
@@ -309,6 +337,8 @@ private final class ComposerAutocompleteCell: UITableViewCell {
             row.badge.uppercased(),
             font: .systemFont(ofSize: 10, weight: .bold),
             color: muted,
+            query: "",
+            highlightColor: highlightColor,
             maxWidth: 88
         )
         badgeView.isHidden = row.badge.isEmpty
@@ -321,17 +351,40 @@ private final class ComposerAutocompleteCell: UITableViewCell {
 
     /// Same path as the sprite icons: a bitmap, not a UILabel. Glass vibrancy
     /// does not eat UIImageView the way it eats UILabel.
-    private static func raster(_ text: String, font: UIFont, color: UIColor, maxWidth: CGFloat) -> UIImage? {
+    private static func raster(
+        _ text: String,
+        font: UIFont,
+        color: UIColor,
+        query: String,
+        highlightColor: UIColor,
+        maxWidth: CGFloat
+    ) -> UIImage? {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return nil }
-        let attrs: [NSAttributedString.Key: Any] = [
+        let attributed = NSMutableAttributedString(string: trimmed, attributes: [
             .font: font,
             .foregroundColor: color,
-        ]
-        let bound = (trimmed as NSString).boundingRect(
+        ])
+        let needle = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !needle.isEmpty {
+            let haystack = trimmed as NSString
+            var search = NSRange(location: 0, length: haystack.length)
+            while search.location < haystack.length {
+                let found = haystack.range(
+                    of: needle,
+                    options: [.caseInsensitive, .diacriticInsensitive],
+                    range: search
+                )
+                if found.location == NSNotFound { break }
+                attributed.addAttribute(.foregroundColor, value: highlightColor, range: found)
+                let next = found.location + max(found.length, 1)
+                if next >= haystack.length { break }
+                search = NSRange(location: next, length: haystack.length - next)
+            }
+        }
+        let bound = attributed.boundingRect(
             with: CGSize(width: maxWidth, height: font.lineHeight + 4),
             options: [.usesLineFragmentOrigin, .truncatesLastVisibleLine],
-            attributes: attrs,
             context: nil
         )
         let size = CGSize(
@@ -340,10 +393,9 @@ private final class ComposerAutocompleteCell: UITableViewCell {
         )
         let renderer = UIGraphicsImageRenderer(size: size)
         return renderer.image { _ in
-            (trimmed as NSString).draw(
+            attributed.draw(
                 with: CGRect(origin: .zero, size: size),
                 options: [.usesLineFragmentOrigin, .truncatesLastVisibleLine],
-                attributes: attrs,
                 context: nil
             )
         }

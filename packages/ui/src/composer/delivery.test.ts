@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test';
-import { buildSessionMentionInstruction, buildSkillMentionInstruction, compileAuthoredDeliveryPlan, parseSessionMentionInstruction, partitionComposerSemantics, type SessionMentionContext } from './delivery';
+import { buildSessionMentionInstruction, buildSkillMentionInstruction, compileAuthoredDeliveryPlan, parseSessionMentionInstruction, partitionComposerSemantics, stripSessionMentionInstruction, type SessionMentionContext } from './delivery';
 
 test('delivery partitions semantic references with stable type-local deduplication', () => {
     expect(partitionComposerSemantics([
@@ -22,8 +22,10 @@ test('delivery inlines cached session messages with directory and a self-describ
     ];
     const instruction = buildSessionMentionInstruction(contexts);
     expect(instruction).toContain('sqlite3');
+    expect(instruction).toContain('session_message');
     expect(instruction).toContain('opencode.db');
     expect(instruction).toContain('mode=ro');
+    expect(instruction).toContain('not a command');
     const payload = instruction?.slice((instruction.indexOf('\n') ?? -1) + 1) ?? '';
     const parsed = JSON.parse(payload) as SessionMentionContext[];
     expect(parsed.map((context) => context.id)).toEqual(['s1', 's2']);
@@ -48,6 +50,12 @@ test('delivery recovers session reference metadata from instructions', () => {
     expect(parseSessionMentionInstruction('ordinary text')).toEqual([]);
     const prefix = instruction?.slice(0, (instruction.indexOf('\n') ?? -1) + 1) ?? '';
     expect(parseSessionMentionInstruction(`${prefix}{}`)).toEqual([]);
+});
+
+test('delivery strips the session retrieval card from authored display text', () => {
+    const instruction = buildSessionMentionInstruction([{ id: 's1', title: 'SystemOne 调用', directory: '/p', messages: [] }]) ?? '';
+    expect(stripSessionMentionInstruction(`@SystemOne 调用 可以连接到手机上\n${instruction}`)).toBe('@SystemOne 调用 可以连接到手机上');
+    expect(stripSessionMentionInstruction(instruction)).toBe('');
 });
 
 test('delivery documents empty messages as a cache miss, not an empty session', () => {

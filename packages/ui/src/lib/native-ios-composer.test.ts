@@ -173,7 +173,7 @@ describe('native iOS composer contract', () => {
       chipRanges: [{ start: 0, end: 8, triggerLength: 2, color: '#22c55e' }],
     }))).toBe(false);
     expect(nativeComposerStatesEqual(state(), state({
-      autocomplete: { open: true, highlightedIndex: 0, rows: [{ id: 'a', title: '/undo', subtitle: '', badge: '', iconBase64: '' }] },
+      autocomplete: { open: true, highlightedIndex: 0, query: '', highlightColor: '', rows: [{ id: 'a', title: '/undo', subtitle: '', badge: '', iconBase64: '' }] },
     }))).toBe(false);
   });
 

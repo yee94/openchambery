@@ -1,4 +1,4 @@
-import { DRAFT_COMPOSER_TRIGGER_ICON_SLOT } from '@/sync/input-draft-types';
+import { DRAFT_COMPOSER_TRIGGER_ICON_SLOT, draftComposerSkillIdTokenPattern } from '@/sync/input-draft-types';
 import { stripComposerTriggerIconSlot } from '@/composer/inline-visual';
 import { buildAgentHref, buildSkillHref } from '@/lib/messages/inlineMessageLinks';
 import type {
@@ -12,7 +12,7 @@ export const MESSAGE_REFERENCE_CLASS = 'text-[var(--primary)]';
 const IMAGE_FILENAME_PATTERN = /\.(?:png|jpe?g|gif|webp|svg|avif|bmp|heic|heif|tiff?)$/i;
 /** Optional reserved icon em-space between `/` and the name (composer chip source). */
 const SLASH_TOKEN_PATTERN = /(^|\s)\/(\u2003)?([A-Za-z0-9][A-Za-z0-9_-]*)/g;
-const CANONICAL_SKILL_PATTERN = /\[skill:([A-Za-z0-9][A-Za-z0-9_-]*)\]/g;
+const CANONICAL_SKILL_PATTERN = draftComposerSkillIdTokenPattern();
 const CANONICAL_COMMAND_PATTERN = /\[command:([^\]\r\n]+)\]/g;
 const SESSION_TOKEN_PATTERN = /(^|[\s([{])(@session:([A-Za-z0-9_-]+))(?=$|[\s)\]},.!?;:])/g;
 const MENTION_PATTERN = /@([^\s]+)/g;
@@ -89,7 +89,7 @@ export const skillReferenceStrategy: MessageReferenceStrategy = {
         }
 
         const agentNames = context.agentNames;
-        const atPattern = /(^|\s)@(\u2003)?([A-Za-z0-9][A-Za-z0-9_-]*)(?=$|[\s)\]},.!?;:])/g;
+        const atPattern = /(^|\s)@(\u2003)?([^\s)\]},.!?;:]+)(?=$|[\s)\]},.!?;:])/gu;
         while ((match = atPattern.exec(text)) !== null) {
             const slot = match[2] ?? '';
             const token = match[3] || '';

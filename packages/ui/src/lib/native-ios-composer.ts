@@ -63,12 +63,17 @@ export type NativeIosComposerSuggestionRow = {
 export type NativeIosComposerAutocomplete = {
   open: boolean;
   highlightedIndex: number;
+  /** Active `/` or `@` query, so native can highlight the same match as web. */
+  query: string;
+  highlightColor: string;
   rows: NativeIosComposerSuggestionRow[];
 };
 
 export const emptyNativeComposerAutocomplete = (): NativeIosComposerAutocomplete => ({
   open: false,
   highlightedIndex: 0,
+  query: '',
+  highlightColor: '',
   rows: [],
 });
 
@@ -333,6 +338,8 @@ export const nativeComposerAutocompleteEqual = (
 ): boolean => (
   left.open === right.open
   && left.highlightedIndex === right.highlightedIndex
+  && left.query === right.query
+  && left.highlightColor === right.highlightColor
   && left.rows.length === right.rows.length
   && left.rows.every((row, index) => {
     const other = right.rows[index];

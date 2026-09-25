@@ -1,4 +1,5 @@
 import type { Part } from '@/lib/opencode/v2-types';
+import { stripSessionMentionInstruction } from '@/composer/delivery';
 import { stripSystemReminders } from '@/lib/systemReminder';
 import { isCodeSelectionFilePart } from '../attachmentCitations';
 import { isEmptyTextPart } from './partUtils';
@@ -104,33 +105,42 @@ const isCompactionCommandText = (text: string): boolean => {
 
 export const normalizeUserDisplayParts = (parts: Part[]): Part[] => {
     return parts
-        .filter((part) => {
+        .flatMap((part) => {
             if (part.type === 'compaction') {
-                return false;
+                return [];
             }
             if (part.type === 'text') {
                 const text = (part as { text?: unknown }).text;
-                if (typeof text === 'string' && (
-                    isSessionGoalContinuationText(text)
-                    || isCompactionCommandText(text)
-                    || text.trimStart().startsWith(SESSION_REFERENCE_CONTEXT_PREFIX)
-                    || (text.includes('<system-reminder>') && stripSystemReminders(text).length === 0)
-                )) {
-                    return false;
+                if (typeof text === 'string') {
+                    const visible = stripSessionMentionInstruction(text);
+                    if (
+                        visible.trim().length === 0
+                        || isSessionGoalContinuationText(visible)
+                        || isCompactionCommandText(visible)
+                        || visible.trimStart().startsWith(SESSION_REFERENCE_CONTEXT_PREFIX)
+                        || (visible.includes('<system-reminder>') && stripSystemReminders(visible).length === 0)
+                    ) {
+                        return [];
+                    }
+                    if (visible !== text) {
+                        part = { ...part, text: visible } as Part;
+                    }
                 }
             }
             const synthetic = (part as { synthetic?: boolean }).synthetic === true;
-            if (!synthetic) return true;
-            if (part.type !== 'text') return false;
+            if (!synthetic) return [part];
+            if (part.type !== 'text') return [];
             const text = (part as { text?: unknown }).text;
             if (typeof text !== 'string') {
-                return false;
+                return [];
             }
 
             const normalizedText = text.trimStart();
             return shouldKeepSyntheticUserText(text)
                 || normalizedText.startsWith(GITHUB_ISSUE_CONTEXT_PREFIX)
-                || normalizedText.startsWith(GITHUB_PR_CONTEXT_PREFIX);
+                || normalizedText.startsWith(GITHUB_PR_CONTEXT_PREFIX)
+                ? [part]
+                : [];
         })
         .map((part) => {
             const rawPart = part as Record<string, unknown>;

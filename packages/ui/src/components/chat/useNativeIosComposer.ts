@@ -118,6 +118,7 @@ export type UseNativeIosComposerArgs = {
   autocompleteOpen?: boolean;
   autocompleteHighlightedIndex?: number;
   autocompleteRows?: readonly ComposerAutocompleteListRow[];
+  autocompleteQuery?: string;
   /** JS-authored caret to apply with forceText (accept/insert). */
   caret?: number;
   /** Web highlight parts; native paints trigger-icon chips from these. */
@@ -335,11 +336,12 @@ export function useNativeIosComposer(args: UseNativeIosComposerArgs): boolean {
   const autocompleteRows = args.autocompleteRows ?? EMPTY_AUTOCOMPLETE_ROWS;
   const autocompleteOpen = args.autocompleteOpen === true;
   const autocompleteHighlightedIndex = args.autocompleteHighlightedIndex ?? 0;
-  const suggestionSignature = autocompleteRowSignature(
+  const autocompleteQuery = args.autocompleteQuery ?? '';
+  const suggestionSignature = `${autocompleteRowSignature(
     autocompleteRows,
     autocompleteOpen,
     autocompleteHighlightedIndex,
-  );
+  )}\0${autocompleteQuery}`;
   useEffect(() => {
     if (!available) return;
     let cancelled = false;
@@ -361,6 +363,8 @@ export function useNativeIosComposer(args: UseNativeIosComposerArgs): boolean {
       const next: NativeIosComposerAutocomplete = {
         open: rows.length > 0,
         highlightedIndex: Math.max(0, Math.min(autocompleteHighlightedIndex, Math.max(rows.length - 1, 0))),
+        query: autocompleteQuery,
+        highlightColor: resolveCssVarToHex('--primary-base') || resolveCssVarToHex('--primary'),
         rows,
       };
       if (nativeComposerAutocompleteEqual(autocompleteRef.current, next)) return;

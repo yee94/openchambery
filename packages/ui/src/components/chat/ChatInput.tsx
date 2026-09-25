@@ -6715,6 +6715,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
         ),
         autocompleteHighlightedIndex: nativeSuggestionHighlight,
         autocompleteRows: nativeSuggestionRows,
+        autocompleteQuery: showFileMention ? mentionQuery : commandQuery,
         caret: cursorPosRef.current,
         onAutocompleteAccept: handleNativeAutocompleteAccept,
         onAutocompleteDismiss: handleNativeAutocompleteDismiss,
