@@ -54,7 +54,25 @@ mock.module('@/lib/runtime-switch', () => ({
   },
 }));
 
-const { refreshDesktopHostCandidates } = await import('./desktopRelayRestore');
+const { desktopRelayApiBaseUrl, refreshDesktopHostCandidates } = await import('./desktopRelayRestore');
+
+describe('desktopRelayApiBaseUrl', () => {
+  test('uses the shell loopback when packaged UI origin is null', () => {
+    const originalWindow = globalThis.window;
+    Object.defineProperty(globalThis, 'window', {
+      configurable: true,
+      value: {
+        location: { origin: 'null', href: 'openchamber-ui://app/index.html' },
+        __OPENCHAMBER_LOCAL_ORIGIN__: 'http://127.0.0.1:57123',
+      },
+    });
+    try {
+      expect(desktopRelayApiBaseUrl()).toBe('http://127.0.0.1:57123');
+    } finally {
+      Object.defineProperty(globalThis, 'window', { configurable: true, value: originalWindow });
+    }
+  });
+});
 
 const relayHost = {
   id: 'host-1',

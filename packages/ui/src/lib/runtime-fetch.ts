@@ -346,6 +346,32 @@ const appendPathQuery = (path: string, query?: RuntimeUrlQuery): string => {
   return `${url.pathname}${url.search}`;
 };
 
+const readInjectedOrigin = (key: '__OPENCHAMBER_LOCAL_ORIGIN__' | '__OPENCHAMBER_API_BASE_URL__'): string => {
+  if (typeof window === 'undefined') return '';
+  const value = (window as typeof window & Partial<Record<typeof key, string>>)[key];
+  return typeof value === 'string' ? value.trim() : '';
+};
+
+const sameParsedOrigin = (url: URL, base: string): boolean => {
+  if (!base) return false;
+  try {
+    return url.origin === new URL(base).origin;
+  } catch {
+    return false;
+  }
+};
+
+// Packaged desktop UI is `openchamber-ui://` (`location.origin` is `"null"`),
+// while the SDK still addresses the injected loopback shell. Those absolute
+// calls are this runtime, not an external host. Tunnel them; leaving them on
+// the network hits local OpenCode and 404s remote sessions.
+const isRelayRuntimeAbsoluteUrl = (url: URL): boolean => {
+  if (!shouldResolveApiPath(url.pathname)) return false;
+  if (isCurrentWindowUrl(url) || isActiveRuntimeServiceUrl(url)) return true;
+  return sameParsedOrigin(url, readInjectedOrigin('__OPENCHAMBER_LOCAL_ORIGIN__'))
+    || sameParsedOrigin(url, readInjectedOrigin('__OPENCHAMBER_API_BASE_URL__'));
+};
+
 const extractRelayPath = (input: string | URL | Request, query?: RuntimeUrlQuery): string | null => {
   const raw = input instanceof Request ? input.url : input.toString();
   if (!isAbsoluteUrl(raw)) {
@@ -354,7 +380,7 @@ const extractRelayPath = (input: string | URL | Request, query?: RuntimeUrlQuery
   }
   try {
     const url = new URL(raw);
-    if (!isCurrentWindowUrl(url) || !shouldResolveApiPath(url.pathname)) return null;
+    if (!isRelayRuntimeAbsoluteUrl(url)) return null;
     appendRuntimeQuery(url, query);
     return `${url.pathname}${url.search}`;
   } catch {

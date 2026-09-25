@@ -1148,6 +1148,12 @@ export function createEventPipeline(input: EventPipelineInput): EventPipeline {
     if (transport === "sse") {
       return "sse"
     }
+    // Relay auto follows the mobile path (SSE + bearer). Desktop WebSocket
+    // upgrades close over the tunnel, so assistant deltas never arrive while
+    // a phone on the same host still works. Explicit `ws` is unchanged.
+    if (isRelayModeActive()) {
+      return "sse"
+    }
     return wsFallbackUntil > Date.now() ? "sse" : "ws"
   }
 

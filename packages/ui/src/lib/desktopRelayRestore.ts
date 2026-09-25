@@ -29,6 +29,39 @@ const isDirectTransportUsable = (status: string): boolean =>
 
 let candidateRefreshInFlight = false;
 
+const readShellLocalOrigin = (): string => {
+  if (typeof window === 'undefined') return '';
+  const injected = window.__OPENCHAMBER_LOCAL_ORIGIN__;
+  return typeof injected === 'string' ? injected.trim() : '';
+};
+
+const isHttpOrigin = (value: string): boolean => {
+  if (!value || value === 'null') return false;
+  try {
+    const url = new URL(value);
+    return (url.protocol === 'http:' || url.protocol === 'https:') && url.origin !== 'null';
+  } catch {
+    return false;
+  }
+};
+
+/**
+ * Virtual API base for a desktop relay client.
+ * Packaged UI (`openchamber-ui://`) reports `location.origin` as `"null"`,
+ * which makes the URL resolver throw and leaves SDK calls on the injected
+ * loopback — those then miss the tunnel and 404 against local OpenCode.
+ * Prefer a real HTTP origin (window, else the shell loopback). runtimeFetch
+ * tunnels that origin while relay is active.
+ */
+export const desktopRelayApiBaseUrl = (): string => {
+  if (typeof window === 'undefined') return '';
+  const windowOrigin = window.location.origin;
+  if (isHttpOrigin(windowOrigin)) return windowOrigin;
+  const local = readShellLocalOrigin();
+  if (isHttpOrigin(local)) return local;
+  return '';
+};
+
 /**
  * Background candidate refresh for a relay-connected desktop host: ask the
  * server (over the live authenticated transport) for its CURRENT LAN addresses,
@@ -153,7 +186,7 @@ export const restoreDesktopRelayRuntime = async (targetHostId?: string): Promise
   };
   const switchToRelay = () => {
     switchRuntimeEndpoint({
-      apiBaseUrl: typeof window !== 'undefined' ? window.location.origin : '',
+      apiBaseUrl: desktopRelayApiBaseUrl(),
       clientToken: host.clientToken || null,
       runtimeKey,
       relay: host.relay ?? undefined,

@@ -39,7 +39,8 @@ Relay is not a separate link format: it is one transport candidate inside the un
 ## What travels the tunnel
 
 Everything a client normally sends to the single OpenChamber origin:
-- **HTTP** — REST endpoints and proxied OpenCode SDK calls under `/api/*`, plus `/auth/*` and `/health`.
+- **HTTP** — REST endpoints and proxied OpenCode SDK calls under `/api/*`, plus `/auth/*` and `/health`. On a packaged desktop client the UI origin is `openchamber-ui://` (`location.origin` is `"null"`) while the SDK still addresses the injected loopback. Relay mode tunnels those shell-local absolute `/api` `/auth` `/health` URLs; they must not fall through to the local OpenCode process.
+- **Events** — relay `auto` uses SSE (bearer), the same path mobile uses. Desktop WebSocket upgrades over the tunnel close and drop assistant deltas; an explicit `ws` setting is unchanged.
 - **SSE** — streamed responses opened through `runtimeFetch`, including `/api/openchamber/events` and SDK global SSE. Relay carries these HTTP response body frames through the tunnel.
 - **WebSocket** — the endpoints that use a real socket (the global event stream on platforms that support WS, terminal I/O, dictation, and Preview/Browser HMR under `/api/preview/proxy/<id>/...`).
 

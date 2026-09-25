@@ -7,7 +7,7 @@ import {
   type DesktopHost,
   type HostProbeResult,
 } from '@/lib/desktopHosts';
-import { scheduleDesktopHostCandidateRefresh } from '@/lib/desktopRelayRestore';
+import { desktopRelayApiBaseUrl, scheduleDesktopHostCandidateRefresh } from '@/lib/desktopRelayRestore';
 import {
   adoptRelayTunnel,
 } from '@/lib/relay/runtime-tunnel';
@@ -76,7 +76,7 @@ export const switchDesktopHost = async (
       }, liveTunnel);
     }
     switchRuntimeEndpoint({
-      apiBaseUrl: typeof window !== 'undefined' ? window.location.origin : '',
+      apiBaseUrl: desktopRelayApiBaseUrl(),
       clientToken: host.clientToken || null,
       runtimeKey: runtimeKeyForDesktopHost(host),
       relay,

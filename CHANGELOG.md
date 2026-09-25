@@ -4,7 +4,13 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
-## [2.0.0-beta.14] - 2026-09-25
+## [2.0.0-beta.15] - 2026-09-25
+
+这是 OpenCode 2 预览版。本次发布桌面、Android 安装包、同版本 Beta OTA，以及 iOS 内测 TestFlight。不进入外测组或稳定自动更新通道。
+
+### 桌面
+
+- PC 通过 Relay 连接另一台实例时，会话和消息会进隧道，不再打到本机 OpenCode 导致 404。消息流在 Relay 下改走 SSE，和移动端一致，助手回复可以正常出现。
 
 这是 OpenCode 2 预览版。本次发布桌面、Android 安装包、同版本 Beta OTA，以及 iOS 内测 TestFlight。不进入外测组或稳定自动更新通道。
 
