@@ -6,6 +6,7 @@ import {
   setRuntimeUrlResolver,
 } from './runtime-url';
 import { setLocalRuntimeUrlAuthToken, setRuntimeBearerToken, setRuntimeExtraHeaders, setRuntimeUrlAuthToken } from './runtime-auth';
+import { adoptRelayTunnel, deactivateRelayTunnel } from './relay/runtime-tunnel';
 
 describe('createRuntimeUrlResolver', () => {
   const withWindow = <T>(value: unknown, callback: () => T): T => {
@@ -96,6 +97,31 @@ describe('createRuntimeUrlResolver', () => {
         expect(ws.searchParams.get('url')).toBe('wss://remote.example/api/global/event/ws');
       });
     } finally {
+      setRuntimeExtraHeaders(null);
+    }
+  });
+
+  test('does not wrap realtime URLs through the local proxy while relay is active', () => {
+    setRuntimeExtraHeaders({ 'CF-Access-Client-Id': 'client-id' });
+    adoptRelayTunnel({ relayUrl: 'wss://relay.example', serverId: 'server-a', hostEncPubJwk: {} }, {
+      fetch: async () => new Response(null, { status: 204 }),
+      openWebSocket: () => { throw new Error('unused'); },
+      getStatus: () => ({ state: 'connected' }),
+      subscribeStatus: () => () => undefined,
+      close: () => undefined,
+    });
+    try {
+      withWindow({
+        location: { origin: 'null', href: 'openchamber-ui://app/index.html' },
+        __OPENCHAMBER_API_BASE_URL__: 'http://127.0.0.1:57123',
+        __OPENCHAMBER_LOCAL_ORIGIN__: 'http://127.0.0.1:57123',
+      }, () => {
+        const urls = createRuntimeUrlResolver({});
+        expect(urls.sse('/api/global/event')).toBe('http://127.0.0.1:57123/api/global/event');
+        expect(urls.websocket('/api/global/event/ws')).toBe('ws://127.0.0.1:57123/api/global/event/ws');
+      });
+    } finally {
+      deactivateRelayTunnel();
       setRuntimeExtraHeaders(null);
     }
   });

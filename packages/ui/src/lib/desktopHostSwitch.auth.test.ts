@@ -13,7 +13,10 @@ vi.mock('@/lib/desktopHosts', () => ({
   getDesktopHostApiUrl: (host: { url: string }) => host.url,
   normalizeHostUrl: (url: string) => url.startsWith('http') ? url : null,
 }));
-vi.mock('@/lib/desktopRelayRestore', () => ({ scheduleDesktopHostCandidateRefresh: vi.fn() }));
+vi.mock('@/lib/desktopRelayRestore', () => ({
+  desktopRelayApiBaseUrl: () => 'http://127.0.0.1:57123',
+  scheduleDesktopHostCandidateRefresh: vi.fn(),
+}));
 vi.mock('@/lib/relay/runtime-tunnel', () => ({ adoptRelayTunnel: mocks.adopt }));
 vi.mock('@/lib/runtime-switch', () => ({ getRuntimeKey: () => 'local', switchRuntimeEndpoint: mocks.switchEndpoint }));
 

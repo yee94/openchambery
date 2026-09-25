@@ -1,4 +1,5 @@
 import { getLocalRuntimeUrlAuthTokenSync, getRuntimeExtraHeadersSync, getRuntimeUrlAuthTokenSync } from '@/lib/runtime-auth';
+import { isRelayModeActive } from '@/lib/relay/runtime-tunnel';
 
 type QueryValue = string | number | boolean | null | undefined;
 
@@ -160,10 +161,14 @@ export const createRuntimeUrlResolver = (config: RuntimeUrlConfig = {}): Runtime
     }),
     sse: (path, query) => {
       const target = withUrlAuth(realtime(path, query));
+      // Relay already carries SSE. Wrapping through the local realtime proxy
+      // would tunnel `/api/openchamber/realtime-proxy/sse` instead of the event path.
+      if (isRelayModeActive()) return target;
       return toRealtimeProxyUrl('sse', target, config) || target;
     },
     websocket: (path, query) => {
       const target = toWebSocketUrl(withUrlAuth(realtime(path, query)), config);
+      if (isRelayModeActive()) return target;
       return toRealtimeProxyUrl('ws', target, config) || target;
     },
   };

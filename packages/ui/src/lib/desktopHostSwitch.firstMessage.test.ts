@@ -2,7 +2,10 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({ invoke: vi.fn(), tunnelFetch: vi.fn(), close: vi.fn(), createTunnel: vi.fn() }));
 vi.mock('@/lib/desktop', () => ({ isElectronShell: () => true, hasDesktopInvoke: () => true, invokeDesktop: mocks.invoke }));
-vi.mock('@/lib/desktopRelayRestore', () => ({ scheduleDesktopHostCandidateRefresh: vi.fn() }));
+vi.mock('@/lib/desktopRelayRestore', () => ({
+  desktopRelayApiBaseUrl: () => 'http://127.0.0.1:57123',
+  scheduleDesktopHostCandidateRefresh: vi.fn(),
+}));
 vi.mock('@/lib/relay/tunnel-client', () => ({ createRelayTunnelClient: mocks.createTunnel }));
 
 import { switchDesktopHost } from './desktopHostSwitch';

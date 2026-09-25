@@ -856,6 +856,49 @@ describe('runtimeFetch reasoning projection query', () => {
     }
   });
 
+  test('tunnels packaged-desktop loopback session GETs instead of hitting local OpenCode', async () => {
+    const calls: string[] = [];
+    const relay = {
+      fetch: async (input: string | URL | Request) => {
+        calls.push(input instanceof Request ? input.url : input.toString());
+        return new Response('{}', { status: 200, headers: { 'content-type': 'application/json' } });
+      },
+      openWebSocket: () => { throw new Error('unused'); },
+      getStatus: () => ({ state: 'connected' as const }),
+      subscribeStatus: () => () => undefined,
+      close: () => undefined,
+    } satisfies RelayTunnelClient;
+    const originalWindow = globalThis.window;
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (() => {
+      throw new Error('native fetch must not reach local OpenCode');
+    }) as typeof fetch;
+
+    try {
+      adoptRelayTunnel({ relayUrl: 'wss://relay.example', serverId: 'server-a', hostEncPubJwk: {} }, relay);
+      Object.defineProperty(globalThis, 'window', {
+        configurable: true,
+        value: {
+          location: { origin: 'null', href: 'openchamber-ui://app/index.html' },
+          __OPENCHAMBER_LOCAL_ORIGIN__: 'http://127.0.0.1:57123',
+          __OPENCHAMBER_API_BASE_URL__: 'http://127.0.0.1:57123',
+        },
+      });
+
+      const response = await runtimeFetch('http://127.0.0.1:57123/api/session/ses_remote');
+
+      expect(response.status).toBe(200);
+      expect(calls).toEqual(['/api/session/ses_remote']);
+
+      await runtimeFetch('https://other.example/api/session/ses_remote').catch(() => undefined);
+      expect(calls).toEqual(['/api/session/ses_remote']);
+    } finally {
+      deactivateRelayTunnel();
+      Object.defineProperty(globalThis, 'window', { configurable: true, value: originalWindow });
+      globalThis.fetch = originalFetch;
+    }
+  });
+
   test('relay non-message Request still forwards the original Request', async () => {
     const calls: Array<{ kind: 'request' | 'path'; value: string }> = [];
     const relay = {

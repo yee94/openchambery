@@ -44,6 +44,7 @@ mock.module('@/lib/desktopHosts', () => ({
 }));
 
 mock.module('@/lib/desktopRelayRestore', () => ({
+  desktopRelayApiBaseUrl: () => 'http://127.0.0.1:57123',
   scheduleDesktopHostCandidateRefresh: (...args: unknown[]) => {
     scheduleDesktopHostCandidateRefreshCalls.push(args);
     return scheduleDesktopHostCandidateRefreshImpl(...args);
