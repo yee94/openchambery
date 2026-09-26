@@ -12,6 +12,9 @@ import type {
 } from '@/lib/opencode/v2-types'
 
 import { Binary } from "./binary"
+import { toast } from "sonner"
+import { formatMessage, useI18nStore } from "@/lib/i18n"
+import { clearSessionInterruptAcknowledgement, runSessionInterrupt } from "./session-interrupt"
 import { useSessionUIStore, type ForkTransitionStage, type MessageEditSnapshot } from "./session-ui-store"
 import { useInputStore } from "./input-store"
 import type { ChildStoreManager } from "./child-store"
@@ -1890,7 +1893,14 @@ export function optimisticInsertUserMessage(input: {
   if (hasStoredSessionMessage(store, input.sessionId, input.messageID, resolvedDirectory)) {
     const state = store.getState()
     const now = Date.now()
+    const next = { ...state }
+    clearSessionInterruptAcknowledgement(next, input.sessionId)
     store.setState({
+      session_interrupt_acknowledged_at: next.session_interrupt_acknowledged_at,
+      session_execution_version: {
+        ...state.session_execution_version,
+        [input.sessionId]: (state.session_execution_version?.[input.sessionId] ?? 0) + 1,
+      },
       session_status: {
         ...state.session_status,
         [input.sessionId]: { type: "busy" as const },
@@ -1973,7 +1983,14 @@ export function optimisticInsertUserMessage(input: {
 
   // Set busy status
   const current = store.getState()
+  const next = { ...current }
+  clearSessionInterruptAcknowledgement(next, input.sessionId)
   store.setState({
+    session_interrupt_acknowledged_at: next.session_interrupt_acknowledged_at,
+    session_execution_version: {
+      ...current.session_execution_version,
+      [input.sessionId]: (current.session_execution_version?.[input.sessionId] ?? 0) + 1,
+    },
     session_status: {
       ...current.session_status,
       [input.sessionId]: { type: "busy" as const },
@@ -2246,13 +2263,26 @@ export async function ensureSentUserMessagePresence(input: {
 // Abort
 // ---------------------------------------------------------------------------
 
-export async function abortCurrentOperation(sessionId: string): Promise<void> {
+const interruptFlights = new WeakMap<DirectoryStoreApi, Map<string, { current: () => boolean; promise: Promise<void> }>>()
+
+export function abortCurrentOperation(sessionId: string): Promise<void> {
   // The abort must carry the SESSION'S directory, not the active UI directory:
   // OpenCode routes the request to the per-directory instance, and an abort
   // sent to the wrong instance cancels nothing while still returning 200 true
   // (the "stop button does nothing" report — sessions in another project/
   // worktree than the UI's current directory could never be aborted).
   const { store, directory } = dirStoreForSession(sessionId)
+  const transport = captureRuntimeTransport()
+  const children = _childStores
+  const executionVersion = store.getState().session_execution_version?.[sessionId] ?? 0
+  const current = () => isCurrentRuntimeTransport(transport)
+    && children === _childStores
+    && (!directory || children?.getChild(directory) === store)
+    && (store.getState().session_execution_version?.[sessionId] ?? 0) === executionVersion
+  let flights = interruptFlights.get(store)
+  if (!flights) { flights = new Map(); interruptFlights.set(store, flights) }
+  const existing = flights.get(sessionId)
+  if (existing?.current()) return existing.promise
   const scope = directory ? {
     state: "bound" as const,
     transportIdentity: getRuntimeTransportIdentity(),
@@ -2260,30 +2290,24 @@ export async function abortCurrentOperation(sessionId: string): Promise<void> {
     sessionID: sessionId,
   } : null
   const blockToken = scope ? useSessionUIStore.getState().beginQueueAbortBlock(scope) : null
-  try {
-    await postSessionInterrupt({ sessionID: sessionId, directory })
-    // A successful abort response is authoritative for this turn. Commit idle
-    // locally as well as waiting for SSE so a newly materialized session cannot
-    // remain stuck behind an optimistic busy state when its idle event raced
-    // with selection/bootstrap. observed_at covers an incomplete aborted tail.
-    const state = store.getState()
-    store.setState({
-      session_status: {
-        ...state.session_status,
-        [sessionId]: { type: "idle" as const },
-      },
-      session_status_observed_at: {
-        ...state.session_status_observed_at,
-        [sessionId]: Date.now(),
-      },
-    })
-  } catch (error) {
+  const rollback = () => {
+    if (!current()) return
     if (scope && blockToken) useSessionUIStore.getState().clearQueueAbortBlock(scope, blockToken)
     void import("./queue-abort-optimistic").then(({ rollbackQueueAbortOptimistic }) => {
-      rollbackQueueAbortOptimistic(sessionId)
+      if (current()) rollbackQueueAbortOptimistic(sessionId)
     }).catch(() => {})
-    console.error("[session-actions] abort failed", error)
+    toast.error(formatMessage(useI18nStore.getState().dictionary, "chat.chatInput.stopUnconfirmed"))
   }
+  const promise = runSessionInterrupt({
+    store, sessionID: sessionId, isCurrent: current,
+    request: (signal) => postSessionInterrupt({ sessionID: sessionId, directory, signal }),
+  }).then((result) => {
+    if (result === "unconfirmed") rollback()
+  }, () => rollback()).finally(() => {
+    if (flights.get(sessionId)?.promise === promise) flights.delete(sessionId)
+  })
+  flights.set(sessionId, { current, promise })
+  return promise
 }
 
 // ---------------------------------------------------------------------------

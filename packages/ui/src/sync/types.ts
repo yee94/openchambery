@@ -109,6 +109,10 @@ export type State = {
   sessionTotal: number
   session_status: Record<string, SessionStatus>
   session_status_observed_at: Record<string, number>
+  /** UI-only stop receipt; authoritative status stays busy until execution settles. */
+  session_interrupt_acknowledged_at: Record<string, number>
+  /** Monotonic in-memory boundary for live starts and local direct sends. */
+  session_execution_version: Record<string, number>
   session_status_snapshot_at: number | undefined
   /** Live `session.error` / `session.execution.failed` observation time. Not persisted history; busy/retry clears. */
   session_error_at: Record<string, number>
@@ -222,6 +226,8 @@ export const INITIAL_STATE: State = {
   sessionTotal: 0,
   session_status: {},
   session_status_observed_at: {},
+  session_interrupt_acknowledged_at: {},
+  session_execution_version: {},
   session_status_snapshot_at: undefined,
   session_error_at: {},
   session_execution_recovery: {},

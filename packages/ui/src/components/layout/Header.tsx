@@ -20,7 +20,7 @@ import { DiffIcon } from '@/components/icons/DiffIcon';
 import { useUIStore, type ContextPanelMode, type MainTab } from '@/stores/useUIStore';
 import { useConfigStore } from '@/stores/useConfigStore';
 import { useSessionUIStore } from '@/sync/session-ui-store';
-import { useCurrentSessionEntity, useSessionMessagesResolved } from '@/sync/sync-context';
+import { useCurrentSessionEntity, useSessionContextUsage, useSessionMessagesResolved } from '@/sync/sync-context';
 import { useProjectsStore } from '@/stores/useProjectsStore';
 import { useQuotaAutoRefresh, useQuotaStore } from '@/stores/useQuotaStore';
 
@@ -594,6 +594,7 @@ const isSameContextUsage = (
   if (!a || !b) return false;
 
   return a.totalTokens === b.totalTokens
+    && a.pending === b.pending
     && a.percentage === b.percentage
     && a.contextLimit === b.contextLimit
     && (a.outputLimit ?? 0) === (b.outputLimit ?? 0)
@@ -698,7 +699,6 @@ export const Header: React.FC<HeaderProps> = ({
   const runtimeApis = useRuntimeAPIs();
   const [isDevShutdownInFlight, setIsDevShutdownInFlight] = React.useState(false);
 
-  const getContextUsage = useSessionUIStore((state) => state.getContextUsage);
   const isNewSessionDraftOpen = useSessionUIStore((state) => Boolean(state.newSessionDraft?.open));
   const currentSessionId = useSessionUIStore((state) => state.currentSessionId);
   const currentSessionMessagesResolved = useSessionMessagesResolved(currentSessionId ?? '');
@@ -792,7 +792,8 @@ export const Header: React.FC<HeaderProps> = ({
     : null;
   const contextLimit = (limit && typeof limit.context === 'number' ? limit.context : 0);
   const outputLimit = (limit && typeof limit.output === 'number' ? limit.output : 0);
-  const contextUsage = getContextUsage(contextLimit, outputLimit);
+  const measuredContextUsage = useSessionContextUsage(currentSessionId ?? '', contextLimit, outputLimit);
+  const contextUsage = isNewSessionDraftOpen ? null : measuredContextUsage;
   const [stableDesktopContextUsage, setStableDesktopContextUsage] = React.useState<SessionContextUsage | null>(null);
   const isContextUsageResolvedForSession = !currentSessionId || currentSessionMessagesResolved;
 
@@ -802,7 +803,7 @@ export const Header: React.FC<HeaderProps> = ({
       return;
     }
 
-    if (contextUsage && contextUsage.totalTokens > 0) {
+    if (contextUsage) {
       setStableDesktopContextUsage((prev) => (isSameContextUsage(prev, contextUsage) ? prev : contextUsage));
       return;
     }
@@ -853,8 +854,7 @@ export const Header: React.FC<HeaderProps> = ({
   });
   const showDesktopHeaderContextUsage = !isVSCode
     && activeMainTab === 'chat'
-    && !!stableDesktopContextUsage
-    && stableDesktopContextUsage.totalTokens > 0;
+    && !!stableDesktopContextUsage;
   const desktopHeaderDisplayPercentage = stableDesktopContextUsage && stableDesktopContextUsage.contextLimit > 0
     ? Math.min(999, (stableDesktopContextUsage.totalTokens / stableDesktopContextUsage.contextLimit) * 100)
     : 0;
@@ -2052,6 +2052,7 @@ export const Header: React.FC<HeaderProps> = ({
         <div className="flex shrink-0 items-center gap-1">
           {showDesktopHeaderContextUsage && stableDesktopContextUsage ? (
             <ContextUsageDisplay
+              pending={stableDesktopContextUsage.pending}
               totalTokens={stableDesktopContextUsage.totalTokens}
               percentage={desktopHeaderDisplayPercentage}
               colorPercentage={stableDesktopContextUsage.percentage}

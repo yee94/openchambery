@@ -45,8 +45,7 @@ describe('ChatContainer source contracts', () => {
         expect(source).toContain('const showLoadOlderButton = resolveMobileLoadOlderVisibility({');
         expect(source).toContain('isMobile,');
         expect(source).not.toContain('const showLoadOlderButton = isMobileSurfaceRuntime()');
-        // Controller scroll/auto-fill must share that same mounted flag so the
-        // button cannot show while auto-load still follows a disagreeing probe.
+        // Controller auto-fill uses the same mounted flag as the status slot.
         const timelineCallStart = source.indexOf('const timelineController = useChatTimelineController({');
         const timelineCallEnd = source.indexOf('});', timelineCallStart);
         expect(timelineCallStart).toBeGreaterThan(-1);
@@ -98,20 +97,21 @@ describe('ChatContainer source contracts', () => {
         expect(source).toContain('prefetchStatus: sessionPrefetchInfo?.status');
     });
 
-    test('mobile load-older button is authoritative-only; unknown availability renders nothing', () => {
+    test('mobile history status is authoritative-only and has no manual load button', () => {
         // No speculative placeholder: unresolved history boundary (unknown)
-        // must not paint the button or a spinner.
+        // must not paint the status slot or a spinner.
         expect(source).not.toContain('isHistoryAvailabilityPending');
         // Visibility = mounted mobile surface && (canLoadEarlier || real
         // user-initiated loadEarlier mutation in flight).
         expect(source).toContain('const showLoadOlderButton = resolveMobileLoadOlderVisibility({');
         expect(source).toContain('canLoadEarlier: timelineController.historySignals.canLoadEarlier');
         expect(source).toContain('isLoadingOlder: timelineController.isLoadingOlder');
-        // Busy/disabled is mutation-owned only — background prefetch/SWR
-        // loading never drives the button.
+        // Busy is mutation-owned only — background prefetch/SWR
+        // loading never drives the status.
         expect(source).toContain('const loadOlderBusy = resolveMobileLoadOlderBusy({ isLoadingOlder });');
         expect(source).toContain('aria-busy={loadOlderBusy}');
-        expect(source).toContain("{t('chat.history.loadOlder')}");
+        expect(source).not.toContain('data-chat-load-older="true"');
+        expect(source).toContain("{t('chat.history.loadingMore')}");
         // Desktop scroll/auto-fill keeps a glass disc (icon only) while the
         // flight is unresolved. The label is the accessible name, not painted text.
         expect(source).toContain('resolveDesktopLoadOlderStatusVisibility');

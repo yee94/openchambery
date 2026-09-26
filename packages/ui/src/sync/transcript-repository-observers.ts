@@ -36,6 +36,7 @@ import {
 } from "./materialization"
 import { ensureTranscriptOnObserve } from "./transcript-reconnect-compensation-runtime"
 import { UNKNOWN_SESSION_HISTORY_BOUNDARY } from "./types"
+import { buildSessionContextUsage, scanContextTokenBaseline } from './context-token-baseline'
 
 const EMPTY_TRANSCRIPT_MESSAGES: Message[] = []
 const EMPTY_TRANSCRIPT_PARTS: Part[] = []
@@ -281,6 +282,34 @@ export function useTranscriptMaterializationStatus(
       && a.missingPartMessageIDs.every((id, index) => id === b.missingPartMessageIDs[index])
     ),
     options,
+  )
+}
+
+/** Observe usage fields only, including part-only compaction status updates. */
+export function useTranscriptContextUsage(
+  sessionID: string,
+  directory: string,
+  store: StoreApi<DirectoryStore>,
+  contextLimit: number,
+  outputLimit: number,
+) {
+  return useTranscriptSelector(
+    sessionID,
+    directory,
+    store,
+    (data) => buildSessionContextUsage(
+      scanContextTokenBaseline(messagesFromTranscriptData(data), (id) => data.partsByMessageID[id]),
+      contextLimit,
+      outputLimit,
+    ),
+    (a, b) => a === b || Boolean(a && b
+      && a.pending === b.pending
+      && a.totalTokens === b.totalTokens
+      && a.percentage === b.percentage
+      && a.contextLimit === b.contextLimit
+      && a.outputLimit === b.outputLimit
+      && a.normalizedOutput === b.normalizedOutput
+      && a.lastMessageId === b.lastMessageId),
   )
 }
 

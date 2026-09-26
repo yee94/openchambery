@@ -45,14 +45,27 @@ describe('getContextUsage compaction baseline', () => {
     expect(usage?.percentage).toBe(45);
   });
 
-  test('returns null after compaction until a post-compaction assistant publishes tokens', () => {
+  test('keeps an explicit pending display after completed compaction', () => {
     refs.messages = [
       { id: 'a1', role: 'assistant', tokens: TOKENS },
       { id: 'c1', role: 'assistant', clientRole: 'compaction', type: 'compaction' },
     ];
-    refs.partsByMessage.set('c1', [{ type: 'compaction' }]);
+    refs.partsByMessage.set('c1', [{ type: 'compaction', status: 'completed' }]);
 
-    expect(useSessionUIStore.getState().getContextUsage(200000, 1000)).toBeNull();
+    expect(useSessionUIStore.getState().getContextUsage(200000, 1000)).toMatchObject({
+      pending: true, totalTokens: 0, contextLimit: 200000,
+    });
+  });
+
+  test.each(['running', 'failed'])('preserves the baseline for %s compaction and ignores its request tokens', (status) => {
+    refs.messages = [
+      { id: 'a1', role: 'assistant', tokens: TOKENS },
+      { id: 'c1', role: 'assistant', clientRole: 'compaction', tokens: { input: 150000 } },
+    ];
+    refs.partsByMessage.set('c1', [{ type: 'compaction', status }]);
+    expect(useSessionUIStore.getState().getContextUsage(200000, 1000)).toMatchObject({
+      totalTokens: 90630, lastMessageId: 'a1',
+    });
   });
 
   test('a post-compaction assistant with tokens becomes the new baseline', () => {

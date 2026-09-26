@@ -2,6 +2,7 @@ import type { I18nKey } from './en';
 import { settingsDict } from './pl.settings';
 
 export const dict: Record<I18nKey, string> = {
+  'chat.chatInput.stopUnconfirmed': 'Zatrzymanie nie zostało jeszcze potwierdzone. Spróbuj ponownie.',
   'chat.response.rateLimit': 'Osiągnięto limit częstotliwości żądań dostawcy',
   'chat.response.auth': 'Uwierzytelnianie dostawcy nie powiodło się. Zaloguj się ponownie i spróbuj jeszcze raz.',
   'chat.response.quota': 'Wyczerpano limit użycia dostawcy',
@@ -1797,6 +1798,8 @@ export const dict: Record<I18nKey, string> = {
   'contextSidebar.tokens.output': 'Wyjście',
   'contextSidebar.tokens.reasoning': 'Rozumowanie',
   'contextUsage.aria.label': 'Użycie kontekstu',
+  'contextUsage.pending': 'Oczekiwanie na aktualizację',
+  'contextUsage.pendingDescription': 'Kontekst został skompaktowany. Użycie zostanie zaktualizowane, gdy kolejna odpowiedź modelu poda liczbę tokenów.',
   'contextUsage.mobile.contextLimit': 'Limit kontekstu',
   'contextUsage.mobile.outputLimit': 'Limit wyjścia',
   'contextUsage.mobile.title': 'Użycie kontekstu',

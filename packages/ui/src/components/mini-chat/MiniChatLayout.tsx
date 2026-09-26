@@ -11,9 +11,7 @@ import { invokeDesktop, isElectronShell } from '@/lib/desktop';
 import { useDesktopWindowControlsLayout } from '@/hooks/useDesktopWindowControlsLayout';
 import { useSessionUIStore } from '@/sync/session-ui-store';
 import { useSessionWorktreeStore } from '@/sync/session-worktree-store';
-import { useSessionMessages, useSessions } from '@/sync/sync-context';
-import { scanContextTokenBaseline, readContextTokenCount } from '@/sync/context-token-baseline';
-import { getSyncParts } from '@/sync/sync-refs';
+import { useSessionContextUsage, useSessionMessages, useSessions } from '@/sync/sync-context';
 import { useDirectoryStore } from '@/stores/useDirectoryStore';
 import { useProjectsStore } from '@/stores/useProjectsStore';
 import { useGitBranchLabel, useGitStore } from '@/stores/useGitStore';
@@ -152,36 +150,7 @@ const MiniChatHeader: React.FC<{ mode: MiniChatMode }> = ({ mode }) => {
     : null;
   const contextLimit = limit && typeof limit.context === 'number' ? limit.context : 0;
   const outputLimit = limit && typeof limit.output === 'number' ? limit.output : 0;
-  const contextUsage = React.useMemo<SessionContextUsage | null>(() => {
-    if (!currentSessionId || currentSessionMessages.length === 0) {
-      return null;
-    }
-
-    // A compaction row newer than the last token-bearing assistant resets the
-    // baseline: pre-compaction counts no longer describe the live context
-    // window, so usage stays unknown until a post-compaction assistant
-    // publishes tokens.
-    const baseline = scanContextTokenBaseline(currentSessionMessages, (messageId) => getSyncParts(messageId));
-    if (!baseline || 'compacted' in baseline) {
-      return null;
-    }
-
-    const lastTokens = baseline.tokens;
-    const totalTokens = baseline.totalTokens;
-    const thresholdLimit = contextLimit > 0 ? contextLimit : 200000;
-    const percentage = contextLimit > 0 ? Math.round((totalTokens / contextLimit) * 100) : 0;
-    const normalizedOutput = outputLimit > 0 ? Math.round((readContextTokenCount(lastTokens.output) / outputLimit) * 100) : undefined;
-
-    return {
-      totalTokens,
-      percentage,
-      contextLimit: contextLimit || 0,
-      outputLimit: outputLimit || undefined,
-      normalizedOutput,
-      thresholdLimit,
-      lastMessageId: baseline.messageId,
-    };
-  }, [contextLimit, currentSessionId, currentSessionMessages, outputLimit]);
+  const contextUsage = useSessionContextUsage(currentSessionId ?? '', contextLimit, outputLimit);
   const [stableContextUsage, setStableContextUsage] = React.useState<SessionContextUsage | null>(null);
   const dragRegionStyle = { WebkitAppRegion: 'drag' } as React.CSSProperties;
   const noDragRegionStyle = { WebkitAppRegion: 'no-drag' } as React.CSSProperties;
@@ -192,10 +161,11 @@ const MiniChatHeader: React.FC<{ mode: MiniChatMode }> = ({ mode }) => {
       return;
     }
 
-    if (contextUsage && contextUsage.totalTokens > 0) {
+    if (contextUsage) {
       setStableContextUsage((prev) => {
         if (
           prev
+          && prev.pending === contextUsage.pending
           && prev.totalTokens === contextUsage.totalTokens
           && prev.percentage === contextUsage.percentage
           && prev.contextLimit === contextUsage.contextLimit
@@ -273,8 +243,9 @@ const MiniChatHeader: React.FC<{ mode: MiniChatMode }> = ({ mode }) => {
         </button>
       </SessionSwitcherDropdown>
       <div className="min-w-0 flex-1" />
-      {stableContextUsage && stableContextUsage.totalTokens > 0 ? (
+      {stableContextUsage ? (
         <ContextUsageDisplay
+          pending={stableContextUsage.pending}
           totalTokens={stableContextUsage.totalTokens}
           percentage={displayContextPercentage}
           colorPercentage={stableContextUsage.percentage}

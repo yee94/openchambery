@@ -238,7 +238,7 @@ describe('MobileSessionRow status placement', () => {
     );
 
     expect(html).toContain('<mark');
-    expect(html).toContain('bg-primary');
+    expect(html).toContain('bg-transparent font-[inherit] text-[var(--primary-base)]');
     expect(html.match(/<mark/g)?.length).toBe(2);
   });
 

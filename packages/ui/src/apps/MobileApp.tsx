@@ -68,7 +68,7 @@ import { SessionStartupCoordinator } from '@/components/session/SessionStartupCo
 import { DirectoryExplorerDialog } from '@/components/session/DirectoryExplorerDialog';
 import { ScheduledTasksDialog, ScheduledTasksWorkspace } from '@/components/session/ScheduledTasksDialog';
 import { SettingsGroup } from '@/components/sections/shared/SettingsGroup';
-import { SyncProvider, useCurrentSessionEntity, useLiveSessionStatus, useParentSessionTarget, useSessionMessages } from '@/sync/sync-context';
+import { SyncProvider, useSessionContextUsage, useCurrentSessionEntity, useLiveSessionStatus, useParentSessionTarget, useSessionMessages } from '@/sync/sync-context';
 import { useSync } from '@/sync/use-sync';
 
 import { SyncAppEffects } from './AppEffects';
@@ -91,7 +91,6 @@ import { MobileFloatingSurface } from '@/mobile/MobileSurface';
 import {
   buildMobileContextDisplay,
   ContextProgressIcon,
-  getLatestAssistantTotalTokens,
   getLatestUserMessageModel,
   getNumericLimit,
   MobileChatScreen,
@@ -1928,11 +1927,11 @@ const SessionMetadataOverlay: React.FC<{
           </MetadataRow>
           {contextDisplay ? (
             <MetadataRow
-              iconNode={<ContextProgressIcon percentage={contextDisplay.percentage} />}
+              iconNode={<ContextProgressIcon percentage={contextDisplay.percentage} pending={contextDisplay.pending} />}
               label={t('mobile.header.metadata.context')}
             >
               <span className="inline-flex items-baseline gap-1.5 tabular-nums">
-                <span className={cn('font-semibold', contextDisplay.colorClass)}>{contextDisplay.percentage.toFixed(1)}%</span>
+                <span className={cn('font-semibold', contextDisplay.colorClass)}>{contextDisplay.pending ? t('contextUsage.pending') : `${contextDisplay.percentage.toFixed(1)}%`}</span>
                 <span className="text-muted-foreground">{contextDisplay.tokens}</span>
               </span>
             </MetadataRow>
@@ -2219,10 +2218,8 @@ const MobileSessionMetadataButton = React.memo(function MobileSessionMetadataBut
   const contextLimit = getNumericLimit((liveModel as { limit?: unknown } | undefined)?.limit, 'context')
     ?? metadata?.limit?.context
     ?? 0;
-  const totalTokens = React.useMemo(
-    () => getLatestAssistantTotalTokens(activeSessionMessages),
-    [activeSessionMessages],
-  );
+  const contextUsage = useSessionContextUsage(currentSessionId ?? '', contextLimit, 0, effectiveDirectory || undefined);
+  const totalTokens = contextUsage?.pending ? null : contextUsage?.totalTokens ?? 0;
 
   const contextDisplay = buildMobileContextDisplay({
     totalTokens,
@@ -2315,7 +2312,7 @@ const MobileSessionMetadataButton = React.memo(function MobileSessionMetadataBut
         onClick={() => onOpenChange((currentOpen) => !currentOpen)}
         style={{ touchAction: 'manipulation' }}
       >
-        <ContextProgressIcon percentage={contextDisplay?.percentage ?? 0} />
+        <ContextProgressIcon percentage={contextDisplay?.percentage ?? 0} pending={contextDisplay?.pending} />
       </button>
       <SessionMetadataOverlay
         open={open}

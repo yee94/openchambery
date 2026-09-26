@@ -859,7 +859,7 @@ const ComposerActionButtons = React.memo(function ComposerActionButtons(props: C
         onAbort,
     } = props;
     const { t } = useI18n();
-    const canAbort = sessionCanAbort || abortPending;
+    const canAbort = sessionCanAbort;
     const actionAvailability = resolveComposerActionAvailability({
         canSend,
         hasSessionTarget: Boolean(currentSessionId || newSessionDraftOpen),
@@ -1281,7 +1281,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
     }, [primaryDraftKey]);
     const surfaceContext = useChatInputSurfaceContext();
     const primarySurfaceActive = useUIStore((state) => state.activeMainTab === 'chat');
-    // Authoritative session_status only (same contract as AssistantView). Double-ESC
+    // Live session status with a UI-only accepted-stop receipt. Double-ESC
     // abort must not depend on useSessionActivity heuristics (pending-assistant /
     // idleCoversPendingAssistant) or the status-row `working.canAbort` path, both of
     // which can lag after abort + re-send. Missing status is idle, never `unknown`.
@@ -4871,7 +4871,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
     const abortFlightsRef = React.useRef(new Set<string>());
     const [abortFlights, setAbortFlights] = React.useState<ReadonlySet<string>>(() => new Set());
     const abortScope = JSON.stringify([surface.transportIdentity, surface.runtimeGeneration, surface.surfaceID, surface.directory, currentSessionId]);
-    const abortPending = abortFlights.has(abortScope);
+    const abortPending = canAbort && abortFlights.has(abortScope);
     const handleAbort = useEvent(async () => {
         if (abortFlightsRef.current.has(abortScope)) return;
         const scope = abortScope;
@@ -4890,7 +4890,10 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
             await Promise.race([
                 request,
                 new Promise<void>((resolve) => {
-                    timeout = setTimeout(resolve, 10_000);
+                    timeout = setTimeout(() => {
+                        if (surface.kind === 'secondary') toast.error(t('chat.chatInput.stopUnconfirmed'));
+                        resolve();
+                    }, 5_000);
                 }),
             ]);
         } catch (error) {

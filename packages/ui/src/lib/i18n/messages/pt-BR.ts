@@ -2,6 +2,7 @@ import type { I18nKey } from './en';
 import { settingsDict } from './pt-BR.settings';
 
 export const dict: Record<I18nKey, string> = {
+  'chat.chatInput.stopUnconfirmed': 'A interrupção ainda não foi confirmada. Tente novamente.',
   'chat.response.rateLimit': 'Limite de frequência de solicitações do provedor atingido',
   'chat.response.auth': 'Falha na autenticação do provedor. Entre novamente e tente outra vez.',
   'chat.response.quota': 'Cota do provedor esgotada',
@@ -1358,6 +1359,8 @@ export const dict: Record<I18nKey, string> = {
   "filesView.diagram.closeDiagramView": "Fechar visualização de diagrama",
   "filesView.diagram.saveDiagram": "Salvar diagrama",
   "contextUsage.aria.label": "Uso do contexto",
+  "contextUsage.pending": "Aguardando atualização",
+  "contextUsage.pendingDescription": "Contexto compactado. O uso será atualizado quando a próxima resposta do modelo informar a contagem de tokens.",
   "contextUsage.mobile.title": "Uso do contexto",
   "contextUsage.mobile.usedTokens": "Tokens usados",
   "contextUsage.mobile.contextLimit": "Limite de contexto",

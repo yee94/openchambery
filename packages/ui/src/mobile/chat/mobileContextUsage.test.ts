@@ -1,9 +1,8 @@
-import { describe, expect, test } from 'bun:test';
+import { describe, expect, test } from 'vitest';
 
 import {
   buildMobileContextDisplay,
   formatContextTokens,
-  getLatestAssistantTotalTokens,
   getLatestUserMessageModel,
   getNumericLimit,
   getTokenCount,
@@ -37,7 +36,7 @@ describe('mobileContextUsage', () => {
     expect(resolveContextColorClass(95)).toBe('text-[var(--status-error)]');
   });
 
-  test('finds latest user model and assistant token totals', () => {
+  test('finds latest user model', () => {
     const messages = [
       { role: 'user', model: { providerID: 'openai', modelID: 'gpt-4.1' } },
       {
@@ -55,38 +54,14 @@ describe('mobileContextUsage', () => {
       providerID: 'anthropic',
       modelID: 'claude',
     });
-    expect(getLatestAssistantTotalTokens(messages)).toBe(150);
   });
 
-  test('compaction row newer than the last assistant resets the token baseline', () => {
-    const messages = [
-      { id: 'a1', role: 'assistant', tokens: { input: 100, output: 50, reasoning: 0, cache: { read: 0, write: 0 } } },
-      { id: 'u-compact', role: 'user' },
-    ];
-    const partsByMessage = new Map([['u-compact', [{ type: 'compaction' }]]]);
-    const getParts = (messageId: string) => partsByMessage.get(messageId);
-
-    expect(getLatestAssistantTotalTokens(messages, getParts)).toBe(0);
+  test('shows pending usage after compaction and hides it for drafts', () => {
+    const totalTokens = null;
+    expect(buildMobileContextDisplay({ totalTokens, contextLimit: 1000, isDraft: false })).toMatchObject({
+      pending: true, tokens: '—', colorClass: 'text-muted-foreground',
+    });
+    expect(buildMobileContextDisplay({ totalTokens, contextLimit: 1000, isDraft: true })).toBeNull();
   });
 
-  test('post-compaction assistant with tokens becomes the new baseline', () => {
-    const messages = [
-      { id: 'a1', role: 'assistant', tokens: { input: 100, output: 50, reasoning: 0, cache: { read: 0, write: 0 } } },
-      { id: 'u-compact', role: 'user' },
-      { id: 'a2', role: 'assistant', tokens: { input: 10, output: 5, reasoning: 0, cache: { read: 0, write: 0 } } },
-    ];
-    const partsByMessage = new Map([['u-compact', [{ type: 'compaction' }]]]);
-    const getParts = (messageId: string) => partsByMessage.get(messageId);
-
-    expect(getLatestAssistantTotalTokens(messages, getParts)).toBe(15);
-  });
-
-  test('without a parts getter the scan keeps its legacy behavior', () => {
-    const messages = [
-      { id: 'a1', role: 'assistant', tokens: { input: 100, output: 50, reasoning: 0, cache: { read: 0, write: 0 } } },
-      { id: 'u-compact', role: 'user' },
-    ];
-
-    expect(getLatestAssistantTotalTokens(messages)).toBe(150);
-  });
 });

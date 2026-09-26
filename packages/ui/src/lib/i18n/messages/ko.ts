@@ -2,6 +2,7 @@ import type { I18nKey } from './en';
 import { settingsDict } from './ko.settings';
 
 export const dict: Record<I18nKey, string> = {
+  'chat.chatInput.stopUnconfirmed': '아직 중지가 확인되지 않았습니다. 다시 시도해 주세요.',
   'chat.response.rateLimit': '공급자 요청 빈도 제한에 도달했습니다',
   'chat.response.auth': '공급자 인증에 실패했습니다. 다시 로그인한 후 재시도하세요.',
   'chat.response.quota': '공급자 할당량을 모두 사용했습니다',
@@ -1395,6 +1396,8 @@ export const dict: Record<I18nKey, string> = {
   'filesView.diagram.closeDiagramView': '다이어그램 보기 닫기',
   'filesView.diagram.saveDiagram': '다이어그램 저장',
   'contextUsage.aria.label': '컨텍스트 사용량',
+  'contextUsage.pending': '업데이트 대기 중',
+  'contextUsage.pendingDescription': '컨텍스트가 압축되었습니다. 다음 모델 응답에서 토큰 수가 보고되면 사용량이 업데이트됩니다.',
   'contextUsage.mobile.title': '컨텍스트 사용량',
   'contextUsage.mobile.usedTokens': '사용한 토큰',
   'contextUsage.mobile.contextLimit': '컨텍스트 한도',

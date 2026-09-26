@@ -39,7 +39,7 @@ import { getWorktreeSetupWaitEnabled } from "@/lib/openchamberConfig"
 import { resolveProjectForSessionDirectory } from "@/lib/projectResolution"
 import { createUuid } from "@/lib/uuid"
 import { ascendingId } from "./message-id"
-import { readContextTokenCount, scanContextTokenBaseline } from "./context-token-baseline"
+import { buildSessionContextUsage, scanContextTokenBaseline } from "./context-token-baseline"
 import { getRegisteredRuntimeAPIs } from "@/contexts/runtimeAPIRegistry"
 import type { ConversationCreateWithPromptResult, ConversationCreateWithPromptInput } from "@/lib/api/types"
 import type { I18nKey } from "@/lib/i18n/messages/en"
@@ -1965,23 +1965,7 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
     // window, so usage stays unknown until a post-compaction assistant
     // publishes tokens.
     const baseline = scanContextTokenBaseline(messages, (messageId) => getSyncParts(messageId))
-    if (!baseline || "compacted" in baseline) return null
-    const lastTokens = baseline.tokens
-
-    const totalTokens = baseline.totalTokens
-    const thresholdLimit = contextLimit > 0 ? contextLimit : 200000
-    const percentage = contextLimit > 0 ? Math.round((totalTokens / contextLimit) * 100) : 0
-    const normalizedOutput = outputLimit > 0 ? Math.round((readContextTokenCount(lastTokens.output) / outputLimit) * 100) : undefined
-
-    return {
-      totalTokens,
-      percentage,
-      contextLimit: contextLimit || 0,
-      outputLimit: outputLimit || undefined,
-      normalizedOutput,
-      thresholdLimit,
-      lastMessageId: baseline.messageId,
-    }
+    return buildSessionContextUsage(baseline, contextLimit, outputLimit)
   },
 
   initializeNewOpenChamberSession: () => {

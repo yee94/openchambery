@@ -7,6 +7,8 @@ import type { FileDiff } from "./types"
 type SessionCache = {
   session_status: Record<string, SessionStatus | undefined>
   session_status_observed_at?: Record<string, number | undefined>
+  session_interrupt_acknowledged_at?: Record<string, number | undefined>
+  session_execution_version?: Record<string, number | undefined>
   session_error_at?: Record<string, number | undefined>
   session_diff: Record<string, FileDiff[] | undefined>
   todo: Record<string, Todo[] | undefined>
@@ -48,11 +50,21 @@ export function dropSessionCaches(store: SessionCache, sessionIDs: Iterable<stri
   const stale = new Set(Array.from(sessionIDs).filter(Boolean))
   if (stale.size === 0) return
 
+  const acknowledgements = store.session_interrupt_acknowledged_at
+  const versions = store.session_execution_version
   for (const sessionID of stale) {
+    if (acknowledgements?.[sessionID] !== undefined && store.session_interrupt_acknowledged_at === acknowledgements) {
+      store.session_interrupt_acknowledged_at = { ...acknowledgements }
+    }
+    if (versions?.[sessionID] !== undefined && store.session_execution_version === versions) {
+      store.session_execution_version = { ...versions }
+    }
     delete store.todo[sessionID]
     delete store.session_diff[sessionID]
     delete store.session_status[sessionID]
     if (store.session_status_observed_at) delete store.session_status_observed_at[sessionID]
+    if (store.session_interrupt_acknowledged_at) delete store.session_interrupt_acknowledged_at[sessionID]
+    if (store.session_execution_version) delete store.session_execution_version[sessionID]
     if (store.session_error_at) delete store.session_error_at[sessionID]
     delete store.permission[sessionID]
     delete store.question[sessionID]

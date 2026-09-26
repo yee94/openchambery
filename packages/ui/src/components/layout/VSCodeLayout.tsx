@@ -5,9 +5,7 @@ import { SessionDialogs } from '@/components/session/SessionDialogs';
 import { ChatView } from '@/components/views/ChatView';
 import { useSessionUIStore } from '@/sync/session-ui-store';
 import { useViewportStore } from '@/sync/viewport-store';
-import { useSessions, useDirectorySync, useSessionMessages, useSessionMessagesResolved } from '@/sync/sync-context';
-import { hasCompactionPartType } from '@/sync/context-token-baseline';
-import { getSyncParts } from '@/sync/sync-refs';
+import { useSessionContextUsage, useSessions, useDirectorySync, useSessionMessages, useSessionMessagesResolved } from '@/sync/sync-context';
 import { useConfigStore } from '@/stores/useConfigStore';
 import { resolveGlobalSessionDirectory, useGlobalSessionsStore } from '@/stores/useGlobalSessionsStore';
 import { ContextUsageDisplay } from '@/components/ui/ContextUsageDisplay';
@@ -686,23 +684,12 @@ const VSCodeHeader: React.FC<VSCodeHeaderProps> = ({ title, showBack, onBack, on
 
   const currentModel = getCurrentModel();
   const headerMessageSummary = React.useMemo(() => {
-    type AssistantTokens = { input: number; output: number; reasoning: number; cache: { read: number; write: number } };
     let latestAssistantModel: ReturnType<typeof getCurrentModel> | undefined;
-    let lastTokens: AssistantTokens | undefined;
-    let lastMessageId: string | undefined;
-    // A compaction row newer than the last token-bearing assistant resets the
-    // token baseline (pre-compaction counts no longer describe the live
-    // context window). The model scan keeps going — model identity survives
-    // compaction, and an older compaction row never invalidates a baseline
-    // already found on a newer assistant.
-    let compactionBaselineReset = false;
+    // Model identity survives compaction; usage follows the shared checkpoint scan.
 
     for (let i = currentSessionMessages.length - 1; i >= 0; i -= 1) {
-      const message = currentSessionMessages[i] as { id?: string; role?: unknown; providerID?: unknown; modelID?: unknown; tokens?: AssistantTokens };
+      const message = currentSessionMessages[i];
       if (message.role !== 'assistant') {
-        if (!lastTokens && !compactionBaselineReset && message.id && hasCompactionPartType(getSyncParts(message.id))) {
-          compactionBaselineReset = true;
-        }
         continue;
       }
 
@@ -711,20 +698,12 @@ const VSCodeHeader: React.FC<VSCodeHeaderProps> = ({ title, showBack, onBack, on
         latestAssistantModel = provider?.models.find((entry) => entry.id === message.modelID);
       }
 
-      if (!lastTokens && !compactionBaselineReset && message.tokens) {
-        const total = message.tokens.input + message.tokens.output + message.tokens.reasoning + (message.tokens.cache?.read ?? 0) + (message.tokens.cache?.write ?? 0);
-        if (total > 0) {
-          lastTokens = message.tokens;
-          lastMessageId = (currentSessionMessages[i] as { id?: string }).id;
-        }
-      }
-
-      if (latestAssistantModel && lastTokens) {
+      if (latestAssistantModel) {
         break;
       }
     }
 
-    return { latestAssistantModel, lastTokens, lastMessageId };
+    return { latestAssistantModel };
   }, [currentSessionMessages, providers]);
   const latestAssistantModel = headerMessageSummary.latestAssistantModel;
   const modelForLimits = currentModel?.limit ? currentModel : latestAssistantModel;
@@ -734,27 +713,7 @@ const VSCodeHeader: React.FC<VSCodeHeaderProps> = ({ title, showBack, onBack, on
   const contextLimit = limit && typeof limit.context === 'number' ? limit.context : 0;
   const outputLimit = limit && typeof limit.output === 'number' ? limit.output : 0;
 
-  const contextUsage = React.useMemo<SessionContextUsage | null>(() => {
-    if (!currentSessionId || !headerMessageSummary.lastTokens) {
-      return null;
-    }
-
-    const lastTokens = headerMessageSummary.lastTokens;
-    const totalTokens = lastTokens.input + lastTokens.output + lastTokens.reasoning + (lastTokens.cache?.read ?? 0) + (lastTokens.cache?.write ?? 0);
-    const thresholdLimit = contextLimit > 0 ? contextLimit : 200000;
-    const percentage = contextLimit > 0 ? Math.round((totalTokens / contextLimit) * 100) : 0;
-    const normalizedOutput = outputLimit > 0 ? Math.round((lastTokens.output / outputLimit) * 100) : undefined;
-
-    return {
-      totalTokens,
-      percentage,
-      contextLimit: contextLimit || 0,
-      outputLimit: outputLimit || undefined,
-      normalizedOutput,
-      thresholdLimit,
-      lastMessageId: headerMessageSummary.lastMessageId,
-    };
-  }, [contextLimit, currentSessionId, headerMessageSummary.lastMessageId, headerMessageSummary.lastTokens, outputLimit]);
+  const contextUsage = useSessionContextUsage(currentSessionId ?? '', contextLimit, outputLimit);
   const [stableContextUsage, setStableContextUsage] = React.useState<SessionContextUsage | null>(null);
   const isContextUsageResolvedForSession = !currentSessionId || currentSessionMessagesResolved;
 
@@ -764,10 +723,11 @@ const VSCodeHeader: React.FC<VSCodeHeaderProps> = ({ title, showBack, onBack, on
       return;
     }
 
-    if (contextUsage && contextUsage.totalTokens > 0) {
+    if (contextUsage) {
       setStableContextUsage((prev) => {
         if (
           prev
+          && prev.pending === contextUsage.pending
           && prev.totalTokens === contextUsage.totalTokens
           && prev.percentage === contextUsage.percentage
           && prev.contextLimit === contextUsage.contextLimit
@@ -1022,8 +982,9 @@ const VSCodeHeader: React.FC<VSCodeHeaderProps> = ({ title, showBack, onBack, on
           <Icon name="settings-3" className="h-5 w-5" />
         </button>
       )}
-      {showContextUsage && stableContextUsage && stableContextUsage.totalTokens > 0 && (
+      {showContextUsage && stableContextUsage && (
         <ContextUsageDisplay
+          pending={stableContextUsage.pending}
           totalTokens={stableContextUsage.totalTokens}
           percentage={stableContextUsage.percentage}
           contextLimit={stableContextUsage.contextLimit}

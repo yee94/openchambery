@@ -2,6 +2,7 @@ import type { I18nKey } from './en';
 import { settingsDict } from './zh-CN.settings';
 
 export const dict: Record<I18nKey, string> = {
+  'chat.chatInput.stopUnconfirmed': '尚未确认停止，请重试。',
   'chat.response.rateLimit': '已触发提供商请求频率限制',
   'chat.response.auth': '提供商身份验证失败，请重新登录后重试。',
   'chat.response.quota': '提供商配额已用尽',
@@ -1358,6 +1359,8 @@ export const dict: Record<I18nKey, string> = {
   'filesView.diagram.closeDiagramView': '关闭图表视图',
   'filesView.diagram.saveDiagram': '保存图表',
   'contextUsage.aria.label': '上下文用量',
+  'contextUsage.pending': '待更新',
+  'contextUsage.pendingDescription': '上下文已压缩，下一次模型响应返回 token 数据后更新用量。',
   'contextUsage.mobile.title': '上下文用量',
   'contextUsage.mobile.usedTokens': '已用 Token',
   'contextUsage.mobile.contextLimit': '上下文上限',

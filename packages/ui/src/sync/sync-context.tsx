@@ -10,6 +10,7 @@ import { useStore } from "zustand"
 import type { OpenCodeClient } from '@/lib/opencode/v2-types'
 
 import { createEventPipeline } from "./event-pipeline"
+import { sessionDisplayStatus, sessionDisplayStatusObservedAt } from "./session-interrupt"
 import { refreshQuestionAutoDelegate } from "@/lib/questionAutoDelegate"
 import { QuestionAutoDelegateNotifications } from "@/components/chat/QuestionAutoDelegateStatus"
 import { bindStreamReconnect, noteStreamActivity, requestStreamReconnect } from "./stream-liveness"
@@ -89,6 +90,7 @@ import {
   resetObserveEnsureGate,
   scheduleEnsureTranscriptOnObserve,
   useTranscriptHydrationState,
+  useTranscriptContextUsage,
   useTranscriptMaterializationStatus,
   useTranscriptMessageCount,
   useTranscriptMessages,
@@ -3356,6 +3358,14 @@ export function useScopedSessionStatusReader(): (scope: ScopedSessionStatusScope
   return useCallback((scope) => readScopedSessionStatus(childStores, scope), [childStores])
 }
 
+/** Context usage for one session, including part-only compaction transitions. */
+export function useSessionContextUsage(sessionID: string, contextLimit: number, outputLimit: number, directory?: string) {
+  const system = useSyncSystem()
+  const targetDirectory = directory ?? system.directory
+  const store = useDirectoryStore(targetDirectory)
+  return useTranscriptContextUsage(sessionID, targetDirectory, store, contextLimit, outputLimit)
+}
+
 /** Get session messages for a specific session (Ticket 02: repository observer). */
 export function useSessionMessages(sessionID: string, directory?: string) {
   const system = useSyncSystem()
@@ -3456,7 +3466,8 @@ export function useSessionParts(messageID: string, directory?: string, sessionID
 }
 
 /**
- * Get status for a specific session.
+ * Get display status for a specific session, including an accepted stop receipt.
+ * Execution/queue/history gates read the raw directory store instead.
  *
  * Observing status must never provision a directory. These hooks are called
  * with directory strings from many sources, and letting a read bootstrap on a
@@ -3466,11 +3477,11 @@ export function useSessionParts(messageID: string, directory?: string, sessionID
  */
 export function useSessionStatus(sessionID: string, directory?: string) {
   const store = useDirectoryStore(directory, { bootstrap: false })
-  const getSnapshot = useCallback(() => {
+  const getSnapshot = () => {
     if (!sessionID) return undefined
-    return store.getState().session_status?.[sessionID]
-  }, [sessionID, store])
-  const subscribe = useCallback((notify: () => void) => {
+    return sessionDisplayStatus(store.getState(), sessionID)
+  }
+  const subscribe = React.useMemo(() => (notify: () => void) => {
     if (!sessionID) return () => undefined
     return store.subscribe(notify)
   }, [sessionID, store])
@@ -3479,11 +3490,11 @@ export function useSessionStatus(sessionID: string, directory?: string) {
 
 export function useSessionStatusObservedAt(sessionID: string, directory?: string) {
   const store = useDirectoryStore(directory, { bootstrap: false })
-  const getSnapshot = useCallback(() => {
+  const getSnapshot = () => {
     if (!sessionID) return undefined
-    return store.getState().session_status_observed_at?.[sessionID]
-  }, [sessionID, store])
-  const subscribe = useCallback((notify: () => void) => {
+    return sessionDisplayStatusObservedAt(store.getState(), sessionID)
+  }
+  const subscribe = React.useMemo(() => (notify: () => void) => {
     if (!sessionID) return () => undefined
     return store.subscribe(notify)
   }, [sessionID, store])

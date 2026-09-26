@@ -2,6 +2,7 @@ import type { I18nKey } from './en';
 import { settingsDict } from './ja.settings';
 
 export const dict: Record<I18nKey, string> = {
+  'chat.chatInput.stopUnconfirmed': '停止をまだ確認できていません。もう一度お試しください。',
   'chat.response.rateLimit': 'プロバイダーのリクエスト頻度制限に達しました',
   'chat.response.auth': 'プロバイダーの認証に失敗しました。再度ログインしてお試しください。',
   'chat.response.quota': 'プロバイダーの利用枠を使い切りました',
@@ -1388,6 +1389,8 @@ export const dict: Record<I18nKey, string> = {
   'filesView.diagram.closeDiagramView': 'ダイアグラムビューを閉じる',
   'filesView.diagram.saveDiagram': 'ダイアグラムを保存',
   'contextUsage.aria.label': 'コンテキスト使用量',
+  'contextUsage.pending': '更新待ち',
+  'contextUsage.pendingDescription': 'コンテキストを圧縮しました。次のモデル応答でトークン数が報告されると、使用量が更新されます。',
   'contextUsage.mobile.title': 'コンテキスト使用量',
   'contextUsage.mobile.usedTokens': '使用トークン',
   'contextUsage.mobile.contextLimit': 'コンテキスト制限',

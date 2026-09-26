@@ -1,14 +1,17 @@
 import { clampPercent, resolveUsageTone } from '@/lib/quota';
+import { useI18n } from '@/lib/i18n';
 
 export type ContextProgressIconProps = {
   percentage: number;
+  pending?: boolean;
 };
 
 /** Circular context-usage ring for mobile chrome (header / floating actions). */
-export function ContextProgressIcon({ percentage }: ContextProgressIconProps) {
-  const progressPct = clampPercent(percentage) ?? 0;
+export function ContextProgressIcon({ percentage, pending = false }: ContextProgressIconProps) {
+  const { t } = useI18n();
+  const progressPct = pending ? 0 : clampPercent(percentage) ?? 0;
   const tone = resolveUsageTone(percentage);
-  const progressColor = tone === 'critical'
+  const progressColor = pending ? 'var(--surface-muted-foreground)' : tone === 'critical'
     ? 'var(--status-error)'
     : tone === 'warn'
       ? 'var(--status-warning)'
@@ -23,7 +26,9 @@ export function ContextProgressIcon({ percentage }: ContextProgressIconProps) {
       viewBox={`0 0 ${size} ${size}`}
       className="size-[18px] -rotate-90"
       role="progressbar"
-      aria-valuenow={Math.round(progressPct)}
+      aria-label={t('contextUsage.aria.label')}
+      aria-valuetext={pending ? t('contextUsage.pending') : undefined}
+      aria-valuenow={pending ? undefined : Math.round(progressPct)}
       aria-valuemin={0}
       aria-valuemax={100}
     >

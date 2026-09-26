@@ -1,6 +1,7 @@
 import { settingsDict } from './en.settings';
 
 export const dict = {
+  'chat.chatInput.stopUnconfirmed': 'Stop is not confirmed yet. Please try again.',
   'chat.response.rateLimit': 'Provider rate limit reached',
   'chat.response.auth': 'Provider authentication failed. Sign in again and retry.',
   'chat.response.quota': 'Provider quota exhausted',
@@ -1393,6 +1394,8 @@ export const dict = {
   'filesView.diagram.closeDiagramView': 'Close diagram view',
   'filesView.diagram.saveDiagram': 'Save diagram',
   'contextUsage.aria.label': 'Context usage',
+  'contextUsage.pending': 'Awaiting update',
+  'contextUsage.pendingDescription': 'Context compacted. Usage will update when the next model response reports tokens.',
   'contextUsage.mobile.title': 'Context Usage',
   'contextUsage.mobile.usedTokens': 'Used tokens',
   'contextUsage.mobile.contextLimit': 'Context limit',

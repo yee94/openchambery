@@ -1,7 +1,6 @@
 import { createProjectIdFromPath } from '../projects/project-id.js';
 import { projectBootstrapSettingsResponse } from './settings-helpers.js';
 import {
-  PINNED_OPENCODE2_VERSION,
   evaluateOpenCodeHealthBody,
   isOpenCode1xVersion,
   resolveOpenCode2UpgradeTarget,
@@ -13,6 +12,7 @@ import {
 } from './ensure-cli.js';
 import { registerUpgradeScreenRoutes } from './upgrade-screen.js';
 import { evaluateRuntimeContract } from './runtime-contract.js';
+import { createOpenCodeUpdateDiscovery } from './update-discovery.js';
 import {
   buildUpgradeStatusSnapshot,
   classifyRuntimeOwnership,
@@ -54,6 +54,7 @@ export const registerOpenCodeRoutes = (app, dependencies) => {
     getResolvedOpenCodeBinarySource = () => null,
     getActiveSessionCount = () => 0,
     openchamberDataDir = null,
+    discoverOpenCodeUpdate = createOpenCodeUpdateDiscovery(),
   } = dependencies;
 
   const upgradeOperation = createUpgradeOperationState();
@@ -156,12 +157,13 @@ export const registerOpenCodeRoutes = (app, dependencies) => {
   const buildUpgradeStatus = async () => {
     const ownership = await resolveOwnershipContext();
     const contract = await buildLiveContract();
+    const targetVersion = await discoverOpenCodeUpdate();
     const activeCount = typeof getActiveSessionCount === 'function' ? Number(getActiveSessionCount()) || 0 : 0;
     return buildUpgradeStatusSnapshot({
       ownership,
       serveVersion: contract.serveVersion,
       cliVersion: contract.cliVersion,
-      targetVersion: PINNED_OPENCODE2_VERSION,
+      targetVersion,
       contract,
       operation: upgradeOperation.getState(),
       hasActiveTasks: activeCount > 0,
@@ -342,7 +344,7 @@ export const registerOpenCodeRoutes = (app, dependencies) => {
           errorCode: 'OPENCODE_UPGRADE_1X_REFUSED',
         });
       }
-      const target = resolveOpenCode2UpgradeTarget(rawTarget);
+      const target = resolveOpenCode2UpgradeTarget(rawTarget ?? (await buildUpgradeStatus()).targetVersion);
       const confirmActive = req.body?.confirmActiveTasks === true || req.body?.force === true;
       const activeCount = typeof getActiveSessionCount === 'function' ? Number(getActiveSessionCount()) || 0 : 0;
       if (activeCount > 0 && !confirmActive) {
