@@ -198,8 +198,6 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
 
     const currentSessionId = useSessionUIStore((s) => s.currentSessionId);
 
-    const getAgentModelForSession = useSelectionStore((s) => s.getAgentModelForSession);
-    const getSessionModelSelection = useSelectionStore((s) => s.getSessionModelSelection);
     const revertToMessage = useSessionUIStore((s) => s.revertToMessage);
     const editMessagePreservingChanges = useSessionUIStore((s) => s.editMessagePreservingChanges);
     const forkFromMessage = useSessionUIStore((s) => s.forkFromMessage);
@@ -340,7 +338,7 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
     const messageProviderID = messageIdentity?.providerId ?? null;
     const messageModelID = messageIdentity?.modelId ?? null;
 
-    const contextModelSelection = React.useMemo(() => {
+    const contextModelSelection = useSelectionStore(useShallow((state) => {
         if (isUser || !sessionId) return null;
 
         if (previousUserMetadata?.providerId && previousUserMetadata?.modelId) {
@@ -351,19 +349,19 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
         }
 
         if (agentName) {
-            const agentSelection = getAgentModelForSession(sessionId, agentName);
+            const agentSelection = state.getAgentModelForSession(sessionId, agentName);
             if (agentSelection?.providerId && agentSelection?.modelId) {
                 return agentSelection;
             }
         }
 
-        const sessionSelection = getSessionModelSelection(sessionId);
+        const sessionSelection = state.getSessionModelSelection(sessionId);
         if (sessionSelection?.providerId && sessionSelection?.modelId) {
             return sessionSelection;
         }
 
         return null;
-    }, [isUser, sessionId, agentName, previousUserMetadata, getAgentModelForSession, getSessionModelSelection]);
+    }));
 
     const providerID = React.useMemo(() => {
         if (isUser) return null;

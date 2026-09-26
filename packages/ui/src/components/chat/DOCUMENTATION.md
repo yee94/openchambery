@@ -1,5 +1,14 @@
 # Chat components
 
+## Message header identity recovery
+
+Turn and ungrouped message headers subscribe to the resolved per-session model
+selection value, not only the stable store getter. Late selection hydration
+therefore fills an unknown header without remounting or waiting for a message
+update. Existing message/user identity precedence and composer fallback scope
+remain unchanged. Selectors read only the relevant session/agent selection;
+unrelated session updates do not invalidate the header.
+
 ## Cached transcript first paint
 
 `ChatContainer` passes current-scope transcript records into `resolveChatSessionTranscriptGate`. A cached visible user body, assistant text, or tool row paints immediately on re-entry even if another message is missing parts or a background pull fails. Metadata-only rows still use the cold skeleton. Repository completeness continues to drive background filling; it is not a whole-conversation visibility gate. No rows from a different session are used as placeholders.

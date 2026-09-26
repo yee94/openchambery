@@ -1,8 +1,10 @@
-import { beforeEach, describe, expect, mock, test } from 'bun:test';
+import { mock } from 'bun:test';
+import { beforeEach, describe, expect, test } from 'vitest';
 
 let runtimeKey = 'runtime-a';
 let agentCalls = 0;
 let agentResult: Array<{ name: string }> | null = null;
+let agentFailure = false;
 let providerCalls = 0;
 let seenSignal: AbortSignal | undefined;
 let providerSignal: AbortSignal | undefined;
@@ -45,6 +47,7 @@ mock.module('@/lib/opencode/client', () => ({
       config: {
         get: async () => {
           v2ConfigCalls += 1;
+          if (v2ConfigResult instanceof Error) throw v2ConfigResult;
           return v2ConfigResult;
         },
       },
@@ -52,6 +55,7 @@ mock.module('@/lib/opencode/client', () => ({
     listAgents: async (_directory?: string | null, signal?: AbortSignal) => {
       agentCalls += 1;
       seenSignal = signal;
+      if (agentFailure) throw new Error('Agent catalog unavailable');
       await new Promise<void>((resolve) => { resolveAgents = resolve; });
       return agentResult ?? [{ name: `${runtimeKey}:${_directory}` }];
     },
@@ -84,6 +88,7 @@ describe('configCatalogQueries', () => {
     runtimeKey = 'runtime-a';
     agentCalls = 0;
     agentResult = null;
+    agentFailure = false;
     providerCalls = 0;
     seenSignal = undefined;
     providerSignal = undefined;
@@ -342,7 +347,7 @@ describe('configCatalogQueries', () => {
     expect(dangerousKey.partial).toBe(true);
   });
 
-  test('partial refresh preserves a complete snapshot, cold partial remains usable, and retry runs exactly three requests', async () => {
+  test('partial responses stay stale, failed requests are not cached as success, and a later ensure recovers', async () => {
     const complete = { schemaVersion: 1, providers: [{ id: 'safe', name: 'Safe', models: { model: { id: 'model', name: 'Model' } } }], default: {}, partial: false };
     providerPayload = complete;
     await ensureProviderCatalogQuery('/workspace/project', runtimeKey);
@@ -351,8 +356,11 @@ describe('configCatalogQueries', () => {
     expect(queryClient.getQueryData<{ partial: boolean }>(providerCatalogQueryOptions('/workspace/project', runtimeKey).queryKey)?.partial).toBe(false);
 
     queryClient.clear();
-    const coldPartial = await ensureProviderCatalogQuery('/workspace/project', runtimeKey);
-    expect(coldPartial.partial).toBe(true);
+    expect((await ensureProviderCatalogQuery('/workspace/project', runtimeKey)).partial).toBe(true);
+    const callsAfterPartial = providerCalls;
+    providerPayload = complete;
+    expect((await ensureProviderCatalogQuery('/workspace/project', runtimeKey)).partial).toBe(false);
+    expect(providerCalls).toBe(callsAfterPartial + 1);
 
     queryClient.clear();
     providerFetchImpl = async () => new Response('unavailable', { status: 503 });
@@ -360,6 +368,9 @@ describe('configCatalogQueries', () => {
     await expect(ensureProviderCatalogQuery('/workspace/retry', runtimeKey)).rejects.toThrow('Provider catalog request failed');
     expect(providerCalls).toBe(3);
     expect(v2ProviderCalls).toBe(0);
+    expect(queryClient.getQueryData(providerCatalogQueryOptions('/workspace/retry', runtimeKey).queryKey)).toBeUndefined();
+    providerFetchImpl = undefined;
+    expect((await ensureProviderCatalogQuery('/workspace/retry', runtimeKey)).providers).toHaveLength(1);
   });
 
   test('v2 catalog 在无限 freshness 下重复 ensure 不发起新请求', async () => {
@@ -371,6 +382,15 @@ describe('configCatalogQueries', () => {
     expect(v2ProviderCalls).toBe(1);
     expect(v2ModelCalls).toBe(1);
     expect(v2ConfigCalls).toBe(1);
+  });
+
+  test('optional default config failure does not discard the loaded provider and model lists', async () => {
+    providerFetchImpl = async () => new Response('missing', { status: 404 });
+    v2ConfigResult = new Error('config unavailable');
+    const catalog = await ensureProviderCatalogQuery('/workspace/project', runtimeKey);
+    expect(catalog.providers[0]?.models.model.id).toBe('model');
+    expect(catalog.default).toEqual({});
+    expect(catalog.partial).toBe(false);
   });
 
   test('成功返回空 catalog 后，再次 ensure 会重新发起请求', async () => {
@@ -402,5 +422,19 @@ describe('configCatalogQueries', () => {
     resolveAgents?.();
     expect(await second).toEqual([]);
     expect(agentCalls).toBe(2);
+  });
+
+  test('failed Agent ensure does not cache an empty success and the next demand recovers', async () => {
+    agentFailure = true;
+    await expect(ensureRawAgentsQuery('/workspace/project', runtimeKey)).rejects.toThrow('Agent catalog unavailable');
+    expect(queryClient.getQueryState(rawAgentsQueryOptions('/workspace/project', runtimeKey).queryKey)?.status).toBe('error');
+    expect(queryClient.getQueryData(rawAgentsQueryOptions('/workspace/project', runtimeKey).queryKey)).toBeUndefined();
+    agentFailure = false;
+    const recovery = ensureRawAgentsQuery('/workspace/project', runtimeKey);
+    resolveAgents?.();
+    expect(await recovery).toHaveLength(1);
+    const calls = agentCalls;
+    await ensureRawAgentsQuery('/workspace/project', runtimeKey);
+    expect(agentCalls).toBe(calls);
   });
 });

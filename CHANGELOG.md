@@ -4,6 +4,19 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [2.0.0-beta.18] - 2026-09-26
+
+这是 OpenCode 2 预览版。本次发布桌面、Android 安装包及同版本 Beta OTA；iOS 不上 TestFlight，不进入外测组或稳定自动更新通道。
+
+### 对话与模型选择
+
+- Agent 或模型目录加载失败后，再次需要时会重新加载；不完整目录不会被当成永久有效缓存。
+- 会话模型选择稍后到达时，对话消息头会自动更新；默认模型信息不可用时，仍显示已加载的模型列表。
+
+### 计划任务
+
+- 根据 OpenCode 2 原生执行结束记录识别计划任务成功、失败和中断状态，并等待会话确认空闲后再结算。
+
 ## [2.0.0-beta.17] - 2026-09-26
 
 这是 OpenCode 2 预览版。本次发布桌面、Android 安装包及同版本 Beta OTA；iOS 不上 TestFlight，不进入外测组或稳定自动更新通道。

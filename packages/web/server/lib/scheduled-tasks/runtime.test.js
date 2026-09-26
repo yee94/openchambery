@@ -1108,6 +1108,78 @@ describe('scheduled-tasks run history and session lifecycle', () => {
     expect(client.prompt).not.toHaveBeenCalled();
   });
 
+  it.each([
+    ['succeeded', 'success', null],
+    ['failed', 'error', 'session execution failed'],
+    ['interrupted', 'error', 'session execution interrupted'],
+  ])('settles native idle outcome %s instead of timing out', async (outcome, status, error) => {
+    vi.useFakeTimers();
+    try {
+      const history = createHistoryStore();
+      const client = createSuccessfulClient({
+        messageListImpl: async () => ({
+          data: [
+            { id: 'msg_idle', type: 'idle', outcome, time: { created: 1_200 } },
+            outcome === 'succeeded' ? erroredAssistant() : completedAssistant(),
+          ],
+        }),
+      });
+      const updateState = vi.fn(async (_projectID, _taskID, state) => ({
+        task: { ...scheduledTask, state: { ...scheduledTask.state, ...state } },
+      }));
+      const runtime = createRuntime(updateState, {
+        runHistoryStore: history,
+        waitForOpenCodeReady: vi.fn(async () => {}),
+        maxRunDurationMs: 2_500,
+      });
+      await runtime.syncProject('project-1');
+      const pending = runtime.runNow('project-1', 'task-1');
+      await vi.advanceTimersByTimeAsync(2_500);
+      const result = await pending;
+      expect(result.status).toBe(status);
+      expect(result.error ?? null).toBe(error);
+      expect(history.finishRun).toHaveBeenCalledWith(
+        expect.any(String), expect.objectContaining({ status }),
+      );
+      expect(client.interrupt).not.toHaveBeenCalled();
+      expect(client.messageList).toHaveBeenCalledTimes(1);
+      expect(history.finishRun.mock.calls[0][1].durationMs).toBeLessThan(2_500);
+      runtime.stop();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('does not settle an older idle record while the session is active', async () => {
+    vi.useFakeTimers();
+    try {
+      const history = createHistoryStore();
+      let busy = true;
+      const client = createSuccessfulClient({
+        activeImpl: async () => busy ? { ses_1: { type: 'running' } } : {},
+        messageListImpl: async () => ({
+          data: [{ id: 'msg_idle', type: 'idle', outcome: 'succeeded', time: { created: 1_200 } }],
+        }),
+      });
+      const runtime = createRuntime(vi.fn(async () => ({ task: scheduledTask })), {
+        runHistoryStore: history,
+        waitForOpenCodeReady: vi.fn(async () => {}),
+        maxRunDurationMs: 5_000,
+      });
+      await runtime.syncProject('project-1');
+      const pending = runtime.runNow('project-1', 'task-1');
+      await vi.advanceTimersByTimeAsync(1_000);
+      expect(history.finishRun).not.toHaveBeenCalled();
+      expect(client.messageList).not.toHaveBeenCalled();
+      busy = false;
+      await vi.advanceTimersByTimeAsync(1_000);
+      expect((await pending).status).toBe('success');
+      runtime.stop();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('ordinary non-goal runs still create a session and settle on the assistant tail', async () => {
     const history = createHistoryStore();
     const client = createSuccessfulClient({ sessionID: 'ses_plain' });
@@ -1182,16 +1254,17 @@ describe('scheduled-tasks run history and session lifecycle', () => {
     );
   });
 
-  it('does not succeed when the latest message is model-switched', async () => {
+  it.each([
+    { id: 'msg_switch', type: 'model-switched', model: { providerID: 'openai', id: 'gpt-4.1' } },
+    { id: 'msg_idle', type: 'idle', outcome: 'unknown' },
+  ])('does not succeed on an unrecognized terminal: $type', async (tail) => {
     vi.useFakeTimers();
     const history = createHistoryStore();
     createSuccessfulClient({
       messageListImpl: async () => ({
         data: [{
-          id: 'msg_switch',
-          type: 'model-switched',
+          ...tail,
           time: { created: Date.now() },
-          model: { providerID: 'openai', id: 'gpt-4.1' },
         }],
       }),
     });
@@ -1442,7 +1515,7 @@ describe('scheduled-tasks run history and session lifecycle', () => {
     vi.unstubAllGlobals();
   });
 
-  it('corrects lastStatus error → success on idle after a continuation, without rewriting history', async () => {
+  it.each(['assistant', 'idle'])('corrects lastStatus error → success from %s after a continuation, without rewriting history', async (tailType) => {
     const history = createHistoryStore();
     const client = createSuccessfulClient({ settlement: 'assistant-error' });
     const fetchMock = vi.fn(async (url) => {
@@ -1468,7 +1541,9 @@ describe('scheduled-tasks run history and session lifecycle', () => {
     expect(history.finishRun).toHaveBeenCalledTimes(1);
 
     client.messageList.mockImplementation(async () => ({
-      data: [completedAssistant('msg_ok')],
+      data: [tailType === 'idle'
+        ? { id: 'msg_idle', type: 'idle', outcome: 'succeeded', time: { created: 1_200 } }
+        : completedAssistant('msg_ok')],
     }));
 
     await runtime.observeSessionEvent({

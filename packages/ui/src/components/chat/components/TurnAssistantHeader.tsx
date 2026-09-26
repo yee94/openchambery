@@ -47,8 +47,6 @@ const TurnAssistantHeader: React.FC<TurnAssistantHeaderProps> = ({
         modelId: state.currentModelId,
     })));
     const sessionId = assistantMessage?.info.sessionID ?? userMessage.info.sessionID;
-    const getAgentModelForSession = useSelectionStore((state) => state.getAgentModelForSession);
-    const getSessionModelSelection = useSelectionStore((state) => state.getSessionModelSelection);
     const { currentContextAgent, savedSessionAgentSelection } = useContextStore(
         useShallow((state) => ({
             currentContextAgent: assistantIsInActiveTurn && sessionId
@@ -77,15 +75,15 @@ const TurnAssistantHeader: React.FC<TurnAssistantHeaderProps> = ({
             ?? savedSessionAgentSelection;
     }, [assistantMessage, currentContextAgent, pendingPresentation?.agentName, savedSessionAgentSelection, userIdentity?.agentName]);
 
-    const sessionModelSelection = React.useMemo(() => {
+    const sessionModelSelection = useSelectionStore((state) => {
         if (sessionId && agentName) {
-            const agentSelection = getAgentModelForSession(sessionId, agentName);
+            const agentSelection = state.getAgentModelForSession(sessionId, agentName);
             if (agentSelection?.providerId && agentSelection.modelId) return agentSelection;
         }
         if (!sessionId) return null;
-        const sessionSelection = getSessionModelSelection(sessionId);
+        const sessionSelection = state.getSessionModelSelection(sessionId);
         return sessionSelection?.providerId && sessionSelection.modelId ? sessionSelection : null;
-    }, [agentName, getAgentModelForSession, getSessionModelSelection, sessionId]);
+    });
 
     const resolvedModel = resolveAssistantHeaderModel({
         assistantIdentity,

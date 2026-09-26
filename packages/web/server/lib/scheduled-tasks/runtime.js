@@ -304,7 +304,7 @@ const isUserMessage = (info) => (
  * - finish tool-calls is mid-loop, never success
  * - incomplete (no time.completed) is never success
  * - model-switched / non-assistant tails are not success
- * - only a completed assistant with a real terminal finish succeeds
+ * - native idle outcomes settle the execution; older servers use assistant finish
  */
 const classifyMessageTail = (messages) => {
   if (!Array.isArray(messages) || messages.length === 0) {
@@ -315,6 +315,15 @@ const classifyMessageTail = (messages) => {
   // a bounded page mixes ages (and fixtures / clock skew can invert created).
   const latest = readMessageInfo(messages[0]);
   if (!latest) {
+    return { outcome: 'unknown' };
+  }
+  if (latest.type === 'idle') {
+    if (latest.outcome === 'succeeded') {
+      return { outcome: 'success' };
+    }
+    if (latest.outcome === 'failed' || latest.outcome === 'interrupted') {
+      return { outcome: 'error', error: `session execution ${latest.outcome}` };
+    }
     return { outcome: 'unknown' };
   }
   if (isAssistantMessage(latest)) {

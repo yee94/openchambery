@@ -33,6 +33,12 @@ host/bridge endpoint). Do not substitute location reload for automatic hot updat
 `sync/config-live-refresh.ts` batches V2 domain events, invalidates matching
 transport/directory Query entries and refreshes existing composer projections.
 Inactive queries stay stale until observed; failed reads retain previous data.
+Provider catalog `ensure` treats partial snapshots as stale even when they contain
+providers, so a later demand retries instead of keeping an incomplete catalog
+fresh forever. Cold partial data remains provisional and usable; failed requests
+stay Query errors without manufacturing an empty successful result. Complete
+cached catalogs remain reusable, and failed refreshes retain them. Optional
+default-selection configuration is independent of provider/model list success.
 Plugin Settings page/sidebar observe `pluginQueries.ts`, including external
 plugin/config changes, while the legacy store mirrors explicit list loads for
 imperative selection/mutation callers. The store loader now shares Query IO.
