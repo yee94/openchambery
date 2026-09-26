@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [2.0.0-beta.17] - 2026-09-26
+
+这是 OpenCode 2 预览版。本次发布桌面、Android 安装包及同版本 Beta OTA；iOS 不上 TestFlight，不进入外测组或稳定自动更新通道。
+
+### 对话输入
+
+- 修复在输入框里写 npm 包名（如 `@scope/package`）时被当成文件附件，导致发送失败（400 Unable to read attachment）的问题。包名会保留在正文里；从文件补全里选中的路径仍会作为附件发送。
+
 ## [2.0.0-beta.16] - 2026-09-26
 
 这是 OpenCode 2 预览版。本次发布桌面、Android 安装包及同版本 Beta OTA；iOS 不上 TestFlight，不进入外测组或稳定自动更新通道。

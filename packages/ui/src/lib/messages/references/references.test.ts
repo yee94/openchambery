@@ -104,6 +104,15 @@ describe('detectMessageReferences', () => {
         ]);
     });
 
+    test('does not decorate npm scoped packages as file mentions', () => {
+        const spans = detectMessageReferences('keep @tencent/agent-tracker-opencode-plugin and @src/a.ts', {
+            allowPathHeuristics: true,
+        });
+        expect(spans.map((span) => [span.kind, span.label])).toEqual([
+            ['file', '@src/a.ts'],
+        ]);
+    });
+
     test('detects session tokens and path/agent mentions', () => {
         const spans = detectMessageReferences('ask @build about @src/a.ts and @session:ses_1', {
             agentNames: new Set(['build']),

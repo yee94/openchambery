@@ -17,6 +17,19 @@ export type FileMentionQueryIntent = {
 };
 
 const FILE_EXTENSION_PATTERN = /\.[a-z0-9]{1,8}$/i;
+/**
+ * `@scope/name` and `@scope/name@version` are npm specs, not filesystem paths.
+ * The mention value omits the trigger `@`. A short file extension (`src/a.ts`)
+ * stays a path so typed file mentions still confirm.
+ */
+const NPM_SCOPED_PACKAGE_MENTION = /^([a-z0-9][a-z0-9._-]*)\/([a-z0-9][a-z0-9._-]*)(?:@[^\s/\\]+)?$/i;
+
+export const isNpmScopedPackageMention = (mention: string): boolean => {
+  const match = NPM_SCOPED_PACKAGE_MENTION.exec(mention);
+  if (!match) return false;
+  return !FILE_EXTENSION_PATTERN.test(match[2]);
+};
+
 const TEST_PATH_SEGMENTS = new Set([
   'test',
   'tests',

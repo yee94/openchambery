@@ -364,6 +364,13 @@ describe('file mention confirmation', () => {
         expect(collectConfirmableFileMentions('@scope/pkg@latest', {
             includeUnterminatedPastedReferences: true,
         })).toEqual([]);
+        expect(collectConfirmableFileMentions('keep @tencent/agent-tracker-opencode-plugin and @scope/pkg@latest ', {
+            agentNames: new Set(['build']),
+        })).toEqual([]);
+        expect(collectComposerMentionHighlights('keep @tencent/agent-tracker-opencode-plugin and @scope/pkg@latest ', {
+            confirmedValues: new Set(),
+            agentNames: new Set(),
+        })).toEqual([]);
         expect(collectConfirmableFileMentions('ask @build about @src/a.ts ', {
             agentNames: new Set(['build']),
         })).toEqual([
