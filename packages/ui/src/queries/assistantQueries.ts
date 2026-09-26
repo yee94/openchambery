@@ -110,6 +110,7 @@ const foregroundReconcileIntervalMs = (
 export const assistantSnapshotQueryOptions = (transport = getRuntimeTransportIdentity()) => ({
   queryKey: key.snapshot(transport),
   queryFn: async ({ signal }: { signal: AbortSignal }) => parseAssistantSnapshotDTO(await requestJSON<unknown>('/api/openchamber/assistants/snapshot', { signal })),
+  staleTime: 0,
   retry: 2,
   refetchInterval: (query: { state: { data: AssistantSnapshot | undefined } }) => (
     foregroundReconcileIntervalMs(query.state.data)
@@ -396,6 +397,7 @@ export const assistantContactQueryOptions = (
     return committed;
   },
   retry: 2,
+  staleTime: 0,
   refetchInterval: () => {
     if (!options.reconcileInForeground) return false as const;
     const snapshot = queryClient.getQueryData<AssistantSnapshot>(key.snapshot(transport));
@@ -449,6 +451,16 @@ export const useAssistantContactMessagesQuery = (assistantID: string, enabled = 
     ...assistantContactQueryOptions(assistantID, transport, runtimeGeneration, { reconcileInForeground: true }),
     enabled: enabled && Boolean(assistantID),
   });
+
+  React.useEffect(() => {
+    if (!enabled || !assistantID) return;
+    // A retained contact can reactivate without remounting its snapshot observer.
+    // Recover activity alongside messages, sharing any already-running snapshot GET.
+    void queryClient.invalidateQueries(
+      { queryKey: key.snapshot(transport), exact: true },
+      { cancelRefetch: false },
+    );
+  }, [assistantID, enabled, runtimeGeneration, transport]);
 
   React.useEffect(() => subscribeOpenchamberEvents((event) => {
     if (getRuntimeTransportIdentity() !== transport) return;

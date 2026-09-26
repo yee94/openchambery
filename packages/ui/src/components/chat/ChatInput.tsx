@@ -196,7 +196,7 @@ import {
     type ComposerSendPhase,
 } from '@/sync/composer-send-manager';
 import { drainEstablishingFollowUps } from '@/sync/composer-send-drain';
-import { forgetUnpromotedInbox, getInboxTerminal, holdInboxSteering, listHeldInboxSteering, releaseInboxSteering, updateInboxOverlayDelivery, useSessionInboxOverlayStore, toChip as toInboxChip, EMPTY_INBOX_CHIPS } from '@/sync/session-inbox-overlay';
+import { getInboxTerminal, updateInboxOverlayDelivery, useSessionInboxOverlayStore, toChip as toInboxChip, EMPTY_INBOX_CHIPS } from '@/sync/session-inbox-overlay';
 import { cancelUnpromotedInboxItem, queueSessionInbox, steerSessionInbox } from '@/sync/session-prompt-api';
 import { canPromoteInboxItem, useSessionCompactionBarrierStore } from '@/sync/session-compaction-api';
 import { runQueueMessageFireAndForget } from './queueMessageFireAndForget';
@@ -2462,16 +2462,6 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
         item: QueuePendingAdmissionItem;
     } | null>(null);
     const [steeringMessageIDs, setSteeringMessageIDs] = React.useState<ReadonlySet<string>>(() => new Set());
-    // Drop 引导中 only after the running turn settles. Releasing mid-turn is what
-    // made steer recycle and the queue 引导 button eat the chip immediately.
-    React.useEffect(() => {
-        if (!currentSessionId || sessionIsRunning) return;
-        const held = listHeldInboxSteering(currentSessionId);
-        if (held.length === 0 && steeringMessageIDs.size === 0) return;
-        releaseInboxSteering(currentSessionId);
-        for (const inboxID of held) forgetUnpromotedInbox(currentSessionId, inboxID, 'consumed');
-        setSteeringMessageIDs((current) => (current.size === 0 ? current : new Set()));
-    }, [currentSessionId, sessionIsRunning, steeringMessageIDs.size]);
     const visibleNativeAdmission = nativeQueueAdmission
         && nativeQueueAdmission.sessionID === currentSessionId
         && isQueueAdmissionRuntimeCurrent(nativeQueueAdmission.runtime, surfaceResources.captureRuntime())
@@ -3226,7 +3216,6 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
         };
         if (nativeQueueMessageID && currentSessionId) {
             if (steerAfterAdmit) {
-                holdInboxSteering(currentSessionId, nativeQueueMessageID);
                 setSteeringMessageIDs((current) => {
                     if (current.has(nativeQueueMessageID)) return current;
                     const next = new Set(current);
@@ -4127,7 +4116,6 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
         void sendPromise.then(async () => {
             if (steerAfterAdmit && nativeQueueMessageID && primarySubmitSessionIdAtStart) {
                 const releaseSteering = () => {
-                    releaseInboxSteering(primarySubmitSessionIdAtStart, nativeQueueMessageID);
                     setSteeringMessageIDs((current) => {
                         if (!current.has(nativeQueueMessageID)) return current;
                         const next = new Set(current);
@@ -4135,7 +4123,8 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
                         return next;
                     });
                 };
-                if (!canPromoteInboxItem({ sessionID: primarySubmitSessionIdAtStart })) {
+                if (getInboxTerminal(primarySubmitSessionIdAtStart, nativeQueueMessageID)
+                    || !canPromoteInboxItem({ sessionID: primarySubmitSessionIdAtStart })) {
                     releaseSteering();
                 } else {
                     const steerDirectory = useSessionUIStore.getState().getDirectoryForSession(primarySubmitSessionIdAtStart)
@@ -7287,9 +7276,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
                 if (!canPromoteInboxItem({ sessionID: currentSessionId })) return;
                 const directory = currentSessionDirectoryForSync ?? currentDirectory ?? '';
                 const sessionID = currentSessionId;
-                // Same recycle as Cmd+Enter: keep the chip on 引导中 until the turn
-                // settles, instead of letting steer consumption eat it immediately.
-                holdInboxSteering(sessionID, inboxID);
+                // Show steering immediately; authoritative consumption owns removal.
                 setSteeringMessageIDs((current) => {
                     if (current.has(inboxID)) return current;
                     const next = new Set(current);
@@ -7298,7 +7285,6 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
                 });
                 return steerSessionInbox({ sessionID, inboxID, directory })
                     .catch(() => {
-                        releaseInboxSteering(sessionID, inboxID);
                         setSteeringMessageIDs((current) => {
                             if (!current.has(inboxID)) return current;
                             const next = new Set(current);

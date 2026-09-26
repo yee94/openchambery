@@ -407,10 +407,55 @@ describe('assistant foreground live recovery', () => {
     expect(SYNTHETIC_CONTACT_COMPLETE_BYTES).toBeLessThan(2_000)
   })
 
-  test('race A — stale idle cache recovers completed reply via idle foreground reconcile (15s), not 50ms', async () => {
+  test('reopening a contact immediately recovers published replies and a running turn from fresh cached idle data', async () => {
+    testQueryClient.setQueryData([hoisted.transport, 'assistants', 'snapshot'], snapshotPage(2))
+    testQueryClient.setQueryData(
+      [hoisted.transport, hoisted.runtimeGeneration, 'assistants', 'contact', assistantID],
+      contactView([userMessage]),
+    )
+    httpState.defaultSnapshot = snapshotPage(3, {
+      working: true,
+      activeContactTurn: { turnID: 'turn_1', messageID: 'turn_1', status: 'running', admittedAt: 10 },
+      unreadCount: 1,
+    })
+    httpState.defaultContact = contactPage([userMessage, assistantReply], { revision: 3 })
+
+    const host = await mountProbe()
+    await waitUntil(host, (p) => p.working && p.activeTurn === 'turn_1'
+      && p.texts.includes('server already replied'), 'reopen recovers intermediate state without waiting for polling')
+    expect(httpState.snapshotFetches).toBe(1)
+    expect(httpState.contactFetches).toBe(1)
+  })
+
+  test('reactivating a retained contact refreshes messages and running state without SSE', async () => {
+    const host = await mountProbe()
+    await waitUntil(host, (p) => p.contactStatus === 'success' && p.snapshotStatus === 'success', 'initial idle')
+    const render = async (active: boolean) => {
+      await act(async () => mounted[0]!.root.render(
+        <QueryClientProvider client={testQueryClient}>
+          <Probe id={assistantID} active={active} />
+        </QueryClientProvider>,
+      ))
+      await flush()
+    }
+    await render(false)
+    httpState.defaultSnapshot = snapshotPage(3, {
+      working: true,
+      activeContactTurn: { turnID: 'turn_1', messageID: 'turn_1', status: 'running', admittedAt: 10 },
+    })
+    httpState.defaultContact = contactPage([userMessage, assistantReply], { revision: 3 })
+    const contactsBefore = httpState.contactFetches
+    const snapshotsBefore = httpState.snapshotFetches
+    await render(true)
+    await waitUntil(host, (p) => p.working && p.texts.includes('server already replied'), 'reactivation recovers intermediate state')
+    expect(httpState.contactFetches - contactsBefore).toBe(1)
+    expect(httpState.snapshotFetches - snapshotsBefore).toBe(1)
+  })
+
+  test('race A — a mounted idle contact recovers a missed reply via foreground reconcile', async () => {
     vi.useFakeTimers()
-    httpState.defaultSnapshot = snapshotPage(9, { working: false, activeContactTurn: null })
-    httpState.defaultContact = contactPage([userMessage, assistantReply])
+    httpState.defaultSnapshot = snapshotPage(2, { working: false, activeContactTurn: null })
+    httpState.defaultContact = contactPage([userMessage])
 
     const snapshotKey = [hoisted.transport, 'assistants', 'snapshot'] as const
     const contactKey = [hoisted.transport, hoisted.runtimeGeneration, 'assistants', 'contact', assistantID] as const
@@ -418,8 +463,11 @@ describe('assistant foreground live recovery', () => {
     testQueryClient.setQueryData(contactKey, contactView([userMessage]))
 
     const host = await mountProbe()
+    await advanceReconcile(0)
     expect(readProbe(host).texts).toBe('hello')
     const contactAtMount = httpState.contactFetches
+    httpState.defaultSnapshot = snapshotPage(9, { working: false, activeContactTurn: null })
+    httpState.defaultContact = contactPage([userMessage, assistantReply])
 
     // Under 15s: still stale (proves we do not rely on a 50ms fluke).
     await advanceReconcile(ASSISTANT_FOREGROUND_IDLE_RECONCILE_MS - 1_000)
