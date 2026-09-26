@@ -2,6 +2,7 @@ import { execFileSync } from 'node:child_process';
 import { describe, expect, test } from 'vitest';
 
 import {
+  isNpmScopedPackageMention,
   isTestFileMentionPath,
   parseFileMentionQuery,
   rankFileMentionSearch,
@@ -267,6 +268,18 @@ describe('file mention search — synthetic mix', () => {
     const ranked = rankFileMentionSearch(project, 'persistence/', { limit: 10 }).map((item) => item.relativePath);
     expect(ranked[0]).toBe('test/yi/persistence/');
     expect(ranked.indexOf('test/yi/persistence/')).toBeLessThan(ranked.indexOf('src/lib/persistence.ts'));
+  });
+});
+
+describe('npm scoped package mentions', () => {
+  test('recognizes @scope/name specs and leaves real file paths alone', () => {
+    expect(isNpmScopedPackageMention('tencent/agent-tracker-opencode-plugin')).toBe(true);
+    expect(isNpmScopedPackageMention('scope/pkg@latest')).toBe(true);
+    expect(isNpmScopedPackageMention('scope/pkg@1.2.3')).toBe(true);
+    expect(isNpmScopedPackageMention('src/a.ts')).toBe(false);
+    expect(isNpmScopedPackageMention('src/foo/')).toBe(false);
+    expect(isNpmScopedPackageMention('/Users/aeodu/Code/project/ai/opencode-config')).toBe(false);
+    expect(isNpmScopedPackageMention('packages/ui/src/index.ts')).toBe(false);
   });
 });
 

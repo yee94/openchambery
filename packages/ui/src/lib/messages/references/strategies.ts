@@ -1,3 +1,4 @@
+import { isNpmScopedPackageMention } from '@/lib/search/fileMentionSearch';
 import { DRAFT_COMPOSER_TRIGGER_ICON_SLOT, draftComposerSkillIdTokenPattern } from '@/sync/input-draft-types';
 import { stripComposerTriggerIconSlot } from '@/composer/inline-visual';
 import { buildAgentHref, buildSkillHref } from '@/lib/messages/inlineMessageLinks';
@@ -31,7 +32,8 @@ const isBoundaryBefore = (text: string, index: number): boolean => {
 };
 
 const looksLikeFilePath = (mention: string): boolean => (
-    mention.includes('/') || mention.includes('\\') || mention.includes('.')
+    !isNpmScopedPackageMention(mention)
+    && (mention.includes('/') || mention.includes('\\') || mention.includes('.'))
 );
 
 const pushSpan = (

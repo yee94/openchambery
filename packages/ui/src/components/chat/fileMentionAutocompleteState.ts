@@ -1,6 +1,6 @@
 import type { Session } from '@/lib/opencode/v2-types';
 import type { ProjectFileSearchHit } from '@/lib/opencode/client';
-import { rankFileMentionSearch, type FileMentionSearchHit } from '@/lib/search/fileMentionSearch';
+import { isNpmScopedPackageMention, rankFileMentionSearch, type FileMentionSearchHit } from '@/lib/search/fileMentionSearch';
 import { scoreTextAgainstQuery } from '@/lib/search/fuzzySearch';
 
 export {
@@ -20,7 +20,8 @@ const FILE_EXTENSION_PATTERN = /\.[a-z0-9]{1,8}$/i;
 const MENTION_BOUNDARY_BEFORE = /(\s|\(|\)|\[|\]|\{|\}|"|'|`|,|\.|;|:)/;
 
 export const looksLikeFilePath = (mention: string): boolean => (
-  mention.includes('/') || mention.includes('\\') || mention.includes('.')
+  !isNpmScopedPackageMention(mention)
+  && (mention.includes('/') || mention.includes('\\') || mention.includes('.'))
 );
 
 export const looksLikePastedFileReference = (mention: string): boolean => {

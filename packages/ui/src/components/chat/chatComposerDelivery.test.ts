@@ -121,6 +121,36 @@ test('confirmed file paths with spaces stay one attachment', () => {
     expect(compiled.attachments[0]?.filename).toBe('今天我们穿越去哪？ - Slidev.pdf');
 });
 
+test('npm scoped package mentions stay text and are not file attachments', () => {
+    const compiled = compileChatComposerDelivery({
+        plan: legacyTextToAuthoredPlan('保留 @tencent/agent-tracker-opencode-plugin 和 @scope/pkg@latest 更新 @/Users/aeodu/Code/project/ai/opencode-config'),
+        agents,
+        installedSkillNames: new Set(),
+        directory: '/Users/aeodu/.config/opencode',
+        root: '/Users/aeodu/.config/opencode',
+    });
+
+    expect(compiled.attachments.map((attachment) => attachment.serverPath)).toEqual([
+        '/Users/aeodu/Code/project/ai/opencode-config',
+    ]);
+    expect(compiled.text).toContain('@tencent/agent-tracker-opencode-plugin');
+    expect(compiled.text).toContain('@scope/pkg@latest');
+});
+
+test('autocomplete-confirmed paths still attach even when they look like npm packages', () => {
+    const compiled = compileChatComposerDelivery({
+        plan: legacyTextToAuthoredPlan('open @tencent/agent-tracker-opencode-plugin'),
+        agents,
+        installedSkillNames: new Set(),
+        directory: '/Users/aeodu/.config/opencode',
+        root: '/Users/aeodu/.config/opencode',
+        confirmedFilePaths: ['tencent/agent-tracker-opencode-plugin'],
+    });
+
+    expect(compiled.attachments).toHaveLength(1);
+    expect(compiled.attachments[0]?.serverPath).toBe('/Users/aeodu/.config/opencode/tencent/agent-tracker-opencode-plugin');
+});
+
 test('confirmed directory mentions send application/x-directory mime', () => {
     const compiled = compileChatComposerDelivery({
         plan: legacyTextToAuthoredPlan('update @opencode config'),

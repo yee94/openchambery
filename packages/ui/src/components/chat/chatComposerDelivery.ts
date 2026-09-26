@@ -11,6 +11,7 @@ import {
     expandCodeSelectionCitations,
     stripAttachmentCitationSlotsForDelivery,
 } from './attachmentCitations';
+import { isNpmScopedPackageMention } from '@/lib/search/fileMentionSearch';
 import { collectSessionMentionIds, replaceSessionMentionTokens } from './fileMentionAutocompleteState';
 import { COMPOSER_TRIGGER_ICON_SLOT } from '@/composer/inline-visual';
 
@@ -61,11 +62,15 @@ export const extractInlineFileMentions = ({ text, root, confirmedFilePaths, conf
         const relativeMentionKey = isAbsolute(mention) || isAbsolute(normalizedMentionPath)
             ? normalizedMentionPath
             : normalizedMentionPath.replace(/^\/+/, '');
-        const looksLikePath = confirmed.has(normalizedMentionPath)
-            || confirmed.has(relativeMentionKey)
-            || mention.includes('/')
-            || mention.includes('\\')
-            || mention.includes('.');
+        const confirmedPath = confirmed.has(normalizedMentionPath) || confirmed.has(relativeMentionKey);
+        // `@scope/name` is an npm spec. Joining it onto the workspace root makes
+        // OpenCode try to read a file that does not exist and reject the send.
+        const looksLikePath = confirmedPath
+            || (!isNpmScopedPackageMention(mention) && (
+                mention.includes('/')
+                || mention.includes('\\')
+                || mention.includes('.')
+            ));
         if (!looksLikePath) return;
         const normalizedServerPath = (isAbsolute(mention) || isAbsolute(normalizedMentionPath))
             ? normalizedMentionPath
