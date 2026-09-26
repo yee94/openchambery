@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [2.0.0-beta.16] - 2026-09-26
+
+这是 OpenCode 2 预览版。本次发布桌面、Android 安装包及同版本 Beta OTA；iOS 不上 TestFlight，不进入外测组或稳定自动更新通道。
+
+### 对话展示
+
+- 历史消息正文尚未补齐时，不再堆出一排没有内容的模型标题；正在生成的当前消息仍保留标题。
+- 末条未归入回合的消息只出现一次，不再在历史区和实时区重复渲染。
+- 仅错误状态变化时也会刷新对应消息，避免旧的空标题残留。
+
 ## [2.0.0-beta.15] - 2026-09-25
 
 这是 OpenCode 2 预览版。本次发布桌面、Android 安装包、同版本 Beta OTA，以及 iOS 内测 TestFlight。不进入外测组或稳定自动更新通道。

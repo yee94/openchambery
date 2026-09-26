@@ -94,8 +94,8 @@ describe('splitTimelineRenderEntries', () => {
             lastTurnId: first.turnId,
         });
 
-        expect(keys(split.history)).toEqual(['turn:user-1', 'msg:msg-compact']);
+        expect(keys(split.history)).toEqual(['turn:user-1']);
         expect(keys(split.tail)).toEqual(['msg:msg-compact']);
-        expect(split.tail[0]).toBe(split.history[1]);
+        expect(new Set(keys([...split.history, ...split.tail])).size).toBe(2);
     });
 });

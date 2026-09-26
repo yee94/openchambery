@@ -135,7 +135,7 @@ export function splitTimelineRenderEntries<
             entry.kind === 'ungrouped' && entry.message.info.id === lastMessage.info.id
         ));
         return {
-            history: ordered,
+            history: trailing ? ordered.filter((entry) => entry !== trailing) : ordered,
             tail: trailing ? [trailing] : EMPTY_TAIL as TimelineRenderEntry<TMessage, TTurn>[],
         };
     }

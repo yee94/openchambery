@@ -37,7 +37,7 @@ vi.mock('@/lib/i18n', () => ({
 
 vi.mock('@/lib/device', () => ({
   useDeviceInfo: () => ({
-    isMobile: false,
+    isMobile: mocks.uiState.isMobile,
     isTablet: false,
     hasTouchInput: false,
   }),
@@ -264,6 +264,7 @@ describe('new conversation assistant header continuity', () => {
   const renderMessages = async (
     messages: Array<ReturnType<typeof userMessage> | ReturnType<typeof assistantMessage>>,
     working: boolean,
+    activeMessageId: string | null = null,
   ) => {
     await act(async () => {
       root.render(
@@ -271,7 +272,7 @@ describe('new conversation assistant header continuity', () => {
           sessionKey={sessionID}
           messages={messages}
           sessionIsWorking={working}
-          activeStreamingMessageId={null}
+          activeStreamingMessageId={activeMessageId}
           activeStreamingPhase={null}
           isLoadingOlder={false}
           onMessageContentChange={() => undefined}
@@ -364,6 +365,36 @@ describe('new conversation assistant header continuity', () => {
     const reloadedDivider = container.querySelector('[data-compaction-card]');
     const reloadedReply = container.querySelector('[data-message-id="assistant-2"]');
     expect(reloadedDivider!.compareDocumentPosition(reloadedReply!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  test.each([
+    [false, 'live'], [true, 'live'], [false, 'sorted'], [true, 'sorted'],
+  ] as const)('does not paint historical V2 metadata shells as standalone model headings (mobile=%s, mode=%s)', async (mobile, mode) => {
+    mocks.uiState.isMobile = mobile;
+    mocks.uiState.chatRenderMode = mode;
+    const shells = Array.from({ length: 4 }, (_, index) => {
+      const row = assistantMessage({ completed: false });
+      return { ...row, info: { ...row.info, id: `shell-${index}`, parentID: undefined, time: { created: index + 1 } } };
+    });
+    await renderMessages(shells, true);
+    expect(container.querySelectorAll('h3')).toHaveLength(0);
+    await renderMessages(shells, true, 'shell-3');
+    expect(container.querySelectorAll('h3')).toHaveLength(1);
+    expect(container.querySelectorAll('[data-message-id="shell-3"]')).toHaveLength(1);
+    const filled = shells.map((row, index) => index === 0 ? { ...row, parts: [textPart('restored body')] } : row);
+    await renderMessages(filled, true);
+    expect(container.textContent).toContain('restored body');
+    expect(container.querySelectorAll('h3')).toHaveLength(1);
+    const complete = shells.map((row, index) => ({ ...row, parts: [textPart(`restored ${index}`)] }));
+    await renderMessages(complete, true);
+    expect(container.querySelectorAll('h3')).toHaveLength(4);
+    expect(container.querySelectorAll('[data-message-id="shell-3"]')).toHaveLength(1);
+    const failed = { ...shells[3], info: { ...shells[3].info, error: { type: 'provider.auth', message: 'Authentication failed' } } };
+    await renderMessages([...shells.slice(0, 3), failed], false);
+    expect(container.querySelectorAll('h3')).toHaveLength(1);
+    expect(container.querySelector('[data-message-id="shell-3"]')).not.toBeNull();
+    await renderMessages(shells, false);
+    expect(container.querySelectorAll('h3')).toHaveLength(0);
   });
 
   test.each(['live', 'sorted'] as const)('renders an execution failure inside its turn below the model header (%s)', async (mode) => {

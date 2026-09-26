@@ -139,6 +139,7 @@ const areRenderRelevantMessageInfoEqual = (left: Message, right: Message): boole
     && left.sessionID === right.sessionID
     && (left as { finish?: unknown }).finish === (right as { finish?: unknown }).finish
     && (left as { status?: unknown }).status === (right as { status?: unknown }).status
+    && (left as { error?: unknown }).error === (right as { error?: unknown }).error
     && (left as { mode?: unknown }).mode === (right as { mode?: unknown }).mode
     && (left as { agent?: unknown }).agent === (right as { agent?: unknown }).agent
     && (left as { providerID?: unknown }).providerID === (right as { providerID?: unknown }).providerID
