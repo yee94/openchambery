@@ -1,6 +1,7 @@
 import { settingsDict } from './fr.settings';
 
 export const dict = {
+  'chat.chatInput.stopUnconfirmed': 'L’arrêt n’est pas encore confirmé. Veuillez réessayer.',
   'chat.response.rateLimit': 'Limite de requêtes du fournisseur atteinte',
   'chat.response.auth': 'Échec de l’authentification du fournisseur. Reconnectez-vous et réessayez.',
   'chat.response.quota': 'Quota du fournisseur épuisé',
@@ -1179,6 +1180,8 @@ export const dict = {
   'filesView.error.readFileFailed': 'Échec de la lecture du fichier',
   'filesView.editor.htmlPreviewTitle': 'Aperçu HTML',
   'contextUsage.aria.label': 'Utilisation du contexte',
+  'contextUsage.pending': 'En attente de mise à jour',
+  'contextUsage.pendingDescription': 'Contexte compacté. L’utilisation sera actualisée lorsque la prochaine réponse du modèle indiquera le nombre de jetons.',
   'contextUsage.mobile.title': 'Utilisation du contexte',
   'contextUsage.mobile.usedTokens': 'Jetons utilisés',
   'contextUsage.mobile.contextLimit': 'Limite de contexte',

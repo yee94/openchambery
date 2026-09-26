@@ -324,7 +324,6 @@ type ChatViewportProps = {
     retryActionCopy: { title: string; message: string; label: string; link?: string } | null;
     isProgrammaticFollowActive: boolean;
     showLoadOlderButton: boolean;
-    onLoadOlder: () => void;
     turnIds: string[];
     activeTurnId: string | null;
     onSelectTurn: (turnId: string) => void;
@@ -366,7 +365,6 @@ const ChatViewport = React.memo(({
     retryActionCopy,
     isProgrammaticFollowActive,
     showLoadOlderButton,
-    onLoadOlder,
     turnIds,
     activeTurnId,
     onSelectTurn,
@@ -378,8 +376,8 @@ const ChatViewport = React.memo(({
 }: ChatViewportProps) => {
     const { t } = useI18n();
     const legendTimelineEnabled = useFeatureFlagsStore((state) => state.legendTimelineEnabled);
-    // Spinner/disabled is mutation-owned only (isLoadingOlder); background
-    // prefetch/SWR loading never drives the button.
+    // Loading status is mutation-owned only (isLoadingOlder); background
+    // prefetch/SWR loading never drives it.
     const loadOlderBusy = resolveMobileLoadOlderBusy({ isLoadingOlder });
     const [mobileHistorySlot, setMobileHistorySlot] = React.useState({
         sessionId: currentSessionId, directory, reserved: showLoadOlderButton,
@@ -409,25 +407,17 @@ const ChatViewport = React.memo(({
             </div>
         </div>
     ) : null;
-    // Main-workspace load-older is an in-flow control. Mobile keeps that
-    // text button; desktop scroll-load uses the glass disc above instead.
+    // Keep the mobile status slot stable while scroll-triggered history loads.
     const mobileLoadOlderControl = isMobile && reserveMobileHistorySlot ? (
-        <div className={cn('flex justify-center pt-3 pb-1', !showLoadOlderButton && 'invisible')} aria-hidden={!showLoadOlderButton}>
-            <Button
-                type="button"
-                variant="link"
-                size="sm"
-                data-chat-load-older="true"
-                className="h-auto gap-1.5 px-1 py-0 font-normal text-[var(--surface-mutedForeground)] no-underline hover:no-underline hover:text-[var(--surface-foreground)]"
-                onClick={onLoadOlder}
-                disabled={loadOlderBusy || !showLoadOlderButton}
+        <div className={cn('flex justify-center pt-3 pb-1', !loadOlderBusy && 'invisible')} aria-hidden={!loadOlderBusy}>
+            <span
+                role="status"
+                className="flex items-center gap-1.5 text-[var(--surface-mutedForeground)]"
                 aria-busy={loadOlderBusy}
             >
-                {loadOlderBusy ? (
-                    <Icon name="loader-4" className="size-3.5 animate-spin" aria-hidden="true" />
-                ) : null}
-                <span className="typography-meta">{t('chat.history.loadOlder')}</span>
-            </Button>
+                <Icon name="loader-4" className="size-3.5 animate-spin" aria-hidden="true" />
+                <span className="typography-meta">{t('chat.history.loadingMore')}</span>
+            </span>
         </div>
     ) : null;
     const promptPreviewsByTurnIdRef = React.useRef<Map<string, Part[]>>(new Map());
@@ -768,7 +758,6 @@ const ChatViewport = React.memo(({
         && prev.retryActionCopy === next.retryActionCopy
         && prev.isProgrammaticFollowActive === next.isProgrammaticFollowActive
         && prev.showLoadOlderButton === next.showLoadOlderButton
-        && prev.onLoadOlder === next.onLoadOlder
         && prev.turnIds === next.turnIds
         && prev.activeTurnId === next.activeTurnId
         && prev.onSelectTurn === next.onSelectTurn
@@ -1690,17 +1679,16 @@ const ChatContainerContent: React.FC<ChatContainerContentProps> = ({
         setLegendFollowReleased(true);
         timelineController.handleHistoryUpwardIntent();
     });
-    // Mobile loads older history via an explicit top button instead of a
-    // scroll-position trigger (see handleHistoryScroll in the controller).
+    // Mobile scroll-load reserves a stable status slot at the history edge.
     // Busy state is mutation-owned (timeline loadEarlierMutation.isPending) —
     // never background historyLoading/prefetch, which can stick true on Relay.
     // The Capacitor mobile entrypoint sets isMobile before first render. Do not
     // use width/pointer surface inference here: native WebView viewport changes
-    // can temporarily classify as desktop and hide this explicit mobile-only
-    // affordance until an unrelated scroll causes another render.
+    // can temporarily classify as desktop and hide this mobile-only status
+    // until an unrelated scroll causes another render.
     // Visibility is authoritative-only: canLoadEarlier from the child-store
     // boundary, or a real user-initiated loadEarlier mutation in flight (that
-    // mutation keeps the button painted so its spinner has an anchor). An
+    // mutation keeps the status slot painted so its spinner has an anchor). An
     // unresolved boundary (unknown availability) renders nothing — never a
     // speculative placeholder.
     const showLoadOlderButton = resolveMobileLoadOlderVisibility({
@@ -2111,7 +2099,6 @@ const ChatContainerContent: React.FC<ChatContainerContentProps> = ({
 						retryActionCopy={null}
 						isProgrammaticFollowActive={isFollowingProgrammatically}
 						showLoadOlderButton={false}
-						onLoadOlder={handleLoadOlderClick}
 						turnIds={[]}
 						activeTurnId={null}
 						onSelectTurn={handlePromptNavigatorSelect}
@@ -2394,7 +2381,6 @@ const ChatContainerContent: React.FC<ChatContainerContentProps> = ({
                 retryActionCopy={retryActionCopy}
                 isProgrammaticFollowActive={isFollowingProgrammatically}
                 showLoadOlderButton={showLoadOlderButton}
-                onLoadOlder={handleLoadOlderClick}
                 turnIds={timelineController.turnIds}
                 activeTurnId={timelineController.activeTurnId}
                 onSelectTurn={handlePromptNavigatorSelect}

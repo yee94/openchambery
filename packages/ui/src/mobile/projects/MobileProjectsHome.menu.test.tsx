@@ -152,7 +152,7 @@ describe('MobileProjectsHome header menu', () => {
     });
 
     const items = Array.from(document.body.querySelectorAll<HTMLElement>('[data-slot="dropdown-menu-item"]'));
-    expect(items).toHaveLength(5);
+    expect(items).toHaveLength(4);
     for (const item of items) {
       expect(item.getAttribute('role')).toBe('menuitem');
       expect(item.className).toContain('active:bg-interactive-active');
@@ -167,7 +167,7 @@ describe('MobileProjectsHome header menu', () => {
 });
 
 describe('MobileProjectsHome global pinned group', () => {
-  test('hides the global group while filtering projects', async () => {
+  test('keeps the pinned group and omits duplicate search from the menu', async () => {
     const { root, container } = mount({
       ...baseProps,
       pinnedSessions: [{
@@ -181,18 +181,9 @@ describe('MobileProjectsHome global pinned group', () => {
     clickMenuTrigger(container);
     await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)); });
     const searchTrigger = findMenuItem('Search sessions');
-    expect(searchTrigger).not.toBeNull();
-    act(() => searchTrigger!.click());
-
-    const input = container.querySelector<HTMLInputElement>('input[type="text"]');
-    expect(input).not.toBeNull();
-    act(() => {
-      const valueSetter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
-      valueSetter?.call(input, 'open');
-      input!.dispatchEvent(new Event('input', { bubbles: true }));
-    });
-
-    expect(container.textContent).not.toContain('Global pinned session');
+    expect(searchTrigger).toBeNull();
+    expect(container.querySelector('input[type="text"]')).toBeNull();
+    expect(container.textContent).toContain('Global pinned session');
     root.unmount();
     document.body.innerHTML = '';
   });

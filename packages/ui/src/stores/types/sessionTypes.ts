@@ -45,6 +45,8 @@ export interface SessionHistoryMeta {
 }
 
 export interface SessionContextUsage {
+    /** Successful compaction invalidated measured usage; numeric fields are placeholders. */
+    pending?: boolean;
     totalTokens: number;
     percentage: number;
     contextLimit: number;

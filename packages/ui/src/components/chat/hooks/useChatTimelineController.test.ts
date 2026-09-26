@@ -183,21 +183,21 @@ describe('shouldLoadEarlierHistory', () => {
         })).toBe(false);
     });
 
-    test('mobile => false', () => {
+    test('mobile near-top scroll and upward intent load earlier', () => {
         expect(shouldLoadEarlierHistory({
             ...baseLoadEarlierInput,
             source: 'upward-intent',
             isMobile: true,
             isPinned: true,
             ...NEAR_TOP,
-        })).toBe(false);
+        })).toBe(true);
         expect(shouldLoadEarlierHistory({
             ...baseLoadEarlierInput,
             source: 'scroll',
             isMobile: true,
             isPinned: false,
             ...NEAR_TOP,
-        })).toBe(false);
+        })).toBe(true);
     });
 
     test('loading older => false', () => {

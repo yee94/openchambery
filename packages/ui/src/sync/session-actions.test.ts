@@ -52,6 +52,7 @@ const mocks = vi.hoisted(() => {
     sessionForkResult: null as Session | null,
     clearAttachedFilesCalls: 0,
     abortReject: false,
+    interruptGate: null as Promise<void> | null,
     abortResult: { data: true } as { data?: boolean; error?: unknown; response?: { status?: number } },
     abortBlockToken: 0,
     mobileSurfaceRuntime: false,
@@ -395,6 +396,7 @@ vi.mock("@/lib/runtime-fetch", () => ({
       if (mocks.state.abortReject) throw new Error("abort failed")
       if (mocks.state.abortResult.error || mocks.state.abortResult.data === false) throw new Error("Session interrupt failed")
       mocks.state.onInterrupt?.()
+      await mocks.state.interruptGate
       return new Response(null, { status: 204 })
     }
     if (urlText.includes("/revert/stage")) {
@@ -1131,6 +1133,8 @@ describe("fetchMessagesForSession startup race", () => {
       session: [{ id: sessionID, time: { created: 1 } } as Session],
       message: { [sessionID]: [shell] },
       part: { [messageID]: [] },
+      session_interrupt_acknowledged_at: { [sessionID]: 1 },
+      session_execution_version: { [sessionID]: 3 },
     })
     const childStores = createChildStores([["/test/project", store]])
     const added: OptimisticAddCall[] = []
@@ -1153,6 +1157,8 @@ describe("fetchMessagesForSession startup race", () => {
     expect(added[0]?.parts.length).toBeGreaterThan(0)
     expect((added[0]?.parts[0] as { text?: string })?.text).toBe("hello after shell")
     expect(store.getState().session_status[sessionID]).toEqual({ type: "busy" })
+    expect(store.getState().session_interrupt_acknowledged_at[sessionID]).toBeUndefined()
+    expect(store.getState().session_execution_version[sessionID]).toBe(4)
   })
 
   test("optimisticInsertUserMessage skips when canonical already has a complete row", async () => {
@@ -1168,6 +1174,8 @@ describe("fetchMessagesForSession startup race", () => {
       session: [{ id: sessionID, time: { created: 1 } } as Session],
       message: { [sessionID]: [existing] },
       part: { [messageID]: [{ id: "prt_complete", type: "text", text: "already there" } as Part] },
+      session_interrupt_acknowledged_at: { [sessionID]: 1 },
+      session_execution_version: { [sessionID]: 3 },
     })
     const childStores = createChildStores([["/test/project", store]])
     const added: OptimisticAddCall[] = []
@@ -1187,6 +1195,8 @@ describe("fetchMessagesForSession startup race", () => {
     expect(inserted).toBe(false)
     expect(added).toHaveLength(0)
     expect(store.getState().session_status[sessionID]).toEqual({ type: "busy" })
+    expect(store.getState().session_interrupt_acknowledged_at[sessionID]).toBeUndefined()
+    expect(store.getState().session_execution_version[sessionID]).toBe(4)
   })
 
   test("a new/empty session's first complete page commits an exhausted boundary atomically", async () => {
@@ -1466,6 +1476,83 @@ describe("abort queue dispatch block", () => {
     mocks.abortBlockToken = 0
     mocks.abortReject = false
     mocks.abortResult = { data: true }
+    mocks.state.interruptGate = null
+  })
+
+  afterEach(() => { mocks.state.interruptGate = null; vi.useRealTimers() })
+
+  test("shares one request and abort block across simultaneous stop callers", async () => {
+    let reply!: () => void
+    mocks.state.interruptGate = new Promise<void>((resolve) => { reply = resolve })
+    const store = createStore({}, { session: [{ id: "session-a" } as Session], session_status: { "session-a": { type: "busy" } } })
+    const { abortCurrentOperation, setActionRefs } = await import("./session-actions")
+    setActionRefs(mockSdk as unknown as OpencodeClient, createChildStores([["/test/project", store]]), () => "/test/project")
+    const first = abortCurrentOperation("session-a")
+    const second = abortCurrentOperation("session-a")
+    expect(second).toBe(first)
+    expect(replyCalls.filter((call) => call.method === "session.interrupt")).toHaveLength(1)
+    expect(abortBlockEvents).toHaveLength(1)
+    reply()
+    await first
+  })
+
+  test("timeout preserves authority, reports unconfirmed and lets a retry own its own receipt", async () => {
+    vi.useFakeTimers()
+    let lateReply!: () => void
+    mocks.state.interruptGate = new Promise<void>((resolve) => { lateReply = resolve })
+    const store = createStore({}, { session: [{ id: "session-a" } as Session], session_status: { "session-a": { type: "busy" } } })
+    const { toast } = await import("sonner")
+    const notify = vi.spyOn(toast, "error")
+    const { abortCurrentOperation, setActionRefs } = await import("./session-actions")
+    setActionRefs(mockSdk as unknown as OpencodeClient, createChildStores([["/test/project", store]]), () => "/test/project")
+    const first = abortCurrentOperation("session-a")
+    await vi.advanceTimersByTimeAsync(5000)
+    await first
+    expect(store.getState().session_status["session-a"]?.type).toBe("busy")
+    expect(notify).toHaveBeenCalled()
+    expect(abortBlockEvents.at(-1)?.event).toBe("clear")
+    mocks.state.interruptGate = null
+    await abortCurrentOperation("session-a")
+    const receipt = store.getState().session_interrupt_acknowledged_at
+    lateReply()
+    await Promise.resolve()
+    expect(store.getState().session_interrupt_acknowledged_at).toBe(receipt)
+    notify.mockRestore()
+  })
+
+  test("a replaced directory store fences an old reply", async () => {
+    let reply!: () => void
+    mocks.state.interruptGate = new Promise<void>((resolve) => { reply = resolve })
+    const firstStore = createStore({}, { session: [{ id: "session-a" } as Session], session_status: { "session-a": { type: "busy" } } })
+    const nextStore = createStore({}, { session: [{ id: "session-a" } as Session], session_status: { "session-a": { type: "busy" } } })
+    const { abortCurrentOperation, setActionRefs } = await import("./session-actions")
+    setActionRefs(mockSdk as unknown as OpencodeClient, createChildStores([["/test/project", firstStore]]), () => "/test/project")
+    const stop = abortCurrentOperation("session-a")
+    setActionRefs(mockSdk as unknown as OpencodeClient, createChildStores([["/test/project", nextStore]]), () => "/test/project")
+    reply()
+    await stop
+    expect(firstStore.getState().session_interrupt_acknowledged_at).toEqual({})
+    expect(nextStore.getState().session_interrupt_acknowledged_at).toEqual({})
+  })
+
+  test("releases a stop when idle arrives before the HTTP reply and preserves a subsequent turn", async () => {
+    let reply!: () => void
+    mocks.state.interruptGate = new Promise<void>((resolve) => { reply = resolve })
+    const store = createStore({}, {
+      session: [{ id: "session-a", time: { created: 1 } } as Session],
+      session_status: { "session-a": { type: "busy" } },
+    })
+    const { abortCurrentOperation, setActionRefs } = await import("./session-actions")
+    setActionRefs(mockSdk as unknown as OpencodeClient, createChildStores([["/test/project", store]]), () => "/test/project")
+    let released = false
+    const stop = abortCurrentOperation("session-a").then(() => { released = true })
+    store.setState({ session_status: { "session-a": { type: "idle" } }, session_status_observed_at: { "session-a": 10 } })
+    await vi.waitFor(() => expect(released).toBe(true), { timeout: 100 })
+    store.setState({ session_status: { "session-a": { type: "busy" } }, session_status_observed_at: { "session-a": 11 } })
+    reply()
+    await stop
+    await Promise.resolve()
+    expect(store.getState().session_status["session-a"]).toEqual({ type: "busy" })
   })
 
   test("creates the exact-scope block before the SDK abort and rolls back its token on failure", async () => {
@@ -1487,8 +1574,8 @@ describe("abort queue dispatch block", () => {
     expect(abortBlockEvents[0]?.scope.sessionID).toBe("session-a")
     expect(abortBlockEvents[0]?.token).toBe("abort-1")
     expect(replyCalls.findIndex((call) => call.method === "session.interrupt")).toBeGreaterThanOrEqual(0)
-    expect(store.getState().session_status["session-a"]).toEqual({ type: "idle" })
-    expect(typeof store.getState().session_status_observed_at["session-a"]).toBe("number")
+    expect(store.getState().session_status["session-a"]).toEqual({ type: "busy" })
+    expect(typeof store.getState().session_interrupt_acknowledged_at["session-a"]).toBe("number")
 
     mocks.abortReject = true
     await abortCurrentOperation("session-a")

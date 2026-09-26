@@ -113,7 +113,7 @@ export interface UseChatTimelineControllerResult {
 }
 
 const TURN_MODEL_CACHE_MAX = 30
-// Desktop load-older lead distance. Trigger well before the top: the fetch
+// Load-older lead distance. Trigger well before the top: the fetch
 // then completes and the prepend lands ABOVE the viewport, where key-anchored
 // compensation is exact and invisible. A short lead (the old 200px) let the
 // user reach the estimated-height region near the absolute top mid-fetch,
@@ -279,7 +279,6 @@ export const shouldLoadEarlierHistory = (input: {
     isLoadingOlder: boolean;
     pendingRevealWork: boolean;
 }): boolean => {
-    if (input.isMobile) return false;
     if (input.isLoadingOlder || input.pendingRevealWork) return false;
     if (!input.canLoadEarlier) return false;
     // Ordinary scroll must not fight auto-follow while pinned. Explicit
@@ -411,7 +410,7 @@ export const chatTimelineAutoFillQueryKey = (input: {
     input.canLoadEarlier,
 ] as const;
 
-/** Mutation key for explicit load-earlier (mobile button / desktop scroll intent). */
+/** Mutation key for explicit load-earlier (navigation / scroll intent). */
 export const chatTimelineLoadEarlierMutationKey = (input: {
     runtimeKey: string;
     sessionId: string;
@@ -1756,11 +1755,8 @@ export const useChatTimelineController = ({
 
     const decideAndLoadEarlier = useEvent((source: HistoryLoadSource) => {
         if (Date.now() < historyStallCooldownUntilRef.current) return;
-        // Mobile never loads history from scroll/gesture position: any prepend
-        // racing an active touch gesture can be hijacked by the native scroll
-        // animation. The user scrolls to the natural top and taps an explicit
-        // "load older" button instead — the insert then happens from a resting
-        // state, which is fully deterministic.
+        // Both surfaces use the same near-top gate; touch compensation below
+        // preserves the reading position when a prepend lands mid-gesture.
         const container = scrollRef.current;
         if (!container) return;
         if (!shouldLoadEarlierHistory({

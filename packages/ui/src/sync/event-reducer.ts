@@ -7,6 +7,7 @@ import { isVisibleGlobalSession } from "@/stores/globalSessions"
 import { Binary } from "./binary"
 import type { FileDiff, GlobalState, State } from "./types"
 import { dropSessionCaches } from "./session-cache"
+import { clearSessionInterruptAcknowledgement } from "./session-interrupt"
 import { stripSessionDiffSnapshots, summarizeFileDiffs } from "./sanitize"
 import { shouldSkipStaleSessionEvent } from "./session-event-freshness"
 import { isQuestionFormMetadata, mapV2PermissionRequest, mapV2QuestionRequest } from "./v2-runtime"
@@ -205,7 +206,8 @@ function assignSessionExecutionRecovery(
 }
 
 function clearSessionExecutionRecovery(draft: State, sessionID: string): boolean {
-  if (draft.session_execution_recovery?.[sessionID] === undefined) return false
+  const acknowledgementCleared = clearSessionInterruptAcknowledgement(draft, sessionID)
+  if (draft.session_execution_recovery?.[sessionID] === undefined) return acknowledgementCleared
   const next = { ...draft.session_execution_recovery }
   delete next[sessionID]
   draft.session_execution_recovery = next
@@ -487,13 +489,14 @@ export function applyDirectoryEvent(
 
     case "session.error": {
       const props = event.properties as { sessionID: string }
+      const acknowledgementCleared = clearSessionInterruptAcknowledgement(draft, props.sessionID)
       callbacks?.onServerSessionIdle?.(props.sessionID)
       const status = { type: "idle" } as const
       const now = callbacks?.now?.()
       if (now !== undefined) draft.session_status_observed_at[props.sessionID] = now
       const errorChanged = now !== undefined ? assignSessionErrorAt(draft, props.sessionID, now) : false
       if (areSessionStatusesEqual(draft.session_status[props.sessionID], status)) {
-        return now !== undefined || errorChanged
+        return now !== undefined || errorChanged || acknowledgementCleared
       }
       draft.session_status[props.sessionID] = status
       return true
@@ -504,12 +507,16 @@ export function applyDirectoryEvent(
       // session_error_at the same way session.status busy/retry does, so a
       // retry does not keep showing the prior failure.
       const props = event.properties as { sessionID: string }
+      draft.session_execution_version = {
+        ...draft.session_execution_version,
+        [props.sessionID]: (draft.session_execution_version?.[props.sessionID] ?? 0) + 1,
+      }
       const status = { type: "busy" } as const
-      const errorChanged = clearSessionErrorAt(draft, props.sessionID)
-      const recoveryCleared = clearSessionExecutionRecovery(draft, props.sessionID)
+      clearSessionErrorAt(draft, props.sessionID)
+      clearSessionExecutionRecovery(draft, props.sessionID)
       if (callbacks?.now) draft.session_status_observed_at[props.sessionID] = callbacks.now()
       if (areSessionStatusesEqual(draft.session_status[props.sessionID], status)) {
-        return Boolean(callbacks?.now) || errorChanged || recoveryCleared
+        return true
       }
       draft.session_status[props.sessionID] = status
       return true
@@ -543,6 +550,7 @@ export function applyDirectoryEvent(
       if (now !== undefined) draft.session_status_observed_at[props.sessionID] = now
 
       if (reason === "shutdown") {
+        const acknowledgementCleared = clearSessionInterruptAcknowledgement(draft, props.sessionID)
         const status = { type: "busy" } as const
         const recoveryChanged = assignSessionExecutionRecovery(draft, props.sessionID, {
           reason: "shutdown",
@@ -551,7 +559,7 @@ export function applyDirectoryEvent(
         // Keep busy so UI is not a permanent false idle; recovery marker
         // distinguishes restart-pending from a live running turn.
         if (areSessionStatusesEqual(draft.session_status[props.sessionID], status)) {
-          return recoveryChanged || now !== undefined
+          return recoveryChanged || acknowledgementCleared || now !== undefined
         }
         draft.session_status[props.sessionID] = status
         return true

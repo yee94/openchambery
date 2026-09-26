@@ -23,14 +23,12 @@ import { useQuotaAutoRefresh, useQuotaStore } from '@/stores/useQuotaStore';
 import { useUIStore, type TimeFormatPreference } from '@/stores/useUIStore';
 import { useSelectionStore } from '@/sync/selection-store';
 import { useSessionUIStore } from '@/sync/session-ui-store';
-import { getSyncParts } from '@/sync/sync-refs';
-import { useSessionMessages } from '@/sync/sync-context';
+import { useSessionContextUsage, useSessionMessages } from '@/sync/sync-context';
 import type { QuotaProviderId, UsageWindow } from '@/types';
 
 import { ContextProgressIcon } from './ContextProgressIcon';
 import {
   buildMobileContextDisplay,
-  getLatestAssistantTotalTokens,
   getLatestUserMessageModel,
   getNumericLimit,
   type MobileContextDisplay,
@@ -244,11 +242,11 @@ const SessionMetadataOverlay: React.FC<{
           </MetadataRow>
           {contextDisplay ? (
             <MetadataRow
-              iconNode={<ContextProgressIcon percentage={contextDisplay.percentage} />}
+              iconNode={<ContextProgressIcon percentage={contextDisplay.percentage} pending={contextDisplay.pending} />}
               label={t('mobile.header.metadata.context')}
             >
               <span className="inline-flex items-baseline gap-1.5 tabular-nums">
-                <span className={cn('font-semibold', contextDisplay.colorClass)}>{contextDisplay.percentage.toFixed(1)}%</span>
+                <span className={cn('font-semibold', contextDisplay.colorClass)}>{contextDisplay.pending ? t('contextUsage.pending') : `${contextDisplay.percentage.toFixed(1)}%`}</span>
                 <span className="text-muted-foreground">{contextDisplay.tokens}</span>
               </span>
             </MetadataRow>
@@ -387,10 +385,8 @@ export function MobileContextProgressButton({
   const contextLimit = getNumericLimit((liveModel as { limit?: unknown } | undefined)?.limit, 'context')
     ?? metadata?.limit?.context
     ?? 0;
-  const totalTokens = React.useMemo(
-    () => getLatestAssistantTotalTokens(activeSessionMessages, (messageId) => getSyncParts(messageId, effectiveDirectory || undefined)),
-    [activeSessionMessages, effectiveDirectory],
-  );
+  const contextUsage = useSessionContextUsage(sessionId, contextLimit, 0, effectiveDirectory || undefined);
+  const totalTokens = contextUsage?.pending ? null : contextUsage?.totalTokens ?? 0;
 
   const contextDisplay = buildMobileContextDisplay({
     totalTokens,
@@ -475,7 +471,7 @@ export function MobileContextProgressButton({
           aria-expanded={open}
           onClick={handleToggle}
         >
-          <ContextProgressIcon percentage={contextDisplay?.percentage ?? 0} />
+          <ContextProgressIcon percentage={contextDisplay?.percentage ?? 0} pending={contextDisplay?.pending} />
         </Button>
       </span>
       <SessionMetadataOverlay

@@ -565,14 +565,13 @@ describe('useChatTimelineController mobile history boundary', () => {
         }
     });
 
-    // isPinned false: scroll/upward only blocked by isMobile (auto-fill also
-    // fails the pin gate). isPinned true: short-viewport auto-fill is armed on
-    // every non-mobile gate — so zero fetches proves the mobile autofill guard.
+    // Mobile stays idle on mount, but a near-top upward gesture loads even
+    // when a short viewport is still pinned and no scroll event can fire.
     test.each([
         { isPinned: false as const, label: 'unpinned' },
         { isPinned: true as const, label: 'pinned short-viewport auto-fill' },
     ])(
-        'UI mobile=true ($label) blocks scroll / upward-intent / short-viewport auto-fill even when runtime probe is desktop',
+        'UI mobile=true ($label) loads on near-top intent but not short-viewport mount',
         async ({ isPinned }) => {
             runtimeSurface.mobileProbe = false;
             const loadMoreMessages = vi.fn(async () => undefined);
@@ -591,6 +590,8 @@ describe('useChatTimelineController mobile history boundary', () => {
             await flushMicrotasks();
             await waitMs(250);
 
+            expect(loadMoreMessages).not.toHaveBeenCalled();
+
             await act(async () => {
                 handle.api!.handleHistoryScroll();
                 handle.api!.handleHistoryUpwardIntent();
@@ -598,11 +599,11 @@ describe('useChatTimelineController mobile history boundary', () => {
             await flushMicrotasks();
             await waitMs(200);
 
-            expect(loadMoreMessages).not.toHaveBeenCalled();
+            expect(loadMoreMessages).toHaveBeenCalled();
         },
     );
 
-    test('manual loadEarlier remains available once; concurrent scroll cannot double-fetch', async () => {
+    test('mobile threshold load deduplicates concurrent scroll and upward intent', async () => {
         runtimeSurface.mobileProbe = false;
         let resolveLoad: (() => void) | null = null;
         const loadMoreMessages = vi.fn(
@@ -616,13 +617,17 @@ describe('useChatTimelineController mobile history boundary', () => {
             autoFillEnabled: true,
             isPinned: false,
             loadMoreMessages,
-            geometry: { scrollHeight: 8000, clientHeight: 400, scrollTop: 0 },
+            geometry: { scrollHeight: 8000, clientHeight: 400, scrollTop: 1200 },
         });
 
         await act(async () => {
-            void handle.api!.loadEarlier({ userInitiated: true });
+            handle.api!.handleHistoryScroll();
         });
         await flushMicrotasks();
+
+        expect(loadMoreMessages).not.toHaveBeenCalled();
+        handle.geometry.scrollTop = 1199;
+        handle.scrollRef.current!.scrollTop = 1199;
 
         await act(async () => {
             handle.api!.handleHistoryScroll();

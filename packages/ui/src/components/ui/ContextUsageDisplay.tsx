@@ -7,6 +7,7 @@ import { useI18n } from '@/lib/i18n';
 import { clampPercent, resolveUsageTone } from '@/lib/quota';
 
 interface ContextUsageDisplayProps {
+  pending?: boolean;
   totalTokens: number;
   percentage: number;
   colorPercentage?: number;
@@ -29,6 +30,7 @@ interface ContextUsageDisplayProps {
 }
 
 export const ContextUsageDisplay: React.FC<ContextUsageDisplayProps> = ({
+  pending = false,
   totalTokens,
   percentage,
   colorPercentage,
@@ -48,10 +50,10 @@ export const ContextUsageDisplay: React.FC<ContextUsageDisplayProps> = ({
   const { t } = useI18n();
   const [mobileTooltipOpen, setMobileTooltipOpen] = React.useState(false);
   const colorPct = typeof colorPercentage === 'number' ? colorPercentage : percentage;
-  const progressPct = clampPercent(percentage) ?? 0;
+  const progressPct = pending ? 0 : clampPercent(percentage) ?? 0;
   const isSubtle = appearance === 'subtle';
   const progressTone = resolveUsageTone(colorPct);
-  const progressColor = isSubtle
+  const progressColor = isSubtle || pending
     ? 'var(--surface-muted-foreground)'
     : progressTone === 'critical'
       ? 'var(--status-error)'
@@ -70,6 +72,7 @@ export const ContextUsageDisplay: React.FC<ContextUsageDisplayProps> = ({
   };
 
   const getPercentageColor = (pct: number) => {
+    if (pending) return 'text-muted-foreground';
     if (pct >= 90) return 'text-status-error';
     if (pct >= 75) return 'text-status-warning';
     return 'text-status-success';
@@ -82,10 +85,10 @@ export const ContextUsageDisplay: React.FC<ContextUsageDisplayProps> = ({
   const circularProgressOffset = circularProgressCircumference * (1 - progressPct / 100);
 
   const safeOutputLimit = typeof outputLimit === 'number' ? Math.max(outputLimit, 0) : 0;
-  const usagePercentLabel = `${Math.min(percentage, 999).toFixed(1)}%`;
-  const usedTokensLabel = formatTokens(totalTokens);
+  const usagePercentLabel = pending ? t('contextUsage.pending') : `${Math.min(percentage, 999).toFixed(1)}%`;
+  const usedTokensLabel = pending ? '—' : formatTokens(totalTokens);
   const contextLimitLabel = formatTokens(contextLimit);
-  const tooltipLines = [
+  const tooltipLines = pending ? [t('contextUsage.pendingDescription')] : [
     t('contextUsage.tooltip.usage', { percent: usagePercentLabel }),
     t('contextUsage.tooltip.usedOfLimit', {
       used: usedTokensLabel,
@@ -104,7 +107,9 @@ export const ContextUsageDisplay: React.FC<ContextUsageDisplayProps> = ({
         percentIconClassName,
       )}
       role="progressbar"
-      aria-valuenow={Math.round(progressPct)}
+      aria-label={t('contextUsage.aria.label')}
+      aria-valuetext={pending ? t('contextUsage.pending') : undefined}
+      aria-valuenow={pending ? undefined : Math.round(progressPct)}
       aria-valuemin={0}
       aria-valuemax={100}
     >
@@ -136,7 +141,7 @@ export const ContextUsageDisplay: React.FC<ContextUsageDisplayProps> = ({
     <span
       className={cn(
         'inline-flex items-center gap-1.5 overflow-hidden whitespace-nowrap typography-micro font-medium text-foreground transition-[max-width,opacity,margin] duration-200',
-        pressed
+        pressed || pending
           ? 'ml-1 max-w-[14rem] opacity-100'
           : 'ml-0 max-w-0 opacity-0 group-hover:ml-1 group-hover:max-w-[14rem] group-hover:opacity-100 group-focus-visible:ml-1 group-focus-visible:max-w-[14rem] group-focus-visible:opacity-100',
       )}
@@ -159,7 +164,12 @@ export const ContextUsageDisplay: React.FC<ContextUsageDisplayProps> = ({
     <>
       {!isMobile && !hideIcon && <Icon name="donut-chart" className="h-4 w-4 flex-shrink-0" />}
       <span className={cn('font-medium inline-flex items-center gap-1.5', valueClassName)}>
-        {showPercentIcon ? (
+        {pending ? (
+          <>
+            {showPercentIcon && progressRing}
+            <span className="text-muted-foreground">{usagePercentLabel}</span>
+          </>
+        ) : showPercentIcon ? (
           <>
             {progressRing}
             <span className="text-foreground">{usagePercentLabel}</span>
@@ -237,7 +247,7 @@ export const ContextUsageDisplay: React.FC<ContextUsageDisplayProps> = ({
               <div className="flex justify-between items-center pt-1 border-t border-border/40">
                 <span className="typography-meta text-muted-foreground">{t('contextUsage.mobile.usage')}</span>
                 <span className={cn('typography-meta font-semibold', getPercentageColor(colorPct))}>
-                  {Math.min(percentage, 999).toFixed(1)}%
+                  {usagePercentLabel}
                 </span>
               </div>
             </div>

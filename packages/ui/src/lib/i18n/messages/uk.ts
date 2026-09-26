@@ -2,6 +2,7 @@ import type { I18nKey } from './en';
 import { settingsDict } from './uk.settings';
 
 export const dict: Record<I18nKey, string> = {
+  'chat.chatInput.stopUnconfirmed': 'Зупинку ще не підтверджено. Спробуйте ще раз.',
   'chat.response.rateLimit': 'Досягнуто обмеження частоти запитів провайдера',
   'chat.response.auth': 'Помилка автентифікації провайдера. Увійдіть знову та повторіть спробу.',
   'chat.response.quota': 'Квоту провайдера вичерпано',
@@ -1358,6 +1359,8 @@ export const dict: Record<I18nKey, string> = {
   "filesView.diagram.closeDiagramView": "Закрити перегляд діаграми",
   "filesView.diagram.saveDiagram": "Зберегти діаграму",
   "contextUsage.aria.label": "Використання контексту",
+  "contextUsage.pending": "Очікування оновлення",
+  "contextUsage.pendingDescription": "Контекст стиснуто. Використання оновиться, коли наступна відповідь моделі міститиме кількість токенів.",
   "contextUsage.mobile.title": "Використання контексту",
   "contextUsage.mobile.usedTokens": "Використані токени",
   "contextUsage.mobile.contextLimit": "Обмеження контексту",

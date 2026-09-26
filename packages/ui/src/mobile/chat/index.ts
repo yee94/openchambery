@@ -9,7 +9,6 @@ export {
 export {
   buildMobileContextDisplay,
   formatContextTokens,
-  getLatestAssistantTotalTokens,
   getLatestUserMessageModel,
   getNumericLimit,
   getTokenCount,

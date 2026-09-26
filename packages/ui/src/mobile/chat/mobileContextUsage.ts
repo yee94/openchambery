@@ -1,6 +1,5 @@
-import { scanContextTokenBaseline } from '@/sync/context-token-baseline';
-
 export type MobileContextDisplay = {
+  pending?: boolean;
   percentage: number;
   tokens: string;
   colorClass: string;
@@ -29,11 +28,15 @@ export const resolveContextColorClass = (percentage: number): string => {
 };
 
 export const buildMobileContextDisplay = (input: {
-  totalTokens: number;
+  totalTokens: number | null;
   contextLimit: number;
   isDraft: boolean;
 }): MobileContextDisplay => {
   const { totalTokens, contextLimit, isDraft } = input;
+  if (!isDraft && totalTokens === null) {
+    return { pending: true, percentage: 0, tokens: '—', colorClass: 'text-muted-foreground' };
+  }
+  if (totalTokens === null) return null;
   if (isDraft || totalTokens <= 0 || contextLimit <= 0) return null;
   const percentage = Math.min((totalTokens / contextLimit) * 100, 999);
   return {
@@ -70,17 +73,4 @@ export const getLatestUserMessageModel = (
     if (providerID && modelID) return { providerID, modelID };
   }
   return null;
-};
-
-export const getLatestAssistantTotalTokens = (
-  messages: readonly MessageLike[],
-  getParts?: (messageId: string) => readonly unknown[] | undefined,
-): number => {
-  // A compaction row newer than the last token-bearing assistant resets the
-  // baseline: pre-compaction counts no longer describe the live context
-  // window, so usage stays unknown (0 hides the display) until a
-  // post-compaction assistant publishes tokens.
-  const baseline = scanContextTokenBaseline(messages, getParts ?? (() => undefined));
-  if (!baseline || 'compacted' in baseline) return 0;
-  return baseline.totalTokens;
 };
