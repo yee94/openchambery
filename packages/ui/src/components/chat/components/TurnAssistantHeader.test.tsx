@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
 
 import TurnAssistantHeader from './TurnAssistantHeader';
+import { useSelectionStore } from '@/sync/selection-store';
 
 const mocks = vi.hoisted(() => ({
   providers: [{
@@ -37,19 +38,22 @@ vi.mock('@/stores/contextStore', () => ({
   }),
 }));
 
-vi.mock('@/sync/selection-store', () => ({
-  useSelectionStore: (selector: (state: {
-    getAgentModelForSession: (sessionId: string, agentName: string) => typeof mocks.agentSelection | null;
-    getSessionModelSelection: (sessionId: string) => typeof mocks.sessionSelection | null;
-  }) => unknown) => selector({
-    getAgentModelForSession: (sessionId) => (
-      sessionId === 'session-1' ? mocks.agentSelection : null
-    ),
-    getSessionModelSelection: (sessionId) => (
-      sessionId === 'session-1' ? mocks.sessionSelection : null
-    ),
-  }),
-}));
+vi.mock('@/sync/selection-store', async () => {
+  const { create } = await import('zustand');
+  type Selection = { providerId: string; modelId: string };
+  type State = {
+    sessionModelSelections: Map<string, Selection>;
+    getAgentModelForSession: (sessionId: string, agentName: string) => Selection | null;
+    getSessionModelSelection: (sessionId: string) => Selection | null;
+  };
+  return {
+    useSelectionStore: create<State>((_set, get) => ({
+      sessionModelSelections: new Map([['session-1', mocks.sessionSelection]]),
+      getAgentModelForSession: (sessionId) => sessionId === 'session-1' ? mocks.agentSelection : null,
+      getSessionModelSelection: (sessionId) => get().sessionModelSelections.get(sessionId) ?? null,
+    })),
+  };
+});
 
 vi.mock('@/components/ui/ModelLogo', () => ({
   ModelLogo: ({ modelId, providerId }: { modelId?: string | null; providerId?: string | null }) => (
@@ -158,6 +162,25 @@ describe('TurnAssistantHeader identity continuity without module cache', () => {
       root.render(node);
     });
   };
+
+  test('a mounted unknown header recovers when its session selection arrives', async () => {
+    await renderHeader(
+      <TurnAssistantHeader
+        assistantMessage={bareAssistant('session-late', 'assistant-late')}
+        userMessage={bareUser('session-late')}
+        assistantIsInActiveTurn={false}
+        isMobile={false}
+      />,
+    );
+    expect(container.textContent).toContain('Assistant');
+    await act(async () => {
+      useSelectionStore.setState({ sessionModelSelections: new Map([
+        ['session-late', { providerId: 'assistant-provider', modelId: 'assistant-model' }],
+      ]) });
+    });
+    expect(container.textContent).toContain('Catalog Display Name');
+    expect(container.textContent).not.toContain('Assistant');
+  });
 
   test('new mount with same assistant id in another session does not leak prior identity', async () => {
     const sharedAssistantId = 'shared-assistant-id';

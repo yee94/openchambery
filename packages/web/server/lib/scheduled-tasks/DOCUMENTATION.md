@@ -215,7 +215,13 @@ Every actual run (timer or manual):
        `message.list({ limit: 50, order: 'desc' })` (newest first) — never
        `order: 'asc'` page-0 + `at(-1)`, which reads an old page once the
        session exceeds the limit.
-     - Real terminal success requires an assistant tail with `time.completed`
+      - OpenCode 2.0.16 emits a native `idle` tail whose `outcome` is authoritative:
+        `succeeded` → success; `failed` / `interrupted` → error. An unknown idle
+        outcome keeps polling. Read it only after `session.active` confirms the
+        session is inactive; an older terminal record cannot settle live work.
+        This also applies to post-run continuation snapshots. Earlier servers
+        without idle records use the assistant-tail rules below.
+      - Assistant-tail terminal success requires `time.completed`
        and finish not `tool-calls` (prefer `finish: 'stop'`). `finish:
        'tool-calls'`, incomplete assistants (no `time.completed`), and
        non-assistant tails such as `model-switched` never succeed — including

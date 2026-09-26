@@ -186,7 +186,7 @@ export const registerConfigEntityRoutes = (app, dependencies) => {
       const [providersResult, modelsResult, defaultResult] = await Promise.all([
         client.provider.list({ location }),
         client.model.list({ location }),
-        client.model.default({ location }),
+        client.model.default({ location }).catch(() => undefined),
       ]);
       const source = composeV2ProviderCatalogSource(
         providersResult?.data,

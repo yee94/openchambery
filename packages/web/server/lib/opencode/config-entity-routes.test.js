@@ -211,6 +211,22 @@ describe('config entity command metadata route', () => {
 });
 
 describe('provider catalog route', () => {
+  it('keeps the model catalog available when the optional default request fails', async () => {
+    const app = express();
+    createOpencodeClient.mockReturnValue({
+      provider: { list: vi.fn(async () => ({ data: [{ id: 'openai', name: 'OpenAI' }] })) },
+      model: {
+        list: vi.fn(async () => ({ data: [{ id: 'model', providerID: 'openai', name: 'Model' }] })),
+        default: vi.fn(async () => { throw new Error('default unavailable'); }),
+      },
+    });
+    registerConfigEntityRoutes(app, createDependencies(vi.fn()));
+    const response = await request(app).get('/api/config/catalog/providers').expect(200);
+    expect(response.body.providers[0].models.model).toEqual({ id: 'model', name: 'Model' });
+    expect(response.body.default).toEqual({});
+    expect(response.body.partial).toBe(false);
+  });
+
   it('uses the resolved directory, OpenCode auth, SDK providers call, and explicit catalog route', async () => {
     const app = express();
     const resolveProjectDirectory = vi.fn(async () => ({ directory: '/project/from-header' }));

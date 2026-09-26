@@ -17,7 +17,7 @@ const catalogStaleTime = (isPopulated: (data: unknown) => boolean) => (
 // staleTime 0 + loadProviders 不写 store + seed 拒绝 + partialize 落 partial 这几道闸门。
 const isProviderCatalogPopulated = (data: unknown): boolean => {
   const catalog = data as ProviderCatalog | undefined;
-  return Boolean(catalog && catalog.providers.length > 0);
+  return Boolean(catalog && !catalog.partial && catalog.providers.length > 0);
 };
 
 export const normalizeConfigCatalogDirectory = (directory: string | null | undefined): string | null => {
@@ -40,9 +40,9 @@ const loadProviderCatalogFromV2 = async (directory: string | null, signal: Abort
   const [providersResult, modelsResult, configEntries] = await Promise.all([
     client.provider.list(location, requestOptions),
     client.model.list(location, requestOptions),
-    client.config.get(location, requestOptions),
+    client.config.get(location, requestOptions).catch(() => undefined),
   ]);
-  if (!Array.isArray(providersResult.data) || !Array.isArray(modelsResult.data) || !Array.isArray(configEntries)) {
+  if (!Array.isArray(providersResult.data) || !Array.isArray(modelsResult.data)) {
     throw new Error('v2 provider catalog request failed');
   }
 
@@ -88,7 +88,7 @@ const loadProviderCatalogFromV2 = async (directory: string | null, signal: Abort
   }
 
   const defaults: Record<string, string> = {};
-  for (const entry of configEntries) {
+  for (const entry of Array.isArray(configEntries) ? configEntries : []) {
     const model = entry?.type === 'document' ? entry.info?.model : undefined;
     if (model && typeof model === 'object' && !Array.isArray(model)) {
       const providerID = typeof model.providerID === 'string' ? model.providerID : '';
