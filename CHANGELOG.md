@@ -4,6 +4,15 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [2.0.0-beta.19] - 2026-09-26
+
+这是 OpenCode 2 预览版。本次发布桌面、Android 安装包及同版本 Beta OTA；iOS 不上 TestFlight，不进入外测组或稳定自动更新通道。
+
+### 对话与同步
+
+- 修复消息已经送达、AI 已开始回复后，队列仍显示“引导中”的问题。队列按单条消息的消费确认及时清理，不再等待整轮回复结束；迟到的请求响应和旧快照不会恢复已清理的条目。
+- 重新进入或切回助手对话时，立即刷新已发出的中间回复和任务运行状态，恢复“处理中”提示，不再等待实时事件或下一轮轮询；刷新失败时保留已加载的内容。
+
 ## [2.0.0-beta.18] - 2026-09-26
 
 这是 OpenCode 2 预览版。本次发布桌面、Android 安装包及同版本 Beta OTA；iOS 不上 TestFlight，不进入外测组或稳定自动更新通道。

@@ -9,7 +9,7 @@ export type FollowUpEnterAction =
  * Plain Enter and the Send button use `ctrlEnter: false` and follow
  * `followUpBehavior` (default queue). Ctrl/Cmd+Enter during a running primary
  * turn admits through the queue and then steers that item, so the message
- * stays visible as steering instead of being consumed off the queue surface.
+ * shows steering feedback until authoritative consumption removes the chip.
  */
 export const resolveFollowUpEnterAction = (input: {
     followUpBehavior: FollowUpBehavior;

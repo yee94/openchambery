@@ -1,11 +1,11 @@
 import { readFileSync } from "node:fs"
 import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
-import { afterAll, afterEach, beforeEach, describe, expect, mock, test } from "bun:test"
+import { afterAll, afterEach, beforeEach, describe, expect, vi, test } from "vitest"
 
 const readHere = (rel: string) => readFileSync(join(dirname(fileURLToPath(import.meta.url)), rel), "utf8")
 
-mock.restore()
+vi.restoreAllMocks()
 
 import { configureRuntimeUrlResolver, getRuntimeUrlResolver, setRuntimeUrlResolver } from "../lib/runtime-url"
 
@@ -86,7 +86,7 @@ describe("idle prompt + interrupt (ticket 06)", () => {
   })
 
   afterAll(() => {
-    mock.restore()
+    vi.restoreAllMocks()
   })
 
   test("idle send POSTs /api/session/:id/prompt with delivery=steer", async () => {
@@ -256,7 +256,7 @@ describe("busy inbox queue / steer / cancel (ticket 07)", () => {
   })
 
   afterAll(() => {
-    mock.restore()
+    vi.restoreAllMocks()
   })
 
   test("busy send POSTs /api/session/:id/prompt with delivery=queue", async () => {
@@ -363,26 +363,53 @@ describe("busy inbox queue / steer / cancel (ticket 07)", () => {
     expect(selectInboxOverlayChips(SESSION)).toEqual([])
   })
 
-  test("steer recycle stays on the queue when the transcript already has the message id", async () => {
+  test("authoritative transcript consumption retires a steering chip without waiting for turn settlement", async () => {
     const {
       forgetPromotedInbox,
-      forgetUnpromotedInbox,
-      holdInboxSteering,
-      resetInboxTerminalReceiptsForTests,
+      getInboxTerminal,
       selectInboxOverlayChips,
       useSessionInboxOverlayStore,
     } = await import('./session-inbox-overlay')
-    resetInboxTerminalReceiptsForTests()
     const store = useSessionInboxOverlayStore.getState()
-    useSessionInboxOverlayStore.setState({ bySession: {} })
-    store.remember({ id: 'msg_waiting', sessionID: SESSION, timeCreated: 1, type: 'user', delivery: 'queue', payload: { text: 'stay' } })
+    const item = { id: 'msg_waiting', sessionID: SESSION, timeCreated: 1, type: 'user' as const, delivery: 'queue' as const, payload: { text: 'stay' } }
+    store.remember(item)
+    store.remember({ ...item, id: 'msg_next' })
     store.updateDelivery(SESSION, 'msg_waiting', 'steer')
-    forgetPromotedInbox(SESSION, ['msg_older', 'msg_waiting'])
-    expect(selectInboxOverlayChips(SESSION).map((chip) => chip.messageID)).toEqual(['msg_waiting'])
     expect(selectInboxOverlayChips(SESSION)[0]?.delivery).toBe('steer')
-    holdInboxSteering(SESSION, 'msg_waiting')
-    forgetUnpromotedInbox(SESSION, 'msg_waiting', 'consumed')
-    expect(selectInboxOverlayChips(SESSION).map((chip) => chip.messageID)).toEqual(['msg_waiting'])
+    forgetPromotedInbox(SESSION, ['msg_older', 'msg_waiting'])
+    expect(selectInboxOverlayChips(SESSION).map((chip) => chip.messageID)).toEqual(['msg_next'])
+    expect(getInboxTerminal(SESSION, 'msg_waiting')).toBe('consumed')
+    expect(store.remember(item)).toBe(false)
+    const snapshot = store.list(SESSION)
+    forgetPromotedInbox(SESSION, ['msg_waiting'])
+    expect(store.list(SESSION)).toBe(snapshot)
+  })
+
+  test("delivered during steer PATCH retires the chip and late success cannot revive it", async () => {
+    const { applySessionInboxEvent, steerSessionInbox } = await import('./session-prompt-api')
+    const { getInboxTerminal, selectInboxOverlayChips, useSessionInboxOverlayStore } = await import('./session-inbox-overlay')
+    const store = useSessionInboxOverlayStore.getState()
+    store.remember({ ...INBOX_QUEUED, type: 'user', delivery: 'queue' })
+    responseImpl = async () => {
+      applySessionInboxEvent({ type: 'session.inbox.delivered', properties: { sessionID: SESSION, inboxID: INBOX_QUEUED.id } })
+      expect(selectInboxOverlayChips(SESSION)).toEqual([])
+      return emptyResponse()
+    }
+    await steerSessionInbox({ sessionID: SESSION, inboxID: INBOX_QUEUED.id, directory: '/repo' })
+    expect(selectInboxOverlayChips(SESSION)).toEqual([])
+    expect(getInboxTerminal(SESSION, INBOX_QUEUED.id)).toBe('consumed')
+  })
+
+  test("delivered before queue POST response prevents a late steering chip", async () => {
+    const { applySessionInboxEvent, postSessionPrompt } = await import('./session-prompt-api')
+    const { getInboxTerminal, selectInboxOverlayChips } = await import('./session-inbox-overlay')
+    responseImpl = async () => {
+      applySessionInboxEvent({ type: 'session.inbox.delivered', properties: { sessionID: SESSION, inboxID: INBOX_QUEUED.id } })
+      return jsonResponse({ data: { ...INBOX_QUEUED, delivery: 'steer' } })
+    }
+    await postSessionPrompt({ sessionID: SESSION, directory: '/repo', messageID: INBOX_QUEUED.id, text: 'follow up', delivery: 'queue' })
+    expect(selectInboxOverlayChips(SESSION)).toEqual([])
+    expect(getInboxTerminal(SESSION, INBOX_QUEUED.id)).toBe('consumed')
   })
 
   test("cancel removes overlay and leaves no transcript residue", async () => {
@@ -463,7 +490,7 @@ describe("busy inbox queue / steer / cancel (ticket 07)", () => {
     expect(overlaySource).not.toMatch(/content\s*===\s*item/)
   })
 
-  test("stale GET started before terminal cannot clear receipt or re-admit chip", async () => {
+  test.each(['cancelled', 'consumed'] as const)("stale GET started before %s cannot clear receipt or re-admit chip", async (terminal) => {
     const { fetchSessionInboxAuthority, replaceInboxOverlayFromAuthority } = await import("./session-prompt-api")
     const {
       captureInboxAuthorityMark,
@@ -497,8 +524,8 @@ describe("busy inbox queue / steer / cancel (ticket 07)", () => {
     await new Promise((r) => setTimeout(r, 0))
     const startedBeforeTerminal = captureInboxAuthorityMark()
 
-    forgetUnpromotedInbox(SESSION, "msg_race", "cancelled")
-    expect(getInboxTerminal(SESSION, "msg_race")).toBe("cancelled")
+    forgetUnpromotedInbox(SESSION, "msg_race", terminal)
+    expect(getInboxTerminal(SESSION, "msg_race")).toBe(terminal)
 
     releaseGet(jsonResponse({
       data: [{
@@ -512,7 +539,7 @@ describe("busy inbox queue / steer / cancel (ticket 07)", () => {
     expect(snap.startedMark).toBeLessThanOrEqual(startedBeforeTerminal)
     replaceInboxOverlayFromAuthority(SESSION, snap.items, { startedMark: snap.startedMark })
 
-    expect(getInboxTerminal(SESSION, "msg_race")).toBe("cancelled")
+    expect(getInboxTerminal(SESSION, "msg_race")).toBe(terminal)
     expect(useSessionInboxOverlayStore.getState().list(SESSION).map((row) => row.id)).not.toContain("msg_race")
   })
 
@@ -641,7 +668,7 @@ describe("busy inbox queue / steer / cancel (ticket 07)", () => {
     expect(promptApi).toContain("queueSessionInbox")
     expect(store).toMatch(/delivery\?:\s*'steer'\s*\|\s*'queue'/)
     expect(chatInput).toContain("steerAfterAdmit ? 'queue'")
-    expect(chatInput).toContain("holdInboxSteering")
+    expect(chatInput).toContain("setSteeringMessageIDs")
     expect(chatInput).toContain("cancelUnpromotedInboxItem")
     expect(chatInput).toContain("steerSessionInbox")
     expect(chatInput).toContain("queueSessionInbox")

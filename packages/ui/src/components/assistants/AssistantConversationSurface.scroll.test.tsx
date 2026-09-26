@@ -218,6 +218,24 @@ afterEach(async () => {
 });
 
 describe('AssistantConversationSurface scroll ownership', () => {
+  test('remount restores a published intermediate reply and processing dots without live events', async () => {
+    const { host, root } = await mountSurface();
+    await act(async () => root.render(null));
+    contactQueryState.extraMessages = 1;
+    const busy: AssistantDTO = {
+      ...assistant('assistant-a'),
+      working: true,
+      activeContactTurn: { turnID: 'assistant-a:refetch-turn:0', messageID: 'assistant-a:user', status: 'running', admittedAt: 2 },
+    };
+    await act(async () => root.render(<AssistantConversationSurface assistant={busy} active />));
+    expect(host.querySelector('[data-message-id="assistant-a:refetch:0"] [data-assistant-contact-text]')?.textContent).toBe('refetched 0');
+    expect(host.querySelectorAll('[data-assistant-contact-processing]')).toHaveLength(1);
+    await act(async () => root.render(null));
+    await act(async () => root.render(<AssistantConversationSurface assistant={assistant('assistant-a')} active />));
+    expect(host.querySelector('[data-assistant-contact-processing]')).toBeNull();
+    expect(host.querySelector('[data-message-id="assistant-a:refetch:0"] [data-assistant-contact-text]')?.textContent).toBe('refetched 0');
+  });
+
   test('shows a completed public message while the turn is still working', async () => {
     const { host, root } = await mountSurface();
     const busy = {
