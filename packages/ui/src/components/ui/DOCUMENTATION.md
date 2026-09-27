@@ -61,6 +61,8 @@ The flow-mobile Settings root and its push-detail surface both use
 
 `DialogContent` owns both the popup surface and its backdrop. Feature-specific dialog treatments pass popup styling through `className` and backdrop styling through `overlayClassName`; this keeps blur and dimming local to the owning dialog without changing every modal surface.
 
+Both the popup and backdrop are Electron `app-region-no-drag` regions. Portal rendering and z-index alone do not exclude the underlying window drag region; dialogs opened over draggable startup/upgrade screens must retain pointer interaction across the entire popup and backdrop.
+
 ### Settings picker focus verification
 
 `MobileWindowMotion.focus.test.tsx` mounts the real model picker, resizable sheet, and Base UI Dialog in happy-dom and checks `document.activeElement` after search activation across page, parent-sheet, and dialog hosts.
