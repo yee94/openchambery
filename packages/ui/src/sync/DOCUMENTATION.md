@@ -1120,9 +1120,10 @@ both readers agree on when a frame may shrink.
    - active running + busy / absent → busy
   - active supported + absent from membership → idle (stale busy converges)
   - active supported + absent from membership + `tailOpenSessionIds` → keep
-    retry metadata when legacy is retry, otherwise busy (open transcript tail
-    is authoritative that the turn has not settled; membership alone may be
-    incomplete in a reconnect window)
+    an existing busy or retry claim so a briefly incomplete membership
+    snapshot does not downgrade a live turn. Idle or missing legacy status
+    stays idle: opening a session must not invent a run from a historical
+    assistant that lacks finish/completed.
   - active unknown / unsupported → legacy only
   - directory reconnect restore IDs are the child-store catalog, the viewed
     session (even before its row is stored), and global-index sessions for

@@ -223,12 +223,16 @@ export function fuseActiveWithLegacyStatus(
       continue
     }
 
-    // Transcript-tail open assistant is authoritative evidence the turn has not
-    // settled. Membership absence alone (reconnect-window active snapshot may be
-    // incomplete) must not downgrade busy; a later live SSE idle still wins via
+    // An open transcript tail keeps an existing busy/retry claim when the active
+    // snapshot is briefly incomplete. It must not invent busy from idle or a
+    // missing legacy status: opening a session whose last assistant lacks
+    // finish/completed is not a new run. A later live SSE idle still wins via
     // session_status_observed_at precedence.
-    if (options?.tailOpenSessionIds?.has(sessionId)) {
-      fused[sessionId] = legacyStatus?.type === "retry" ? legacyStatus : { type: "busy" }
+    if (
+      options?.tailOpenSessionIds?.has(sessionId)
+      && (legacyStatus?.type === "retry" || legacyStatus?.type === "busy")
+    ) {
+      fused[sessionId] = legacyStatus
       continue
     }
 

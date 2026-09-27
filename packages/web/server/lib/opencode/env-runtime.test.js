@@ -243,6 +243,22 @@ describe('OpenCode env runtime', () => {
     expect(state.resolvedOpencodeBinarySource).toBe('path');
   });
 
+  it('uses a newly installed global CLI on a fresh startup with an existing owned cache', async () => {
+    const dataDir = createTempDir('openchamber-restart-cache-');
+    const cached = path.join(dataDir, 'opencode-cli', '2.0.12', 'opencode');
+    const pathDir = createTempDir('openchamber-restart-global-');
+    const globalBinary = path.join(pathDir, 'opencode');
+    writeVersionBinary(cached, '2.0.12');
+    writeVersionBinary(globalBinary, '2.0.15');
+    process.env.OPENCHAMBER_DATA_DIR = dataDir;
+    process.env.PATH = pathDir;
+    delete process.env.OPENCODE_BINARY;
+    const { runtime, state } = createRuntime({});
+
+    await expect(runtime.ensurePinnedOpenCode2CliEnv()).resolves.toBe(globalBinary);
+    expect(state.resolvedOpencodeBinarySource).toBe('path');
+  });
+
   it('keeps explicit OpenCode binary ahead of bundled CLI', () => {
     const bundledDir = createTempDir('openchamber-bundled-opencode-');
     const bundledBinary = path.join(bundledDir, process.platform === 'win32' ? 'opencode.exe' : 'opencode');

@@ -938,7 +938,7 @@ export function DesktopHostSwitcherDialog({
                   <div
                     key={host.id}
                     className={cn(
-                      'group flex items-center gap-2 px-2.5 py-2 rounded-md overflow-hidden',
+                      'app-region-no-drag group flex items-center gap-2 px-2.5 py-2 rounded-md overflow-hidden',
                       // Dropdown (embedded): mobile-style card per host; the
                       // active host reads as selected, not just labelled.
                       embedded && 'rounded-xl bg-[var(--surface-muted)] px-3 py-2.5',
@@ -1014,12 +1014,12 @@ export function DesktopHostSwitcherDialog({
                         )
                       )}
 
-                      <Tooltip>
+                      <Tooltip delayDuration={600}>
                         <TooltipTrigger asChild>
                           <button
                             type="button"
                             className={cn(
-                              'h-8 w-8 rounded-md inline-flex items-center justify-center hover:bg-interactive-hover transition-colors',
+                              'app-region-no-drag h-8 w-8 rounded-md inline-flex items-center justify-center hover:bg-interactive-hover transition-colors',
                               isDefault
                                 ? 'text-primary hover:text-primary/80'
                                 : 'text-muted-foreground/60 hover:text-primary/80',
@@ -1036,12 +1036,12 @@ export function DesktopHostSwitcherDialog({
                         </TooltipContent>
                       </Tooltip>
 
-                      <Tooltip>
+                      <Tooltip delayDuration={600}>
                         <TooltipTrigger asChild>
                           <button
                             type="button"
                               className={cn(
-                                'h-8 w-8 rounded-md inline-flex items-center justify-center hover:bg-interactive-hover transition-colors',
+                                'app-region-no-drag h-8 w-8 rounded-md inline-flex items-center justify-center hover:bg-interactive-hover transition-colors',
                                 isBlockedDisplayStatus(statusKind)
                                   ? 'text-muted-foreground/30 cursor-not-allowed'
                                   : 'text-muted-foreground/60 hover:text-foreground',

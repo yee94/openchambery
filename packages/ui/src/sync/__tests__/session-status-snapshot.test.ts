@@ -154,7 +154,7 @@ describe("fuseActiveWithLegacyStatus", () => {
     expect(snapshot?.ses_a).toEqual({ type: "busy" })
   })
 
-  test("tailOpenSessionIds promotes legacy idle to busy when absent from membership", () => {
+  test("tailOpenSessionIds does not invent busy from legacy idle when absent from membership", () => {
     const { snapshot } = fuseActiveWithLegacyStatus(
       { state: "supported", membership: {} },
       { ses_a: { type: "idle" } },
@@ -162,7 +162,7 @@ describe("fuseActiveWithLegacyStatus", () => {
       Date.now(),
       { tailOpenSessionIds: new Set(["ses_a"]) },
     )
-    expect(snapshot?.ses_a).toEqual({ type: "busy" })
+    expect(snapshot?.ses_a).toEqual({ type: "idle" })
   })
 
   test("without tailOpenSessionIds, absent membership still converges to idle", () => {
