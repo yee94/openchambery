@@ -43,7 +43,7 @@ const BUNDLE_ID_PATTERN = /^[0-9a-f]{16}$/
 const VERSION_PATTERN = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/
 const ALLOWED_CHANNELS = new Set(['beta', 'stable'])
 
-const { parseOtaManifest } = await import(
+const { parseOtaManifest, selectOtaMajor, mergeOtaMajor, otaManifestMajor } = await import(
   pathToFileURL(path.join(ROOT, 'deploy/update-service/lib/ota-manifest.js')).href
 )
 
@@ -93,6 +93,10 @@ function parseArgs(argv) {
       case '--channel':
         out.channel = next()
         break
+      case '--major':
+        out.major = Number(next())
+        if (!Number.isSafeInteger(out.major) || out.major < 0) throw new Error('--major must be a non-negative integer')
+        break
       case '--from':
         out.from = next()
         break
@@ -104,7 +108,7 @@ function parseArgs(argv) {
         break
       case '--help':
       case '-h':
-        console.log(`Usage:
+        console.log(`Usage (all actions accept --major X; defaults to the root release major):
   node scripts/mobile-ota/rollout.mjs --action promote --percent N --out <dir> [--channel beta|stable]
   node scripts/mobile-ota/rollout.mjs --action pause --out <dir> [--channel beta|stable]
   node scripts/mobile-ota/rollout.mjs --action rollback --out <dir> [--channel beta|stable]
@@ -388,6 +392,9 @@ async function finalizeRollback(next, baseUrl, bundlesDir) {
 }
 
 async function ensureBundles(manifest, baseUrl, bundlesDir) {
+  for (const release of Object.values(manifest.majorReleases ?? {})) {
+    await ensureBundles(release, baseUrl, bundlesDir)
+  }
   const ids = []
   if (manifest.activeBundle?.bundleId) ids.push(manifest.activeBundle.bundleId)
   if (Array.isArray(manifest.rollbackBundleIds)) {
@@ -428,12 +435,17 @@ async function main() {
   let next
   let previous
   let writeChannel
+  let catalog
 
   if (args.action === 'promote-channel') {
     const source = await fetchProductionManifest(baseUrl, args.from)
     const target = await fetchProductionManifest(baseUrl, args.to)
-    previous = target.manifest
-    next = applyPromoteChannel(source.manifest, target.manifest, args.percent)
+    catalog = target.manifest
+    const major = args.major ?? otaManifestMajor(source.manifest)
+    const sourceRelease = selectOtaMajor(source.manifest, major)
+    if (!sourceRelease) throw new Error(`No source release for major ${major}`)
+    previous = selectOtaMajor(catalog, major) ?? emptyManifest(args.to)
+    next = applyPromoteChannel(sourceRelease, previous, args.percent)
     writeChannel = args.to
 
     // Source channel is the "other" relative to the written target — mirror it
@@ -446,7 +458,10 @@ async function main() {
     await ensureBundles(source.manifest, baseUrl, bundlesDir)
   } else {
     const fetched = await fetchProductionManifest(baseUrl, args.channel)
-    previous = fetched.manifest
+    catalog = fetched.manifest
+    const major = args.major ?? otaManifestMajor(catalog)
+    previous = selectOtaMajor(catalog, major)
+    if (!previous) throw new Error(`No release for major ${major}`)
     writeChannel = args.channel
 
     switch (args.action) {
@@ -477,6 +492,13 @@ async function main() {
   if (args.action === 'rollback') {
     next = await finalizeRollback(next, baseUrl, bundlesDir)
   }
+
+  if (otaManifestMajor(next) !== (args.major ?? otaManifestMajor(previous)) && args.action !== 'promote-channel') {
+    throw new Error('Cannot move a release lane to another major')
+  }
+  next = mergeOtaMajor(catalog, next)
+  const validated = parseOtaManifest(next)
+  if (!validated.ok) throw new Error(validated.errors.join('; '))
 
   await ensureBundles(next, baseUrl, bundlesDir)
 

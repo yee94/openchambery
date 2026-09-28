@@ -48,6 +48,10 @@ on:
         options:
           - beta
           - stable
+      major:
+        description: Release major X (empty uses the most recently published lane)
+        required: false
+        type: string
       from:
         description: Source channel for promote-channel
         required: false
@@ -98,6 +102,7 @@ jobs:
           BUILD: ${{ inputs.build }}
           URL: ${{ inputs.url }}
           CHANNEL: ${{ inputs.channel }}
+          MAJOR: ${{ inputs.major }}
           FROM: ${{ inputs.from }}
           TO: ${{ inputs.to }}
           OTA_BASE_URL: ${{ env.OTA_BASE_URL }}
@@ -152,6 +157,7 @@ jobs:
               ;;
           esac
 
+          if [[ -n "${MAJOR:-}" ]]; then ARGS+=(--major "$MAJOR"); fi
           node scripts/mobile-ota/rollout.mjs "${ARGS[@]}"
           GENERATION="$(node -p "JSON.parse(require('fs').readFileSync('$OUT/ota-meta.json','utf8')).generation")"
           PREV="$(node -p "JSON.parse(require('fs').readFileSync('$OUT/ota-meta.json','utf8')).previousGeneration")"

@@ -195,6 +195,12 @@ const bundledReleaseVersion = (): string | null => (
   typeof __APP_VERSION__ !== 'undefined' ? nonEmptyString(__APP_VERSION__) : null
 );
 
+const releaseMajorOf = (version: string | null | undefined): number | undefined => {
+  const match = version?.trim().match(/^v?(\d+)\.\d+\.\d+(?:-beta\.\d+)?$/i);
+  const major = match ? Number(match[1]) : undefined;
+  return major !== undefined && Number.isSafeInteger(major) ? major : undefined;
+};
+
 const resolveCurrentBundleId = async (
   updater: CapgoUpdater | null,
   channel: MobileUpdateChannel,
@@ -340,6 +346,10 @@ async function postUpdateCheck(
   }
 
   if (!isMobileUpdateDecision(data)) return null;
+  if (data.primaryAction === 'apply_ota'
+    && (body.releaseMajor === undefined || releaseMajorOf(data.ota.bundle?.releaseVersion) !== body.releaseMajor)) {
+    throw new Error('OTA release major mismatch');
+  }
   return normalizeMobileUpdateDecision(data);
 }
 
@@ -373,6 +383,7 @@ export async function checkMobileOtaUpdate(
     nativeBuild: nativeInfo.build,
     shellApiVersion: readShellApiVersion(),
     currentBundleId,
+    releaseMajor: releaseMajorOf(currentBundleId) ?? releaseMajorOf(nativeInfo.version),
   };
 
   const urls = getUpdateCheckUrls();
@@ -406,6 +417,11 @@ export async function findDownloadedOtaBundle(bundle: MobileOtaBundleInfo): Prom
   const updater = await getCapgoUpdater();
   if (!updater) return null;
 
+  const request = await assembleMobileOtaCheckRequest({ updater });
+  if (request.releaseMajor === undefined || releaseMajorOf(bundle.releaseVersion) !== request.releaseMajor) {
+    throw new Error('OTA release major mismatch');
+  }
+
   try {
     const { bundles } = await updater.list();
     const match = bundles.find((entry) => (
@@ -422,6 +438,11 @@ export async function findDownloadedOtaBundle(bundle: MobileOtaBundleInfo): Prom
 export async function downloadOtaBundle(bundle: MobileOtaBundleInfo): Promise<string> {
   const updater = await getCapgoUpdater();
   if (!updater) throw new MobileUpdatesUnsupportedError();
+
+  const request = await assembleMobileOtaCheckRequest({ updater });
+  if (request.releaseMajor === undefined || releaseMajorOf(bundle.releaseVersion) !== request.releaseMajor) {
+    throw new Error('OTA release major mismatch');
+  }
 
   const result = await updater.download({
     url: bundle.url,
@@ -463,5 +484,6 @@ export async function assembleMobileOtaCheckRequest(
     nativeBuild: nativeInfo.build,
     shellApiVersion: readShellApiVersion(),
     currentBundleId,
+    releaseMajor: releaseMajorOf(currentBundleId) ?? releaseMajorOf(nativeInfo.version),
   };
 }
