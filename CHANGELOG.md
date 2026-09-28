@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [2.0.0-beta.22] - 2026-09-28
+
+这是 OpenCode 2 预览版。本次发布桌面、Android 安装包、同版本 Beta OTA，以及 iOS 内测 TestFlight。不进入外测组或稳定自动更新通道。
+
+### iOS
+
+- 提供当前预览版的内测 TestFlight 构建，方便直接安装。不关联外测组，也不进入稳定自动更新。
+
 ## [2.0.0-beta.21] - 2026-09-27
 
 这是 OpenCode 2 预览版。本次发布桌面、Android 安装包及同版本 Beta OTA；iOS 不上 TestFlight，不进入外测组或稳定自动更新通道。
