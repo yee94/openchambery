@@ -29,7 +29,8 @@ const writeGoal = (
     if (nextGoal) {
       nextNamespace.goal = nextGoal;
     } else {
-      delete nextNamespace.goal;
+      // Metadata writes are Merge Patch: omission preserves the stored goal.
+      nextNamespace.goal = null;
     }
     return { ...metadata, openchamber: nextNamespace };
   });

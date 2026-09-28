@@ -50,6 +50,10 @@ Verified against `@opencode/client` 2.0.12 / OpenCode core: `session.execution.i
 
 ### Demand-driven location services (Ticket 09)
 
+Directory bootstrap does not schedule `lsp.status`: that capability is not
+available on the V2 client. Deferred VCS, form and permission failures remain
+visible as real errors; an unsupported LSP placeholder must not mask them.
+
 Directory bootstrap phase 1 stays critical (location/config/active status). Phase 2 keeps form + permission lists so background sessions remain reachable without a visible MCP surface. **MCP is not listed during bootstrap**, and the directory child store holds no MCP state. Demand for location-scoped catalogs (MCP configs/status, command catalog) is the set of mounted, enabled TanStack Query observers; there is no separate demand counter. `location-services-demand.ts` `refreshDemandedLocationServices` invalidates those catalogs with `refetchType: "active"`: `location.shutdown` (legacy `server.instance.disposed`) targets that directory, and `server.connected` / `global.disposed` outside the recent-boot window target every directory. Only observed catalogs refetch; unobserved ones are marked stale and load on their next consumer. Query keys carry the transport identity and runtime identity changes clear the client, so an old runtime's demand and results never refresh on the new one. Sidebar index browse with `bootstrap: false` never starts location MCP.
 
 `session-projection-api.ts` projects native `shell` rows into user-owned `shellAction` cards, preserving command, output, and running/success/failure state. The transcript reducer handles `session.shell.started` / `ended` using the SDK's event-to-message ID rule and shell identity. Query merge resolves a shell event's target card through the same `findShellMessageID` rule, and part equality compares `shellAction`, so an HTTP-loaded running card completes from the live end event or an authoritative page. Terminal shell events trigger the existing bounded active-session materialization to recover a missed start.

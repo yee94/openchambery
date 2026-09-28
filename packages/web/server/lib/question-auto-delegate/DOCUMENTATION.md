@@ -2,12 +2,15 @@
 
 ## Purpose
 
-Server-owned automatic handling of OpenCode `question.asked` prompts. When
+Server-owned automatic handling of OpenCode 2 question-tool forms (`form.created`,
+`data.form.metadata.kind === "question"`). When
 enabled (default), pending questions are answered after 30 seconds with a fixed
 continuation text so agents (including background/subagent sessions) can proceed
 without a connected UI. Manual reply/reject still use the official OpenCode
-SDK shape; the Host only adds a single-flight claim so timer, manual, and
-delegate paths cannot double-POST upstream.
+form schema. The Host adds a single-flight claim for timer, delegate, and
+compatibility question routes. Native manual form replies settle via
+`form.replied` / `form.cancelled`; upstream form settlement arbitrates any race
+with a native reply already in flight.
 
 Permission auto-accept is intentionally out of scope — this module never
 replies to permission requests.
@@ -42,6 +45,7 @@ Auto-submit requires **settings ready + enabled + authoritative directory**.
 |---|---|
 | `core.js` / `core.d.ts` | Platform-agnostic state machine (IO/timer injected). Shared contract for VS Code. |
 | `runtime.js` | Web adapter: OpenCode upstream fetch, global event hub, settings, SSE tips, project + session-index directories. |
+| `form-io.js` / `form-io.d.ts` | Shared Web/VS Code native form list, schema lookup, answer mapping and cancellation. |
 | `routes.js` | OpenChamber routes + precise `/api/question/:id/reply\|reject` intercepts. |
 
 ## Snapshot
@@ -62,21 +66,31 @@ Tip event (not a data payload):
 | `POST` | `.../requests/:id/pause` | `{ sessionID, directory, reason: 'interaction'\|'user' }` — bound identity conflicts → 409. Directory may be empty; pause still cancels the auto timer. |
 | `POST` | `.../requests/:id/delegate` | recovers identity via scoped list; allowed when toggle off |
 | `POST` | `/api/question/:id/reply` | manual: `answers` must be an array (incl. `[]`); never auto text |
-| `POST` | `/api/question/:id/reject` | SDK body preserved |
+| `POST` | `/api/question/:id/reject` | Compatibility route mapped to native form cancellation |
 
 Concurrent claim losers: HTTP **409** + `code: "question_submission_claimed"`.
 
 ## Claim / upstream rules
+
+OpenCode 2.0.15 upstream uses `GET /api/form?location[directory]=...` for
+pending forms and `GET /api/session/:sessionID/form/:formID` before submitting
+`POST .../reply` with `{ answer }`. Only question-tool forms are eligible.
+The fresh schema owns field keys, option values and string/multiselect shape.
+Failed schema reads are `notSent` and pause for retry. Cancellation uses
+`POST .../cancel`. Session directory recovery reads `info.location.directory`;
+live events read `payload.location.directory` and `payload.data`.
+Web, Electron and mobile hosts use the Web adapter; VS Code imports the same
+form IO and core, restoring `/api` for origin-only upstream URLs.
 
 1. One authority owns at most one upstream POST per `requestID` (sync claim).
 2. **Definitive reject** (400/409/422) or pre-send throw → **release claim**, pause for human retry. **No immediate auto retry.**
 3. **Unclear post-dispatch result** (timeout/5xx/`uncertain`) → `uncertain` tombstone; no retry; still **blocks** goal.
 4. **Settled** must not be downgraded by a late POST failure.
 5. Successful **scoped** empty list may converge `uncertain`/pending → `external` settled **only for that directory**.
-6. Manual reply forwards `answers` as-is (including `[]`). Fixed text is auto/delegate only.
+6. Compatibility manual reply passes `answers` (including `[]`) to the form adapter, which maps them by authoritative fields. Fixed text is auto/delegate only.
 7. Client `sessionID`/`directory` hints never override a bound identity (conflict → 409).
 8. Auto-submit requires an authoritative directory binding (from event, session cache, or `getSession` write-back). Missing directory → no timer.
-9. Unknown pause/delegate recovers via scoped `question.list` — never invents `questionCount=1`.
+9. Unknown pause/delegate recovers via scoped `form.list`, filtered to question-tool forms — never invents `questionCount=1`.
 
 ## Reconcile
 
@@ -119,6 +133,7 @@ Concurrent claim losers: HTTP **409** + `code: "question_submission_claimed"`.
 ```sh
 bunx vitest run --project @openchamber/web \
   packages/web/server/lib/question-auto-delegate/core.test.js \
+  packages/web/server/lib/question-auto-delegate/runtime.test.js \
   packages/web/server/lib/question-auto-delegate/routes.test.js \
   packages/web/server/lib/session-goal/runtime.test.js
 ```

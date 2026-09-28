@@ -722,20 +722,20 @@ export const createSessionGoalRuntime = ({
       const client = openCodeClient();
       if (typeof client?.message?.list === 'function') {
         const listed = await client.message.list(
-          { sessionID: sessionId, limit: MESSAGE_FETCH_LIMIT, order: 'asc' },
+          { sessionID: sessionId, limit: MESSAGE_FETCH_LIMIT, order: 'desc' },
           directoryRequestOptions(directory),
         );
         const projected = projectGoalMessages(listed, sessionId);
-        if (projected) return projected;
+        if (projected) return projected.reverse();
       }
     } catch {
       // Fall through to controlled HTTP seam for tests / older fixtures.
     }
     const raw = await openCodeFetch(`/session/${encodeURIComponent(sessionId)}/message`, {
       directory,
-      query: { limit: String(MESSAGE_FETCH_LIMIT) },
+      query: { limit: String(MESSAGE_FETCH_LIMIT), order: 'desc' },
     }).catch(() => null);
-    return projectGoalMessages(raw, sessionId);
+    return projectGoalMessages(raw, sessionId)?.reverse() ?? null;
   };
 
   /**

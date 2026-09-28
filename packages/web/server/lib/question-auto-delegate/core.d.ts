@@ -114,6 +114,8 @@ export interface QuestionAutoDelegatePendingQuestion {
   sessionID: string;
   directory?: string | null;
   questions?: unknown[] | null;
+  fields?: unknown[];
+  metadata?: { kind?: unknown };
 }
 
 export interface QuestionAutoDelegateSessionInfo {
@@ -167,11 +169,13 @@ export interface QuestionAutoDelegateIO {
     requestID: string,
     directory: string | undefined,
     answers: string[][],
+    sessionID: string,
   ): Promise<QuestionAutoDelegateUpstreamResult>;
   postReject(
     requestID: string,
     directory: string | undefined,
-    body?: unknown,
+    body: unknown,
+    sessionID: string,
   ): Promise<QuestionAutoDelegateUpstreamResult>;
   /** Project directories used for reconnect/start reconcile. */
   listDirectories(): Promise<string[]>;

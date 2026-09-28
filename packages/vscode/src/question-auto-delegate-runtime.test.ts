@@ -158,6 +158,54 @@ afterEach(() => {
 });
 
 describe('VS Code question auto-delegate host authority', () => {
+  test.each(['http://opencode.test', 'http://opencode.test/api'])('native form auto-reply uses the V2 API from %s', async (baseUrl) => {
+    vi.useFakeTimers();
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'openchamber-qad-v2-'));
+    __setQuestionAutoDelegateSettingsPathForTests(path.join(dir, 'settings.json'));
+    const form = {
+      id: 'frm_native', sessionID: 'ses_native', title: 'Choose', metadata: { kind: 'question' },
+      fields: [{ key: 'choice', type: 'string', custom: true }],
+    };
+    const posts: Array<{ path: string; body: unknown }> = [];
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
+      const url = new URL(String(input));
+      if (url.pathname === '/api/form') {
+        assert.equal(url.searchParams.has('directory'), false);
+        return Response.json({ data: [] });
+      }
+      if (url.pathname === '/api/session/ses_native') {
+        return Response.json({ data: { id: form.sessionID, location: { directory: '/workspace' } } });
+      }
+      if (url.pathname === '/api/session/ses_native/form/frm_native') return Response.json({ data: form });
+      if (init?.method === 'POST') {
+        posts.push({ path: url.pathname, body: JSON.parse(String(init.body)) });
+        return new Response(null, { status: 204 });
+      }
+      return new Response(null, { status: 404 });
+    });
+    try {
+      startQuestionAutoDelegateRuntime({
+        getApiUrl: () => baseUrl,
+        getOpenCodeAuthHeaders: () => ({}),
+        getWorkingDirectory: () => '/workspace',
+      } as unknown as OpenCodeManager);
+      await vi.advanceTimersByTimeAsync(0);
+      processQuestionAutoDelegateEvent({ type: 'form.created', location: { directory: '/workspace' }, data: { form } });
+      await vi.advanceTimersByTimeAsync(29_999);
+      assert.equal(posts.length, 0);
+      await vi.advanceTimersByTimeAsync(1);
+      assert.deepEqual(posts, [{
+        path: '/api/session/ses_native/form/frm_native/reply',
+        body: { answer: { choice: QUESTION_AUTO_DELEGATE_ANSWER } },
+      }]);
+    } finally {
+      stopQuestionAutoDelegateRuntime();
+      fetchSpy.mockRestore();
+      vi.useRealTimers();
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   test('fires auto-reply after 30s without any webview sink (host singleton)', async () => {
     // Do not call core.start() here: start()'s async reconcile with empty list
     // would external-settle the just-tracked request. Host authority is the

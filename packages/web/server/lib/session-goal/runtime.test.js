@@ -136,7 +136,7 @@ const makeFetch = ({ messages, liveStatus }) => {
       }
       if (pathEndsWith(reqPath, '/session/ses-goal/message')) {
         // Official v2 SessionMessagesResponse shape.
-        return jsonResponse({ data: messages, cursor: {} });
+        return jsonResponse({ data: new URL(url).searchParams.get('order') === 'desc' ? [...messages].reverse() : messages, cursor: {} });
       }
       if (pathEndsWith(reqPath, '/session/ses-goal') && !reqPath.includes('/message')) {
         if (init.method === 'PATCH') {
@@ -263,6 +263,33 @@ describe('session-goal v2 message projection helpers', () => {
 });
 
 describe('session-goal continuation delivery', () => {
+  it.each([false, true])('continues after a completed compaction beyond the first message page (HTTP fallback: %s)', async (fallback) => {
+    const messages = Array.from({ length: 42 }, (_, index) => ({
+      id: `msg_${String(index).padStart(3, '0')}`,
+      type: index === 41 ? 'compaction' : index % 2 ? 'user' : 'assistant',
+      time: index === 41 ? { created: index + 1 } : { created: index + 1, completed: index + 2 },
+      model: { providerID: 'p', id: 'm' },
+      agent: 'build',
+      ...(index === 41 ? { status: 'completed', summary: 'Work remains' } : { text: 'Working' }),
+    }));
+    const fixture = makeFetch({ messages, liveStatus: 'idle' });
+    const runtime = makeRuntime();
+    try {
+      await withFetch(async (input, init) => {
+        const url = new URL(String(input));
+        if (pathEndsWith(url.pathname, '/session/ses-goal/message')) {
+          if (fallback && url.pathname.startsWith('/api/')) return jsonResponse({ error: 'unavailable' }, 503);
+          const ordered = url.searchParams.get('order') === 'desc' ? [...messages].reverse() : messages;
+          return jsonResponse({ data: ordered.slice(0, Number(url.searchParams.get('limit') || 40)), cursor: {} });
+        }
+        return fixture.fetch(input, init);
+      }, async () => runtime.runTick('ses-goal', '/repo'));
+      expect(fixture.calls.prompt).toBe(1);
+    } finally {
+      runtime.stop();
+    }
+  });
+
   it('dispatches v2 session.prompt with stable continuation id and metadata', async () => {
     const promptBodies = [];
     const messages = [
@@ -291,7 +318,7 @@ describe('session-goal continuation delivery', () => {
         return jsonResponse({ data: {} });
       }
       if (pathEndsWith(reqPath, '/session/ses-goal/message')) {
-        return jsonResponse({ data: messages, cursor: {} });
+        return jsonResponse({ data: new URL(url).searchParams.get('order') === 'desc' ? [...messages].reverse() : messages, cursor: {} });
       }
       if (pathEndsWith(reqPath, '/session/ses-goal') && !reqPath.includes('/message')) {
         if (init.method === 'PATCH' && init.body) {
@@ -984,7 +1011,9 @@ describe('session-goal runtime — pause / audit / dispatch boundary', () => {
         const body = Array.isArray(messages)
           ? { data: messages, cursor: {} }
           : messages;
-        return jsonResponse(body);
+        return jsonResponse(new URL(String(input)).searchParams.get('order') === 'desc'
+          ? { ...body, data: [...body.data].reverse() }
+          : body);
       }
       if (pathEndsWith(reqPath, '/session/ses-goal')) {
         if (init.method === 'PATCH') {

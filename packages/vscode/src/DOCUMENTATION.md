@@ -373,7 +373,12 @@ Contract source of truth (do not vendor/copy): `packages/web/server/lib/question
 | `POST /question-auto-delegate/requests/:id/delegate` | Immediate auto-reply claim |
 | `POST /question/:id/reply\|reject` | Sync claim + upstream; preserve SDK body/status |
 
-Timers are host-owned: closing every webview does not cancel counting. Webview
+Timers are host-owned: closing every webview does not cancel counting.
+Native OpenCode 2 `form.created` / `form.replied` / `form.cancelled` events use
+the shared core; `form-io.js` owns pending-list and schema-based replies for
+question-tool forms. Upstream URLs restore `/api` exactly once and scope lists
+with `location[directory]`. Session directory recovery reads `location.directory`.
+Webview
 tips call shared `refreshQuestionAutoDelegate` once (no window `message`
 re-dispatch). Same-endpoint disconnect retains core state; reconnect reconciles
 pending. Offline auto-submit waits briefly for `getApiUrl`; if still missing,
