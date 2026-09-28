@@ -489,6 +489,93 @@ describe('history failure feedback with production toast store', () => {
 });
 
 describe('useChatTimelineController mobile history boundary', () => {
+    test('one mobile gesture cannot cascade through history after prepend scroll events', async () => {
+        const load = vi.fn(async () => {
+            handle.geometry.scrollHeight += 100;
+        });
+        const handle = await mountController({
+            isMobile: true, isPinned: false, loadMoreMessages: load,
+            geometry: { scrollHeight: 4000, clientHeight: 400, scrollTop: 500 },
+        });
+        await act(async () => handle.api!.handleHistoryScroll());
+        expect(load).not.toHaveBeenCalled();
+        await act(async () => {
+            handle.scrollRef.current!.dispatchEvent(new Event('touchstart'));
+            handle.api!.handleHistoryUpwardIntent();
+        });
+        await waitMs(300);
+        expect(load).toHaveBeenCalledTimes(1);
+        for (let index = 0; index < 3; index += 1) {
+            await act(async () => {
+                handle.api!.handleHistoryScroll();
+                handle.api!.handleHistoryUpwardIntent();
+            });
+            await waitMs(300);
+        }
+        expect(load).toHaveBeenCalledTimes(1);
+        await act(async () => {
+            handle.scrollRef.current!.dispatchEvent(new Event('touchstart'));
+            handle.api!.handleHistoryUpwardIntent();
+        });
+        await waitMs(300);
+        expect(load).toHaveBeenCalledTimes(2);
+    });
+
+    test.each(['stationary', 'failure'] as const)('mobile %s page waits for a new gesture instead of retrying itself', async (outcome) => {
+        const load = vi.fn(async () => {
+            if (outcome === 'failure') throw new Error('offline');
+        });
+        const handle = await mountController({
+            isMobile: true, isPinned: false, loadMoreMessages: load,
+            geometry: { scrollHeight: 4000, clientHeight: 400, scrollTop: 500 },
+        });
+        await act(async () => {
+            handle.scrollRef.current!.dispatchEvent(new Event('touchstart'));
+            handle.api!.handleHistoryUpwardIntent();
+        });
+        await waitMs(HISTORY_STALL_COOLDOWN_MS + 50);
+        await act(async () => {
+            for (let index = 0; index < 50; index += 1) {
+                handle.api!.handleHistoryScroll();
+                handle.api!.handleHistoryUpwardIntent();
+            }
+        });
+        expect(load).toHaveBeenCalledTimes(1);
+        await act(async () => {
+            handle.scrollRef.current!.dispatchEvent(new Event('touchstart'));
+            handle.api!.handleHistoryUpwardIntent();
+        });
+        await waitMs(300);
+        expect(load).toHaveBeenCalledTimes(2);
+    });
+
+    test('one mobile gesture loads only one page even when collapsed history has no height growth', async () => {
+        const client = new QueryClient();
+        const repo = createQueryTranscriptRepository({ client, transport: 'test-runtime', generation: 1 });
+        runtimeSurface.repository = repo;
+        const scope = { directory: '/workspace', sessionID: SESSION_ID };
+        repo.apply(scope, { type: 'http-page', purpose: 'initial', page: {
+            records: [message('msg_1'), message('msg_2')], cursor: 'cursor-0', complete: false, turnCount: 2,
+        } });
+        const load = vi.fn(async () => {
+            repo.apply(scope, { type: 'http-page', purpose: 'prepend', page: {
+                records: [], cursor: `cursor-${load.mock.calls.length}`, complete: false, turnCount: 0,
+            } });
+        });
+        const handle = await mountController({
+            isMobile: true, isPinned: false, loadMoreMessages: load,
+            geometry: { scrollHeight: 4000, clientHeight: 400, scrollTop: 500 },
+        });
+        await act(async () => {
+            handle.scrollRef.current!.dispatchEvent(new Event('touchstart'));
+            handle.api!.handleHistoryUpwardIntent();
+        });
+        await waitMs(500);
+        expect(load).toHaveBeenCalledTimes(1);
+        repo.destroy();
+        client.clear();
+    });
+
     test('non-virtual mobile explicit load preserves its anchor through delayed DOM hydration before paint', async () => {
         runtimeSurface.mobileProbe = true;
         let settle!: () => void;
@@ -621,6 +708,8 @@ describe('useChatTimelineController mobile history boundary', () => {
         });
 
         await act(async () => {
+            handle.scrollRef.current!.dispatchEvent(new Event('touchstart'));
+            handle.api!.handleHistoryUpwardIntent();
             handle.api!.handleHistoryScroll();
         });
         await flushMicrotasks();
@@ -632,7 +721,6 @@ describe('useChatTimelineController mobile history boundary', () => {
         await act(async () => {
             handle.api!.handleHistoryScroll();
             handle.api!.handleHistoryUpwardIntent();
-            void handle.api!.loadEarlier({ userInitiated: true });
         });
         await flushMicrotasks();
 

@@ -1572,7 +1572,10 @@ const AssistantMessageBody = React.memo(({
         };
     }, [assistantPlanText, effectiveDirectory, effectiveReviewTransferDirection, sessionId, t]);
     const [isForkPending, setIsForkPending] = React.useState(false);
-    const chatRenderMode = useUIStore((state) => state.chatRenderMode);
+    const preferredChatRenderMode = useUIStore((state) => state.chatRenderMode);
+    // A partial history window can contain an assistant before its user turn.
+    // Without a turn-owned Activity group, folding would hide the only body.
+    const chatRenderMode = turnGroupingContext ? preferredChatRenderMode : 'live';
     const collapsibleThinkingBlocks = useUIStore((state) => state.collapsibleThinkingBlocks);
     const showSplitAssistantMessageActions = useUIStore((state) => state.showSplitAssistantMessageActions);
     const showAssistantTps = useUIStore((state) => state.showAssistantTps);

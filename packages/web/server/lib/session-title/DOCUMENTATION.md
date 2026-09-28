@@ -50,18 +50,21 @@ extension-only VS Code retains the limitation below.
       assistant reply run concurrently. Generation publishes `isGenerating` via
       the existing Host metadata path, then the final title through `session.updated`.
       Later user admissions/idle events do not regenerate the initial title.
-      The legacy first-idle edge remains a fallback when no admission was observed.
-      A fork title (`(fork #n)`) waits for its first
-     newly-created user message; the matching assistant completion triggers an
-     immediate title refresh that bypasses inherited title metadata and throttle.
+       If `session.created` was missed, the admission's session read recovers
+       an empty/default title with no previous auto-title metadata and starts
+       immediately. The legacy first-idle edge remains a fallback when no
+       admission was observed.
+       A fork title (`(fork #n)`) refreshes on its first newly-admitted user
+       message, bypassing inherited title metadata and throttle without waiting
+       for the assistant. Legacy message-only events retain the idle fallback.
      If the fork's `session.created` was lost (SSE reconnect gap, server or
      OpenCode restart), the first newly-created user message lazily re-registers
      the pending fork from the session read inside `recordUserActivity` (fork
      title + message created after the fork + activity timestamp not yet past
-     the fork time), so the first-reply refresh still fires.
+      the fork time), so the first-send refresh still fires.
      Ordinary later idle transitions do **not** arm another refresh. Any
       `busy`/`retry` status or a fresh user `message.updated` still clears an
-      ordinary already-armed timer; an admitted first-title timer is exempt.
+       ordinary already-armed timer; admitted initial/fork-title timers are exempt.
      A sidebar smart-title request sets `titleRefresh.requestedAt`; its
      `session.updated` event arms the same flow immediately (forced / manual
      refresh is unaffected by the background gate).
@@ -140,6 +143,13 @@ auto updates for that session.
 
 Title language follows the user's real message text. Assistant responses, tool
 output, and transcript labels provide context without selecting the title language.
+
+Attachments do not gate title generation. Admission retains user text plus at
+most eight bounded filename/MIME descriptors, never attachment bytes or URLs.
+Attachment-only messages also start generation; the text-only summary model can
+name the attachment subject from those descriptors, but is explicitly told that
+file contents are not included. Transcript-based/manual generation uses the
+same file descriptors. This does not perform image recognition or file parsing.
 
 - Lives in the web server, so VS Code (extension-only) does not generate
   refreshes; it still receives `session.updated` title changes produced by a

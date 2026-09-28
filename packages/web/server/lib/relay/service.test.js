@@ -123,6 +123,19 @@ describe('relay service pairing endpoint', () => {
     delete process.env.OPENCHAMBER_RELAY_URL;
   });
 
+  it('starts only one host per endpoint during concurrent startup and stops every started host', async () => {
+    const { service, settings } = createTestRelayService({ hasRelayDemand: async () => true });
+    await settings.write({ privateRelay: { enabled: true, relayUrl: DEFAULT_RELAY_URL } });
+
+    try {
+      await Promise.all([service.reconcile(), service.reconcile()]);
+      expect(relayMocks.starts).toEqual([DEFAULT_RELAY_URL]);
+    } finally {
+      service.stop();
+    }
+    expect(relayMocks.stops).toEqual(relayMocks.starts);
+  });
+
   it('appends a new pairing endpoint (multi-relay) while keeping the primary', async () => {
     const { service, settings } = createTestRelayService();
 

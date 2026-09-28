@@ -1104,8 +1104,15 @@ async function materializeClaimedDraftSession(selection: {
   try {
     const { directory } = await resolveDraftDirectory(draft)
     const dir = directory ?? opencodeClient.getDirectory()
-    const created = await createSessionAction(draft.title, dir, draft.parentID ?? null, undefined)
+    // Draft finalization owns selection; the general create action closes the draft too early.
+    const created = await opencodeClient.createSession({ title: draft.title, parentID: draft.parentID ?? undefined }, dir)
     if (!created?.id) throw new Error("Failed to create session")
+    if (draft.permissionAutoAcceptEnabled !== true) {
+      const sessionDirectory = directory ?? created.directory
+      if (sessionDirectory) registerSessionDirectory(created.id, sessionDirectory)
+      const { usePermissionStore } = await import("@/stores/permissionStore")
+      await usePermissionStore.getState().setSessionAutoAccept(created.id, false)
+    }
     if (pendingUserMessage) {
       optimisticInsertUserMessage({
         sessionId: created.id,
@@ -2125,7 +2132,9 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
 
     // ---- New session from draft ----
     if (!options?.sessionId && draft?.open) {
+      // Combined admission cannot install an explicit deny before its first prompt executes.
       const canUseCombined =
+        draft.permissionAutoAcceptEnabled === true &&
         inputMode !== "shell" &&
         !content.trimStart().startsWith("/") &&
         !options?.delivery &&

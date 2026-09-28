@@ -12,6 +12,7 @@ import { useSelectionStore } from '@/sync/selection-store';
 import { useDeviceInfo } from '@/lib/device';
 import { useI18n } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
+import { Skeleton } from '@/components/ui/skeleton';
 
 import type { AnimationHandlers, ContentChangeReason } from '@/hooks/useChatAutoFollow';
 import MessageHeader from './message/MessageHeader';
@@ -21,7 +22,7 @@ import type { StreamPhase, ToolPopupContent } from './message/types';
 import { deriveMessageRole } from './message/messageRole';
 import { CompactionCard } from './message/CompactionCard';
 import { getSessionCompactionCard } from '@/sync/session-projection-api';
-import { filterVisibleParts, isEmptyTextPart, normalizeParts } from './message/partUtils';
+import { extractTextContent, filterVisibleParts, normalizeParts } from './message/partUtils';
 import { hasVisibleUserBubbleContent, normalizeUserDisplayParts } from './message/normalizeUserDisplayParts';
 import { flattenAssistantTextParts } from '@/lib/messages/messageText';
 import { getProviderModelDisplayName } from '@/lib/modelDisplay';
@@ -1030,13 +1031,13 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
         if (isUser) {
             return true;
         }
-        return normalizedParts.some((part) => {
-            if (part.type === 'patch') {
-                return false;
+        return visibleParts.some((part) => {
+            if (part.type === 'text' || part.type === 'reasoning') {
+                return extractTextContent(part).trim().length > 0;
             }
-            return !isEmptyTextPart(part);
+            return part.type === 'tool' || part.type === 'file';
         });
-    }, [isUser, normalizedParts]);
+    }, [isUser, visibleParts]);
 
     const hostsTurnActivity = Boolean(
         turnGroupingContext?.activityOwnerMessageId === message.info.id
@@ -1047,6 +1048,7 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
         ),
     );
     const shouldHideEmptyAssistant = !isUser
+        && !compactionCard
         && (isMessageCompleted || !isInActiveTurn)
         && !assistantError
         && !hasRenderableAssistantParts
@@ -1212,6 +1214,13 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
                                     modelName={headerModelName}
                                     variant={headerVariant}
                                 />
+                            )}
+
+                            {!hasRenderableAssistantParts && !hostsTurnActivity && !assistantError && isInActiveTurn && !isMessageCompleted && (
+                                <div role="status" aria-label={t('common.loading')} data-assistant-content-loading="" className="space-y-2 py-2">
+                                    <Skeleton className="h-3.5 w-2/3" />
+                                    <Skeleton className="h-3.5 w-1/3" />
+                                </div>
                             )}
 
                             <MessageBody
