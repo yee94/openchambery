@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [2.0.0-beta.25] - 2026-09-29
+
+这是 OpenCode 2 预览版。本次发布桌面、Android 安装包、同版本 Beta OTA，以及 iOS 内测 TestFlight。不进入外测组或稳定自动更新通道。
+
+### 热更新
+
+- OTA 更新按主版本隔离：1.x 设备只接收 1.x 更新，2.x 设备只接收 2.x 更新，正式版与 Beta 渠道均遵守该规则。
+- 兼容旧客户端的版本上报方式；新版客户端在检查、下载和复用缓存更新包时校验主版本，避免跨版本热更。
+- 发布与灰度操作保留其他主版本的更新包和回滚记录，支持独立维护 1.x 与 2.x。
+
 ## [2.0.0-beta.24] - 2026-09-28
 
 这是 OpenCode 2 预览版。本次发布桌面、Android 安装包、同版本 Beta OTA，以及 iOS 内测 TestFlight。不进入外测组或稳定自动更新通道。
