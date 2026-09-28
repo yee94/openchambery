@@ -71,6 +71,7 @@ vi.mock('@/lib/platform', () => ({
 import {
   assembleMobileOtaCheckRequest,
   checkMobileOtaUpdate,
+  downloadOtaBundle,
   findDownloadedOtaBundle,
   MOBILE_OTA_EDGEONE_CHECK_URL,
   MOBILE_OTA_VERCEL_CHECK_URL,
@@ -113,7 +114,38 @@ describe('mobile OTA coordinator', () => {
       nativeBuild: 45,
       shellApiVersion: 2,
       currentBundleId: 'builtin',
+      releaseMajor: 1,
     });
+  });
+
+  test('reports the running web major even when native shell still reports 1.x', async () => {
+    mocks.updater.current.mockResolvedValue({ bundle: { id: 'installed', version: '2.0.0-beta.24' }, native: '1.2.3' });
+    const body = await assembleMobileOtaCheckRequest({ updater: mocks.updater });
+    expect(body.releaseMajor).toBe(2);
+  });
+
+  test('rejects cross-major OTA from older update services, including rollback responses', async () => {
+    const fetchImpl = vi.fn(async () => new Response(JSON.stringify(sampleDecision({
+      primaryAction: 'apply_ota',
+      isChannelRollback: true,
+      ota: { state: 'available', bundle: {
+        bundleId: 'two', releaseVersion: '2.0.0', url: 'https://updates.example.com/two.zip',
+        checksum: 'abc', size: 1, minShellApiVersion: 1,
+      } },
+    }))));
+    await expect(checkMobileOtaUpdate({ updater: mocks.updater, fetchImpl })).rejects.toThrow('major mismatch');
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+  });
+
+  test('refuses both cached and new cross-major downloads', async () => {
+    const bundle = {
+      bundleId: 'two', releaseVersion: '2.0.0-beta.24', url: 'https://updates.example.com/two.zip',
+      checksum: 'abc', size: 1, minShellApiVersion: 1,
+    };
+    await expect(findDownloadedOtaBundle(bundle)).rejects.toThrow('major mismatch');
+    await expect(downloadOtaBundle(bundle)).rejects.toThrow('major mismatch');
+    expect(mocks.updater.download).not.toHaveBeenCalled();
+    expect(mocks.updater.list).not.toHaveBeenCalled();
   });
 
   test('defaults channel to beta and shellApiVersion to 1 when config is missing', async () => {

@@ -55,6 +55,9 @@
  * Pass `--fixtures-only` to assert the dual-fixture profile table without
  * contacting production endpoints.
  */
+import { parseOtaManifest, selectOtaMajor } from '../../deploy/update-service/lib/ota-manifest.js'
+import { parseReleaseVersion } from '../../deploy/update-service/lib/semver.js'
+
 const DEFAULT_BASES = [
   'https://openchamber-update.vercel.app',
   'https://openchamber.xiaobe.top',
@@ -133,7 +136,9 @@ function versionBelow(v) {
 async function fetchManifest(base) {
   const response = await fetch(`${base}/ota/channels/${channel}.json`, { cache: 'no-store' })
   if (!response.ok) throw new Error(`manifest fetch failed: ${response.status}`)
-  return response.json()
+  const parsed = parseOtaManifest(await response.json())
+  if (!parsed.ok) throw new Error(parsed.errors.join('; '))
+  return parsed.manifest
 }
 
 async function probe(base, body) {
@@ -571,11 +576,39 @@ for (const delay of RETRY_DELAYS_MS) {
   for (const base of bases) {
     const label = hostLabel(base)
     try {
-      const profiles = buildProfiles(await fetchManifest(base))
+      const catalog = await fetchManifest(base)
+      const major = parseReleaseVersion(version)?.major
+      const manifest = selectOtaMajor(catalog, major)
+      if (!manifest) throw new Error(`No release lane for major ${major}`)
+      const profiles = buildProfiles(manifest)
+      for (const otherMajor of new Set([1, 2, major + 1])) {
+        if (otherMajor === major) continue
+        profiles.push({
+          name: `major ${otherMajor} isolation`,
+          body: {
+            channel, platform: 'ios', deviceId: 'ci-major-isolation',
+            nativeVersion: `${otherMajor}.0.0`, nativeBuild: 21,
+            shellApiVersion: 1, currentBundleId: 'builtin',
+          },
+        })
+      }
       for (const profile of profiles) {
         try {
           const decision = await probe(base, profile.body)
           const actual = decision.primaryAction
+          const requestMajor = parseReleaseVersion(profile.body.currentBundleId)?.major
+            ?? parseReleaseVersion(profile.body.nativeVersion)?.major
+          if (requestMajor !== major) {
+            if (decision.status !== 'ok'
+              || !['none', 'apply_ota', 'install_native_required'].includes(actual)
+              || (actual === 'apply_ota' && parseReleaseVersion(decision.ota?.bundle?.releaseVersion)?.major !== requestMajor)
+              || (decision.native?.version && parseReleaseVersion(decision.native.version)?.major !== requestMajor)) {
+              lastFailures.push(`${label} ${profile.name}: crossed release major`)
+            } else {
+              console.log(`  ok ${label} ${profile.name} -> isolated major ${requestMajor}`)
+            }
+            continue
+          }
           if (actual !== profile.expect) {
             lastFailures.push(`${label} ${profile.name}: expected ${profile.expect}, got ${actual}`)
           } else if (profile.expect === 'apply_ota' && decision.ota?.bundle?.releaseVersion !== version) {

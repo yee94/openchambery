@@ -1,4 +1,5 @@
 import { compareReleaseVersions, isStrippedMarketingIdentity, parseReleaseVersion } from './semver.js';
+import { selectOtaMajor } from './ota-manifest.js';
 
 const DEFAULT_NEXT_CHECK_IN_SEC = 3600;
 
@@ -147,6 +148,10 @@ function nativeAvailableIfNewer(nativeTarget, nativeBuild) {
  * `manifest` may be null when the channel file is missing (channel not using OTA yet).
  */
 export function resolveMobileUpdate(manifest, request) {
+  const major = request.releaseMajor
+    ?? parseReleaseVersion(request.currentBundleId)?.major
+    ?? parseReleaseVersion(request.nativeVersion)?.major;
+  manifest = selectOtaMajor(manifest, major);
   const nextCheckInSec = DEFAULT_NEXT_CHECK_IN_SEC;
   const platform = request.platform;
   const nativeTarget = manifest?.nativeTargets?.[platform];

@@ -7,6 +7,7 @@ The mobile package reuses the web build, then rewrites `mobile.html` to `index.h
 ## Runtime Model
 
 - The native app bundles the mobile UI only; it does not embed the OpenChamber web server or OpenCode server.
+- OTA checks are isolated by running release major and beta/stable channel: 1.x stays on 1.x and 2.x stays on 2.x, including channel rollback. New shared-UI clients send `releaseMajor` and reject cross-major responses, downloads and cached-bundle reuse. Legacy clients are routed by their existing bundle/native version fields on the update service. See `deploy/update-service/README.md` for the catalog and rollout-order contract.
 - On first launch in Capacitor, the app shows a connection screen for an existing OpenChamber server.
 - Connections are saved locally in the app and can be managed from Settings under `Switch instance`.
 - About reports the installed native client version separately from the connected instance's OpenChamber and OpenCode versions. Mobile update checks send the native client version to the instance.
