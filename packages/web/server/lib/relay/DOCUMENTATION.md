@@ -118,6 +118,7 @@ Catalog loaders (`loadProviders` / `loadAgents`) and assistant Query keys gate w
 - The tunnel is transparent to the app: adding relay support to a feature should not require the feature to know the relay exists — it goes through the shared runtime transport helpers.
 - The two implementations stay byte-compatible and the wire format is versioned/negotiated so mixed client/host app versions degrade gracefully rather than break. The Layer 1 Relay does not inspect application versions; unsupported Host/Client features are omitted at the endpoints.
 - Host-control reconnect storms are bounded at both ends: the Host does not reset backoff on a brief `open`, and the Relay rate-limits host-control upgrades per IP and per `serverId` (`4029`) without replacing a live control socket.
+- Concurrent service starts recheck the endpoint's active Host after awaiting identity, so each endpoint has one managed Host and stopping the service closes every started Host.
 - Tunneled HTTP/WS always dial `getLocalPort()` on loopback; there is no client-selected target-port override on the host dispatcher.
 
 For the operational rules that keep future changes (new WebSocket endpoints, transport refactors, terminal/voice porting) from breaking this, load the `relay-transport` skill.

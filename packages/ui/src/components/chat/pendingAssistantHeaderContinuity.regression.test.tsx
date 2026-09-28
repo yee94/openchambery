@@ -8,6 +8,7 @@ import { useNotificationStore } from '@/sync/notification-store';
 import { normalizeSessionProjectionMessage } from '@/sync/session-projection-api';
 
 const mocks = vi.hoisted(() => ({
+  realBody: false,
   errorAt: undefined as number | undefined,
   uiState: {
     isMobile: false,
@@ -29,6 +30,7 @@ vi.hoisted(() => {
 });
 
 vi.mock('@/lib/i18n', () => ({
+  getCurrentIntlLocale: () => 'en-US',
   useI18n: () => ({
     locale: 'en',
     t: (key: string) => key,
@@ -118,16 +120,25 @@ vi.mock('@/sync/sync-context', () => ({
   useSessionErrorAt: () => mocks.errorAt,
 }));
 
-vi.mock('./message/MessageBody', () => ({
-  default: ({ messageId, parts }: { messageId: string; parts: Part[] }) => React.createElement(
-    'div',
-    { 'data-testid': `message-body-${messageId}` },
-    parts
-      .filter((part): part is Part & { text: string } => part.type === 'text' && typeof part.text === 'string')
-      .map((part) => part.text)
-      .join(''),
-  ),
-}));
+vi.mock('./message/MessageBody', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./message/MessageBody')>();
+  return {
+    default: (props: React.ComponentProps<typeof actual.default>) => mocks.realBody
+      ? React.createElement(actual.default, props)
+      : React.createElement(
+        'div',
+        { 'data-testid': `message-body-${props.messageId}` },
+        props.parts
+          .filter((part): part is Part & { text: string } => part.type === 'text' && typeof part.text === 'string')
+          .map((part) => part.text)
+          .join(''),
+      ),
+  };
+});
+
+vi.mock('./MarkdownRenderer', () => ({ MarkdownRenderer: ({ content }: { content: string }) => <p>{content}</p> }));
+vi.mock('@/hooks/useEffectiveDirectory', () => ({ useEffectiveDirectory: () => '/workspace' }));
+vi.mock('./message/parts/UserTextPart', () => ({ default: ({ part }: { part: { text: string } }) => <p>{part.text}</p> }));
 
 vi.mock('./hooks/useMarkdownPinReveal', () => ({
   useMarkdownPinReveal: () => false,
@@ -216,6 +227,7 @@ describe('new conversation assistant header continuity', () => {
   let root: Root;
 
   beforeEach(() => {
+    mocks.realBody = false;
     mocks.errorAt = undefined;
     useNotificationStore.setState({ list: [] });
     mocks.uiState.isMobile = false;
@@ -381,6 +393,8 @@ describe('new conversation assistant header continuity', () => {
     await renderMessages(shells, true, 'shell-3');
     expect(container.querySelectorAll('h3')).toHaveLength(1);
     expect(container.querySelectorAll('[data-message-id="shell-3"]')).toHaveLength(1);
+    expect(container.querySelectorAll('[data-assistant-content-loading]')).toHaveLength(1);
+    expect(container.querySelector('[data-assistant-content-loading]')?.getAttribute('aria-label')).toBe('common.loading');
     const filled = shells.map((row, index) => index === 0 ? { ...row, parts: [textPart('restored body')] } : row);
     await renderMessages(filled, true);
     expect(container.textContent).toContain('restored body');
@@ -388,6 +402,7 @@ describe('new conversation assistant header continuity', () => {
     const complete = shells.map((row, index) => ({ ...row, parts: [textPart(`restored ${index}`)] }));
     await renderMessages(complete, true);
     expect(container.querySelectorAll('h3')).toHaveLength(4);
+    expect(container.querySelector('[data-assistant-content-loading]')).toBeNull();
     expect(container.querySelectorAll('[data-message-id="shell-3"]')).toHaveLength(1);
     const failed = { ...shells[3], info: { ...shells[3].info, error: { type: 'provider.auth', message: 'Authentication failed' } } };
     await renderMessages([...shells.slice(0, 3), failed], false);
@@ -395,6 +410,47 @@ describe('new conversation assistant header continuity', () => {
     expect(container.querySelector('[data-message-id="shell-3"]')).not.toBeNull();
     await renderMessages(shells, false);
     expect(container.querySelectorAll('h3')).toHaveLength(0);
+  });
+
+  test.each([
+    [false, 'live'], [true, 'live'], [false, 'sorted'], [true, 'sorted'],
+  ] as const)('does not paint empty reasoning or hidden content as model-only rows (mobile=%s, mode=%s)', async (mobile, mode) => {
+    mocks.uiState.isMobile = mobile;
+    mocks.uiState.chatRenderMode = mode;
+    const shells = ['', '   ', '\n'].map((text, index) => {
+      const row = assistantMessage({ completed: true, parts: [{ ...textPart(text), type: 'reasoning' } as Part] });
+      return { ...row, info: { ...row.info, id: `empty-reasoning-${index}`, parentID: undefined } };
+    });
+    await renderMessages(shells, false);
+    expect(container.querySelectorAll('h3')).toHaveLength(0);
+    const hidden = assistantMessage({ completed: true, parts: [textPart('<system-reminder>internal instruction</system-reminder>')] });
+    hidden.info = { ...hidden.info, parentID: undefined };
+    await renderMessages([...shells, hidden], false);
+    expect(container.querySelectorAll('h3')).toHaveLength(0);
+    await renderMessages([...shells, { ...hidden, parts: [textPart('Actual answer')] }], false);
+    expect(container.querySelectorAll('h3')).toHaveLength(1);
+    expect(container.textContent).toContain('Actual answer');
+    await renderMessages([...shells, hidden], false);
+    expect(container.querySelectorAll('h3')).toHaveLength(0);
+    expect(container.querySelector('[data-assistant-content-loading]')).toBeNull();
+  });
+
+  test.each([
+    [false, 'live'], [true, 'live'], [false, 'sorted'], [true, 'sorted'],
+  ] as const)('paints completed ungrouped content before user history arrives without reopening (mobile=%s, mode=%s)', async (mobile, mode) => {
+    mocks.realBody = true;
+    mocks.uiState.isMobile = mobile;
+    mocks.uiState.chatRenderMode = mode;
+    const reply = assistantMessage({ completed: true, parts: [textPart('Completed reply remains visible')] });
+    reply.info = { ...reply.info, parentID: undefined };
+    await renderMessages([{ ...reply, parts: [] }], false);
+    await renderMessages([reply], false);
+    expect(container.textContent).toContain('Completed reply remains visible');
+    expect(container.querySelectorAll('h3')).toHaveLength(1);
+    await renderMessages([userMessage(), reply], false);
+    expect(container.textContent).toContain('Investigate the flicker');
+    expect(container.textContent).toContain('Completed reply remains visible');
+    expect(container.querySelectorAll('h3')).toHaveLength(1);
   });
 
   test.each(['live', 'sorted'] as const)('renders an execution failure inside its turn below the model header (%s)', async (mode) => {

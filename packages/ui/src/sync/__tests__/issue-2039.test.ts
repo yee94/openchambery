@@ -104,6 +104,8 @@ vi.mock("@/stores/utils/safeStorage", () => ({
 
 vi.mock("@/lib/opencode/client", () => ({
   opencodeClient: {
+    createSession: (params: { title?: string; parentID?: string }, directory: string | null) =>
+      sessionActionsMock.createSession(params.title, directory, params.parentID ?? null),
     getDirectory: () => null,
     setDirectory: vi.fn(() => undefined),
   },
@@ -387,6 +389,16 @@ describe("issue 2039 draft auto-accept", () => {
     expect(result).toBeNull()
     expect(createSessionCalls).toHaveLength(0)
     expect(permissionAutoAcceptCalls).toHaveLength(0)
+  })
+
+  test("preserves unchecked auto-accept when the draft becomes a session", async () => {
+    useSessionUIStore.getState().openNewSessionDraft()
+    expect(useSessionUIStore.getState().newSessionDraft.permissionAutoAcceptEnabled).toBe(false)
+
+    await materializeOpenDraftSession({ providerID: "provider", modelID: "model" })
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    expect(permissionAutoAcceptCalls).toEqual([["ses_issue_2039", false]])
   })
 
   test("skips ownership finalization when the materialized draft source is missing", async () => {

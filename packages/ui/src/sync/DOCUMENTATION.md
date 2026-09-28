@@ -117,6 +117,10 @@ Owning modules: `session-send-selection.ts`, `lib/opencode/client.ts`
 
 ## Prompt admission lifecycle — Ticket 02
 
+### Draft permission selection
+
+An unchecked draft auto-accept shield is an explicit `false` policy. Such drafts use the existing separate create/send path: register the new session directory, await `setSessionAutoAccept(sessionId, false)`, then select the session and dispatch the first prompt. The combined create-with-prompt capability has no pre-prompt policy field, so it is eligible only when the draft explicitly enables auto-accept. This shared ordering applies to web, Electron, VS Code, hosted mobile, and Capacitor. A failed policy write restores the draft and prevents prompt dispatch; the already-created empty upstream session remains. Existing session policies and inherited/default policy resolution are unchanged. Regression coverage: `issue-2039.test.ts` and `session-combined-send.test.ts`.
+
 Verified on **2.0.12** / **2.0.14** core inbox. Installed `@opencode/client` / `@opencode/schema` are **2.0.15**; the generated prompt and message routes are unchanged from that verification. `admit` is idempotent for the
 same session + message id (fixed id + fixed payload; reconcile returns existing
 pending or promoted-from-message). Empty inbox + empty projection after a lost

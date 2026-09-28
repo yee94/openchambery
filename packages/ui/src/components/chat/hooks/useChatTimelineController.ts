@@ -1,6 +1,6 @@
 import React from 'react';
 import { useMutation, useQuery } from '@tanstack/react-query';
-import { useEvent, useIsomorphicLayoutEffect, useResizeObserver, useUnmount } from '@reactuses/core';
+import { useEvent, useEventListener, useIsomorphicLayoutEffect, useResizeObserver, useUnmount } from '@reactuses/core';
 
 import type { ChatMessageEntry } from '../lib/turns/types';
 import type { MessageListHandle } from '../MessageList';
@@ -99,7 +99,7 @@ export interface UseChatTimelineControllerResult {
     activeTurnId: string | null;
     showScrollToBottom: boolean;
     turnWindowModel: TurnWindowModel;
-    loadEarlier: (options?: { userInitiated?: boolean }) => Promise<void>;
+    loadEarlier: (options?: { userInitiated?: boolean; singlePage?: boolean }) => Promise<void>;
     revealBufferedTurns: () => Promise<boolean>;
     resumeToBottom: () => void;
     resumeToBottomInstant: () => Promise<void>;
@@ -747,6 +747,24 @@ export const useChatTimelineController = ({
     const scrollPinRef = React.useRef<{ turnId: string; expiresAt: number } | null>(null);
     const historyInteractionRef = React.useRef(false);
     const historyInteractionTimerRef = React.useRef<number | null>(null);
+    const mobileHistoryGestureRef = React.useRef({ authorized: false, consumed: false, top: 0 });
+
+    // A new physical gesture can authorize one load. Completion, compensation
+    // scroll events and continued touchmove events never replenish its budget.
+    const beginMobileHistoryGesture = useEvent(() => {
+        mobileHistoryGestureRef.current = {
+            authorized: false,
+            consumed: isLoadingOlderRef.current,
+            top: scrollRef.current?.scrollTop ?? 0,
+        };
+    });
+    const mobileHistoryEventTarget = () => isMobile ? scrollRef.current ?? undefined : undefined;
+    const beginMobileHistoryKeyGesture = useEvent((event: KeyboardEvent) => {
+        if (!event.repeat) beginMobileHistoryGesture();
+    });
+    useEventListener('touchstart', beginMobileHistoryGesture, mobileHistoryEventTarget, { passive: true, capture: true });
+    useEventListener('wheel', beginMobileHistoryGesture, mobileHistoryEventTarget, { passive: true, capture: true });
+    useEventListener('keydown', beginMobileHistoryKeyGesture, mobileHistoryEventTarget, { capture: true });
 
     // Session switch: adjust state during render (React-supported prop-driven reset)
     // so we never race a layout effect against the first paint of the new session.
@@ -766,6 +784,7 @@ export const useChatTimelineController = ({
         setAutoFillBlocked(false);
         noGrowthBlockedRef.current = false;
         historyStallCooldownUntilRef.current = 0;
+        mobileHistoryGestureRef.current = { authorized: false, consumed: false, top: 0 };
         setViewportMetrics({ scrollHeight: 0, clientHeight: 0 });
     }
 
@@ -1273,6 +1292,7 @@ export const useChatTimelineController = ({
         preserveViewport: boolean;
         /** When true, wait out a concurrent sync page instead of silent no-op. */
         userInitiated?: boolean;
+        singlePage?: boolean;
     }): Promise<boolean> => {
         if (!sessionIdRef.current || isLoadingOlderRef.current) {
             return false;
@@ -1420,7 +1440,7 @@ export const useChatTimelineController = ({
                         cursorAfter: readCursor(),
                         hasMoreAbove: historySignalsRef.current.hasMoreAboveTurns,
                         pagesLoaded,
-                        maxPages: HISTORY_INTERACTION_MAX_PAGES,
+                        maxPages: input.singlePage ? 1 : HISTORY_INTERACTION_MAX_PAGES,
                     });
                 };
 
@@ -1434,6 +1454,12 @@ export const useChatTimelineController = ({
                     continue;
                 }
                 if (decision === 'stop-no-growth') {
+                    // Scroll-triggered mobile loads spend exactly one page,
+                    // including an empty/stationary result. A new gesture retries.
+                    if (input.singlePage) {
+                        releaseSnapshot();
+                        return false;
+                    }
                     // Concurrent sync can hold historyLoading while loadMore
                     // busy-no-ops. Wait it out and retry the same interaction
                     // budget; never mark history exhausted from a busy miss.
@@ -1506,7 +1532,7 @@ export const useChatTimelineController = ({
             runtimeKey: getRuntimeKey(),
             sessionId: sessionId ?? '',
         }),
-        mutationFn: async (input: { sessionId: string; scope: typeof historyScope; userInitiated?: boolean }): Promise<boolean> => {
+        mutationFn: async (input: { sessionId: string; scope: typeof historyScope; userInitiated?: boolean; singlePage?: boolean }): Promise<boolean> => {
             if (historyScopeRef.current !== input.scope || getRuntimeKey() !== input.scope.runtimeKey
                 || getRuntimeGeneration() !== input.scope.runtimeGeneration || sessionIdRef.current !== input.sessionId) {
                 return false;
@@ -1519,6 +1545,7 @@ export const useChatTimelineController = ({
                 return await fetchOlderHistory({
                     preserveViewport: true,
                     userInitiated: Boolean(input.userInitiated),
+                    singlePage: input.singlePage,
                 });
             } finally {
                 if (historyScopeRef.current === input.scope
@@ -1527,7 +1554,7 @@ export const useChatTimelineController = ({
         },
     });
 
-    const loadEarlier = useEvent(async (options?: { userInitiated?: boolean }) => {
+    const loadEarlier = useEvent(async (options?: { userInitiated?: boolean; singlePage?: boolean }) => {
         const targetSessionId = sessionIdRef.current;
         if (!targetSessionId || !historySignalsRef.current.canLoadEarlier) return;
         const scope = historyScope;
@@ -1554,6 +1581,7 @@ export const useChatTimelineController = ({
                 sessionId: targetSessionId,
                 scope,
                 userInitiated: Boolean(options?.userInitiated),
+                singlePage: options?.singlePage,
             });
             // Silent no-op paths (missing cursor, stop-no-growth) return false
             // without throwing. Log when history still claims more, but never
@@ -1759,6 +1787,14 @@ export const useChatTimelineController = ({
         // preserves the reading position when a prepend lands mid-gesture.
         const container = scrollRef.current;
         if (!container) return;
+        if (isMobileRef.current) {
+            const gesture = mobileHistoryGestureRef.current;
+            const movedUp = container.scrollTop < gesture.top;
+            gesture.top = container.scrollTop;
+            if (gesture.consumed) return;
+            if (source === 'upward-intent') gesture.authorized = true;
+            if (!gesture.authorized || (source === 'scroll' && !movedUp)) return;
+        }
         if (!shouldLoadEarlierHistory({
             source,
             isMobile: isMobileRef.current,
@@ -1772,7 +1808,8 @@ export const useChatTimelineController = ({
             return;
         }
 
-        void loadEarlier({ userInitiated: true });
+        if (isMobileRef.current) mobileHistoryGestureRef.current.consumed = true;
+        void loadEarlier({ userInitiated: true, singlePage: isMobileRef.current });
     });
 
     const handleHistoryScroll = useEvent(() => {

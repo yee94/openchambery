@@ -33,6 +33,7 @@ import { getRuntimeTransportIdentity } from '@/lib/runtime-switch'
 
 const PROJECT = { id: 'proj-comb', path: '/projects/combined', label: 'Combined' }
 const SESSION_ID = 'ses_combined_001'
+const openNewSessionDraft = useSessionUIStore.getState().openNewSessionDraft
 
 function sessionFixture(overrides: Record<string, unknown> = {}) {
   return {
@@ -284,6 +285,10 @@ beforeEach(() => {
   notificationRequests = []
   globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
     if (String(input).includes('/message-sent')) notificationRequests.push({ url: String(input), init })
+    if (String(input).includes('/permission-auto-accept/sessions/')) {
+      const enabled = JSON.parse(String(init?.body)).enabled
+      return Response.json({ sessions: { [SESSION_ID]: enabled } })
+    }
     return new Response(null, { status: 200 })
   }) as typeof globalThis.fetch
 
@@ -330,6 +335,7 @@ beforeEach(() => {
     getDraft: originalGetDraft,
     finalizeDraftOwnership: originalFinalizeDraftOwnership,
   })
+  useSessionUIStore.setState({ openNewSessionDraft })
   registerRuntimeAPIs(null)
   setActionRefs(null as any, null as any, () => '')
   setOptimisticRefs(null as any, null as any)
@@ -346,6 +352,12 @@ beforeEach(() => {
 // ─── tests ──────────────────────────────────────────────────────────────────
 
 describe('handleCombinedDraftSend', () => {
+
+  beforeEach(() => {
+    useSessionUIStore.setState({
+      openNewSessionDraft: (options) => openNewSessionDraft({ permissionAutoAcceptEnabled: true, ...options }),
+    })
+  })
 
   test('1) pending same tick — draftSubmitting true, second send does not call endpoint', async () => {
     let calls = 0
@@ -1124,12 +1136,60 @@ describe('handleCombinedDraftSend', () => {
     expect(count).toBe(0)
   })
 
+  test('unchecked auto-accept is saved before the first prompt can execute', async () => {
+    const combined = vi.fn(async () => successResult())
+    registerRuntimeAPIs(makeCombinedAPI(combined))
+    let releasePolicy!: () => void
+    let policyStarted!: () => void
+    const started = new Promise<void>((resolve) => { policyStarted = resolve })
+    const policy = new Promise<void>((resolve) => { releasePolicy = resolve })
+    const fetch = globalThis.fetch
+    globalThis.fetch = async (input, init) => {
+      if (String(input).includes('/permission-auto-accept/sessions/')) {
+        expect(JSON.parse(String(init?.body))).toMatchObject({ enabled: false, directory: PROJECT.path })
+        policyStarted()
+        await policy
+      }
+      return fetch(input, init)
+    }
+    const send = vi.fn(async () => 'msg_permission_off')
+    opencodeClient.sendMessage = send
+    useSessionUIStore.getState().openNewSessionDraft({ permissionAutoAcceptEnabled: false })
+    const pending = useSessionUIStore.getState().sendMessage('hello', 'openai', 'gpt-4o')
+    await started
+    expect(combined).not.toHaveBeenCalled()
+    expect(send).not.toHaveBeenCalled()
+    expect(useSessionUIStore.getState().currentSessionId).toBeNull()
+    releasePolicy()
+    await pending
+    expect(send).toHaveBeenCalledTimes(1)
+    expect(useSessionUIStore.getState().currentSessionId).toBe(SESSION_ID)
+  })
+
+  test('failed unchecked policy write keeps the draft and blocks the first prompt', async () => {
+    const combined = vi.fn(async () => successResult())
+    registerRuntimeAPIs(makeCombinedAPI(combined))
+    const fetch = globalThis.fetch
+    globalThis.fetch = async (input, init) => String(input).includes('/permission-auto-accept/sessions/')
+      ? new Response(null, { status: 503 })
+      : fetch(input, init)
+    const send = vi.fn(async () => 'msg_permission_off')
+    opencodeClient.sendMessage = send
+    useSessionUIStore.getState().openNewSessionDraft({ permissionAutoAcceptEnabled: false })
+    await expect(useSessionUIStore.getState().sendMessage('hello', 'openai', 'gpt-4o')).rejects.toThrow()
+    expect(combined).not.toHaveBeenCalled()
+    expect(send).not.toHaveBeenCalled()
+    expect(useSessionUIStore.getState().newSessionDraft.open).toBe(true)
+    expect(useSessionUIStore.getState().newSessionDraft.draftSubmitting).toBe(false)
+    expect(useSessionUIStore.getState().currentSessionId).toBeNull()
+  })
+
   test('12) synthetic/additional/file/agent payload exact, messageID format msg_', async () => {
     let capturedInput: ConversationCreateWithPromptInput | null = null
     registerRuntimeAPIs(makeCombinedAPI(async (input) => { capturedInput = { ...input, parts: [...input.parts] }; return successResult() }))
 
     useSessionUIStore.setState(s => ({ ...s,
-      newSessionDraft: { open: true, draftID: crypto.randomUUID(), directoryOverride: null, parentID: null, draftSubmitting: false, syntheticParts: [{ text: 'synth ctx', synthetic: true }] },
+      newSessionDraft: { open: true, draftID: crypto.randomUUID(), directoryOverride: null, parentID: null, draftSubmitting: false, permissionAutoAcceptEnabled: true, syntheticParts: [{ text: 'synth ctx', synthetic: true }] },
       webUICreatedSessions: new Set(),
     }))
 
@@ -1329,6 +1389,7 @@ describe('handleCombinedDraftSend', () => {
         directoryOverride: null,
         parentID: null,
         draftSubmitting: false,
+        permissionAutoAcceptEnabled: true,
       },
       webUICreatedSessions: new Set(),
     }))

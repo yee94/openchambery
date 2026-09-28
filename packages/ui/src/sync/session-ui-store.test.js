@@ -39,6 +39,11 @@ vi.mock('./session-projection-api', () => ({
   normalizeSessionProjectionMessage: (sessionID, raw) => raw,
   normalizeSessionProjectionPage: (page) => page,
 }));
+vi.mock('@/stores/permissionStore', () => ({
+  usePermissionStore: {
+    getState: () => ({ setSessionAutoAccept: async () => undefined }),
+  },
+}));
 
 /**
  * Unit tests for session worktree routing through the authoritative store.

@@ -313,6 +313,7 @@ export const createRelayService = ({
     }
     const identity = await identityRuntime.getRelayIdentity();
     for (const relayUrl of pending) {
+      if (hostClients.has(relayUrl)) continue;
       const hostClient = startRelayHost({
         relayUrl,
         identity,

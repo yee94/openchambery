@@ -1,7 +1,7 @@
 // Session title refresh: regenerate the sidebar title from the conversation's
 // MAIN SUBJECT (overall feature / goal), not just the last wrap-up utterance.
 // OpenCode only titles once from the first user message. Auto refresh is sparse
-// for title stability: first idle of a new session, first newly-sent reply on a
+// for title stability: first user admission of a new session, first send on a
 // fork, plus explicit smart-title / forced refresh. Continuing the same work
 // should keep naming the thing being done — not "commit and push". This
 // watcher throttles to at most one refresh per session every TITLE_THROTTLE_MS
@@ -201,13 +201,22 @@ const extractUserMessage = (payload) => {
     const item = properties.item;
     if (typeof properties.sessionID !== 'string' || item?.type !== 'user') return null;
     const text = typeof item.payload?.text === 'string' ? item.payload.text.slice(0, TRANSCRIPT_USER_CHAR_LIMIT) : '';
+    const files = Array.isArray(item.payload?.files) ? item.payload.files.slice(0, 8) : [];
+    const parts = [
+      ...(text.trim() ? [{ type: 'text', text }] : []),
+      ...files.filter((file) => file && typeof file === 'object').map((file) => ({
+        type: 'file',
+        filename: typeof file.name === 'string' ? file.name.slice(0, 200) : '',
+        mime: typeof file.mime === 'string' ? file.mime.slice(0, 100) : '',
+      })),
+    ];
     return {
       sessionId: properties.sessionID,
       createdAt: payload.created ?? 0,
       directory: payload.location?.directory ?? '',
-      initialRecord: text.trim() ? {
+      initialRecord: parts.length ? {
         info: { id: properties.inboxID, role: 'user' },
-        parts: [{ type: 'text', text }],
+        parts,
       } : null,
     };
   }
@@ -230,7 +239,13 @@ const messagePartsToText = (message) => {
     ? TRANSCRIPT_ASSISTANT_CHAR_LIMIT
     : TRANSCRIPT_USER_CHAR_LIMIT;
   return parts
-    .map((part) => (part?.type === 'text' && typeof part.text === 'string' ? part.text : ''))
+    .map((part) => {
+      if (part?.type === 'text' && typeof part.text === 'string') return part.text;
+      if (part?.type !== 'file') return '';
+      const filename = typeof part.filename === 'string' ? part.filename.slice(0, 200) : '';
+      const mime = typeof part.mime === 'string' ? part.mime.slice(0, 100) : '';
+      return `[Attachment: ${filename || mime || 'file'}${filename && mime ? ` (${mime})` : ''}; contents not included]`;
+    })
     .filter(Boolean)
     .join('\n')
     .slice(0, charLimit);
@@ -495,7 +510,7 @@ export const createSessionTitleRuntime = ({
     });
   };
 
-  const recordUserActivity = async (sessionId, directory, createdAt) => {
+  const recordUserActivity = async (sessionId, directory, createdAt, initialRecord) => {
     if (!Number.isFinite(createdAt) || createdAt <= 0) return;
     const session = await openCodeFetch(`/session/${encodeURIComponent(sessionId)}`, { directory })
       .catch(() => null);
@@ -508,7 +523,7 @@ export const createSessionTitleRuntime = ({
     // never learned about the fork. The first newly-created user message on a
     // fork-titled session (message created after the fork, before any activity
     // timestamp advanced past the fork) rebuilds that pending entry so the
-    // matching idle still triggers the first-refresh. Idempotent: the normal
+    // first admission can trigger the refresh. Idempotent: the normal
     // session.created path already holds a pending entry, and once activity
     // advances past the fork time later messages never re-register.
     const forkCreated = Number(session?.time?.created);
@@ -524,6 +539,26 @@ export const createSessionTitleRuntime = ({
         directory: directory || '',
         hasNewUserMessage: true,
       });
+    }
+
+    // Recover first-send admission even when session.created was missed.
+    // Use the admitted text: the message projection may not exist yet.
+    if (initialRecord && !stopped && !inflight.has(sessionId) && !initialRefreshes.has(sessionId)
+      && !forkFirstRefreshes.has(sessionId) && !session.parentID && !isSystemOwnedSession(session)) {
+      const pendingFork = forkFirstSendPending.get(sessionId);
+      const firstForkSend = pendingFork && createdAt > pendingFork.createdAt;
+      const untitled = !session.title || isDefaultSessionTitle(session.title);
+      if (firstForkSend || (untitled && !meta.generatedAt && !meta.lastAutoTitle)) {
+        newSessions.delete(sessionId);
+        if (firstForkSend) {
+          forkFirstSendPending.delete(sessionId);
+          forkFirstRefreshes.add(sessionId);
+        } else {
+          initialRefreshes.add(sessionId);
+        }
+        initialUserMessages.set(sessionId, initialRecord);
+        armTimer(sessionId, directory, 0);
+      }
     }
 
     const previous = Number(meta.titleRefresh.activityUpdatedAt);
@@ -683,7 +718,7 @@ export const createSessionTitleRuntime = ({
       return;
     }
 
-    const latestMessages = await fetchRecentMessages(sessionId, directory);
+    const latestMessages = initialUserMessage ? null : await fetchRecentMessages(sessionId, directory);
     const latestAssistantId = (() => {
       if (!latestMessages) return null;
       for (let i = latestMessages.length - 1; i >= 0; i -= 1) {
@@ -777,7 +812,7 @@ export const createSessionTitleRuntime = ({
           initialRefreshes.add(status.sessionId);
           armTimer(status.sessionId, status.directory || directoryHint, 0);
         }
-      } else if (!initialRefreshes.has(status.sessionId)) {
+      } else if (!initialRefreshes.has(status.sessionId) && !forkFirstRefreshes.has(status.sessionId)) {
         clearTimer(status.sessionId);
       }
       return;
@@ -797,6 +832,7 @@ export const createSessionTitleRuntime = ({
         userMessage.sessionId,
         userMessage.directory || directoryHint,
         userMessage.createdAt,
+        userMessage.initialRecord,
       ).catch((error) => {
         console.warn('[session-title] failed to record user activity:', error?.message || error);
       });
@@ -804,7 +840,7 @@ export const createSessionTitleRuntime = ({
       // session settles. Only a message created after the timer was armed
       // means the user actually moved on.
       const armed = timers.get(userMessage.sessionId);
-      if (armed && !initialRefreshes.has(userMessage.sessionId) && userMessage.createdAt >= armed.armedAt) {
+      if (armed && !initialRefreshes.has(userMessage.sessionId) && !forkFirstRefreshes.has(userMessage.sessionId) && userMessage.createdAt >= armed.armedAt) {
         clearTimer(userMessage.sessionId);
       }
     }

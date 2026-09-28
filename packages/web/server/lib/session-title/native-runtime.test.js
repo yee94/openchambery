@@ -110,10 +110,12 @@ it('uses the real v2 client and publishes the generated title without another se
   }
 });
 
-it('starts the first title from admitted user text while the assistant is still running', async () => {
+it.each(['new', 'missed-create', 'fork', 'missed-fork-create'].flatMap((scenario) =>
+  ['text', 'text-and-file', 'file-only'].map((content) => ({ scenario, content })),
+))('starts the first title before assistant completion ($scenario, $content)', async ({ scenario, content }) => {
   vi.useFakeTimers();
   const session = {
-    id: 'ses_first', title: '', time: { created: 1, updated: 1 },
+    id: 'ses_first', title: scenario.includes('fork') ? 'Original (fork #1)' : '', time: { created: 1, updated: 1 },
     metadata: {},
   };
   let finishTitle;
@@ -135,26 +137,36 @@ it('starts the first title from admitted user text while the assistant is still 
   });
   const emit = (type, data) => runtime.processPayload({ type, data, created: 1000, location: { directory: '/repo' } });
   try {
-    emit('session.created', { sessionID: session.id, location: { directory: '/repo' } });
+    if (!scenario.startsWith('missed')) {
+      emit('session.created', { sessionID: session.id, title: session.title, time: session.time, location: { directory: '/repo' } });
+    }
     emit('session.inbox.enqueued', { sessionID: session.id, inboxID: 'msg_synthetic', item: {
       type: 'synthetic', delivery: 'steer', payload: { text: 'Internal instructions' },
     } });
     await vi.runAllTimersAsync();
     expect(generate).not.toHaveBeenCalled();
     emit('session.inbox.enqueued', { sessionID: session.id, inboxID: 'msg_first', item: {
-      type: 'user', delivery: 'steer', payload: { text: 'Implement a session title generator' },
+      type: 'user', delivery: 'steer', payload: {
+        text: content === 'file-only' ? '' : 'Implement a session title generator',
+        ...(content !== 'text' ? { files: [{ name: 'title-bug.png', mime: 'image/png', source: { type: 'inline' }, data: 'YQ=='.repeat(100_000) }] } : {}),
+      },
     } });
     emit('session.execution.started', { sessionID: session.id });
     emit('session.status', { sessionID: session.id, status: { type: 'busy' } });
     await vi.runAllTimersAsync();
     expect(generate).toHaveBeenCalledTimes(1);
-    expect(generate.mock.calls[0][0].prompt).toContain('Implement a session title generator');
+    const prompt = generate.mock.calls[0][0].prompt;
+    if (content !== 'file-only') expect(prompt).toContain('Implement a session title generator');
+    if (content !== 'text') expect(prompt).toContain('title-bug.png');
+    expect(prompt).not.toContain('YQ==');
+    expect(prompt.length).toBeLessThan(4000);
     expect(session.metadata.openchamber?.titleRefresh?.isGenerating).toBe(true);
     expect(access.messages).not.toHaveBeenCalled();
     finishTitle({ text: 'Session titles', providerID: 'test', modelID: 'test' });
     await vi.runAllTimersAsync();
     expect(session.title).toBe('Session titles');
     expect(session.metadata.openchamber.titleRefresh.isGenerating).toBeUndefined();
+    expect(access.messages).not.toHaveBeenCalled();
     emit('session.execution.succeeded', { sessionID: session.id });
     emit('session.inbox.enqueued', { sessionID: session.id, inboxID: 'msg_second', item: {
       type: 'user', delivery: 'steer', payload: { text: 'Follow up on the implementation' },

@@ -1,5 +1,11 @@
 # Chat components
 
+## Mobile history gesture budget
+
+Mobile near-top pagination requires explicit upward user intent. Each touch gesture authorizes at most one page, consumed synchronously before starting the mutation. A gesture starting outside the threshold can spend that authorization when upward scrolling (including momentum) enters it. Plain scroll events, prepend/anchor compensation, request completion, and repeated touchmove intent cannot re-arm a spent gesture. A new touchstart resets the budget; a touch starting while loading is consumed rather than queued. Session/directory/runtime changes clear authorization. Desktop retains its existing scroll behavior.
+
+Scroll-triggered mobile mutations set `singlePage`: even collapsed or system-only pages with an advancing cursor stop after one fetch, and stationary pages do not invoke the internal retry loop. The multi-page interaction behavior described below remains for desktop and explicit navigation. Failure preserves existing history and error feedback; a later gesture can retry after the existing cooldown. Regression coverage in `useChatTimelineController.mobileHistoryBoundary.test.tsx` asserts operation counts after successful prepends, repeated scroll/touch intent, collapsed cursor-only pages, stationary pages, and failures.
+
 ## Message header identity recovery
 
 Turn and ungrouped message headers subscribe to the resolved per-session model
@@ -14,6 +20,10 @@ unrelated session updates do not invalidate the header.
 `ChatContainer` passes current-scope transcript records into `resolveChatSessionTranscriptGate`. A cached visible user body, assistant text, or tool row paints immediately on re-entry even if another message is missing parts or a background pull fails. Metadata-only rows still use the cold skeleton. Repository completeness continues to drive background filling; it is not a whole-conversation visibility gate. No rows from a different session are used as placeholders.
 
 Row visibility is enforced independently of that first-paint gate: `ChatMessage` hides empty, non-active assistant rows even when upstream completion metadata is absent. Such historical metadata shells must not render standalone model headings after a cached body or a previously painted viewport opens the gate. Active streaming shells, errors and turn activity owners keep their presentation, and arriving parts reveal the same record without inventing completion or deleting history. An ungrouped trailing row belongs only to the tail, never simultaneously to history. Rendered regression coverage includes parentless V2 shells, partial/full body recovery, the active empty tail, empty failures and desktop/mobile live/sorted modes.
+
+Assistant row visibility uses filtered display parts: empty/whitespace reasoning, hidden system reminders and non-body metadata do not establish visible content. Native compaction cards retain their independent presentation. An active empty assistant shows a localized loading skeleton until content arrives; settled empty rows disappear on the data update without requiring a scroll/remount. This is presentation only and does not mark missing history content as fully loaded.
+
+Sorted body folding requires a `TurnGroupingContext`. A partial V2 window can have assistant records before their authored user row is loaded; these ungrouped records render their available text/reasoning/tools in natural order. They must not defer text or tools into a nonexistent Activity owner. When user history arrives, the normal turn projection and sorted grouping take over on the same mounted list. Coverage uses the real `MessageBody` through `MessageList`, plus a Query repository subscription that fills a metadata shell without reopening the view; Markdown is simplified only at the leaf in these DOM tests.
 
 ## OpenCode response status presentation
 
