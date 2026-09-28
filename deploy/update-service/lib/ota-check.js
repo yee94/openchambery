@@ -1,6 +1,7 @@
 import { loadOtaChannelManifest } from './ota-manifest.js';
 import { resolveMobileUpdate } from './ota-resolver.js';
 import { loadReleaseNotes, resolveChangelogCurrentVersion } from './release-notes.js';
+import { parseReleaseVersion } from './semver.js';
 
 const ALLOWED_CHANNELS = new Set(['beta', 'stable']);
 const ALLOWED_PLATFORMS = new Set(['ios', 'android']);
@@ -110,6 +111,16 @@ function parseMobileUpdateRequest(payload) {
     currentBundleId: currentBundleId.trim(),
   };
 
+  const inferredMajor = parseReleaseVersion(request.currentBundleId)?.major
+    ?? parseReleaseVersion(request.nativeVersion)?.major;
+  if (payload.releaseMajor !== undefined) {
+    if (!Number.isSafeInteger(payload.releaseMajor) || payload.releaseMajor < 0
+      || (inferredMajor !== undefined && payload.releaseMajor !== inferredMajor)) {
+      return { ok: false, response: jsonResponse({ error: 'Invalid releaseMajor' }, { status: 400 }) };
+    }
+    request.releaseMajor = payload.releaseMajor;
+  }
+
   if (payload.installSource !== undefined) {
     if (!isNonEmptyString(payload.installSource)) {
       return { ok: false, response: jsonResponse({ error: 'Invalid installSource' }, { status: 400 }) };
@@ -157,6 +168,7 @@ function parseCapgoRequest(payload) {
     nativeBuild,
     shellApiVersion,
     currentBundleId: typeof currentBundleId === 'string' ? currentBundleId : 'builtin',
+    ...(payload.releaseMajor !== undefined ? { releaseMajor: payload.releaseMajor } : {}),
     ...(payload.installSource !== undefined ? { installSource: payload.installSource } : {}),
   });
 }

@@ -172,7 +172,7 @@ function parseNativeTarget(value, platform, errors) {
  * Validate and normalize a channel OTA manifest.
  * `activeBundle: null` means OTA is enabled for the channel but no bundle is published yet.
  */
-export function parseOtaManifest(value) {
+export function parseOtaManifest(value, nested = false) {
   const errors = [];
 
   if (!isRecord(value)) {
@@ -223,6 +223,28 @@ export function parseOtaManifest(value) {
   if (ios) nativeTargets.ios = ios;
   if (android) nativeTargets.android = android;
 
+  const majorReleases = {};
+  if (value.majorReleases !== undefined) {
+    if (nested || !isRecord(value.majorReleases)) {
+      return { ok: false, errors: ['majorReleases must be a non-nested object'] };
+    }
+    for (const [major, release] of Object.entries(value.majorReleases)) {
+      const parsed = parseOtaManifest(release, true);
+      if (!/^(0|[1-9]\d*)$/.test(major) || !parsed.ok
+        || parsed.manifest.channel !== value.channel
+        || otaManifestMajor(parsed.manifest) !== Number(major)) {
+        return { ok: false, errors: [`Invalid majorReleases.${major}`] };
+      }
+      majorReleases[major] = parsed.manifest;
+    }
+  }
+  const major = otaManifestMajor({ activeBundle, nativeTargets });
+  if (Object.values(nativeTargets).some((target) => parseReleaseVersion(target.version)?.major !== major)
+    || (activeBundle?.minShellReleaseVersion && parseReleaseVersion(activeBundle.minShellReleaseVersion)?.major !== major)
+    || majorReleases[major]) {
+    return { ok: false, errors: ['Manifest contains conflicting release majors'] };
+  }
+
   return {
     ok: true,
     manifest: {
@@ -232,8 +254,34 @@ export function parseOtaManifest(value) {
       activeBundle: activeBundle === null ? null : activeBundle,
       nativeTargets,
       rollbackBundleIds: [...value.rollbackBundleIds],
+      ...(Object.keys(majorReleases).length ? { majorReleases } : {}),
     },
   };
+}
+
+export function otaManifestMajor(manifest) {
+  return parseReleaseVersion(manifest.activeBundle?.releaseVersion)?.major
+    ?? parseReleaseVersion(Object.values(manifest.nativeTargets ?? {})[0]?.version)?.major
+    ?? 1;
+}
+
+export function selectOtaMajor(manifest, major) {
+  if (!manifest || !Number.isSafeInteger(major) || major < 0) return null;
+  if (otaManifestMajor(manifest) === major) {
+    const { majorReleases, ...release } = manifest;
+    return release;
+  }
+  return manifest.majorReleases?.[major] ?? null;
+}
+
+/** Keep the most recently published lane at the legacy root and archive other majors. */
+export function mergeOtaMajor(previous, next) {
+  const { majorReleases: ignored, ...release } = next;
+  const majorReleases = { ...previous.majorReleases };
+  const previousMajor = otaManifestMajor(previous);
+  majorReleases[previousMajor] = selectOtaMajor(previous, previousMajor);
+  delete majorReleases[otaManifestMajor(release)];
+  return { ...release, ...(Object.keys(majorReleases).length ? { majorReleases } : {}) };
 }
 
 /**
