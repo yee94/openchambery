@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { afterEach, test } from 'vitest';
 
 import { handleCapgoOtaCheck, handleMobileUpdateCheck } from '../lib/ota-check.js';
+import { mergeOtaMajor, parseOtaManifest, selectOtaMajor } from '../lib/ota-manifest.js';
 
 let restoreFetch = null;
 
@@ -97,6 +98,72 @@ const validBody = {
   shellApiVersion: 1,
   currentBundleId: 'builtin',
 };
+
+for (const channel of ['stable', 'beta']) {
+  for (const major of [1, 2]) {
+    test(`${channel}: legacy and explicit major ${major} clients stay in their lane`, async () => {
+      const one = channelManifest({ channel, nativeTargets: {} });
+      one.activeBundle.releaseVersion = channel === 'beta' ? '1.20.0-beta.2' : '1.20.0';
+      const two = structuredClone(one);
+      two.activeBundle.releaseVersion = channel === 'beta' ? '2.1.0-beta.2' : '2.1.0';
+      stubChannel({ channel, manifest: mergeOtaMajor(one, two) });
+      for (const explicit of [false, true]) {
+        for (const currentBundleId of ['builtin', 'abcdef0123456789', `${major}.0.0-beta.1`]) {
+          const body = { ...validBody, channel, nativeVersion: `${major}.0.0`, currentBundleId,
+            ...(explicit ? { releaseMajor: major } : {}) };
+          const response = await handleMobileUpdateCheck(mobileRequest(body));
+          assert.equal(response.status, 200);
+          const decision = await response.json();
+          assert.equal(decision.primaryAction, 'apply_ota');
+          assert.equal(decision.ota.bundle.releaseVersion, major === 1 ? one.activeBundle.releaseVersion : two.activeBundle.releaseVersion);
+          const capgo = await handleCapgoOtaCheck(mobileRequest({
+            platform: 'ios', defaultChannel: channel, device_id: 'legacy',
+            version_build: body.nativeVersion, version_code: '350', version_name: currentBundleId,
+          }));
+          assert.equal((await capgo.json()).version, decision.ota.bundle.releaseVersion);
+        }
+      }
+    });
+  }
+}
+
+test('missing major never upgrades or channel-rolls back across majors', async () => {
+  stubChannel({ channel: 'stable', manifest: channelManifest({ channel: 'stable' }) });
+  const response = await handleMobileUpdateCheck(mobileRequest({
+    ...validBody, channel: 'stable', nativeVersion: '2.0.0', currentBundleId: '2.0.0-beta.24',
+  }));
+  const decision = await response.json();
+  assert.equal(decision.primaryAction, 'none');
+  assert.equal(decision.ota.bundle, undefined);
+  assert.equal(decision.native.version, undefined);
+});
+
+test('explicit major must agree with existing release identity', async () => {
+  for (const releaseMajor of [2, -1, 1.5, '1', null]) {
+    const response = await handleMobileUpdateCheck(mobileRequest({ ...validBody, releaseMajor }));
+    assert.equal(response.status, 400);
+  }
+});
+
+test('major catalog round-trips and rejects corrupt archived lanes', () => {
+  const one = channelManifest();
+  const two = channelManifest({ nativeTargets: {} });
+  two.activeBundle.releaseVersion = '2.0.0-beta.24';
+  const catalog = mergeOtaMajor(one, two);
+  const parsed = parseOtaManifest(JSON.parse(JSON.stringify(catalog)));
+  assert.equal(parsed.ok, true);
+  assert.deepEqual(selectOtaMajor(parsed.manifest, 1), one);
+  assert.deepEqual(selectOtaMajor(parsed.manifest, 2), two);
+  assert.deepEqual(selectOtaMajor(mergeOtaMajor(catalog, one), 2), two);
+  catalog.majorReleases['1'].activeBundle.releaseVersion = '2.0.0';
+  assert.equal(parseOtaManifest(catalog).ok, false);
+});
+
+test('corrupt archived lane is unavailable rather than silently erased', async () => {
+  stubChannel({ manifest: channelManifest({ majorReleases: { 2: {} } }) });
+  const response = await handleMobileUpdateCheck(mobileRequest(validBody));
+  assert.equal(response.status, 503);
+});
 
 test('mobile update check returns apply_ota with absolute bundle URL', async () => {
   stubChannel({ manifest: channelManifest() });

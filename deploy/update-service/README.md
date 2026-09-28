@@ -100,6 +100,15 @@ Required JSON fields:
 - `shellApiVersion`: positive integer
 - `currentBundleId`: active OTA bundle id, or `builtin`. On the beta channel this must be the running **web** bundle version, never the iOS marketing version (`1.18.2`). Capgo builtin reports `CFBundleShortVersionString`; the resolver ignores that stripped identity when it matches `nativeVersion`, otherwise every `1.18.2-beta.N` OTA looks like a downgrade. It is also the primary identity for the shell version gate (`minShellReleaseVersion`); beta clients must report the running web package version.
 - `installSource`: optional string
+- `releaseMajor`: optional non-negative integer (`X` in `X.Y.Z`), explicitly sent by new clients. It must agree with the first parseable identity in `currentBundleId`, then `nativeVersion`. Legacy clients and Capgo requests may omit it; the server derives the same value from those existing fields. A builtin/hash bundle id falls back to the native marketing version; stripping a beta suffix does not change its major.
+
+### Major-version isolation
+
+OTA selection is scoped by **release major × channel**. A 1.x client receives only 1.x bundles on either stable or beta, and a 2.x client receives only 2.x bundles. Beta→stable rollback is permitted only within that major. The running web release identity takes precedence over the native marketing version. An unknown identity or an unpublished major yields `none` without an OTA or native target; it never falls back to another major. Fetch/validation failures still return 503.
+
+New clients also validate the response major and reject mismatched bundles before downloading or reusing cached bundles. This protects them against older update-service deployments that ignore `releaseMajor`. Native Capgo automatic checks use the server-side inferred major. Web, hosted mobile, desktop and VS Code do not use this Capacitor OTA path.
+
+Rollout order: deploy this update-service implementation to **both Vercel and EdgeOne before publishing a second major**, then publish using the updated snapshot scripts. Existing clients need no request migration. All subsequent publishing/rollout jobs (including maintenance releases from a 1.x branch) must use the major-aware scripts; older writers drop the catalog. Reverting the service or publishing scripts to a pre-isolation version is not compatible with a multi-major catalog.
 
 ### Decision response (`/v1/mobile/update/check`)
 
@@ -162,6 +171,9 @@ Schema summary (`schemaVersion: 1`):
   - `platforms.ios|android.minNativeBuild` (**deprecated**): 存量 manifest 兼容读取；判定已不使用
 - `nativeTargets.ios|android`: optional `{ version, build, status?, installUrl? }`
 - `rollbackBundleIds`: 0–2 hex bundle ids
+- `majorReleases` (optional): map of other major numbers to complete schema-v1 channel manifests, with no nested `majorReleases`. The root remains the most recently published/modified lane for existing publishing consumers; the resolver selects by client major, never by the root's recency. Root and archived lanes must have distinct majors, the same channel, and same-major native targets/shell floors. Legacy manifests without the map remain readable. An empty legacy seed belongs to major 1.
+
+`assemble-snapshot.mjs` selects previous state by the release's major, so generation, rollback ids, native targets and shell floors are independent per lane. It archives the previous root when switching majors and mirrors all lanes and their active/rollback zip files in both channels. `rollout.mjs --major X` targets a specific lane; omission retains the legacy default of the root lane. The rollout workflow exposes the same `major` input. Invalid catalogs or missing referenced bundles abort snapshot creation before deployment.
 
 Build copies the entire `ota/` tree into `public/` (Vercel) or `dist/` (EdgeOne) and fails if either `ota/channels/beta.json` or `ota/channels/stable.json` is missing or invalid.
 

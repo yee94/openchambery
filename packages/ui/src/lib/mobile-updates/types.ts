@@ -11,6 +11,8 @@ export interface MobileUpdateCheckRequest {
   shellApiVersion: number;
   /** Capgo bundle id, or `builtin` when no OTA bundle is applied. */
   currentBundleId: string;
+  /** OTA release lane; omitted by legacy clients. */
+  releaseMajor?: number;
   installSource?: string;
 }
 

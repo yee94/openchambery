@@ -39,7 +39,7 @@ const DEFAULT_OTA_BASE = 'https://openchamber-update.vercel.app'
 const BUNDLE_ID_PATTERN = /^[0-9a-f]{16}$/
 const ALLOWED_CHANNELS = new Set(['beta', 'stable'])
 
-const { parseOtaManifest } = await import(
+const { parseOtaManifest, selectOtaMajor, mergeOtaMajor } = await import(
   pathToFileURL(path.join(ROOT, 'deploy/update-service/lib/ota-manifest.js')).href
 )
 const { compareReleaseVersions, parseReleaseVersion } = await import(
@@ -205,6 +205,9 @@ async function downloadBundle(baseUrl, bundleId, destPath) {
 
 /** Fetch active + rollback zips for a channel manifest into bundlesDir (skip existing). */
 async function ensureChannelBundles(manifest, baseUrl, bundlesDir) {
+  for (const release of Object.values(manifest.majorReleases ?? {})) {
+    await ensureChannelBundles(release, baseUrl, bundlesDir)
+  }
   const ids = []
   if (manifest.activeBundle?.bundleId) ids.push(manifest.activeBundle.bundleId)
   if (Array.isArray(manifest.rollbackBundleIds)) {
@@ -290,7 +293,10 @@ async function main() {
   }
   const size = readFileSync(zipPath).byteLength
 
-  const { manifest: previous } = await fetchProductionManifest(baseUrl, args.channel)
+  const releaseMajor = parseReleaseVersion(args.version)?.major
+  if (releaseMajor === undefined) throw new Error('--version must be a release version')
+  const { manifest: catalog } = await fetchProductionManifest(baseUrl, args.channel)
+  const previous = selectOtaMajor(catalog, releaseMajor) ?? emptyManifest(args.channel)
   const previousGeneration = Number.isInteger(previous.generation) ? previous.generation : 0
   const generation = previousGeneration + 1
   const previousActive = previous.activeBundle ?? null
@@ -341,7 +347,7 @@ async function main() {
     activeBundle.sessionKey = args.sessionKey
   }
 
-  const nextManifest = {
+  const nextManifest = mergeOtaMajor(catalog, {
     schemaVersion: 1,
     channel: args.channel,
     generation,
@@ -350,7 +356,9 @@ async function main() {
       ? { ...previous.nativeTargets }
       : {},
     rollbackBundleIds: trimmedRollbacks,
-  }
+  })
+  const validated = parseOtaManifest(nextManifest)
+  if (!validated.ok) throw new Error(validated.errors.join('; '))
 
   const outRoot = path.resolve(args.out)
   const bundlesDir = path.join(outRoot, 'ota', 'bundles')
@@ -361,7 +369,7 @@ async function main() {
   copyFileSync(zipPath, path.join(bundlesDir, `${bundleId}.zip`))
 
   await ensureChannelBundles(
-    { activeBundle: null, rollbackBundleIds: trimmedRollbacks },
+    nextManifest,
     baseUrl,
     bundlesDir,
   )

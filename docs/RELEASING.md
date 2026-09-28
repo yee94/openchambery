@@ -33,6 +33,15 @@
 
 资格细则与 OTA 步骤见下文 `Mobile OTA releases`。
 
+### OTA 主版本隔离（X.Y.Z 的 X）
+
+- OTA 按「主版本 × beta/stable」选包：1.x 只跟随 1.x，2.x 只跟随 2.x；Beta 切回正式版也不能跨主版本。
+- 首次发布第二条主版本线之前，先把支持该规则的 update-service 部署到 Vercel 与 EdgeOne。旧客户端继续通过 `currentBundleId` / `nativeVersion` 推导主版本；新客户端明确发送 `releaseMajor` 并拒绝跨主版本响应和下载。
+- 渠道 JSON 保持 schemaVersion 1，根节点为本次发布线，`majorReleases` 保存其他主版本线。发布脚本按主版本继承壳门、原生目标、generation 和回滚包，全量快照保留两渠道所有主版本引用的 zip。禁止用旧版 assemble/rollout 脚本覆盖线上多主版本清单；1.x 维护分支也必须同步这些发布脚本及其 update-service 依赖模块。
+- 灰度、暂停、回滚或修改原生目标时用 `rollout.mjs --major 1` / `--major 2`；工作流 `mobile-beta-rollout.yml` 的 `major` 输入同义。省略时沿用根节点对应的发布线。发布新版本时主版本直接从 `--version` 推导。
+- 未发布的主版本返回无更新，不拿其他主版本兜底。跨主版本迁移需要安装对应主版本的原生包。
+- detectability verifier 根据 `--version` 选择对应主版本线，并在 Vercel、EdgeOne 检查跨主版本隔离；`2.0.0` 边界处的旧版画像按隔离规则验证，不再要求 1.x 检测到 2.x。
+
 ## 发布前检查
 
 设定版本号：
