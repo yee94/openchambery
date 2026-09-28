@@ -2,6 +2,7 @@ import {
   createQuestionAutoDelegateCore,
   QUESTION_AUTO_DELEGATE_DELAY_MS,
 } from './core.js';
+import { createQuestionFormIO } from './form-io.js';
 
 const REQUEST_TIMEOUT_MS = 15_000;
 
@@ -44,7 +45,7 @@ export function createQuestionAutoDelegateRuntime({
 } = {}) {
   const upstream = async (path, { directory, method = 'GET', body } = {}) => {
     const url = new URL(buildOpenCodeUrl(path, ''));
-    if (directory) url.searchParams.set('directory', directory);
+    if (directory) url.searchParams.set('location[directory]', directory);
     let response;
     try {
       response = await fetchImpl(url, {
@@ -149,14 +150,7 @@ export function createQuestionAutoDelegateRuntime({
         }
         return Array.from(dirs);
       },
-      async listQuestions(directory) {
-        const result = await upstream('/question', { directory });
-        if (!result.ok) return null;
-        const payload = result.body;
-        if (Array.isArray(payload)) return payload;
-        if (Array.isArray(payload?.data)) return payload.data;
-        return null;
-      },
+      ...createQuestionFormIO(upstream),
       async getSession(sessionID, directory) {
         const result = await upstream(`/session/${encodeURIComponent(sessionID)}`, { directory });
         if (!result.ok) return null;
@@ -167,22 +161,8 @@ export function createQuestionAutoDelegateRuntime({
         return {
           id: asTrimmedString(info.id) || sessionID,
           parentID: asTrimmedString(info.parentID) || null,
-          directory: asTrimmedString(info.directory) || asTrimmedString(directory) || null,
+          directory: asTrimmedString(info.location?.directory) || asTrimmedString(info.directory) || asTrimmedString(directory) || null,
         };
-      },
-      async postReply(requestID, directory, answers) {
-        return upstream(`/question/${encodeURIComponent(requestID)}/reply`, {
-          directory,
-          method: 'POST',
-          body: { answers },
-        });
-      },
-      async postReject(requestID, directory, body) {
-        return upstream(`/question/${encodeURIComponent(requestID)}/reject`, {
-          directory,
-          method: 'POST',
-          body: body && typeof body === 'object' ? body : {},
-        });
       },
     },
   });

@@ -14,7 +14,6 @@ import {
   mapV2Project,
   mapV2QuestionRequest,
   projectWorktree,
-  v2CapabilityUnavailable,
 } from "./v2-runtime"
 
 const cmp = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0)
@@ -240,9 +239,6 @@ export async function bootstrapDirectory(input: {
   // ---------------------------------------------------------------------------
   void Promise.allSettled([
     retry(async () => {
-      throw v2CapabilityUnavailable("lsp.status")
-    }),
-    retry(async () => {
       // VCS is work-directory enrichment: fetch on first open of a bootstrapped
       // directory. Pure sidebar index browse never reaches bootstrapDirectory.
       const result = await sdk.vcs.get(locationOf(directory))
@@ -325,4 +321,3 @@ export async function bootstrapDirectory(input: {
   // coordinator owns one bounded SQLite-backed list per project, avoiding a
   // second active-directory `experimental.session.list` request.
 }
-

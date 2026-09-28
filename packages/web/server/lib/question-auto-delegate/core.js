@@ -25,7 +25,8 @@ const normalizeQuestion = (raw, directoryHint = '') => {
   const sessionID = asTrimmedString(raw.sessionID);
   if (!requestID || !sessionID) return null;
   const directory = asTrimmedString(raw.directory) || asTrimmedString(directoryHint);
-  const questions = Array.isArray(raw.questions) ? raw.questions : [];
+  if (Array.isArray(raw.fields) && raw.metadata?.kind !== 'question') return null;
+  const questions = Array.isArray(raw.fields) ? raw.fields : Array.isArray(raw.questions) ? raw.questions : [];
   return {
     requestID,
     sessionID,
@@ -608,18 +609,18 @@ export function createQuestionAutoDelegateCore({
     try {
       if (kind === 'reject') {
         entry.upstreamDispatched = true;
-        upstream = await io.postReject(requestID, directory, input.body);
+        upstream = await io.postReject(requestID, directory, input.body, entry.sessionID);
       } else if (authority === 'manual') {
         entry.upstreamDispatched = true;
         // Forward the caller payload exactly (answers may be empty).
-        upstream = await io.postReply(requestID, directory, input.answers);
+        upstream = await io.postReply(requestID, directory, input.answers, entry.sessionID);
       } else {
         const count = entry.questionCount > 0 ? entry.questionCount : 1;
         const answers = Array.isArray(input.answers) && input.answers.length > 0
           ? input.answers
           : buildAutoDelegateAnswers(count, autoAnswer);
         entry.upstreamDispatched = true;
-        upstream = await io.postReply(requestID, directory, answers);
+        upstream = await io.postReply(requestID, directory, answers, entry.sessionID);
       }
     } catch (error) {
       // Throw before a classified upstream result: treat as pre-send failure → release for retry.
@@ -1157,12 +1158,18 @@ export function createQuestionAutoDelegateCore({
   const processEvent = (payload, directoryHint = '') => {
     if (disposed || !payload || typeof payload !== 'object') return;
     const type = typeof payload.type === 'string' ? payload.type : '';
-    const properties = payload.properties && typeof payload.properties === 'object' ? payload.properties : {};
-    const hint = asTrimmedString(directoryHint);
+    const properties = payload.data && typeof payload.data === 'object'
+      ? payload.data
+      : payload.properties && typeof payload.properties === 'object' ? payload.properties : {};
+    const hint = asTrimmedString(payload.location?.directory) || asTrimmedString(directoryHint);
 
     if (type === 'session.created' || type === 'session.updated') {
-      rememberSession(properties.info, hint);
-      const info = properties.info;
+      const info = properties.info ?? {
+        id: properties.sessionID,
+        parentID: properties.parentID,
+        directory: properties.location?.directory,
+      };
+      rememberSession(info, hint);
       const sessionId = asTrimmedString(info?.id);
       const directory = asTrimmedString(info?.directory) || hint;
       if (sessionId && directory) {
@@ -1176,8 +1183,9 @@ export function createQuestionAutoDelegateCore({
       return;
     }
 
-    if (type === 'question.asked') {
-      const normalized = normalizeQuestion(properties, hint);
+    if (type === 'question.asked' || type === 'form.created') {
+      if (type === 'form.created' && properties.form?.metadata?.kind !== 'question') return;
+      const normalized = normalizeQuestion(type === 'form.created' ? properties.form : properties, hint);
       if (!normalized) return;
       rememberSession({ id: normalized.sessionID, directory: normalized.directory }, normalized.directory || hint);
       if (!normalized.directory) {
@@ -1191,13 +1199,13 @@ export function createQuestionAutoDelegateCore({
       return;
     }
 
-    if (type === 'question.replied' || type === 'question.rejected') {
-      const requestID = asTrimmedString(properties.id) || asTrimmedString(properties.requestID);
+    if (type === 'question.replied' || type === 'question.rejected' || type === 'form.replied' || type === 'form.cancelled') {
+      const requestID = asTrimmedString(properties.formID) || asTrimmedString(properties.id) || asTrimmedString(properties.requestID);
       if (!requestID) return;
       const entry = requests.get(requestID);
       if (!entry) return;
       if (entry.state === TERMINAL_SETTLED) return;
-      const resolution = type === 'question.rejected' ? 'rejected' : 'replied';
+      const resolution = type === 'question.rejected' || type === 'form.cancelled' ? 'rejected' : 'replied';
       if (entry.state === 'uncertain' || entry.state === 'submitting') {
         markSettled(entry, resolution, entry.submittedBy ?? null);
         bump();

@@ -186,6 +186,17 @@ before touching the filesystem). Rationale: metadata rides every
 
 ## Flow
 
+Recent-message reads request the newest 40 records with V2 `order: desc`, then
+reverse that page into chronological order for tail checks, audit selection and
+accounting. The SDK and HTTP fallback use the same ordering contract; `asc`
+without a cursor would read the oldest page and strand long sessions after
+compaction. Message IDs are not used to reorder the fetched page.
+
+UI goal removal sends the Merge Patch tombstone `openchamber.goal: null`.
+Omitting the key preserves the stored goal. Objective-file cleanup and stopping
+the active turn follow a successful metadata write; failed writes retain the
+goal and its objective for retry.
+
 1. `createSessionGoalRuntime` subscribes to the global SSE hub (it needs
    the envelope's `directory`).
 2. `session.status: idle` arms a 15s per-session timer; `busy`/`retry` clears

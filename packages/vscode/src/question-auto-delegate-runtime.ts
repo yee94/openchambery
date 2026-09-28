@@ -15,6 +15,7 @@ import {
   type QuestionAutoDelegateMutationResult,
   type QuestionAutoDelegateSnapshot,
 } from '../../web/server/lib/question-auto-delegate/core.js';
+import { createQuestionFormIO } from '../../web/server/lib/question-auto-delegate/form-io.js';
 import type { OpenCodeManager } from './opencode';
 
 const REQUEST_TIMEOUT_MS = 15_000;
@@ -207,7 +208,7 @@ const waitForUpstreamBaseUrl = async (timeoutMs: number): Promise<string | null>
  */
 const buildUpstream = async (
   requestPath: string,
-  options: { directory?: string; method?: string; body?: unknown } = {},
+  options: { directory?: string | null; method?: string; body?: unknown } = {},
 ): Promise<UpstreamResult> => {
   let baseUrl = asTrimmedString(managerRef?.getApiUrl());
   if (!baseUrl) {
@@ -225,9 +226,10 @@ const buildUpstream = async (
     };
   }
 
-  const url = new URL(requestPath.replace(/^\//, ''), `${baseUrl.replace(/\/+$/, '')}/`);
+  const apiBase = `${baseUrl.replace(/\/+$/, '').replace(/\/api$/, '')}/api/`;
+  const url = new URL(requestPath.replace(/^\/(?:api\/)?/, ''), apiBase);
   if (options.directory) {
-    url.searchParams.set('directory', options.directory);
+    url.searchParams.set('location[directory]', options.directory);
   }
 
   let response: Response;
@@ -295,16 +297,7 @@ const ensureCore = (): QuestionAutoDelegateCore => {
       async listDirectories() {
         return collectDirectoryScopes();
       },
-      async listQuestions(directory) {
-        const result = await buildUpstream('/question', { directory });
-        if (!result.ok) return null;
-        const payload = result.body;
-        if (Array.isArray(payload)) return payload;
-        if (payload && typeof payload === 'object' && Array.isArray((payload as { data?: unknown }).data)) {
-          return (payload as { data: unknown[] }).data;
-        }
-        return null;
-      },
+      ...createQuestionFormIO(buildUpstream),
       async getSession(sessionID, directory) {
         const result = await buildUpstream(`/session/${encodeURIComponent(sessionID)}`, {
           directory: directory || undefined,
@@ -318,28 +311,16 @@ const ensureCore = (): QuestionAutoDelegateCore => {
             : body;
         if (!info || typeof info !== 'object') return null;
         const record = info as Record<string, unknown>;
+        const location = record.location && typeof record.location === 'object'
+          ? record.location as Record<string, unknown> : null;
         const resolvedDirectory =
-          asTrimmedString(record.directory) || asTrimmedString(directory) || null;
+          asTrimmedString(location?.directory) || asTrimmedString(record.directory) || asTrimmedString(directory) || null;
         if (resolvedDirectory) rememberDirectory(resolvedDirectory);
         return {
           id: asTrimmedString(record.id) || sessionID,
           parentID: asTrimmedString(record.parentID) || null,
           directory: resolvedDirectory,
         };
-      },
-      async postReply(requestID, directory, answers) {
-        return buildUpstream(`/question/${encodeURIComponent(requestID)}/reply`, {
-          directory,
-          method: 'POST',
-          body: { answers },
-        });
-      },
-      async postReject(requestID, directory, body) {
-        return buildUpstream(`/question/${encodeURIComponent(requestID)}/reject`, {
-          directory,
-          method: 'POST',
-          body: body && typeof body === 'object' ? body : {},
-        });
       },
     },
   });

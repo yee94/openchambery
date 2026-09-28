@@ -4,6 +4,21 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [2.0.0-beta.23] - 2026-09-28
+
+这是 OpenCode 2 预览版。本次发布桌面、Android 安装包、同版本 Beta OTA，以及 iOS 内测 TestFlight。不进入外测组或稳定自动更新通道。
+
+### 问题托管
+
+- 修复 question 无人响应 30 秒后不再自动托管的问题，接入 OpenCode 2 原生表单事件与回答接口；Web 和 VS Code 均支持启动、重连时恢复待答问题。
+- 人工接管、回答或取消问题后停止自动倒计时；读取表单失败时保留问题供重试。
+
+### 会话目标与初始化
+
+- 修复长会话压缩完成后目标无法继续执行的问题，续跑检查改为读取最新消息。
+- 修复清除目标后旧目标仍保留的问题；保存失败时保留目标及说明文件，允许重试。
+- 移除会话初始化时不受 OpenCode 2 支持的 LSP 状态请求，避免无效报错掩盖真实加载失败。
+
 ## [2.0.0-beta.22] - 2026-09-28
 
 这是 OpenCode 2 预览版。本次发布桌面、Android 安装包、同版本 Beta OTA，以及 iOS 内测 TestFlight。不进入外测组或稳定自动更新通道。
