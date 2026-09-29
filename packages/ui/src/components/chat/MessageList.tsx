@@ -2967,7 +2967,16 @@ const MessageList = React.forwardRef<MessageListHandle, MessageListProps>(({
                     const targetTop = element.getBoundingClientRect().top - containerRect.top;
                     const delta = targetTop - anchor.offsetTop;
                     if (delta !== 0) {
-                        container.scrollTop += delta;
+                        const target = container.scrollTop + delta;
+                        const virtualizer = tanstackVirtualizerRef.current;
+                        if (shouldVirtualizeHistory && virtualizer) {
+                            // An absolute restore includes the measured prepend.
+                            // Let core retire its pending iOS touch compensation
+                            // instead of replaying that delta after a DOM write.
+                            virtualizer.scrollToOffset(target, { behavior: 'auto' });
+                        } else {
+                            container.scrollTop = target;
+                        }
                     }
                     return true;
                 };

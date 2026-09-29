@@ -4,6 +4,15 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [2.0.0-beta.26] - 2026-09-29
+
+这是 OpenCode 2 预览版。本次发布桌面、Android 安装包及同版本 Beta OTA；iOS 不上 TestFlight，不进入外测组或稳定自动更新通道。
+
+### 对话与历史加载
+
+- 修复正在查看任务进度时，新执行步骤的空助手消息额外显示 loading 骨架和空白行的问题；正文到达后正常显示，已有工具进度保持稳定。
+- 修复 iOS 加载历史后滚动补偿重复应用、阅读位置跳到对话底部的问题，统一通过虚拟列表恢复阅读位置。
+
 ## [2.0.0-beta.25] - 2026-09-29
 
 这是 OpenCode 2 预览版。本次发布桌面、Android 安装包、同版本 Beta OTA，以及 iOS 内测 TestFlight。不进入外测组或稳定自动更新通道。

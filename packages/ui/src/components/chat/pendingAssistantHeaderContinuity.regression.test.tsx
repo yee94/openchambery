@@ -232,6 +232,7 @@ describe('new conversation assistant header continuity', () => {
     useNotificationStore.setState({ list: [] });
     mocks.uiState.isMobile = false;
     mocks.uiState.chatRenderMode = 'live';
+    mocks.uiState.showReasoningTraces = true;
     container = document.createElement('div');
     document.body.appendChild(container);
     root = createRoot(container);
@@ -297,6 +298,38 @@ describe('new conversation assistant header continuity', () => {
       );
     });
   };
+
+  test.each([
+    [false, 'live'], [true, 'live'], [false, 'sorted'], [true, 'sorted'],
+  ] as const)('keeps turn activity stable through an empty continuation and hidden reasoning (mobile=%s, mode=%s)', async (mobile, mode) => {
+    mocks.realBody = true;
+    mocks.uiState.isMobile = mobile;
+    mocks.uiState.chatRenderMode = mode;
+    mocks.uiState.showReasoningTraces = false;
+    const first = assistantMessage({ completed: true, parts: [{
+      id: 'bash-1', sessionID, messageID: 'assistant-1', type: 'tool', tool: 'bash', callID: 'call-1',
+      state: { status: 'completed', input: { command: 'pwd' }, output: '/workspace\n', title: 'pwd', metadata: {}, time: { start: 2, end: 3 } },
+    } as Part] });
+    first.info = { ...first.info, finish: 'tool-calls' } as Message;
+    await renderMessages([userMessage(), first], true);
+    const activityOwner = container.querySelector('[data-message-id="assistant-1"]');
+    expect(activityOwner).not.toBeNull();
+    const continuation = assistantMessage();
+    continuation.info = { ...continuation.info, id: 'assistant-2', time: { created: 11 } };
+    for (const parts of [[], [{
+      id: 'reasoning-2', sessionID, messageID: 'assistant-2', type: 'reasoning', text: 'Thinking',
+    } as Part]]) {
+      await renderMessages([userMessage(), first, { ...continuation, parts }], true, 'assistant-2');
+      expect(container.querySelector('[data-assistant-content-loading]')).toBeNull();
+      expect(container.querySelector('[data-message-id="assistant-2"]')).toBeNull();
+      expect(container.querySelector('[data-message-id="assistant-1"]')).toBe(activityOwner);
+    }
+    const body = { ...textPart('Continuation answer'), id: 'text-2', messageID: 'assistant-2' } as Part;
+    await renderMessages([userMessage(), first, { ...continuation, parts: [body] }], true, 'assistant-2');
+    expect(container.textContent).toContain('Continuation answer');
+    expect(container.querySelector('[data-assistant-content-loading]')).toBeNull();
+    expect(container.querySelector('[data-message-id="assistant-1"]')).toBe(activityOwner);
+  });
 
   test.each([
     [false, 'live'], [true, 'live'], [false, 'sorted'], [true, 'sorted'],
