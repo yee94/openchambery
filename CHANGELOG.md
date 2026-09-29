@@ -4,6 +4,15 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [2.0.0-beta.27] - 2026-09-29
+
+这是 OpenCode 2 预览版。本次仅发布 2.x Beta OTA 热更新，适用于兼容的已安装移动端 App。
+
+### 对话与历史加载
+
+- 修复 iOS 接近顶部自动加载历史时仍会跳动的问题：历史请求立即发出，新消息在手势和惯性滚动停稳后插入，保持当前阅读位置。
+- 修复正文延迟到达及短列表切换为虚拟列表时的滚动补偿问题；持续拖动或长按停留不会提前插入历史，每次手势仍最多加载一页。
+
 ## [2.0.0-beta.26] - 2026-09-29
 
 这是 OpenCode 2 预览版。本次发布桌面、Android 安装包及同版本 Beta OTA；iOS 不上 TestFlight，不进入外测组或稳定自动更新通道。

@@ -1,7 +1,7 @@
 import React from 'react';
 import { createRoot } from 'react-dom/client';
 import { QueryClientProvider } from '@tanstack/react-query';
-import { useEvent } from '@reactuses/core';
+import { useEvent, useEventListener } from '@reactuses/core';
 import MessageList, { type MessageListHandle } from './MessageList';
 import { useChatAutoFollow } from '@/hooks/useChatAutoFollow';
 import { useChatTimelineController } from './hooks/useChatTimelineController';
@@ -27,24 +27,36 @@ const makeRows = (start: number, count: number): ChatMessageEntry[] => Array.fro
 const wait = (ms: number) => new Promise<void>((resolve) => window.setTimeout(resolve, ms));
 
 export default function Fixture() {
-    const [rows, setRows] = React.useState(() => makeRows(20, 12));
+    const scenario = new URLSearchParams(location.search).get('scenario');
+    const delayedResize = scenario === 'delayed-resize';
+    const [rows, setRows] = React.useState(() => makeRows(20, scenario === 'virtualize-transition' ? 4 : 12));
     const [token, setToken] = React.useState(0);
     const listRef = React.useRef<MessageListHandle | null>(null);
     const upwardRef = React.useRef<() => void>(() => undefined);
     const loads = React.useRef(0);
+    const prepared = React.useRef(false);
     const anchorID = React.useRef<string | null>(null);
+    const anchorOffset = React.useRef<number | null>(null);
+    const fingerY = React.useRef(0);
+    const loadFingerY = React.useRef(0);
     const auto = useChatAutoFollow({
         currentSessionId: sessionID, sessionMessageCount: rows.length, sessionIsWorking: false, isMobile: true,
         onUpwardUserIntent: useEvent(() => upwardRef.current()),
     });
     const { releaseAutoFollow, scrollRef } = auto;
+    useEventListener('touchmove', useEvent((event: TouchEvent) => {
+        fingerY.current = event.touches.item(0)?.clientY ?? fingerY.current;
+    }), scrollRef, { capture: true, passive: true });
     const sample = useEvent(() => {
         const el = auto.scrollRef.current!;
         const node = anchorID.current ? el.querySelector<HTMLElement>(`[data-message-id="${anchorID.current}"]`) : null;
         return {
             run: new URLSearchParams(location.search).get('run'),
+            prepared: prepared.current,
             top: el.scrollTop, max: el.scrollHeight - el.clientHeight,
             anchor: anchorID.current,
+            anchorOffset: anchorOffset.current,
+            fingerDelta: fingerY.current - loadFingerY.current,
             anchorTop: node ? node.getBoundingClientRect().top - el.getBoundingClientRect().top : null,
             anchorBottom: node ? node.getBoundingClientRect().bottom - el.getBoundingClientRect().top : null,
             loads: loads.current, pinned: auto.isPinned,
@@ -53,9 +65,19 @@ export default function Fixture() {
     });
     const loadMore = useEvent(async () => {
         loads.current += 1;
-        anchorID.current = listRef.current?.captureViewportAnchor()?.messageId ?? null;
+        const anchor = listRef.current?.captureViewportAnchor();
+        anchorID.current = anchor?.messageId ?? null;
+        anchorOffset.current = anchor?.offsetTop ?? null;
+        loadFingerY.current = fingerY.current;
         await wait(100);
-        setRows((current) => [...makeRows(0, 12), ...current]);
+        const older = makeRows(0, 12);
+        setRows((current) => [...(delayedResize ? older.map((message) => ({
+            ...message, parts: message.parts.map((part) => part.type === 'text' ? { ...part, text: 'Loading history body' } : part),
+        })) : older), ...current]);
+        if (delayedResize) {
+            await wait(350);
+            setRows((current) => [...older, ...current.slice(12)]);
+        }
     });
     const timeline = useChatTimelineController({
         sessionId: sessionID, directory: '/fixture', messages: rows,
@@ -73,8 +95,9 @@ export default function Fixture() {
             prepare: async () => {
                 releaseAutoFollow();
                 await wait(50);
-                scrollRef.current!.scrollTop = 800;
+                scrollRef.current!.scrollTop = scenario === 'virtualize-transition' ? 100 : 800;
                 await wait(500);
+                prepared.current = true;
             },
             sample,
         };
@@ -85,7 +108,7 @@ export default function Fixture() {
         }, 200);
         const prepareTimer = window.setTimeout(() => void api.prepare(), 2000);
         return () => { window.clearInterval(timer); window.clearTimeout(prepareTimer); };
-    }, [releaseAutoFollow, scrollRef, sample]);
+    }, [releaseAutoFollow, scrollRef, sample, scenario]);
     return <div ref={auto.scrollRef} data-history-scroller="true" onScroll={timeline.handleHistoryScroll}
         style={{ height: '100dvh', overflowY: 'auto', overflowAnchor: 'none' }}>
         <MessageList ref={listRef} sessionKey={sessionID} virtualizerKey={sessionID} directory="/fixture"

@@ -192,12 +192,9 @@ const TANSTACK_AT_END_THRESHOLD_PX = 80;
 // viewport races against the native animation — a race that compensation
 // logic can only lose sometimes. So freshly loaded older history is held
 // (data already fetched, store already updated) and inserted into the
-// rendered list only once the gesture goes quiet. Safety valves: flush when
-// the user gets close to the top (a blank top is worse than a small hop) or
-// after MAX_HOLD_MS.
+// rendered list only once the gesture goes quiet, including near the top.
+// A timeout must not force a geometry change underneath a held finger.
 const HISTORY_PREPEND_QUIET_MS = 160;
-const HISTORY_PREPEND_MAX_HOLD_MS = 1500;
-const HISTORY_PREPEND_NEAR_TOP_VIEWPORTS = 1.5;
 const HISTORY_PREPEND_MONITOR_INTERVAL_MS = 90;
 
 // A commit is a deferable prepend when older entries were inserted strictly
@@ -1443,7 +1440,8 @@ type StaticHistoryListProps = {
 };
 
 const StaticHistoryList = React.memo(({ entries, historyAnchorToken, engine, contentRef, scrollRef, registerTanstackVirtualizer, virtualizerKey, onMessageContentChange, getAnimationHandlers, scrollToBottom, stickyUserHeader, activityRenderMode, turnUiStates, onToggleTurnGroup, chatRenderMode, shouldAnimateUserMessage, onUserAnimationConsumed, reviewTransferDirection }: StaticHistoryListProps) => {
-    const isTanstack = engine === 'tanstack';
+    const [displayEntries, setDisplayEntries] = React.useState(entries);
+    const isTanstack = engine === 'tanstack' && displayEntries.length >= MESSAGE_LIST_VIRTUALIZE_THRESHOLD;
     // A prepend can move this list across the tiny-history virtualization
     // threshold. Capture from the old normal-flow DOM during render, then let
     // the new virtualizer mount that same keyed entry before restoring its exact
@@ -1454,7 +1452,7 @@ const StaticHistoryList = React.memo(({ entries, historyAnchorToken, engine, con
         (value: number) => value + 1,
         0,
     );
-    if (engine === 'none') {
+    if (!isTanstack) {
         virtualizationTransitionAnchorRef.current = null;
     } else if (
         committedEngineRef.current === 'none' && isTanstack
@@ -1473,7 +1471,7 @@ const StaticHistoryList = React.memo(({ entries, historyAnchorToken, engine, con
     const touchActiveRef = React.useRef(false);
     const lastScrollAtRef = React.useRef(0);
     const holdSinceRef = React.useRef<number | null>(null);
-    const deferPrepends = isTanstack && isMobileSurfaceRuntime();
+    const deferPrepends = isMobileSurfaceRuntime();
 
     // Gesture listeners: register only while quiet-window prepend is active.
     // Handlers close over refs, so identity is irrelevant to effect lifecycle.
@@ -1501,13 +1499,6 @@ const StaticHistoryList = React.memo(({ entries, historyAnchorToken, engine, con
         || performance.now() - lastScrollAtRef.current < HISTORY_PREPEND_QUIET_MS
     );
 
-    const isNearTop = () => {
-        const element = scrollRef?.current;
-        if (!element) return true;
-        return element.scrollTop < element.clientHeight * HISTORY_PREPEND_NEAR_TOP_VIEWPORTS;
-    };
-
-    const [displayEntries, setDisplayEntries] = React.useState(entries);
     // Render-phase reconcile (official derived-state pattern): adopt the new
     // entries immediately unless this commit is a pure prepend-above landing
     // in the middle of an active touch gesture — those wait for quiet.
@@ -1515,10 +1506,7 @@ const StaticHistoryList = React.memo(({ entries, historyAnchorToken, engine, con
     if (entries !== displayEntries) {
         const shouldHold = deferPrepends
             && isPrependAboveCommit(displayEntries, entries)
-            && isGestureActive()
-            && !isNearTop()
-            && (holdSinceRef.current === null
-                || performance.now() - holdSinceRef.current < HISTORY_PREPEND_MAX_HOLD_MS);
+            && isGestureActive();
         if (shouldHold) {
             if (holdSinceRef.current === null) holdSinceRef.current = performance.now();
         } else {
@@ -1535,11 +1523,10 @@ const StaticHistoryList = React.memo(({ entries, historyAnchorToken, engine, con
     const [, forceFlushTick] = React.useReducer((tick: number) => tick + 1, 0);
     useInterval(() => {
         if (holdSinceRef.current === null) return;
-        const expired = performance.now() - holdSinceRef.current >= HISTORY_PREPEND_MAX_HOLD_MS;
-        if (!isGestureActive() || isNearTop() || expired) {
+        if (!isGestureActive()) {
             forceFlushTick();
         }
-    }, deferPrepends ? HISTORY_PREPEND_MONITOR_INTERVAL_MS : null);
+    }, deferPrepends && holdSinceRef.current !== null ? HISTORY_PREPEND_MONITOR_INTERVAL_MS : null);
 
     const entriesRef = React.useRef(renderEntries);
     entriesRef.current = renderEntries;
@@ -1575,7 +1562,13 @@ const StaticHistoryList = React.memo(({ entries, historyAnchorToken, engine, con
     const sizeContainerRef = React.useRef<HTMLDivElement | null>(null);
     const historyReadingAnchorRef = React.useRef<ViewportMessageAnchor | null>(null);
     const previousHistoryAnchorTokenRef = React.useRef(historyAnchorToken);
-    if (previousHistoryAnchorTokenRef.current !== historyAnchorToken) {
+    // A held prepend must use the reading position at adoption, after the
+    // user's drag/momentum, rather than the position when the request began.
+    const previousDisplayEntriesRef = React.useRef(renderEntries);
+    const adoptingPrepend = previousDisplayEntriesRef.current !== renderEntries
+        && isPrependAboveCommit(previousDisplayEntriesRef.current, renderEntries);
+    previousDisplayEntriesRef.current = renderEntries;
+    if (previousHistoryAnchorTokenRef.current !== historyAnchorToken || adoptingPrepend) {
         previousHistoryAnchorTokenRef.current = historyAnchorToken;
         const container = scrollRef?.current;
         const content = sizeContainerRef.current ?? contentRef.current;
@@ -1596,7 +1589,9 @@ const StaticHistoryList = React.memo(({ entries, historyAnchorToken, engine, con
         const element = findMessageElement(container, anchor.messageId);
         if (!element) return;
         const delta = element.getBoundingClientRect().top - container.getBoundingClientRect().top - anchor.offsetTop;
-        if (Math.abs(delta) > 0.5) container.scrollTop += delta;
+        if (Math.abs(delta) > 0.5) {
+            tanstackVirtualizer.scrollToOffset(container.scrollTop + delta, { behavior: 'auto' });
+        }
     });
     // Unknown-row estimates stay fixed until the activity-density mode changes.
     const defaultEstimatedEntrySize = resolveTanstackEstimatedEntrySize(activityRenderMode);
@@ -1739,7 +1734,7 @@ const StaticHistoryList = React.memo(({ entries, historyAnchorToken, engine, con
         // eslint-disable-next-line react-hooks/exhaustive-deps -- handleColumnResize is useEvent
     }, [isTanstack]);
     useIsomorphicLayoutEffect(() => {
-        committedEngineRef.current = engine;
+        committedEngineRef.current = isTanstack ? 'tanstack' : 'none';
         if (!isTanstack) {
             virtualizationTransitionAnchorRef.current = null;
             return;
@@ -1915,7 +1910,7 @@ const StaticHistoryList = React.memo(({ entries, historyAnchorToken, engine, con
         );
     });
 
-    if (engine === 'none') {
+    if (!isTanstack) {
         return (
             <div ref={contentRef} className="relative w-full">
                 {renderEntries.map((entry) => (
@@ -2970,6 +2965,9 @@ const MessageList = React.forwardRef<MessageListHandle, MessageListProps>(({
                         const target = container.scrollTop + delta;
                         const virtualizer = tanstackVirtualizerRef.current;
                         if (shouldVirtualizeHistory && virtualizer) {
+                            // The child still displays the pre-request window
+                            // until the active gesture settles.
+                            if (virtualizer.options.count !== historyEntries.length) return true;
                             // An absolute restore includes the measured prepend.
                             // Let core retire its pending iOS touch compensation
                             // instead of replaying that delta after a DOM write.
