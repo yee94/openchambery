@@ -1049,7 +1049,7 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
     );
     const shouldHideEmptyAssistant = !isUser
         && !compactionCard
-        && (isMessageCompleted || !isInActiveTurn)
+        && (isMessageCompleted || !isInActiveTurn || Boolean(turnGroupingContext))
         && !assistantError
         && !hasRenderableAssistantParts
         && !hostsTurnActivity;
