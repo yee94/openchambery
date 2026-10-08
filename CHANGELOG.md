@@ -4,6 +4,15 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [2.0.0-beta.30] - 2026-10-08
+
+这是 OpenCode 2 预览版。本次发布桌面、Android 安装包及同版本 Beta OTA；iOS 不上 TestFlight，不进入稳定自动更新通道。
+
+### 消息队列恢复
+
+- 打开会话、从缓存返回及断线重连时，主动恢复 OpenCode 原生待发送消息队列，避免排队消息暂时消失。
+- 队列恢复与对话历史加载并行；读取失败保留已有消息，并防止过期请求覆盖刚收到的排队、投递或完成状态。
+
 ## [2.0.0-beta.29] - 2026-10-08
 
 这是 OpenCode 2 预览版。本次发布桌面、Android 安装包及同版本 Beta OTA；iOS 不上 TestFlight，不进入稳定自动更新通道。

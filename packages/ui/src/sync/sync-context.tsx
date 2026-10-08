@@ -44,6 +44,7 @@ import { adoptSessionMove } from './session-move'
 import { updateStreamingState } from "./streaming"
 import { setActionRefs } from "./session-actions"
 import { applySessionInboxEvent } from "./session-prompt-api"
+import { refreshSessionInbox } from "./session-inbox-query"
 import { setSyncRefs, getSyncChildStores } from "./sync-refs"
 import {
   applyTranscriptCommand,
@@ -1735,7 +1736,12 @@ export async function resyncDirectoryAfterReconnect(
   // sessions that were already non-idle. Otherwise a restart drops running
   // sessions that were never in the child store when bootstrap fetched
   // session.active, while their text frames keep streaming.
-  await resyncDirectorySessionStatuses(directory, store, candidateSessionIds)
+  await Promise.all([
+    resyncDirectorySessionStatuses(directory, store, candidateSessionIds),
+    ...getCompensationViewedSessions()
+      .filter((ref) => normalizeEventDirectory(ref.directory) === normalizeEventDirectory(directory))
+      .map((ref) => refreshSessionInbox(ref).catch(() => undefined)),
+  ])
 
   // statusOnly suppresses extra reconnect work (full routing ingest) but must
   // still run bounded authoritative recovery for the currently viewed session
