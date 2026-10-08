@@ -4,6 +4,15 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [2.0.0-beta.35] - 2026-10-08
+
+这是 OpenCode 2 预览版。本次发布桌面、Android 安装包及同版本 Beta OTA；iOS 不上 TestFlight，不进入稳定自动更新通道。
+
+### 远程设备管理
+
+- 设备重命名改用独立编辑弹窗，避免编辑框和操作按钮挤占设备列表空间，并补齐多语言弹窗标题。
+- 重命名失败时在输入框下显示错误，保存期间禁用重复操作和关闭弹窗。
+
 ## [2.0.0-beta.34] - 2026-10-08
 
 这是 OpenCode 2 预览版。本次发布桌面、Android 安装包及同版本 Beta OTA；iOS 不上 TestFlight，不进入稳定自动更新通道。

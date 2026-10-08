@@ -1,4 +1,5 @@
 export const settingsDict = {
+  'settings.remoteInstances.clientAuth.edit.title': 'Modifier l’appareil',
   'settings.remoteInstances.clientAuth.edit.action': 'Modifier',
   'settings.remoteInstances.clientAuth.edit.name': 'Nom de l’appareil',
   'settings.openchamber.about.opencodeGuidance.manualGlobal': 'Mettez à jour le CLI OpenCode configuré avec son gestionnaire de paquets, puis redémarrez le service.',
