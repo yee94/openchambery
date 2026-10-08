@@ -48,7 +48,7 @@ export function MobileDetailNavigation({
   overlay = false,
   elevated = false,
 }: MobileDetailNavigationProps) {
-  const hasTrailingActions = Boolean(trailing) || actions.length > 0;
+  const trailingCount = Array.isArray(trailing) ? trailing.filter(Boolean).length : trailing ? 1 : 0;
   const actionElevated = elevated || actions.some((action) => action.elevated);
 
   return (
@@ -65,7 +65,7 @@ export function MobileDetailNavigation({
       <div
         className={cn(
           'oc-mobile-detail-navigation-content grid items-center gap-1 px-4',
-          hasTrailingActions && actions.length + (trailing ? 1 : 0) > 1
+          actions.length + trailingCount > 1
             ? 'grid-cols-[2.75rem_minmax(0,1fr)_auto]'
             : 'grid-cols-[2.75rem_minmax(0,1fr)_2.75rem]',
         )}

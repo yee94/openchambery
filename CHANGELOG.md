@@ -4,6 +4,15 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [2.0.0-beta.37] - 2026-10-09
+
+本次发布桌面、Android 安装包及同版本 Beta OTA，不上传 TestFlight，不进入稳定自动更新通道。
+
+### 修复与改进
+
+- 移动端计划编辑页将启用开关改为标题右侧的 Switch，保存改为顶部更多菜单左侧的勾选图标，移除底部保存浮条。
+- 包含 2.0.1 的首条消息闪烁、压缩状态显示修复，以及计划和助理运行状态指示、关于弹窗布局改进。
+
 ## [2.0.1] - 2026-10-08
 
 ### 修复与改进
