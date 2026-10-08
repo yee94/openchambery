@@ -171,7 +171,7 @@ describe('ScheduledTasksDialog queries', () => {
     expect(editorContent).toContain('const canOpenTaskHistory = Boolean(task && onOpenTaskHistory)');
     expect(editorContent).toContain('onSelect={() => onOpenTaskHistory?.(task)}');
     expect(editorContent).toContain("t('sessions.scheduledTasks.workspace.views.history')");
-    expect(editorContent).toContain('trailing={editorOverflowMenu}');
+    expect(editorContent).toContain('<React.Fragment key="more">{editorOverflowMenu}</React.Fragment>');
   });
 
   test('keeps the selected task editor open when deleting a different composite task identity', async () => {
@@ -294,7 +294,7 @@ describe('ScheduledTasksDialog queries', () => {
     expect(tabRootContent).toContain('inert={topSecondaryPage || nativeTabBarAdopted ? true : undefined}');
     expect(tabRootContent).not.toContain('inert={topSecondaryPage || tabBarCovered || nativeTabBarAdopted ? true : undefined}');
     expect(mobileStyles).toContain('.oc-mobile-scheduled-editor-overlay');
-    expect(mobileStyles).toContain(':root:not(.oc-native-ios-tab-bar)\n  .oc-mobile-floating-bottom-bar-frame[data-scheduled-editor-footer]');
+    expect(mobileStyles).toContain(':root:not(.oc-native-ios-tab-bar) .oc-mobile-scheduled-editor-body');
     expect(tabRootContent).toContain('<MobileTabBar activeTab={selectedTab}');
     expect(tabRootContent).not.toContain(') : showTabBar ? (');
     expect(tabRootContent).toContain('data-mobile-navigation-underlay="true"');
@@ -310,9 +310,10 @@ describe('ScheduledTasksDialog queries', () => {
     expect(mobileTabEditorContent).toContain('<MobileDetailNavigation\n          sticky');
     expect(mobileTabEditorContent).toContain('<section className="flex h-full min-h-0 flex-col bg-background"');
     expect(mobileTabEditorContent).toContain('oc-mobile-scheduled-editor-body min-h-0 flex-1 overflow-y-auto overflow-x-hidden');
-    expect(mobileTabEditorContent).toContain('data-scheduled-editor-footer=""');
-    expect(mobileTabEditorContent).toContain('<MobileFloatingBottomBar\n          as="footer"');
-    expect(mobileTabEditorContent).toContain('className="z-[60]"');
+    expect(mobileTabEditorContent).not.toContain('<MobileFloatingBottomBar');
+    expect(mobileTabEditorContent).toContain('<Switch');
+    expect(mobileTabEditorContent).toContain('checked={draft.enabled}');
+    expect(mobileTabEditorContent.indexOf('key="save"')).toBeLessThan(mobileTabEditorContent.indexOf('key="more"'));
     expect(mobileTabEditorContent).not.toContain('<ScrollShadow');
     expect(mobileSurfaceContent).toContain("variant?: 'navigation' | 'actions'");
     expect(mobileSurfaceContent).toContain("'oc-mobile-floating-bottom-bar'");

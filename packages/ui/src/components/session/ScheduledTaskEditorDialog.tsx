@@ -6,6 +6,7 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Checkbox } from '@/components/ui/checkbox';
+import { Switch } from '@/components/ui/switch';
 import { NumberInput } from '@/components/ui/number-input';
 import { Button } from '@/components/ui/button';
 import {
@@ -29,7 +30,6 @@ import { FileMentionAutocomplete, type FileMentionHandle } from '@/components/ch
 import { insertTokenWithReferenceBoundaries } from '@/components/chat/insertionBoundaries';
 import { Icon } from "@/components/icon/Icon";
 import { MobileDetailNavigation } from '@/mobile/MobileDetailNavigation';
-import { MobileFloatingBottomBar } from '@/mobile/MobileSurface';
 import { useConfigStore } from '@/stores/useConfigStore';
 import { useUIStore } from '@/stores/useUIStore';
 import type { ScheduledTask } from '@/lib/scheduledTasksApi';
@@ -1884,26 +1884,46 @@ export function ScheduledTaskEditorDialog(props: {
           backAriaLabel={t('header.actions.backAria')}
           onBack={() => onOpenChange(false)}
           backDisabled={saving}
-          trailing={editorOverflowMenu}
+          trailing={[
+            <Button
+              key="save"
+              type="button"
+              variant="mobileGlass"
+              size="mobileIcon"
+              className="text-primary"
+              onClick={handleSubmit}
+              disabled={saving}
+              aria-label={saving
+                ? t('sessions.scheduledTasks.editor.actions.saving')
+                : task
+                  ? t('sessions.scheduledTasks.editor.actions.save')
+                  : t('sessions.scheduledTasks.dialog.actions.create')}
+              aria-busy={saving}
+            >
+              <Icon name={saving ? 'loader-4' : 'check'} className={cn('size-5', saving && 'animate-spin motion-reduce:animate-none')} />
+            </Button>,
+            editorOverflowMenu ? <React.Fragment key="more">{editorOverflowMenu}</React.Fragment> : null,
+          ]}
         />
         <div className="oc-mobile-scheduled-editor-body min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-[var(--oc-mobile-page-inline-inset)] pt-4">
-          <Input
-            value={draft.name}
-            onChange={(event) => setDraft((prev) => ({ ...prev, name: event.target.value }))}
-            placeholder={t('sessions.scheduledTasks.editor.taskName.placeholder')}
-            aria-label={t('sessions.scheduledTasks.editor.taskName.label')}
-            maxLength={80}
-            className="oc-mobile-detail-editor-title mb-5 !h-auto min-h-0 border-0 bg-transparent px-0 py-0 text-xl font-semibold shadow-none ring-0 hover:!bg-transparent focus:!bg-transparent focus:ring-0"
-          />
+          <div className="mb-5 flex items-center gap-4">
+            <Input
+              value={draft.name}
+              onChange={(event) => setDraft((prev) => ({ ...prev, name: event.target.value }))}
+              placeholder={t('sessions.scheduledTasks.editor.taskName.placeholder')}
+              aria-label={t('sessions.scheduledTasks.editor.taskName.label')}
+              maxLength={80}
+              className="oc-mobile-detail-editor-title min-w-0 flex-1 !h-auto min-h-0 border-0 bg-transparent px-0 py-0 text-xl font-semibold shadow-none ring-0 hover:!bg-transparent focus:!bg-transparent focus:ring-0"
+            />
+            <Switch
+              checked={draft.enabled}
+              onCheckedChange={(enabled) => setDraft((prev) => ({ ...prev, enabled }))}
+              disabled={saving}
+              aria-label={t('sessions.scheduledTasks.editor.enabled.aria')}
+            />
+          </div>
           {formBody}
         </div>
-        <MobileFloatingBottomBar
-          as="footer"
-          data-scheduled-editor-footer=""
-          className="z-[60]"
-        >
-          {footerRow}
-        </MobileFloatingBottomBar>
       </section>
     );
   }

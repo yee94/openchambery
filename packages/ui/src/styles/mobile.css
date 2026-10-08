@@ -250,23 +250,14 @@
 
 .oc-mobile-scheduled-editor-body {
   padding-bottom: calc(
-    var(--oc-mobile-dock-height) + 2.5rem +
+    1.5rem +
     var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px))
-  );
-}
-
-:root:not(.oc-native-ios-tab-bar)
-  .oc-mobile-floating-bottom-bar-frame[data-scheduled-editor-footer] {
-  padding-bottom: calc(
-    var(--oc-mobile-dock-height) +
-    max(1.25rem, var(--oc-safe-area-bottom-visual, 0px)) +
-    0.75rem
   );
 }
 
 :root:not(.oc-native-ios-tab-bar) .oc-mobile-scheduled-editor-body {
   padding-bottom: calc(
-    (var(--oc-mobile-dock-height) * 2) + 3.25rem +
+    var(--oc-mobile-dock-height) + 2rem +
     var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px))
   );
 }
