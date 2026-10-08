@@ -20,6 +20,7 @@ const mocks = vi.hoisted(() => {
     currentDirectory: '/repo',
   };
   return {
+    routeMessage: vi.fn(() => Promise.resolve()),
     upsertedSessions,
     registeredDirectories,
     ensureChildCalls,
@@ -33,7 +34,7 @@ const mocks = vi.hoisted(() => {
 });
 
 vi.mock('@/sync/session-ui-store', () => ({
-  routeMessage: vi.fn(() => Promise.resolve()),
+  routeMessage: mocks.routeMessage,
   useSessionUIStore: {
     getState: () => ({
       markSessionAsOpenChamberCreated: vi.fn(() => undefined),
@@ -123,14 +124,6 @@ vi.mock('./useProjectsStore', () => ({
   },
 }));
 
-vi.mock('./useSnippetsStore', () => ({
-  useSnippetsStore: {
-    getState: () => ({
-      expandText: (value: string) => Promise.resolve(value),
-    }),
-  },
-}));
-
 vi.mock('./useGlobalSessionsStore', () => ({
   useGlobalSessionsStore: {
     getState: () => ({
@@ -164,6 +157,7 @@ const { useMultiRunStore } = await import('./useMultiRunStore');
 
 describe('useMultiRunStore', () => {
   beforeEach(() => {
+    mocks.routeMessage.mockClear();
     mocks.upsertedSessions.length = 0;
     mocks.registeredDirectories.length = 0;
     mocks.ensureChildCalls.length = 0;
@@ -195,6 +189,22 @@ describe('useMultiRunStore', () => {
     expect(mocks.registeredDirectories).toEqual([{ sessionID: 'ses_multirun', directory: '/repo' }]);
     expect(mocks.ensureChildCalls).toEqual([{ directory: '/repo', bootstrap: false }]);
     expect(mocks.childState.session.map((session) => session.id)).toEqual(['ses_multirun']);
+  });
+
+  test('sends hash-prefixed prompt text literally', async () => {
+    const prompt = 'Review #careful and issue #123';
+    await useMultiRunStore.getState().createMultiRun({
+      name: 'Review',
+      isolateRuns: false,
+      groups: [{
+        prompt,
+        models: [{ providerID: 'anthropic', modelID: 'claude-sonnet-4-5' }],
+      }],
+    });
+
+    await vi.waitFor(() => {
+      expect(mocks.routeMessage).toHaveBeenCalledWith(expect.objectContaining({ content: prompt }));
+    });
   });
 
   test('uses fast background worktree creation for isolated runs', async () => {

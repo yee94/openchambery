@@ -109,6 +109,8 @@ export type State = {
   sessionTotal: number
   session_status: Record<string, SessionStatus>
   session_status_observed_at: Record<string, number>
+  session_status_event_at: Record<string, number>
+  session_status_event_sequence: Record<string, number>
   /** UI-only stop receipt; authoritative status stays busy until execution settles. */
   session_interrupt_acknowledged_at: Record<string, number>
   /** Monotonic in-memory boundary for live starts and local direct sends. */
@@ -226,6 +228,8 @@ export const INITIAL_STATE: State = {
   sessionTotal: 0,
   session_status: {},
   session_status_observed_at: {},
+  session_status_event_at: {},
+  session_status_event_sequence: {},
   session_interrupt_acknowledged_at: {},
   session_execution_version: {},
   session_status_snapshot_at: undefined,

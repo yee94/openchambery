@@ -7,20 +7,21 @@
  * execution semantics.
  *
  * Evidence bounds (ticket 11):
- * - MIN_VERIFIED: pin / installed verification (`2.0.12`)
+ * - MIN_VERIFIED: credential API availability (`2.0.20`)
  * Any acceptable OpenCode 2.x at or above MIN_VERIFIED may execute. Below-min
  * 2.x and 1.x are refused with upgrade guidance; there is no upper version cap.
  */
 
 import {
   PINNED_OPENCODE2_VERSION,
+  MINIMUM_OPENCODE2_VERSION,
   compareOpenCode2Versions,
   isAcceptableOpenCode2HealthVersion,
   isOpenCode1xVersion,
 } from './opencode2-pin.js';
 
 /** Lowest version with documented OpenChamber + OpenCode 2 contract tests. */
-export const RUNTIME_CONTRACT_MIN_VERIFIED = PINNED_OPENCODE2_VERSION;
+export const RUNTIME_CONTRACT_MIN_VERIFIED = MINIMUM_OPENCODE2_VERSION;
 
 /**
  * Optional / core capabilities and the minimum serve version that admits them.

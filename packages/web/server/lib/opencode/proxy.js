@@ -1,4 +1,5 @@
 import { createProxyMiddleware } from 'http-proxy-middleware';
+import { isSensitiveCredentialResponse } from './credential-boundary.js';
 
 import {
   applyForwardProxyResponseHeaders,
@@ -244,6 +245,12 @@ export const resolveSessionTurnAdmissionRequest = (req) => {
 };
 
 export const registerOpenCodeProxy = (app, deps) => {
+  app.use((req, res, next) => {
+    if (isSensitiveCredentialResponse(req.method, req.originalUrl || req.url)) {
+      return res.status(403).json({ code: 'credential_response_refused', error: 'Provider credential values are host-only.' });
+    }
+    return next();
+  });
   const {
     fs,
     os,

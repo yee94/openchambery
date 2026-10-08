@@ -13,14 +13,14 @@ import {
 } from './runtime-contract.js';
 
 describe('runtime contract admission (ticket 11)', () => {
-  it('records minimum verified bound from pin', () => {
-    expect(RUNTIME_CONTRACT_MIN_VERIFIED).toBe('2.0.12');
+  it('records the credential API floor independently of the install pin', () => {
+    expect(RUNTIME_CONTRACT_MIN_VERIFIED).toBe('2.0.20');
   });
 
   it('classifies version bands with a 2.x floor only', () => {
-    expect(classifyRuntimeVersionBand('2.0.12')).toBe('verified');
-    expect(classifyRuntimeVersionBand('2.0.14')).toBe('verified');
-    expect(classifyRuntimeVersionBand('2.0.15')).toBe('verified');
+    expect(classifyRuntimeVersionBand('2.0.19')).toBe('below-min');
+    expect(classifyRuntimeVersionBand('2.0.20')).toBe('verified');
+    expect(classifyRuntimeVersionBand('2.0.23')).toBe('verified');
     expect(classifyRuntimeVersionBand('2.1.0')).toBe('verified');
     expect(classifyRuntimeVersionBand('2.0.5')).toBe('below-min');
     expect(classifyRuntimeVersionBand('1.18.18')).toBe('1x');
@@ -30,8 +30,8 @@ describe('runtime contract admission (ticket 11)', () => {
 
   it('admits verified serve for core protocol and optional caps', () => {
     const result = evaluateRuntimeContract({
-      serveVersion: '2.0.12',
-      cliVersion: '2.0.12',
+      serveVersion: '2.0.20',
+      cliVersion: '2.0.20',
       reachable: true,
       authenticated: true,
       healthOk: true,
@@ -65,7 +65,7 @@ describe('runtime contract admission (ticket 11)', () => {
 
   it('admits newer 2.x above the documented floor for execution', () => {
     const result = evaluateRuntimeContract({
-      serveVersion: '2.0.15',
+      serveVersion: '2.0.23',
       reachable: true,
       authenticated: true,
       healthOk: true,
@@ -105,12 +105,12 @@ describe('runtime contract admission (ticket 11)', () => {
     expect(evaluateRuntimeContract({
       reachable: true,
       authenticated: false,
-      serveVersion: '2.0.12',
+      serveVersion: '2.0.20',
       healthOk: true,
     }).phase).toBe('unauthenticated');
 
     const migration = evaluateRuntimeContract({
-      serveVersion: '2.0.12',
+      serveVersion: '2.0.20',
       reachable: true,
       authenticated: true,
       healthOk: true,
@@ -122,7 +122,7 @@ describe('runtime contract admission (ticket 11)', () => {
     expect(migration.migrationExecutable).toBe(false);
 
     const mismatch = evaluateRuntimeContract({
-      serveVersion: '2.0.12',
+      serveVersion: '2.0.20',
       cliVersion: '2.0.14',
       reachable: true,
       authenticated: true,
@@ -179,7 +179,7 @@ describe('runtime contract admission (ticket 11)', () => {
       migrationAdmitTranscript: true,
     });
     const body = runtimeContractExecutionBlockedBody(contract);
-    expect(body.error).toContain('2.0.12');
+    expect(body.error).toContain('2.0.20');
     expect(body.error).toMatch(/Settings → About/i);
     expect(formatRuntimeContractBlockedError(contract)).toBe(body.error);
   });

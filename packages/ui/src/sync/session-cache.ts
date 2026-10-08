@@ -7,6 +7,8 @@ import type { FileDiff } from "./types"
 type SessionCache = {
   session_status: Record<string, SessionStatus | undefined>
   session_status_observed_at?: Record<string, number | undefined>
+  session_status_event_at?: Record<string, number | undefined>
+  session_status_event_sequence?: Record<string, number | undefined>
   session_interrupt_acknowledged_at?: Record<string, number | undefined>
   session_execution_version?: Record<string, number | undefined>
   session_error_at?: Record<string, number | undefined>
@@ -52,6 +54,8 @@ export function dropSessionCaches(store: SessionCache, sessionIDs: Iterable<stri
 
   const acknowledgements = store.session_interrupt_acknowledged_at
   const versions = store.session_execution_version
+  const eventClocks = store.session_status_event_at
+  const eventSequences = store.session_status_event_sequence
   for (const sessionID of stale) {
     if (acknowledgements?.[sessionID] !== undefined && store.session_interrupt_acknowledged_at === acknowledgements) {
       store.session_interrupt_acknowledged_at = { ...acknowledgements }
@@ -59,10 +63,14 @@ export function dropSessionCaches(store: SessionCache, sessionIDs: Iterable<stri
     if (versions?.[sessionID] !== undefined && store.session_execution_version === versions) {
       store.session_execution_version = { ...versions }
     }
+    if (eventClocks?.[sessionID] !== undefined && store.session_status_event_at === eventClocks) store.session_status_event_at = { ...eventClocks }
+    if (eventSequences?.[sessionID] !== undefined && store.session_status_event_sequence === eventSequences) store.session_status_event_sequence = { ...eventSequences }
     delete store.todo[sessionID]
     delete store.session_diff[sessionID]
     delete store.session_status[sessionID]
     if (store.session_status_observed_at) delete store.session_status_observed_at[sessionID]
+    if (store.session_status_event_at) delete store.session_status_event_at[sessionID]
+    if (store.session_status_event_sequence) delete store.session_status_event_sequence[sessionID]
     if (store.session_interrupt_acknowledged_at) delete store.session_interrupt_acknowledged_at[sessionID]
     if (store.session_execution_version) delete store.session_execution_version[sessionID]
     if (store.session_error_at) delete store.session_error_at[sessionID]

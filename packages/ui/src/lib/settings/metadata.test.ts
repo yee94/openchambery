@@ -31,7 +31,7 @@ describe('settings navigation metadata', () => {
       personalization: ['appearance', 'chat', 'notifications', 'sessions', 'archived-sessions', 'summary-ai', 'shortcuts'],
       workspace: ['projects', 'git', 'remote-instances'],
       opencode: ['providers', 'agents', 'assistants', 'behavior', 'commands', 'mcp', 'plugins', 'global-config'],
-      content: ['magic-prompts', 'snippets', 'skills.installed', 'skills.catalog'],
+      content: ['magic-prompts', 'skills.installed', 'skills.catalog'],
       system: ['usage', 'voice', 'about'],
     });
   });

@@ -10,7 +10,7 @@ interface WorkingPlaceholderProps {
   statusText: string | null;
   isGenericStatus?: boolean;
   isWaitingForPermission?: boolean;
-  retryInfo?: { attempt?: number; next?: number } | null;
+  retryInfo?: { attempt?: number; next?: number; message?: string } | null;
   turnStartedAt?: number;
   agentName?: string;
   /** Authoritative turn settle — hide immediately, no step-gap linger. */
@@ -20,19 +20,6 @@ interface WorkingPlaceholderProps {
 const STATUS_DISPLAY_TIME_MS = 1200;
 /** Keep the last status painted briefly after isWorking drops so step gaps do not collapse the row. */
 const STATUS_CLEAR_LINGER_MS = 600;
-
-const EPOCH_SECONDS_THRESHOLD = 1_000_000_000;
-const EPOCH_MILLISECONDS_THRESHOLD = 1_000_000_000_000;
-
-const toRetryTargetTimestamp = (next: number): number => {
-  if (next >= EPOCH_MILLISECONDS_THRESHOLD) {
-    return next;
-  }
-  if (next >= EPOCH_SECONDS_THRESHOLD) {
-    return next * 1000;
-  }
-  return Date.now() + next;
-};
 
 export function WorkingPlaceholder({
   isWorking,
@@ -78,7 +65,7 @@ export function WorkingPlaceholder({
       return;
     }
 
-    const retryTargetAt = toRetryTargetTimestamp(rawNext);
+    const retryTargetAt = rawNext;
 
     const update = () => {
       const remaining = Math.max(0, retryTargetAt - Date.now());
@@ -235,26 +222,28 @@ export function WorkingPlaceholder({
       ? new Intl.RelativeTimeFormat(locale, { numeric: 'always', style: 'short' }).format(retryCountdown, 'second')
       : null;
     const retryText = retryDuration
-      ? retryInfo.attempt && retryInfo.attempt > 1
+      ? retryInfo.attempt && retryInfo.attempt > 0
         ? t('chat.assistantStatus.retryingInAttempt', { duration: retryDuration, attempt: retryInfo.attempt })
         : t('chat.assistantStatus.retryingIn', { duration: retryDuration })
-      : retryInfo.attempt && retryInfo.attempt > 1
+      : retryInfo.attempt && retryInfo.attempt > 0
         ? t('chat.assistantStatus.retryingAttempt', { attempt: retryInfo.attempt })
-        : t('chat.assistantStatus.retrying');
+         : t('chat.assistantStatus.retrying');
+
+    const retryLabel = retryInfo.message ? `${retryText} · ${retryInfo.message}` : retryText;
 
     return (
       <div
         className="flex h-full items-center text-muted-foreground"
         role="status"
         aria-live="polite"
-        aria-label={retryText}
+        aria-label={retryLabel}
       >
         <span className={`flex min-w-0 items-center ${isMobile ? "gap-1 typography-meta !text-[length:var(--text-meta)]" : "gap-1.5 typography-ui-header"}`}>
           <span className={`inline-flex flex-none items-center justify-center ${isMobile ? 'h-5 w-4' : 'h-6 w-3.5'}`}>
             <MorphOrb isMobile={isMobile} />
           </span>
-          <span className="animate-text-shimmer min-w-0 truncate whitespace-nowrap">
-            {retryText}
+          <span className="animate-text-shimmer min-w-0 whitespace-normal break-words">
+            {retryLabel}
           </span>
         </span>
       </div>

@@ -54,6 +54,7 @@ The following functions are exported and used by the web server:
 - `validateWorktreeCreate(directory, input)`: Validate worktree creation parameters (mode, branchName, startRef, upstream config).
 - `createWorktree(directory, input)`: Create a new worktree (supports 'new' and 'existing' modes, upstream setup).
 - `removeWorktree(directory, input)`: Remove a worktree (optionally delete local branch).
+- `removeWorktree(directory, input, { beforeRemove })`: optional host hook after primary-workspace/catalog validation, immediately before removal of a matched worktree or managed orphan. The hook never runs for unrelated orphan paths. Production hosts use the official v2 `debug.location.evict` with the validated target and current upstream URL/auth; the 2s budget returns `released`, `failed`, `timeout`, or `unavailable`. Eviction is best effort and never counts as successful Git removal. DELETE responses include `locationRelease` when attempted. Shared-service explicit removal retains the existing force-delete semantics for that target; it is not automatic idle cleanup and does not interrupt unrelated sessions. An eviction acknowledgement is cache detachment, not a guarantee that active borrowers released OS handles. Queue rollback and topology publication remain tied to the Git result.
 - `isLinkedWorktree(directory)`: Check if directory is a linked worktree (not primary).
 
 ### Commit and Remote Operations

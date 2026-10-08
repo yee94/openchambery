@@ -445,11 +445,11 @@ export async function handleSystemBridgeMessage(
       try {
         let removed = false;
         if (normalizedScope === 'auth') {
-          removed = removeProviderAuth(providerId);
+          removed = await removeProviderAuth(providerId);
         } else if (normalizedScope === 'user' || normalizedScope === 'project' || normalizedScope === 'custom') {
           removed = removeProviderConfig(providerId, workingDirectory, normalizedScope);
         } else if (normalizedScope === 'all') {
-          const authRemoved = removeProviderAuth(providerId);
+          const authRemoved = await removeProviderAuth(providerId);
           const userRemoved = removeProviderConfig(providerId, workingDirectory, 'user');
           const projectRemoved = workingDirectory
             ? removeProviderConfig(providerId, workingDirectory, 'project')
@@ -460,7 +460,7 @@ export async function handleSystemBridgeMessage(
           return { id, type, success: false, error: 'Invalid scope' };
         }
 
-        if (removed) {
+        if (removed && normalizedScope !== 'auth') {
           await ctx?.manager?.restart();
         }
         return {
@@ -470,7 +470,7 @@ export async function handleSystemBridgeMessage(
           data: {
             success: true,
             removed,
-            requiresReload: removed,
+            requiresReload: removed && normalizedScope !== 'auth',
             message: removed
               ? `Provider ${providerId} disconnected successfully. Reloading interface…`
               : `Provider ${providerId} was not configured.`,
@@ -493,7 +493,7 @@ export async function handleSystemBridgeMessage(
           ? directory.trim()
           : ctx?.manager?.getWorkingDirectory();
         const sources = getProviderSources(providerId, workingDirectory);
-        const auth = getProviderAuth(providerId);
+        const auth = await getProviderAuth(providerId);
         sources.auth.exists = Boolean(auth);
         return { id, type, success: true, data: { providerId, sources } };
       } catch (error) {
@@ -504,7 +504,7 @@ export async function handleSystemBridgeMessage(
 
     case 'api:quota:providers': {
       try {
-        const providers = listConfiguredQuotaProviders();
+        const providers = await listConfiguredQuotaProviders();
         return { id, type, success: true, data: { providers } };
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : String(error);

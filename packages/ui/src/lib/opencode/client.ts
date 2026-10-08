@@ -528,6 +528,20 @@ class OpencodeService {
     return this.getScopedApiClient(directory);
   }
 
+  async checkLocationReleaseUse(directory: string, signal: AbortSignal): Promise<'free' | 'busy'> {
+    const client = this.getScopedSdkClient(directory);
+    const input = { location: { directory } };
+    const [shells, forms] = await Promise.all([
+      client.shell.list(input, { signal }),
+      client.form.list(input, { signal }),
+    ]);
+    return shells.data.some((shell) => shell.status === 'running') || forms.data.length > 0 ? 'busy' : 'free';
+  }
+
+  async releaseLocation(directory: string, signal: AbortSignal): Promise<void> {
+    await this.getScopedSdkClient(directory).debug.location.evict({ location: { directory } }, { signal });
+  }
+
   /**
    * Returns an SDK client scoped to a project directory.
    * Needed for worktree APIs where backend ignores per-call directory.

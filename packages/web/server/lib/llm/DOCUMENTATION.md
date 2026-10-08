@@ -39,8 +39,8 @@ call Anthropic/OpenAI/plugin SDKs, and does not use the `openai` npm package.
 `openchamber-text` agent (same temp root, same deny-all verification and
 `session.create` / `session.remove` lifecycle as the attachment path below):
 
-1. Ensure `.opencode/agent/openchamber-text.md` and verify its final
-   permission rule is deny-all before creating the session.
+1. Ensure `.opencode/agent/openchamber-text.md` and verify its last catch-all
+   permission rule is deny-all, with only deny rules after it, before creating the session.
 2. `session.create({ location, agent: 'openchamber-text', model, metadata })`.
 3. `session.generate({ sessionID, prompt })` → `{ text }`. One model call with
    the session's provider context, no tool loop, no messages written. System
@@ -62,8 +62,10 @@ data-URL file parts:
 
 1. Ensure the throwaway temp directory agent markdown (`openchamber-llm`,
    permissions array ending in `action:* resource:* effect:deny`).
-2. `agent.get({ agentID: 'openchamber-llm', location })` and require the **final**
-   permissions rule to be deny-all. Failure → `llm_attachment_generation_unavailable`
+2. `agent.get({ agentID: 'openchamber-llm', location })` and require the **last catch-all**
+   permissions rule to be deny-all, with only deny rules after it. This accepts
+   OpenCode's appended `browser` deny while rejecting trailing allow/ask rules.
+   Failure → `llm_attachment_generation_unavailable`
    **before** any `session.prompt`. Title is never treated as permission isolation.
 3. `session.create({ location, agent, model: { id, providerID, variant? },
    metadata: { openchamber: { llm: { purpose: 'chat-completions' } } } })`

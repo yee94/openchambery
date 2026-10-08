@@ -22,7 +22,7 @@ function catalogScope(key: QueryKey): { domain: Domain; directory: string | null
   if (key[2] === 'provider-connections') return { domain: 'providers', directory: normalize(key[3] as string | null) };
   if (key[1] === 'configCatalog' && key[2] === 'providers') return { domain: 'providers', directory: normalize(key[3] as string | null) };
   if (key[1] === 'providers') return { domain: 'providers', directory: normalize(key[2] as string | null) };
-  if (key[1] === 'agents') return { domain: 'agents', directory: key[2] === 'raw' ? null : normalize(key[2] as string | null) };
+  if (key[1] === 'agents') return { domain: 'agents', directory: normalize((key[2] === 'raw' ? key[3] : key[2]) as string | null) };
   if (key[1] === 'commands' || key[1] === 'skills') return { domain: key[1], directory: normalize(key[2] as string | null) };
   if (key[1] === 'mcp' || key[1] === 'plugins') return { domain: key[1], directory: normalize(key[3] as string | null) };
   if (key[1] === 'skillsCatalog') return { domain: 'skills', directory: normalize(key[3] as string | null) };

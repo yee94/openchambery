@@ -68,8 +68,8 @@ it('resolves an external worktree to its project, copies the branch, and opens G
   expect(host.textContent).toBe('Project labelfeature/topictopicChanges+8−3');
   expect(host.querySelectorAll('button')).toHaveLength(3);
   expect(host.querySelector('[title^="Worktree:"] use')?.getAttribute('href')).toBe('#oc-node-tree');
-  expect(host.querySelector('[title="Worktree"]')?.getAttribute('title')).toBe('Worktree');
-  expect(host.querySelector('[title="Current branch"]')?.getAttribute('title')).toBe('Current branch');
+  expect(host.querySelector('[title^="Worktree:"]')?.getAttribute('title')).toBe('Worktree: /trees/topic');
+  expect(host.querySelector('[title^="Current branch:"]')?.getAttribute('title')).toBe('Current branch: feature/topic');
   expect(host.querySelector('[aria-label="Copy Worktree Path"]')?.className).not.toContain('ml-auto');
   expect(host.querySelector('[aria-label="Copy branch name"]')?.className).toContain('oc-work-status-action');
   expect(host.querySelector('[aria-label="Copy Worktree Path"]')?.className).toContain('oc-work-status-action');
@@ -119,7 +119,7 @@ it('renders a collapsed agent disclosure with stacked faces and expandable statu
   });
   fixture.faces = fixture.faces.map((face) => ({ ...face, phase: 'done' }));
   await act(async () => root.render(<WorkStatusCompact sessionId="s" directory="/repo" />));
-  expect(disclosure?.textContent).toContain('0 working·4 done');
+  expect(disclosure?.textContent).toBe('4 done');
   expect(stack?.querySelectorAll('section')).toHaveLength(1);
   expect(stack?.querySelector('section')?.getAttribute('aria-label')).toBe('4 done');
   fixture.faces = [];

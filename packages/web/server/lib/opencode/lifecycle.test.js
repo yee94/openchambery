@@ -10,6 +10,8 @@ vi.mock('node:child_process', () => ({
 
 const { createOpenCodeLifecycleRuntime } = await import('./lifecycle.js');
 const { createOpenCodeNetworkRuntime } = await import('./network-runtime.js');
+const { resolveOpenCodeEnvConfig } = await import('./env-config.js');
+const { RUNTIME_CONTRACT_MIN_VERIFIED } = await import('./runtime-contract.js');
 
 const originalOpencodeBinary = process.env.OPENCODE_BINARY;
 const originalPath = process.env.PATH;
@@ -106,6 +108,7 @@ const createRuntime = (overrides = {}, stateRef = null) => {
     getManagedOpenCodeShellEnvSnapshot: vi.fn(() => ({
       PATH: '/home/user/.bun/bin:/usr/local/bin:/usr/bin',
       SHELL_ONLY: 'yes',
+      OPENCODE_PASSWORD: 'shell-v2-password',
       OPENCODE_SERVER_PASSWORD: 'shell-password',
     })),
     ...overrides,
@@ -160,6 +163,28 @@ const startListeningChild = () => {
 };
 
 describe('OpenCode lifecycle', () => {
+  it.each(['http://example.test:80', 'https://example.test:443', 'http://[::1]:80'])('attaches explicit default-port host %s without spawning', async (host) => {
+    const config = resolveOpenCodeEnvConfig({ env: { OPENCODE_HOST: host, OPENCODE_PORT: '9999' } });
+    const stateRef = {};
+    const runtime = createRuntime({
+      env: {
+        ENV_CONFIGURED_OPENCODE_PORT: config.configuredOpenCodePort,
+        ENV_CONFIGURED_OPENCODE_HOST: config.configuredOpenCodeHost,
+        ENV_EFFECTIVE_PORT: config.effectivePort,
+        ENV_CONFIGURED_OPENCODE_HOSTNAME: '127.0.0.1',
+        ENV_SKIP_OPENCODE_START: true,
+      },
+      buildOpenCodeUrl: (route) => new URL(route, config.configuredOpenCodeHost.origin).href,
+    }, stateRef);
+    const fetchMock = stubOpenCodeFetch({ health: { ...DEFAULT_V2_HEALTH, version: '2.0.23' } });
+    await runtime.bootstrapOpenCodeAtStartup();
+    await runtime.waitForOpenCodeReady(1000, 1);
+    expect(stateRef.current.isExternalOpenCode).toBe(true);
+    expect(stateRef.current.openCodePort).toBe(config.effectivePort);
+    expect(fetchMock.mock.calls.some(([url]) => String(url) === `${config.configuredOpenCodeHost.origin}/api/info`)).toBe(true);
+    expect(spawnMock).not.toHaveBeenCalled();
+  });
+
   it('launches managed OpenCode with the managed PATH', async () => {
     delete process.env.OPENCODE_BINARY;
     const child = createMockChild();
@@ -179,6 +204,7 @@ describe('OpenCode lifecycle', () => {
     expect(options.env.PATH).toBe('/home/user/.bun/bin:/usr/local/bin:/usr/bin');
     expect(options.env.SHELL_ONLY).toBe('yes');
     expect(options.env.OPENCODE_SERVER_PASSWORD).toBe('password');
+    expect(options.env.OPENCODE_PASSWORD).toBe('password');
 
     await server.close();
   });
@@ -847,7 +873,7 @@ describe('OpenCode lifecycle', () => {
     stateRef.current.runtimeContract = {
       executionAllowed: true,
       phase: 'ready',
-      serveVersion: '2.0.12',
+      serveVersion: RUNTIME_CONTRACT_MIN_VERIFIED,
       instanceGeneration: 1,
     };
 
@@ -861,7 +887,7 @@ describe('OpenCode lifecycle', () => {
     runtime.refreshRuntimeContractFromProbe(
       {
         ok: true,
-        version: '2.0.12',
+        version: RUNTIME_CONTRACT_MIN_VERIFIED,
         authenticated: true,
         healthOk: true,
       },
@@ -875,7 +901,7 @@ describe('OpenCode lifecycle', () => {
     runtime.refreshRuntimeContractFromProbe(
       {
         ok: true,
-        version: '2.0.12',
+        version: RUNTIME_CONTRACT_MIN_VERIFIED,
         authenticated: true,
         healthOk: true,
       },
@@ -884,7 +910,7 @@ describe('OpenCode lifecycle', () => {
     );
     expect(stateRef.current.runtimeContract.executionAllowed).toBe(true);
     expect(stateRef.current.runtimeContract.instanceGeneration).toBe(2);
-    expect(stateRef.current.runtimeContract.serveVersion).toBe('2.0.12');
+    expect(stateRef.current.runtimeContract.serveVersion).toBe(RUNTIME_CONTRACT_MIN_VERIFIED);
   });
 
   it('does not mark external skip-start ready before version and migration admit', async () => {

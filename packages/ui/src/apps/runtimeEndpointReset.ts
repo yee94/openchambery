@@ -66,6 +66,9 @@ export const resetAppForRuntimeEndpointChange = (detail: RuntimeEndpointChangedD
   }
   disposeTerminalInputTransport();
   opencodeClient.reconnectToRuntimeBaseUrl();
+  // Reset projections without overwriting the new runtime's saved selections.
+  const configStorage = useConfigStore.persist.getOptions().storage;
+  useConfigStore.persist.setOptions({ storage: { getItem: () => null, setItem: () => {}, removeItem: () => {} } });
   useConfigStore.setState({
     // Must match getRuntimeTransportIdentity(), not runtimeKey. runtimeKey is the
     // stable device/instance id (shared across LAN and relay); loadProviders /
@@ -90,11 +93,16 @@ export const resetAppForRuntimeEndpointChange = (detail: RuntimeEndpointChangedD
     opencodeDefaultAgent: undefined,
     opencodeDefaultModel: undefined,
     selectionSource: 'auto',
+    settingsDefaultModel: undefined,
+    settingsDefaultVariant: undefined,
+    settingsDefaultAgent: undefined,
     isConnected: false,
     isInitialized: false,
     connectionPhase: 'connecting',
     lastDisconnectReason: null,
   });
+  useConfigStore.persist.setOptions({ storage: configStorage });
+  void useConfigStore.persist.rehydrate();
   useProjectsStore.getState().resetForRuntimeSwitch();
   // Cross-project session list (mobile sessions sheet & co) belongs to the
   // previous instance — drop it so stale sessions can't linger after a switch.

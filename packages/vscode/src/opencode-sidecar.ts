@@ -281,7 +281,7 @@ export type OpenCodeHealthResult = {
 // Keep health + execution admission aligned with web opencode2-pin.js /
 // runtime-contract.js (ticket 11). Sidecar must not treat any 2.x health as
 // full execution; only the verified band opens core protocol writes.
-export const RUNTIME_CONTRACT_MIN_VERIFIED = '2.0.12';
+export const RUNTIME_CONTRACT_MIN_VERIFIED = '2.0.20';
 
 export function isOpenCode1xVersion(value: unknown): boolean {
   if (typeof value !== 'string') return false;

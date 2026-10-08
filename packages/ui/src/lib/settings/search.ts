@@ -798,18 +798,6 @@ const SETTINGS_SEARCH_ITEMS: readonly SettingsSearchItem[] = [
     keywords: ['file', 'code'],
   },
   {
-    id: 'snippets.create',
-    page: 'snippets',
-    titleKey: 'settings.snippets.sidebar.actions.create',
-    keywords: ['add', 'new snippet'],
-  },
-  {
-    id: 'snippets.content',
-    page: 'snippets',
-    titleKey: 'settings.snippets.page.field.content',
-    keywords: ['markdown', 'prompt', 'template'],
-  },
-  {
     id: 'providers.connect',
     page: 'providers',
     titleKey: 'settings.providers.page.connect.title',

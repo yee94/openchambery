@@ -1,4 +1,5 @@
 import type { BridgeContext, BridgeResponse } from './bridge';
+import { isSensitiveCredentialResponse } from '../../web/server/lib/opencode/credential-boundary.js';
 import {
   isOpenCodeExecutionPermitted,
   resolveConnectedApiUrl,
@@ -251,6 +252,9 @@ export async function handleProxyBridgeMessage(
           : `/${requestPath.trim()}`
           : '/';
 
+      if (isSensitiveCredentialResponse(normalizedMethod, ensureOpenCodeApiUpstreamPath(normalizedPath))) {
+        return { id, type, success: true, data: { status: 403, headers: { 'content-type': 'application/json' }, bodyText: JSON.stringify({ code: 'credential_response_refused', error: 'Provider credential values are host-only.' }) } };
+      }
       if (isSseProxyPath(normalizedPath)) {
         const data: ApiProxyResponsePayload = {
           status: 400,

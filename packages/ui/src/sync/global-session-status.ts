@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import type { Event } from '@/sync/types'
 
 import { normalizeProjectPath } from '@/lib/projectResolution';
+import { getRuntimeGeneration, getRuntimeTransportIdentity } from '@/lib/runtime-switch';
 
 // Live busy/retry status for sessions in directories WITHOUT a synced child
 // store. The global event stream (`/api/global/event/ws`) carries status
@@ -15,6 +16,11 @@ import { normalizeProjectPath } from '@/lib/projectResolution';
 // that directory's slice (the server omits idle sessions from snapshots).
 
 type ActiveStatusType = 'busy' | 'retry';
+let eventRuntime = '';
+const eventClocks = new Map<string, number>();
+const eventSequences = new Map<string, number>();
+const statusEvents = new Set(['session.status', 'session.idle', 'session.error', 'session.step.started',
+  'session.execution.started', 'session.execution.succeeded', 'session.execution.failed', 'session.execution.interrupted']);
 
 type GlobalSessionStatusEntry = { status: ActiveStatusType; directory: string };
 
@@ -62,7 +68,26 @@ export const applyGlobalSessionStatusEvent = (
   directory: string,
   payload: Event,
 ): void => {
+  if (statusEvents.has(payload.type)) {
+    const runtime = `${getRuntimeTransportIdentity()}:${getRuntimeGeneration()}`;
+    if (eventRuntime !== runtime) { eventRuntime = runtime; eventClocks.clear(); eventSequences.clear(); }
+    const props = payload.properties as { sessionID?: string; eventCreated?: number; eventSequence?: number };
+    if (props.sessionID && typeof props.eventSequence === 'number') {
+      if (props.eventSequence <= (eventSequences.get(props.sessionID) ?? -1)) return;
+      eventSequences.set(props.sessionID, props.eventSequence);
+    }
+    if (props.sessionID && typeof props.eventCreated === 'number') {
+      if (props.eventSequence === undefined && props.eventCreated < (eventClocks.get(props.sessionID) ?? 0)) return;
+      eventClocks.set(props.sessionID, props.eventCreated);
+    }
+  }
   switch (payload.type) {
+    case 'session.moved': {
+      const props = payload.properties as { sessionID?: string; location?: { directory?: string } };
+      const entry = props.sessionID ? useGlobalSessionStatusStore.getState().statusById.get(props.sessionID) : undefined;
+      if (entry && props.sessionID && props.location?.directory) setStatus(props.sessionID, normalizeDirectory(props.location.directory), entry.status);
+      return;
+    }
     case 'session.status': {
       const props = payload.properties as { sessionID?: string; status?: { type?: string } } | undefined;
       if (typeof props?.sessionID !== 'string' || !props.sessionID) return;
@@ -91,6 +116,7 @@ export const applyGlobalSessionStatusEvent = (
       setStatus(props.sessionID, normalizeDirectory(directory), 'idle');
       return;
     }
+    case 'session.step.started':
     case 'session.execution.started': {
       const props = payload.properties as { sessionID?: string } | undefined;
       if (typeof props?.sessionID === 'string' && props.sessionID) {

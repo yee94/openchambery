@@ -13,6 +13,7 @@
  */
 
 import { create } from "zustand"
+import { movedSessionDirectory } from './session-location-authority'
 import type { Session, Part, Message, TextPart } from '@/lib/opencode/v2-types'
 
 import type { AttachedFile, SessionContextUsage, SessionWorktreeAttachment } from "@/stores/types/sessionTypes"
@@ -512,7 +513,7 @@ export type NewSessionDraftState = {
   draftSubmitting?: boolean
   /**
    * UI-only prelude before claimDraftSubmission: ChatInput paints the
-   * establishing page while it still awaits response-style / snippet prep.
+   * establishing page while it still awaits response-style prep.
    * Cleared when the real claim takes over or the send aborts.
    */
   draftEstablishing?: boolean
@@ -862,7 +863,7 @@ const isCurrentClaimDraft = (draft: NewSessionDraftState, claim: DraftSubmission
 
 /**
  * Paint the full-screen "establishing conversation" page before ChatInput's
- * network preamble (response-style fetch / snippet expand). Does not claim
+ * network preamble (response-style fetch). Does not claim
  * submission — claimDraftSubmission still owns idempotency.
  */
 export async function beginDraftEstablishingPaint(input?: {
@@ -2740,6 +2741,8 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
   },
 
   getDirectoryForSession: (sessionId) => {
+    const movedDirectory = movedSessionDirectory(sessionId)
+    if (movedDirectory) return movedDirectory
     if (sessionId === get().currentSessionId && get().currentSessionDirectory) {
       return get().currentSessionDirectory
     }

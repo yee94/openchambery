@@ -30,8 +30,8 @@ function getProviderSources(providerId, workingDirectory) {
   return {
     sources: {
       auth: { exists: false },
-      user: { exists: userExists, path: paths.userPath },
-      project: { exists: projectExists, path: paths.projectPath || null },
+      user: { exists: userExists, path: layers.userLayers.findLast((layer) => layer.config?.provider?.[providerId] !== undefined || layer.config?.providers?.[providerId] !== undefined)?.path || paths.userPath },
+      project: { exists: projectExists, path: layers.projectLayers.findLast((layer) => layer.config?.provider?.[providerId] !== undefined || layer.config?.providers?.[providerId] !== undefined)?.path || paths.projectPath || null },
       custom: { exists: customExists, path: paths.customPath }
     }
   };
@@ -44,17 +44,20 @@ function removeProviderConfig(providerId, workingDirectory, scope = 'user') {
 
   const layers = readConfigLayers(workingDirectory);
   let targetPath = layers.paths.userPath;
+  const sources = getProviderSources(providerId, workingDirectory).sources;
 
   if (scope === 'project') {
     if (!workingDirectory) {
       throw new Error('Working directory is required for project scope');
     }
-    targetPath = layers.paths.projectPath || targetPath;
+    targetPath = sources.project.path || targetPath;
   } else if (scope === 'custom') {
     if (!layers.paths.customPath) {
       return false;
     }
     targetPath = layers.paths.customPath;
+  } else {
+    targetPath = sources.user.path;
   }
 
   const targetConfig = getConfigForPath(layers, targetPath);

@@ -15,11 +15,8 @@ export const compatibilityFromDebugInfo = (
   options: { platformCanInstall?: boolean; readBinaryVersion?: (binaryPath: string) => string } = {},
 ) => {
   const installation = info?.mode === 'external' ? 'external' : 'managed';
-  const cliVersion = info?.cliPath && options.readBinaryVersion
-    ? options.readBinaryVersion(info.cliPath)
-    : null;
   return describeUpgradeScreen({
-    version: info?.version || cliVersion || null,
+    version: info?.version || null,
     installation,
     platformCanInstall: options.platformCanInstall ?? platformSupportsUpgradeScreenInstall(),
     guidance: installation === 'external' ? externalGuidance : null,

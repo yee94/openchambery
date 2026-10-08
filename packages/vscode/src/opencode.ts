@@ -51,7 +51,7 @@ type OpenCodeDebugInfo = {
   version: string | null;
   v1Migration: V1MigrationGateResult | null;
   secureConnection: boolean;
-  authSource: 'user-env' | 'generated' | 'rotated' | null;
+  authSource: 'user-env' | 'generated' | 'rotated' | 'shared-service' | null;
 };
 
 type SetWorkingDirectoryResult =
@@ -81,8 +81,8 @@ function generateSecureOpenCodePassword(): string {
     .replace(/=+$/g, '');
 }
 
-function buildOpenCodeAuthHeader(password: string): string {
-  const username = process.env.OPENCODE_SERVER_USERNAME?.trim() || 'opencode';
+function buildOpenCodeAuthHeader(password: string, sharedService = false): string {
+  const username = sharedService ? 'opencode' : process.env.OPENCODE_SERVER_USERNAME?.trim() || 'opencode';
   return `Basic ${Buffer.from(`${username}:${password}`, 'utf8').toString('base64')}`;
 }
 
@@ -613,16 +613,32 @@ async function waitForReady(
   };
 }
 
+function readOpenCodeServicePassword(apiUrl: string): string | null | undefined {
+  try {
+    const stateHome = process.env.XDG_STATE_HOME?.trim() || path.join(os.homedir(), '.local', 'state');
+    const registration = JSON.parse(fs.readFileSync(path.join(stateHome, 'opencode', 'service.json'), 'utf8'));
+    const target = new URL(apiUrl);
+    const service = new URL(registration.url);
+    // Only the exact registered origin may receive the service's credential.
+    if (!['http:', 'https:'].includes(target.protocol) || target.origin !== service.origin
+      || target.username || target.password || target.pathname !== '/' || target.search || target.hash) return undefined;
+    return typeof registration.password === 'string' && registration.password.trim() ? registration.password.trim() : null;
+  } catch {
+    return undefined;
+  }
+}
+
 async function spawnManagedOpenCodeServer(
   workingDirectory: string,
   port: number,
-  timeoutMs: number
+  timeoutMs: number,
+  password: string
 ): Promise<{ url: string; close: () => void }> {
   const binary = stripWrappingQuotes(process.env.OPENCODE_BINARY || 'opencode') || 'opencode';
   const launch = resolveWindowsLaunchSpec(binary, ['serve', '--hostname', '127.0.0.1', '--port', String(port)]);
   const child = spawn(launch.binary, launch.args, {
     cwd: workingDirectory,
-    env: { ...process.env },
+    env: { ...process.env, OPENCODE_PASSWORD: password, OPENCODE_SERVER_PASSWORD: password },
     stdio: ['ignore', 'pipe', 'pipe'],
     windowsHide: true,
   });
@@ -737,8 +753,9 @@ export function createOpenCodeManager(context: vscode.ExtensionContext): OpenCod
   let managedApiUrlOverride: string | null = null;
   let managedPassword: string | null = null;
   let managedPasswordSource: 'user-env' | 'generated' | 'rotated' | null = null;
+  let servicePassword: string | null | undefined;
   const userProvidedEnvPassword = (() => {
-    const normalized = (process.env.OPENCODE_SERVER_PASSWORD || '').trim();
+    const normalized = process.env.OPENCODE_PASSWORD?.trim() || process.env.OPENCODE_SERVER_PASSWORD?.trim() || '';
     return isValidOpenCodePassword(normalized) ? normalized : null;
   })();
   let status: ConnectionStatus = 'disconnected';
@@ -817,11 +834,11 @@ export function createOpenCodeManager(context: vscode.ExtensionContext): OpenCod
   };
 
   const getOpenCodeAuthHeaders = (): Record<string, string> => {
-    const password = (managedPassword || userProvidedEnvPassword || process.env.OPENCODE_SERVER_PASSWORD || '').trim();
+    const password = (servicePassword !== undefined ? servicePassword || '' : managedPassword || userProvidedEnvPassword || '').trim();
     if (!password) {
       return {};
     }
-    return { Authorization: buildOpenCodeAuthHeader(password) };
+    return { Authorization: buildOpenCodeAuthHeader(password, servicePassword !== undefined) };
   };
 
   const setManagedPasswordState = (
@@ -871,6 +888,7 @@ export function createOpenCodeManager(context: vscode.ExtensionContext): OpenCod
 
     if (useConfiguredUrl && configuredApiUrl) {
       setStatus('connecting');
+      servicePassword = readOpenCodeServicePassword(configuredApiUrl);
       cancelReadyWait();
       readyAbortController = new AbortController();
       const ready = await waitForReady(
@@ -953,7 +971,7 @@ export function createOpenCodeManager(context: vscode.ExtensionContext): OpenCod
         fs.mkdirSync(serverCwd, { recursive: true });
         process.chdir(serverCwd);
         const port = await allocateManagedOpenCodePort();
-        server = await spawnManagedOpenCodeServer(serverCwd, port, READY_CHECK_TIMEOUT_MS);
+        server = await spawnManagedOpenCodeServer(serverCwd, port, READY_CHECK_TIMEOUT_MS, password);
       } finally {
         try {
           process.chdir(originalCwd);
@@ -1195,7 +1213,7 @@ export function createOpenCodeManager(context: vscode.ExtensionContext): OpenCod
         version,
         v1Migration,
         secureConnection,
-        authSource: managedPasswordSource || (userProvidedEnvPassword ? 'user-env' : null),
+        authSource: servicePassword !== undefined ? 'shared-service' : managedPasswordSource || (userProvidedEnvPassword ? 'user-env' : null),
       };
     },
     onStatusChange(callback) {

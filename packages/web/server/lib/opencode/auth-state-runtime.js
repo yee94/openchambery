@@ -31,7 +31,7 @@ export const createOpenCodeAuthStateRuntime = (dependencies) => {
     const normalized = normalizeOpenCodePassword(password);
     if (!isValidOpenCodePassword(normalized)) {
       setAuthPassword(null);
-      setAuthSource(null);
+      setAuthSource(source || null);
       delete process.env.OPENCODE_SERVER_PASSWORD;
       syncToHmrState();
       return null;
@@ -45,13 +45,13 @@ export const createOpenCodeAuthStateRuntime = (dependencies) => {
   };
 
   const getOpenCodeAuthHeaders = () => {
-    const password = normalizeOpenCodePassword(getAuthPassword() || process.env.OPENCODE_SERVER_PASSWORD || '');
+    const password = normalizeOpenCodePassword(getAuthPassword() || '');
 
     if (!password) {
       return {};
     }
 
-    const username = process.env.OPENCODE_SERVER_USERNAME?.trim() || 'opencode';
+    const username = getAuthSource() === 'shared-service' ? 'opencode' : process.env.OPENCODE_SERVER_USERNAME?.trim() || 'opencode';
     const credentials = Buffer.from(`${username}:${password}`).toString('base64');
     return { Authorization: `Basic ${credentials}` };
   };

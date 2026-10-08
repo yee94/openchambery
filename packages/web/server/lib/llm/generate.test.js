@@ -127,8 +127,16 @@ function textSessionClient({ generate = vi.fn(async () => ({ text: 'reply' })), 
 }
 
 describe('generateOpenCodeText — text path', () => {
-  it('runs session.generate in a verified deny-all throwaway session and removes it', async () => {
-    const { client, agentGet, create, generate, remove, prompt } = textSessionClient()
+  it.each([
+    { name: 'deny-all alone', suffix: [] },
+    { name: 'appended browser deny', suffix: [{ action: 'browser', resource: '*', effect: 'deny' }] },
+  ])('runs session.generate in a verified throwaway session ($name) and removes it', async ({ suffix }) => {
+    const { client, agentGet, create, generate, remove, prompt } = textSessionClient({
+      agentGet: vi.fn(async () => ({
+        ...denyAllTextAgent,
+        data: { ...denyAllTextAgent.data, permissions: [...denyAllTextAgent.data.permissions, ...suffix] },
+      })),
+    })
     const ensureTempDirectory = vi.fn(async ({ agentName, agentMarkdown }) => {
       expect(agentName).toBe(_test.TEXT_AGENT_NAME)
       expect(agentMarkdown).toBe(_test.TEXT_AGENT_MARKDOWN)
@@ -188,10 +196,23 @@ describe('generateOpenCodeText — text path', () => {
     }
   })
 
-  it('blocks before creating a session when the text agent is not deny-all', async () => {
+  it.each([
+    { name: 'no catch-all', permissions: [{ action: 'browser', resource: '*', effect: 'deny' }] },
+    ...['allow', 'ask'].flatMap((effect) => ['*', 'edit'].map((action) => ({
+      name: `trailing ${action} ${effect} before browser deny`,
+      permissions: [
+        ...denyAllTextAgent.data.permissions,
+        { action, resource: '*', effect },
+        { action: 'browser', resource: '*', effect: 'deny' },
+      ],
+    }))),
+    { name: 'missing permissions', permissions: undefined },
+    { name: 'empty permissions', permissions: [] },
+    { name: 'invalid trailing rule', permissions: [...denyAllTextAgent.data.permissions, null] },
+  ])('blocks before creating a session: $name', async ({ permissions }) => {
     const { client, create, generate } = textSessionClient({
       agentGet: vi.fn(async () => ({
-        data: { id: 'openchamber-text', permissions: [{ action: 'bash', resource: '*', effect: 'allow' }] },
+        data: { id: 'openchamber-text', permissions },
       })),
     })
     await expect(generateOpenCodeText({
@@ -316,8 +337,14 @@ describe('generateOpenCodeText — text path', () => {
 })
 
 describe('generateOpenCodeText — attachment session path', () => {
-  it('verifies deny-all before prompt, prompts with files, waits, lists, and removes', async () => {
-    const agentGet = vi.fn(async () => denyAllAgent)
+  it.each([
+    { name: 'deny-all alone', suffix: [] },
+    { name: 'appended browser deny', suffix: [{ action: 'browser', resource: '*', effect: 'deny' }] },
+  ])('verifies deny-all ($name) before prompt, prompts with files, waits, lists, and removes', async ({ suffix }) => {
+    const agentGet = vi.fn(async () => ({
+      ...denyAllAgent,
+      data: { ...denyAllAgent.data, permissions: [...denyAllAgent.data.permissions, ...suffix] },
+    }))
     const create = vi.fn(async () => ({ id: 'ses_tmp' }))
     const put = vi.fn(async () => undefined)
     const prompt = vi.fn(async () => ({ id: 'inbox_1', type: 'user' }))

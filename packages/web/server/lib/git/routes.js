@@ -1,4 +1,4 @@
-export function registerGitRoutes(app, { messageQueueService = null, createRequestID = () => globalThis.crypto.randomUUID(), broadcastWorktreeTopologyChanged = () => {} } = {}) {
+export function registerGitRoutes(app, { messageQueueService = null, createRequestID = () => globalThis.crypto.randomUUID(), broadcastWorktreeTopologyChanged = () => {}, releaseWorktreeLocation } = {}) {
   const normalizeWorktreePath = (value) => typeof value === 'string' ? value.trim().replace(/\\/g, '/').replace(/\/+$/, '') : '';
   const lifecycleOperations = new Map();
   const acquireWorktreeLifecycleOperation = (runtimeKey, directory) => {
@@ -1282,11 +1282,14 @@ export function registerGitRoutes(app, { messageQueueService = null, createReque
         }
 
         let result;
+        let locationRelease;
         try {
           result = await removeWorktree(directory, {
             directory: worktreeDirectory,
             deleteLocalBranch: req.body?.deleteLocalBranch === true,
-          });
+          }, ...(releaseWorktreeLocation ? [{ beforeRemove: async (target) => {
+            locationRelease = await releaseWorktreeLocation(target);
+          } }] : []));
         } catch (error) {
           if (messageQueueService) {
             try {
@@ -1328,7 +1331,7 @@ export function registerGitRoutes(app, { messageQueueService = null, createReque
               console.warn('Failed to roll back message queue worktree deletion');
             }
           }
-          return res.json({ success: false });
+          return res.json({ success: false, ...(locationRelease ? { locationRelease } : {}) });
         }
 
         notifyWorktreeTopologyChanged(directory, worktreeDirectory, 'removed');
@@ -1346,7 +1349,7 @@ export function registerGitRoutes(app, { messageQueueService = null, createReque
             return res.status(500).json({ error: 'Failed to commit worktree queue deletion' });
           }
         }
-        res.json({ success: true });
+        res.json({ success: true, ...(locationRelease ? { locationRelease } : {}) });
       } finally {
         releaseWorktreeLifecycleOperation(operation);
       }

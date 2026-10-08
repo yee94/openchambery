@@ -37,7 +37,9 @@ it('uses the transcript column and a quiet full-width row for long errors', asyn
   expect(alert?.classList.contains('w-full')).toBe(true);
   expect(alert?.classList.contains('border')).toBe(false);
   expect(alert?.classList.contains('rounded-lg')).toBe(false);
-  expect(alert?.querySelector('span.flex-1')?.classList.contains('[overflow-wrap:anywhere]')).toBe(true);
+  expect(alert?.querySelector('span.flex-1')?.classList.contains('truncate')).toBe(true);
+  expect(alert?.querySelector('span.flex-1')?.getAttribute('title')).toContain(message);
+  expect(alert?.querySelector('span.block')).toBeNull();
   expect(alert?.textContent).toContain(message);
 });
 it('clears the error when authoritative activity clears error_at', async () => {

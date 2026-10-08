@@ -16,7 +16,7 @@ on hover. Project, branch, worktree, and changes consume the shared `folder`,
 All four status-column icons use medium stroke without extra opacity reduction. Context usage, MCP,
 and skills are not shown here. Subagents use a collapsed disclosure row matching
 the chat activity header: up to three tightly stacked `AgentAvatar` faces, a
-localized working and completed counts (including zero), and a chevron. Expanding
+localized nonzero working and completed counts, and a chevron. Expanding
 groups agents by state, working first, omitting empty groups. Group headings show
 their counts; spaced, borderless agent rows do not repeat the status. Rows with an authoritative
 child session ID open that session in the context panel; unresolved rows remain

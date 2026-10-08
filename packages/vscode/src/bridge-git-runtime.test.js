@@ -1,6 +1,7 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const gitService = vi.hoisted(() => ({
+  removeWorktree: vi.fn(),
   stageGitFiles: vi.fn(),
   unstageGitFiles: vi.fn(),
   checkoutCommit: vi.fn(),
@@ -16,6 +17,35 @@ const gitService = vi.hoisted(() => ({
 vi.mock('./gitService', () => gitService);
 
 const { handleStandardGitBridgeMessage } = await import('./bridge-git-runtime');
+
+describe('worktree deletion resource release', () => {
+  afterEach(() => vi.unstubAllGlobals());
+  const message = { id: 'delete', type: 'api:git/worktrees', payload: { directory: '/repo', method: 'DELETE', body: { directory: '/repo/worktree' } } };
+  it('uses host URL/auth and continues after release failure', async () => {
+    const requests = [];
+    vi.stubGlobal('fetch', async (input, init) => {
+      requests.push(new Request(input, init));
+      return new Response('{}', { status: 503 });
+    });
+    gitService.removeWorktree.mockImplementation(async (_root, _input, options) => {
+      await options.beforeRemove('/repo/worktree');
+      return true;
+    });
+    const result = await handleStandardGitBridgeMessage(message, { manager: {
+      getApiUrl: () => 'https://host.invalid', getOpenCodeAuthHeaders: () => ({ Authorization: 'test-host-auth' }),
+    } });
+    expect(result.data).toEqual({ success: true, locationRelease: { state: 'failed' } });
+    expect(requests[0].headers.get('Authorization')).toBe('test-host-auth');
+    expect(new URL(requests[0].url).searchParams.get('location[directory]')).toBe('/repo/worktree');
+  });
+  it('does not report removal success after a Git failure', async () => {
+    gitService.removeWorktree.mockImplementation(async (_root, _input, options) => {
+      await options.beforeRemove('/repo/worktree');
+      throw new Error('file still occupied');
+    });
+    await expect(handleStandardGitBridgeMessage(message)).rejects.toThrow('file still occupied');
+  });
+});
 
 describe('bridge git runtime index mutations', () => {
   beforeEach(() => {

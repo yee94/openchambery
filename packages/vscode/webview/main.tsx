@@ -1,7 +1,7 @@
 import { createVSCodeAPIs } from './api';
 import { onCommand, onThemeChange, proxyApiRequest, proxySessionMessageRequest, sendBridgeMessage, startSseProxy, stopSseProxy } from './api/bridge';
 import { vscodeStreamPerfCount, vscodeStreamPerfMeasure, vscodeStreamPerfObserve } from './api/streamPerf';
-import { extractBodyBase64, extractBodyText, extractJsonBody, hasInitBody } from './requestBodyTransport';
+import { extractBodyBase64, extractBodyText, extractJsonBody } from './requestBodyTransport';
 import { isMessageQueueRoute } from './messageQueueRoute';
 import { browserProviderUnsupportedBody, isBrowserProviderRoute } from './browserProviderRoute';
 import {
@@ -742,46 +742,6 @@ const handleLocalApiRequest = async (input: RequestInfo | URL, url: URL, init: R
     const directory = getRequestDirectoryHint(url, input, init);
     try {
       const data = await sendBridgeMessage('api:config/mcp', { method: verb, name, body, directory });
-      return new Response(JSON.stringify(data), { status: 200, headers: { 'Content-Type': 'application/json' } });
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      return new Response(JSON.stringify({ error: message }), { status: 500, headers: { 'Content-Type': 'application/json' } });
-    }
-  }
-
-  if (pathname === '/api/config/snippets') {
-    const verb = method;
-    const directory = getRequestDirectoryHint(url, input, init);
-    try {
-      const data = await sendBridgeMessage('api:config/snippets', { method: verb, directory });
-      return new Response(JSON.stringify(data), { status: 200, headers: { 'Content-Type': 'application/json' } });
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      return new Response(JSON.stringify({ error: message }), { status: 500, headers: { 'Content-Type': 'application/json' } });
-    }
-  }
-
-  if (pathname === '/api/config/snippets/expand') {
-    const verb = method === 'GET' && !hasInitBody(init) && !(input instanceof Request) ? 'POST' : method;
-    const body = await extractJsonBody(input, init, method);
-    const directory = getRequestDirectoryHint(url, input, init);
-    try {
-      const data = await sendBridgeMessage('api:config/snippets', { method: verb, body, directory });
-      return new Response(JSON.stringify(data), { status: 200, headers: { 'Content-Type': 'application/json' } });
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      return new Response(JSON.stringify({ error: message }), { status: 500, headers: { 'Content-Type': 'application/json' } });
-    }
-  }
-
-  if (pathname.startsWith('/api/config/snippets/')) {
-    const encodedName = pathname.slice('/api/config/snippets/'.length);
-    const name = decodeURIComponent(encodedName);
-    const verb = method;
-    const body = await extractJsonBody(input, init, method);
-    const directory = getRequestDirectoryHint(url, input, init);
-    try {
-      const data = await sendBridgeMessage('api:config/snippets', { method: verb, name, body, directory });
       return new Response(JSON.stringify(data), { status: 200, headers: { 'Content-Type': 'application/json' } });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);

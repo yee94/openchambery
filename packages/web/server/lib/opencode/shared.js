@@ -2,18 +2,18 @@ import fs from 'fs';
 import path from 'path';
 import os from 'os';
 import yaml from 'yaml';
-import { parse as parseJsonc } from 'jsonc-parser';
+import {
+  getGlobalConfigDirectory, readConfigFile, isPlainObject, readConfigLayers,
+  readConfig, getConfigForPath, writeConfig, getJsonEntrySource, getJsonWriteTarget,
+} from './config-files.js';
 
 // ============== PATH CONSTANTS ==============
 
-const OPENCODE_CONFIG_DIR = path.join(os.homedir(), '.config', 'opencode');
+const OPENCODE_CONFIG_DIR = getGlobalConfigDirectory();
 const AGENT_DIR = path.join(OPENCODE_CONFIG_DIR, 'agents');
 const COMMAND_DIR = path.join(OPENCODE_CONFIG_DIR, 'commands');
 const SKILL_DIR = path.join(OPENCODE_CONFIG_DIR, 'skills');
-const CONFIG_FILE = path.join(OPENCODE_CONFIG_DIR, 'config.json');
-const CUSTOM_CONFIG_FILE = process.env.OPENCODE_CONFIG
-  ? path.resolve(process.env.OPENCODE_CONFIG)
-  : null;
+const CONFIG_FILE = path.join(OPENCODE_CONFIG_DIR, 'opencode.jsonc');
 const PROMPT_FILE_PATTERN = /^\{file:(.+)\}$/i;
 
 // ============== SCOPE TYPE CONSTANTS ==============
@@ -88,175 +88,6 @@ function writeMdFile(filePath, frontmatter, body) {
 }
 
 // ============== CONFIG FILE OPERATIONS ==============
-
-function getProjectConfigCandidates(workingDirectory) {
-  if (!workingDirectory) return [];
-  return [
-    path.join(workingDirectory, 'opencode.json'),
-    path.join(workingDirectory, 'opencode.jsonc'),
-    path.join(workingDirectory, '.opencode', 'opencode.json'),
-    path.join(workingDirectory, '.opencode', 'opencode.jsonc'),
-  ];
-}
-
-function getProjectConfigPath(workingDirectory) {
-  if (!workingDirectory) return null;
-
-  const candidates = getProjectConfigCandidates(workingDirectory);
-
-  for (const candidate of candidates) {
-    if (fs.existsSync(candidate)) {
-      return candidate;
-    }
-  }
-
-  return candidates[0];
-}
-
-function getConfigPaths(workingDirectory) {
-  return {
-    userPaths: [
-      path.join(OPENCODE_CONFIG_DIR, 'config.json'),
-      path.join(OPENCODE_CONFIG_DIR, 'opencode.json'),
-      path.join(OPENCODE_CONFIG_DIR, 'opencode.jsonc'),
-    ],
-    projectPath: getProjectConfigPath(workingDirectory),
-    customPath: CUSTOM_CONFIG_FILE
-  };
-}
-
-function getPrimaryUserConfigPath(userPaths) {
-  for (const userPath of userPaths) {
-    if (fs.existsSync(userPath)) {
-      return userPath;
-    }
-  }
-
-  return CONFIG_FILE;
-}
-
-function readConfigFile(filePath) {
-  if (!filePath || !fs.existsSync(filePath)) {
-    return {};
-  }
-  try {
-    const content = fs.readFileSync(filePath, 'utf8');
-    const normalized = content.trim();
-    if (!normalized) {
-      return {};
-    }
-    return parseJsonc(normalized, [], { allowTrailingComma: true });
-  } catch (error) {
-    console.error(`Failed to read config file: ${filePath}`, error);
-    throw new Error('Failed to read OpenCode configuration');
-  }
-}
-
-function isPlainObject(value) {
-  return value && typeof value === 'object' && !Array.isArray(value);
-}
-
-function mergeConfigs(base, override) {
-  if (!isPlainObject(base) || !isPlainObject(override)) {
-    return override;
-  }
-  const result = { ...base };
-  for (const [key, value] of Object.entries(override)) {
-    if (key in result) {
-      const baseValue = result[key];
-      if (isPlainObject(baseValue) && isPlainObject(value)) {
-        result[key] = mergeConfigs(baseValue, value);
-      } else {
-        result[key] = value;
-      }
-    } else {
-      result[key] = value;
-    }
-  }
-  return result;
-}
-
-function readConfigLayers(workingDirectory) {
-  const { userPaths, projectPath, customPath } = getConfigPaths(workingDirectory);
-  const userPath = getPrimaryUserConfigPath(userPaths);
-  const userConfig = readConfigFile(userPath);
-  const projectConfig = readConfigFile(projectPath);
-  const customConfig = readConfigFile(customPath);
-  const mergedConfig = mergeConfigs(mergeConfigs(userConfig, projectConfig), customConfig);
-
-  return {
-    userConfig,
-    projectConfig,
-    customConfig,
-    mergedConfig,
-    paths: { userPath, projectPath, customPath }
-  };
-}
-
-function readConfig(workingDirectory) {
-  return readConfigLayers(workingDirectory).mergedConfig;
-}
-
-function getConfigForPath(layers, targetPath) {
-  if (!targetPath) {
-    return layers.userConfig;
-  }
-  if (layers.paths.customPath && targetPath === layers.paths.customPath) {
-    return layers.customConfig;
-  }
-  if (layers.paths.projectPath && targetPath === layers.paths.projectPath) {
-    return layers.projectConfig;
-  }
-  return layers.userConfig;
-}
-
-function writeConfig(config, filePath = CONFIG_FILE) {
-  try {
-    if (fs.existsSync(filePath)) {
-      const backupFile = `${filePath}.openchamber.backup`;
-      fs.copyFileSync(filePath, backupFile);
-      console.log(`Created config backup: ${backupFile}`);
-    }
-
-    fs.mkdirSync(path.dirname(filePath), { recursive: true });
-    fs.writeFileSync(filePath, JSON.stringify(config, null, 2), 'utf8');
-    console.log(`Successfully wrote config file: ${filePath}`);
-  } catch (error) {
-    console.error(`Failed to write config file: ${filePath}`, error);
-    throw new Error('Failed to write OpenCode configuration');
-  }
-}
-
-function getJsonEntrySource(layers, sectionKey, entryName) {
-  const { userConfig, projectConfig, customConfig, paths } = layers;
-  const customSection = customConfig?.[sectionKey]?.[entryName];
-  if (customSection !== undefined) {
-    return { section: customSection, config: customConfig, path: paths.customPath, exists: true };
-  }
-
-  const projectSection = projectConfig?.[sectionKey]?.[entryName];
-  if (projectSection !== undefined) {
-    return { section: projectSection, config: projectConfig, path: paths.projectPath, exists: true };
-  }
-
-  const userSection = userConfig?.[sectionKey]?.[entryName];
-  if (userSection !== undefined) {
-    return { section: userSection, config: userConfig, path: paths.userPath, exists: true };
-  }
-
-  return { section: null, config: null, path: null, exists: false };
-}
-
-function getJsonWriteTarget(layers, preferredScope) {
-  const { userConfig, projectConfig, customConfig, paths } = layers;
-  if (paths.customPath) {
-    return { config: customConfig, path: paths.customPath };
-  }
-  if (preferredScope === AGENT_SCOPE.PROJECT && paths.projectPath) {
-    return { config: projectConfig, path: paths.projectPath };
-  }
-  return { config: userConfig, path: paths.userPath };
-}
 
 // ============== GIT/WORKTREE HELPERS ==============
 

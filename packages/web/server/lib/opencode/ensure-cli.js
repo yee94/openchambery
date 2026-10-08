@@ -233,6 +233,9 @@ export async function ensurePinnedOpenCode2Cli(input = {}) {
   }
 
   const installedPath = await install({ ...input, version: pin });
-  const version = readVersion(installedPath) || pin;
+  const version = readVersion(installedPath);
+  if (version !== pin) {
+    throw new Error(`Installed OpenCode version mismatch: expected ${pin}, got ${version || 'unknown'}`);
+  }
   return { path: installedPath, version, source: 'installed', installed: true };
 }

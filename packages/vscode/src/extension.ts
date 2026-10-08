@@ -3,6 +3,8 @@ import { ChatViewProvider } from './ChatViewProvider';
 import { AgentManagerPanelProvider } from './AgentManagerPanelProvider';
 import { SessionEditorPanelProvider } from './SessionEditorPanelProvider';
 import { createOpenCodeManager, type OpenCodeManager } from './opencode';
+import { configureOpenCodeCredentials } from './opencodeAuth';
+import { OpenCode } from '@opencode/client';
 import {
   startGlobalEventWatcher,
   stopGlobalEventWatcher,
@@ -139,6 +141,13 @@ export async function activate(context: vscode.ExtensionContext) {
 
   // Create OpenCode manager first
   openCodeManager = createOpenCodeManager(context);
+  configureOpenCodeCredentials(() => {
+    const manager = openCodeManager;
+    const baseUrl = manager?.getApiUrl();
+    if (!manager || !baseUrl) throw new Error('OpenCode is not connected');
+    return OpenCode.make({ baseUrl: baseUrl.replace(/\/api\/?$/, ''), headers: manager.getOpenCodeAuthHeaders() });
+  });
+  context.subscriptions.push({ dispose: () => configureOpenCodeCredentials(null) });
 
   // Create chat view provider with manager reference
   // The webview will show a loading state until OpenCode is ready

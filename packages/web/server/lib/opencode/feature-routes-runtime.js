@@ -5,6 +5,8 @@ import { registerSessionGoalRoutes } from '../session-goal/routes.js';
 import { registerSessionMetadataRoutes } from '../session-metadata/routes.js';
 import { registerGitHubRoutes } from '../github/routes.js';
 import { registerGitRoutes } from '../git/routes.js';
+import { makeOpenCodeV2Client } from './v2-client.js';
+import { releaseDeletedWorktreeLocation } from './location-release.js';
 import { registerMagicPromptRoutes } from '../magic-prompts/routes.js';
 import { registerSessionFoldersRoutes } from '../session-folders/routes.js';
 import { registerPermissionAutoAcceptRoutes } from '../permission-auto-accept/runtime.js';
@@ -31,7 +33,6 @@ import { getProviderSources, removeProviderConfig } from './providers.js';
 import { getAgentSources, getAgentConfig, listDisabledAgentOverrides, createAgent, updateAgent, deleteAgent } from './agents.js';
 import { getCommandSources, createCommand, updateCommand, deleteCommand } from './commands.js';
 import { listMcpConfigs, getMcpConfig, createMcpConfig, updateMcpConfig, deleteMcpConfig } from './mcp.js';
-import { listSnippets, getSnippet, createSnippet, updateSnippet, deleteSnippet, expandSnippets } from './snippets.js';
 import {
   listPluginEntries,
   getPluginEntry,
@@ -359,12 +360,6 @@ export const createFeatureRoutesRuntime = (dependencies) => {
       createMcpConfig,
       updateMcpConfig,
       deleteMcpConfig,
-      listSnippets,
-      getSnippet,
-      createSnippet,
-      updateSnippet,
-      deleteSnippet,
-      expandSnippets,
     });
 
     registerPluginRoutes(app, {
@@ -492,6 +487,13 @@ export const createFeatureRoutesRuntime = (dependencies) => {
     registerGitRoutes(app, {
       messageQueueService,
       broadcastWorktreeTopologyChanged,
+      releaseWorktreeLocation: (directory) => releaseDeletedWorktreeLocation({
+        directory,
+        getClient: () => makeOpenCodeV2Client({
+          baseUrl: buildOpenCodeUrl('/', '').replace(/\/$/, ''),
+          authHeaders: getOpenCodeAuthHeaders(),
+        }),
+      }),
     });
     registerMagicPromptRoutes(app, {
       fsPromises,

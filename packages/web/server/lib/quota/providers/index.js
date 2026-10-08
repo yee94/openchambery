@@ -130,16 +130,12 @@ const registry = {
   }
 };
 
-export const listConfiguredQuotaProviders = () => {
+export const listConfiguredQuotaProviders = async () => {
   const configured = [];
 
   for (const [id, provider] of Object.entries(registry)) {
-    try {
-      if (provider.isConfigured()) {
-        configured.push(id);
-      }
-    } catch {
-      // Ignore provider-specific config errors in list API.
+    if (await provider.isConfigured()) {
+      configured.push(id);
     }
   }
 

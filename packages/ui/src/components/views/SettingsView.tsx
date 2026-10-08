@@ -14,7 +14,6 @@ import {
 import { useCommandsStore } from "@/stores/useCommandsStore";
 import { useMcpConfigStore } from "@/stores/useMcpConfigStore";
 import { readMcpConfigsSnapshot } from "@/queries/mcpQueries";
-import { useSnippetsStore } from "@/stores/useSnippetsStore";
 import { useSkillsStore } from "@/stores/useSkillsStore";
 import { useBrowserProviderCatalogQuery } from "@/queries/browserProviderQueries";
 import { queryClient } from "@/lib/queryRuntime";
@@ -56,8 +55,6 @@ import { UsageSidebar } from "@/components/sections/usage/UsageSidebar";
 import { UsagePage } from "@/components/sections/usage/UsagePage";
 import { MagicPromptsSidebar } from "@/components/sections/magic-prompts/MagicPromptsSidebar";
 import { MagicPromptsPage } from "@/components/sections/magic-prompts/MagicPromptsPage";
-import { SnippetsSidebar } from "@/components/sections/snippets/SnippetsSidebar";
-import { SnippetsPage } from "@/components/sections/snippets/SnippetsPage";
 import { GitPage } from "@/components/sections/git-identities/GitPage";
 import type { OpenChamberSection } from "@/components/sections/openchamber/types";
 import { OpenChamberPage } from "@/components/sections/openchamber/OpenChamberPage";
@@ -137,7 +134,6 @@ interface SettingsViewProps {
   onMobileStageChange?: (stage: MobileStage) => void;
 }
 
-const SNIPPETS_SETTINGS_ICON = { icon: "chat-thread" } as const;
 const ADD_PROVIDER_SETTINGS_ID = "__add_provider__";
 
 function buildRuntimeContext(
@@ -221,8 +217,6 @@ export function getSettingsNavIcon(slug: SettingsPageSlug): IconName | null {
       return "chat-ai-3";
     case "magic-prompts":
       return "ai-generate-2";
-    case "snippets":
-      return SNIPPETS_SETTINGS_ICON.icon;
     case "notifications":
       return "notification-3";
     case "shortcuts":
@@ -613,9 +607,6 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
         resolveInstalledSkillsQueryDirectory(),
       );
     }
-    if (settingsSlug === "snippets") {
-      void useSnippetsStore.getState().loadSnippets();
-    }
   }, [
     activeProjectId,
     isSettingsDialogOpen,
@@ -709,8 +700,6 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
           return t("settings.page.summaryAI.title");
         case "magic-prompts":
           return t("settings.page.magicPrompts.title");
-        case "snippets":
-          return t("settings.page.snippets.title");
         case "notifications":
           return t("settings.page.notifications.title");
         case "voice":
@@ -815,17 +804,6 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
         });
         store.setSelectedMcp(name);
         return result.id === "mcp.create" ? "mcp.server" : result.id;
-      }
-
-      if (result.id.startsWith("snippets.")) {
-        const store = useSnippetsStore.getState();
-        const name = nextUniqueName(
-          "new-snippet",
-          store.snippets.map((snippet) => snippet.name),
-        );
-        store.setSnippetDraft({ name, scope: "global" });
-        store.setSelectedSnippet(name);
-        return result.id === "snippets.create" ? "snippets.content" : result.id;
       }
 
       if (result.id.startsWith("skills.")) {
@@ -1055,8 +1033,6 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
           return <UsageSidebar onItemSelect={opts.onItemSelect} />;
         case "magic-prompts":
           return <MagicPromptsSidebar onItemSelect={opts.onItemSelect} />;
-        case "snippets":
-          return <SnippetsSidebar onItemSelect={opts.onItemSelect} />;
         default:
           return null;
       }
@@ -1142,8 +1118,6 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
           );
         case "magic-prompts":
           return <MagicPromptsPage />;
-        case "snippets":
-          return <SnippetsPage />;
         case "git":
           return <GitPage />;
         case "archived-sessions":

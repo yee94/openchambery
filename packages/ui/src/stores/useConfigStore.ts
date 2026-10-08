@@ -11,6 +11,7 @@ import { opencodeClient } from "@/lib/opencode/client";
 import { scopeMatches, subscribeToConfigChanges } from "@/lib/configSync";
 import type { ModelMetadata } from "@/types";
 import { createDeferredSafeJSONStorage } from "./utils/safeStorage";
+import { runtimeScopedStorageKey, mayReadLegacyUnscopedStorage } from '@/lib/runtimeScopedStorage';
 import { filterVisibleAgents } from "./useAgentsStore";
 import { isPrimaryMode } from "@/components/chat/mobileControlsUtils";
 import { useSessionUIStore } from "@/sync/session-ui-store";
@@ -18,14 +19,13 @@ import { useSelectionStore } from "@/sync/selection-store";
 import { updateDesktopSettings } from "@/lib/persistence";
 import { useDirectoryStore } from "@/stores/useDirectoryStore";
 import { useProjectsStore } from "@/stores/useProjectsStore";
-import { resolveProjectForSessionDirectory } from "@/lib/projectResolution";
 import { streamDebugEnabled } from "@/stores/utils/streamDebug";
-import { parseModelIdentifier } from "@/lib/modelIdentifier";
+import { parseModelIdentifier, normalizeModelIdentifier } from "@/lib/modelIdentifier";
 import { rememberResponseStyleSettings } from "@/lib/responseStyle";
 import { markStartupTrace, measureStartupTrace } from "@/lib/startupTrace";
 import { normalizePath } from "@/lib/pathNormalization";
 import { getSyncConfig, subscribeToSyncConfigChanges } from "@/sync/sync-refs";
-import { ensureProviderCatalogQuery, ensureRawAgentsQuery, invalidateProviderCatalogQuery, refreshProviderCatalogQuery, refreshRawAgentsQuery, seedProviderCatalogQuery } from "@/queries/configCatalogQueries";
+import { ensureProviderCatalogQuery, ensureRawAgentsQuery, invalidateProviderCatalogQuery, refreshProviderCatalogQuery, refreshRawAgentsQuery } from "@/queries/configCatalogQueries";
 import { getRuntimeGeneration, getRuntimeTransportIdentity } from "@/lib/runtime-switch";
 import { parseProviderCatalog } from "@/lib/configCatalogParser";
 import type { ConfigCatalogModel, ConfigCatalogProvider } from "@/types/configCatalog";
@@ -95,7 +95,7 @@ const fetchOpenChamberDefaults = async (
     }
 };
 
-const parseModelString = (modelString: string): { providerId: string; modelId: string } | null => {
+const parseModelString = (modelString: unknown) => {
     return parseModelIdentifier(modelString);
 };
 
@@ -176,35 +176,21 @@ const resolveProviderModelSelection = ({
     settingsDefaultModel?: string;
     settingsDefaultVariant?: string;
 }): ProviderModelSelection => {
-    const resolveVariant = (providerId: string, modelId: string, variant?: string): string | undefined => {
-        if (!variant) {
-            return undefined;
-        }
-
-        const model = providers
-            .find((provider) => provider.id === providerId)
-            ?.models.find((entry) => entry.id === modelId) as { variants?: Record<string, unknown> } | undefined;
-
-        return model?.variants && Object.prototype.hasOwnProperty.call(model.variants, variant)
-            ? variant
-            : undefined;
-    };
-
-    if (currentProviderId && currentModelId && hasProviderModel(providers, currentProviderId, currentModelId)) {
+    if (currentProviderId && currentModelId) {
         return {
             providerId: currentProviderId,
             modelId: currentModelId,
-            variant: resolveVariant(currentProviderId, currentModelId, currentVariant),
+            variant: currentVariant,
         };
     }
 
     if (settingsDefaultModel) {
         const parsed = parseModelString(settingsDefaultModel);
-        if (parsed && hasProviderModel(providers, parsed.providerId, parsed.modelId)) {
+        if (parsed) {
             return {
                 providerId: parsed.providerId,
                 modelId: parsed.modelId,
-                variant: resolveVariant(parsed.providerId, parsed.modelId, settingsDefaultVariant),
+                variant: parsed.variant ?? settingsDefaultVariant,
             };
         }
     }
@@ -280,39 +266,20 @@ const resolveDefaultAgentModelSelection = ({
     projectLastUserSelection?: LastUserSelection;
     globalLastUserSelection?: LastUserSelection;
 }): DefaultAgentModelSelection => {
-    if (agents.length === 0) {
-        return { agentName: undefined };
-    }
-
-    const resolveVariant = (providerId: string, modelId: string, variant?: string): string | undefined => {
-        if (!variant) {
-            return undefined;
-        }
-        const model = providers
-            .find((provider) => provider.id === providerId)
-            ?.models.find((entry) => entry.id === modelId) as { variants?: Record<string, unknown> } | undefined;
-        return model?.variants && Object.prototype.hasOwnProperty.call(model.variants, variant)
-            ? variant
-            : undefined;
-    };
-
     const tryUnitSelection = (selection?: LastUserSelection): DefaultAgentModelSelection | null => {
         if (!selection) {
             return null;
         }
         // Accept authoritative id or legacy persisted display name (e.g. "Build").
         const candidate = findAgentBySelectionKey(agents, selection.agentName);
-        if (!candidate || !isPrimaryMode(candidate.mode) || candidate.hidden === true) {
-            return null;
-        }
-        if (!hasProviderModel(providers, selection.providerId, selection.modelId)) {
+        if (candidate && (!isPrimaryMode(candidate.mode) || candidate.hidden === true)) {
             return null;
         }
         return {
-            agentName: candidate.name,
+            agentName: candidate?.name ?? selection.agentName,
             providerId: selection.providerId,
             modelId: selection.modelId,
-            variant: resolveVariant(selection.providerId, selection.modelId, selection.variant),
+            variant: selection.variant,
         };
     };
 
@@ -346,10 +313,6 @@ const resolveDefaultAgentModelSelection = ({
             || primaryAgents[0]
             || agents[0];
     }
-    if (!resolvedAgent) {
-        return { agentName: undefined };
-    }
-
     // --- Model cascade ---
     let providerId: string | undefined;
     let modelId: string | undefined;
@@ -359,28 +322,28 @@ const resolveDefaultAgentModelSelection = ({
 
     if (effectiveDefaultModel) {
         const parsed = parseModelString(effectiveDefaultModel);
-        if (parsed && hasProviderModel(providers, parsed.providerId, parsed.modelId)) {
+        if (parsed) {
             providerId = parsed.providerId;
             modelId = parsed.modelId;
-            variant = resolveVariant(providerId, modelId, projectDefaultModel ? undefined : settingsDefaultVariant);
+            variant = parsed.variant ?? (projectDefaultModel ? undefined : settingsDefaultVariant);
         }
     }
 
     if (!providerId
-        && resolvedAgent.model?.providerID
-        && resolvedAgent.model?.modelID
-        && hasProviderModel(providers, resolvedAgent.model.providerID, resolvedAgent.model.modelID)) {
+        && resolvedAgent?.model?.providerID
+        && resolvedAgent.model?.modelID) {
         providerId = resolvedAgent.model.providerID;
         modelId = resolvedAgent.model.modelID;
-        variant = resolveVariant(providerId, modelId, resolvedAgent.variant);
+        variant = resolvedAgent.variant;
     }
 
     // OpenCode's global default model — used when neither our settings nor the agent pin a model.
     if (!providerId && opencodeDefaultModel) {
         const parsed = parseModelString(opencodeDefaultModel);
-        if (parsed && hasProviderModel(providers, parsed.providerId, parsed.modelId)) {
+        if (parsed) {
             providerId = parsed.providerId;
             modelId = parsed.modelId;
+            variant = parsed.variant;
         }
     }
 
@@ -398,7 +361,11 @@ const resolveDefaultAgentModelSelection = ({
         }
     }
 
-    return { agentName: resolvedAgent.name, providerId, modelId, variant };
+    const pendingAgent = settingsDefaultAgent && !findAgentBySelectionKey(agents, settingsDefaultAgent)
+        ? settingsDefaultAgent
+        : !settingsDefaultAgent && opencodeDefaultAgent && !findAgentBySelectionKey(agents, opencodeDefaultAgent)
+            ? opencodeDefaultAgent : undefined;
+    return { agentName: pendingAgent ?? resolvedAgent?.name, providerId, modelId, variant };
 };
 
 const resolveGitGenerationModelSelection = ({
@@ -501,52 +468,10 @@ const resolveInitialDirectoryKey = (): string => {
     return toConfigDirectoryKey(directory);
 };
 
-// Persisted worktree→project mapping. The runtime worktree map
-// (availableWorktreesByProject) is populated by async git discovery and isn't
-// ready when initializeApp runs on startup — so without this, a worktree's first
-// config load can't resolve to its project and duplicates the project's load.
-// We cache resolved mappings to localStorage so subsequent launches resolve the
-// project synchronously at init time. worktree→project is effectively immutable,
-// so a cached entry is safe to trust.
-const WORKTREE_PROJECT_MAP_KEY = 'oc.worktreeProjectMap';
-let _worktreeProjectMap: Record<string, string> | null = null;
-const getWorktreeProjectMap = (): Record<string, string> => {
-    if (_worktreeProjectMap === null) {
-        try {
-            const raw = typeof localStorage !== 'undefined' ? localStorage.getItem(WORKTREE_PROJECT_MAP_KEY) : null;
-            _worktreeProjectMap = raw ? (JSON.parse(raw) as Record<string, string>) : {};
-        } catch {
-            _worktreeProjectMap = {};
-        }
-    }
-    return _worktreeProjectMap;
-};
-const rememberWorktreeProject = (worktree: string, project: string): void => {
-    if (!worktree || !project || worktree === project) return;
-    const map = getWorktreeProjectMap();
-    if (map[worktree] === project) return;
-    map[worktree] = project;
-    try {
-        localStorage.setItem(WORKTREE_PROJECT_MAP_KEY, JSON.stringify(map));
-    } catch {
-        // localStorage quota exceeded — ignore; live resolution still works.
-    }
-};
-
 const normalizeConfigPath = (value: string | null | undefined): string | null => {
     const result = normalizePath(value);
     if (result === null) return null;
     return result || '/';
-};
-
-const getKnownProjectDirectories = (): string[] => {
-    try {
-        return useProjectsStore.getState().projects
-            .map((project) => normalizeConfigPath(project.path))
-            .filter((path): path is string => Boolean(path));
-    } catch {
-        return [];
-    }
 };
 
 const getFallbackProjectDirectory = (): string | null => {
@@ -561,39 +486,9 @@ const getFallbackProjectDirectory = (): string | null => {
     }
 };
 
-/**
- * Map a directory to its CONFIG scope. Providers/agents/defaults are defined at
- * the PROJECT level (opencode.json), so a worktree must inherit its parent
- * project's config instead of maintaining — and re-fetching — its own
- * per-worktree snapshot. Returns the owning project's path when the directory is
- * a known worktree, else the directory unchanged.
- */
+/** OpenCode owns inheritance; every actual Location has its own config scope. */
 const resolveConfigDirectory = (directory: string | null | undefined): string | null => {
-    const dir = normalizeConfigPath(directory);
-    const projects = getKnownProjectDirectories();
-    if (!dir) return null;
-    if (projects.includes(dir)) return dir;
-
-    // 1. Persisted mapping — resolves synchronously when the async worktree
-    //    discovery has not populated the runtime map yet.
-    const cached = normalizeConfigPath(getWorktreeProjectMap()[dir]);
-    if (cached) return cached;
-    // 2. Live resolution via projects + discovered worktree map; cache the hit.
-    try {
-        const project = resolveProjectForSessionDirectory(
-            useProjectsStore.getState().projects,
-            useSessionUIStore.getState().availableWorktreesByProject,
-            dir,
-        );
-        const projectPath = normalizeConfigPath(project?.path ?? null);
-        if (projectPath && projectPath !== dir) {
-            rememberWorktreeProject(dir, projectPath);
-            return projectPath;
-        }
-    } catch {
-        return null;
-    }
-    return null;
+    return normalizeConfigPath(directory);
 };
 
 const toConfigDirectoryKey = (directory: string | null | undefined): string =>
@@ -601,14 +496,11 @@ const toConfigDirectoryKey = (directory: string | null | undefined): string =>
 
 export const getConfigDirectoryKey = (directory: string | null | undefined): string => toConfigDirectoryKey(directory);
 
-const PROJECT_CONFIG_PREWARM_DELAY_MS = 1_000;
-const PERSISTED_CONFIG_CATALOG_BYTE_BUDGET = 1_250_000;
 const PERSISTED_AGENT_MODEL_SELECTION_LIMIT = 100;
 const PERSISTED_SELECTION_STRING_LIMIT = 256;
 const PERSISTED_SELECTION_DANGEROUS_KEYS = new Set(["__proto__", "prototype", "constructor"]);
 // eslint-disable-next-line no-control-regex
 const PERSISTED_SELECTION_CONTROL_CHARACTERS = /[\u0000-\u001F\u007F]/u;
-const persistedCatalogTextEncoder = new TextEncoder();
 
 interface DirectoryScopedConfig {
 
@@ -636,9 +528,7 @@ interface DirectoryScopedConfig {
 }
 
 /**
- * Lift persisted selection for the active directory into the picker fields.
- * Prefer an already-hydrated top-level list, then the active directory's
- * startup snapshot. Seed the Query cache with the same directory key used by loadProviders.
+ * Lift persisted selections only. Catalogs always recover through Query IO.
  */
 const hydrateActiveDirectorySnapshot = <T extends Partial<ConfigStore>>(merged: T): T => {
     const directoryScoped = merged.directoryScoped;
@@ -648,14 +538,9 @@ const hydrateActiveDirectorySnapshot = <T extends Partial<ConfigStore>>(merged: 
     if (!snapshot) return merged;
 
     const next: Partial<ConfigStore> = { ...merged };
-    const globalProviders = (merged.providers && merged.providers.length > 0)
-        ? merged.providers
-        : snapshot.providers;
-    next.providers = globalProviders;
+    next.providers = [];
     next.agents = [];
-    next.defaultProviders = (merged.defaultProviders && Object.keys(merged.defaultProviders).length > 0)
-        ? merged.defaultProviders
-        : snapshot.defaultProviders;
+    next.defaultProviders = {};
     next.currentProviderId = snapshot.currentProviderId;
     next.currentModelId = snapshot.currentModelId;
     next.currentVariant = snapshot.currentVariant;
@@ -664,16 +549,9 @@ const hydrateActiveDirectorySnapshot = <T extends Partial<ConfigStore>>(merged: 
     next.agentModelSelections = snapshot.agentModelSelections;
     next.lastSelectedAgentName = snapshot.lastSelectedAgentName;
     next.lastUserSelection = snapshot.lastUserSelection;
-    next.opencodeDefaultAgent = snapshot.opencodeDefaultAgent;
-    next.opencodeDefaultModel = snapshot.opencodeDefaultModel;
+    next.opencodeDefaultAgent = undefined;
+    next.opencodeDefaultModel = undefined;
     next.selectionSource = snapshot.selectionSource ?? "auto";
-    if (globalProviders.length > 0 && snapshot.providerCatalogPartial !== true) {
-        seedProviderCatalogQuery(fromDirectoryKey(activeKey), {
-            providers: globalProviders,
-            defaultProviders: next.defaultProviders ?? {},
-            providerCatalogPartial: false,
-        });
-    }
     return next as T;
 };
 
@@ -761,31 +639,11 @@ const createEmptyDirectoryScopedConfig = (
     selectionSource: "auto",
 });
 
-/** Keep Project/global last picks across transport switches; catalogs stay transport-scoped. */
-const preserveDirectorySelectionMemory = (
-    directoryScoped: Record<string, DirectoryScopedConfig>,
-): Record<string, DirectoryScopedConfig> => {
-    const preserved: Record<string, DirectoryScopedConfig> = {};
-    for (const [directoryKey, snapshot] of Object.entries(directoryScoped)) {
-        const lastUserSelection = snapshot.lastUserSelection
-            ?? deriveLastUserSelectionFromLegacy(snapshot.lastSelectedAgentName, snapshot.agentModelSelections);
-        if (!lastUserSelection && !snapshot.lastSelectedAgentName) continue;
-        preserved[directoryKey] = {
-            ...createEmptyDirectoryScopedConfig(),
-            agentModelSelections: {},
-            lastSelectedAgentName: lastUserSelection?.agentName ?? snapshot.lastSelectedAgentName,
-            lastUserSelection,
-            selectionSource: snapshot.selectionSource === "manual" ? "manual" : "auto",
-        };
-    }
-    return preserved;
-};
-
 const sanitizePersistedCatalogState = (persistedState: unknown): Partial<ConfigStore> => {
     if (!isRecord(persistedState)) return {};
     const transportIdentity = normalizeOptionalString(persistedState.catalogTransportIdentity);
     const preferences: Partial<ConfigStore> = {};
-    const optionalStrings = ['activeDirectoryKey', 'settingsDefaultModel', 'settingsDefaultVariant', 'settingsDefaultAgent', 'settingsZenModel'] as const;
+    const optionalStrings = ['activeDirectoryKey'] as const;
     for (const key of optionalStrings) {
         const safeValue = normalizeOptionalString(persistedState[key]);
         if (safeValue !== undefined) preferences[key] = safeValue;
@@ -803,9 +661,6 @@ const sanitizePersistedCatalogState = (persistedState: unknown): Partial<ConfigS
     if (isRecord(persistedState.directoryScoped)) {
         for (const [directoryKey, rawSnapshot] of Object.entries(persistedState.directoryScoped)) {
             if (!isRecord(rawSnapshot)) continue;
-            const providerCatalogPartial = rawSnapshot.providerCatalogPartial === true;
-            const providers = providerCatalogPartial ? [] : sanitizeProviderList(rawSnapshot.providers);
-            const defaultProviders = providerCatalogPartial ? {} : sanitizeDefaultProviders(rawSnapshot.defaultProviders);
             const agentModelSelections = sanitizeAgentModelSelections(rawSnapshot.agentModelSelections);
             const lastSelectedAgentName = sanitizeSelectionIdentifier(rawSnapshot.lastSelectedAgentName, true);
             const lastUserSelection = resolvePersistedLastUserSelection(
@@ -815,7 +670,7 @@ const sanitizePersistedCatalogState = (persistedState: unknown): Partial<ConfigS
             );
             directoryScoped[directoryKey] = {
                 ...createEmptyDirectoryScopedConfig(),
-                providers,
+                providers: [],
                 agents: [],
                 currentProviderId: normalizeOptionalString(rawSnapshot.currentProviderId) ?? '',
                 currentModelId: normalizeOptionalString(rawSnapshot.currentModelId) ?? '',
@@ -826,10 +681,7 @@ const sanitizePersistedCatalogState = (persistedState: unknown): Partial<ConfigS
                 agentModelSelections,
                 lastSelectedAgentName: lastUserSelection?.agentName ?? lastSelectedAgentName,
                 lastUserSelection,
-                defaultProviders,
-                providerCatalogPartial,
-                opencodeDefaultAgent: normalizeOptionalString(rawSnapshot.opencodeDefaultAgent),
-                opencodeDefaultModel: normalizeOptionalString(rawSnapshot.opencodeDefaultModel),
+                defaultProviders: {},
                 selectionSource: rawSnapshot.selectionSource === 'manual' ? 'manual' : 'auto',
             };
         }
@@ -848,16 +700,11 @@ const sanitizePersistedCatalogState = (persistedState: unknown): Partial<ConfigS
     })();
 
     const currentTransport = getRuntimeTransportIdentity();
-    if (transportIdentity !== currentTransport) {
-        // Transport fingerprint changed: drop catalogs, keep Project/global last picks so
-        // refresh / reconnect does not erase the user's remembered agent+model unit.
-        const preservedDirectoryScoped = preserveDirectorySelectionMemory(directoryScoped);
-        const activeKey = normalizeOptionalString(persistedState.activeDirectoryKey);
-        const activeSelection = activeKey ? preservedDirectoryScoped[activeKey]?.lastUserSelection : undefined;
+    if (transportIdentity && transportIdentity !== currentTransport) {
         return {
             ...preferences,
             catalogTransportIdentity: currentTransport,
-            directoryScoped: preservedDirectoryScoped,
+            directoryScoped: {},
             providers: [],
             agents: [],
             defaultProviders: {},
@@ -867,9 +714,9 @@ const sanitizePersistedCatalogState = (persistedState: unknown): Partial<ConfigS
             currentAgentName: undefined,
             selectedProviderId: '',
             agentModelSelections: {},
-            lastSelectedAgentName: activeSelection?.agentName ?? globalLastUserSelection?.agentName,
-            lastUserSelection: activeSelection,
-            globalLastUserSelection,
+            lastSelectedAgentName: undefined,
+            lastUserSelection: undefined,
+            globalLastUserSelection: undefined,
             providerConfigLoadingByDirectory: {},
             agentConfigLoadingByDirectory: {},
         };
@@ -877,7 +724,7 @@ const sanitizePersistedCatalogState = (persistedState: unknown): Partial<ConfigS
 
     return {
         ...preferences,
-        catalogTransportIdentity: transportIdentity,
+        catalogTransportIdentity: currentTransport,
         directoryScoped,
         providers: [],
         agents: [],
@@ -897,22 +744,8 @@ const sanitizePersistedCatalogState = (persistedState: unknown): Partial<ConfigS
     };
 };
 
-const hasValidVariant = (
-    providers: ProviderWithModelList[],
-    providerId: string,
-    modelId: string,
-    variant: string | undefined,
-): boolean => {
-    if (!variant) return true;
-    const model = providers
-        .find((provider) => provider.id === providerId)
-        ?.models.find((entry) => entry.id === modelId) as { variants?: Record<string, unknown> } | undefined;
-    return !!model?.variants && Object.prototype.hasOwnProperty.call(model.variants, variant);
-};
-
 const resolveSelectionWithManualGuard = ({
     agents,
-    providers,
     currentAgentName,
     currentProviderId,
     currentModelId,
@@ -937,11 +770,9 @@ const resolveSelectionWithManualGuard = ({
 }) => {
     // Remap legacy display-name selections onto authoritative id (domain name).
     const manualAgent = findAgentBySelectionKey(agents, currentAgentName);
-    const manualAgentName = manualAgent?.name;
+    const manualAgentName = manualAgent?.name ?? currentAgentName;
     const manualModelValid = !!currentProviderId
-        && !!currentModelId
-        && hasProviderModel(providers, currentProviderId, currentModelId)
-        && hasValidVariant(providers, currentProviderId, currentModelId, currentVariant);
+        && !!currentModelId;
     const preserveManual = selectionSource === "manual" && (!!manualAgentName || manualModelValid);
 
     return {
@@ -1113,10 +944,32 @@ declare global {
 }
 
 let _initializeAppInFlight: Promise<void> | null = null;
-let _refreshMissingCatalogsInFlight: Promise<void> | null = null;
-let _refreshCatalogsOnPickerOpenInFlight: Promise<void> | null = null;
+const _refreshMissingCatalogsInFlight = new Map<string, Promise<void>>();
+const _refreshCatalogsOnPickerOpenInFlight = new Map<string, Promise<void>>();
 const _providerLoadEpochByDirectory: Record<string, number> = {};
 const _agentLoadEpochByDirectory: Record<string, number> = {};
+
+type PersistedConfigState = Omit<Partial<ConfigStore>, 'directoryScoped'> & {
+    directoryScoped?: Record<string, Partial<DirectoryScopedConfig>>;
+};
+const selectionStorage = createDeferredSafeJSONStorage<PersistedConfigState>();
+const scopedSelectionStorage: typeof selectionStorage = selectionStorage && {
+    flush: () => selectionStorage.flush(),
+    getItem: (name) => {
+        const transport = getRuntimeTransportIdentity();
+        const scoped = selectionStorage.getItem(runtimeScopedStorageKey(name, transport));
+        const fallback = (value: Awaited<typeof scoped>) => {
+            if (getRuntimeTransportIdentity() !== transport) return null;
+            if (value || !mayReadLegacyUnscopedStorage()) return value;
+            return selectionStorage.getItem(name);
+        };
+        return scoped instanceof Promise ? scoped.then(fallback) : fallback(scoped);
+    },
+    setItem: (name, value) => selectionStorage.setItem(
+        runtimeScopedStorageKey(name, value.state.catalogTransportIdentity ?? getRuntimeTransportIdentity()), value,
+    ),
+    removeItem: (name) => selectionStorage.removeItem(runtimeScopedStorageKey(name)),
+};
 
 export const useConfigStore = create<ConfigStore>()(
     devtools(
@@ -1377,10 +1230,8 @@ export const useConfigStore = create<ConfigStore>()(
                     return 500;
                 })(),
                 activateDirectory: async (directory, options) => {
-                    // Resolve the worktree to its owning project up-front so the
-                    // active key + snapshot key always match and stay project-scoped.
-                    // Everything below operates on this key unchanged; the OpenCode
-                    // working directory (opencodeClient.getDirectory()) is separate.
+                    const generation = getRuntimeGeneration();
+                    // Actual worktree directory is the config and selection scope.
                     const configDirectory = resolveConfigDirectory(directory);
                     if (!configDirectory) {
                         markStartupTrace('activateDirectory:skippedUnknownDirectory', { directory });
@@ -1393,15 +1244,9 @@ export const useConfigStore = create<ConfigStore>()(
 
                     set((state) => {
                         const snapshot = state.directoryScoped[directoryKey];
-                        const globalProviders = state.providers.length > 0
-                            ? state.providers
-                            : (snapshot?.providers ?? []);
-                        const globalDefaults = Object.keys(state.defaultProviders).length > 0
-                            ? state.defaultProviders
-                            : (snapshot?.defaultProviders ?? {});
-                        const globalAgents = state.agents.length > 0
-                            ? state.agents
-                            : (snapshot?.agents ?? []);
+                        const globalProviders = snapshot?.providers ?? [];
+                        const globalDefaults = snapshot?.defaultProviders ?? {};
+                        const globalAgents = snapshot?.agents ?? [];
                         snapshotHadProviders = globalProviders.length > 0;
                         snapshotHadAgents = globalAgents.length > 0;
                         hadInMemoryDirectoryAgents = Boolean(snapshot?.agents.length);
@@ -1443,6 +1288,7 @@ export const useConfigStore = create<ConfigStore>()(
                             agents: globalAgents,
                             currentProviderId: "",
                             currentModelId: "",
+                            currentVariant: undefined,
                             currentAgentName: undefined,
                             selectedProviderId: "",
                             agentModelSelections: {},
@@ -1463,8 +1309,7 @@ export const useConfigStore = create<ConfigStore>()(
                         };
                     });
 
-                    // New / persisted-empty directories inherit immediately from the
-                    // already-loaded global catalogs. Do not wait on a project fetch.
+                    // Resolve only from the matching directory's in-memory catalogs.
                     if (snapshotHadAgents && snapshotHadProviders && !hadInMemoryDirectoryAgents) {
                         get().applyDefaultModelAgentSelection();
                     }
@@ -1473,14 +1318,12 @@ export const useConfigStore = create<ConfigStore>()(
                         return;
                     }
 
-                    // Provider and Agent catalogs are global. Reuse them across projects;
-                    // only fetch when we have nothing to show. Explicit refreshProviders
-                    // still refetches (config-change / initializeApp), but a new draft
-                    // must not block on a second catalog round-trip.
+                    // Reuse only the matching directory projection.
                     if (!snapshotHadProviders || options?.refreshProviders) {
                         await get().loadProviders({ directory: fromDirectoryKey(directoryKey), source: options?.source ?? 'activateDirectory', forceRefresh: options?.refreshProviders });
                     }
 
+                    if (getRuntimeGeneration() !== generation || get().activeDirectoryKey !== directoryKey) return;
                     if (!snapshotHadAgents) {
                         await get().loadAgents({ directory: fromDirectoryKey(directoryKey), source: 'activateDirectory' });
                     }
@@ -1507,6 +1350,7 @@ export const useConfigStore = create<ConfigStore>()(
                     const isCurrent = () => getRuntimeGeneration() === generation
                         && getRuntimeTransportIdentity() === transport
                         && get().catalogTransportIdentity === transport
+                        && _providerLoadEpochByDirectory[directoryKey] === loadEpoch
                         && resolveConfigDirectory(requestedDirectory) === configDirectory;
                     const loadEpoch = (_providerLoadEpochByDirectory[directoryKey] ?? 0) + 1;
                     _providerLoadEpochByDirectory[directoryKey] = loadEpoch;
@@ -1528,12 +1372,8 @@ export const useConfigStore = create<ConfigStore>()(
                     const loaderStarted = typeof performance !== 'undefined' ? performance.now() : Date.now();
                     markStartupTrace('loadProviders:start', { directoryKey, source, requestedDirectory, effectiveDirectory });
                     const existingSnapshot = get().directoryScoped[directoryKey];
-                    const previousProviders = get().providers.length > 0
-                        ? get().providers
-                        : existingSnapshot?.providers ?? [];
-                    const previousDefaults = Object.keys(get().defaultProviders).length > 0
-                        ? get().defaultProviders
-                        : existingSnapshot?.defaultProviders ?? {};
+                    const previousProviders = existingSnapshot?.providers ?? [];
+                    const previousDefaults = existingSnapshot?.defaultProviders ?? {};
                     try {
                             const apiResult = await measureStartupTrace(
                                 'loadProviders:api',
@@ -1605,8 +1445,6 @@ export const useConfigStore = create<ConfigStore>()(
                                 };
 
                                 const nextState: Partial<ConfigStore> = {
-                                    providers: processedProviders,
-                                    defaultProviders: defaults,
                                     directoryScoped: {
                                         ...state.directoryScoped,
                                         [directoryKey]: nextSnapshot,
@@ -1614,6 +1452,8 @@ export const useConfigStore = create<ConfigStore>()(
                                 };
 
                                 if (state.activeDirectoryKey === directoryKey) {
+                                    nextState.providers = processedProviders;
+                                    nextState.defaultProviders = defaults;
                                     nextState.currentProviderId = nextSnapshot.currentProviderId;
                                     nextState.currentModelId = nextSnapshot.currentModelId;
                                     nextState.currentVariant = nextSnapshot.currentVariant;
@@ -1668,8 +1508,6 @@ export const useConfigStore = create<ConfigStore>()(
                         };
 
                         const nextState: Partial<ConfigStore> = {
-                            providers: previousProviders,
-                            defaultProviders: previousDefaults,
                             directoryScoped: {
                                 ...state.directoryScoped,
                                 [directoryKey]: nextSnapshot,
@@ -1677,7 +1515,8 @@ export const useConfigStore = create<ConfigStore>()(
                         };
 
                         if (state.activeDirectoryKey === directoryKey) {
-
+                            nextState.providers = previousProviders;
+                            nextState.defaultProviders = previousDefaults;
                             if (!state.currentProviderId && !state.currentModelId && state.settingsDefaultModel) {
                                 const parsed = parseModelString(state.settingsDefaultModel);
                                 if (parsed) {
@@ -1719,9 +1558,11 @@ export const useConfigStore = create<ConfigStore>()(
 
                 // Not `async`: must return the same Promise reference for single-flight callers.
                 refreshMissingCatalogs: (options) => {
-                    if (_refreshMissingCatalogsInFlight) {
-                        return _refreshMissingCatalogsInFlight;
-                    }
+                    const directory = fromDirectoryKey(get().activeDirectoryKey);
+                    const generation = getRuntimeGeneration();
+                    const key = JSON.stringify([getRuntimeTransportIdentity(), generation, directory]);
+                    const existing = _refreshMissingCatalogsInFlight.get(key);
+                    if (existing) return existing;
 
                     const source = options?.source ?? 'refreshMissingCatalogs';
                     const run = (async () => {
@@ -1729,35 +1570,37 @@ export const useConfigStore = create<ConfigStore>()(
                         // force-refreshes catalogs that are still empty after a successful
                         // empty warm load.
                         if (get().providers.length === 0) {
-                            await get().loadProviders({ source, forceRefresh: true });
+                            await get().loadProviders({ directory, source, forceRefresh: true });
                         }
                         // Re-read after providers: agent selection cascade depends on the
                         // latest provider snapshot, and agents may have been filled meanwhile.
+                        if (getRuntimeGeneration() !== generation || fromDirectoryKey(get().activeDirectoryKey) !== directory) return;
                         if (get().agents.length === 0) {
-                            await get().loadAgents({ source, forceRefresh: true });
+                            await get().loadAgents({ directory, source, forceRefresh: true });
                         }
                     })().finally(() => {
-                        _refreshMissingCatalogsInFlight = null;
+                        _refreshMissingCatalogsInFlight.delete(key);
                     });
 
-                    _refreshMissingCatalogsInFlight = run;
+                    _refreshMissingCatalogsInFlight.set(key, run);
                     return run;
                 },
 
                 refreshCatalogsOnPickerOpen: (options) => {
-                    if (_refreshCatalogsOnPickerOpenInFlight) {
-                        return _refreshCatalogsOnPickerOpenInFlight;
-                    }
+                    const directory = fromDirectoryKey(get().activeDirectoryKey);
+                    const key = JSON.stringify([getRuntimeTransportIdentity(), getRuntimeGeneration(), directory]);
+                    const existing = _refreshCatalogsOnPickerOpenInFlight.get(key);
+                    if (existing) return existing;
 
                     const source = options?.source ?? 'refreshCatalogsOnPickerOpen';
                     const run = Promise.all([
-                        get().loadProviders({ source, forceRefresh: true }),
-                        get().loadAgents({ source, forceRefresh: true }),
+                        get().loadProviders({ directory, source, forceRefresh: true }),
+                        get().loadAgents({ directory, source, forceRefresh: true }),
                     ]).then(() => undefined).finally(() => {
-                        _refreshCatalogsOnPickerOpenInFlight = null;
+                        _refreshCatalogsOnPickerOpenInFlight.delete(key);
                     });
 
-                    _refreshCatalogsOnPickerOpenInFlight = run;
+                    _refreshCatalogsOnPickerOpenInFlight.set(key, run);
                     return run;
                 },
 
@@ -2018,8 +1861,7 @@ export const useConfigStore = create<ConfigStore>()(
 
                 loadAgents: async (options) => {
                     const requestedDirectory = options?.directory ?? fromDirectoryKey(get().activeDirectoryKey);
-                    // Composer Agent catalog is global per transport. Directory is an
-                    // OpenCode instance hint and the lastUserSelection key, not a cache partition.
+                    // Composer agents are scoped to the actual Location.
                     const configDirectory = resolveConfigDirectory(requestedDirectory);
                     if (!configDirectory) {
                         markStartupTrace('loadAgents:skippedUnknownDirectory', { requestedDirectory, source: options?.source ?? 'unknown' });
@@ -2033,6 +1875,7 @@ export const useConfigStore = create<ConfigStore>()(
                     const isCurrent = () => getRuntimeGeneration() === generation
                         && getRuntimeTransportIdentity() === transport
                         && get().catalogTransportIdentity === transport
+                        && _agentLoadEpochByDirectory[directoryKey] === loadEpoch
                         && resolveConfigDirectory(requestedDirectory) === configDirectory;
                     const loadEpoch = (_agentLoadEpochByDirectory[directoryKey] ?? 0) + 1;
                     _agentLoadEpochByDirectory[directoryKey] = loadEpoch;
@@ -2054,9 +1897,7 @@ export const useConfigStore = create<ConfigStore>()(
                     const loaderStarted = typeof performance !== 'undefined' ? performance.now() : Date.now();
                     markStartupTrace('loadAgents:start', { directoryKey, source, requestedDirectory, effectiveDirectory });
                     const existingSnapshot = get().directoryScoped[directoryKey];
-                    const previousAgents = get().agents.length > 0
-                        ? get().agents
-                        : existingSnapshot?.agents ?? [];
+                    const previousAgents = existingSnapshot?.agents ?? [];
                     try {
                             // Fetch agents and OpenChamber settings in parallel. OpenCode config
                             // comes from sync state if it is already available; it must not block
@@ -2099,6 +1940,9 @@ export const useConfigStore = create<ConfigStore>()(
                             if (!isCurrent()) {
                                 return false;
                             }
+                            // Empty startup catalogs are provisional; keep selection intent and
+                            // the previous directory projection until plugin discovery catches up.
+                            if (safeAgents.length === 0) return true;
 
                             const latestSyncedOpencodeConfig = getSyncConfig(requestedDirectory ?? undefined)
                                 ?? getSyncConfig(configDirectoryPath ?? undefined);
@@ -2107,7 +1951,7 @@ export const useConfigStore = create<ConfigStore>()(
                                 ? normalizeOptionalString(latestSyncedOpencodeConfig.default_agent)
                                 : undefined;
                             const latestSyncedOpencodeDefaultModel = hasLatestSyncedOpencodeConfig
-                                ? normalizeOptionalString(latestSyncedOpencodeConfig.model)
+                                ? normalizeModelIdentifier(latestSyncedOpencodeConfig.model)
                                 : undefined;
 
                             const providers = get().activeDirectoryKey === directoryKey
@@ -2209,99 +2053,8 @@ export const useConfigStore = create<ConfigStore>()(
                                 });
                             }
 
-                            if (safeAgents.length === 0) {
-                                // A later project overlay must not blank the already-loaded
-                                // global catalog unless this is an explicit force-refresh.
-                                if (previousAgents.length > 0 && !options?.forceRefresh) {
-                                    if (!isCurrent()) return false;
-                                    const loaderEnded = typeof performance !== 'undefined' ? performance.now() : Date.now();
-                                    markStartupTrace('loadAgents:end', {
-                                        directoryKey,
-                                        source,
-                                        requestedDirectory,
-                                        effectiveDirectory,
-                                        durationMs: Math.round(loaderEnded - loaderStarted),
-                                        agents: previousAgents.length,
-                                        retainedPrevious: true,
-                                    });
-                                    return true;
-                                }
-                                set((state) => {
-                                    if (!isCurrent() || state.catalogTransportIdentity !== transport) return state;
-                                    const baseSnapshot: DirectoryScopedConfig = state.directoryScoped[directoryKey] ?? {
-                                        providers,
-                                        agents: [],
-                            currentProviderId: "",
-                            currentModelId: "",
-                            currentVariant: undefined,
-                            currentAgentName: undefined,
-                                        selectedProviderId: "",
-                                        agentModelSelections: {},
-                                        defaultProviders: {},
-                                    };
-
-                                    const nextSnapshot: DirectoryScopedConfig = {
-                                        ...baseSnapshot,
-                                        providers,
-                                        agents: [],
-                                        currentAgentName: undefined,
-                                    };
-
-                                    const nextState: Partial<ConfigStore> = {
-                                        directoryScoped: {
-                                            ...state.directoryScoped,
-                                            [directoryKey]: nextSnapshot,
-                                        },
-                                    };
-
-                                    if (state.activeDirectoryKey === directoryKey) {
-                                        nextState.currentAgentName = undefined;
-                                    }
-
-                                    return nextState;
-                                });
-
-                                if (!isCurrent()) return false;
-                                const loaderEnded = typeof performance !== 'undefined' ? performance.now() : Date.now();
-                                markStartupTrace('loadAgents:end', {
-                                    directoryKey,
-                                    source,
-                                    requestedDirectory,
-                                    effectiveDirectory,
-                                    durationMs: Math.round(loaderEnded - loaderStarted),
-                                    agents: safeAgents.length,
-                                });
-                                return true;
-                            }
-
-                            // Helper to validate model exists in providers
-                            const validateModel = (providerId: string, modelId: string): boolean => {
-                                const provider = providers.find((p) => p.id === providerId);
-                                if (!provider) return false;
-                                return provider.models.some((m) => m.id === modelId);
-                            };
-
-                            // Detect invalid OpenChamber settings so we can clear them from storage.
-                            // This is independent of resolution: even though the cascade below falls
-                            // back gracefully, stale settings pointing at removed agents/models/variants
-                            // should be cleaned up.
-                            const invalidSettings: { defaultModel?: string; defaultVariant?: string; defaultAgent?: string } = {};
-                            if (openChamberDefaults.defaultAgent && !findAgentBySelectionKey(safeAgents, openChamberDefaults.defaultAgent)) {
-                                invalidSettings.defaultAgent = '';
-                            }
-                            if (openChamberDefaults.defaultModel) {
-                                const parsed = parseModelString(openChamberDefaults.defaultModel);
-                                if (!parsed || !validateModel(parsed.providerId, parsed.modelId)) {
-                                    invalidSettings.defaultModel = '';
-                                } else if (openChamberDefaults.defaultVariant) {
-                                    const provider = providers.find((p) => p.id === parsed.providerId);
-                                    const model = provider?.models.find((m) => m.id === parsed.modelId) as { variants?: Record<string, unknown> } | undefined;
-                                    const variants = model?.variants;
-                                    if (!(variants && Object.prototype.hasOwnProperty.call(variants, openChamberDefaults.defaultVariant))) {
-                                        invalidSettings.defaultVariant = '';
-                                    }
-                                }
-                            }
+                            // Catalog absence is not permission to rewrite user configuration:
+                            // plugins may publish agents, models and variants after bootstrap.
 
                             // Resolve agent + model via the shared cascade:
                             //   Project lastUserSelection → global lastUserSelection
@@ -2391,19 +2144,6 @@ export const useConfigStore = create<ConfigStore>()(
 
                                 return nextState;
                             });
-
-                            // Clear invalid settings from storage (best-effort cleanup)
-                            if (isCurrent() && Object.keys(invalidSettings).length > 0) {
-                                // Also clear from store state
-                                 set({
-                                     settingsDefaultModel: invalidSettings.defaultModel !== undefined ? undefined : get().settingsDefaultModel,
-                                     settingsDefaultVariant: invalidSettings.defaultVariant !== undefined ? undefined : get().settingsDefaultVariant,
-                                     settingsDefaultAgent: invalidSettings.defaultAgent !== undefined ? undefined : get().settingsDefaultAgent,
-                                 });
-                                updateDesktopSettings(invalidSettings).catch(() => {
-                                    // Ignore errors - best effort cleanup
-                                });
-                            }
 
                             if (!isCurrent()) return false;
                             const loaderEnded = typeof performance !== 'undefined' ? performance.now() : Date.now();
@@ -2776,7 +2516,7 @@ export const useConfigStore = create<ConfigStore>()(
                     }
 
                     const opencodeDefaultAgent = normalizeOptionalString(syncedConfig.default_agent);
-                    const opencodeDefaultModel = normalizeOptionalString(syncedConfig.model);
+                    const opencodeDefaultModel = normalizeModelIdentifier(syncedConfig.model);
 
                     set((state) => {
                         const snapshot = state.directoryScoped[directoryKey];
@@ -3255,25 +2995,13 @@ export const useConfigStore = create<ConfigStore>()(
                             if (debug) console.log("Initializing app...");
                             markStartupTrace('initApp:skipped', { reason: 'checkConnection already verified health' });
 
-                            // Stale-while-revalidate: do NOT invalidate the hydrated
-                            // provider snapshot here. The pickers keep showing the
-                            // last-known providers/agents while loadProviders/loadAgents
-                            // below fetch fresh data and overwrite on success. Clearing
-                            // first would blank the UI for the duration of the fetch.
-
-                            // Config (providers/agents/defaults) lives at the PROJECT level. If the
-                            // app starts on a worktree directory, load config under the owning
-                            // project's key so the initial draft — which activates the project — finds
-                            // a ready snapshot instead of triggering a second provider/agent load.
+                            // Existing runtime projections remain visible during refresh;
+                            // persisted selections never supply catalog data. OpenCode owns
+                            // inheritance for the actual initial Location, including worktrees.
                             const initialDirectory = opencodeClient.getDirectory()
                                 ?? useDirectoryStore.getState().currentDirectory
                                 ?? fromDirectoryKey(get().activeDirectoryKey);
-                            const resolvedProject = resolveProjectForSessionDirectory(
-                                useProjectsStore.getState().projects,
-                                useSessionUIStore.getState().availableWorktreesByProject,
-                                initialDirectory ?? null,
-                            );
-                            const resolvedInitialDirectory = resolveConfigDirectory(resolvedProject?.path ?? initialDirectory ?? null);
+                            const resolvedInitialDirectory = resolveConfigDirectory(initialDirectory);
                             const configDirectory = resolvedInitialDirectory ?? getFallbackProjectDirectory();
                             if (!configDirectory) {
                                 markStartupTrace('initializeApp:noProjectConfigDirectory');
@@ -3290,7 +3018,26 @@ export const useConfigStore = create<ConfigStore>()(
                             }
                             const configDirectoryKey = toDirectoryKey(configDirectory);
                             if (get().activeDirectoryKey !== configDirectoryKey) {
-                                set({ activeDirectoryKey: configDirectoryKey });
+                                set((state) => {
+                                    const snapshot = state.directoryScoped[configDirectoryKey] ?? createEmptyDirectoryScopedConfig();
+                                    return {
+                                        activeDirectoryKey: configDirectoryKey,
+                                        providers: snapshot.providers,
+                                        agents: snapshot.agents,
+                                        defaultProviders: snapshot.defaultProviders,
+                                        currentProviderId: snapshot.currentProviderId,
+                                        currentModelId: snapshot.currentModelId,
+                                        currentVariant: snapshot.currentVariant,
+                                        currentAgentName: snapshot.currentAgentName,
+                                        selectedProviderId: snapshot.selectedProviderId,
+                                        agentModelSelections: snapshot.agentModelSelections,
+                                        lastSelectedAgentName: snapshot.lastSelectedAgentName,
+                                        lastUserSelection: snapshot.lastUserSelection,
+                                        opencodeDefaultAgent: snapshot.opencodeDefaultAgent,
+                                        opencodeDefaultModel: snapshot.opencodeDefaultModel,
+                                        selectionSource: snapshot.selectionSource ?? 'auto',
+                                    };
+                                });
                             }
 
                             if (debug) console.log("Loading providers and agents...");
@@ -3326,52 +3073,10 @@ export const useConfigStore = create<ConfigStore>()(
                 },
 
                 prewarmProjectConfigs: async (initialDirectory?: string | null) => {
-                    if (!get().isConnected) {
-                        return;
-                    }
-
-                    const initialKey = toConfigDirectoryKey(initialDirectory ?? fromDirectoryKey(get().activeDirectoryKey));
-                    const projectDirectories = useProjectsStore.getState().projects
-                        .map((project) => project.path)
-                        .filter((path): path is string => typeof path === 'string' && path.trim().length > 0);
-                    const seen = new Set<string>([initialKey]);
-                    const queuedDirectories: string[] = [];
-
-                    for (const directory of projectDirectories) {
-                        const directoryKey = toConfigDirectoryKey(directory);
-                        if (seen.has(directoryKey)) {
-                            continue;
-                        }
-                        seen.add(directoryKey);
-
-                        const snapshot = get().directoryScoped[directoryKey];
-                        if ((snapshot?.providers.length || get().providers.length > 0) && (snapshot?.agents.length || get().agents.length > 0)) {
-                            continue;
-                        }
-                        const scopedDirectory = fromDirectoryKey(directoryKey);
-                        if (scopedDirectory) {
-                            queuedDirectories.push(scopedDirectory);
-                        }
-                    }
-
-                    for (const directory of queuedDirectories) {
-                        await sleep(PROJECT_CONFIG_PREWARM_DELAY_MS);
-                        if (!get().isConnected) {
-                            return;
-                        }
-                        const directoryKey = toConfigDirectoryKey(directory);
-                        const snapshot = get().directoryScoped[directoryKey];
-                        const tasks: Promise<unknown>[] = [];
-                        if (!snapshot?.providers.length && get().providers.length === 0) {
-                            tasks.push(get().loadProviders({ directory, source: 'projectConfigPrewarm' }));
-                        }
-                        if (!snapshot?.agents.length && get().agents.length === 0) {
-                            tasks.push(get().loadAgents({ directory, source: 'projectConfigPrewarm' }));
-                        }
-                        if (tasks.length > 0) {
-                            await Promise.allSettled(tasks);
-                        }
-                    }
+                    if (!get().isConnected) return;
+                    const directory = initialDirectory ?? fromDirectoryKey(get().activeDirectoryKey);
+                    if (toConfigDirectoryKey(directory) !== get().activeDirectoryKey) return;
+                    await get().refreshMissingCatalogs({ source: 'activeConfigPrewarm' });
                 },
 
                 getCurrentProvider: () => {
@@ -3415,8 +3120,8 @@ export const useConfigStore = create<ConfigStore>()(
             }),
             {
                 name: "config-store",
-                version: 4,
-                storage: createDeferredSafeJSONStorage(),
+                version: 5,
+                storage: scopedSelectionStorage,
                 migrate: (persistedState) => sanitizePersistedCatalogState(persistedState),
                 merge: (persistedState, currentState) =>
                     hydrateActiveDirectorySnapshot({
@@ -3424,22 +3129,6 @@ export const useConfigStore = create<ConfigStore>()(
                         ...sanitizePersistedCatalogState(persistedState),
                     }),
                 partialize: (state) => {
-                    const activeSnapshot = state.directoryScoped[state.activeDirectoryKey];
-                    const globalCatalog = state.providers.length > 0
-                        ? {
-                            providers: sanitizeProviderList(state.providers),
-                            defaultProviders: sanitizeDefaultProviders(state.defaultProviders),
-                            providerCatalogPartial: false,
-                        }
-                        : activeSnapshot && activeSnapshot.providerCatalogPartial !== true
-                            ? {
-                                providers: sanitizeProviderList(activeSnapshot.providers),
-                                defaultProviders: sanitizeDefaultProviders(activeSnapshot.defaultProviders),
-                                providerCatalogPartial: false,
-                            }
-                            // 空 catalog 以 partial 落盘：恢复时不被信任、不 seed。
-                            : { providers: [], defaultProviders: {}, providerCatalogPartial: true };
-                    const activeCatalog = globalCatalog;
                     const serializeDirectorySnapshot = (
                         directoryKey: string,
                         snapshot: DirectoryScopedConfig | undefined,
@@ -3453,10 +3142,6 @@ export const useConfigStore = create<ConfigStore>()(
                                 ? sanitizeLastUserSelection(state.lastUserSelection)
                                 : undefined);
                         return {
-                            ...(directoryKey === state.activeDirectoryKey
-                                ? activeCatalog
-                                : { providers: [], defaultProviders: {}, providerCatalogPartial: snapshot?.providerCatalogPartial === true }),
-                            agents: [],
                             currentProviderId: snapshot?.currentProviderId ?? (directoryKey === state.activeDirectoryKey ? state.currentProviderId : ''),
                             currentModelId: snapshot?.currentModelId ?? (directoryKey === state.activeDirectoryKey ? state.currentModelId : ''),
                             currentVariant: snapshot?.currentVariant ?? (directoryKey === state.activeDirectoryKey ? state.currentVariant : undefined),
@@ -3468,8 +3153,6 @@ export const useConfigStore = create<ConfigStore>()(
                             lastSelectedAgentName: lastUserSelection?.agentName
                                 ?? sanitizeSelectionIdentifier(snapshot?.lastSelectedAgentName, true),
                             lastUserSelection,
-                            opencodeDefaultAgent: snapshot?.opencodeDefaultAgent,
-                            opencodeDefaultModel: snapshot?.opencodeDefaultModel,
                             selectionSource: snapshot?.selectionSource ?? (directoryKey === state.activeDirectoryKey ? state.selectionSource : undefined),
                         };
                     };
@@ -3485,20 +3168,11 @@ export const useConfigStore = create<ConfigStore>()(
                             undefined,
                         );
                     }
-                    const activeCatalogSerialized = JSON.stringify(activeCatalog);
-                    if (persistedCatalogTextEncoder.encode(activeCatalogSerialized).byteLength > PERSISTED_CONFIG_CATALOG_BYTE_BUDGET) {
-                        const active = directoryScoped[state.activeDirectoryKey] as Record<string, unknown> | undefined;
-                        if (active) {
-                            active.providers = [];
-                            active.defaultProviders = {};
-                            active.providerCatalogPartial = true;
-                        }
-                    }
                     const globalLastUserSelection = sanitizeLastUserSelection(state.globalLastUserSelection)
                         ?? sanitizeLastUserSelection(state.lastUserSelection);
                     return {
                         activeDirectoryKey: state.activeDirectoryKey,
-                        catalogTransportIdentity: getRuntimeTransportIdentity(),
+                        catalogTransportIdentity: state.catalogTransportIdentity,
                         directoryScoped,
                         currentProviderId: state.currentProviderId,
                         currentModelId: state.currentModelId,
@@ -3510,14 +3184,6 @@ export const useConfigStore = create<ConfigStore>()(
                             ?? sanitizeSelectionIdentifier(state.lastSelectedAgentName, true),
                         lastUserSelection: sanitizeLastUserSelection(state.lastUserSelection) ?? globalLastUserSelection,
                         globalLastUserSelection,
-                        settingsDefaultModel: state.settingsDefaultModel,
-                        settingsDefaultVariant: state.settingsDefaultVariant,
-                        settingsDefaultAgent: state.settingsDefaultAgent,
-                        settingsAutoCreateWorktree: state.settingsAutoCreateWorktree,
-                        settingsGitmojiEnabled: state.settingsGitmojiEnabled,
-                        settingsDefaultFileViewerPreview: state.settingsDefaultFileViewerPreview,
-                        settingsZenModel: state.settingsZenModel,
-                        settingsMessageStreamTransport: state.settingsMessageStreamTransport,
                         speechRate: state.speechRate,
                         speechPitch: state.speechPitch,
                         speechVolume: state.speechVolume,

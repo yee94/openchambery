@@ -48,17 +48,18 @@ const LEGACY_WORKSPACE_VALUE = '__current_workspace__';
 const DEFAULT_ASSISTANT_NAME = '默认助理';
 
 /** Resolves an initial provider and model for default assistant creation. */
-const resolveDefaultAssistantModel = (): { providerID: string; modelID: string } | null => {
+const resolveDefaultAssistantModel = (): { providerID: string; modelID: string; variant?: string } | null => {
   const configState = useConfigStore.getState();
-  const settingsDefaultModel = configState.settingsDefaultModel;
+  const settingsDefaultModel = configState.settingsDefaultModel
+    ?? (!configState.currentModelId ? configState.opencodeDefaultModel : undefined);
   if (settingsDefaultModel) {
     const parsed = parseModelIdentifier(settingsDefaultModel);
     if (parsed?.providerId && parsed?.modelId) {
-      return { providerID: parsed.providerId, modelID: parsed.modelId };
+      return { providerID: parsed.providerId, modelID: parsed.modelId, variant: parsed.variant ?? configState.settingsDefaultVariant };
     }
   }
   if (configState.currentProviderId && configState.currentModelId) {
-    return { providerID: configState.currentProviderId, modelID: configState.currentModelId };
+    return { providerID: configState.currentProviderId, modelID: configState.currentModelId, variant: configState.currentVariant };
   }
   const providers = configState.providers;
   for (const provider of providers) {
@@ -82,7 +83,7 @@ const emptyDraft = (defaultName = ''): AssistantDraft => {
     workspacePath: null,
     providerID: defaultModel?.providerID ?? '',
     modelID: defaultModel?.modelID ?? '',
-    variant: null,
+    variant: defaultModel?.variant ?? null,
   };
 };
 
@@ -357,6 +358,7 @@ export const AssistantsSettingsSidebar: React.FC<{ onItemSelect?: () => void }> 
             workspacePath: null,
             providerID: defaultModel.providerID,
             modelID: defaultModel.modelID,
+            variant: defaultModel.variant,
           });
           selectSettingsAssistant(created.id);
         }

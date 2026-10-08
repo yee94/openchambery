@@ -3851,7 +3851,7 @@ export async function getWorktreeBootstrapStatus(directory) {
   };
 }
 
-export async function removeWorktree(directory, input = {}) {
+export async function removeWorktree(directory, input = {}, { beforeRemove } = {}) {
   const targetDirectory = normalizeDirectoryPath(input?.directory);
   if (!targetDirectory) {
     throw new Error('Worktree directory is required');
@@ -3887,6 +3887,7 @@ export async function removeWorktree(directory, input = {}) {
 
     const targetExists = await checkPathExists(targetDirectory);
     if (targetExists && isManagedOrphan) {
+      await beforeRemove?.(targetDirectory);
       await fsp.rm(targetDirectory, { recursive: true, force: true });
     }
 
@@ -3901,6 +3902,7 @@ export async function removeWorktree(directory, input = {}) {
     return true;
   }
 
+  await beforeRemove?.(matchedEntry.worktree);
   await runGitCommandOrThrow(
     context.primaryWorktree,
     ['worktree', 'remove', '--force', matchedEntry.worktree],

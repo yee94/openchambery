@@ -320,6 +320,11 @@ export function applySessionCompactionLiveEvent(
     return true
   }
   if (type === "session.compaction.ended") {
+    setSessionCompactionBarrier(sessionID, false)
+    // The end event has no checkpoint identity. A completed HTTP snapshot may
+    // already have replaced the running row; recover missed starts via GET,
+    // rather than inventing a second checkpoint from the end event's ID.
+    if (!existingID) return false
     upsertCompactionCard(draft, sessionID, messageID, (current) => ({
       ...current,
       status: "completed",
@@ -327,10 +332,11 @@ export function applySessionCompactionLiveEvent(
       summary: typeof props.text === "string" ? props.text : current.summary,
       ...(typeof props.recent === "string" ? { recent: props.recent } : {}),
     }), asNumber(props.eventCreated))
-    setSessionCompactionBarrier(sessionID, false)
     return true
   }
   if (type === "session.compaction.failed") {
+    setSessionCompactionBarrier(sessionID, false)
+    if (!existingID && !inputID) return false
     const error = record(props.error) ? props.error : {}
     upsertCompactionCard(draft, sessionID, messageID, (current) => ({
       ...current,
@@ -342,7 +348,6 @@ export function applySessionCompactionLiveEvent(
         ...(typeof error.status === "number" ? { status: error.status } : {}),
       },
     }), asNumber(props.eventCreated))
-    setSessionCompactionBarrier(sessionID, false)
     return true
   }
   return false

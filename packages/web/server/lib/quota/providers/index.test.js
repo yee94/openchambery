@@ -11,7 +11,7 @@ describe('quota provider registry', () => {
     expect(typeof google.resolveGoogleAuthSources).toBe('function');
   });
 
-  it('can list configured providers without missing provider exports', () => {
-    expect(() => listConfiguredQuotaProviders()).not.toThrow();
+  it('reports unavailable credentials instead of an empty configured-provider list', async () => {
+    await expect(listConfiguredQuotaProviders()).rejects.toThrow('Unable to read OpenCode credentials');
   });
 });

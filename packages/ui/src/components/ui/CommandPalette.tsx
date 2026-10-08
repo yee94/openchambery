@@ -565,6 +565,7 @@ export const CommandPalette: React.FC = () => {
         data-page-scroll-lock="true"
         className="oc-global-search oc-mobile-overlay-surface oc-mobile-overlay-surface--translucent oc-composer-autocomplete-surface fixed left-1/2 top-[12vh] z-50 w-[min(40rem,calc(100vw-1.5rem))] max-w-none -translate-x-1/2 translate-y-0 gap-0 overflow-hidden rounded-3xl border-0 p-0"
         containerClassName="block p-0"
+        overlayClassName="bg-transparent dark:bg-transparent"
         showCloseButton={isMobile}
       >
         <DialogHeader className="sr-only">

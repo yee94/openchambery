@@ -310,21 +310,6 @@ describe('core-routes', () => {
     expect(dependencies.gracefulShutdown).not.toHaveBeenCalled();
   });
 
-  it('should parse JSON bodies for snippet config routes', async () => {
-    const app = express();
-    registerCommonRequestMiddleware(app, { express });
-    app.post('/api/config/snippets/example', (req, res) => {
-      res.json({ body: req.body });
-    });
-
-    const response = await request(app)
-      .post('/api/config/snippets/example')
-      .send({ content: 'Snippet body' })
-      .expect(200);
-
-    expect(response.body).toEqual({ body: { content: 'Snippet body' } });
-  });
-
   // Global raw config saves send { content: "<jsonc string>" }. Without this
   // prefix in the JSON middleware allowlist, PUT arrives with an empty body and
   // the handler rejects with "Configuration content must be a string".

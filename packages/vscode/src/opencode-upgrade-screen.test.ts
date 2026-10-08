@@ -8,7 +8,7 @@ describe('VS Code upgrade screen adapter', () => {
       canInstall: false,
       installation: 'external',
     });
-    expect(compatibilityFromDebugInfo({ mode: 'managed', version: '2.0.15' }, { platformCanInstall: true }).state).toBe('compatible');
+    expect(compatibilityFromDebugInfo({ mode: 'managed', version: '2.0.20' }, { platformCanInstall: true }).state).toBe('compatible');
     expect(compatibilityFromDebugInfo({
       mode: 'managed',
       version: null,
@@ -16,7 +16,7 @@ describe('VS Code upgrade screen adapter', () => {
     }, {
       platformCanInstall: true,
       readBinaryVersion: () => '1.18.30',
-    })).toMatchObject({ state: 'incompatible', canInstall: true, version: '1.18.30' });
+    })).toMatchObject({ state: 'unavailable', canInstall: false, version: null });
   });
 
   test('surfaces the install error and does not report upgraded', async () => {

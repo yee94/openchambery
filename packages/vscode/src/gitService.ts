@@ -1988,7 +1988,7 @@ export async function getWorktreeBootstrapStatus(directory: string): Promise<{ s
   };
 }
 
-export async function removeWorktree(directory: string, input: RemoveGitWorktreePayload): Promise<boolean> {
+export async function removeWorktree(directory: string, input: RemoveGitWorktreePayload, options: { beforeRemove?: (directory: string) => Promise<void> } = {}): Promise<boolean> {
   const targetDirectory = normalizeDirectoryPath(input?.directory);
   if (!targetDirectory) {
     throw new Error('Worktree directory is required');
@@ -2020,6 +2020,11 @@ export async function removeWorktree(directory: string, input: RemoveGitWorktree
   if (!matchedEntry?.worktree) {
     const targetExists = await checkPathExists(targetDirectory);
     if (targetExists) {
+      const rootCanonical = await canonicalPath(context.worktreeRoot);
+      if (targetCanonical === rootCanonical || !isInsideOrSameDirectory(rootCanonical, targetCanonical)) {
+        throw new Error('Directory is not a worktree or managed worktree orphan');
+      }
+      await options.beforeRemove?.(targetDirectory);
       await fs.promises.rm(targetDirectory, { recursive: true, force: true });
     }
 
@@ -2034,6 +2039,7 @@ export async function removeWorktree(directory: string, input: RemoveGitWorktree
     return true;
   }
 
+  await options.beforeRemove?.(matchedEntry.worktree);
   await runGitCommandOrThrow(
     context.primaryWorktree,
     ['worktree', 'remove', '--force', matchedEntry.worktree],

@@ -8,7 +8,24 @@ Reasoning projection supports native v2 list/context `{ data }` envelopes, assis
 
 Keep `bridge.ts` as a thin orchestration layer that delegates message handling to cohesive domain runtimes while preserving API behavior.
 
+Hash-prefixed prompt text is literal. The snippet configuration bridge and local CRUD/expansion implementation have been removed, matching the shared composer and Web runtime.
+
 ## Runtime modules
+
+- OpenCode configuration persistence: `opencodeConfig.ts` and the raw editor in `bridge-config-runtime.ts` share `packages/web/server/lib/opencode/config-files.js`. Both global JSON/JSONC documents participate; entity edits target their physical source. Custom file and `OPENCODE_CONFIG_DIR`/XDG resolution happen at read time. Structured writes preserve unrelated JSONC comments, validate before writing, retain backups, and atomically replace; parse/IO failures propagate. Raw editor selects custom or highest-precedence global JSONC/JSON, never a merged snapshot. See the owning OpenCode backend document's **Storage and configuration** contract.
+
+OpenCode client/schema and CLI default install target are `2.0.23`; execution and
+startup compatibility require the **running service** to be 2.x at `2.0.20` or newer.
+The install pin is not a downgrade policy. An unreadable service version stays
+unavailable even if the local CLI is compatible.
+
+`opencodeAuth.ts` re-exports the shared host credential adapter. Extension activation
+injects a resolver using the current manager URL/auth on every operation. Quota and
+provider-source/deletion bridge handlers await the credential API; no `auth.json`
+fallback remains. Auth-only deletion removes all accounts for that integration
+without restarting the service. Partial deletion failures remain retryable errors.
+The generic bridge refuses secret-bearing credential list/create replies before
+forwarding; webview callers receive existence/status information, never raw keys.
 
 Skill discovery uses the official V2 `skill.list` SDK with the selected directory and projects `id`/`path` onto the shared catalog's `name`/`path`. Local skill discovery also keys by path-derived ID. Combined first-message requests validate `skills: [{ id }]` and forward them as native prompt attachments, matching the Web/Electron/mobile route.
 
@@ -18,6 +35,7 @@ Skill discovery uses the official V2 `skill.list` SDK with the selected director
 
 - `bridge-git-runtime.ts`
   - Standard Git message handlers.
+  - Explicit worktree removal passes a validated pre-remove hook into `gitService`; the hook uses the current manager URL/auth and official v2 `debug.location.evict`. The Web-owned `location-release.js` supplies the shared 2s best-effort policy. `locationRelease` reports eviction separately from Git success. Unmatched existing directories may only be removed inside the managed worktree root (never the root itself); primary workspaces are rejected before eviction. Removal failures propagate without publishing success. Shared/externally configured servers receive only the explicitly deleted target, never navigation-triggered automatic eviction.
 
 - `bridge-git-special-runtime.ts`
   - Specialized Git flows (`pr-description`, `conflict-details`) and generation helpers.
@@ -276,6 +294,8 @@ Skill discovery uses the official V2 `skill.list` SDK with the selected director
   - Listening accepts `server listening on http://…` and the legacy `opencode server listening on …` line.
   - Health probes `GET /api/health` first, then `/global/health`, with Basic auth (username `opencode`). Admission requires `healthy: true` and a non-1.x version string; 1.15.0-style bodies fail closed. The password is never written to logs.
   - V1 migration gate (`GET /api/experimental/migration/v1`): `required` / `running` / `error` block transcript readiness; `completed` or HTTP 404 admit. Managed and external starts both wait on this gate; dispose/stop aborts an in-flight wait.
+
+- `opencode.ts` authentication: captures `OPENCODE_PASSWORD` before the legacy `OPENCODE_SERVER_PASSWORD`, and sets both child env names to the same password used by health/bridge requests after shell-env recovery. An explicitly configured external origin matching the local stable-channel `service.json` uses that registration's password (and fixed `opencode` username), re-read on reconnect; no private fallback credentials are sent to that service. Different origins retain explicit env auth. External attach never starts/stops the registered process.
 
 - `bridge-system-runtime.ts`
   - System/editor/provider/quota/notification/update-check message handlers.

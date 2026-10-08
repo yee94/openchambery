@@ -175,14 +175,13 @@ and expands directory references in the tree. Existing runtime read permissions
 and outside-file grants remain authoritative.
 
 `configCatalogQueries.ts` owns the safe Provider catalog and the composer Agent
-catalog by transport identity. Provider catalog Query keys are sharded by
-normalized config directory (different projects/instances must not share one
-cache); Agent composer catalog remains one global cache per transport, where
-directory is only an OpenCode request hint (`listAgents(directory)`). New
+catalog by transport identity and normalized actual directory. Different
+worktrees/instances must not share one cache; every official request carries
+that directory (`listAgents(directory)`). New
 OpenChamber hosts always use the safe
 projection from `GET /api/config/catalog/providers` via `runtimeFetch`, with directory and AbortSignal
 propagation. Older OpenChamber hosts that answer 404 or 501 use one compatibility read through the
-official SDK's `/api/config/providers` network path; its raw response is parsed immediately into the
+official SDK's `provider.list` / `model.list` / optional `config.get`; its raw response is parsed immediately into the
 safe DTO. The Provider DTO admits only provider/model display and capability fields;
 the parser constructs each field, drops unknown keys, bounds collections, and accepts
 partial catalogs with invalid individual entities removed. TanStack Query owns the sole
@@ -203,17 +202,27 @@ use the authoritative OpenCode agent **id** (domain `Agent.name` after
 the catalog loads — never via blind `toLowerCase`, so custom ids that differ
 only by case stay distinct. It applies the Provider DTO allowlist
 again when projecting Query results into the store. TanStack Query remains the
-Provider/Agent network SWR owner. `config-store` localStorage keeps one bounded
-safe Provider/default DTO startup snapshot on the active configuration
-directory; empty Provider responses are soft failures (retain prior non-empty
-data, do not write store/snapshot) and persist with
-`providerCatalogPartial: true` so hydrate will not seed them. Agent catalogs
-remain memory-only. Startup and config-change still force-refresh Providers and
-Agents; project switch restores that project's last agent+model ID and uses the
-directory-scoped Provider cache. Project-only agents are rare and arrive later
-via force-refresh or Agents settings metadata (`agentQueries.ts`, still
-directory-scoped). A new directory must not clear the in-memory Agent list or
-raise `agentConfigLoading` when the global Agent catalog is already present.
+Provider/Agent network SWR owner. `config-store` version 5 persists selections only
+under transport-scoped storage keys; it never persists providers, agents, catalog
+defaults or OpenCode/OpenChamber default-config snapshots. Legacy envelopes are
+allowlist-migrated without seeding Query; valid model/agent/variant intent survives.
+Known foreign-transport envelopes cannot supply selections. Runtime reset suppresses
+the empty reset write before rehydrating the destination bucket.
+
+Both Provider and raw Agent Query keys include the normalized **actual Location
+directory**, including worktrees. OpenCode owns inheritance; no parent-project
+mapping is applied, including during initialization. Directory switches expose
+only that directory's projections and loading flags. Late results update only
+their own directory, with per-resource request epochs and runtime generations.
+Prewarm loads only the active directory, never enumerating projects/locations.
+Empty/partial startup catalogs do not erase model, agent or thinking intent;
+catalog absence never rewrites saved settings. Configured default model strings
+`provider/model#variant` and objects `{ providerID, model, variant }` share
+`modelIdentifier.ts` normalization. Explicit configured/remembered choices remain
+intact while plugins are late; invalid syntax produces no model reference.
+The same normalized variant reaches new drafts and official send model refs.
+The server's `model.default` consumers already read ModelInfo rather than raw
+config documents and remain server-owned.
 Failed refreshes retain the previous snapshot. An empty Agent catalog is still a
 valid success response but uses `staleTime: 0` so the next `ensure`/`fetchQuery`
 refetches instead of treating the empty list as infinitely fresh. Cold-start
@@ -222,16 +231,16 @@ refetches instead of treating the empty list as infinitely fresh. Cold-start
   empty warm response cannot stick until a page restart. Opening a model or agent
   picker always force-refreshes both catalogs in the background via
   `refreshCatalogsOnPickerOpen`. Concurrent recovery and picker-open calls each
-  share one in-flight promise. App shells own the poll via `useStartupCatalogRecovery`
+   share one in-flight promise per transport, generation and directory. App shells own the poll via `useStartupCatalogRecovery`
   (`useInterval` + bounded attempts); VS Code bootstrap invokes the store action
-  directly. Persisted selection, startup snapshots, and settings carry
+   directly. Persisted selections carry
 transport identity; another transport receives isolated catalogs and directory
 selection. Runtime
 endpoint reset clears Provider and Agent snapshots, directory scopes, defaults, and catalog
 selection state. Reset and same-device LAN⇄relay rebinds must assign
 `catalogTransportIdentity` from `getRuntimeTransportIdentity()`, never from `runtimeKey`;
 `runtimeKey` is the stable device/instance id shared across transports, while catalog loaders
-discard writes whose transport fingerprint does not match the active one. The persisted allowlist excludes credential fields and unknown keys; the Provider snapshot uses the parser DTO allowlist, and migration
+discard writes whose transport fingerprint does not match the active one. The persisted allowlist excludes credential fields, catalogs, config defaults and unknown keys; migration
 rewrites legacy envelopes through that allowlist. Partial Provider refreshes retain an existing
 complete snapshot while cold partial snapshots stay memory-only. Provider and Agent loads capture
 runtime generation and transport identity before every commit, trace, error log, and loading

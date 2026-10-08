@@ -40,7 +40,10 @@ const state = {
 
 mock.module('@/lib/opencode/client', () => ({ opencodeClient: { reconnectToRuntimeBaseUrl: mock(() => undefined) } }));
 mock.module('@/lib/terminalApi', () => ({ disposeTerminalInputTransport: mock(() => undefined) }));
-mock.module('@/stores/useConfigStore', () => ({ useConfigStore: { setState: configSetState } }));
+mock.module('@/stores/useConfigStore', () => ({ useConfigStore: {
+  setState: configSetState,
+  persist: { getOptions: () => ({ storage: {} }), setOptions: mock(() => {}), rehydrate: mock(() => {}) },
+} }));
 mock.module('@/stores/useProjectsStore', () => ({ useProjectsStore: state }));
 mock.module('@/stores/useGlobalSessionsStore', () => ({ useGlobalSessionsStore: state }));
 mock.module('@/stores/useAutoReviewStore', () => ({ useAutoReviewStore: state }));

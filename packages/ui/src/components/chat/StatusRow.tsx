@@ -41,7 +41,7 @@ interface StatusRowProps {
   isWaitingForPermission?: boolean;
   wasAborted?: boolean;
   abortActive?: boolean;
-  retryInfo?: { attempt?: number; next?: number } | null;
+  retryInfo?: { attempt?: number; next?: number; message?: string } | null;
   turnStartedAt?: number;
   /** Authoritative turn settle — drop the working-hint slot immediately. */
   isTurnSettled?: boolean;

@@ -1,5 +1,5 @@
 /**
- * Startup upgrade screen for OpenCode below 2.0.15.
+ * Startup upgrade screen for OpenCode below the runtime contract minimum.
  *
  * This module does not own process lifecycle. It classifies the version the
  * existing startup path already detected, and installs through the owned-cache
@@ -9,6 +9,7 @@
 
 import {
   PINNED_OPENCODE2_VERSION,
+  MINIMUM_OPENCODE2_VERSION,
   isAcceptableOpenCode2HealthVersion,
   isOpenCode1xVersion,
   isOpenCode2VersionAtLeast,
@@ -16,7 +17,7 @@ import {
 } from './opencode2-pin.js';
 
 /** Oldest OpenCode this OpenChamber build will enter a session against. */
-export const REQUIRED_OPENCODE_VERSION = '2.0.15';
+export const REQUIRED_OPENCODE_VERSION = MINIMUM_OPENCODE2_VERSION;
 
 const normalizeVersion = (value) => {
   if (typeof value !== 'string') return null;
@@ -67,14 +68,6 @@ export function platformSupportsUpgradeScreenInstall(platform = process.platform
     return false;
   }
 }
-
-const pickDetectedVersion = (serveVersion, cliVersion) => {
-  const serve = normalizeVersion(serveVersion);
-  const cli = normalizeVersion(cliVersion);
-  if (serve && !isUpgradeScreenSatisfied(serve)) return serve;
-  if (serve) return serve;
-  return cli;
-};
 
 /**
  * @param {{
@@ -156,7 +149,7 @@ async function readUpgradeScreenStatus(deps) {
     ? await Promise.resolve(deps.readCliVersion()).catch(() => null)
     : null;
   return describeUpgradeScreen({
-    version: pickDetectedVersion(serveVersion, cliVersion),
+    version: serveVersion || (typeof deps.readServeVersion === 'function' ? null : cliVersion),
     installation,
     platformCanInstall: typeof deps.platformCanInstall === 'boolean'
       ? deps.platformCanInstall

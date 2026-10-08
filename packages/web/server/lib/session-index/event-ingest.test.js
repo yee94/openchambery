@@ -3,6 +3,13 @@ import { describe, expect, it, vi } from 'vitest';
 import { applySessionIndexEvent } from './event-ingest.js';
 
 describe('session index event ingest', () => {
+  it('takes moved ownership from native data rather than the old event envelope directory', () => {
+    const service = { move: vi.fn(() => true) };
+    expect(applySessionIndexEvent(service, { directory: '/old', payload: {
+      type: 'session.moved', created: 20, data: { sessionID: 'ses_move', location: { directory: '/new' }, projectID: 'project' },
+    } }, 30)).toBe(true);
+    expect(service.move).toHaveBeenCalledWith('ses_move', '/new', 20, undefined);
+  });
   it('writes session summaries, user activity, and status to the service', () => {
     const service = {
       upsertAndReportChange: vi.fn(() => true),

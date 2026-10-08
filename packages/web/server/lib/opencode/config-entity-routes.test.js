@@ -38,12 +38,6 @@ const createDependencies = (getCommandSources, configDirectory, getAgentSources 
   createMcpConfig: vi.fn(),
   updateMcpConfig: vi.fn(),
   deleteMcpConfig: vi.fn(),
-  listSnippets: vi.fn(),
-  getSnippet: vi.fn(),
-  createSnippet: vi.fn(),
-  updateSnippet: vi.fn(),
-  deleteSnippet: vi.fn(),
-  expandSnippets: vi.fn(),
   configDirectory,
   buildOpenCodeUrl: () => 'http://opencode-upstream:4096/',
   getOpenCodeAuthHeaders: () => ({ Authorization: 'Basic example' }),
@@ -459,6 +453,8 @@ describe('config entity agent metadata route', () => {
 });
 
 describe('global raw configuration routes', () => {
+  beforeEach(() => vi.stubEnv('OPENCODE_CONFIG', ''));
+  afterEach(() => vi.unstubAllEnvs());
   it('reads and validates the configured OpenCode and oh-my-opencode files', async () => {
     const app = express();
     app.use(express.json());
@@ -503,7 +499,7 @@ describe('global raw configuration routes', () => {
     await fs.rm(configDirectory, { recursive: true, force: true });
   });
 
-  it('discovers only existing configuration targets and prefers JSON files', async () => {
+  it('discovers only existing targets and edits the winning global JSONC document', async () => {
     const app = express();
     app.use(express.json());
     const configDirectory = await fs.mkdtemp(path.join(os.tmpdir(), 'openchamber-global-config-'));
@@ -516,20 +512,20 @@ describe('global raw configuration routes', () => {
     const available = await request(app).get('/api/config/global').expect(200);
     expect(available.body).toEqual({
       targets: [
-        { target: 'opencode', fileName: 'opencode.json' },
+        { target: 'opencode', fileName: 'opencode.jsonc' },
         { target: 'oh-my-openagent', fileName: 'oh-my-openagent.jsonc' },
       ],
     });
 
     const openCode = await request(app).get('/api/config/global/opencode').expect(200);
-    expect(openCode.body).toMatchObject({ fileName: 'opencode.json', content: '{ "model": "json-model" }' });
+    expect(openCode.body).toMatchObject({ fileName: 'opencode.jsonc', content: '{ "model": "jsonc-model" }' });
 
     await request(app)
       .put('/api/config/global/opencode')
       .send({ content: '{ "model": "updated-json-model" }' })
       .expect(200);
-    expect(await fs.readFile(path.join(configDirectory, 'opencode.json'), 'utf8')).toContain('updated-json-model');
-    expect(await fs.readFile(path.join(configDirectory, 'opencode.jsonc'), 'utf8')).toContain('jsonc-model');
+    expect(await fs.readFile(path.join(configDirectory, 'opencode.json'), 'utf8')).toContain('json-model');
+    expect(await fs.readFile(path.join(configDirectory, 'opencode.jsonc'), 'utf8')).toContain('updated-json-model');
 
     await fs.rm(configDirectory, { recursive: true, force: true });
   });

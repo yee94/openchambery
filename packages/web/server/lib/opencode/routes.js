@@ -709,7 +709,7 @@ export const registerOpenCodeRoutes = (app, dependencies) => {
 
       const sources = getProviderSources(providerId, directory);
       const { getProviderAuth } = await getAuthLibrary();
-      const auth = getProviderAuth(providerId);
+      const auth = await getProviderAuth(providerId);
       sources.sources.auth.exists = Boolean(auth);
 
       return res.json({
@@ -753,12 +753,12 @@ export const registerOpenCodeRoutes = (app, dependencies) => {
       let removed = false;
       if (scope === 'auth') {
         const { removeProviderAuth } = await getAuthLibrary();
-        removed = removeProviderAuth(providerId);
+        removed = await removeProviderAuth(providerId);
       } else if (scope === 'user' || scope === 'project' || scope === 'custom') {
         removed = removeProviderConfig(providerId, directory, scope);
       } else if (scope === 'all') {
         const { removeProviderAuth } = await getAuthLibrary();
-        const authRemoved = removeProviderAuth(providerId);
+        const authRemoved = await removeProviderAuth(providerId);
         const userRemoved = removeProviderConfig(providerId, directory, 'user');
         const projectRemoved = directory ? removeProviderConfig(providerId, directory, 'project') : false;
         const customRemoved = removeProviderConfig(providerId, directory, 'custom');
@@ -767,14 +767,14 @@ export const registerOpenCodeRoutes = (app, dependencies) => {
         return res.status(400).json({ error: 'Invalid scope' });
       }
 
-      if (removed) {
+      if (removed && scope !== 'auth') {
         await refreshOpenCodeAfterConfigChange(`provider ${providerId} disconnected (${scope})`);
       }
 
       return res.json({
         success: true,
         removed,
-        requiresReload: removed,
+        requiresReload: removed && scope !== 'auth',
         message: removed ? 'Provider disconnected successfully' : 'Provider was not connected',
         reloadDelayMs: removed ? clientReloadDelayMs : undefined,
       });

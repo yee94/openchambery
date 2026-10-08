@@ -1,5 +1,12 @@
 # Session Index Runtime
 
+Native `session.renamed` updates the existing runtime-scoped summary's title and
+update clock directly, publishing through the normal index revision path. It
+preserves activity ordering, pins and execution status; older/duplicate events
+and unknown sessions are no-ops. Partial rename payloads never fabricate rows.
+
+Native `session.moved` uses `data.location.directory`, not the old event-envelope directory. The transactional `move` operation retains summary activity/status and independent pin membership, maintains the newest-20 destination bound, and installs a runtime-scoped event-clock fence against delayed source-directory upserts/pages. Duplicate/older moves are no-ops. Unknown sessions are not fabricated from the partial move payload.
+
 Every OpenChamber Web Server enables `session-index.sqlite` in its data
 directory by default. Electron injects its user-data path explicitly.
 `sessionIndexDbPath` and `OPENCHAMBER_SESSION_INDEX_DB_PATH` override that

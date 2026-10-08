@@ -12,7 +12,7 @@ import { WorkerHighlightedCode } from '@/components/code/WorkerHighlightedCode';
 import { useOptionalThemeSystem } from '@/contexts/useThemeSystem';
 import { useEffectiveDirectory } from '@/hooks/useEffectiveDirectory';
 import { useSessionUIStore } from '@/sync/session-ui-store';
-import { useSession, useSessionMessageRecords, useEnsureSessionMessages, useSessionStatus, useSessionStatusObservedAt, useSessionStatusSnapshotAt } from '@/sync/sync-context';
+import { useSession, useSessionMessageRecords, useEnsureSessionMessages, useGlobalSessionStatus, useSessionStatus, useSessionStatusObservedAt, useSessionStatusSnapshotAt } from '@/sync/sync-context';
 import { useUIStore } from '@/stores/useUIStore';
 import { sessionEvents } from '@/lib/sessionEvents';
 import { ScrollShadow } from '@/components/ui/ScrollShadow';
@@ -2112,7 +2112,8 @@ const ToolPartContent: React.FC<ToolPartProps> = ({
     // Background subagent / shell：tool part 立即终结（success），但 metadata/output
     // 仍可标记 status=running。该历史 hint 只表示曾转后台，不是永久 live。
     // 权威来源：子会话 status（subagent）、父会话 synthetic shell/subagent 完成通知。
-    // 观察是一次性闩锁：权威 idle/terminal 确认后停止订阅，历史行不长期占用窄状态。
+    // 子会话按列表的实时状态持续订阅；同一个 session 可以在 idle 后继续运行。
+    // Shell 没有独立 session 状态，仍由完成通知结束观察。
     const settledRunningHint = React.useMemo(() => {
         if (!isFinalized || !isBackgroundableTool) return false;
         if (hasSettledBackgroundRunningHint(part)) return true;
@@ -2140,13 +2141,14 @@ const ToolPartContent: React.FC<ToolPartProps> = ({
     const taskOutputRunning = Boolean(isTaskTool && settledRunningHint);
     const shellBackgroundRunningHint = Boolean(isShellTool && settledRunningHint);
     const [backgroundObserveActive, setBackgroundObserveActive] = React.useState(true);
+    const childSessionStatus = useGlobalSessionStatus(isTaskTool ? taskSessionId ?? '' : '');
     const parentSessionIdForBackground = typeof part.sessionID === 'string' ? part.sessionID.trim() : '';
     // Shell 完成后官方不 patch tool metadata；需要父会话消息上的 synthetic 通知。
     // 仅在仍有 background hint 且观察未闩断时订阅，避免历史行常驻拉取。
     const wantsParentCompletionProjection = Boolean(
         isBackgroundableTool
         && settledRunningHint
-        && backgroundObserveActive
+        && (isTaskTool ? !childSessionStatus : backgroundObserveActive)
         && parentSessionIdForBackground,
     );
     const parentSessionMessagesForBackground = useSessionMessageRecords(
@@ -2166,11 +2168,10 @@ const ToolPartContent: React.FC<ToolPartProps> = ({
         [parentSessionMessagesForBackground, wantsParentCompletionProjection],
     );
     const wantsTaskChildStatus = isTaskTool
-        && ((!isFinalized && activeLatched) || (taskOutputRunning && backgroundObserveActive));
+        && !isFinalized && activeLatched;
     const activeTaskStatusSessionId = wantsTaskChildStatus ? taskSessionId : undefined;
     const activeTaskParentSessionId = wantsTaskChildStatus && !taskSessionId ? part.sessionID : undefined;
     const observedTaskSessionId = activeTaskStatusSessionId ?? activeTaskParentSessionId;
-    const childSessionStatus = useSessionStatus(activeTaskStatusSessionId ?? '', currentDirectory);
     const parentSessionStatus = useSessionStatus(activeTaskParentSessionId ?? '', currentDirectory);
     const statusObservedAt = useSessionStatusObservedAt(observedTaskSessionId ?? '', currentDirectory);
     const statusSnapshotAt = useSessionStatusSnapshotAt(currentDirectory, wantsTaskChildStatus);
@@ -2182,26 +2183,16 @@ const ToolPartContent: React.FC<ToolPartProps> = ({
         }),
         [backgroundCompletions, childSessionStatus?.type, part],
     );
-    // 与 shouldSuppressTaskLoading 相同的新鲜度守卫：仅当 idle 观察时间不早于任务开始才确认结束。
-    const childIdleConfirmed = Boolean(
-        taskOutputRunning
-        && childSessionStatus?.type === 'idle'
-        && typeof effectiveTimeStart === 'number'
-        && (
-            (typeof statusObservedAt === 'number' && effectiveTimeStart <= statusObservedAt)
-            || (typeof statusSnapshotAt === 'number' && effectiveTimeStart <= statusSnapshotAt)
-        )
-    );
     React.useEffect(() => {
-        if (childIdleConfirmed || backgroundActivity.kind === 'terminal') {
+        if (isShellTool && backgroundActivity.kind === 'terminal') {
             setBackgroundObserveActive(false);
         }
-    }, [backgroundActivity.kind, childIdleConfirmed]);
+    }, [backgroundActivity.kind, isShellTool]);
     const taskBackgroundRunning = Boolean(
         isTaskTool
-        && backgroundObserveActive
         && !isError
-        && backgroundActivity.kind === 'background-running'
+        && (childSessionStatus?.type === 'busy' || childSessionStatus?.type === 'retry'
+            || (taskOutputRunning && backgroundActivity.kind === 'background-running'))
         && taskSessionId
     );
     // Shell 后台：live 仅当权威投影仍为 background-running；完成通知/终态后停止 busy。
@@ -2377,7 +2368,7 @@ const ToolPartContent: React.FC<ToolPartProps> = ({
             delegating: isDelegatingTask,
             childStatus: diagnosticsSessionStatusType(childSessionStatus),
             parentStatus: diagnosticsSessionStatusType(parentSessionStatus),
-            idleConfirmed: childIdleConfirmed,
+            idleConfirmed: childSessionStatus?.type === 'idle',
             navigateCapability: sessionSurface.capabilities.navigateNestedSession,
             surfaceKind: sessionSurface.kind,
             ...(typeof effectiveTimeStart === 'number' ? { taskStartedAt: effectiveTimeStart } : {}),
@@ -2385,7 +2376,6 @@ const ToolPartContent: React.FC<ToolPartProps> = ({
             ...(typeof statusSnapshotAt === 'number' ? { statusSnapshotAt } : {}),
         };
     }, [
-        childIdleConfirmed,
         childSessionStatus,
         currentDirectory,
         effectiveActive,

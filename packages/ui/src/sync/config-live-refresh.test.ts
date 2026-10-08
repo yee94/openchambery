@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { QueryClient, QueryObserver } from '@tanstack/react-query';
 import { createConfigLiveRefresh } from './config-live-refresh';
+import { queryKeys } from '@/lib/queryRuntime';
 
 afterEach(() => vi.useRealTimers());
 
@@ -49,6 +50,26 @@ describe('V2 configuration event refresh', () => {
     await vi.advanceTimersByTimeAsync(100);
     expect(keys.map((key) => s.client.getQueryState(key)?.isInvalidated)).toEqual([true, false, false, false]);
     s.refresh.dispose(); s.client.clear();
+  });
+
+  it('refreshes raw agents only in the event directory without waking other worktrees', async () => {
+    const s = setup();
+    const key = queryKeys.agents.raw('/one', 'runtime-a');
+    const otherKey = queryKeys.agents.raw('/two', 'runtime-a');
+    const otherRuntimeKey = queryKeys.agents.raw('/one', 'runtime-b');
+    [key, otherKey, otherRuntimeKey].forEach((entry) => s.client.setQueryData(entry, ['previous']));
+    const queryFn = vi.fn(async () => ['updated']);
+    const otherQueryFn = vi.fn(async () => ['unrelated']);
+    const unsubscribe = new QueryObserver(s.client, { queryKey: key, queryFn }).subscribe(() => undefined);
+    const unsubscribeOther = new QueryObserver(s.client, { queryKey: otherKey, queryFn: otherQueryFn }).subscribe(() => undefined);
+    s.refresh.event('agent.updated', '/one/');
+    await vi.advanceTimersByTimeAsync(100);
+    expect(queryFn).toHaveBeenCalledTimes(1);
+    expect(otherQueryFn).not.toHaveBeenCalled();
+    expect(s.client.getQueryData(key)).toEqual(['updated']);
+    expect(s.client.getQueryState(otherKey)?.isInvalidated).toBe(false);
+    expect(s.client.getQueryState(otherRuntimeKey)?.isInvalidated).toBe(false);
+    unsubscribe(); unsubscribeOther(); s.refresh.dispose(); s.client.clear();
   });
 
   it('ignores high-frequency transcript events without scheduling or scanning queries', async () => {
@@ -130,7 +151,7 @@ describe('V2 configuration event refresh', () => {
 
   it('reconnect invalidates all configuration families without touching unrelated queries', async () => {
     const s = setup();
-    const keys = [['runtime-a', 'skills', '/two'], ['runtime-a', 'agents', 'raw'], ['runtime-a', 'plugins', 'list', '/one']];
+    const keys = [['runtime-a', 'skills', '/two'], queryKeys.agents.raw('/one', 'runtime-a'), ['runtime-a', 'plugins', 'list', '/one']];
     keys.forEach((key) => s.client.setQueryData(key, []));
     s.refresh.event('server.connected');
     await vi.advanceTimersByTimeAsync(100);

@@ -12,7 +12,6 @@ import { getRootBranch } from '@/lib/worktrees/worktreeStatus';
 import { checkIsGitRepository } from '@/lib/gitApi';
 import { useDirectoryStore } from './useDirectoryStore';
 import { useProjectsStore } from './useProjectsStore';
-import { useSnippetsStore } from './useSnippetsStore';
 import { useGlobalSessionsStore } from './useGlobalSessionsStore';
 import { getMultiRunSessionTitle } from '@/lib/multirun/title';
 import { getSyncChildStores, registerSessionDirectory } from '@/sync/sync-refs';
@@ -295,15 +294,13 @@ export const useMultiRunStore = create<MultiRunStore>()(
 
           void (async () => {
             try {
-              const expandText = useSnippetsStore.getState().expandText;
               await Promise.allSettled(
                 createdRuns.map(async (run) => {
                   try {
-                    const text = await expandText(run.prompt).catch(() => run.prompt);
                     await routeMessage({
                       sessionId: run.sessionId,
                       directory: run.worktreePath,
-                      content: text,
+                      content: run.prompt,
                       providerID: run.providerID,
                       modelID: run.modelID,
                       variant: run.variant,

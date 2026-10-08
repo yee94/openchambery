@@ -104,7 +104,7 @@ describe('parseOpenCodeListeningLine', () => {
 describe('evaluateSidecarExecutionAdmission (ticket 11)', () => {
   test('admits verified serve for core execution', () => {
     const result = evaluateSidecarExecutionAdmission({
-      serveVersion: '2.0.12',
+      serveVersion: RUNTIME_CONTRACT_MIN_VERIFIED,
       reachable: true,
       healthOk: true,
       migrationAdmitTranscript: true,
@@ -116,8 +116,9 @@ describe('evaluateSidecarExecutionAdmission (ticket 11)', () => {
   });
 
   test('admits newer 2.x and blocks below-min', () => {
+    const [major, minor, patch] = RUNTIME_CONTRACT_MIN_VERIFIED.split('.').map(Number);
     const newer = evaluateSidecarExecutionAdmission({
-      serveVersion: '2.0.15',
+      serveVersion: `${major}.${minor}.${patch + 1}`,
       reachable: true,
       healthOk: true,
       migrationAdmitTranscript: true,

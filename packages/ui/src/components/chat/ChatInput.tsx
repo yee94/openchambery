@@ -43,7 +43,6 @@ import { useTranscriptData } from '@/sync/transcript-repository-observers';
 import { getAllSyncSessionMap, getSyncMessages, resolveMaterializedSessionDirectory } from '@/sync/sync-refs';
 import { useSync } from '@/sync/use-sync';
 import { useInlineCommentDraftStore, type InlineCommentDraft } from '@/stores/useInlineCommentDraftStore';
-import { useSnippetsStore } from '@/stores/useSnippetsStore';
 import { appendInlineComments } from '@/lib/messages/inlineComments';
 import { renderMagicPrompt } from '@/lib/magicPrompts';
 import { startReviewFlow } from '@/lib/reviewFlow';
@@ -62,7 +61,6 @@ import { SessionRecoveryNotice } from './SessionRecoveryNotice';
 import { AutoReviewBanner } from './AutoReviewBanner';
 import { FileMentionAutocomplete, type FileMentionHandle, type MentionSkillInfo } from './FileMentionAutocomplete';
 import { CommandAutocomplete, type CommandAutocompleteHandle, type CommandInfo } from './CommandAutocomplete';
-import { SnippetAutocomplete, type SnippetAutocompleteHandle } from './SnippetAutocomplete';
 import { cn, formatDirectoryName } from '@/lib/utils';
 import { ModelControls } from './ModelControls';
 import { LeaderKeyHint } from './LeaderKeyHint';
@@ -1096,8 +1094,6 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
     const [showCommandAutocomplete, setShowCommandAutocomplete] = React.useState(false);
     const [commandQuery, setCommandQuery] = React.useState('');
 
-    const [showSnippetAutocomplete, setShowSnippetAutocomplete] = React.useState(false);
-    const [snippetQuery, setSnippetQuery] = React.useState('');
     const [nativeSuggestionRows, setNativeSuggestionRows] = React.useState<ComposerAutocompleteListRow[]>([]);
     const [nativeSuggestionHighlight, setNativeSuggestionHighlight] = React.useState(0);
     const [textareaSize, setTextareaSize] = React.useState<{ height: number; maxHeight: number } | null>(null);
@@ -1846,7 +1842,6 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
     const pendingSessionReferenceRef = React.useRef(false);
     const commandRef = React.useRef<CommandAutocompleteHandle>(null);
 
-    const snippetRef = React.useRef<SnippetAutocompleteHandle>(null);
     const messageRef = React.useRef(message);
     const pendingPastedAttachmentFilenamesRef = React.useRef<Set<string>>(new Set());
     const getDocument = composer.getDocument;
@@ -2041,36 +2036,6 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
         return ranges;
     }, [inputMode, knownSlashNames, message]);
 
-    // Snippet triggers (#name / #alias). Highlighted like commands once the
-    // trigger matches a known snippet name or alias.
-    const availableSnippets = useSnippetsStore((s) => s.snippets);
-    const knownSnippetTriggers = React.useMemo(() => {
-        const triggers = new Set<string>();
-        for (const snippet of availableSnippets) {
-            triggers.add(snippet.name.toLowerCase());
-            for (const alias of snippet.aliases ?? []) triggers.add(alias.toLowerCase());
-        }
-        return triggers;
-    }, [availableSnippets]);
-
-    const composerSnippetRanges = React.useMemo<HighlightRange[]>(() => {
-        if (!message || !message.includes('#') || inputMode === 'shell' || knownSnippetTriggers.size === 0) {
-            return [];
-        }
-        const ranges: HighlightRange[] = [];
-        const snippetRegex = /(^|\s)#([A-Za-z0-9][A-Za-z0-9_-]*)/g;
-        let match: RegExpExecArray | null;
-        while ((match = snippetRegex.exec(message)) !== null) {
-            const trigger = match[2];
-            if (!knownSnippetTriggers.has(trigger.toLowerCase())) {
-                continue;
-            }
-            const hashStart = match.index + match[1].length;
-            ranges.push({ start: hashStart, end: hashStart + 1 + trigger.length, style: 'mentionSnippet' });
-        }
-        return ranges;
-    }, [inputMode, knownSnippetTriggers, message]);
-
     // @mention spans use the shared reference color. Computed as character ranges
     // so they can be merged with markdown highlight ranges in a single overlay.
     const composerMentionRanges = React.useMemo<MentionRange[]>(() => {
@@ -2130,7 +2095,6 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
             ...(nativeComposerOwnedInput ? [] : highlightFencedCode(message)),
             ...mentionRangesToHighlightRanges(composerMentionRanges),
             ...composerCommandRanges,
-            ...composerSnippetRanges,
             ...attachmentCitationRanges,
             // Authoritative reference decorations win over slash rescans so
             // reserved-slot skills/sessions keep their metric-safe icon placement.
@@ -2142,7 +2106,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
             })),
         ];
         return buildHighlightParts(message, ranges);
-    }, [attachmentCitationRanges, composerCommandRanges, composerSnippetRanges, composerMentionRanges, composerDocument.references, inputMode, message, nativeComposerOwnedInput]);
+    }, [attachmentCitationRanges, composerCommandRanges, composerMentionRanges, composerDocument.references, inputMode, message, nativeComposerOwnedInput]);
 
     const sanitizeAttachmentsForSend = React.useCallback(
         (files: AttachedFile[] | undefined): AttachedFile[] => (files ?? [])
@@ -3636,7 +3600,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
 
         // New-session draft: paint "establishing conversation" before clearing
         // the composer. Otherwise the draft dialog stays visible with an empty
-        // input while response-style / snippet prep (and later createWithPrompt)
+        // input while response-style prep (and later createWithPrompt)
         // still run — claimDraftSubmission is too late for that gap.
         if (establishingDraftIDAtSubmit && draftMessageID) {
             const painted = await beginDraftEstablishingPaint({
@@ -4054,16 +4018,6 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
             }
         }
 
-        try {
-            const expandText = useSnippetsStore.getState().expandText;
-            primaryText = await expandText(primaryText);
-            for (const part of additionalParts) {
-                if (!part.synthetic) part.text = await expandText(part.text);
-            }
-        } catch (error) {
-            console.warn('[ChatInput] Failed to expand snippets, sending original text:', error);
-        }
-
         // Hand optimistic ticket / edit paint to the final send path; early exits
         // roll them back in finally. sendPromise rejection rolls back the ticket
         // only — sendMessage releases the editing paint around the commit, and the
@@ -4320,7 +4274,6 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
             clearQueue(currentQueueScope);
         }
         setShowCommandAutocomplete(false);
-        setShowSnippetAutocomplete(false);
         setShowFileMention(false);
         if (inputMode === 'shell') {
             setInputMode('normal');
@@ -4550,15 +4503,6 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
             }
         }
 
-        if (showSnippetAutocomplete && snippetRef.current) {
-            if (e.key === 'Enter' || e.key === 'Escape' || e.key === 'Tab' || isPlainArrowKey) {
-                e.preventDefault();
-                e.stopPropagation();
-                snippetRef.current.handleKeyDown(e.key);
-                return;
-            }
-        }
-
         if (showFileMention && mentionRef.current) {
             if (e.key === 'Enter' || e.key === 'Escape' || e.key === 'Tab' || isPlainArrowKey) {
                 e.preventDefault();
@@ -4583,7 +4527,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
                 ? 1
                 : 0;
 
-        if (cycleAgentDirection !== 0 && !showCommandAutocomplete && !showSnippetAutocomplete && !showFileMention) {
+        if (cycleAgentDirection !== 0 && !showCommandAutocomplete && !showFileMention) {
             e.preventDefault();
             e.stopPropagation();
             void controllerWiring?.shortcut('cycle', cycleAgentDirection);
@@ -4597,7 +4541,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
         // Handle ArrowUp/ArrowDown for message history navigation
         // ArrowUp: only when cursor at start (position 0) or input is empty
         // ArrowDown: also works when cursor at end (to cycle forward through history)
-        const isAnyAutocompleteOpen = showCommandAutocomplete || showSnippetAutocomplete || showFileMention;
+        const isAnyAutocompleteOpen = showCommandAutocomplete || showFileMention;
         const cursorAtStart = textareaRef.current?.selectionStart === 0 && textareaRef.current?.selectionEnd === 0;
         const cursorAtEnd = textareaRef.current?.selectionStart === message.length && textareaRef.current?.selectionEnd === message.length;
         const canNavigateHistoryUp = !isAnyAutocompleteOpen && (message.length === 0 || cursorAtStart);
@@ -4786,7 +4730,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
             return;
         }
 
-        if (!showCommandAutocomplete && !showSnippetAutocomplete && !showFileMention) {
+        if (!showCommandAutocomplete && !showFileMention) {
             setAutocompleteOverlayPosition(null);
             return;
         }
@@ -4811,7 +4755,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
         const spaceBelow = containerRect.height - caretY - popupMargin;
         const place: 'above' | 'below' = spaceBelow >= estimatedPopupHeight || spaceBelow >= spaceAbove ? 'below' : 'above';
 
-        const desiredWidth = showFileMention ? 520 : showCommandAutocomplete || showSnippetAutocomplete ? 450 : 360;
+        const desiredWidth = showFileMention ? 520 : showCommandAutocomplete ? 450 : 360;
         const clampedLeft = Math.max(
             popupMargin,
             Math.min(caretX - 24, containerRect.width - desiredWidth - popupMargin)
@@ -4831,7 +4775,6 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
         message.length,
         showCommandAutocomplete,
         showFileMention,
-        showSnippetAutocomplete,
     ]);
 
     React.useLayoutEffect(() => {
@@ -4840,7 +4783,6 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
         updateAutocompleteOverlayPosition,
         message,
         showCommandAutocomplete,
-        showSnippetAutocomplete,
         showFileMention,
         isDesktopExpanded,
     ]);
@@ -5027,24 +4969,15 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
         if (!trigger) {
             setShowCommandAutocomplete(false);
             setShowFileMention(false);
-            setShowSnippetAutocomplete(false);
             return;
         }
         if (trigger.kind === 'slash-command') {
             setCommandQuery(trigger.query);
             setShowCommandAutocomplete(true);
             setShowFileMention(false);
-            setShowSnippetAutocomplete(false);
             return;
         }
         setShowCommandAutocomplete(false);
-        if (trigger.kind === 'snippet') {
-            setSnippetQuery(trigger.query);
-            setShowSnippetAutocomplete(true);
-            setShowFileMention(false);
-            return;
-        }
-        setShowSnippetAutocomplete(false);
         setMentionQuery(trigger.query);
         setShowFileMention(true);
     }, [
@@ -5053,8 +4986,6 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
         setMentionQuery,
         setShowCommandAutocomplete,
         setShowFileMention,
-        setShowSnippetAutocomplete,
-        setSnippetQuery,
     ]);
 
     const commitBrowserTextChange = React.useCallback((nextText: string, selectionStart: number, selectionEnd: number, inputSource: FileMentionAutocompleteInputSource = 'manual', insertedText?: string) => {
@@ -5744,34 +5675,6 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
             setShowFileMention(false);
             setMentionQuery('');
         });
-        restoreWebComposerFocus();
-    };
-
-    const handleSnippetSelect = (_snippet: unknown, trigger: string) => {
-        const cursorPosition = readComposerInsertCaret(message.length);
-        const range = resolveComposerAutocompleteReplaceRange(
-            message,
-            cursorPosition,
-            autocompleteTriggerRef.current,
-        );
-        const textBeforeCursor = message.substring(0, cursorPosition);
-        const lastHashSymbol = textBeforeCursor.lastIndexOf('#');
-        const startIndex = range?.start ?? (lastHashSymbol !== -1 ? lastHashSymbol : cursorPosition);
-        const endIndex = range?.end ?? cursorPosition;
-        const newMessage = `${message.substring(0, startIndex)}#${trigger} ${message.substring(endIndex)}`;
-        applyProgrammaticEdit(newMessage);
-        const nextCursor = startIndex + trigger.length + 2;
-        cursorPosRef.current = nextCursor;
-        requestAnimationFrame(() => {
-            if (textareaRef.current) {
-                textareaRef.current.selectionStart = nextCursor;
-                textareaRef.current.selectionEnd = nextCursor;
-            }
-            adjustTextareaHeight();
-            updateAutocompleteState(newMessage, nextCursor);
-        });
-        setShowSnippetAutocomplete(false);
-        setSnippetQuery('');
         restoreWebComposerFocus();
     };
 
@@ -6609,7 +6512,6 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
     const handleNativeAutocompleteDismiss = useEvent(() => {
         autocompleteTriggerRef.current = null;
         setShowCommandAutocomplete(false);
-        setShowSnippetAutocomplete(false);
         setShowFileMention(false);
         setNativeSuggestionRows([]);
         setNativeSuggestionHighlight(0);
@@ -7961,24 +7863,6 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
                             commandPolicy={evaluateChatInputCommandPolicy}
                             commandContext={commandContext}
                             onRowsChange={nativeIosComposerActive ? handleNativeSuggestionRows : undefined}
-                            style={isDesktopExpanded && autocompleteOverlayPosition
-                                ? {
-                                    left: `${autocompleteOverlayPosition.left}px`,
-                                    top: `${autocompleteOverlayPosition.top}px`,
-                                    bottom: 'auto',
-                                    width: `min(450px, calc(100% - ${autocompleteOverlayPosition.left + 8}px))`,
-                                    maxHeight: `${autocompleteOverlayPosition.maxHeight}px`,
-                                    transform: autocompleteOverlayPosition.place === 'above' ? 'translateY(-100%)' : undefined,
-                                }
-                                : undefined}
-                        />
-                    )}
-                    {showSnippetAutocomplete && (
-                        <SnippetAutocomplete
-                            ref={snippetRef}
-                            searchQuery={snippetQuery}
-                            onSnippetSelect={handleSnippetSelect}
-                            onClose={() => setShowSnippetAutocomplete(false)}
                             style={isDesktopExpanded && autocompleteOverlayPosition
                                 ? {
                                     left: `${autocompleteOverlayPosition.left}px`,

@@ -1,6 +1,6 @@
 # Composer autocomplete engine
 
-Runtime-agnostic trigger, rank, icon-name, and row-builder helpers for `/` commands, `#` snippets, and `@` mentions. Skills are `@` context rows, matching OpenCode, not a `/` palette.
+Runtime-agnostic trigger, rank, icon-name, and row-builder helpers for `/` commands and `@` mentions. Skills are `@` context rows, matching OpenCode, not a `/` palette. Hash-prefixed text is ordinary text, with no autocomplete or expansion.
 
 ChatInput and the Capacitor iOS native composer both consume this module. A later language-server consumer can import the same functions without mounting React autocomplete UI.
 
@@ -10,7 +10,7 @@ Assistant contacts also consume `resolveComposerAutocompleteTrigger` through `co
 
 | Concern | Owner |
 |---|---|
-| Trigger detection (`/`, `#`, `@`, paste guard, shell off) | `trigger.ts` |
+| Trigger detection (`/`, `@`, paste guard, shell off) | `trigger.ts` |
 | Accept replace range (open trigger token, then live caret) | `trigger.ts` (`resolveComposerAutocompleteReplaceRange`) |
 | Slash-command fuzzy rank | `slash-rank.ts` |
 | `@` skill fuzzy rank | `skill-rank.ts` |
@@ -18,7 +18,7 @@ Assistant contacts also consume `resolveComposerAutocompleteTrigger` through `co
 | Flat suggestion rows (titles, badges, icon names) | `rows.ts` |
 | Equal-row commit / emit for native and LS consumers | `visible-rows.ts` |
 | WebView PNG raster of a sprite icon | `rasterize-icon.ts` |
-| Catalog fetch, Query, and insert/submit | Existing `CommandAutocomplete` / `FileMentionAutocomplete` (skills live in the `@` list) / `SnippetAutocomplete` |
+| Catalog fetch, Query, and insert/submit | Existing `CommandAutocomplete` / `FileMentionAutocomplete` (skills live in the `@` list) |
 
 Do not fetch files, commands, or skills from this folder. Ranking runs on catalogs the caller already loaded.
 
@@ -28,8 +28,7 @@ Matches ChatInput:
 
 1. `inputMode === 'shell'` → closed
 2. Document starts with `/`, caret still in the first token, no space → slash-command
-3. Word-boundary `#` → snippet
-4. Word-boundary `@` (`getFileMentionAutocompleteQuery`) → mention, including skills
+3. Word-boundary `@` (`getFileMentionAutocompleteQuery`) → mention, including skills
 
 Leading reserved icon slots (`/\u2003name`) are stripped before ranking.
 

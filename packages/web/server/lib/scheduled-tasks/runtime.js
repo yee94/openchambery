@@ -2,7 +2,6 @@ import crypto from 'node:crypto';
 import { DateTime } from 'luxon';
 import parser from 'cron-parser';
 import { makeOpenCodeV2Client } from '../opencode/v2-client.js';
-import { expandSnippets } from '../opencode/snippets.js';
 import {
   getSessionGoalCapability,
   isSessionGoalSupported,
@@ -858,7 +857,7 @@ export const createScheduledTasksRuntime = (deps) => {
   };
 
   const buildPromptText = (task, projectPath) => {
-    const promptText = expandSnippets(task.execution.prompt, projectPath);
+    const promptText = task.execution.prompt;
     if (!task.execution.goalEnabled) {
       return promptText;
     }
@@ -883,7 +882,7 @@ export const createScheduledTasksRuntime = (deps) => {
     // back to an inline objective so parseGoalMetadata still accepts the
     // record. Oversized prompts are distilled into audit criteria by the
     // small model; on distill failure a head+tail excerpt keeps intent.
-    let objectiveText = expandSnippets(task.execution.prompt, projectPath);
+    let objectiveText = task.execution.prompt;
     if (objectiveText.length > 5000) {
       let distilled = null;
       try {

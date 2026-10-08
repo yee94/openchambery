@@ -57,6 +57,19 @@ const mountProxy = () => {
   return app;
 };
 
+describe('credential response boundary', () => {
+  it.each(['/api/credential', '/api/credential/', '/api/%63redential?directory=/repo'])('refuses raw credential list %s before upstream', async (path) => {
+    const fetchSpy = vi.fn();
+    globalThis.fetch = fetchSpy;
+    const response = await request(mountProxy()).get(path).expect(403);
+    expect(response.body.code).toBe('credential_response_refused');
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+  it('refuses credential create replies which echo values', async () => {
+    await request(mountProxy()).post('/api/credential').send({}).expect(403);
+  });
+});
+
 const sseBody = (blocks) => {
   const encoder = new TextEncoder();
   const text = blocks.join('');

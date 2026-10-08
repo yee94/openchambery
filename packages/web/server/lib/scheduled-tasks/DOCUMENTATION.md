@@ -8,6 +8,7 @@ Server-owned scheduled task runtime and routes for OpenChamber-only automation.
 - Runtime orchestration and execution is owned by this module.
 - Durable run history is owned by an independent SQLite store in this module.
 - This module is OpenChamber feature logic; it is intentionally separate from OpenCode proxy/runtime internals.
+- Prompt and goal execution preserve hash-prefixed text literally; no snippet discovery or expansion occurs before dispatch.
 
 ## Files
 

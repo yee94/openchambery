@@ -33,7 +33,10 @@ export const resolveOpenCodeEnvConfig = (options = {}) => {
       warnInvalidHost(`must use http or https scheme (got ${JSON.stringify(url.protocol)})`);
       return null;
     }
-    const port = parseInt(url.port, 10);
+    // WHATWG URL removes explicit default ports; inspect the authority before normalization.
+    const authority = raw.match(/^https?:\/\/([^/?#]+)/i)?.[1] ?? '';
+    const explicitPort = authority.match(/:(\d+)$/)?.[1];
+    const port = parseInt(url.port || explicitPort || '', 10);
     if (!Number.isFinite(port) || port <= 0) {
       warnInvalidHost('must include an explicit port (example: http://hostname:4096)');
       return null;

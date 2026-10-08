@@ -17,6 +17,7 @@ const mocks = vi.hoisted(() => ({
     activityRenderMode: 'summary' as const,
     showTurnChangedFiles: false,
     showReasoningTraces: true,
+    showAssistantTps: true,
     showExpandedBashTools: false,
     setImagePreviewOpen: () => undefined,
   },
@@ -114,11 +115,17 @@ vi.mock('@/components/chat/AgentAvatar', () => ({
   ),
 }));
 
-vi.mock('@/sync/sync-context', () => ({
-  useDirectorySync: () => false,
-  useSessionParts: () => [],
-  useSessionErrorAt: () => mocks.errorAt,
-}));
+vi.mock('@/sync/sync-context', async () => {
+  const { createStore } = await import('zustand/vanilla');
+  const store = createStore(() => ({ session_execution_recovery: {}, session_status: {} }));
+  return {
+    useDirectoryStore: () => store,
+    useSessionMessages: () => [],
+    useDirectorySync: () => false,
+    useSessionParts: () => [],
+    useSessionErrorAt: () => mocks.errorAt,
+  };
+});
 
 vi.mock('./message/MessageBody', async (importOriginal) => {
   const actual = await importOriginal<typeof import('./message/MessageBody')>();
@@ -334,6 +341,7 @@ describe('new conversation assistant header continuity', () => {
   test.each([
     [false, 'live'], [true, 'live'], [false, 'sorted'], [true, 'sorted'],
   ] as const)('retires the restart notice on resumed output and history reload (mobile=%s, mode=%s)', async (mobile, mode) => {
+    mocks.realBody = true;
     mocks.uiState.isMobile = mobile;
     mocks.uiState.chatRenderMode = mode;
     const restart = normalizeSessionProjectionMessage(sessionID, {
@@ -342,22 +350,34 @@ describe('new conversation assistant header continuity', () => {
       text: 'The server restarted while you were working. Continue from where you left off without repeating completed work.',
     })!;
     const interrupted = assistantMessage({ completed: true });
-    interrupted.info.error = { type: 'aborted', message: 'Step interrupted' };
+    interrupted.info.error = { type: 'provider.transport', message: 'Session WebSocket closed' };
+    interrupted.info = { ...interrupted.info, time: { created: 2, streamed: 8, completed: 10 }, tokens: { input: 10, output: 20, reasoning: 0, cache: { read: 0, write: 0 } } } as Message;
     await renderMessages([userMessage(), interrupted, restart], false);
     expect(container.querySelectorAll('[data-restart-notice]')).toHaveLength(1);
     expect(container.querySelector('[data-restart-notice]')?.textContent).toBe('chat.response.continuingAfterRestart');
     expect(container.querySelector('[data-restart-notice] use')?.getAttribute('href')).toBe('#oc-restart');
     expect(container.querySelector('[data-restart-notice] svg')?.getAttribute('class')).not.toContain('--status-');
     expect(container.textContent).not.toContain('Continue from where you left off');
+    expect(container.querySelector('[role="alert"]')).not.toBeNull();
+    expect(container.querySelector('[data-message-footer]')).toBeNull();
+    await renderMessages([userMessage(), interrupted, restart], true);
+    expect(container.querySelector('[role="alert"]')).not.toBeNull();
+    expect(container.querySelector('[data-message-footer]')).toBeNull();
     const streaming = assistantMessage({ completed: false, parts: [textPart('continuing')] });
     streaming.info = { ...streaming.info, id: 'assistant-2', time: { created: 4 } };
+    await renderMessages([userMessage(), interrupted, restart, { ...streaming, parts: [] }], true, 'assistant-2');
+    expect(container.querySelector('[role="alert"]')).toBeNull();
+    expect(container.querySelector('[data-restart-notice]')).toBeNull();
+    expect(container.querySelector('[data-message-footer]')).toBeNull();
     await renderMessages([userMessage(), interrupted, restart, streaming], true);
     expect(container.querySelectorAll('[data-restart-notice]')).toHaveLength(0);
+    expect(container.querySelector('[role="alert"]')).toBeNull();
     const resumed = assistantMessage({ completed: true, parts: [textPart('continued answer')] });
     resumed.info = { ...resumed.info, id: 'assistant-2', time: { created: 4, completed: 5 } };
     await renderMessages([userMessage(), interrupted, restart, resumed], false);
     expect(container.querySelectorAll('[data-restart-notice]')).toHaveLength(0);
     expect(container.textContent).toContain('continued answer');
+    expect(container.querySelector('[data-message-footer]')).not.toBeNull();
     expect(container.querySelector('[data-restart-notice] .animate-spin')).toBeNull();
     await renderMessages([], false);
     await renderMessages([userMessage(), interrupted, restart, resumed], false);

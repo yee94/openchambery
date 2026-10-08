@@ -105,10 +105,16 @@ Use this doc when you ask an agent to change tool/header/description behavior.
   - Background subagent / shell tasks settle the tool part immediately (tool success with a
     historical `metadata.status=running` hint). That hint is **not** permanent live proof —
     official shell background never terminal-patches the tool part. Live busy chrome is driven by
-    `resolveBackgroundToolActivity`: synthetic completion notices (`<shell …>` / `<subagent …>` or
-    metadata `source=shell|subagent`) and authoritative child session status. Observation is
-    one-shot latched: terminal notice or authoritative child idle ends the busy state and drops
-    the narrow parent/child subscriptions.
+    `resolveBackgroundToolActivity`: authoritative child session status takes precedence over
+    synthetic completion notices (`<shell …>` / `<subagent …>` or metadata `source=shell|subagent`).
+    Task rows continuously observe the same cross-directory live status used by session lists
+    (`useGlobalSessionStatus`), including its global fallback, even after idle or tool completion.
+    OpenCode 2.0.24 seeds this authority from `session.active()` and updates it from
+    `session.execution.*`; background tool success does not end the child execution. A reused
+    child can become busy/retry again, so neither an old notice nor a one-shot idle latch may
+    override it. Parent completion history is observed only while child status is unknown.
+    Shell completion observation remains one-shot because shells have no child session status.
+    `ToolPart.background.test.tsx` covers mounted desktop/mobile idle→busy→retry→idle→busy.
   - Nested task-session navigation delegates to `SessionSurfaceContext`. In an
     ContextPanel transcript, the strict read-only panel surface accepts
     same-directory local navigation and preserves the primary session selection.

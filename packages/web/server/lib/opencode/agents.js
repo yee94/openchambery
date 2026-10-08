@@ -197,23 +197,12 @@ function getAgentPermissionSource(agentName, workingDirectory, lookupCache = nul
     }
   }
 
-  // Check JSON layers in effective override order. readConfigLayers merges
-  // user -> project -> custom, so custom wins over project, project over user.
+  // Check physical documents in effective override order, including both global files.
   const layers = readConfigLayers(workingDirectory);
-
-  const customJsonPermission = layers.customConfig?.agent?.[agentName]?.permission;
-  if (customJsonPermission !== undefined && layers.paths.customPath) {
-    return { source: 'json', scope: 'custom', path: layers.paths.customPath };
-  }
-
-  const projectJsonPermission = layers.projectConfig?.agent?.[agentName]?.permission;
-  if (projectJsonPermission !== undefined && layers.paths.projectPath) {
-    return { source: 'json', scope: AGENT_SCOPE.PROJECT, path: layers.paths.projectPath };
-  }
-
-  const userJsonPermission = layers.userConfig?.agent?.[agentName]?.permission;
-  if (userJsonPermission !== undefined) {
-    return { source: 'json', scope: AGENT_SCOPE.USER, path: layers.paths.userPath };
+  for (const layer of layers.documents.toReversed()) {
+    if (layer.config?.agent?.[agentName]?.permission !== undefined) {
+      return { source: 'json', scope: layer.scope, path: layer.path };
+    }
   }
 
   return { source: null, scope: null, path: null };
@@ -300,7 +289,7 @@ function getAgentSources(agentName, workingDirectory, lookupCache = createAgentL
   const jsonSource = getJsonEntrySource(layers, 'agent', agentName);
   const jsonSection = jsonSource.section;
   const jsonPath = jsonSource.path || layers.paths.customPath || layers.paths.projectPath || layers.paths.userPath;
-  const jsonScope = jsonSource.path === layers.paths.projectPath ? AGENT_SCOPE.PROJECT : AGENT_SCOPE.USER;
+  const jsonScope = layers.projectLayers.some((layer) => layer.path === jsonSource.path) ? AGENT_SCOPE.PROJECT : AGENT_SCOPE.USER;
 
   const sources = {
     md: {
@@ -444,7 +433,7 @@ function getAgentConfig(agentName, workingDirectory, lookupCache = createAgentLo
   const jsonSource = getJsonEntrySource(layers, 'agent', agentName);
 
   if (jsonSource.exists && jsonSource.section) {
-    const scope = jsonSource.path === layers.paths.projectPath ? AGENT_SCOPE.PROJECT : AGENT_SCOPE.USER;
+    const scope = layers.projectLayers.some((layer) => layer.path === jsonSource.path) ? AGENT_SCOPE.PROJECT : AGENT_SCOPE.USER;
     return {
       source: 'json',
       scope,
@@ -756,8 +745,9 @@ function deleteAgent(agentName, workingDirectory, scope) {
   const layers = readConfigLayers(workingDirectory);
 
   if (requestedScope === AGENT_SCOPE.PROJECT) {
-    if (layers.paths.projectPath && deleteJsonAgentEntry(layers.projectConfig, agentName)) {
-      writeConfig(layers.projectConfig, layers.paths.projectPath);
+    const target = layers.projectLayers.toReversed().find((layer) => layer.config?.agent?.[agentName] !== undefined);
+    if (target && deleteJsonAgentEntry(target.config, agentName)) {
+      writeConfig(target.config, target.path);
       console.log(`Removed project-level agent from opencode.json: ${agentName}`);
       return;
     }
@@ -765,8 +755,9 @@ function deleteAgent(agentName, workingDirectory, scope) {
   }
 
   if (requestedScope === AGENT_SCOPE.USER) {
-    const userJsonPath = layers.paths.customPath || layers.paths.userPath;
-    const userJsonConfig = layers.paths.customPath ? layers.customConfig : layers.userConfig;
+    const target = layers.documents.toReversed().find((layer) => layer.scope !== 'project' && layer.config?.agent?.[agentName] !== undefined);
+    const userJsonPath = target?.path;
+    const userJsonConfig = target?.config;
     if (userJsonPath && deleteJsonAgentEntry(userJsonConfig, agentName)) {
       writeConfig(userJsonConfig, userJsonPath);
       console.log(`Removed user-level agent from opencode.json: ${agentName}`);

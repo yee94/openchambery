@@ -3,6 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { createOpenCodeEnvRuntime } from './env-runtime.js';
+import { PINNED_OPENCODE2_VERSION } from './opencode2-pin.js';
 
 const originalOpencodeBinary = process.env.OPENCODE_BINARY;
 const originalComSpec = process.env.ComSpec;
@@ -305,7 +306,7 @@ describe('OpenCode env runtime', () => {
 
   it('discovers a previously installed pin from the OpenChamber data dir', () => {
     const dataDir = createTempDir('openchamber-installed-cli-');
-    const installedDir = path.join(dataDir, 'opencode-cli', '2.0.12');
+    const installedDir = path.join(dataDir, 'opencode-cli', PINNED_OPENCODE2_VERSION);
     const installedBinary = path.join(installedDir, process.platform === 'win32' ? 'opencode.exe' : 'opencode');
     fs.mkdirSync(installedDir, { recursive: true });
     fs.writeFileSync(installedBinary, '#!/bin/sh\nexit 0\n');

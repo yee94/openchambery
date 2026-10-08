@@ -15,6 +15,7 @@ const fixture = vi.hoisted(() => {
     create: vi.fn(),
     remove: vi.fn().mockResolvedValue(undefined),
     providers: { data: [] },
+    config: { providers: [], opencodeDefaultModel: undefined as string | undefined },
   };
 });
 vi.mock('@/lib/i18n', () => ({ useI18n: () => ({ t: (key: string) => key }) }));
@@ -29,7 +30,7 @@ vi.mock('@/components/sections/agents/ModelSelector', () => ({
   ),
 }));
 vi.mock('@/stores/useConfigStore', () => ({
-  useConfigStore: { getState: () => ({ providers: [] }) },
+  useConfigStore: { getState: () => fixture.config },
 }));
 vi.mock('@/stores/useProjectsStore', () => ({
   useProjectsStore: (selector: (state: { projects: never[] }) => unknown) => selector({ projects: [] }),
@@ -51,6 +52,7 @@ vi.mock('@/queries/assistantQueries', () => ({
 
 import { AssistantsSettingsPage } from './AssistantsSettingsPage';
 import { useAssistantUIStore } from '@/stores/useAssistantUIStore';
+import { normalizeModelIdentifier } from '@/lib/modelIdentifier';
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 let host: HTMLDivElement;
@@ -59,6 +61,7 @@ let previousSelection: string | null;
 beforeEach(() => {
   vi.clearAllMocks();
   fixture.snapshot.data.assistants = [fixture.assistant];
+  fixture.config.opencodeDefaultModel = undefined;
   previousSelection = useAssistantUIStore.getState().settingsSelectedAssistantID;
   useAssistantUIStore.getState().selectSettingsAssistant('asst_settings_tab');
   host = document.createElement('div');
@@ -93,6 +96,21 @@ test('mounted settings rehydrates and saves a variant selected inside the model 
     providerID: 'provider', modelID: 'model', variant: 'high',
   }));
 });
+
+test.each(['plugin/custom#high', { providerID: 'plugin', model: 'custom', variant: 'high' }])(
+  'new assistant preserves the configured default variant with a cold catalog: %j', async (model) => {
+    fixture.snapshot.data.assistants = [];
+    fixture.config.opencodeDefaultModel = normalizeModelIdentifier(model);
+    fixture.create.mockResolvedValue(fixture.assistant);
+    useAssistantUIStore.getState().requestCreate();
+    await act(async () => root.render(<AssistantsSettingsPage />));
+    expect(host.querySelector('[data-testid="model-picker"]')?.getAttribute('data-variant')).toBe('high');
+    await act(async () => button('assistants.settings.save').click());
+    expect(fixture.create).toHaveBeenCalledWith(expect.objectContaining({
+      providerID: 'plugin', modelID: 'custom', variant: 'high',
+    }));
+  },
+);
 
 test('switching to a plain model clears the previous variant when saved', async () => {
   await act(async () => root.render(<AssistantsSettingsPage assistantID="asst_route" />));

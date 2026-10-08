@@ -198,9 +198,12 @@ export const WorkStatusCompact: React.FC<Props> = ({ sessionId, directory }) => 
               })}
             </span>
             <span className="flex min-w-0 flex-1 items-center gap-x-1 whitespace-nowrap text-left text-[11px] leading-5 tabular-nums">
-              <span>{t(subagentGroups[0].labelKey, { count: subagentGroups[0].items.length })}</span>
-              <span aria-hidden="true">·</span>
-              <span>{t(subagentGroups[1].labelKey, { count: subagentGroups[1].items.length })}</span>
+              {subagentGroups.filter((group) => group.items.length > 0).map((group, index) => (
+                <React.Fragment key={group.phase}>
+                  {index > 0 ? <span aria-hidden="true">·</span> : null}
+                  <span>{t(group.labelKey, { count: group.items.length })}</span>
+                </React.Fragment>
+              ))}
             </span>
             <Icon
               name={subagentsExpanded ? 'arrow-down-s' : 'arrow-right-s'}

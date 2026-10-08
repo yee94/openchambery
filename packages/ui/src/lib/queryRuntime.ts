@@ -24,7 +24,7 @@ export const queryKeys = {
   agents: {
     list: (directory: string | null, transport = getRuntimeTransportIdentity()): readonly [string, 'agents', string | null] => [transport, 'agents', directory],
     // Directory is an OpenCode request hint only; the composer catalog is one cache per transport.
-    raw: (_directory: string | null, transport = getRuntimeTransportIdentity()): readonly [string, 'agents', 'raw'] => [transport, 'agents', 'raw'],
+    raw: (directory: string | null, transport = getRuntimeTransportIdentity()): readonly [string, 'agents', 'raw', string | null] => [transport, 'agents', 'raw', directory],
   },
     configCatalog: {
       // Catalog 缓存按 directory 分片，不同项目/实例不得共用。
