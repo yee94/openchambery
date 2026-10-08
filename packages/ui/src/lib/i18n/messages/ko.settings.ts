@@ -1,4 +1,5 @@
 export const settingsDict = {
+  'settings.remoteInstances.clientAuth.edit.title': '기기 편집',
   'settings.remoteInstances.clientAuth.edit.action': '편집',
   'settings.remoteInstances.clientAuth.edit.name': '기기 이름',
   'settings.openchamber.about.opencodeGuidance.manualGlobal': '해당 패키지 관리자로 설정된 OpenCode CLI를 업그레이드한 후 서비스를 재시작하세요.',

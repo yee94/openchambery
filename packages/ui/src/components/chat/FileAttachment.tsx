@@ -776,14 +776,13 @@ const MessageImageCard = ({
         <button
           type="button"
           onClick={onOpen}
-          className="group absolute inset-0 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary"
+          className="group/message-image absolute inset-0 cursor-pointer text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--interactive-focus-ring)]"
           aria-label={filename}
         >
           <img src={displaySource || undefined} alt={filename} className="h-full w-full object-cover" loading="lazy" />
-          <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
-          <div className="absolute bottom-0 left-0 right-0 p-2 text-white opacity-0 group-hover:opacity-100 transition-opacity">
-            <p className="text-xs font-medium truncate">{filename}</p>
-            {sizeText && <p className="text-xs opacity-80">{sizeText}</p>}
+          <div className="pointer-events-none absolute inset-x-2 bottom-2 flex translate-y-1 items-center gap-2 rounded-xl border border-border/40 bg-[color-mix(in_srgb,var(--surface-elevated)_85%,transparent)] px-3 py-2 text-foreground opacity-0 shadow-sm backdrop-blur-md transition-[opacity,transform] duration-150 ease-out group-hover/message-image:translate-y-0 group-hover/message-image:opacity-100 group-focus-visible/message-image:translate-y-0 group-focus-visible/message-image:opacity-100 motion-reduce:transform-none motion-reduce:transition-none">
+            <p className="min-w-0 flex-1 truncate text-xs font-medium">{filename}</p>
+            {sizeText && <p className="shrink-0 text-[10px] tabular-nums text-muted-foreground">{sizeText}</p>}
           </div>
         </button>
       ) : (

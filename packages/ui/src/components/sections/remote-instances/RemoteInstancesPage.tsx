@@ -1085,6 +1085,7 @@ export const RemoteInstancesPage: React.FC = () => {
   const [remoteClientError, setRemoteClientError] = React.useState<string | null>(null);
   const [editingClient, setEditingClient] = React.useState<{ id: string; label: string } | null>(null);
   const [clientRenamePending, setClientRenamePending] = React.useState(false);
+  const [clientRenameError, setClientRenameError] = React.useState<string | null>(null);
   const [pairingUrl, setPairingUrl] = React.useState<string | null>(null);
   // The pairing session shown in the QR dialog; used to auto-close the dialog
   // once the device redeems it (the pairing leaves the pending list).
@@ -1684,14 +1685,14 @@ export const RemoteInstancesPage: React.FC = () => {
   const saveRemoteClientName = useEvent(async () => {
     if (!clientAuth || !editingClient || clientRenamePending || !editingClient.label.trim()) return;
     setClientRenamePending(true);
-    setRemoteClientError(null);
+    setClientRenameError(null);
     try {
       const updated = await clientAuth.renameClient(editingClient.id, editingClient.label.trim());
       setRemoteClients((clients) => clients.map((client) => client.id === updated.id ? updated : client));
       setEditingClient(null);
       await loadRemoteClients({ silent: true });
     } catch (err) {
-      setRemoteClientError(err instanceof Error ? err.message : String(err));
+      setClientRenameError(err instanceof Error ? err.message : String(err));
     } finally {
       setClientRenamePending(false);
     }
@@ -2248,26 +2249,7 @@ export const RemoteInstancesPage: React.FC = () => {
                                 'h-2 w-2 shrink-0 rounded-full',
                                 client.revokedAt ? 'bg-muted-foreground/20' : isOnline ? 'bg-[var(--status-success)]' : 'bg-muted-foreground/30',
                               )} />
-                              {editingClient?.id === client.id ? (
-                                <Input
-                                  autoFocus
-                                  value={editingClient.label}
-                                  maxLength={80}
-                                  disabled={clientRenamePending}
-                                  aria-label={t('settings.remoteInstances.clientAuth.edit.name')}
-                                  onChange={(event) => setEditingClient({ id: client.id, label: event.target.value })}
-                                  onKeyDown={(event) => {
-                                    if (event.nativeEvent.isComposing) return;
-                                    if (event.key === 'Enter') {
-                                      event.preventDefault();
-                                      void saveRemoteClientName();
-                                    } else if (event.key === 'Escape' && !clientRenamePending) {
-                                      event.preventDefault();
-                                      setEditingClient(null);
-                                    }
-                                  }}
-                                />
-                              ) : <p className="typography-ui-label text-foreground truncate">{client.label}</p>}
+                              <p className="typography-ui-label text-foreground truncate">{client.label}</p>
                               {devicePlatformLabel(client.devicePlatform) ? (
                                 <span className="typography-micro text-muted-foreground bg-muted px-1 rounded shrink-0 leading-none pb-px border border-border/50">
                                   {devicePlatformLabel(client.devicePlatform)}
@@ -2282,25 +2264,12 @@ export const RemoteInstancesPage: React.FC = () => {
                             <p className={cn('typography-micro truncate', isOnline && !client.revokedAt ? 'text-[var(--status-success)]' : 'text-muted-foreground')}>{statusText}</p>
                           </div>
                           <div className="flex shrink-0 items-center gap-1">
-                            {editingClient?.id === client.id ? (
-                              <>
-                                <Button type="button" variant="outline" size="xs" onClick={() => void saveRemoteClientName()} disabled={clientRenamePending || !editingClient.label.trim()}>
-                                  {t('settings.common.actions.saveChanges')}
-                                </Button>
-                                <Button type="button" variant="ghost" size="xs" onClick={() => setEditingClient(null)} disabled={clientRenamePending}>
-                                  {t('settings.common.actions.cancel')}
-                                </Button>
-                              </>
-                            ) : (
-                              <>
-                                <Button type="button" variant="ghost" size="xs" className="!font-normal" onClick={() => { setRemoteClientError(null); setEditingClient({ id: client.id, label: client.label }); }} disabled={clientRenamePending}>
-                                  {t('settings.remoteInstances.clientAuth.edit.action')}
-                                </Button>
-                                <Button type="button" variant="ghost" size="xs" className="!font-normal" onClick={() => void revokeRemoteClient(client)} disabled={Boolean(client.revokedAt) || clientRenamePending}>
-                                  {t('settings.remoteInstances.clientAuth.actions.revoke')}
-                                </Button>
-                              </>
-                            )}
+                            <Button type="button" variant="ghost" size="xs" className="!font-normal" onClick={() => { setClientRenameError(null); setEditingClient({ id: client.id, label: client.label }); }} disabled={clientRenamePending}>
+                              {t('settings.remoteInstances.clientAuth.edit.action')}
+                            </Button>
+                            <Button type="button" variant="ghost" size="xs" className="!font-normal" onClick={() => void revokeRemoteClient(client)} disabled={Boolean(client.revokedAt) || clientRenamePending}>
+                              {t('settings.remoteInstances.clientAuth.actions.revoke')}
+                            </Button>
                           </div>
                         </div>
                       );
@@ -2564,6 +2533,42 @@ export const RemoteInstancesPage: React.FC = () => {
             {directError ? <p className="typography-meta text-[var(--status-error)]">{directError}</p> : null}
           </div>
         </RemoteSettingsSection> : null}
+
+        <Dialog open={editingClient !== null} onOpenChange={(open) => { if (!open && !clientRenamePending) setEditingClient(null); }}>
+          <DialogContent className="sm:max-w-sm" showCloseButton={!clientRenamePending}>
+            <DialogHeader>
+              <DialogTitle>{t('settings.remoteInstances.clientAuth.edit.title')}</DialogTitle>
+            </DialogHeader>
+            <form className="space-y-4" onSubmit={(event) => { event.preventDefault(); void saveRemoteClientName(); }}>
+              <div className="space-y-2">
+                <label htmlFor="remote-client-name" className="typography-ui-label text-muted-foreground">
+                  {t('settings.remoteInstances.clientAuth.edit.name')}
+                </label>
+                <Input
+                  id="remote-client-name"
+                  className="text-left"
+                  autoFocus
+                  value={editingClient?.label ?? ''}
+                  maxLength={80}
+                  disabled={clientRenamePending}
+                  onChange={(event) => setEditingClient((client) => client ? { ...client, label: event.target.value } : null)}
+                  onKeyDown={(event) => { if (event.key === 'Enter' && event.nativeEvent.isComposing) event.preventDefault(); }}
+                  aria-invalid={Boolean(clientRenameError)}
+                  aria-describedby={clientRenameError ? 'remote-client-name-error' : undefined}
+                />
+                {clientRenameError ? <p id="remote-client-name-error" role="alert" className="typography-meta text-[var(--status-error)]">{clientRenameError}</p> : null}
+              </div>
+              <DialogFooter>
+                <Button type="button" variant="ghost" size="sm" onClick={() => setEditingClient(null)} disabled={clientRenamePending}>
+                  {t('settings.common.actions.cancel')}
+                </Button>
+                <Button type="submit" size="sm" disabled={clientRenamePending || !editingClient?.label.trim()}>
+                  {t('settings.common.actions.saveChanges')}
+                </Button>
+              </DialogFooter>
+            </form>
+          </DialogContent>
+        </Dialog>
 
         {showInstanceManagement ? <Dialog open={directImportDialogOpen} onOpenChange={setDirectImportDialogOpen}>
           <DialogContent className="sm:max-w-lg">
