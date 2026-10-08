@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'bun:test';
+import { describe, expect, it } from 'vitest';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
@@ -17,6 +17,47 @@ const createRuntime = async () => {
 };
 
 describe('remote client auth runtime', () => {
+  it('persists renamed labels without changing credentials, metadata or revocation', async () => {
+    const { dir, runtime } = await createRuntime();
+    try {
+      const created = await runtime.createClient({ label: 'Phone', devicePlatform: 'iOS', usesRelay: true });
+      const renamed = await runtime.renameClient(created.client.id, '  Work phone  ');
+      expect(renamed).toEqual({ ...created.client, label: 'Work phone' });
+      expect('tokenHash' in renamed).toBe(false);
+      const reopened = createRemoteClientAuthRuntime({ fsPromises: fs, path, crypto, storePath: path.join(dir, 'remote-clients.json') });
+      expect(await reopened.listClients()).toEqual([renamed]);
+      expect((await reopened.authenticateBearerToken(created.token))?.clientId).toBe(created.client.id);
+      await Promise.all([
+        runtime.renameClient(created.client.id, 'Archived phone'),
+        runtime.revokeClient(created.client.id),
+      ]);
+      expect(await runtime.authenticateBearerToken(created.token)).toBe(null);
+      expect((await runtime.listClients())[0]).toMatchObject({ label: 'Archived phone', revokedAt: expect.any(String) });
+    } finally {
+      await fs.rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('rejects invalid labels and failed writes without committing a new name', async () => {
+    const { dir, runtime } = await createRuntime();
+    try {
+      const created = await runtime.createClient({ label: 'Phone' });
+      for (const label of [undefined, null, 42, '', '  ', 'x'.repeat(81)]) {
+        await expect(runtime.renameClient(created.client.id, label)).rejects.toMatchObject({ status: 400 });
+      }
+      expect(await runtime.renameClient('missing', 'Name')).toBe(null);
+      const failing = createRemoteClientAuthRuntime({
+        fsPromises: { ...fs, writeFile: async () => { throw new Error('Write failed'); } },
+        path, crypto, storePath: path.join(dir, 'remote-clients.json'),
+      });
+      await expect(failing.renameClient(created.client.id, 'New name')).rejects.toThrow('Write failed');
+      expect(await runtime.listClients()).toEqual([created.client]);
+      expect((await runtime.authenticateBearerToken(created.token))?.ok).toBe(true);
+    } finally {
+      await fs.rm(dir, { recursive: true, force: true });
+    }
+  });
+
   it('creates, authenticates, lists, and revokes client tokens', async () => {
     const { dir, runtime } = await createRuntime();
     try {

@@ -1,4 +1,6 @@
 export const settingsDict = {
+  'settings.remoteInstances.clientAuth.edit.action': 'Редагувати',
+  'settings.remoteInstances.clientAuth.edit.name': 'Назва пристрою',
   'settings.openchamber.about.opencodeGuidance.manualGlobal': 'Оновіть налаштований CLI OpenCode через його менеджер пакунків, а потім перезапустіть службу.',
   'settings.openchamber.about.opencodeGuidance.manualExternal': 'Зверніться до власника зовнішньої служби OpenCode для її оновлення та перезапуску.',
   'settings.openchamber.about.opencodeGuidance.bundled': 'Оновіть OpenChamber Desktop, щоб оновити вбудований OpenCode.',

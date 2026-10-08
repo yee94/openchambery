@@ -51,6 +51,12 @@ const createClientAuthDependencies = (options = {}) => {
         clients.push(client);
         return { client, token: 'oc_client_secret' };
       },
+      renameClient: vi.fn(async (id, label) => {
+        const client = clients.find((entry) => entry.id === id);
+        if (!client) return null;
+        client.label = label.trim();
+        return client;
+      }),
       revokeClient: async (id) => {
         const client = clients.find((entry) => entry.id === id);
         if (!client) return { revoked: false };
@@ -1333,6 +1339,43 @@ describe('core-routes', () => {
 
 describe('client auth routes', () => {
   const createDependencies = createClientAuthDependencies;
+
+  it.each(['session', 'desktop-local', 'desktop', 'mobile'])('scopes device renaming for %s', async (kind) => {
+    const app = express();
+    let authContext = { type: 'session' };
+    const dependencies = createDependencies({ resolveAuthContext: async () => authContext });
+    registerAuthAndAccessRoutes(app, dependencies);
+    const own = (await request(app).post('/api/client-auth/clients').send({ label: 'Own', clientKind: kind })).body.client;
+    const other = (await request(app).post('/api/client-auth/clients').send({ label: 'Other' })).body.client;
+    if (kind !== 'session') authContext = { type: 'client', clientId: own.id, client: own };
+
+    await request(app).patch(`/api/client-auth/clients/${own.id}`).send({ label: 'Renamed own' }).expect(200);
+    dependencies.remoteClientAuthRuntime.renameClient.mockClear();
+    const response = await request(app).patch(`/api/client-auth/clients/${other.id}`).send({ label: 'Renamed other', clientKind: 'desktop-local' });
+    expect(response.status).toBe(kind === 'mobile' ? 403 : 200);
+    if (kind === 'mobile') {
+      expect(dependencies.remoteClientAuthRuntime.renameClient).not.toHaveBeenCalled();
+    } else {
+      expect(response.body.client).toEqual({ ...other, label: 'Renamed other' });
+      expect(dependencies.remoteClientAuthRuntime.renameClient).toHaveBeenCalledWith(other.id, 'Renamed other');
+      await request(app).patch('/api/client-auth/clients/missing').send({ label: 'Name' }).expect(404);
+    }
+  });
+
+  it('requires authentication and propagates rename failures', async () => {
+    const app = express();
+    const dependencies = createDependencies({ resolveAuthContext: async () => null });
+    dependencies.uiAuthController.requireSessionAuth = (_req, res) => res.status(401).json({ error: 'Unauthorized' });
+    registerAuthAndAccessRoutes(app, dependencies);
+    await request(app).patch('/api/client-auth/clients/other').send({ label: 'Name' }).expect(401);
+    expect(dependencies.remoteClientAuthRuntime.renameClient).not.toHaveBeenCalled();
+
+    dependencies.uiAuthController.resolveAuthContext.mockResolvedValue({ type: 'session' });
+    dependencies.remoteClientAuthRuntime.renameClient.mockRejectedValue(Object.assign(new Error('Invalid label'), { status: 400 }));
+    await request(app).patch('/api/client-auth/clients/other').send({ label: '' }).expect(400);
+    dependencies.remoteClientAuthRuntime.renameClient.mockRejectedValue(new Error('Write failed'));
+    await request(app).patch('/api/client-auth/clients/other').send({ label: 'Name' }).expect(500);
+  });
 
   it('creates, lists, and revokes remote client tokens', async () => {
     const app = express();

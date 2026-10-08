@@ -1232,6 +1232,7 @@ export interface PairingSessionCreateResult {
 
 export interface ClientAuthAPI {
   listClients(): Promise<RemoteClientRecord[]>;
+  renameClient(id: string, label: string): Promise<RemoteClientRecord>;
   createClient(input?: { label?: string }): Promise<RemoteClientCreateResult>;
   // Creates a one-time pairing session (pairing v2). `serverUrl` is the
   // externally reachable URL to advertise as the direct candidate (the desktop

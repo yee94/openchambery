@@ -204,6 +204,20 @@ export const createRemoteClientAuthRuntime = ({ fsPromises, path, crypto, storeP
     });
   };
 
+  const renameClient = async (id, label) => {
+    if (typeof label !== 'string' || !label.trim() || label.trim().length > MAX_LABEL_LENGTH) {
+      throw Object.assign(new Error('Client label must contain 1–80 characters'), { status: 400 });
+    }
+    return withStoreMutation(async () => {
+      const store = await readStore();
+      const client = store.clients.find((entry) => entry.id === id);
+      if (!client) return null;
+      client.label = label.trim();
+      await writeStore(store);
+      return publicClient(client);
+    });
+  };
+
   const revokeClient = async (id) => {
     if (typeof id !== 'string' || id.trim().length === 0) {
       return { revoked: false };
@@ -264,6 +278,7 @@ export const createRemoteClientAuthRuntime = ({ fsPromises, path, crypto, storeP
     listClients,
     hasActiveRelayClients,
     purgeRevokedClients,
+    renameClient,
     revokeClient,
   };
 };

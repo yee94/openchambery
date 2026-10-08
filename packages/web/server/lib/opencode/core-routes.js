@@ -822,6 +822,23 @@ export const registerAuthAndAccessRoutes = (app, dependencies) => {
     });
   });
 
+  app.patch('/api/client-auth/clients/:id', express.json({ limit: '64kb' }), async (req, res, next) => {
+    await runWithClientManagementAuth(req, res, next, async (authContext) => {
+      if (authContext.type === 'client') {
+        const actingClient = await clientRecordFromAuthContext(authContext);
+        if (!canManageRemoteClients(actingClient)) {
+          const clientId = clientIdFromAuthContext(authContext);
+          if (!clientId || clientId !== req.params?.id) {
+            return res.status(403).json({ error: 'Client tokens can only rename themselves' });
+          }
+        }
+      }
+      const client = await remoteClientAuthRuntime.renameClient(req.params?.id, req.body?.label);
+      if (!client) return res.status(404).json({ error: 'Client not found' });
+      res.json({ client });
+    });
+  });
+
   app.delete('/api/client-auth/clients/:id', async (req, res, next) => {
     await runWithClientManagementAuth(req, res, next, async (authContext) => {
       if (authContext.type === 'client') {

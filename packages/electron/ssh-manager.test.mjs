@@ -755,6 +755,26 @@ describe('ensureRemoteOpenCodeCli opencode2 pin', () => {
     return manager;
   };
 
+  test.each(['npm', 'bun'])('repairs a Bun install with blocked postinstall when preferring %s', async (preferred) => {
+    const manager = createManager('2.0.23');
+    let bunPostinstallRan = false;
+    manager.remoteCommandExists = async () => true;
+    manager.runManagedRemoteCommand = async (_parsed, _controlPath, script) => {
+      if (script.includes('opencode --version')) {
+        return bunPostinstallRan ? 'opencode v2.0.23\n' : '';
+      }
+      // The broken Bun binary precedes the healthy npm binary on PATH.
+      if (script.startsWith('bun add -g @opencode/cli@2.0.23') && script.includes('--trust')) {
+        bunPostinstallRan = true;
+      }
+      return '';
+    };
+
+    await manager.ensureRemoteOpenCodeCli({ user: 'u', host: 'h' }, '/tmp/cp', preferred);
+
+    expect(await manager.currentRemoteOpenCodeVersion({}, '/tmp/cp')).toBe('2.0.23');
+  });
+
   test('empty remote installs @opencode/cli at the pinned version via opencode2 probe', async () => {
     const manager = createManager('2.0.12');
     const commands = [];

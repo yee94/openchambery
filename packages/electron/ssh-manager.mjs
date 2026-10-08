@@ -1715,9 +1715,9 @@ export class ElectronSshManager {
     const commands = [];
     if (preferred === 'npm') {
       if (hasNpm) commands.push(`npm install -g ${packageSpec} --force`);
-      if (hasBun) commands.push(`bun add -g ${packageSpec}`);
+      if (hasBun) commands.push(`bun add -g ${packageSpec} --trust`);
     } else {
-      if (hasBun) commands.push(`bun add -g ${packageSpec}`);
+      if (hasBun) commands.push(`bun add -g ${packageSpec} --trust`);
       if (hasNpm) commands.push(`npm install -g ${packageSpec} --force`);
     }
     if (commands.length === 0) {

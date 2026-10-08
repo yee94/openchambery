@@ -166,6 +166,8 @@ The package supports macOS, Windows, and Linux desktop features. Linux AppImage 
 
 Managed Desktop / `openchamber serve` / HMR discovery still does **not** prefer a packaged extraResource binary. Discovery order: settings/env → PATH `opencode` / known install locations → a previously installed pin under `~/.config/openchamber/opencode-cli/<version>/opencode`. Automatic discovery uses only the official `opencode` name and accepts 2.x by version. If nothing usable is found, startup downloads `@opencode/cli-<os>-<arch>@pin` into that data dir. Only when that pin install fails (or `OPENCHAMBER_OPENCODE2_AUTO_INSTALL=0` blocks it) does startup fall back to a staged 2.x binary named `opencode` (`opencode.exe` on Windows) under `OPENCHAMBER_BUNDLED_OPENCODE_CLI_DIR` or `process.resourcesPath/opencode-cli`. A healthy v2 `opencode serve` already listening on 4096 is reused; otherwise OpenChamber starts generic `serve` on 4096 when free. Explicit `OPENCODE_BINARY` / `settings.opencodeBinary` still win for an acceptable 2.x. SSH installation uses `@opencode/cli` and probes `opencode --version`.
 
+SSH Bun installs of `@opencode/cli` use `--trust` so its required postinstall prepares the executable, including when repairing an existing blocked install. A successful package-manager exit is still verified through `opencode --version` on the managed PATH; a broken Bun binary can otherwise shadow a healthy npm install.
+
 `prepare:opencode-cli` stages `resources/opencode-cli` for packaging/CI; runtime discovery (`resolveOpencodeCliPath`) still ignores that copy — it is only a last-resort after install failure.
 
 ## Releases and automatic updates

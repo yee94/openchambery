@@ -114,6 +114,19 @@ export const createWebClientAuthAPI = (): ClientAuthAPI => ({
     return { cancelled: payload.cancelled === true };
   },
 
+  async renameClient(id: string, label: string): Promise<RemoteClientRecord> {
+    const response = await runtimeFetch(`/api/client-auth/clients/${encodeURIComponent(id)}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+      body: JSON.stringify({ label }),
+    });
+    const payload = await jsonOrNull<{ client?: RemoteClientRecord; error?: string }>(response);
+    if (!response.ok || !payload?.client) {
+      throw new Error(payload?.error || response.statusText || 'Failed to rename remote client');
+    }
+    return payload.client;
+  },
+
   async revokeClient(id: string): Promise<RemoteClientRevokeResult> {
     const response = await runtimeFetch(`/api/client-auth/clients/${encodeURIComponent(id)}`, {
       method: 'DELETE',
