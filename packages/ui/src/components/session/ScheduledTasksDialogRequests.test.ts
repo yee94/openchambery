@@ -21,7 +21,7 @@ describe('ScheduledTasksDialog queries', () => {
       readFile(join(directory, 'ScheduledTasksDialog.tsx'), 'utf8'),
       readFile(join(directory, '../../lib/scheduledTasksApi.ts'), 'utf8'),
     ]);
-    expect(apiContent).toContain("runtimeFetch('/api/openchamber/scheduled-tasks')");
+    expect(apiContent).toContain("runtimeFetch('/api/openchamber/scheduled-tasks', { signal })");
     expect(apiContent).toContain('export type GlobalScheduledTasksResponse');
     expect(content).toContain('const replaceProjectTasks =');
     expect(content).toContain('current?.tasks.filter((entry) => entry.projectId !== projectId)');
@@ -288,7 +288,7 @@ describe('ScheduledTasksDialog queries', () => {
       readFile(join(directory, '../../mobile/MobileTabBar.tsx'), 'utf8'),
       readFile(join(directory, '../../styles/mobile.css'), 'utf8'),
     ]);
-    expect(phoneShellContent).toContain('tabBarCovered={scheduledEditorActive}');
+    expect(phoneShellContent).toContain('tabBarCovered={scheduledEditorActive || searchOpen}');
     expect(tabRootContent).toContain('showTabBar?: boolean;');
     expect(tabRootContent).toContain('data-mobile-navigation-dock-underlay="true"');
     expect(tabRootContent).toContain('inert={topSecondaryPage || nativeTabBarAdopted ? true : undefined}');
@@ -340,7 +340,7 @@ describe('ScheduledTasksDialog queries', () => {
 
   test('shares one mobile detail navigation across settings, task editing, and chat', async () => {
     const directory = dirname(fileURLToPath(import.meta.url));
-    const [navigationContent, rootHeaderContent, projectsHomeContent, buttonContent, editorContent, settingsContent, settingsTabContent, chatHeaderContent, chatScreenContent, mobileStyles] = await Promise.all([
+    const [navigationContent, rootHeaderContent, projectsHomeContent, buttonContent, editorContent, settingsContent, settingsTabContent, chatHeaderContent, chatScreenContent, mobileStyles, searchButtonContent] = await Promise.all([
       readFile(join(directory, '../../mobile/MobileDetailNavigation.tsx'), 'utf8'),
       readFile(join(directory, '../../mobile/MobileTabPageHeader.tsx'), 'utf8'),
       readFile(join(directory, '../../mobile/projects/MobileProjectsHome.tsx'), 'utf8'),
@@ -351,6 +351,7 @@ describe('ScheduledTasksDialog queries', () => {
       readFile(join(directory, '../../mobile/chat/MobileChatHeader.tsx'), 'utf8'),
       readFile(join(directory, '../../mobile/chat/MobileChatScreen.tsx'), 'utf8'),
       readFile(join(directory, '../../styles/mobile.css'), 'utf8'),
+      readFile(join(directory, '../layout/GlobalSearchButton.tsx'), 'utf8'),
     ]);
     expect(navigationContent).toContain('oc-mobile-detail-navigation-content');
     expect(navigationContent).toContain('items-center gap-1 px-4');
@@ -360,13 +361,13 @@ describe('ScheduledTasksDialog queries', () => {
     expect(navigationContent).not.toContain('className?: string');
     expect(navigationContent.match(/variant="mobileGlass"/g)).toHaveLength(2);
     expect(navigationContent.match(/size="mobileIcon"/g)).toHaveLength(2);
-    expect(projectsHomeContent.match(/variant="mobileGlass"/g)).toHaveLength(1);
-    expect(projectsHomeContent.match(/size="mobileIcon"/g)).toHaveLength(2);
+    expect(projectsHomeContent).toContain('<GlobalSearchButton mobile />');
+    expect(searchButtonContent).toContain("variant={mobile ? 'mobileGlass' : 'ghost'}");
+    expect(searchButtonContent).toContain("size={mobile ? 'mobileIcon' : 'icon'}");
+    expect(searchButtonContent).toContain('onClick={() => setCommandPaletteOpen(true)}');
+    expect(projectsHomeContent.match(/size="mobileIcon"/g)).toHaveLength(1);
     expect(projectsHomeContent).toContain('bg-[var(--primary-base)]');
     expect(projectsHomeContent).toContain('var(--primary-base)_22%');
-    expect(projectsHomeContent).toContain('filterMobileProjectsForSearch');
-    expect(projectsHomeContent).toContain('inputMode="search"');
-    expect(projectsHomeContent).not.toContain('type="search"');
     expect(projectsHomeContent).not.toContain('onClick={() => {}}');
     expect(buttonContent).toContain('mobileGlass:');
     expect(buttonContent).toContain('mobileIcon: "size-10 min-h-10 min-w-10 rounded-full"');

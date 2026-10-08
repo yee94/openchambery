@@ -75,6 +75,7 @@ import {
   fetchRecentSendConfirmationRecords,
   materializeConfirmedSendRecords,
   ensureSentUserMessagePresence,
+  getSendFailureKind,
   dirStoreForDirectory,
   type OptimisticSendTicket,
 } from "./session-actions"
@@ -1126,6 +1127,11 @@ async function materializeClaimedDraftSession(selection: {
         directory: directory ?? (created as { directory?: string }).directory ?? null,
         parts: pendingUserMessage.parts,
       })
+      if (isCurrentClaimDraft(useSessionUIStore.getState().newSessionDraft, claimed)) {
+        // Carry the painted draft identity before selection: optimistic rows
+        // alone cannot bypass the cold session-view and Markdown reveal gates.
+        retainPendingUserMessageForSession(created.id, pendingUserMessage)
+      }
     }
     const finalized = await finalizeDraftSession(created, selection, {
       directory: directory ?? (created as { directory?: string }).directory ?? null,
@@ -2222,6 +2228,12 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
         })
         await finalizeClaimedDraftOwnership(claim, createdDraftSession.sessionId, "consume")
       } catch (error) {
+        if (
+          sameRuntimeCapture(useInputStore.getState().captureDraftRuntime(), claim.runtime)
+          && !(options?.preserveOptimisticOnAmbiguous && getSendFailureKind(error) === 'ambiguous-dispatched')
+        ) {
+          get().clearRetainedPendingUserMessages(createdDraftSession.sessionId, [fallbackMessageID])
+        }
         await finalizeClaimedDraftOwnership(claim, createdDraftSession.sessionId, "preserve")
         throw error
       }

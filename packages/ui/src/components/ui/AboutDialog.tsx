@@ -5,10 +5,9 @@ import {
   DialogContent,
 } from '@/components/ui/dialog';
 import { OpenChamberLogo } from '@/components/ui/OpenChamberLogo';
-import { debugUtils } from '@/lib/debug';
-import { cn } from '@/lib/utils';
 import { toast } from '@/components/ui';
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Icon } from "@/components/icon/Icon";
 import { useI18n } from '@/lib/i18n';
 import { getDesktopAppVersion } from '@/lib/desktopNative';
@@ -18,7 +17,6 @@ import {
   isTranscriptDiagnosticsEnabled,
   setTranscriptDiagnosticsEnabled,
 } from '@/sync/transcript-diagnostics-runtime';
-import { SettingsToggleRow } from '@/components/sections/shared/SettingsGroup';
 
 interface AboutDialogProps {
   open: boolean;
@@ -30,13 +28,8 @@ export const AboutDialog: React.FC<AboutDialogProps> = ({
   onOpenChange,
 }) => {
   const { t } = useI18n();
-  const showDiagnostics = import.meta.env.DEV;
   const [version, setVersion] = React.useState<string | null>(null);
   const [openCodeVersion, setOpenCodeVersion] = React.useState<string | null>(null);
-  const [isCopyingDiagnostics, setIsCopyingDiagnostics] = React.useState(false);
-  const [copiedDiagnostics, setCopiedDiagnostics] = React.useState(false);
-  const [diagnosticsReport, setDiagnosticsReport] = React.useState<string | null>(null);
-  const [isPreparingDiagnostics, setIsPreparingDiagnostics] = React.useState(false);
   const [exportingFeatLog, setExportingFeatLog] = React.useState(false);
   const [diagnosticsEnabled, setDiagnosticsEnabled] = React.useState(() => isTranscriptDiagnosticsEnabled());
 
@@ -66,36 +59,6 @@ export const AboutDialog: React.FC<AboutDialogProps> = ({
       setExportingFeatLog(false);
     }
   });
-
-  const handleCopyDiagnostics = React.useCallback(async () => {
-    if (!showDiagnostics) return;
-    if (isCopyingDiagnostics) return;
-    setIsCopyingDiagnostics(true);
-    setCopiedDiagnostics(false);
-    try {
-      if (!diagnosticsReport) {
-        toast.error(t('aboutDialog.toast.copyFailed'), {
-          description: t('aboutDialog.toast.diagnosticsNotReady'),
-        });
-        return;
-      }
-
-      const result = await debugUtils.copyTextToClipboard(diagnosticsReport);
-      if (result.ok) {
-        setCopiedDiagnostics(true);
-        toast.success(t('aboutDialog.toast.diagnosticsCopied'));
-      } else {
-        toast.error(t('aboutDialog.toast.copyFailed'), {
-          description: result.error,
-        });
-      }
-    } catch (error) {
-      toast.error(t('aboutDialog.toast.copyFailed'));
-      console.error('Failed to copy diagnostics:', error);
-    } finally {
-      setIsCopyingDiagnostics(false);
-    }
-  }, [diagnosticsReport, isCopyingDiagnostics, showDiagnostics, t]);
 
   React.useEffect(() => {
     if (!open) return;
@@ -146,35 +109,6 @@ export const AboutDialog: React.FC<AboutDialogProps> = ({
     };
   }, [open]);
 
-  React.useEffect(() => {
-    if (!open || !showDiagnostics) {
-      setDiagnosticsReport(null);
-      setIsPreparingDiagnostics(false);
-      return;
-    }
-
-    let cancelled = false;
-    setIsPreparingDiagnostics(true);
-    void debugUtils.buildDiagnosticsReport()
-      .then((report) => {
-        if (cancelled) return;
-        setDiagnosticsReport(report);
-      })
-      .catch((error) => {
-        if (cancelled) return;
-        console.error('Failed to prepare diagnostics:', error);
-        setDiagnosticsReport(null);
-      })
-      .finally(() => {
-        if (cancelled) return;
-        setIsPreparingDiagnostics(false);
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [open, showDiagnostics]);
-
   const displayVersion = version;
 
   return (
@@ -195,59 +129,6 @@ export const AboutDialog: React.FC<AboutDialogProps> = ({
             </div>
           </div>
 
-          <div className="flex w-full items-center justify-between gap-2">
-            <SettingsToggleRow
-              className="min-w-0 flex-1 !w-auto !grid-cols-[minmax(0,1fr)_auto] !gap-x-2 !p-0 text-left"
-              itemId="about.diagnostics"
-              checked={diagnosticsEnabled}
-              onChange={handleDiagnosticsEnabledChange}
-              label={t('settings.openchamber.about.diagnostics.label')}
-              ariaLabel={t('settings.openchamber.about.diagnostics.label')}
-            />
-            {diagnosticsEnabled && (
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                className="text-muted-foreground font-normal"
-                disabled={exportingFeatLog}
-                aria-busy={exportingFeatLog}
-                onClick={() => void handleExportFeatLog()}
-              >
-                <Icon
-                  name={exportingFeatLog ? 'loader' : 'download'}
-                  className={cn('size-4', exportingFeatLog && 'animate-spin')}
-                />
-                {exportingFeatLog
-                  ? t('settings.openchamber.about.diagnostics.exporting')
-                  : t('settings.openchamber.about.diagnostics.export')}
-              </Button>
-            )}
-          </div>
-
-          {showDiagnostics && (
-            <div className="flex flex-col items-center gap-2">
-              <button
-                onClick={handleCopyDiagnostics}
-                disabled={isCopyingDiagnostics || isPreparingDiagnostics || !diagnosticsReport}
-                className={cn(
-                  'typography-meta text-muted-foreground hover:text-foreground',
-                  'underline-offset-2 hover:underline',
-                  'disabled:opacity-50 disabled:cursor-not-allowed'
-                )}
-              >
-                {copiedDiagnostics
-                  ? t('aboutDialog.actions.diagnosticsCopied')
-                  : isPreparingDiagnostics
-                    ? t('aboutDialog.actions.preparingDiagnostics')
-                    : t('aboutDialog.actions.copyDiagnostics')}
-              </button>
-              <p className="typography-micro text-muted-foreground">
-                {t('aboutDialog.diagnosticsDescription')}
-              </p>
-            </div>
-          )}
-
           <div className="flex items-center justify-center">
             <a
               href="https://github.com/yee94/openchamber"
@@ -263,6 +144,34 @@ export const AboutDialog: React.FC<AboutDialogProps> = ({
           <p className="typography-micro text-muted-foreground/60">
             {t('aboutDialog.footerNote')}
           </p>
+
+          <div className="flex w-full items-center justify-center gap-2">
+            <div data-settings-item="about.diagnostics" className="flex items-center gap-2">
+              <span className="typography-ui-label text-foreground">
+                {t('settings.openchamber.about.diagnostics.label')}
+              </span>
+              <Checkbox
+                checked={diagnosticsEnabled}
+                onChange={handleDiagnosticsEnabledChange}
+                ariaLabel={t('settings.openchamber.about.diagnostics.label')}
+              />
+            </div>
+            {diagnosticsEnabled && (
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="text-muted-foreground font-normal"
+                disabled={exportingFeatLog}
+                aria-busy={exportingFeatLog}
+                onClick={() => void handleExportFeatLog()}
+              >
+                {exportingFeatLog
+                  ? t('settings.openchamber.about.diagnostics.exporting')
+                  : t('settings.openchamber.about.diagnostics.export')}
+              </Button>
+            )}
+          </div>
         </div>
       </DialogContent>
     </Dialog>

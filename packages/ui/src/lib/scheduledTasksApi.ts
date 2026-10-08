@@ -172,12 +172,15 @@ export const fetchScheduledTasks = async (projectID: string): Promise<ScheduledT
   return parsed.tasks as ScheduledTask[];
 };
 
-export const fetchGlobalScheduledTasks = async (): Promise<GlobalScheduledTasksResponse> => {
-  const response = await runtimeFetch('/api/openchamber/scheduled-tasks');
+export const fetchGlobalScheduledTasks = async ({ signal }: { signal?: AbortSignal } = {}): Promise<GlobalScheduledTasksResponse> => {
+  const response = await runtimeFetch('/api/openchamber/scheduled-tasks', { signal });
   if (!response.ok) {
     throw new Error(await parseErrorMessage(response, 'Failed to load schedules'));
   }
   const parsed = await response.json().catch(() => null);
+  if (!parsed || !Array.isArray(parsed.tasks)) {
+    throw new Error('Malformed schedules response');
+  }
   return {
     tasks: Array.isArray(parsed?.tasks) ? parsed.tasks as GlobalScheduledTask[] : [],
     failedProjectIds: Array.isArray(parsed?.failedProjectIds) ? parsed.failedProjectIds.filter((id: unknown): id is string => typeof id === 'string') : [],
