@@ -152,6 +152,17 @@ Owning modules: `session-send-selection.ts`, `lib/opencode/client.ts`
 
 ## Prompt admission lifecycle — Ticket 02
 
+`session-inbox-query.ts` restores the native inbox on session selection (including
+hot transcript-cache revisits) and on stream-ready/reconnect for viewed sessions.
+The Query key includes transport, generation, directory and session; concurrent
+reads share a flight and each lifecycle edge fetches fresh authority. GET failures
+retain the prior overlay and Query snapshot, with one bounded retry. Successful
+empty snapshots clear pending rows. Runtime fences and terminal receipts reject
+stale completions; per-item overlay identities captured at request start preserve
+live admissions and delivery changes racing the GET. Transcript hydration and
+inbox recovery start independently. No persisted browser queue or polling is
+needed; all shared UI runtimes use the same path.
+
 ### Draft permission selection
 
 An unchecked draft auto-accept shield is an explicit `false` policy. Such drafts use the existing separate create/send path: register the new session directory, await `setSessionAutoAccept(sessionId, false)`, then select the session and dispatch the first prompt. The combined create-with-prompt capability has no pre-prompt policy field, so it is eligible only when the draft explicitly enables auto-accept. This shared ordering applies to web, Electron, VS Code, hosted mobile, and Capacitor. A failed policy write restores the draft and prevents prompt dispatch; the already-created empty upstream session remains. Existing session policies and inherited/default policy resolution are unchanged. Regression coverage: `issue-2039.test.ts` and `session-combined-send.test.ts`.

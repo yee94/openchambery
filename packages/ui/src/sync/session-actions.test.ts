@@ -769,6 +769,30 @@ describe("fetchMessagesForSession startup race", () => {
     expectSessionProjection(1)
   })
 
+  test("restores server queue chips on a cold session open without an enqueue event", async () => {
+    const { runtimeFetch } = await import("@/lib/runtime-fetch")
+    const { useSessionInboxOverlayStore, selectInboxOverlayChips } = await import("./session-inbox-overlay")
+    const { fetchMessagesForSession, setActionRefs } = await import("./session-actions")
+    const original = vi.mocked(runtimeFetch).getMockImplementation()!
+    vi.mocked(runtimeFetch).mockImplementation(async (input, init) => {
+      if (String(input).endsWith("/inbox")) {
+        return new Response(JSON.stringify([{ id: "msg_waiting_reload", sessionID: "session-a", type: "user", delivery: "queue", timeCreated: 1, payload: { text: "Queued on another device" } }]))
+      }
+      return original(input, init)
+    })
+    useSessionInboxOverlayStore.setState({ bySession: {} })
+    mocks.sessionMessagesResult = { data: [] }
+    const store = createStore({}, { session: [{ id: "session-a", time: { created: 1 } } as Session] })
+    setActionRefs(mockSdk as unknown as OpencodeClient, createChildStores([["/test/project", store]]), () => "/test/project")
+    try {
+      await fetchMessagesForSession("session-a", "/test/project")
+      expect(selectInboxOverlayChips("session-a").map((item) => item.content)).toEqual(["Queued on another device"])
+    } finally {
+      vi.mocked(runtimeFetch).mockImplementation(original)
+      useSessionInboxOverlayStore.setState({ bySession: {} })
+    }
+  })
+
   test("selection loads through the repository and keeps A cached after switching to B", async () => {
     const { QueryClient } = await import("@tanstack/react-query")
     const { createQueryTranscriptRepository } = await import("./transcript-repository-query-adapter")

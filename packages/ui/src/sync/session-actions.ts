@@ -77,6 +77,7 @@ import {
   fetchSessionInboxAuthority,
   postSessionInterrupt,
 } from "./session-prompt-api"
+import { refreshSessionInbox } from "./session-inbox-query"
 import {
   forgetUnpromotedInbox,
   rememberUnpromotedInbox,
@@ -3407,7 +3408,10 @@ export async function fetchMessagesForSession(
   const existingRequest = FETCH_MESSAGES_LOADING.get(loadingKey)
   if (existingRequest) return existingRequest
 
-  const request = fetchMessagesForSessionInternal(sessionID, resolvedDir, runtimeKey, limit)
+  const request = Promise.all([
+    fetchMessagesForSessionInternal(sessionID, resolvedDir, runtimeKey, limit),
+    refreshSessionInbox({ sessionID, directory: resolvedDir }).catch(() => undefined),
+  ]).then(() => undefined)
   const trackedRequest = request.finally(() => {
     if (FETCH_MESSAGES_LOADING.get(loadingKey) === trackedRequest) {
       FETCH_MESSAGES_LOADING.delete(loadingKey)

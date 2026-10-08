@@ -60,6 +60,8 @@ export type InboxAuthorityOptions = {
    * Omit for live SSE authority (always may clear).
    */
   startedMark?: number
+  /** Overlay identities at request start; later live writes win over this GET. */
+  observedItems?: readonly SessionInboxOverlayItem[]
 }
 
 type SessionInboxOverlayState = {
@@ -293,11 +295,21 @@ export const useSessionInboxOverlayStore = create<SessionInboxOverlayState>((set
     }
     set((state) => {
       const previous = new Map((state.bySession[sessionID] ?? []).map((item) => [item.id, item]))
+      const observed = options?.observedItems && new Map(options.observedItems.map((item) => [item.id, item]))
       const next = admitted.map((item) => ({
         ...item,
         requestID: item.id,
         wasQueued: item.delivery === "queue" || previous.get(item.id)?.wasQueued === true,
       }))
+      if (observed) {
+        const positions = new Map(next.map((item, index) => [item.id, index]))
+        for (const item of previous.values()) {
+          if (observed.get(item.id) === item) continue
+          const index = positions.get(item.id)
+          if (index === undefined) next.push(item)
+          else next[index] = item
+        }
+      }
       return { bySession: writeSession(state.bySession, sessionID, next) }
     })
   },
