@@ -6,6 +6,8 @@ import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import MessageList from './MessageList';
 import { useNotificationStore } from '@/sync/notification-store';
 import { normalizeSessionProjectionMessage } from '@/sync/session-projection-api';
+import { mergeSessionTranscript } from '@/sync/transcript-merge';
+import type { Event } from '@/sync/types';
 
 const mocks = vi.hoisted(() => ({
   realBody: false,
@@ -416,6 +418,50 @@ describe('new conversation assistant header continuity', () => {
     expect(container.textContent).toContain('Summary being read');
     await renderMessages(messages, false);
     expect(container.querySelector('[data-compaction-card] button')).toBe(toggle);
+  });
+
+  test.each([
+    [false, 'live'], [true, 'live'], [false, 'sorted'], [true, 'sorted'],
+  ] as const)('updates an expanded checkpoint on every summary-only frame (mobile=%s, mode=%s)', async (mobile, mode) => {
+    mocks.uiState.isMobile = mobile;
+    mocks.uiState.chatRenderMode = mode;
+    const user = userMessage();
+    const before = assistantMessage({ completed: true });
+    const checkpoint = normalizeSessionProjectionMessage(sessionID, {
+      id: 'compact-stream', type: 'compaction', time: { created: 3 }, status: 'running', reason: 'auto',
+      summary: '',
+    })!;
+    let data = mergeSessionTranscript(undefined, sessionID, {
+      type: 'http-page', purpose: 'initial',
+      page: { records: [user, before, checkpoint], complete: true, turnCount: 1 },
+    }).data;
+    const renderTranscript = () => renderMessages(data!.pages.flatMap(page => page.messageOrder.map(id => ({
+      info: page.messagesByID[id], parts: [...(page.partsByMessageID[id] ?? [])],
+    }))), true);
+    const send = async (type: string, properties: Record<string, unknown>) => {
+      data = mergeSessionTranscript(data, sessionID, {
+        type: 'sse-event', event: { type, properties: { sessionID, ...properties } } as Event,
+      }).data;
+      await renderTranscript();
+    };
+    await renderTranscript();
+    expect(container.querySelector('[data-compaction-card] button')).toBeNull();
+    await send('session.compaction.delta', { text: 'Objective' });
+    const toggle = container.querySelector<HTMLButtonElement>('[data-compaction-card] button')!;
+    await act(async () => toggle.click());
+    let summary = 'Objective';
+    for (const delta of [': first update', '\nCompleted work: second update']) {
+      summary += delta;
+      await send('session.compaction.delta', { text: delta });
+      expect(container.textContent).toContain(summary);
+      expect(container.querySelector('[data-compaction-card] button')).toBe(toggle);
+      expect(toggle.getAttribute('aria-expanded')).toBe('true');
+    }
+    await send('session.compaction.ended', { reason: 'auto', text: `${summary}\nFinal summary`, recent: '' });
+    expect(container.textContent).toContain(`${summary}\nFinal summary`);
+    expect(container.querySelector('[data-compaction-card]')?.getAttribute('data-compaction-status')).toBe('completed');
+    expect(container.querySelector('[data-compaction-card] button')).toBe(toggle);
+    expect(toggle.getAttribute('aria-expanded')).toBe('true');
   });
 
   test('keeps explicit checkpoint disclosure when its row is temporarily unmounted', async () => {

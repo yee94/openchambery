@@ -12,6 +12,7 @@ import { useNotificationStore } from '@/sync/notification-store';
 import { useAllLiveSessions } from '@/sync/sync-context';
 import { useAssistantCapabilityQuery } from '@/queries/assistantQueries';
 import { AssistantNavigationUnreadBadge } from '@/components/assistants/AssistantUnreadBadge';
+import { AssistantNavigationActivity, ScheduledNavigationActivity } from './SidebarNavigationActivity';
 import { openAssistant } from '@/stores/useAssistantUIStore';
 import { useAlwaysVisibleSessionIds, useRunningSessionIds } from './sidebar/hooks/useAlwaysVisibleSessionIds';
 import { useDirectoryStore } from '@/stores/useDirectoryStore';
@@ -2640,6 +2641,7 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
               >
                 <Icon name="time" className="size-4" />
                 <span className="truncate">{t("sessions.sidebar.header.actions.scheduledTasks")}</span>
+                {isVisible ? <ScheduledNavigationActivity /> : null}
               </Button>
               {assistantCapability.data?.supported && assistantCapability.data?.enabled ? <Button
                 variant="ghost"
@@ -2653,7 +2655,10 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
               >
                 <Icon name="ai-agent" className="size-4" />
                 <span className="truncate">{t("assistants.title")}</span>
-                <AssistantNavigationUnreadBadge className="ml-auto" />
+                <span className="ml-auto flex shrink-0 items-center gap-2">
+                  <AssistantNavigationUnreadBadge />
+                  {isVisible ? <AssistantNavigationActivity /> : null}
+                </span>
               </Button> : null}
             </div>
           </>

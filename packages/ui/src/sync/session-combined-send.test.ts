@@ -1166,6 +1166,47 @@ describe('handleCombinedDraftSend', () => {
     expect(useSessionUIStore.getState().currentSessionId).toBe(SESSION_ID)
   })
 
+  test.each([
+    { permissionAutoAcceptEnabled: false, combinedAvailable: true },
+    { permissionAutoAcceptEnabled: true, combinedAvailable: false },
+  ])('separate first send hands the painted message to selection: %j', async ({ permissionAutoAcceptEnabled, combinedAvailable }) => {
+    const combined = vi.fn(async () => successResult())
+    registerRuntimeAPIs(combinedAvailable ? makeCombinedAPI(combined) : null)
+    const messageID = 'msg_unchecked_handoff'
+    let selectedWithPresentation = false
+    const unsubscribe = useSessionUIStore.subscribe((state, previous) => {
+      if (state.currentSessionId === SESSION_ID && previous.currentSessionId !== SESSION_ID) {
+        selectedWithPresentation = state.retainedPendingUserMessages.get(SESSION_ID)
+          ?.some((message) => message.info.id === messageID) ?? false
+      }
+    })
+    opencodeClient.sendMessage = vi.fn(async () => messageID)
+    useSessionUIStore.getState().openNewSessionDraft({ permissionAutoAcceptEnabled })
+    try {
+      await useSessionUIStore.getState().sendMessage(
+        'keep the first prompt visible', 'openai', 'gpt-4o', undefined, undefined,
+        undefined, undefined, undefined, 'normal', { messageID },
+      )
+      expect(combined).not.toHaveBeenCalled()
+      expect(selectedWithPresentation).toBe(true)
+    } finally {
+      unsubscribe()
+    }
+  })
+
+  test('rejected unchecked-permission first prompt clears its handoff presentation', async () => {
+    registerRuntimeAPIs(makeCombinedAPI(async () => successResult()))
+    let hadPresentationAtDispatch = false
+    opencodeClient.sendMessage = vi.fn(async () => {
+      hadPresentationAtDispatch = useSessionUIStore.getState().retainedPendingUserMessages.has(SESSION_ID)
+      throw new Error('prompt rejected')
+    })
+    useSessionUIStore.getState().openNewSessionDraft({ permissionAutoAcceptEnabled: false })
+    await expect(useSessionUIStore.getState().sendMessage('hello', 'openai', 'gpt-4o')).rejects.toThrow('prompt rejected')
+    expect(hadPresentationAtDispatch).toBe(true)
+    expect(useSessionUIStore.getState().retainedPendingUserMessages.has(SESSION_ID)).toBe(false)
+  })
+
   test('failed unchecked policy write keeps the draft and blocks the first prompt', async () => {
     const combined = vi.fn(async () => successResult())
     registerRuntimeAPIs(makeCombinedAPI(combined))
@@ -1182,6 +1223,7 @@ describe('handleCombinedDraftSend', () => {
     expect(useSessionUIStore.getState().newSessionDraft.open).toBe(true)
     expect(useSessionUIStore.getState().newSessionDraft.draftSubmitting).toBe(false)
     expect(useSessionUIStore.getState().currentSessionId).toBeNull()
+    expect(useSessionUIStore.getState().retainedPendingUserMessages.size).toBe(0)
   })
 
   test('12) synthetic/additional/file/agent payload exact, messageID format msg_', async () => {

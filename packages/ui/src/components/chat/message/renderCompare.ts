@@ -1,4 +1,5 @@
 import type { Message, Part } from '@/lib/opencode/v2-types';
+import type { SessionCompactionPart } from '@/sync/session-projection-api';
 import type { TurnActivityGroup, TurnActivityRecord, TurnChangedFile, TurnDiffStats, TurnGroupingContext } from '../lib/turns/types';
 
 type MessageRecord = {
@@ -71,6 +72,20 @@ export const areRenderRelevantPartsEqual = (left: Part[], right: Part[]): boolea
     const rightId = readPartId(rightPart);
     if (leftId !== rightId) {
       return false;
+    }
+
+    if (leftPart.type === 'compaction') {
+      const leftCompaction = leftPart as SessionCompactionPart;
+      const rightCompaction = rightPart as SessionCompactionPart;
+      if (leftCompaction.status !== rightCompaction.status
+        || leftCompaction.summary !== rightCompaction.summary
+        || leftCompaction.reason !== rightCompaction.reason
+        || leftCompaction.recent !== rightCompaction.recent
+        || leftCompaction.error?.type !== rightCompaction.error?.type
+        || leftCompaction.error?.message !== rightCompaction.error?.message
+        || leftCompaction.error?.status !== rightCompaction.error?.status) {
+        return false;
+      }
     }
 
     if (leftPart.type === 'tool') {

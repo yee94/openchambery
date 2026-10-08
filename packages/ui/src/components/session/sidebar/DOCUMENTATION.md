@@ -122,6 +122,12 @@
   safety net.
 - An idle global-session store always triggers a priority refresh, including after a runtime endpoint reset; the status therefore cannot remain idle after the sidebar's one-time mount effect has already run.
 - `NavRail` is no longer part of sidebar/navigation flow.
+- Visible sidebar Scheduled/Assistant navigation entries reuse `SessionBusyIndicator`
+  as a trailing activity ring. Assistant activity selects server snapshot
+  `working` / `activeContactTurn`; its unread badge remains independent. Scheduled
+  activity selects current catalog `lastStatus: running`, refreshed on run events,
+  reconnect, and foreground reconciliation (2.5s busy / 15s idle). Leaf observers
+  unmount while the sidebar is hidden and do not subscribe the session tree to activity.
 - Project headers now own root sessions directly; there is no separate rendered `project root` subgroup.
 - Active/hover rows use Codex-style inset neutral chips (`SIDEBAR_ROW_*`); light mode
   uses a soft wash (hover ~3.5%, active ~6%) so cream themes stay airy, while dark keeps

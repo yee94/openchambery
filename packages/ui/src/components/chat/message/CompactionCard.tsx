@@ -33,11 +33,7 @@ export function CompactionCard({
     const summary = isFailed ? '' : part.summary?.trim() ?? '';
     const labelClassName = cn(
         'shrink-0 typography-meta',
-        isRunning
-            ? 'animate-text-shimmer text-[var(--status-info)] [--oc-text-shimmer-base:var(--status-info)]'
-            : isFailed
-                ? 'text-[var(--status-error)]/85'
-                : 'text-muted-foreground',
+        isFailed ? 'text-[var(--status-error)]/85' : 'text-muted-foreground',
     );
 
     return (

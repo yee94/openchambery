@@ -4,6 +4,15 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [2.0.1] - 2026-10-08
+
+### 修复与改进
+
+- 修复新建对话发送首条消息后退回加载占位、正文短暂消失的闪烁问题，并正确清理发送失败的临时消息。
+- 修复压缩摘要流式更新和完成状态未及时显示的问题，统一压缩中与完成后的分隔条样式。
+- 侧栏的计划和助理入口新增运行状态指示，支持事件刷新、重连恢复及失败时保留已有状态。
+- 精简关于弹窗及诊断日志控件，启动时默认显示关于弹窗。
+
 ## [2.0.0] - 2026-10-08
 
 OpenChamber 2.0 正式版，汇总 2.0.0 Beta 系列的全部改进。本次发布 macOS、Windows、Linux、Android 安装包、npm 包与同版本稳定 OTA，并上传 iOS TestFlight 外测构建。

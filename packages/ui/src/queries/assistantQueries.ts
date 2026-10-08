@@ -157,6 +157,13 @@ export const useAssistantUnreadTotal = () => {
   React.useEffect(() => retainAssistantSnapshotEvents(transport), [transport]);
   return query.data ?? 0;
 };
+const selectAssistantWorking = (snapshot: AssistantSnapshot) => snapshot.enabled && snapshotHasContactWorking(snapshot);
+export const useAssistantWorking = () => {
+  const transport = getRuntimeTransportIdentity();
+  const query = useQuery({ ...assistantSnapshotQueryOptions(transport), select: selectAssistantWorking });
+  React.useEffect(() => retainAssistantSnapshotEvents(transport), [transport]);
+  return query.data ?? false;
+};
 export const assistantHistoryInfiniteQueryOptions = (
   assistantID: string,
   sessionID: string,
