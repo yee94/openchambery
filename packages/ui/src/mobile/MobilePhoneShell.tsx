@@ -81,6 +81,7 @@ export function MobilePhoneShell({
   className,
 }: MobilePhoneShellProps) {
   const { t } = useI18n();
+  const searchOpen = useUIStore((state) => state.isCommandPaletteOpen);
   const navigation = useMobileNavigationStore();
   const setActiveTabStore = useMobileNavigationStore((state) => state.setActiveTab);
   const openSessionStore = useMobileNavigationStore((state) => state.openSession);
@@ -328,7 +329,7 @@ export function MobilePhoneShell({
       onTabChange={setActiveTab}
       tabs={tabs}
       secondaryPages={secondaryPages ?? []}
-      tabBarCovered={scheduledEditorActive}
+      tabBarCovered={scheduledEditorActive || searchOpen}
     />
   );
 }

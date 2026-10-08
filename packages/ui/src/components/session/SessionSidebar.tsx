@@ -1899,20 +1899,20 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
     }
     // Pinned rows first, then the unlabeled in-progress rows; both live in the
     // top `pinned` scope (VS Code included — its pinned list is simply empty).
-    return [...pinnedSessions, ...inProgressSessions].map((session, visibleIndex) => {
-      const meta = sessionSidebarMetaById.get(session.id);
+    return [...pinnedItems, ...inProgressItems].map((item, visibleIndex) => {
+      const session = item.node.session;
       return {
         scope: "pinned",
         sessionId: session.id,
-        projectId: meta?.projectId ?? null,
+        projectId: item.projectId,
         directory:
           normalizePath(resolveGlobalSessionDirectory(session)) ??
-          meta?.groupDirectory ??
+          item.groupDirectory ??
           null,
         visibleIndex,
       };
     });
-  }, [hasSessionSearchQuery, inProgressSessions, pinnedSessions, sessionSidebarMetaById]);
+  }, [hasSessionSearchQuery, inProgressItems, pinnedItems]);
 
   const [visiblePinnedShortcutSessionIds, setVisiblePinnedShortcutSessionIds] =
     React.useState<readonly string[] | null>(null);

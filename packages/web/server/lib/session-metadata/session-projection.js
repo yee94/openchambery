@@ -13,6 +13,14 @@
 
 const isPlainObject = (value) => value !== null && typeof value === 'object' && !Array.isArray(value);
 
+export const readSessionTitleAuthority = (sessionID, metadata) => {
+  const authority = metadata?.openchamber?.titleAuthority;
+  return typeof sessionID === 'string' && sessionID.length > 0 && authority?.sessionID === sessionID
+    && typeof authority.title === 'string' && authority.title.trim()
+    && typeof authority.revision === 'string' && authority.revision
+    ? authority : null;
+};
+
 /** RFC 7386 merge (local copy — avoid circular import with the metadata store). */
 const mergeMetadataPatch = (current, patch) => {
   const base = isPlainObject(current) ? { ...current } : {};
@@ -33,6 +41,7 @@ const SESSION_LIFECYCLE_BASE = new Set([
   'session.created',
   'session.updated',
   'session.deleted',
+  'session.renamed',
 ]);
 
 /**
@@ -156,8 +165,10 @@ export const projectSessionWithHostMetadata = (session, hostMetadata) => {
   else timeBase.archived = projectedArchived;
 
   const directory = resolveSessionDirectory(session);
+  const titleAuthority = readSessionTitleAuthority(session.id, metadata);
   const next = {
     ...session,
+    ...(titleAuthority ? { title: titleAuthority.title } : {}),
     metadata: Object.keys(metadata).length > 0 ? metadata : (session.metadata ?? metadata),
     time: timeBase,
     ...(directory ? { directory } : {}),
@@ -207,6 +218,15 @@ export const projectSessionWithStoredMap = (session, storedBySessionId) => {
 
 const projectLifecycleInner = (payload, readHostMetadata) => {
   const baseType = normalizeSessionEventType(payload.type);
+  if (baseType === 'session.renamed') {
+    const data = payload.data ?? payload.properties;
+    if (typeof data?.sessionID !== 'string') return payload;
+    const authority = readSessionTitleAuthority(data?.sessionID, readHostMetadata?.(data?.sessionID));
+    if (!authority || data.title === authority.title) return payload;
+    return payload.data
+      ? { ...payload, data: { ...data, title: authority.title } }
+      : { ...payload, properties: { ...data, title: authority.title } };
+  }
   if (baseType !== 'session.created' && baseType !== 'session.updated') return payload;
 
   const info = extractSessionInfoFromPayload(payload);
@@ -267,6 +287,9 @@ export const projectSessionLifecyclePayload = (payload, readHostMetadata, option
   }
 
   const type = typeof payload.type === 'string' ? payload.type : '';
+  if (type === 'session.renamed') {
+    return options.hostReady === false ? null : projectLifecycleInner(payload, readHostMetadata);
+  }
   if (options.hostReady === false && isSessionLifecycleEventType(type)) {
     return null;
   }

@@ -2007,9 +2007,13 @@ describe("updateSessionTitle live state", () => {
 
     await updateSessionTitle("session-a", "New Title")
 
-    const updateCall = replyCalls.find((call) => call.method === "session.update")
+    const updateCall = replyCalls.find((call) => call.method === "session.update" && call.params.title === "New Title")
     expect(updateCall?.params.sessionID).toBe("session-a")
     expect(updateCall?.params.title).toBe("New Title")
+    const intentCall = replyCalls.find((call) => call.method === "session.update" && call.params.metadata)
+    expect(intentCall?.params.metadata).toMatchObject({ openchamber: { titleAuthority: {
+      sessionID: "session-a", title: "New Title", source: "manual", revision: expect.any(String),
+    } } })
     expect(updateCall?.params.directory).toBe("/test/project")
     expect(globalUpsertedSessions).toEqual([updatedSession])
     expect(sessionStore.getState().session[0].title).toBe("New Title")

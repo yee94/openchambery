@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'bun:test';
+import { vi } from 'vitest';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
@@ -30,19 +31,20 @@ describe('opencode plugins data layer', () => {
   beforeAll(async () => {
     rootDir = fs.mkdtempSync(path.join(os.tmpdir(), 'openchamber-plugins-'));
     userConfigPath = path.join(rootDir, 'user-opencode.json');
-    process.env.OPENCODE_CONFIG = userConfigPath;
+    vi.stubEnv('OPENCODE_CONFIG', userConfigPath);
+    vi.stubEnv('OPENCODE_CONFIG_DIR', path.join(rootDir, 'global-config'));
     plugins = await import('./plugins.js');
   });
 
   beforeEach(() => {
-    process.env.OPENCODE_CONFIG = userConfigPath;
+    vi.stubEnv('OPENCODE_CONFIG', userConfigPath);
     projectDir = fs.mkdtempSync(path.join(rootDir, 'project-'));
     fs.rmSync(userConfigPath, { force: true });
   });
 
   afterAll(() => {
     fs.rmSync(rootDir, { recursive: true, force: true });
-    delete process.env.OPENCODE_CONFIG;
+    vi.unstubAllEnvs();
   });
 
   test('parses raw plugin entries', () => {

@@ -39,3 +39,4 @@ export function projectSessionLifecyclePayload(
   readHostMetadata: (sessionId: string) => unknown,
   options?: { hostReady?: boolean },
 ): unknown;
+export function readSessionTitleAuthority(sessionID: string, metadata: unknown): { sessionID: string; title: string; revision: string; source?: string } | null;

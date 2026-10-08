@@ -55,6 +55,29 @@ it.each([false, true])('runs a Host smart-title request and clears loading (mode
   }
 });
 
+it('does not start a pending initial title over a manual authority committed before generation', async () => {
+  vi.useFakeTimers();
+  const generate = vi.fn();
+  const session = { id: 'ses_manual', title: 'Manual', metadata: { openchamber: {
+    titleAuthority: { sessionID: 'ses_manual', title: 'Manual', revision: 'manual', source: 'manual' },
+  } } };
+  const runtime = createSessionTitleRuntime({
+    sessionAccess: {
+      get: async () => session,
+      messages: async () => [{ info: { id: 'u1', role: 'user' }, parts: [{ type: 'text', text: 'Initial work' }] }],
+      update: async () => {},
+    },
+    getSmallModelService: async () => ({ generateSmallModelText: generate }),
+    isTitleRefreshEnabled: () => true,
+  });
+  try {
+    runtime.processPayload({ type: 'session.created', data: { sessionID: session.id } });
+    runtime.processPayload({ type: 'session.execution.succeeded', data: { sessionID: session.id } });
+    await vi.runAllTimersAsync();
+    expect(generate).not.toHaveBeenCalled();
+  } finally { runtime.stop(); }
+});
+
 it('uses the real v2 client and publishes the generated title without another session click', async () => {
   vi.useFakeTimers();
   configureServerOpenCodeFetchGate(null, { allowMissingContract: true });
@@ -85,6 +108,12 @@ it('uses the real v2 client and publishes the generated title without another se
     buildOpenCodeUrl: (path) => `http://opencode${path}`,
     getOpenCodeAuthHeaders: () => ({}),
     readSessionMetadata: async () => metadata,
+    mutateSessionMetadata: async (_id, decide) => {
+      const decision = decide(metadata);
+      if (!decision.ok) return { committed: false };
+      metadata = mergeMetadataPatch(metadata, decision.patch);
+      return { committed: true, metadata };
+    },
     persistSessionMetadata: async (_id, patch) => {
       metadata = mergeMetadataPatch(metadata, patch);
       events.push({ type: 'metadata', metadata: structuredClone(metadata) });
@@ -105,6 +134,19 @@ it('uses the real v2 client and publishes the generated title without another se
     expect(events.at(-1)).toMatchObject({ type: 'session', row: { title: 'Title refresh', directory: '/repo' } });
     expect(metadata.openchamber.titleRefresh.isGenerating).toBeUndefined();
     expect(requests).toContain('PATCH /api/session/ses_title');
+    session.title = 'Late native title';
+    runtime.processPayload({ type: 'session.renamed', created: 2000, data: {
+      sessionID: session.id, title: session.title,
+    } });
+    await vi.runAllTimersAsync();
+    expect(session.title).toBe('Title refresh');
+    expect(events.at(-1)).toMatchObject({ type: 'session', row: { title: 'Title refresh' } });
+    const writes = requests.filter((request) => request.startsWith('PATCH')).length;
+    runtime.processPayload({ type: 'session.renamed', created: 500, data: {
+      sessionID: session.id, title: 'Replayed stale title',
+    } });
+    await vi.runAllTimersAsync();
+    expect(requests.filter((request) => request.startsWith('PATCH'))).toHaveLength(writes);
   } finally {
     runtime.stop();
   }

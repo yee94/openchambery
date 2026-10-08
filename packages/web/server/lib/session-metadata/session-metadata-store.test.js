@@ -53,6 +53,29 @@ describe('mergeMetadataPatch', () => {
 });
 
 describe('createSessionMetadataStore', () => {
+  it('round-trips title authority through the OpenCode record and restart without losing neighboring metadata', async () => {
+    const dataDir = makeDataDir();
+    const record = { id: 'ses_1', title: 'Native', metadata: { plugin: { retained: true } } };
+    const authority = { sessionID: 'ses_1', title: 'Chosen', revision: 'r1', source: 'summary' };
+    const deps = {
+      dataDir,
+      recordReader: async () => structuredClone(record),
+      recordWriter: async (_id, metadata) => { record.metadata = structuredClone(metadata); },
+    };
+    const store = createSessionMetadataStore(deps);
+    await store.mutateSessionMetadata('ses_1', () => ({ ok: true, patch: {
+      openchamber: { titleAuthority: authority },
+    } }));
+    expect(record.metadata).toEqual({ plugin: { retained: true }, openchamber: { titleAuthority: authority } });
+    const reopened = createSessionMetadataStore(deps);
+    expect((await reopened.get('ses_1')).openchamber.titleAuthority).toEqual(authority);
+    expect((await reopened.getAll()).ses_1.openchamber.titleAuthority).toEqual(authority);
+    const stale = await reopened.mutateSessionMetadata('ses_1', (metadata) => ({
+      ok: metadata.openchamber.titleAuthority.revision === 'old', patch: { openchamber: { titleAuthority: null } },
+    }));
+    expect(stale.committed).toBe(false);
+    expect(record.metadata.openchamber.titleAuthority).toEqual(authority);
+  });
   it('starts empty when the file does not exist', async () => {
     const store = createSessionMetadataStore({ dataDir: makeDataDir() });
     await expect(store.getAll()).resolves.toEqual({});

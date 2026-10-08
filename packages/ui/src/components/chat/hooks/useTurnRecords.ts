@@ -101,7 +101,7 @@ export const useTurnRecords = (
     const previousProjectionRef = React.useRef<TurnProjectionResult | null>(null);
     const staticTurnsRef = React.useRef<TurnRecord[]>([]);
     const streamingTurnsRef = React.useRef<TurnRecord[]>(EMPTY_TURNS);
-    const liveTailStartRef = React.useRef<number | null>(null);
+    const liveTailStartRef = React.useRef<{ turnId: string; index: number } | null>(null);
     const previousSessionKeyRef = React.useRef<string | undefined>(options.sessionKey);
     const previousShowTextJustificationActivityRef = React.useRef(options.showTextJustificationActivity);
     const previousShowTurnChangedFilesRef = React.useRef(options.showTurnChangedFiles);
@@ -153,13 +153,24 @@ export const useTurnRecords = (
         });
     }, [messages, options.showTextJustificationActivity, options.showTurnChangedFiles, options.sessionKey]);
 
+    const claimedTurnId = liveTailStartRef.current?.turnId;
+    const claimedTurnIndex = React.useMemo(
+        () => claimedTurnId ? projection.turns.findIndex((turn) => turn.turnId === claimedTurnId) : -1,
+        [projection.turns, claimedTurnId],
+    );
     const liveTailStart = resolveLiveTailStart({
         turnCount: projection.turns.length,
         hasLiveTail: options.hasLiveTail,
         liveTailActive: options.liveTailActive,
-        previousStart: liveTailStartRef.current,
+        // Prepending history moves indices, not ownership. Count only turns
+        // from the claimed identity toward the bounded live-tail budget.
+        previousStart: claimedTurnIndex >= 0 ? claimedTurnIndex : liveTailStartRef.current?.index ?? null,
     });
-    liveTailStartRef.current = liveTailStart;
+    if (liveTailStart === null) {
+        liveTailStartRef.current = null;
+    } else if (projection.turns[liveTailStart]) {
+        liveTailStartRef.current = { turnId: projection.turns[liveTailStart].turnId, index: liveTailStart };
+    }
 
     const staticTurns = React.useMemo(() => {
         const nextStatic = splitTurnRecordsByLiveTail(projection.turns, liveTailStart).staticTurns;

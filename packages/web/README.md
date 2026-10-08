@@ -238,6 +238,20 @@ systemctl --user enable --now opencode openchamber
 - Background notifications plus reliable cross-tab session activity tracking
 - Built-in self-update + restart flow that keeps your server settings intact
 
+## Tests
+
+Run `bun run --cwd packages/web test` from the repository root. The command
+checks the Node-compatible SQLite binding before running Vitest.
+
+`test/setup.js` makes Supertest 7.2 request the test listener's address family.
+This prevents ephemeral IPv6 test listeners from accidentally reaching a real
+IPv4 application on the same port, notably on macOS. The dual-listener regression
+in `test/supertest-loopback.test.js` covers the routing contract. Remove the
+workaround when the installed Supertest version handles this contract itself.
+Plugin fixtures isolate both `OPENCODE_CONFIG` and `OPENCODE_CONFIG_DIR`, then
+restore the inherited environment; custom configuration does not replace the
+global configuration discovery layer.
+
 ## License
 
 MIT

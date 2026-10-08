@@ -9,7 +9,8 @@ test('mounts global search inside the dedicated mobile actions provider', async 
   const source = await readFile(sourcePath, 'utf8');
   const providerStart = source.indexOf('<DedicatedMobileAppProvider actions={mobileActions}>');
   const providerEnd = source.indexOf('</DedicatedMobileAppProvider>', providerStart);
-  expect(source.slice(providerStart, providerEnd)).toContain('<CommandPalette />');
+  expect(source.slice(providerStart, providerEnd)).toContain('<MobileGlobalSearchHost>');
+  expect(source.slice(providerStart, providerEnd)).not.toContain('<CommandPalette />');
 });
 
 test('keeps the active runtime after a transient mobile re-probe failure', async () => {
