@@ -1,4 +1,6 @@
 export const settingsDict = {
+  'settings.remoteInstances.clientAuth.edit.action': '編集',
+  'settings.remoteInstances.clientAuth.edit.name': 'デバイス名',
   'settings.openchamber.about.opencodeGuidance.manualGlobal': '対応するパッケージマネージャーで設定済みの OpenCode CLI を更新し、サービスを再起動してください。',
   'settings.openchamber.about.opencodeGuidance.manualExternal': '外部 OpenCode サービスの管理者を通じて更新と再起動を行ってください。',
   'settings.openchamber.about.opencodeGuidance.bundled': 'OpenChamber デスクトップアプリを更新すると、同梱の OpenCode も更新されます。',

@@ -25,6 +25,7 @@ This module provides OpenCode server integration utilities for the web server ru
 - `packages/web/server/lib/opencode/provider-catalog.js`: fail-closed projection for the safe provider catalog response.
 - `packages/web/server/lib/opencode/cli-options.js`: CLI/environment option parsing for server startup arguments.
 - `packages/web/server/lib/opencode/core-routes.js`: server status/system routes, auth/access guard routes, and settings utility route registration.
+  - `PATCH /api/client-auth/clients/:id` edits the stored device label (trimmed, 1–80 characters), returning `{ client }` without credentials. Owner UI sessions and local/paired desktop clients can edit any device; other client tokens can edit only themselves. Missing devices return 404, invalid labels 400, unauthorized targets 403. Renaming shares the client store mutation queue and preserves token identity, metadata and revocation. Web, Electron and mobile use the web `ClientAuthAPI`; VS Code does not expose client management.
 - `packages/web/server/lib/opencode/shutdown-runtime.js`: graceful shutdown orchestration runtime for watcher/session/terminal/process/server teardown.
 - `packages/web/server/lib/opencode/server-startup-runtime.js`: server listen/startup flow and process/signal handler orchestration runtime.
 - `packages/web/server/lib/opencode/static-routes-runtime.js`: static asset/SPA fallback route registration and manifest route wiring. The SPA fallback sends `index.html` relative to `root`, so deep links keep working when the install lives under a dot directory.

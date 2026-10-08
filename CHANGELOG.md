@@ -4,6 +4,19 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [2.0.0-beta.34] - 2026-10-08
+
+这是 OpenCode 2 预览版。本次发布桌面、Android 安装包及同版本 Beta OTA；iOS 不上 TestFlight，不进入稳定自动更新通道。
+
+### SSH 远程连接
+
+- 修复 Bun 安装 OpenCode 2 时跳过必要安装脚本，导致更新成功后仍提示检查远程网络和包管理器的问题；重试可修复已有的不可用安装。
+
+### 远程设备管理
+
+- 支持在远程实例设置中修改已连接设备的名称，支持回车保存与 Escape 取消，并保留设备原有凭据与连接记录。
+- 管理端可修改设备名称，普通设备凭据仅允许修改自身名称。
+
 ## [2.0.0-beta.33] - 2026-10-08
 
 这是 OpenCode 2 预览版。本次发布桌面、Android 安装包及同版本 Beta OTA；iOS 不上 TestFlight，不进入稳定自动更新通道。

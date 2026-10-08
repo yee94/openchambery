@@ -1,4 +1,6 @@
 ﻿export const settingsDict = {
+  'settings.remoteInstances.clientAuth.edit.action': '編輯',
+  'settings.remoteInstances.clientAuth.edit.name': '裝置名稱',
   'settings.openchamber.about.opencodeGuidance.manualGlobal': '透過對應的套件管理器升級已設定的 OpenCode CLI，然後重新啟動服務。',
   'settings.openchamber.about.opencodeGuidance.manualExternal': '透過外部 OpenCode 服務的管理方升級並重新啟動服務。',
   'settings.openchamber.about.opencodeGuidance.bundled': '更新 OpenChamber 桌面應用程式以更新其內建的 OpenCode。',
