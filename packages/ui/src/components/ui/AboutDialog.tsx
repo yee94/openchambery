@@ -179,9 +179,9 @@ export const AboutDialog: React.FC<AboutDialogProps> = ({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-xs p-6">
-        <div className="flex flex-col items-center text-center space-y-4">
-          <OpenChamberLogo width={64} height={64} />
+      <DialogContent className="max-w-xs p-5">
+        <div className="flex flex-col items-center gap-3 text-center">
+          <OpenChamberLogo width={48} height={48} />
 
           <div className="space-y-1">
             <h2 className="text-lg font-semibold">OpenChamber</h2>
@@ -195,8 +195,9 @@ export const AboutDialog: React.FC<AboutDialogProps> = ({
             </div>
           </div>
 
-          <div className="flex w-full flex-col items-stretch gap-3 pt-2">
+          <div className="flex w-full items-center justify-between gap-2">
             <SettingsToggleRow
+              className="min-w-0 flex-1 !w-auto !grid-cols-[minmax(0,1fr)_auto] !gap-x-2 !p-0 text-left"
               itemId="about.diagnostics"
               checked={diagnosticsEnabled}
               onChange={handleDiagnosticsEnabledChange}
@@ -208,7 +209,7 @@ export const AboutDialog: React.FC<AboutDialogProps> = ({
                 type="button"
                 variant="ghost"
                 size="sm"
-                className="self-center text-muted-foreground font-normal"
+                className="text-muted-foreground font-normal"
                 disabled={exportingFeatLog}
                 aria-busy={exportingFeatLog}
                 onClick={() => void handleExportFeatLog()}
@@ -225,7 +226,7 @@ export const AboutDialog: React.FC<AboutDialogProps> = ({
           </div>
 
           {showDiagnostics && (
-            <div className="flex flex-col items-center gap-2 pt-2">
+            <div className="flex flex-col items-center gap-2">
               <button
                 onClick={handleCopyDiagnostics}
                 disabled={isCopyingDiagnostics || isPreparingDiagnostics || !diagnosticsReport}
@@ -247,21 +248,19 @@ export const AboutDialog: React.FC<AboutDialogProps> = ({
             </div>
           )}
 
-          <div className="flex flex-col items-center gap-2 pt-2">
-            <div className="flex items-center justify-center gap-4">
-              <a
-                href="https://github.com/yee94/openchamber"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="flex items-center gap-1.5 typography-meta text-muted-foreground hover:text-foreground transition-colors"
-              >
-                <Icon name="github-fill" className="h-4 w-4" />
-                <span>GitHub</span>
-              </a>
-            </div>
+          <div className="flex items-center justify-center">
+            <a
+              href="https://github.com/yee94/openchamber"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-1.5 typography-meta text-muted-foreground hover:text-foreground transition-colors"
+            >
+              <Icon name="github-fill" className="h-4 w-4" />
+              <span>GitHub</span>
+            </a>
           </div>
 
-          <p className="typography-meta text-muted-foreground/60 pt-2">
+          <p className="typography-micro text-muted-foreground/60">
             {t('aboutDialog.footerNote')}
           </p>
         </div>
