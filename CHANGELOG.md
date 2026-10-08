@@ -4,6 +4,15 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [2.0.0-beta.31] - 2026-10-08
+
+这是 OpenCode 2 预览版。本次发布桌面、Android 安装包及同版本 Beta OTA；iOS 不上 TestFlight，不进入稳定自动更新通道。
+
+### 桌面内置浏览器
+
+- 修复 macOS 打开内置浏览器后，左侧会话栏持续闪动、文字重影的问题。
+- 内置浏览器显示时使用不透明侧边栏背景；关闭面板或切换到其他标签后恢复透明效果。
+
 ## [2.0.0-beta.30] - 2026-10-08
 
 这是 OpenCode 2 预览版。本次发布桌面、Android 安装包及同版本 Beta OTA；iOS 不上 TestFlight，不进入稳定自动更新通道。

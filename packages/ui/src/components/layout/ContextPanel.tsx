@@ -2878,6 +2878,7 @@ export const ContextPanel: React.FC<{ directory?: string | null }> = ({ director
     <aside
       ref={panelRef}
       data-context-panel="true"
+      data-native-browser-visible={isOpen && activeTab?.mode === 'browser' && BrowserPane === DesktopBrowserPane ? 'true' : undefined}
       tabIndex={-1}
       inert={!isOpen || undefined}
       className={cn(

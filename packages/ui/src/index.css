@@ -82,6 +82,12 @@ html[data-oc-vibrancy][data-oc-vibrancy-ready] .oc-vibrancy-surface {
   background: var(--sidebar-vibrancy-overlay) !important;
 }
 
+/* A visible Electron webview can corrupt the translucent sidebar's native
+   composition on macOS. Restore vibrancy when the native browser is hidden. */
+html[data-oc-vibrancy]:has([data-native-browser-visible="true"]) .oc-vibrancy-surface {
+  background: var(--sidebar) !important;
+}
+
 /* Inner bg-sidebar elements inside the vibrant surface must not re-paint an
    opaque fill, or they'd cover the frosted effect. */
 html[data-oc-vibrancy] .oc-vibrancy-surface .bg-sidebar {
