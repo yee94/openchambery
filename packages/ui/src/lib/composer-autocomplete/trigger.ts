@@ -18,7 +18,7 @@ export type ResolveComposerAutocompleteTriggerInput = {
 /**
  * Resolve the live composer autocomplete trigger at `cursor`.
  * Priority matches ChatInput and OpenCode: shell off, leading `/` commands,
- * `#` snippets, then `@` mentions (files, agents, sessions, and skills).
+ * then `@` mentions (files, agents, sessions, and skills).
  */
 export const resolveComposerAutocompleteTrigger = (
   input: ResolveComposerAutocompleteTriggerInput,
@@ -49,20 +49,6 @@ export const resolveComposerAutocompleteTrigger = (
   }
 
   const textBeforeCursor = text.substring(0, cursor);
-  const lastHashSymbol = textBeforeCursor.lastIndexOf('#');
-  if (lastHashSymbol !== -1) {
-    const charBefore = lastHashSymbol > 0 ? textBeforeCursor[lastHashSymbol - 1] : null;
-    const textAfterHash = textBeforeCursor.substring(lastHashSymbol + 1);
-    const isWordBoundary = !charBefore || /\s/.test(charBefore);
-    if (isWordBoundary && !textAfterHash.includes(' ') && !textAfterHash.includes('\n')) {
-      return {
-        kind: 'snippet',
-        query: textAfterHash,
-        tokenStart: lastHashSymbol,
-        tokenEnd: cursor,
-      };
-    }
-  }
 
   const mentionQuery = getFileMentionAutocompleteQuery({
     value: text,
@@ -85,7 +71,6 @@ export const resolveComposerAutocompleteTrigger = (
 
 const triggerPrefix = (kind: ComposerAutocompleteTrigger['kind']): string => {
   if (kind === 'mention') return '@';
-  if (kind === 'snippet') return '#';
   return '/';
 };
 

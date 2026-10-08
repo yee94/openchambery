@@ -234,6 +234,18 @@ describe("noteLiveSessionActivity", () => {
 })
 
 describe("handleNormalizedOpenCodeHints", () => {
+  test("late output and outstanding tool progress do not clear a newer retry", () => {
+    const manager = new ChildStoreManager()
+    const store = manager.ensureChild('/workspace', { bootstrap: false })
+    store.setState({ session_status: { ses_a: { type: 'retry', attempt: 2, message: 'limit', next: 3000 } }, session_status_event_at: { ses_a: 2000 } })
+    for (const [type, eventCreated] of [['session.text.delta', 1000], ['session.tool.progress', 2500]] as const) {
+      handleNormalizedOpenCodeHints('/workspace', { type, properties: { sessionID: 'ses_a', eventCreated }, domainActivityHint: { sessionID: 'ses_a', kind: 'activity' } }, manager)
+      expect(store.getState().session_status.ses_a?.type).toBe('retry')
+    }
+    handleNormalizedOpenCodeHints('/workspace', { type: 'session.step.started', properties: { sessionID: 'ses_a', eventCreated: 3000 }, domainActivityHint: { sessionID: 'ses_a', kind: 'activity' } }, manager)
+    expect(store.getState().session_status.ses_a).toEqual({ type: 'busy' })
+    manager.disposeAll()
+  })
   test("live session.next activity clears a retry overlay status", () => {
     const manager = new ChildStoreManager()
     const store = manager.ensureChild("/workspace", { bootstrap: false })

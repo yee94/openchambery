@@ -25,8 +25,7 @@
  * @property {number} [nextResetTime]
  * @property {Array<{modelCode: string, usage: number}>} [usageDetails]
  */
-import { readAuthFile } from '../../opencode/auth.js';
-import { readConfigLayers } from '../../opencode/shared.js';
+import { readOpenCodeCredentials } from '../../opencode/auth.js';
 import {
   getAuthEntry,
   normalizeAuthEntry,
@@ -40,8 +39,8 @@ export const providerId = 'zhipuai-coding-plan';
 export const providerName = 'Zhipu AI Coding Plan';
 const aliases = ['zhipuai-coding-plan', 'zhipuai', 'zhipu'];
 
-function getApiKey() {
-  const auth = readAuthFile();
+async function getApiKey() {
+  const auth = await readOpenCodeCredentials();
   const entry = normalizeAuthEntry(getAuthEntry(auth, aliases));
   const apiKeyFromAuth = entry?.key ?? entry?.token;
 
@@ -49,28 +48,15 @@ function getApiKey() {
     return apiKeyFromAuth;
   }
 
-  try {
-    const { mergedConfig } = readConfigLayers();
-
-    for (const alias of aliases) {
-      const providerConfig = mergedConfig?.provider?.[alias];
-      if (providerConfig?.options?.apiKey) {
-        return providerConfig.options.apiKey;
-      }
-    }
-  } catch {
-    // Ignore config read errors; the provider will be treated as not configured.
-  }
-
   return null;
 }
 
-export const isConfigured = () => {
-  return Boolean(getApiKey());
+export const isConfigured = async () => {
+  return Boolean(await getApiKey());
 };
 
 export const fetchQuota = async () => {
-  const apiKey = getApiKey();
+  const apiKey = await getApiKey();
 
   if (!apiKey) {
     return buildResult({

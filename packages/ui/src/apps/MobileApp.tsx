@@ -15,6 +15,7 @@ import { ConfigUpdateOverlay } from '@/components/ui/ConfigUpdateOverlay';
 import { Button } from '@/components/ui/button';
 import { OpenChamberLogo } from '@/components/ui/OpenChamberLogo';
 import { ProviderLogo } from '@/components/ui/ProviderLogo';
+import { CommandPalette } from '@/components/ui/CommandPalette';
 import { ChatView } from '@/components/views/ChatView';
 import { AssistantView } from '@/components/assistants/AssistantView';
 import { AssistantShareWelcome } from '@/components/assistants/AssistantShareWelcome';
@@ -3203,6 +3204,7 @@ const MobileShell: React.FC<{
 
   return (
     <DedicatedMobileAppProvider actions={mobileActions}>
+      <CommandPalette />
       <div
         className="oc-mobile-app-shell main-content-safe-area flex h-[100dvh] flex-row text-foreground"
         data-page-scroll-lock="true"

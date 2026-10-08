@@ -39,10 +39,12 @@ import {
 import { bootstrapGlobal, bootstrapDirectory } from "./bootstrap"
 import { projectSession } from "./v2-runtime"
 import { retry } from "./retry"
+import { acceptSessionMove, movedSessionDirectory, sessionBelongsToDirectory } from './session-location-authority'
+import { adoptSessionMove } from './session-move'
 import { updateStreamingState } from "./streaming"
 import { setActionRefs } from "./session-actions"
 import { applySessionInboxEvent } from "./session-prompt-api"
-import { setSyncRefs } from "./sync-refs"
+import { setSyncRefs, getSyncChildStores } from "./sync-refs"
 import {
   applyTranscriptCommand,
   ensureTranscriptInitial,
@@ -84,6 +86,7 @@ import { queryClient } from "@/lib/queryRuntime"
 import { locationShutdownDirectory, refreshDemandedLocationServices } from "./location-services-demand"
 import { createConfigLiveRefresh } from "./config-live-refresh"
 import { normalizePath } from "@/lib/pathNormalization"
+import { createLocationRelease, directoryUse, isWorktreeDirectory } from "./location-release"
 import {
   materializationStatusFromTranscriptData,
   messagesFromTranscriptData,
@@ -304,6 +307,21 @@ type LiveAggregateOptions = {
   enabled?: boolean
 }
 
+export function useRunningSessionCount(sessionIDs: readonly string[]): number {
+  const selector = React.useMemo(() => (states: State[]) => sessionIDs.reduce((count, id) => {
+    const type = findLiveSessionStatus(states, id)?.type
+    return count + Number(type === 'busy' || type === 'retry')
+  }, 0), [sessionIDs])
+  const subscribe = React.useMemo(() => (childStores: ChildStoreManager, notify: () => void) => {
+    if (sessionIDs.length === 0) return () => {}
+    return childStores.subscribeAllSelected(
+      (state: State) => sessionIDs.map((id) => state.session_status[id]?.type ?? '').join(','),
+      notify,
+    )
+  }, [sessionIDs])
+  return useLiveSyncSelector(selector, Object.is, subscribe)
+}
+
 /** Read all session statuses (for sidebar) */
 export function useAllSessionStatuses(options?: LiveAggregateOptions): Record<string, SessionStatus> {
   const enabled = options?.enabled ?? true
@@ -505,6 +523,19 @@ export function handleNormalizedOpenCodeHints(
   // resumed. Promote retry → busy so the overlay does not stay pinned.
   if (normalized.domainActivityHint?.kind === "activity") {
     const store = childStores.getChild(directory) ?? childStores.ensureChild(directory, { bootstrap: false })
+    const resumedOutput = normalized.type === 'session.step.started'
+      || /^session\.(?:next\.)?(?:text|reasoning)\./.test(normalized.type)
+    const created = normalized.properties.eventCreated
+    const sequence = normalized.properties.eventSequence
+    if (typeof sequence === 'number') {
+      if (sequence <= (store.getState().session_status_event_sequence?.[sessionID] ?? -1)) return
+      if (normalized.type === 'session.step.started') store.setState({ session_status_event_sequence: { ...store.getState().session_status_event_sequence, [sessionID]: sequence } })
+    }
+    if (typeof created === 'number') {
+      if (sequence === undefined && created < (store.getState().session_status_event_at?.[sessionID] ?? 0)) return
+      if (resumedOutput && (normalized.type === 'session.step.started' || store.getState().session_status?.[sessionID]?.type !== 'busy')) store.setState({ session_status_event_at: { ...store.getState().session_status_event_at, [sessionID]: created } })
+    }
+    if (store.getState().session_status?.[sessionID]?.type === 'retry' && !resumedOutput) return
     noteLiveSessionActivity(store, sessionID)
   }
 
@@ -1257,6 +1288,8 @@ const resolveDirectoryFromRoutingIndex = (
 
   const sessionID = getSessionIdFromPayload(payload)
   if (sessionID) {
+    const movedDirectory = movedSessionDirectory(sessionID)
+    if (movedDirectory) return movedDirectory
     if (normalizedDirectory && normalizedDirectory !== "global" && childStoreHasSessionState(childStores, normalizedDirectory, sessionID)) {
       setIndexedSessionDirectory(routingIndex, sessionID, normalizedDirectory)
       return normalizedDirectory
@@ -1360,6 +1393,7 @@ export function isLiveRevisionCurrent(capturedRevision: number, currentRevision:
 
 const isSnapshotRevisionEvent = (payload: Event): boolean => (
   payload.type === "session.created"
+  || payload.type === "session.renamed"
   || payload.type === "session.updated"
   || payload.type === "session.deleted"
   || payload.type === "message.updated"
@@ -1691,6 +1725,8 @@ export async function resyncDirectoryAfterReconnect(
   getLiveRevision: (sessionID: string) => number,
   options?: { statusOnly?: boolean },
 ) {
+  const recoveryGeneration = getRuntimeGeneration()
+  const recoveryTransport = getRuntimeTransportIdentity()
   const current = store.getState()
   const candidateSessionIds = getDirectoryStatusRestoreSessionIds(directory, current)
 
@@ -1716,11 +1752,13 @@ export async function resyncDirectoryAfterReconnect(
   if (materializationSessionIds.length > 0) {
     const scopedClient = opencodeClient.getScopedSdkClient(directory)
     await Promise.all(materializationSessionIds.map(async (sessionId) => {
+      const locationBeforeRead = movedSessionDirectory(sessionId)
       const identityRevision = getLiveRevision(sessionId)
       syncDebug.recovery.materializing({ reason, directory, sessionID: sessionId })
       const session = await retry(async () => {
         return await scopedClient.session.get({ sessionID: sessionId })
       }).catch(() => null)
+      if (recoveryGeneration !== getRuntimeGeneration() || recoveryTransport !== getRuntimeTransportIdentity()) return
 
       // Session identity is independent of the message page. A missing session or
       // live events arriving during `session.get` only skip the identity write:
@@ -1730,6 +1768,13 @@ export async function resyncDirectoryAfterReconnect(
         // location.directory. projectSession() is the same write-path
         // projection use-sync already applies before child-store commits.
         const nextSession = stripSessionDiffSnapshots(projectSession(session))
+        if (locationBeforeRead !== movedSessionDirectory(sessionId)) return
+        if (nextSession.directory && normalizeEventDirectory(nextSession.directory) !== normalizeEventDirectory(directory)) {
+          acceptSessionMove(sessionId, nextSession.directory, Date.now())
+          adoptSessionMove(nextSession, getSyncChildStores())
+          setIndexedSessionDirectory(routingIndex, sessionId, nextSession.directory)
+          return
+        }
         store.setState((state: DirectoryStore) => {
           const sessionIndex = state.session.findIndex((item) => item.id === nextSession.id)
           let sessions = state.session
@@ -2095,6 +2140,27 @@ export function handleEvent(
   childStores: ChildStoreManager,
   routingIndex: EventRoutingIndex,
 ) {
+  if (payload.type === 'session.moved') {
+    const props = payload.properties as { sessionID?: string; location?: { directory?: string }; projectID?: string; subpath?: string; eventCreated?: number; eventSequence?: number }
+    const id = props.sessionID
+    const target = props.location?.directory
+    if (!id || !target || !acceptSessionMove(id, target, props.eventCreated ?? Date.now(), props.eventSequence)) return
+    const generation = getRuntimeGeneration()
+    const transport = getRuntimeTransportIdentity()
+    setIndexedSessionDirectory(routingIndex, id, target)
+    applyGlobalSessionStatusEvent(target, payload)
+    const known = [...childStores.children.values()].map((store) => store.getState().session.find((session) => session.id === id)).find(Boolean)
+      ?? useGlobalSessionsStore.getState().activeSessions.find((session) => session.id === id)
+    if (known) adoptSessionMove({ ...known, directory: target, location: { ...props.location, directory: target }, projectID: props.projectID ?? known.projectID, subpath: props.subpath }, childStores)
+    else useSessionUIStore.getState().setSessionDirectory(id, target)
+    void opencodeClient.getSession(id, target).then((session) => {
+      if (generation !== getRuntimeGeneration() || transport !== getRuntimeTransportIdentity()
+        || !sessionBelongsToDirectory(id, target)
+        || !sessionBelongsToDirectory(id, session.directory ?? target)) return
+      adoptSessionMove(session, childStores)
+    }).catch(() => { /* Reconnect identity recovery retries failed authority reads. */ })
+    return
+  }
   if (configLiveRefresh.event(payload.type, rawDirectory) && payload.type !== 'server.connected') return
   if ((payload as { type?: unknown }).type === "openchamber:worktree-bootstrap-status") {
     const properties = (payload as unknown as { properties?: unknown }).properties
@@ -2584,6 +2650,7 @@ export function handleEvent(
     case "session.created":
     case "session.updated":
     case "session.deleted":
+    case "session.renamed":
     case "openchamber:session-metadata":
       draft.session = [...current.session]
       draft.session_status_observed_at = { ...current.session_status_observed_at }
@@ -2743,6 +2810,46 @@ export function SyncProvider(props: {
   const childStoresRef = useRef<ChildStoreManager | null>(null)
   if (!childStoresRef.current) childStoresRef.current = new ChildStoreManager()
   const childStores = childStoresRef.current
+  const releaseDirectoryRef = useRef(props.directory)
+  releaseDirectoryRef.current = props.directory
+  const previousReleaseDirectoryRef = useRef(props.directory)
+  const locationReleaseRef = useRef<ReturnType<typeof createLocationRelease> | null>(null)
+  useEffect(() => {
+    const install = () => {
+      locationReleaseRef.current?.dispose()
+      previousReleaseDirectoryRef.current = releaseDirectoryRef.current
+      const generation = getRuntimeGeneration()
+      const runtimeKey = getRuntimeKey()
+      const sdk = opencodeClient.getSdkClient()
+      locationReleaseRef.current = createLocationRelease({
+        eligible: (directory) => isWorktreeDirectory(directory, useSessionUIStore.getState().availableWorktreesByProject),
+        isCurrentDirectory: (directory) => normalizePath(directory) === normalizePath(releaseDirectoryRef.current),
+        isRuntimeCurrent: () => generation === getRuntimeGeneration() && runtimeKey === getRuntimeKey()
+          && sdk === opencodeClient.getSdkClient(),
+        directoryUse: (directory) => {
+          pruneExternallyViewedSessions()
+          if (normalizePath(_contextPanelDirectory) === directory
+            || [...externallyViewedSessions.keys()].some((key) => normalizePath(key.split("\n")[0]) === directory)) return "busy"
+          const child = [...childStores.children.entries()].find(([path]) => normalizePath(path) === directory)?.[1]
+          return directoryUse(directory, child?.getState())
+        },
+        checkRemoteUse: (directory, signal) => opencodeClient.checkLocationReleaseUse(directory, signal),
+        release: (directory, signal) => opencodeClient.releaseLocation(directory, signal),
+      })
+    }
+    install()
+    const unsubscribe = subscribeRuntimeEndpointChanged(install)
+    return () => {
+      unsubscribe()
+      locationReleaseRef.current?.dispose()
+      locationReleaseRef.current = null
+    }
+  }, [childStores, props.sdk])
+  useEffect(() => {
+    const previous = previousReleaseDirectoryRef.current
+    previousReleaseDirectoryRef.current = props.directory
+    locationReleaseRef.current?.directoryChanged(previous, props.directory)
+  }, [props.directory])
   const routingIndexRef = useRef<EventRoutingIndex | null>(null)
   if (!routingIndexRef.current) routingIndexRef.current = createEventRoutingIndex()
   const routingIndex = routingIndexRef.current

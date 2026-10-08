@@ -39,7 +39,7 @@ type MentionKind = 'file' | 'agent' | 'session';
 export interface HighlightRange {
     start: number;
     end: number;
-    style: HighlightStyle | 'mentionFile' | 'mentionAgent' | 'mentionSession' | 'mentionCommand' | 'mentionSnippet' | 'mentionPaste';
+    style: HighlightStyle | 'mentionFile' | 'mentionAgent' | 'mentionSession' | 'mentionCommand' | 'mentionPaste';
     /**
      * Optional explicit class, used by syntax highlighting where the style is
      * resolved dynamically (per language token) rather than from a fixed enum.
@@ -96,7 +96,6 @@ const STYLE_PRIORITY: Record<AnyStyle, number> = {
     mentionAgent: 100,
     mentionSession: 100,
     mentionCommand: 100,
-    mentionSnippet: 100,
     mentionPaste: 100,
     code: 90,
     codeFence: 90,
@@ -114,7 +113,6 @@ const STYLE_CLASS: Record<AnyStyle, string> = {
     mentionAgent: 'text-[var(--primary)]',
     mentionSession: 'text-[var(--primary)]',
     mentionCommand: 'text-[var(--primary)]',
-    mentionSnippet: 'text-[var(--primary)]',
     mentionPaste: 'text-[var(--primary)]',
     code: 'rounded-[3px] bg-[var(--surface-subtle)] text-[var(--markdown-inline-code)]',
     codeFence: 'bg-[var(--surface-subtle)] text-[var(--markdown-inline-code)]',

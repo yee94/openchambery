@@ -163,6 +163,10 @@ describe('blocking vs background-running tool parts', () => {
             part: officialSubagentBackgroundPart,
             completions,
             childSessionStatusType: 'busy',
+        })).toEqual({ kind: 'background-running' });
+        expect(resolveBackgroundToolActivity({
+            part: officialSubagentBackgroundPart,
+            completions,
         })).toEqual({ kind: 'terminal', state: 'completed' });
     });
 

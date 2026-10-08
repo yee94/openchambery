@@ -18,7 +18,7 @@ const positiveMs = (value, fallback) => (
 
 /**
  * Agent frontmatter for official client agent permissions (action/resource/effect).
- * The final rule must be deny-all; assertLlmAgentDenyAll verifies that before prompt.
+ * The final catch-all must deny, with only denies after it; verified before prompt.
  */
 const AGENT_MARKDOWN = `---
 mode: primary
@@ -308,7 +308,7 @@ const readGeneratorAgent = async ({ client, location, signal, agentID, waitMs, p
 };
 
 /**
- * Verify the generator agent ends with deny-all permissions.
+ * Verify the generator agent has a deny-all rule followed only by denies.
  * Title alone is never treated as isolation. Failure must happen before prompt.
  */
 export async function assertLlmAgentDenyAll({
@@ -336,13 +336,12 @@ export async function assertLlmAgentDenyAll({
       'llm_attachment_generation_unavailable',
     );
   }
-  const last = permissions[permissions.length - 1];
-  if (
-    !last
-    || last.action !== '*'
-    || last.resource !== '*'
-    || last.effect !== 'deny'
-  ) {
+  const lastCatchAll = permissions.findLastIndex(
+    (rule) => rule?.action === '*' && rule?.resource === '*',
+  );
+  const isolated = lastCatchAll > -1
+    && permissions.slice(lastCatchAll).every((rule) => rule?.effect === 'deny');
+  if (!isolated) {
     failGenerate(
       'OpenCode LLM agent final permission is not deny-all; generation blocked',
       'llm_attachment_generation_unavailable',

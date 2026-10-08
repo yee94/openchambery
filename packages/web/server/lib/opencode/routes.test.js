@@ -233,39 +233,39 @@ describe('opencode2 upgrade pin (ticket 12)', () => {
   });
 
   it('upgrades a shared service using the owned cache and verifies the running version', async () => {
-    const binary = '/cache/opencode-cli/2.0.14/opencode';
+    const binary = '/cache/opencode-cli/2.0.23/opencode';
     vi.mocked(installPinnedOpenCode2Cli).mockResolvedValueOnce(binary);
-    vi.mocked(readOpenCode2BinaryVersion).mockReturnValueOnce('2.0.14');
-    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ version: '2.0.14', pid: 42 }))));
+    vi.mocked(readOpenCode2BinaryVersion).mockReturnValueOnce('2.0.23');
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ version: '2.0.23', pid: 42 }))));
     let resolvedBinary = '/usr/local/bin/opencode';
     const restartOpenCode = vi.fn(async () => {});
     const { app } = createUpgradeApp({
       getIsExternalOpenCode: () => true,
       getIsSharedOpenCodeService: () => true,
       getResolvedOpenCodeBinary: () => resolvedBinary,
-      getOpenCodeCliVersion: () => '2.0.14',
+      getOpenCodeCliVersion: () => '2.0.23',
       forceResolvedOpenCodeBinary: (value) => { resolvedBinary = value; },
       restartOpenCode,
       waitForOpenCodeReady: vi.fn(),
       openchamberDataDir: '/cache',
     });
 
-    const response = await request(app).post('/api/opencode/upgrade').send({ target: '2.0.14' }).expect(200);
+    const response = await request(app).post('/api/opencode/upgrade').send({ target: '2.0.23' }).expect(200);
     expect(restartOpenCode).toHaveBeenCalledWith({ binaryPath: binary });
-    expect(response.body).toMatchObject({ success: true, version: '2.0.14', ownership: 'shared-service' });
+    expect(response.body).toMatchObject({ success: true, version: '2.0.23', ownership: 'shared-service' });
   });
 
-  it('discovers the remote release and updates a shared 2.0.16 service to 2.0.18', async () => {
+  it('discovers the remote release and updates a shared 2.0.16 service to 2.0.23', async () => {
     let serveVersion = '2.0.16';
     let binary = '/usr/local/bin/opencode';
-    const installed = '/cache/opencode-cli/2.0.18/opencode';
+    const installed = '/cache/opencode-cli/2.0.23/opencode';
     const fetchMock = vi.fn(async (url) => new Response(JSON.stringify({
-      version: String(url).includes('registry.npmjs.org') ? '2.0.18' : serveVersion,
+      version: String(url).includes('registry.npmjs.org') ? '2.0.23' : serveVersion,
     })));
     vi.stubGlobal('fetch', fetchMock);
-    vi.mocked(readOpenCode2BinaryVersion).mockReturnValue('2.0.18');
+    vi.mocked(readOpenCode2BinaryVersion).mockReturnValue('2.0.23');
     vi.mocked(installPinnedOpenCode2Cli).mockResolvedValueOnce(installed);
-    const restartOpenCode = vi.fn(async () => { serveVersion = '2.0.18'; });
+    const restartOpenCode = vi.fn(async () => { serveVersion = '2.0.23'; });
     const { app } = createUpgradeApp({
       discoverOpenCodeUpdate: createOpenCodeUpdateDiscovery(),
       getIsExternalOpenCode: () => true,
@@ -277,12 +277,12 @@ describe('opencode2 upgrade pin (ticket 12)', () => {
       openchamberDataDir: '/cache',
     });
     const before = await request(app).get('/api/opencode/upgrade-status').expect(200);
-    expect(before.body).toMatchObject({ available: true, serveVersion: '2.0.16', targetVersion: '2.0.18', canManage: true });
+    expect(before.body).toMatchObject({ available: true, serveVersion: '2.0.16', targetVersion: '2.0.23', canManage: true });
     const result = await request(app).post('/api/opencode/upgrade').send({}).expect(200);
-    expect(result.body).toMatchObject({ success: true, restarted: true, version: '2.0.18' });
+    expect(result.body).toMatchObject({ success: true, restarted: true, version: '2.0.23' });
     expect(restartOpenCode).toHaveBeenCalledWith({ binaryPath: installed });
     const after = await request(app).get('/api/opencode/upgrade-status').expect(200);
-    expect(after.body).toMatchObject({ available: false, serveVersion: '2.0.18' });
+    expect(after.body).toMatchObject({ available: false, serveVersion: '2.0.23' });
     expect(fetchMock.mock.calls.filter(([url]) => String(url).includes('registry.npmjs.org'))).toHaveLength(1);
     vi.mocked(readOpenCode2BinaryVersion).mockReset();
   });
@@ -385,7 +385,7 @@ describe('runtime contract routes (ticket 11)', () => {
       ok: true,
       status: 200,
       statusText: 'OK',
-      json: async () => ({ version: '2.0.12', pid: 1 }),
+      json: async () => ({ version: '2.0.20', pid: 1 }),
     })));
     const { app } = createContractApp();
 
@@ -395,7 +395,7 @@ describe('runtime contract routes (ticket 11)', () => {
     expect(health.body.executionAllowed).toBe(true);
 
     const contract = await request(app).get('/api/opencode/contract').expect(200);
-    expect(contract.body.serveVersion).toBe('2.0.12');
+    expect(contract.body.serveVersion).toBe('2.0.20');
     expect(contract.body.capabilities['core.protocol'].available).toBe(true);
   });
 
@@ -439,7 +439,7 @@ describe('GET /api/opencode/health', () => {
         status: 200,
         statusText: 'OK',
         json: async () => ({
-          version: '2.0.12',
+          version: '2.0.20',
           pid: 4242,
           urls: { api: 'http://127.0.0.1:4096' },
           paths: { config: '/tmp/config', data: '/tmp/data' },
@@ -453,7 +453,7 @@ describe('GET /api/opencode/health', () => {
 
     expect(response.body).toMatchObject({
       healthy: true,
-      version: '2.0.12',
+      version: '2.0.20',
       executionAllowed: true,
       protocolCompatible: true,
     });

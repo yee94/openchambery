@@ -14,6 +14,7 @@ import {
 import { isCompactionCommandParts } from '@/components/chat/lib/messageDisplayNormalization';
 import { hasConfirmedFinalBody } from '@/components/chat/lib/turns/assistantMessageLifecycle';
 import { isFullySyntheticMessage } from '@/lib/messages/synthetic';
+import { isNativeSyntheticMessage } from '@/sync/session-projection-api';
 import { useI18n, type I18nKey, type I18nParams } from '@/lib/i18n';
 import { canonicalizeBuiltInToolName } from '@/lib/toolHelpers';
 import { useSessionActivity } from './useSessionActivity';
@@ -46,7 +47,7 @@ interface WorkingSummary {
      * linger after the turn has settled.
      */
     isTurnSettled: boolean;
-    retryInfo: { attempt?: number; next?: number } | null;
+    retryInfo: { attempt?: number; next?: number; message?: string } | null;
     turnStartedAt?: number;
 }
 
@@ -323,7 +324,7 @@ export function useAssistantStatus(
     const lastUser = React.useMemo(() => {
         for (let i = rawSessionMessages.length - 1; i >= 0; i--) {
             const message = rawSessionMessages[i];
-            if (message.role === 'user') {
+            if (message.role === 'user' && !isNativeSyntheticMessage(message)) {
                 return {
                     id: message.id,
                     index: i,
@@ -454,7 +455,7 @@ export function useAssistantStatus(
         }
 
         const retryInfo = isRetry
-            ? { attempt: sessionRetryAttempt, next: sessionRetryNext }
+            ? { attempt: sessionRetryAttempt, next: sessionRetryNext, message: currentSessionStatus?.type === 'retry' ? currentSessionStatus.message : undefined }
             : null;
 
         return {
@@ -482,7 +483,7 @@ export function useAssistantStatus(
             retryInfo,
             turnStartedAt: lastUser.turnStartedAt,
         };
-    }, [isRecovering, hasTerminalError, activityPhase, isPhaseWorking, isTurnSettled, lastUserIsCompaction, lastUser.turnStartedAt, parsedStatus, abortState, sessionRetryAttempt, sessionRetryNext, t]);
+    }, [isRecovering, hasTerminalError, activityPhase, isPhaseWorking, isTurnSettled, lastUserIsCompaction, lastUser.turnStartedAt, parsedStatus, abortState, sessionRetryAttempt, sessionRetryNext, currentSessionStatus, t]);
 
     const forming = React.useMemo<FormingSummary>(() => {
         const isActive = !isRecovering && !hasTerminalError && isPhaseWorking && parsedStatus.activePartType === 'text';

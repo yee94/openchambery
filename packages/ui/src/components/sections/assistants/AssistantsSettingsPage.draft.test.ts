@@ -208,7 +208,7 @@ describe('AssistantsSettingsPage draft → save payload', () => {
     const save = source.slice(source.indexOf('const save = useEvent'), source.indexOf('const remove = useEvent'));
 
     expect(emptyDraft).not.toMatch(/\bagent\s*:/);
-    expect(emptyDraft).toContain('variant: null');
+    expect(emptyDraft).toContain('variant: defaultModel?.variant ?? null');
     expect(emptyDraft).not.toMatch(/\bmode\s*:/);
     expect(draftFrom).not.toMatch(/\bagent\s*:/);
     expect(draftFrom).toContain('variant: assistant.variant');

@@ -1,5 +1,24 @@
 # Sync architecture, event handling & store update rules
 
+## Native session title events
+
+`session.renamed` (`data.sessionID`, `data.title`, envelope `created`) updates
+existing global and directory session rows through the shared rename freshness
+rule. The normalizer retains the clock as `eventCreated`; older and duplicate
+events are ignored. Rename events advance the snapshot revision fence, preserve
+unrelated row references and execution state, and never invent an incomplete
+session. The Host session index independently consumes the same event for
+index-backed sidebar snapshots. This shared UI path also covers extension-only
+VS Code where no Host index is available.
+
+## V2 retry, move and fork boundaries (07/10/11)
+
+Verified against client/schema **2.0.23**. Ingress maps `session.retry.scheduled` (`attempt`, absolute millisecond `at`, structured `error.message`) to retry status. Retry is non-idle; the leaf working row paints reason, attempt and countdown. Execution start/resumed text or reasoning clears the countdown; terminal execution clears it through the existing idle gate, while shutdown retains busy recovery. Native event clocks reject older retry/output frames; outstanding tool progress does not end backoff. Countdown expiry never releases execution or a queue.
+
+`session.moved.data.location.directory` owns routing, independent of the old envelope directory. `session-move.ts` transfers live status/blocking requests, retires the source transcript scope, updates global identity and the current session directory, and preserves session-keyed drafts. Runtime-scoped move fences reject old-directory catalog/status writes. A guarded `session.get` enriches event identity; reconnect identity reads recover missed moves. SQLite index ingestion moves the same identity while retaining pins/activity/status and rejecting older source-directory snapshots.
+
+Fork reads native `message.list` pages through the scoped client, independently of the filtered/rendered window. `before` is exclusive: explicit assistant forks retain subsequent steps and context through the native idle boundary, excluding later compaction/turns; live `/fork` retains its latest user and context carriers before execution. Shell is a separate input boundary. Missing targets, failed/stationary pages and switched runtime/directory fail explicitly. Native records preserve attachments, skills and synthetic/system context on the server; selected-message composer restoration fetches missing/exact attachment bodies. Copied-event suppression uses exact ID membership, never ID order. Focused tests: `session-retry-lifecycle`, `WorkingPlaceholder.retry`, `session-status-snapshot`, `session-move`, `session-fork-boundary`, and the fork cases in `session-actions`.
+
 ## Structured execution error presentation
 
 `summarizeOpenCodeError` preserves native `type` and valid HTTP `status` alongside its existing `name`/bounded `message` fields. The in-memory notification store carries those fields through to `SessionErrorNotice`; failures before an assistant row exists use the same localized error classification as transcript assistant failures. Step-failure SSE and compaction GET/SSE projection also preserve upstream HTTP status, so error details agree before and after reload. Do not flatten structured types into text or infer automatic retries from error codes. Live retry state remains authoritative for countdown/activity; historical interruption and restart notices never start a live spinner.
@@ -26,7 +45,7 @@ An accepted request writes only `session_interrupt_acknowledged_at`; `session_st
 
 Regression coverage: `session-interrupt.test.tsx` and the abort group in `session-actions.test.ts`, including event-before-HTTP, late success/failure after a new turn, same-clock new execution, runtime/store replacement, duplicate stop callers, ignored abort signals, timeout/retry, and unrelated-session rendering isolation.
 
-Native compaction is a standalone `Session.Message.Compaction` checkpoint (`running` / `completed` / `failed`). Live starts use `inputID` for manual requests or `messageIDFromEventID(event.id)` for automatic requests, with the envelope creation clock. Delta/end/failure events update the latest running checkpoint, never the first historical card; deltas without a running checkpoint are ignored. Transcript merge targets compaction rows explicitly and compares status, reason, summary, recent context and error so both SSE batches and HTTP refreshes publish changes instead of retaining stale parts. GET projection keeps the same identity across reload. Regression coverage: `compaction-transcript.regression.test.ts`.
+Native compaction is a standalone `Session.Message.Compaction` checkpoint (`running` / `completed` / `failed`). Live starts use `inputID` for manual requests or `messageIDFromEventID(event.id)` for automatic requests, with the envelope creation clock. Delta/end/failure events update the latest running checkpoint, never the first historical card; deltas without a running checkpoint are ignored. Terminal events without a running checkpoint must not mint another row from the terminal event ID: HTTP may already have completed the original row. Failure with an explicit `inputID` retains that identity. Both terminal types clear the compaction barrier and trigger the existing bounded viewed-session materialization, recovering missed starts from authoritative GET. Transcript merge targets compaction rows explicitly and compares status, reason, summary, recent context and error so both SSE batches and HTTP refreshes publish changes instead of retaining stale parts. GET projection keeps the same identity across reload. Regression coverage: `compaction-transcript.regression.test.ts`.
 
 `session-projection-api.ts` excludes native `system` rows from the shared transcript projection. These rows carry model instructions such as Code Mode catalog updates. Filtering follows the authoritative row type, preserving user/assistant text even when it quotes those instructions. Full system-only pages preserve the upstream cursor so older conversation history remains reachable.
 
@@ -48,6 +67,14 @@ Verified against `@opencode/client` 2.0.12 / OpenCode core: `session.execution.i
 
 `session.revert.committed` (data: `{ sessionID, to }`) clears the catalog `session.revert` marker and runs TranscriptRepository `revert-committed`: locate boundary `to` by exact id in repository `messageOrder` (chronological / seq-equivalent, matching upstream projector `gte(boundary.seq)`), drop that message and every later one, bump per-scope read epoch so in-flight HTTP/materialize completions lose commit eligibility. **Never** rank the cut with message-id string comparison (`id >= to`) — queue ids are minted at enqueue and can lexicographically precede earlier turns. When the boundary is missing from an incomplete window, force authority recovery (clear + `ensureInitial`) instead of inventing a range; exhausted windows missing the boundary are a no-op. Stage/clear remain marker-only. Other sessions' epochs stay untouched.
 
+### Best-effort worktree location release (compatibility Ticket 08)
+
+`SyncProvider` owns `location-release.ts` for its current runtime. Leaving a known worktree schedules one five-minute timer; project roots and unknown directories never qualify. Paths are compared with `normalizePath`. Reentry cancels that directory's timer and request, and runtime endpoint changes / SDK replacement / unmount dispose all timers and abort outstanding probes. A new runtime begins without inherited departures.
+
+At expiry, a complete child store with a successful status snapshot supplies local authority. Busy/retry status, permission, question, generic session forms, global live activity, known external viewers and the Context Panel defer another five minutes. Missing/incomplete authority skips release. Only otherwise-free departed scopes perform `shell.list` + `form.list` through `opencodeClient.getScopedSdkClient` with explicit `{ location: { directory } }` and an abort signal; running shells or pending forms defer. The coordinator rechecks runtime generation/key/SDK, current directory, worktree eligibility and local use after that await, then calls official `debug.location.evict`. The entire probe/eviction attempt has a ten-second independent deadline even when a bridge ignores abort. Failure/timeout leaves cleanup to OpenCode's sweep, without clearing local stores or manufacturing idle state.
+
+This is the user-selected reference **best-effort** policy for shared and private services, not an atomic cross-client lease: unknown external consumers and the check→evict race remain possible, and 204 does not prove OS/MCP handles were closed. There is no exclusive-process prerequisite. The same shared provider/SDK path serves web, Electron, VS Code and hosted/native mobile; a runtime without a known worktree catalog simply has no candidates. This branch has no independent managed Chats directory contract, so it does not introduce the reference's thirty-second Chats policy or infer it from path names. No catalog-wide probing, MCP warmup, high-frequency subscriptions or new persisted state is added. Focused lifecycle and generated-SDK transport tests cover cancellation, late completions, failures and bounded request counts; live multi-client/MCP resource counts have not been measured.
+
 ### Demand-driven location services (Ticket 09)
 
 Directory bootstrap does not schedule `lsp.status`: that capability is not
@@ -62,7 +89,7 @@ Question reply adapters fetch `session.form.get` on the captured scoped client b
 
 Question-tool forms (`metadata.kind === "question"`, with `metadata.tool`) are the QuestionCard contract. `form.list` and live `form.created` project only those rows into the question store; `form.replied` and `form.cancelled` remove them by form id. Other pending forms stay on the session form store and render as FormCard. A question form is not also a FormCard.
 
-Projection and live `session.step.streamed` preserve OpenCode's `time.streamed` clock through completion. It marks the provider response body ending, before tool settlement. TPS follows the OpenCode TUI contract: for each assistant turn, sum output + reasoning tokens across its assistant steps and divide by the sum of `max(0, time.streamed - time.created)`; omit the rate if any step lacks that clock. Formatting is one decimal place plus `tok/s`. The context panel uses the same per-step interval and authoritative message token usage for its latest-turn and session aggregates. Interrupted, aborted, and failed turns still publish that rate when every included step has the streamed clock; an in-flight continuation does not. There is no legacy wall-clock/tool-duration fallback. OpenCode client 2.0.12 exposes these measurement inputs rather than a precomputed TPS field.
+Projection and live `session.step.streamed` preserve OpenCode's `time.streamed` clock through completion. It marks the provider response body ending, before tool settlement. TPS follows the OpenCode TUI contract: for each assistant turn, sum output + reasoning tokens across its assistant steps and divide by the sum of `max(0, time.streamed - time.created)`; omit the rate if any step lacks that clock. Formatting is one decimal place plus `tok/s`. The context panel uses the same per-step interval and authoritative message token usage for its latest-turn and session aggregates. Interrupted, aborted, and failed turns still calculate that rate when every included step has the streamed clock; an in-flight continuation does not. Transcript failure presentation suppresses the completion footer and TPS while showing the error; explicit user stops retain their metadata. There is no legacy wall-clock/tool-duration fallback. OpenCode client 2.0.12 exposes these measurement inputs rather than a precomputed TPS field.
 
 ## Session model switch on send (OpenCode 2.x)
 
@@ -121,7 +148,7 @@ Owning modules: `session-send-selection.ts`, `lib/opencode/client.ts`
 
 An unchecked draft auto-accept shield is an explicit `false` policy. Such drafts use the existing separate create/send path: register the new session directory, await `setSessionAutoAccept(sessionId, false)`, then select the session and dispatch the first prompt. The combined create-with-prompt capability has no pre-prompt policy field, so it is eligible only when the draft explicitly enables auto-accept. This shared ordering applies to web, Electron, VS Code, hosted mobile, and Capacitor. A failed policy write restores the draft and prevents prompt dispatch; the already-created empty upstream session remains. Existing session policies and inherited/default policy resolution are unchanged. Regression coverage: `issue-2039.test.ts` and `session-combined-send.test.ts`.
 
-Verified on **2.0.12** / **2.0.14** core inbox. Installed `@opencode/client` / `@opencode/schema` are **2.0.15**; the generated prompt and message routes are unchanged from that verification. `admit` is idempotent for the
+Verified on **2.0.12** / **2.0.14** core inbox. Installed `@opencode/client` / `@opencode/schema` are **2.0.23**; the generated prompt and message routes retain the verified admission contract. `admit` is idempotent for the
 same session + message id (fixed id + fixed payload; reconcile returns existing
 pending or promoted-from-message). Empty inbox + empty projection after a lost
 response is **unknown** (pending-not-visible vs cancelled) — never a new draft.
@@ -315,6 +342,8 @@ Current consumers:
 - agent/session activity surfaces using `useGlobalSessionStatus()` / `useAllSessionStatuses()`
 
 Cross-directory selectors subscribe to the narrow child-store field they aggregate. Session aggregation listens to `state.session`; per-session status listens only to that session's `state.session_status` entry. Unrelated streaming events such as `message.part.delta` must not trigger global session/status scans.
+
+`useRunningSessionCount` observes a caller-supplied unique ID set using the same live authority as the sidebar. It publishes only count changes, selects only those IDs in each child store, and makes no subscription for an empty set. Background-work footer candidates are transcript dispatch identities, while only live busy/retry entries contribute to their count.
 
 Sessions titled `smartfetch-secondary` are temporary SmartFetch model calls. The
 directory event reducer never inserts them into live child-store session lists,
@@ -1734,7 +1763,7 @@ The client generates the message ID before the request. The server/runtime host
 uses it as the bounded operation key, so reconnect retries reuse the in-flight
 or completed operation instead of creating another session. ChatInput publishes
 the stable-ID pending user-message presentation while it sets `draftEstablishing`,
-before response-style and snippet preprocessing. The row contains the captured
+before response-style preprocessing. The row contains the captured
 visible text, primary and per-part attachments, synthetic parts, and agent mention.
 `claimDraftSubmission` reuses that message identity and promotes the draft to
 `draftSubmitting`. The shared MessageList renders the pending presentation while
@@ -1745,8 +1774,8 @@ Definitive failure clears the pending row and restores the claimed draft input.
 
 Send-path prep must not compete for Chromium's per-origin HTTP/1.1 sockets:
 `fetchResponseStyleInstruction` reads an in-memory cache warmed by settings
-bootstrap / Behavior saves; `expandText` expands from the loaded snippet
-catalog locally when every `#token` resolves. Git discovery
+bootstrap / Behavior saves. Hash-prefixed prompt text is sent literally; no
+snippet catalog or expansion request participates in sending. Git discovery
 (`primary-root` / `worktrees`) is capped at 2 concurrent network calls with a
 short TTL + in-flight dedupe so sidebar fan-out cannot starve create/prompt.
 Cold-start project lists use `GET /api/git/discover` (via
@@ -1954,6 +1983,21 @@ Transport retries reuse one request ID, revision-conflict retries use a new requ
 ID, and runtime changes abort both observers and writes.
 Shared ordering covers worktree row order; expanded groups, selected sessions,
 and other local navigation state retain their existing local ownership.
+
+## Demand-scoped bootstrap
+
+Global bootstrap probes only `server.info`, which does not resolve a location.
+It preserves existing seed data and startup-error reporting. Path, project ID
+and merged configuration load through explicit-directory calls in
+`bootstrapDirectory`; an empty directory is rejected before any request.
+Global bootstrap no longer enumerates location-scoped project/config catalogs
+or boots the server default/home directory. The sidebar's host-owned project
+and session catalogs retain their own ownership.
+
+Automatic navigation eviction is not supported: public V2 has no cross-client
+consumer lease or atomic idle eviction. Private process ownership alone does
+not prove absence of other consumers. Explicit worktree deletion uses its
+separate host-owned best-effort policy.
 
 ## V2 configuration hot-update events
 

@@ -36,6 +36,19 @@ export const applySessionIndexEvent = (service, event, observedAt = Date.now(), 
 
   const baseType = normalizeSessionEventType(payload.type);
 
+  if (baseType === 'session.renamed') {
+    if (isHostReady && !isHostReady()) return false;
+    const data = payload.data ?? properties;
+    return service.rename(data.sessionID, data.title, payload.created ?? properties.eventCreated ?? observedAt);
+  }
+
+  if (baseType === 'session.moved') {
+    const data = payload.data ?? properties;
+    return typeof data.sessionID === 'string' && typeof data.location?.directory === 'string'
+      ? service.move(data.sessionID, data.location.directory, typeof payload.created === 'number' ? payload.created : observedAt, payload.durable?.seq)
+      : false;
+  }
+
   if (baseType === 'session.created' || baseType === 'session.updated') {
     // Until Host metadata is ready, do not write session lifecycle into the
     // index (would bake unprojected upstream archive). Transcript paths use

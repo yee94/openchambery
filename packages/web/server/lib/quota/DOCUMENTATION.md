@@ -38,6 +38,15 @@ These provider IDs are currently dispatchable via `fetchQuotaForProvider(provide
 - `providers/openai.js` exists for logic parity/reuse but is intentionally not registered for dispatcher ID routing.
 
 ## Response contract
+Provider credentials are read asynchronously from the current OpenCode service via
+`opencode/auth.js`; only the selected credential is used. Account switching and
+logout are observed on the next request, without file fallback or persisted secret
+cache. Credential-list transport/auth/schema failure rejects the configured-provider
+list instead of returning an authoritative empty list; per-provider quota requests
+return `ok: false` with a sanitized error. VS Code uses the same credential adapter.
+OpenChamber-owned quota cookies and Grok/Antigravity-specific stores retain their
+separate explicit sources; they are not legacy OpenCode `auth.json` fallbacks.
+
 All providers should return results via shared helpers to preserve API shape:
 - Required fields: `providerId`, `providerName`, `ok`, `configured`, `usage`, `fetchedAt`
 - Optional field: `error`

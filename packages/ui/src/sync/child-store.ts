@@ -1,4 +1,5 @@
 import { create, type StoreApi } from "zustand"
+import { filterMovedSessionState } from './session-location-authority'
 import { normalizeDirectoryKey } from "@/lib/pathNormalization"
 import type { DirState, State } from "./types"
 import { INITIAL_STATE, MAX_DIR_STORES, DIR_IDLE_TTL_MS, EVICTION_GRACE_MS } from "./types"
@@ -32,6 +33,13 @@ function createDirectoryStore(directory: string): StoreApi<DirectoryStore> {
     patch: (partial) => set(partial),
     replace: (next) => set(next),
   }))
+
+  const write = store.setState
+  store.setState = ((partial: Parameters<typeof write>[0], replace?: boolean) => {
+    const next = typeof partial === 'function' ? partial(store.getState()) : partial
+    write(filterMovedSessionState(directory, store.getState(), next), replace as false)
+  }) as typeof write
+  store.setState({ patch: (partial) => store.setState(partial), replace: (next) => store.setState(next) })
 
   // Subscribe to persist metadata changes back to localStorage
   store.subscribe((state, prev) => {

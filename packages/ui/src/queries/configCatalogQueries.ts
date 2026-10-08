@@ -5,6 +5,7 @@ import { getRuntimeTransportIdentity } from '@/lib/runtime-switch';
 import { runtimeFetch } from '@/lib/runtime-fetch';
 import { parseProviderCatalog } from '@/lib/configCatalogParser';
 import type { ProviderCatalog } from '@/types/configCatalog';
+import { parseModelIdentifier } from '@/lib/modelIdentifier';
 
 // 空 catalog 绝不能永久 fresh：成功或失败后的空列表都必须在下一次
 // ensure/fetchQuery 时重新请求，避免 UI 被空 SWR 快照永久困住。
@@ -14,7 +15,7 @@ const catalogStaleTime = (isPopulated: (data: unknown) => boolean) => (
 
 // 空 catalog 不得被信任：staleTime 0 保证下一次 ensure 必然重拉（见上方 catalogStaleTime）。
 // TQ 运行期 gcTime 仅支持 number，不解析函数形式；空结果的实际约束靠
-// staleTime 0 + loadProviders 不写 store + seed 拒绝 + partialize 落 partial 这几道闸门。
+// staleTime 0 + loadProviders 保留选择意图；catalog 始终只存在于运行期。
 const isProviderCatalogPopulated = (data: unknown): boolean => {
   const catalog = data as ProviderCatalog | undefined;
   return Boolean(catalog && !catalog.partial && catalog.providers.length > 0);
@@ -90,11 +91,8 @@ const loadProviderCatalogFromV2 = async (directory: string | null, signal: Abort
   const defaults: Record<string, string> = {};
   for (const entry of Array.isArray(configEntries) ? configEntries : []) {
     const model = entry?.type === 'document' ? entry.info?.model : undefined;
-    if (model && typeof model === 'object' && !Array.isArray(model)) {
-      const providerID = typeof model.providerID === 'string' ? model.providerID : '';
-      const modelID = typeof model.model === 'string' ? model.model : '';
-      if (providerID && modelID) defaults[providerID] = modelID;
-    }
+    const selection = parseModelIdentifier(model);
+    if (selection) defaults[selection.providerId] = selection.modelId;
   }
 
   return {
@@ -147,10 +145,7 @@ export const providerCatalogQueryOptions = (
   };
 };
 
-// Composer Agent catalog is one cache per transport. `directory` is only an
-// OpenCode request hint so the first load can bind to an instance; later
-// projects reuse this list immediately. Project-only agents are rare and
-// arrive later via force-refresh / Agents settings metadata.
+// Agent configuration inherits in OpenCode at the actual Location directory.
 export const rawAgentsQueryOptions = (
   directory: string | null,
   transport = getRuntimeTransportIdentity(),
@@ -171,37 +166,6 @@ export const readProviderCatalogSnapshot = (directory: string | null, transport 
 
 export const readRawAgentsSnapshot = (directory: string | null, transport = getRuntimeTransportIdentity()): Agent[] | undefined =>
   queryClient.getQueryData<Agent[]>(rawAgentsQueryOptions(directory, transport).queryKey);
-
-export const seedProviderCatalogQuery = (
-  directory: string | null,
-  snapshot: { providers: unknown; defaultProviders: unknown; providerCatalogPartial?: boolean },
-  transport = getRuntimeTransportIdentity(),
-): void => {
-  if (snapshot.providerCatalogPartial === true) return;
-  const options = providerCatalogQueryOptions(directory, transport);
-  if (queryClient.getQueryData(options.queryKey) !== undefined) return;
-  try {
-    const providers = Array.isArray(snapshot.providers)
-      ? snapshot.providers.map((provider) => {
-        if (typeof provider !== 'object' || provider === null || Array.isArray(provider)) return provider;
-        const entry = provider as Record<string, unknown>;
-        return {
-          ...entry,
-          models: Array.isArray(entry.models)
-            ? Object.fromEntries(entry.models.map((model, index) => [String(index), model]))
-            : entry.models,
-        };
-      })
-      : snapshot.providers;
-    const catalog = parseProviderCatalog({ schemaVersion: 1, providers, default: snapshot.defaultProviders, partial: false });
-    if (catalog.partial) return;
-    // 空列表不是可信快照，不 seed。
-    if (catalog.providers.length === 0) return;
-    queryClient.setQueryData(options.queryKey, catalog);
-  } catch {
-    // Persisted startup snapshots are optional and isolated from network loading.
-  }
-};
 
 export const ensureProviderCatalogQuery = (directory: string | null, transport = getRuntimeTransportIdentity()): Promise<ProviderCatalog> =>
   queryClient.fetchQuery(providerCatalogQueryOptions(directory, transport));

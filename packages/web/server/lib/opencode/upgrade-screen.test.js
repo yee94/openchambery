@@ -11,26 +11,26 @@ import {
 } from './upgrade-screen.js';
 
 describe('upgrade screen version gate', () => {
-  it('uses 2.0.15 even when the runtime pin is older', () => {
-    expect(REQUIRED_OPENCODE_VERSION).toBe('2.0.15');
-    expect(resolveUpgradeScreenTarget('2.0.12')).toBe('2.0.15');
-    expect(resolveUpgradeScreenTarget('2.0.16')).toBe('2.0.16');
+  it('uses the floor even when the runtime pin is older', () => {
+    expect(REQUIRED_OPENCODE_VERSION).toBe('2.0.20');
+    expect(resolveUpgradeScreenTarget('2.0.12')).toBe('2.0.20');
+    expect(resolveUpgradeScreenTarget('2.0.23')).toBe('2.0.23');
   });
 
-  it('does not open the gate at or above 2.0.15', () => {
+  it('does not open the gate at or above 2.0.20', () => {
     expect(describeUpgradeScreen({
-      version: '2.0.15',
+      version: '2.0.20',
       installation: 'managed',
       platformCanInstall: true,
-    })).toMatchObject({ state: 'compatible', canInstall: false, minimumVersion: '2.0.15' });
+    })).toMatchObject({ state: 'compatible', canInstall: false, minimumVersion: '2.0.20' });
     expect(describeUpgradeScreen({
-      version: 'v2.0.16',
+      version: 'v2.0.23',
       installation: 'managed',
       platformCanInstall: true,
     }).state).toBe('compatible');
   });
 
-  it('opens the gate below 2.0.15 and offers install only when this runtime can switch', () => {
+  it('opens the gate below 2.0.20 and offers install only when this runtime can switch', () => {
     expect(describeUpgradeScreen({
       version: '2.0.14',
       installation: 'managed',
@@ -68,17 +68,17 @@ describe('upgrade screen version gate', () => {
 
   it('does not report an unverified install as upgraded', () => {
     expect(evaluateUpgradeScreenInstallResult({
-      targetVersion: '2.0.15',
+      targetVersion: '2.0.23',
       serveVersion: '2.0.14',
     })).toMatchObject({ ok: false, upgraded: false, version: '2.0.14' });
     expect(evaluateUpgradeScreenInstallResult({
-      targetVersion: '2.0.15',
+      targetVersion: '2.0.23',
       serveVersion: null,
     }).upgraded).toBe(false);
     expect(evaluateUpgradeScreenInstallResult({
-      targetVersion: '2.0.15',
-      serveVersion: '2.0.15',
-    })).toMatchObject({ ok: true, upgraded: true, version: '2.0.15' });
+      targetVersion: '2.0.23',
+      serveVersion: '2.0.23',
+    })).toMatchObject({ ok: true, upgraded: true, version: '2.0.23' });
   });
 });
 
@@ -94,7 +94,7 @@ describe('installRequiredOpenCode', () => {
         calls.push('install');
         return '/cache/opencode';
       }),
-      readBinaryVersion: vi.fn(() => '2.0.15'),
+      readBinaryVersion: vi.fn(() => '2.0.23'),
       persistBinary: vi.fn(async () => {
         calls.push('persist');
       }),
@@ -114,20 +114,20 @@ describe('installRequiredOpenCode', () => {
     return { deps, calls };
   };
 
-  it('installs 2.0.15 and only succeeds after the running serve is verified', async () => {
+  it('installs 2.0.23 and only succeeds after the running serve is verified', async () => {
     const { deps, calls } = createDeps({
       readServeVersion: vi.fn()
         .mockResolvedValueOnce('2.0.14')
-        .mockResolvedValueOnce('2.0.15'),
+        .mockResolvedValueOnce('2.0.23'),
     });
 
     await expect(installRequiredOpenCode(deps)).resolves.toMatchObject({
       ok: true,
       upgraded: true,
-      version: '2.0.15',
-      targetVersion: '2.0.15',
+      version: '2.0.23',
+      targetVersion: '2.0.23',
     });
-    expect(deps.install).toHaveBeenCalledWith({ version: '2.0.15' });
+    expect(deps.install).toHaveBeenCalledWith({ version: '2.0.23' });
     expect(calls).toEqual(['install', 'persist', 'force', 'restart', 'ready']);
   });
 
@@ -137,7 +137,7 @@ describe('installRequiredOpenCode', () => {
         .mockResolvedValueOnce('1.18.30')
         .mockResolvedValueOnce('1.18.30'),
       readCliVersion: () => '1.18.30',
-      readBinaryVersion: () => '2.0.15',
+      readBinaryVersion: () => '2.0.23',
     });
 
     await expect(installRequiredOpenCode(deps)).rejects.toThrow(/still 1\.18\.30/);
@@ -161,11 +161,11 @@ describe('installRequiredOpenCode', () => {
 });
 
 describe('upgrade screen routes', () => {
-  it('hides the gate for 2.0.15 and reports install failure without upgraded:true', async () => {
+  it('hides the gate for 2.0.20 and reports install failure without upgraded:true', async () => {
     const app = express();
     app.use(express.json());
     const readServeVersion = vi.fn()
-      .mockResolvedValueOnce('2.0.15')
+      .mockResolvedValueOnce('2.0.20')
       .mockResolvedValueOnce('2.0.12')
       .mockResolvedValueOnce('2.0.12');
     registerUpgradeScreenRoutes(app, {
@@ -176,14 +176,14 @@ describe('upgrade screen routes', () => {
       install: vi.fn(async () => {
         throw new Error('registry unreachable');
       }),
-      readBinaryVersion: () => '2.0.15',
+      readBinaryVersion: () => '2.0.23',
       persistBinary: vi.fn(),
       forceBinary: vi.fn(),
       restart: vi.fn(),
     });
 
     const compatible = await request(app).get('/api/opencode/compatibility').expect(200);
-    expect(compatible.body).toMatchObject({ state: 'compatible', version: '2.0.15', minimumVersion: '2.0.15' });
+    expect(compatible.body).toMatchObject({ state: 'compatible', version: '2.0.20', minimumVersion: '2.0.20' });
 
     const failed = await request(app).post('/api/opencode/install-required').expect(500);
     expect(failed.body).toMatchObject({

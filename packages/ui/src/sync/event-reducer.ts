@@ -9,7 +9,7 @@ import type { FileDiff, GlobalState, State } from "./types"
 import { dropSessionCaches } from "./session-cache"
 import { clearSessionInterruptAcknowledgement } from "./session-interrupt"
 import { stripSessionDiffSnapshots, summarizeFileDiffs } from "./sanitize"
-import { shouldSkipStaleSessionEvent } from "./session-event-freshness"
+import { applySessionRename, shouldSkipStaleSessionEvent } from "./session-event-freshness"
 import { isQuestionFormMetadata, mapV2PermissionRequest, mapV2QuestionRequest } from "./v2-runtime"
 
 function asRecord(value: unknown): Record<string, unknown> | null {
@@ -344,6 +344,17 @@ export function applyDirectoryEvent(
     now?: () => number
   },
 ): DirectoryEventResult {
+  if (event.type === 'session.status' || event.type === 'session.idle' || event.type === 'session.error' || event.type.startsWith('session.execution.')) {
+    const props = event.properties as { sessionID?: string; eventCreated?: number; eventSequence?: number }
+    if (props.sessionID && typeof props.eventSequence === 'number') {
+      if (props.eventSequence <= (draft.session_status_event_sequence?.[props.sessionID] ?? -1)) return false
+      draft.session_status_event_sequence = { ...draft.session_status_event_sequence, [props.sessionID]: props.eventSequence }
+    }
+    if (props.sessionID && typeof props.eventCreated === 'number') {
+      if (props.eventSequence === undefined && props.eventCreated < (draft.session_status_event_at?.[props.sessionID] ?? 0)) return false
+      draft.session_status_event_at = { ...draft.session_status_event_at, [props.sessionID]: props.eventCreated }
+    }
+  }
   switch (event.type) {
     case "server.instance.disposed": {
       callbacks?.onRefresh?.("")
@@ -372,6 +383,21 @@ export function applyDirectoryEvent(
         trimSessions(draft)
         if (!info.parentID) draft.sessionTotal += 1
       }
+      return true
+    }
+
+    case "session.renamed": {
+      const properties = event.properties as Record<string, unknown>
+      if (typeof properties.sessionID !== 'string') return false
+      const result = Binary.search(draft.session, properties.sessionID, (session) => session.id)
+      if (!result.found) return false
+      const current = draft.session[result.index]
+      const next = applySessionRename(current, properties)
+      if (next === current) return false
+      if (!isVisibleGlobalSession(next)) {
+        return removeFromLiveDirectoryList(draft, next, result, callbacks?.onSetSessionTodo)
+      }
+      draft.session[result.index] = next
       return true
     }
 
@@ -462,6 +488,7 @@ export function applyDirectoryEvent(
       }
       let errorChanged = false
       if (props.status.type === "busy" || props.status.type === "retry") {
+        clearSessionInterruptAcknowledgement(draft, props.sessionID)
         errorChanged = clearSessionErrorAt(draft, props.sessionID)
       }
       // Authoritative status snapshot ends shutdown-recovery pending.

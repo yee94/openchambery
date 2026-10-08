@@ -35,9 +35,9 @@ export const createHmrStateRuntime = (dependencies) => {
     if (typeof hmrState.userProvidedOpenCodePassword !== 'undefined') {
       return;
     }
-    const initialPassword = typeof processLike.env.OPENCODE_SERVER_PASSWORD === 'string'
-      ? processLike.env.OPENCODE_SERVER_PASSWORD.trim()
-      : '';
+    const initialPassword = processLike.env.OPENCODE_PASSWORD?.trim()
+      || processLike.env.OPENCODE_SERVER_PASSWORD?.trim()
+      || '';
     hmrState.userProvidedOpenCodePassword = initialPassword || null;
   };
 
@@ -51,7 +51,7 @@ export const createHmrStateRuntime = (dependencies) => {
     openCodeAuthPassword:
       typeof hmrState.openCodeAuthPassword === 'string' && hmrState.openCodeAuthPassword.length > 0
         ? hmrState.openCodeAuthPassword
-        : userProvidedOpenCodePassword,
+        : hmrState.openCodeAuthSource === 'shared-service' ? null : userProvidedOpenCodePassword,
     openCodeAuthSource:
       typeof hmrState.openCodeAuthSource === 'string' && hmrState.openCodeAuthSource.length > 0
         ? hmrState.openCodeAuthSource

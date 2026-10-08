@@ -128,7 +128,7 @@ export type ProviderResult = {
 
 const OPENCODE_CONFIG_DIR = path.join(os.homedir(), '.config', 'opencode');
 const OPENCODE_DATA_DIR = path.join(os.homedir(), '.local', 'share', 'opencode');
-const AUTH_FILE = path.join(OPENCODE_DATA_DIR, 'auth.json');
+import { readOpenCodeCredentials } from './opencodeAuth';
 
 
 const ANTIGRAVITY_ACCOUNTS_PATHS = [
@@ -190,22 +190,6 @@ const resolveGoogleWindow = (sourceId: GoogleAuthSource['sourceId'], resetAt: nu
 
 const ZAI_TOKEN_WINDOW_SECONDS: Record<number, number> = { 3: 3600 };
 
-const readAuthFile = (): AuthFile => {
-  if (!fs.existsSync(AUTH_FILE)) {
-    return {};
-  }
-  try {
-    const content = fs.readFileSync(AUTH_FILE, 'utf8');
-    const trimmed = content.trim();
-    if (!trimmed) {
-      return {};
-    }
-    return JSON.parse(trimmed) as AuthFile;
-  } catch (error) {
-    console.error('Failed to read auth file:', error);
-    throw new Error('Failed to read OpenCode auth configuration');
-  }
-};
 
 const readJsonFile = (filePath: string): Record<string, unknown> | null => {
   if (!fs.existsSync(filePath)) {
@@ -377,8 +361,8 @@ const durationToSeconds = (duration?: number, unit?: string) => {
   return null;
 };
 
-export const listConfiguredQuotaProviders = () => {
-  const auth = readAuthFile();
+export const listConfiguredQuotaProviders = async () => {
+  const auth = await readOpenCodeCredentials();
   const configured = new Set<string>();
   if (readCredential('opencode-go')) configured.add('opencode-go');
   if (readCredential('ollama-cloud')) configured.add('ollama-cloud');
@@ -453,7 +437,7 @@ export const listConfiguredQuotaProviders = () => {
 };
 
 const fetchCodexQuota = async (): Promise<ProviderResult> => {
-  const auth = readAuthFile();
+  const auth = await readOpenCodeCredentials();
   const entry = normalizeAuthEntry(getAuthEntry(auth, ['openai', 'codex', 'chatgpt'])) as Record<string, unknown> | null;
   const accessToken = (entry?.access as string | undefined) ?? (entry?.token as string | undefined);
   const accountId = entry?.accountId as string | undefined;
@@ -608,8 +592,8 @@ const resolveAntigravityAuth = (): GoogleAuthSource | null => {
   return null;
 };
 
-const resolveGoogleAuthSources = (): GoogleAuthSource[] => {
-  const auth = readAuthFile();
+const resolveGoogleAuthSources = async (): Promise<GoogleAuthSource[]> => {
+  const auth = await readOpenCodeCredentials();
   const sources: GoogleAuthSource[] = [];
 
   const geminiAuth = resolveGeminiCliAuth(auth);
@@ -722,7 +706,7 @@ const fetchGoogleModels = async (accessToken: string, projectId?: string) => {
 };
 
 const fetchGoogleQuota = async (): Promise<ProviderResult> => {
-  const authSources = resolveGoogleAuthSources();
+  const authSources = await resolveGoogleAuthSources();
   if (!authSources.length) {
     return buildResult({
       providerId: 'google',
@@ -850,7 +834,7 @@ const fetchGoogleQuota = async (): Promise<ProviderResult> => {
 };
 
 const fetchClaudeQuota = async (): Promise<ProviderResult> => {
-  const auth = readAuthFile();
+  const auth = await readOpenCodeCredentials();
   const entry = normalizeAuthEntry(getAuthEntry(auth, ['anthropic', 'claude'])) as Record<string, unknown> | null;
   const accessToken = (entry?.access as string | undefined) ?? (entry?.token as string | undefined);
 
@@ -968,7 +952,7 @@ const buildCopilotWindows = (payload: Record<string, unknown>) => {
 };
 
 const fetchCopilotQuota = async (): Promise<ProviderResult> => {
-  const auth = readAuthFile();
+  const auth = await readOpenCodeCredentials();
   const entry = normalizeAuthEntry(getAuthEntry(auth, ['github-copilot', 'copilot'])) as Record<string, unknown> | null;
   const accessToken = (entry?.access as string | undefined) ?? (entry?.token as string | undefined);
 
@@ -1023,7 +1007,7 @@ const fetchCopilotQuota = async (): Promise<ProviderResult> => {
 };
 
 const fetchCopilotAddonQuota = async (): Promise<ProviderResult> => {
-  const auth = readAuthFile();
+  const auth = await readOpenCodeCredentials();
   const entry = normalizeAuthEntry(getAuthEntry(auth, ['github-copilot', 'copilot'])) as Record<string, unknown> | null;
   const accessToken = (entry?.access as string | undefined) ?? (entry?.token as string | undefined);
 
@@ -1081,7 +1065,7 @@ const fetchCopilotAddonQuota = async (): Promise<ProviderResult> => {
 };
 
 const fetchKimiQuota = async (): Promise<ProviderResult> => {
-  const auth = readAuthFile();
+  const auth = await readOpenCodeCredentials();
   const entry = normalizeAuthEntry(getAuthEntry(auth, ['kimi-for-coding', 'kimi'])) as Record<string, unknown> | null;
   const apiKey = (entry?.key as string | undefined) ?? (entry?.token as string | undefined);
 
@@ -1173,7 +1157,7 @@ const fetchMiniMaxQuota = async (data: {
   endpoint: string;
   usageFieldsAreRemaining: boolean;
 }): Promise<ProviderResult> => {
-  const auth = readAuthFile();
+  const auth = await readOpenCodeCredentials();
   const entry = normalizeAuthEntry(getAuthEntry(auth, [data.providerId])) as Record<string, unknown> | null;
   const apiKey = (entry?.key as string | undefined) ?? (entry?.token as string | undefined);
 
@@ -1405,7 +1389,7 @@ const fetchCursorQuota = async (): Promise<ProviderResult> => {
 };
 
 const fetchOpenRouterQuota = async (): Promise<ProviderResult> => {
-  const auth = readAuthFile();
+  const auth = await readOpenCodeCredentials();
   const entry = normalizeAuthEntry(getAuthEntry(auth, ['openrouter'])) as Record<string, unknown> | null;
   const apiKey = (entry?.key as string | undefined) ?? (entry?.token as string | undefined);
 
@@ -1503,7 +1487,7 @@ const resolveWindowLabel = (windowSeconds: number | null) => {
 };
 
 const fetchZaiQuota = async (): Promise<ProviderResult> => {
-  const auth = readAuthFile();
+  const auth = await readOpenCodeCredentials();
   const entry = normalizeAuthEntry(getAuthEntry(auth, ['zai-coding-plan', 'zai', 'z.ai'])) as Record<string, unknown> | null;
   const apiKey = (entry?.key as string | undefined) ?? (entry?.token as string | undefined);
 
@@ -1572,7 +1556,7 @@ const fetchZaiQuota = async (): Promise<ProviderResult> => {
 };
 
 const fetchZhipuaiCodingPlanQuota = async (): Promise<ProviderResult> => {
-  const auth = readAuthFile();
+  const auth = await readOpenCodeCredentials();
   const entry = normalizeAuthEntry(getAuthEntry(auth, ['zhipuai-coding-plan'])) as Record<string, unknown> | null;
   const apiKey = (entry?.key as string | undefined) ?? (entry?.token as string | undefined);
 
@@ -1661,7 +1645,7 @@ const fetchZhipuaiCodingPlanQuota = async (): Promise<ProviderResult> => {
 const NANO_GPT_DAILY_WINDOW_SECONDS = 86400;
 
 const fetchNanoGptQuota = async (): Promise<ProviderResult> => {
-  const auth = readAuthFile();
+  const auth = await readOpenCodeCredentials();
   const entry = normalizeAuthEntry(getAuthEntry(auth, ['nano-gpt', 'nanogpt', 'nano_gpt'])) as Record<string, unknown> | null;
   const apiKey = (entry?.key as string | undefined) ?? (entry?.token as string | undefined);
 
@@ -2325,7 +2309,7 @@ const fetchXaiQuota = async (): Promise<ProviderResult> => {
 };
 
 const fetchWaferQuota = async (): Promise<ProviderResult> => {
-  const auth = readAuthFile();
+  const auth = await readOpenCodeCredentials();
   const entry = normalizeAuthEntry(getAuthEntry(auth, ['wafer', 'wafer-ai', 'wafer_ai', 'wafer.ai'])) as Record<string, unknown> | null;
   const apiKey = (entry?.key as string | undefined) ?? (entry?.token as string | undefined);
 

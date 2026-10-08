@@ -12,6 +12,8 @@ import type {
 } from '@/lib/opencode/v2-types'
 
 import { Binary } from "./binary"
+import { movedSessionDirectory } from './session-location-authority'
+import { fetchForkBoundary, resolveNativeForkBoundary } from './session-fork-boundary'
 import { toast } from "sonner"
 import { formatMessage, useI18nStore } from "@/lib/i18n"
 import { clearSessionInterruptAcknowledgement, runSessionInterrupt } from "./session-interrupt"
@@ -67,6 +69,7 @@ import { postSessionPermissionReply } from "./session-permission-api"
 import {
   fetchSessionProjectionPage,
   isAuthoredUserTurnRecord,
+  normalizeSessionProjectionMessage,
 } from "./session-projection-api"
 import {
   confirmOptimisticAgainstPromoted,
@@ -112,7 +115,7 @@ let activeForkCopy: {
   expectedTargetTitle: string
   targetSessionID?: string
 } | null = null
-const forkCopyEventCutoffs = new Map<string, { messageID: string; expiresAt: number }>()
+const forkCopyEventCutoffs = new Map<string, { messageIDs: Set<string>; expiresAt: number }>()
 const FORK_COPY_EVENT_CUTOFF_TTL_MS = 30_000
 
 export function trackForkCopySessionCreated(directory: string, session?: { id?: string; title?: string }): void {
@@ -167,45 +170,15 @@ function isLiveForkStatus(status: SessionStatus | undefined): boolean {
   return status?.type === "busy" || status?.type === "retry"
 }
 
-function lastUserMessageIndex(messages: Message[]): number {
-  for (let index = messages.length - 1; index >= 0; index -= 1) {
-    if (messages[index]?.role === "user") return index
-  }
-  return -1
-}
-
-function isOpenAssistantTail(messages: Message[]): boolean {
-  const last = messages.at(-1)
-  return last?.role === "assistant" && last.time.completed == null
-}
-
-/**
- * Live `/fork` needs a user-turn cutoff. Missing status is not live on its own:
- * `/session/status` omits idle sessions, so a completed tail with no entry is idle.
- */
-function needsLiveUserForkPoint(status: SessionStatus | undefined, messages: Message[]): boolean {
-  return isLiveForkStatus(status) || (status == null && isOpenAssistantTail(messages))
-}
-
 export function resolveForkMessageId(
   messageId: string | undefined,
   messages: Message[],
   status: SessionStatus | undefined,
 ): string | undefined {
-  if (messageId) {
-    const messageIndex = messages.findIndex((message) => message.id === messageId)
-    if (messageIndex === -1 || messages[messageIndex]?.role !== "assistant") return messageId
-    return messages[messageIndex + 1]?.id
-  }
-  // OpenCode session.fork(messageID) copies strictly before that message.
-  // Idle and omitted-idle `/fork` pass undefined so the full history is kept.
-  // Busy/retry (or a missing status with an open assistant tail) pass the first
-  // message after the latest user so that user turn is included and the
-  // in-progress assistant work is not.
-  if (!needsLiveUserForkPoint(status, messages)) return undefined
-  const userIndex = lastUserMessageIndex(messages)
-  if (userIndex === -1) return undefined
-  return messages[userIndex + 1]?.id
+  return resolveNativeForkBoundary(messages.map((message) => ({
+    id: message.id, type: typeof message.nativeType === 'string' ? message.nativeType : message.role,
+    finish: typeof message.finish === 'string' ? message.finish : undefined,
+  })), messageId, isLiveForkStatus(status))
 }
 
 async function markForkSessionAsLatest(session: Session, directory: string): Promise<Session> {
@@ -249,7 +222,7 @@ export function shouldSuppressForkCopyEvent(directory: string, sessionID?: strin
     forkCopyEventCutoffs.delete(key)
     return false
   }
-  return messageID <= cutoff.messageID
+  return cutoff.messageIDs.has(messageID)
 }
 
 // Reference set by SyncProvider — allows actions to access SDK and stores
@@ -447,7 +420,7 @@ export function dirStoreForDirectory(
 }
 
 function dirStoreForSession(sessionId: string, directoryOverride?: string): { store: DirectoryStoreApi; directory?: string } {
-  const directory = directoryOverride ?? getSessionDirectory(sessionId)
+  const directory = movedSessionDirectory(sessionId) ?? directoryOverride ?? getSessionDirectory(sessionId)
   if (directory) {
     return { store: dirStoreForDirectory(directory), directory }
   }
@@ -736,7 +709,7 @@ async function ensureForkSourceSession(
 }
 
 function getSessionDirectory(sessionId: string): string | undefined {
-  return findSessionDirectoryInChildStores(sessionId)
+  return movedSessionDirectory(sessionId) || findSessionDirectoryInChildStores(sessionId)
     || useSessionUIStore.getState().getDirectoryForSession(sessionId)
     || dir()
 }
@@ -994,9 +967,9 @@ function getRequestReplyClient(
   requestId: string,
   directoryHint?: string,
 ): OpenCodeClient {
-  // Prefer explicit hint, then request/session ownership, then selected dir.
+  // A committed move supersedes a captured UI hint; otherwise prefer the hint.
   // Form reply/cancel have no directory body field — scope lives on the client.
-  const requestDirectory = (typeof directoryHint === "string" && directoryHint.trim().length > 0
+  const requestDirectory = movedSessionDirectory(sessionId) || (typeof directoryHint === "string" && directoryHint.trim().length > 0
     ? directoryHint.trim()
     : null)
     || resolveDirectoryForBlockingRequest(type, sessionId, requestId)
@@ -3228,15 +3201,17 @@ export async function unrevertSession(sessionId: string, directoryOverride?: str
  */
 export async function forkSession(sessionId: string, operationId: number, messageId?: string, directoryOverride?: string): Promise<boolean> {
   const forkRuntimeKey = getRuntimeKey()
+  const forkTransport = captureRuntimeTransport()
   const { store, directory } = dirStoreForSession(sessionId, directoryOverride)
   if (!directory) throw new Error("Fork session directory is unavailable")
   const sourceSession = await ensureForkSourceSession(sessionId, store, directory)
+  if (!isCurrentRuntimeTransport(forkTransport) || (sourceSession.directory && sourceSession.directory !== directory)) throw new Error('Fork source changed while reading identity')
   registerSessionDirectory(sessionId, directory)
-  let state = store.getState()
+  const state = store.getState()
 
-  let sourceStatus = state.session_status[sessionId]
+  const sourceStatus = state.session_status[sessionId]
   // Ticket 09 batch 1B: fork source messages/parts from TranscriptRepository.
-  let sourceMessages = readSessionMessages(sessionId, directory)
+  const sourceMessages = readSessionMessages(sessionId, directory)
   console.info("[session-fork] resolving fork point", {
     operationId,
     sessionId,
@@ -3244,27 +3219,9 @@ export async function forkSession(sessionId: string, operationId: number, messag
     statusType: sourceStatus?.type ?? "unknown",
     messageCount: sourceMessages.length,
   })
-  let forkMessageId = resolveForkMessageId(messageId, sourceMessages, sourceStatus)
-  if (!messageId && needsLiveUserForkPoint(sourceStatus, sourceMessages) && lastUserMessageIndex(sourceMessages) === -1) {
-    console.info("[session-fork] refreshing messages to resolve the active fork point", {
-      operationId,
-      sessionId,
-    })
-    await refetchSessionMessages(sessionId)
-    state = store.getState()
-    sourceStatus = state.session_status[sessionId]
-    sourceMessages = readSessionMessages(sessionId, directory)
-    forkMessageId = resolveForkMessageId(undefined, sourceMessages, sourceStatus)
-  }
-  if (!messageId && needsLiveUserForkPoint(sourceStatus, sourceMessages) && lastUserMessageIndex(sourceMessages) === -1) {
-    console.error("[session-fork] active session has no user message fork point", {
-      operationId,
-      sessionId,
-      statusType: state.session_status[sessionId]?.type ?? "unknown",
-      messageCount: readSessionMessageCount(sessionId, directory),
-    })
-    throw new Error("Fork source user message is unavailable")
-  }
+  const isCurrentFork = () => isCurrentRuntimeTransport(forkTransport) && getSessionDirectory(sessionId) === directory
+  const forkMessageId = await fetchForkBoundary(opencodeClient.getScopedSdkClient(directory), sessionId, messageId,
+    isLiveForkStatus(sourceStatus), isCurrentFork)
   console.info("[session-fork] fork point resolved", {
     operationId,
     sessionId,
@@ -3280,12 +3237,19 @@ export async function forkSession(sessionId: string, operationId: number, messag
   // text parts that should not be restored. File parts (images, pasted
   // screenshots) are user-originated and must be restored.
   const { repository: forkRepo, data: forkData } = readSessionTranscript(sessionId, directory)
-  const forkSourceMessage = messageId
+  let forkSourceMessage = messageId
     ? forkData.messagesByID[messageId] ?? sourceMessages.find((message) => message.id === messageId)
     : undefined
-  const forkSourceParts = messageId
+  let forkSourceParts = messageId
     ? [...forkRepo.getParts(transcriptScope(directory, sessionId), messageId)]
     : []
+  if (messageId && (!forkSourceMessage || sentMessageFilePartsNeedExactBody(forkSourceParts))) {
+    const exact = await opencodeClient.getScopedSdkClient(directory).session.message.get({ sessionID: sessionId, messageID: messageId })
+    if (!isCurrentFork()) throw new Error('Fork source changed while reading the selected message')
+    const projected = normalizeSessionProjectionMessage(sessionId, exact)
+    if (projected) { forkSourceMessage = projected.info; forkSourceParts = projected.parts }
+    if (sentMessageFilePartsNeedExactBody(forkSourceParts)) throw new Error('Fork attachment is unavailable')
+  }
   const shouldRestoreComposer = isAuthoredUserTurnRecord(forkSourceMessage, forkSourceParts)
   const parts = shouldRestoreComposer ? forkSourceParts : []
   let messageText = ""
@@ -3308,6 +3272,7 @@ export async function forkSession(sessionId: string, operationId: number, messag
 
   let forkedSession: Session
   try {
+    if (!isCurrentFork()) throw new Error('Fork source changed before copying')
     console.info("[session-fork] calling runtime fork endpoint", {
       operationId,
       sessionId,
@@ -3399,7 +3364,7 @@ export async function forkSession(sessionId: string, operationId: number, messag
     const newestLoadedMessageID = loadedMessages.at(-1)?.id
     if (newestLoadedMessageID) {
       forkCopyEventCutoffs.set(`${getRuntimeKey()}:${directory}:${forkedSession.id}`, {
-        messageID: newestLoadedMessageID,
+        messageIDs: new Set(loadedMessages.map((message) => message.id)),
         expiresAt: Date.now() + FORK_COPY_EVENT_CUTOFF_TTL_MS,
       })
     }
@@ -3438,7 +3403,7 @@ export async function fetchMessagesForSession(
   sessionID: string,
   directory?: string | null,
 ): Promise<void> {
-  const resolvedDir = directory ?? dir()
+  const resolvedDir = movedSessionDirectory(sessionID) ?? directory ?? dir()
   if (!resolvedDir) return
 
   const runtimeKey = getRuntimeKey()

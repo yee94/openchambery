@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => ({
     time: { created: number };
     finish?: string;
     error?: unknown;
+    nativeType?: string;
   }>,
   partsByMessageId: {} as Record<string, Array<{ id: string; type: string; text?: string }>>,
   pendingSendMessageIDs: new Map<string, string>(),
@@ -159,6 +160,19 @@ describe('useAssistantStatus turn settle', () => {
     const resumed = await renderWorking();
     expect(resumed.isWorking).toBe(true);
     expect(resumed.statusText).toBe('chat.assistantStatus.thinking');
+  });
+
+  test('a restart notice does not reopen a failed turn before a new assistant arrives', async () => {
+    mocks.messages = [
+      { id: 'user-1', role: 'user', time: { created: 1 } },
+      { id: 'assistant-1', role: 'assistant', time: { created: 2 }, error: { type: 'provider.transport' } },
+      { id: 'restart-1', role: 'user', nativeType: 'synthetic', time: { created: 3 } },
+    ];
+    const waiting = await renderWorking();
+    expect(waiting.isWorking).toBe(false);
+    expect(waiting.statusText).toBeNull();
+    mocks.messages = [...mocks.messages, { id: 'assistant-2', role: 'assistant', time: { created: 4 } }];
+    expect((await renderWorking()).isWorking).toBe(true);
   });
 
   test('authoritative retry remains visible after a failed step without claiming to be thinking', async () => {

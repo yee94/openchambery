@@ -2,6 +2,7 @@ import { describe, expect, test } from 'vitest'
 import type { Event } from './types'
 import { mergeSessionTranscript, type SessionTranscriptData } from './transcript-merge'
 import { normalizeSessionProjectionMessage } from './session-projection-api'
+import { normalizeOpenCodeEvent } from './opencode-event-normalizer'
 
 describe('native compaction transcript lifecycle', () => {
   test('publishes live updates and keeps successive checkpoints separate', () => {
@@ -66,5 +67,45 @@ describe('native compaction transcript lifecycle', () => {
     }).data
     expect(refreshed?.pages[0]?.messageOrder).toEqual(['msg_checkpoint'])
     expect(refreshed?.pages[0]?.partsByMessageID.msg_checkpoint?.[0]).toMatchObject({ status: 'completed', summary: 'authoritative summary' })
+  })
+
+  test('a completion arriving after its authoritative HTTP snapshot does not create a second checkpoint', () => {
+    const sessionID = 'ses_race'
+    const row = normalizeSessionProjectionMessage(sessionID, {
+      id: 'msg_start', type: 'compaction', status: 'completed', reason: 'auto',
+      summary: 'summary', recent: '', time: { created: 10 },
+    })!
+    const initial = mergeSessionTranscript(undefined, sessionID, {
+      type: 'http-page', purpose: 'initial', page: { records: [row], complete: true, turnCount: 0 },
+    }).data
+    const completed = mergeSessionTranscript(initial, sessionID, {
+      type: 'sse-event', event: {
+        id: 'evt_end', type: 'session.compaction.ended',
+        properties: { sessionID, eventCreated: 20, reason: 'auto', text: 'summary', recent: '' },
+      } as Event,
+    }).data
+    expect(completed?.pages.flatMap(page => page.messageOrder)).toEqual(['msg_start'])
+  })
+
+  test.each(['session.compaction.ended', 'session.compaction.failed'])('a missed start uses terminal recovery for %s, not an event-ID checkpoint', type => {
+    const sessionID = 'ses_missed'
+    const normalized = normalizeOpenCodeEvent({
+      id: 'evt_end', type, created: 20,
+      data: { sessionID, reason: 'auto', text: 'summary', recent: '' },
+    })
+    expect(normalized).toMatchObject({ action: 'emit', event: { domainActivityHint: { sessionID, kind: 'terminal' } } })
+    if (normalized.action !== 'emit') throw new Error('Expected terminal event')
+    const missed = mergeSessionTranscript(undefined, sessionID, {
+      type: 'sse-event', event: normalized.event as Event,
+    }).data
+    expect(missed?.pages.flatMap(page => page.messageOrder) ?? []).toEqual([])
+    const checkpoint = normalizeSessionProjectionMessage(sessionID, {
+      id: 'msg_start', type: 'compaction', status: type.endsWith('failed') ? 'failed' : 'completed',
+      reason: 'auto', summary: 'summary', time: { created: 10 },
+    })!
+    const recovered = mergeSessionTranscript(missed, sessionID, {
+      type: 'http-page', purpose: 'initial', page: { records: [checkpoint], complete: true, turnCount: 0 },
+    }).data
+    expect(recovered?.pages.flatMap(page => page.messageOrder)).toEqual(['msg_start'])
   })
 })

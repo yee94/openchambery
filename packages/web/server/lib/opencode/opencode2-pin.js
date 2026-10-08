@@ -1,5 +1,6 @@
 // Pinned desktop/runtime opencode2. Upgrade and prepare must not fall back to 1.18.x.
-export const PINNED_OPENCODE2_VERSION = '2.0.12';
+export const PINNED_OPENCODE2_VERSION = '2.0.23';
+export const MINIMUM_OPENCODE2_VERSION = '2.0.20';
 
 // Global npm/bun package that installs the opencode v2 binary (not 1.x opencode-ai).
 export const OPENCODE2_NPM_PACKAGE = '@opencode/cli';

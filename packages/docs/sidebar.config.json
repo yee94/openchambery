@@ -340,17 +340,17 @@
           }
         },
         {
-          "label": "Commands & Snippets",
+          "label": "Commands",
           "link": "/commands-snippets/",
           "translations": {
-            "uk": "Команди та сніпети",
-            "zh-CN": "命令与代码片段",
-            "es": "Comandos y fragmentos",
-            "pt-BR": "Comandos e trechos",
-            "ko": "명령 및 스니펫",
-            "pl": "Polecenia i fragmenty",
-            "fr": "Commandes et snippets",
-            "ja": "コマンドとスニペット"
+            "uk": "Команди",
+            "zh-CN": "命令",
+            "es": "Comandos",
+            "pt-BR": "Comandos",
+            "ko": "명령",
+            "pl": "Polecenia",
+            "fr": "Commandes",
+            "ja": "コマンド"
           }
         },
         {

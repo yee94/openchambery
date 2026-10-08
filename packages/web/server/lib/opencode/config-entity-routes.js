@@ -1,9 +1,9 @@
 import fs from 'node:fs/promises';
-import os from 'node:os';
 import path from 'node:path';
 import { parse as parseJsonc } from 'jsonc-parser';
 import { OpenCode } from '@opencode/client';
 import { projectProviderCatalog } from './provider-catalog.js';
+import { getGlobalConfigDirectory, writeConfigText } from './config-files.js';
 
 // Compose official v2 provider.list + model.list (+ optional default) into the
 // catalog shape consumed by projectProviderCatalog. Missing arrays are failure.
@@ -60,7 +60,7 @@ const createOpenCodeClient = ({ baseUrl, headers, fetch: fetchImpl }) =>
 
 const MAX_GLOBAL_CONFIG_SIZE = 2 * 1024 * 1024;
 const GLOBAL_CONFIG_FILES = {
-  opencode: ['opencode.json', 'opencode.jsonc'],
+  opencode: ['opencode.jsonc', 'opencode.json'],
   'oh-my-opencode-slim': ['oh-my-opencode-slim.json', 'oh-my-opencode-slim.jsonc'],
   'oh-my-openagent': ['oh-my-openagent.json', 'oh-my-openagent.jsonc'],
 };
@@ -84,6 +84,10 @@ function resolveGlobalConfigPath(target, configDirectory) {
   if (!fileNames) {
     return null;
   }
+  if (target === 'opencode' && process.env.OPENCODE_CONFIG) {
+    const filePath = path.resolve(process.env.OPENCODE_CONFIG);
+    return { target, fileNames: [path.basename(filePath)], fileName: path.basename(filePath), filePath };
+  }
   return {
     target,
     fileNames,
@@ -99,7 +103,7 @@ async function findGlobalConfigPath(target, configDirectory) {
   }
 
   for (const fileName of configPath.fileNames) {
-    const filePath = path.join(configDirectory, fileName);
+    const filePath = path.join(path.dirname(configPath.filePath), fileName);
     try {
       if ((await fs.stat(filePath)).isFile()) {
         return { ...configPath, fileName, filePath };
@@ -153,13 +157,7 @@ export const registerConfigEntityRoutes = (app, dependencies) => {
     createMcpConfig,
     updateMcpConfig,
     deleteMcpConfig,
-    listSnippets,
-    getSnippet,
-    createSnippet,
-    updateSnippet,
-    deleteSnippet,
-    expandSnippets,
-    configDirectory = path.join(os.homedir(), '.config', 'opencode'),
+    configDirectory = getGlobalConfigDirectory(),
   } = dependencies;
 
   app.get('/api/config/catalog/providers', async (req, res) => {
@@ -254,10 +252,7 @@ export const registerConfigEntityRoutes = (app, dependencies) => {
     }
 
     try {
-      await fs.mkdir(configDirectory, { recursive: true });
-      const temporaryPath = `${target.filePath}.${process.pid}.${Date.now()}.tmp`;
-      await fs.writeFile(temporaryPath, content, 'utf8');
-      await fs.rename(temporaryPath, target.filePath);
+      writeConfigText(content, target.filePath);
       return res.json({
         target: req.params.target,
         fileName: target.fileName,
@@ -679,112 +674,4 @@ export const registerConfigEntityRoutes = (app, dependencies) => {
     }
   });
 
-  app.get('/api/config/snippets', async (req, res) => {
-    try {
-      const { directory, error } = await resolveOptionalProjectDirectory(req);
-      if (error) {
-        return res.status(400).json({ error });
-      }
-      res.json(listSnippets(directory));
-    } catch (error) {
-      console.error('[API:GET /api/config/snippets] Failed:', error);
-      res.status(500).json({ error: error.message || 'Failed to list snippets' });
-    }
-  });
-
-  app.post('/api/config/snippets/expand', async (req, res) => {
-    try {
-      const { directory, error } = await resolveOptionalProjectDirectory(req);
-      if (error) {
-        return res.status(400).json({ error });
-      }
-      res.json({ text: expandSnippets(req.body?.text ?? '', directory) });
-    } catch (error) {
-      console.error('[API:POST /api/config/snippets/expand] Failed:', error);
-      res.status(500).json({ error: error.message || 'Failed to expand snippets' });
-    }
-  });
-
-  app.get('/api/config/snippets/:name', async (req, res) => {
-    try {
-      const name = req.params.name;
-      const { directory, error } = await resolveOptionalProjectDirectory(req);
-      if (error) {
-        return res.status(400).json({ error });
-      }
-      const snippet = getSnippet(name, directory);
-      if (!snippet) {
-        return res.status(404).json({ error: `Snippet "${name}" not found` });
-      }
-      res.json(snippet);
-    } catch (error) {
-      console.error('[API:GET /api/config/snippets/:name] Failed:', error);
-      if (error.message?.includes('Snippet name')) {
-        return res.status(400).json({ error: error.message });
-      }
-      res.status(500).json({ error: error.message || 'Failed to get snippet' });
-    }
-  });
-
-  app.post('/api/config/snippets/:name', async (req, res) => {
-    try {
-      const name = req.params.name;
-      const { directory, error } = await resolveOptionalProjectDirectory(req);
-      if (error) {
-        return res.status(400).json({ error });
-      }
-      const snippet = createSnippet(name, req.body || {}, directory, req.body?.scope || 'global');
-      res.json({ success: true, snippet });
-    } catch (error) {
-      console.error('[API:POST /api/config/snippets/:name] Failed:', error);
-      if (error.message?.includes('already exists')) {
-        return res.status(409).json({ error: error.message });
-      }
-      if (error.message?.includes('Snippet name') || error.message?.includes('Project directory')) {
-        return res.status(400).json({ error: error.message });
-      }
-      res.status(500).json({ error: error.message || 'Failed to create snippet' });
-    }
-  });
-
-  app.patch('/api/config/snippets/:name', async (req, res) => {
-    try {
-      const name = req.params.name;
-      const { directory, error } = await resolveOptionalProjectDirectory(req);
-      if (error) {
-        return res.status(400).json({ error });
-      }
-      res.json({ success: true, snippet: updateSnippet(name, req.body || {}, directory) });
-    } catch (error) {
-      console.error('[API:PATCH /api/config/snippets/:name] Failed:', error);
-      if (error.message?.includes('not found')) {
-        return res.status(404).json({ error: error.message });
-      }
-      if (error.message?.includes('Snippet name')) {
-        return res.status(400).json({ error: error.message });
-      }
-      res.status(500).json({ error: error.message || 'Failed to update snippet' });
-    }
-  });
-
-  app.delete('/api/config/snippets/:name', async (req, res) => {
-    try {
-      const name = req.params.name;
-      const { directory, error } = await resolveOptionalProjectDirectory(req);
-      if (error) {
-        return res.status(400).json({ error });
-      }
-      deleteSnippet(name, directory);
-      res.json({ success: true });
-    } catch (error) {
-      console.error('[API:DELETE /api/config/snippets/:name] Failed:', error);
-      if (error.message?.includes('not found')) {
-        return res.status(404).json({ error: error.message });
-      }
-      if (error.message?.includes('Snippet name')) {
-        return res.status(400).json({ error: error.message });
-      }
-      res.status(500).json({ error: error.message || 'Failed to delete snippet' });
-    }
-  });
 };

@@ -604,7 +604,7 @@ describe('draft transcript handoff — sendMessage public action', () => {
     })
     registerRuntimeAPIs(makeCombinedAPI(async (input) => deferred.then(() => successResult(input.messageID!))))
 
-    useSessionUIStore.getState().openNewSessionDraft()
+    useSessionUIStore.getState().openNewSessionDraft({ permissionAutoAcceptEnabled: true })
     const sendPromise = useSessionUIStore.getState().sendMessage(
       'public handoff',
       'openai',
@@ -670,7 +670,7 @@ describe('draft transcript handoff — sendMessage public action', () => {
 
   test('create failure restores draft and never retains a session-keyed pending row', async () => {
     registerRuntimeAPIs(makeCombinedAPI(async () => failResult('create')))
-    useSessionUIStore.getState().openNewSessionDraft()
+    useSessionUIStore.getState().openNewSessionDraft({ permissionAutoAcceptEnabled: true })
 
     let caught = false
     try {
@@ -692,7 +692,7 @@ describe('draft transcript handoff — sendMessage public action', () => {
   test('runtime switch clears retained pending map', async () => {
     const messageID = 'msg_handoff_runtime_clear'
     registerRuntimeAPIs(makeCombinedAPI(async (input) => successResult(input.messageID!)))
-    useSessionUIStore.getState().openNewSessionDraft()
+    useSessionUIStore.getState().openNewSessionDraft({ permissionAutoAcceptEnabled: true })
     await useSessionUIStore.getState().sendMessage(
       'runtime clear',
       'openai',
@@ -716,7 +716,7 @@ describe('draft transcript handoff — sendMessage public action', () => {
   test('switching current session does not expose other session retained rows to the gate', async () => {
     const messageID = 'msg_handoff_switch'
     registerRuntimeAPIs(makeCombinedAPI(async (input) => successResult(input.messageID!)))
-    useSessionUIStore.getState().openNewSessionDraft()
+    useSessionUIStore.getState().openNewSessionDraft({ permissionAutoAcceptEnabled: true })
     await useSessionUIStore.getState().sendMessage(
       'switch away',
       'openai',

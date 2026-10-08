@@ -311,8 +311,8 @@ const lookupChildCompletion = (
  * Resolve live vs final activity for a backgroundable tool row.
  * Status sources (in priority):
  * 1. Foreground tool lifecycle still running → blocking
- * 2. Synthetic completion notice / metadata terminal → terminal (never stay busy)
- * 3. Subagent: authoritative child session status (idle settles; busy keeps live)
+ * 2. Subagent: authoritative child session status (idle settles; busy keeps live)
+ * 3. Synthetic completion notice → terminal when child status is unavailable
  * 4. Settled tool + historical metadata.status=running hint → background-running
  *    only when no terminal fact exists
  * 5. Otherwise settled
@@ -343,9 +343,6 @@ export const resolveBackgroundToolActivity = (
     }
 
     // subagent / task
-    const terminal = lookupChildCompletion(identity, completions);
-    if (terminal) return { kind: 'terminal', state: terminal };
-
     const childType = readString(childSessionStatusType)?.toLowerCase();
     if (childType === 'idle') {
         return { kind: 'settled' };
@@ -353,6 +350,9 @@ export const resolveBackgroundToolActivity = (
     if (childType === 'busy' || childType === 'retry') {
         return { kind: 'background-running' };
     }
+
+    const terminal = lookupChildCompletion(identity, completions);
+    if (terminal) return { kind: 'terminal', state: terminal };
 
     // No live child status yet: historical running hint may start observation,
     // but must not force permanent busy once a terminal notice arrives (handled above).

@@ -46,13 +46,9 @@ describe('resolveComposerAutocompleteTrigger', () => {
     expect(resolveComposerAutocompleteTrigger({ text: 'http://x', cursor: 8 })).toBeNull();
   });
 
-  test('opens a snippet trigger on a word-boundary hash', () => {
-    expect(resolveComposerAutocompleteTrigger({ text: 'see #foo', cursor: 8 })).toEqual({
-      kind: 'snippet',
-      query: 'foo',
-      tokenStart: 4,
-      tokenEnd: 8,
-    });
+  test('treats hash-prefixed text as plain text', () => {
+    expect(resolveComposerAutocompleteTrigger({ text: 'see #foo', cursor: 8 })).toBeNull();
+    expect(resolveComposerAutocompleteTrigger({ text: '#foo', cursor: 4 })).toBeNull();
   });
 
   test('opens an @ mention on a word boundary', () => {

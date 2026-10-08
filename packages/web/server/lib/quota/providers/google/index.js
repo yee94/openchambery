@@ -17,10 +17,10 @@ export const providerId = 'google';
 export const providerName = 'Google';
 export const aliases = ['google', 'google.oauth'];
 
-export const isConfigured = () => resolveGoogleAuthSources().length > 0;
+export const isConfigured = async () => (await resolveGoogleAuthSources()).length > 0;
 
 export const fetchGoogleQuota = async () => {
-  const authSources = resolveGoogleAuthSources();
+  const authSources = await resolveGoogleAuthSources();
   if (!authSources.length) {
     return buildResult({
       providerId,

@@ -14,7 +14,7 @@ import {
   asNonEmptyString,
   toTimestamp
 } from '../../utils/index.js';
-import { readAuthFile } from '../../../opencode/auth.js';
+import { readOpenCodeCredentials } from '../../../opencode/auth.js';
 import { parseGoogleRefreshToken } from './transforms.js';
 
 const ANTIGRAVITY_GOOGLE_CLIENT_ID =
@@ -90,8 +90,8 @@ const resolveAntigravityAuth = () => {
   return null;
 };
 
-export const resolveGoogleAuthSources = () => {
-  const auth = readAuthFile();
+export const resolveGoogleAuthSources = async () => {
+  const auth = await readOpenCodeCredentials();
   const sources = [];
 
   const geminiAuth = resolveGeminiCliAuth(auth);

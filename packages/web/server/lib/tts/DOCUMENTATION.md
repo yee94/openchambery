@@ -43,7 +43,8 @@ This module provides server-side Text-to-Speech services using OpenAI's TTS API.
 ## TTSService methods
 
 ### `isAvailable()`
-Returns boolean indicating whether OpenAI API key is configured (checks environment variable `OPENAI_API_KEY` or OpenCode auth file).
+Returns a Promise of boolean after reading the current OpenCode selected credential.
+Credential-source failure rejects; logout clears the previously constructed client.
 
 ### `generateSpeechStream(options)`
 Generates speech and returns as a web stream for direct streaming to clients.
@@ -81,10 +82,11 @@ Returns object with:
 Returns Buffer containing MP3 audio data.
 
 ## API key resolution
-OpenAI API keys are resolved in order:
-1. Environment variable `OPENAI_API_KEY`.
-2. OpenCode auth file (`auth.openai`, `auth.codex`, or `auth.chatgpt`).
-3. Supports both string format (just token) and object format (with `access` or `token` fields).
+Explicit request API key/custom base URL remains supported. Otherwise the host
+reads the current OpenCode credential API (`openai`, `codex`, `chatgpt` aliases),
+using API `key` or OAuth `access`. There is no host-local environment/file fallback
+that could substitute another account for a remote service. A credential read
+failure propagates; selected-account changes replace the client and logout clears it.
 
 ## Usage in web server
 The TTS module is used by `packages/web/server/index.js` for:

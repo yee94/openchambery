@@ -1,4 +1,4 @@
-import { readAuthFile } from '../../opencode/auth.js';
+import { readOpenCodeCredentials } from '../../opencode/auth.js';
 import {
   getAuthEntry,
   normalizeAuthEntry,
@@ -14,14 +14,14 @@ export const providerId = 'kimi-for-coding';
 export const providerName = 'Kimi for Coding';
 const aliases = ['kimi-for-coding', 'kimi'];
 
-export const isConfigured = () => {
-  const auth = readAuthFile();
+export const isConfigured = async () => {
+  const auth = await readOpenCodeCredentials();
   const entry = normalizeAuthEntry(getAuthEntry(auth, aliases));
   return Boolean(entry?.key || entry?.token);
 };
 
 export const fetchQuota = async () => {
-  const auth = readAuthFile();
+  const auth = await readOpenCodeCredentials();
   const entry = normalizeAuthEntry(getAuthEntry(auth, aliases));
   const apiKey = entry?.key ?? entry?.token;
 

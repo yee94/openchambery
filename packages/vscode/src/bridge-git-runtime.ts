@@ -1,5 +1,7 @@
 import * as gitService from './gitService';
-import type { BridgeResponse } from './bridge';
+import type { BridgeContext, BridgeResponse } from './bridge';
+import { OpenCode } from '@opencode/client';
+import { releaseDeletedWorktreeLocation } from '../../web/server/lib/opencode/location-release.js';
 
 type BridgeMessageInput = {
   id: string;
@@ -18,7 +20,7 @@ const isValidCommitHash = (hash: string | undefined): hash is string => (
   typeof hash === 'string' && /^[0-9a-fA-F]{7,40}$/.test(hash)
 );
 
-export async function handleStandardGitBridgeMessage(message: BridgeMessageInput): Promise<BridgeResponse | null> {
+export async function handleStandardGitBridgeMessage(message: BridgeMessageInput, context?: BridgeContext): Promise<BridgeResponse | null> {
   const { id, type, payload } = message;
 
   switch (type) {
@@ -143,11 +145,22 @@ export async function handleStandardGitBridgeMessage(message: BridgeMessageInput
         if (!worktreeDirectory) {
           return { id, type, success: false, error: 'Worktree directory is required' };
         }
+        let locationRelease;
         const removed = await gitService.removeWorktree(directory!, {
           directory: worktreeDirectory,
           deleteLocalBranch: removePayload?.body?.deleteLocalBranch === true || removePayload?.deleteLocalBranch === true,
+        }, {
+          beforeRemove: async (target) => {
+            locationRelease = await releaseDeletedWorktreeLocation({
+              directory: target,
+              getClient: () => {
+                const baseUrl = context?.manager?.getApiUrl();
+                return baseUrl ? OpenCode.make({ baseUrl, headers: context?.manager?.getOpenCodeAuthHeaders() }) : null;
+              },
+            });
+          },
         });
-        return { id, type, success: true, data: { success: Boolean(removed) } };
+        return { id, type, success: true, data: { success: Boolean(removed), ...(locationRelease ? { locationRelease } : {}) } };
       }
 
       return { id, type, success: false, error: `Unsupported method: ${normalizedMethod}` };

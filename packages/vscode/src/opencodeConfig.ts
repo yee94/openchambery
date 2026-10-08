@@ -2,26 +2,20 @@ import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import yaml from 'yaml';
-import { parse as parseJsonc } from 'jsonc-parser';
+import {
+  getGlobalConfigDirectory, readConfigFile, isPlainObject, readConfigLayers,
+  readConfig, getConfigForPath, writeConfig, getJsonEntrySource, getJsonWriteTarget,
+} from '../../web/server/lib/opencode/config-files.js';
 import {
   inspectAgentConfig,
   writeAgentDocument,
 } from '../../web/server/lib/opencode/agent-document.js';
 
-const OPENCODE_CONFIG_DIR = path.join(os.homedir(), '.config', 'opencode');
+const OPENCODE_CONFIG_DIR = getGlobalConfigDirectory();
 const AGENT_DIR = path.join(OPENCODE_CONFIG_DIR, 'agents');
 const COMMAND_DIR = path.join(OPENCODE_CONFIG_DIR, 'commands');
-const GLOBAL_SNIPPET_DIR = path.join(OPENCODE_CONFIG_DIR, 'snippet');
-const GLOBAL_SNIPPET_DIR_ALT = path.join(OPENCODE_CONFIG_DIR, 'snippets');
-const CONFIG_FILE = path.join(OPENCODE_CONFIG_DIR, 'config.json');
-const CUSTOM_CONFIG_FILE = process.env.OPENCODE_CONFIG
-  ? path.resolve(process.env.OPENCODE_CONFIG)
-  : null;
+const CONFIG_FILE = path.join(OPENCODE_CONFIG_DIR, 'opencode.jsonc');
 const PROMPT_FILE_PATTERN = /^\{file:(.+)\}$/i;
-const SNIPPET_EXTENSION = '.md';
-const SNIPPET_NAME_PATTERN = /^[a-z0-9][a-z0-9_-]{0,79}$/i;
-const HASHTAG_PATTERN = /#([a-z0-9_-]+)/gi;
-const MAX_SNIPPET_EXPANSION_COUNT = 15;
 
 // Scope types (shared by agents and commands)
 export const AGENT_SCOPE = {
@@ -36,17 +30,6 @@ export const COMMAND_SCOPE = {
 
 export type AgentScope = typeof AGENT_SCOPE[keyof typeof AGENT_SCOPE];
 export type CommandScope = typeof COMMAND_SCOPE[keyof typeof COMMAND_SCOPE];
-
-export type SnippetScope = 'global' | 'project';
-
-export type Snippet = {
-  name: string;
-  content: string;
-  aliases: string[];
-  description?: string;
-  filePath: string;
-  source: SnippetScope;
-};
 
 export type PluginScope = 'user' | 'project';
 type PluginParsedKind = 'npm' | 'path';
@@ -314,174 +297,6 @@ const getCommandWritePath = (commandName: string, workingDirectory?: string, req
   };
 };
 
-// ============== SNIPPET HELPERS ==============
-
-const getProjectSnippetDirs = (workingDirectory?: string): Array<{ dir: string; source: SnippetScope }> => {
-  if (!workingDirectory) return [];
-  return [
-    { dir: path.join(workingDirectory, '.opencode', 'snippets'), source: 'project' },
-    { dir: path.join(workingDirectory, '.opencode', 'snippet'), source: 'project' },
-  ];
-};
-
-const getGlobalSnippetDirs = (): Array<{ dir: string; source: SnippetScope }> => [
-  { dir: GLOBAL_SNIPPET_DIR_ALT, source: 'global' },
-  { dir: GLOBAL_SNIPPET_DIR, source: 'global' },
-];
-
-const assertValidSnippetName = (name: string): void => {
-  if (typeof name !== 'string' || !SNIPPET_NAME_PATTERN.test(name)) {
-    throw new Error('Snippet name must use letters, numbers, dashes, or underscores');
-  }
-};
-
-const normalizeSnippetAliases = (frontmatter: Record<string, unknown>): string[] => {
-  const raw = frontmatter.aliases ?? frontmatter.alias;
-  if (!raw) return [];
-  const aliases = Array.isArray(raw) ? raw : [raw];
-  return aliases.map((alias) => String(alias).trim()).filter(Boolean);
-};
-
-const loadSnippetFile = (dir: string, filename: string, source: SnippetScope): Snippet | null => {
-  const name = path.basename(filename, SNIPPET_EXTENSION);
-  if (!SNIPPET_NAME_PATTERN.test(name)) return null;
-  const filePath = path.join(dir, filename);
-  const { frontmatter, body } = parseMdFile(filePath);
-  return {
-    name,
-    content: body,
-    aliases: normalizeSnippetAliases(frontmatter),
-    description: typeof frontmatter.description === 'string' ? frontmatter.description : undefined,
-    filePath,
-    source,
-  };
-};
-
-const registerSnippet = (registry: Map<string, Snippet>, snippet: Snippet): void => {
-  const key = snippet.name.toLowerCase();
-  const existing = registry.get(key);
-  if (existing) {
-    for (const alias of existing.aliases) registry.delete(alias.toLowerCase());
-  }
-  registry.set(key, snippet);
-  for (const alias of snippet.aliases) {
-    if (SNIPPET_NAME_PATTERN.test(alias)) registry.set(alias.toLowerCase(), snippet);
-  }
-};
-
-const loadSnippetRegistry = (workingDirectory?: string): Map<string, Snippet> => {
-  const registry = new Map<string, Snippet>();
-  for (const { dir, source } of [...getGlobalSnippetDirs(), ...getProjectSnippetDirs(workingDirectory)]) {
-    if (!fs.existsSync(dir)) continue;
-    for (const filename of fs.readdirSync(dir)) {
-      if (!filename.endsWith(SNIPPET_EXTENSION)) continue;
-      try {
-        const snippet = loadSnippetFile(dir, filename, source);
-        if (snippet) registerSnippet(registry, snippet);
-      } catch (error) {
-        console.warn(`[OpenChamber][VSCode] Failed to load snippet ${path.join(dir, filename)}:`, error);
-      }
-    }
-  }
-  return registry;
-};
-
-const listUniqueSnippets = (registry: Map<string, Snippet>): Snippet[] => {
-  const seen = new Set<string>();
-  const snippets: Snippet[] = [];
-  for (const snippet of registry.values()) {
-    const key = `${snippet.source}:${snippet.filePath}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
-    snippets.push(snippet);
-  }
-  return snippets.sort((a, b) => a.name.localeCompare(b.name));
-};
-
-const getWritableSnippetDir = (scope: SnippetScope, workingDirectory?: string): string => {
-  if (scope === 'project') {
-    if (!workingDirectory) throw new Error('Project directory is required for project snippets');
-    const preferred = path.join(workingDirectory, '.opencode', 'snippet');
-    const alternate = path.join(workingDirectory, '.opencode', 'snippets');
-    return fs.existsSync(alternate) && !fs.existsSync(preferred) ? alternate : preferred;
-  }
-  return fs.existsSync(GLOBAL_SNIPPET_DIR_ALT) && !fs.existsSync(GLOBAL_SNIPPET_DIR)
-    ? GLOBAL_SNIPPET_DIR_ALT
-    : GLOBAL_SNIPPET_DIR;
-};
-
-const findSnippetByName = (name: string, workingDirectory?: string): Snippet | null => {
-  assertValidSnippetName(name);
-  return loadSnippetRegistry(workingDirectory).get(name.toLowerCase()) ?? null;
-};
-
-const writeSnippetFile = (filePath: string, config: Record<string, unknown>): void => {
-  const aliases = Array.isArray(config.aliases)
-    ? config.aliases.map((alias) => String(alias).trim()).filter(Boolean)
-    : [];
-  const frontmatter: Record<string, unknown> = {};
-  if (aliases.length > 0) frontmatter.aliases = aliases;
-  if (typeof config.description === 'string' && config.description.trim()) {
-    frontmatter.description = config.description.trim();
-  }
-  fs.mkdirSync(path.dirname(filePath), { recursive: true });
-  writeMdFile(filePath, frontmatter, typeof config.content === 'string' ? config.content : '');
-};
-
-const parseSnippetBlocks = (content: string): { inline: string; prepend: string[]; append: string[] } => {
-  const blocks = { prepend: [] as string[], append: [] as string[] };
-  let inline = content;
-  for (const type of ['prepend', 'append'] as const) {
-    const regex = new RegExp(`<${type}>([\\s\\S]*?)(?:<\\/${type}>|$)`, 'gi');
-    inline = inline.replace(regex, (_match, value: string) => {
-      const normalized = String(value).trim();
-      if (normalized) blocks[type].push(normalized);
-      return '';
-    });
-  }
-  inline = inline.replace(/<inject>[\s\S]*?(?:<\/inject>|$)/gi, '').trim();
-  return { inline, prepend: blocks.prepend, append: blocks.append };
-};
-
-const expandSnippetText = (
-  text: string,
-  registry: Map<string, Snippet>,
-  expansionCounts: Map<string, number>,
-  collector: { prepend: string[]; append: string[] },
-): string => {
-  let expanded = text;
-  let changed = true;
-
-  while (changed) {
-    const previous = expanded;
-    let loopDetected = false;
-    HASHTAG_PATTERN.lastIndex = 0;
-
-    expanded = expanded.replace(HASHTAG_PATTERN, (match, name: string, offset: number, input: string) => {
-      if (name.toLowerCase() === 'skill' && input[offset + match.length] === '(') return match;
-      const snippet = registry.get(name.toLowerCase());
-      if (!snippet) return match;
-
-      const key = snippet.name.toLowerCase();
-      const count = (expansionCounts.get(key) || 0) + 1;
-      if (count > MAX_SNIPPET_EXPANSION_COUNT) {
-        loopDetected = true;
-        return match;
-      }
-      expansionCounts.set(key, count);
-
-      const parsed = parseSnippetBlocks(snippet.content);
-      for (const block of parsed.prepend) collector.prepend.push(expandSnippetText(block, registry, expansionCounts, collector));
-      for (const block of parsed.append) collector.append.push(expandSnippetText(block, registry, expansionCounts, collector));
-      return expandSnippetText(parsed.inline, registry, expansionCounts, collector);
-    });
-
-    changed = expanded !== previous && !loopDetected;
-  }
-
-  return expanded;
-};
-
 const isPromptFileReference = (value: unknown): value is string => {
   return typeof value === 'string' && PROMPT_FILE_PATTERN.test(value.trim());
 };
@@ -505,107 +320,6 @@ const writePromptFile = (filePath: string, content: string) => {
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
   fs.writeFileSync(filePath, content, 'utf8');
 };
-
-/**
- * Get all possible project config paths in priority order
- * Priority: root > .opencode/, json > jsonc
- */
-const getProjectConfigCandidates = (workingDirectory?: string): string[] => {
-  if (!workingDirectory) return [];
-  return [
-    path.join(workingDirectory, 'opencode.json'),
-    path.join(workingDirectory, 'opencode.jsonc'),
-    path.join(workingDirectory, '.opencode', 'opencode.json'),
-    path.join(workingDirectory, '.opencode', 'opencode.jsonc'),
-  ];
-};
-
-/**
- * Find existing project config file or return default path for new config
- */
-const getProjectConfigPath = (workingDirectory?: string): string | null => {
-  if (!workingDirectory) return null;
-
-  const candidates = getProjectConfigCandidates(workingDirectory);
-
-  // Return first existing config file
-  for (const candidate of candidates) {
-    if (fs.existsSync(candidate)) {
-      return candidate;
-    }
-  }
-
-  // Default to root opencode.json for new configs
-  return candidates[0] || null;
-};
-
-const getConfigPaths = (workingDirectory?: string) => ({
-  userPaths: [
-    path.join(OPENCODE_CONFIG_DIR, 'config.json'),
-    path.join(OPENCODE_CONFIG_DIR, 'opencode.json'),
-    path.join(OPENCODE_CONFIG_DIR, 'opencode.jsonc'),
-  ],
-  projectPath: getProjectConfigPath(workingDirectory),
-  customPath: CUSTOM_CONFIG_FILE
-});
-
-const getPrimaryUserConfigPath = (userPaths: string[]): string => {
-  for (const userPath of userPaths) {
-    if (fs.existsSync(userPath)) {
-      return userPath;
-    }
-  }
-
-  return CONFIG_FILE;
-};
-
-const readConfigFile = (filePath?: string | null): Record<string, unknown> => {
-  if (!filePath || !fs.existsSync(filePath)) return {};
-  const content = fs.readFileSync(filePath, 'utf8');
-  const normalized = content.trim();
-  if (!normalized) return {};
-  return parseJsonc(normalized, [], { allowTrailingComma: true }) as Record<string, unknown>;
-};
-
-const isPlainObject = (value: unknown): value is Record<string, unknown> =>
-  Boolean(value) && typeof value === 'object' && !Array.isArray(value);
-
-const mergeConfigs = (base: Record<string, unknown>, override: Record<string, unknown>): Record<string, unknown> => {
-  const result: Record<string, unknown> = { ...base };
-  for (const [key, value] of Object.entries(override)) {
-    if (key in result) {
-      const baseValue = result[key];
-      if (isPlainObject(baseValue) && isPlainObject(value)) {
-        result[key] = mergeConfigs(baseValue, value);
-      } else {
-        result[key] = value;
-      }
-    } else {
-      result[key] = value;
-    }
-  }
-  return result;
-};
-
-const readConfigLayers = (workingDirectory?: string) => {
-  const { userPaths, projectPath, customPath } = getConfigPaths(workingDirectory);
-  const userPath = getPrimaryUserConfigPath(userPaths);
-  const userConfig = readConfigFile(userPath);
-  const projectConfig = readConfigFile(projectPath);
-  const customConfig = readConfigFile(customPath);
-  const mergedConfig = mergeConfigs(mergeConfigs(userConfig, projectConfig), customConfig);
-
-  return {
-    userConfig,
-    projectConfig,
-    customConfig,
-    mergedConfig,
-    paths: { userPath, projectPath, customPath }
-  };
-};
-
-const readConfig = (workingDirectory?: string): Record<string, unknown> =>
-  readConfigLayers(workingDirectory).mergedConfig;
 
 const getAncestors = (startDir?: string, stopDir?: string): string[] => {
   if (!startDir) return [];
@@ -689,26 +403,6 @@ const resolveSkillSearchDirectories = (workingDirectory?: string): string[] => {
   pushDir(process.env.OPENCODE_CONFIG_DIR ? path.resolve(process.env.OPENCODE_CONFIG_DIR) : null);
 
   return directories;
-};
-
-const getConfigForPath = (layers: ReturnType<typeof readConfigLayers>, targetPath?: string | null) => {
-  if (!targetPath) return layers.userConfig;
-  if (layers.paths.customPath && targetPath === layers.paths.customPath) return layers.customConfig;
-  if (layers.paths.projectPath && targetPath === layers.paths.projectPath) return layers.projectConfig;
-  return layers.userConfig;
-};
-
-const writeConfig = (config: Record<string, unknown>, filePath: string = CONFIG_FILE) => {
-  if (fs.existsSync(filePath)) {
-    const backupFile = `${filePath}.openchamber.backup`;
-    try {
-      fs.copyFileSync(filePath, backupFile);
-    } catch {
-      // ignore backup failures
-    }
-  }
-  fs.mkdirSync(path.dirname(filePath), { recursive: true });
-  fs.writeFileSync(filePath, JSON.stringify(config, null, 2), 'utf8');
 };
 
 const codedError = (message: string, code: string): Error & { code: string } => {
@@ -837,23 +531,9 @@ const getActiveOpencodeConfigDir = (): string => {
   return customConfigPath ? path.dirname(customConfigPath) : OPENCODE_CONFIG_DIR;
 };
 
-const getActiveUserConfigPaths = (): string[] => {
-  const configDir = getActiveOpencodeConfigDir();
-  return [
-    path.join(configDir, 'config.json'),
-    path.join(configDir, 'opencode.json'),
-    path.join(configDir, 'opencode.jsonc'),
-  ];
-};
-
 const getActivePrimaryUserConfigPath = (): string => {
-  const [defaultPath, ...fallbackPaths] = getActiveUserConfigPaths();
-  for (const userPath of [defaultPath, ...fallbackPaths]) {
-    if (fs.existsSync(userPath)) {
-      return userPath;
-    }
-  }
-  return defaultPath;
+  const layers = readConfigLayers();
+  return layers.paths.customPath || layers.paths.userPath;
 };
 
 const ensureProjectPluginConfigPath = (workingDirectory?: string | null): string => {
@@ -862,17 +542,10 @@ const ensureProjectPluginConfigPath = (workingDirectory?: string | null): string
 };
 
 const getPluginConfigSources = (workingDirectory?: string | null): Array<{ scope: PluginScope; path: string; config: Record<string, unknown> }> => {
-  const customPath = getActiveCustomConfigPath();
-  const userPath = getActivePrimaryUserConfigPath();
-  const projectPath = getProjectConfigPath(workingDirectory || undefined);
-  return [
-    customPath
-      ? { scope: 'user', path: customPath, config: readConfigFile(customPath) }
-      : { scope: 'user', path: userPath, config: readConfigFile(userPath) },
-    ...(projectPath
-      ? [{ scope: 'project' as const, path: projectPath, config: readConfigFile(projectPath) }]
-      : []),
-  ];
+  const layers = readConfigLayers(workingDirectory || undefined);
+  return [...layers.documents.filter((layer) => layer.scope !== 'project').reverse(), ...[...layers.projectLayers].reverse()].map((layer) => ({
+    scope: layer.scope === 'project' ? 'project' : 'user', path: layer.path, config: layer.config,
+  }));
 };
 
 const readPluginArray = (config: Record<string, unknown>): unknown[] => Array.isArray(config.plugin) ? config.plugin : [];
@@ -908,7 +581,7 @@ const getPluginTarget = (id: string, workingDirectory?: string | null): null | {
     throw codedError('Plugin entry id must use config prefix', 'INVALID_SPEC');
   }
   const { scope, rest: spec } = parsePluginIdValue(decoded.value);
-  const source = getPluginConfigSources(workingDirectory).find((candidate) => candidate.scope === scope);
+  const source = getPluginConfigSources(workingDirectory).find((candidate) => candidate.scope === scope && hasPluginSpec(readPluginArray(candidate.config), spec));
   if (!source) return null;
   const plugin = readPluginArray(source.config);
   const index = plugin.findIndex((raw) => {
@@ -1212,7 +885,7 @@ export type McpConfigEntry = {
 
 const resolveMcpScopeFromPath = (layers: ReturnType<typeof readConfigLayers>, sourcePath?: string | null): AgentScope | null => {
   if (!sourcePath) return null;
-  return sourcePath === layers.paths.projectPath ? AGENT_SCOPE.PROJECT : AGENT_SCOPE.USER;
+  return layers.projectLayers.some((layer) => layer.path === sourcePath) ? AGENT_SCOPE.PROJECT : AGENT_SCOPE.USER;
 };
 
 const ensureProjectMcpConfigPath = (workingDirectory: string): string => {
@@ -1381,44 +1054,6 @@ export const deleteMcpConfig = (name: string, workingDirectory?: string): void =
   writeConfig(config, targetPath);
 };
 
-const getJsonEntrySource = (
-  layers: ReturnType<typeof readConfigLayers>,
-  sectionKey: 'agent' | 'command' | 'mcp',
-  entryName: string
-) => {
-  const { userConfig, projectConfig, customConfig, paths } = layers;
-  const customSection = (customConfig as Record<string, unknown>)?.[sectionKey] as Record<string, unknown> | undefined;
-  if (customSection?.[entryName] !== undefined) {
-    return { section: customSection[entryName], config: customConfig, path: paths.customPath, exists: true };
-  }
-
-  const projectSection = (projectConfig as Record<string, unknown>)?.[sectionKey] as Record<string, unknown> | undefined;
-  if (projectSection?.[entryName] !== undefined) {
-    return { section: projectSection[entryName], config: projectConfig, path: paths.projectPath, exists: true };
-  }
-
-  const userSection = (userConfig as Record<string, unknown>)?.[sectionKey] as Record<string, unknown> | undefined;
-  if (userSection?.[entryName] !== undefined) {
-    return { section: userSection[entryName], config: userConfig, path: paths.userPath, exists: true };
-  }
-
-  return { section: null, config: null, path: null, exists: false };
-};
-
-const getJsonWriteTarget = (
-  layers: ReturnType<typeof readConfigLayers>,
-  preferredScope: AgentScope | CommandScope
-) => {
-  const { userConfig, projectConfig, customConfig, paths } = layers;
-  if (paths.customPath) {
-    return { config: customConfig, path: paths.customPath };
-  }
-  if (preferredScope === AGENT_SCOPE.PROJECT && paths.projectPath) {
-    return { config: projectConfig, path: paths.projectPath };
-  }
-  return { config: userConfig, path: paths.userPath };
-};
-
 const getAgentPermissionSource = (agentName: string, workingDirectory?: string) => {
   if (workingDirectory) {
     const projectMdPath = getProjectAgentPath(workingDirectory, agentName);
@@ -1439,19 +1074,11 @@ const getAgentPermissionSource = (agentName: string, workingDirectory?: string) 
   }
 
   const layers = readConfigLayers(workingDirectory);
-  const customAgent = ((layers.customConfig as Record<string, unknown>)?.agent as Record<string, unknown> | undefined)?.[agentName] as Record<string, unknown> | undefined;
-  if (customAgent?.permission !== undefined && layers.paths.customPath) {
-    return { source: 'json' as const, scope: 'custom' as const, path: layers.paths.customPath };
-  }
-
-  const projectAgent = ((layers.projectConfig as Record<string, unknown>)?.agent as Record<string, unknown> | undefined)?.[agentName] as Record<string, unknown> | undefined;
-  if (projectAgent?.permission !== undefined && layers.paths.projectPath) {
-    return { source: 'json' as const, scope: AGENT_SCOPE.PROJECT, path: layers.paths.projectPath };
-  }
-
-  const userAgent = ((layers.userConfig as Record<string, unknown>)?.agent as Record<string, unknown> | undefined)?.[agentName] as Record<string, unknown> | undefined;
-  if (userAgent?.permission !== undefined) {
-    return { source: 'json' as const, scope: AGENT_SCOPE.USER, path: layers.paths.userPath };
+  for (const layer of [...layers.documents].reverse()) {
+    const agent = (layer.config.agent as Record<string, Record<string, unknown>> | undefined)?.[agentName];
+    if (agent?.permission !== undefined) {
+      return { source: 'json' as const, scope: layer.scope, path: layer.path };
+    }
   }
 
   return { source: null, scope: null, path: null };
@@ -1558,7 +1185,7 @@ export const getAgentSources = (agentName: string, workingDirectory?: string): C
   const jsonSource = getJsonEntrySource(layers, 'agent', agentName);
   const agentSection = jsonSource.section as Record<string, unknown> | undefined;
   const jsonPath = jsonSource.path || layers.paths.customPath || layers.paths.projectPath || layers.paths.userPath;
-  const jsonScope = jsonSource.path === layers.paths.projectPath ? AGENT_SCOPE.PROJECT : AGENT_SCOPE.USER;
+  const jsonScope = layers.projectLayers.some((layer) => layer.path === jsonSource.path) ? AGENT_SCOPE.PROJECT : AGENT_SCOPE.USER;
 
   const sources: ConfigSources = {
     md: { exists: mdExists, path: mdPath, scope: mdScope, fields: [] },
@@ -1617,7 +1244,7 @@ export const getAgentConfig = (agentName: string, workingDirectory?: string) => 
   const layers = readConfigLayers(workingDirectory);
   const jsonSource = getJsonEntrySource(layers, 'agent', agentName);
   if (jsonSource.exists && jsonSource.section && typeof jsonSource.section === 'object') {
-    const scope = jsonSource.path === layers.paths.projectPath ? AGENT_SCOPE.PROJECT : AGENT_SCOPE.USER;
+    const scope = layers.projectLayers.some((layer) => layer.path === jsonSource.path) ? AGENT_SCOPE.PROJECT : AGENT_SCOPE.USER;
     return { source: 'json', scope, config: { ...(jsonSource.section as Record<string, unknown>) } };
   }
   return { source: 'none', scope: null, config: {} };
@@ -2005,8 +1632,9 @@ export const deleteAgent = (agentName: string, workingDirectory?: string, scope?
   const layers = readConfigLayers(workingDirectory);
 
   if (requestedScope === AGENT_SCOPE.PROJECT) {
-    if (layers.paths.projectPath && deleteJsonAgentEntry(layers.projectConfig, agentName)) {
-      writeConfig(layers.projectConfig, layers.paths.projectPath);
+    const target = [...layers.projectLayers].reverse().find((layer) => (layer.config.agent as Record<string, unknown> | undefined)?.[agentName] !== undefined);
+    if (target && deleteJsonAgentEntry(target.config, agentName)) {
+      writeConfig(target.config, target.path);
       resetAgentLookupCache(globalAgentLookupCache);
       return;
     }
@@ -2014,9 +1642,10 @@ export const deleteAgent = (agentName: string, workingDirectory?: string, scope?
   }
 
   if (requestedScope === AGENT_SCOPE.USER) {
-    const userJsonPath = layers.paths.customPath || layers.paths.userPath;
-    const userJsonConfig = layers.paths.customPath ? layers.customConfig : layers.userConfig;
-    if (userJsonPath && deleteJsonAgentEntry(userJsonConfig, agentName)) {
+    const target = [...layers.documents].reverse().find((layer) => layer.scope !== 'project' && (layer.config.agent as Record<string, unknown> | undefined)?.[agentName] !== undefined);
+    const userJsonPath = target?.path;
+    const userJsonConfig = target?.config;
+    if (userJsonPath && userJsonConfig && deleteJsonAgentEntry(userJsonConfig, agentName)) {
       writeConfig(userJsonConfig, userJsonPath);
       resetAgentLookupCache(globalAgentLookupCache);
       return;
@@ -2053,7 +1682,7 @@ export const getCommandSources = (commandName: string, workingDirectory?: string
   const jsonSource = getJsonEntrySource(layers, 'command', commandName);
   const commandSection = jsonSource.section as Record<string, unknown> | undefined;
   const jsonPath = jsonSource.path || layers.paths.customPath || layers.paths.projectPath || layers.paths.userPath;
-  const jsonScope = jsonSource.path === layers.paths.projectPath ? COMMAND_SCOPE.PROJECT : COMMAND_SCOPE.USER;
+  const jsonScope = layers.projectLayers.some((layer) => layer.path === jsonSource.path) ? COMMAND_SCOPE.PROJECT : COMMAND_SCOPE.USER;
 
   const sources: ConfigSources = {
     md: { exists: mdExists, path: mdPath, scope: mdScope, fields: [] },
@@ -2211,6 +1840,10 @@ export const updateCommand = (commandName: string, updates: Record<string, unkno
 
 export const getProviderSources = (providerId: string, workingDirectory?: string) => {
   const layers = readConfigLayers(workingDirectory);
+  const providerPath = (scope: 'user' | 'project') => [...layers.documents].reverse().find((layer) => layer.scope === scope && (
+    (isPlainObject(layer.config.provider) && Object.hasOwn(layer.config.provider, providerId))
+    || (isPlainObject(layer.config.providers) && Object.hasOwn(layer.config.providers, providerId))
+  ))?.path;
   const customProviders = isPlainObject((layers.customConfig as Record<string, unknown>)?.provider)
     ? (layers.customConfig as Record<string, unknown>).provider as Record<string, unknown>
     : {};
@@ -2239,8 +1872,8 @@ export const getProviderSources = (providerId: string, workingDirectory?: string
 
   return {
     auth: { exists: false },
-    user: { exists: userExists, path: layers.paths.userPath },
-    project: { exists: projectExists, path: layers.paths.projectPath ?? null },
+    user: { exists: userExists, path: providerPath('user') || layers.paths.userPath },
+    project: { exists: projectExists, path: providerPath('project') || layers.paths.projectPath || null },
     custom: { exists: customExists, path: layers.paths.customPath },
   };
 };
@@ -2249,13 +1882,14 @@ export const removeProviderConfig = (providerId: string, workingDirectory?: stri
   if (!providerId) throw new Error('Provider ID is required');
 
   const layers = readConfigLayers(workingDirectory);
-  let targetPath: string | null | undefined = layers.paths.userPath;
+  const sources = getProviderSources(providerId, workingDirectory);
+  let targetPath: string | null | undefined = sources.user.path;
 
   if (scope === 'project') {
     if (!workingDirectory) {
       throw new Error('Working directory is required for project scope');
     }
-    targetPath = layers.paths.projectPath ?? targetPath;
+    targetPath = sources.project.path ?? targetPath;
   }
 
   if (scope === 'custom') {
@@ -2336,48 +1970,6 @@ export const deleteCommand = (commandName: string, workingDirectory?: string) =>
   if (!deleted) {
     throw new Error(`Command "${commandName}" not found`);
   }
-};
-
-export const listSnippets = (workingDirectory?: string): Snippet[] => {
-  return listUniqueSnippets(loadSnippetRegistry(workingDirectory));
-};
-
-export const getSnippet = (name: string, workingDirectory?: string): Snippet | null => {
-  return findSnippetByName(name, workingDirectory);
-};
-
-export const createSnippet = (
-  name: string,
-  config: Record<string, unknown>,
-  workingDirectory?: string,
-  scope: SnippetScope = 'global',
-): Snippet | null => {
-  assertValidSnippetName(name);
-  const dir = getWritableSnippetDir(scope, workingDirectory);
-  const filePath = path.join(dir, `${name}${SNIPPET_EXTENSION}`);
-  if (fs.existsSync(filePath)) throw new Error(`Snippet "${name}" already exists`);
-  writeSnippetFile(filePath, config || {});
-  return getSnippet(name, workingDirectory);
-};
-
-export const updateSnippet = (name: string, updates: Record<string, unknown>, workingDirectory?: string): Snippet | null => {
-  const existing = findSnippetByName(name, workingDirectory);
-  if (!existing) throw new Error(`Snippet "${name}" not found`);
-  writeSnippetFile(existing.filePath, { ...existing, ...(updates || {}) });
-  return getSnippet(name, workingDirectory);
-};
-
-export const deleteSnippet = (name: string, workingDirectory?: string): void => {
-  const existing = findSnippetByName(name, workingDirectory);
-  if (!existing) throw new Error(`Snippet "${name}" not found`);
-  fs.unlinkSync(existing.filePath);
-};
-
-export const expandSnippets = (text: string, workingDirectory?: string): string => {
-  const registry = loadSnippetRegistry(workingDirectory);
-  const collector = { prepend: [] as string[], append: [] as string[] };
-  const expanded = expandSnippetText(text || '', registry, new Map(), collector).trim();
-  return [...collector.prepend, expanded, ...collector.append].filter(Boolean).join('\n\n');
 };
 
 // ============== SKILL SCOPE HELPERS ==============

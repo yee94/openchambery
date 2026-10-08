@@ -171,7 +171,8 @@ export function GitHubIssuePickerDialog({
 
   const resolveDefaultModelSelection = React.useCallback((): { providerID: string; modelID: string } | null => {
     const configState = useConfigStore.getState();
-    const settingsDefaultModel = configState.settingsDefaultModel;
+    const settingsDefaultModel = configState.settingsDefaultModel
+      ?? (!configState.currentModelId ? configState.opencodeDefaultModel : undefined);
     if (!settingsDefaultModel) {
       return null;
     }
@@ -182,36 +183,19 @@ export function GitHubIssuePickerDialog({
     }
     const { providerId: providerID, modelId: modelID } = parsed;
 
-    const modelMetadata = configState.getModelMetadata(providerID, modelID);
-    if (!modelMetadata) {
-      return null;
-    }
-
     return { providerID, modelID };
   }, []);
 
   const resolveDefaultVariant = React.useCallback((providerID: string, modelID: string): string | undefined => {
     const configState = useConfigStore.getState();
-    const settingsDefaultVariant = configState.settingsDefaultVariant;
+    const configured = parseModelIdentifier(configState.settingsDefaultModel ?? configState.opencodeDefaultModel);
+    const settingsDefaultVariant = configured?.providerId === providerID && configured.modelId === modelID
+      ? configured.variant ?? configState.settingsDefaultVariant : undefined;
     const currentVariant = configState.currentProviderId === providerID && configState.currentModelId === modelID
       ? configState.currentVariant
       : undefined;
 
-    const provider = configState.providers.find((p) => p.id === providerID);
-    const model = provider?.models.find((m: Record<string, unknown>) => (m as { id?: string }).id === modelID) as
-      | { variants?: Record<string, unknown> }
-      | undefined;
-    const variants = model?.variants;
-    if (!variants) {
-      return settingsDefaultVariant || currentVariant || undefined;
-    }
-    if (settingsDefaultVariant && Object.prototype.hasOwnProperty.call(variants, settingsDefaultVariant)) {
-      return settingsDefaultVariant;
-    }
-    if (currentVariant && Object.prototype.hasOwnProperty.call(variants, currentVariant)) {
-      return currentVariant;
-    }
-    return undefined;
+    return settingsDefaultVariant ?? currentVariant;
   }, []);
 
   const startSession = React.useCallback(async (issueNumber: number, sourceRepo?: GitHubRepoSelector | null) => {

@@ -122,7 +122,7 @@ Canonical look is the bordered shared `Input` style, not a flat bottom divider.
 - Wrapper padding for the search row is `p-1.5 pb-1`.
 - Dense picker search fields are typically `h-8` with a leading search icon.
 - Keep the ring treatment: inset `ring-border/60`, hover subtle surface, focus `interactive-focus-ring`.
-- Shared searchable pickers retain their bordered input and search icon. `CommandPalette` is the intentional global-search exception: its locally scoped `command-palette.css` presents a plain text input, an opaque elevated rounded surface, and a surface-level focus border. Shared `CommandInput` styling stays unchanged.
+- Shared searchable pickers retain their bordered input and search icon. `CommandPalette` is the intentional global-search exception: its locally scoped `command-palette.css` presents a plain text input and a surface-level focus border. The rounded popup uses shared translucent overlay glass; its backdrop is transparent in both themes so only the panel blurs the page. Desktop `MainLayout` and the dedicated mobile app each mount the palette; mobile mounts it inside `DedicatedMobileAppProvider` so search actions use mobile navigation. Shared `CommandInput` styling stays unchanged.
 - Do not reintroduce the old `border-b border-border/40` search divider as the primary search-field affordance.
 - Keep search placeholders localized through `locale-ui-patterns`.
 

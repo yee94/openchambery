@@ -6,6 +6,7 @@ import type { SessionCompactionPart } from '@/sync/session-projection-api';
 import { CompactionCard } from './CompactionCard';
 
 vi.mock('@/lib/i18n', () => ({ useI18n: () => ({ t: (key: keyof typeof zh) => zh[key] }) }));
+vi.mock('../MarkdownRenderer', () => ({ MarkdownRenderer: ({ content }: { content: string }) => <div>{content}</div> }));
 let root: Root;
 let host: HTMLDivElement;
 beforeEach(() => {
@@ -33,7 +34,15 @@ test('running and completed are one-line style separators, not cards', async () 
     expect(host.textContent).toContain(zh['chat.activity.compactionCompleted']);
     expect(host.textContent).not.toContain('checkpoint');
     expect(host.querySelector('.animate-text-shimmer')).toBeNull();
-    expect(host.querySelector('button')).toBeNull();
+    const toggle = host.querySelector('button');
+    expect(toggle).not.toBeNull();
+    expect(toggle?.getAttribute('aria-expanded')).toBe('false');
+    await act(async () => toggle?.click());
+    expect(host.textContent).toContain('checkpoint');
+    expect(toggle?.getAttribute('aria-expanded')).toBe('true');
+    expect(host.querySelectorAll('[role="separator"]')).toHaveLength(1);
+    await act(async () => toggle?.click());
+    expect(host.textContent).not.toContain('checkpoint');
 });
 
 test('failed stays a separator and does not open an error card', async () => {
@@ -45,4 +54,16 @@ test('failed stays a separator and does not open an error card', async () => {
     expect(host.textContent).not.toContain('model refused');
     expect(host.querySelector('[data-compaction-card]')?.getAttribute('role')).toBe('separator');
     expect(host.querySelector('button')).toBeNull();
+});
+
+test('an expanded streaming summary stays open when the checkpoint completes', async () => {
+    await act(async () => root.render(<CompactionCard isMobile part={{ ...part('running'), summary: 'partial' }} />));
+    const toggle = host.querySelector('button')!;
+    await act(async () => toggle.click());
+    expect(host.textContent).toContain('partial');
+    await act(async () => root.render(<CompactionCard isMobile part={{ ...part('completed'), summary: 'final summary' }} />));
+    expect(host.querySelector('button')).toBe(toggle);
+    expect(toggle.getAttribute('aria-expanded')).toBe('true');
+    expect(host.textContent).toContain('final summary');
+    expect(host.querySelectorAll('[role="separator"]')).toHaveLength(1);
 });

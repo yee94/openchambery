@@ -517,7 +517,11 @@ vi.mock("@/lib/opencode/client", () => ({
     } } }),
     getScopedSdkClient: (directory: string) => {
       mocks.scopedClientDirectories.push(directory)
-      return mocks.mockScopedClient
+      return { ...mocks.mockScopedClient, message: { list: async ({ sessionID }: { sessionID: string }) => ({
+        data: forkProjectionStores.flatMap((store) => (store.getState().message[sessionID] ?? []).map((message) => ({
+          ...message, type: message.nativeType ?? message.role,
+        }))).reverse(), cursor: {},
+      }) } }
     },
     getDirectory: () => "/test/project",
     setDirectory: vi.fn(),
@@ -679,12 +683,14 @@ function createStore(
   }))
 }
 
+let forkProjectionStores: Array<StoreApi<TestDirectoryStore>> = []
 function createChildStores(
   entries: Array<[string, StoreApi<TestDirectoryStore>]>,
   options?: {
     trackEnsure?: Array<{ directory: string; options?: { bootstrap?: boolean } }>
   },
 ) {
+  forkProjectionStores = entries.map(([, store]) => store)
   return {
     children: new Map(entries),
     ensureChild: (dir: string, ensureOptions?: { bootstrap?: boolean }) => {
@@ -1627,7 +1633,7 @@ describe("resolveForkMessageId", () => {
 
     expect(resolveForkMessageId(undefined, [userMessage, assistantMessage], { type: "busy" })).toBe("assistant-message")
     expect(resolveForkMessageId(undefined, [userMessage, assistantMessage], { type: "retry", attempt: 1, message: "retrying", next: 0 })).toBe("assistant-message")
-    expect(resolveForkMessageId(undefined, [userMessage], { type: "busy" })).toBe(undefined)
+    expect(() => resolveForkMessageId(undefined, [userMessage], { type: "busy" })).toThrow('Fork live boundary')
   })
 
   test("resolves explicit fork points against source message roles", async () => {
@@ -1636,7 +1642,7 @@ describe("resolveForkMessageId", () => {
     expect(resolveForkMessageId("user-message", [userMessage, assistantMessage], { type: "busy" })).toBe("user-message")
     expect(resolveForkMessageId("assistant-message", [userMessage, assistantMessage, nextMessage], { type: "idle" })).toBe("next-message")
     expect(resolveForkMessageId("assistant-message", [userMessage, assistantMessage], { type: "idle" })).toBe(undefined)
-    expect(resolveForkMessageId("unknown-message", [userMessage, assistantMessage], { type: "busy" })).toBe("unknown-message")
+    expect(() => resolveForkMessageId("unknown-message", [userMessage, assistantMessage], { type: "busy" })).toThrow('Fork boundary')
     expect(resolveForkMessageId(undefined, [userMessage, assistantMessage], { type: "idle" })).toBe(undefined)
   })
 
@@ -1648,10 +1654,10 @@ describe("resolveForkMessageId", () => {
     expect(resolveForkMessageId(undefined, [assistantMessage], undefined)).toBe(undefined)
   })
 
-  test("treats a missing status entry as live only when the assistant tail is still open", async () => {
+  test("does not infer live execution from an incomplete historical assistant", async () => {
     const { resolveForkMessageId } = await import("./session-actions")
 
-    expect(resolveForkMessageId(undefined, [userMessage, openAssistant], undefined)).toBe("open-assistant")
+    expect(resolveForkMessageId(undefined, [userMessage, openAssistant], undefined)).toBe(undefined)
   })
 })
 

@@ -114,7 +114,7 @@ function getCommandSources(commandName, workingDirectory) {
   const jsonSource = getJsonEntrySource(layers, 'command', commandName);
   const jsonSection = jsonSource.section;
   const jsonPath = jsonSource.path || layers.paths.customPath || layers.paths.projectPath || layers.paths.userPath;
-  const jsonScope = jsonSource.path === layers.paths.projectPath ? COMMAND_SCOPE.PROJECT : COMMAND_SCOPE.USER;
+  const jsonScope = layers.projectLayers.some((layer) => layer.path === jsonSource.path) ? COMMAND_SCOPE.PROJECT : COMMAND_SCOPE.USER;
 
   const sources = {
     md: {

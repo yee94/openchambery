@@ -50,6 +50,7 @@ import { refreshSessionForms, useSessionFormStore } from '@/sync/session-form-st
 import { isQuestionFormMetadata } from '@/sync/v2-runtime';
 import { isSessionRetryAction, resolveRetryActionCopy } from '@/sync/session-retry-action';
 import { StatusRowContainer } from './StatusRowContainer';
+import { BackgroundWorkHint } from './BackgroundWorkHint';
 import ScrollToBottomButton from './components/ScrollToBottomButton';
 import { PromptNavigatorRail } from './components/PromptNavigatorRail';
 import { ScrollShadow } from '@/components/ui/ScrollShadow';
@@ -586,6 +587,8 @@ const ChatViewport = React.memo(({
                                     <div className="mb-1">{transcriptStatusRow}</div>
                                 ) : null}
 
+                                {directory && <BackgroundWorkHint sessionID={currentSessionId} directory={directory} />}
+
                                 <div
                                     className="flex-shrink-0"
                                     style={{ height: isMobile ? MOBILE_TIMELINE_FOOT_SPACER_HEIGHT : CHAT_TAIL_SPACER_DESKTOP_HEIGHT }}
@@ -701,6 +704,8 @@ const ChatViewport = React.memo(({
                                 ))}
                             </div>
                         )}
+
+                        {directory && <BackgroundWorkHint sessionID={currentSessionId} directory={directory} />}
 
                         {/* The chrome reservation itself comes from
                             `.chat-scroll-foot-inset` padding on this content
@@ -2059,7 +2064,7 @@ const ChatContainerContent: React.FC<ChatContainerContentProps> = ({
 	if (!currentSessionId && draftOpen) {
 		// Match fork: leave the draft composer and show a full-screen
 		// establishing page until a real session ID arrives. ChatInput sets
-		// draftEstablishing before response-style/snippet prep; claim then
+		// draftEstablishing before response-style prep; claim then
 		// promotes to draftSubmitting. Combined create+prompt can take a while;
 		// partial draft banners were easy to miss (especially desktop /
 		// expanded-input layouts).

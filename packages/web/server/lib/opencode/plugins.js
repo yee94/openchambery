@@ -4,6 +4,8 @@ import path from 'path';
 import {
   AGENT_SCOPE,
   readConfigFile,
+  readConfigLayers,
+  getConfigForPath,
   writeConfig,
 } from './shared.js';
 import { isPathSpec } from './plugin-spec.js';
@@ -74,54 +76,8 @@ function getActiveOpencodeConfigDir() {
   return path.join(os.homedir(), '.config', 'opencode');
 }
 
-function getActiveUserConfigPaths() {
-  const configDir = getActiveOpencodeConfigDir();
-  return [
-    path.join(configDir, 'config.json'),
-    path.join(configDir, 'opencode.json'),
-    path.join(configDir, 'opencode.jsonc'),
-  ];
-}
-
-function getActiveCustomConfigPath() {
-  return process.env.OPENCODE_CONFIG ? path.resolve(process.env.OPENCODE_CONFIG) : null;
-}
-
-function getPrimaryUserConfigPath() {
-  const [defaultPath, ...fallbackPaths] = getActiveUserConfigPaths();
-  for (const userPath of [defaultPath, ...fallbackPaths]) {
-    if (fs.existsSync(userPath)) {
-      return userPath;
-    }
-  }
-  return defaultPath;
-}
-
-function getProjectConfigPath(workingDirectory) {
-  if (!workingDirectory) return null;
-  const candidates = [
-    path.join(workingDirectory, 'opencode.json'),
-    path.join(workingDirectory, 'opencode.jsonc'),
-    path.join(workingDirectory, '.opencode', 'opencode.json'),
-    path.join(workingDirectory, '.opencode', 'opencode.jsonc'),
-  ];
-  return candidates.find((candidate) => fs.existsSync(candidate)) || candidates[0];
-}
-
 function readPluginConfigLayers(workingDirectory) {
-  const customPath = getActiveCustomConfigPath();
-  const userPath = getPrimaryUserConfigPath();
-  const projectPath = getProjectConfigPath(workingDirectory);
-  return {
-    userConfig: readConfigFile(userPath),
-    projectConfig: readConfigFile(projectPath),
-    customConfig: readConfigFile(customPath),
-    paths: {
-      userPath,
-      projectPath,
-      customPath,
-    },
-  };
+  return readConfigLayers(workingDirectory);
 }
 
 function validateFileName(fileName) {
@@ -144,16 +100,10 @@ function ensureProjectConfigPath(workingDirectory) {
 }
 
 function configSources(layers) {
-  const sources = [];
-  if (layers.paths.customPath) {
-    sources.push({ config: layers.customConfig, filePath: layers.paths.customPath, scope: AGENT_SCOPE.USER });
-  } else {
-    sources.push({ config: layers.userConfig, filePath: layers.paths.userPath, scope: AGENT_SCOPE.USER });
-  }
-  if (layers.paths.projectPath) {
-    sources.push({ config: layers.projectConfig, filePath: layers.paths.projectPath, scope: AGENT_SCOPE.PROJECT });
-  }
-  return sources;
+  return [...layers.documents.filter((layer) => layer.scope !== 'project').reverse(), ...layers.projectLayers.toReversed()].map((layer) => ({
+    config: layer.config, filePath: layer.path,
+    scope: layer.scope === 'project' ? AGENT_SCOPE.PROJECT : AGENT_SCOPE.USER,
+  }));
 }
 
 function splitScopedValue(value) {
@@ -175,7 +125,9 @@ function getPluginTarget(id, workingDirectory) {
   const { scope, value: spec } = splitScopedValue(decoded.value);
   validateScope(scope);
   const layers = readPluginConfigLayers(workingDirectory);
-  const source = configSources(layers).find((candidate) => candidate.scope === scope);
+  const source = configSources(layers).find((candidate) => candidate.scope === scope
+    && Array.isArray(candidate.config?.plugin)
+    && candidate.config.plugin.some((raw) => parsePluginRaw(raw).spec === spec));
   const plugin = Array.isArray(source?.config?.plugin) ? source.config.plugin : [];
   const index = plugin.findIndex((raw) => parsePluginRaw(raw).spec === spec);
   if (!source || index === -1) {
@@ -281,14 +233,14 @@ function createPluginEntry(entry, workingDirectory) {
     throw codedError(`Plugin "${spec}" already exists`, 'ENTRY_EXISTS');
   }
 
-  let targetPath = getPrimaryUserConfigPath();
+  let targetPath = layers.paths.userPath;
   let config = {};
   if (scope === AGENT_SCOPE.PROJECT) {
     targetPath = ensureProjectConfigPath(workingDirectory);
     config = fs.existsSync(targetPath) ? readConfigFile(targetPath) : {};
   } else {
     targetPath = layers.paths.customPath || layers.paths.userPath;
-    config = layers.paths.customPath ? layers.customConfig : layers.userConfig;
+    config = getConfigForPath(layers, targetPath);
   }
 
   if (!Array.isArray(config.plugin)) {

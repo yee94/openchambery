@@ -11,7 +11,6 @@ import {
   locationToPath,
   isQuestionFormMetadata,
   mapV2PermissionRequest,
-  mapV2Project,
   mapV2QuestionRequest,
   projectWorktree,
 } from "./v2-runtime"
@@ -73,18 +72,10 @@ export async function bootstrapGlobal(
   set: (patch: Partial<GlobalState>) => void,
 ) {
   const results = await Promise.allSettled([
-    retry(() => sdk.location.get().then((location) => set({ path: locationToPath(location) }))),
-    retry(() => sdk.config.get().then((entries) => set({ config: mergeConfigDocuments(entries) }))),
-    retry(() =>
-      sdk.project.list().then((data) => {
-        const projects = data
-          .filter((p): p is NonNullable<typeof p> => !!p?.id)
-          .map(mapV2Project)
-          .filter((p) => !!projectWorktree(p) && !projectWorktree(p).includes("opencode-test"))
-          .sort((a, b) => cmp(a.id, b.id))
-        set({ projects })
-      }),
-    ),
+    // Global readiness must not resolve the server's default location (often
+    // home). Path, project identity and merged config load in bootstrapDirectory
+    // only when a concrete directory is demanded. Preserve existing seed data.
+    retry(() => sdk.server.info()),
   ])
 
   const errors = results
@@ -142,6 +133,7 @@ export async function bootstrapDirectory(input: {
   }
 }) {
   const { directory, sdk, getState, set, global: g } = input
+  if (!directory.trim()) throw new Error("Directory bootstrap requires an explicit directory")
   const state = getState()
   const loading = state.status !== "complete"
 

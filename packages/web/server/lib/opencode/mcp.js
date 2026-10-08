@@ -29,7 +29,7 @@ function validateMcpName(name) {
  */
 function resolveMcpScopeFromPath(layers, sourcePath) {
   if (!sourcePath) return null;
-  return sourcePath === layers.paths.projectPath ? AGENT_SCOPE.PROJECT : AGENT_SCOPE.USER;
+  return layers.projectLayers.some((layer) => layer.path === sourcePath) ? AGENT_SCOPE.PROJECT : AGENT_SCOPE.USER;
 }
 
 function ensureProjectMcpConfigPath(workingDirectory) {

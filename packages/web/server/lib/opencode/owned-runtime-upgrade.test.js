@@ -86,15 +86,15 @@ describe('owned runtime upgrade (ticket 12)', () => {
 
   it('verifies running serve identity before upgrade success', () => {
     const contractOk = evaluateRuntimeContract({
-      serveVersion: '2.0.14',
+      serveVersion: '2.0.23',
       reachable: true,
       authenticated: true,
       healthOk: true,
       migrationAdmitTranscript: true,
     });
     expect(evaluateOwnedUpgradeResult({
-      targetVersion: '2.0.14',
-      serveVersion: '2.0.14',
+      targetVersion: '2.0.23',
+      serveVersion: '2.0.23',
       binaryPath: ownedBinary,
       expectedBinaryPath: ownedBinary,
       contract: contractOk,
@@ -116,8 +116,8 @@ describe('owned runtime upgrade (ticket 12)', () => {
     });
 
     expect(evaluateOwnedUpgradeResult({
-      targetVersion: '2.0.14',
-      serveVersion: '2.0.14',
+      targetVersion: '2.0.23',
+      serveVersion: '2.0.23',
       binaryPath: '/usr/bin/opencode',
       expectedBinaryPath: ownedBinary,
       contract: contractOk,

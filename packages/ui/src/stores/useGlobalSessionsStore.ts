@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { reconcileMovedSessionDirectory } from '@/sync/session-location-authority';
 import type { Session } from '@/lib/opencode/v2-types';
 import { getSessionActivityUpdatedAt } from '@/lib/sessionActivity';
 import { opencodeClient } from '@/lib/opencode/client';
@@ -253,6 +254,10 @@ export const resolveGlobalSessionDirectory = (session: Session): string | null =
 };
 
 export const mergeSessionDirectoryMetadata = (incoming: Session, existing?: Session | null): Session => {
+  const movedDirectory = reconcileMovedSessionDirectory(incoming.id, incoming.directory, incoming.time?.updated);
+  if (movedDirectory && incoming.directory !== movedDirectory) {
+    incoming = existing?.directory === movedDirectory ? existing : { ...incoming, directory: movedDirectory };
+  }
   if (!existing) {
     return incoming;
   }

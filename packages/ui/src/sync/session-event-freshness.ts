@@ -13,3 +13,12 @@ export const shouldSkipStaleSessionEvent = (currentSession: Session | null, inco
   if (!currentSession) return false
   return getSessionRecencyTimestamp(incomingSession) < getSessionRecencyTimestamp(currentSession)
 }
+
+export const applySessionRename = (session: Session, properties: Record<string, unknown>): Session => {
+  if (properties.sessionID !== session.id || typeof properties.title !== 'string') return session
+  const updated = typeof properties.eventCreated === 'number' && Number.isFinite(properties.eventCreated)
+    ? properties.eventCreated : getSessionRecencyTimestamp(session)
+  if (updated < getSessionRecencyTimestamp(session)) return session
+  if (session.title === properties.title && updated === getSessionRecencyTimestamp(session)) return session
+  return { ...session, title: properties.title, time: { ...session.time, updated } }
+}

@@ -5,6 +5,7 @@ import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import { createSessionIndexService } from './service.js';
+import { applySessionIndexEvent } from './event-ingest.js';
 
 const tempDirectories = [];
 
@@ -31,6 +32,52 @@ afterEach(() => {
 });
 
 describe('Electron session index', () => {
+  it('ingests native renames without changing activity, status, pins or unrelated sessions', () => {
+    const runtimeRef = { value: 'http://runtime-a.test' };
+    const service = createService(runtimeRef);
+    service.upsert(session('ses_title', 10));
+    service.upsert(session('ses_other', 15));
+    service.setPinned('ses_title', 12);
+    service.updateStatus('ses_title', 'busy', 13);
+    const before = service.snapshot();
+    const rename = (title, created, sessionID = 'ses_title') => applySessionIndexEvent(service, {
+      payload: { type: 'session.renamed', created, data: { sessionID, title } },
+    });
+    expect(rename('Generated title', 20)).toBe(true);
+    const after = service.snapshot();
+    expect(after.directories[0].sessions.map((row) => row.id)).toEqual(before.directories[0].sessions.map((row) => row.id));
+    expect(service.findBySessionId('ses_title')).toMatchObject({ title: 'Generated title' });
+    expect(after.pinnedSessionIds).toEqual(before.pinnedSessionIds);
+    expect(after.directories[0].sessions.find((row) => row.id === 'ses_title').metadata).toEqual(
+      before.directories[0].sessions.find((row) => row.id === 'ses_title').metadata,
+    );
+    expect(rename('Generated title', 20)).toBe(false);
+    expect(rename('Stale title', 19)).toBe(false);
+    expect(rename('Unknown', 30, 'ses_missing')).toBe(false);
+    runtimeRef.value = 'http://runtime-b.test';
+    expect(rename('Other runtime', 30)).toBe(false);
+    service.close();
+  });
+  it('moves one authoritative identity, preserving pin/status and fencing delayed old-directory pages', () => {
+    const runtimeRef = { value: 'http://runtime-a.test' };
+    const service = createService(runtimeRef);
+    service.upsert(session('ses_move', 10, '/old'));
+    service.setPinned('ses_move', 12);
+    service.updateStatus('ses_move', 'retry', 15);
+    expect(service.move('ses_move', '/new', 20)).toBe(true);
+    expect(service.move('ses_move', '/new', 20)).toBe(false);
+    expect(service.move('ses_move', '/old', 19)).toBe(false);
+    service.replaceDirectory({ directory: '/old', sessions: [session('ses_move', 10, '/old')], now: 30 });
+    expect(service.upsertAndReportChange(session('ses_move', 10, '/old'), 40)).toBe(false);
+    const rows = service.snapshot().directories.flatMap((item) => item.sessions);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ id: 'ses_move', directory: '/new', metadata: { openchamber: { sessionStatus: { type: 'retry' } } } });
+    expect(service.snapshot().pinnedSessionIds).toContain('ses_move');
+    runtimeRef.value = 'http://runtime-b.test';
+    expect(service.upsert(session('ses_move', 1, '/old'))).toBe(true);
+    expect(service.findBySessionId('ses_move').directory).toBe('/old');
+    service.close();
+  });
   it('stores one bounded root-session page transactionally', () => {
     const runtimeRef = { value: 'http://runtime-a.test' };
     const service = createService(runtimeRef);

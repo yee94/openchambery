@@ -1838,10 +1838,11 @@ const AssistantMessageBody = React.memo(({
         && !canRevealSortedBody
         && !(isCompactionTurn && isActivityExpanded);
     const shouldShowMessageActions = hasCopyableText;
-    // Settled turns (stop / completed / interrupt-error) get the footer even
-    // when text is empty, so duration + TPS still show after user abort.
+    // Settled turns keep duration + TPS after user abort, even without text.
+    // Failures own the feedback instead of also publishing completion chrome.
     const shouldShowTurnFooter = isLastAssistantInTurn
         && isTurnSettled
+        && errorPresentation?.variant !== 'error'
         && !hideCompactionBody
         && (hasTextContent || Boolean(errorMessage) || isMessageCompleted);
     const hasAuthoritativeChangesMarker = turnGroupingContext?.diffStats?.hasDiffs === true;
@@ -2309,7 +2310,7 @@ const AssistantMessageBody = React.memo(({
     }, [messageCompletedAt, messageCreatedAt, timeFormatPreference, locale]);
 
     const assistantTpsText = React.useMemo(() => {
-        if (!showAssistantTps || !isLastAssistantInTurn) return null;
+        if (!showAssistantTps || !isLastAssistantInTurn || errorPresentation?.variant === 'error') return null;
         const tps = turnGroupingContext?.assistantTps;
         // Interrupted and aborted turns stay visible once the streamed clocks
         // can produce a rate. An active continuation must not flash one.
@@ -2321,6 +2322,7 @@ const AssistantMessageBody = React.memo(({
         return label.length > 0 ? label : null;
     }, [
         showAssistantTps,
+        errorPresentation?.variant,
         isLastAssistantInTurn,
         turnGroupingContext?.assistantTps,
         turnGroupingContext?.completionDisposition,

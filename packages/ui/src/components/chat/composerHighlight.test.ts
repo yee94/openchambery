@@ -121,7 +121,6 @@ describe('buildHighlightParts', () => {
             'mentionAgent',
             'mentionSession',
             'mentionCommand',
-            'mentionSnippet',
             'mentionPaste',
         ];
 

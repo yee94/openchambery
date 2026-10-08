@@ -29,8 +29,6 @@ const OPENCODE_CHILD_SIGTERM_GRACE_MS = 2500;
 const OPENCODE_CHILD_SIGKILL_WAIT_MS = 1000;
 // Last-used directory plus recently opened projects — deeper tails are unlikely
 // to be the user's first click and just add background work.
-const WARMUP_DIRECTORY_LIMIT = 4;
-const WARMUP_REQUEST_TIMEOUT_MS = 30000;
 
 export const createOpenCodeLifecycleRuntime = (deps) => {
   const {
@@ -57,7 +55,6 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
     getManagedOpenCodeShellEnvSnapshot,
     managedCapabilitiesRuntime = null,
     getActiveSessionCount = () => 0,
-    getWarmupDirectories = async () => [],
     // Official background service (shared-service.js). null keeps the private
     // managed `opencode serve` path.
     sharedService = null,
@@ -796,6 +793,7 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
         ...shellEnv,
         ...process.env,
         PATH: envPath,
+        OPENCODE_PASSWORD: openCodePassword,
         OPENCODE_SERVER_PASSWORD: openCodePassword,
       };
       const managedEnv = managedCapabilitiesRuntime
@@ -1253,11 +1251,6 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
       await waitForOpenCodePort();
       try {
         await waitForOpenCodeReady();
-        // Warm only after readiness admits; a failed gate must not kick off
-        // directory-scoped traffic against an unready upstream.
-        if (state.isOpenCodeReady) {
-          void warmOpenCodeDirectories();
-        }
       } catch (error) {
         console.error(`OpenCode readiness check failed: ${error.message}`);
       }
@@ -1265,47 +1258,6 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
       console.error(`Failed to start OpenCode: ${error.message}`);
       console.log('Continuing without OpenCode integration...');
       state.lastOpenCodeError = error.message;
-    }
-  };
-
-  // OpenCode initializes each project directory lazily on its first
-  // directory-scoped request, and that initialization takes seconds on large
-  // session stores. Without warming, the user's first session open pays it
-  // interactively. Warm the most recently used directories right after
-  // readiness so the work overlaps UI startup instead. Sequential and
-  // best-effort: a failed or slow directory never blocks the others for long,
-  // and a restart invalidates the pass via the port/readiness guard.
-  const warmOpenCodeDirectories = async () => {
-    let directories = [];
-    try {
-      directories = await getWarmupDirectories();
-    } catch {
-      return;
-    }
-    if (!Array.isArray(directories) || directories.length === 0) return;
-
-    const warmedPort = state.openCodePort;
-    for (const directory of directories.slice(0, WARMUP_DIRECTORY_LIMIT)) {
-      if (typeof directory !== 'string' || !directory) continue;
-      if (!state.isOpenCodeReady || state.openCodePort !== warmedPort) return;
-      let timeout = null;
-      try {
-        const controller = new AbortController();
-        timeout = setTimeout(() => controller.abort(), WARMUP_REQUEST_TIMEOUT_MS);
-        // Warming a directory is the point, not the answer: any directory-scoped
-        // read makes OpenCode initialise it. `/api/session` is the cheapest one
-        // that takes a directory.
-        const url = `${buildOpenCodeUrl('/api/session', '')}?directory=${encodeURIComponent(directory)}&limit=1`;
-        await fetch(url, {
-          method: 'GET',
-          headers: { Accept: 'application/json', ...getOpenCodeAuthHeaders() },
-          signal: controller.signal,
-        });
-      } catch {
-        // Best-effort — the directory stays lazy and the UI's own request warms it.
-      } finally {
-        if (timeout) clearTimeout(timeout);
-      }
     }
   };
 

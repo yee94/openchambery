@@ -3,7 +3,7 @@ import type { Event } from '@/sync/types'
 
 import { useGlobalSessionsStore } from "@/stores/useGlobalSessionsStore"
 import { stripSessionDiffSnapshots } from "./sanitize"
-import { shouldSkipStaleSessionEvent } from "./session-event-freshness"
+import { applySessionRename, shouldSkipStaleSessionEvent } from "./session-event-freshness"
 
 export const getSessionInfoFromPayload = (event: Event, fallbackDirectory?: string | null): Session | null => {
   if (event.type !== "session.created" && event.type !== "session.updated" && event.type !== "session.deleted") {
@@ -59,6 +59,15 @@ const getVisibleSessionSignature = (session: Session): string => {
 }
 
 export const applySessionEventToGlobalSessions = (payload: Event, directory?: string | null): void => {
+  if (payload.type === 'session.renamed') {
+    const properties = payload.properties as Record<string, unknown>
+    if (typeof properties.sessionID !== 'string') return
+    const current = getGlobalSessionSnapshot(properties.sessionID)
+    if (!current) return
+    const next = applySessionRename(current, properties)
+    if (next !== current) useGlobalSessionsStore.getState().upsertSession(next)
+    return
+  }
   if (payload.type === "session.created" || payload.type === "session.updated") {
     const session = getSessionInfoFromPayload(payload, directory)
     if (session) {

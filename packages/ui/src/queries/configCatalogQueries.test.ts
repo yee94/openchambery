@@ -76,7 +76,6 @@ const {
   ensureRawAgentsQuery,
   ensureProviderCatalogQuery,
   refreshProviderCatalogQuery,
-  seedProviderCatalogQuery,
   invalidateRawAgentsQuery,
   providerCatalogQueryOptions,
   rawAgentsQueryOptions,
@@ -132,28 +131,30 @@ describe('configCatalogQueries', () => {
     const secondTransport = ensureRawAgentsQuery('/workspace/project', runtimeKey);
     resolveAgents?.();
     await secondTransport;
-    expect(agentCalls).toBe(2);
+    expect(agentCalls).toBe(3);
 
     await invalidateRawAgentsQuery('/workspace/project', 'runtime-a');
     runtimeKey = 'runtime-a';
     const refreshed = ensureRawAgentsQuery('/workspace/project', runtimeKey);
     resolveAgents?.();
     await refreshed;
-    expect(agentCalls).toBe(3);
-    expect(rawAgentsQueryOptions('/workspace/project', 'runtime-a').queryKey).toEqual(['runtime-a', 'agents', 'raw']);
-    expect(rawAgentsQueryOptions('/workspace/project', 'runtime-a').queryKey).toEqual(
+    expect(agentCalls).toBe(4);
+    expect(rawAgentsQueryOptions('/workspace/project', 'runtime-a').queryKey).toEqual(['runtime-a', 'agents', 'raw', '/workspace/project']);
+    expect(rawAgentsQueryOptions('/workspace/project', 'runtime-a').queryKey).not.toEqual(
       rawAgentsQueryOptions('/workspace/other', 'runtime-a').queryKey,
     );
     expect(providerCatalogQueryOptions('/workspace/project', 'runtime-a').queryKey).toEqual(['runtime-a', 'configCatalog', 'providers', '/workspace/project']);
   });
 
-  test('Agent catalog 跨目录共享同一份全局 cache', async () => {
+  test('Agent catalog 按实际 worktree 目录独立缓存', async () => {
     const first = ensureRawAgentsQuery('/workspace/project', runtimeKey);
     resolveAgents?.();
     await first;
-    await ensureRawAgentsQuery('/workspace/other', runtimeKey);
-    expect(agentCalls).toBe(1);
-    expect(rawAgentsQueryOptions('/workspace/project', runtimeKey).queryKey).toEqual(
+    const other = ensureRawAgentsQuery('/workspace/other', runtimeKey);
+    resolveAgents?.();
+    expect(await other).toEqual([{ name: 'runtime-a:/workspace/other' }]);
+    expect(agentCalls).toBe(2);
+    expect(rawAgentsQueryOptions('/workspace/project', runtimeKey).queryKey).not.toEqual(
       rawAgentsQueryOptions('/workspace/other', runtimeKey).queryKey,
     );
   });
@@ -175,32 +176,6 @@ describe('configCatalogQueries', () => {
     expect(result.providers[0]).toEqual({ id: 'safe', name: 'Safe', models: { model: { id: 'model', name: 'Model', variants: { fast: {} } } } });
     expect(JSON.stringify(result)).not.toContain('secret');
     expect(JSON.stringify(queryClient.getQueryData(providerCatalogQueryOptions('/workspace/project', runtimeKey).queryKey))).not.toContain('secret');
-  });
-
-  test('完整快照只 seed 冷 Query，partial 快照不创建冷 Query', () => {
-    seedProviderCatalogQuery('/workspace/project', {
-      providers: [{ id: 'seed', name: 'Seed', apiKey: 'secret', models: [{ id: 'model', name: 'Model', variants: { fast: { token: 'secret' } } }] }],
-      defaultProviders: { default: 'seed' },
-      providerCatalogPartial: false,
-    }, runtimeKey);
-    expect(queryClient.getQueryData(providerCatalogQueryOptions('/workspace/project', runtimeKey).queryKey)).toEqual({
-      schemaVersion: 1,
-      providers: [{ id: 'seed', name: 'Seed', models: { '0': { id: 'model', name: 'Model', variants: { fast: {} } } } }],
-      default: { default: 'seed' },
-      partial: false,
-    });
-    const warmCatalog = queryClient.getQueryData(providerCatalogQueryOptions('/workspace/project', runtimeKey).queryKey);
-    seedProviderCatalogQuery('/workspace/project', {
-      providers: [{ id: 'replacement', name: 'Replacement', models: [{ id: 'replacement-model', name: 'Replacement model' }] }],
-      defaultProviders: { default: 'replacement' },
-      providerCatalogPartial: false,
-    }, runtimeKey);
-    // 分片后 seed 不得泄漏到其他目录
-    expect(queryClient.getQueryData(providerCatalogQueryOptions('/workspace/other', runtimeKey).queryKey)).toBe(undefined);
-    expect(queryClient.getQueryData(providerCatalogQueryOptions('/workspace/project', runtimeKey).queryKey)).toEqual(warmCatalog);
-
-    seedProviderCatalogQuery('/workspace/cold-partial', { providers: [], defaultProviders: {}, providerCatalogPartial: true }, runtimeKey);
-    expect(queryClient.getQueryData(providerCatalogQueryOptions('/workspace/cold-partial', runtimeKey).queryKey)).toBe(undefined);
   });
 
   test('Provider Catalog 顶层 schema 失效时失败关闭', async () => {
@@ -400,15 +375,6 @@ describe('configCatalogQueries', () => {
 
     await ensureProviderCatalogQuery('/workspace/project', runtimeKey);
     expect(providerCalls).toBeGreaterThan(1);
-  });
-
-  test('空 providers 完整快照不 seed', () => {
-    seedProviderCatalogQuery('/workspace/project', {
-      providers: [],
-      defaultProviders: {},
-      providerCatalogPartial: false,
-    }, runtimeKey);
-    expect(queryClient.getQueryData(providerCatalogQueryOptions('/workspace/project', runtimeKey).queryKey)).toBe(undefined);
   });
 
   test('成功返回空 Agent catalog 后，再次 ensure 会重新发起请求', async () => {

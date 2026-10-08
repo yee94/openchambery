@@ -69,6 +69,40 @@ const createMockResponse = () => {
   };
 };
 
+describe('worktree eviction best effort', () => {
+  it.each(['released', 'failed', 'timeout', 'unavailable'])('preserves successful deletion with release outcome %s', async (state) => {
+    const { app, getRoute } = createRouteRegistry();
+    const releaseWorktreeLocation = vi.fn(async () => ({ state }));
+    const broadcastWorktreeTopologyChanged = vi.fn();
+    registerGitRoutes(app, { releaseWorktreeLocation, broadcastWorktreeTopologyChanged });
+    gitLibraries.removeWorktree.mockImplementation(async (_root, _input, options) => {
+      await options.beforeRemove('/validated/worktree');
+      return true;
+    });
+    const response = createMockResponse();
+    await getRoute('DELETE', '/api/git/worktrees')({ query: { directory: '/repo' }, body: { directory: '/requested/worktree' } }, response);
+    expect(releaseWorktreeLocation).toHaveBeenCalledWith('/validated/worktree');
+    expect(response.body).toEqual({ success: true, locationRelease: { state } });
+    expect(broadcastWorktreeTopologyChanged).toHaveBeenCalledTimes(1);
+  });
+  it('does not publish topology when removal fails after successful release', async () => {
+    const { app, getRoute } = createRouteRegistry();
+    const broadcastWorktreeTopologyChanged = vi.fn();
+    registerGitRoutes(app, { releaseWorktreeLocation: async () => ({ state: 'released' }), broadcastWorktreeTopologyChanged });
+    gitLibraries.removeWorktree.mockImplementation(async (_root, _input, options) => {
+      await options.beforeRemove('/repo/worktree');
+      throw new Error('deletion failed');
+    });
+    const response = createMockResponse();
+    const log = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      await getRoute('DELETE', '/api/git/worktrees')({ query: { directory: '/repo' }, body: { directory: '/repo/worktree' } }, response);
+    } finally { log.mockRestore(); }
+    expect(response.statusCode).toBe(500);
+    expect(broadcastWorktreeTopologyChanged).not.toHaveBeenCalled();
+  });
+});
+
 describe('git routes batch discover', () => {
   beforeEach(() => {
     gitLibraries.isGitRepository.mockReset();

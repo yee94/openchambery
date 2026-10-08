@@ -62,7 +62,7 @@ export function registerTtsRoutes(app, { sayTTSCapability }) {
       const { ttsService } = await getTtsModule();
 
       // Check availability - server-configured key, client-provided key, or custom server URL
-      const hasServerKey = ttsService.isAvailable();
+      const hasServerKey = await ttsService.isAvailable();
       const hasClientKey = apiKey && typeof apiKey === 'string' && apiKey.trim().length > 0;
       const hasCustomBaseURL = typeof normalizedBaseURL === 'string' && normalizedBaseURL.length > 0;
       
@@ -134,7 +134,7 @@ export function registerTtsRoutes(app, { sayTTSCapability }) {
     try {
       const { ttsService } = await getTtsModule();
       res.json({
-        available: ttsService.isAvailable(),
+        available: await ttsService.isAvailable(),
         voices: [
           'alloy', 'ash', 'ballad', 'coral', 'echo', 'fable',
           'nova', 'onyx', 'sage', 'shimmer', 'verse', 'marin', 'cedar'

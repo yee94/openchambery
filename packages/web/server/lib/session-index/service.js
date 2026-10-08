@@ -277,6 +277,30 @@ export const createSessionIndexService = ({ dbPath, getRuntimeConfig = () => nul
     WHERE runtime_key = ? AND session_id = ?
   `);
 
+  const movedLocations = new Map();
+  const isStaleLocation = (session, directory) => {
+    const moved = movedLocations.get(`${runtimeKey()}:${session?.id}`);
+    return moved && moved.directory !== normalizeDirectory(directory) && toTimestamp(session?.time?.updated) <= moved.at;
+  };
+  const move = db.transaction((sessionID, directory, at = Date.now(), sequence) => {
+    directory = normalizeDirectory(directory);
+    if (!sessionID || !directory) return false;
+    const key = runtimeKey();
+    const fenceKey = `${key}:${sessionID}`;
+    const previous = movedLocations.get(fenceKey);
+    if (previous && (sequence !== undefined && previous.sequence !== undefined
+      ? sequence <= previous.sequence
+      : at < previous.at || (at === previous.at && previous.directory === directory))) return false;
+    movedLocations.set(fenceKey, { directory, at, sequence });
+    touchExistingDirectory.run({ runtimeKey: key, directory, lastAccessedAt: at });
+    const roots = db.prepare('UPDATE OR REPLACE session_summary SET directory = ? WHERE runtime_key = ? AND session_id = ? AND directory != ?').run(directory, key, sessionID, directory);
+    const children = db.prepare('UPDATE OR REPLACE session_child SET directory = ? WHERE runtime_key = ? AND session_id = ? AND directory != ?').run(directory, key, sessionID, directory);
+    db.prepare(`DELETE FROM session_summary WHERE runtime_key = ? AND directory = ? AND session_id IN (
+      SELECT session_id FROM session_summary WHERE runtime_key = ? AND directory = ? ORDER BY activity_updated_at DESC, session_id DESC LIMIT -1 OFFSET ?
+    )`).run(key, directory, key, directory, MAX_ROOT_SESSIONS);
+    return roots.changes > 0 || children.changes > 0;
+  });
+
   const replaceDirectoryRows = ({ directory, sessions, cursor, hasMore, fullSync = true, now = Date.now() }) => {
     const normalizedDirectory = normalizeDirectory(directory);
     if (!normalizedDirectory) throw new Error('directory is required');
@@ -289,6 +313,7 @@ export const createSessionIndexService = ({ dbPath, getRuntimeConfig = () => nul
     // stale unarchived cache cannot resurrect them.
     const summaries = Array.isArray(sessions)
       ? sessions
+        .filter((session) => !isStaleLocation(session, normalizedDirectory))
         .map((session) => toSummary(session, normalizedDirectory))
         .filter((summary) => summary && !summary.archivedAt)
         .slice(0, MAX_ROOT_SESSIONS)
@@ -328,6 +353,7 @@ export const createSessionIndexService = ({ dbPath, getRuntimeConfig = () => nul
   });
 
   const upsertMutation = db.transaction((session, now = Date.now(), options = {}) => {
+    if (isStaleLocation(session, session?.directory ?? session?.location?.directory)) return { accepted: false, changed: false };
     if (!isVisibleSession(session)) {
       const changed = remove(session?.id);
       return { accepted: changed, changed };
@@ -517,6 +543,23 @@ export const createSessionIndexService = ({ dbPath, getRuntimeConfig = () => nul
     return result.changes > 0;
   };
 
+  const rename = (sessionID, title, observedAt) => {
+    if (typeof sessionID !== 'string' || !sessionID || typeof title !== 'string') return false;
+    const timestamp = toTimestamp(observedAt);
+    if (!timestamp) return false;
+    const key = runtimeKey();
+    if (HIDDEN_SESSION_TITLES.has(title)) {
+      const current = db.prepare('SELECT updated_at FROM session_summary WHERE runtime_key = ? AND session_id = ?').get(key, sessionID);
+      return current && current.updated_at <= timestamp ? remove(sessionID) : false;
+    }
+    const result = db.prepare(`
+      UPDATE session_summary SET title = ?, updated_at = ?
+      WHERE runtime_key = ? AND session_id = ? AND updated_at <= ?
+        AND (title != ? OR updated_at != ?)
+    `).run(title, timestamp, key, sessionID, timestamp, title, timestamp);
+    return result.changes > 0;
+  };
+
   const updateStatus = (sessionID, status, observedAt) => {
     if (typeof sessionID !== 'string' || !sessionID) return false;
     if (status !== 'busy' && status !== 'retry' && status !== 'idle') return false;
@@ -570,6 +613,8 @@ export const createSessionIndexService = ({ dbPath, getRuntimeConfig = () => nul
     upsertAndReportChange,
     touchActivity,
     updateStatus,
+    rename,
+    move,
     setPinned,
     clearPinned,
     remove,

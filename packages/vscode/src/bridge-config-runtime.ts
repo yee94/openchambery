@@ -3,21 +3,18 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { parse as parseJsonc } from 'jsonc-parser';
+import { getGlobalConfigDirectory, writeConfigText } from '../../web/server/lib/opencode/config-files.js';
 import {
   createAgent,
   createCommand,
-  createSnippet,
   deleteAgent,
   deleteCommand,
-  deleteSnippet,
   getAgentSources,
   getAgentConfig,
   listDisabledAgentOverrides,
   getCommandSources,
-  getSnippet,
   updateAgent,
   updateCommand,
-  updateSnippet,
   type AgentScope,
   type CommandScope,
   AGENT_SCOPE,
@@ -45,13 +42,10 @@ import {
   writePluginDirFile,
   deletePluginDirFile,
   queryPluginRegistry,
-  listSnippets,
   getMcpConfig,
   createMcpConfig,
   updateMcpConfig,
   deleteMcpConfig,
-  expandSnippets,
-  type SnippetScope,
 } from './opencodeConfig';
 import {
   getSkillsCatalog,
@@ -87,7 +81,7 @@ const AGENTS_MD_PATH = path.join(os.homedir(), '.config', 'opencode', 'AGENTS.md
 const MAX_BEHAVIOR_PROMPT_SIZE = 1024 * 1024;
 const MAX_GLOBAL_CONFIG_SIZE = 2 * 1024 * 1024;
 const GLOBAL_CONFIG_FILES: Record<string, string[]> = {
-  opencode: ['opencode.json', 'opencode.jsonc'],
+  opencode: ['opencode.jsonc', 'opencode.json'],
   'oh-my-opencode-slim': ['oh-my-opencode-slim.json', 'oh-my-opencode-slim.jsonc'],
   'oh-my-openagent': ['oh-my-openagent.json', 'oh-my-openagent.jsonc'],
 };
@@ -96,11 +90,15 @@ const resolveGlobalConfigPath = (target: unknown) => {
   if (typeof target !== 'string') return null;
   const fileNames = GLOBAL_CONFIG_FILES[target];
   if (!fileNames) return null;
+  if (target === 'opencode' && process.env.OPENCODE_CONFIG) {
+    const filePath = path.resolve(process.env.OPENCODE_CONFIG);
+    return { target, fileNames: [path.basename(filePath)], fileName: path.basename(filePath), filePath };
+  }
   return {
     target,
     fileNames,
     fileName: fileNames[0],
-    filePath: path.join(os.homedir(), '.config', 'opencode', fileNames[0]),
+    filePath: path.join(getGlobalConfigDirectory(), fileNames[0]),
   };
 };
 
@@ -235,10 +233,7 @@ export async function handleConfigBridgeMessage(
       if (typeof request.content !== 'string') return { id, type, success: false, error: 'Configuration content must be a string' };
       const validationError = validateGlobalConfigContent(request.content);
       if (validationError) return { id, type, success: false, error: validationError };
-      await fs.promises.mkdir(path.dirname(target.filePath), { recursive: true });
-      const temporaryPath = `${target.filePath}.${process.pid}.${Date.now()}.tmp`;
-      await fs.promises.writeFile(temporaryPath, request.content, 'utf8');
-      await fs.promises.rename(temporaryPath, target.filePath);
+      writeConfigText(request.content, target.filePath);
       return { id, type, success: true, data: { fileName: target.fileName, content: request.content, requiresManualRestart: request.target !== 'opencode', application: request.target === 'opencode' ? 'watch' : 'manual' } };
     }
 
@@ -756,54 +751,6 @@ export async function handleConfigBridgeMessage(
       }
 
       return { id, type, success: false, error: 'Unsupported plugin config request' };
-    }
-
-    case 'api:config/snippets': {
-      const { method, name, body, directory } = (payload || {}) as {
-        method?: string;
-        name?: string;
-        body?: Record<string, unknown>;
-        directory?: string;
-      };
-      const normalizedMethod = typeof method === 'string' && method.trim() ? method.trim().toUpperCase() : 'GET';
-      const snippetName = typeof name === 'string' ? name.trim() : '';
-      const workingDirectory = resolveWorkingDirectory(ctx, directory);
-
-      if (normalizedMethod === 'GET' && !snippetName) {
-        return { id, type, success: true, data: listSnippets(workingDirectory) };
-      }
-
-      if (normalizedMethod === 'POST' && !snippetName) {
-        return { id, type, success: true, data: { text: expandSnippets(typeof body?.text === 'string' ? body.text : '', workingDirectory) } };
-      }
-
-      if (!snippetName) {
-        return { id, type, success: false, error: 'Snippet name is required' };
-      }
-
-      if (normalizedMethod === 'GET') {
-        const snippet = getSnippet(snippetName, workingDirectory);
-        if (!snippet) return { id, type, success: false, error: `Snippet "${snippetName}" not found` };
-        return { id, type, success: true, data: snippet };
-      }
-
-      if (normalizedMethod === 'POST') {
-        const scope = body?.scope === 'project' ? 'project' : 'global';
-        const snippet = createSnippet(snippetName, (body || {}) as Record<string, unknown>, workingDirectory, scope as SnippetScope);
-        return { id, type, success: true, data: { success: true, snippet } };
-      }
-
-      if (normalizedMethod === 'PATCH') {
-        const snippet = updateSnippet(snippetName, (body || {}) as Record<string, unknown>, workingDirectory);
-        return { id, type, success: true, data: { success: true, snippet } };
-      }
-
-      if (normalizedMethod === 'DELETE') {
-        deleteSnippet(snippetName, workingDirectory);
-        return { id, type, success: true, data: { success: true } };
-      }
-
-      return { id, type, success: false, error: `Unsupported method: ${normalizedMethod}` };
     }
 
     case 'api:config/skills': {

@@ -24,7 +24,6 @@ export type SettingsPageSlug =
   | 'archived-sessions'
   | 'summary-ai'
   | 'magic-prompts'
-  | 'snippets'
   | 'notifications'
   | 'voice'
   | 'about';
@@ -68,7 +67,6 @@ const SETTINGS_PAGE_ORDER: readonly SettingsPageSlug[] = [
   'plugins',
   'global-config',
   'magic-prompts',
-  'snippets',
   'skills.installed',
   'skills.catalog',
   'usage',
@@ -101,7 +99,6 @@ export const MOBILE_SETTINGS_PAGE_SLUGS = [
   'mcp',
   'plugins',
   'magic-prompts',
-  'snippets',
   'skills.installed',
   'usage',
   'voice',
@@ -292,13 +289,6 @@ export const SETTINGS_PAGE_METADATA: readonly SettingsPageMeta[] = [
     kind: 'split',
     keywords: ['prompts', 'templates', 'git', 'github', 'review', 'commit', 'pull request'],
     isAvailable: (ctx) => !ctx.isVSCode,
-  },
-  {
-    slug: 'snippets',
-    title: 'Snippets',
-    group: 'content',
-    kind: 'split',
-    keywords: ['prompt', 'templates', 'multi-run', 'strategy', 'approach'],
   },
 
   { slug: 'notifications', title: 'Notifications', group: 'personalization', kind: 'single', keywords: ['alerts', 'native', 'summary', 'summarization'], },

@@ -57,6 +57,8 @@ const CURRENT_TERMINAL_TYPES = new Set([
   "session.step.ended",
   "session.step.failed",
   "session.shell.ended",
+  "session.compaction.ended",
+  "session.compaction.failed",
 ])
 
 function stripVersionSuffix(type: string): string {
@@ -183,7 +185,7 @@ export function normalizeOpenCodeEvent(raw: unknown): NormalizeOpenCodeEventResu
     return { action: "drop", reason: "sync-duplicate" }
   }
 
-  const type = stripVersionSuffix(rawType)
+  let type = stripVersionSuffix(rawType)
 
   // Prefer current `data`, fall back to legacy `properties`.
   const dataBody = asRecord(record.data)
@@ -208,6 +210,20 @@ export function normalizeOpenCodeEvent(raw: unknown): NormalizeOpenCodeEventResu
 
   // Copy so envelope wall-clock can be attached without mutating the raw body.
   const properties: Record<string, unknown> = { ...toLegacyProperties(type, body) }
+  const durable = asRecord(record.durable)
+  if (typeof durable?.seq === 'number' && Number.isSafeInteger(durable.seq) && durable.seq >= 0) properties.eventSequence = durable.seq
+  if (type === "session.retry.scheduled") {
+    const error = asRecord(body.error)
+    if (!readSessionID(body) || typeof body.attempt !== "number" || !Number.isFinite(body.attempt)
+      || typeof body.at !== "number" || !Number.isFinite(body.at)) {
+      return { action: "drop", reason: "invalid" }
+    }
+    type = "session.status"
+    properties.status = {
+      type: "retry", attempt: body.attempt, next: body.at,
+      message: typeof error?.message === "string" ? error.message : "",
+    }
+  }
   // Official envelopes carry `created` outside `data`. Live message bootstrap
   // needs that clock so turn attribution does not stamp `time.created: 0`.
   if (
