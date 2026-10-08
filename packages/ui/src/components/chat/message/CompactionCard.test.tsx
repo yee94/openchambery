@@ -4,6 +4,7 @@ import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import { dict as zh } from '@/lib/i18n/messages/zh-CN';
 import type { SessionCompactionPart } from '@/sync/session-projection-api';
 import { CompactionCard } from './CompactionCard';
+import { CompactionDisclosureContext, createCompactionDisclosureStore, useCompactionDisclosure } from './compactionDisclosureState';
 
 vi.mock('@/lib/i18n', () => ({ useI18n: () => ({ t: (key: keyof typeof zh) => zh[key] }) }));
 vi.mock('../MarkdownRenderer', () => ({ MarkdownRenderer: ({ content }: { content: string }) => <div>{content}</div> }));
@@ -66,4 +67,30 @@ test('an expanded streaming summary stays open when the checkpoint completes', a
     expect(toggle.getAttribute('aria-expanded')).toBe('true');
     expect(host.textContent).toContain('final summary');
     expect(host.querySelectorAll('[role="separator"]')).toHaveLength(1);
+});
+
+test('disclosure updates subscribe only their own row and stay isolated between views', async () => {
+    const first = createCompactionDisclosureStore();
+    const second = createCompactionDisclosureStore();
+    const renders = { first: 0, sibling: 0, otherView: 0 };
+    function Probe({ name, id }: { name: keyof typeof renders; id: string }) {
+        const { expanded } = useCompactionDisclosure(id);
+        renders[name] += 1;
+        return <span data-probe={name}>{String(expanded)}</span>;
+    }
+    await act(async () => root.render(<>
+        <CompactionDisclosureContext.Provider value={first}>
+            <Probe name="first" id="same-id" />
+            <Probe name="sibling" id="another-id" />
+        </CompactionDisclosureContext.Provider>
+        <CompactionDisclosureContext.Provider value={second}>
+            <Probe name="otherView" id="same-id" />
+        </CompactionDisclosureContext.Provider>
+    </>));
+    await act(async () => first.getState().toggle('same-id'));
+    expect(renders).toEqual({ first: 2, sibling: 1, otherView: 1 });
+    expect(host.querySelector('[data-probe="first"]')?.textContent).toBe('true');
+    expect(host.querySelector('[data-probe="otherView"]')?.textContent).toBe('false');
+    await act(async () => first.getState().toggle('same-id'));
+    expect(first.getState().expanded.size).toBe(0);
 });

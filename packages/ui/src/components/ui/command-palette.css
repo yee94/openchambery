@@ -2,6 +2,52 @@
   max-height: min(42rem, 80dvh);
 }
 
+.oc-global-search-page {
+  height: min(100%, var(--search-viewport-height, 100dvh));
+  padding-bottom: var(--oc-safe-area-bottom, env(safe-area-inset-bottom, 0px));
+}
+
+.oc-global-search-page > [cmdk-root] {
+  border-radius: 0;
+}
+
+.oc-global-search-page .oc-mobile-detail-navigation-content {
+  grid-template-columns: 2.75rem minmax(0, 1fr);
+}
+
+.oc-global-search-page .oc-mobile-detail-navigation-content > :nth-child(2) {
+  max-width: none;
+  padding: 0;
+}
+
+.oc-global-search-page .oc-mobile-detail-navigation-content > :last-child {
+  display: none;
+}
+
+.oc-global-search-page [data-slot='command-input-wrapper'] {
+  padding: 8px 0;
+}
+
+.oc-global-search-page [data-slot='command-input-field'],
+.oc-global-search-page [data-slot='command-input'] {
+  height: 40px;
+  font-size: 16px;
+}
+
+.oc-global-search-page [cmdk-root] > :last-child {
+  flex: 1;
+  max-height: none;
+}
+
+.oc-global-search-page [cmdk-item] {
+  min-height: 44px;
+}
+
+.oc-global-search-page [data-slot='command-list'] {
+  overscroll-behavior: contain;
+  touch-action: pan-y;
+}
+
 .oc-global-search [data-slot='command-input-wrapper'] {
   flex-shrink: 0;
   padding: 14px 16px 6px;

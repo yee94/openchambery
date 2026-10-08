@@ -4,6 +4,7 @@ import type { Part } from '@/lib/opencode/v2-types';
 import { elementScroll, useVirtualizer as useTanstackVirtualizer, type ReactVirtualizer, type VirtualItem } from '@tanstack/react-virtual';
 import { isAssistantSessionDivider } from './hostedSessionHistory';
 import { useI18n } from '@/lib/i18n';
+import { CompactionDisclosureContext, createCompactionDisclosureStore } from './message/compactionDisclosureState';
 
 import ChatMessage from './ChatMessage';
 import { computeAssistantTps } from './message/assistantTps';
@@ -2391,6 +2392,12 @@ const MessageList = React.forwardRef<MessageListHandle, MessageListProps>(({
 }, ref) => {
     streamPerfCount('ui.message_list.render');
     const { sessionKey: domainSessionKey, virtualizerKey: resolvedVirtualizerKey } = resolveMessageListKeys(sessionKey, virtualizerKey);
+    const compactionDisclosureStore = React.useMemo(
+        () => createCompactionDisclosureStore(),
+        // A view owns disclosure state across row recycling, never across sessions.
+        // eslint-disable-next-line react-hooks/exhaustive-deps -- explicit view lifetime
+        [domainSessionKey, directory],
+    );
     const stickyUserHeader = useUIStore(state => state.stickyUserHeader);
     const chatRenderMode = useUIStore((state) => state.chatRenderMode);
     const activityRenderMode = useUIStore((state) => state.activityRenderMode);
@@ -2539,30 +2546,16 @@ const MessageList = React.forwardRef<MessageListHandle, MessageListProps>(({
         });
     }), [baseDisplayMessages, retryOverlay]);
 
-    // A finished turn must keep rendering from the React subtree it streamed in.
-    // `staticTurns` and `streamingTurn` are owned by different components
-    // (StaticHistoryList vs StreamingTailContent), so releasing the tail the
-    // moment the stream ends unmounts the whole turn and remounts it elsewhere:
-    // every Markdown container, syntax highlight, image and diagram is rebuilt
-    // from an empty node, which reads as a full-message flash. Keep the tail slot
-    // claimed until a newer turn takes it over (the next stream re-arms it) or
-    // the session changes.
+    // Reserve the latest turn in the tail from its first paint, including idle
+    // history. Arming only on busy moves an already-mounted turn between two
+    // React parents, rebuilding Markdown and losing row-local UI state.
     const liveTailActive = sessionIsWorking || Boolean(activeStreamingMessageId);
-    const stickyLiveTailRef = React.useRef(liveTailActive);
-    const stickyLiveTailSessionRef = React.useRef(domainSessionKey);
-    if (stickyLiveTailSessionRef.current !== domainSessionKey) {
-        stickyLiveTailSessionRef.current = domainSessionKey;
-        stickyLiveTailRef.current = false;
-    }
-    if (liveTailActive) {
-        stickyLiveTailRef.current = true;
-    }
 
     const { projection, streamingTurns } = useTurnRecords(displayMessages, {
         sessionKey: domainSessionKey,
         showTextJustificationActivity: chatRenderMode === 'sorted',
         showTurnChangedFiles,
-        hasLiveTail: liveTailActive || stickyLiveTailRef.current,
+        hasLiveTail: true,
         liveTailActive,
     });
     const timelineEntries = React.useMemo(() => streamPerfMeasure('ui.message_list.render_entries_ms', () => {
@@ -3036,6 +3029,7 @@ const MessageList = React.forwardRef<MessageListHandle, MessageListProps>(({
 
     if (legendTimelineEnabled) {
         return (
+            <CompactionDisclosureContext.Provider value={compactionDisclosureStore}>
             <LegendTimelineHost
                 key={resolvedVirtualizerKey}
                 historyEntries={historyEntries}
@@ -3075,10 +3069,12 @@ const MessageList = React.forwardRef<MessageListHandle, MessageListProps>(({
                 anchoredUserMessageId={nextAnchorId}
                 onAnchoredTurnParkReleased={onAnchoredTurnParkReleased}
             />
+            </CompactionDisclosureContext.Provider>
         );
     }
 
     return (
+        <CompactionDisclosureContext.Provider value={compactionDisclosureStore}>
         <div>
                 <FadeInDisabledProvider disabled={disableFadeIn}>
                     <div
@@ -3149,6 +3145,7 @@ const MessageList = React.forwardRef<MessageListHandle, MessageListProps>(({
                 </FadeInDisabledProvider>
 
         </div>
+        </CompactionDisclosureContext.Provider>
     );
 });
 

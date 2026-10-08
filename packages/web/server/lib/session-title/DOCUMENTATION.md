@@ -4,8 +4,8 @@ Server-side watcher that regenerates a session's sidebar title from the
 conversation's **main subject** (overall feature / goal) with the small model
 (`lib/small-model`), then PATCHes `title` plus `metadata.openchamber.titleRefresh`.
 
-OpenCode only auto-titles once from the first user message
-(`SessionPrompt.ensureTitle`). This module auto-refreshes sparsely (first user
+OpenCode starts its own initial title through `SessionTitle.generate`.
+This module auto-refreshes sparsely (first user
 admission of a new session, first newly-sent reply on a fork) and on explicit smart-title
 requests, naming the durable work being done — not the last wrap-up utterance
 like "commit and push". Background auto refreshes still respect a 5-minute
@@ -127,6 +127,8 @@ and other session updates keep the existing ordering timestamp unchanged.
 `sessionTitleRefreshEnabled` in OpenChamber settings (Settings → Chat,
 default on) controls background title refreshes. Explicit smart-title actions
 still run when background refresh is disabled.
+The gate controls model generation, not synchronization of an already committed
+title authority; reconciliation continues without additional model calls.
 
 Settings → Summary AI controls the title model and the optional
 `summarySessionTitlePrompt` override. The configured custom API receives the
@@ -134,10 +136,36 @@ title transcript only after the user explicitly selects that source.
 
 ## Manual rename contract
 
-After this module writes a title, further auto-refreshes only proceed while
-`session.title === titleRefresh.lastAutoTitle` (or the title is still the
-OpenCode default). Renaming in the sidebar breaks that equality and stops
-auto updates for that session.
+OpenChamber owns the title once it generates one or the user renames it here.
+`metadata.openchamber.titleAuthority` stores `{ sessionID, title, revision,
+source }` on the OpenCode session via the metadata store. `sessionID` prevents
+forks inheriting a parent's title lock. Existing `lastAutoTitle` records are not
+promoted: they cannot distinguish an external manual rename from native generation.
+
+`session-access.js` commits the authority before writing the official
+`session.update({ sessionID, title })`. A conditional metadata mutation checks
+the revision captured before model generation, so a late model result cannot
+undo a newer manual rename. Even output equal to the current title claims
+ownership. Sidebar rename commits a new manual authority before its official
+title update. Smart-title requests explicitly allow a new summary generation.
+Ordinary follow-up messages still do not regenerate titles.
+
+Native `session.renamed`, full session updates and Host metadata writes trigger
+coalesced per-session reconciliation. It reads current authority and upstream
+title, writes only on drift, then verifies again. Duplicate/out-of-order events
+are hints, never authority. Retries use exponential backoff capped at 60 seconds;
+404 and shutdown stop pending work. Connection/startup recovery checks persisted
+owned sessions serially, without model calls. Failed upstream writes retain the
+durable intent and report failure rather than claiming successful synchronization.
+
+List/detail and live/replayed rename projections retain the owned title while
+repair runs; the real OpenCode `session.title` is repaired as well. The upstream
+API has no atomic title lock, so other OpenCode clients can briefly observe a
+conflicting write until repair completes. A running, connected Host is required
+for repair; restart/reconnect recovers missed writes. Direct OpenCode renames
+(manual or generated) cannot replace an owned title: rename in OpenChamber to
+change it. Extension-only VS Code receives shared metadata/projection behavior,
+but repair requires a connected OpenChamber Host.
 
 ## Limitations
 
@@ -154,5 +182,5 @@ same file descriptors. This does not perform image recognition or file parsing.
 - Lives in the web server, so VS Code (extension-only) does not generate
   refreshes; it still receives `session.updated` title changes produced by a
   web/desktop instance of the same OpenCode server.
-- First OpenCode-generated title (no `titleRefresh` metadata yet) may be
-  replaced once the conversation has 2+ real user turns — that is intentional.
+- First OpenCode-generated titles may be replaced by OpenChamber's initial title,
+  regardless of which model completes first.

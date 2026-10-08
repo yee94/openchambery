@@ -46,6 +46,7 @@ import { useMobileNavigationStore } from '@/mobile/useMobileNavigationStore';
 import { resolveProjectForSessionDirectory } from '@/lib/projectResolution';
 import { sessionTitleSearchQueryOptions } from '@/queries/sessionTitleSearchQueries';
 import { consumeMatchingPress, markMatchingPress } from './matchingPress';
+import { MobileDetailNavigation } from '@/mobile/MobileDetailNavigation';
 
 type CommandEntry = {
   id: string;
@@ -116,7 +117,7 @@ const normalizePath = (value: string): string => {
   return normalized;
 };
 
-export const CommandPalette: React.FC = () => {
+export const CommandPalette: React.FC<{ presentation?: 'dialog' | 'page'; onBack?: () => void }> = ({ presentation = 'dialog', onBack }) => {
   const { t } = useI18n();
   const mobileActions = useMobileAppActions();
 
@@ -145,7 +146,8 @@ export const CommandPalette: React.FC = () => {
   const effectiveDirectory = useEffectiveDirectory();
   const searchFiles = useFileSearchStore((s) => s.searchFiles);
   const { files: filesApi } = useRuntimeAPIs();
-  const { isMobile } = useDeviceInfo();
+  const { isMobile: deviceIsMobile } = useDeviceInfo();
+  const isMobile = presentation === 'page' || deviceIsMobile;
   const mac = isMacOS();
   const popupRef = React.useRef<HTMLDivElement>(null);
   const inputRef = React.useRef<HTMLInputElement>(null);
@@ -158,6 +160,9 @@ export const CommandPalette: React.FC = () => {
   useEventListener('resize', updateViewport, () => isMobile && isCommandPaletteOpen ? window.visualViewport ?? window : null);
   useEventListener('scroll', updateViewport, () => isMobile && isCommandPaletteOpen ? window.visualViewport : null);
   React.useEffect(() => { updateViewport(); }, [isMobile, isCommandPaletteOpen]);
+  React.useEffect(() => {
+    if (presentation === 'page' && isCommandPaletteOpen) inputRef.current?.focus({ preventScroll: true });
+  }, [presentation, isCommandPaletteOpen]);
 
   const currentRoot = React.useMemo(
     () => (effectiveDirectory ? normalizePath(effectiveDirectory) : null),
@@ -555,23 +560,21 @@ export const CommandPalette: React.FC = () => {
   const fileSearchFailed = hasQuery && liveTrimmed === trimmedQuery && Boolean(fileSearchKey) && fileErrorKey === fileSearchKey;
   const waitingForTitles = hasQuery && (liveTrimmed !== trimmedQuery || (titleSearchQuery.isFetching && !titleSearchQuery.isSuccess));
 
-  return (
-    <Dialog open={isCommandPaletteOpen} onOpenChange={setCommandPaletteOpen} onOpenChangeComplete={(open) => { if (!open) setRetainResults(false); }}>
-      <DialogContent
-        ref={popupRef}
-        initialFocus={inputRef}
-        data-global-search="true"
-        data-mobile={isMobile}
-        data-page-scroll-lock="true"
-        className="oc-global-search oc-mobile-overlay-surface oc-mobile-overlay-surface--translucent oc-composer-autocomplete-surface fixed left-1/2 top-[12vh] z-50 w-[min(40rem,calc(100vw-1.5rem))] max-w-none -translate-x-1/2 translate-y-0 gap-0 overflow-hidden rounded-3xl border-0 p-0"
-        containerClassName="block p-0"
-        overlayClassName="bg-transparent dark:bg-transparent"
-        showCloseButton={isMobile}
-      >
-        <DialogHeader className="sr-only">
-          <DialogTitle>{t('commandPalette.title')}</DialogTitle>
-          <DialogDescription>{t('commandPalette.description')}</DialogDescription>
-        </DialogHeader>
+  const searchInput = (
+    <CommandInput
+      ref={inputRef}
+      aria-label={t('commandPalette.title')}
+      inputMode="search"
+      autoComplete="off"
+      autoCorrect="off"
+      spellCheck={false}
+      value={query}
+      onValueChange={setQuery}
+      placeholder={t('commandPalette.input.placeholder')}
+    />
+  );
+
+  const content = (
         <Command
           shouldFilter={false}
           onKeyDownCapture={handleNumberShortcut}
@@ -592,17 +595,13 @@ export const CommandPalette: React.FC = () => {
           }}
           className="max-h-full min-h-0 rounded-[inherit] bg-transparent [&_[cmdk-group]]:px-0 [&_[cmdk-item][data-selected=true]]:!bg-[color-mix(in_srgb,var(--interactive-selection)_40%,transparent)] [&_[cmdk-item]:hover]:!bg-[color-mix(in_srgb,var(--interactive-selection)_40%,transparent)]"
         >
-          <CommandInput
-            ref={inputRef}
-            aria-label={t('commandPalette.title')}
-            inputMode="search"
-            autoComplete="off"
-            autoCorrect="off"
-            spellCheck={false}
-            value={query}
-            onValueChange={setQuery}
-            placeholder={t('commandPalette.input.placeholder')}
-          />
+          {presentation === 'page' ? (
+            <MobileDetailNavigation
+              title={searchInput}
+              backAriaLabel={t('header.actions.backAria')}
+              onBack={onBack ?? close}
+            />
+          ) : searchInput}
           <CommandList aria-label={t('commandPalette.title')} className="overscroll-contain p-1.5">
             {visibleSessions.length === 0 ? <div className="px-2.5 pb-2 pt-3 typography-meta text-muted-foreground">{t('layout.mainTab.chat')}</div> : null}
             {!waitingForFiles && !waitingForTitles && !fileSearchFailed && !titleSearchFailed && sessionsStatus !== 'loading' && sessionsStatus !== 'error' ? (
@@ -736,6 +735,34 @@ export const CommandPalette: React.FC = () => {
             {fileSearchFailed ? <div role="alert" className="px-3 py-4 typography-meta text-[var(--status-error)]">{t('mobile.files.error.listFailed')}</div> : null}
           </CommandList>
         </Command>
+  );
+
+  if (presentation === 'page') {
+    return (
+      <section ref={popupRef} data-global-search="true" data-page-scroll-lock="true" aria-label={t('commandPalette.title')} className="oc-global-search-page flex min-h-0 w-full flex-col bg-background text-foreground">
+        {content}
+      </section>
+    );
+  }
+
+  return (
+    <Dialog open={isCommandPaletteOpen} onOpenChange={setCommandPaletteOpen} onOpenChangeComplete={(open) => { if (!open) setRetainResults(false); }}>
+      <DialogContent
+        ref={popupRef}
+        initialFocus={inputRef}
+        data-global-search="true"
+        data-mobile={isMobile}
+        data-page-scroll-lock="true"
+        className="oc-global-search oc-mobile-overlay-surface oc-mobile-overlay-surface--translucent oc-composer-autocomplete-surface fixed left-1/2 top-[12vh] z-50 w-[min(40rem,calc(100vw-1.5rem))] max-w-none -translate-x-1/2 translate-y-0 gap-0 overflow-hidden rounded-3xl border-0 p-0"
+        containerClassName="block p-0"
+        overlayClassName="bg-transparent dark:bg-transparent"
+        showCloseButton={isMobile}
+      >
+        <DialogHeader className="sr-only">
+          <DialogTitle>{t('commandPalette.title')}</DialogTitle>
+          <DialogDescription>{t('commandPalette.description')}</DialogDescription>
+        </DialogHeader>
+        {content}
       </DialogContent>
     </Dialog>
   );

@@ -757,6 +757,8 @@ const sessionTitleRuntime = createSessionTitleRuntime({
     buildOpenCodeUrl,
     getOpenCodeAuthHeaders,
     readSessionMetadata: (sessionID) => sessionMetadataStore.get(sessionID),
+    mutateSessionMetadata: (sessionID, decide) => sessionMetadataStore.mutateSessionMetadata(sessionID, decide),
+    listSessionMetadata: () => sessionMetadataStore.getAll(),
     persistSessionMetadata: (sessionID, patch) => persistSessionMetadataToStore(sessionID, patch),
     publishSession: (session, directory) => {
       const payload = { type: 'session.updated', properties: { info: session, directory } };
@@ -1045,6 +1047,9 @@ const openCodeWatcherRuntime = createOpenCodeWatcherRuntime({
 // envelope's directory to route their own OpenCode calls to the right instance.
 console.log('[session-title] listening for session events');
 console.log('[session-goal] listening for session events');
+globalMessageStreamHub.subscribeStatus((status) => {
+  if (status.type === 'connect') sessionTitleRuntime.processPayload({ type: 'server.connected' });
+});
 globalMessageStreamHub.subscribeEvent((event) => {
   const raw = event?.payload;
   const payload = raw?.payload && typeof raw.payload === 'object' ? raw.payload : raw;
@@ -2170,6 +2175,7 @@ async function main(options = {}) {
       };
     },
     stop: async (shutdownOptions = {}) => {
+      sessionTitleRuntime.stop();
       try {
         unsubscribeSessionIndexEvents();
         unsubscribeMessageQueueEvents();

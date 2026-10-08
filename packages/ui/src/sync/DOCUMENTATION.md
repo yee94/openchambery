@@ -2,6 +2,14 @@
 
 ## Native session title events
 
+OpenChamber manual rename first persists `openchamber.titleAuthority` with a new
+revision, then updates the official session title. Host projection and repair
+keep this choice above later native title events; in-flight summary generation
+cannot commit across a newer authority revision. Rename/smart-title metadata
+patches are narrow and never replay an old authority snapshot. See the Host
+`packages/web/server/lib/session-title/DOCUMENTATION.md` for convergence/failure
+and extension-only runtime boundaries.
+
 `session.renamed` (`data.sessionID`, `data.title`, envelope `created`) updates
 existing global and directory session rows through the shared rename freshness
 rule. The normalizer retains the clock as `eventCreated`; older and duplicate

@@ -46,8 +46,8 @@ const FORK_TITLE_RE = / \(fork #\d+\)$/;
 const MULTI_RUN_GROUP_SLUG = /^[a-z0-9](?:[a-z0-9-]{0,48}[a-z0-9])?$/;
 const MULTI_RUN_GROUP = /^g[1-9]\d*$/;
 
-// Hard generation switch (default on). When off, no small-model calls and no
-// title writes happen. Existing titles stay untouched.
+// Generation switch (default on). Existing owned titles still reconcile when
+// generation is off; explicit smart-title requests also remain available.
 const isSessionTitleRefreshEnabled = () => {
   try {
     const raw = fs.readFileSync(OPENCHAMBER_SETTINGS_FILE, 'utf8');
@@ -603,6 +603,8 @@ export const createSessionTitleRuntime = ({
 
     const currentTitle = typeof session.title === 'string' ? session.title : '';
     if (looksLikeMultiRunSessionTitle(currentTitle)) return;
+    const authority = session.metadata?.openchamber?.titleAuthority;
+    if (!forceRefresh && authority?.sessionID === sessionId && authority.source === 'manual') return;
 
     const meta = readTitleRefreshMeta(session);
     const canRefreshForkTitle = forkFirstRefresh && isForkedSessionTitle(currentTitle);
@@ -700,12 +702,7 @@ export const createSessionTitleRuntime = ({
     }
 
     const nextTitle = cleanGeneratedTitle(generated?.text);
-    if (!nextTitle) return;
-    if (nextTitle === currentTitle) {
-      // Still stamp metadata so we do not keep re-calling for the same tail.
-      lastGeneratedAtBySession.set(sessionId, now());
-      return;
-    }
+    if (!nextTitle || stopped) return;
 
     // Re-check before write: user may have renamed, or a new message arrived.
     const freshSession = await openCodeFetch(`/session/${encodeURIComponent(sessionId)}`, { directory })
@@ -742,6 +739,8 @@ export const createSessionTitleRuntime = ({
       method: 'PATCH',
       body: {
         title: nextTitle,
+        expectedTitleRevision: session.metadata?.openchamber?.titleAuthority?.sessionID === sessionId
+          ? session.metadata.openchamber.titleAuthority.revision : null,
         metadata: {
           openchamber: {
             titleRefresh: {
@@ -777,6 +776,16 @@ export const createSessionTitleRuntime = ({
   const processPayload = (payload, directoryHint = '') => {
     if (stopped) return;
     directoryHint = directoryHint || payload?.location?.directory || '';
+    if (payload?.type === 'server.connected') {
+      void sessionAccess?.reconcileAll?.().catch((error) => {
+        console.warn('[session-title] recovery failed:', error?.message || error);
+      });
+    }
+    if (payload?.type === 'session.renamed' || payload?.type === 'session.updated'
+      || payload?.type === 'openchamber:session-metadata') {
+      const data = payload.data ?? payload.properties ?? {};
+      sessionAccess?.reconcile?.(data.sessionID ?? data.info?.id ?? data.id, directoryHint);
+    }
     const createdSession = extractCreatedSession(payload);
     if (createdSession) {
       if (isForkedSessionTitle(createdSession.title)) {
@@ -848,6 +857,7 @@ export const createSessionTitleRuntime = ({
 
   const stop = () => {
     stopped = true;
+    sessionAccess?.stop?.();
     for (const { timer } of timers.values()) {
       clearTimeout(timer);
     }

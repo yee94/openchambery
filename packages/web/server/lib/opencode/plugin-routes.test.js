@@ -1,4 +1,5 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, mock, test } from 'bun:test';
+import { vi } from 'vitest';
 import express from 'express';
 import fs from 'fs';
 import os from 'os';
@@ -67,7 +68,8 @@ describe('opencode plugin routes', () => {
   beforeAll(async () => {
     rootDir = fs.mkdtempSync(path.join(os.tmpdir(), 'openchamber-plugin-routes-'));
     userConfigPath = path.join(rootDir, 'user-opencode.json');
-    process.env.OPENCODE_CONFIG = userConfigPath;
+    vi.stubEnv('OPENCODE_CONFIG', userConfigPath);
+    vi.stubEnv('OPENCODE_CONFIG_DIR', path.join(rootDir, 'global-config'));
     plugins = await import('./plugins.js');
   });
 
@@ -91,7 +93,7 @@ describe('opencode plugin routes', () => {
 
   afterAll(() => {
     fs.rmSync(rootDir, { recursive: true, force: true });
-    delete process.env.OPENCODE_CONFIG;
+    vi.unstubAllEnvs();
   });
 
   test('GET /api/config/plugins empty returns entries and files arrays', async () => {

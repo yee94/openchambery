@@ -285,11 +285,12 @@ describe('new conversation assistant header continuity', () => {
     messages: Array<ReturnType<typeof userMessage> | ReturnType<typeof assistantMessage>>,
     working: boolean,
     activeMessageId: string | null = null,
+    viewSessionKey: string = sessionID,
   ) => {
     await act(async () => {
       root.render(
         <MessageList
-          sessionKey={sessionID}
+          sessionKey={viewSessionKey}
           messages={messages}
           sessionIsWorking={working}
           activeStreamingMessageId={activeMessageId}
@@ -389,6 +390,73 @@ describe('new conversation assistant header continuity', () => {
     await renderMessages([userMessage(), interrupted, restart, resumed, nextRestart], false);
     expect(container.querySelectorAll('[data-restart-notice]')).toHaveLength(1);
     expect(container.querySelector('[data-restart-notice]')?.getAttribute('data-message-id')).toBe('restart-2');
+  });
+
+  test.each([
+    [false, 'live'], [true, 'live'], [false, 'sorted'], [true, 'sorted'],
+  ] as const)('keeps an opened checkpoint through idle-to-working history/tail handoff (mobile=%s, mode=%s)', async (mobile, mode) => {
+    mocks.uiState.isMobile = mobile;
+    mocks.uiState.chatRenderMode = mode;
+    const checkpoint = normalizeSessionProjectionMessage(sessionID, {
+      id: 'compact-disclosure', type: 'compaction', time: { created: 3 }, status: 'completed', reason: 'auto',
+      summary: 'Summary being read',
+    })!;
+    const messages = [userMessage(), assistantMessage({ completed: true }), checkpoint];
+    await renderMessages(messages, false);
+    const toggle = container.querySelector<HTMLButtonElement>('[data-compaction-card] button')!;
+    await act(async () => toggle.click());
+    expect(toggle.getAttribute('aria-expanded')).toBe('true');
+    // A new array / refreshed record and loading-related parent render alone
+    // must not replace the row or its disclosure state.
+    await renderMessages([...messages], false);
+    expect(container.querySelector('[data-compaction-card] button')).toBe(toggle);
+    await renderMessages(messages, true);
+    expect(container.querySelector('[data-compaction-card] button')).toBe(toggle);
+    expect(container.querySelector('[data-compaction-card] button')?.getAttribute('aria-expanded')).toBe('true');
+    expect(container.textContent).toContain('Summary being read');
+    await renderMessages(messages, false);
+    expect(container.querySelector('[data-compaction-card] button')).toBe(toggle);
+  });
+
+  test('keeps explicit checkpoint disclosure when its row is temporarily unmounted', async () => {
+    const checkpoint = normalizeSessionProjectionMessage(sessionID, {
+      id: 'compact-remount', type: 'compaction', time: { created: 3 }, status: 'completed', reason: 'auto',
+      summary: 'Retained summary',
+    })!;
+    const messages = [userMessage(), assistantMessage({ completed: true }), checkpoint];
+    await renderMessages(messages, false);
+    await act(async () => container.querySelector<HTMLButtonElement>('[data-compaction-card] button')!.click());
+    await renderMessages([], false);
+    await renderMessages(messages, false);
+    expect(container.querySelector('[data-compaction-card] button')?.getAttribute('aria-expanded')).toBe('true');
+    expect(container.textContent).toContain('Retained summary');
+    await act(async () => container.querySelector<HTMLButtonElement>('[data-compaction-card] button')!.click());
+    await renderMessages([], false);
+    await renderMessages(messages, false);
+    expect(container.querySelector('[data-compaction-card] button')?.getAttribute('aria-expanded')).toBe('false');
+    await act(async () => container.querySelector<HTMLButtonElement>('[data-compaction-card] button')!.click());
+    await renderMessages(messages, false, null, 'other-session');
+    expect(container.querySelector('[data-compaction-card] button')?.getAttribute('aria-expanded')).toBe('false');
+  });
+
+  test('prepending history does not spend the live-tail budget or move its mounted turns', async () => {
+    const checkpoint = normalizeSessionProjectionMessage(sessionID, {
+      id: 'compact-prepend', type: 'compaction', time: { created: 3 }, status: 'completed', reason: 'auto', summary: 'Open summary',
+    })!;
+    const first = [userMessage(), assistantMessage({ completed: true }), checkpoint];
+    await renderMessages(first, false);
+    const secondUser = userMessage();
+    secondUser.info = { ...secondUser.info, id: 'user-2', time: { created: 20 } };
+    await renderMessages([...first, secondUser], true);
+    const toggle = container.querySelector<HTMLButtonElement>('[data-compaction-card] button')!;
+    await act(async () => toggle.click());
+    const older = Array.from({ length: 13 }, (_, index) => {
+      const user = userMessage();
+      return { ...user, info: { ...user.info, id: `older-${index}`, time: { created: index - 20 } } };
+    });
+    await renderMessages([...older, ...first, secondUser], false);
+    expect(container.querySelector('[data-compaction-card] button')).toBe(toggle);
+    expect(toggle.getAttribute('aria-expanded')).toBe('true');
   });
 
   test.each([

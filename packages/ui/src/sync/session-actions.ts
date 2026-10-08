@@ -23,6 +23,7 @@ import type { ChildStoreManager } from "./child-store"
 import { computeSubtreeIds } from "./scoped-blocking-requests"
 import { opencodeClient } from "@/lib/opencode/client"
 import { getSessionActivityUpdatedAt } from "@/lib/sessionActivity"
+import { createUuid } from "@/lib/uuid"
 import { mergeSessionDirectoryMetadata, useGlobalSessionsStore } from "@/stores/useGlobalSessionsStore"
 import { useConfigStore } from "@/stores/useConfigStore"
 import { registerSessionDirectory } from "./sync-refs"
@@ -1383,27 +1384,18 @@ export async function unarchiveSession(sessionId: string): Promise<boolean> {
 export async function updateSessionTitle(sessionId: string, title: string): Promise<void> {
   const sessionDirectory = getSessionDirectory(sessionId)
   const current = getGlobalSessionSnapshot(sessionId)
-  const metadata = (current as Session & { metadata?: Record<string, unknown> } | null)?.metadata ?? {}
-  const openchamber = metadata.openchamber && typeof metadata.openchamber === "object"
-    ? metadata.openchamber as Record<string, unknown>
-    : {}
-  const titleRefresh = openchamber.titleRefresh && typeof openchamber.titleRefresh === "object"
-    ? openchamber.titleRefresh as Record<string, unknown>
-    : {}
   const activityUpdatedAt = current ? getSessionActivityUpdatedAt(current) : 0
-  const session = await opencodeClient.updateSession(sessionId, {
-    title,
+  await opencodeClient.updateSession(sessionId, {
     metadata: {
-      ...metadata,
       openchamber: {
-        ...openchamber,
+        titleAuthority: { sessionID: sessionId, title, revision: createUuid(), source: "manual" },
         titleRefresh: {
-          ...titleRefresh,
           activityUpdatedAt,
         },
       },
     },
   }, sessionDirectory)
+  const session = await opencodeClient.updateSession(sessionId, { title }, sessionDirectory)
   useGlobalSessionsStore.getState().upsertSession(session)
   mirrorSessionIntoLiveStores(session, sessionDirectory)
 }
@@ -1428,11 +1420,8 @@ export async function requestSessionSmartTitle(sessionId: string): Promise<void>
     : (typeof titleRefresh.lastAutoTitle === "string" ? titleRefresh.lastAutoTitle : undefined)
   const session = await opencodeClient.updateSession(sessionId, {
     metadata: {
-      ...metadata,
       openchamber: {
-        ...openchamber,
         titleRefresh: {
-          ...titleRefresh,
           ...(lastAutoTitle ? { lastAutoTitle } : {}),
           requestedAt: Date.now(),
         },

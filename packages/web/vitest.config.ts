@@ -6,6 +6,7 @@ import { bunTestShim, sharedExclude } from '../../vitest.shared.ts';
 export default defineConfig({
   test: {
     name: '@openchamber/web',
+    setupFiles: [fileURLToPath(new URL('./test/setup.js', import.meta.url))],
     // Sequential files plus per-file isolation keep auth/runtime mocks, env
     // stubs, and Express apps from leaking 401/400 failures across suites.
     fileParallelism: false,

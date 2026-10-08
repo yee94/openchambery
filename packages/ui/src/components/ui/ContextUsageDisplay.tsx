@@ -184,7 +184,8 @@ export const ContextUsageDisplay: React.FC<ContextUsageDisplayProps> = ({
   );
 
   const sharedClassName = cn(
-    'app-region-no-drag flex items-center gap-1.5 select-none',
+    'app-region-no-drag flex items-center select-none',
+    isSubtle ? 'gap-0' : 'gap-1.5',
     size === 'compact' ? 'typography-micro' : 'typography-meta',
     isInteractive
       ? cn(

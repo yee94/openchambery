@@ -1967,14 +1967,14 @@ export const Header: React.FC<HeaderProps> = ({
           title={t('header.workStatusPanel.toggleAria')}
           onClick={handleWorkStatusToggle}
           className={cn(
-            'app-region-no-drag group mr-1 inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary hover:bg-interactive-hover transition-colors',
+            'app-region-no-drag group inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary hover:bg-interactive-hover transition-colors',
             workStatusToggleActive ? 'text-foreground' : 'text-muted-foreground/50',
           )}
         >
           <Icon name="settings-2" className="size-4" />
         </button>
       ) : null}
-      <OpenInAppButton directory={actionDirectory} className="mr-1" />
+      <OpenInAppButton directory={actionDirectory} />
       <HeaderIconActionButton
         title={t('header.actions.rightSidebarWithShortcut', { shortcut: shortcutLabel('toggle_right_sidebar') })}
         ariaLabel={t('header.actions.toggleRightSidebarAria')}
@@ -2062,7 +2062,6 @@ export const Header: React.FC<HeaderProps> = ({
               appearance="subtle"
               onClick={handleOpenContextPanel}
               pressed={isContextPanelActive}
-              className="mr-2"
             />
           ) : null}
           {desktopSidebarActions}

@@ -1,4 +1,4 @@
-import { useId, useState } from 'react';
+import { useId } from 'react';
 import { useEvent } from '@reactuses/core';
 import { Button } from '@/components/ui/button';
 import { Icon } from '@/components/icon/Icon';
@@ -7,6 +7,8 @@ import { cn } from '@/lib/utils';
 import type { SessionCompactionPart } from '@/sync/session-projection-api';
 import { resolveAssistantErrorPresentation } from './assistantErrorPresentation';
 import { MarkdownRenderer } from '../MarkdownRenderer';
+import { TOOL_ROW_CHIP_HOVER_CLASS } from './parts/toolRowChrome';
+import { useCompactionDisclosure } from './compactionDisclosureState';
 
 export function CompactionCard({
     part,
@@ -16,9 +18,10 @@ export function CompactionCard({
     isMobile?: boolean;
 }) {
     const { t } = useI18n();
-    const [expanded, setExpanded] = useState(false);
+    const disclosureId = JSON.stringify([part.sessionID, part.messageID, part.id]);
+    const { expanded, toggle: toggleDisclosure } = useCompactionDisclosure(disclosureId);
     const contentId = useId();
-    const toggle = useEvent(() => setExpanded(value => !value));
+    const toggle = useEvent(() => toggleDisclosure(disclosureId));
     const isRunning = part.status === 'running';
     const isFailed = part.status === 'failed';
     const title = isRunning
@@ -52,7 +55,7 @@ export function CompactionCard({
                     <Button
                         variant="ghost"
                         size="sm"
-                        className={labelClassName}
+                        className={cn(labelClassName, TOOL_ROW_CHIP_HOVER_CLASS)}
                         aria-expanded={expanded}
                         aria-controls={contentId}
                         onClick={toggle}
