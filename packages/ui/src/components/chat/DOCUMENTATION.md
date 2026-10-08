@@ -1,5 +1,7 @@
 # Chat components
 
+ChatInput uses one mode-aware placeholder for desktop, mobile expanded/compact surfaces, and the native iOS composer. Width does not select alternate copy; chat mode retains the full reference, command, and Shell hints on every surface.
+
 ## Mobile history gesture budget
 
 Mobile near-top pagination requires explicit upward user intent. Each touch gesture authorizes at most one page, consumed synchronously before starting the mutation. A gesture starting outside the threshold can spend that authorization when upward scrolling (including momentum) enters it. Plain scroll events, prepend/anchor compensation, request completion, and repeated touchmove intent cannot re-arm a spent gesture. A new touchstart resets the budget; a touch starting while loading is consumed rather than queued. Session/directory/runtime changes clear authorization. Desktop retains its existing scroll behavior.
