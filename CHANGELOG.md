@@ -4,6 +4,23 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [2.0.0-beta.32] - 2026-10-08
+
+这是 OpenCode 2 预览版。本次发布桌面、Android 安装包及同版本 Beta OTA；iOS 不上 TestFlight，不进入稳定自动更新通道。
+
+### 移动端全局搜索
+
+- 搜索框与返回按钮统一使用中性玻璃材质和圆角胶囊样式，移除主题色边框与粗体输入文字。
+- 打开搜索页默认加载最近 30 条会话，无需先输入关键词；已有缓存会话在加载期间保持可见。
+
+### 项目路径
+
+- 修复大小写不敏感文件系统上的项目路径拼写与 Git、OpenCode 不一致的问题，避免项目被误判；路径修正时保留项目图标、存储和当前选择。
+
+### 图标显示
+
+- 修复通知等实心图标继承描边后变粗、内部符号被填满的问题。
+
 ## [2.0.0-beta.31] - 2026-10-08
 
 这是 OpenCode 2 预览版。本次发布桌面、Android 安装包及同版本 Beta OTA；iOS 不上 TestFlight，不进入稳定自动更新通道。

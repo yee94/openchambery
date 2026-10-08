@@ -135,7 +135,7 @@ function remixInnerForKebab(kebab) {
   if (!varName) return null
   const paths = varPathMap.get(varName)
   if (!paths?.length) return null
-  return paths.map((d) => `<path d="${d}" fill="currentColor"/>`).join("")
+  return paths.map((d) => `<path d="${d}" fill="currentColor" stroke="none"/>`).join("")
 }
 
 // --- Scan packages/ui/src for used kebab icon names ---

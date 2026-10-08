@@ -3,6 +3,10 @@ import { createRoot } from 'react-dom/client';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { expect, test, vi } from 'vitest';
 
+const searchSessions = vi.hoisted(() => vi.fn(async (_query: string) => [
+  { id: 'session-1', title: 'Recent conversation', time: { updated: 1 } },
+]));
+
 vi.mock('@/lib/i18n', () => ({ useI18n: () => ({ t: (key: string) => key }) }));
 vi.mock('@/components/ui', () => ({ toast: { error: vi.fn() } }));
 vi.mock('@/lib/worktreeSessionCreator', () => ({ createWorktreeSession: vi.fn() }));
@@ -20,7 +24,7 @@ vi.mock('@/stores/useGlobalSessionsStore', async () => {
   const { create } = await import('zustand');
   return {
     resolveGlobalSessionDirectory: () => '/project',
-    useGlobalSessionsStore: create(() => ({ activeSessions: [{ id: 'session-1', title: 'Recent conversation', time: { updated: 1 } }], status: 'ready' })),
+    useGlobalSessionsStore: create(() => ({ activeSessions: [], status: 'ready' })),
   };
 });
 vi.mock('@/stores/useDirectoryStore', async () => {
@@ -36,7 +40,7 @@ vi.mock('@/stores/useFileSearchStore', async () => {
   return { useFileSearchStore: create(() => ({ searchFiles: vi.fn(async () => []) })) };
 });
 vi.mock('@/queries/sessionTitleSearchQueries', () => ({
-  sessionTitleSearchQueryOptions: (query: string) => ({ queryKey: ['search', query], queryFn: async () => [] }),
+  sessionTitleSearchQueryOptions: (query: string) => ({ queryKey: ['search', query], queryFn: () => searchSessions(query) }),
 }));
 
 import { CommandPalette } from './CommandPalette';
@@ -59,7 +63,12 @@ test('page presentation has a focused search header and results without dialog c
     expect(input).not.toBeNull();
     expect(document.activeElement).toBe(input);
     expect(input.inputMode).toBe('search');
+    expect(input.value).toBe('');
+    expect(searchSessions).toHaveBeenCalledWith('');
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)); });
     expect(host.textContent).toContain('Recent conversation');
+    expect(input.closest('[data-slot="command-input-field"]')?.className).toContain('oc-mobile-glass-control');
+    expect(input.closest('[data-slot="command-input-field"]')?.className).not.toContain('ring-');
     expect(document.querySelector('[data-slot="dialog-overlay"]')).toBeNull();
     expect(host.querySelector('[data-slot="dialog-close"]')).toBeNull();
     await act(async () => host.querySelector<HTMLButtonElement>('button[aria-label="header.actions.backAria"]')!.click());

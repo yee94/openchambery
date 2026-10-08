@@ -33,8 +33,8 @@ function Command({
 
 const CommandInput = React.forwardRef<
   React.ComponentRef<typeof CommandPrimitive.Input>,
-  React.ComponentPropsWithoutRef<typeof CommandPrimitive.Input>
->(({ className, ...props }, ref) => {
+  React.ComponentPropsWithoutRef<typeof CommandPrimitive.Input> & { variant?: 'default' | 'mobileGlass' }
+>(({ className, variant = 'default', ...props }, ref) => {
   return (
     // Match the bordered Input used in Select dropdowns (e.g. draft project picker)
     // so every searchable command/select popup shares one search-field look.
@@ -43,9 +43,9 @@ const CommandInput = React.forwardRef<
         data-slot="command-input-field"
         className={cn(
           "flex h-8 items-center gap-2 rounded-lg px-3",
-          "bg-[var(--surface-elevated)] ring-1 ring-inset ring-border/60 transition duration-200 ease-out",
-          "hover:[&:not(:focus-within)]:bg-[var(--surface-subtle)] hover:[&:not(:focus-within)]:ring-transparent",
-          "focus-within:ring-2 focus-within:ring-[var(--interactive-focus-ring)]",
+          variant === 'mobileGlass'
+            ? "oc-mobile-glass-control rounded-full"
+            : "bg-[var(--surface-elevated)] ring-1 ring-inset ring-border/60 transition duration-200 ease-out hover:[&:not(:focus-within)]:bg-[var(--surface-subtle)] hover:[&:not(:focus-within)]:ring-transparent focus-within:ring-2 focus-within:ring-[var(--interactive-focus-ring)]",
         )}
       >
         <Icon name="search" className="size-4 shrink-0 opacity-50" />
