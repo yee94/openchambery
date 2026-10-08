@@ -33,8 +33,6 @@ import { SettingsGroup, SettingsRow, SettingsToggleRow } from '@/components/sect
 
 const GITHUB_URL = 'https://github.com/yee94/openchamber';
 const GITHUB_ISSUES_URL = `${GITHUB_URL}/issues/new`;
-const DISCORD_URL = 'https://discord.gg/ZYRSdnwwKA';
-const X_URL = 'https://x.com/openchamber_dev';
 
 const MIN_CHECKING_DURATION = 800; // ms
 
@@ -373,27 +371,7 @@ export const AboutSettings: React.FC<AboutSettingsProps> = ({ initialUpdateDialo
               <Icon name="github-fill" className="size-5" />
               <span>GitHub</span>
             </a>
-
-            <a
-              href={DISCORD_URL}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="flex items-center gap-1.5 typography-ui-label text-muted-foreground transition-colors hover:text-foreground"
-            >
-              <Icon name="discord-fill" className="size-5" />
-              <span>Discord</span>
-            </a>
           </div>
-
-          <a
-            href={X_URL}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="flex items-center gap-1.5 typography-ui-label text-muted-foreground transition-colors hover:text-foreground"
-          >
-            <Icon name="twitter-xfill" className="size-5" />
-            <span>@openchamber_dev</span>
-          </a>
         </div>
 
         <p className="text-center typography-ui text-muted-foreground/60">
@@ -535,16 +513,6 @@ export const AboutSettings: React.FC<AboutSettingsProps> = ({ initialUpdateDialo
             <Icon name="github-fill" className="h-4 w-4" />
             <span>GitHub</span>
           </a>
-
-            <a
-              href={X_URL}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="flex items-center gap-1.5 text-muted-foreground hover:text-foreground typography-meta transition-colors"
-          >
-            <Icon name="twitter-xfill" className="h-4 w-4" />
-              <span>@openchamber_dev</span>
-            </a>
         </SettingsRow>
       </SettingsGroup>
 

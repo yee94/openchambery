@@ -4,6 +4,15 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [2.0.0-beta.33] - 2026-10-08
+
+这是 OpenCode 2 预览版。本次发布桌面、Android 安装包及同版本 Beta OTA；iOS 不上 TestFlight，不进入稳定自动更新通道。
+
+### 关于页面
+
+- 精简关于页面及弹窗的外部链接，移除 Discord 和 X 入口，保留 GitHub。
+- 诊断日志导出按钮改为轻量样式，加入下载图标、导出中动画和忙碌状态提示。
+
 ## [2.0.0-beta.32] - 2026-10-08
 
 这是 OpenCode 2 预览版。本次发布桌面、Android 安装包及同版本 Beta OTA；iOS 不上 TestFlight，不进入稳定自动更新通道。

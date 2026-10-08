@@ -204,17 +204,23 @@ export const AboutDialog: React.FC<AboutDialogProps> = ({
               ariaLabel={t('settings.openchamber.about.diagnostics.label')}
             />
             {diagnosticsEnabled && (
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              disabled={exportingFeatLog}
-              onClick={() => void handleExportFeatLog()}
-            >
-              {exportingFeatLog
-                ? t('settings.openchamber.about.diagnostics.exporting')
-                : t('settings.openchamber.about.diagnostics.export')}
-            </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="self-center text-muted-foreground font-normal"
+                disabled={exportingFeatLog}
+                aria-busy={exportingFeatLog}
+                onClick={() => void handleExportFeatLog()}
+              >
+                <Icon
+                  name={exportingFeatLog ? 'loader' : 'download'}
+                  className={cn('size-4', exportingFeatLog && 'animate-spin')}
+                />
+                {exportingFeatLog
+                  ? t('settings.openchamber.about.diagnostics.exporting')
+                  : t('settings.openchamber.about.diagnostics.export')}
+              </Button>
             )}
           </div>
 
@@ -252,25 +258,7 @@ export const AboutDialog: React.FC<AboutDialogProps> = ({
                 <Icon name="github-fill" className="h-4 w-4" />
                 <span>GitHub</span>
               </a>
-              <a
-                href="https://discord.gg/ZYRSdnwwKA"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="flex items-center gap-1.5 typography-meta text-muted-foreground hover:text-foreground transition-colors"
-              >
-                <Icon name="discord-fill" className="h-4 w-4" />
-                <span>Discord</span>
-              </a>
             </div>
-            <a
-              href="https://x.com/openchamber_dev"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="flex items-center gap-1.5 typography-meta text-muted-foreground hover:text-foreground transition-colors"
-            >
-              <Icon name="twitter-xfill" className="h-4 w-4" />
-              <span>@openchamber_dev</span>
-            </a>
           </div>
 
           <p className="typography-meta text-muted-foreground/60 pt-2">
