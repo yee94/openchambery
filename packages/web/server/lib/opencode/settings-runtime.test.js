@@ -5,8 +5,9 @@ import os from 'os';
 import path from 'path';
 import { createProjectIdFromPath } from '../projects/project-id.js';
 import { createSettingsRuntime } from './settings-runtime.js';
+import { createSettingsNormalizationRuntime } from './settings-normalization-runtime.js';
 
-const createRuntime = async () => {
+const createRuntime = async (overrides = {}) => {
   const tempRoot = await fsPromises.mkdtemp(path.join(os.tmpdir(), 'oc-settings-runtime-'));
   const settingsFilePath = path.join(tempRoot, 'settings.json');
   const runtime = createSettingsRuntime({
@@ -21,6 +22,7 @@ const createRuntime = async () => {
     normalizeStringArray: (values) => Array.isArray(values) ? values.filter((value) => typeof value === 'string') : [],
     formatSettingsResponse: (settings) => settings,
     resolveDirectoryCandidate: (value) => value,
+    ...overrides,
   });
 
   return {
@@ -34,6 +36,61 @@ const createRuntime = async () => {
 };
 
 describe('settings runtime', () => {
+  it('repairs existing project casing, migrates project data, and persists new paths canonically', async () => {
+    const normalization = createSettingsNormalizationRuntime({
+      os, path, processLike: process,
+      realpathSync: Object.assign((value) => value, {
+        native: (value) => value.replace(`${path.sep}code${path.sep}`, `${path.sep}Code${path.sep}`),
+      }),
+    });
+    let failSettingsWrite = true;
+    const { runtime, settingsFilePath, tempRoot, cleanup } = await createRuntime({
+      ...normalization,
+      fsPromises: {
+        ...fsPromises,
+        rename: async (source, target) => {
+          if (failSettingsWrite && path.basename(target) === 'settings.json') {
+            throw Object.assign(new Error('Simulated settings write failure'), { code: 'EIO' });
+          }
+          return fsPromises.rename(source, target);
+        },
+      },
+    });
+    try {
+      const legacyPath = path.join(tempRoot, 'code', 'project');
+      const canonicalPath = path.join(tempRoot, 'Code', 'project');
+      const oldId = createProjectIdFromPath(legacyPath);
+      const newId = createProjectIdFromPath(canonicalPath);
+      const projectsRoot = path.join(tempRoot, 'projects');
+      await fsPromises.mkdir(canonicalPath, { recursive: true });
+      await fsPromises.mkdir(projectsRoot, { recursive: true });
+      await fsPromises.writeFile(path.join(projectsRoot, `${oldId}.json`), JSON.stringify({ projectNotes: 'Keep these notes' }));
+      await fsPromises.writeFile(settingsFilePath, JSON.stringify({
+        projects: [{ id: oldId, path: legacyPath, label: 'My project' }],
+        activeProjectId: oldId,
+        lastDirectory: legacyPath,
+      }));
+
+      const original = await fsPromises.readFile(settingsFilePath, 'utf8');
+      await expect(runtime.readSettingsFromDiskMigrated()).rejects.toThrow('Simulated settings write failure');
+      expect(await fsPromises.readFile(settingsFilePath, 'utf8')).toBe(original);
+      failSettingsWrite = false;
+      const settings = await runtime.readSettingsFromDiskMigrated();
+      expect(settings.projects).toMatchObject([{ id: newId, path: canonicalPath, label: 'My project' }]);
+      expect(settings.activeProjectId).toBe(newId);
+      expect(settings.lastDirectory).toBe(canonicalPath);
+      expect(JSON.parse(await fsPromises.readFile(path.join(projectsRoot, `${newId}.json`), 'utf8')).projectNotes).toBe('Keep these notes');
+      expect(JSON.parse(await fsPromises.readFile(settingsFilePath, 'utf8'))).toEqual(settings);
+      expect(await runtime.readSettingsFromDiskMigrated()).toEqual(settings);
+
+      const saved = await runtime.persistSettings({ ...settings, projects: [{ id: oldId, path: legacyPath }] });
+      expect(saved.projects).toMatchObject([{ id: newId, path: canonicalPath }]);
+      expect(saved.activeProjectId).toBe(newId);
+    } finally {
+      await cleanup();
+    }
+  });
+
   it('migrates absent notification toggles to their defaults', async () => {
     const { runtime, settingsFilePath, cleanup } = await createRuntime();
     try {

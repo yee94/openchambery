@@ -44,7 +44,9 @@ export const createSettingsNormalizationRuntime = (dependencies) => {
       return value;
     }
     try {
-      return realpathSync(value);
+      // The JS implementation preserves input casing on case-insensitive volumes.
+      // Native realpath supplies the filesystem spelling used by Git and OpenCode.
+      return (realpathSync.native ?? realpathSync)(value);
     } catch {
       return value;
     }

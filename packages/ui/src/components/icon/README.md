@@ -60,6 +60,10 @@ const icon: IconName = "arrow-down-s"; // type-checked
 
 ## Architecture
 
+Remixicon fallback paths are fill-based and explicitly set `stroke="none"` during
+generation. They must not inherit the sprite's Lucide stroke: it thickens their
+outlines and closes small cutouts such as the “i” in notification icons.
+
 - `sprite.ts` — Auto-generated SVG path data (run `bun run generate-icon-sprite` to regenerate)
 - `Icon.tsx` — The `<Icon>` component, injects sprite on first mount
 - `icons.ts` — TypeScript type `IconName`

@@ -265,6 +265,7 @@ This module provides OpenCode server integration utilities for the web server ru
 
 ## Public exports (settings-normalization-runtime.js)
 - `createSettingsNormalizationRuntime(dependencies)`: creates normalization/sanitization runtime for shared settings helper logic.
+- Filesystem path normalization prefers `realpathSync.native` (falling back to the injected function when native is unavailable), so case-insensitive volumes use the same spelling as Git/OpenCode. It never lowercases directory names; inaccessible paths keep their original value. Existing settings read/write normalization repairs project paths and the existing deterministic-ID migration carries project storage/icons and active selection to the resulting ID. Web, in-process Electron, and hosted/native mobile use this Host boundary; extension-only VS Code retains its workspace-folder ownership.
 - Returned API:
   - `normalizeDirectoryPath(value)`
   - `normalizePathForPersistence(value)`

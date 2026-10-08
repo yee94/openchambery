@@ -905,7 +905,8 @@ class OpencodeService {
   /**
    * Official title search. `session.list` `search` is a SQL LIKE on
    * `session_v2.title` only — it does not search message bodies. Omit
-   * directory/project so the match is instance-wide. A missing payload is a
+    * directory/project so the match is instance-wide. An empty search returns
+    * the latest sessions for the search page's default list. A missing payload is a
    * failure, not an empty result.
    */
   async searchSessionsByTitle(params: {
@@ -914,10 +915,9 @@ class OpencodeService {
     signal?: AbortSignal
   }): Promise<Session[]> {
     const search = params.search.trim()
-    if (!search) return []
     const response = await this.client.session.list(
       {
-        search,
+        search: search || undefined,
         parentID: null,
         limit: params.limit ?? 30,
         order: "desc",

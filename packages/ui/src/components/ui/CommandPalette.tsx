@@ -437,10 +437,10 @@ export const CommandPalette: React.FC<{ presentation?: 'dialog' | 'page'; onBack
 
   const titleSearchQuery = useQuery({
     ...sessionTitleSearchQueryOptions(trimmedQuery),
-    enabled: (isCommandPaletteOpen || retainResults) && trimmedQuery.length > 0,
+    enabled: (isCommandPaletteOpen || retainResults) && (trimmedQuery.length > 0 || presentation === 'page'),
   });
   const titleSearchReady = hasQuery && liveTrimmed === trimmedQuery && titleSearchQuery.isSuccess;
-  const titleSearchFailed = hasQuery && liveTrimmed === trimmedQuery && titleSearchQuery.isError;
+  const titleSearchFailed = (hasQuery || presentation === 'page') && liveTrimmed === trimmedQuery && titleSearchQuery.isError;
   const localTitleMatches = React.useMemo(() => {
     if (!titleSearchFailed) return [];
     return scoreByFuzzyQuery(sortedActiveSessions, liveTrimmed, (session) => session.title || '', {
@@ -450,7 +450,10 @@ export const CommandPalette: React.FC<{ presentation?: 'dialog' | 'page'; onBack
   }, [titleSearchFailed, sortedActiveSessions, liveTrimmed]);
 
   const visibleTitleSessions = React.useMemo(() => {
-    if (!hasQuery) return sortedActiveSessions.slice(0, 9);
+    if (!hasQuery) {
+      if (presentation === 'page' && !trimmedQuery && titleSearchQuery.isSuccess) return titleSearchQuery.data;
+      return sortedActiveSessions.slice(0, presentation === 'page' ? 30 : 9);
+    }
     if (!titleSearchReady) return titleSearchFailed ? localTitleMatches : [];
     return titleSearchQuery.data ?? [];
   }, [
@@ -460,6 +463,9 @@ export const CommandPalette: React.FC<{ presentation?: 'dialog' | 'page'; onBack
     titleSearchFailed,
     localTitleMatches,
     titleSearchQuery.data,
+    titleSearchQuery.isSuccess,
+    presentation,
+    trimmedQuery,
   ]);
 
   const scoredFiles = React.useMemo(() => {
@@ -558,11 +564,13 @@ export const CommandPalette: React.FC<{ presentation?: 'dialog' | 'page'; onBack
 
   const waitingForFiles = hasQuery && Boolean(currentRoot) && (liveTrimmed !== trimmedQuery || isFileSearchStale);
   const fileSearchFailed = hasQuery && liveTrimmed === trimmedQuery && Boolean(fileSearchKey) && fileErrorKey === fileSearchKey;
-  const waitingForTitles = hasQuery && (liveTrimmed !== trimmedQuery || (titleSearchQuery.isFetching && !titleSearchQuery.isSuccess));
+  const waitingForTitles = (hasQuery || presentation === 'page') && (liveTrimmed !== trimmedQuery || (titleSearchQuery.isFetching && !titleSearchQuery.isSuccess));
 
   const searchInput = (
     <CommandInput
       ref={inputRef}
+      variant={presentation === 'page' ? 'mobileGlass' : 'default'}
+      className="font-normal"
       aria-label={t('commandPalette.title')}
       inputMode="search"
       autoComplete="off"

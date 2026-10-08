@@ -24,6 +24,10 @@
   display: none;
 }
 
+.oc-global-search-page .oc-mobile-detail-title {
+  overflow: visible;
+}
+
 .oc-global-search-page [data-slot='command-input-wrapper'] {
   padding: 8px 0;
 }

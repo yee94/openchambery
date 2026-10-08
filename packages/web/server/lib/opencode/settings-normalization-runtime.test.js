@@ -22,6 +22,42 @@ const createTestRuntime = (overrides = {}) => {
 
 describe('settings normalization runtime - symlink resolution', () => {
   describe('normalizePathForPersistence', () => {
+    it('uses native realpath to recover filesystem casing instead of preserving the input spelling', () => {
+      const realpathSync = Object.assign((p) => p, {
+        native: (p) => p.replace('/code/', '/Code/'),
+      });
+      const runtime = createTestRuntime({ realpathSync, processLike: { platform: 'darwin' } });
+
+      expect(runtime.normalizePathForPersistence('/workspace/code/project')).toBe('/workspace/Code/project');
+      const result = runtime.normalizeSettingsPaths({
+        projects: [{ id: 'project', path: '/workspace/code/project' }],
+        lastDirectory: '/workspace/code/project',
+        pinnedDirectories: ['/workspace/code/project'],
+      });
+      expect(result.changed).toBe(true);
+      expect(result.settings.projects[0].path).toBe('/workspace/Code/project');
+      expect(result.settings.lastDirectory).toBe('/workspace/Code/project');
+      expect(result.settings.pinnedDirectories).toEqual(['/workspace/Code/project']);
+      expect(runtime.normalizeSettingsPaths(result.settings).changed).toBe(false);
+    });
+
+    it('preserves distinct directory casing when native realpath reports distinct locations', () => {
+      const runtime = createTestRuntime({ realpathSync: Object.assign((p) => p, { native: (p) => p }) });
+      expect(runtime.sanitizeProjects([
+        { id: 'lower', path: '/workspace/code/project' },
+        { id: 'upper', path: '/workspace/Code/project' },
+      ])).toHaveLength(2);
+    });
+
+    it('keeps unavailable paths when native realpath fails', () => {
+      const runtime = createTestRuntime({
+        realpathSync: Object.assign(() => '/incorrect-fallback', {
+          native: () => { throw new Error('EACCES'); },
+        }),
+      });
+      expect(runtime.normalizePathForPersistence('/unavailable/project')).toBe('/unavailable/project');
+    });
+
     it('resolves symlinks via realpathSync', () => {
       const runtime = createTestRuntime({
         realpathSync: (p) =>
