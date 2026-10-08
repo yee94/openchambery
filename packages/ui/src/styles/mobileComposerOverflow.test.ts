@@ -88,7 +88,9 @@ describe('mobile composer overflow and swap contract', () => {
         expect(chatInputSource).toContain('data-oc-composer-compact-surface="true"');
         expect(chatInputSource).toContain('oc-mobile-composer-compact-preview');
         expect(chatInputSource).toContain('oc-mobile-composer-compact-preview--placeholder');
-        expect(chatInputSource).toContain("t('chat.chatInput.placeholder.compactTap')");
+        expect(chatInputSource).toContain('placeholder: composerPlaceholder');
+        expect(chatInputSource).toContain('{message.trim() ? message : composerPlaceholder}');
+        expect(chatInputSource).not.toContain("t('chat.chatInput.placeholder.compactTap')");
         expect(mobileCss).toContain('.oc-mobile-composer-compact-preview--placeholder');
     });
 

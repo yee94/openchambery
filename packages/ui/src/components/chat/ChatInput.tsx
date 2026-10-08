@@ -264,7 +264,6 @@ const shouldEnableComposerSlashDirectoryQueries = ({
 );
 // Single-line URL pasted over a selection becomes a markdown link.
 const PASTE_LINK_URL_PATTERN = /^(https?:\/\/|mailto:)\S+$/i;
-const COMPACT_CHAT_PLACEHOLDER_MAX_WIDTH = 560;
 const renameFileForAttachmentCitation = (file: File, filename: string): File => {
     if (file.name === filename) {
         return file;
@@ -1889,7 +1888,6 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
     const fetchGitStatus = useGitStore((state) => state.fetchStatus);
     const [showAbortStatus, setShowAbortStatus] = React.useState(false);
     const composerHighlightRef = React.useRef<HTMLDivElement | null>(null);
-    const [isNarrowComposer, setIsNarrowComposer] = React.useState(false);
     React.useEffect(() => {
         if (!currentDirectory || !runtimeGit) return;
         void ensureGitStatus(currentDirectory, runtimeGit);
@@ -1939,37 +1937,11 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
     const isComposerExpanded = isDesktopExpanded || isMobileExpanded;
     // The queue/composer stack shares one soft silhouette across desktop and mobile.
     const chatInputRadius = '1.5rem';
-    const useCompactChatPlaceholder = isMobile || isNarrowComposer;
     const composerPlaceholder = currentSessionId || newSessionDraftOpen
         ? inputMode === 'shell'
             ? t('chat.chatInput.placeholder.shell')
-            : t(useCompactChatPlaceholder ? 'chat.chatInput.placeholder.chatCompact' : 'chat.chatInput.placeholder.chat')
+            : t('chat.chatInput.placeholder.chat')
         : t('chat.chatInput.placeholder.selectSession');
-    const compactComposerPlaceholder = t('chat.chatInput.placeholder.compactTap');
-
-    React.useEffect(() => {
-        const element = dropZoneRef.current;
-        if (!element) return;
-
-        const updateWidth = (width: number) => {
-            const next = width > 0 && width < COMPACT_CHAT_PLACEHOLDER_MAX_WIDTH;
-            setIsNarrowComposer((prev) => (prev === next ? prev : next));
-        };
-
-        updateWidth(element.clientWidth);
-
-        if (typeof ResizeObserver === 'undefined') {
-            const handleResize = () => updateWidth(element.clientWidth);
-            window.addEventListener('resize', handleResize);
-            return () => window.removeEventListener('resize', handleResize);
-        }
-
-        const observer = new ResizeObserver((entries) => {
-            updateWidth(entries[0]?.contentRect.width ?? element.clientWidth);
-        });
-        observer.observe(element);
-        return () => observer.disconnect();
-    }, []);
 
     const sendableAttachedFiles = attachedFiles;
 
@@ -6521,7 +6493,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
         isMobile,
         text: message,
         textPresetEpoch: composer.textPresetEpoch,
-        placeholder: compactComposerPlaceholder,
+        placeholder: composerPlaceholder,
         modelLabel: nativeModelName,
         modelVariantLabel: nativeModelVariant ? formatEffortLabel(nativeModelVariant) : '',
         canSend,
@@ -7934,7 +7906,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
                             )}
                             aria-hidden="true"
                         >
-                            {message.trim() ? message : compactComposerPlaceholder}
+                            {message.trim() ? message : composerPlaceholder}
                         </div>
                     </div>
                 ) : null}
