@@ -26,6 +26,7 @@ import { runtimeFetch, setRuntimeInteractiveSessionRequestId } from "@/lib/runti
 import { useConfigStore } from "@/stores/useConfigStore"
 import { useProjectsStore } from "@/stores/useProjectsStore"
 import { useGlobalSessionsStore, resolveGlobalSessionDirectory } from "@/stores/useGlobalSessionsStore"
+import { isVisibleGlobalSession } from "@/stores/globalSessions"
 import { useDirectoryStore } from "@/stores/useDirectoryStore"
 import { useSessionFoldersStore } from "@/stores/useSessionFoldersStore"
 import { commandQueryOptions, readCommandsSnapshot } from "@/queries/commandQueries"
@@ -837,7 +838,9 @@ const waitForWorktreeBootstrapIfConfigured = async (directory: string | null, pr
 export const promoteProjectForConversation = (
   directory: string | null,
   availableWorktreesByProject: Map<string, WorktreeMetadata[]>,
+  session: Session | null | undefined,
 ): void => {
+  if (!session || !isVisibleGlobalSession(session) || (session.time?.archived ?? 0) > 0) return
   const projectsState = useProjectsStore.getState()
   const project = resolveProjectForSessionDirectory(
     projectsState.projects,
@@ -1065,7 +1068,7 @@ async function finalizeDraftSession(
     }
     store.initializeNewOpenChamberSession(created.id, configState.agents ?? [])
     store.setCurrentSession(created.id, createdDirectory)
-    promoteProjectForConversation(createdDirectory, useSessionUIStore.getState().availableWorktreesByProject)
+    promoteProjectForConversation(createdDirectory, useSessionUIStore.getState().availableWorktreesByProject, created)
     if (draftPermissionAutoAcceptEnabled) {
       void import("@/stores/permissionStore")
         .then(({ usePermissionStore }) => usePermissionStore.getState().setSessionAutoAccept(created.id, true))
@@ -2237,7 +2240,9 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
         await finalizeClaimedDraftOwnership(claim, createdDraftSession.sessionId, "preserve")
         throw error
       }
-      promoteProjectForConversation(createdDraftSession.directory, get().availableWorktreesByProject)
+      promoteProjectForConversation(createdDraftSession.directory, get().availableWorktreesByProject,
+        getSyncSessions(createdDraftSession.directory ?? undefined).find((session) => session.id === createdDraftSession.sessionId)
+          ?? useGlobalSessionsStore.getState().sessionsByDirectory.get(createdDraftSession.directory ?? '')?.find((session) => session.id === createdDraftSession.sessionId))
       applyArmedGoal(createdDraftSession.sessionId, createdDraftSession.directory)
       return
     }
@@ -2358,7 +2363,9 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
       }
     }
 
-    promoteProjectForConversation(currentSessionDirectory, get().availableWorktreesByProject)
+    promoteProjectForConversation(currentSessionDirectory, get().availableWorktreesByProject,
+      getSyncSessions(currentSessionDirectory ?? undefined).find((session) => session.id === targetSessionId)
+        ?? useGlobalSessionsStore.getState().sessionsByDirectory.get(currentSessionDirectory ?? '')?.find((session) => session.id === targetSessionId))
     if (targetSessionId) {
       applyArmedGoal(targetSessionId, currentSessionDirectory)
     }

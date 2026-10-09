@@ -20,15 +20,21 @@ newest 20 root-session summaries per runtime and directory. It never stores
 messages, attachments, permissions, provider data, or model metadata.
 Sessions titled `smartfetch-secondary` are temporary SmartFetch model calls;
 the index excludes them from every snapshot and clears prior summaries when a
-  matching session update arrives. System-owned sessions are excluded by
-  authoritative metadata only: a non-empty
+  matching session update arrives. Reserved leading tags `[Scheduled]`,
+  `[Assistant]`, and `[openchamber-llm]` also exclude background sessions,
+  including legacy rows without metadata. Ordinary bracketed titles are unaffected.
+  The same visibility predicate is used before the sync runtime's active-20 budget,
+  on index writes, and on native rename. Opening the index transactionally prunes
+  previously admitted tagged summaries, their pins and child memberships across
+  runtime partitions without advancing directory recency. Normal refresh refills
+  the bounded window. System-owned sessions are additionally excluded by a non-empty
   `metadata.openchamber.assistant.assistantID` (unless
   `metadata.openchamber.assigned.from === 'contact'` — those are visible
   coding workers the Assistant subscribed to),
   `metadata.openchamber.scheduledTask.taskID`,
   `metadata.openchamber.smallModel.purpose`, or
-  `metadata.openchamber.llm.purpose`. Title prefixes are human labels and
-  never participate in this filter. Metadata is the ownership/isolation signal;
+  `metadata.openchamber.llm.purpose`. Metadata remains the ownership/isolation signal;
+  reserved title tags are a separate background-list exclusion rule.
 `time.archived` is archive state (Host authority via
   `metadata.openchamber.archive.archivedAt` when present — see
   `session-metadata/`); `time.pinned` is OpenChamber-owned pin state

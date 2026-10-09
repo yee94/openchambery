@@ -267,7 +267,8 @@ So:
 
 `handleEvent` compares status-bearing live events against the directory child's
 status (or the global live status map for unopened directories) before applying
-them. A real busy/retry/idle transition calls `promoteProjectForConversation`,
+them. A real busy/retry/idle transition for a known visible, unarchived root
+conversation calls `promoteProjectForConversation`,
 shared with successful sends, to resolve project/worktree ownership and advance
 the current project order. Duplicate statuses preserve subsequent manual drags.
 Bootstrap/reconnect snapshots establish the baseline; token/part events leave
@@ -275,6 +276,11 @@ structural project ordering unchanged. `useProjectsStore.moveProjectToTop`
 updates both registry and existing manual order, persists the result, and keeps
 references stable when the project is already first. Shared web, Electron,
 hosted/native mobile use this path; VS Code retains its workspace-owned registry.
+Background-tagged, metadata-owned, child, archived, and unknown sessions never
+promote a project. The gate is shared with successful sends and reads only the
+event directory's live/catalog rows on status transitions. It does not suppress
+background execution status or transcript updates, fetch unknown identities, or
+attempt to reconstruct manual order already changed by an older client.
 
 ### Question auto-delegate pull authority
 
@@ -370,17 +376,20 @@ Sessions titled `smartfetch-secondary` are temporary SmartFetch model calls. The
 directory event reducer never inserts them into live child-store session lists,
 and `aggregateLiveSessions` excludes them so sidebar/mobile merges cannot flash
 them before `session.deleted` arrives. The same title blacklist is shared with
-`useGlobalSessionsStore` and the server session index. System sessions are also
-  hidden from ordinary active/archived lists by authoritative metadata only: a
+`useGlobalSessionsStore` and the server session index. Reserved leading tags
+`[Scheduled]`, `[Assistant]`, and `[openchamber-llm]` hide background sessions
+even without metadata, before list limits and project activity promotion.
+Other bracketed titles and mentions of a tag inside a title remain visible.
+System sessions are also hidden from ordinary active/archived lists by a
   non-empty `metadata.openchamber.assistant.assistantID`,
   `metadata.openchamber.scheduledTask.taskID`,
   `metadata.openchamber.smallModel.purpose`, or
   `metadata.openchamber.llm.purpose`. Sessions with a non-empty
   `parentID` are also excluded from the root catalog (`isVisibleGlobalSession`
   and `aggregateLiveSessions`); they never promote to sidebar roots when the
-  parent is missing, archived, or system-owned. Title prefixes never participate
-  in this check. Metadata is ownership/isolation; `time.archived` is archive
-  state; titles are human labels. Direct open by sessionID+directory is
+  parent is missing, archived, or system-owned. Metadata is ownership/isolation;
+  `time.archived` is archive state; reserved title tags additionally exclude
+  background work from the ordinary catalog. Direct open by sessionID+directory is
   unaffected. Assistant history and scheduled-task source surfaces remain the
   entry points.
 
@@ -398,6 +407,9 @@ owns the transcript key families (canonical InfiniteData, transport-page,
 tail/reconcile/checkpoint). A deleted session, a wiped temporary secondary, and
 an ordinarily evicted session all leave pagination clean — a later visit reads
 `unknown` and performs one authoritative tail refresh.
+The global event router includes catalog visibility in its change signature, so
+a metadata-only ownership change on `session.updated` removes the previous
+visible row even when its title and archive state have not changed.
 
 `useCurrentSessionEntity(sessionID)` owns current-session entity resolution for the desktop Header and mobile Header. It prioritizes the matching cross-directory live session, then the matching global active session. A resolved entity remains available for two seconds during a brief source gap; clearing or changing the session ID immediately clears that fallback.
 

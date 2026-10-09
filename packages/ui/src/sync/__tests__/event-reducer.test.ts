@@ -659,7 +659,7 @@ describe("applyDirectoryEvent (non-transcript production domains)", () => {
     const draft = directoryState()
     const session = {
       id: "ses_sched",
-      title: "[Scheduled] Task 2026-09-23 12:00",
+      title: "Background task before ownership is persisted",
       time: { created: 1, updated: 1 },
       version: "1",
     } as Session

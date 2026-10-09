@@ -41,6 +41,35 @@ const isFullyIdle = (runtime) => (
 );
 
 describe('session index background sync runtime', () => {
+  it('skips a full background-tagged page without consuming the active session budget', async () => {
+    const service = createService();
+    const cursors = [];
+    const runtime = createSessionIndexSyncRuntime({
+      sessionIndexService: service,
+      buildOpenCodeUrl: (route) => `http://opencode.test${route}`,
+      getOpenCodeAuthHeaders: () => ({}),
+      waitForOpenCodeReady: async () => true,
+      fetchFn: async (url) => {
+        if (url.pathname !== '/session' || url.searchParams.has('parentID')) return new Response(JSON.stringify([]));
+        const cursor = url.searchParams.get('cursor');
+        cursors.push(cursor);
+        return new Response(JSON.stringify(cursor ? {
+          data: Array.from({ length: 20 }, (_, i) => session(`visible-${i}`, 100 - i)), cursor: null,
+        } : {
+          data: Array.from({ length: 20 }, (_, i) => ({ ...session(`background-${i}`, 200 - i), title: '[Scheduled] Run' })),
+          cursor: { next: 'ordinary' },
+        }));
+      },
+    });
+    runtime.enqueue(['/repo']);
+    await waitUntil(() => isFullyIdle(runtime));
+    expect(cursors).toEqual([null, 'ordinary']);
+    expect(service.replaceDirectory.mock.calls[0][0].sessions.map((row) => row.id)).toEqual(
+      Array.from({ length: 20 }, (_, i) => `visible-${i}`),
+    );
+    runtime.stop();
+  });
+
   it('runs directory sync sequentially and publishes long-poll progress', async () => {
     const service = createService();
     let active = 0;

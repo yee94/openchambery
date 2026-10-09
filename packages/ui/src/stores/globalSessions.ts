@@ -12,6 +12,7 @@ export type GlobalSessionRecord = Session & {
 };
 
 const HIDDEN_SESSION_TITLES = new Set(['smartfetch-secondary']);
+const BACKGROUND_SESSION_TITLE = /^\[(?:Scheduled|Assistant|openchamber-llm)\]/;
 
 const nonEmptySystemID = (value: unknown): value is string =>
     typeof value === 'string' && value.length > 0;
@@ -56,6 +57,7 @@ export const isVisibleGlobalSession = (
     },
 ): boolean => {
     if (session.title && HIDDEN_SESSION_TITLES.has(session.title)) return false;
+    if (session.title && BACKGROUND_SESSION_TITLE.test(session.title)) return false;
     // Subagent/child sessions never belong in the sidebar root catalog. They
     // load only when the user expands a parent tree node; promoting orphans
     // (parent archived, system-owned, or simply missing from this list) is how

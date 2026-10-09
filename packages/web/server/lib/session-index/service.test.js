@@ -32,6 +32,58 @@ afterEach(() => {
 });
 
 describe('Electron session index', () => {
+  it('excludes tagged background runs before retention and ignores their activity/status events', () => {
+    const service = createService({ value: 'http://runtime-a.test' });
+    const ordinary = Array.from({ length: 20 }, (_, i) => session(`ses_visible_${i}`, 100 - i));
+    const background = ['[Scheduled]', '[Assistant]', '[openchamber-llm]'].map((tag, i) => ({
+      ...session(`ses_background_${i}`, 200 + i), title: `${tag} Background run`,
+    }));
+    service.replaceDirectory({ directory: '/repo', sessions: [...background, ...ordinary], now: 500 });
+    const before = service.snapshot();
+    expect(before.directories[0].sessions.map((row) => row.id)).toEqual(ordinary.map((row) => row.id));
+    for (const row of background) {
+      expect(service.upsertAndReportChange(row, 600)).toBe(false);
+      expect(applySessionIndexEvent(service, { type: 'session.idle', properties: { sessionID: row.id } }, 700)).toBe(false);
+    }
+    expect(service.snapshot()).toEqual(before);
+    service.setPinned(ordinary[0].id, 1);
+    expect(service.rename(ordinary[0].id, '[Scheduled] Renamed', 1000)).toBe(true);
+    expect(service.snapshot().pinnedSessionIds).not.toContain(ordinary[0].id);
+    expect(service.findBySessionId(ordinary[0].id)).toBeNull();
+    service.close();
+  });
+
+  it('purges persisted tagged summaries and their pins on reopen without changing directory recency', () => {
+    const runtimeRef = { value: 'http://runtime-a.test' };
+    const service = createService(runtimeRef);
+    service.upsert(session('ses_background', 100), 500);
+    service.upsert(session('ses_visible', 90), 500);
+    service.setPinned('ses_background', 1);
+    service.setPinned('ses_visible', 2);
+    const before = service.snapshot().directories[0];
+    runtimeRef.value = 'http://runtime-b.test';
+    service.upsert(session('ses_background', 100), 500);
+    service.setPinned('ses_background', 1);
+    service.close();
+    const dbPath = path.join(tempDirectories.at(-1), 'session-index.sqlite');
+    const Database = createRequire(import.meta.url)('better-sqlite3');
+    const db = new Database(dbPath);
+    db.prepare('UPDATE session_summary SET title = ? WHERE session_id = ?').run('[Scheduled] Legacy run', 'ses_background');
+    db.close();
+    runtimeRef.value = 'http://runtime-a.test';
+    const reopened = createSessionIndexService({ dbPath, getRuntimeConfig: () => ({ apiBaseUrl: runtimeRef.value }) });
+    expect(reopened.findBySessionId('ses_background')).toBeNull();
+    expect(reopened.snapshot().pinnedSessionIds).toEqual(['ses_visible']);
+    expect(reopened.snapshot().directories[0]).toMatchObject({
+      lastAccessedAt: before.lastAccessedAt,
+      sessions: [expect.objectContaining({ id: 'ses_visible' })],
+    });
+    runtimeRef.value = 'http://runtime-b.test';
+    expect(reopened.findBySessionId('ses_background')).toBeNull();
+    expect(reopened.snapshot().pinnedSessionIds).toEqual([]);
+    reopened.close();
+  });
+
   it('ingests native renames without changing activity, status, pins or unrelated sessions', () => {
     const runtimeRef = { value: 'http://runtime-a.test' };
     const service = createService(runtimeRef);

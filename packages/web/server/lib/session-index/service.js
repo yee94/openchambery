@@ -6,6 +6,7 @@ const require = createRequire(import.meta.url);
 const SCHEMA_VERSION = 6;
 const MAX_ROOT_SESSIONS = 20;
 const HIDDEN_SESSION_TITLES = new Set(['smartfetch-secondary']);
+const BACKGROUND_SESSION_TITLE = /^\[(?:Scheduled|Assistant|openchamber-llm)\]/;
 
 const nonEmptySystemID = (value) => typeof value === 'string' && value.length > 0;
 
@@ -24,9 +25,10 @@ const isSystemSession = (session) => {
   return false;
 };
 
-const isVisibleSession = (session) => {
+export const isVisibleSession = (session) => {
   if (!session) return false;
   if (HIDDEN_SESSION_TITLES.has(session.title)) return false;
+  if (typeof session.title === 'string' && BACKGROUND_SESSION_TITLE.test(session.title)) return false;
   if (isSystemSession(session)) return false;
   return true;
 };
@@ -168,6 +170,21 @@ export const createSessionIndexService = ({ dbPath, getRuntimeConfig = () => nul
   `).run();
   db.prepare('INSERT OR REPLACE INTO session_index_meta(key, value) VALUES (?, ?)')
     .run('schema_version', String(SCHEMA_VERSION));
+
+  // Older indexes admitted title-only background runs. Prune every runtime once
+  // on open, before they can consume retention slots or receive activity writes.
+  db.transaction(() => {
+    const rows = db.prepare('SELECT runtime_key, session_id, title FROM session_summary').all();
+    const deleteSummary = db.prepare('DELETE FROM session_summary WHERE runtime_key = ? AND session_id = ?');
+    const deletePin = db.prepare('DELETE FROM session_pin WHERE runtime_key = ? AND session_id = ?');
+    const deleteChildren = db.prepare('DELETE FROM session_child WHERE runtime_key = ? AND (session_id = ? OR parent_id = ?)');
+    for (const row of rows) {
+      if (isVisibleSession(row)) continue;
+      deleteSummary.run(row.runtime_key, row.session_id);
+      deletePin.run(row.runtime_key, row.session_id);
+      deleteChildren.run(row.runtime_key, row.session_id, row.session_id);
+    }
+  })();
 
   const runtimeKey = () => runtimeKeyFor(getRuntimeConfig());
   const touchDirectory = db.prepare(`
@@ -548,7 +565,7 @@ export const createSessionIndexService = ({ dbPath, getRuntimeConfig = () => nul
     const timestamp = toTimestamp(observedAt);
     if (!timestamp) return false;
     const key = runtimeKey();
-    if (HIDDEN_SESSION_TITLES.has(title)) {
+    if (!isVisibleSession({ title })) {
       const current = db.prepare('SELECT updated_at FROM session_summary WHERE runtime_key = ? AND session_id = ?').get(key, sessionID);
       return current && current.updated_at <= timestamp ? remove(sessionID) : false;
     }

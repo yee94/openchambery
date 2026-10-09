@@ -2,6 +2,7 @@ import type { Session } from '@/lib/opencode/v2-types'
 import type { Event } from '@/sync/types'
 
 import { useGlobalSessionsStore } from "@/stores/useGlobalSessionsStore"
+import { isVisibleGlobalSession } from "@/stores/globalSessions"
 import { stripSessionDiffSnapshots } from "./sanitize"
 import { applySessionRename, shouldSkipStaleSessionEvent } from "./session-event-freshness"
 
@@ -49,6 +50,7 @@ const getVisibleSessionSignature = (session: Session): string => {
     hasChildren?: boolean
   }
   return JSON.stringify([
+    isVisibleGlobalSession(session),
     session.title ?? "",
     session.time?.archived ?? 0,
     session.share?.url ?? "",

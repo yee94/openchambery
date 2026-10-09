@@ -4,9 +4,16 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
-## [2.0.2-beta.1] - 2026-10-09
+## [2.0.2] - 2026-10-09
 
-本次发布桌面、Android 安装包及同版本 Beta OTA，不上传 TestFlight，不进入稳定自动更新通道。
+### 修复与改进
+
+- 恢复隐藏 `[Scheduled]`、`[Assistant]`、`[openchamber-llm]` 标记的后台会话，兼容缺少元数据的旧记录，不再占用对话列表名额。
+- 后台会话运行、重试和结束时不再改变项目顺序；会话更名或补齐后台标记后也会及时移出普通列表。
+- 移动端计划编辑页将启用开关改为标题右侧的 Switch，保存改为顶部更多菜单左侧的勾选图标，移除底部保存浮条。
+- 移动端、折叠态及 iOS 原生输入框统一使用与 PC 相同的完整提示语，保留引用、命令和 Shell 操作提示。
+
+## [2.0.2-beta.1] - 2026-10-09
 
 ### 修复与改进
 
@@ -25,7 +32,7 @@ All notable changes to this project will be documented in this file.
 
 ## [2.0.0] - 2026-10-08
 
-OpenChamber 2.0 正式版，汇总 2.0.0 Beta 系列的全部改进。本次发布 macOS、Windows、Linux、Android 安装包、npm 包与同版本稳定 OTA，并上传 iOS TestFlight 外测构建。
+OpenChamber 2.0 正式版，汇总 2.0.0 Beta 系列的全部改进。
 
 ### OpenCode 2
 
@@ -54,8 +61,6 @@ OpenChamber 2.0 正式版，汇总 2.0.0 Beta 系列的全部改进。本次发�
 
 ## [2.0.0-beta.36] - 2026-10-08
 
-这是 OpenCode 2 预览版。本次发布桌面、Android 安装包及同版本 Beta OTA；iOS 不上 TestFlight，不进入稳定自动更新通道。
-
 ### 关于弹窗
 
 - 诊断日志文字居左，复选框与导出按钮同排靠右对齐。
@@ -63,16 +68,12 @@ OpenChamber 2.0 正式版，汇总 2.0.0 Beta 系列的全部改进。本次发�
 
 ## [2.0.0-beta.35] - 2026-10-08
 
-这是 OpenCode 2 预览版。本次发布桌面、Android 安装包及同版本 Beta OTA；iOS 不上 TestFlight，不进入稳定自动更新通道。
-
 ### 远程设备管理
 
 - 设备重命名改用独立编辑弹窗，避免编辑框和操作按钮挤占设备列表空间，并补齐多语言弹窗标题。
 - 重命名失败时在输入框下显示错误，保存期间禁用重复操作和关闭弹窗。
 
 ## [2.0.0-beta.34] - 2026-10-08
-
-这是 OpenCode 2 预览版。本次发布桌面、Android 安装包及同版本 Beta OTA；iOS 不上 TestFlight，不进入稳定自动更新通道。
 
 ### SSH 远程连接
 
@@ -85,16 +86,12 @@ OpenChamber 2.0 正式版，汇总 2.0.0 Beta 系列的全部改进。本次发�
 
 ## [2.0.0-beta.33] - 2026-10-08
 
-这是 OpenCode 2 预览版。本次发布桌面、Android 安装包及同版本 Beta OTA；iOS 不上 TestFlight，不进入稳定自动更新通道。
-
 ### 关于页面
 
 - 精简关于页面及弹窗的外部链接，移除 Discord 和 X 入口，保留 GitHub。
 - 诊断日志导出按钮改为轻量样式，加入下载图标、导出中动画和忙碌状态提示。
 
 ## [2.0.0-beta.32] - 2026-10-08
-
-这是 OpenCode 2 预览版。本次发布桌面、Android 安装包及同版本 Beta OTA；iOS 不上 TestFlight，不进入稳定自动更新通道。
 
 ### 移动端全局搜索
 
@@ -111,8 +108,6 @@ OpenChamber 2.0 正式版，汇总 2.0.0 Beta 系列的全部改进。本次发�
 
 ## [2.0.0-beta.31] - 2026-10-08
 
-这是 OpenCode 2 预览版。本次发布桌面、Android 安装包及同版本 Beta OTA；iOS 不上 TestFlight，不进入稳定自动更新通道。
-
 ### 桌面内置浏览器
 
 - 修复 macOS 打开内置浏览器后，左侧会话栏持续闪动、文字重影的问题。
@@ -120,16 +115,12 @@ OpenChamber 2.0 正式版，汇总 2.0.0 Beta 系列的全部改进。本次发�
 
 ## [2.0.0-beta.30] - 2026-10-08
 
-这是 OpenCode 2 预览版。本次发布桌面、Android 安装包及同版本 Beta OTA；iOS 不上 TestFlight，不进入稳定自动更新通道。
-
 ### 消息队列恢复
 
 - 打开会话、从缓存返回及断线重连时，主动恢复 OpenCode 原生待发送消息队列，避免排队消息暂时消失。
 - 队列恢复与对话历史加载并行；读取失败保留已有消息，并防止过期请求覆盖刚收到的排队、投递或完成状态。
 
 ## [2.0.0-beta.29] - 2026-10-08
-
-这是 OpenCode 2 预览版。本次发布桌面、Android 安装包及同版本 Beta OTA；iOS 不上 TestFlight，不进入稳定自动更新通道。
 
 ### 会话标题
 
@@ -166,16 +157,12 @@ OpenChamber 2.0 正式版，汇总 2.0.0 Beta 系列的全部改进。本次发�
 
 ## [2.0.0-beta.27] - 2026-09-29
 
-这是 OpenCode 2 预览版。本次仅发布 2.x Beta OTA 热更新，适用于兼容的已安装移动端 App。
-
 ### 对话与历史加载
 
 - 修复 iOS 接近顶部自动加载历史时仍会跳动的问题：历史请求立即发出，新消息在手势和惯性滚动停稳后插入，保持当前阅读位置。
 - 修复正文延迟到达及短列表切换为虚拟列表时的滚动补偿问题；持续拖动或长按停留不会提前插入历史，每次手势仍最多加载一页。
 
 ## [2.0.0-beta.26] - 2026-09-29
-
-这是 OpenCode 2 预览版。本次发布桌面、Android 安装包及同版本 Beta OTA；iOS 不上 TestFlight，不进入外测组或稳定自动更新通道。
 
 ### 对话与历史加载
 
@@ -184,8 +171,6 @@ OpenChamber 2.0 正式版，汇总 2.0.0 Beta 系列的全部改进。本次发�
 
 ## [2.0.0-beta.25] - 2026-09-29
 
-这是 OpenCode 2 预览版。本次发布桌面、Android 安装包、同版本 Beta OTA，以及 iOS 内测 TestFlight。不进入外测组或稳定自动更新通道。
-
 ### 热更新
 
 - OTA 更新按主版本隔离：1.x 设备只接收 1.x 更新，2.x 设备只接收 2.x 更新，正式版与 Beta 渠道均遵守该规则。
@@ -193,8 +178,6 @@ OpenChamber 2.0 正式版，汇总 2.0.0 Beta 系列的全部改进。本次发�
 - 发布与灰度操作保留其他主版本的更新包和回滚记录，支持独立维护 1.x 与 2.x。
 
 ## [2.0.0-beta.24] - 2026-09-28
-
-这是 OpenCode 2 预览版。本次发布桌面、Android 安装包、同版本 Beta OTA，以及 iOS 内测 TestFlight。不进入外测组或稳定自动更新通道。
 
 ### 对话与历史加载
 
@@ -209,8 +192,6 @@ OpenChamber 2.0 正式版，汇总 2.0.0 Beta 系列的全部改进。本次发�
 
 ## [2.0.0-beta.23] - 2026-09-28
 
-这是 OpenCode 2 预览版。本次发布桌面、Android 安装包、同版本 Beta OTA，以及 iOS 内测 TestFlight。不进入外测组或稳定自动更新通道。
-
 ### 问题托管
 
 - 修复 question 无人响应 30 秒后不再自动托管的问题，接入 OpenCode 2 原生表单事件与回答接口；Web 和 VS Code 均支持启动、重连时恢复待答问题。
@@ -224,15 +205,9 @@ OpenChamber 2.0 正式版，汇总 2.0.0 Beta 系列的全部改进。本次发�
 
 ## [2.0.0-beta.22] - 2026-09-28
 
-这是 OpenCode 2 预览版。本次发布桌面、Android 安装包、同版本 Beta OTA，以及 iOS 内测 TestFlight。不进入外测组或稳定自动更新通道。
-
-### iOS
-
-- 提供当前预览版的内测 TestFlight 构建，方便直接安装。不关联外测组，也不进入稳定自动更新。
+- 无功能改动。
 
 ## [2.0.0-beta.21] - 2026-09-27
-
-这是 OpenCode 2 预览版。本次发布桌面、Android 安装包及同版本 Beta OTA；iOS 不上 TestFlight，不进入外测组或稳定自动更新通道。
 
 ### 桌面
 
@@ -243,8 +218,6 @@ OpenChamber 2.0 正式版，汇总 2.0.0 Beta 系列的全部改进。本次发�
 - 打开已有会话时，不再因为历史助手消息缺少完成标记而误显示为正在运行。已确认正在运行或重试的会话仍会保留状态。
 
 ## [2.0.0-beta.20] - 2026-09-26
-
-这是 OpenCode 2 预览版。本次发布桌面、Android 安装包及同版本 Beta OTA；iOS 不上 TestFlight，不进入外测组或稳定自动更新通道。
 
 ### 对话与用量
 
@@ -259,16 +232,12 @@ OpenChamber 2.0 正式版，汇总 2.0.0 Beta 系列的全部改进。本次发�
 
 ## [2.0.0-beta.19] - 2026-09-26
 
-这是 OpenCode 2 预览版。本次发布桌面、Android 安装包及同版本 Beta OTA；iOS 不上 TestFlight，不进入外测组或稳定自动更新通道。
-
 ### 对话与同步
 
 - 修复消息已经送达、AI 已开始回复后，队列仍显示“引导中”的问题。队列按单条消息的消费确认及时清理，不再等待整轮回复结束；迟到的请求响应和旧快照不会恢复已清理的条目。
 - 重新进入或切回助手对话时，立即刷新已发出的中间回复和任务运行状态，恢复“处理中”提示，不再等待实时事件或下一轮轮询；刷新失败时保留已加载的内容。
 
 ## [2.0.0-beta.18] - 2026-09-26
-
-这是 OpenCode 2 预览版。本次发布桌面、Android 安装包及同版本 Beta OTA；iOS 不上 TestFlight，不进入外测组或稳定自动更新通道。
 
 ### 对话与模型选择
 
@@ -281,15 +250,11 @@ OpenChamber 2.0 正式版，汇总 2.0.0 Beta 系列的全部改进。本次发�
 
 ## [2.0.0-beta.17] - 2026-09-26
 
-这是 OpenCode 2 预览版。本次发布桌面、Android 安装包及同版本 Beta OTA；iOS 不上 TestFlight，不进入外测组或稳定自动更新通道。
-
 ### 对话输入
 
 - 修复在输入框里写 npm 包名（如 `@scope/package`）时被当成文件附件，导致发送失败（400 Unable to read attachment）的问题。包名会保留在正文里；从文件补全里选中的路径仍会作为附件发送。
 
 ## [2.0.0-beta.16] - 2026-09-26
-
-这是 OpenCode 2 预览版。本次发布桌面、Android 安装包及同版本 Beta OTA；iOS 不上 TestFlight，不进入外测组或稳定自动更新通道。
 
 ### 对话展示
 
@@ -299,13 +264,9 @@ OpenChamber 2.0 正式版，汇总 2.0.0 Beta 系列的全部改进。本次发�
 
 ## [2.0.0-beta.15] - 2026-09-25
 
-这是 OpenCode 2 预览版。本次发布桌面、Android 安装包、同版本 Beta OTA，以及 iOS 内测 TestFlight。不进入外测组或稳定自动更新通道。
-
 ### 桌面
 
 - PC 通过 Relay 连接另一台实例时，会话和消息会进隧道，不再打到本机 OpenCode 导致 404。消息流在 Relay 下改走 SSE，和移动端一致，助手回复可以正常出现。
-
-这是 OpenCode 2 预览版。本次发布桌面、Android 安装包、同版本 Beta OTA，以及 iOS 内测 TestFlight。不进入外测组或稳定自动更新通道。
 
 ### 移动端
 
@@ -315,15 +276,11 @@ OpenChamber 2.0 正式版，汇总 2.0.0 Beta 系列的全部改进。本次发�
 
 ## [2.0.0-beta.13] - 2026-09-25
 
-这是 OpenCode 2 预览版。本次发布桌面、Android 安装包及同版本 Beta OTA；iOS 不上 TestFlight，不进入外测组或稳定自动更新通道。
-
 ### 移动端
 
 - 修复删除会话后的撤销提示：毛玻璃与底栏同一套材质，倒计时圆环留在撤销按钮内，不再透出标题或画出提示条。
 
 ## [2.0.0-beta.12] - 2026-09-24
-
-这是 OpenCode 2 预览版。本次发布桌面、Android 安装包及同版本 Beta OTA；iOS 不上 TestFlight，不进入外测组或稳定自动更新通道。
 
 ### 对话与同步
 
@@ -335,15 +292,11 @@ OpenChamber 2.0 正式版，汇总 2.0.0 Beta 系列的全部改进。本次发�
 
 ## [2.0.0-beta.11] - 2026-09-24
 
-这是 OpenCode 2 预览版。本次发布桌面、Android 安装包及同版本 Beta OTA；iOS 不上 TestFlight，不进入外测组或稳定自动更新通道。
-
 ### 用量
 
 - 修复额度接口返回空数据时，顶栏用量菜单因读取空结果的 providerId 而崩溃的问题。无效响应不再写入结果，并保留上一次有效额度。
 
 ## [2.0.0-beta.10] - 2026-09-24
-
-这是 OpenCode 2 预览版。本次发布桌面、Android 安装包及同版本 Beta OTA；iOS 不上 TestFlight，不进入外测组或稳定自动更新通道。
 
 ### 对话与同步
 
@@ -358,8 +311,6 @@ OpenChamber 2.0 正式版，汇总 2.0.0 Beta 系列的全部改进。本次发�
 
 ## [2.0.0-beta.9] - 2026-09-24
 
-这是 OpenCode 2 预览版，需要手动下载安装包。本次不发布 OTA；iOS 不上 TestFlight，不进入外测组或稳定自动更新通道。
-
 ### 对话与输入
 
 - 会话忙碌时，Enter 和发送按钮默认进入队列，不再直接引导；只有 Cmd/Ctrl+Enter 才会引导。
@@ -367,15 +318,11 @@ OpenChamber 2.0 正式版，汇总 2.0.0 Beta 系列的全部改进。本次发�
 
 ## [2.0.0-beta.8] - 2026-09-24
 
-这是 OpenCode 2 预览版，需要手动下载安装包。本次不发布 OTA；iOS 仅上传 TestFlight 内测，不进入外测组或稳定自动更新通道。
-
 ### 对话展示
 
 - 正在生成的纯文本回复在状态行前补上应有的块间距，不再和底部的运行状态贴在一起；最后一行是工具行时保持原样。
 
 ## [2.0.0-beta.7] - 2026-09-24
-
-这是 OpenCode 2 预览版，需要手动下载安装包。本次不发布 OTA；iOS 仅上传 TestFlight 内测，不进入外测组或稳定自动更新通道。
 
 ### 对话与输入
 
@@ -387,8 +334,6 @@ OpenChamber 2.0 正式版，汇总 2.0.0 Beta 系列的全部改进。本次发�
 - 正在生成的非压缩轮次不再绘制可折叠的 Working 标题，只展开工具与推理行；压缩过程仍显示 Compacting 标题，完成的轮次保留可折叠标题与时长。
 
 ## [2.0.0-beta.6] - 2026-09-24
-
-这是 OpenCode 2 预览版，需要手动下载安装包。本次不发布 OTA；iOS 仅上传 TestFlight 内测，不进入外测组或稳定自动更新通道。
 
 ### 对话与状态
 
@@ -405,8 +350,6 @@ OpenChamber 2.0 正式版，汇总 2.0.0 Beta 系列的全部改进。本次发�
 - 收紧内置会话标题提示词：把「优先 ≤6 词 / ≤6 个 CJK 字」改为硬性上限，且标题不再限定 50 字符。
 
 ## [2.0.0-beta.5] - 2026-09-24
-
-这是 OpenCode 2 预览版，需要手动下载安装包。本次不发布 OTA 或 iOS，也不会进入稳定自动更新通道。
 
 ### 对话与输入
 
@@ -425,8 +368,6 @@ OpenChamber 2.0 正式版，汇总 2.0.0 Beta 系列的全部改进。本次发�
 - 改进通知模板与会话记录投影，增强断线恢复和跨端状态一致性。
 
 ## [2.0.0-beta.4] - 2026-09-24
-
-这是 OpenCode 2 预览版，需要手动下载安装包。本次不发布 OTA，也不会进入稳定自动更新通道。
 
 ### 对话
 
@@ -449,8 +390,6 @@ OpenChamber 2.0 正式版，汇总 2.0.0 Beta 系列的全部改进。本次发�
 
 ## [2.0.0-beta.3] - 2026-09-24
 
-这是 OpenCode 2 预览版，需要手动下载安装包。本次不发布 OTA，也不会进入稳定自动更新通道。
-
 ### 对话
 
 - 修复推理过程中的消息顺序：操作说明、思考内容与工具调用按实际产生顺序展示，不再把工具统一排到说明前面；实时更新和历史加载保持一致。
@@ -464,8 +403,6 @@ OpenChamber 2.0 正式版，汇总 2.0.0 Beta 系列的全部改进。本次发�
 - 修正桌面内置 OpenCode CLI 的打包与 Windows 平台适配。
 
 ## [2.0.0-beta.2] - 2026-09-22
-
-这是 OpenCode 2 预览版，不会进入稳定自动更新，也不会改写现网手机 OTA。需要手动下载安装包。
 
 ### 对话
 
@@ -488,8 +425,6 @@ OpenChamber 2.0 正式版，汇总 2.0.0 Beta 系列的全部改进。本次发�
 - 退出时会关掉遗留的 WebSocket，生成中退出不再空等 10 秒。
 
 ## [2.0.0-beta.1] - 2026-09-22
-
-这是 OpenCode 2 预览版，不会进入稳定自动更新。需要手动下载安装包。
 
 ### OpenCode 2
 
@@ -1713,7 +1648,7 @@ OpenChamber 2.0 正式版，汇总 2.0.0 Beta 系列的全部改进。本次发�
 
 ### Changed
 
-- iPhone native composer attach / send / stop taps use the shared light haptic path. This is a native-shell update — TestFlight testers need this build; one-tap OTA is not enough.
+- iPhone native composer attach / send / stop taps use the shared light haptic path.
 - Phone row action sheets fire a light haptic on tap even when press-scale feedback is off.
 - Push delivery can register device tokens through the self-hosted relay and re-bind when the relay URL changes.
 
@@ -1731,7 +1666,7 @@ OpenChamber 2.0 正式版，汇总 2.0.0 Beta 系列的全部改进。本次发�
 
 ### Added
 
-- On iPhone, active agent work appears as a Live Activity in the Dynamic Island and on the Lock Screen after 12 seconds, with task state, elapsed time, attention requests, completion or error state, and a shortcut back to the session. This is a native-shell update — TestFlight testers need this build; one-tap OTA is not enough.
+- On iPhone, active agent work appears as a Live Activity in the Dynamic Island and on the Lock Screen after 12 seconds, with task state, elapsed time, attention requests, completion or error state, and a shortcut back to the session.
 
 ### Fixed
 
@@ -1749,37 +1684,37 @@ OpenChamber 2.0 正式版，汇总 2.0.0 Beta 系列的全部改进。本次发�
 ### Fixed
 
 - Phone Settings selects (theme, language, and other dropdowns) open as a bottom sheet instead of a clipped popup.
-- On iPhone, the `/` and `@` suggestion list can be scrolled with a pan; tapping a row still inserts. This is a native-shell update — TestFlight testers need this build; one-tap OTA is not enough.
+- On iPhone, the `/` and `@` suggestion list can be scrolled with a pan; tapping a row still inserts.
 - Editing a message on iPhone restores the full text in the native composer even if the input pill was collapsed.
 
 ## [1.19.0-beta.32] - 2026-08-30
 
 ### Fixed
 
-- Typing in the iPhone native composer no longer slows down the longer you type or the more you use it: duplicate typing events and unchanged height reports are skipped, theme colors are resolved once instead of on every keystroke, and markdown highlight recalculation for the hidden web input is skipped while the native composer owns input. This is a native-shell update — TestFlight testers need this build; one-tap OTA is not enough.
+- Typing in the iPhone native composer no longer slows down the longer you type or the more you use it: duplicate typing events and unchanged height reports are skipped, theme colors are resolved once instead of on every keystroke, and markdown highlight recalculation for the hidden web input is skipped while the native composer owns input.
 
 ## [1.19.0-beta.31] - 2026-08-30
 
 ### Fixed
 
-- Typing in the iPhone native composer no longer slows down the longer you type or the more you use it: duplicate typing events and unchanged height reports are skipped, theme colors are resolved once instead of on every keystroke, and markdown highlight recalculation for the hidden web input is skipped while the native composer owns input. This is a native-shell update — TestFlight testers need this build; one-tap OTA is not enough.
+- Typing in the iPhone native composer no longer slows down the longer you type or the more you use it: duplicate typing events and unchanged height reports are skipped, theme colors are resolved once instead of on every keystroke, and markdown highlight recalculation for the hidden web input is skipped while the native composer owns input.
 
 ## [1.19.0-beta.30] - 2026-08-30
 
 ### Fixed
 
-- Opening chat on iPhone no longer stalls the first frame while the native composer glass overlay is created; the shell warms it while hidden on the homepage. This is a native-shell update — TestFlight testers need this build; one-tap OTA is not enough.
+- Opening chat on iPhone no longer stalls the first frame while the native composer glass overlay is created; the shell warms it while hidden on the homepage.
 - Native composer chrome updates no longer repaint chip ranges on every send or scroll tick, which had made entering chat and controlling the input feel laggy.
 
 ### Changed
 
-- `/` and `@` tokens in the iPhone native composer render as primary-colored labels with whole-token delete, without rasterized icon overlays, to keep typing smooth. This is a native-shell update — TestFlight testers need this build; one-tap OTA is not enough.
+- `/` and `@` tokens in the iPhone native composer render as primary-colored labels with whole-token delete, without rasterized icon overlays, to keep typing smooth.
 
 ## [1.19.0-beta.29] - 2026-08-30
 
 ### Fixed
 
-- On iPhone, tapping the agent name next to the identicon also cycles the role, not only the avatar. This is a native-shell update — TestFlight testers need this build; one-tap OTA is not enough.
+- On iPhone, tapping the agent name next to the identicon also cycles the role, not only the avatar.
 
 ## [1.19.0-beta.28] - 2026-08-30
 
@@ -1787,39 +1722,39 @@ OpenChamber 2.0 正式版，汇总 2.0.0 Beta 系列的全部改进。本次发�
 
 - The phone chat header fade is a bit less see-through so the title stays readable over scrolling messages.
 - Phone chat keeps more empty space under the newest message so you can scroll it up off the composer.
-- Ready Send and Stop on the iPhone native composer now match the web inverted disc. This is a native-shell update — TestFlight testers need this build; one-tap OTA is not enough.
+- Ready Send and Stop on the iPhone native composer now match the web inverted disc.
 
 ### Fixed
 
 - On iPhone, the chat list now reserves the real native composer and queue height, so the last message is no longer clipped against the input when something is queued.
 - After sending, scrolling the transcript no longer bounces or gets pulled back while a reply is streaming.
-- Switching chats on iPhone updates the native input's model name and thinking strength, not only the icon. This is a native-shell update — TestFlight testers need this build; one-tap OTA is not enough.
+- Switching chats on iPhone updates the native input's model name and thinking strength, not only the icon.
 
 ## [1.19.0-beta.27] - 2026-08-30
 
 ### Fixed
 
 - Opening a chat no longer leaves the previous model's icon in the input while messages load, and Send uses the model you see.
-- On iPhone, tapping a `/` or `@` suggestion now inserts the same way as the web composer: it replaces the token you were typing and moves the caret after it. File and agent `@` matches also follow the same ranking as web. This is a native-shell update — TestFlight testers need this build; one-tap OTA is not enough.
+- On iPhone, tapping a `/` or `@` suggestion now inserts the same way as the web composer: it replaces the token you were typing and moves the caret after it. File and agent `@` matches also follow the same ranking as web.
 - The iPhone homepage dock uses the system tab bar for the selected liquid-glass lens (and light mode) instead of a nested glass pill that read as a black shadow.
 
 ## [1.19.0-beta.26] - 2026-08-30
 
 ### Added
 
-- iPhone homepage tabs use a native liquid-glass dock on iOS 26. Older iOS, Android, and the web app keep the existing bar. This is a native-shell update — TestFlight testers need this build; one-tap OTA is not enough.
+- iPhone homepage tabs use a native liquid-glass dock on iOS 26. Older iOS, Android, and the web app keep the existing bar.
 
 ## [1.19.0-beta.25] - 2026-08-30
 
 ### Added
 
-- On iPhone, typing `/` or `@` in the native composer opens a liquid-glass suggestion list above the input — same width as the card, with a small gap, internal scroll, and room so it does not collide with the header. Search as you type; tap a row or press Return to insert. This is a native-shell update — TestFlight testers need this build; one-tap OTA is not enough.
+- On iPhone, typing `/` or `@` in the native composer opens a liquid-glass suggestion list above the input — same width as the card, with a small gap, internal scroll, and room so it does not collide with the header. Search as you type; tap a row or press Return to insert.
 
 ## [1.19.0-beta.24] - 2026-08-30
 
 ### Added
 
-- iPhone chat now uses a native liquid-glass composer: tap + for photos or files, then remove attachments from the preview strip or by deleting the `[filename]` text. This is a native-shell update — TestFlight testers need this build; one-tap OTA is not enough.
+- iPhone chat now uses a native liquid-glass composer: tap + for photos or files, then remove attachments from the preview strip or by deleting the `[filename]` text.
 
 ### Fixed
 
@@ -1865,7 +1800,7 @@ OpenChamber 2.0 正式版，汇总 2.0.0 Beta 系列的全部改进。本次发�
 
 ### Added
 
-- iPhone chat now uses a native liquid-glass composer: tap + for photos or files, then remove attachments from the preview strip or by deleting the `[filename]` text. This is a native-shell update — TestFlight testers need this build; one-tap OTA is not enough.
+- iPhone chat now uses a native liquid-glass composer: tap + for photos or files, then remove attachments from the preview strip or by deleting the `[filename]` text.
 
 ### Changed
 
@@ -1943,7 +1878,7 @@ OpenChamber 2.0 正式版，汇总 2.0.0 Beta 系列的全部改进。本次发�
 - **加载更早历史时，你正在看的那条消息一动不动：** 上一版让列表在插入历史后多补偿一段时间，但真正的问题不是补偿多久，而是列表**按哪一条消息**来对齐——它选的是「视口里最上面那条」。点「加载更多」时你正处在最顶端，于是新插进来的消息立刻变成了最上面那条，而它们刚落位时用的还是估算高度；列表于是死死盯住一条估算高度的消息，随着逐行实测，整段历史的误差全部累加到你的阅读位置上方，最后视口就停到了会话中间。现在改为显式记住你点击前正在看的那条消息（取数据之前就已记录），并一直把它钉在原来的屏幕位置上，直到新插入的这批内容彻底停止变化——这比固定时间窗更久，因为消息正文的排版会在稍后再变一次高度。位置校正走列表自己的滚动接口、且每次都是绝对目标，不再与列表内部的位置调整互相抢写。你一旦上滑或触屏，锚点立即让位给你。
 - **加载过程中输入框不再闪出：** 上一版已让滚动容器在重新锚定期间对外声明状态，但这个声明是在画面绘制之后才挂上的，而列表在同一次提交里就已经调整了滚动位置——浏览器把那一帧的滚动事件抢在声明之前发了出去。就这一帧没被标记，却是一次很大的「离底距离」变化，被输入框读成了用户的主动下滑。现在声明改在绘制之前完成，并覆盖整个锚定过程。
 
-包含 1.19.0-beta.1 ~ beta.7 的全部内容。本版本为预发布，仅用于测试；不含 iOS / TestFlight 更新。
+包含 1.19.0-beta.1 ~ beta.7 的全部内容。
 
 ## [1.19.0-beta.7] - 2026-08-29
 
@@ -1951,7 +1886,7 @@ OpenChamber 2.0 正式版，汇总 2.0.0 Beta 系列的全部改进。本次发�
 
 - **滚动经过的消息不再卡在 loading 骨架：** 消息正文先以骨架挂载，等一次「水合」把它换成正式排版；而滚动中途换排版会顶动正在读的内容，所以只允许在滚动停下来之后换。但新引擎只有滚动事件这一个触发点，它调度的那一次水合就在同一帧里执行，永远不算「已停下」——于是快速滚动时越过预加载窗口的消息被跳过后再也没有第二次机会，只能退出重进对话才恢复。现在滚动停下来后会补一次水合，单次提交超过上限而剩下的部分也会继续排队补完。
 
-包含 1.19.0-beta.1 ~ beta.6 的全部内容。本版本为预发布，仅用于测试；不含 iOS / TestFlight 更新。
+包含 1.19.0-beta.1 ~ beta.6 的全部内容。
 
 ## [1.19.0-beta.6] - 2026-08-29
 
@@ -1960,7 +1895,7 @@ OpenChamber 2.0 正式版，汇总 2.0.0 Beta 系列的全部改进。本次发�
 - **加载更早历史时视口原地不动：** 上一版已经先释放端部跟随，但插入的历史是先按估算高度落位、随后才逐行实测，而新引擎当初关掉了列表默认的尺寸补偿，于是这些实测差值全部累加到阅读位置上方——加载完成的一瞬间视口被推到了别处。现在每次插入更早历史后会在一个短窗口内开启尺寸补偿，把这批新行的实测差值吸收掉；窗口之外，工具调用展开之类的原地增长照旧向下生长。
 - **加载过程中输入框不再闪出：** 插入内容与列表的位置纠正落在不同帧，「离底距离」先跳远再跳回，回来那一帧和用户快速下滑无法区分，于是输入框在加载中途闪成展开态。现在滚动容器会在重新锚定期间对外声明状态，这些帧不再计入手势行程，输入框保持原样直到锚定结束。
 
-包含 1.19.0-beta.1 ~ beta.5 的全部内容。本版本为预发布，仅用于测试；不含 iOS / TestFlight 更新。
+包含 1.19.0-beta.1 ~ beta.5 的全部内容。
 
 ## [1.19.0-beta.5] - 2026-08-29
 
@@ -1969,7 +1904,7 @@ OpenChamber 2.0 正式版，汇总 2.0.0 Beta 系列的全部改进。本次发�
 - **加载更早历史不再把视图甩走：** 新引擎把「插入更早消息」当成一次内容增长，而此时端部跟随还开着，于是列表立刻把视口纠回最新消息处。现在点「加载更多」（以及滚动到顶部触发的加载）会先释放端部跟随再取数据，插入的历史落在阅读位置上方，读到哪儿还在哪儿。已经贴在底部时不做释放——那种情况下纠正本身就是空操作。
 - **手动上滑后不会再被自动拉回底部：** 新引擎原本只按「离底距离」判断是否继续跟随，离底不足十分之一屏就照旧跟随，流式回复时轻轻上滑会被拽回去，而且无需下滑就会悄悄恢复跟随。现在上滑手势会粘性地交出跟随权，只有真正回到底部、点「回到底部」或切换会话才重新接管。
 
-包含 1.19.0-beta.1 ~ beta.4 的全部内容。本版本为预发布，仅用于测试；不含 iOS / TestFlight 更新。
+包含 1.19.0-beta.1 ~ beta.4 的全部内容。
 
 ## [1.19.0-beta.4] - 2026-08-29
 
@@ -1977,7 +1912,7 @@ OpenChamber 2.0 正式版，汇总 2.0.0 Beta 系列的全部改进。本次发�
 
 - **流式回复时输入框不再闪成收起态：** 新引擎在会话进行中用动画方式把视图滑回底部，收起判定只看「离底距离」，于是把这段动画误读成用户上滑。现在收起只由真实手势触发，内容增长和列表自身的回滑不再影响输入框的吸底展开；滑到真正底部仍会展开，抬手后的惯性滑动照旧生效。
 
-包含 1.19.0-beta.1 ~ beta.3 的全部内容。本版本为预发布，仅用于测试；不含 iOS / TestFlight 更新。
+包含 1.19.0-beta.1 ~ beta.3 的全部内容。
 
 ## [1.19.0-beta.3] - 2026-08-29
 
@@ -1986,7 +1921,7 @@ OpenChamber 2.0 正式版，汇总 2.0.0 Beta 系列的全部改进。本次发�
 - **顶部导航与输入框不再压住正文：** 新时间线引擎下聊天记录上下两侧的留白丢失，首条消息被顶部导航遮住、末条被输入框遮住。留白改为由列表实际测量的占位承担，安全区、导航高度、输入框高度等变量继续动态生效。
 - **顺带修好三处新引擎下的静默失效：** 附件定位、展开/折叠工具调用后的滚动位置回补、以及聊天容器的兜底查询——它们都通过 `data-scrollbar="chat"` 找滚动容器，而新引擎下这个标记丢了；聊天滚动条样式同时恢复。
 
-包含 1.19.0-beta.1 ~ beta.2 的全部内容。本版本为预发布，仅用于测试；不含 iOS / TestFlight 更新。
+包含 1.19.0-beta.1 ~ beta.2 的全部内容。
 
 ## [1.19.0-beta.2] - 2026-08-29
 
@@ -1994,7 +1929,7 @@ OpenChamber 2.0 正式版，汇总 2.0.0 Beta 系列的全部改进。本次发�
 
 - **往下滚动时输入框会回来了：** 之前输入框收起后，只有滚到接近底部（离底 80px 内）才重新出现，从很上面往下滑要一路滑到底才看得到。现在只要往下滑动一小段就会唤出，唤出后在同一次下滑手势里保持展开，直到再次上滑才收起。离底 80px 内的按位置比例跟随、以及收起后的惯性沉降窗口保持原样；顶部橡皮筋回弹不再被误当成下滑意图。
 
-包含 1.19.0-beta.1 的全部内容（Beta 新时间线引擎）。本版本为预发布，仅用于测试；不含 iOS / TestFlight 更新。
+包含 1.19.0-beta.1 的全部内容（Beta 新时间线引擎）。
 
 ## [1.19.0-beta.1] - 2026-08-29
 
@@ -2003,7 +1938,6 @@ OpenChamber 2.0 正式版，汇总 2.0.0 Beta 系列的全部改进。本次发�
 - **进入会话不再闪动：** 聊天记录改由单一列表持有滚动位置（替换 TanStack 虚拟化 + 自动跟随钉底的组合），打开会话直接落在最新消息；迟到的异步内容增长由列表自身跟随，不再触发逐帧滚动校正。默认启用，可在 DevTools 控制台执行 `localStorage.setItem('oc:legend-timeline', '0')` 并刷新回退旧引擎。
 - **新引擎下交互与流式正常：** 展开工具调用、切换活动密度等行内状态即时生效；流式回复按块即时上屏；Markdown 渐进加载只重绘真正变化的行。
 - **加载更早历史与"回到底部"按钮改读列表真实位置：** 修复新引擎下滚动到顶部附近不再触发历史加载、按钮不再常隐的问题。
-- 本版本为预发布，仅用于测试；不含 iOS / TestFlight 更新。
 
 ## [1.18.6-beta.2] - 2026-08-28
 
@@ -2371,7 +2305,6 @@ OpenChamber 2.0 正式版，汇总 2.0.0 Beta 系列的全部改进。本次发�
 - **应用内热更新：** 无需重装即可在后台接收界面更新，支持自动检测新版本、更新通知与更新说明展示。
 - **输入框体验升级：** 上滑聊天时输入框自动收起为紧凑条，键盘自动避让，交互更跟手流畅。
 - **界面密度自适应：** 支持按偏好缩放字号与间距，适配不同屏幕显示大小。
-- **外测 iOS 版本：** 正式版同步发布到 TestFlight 外测。
 
 ### 远程实例（SSH）
 
