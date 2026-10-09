@@ -13,7 +13,7 @@ import { useI18n } from '@/lib/i18n';
 import { runtimeFetch } from '@/lib/runtime-fetch';
 import { checkOpenCodeAvailability, retryOpenCodeAvailability } from './openCodeAvailability';
 
-const INSTALL_COMMAND = 'curl -fsSL https://opencode.ai/install | bash';
+const INSTALL_COMMAND = 'curl -fsSL https://opencode.ai/v2/install | bash';
 const DOCS_URL = 'https://opencode.ai/docs';
 const POLL_INTERVAL_MS = 2500;
 const AUTO_RETRY_INTERVAL_MS = 10000;
@@ -31,7 +31,7 @@ function BashCommand({ onCopy, copyTitle }: { onCopy: () => void; copyTitle: str
       <code className="flex-1 text-left overflow-x-auto whitespace-nowrap">
         <span style={{ color: 'var(--syntax-keyword)' }}>curl</span>
         <span className="text-muted-foreground"> -fsSL </span>
-        <span style={{ color: 'var(--syntax-string)' }}>https://opencode.ai/install</span>
+        <span style={{ color: 'var(--syntax-string)' }}>https://opencode.ai/v2/install</span>
         <span className="text-muted-foreground"> | </span>
         <span style={{ color: 'var(--syntax-keyword)' }}>bash</span>
       </code>
