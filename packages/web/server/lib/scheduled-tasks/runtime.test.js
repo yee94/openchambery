@@ -587,7 +587,7 @@ describe('scheduled-tasks run history and session lifecycle', () => {
       expect.any(String),
       expect.objectContaining({
         status: 'error',
-        error: 'ProviderError',
+        error: 'upstream failed',
         sessionId: 'ses_1',
         durationMs: expect.any(Number),
       }),
@@ -1150,6 +1150,97 @@ describe('scheduled-tasks run history and session lifecycle', () => {
     }
   });
 
+  it.each([
+    [{ type: 'rate_limit', message: 'Gemini usage limit reached; resets on October 12.' }, 'Gemini usage limit reached; resets on October 12.'],
+    [{ name: 'APIError', data: { message: 'Provider quota exhausted' } }, 'Provider quota exhausted'],
+    [{ name: 'ProviderError', message: 'Model unavailable' }, 'Model unavailable'],
+  ])('persists the actual assistant error behind a failed idle marker: %j', async (error, expected) => {
+    const history = createHistoryStore();
+    const client = createSuccessfulClient({
+      messageListImpl: async () => ({ data: [
+        { id: 'msg_idle', type: 'idle', outcome: 'failed' },
+        { ...erroredAssistant(), error },
+      ] }),
+    });
+    const updateState = vi.fn(async () => ({ task: scheduledTask }));
+    const runtime = createRuntime(updateState, {
+      runHistoryStore: history,
+      waitForOpenCodeReady: vi.fn(async () => {}),
+    });
+    await runtime.syncProject('project-1');
+    expect(await runtime.runNow('project-1', 'task-1')).toMatchObject({ status: 'error', error: expected });
+    expect(history.finishRun).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({ error: expected }));
+    expect(updateState.mock.calls.at(-1)[2].lastError).toBe(expected);
+    expect(client.messageList).toHaveBeenCalledTimes(1);
+  });
+
+  it.each(['data', 'properties'])('captures execution failure before any assistant exists (%s envelope)', async (envelope) => {
+    const history = createHistoryStore();
+    const client = createSuccessfulClient({
+      messageListImpl: async () => ({ data: [
+        { id: 'msg_idle', type: 'idle', outcome: 'failed' },
+        { id: 'msg_user', type: 'user' },
+      ] }),
+    });
+    const runtime = createRuntime(vi.fn(async () => ({ task: scheduledTask })), {
+      runHistoryStore: history,
+      waitForOpenCodeReady: vi.fn(async () => {}),
+    });
+    client.prompt.mockImplementation(async () => {
+      await runtime.observeSessionEvent({ payload: {
+        type: 'session.execution.failed',
+        [envelope]: { sessionID: 'ses_1', error: { type: 'unknown', message: 'Model unavailable: provider/model' } },
+      } });
+    });
+    await runtime.syncProject('project-1');
+    expect(await runtime.runNow('project-1', 'task-1')).toMatchObject({ error: 'Model unavailable: provider/model' });
+    expect(history.finishRun).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({ error: 'Model unavailable: provider/model' }));
+    client.prompt.mockImplementation(async () => {});
+    await runtime.observeSessionEvent({ payload: {
+      type: 'session.execution.failed',
+      [envelope]: { sessionID: 'ses_1', error: { message: 'late error' } },
+    } });
+    expect(await runtime.runNow('project-1', 'task-1')).toMatchObject({ error: 'session execution failed' });
+  });
+
+  it('does not borrow an error from a previous idle-delimited turn', async () => {
+    createSuccessfulClient({ messageListImpl: async () => ({ data: [
+      { id: 'idle_new', type: 'idle', outcome: 'failed' },
+      completedAssistant(),
+      { id: 'idle_old', type: 'idle', outcome: 'failed' },
+      erroredAssistant(),
+    ] }) });
+    const runtime = createRuntime(vi.fn(async () => ({ task: scheduledTask })), {
+      waitForOpenCodeReady: vi.fn(async () => {}),
+    });
+    await runtime.syncProject('project-1');
+    expect(await runtime.runNow('project-1', 'task-1')).toMatchObject({ error: 'session execution failed' });
+  });
+
+  it.each([
+    ['ses_other', 'failed', 'error', 'session execution failed'],
+    ['ses_1', 'succeeded', 'success', undefined],
+    ['ses_1', 'interrupted', 'error', 'session execution interrupted'],
+  ])('keeps failure detail scoped to the failed run (%s / %s)', async (sessionID, outcome, status, error) => {
+    const client = createSuccessfulClient({ messageListImpl: async () => ({ data: [
+      { id: 'msg_idle', type: 'idle', outcome },
+    ] }) });
+    const runtime = createRuntime(vi.fn(async () => ({ task: scheduledTask })), {
+      waitForOpenCodeReady: vi.fn(async () => {}),
+    });
+    client.prompt.mockImplementation(async () => {
+      await runtime.observeSessionEvent({ payload: {
+        type: 'session.execution.failed',
+        data: { sessionID, error: { message: 'Earlier failure' } },
+      } });
+    });
+    await runtime.syncProject('project-1');
+    const result = await runtime.runNow('project-1', 'task-1');
+    expect(result.status).toBe(status);
+    expect(result.error).toBe(error);
+    expect(client.messageList).toHaveBeenCalledTimes(1);
+  });
+
   it('does not settle an older idle record while the session is active', async () => {
     vi.useFakeTimers();
     try {
@@ -1221,10 +1312,10 @@ describe('scheduled-tasks run history and session lifecycle', () => {
 
     expect(result.ok).toBe(false);
     expect(result.status).toBe('error');
-    expect(result.error).toBe('ProviderError');
+    expect(result.error).toBe('upstream failed');
     expect(history.finishRun).toHaveBeenCalledWith(
       expect.any(String),
-      expect.objectContaining({ status: 'error', error: 'ProviderError' }),
+      expect.objectContaining({ status: 'error', error: 'upstream failed' }),
     );
   });
 

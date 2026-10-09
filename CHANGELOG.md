@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [2.0.6-beta.1] - 2026-10-09
+
+### 修复
+
+- 计划任务失败时显示 OpenCode 返回的具体错误原因，包括模型不可用、额度耗尽等，避免仅显示通用的执行失败提示。
+
 ## [2.0.5] - 2026-10-09
 
 ### 修复与改进
