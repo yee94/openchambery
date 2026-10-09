@@ -3,6 +3,7 @@ import {
   QUESTION_AUTO_DELEGATE_DELAY_MS,
 } from './core.js';
 import { createQuestionFormIO } from './form-io.js';
+import { createQuestionPauseStore } from './pause-store.js';
 
 const REQUEST_TIMEOUT_MS = 15_000;
 
@@ -42,6 +43,7 @@ export function createQuestionAutoDelegateRuntime({
   },
   createEpoch = () => `qad-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`,
   onUserTakeover,
+  pauseStore = createQuestionPauseStore(),
 } = {}) {
   const upstream = async (path, { directory, method = 'GET', body } = {}) => {
     const url = new URL(buildOpenCodeUrl(path, ''));
@@ -103,6 +105,7 @@ export function createQuestionAutoDelegateRuntime({
 
   const core = createQuestionAutoDelegateCore({
     delayMs,
+    pauseStore,
     io: {
       now,
       createTimer,

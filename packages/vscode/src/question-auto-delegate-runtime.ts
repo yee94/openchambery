@@ -16,6 +16,7 @@ import {
   type QuestionAutoDelegateSnapshot,
 } from '../../web/server/lib/question-auto-delegate/core.js';
 import { createQuestionFormIO } from '../../web/server/lib/question-auto-delegate/form-io.js';
+import { createQuestionPauseStore } from '../../web/server/lib/question-auto-delegate/pause-store.js';
 import type { OpenCodeManager } from './opencode';
 
 const REQUEST_TIMEOUT_MS = 15_000;
@@ -271,6 +272,7 @@ const ensureCore = (): QuestionAutoDelegateCore => {
   if (coreRef) return coreRef;
 
   coreRef = createQuestionAutoDelegateCore({
+    pauseStore: createQuestionPauseStore(settingsPathOverrideForTests ? path.join(path.dirname(settingsPathOverrideForTests), 'question-pauses') : undefined),
     delayMs: QUESTION_AUTO_DELEGATE_DELAY_MS,
     io: {
       now: () => Date.now(),

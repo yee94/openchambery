@@ -286,6 +286,8 @@ attempt to reconstruct manual order already changed by an older client.
 
 ### Question auto-delegate pull authority
 
+Question answer drafts live in the chat-owned `questionDraftStore`, separate from Query snapshots. Runtime endpoint changes clear drafts, while temporary card unmounts and countdown snapshot transitions preserve them. The transcript-level delegation observer retires drafts only for explicitly settled request IDs, never an absent/failed snapshot.
+
 `lib/questionAutoDelegate.ts` owns a TanStack Query keyed by transport identity and runtime generation. It validates the Host `question-auto-delegate/core.d.ts` snapshot, passes GET cancellation to `runtimeFetch`, retains the previous snapshot after read failure, and applies mutation `{ outcome, snapshot }` responses (including 409 claims). Same-epoch revisions, retired epochs, and request sequence prevent late snapshots from replacing newer host state. Runtime-generation checks discard stale GET/mutation completions.
 
 `sync-context.handleEvent` consumes `openchamber:question-auto-delegate-changed` as an invalidation tip only. The stream-ready compensation edge also invalidates; active query observers lead with GET and runtime changes select a fresh key. Invalidation cancels an older in-flight GET before refetching, including cold-query tip races. `QuestionAutoDelegateNotifications` remains mounted through pending-card removal for confirmed automatic success feedback. High-frequency countdown paint belongs only to the card's leaf component. Session actions accept an optional authoritative question directory while preserving existing directory resolution for their other callers.

@@ -6,6 +6,7 @@ import { useI18n } from '@/lib/i18n';
 import { ensureQuestionAutoDelegate, getQuestionAutoDelegateSnapshot, mutateQuestionAutoDelegate, refreshQuestionAutoDelegate, useQuestionAutoDelegate, type QuestionDelegateData } from '@/lib/questionAutoDelegate';
 import { getRuntimeGeneration } from '@/lib/runtime-switch';
 import type { QuestionRequest } from '@/types/question';
+import { discardQuestionDraft, getQuestionDraft, updateQuestionDraft, useQuestionDraftStore } from './questionDraftStore';
 
 const DEFAULT_DELAY_MS = 30_000;
 
@@ -17,30 +18,31 @@ export function useQuestionDelegation(question: QuestionRequest) {
   const query = useQuestionAutoDelegate();
   const request = matchRequest(query.data?.snapshot.requests, question);
   const scope = `${getRuntimeGeneration()}:${question.sessionID}:${question.id}`;
+  const pausePending = useQuestionDraftStore((state) => state.drafts[scope]?.pausePending ?? false);
+  const pauseFailed = useQuestionDraftStore((state) => state.drafts[scope]?.pauseFailed ?? false);
   const [ui, setUI] = React.useState<{ scope: string; pending: 'pause' | 'delegate' | null; failed: 'pause' | 'delegate' | null }>({ scope, pending: null, failed: null });
-  const pending = ui.scope === scope ? ui.pending : null;
-  const failed = ui.scope === scope ? ui.failed : null;
+  const pending = (ui.scope === scope ? ui.pending : null) ?? (pausePending ? 'pause' : null);
+  const failed = (ui.scope === scope ? ui.failed : null) ?? (pauseFailed ? 'pause' : null);
   const [claim, setClaim] = React.useState<{ scope: string; epoch?: string } | null>(null);
   const claimed = claim?.scope === scope && (!claim.epoch || claim.epoch === query.data?.snapshot.epoch);
   const awaitingClaim = claimed && (!request || !['submitting', 'uncertain', 'settled'].includes(request.state));
-  const [held, setHeld] = React.useState<{ scope: string } | null>(null);
-  const heldForScope = held?.scope === scope;
+  const heldForScope = useQuestionDraftStore((state) => state.drafts[scope]?.interacted ?? false);
   const flight = React.useRef<string | null>(null);
   const failedScope = React.useRef<string | null>(null);
   const latestScope = React.useRef(scope);
   latestScope.current = scope;
   const hold = useEvent(() => {
     if (claimed) return;
-    setHeld((current) => (current?.scope === scope ? current : { scope }));
+    updateQuestionDraft(scope, () => ({ interacted: true }));
   });
   const run = useEvent(async (action: 'pause' | 'delegate', reason: 'interaction' | 'user' = 'user') => {
     if (claimed) return;
     if (action === 'pause') hold();
-    if (flight.current === scope || (reason === 'interaction' && failedScope.current === scope)) return;
+    const draft = getQuestionDraft(scope);
+    if (flight.current === scope || draft.pausePending || (reason === 'interaction' && (failedScope.current === scope || draft.pauseFailed))) return;
     const cached = getQuestionAutoDelegateSnapshot();
     const currentRequest = matchRequest(cached?.snapshot.requests, question);
-    if (currentRequest && ((action === 'pause' && currentRequest.state !== 'counting') ||
-      ['submitting', 'uncertain', 'settled'].includes(currentRequest.state))) {
+    if (currentRequest && ['submitting', 'uncertain', 'settled'].includes(currentRequest.state)) {
       if (reason === 'user') {
         setUI({ scope, pending: null, failed: null });
         failedScope.current = null;
@@ -52,6 +54,7 @@ export function useQuestionDelegation(question: QuestionRequest) {
     flight.current = scope;
     failedScope.current = null;
     setUI({ scope, pending: action, failed: null });
+    if (action === 'pause') updateQuestionDraft(scope, () => ({ pausePending: true, pauseFailed: false }));
     const startedScope = scope;
     try {
       let identity = {
@@ -70,21 +73,28 @@ export function useQuestionDelegation(question: QuestionRequest) {
       if (outcome === 'not_found' && action === 'pause' && reason === 'interaction') return;
       if (['error', 'not_found', 'disabled'].includes(outcome)) throw new Error('Question operation failed');
     } catch {
+      if (action === 'pause' && generation === getRuntimeGeneration() && useQuestionDraftStore.getState().drafts[startedScope]) {
+        updateQuestionDraft(startedScope, () => ({ pauseFailed: true }));
+      }
       if (latestScope.current === startedScope) {
         failedScope.current = startedScope;
         setUI({ scope: startedScope, pending: action, failed: action });
       }
     } finally {
+      if (action === 'pause' && generation === getRuntimeGeneration() && useQuestionDraftStore.getState().drafts[startedScope]) {
+        updateQuestionDraft(startedScope, () => ({ pausePending: false }));
+      }
       if (flight.current === startedScope) flight.current = null;
       if (latestScope.current === startedScope) setUI((state) => ({ ...state, pending: null }));
     }
   });
   const interaction = useEvent((event: React.SyntheticEvent<HTMLElement>) => {
     if ((event.target as Element).closest('[data-question-delegation-controls]')) return;
-    // First interaction holds locally and the effect below sends one pause.
+    // First interaction holds locally and starts the pause before a possible remount.
     // Further input (e.g. custom textarea keystrokes) must not re-enter pause.
     if (heldForScope) return;
     hold();
+    void run('pause', 'interaction');
   });
   const submissionClaimed = useEvent(async (submittedScope: string) => {
     if (submittedScope !== `${getRuntimeGeneration()}:${question.sessionID}:${question.id}`) return;
@@ -148,13 +158,14 @@ export function QuestionAutoDelegateStatus({ delegation }: { delegation: Delegat
     : request?.state === 'settled' && request.submittedBy === 'auto' && request.resolution === 'replied' ? 'chat.questionDelegate.success'
     : request?.state === 'settled' ? 'chat.questionDelegate.settled'
     : !enabled ? 'chat.questionDelegate.disabled'
-    : held || request?.state === 'paused' ? 'chat.questionDelegate.paused'
+    : request?.state === 'paused' ? 'chat.questionDelegate.paused'
+    : held ? 'chat.questionDelegate.pausing'
     : request?.state === 'disabled' ? 'chat.questionDelegate.disabled'
     : 'chat.questionDelegate.settled';
   return <div data-question-delegation-controls className="flex flex-col gap-1.5 border-t border-border/20 px-2 py-1.5">
     {showCountdown ? <LiveCountdown data={query.data} deadlineAt={request?.deadlineAt ?? null} startedAt={startedAt.current} delayMs={delayMs} /> : null}
     <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-      {!showCountdown ? <div className="min-w-0 flex-1 basis-40 typography-micro text-muted-foreground">
+      {!showCountdown && !failed ? <div className="min-w-0 flex-1 basis-40 typography-micro text-muted-foreground">
         <span role="status">{t(status)}</span>
       </div> : null}
       {query.isError || failed ? <div role="alert" className="min-w-0 flex-1 basis-40 typography-micro text-[var(--status-error)]">{t(failed === 'pause' ? 'chat.questionDelegate.pauseFailed' : failed === 'delegate' ? 'chat.questionDelegate.delegateFailed' : 'chat.questionDelegate.loadFailed')}</div> : null}
@@ -174,6 +185,10 @@ export function QuestionAutoDelegateNotifications() {
   React.useEffect(() => {
     const next = query.data;
     if (!next) return;
+    const settledIDs = new Set(next.snapshot.requests.filter((request) => request.state === 'settled').map((request) => request.requestID));
+    for (const scope of Object.keys(useQuestionDraftStore.getState().drafts)) {
+      if (scope.startsWith(`${generation}:`) && settledIDs.has(scope.slice(scope.lastIndexOf(':') + 1))) discardQuestionDraft(scope);
+    }
     const prior = previous.current;
     previous.current = { generation, data: next };
     if (!prior || prior.generation !== generation) return;

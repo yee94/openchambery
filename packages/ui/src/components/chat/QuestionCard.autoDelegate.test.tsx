@@ -21,6 +21,7 @@ import { questionAutoDelegateQueryOptions, refreshQuestionAutoDelegate, type Que
 import { QuestionCard } from './QuestionCard';
 import { QuestionAutoDelegateNotifications } from './QuestionAutoDelegateStatus';
 import type { QuestionRequest } from '@/types/question';
+import { useQuestionDraftStore } from './questionDraftStore';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 const question: QuestionRequest = { id: 'q-1', sessionID: 'child', questions: [
@@ -48,6 +49,7 @@ async function mount() {
   await flush();
 }
 beforeEach(() => {
+  useQuestionDraftStore.setState({ drafts: {} });
   vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'Date', 'performance'] });
   vi.setSystemTime(new Date('2040-01-01'));
   vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('visible');
@@ -73,6 +75,93 @@ afterEach(async () => {
 const bar = () => host.querySelector<HTMLElement>('[data-question-delegate-bar]');
 
 describe('QuestionCard auto delegation', () => {
+  test('failed pause never claims the server countdown is paused', async () => {
+    await mount();
+    mocks.fetch.mockRejectedValueOnce(new Error('offline'));
+    await click('Option A');
+    expect(snapshot.requests[0].state).toBe('counting');
+    expect(host.textContent).not.toContain('Countdown paused');
+    expect(host.querySelector('[role="alert"]')?.textContent).toContain('Pause failed');
+    expect(button('Option A').getAttribute('aria-pressed')).toBe('true');
+  });
+
+  test('first interaction publishes a shared hold even if this host was already paused', async () => {
+    snapshot = { ...snapshot, requests: [{ ...snapshot.requests[0], state: 'paused', deadlineAt: null, pauseReason: 'user' }] };
+    await mount();
+    await click('Option A');
+    expect(posts()).toHaveLength(1);
+    expect(JSON.parse(posts()[0][1].body).reason).toBe('interaction');
+    expect(button('Option A').getAttribute('aria-pressed')).toBe('true');
+  });
+
+  test('keeps selected answers through a card remount after the countdown pauses', async () => {
+    await mount();
+    await click('Option A');
+    expect(button('Option A').getAttribute('aria-pressed')).toBe('true');
+    await act(async () => { root.render(<QuestionAutoDelegateNotifications />); });
+    await mount();
+    expect(host.textContent).toContain('Countdown paused');
+    expect(button('Option A').getAttribute('aria-pressed')).toBe('true');
+    await click('Second');
+    await click('Option B');
+    await click('Submit');
+    expect(mocks.reply).toHaveBeenCalledWith('child', 'q-1', [['Option A'], ['Option B']], '/child-project');
+    expect(Object.keys(useQuestionDraftStore.getState().drafts)).toHaveLength(0);
+  });
+
+  test('preserves custom text and active tab on remount without sharing answers with a different question', async () => {
+    await mount();
+    await click('Other…');
+    await act(async () => {
+      const textarea = host.querySelector('textarea')!;
+      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')!.set!.call(textarea, 'My answer');
+      textarea.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    await click('Second');
+    await click('Option B');
+    await act(async () => { root.render(<QuestionCard question={{ ...question, id: 'q-other' }} />); });
+    await flush();
+    expect(button('Option A').getAttribute('aria-pressed')).toBe('false');
+    await mount();
+    expect(button('Option B').getAttribute('aria-pressed')).toBe('true');
+    await click('First');
+    expect(host.querySelector('textarea')?.value).toBe('My answer');
+  });
+
+  test('retries publishing a pause even when only the local host was paused', async () => {
+    await mount();
+    mocks.fetch.mockImplementationOnce(async () => {
+      snapshot = { ...snapshot, revision: snapshot.revision + 1, requests: [{ ...snapshot.requests[0], state: 'paused', deadlineAt: null, pauseReason: 'interaction' }] };
+      return Response.json({ outcome: 'error', snapshot }, { status: 503 });
+    });
+    await click('Option A');
+    expect(host.textContent).not.toContain('Countdown paused');
+    await click('Retry');
+    expect(posts()).toHaveLength(2);
+    expect(host.textContent).toContain('Countdown paused');
+    expect(button('Option A').getAttribute('aria-pressed')).toBe('true');
+  });
+
+  test('preserves an in-flight pause and its eventual failure across a remount', async () => {
+    await mount();
+    let finish!: (response: Response) => void;
+    mocks.fetch.mockImplementationOnce(() => new Promise<Response>((resolve) => { finish = resolve; }));
+    await click('Option A');
+    await act(async () => { root.render(<QuestionAutoDelegateNotifications />); });
+    await mount();
+    expect(posts()).toHaveLength(1);
+    expect(host.textContent).toContain('Pausing countdown');
+    snapshot = { ...snapshot, revision: snapshot.revision + 1, requests: [{ ...snapshot.requests[0], state: 'paused', deadlineAt: null, pauseReason: 'interaction' }] };
+    await act(async () => { finish(Response.json({ outcome: 'error', snapshot }, { status: 503 })); });
+    await flush();
+    expect(host.textContent).not.toContain('Countdown paused');
+    expect(host.textContent).toContain('Pause failed');
+    await click('Retry');
+    expect(posts()).toHaveLength(2);
+    expect(host.textContent).toContain('Countdown paused');
+    expect(button('Option A').getAttribute('aria-pressed')).toBe('true');
+  });
+
   test('Dismiss stops the question-owning child session and hides the card only after success', async () => {
     await mount();
     await click('Dismiss');

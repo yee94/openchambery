@@ -16,6 +16,7 @@ import { serializeQuestionAsJson, serializeQuestionAsMarkdown } from './question
 import { QUESTION_CUSTOM_TEXTAREA_MIN_HEIGHT, clampQuestionCustomTextareaHeight } from './questionTextareaSizing';
 import { QuestionAutoDelegateStatus, useQuestionDelegation } from './QuestionAutoDelegateStatus';
 import { QuestionCardFrame } from './QuestionCardFrame';
+import { discardQuestionDraft, getQuestionDraft, selectQuestionDraft, updateQuestionDraft, useQuestionDraftStore } from './questionDraftStore';
 
 interface QuestionCardProps {
   question: QuestionRequest;
@@ -162,16 +163,17 @@ export const QuestionCard: React.FC<QuestionCardProps> = ({ question }) => {
     const sourceSession = sessions.find((session) => session.id === question.sessionID);
     return Boolean(sourceSession?.parentID && sourceSession.parentID === currentSessionId);
   }, [question.sessionID, currentSessionId, sessions]);
-  const [activeTab, setActiveTab] = React.useState<TabKey>('0');
+  const scope = delegation.scope;
+  const activeTab = useQuestionDraftStore((state) => state.drafts[scope]?.activeTab ?? '0');
+  const setActiveTab = (activeTab: TabKey) => updateQuestionDraft(scope, () => ({ activeTab }));
   const [manualResponding, setIsResponding] = React.useState(false);
   const isResponding = manualResponding || delegation.claimed || delegation.pending === 'delegate' ||
     delegation.request?.state === 'submitting' || delegation.request?.state === 'uncertain' || delegation.request?.state === 'settled';
   const [hasResponded, setHasResponded] = React.useState(false);
 
-  const [selectedOptions, setSelectedOptions] = React.useState<Record<number, string[]>>({});
-  const [customMode, setCustomMode] = React.useState<Record<number, boolean>>({});
-  const customTextRef = React.useRef<Record<number, string>>({});
-  const [customTextFilled, setCustomTextFilled] = React.useState<Record<number, boolean>>({});
+  const selectedOptions = useQuestionDraftStore((state) => selectQuestionDraft(state, scope).selectedOptions);
+  const customMode = useQuestionDraftStore((state) => selectQuestionDraft(state, scope).customMode);
+  const customTextFilled = useQuestionDraftStore((state) => selectQuestionDraft(state, scope).customTextFilled);
 
   const questions = React.useMemo(() => question.questions ?? [], [question.questions]);
   const isSummaryTab = activeTab === SUMMARY_TAB;
@@ -184,13 +186,8 @@ export const QuestionCard: React.FC<QuestionCardProps> = ({ question }) => {
   }, [activeQuestion?.header, isSummaryTab]);
 
   React.useEffect(() => {
-    setActiveTab('0');
-    setSelectedOptions({});
-    setCustomMode({});
-    customTextRef.current = {};
-    setCustomTextFilled({});
     setHasResponded(false);
-  }, [question.id]);
+  }, [scope]);
 
   const tabs = React.useMemo(() => {
     const questionTabs = questions.map((q, index) => ({
@@ -208,7 +205,7 @@ export const QuestionCard: React.FC<QuestionCardProps> = ({ question }) => {
   const getAnswerDisplay = (index: number): string => {
     const isCustom = Boolean(customMode[index]);
     if (isCustom) {
-      const value = (customTextRef.current[index] ?? '').trim();
+      const value = (getQuestionDraft(scope).customText[index] ?? '').trim();
       return value || t('chat.questionCard.noAnswer');
     }
     const answers = selectedOptions[index] ?? [];
@@ -262,7 +259,7 @@ export const QuestionCard: React.FC<QuestionCardProps> = ({ question }) => {
     for (let index = 0; index < questions.length; index += 1) {
       const isCustom = Boolean(customMode[index]);
       if (isCustom) {
-        const value = (customTextRef.current[index] ?? '').trim();
+        const value = (getQuestionDraft(scope).customText[index] ?? '').trim();
         answers.push(value ? [value] : []);
         continue;
       }
@@ -277,32 +274,34 @@ export const QuestionCard: React.FC<QuestionCardProps> = ({ question }) => {
     (label: string) => {
       if (!activeQuestion) return;
 
-      setCustomMode((prev) => ({ ...prev, [activeIndex]: false }));
-      setCustomTextFilled((prev) => (prev[activeIndex] ? { ...prev, [activeIndex]: false } : prev));
-
-      setSelectedOptions((prev) => {
-        const current = prev[activeIndex] ?? [];
-        if (isMultiple) {
-          const exists = current.includes(label);
-          const next = exists ? current.filter((item) => item !== label) : [...current, label];
-          return { ...prev, [activeIndex]: next };
-        }
-        return { ...prev, [activeIndex]: [label] };
+      updateQuestionDraft(scope, (draft) => {
+        const current = draft.selectedOptions[activeIndex] ?? [];
+        const next = isMultiple
+          ? current.includes(label) ? current.filter((item) => item !== label) : [...current, label]
+          : [label];
+        return {
+          selectedOptions: { ...draft.selectedOptions, [activeIndex]: next },
+          customMode: { ...draft.customMode, [activeIndex]: false },
+          customTextFilled: draft.customTextFilled[activeIndex] ? { ...draft.customTextFilled, [activeIndex]: false } : draft.customTextFilled,
+        };
       });
     }
   );
 
   const handleSelectCustom = useEvent(() => {
-    setCustomMode((prev) => ({ ...prev, [activeIndex]: true }));
-    setSelectedOptions((prev) => ({ ...prev, [activeIndex]: [] }));
-    const hasValue = (customTextRef.current[activeIndex] ?? '').trim().length > 0;
-    setCustomTextFilled((prev) => (prev[activeIndex] === hasValue ? prev : { ...prev, [activeIndex]: hasValue }));
+    updateQuestionDraft(scope, (draft) => ({
+      customMode: { ...draft.customMode, [activeIndex]: true },
+      selectedOptions: { ...draft.selectedOptions, [activeIndex]: [] },
+      customTextFilled: { ...draft.customTextFilled, [activeIndex]: (draft.customText[activeIndex] ?? '').trim().length > 0 },
+    }));
   });
 
   const handleCustomValueChange = useEvent((value: string) => {
-    customTextRef.current[activeIndex] = value;
     const hasValue = value.trim().length > 0;
-    setCustomTextFilled((prev) => (prev[activeIndex] === hasValue ? prev : { ...prev, [activeIndex]: hasValue }));
+    updateQuestionDraft(scope, (draft) => ({
+      customText: { ...draft.customText, [activeIndex]: value },
+      customTextFilled: draft.customTextFilled[activeIndex] === hasValue ? draft.customTextFilled : { ...draft.customTextFilled, [activeIndex]: hasValue },
+    }));
   });
 
   const handleConfirm = useEvent(async () => {
@@ -313,11 +312,13 @@ export const QuestionCard: React.FC<QuestionCardProps> = ({ question }) => {
     try {
       const answers = buildAnswersPayload();
       await respondToQuestion(question.sessionID, question.id, answers, delegation.request?.directory);
+      discardQuestionDraft(submittedScope);
       setHasResponded(true);
     } catch (error) {
       if (sessionActions.isQuestionSubmissionClaimedError(error)) {
         await delegation.submissionClaimed(submittedScope);
       } else if (sessionActions.isQuestionRequestNotFoundError(error)) {
+        discardQuestionDraft(submittedScope);
         toast.info(t('chat.questionCard.noLongerPending'));
         setHasResponded(true);
       } else {
@@ -351,11 +352,13 @@ export const QuestionCard: React.FC<QuestionCardProps> = ({ question }) => {
     setIsResponding(true);
     try {
       await dismissQuestion(question.sessionID, question.id, delegation.request?.directory);
+      discardQuestionDraft(submittedScope);
       setHasResponded(true);
     } catch (error) {
       if (sessionActions.isQuestionSubmissionClaimedError(error)) {
         await delegation.submissionClaimed(submittedScope);
       } else if (sessionActions.isQuestionRequestNotFoundError(error)) {
+        discardQuestionDraft(submittedScope);
         toast.info(t('chat.questionCard.noLongerPending'));
         setHasResponded(true);
       } else {
@@ -624,7 +627,7 @@ export const QuestionCard: React.FC<QuestionCardProps> = ({ question }) => {
                   {isCustomActive ? (
                     <div className="pl-6 pr-1 pt-0.5">
                       <CustomAnswerTextarea
-                        value={customTextRef.current[activeIndex] ?? ''}
+                        value={getQuestionDraft(scope).customText[activeIndex] ?? ''}
                         onValueChange={handleCustomValueChange}
                         placeholder={t('chat.questionCard.yourAnswer')}
                         disabled={isResponding}
