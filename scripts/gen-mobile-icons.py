@@ -35,10 +35,12 @@ BLEED = 7.0
 SUPERSAMPLE = 4
 
 # Adaptive icons are a 108dp canvas with a 72dp viewport and a 66dp safe zone.
-# 64dp keeps the complete silhouette inside the safe zone, including round masks.
+# Preserve the original foreground-to-background ratio inside the safe zone.
 CANVAS_DP = 108
-MARK_HEIGHT_DP = 64
-IOS_MARK_HEIGHT = 836
+MARK_HEIGHT_DP = 56
+# The original artwork's 824px card starts at (100, 100); its outer margin is
+# desktop padding, not part of the mobile icon's composition.
+CARD_BOUNDS = (100, 100, 924, 924)
 DENSITIES = {
     "ldpi": 81,
     "mdpi": 108,
@@ -93,13 +95,21 @@ def background(canvas: int) -> Image.Image:
     return out
 
 
-def generate_ios(mark: Image.Image) -> None:
-    icon = background(1024).convert("RGBA")
-    icon.alpha_composite(centered_mark(mark, 1024, IOS_MARK_HEIGHT))
+def normalized_card(canvas: int) -> Image.Image:
+    # Scale the finished card as one image, so its mark, internal spacing, and
+    # background keep exactly the source proportions. Only exterior padding goes.
+    card = Image.open(SOURCE).convert("RGBA").crop(CARD_BOUNDS)
+    icon = background(canvas).convert("RGBA")
+    icon.alpha_composite(card.resize((canvas, canvas), Image.LANCZOS))
+    return icon
+
+
+def generate_ios() -> None:
+    icon = normalized_card(1024)
     icon.convert("RGB").save(IOS / "Assets.xcassets/AppIcon.appiconset/AppIcon-512@2x.png")
 
-    # Keep the existing glass artwork, with mobile-only sizing. Desktop uses
-    # its original Composer document and dock-specific padding.
+    # Composer already supplies a full-size system background. Preserve its
+    # original composition instead of enlarging the foreground independently.
     source = REPO / "packages/electron/resources/icons/AppIcon.icon"
     target = IOS / "AppIcon.icon"
     (target / "Assets").mkdir(parents=True, exist_ok=True)
@@ -107,17 +117,12 @@ def generate_ios(mark: Image.Image) -> None:
     for group in document["groups"]:
         for layer in group["layers"]:
             copy2(source / "Assets" / layer["image-name"], target / "Assets" / layer["image-name"])
-            if not layer.get("hidden"):
-                layer["position-specializations"] = [{
-                    "idiom": "square",
-                    "value": {"scale": 1.30, "translation-in-points": [0, 0]},
-                }]
     (target / "icon.json").write_text(json.dumps(document, indent=2) + "\n")
 
 
 def main() -> None:
     mark = extract_mark()
-    generate_ios(mark)
+    generate_ios()
 
     for density, canvas in DENSITIES.items():
         height = round(canvas * MARK_HEIGHT_DP / CANVAS_DP)
@@ -127,11 +132,10 @@ def main() -> None:
         out.save(target)
         print(f"{target.relative_to(REPO)} {canvas}x{canvas} mark-height={height}")
 
-        # Pre-adaptive launchers consume these PNGs directly. Match the adaptive
-        # viewport size and preserve both the rounded-square and round variants.
+        # Pre-adaptive launchers consume the complete, uniformly scaled card.
+        # Preserve both the rounded-square and round variants.
         viewport = 768
-        legacy = background(viewport).convert("RGBA")
-        legacy.alpha_composite(centered_mark(mark, viewport, round(viewport * MARK_HEIGHT_DP / 72)))
+        legacy = normalized_card(viewport)
         size = round(canvas * 48 / CANVAS_DP)
         for name, circular in [("ic_launcher.png", False), ("ic_launcher_round.png", True)]:
             mask = Image.new("L", (viewport, viewport))
