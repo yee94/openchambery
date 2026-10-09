@@ -17,6 +17,8 @@ import type { Event } from "@/sync/types"
 import { mergeSessionTranscript, projectFlatFromTranscriptData } from "./transcript-merge"
 import { createQueryTranscriptRepository } from "./transcript-repository-query-adapter"
 import { computeAssistantTps } from "@/components/chat/message/assistantTps"
+import { normalizeOpenCodeEvent, toLegacyEventShape } from "./opencode-event-normalizer"
+import { projectTurnRecords } from "@/components/chat/lib/turns/projectTurnRecords"
 
 const SESSION = "ses_tps_batch"
 const DIRECTORY = "/workspace"
@@ -69,6 +71,68 @@ const readTpsInputs = (data: ReturnType<typeof projectFlatFromTranscriptData> | 
 }
 
 describe("settle tokens through sse-event-batch (mergeSessionTranscript)", () => {
+  test("idle materialization repairs a missed streamed event on an otherwise settled step", () => {
+    const settled = {
+      ...assistantZero("msg_a"), finish: "stop", tokens: TOKENS_FINAL,
+      time: { created: 2000, completed: 21000 },
+    } as Message
+    const live = mergeSessionTranscript(undefined, SESSION, {
+      type: "http-page", purpose: "initial",
+      page: transportPage([{ info: userMsg("msg_u") }, { info: settled }]),
+    }).data
+    const repaired = mergeSessionTranscript(live, SESSION, {
+      type: "http-page", purpose: "materialize",
+      page: transportPage([{ info: { ...settled, time: { ...settled.time, streamed: 20000 } } }]),
+    }).data
+    const { info, tps } = readTpsInputs(projectFlatFromTranscriptData(repaired, SESSION))
+    expect(info?.time.streamed).toBe(20000)
+    expect(tps).toBeCloseTo(142 / 18)
+  })
+
+  test("native streamed clock survives separate production batches", () => {
+    let data = mergeSessionTranscript(undefined, SESSION, {
+      type: "http-page", purpose: "initial",
+      page: transportPage([{ info: userMsg("msg_u") }]),
+    }).data
+    for (const [type, created, fields] of [
+      ["session.step.started", 2000, {}],
+      ["session.step.streamed", 20000, {}],
+      ["session.step.ended", 21000, { finish: "stop", tokens: TOKENS_FINAL }],
+    ] as const) {
+      const normalized = normalizeOpenCodeEvent({
+        id: `evt_${created}`, type, created,
+        location: { directory: DIRECTORY },
+        durable: { aggregateID: `session:${SESSION}`, seq: created, version: 1 },
+        data: { sessionID: SESSION, assistantMessageID: "msg_a", ...fields },
+      })
+      expect(normalized.action).toBe("emit")
+      if (normalized.action !== "emit") throw new Error("Missing lifecycle event")
+      data = mergeSessionTranscript(data, SESSION, {
+        type: "sse-event-batch", events: [toLegacyEventShape(normalized.event) as Event],
+      }).data
+    }
+    const { info, tps } = readTpsInputs(projectFlatFromTranscriptData(data, SESSION))
+    expect(info?.time.streamed).toBe(20000)
+    expect(tps).toBeCloseTo(142 / 18)
+  })
+
+  test("materialization preserves an existing live streamed clock", () => {
+    const settled = {
+      ...assistantZero("msg_a"), finish: "stop", tokens: TOKENS_FINAL,
+      time: { created: 2000, streamed: 20000, completed: 21000 },
+    } as Message
+    const live = mergeSessionTranscript(undefined, SESSION, {
+      type: "http-page", purpose: "initial", page: transportPage([{ info: settled }]),
+    }).data
+    const after = mergeSessionTranscript(live, SESSION, {
+      type: "http-page", purpose: "materialize",
+      page: transportPage([{ info: { ...settled, time: { ...settled.time, streamed: 19000 } } }]),
+    }).data
+    expect(projectFlatFromTranscriptData(after, SESSION).messagesByID.msg_a).toBe(
+      projectFlatFromTranscriptData(live, SESSION).messagesByID.msg_a,
+    )
+  })
+
   test("both settle ticks in one batch", () => {
     const open = assistantZero("msg_a")
     const live = mergeSessionTranscript(undefined, SESSION, {
@@ -205,6 +269,51 @@ describe("settle tokens through production query adapter with sse-event-batch", 
   const TRANSPORT = "browser" as const
   const GENERATION = 1
   const scope = { directory: DIRECTORY, sessionID: SESSION, transport: TRANSPORT, generation: GENERATION }
+
+  test("missing timing recovers on both sides of an aborted turn without contaminating later turns", () => {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const repo = createQueryTranscriptRepository({ client, transport: TRANSPORT, generation: GENERATION })
+    const users = [0, 1, 2].map((index) => ({
+      ...userMsg(`msg_u${index}`), time: { created: index * 30000 + 1000 },
+    }))
+    const assistants = [0, 1, 2].map((index) => ({
+      ...assistantZero(`msg_a${index}`),
+      time: { created: index * 30000 + 2000, completed: index * 30000 + 21000 },
+      finish: index === 1 ? "error" : "stop",
+      tokens: index === 1 ? TOKENS_ZERO : TOKENS_FINAL,
+      ...(index === 1 ? { error: { type: "aborted", message: "aborted" } } : {}),
+    }) as Message)
+    const records = users.flatMap((info, index) => [
+      { info, parts: [] }, { info: assistants[index], parts: [textPart(`p_${index}`, assistants[index].id)] },
+    ])
+    repo.apply(scope, { type: "http-page", purpose: "initial", page: transportPage(records) })
+    const before = repo.getTranscript(scope)
+    let notifications = 0
+    const unsubscribe = repo.subscribe(scope, () => { notifications += 1 })
+    const authority = records.map((record) => record.info.role === "assistant" && record.info.finish === "stop"
+      ? { ...record, info: { ...record.info, time: { ...record.info.time, streamed: record.info.time.created + 18000 } } }
+      : record)
+    repo.apply(scope, { type: "http-page", purpose: "materialize", page: transportPage(authority) })
+    const after = repo.getTranscript(scope)
+    const turns = projectTurnRecords(after.messageOrder.map((id) => ({
+      info: after.messagesByID[id], parts: [...(after.partsByMessageID[id] ?? [])],
+    }))).turns
+    expect(turns).toHaveLength(3)
+    const rates = turns.map((turn) => computeAssistantTps(turn.assistantMessages.map(({ info }) => ({
+      createdAt: info.time.created, streamedAt: info.time.streamed,
+      outputTokens: info.tokens?.output, reasoningTokens: info.tokens?.reasoning,
+    }))))
+    expect(rates[0]).toBeCloseTo(142 / 18)
+    expect(rates[1]).toBeNull()
+    expect(rates[2]).toBeCloseTo(142 / 18)
+    expect(after.messagesByID.msg_a1).toBe(before.messagesByID.msg_a1)
+    expect(notifications).toBeGreaterThan(0)
+    repo.apply(scope, { type: "http-page", purpose: "materialize", page: transportPage(authority) })
+    expect(repo.getMessage(scope, "msg_a0")).toBe(after.messagesByID.msg_a0)
+    unsubscribe()
+    repo.destroy()
+    client.clear()
+  })
 
   test("captured settle sequence batched through createQueryTranscriptRepository", () => {
     const client = new QueryClient({ defaultOptions: { queries: { retry: false, retryDelay: 1 } } })

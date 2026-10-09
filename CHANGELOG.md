@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [2.0.3] - 2026-10-09
+
+### 修复
+
+- 修复实时计时事件缺失后，已完成回复的 TPS 在补拉数据后仍不显示的问题；补齐缺失的生成计时，并保留已有实时数据。
+
 ## [2.0.2] - 2026-10-09
 
 ### 修复与改进
