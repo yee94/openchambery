@@ -400,7 +400,7 @@ function mergeMaterializedParts(
 type MessageTerminalFields = {
   finish?: unknown
   error?: unknown
-  time?: { created?: unknown; completed?: unknown }
+  time?: { created?: unknown; streamed?: unknown; completed?: unknown }
 }
 
 const readTerminalFields = (message: Message): MessageTerminalFields => message as MessageTerminalFields
@@ -426,11 +426,14 @@ const hasError = (message: Message): boolean => Boolean(readTerminalFields(messa
  * insert-only and must still copy positive snapshot tokens so TPS does not wait
  * for a later reconcile-page upsert. Live positive tokens are never overwritten
  * (same zero-value protection as `mergeTranscriptMessageUpdate`).
+ * The provider-stream boundary is also terminal measurement data: missing it
+ * leaves TPS unavailable even when completion and token usage have settled.
  */
 function fillMissingTerminalMessageFields(live: Message, snapshot: Message): Message {
   const snapshotFields = readTerminalFields(snapshot)
   const snapshotFinish = snapshotFields.finish
   const snapshotCompleted = snapshotFields.time?.completed
+  const snapshotStreamed = snapshotFields.time?.streamed
   const snapshotError = snapshotFields.error
   const liveTokens = (live as { tokens?: unknown }).tokens
   const snapshotTokens = (snapshot as { tokens?: unknown }).tokens
@@ -439,11 +442,13 @@ function fillMissingTerminalMessageFields(live: Message, snapshot: Message): Mes
     && typeof snapshotFinish === "string"
     && snapshotFinish.length > 0
   const takeCompleted = !hasCompletedTime(live) && typeof snapshotCompleted === "number"
+  const takeStreamed = live.time.streamed === undefined
+    && typeof snapshotStreamed === "number" && Number.isFinite(snapshotStreamed)
   const takeError = !hasError(live) && Boolean(snapshotError)
   const takeTokens = !hasAnyPositiveTokenCount(liveTokens)
     && hasAnyPositiveTokenCount(snapshotTokens)
 
-  if (!takeFinish && !takeCompleted && !takeError && !takeTokens) {
+  if (!takeFinish && !takeCompleted && !takeStreamed && !takeError && !takeTokens) {
     return live
   }
 
@@ -451,8 +456,12 @@ function fillMissingTerminalMessageFields(live: Message, snapshot: Message): Mes
   if (takeFinish) {
     next.finish = snapshotFinish
   }
-  if (takeCompleted) {
-    next.time = { ...readTerminalFields(live).time, completed: snapshotCompleted }
+  if (takeCompleted || takeStreamed) {
+    next.time = {
+      ...readTerminalFields(live).time,
+      ...(takeCompleted ? { completed: snapshotCompleted } : {}),
+      ...(takeStreamed ? { streamed: snapshotStreamed } : {}),
+    }
   }
   if (takeError) {
     next.error = snapshotError
