@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [2.0.6] - 2026-10-10
+
+### 修复与改进
+
+- 安装引导统一使用 OpenCode 2 安装命令，展示内容与复制到剪贴板的命令保持一致。
+- 计划任务失败时显示 OpenCode 返回的具体错误原因，包括模型不可用、额度耗尽等，避免仅显示通用的执行失败提示。
+
 ## [2.0.6-beta.1] - 2026-10-09
 
 ### 修复

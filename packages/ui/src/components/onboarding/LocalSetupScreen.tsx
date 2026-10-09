@@ -10,7 +10,7 @@ import { useI18n } from '@/lib/i18n';
 import { runtimeFetch } from '@/lib/runtime-fetch';
 import { checkOpenCodeAvailability, retryOpenCodeAvailability } from './openCodeAvailability';
 
-const INSTALL_COMMAND = 'curl -fsSL https://opencode.ai/install | bash';
+const INSTALL_COMMAND = 'curl -fsSL https://opencode.ai/v2/install | bash';
 const DOCS_URL = 'https://opencode.ai/docs';
 
 type OnboardingPlatform = 'macos' | 'linux' | 'windows' | 'unknown';
@@ -32,7 +32,7 @@ function BashCommand({ onCopy, copyTitle }: { onCopy: () => void; copyTitle: str
       <code>
         <span style={{ color: 'var(--syntax-keyword)' }}>curl</span>
         <span className="text-muted-foreground"> -fsSL </span>
-        <span style={{ color: 'var(--syntax-string)' }}>https://opencode.ai/install</span>
+        <span style={{ color: 'var(--syntax-string)' }}>https://opencode.ai/v2/install</span>
         <span className="text-muted-foreground"> | </span>
         <span style={{ color: 'var(--syntax-keyword)' }}>bash</span>
       </code>
