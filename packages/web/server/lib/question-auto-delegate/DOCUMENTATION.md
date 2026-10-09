@@ -41,6 +41,10 @@ Auto-submit requires **settings ready + enabled + authoritative directory**.
 
 ## Architecture
 
+`pause-store.js` owns monotonic per-question user holds shared by co-located Web, Electron and VS Code hosts. Default storage is the user's `.config/openchamber/question-pauses`; `OPENCHAMBER_QUESTION_PAUSE_DIR` can select a shared directory. Empty, atomically created files are keyed by the digest of globally unique upstream session/form IDs, contain no answers or credentials, survive host restart and are removed on authoritative settlement. All hosts attached to one upstream must use this shared location and the updated runtime; independent machines require a shared filesystem or a single OpenChamber host. This is not an upstream distributed lock or a cross-host submission claim.
+
+Pause acknowledgement follows shared hold publication. Failure leaves the local timer stopped but returns an error so the UI can retry publication. An early pause with no recovered form records only a hold and still returns `not_found`; later discovery cannot arm it. Snapshot reads and automatic expiry adopt shared holds, and form IO rechecks immediately after schema GET, before answer POST. Unreadable coordination fails closed (local pause, partial coverage); explicit user reply/delegation remains allowed. A POST already dispatched upstream cannot be recalled. No polling loop or extra upstream request is introduced.
+
 | File | Role |
 |---|---|
 | `core.js` / `core.d.ts` | Platform-agnostic state machine (IO/timer injected). Shared contract for VS Code. |

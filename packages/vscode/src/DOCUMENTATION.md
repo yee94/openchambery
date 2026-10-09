@@ -12,6 +12,8 @@ Hash-prefixed prompt text is literal. The snippet configuration bridge and local
 
 ## Runtime modules
 
+Question auto-delegation uses the Web-owned `pause-store` as well as the shared core/form IO. User interaction holds are shared with co-located desktop/Web hosts and checked again before automatic answer dispatch. `OPENCHAMBER_QUESTION_PAUSE_DIR` must match across participating hosts; failed reads prevent auto-answering and failed writes remain retryable. See `packages/web/server/lib/question-auto-delegate/DOCUMENTATION.md` for lifetime and deployment scope.
+
 - OpenCode configuration persistence: `opencodeConfig.ts` and the raw editor in `bridge-config-runtime.ts` share `packages/web/server/lib/opencode/config-files.js`. Both global JSON/JSONC documents participate; entity edits target their physical source. Custom file and `OPENCODE_CONFIG_DIR`/XDG resolution happen at read time. Structured writes preserve unrelated JSONC comments, validate before writing, retain backups, and atomically replace; parse/IO failures propagate. Raw editor selects custom or highest-precedence global JSONC/JSON, never a merged snapshot. See the owning OpenCode backend document's **Storage and configuration** contract.
 
 OpenCode client/schema and CLI default install target are `2.0.23`; execution and

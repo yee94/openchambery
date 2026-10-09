@@ -109,6 +109,10 @@ Primary composer history parsing reads authoritative top-level `providerID` / `m
 
 ## Question auto-delegation
 
+`questionDraftStore.ts` owns in-memory answer drafts by runtime generation, session and request ID. Selection, custom text, active tab, interaction intent and pause-flight/error state survive QuestionCard remounts and counting/paused snapshot changes. Each card subscribes only to its own selection/mode/completion fields; non-empty custom typing does not republish those fields. Successful reply/dismiss, authoritative settled snapshots and runtime changes release drafts; unmount and failed mutations do not. Drafts are not written to browser storage.
+
+Interaction capture starts POST pause directly, before a possible unmount; the held-state effect compensates for late form discovery and remount. Only an authoritative paused request may display confirmed pause. A local hold without confirmation displays pausing; a failed POST displays the existing retryable failure instead of a contradictory paused label. Explicit retry also republishes when the local host paused but shared pause persistence failed.
+
 Pending Question, Permission, and native Form interactions all render through
 `QuestionCardFrame`, the shared transcript presentation based on the existing
 QuestionCard: the same neutral card surface, rounded border, and separated

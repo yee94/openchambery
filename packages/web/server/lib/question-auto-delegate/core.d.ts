@@ -4,6 +4,7 @@
  * API tip event: `openchamber:question-auto-delegate-changed` with `{ epoch, revision }` only —
  * consumers must GET `/api/question-auto-delegate` for the authoritative snapshot.
  */
+import type { QuestionPauseStore } from './pause-store.js';
 
 export const QUESTION_AUTO_DELEGATE_DELAY_MS: 30000;
 
@@ -140,6 +141,8 @@ export interface QuestionAutoDelegateUpstreamResult {
    * body was never transmitted. Must not be set when the send may have reached upstream.
    */
   notSent?: boolean;
+  /** A shared user hold prevented the automatic answer before dispatch. */
+  paused?: boolean;
   status: number;
   body: unknown;
 }
@@ -170,6 +173,7 @@ export interface QuestionAutoDelegateIO {
     directory: string | undefined,
     answers: string[][],
     sessionID: string,
+    canReply?: () => boolean,
   ): Promise<QuestionAutoDelegateUpstreamResult>;
   postReject(
     requestID: string,
@@ -203,6 +207,7 @@ export interface QuestionAutoDelegateCoreOptions {
   io: QuestionAutoDelegateIO;
   delayMs?: number;
   autoAnswer?: string;
+  pauseStore?: QuestionPauseStore;
 }
 
 export interface QuestionAutoDelegateCore {

@@ -64,6 +64,7 @@ export function createQuestionAutoDelegateCore({
   io,
   delayMs = QUESTION_AUTO_DELEGATE_DELAY_MS,
   autoAnswer = QUESTION_AUTO_DELEGATE_ANSWER,
+  pauseStore,
 } = {}) {
   if (!io || typeof io !== 'object') {
     throw new TypeError('createQuestionAutoDelegateCore requires io');
@@ -107,18 +108,21 @@ export function createQuestionAutoDelegateCore({
     }
   };
 
-  const snapshot = () => ({
-    epoch,
-    revision,
-    serverNow: io.now(),
-    enabled: settingsStatus === 'ready' ? enabled : false,
-    delayMs,
-    coverage: {
-      state: settingsStatus === 'unavailable' && coverageState === 'ready' ? 'partial' : coverageState,
-      failedDirectories: failedDirectories.slice(),
-    },
-    requests: Array.from(requests.values()).map(publicRequest),
-  });
+  const snapshot = () => {
+    for (const entry of requests.values()) syncSharedPause(entry);
+    return {
+      epoch,
+      revision,
+      serverNow: io.now(),
+      enabled: settingsStatus === 'ready' ? enabled : false,
+      delayMs,
+      coverage: {
+        state: settingsStatus === 'unavailable' && coverageState === 'ready' ? 'partial' : coverageState,
+        failedDirectories: failedDirectories.slice(),
+      },
+      requests: Array.from(requests.values()).map(publicRequest),
+    };
+  };
 
   const rememberSession = (info, directoryHint = '') => {
     if (!info || typeof info !== 'object') return;
@@ -143,6 +147,23 @@ export function createQuestionAutoDelegateCore({
       }
       entry.timer = null;
     }
+  };
+
+  const syncSharedPause = (entry) => {
+    if (entry.state !== 'counting') return false;
+    try {
+      if (!pauseStore?.has(entry.requestID, entry.sessionID)) return false;
+    } catch {
+      // Unreadable coordination is not permission to answer. Pause locally and
+      // expose partial coverage; never let an event/timer rejection escape the hub.
+      coverageState = 'partial';
+    }
+    clearTimer(entry);
+    entry.state = 'paused';
+    entry.deadlineAt = null;
+    entry.pauseReason = 'interaction';
+    bump();
+    return true;
   };
 
   const fireTakeover = (entry, reason) => {
@@ -191,6 +212,7 @@ export function createQuestionAutoDelegateCore({
   };
 
   const ensureCounting = (entry, { resetDeadline } = { resetDeadline: true }) => {
+    if (syncSharedPause(entry)) return false;
     if (entry.state === TERMINAL_SETTLED || entry.state === 'uncertain' || entry.state === 'submitting') {
       return false;
     }
@@ -304,6 +326,11 @@ export function createQuestionAutoDelegateCore({
     entry.resolution = resolution;
     entry.claimAuthority = entry.claimAuthority || 'done';
     if (submittedBy) entry.submittedBy = submittedBy;
+    try {
+      pauseStore?.remove(entry.requestID, entry.sessionID);
+    } catch {
+      // Retaining a settled hold is harmless; cleanup must not undo settlement.
+    }
   };
 
   const markUncertain = (entry, submittedBy) => {
@@ -538,6 +565,9 @@ export function createQuestionAutoDelegateCore({
         };
       }
       const existing = requests.get(requestID);
+      if (existing && (syncSharedPause(existing) || existing.state === 'paused')) {
+        return { outcome: 'paused', snapshot: snapshot() };
+      }
       if (existing && !asTrimmedString(existing.directory) && !asTrimmedString(input.directory)) {
         return {
           outcome: 'error',
@@ -620,7 +650,8 @@ export function createQuestionAutoDelegateCore({
           ? input.answers
           : buildAutoDelegateAnswers(count, autoAnswer);
         entry.upstreamDispatched = true;
-        upstream = await io.postReply(requestID, directory, answers, entry.sessionID);
+        upstream = await io.postReply(requestID, directory, answers, entry.sessionID,
+          authority === 'auto' ? () => !pauseStore?.has(requestID, entry.sessionID) : undefined);
       }
     } catch (error) {
       // Throw before a classified upstream result: treat as pre-send failure → release for retry.
@@ -650,6 +681,11 @@ export function createQuestionAutoDelegateCore({
     // Compatible extension: only an explicit notSent===true means the request
     // never left the process. Release claim for human retry. Unknown status:0
     // without notSent stays uncertain (may have been sent).
+    if (upstream?.paused === true && upstream.notSent === true) {
+      releaseClaimToPaused(entry, 'interaction');
+      bump();
+      return { outcome: 'paused', snapshot: snapshot() };
+    }
     if (upstream?.notSent === true) {
       releaseClaimToPaused(entry, authority === 'manual' ? 'interaction' : 'user');
       bump();
@@ -793,6 +829,13 @@ export function createQuestionAutoDelegateCore({
 
     let entry = requests.get(requestID);
     if (!entry) {
+      // Publish the user's hold before asynchronous discovery: another host's
+      // deadline must not win while this host waits for its form list.
+      try {
+        pauseStore?.pause(requestID, sessionID);
+      } catch {
+        return { outcome: 'error', snapshot: snapshot(), status: 503, error: 'Could not publish question pause' };
+      }
       const recovered = await recoverPendingIdentity({
         requestID,
         sessionID,
@@ -863,6 +906,12 @@ export function createQuestionAutoDelegateCore({
     entry.state = 'paused';
     entry.deadlineAt = null;
     entry.pauseReason = reason === 'goal' ? 'goal' : reason;
+    try {
+      pauseStore?.pause(requestID, sessionID);
+    } catch {
+      bump();
+      return { outcome: 'error', snapshot: snapshot(), status: 503, error: 'Could not publish question pause' };
+    }
     if (reason !== 'goal') {
       fireTakeover(entry, reason);
     }

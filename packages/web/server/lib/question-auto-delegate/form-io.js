@@ -12,7 +12,7 @@ export function createQuestionFormIO(upstream) {
       if (!Array.isArray(rows)) return null;
       return rows.filter((form) => form?.metadata?.kind === 'question');
     },
-    async postReply(requestID, directory, answers, sessionID) {
+    async postReply(requestID, directory, answers, sessionID, canReply) {
       const path = formPath(sessionID, requestID);
       const result = await upstream(path, { directory });
       // A failed schema read never means the answer POST was dispatched.
@@ -30,6 +30,9 @@ export function createQuestionFormIO(upstream) {
           field.options?.find((option) => (option.label || option.value) === value)?.value ?? value);
         return [field.key, field.type === 'multiselect' ? values : values[0] ?? ''];
       }));
+      if (canReply && !canReply()) {
+        return { ok: false, notSent: true, paused: true, status: 409, body: null };
+      }
       return upstream(`${path}/reply`, { directory, method: 'POST', body: { answer } });
     },
     async postReject(requestID, directory, _body, sessionID) {
