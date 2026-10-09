@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [2.0.5-beta.2] - 2026-10-09
+
+### 修复
+
+- 恢复移动端图标中立方体与底板的原有比例，撤回单独放大内部图案的调整；传统图标去除外部留白后整张等比缩放，保留原有构图。
+
 ## [2.0.5-beta.1] - 2026-10-09
 
 ### 修复与改进
