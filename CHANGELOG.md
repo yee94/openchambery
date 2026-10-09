@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [2.0.5-beta.3] - 2026-10-09
+
+### 修复
+
+- 修复发送粘贴消息时先显示粘贴占位符、再跳变为全文的问题，发送后的首帧直接展示完整原文。
+
 ## [2.0.5-beta.2] - 2026-10-09
 
 ### 修复

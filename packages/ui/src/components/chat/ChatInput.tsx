@@ -3248,7 +3248,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
                     directory: sessionDirectoryForOptimistic,
                     content: quotesRideAlong
                         ? messageWithComposerQuotes(quotesAtSubmit, logicalInputMessage)
-                        : inputSnapshot.message,
+                        : logicalInputMessage,
                     providerID: optimisticConfig.providerID,
                     modelID: optimisticConfig.modelID,
                     agent: optimisticConfig.agent,
