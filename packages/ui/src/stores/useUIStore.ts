@@ -1136,7 +1136,7 @@ export const useUIStore = create<UIStore>()(
         isMobile: false,
         isCommandPaletteOpen: false,
         isHelpDialogOpen: false,
-        isAboutDialogOpen: true,
+        isAboutDialogOpen: false,
         isOpenCodeStatusDialogOpen: false,
         openCodeStatusText: '',
         isSessionCreateDialogOpen: false,

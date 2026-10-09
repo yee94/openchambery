@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [2.0.4] - 2026-10-09
+
+### 修复
+
+- 启动时不再自动弹出「关于 OpenChamber」窗口。
+
 ## [2.0.3] - 2026-10-09
 
 ### 修复
