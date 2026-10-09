@@ -221,7 +221,19 @@ Every actual run (timer or manual):
         outcome keeps polling. Read it only after `session.active` confirms the
         session is inactive; an older terminal record cannot settle live work.
         This also applies to post-run continuation snapshots. Earlier servers
-        without idle records use the assistant-tail rules below.
+         without idle records use the assistant-tail rules below.
+      - Failed idle records carry no error detail. Prefer the current run's
+        `session.execution.failed.error.message`, captured before prompt/command
+        admission can finish. Otherwise read the newest assistant error in this
+        turn on the same bounded page, stopping at the previous idle marker.
+        Error text prefers `message` / legacy `data.message` over name/type;
+        only missing detail falls back to the generic execution failure.
+        Do not serialize provider response bodies or stacks. Persist this text
+        through the existing history `error` and task `lastError` fields.
+        The event capture is session-scoped, ignores unrelated sessions, and is
+        removed on settlement or watchdog abort. It never determines activity
+        or overrides succeeded/interrupted outcomes. Existing history is not
+        backfilled.
       - Assistant-tail terminal success requires `time.completed`
        and finish not `tool-calls` (prefer `finish: 'stop'`). `finish:
        'tool-calls'`, incomplete assistants (no `time.completed`), and
@@ -270,8 +282,9 @@ that same history session. `observeSessionEvent` corrects **only task state**
 - do not change `lastRunAt` / `lastDurationMs` / `nextRunAt`
 - history rows are never rewritten; `finishRun` is not called again
 
-A live run (`runningTaskKeys`) owns settlement; the observer is a no-op while
-the task is in `runningTaskKeys`. Idle correction is a no-op if `lastStatus`
+A live run (`runningTaskKeys`) owns settlement; the observer only captures its
+execution error detail while the task is in `runningTaskKeys`, without changing
+task state or finalizing history. Idle correction is a no-op if `lastStatus`
 is already `success`, or if the snapshot is still error/busy/unknown
 (`session.active` failure and goal-unsupported goal tasks stay unknown).
 Observer failures are logged and must not throw out of the event bus.

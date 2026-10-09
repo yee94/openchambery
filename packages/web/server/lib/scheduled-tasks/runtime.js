@@ -274,14 +274,10 @@ const readMessageInfo = (entry) => {
 };
 
 const formatAssistantError = (error) => {
-  if (!error || typeof error !== 'object') {
-    return 'assistant error';
-  }
-  if (typeof error.name === 'string' && error.name.trim()) {
-    return error.name.trim();
-  }
-  if (typeof error.message === 'string' && error.message.trim()) {
-    return error.message.trim();
+  for (const value of [error?.message, error?.data?.message, error?.name, error?.type]) {
+    if (typeof value === 'string' && value.trim()) {
+      return value.trim();
+    }
   }
   return 'assistant error';
 };
@@ -305,7 +301,7 @@ const isUserMessage = (info) => (
  * - model-switched / non-assistant tails are not success
  * - native idle outcomes settle the execution; older servers use assistant finish
  */
-const classifyMessageTail = (messages) => {
+const classifyMessageTail = (messages, executionError = null) => {
   if (!Array.isArray(messages) || messages.length === 0) {
     return { outcome: 'unknown' };
   }
@@ -319,6 +315,19 @@ const classifyMessageTail = (messages) => {
   if (latest.type === 'idle') {
     if (latest.outcome === 'succeeded') {
       return { outcome: 'success' };
+    }
+    if (latest.outcome === 'failed') {
+      if (executionError) {
+        return { outcome: 'error', error: executionError };
+      }
+      // Idle has no error payload. Only inspect this turn on the bounded page.
+      for (let index = 1; index < messages.length; index += 1) {
+        const info = readMessageInfo(messages[index]);
+        if (info?.type === 'idle') break;
+        if (isAssistantMessage(info) && info.error) {
+          return { outcome: 'error', error: formatAssistantError(info.error) };
+        }
+      }
     }
     if (latest.outcome === 'failed' || latest.outcome === 'interrupted') {
       return { outcome: 'error', error: `session execution ${latest.outcome}` };
@@ -506,7 +515,7 @@ const parseSessionEventPhase = (event) => {
     return { phase: 'idle', sessionID };
   }
   if (payload?.type === 'session.execution.failed') {
-    return { phase: 'error', sessionID };
+    return { phase: 'error', sessionID, error: properties.error ? formatAssistantError(properties.error) : null };
   }
   if (payload?.type === 'session.execution.interrupted') {
     // user / superseded / inactivity — claim released; treat as idle for settlement.
@@ -572,6 +581,8 @@ export const createScheduledTasksRuntime = (deps) => {
   const queue = [];
   /** sessionID → { projectID, taskID } for post-run continuation correction. */
   const lastSessionOwners = new Map();
+  // Register before dispatch; retain only active runs and release in finally.
+  const executionErrorsBySession = new Map();
 
   const rememberLastSession = (projectID, task) => {
     const sessionID = task?.state?.lastSessionId;
@@ -1043,7 +1054,7 @@ export const createScheduledTasksRuntime = (deps) => {
       try {
         const messages = await listLatestMessages(client, sessionID, requestOptions);
         if (messages) {
-          const classified = classifyMessageTail(messages);
+          const classified = classifyMessageTail(messages, executionErrorsBySession.get(sessionID));
           if (classified.outcome === 'success' || classified.outcome === 'error') {
             return classified;
           }
@@ -1180,6 +1191,7 @@ export const createScheduledTasksRuntime = (deps) => {
         return;
       }
       sessionAbortStarted = true;
+      executionErrorsBySession.delete(sessionID);
       void interruptCreatedSessionBestEffort({ client, sessionID });
     };
     const clearWatchdogAbortListener = () => {
@@ -1255,6 +1267,7 @@ export const createScheduledTasksRuntime = (deps) => {
 
       signal?.throwIfAborted?.();
 
+      executionErrorsBySession.set(sessionID, null);
       const executedAsCommand = await runScheduledCommandIfApplicable({
         client,
         projectPath,
@@ -1291,6 +1304,7 @@ export const createScheduledTasksRuntime = (deps) => {
         finishedAt,
       };
     } finally {
+      executionErrorsBySession.delete(sessionID);
       clearWatchdogAbortListener();
     }
   };
@@ -1729,9 +1743,12 @@ export const createScheduledTasksRuntime = (deps) => {
   };
 
   const handleSessionContinuation = async (event) => {
-    const { phase, sessionID } = parseSessionEventPhase(event);
+    const { phase, sessionID, error } = parseSessionEventPhase(event);
     if (!phase || !sessionID) {
       return;
+    }
+    if (phase === 'error' && error && executionErrorsBySession.has(sessionID)) {
+      executionErrorsBySession.set(sessionID, error);
     }
 
     const owner = lastSessionOwners.get(sessionID);
