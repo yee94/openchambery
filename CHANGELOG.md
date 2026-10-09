@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [2.0.5-beta.1] - 2026-10-09
+
+### 修复与改进
+
+- 放大 iOS 与 Android 桌面图标中的立方体主体，保留原有轮廓与比例，统一不同图标样式下的视觉大小。
+- 引用选中文字后，仅聚焦可见且可用的主输入框，避免误选隐藏输入框或触发页面滚动。
+
 ## [2.0.4] - 2026-10-09
 
 ### 修复

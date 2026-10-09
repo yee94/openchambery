@@ -658,8 +658,8 @@ export const TextSelectionMenu: React.FC<TextSelectionMenuProps> = ({ containerR
     clearSelection();
     requestAnimationFrame(() => {
       const composer = Array.from(document.querySelectorAll<HTMLTextAreaElement>('textarea[data-chat-input="true"]'))
-        .find((node) => !node.closest('[data-btw-composer]'));
-      composer?.focus();
+        .find((node) => !node.disabled && node.getClientRects().length > 0 && !node.closest('[data-btw-composer]'));
+      composer?.focus({ preventScroll: true });
     });
   });
 
