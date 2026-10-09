@@ -2233,7 +2233,9 @@ export function handleEvent(
   if (statusSessionID && directory && directory !== "global") {
     const nextStatus = useGlobalSessionStatusStore.getState().statusById.get(statusSessionID)?.status ?? "idle"
     if (previousStatus !== nextStatus) {
-      promoteProjectForConversation(directory, useSessionUIStore.getState().availableWorktreesByProject)
+      const session = childStores.getChild(directory)?.getState().session.find((row) => row.id === statusSessionID)
+        ?? useGlobalSessionsStore.getState().sessionsByDirectory.get(directory)?.find((row) => row.id === statusSessionID)
+      promoteProjectForConversation(directory, useSessionUIStore.getState().availableWorktreesByProject, session)
     }
   }
 

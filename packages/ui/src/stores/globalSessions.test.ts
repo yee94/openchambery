@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'bun:test'
+import { describe, expect, test } from 'vitest'
 import type { OpenCodeClient } from '@/lib/opencode/v2-types'
 import { isVisibleGlobalSession, listGlobalSessionPages } from './globalSessions'
 
@@ -159,7 +159,7 @@ describe('listGlobalSessionPages', () => {
       metadata: { openchamber: { llm: { purpose: 'chat-completions' } } },
     } as never)).toBe(false)
     expect(isVisibleGlobalSession({
-      title: '[Assistant] Looks system',
+      title: 'Assistant without an ownership ID',
       metadata: { openchamber: { assistant: { name: 'no-id' } } },
     } as never)).toBe(true)
     expect(isVisibleGlobalSession({
@@ -188,6 +188,13 @@ describe('listGlobalSessionPages', () => {
         },
       },
     } as never)).toBe(true)
+  })
+
+  test.each(['[Scheduled]', '[Assistant]', '[openchamber-llm]'])('hides reserved background tag %s without metadata', (tag) => {
+    expect(isVisibleGlobalSession({ title: `${tag} Background run` } as never)).toBe(false)
+    expect(isVisibleGlobalSession({ title: tag } as never)).toBe(false)
+    expect(isVisibleGlobalSession({ title: `Discuss ${tag}` } as never)).toBe(true)
+    expect(isVisibleGlobalSession({ title: '[Feature] Ordinary chat' } as never)).toBe(true)
   })
 
   test('hides subagent sessions with a parentID from the sidebar catalog', () => {

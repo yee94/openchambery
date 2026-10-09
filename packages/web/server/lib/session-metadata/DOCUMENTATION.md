@@ -94,9 +94,11 @@ routes, and scheduled-task goal create all persist `openchamber.goal` through
 this store. After first create/resume persist, the server notifies the goal
 runtime with a synthetic `session.updated` so the loop can arm.
 
-Sidebar / session-index / notifications hide a session only when Host metadata
+System ownership for sidebar / session-index / notifications is established when Host metadata
 carries a non-empty `openchamber.assistant.assistantID` (unless
 `assigned.from === 'contact'`), `openchamber.scheduledTask.taskID`,
-`openchamber.smallModel.purpose`, or `openchamber.llm.purpose`. Title prefixes
-are human labels and never participate. Every system session creator must
-persist the matching patch through this store.
+`openchamber.smallModel.purpose`, or `openchamber.llm.purpose`. Every system
+session creator must persist the matching patch through this store. Separately,
+ordinary sidebar/session-index lists also exclude reserved leading title tags
+`[Scheduled]`, `[Assistant]`, and `[openchamber-llm]`, including legacy sessions
+without metadata; these tags do not establish metadata ownership.

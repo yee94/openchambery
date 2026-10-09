@@ -1,3 +1,5 @@
+import { isVisibleSession } from './service.js';
+
 const SESSION_LIMIT = 20;
 /** Max upstream list pages while skipping consecutive Host-archived rows. */
 const ARCHIVE_SKIP_PAGE_BUDGET = 5;
@@ -22,26 +24,10 @@ const isArchivedSession = (session) => {
   return typeof archived === 'number' && Number.isFinite(archived) && archived > 0;
 };
 
-const nonEmptySystemID = (value) => typeof value === 'string' && value.length > 0;
-
-/** Match session-index service: system sessions never consume the active-20 budget. */
-const isSystemSession = (session) => {
-  const openchamber = session?.metadata?.openchamber;
-  if (!openchamber || typeof openchamber !== 'object') return false;
-  if (openchamber.assigned?.from === 'contact') return false;
-  if (nonEmptySystemID(openchamber.assistant?.assistantID)) return true;
-  if (nonEmptySystemID(openchamber.scheduledTask?.taskID)) return true;
-  if (nonEmptySystemID(openchamber.smallModel?.purpose)) return true;
-  if (nonEmptySystemID(openchamber.llm?.purpose)) return true;
-  return false;
-};
-
 const isRootActiveCandidate = (session) => {
   if (!session?.id || isArchivedSession(session)) return false;
   if (typeof session.parentID === 'string' && session.parentID) return false;
-  if (session.title === 'smartfetch-secondary') return false;
-  if (isSystemSession(session)) return false;
-  return true;
+  return isVisibleSession(session);
 };
 
 /**
