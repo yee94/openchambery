@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { mkdtemp, readFile, writeFile, rm } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, writeFile, rm } from 'node:fs/promises';
+import { createAssetZip } from '../../../packages/web/server/lib/zip-assets.js';
 import { createServer } from 'node:http';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -47,13 +48,21 @@ test('publishing and rollout retain both majors, channels and referenced bundles
     const bytes = Buffer.from(`bundle ${version}`);
     const checksum = createHash('sha256').update(bytes).digest('hex');
     await writeFile(zip, bytes);
+    const desktopDir = path.join(dir, `desktop-${sequence}`);
+    await mkdir(desktopDir);
+    await writeFile(path.join(desktopDir, 'desktop-ota.json'), JSON.stringify({ releaseVersion: version, shellFingerprint: 'a'.repeat(64) }));
+    await writeFile(path.join(desktopDir, 'index.html'), '<html>Desktop</html>');
+    const desktopZip = `${desktopDir}.zip`;
+    createAssetZip(desktopDir, desktopZip);
     const out = path.join(dir, `snapshot-${sequence}`);
     await exec(process.execPath, ['scripts/mobile-ota/assemble-snapshot.mjs', '--zip', zip,
-      '--version', version, '--channel', channel, '--checksum', checksum, '--out', out], { cwd: root, env });
+      '--desktop-zip', desktopZip, '--version', version, '--channel', channel, '--checksum', checksum, '--out', out], { cwd: root, env });
     for (const name of ['beta', 'stable']) {
       channels.set(name, await readFile(path.join(out, 'ota/channels', `${name}.json`)));
     }
     bundles.set(checksum.slice(0, 16), bytes);
+    const desktopBytes = await readFile(desktopZip);
+    bundles.set(createHash('sha256').update(desktopBytes).digest('hex').slice(0, 16), desktopBytes);
     for (const [id, contents] of bundles) {
       assert.deepEqual(await readFile(path.join(out, 'ota/bundles', `${id}.zip`)), contents);
     }
@@ -76,6 +85,13 @@ test('publishing and rollout retain both majors, channels and referenced bundles
     assert.equal(selectOtaMajor(paused, 2).activeBundle.rolloutPercent, 0);
     assert.deepEqual(selectOtaMajor(paused, 1), selectOtaMajor(oneAgain, 1));
     for (const id of bundles.keys()) await readFile(path.join(out, 'ota/bundles', `${id}.zip`));
+    const rollbackOut = path.join(dir, 'rollback');
+    await exec(process.execPath, ['scripts/mobile-ota/rollout.mjs', '--action', 'rollback', '--major', '1', '--out', rollbackOut], { cwd: root, env });
+    const rolledBack = selectOtaMajor(JSON.parse(await readFile(path.join(rollbackOut, 'ota/channels/beta.json'), 'utf8')), 1);
+    assert.equal(rolledBack.activeBundle.releaseVersion, one.activeBundle.releaseVersion);
+    assert.deepEqual(rolledBack.activeBundle.desktop, one.activeBundle.desktop);
+    assert.equal(rolledBack.activeBundle.checksum, one.activeBundle.checksum);
+    for (const id of bundles.keys()) await readFile(path.join(rollbackOut, 'ota/bundles', `${id}.zip`));
     await assert.rejects(() => publish('1.19.0-beta.1'), /older than active/);
     const corrupt = JSON.parse(channels.get('beta'));
     corrupt.majorReleases['2'].activeBundle.releaseVersion = '3.0.0';

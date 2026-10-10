@@ -120,11 +120,20 @@ Phone conversation headers (session chat and Assistant) share `--oc-mobile-heade
 visible: compositing a `<webview>` alongside the translucent vibrancy surface
 can cause sidebar flicker and ghosting. `ContextPanel` derives
 `data-native-browser-visible` from its open state, active browser tab, and native
-browser implementation. CSS consumes that marker without an additional store,
-observer, or effect. Closing the panel, switching away from the browser tab, or
-unmounting it restores the usual vibrancy background. Retained hidden browser
+browser implementation. The single MainLayout-owned ContextPanel mirrors that
+boolean to `html[data-oc-native-browser-visible]` in a layout effect, changing
+the root only on visibility transitions and removing it on cleanup. CSS uses
+the explicit root marker, never `html:has(descendant)`: that selector caused
+each controlled input edit to invalidate the entire retained DOM (21k elements
+in the typing regression fixture). Closing the panel, switching away from the
+browser tab, or unmounting it restores the usual vibrancy background. Retained hidden browser
 tabs and Relay iframe browsers do not activate this fallback. The rule is gated
 by `data-oc-vibrancy`, so other runtimes keep their existing appearance.
+
+`desktopTyping.chrome.test.ts` compiles production CSS and replays controlled
+textarea edits in Chromium, asserting bounded style invalidation and preserved
+opaque/translucent sidebar transitions. Mounted ContextPanel coverage checks
+browser-to-file switching, closing, and unmount cleanup.
 
 ## Layout chrome dividers
 

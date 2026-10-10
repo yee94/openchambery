@@ -9,6 +9,7 @@ import {
   decodeDataUrlStrict,
   relativeObjectPath,
   storePromptAttachmentBytes,
+  storeTemporaryPromptAttachment,
   readPromptAttachmentBytes,
   promptAttachmentsRoot,
 } from './prompt-attachment-store.js';
@@ -32,6 +33,28 @@ const makeDataDir = () => fs.mkdtempSync(path.join(os.tmpdir(), 'pas-'));
 describe('prompt-attachment-store', () => {
   afterEach(() => {
     vi.restoreAllMocks();
+  });
+
+  it.each(['hash', 'short', 'long', 'abort', 'disconnect'])('removes temporary uploads after %s failures', async (failure) => {
+    const remove = vi.spyOn(fsp, 'rm');
+    const controller = new AbortController();
+    const body = Buffer.from('trace');
+    const request = {
+      async *[Symbol.asyncIterator]() {
+        yield body;
+        if (failure === 'abort') controller.abort();
+        if (failure === 'disconnect') throw new Error('connection closed');
+      },
+    };
+    await expect(storeTemporaryPromptAttachment(request, {
+      expectedSize: body.length + (failure === 'short' ? 1 : failure === 'long' ? -1 : 0),
+      expectedSha256: failure === 'hash' ? '0'.repeat(64) : sha256(body),
+      mime: 'application/gzip', filename: 'trace.json.gz', signal: controller.signal,
+    })).rejects.toThrow();
+    expect(remove).toHaveBeenCalledOnce();
+    const dir = remove.mock.calls[0][0];
+    expect(path.basename(dir)).toMatch(/^openchamber-prompt-/);
+    expect(fs.existsSync(dir)).toBe(false);
   });
 
   it('stores content-addressed bytes and rejects path traversal relative paths', async () => {

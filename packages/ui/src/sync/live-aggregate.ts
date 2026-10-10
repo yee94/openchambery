@@ -21,11 +21,14 @@ const getSessionUpdatedAt = (session: Session): number => {
  * Structural identity for live session list equivalence.
  * Intentionally omits `time.updated`: streaming/recency ticks must not force
  * sidebar ownership/grouping rebuilds. Title/parent/archive/directory/share
- * changes still invalidate the list.
+ * changes and title-generation presentation still invalidate the list.
  */
 export const getLiveSessionStructuralSignature = (session: Session): string => {
   const directory = (session as Session & { directory?: string | null }).directory ?? ''
   const parentID = (session as Session & { parentID?: string | null }).parentID ?? ''
+  const titleRefresh = (session.metadata?.openchamber as {
+    titleRefresh?: { isGenerating?: unknown; lastError?: unknown; failedAt?: unknown }
+  } | undefined)?.titleRefresh
   return [
     session.id,
     session.title ?? '',
@@ -34,6 +37,9 @@ export const getLiveSessionStructuralSignature = (session: Session): string => {
     directory,
     parentID,
     session.share?.url ?? '',
+    titleRefresh?.isGenerating === true,
+    typeof titleRefresh?.lastError === 'string' ? titleRefresh.lastError : '',
+    typeof titleRefresh?.failedAt === 'number' ? titleRefresh.failedAt : '',
   ].join('|')
 }
 

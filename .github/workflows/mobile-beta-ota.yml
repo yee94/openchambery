@@ -1,4 +1,4 @@
-name: Mobile OTA Release
+name: Shared Desktop and Mobile OTA Release
 
 # Tag namespaces:
 #   mobile-beta/vX.Y.Z-beta.N  → beta-channel web-bundle OTA
@@ -157,6 +157,9 @@ jobs:
         # packages/mobile "build" = web build + prepare-web-assets (no cap sync).
         run: bun run --cwd packages/mobile build
 
+      - name: Package desktop resources from the same web build
+        run: node scripts/desktop-ota-assets.mjs "$RUNNER_TEMP/desktop-ota.zip"
+
       - name: Package Capgo zip
         id: zip
         shell: bash
@@ -293,6 +296,8 @@ jobs:
 
           ARGS=(
             --zip "$ZIP_PATH"
+            --desktop-zip "$RUNNER_TEMP/desktop-ota.zip"
+            --desktop-ota-only
             --version "$VERSION"
             --checksum "$CHECKSUM"
             --channel "$CHANNEL"
@@ -495,6 +500,9 @@ jobs:
           fi
           MANIFEST="$SNAPSHOT_DIR/ota/channels/${CHANNEL}.json"
           ZIP_FILE="$(find "$ZIP_DIR" -type f -name '*.zip' -print -quit)"
+          DESKTOP_ID="$(node -p "JSON.parse(require('fs').readFileSync('$MANIFEST','utf8')).activeBundle.desktop.bundleId")"
+          DESKTOP_ZIP="$SNAPSHOT_DIR/ota/bundles/$DESKTOP_ID.zip"
+          test -s "$DESKTOP_ZIP"
           if [[ ! -f "$MANIFEST" || ! -f "$ZIP_FILE" ]]; then
             echo "Missing manifest or zip file"
             exit 1
@@ -514,9 +522,9 @@ jobs:
 
           # Tag already exists (workflow trigger). Create a prerelease on it.
           if gh release view "$TAG" --repo "${{ github.repository }}" >/dev/null 2>&1; then
-            gh release upload "$TAG" "$ZIP_FILE" "$MANIFEST" --clobber --repo "${{ github.repository }}"
+            gh release upload "$TAG" "$ZIP_FILE" "$DESKTOP_ZIP" "$MANIFEST" --clobber --repo "${{ github.repository }}"
           else
-            gh release create "$TAG" "$ZIP_FILE" "$MANIFEST" \
+            gh release create "$TAG" "$ZIP_FILE" "$DESKTOP_ZIP" "$MANIFEST" \
               --prerelease \
               --title "Mobile OTA ${TAG}" \
               --notes-file "$NOTES" \

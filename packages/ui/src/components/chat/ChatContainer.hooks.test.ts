@@ -306,12 +306,12 @@ describe('ChatContainer source contracts', () => {
         expect(source).toContain("orientation: 'vertical'");
     });
 
-    test('timeline viewport metrics are ResizeObserver-owned and identity-stable on no-op', () => {
+    test('timeline does not publish viewport metrics for automatic backfill', () => {
         // Trace-20260805: messages-keyed layout effect + fresh setState object
         // forced a second ChatContainer render on every shell-tool part commit.
         const timelineSource = readFileSync(join(here, 'hooks/useChatTimelineController.ts'), 'utf8');
-        expect(timelineSource).toContain('resolvePublishedViewportMetrics');
-        expect(timelineSource).toContain('useResizeObserver(');
+        expect(timelineSource).not.toContain('setViewportMetrics');
+        expect(timelineSource).not.toContain('chatTimelineAutoFillQueryKey');
         expect(timelineSource).not.toContain('[messages, sessionId, isLoadingOlder, scrollRef]');
     });
 

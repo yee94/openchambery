@@ -17,6 +17,7 @@ import type { ChatMessageEntry } from './lib/turns/types';
 import type { Message, Part } from '@/lib/opencode/v2-types';
 
 const sessionID = 'history-scroll-fixture';
+const isMobile = new URLSearchParams(location.search).get('scenario') !== 'desktop-short';
 const makeRows = (start: number, count: number): ChatMessageEntry[] => Array.from({ length: count }, (_, index) => {
     const id = `message-${String(start + index).padStart(3, '0')}`;
     return {
@@ -29,7 +30,11 @@ const wait = (ms: number) => new Promise<void>((resolve) => window.setTimeout(re
 export default function Fixture() {
     const scenario = new URLSearchParams(location.search).get('scenario');
     const delayedResize = scenario === 'delayed-resize';
-    const [rows, setRows] = React.useState(() => makeRows(20, scenario === 'virtualize-transition' ? 4 : 12));
+    const [rows, setRows] = React.useState(() => scenario === 'desktop-short'
+        ? makeRows(20, 1).map((message) => ({ ...message, parts: message.parts.map((part) => (
+            part.type === 'text' ? { ...part, text: 'Short initial transcript' } : part
+        )) }))
+        : makeRows(20, scenario === 'virtualize-transition' ? 4 : 12));
     const [token, setToken] = React.useState(0);
     const listRef = React.useRef<MessageListHandle | null>(null);
     const upwardRef = React.useRef<() => void>(() => undefined);
@@ -40,7 +45,7 @@ export default function Fixture() {
     const fingerY = React.useRef(0);
     const loadFingerY = React.useRef(0);
     const auto = useChatAutoFollow({
-        currentSessionId: sessionID, sessionMessageCount: rows.length, sessionIsWorking: false, isMobile: true,
+        currentSessionId: sessionID, sessionMessageCount: rows.length, sessionIsWorking: false, isMobile,
         onUpwardUserIntent: useEvent(() => upwardRef.current()),
     });
     const { releaseAutoFollow, scrollRef } = auto;
@@ -86,7 +91,7 @@ export default function Fixture() {
         goToBottom: auto.goToBottom, releaseAutoFollow: auto.releaseAutoFollow,
         beginHistoryViewportPreservation: auto.beginHistoryViewportPreservation,
         endHistoryViewportPreservation: auto.endHistoryViewportPreservation,
-        isPinned: auto.isPinned, showScrollButton: auto.showScrollButton, isMobile: true, autoFillEnabled: false,
+        isPinned: auto.isPinned, showScrollButton: auto.showScrollButton, isMobile,
         onWillLoadEarlier: useEvent(() => setToken((value) => value + 1)),
     });
     upwardRef.current = timeline.handleHistoryUpwardIntent;
@@ -119,7 +124,7 @@ export default function Fixture() {
     </div>;
 }
 
-useUIStore.setState({ isMobile: true, chatRenderMode: 'live', activityRenderMode: 'summary' });
+useUIStore.setState({ isMobile, chatRenderMode: 'live', activityRenderMode: 'summary' });
 useFeatureFlagsStore.setState({ legendTimelineEnabled: false });
 createRoot(document.getElementById('root')!).render(
     <RuntimeAPIProvider apis={createWebAPIs()}><QueryClientProvider client={queryClient}><I18nProvider>

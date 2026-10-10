@@ -9,7 +9,7 @@ import path from 'node:path';
 import { execFile, spawn, spawnSync } from 'node:child_process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { promisify } from 'node:util';
-import updaterPkg from 'electron-updater';
+import { DesktopOta } from './desktop-ota.mjs';
 import { ElectronSshManager, planOpenCodeConfigSync } from './ssh-manager.mjs';
 import { createDirectConfigSyncController } from './direct-config-sync.mjs';
 import { probeHostAuthentication } from './host-auth-probe.mjs';
@@ -27,12 +27,6 @@ import {
 } from '@openchambery/web/server/lib/config-sync/index.js';
 import { resolveManagedOpenCodeCwd } from './opencode-cwd.mjs';
 import { sanitizeRuntimeRequestHeaders } from './runtime-request-headers.mjs';
-import { assertUpdaterCapability } from './updater-capability.mjs';
-import { checkForDesktopUpdate } from './updater-check.mjs';
-import { createIdleUpdateDownloadScheduler } from './updater-idle-download.mjs';
-import { getUpdateDownloadSnapshot } from './updater-download-status.mjs';
-import { PRODUCTION_CHANGELOG_URL, resolveUpdaterFeed } from './updater-feed.mjs';
-import { parseRelevantChangelogNotes as fetchRelevantChangelogNotes } from './updater-changelog.mjs';
 import { resolveQuitInterception } from './quit-confirmation.mjs';
 import { isRemoteIpcCommandAllowed } from './ipc-command-gate.mjs';
 import { getMenuLabels, normalizeMenuLocale } from './menu-i18n.mjs';
@@ -350,13 +344,11 @@ const GITHUB_REPOSITORY = Object.freeze({ owner: 'yee94', repo: 'openchamber' })
 const GITHUB_REPOSITORY_URL = `https://github.com/${GITHUB_REPOSITORY.owner}/${GITHUB_REPOSITORY.repo}`;
 // Fallback release notes: same update-service origin as the desktop feed
 // (deploy-authoritative /CHANGELOG.md), not a GitHub branch-pinned raw URL.
-const CHANGELOG_URL = PRODUCTION_CHANGELOG_URL;
 const GITHUB_BUG_REPORT_URL = `${GITHUB_REPOSITORY_URL}/issues/new?template=bug_report.yml`;
 const GITHUB_FEATURE_REQUEST_URL = `${GITHUB_REPOSITORY_URL}/issues/new?template=feature_request.yml`;
 const DISCORD_INVITE_URL = 'https://discord.gg/ZYRSdnwwKA';
 const INSTALLED_APPS_CACHE_TTL_SECS = 60 * 60 * 24;
 const INSTALLED_APPS_CACHE_FILE = 'discovered-apps.json';
-const { autoUpdater } = updaterPkg;
 
 const state = {
   serverHandle: null,
@@ -377,7 +369,6 @@ const state = {
   shutdownPromise: null,
   sshShutdownPromise: null,
   installingUpdate: false,
-  pendingUpdate: null,
   unreachableHosts: new Set(),
   windowCounter: 1,
   focusedWindowIds: new Set(),
@@ -512,6 +503,7 @@ const shutdownSshSessions = async () => {
 };
 
 const prepareForQuit = ({ installingUpdate = false } = {}) => {
+  clearTimeout(desktopOtaReadyTimer);
   state.quitRequested = true;
   state.quitConfirmed = true;
   state.installingUpdate = installingUpdate;
@@ -1188,7 +1180,9 @@ const detectLanIPv4Address = async () => {
 const buildLocalUrl = (port) => `http://127.0.0.1:${port}`;
 
 const resourceRoot = () => isDev ? path.join(__dirname, 'resources') : process.resourcesPath;
-const resolveWebDistDir = () => path.join(resourceRoot(), 'web-dist');
+let desktopOta = null;
+let desktopOtaReadyTimer = null;
+const resolveWebDistDir = () => desktopOta?.assetDirectory ?? path.join(resourceRoot(), 'web-dist');
 const shouldUsePackagedUi = () => {
   if (process.env.OPENCHAMBER_ELECTRON_LOAD_SERVER_UI === '1') return false;
   if (process.env.OPENCHAMBER_ELECTRON_USE_BUNDLED_UI === '1') return true;
@@ -3236,176 +3230,15 @@ const resolveInitialUrl = async () => {
   return { initialUrl, localOrigin, localUiUrl, bootOutcome, apiBaseUrl, clientToken, requestHeaders };
 };
 
-const compareSemver = (left, right) => {
-  const a = String(left || '').replace(/^v/, '').split('.').map((value) => Number.parseInt(value || '0', 10));
-  const b = String(right || '').replace(/^v/, '').split('.').map((value) => Number.parseInt(value || '0', 10));
-  const length = Math.max(a.length, b.length);
-  for (let index = 0; index < length; index += 1) {
-    const diff = (a[index] || 0) - (b[index] || 0);
-    if (diff !== 0) return diff;
-  }
-  return 0;
-};
-
-// Shared in-flight download so idle auto-download and the manual "Download"
-// button await the same promise instead of racing two electron-updater calls.
-let updateDownloadPromise = null;
-let idleUpdateDownloadScheduler = null;
-// Latest progress for idle/manual downloads so reopening the dialog can show
-// an accurate bar even if the renderer missed earlier progress events.
-let updateDownloadProgress = null;
-
-const hasPendingUpdateDownload = () =>
-  Boolean(state.pendingUpdate?.electronUpdate && !state.pendingUpdate.downloaded);
-
 const downloadPendingUpdate = async () => {
-  assertUpdaterCapability({ packaged: app.isPackaged });
-  if (!state.pendingUpdate) {
-    throw new Error('No pending update');
-  }
-  if (state.pendingUpdate.downloaded) {
-    return null;
-  }
-  if (!state.pendingUpdate.electronUpdate) {
-    throw new Error('Electron updater metadata is not available for this build');
-  }
-  if (updateDownloadPromise) {
-    return updateDownloadPromise;
-  }
-
-  updateDownloadPromise = (async () => {
-    updateDownloadProgress = { downloaded: 0 };
-    setTaskbarProgress(0.01);
-    emitToAllWindows('openchamber:update-progress', mapUpdaterProgressEvent({
-      event: 'Started',
-      data: {
-        contentLength: null,
-      },
-    }));
-    try {
-      await new Promise((resolve, reject) => {
-        let settled = false;
-        const cleanup = () => {
-          autoUpdater.off('update-downloaded', onDownloaded);
-          autoUpdater.off('error', onError);
-        };
-        const finish = (callback, value) => {
-          if (settled) return;
-          settled = true;
-          cleanup();
-          callback(value);
-        };
-        const onDownloaded = () => finish(resolve, null);
-        const onError = (error) => finish(reject, error);
-        autoUpdater.on('update-downloaded', onDownloaded);
-        autoUpdater.on('error', onError);
-        Promise.resolve(autoUpdater.downloadUpdate()).catch((error) => finish(reject, error));
-      });
-      if (state.pendingUpdate) {
-        state.pendingUpdate.downloaded = true;
-      }
-      updateDownloadProgress = null;
-      emitToAllWindows('openchamber:update-progress', mapUpdaterProgressEvent({
-        event: 'Finished',
-        data: {},
-      }));
-      emitToAllWindows('openchamber:update-ready', {
-        version: state.pendingUpdate?.version || null,
-        downloaded: true,
-      });
-      return null;
-    } finally {
-      setTaskbarProgress(-1);
-    }
-  })().finally(() => {
-    updateDownloadPromise = null;
-    if (!state.pendingUpdate?.downloaded) {
-      // Keep the last progress only while a download is still considered active;
-      // failed/aborted flights clear the snapshot so the UI does not stick.
-      updateDownloadProgress = null;
-    }
-  });
-
-  return updateDownloadPromise;
+  if (!desktopOta) throw new Error('Desktop OTA requires a packaged app');
+  emitToAllWindows('openchamber:update-progress', mapUpdaterProgressEvent({ event: 'Started', data: {} }));
+  try {
+    await desktopOta.download();
+    emitToAllWindows('openchamber:update-progress', mapUpdaterProgressEvent({ event: 'Finished', data: {} }));
+    emitToAllWindows('openchamber:update-ready', { version: desktopOta.state.queued?.releaseVersion, downloaded: true });
+  } finally { setTaskbarProgress(-1); }
 };
-
-const scheduleIdleUpdateDownload = () => {
-  if (!app.isPackaged || !hasPendingUpdateDownload()) return;
-  if (!idleUpdateDownloadScheduler) {
-    // powerMonitor.getSystemIdleState(threshold) is the OS-level API that
-    // answers "has the user been inactive for N seconds?" — idle/locked means
-    // we can pull the update package without contending with interactive work.
-    idleUpdateDownloadScheduler = createIdleUpdateDownloadScheduler({
-      getIdleState: (thresholdSeconds) => powerMonitor.getSystemIdleState(thresholdSeconds),
-      downloadUpdate: downloadPendingUpdate,
-      isPendingDownload: hasPendingUpdateDownload,
-      log,
-    });
-  }
-  idleUpdateDownloadScheduler.schedule();
-};
-
-const setupAutoUpdater = () => {
-  if (!app.isPackaged) {
-    return;
-  }
-  autoUpdater.autoDownload = false;
-  autoUpdater.autoInstallOnAppQuit = false;
-  autoUpdater.allowPrerelease = false;
-  autoUpdater.fullChangelog = true;
-  autoUpdater.disableWebInstaller = false;
-  autoUpdater.logger = log;
-
-  const testBuild = typeof __OPENCHAMBER_UPDATER_E2E_BUILD__ !== 'undefined'
-    && __OPENCHAMBER_UPDATER_E2E_BUILD__ === true;
-  const resolvedFeed = resolveUpdaterFeed({ testBuild });
-  const feed = resolvedFeed;
-  autoUpdater.setFeedURL(feed);
-  log.info('[electron] updater feed configured', {
-    provider: feed.provider,
-    target: feed.url,
-  });
-
-  autoUpdater.on('download-progress', (progress) => {
-    const total = Number(progress.total || 0);
-    const transferred = Number(progress.transferred || 0);
-    updateDownloadProgress = {
-      downloaded: Math.round(progress.transferred || 0),
-      ...(total > 0 ? { total: Math.round(progress.total || 0) } : {}),
-    };
-    setTaskbarProgress(total > 0 ? Math.max(0, Math.min(1, transferred / total)) : 0.01);
-    emitToAllWindows('openchamber:update-progress', mapUpdaterProgressEvent({
-      event: 'Progress',
-      data: {
-        chunkLength: Math.max(0, Math.round(progress.bytesPerSecond || 0)),
-        downloaded: Math.round(progress.transferred || 0),
-        total: Math.round(progress.total || 0),
-      },
-    }));
-  });
-
-  autoUpdater.on('update-downloaded', (info) => {
-    log.info(`[electron] update-downloaded version=${info?.version || 'unknown'}`);
-    setTaskbarProgress(-1);
-    updateDownloadProgress = null;
-    if (state.pendingUpdate) {
-      state.pendingUpdate.downloaded = true;
-    }
-  });
-
-  autoUpdater.on('error', (err) => {
-    setTaskbarProgress(-1);
-    updateDownloadProgress = null;
-    log.error('[electron] autoUpdater error', err);
-  });
-};
-
-const parseRelevantChangelogNotes = (fromVersion, toVersion) => fetchRelevantChangelogNotes({
-  changelogUrl: CHANGELOG_URL,
-  fromVersion,
-  toVersion,
-  compareVersions: compareSemver,
-});
 
 const buildInstalledAppsCachePath = () => path.join(path.dirname(settingsFilePath()), INSTALLED_APPS_CACHE_FILE);
 
@@ -4464,73 +4297,29 @@ const handleInvoke = async (browserWindow, command, args = {}) => {
     }
 
     case 'desktop_check_for_updates': {
-      assertUpdaterCapability({ packaged: app.isPackaged });
-      const currentVersion = APP_VERSION;
-      const { available, updateInfo, updateResult, nextVersion, pendingUpdate } = await checkForDesktopUpdate({
-        autoUpdater,
-        currentVersion,
-        pendingUpdate: state.pendingUpdate,
-        compareVersions: compareSemver,
-      });
-      const body =
-        (typeof updateInfo?.releaseNotes === 'string' && updateInfo.releaseNotes.trim() ? updateInfo.releaseNotes : null) ||
-        await parseRelevantChangelogNotes(currentVersion, nextVersion);
-      state.pendingUpdate = pendingUpdate;
-      // Check is cheap and can run anytime; the package download waits for an
-      // OS-reported idle/locked window via powerMonitor.getSystemIdleState.
-      if (available && hasPendingUpdateDownload()) {
-        scheduleIdleUpdateDownload();
-      } else {
-        idleUpdateDownloadScheduler?.stop();
-      }
-      const downloadSnapshot = getUpdateDownloadSnapshot({
-        pendingUpdate,
-        downloadInFlight: Boolean(updateDownloadPromise),
-        progress: updateDownloadProgress,
-      });
-      return {
-        available,
-        currentVersion,
-        version: available ? nextVersion : null,
-        body: body || null,
-        date:
-          (typeof updateInfo?.releaseDate === 'string' && updateInfo.releaseDate) ||
-          null,
-        downloaded: downloadSnapshot.downloaded,
-        downloading: downloadSnapshot.downloading,
-        progress: downloadSnapshot.progress,
-      };
+      if (!desktopOta) throw new Error('Desktop OTA requires a packaged app');
+      return desktopOta.check(args?.channelOverride);
     }
 
+    case 'desktop_ota_ready':
+      if (desktopOta) await desktopOta.ready(args?.version);
+      clearTimeout(desktopOtaReadyTimer);
+      desktopOtaReadyTimer = null;
+      return null;
+
     case 'desktop_download_and_install_update':
-      // Manual download: skip the idle gate and pull immediately. Shares the
-      // same in-flight promise as the idle scheduler when one is already going.
-      idleUpdateDownloadScheduler?.stop();
       await downloadPendingUpdate();
       return null;
 
     case 'desktop_restart': {
       const updateRestartRequested = args?.applyUpdate === true;
-      if (updateRestartRequested && !(state.pendingUpdate?.downloaded && app.isPackaged)) {
-        throw new Error('No pending update');
+      if (updateRestartRequested) {
+        if (!desktopOta) throw new Error('Desktop OTA requires a packaged app');
+        await desktopOta.assertPending();
       }
-      const applyUpdate = updateRestartRequested || Boolean(state.pendingUpdate?.downloaded && app.isPackaged);
-      if (applyUpdate) assertUpdaterCapability({ packaged: app.isPackaged });
+      const applyUpdate = updateRestartRequested;
       log.info(`[electron] desktop_restart applyUpdate=${applyUpdate} packaged=${app.isPackaged}`);
-      if (applyUpdate && process.platform === 'darwin' && typeof app.isInApplicationsFolder === 'function') {
-        try {
-          if (!app.isInApplicationsFolder()) {
-            throw new Error('Desktop update requires OpenChamber.app to be installed in /Applications');
-          }
-        } catch (error) {
-          log.warn('[electron] desktop_restart blocked', error);
-          throw error;
-        }
-      }
       if (applyUpdate) {
-        // Match the working updater pattern closely: only bypass the macOS
-        // hide-on-close / quit-confirmation guards, leave the rest of the
-        // updater-driven quit/install sequence alone.
         state.quitRequested = true;
         state.installingUpdate = true;
         state.quitConfirmationPending = false;
@@ -4542,21 +4331,15 @@ const handleInvoke = async (browserWindow, command, args = {}) => {
         }
       }
       // Defer so the IPC reply flushes before the app starts shutting down.
-      // Without this, quitAndInstall() can race with the renderer's pending
+      // Without this, relaunch can race with the renderer's pending
       // invoke and the restart appears to do nothing from the UI side.
       setImmediate(() => {
         void (async () => {
           try {
-            if (applyUpdate) {
-              prepareForQuit({ installingUpdate: true });
-              await shutdownBackgroundServices();
-              autoUpdater.quitAndInstall();
-            } else {
-              prepareForQuit();
-              await shutdownBackgroundServices();
-              app.relaunch();
-              app.exit(0);
-            }
+            prepareForQuit({ installingUpdate: applyUpdate });
+            await shutdownBackgroundServices();
+            app.relaunch({ args: process.argv.slice(1).filter((arg) => arg !== BACKGROUND_START_ARG) });
+            app.exit(0);
           } catch (err) {
             log.error('[electron] desktop_restart failed', err);
           }
@@ -5784,9 +5567,20 @@ app.whenReady().then(async () => {
     loginItemSettings,
   });
   nativeTheme.themeSource = readThemeSource();
+  if (app.isPackaged) {
+    desktopOta = new DesktopOta({
+      directory: path.join(app.getPath('userData'), 'ota'),
+      builtinDirectory: path.join(resourceRoot(), 'web-dist'),
+      nativeVersion: APP_VERSION,
+      onProgress: (progress) => {
+        setTaskbarProgress(progress.downloaded / progress.total);
+        emitToAllWindows('openchamber:update-progress', mapUpdaterProgressEvent({ event: 'Progress', data: progress }));
+      },
+    });
+    await desktopOta.initialize({ activateQueued: !isBackgroundStart });
+  }
   registerPackagedUiProtocol();
   registerVirtualAssetProtocol();
-  setupAutoUpdater();
 
   rebuildApplicationMenus();
   setupDockMenu();
@@ -5822,6 +5616,18 @@ app.whenReady().then(async () => {
   if (initial.length > 0) handleDeepLinks(initial);
 
   const { initialUrl, localOrigin, bootOutcome, apiBaseUrl, clientToken, requestHeaders } = await resolveInitialUrl();
+  if (desktopOta?.state.trial) {
+    desktopOtaReadyTimer = setTimeout(() => {
+      if (!desktopOta.state.trial || state.quitRequested) return;
+      void (async () => {
+        prepareForQuit();
+        await shutdownBackgroundServices();
+        app.relaunch({ args: process.argv.slice(1).filter((arg) => arg !== BACKGROUND_START_ARG) });
+        app.exit(0);
+      })().catch((error) => log.error('[electron] OTA recovery restart failed', error));
+    }, 60_000);
+    desktopOtaReadyTimer.unref();
+  }
   await activateMainWindow(initialUrl, localOrigin, bootOutcome, { apiBaseUrl, clientToken, requestHeaders });
   initialStartupComplete = true;
   schedulePendingDeepLinkFlush();

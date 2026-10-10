@@ -24,6 +24,7 @@ import { runtimeFetch } from '@/lib/runtime-fetch';
 import { getRuntimeGeneration, getRuntimeTransportIdentity, subscribeRuntimeEndpointChanged } from '@/lib/runtime-switch';
 import { formatMobileClientVersionLabel, getMobileClientVersion, getMobileClientBuildNumber } from '@/lib/mobileAppVersion';
 import { isCapacitorApp } from '@/lib/platform';
+import { isElectronShell, getDesktopAppVersion } from '@/lib/desktop';
 import {
   exportAndDownloadClientDiagnostics,
   isTranscriptDiagnosticsEnabled,
@@ -140,11 +141,15 @@ export const AboutSettings: React.FC<AboutSettingsProps> = ({ initialUpdateDialo
   const otaChannelOverride = useUIStore((state) => state.otaChannelOverride);
   const setOtaChannelOverride = useUIStore((state) => state.setOtaChannelOverride);
   const isNativeMobileApp = isCapacitorApp();
+  const [desktopBakedChannel, setDesktopBakedChannel] = React.useState<'beta' | 'stable'>('stable');
+  React.useEffect(() => {
+    if (isElectronShell()) void getDesktopAppVersion().then((version) => setDesktopBakedChannel(version?.includes('-') ? 'beta' : 'stable'));
+  }, []);
   const bakedOtaChannel = readBakedOtaChannel();
   // The switch shows the effective opt-in state while preserving null as
   // “follow the baked channel”: explicit beta, or an untouched beta build.
   const betaUpdatesEnabled = otaChannelOverride === 'beta'
-    || (otaChannelOverride === null && bakedOtaChannel === 'beta');
+    || (otaChannelOverride === null && (isElectronShell() ? desktopBakedChannel : bakedOtaChannel) === 'beta');
   const [exportingDiagnostics, setExportingDiagnostics] = React.useState(false);
   const [diagnosticsEnabled, setDiagnosticsEnabled] = React.useState(() => isTranscriptDiagnosticsEnabled());
 
@@ -322,7 +327,7 @@ export const AboutSettings: React.FC<AboutSettingsProps> = ({ initialUpdateDialo
               <p className="typography-meta text-[var(--status-error)]">{updateStore.error}</p>
             </SettingsRow>
           )}
-          {isNativeMobileApp && (
+          {(isNativeMobileApp || isElectronShell()) && (
             <SettingsToggleRow
               itemId="about.beta-updates"
               checked={betaUpdatesEnabled}

@@ -4,7 +4,6 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import {
-    chatTimelineAutoFillQueryKey,
     HISTORY_LOADING_TIMEOUT_CODE,
     HISTORY_LOADING_WAIT_MS,
     isHistoryLoadingTimeoutError,
@@ -13,11 +12,9 @@ import {
     resolveHasMoreAboveTurns,
     resolveHistoryPageDecision,
     resolveHistoryPrependCompensation,
-    resolvePublishedViewportMetrics,
     attachTouchGestureTracking,
     resetTouchGestureTracking,
     setScrollTopDefeatingMomentum,
-    shouldAutoFillEarlierHistory,
     shouldHoldHistoryViewportAnchor,
     shouldLoadEarlierHistory,
 } from './useChatTimelineController';
@@ -104,28 +101,6 @@ describe('resolveHasMoreAboveTurns', () => {
         // window applies (short transcript cannot hide pages above).
         expect(resolveHasMoreAboveTurns(null, 0)).toBe(false);
         expect(resolveHasMoreAboveTurns(null, 10_000)).toBe(true);
-    });
-});
-
-describe('resolvePublishedViewportMetrics', () => {
-    test('reuses the previous object when scroll geometry is unchanged', () => {
-        const previous = { scrollHeight: 4000, clientHeight: 900 };
-        expect(resolvePublishedViewportMetrics(previous, {
-            scrollHeight: 4000,
-            clientHeight: 900,
-        })).toBe(previous);
-    });
-
-    test('publishes a new object when height or viewport size changes', () => {
-        const previous = { scrollHeight: 4000, clientHeight: 900 };
-        expect(resolvePublishedViewportMetrics(previous, {
-            scrollHeight: 4120,
-            clientHeight: 900,
-        })).toEqual({ scrollHeight: 4120, clientHeight: 900 });
-        expect(resolvePublishedViewportMetrics(previous, {
-            scrollHeight: 4000,
-            clientHeight: 800,
-        })).toEqual({ scrollHeight: 4000, clientHeight: 800 });
     });
 });
 
@@ -371,185 +346,20 @@ describe('HISTORY_INTERACTION_MAX_PAGES source contract', () => {
     });
 });
 
-const baseAutoFillInput = {
-    enabled: true,
-    isMobile: false,
-    sessionReady: true,
-    messageReady: true,
-    historyLoading: false,
-    canLoadEarlier: true,
-    isPinned: true,
-    fillBlocked: false,
-    scrollHeight: 400,
-    clientHeight: 400,
-    pendingRevealWork: false,
-    isLoadingOlder: false,
-    hasMessages: true,
-} as const;
-
-describe('shouldAutoFillEarlierHistory', () => {
-    test('desktop + ready + not loading + canLoad + pinned + not blocked + scrollHeight within clientHeight+48 + no pending/loadingOlder => true', () => {
-        expect(shouldAutoFillEarlierHistory({
-            ...baseAutoFillInput,
-        })).toBe(true);
-        expect(shouldAutoFillEarlierHistory({
-            ...baseAutoFillInput,
-            scrollHeight: 448,
-            clientHeight: 400,
-        })).toBe(true);
-    });
-
-    test('scrollHeight exceeds clientHeight+48 => false', () => {
-        expect(shouldAutoFillEarlierHistory({
-            ...baseAutoFillInput,
-            scrollHeight: 449,
-            clientHeight: 400,
-        })).toBe(false);
-    });
-
-    test('mobile => false', () => {
-        expect(shouldAutoFillEarlierHistory({
-            ...baseAutoFillInput,
-            isMobile: true,
-        })).toBe(false);
-    });
-
-    test('enabled false (inactive or expanded-input) => false', () => {
-        expect(shouldAutoFillEarlierHistory({
-            ...baseAutoFillInput,
-            enabled: false,
-        })).toBe(false);
-    });
-
-    test('no messages => false', () => {
-        expect(shouldAutoFillEarlierHistory({
-            ...baseAutoFillInput,
-            hasMessages: false,
-        })).toBe(false);
-    });
-
-    test('history loading => false', () => {
-        expect(shouldAutoFillEarlierHistory({
-            ...baseAutoFillInput,
-            historyLoading: true,
-        })).toBe(false);
-    });
-
-    test('no more history => false', () => {
-        expect(shouldAutoFillEarlierHistory({
-            ...baseAutoFillInput,
-            canLoadEarlier: false,
-        })).toBe(false);
-    });
-
-    test('released (not pinned) => false', () => {
-        expect(shouldAutoFillEarlierHistory({
-            ...baseAutoFillInput,
-            isPinned: false,
-        })).toBe(false);
-    });
-
-    test('fill blocked after no-growth/failure => false', () => {
-        expect(shouldAutoFillEarlierHistory({
-            ...baseAutoFillInput,
-            fillBlocked: true,
-        })).toBe(false);
-    });
-
-    test('pending reveal work => false', () => {
-        expect(shouldAutoFillEarlierHistory({
-            ...baseAutoFillInput,
-            pendingRevealWork: true,
-        })).toBe(false);
-    });
-
-    test('loading older => false', () => {
-        expect(shouldAutoFillEarlierHistory({
-            ...baseAutoFillInput,
-            isLoadingOlder: true,
-        })).toBe(false);
-    });
-
-    test('session or message not ready => false', () => {
-        expect(shouldAutoFillEarlierHistory({
-            ...baseAutoFillInput,
-            sessionReady: false,
-        })).toBe(false);
-        expect(shouldAutoFillEarlierHistory({
-            ...baseAutoFillInput,
-            messageReady: false,
-        })).toBe(false);
-    });
-
-    test('short collapsed transcript keeps auto-fill without a message-count ceiling', () => {
-        // Collapsed activity can stack many messages without overflow; count must
-        // not freeze fill (that forced expand-before-load-more).
-        expect(shouldAutoFillEarlierHistory({
-            ...baseAutoFillInput,
-            scrollHeight: 400,
-            clientHeight: 400,
-        })).toBe(true);
-    });
-
-    test('unmeasured viewport (clientHeight 0) does not auto-fill', () => {
-        expect(shouldAutoFillEarlierHistory({
-            ...baseAutoFillInput,
-            scrollHeight: 0,
-            clientHeight: 0,
-        })).toBe(false);
-    });
-});
-
-describe('chatTimelineAutoFillQueryKey', () => {
-    test('includes runtime, session, edge id, count, and canLoadEarlier', () => {
-        expect(chatTimelineAutoFillQueryKey({
-            runtimeKey: 'rt_1',
-            sessionId: 'ses_1',
-            oldestMessageId: 'msg_old',
-            messageCount: 12,
-            canLoadEarlier: true,
-        })).toEqual([
-            'chat-timeline-auto-fill',
-            'rt_1',
-            'ses_1',
-            'msg_old',
-            12,
-            true,
-        ]);
-    });
-});
-
 describe('useChatTimelineController source contracts', () => {
     const source = readFileSync(join(here, 'useChatTimelineController.ts'), 'utf8');
 
-    test('auto-fill is Query-driven (no useEffect fill path)', () => {
-        expect(source).toContain('useQuery');
-        expect(source).toContain('chatTimelineAutoFillQueryKey');
-        // Imperative auto-fill effect must stay gone.
-        expect(source).not.toMatch(/React\.useEffect\s*\(\s*\(\)\s*=>\s*\{[\s\S]*?fetchOlderHistory/);
-        expect(source).not.toMatch(/useEffect\s*\(\s*\(\)\s*=>\s*\{[\s\S]*?shouldAutoFillEarlierHistory/);
-    });
-
-    test('scroll / upward-intent / auto-fill gates use required isMobile option, not runtime probe', () => {
+    test('scroll / upward-intent gates use required isMobile option, not runtime probe', () => {
         // Same mounted flag as ChatContainer's load-older button. Runtime probe
         // remains for cache/keeper/momentum only.
         expect(source).toContain('isMobile: boolean');
         expect(source).toContain('isMobileRef.current = isMobile');
-        expect(source).toContain('autoFillEnabledRef.current = autoFillEnabled');
         expect(source).toContain('isMobile: isMobileRef.current');
-        // Gate render path uses the option directly.
-        expect(source).toMatch(/shouldAutoFillEarlierHistory\(\{[\s\S]*?isMobile,/);
-        // queryFn must re-check before real fetch so busy retries stop on flip.
-        expect(source).toContain('if (!autoFillEnabledRef.current || isMobileRef.current)');
         // History-load decisions must not call the probe (cache/keeper still may).
         const decideStart = source.indexOf('const decideAndLoadEarlier = useEvent');
         const decideEnd = source.indexOf('const handleHistoryScroll = useEvent', decideStart);
         expect(decideStart).toBeGreaterThan(-1);
         expect(source.slice(decideStart, decideEnd)).not.toContain('isMobileSurfaceRuntime()');
-        const autoFillStart = source.indexOf('const autoFillGate = shouldAutoFillEarlierHistory');
-        const autoFillEnd = source.indexOf('const decideAndLoadEarlier = useEvent', autoFillStart);
-        expect(autoFillStart).toBeGreaterThan(-1);
-        expect(source.slice(autoFillStart, autoFillEnd)).not.toContain('isMobileSurfaceRuntime()');
     });
 
     test('has-more-above-turns never falls back to !complete (unknown ≠ loadable)', () => {
@@ -647,11 +457,9 @@ describe('useChatTimelineController source contracts', () => {
         expect(String(calls[2]?.[0])).toContain('load older failed');
     });
 
-    test('no-growth pagination refetches once, blocks auto-fill, and only cools gestures down', () => {
+    test('no-growth pagination refetches once and only cools gestures down', () => {
         expect(source).toContain("if (decision === 'stop-no-growth')");
         expect(source).toContain('stalledRetries < HISTORY_STALLED_PAGE_RETRIES');
-        expect(source).toContain('noGrowthBlockedRef.current = true');
-        expect(source).toContain('setAutoFillBlocked(true)');
         expect(source).toContain('Date.now() + HISTORY_STALL_COOLDOWN_MS');
         expect(source).toContain('if (Date.now() < historyStallCooldownUntilRef.current) return;');
         expect(source).not.toContain('if (noGrowthBlockedRef.current) return;');

@@ -6,6 +6,32 @@ import { fnv1a32, resolveCurrentFloorVersion, resolveMobileUpdate, rolloutBucket
 
 const CHECKSUM = `sha256:${'a'.repeat(64)}`;
 
+test('desktop uses the shared channel, rollout and rollback policy with its own asset and real shell floor', () => {
+  const manifest = validManifest();
+  manifest.activeBundle.desktop = { bundleId: '1234567890abcdef', url: '/ota/bundles/1234567890abcdef.zip',
+    size: 100, checksum: 'b'.repeat(64), shellFingerprint: 'c'.repeat(64), minShellReleaseVersion: '1.18.2-beta.20' };
+  manifest.nativeTargets.desktop = { version: '1.18.2-beta.20', build: 1, installUrl: 'https://example.com/releases' };
+  const parsed = parseOtaManifest(manifest);
+  assert.equal(parsed.ok, true);
+  const request = baseRequest({ platform: 'desktop', nativeVersion: '1.18.2-beta.20', currentBundleId: '1.18.2-beta.21' });
+  let result = resolveMobileUpdate(parsed.manifest, request);
+  assert.equal(result.primaryAction, 'apply_ota');
+  assert.equal(result.ota.bundle.bundleId, '1234567890abcdef');
+  assert.equal(result.ota.bundle.checksum, 'b'.repeat(64));
+  result = resolveMobileUpdate(parsed.manifest, { ...request, nativeVersion: '1.18.2-beta.19', currentBundleId: '1.18.2-beta.99' });
+  assert.equal(result.primaryAction, 'install_native_required');
+  assert.equal(result.native.installUrl, 'https://example.com/releases');
+  parsed.manifest.activeBundle.rolloutPercent = 0;
+  assert.equal(resolveMobileUpdate(parsed.manifest, request).ota.state, 'outside_rollout');
+  parsed.manifest.activeBundle.rolloutPercent = 100;
+  parsed.manifest.activeBundle.releaseVersion = '1.18.2';
+  parsed.manifest.channel = 'stable';
+  result = resolveMobileUpdate(parsed.manifest, { ...request, channel: 'stable', currentBundleId: '1.18.3-beta.1' });
+  assert.equal(result.isChannelRollback, true);
+  assert.equal(resolveMobileUpdate(parsed.manifest, { ...request, currentBundleId: '1.18.4' }).primaryAction, 'none');
+  assert.equal(resolveMobileUpdate(parsed.manifest, { ...request, currentBundleId: '2.0.0' }).primaryAction, 'none');
+});
+
 function activeBundle(overrides = {}) {
   return {
     bundleId: '34ab092a8e7f6d21',

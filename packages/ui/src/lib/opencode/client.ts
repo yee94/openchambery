@@ -348,6 +348,19 @@ type FileInputLite = {
   url: string;
 };
 
+type NormalizedPromptFile = FilePartInput & { referenceOnly?: boolean };
+const MAX_INLINE_IMAGE_BYTES = 20 * 1024 * 1024;
+
+const promptFilePart = (file: NormalizedPromptFile): TextPartInput | FilePartInput => {
+  const { referenceOnly, ...part } = file;
+  if (isImagePromptFile(file) && !referenceOnly) return part;
+  return {
+    type: 'text',
+    synthetic: true,
+    text: `Attachment ${JSON.stringify(file.filename || 'file')}: ${JSON.stringify(pathFromPromptAttachmentFileUrl(file.url))}\nRead or process this file with tools as needed; its contents are not included in the message.`,
+  };
+};
+
 /**
  * Internal parts builder — shared between instance method and tests.
  * File normalization is injected so the instance method uses OpencodeService's
@@ -382,7 +395,7 @@ const _buildPromptParts = async (params: {
     files?: Array<FileInputLite>;
   }>;
   agentMentions?: Array<{ name: string; source?: { value: string; start: number; end: number } }>;
-}, normalizeFile: (file: FileInputLite) => Promise<FilePartInput>): Promise<Array<TextPartInput | FilePartInput | AgentPartInputLite>> => {
+}, normalizeFile: (file: FileInputLite) => Promise<NormalizedPromptFile>): Promise<Array<TextPartInput | FilePartInput | AgentPartInputLite>> => {
   const parts: Array<TextPartInput | FilePartInput | AgentPartInputLite> = [];
   const normalizedFiles = params.files?.length
     ? await Promise.all(params.files.map((file) => normalizeFile(file)))
@@ -419,7 +432,7 @@ const _buildPromptParts = async (params: {
     });
   }
 
-  parts.push(...normalizedFiles);
+  parts.push(...normalizedFiles.map(promptFilePart));
 
   if (additionalNormalized.length > 0) {
     for (const additional of additionalNormalized) {
@@ -428,7 +441,7 @@ const _buildPromptParts = async (params: {
         if (additional.synthetic) (tp as Record<string, unknown>).synthetic = true;
         parts.push(tp);
       }
-      parts.push(...additional.files);
+      parts.push(...additional.files.map(promptFilePart));
     }
   }
 
@@ -1297,17 +1310,20 @@ class OpencodeService {
   private async toNormalizedFilePartInput(
     file: FileInputLite,
     runtime?: { generation: number; runtimeKey: string },
-  ): Promise<FilePartInput> {
+  ): Promise<NormalizedPromptFile> {
     const generation = runtime?.generation ?? getRuntimeGeneration();
     const runtimeKey = runtime?.runtimeKey ?? getRuntimeKey();
-    const normalized = await this.normalizeFilePart(file);
+    const normalized = isImagePromptFile(file) ? await this.normalizeFilePart(file) : file;
     this.assertCapturedRuntime(generation, runtimeKey, "prompt attachment normalize");
     let url = normalized.url;
+    let size: number | undefined;
     // Inline data/blob URLs must leave the prompt JSON before promptAsync /
     // createWithPrompt. Upload the bytes first and keep only a host file://
     // reference so the shared relay tunnel is not head-of-line blocked.
     if (needsPromptAttachmentUpload(url)) {
-      const body = blobFromDataUrl(url, normalized.mime);
+      const body = url.startsWith('blob:')
+        ? await fetch(url).then((response) => response.blob())
+        : blobFromDataUrl(url, normalized.mime);
       if (!body) {
         throw new Error(`Failed to materialize attachment bytes for ${normalized.filename ?? 'file'}`);
       }
@@ -1320,6 +1336,20 @@ class OpencodeService {
       // Stale runtime must not keep the uploaded host path for a new target.
       this.assertCapturedRuntime(generation, runtimeKey, "prompt attachment upload");
       url = uploaded.url;
+      size = uploaded.size;
+    }
+    if (isImagePromptFile(normalized) && size === undefined && url.toLowerCase().startsWith('file://')) {
+      const path = pathFromPromptAttachmentFileUrl(url);
+      const files = getRegisteredRuntimeAPIs()?.files;
+      if (files?.statFile) {
+        size = (await files.statFile(path)).size;
+      } else {
+        const response = await runtimeFetch('/api/fs/stat', { query: { path } });
+        if (!response.ok) throw new Error('Failed to inspect prompt attachment');
+        const stat = await response.json() as { size?: number };
+        size = stat.size;
+      }
+      this.assertCapturedRuntime(generation, runtimeKey, 'prompt attachment stat');
     }
     return {
       ...(file.id ? { id: file.id } : {}),
@@ -1327,6 +1357,8 @@ class OpencodeService {
       mime: normalized.mime,
       filename: normalized.filename,
       url,
+      ...(isImagePromptFile(normalized) && (size === undefined || !Number.isSafeInteger(size) || size < 0 || size > MAX_INLINE_IMAGE_BYTES)
+        ? { referenceOnly: true } : {}),
     };
   }
 
@@ -1568,13 +1600,12 @@ class OpencodeService {
   }): Promise<string> {
     const tempMessageId = params.messageId ?? ascendingId("msg");
 
-    const files: Array<{ uri: string; name?: string }> = [];
-    if (params.files && params.files.length > 0) {
-      for (const file of params.files) {
-        const normalized = await this.toNormalizedFilePartInput(file);
-        files.push({ uri: normalized.url, ...(normalized.filename ? { name: normalized.filename } : {}) });
-      }
-    }
+    const parts = params.arguments?.trim() || params.files?.length
+      ? await this.buildMessageParts({ text: params.arguments ?? '', files: params.files })
+      : [];
+    const files = parts.flatMap((part) => part.type === 'file'
+      ? [{ uri: part.url, ...(part.filename ? { name: part.filename } : {}) }] : []);
+    const text = parts.flatMap((part) => part.type === 'text' ? [part.text] : []).join('\n');
 
     // SessionCommandInput is { sessionID, name, text, files?, agents?, skills? }.
     // model/agent/command/arguments/id are not on the 2.0.12 surface; command() returns void.
@@ -1586,7 +1617,7 @@ class OpencodeService {
     await this.client.session.command({
       sessionID: params.id,
       name: params.command,
-      text: params.arguments ?? '',
+      text,
       ...(files.length > 0 ? { files } : {}),
     });
     return tempMessageId;

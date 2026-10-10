@@ -13,6 +13,7 @@ const mocks = vi.hoisted(() => {
     mobileUpdates,
     legacyCheck,
     isCapacitor: true,
+    isElectron: false,
     registeredApis: { mobileUpdates } as { mobileUpdates?: typeof mobileUpdates } | null,
     otaChannelOverride: null as 'beta' | 'stable' | null,
   };
@@ -30,7 +31,7 @@ vi.mock('@/lib/desktop', () => ({
   listenDesktopUpdateReady: vi.fn(async () => () => undefined),
   restartToApplyUpdate: vi.fn(),
   isDesktopLocalOriginActive: () => false,
-  isElectronShell: () => false,
+  isElectronShell: () => mocks.isElectron,
   isVSCodeRuntime: () => false,
   isWebRuntime: () => false,
 }));
@@ -66,6 +67,7 @@ vi.mock('@/stores/useUIStore', () => ({
 
 import { useUpdateStore } from './useUpdateStore';
 import type { MobileUpdateDecision } from '@/lib/mobile-updates/types';
+import { checkForDesktopUpdates, downloadDesktopUpdate, restartToApplyUpdate } from '@/lib/desktop';
 
 const otaAvailableDecision = (): MobileUpdateDecision => ({
   status: 'ok',
@@ -88,6 +90,7 @@ const otaAvailableDecision = (): MobileUpdateDecision => ({
 describe('useUpdateStore mobile OTA branch', () => {
   beforeEach(() => {
     mocks.isCapacitor = true;
+    mocks.isElectron = false;
     mocks.registeredApis = { mobileUpdates: mocks.mobileUpdates };
     mocks.otaChannelOverride = null;
     mocks.mobileUpdates.checkForOtaUpdate.mockReset();
@@ -439,5 +442,42 @@ describe('useUpdateStore mobile OTA branch', () => {
     expect(state.available).toBe(false);
     expect(state.error).toBe('network');
     expect(state.otaPhase).toBe('error');
+  });
+});
+
+describe('desktop shared OTA policy', () => {
+  beforeEach(() => {
+    mocks.isCapacitor = false;
+    mocks.isElectron = true;
+    mocks.otaChannelOverride = 'stable';
+    vi.mocked(checkForDesktopUpdates).mockReset();
+    vi.mocked(downloadDesktopUpdate).mockReset();
+    vi.mocked(restartToApplyUpdate).mockReset();
+    useUpdateStore.getState().reset();
+  });
+
+  test('forwards the channel and follows download → restart for stable rollback', async () => {
+    vi.mocked(checkForDesktopUpdates).mockResolvedValue({ available: true, currentVersion: '1.19.0-beta.1',
+      version: '1.18.3', inAppApply: true, isChannelRollback: true,
+      otaDecision: { ...otaAvailableDecision(), isChannelRollback: true } });
+    vi.mocked(downloadDesktopUpdate).mockResolvedValue(true);
+    vi.mocked(restartToApplyUpdate).mockResolvedValue(true);
+    await useUpdateStore.getState().checkForUpdates();
+    expect(checkForDesktopUpdates).toHaveBeenCalledWith('stable');
+    expect(useUpdateStore.getState().info?.isChannelRollback).toBe(true);
+    await useUpdateStore.getState().downloadUpdate();
+    expect(useUpdateStore.getState().otaPhase).toBe('pending_restart');
+    useUpdateStore.getState().dismiss();
+    expect(useUpdateStore.getState().downloaded).toBe(true);
+    await useUpdateStore.getState().restartToUpdate();
+    expect(restartToApplyUpdate).toHaveBeenCalledOnce();
+  });
+
+  test('channel change invalidates an already downloaded candidate before a failing request', async () => {
+    useUpdateStore.setState({ downloaded: true, lastOtaChannelOverride: 'beta', otaPhase: 'pending_restart' });
+    vi.mocked(checkForDesktopUpdates).mockRejectedValue(new Error('offline'));
+    await useUpdateStore.getState().checkForUpdates();
+    expect(useUpdateStore.getState().downloaded).toBe(false);
+    expect(useUpdateStore.getState().error).toBe('offline');
   });
 });

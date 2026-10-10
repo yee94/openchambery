@@ -129,6 +129,39 @@ afterEach(async () => {
 });
 
 describe('file reference failure lifecycle', () => {
+  test('native browser opacity follows tab visibility and clears on unmount', async () => {
+    vi.stubGlobal('__OPENCHAMBER_ELECTRON__', true);
+    await act(async () => {
+      useUIStore.getState().openContextBrowser('/repo');
+      reactRoot.render(<ContextPanel directory="/repo" />);
+    });
+    expect(document.documentElement.hasAttribute('data-oc-native-browser-visible')).toBe(true);
+    await act(async () => useUIStore.getState().closeContextPanel('/repo'));
+    expect(document.documentElement.hasAttribute('data-oc-native-browser-visible')).toBe(false);
+    await act(async () => useUIStore.getState().openContextBrowser('/repo'));
+    expect(document.documentElement.hasAttribute('data-oc-native-browser-visible')).toBe(true);
+    harness.files.readFile.mockResolvedValue({ content: 'file content' });
+    await open('/repo/file.ts');
+    expect(document.documentElement.hasAttribute('data-oc-native-browser-visible')).toBe(false);
+    await act(async () => useUIStore.getState().openContextBrowser('/repo'));
+    expect(document.documentElement.hasAttribute('data-oc-native-browser-visible')).toBe(true);
+    await act(async () => reactRoot.render(<ContextPanel directory="/other" />));
+    expect(document.documentElement.hasAttribute('data-oc-native-browser-visible')).toBe(false);
+    await act(async () => reactRoot.render(<ContextPanel directory="/repo" />));
+    expect(document.documentElement.hasAttribute('data-oc-native-browser-visible')).toBe(true);
+    await act(async () => reactRoot.render(null));
+    expect(document.documentElement.hasAttribute('data-oc-native-browser-visible')).toBe(false);
+  });
+
+  test('an iframe browser does not disable sidebar vibrancy', async () => {
+    vi.stubGlobal('__OPENCHAMBER_ELECTRON__', false);
+    await act(async () => {
+      useUIStore.getState().openContextBrowser('/repo');
+      reactRoot.render(<ContextPanel directory="/repo" />);
+    });
+    expect(document.documentElement.hasAttribute('data-oc-native-browser-visible')).toBe(false);
+  });
+
   test.each([
     ['/repo/.../B.ts', 'ENOENT: no such file or directory'],
     ['/repo/folder', 'EISDIR: illegal operation on a directory'],

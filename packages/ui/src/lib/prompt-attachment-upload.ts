@@ -1,8 +1,6 @@
 import { normalize } from 'pathe';
 import { runtimeFetch } from '@/lib/runtime-fetch';
 
-export const MAX_PROMPT_ATTACHMENT_BYTES = 25 * 1024 * 1024;
-
 export class PromptAttachmentUploadError extends Error {
   readonly status: number;
   readonly code: 'unavailable' | 'too-large' | 'rejected';
@@ -120,8 +118,8 @@ export const needsPromptAttachmentUpload = (url: string): boolean =>
   url.startsWith('data:') || url.startsWith('blob:');
 
 /**
- * Upload inline image/file bytes as a streamed Blob body, then return a
- * host-absolute file:// URL for the OpenCode prompt part.
+ * Upload inline image/file bytes to the active host's temporary directory as a
+ * Blob body, then return a host-absolute file:// URL for prompt preparation.
  *
  * Failures throw. Callers must not silently fall back to embedding the data
  * URL in the prompt JSON — that blocks the shared relay tunnel.
@@ -131,7 +129,7 @@ export const uploadPromptAttachmentBytes = async (
 ): Promise<PromptAttachmentUploadResult> => {
   const mime = input.mime || input.body.type || 'application/octet-stream';
   const body = input.body.type === mime ? input.body : new Blob([input.body], { type: mime });
-  if (!Number.isSafeInteger(body.size) || body.size < 0 || body.size > MAX_PROMPT_ATTACHMENT_BYTES) {
+  if (!Number.isSafeInteger(body.size) || body.size < 0) {
     throw new PromptAttachmentUploadError(413, 'too-large');
   }
   const sha256 = await digestHex(body);
@@ -146,6 +144,7 @@ export const uploadPromptAttachmentBytes = async (
         'X-OpenChamber-Content-Length': String(body.size),
         'X-OpenChamber-Sha256': sha256,
         'X-OpenChamber-Mime': mime,
+        'X-OpenChamber-Storage': 'temporary',
         ...(input.filename ? { 'X-OpenChamber-Filename': encodeURIComponent(input.filename) } : {}),
       },
       body,

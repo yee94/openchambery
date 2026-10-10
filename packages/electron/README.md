@@ -12,6 +12,8 @@ Desktop starts the OpenChamber web server in the same Electron main process. The
 
 The preload bridge exposes desktop-only APIs to the web UI through `window.__OPENCHAMBER_DESKTOP__`. Privileged commands are checked in `main.mjs`, not only in the UI. The binary-path probe samples at most 8 KiB before a non-image binary file opens through the system handler.
 
+Packaged UI resources may be replaced by a verified desktop OTA directory under `userData/ota`. `desktop-ota.mjs` owns download, channel selection, atomic staging, next-launch activation and recovery. The scheme remains `openchamber-ui://app`, preserving browser storage. Main, preload, native dependencies and the in-process web backend remain installer-owned. `packages/web/server/lib/zip-assets.js` owns the bounded archive codec using the existing web-package ZIP dependency.
+
 Desktop instance switches revalidate the target's authentication before committing the runtime endpoint. Direct probes verify service compatibility and `/auth/session` with the saved client credential; Relay probes verify `/auth/session` over the pinned E2EE tunnel and hand that authenticated tunnel to the runtime. Cached connected badges remain display snapshots. A direct authentication failure triggers Relay fallback when available; failed authentication on every candidate preserves the current instance and reports authentication required.
 
 ## Shutdown Lifecycle
@@ -154,11 +156,11 @@ After packaging, run `bun run --cwd packages/electron verify:linux-appimage`. Th
 
 Running a packaged Linux AppImage requires FUSE (`libfuse.so.2`, typically `libfuse2` / `libfuse2t64` on Debian/Ubuntu). Without FUSE, start with `APPIMAGE_EXTRACT_AND_RUN=1`. Keep the AppImage on a writable path so in-app updates can replace it.
 
-Linux updates are supported only when the packaged app is running from a writable AppImage. Update checks, downloads, and installation report an actionable error when `APPIMAGE` is missing, invalid, or read-only; a missing release feed (`latest-linux.yml` 404 before the first Linux publish) is treated as “no update available”. macOS and Windows updater behavior is unchanged. Release builds keep `latest-linux.yml` (x64) and `latest-linux-arm64.yml` separate and validate each manifest against its AppImage before upload. Linux AppImages download full updates (no `.blockmap` differential channel yet).
+Desktop OTA writes only to userData on macOS, Windows and Linux. It does not replace the AppImage or signed application bundle. A shell/backend change requires downloading a full installer through the shared update decision's native target.
 
 ### Updater End-to-End Fixture
 
-A loopback-only updater fixture is available for contributor QA of N-to-N+1 AppImage replacement and restart behavior. It is test infrastructure, not a user-configurable update source. See [`scripts/updater-e2e-fixture.md`](./scripts/updater-e2e-fixture.md) for the controlled test procedure. Unit tests cover feed selection, check failures, no-update results, and fixture generation; actual AppImage replacement and restart remains a manual native N-to-N+1 release boundary because it requires executing two packaged versions on each supported architecture.
+`bun run test:updater` covers OTA state transitions and runs a real Electron relaunch fixture (`scripts/desktop-ota-evidence.test.mjs`): verified assets are queued, the process PID changes, and the new window loads the new resources through `openchamber-ui://`. Full signed installer, Windows and Linux runtime validation still requires those platform builds.
 
 The package supports macOS, Windows, and Linux desktop features. Linux AppImage builds include in-app window controls and auto-update; system tray and launch-at-login remain macOS/Windows only. Some native discovery helpers are platform-specific. For example, app icon fetching and app filtering currently only work on macOS, while opening files in installed apps and installed-app discovery work on macOS and Windows (Linux returns an empty list without errors).
 
@@ -172,7 +174,11 @@ SSH Bun installs of `@opencode/cli` use `--trust` so its required postinstall pr
 
 ## Releases and automatic updates
 
-Packaged desktop apps check updates through `openchamber-update.vercel.app` using Electron updater metadata proxied through `/desktop/`. Signed installers, macOS ZIP updates, and AppImages remain GitHub Release assets. Each cold startup checks once, then repeats hourly while the app is visible; users can also check from the app menu, sidebar, or Settings. After an update is found, Electron may download the package silently while the OS is idle/locked; the dialog progress bar appears only when the user clicks Download (joining any in-flight idle download). Electron applies a downloaded desktop update independently of the active OpenChamber host connection.
+Packaged desktop apps call `POST /v1/mobile/update/check` with `platform: desktop` on the public update service. Desktop and mobile share `ota/channels/{beta,stable}.json`, major isolation, rollout, pause and beta→stable rollback decisions. The About beta switch overrides the shell's baked channel (prerelease shell → beta, stable shell → stable). Updates are independent of the connected Host. Checks run at startup and hourly while visible, and from the menu/sidebar/Settings.
+
+Download stages the desktop ZIP from `activeBundle.desktop`, checks size/SHA-256 and archive paths, and queues it for the next launch. Restart awaits the existing backend shutdown and uses `app.relaunch()` / `app.exit(0)`. The UI explicitly confirms readiness through local-only `desktop_ota_ready`. A failed/unconfirmed launch returns to the previous good bundle or builtin on the next launch; a 60-second UI readiness timeout requests that recovery restart. Rejected bundle IDs cannot loop. Changing channels invalidates queued downloads. A new native installer version resets cached activation to its builtin assets.
+
+CI builds desktop and mobile ZIPs from the same Web build (the mobile ZIP may still use Capgo encryption). `scripts/desktop-ota-assets.mjs` fingerprints shell/backend sources and locked dependencies. Assembly carries the desktop minimum shell version forward when the fingerprint matches and raises it on change; OTA-only publishing rejects changed shell/backend fingerprints. The desktop floor always compares the installed shell version, never the downloaded UI version. Release CI publishes shared OTA only after installers are published and no longer publishes `latest*.yml`. Existing pre-OTA desktops need a one-time installer upgrade to adopt this mechanism.
 
 The `Release` GitHub Actions workflow runs for `v*` tags or by manual dispatch. Before starting a release:
 
@@ -181,7 +187,7 @@ The `Release` GitHub Actions workflow runs for `v*` tags or by manual dispatch. 
 3. Configure `NPM_TOKEN` so the release workflow can publish `@openchambery/web` and `@openchambery/relay-server` to npm. iOS signing secrets are required for the TestFlight upload that runs with the formal release workflow.
 4. For a desktop-only release, manually dispatch the workflow with scope `desktop` (the default). Pushing tag `v<version>` retains the full-release behavior.
 
-The workflow creates the GitHub Release and uploads the desktop artifacts. macOS, Windows, and writable Linux AppImage installs use in-app automatic updates. Formal releases also upload Android artifacts and send iOS builds to TestFlight. A dry run keeps the Release as a draft. The version validation step fails early if the requested version differs from the root or Electron package version.
+The workflow creates the GitHub Release and uploads desktop installers. macOS, Windows and Linux use in-app resource OTA plus restart; incompatible shells follow the native installer target. Formal releases also upload Android artifacts and send iOS builds to TestFlight. A dry run keeps the Release as a draft. The version validation step fails early if the requested version differs from the root or Electron package version.
 
 Managed local Desktop startup prefers OpenCode binaries in this order:
 

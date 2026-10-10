@@ -249,6 +249,5 @@ jobs:
           path: |
             packages/electron/dist/*.exe
             packages/electron/dist/*.blockmap
-            packages/electron/dist/latest.yml
           if-no-files-found: error
           retention-days: ${{ fromJSON(inputs.retention_days) }}

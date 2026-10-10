@@ -7,6 +7,7 @@ import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import fsp from 'node:fs/promises';
 import path from 'node:path';
+import os from 'node:os';
 import { constants as fsConstants } from 'node:fs';
 
 export const MAX_PROMPT_ATTACHMENT_BYTES = 25 * 1024 * 1024;
@@ -112,6 +113,47 @@ export async function collectRequestBytes(req, { expectedSize, maxBytes = MAX_PR
     fail('PROMPT_ATTACHMENT_SIZE_MISMATCH', 'Attachment size mismatch');
   }
   return { buffer: Buffer.concat(chunks, size), size };
+}
+
+/** Prompt-only uploads live on the model host and are streamed without the inline-context size limit. */
+export async function storeTemporaryPromptAttachment(req, { expectedSize, expectedSha256, mime, filename, signal }) {
+  const directory = await fsp.mkdtemp(path.join(os.tmpdir(), 'openchamber-prompt-'));
+  let decodedName;
+  try { decodedName = decodeURIComponent(filename || 'attachment'); } catch { decodedName = 'attachment'; }
+  const name = Array.from(path.basename(decodedName.replace(/\\/g, '/')).replace(/[\x00-\x1f\x7f]/g, '_')).slice(-60).join('');
+  const absolutePath = path.join(directory, name && name !== '.' && name !== '..' ? name : 'attachment');
+  let fd;
+  try {
+    fd = await fsp.open(absolutePath, 'wx', 0o600);
+    const hash = createHash('sha256');
+    let size = 0;
+    const chunks = Buffer.isBuffer(req.body) ? [req.body] : req;
+    for await (const chunk of chunks) {
+      if (signal?.aborted) fail('PROMPT_ATTACHMENT_ABORTED', 'Upload aborted');
+      const bytes = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+      size += bytes.length;
+      if (size > expectedSize) fail('PROMPT_ATTACHMENT_SIZE_MISMATCH', 'Attachment size mismatch');
+      hash.update(bytes);
+      let offset = 0;
+      while (offset < bytes.length) {
+        const { bytesWritten } = await fd.write(bytes, offset, bytes.length - offset);
+        if (bytesWritten <= 0) fail('attachment_write_failed', 'Short attachment write');
+        offset += bytesWritten;
+      }
+    }
+    if (signal?.aborted) fail('PROMPT_ATTACHMENT_ABORTED', 'Upload aborted');
+    if (size !== expectedSize) fail('PROMPT_ATTACHMENT_SIZE_MISMATCH', 'Attachment size mismatch');
+    const sha256 = hash.digest('hex');
+    if (sha256 !== expectedSha256) fail('attachment_hash_mismatch', 'Attachment digest mismatch');
+    await fd.sync();
+    await fd.close();
+    fd = undefined;
+    return { absolutePath, size, mime, sha256 };
+  } catch (error) {
+    await fd?.close().catch(() => {});
+    await fsp.rm(directory, { recursive: true, force: true });
+    throw error;
+  }
 }
 
 export function promptAttachmentsRoot(dataDir) {

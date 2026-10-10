@@ -52,8 +52,8 @@ OpenChamber Server (with optional `OPENCHAMBER_UPDATE_API_URL` override). Capaci
 mobile clients call the public update API **directly** from the app process,
 preferring EdgeOne (`https://openchamber.xiaobe.top/v1/update/check`), then
 this Vercel endpoint, then GitHub Releases. Packaged Desktop builds on macOS,
-Windows, and Linux use Electron updater metadata under `/desktop/`. Those
-metadata responses point signed package downloads at GitHub Release assets.
+Windows, and Linux use the shared OTA decision endpoint below. `/desktop/`
+remains a legacy metadata proxy; new release CI no longer publishes YAML feeds.
 
 `OPENCHAMBER_UPDATE_API_URL` remains available as a compatible JSON API
 override for Web, VS Code, and server-side package update checks.
@@ -93,7 +93,7 @@ Both accept CORS preflight (`OPTIONS`) and return `cache-control: no-store`.
 Required JSON fields:
 
 - `channel`: `beta` \| `stable`
-- `platform`: `ios` \| `android`
+- `platform`: `ios` \| `android` \| `desktop`
 - `deviceId`: non-empty string (rollout bucketing)
 - `nativeVersion`: native marketing version string
 - `nativeBuild`: positive integer
@@ -106,7 +106,7 @@ Required JSON fields:
 
 OTA selection is scoped by **release major × channel**. A 1.x client receives only 1.x bundles on either stable or beta, and a 2.x client receives only 2.x bundles. Beta→stable rollback is permitted only within that major. The running web release identity takes precedence over the native marketing version. An unknown identity or an unpublished major yields `none` without an OTA or native target; it never falls back to another major. Fetch/validation failures still return 503.
 
-New clients also validate the response major and reject mismatched bundles before downloading or reusing cached bundles. This protects them against older update-service deployments that ignore `releaseMajor`. Native Capgo automatic checks use the server-side inferred major. Web, hosted mobile, desktop and VS Code do not use this Capacitor OTA path.
+New clients also validate the response major and reject mismatched bundles before downloading or reusing cached bundles. This protects them against older update-service deployments that ignore `releaseMajor`. Native Capgo automatic checks use the server-side inferred major. Desktop uses the same resolver with its own artifact and shell gate; Web, hosted mobile and VS Code do not use this OTA path.
 
 Rollout order: deploy this update-service implementation to **both Vercel and EdgeOne before publishing a second major**, then publish using the updated snapshot scripts. Existing clients need no request migration. All subsequent publishing/rollout jobs (including maintenance releases from a 1.x branch) must use the major-aware scripts; older writers drop the catalog. Reverting the service or publishing scripts to a pre-isolation version is not compatible with a multi-major catalog.
 
@@ -171,6 +171,9 @@ Schema summary (`schemaVersion: 1`):
   - `platforms.ios|android.minNativeBuild` (**deprecated**): 存量 manifest 兼容读取；判定已不使用
 - `nativeTargets.ios|android`: optional `{ version, build, status?, installUrl? }`
 - `rollbackBundleIds`: 0–2 hex bundle ids
+- `activeBundle.desktop` (optional for legacy manifests): `{ bundleId, url, size, checksum, shellFingerprint, minShellReleaseVersion }`. The desktop ZIP has the desktop `index.html` and `desktop-ota.json`; mobile's existing bundle may remain Capgo-encrypted. Both artifacts share the parent release version, channel, rollout and generation. A legacy manifest without this field offers no desktop OTA.
+- `nativeTargets.desktop`: installer release target when the desktop shell/backend is incompatible. The desktop gate compares `nativeVersion`, not `currentBundleId`; current UI identity still controls upgrade/rollback and major isolation.
+- `rollbackBundles`: up to two full prior bundle records keyed by `rollbackBundleIds`. Snapshot/rollout mirrors their desktop ZIPs as well as mobile ZIPs. New rollbacks restore original versions, checksums, encryption metadata and shell floors; legacy rollback entries without desktop metadata cannot be used to reconstruct a desktop bundle.
 - `majorReleases` (optional): map of other major numbers to complete schema-v1 channel manifests, with no nested `majorReleases`. The root remains the most recently published/modified lane for existing publishing consumers; the resolver selects by client major, never by the root's recency. Root and archived lanes must have distinct majors, the same channel, and same-major native targets/shell floors. Legacy manifests without the map remain readable. An empty legacy seed belongs to major 1.
 
 `assemble-snapshot.mjs` selects previous state by the release's major, so generation, rollback ids, native targets and shell floors are independent per lane. It archives the previous root when switching majors and mirrors all lanes and their active/rollback zip files in both channels. `rollout.mjs --major X` targets a specific lane; omission retains the legacy default of the root lane. The rollout workflow exposes the same `major` input. Invalid catalogs or missing referenced bundles abort snapshot creation before deployment.

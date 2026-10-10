@@ -1,4 +1,4 @@
-name: Mobile Beta OTA Rollout
+name: Shared Desktop and Mobile OTA Rollout
 
 on:
   workflow_dispatch:
@@ -21,13 +21,14 @@ on:
         type: string
         default: ''
       platform:
-        description: Platform for set-native-target / set-min-native-build (ios|android; ignore for other actions)
+        description: Platform for native target or shell gate (desktop build-number gates are unsupported)
         required: false
         type: choice
         default: ios
         options:
           - ios
           - android
+          - desktop
       version:
         description: Version for set-native-target / set-min-shell-release-version (empty clears the shell gate)
         required: false
@@ -139,7 +140,7 @@ jobs:
               ;;
             set-min-shell-release-version)
               # Empty VERSION clears activeBundle.minShellReleaseVersion (no shell gate).
-              ARGS=(--action set-min-shell-release-version --channel "$CHANNEL" --version "${VERSION:-}" --out "$OUT")
+              ARGS=(--action set-min-shell-release-version --channel "$CHANNEL" --platform "$PLATFORM" --version "${VERSION:-}" --out "$OUT")
               WRITE_CHANNEL="$CHANNEL"
               ;;
             set-min-native-build)

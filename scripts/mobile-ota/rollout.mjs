@@ -235,12 +235,17 @@ function applyRollback(manifest) {
   next.rollbackBundleIds = [demoted.bundleId, ...manifest.rollbackBundleIds.slice(1)]
     .filter((id, index, arr) => arr.indexOf(id) === index)
     .slice(0, 2)
+  next._rollbackBundle = manifest.rollbackBundles?.[targetId]
+  next.rollbackBundles = Object.fromEntries(next.rollbackBundleIds.flatMap((id) => {
+    const bundle = id === demoted.bundleId ? demoted : manifest.rollbackBundles?.[id]
+    return bundle ? [[id, bundle]] : []
+  }))
   return next
 }
 
 function applySetNativeTarget(manifest, args) {
-  if (args.platform !== 'ios' && args.platform !== 'android') {
-    throw new Error('--platform must be ios or android')
+  if (!['ios', 'android', 'desktop'].includes(args.platform)) {
+    throw new Error('--platform must be ios, android or desktop')
   }
   if (!args.version || !VERSION_PATTERN.test(args.version)) {
     throw new Error('--version must be a semver string')
@@ -277,6 +282,11 @@ function applySetMinShellReleaseVersion(manifest, args) {
 
   const next = structuredClone(manifest)
   next.generation = (Number.isInteger(manifest.generation) ? manifest.generation : 0) + 1
+  if (args.platform === 'desktop') {
+    if (clearing || !next.activeBundle.desktop) throw new Error('Desktop OTA requires an explicit shell floor and artifact')
+    next.activeBundle.desktop.minShellReleaseVersion = raw
+    return next
+  }
   if (clearing) {
     delete next.activeBundle.minShellReleaseVersion
   } else {
@@ -347,10 +357,23 @@ function applyPromoteChannel(sourceManifest, targetManifest, percent) {
       ? structuredClone(targetManifest.nativeTargets)
       : {},
     rollbackBundleIds: rollbackBundleIds.slice(0, 2),
+    rollbackBundles: Object.fromEntries(rollbackBundleIds.slice(0, 2).flatMap((id) => {
+      const bundle = id === targetManifest.activeBundle?.bundleId ? targetManifest.activeBundle : targetManifest.rollbackBundles?.[id]
+      return bundle ? [[id, bundle]] : []
+    })),
   }
 }
 
 async function finalizeRollback(next, baseUrl, bundlesDir) {
+  if (next._rollbackBundle) {
+    next.activeBundle = { ...next._rollbackBundle, rolloutPercent: 100, rolloutSalt: `${next.channel}-${next.generation}` }
+    delete next._rollbackTargetId
+    delete next._demotedActive
+    delete next._rollbackBundle
+    return next
+  }
+  if (next._demotedActive?.desktop) throw new Error('Legacy rollback target lacks desktop metadata; republish the target release')
+  delete next._rollbackBundle
   const targetId = next._rollbackTargetId
   const demoted = next._demotedActive
   delete next._rollbackTargetId
@@ -396,6 +419,10 @@ async function ensureBundles(manifest, baseUrl, bundlesDir) {
     await ensureBundles(release, baseUrl, bundlesDir)
   }
   const ids = []
+  if (manifest.activeBundle?.desktop?.bundleId) ids.push(manifest.activeBundle.desktop.bundleId)
+  for (const bundle of Object.values(manifest.rollbackBundles ?? {})) {
+    if (bundle.desktop?.bundleId) ids.push(bundle.desktop.bundleId)
+  }
   if (manifest.activeBundle?.bundleId) ids.push(manifest.activeBundle.bundleId)
   if (Array.isArray(manifest.rollbackBundleIds)) {
     for (const id of manifest.rollbackBundleIds) {
@@ -499,6 +526,7 @@ async function main() {
   next = mergeOtaMajor(catalog, next)
   const validated = parseOtaManifest(next)
   if (!validated.ok) throw new Error(validated.errors.join('; '))
+  next = validated.manifest
 
   await ensureBundles(next, baseUrl, bundlesDir)
 

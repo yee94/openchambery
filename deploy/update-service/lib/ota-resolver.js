@@ -37,6 +37,7 @@ function publicBundle(activeBundle) {
   if (activeBundle.sessionKey !== undefined) {
     bundle.sessionKey = activeBundle.sessionKey;
   }
+  if (activeBundle.minShellReleaseVersion) bundle.minShellReleaseVersion = activeBundle.minShellReleaseVersion;
   return bundle;
 }
 
@@ -59,6 +60,7 @@ function nativeInfo(nativeTarget) {
  * （iOS 剥离版 "1.18.2" 也可解析，参与门比较是安全且正确的方向——stable 门不拦同 core beta 剥离身份）。
  */
 function resolveShellGateIdentity(request) {
+  if (request.platform === 'desktop') return request.nativeVersion;
   if (parseReleaseVersion(request.currentBundleId)) {
     return request.currentBundleId;
   }
@@ -74,6 +76,7 @@ function resolveShellGateIdentity(request) {
  * rolled back to an older activeBundle.
  */
 export function resolveCurrentFloorVersion(request, nativeTarget) {
+  if (request.platform === 'desktop') return request.currentBundleId;
   const candidates = [];
   if (
     parseReleaseVersion(request.currentBundleId)
@@ -152,6 +155,14 @@ export function resolveMobileUpdate(manifest, request) {
     ?? parseReleaseVersion(request.currentBundleId)?.major
     ?? parseReleaseVersion(request.nativeVersion)?.major;
   manifest = selectOtaMajor(manifest, major);
+  if (request.platform === 'desktop' && manifest?.activeBundle) {
+    const desktop = manifest.activeBundle.desktop;
+    if (!desktop) manifest = { ...manifest, activeBundle: null };
+    else {
+      const { sessionKey, ...shared } = manifest.activeBundle;
+      manifest = { ...manifest, activeBundle: { ...shared, ...desktop, minShellApiVersion: 1 } };
+    }
+  }
   const nextCheckInSec = DEFAULT_NEXT_CHECK_IN_SEC;
   const platform = request.platform;
   const nativeTarget = manifest?.nativeTargets?.[platform];

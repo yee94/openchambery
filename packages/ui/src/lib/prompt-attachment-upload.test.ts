@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, mock, test } from 'bun:test';
+import { it } from 'vitest';
 
 const fetchCalls: Array<{ path: string; init?: RequestInit }> = [];
 const fetchResults: Array<Response | Error> = [];
@@ -65,6 +66,15 @@ describe('prompt attachment upload', () => {
       body: new Blob(['abcd'], { type: 'image/png' }),
       mime: 'image/png',
     })).rejects.toThrow(PromptAttachmentUploadError);
+  });
+
+  it('uploads files above the context limit to temporary host storage', async () => {
+    const body = new Blob([new Uint8Array(26 * 1024 * 1024)], { type: 'application/gzip' });
+    fetchResults.push(new Response(JSON.stringify({ path: '/tmp/openchamber-prompt-test/trace.json.gz', size: body.size })));
+    const result = await uploadPromptAttachmentBytes({ body, mime: body.type, filename: 'trace.json.gz' });
+    expect(result.path).toBe('/tmp/openchamber-prompt-test/trace.json.gz');
+    expect(new Headers(fetchCalls[0]?.init?.headers).get('X-OpenChamber-Storage')).toBe('temporary');
+    expect(fetchCalls[0]?.init?.body).toBe(body);
   });
 
   test('encodes Windows drive letters as file:///C:/...', () => {

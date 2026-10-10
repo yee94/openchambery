@@ -6,6 +6,12 @@
 
 Not all state in the UI belongs here.
 
+`useUpdateStore` owns update-dialog orchestration. Electron and Capacitor use the
+same OTA channel override and beta→stable confirmation flow; Electron delegates
+checks/download/relaunch to main-process IPC, while Capacitor uses mobileUpdates.
+The desktop decision and pending-restart state are main-process authoritative and
+independent of the selected Host. Web and VS Code keep their existing package paths.
+
 Use a store when state is:
 
 - shared across distant parts of the app

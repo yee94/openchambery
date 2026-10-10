@@ -207,7 +207,7 @@ const SETTINGS_SEARCH_ITEMS: readonly SettingsSearchItem[] = [
     titleKey: 'settings.openchamber.about.betaUpdates.label',
     descriptionKey: 'settings.openchamber.about.betaUpdates.description',
     keywords: ['beta', 'updates', 'channel', 'ota'],
-    isAvailable: (ctx) => ctx.isMobile && isCapacitorApp(),
+    isAvailable: (ctx) => ctx.isDesktop || isCapacitorApp(),
   },
   {
     id: 'about.diagnostics',

@@ -109,3 +109,15 @@ test('server first-title generation shows loading without clicking the AI button
   expect(container.querySelector('[aria-busy="true"]')).toBeNull();
   expect(container.textContent).toContain('Generated first title');
 });
+
+test('metadata-only title completion stops text loading while execution remains busy', async () => {
+  root = createRoot(container);
+  const generating = { ...session, metadata: { openchamber: { titleRefresh: { isGenerating: true } } } } as Session;
+  await act(async () => root.render(<Harness editing={false} live={generating} />));
+  expect(container.querySelector('.animate-text-shimmer')?.textContent).toBe(session.title);
+  const completed = { ...session, metadata: { openchamber: { titleRefresh: {} } } } as Session;
+  await act(async () => root.render(<Harness editing={false} live={completed} />));
+  expect(container.querySelector('.animate-text-shimmer')).toBeNull();
+  expect(container.querySelector('[aria-busy="true"]')).toBeNull();
+  expect(container.querySelector('[aria-label="sessions.sidebar.session.status.active"]')).not.toBeNull();
+});

@@ -57,6 +57,7 @@
  */
 import { parseOtaManifest, selectOtaMajor } from '../../deploy/update-service/lib/ota-manifest.js'
 import { parseReleaseVersion } from '../../deploy/update-service/lib/semver.js'
+import { createHash } from 'node:crypto'
 
 const DEFAULT_BASES = [
   'https://openchamber-update.vercel.app',
@@ -581,6 +582,27 @@ for (const delay of RETRY_DELAYS_MS) {
       const manifest = selectOtaMajor(catalog, major)
       if (!manifest) throw new Error(`No release lane for major ${major}`)
       const profiles = buildProfiles(manifest)
+      const desktop = manifest.activeBundle?.desktop
+      if (!desktop) throw new Error('Shared OTA manifest is missing desktop resources')
+      const desktopResponse = await fetch(new URL(desktop.url, base))
+      if (!desktopResponse.ok) throw new Error(`Desktop bundle unavailable: ${desktopResponse.status}`)
+      const desktopBytes = Buffer.from(await desktopResponse.arrayBuffer())
+      if (desktopBytes.length !== desktop.size || createHash('sha256').update(desktopBytes).digest('hex') !== desktop.checksum) {
+        throw new Error('Desktop bundle checksum/size mismatch')
+      }
+      const desktopBody = {
+        channel, platform: 'desktop', deviceId: 'ci-desktop-ota', nativeBuild: 1, shellApiVersion: 1,
+        releaseMajor: major, nativeVersion: desktop.minShellReleaseVersion, currentBundleId: version,
+      }
+      profiles.push({ name: 'desktop current', body: desktopBody, expect: 'none' })
+      profiles.push({ name: 'desktop compatible shell', body: { ...desktopBody, currentBundleId: `${major}.0.0-beta.0` }, expect: 'apply_ota' })
+      profiles.push({ name: 'desktop old shell cannot use new web identity to bypass gate',
+        body: { ...desktopBody, nativeVersion: versionBelow(desktop.minShellReleaseVersion) }, expect: 'install_native_required' })
+      if (channel === 'stable') {
+        const parsedVersion = parseReleaseVersion(version)
+        profiles.push({ name: 'desktop beta to stable rollback', body: { ...desktopBody,
+          currentBundleId: `${parsedVersion.major}.${parsedVersion.minor}.${parsedVersion.patch + 1}-beta.1` }, expect: 'apply_ota', expectIsChannelRollback: true })
+      }
       for (const otherMajor of new Set([1, 2, major + 1])) {
         if (otherMajor === major) continue
         profiles.push({
@@ -611,6 +633,10 @@ for (const delay of RETRY_DELAYS_MS) {
           }
           if (actual !== profile.expect) {
             lastFailures.push(`${label} ${profile.name}: expected ${profile.expect}, got ${actual}`)
+          } else if (profile.expectIsChannelRollback && decision.isChannelRollback !== true) {
+            lastFailures.push(`${label} ${profile.name}: missing channel rollback flag`)
+          } else if (profile.body.platform === 'desktop' && actual === 'apply_ota' && decision.ota?.bundle?.bundleId !== desktop.bundleId) {
+            lastFailures.push(`${label} ${profile.name}: incorrect desktop artifact`)
           } else if (profile.expect === 'apply_ota' && decision.ota?.bundle?.releaseVersion !== version) {
             lastFailures.push(`${label} ${profile.name}: apply_ota offers ${decision.ota?.bundle?.releaseVersion ?? 'none'}, expected ${version}`)
           } else {

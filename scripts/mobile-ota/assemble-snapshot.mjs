@@ -29,6 +29,7 @@ import path from 'node:path'
 import { pipeline } from 'node:stream/promises'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { Readable } from 'node:stream'
+import { readAssetZipMetadata } from '../../packages/web/server/lib/zip-assets.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const ROOT = path.resolve(__dirname, '../..')
@@ -76,6 +77,12 @@ function parseArgs(argv) {
       case '--zip':
         out.zip = next()
         break
+      case '--desktop-zip':
+        out.desktopZip = next()
+        break
+      case '--desktop-ota-only':
+        out.desktopOtaOnly = true
+        break
       case '--checksum':
         out.checksum = next()
         break
@@ -88,7 +95,7 @@ function parseArgs(argv) {
       case '--help':
       case '-h':
         console.log(
-          'Usage: node scripts/mobile-ota/assemble-snapshot.mjs --zip <path> --version <semver> --checksum <hex> --out <dir> [--channel beta|stable] [--session-key <key>] [--dist-dir <dir>]',
+          'Usage: node scripts/mobile-ota/assemble-snapshot.mjs --zip <mobile.zip> --desktop-zip <desktop.zip> --version <semver> --checksum <hex> --out <dir> [--desktop-ota-only] [--channel beta|stable] [--session-key <key>] [--dist-dir <dir>]',
         )
         process.exit(0)
         break
@@ -209,6 +216,10 @@ async function ensureChannelBundles(manifest, baseUrl, bundlesDir) {
     await ensureChannelBundles(release, baseUrl, bundlesDir)
   }
   const ids = []
+  if (manifest.activeBundle?.desktop?.bundleId) ids.push(manifest.activeBundle.desktop.bundleId)
+  for (const bundle of Object.values(manifest.rollbackBundles ?? {})) {
+    if (bundle.desktop?.bundleId) ids.push(bundle.desktop.bundleId)
+  }
   if (manifest.activeBundle?.bundleId) ids.push(manifest.activeBundle.bundleId)
   if (Array.isArray(manifest.rollbackBundleIds)) {
     for (const id of manifest.rollbackBundleIds) {
@@ -347,7 +358,31 @@ async function main() {
     activeBundle.sessionKey = args.sessionKey
   }
 
-  const nextManifest = mergeOtaMajor(catalog, {
+  if (!args.desktopZip) throw new Error('--desktop-zip is required for shared desktop/mobile OTA publishing')
+  const desktopZip = path.resolve(args.desktopZip)
+  const desktopChecksum = sha256FileHex(desktopZip)
+  const desktopMetadata = readAssetZipMetadata(desktopZip)
+  if (desktopMetadata.releaseVersion !== args.version) throw new Error('Desktop OTA version must match release version')
+  const { manifest: otherCatalog } = await fetchProductionManifest(baseUrl, otherChannel(args.channel))
+  const otherRelease = selectOtaMajor(otherCatalog, releaseMajor)
+  const matchingDesktops = [previousActive?.desktop, otherRelease?.activeBundle?.desktop]
+    .filter((d) => d?.shellFingerprint === desktopMetadata.shellFingerprint
+      && compareReleaseVersions(d.minShellReleaseVersion, args.version) <= 0)
+    .sort((a, b) => compareReleaseVersions(a.minShellReleaseVersion, b.minShellReleaseVersion))
+  const previousDesktop = matchingDesktops[0]
+  const sameShell = Boolean(previousDesktop)
+  if (args.desktopOtaOnly && !sameShell) throw new Error('Desktop shell/backend changed: publish a v* installer release first')
+  activeBundle.desktop = {
+    bundleId: desktopChecksum.slice(0, 16),
+    url: `/ota/bundles/${desktopChecksum.slice(0, 16)}.zip`,
+    size: readFileSync(desktopZip).byteLength,
+    checksum: desktopChecksum,
+    shellFingerprint: desktopMetadata.shellFingerprint,
+    minShellReleaseVersion: sameShell ? previousDesktop.minShellReleaseVersion : args.version,
+  }
+  if (activeBundle.desktop.size > 24 * 1024 * 1024) throw new Error('Desktop OTA exceeds hosting size limit')
+
+  let nextManifest = mergeOtaMajor(catalog, {
     schemaVersion: 1,
     channel: args.channel,
     generation,
@@ -356,9 +391,14 @@ async function main() {
       ? { ...previous.nativeTargets }
       : {},
     rollbackBundleIds: trimmedRollbacks,
+    rollbackBundles: Object.fromEntries(trimmedRollbacks.flatMap((id) => {
+      const bundle = id === previousActive?.bundleId ? previousActive : previous.rollbackBundles?.[id]
+      return bundle ? [[id, bundle]] : []
+    })),
   })
   const validated = parseOtaManifest(nextManifest)
   if (!validated.ok) throw new Error(validated.errors.join('; '))
+  nextManifest = validated.manifest
 
   const outRoot = path.resolve(args.out)
   const bundlesDir = path.join(outRoot, 'ota', 'bundles')
@@ -367,6 +407,7 @@ async function main() {
   mkdirSync(channelsDir, { recursive: true })
 
   copyFileSync(zipPath, path.join(bundlesDir, `${bundleId}.zip`))
+  copyFileSync(desktopZip, path.join(bundlesDir, `${activeBundle.desktop.bundleId}.zip`))
 
   await ensureChannelBundles(
     nextManifest,

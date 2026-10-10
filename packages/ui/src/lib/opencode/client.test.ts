@@ -1,4 +1,5 @@
-import { beforeEach, describe, expect, mock, test } from 'bun:test';
+import { beforeEach, describe, mock, test } from 'bun:test';
+import { expect, it } from 'vitest';
 
 type ConfigEntry = { type: 'document'; info: Record<string, unknown> };
 
@@ -31,6 +32,7 @@ const sessionActiveMock = mock(async (...args: unknown[]) => {
 
 const sessionGenerateSdkCalls: unknown[][] = [];
 const sessionGenerateResults: Array<unknown> = [];
+const sessionCommandCalls: unknown[] = [];
 const sessionGenerateMock = mock(async (...args: unknown[]) => {
   sessionGenerateSdkCalls.push(args);
   const next = sessionGenerateResults.shift();
@@ -75,6 +77,7 @@ mock.module('@opencode/client', () => ({
           }),
         },
         session: {
+          command: mock(async (input: unknown) => { sessionCommandCalls.push(input); }),
           active: sessionActiveMock,
           generate: sessionGenerateMock,
           update: mock(async (...args: unknown[]) => {
@@ -194,6 +197,7 @@ mock.module('@/lib/prompt-attachment-upload', () => ({
 const { opencodeClient } = await import(`./client?cache-test=${Date.now()}`);
 
 beforeEach(() => {
+  sessionCommandCalls.length = 0;
   healthFetchCalls.length = 0;
   healthFetchResults.length = 0;
   uploadPromptAttachmentCalls.length = 0;
@@ -627,6 +631,73 @@ describe('opencodeClient prompt retry behavior', () => {
     const init = (healthFetchCalls[callIndex]?.[1] ?? {}) as { body?: string };
     return JSON.parse(init.body ?? '{}');
   };
+
+  it('sends a large trace as a path reference rather than an eagerly loaded attachment', async () => {
+    healthFetchResults.push(new Response(JSON.stringify({ id: 'msg_trace', sessionID: 'ses_1' }), { headers: { 'Content-Type': 'application/json' } }));
+    await opencodeClient.sendMessage({
+      id: 'ses_1', providerID: 'trace', modelID: 'model', text: 'inspect trace',
+      files: [{ type: 'file', mime: 'application/gzip', filename: 'trace.json.gz', url: 'file:///workspace/trace.json.gz' }],
+    });
+    const body = readPromptRequestBody();
+    expect(body.files).toBeUndefined();
+    expect(body.text).toContain('/workspace/trace.json.gz');
+  });
+
+  it('uploads non-image bytes before referencing the host path for queue delivery', async () => {
+    healthFetchResults.push(new Response(JSON.stringify({ id: 'msg_trace', sessionID: 'ses_1' }), { headers: { 'Content-Type': 'application/json' } }));
+    await opencodeClient.sendMessage({
+      id: 'ses_1', providerID: 'trace', modelID: 'model', text: 'inspect trace', delivery: 'queue',
+      files: [{ type: 'file', mime: 'application/gzip', filename: 'trace.json.gz', url: 'data:application/gzip;base64,aGVsbA==' }],
+    });
+    expect(uploadPromptAttachmentCalls).toHaveLength(1);
+    expect(uploadPromptAttachmentCalls[0]?.mime).toBe('application/gzip');
+    const body = readPromptRequestBody();
+    expect(body.files).toBeUndefined();
+    expect(body.text).toContain(defaultUploadResult('application/gzip').path);
+    expect(body.text).not.toContain('data:');
+  });
+
+  it('keeps small images inline and turns oversized uploaded images and documents into references for first messages', async () => {
+    uploadPromptAttachmentResults.push({ ...defaultUploadResult('image/png'), size: 20 * 1024 * 1024 + 1 });
+    healthFetchResults.push(new Response(JSON.stringify({ size: 1024 }), { headers: { 'Content-Type': 'application/json' } }));
+    const parts: Awaited<ReturnType<(typeof import('./client'))['opencodeClient']['buildMessageParts']>> = await opencodeClient.buildMessageParts({
+      text: 'inspect',
+      files: [{ type: 'file', mime: 'image/png', filename: 'big.png', url: 'data:image/png;base64,aGVsbA==' }],
+      additionalParts: [{ text: 'also', files: [
+        { type: 'file', mime: 'image/png', filename: 'small.png', url: 'file:///workspace/small.png' },
+        { type: 'file', mime: 'application/pdf', filename: 'doc.pdf', url: 'file:///workspace/doc.pdf' },
+      ] }],
+    });
+    expect(parts.filter((part) => part.type === 'file')).toMatchObject([{ filename: 'small.png' }]);
+    const text = parts.flatMap((part) => part.type === 'text' ? [part.text] : []).join('\n');
+    expect(text).toContain(defaultUploadResult('image/png').path);
+    expect(text).toContain('/workspace/doc.pdf');
+  });
+
+  it('turns an oversized host image into a reference before prompt admission', async () => {
+    healthFetchResults.push(
+      new Response(JSON.stringify({ size: 20 * 1024 * 1024 + 1 })),
+      new Response(JSON.stringify({ id: 'msg_image', sessionID: 'ses_1' })),
+    );
+    await opencodeClient.sendMessage({
+      id: 'ses_1', providerID: 'image', modelID: 'model', text: 'inspect',
+      files: [{ type: 'file', mime: 'image/png', filename: 'big.png', url: 'file:///workspace/big.png' }],
+    });
+    const body = readPromptRequestBody(1);
+    expect(body.files).toBeUndefined();
+    expect(body.text).toContain('/workspace/big.png');
+  });
+
+  it('uses path references for command attachments and still permits argument-free commands', async () => {
+    await opencodeClient.sendCommand({
+      id: 'ses_1', providerID: 'trace', modelID: 'model', command: 'inspect',
+      files: [{ type: 'file', mime: 'text/plain', filename: 'notes.txt', url: 'file:///workspace/notes.txt' }],
+    });
+    expect(sessionCommandCalls[0]).toMatchObject({ text: expect.stringContaining('/workspace/notes.txt') });
+    expect(sessionCommandCalls[0]).not.toHaveProperty('files');
+    await opencodeClient.sendCommand({ id: 'ses_1', providerID: 'trace', modelID: 'model', command: 'inspect' });
+    expect(sessionCommandCalls[1]).toMatchObject({ text: '' });
+  });
 
   test('uploads inline data URLs before the prompt POST so the JSON body stays a file:// reference', async () => {
     healthFetchResults.push(new Response(JSON.stringify({ id: 'inbox_1', sessionID: 'ses_1' }), { headers: { 'Content-Type': 'application/json' } }));

@@ -17,7 +17,6 @@ import { fileURLToPath } from 'node:url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(__dirname, '..');
-const updaterE2eBuild = process.env.OPENCHAMBER_UPDATER_E2E_BUILD === '1';
 // Bake packaging profile into main so packaged preview apps isolate userData
 // without relying on process env at runtime. Default remains release for CI.
 const desktopProfile = String(process.env.OPENCHAMBER_DESKTOP_PROFILE || 'release').trim().toLowerCase();
@@ -44,7 +43,6 @@ const result = await Bun.build({
   sourcemap: 'none',
   naming: '[name].mjs',
   define: {
-    __OPENCHAMBER_UPDATER_E2E_BUILD__: updaterE2eBuild ? 'true' : 'false',
     __OPENCHAMBER_DESKTOP_PROFILE__: JSON.stringify(desktopProfileDefine),
   },
 });
@@ -54,4 +52,4 @@ if (!result.success) {
   process.exit(1);
 }
 
-console.log(`[electron] main.mjs bundled -> dist-bundle/main.mjs (profile=${desktopProfileDefine}, updater E2E=${updaterE2eBuild})`);
+console.log(`[electron] main.mjs bundled -> dist-bundle/main.mjs (profile=${desktopProfileDefine})`);
