@@ -163,14 +163,16 @@ export function QuestionAutoDelegateStatus({ delegation }: { delegation: Delegat
     : request?.state === 'disabled' ? 'chat.questionDelegate.disabled'
     : 'chat.questionDelegate.settled';
   return <div data-question-delegation-controls className="flex flex-col gap-1.5 border-t border-border/20 px-2 py-1.5">
-    {showCountdown ? <LiveCountdown data={query.data} deadlineAt={request?.deadlineAt ?? null} startedAt={startedAt.current} delayMs={delayMs} /> : null}
-    <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-      {!showCountdown && !failed ? <div className="min-w-0 flex-1 basis-40 typography-micro text-muted-foreground">
-        <span role="status">{t(status)}</span>
-      </div> : null}
-      {query.isError || failed ? <div role="alert" className="min-w-0 flex-1 basis-40 typography-micro text-[var(--status-error)]">{t(failed === 'pause' ? 'chat.questionDelegate.pauseFailed' : failed === 'delegate' ? 'chat.questionDelegate.delegateFailed' : 'chat.questionDelegate.loadFailed')}</div> : null}
+    {showCountdown ? <LiveCountdown data={query.data} deadlineAt={request?.deadlineAt ?? null} startedAt={startedAt.current} delayMs={delayMs} /> : (
+      <div className="flex min-w-0 flex-1 flex-col gap-1">
+        {!failed ? <span role="status" className="typography-micro text-muted-foreground">{t(status)}</span> : null}
+        <div aria-hidden className="h-1" />
+      </div>
+    )}
+    {query.isError || failed ? <div role="alert" className="typography-micro text-[var(--status-error)]">{t(failed === 'pause' ? 'chat.questionDelegate.pauseFailed' : failed === 'delegate' ? 'chat.questionDelegate.delegateFailed' : 'chat.questionDelegate.loadFailed')}</div> : null}
+    <div className="flex min-h-6 flex-wrap items-center gap-x-2 gap-y-1">
       {(query.isError || failed || awaitingClaim) && <Button variant="ghost" size="xs" disabled={Boolean(pending) || query.isFetching} onClick={() => failed && !claimed ? void run(failed) : void query.refetch()}>{t(claimed ? 'chat.questionDelegate.refreshStatus' : 'chat.questionDelegate.retry')}</Button>}
-      {request?.state === 'counting' && !locked && enabled && !held && <Button variant="ghost" size="xs" disabled={Boolean(pending)} onClick={() => void run('pause')}>{t('chat.questionDelegate.pause')}</Button>}
+      {(request?.state === 'counting' || held) && !locked && enabled && <Button variant="ghost" size="xs" className={held ? 'invisible' : undefined} aria-hidden={held || undefined} tabIndex={held ? -1 : undefined} disabled={Boolean(pending) || held} onClick={() => void run('pause')}>{t('chat.questionDelegate.pause')}</Button>}
       {request && !locked && <Button variant="outline" size="xs" disabled={Boolean(pending)} onClick={() => void run('delegate')}>{t('chat.questionDelegate.delegate')}</Button>}
     </div>
   </div>;

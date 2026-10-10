@@ -40,7 +40,7 @@ import { copyTextToClipboard } from '@/lib/clipboard';
 import { useChatSurfaceMode } from '@/components/chat/useChatSurfaceMode';
 import { isVSCodeRuntime } from '@/lib/desktop';
 import { Icon } from "@/components/icon/Icon";
-import { formatTimestampForDisplay } from './timeFormat';
+import { formatAbsoluteMessageTimestamp, formatTimestampForDisplay } from './timeFormat';
 import { canPresentAssistantTps, formatAssistantTps } from './assistantTps';
 import { ContextToolGroup } from './parts/ContextToolGroup';
 import { SkillToolGroup } from './parts/SkillToolGroup';
@@ -89,8 +89,9 @@ const MESSAGE_FOOTER_ROW_MOBILE_CLASS = 'mt-3 mb-0.5 flex flex-wrap items-center
 const MESSAGE_ACTION_GROUP_CLASS = 'flex items-center gap-2';
 /** Duration / timestamp — 与操作图标同色；字略小，行高贴齐图标高度保持垂直对齐. */
 const MESSAGE_FOOTER_META_GROUP_CLASS = 'flex items-center gap-2 text-muted-foreground';
-const MESSAGE_FOOTER_META_CLASS =
-  'inline-flex h-3.5 items-center gap-1 text-[11px] leading-none tabular-nums text-muted-foreground';
+const MESSAGE_FOOTER_META_TEXT_CLASS =
+  'h-3.5 items-center gap-1 text-[11px] leading-none tabular-nums text-muted-foreground';
+const MESSAGE_FOOTER_META_CLASS = `inline-flex ${MESSAGE_FOOTER_META_TEXT_CLASS}`;
 const MESSAGE_FOOTER_META_ICON_CLASS = 'size-3.5!';
 /** Message-action icons: medium stroke — PC + mobile 同一套. */
 const MESSAGE_ACTION_ICON_WEIGHT = 'medium' as const;
@@ -1453,7 +1454,7 @@ const AssistantMessageBody = React.memo(({
     reviewTransferDirection = null,
 }: Omit<MessageBodyProps, 'isUser'>) => {
     const errorMessage = errorPresentation?.text;
-    const { t, locale } = useI18n();
+    const { t } = useI18n();
     const chatSurfaceMode = useChatSurfaceMode();
     const sessionSurface = useSessionSurface();
     const sessionSurfaceActions = getSessionSurfaceActionAvailability(sessionSurface);
@@ -1579,7 +1580,6 @@ const AssistantMessageBody = React.memo(({
     const collapsibleThinkingBlocks = useUIStore((state) => state.collapsibleThinkingBlocks);
     const showSplitAssistantMessageActions = useUIStore((state) => state.showSplitAssistantMessageActions);
     const showAssistantTps = useUIStore((state) => state.showAssistantTps);
-    const timeFormatPreference = useUIStore((state) => state.timeFormatPreference);
     const isSortedRenderMode = chatRenderMode === 'sorted';
     const collapsedPreviewCount = 0;
     const isLastAssistantInTurn = turnGroupingContext?.isLastAssistantInTurn ?? false;
@@ -2299,15 +2299,14 @@ const AssistantMessageBody = React.memo(({
     }, [isLastAssistantInTurn, isTurnSettled, turnGroupingContext?.durationMs]);
 
     const footerTimestamp = React.useMemo(() => {
-        void locale;
         const timestamp = typeof messageCompletedAt === 'number' && messageCompletedAt > 0
             ? messageCompletedAt
             : (typeof messageCreatedAt === 'number' && messageCreatedAt > 0 ? messageCreatedAt : null);
         if (timestamp === null) return null;
 
-        const formatted = formatTimestampForDisplay(timestamp, timeFormatPreference);
+        const formatted = formatAbsoluteMessageTimestamp(timestamp);
         return formatted.length > 0 ? formatted : null;
-    }, [messageCompletedAt, messageCreatedAt, timeFormatPreference, locale]);
+    }, [messageCompletedAt, messageCreatedAt]);
 
     const assistantTpsText = React.useMemo(() => {
         if (!showAssistantTps || !isLastAssistantInTurn || errorPresentation?.variant === 'error') return null;
@@ -2451,18 +2450,16 @@ const AssistantMessageBody = React.memo(({
                                     </Tooltip>
                                 ) : null}
                                 {footerTimestamp ? (
-                                    <Tooltip>
-                                        <TooltipTrigger asChild>
-                                            <span
-                                                className={MESSAGE_FOOTER_META_CLASS}
-                                                aria-label={`Message time: ${footerTimestamp}`}
-                                            >
-                                                <Icon weight={MESSAGE_ACTION_ICON_WEIGHT} name="time" className={MESSAGE_FOOTER_META_ICON_CLASS} />
-                                                <span className="message-footer__label">{footerTimestamp}</span>
-                                            </span>
-                                        </TooltipTrigger>
-                                        <TooltipContent>{footerTimestamp}</TooltipContent>
-                                    </Tooltip>
+                                    <span
+                                        className={cn(
+                                            MESSAGE_FOOTER_META_TEXT_CLASS,
+                                            'whitespace-nowrap',
+                                            isMobile ? 'inline-flex' : 'hidden group-hover/message:inline-flex',
+                                        )}
+                                        data-message-time=""
+                                    >
+                                        {footerTimestamp}
+                                    </span>
                                 ) : null}
                             </div>
                         ) : null}

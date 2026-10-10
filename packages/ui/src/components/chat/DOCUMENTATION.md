@@ -113,6 +113,8 @@ Primary composer history parsing reads authoritative top-level `providerID` / `m
 
 Interaction capture starts POST pause directly, before a possible unmount; the held-state effect compensates for late form discovery and remount. Only an authoritative paused request may display confirmed pause. A local hold without confirmation displays pausing; a failed POST displays the existing retryable failure instead of a contradictory paused label. Explicit retry also republishes when the local host paused but shared pause persistence failed.
 
+Countdown and paused feedback retain the same status/progress slots and action-row footprint. The held pause button becomes invisible and non-focusable rather than collapsing its space. Pointer-down must not shrink the card before pointer-up: a bottom-pinned transcript would move the option away from the pointer and swallow the first click. Selection remains click-owned so a touch-scroll gesture does not answer a question.
+
 Pending Question, Permission, and native Form interactions all render through
 `QuestionCardFrame`, the shared transcript presentation based on the existing
 QuestionCard: the same neutral card surface, rounded border, and separated

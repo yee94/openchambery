@@ -21,6 +21,18 @@ const isValidTimestamp = (timestamp: number): boolean => {
     return Number.isFinite(timestamp) && !Number.isNaN(new Date(timestamp).getTime());
 };
 
+const pad2 = (value: number): string => String(value).padStart(2, '0');
+
+/** Assistant footer clock: local `YYYY-MM-DD HH:mm`, independent of the 12h/24h preference. */
+export const formatAbsoluteMessageTimestamp = (timestamp: number): string => {
+    if (!isValidTimestamp(timestamp)) {
+        return '';
+    }
+
+    const date = new Date(timestamp);
+    return `${date.getFullYear()}-${pad2(date.getMonth() + 1)}-${pad2(date.getDate())} ${pad2(date.getHours())}:${pad2(date.getMinutes())}`;
+};
+
 export const formatTimestampForDisplay = (timestamp: number, timeFormatPreference: TimeFormatPreference): string => {
     if (!isValidTimestamp(timestamp)) {
         return '';

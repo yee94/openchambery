@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [2.0.7-beta.1] - 2026-10-10
+
+### 修复与改进
+
+- 修复 Linux 发布流程中桌面 OTA 重启测试的沙箱启动失败问题。
+- 问题卡片暂停自动托管时保留状态区与操作按钮的位置，减少布局跳动。
+- 助手消息显示完整的本地日期与时间；桌面端悬停时显示，移动端直接显示。
+
 ## [2.0.6-beta.3] - 2026-10-10
 
 ### 新增

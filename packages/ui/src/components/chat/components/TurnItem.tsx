@@ -72,6 +72,7 @@ const TurnItem: React.FC<TurnItemProps> = ({
                 renderMessage(turn.userMessage, activityExpanded)
             )}
 
+            <div className="group/message">
             {!isShellTurn && (pendingAssistantHeader || assistantHeaderMessage) ? (
                 <div className={`group w-full ${isMobile ? (stickyUserHeader ? 'pt-4' : 'pt-0') : 'pt-6'} pb-0`}>
                     <div className="chat-message-column relative">
@@ -130,6 +131,7 @@ const TurnItem: React.FC<TurnItemProps> = ({
                     ) : undefined}
                 />
             ) : null}
+            </div>
         </section>
     );
 };

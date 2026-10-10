@@ -102,7 +102,7 @@
     },
     "packages/electron": {
       "name": "@openchamber/electron",
-      "version": "2.0.6-beta.3",
+      "version": "2.0.7-beta.1",
       "dependencies": {
         "@openchambery/web": "workspace:*",
         "electron-context-menu": "^4.1.2",
@@ -116,7 +116,7 @@
     },
     "packages/mobile": {
       "name": "@openchamber/mobile",
-      "version": "2.0.6-beta.3",
+      "version": "2.0.7-beta.1",
       "dependencies": {
         "@aparajita/capacitor-secure-storage": "^8.0.0",
         "@capacitor-mlkit/barcode-scanning": "^8.1.0",
@@ -138,7 +138,7 @@
     },
     "packages/relay-server": {
       "name": "@openchambery/relay-server",
-      "version": "2.0.6-beta.3",
+      "version": "2.0.7-beta.1",
       "bin": {
         "openchamber-relay": "./bin/openchamber-relay.js",
       },
@@ -148,7 +148,7 @@
     },
     "packages/ui": {
       "name": "@openchamber/ui",
-      "version": "2.0.6-beta.3",
+      "version": "2.0.7-beta.1",
       "dependencies": {
         "@aparajita/capacitor-secure-storage": "^8.0.0",
         "@base-ui/react": "^1.4.0",
@@ -260,7 +260,7 @@
     },
     "packages/vscode": {
       "name": "openchamber",
-      "version": "2.0.6-beta.3",
+      "version": "2.0.7-beta.1",
       "dependencies": {
         "@openchamber/ui": "workspace:*",
         "@opencode/client": "2.0.23",
@@ -287,7 +287,7 @@
     },
     "packages/web": {
       "name": "@openchambery/web",
-      "version": "2.0.6-beta.3",
+      "version": "2.0.7-beta.1",
       "bin": {
         "openchamber": "./bin/cli.js",
         "openchambery": "./bin/cli.js",
