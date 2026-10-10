@@ -23,6 +23,7 @@ vi.mock('@/stores/useUpdateStore', () => ({ useUpdateStore: (select: (state: unk
 vi.mock('@/stores/useUIStore', () => ({ useUIStore: (select: (state: unknown) => unknown) => select({ otaChannelOverride: null }) }));
 vi.mock('@/lib/device', () => ({ useDeviceInfo: () => ({ isMobile: fixture.mobile }) }));
 vi.mock('@/lib/platform', () => ({ isCapacitorApp: () => false }));
+vi.mock('@/lib/desktop', () => ({ isElectronShell: () => true, getDesktopAppVersion: async () => '2.0.7-beta.1' }));
 vi.mock('@/components/ui/UpdateDialog', () => ({ UpdateDialog: () => null }));
 vi.mock('@/lib/mobileAppVersion', () => ({ getMobileClientVersion: async () => '2.0.0', getMobileClientBuildNumber: async () => null, formatMobileClientVersionLabel: (version: string) => version }));
 vi.mock('@/sync/transcript-diagnostics-runtime', () => ({ isTranscriptDiagnosticsEnabled: () => false, setTranscriptDiagnosticsEnabled: vi.fn(), exportAndDownloadClientDiagnostics: vi.fn() }));
@@ -42,6 +43,14 @@ afterEach(async () => { await act(async () => root.unmount()); client.clear(); h
 async function render() {
   await act(async () => { root.render(<QueryClientProvider client={client}><AboutSettings /></QueryClientProvider>); await new Promise((resolve) => setTimeout(resolve, 20)); });
 }
+it('exposes desktop update, feedback, beta and diagnostic controls in the shared About page', async () => {
+  await render(); await render();
+  for (const item of ['about.check-updates', 'about.feedback', 'about.beta-updates', 'about.diagnostics']) {
+    expect(host.querySelector(`[data-settings-item="${item}"]`)).not.toBeNull();
+  }
+  expect(host.querySelector('[data-settings-item="about.feedback"]')?.getAttribute('href')).toContain('/issues/new');
+  expect(host.querySelector('[data-settings-item="about.export-diagnostics"]')).toBeNull();
+});
 it('translates the raw snapshot on locale change without repeating requests', async () => {
   await render(); await render();
   expect(host.textContent).toContain('2.0.14'); expect(host.textContent).toContain('global CLI');

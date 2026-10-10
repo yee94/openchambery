@@ -136,7 +136,7 @@ export const uploadPromptAttachmentBytes = async (
   const attachmentID = attachmentIDFor(input.filename);
   let response: Response;
   try {
-    response = await runtimeFetch(`/api/fs/prompt-attachments/${encodeURIComponent(attachmentID)}`, {
+    response = await runtimeFetch(`/api/fs/prompt-attachments/${encodeURIComponent(attachmentID)}?storage=temporary`, {
       method: 'PUT',
       headers: {
         'Content-Type': mime,
@@ -144,7 +144,6 @@ export const uploadPromptAttachmentBytes = async (
         'X-OpenChamber-Content-Length': String(body.size),
         'X-OpenChamber-Sha256': sha256,
         'X-OpenChamber-Mime': mime,
-        'X-OpenChamber-Storage': 'temporary',
         ...(input.filename ? { 'X-OpenChamber-Filename': encodeURIComponent(input.filename) } : {}),
       },
       body,

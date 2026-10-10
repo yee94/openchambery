@@ -334,12 +334,12 @@ describe('fs prompt attachments', () => {
     const res = createMockResponse();
     await handler({
       params: { attachmentID: 'att-large' },
+      query: { storage: 'temporary' },
       headers: {
         'x-openchamber-content-length': String(chunk.length * 26),
         'x-openchamber-sha256': digest,
         'x-openchamber-mime': 'application/gzip',
         'x-openchamber-filename': encodeURIComponent('../../trace.json.gz'),
-        'x-openchamber-storage': 'temporary',
       },
       async *[Symbol.asyncIterator]() { for (let i = 0; i < 26; i++) yield chunk; },
     }, res);

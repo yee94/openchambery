@@ -202,6 +202,18 @@ const SETTINGS_SEARCH_ITEMS: readonly SettingsSearchItem[] = [
     isAvailable: (ctx) => !ctx.isMobile && !ctx.isDesktop && !ctx.isVSCode,
   },
   {
+    id: 'about.check-updates',
+    page: 'about',
+    titleKey: 'settings.openchamber.about.actions.checkForUpdates',
+    keywords: ['updates', 'version', 'ota'],
+  },
+  {
+    id: 'about.feedback',
+    page: 'about',
+    titleKey: 'settings.openchamber.about.actions.submitFeedback',
+    keywords: ['feedback', 'issues', 'bugs', 'github'],
+  },
+  {
     id: 'about.beta-updates',
     page: 'about',
     titleKey: 'settings.openchamber.about.betaUpdates.label',
