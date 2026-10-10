@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [2.0.7-beta.3] - 2026-10-10
+
+### 修复
+
+- 关于页面的「提交反馈」与「检查更新」按钮使用整行空间并排显示，避免被桌面设置的窄列挤成上下排列。
+
 ## [2.0.7-beta.2] - 2026-10-10
 
 ### 修复与改进

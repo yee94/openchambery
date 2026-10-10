@@ -280,7 +280,7 @@ export const AboutSettings: React.FC<AboutSettingsProps> = ({ initialUpdateDialo
               {openCodeVersion || t('settings.openchamber.about.state.unknown')}
             </span>
           </SettingsRow>
-          <SettingsRow>
+          <SettingsRow className="oc-settings-split-row-stacked" copyClassName="hidden">
             <div className="flex flex-wrap items-center justify-end gap-2">
               <Button asChild variant="outline" size="sm" className="whitespace-nowrap" data-settings-item="about.feedback">
                 <a href={GITHUB_ISSUES_URL} target="_blank" rel="noopener noreferrer">
