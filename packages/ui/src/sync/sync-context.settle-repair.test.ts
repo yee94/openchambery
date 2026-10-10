@@ -97,8 +97,9 @@ const createStore = () => {
   }
 }
 
+const stableStore = createStore()
 const childStores = {
-  getChild: () => createStore(),
+  getChild: () => stableStore,
   children: new Map(),
   ensureChild: () => undefined,
   mark: () => undefined,

@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import { spawnSync } from 'node:child_process';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -137,6 +138,54 @@ const createRuntime = (settings, options = {}) => {
 };
 
 describe('OpenCode env runtime', () => {
+  itIf(process.platform === 'darwin')('discovers and upgrades the same Homebrew-style symlink as an isolated login zsh', async () => {
+    const dir = createTempDir('openchamber-zsh-discovery-');
+    const cellar = path.join(dir, 'Cellar', 'opencode', '2.0.23', 'bin', 'opencode');
+    const brewBin = path.join(dir, 'bin');
+    const otherBin = path.join(dir, 'other', 'bin');
+    writeVersionBinary(cellar, '2.0.23');
+    const versionFile = path.join(dir, 'version');
+    fs.writeFileSync(versionFile, '2.0.23');
+    fs.writeFileSync(cellar, `#!${process.execPath}\nconst fs = require('node:fs');\nconst file = ${JSON.stringify(versionFile)};\nif (process.argv[2] === 'upgrade') fs.writeFileSync(file, process.argv[3]);\nelse console.log(fs.readFileSync(file, 'utf8'));\n`);
+    writeVersionBinary(path.join(otherBin, 'opencode'), '2.0.22');
+    fs.mkdirSync(brewBin);
+    const linked = path.join(brewBin, 'opencode');
+    fs.symlinkSync(cellar, linked);
+    fs.writeFileSync(path.join(dir, '.zshrc'), `export PATH='${brewBin}:${otherBin}:/usr/bin:/bin'\n`);
+    const env = { HOME: dir, ZDOTDIR: dir, SHELL: '/bin/zsh', PATH: '/usr/bin:/bin' };
+    const expected = spawnSync('/bin/zsh', ['-lic', 'command -v opencode'], { env, encoding: 'utf8' });
+    expect(expected.status).toBe(0);
+    delete process.env.OPENCODE_BINARY;
+    process.env.PATH = `${otherBin}:${brewBin}:/usr/bin:/bin`;
+    const { runtime, state } = createRuntime({}, {
+      spawnSync: (_shell, args, options) => spawnSync('/bin/zsh', args, { ...options, env }),
+    });
+    state.cachedLoginShellEnvSnapshot = undefined;
+    runtime.applyLoginShellEnvSnapshot();
+    expect(runtime.ensureOpencodeCliEnv()).toBe(expected.stdout.trim());
+    expect(state.resolvedOpencodeBinary).toBe(linked);
+    await expect(runtime.upgradeOpenCodeCli({ binaryPath: linked, version: '2.0.24' })).resolves.toBe(linked);
+    const upgraded = spawnSync('/bin/zsh', ['-lic', 'opencode --version'], { env, encoding: 'utf8' });
+    expect(upgraded.status).toBe(0);
+    expect(upgraded.stdout.trim()).toBe('2.0.24');
+    expect(fs.lstatSync(linked).isSymbolicLink()).toBe(true);
+    expect(spawnSync(path.join(otherBin, 'opencode'), ['--version'], { encoding: 'utf8' }).stdout.trim()).toBe('2.0.22');
+  });
+
+  itIf(process.platform !== 'win32')('discovers the shell PATH winner even when the host PATH prefers another install', () => {
+    const dir = createTempDir('openchamber-shell-order-');
+    const shellBin = path.join(dir, 'homebrew', 'bin', 'opencode');
+    const hostBin = path.join(dir, 'other', 'bin', 'opencode');
+    writeVersionBinary(shellBin, '2.0.23');
+    writeVersionBinary(hostBin, '2.0.22');
+    delete process.env.OPENCODE_BINARY;
+    process.env.PATH = `${path.dirname(hostBin)}:${path.dirname(shellBin)}`;
+    const { runtime, state } = createRuntime({});
+    state.cachedLoginShellEnvSnapshot = { PATH: `${path.dirname(shellBin)}:${path.dirname(hostBin)}` };
+
+    expect(runtime.resolveOpencodeCliPath()).toBe(shellBin);
+  });
+
   it('throws a specific error for a missing configured OpenCode binary in strict mode', async () => {
     const { runtime } = createRuntime({ opencodeBinary: '/missing/opencode2' });
 

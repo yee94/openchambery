@@ -8,6 +8,7 @@ import {
   installedOpenCode2BinaryPath,
   isOpenCode2AutoInstallEnabled,
   resolveOpenChamberDataDir,
+  upgradeSelectedOpenCodeCli,
 } from './ensure-cli.js';
 
 const tempDirs = [];
@@ -25,6 +26,38 @@ afterEach(() => {
 });
 
 describe('ensurePinnedOpenCode2Cli', () => {
+  it('runs upgrade through the selected launch target and preserves its CLI entry path', async () => {
+    const dir = createTempDir('openchamber-upgrade-cli-');
+    const script = path.join(dir, 'cli.cjs');
+    const output = path.join(dir, 'invocation.json');
+    fs.writeFileSync(script, 'require("node:fs").writeFileSync(process.env.RESULT_FILE, JSON.stringify(process.argv.slice(2)))');
+    const entry = path.join(dir, 'opencode');
+    await expect(upgradeSelectedOpenCodeCli({
+      binaryPath: entry,
+      version: '2.0.23',
+      launchSpec: { binary: process.execPath, args: [script] },
+      env: { ...process.env, RESULT_FILE: output },
+    })).resolves.toBe(entry);
+    expect(JSON.parse(fs.readFileSync(output, 'utf8'))).toEqual(['upgrade', '2.0.23']);
+  });
+
+  it('reports a failed CLI upgrade without exposing child output', async () => {
+    await expect(upgradeSelectedOpenCodeCli({
+      binaryPath: '/missing/opencode',
+      version: '2.0.23',
+      execFileImpl: (_binary, _args, _options, callback) => callback(new Error('sensitive child output')),
+    })).rejects.toMatchObject({ code: 'UPGRADE_GLOBAL_CLI_FAILED', message: expect.not.stringContaining('sensitive') });
+  });
+
+  it('does not start a console-grandchild batch shim for upgrades on Windows', async () => {
+    await expect(upgradeSelectedOpenCodeCli({
+      binaryPath: 'C:\\tools\\opencode.cmd',
+      version: '2.0.23',
+      launchSpec: { binary: 'cmd.exe', args: [], wrapperType: 'cmd-wrapper' },
+      execFileImpl: () => { throw new Error('must not spawn'); },
+    })).rejects.toMatchObject({ code: 'UPGRADE_GLOBAL_CLI_UNSUPPORTED' });
+  });
+
   it('keeps a discovered binary that already meets the pin', async () => {
     const result = await ensurePinnedOpenCode2Cli({
       discoveredPath: '/opt/opencode2',

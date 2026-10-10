@@ -55,6 +55,7 @@ export const registerOpenCodeRoutes = (app, dependencies) => {
     getActiveSessionCount = () => 0,
     openchamberDataDir = null,
     discoverOpenCodeUpdate = createOpenCodeUpdateDiscovery(),
+    upgradeOpenCodeCli = null,
   } = dependencies;
 
   const upgradeOperation = createUpgradeOperationState();
@@ -139,8 +140,9 @@ export const registerOpenCodeRoutes = (app, dependencies) => {
     const serveVersion = serveProbe.currentVersion
       || (!fresh && typeof getOpenCodeServeVersion === 'function' ? getOpenCodeServeVersion() : null);
     const binaryPath = typeof getResolvedOpenCodeBinary === 'function' ? getResolvedOpenCodeBinary() : null;
-    const cliVersion = (typeof getOpenCodeCliVersion === 'function' ? getOpenCodeCliVersion() : null)
-      || (binaryPath ? readOpenCode2BinaryVersion(binaryPath) : null)
+    const cliVersion = (fresh && binaryPath ? readOpenCode2BinaryVersion(binaryPath) : null)
+      || (!fresh && typeof getOpenCodeCliVersion === 'function' ? getOpenCodeCliVersion() : null)
+      || (!fresh && binaryPath ? readOpenCode2BinaryVersion(binaryPath) : null)
       || null;
     return evaluateRuntimeContract({
       serveVersion,
@@ -282,6 +284,7 @@ export const registerOpenCodeRoutes = (app, dependencies) => {
     waitReady: typeof waitForOpenCodeReady === 'function' ? waitForOpenCodeReady : null,
     isSharedService: () => getIsSharedOpenCodeService() === true,
     install: (options) => installPinnedOpenCode2Cli({ ...options, dataDir: resolveDataDir() }),
+    upgradeCli: upgradeOpenCodeCli,
     readBinaryVersion: readOpenCode2BinaryVersion,
   });
 
@@ -366,17 +369,29 @@ export const registerOpenCodeRoutes = (app, dependencies) => {
       let installedPath = expectedBinaryPath;
       const previousBinary = getResolvedOpenCodeBinary();
       const previousSource = getResolvedOpenCodeBinarySource();
+      const upgradeGlobal = ownership.ownership === 'shared-service'
+        && ownership.binaryOwnership !== 'owned-cache' && previousSource !== 'bundled';
+      const selectedSource = upgradeGlobal ? previousSource : 'installed';
 
       try {
-        upgradeOperation.setPhase('download');
-        installedPath = await installPinnedOpenCode2Cli({
-          version: target,
-          dataDir: resolveDataDir(),
-        });
+        if (upgradeGlobal) {
+          installedPath = previousBinary;
+          upgradeOperation.setPhase('upgrade-cli');
+          if (!previousBinary || typeof upgradeOpenCodeCli !== 'function') {
+            throw Object.assign(new Error('The selected OpenCode CLI cannot be upgraded.'), { code: 'UPGRADE_CLI_UNAVAILABLE' });
+          }
+          await upgradeOpenCodeCli({ binaryPath: previousBinary, version: target });
+        } else {
+          upgradeOperation.setPhase('download');
+          installedPath = await installPinnedOpenCode2Cli({
+            version: target,
+            dataDir: resolveDataDir(),
+          });
+        }
         const diskVersion = readOpenCode2BinaryVersion(installedPath);
         if (diskVersion !== target) {
           const error = new Error(
-            `Owned-cache binary version mismatch after install: expected ${target}, got ${diskVersion || 'unknown'}`,
+            `OpenCode binary version mismatch after upgrade: expected ${target}, got ${diskVersion || 'unknown'}`,
           );
           error.code = 'UPGRADE_BINARY_VERSION_MISMATCH';
           throw error;
@@ -388,8 +403,8 @@ export const registerOpenCodeRoutes = (app, dependencies) => {
           error.code = 'UPGRADE_FORCE_BINARY_UNAVAILABLE';
           throw error;
         }
-        // Keep target identity through restart — do not rediscover global CLI.
-        forceResolvedOpenCodeBinary(installedPath, 'installed');
+        // Keep the selected installation through restart, including global CLI symlinks.
+        forceResolvedOpenCodeBinary(installedPath, selectedSource);
 
         upgradeOperation.setPhase('restart');
         if (typeof restartOpenCode === 'function') {
@@ -410,8 +425,13 @@ export const registerOpenCodeRoutes = (app, dependencies) => {
 
         upgradeOperation.setPhase('verify');
         // Re-pin after restart helpers that may clear resolution.
-        forceResolvedOpenCodeBinary(installedPath, 'installed');
+        forceResolvedOpenCodeBinary(installedPath, selectedSource);
         const contract = await buildLiveContract({ fresh: true });
+        if (upgradeGlobal && contract.cliVersion !== target) {
+          throw Object.assign(new Error('The selected OpenCode CLI no longer matches the upgrade target.'), {
+            code: 'UPGRADE_BINARY_VERSION_MISMATCH',
+          });
+        }
         const verification = evaluateOwnedUpgradeResult({
           targetVersion: target,
           serveVersion: contract.serveVersion,
@@ -441,7 +461,7 @@ export const registerOpenCodeRoutes = (app, dependencies) => {
           version: verification.serveVersion,
           targetVersion: target,
           pinned: true,
-          supplySource: 'owned-cache',
+          supplySource: upgradeGlobal ? 'global-cli' : 'owned-cache',
           ownership: ownership.ownership === 'shared-service' ? 'shared-service' : 'owned-cache',
           binaryPath: installedPath,
           contract: verification.contract,

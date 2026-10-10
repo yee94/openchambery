@@ -1,4 +1,4 @@
-import { spawnSync } from 'node:child_process';
+import { execFile, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -12,6 +12,28 @@ import {
 } from './opencode2-pin.js';
 
 const INSTALL_FETCH_TIMEOUT_MS = 30_000;
+
+export async function upgradeSelectedOpenCodeCli({ binaryPath, version, launchSpec, env = process.env, execFileImpl = execFile }) {
+  if (launchSpec?.wrapperType === 'cmd-wrapper') {
+    throw Object.assign(new Error('Upgrade this OpenCode batch shim from your terminal.'), { code: 'UPGRADE_GLOBAL_CLI_UNSUPPORTED' });
+  }
+  const binary = launchSpec?.binary || binaryPath;
+  const args = [...(launchSpec?.args || []), 'upgrade', version];
+  await new Promise((resolve, reject) => {
+    execFileImpl(binary, args, {
+      env,
+      timeout: 5 * 60_000,
+      maxBuffer: 1024 * 1024,
+      windowsHide: true,
+    }, (error) => {
+      if (!error) return resolve();
+      const failure = new Error('OpenCode CLI upgrade failed. Retry `opencode upgrade` in your terminal using the same installation.');
+      failure.code = 'UPGRADE_GLOBAL_CLI_FAILED';
+      reject(failure);
+    });
+  });
+  return binaryPath;
+}
 
 export function isOpenCode2AutoInstallEnabled(env = process.env) {
   const value = typeof env.OPENCHAMBER_OPENCODE2_AUTO_INSTALL === 'string'

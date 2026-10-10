@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [2.0.6-beta.2] - 2026-10-10
+
+### 修复与改进
+
+- 已打开的后台对话在执行完成后提前补齐最终内容，切回时优先显示最新缓存；补全失败保留已有内容，避免旧请求覆盖新运行环境。
+- 桌面启动时按登录 Shell 的 PATH 查找 OpenCode，改善全局安装的识别；共享服务升级沿用当前 CLI 安装，并校验升级后的实际版本。
+
 ## [2.0.6] - 2026-10-10
 
 ### 修复与改进

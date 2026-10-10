@@ -1995,6 +1995,7 @@ async function main(options = {}) {
     getIsExternalOpenCode: () => isExternalOpenCode,
     getIsSharedOpenCodeService: () => openCodeLifecycleRuntime.isSharedOpenCodeService(),
     forceResolvedOpenCodeBinary,
+    upgradeOpenCodeCli: (...args) => openCodeEnvRuntime.upgradeOpenCodeCli(...args),
     restartOpenCode,
     waitForOpenCodeReady,
     getRuntimeContract: () => runtimeContract,

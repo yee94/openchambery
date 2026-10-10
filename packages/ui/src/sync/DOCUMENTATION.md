@@ -1446,11 +1446,17 @@ both readers agree on when a frame may shrink.
   ensure/compensation may refresh. The next `syncSession` / selection ensure
   performs one bounded tail ensure through Query when needed; merge is
   reference-stable when unchanged, so same-size completed parts replace
-  truncated live text. On `session.idle` for the **active** top-level session
-  (`setActiveSession` directory/session identity, not window focus),
-  `handleEvent` enqueues one bounded `session-idle` materialization; background
-  top-level idle stays zero-request; child idle still materializes the parent
-  (`child-session-idle`). Idle materialize captures live revision before the
+  truncated live text. On `session.idle` or native execution completion
+  (success/failure/non-shutdown interrupt), `handleEvent` enqueues a bounded
+  `session-idle` materialization for the active top-level session and retained
+  background transcripts with a known history boundary. Thus previously loaded
+  chats settle before revisit without mounting hidden views or fetching cold
+  conversations. Cold scopes defer until selection; child completion still
+  materializes the parent (`child-session-idle`). Concurrent completion frames
+  share the pending session request. Failure/skipped recovery preserves cached
+  content and retains a selection-time retry. Runtime/transport/store changes
+  fence queued and in-flight commits. Background step-level hints alone do not
+  fetch bodies. Idle materialize captures live revision before the
   HTTP round trip and drops the page when SSE advanced while it was in flight.
   Query `structuralSharing` (`shareSessionTranscriptData`) re-merges a same-
   length or collapsed tail through insert-only `materialize` so a lagging Host

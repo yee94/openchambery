@@ -2,8 +2,8 @@
  * Startup upgrade screen for OpenCode below the runtime contract minimum.
  *
  * This module does not own process lifecycle. It classifies the version the
- * existing startup path already detected, and installs through the owned-cache
- * installer (`installPinnedOpenCode2Cli`) plus the caller's restart hook.
+ * existing startup path already detected, and upgrades the selected shared CLI
+ * or installs an owned cache, then uses the caller's restart hook.
  * Success is a verified running version, never a download that has not started.
  */
 
@@ -167,8 +167,8 @@ const failure = (message, code, status = 500) => {
 };
 
 /**
- * Install the screen target into the owned cache and restart through the
- * caller's existing lifecycle hooks. Restores the previous binary selection
+ * Upgrade the selected shared CLI or install the screen target into the owned
+ * cache and restart through existing hooks. Restores the previous selection
  * when verification fails. Never returns upgraded:true for a failed install.
  * @param {object} deps
  */
@@ -184,15 +184,22 @@ export async function installRequiredOpenCode(deps) {
   const target = status.targetVersion;
   const previousBinary = typeof deps.getResolvedBinary === 'function' ? deps.getResolvedBinary() : null;
   const previousSource = typeof deps.getResolvedBinarySource === 'function' ? deps.getResolvedBinarySource() : null;
+  const ownership = typeof deps.resolveOwnership === 'function' ? await deps.resolveOwnership() : null;
+  const upgradeGlobal = ownership?.ownership === 'shared-service'
+    && ownership.binaryOwnership !== 'owned-cache' && previousSource !== 'bundled';
   const previousSetting = typeof deps.readConfiguredBinary === 'function'
     ? await deps.readConfiguredBinary()
     : undefined;
   let persisted = false;
   try {
-    if (typeof deps.install !== 'function') {
+    if (upgradeGlobal && (!previousBinary || typeof deps.upgradeCli !== 'function')) {
+      throw failure('The selected OpenCode CLI cannot be upgraded.', 'UPGRADE_CLI_UNAVAILABLE', 409);
+    }
+    if (!upgradeGlobal && typeof deps.install !== 'function') {
       throw failure('OpenCode install is not configured.', 'UPGRADE_SCREEN_INSTALL_UNAVAILABLE', 500);
     }
-    const installedPath = await deps.install({ version: target });
+    const installedPath = upgradeGlobal ? previousBinary : await deps.install({ version: target });
+    if (upgradeGlobal) await deps.upgradeCli({ binaryPath: previousBinary, version: target });
     const diskVersion = typeof deps.readBinaryVersion === 'function'
       ? await Promise.resolve(deps.readBinaryVersion(installedPath))
       : null;
@@ -203,12 +210,12 @@ export async function installRequiredOpenCode(deps) {
         500,
       );
     }
-    if (typeof deps.persistBinary === 'function') {
+    if (!upgradeGlobal && typeof deps.persistBinary === 'function') {
       await deps.persistBinary(installedPath);
       persisted = true;
     }
     if (typeof deps.forceBinary === 'function') {
-      deps.forceBinary(installedPath, 'installed');
+      deps.forceBinary(installedPath, upgradeGlobal ? previousSource : 'installed');
     }
     if (typeof deps.restart === 'function') {
       const shared = typeof deps.isSharedService === 'function' && deps.isSharedService() === true;
