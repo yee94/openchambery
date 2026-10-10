@@ -3,10 +3,9 @@ import { readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { DesktopOta } from '../desktop-ota.mjs';
+import { desktopOtaEvidenceArgs } from './desktop-ota-evidence-launch.mjs';
 
 const [root, stage = 'download'] = process.argv.slice(2);
-// The isolated Linux CI fixture runs in Xvfb without user namespaces.
-if (process.platform === 'linux') app.commandLine.appendSwitch('no-sandbox');
 app.setPath('userData', path.join(root, 'user-data'));
 protocol.registerSchemesAsPrivileged([{ scheme: 'openchamber-ui', privileges: { standard: true, secure: true, supportFetchAPI: true } }]);
 app.whenReady().then(async () => {
@@ -21,7 +20,7 @@ try {
     await ota.download();
     await ota.assertPending();
     await writeFile(path.join(root, 'shutdown.json'), JSON.stringify({ pid: process.pid, version: ota.version }));
-    app.relaunch({ args: [process.argv[1], root, 'apply'] });
+    app.relaunch({ args: desktopOtaEvidenceArgs({ script: process.argv[1], root, stage: 'apply' }) });
     app.exit(0);
   } else {
     protocol.handle('openchamber-ui', (request) => {

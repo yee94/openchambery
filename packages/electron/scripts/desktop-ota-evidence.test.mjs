@@ -7,6 +7,17 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createAssetZip } from '../../web/server/lib/zip-assets.js';
+import { desktopOtaEvidenceArgs } from './desktop-ota-evidence-launch.mjs';
+
+test.each(['download', 'apply'])('Linux %s fixture disables the sandbox before Electron starts', (stage) => {
+  const args = desktopOtaEvidenceArgs({ script: 'fixture.mjs', root: 'fixture-data', stage, platform: 'linux' });
+  expect(args).toContain('--no-sandbox');
+  expect(args.slice(0, 3)).toEqual(['fixture.mjs', 'fixture-data', stage]);
+});
+
+test.each(['darwin', 'win32'])('%s fixture keeps its default sandbox', (platform) => {
+  expect(desktopOtaEvidenceArgs({ script: 'fixture.mjs', root: 'fixture-data', platform })).not.toContain('--no-sandbox');
+});
 
 test('real Electron relaunch loads downloaded resources through the packaged protocol', { timeout: 30000 }, async () => {
   const root = await mkdtemp(path.join(tmpdir(), 'electron-ota-evidence-'));
@@ -28,7 +39,9 @@ test('real Electron relaunch loads downloaded resources through the packaged pro
     const require = createRequire(import.meta.url);
     const env = { ...process.env };
     delete env.ELECTRON_RUN_AS_NODE;
-    child = spawn(require('electron'), [path.join(path.dirname(fileURLToPath(import.meta.url)), 'desktop-ota-evidence.mjs'), root], {
+    child = spawn(require('electron'), desktopOtaEvidenceArgs({
+      script: path.join(path.dirname(fileURLToPath(import.meta.url)), 'desktop-ota-evidence.mjs'), root,
+    }), {
       env, stdio: 'pipe', windowsHide: true,
     });
     let stderr = '';
@@ -39,6 +52,9 @@ test('real Electron relaunch loads downloaded resources through the packaged pro
     while (Date.now() < deadline) {
       try { result = JSON.parse(await readFile(resultPath, 'utf8')); break; }
       catch (error) { if (error.code !== 'ENOENT' && !(error instanceof SyntaxError)) throw error; }
+      if (child.signalCode || (child.exitCode !== null && child.exitCode !== 0)) {
+        throw new Error(`Electron fixture exited (${child.signalCode ?? child.exitCode}): ${stderr}`);
+      }
       await new Promise((resolve) => setTimeout(resolve, 100));
     }
     expect(result, stderr).toBeDefined();
