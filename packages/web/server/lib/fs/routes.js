@@ -10,6 +10,7 @@ import {
   collectRequestBytes,
   promptAttachmentExtension,
   storePromptAttachmentBytes,
+  storeTemporaryPromptAttachment,
 } from './prompt-attachment-store.js';
 
 const EXEC_JOB_TTL_MS = 30 * 60 * 1000;
@@ -1054,7 +1055,8 @@ export const registerFsRoutes = (app, dependencies) => {
     }
 
     const expectedSize = Number(headerValue(req.headers['x-openchamber-content-length']) ?? headerValue(req.headers['content-length']));
-    if (!Number.isSafeInteger(expectedSize) || expectedSize < 0 || expectedSize > MAX_PROMPT_ATTACHMENT_BYTES) {
+    const temporary = headerValue(req.headers['x-openchamber-storage']) === 'temporary';
+    if (!Number.isSafeInteger(expectedSize) || expectedSize < 0 || (!temporary && expectedSize > MAX_PROMPT_ATTACHMENT_BYTES)) {
       return res.status(400).json({ error: 'Attachment size is required' });
     }
     const expectedSha256 = headerValue(req.headers['x-openchamber-sha256']);
@@ -1072,6 +1074,12 @@ export const registerFsRoutes = (app, dependencies) => {
     req.once?.('aborted', () => controller.abort());
 
     try {
+      if (temporary) {
+        const stored = await storeTemporaryPromptAttachment(req, {
+          expectedSize, expectedSha256, mime: mimeType, filename, signal: controller.signal,
+        });
+        return res.json({ success: true, path: stored.absolutePath, size: stored.size, mime: stored.mime, sha256: stored.sha256 });
+      }
       const { buffer, size } = await collectRequestBytes(req, {
         expectedSize,
         maxBytes: MAX_PROMPT_ATTACHMENT_BYTES,

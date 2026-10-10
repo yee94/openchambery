@@ -121,7 +121,6 @@ const waitMs = async (ms: number) => {
 type HarnessState = {
     sessionId: string;
     isMobile: boolean;
-    autoFillEnabled: boolean;
     isPinned: boolean;
     historyMeta: SessionHistoryMeta;
     messages: ChatMessageEntry[];
@@ -138,7 +137,6 @@ type TimelineHarnessProps = HarnessState & {
 const TimelineHarness: React.FC<TimelineHarnessProps> = ({
     sessionId,
     isMobile,
-    autoFillEnabled,
     isPinned,
     historyMeta,
     messages,
@@ -150,8 +148,7 @@ const TimelineHarness: React.FC<TimelineHarnessProps> = ({
 }) => {
     const messageListRef = React.useRef<MessageListHandle | null>(null);
     messageListRef.current = messageListApi ?? null;
-    // Apply geometry before the controller's layout-phase metrics publish so
-    // short-viewport auto-fill can arm on the first commit.
+    // The first commit must see the actual short-viewport geometry.
     const bindScrollNode = (node: HTMLDivElement | null) => {
         scrollRef.current = node;
         if (node) applyScrollerGeometry(node, geometry);
@@ -170,7 +167,6 @@ const TimelineHarness: React.FC<TimelineHarnessProps> = ({
         endHistoryViewportPreservation: () => undefined,
         isPinned,
         showScrollButton: false,
-        autoFillEnabled,
         isMobile,
     });
     onApi(api);
@@ -198,7 +194,6 @@ const mounted: Mounted[] = [];
 
 const mountController = async (input: {
     isMobile: boolean;
-    autoFillEnabled?: boolean;
     isPinned?: boolean;
     historyMeta?: SessionHistoryMeta;
     messages?: ChatMessageEntry[];
@@ -223,7 +218,6 @@ const mountController = async (input: {
         state: {
             sessionId: SESSION_ID,
             isMobile: input.isMobile,
-            autoFillEnabled: input.autoFillEnabled ?? true,
             isPinned: input.isPinned ?? true,
             historyMeta: input.historyMeta ?? historyMetaReady(),
             messages: input.messages ?? [message('msg_1'), message('msg_2')],
@@ -266,7 +260,6 @@ const mountController = async (input: {
 
     await handle.render();
     await flushMicrotasks();
-    // Metrics publish + Query auto-fill scheduling.
     await flushMicrotasks();
     await waitMs(0);
 
@@ -298,6 +291,80 @@ beforeEach(() => {
 });
 
 describe('history failure feedback with production toast store', () => {
+    test.each([true, false])('initial history stays idle until upward intent (mobile=%s)', async (isMobile) => {
+        const load = vi.fn(async () => undefined);
+        const handle = await mountController({ isMobile, loadMoreMessages: load });
+        await waitMs(250);
+        await act(async () => handle.api!.handleHistoryScroll());
+        expect(load).not.toHaveBeenCalled();
+        expect(handle.loadingStates).not.toContain(true);
+        await act(async () => handle.api!.handleHistoryUpwardIntent());
+        expect(load).toHaveBeenCalledTimes(1);
+    });
+
+    test('initial unpinned scroll restoration does not load history', async () => {
+        const load = vi.fn(async () => undefined);
+        const handle = await mountController({
+            isMobile: false, isPinned: false, loadMoreMessages: load,
+            geometry: { scrollHeight: 8000, clientHeight: 400, scrollTop: 100 },
+        });
+        await act(async () => handle.api!.handleHistoryScroll());
+        handle.geometry.scrollTop = 0;
+        await act(async () => handle.api!.handleHistoryScroll());
+        expect(load).not.toHaveBeenCalled();
+        await act(async () => handle.api!.handleHistoryUpwardIntent());
+        expect(load).toHaveBeenCalledTimes(1);
+    });
+
+    test('desktop upward intent outside the threshold loads when scrolling enters it', async () => {
+        const load = vi.fn(async () => undefined);
+        const handle = await mountController({
+            isMobile: false, isPinned: false, loadMoreMessages: load,
+            geometry: { scrollHeight: 8000, clientHeight: 400, scrollTop: 2000 },
+        });
+        await act(async () => handle.api!.handleHistoryUpwardIntent());
+        expect(load).not.toHaveBeenCalled();
+        handle.geometry.scrollTop = 1100;
+        await act(async () => handle.api!.handleHistoryScroll());
+        expect(load).toHaveBeenCalledTimes(1);
+    });
+
+    test.each(['session', 'runtime', 'downward'] as const)('%s clears unused desktop upward intent', async (change) => {
+        const load = vi.fn(async () => undefined);
+        const handle = await mountController({
+            isMobile: false, isPinned: false, loadMoreMessages: load,
+            geometry: { scrollHeight: 8000, clientHeight: 400, scrollTop: 2000 },
+        });
+        await act(async () => handle.api!.handleHistoryUpwardIntent());
+        if (change === 'session') await handle.setState({ sessionId: 'other-session' });
+        if (change === 'runtime') {
+            runtimeSurface.generation += 1;
+            await handle.render();
+        }
+        if (change === 'downward') {
+            handle.geometry.scrollTop = 2200;
+            await act(async () => handle.api!.handleHistoryScroll());
+        }
+        handle.geometry.scrollTop = 100;
+        await act(async () => handle.api!.handleHistoryScroll());
+        expect(load).not.toHaveBeenCalled();
+        await act(async () => handle.api!.handleHistoryUpwardIntent());
+        expect(load).toHaveBeenCalledTimes(1);
+    });
+
+    test.each([true, false])('initial content hydration stays idle (mobile=%s)', async (isMobile) => {
+        const load = vi.fn(async () => undefined);
+        const handle = await mountController({
+            isMobile, loadMoreMessages: load, messages: [],
+            historyMeta: { ...historyMetaReady(), loading: true, canLoadEarlier: false },
+        });
+        await handle.setState({ messages: [message('msg_1')], historyMeta: historyMetaReady() });
+        await act(async () => handle.api!.handleHistoryScroll());
+        await waitMs(250);
+        expect(load).not.toHaveBeenCalled();
+        expect(handle.loadingStates).not.toContain(true);
+    });
+
     const activeErrors = () => sonnerToast.getToasts().filter((toast): toast is ToastT => 'type' in toast && toast.type === 'error');
     const fail = async () => { throw new Error('HTTP 400'); };
 
@@ -307,7 +374,7 @@ describe('history failure feedback with production toast store', () => {
         const clock = vi.spyOn(Date, 'now').mockImplementation(() => realNow() + skew);
         try {
             const load = vi.fn(fail);
-            const handle = await mountController({ isMobile: false, autoFillEnabled: false, loadMoreMessages: load });
+            const handle = await mountController({ isMobile: false, loadMoreMessages: load });
             for (let index = 0; index < 3; index += 1) {
                 await act(async () => handle.api!.handleHistoryUpwardIntent());
                 await waitMs(10);
@@ -337,7 +404,7 @@ describe('history failure feedback with production toast store', () => {
         const clock = vi.spyOn(Date, 'now').mockImplementation(() => realNow() + skew);
         try {
             const load = vi.fn(async () => undefined);
-            const handle = await mountController({ isMobile: false, autoFillEnabled: false, loadMoreMessages: load });
+            const handle = await mountController({ isMobile: false, loadMoreMessages: load });
             await act(async () => handle.api!.handleHistoryUpwardIntent());
             await waitMs(700);
             expect(load).toHaveBeenCalledTimes(2);
@@ -406,18 +473,18 @@ describe('history failure feedback with production toast store', () => {
         expect(activeErrors()).toHaveLength(0);
     });
 
-    test('auto-fill failure makes one request and stays silent', async () => {
+    test('initial mount never calls a failing history loader or shows an error', async () => {
         const load = vi.fn(fail);
         const handle = await mountController({ isMobile: false, loadMoreMessages: load });
         await waitMs(350);
         await handle.render();
-        expect(load).toHaveBeenCalledTimes(1);
+        expect(load).not.toHaveBeenCalled();
         expect(activeErrors()).toHaveLength(0);
     });
 
-    test('stationary page is refetched once, then blocks auto-fill and cools scroll down without a toast', async () => {
+    test('stationary page is refetched once, then cools scroll down without a toast', async () => {
         const load = vi.fn(async () => undefined);
-        const handle = await mountController({ isMobile: false, isPinned: false, autoFillEnabled: false, loadMoreMessages: load });
+        const handle = await mountController({ isMobile: false, isPinned: false, loadMoreMessages: load });
         await act(async () => { await handle.api!.loadEarlier({ userInitiated: true }); });
         expect(load).toHaveBeenCalledTimes(2);
         expect(activeErrors()).toHaveLength(0);
@@ -426,7 +493,7 @@ describe('history failure feedback with production toast store', () => {
             await act(async () => handle.api!.handleHistoryScroll());
             await act(async () => handle.api!.handleHistoryUpwardIntent());
         }
-        await handle.setState({ isPinned: true, autoFillEnabled: true });
+        await handle.setState({ isPinned: true });
         await waitMs(350);
         expect(load).toHaveBeenCalledTimes(2);
         await act(async () => { await handle.api!.loadEarlier({ userInitiated: true }); });
@@ -459,7 +526,7 @@ describe('history failure feedback with production toast store', () => {
         client.clear();
     });
 
-    test('auto-fill re-arms on an empty cursor advance and stops on the next stationary page', async () => {
+    test('background cursor advances never authorize history loading', async () => {
         const client = new QueryClient();
         const repo = createQueryTranscriptRepository({ client, transport: 'test-runtime', generation: 1 });
         runtimeSurface.repository = repo;
@@ -473,6 +540,9 @@ describe('history failure feedback with production toast store', () => {
             } });
         });
         const handle = await mountController({ isMobile: false, loadMoreMessages: load });
+        repo.apply(scope, { type: 'http-page', purpose: 'prepend', page: {
+            records: [], cursor: 'cursor-2', complete: false, turnCount: 0,
+        } });
         await waitMs(350);
         await handle.render();
         await waitMs(350);
@@ -480,7 +550,7 @@ describe('history failure feedback with production toast store', () => {
         await waitMs(350);
         await handle.render();
         await waitMs(350);
-        expect(load).toHaveBeenCalledTimes(3);
+        expect(load).not.toHaveBeenCalled();
         expect(handle.api!.historySignals.canLoadEarlier).toBe(true);
         expect(activeErrors()).toHaveLength(0);
         repo.destroy();
@@ -656,7 +726,7 @@ describe('useChatTimelineController mobile history boundary', () => {
     // when a short viewport is still pinned and no scroll event can fire.
     test.each([
         { isPinned: false as const, label: 'unpinned' },
-        { isPinned: true as const, label: 'pinned short-viewport auto-fill' },
+        { isPinned: true as const, label: 'pinned short viewport' },
     ])(
         'UI mobile=true ($label) loads on near-top intent but not short-viewport mount',
         async ({ isPinned }) => {
@@ -665,14 +735,12 @@ describe('useChatTimelineController mobile history boundary', () => {
 
             const handle = await mountController({
                 isMobile: true,
-                autoFillEnabled: true,
                 isPinned,
                 loadMoreMessages,
                 geometry: { scrollHeight: 400, clientHeight: 400, scrollTop: 0 },
             });
 
-            // Extra commit so short-viewport metrics + Query enablement settle
-            // when pin would otherwise arm desktop auto-fill.
+            // Extra commits and elapsed time cannot authorize history loading.
             await handle.render();
             await flushMicrotasks();
             await waitMs(250);
@@ -701,7 +769,6 @@ describe('useChatTimelineController mobile history boundary', () => {
 
         const handle = await mountController({
             isMobile: true,
-            autoFillEnabled: true,
             isPinned: false,
             loadMoreMessages,
             geometry: { scrollHeight: 8000, clientHeight: 400, scrollTop: 1200 },
@@ -732,13 +799,12 @@ describe('useChatTimelineController mobile history boundary', () => {
         await flushMicrotasks();
     });
 
-    test('UI mobile=false keeps scroll auto-load when runtime probe reports mobile', async () => {
+    test('UI mobile=false requires upward intent when runtime probe reports mobile', async () => {
         runtimeSurface.mobileProbe = true;
         const loadMoreMessages = vi.fn(async () => undefined);
 
         const handle = await mountController({
             isMobile: false,
-            autoFillEnabled: false,
             isPinned: false,
             loadMoreMessages,
             geometry: { scrollHeight: 8000, clientHeight: 400, scrollTop: 0 },
@@ -750,58 +816,33 @@ describe('useChatTimelineController mobile history boundary', () => {
         await flushMicrotasks();
         await waitMs(50);
 
+        expect(loadMoreMessages).not.toHaveBeenCalled();
+        await act(async () => handle.api!.handleHistoryUpwardIntent());
         expect(loadMoreMessages).toHaveBeenCalledTimes(1);
         expect(loadMoreMessages).toHaveBeenCalledWith(SESSION_ID, 'up');
     });
 
-    test('UI mobile=false keeps short-viewport auto-fill when runtime probe reports mobile', async () => {
+    test('UI mobile=false leaves short viewport idle when runtime probe reports mobile', async () => {
         runtimeSurface.mobileProbe = true;
         const loadMoreMessages = vi.fn(async () => undefined);
 
         const handle = await mountController({
             isMobile: false,
-            autoFillEnabled: true,
             isPinned: true,
             loadMoreMessages,
             geometry: { scrollHeight: 400, clientHeight: 400, scrollTop: 0 },
         });
 
-        // Metrics publish is async setState; give Query one more commit + tick.
         await handle.render();
         await flushMicrotasks();
         await waitMs(250);
 
-        expect(loadMoreMessages).toHaveBeenCalled();
-        expect(loadMoreMessages).toHaveBeenCalledWith(SESSION_ID, 'up');
+        expect(loadMoreMessages).not.toHaveBeenCalled();
     });
 
-    const autoFillQuerySnapshots = (client: QueryClient) => (
-        client.getQueryCache().getAll().filter((query) => (
-            Array.isArray(query.queryKey) && query.queryKey[0] === 'chat-timeline-auto-fill'
-        ))
-    );
-
-    const isAutoFillBusyRetryState = (client: QueryClient): boolean => {
-        return autoFillQuerySnapshots(client).some((query) => {
-            const error = query.state.error as { code?: string; message?: string } | null;
-            return (
-                query.state.fetchFailureCount > 0
-                || error?.code === 'auto-fill-busy'
-                || error?.message === 'auto-fill-busy'
-            );
-        });
-    };
-
-    // Mount autoFill off → real manual pending → enable autoFill so queryFn
-    // hits auto-fill-busy retries (not the initial autofill owning the mutex).
-    // Stop via mobile flip or autoFill disable; resolve manual with real growth
-    // so canLoadEarlier stays true (no-growth would clear it and vacate the assert).
-    test.each([
-        { stopHow: 'mobile' as const, label: 'flipping to mobile' },
-        { stopHow: 'disable-autofill' as const, label: 'disabling autoFillEnabled' },
-    ])(
-        '$label stops an already-scheduled auto-fill busy retry before real fetch',
-        async ({ stopHow }) => {
+    test.each([true, false])(
+        'successful history load does not automatically fetch another page (mobile=%s)',
+        async (isMobile) => {
             runtimeSurface.mobileProbe = false;
             let resolveUserLoad: (() => void) | null = null;
             const loadMoreMessages = vi.fn(
@@ -811,8 +852,7 @@ describe('useChatTimelineController mobile history boundary', () => {
             );
 
             const handle = await mountController({
-                isMobile: false,
-                autoFillEnabled: false,
+                isMobile,
                 isPinned: true,
                 loadMoreMessages,
                 geometry: { scrollHeight: 400, clientHeight: 400, scrollTop: 0 },
@@ -825,24 +865,12 @@ describe('useChatTimelineController mobile history boundary', () => {
             await flushMicrotasks();
             expect(loadMoreMessages).toHaveBeenCalledTimes(1);
 
-            // Arm short-viewport auto-fill while manual is still pending.
-            // isLoadingOlder is excluded from Query `enabled`, so queryFn must
-            // enter the busy-retry path instead of a second real fetch.
-            await handle.setState({ autoFillEnabled: true });
             await handle.render();
             await flushMicrotasks();
 
-            // Let busy retries schedule (retryDelay 50).
             await waitMs(200);
-            expect(isAutoFillBusyRetryState(handle.client)).toBe(true);
             // Still only the manual real fetch.
             expect(loadMoreMessages).toHaveBeenCalledTimes(1);
-
-            if (stopHow === 'mobile') {
-                await handle.setState({ isMobile: true });
-            } else {
-                await handle.setState({ autoFillEnabled: false });
-            }
 
             // Submit actual growth so stop-no-growth cannot clear canLoadEarlier
             // and make "no second fetch" vacuously true.

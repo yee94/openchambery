@@ -785,25 +785,8 @@ const HYDRATING_SKELETON_ITEMS: Array<{
         toolRows: [
             { id: 'search', titleWidth: 'w-24', detailWidth: 'w-52' },
             { id: 'read', titleWidth: 'w-20', detailWidth: 'w-36' },
-            { id: 'edit', titleWidth: 'w-24', detailWidth: 'w-64' },
         ],
         textWidths: ['w-24', 'w-[92%]', 'w-[78%]'],
-    },
-    {
-        id: 2,
-        toolRows: [
-            { id: 'read', titleWidth: 'w-20', detailWidth: 'w-40' },
-            { id: 'search', titleWidth: 'w-24', detailWidth: 'w-48' },
-        ],
-        textWidths: ['w-20', 'w-[88%]', 'w-[70%]'],
-    },
-    {
-        id: 3,
-        toolRows: [
-            { id: 'shell', titleWidth: 'w-28', detailWidth: 'w-44' },
-            { id: 'edit', titleWidth: 'w-24', detailWidth: 'w-56' },
-        ],
-        textWidths: ['w-24', 'w-[84%]', 'w-[64%]'],
     },
 ];
 
@@ -1657,9 +1640,6 @@ const ChatContainerContent: React.FC<ChatContainerContentProps> = ({
         showScrollButton: legendTimelineEnabled ? legendShowScrollButton : showScrollButton,
         // Same mounted flag as showLoadOlderButton — not isMobileSurfaceRuntime().
         isMobile,
-        // Only the active desktop transcript auto-fills short first paint;
-        // expanded-input and mobile keep explicit load paths only.
-        autoFillEnabled: active && !isDesktopExpandedInput,
         onWillLoadEarlier: armTimelineHistoryAnchor,
     });
     const resumeToLatestInstant = useEvent(() => {
@@ -2451,7 +2431,7 @@ const SessionViewLoadingPlaceholder: React.FC = () => (
         aria-hidden="true"
     >
         <div className="mt-auto w-full pb-5 motion-safe:animate-pulse">
-            <div className="chat-message-column space-y-6 px-4">
+            <div className="chat-message-column space-y-2 px-4">
                 <div className="space-y-2">
                     <Skeleton className="h-4 w-4/5 animate-none rounded-md" />
                     <Skeleton className="h-4 w-2/3 animate-none rounded-md" />
@@ -2461,7 +2441,6 @@ const SessionViewLoadingPlaceholder: React.FC = () => (
                     <Skeleton className="h-4 w-5/6 animate-none rounded-md" />
                     <Skeleton className="h-4 w-3/5 animate-none rounded-md" />
                 </div>
-                <Skeleton className="h-24 w-full animate-none rounded-xl" />
             </div>
         </div>
     </div>

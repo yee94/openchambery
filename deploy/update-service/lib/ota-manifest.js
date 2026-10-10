@@ -126,6 +126,22 @@ function parseActiveBundle(value, errors) {
     }
   }
 
+  if (value.desktop !== undefined) {
+    const d = value.desktop;
+    if (!isRecord(d) || !BUNDLE_ID_PATTERN.test(d.bundleId ?? '')
+      || d.url !== `/ota/bundles/${d.bundleId}.zip`
+      || !PLAIN_CHECKSUM_PATTERN.test(d.checksum ?? '')
+      || !Number.isSafeInteger(d.size) || d.size < 1
+      || !PLAIN_CHECKSUM_PATTERN.test(d.shellFingerprint ?? '')
+      || !parseReleaseVersion(d.minShellReleaseVersion)
+      || parseReleaseVersion(d.minShellReleaseVersion)?.major !== parseReleaseVersion(value.releaseVersion)?.major) {
+      errors.push('activeBundle.desktop must contain a valid desktop artifact and shell floor');
+    } else {
+      bundle.desktop = { bundleId: d.bundleId, url: d.url, checksum: d.checksum, size: d.size,
+        shellFingerprint: d.shellFingerprint, minShellReleaseVersion: d.minShellReleaseVersion };
+    }
+  }
+
   return errors.length === 0 ? bundle : undefined;
 }
 
@@ -192,6 +208,20 @@ export function parseOtaManifest(value, nested = false) {
   }
 
   const activeBundle = parseActiveBundle(value.activeBundle, errors);
+  const rollbackBundles = {};
+  if (value.rollbackBundles !== undefined) {
+    if (!isRecord(value.rollbackBundles) || Object.keys(value.rollbackBundles).length > 2) {
+      errors.push('rollbackBundles must contain at most two bundles');
+    } else {
+      for (const [id, raw] of Object.entries(value.rollbackBundles)) {
+        const bundle = parseActiveBundle(raw, errors);
+        if (!bundle || bundle.bundleId !== id || !Array.isArray(value.rollbackBundleIds) || !value.rollbackBundleIds.includes(id)
+          || parseReleaseVersion(bundle.releaseVersion)?.major !== parseReleaseVersion(activeBundle?.releaseVersion)?.major) {
+          errors.push('Invalid rollback bundle metadata');
+        } else rollbackBundles[id] = bundle;
+      }
+    }
+  }
 
   if (!isRecord(value.nativeTargets)) {
     errors.push('nativeTargets must be an object');
@@ -222,6 +252,9 @@ export function parseOtaManifest(value, nested = false) {
   }
   if (ios) nativeTargets.ios = ios;
   if (android) nativeTargets.android = android;
+  const desktop = parseNativeTarget(value.nativeTargets.desktop, 'desktop', errors);
+  if (errors.length) return { ok: false, errors };
+  if (desktop) nativeTargets.desktop = desktop;
 
   const majorReleases = {};
   if (value.majorReleases !== undefined) {
@@ -254,6 +287,7 @@ export function parseOtaManifest(value, nested = false) {
       activeBundle: activeBundle === null ? null : activeBundle,
       nativeTargets,
       rollbackBundleIds: [...value.rollbackBundleIds],
+      ...(Object.keys(rollbackBundles).length ? { rollbackBundles } : {}),
       ...(Object.keys(majorReleases).length ? { majorReleases } : {}),
     },
   };

@@ -4,7 +4,7 @@ import { loadReleaseNotes, resolveChangelogCurrentVersion } from './release-note
 import { parseReleaseVersion } from './semver.js';
 
 const ALLOWED_CHANNELS = new Set(['beta', 'stable']);
-const ALLOWED_PLATFORMS = new Set(['ios', 'android']);
+const ALLOWED_PLATFORMS = new Set(['ios', 'android', 'desktop']);
 
 function responseHeaders(headers = {}) {
   return {

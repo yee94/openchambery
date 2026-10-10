@@ -29,6 +29,8 @@
 
 默认 `v*` 仍会产出桌面与 APK；同版本 web bundle 由 `mobile-native-targets` 写入 OTA 通道。`mobile-beta/v*` / `mobile-stable/v*` 才是「只有 OTA、没有安装包」。`relay/v*` 是独立命名空间，只发 Relay npm 与 Docker，不会走 `release.yml`。
 
+桌面更新现与移动端共用频道 JSON 和决策接口。CI 从同一次 Web 构建打包两份资源：mobile 保留 Capgo 格式，desktop 保留桌面入口；两者位于同一 `activeBundle`，共享版本、灰度和频道。桌面下载后重启 Electron 生效，启动失败回退。`scripts/desktop-ota-assets.mjs` 对桌面壳、内置后端与锁定依赖计算指纹；指纹变化时必须发 `v*`，纯 OTA 标签会被拒绝。`activeBundle.desktop.minShellReleaseVersion` 仅在指纹变化时提高，并与实际安装的壳版本比较。新 CI 不发布 `latest*.yml`；首次启用 OTA 的旧桌面需要安装新版壳。全量发布先完成 `finalize-release`，再发布共享 OTA，避免原生升级链接指向 Draft Release。
+
 仅当用户明确只要 OTA、不要安装包时，才只打 OTA tag，且不要同时打 `v$VERSION`。OTA 版本必须**高于**当前通道 `activeBundle.releaseVersion`。`version:bump` 与 `CHANGELOG.md` 两路都要写。
 
 资格细则与 OTA 步骤见下文 `Mobile OTA releases`。
@@ -126,7 +128,7 @@ npm 发布需要仓库 Secret `NPM_TOKEN`（对 `@openchambery` scope 有 publis
 1. 使用 `X.Y.Z-beta.N`（或其它 semver prerelease）形式；禁止把 beta 内容打成无后缀的 `X.Y.Z`。
 2. 依赖 `release.yml`：含 `-` 的版本创建/发布 GitHub Release 时设置 `prerelease: true`，从而**不会**成为 `/releases/latest`。
 3. 依赖 finalize-release **跳过** `deploy/update-service/release-manifest.json` 写入；`write-release-manifest.mjs` 对 prerelease 直接 exit 0。Agent 不得手工把该 manifest 改成 beta 版本并推送。
-4. 保持 Electron `autoUpdater.allowPrerelease = false`（稳定客户端不订阅 prerelease）。
+4. Electron 与移动端共用 OTA 的 beta/stable 频道；稳定壳默认 stable，用户显式打开 beta 开关才订阅 beta，关闭后可确认回退同主版本 stable。
 5. beta `v*` 是否上传 iOS 由 plan mode 决定：`mode: native`（需要原生壳）**必须**上传 iOS 到 TestFlight 内测；`mode: ota`（常规 web-only beta）**不构建、不上传 iOS**。**禁止**把 prerelease 构建关联到已有外测组或提交 Beta App Review（外测组仅稳定版）。iOS 上传失败只影响内测可见性，重跑 `--failed` 即可；桌面 / APK / npm 不受影响。
 
 **发布时禁止**
@@ -137,7 +139,7 @@ npm 发布需要仓库 Secret `NPM_TOKEN`（对 `@openchambery` scope 有 publis
 
 **通道说明**
 
-- 桌面 Vercel `/desktop/latest*.yml` 代理 `https://github.com/yee94/openchamber/releases/latest/download/…`。
+- 桌面改用移动端同一份 `ota/channels/{beta,stable}.json` 和 `/v1/mobile/update/check`（`platform: desktop`）。新发布不再上传 `latest*.yml`；旧 `/desktop/` 路由仅为历史兼容。
 - Android 最新 APK 同样读 `/releases/latest`。
 - Web / VS Code / Capacitor 的 JSON 更新检查读 `release-manifest.json`（只应含最新稳定版）。
 - 用户从 Release 页**手动下载** beta 安装包不受影响；被隔离的只有稳定客户端自动更新。
@@ -156,7 +158,7 @@ gh release edit "v$STABLE_VERSION" --latest --repo yee94/openchamber
 
 ```bash
 gh api repos/yee94/openchamber/releases/latest --jq .tag_name   # 应为稳定版
-curl -sS https://openchamber-update.vercel.app/desktop/latest-mac.yml | head -3
+curl -sS https://openchamber-update.vercel.app/ota/channels/stable.json
 ```
 
 Agent 入口命令：`.opencode/commands/release.md`。
@@ -288,12 +290,12 @@ tag push 会包含 mobile-release。手动触发时使用 `release_scope=all`。
 
 ### `finalize-release` / `Verify complete release asset inventory` 失败
 
-`finalize-release` 要求 Draft Release **恰好 16 个**资产（mac/win/linux 安装包与 `latest*.yml`，加上 `app-release.aab` / `app-release.apk` 与当前 `run_number` 的版本化 Android 两个文件），且 Android 版本化文件名必须匹配**当前这次** workflow 的 `github.run_number`：
+`finalize-release` 要求 Draft Release **恰好 9 个**资产（mac DMG/ZIP、Windows EXE、两种架构 Linux AppImage，加上 `app-release.aab` / `app-release.apk` 与当前 `run_number` 的版本化 Android 两个文件），且 Android 版本化文件名必须匹配**当前这次** workflow 的 `github.run_number`：
 
 - `OpenChamber-$VERSION-$RUN_NUMBER-android.aab`
 - `OpenChamber-$VERSION-$RUN_NUMBER-android.apk`
 
-同名资产（如 `app-release.apk`、桌面安装包、`latest*.yml`）上传时会被覆盖；但 Android 版本化文件名包含 `run_number`，**不会**被后续运行覆盖。
+同名资产（如 `app-release.apk`、桌面安装包）上传时会被覆盖；但 Android 版本化文件名包含 `run_number`，**不会**被后续运行覆盖。
 
 因此，只要同一版本经历过多次 Release 运行（先 `workflow_dispatch` 再 tag push、或多次手动重跑），旧的 `-NN-android.*` 会留在 Draft 上。典型报错：
 
@@ -380,7 +382,7 @@ Capacitor 移动端支持 **web bundle OTA**（Capgo-style，自托管在 update
 
 | Tag | 含义 | Workflow |
 |---|---|---|
-| `mobile-beta/vX.Y.Z-beta.N` | 仅发布 **beta** 通道 web bundle OTA | `.github/workflows/mobile-beta-ota.yml`（name: Mobile OTA Release） |
+| `mobile-beta/vX.Y.Z-beta.N` | 仅发布桌面与移动端 **beta** 通道资源 OTA | `.github/workflows/mobile-beta-ota.yml`（name: Shared Desktop and Mobile OTA Release） |
 | `mobile-stable/vX.Y.Z` | 仅发布 **stable** 通道 web bundle OTA | 同上 |
 | `vX.Y.Z-beta.N` / `vX.Y.Z` | 完整原生壳 + 桌面等正式发布 | `.github/workflows/release.yml` → `mobile-release`（`ota_channel`：beta / stable） |
 | `relay/vX.Y.Z` / `relay/vX.Y.Z-beta.N` | 仅发布 Relay npm + Docker | `.github/workflows/relay-release.yml`（调用 `relay-docker.yml`） |
@@ -446,7 +448,7 @@ node scripts/mobile-release-plan.mjs --json
    git push origin "mobile-stable/v1.18.3"
    ```
 
-3. `mobile-beta-ota.yml`（Mobile OTA Release）：
+3. `mobile-beta-ota.yml`（Shared Desktop and Mobile OTA Release）：
    - `release-plan`：从 tag 推导 `CHANNEL`（`mobile-beta/` → beta，`mobile-stable/` → stable）与 `VERSION`；再次校验资格；非 ota 则失败并提示改用 `v*`。
    - `build-ota`：`bun run --cwd packages/mobile build`（web 构建 + prepare，**不含** `cap sync`）→ `@capgo/cli bundle zip` → 可选 `CAPGO_PRIVATE_KEY_V2` 加密 → 24 MiB 上限 → `scripts/mobile-ota/assemble-snapshot.mjs --channel $CHANNEL`。默认灰度：双通道均 `100`（可 `workflow_dispatch` 覆盖 `rollout_percent`）。
    - `deploy`：对 `deploy/update-service` 做 Vercel pull / `vercel build --prod` / 将 **完整** snapshot 的 `ota/` 覆盖进 `.vercel/output/static/ota/` / `vercel deploy --prebuilt --prod`，再 curl 校验 **两个** channel manifest（`beta.json` + `stable.json`）以及目标 channel 的 bundle。
@@ -465,7 +467,7 @@ OTA release 与 rollout 共用 concurrency group `mobile-ota-production`（`canc
 
 ### 灰度 / 暂停 / 回滚 / 跨通道 promote
 
-GitHub Actions → **Mobile Beta OTA Rollout**（`mobile-beta-rollout.yml`）`workflow_dispatch`：
+GitHub Actions → **Shared Desktop and Mobile OTA Rollout**（`mobile-beta-rollout.yml`）`workflow_dispatch`：
 
 | action | 作用 |
 |---|---|

@@ -2712,6 +2712,15 @@ export const ContextPanel: React.FC<{ directory?: string | null }> = ({ director
   })
     ? DesktopBrowserPane
     : IframeBrowserPane;
+  const nativeBrowserVisible = isOpen && activeTab?.mode === 'browser' && BrowserPane === DesktopBrowserPane;
+  React.useLayoutEffect(() => {
+    if (!nativeBrowserVisible) return;
+    // MainLayout owns one ContextPanel. Publish only visibility transitions;
+    // root :has(descendant) otherwise invalidates the whole tree on text edits.
+    const root = document.documentElement;
+    root.setAttribute('data-oc-native-browser-visible', '');
+    return () => root.removeAttribute('data-oc-native-browser-visible');
+  }, [nativeBrowserVisible]);
   const hasFileTabs = React.useMemo(
     () => tabs.some((tab) => tab.mode === 'file'),
     [tabs],
@@ -2878,7 +2887,7 @@ export const ContextPanel: React.FC<{ directory?: string | null }> = ({ director
     <aside
       ref={panelRef}
       data-context-panel="true"
-      data-native-browser-visible={isOpen && activeTab?.mode === 'browser' && BrowserPane === DesktopBrowserPane ? 'true' : undefined}
+      data-native-browser-visible={nativeBrowserVisible ? 'true' : undefined}
       tabIndex={-1}
       inert={!isOpen || undefined}
       className={cn(

@@ -259,7 +259,7 @@ jobs:
           spctl --assess --type execute --verbose=4 "$APP_PATH"
           echo "Developer ID macOS app prepared at $APP_PATH"
 
-      - name: Upload DMG / ZIP / blockmaps to release
+      - name: Upload DMG / ZIP installers to release
         uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2.6.2
         with:
           tag_name: v${{ needs.create-release.outputs.version }}
@@ -267,17 +267,8 @@ jobs:
           files: |
             packages/electron/dist/*.dmg
             packages/electron/dist/*.zip
-            packages/electron/dist/*.blockmap
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Upload per-arch latest-mac.yml for merge
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: latest-yml-${{ matrix.target }}
-          path: packages/electron/dist/latest-mac.yml
-          if-no-files-found: error
-          retention-days: 1
 
   build-desktop-electron-windows:
     needs: create-release
@@ -357,17 +348,8 @@ jobs:
           draft: true
           files: |
             packages/electron/dist/*.exe
-            packages/electron/dist/*.blockmap
-            packages/electron/dist/latest.yml
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Upload update manifest as artifact
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: latest-yml-${{ matrix.target }}
-          path: packages/electron/dist/latest.yml
-          retention-days: 1
 
   build-desktop-electron-linux:
     needs: create-release
@@ -379,12 +361,10 @@ jobs:
             arch: x64
             host_arch: x86_64
             artifact_arch: x86_64
-            manifest: latest-linux.yml
           - runner: ubuntu-24.04-arm
             arch: arm64
             host_arch: aarch64
             artifact_arch: arm64
-            manifest: latest-linux-arm64.yml
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
@@ -428,7 +408,7 @@ jobs:
         working-directory: packages/electron
         run: |
           bun run test:architecture
-          bun run test:updater
+          xvfb-run --auto-servernum bun run test:updater
 
       - name: Build and package Linux AppImage
         working-directory: packages/electron
@@ -445,24 +425,12 @@ jobs:
           bun run verify:opencode-cli:packaged
           bun run verify:linux-appimage
 
-      - name: Validate Linux update manifest
-        working-directory: packages/electron
-        env:
-          VERSION: ${{ needs.create-release.outputs.version }}
-          ARTIFACT_ARCH: ${{ matrix.artifact_arch }}
-          MANIFEST: ${{ matrix.manifest }}
-        run: |
-          set -euo pipefail
-          APPIMAGE="dist/OpenChamber-${VERSION}-linux-${ARTIFACT_ARCH}.AppImage"
-          node ./scripts/verify-update-manifest.mjs "dist/${MANIFEST}" "$APPIMAGE" "$VERSION"
-
       - name: Upload validated Linux release files
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: linux-release-${{ matrix.arch }}
           path: |
             packages/electron/dist/OpenChamber-${{ needs.create-release.outputs.version }}-linux-${{ matrix.artifact_arch }}.AppImage
-            packages/electron/dist/${{ matrix.manifest }}
           if-no-files-found: error
           retention-days: 1
 
@@ -484,21 +452,7 @@ jobs:
           name: linux-release-arm64
           path: artifacts/arm64
 
-      - name: Revalidate separate Linux manifests
-        env:
-          VERSION: ${{ needs.create-release.outputs.version }}
-        run: |
-          set -euo pipefail
-          node packages/electron/scripts/verify-update-manifest.mjs \
-            artifacts/x64/latest-linux.yml \
-            "artifacts/x64/OpenChamber-${VERSION}-linux-x86_64.AppImage" \
-            "$VERSION"
-          node packages/electron/scripts/verify-update-manifest.mjs \
-            artifacts/arm64/latest-linux-arm64.yml \
-            "artifacts/arm64/OpenChamber-${VERSION}-linux-arm64.AppImage" \
-            "$VERSION"
-
-      - name: Upload Linux AppImages and manifests to release
+      - name: Upload Linux AppImages to release
         if: ${{ github.event.inputs.dry_run != 'true' }}
         uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2.6.2
         with:
@@ -506,71 +460,9 @@ jobs:
           draft: true
           files: |
             artifacts/x64/OpenChamber-${{ needs.create-release.outputs.version }}-linux-x86_64.AppImage
-            artifacts/x64/latest-linux.yml
             artifacts/arm64/OpenChamber-${{ needs.create-release.outputs.version }}-linux-arm64.AppImage
-            artifacts/arm64/latest-linux-arm64.yml
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-  combine-electron-manifests:
-    needs: [create-release, build-desktop-electron-macos]
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
-
-      - name: Setup Node.js
-        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
-        with:
-          node-version: '22'
-
-      - name: Download per-arch latest-mac.yml
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
-        with:
-          pattern: latest-yml-*-apple-darwin
-          path: artifacts
-
-      - name: Verify macOS arm64 manifest
-        run: |
-          set -euo pipefail
-          mapfile -t manifests < <(find artifacts -type f -name latest-mac.yml -print)
-          if [ "${#manifests[@]}" -ne 1 ]; then
-            echo "Expected exactly one arm64 latest-mac.yml file, found ${#manifests[@]}"
-            printf '%s\n' "${manifests[@]}"
-            exit 1
-          fi
-
-      - name: Finalize combined latest-mac.yml
-        env:
-          LATEST_YML_DIR: ${{ github.workspace }}/artifacts
-          GH_REPO: ${{ github.repository }}
-          OPENCHAMBER_VERSION: ${{ needs.create-release.outputs.version }}
-        run: node packages/electron/scripts/finalize-latest-yml.mjs
-
-      - name: Verify combined macOS manifest
-        env:
-          VERSION: ${{ needs.create-release.outputs.version }}
-        run: |
-          set -euo pipefail
-          manifest="${RUNNER_TEMP}/latest-mac.yml"
-          test -s "$manifest"
-          grep -Fq "OpenChamber-${VERSION}-mac-arm64.zip" "$manifest"
-
-      - name: Upload combined macOS manifest to draft release
-        if: ${{ github.event.inputs.dry_run != 'true' }}
-        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2.6.2
-        with:
-          tag_name: v${{ needs.create-release.outputs.version }}
-          draft: true
-          files: ${{ runner.temp }}/latest-mac.yml
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Archive combined macOS manifest for diagnostics
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: unsigned-macos-update-manifest
-          path: ${{ runner.temp }}/latest-mac.yml
-          retention-days: 7
 
   mobile-release:
     needs: create-release
@@ -596,9 +488,9 @@ jobs:
   # and move nativeTargets. Fresh installs must never be rolled back to an older
   # activeBundle. Does not touch desktop latest feeds or /releases/latest.
   mobile-native-targets:
-    name: Publish mobile nativeTargets to OTA
-    needs: [create-release, mobile-release]
-    if: ${{ always() && !cancelled() && needs.create-release.result == 'success' && needs.mobile-release.result == 'success' && (github.event_name != 'workflow_dispatch' || (!inputs.dry_run && !inputs.skip_ota)) }}
+    name: Publish shared desktop and mobile OTA
+    needs: [create-release, finalize-release]
+    if: ${{ !cancelled() && needs.finalize-release.result == 'success' && (github.event_name != 'workflow_dispatch' || (!inputs.dry_run && !inputs.skip_ota)) }}
     runs-on: ubuntu-latest
     concurrency:
       group: mobile-ota-production
@@ -622,6 +514,9 @@ jobs:
 
       - name: Build mobile web assets
         run: bun run --cwd packages/mobile build
+
+      - name: Package desktop resources from the same web build
+        run: node scripts/desktop-ota-assets.mjs "$RUNNER_TEMP/desktop-ota.zip"
 
       - name: Package Capgo zip
         id: zip
@@ -752,6 +647,7 @@ jobs:
           fi
           ASSEMBLE_ARGS=(
             --zip "$ZIP_PATH"
+            --desktop-zip "$RUNNER_TEMP/desktop-ota.zip"
             --version "$VERSION"
             --checksum "$CHECKSUM"
             --channel "$OTA_CHANNEL"
@@ -780,6 +676,7 @@ jobs:
             throw new Error(`Assembled activeBundle.releaseVersion must be ${version}, got ${manifest.activeBundle?.releaseVersion ?? 'none'}`);
           }
           manifest.nativeTargets = manifest.nativeTargets || {};
+          manifest.nativeTargets.desktop = { version, build, status: 'published', installUrl: androidUrl };
           if (planMode === 'ota') {
             // Do not raise the shell gate on web-only releases. Legacy
             // platforms.*.minNativeBuild may still be present for schema
@@ -883,7 +780,7 @@ jobs:
 
   publish-relay-docker:
     name: Publish Relay image to Docker Hub
-    needs: [create-release, build-desktop-electron-macos, build-desktop-electron-windows, publish-electron-linux, combine-electron-manifests, mobile-release]
+    needs: [create-release, build-desktop-electron-macos, build-desktop-electron-windows, publish-electron-linux, mobile-release]
     uses: ./.github/workflows/relay-docker.yml
     with:
       version: ${{ needs.create-release.outputs.version }}
@@ -950,7 +847,7 @@ jobs:
           fi
 
   finalize-release:
-    needs: [create-release, build-desktop-electron-macos, build-desktop-electron-windows, publish-electron-linux, combine-electron-manifests, mobile-release, publish-relay-docker, publish-npm]
+    needs: [create-release, build-desktop-electron-macos, build-desktop-electron-windows, publish-electron-linux, mobile-release, publish-relay-docker, publish-npm]
     if: >-
       ${{
         always() &&
@@ -960,7 +857,6 @@ jobs:
         needs.build-desktop-electron-macos.result == 'success' &&
         needs.build-desktop-electron-windows.result == 'success' &&
         needs.publish-electron-linux.result == 'success' &&
-        needs.combine-electron-manifests.result == 'success' &&
         needs.mobile-release.result == 'success' &&
         needs.publish-relay-docker.result == 'success' &&
         needs.publish-npm.result == 'success'
@@ -1032,17 +928,10 @@ jobs:
           } = process.env;
           const expected = [
             `OpenChamber-${version}-mac-arm64.dmg`,
-            `OpenChamber-${version}-mac-arm64.dmg.blockmap`,
             `OpenChamber-${version}-mac-arm64.zip`,
-            `OpenChamber-${version}-mac-arm64.zip.blockmap`,
-            'latest-mac.yml',
             `OpenChamber-${version}-win-x64.exe`,
-            `OpenChamber-${version}-win-x64.exe.blockmap`,
-            'latest.yml',
             `OpenChamber-${version}-linux-x86_64.AppImage`,
-            'latest-linux.yml',
             `OpenChamber-${version}-linux-arm64.AppImage`,
-            'latest-linux-arm64.yml',
             'app-release.aab',
             'app-release.apk',
             `OpenChamber-${version}-${buildNumber}-android.aab`,

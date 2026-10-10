@@ -75,6 +75,8 @@ import { SessionStartupCoordinator } from '@/components/session/SessionStartupCo
 import { useStartupCatalogRecovery } from '@/hooks/useStartupCatalogRecovery';
 import { useGlobalSessionsStore } from '@/stores/useGlobalSessionsStore';
 import { useUpdateStore } from '@/stores/useUpdateStore';
+import { notifyDesktopOtaReady } from '@/lib/desktop';
+import { getMobileClientVersion } from '@/lib/mobileAppVersion';
 import { markStartupTrace, startupTraceEnabled } from '@/lib/startupTrace';
 import { releaseSessionStartupBarrier, waitForSessionStartupBarrier } from '@/lib/session-startup-barrier';
 
@@ -784,6 +786,11 @@ function App({ apis }: AppProps) {
   useMenuActions(handleToggleMemoryDebug);
 
   React.useEffect(() => {
+    if (!isPackagedElectronShell()) return;
+    void getMobileClientVersion().then(async (version) => { if (version) await notifyDesktopOtaReady(version); }).catch(console.warn);
+  }, []);
+
+  React.useEffect(() => {
     if (!isInitialized || !isPackagedElectronShell() || startupUpdateCheckStartedRef.current) {
       return;
     }
@@ -793,8 +800,7 @@ function App({ apis }: AppProps) {
     let timer: number | null = null;
     let unlistenDesktopUpdates: null | (() => void | Promise<void>) = null;
 
-    // Idle auto-download runs in the Electron main process; mirror its progress
-    // so the update CTA flips to "Restart to Update" without a manual Download.
+    // Mirror the main-process OTA download lifecycle across desktop windows.
     void useUpdateStore.getState().subscribeDesktopUpdateEvents().then((unlisten) => {
       if (disposed) {
         void unlisten();

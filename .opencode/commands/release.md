@@ -3,7 +3,7 @@ description: Publish an OpenChamber GitHub Release; usage: /release [version] [d
 agent: build
 ---
 
-You are releasing OpenChamber from this repository. Follow @docs/RELEASING.md. Treat @.github/workflows/release.yml as the native-release contract and @.github/workflows/mobile-beta-ota.yml as the mobile web-bundle OTA contract. Beta / prerelease rules in @docs/RELEASING.md section `Beta / prerelease` are mandatory.
+You are releasing OpenChamber from this repository. Follow @docs/RELEASING.md. Treat @.github/workflows/release.yml as the native-release contract and @.github/workflows/mobile-beta-ota.yml as the shared desktop/mobile OTA contract. Beta / prerelease rules in @docs/RELEASING.md section `Beta / prerelease` are mandatory.
 
 Arguments: `$ARGUMENTS.opencode/commands/release.md`
 
@@ -26,7 +26,7 @@ Workflow:
 6. Stage all current changes and commit:
    - Default / native: `release: v$VERSION`, tag `v$VERSION`.
    - Explicit OTA-only: `release: mobile-beta/v$VERSION` (or `release: mobile-stable/v$VERSION`), tag only that OTA tag.
-7. Push `main` and only the tag from step 6. A `v*` tag triggers the full desktop and Android Release workflow (and same-version OTA). An OTA-only tag triggers Mobile OTA Release only.
+7. Push `main` and only the tag from step 6. A `v*` tag triggers the full desktop and Android Release workflow (and same-version OTA). An OTA-only tag triggers Shared Desktop and Mobile OTA Release only.
 8. When `dry-run` was requested, dispatch the workflow manually instead of creating or pushing a tag:
 
    ```bash
@@ -43,9 +43,9 @@ Stable packaged clients must never be offered a beta through auto-update. When r
 - **Must** rely on `release.yml` marking the GitHub Release as `prerelease: true` so it does **not** become `/releases/latest`.
 - **Must not** write, commit, or push `deploy/update-service/release-manifest.json` to the beta version. That file is the stable Vercel JSON update feed; `write-release-manifest.mjs` and finalize-release already skip prereleases — do not bypass them.
 - **Must not** manually promote a beta to Latest (`gh release edit … --latest`) or clear its prerelease flag unless the user explicitly converts it into a stable release.
-- **Must not** point desktop updater feeds, Discord “latest”, or Android “latest APK” at a beta. Desktop Vercel `/desktop/latest*.yml` proxies GitHub `/releases/latest`; Android also uses `/releases/latest`.
-- **Must** leave `autoUpdater.allowPrerelease = false` alone unless the user explicitly requests prerelease auto-update.
-- After pushing a beta tag, if a previous beta was accidentally published as Latest, immediately restore the newest stable release as Latest (`gh release edit vX.Y.Z --latest`) and confirm `release-manifest.json` / Vercel `latest-mac.yml` still show that stable version.
+- Stable OTA, Discord “latest”, and Android “latest APK” contain stable releases only. Desktop uses the shared OTA channel manifest; beta selection and beta→stable rollback follow the user's About switch. Release CI no longer publishes Electron `latest*.yml`.
+- OTA-only publishing must pass both mobile eligibility and the desktop shell/backend fingerprint gate. Changed desktop shell/backend code requires a `v*` installer release. Shared OTA is published after the native release is public.
+- After pushing a beta tag, if a previous beta was accidentally published as Latest, restore the newest stable release as Latest (`gh release edit vX.Y.Z --latest`) and confirm `release-manifest.json` and the stable OTA channel still contain stable releases.
 - TestFlight tracks the native-shell requirement, not the tag: `mode: native` betas and all stable releases upload iOS (betas internal-only; external group and Beta App Review stay stable-only); `mode: ota` betas and `mobile-beta/*` tags skip iOS. The minNativeBuild floor (one-tap OTA vs reinstall prompt) rises only on `mode: native`, independent of OTA publishing.
 - OTA detectability is a release gate, not a manual afterthought: `release.yml` / `mobile-beta-ota.yml` run `scripts/mobile-ota/verify-detectability.mjs` against Vercel and EdgeOne. Do not drop the iOS marketing-version profile (`currentBundleId` = stripped `CFBundleShortVersionString`). Beta-channel checks must use the running web bundle version, never the official marketing version.
 

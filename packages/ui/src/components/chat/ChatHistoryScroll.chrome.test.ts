@@ -17,7 +17,7 @@ afterAll(() => {
     if (!keepEvidence()) for (const dir of workDirs) rmSync(dir, { recursive: true, force: true });
 });
 
-test.skipIf(!resolveChrome()).each(['normal', 'delayed-resize', 'virtualize-transition', 'continued-drag'] as const)('history prepend keeps the reading row (%s)', async (scenario) => {
+test.skipIf(!resolveChrome()).each(['normal', 'delayed-resize', 'virtualize-transition', 'continued-drag', 'desktop-short'] as const)('history prepend keeps the reading row (%s)', async (scenario) => {
     const work = mkdtempSync(join(evidenceRoot(), 'history-scroll-'));
     workDirs.push(work);
     await build({
@@ -32,7 +32,7 @@ test.skipIf(!resolveChrome()).each(['normal', 'delayed-resize', 'virtualize-tran
     const html = join(work, 'index.html');
     const css = await compileProductionCssAsync(join(here, '../..'));
     writeFileSync(html, `<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><style>${css}\nhtml,body,#root{margin:0;height:100%;overflow:hidden}</style></head><body><div id="root"></div><script>
-window.process={env:{NODE_ENV:'production'}};window.global=window;window.__OPENCHAMBER_SURFACE__='mobile';window.errors=[];window.resizeWarnings=0;
+window.process={env:{NODE_ENV:'production'}};window.global=window;window.__OPENCHAMBER_SURFACE__='${scenario === 'desktop-short' ? 'web' : 'mobile'}';window.errors=[];window.resizeWarnings=0;
 window.addEventListener('error',e=>{
   if(e.message==='ResizeObserver loop completed with undelivered notifications.')window.resizeWarnings++;
   else window.errors.push(e.message);
@@ -62,23 +62,30 @@ window.addEventListener('error',e=>{
         await page.send('Page.navigate', { url: `http://127.0.0.1:${address.port}/?scenario=${scenario}` });
         await new Promise((resolve) => setTimeout(resolve, 1500));
         expect(await page.evaluate('window.errors')).toEqual([]);
+        expect((await page.evaluate<Sample>('window.historyScrollFixture.sample()')).loads).toBe(0);
         await page.evaluate('window.historyScrollFixture.prepare()');
         const prepared = await page.evaluate<Sample>('window.historyScrollFixture.sample()');
-        await page.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: 180, y: 400 }] });
-        await page.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: 180, y: 420 }] });
+        expect(prepared.loads).toBe(0);
+        if (scenario === 'desktop-short') {
+            expect(prepared.max).toBe(0);
+            await page.send('Input.dispatchMouseEvent', { type: 'mouseWheel', x: 180, y: 400, deltaX: 0, deltaY: -100 });
+        } else {
+            await page.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: 180, y: 400 }] });
+            await page.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: 180, y: 420 }] });
+        }
         await new Promise((resolve) => setTimeout(resolve, 1000));
         const before = await page.evaluate<Sample>('window.historyScrollFixture.sample()');
-        await page.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+        if (scenario !== 'desktop-short') await page.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
         await new Promise((resolve) => setTimeout(resolve, 2500));
         const after = await page.evaluate<Sample>('window.historyScrollFixture.sample()');
         console.info('[history-scroll positions]', { before, after });
         expect(after.loads).toBe(1);
         expect(after.max - prepared.max, 'the fetched history must actually be rendered').toBeGreaterThan(2000);
-        expect(after.max - after.top).toBeGreaterThan(scenario === 'virtualize-transition' ? 100 : 1000);
+        if (scenario !== 'desktop-short') expect(after.max - after.top).toBeGreaterThan(scenario === 'virtualize-transition' ? 100 : 1000);
         expect(after.anchorTop).not.toBeNull();
         expect(after.anchorTop!).toBeLessThan(after.viewportHeight);
         expect(after.anchorBottom!).toBeGreaterThan(0);
-        if (process.env.IOS_HISTORY_SIM === '1') {
+        if (process.env.IOS_HISTORY_SIM === '1' && scenario !== 'desktop-short') {
             const app = join(work, 'HistoryScroll.app');
             mkdirSync(app);
             const { stdout: sdk } = await exec('xcrun', ['--sdk', 'iphonesimulator', '--show-sdk-path']);

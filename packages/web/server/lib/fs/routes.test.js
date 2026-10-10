@@ -325,6 +325,35 @@ describe('fs stat', () => {
 });
 
 describe('fs prompt attachments', () => {
+  it('streams a large relay upload to a host tmp path with the original filename', async () => {
+    const handler = registerPromptAttachment({});
+    const chunk = Buffer.alloc(1024 * 1024, 7);
+    const hash = createHash('sha256');
+    for (let i = 0; i < 26; i++) hash.update(chunk);
+    const digest = hash.digest('hex');
+    const res = createMockResponse();
+    await handler({
+      params: { attachmentID: 'att-large' },
+      headers: {
+        'x-openchamber-content-length': String(chunk.length * 26),
+        'x-openchamber-sha256': digest,
+        'x-openchamber-mime': 'application/gzip',
+        'x-openchamber-filename': encodeURIComponent('../../trace.json.gz'),
+        'x-openchamber-storage': 'temporary',
+      },
+      async *[Symbol.asyncIterator]() { for (let i = 0; i < 26; i++) yield chunk; },
+    }, res);
+    expect(res.body).toMatchObject({ success: true, size: chunk.length * 26, sha256: digest });
+    const dir = path.dirname(res.body.path);
+    try {
+      expect(path.dirname(dir)).toBe(os.tmpdir());
+      expect(path.basename(dir)).toMatch(/^openchamber-prompt-/);
+      expect(path.basename(res.body.path)).toBe('trace.json.gz');
+      expect(fs.statSync(res.body.path).size).toBe(chunk.length * 26);
+      expect(createHash('sha256').update(fs.readFileSync(res.body.path)).digest('hex')).toBe(digest);
+    } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+  });
+
   it('stores binary bytes under the data-dir content-addressed path', async () => {
     const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'fs-prompt-att-'));
     const handler = registerPromptAttachment({}, { openchamberDataDir: dataDir });

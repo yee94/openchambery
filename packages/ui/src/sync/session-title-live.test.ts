@@ -6,6 +6,7 @@ import type { Session } from '@/lib/opencode/v2-types';
 import type { ChildStoreManager } from './child-store';
 import { normalizeOpenCodeEvent, toLegacyEventShape } from './opencode-event-normalizer';
 import { useGlobalSessionsStore } from '@/stores/useGlobalSessionsStore';
+import { aggregateLiveSessions, areSessionListsEquivalent } from './live-aggregate';
 
 vi.hoisted(() => {
   vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ home: '/workspace', data: [] }), {
@@ -73,10 +74,20 @@ test('smart-title loading and completion update automatically without clearing e
   const emit = (type: string, properties: Record<string, unknown>) =>
     handleEvent(directory, { type, properties } as Event, children, routing);
 
+  const initialRows = aggregateLiveSessions([store.getState()]);
   emit('openchamber:session-metadata', { sessionID: session.id, metadata: {
     openchamber: { titleRefresh: { isGenerating: true } },
   } });
   expect(store.getState().session[0].metadata?.openchamber).toEqual({ titleRefresh: { isGenerating: true } });
+  expect(store.getState().session_status[session.id]).toBe(busy);
+
+  const loadingRows = aggregateLiveSessions([store.getState()]);
+  expect(areSessionListsEquivalent(initialRows, loadingRows)).toBe(false);
+  emit('openchamber:session-metadata', { sessionID: session.id, metadata: {
+    openchamber: { titleRefresh: {} },
+  } });
+  const completedRows = aggregateLiveSessions([store.getState()]);
+  expect(areSessionListsEquivalent(loadingRows, completedRows)).toBe(false);
   expect(store.getState().session_status[session.id]).toBe(busy);
 
   emit('session.updated', { info: { ...session, title: 'Generated title', metadata: {
@@ -90,4 +101,19 @@ test('smart-title loading and completion update automatically without clearing e
   expect(store.getState().session_status[session.id].type).toBe('idle');
   emit('session.execution.started', { sessionID: session.id });
   expect(store.getState().session_status[session.id].type).toBe('busy');
+});
+
+test('title presentation equality detects failure but ignores recency and unrelated metadata', () => {
+  const session = { id: 'ses_title', title: 'Generated title', time: { created: 10, updated: 20 },
+    metadata: { openchamber: { titleRefresh: {} } },
+  } as Session;
+  const failed = { ...session, metadata: { openchamber: {
+    titleRefresh: { lastError: 'Title generation failed', failedAt: 30 },
+  } } } as Session;
+  expect(areSessionListsEquivalent([session], [failed])).toBe(false);
+  expect(areSessionListsEquivalent([failed], [session])).toBe(false);
+  const refreshed = { ...session, time: { ...session.time, updated: 40 }, metadata: { openchamber: {
+    goal: { status: 'active' }, titleRefresh: { activityUpdatedAt: 40, generatedAt: 30 },
+  } } } as Session;
+  expect(areSessionListsEquivalent([session], [refreshed])).toBe(true);
 });

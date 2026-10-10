@@ -17,7 +17,7 @@ Own filesystem API behavior for the web server runtime, including file operation
     - `GET /api/fs/raw`
     - `GET /api/fs/serve/:path(*)`
     - `POST /api/fs/write`
-    - `PUT /api/fs/prompt-attachments/:attachmentID` (binary prompt attachment; streams bytes into `<openchamberDataDir>/prompt-attachments/<sha256-prefix>/<sha256><ext>` and returns `{ path, size, mime, sha256 }`)
+    - `PUT /api/fs/prompt-attachments/:attachmentID` (binary prompt attachment; returns `{ path, size, mime, sha256 }`). Chat sends `X-OpenChamber-Storage: temporary`: bytes stream into a private `<os.tmpdir()>/openchamber-prompt-*/<filename>` on the active model host, including relay clients. This path has no model-context byte limit; size and SHA-256 are verified before returning, and failed/aborted uploads are removed. Successful files remain for later tool reads until OS/user temporary-file cleanup. The legacy/default mode retains the 25 MiB content-addressed store under `<openchamberDataDir>/prompt-attachments/<sha256-prefix>/<sha256><ext>`; Assistant storage is unchanged.
     - `POST /api/fs/delete`
     - `POST /api/fs/rename`
     - `POST /api/fs/reveal`

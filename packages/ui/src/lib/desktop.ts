@@ -2,10 +2,12 @@ import type { ProjectEntry } from '@/lib/api/types';
 import { getInjectedBootOutcome } from '@/lib/desktopBoot';
 import type { DraftStarterRef } from '@/lib/draftStarters';
 import type { MobileKeyboardMode } from '@/lib/mobileKeyboardMode';
+import type { MobileUpdateDecision } from '@/lib/mobile-updates/types';
 import { getRuntimeApiBaseUrl, getRuntimeKey } from '@/lib/runtime-switch';
 import { getRegisteredRuntimeAPIs } from '@/contexts/runtimeAPIRegistry';
 
 export type UpdateInfo = {
+  otaDecision?: MobileUpdateDecision;
   available: boolean;
   version?: string;
   currentVersion: string;
@@ -14,21 +16,21 @@ export type UpdateInfo = {
   releaseUrl?: string;
   downloadUrl?: string;
   nextSuggestedCheckInSec?: number;
-  /** True when the desktop package is already on disk and ready to install on restart. */
+  /** True when desktop resources are queued for the next launch. */
   downloaded?: boolean;
-  /** True when main is already running an idle or manual package download. */
+  /** True when main is downloading an update. */
   downloading?: boolean;
-  /** Latest transferred bytes while `downloading` is true (idle or manual). */
+  /** Latest transferred bytes while `downloading` is true. */
   progress?: UpdateProgress | null;
   // Web-specific fields
   packageManager?: string;
   updateCommand?: string;
   /** The update was found through GitHub Releases and must be installed manually. */
   manualUpdate?: boolean;
-  /** Mobile web-bundle OTA that can be downloaded and applied in-app. */
+  /** Desktop/mobile resource OTA that can be downloaded and applied in-app. */
   inAppApply?: boolean;
   /**
-   * Mobile OTA only: server is offering a stable-channel rollback from a newer
+   * The shared OTA service is offering a stable-channel rollback from a newer
    * beta/prerelease bundle. UI should confirm "roll back to stable" before
    * calling the existing download → restart flow.
    */
@@ -678,17 +680,23 @@ export const stopAccessingDirectory = async (
   return { success: true };
 };
 
-export const checkForDesktopUpdates = async (): Promise<UpdateInfo | null> => {
+export const checkForDesktopUpdates = async (channelOverride?: 'beta' | 'stable' | null): Promise<UpdateInfo | null> => {
   if (!hasDesktopInvoke()) {
     throw new Error('Desktop update checker is unavailable');
   }
 
-  const info = await invokeDesktop<UpdateInfo>('desktop_check_for_updates');
+  const info = await invokeDesktop<UpdateInfo>('desktop_check_for_updates', { channelOverride });
   if (!info) {
     throw new Error('Desktop update checker returned no result');
   }
   return info;
 };
+
+export const notifyDesktopOtaReady = async (version: string): Promise<void> => {
+  if (hasDesktopInvoke()) await invokeDesktop('desktop_ota_ready', { version });
+};
+
+export const getDesktopAppVersion = (): Promise<string | null> => invokeDesktop<string>('desktop_get_app_version');
 
 /** Subscribe to main-process update progress (manual or idle auto-download). */
 export const listenDesktopUpdateProgress = async (

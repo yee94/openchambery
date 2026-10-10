@@ -319,12 +319,15 @@ function mapOtaDecisionToUpdateInfo(
   };
 }
 
+let updateCheckGeneration = 0;
+
 export const useUpdateStore = create<UpdateStore>()((set, get) => ({
   ...initialState,
 
   checkForUpdates: async () => {
     const runtime = detectRuntimeType();
     if (!runtime) return null;
+    const checkGeneration = ++updateCheckGeneration;
 
     set({ checking: true, error: null, runtimeType: runtime });
 
@@ -333,23 +336,30 @@ export const useUpdateStore = create<UpdateStore>()((set, get) => ({
       let suggestedSec: number | null = null;
 
       if (runtime === 'desktop') {
-        const desktopInfo = await checkForDesktopUpdates();
+        const channelOverride = useUIStore.getState().otaChannelOverride;
+        if (get().lastOtaChannelOverride !== channelOverride) {
+          set({ downloaded: false, downloading: false, available: false, info: null, otaDecision: null, progress: null, otaPhase: 'checking' });
+        }
+        const desktopInfo = await checkForDesktopUpdates(channelOverride);
+        if (checkGeneration !== updateCheckGeneration || useUIStore.getState().otaChannelOverride !== channelOverride) return null;
         const alreadyDownloaded = desktopInfo?.downloaded === true;
         set({
           checking: false,
           available: desktopInfo?.available ?? false,
-          // Main may already have finished an idle auto-download for this version.
-          // Idle downloads stay silent until the user clicks "Download Update".
+          // Main may already have queued the resource bundle in another window.
           downloaded: alreadyDownloaded,
-          // If main already has the package, clear any foreground download UI.
+          // A queued bundle is ready for the next launch.
           ...(alreadyDownloaded ? { downloading: false, progress: null } : {}),
           info: desktopInfo,
           error: null,
           lastChecked: Date.now(),
-          nextCheckInSec: null,
+          nextCheckInSec: desktopInfo?.nextSuggestedCheckInSec ?? null,
+          otaDecision: desktopInfo?.otaDecision ?? null,
+          otaPhase: alreadyDownloaded ? 'pending_restart' : desktopInfo?.inAppApply ? 'available' : 'idle',
+          lastOtaChannelOverride: channelOverride,
         });
 
-        return suggestedSec;
+        return desktopInfo?.nextSuggestedCheckInSec ?? null;
       } else if (runtime === 'web') {
         info = await checkForWebUpdates('web');
         suggestedSec = info?.nextSuggestedCheckInSec ?? null;
@@ -465,9 +475,11 @@ export const useUpdateStore = create<UpdateStore>()((set, get) => ({
       });
       return suggestedSec;
     } catch (error) {
+      if (checkGeneration !== updateCheckGeneration) return null;
       set({
         checking: false,
         error: error instanceof Error ? error.message : 'Failed to check for updates',
+        ...(runtime === 'desktop' && !get().downloaded ? { otaPhase: 'error' as const } : {}),
       });
       return null;
     }
@@ -524,14 +536,14 @@ export const useUpdateStore = create<UpdateStore>()((set, get) => ({
       return;
     }
 
-    // Enter the foreground download UI only after the user clicks Download.
-    // If main already has an idle download in flight, seed progress from that
-    // snapshot so the bar does not restart at 0%.
+    // Main owns resource download and next-launch activation.
     set({ downloading: true, error: null, progress: null });
 
     try {
-      const desktopInfo = await checkForDesktopUpdates();
-      if (!desktopInfo?.available) {
+      const channelOverride = useUIStore.getState().otaChannelOverride;
+      const desktopInfo = await checkForDesktopUpdates(channelOverride);
+      if (channelOverride !== useUIStore.getState().otaChannelOverride) throw new Error('OTA channel changed');
+      if (!desktopInfo?.available || desktopInfo.manualUpdate) {
         throw new Error('Update detected, but desktop package is not ready yet. Retry in a moment.');
       }
 
@@ -540,22 +552,19 @@ export const useUpdateStore = create<UpdateStore>()((set, get) => ({
           ? {
             ...state.info,
             ...desktopInfo,
-            // Keep the richer sidecar-sourced changelog; desktopInfo.body is
-            // often the bare "See release notes at..." fallback from the
-            // updater and would otherwise clobber the nice changelog.
-            body: state.info.body || desktopInfo.body,
+            body: desktopInfo.body || state.info.body,
             available: state.info.available,
           }
           : desktopInfo,
       }));
 
-      // Already idle-downloaded while the dialog was open — just flip the CTA.
+      // Another window may have queued this bundle while the dialog was open.
       if (desktopInfo.downloaded || get().downloaded) {
         set({ downloading: false, downloaded: true, progress: null });
         return;
       }
 
-      // Promote an in-flight idle download into the dialog progress UI.
+      // Reuse progress if the runtime exposes an in-flight snapshot.
       if (desktopInfo.downloading) {
         set({
           downloading: true,
@@ -569,7 +578,7 @@ export const useUpdateStore = create<UpdateStore>()((set, get) => ({
       if (!ok) {
         throw new Error('Failed to download update');
       }
-      set({ downloading: false, downloaded: true, progress: null });
+      set({ downloading: false, downloaded: true, progress: null, otaPhase: 'pending_restart' });
     } catch (error) {
       set({
         downloading: false,
@@ -589,8 +598,7 @@ export const useUpdateStore = create<UpdateStore>()((set, get) => ({
       const eventName = payload.event;
       const eventData = payload.data ?? null;
 
-      // Idle auto-download stays silent. Progress only drives the dialog bar
-      // after the user clicks "Download Update" (store.downloading === true).
+      // Progress drives the foreground dialog only after the user starts it.
       if (eventName === 'Started') {
         if (!get().downloading) return;
         set({
@@ -619,8 +627,7 @@ export const useUpdateStore = create<UpdateStore>()((set, get) => ({
 
     const unlistenReady = await listenDesktopUpdateReady((payload) => {
       if (payload.downloaded) {
-        // Idle or manual completion: flip CTA to Restart without forcing a
-        // progress bar if the user never entered the foreground download UI.
+        // A completion in any window makes the queued update restartable.
         set({ downloading: false, downloaded: true, available: true, progress: null });
       }
     });
@@ -727,7 +734,7 @@ export const useUpdateStore = create<UpdateStore>()((set, get) => ({
 
   dismiss: () => {
     const state = get();
-    if (state.runtimeType === 'mobile' && state.otaPhase === 'pending_restart') return;
+    if (state.otaPhase === 'pending_restart') return;
     set({
       available: false,
       downloaded: false,

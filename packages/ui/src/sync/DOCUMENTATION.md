@@ -2,6 +2,11 @@
 
 ## Native session title events
 
+Live session list equality includes the title-refresh presentation fields
+`isGenerating`, `lastError`, and `failedAt`. Metadata-only completion must release
+the sidebar title shimmer even when the title is unchanged and execution remains
+busy. Recency ticks and unrelated metadata do not invalidate that list.
+
 OpenChamber manual rename first persists `openchamber.titleAuthority` with a new
 revision, then updates the official session title. Host projection and repair
 keep this choice above later native title events; in-flight summary generation
@@ -1346,22 +1351,19 @@ both readers agree on when a frame may shrink.
   retry can still converge. Legal cursor advances accumulate `loadedTurns` per
   prepend; a final `complete=true` page resolves to `exhausted`.
   Host `scanLimit` is not sent by default. Refetch 100 and send-confirmation 30
-  are unchanged. The chat timeline controller issues at most one Host turn-page
-  request per user interaction (desktop near-top scroll or explicit upward
-  intent; mobile top button). Explicit load-earlier is TanStack
+  are unchanged. The chat timeline controller requires explicit upward user
+  intent for near-top pagination. Mobile gestures load one page; desktop may
+  continue through collapsed pages within the bounded interaction budget.
+  Explicit load-earlier is TanStack
   `useMutation`-owned (`chatTimelineLoadEarlierMutationKey`); UI busy is
-  `mutation.isPending` for the active session (plus local auto-fill state),
+  `mutation.isPending` for the active session (plus synchronous fetch state),
   never background `historyLoading` alone which can stick on Relay. Concurrent
   wheel bursts share one in-flight chain via a synchronous loading guard;
   fetches check `historyLoading` and cancel viewport-anchor hold only while
-  still owning the armed snapshot. Active desktop transcripts may auto-fill
-  earlier history while the first paint stays short
-  (`scrollHeight ≤ clientHeight + 48`) and `canLoadEarlier` is cursor-backed;
-  height-only geometry so collapsed stacks keep filling without expand-first;
-  owned by TanStack Query (`chatTimelineAutoFillQueryKey`) rather than a
-  `useEffect` chain; no-growth/failure blocks further auto-fill for the session;
-  successful short pages re-arm via query-key edge movement. That path does not
-  release auto-follow. Timeline handlers use `@reactuses/core` `useEvent`.
+  still owning the armed snapshot. Initial paint, hydration, viewport resize,
+  cursor updates, and programmatic scroll restoration never auto-fill earlier
+  history, including short desktop transcripts. Timeline handlers use
+  `@reactuses/core` `useEvent`; chat/DOCUMENTATION.md owns gesture budgets.
 - Composer session mention search filters every loaded global active-session
   summary across projects, while the empty menu keeps three recent suggestions.
   Opening the mention menu performs no referenced-session fetch. Selecting a
