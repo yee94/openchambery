@@ -10,7 +10,7 @@ describe('useAssistantStatus compaction hint', () => {
     test('prefers compacting over leftover previous-turn tool status', () => {
         expect(statusSource).toContain('isCompactionCommandParts');
         expect(statusSource).toContain('const lastUserIsCompaction = Boolean(lastUserId) && isCompactionCommandParts(lastUserParts)');
-        expect(statusSource).toContain('const preferCompactionStatus = isWorking && lastUserIsCompaction');
+        expect(statusSource).toContain("const preferCompactionStatus = isWorking && (lastUserIsCompaction || compaction?.status === 'running')");
         expect(statusSource).toContain("t('chat.assistantStatus.compacting')");
         expect(statusSource).toContain('preferCompactionStatus ? t(\'chat.assistantStatus.compacting\') : parsedStatus.statusText');
         expect(statusSource).toContain('!preferCompactionStatus && (parsedStatus.activePartType === \'tool\' || parsedStatus.activePartType === \'editing\')');
