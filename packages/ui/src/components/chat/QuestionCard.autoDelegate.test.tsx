@@ -75,6 +75,25 @@ afterEach(async () => {
 const bar = () => host.querySelector<HTMLElement>('[data-question-delegate-bar]');
 
 describe('QuestionCard auto delegation', () => {
+  test('pointer down pauses without selecting, and the subsequent click selects exactly once', async () => {
+    await mount();
+    const option = button('Option A');
+    await act(async () => {
+      option.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, pointerType: 'mouse' }));
+    });
+    await flush();
+    expect(host.textContent).toContain('Countdown paused');
+    expect(button('Option A')).toBe(option);
+    expect(option.getAttribute('aria-pressed')).toBe('false');
+    await act(async () => {
+      option.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, pointerType: 'mouse' }));
+      option.click();
+    });
+    await flush();
+    expect(option.getAttribute('aria-pressed')).toBe('true');
+    expect(posts()).toHaveLength(1);
+  });
+
   test('failed pause never claims the server countdown is paused', async () => {
     await mount();
     mocks.fetch.mockRejectedValueOnce(new Error('offline'));

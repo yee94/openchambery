@@ -1093,6 +1093,7 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
             <div
                 className={cn(
                     'group w-full',
+                    !isUser && 'group/message',
                     isUser ? (isMobile ? 'pt-2' : 'pt-6') : assistantTopPaddingClass,
                     isUser ? 'pb-0' : isFollowedByAssistant || turnOwnsAssistantHeader ? 'pb-0' : tightenWorkingBottomGap ? 'pb-1' : 'pb-8'
                 )}
