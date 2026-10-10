@@ -29,7 +29,7 @@
 
 默认 `v*` 仍会产出桌面与 APK；同版本 web bundle 由 `mobile-native-targets` 写入 OTA 通道。`mobile-beta/v*` / `mobile-stable/v*` 才是「只有 OTA、没有安装包」。`relay/v*` 是独立命名空间，只发 Relay npm 与 Docker，不会走 `release.yml`。
 
-桌面更新现与移动端共用频道 JSON 和决策接口。CI 从同一次 Web 构建打包两份资源：mobile 保留 Capgo 格式，desktop 保留桌面入口；两者位于同一 `activeBundle`，共享版本、灰度和频道。桌面下载后重启 Electron 生效，启动失败回退。`scripts/desktop-ota-assets.mjs` 对桌面壳、内置后端与锁定依赖计算指纹；指纹变化时必须发 `v*`，纯 OTA 标签会被拒绝。`activeBundle.desktop.minShellReleaseVersion` 仅在指纹变化时提高，并与实际安装的壳版本比较。新 CI 不发布 `latest*.yml`；首次启用 OTA 的旧桌面需要安装新版壳。全量发布先完成 `finalize-release`，再发布共享 OTA，避免原生升级链接指向 Draft Release。
+桌面更新现与移动端共用频道 JSON 和决策接口。CI 从同一次 Web 构建打包两份资源：mobile 保留 Capgo 格式，desktop 包含桌面入口及 `desktop-backend` 后端源码和版本清单；两者位于同一 `activeBundle`，共享版本、灰度和频道。桌面下载后重启 Electron，同时加载新版 UI 和本地后端。新版后端 OTA 不自动回退，启动失败需重新安装。`scripts/desktop-ota-assets.mjs` 对桌面壳、锁定依赖、壳共享的 config-sync/路径工具/ZIP 模块和本地语音原生 worker 计算指纹；普通后端源码不再提高最低壳版本，指纹变化时仍必须发 `v*`，纯 OTA 标签会被拒绝。`activeBundle.desktop.minShellReleaseVersion` 仅在指纹变化时提高，并与实际安装的壳版本比较。新 CI 不发布 `latest*.yml`；首次启用后端 OTA 需要安装带后端加载器的新版壳。全量发布先完成 `finalize-release`，再发布共享 OTA，避免原生升级链接指向 Draft Release。
 
 仅当用户明确只要 OTA、不要安装包时，才只打 OTA tag，且不要同时打 `v$VERSION`。OTA 版本必须**高于**当前通道 `activeBundle.releaseVersion`。`version:bump` 与 `CHANGELOG.md` 两路都要写。
 
@@ -139,7 +139,7 @@ npm 发布需要仓库 Secret `NPM_TOKEN`（对 `@openchambery` scope 有 publis
 
 **通道说明**
 
-- 桌面改用移动端同一份 `ota/channels/{beta,stable}.json` 和 `/v1/mobile/update/check`（`platform: desktop`）。新发布不再上传 `latest*.yml`；旧 `/desktop/` 路由仅为历史兼容。
+- 桌面改用移动端同一份 `ota/channels/{beta,stable}.json` 和 `/v1/mobile/update/check`（`platform: desktop`）。OTA 不兼容时，按决策中的精确安装包版本读取 GitHub Release 下的 `full.yml` / `full-mac.yml` / `full-linux.yml` / `full-linux-arm64.yml`，在应用内下载全量安装包并重启安装，不跳转 GitHub。清单由 `write-installer-feed.mjs` 对完整产物计算 SHA-512。新发布不上传 `latest*.yml`；旧 `/desktop/` 路由仅为历史兼容。
 - Android 最新 APK 同样读 `/releases/latest`。
 - Web / VS Code / Capacitor 的 JSON 更新检查读 `release-manifest.json`（只应含最新稳定版）。
 - 用户从 Release 页**手动下载** beta 安装包不受影响；被隔离的只有稳定客户端自动更新。
@@ -290,7 +290,7 @@ tag push 会包含 mobile-release。手动触发时使用 `release_scope=all`。
 
 ### `finalize-release` / `Verify complete release asset inventory` 失败
 
-`finalize-release` 要求 Draft Release **恰好 9 个**资产（mac DMG/ZIP、Windows EXE、两种架构 Linux AppImage，加上 `app-release.aab` / `app-release.apk` 与当前 `run_number` 的版本化 Android 两个文件），且 Android 版本化文件名必须匹配**当前这次** workflow 的 `github.run_number`：
+`finalize-release` 要求 Draft Release **恰好 13 个**资产（mac DMG/ZIP、Windows EXE、两种架构 Linux AppImage、四份 `full*.yml` 全量更新清单，加上 `app-release.aab` / `app-release.apk` 与当前 `run_number` 的版本化 Android 两个文件），且 Android 版本化文件名必须匹配**当前这次** workflow 的 `github.run_number`：
 
 - `OpenChamber-$VERSION-$RUN_NUMBER-android.aab`
 - `OpenChamber-$VERSION-$RUN_NUMBER-android.apk`
@@ -324,7 +324,7 @@ Expected exactly 16 release assets, found 18: ... OpenChamber-1.16.32-72-android
    gh api -X DELETE "repos/yee94/openchamber/releases/assets/<asset-id>"
    ```
 
-3. 清理后资产数应为 16，再只重跑失败的 `finalize-release`（不必整条 Release 全量重跑）：
+3. 清理后资产数应为 13，再只重跑失败的 `finalize-release`（不必整条 Release 全量重跑）：
 
    ```bash
    gh run rerun <run-id> --repo yee94/openchamber --failed

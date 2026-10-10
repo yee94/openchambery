@@ -10,6 +10,9 @@ import { execFile, spawn, spawnSync } from 'node:child_process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { promisify } from 'node:util';
 import { DesktopOta } from './desktop-ota.mjs';
+import { loadDesktopBackend } from './desktop-backend.mjs';
+import { DesktopInstaller } from './desktop-installer.mjs';
+import electronUpdater from 'electron-updater';
 import { ElectronSshManager, planOpenCodeConfigSync } from './ssh-manager.mjs';
 import { createDirectConfigSyncController } from './direct-config-sync.mjs';
 import { probeHostAuthentication } from './host-auth-probe.mjs';
@@ -30,7 +33,9 @@ import { sanitizeRuntimeRequestHeaders } from './runtime-request-headers.mjs';
 import { resolveQuitInterception } from './quit-confirmation.mjs';
 import { isRemoteIpcCommandAllowed } from './ipc-command-gate.mjs';
 import { getMenuLabels, normalizeMenuLocale } from './menu-i18n.mjs';
-import { mintOutsideFileGrant } from '@openchambery/web/server/lib/fs/routes.js';
+let desktopBackendPromise;
+const getDesktopBackend = () => desktopBackendPromise ??= loadDesktopBackend(desktopOta?.backendDirectory);
+const mintOutsideFileGrant = async (...args) => (await getDesktopBackend()).mintOutsideFileGrant(...args);
 import {
   UI_PROTOCOL,
   isPackagedUiUrl,
@@ -1181,6 +1186,8 @@ const buildLocalUrl = (port) => `http://127.0.0.1:${port}`;
 
 const resourceRoot = () => isDev ? path.join(__dirname, 'resources') : process.resourcesPath;
 let desktopOta = null;
+let desktopInstaller = null;
+let desktopUpdateKind = 'ota';
 let desktopOtaReadyTimer = null;
 const resolveWebDistDir = () => desktopOta?.assetDirectory ?? path.join(resourceRoot(), 'web-dist');
 const shouldUsePackagedUi = () => {
@@ -1628,7 +1635,9 @@ const spawnLocalServer = async () => {
   process.env.NO_PROXY = process.env.NO_PROXY || 'localhost,127.0.0.1';
   process.env.no_proxy = process.env.no_proxy || 'localhost,127.0.0.1';
 
-  const { startWebUiServer } = await import('@openchambery/web/server/index.js');
+  process.env.OPENCHAMBER_DIST_DIR = resolveWebDistDir();
+  const backend = await getDesktopBackend();
+  const { startWebUiServer } = backend;
 
   const handle = await startWebUiServer({
     port: chosenPort,
@@ -3232,11 +3241,13 @@ const resolveInitialUrl = async () => {
 
 const downloadPendingUpdate = async () => {
   if (!desktopOta) throw new Error('Desktop OTA requires a packaged app');
+  if (state.installingUpdate) throw new Error('An update is already being installed');
   emitToAllWindows('openchamber:update-progress', mapUpdaterProgressEvent({ event: 'Started', data: {} }));
   try {
-    await desktopOta.download();
+    if (desktopUpdateKind === 'installer') await desktopInstaller.download();
+    else await desktopOta.download();
     emitToAllWindows('openchamber:update-progress', mapUpdaterProgressEvent({ event: 'Finished', data: {} }));
-    emitToAllWindows('openchamber:update-ready', { version: desktopOta.state.queued?.releaseVersion, downloaded: true });
+    emitToAllWindows('openchamber:update-ready', { version: desktopUpdateKind === 'installer' ? desktopInstaller.version : desktopOta.state.queued?.releaseVersion, downloaded: true });
   } finally { setTaskbarProgress(-1); }
 };
 
@@ -4298,7 +4309,20 @@ const handleInvoke = async (browserWindow, command, args = {}) => {
 
     case 'desktop_check_for_updates': {
       if (!desktopOta) throw new Error('Desktop OTA requires a packaged app');
-      return desktopOta.check(args?.channelOverride);
+      if (state.installingUpdate) throw new Error('An update is already being installed');
+      desktopInstaller.assertIdle();
+      const info = await desktopOta.check(args?.channelOverride);
+      if (info.manualUpdate) {
+        desktopUpdateKind = 'installer';
+        const version = desktopOta.decision.native.version;
+        const result = await desktopInstaller.check(version, {
+          channel: desktopOta.state.channel, rollback: info.isChannelRollback,
+        });
+        return { ...info, ...result, version, manualUpdate: false, inAppApply: false };
+      }
+      desktopInstaller.clear();
+      desktopUpdateKind = 'ota';
+      return info;
     }
 
     case 'desktop_ota_ready':
@@ -4315,7 +4339,8 @@ const handleInvoke = async (browserWindow, command, args = {}) => {
       const updateRestartRequested = args?.applyUpdate === true;
       if (updateRestartRequested) {
         if (!desktopOta) throw new Error('Desktop OTA requires a packaged app');
-        await desktopOta.assertPending();
+        if (desktopUpdateKind === 'installer') desktopInstaller.assertPending();
+        else await desktopOta.assertPending();
       }
       const applyUpdate = updateRestartRequested;
       log.info(`[electron] desktop_restart applyUpdate=${applyUpdate} packaged=${app.isPackaged}`);
@@ -4338,6 +4363,10 @@ const handleInvoke = async (browserWindow, command, args = {}) => {
           try {
             prepareForQuit({ installingUpdate: applyUpdate });
             await shutdownBackgroundServices();
+            if (applyUpdate && desktopUpdateKind === 'installer') {
+              desktopInstaller.install();
+              return;
+            }
             app.relaunch({ args: process.argv.slice(1).filter((arg) => arg !== BACKGROUND_START_ARG) });
             app.exit(0);
           } catch (err) {
@@ -5568,10 +5597,19 @@ app.whenReady().then(async () => {
   });
   nativeTheme.themeSource = readThemeSource();
   if (app.isPackaged) {
+    electronUpdater.autoUpdater.logger = log;
+    desktopInstaller = new DesktopInstaller(electronUpdater.autoUpdater, {
+      onProgress: (progress) => {
+        setTaskbarProgress(progress.percent / 100);
+        emitToAllWindows('openchamber:update-progress', mapUpdaterProgressEvent({ event: 'Progress', data: { downloaded: progress.transferred, total: progress.total } }));
+      },
+      onError: (error) => log.error('[electron] installer update failed', error),
+    });
     desktopOta = new DesktopOta({
       directory: path.join(app.getPath('userData'), 'ota'),
       builtinDirectory: path.join(resourceRoot(), 'web-dist'),
       nativeVersion: APP_VERSION,
+      requireBackend: true,
       onProgress: (progress) => {
         setTaskbarProgress(progress.downloaded / progress.total);
         emitToAllWindows('openchamber:update-progress', mapUpdaterProgressEvent({ event: 'Progress', data: progress }));

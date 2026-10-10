@@ -1,6 +1,6 @@
 {
   "name": "@openchamber/electron",
-  "version": "2.0.7-beta.4",
+  "version": "2.0.7",
   "private": true,
   "description": "Electron desktop runtime for OpenChamber",
   "author": "OpenChamber",
@@ -9,7 +9,8 @@
   "dependencies": {
     "@openchambery/web": "workspace:*",
     "electron-context-menu": "^4.1.2",
-    "electron-log": "^5.4.3"
+    "electron-log": "^5.4.3",
+    "electron-updater": "^6.8.3"
   },
   "devDependencies": {
     "@electron/rebuild": "^3.7.0",
@@ -39,7 +40,7 @@
     "test:architecture": "vitest run ./scripts/target-architecture.test.mjs ./scripts/desktop-profile.test.mjs ./scripts/verify-linux-appimage.test.mjs ./scripts/opencode2-bundle-contract.test.mjs",
     "test:input-draft-indexeddb": "vitest run ./scripts/indexeddb-evidence.test.mjs -t \"input draft\"",
     "test:transcript-durable-indexeddb": "vitest run ./scripts/indexeddb-evidence.test.mjs -t \"transcript durable\"",
-    "test:updater": "vitest run ./ipc-command-gate.test.mjs ./desktop-ota.test.mjs ./scripts/desktop-ota-evidence.test.mjs",
+    "test:updater": "vitest run ./ipc-command-gate.test.mjs ./desktop-ota.test.mjs ./desktop-backend.test.mjs ./desktop-installer.test.mjs ./scripts/desktop-ota-evidence.test.mjs",
     "test:virtual-asset": "vitest run ./virtual-asset-protocol.test.mjs",
     "test:preview-gateway": "vitest run ./preview-loopback-gateway.test.mjs",
     "package": "bun run build:web-assets && bun run prepare:opencode-cli && bun run bundle:main && bun run rebuild:native && node ./scripts/package.mjs",
@@ -163,6 +164,10 @@
         }
       ]
     },
-    "publish": null
+    "publish": {
+      "provider": "generic",
+      "url": "https://github.com/yee94/openchamber/releases/download/",
+      "channel": "full"
+    }
   }
 }

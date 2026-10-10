@@ -1,12 +1,12 @@
 import { createHash } from 'node:crypto';
-import { readdir, readFile, writeFile } from 'node:fs/promises';
+import { cp, mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { createAssetZip } from '../packages/web/server/lib/zip-assets.js';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
-// The fingerprint covers executable shell/backend sources and dependency locks,
+// The fingerprint covers executable shell sources and dependency locks,
 // independent of build host, generated resources and the marketing version.
 export async function desktopShellFingerprint() {
   const hash = createHash('sha256');
@@ -21,7 +21,11 @@ export async function desktopShellFingerprint() {
     }
   }
   await visit('packages/electron');
-  await visit('packages/web/server');
+  await visit('packages/web/server/lib/config-sync');
+  await visit('packages/web/server/lib/dictation/local');
+  for (const name of ['packages/web/server/lib/zip-assets.js', 'packages/web/server/lib/opencode/path-utils.js', 'packages/web/server/lib/dictation/audio.js']) {
+    hash.update(name).update(await readFile(path.join(root, name)));
+  }
   for (const name of ['package.json', 'packages/electron/package.json', 'packages/web/package.json']) {
     const pkg = JSON.parse(await readFile(path.join(root, name), 'utf8'));
     hash.update(name).update(JSON.stringify({ dependencies: pkg.dependencies, devDependencies: pkg.devDependencies, build: pkg.build }));
@@ -40,7 +44,15 @@ export async function desktopShellFingerprint() {
 
 export async function writeDesktopAssetMetadata(directory) {
   const { version } = JSON.parse(await readFile(path.join(root, 'package.json'), 'utf8'));
-  const metadata = { releaseVersion: version, shellFingerprint: await desktopShellFingerprint() };
+  const backend = path.join(directory, 'desktop-backend');
+  await rm(backend, { recursive: true, force: true });
+  await mkdir(backend, { recursive: true });
+  await cp(path.join(root, 'packages/web/server'), path.join(backend, 'server'), {
+    recursive: true,
+    filter: (source) => !/\.(?:test|spec)\./.test(source),
+  });
+  await cp(path.join(root, 'packages/web/package.json'), path.join(backend, 'package.json'));
+  const metadata = { releaseVersion: version, backendVersion: version, shellFingerprint: await desktopShellFingerprint() };
   await writeFile(path.join(directory, 'desktop-ota.json'), JSON.stringify(metadata));
   return metadata;
 }
