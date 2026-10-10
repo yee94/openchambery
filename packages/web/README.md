@@ -20,7 +20,7 @@ Or install manually: `bun add -g @openchambery/web` (or npm, pnpm, yarn).
 
 ## Usage
 
-By default, OpenChamber connects to the official shared OpenCode background service used by Desktop and TUI. Closing OpenChamber leaves OpenCode running, and the next launch reuses it. If the service cannot start, OpenChamber reports the failure for retry instead of launching a private fallback. In-app OpenCode upgrades install into OpenChamber's own cache and replace the shared service through the official service command; this also reconnects other clients using that service. User-installed CLI files are not overwritten.
+By default, OpenChamber connects to the official shared OpenCode background service used by Desktop and TUI. Closing OpenChamber leaves OpenCode running, and the next launch reuses it. If the service cannot start, OpenChamber reports the failure for retry instead of launching a private fallback. On macOS/Linux, automatic CLI discovery follows the user's interactive login-shell PATH; explicit settings/environment overrides take precedence. In-app upgrades of a shared global installation run that selected CLI's `upgrade` command, verify its on-disk version, then restart the shared service through the same CLI entry path. Homebrew symlinks remain entry paths rather than being pinned to a Cellar version. Owned-cache installations continue to use the cache installer. Failed global upgrades never silently switch to a private cache.
 
 Explicit `OPENCODE_HOST` / `OPENCODE_PORT` connections keep their existing behavior. `OPENCHAMBER_OPENCODE_SHARED_SERVICE=0` selects the private managed lifecycle when required by an existing deployment.
 

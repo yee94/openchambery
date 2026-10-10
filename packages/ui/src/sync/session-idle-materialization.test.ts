@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, test } from "bun:test"
+import { beforeEach, describe, expect, test } from "vitest"
 import {
   clearDeferredIdleTranscriptSettle,
   deferIdleTranscriptSettle,
@@ -8,6 +8,15 @@ import {
 } from "./session-idle-materialization"
 
 describe("planSessionIdleMaterialization", () => {
+  test("settles a loaded background transcript before selection, including other directories", () => {
+    expect(planSessionIdleMaterialization({
+      idleSessionID: "ses_a",
+      directory: "/other",
+      activeSessionID: "ses_b",
+      activeDirectory: "/proj",
+      hasLoadedTranscript: true,
+    })).toEqual({ action: "materialize-now", sessionID: "ses_a" })
+  })
   test("materializes a viewed top-level idle immediately", () => {
     expect(planSessionIdleMaterialization({
       idleSessionID: "ses_a",

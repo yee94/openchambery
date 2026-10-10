@@ -4,7 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { mergePathValues } from './path-utils.js';
 import { PINNED_OPENCODE2_VERSION, isAcceptableOpenCode2HealthVersion, isOpenCode1xVersion } from './opencode2-pin.js';
-import { ensurePinnedOpenCode2Cli, installedOpenCode2BinaryPath, readOpenCode2BinaryVersion } from './ensure-cli.js';
+import { ensurePinnedOpenCode2Cli, installedOpenCode2BinaryPath, readOpenCode2BinaryVersion, upgradeSelectedOpenCodeCli } from './ensure-cli.js';
 
 export const createOpenCodeEnvRuntime = (deps) => {
   const {
@@ -92,14 +92,13 @@ export const createOpenCodeEnvRuntime = (deps) => {
     return isExecutable(trimmed) ? trimmed : null;
   };
 
-  const searchPathFor = (binaryName) => {
+  const searchPathFor = (binaryName, searchPath = process.env.PATH || '') => {
     const trimmed = typeof binaryName === 'string' ? binaryName.trim() : '';
     if (!trimmed) {
       return null;
     }
 
-    const current = process.env.PATH || '';
-    const parts = current.split(path.delimiter).filter(Boolean);
+    const parts = searchPath.split(path.delimiter).filter(Boolean);
     const candidateNames = [];
 
     if (process.platform === 'win32' && !path.extname(trimmed)) {
@@ -356,8 +355,11 @@ export const createOpenCodeEnvRuntime = (deps) => {
 
     // Match master: reuse a globally installed CLI. Official v2 is `opencode`;
     // Skip 1.x binaries by version; auto-discovery uses only the official name.
+    const discoveryPath = process.platform === 'win32'
+      ? process.env.PATH
+      : getLoginShellEnvSnapshot()?.PATH || process.env.PATH;
     for (const name of ['opencode']) {
-      const resolvedFromPath = searchPathFor(name);
+      const resolvedFromPath = searchPathFor(name, discoveryPath);
       const accepted = acceptOpenCodeV2Candidate(resolvedFromPath, 'path');
       if (accepted) return accepted;
     }
@@ -1255,6 +1257,12 @@ export const createOpenCodeEnvRuntime = (deps) => {
   };
 
   return {
+    upgradeOpenCodeCli: ({ binaryPath, version }) => upgradeSelectedOpenCodeCli({
+      binaryPath,
+      version,
+      launchSpec: resolveManagedOpenCodeLaunchSpec(binaryPath),
+      env: { ...process.env, PATH: getLoginShellEnvSnapshot()?.PATH || process.env.PATH },
+    }),
     applyLoginShellEnvSnapshot,
     ensureOpencodeCliEnv,
     ensurePinnedOpenCode2CliEnv,

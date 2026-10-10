@@ -131,6 +131,24 @@ describe('installRequiredOpenCode', () => {
     expect(calls).toEqual(['install', 'persist', 'force', 'restart', 'ready']);
   });
 
+  it('upgrades a shared global CLI in place without persisting an override for shell discovery', async () => {
+    const binary = '/opt/homebrew/bin/opencode';
+    const { deps } = createDeps({
+      resolveOwnership: async () => ({ ownership: 'shared-service', binaryOwnership: 'external-or-global' }),
+      isSharedService: () => true,
+      getResolvedBinary: () => binary,
+      getResolvedBinarySource: () => 'path',
+      upgradeCli: vi.fn(async () => binary),
+      readServeVersion: vi.fn().mockResolvedValueOnce('2.0.14').mockResolvedValueOnce('2.0.23'),
+    });
+    await expect(installRequiredOpenCode(deps)).resolves.toMatchObject({ upgraded: true });
+    expect(deps.upgradeCli).toHaveBeenCalledWith({ binaryPath: binary, version: '2.0.23' });
+    expect(deps.install).not.toHaveBeenCalled();
+    expect(deps.persistBinary).not.toHaveBeenCalled();
+    expect(deps.forceBinary).toHaveBeenCalledWith(binary, 'path');
+    expect(deps.restart).toHaveBeenCalledWith({ binaryPath: binary });
+  });
+
   it('returns the failure reason and does not claim an upgrade when verification fails', async () => {
     const { deps } = createDeps({
       readServeVersion: vi.fn()

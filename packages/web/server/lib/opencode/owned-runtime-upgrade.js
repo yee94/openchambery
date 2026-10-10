@@ -3,13 +3,13 @@
  *
  * Binary ownership and process ownership are modeled separately:
  * - arbitrary external serve is never upgraded/restarted in-app
- * - official shared service can be replaced using an owned-cache binary
+ * - official shared service upgrades its selected CLI or its owned cache
  * - managed process using a global CLI is "global-cli" (manual guidance)
  * - managed process using OpenChamber cache under opencode-cli/ is "owned-cache"
  * - bundled desktop binary cannot be upgraded separately
  *
- * In-app upgrade only mutates the owned cache, then launches that target and
- * verifies the running serve identity/version/contract before success.
+ * Shared global CLI upgrades use that installation's official upgrade command.
+ * Owned-cache upgrades install a target then verify the running serve contract.
  */
 
 import path from 'node:path';

@@ -422,9 +422,11 @@ type SessionMaterializationRequest = {
 }
 
 const SESSION_MATERIALIZATION_COOLDOWN_MS = 5_000
-const pendingSessionMaterializations = new Map<string, PendingSessionMaterialization>() // key: directory:sessionID
+const pendingSessionMaterializations = new Map<string, PendingSessionMaterialization>() // key: runtime/transport/directory/session
 
-const materializationKey = (directory: string, sessionID: string) => `${directory}:${sessionID}`
+const materializationKey = (directory: string, sessionID: string) => JSON.stringify([
+  getRuntimeTransportIdentity(), getRuntimeGeneration(), directory, sessionID,
+])
 
 function liveTailMissingSettledCompletion(directory: string, sessionID: string): boolean {
   try {
@@ -462,6 +464,12 @@ function enqueueSessionMaterialization(
   request: SessionMaterializationRequest,
 ) {
   if (!directory || directory === "global" || !sessionID) return
+  const generation = getRuntimeGeneration()
+  const transport = getRuntimeTransportIdentity()
+  const capturedStore = childStores.getChild(directory)
+  const isStale = () => generation !== getRuntimeGeneration()
+    || transport !== getRuntimeTransportIdentity()
+    || childStores.getChild(directory) !== capturedStore
   const k = materializationKey(directory, sessionID)
   const existing = pendingSessionMaterializations.get(k)
   if (existing && Date.now() - existing.enqueuedAt < SESSION_MATERIALIZATION_COOLDOWN_MS) {
@@ -475,28 +483,33 @@ function enqueueSessionMaterialization(
     // settle tick lost earlier in the current event frame is only visible
     // in the tail after the frame applies.
     void Promise.resolve().then(() => {
-      if (liveTailMissingSettledCompletion(directory, sessionID)) {
+      if (!isStale() && liveTailMissingSettledCompletion(directory, sessionID)) {
         void repairMissingSettleCompletion(directory, sessionID)
       }
     })
     return
   }
 
-  pendingSessionMaterializations.set(k, { sessionID, directory, enqueuedAt: Date.now(), request })
+  const pending = { sessionID, directory, enqueuedAt: Date.now(), request }
+  pendingSessionMaterializations.set(k, pending)
 
   // Defer to next microtask so we don't hold up the current event batch
   void Promise.resolve().then(async () => {
     const store = childStores.getChild(directory)
-    if (!store) {
-      pendingSessionMaterializations.delete(k)
+    if (!store || isStale()) {
+      if (pendingSessionMaterializations.get(k) === pending) pendingSessionMaterializations.delete(k)
       return
     }
     try {
-      await materializeSessionFromServer(directory, sessionID, store, request)
+      const result = await materializeSessionFromServer(directory, sessionID, store, { ...request, isStale })
+      if (!isStale() && request.reason === "session-idle") {
+        if (result === "ready") takeDeferredIdleTranscriptSettle(directory, sessionID)
+        else deferIdleTranscriptSettle(directory, sessionID)
+      }
     } catch {
       // Transient failure — next SSE event or reconnect will catch up.
     } finally {
-      pendingSessionMaterializations.delete(k)
+      if (pendingSessionMaterializations.get(k) === pending) pendingSessionMaterializations.delete(k)
     }
   })
 }
@@ -2530,10 +2543,13 @@ export function handleEvent(
   // - child idle → materialize parent (task tool completion without mounted ToolPart)
   // - active top-level idle → one bounded tail materialize so half-finished
   //   reasoning/text is replaced by the authoritative completed snapshot.
-  // - background top-level idle stays zero-request now, then the same
-  //   session-idle materialize runs when setActiveSession views it.
+  // - retained, loaded background transcripts settle now; cold transcripts
+  //   defer until selection. No background view needs to mount to merge the GET.
   //   Active identity uses setActiveSession directory/session only (not window focus).
-  if (payload.type === "session.idle") {
+  if (payload.type === "session.idle"
+    || payload.type === "session.execution.succeeded"
+    || payload.type === "session.execution.failed"
+    || (payload.type === "session.execution.interrupted" && payload.properties?.reason !== "shutdown")) {
     const idleSessionId = getSessionIdFromPayload(payload)
     if (idleSessionId && resolvedDirectory && resolvedDirectory !== "global") {
       const sessionState = store.getState()
@@ -2541,12 +2557,14 @@ export function handleEvent(
       const parentID = idleSession
         ? (idleSession as Session & { parentID?: string | null }).parentID
         : null
+      const transcript = getTranscriptRepository()?.getTranscript(transcriptScope(resolvedDirectory, idleSessionId))
       const plan = planSessionIdleMaterialization({
         idleSessionID: idleSessionId,
         directory: resolvedDirectory,
         parentID,
         activeSessionID: _activeSession,
         activeDirectory: _activeDirectory,
+        hasLoadedTranscript: Boolean(transcript && transcript.boundary.kind !== "unknown"),
       })
       if (plan.action === "materialize-parent") {
         enqueueSessionMaterialization(resolvedDirectory, plan.sessionID, childStores, { reason: "child-session-idle" })

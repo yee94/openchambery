@@ -30,7 +30,7 @@ describe('v2 version alignment', () => {
   it('verifies the live service after explicit install, and rolls selection back on failure', async () => {
     const persistBinary = vi.fn();
     const restart = vi.fn();
-    const deps = { resolveOwnership: async () => ({ ownership: 'shared-service' }), readServeVersion: vi.fn().mockResolvedValueOnce('2.0.19').mockResolvedValueOnce('2.0.23'), readCliVersion: () => '2.0.23', platformCanInstall: true, install: async () => '/owned/opencode', readBinaryVersion: () => '2.0.23', persistBinary, restart, isSharedService: () => true };
+    const deps = { resolveOwnership: async () => ({ ownership: 'shared-service', binaryOwnership: 'owned-cache' }), readServeVersion: vi.fn().mockResolvedValueOnce('2.0.19').mockResolvedValueOnce('2.0.23'), readCliVersion: () => '2.0.23', platformCanInstall: true, install: async () => '/owned/opencode', readBinaryVersion: () => '2.0.23', persistBinary, restart, isSharedService: () => true };
     await expect(installRequiredOpenCode(deps)).resolves.toMatchObject({ upgraded: true, version: '2.0.23' });
     expect(restart).toHaveBeenCalledWith({ binaryPath: '/owned/opencode' });
     deps.readServeVersion.mockResolvedValue('2.0.19');
