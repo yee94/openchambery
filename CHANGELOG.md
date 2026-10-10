@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [2.0.7-beta.2] - 2026-10-10
+
+### 修复与改进
+
+- 修复桌面端图片附件上传被跨域检查拦截、导致消息无法发送的问题，兼容已安装版本的本地后端。
+- 桌面设置增加“关于”页面，集中提供更新检查、Beta 通道、问题反馈与诊断功能，并支持设置搜索定位。
+
 ## [2.0.7-beta.1] - 2026-10-10
 
 ### 修复与改进

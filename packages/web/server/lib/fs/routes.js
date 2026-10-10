@@ -1055,7 +1055,7 @@ export const registerFsRoutes = (app, dependencies) => {
     }
 
     const expectedSize = Number(headerValue(req.headers['x-openchamber-content-length']) ?? headerValue(req.headers['content-length']));
-    const temporary = headerValue(req.headers['x-openchamber-storage']) === 'temporary';
+    const temporary = req.query?.storage === 'temporary';
     if (!Number.isSafeInteger(expectedSize) || expectedSize < 0 || (!temporary && expectedSize > MAX_PROMPT_ATTACHMENT_BYTES)) {
       return res.status(400).json({ error: 'Attachment size is required' });
     }

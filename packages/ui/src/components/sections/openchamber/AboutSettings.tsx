@@ -6,7 +6,6 @@ import { useUpdateStore } from '@/stores/useUpdateStore';
 import { useUIStore } from '@/stores/useUIStore';
 import { useShallow } from 'zustand/react/shallow';
 import { UpdateDialog } from '@/components/ui/UpdateDialog';
-import { useDeviceInfo } from '@/lib/device';
 import { toast } from '@/components/ui';
 import { Button } from '@/components/ui/button';
 import {
@@ -137,7 +136,6 @@ export const AboutSettings: React.FC<AboutSettingsProps> = ({ initialUpdateDialo
     downloadUpdate: s.downloadUpdate,
     restartToUpdate: s.restartToUpdate,
   })));
-  const { isMobile } = useDeviceInfo();
   const otaChannelOverride = useUIStore((state) => state.otaChannelOverride);
   const setOtaChannelOverride = useUIStore((state) => state.setOtaChannelOverride);
   const isNativeMobileApp = isCapacitorApp();
@@ -261,9 +259,8 @@ export const AboutSettings: React.FC<AboutSettingsProps> = ({ initialUpdateDialo
 
   const isChecking = updateStore.checking || showChecking;
 
-  if (isMobile) {
-    return (
-      <div className="w-full space-y-6 pb-2">
+  return (
+      <div className="oc-settings-section-stack w-full">
         <div className="flex flex-col items-center text-center">
           <OpenChamberLogo width={72} height={72} />
           <h2 className="mt-4 typography-ui-header font-semibold text-foreground">OpenChamber</h2>
@@ -284,8 +281,8 @@ export const AboutSettings: React.FC<AboutSettingsProps> = ({ initialUpdateDialo
             </span>
           </SettingsRow>
           <SettingsRow>
-            <div className="flex flex-nowrap items-center justify-end gap-2">
-              <Button asChild variant="outline" size="sm" className="whitespace-nowrap">
+            <div className="flex flex-wrap items-center justify-end gap-2">
+              <Button asChild variant="outline" size="sm" className="whitespace-nowrap" data-settings-item="about.feedback">
                 <a href={GITHUB_ISSUES_URL} target="_blank" rel="noopener noreferrer">
                   <Icon name="question" className="size-4" />
                   {t('settings.openchamber.about.actions.submitFeedback')}
@@ -298,6 +295,7 @@ export const AboutSettings: React.FC<AboutSettingsProps> = ({ initialUpdateDialo
                 size="sm"
                 className="whitespace-nowrap"
                 onClick={() => setUpdateDialogOpen(true)}
+                data-settings-item="about.check-updates"
               >
                 <Icon name="download" className="size-4" />
                 {updateStore.info?.inAppApply
@@ -313,6 +311,7 @@ export const AboutSettings: React.FC<AboutSettingsProps> = ({ initialUpdateDialo
                 size="sm"
                 className="whitespace-nowrap"
                 onClick={() => updateStore.checkForUpdates()}
+                data-settings-item="about.check-updates"
                 disabled={isChecking}
               >
                 {isChecking ? <Icon name="loader" className="size-4 animate-spin" /> : <Icon name="refresh" className="size-4" />}
@@ -417,122 +416,5 @@ export const AboutSettings: React.FC<AboutSettingsProps> = ({ initialUpdateDialo
           </DialogContent>
         </Dialog>
       </div>
-    );
-  }
-
-  // Desktop uses the same grouped Settings grammar as other detail pages.
-  return (
-    <>
-      <SettingsGroup label={t('settings.openchamber.about.title')}>
-        <SettingsRow label={t('settings.openchamber.about.field.clientVersion')}>
-          <span className="typography-ui-label font-mono text-foreground text-right">{currentVersion}</span>
-        </SettingsRow>
-        <SettingsRow label={t('settings.openchamber.about.field.instanceOpenChamberVersion')}>
-          <span className="typography-ui-label font-mono text-foreground text-right">
-            {openChamberVersion || t('settings.openchamber.about.state.unknown')}
-          </span>
-        </SettingsRow>
-        <SettingsRow label={t('settings.openchamber.about.field.instanceOpenCodeVersion')} description={managementGuidance}>
-          <span className="typography-ui-label font-mono text-foreground text-right">
-            {openCodeVersion || t('settings.openchamber.about.state.unknown')}
-          </span>
-        </SettingsRow>
-        <SettingsRow>
-          <div className="flex flex-nowrap items-center justify-end gap-3">
-            <Button asChild variant="outline" size="sm" className="whitespace-nowrap">
-              <a href={GITHUB_ISSUES_URL} target="_blank" rel="noopener noreferrer">
-                <Icon name="question" className="size-4" />
-                {t('settings.openchamber.about.actions.submitFeedback')}
-              </a>
-            </Button>
-            {updateStore.checking && (
-              <div className="flex items-center gap-2 text-muted-foreground">
-                <Icon name="loader" className="h-4 w-4 animate-spin" />
-                <span className="typography-meta">{t('settings.openchamber.about.state.checking')}</span>
-              </div>
-            )}
-
-            {!updateStore.checking && updateStore.available && (
-              <Button size="sm"
-                variant="default"
-                onClick={() => setUpdateDialogOpen(true)}
-              >
-                <Icon name="download" className="h-4 w-4 mr-1" />
-                {t('settings.openchamber.about.actions.updateToVersion', { version: updateStore.info?.version || '' })}
-              </Button>
-            )}
-
-            {!updateStore.checking && !updateStore.available && !updateStore.error && (
-              <span className="typography-meta text-muted-foreground">{t('settings.openchamber.about.state.upToDate')}</span>
-            )}
-
-            <Button size="sm"
-              variant="outline"
-              onClick={() => updateStore.checkForUpdates()}
-              disabled={updateStore.checking}
-            >
-              {t('settings.openchamber.about.actions.checkForUpdates')}
-            </Button>
-          </div>
-        </SettingsRow>
-
-        {updateStore.error && (
-          <SettingsRow>
-            <p className="typography-meta text-[var(--status-error)]">{updateStore.error}</p>
-          </SettingsRow>
-        )}
-
-        <SettingsToggleRow
-          itemId="about.diagnostics"
-          checked={diagnosticsEnabled}
-          onChange={handleDiagnosticsEnabledChange}
-          label={t('settings.openchamber.about.diagnostics.label')}
-          ariaLabel={t('settings.openchamber.about.diagnostics.label')}
-        />
-        {diagnosticsEnabled && (
-        <SettingsRow
-          itemId="about.export-diagnostics"
-          label={t('settings.openchamber.about.diagnostics.export')}
-        >
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            disabled={exportingDiagnostics}
-            onClick={() => void handleExportDiagnostics()}
-          >
-            {exportingDiagnostics
-              ? t('settings.openchamber.about.diagnostics.exporting')
-              : t('settings.openchamber.about.diagnostics.export')}
-          </Button>
-        </SettingsRow>
-        )}
-
-        <SettingsRow controlClassName="flex-wrap">
-          <a
-            href={GITHUB_URL}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="flex items-center gap-1.5 text-muted-foreground hover:text-foreground typography-meta transition-colors"
-          >
-            <Icon name="github-fill" className="h-4 w-4" />
-            <span>GitHub</span>
-          </a>
-        </SettingsRow>
-      </SettingsGroup>
-
-      <UpdateDialog
-        open={updateDialogOpen}
-        onOpenChange={setUpdateDialogOpen}
-        info={updateStore.info}
-        downloading={updateStore.downloading}
-        downloaded={updateStore.downloaded}
-        progress={updateStore.progress}
-        error={updateStore.error}
-        onDownload={updateStore.downloadUpdate}
-        onRestart={updateStore.restartToUpdate}
-        runtimeType={updateStore.runtimeType}
-      />
-    </>
   );
 };

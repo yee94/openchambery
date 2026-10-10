@@ -21,6 +21,19 @@ beforeEach(() => {
 });
 
 describe('prompt attachment upload', () => {
+  it('passes packaged Electron preflight against the installer-owned CORS contract', async () => {
+    await uploadPromptAttachmentBytes({ body: new Blob(['abcd']), mime: 'image/png', filename: 'photo.png' });
+    // Installed desktop backends survive UI OTA updates; new upload options
+    // must not require adding headers to their fixed CORS allowlist.
+    const allowed = new Set([
+      'content-type', 'content-length', 'x-openchamber-content-length',
+      'x-openchamber-sha256', 'x-openchamber-mime', 'x-openchamber-filename',
+    ]);
+    const headers = new Headers(fetchCalls[0]?.init?.headers);
+    expect([...headers.keys()].map((name) => name.toLowerCase()).filter((name) => !allowed.has(name))).toEqual([]);
+    expect(new URL(fetchCalls[0]!.path, 'http://localhost').searchParams.get('storage')).toBe('temporary');
+  });
+
   test('detects inline data and blob URLs that must leave the prompt JSON', () => {
     expect(needsPromptAttachmentUpload('data:image/png;base64,eA==')).toBe(true);
     expect(needsPromptAttachmentUpload('blob:https://example.test/id')).toBe(true);
@@ -73,7 +86,7 @@ describe('prompt attachment upload', () => {
     fetchResults.push(new Response(JSON.stringify({ path: '/tmp/openchamber-prompt-test/trace.json.gz', size: body.size })));
     const result = await uploadPromptAttachmentBytes({ body, mime: body.type, filename: 'trace.json.gz' });
     expect(result.path).toBe('/tmp/openchamber-prompt-test/trace.json.gz');
-    expect(new Headers(fetchCalls[0]?.init?.headers).get('X-OpenChamber-Storage')).toBe('temporary');
+    expect(new URL(fetchCalls[0]!.path, 'http://localhost').searchParams.get('storage')).toBe('temporary');
     expect(fetchCalls[0]?.init?.body).toBe(body);
   });
 
