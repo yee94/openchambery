@@ -33,6 +33,7 @@ const result = await Bun.build({
   format: 'esm',
   external: [
     'electron',
+    'electron-updater',
     '@openchambery/web',
     '@openchambery/web/*',
     'bun-pty',

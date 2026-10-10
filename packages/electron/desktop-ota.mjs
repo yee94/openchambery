@@ -8,10 +8,11 @@ const UPDATE_ORIGIN = 'https://openchamber-update.vercel.app';
 const MAX_BYTES = 64 * 1024 * 1024;
 const validId = (id) => typeof id === 'string' && /^[a-f0-9]{16}$/.test(id);
 
-/** Owns desktop assets only. Shell, preload and backend always stay in the installer. */
+/** Owns desktop UI and backend resources. Shell, preload and dependencies stay in the installer. */
 export class DesktopOta {
-  constructor({ directory, builtinDirectory, nativeVersion, fetchImpl = fetch, origin = UPDATE_ORIGIN, onProgress = () => {} }) {
+  constructor({ directory, builtinDirectory, nativeVersion, requireBackend = false, fetchImpl = fetch, origin = UPDATE_ORIGIN, onProgress = () => {} }) {
     Object.assign(this, { directory, builtinDirectory, nativeVersion, fetchImpl, origin, onProgress });
+    this.requireBackend = requireBackend;
     this.state = { schemaVersion: 1, nativeVersion, deviceId: randomUUID(), channel: null,
       active: null, previous: null, queued: null, trial: false, rejected: [] };
     this.running = null;
@@ -24,6 +25,18 @@ export class DesktopOta {
 
   get version() { return this.running?.releaseVersion ?? this.nativeVersion; }
   get assetDirectory() { return this.running ? path.join(this.directory, this.running.bundleId) : this.builtinDirectory; }
+  get backendDirectory() { return this.running && this.requireBackend ? path.join(this.assetDirectory, 'desktop-backend') : null; }
+
+  async validateResources(dir, version) {
+    const metadata = JSON.parse(await readFile(path.join(dir, 'desktop-ota.json'), 'utf8'));
+    if (metadata.releaseVersion !== version) throw new Error('OTA resource version mismatch');
+    await readFile(path.join(dir, 'index.html'));
+    if (this.requireBackend) {
+      const pkg = JSON.parse(await readFile(path.join(dir, 'desktop-backend/package.json'), 'utf8'));
+      if (metadata.backendVersion !== version || pkg.version !== version) throw new Error('OTA backend version mismatch');
+      await readFile(path.join(dir, 'desktop-backend/server/index.js'));
+    }
+  }
 
   async persist() {
     const data = JSON.stringify(this.state);
@@ -41,9 +54,7 @@ export class DesktopOta {
       || parseReleaseVersion(bundle.releaseVersion).major !== parseReleaseVersion(this.nativeVersion)?.major) return false;
     try {
       const dir = path.join(this.directory, bundle.bundleId);
-      const metadata = JSON.parse(await readFile(path.join(dir, 'desktop-ota.json'), 'utf8'));
-      if (metadata.releaseVersion !== bundle.releaseVersion) return false;
-      await readFile(path.join(dir, 'index.html'));
+      await this.validateResources(dir, bundle.releaseVersion);
       return true;
     } catch { return false; }
   }
@@ -66,13 +77,17 @@ export class DesktopOta {
       this.state.queued = null;
       this.state.trial = false;
     }
+    if (activateQueued && this.requireBackend && this.state.queued && !(await this.usable(this.state.queued))) {
+      throw new Error('Queued desktop OTA resources are invalid; clear the OTA cache or install a newer application');
+    }
     if (activateQueued && await this.usable(this.state.queued)) {
       this.state.previous = this.state.active;
       this.state.active = this.state.queued;
       this.state.queued = null;
-      this.state.trial = true;
+      this.state.trial = !this.requireBackend;
     }
     if (!(await this.usable(this.state.active))) {
+      if (this.requireBackend && this.state.active) throw new Error('Active desktop OTA resources are invalid; clear the OTA cache or install a newer application');
       this.state.active = await this.usable(this.state.previous) ? this.state.previous : null;
       this.state.trial = false;
     }
@@ -190,9 +205,7 @@ export class DesktopOta {
         try {
           await mkdir(staging, { recursive: true });
           await extractAssetZip(bytes, staging);
-          const metadata = JSON.parse(await readFile(path.join(staging, 'desktop-ota.json'), 'utf8'));
-          if (metadata.releaseVersion !== bundle.releaseVersion) throw new Error('OTA resource version mismatch');
-          await readFile(path.join(staging, 'index.html'));
+          await this.validateResources(staging, bundle.releaseVersion);
           const target = path.join(this.directory, bundle.bundleId);
           await rm(target, { recursive: true, force: true });
           await rename(staging, target);

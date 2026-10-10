@@ -259,6 +259,9 @@ jobs:
           spctl --assess --type execute --verbose=4 "$APP_PATH"
           echo "Developer ID macOS app prepared at $APP_PATH"
 
+      - name: Write version-pinned installer feed
+        run: node packages/electron/scripts/write-installer-feed.mjs packages/electron/dist "${{ needs.create-release.outputs.version }}" darwin "${{ matrix.arch }}"
+
       - name: Upload DMG / ZIP installers to release
         uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2.6.2
         with:
@@ -267,6 +270,7 @@ jobs:
           files: |
             packages/electron/dist/*.dmg
             packages/electron/dist/*.zip
+            packages/electron/dist/full-mac.yml
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -341,6 +345,9 @@ jobs:
           node ./scripts/package.mjs --win --${{ matrix.arch }} --publish=never
           bun run verify:opencode-cli:packaged
 
+      - name: Write version-pinned installer feed
+        run: node packages/electron/scripts/write-installer-feed.mjs packages/electron/dist "${{ needs.create-release.outputs.version }}" win32 "${{ matrix.arch }}"
+
       - name: Upload installer to release
         uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2.6.2
         with:
@@ -348,6 +355,7 @@ jobs:
           draft: true
           files: |
             packages/electron/dist/*.exe
+            packages/electron/dist/full.yml
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -424,6 +432,7 @@ jobs:
           node ./scripts/package.mjs --linux --${{ matrix.arch }} --publish=never
           bun run verify:opencode-cli:packaged
           bun run verify:linux-appimage
+          node ./scripts/write-installer-feed.mjs dist "${{ needs.create-release.outputs.version }}" linux "${{ matrix.arch }}"
 
       - name: Upload validated Linux release files
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -431,6 +440,7 @@ jobs:
           name: linux-release-${{ matrix.arch }}
           path: |
             packages/electron/dist/OpenChamber-${{ needs.create-release.outputs.version }}-linux-${{ matrix.artifact_arch }}.AppImage
+            packages/electron/dist/full-linux*.yml
           if-no-files-found: error
           retention-days: 1
 
@@ -461,6 +471,8 @@ jobs:
           files: |
             artifacts/x64/OpenChamber-${{ needs.create-release.outputs.version }}-linux-x86_64.AppImage
             artifacts/arm64/OpenChamber-${{ needs.create-release.outputs.version }}-linux-arm64.AppImage
+            artifacts/x64/full-linux.yml
+            artifacts/arm64/full-linux-arm64.yml
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -932,6 +944,10 @@ jobs:
             `OpenChamber-${version}-win-x64.exe`,
             `OpenChamber-${version}-linux-x86_64.AppImage`,
             `OpenChamber-${version}-linux-arm64.AppImage`,
+            'full.yml',
+            'full-mac.yml',
+            'full-linux.yml',
+            'full-linux-arm64.yml',
             'app-release.aab',
             'app-release.apk',
             `OpenChamber-${version}-${buildNumber}-android.aab`,
