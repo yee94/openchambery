@@ -314,10 +314,12 @@ export function useAssistantStatus(
                     index: i,
                     finish: (message as { finish?: unknown }).finish,
                     error: (message as { error?: unknown }).error,
+                    isCompaction: message.clientRole === 'compaction',
+                    startedAt: Number.isFinite(message.time.created) ? message.time.created : undefined,
                 };
             }
         }
-        return { id: null as string | null, index: -1, finish: undefined as unknown, error: undefined as unknown };
+        return { id: null as string | null, index: -1, finish: undefined as unknown, error: undefined as unknown, isCompaction: false, startedAt: undefined };
     }, [rawSessionMessages]);
     const lastAssistantId = lastAssistant.id;
 
@@ -348,12 +350,22 @@ export function useAssistantStatus(
         currentSessionId ?? undefined,
     );
     const lastUserIsCompaction = Boolean(lastUserId) && isCompactionCommandParts(lastUserParts);
+    const compaction = lastAssistant.isCompaction && lastAssistant.index > lastUser.index
+        ? lastAssistantParts.find((part) => part.type === 'compaction')
+        : undefined;
+    // Manual inbox controls own their clock while running. Automatic/overflow
+    // checkpoints belong to the current runner loop and keep its user clock.
+    const turnStartedAt = compaction?.reason === 'manual'
+        ? lastAssistant.startedAt
+        : lastUser.turnStartedAt;
     // A user row after the last assistant opens a new turn; the previous
     // assistant's final body must not settle it before the reply arrives.
     const isTurnSettled = Boolean(
         lastAssistantId
         && lastAssistant.index > lastUser.index
-        && hasConfirmedFinalBody(lastAssistant.finish, lastAssistantParts, lastAssistant.error),
+        && (compaction
+            ? compaction.status === 'failed' || (compaction.reason === 'manual' && compaction.status === 'completed')
+            : hasConfirmedFinalBody(lastAssistant.finish, lastAssistantParts, lastAssistant.error)),
     );
     const lastAssistantStatusSignature = React.useMemo(() => {
         const genericKey = `${currentSessionId ?? ''}:${lastAssistantId ?? ''}`;
@@ -433,9 +445,9 @@ export function useAssistantStatus(
         if (isTurnSettled) {
             return {
                 ...DEFAULT_WORKING,
-                isComplete: true,
+                isComplete: compaction?.status !== 'failed',
                 isTurnSettled: true,
-                turnStartedAt: lastUser.turnStartedAt,
+                turnStartedAt,
             };
         }
 
@@ -443,7 +455,7 @@ export function useAssistantStatus(
         const isStreaming = activityPhase === 'busy';
         const isCooldown = false;
         const isRetry = activityPhase === 'retry';
-        const preferCompactionStatus = isWorking && lastUserIsCompaction;
+        const preferCompactionStatus = isWorking && (lastUserIsCompaction || compaction?.status === 'running');
 
         let activity: AssistantActivity = 'idle';
         if (isWorking) {
@@ -481,9 +493,9 @@ export function useAssistantStatus(
             isComplete: false,
             isTurnSettled: false,
             retryInfo,
-            turnStartedAt: lastUser.turnStartedAt,
+            turnStartedAt,
         };
-    }, [isRecovering, hasTerminalError, activityPhase, isPhaseWorking, isTurnSettled, lastUserIsCompaction, lastUser.turnStartedAt, parsedStatus, abortState, sessionRetryAttempt, sessionRetryNext, currentSessionStatus, t]);
+    }, [isRecovering, hasTerminalError, activityPhase, isPhaseWorking, isTurnSettled, lastUserIsCompaction, compaction?.status, turnStartedAt, parsedStatus, abortState, sessionRetryAttempt, sessionRetryNext, currentSessionStatus, t]);
 
     const forming = React.useMemo<FormingSummary>(() => {
         const isActive = !isRecovering && !hasTerminalError && isPhaseWorking && parsedStatus.activePartType === 'text';
