@@ -178,6 +178,8 @@ Schema summary (`schemaVersion: 1`):
 
 `assemble-snapshot.mjs` selects previous state by the release's major, so generation, rollback ids, native targets and shell floors are independent per lane. It archives the previous root when switching majors and mirrors all lanes and their active/rollback zip files in both channels. `rollout.mjs --major X` targets a specific lane; omission retains the legacy default of the root lane. The rollout workflow exposes the same `major` input. Invalid catalogs or missing referenced bundles abort snapshot creation before deployment.
 
+Stable publishing also advances the same-major beta lane to the stable bundle unless beta already has a higher release version. Beta keeps its channel identity, independent generation, two most recent rollback records (including their ZIPs), and other major lanes. The promoted bundle shares stable's mobile/desktop artifacts, rollout and shell gates. Full releases synchronize finalized native targets before deployment. Beta publishing never advances stable.
+
 Build copies the entire `ota/` tree into `public/` (Vercel) or `dist/` (EdgeOne) and fails if either `ota/channels/beta.json` or `ota/channels/stable.json` is missing or invalid.
 
 ### Cache rules

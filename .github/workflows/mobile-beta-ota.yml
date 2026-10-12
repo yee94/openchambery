@@ -463,6 +463,15 @@ jobs:
           set -euo pipefail
           node scripts/mobile-ota/verify-detectability.mjs \
             --channel "$CHANNEL" --version "$VERSION" --mode ota
+          if [[ "$CHANNEL" == "stable" ]]; then
+            BETA_VERSION="$(node --input-type=module -e '
+              import { readFileSync } from "node:fs";
+              import { selectOtaMajor } from "./deploy/update-service/lib/ota-manifest.js";
+              const catalog = JSON.parse(readFileSync(process.argv[1], "utf8"));
+              process.stdout.write(selectOtaMajor(catalog, Number(process.env.VERSION.split(".")[0])).activeBundle.releaseVersion);
+            ' /tmp/ota-snapshot/ota/channels/beta.json)"
+            node scripts/mobile-ota/verify-detectability.mjs --channel beta --version "$BETA_VERSION" --mode ota
+          fi
 
   archive:
     name: Archive OTA prerelease

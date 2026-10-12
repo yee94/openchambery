@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [2.0.8-beta.1] - 2026-10-12
+
+### 修复
+
+- 正式版 OTA 发布后，Beta 通道保留并同步到同主版本的最新正式版，无需关闭 Beta 开关；保留最近两个回滚包，已有更高版本的 Beta 不会被降级。
+
 ## [2.0.7] - 2026-10-10
 
 ### 新增

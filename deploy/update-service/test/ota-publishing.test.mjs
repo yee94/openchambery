@@ -11,6 +11,7 @@ import { promisify } from 'node:util';
 import { test } from 'vitest';
 import { selectOtaMajor } from '../lib/ota-manifest.js';
 import { handleMobileUpdateCheck } from '../lib/ota-check.js';
+import { promoteStableToBeta } from '../../../scripts/mobile-ota/channel-promotion.mjs';
 
 const exec = promisify(execFile);
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
@@ -69,7 +70,8 @@ test('publishing and rollout retain both majors, channels and referenced bundles
     return JSON.parse(channels.get(channel));
   };
   try {
-    await publish('1.20.0', 'stable');
+    await publish('1.19.0', 'stable');
+    assert.equal(JSON.parse(channels.get('beta')).activeBundle.releaseVersion, '1.19.0');
     const one = await publish('1.20.0-beta.1');
     const two = await publish('2.0.0-beta.24');
     assert.deepEqual(selectOtaMajor(two, 1), one);
@@ -92,11 +94,32 @@ test('publishing and rollout retain both majors, channels and referenced bundles
     assert.deepEqual(rolledBack.activeBundle.desktop, one.activeBundle.desktop);
     assert.equal(rolledBack.activeBundle.checksum, one.activeBundle.checksum);
     for (const id of bundles.keys()) await readFile(path.join(rollbackOut, 'ota/bundles', `${id}.zip`));
+    const stable = await publish('1.20.0', 'stable');
+    const promoted = JSON.parse(channels.get('beta'));
+    assert.equal(promoted.channel, 'beta');
+    assert.deepEqual(promoted.activeBundle, stable.activeBundle);
+    assert.equal(promoted.generation, oneAgain.generation + 1);
+    assert.deepEqual(promoted.rollbackBundleIds, [oneAgain.activeBundle.bundleId, one.activeBundle.bundleId]);
+    assert.deepEqual(promoted.rollbackBundles[oneAgain.activeBundle.bundleId], oneAgain.activeBundle);
+    assert.deepEqual(selectOtaMajor(promoted, 2), selectOtaMajor(two, 2));
+    for (const channel of ['beta', 'stable']) {
+      await exec(process.execPath, ['scripts/mobile-ota/verify-detectability.mjs',
+        '--channel', channel, '--version', '1.20.0', '--base', env.OTA_BASE_URL], { cwd: root, env, timeout: 10_000 });
+    }
+    const nativeTargets = { android: { version: '1.20.0', build: 30, installUrl: 'https://example.com/download' } };
+    const finalized = promoteStableToBeta({ ...stable, nativeTargets }, promoted);
+    assert.deepEqual(finalized.nativeTargets, nativeTargets);
+    assert.equal(finalized.generation, promoted.generation);
+    assert.deepEqual(finalized.rollbackBundles, promoted.rollbackBundles);
+    const newerBeta = structuredClone(promoted);
+    newerBeta.activeBundle.releaseVersion = '1.21.0-beta.1';
+    assert.deepEqual(promoteStableToBeta(stable, newerBeta), newerBeta);
+    assert.throws(() => promoteStableToBeta(one, promoted), /active stable release/);
     await assert.rejects(() => publish('1.19.0-beta.1'), /older than active/);
     const corrupt = JSON.parse(channels.get('beta'));
     corrupt.majorReleases['2'].activeBundle.releaseVersion = '3.0.0';
     channels.set('beta', JSON.stringify(corrupt));
-    await assert.rejects(() => publish('1.20.0-beta.3'), /manifest invalid/);
+    await assert.rejects(() => publish('1.20.1-beta.1'), /manifest invalid/);
   } finally {
     await new Promise((resolve) => server.close(resolve));
     await rm(dir, { recursive: true, force: true });

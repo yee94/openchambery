@@ -30,6 +30,7 @@ import { pipeline } from 'node:stream/promises'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { Readable } from 'node:stream'
 import { readAssetZipMetadata } from '../../packages/web/server/lib/zip-assets.js'
+import { promoteStableToBeta } from './channel-promotion.mjs'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const ROOT = path.resolve(__dirname, '../..')
@@ -235,19 +236,22 @@ async function ensureChannelBundles(manifest, baseUrl, bundlesDir) {
 
 /**
  * Mirror the OTHER channel into the snapshot so a full static replace does not
- * delete it. 404 → write null-seed; other errors → abort; success → validate + write.
+ * delete it. Stable publishes also advance older beta lanes to the stable bundle.
+ * 404 → start an empty lane; other errors → abort; success → validate + write.
  */
-async function mirrorOtherChannel(baseUrl, targetChannel, channelsDir, bundlesDir) {
-  const other = otherChannel(targetChannel)
-  const { kind, manifest } = await fetchProductionManifest(baseUrl, other)
+async function mirrorOtherChannel(baseUrl, targetManifest, otherCatalog, channelsDir, bundlesDir) {
+  const other = otherChannel(targetManifest.channel)
+  const manifest = targetManifest.channel === 'stable'
+    ? promoteStableToBeta(targetManifest, otherCatalog.manifest)
+    : otherCatalog.manifest
+  const parsed = parseOtaManifest(manifest)
+  if (!parsed.ok) throw new Error(parsed.errors.join('; '))
   writeFileSync(
     path.join(channelsDir, `${other}.json`),
     `${JSON.stringify(manifest, null, 2)}\n`,
   )
-  if (kind === 'ok') {
-    await ensureChannelBundles(manifest, baseUrl, bundlesDir)
-  }
-  return { other, kind, generation: manifest.generation }
+  await ensureChannelBundles(manifest, baseUrl, bundlesDir)
+  return { other, kind: otherCatalog.kind, generation: manifest.generation }
 }
 
 /**
@@ -363,8 +367,8 @@ async function main() {
   const desktopChecksum = sha256FileHex(desktopZip)
   const desktopMetadata = readAssetZipMetadata(desktopZip)
   if (desktopMetadata.releaseVersion !== args.version) throw new Error('Desktop OTA version must match release version')
-  const { manifest: otherCatalog } = await fetchProductionManifest(baseUrl, otherChannel(args.channel))
-  const otherRelease = selectOtaMajor(otherCatalog, releaseMajor)
+  const otherCatalog = await fetchProductionManifest(baseUrl, otherChannel(args.channel))
+  const otherRelease = selectOtaMajor(otherCatalog.manifest, releaseMajor)
   const matchingDesktops = [previousActive?.desktop, otherRelease?.activeBundle?.desktop]
     .filter((d) => d?.shellFingerprint === desktopMetadata.shellFingerprint
       && compareReleaseVersions(d.minShellReleaseVersion, args.version) <= 0)
@@ -420,7 +424,7 @@ async function main() {
     `${JSON.stringify(nextManifest, null, 2)}\n`,
   )
 
-  const mirrored = await mirrorOtherChannel(baseUrl, args.channel, channelsDir, bundlesDir)
+  const mirrored = await mirrorOtherChannel(baseUrl, nextManifest, otherCatalog, channelsDir, bundlesDir)
 
   const meta = {
     bundleId,
