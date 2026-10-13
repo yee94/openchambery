@@ -55,6 +55,97 @@ it.each([false, true])('runs a Host smart-title request and clears loading (mode
   }
 });
 
+it.each([
+  { forced: true, renamed: false, expectedTitle: 'Title refresh' },
+  { forced: false, renamed: false, expectedTitle: 'Original' },
+  { forced: true, renamed: true, expectedTitle: 'Manual title' },
+])('handles conversation progress during title generation (forced: $forced, renamed: $renamed)', async ({ forced, renamed, expectedTitle }) => {
+  vi.useFakeTimers();
+  const session = { id: 'ses_progress', title: 'Original', metadata: { openchamber: {
+    titleRefresh: { lastAutoTitle: 'Original', ...(forced ? { requestedAt: 1000 } : {}) },
+  } } };
+  const messages = [
+    { info: { id: 'u1', role: 'user' }, parts: [{ type: 'text', text: 'Implement title refresh' }] },
+    { info: { id: 'u2', role: 'user' }, parts: [{ type: 'text', text: 'Support ongoing conversations' }] },
+    { info: { id: 'a1', role: 'assistant' }, parts: [{ type: 'text', text: 'Working on title refresh' }] },
+  ];
+  let finishTitle;
+  const generation = new Promise((resolve) => { finishTitle = resolve; });
+  const generate = vi.fn(() => generation);
+  const runtime = createSessionTitleRuntime({
+    sessionAccess: {
+      get: async () => structuredClone(session),
+      messages: async () => structuredClone(messages),
+      update: async (_id, _directory, patch) => {
+        if (patch.metadata) session.metadata = mergeMetadataPatch(session.metadata, patch.metadata);
+        if (patch.title) session.title = patch.title;
+      },
+    },
+    getSmallModelService: async () => ({ generateSmallModelText: generate }),
+    isTitleRefreshEnabled: () => true,
+    now: () => 1000,
+  });
+  try {
+    if (forced) runtime.processPayload({ type: 'openchamber:session-metadata', properties: {
+      sessionID: session.id, metadata: session.metadata,
+    } });
+    else runtime.armTimer(session.id, '/repo', 0);
+    await vi.runAllTimersAsync();
+    expect(generate).toHaveBeenCalledTimes(1);
+    expect(session.metadata.openchamber.titleRefresh.isGenerating).toBe(true);
+    messages.push({ info: { id: 'a2', role: 'assistant' }, parts: [{ type: 'text', text: 'Next implementation step' }] });
+    if (renamed) session.title = 'Manual title';
+    finishTitle({ text: 'Title refresh', providerID: 'test', modelID: 'test' });
+    await vi.runAllTimersAsync();
+    expect(session.title).toBe(expectedTitle);
+    expect(session.metadata.openchamber.titleRefresh.isGenerating).toBeUndefined();
+    expect(session.metadata.openchamber.titleRefresh.requestedAt).toBeUndefined();
+    if (forced && !renamed) expect(session.metadata.openchamber.titleRefresh.forMessageID).toBe('a1');
+    runtime.processPayload({ type: 'session.execution.succeeded', data: { sessionID: session.id } });
+    await vi.runAllTimersAsync();
+    expect(generate).toHaveBeenCalledTimes(1);
+  } finally { runtime.stop(); }
+});
+
+it.each([
+  { type: 'session.status', properties: { sessionID: 'ses_pending', status: { type: 'busy' } } },
+  { type: 'session.status', properties: { sessionID: 'ses_pending', status: { type: 'retry' } } },
+  { type: 'session.execution.started', data: { sessionID: 'ses_pending' } },
+  { type: 'message.updated', properties: { info: { sessionID: 'ses_pending', role: 'user', time: { created: 1000 } } } },
+  { type: 'session.inbox.enqueued', created: 1000, data: { sessionID: 'ses_pending', inboxID: 'u2', item: {
+    type: 'user', payload: { text: 'Keep working' },
+  } } },
+])('preserves a pending manual title request across $type', async (event) => {
+  vi.useFakeTimers();
+  const session = { id: 'ses_pending', title: 'Original', metadata: { openchamber: {
+    titleRefresh: { lastAutoTitle: 'Original', requestedAt: 1000 },
+  } } };
+  const generate = vi.fn(async () => ({ text: 'Title refresh', providerID: 'test', modelID: 'test' }));
+  const runtime = createSessionTitleRuntime({
+    sessionAccess: {
+      get: async () => structuredClone(session),
+      messages: async () => [{ info: { id: 'u1', role: 'user' }, parts: [{ type: 'text', text: 'Implement title refresh' }] }],
+      update: async (_id, _directory, patch) => {
+        if (patch.metadata) session.metadata = mergeMetadataPatch(session.metadata, patch.metadata);
+        if (patch.title) session.title = patch.title;
+      },
+    },
+    getSmallModelService: async () => ({ generateSmallModelText: generate }),
+    now: () => 1000,
+  });
+  try {
+    runtime.processPayload({ type: 'openchamber:session-metadata', properties: {
+      sessionID: session.id, metadata: session.metadata,
+    } });
+    for (let i = 0; i < 3; i += 1) runtime.processPayload(event);
+    await vi.runAllTimersAsync();
+    expect(generate).toHaveBeenCalledTimes(1);
+    expect(session.title).toBe('Title refresh');
+    expect(session.metadata.openchamber.titleRefresh.isGenerating).toBeUndefined();
+    expect(session.metadata.openchamber.titleRefresh.requestedAt).toBeUndefined();
+  } finally { runtime.stop(); }
+});
+
 it('does not start a pending initial title over a manual authority committed before generation', async () => {
   vi.useFakeTimers();
   const generate = vi.fn();

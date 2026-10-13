@@ -64,10 +64,15 @@ extension-only VS Code retains the limitation below.
       the fork time), so the first-send refresh still fires.
      Ordinary later idle transitions do **not** arm another refresh. Any
       `busy`/`retry` status or a fresh user `message.updated` still clears an
-       ordinary already-armed timer; admitted initial/fork-title timers are exempt.
+        ordinary already-armed timer; admitted initial/fork-title and explicit
+        smart-title timers are exempt.
      A sidebar smart-title request sets `titleRefresh.requestedAt`; its
      `session.updated` event arms the same flow immediately (forced / manual
-     refresh is unaffected by the background gate).
+      refresh is unaffected by the background gate).
+      Explicit requests summarize the bounded transcript captured when generation
+      starts. A newer assistant message does not discard that result or trigger
+      another model call. Concurrent manual renames remain protected by the
+      fresh-title check and the title-authority revision check at commit.
   3. On fire:
     - Skip when Settings → Chat → session title refresh is off.
     - Skip system-owned sessions whose metadata carries a non-empty

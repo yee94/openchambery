@@ -725,7 +725,8 @@ export const createSessionTitleRuntime = ({
       }
       return null;
     })();
-    if (lastAssistantId && latestAssistantId && latestAssistantId !== lastAssistantId) {
+    // Explicit requests summarize the captured transcript even while the reply continues.
+    if (!forceRefresh && lastAssistantId && latestAssistantId && latestAssistantId !== lastAssistantId) {
       console.log('[session-title] tail moved on, dropping result');
       return;
     }
@@ -821,7 +822,7 @@ export const createSessionTitleRuntime = ({
           initialRefreshes.add(status.sessionId);
           armTimer(status.sessionId, status.directory || directoryHint, 0);
         }
-      } else if (!initialRefreshes.has(status.sessionId) && !forkFirstRefreshes.has(status.sessionId)) {
+      } else if (!forcedRefreshes.has(status.sessionId) && !initialRefreshes.has(status.sessionId) && !forkFirstRefreshes.has(status.sessionId)) {
         clearTimer(status.sessionId);
       }
       return;
@@ -849,7 +850,7 @@ export const createSessionTitleRuntime = ({
       // session settles. Only a message created after the timer was armed
       // means the user actually moved on.
       const armed = timers.get(userMessage.sessionId);
-      if (armed && !initialRefreshes.has(userMessage.sessionId) && !forkFirstRefreshes.has(userMessage.sessionId) && userMessage.createdAt >= armed.armedAt) {
+      if (armed && !forcedRefreshes.has(userMessage.sessionId) && !initialRefreshes.has(userMessage.sessionId) && !forkFirstRefreshes.has(userMessage.sessionId) && userMessage.createdAt >= armed.armedAt) {
         clearTimer(userMessage.sessionId);
       }
     }

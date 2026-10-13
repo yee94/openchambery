@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [2.0.8-beta.5] - 2026-10-13
+
+### 修复
+
+- 修复进行中的对话手动生成智能标题时，闪烁一段时间后标题仍未更新的问题；对话继续输出、重试或收到新消息时，摘要任务仍能完成并写回标题，期间手动改名仍受保护。
+
 ## [2.0.8-beta.4] - 2026-10-13
 
 ### 修复
