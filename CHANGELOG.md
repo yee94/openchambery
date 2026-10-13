@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [2.0.8-beta.12] - 2026-10-13
+
+### 修复
+
+- 修复文件首次打开正常、关闭后重新打开却提示「无法打开文件」的问题；缓存读取保留文件存在性信息，并正确处理空文件、文件删除及缺少文件状态查询能力的环境。
+
 ## [2.0.8-beta.11] - 2026-10-13
 
 ### 修复

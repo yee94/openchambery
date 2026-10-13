@@ -1,6 +1,6 @@
 import React, { type JSX, type ReactNode } from 'react';
 import { RuntimeAPIContext } from '@/contexts/runtimeAPIContext';
-import type { FilesAPI, RuntimeAPIs } from '@/lib/api/types';
+import type { FileReadResult, FilesAPI, RuntimeAPIs } from '@/lib/api/types';
 import {
   approxStringBytes,
   evictContentLru,
@@ -11,7 +11,7 @@ import {
 
 /** Wrap a FilesAPI with an in-memory LRU content cache. */
 function withContentCache(files: FilesAPI): FilesAPI {
-  const cache = new Map<string, { content: string; path: string; size?: number; mtimeMs?: number }>();
+  const cache = new Map<string, FileReadResult & { size?: number; mtimeMs?: number }>();
 
   const removeCacheEntry = (path: string) => {
     cache.delete(path);
@@ -42,9 +42,13 @@ function withContentCache(files: FilesAPI): FilesAPI {
 
   const syncCacheEntry = (
     path: string,
-    result: { content: string; path: string },
+    result: FileReadResult,
     stat?: { isFile: boolean; size: number; mtimeMs?: number } | null,
-  ): { content: string; path: string } => {
+  ): FileReadResult => {
+    if (result.exists === false) {
+      removeCacheEntry(path);
+      return result;
+    }
     const bytes = approxStringBytes(result.content);
     cache.set(path, {
       ...result,
@@ -61,7 +65,7 @@ function withContentCache(files: FilesAPI): FilesAPI {
     return result;
   };
 
-  const readFreshFile = async (path: string, options?: Parameters<NonNullable<FilesAPI['readFile']>>[1]): Promise<{ content: string; path: string }> => {
+  const readFreshFile = async (path: string, options?: Parameters<NonNullable<FilesAPI['readFile']>>[1]): Promise<FileReadResult> => {
     // stat → read → stat to avoid TOCTOU:
     // if the file changes between read and either stat, metadata won't match and we retry.
     const statBefore = await files.statFile?.(path, options).catch(() => null);
@@ -98,6 +102,10 @@ function withContentCache(files: FilesAPI): FilesAPI {
         }
         const hit = cache.get(path);
         if (hit) {
+          // Optional reads need explicit existence metadata and a way to revalidate it.
+          if (options?.optional && (hit.exists === undefined || !files.statFile)) {
+            return readFreshFile(path, options);
+          }
           // Validate cached entry is still fresh
           if (files.statFile) {
             const latest = await files.statFile(path, options).catch(() => {
@@ -110,7 +118,7 @@ function withContentCache(files: FilesAPI): FilesAPI {
             }
           }
           touchContentLru(path);
-          return { content: hit.content, path: hit.path };
+          return { content: hit.content, path: hit.path, exists: hit.exists };
         }
 
         return readFreshFile(path, options);
