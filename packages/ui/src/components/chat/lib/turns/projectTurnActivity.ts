@@ -7,6 +7,8 @@ import type {
     TurnPartRecord,
 } from './types';
 import { resolveActivityPartId } from './resolveActivityPartId';
+import { hasUserDisplayableParts } from '../../message/normalizeUserDisplayParts';
+import { isRestartNotice } from '../../message/assistantErrorPresentation';
 
 const getPartEndTime = (part: unknown): number | undefined => {
     const stateEnd = (part as { state?: { time?: { end?: unknown } } }).state?.time?.end;
@@ -138,13 +140,18 @@ export const projectTurnActivity = (input: ProjectActivityInput): ProjectActivit
 
     const activitySegments: TurnActivityGroup[] = [];
 
-    // Consolidate adjacent assistants only. A checkpoint/notice is an order
-    // boundary: later activity cannot migrate to the turn's first assistant.
+    // Consolidate display-adjacent assistants only. A visible checkpoint/notice
+    // is an order boundary; hidden native instructions are transparent.
     // Empty assistants still anchor their run so late parts cannot remount it.
-    const records = input.messages ?? input.assistantMessages.map(message => ({ role: 'assistant', messageId: message.info.id }));
+    const records = input.messages ?? input.assistantMessages.map(message => ({ role: 'assistant', messageId: message.info.id, message }));
     let segment: TurnActivityGroup | undefined;
     for (const record of records) {
         if (record.role !== 'assistant') {
+            // Match notice visibility before ending the adjacent assistant run.
+            // Hidden native instructions have no position in the rendered list.
+            if (record.message.info.nativeType === 'synthetic'
+                && !isRestartNotice(record.message.info)
+                && !hasUserDisplayableParts(record.message.parts)) continue;
             segment = undefined;
             continue;
         }

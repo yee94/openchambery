@@ -41,6 +41,31 @@ let previousUI: ReturnType<typeof useUIStore.getState>;
 let previousFlags: ReturnType<typeof useFeatureFlagsStore.getState>;
 const apis = { runtime: { isVSCode: false, isDesktop: false }, files: {}, editor: {} } as RuntimeAPIs;
 
+test('hidden instruction notices do not split the three native tool runs', async () => {
+    useUIStore.setState({ showReasoningTraces: false });
+    const tools = (id: string, names: string[]) => normalizeSessionProjectionMessage(sessionID, {
+        id, type: 'assistant', time: { created: 2 },
+        content: names.map((name, index) => ({ type: 'tool', id: `${id}-${index}`, name,
+            state: { status: 'completed', input: { filePath: `/workspace/${id}-${index}.ts` }, content: [{ type: 'text', text: 'done' }] },
+        })),
+    })!;
+    const notice = (id: string, path: string) => normalizeSessionProjectionMessage(sessionID, {
+        id, type: 'synthetic', time: { created: 3 }, description: `Loaded ${path}`,
+        text: `Instructions from: ${path}\n# Project instructions`, metadata: { instruction: { paths: [path] } },
+    })!;
+    const first = tools('step-one', ['glob', 'grep', 'read', 'read', 'read']);
+    const second = tools('step-two', ['grep', 'grep', ...Array<string>(5).fill('read')]);
+    const third = tools('step-three', [...Array<string>(4).fill('grep'), ...Array<string>(5).fill('read'), 'patch', 'patch']);
+    await render([user, first, notice('project-instructions', '/workspace/AGENTS.md'), second,
+        notice('library-instructions', '/workspace/node_modules/effect/AGENTS.md'), third], third.info.id);
+    expect(container.textContent).not.toContain('Project instructions');
+    expect(container.querySelectorAll('[data-component="context-tool-group"]')).toHaveLength(1);
+    const group = container.querySelector('[data-component="context-tool-group"]')!;
+    expect(group.textContent).toContain('8 searches');
+    expect(group.textContent).toContain('13 reads');
+    expect(group.textContent).toContain('2 edits');
+});
+
 test.each([
     ['sorted', true], ['sorted', false], ['live', true], ['live', false],
 ] as const)('invisible Thought does not split successful and failed tools (mode=%s, showReasoning=%s)', async (chatRenderMode, showReasoningTraces) => {

@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [2.0.8-beta.11] - 2026-10-13
+
+### 修复
+
+- 修复隐藏的项目指令、AGENTS.md 等系统注入消息将连续工具拆成多个过程组的问题；按可见内容边界合并工具，保留原始顺序以及可见通知、压缩记录和用户消息的分隔。
+
 ## [2.0.8-beta.10] - 2026-10-13
 
 ### 修复

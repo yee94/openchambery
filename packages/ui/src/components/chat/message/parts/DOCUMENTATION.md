@@ -10,6 +10,8 @@ Tool grouping operates on visible Activity items: hidden reasoning and empty Tho
 
 The flat/live MessageBody path applies the same invisible-reasoning filter before collecting consecutive tools. Error status does not start a new group: successful and failed process tools remain adjacent in source order. `MessageList.contentRetention.test.tsx` exercises both live/sorted modes with empty and hidden Thought between successful and failed calls.
 
+Sorted Activity segments also use display adjacency across messages. A native synthetic record that has no displayable user content and is not a visible restart notice does not end the assistant run. This reuses the user-bubble visibility predicate instead of guessing from instruction text or file paths. Visible notices, checkpoints and authored user turns retain their boundaries; raw records remain intact. This matches OpenCode's graphical timeline policy of skipping hidden notices before flushing its assistant segment. The real MessageList regression reproduces two hidden instruction injections and verifies one group with 8 searches, 13 reads and 2 edits.
+
 Use this doc when you ask an agent to change tool/header/description behavior.
 
 ## High-level flow
