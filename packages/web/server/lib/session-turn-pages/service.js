@@ -668,8 +668,11 @@ export const createSessionTurnPageService = ({
           ? decoded.value.before
           : undefined;
       } else {
-        // Raw OpenCode SDK cursor — pass through for the first request.
-        before = initialBefore;
+        // Durable message anchors need the native exclusive older-page cursor.
+        // Other OpenCode SDK cursors stay opaque and pass through unchanged.
+        before = /^msg_[A-Za-z0-9_]+$/.test(initialBefore)
+          ? Buffer.from(JSON.stringify({ id: initialBefore, order: 'desc', direction: 'next' })).toString('base64url')
+          : initialBefore;
       }
     }
 

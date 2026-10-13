@@ -1282,7 +1282,8 @@ function applyDurableSeed(
 
   if (!previous || previous.pages.length === 0) {
     // Durable order is (`time.created`, id) ascending, so the first message is
-    // the oldest loaded record and a valid `before` cursor for older history.
+    // the oldest loaded record and an exclusive older-history anchor. Transport
+    // encodes this message ID as a native cursor; it is not an upstream token.
     const oldestSeededID = materialized.messages[0]?.id
     const seededTurns = materialized.messages.filter((message) => message.role === "user").length
     const tail = pageFromMessages(

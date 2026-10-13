@@ -1000,8 +1000,8 @@ describe("mergeSessionTranscript", () => {
     expect(data?.pages[0]?.messageOrder).toEqual(["msg_1", "msg_2"])
     expect((data?.pages[0]?.partsByMessageID.msg_1?.[0] as { text?: string })?.text).toBe("cached")
     expect(data?.pages[0]?.complete).toBe(false)
-    // Oldest seeded message id is the `before` cursor, so cold enters take the
-    // hot path instead of replaying a full authority initial every start.
+    // The oldest seeded ID is a local anchor, encoded by the transport before
+    // sending upstream; it lets cold enters avoid replaying authority history.
     expect(data?.pages[0]?.cursor).toBe("msg_1")
     expect(boundaryFromTranscriptData(data)).toEqual({ kind: "has-more", cursor: "msg_1", loadedTurns: 1 })
     expect(result.boundary).toEqual({ kind: "has-more", cursor: "msg_1", loadedTurns: 1 })

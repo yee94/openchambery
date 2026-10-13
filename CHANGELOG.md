@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [2.0.8-beta.10] - 2026-10-13
+
+### 修复
+
+- 修复部分会话从本地缓存恢复后，向上滚动始终无法加载更早历史的问题；正确转换分页锚点，保留已缓存消息并支持连续翻页。
+
 ## [2.0.8-beta.9] - 2026-10-13
 
 ### 修复

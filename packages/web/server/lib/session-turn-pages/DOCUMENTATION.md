@@ -32,11 +32,13 @@ Official OpenCode pagination is message-count based and uses **opaque** cursors 
 |---|---|---|---|
 | `turns` | `3` | `1..10` | Authored user turn budget (product limit) |
 | `scanLimit` | **omitted** | `10..200` when present | Optional override only. Host→OpenCode local page size; when omitted it resolves to `_inner_scanLimit`. Clients should omit this. |
-| `before` | omitted | opaque string ≤ 8192 chars | Resume older history: host cursor (`oc1.…`) or raw OpenCode SDK cursor on first page |
+| `before` | omitted | opaque string ≤ 8192 chars | Resume older history: host cursor (`oc1.…`), raw OpenCode SDK cursor, or durable `msg_*` anchor on first page |
 | `directory` | omitted | path string | Forwarded to directory-scoped OpenCode client |
 | `includeReasoning` | omitted (include) | strict `'false'` only disables | OpenChamber projection control. When `'false'`, drop `type=reasoning` parts from turn-page / reconcile / exact responses. Host order is **normalize native SessionMessageInfo → slim/L1 bounds → reasoning strip** so `content`/`text` carriers cannot rebuild filtered parts or leak through `info` expansion. Missing or any other value keeps existing behavior (slim reasoning identity on turn pages; full parts on reconcile/exact). **Never forwarded to OpenCode.** Same contract on transcript-cache reads, official `session.messages` list proxy, and event SSE/WS send boundaries — see `event-stream/reasoning-projection.js`. |
 
 Invalid `turns`, explicit invalid `scanLimit`, or `before` (malformed/stale host token, oversize) → HTTP 400.
+
+Durable message anchors are encoded before upstream fetch as base64url JSON `{ id, order: "desc", direction: "next" }`, excluding the anchor and continuing toward older messages. Native SDK tokens remain opaque and unchanged; host tokens retain their existing boundary-slice semantics.
 
 **`_inner_scanLimit`**: resolved once at process start from env (clamped 10..200). Host always calls OpenCode on loopback; scan chunk is not a client-network concern. Final response size is still turn-trimmed via `selectTurnRecords`.
 

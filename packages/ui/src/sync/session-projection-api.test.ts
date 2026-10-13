@@ -155,6 +155,40 @@ describe("fetchSessionProjectionPage", () => {
     expect(calls[0]!.url.searchParams.has("before")).toBe(false)
   })
 
+  test("durable seed survives overlapping authority and loads older pages through exhaustion", async () => {
+    const { fetchSessionProjectionPage } = await import("./session-projection-api")
+    const { mergeSessionTranscript, boundaryFromTranscriptData, projectFlatFromTranscriptData } = await import("./transcript-merge")
+    const nativeCursor = (id: string) => Buffer.from(JSON.stringify({ id, order: "desc", direction: "next" })).toString("base64url")
+    const records = [5, 6].map((n) => ({
+      info: { id: `msg_${n}`, sessionID: SESSION, role: "user" as const, time: { created: n } }, parts: [],
+    }))
+    let data = mergeSessionTranscript(undefined, SESSION, { type: "durable-seed", records }).data
+    data = mergeSessionTranscript(data, SESSION, {
+      type: "http-page", purpose: "initial",
+      page: { records, cursor: nativeCursor("msg_5"), complete: false, turnCount: 2 },
+    }).data
+    responseImpl = async ({ url }) => {
+      expect(url.searchParams.has("order")).toBe(false)
+      const decoded = JSON.parse(Buffer.from(url.searchParams.get("cursor")!, "base64url").toString("utf8"))
+      expect(decoded).toEqual({ id: calls.length === 1 ? "msg_5" : "msg_3", order: "desc", direction: "next" })
+      const ids = decoded.id === "msg_5" ? [4, 3] : [2]
+      return jsonResponse({
+        data: ids.map((n) => ({ id: `msg_${n}`, type: "user", time: { created: n }, text: "older" })),
+        cursor: { next: nativeCursor(`msg_${ids.at(-1)}`) },
+      })
+    }
+    for (let i = 0; i < 2; i++) {
+      const boundary = boundaryFromTranscriptData(data)
+      if (boundary.kind !== "has-more") throw new Error("Expected older history")
+      const page = await fetchSessionProjectionPage({ sessionID: SESSION, directory: "/repo", cursor: boundary.cursor, limit: 2 })
+      data = mergeSessionTranscript(data, SESSION, { type: "http-page", purpose: "prepend", page }).data
+    }
+    expect(calls).toHaveLength(2)
+    expect(boundaryFromTranscriptData(data).kind).toBe("exhausted")
+    expect(projectFlatFromTranscriptData(data, SESSION).messageOrder).toEqual(["msg_2", "msg_3", "msg_4", "msg_5", "msg_6"])
+    expect(calls[1]!.url.searchParams.get("cursor")).toBe(nativeCursor("msg_3"))
+  })
+
   test("normalizes chat rows and excludes system instructions from literal JSON", async () => {
     responseImpl = async () =>
       jsonResponse({

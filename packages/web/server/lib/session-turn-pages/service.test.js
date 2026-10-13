@@ -41,6 +41,17 @@ const hostedDivider = (sessionID = 'ses_old') => ({
   parts: [],
 });
 
+it('converts a durable message anchor to a native older cursor before fetching', async () => {
+  const fetchPage = vi.fn(async () => {
+    return { records: [user('msg_3'), assistant('msg_4')], nextCursor: null, complete: true };
+  });
+  await createSessionTurnPageService({ fetchPage }).loadPage({ sessionID: 'ses_1', before: 'msg_5' });
+  expect(fetchPage).toHaveBeenCalledTimes(1);
+  expect(JSON.parse(Buffer.from(fetchPage.mock.calls[0][0].before, 'base64url').toString('utf8'))).toEqual({
+    id: 'msg_5', order: 'desc', direction: 'next',
+  });
+});
+
 describe('isUserAuthoredTurnBoundary', () => {
   it('counts role user with non-synthetic parts as a turn boundary', () => {
     expect(isUserAuthoredTurnBoundary(user('msg_1'))).toBe(true);

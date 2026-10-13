@@ -564,7 +564,12 @@ export async function fetchSessionProjectionPage(
     limit: String(limit),
   }
   if (input.cursor) {
-    query.cursor = input.cursor
+    // Durable boundaries are message anchors; native tokens remain opaque.
+    // In descending order, `next` excludes the anchor and reads older rows.
+    query.cursor = /^msg_[A-Za-z0-9_]+$/.test(input.cursor)
+      ? btoa(JSON.stringify({ id: input.cursor, order, direction: order === "desc" ? "next" : "previous" }))
+        .replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "")
+      : input.cursor
   } else {
     query.order = order
   }
