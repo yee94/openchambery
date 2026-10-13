@@ -32,6 +32,7 @@ import type { PermissionRequest } from "@/types/permission";
 import type { QuestionRequest } from "@/types/question";
 import { convertHeicToJpegViaNative } from "../native-image-transcode";
 import { expandImageAttachmentCitations } from "@/components/chat/attachmentCitations";
+import { wrapSystemReminder } from "../systemReminder";
 import { blobFromDataUrl, needsPromptAttachmentUpload, pathFromPromptAttachmentFileUrl, uploadPromptAttachmentBytes } from "../prompt-attachment-upload";
 
 /**
@@ -357,7 +358,9 @@ const promptFilePart = (file: NormalizedPromptFile): TextPartInput | FilePartInp
   return {
     type: 'text',
     synthetic: true,
-    text: `Attachment ${JSON.stringify(file.filename || 'file')}: ${JSON.stringify(pathFromPromptAttachmentFileUrl(file.url))}\nRead or process this file with tools as needed; its contents are not included in the message.`,
+    text: wrapSystemReminder(
+      `Attachment ${JSON.stringify(file.filename || 'file')}: ${JSON.stringify(pathFromPromptAttachmentFileUrl(file.url))}\nRead or process this file with tools as needed; its contents are not included in the message.`.replace(/</g, '\\u003c'),
+    ),
   };
 };
 

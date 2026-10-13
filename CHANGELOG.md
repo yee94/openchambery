@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [2.0.8-beta.2] - 2026-10-13
+
+### 修复
+
+- 修复文件引用发送后，内部附件说明混入消息正文的问题；保留文件引用和用户正文，隐藏有明确起止边界的辅助说明，覆盖普通发送、排队发送、首条消息和命令附件。
+
 ## [2.0.8-beta.1] - 2026-10-12
 
 ### 修复
