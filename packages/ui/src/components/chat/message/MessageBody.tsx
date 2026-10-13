@@ -1812,18 +1812,9 @@ const AssistantMessageBody = React.memo(({
         && (hasAnchoredActivitySegments || isCompactionTurn)
         && Boolean(toggleActivityGroup);
 
-    // Sorted mode defers mid-turn stream text so it stays in Activity
-    // (justification). The final-conclusion body may reveal earlier than a
-    // confirmed terminal stop when the live message already matches the
-    // terminal-stop shape (no continuation tools, finish absent/`stop`) — and
-    // only that segment streams. Compaction is different: the streaming
-    // summary *is* the foldable body under Compacting / 正在压缩. Visibility is
-    // owned only by hideCompactionBody, so do not defer when the disclosure is
-    // expanded — otherwise active compact streams stay invisible until finish=stop.
-    // A stop that still carries continuation tools is a step boundary, and its
-    // text must keep deferring to Activity justification rather than painting
-    // as the final body. Message-level completion and the effective stream
-    // phase above still read the raw finish.
+    // Received text stays in its message body, including intermediate and
+    // interrupted steps. Terminal-stop checks still own completion chrome,
+    // never body visibility. Compaction retains its explicit disclosure.
     const hasConfirmedStopFinish = hasConfirmedTerminalStop(messageFinish, visibleParts);
     const sortedFinalBodyReveal = {
         finish: messageFinish,

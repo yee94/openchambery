@@ -8,7 +8,7 @@ vi.mock('./runtime-switch', () => ({
   subscribeRuntimeEndpointChanged: () => () => {},
 }));
 import { queryClient } from './queryRuntime';
-import { ensureQuestionAutoDelegate, getQuestionAutoDelegateSnapshot, mergeQuestionDelegateData, mutateQuestionAutoDelegate, questionAutoDelegateQueryOptions, refreshQuestionAutoDelegate, type QuestionDelegateData } from './questionAutoDelegate';
+import { ensureQuestionAutoDelegate, getQuestionAutoDelegateSnapshot, mergeQuestionDelegateData, questionAutoDelegateQueryOptions, refreshQuestionAutoDelegate, type QuestionDelegateData } from './questionAutoDelegate';
 
 function data(epoch = 'epoch-a', revision = 1, sequence = 1): QuestionDelegateData {
   return { receivedAt: 0, sequence, retiredEpochs: [], snapshot: {
@@ -39,22 +39,9 @@ describe('question auto-delegate authoritative query', () => {
     expect(getQuestionAutoDelegateSnapshot()).toBe(before);
     expect(queryClient.getQueryState(questionAutoDelegateQueryOptions().queryKey)?.status).toBe('error');
   });
-  test('mutation carries real identity and applies a 409 claimed snapshot', async () => {
-    mocks.fetch.mockResolvedValue(Response.json({ outcome: 'claimed', snapshot: data('a', 3).snapshot }, { status: 409 }));
-    expect(await mutateQuestionAutoDelegate('pause', { requestID: 'q/1', sessionID: 'child', directory: '/child-project' }, 'interaction')).toBe('claimed');
-    expect(mocks.fetch.mock.calls[0][0]).toBe('/api/question-auto-delegate/requests/q%2F1/pause');
-    expect(JSON.parse(mocks.fetch.mock.calls[0][1].body)).toEqual({ sessionID: 'child', directory: '/child-project', reason: 'interaction' });
-    expect(getQuestionAutoDelegateSnapshot()?.snapshot.revision).toBe(3);
-  });
-  test('runtime switch rejects late mutation and GET results', async () => {
+  test('runtime switch rejects late GET results', async () => {
     let resolve!: (response: Response) => void;
     mocks.fetch.mockImplementation(() => new Promise<Response>((done) => { resolve = done; }));
-    const pending = mutateQuestionAutoDelegate('delegate', { requestID: 'q', sessionID: 'child', directory: '/child' });
-    mocks.generation++;
-    mocks.transport = 'runtime-b';
-    resolve(Response.json({ outcome: 'submitted', snapshot: data().snapshot }));
-    await expect(pending).rejects.toThrow('Runtime changed');
-    expect(getQuestionAutoDelegateSnapshot()).toBeUndefined();
     const options = questionAutoDelegateQueryOptions();
     const get = queryClient.fetchQuery({ ...options, retry: false });
     mocks.generation++;
@@ -67,11 +54,10 @@ describe('question auto-delegate authoritative query', () => {
     await expect(queryClient.fetchQuery({ ...questionAutoDelegateQueryOptions(), retry: false })).rejects.toThrow();
     expect(getQuestionAutoDelegateSnapshot()).toBeUndefined();
   });
-  test('tip cancels a cold GET before fetching authority, and cancellation preserves mutation data', async () => {
+  test('tip cancels a cold GET before fetching authority, and refresh preserves newer data', async () => {
     let reads = 0;
     const signals: AbortSignal[] = [];
     mocks.fetch.mockImplementation((_path: string, init: RequestInit) => {
-      if (init.method === 'POST') return Promise.resolve(Response.json({ outcome: 'paused', snapshot: data('a', 3).snapshot }));
       reads++;
       signals.push(init.signal as AbortSignal);
       if (reads === 1 || reads === 3) return new Promise(() => {});
@@ -83,7 +69,7 @@ describe('question auto-delegate authoritative query', () => {
     expect(signals[0].aborted).toBe(true);
     expect(getQuestionAutoDelegateSnapshot()?.snapshot.revision).toBe(2);
     void observer.refetch();
-    await mutateQuestionAutoDelegate('pause', { requestID: 'q', sessionID: 'child', directory: '/child' }, 'user');
+    await refreshQuestionAutoDelegate();
     expect(getQuestionAutoDelegateSnapshot()?.snapshot.revision).toBe(3);
     expect(signals[2].aborted).toBe(true);
     unsubscribe(); observer.destroy();

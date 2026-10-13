@@ -71,6 +71,7 @@ export function createGlobalMessageStreamHub({
    * @type {((payload: unknown) => unknown) | null}
    */
   projectOutboundSessionPayload = null,
+  resolveDirectory = (value) => value,
 }) {
   const eventSubscribers = new Set();
   const statusSubscribers = new Set();
@@ -109,17 +110,18 @@ export function createGlobalMessageStreamHub({
     : null;
 
   /**
-   * Diff-summarize only. Host archive projection is applied at fan-out and
+   * Normalize directory identity and summarize diffs. Host archive projection is applied at fan-out and
    * replayAfter time against the *current* committed store — never baked into
    * the replay buffer (stale archive stamps must not stick after Host writes).
    */
   const normalizeEvent = ({ envelope, payload, connectionContext }) => {
-    const directory =
+    const rawDirectory =
       typeof envelope?.directory === 'string' && envelope.directory.length > 0 ? envelope.directory : 'global';
+    const directory = rawDirectory === 'global' ? rawDirectory : resolveDirectory(rawDirectory);
     const eventId = typeof envelope?.eventId === 'string' && envelope.eventId.length > 0 ? envelope.eventId : undefined;
     const outboundPayload = summarizeOutboundEventPayload(payload);
     return {
-      envelope,
+      envelope: directory === rawDirectory ? envelope : { ...envelope, directory },
       payload: outboundPayload,
       directory,
       eventId,

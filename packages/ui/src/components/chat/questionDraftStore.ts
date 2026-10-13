@@ -7,14 +7,10 @@ interface QuestionDraft {
   customMode: Record<number, boolean>;
   customText: Record<number, string>;
   customTextFilled: Record<number, boolean>;
-  interacted: boolean;
-  pausePending: boolean;
-  pauseFailed: boolean;
 }
 
 const EMPTY_DRAFT: QuestionDraft = {
-  activeTab: '0', selectedOptions: {}, customMode: {}, customText: {}, customTextFilled: {}, interacted: false,
-  pausePending: false, pauseFailed: false,
+  activeTab: '0', selectedOptions: {}, customMode: {}, customText: {}, customTextFilled: {},
 };
 
 export const useQuestionDraftStore = create<{ drafts: Record<string, QuestionDraft> }>(() => ({ drafts: {} }));

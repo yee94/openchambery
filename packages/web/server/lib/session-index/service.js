@@ -55,9 +55,9 @@ const runtimeKeyFor = (runtimeConfig) => {
   return crypto.createHash('sha256').update(source).digest('hex');
 };
 
-const toSummary = (session, fallbackDirectory) => {
+const toSummary = (session, fallbackDirectory, resolveDirectory = normalizeDirectory) => {
   if (!session || !isVisibleSession(session) || typeof session.id !== 'string' || !session.id) return null;
-  const directory = normalizeDirectory(session.directory ?? session.project?.worktree ?? fallbackDirectory);
+  const directory = resolveDirectory(session.location?.directory ?? session.directory ?? session.project?.worktree ?? fallbackDirectory);
   if (!directory) return null;
   const openchamber = session.metadata?.openchamber;
   const assistant = openchamber?.assistant;
@@ -77,8 +77,14 @@ const toSummary = (session, fallbackDirectory) => {
   };
 };
 
-export const createSessionIndexService = ({ dbPath, getRuntimeConfig = () => null } = {}) => {
+export const createSessionIndexService = ({ dbPath, getRuntimeConfig = () => null, resolveDirectory = (value) => value } = {}) => {
   if (typeof dbPath !== 'string' || !dbPath.trim()) return null;
+
+  const normalizeDirectory = (value) => {
+    if (typeof value !== 'string' || !value.trim()) return null;
+    const input = value.trim().replace(/\\/g, '/').replace(/\/+$/, '') || '/';
+    try { return resolveDirectory(input) || input; } catch { return input; }
+  };
 
   const Database = require('better-sqlite3');
   const db = new Database(dbPath);
@@ -186,6 +192,51 @@ export const createSessionIndexService = ({ dbPath, getRuntimeConfig = () => nul
     }
   })();
 
+  // Upgrade only the current runtime's acceleration index. Never rewrite the
+  // upstream session database or resolve another runtime's paths on this host.
+  const reconcileDirectoryAliases = db.transaction((key) => {
+    const directories = db.prepare('SELECT * FROM runtime_directory WHERE runtime_key = ?').all(key);
+    for (const source of directories) {
+      const target = normalizeDirectory(source.directory);
+      if (!target || target === source.directory) continue;
+      db.prepare(`INSERT OR IGNORE INTO runtime_directory(runtime_key, directory, last_accessed_at)
+        VALUES (?, ?, ?)`).run(key, target, source.last_accessed_at);
+      const rows = db.prepare('SELECT * FROM session_summary WHERE runtime_key = ? AND directory IN (?, ?)')
+        .all(key, source.directory, target);
+      const merged = new Map();
+      for (const row of rows) {
+        const previous = merged.get(row.session_id);
+        if (!previous) { merged.set(row.session_id, row); continue; }
+        const newest = row.updated_at > previous.updated_at ? row : previous;
+        const status = row.status_changed_at > previous.status_changed_at ? row : previous;
+        merged.set(row.session_id, { ...newest,
+          activity_updated_at: Math.max(row.activity_updated_at, previous.activity_updated_at),
+          status: status.status, status_changed_at: status.status_changed_at,
+          has_children: Math.max(row.has_children, previous.has_children),
+          pinned_at: row.pinned_at ?? previous.pinned_at,
+        });
+      }
+      db.prepare('DELETE FROM session_summary WHERE runtime_key = ? AND directory IN (?, ?)').run(key, source.directory, target);
+      const retained = [...merged.values()].sort((a, b) => b.activity_updated_at - a.activity_updated_at
+        || b.session_id.localeCompare(a.session_id)).slice(0, MAX_ROOT_SESSIONS);
+      const columns = rows.length > 0 ? Object.keys(rows[0]) : [];
+      const insert = columns.length > 0
+        ? db.prepare(`INSERT INTO session_summary (${columns.join(',')}) VALUES (${columns.map(() => '?').join(',')})`) : null;
+      for (const row of retained) {
+        insert.run(...columns.map((column) => column === 'directory' ? target : row[column]));
+      }
+      db.prepare('UPDATE OR IGNORE session_child SET directory = ? WHERE runtime_key = ? AND directory = ?')
+        .run(target, key, source.directory);
+      db.prepare('DELETE FROM session_child WHERE runtime_key = ? AND directory = ?').run(key, source.directory);
+      db.prepare(`UPDATE runtime_directory SET cursor = NULL, has_more = 1, last_full_synced_at = 0,
+        last_accessed_at = MAX(last_accessed_at, ?) WHERE runtime_key = ? AND directory = ?`)
+        .run(source.last_accessed_at, key, target);
+      db.prepare('DELETE FROM runtime_directory WHERE runtime_key = ? AND directory = ?').run(key, source.directory);
+      db.prepare(`DELETE FROM session_child WHERE runtime_key = ? AND directory = ? AND parent_id NOT IN
+        (SELECT session_id FROM session_summary WHERE runtime_key = ? AND directory = ?)`)
+        .run(key, target, key, target);
+    }
+  });
   const runtimeKey = () => runtimeKeyFor(getRuntimeConfig());
   const touchDirectory = db.prepare(`
     INSERT INTO runtime_directory(runtime_key, directory, cursor, has_more, last_synced_at, last_full_synced_at, last_accessed_at)
@@ -331,7 +382,7 @@ export const createSessionIndexService = ({ dbPath, getRuntimeConfig = () => nul
     const summaries = Array.isArray(sessions)
       ? sessions
         .filter((session) => !isStaleLocation(session, normalizedDirectory))
-        .map((session) => toSummary(session, normalizedDirectory))
+        .map((session) => toSummary(session, normalizedDirectory, normalizeDirectory))
         .filter((summary) => summary && !summary.archivedAt)
         .slice(0, MAX_ROOT_SESSIONS)
       : [];
@@ -361,21 +412,25 @@ export const createSessionIndexService = ({ dbPath, getRuntimeConfig = () => nul
     }
     deleteOrphanChildRows.run(key, normalizedDirectory, key, normalizedDirectory);
   };
-  const replaceDirectory = db.transaction(replaceDirectoryRows);
+  const replaceDirectory = db.transaction((input) => {
+    reconcileDirectoryAliases(runtimeKey());
+    replaceDirectoryRows(input);
+  });
   const replaceDirectories = db.transaction((directories, now = Date.now()) => {
     if (!Array.isArray(directories)) throw new Error('directories must be an array');
+    reconcileDirectoryAliases(runtimeKey());
     for (const directory of directories) {
       replaceDirectoryRows({ ...directory, now });
     }
   });
 
   const upsertMutation = db.transaction((session, now = Date.now(), options = {}) => {
-    if (isStaleLocation(session, session?.directory ?? session?.location?.directory)) return { accepted: false, changed: false };
+    if (isStaleLocation(session, session?.location?.directory ?? session?.directory)) return { accepted: false, changed: false };
     if (!isVisibleSession(session)) {
       const changed = remove(session?.id);
       return { accepted: changed, changed };
     }
-    const summary = toSummary(session);
+    const summary = toSummary(session, null, normalizeDirectory);
     if (!summary) return { accepted: false, changed: false };
     const key = runtimeKey();
     if (summary.archivedAt) {
@@ -448,6 +503,7 @@ export const createSessionIndexService = ({ dbPath, getRuntimeConfig = () => nul
 
   const snapshot = () => {
     const key = runtimeKey();
+    reconcileDirectoryAliases(key);
     const pinRows = readPins.all(key);
     const pinById = new Map(pinRows.map((row) => [row.id, row.pinnedAt]));
     const directories = db.prepare(`
@@ -535,7 +591,7 @@ export const createSessionIndexService = ({ dbPath, getRuntimeConfig = () => nul
     if (!row || typeof row.directory !== 'string' || !row.directory) return null;
     return {
       id: row.id,
-      directory: row.directory,
+      directory: normalizeDirectory(row.directory),
       title: typeof row.title === 'string' ? row.title : '',
       createdAt: toTimestamp(row.createdAt),
       updatedAt: toTimestamp(row.updatedAt),
@@ -623,6 +679,7 @@ export const createSessionIndexService = ({ dbPath, getRuntimeConfig = () => nul
     return result.changes > 0;
   });
 
+  try { reconcileDirectoryAliases(runtimeKey()); } catch (error) { db.close(); throw error; }
   return {
     replaceDirectory,
     replaceDirectories,

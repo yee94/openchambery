@@ -179,10 +179,7 @@ describe('canRevealSortedFinalBody / shouldStreamSortedFinalBody', () => {
         expect(shouldStreamSortedFinalBody(input)).toBe(true);
     });
 
-    test('continuation tools arriving withdraw the optimistic reveal', () => {
-        // 正文流式中一旦出现 continuation tool part，乐观揭示立即撤回：文本
-        // 折回 Activity justification（原始消费语义）。撤回跟随工具到达而
-        // 非步骤边界——正文不得与正在运行的工具步骤同屏挂起。
+    test('continuation tools cannot withdraw received body text', () => {
         const input = {
             finish: undefined,
             parts: [
@@ -192,13 +189,11 @@ describe('canRevealSortedFinalBody / shouldStreamSortedFinalBody', () => {
             streamPhase: 'streaming' as const,
             isLastAssistantInTurn: true,
         };
-        expect(canRevealSortedFinalBody(input)).toBe(false);
-        expect(shouldStreamSortedFinalBody(input)).toBe(false);
+        expect(canRevealSortedFinalBody(input)).toBe(true);
+        expect(shouldStreamSortedFinalBody(input)).toBe(true);
     });
 
-    test('step boundary folds intermediate text back into Activity', () => {
-        // finish 打上 tool-calls（步骤结束、下一 assistant 未到）即整理进
-        // Activity，正文不再揭示。
+    test('step boundaries retain intermediate text in the message body', () => {
         const input = {
             finish: 'tool-calls',
             parts: [
@@ -208,13 +203,11 @@ describe('canRevealSortedFinalBody / shouldStreamSortedFinalBody', () => {
             streamPhase: 'streaming' as const,
             isLastAssistantInTurn: true,
         };
-        expect(canRevealSortedFinalBody(input)).toBe(false);
-        expect(shouldStreamSortedFinalBody(input)).toBe(false);
+        expect(canRevealSortedFinalBody(input)).toBe(true);
+        expect(shouldStreamSortedFinalBody(input)).toBe(true);
     });
 
-    test('non-live messages with continuation tools stay deferred', () => {
-        // 非 live 阶段只认 confirmed terminal stop：工具未清偿的已完成消息
-        // 的文本保持在 Activity。
+    test('non-live messages with continuation tools retain their text', () => {
         expect(canRevealSortedFinalBody({
             finish: undefined,
             parts: [
@@ -223,32 +216,32 @@ describe('canRevealSortedFinalBody / shouldStreamSortedFinalBody', () => {
             ],
             streamPhase: 'completed',
             isLastAssistantInTurn: true,
-        })).toBe(false);
+        })).toBe(true);
     });
 
-    test('non-stop finish and non-last assistants never reveal as final body', () => {
+    test('non-stop finish and non-last assistants retain their body', () => {
         expect(canRevealSortedFinalBody({
             finish: 'tool-calls',
             parts: [textPart('p1', 'step')],
             streamPhase: 'streaming',
             isLastAssistantInTurn: true,
-        })).toBe(false);
+        })).toBe(true);
         expect(canRevealSortedFinalBody({
             finish: undefined,
             parts: [textPart('p1', 'step')],
             streamPhase: 'streaming',
             isLastAssistantInTurn: false,
-        })).toBe(false);
+        })).toBe(true);
     });
 
-    test('errors veto reveal even while streaming', () => {
+    test('errors preserve the partial body already received', () => {
         expect(canRevealSortedFinalBody({
             finish: undefined,
             parts: [textPart('p1', 'partial')],
             streamPhase: 'streaming',
             error: { message: 'aborted' },
             isLastAssistantInTurn: true,
-        })).toBe(false);
+        })).toBe(true);
     });
 });
 

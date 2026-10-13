@@ -125,9 +125,7 @@ export const ReasoningTimelineBlock: React.FC<ReasoningTimelineBlockProps> = ({
         }
         return { expanded: canAutoExpand, source: 'auto' };
     });
-    const isExpanded = expansion.source === 'auto'
-        ? canAutoExpand && expansion.expanded
-        : expansion.expanded;
+    const isExpanded = expansion.expanded;
     const [shouldRenderExpandedContent, setShouldRenderExpandedContent] = React.useState(defaultExpanded === true || canAutoExpand);
     const contentId = React.useId();
     const contentRef = React.useRef<HTMLDivElement>(null);
@@ -162,10 +160,10 @@ export const ReasoningTimelineBlock: React.FC<ReasoningTimelineBlockProps> = ({
             if (prev.source === 'user') {
                 return prev;
             }
-            if (prev.expanded === canAutoExpand) {
+            if (prev.expanded || !canAutoExpand) {
                 return prev;
             }
-            return { expanded: canAutoExpand, source: 'auto' };
+            return { expanded: true, source: 'auto' };
         });
     }, [canAutoExpand]);
 

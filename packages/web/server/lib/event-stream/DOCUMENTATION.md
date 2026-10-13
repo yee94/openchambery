@@ -50,6 +50,13 @@ Import from the module file (not the event-stream barrel). Public surface:
 
 ## Runtime behavior
 
+The Host injects physical directory resolution into the global hub before fanout
+and replay buffering. Session payloads and the routing envelope therefore agree
+when OpenCode reports a symlink directory. Direct SSE filters have an optional
+`projectEnvelope` hook applied after payload projection; the Host uses it for the
+same routing identity. This preserves message routing as well as session sidebar
+membership. Reasoning-only filters need no envelope hook.
+
 Native v2 `session.reasoning.*` events are filtered at the same outbound boundary as legacy `session.next.reasoning.*`. Both `/api/session/:id/message` and `/api/session/:id/context` use the snapshot projection before relay encryption.
 - Browser clients connect to the WS endpoints above.
 - OpenChamber still fetches OpenCode upstream event streams over SSE.

@@ -67,10 +67,7 @@ describe('resolveLiveRevealBodyMessageId', () => {
         })).toBeNull();
     });
 
-    test('continuation tool arrival withdraws the reveal (folds back into Activity)', () => {
-        // 原始消费语义：正文流式中一旦出现 continuation tool part，乐观
-        // 揭示立即撤回，文本折回 Activity justification——正文不与正在
-        // 运行的工具步骤同屏挂起。
+    test('continuation tool arrival retains the body owner', () => {
         const streaming = assistant({
             id: 'a2',
             parts: [textPart('p1', 'partial'), toolPart('t1')],
@@ -80,10 +77,10 @@ describe('resolveLiveRevealBodyMessageId', () => {
             assistants: [assistant({ id: 'a1', finish: 'tool-calls', completed: 3, parts: [toolPart('t0')] }), streaming],
             streamingAssistantMessageId: 'a2',
             activeStreamingPhase: 'streaming',
-        })).toBeNull();
+        })).toBe('a2');
     });
 
-    test('step boundary (finish=tool-calls) stops revealing so Activity shows justification again', () => {
+    test('step boundary retains the body owner', () => {
         const streaming = assistant({
             id: 'a2',
             finish: 'tool-calls',
@@ -94,10 +91,10 @@ describe('resolveLiveRevealBodyMessageId', () => {
             assistants: [streaming],
             streamingAssistantMessageId: 'a2',
             activeStreamingPhase: 'streaming',
-        })).toBeNull();
+        })).toBe('a2');
     });
 
-    test('errors veto the live reveal', () => {
+    test('errors retain received partial text in the body', () => {
         const streaming = assistant({
             id: 'a2',
             error: { message: 'aborted' },
@@ -108,10 +105,10 @@ describe('resolveLiveRevealBodyMessageId', () => {
             assistants: [streaming],
             streamingAssistantMessageId: 'a2',
             activeStreamingPhase: 'streaming',
-        })).toBeNull();
+        })).toBe('a2');
     });
 
-    test('a completed streaming message mirrors the completed phase (no live reveal)', () => {
+    test('completion retains received body text', () => {
         const done = assistant({
             id: 'a2',
             completed: 42,
@@ -122,7 +119,7 @@ describe('resolveLiveRevealBodyMessageId', () => {
             assistants: [done],
             streamingAssistantMessageId: 'a2',
             activeStreamingPhase: 'streaming',
-        })).toBeNull();
+        })).toBe('a2');
     });
 
     test('null streaming phase falls back to streaming (steer gap keeps tool-less body)', () => {
@@ -166,7 +163,7 @@ describe('dropLiveRevealJustificationParts', () => {
 });
 
 describe('regression: live reveal renders text exactly once', () => {
-    test('multi-step turn — body streams, tool arrival folds it back into Activity exactly once', () => {
+    test('multi-step turn retains one body through tool arrival and completion', () => {
         const anchor = assistant({ id: 'a1', finish: 'tool-calls', completed: 3, parts: [toolPart('t0')] });
 
         // Phase 1: text streaming, no tools yet — the body reveals and the
@@ -186,8 +183,7 @@ describe('regression: live reveal renders text exactly once', () => {
         const turnJustificationRows: TurnActivityRecord[] = [activity('justification', 'a2')];
         expect(dropLiveRevealJustificationParts(turnJustificationRows, revealId)).toHaveLength(0);
 
-        // Phase 2: a continuation tool arrives — the optimistic reveal is
-        // withdrawn, the text folds back into Activity (visible there).
+        // Phase 2: a continuation tool cannot revoke received body text.
         const withTool = assistant({
             id: 'a2',
             parts: [textPart('p_stream', 'REPLY TEXT'), toolPart('t1')],
@@ -198,11 +194,10 @@ describe('regression: live reveal renders text exactly once', () => {
             streamingAssistantMessageId: 'a2',
             activeStreamingPhase: 'streaming',
         });
-        expect(withdrawnReveal).toBeNull();
-        expect(dropLiveRevealJustificationParts(turnJustificationRows, withdrawnReveal)).toBe(turnJustificationRows);
+        expect(withdrawnReveal).toBe('a2');
+        expect(dropLiveRevealJustificationParts(turnJustificationRows, withdrawnReveal)).toHaveLength(0);
 
-        // Phase 3: at the step boundary (finish=tool-calls) Activity keeps
-        // showing the justification.
+        // Phase 3: the step boundary preserves that same body owner.
         const settled = assistant({
             id: 'a2',
             finish: 'tool-calls',
@@ -214,8 +209,8 @@ describe('regression: live reveal renders text exactly once', () => {
             streamingAssistantMessageId: 'a2',
             activeStreamingPhase: 'streaming',
         });
-        expect(settledReveal).toBeNull();
-        expect(dropLiveRevealJustificationParts(turnJustificationRows, settledReveal)).toBe(turnJustificationRows);
+        expect(settledReveal).toBe('a2');
+        expect(dropLiveRevealJustificationParts(turnJustificationRows, settledReveal)).toHaveLength(0);
     });
 });
 

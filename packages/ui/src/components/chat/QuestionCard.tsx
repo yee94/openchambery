@@ -167,7 +167,7 @@ export const QuestionCard: React.FC<QuestionCardProps> = ({ question }) => {
   const activeTab = useQuestionDraftStore((state) => state.drafts[scope]?.activeTab ?? '0');
   const setActiveTab = (activeTab: TabKey) => updateQuestionDraft(scope, () => ({ activeTab }));
   const [manualResponding, setIsResponding] = React.useState(false);
-  const isResponding = manualResponding || delegation.claimed || delegation.pending === 'delegate' ||
+  const isResponding = manualResponding || delegation.claimed ||
     delegation.request?.state === 'submitting' || delegation.request?.state === 'uncertain' || delegation.request?.state === 'settled';
   const [hasResponded, setHasResponded] = React.useState(false);
 
@@ -399,7 +399,6 @@ export const QuestionCard: React.FC<QuestionCardProps> = ({ question }) => {
     <QuestionCardFrame
       mobile={isMobile}
       questionCard
-      onInteraction={delegation.interaction}
       header={(
         <div className={cn('flex min-w-0 items-center gap-2', isMobile && 'flex-wrap')}>
           <Icon name="question" className="h-3.5 w-3.5 text-primary" />

@@ -69,6 +69,7 @@ import { createSessionTitleRuntime } from './lib/session-title/runtime.js';
 import { createTitleSessionAccess } from './lib/session-title/session-access.js';
 import { createSessionIndexService } from './lib/session-index/service.js';
 import { createSessionIndexSyncRuntime } from './lib/session-index/sync-runtime.js';
+import { createSessionDirectoryRuntime } from './lib/opencode/session-directory-runtime.js';
 import { resolveSessionIndexDbPath } from './lib/session-index/resolve-db-path.js';
 import { applySessionIndexEvent } from './lib/session-index/event-ingest.js';
 import { createTranscriptCacheService } from './lib/transcript-cache/service.js';
@@ -897,13 +898,14 @@ const readHostMetadataForSession = (sessionID) => {
   return host && typeof host === 'object' && !Array.isArray(host) ? host : null;
 };
 
+const sessionDirectories = createSessionDirectoryRuntime({ getRuntimeUrl: () => buildOpenCodeUrl('/', '') });
 const projectHostSessionPayload = (payload) => {
   const ready = sessionMetadataStore.isLoaded();
-  return projectSessionLifecyclePayload(
+  return sessionDirectories.projectEvent(projectSessionLifecyclePayload(
     payload,
     readHostMetadataForSession,
     { hostReady: ready },
-  );
+  ));
 };
 
 const sessionGoalRuntime = createSessionGoalRuntime({
@@ -983,6 +985,7 @@ const globalMessageStreamHub = createGlobalMessageStreamHub({
   getOpenCodeAuthHeaders,
   upstreamStallTimeoutMs: getUpstreamStallTimeoutMs,
   projectOutboundSessionPayload: projectHostSessionPayload,
+  resolveDirectory: sessionDirectories.resolveDirectory,
 });
 
 const permissionAutoAcceptRuntime = createPermissionAutoAcceptRuntime({
@@ -1593,9 +1596,13 @@ async function main(options = {}) {
   const sessionIndexDbPath = options.sessionIndexDbPath !== undefined
     ? options.sessionIndexDbPath
     : process.env.OPENCHAMBER_SESSION_INDEX_DB_PATH;
+  const indexSessionDirectories = createSessionDirectoryRuntime({
+    getRuntimeUrl: () => getDesktopRuntimeConfig?.()?.apiBaseUrl ?? buildOpenCodeUrl('/', ''),
+  });
   const sessionIndexService = createSessionIndexService({
     dbPath: resolveSessionIndexDbPath({ sessionIndexDbPath }, OPENCHAMBER_DATA_DIR),
     getRuntimeConfig: () => getDesktopRuntimeConfig?.() ?? null,
+    resolveDirectory: indexSessionDirectories.resolveDirectory,
   });
   sessionIndexServiceRef = sessionIndexService;
   const transcriptCacheService = createTranscriptCacheService({
@@ -1635,6 +1642,8 @@ async function main(options = {}) {
     buildOpenCodeUrl,
     getOpenCodeAuthHeaders,
     waitForOpenCodeReady,
+    fetchFn: indexSessionDirectories.fetchSessionList,
+    resolveDirectory: indexSessionDirectories.resolveDirectory,
     projectSessions: (sessions) => {
       const snap = sessionMetadataStore.getSnapshotSync();
       // Not ready / unavailable — throw so sync keeps prior directory rows.
@@ -1642,7 +1651,7 @@ async function main(options = {}) {
       if (!snap) {
         throw new Error('session metadata is unavailable: Host store not ready');
       }
-      return retainOpenCodeSessions(sessions, snap);
+      return retainOpenCodeSessions(sessions, snap).map(indexSessionDirectories.projectSession);
     },
     onRevisionTip: (tip) => {
       broadcastOpenChamberEvent({

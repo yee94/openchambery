@@ -7,6 +7,7 @@ import {
   shouldForwardProxyResponseHeader,
 } from '../../proxy-headers.js';
 import { createRealpathCache } from '../path-realpath-cache.js';
+import { createSessionDirectoryRuntime } from './session-directory-runtime.js';
 import {
   createDirectoryInstanceRecovery,
   extractDirectoryFromRequest,
@@ -156,6 +157,8 @@ const SESSION_LIST_ALLOWED_FIELDS = [
   'projectID',
   'workspaceID',
   'directory',
+  'location',
+  'subpath',
   'path',
   'parentID',
   'title',
@@ -280,6 +283,7 @@ export const registerOpenCodeProxy = (app, deps) => {
   } = deps;
 
   const storeConfigured = typeof getStoredSessionMetadata === 'function';
+  const sessionDirectories = createSessionDirectoryRuntime({ getRuntimeUrl: () => buildOpenCodeUrl('/', '') });
 
   const waitForHostMetadataReady = async () => {
     if (!storeConfigured) return true;
@@ -346,8 +350,7 @@ export const registerOpenCodeProxy = (app, deps) => {
    * metadata, and Host archive authority projects onto `time.archived`.
    */
   const overlaySession = (session, stored) => {
-    if (!stored) return session;
-    return projectSessionWithStoredMap(session, stored);
+    return sessionDirectories.projectSession(stored ? projectSessionWithStoredMap(session, stored) : session);
   };
 
   /**
@@ -368,6 +371,7 @@ export const registerOpenCodeProxy = (app, deps) => {
   };
 
   const createHostSessionSseFilter = () => ({
+    projectEnvelope: sessionDirectories.projectEvent,
     projectEvent: (payload) => {
       // Transcript/message hot path stays open. Only session lifecycle frames
       // require Host authority; until the store is ready they are suppressed.
@@ -378,10 +382,10 @@ export const registerOpenCodeProxy = (app, deps) => {
         return payload;
       }
       if (!stored) return payload;
-      return projectSessionLifecyclePayload(payload, (sessionId) => {
+      return sessionDirectories.projectEvent(projectSessionLifecyclePayload(payload, (sessionId) => {
         const host = stored[sessionId];
         return host && typeof host === 'object' && !Array.isArray(host) ? host : null;
-      }, { hostReady: true });
+      }, { hostReady: true }));
     },
   });
 
@@ -390,6 +394,14 @@ export const registerOpenCodeProxy = (app, deps) => {
     if (active.length === 0) return null;
     if (active.length === 1) return active[0];
     return {
+      projectEnvelope: (envelope) => {
+        let current = envelope;
+        for (const filter of active) {
+          if (filter.projectEnvelope) current = filter.projectEnvelope(current);
+          if (current == null) return null;
+        }
+        return current;
+      },
       projectEvent: (payload) => {
         let current = payload;
         for (const filter of active) {
@@ -418,9 +430,12 @@ export const registerOpenCodeProxy = (app, deps) => {
 
   const isAbortError = (error) => error?.name === 'AbortError';
   const FALLBACK_PROXY_TARGET = 'http://127.0.0.1:3902';
-  const canonicalizeDirectoryQuery = createDirectoryQueryCanonicalizer({
+  const canonicalizeLocalDirectoryQuery = createDirectoryQueryCanonicalizer({
     realpath: fs?.promises?.realpath?.bind(fs.promises),
+    successTtlMs: 60_000,
   });
+  const canonicalizeDirectoryQuery = (value) => sessionDirectories.isLocal()
+    ? canonicalizeLocalDirectoryQuery(value) : value;
 
   const hasParsedBodyValue = (body) => {
     if (body === undefined || body === null) return false;
@@ -791,7 +806,7 @@ export const registerOpenCodeProxy = (app, deps) => {
           ...getOpenCodeAuthHeaders(),
           'accept-encoding': 'identity',
         };
-    const upstream = await fetch(buildOpenCodeUrl(upstreamPath, ''), {
+    const upstream = await sessionDirectories.fetchSessionList(buildOpenCodeUrl(upstreamPath, ''), {
       method: method || 'GET',
       headers,
       ...(typeof timeoutMs === 'number' ? { signal: AbortSignal.timeout(timeoutMs) } : {}),

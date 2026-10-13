@@ -32,6 +32,79 @@ afterEach(() => {
 });
 
 describe('Electron session index', () => {
+  it('merges duplicate aliases by freshness, keeps the newest twenty and preserves independent pins', () => {
+    const service = createService({ value: 'http://runtime-a.test' });
+    service.replaceDirectory({ directory: '/alias', sessions: Array.from({ length: 20 }, (_, i) => session(`alias-${i}`, i + 1, '/alias')) });
+    service.upsert(session('duplicate', 50, '/alias'));
+    service.setPinned('alias-1', 1);
+    service.upsert({ ...session('duplicate', 60, '/real'), title: 'Newer title' });
+    service.updateStatus('duplicate', 'busy', 70);
+    service.touchActivity('duplicate', 80);
+    service.upsert({ ...session('child', 65, '/alias'), parentID: 'duplicate' });
+    service.close();
+    const dbPath = path.join(tempDirectories.at(-1), 'session-index.sqlite');
+    const reopened = createSessionIndexService({ dbPath, getRuntimeConfig: () => ({ apiBaseUrl: 'http://runtime-a.test' }),
+      resolveDirectory: (directory) => directory === '/alias' ? '/real' : directory });
+    try {
+      const snapshot = reopened.snapshot();
+      expect(snapshot.directories).toHaveLength(1);
+      expect(snapshot.directories[0].sessions).toHaveLength(20);
+      expect(snapshot.directories[0].sessions[0]).toMatchObject({ id: 'duplicate', title: 'Newer title', hasChildren: true,
+        metadata: { openchamber: { titleRefresh: { activityUpdatedAt: 80 }, sessionStatus: { type: 'busy' } } } });
+      expect(snapshot.pinnedSessionIds).toContain('alias-1');
+      reopened.remove('child');
+      expect(reopened.findBySessionId('duplicate').hasChildren).toBe(false);
+    } finally { reopened.close(); }
+  });
+
+  it('rolls back alias reconciliation after a SQLite write failure', () => {
+    const service = createService({ value: 'http://runtime-a.test' });
+    service.upsert(session('alias-session', 10, '/alias'));
+    service.upsert(session('real-session', 20, '/real'));
+    service.close();
+    const dbPath = path.join(tempDirectories.at(-1), 'session-index.sqlite');
+    const Database = createRequire(import.meta.url)('better-sqlite3');
+    const db = new Database(dbPath);
+    db.exec("CREATE TRIGGER reject_alias_delete BEFORE DELETE ON runtime_directory WHEN OLD.directory = '/alias' BEGIN SELECT RAISE(ABORT, 'injected write failure'); END");
+    expect(() => createSessionIndexService({ dbPath, getRuntimeConfig: () => ({ apiBaseUrl: 'http://runtime-a.test' }),
+      resolveDirectory: (directory) => directory === '/alias' ? '/real' : directory })).toThrow('injected write failure');
+    expect(db.prepare('SELECT session_id, directory FROM session_summary ORDER BY session_id').all()).toEqual([
+      { session_id: 'alias-session', directory: '/alias' }, { session_id: 'real-session', directory: '/real' },
+    ]);
+    db.close();
+  });
+
+  it('reconciles persisted symlink directories and live events into the physical project without losing pins or activity', () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'session-symlink-'));
+    tempDirectories.push(root);
+    const real = path.join(fs.realpathSync(root), 'project');
+    const alias = path.join(fs.realpathSync(root), 'alias');
+    fs.mkdirSync(real);
+    fs.symlinkSync(real, alias, process.platform === 'win32' ? 'junction' : 'dir');
+    const dbPath = path.join(root, 'index.sqlite');
+    const legacy = createSessionIndexService({ dbPath });
+    legacy.upsert(session('ses_alias', 10, alias));
+    legacy.upsert(session('ses_real', 20, real));
+    legacy.setPinned('ses_alias', 5);
+    legacy.updateStatus('ses_alias', 'busy', 30);
+    legacy.touchActivity('ses_alias', 40);
+    legacy.close();
+    const service = createSessionIndexService({ dbPath, resolveDirectory: (value) => fs.realpathSync(value) });
+    try {
+      expect(service.snapshot().directories).toHaveLength(1);
+      expect(service.snapshot().directories[0].sessions.find((row) => row.id === 'ses_alias')).toMatchObject({
+        directory: real,
+        time: { pinned: 5 },
+        metadata: { openchamber: { titleRefresh: { activityUpdatedAt: 40 }, sessionStatus: { type: 'busy' } } },
+      });
+      applySessionIndexEvent(service, { type: 'session.updated', properties: { info: session('ses_live', 50, alias) } });
+      expect(service.snapshot().directories[0]).toMatchObject({ directory: real });
+      expect(service.snapshot().directories[0].sessions.map((row) => row.id)).toContain('ses_live');
+    } finally {
+      service.close();
+    }
+  });
+
   it('excludes tagged background runs before retention and ignores their activity/status events', () => {
     const service = createService({ value: 'http://runtime-a.test' });
     const ordinary = Array.from({ length: 20 }, (_, i) => session(`ses_visible_${i}`, 100 - i));

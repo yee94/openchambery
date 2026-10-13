@@ -3,6 +3,19 @@ import type { OpenCodeClient } from '@/lib/opencode/v2-types'
 import { isVisibleGlobalSession, listGlobalSessionPages } from './globalSessions'
 
 describe('listGlobalSessionPages', () => {
+  test('follows cursor continuations after alias filtering leaves an empty or short page', async () => {
+    const calls: Array<string | undefined> = []
+    const apiClient = { session: { list: async (input: { cursor?: string }) => {
+      calls.push(input.cursor)
+      if (!input.cursor) return { data: [], cursor: { next: 'short' } }
+      if (input.cursor === 'short') return { data: [{ id: 'alias-1', directory: '/repo', time: { created: 1, updated: 3 } }], cursor: { next: 'last' } }
+      return { data: [{ id: 'alias-2', directory: '/repo', time: { created: 1, updated: 2 } }], cursor: {} }
+    } } } as unknown as OpenCodeClient
+    const sessions = await listGlobalSessionPages(apiClient, { directory: '/repo', archived: false, pageSize: 20, maxItems: 20 })
+    expect(sessions.map((session) => session.id)).toEqual(['alias-1', 'alias-2'])
+    expect(calls).toEqual([undefined, 'short', 'last'])
+  })
+
   test('retries resolved transient SDK errors before returning data', async () => {
     let attempts = 0
     const apiClient = {

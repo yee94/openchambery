@@ -18,58 +18,22 @@ export const isAssistantMessageCompleted = (message: ChatMessageEntry): boolean 
 /**
  * Which assistant messages belong in a sorted-mode turn viewport.
  *
- * Multi-step agent turns create several assistant messages. Only the last is
- * "streaming"; earlier siblings often still lack `time.completed` for a while.
- *
- * While a stream id is known, keep the turn **prefix** through that assistant
- * so every earlier step stays on screen. When the turn is fully settled, show
- * every assistant.
- *
- * When the stream id is briefly unknown (common between shell steps while
- * session_status flaps idle), do **not** fall back to completed-only or
- * first-only filters: that drops incomplete assistants and their Activity
- * tools for a frame, then remounts them (fold flash). The turn already scopes
- * the assistant set — paint the whole set unless a live stream id narrows it.
+ * The transcript owns membership. A streaming pointer describes activity, not
+ * visibility: delayed status for an older step cannot hide received siblings.
  */
 export const resolveVisibleSortedAssistants = (
   assistants: readonly ChatMessageEntry[],
-  streamingAssistantMessageId: string | null | undefined,
+  _streamingAssistantMessageId: string | null | undefined,
 ): ChatMessageEntry[] => {
-  if (assistants.length === 0) return [];
-
-  const completed = assistants.filter(isAssistantMessageCompleted);
-  if (completed.length === assistants.length) {
-    return assistants as ChatMessageEntry[];
-  }
-
-  if (streamingAssistantMessageId) {
-    const streamingIndex = assistants.findIndex(
-      (assistant) => assistant.info.id === streamingAssistantMessageId,
-    );
-    if (streamingIndex >= 0) {
-      return assistants.slice(0, streamingIndex + 1) as ChatMessageEntry[];
-    }
-  }
-
-  // Stream id missing mid-turn: keep every assistant already in the turn.
   return assistants as ChatMessageEntry[];
 };
 
 /**
  * Which assistant message currently owns the sorted live body reveal.
  *
- * The optimistic reveal holds only while the streaming last assistant is in a
- * live phase with no continuation tool part yet. A continuation tool arriving
- * mid-stream withdraws the reveal (the original consumption semantics): the
- * text folds back into its Activity justification row and never stays on
- * screen next to the running tool steps. While the reveal IS active the
- * Activity group must withhold the SAME text (its justification row), or the
- * paragraph renders twice: once in the body of the streaming message and once
- * in the Activity group hosted on the turn's first assistant.
- *
- * The phase derivation is owned by `resolveSortedRevealStreamPhase` — the
- * same single derivation the reveal predicate consumes — so the Activity
- * dedup cannot drift from what the body render decides.
+ * Body ownership is independent of tools, errors and completion. If an input
+ * projection also supplies justification rows, withhold the matching row to
+ * avoid duplication; never use this pointer to filter transcript membership.
  */
 export const resolveLiveRevealBodyMessageId = (input: {
   chatRenderMode: 'sorted' | 'live';
@@ -98,7 +62,7 @@ export const resolveLiveRevealBodyMessageId = (input: {
     parts: streaming.parts,
     streamPhase,
     error: info.error,
-    // The streaming id is always the last visible assistant of its turn.
+    // Position is diagnostic only; every received message retains its body.
     isLastAssistantInTurn: true,
   });
   return reveal ? streamingId : null;

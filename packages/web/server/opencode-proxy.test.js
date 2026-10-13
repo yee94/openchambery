@@ -2,6 +2,8 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { EventEmitter } from 'node:events';
 import express from 'express';
 import path from 'path';
+import fs from 'node:fs';
+import os from 'node:os';
 
 import { createSseBoundaryTracker, registerOpenCodeProxy, writeSseChunkWithBackpressure } from './lib/opencode/proxy.js';
 
@@ -33,6 +35,53 @@ describe('OpenCode proxy SSE forwarding', () => {
     await closeServer(upstreamServer);
     proxyServer = undefined;
     upstreamServer = undefined;
+  });
+
+  it('projects legacy symlink sessions consistently through list, detail and live SSE', async () => {
+    const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'proxy-symlink-')));
+    const real = path.join(root, 'repo');
+    const alias = path.join(root, 'alias');
+    fs.mkdirSync(real);
+    fs.symlinkSync(real, alias, process.platform === 'win32' ? 'junction' : 'dir');
+    const session = { id: 'ses_alias', title: 'Alias session', location: { directory: alias }, time: { created: 1, updated: 2 } };
+    try {
+      const upstream = express();
+      upstream.get('/api/location', (_req, res) => res.json({ project: { id: 'project-repo' } }));
+      upstream.get('/api/session', (req, res) => {
+        expect(req.query.project).toBe('project-repo');
+        expect(req.query.directory).toBeUndefined();
+        res.json({ data: [session], cursor: {} });
+      });
+      upstream.get('/api/session/ses_alias', (_req, res) => res.json({ data: session }));
+      upstream.get('/api/global/event', (_req, res) => {
+        res.setHeader('Content-Type', 'text/event-stream');
+        res.end(`data: ${JSON.stringify({ directory: alias, payload: { type: 'session.updated', data: { info: session } } })}\n\n`);
+      });
+      upstreamServer = await listen(upstream);
+      const upstreamPort = upstreamServer.address().port;
+      const app = express();
+      registerOpenCodeProxy(app, {
+        fs, os, path, OPEN_CODE_READY_GRACE_MS: 0,
+        getRuntime: () => ({ openCodePort: upstreamPort, isOpenCodeReady: true, openCodeNotReadySince: 0, isRestartingOpenCode: false }),
+        getOpenCodeAuthHeaders: () => ({}),
+        buildOpenCodeUrl: (requestPath) => `http://127.0.0.1:${upstreamPort}${requestPath}`,
+        ensureOpenCodeApiPrefix: () => {},
+        getStoredSessionMetadata: async () => ({}),
+        getStoredSessionMetadataSync: () => ({}),
+      });
+      proxyServer = await listen(app);
+      const base = `http://127.0.0.1:${proxyServer.address().port}`;
+      const list = await (await fetch(`${base}/api/session?directory=${encodeURIComponent(real)}`)).json();
+      expect(list.data).toEqual([expect.objectContaining({ id: 'ses_alias', directory: real, location: { directory: real } })]);
+      const detail = await (await fetch(`${base}/api/session/ses_alias`)).json();
+      expect(detail.data.directory).toBe(real);
+      expect(detail.data.location.directory).toBe(real);
+      const events = await (await fetch(`${base}/api/global/event`)).text();
+      const event = JSON.parse(events.trim().replace(/^data: /, ''));
+      expect(event.directory).toBe(real);
+      expect(event.payload.data.info.directory).toBe(real);
+      expect(event.payload.data.info.location.directory).toBe(real);
+    } finally { fs.rmSync(root, { recursive: true, force: true }); }
   });
 
   it('forwards event streams with nginx-safe headers', async () => {

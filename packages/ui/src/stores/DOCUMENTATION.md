@@ -2,6 +2,10 @@
 
 ## Purpose
 
+`globalSessions.ts` follows the authoritative V2 cursor even when a returned page
+is short or empty: a Host can filter a project page down to one physical directory
+while recovering symlink aliases. Page length alone cannot establish exhaustion.
+
 `packages/ui/src/stores` contains app-level Zustand stores for persistent UI state, runtime state, and feature caches.
 
 Not all state in the UI belongs here.

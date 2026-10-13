@@ -3,10 +3,10 @@ import { useEvent, useInterval } from '@reactuses/core';
 import { Button } from '@/components/ui/button';
 import { toast } from '@/components/ui';
 import { useI18n } from '@/lib/i18n';
-import { ensureQuestionAutoDelegate, getQuestionAutoDelegateSnapshot, mutateQuestionAutoDelegate, refreshQuestionAutoDelegate, useQuestionAutoDelegate, type QuestionDelegateData } from '@/lib/questionAutoDelegate';
+import { refreshQuestionAutoDelegate, useQuestionAutoDelegate, type QuestionDelegateData } from '@/lib/questionAutoDelegate';
 import { getRuntimeGeneration } from '@/lib/runtime-switch';
 import type { QuestionRequest } from '@/types/question';
-import { discardQuestionDraft, getQuestionDraft, updateQuestionDraft, useQuestionDraftStore } from './questionDraftStore';
+import { discardQuestionDraft, useQuestionDraftStore } from './questionDraftStore';
 
 const DEFAULT_DELAY_MS = 30_000;
 
@@ -18,96 +18,15 @@ export function useQuestionDelegation(question: QuestionRequest) {
   const query = useQuestionAutoDelegate();
   const request = matchRequest(query.data?.snapshot.requests, question);
   const scope = `${getRuntimeGeneration()}:${question.sessionID}:${question.id}`;
-  const pausePending = useQuestionDraftStore((state) => state.drafts[scope]?.pausePending ?? false);
-  const pauseFailed = useQuestionDraftStore((state) => state.drafts[scope]?.pauseFailed ?? false);
-  const [ui, setUI] = React.useState<{ scope: string; pending: 'pause' | 'delegate' | null; failed: 'pause' | 'delegate' | null }>({ scope, pending: null, failed: null });
-  const pending = (ui.scope === scope ? ui.pending : null) ?? (pausePending ? 'pause' : null);
-  const failed = (ui.scope === scope ? ui.failed : null) ?? (pauseFailed ? 'pause' : null);
   const [claim, setClaim] = React.useState<{ scope: string; epoch?: string } | null>(null);
   const claimed = claim?.scope === scope && (!claim.epoch || claim.epoch === query.data?.snapshot.epoch);
   const awaitingClaim = claimed && (!request || !['submitting', 'uncertain', 'settled'].includes(request.state));
-  const heldForScope = useQuestionDraftStore((state) => state.drafts[scope]?.interacted ?? false);
-  const flight = React.useRef<string | null>(null);
-  const failedScope = React.useRef<string | null>(null);
-  const latestScope = React.useRef(scope);
-  latestScope.current = scope;
-  const hold = useEvent(() => {
-    if (claimed) return;
-    updateQuestionDraft(scope, () => ({ interacted: true }));
-  });
-  const run = useEvent(async (action: 'pause' | 'delegate', reason: 'interaction' | 'user' = 'user') => {
-    if (claimed) return;
-    if (action === 'pause') hold();
-    const draft = getQuestionDraft(scope);
-    if (flight.current === scope || draft.pausePending || (reason === 'interaction' && (failedScope.current === scope || draft.pauseFailed))) return;
-    const cached = getQuestionAutoDelegateSnapshot();
-    const currentRequest = matchRequest(cached?.snapshot.requests, question);
-    if (currentRequest && ['submitting', 'uncertain', 'settled'].includes(currentRequest.state)) {
-      if (reason === 'user') {
-        setUI({ scope, pending: null, failed: null });
-        failedScope.current = null;
-        void refreshQuestionAutoDelegate();
-      }
-      return;
-    }
-    const generation = getRuntimeGeneration();
-    flight.current = scope;
-    failedScope.current = null;
-    setUI({ scope, pending: action, failed: null });
-    if (action === 'pause') updateQuestionDraft(scope, () => ({ pausePending: true, pauseFailed: false }));
-    const startedScope = scope;
-    try {
-      let identity = {
-        requestID: question.id,
-        sessionID: currentRequest?.sessionID || question.sessionID,
-        directory: currentRequest?.directory || '',
-      };
-      if (action === 'delegate' && !currentRequest) {
-        const data = cached ?? await ensureQuestionAutoDelegate();
-        if (generation !== getRuntimeGeneration()) throw new Error('Runtime changed');
-        const matched = matchRequest(data.snapshot.requests, question);
-        if (!matched) throw new Error('Question identity unavailable');
-        identity = { requestID: matched.requestID, sessionID: matched.sessionID, directory: matched.directory };
-      }
-      const outcome = await mutateQuestionAutoDelegate(action, identity, action === 'pause' ? reason : undefined);
-      if (outcome === 'not_found' && action === 'pause' && reason === 'interaction') return;
-      if (['error', 'not_found', 'disabled'].includes(outcome)) throw new Error('Question operation failed');
-    } catch {
-      if (action === 'pause' && generation === getRuntimeGeneration() && useQuestionDraftStore.getState().drafts[startedScope]) {
-        updateQuestionDraft(startedScope, () => ({ pauseFailed: true }));
-      }
-      if (latestScope.current === startedScope) {
-        failedScope.current = startedScope;
-        setUI({ scope: startedScope, pending: action, failed: action });
-      }
-    } finally {
-      if (action === 'pause' && generation === getRuntimeGeneration() && useQuestionDraftStore.getState().drafts[startedScope]) {
-        updateQuestionDraft(startedScope, () => ({ pausePending: false }));
-      }
-      if (flight.current === startedScope) flight.current = null;
-      if (latestScope.current === startedScope) setUI((state) => ({ ...state, pending: null }));
-    }
-  });
-  const interaction = useEvent((event: React.SyntheticEvent<HTMLElement>) => {
-    if ((event.target as Element).closest('[data-question-delegation-controls]')) return;
-    // First interaction holds locally and starts the pause before a possible remount.
-    // Further input (e.g. custom textarea keystrokes) must not re-enter pause.
-    if (heldForScope) return;
-    hold();
-    void run('pause', 'interaction');
-  });
   const submissionClaimed = useEvent(async (submittedScope: string) => {
     if (submittedScope !== `${getRuntimeGeneration()}:${question.sessionID}:${question.id}`) return;
     setClaim({ scope, epoch: query.data?.snapshot.epoch });
-    setUI({ scope, pending: null, failed: null });
     await refreshQuestionAutoDelegate();
   });
-  React.useEffect(() => {
-    if (!heldForScope || claimed) return;
-    if (request && request.state !== 'counting') return;
-    void run('pause', 'interaction');
-  }, [heldForScope, claimed, request?.state, request?.requestID]);
-  return { query, request, pending, failed, run, interaction, submissionClaimed, claimed, awaitingClaim, scope, held: heldForScope };
+  return { query, request, submissionClaimed, claimed, awaitingClaim, scope };
 }
 
 type Delegation = ReturnType<typeof useQuestionDelegation>;
@@ -140,41 +59,36 @@ function LiveCountdown({ data, deadlineAt, startedAt, delayMs }: {
 
 export function QuestionAutoDelegateStatus({ delegation }: { delegation: Delegation }) {
   const { t } = useI18n();
-  const { query, request, pending, failed, run, claimed, awaitingClaim, scope, held } = delegation;
+  const { query, request, claimed, awaitingClaim, scope } = delegation;
   const startedAt = React.useRef(performance.now());
   const startedScope = React.useRef(scope);
   if (startedScope.current !== scope) {
     startedScope.current = scope;
     startedAt.current = performance.now();
   }
-  const locked = claimed || request?.state === 'submitting' || request?.state === 'uncertain' || request?.state === 'settled';
   const enabled = query.data?.snapshot.enabled !== false;
-  const showCountdown = enabled && !awaitingClaim && !pending && !held && (!request || request.state === 'counting');
+  const showCountdown = enabled && !awaitingClaim && (!request || request.state === 'counting');
   const delayMs = query.data?.snapshot.delayMs ?? DEFAULT_DELAY_MS;
   const status = awaitingClaim ? 'chat.questionDelegate.uncertain'
-    : pending ? (pending === 'pause' ? 'chat.questionDelegate.pausing' : 'chat.questionDelegate.submitting')
     : request?.state === 'submitting' ? 'chat.questionDelegate.submitting'
     : request?.state === 'uncertain' ? 'chat.questionDelegate.uncertain'
     : request?.state === 'settled' && request.submittedBy === 'auto' && request.resolution === 'replied' ? 'chat.questionDelegate.success'
     : request?.state === 'settled' ? 'chat.questionDelegate.settled'
     : !enabled ? 'chat.questionDelegate.disabled'
-    : request?.state === 'paused' ? 'chat.questionDelegate.paused'
-    : held ? 'chat.questionDelegate.pausing'
     : request?.state === 'disabled' ? 'chat.questionDelegate.disabled'
     : 'chat.questionDelegate.settled';
+  if (request?.state === 'paused' && !awaitingClaim && !query.isError) return null;
   return <div data-question-delegation-controls className="flex flex-col gap-1.5 border-t border-border/20 px-2 py-1.5">
-    {showCountdown ? <LiveCountdown data={query.data} deadlineAt={request?.deadlineAt ?? null} startedAt={startedAt.current} delayMs={delayMs} /> : (
+    {showCountdown ? <LiveCountdown data={query.data} deadlineAt={request?.deadlineAt ?? null} startedAt={startedAt.current} delayMs={delayMs} /> : request?.state !== 'paused' || awaitingClaim ? (
       <div className="flex min-w-0 flex-1 flex-col gap-1">
-        {!failed ? <span role="status" className="typography-micro text-muted-foreground">{t(status)}</span> : null}
+        <span role="status" className="typography-micro text-muted-foreground">{t(status)}</span>
         <div aria-hidden className="h-1" />
       </div>
-    )}
-    {query.isError || failed ? <div role="alert" className="typography-micro text-[var(--status-error)]">{t(failed === 'pause' ? 'chat.questionDelegate.pauseFailed' : failed === 'delegate' ? 'chat.questionDelegate.delegateFailed' : 'chat.questionDelegate.loadFailed')}</div> : null}
-    <div className="flex min-h-6 flex-wrap items-center gap-x-2 gap-y-1">
-      {(query.isError || failed || awaitingClaim) && <Button variant="ghost" size="xs" disabled={Boolean(pending) || query.isFetching} onClick={() => failed && !claimed ? void run(failed) : void query.refetch()}>{t(claimed ? 'chat.questionDelegate.refreshStatus' : 'chat.questionDelegate.retry')}</Button>}
-      {(request?.state === 'counting' || held) && !locked && enabled && <Button variant="ghost" size="xs" className={held ? 'invisible' : undefined} aria-hidden={held || undefined} tabIndex={held ? -1 : undefined} disabled={Boolean(pending) || held} onClick={() => void run('pause')}>{t('chat.questionDelegate.pause')}</Button>}
-      {request && !locked && <Button variant="outline" size="xs" disabled={Boolean(pending)} onClick={() => void run('delegate')}>{t('chat.questionDelegate.delegate')}</Button>}
-    </div>
+    ) : null}
+    {query.isError ? <div role="alert" className="typography-micro text-[var(--status-error)]">{t('chat.questionDelegate.loadFailed')}</div> : null}
+    {(query.isError || awaitingClaim) && <div className="flex min-h-6 flex-wrap items-center gap-x-2 gap-y-1">
+      <Button variant="ghost" size="xs" disabled={query.isFetching} onClick={() => void query.refetch()}>{t(claimed ? 'chat.questionDelegate.refreshStatus' : 'chat.questionDelegate.retry')}</Button>
+    </div>}
   </div>;
 }
 

@@ -134,42 +134,21 @@ export type SortedFinalBodyRevealInput = {
     parts: readonly Part[];
     streamPhase?: unknown;
     error?: unknown;
-    /** Older assistants in a multi-step turn never own the sorted final body. */
+    /** Turn position does not revoke already received message text. */
     isLastAssistantInTurn?: boolean;
 };
 
 /**
- * Sorted-mode final-body reveal.
- *
- * Intermediate tool/reasoning work stays in Activity. The message body may
- * paint only when this matches the terminal-stop shape:
- * - already a confirmed terminal stop, or
- * - a live stream with no continuation tools and finish absent/`stop`.
- *
- * Errors veto reveal so a partial abort does not promote text out of Activity.
+ * Received model text owns its message body in sorted mode too. Later steps,
+ * tools, errors and completion cannot revoke content already shown to the user.
  */
 export const canRevealSortedFinalBody = (input: SortedFinalBodyRevealInput): boolean => {
-    if (input.error) {
-        return false;
-    }
-    if (input.isLastAssistantInTurn === false) {
-        return false;
-    }
-    if (hasConfirmedTerminalStop(input.finish, input.parts)) {
-        return true;
-    }
-    if (!isLiveStreamPhase(input.streamPhase)) {
-        return false;
-    }
-    if (typeof input.finish === 'string' && input.finish !== 'stop') {
-        return false;
-    }
-    return countContinuationToolParts(input.parts) === 0;
+    return input.parts.some(isModelTextPart);
 };
 
 /**
- * Sorted mode streams only the final-conclusion body while that reveal
- * candidate is live. Justification/Activity rows stay non-streaming.
+ * Apply the streaming cadence only while the message's live channel is active.
+ * Completion stops animation without withdrawing the body.
  */
 export const shouldStreamSortedFinalBody = (input: SortedFinalBodyRevealInput): boolean => {
     if (!isLiveStreamPhase(input.streamPhase)) {

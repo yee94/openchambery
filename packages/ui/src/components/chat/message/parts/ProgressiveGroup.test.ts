@@ -317,7 +317,7 @@ describe('progressive activity presentation', () => {
         // Live non-compaction expands tool rows without the "Working" chrome.
         // Settled turns keep the foldable Processed header; compaction keeps Compacting.
         expect(progressiveGroupSource).toContain('const paintDisclosureHeader = Boolean(showHeader) && !(isActive && !isCompaction)');
-        expect(progressiveGroupSource).toContain('if (!paintDisclosureHeader)');
+        expect(progressiveGroupSource).toContain('{paintDisclosureHeader ? <button');
         expect(progressiveGroupSource).toContain('if ((!paintDisclosureHeader || (disclosureLockedOpen && !isCompaction)) && rows.length === 0)');
         expect(progressiveGroupSource).toContain('Live non-compaction never paints the Working disclosure header');
     });

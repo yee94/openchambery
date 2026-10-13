@@ -41,6 +41,27 @@ async function waitForAssertion(assertion) {
 }
 
 describe('createGlobalMessageStreamHub', () => {
+  it('routes symlink message events and reconnect replay through the same physical directory', async () => {
+    const received = [];
+    const hub = createGlobalMessageStreamHub({
+      buildOpenCodeUrl: (pathname) => `http://127.0.0.1:4096${pathname}`,
+      getOpenCodeAuthHeaders: () => ({}),
+      resolveDirectory: (value) => value === '/alias' ? '/physical' : value,
+      upstreamReconnectDelayMs: 1000,
+      fetchImpl: async () => createSseResponse({ blocks: [
+        'id: evt-1\ndata: {"directory":"/alias","payload":{"type":"message.updated","properties":{}}}\n\n',
+        'id: evt-2\ndata: {"directory":"/alias","payload":{"type":"message.part.updated","properties":{}}}\n\n',
+      ] }),
+    });
+    hub.subscribeEvent((event) => received.push(event));
+    try {
+      hub.start();
+      await waitForAssertion(() => expect(received).toHaveLength(2));
+      expect(received.every((event) => event.directory === '/physical' && event.envelope.directory === '/physical')).toBe(true);
+      expect(hub.replayAfter('evt-1')[0]).toMatchObject({ eventId: 'evt-2', directory: '/physical' });
+    } finally { hub.stop(); }
+  });
+
   it('continues fanout when an event subscriber throws', async () => {
     const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
     const received = [];

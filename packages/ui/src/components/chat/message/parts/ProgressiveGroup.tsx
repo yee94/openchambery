@@ -1345,18 +1345,11 @@ const ProgressiveGroup: React.FC<ProgressiveGroupProps> = ({
     // Empty expanded disclosures (e.g. compaction with only foldable body text
     // outside activity rows) keep the header and skip the empty rail.
     const shouldShowRowsContainer = visibleRows.length > 0;
-    // Live non-compaction: skip the Working header and render rows only (still
-    // force-expanded / no indent rail via disclosureLockedOpen). Settled and
-    // compaction keep the disclosure chrome.
-    if (!paintDisclosureHeader) {
-        return (
-            <div className={getToolRowBlockClass(isMobile)}>{renderedRows}</div>
-        );
-    }
-
+    // Header visibility must not change the rows' React parent: doing so resets
+    // expanded reasoning/tool children when a stream settles.
     return (
         <div className={getToolRowBlockClass(isMobile)}>
-                    <button
+                    {paintDisclosureHeader ? <button
                         ref={activityHeaderRef}
                         type="button"
                         className={cn(
@@ -1462,7 +1455,7 @@ const ProgressiveGroup: React.FC<ProgressiveGroupProps> = ({
                             />
                         ) : null}
                     </span>
-                    </button>
+                    </button> : null}
                 {shouldShowRowsContainer ? (
                     <div className={disclosureLockedOpen ? undefined : 'relative ml-2 pl-3'}>
                         {!disclosureLockedOpen ? (

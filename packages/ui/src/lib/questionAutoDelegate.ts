@@ -1,7 +1,7 @@
 import { queryOptions, useQuery } from '@tanstack/react-query';
 import { useSyncExternalStore } from 'react';
 import { z } from 'zod';
-import type { QuestionAutoDelegateSnapshot, QuestionAutoDelegateMutationResult } from '../../../web/server/lib/question-auto-delegate/core';
+import type { QuestionAutoDelegateSnapshot } from '../../../web/server/lib/question-auto-delegate/core';
 import { runtimeFetch } from './runtime-fetch';
 import { queryClient } from './queryRuntime';
 import { getRuntimeGeneration, getRuntimeTransportIdentity, subscribeRuntimeEndpointChanged } from './runtime-switch';
@@ -16,10 +16,6 @@ const snapshotSchema = z.object({
     deadlineAt: z.number().nullable(), pauseReason: z.enum(['interaction', 'user', 'goal']).nullable(),
     submittedBy: z.enum(['manual', 'auto']).nullable(), resolution: z.enum(['replied', 'rejected', 'external']).nullable(),
   })),
-});
-const mutationSchema = z.object({
-  outcome: z.enum(['ok', 'paused', 'delegated', 'submitted', 'claimed', 'uncertain', 'settled', 'not_found', 'disabled', 'error']),
-  snapshot: snapshotSchema,
 });
 
 export interface QuestionDelegateData {
@@ -82,23 +78,3 @@ export const refreshQuestionAutoDelegate = async () => {
   await queryClient.cancelQueries({ queryKey, exact: true }, { revert: false });
   await queryClient.invalidateQueries({ queryKey, exact: true });
 };
-
-export async function mutateQuestionAutoDelegate(
-  action: 'pause' | 'delegate',
-  identity: { requestID: string; sessionID: string; directory: string },
-  reason?: 'interaction' | 'user',
-): Promise<QuestionAutoDelegateMutationResult['outcome']> {
-  const runtime = capture();
-  const requestSequence = ++sequence;
-  const response = await runtimeFetch(`/api/question-auto-delegate/requests/${encodeURIComponent(identity.requestID)}/${action}`, {
-    method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ sessionID: identity.sessionID, directory: identity.directory, ...(reason ? { reason } : {}) }),
-  });
-  const result = mutationSchema.parse(await response.json());
-  if (!current(runtime)) throw new Error('Runtime changed');
-  queryClient.setQueryData(key(runtime), (previous: QuestionDelegateData | undefined) =>
-    mergeQuestionDelegateData(previous, dataFrom(result.snapshot, requestSequence)));
-  void refreshQuestionAutoDelegate();
-  if (!response.ok && !['claimed', 'uncertain', 'not_found'].includes(result.outcome)) throw new Error(`Question ${action}: ${response.status}`);
-  return result.outcome;
-}

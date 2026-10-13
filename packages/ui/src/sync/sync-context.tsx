@@ -44,6 +44,7 @@ import { adoptSessionMove } from './session-move'
 import { updateStreamingState } from "./streaming"
 import { setActionRefs } from "./session-actions"
 import { applySessionInboxEvent } from "./session-prompt-api"
+import { handoffDeliveredInbox } from "./session-inbox-transcript"
 import { refreshSessionInbox } from "./session-inbox-query"
 import { setSyncRefs, getSyncChildStores } from "./sync-refs"
 import {
@@ -2597,14 +2598,14 @@ export function handleEvent(
     return
   }
 
-  // Ticket 02: known inbox events update the composer overlay only (not
-  // transcript). Unknown types leave overlay untouched.
+  // Consumed user input must reach the transcript before its queue chip retires.
   if (
     payload.type === "session.inbox.enqueued"
     || payload.type === "session.inbox.cancelled"
     || payload.type === "session.inbox.delivered"
     || payload.type === "session.inbox.delivery.changed"
   ) {
+    handoffDeliveredInbox(resolvedDirectory, payload)
     applySessionInboxEvent({
       type: payload.type,
       properties: (payload.properties ?? null) as Record<string, unknown> | null,

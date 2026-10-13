@@ -73,6 +73,7 @@ export const createSessionIndexSyncRuntime = ({
    */
   projectSessions = null,
   fetchFn = globalThis.fetch,
+  resolveDirectory = (value) => value,
   now = Date.now,
   setTimer = setTimeout,
   clearTimer = clearTimeout,
@@ -427,7 +428,7 @@ export const createSessionIndexSyncRuntime = ({
       batchDirectories = new Set();
     }
     for (const value of directories ?? []) {
-      const directory = normalizeDirectory(value);
+      const directory = normalizeDirectory(resolveDirectory(value));
       if (!directory || batchDirectories.has(directory)) continue;
       batchDirectories.add(directory);
       queuedDirectories.add(directory);

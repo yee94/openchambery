@@ -990,12 +990,8 @@ const TurnBlock = React.memo(({
         return null;
     }, [activeStreamingMessageId, turn.assistantMessages]);
 
-    // Sorted live-body reveal owner: while the streaming last assistant's body
-    // is revealed (live phase, no continuation tools yet), its justification
-    // rows must be withheld from Activity or the same paragraph renders twice
-    // (body of the streaming message + Activity group on the anchor). Once a
-    // continuation tool arrives the reveal is withdrawn and the text folds
-    // back into Activity.
+    // Text owns its message body throughout the turn. This deduplication only
+    // guards projections that also carry a justification for the same body.
     const liveRevealBodyMessageId = React.useMemo(() => {
         return resolveLiveRevealBodyMessageId({
             chatRenderMode,
@@ -2076,10 +2072,10 @@ const StreamingTailContent: React.FC<{
         return buildLiveStreamingEntry(newest, {
             activeStreamingMessageId,
             liveParts,
-            showTextJustificationActivity: chatRenderMode === 'sorted',
+            showTextJustificationActivity: false,
             showTurnChangedFiles,
         });
-    }, [activeStreamingMessageId, chatRenderMode, entries, newestIndex, liveParts, showTurnChangedFiles]);
+    }, [activeStreamingMessageId, entries, newestIndex, liveParts, showTurnChangedFiles]);
 
     return (
         <>
@@ -2222,7 +2218,7 @@ const LegendTimelineHost: React.FC<LegendTimelineHostProps> = ({
         const live = buildLiveStreamingEntry(newestTailEntry, {
             activeStreamingMessageId,
             liveParts,
-            showTextJustificationActivity: chatRenderMode === 'sorted',
+            showTextJustificationActivity: false,
             showTurnChangedFiles,
         });
         if (live === newestTailEntry) return tailEntries;
@@ -2231,7 +2227,6 @@ const LegendTimelineHost: React.FC<LegendTimelineHostProps> = ({
         return next;
     }, [
         activeStreamingMessageId,
-        chatRenderMode,
         liveParts,
         newestTailEntry,
         showTurnChangedFiles,
@@ -2406,6 +2401,11 @@ const MessageList = React.forwardRef<MessageListHandle, MessageListProps>(({
         return state.reviewTransferBySessionId.get(domainSessionKey) ?? null;
     });
     const [turnUiStates, setTurnUiStates] = React.useState<Map<string, TurnUiState>>(() => new Map());
+    const [turnUiSessionKey, setTurnUiSessionKey] = React.useState(domainSessionKey);
+    if (turnUiSessionKey !== domainSessionKey) {
+        setTurnUiSessionKey(domainSessionKey);
+        setTurnUiStates(new Map());
+    }
     const userAnimationRef = React.useRef<{
         sessionKey: string | undefined;
         previousOrder: string[];
@@ -2553,11 +2553,27 @@ const MessageList = React.forwardRef<MessageListHandle, MessageListProps>(({
 
     const { projection, streamingTurns } = useTurnRecords(displayMessages, {
         sessionKey: domainSessionKey,
-        showTextJustificationActivity: chatRenderMode === 'sorted',
+        // Received text keeps its message body; a later summary must not move it
+        // into an automatically collapsed Activity disclosure.
+        showTextJustificationActivity: false,
         showTurnChangedFiles,
         hasLiveTail: true,
         liveTailActive,
     });
+    // The committed live tail was shown expanded. Retain that disclosure state
+    // above virtualized rows so completion/new turns cannot silently fold it.
+    useIsomorphicLayoutEffect(() => {
+        if (!liveTailActive) return;
+        setTurnUiStates((previous) => {
+            let next = previous;
+            for (const turn of streamingTurns) {
+                if (turn.completionDisposition !== 'active' || turn.assistantMessages.length === 0 || previous.has(turn.turnId)) continue;
+                if (next === previous) next = new Map(previous);
+                next.set(turn.turnId, { isExpanded: true });
+            }
+            return next;
+        });
+    }, [liveTailActive, streamingTurns]);
     const timelineEntries = React.useMemo(() => streamPerfMeasure('ui.message_list.render_entries_ms', () => {
         return splitTimelineRenderEntries({
             messages: displayMessages,

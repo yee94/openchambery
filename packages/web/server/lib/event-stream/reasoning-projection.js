@@ -322,7 +322,7 @@ export function createReasoningOutboundFilter() {
 /**
  * Project SSE data JSON; preserve GlobalEvent `{ directory, payload }` wrap.
  * @param {unknown} dataJson
- * @param {{ projectEvent: (payload: unknown) => unknown | null }} filter
+ * @param {{ projectEvent: (payload: unknown) => unknown | null, projectEnvelope?: (envelope: object) => object | null }} filter
  */
 function projectSseDataJson(dataJson, filter) {
   if (!isPlainObject(dataJson)) {
@@ -332,8 +332,10 @@ function projectSseDataJson(dataJson, filter) {
   if (isPlainObject(dataJson.payload) && typeof dataJson.payload.type === 'string') {
     const projected = filter.projectEvent(dataJson.payload);
     if (projected == null) return { action: 'drop' };
-    if (projected === dataJson.payload) return { action: 'keep', value: dataJson, changed: false };
-    return { action: 'keep', value: { ...dataJson, payload: projected }, changed: true };
+    const envelope = projected === dataJson.payload ? dataJson : { ...dataJson, payload: projected };
+    const value = filter.projectEnvelope ? filter.projectEnvelope(envelope) : envelope;
+    if (value == null) return { action: 'drop' };
+    return { action: 'keep', value, changed: value !== dataJson };
   }
 
   const projected = filter.projectEvent(dataJson);
@@ -345,7 +347,7 @@ function projectSseDataJson(dataJson, filter) {
 /**
  * Filter one SSE block (no trailing separator). null = drop.
  * @param {string} block
- * @param {{ projectEvent: (payload: unknown) => unknown | null }} filter
+ * @param {{ projectEvent: (payload: unknown) => unknown | null, projectEnvelope?: (envelope: object) => object | null }} filter
  * @returns {string | null}
  */
 export function filterSseBlock(block, filter) {

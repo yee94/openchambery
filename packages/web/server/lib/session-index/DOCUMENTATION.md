@@ -1,5 +1,28 @@
 # Session Index Runtime
 
+## Physical directory identity
+
+The Host injects `session-directory-runtime.js` into index writes, background
+lists and outbound session projection. For a local OpenCode service, resolvable
+symlinks use the physical path already used by project settings. Missing paths
+retain their lexical identity; non-loopback upstreams never resolve against the
+Host's filesystem. This does not edit OpenCode's database or shell settings.
+
+Existing index aliases reconcile transactionally on open, snapshot reads and
+directory replacement, scoped to the current runtime. Duplicate summaries retain
+the freshest record, maximum activity and newest status; pins remain independent,
+child membership follows the directory, and the merged head stays bounded to 20.
+Reconciliation failure rolls back the entire index conversion. Rechecking on reads
+also recovers paths unavailable during startup.
+
+Directory lists resolve the upstream location/project, fetch project-scoped pages
+and retain only records whose physical directory matches the requested directory.
+This discovers old aliases outside the index without admitting sibling worktrees.
+Opaque next/previous cursors stay upstream-owned; filtered short/empty pages with
+a continuation are partial, not exhausted. The existing five-page sync budget and
+`hasMore` partial-result contract still apply. Explicit remote upstreams retain
+their directory query behavior; extension-only VS Code has no Host identity layer.
+
 Native `session.renamed` updates the existing runtime-scoped summary's title and
 update clock directly, publishing through the normal index revision path. It
 preserves activity ordering, pins and execution status; older/duplicate events

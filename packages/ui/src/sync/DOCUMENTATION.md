@@ -1,5 +1,11 @@
 # Sync architecture, event handling & store update rules
 
+## Consumed inbox transcript handoff
+
+Before `applySessionInboxEvent` retires a delivered queue chip, `session-inbox-transcript.ts` commits the known user payload through the native projection normalizer and repository SSE batch, using the inbox/message identity and delivery clock. Text and file resources become transcript content together. Already-materialized messages are not overwritten; duplicate deliveries do not append another row.
+
+When enqueue was missed, the shared bounded exact-fill scheduler fetches that message through the scoped SDK. Runtime transport/generation, repository identity and moved-directory authority fence async completion. Failure preserves unrelated content and reports a recovery warning; subsequent delivery or normal authoritative history recovery can retry. Pending, unconsumed queue items remain outside the transcript. Regression coverage: `session-inbox-transcript.test.ts`.
+
 ## Native session title events
 
 Live session list equality includes the title-refresh presentation fields

@@ -140,7 +140,6 @@ export async function listGlobalSessionPages(
         }, { attempts: options.retryAttempts ?? 3, delay: 500 });
 
         const raw = page.data.map((session) => projectListedSession(session));
-        if (raw.length === 0) break;
 
         const payload = raw.filter((session) => {
             if (options.archived ? !isArchivedSession(session) : isArchivedSession(session)) {
@@ -168,8 +167,6 @@ export async function listGlobalSessionPages(
         if (options.maxItems !== undefined && all.length >= options.maxItems) break;
 
         // Filtered-empty pages are not exhausted — keep walking the raw cursor.
-        if (raw.length < requestLimit) break;
-
         const nextCursor = typeof page.cursor?.next === "string" && page.cursor.next.length > 0
             ? page.cursor.next
             : undefined;
