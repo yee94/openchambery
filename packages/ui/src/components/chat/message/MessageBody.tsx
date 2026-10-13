@@ -1486,11 +1486,13 @@ const AssistantMessageBody = React.memo(({
     const visibleParts = React.useMemo(() => {
         return parts
             .filter((part) => !isEmptyTextPart(part))
+            .filter((part) => part.type !== 'reasoning'
+                || (showReasoningTraces && extractTextContent(part).trim().length > 0))
             .filter((part) => {
                 const rawPart = part as Record<string, unknown>;
                 return rawPart.type !== 'compaction';
             });
-    }, [parts]);
+    }, [parts, showReasoningTraces]);
 
     const toolParts = React.useMemo(() => {
         return visibleParts.filter((part): part is ToolPartType => part.type === 'tool');

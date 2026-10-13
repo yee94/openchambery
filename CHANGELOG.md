@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [2.0.8-beta.9] - 2026-10-13
+
+### 修复
+
+- 修复实时展示模式中空白或隐藏的思考占位仍将相邻工具拆成多个组的问题；成功、失败及后续工具按原始顺序合并，可见说明仍保留分组边界。
+
 ## [2.0.8-beta.8] - 2026-10-13
 
 ### 修复

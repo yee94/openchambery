@@ -41,12 +41,15 @@ let previousUI: ReturnType<typeof useUIStore.getState>;
 let previousFlags: ReturnType<typeof useFeatureFlagsStore.getState>;
 const apis = { runtime: { isVSCode: false, isDesktop: false }, files: {}, editor: {} } as RuntimeAPIs;
 
-test.each([true, false])('invisible Thought does not split adjacent tools (showReasoning=%s)', async (showReasoningTraces) => {
-    useUIStore.setState({ showReasoningTraces });
+test.each([
+    ['sorted', true], ['sorted', false], ['live', true], ['live', false],
+] as const)('invisible Thought does not split successful and failed tools (mode=%s, showReasoning=%s)', async (chatRenderMode, showReasoningTraces) => {
+    useUIStore.setState({ chatRenderMode, showReasoningTraces });
     const row = assistant('tools-with-thought', '');
     row.parts = [
         { id: 'tool-one', type: 'tool', tool: 'read', state: { status: 'completed', input: { filePath: '/workspace/one.ts' }, output: 'one' } },
         { id: 'thought', type: 'reasoning', text: showReasoningTraces ? '' : 'Hidden thought' },
+        { id: 'failed-search', type: 'tool', tool: 'custom_websearch', state: { status: 'error', input: { query: 'test' }, error: 'Search unavailable' } },
         { id: 'tool-two', type: 'tool', tool: 'read', state: { status: 'completed', input: { filePath: '/workspace/two.ts' }, output: 'two' } },
     ].map(part => ({ ...part, messageID: row.info.id, sessionID })) as Part[];
     await render([user, row], row.info.id);
