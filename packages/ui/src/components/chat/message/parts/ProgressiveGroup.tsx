@@ -1175,7 +1175,11 @@ const ProgressiveGroup: React.FC<ProgressiveGroupProps> = ({
         if (!shouldRenderRows) {
             return [] as AggregatedRow[];
         }
-        return aggregateRows(sortedParts);
+        // Invisible Thought placeholders have no display position and must not
+        // split otherwise adjacent tools. Visible reasoning remains a boundary.
+        return aggregateRows(sortedParts.filter(activity => (
+            activity.kind !== 'reasoning' || extractTextContent(activity.part).trim().length > 0
+        )));
     }, [shouldRenderRows, sortedParts]);
 
     const previewHiddenCount = React.useMemo(() => {

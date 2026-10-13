@@ -49,6 +49,7 @@ import {
   getTranscriptRepository,
   listCanonicalTranscriptScopes,
   materializeTranscriptMessage,
+  refreshTranscriptFromAuthority,
   resolveTranscriptRepositoryForStore,
   transcriptScope,
 } from "./transcript-repository-runtime"
@@ -1443,6 +1444,7 @@ export async function commitStagedRevertBeforeSend(sessionId: string, directoryO
     return
   }
   const { store, directory } = directoryState
+  const recoveryDirectory = directory ?? _getDirectory()
   return runSessionHistoryMutation(sessionId, directory, async ({ isCurrent }) => {
     // A partially initialized directory state (or test harness) has no session
     // catalog; without it there is no staged revert to commit.
@@ -1471,8 +1473,15 @@ export async function commitStagedRevertBeforeSend(sessionId: string, directoryO
           type: "revert-committed",
           to: revertTo,
         })
-      } catch {
-        // Catalog marker already cleared; SSE / next authority pull can finish.
+      } catch (error) {
+        // Commit is authoritative even if local publication failed. Repair before sending.
+        if (!isCurrent()) throw error
+        try {
+          await refreshTranscriptFromAuthority(recoveryDirectory, sessionId)
+        } catch (recoveryError) {
+          throw new AggregateError([error, recoveryError], `Revert committed, but local synchronization failed: ${recoveryError instanceof Error ? recoveryError.message : String(recoveryError)}`)
+        }
+        if (!isCurrent()) throw new Error("Session history mutation aborted because the runtime changed")
       }
     }
   })
@@ -2717,6 +2726,21 @@ export async function revertToMessage(
             previous: previousDraft,
           }).catch(() => undefined)
         }
+      }
+      if (isCurrent() && err instanceof Error && err.name === "MessageNotFoundError") {
+        try {
+          const authoritativeSession = await opencodeClient.getSession(sessionId, directory)
+          if (!isCurrent()) throw new Error("Session history mutation aborted because the runtime changed")
+          updateLiveSession(authoritativeSession, directory)
+          await refreshTranscriptFromAuthority(transcriptDirectory, sessionId)
+          if (!isCurrent()) throw new Error("Session history mutation aborted because the runtime changed")
+        } catch (recoveryError) {
+          throw new AggregateError([err, recoveryError], `${err.message}\n${recoveryError instanceof Error ? recoveryError.message : String(recoveryError)}`)
+        } finally {
+          // The exact stage response proves this ID is absent, even outside a fetched tail.
+          if (isCurrent()) repository.apply(transcriptScope(transcriptDirectory, sessionId), { type: "remove-message", messageID: messageId })
+        }
+        err.name = "SessionRevertMessageMissingRecoveredError"
       }
       throw err
     }

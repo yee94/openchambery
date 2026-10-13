@@ -2024,6 +2024,8 @@ export const dict: Record<I18nKey, string> = {
   'chat.revert.toast.redo': '다시 실행',
   'chat.revert.toast.restored': '모든 메시지 복원됨',
   'chat.revert.toast.busy': '세션이 실행 중일 때는 되돌릴 수 없습니다',
+  'chat.revert.toast.failed': '메시지를 되돌리지 못했습니다',
+  'chat.revert.toast.messageMissing': '이 메시지는 더 이상 존재하지 않습니다. 대화를 새로고침했습니다.',
   'chat.form.title': '양식',
   'chat.form.reply': '제출',
   'chat.form.cancel': '취소',

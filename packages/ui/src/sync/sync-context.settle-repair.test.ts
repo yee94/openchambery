@@ -16,8 +16,14 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest"
 import type { Message, Part } from "@/lib/opencode/v2-types"
 import type { Event } from "@/sync/types"
+import { QueryClient } from '@tanstack/react-query'
+import { createQueryTranscriptRepository } from './transcript-repository-query-adapter'
+import { getRuntimeGeneration, getRuntimeTransportIdentity } from '@/lib/runtime-switch'
 
-const { fetchPageMock } = vi.hoisted(() => ({ fetchPageMock: vi.fn() }))
+const { fetchPageMock } = vi.hoisted(() => {
+  vi.stubGlobal('fetch', vi.fn(async () => new Response('{}', { headers: { 'content-type': 'application/json' } })))
+  return { fetchPageMock: vi.fn() }
+})
 
 vi.mock("./transcript-repository-production", async (importOriginal) => {
   const actual = await importOriginal<typeof import("./transcript-repository-production")>()
@@ -27,7 +33,8 @@ vi.mock("./transcript-repository-production", async (importOriginal) => {
   }
 })
 
-import { handleEvent, setActiveSession } from "./sync-context"
+import { handleEvent, handleNormalizedOpenCodeHints, setActiveSession } from "./sync-context"
+import { normalizeOpenCodeEvent } from './opencode-event-normalizer'
 import {
   bindTranscriptRepositoryInstance,
   unbindTranscriptRepository,
@@ -133,8 +140,8 @@ describe("settle-gap repair around session materialization", () => {
     const refreshFromAuthority = bindRepository(gapTail)
     fetchPageMock.mockRejectedValue(new Error("offline"))
 
-    // First idle claims the materialization slot (its fetch fails offline);
-    // the second lands inside the cooldown window and must still repair.
+    // Both receipts arrive before the scheduled reconciliation starts and
+    // share one authoritative tail read.
     handleEvent(DIRECTORY, idleEvent, childStores, routingIndex)
     handleEvent(DIRECTORY, idleEvent, childStores, routingIndex)
 
@@ -146,7 +153,7 @@ describe("settle-gap repair around session materialization", () => {
     expect(scope.sessionID).toBe(SESSION)
   })
 
-  test("cooldown-suppressed idle enqueue stays quiet without the gap", async () => {
+  test("duplicate idle receipts coalesce even when the known tail looks complete", async () => {
     const refreshFromAuthority = bindRepository(settledTail)
     fetchPageMock.mockRejectedValue(new Error("offline"))
 
@@ -155,7 +162,7 @@ describe("settle-gap repair around session materialization", () => {
     await flushAsync()
     await flushAsync()
 
-    expect(refreshFromAuthority).not.toHaveBeenCalled()
+    expect(refreshFromAuthority).toHaveBeenCalledTimes(1)
   })
 
   test("materialize that cannot repair the gap reconciles from authority", async () => {
@@ -174,5 +181,80 @@ describe("settle-gap repair around session materialization", () => {
     await vi.waitFor(() => {
       expect(refreshFromAuthority).toHaveBeenCalledTimes(1)
     })
+  })
+
+  test.each(['tool-calls', 'stop'])('idle recovers an entirely missing final message after a completed %s step', async (finish) => {
+    const client = new QueryClient()
+    const toolTail = assistantWith({ finish, time: { created: 2, completed: 3 }, tokens: settledTail.tokens })
+    const final = { ...settledTail, id: 'msg_final' }
+    const records = [
+      { info: transcriptFor(toolTail).messagesByID.msg_u, parts: [] },
+      { info: toolTail, parts: [] },
+      { info: final, parts: [{ id: 'final-text', type: 'text', messageID: final.id, sessionID: SESSION, text: 'Final answer retained' } as Part] },
+    ]
+    const fetcher = vi.fn(async () => ({ records, complete: true }))
+    const repo = createQueryTranscriptRepository({ client, fetcher, transport: getRuntimeTransportIdentity(), generation: getRuntimeGeneration() })
+    bindTranscriptRepositoryInstance(repo)
+    const scope = { directory: DIRECTORY, sessionID: SESSION }
+    repo.apply(scope, { type: 'materialize-snapshots', records: records.slice(0, 2) })
+    // A recovery page can predate the missing final step without exhibiting
+    // missing completion fields on any locally known message.
+    fetchPageMock.mockResolvedValue({ records: records.slice(0, 2), complete: true })
+    try {
+      handleEvent(DIRECTORY, idleEvent, childStores, routingIndex)
+      await vi.waitFor(() => expect(repo.getParts(scope, final.id)).toEqual(expect.arrayContaining([
+        expect.objectContaining({ text: 'Final answer retained' }),
+      ])))
+      expect(repo.getTranscript(scope).messageOrder).toEqual(['msg_u', 'msg_a', 'msg_final'])
+      expect(fetcher).toHaveBeenCalledTimes(1)
+    } finally {
+      unbindTranscriptRepository()
+      repo.destroy()
+      client.clear()
+    }
+  })
+
+  test('idle during a pre-terminal fetch reconciles after that fetch, not inside its old flight', async () => {
+    const refresh = bindRepository(settledTail)
+    let finishPage!: (page: { records: never[]; complete: boolean }) => void
+    fetchPageMock.mockImplementation(() => new Promise(resolve => { finishPage = resolve }))
+    const normalized = normalizeOpenCodeEvent({
+      id: 'evt_step_end', type: 'session.step.ended', created: 100,
+      data: { sessionID: SESSION, assistantMessageID: 'msg_a', finish: 'tool-calls' },
+      location: { directory: DIRECTORY },
+    })
+    if (normalized.action !== 'emit') throw new Error('Expected native step event')
+    handleNormalizedOpenCodeHints(DIRECTORY, normalized.event, childStores)
+    await vi.waitFor(() => expect(fetchPageMock).toHaveBeenCalledTimes(1))
+    handleEvent(DIRECTORY, idleEvent, childStores, routingIndex)
+    handleEvent(DIRECTORY, idleEvent, childStores, routingIndex)
+    await flushAsync()
+    expect(refresh).not.toHaveBeenCalled()
+    finishPage({ records: [], complete: true })
+    await vi.waitFor(() => expect(refresh).toHaveBeenCalledTimes(1))
+  })
+
+  test('failed idle reconciliation preserves content and another idle can retry', async () => {
+    const client = new QueryClient()
+    const scope = { directory: DIRECTORY, sessionID: SESSION }
+    const records = [{ info: settledTail, parts: [{ id: 'kept', messageID: settledTail.id, sessionID: SESSION, type: 'text', text: 'Already shown' } as Part] }]
+    const fetcher = vi.fn().mockRejectedValueOnce(new Error('offline')).mockResolvedValue({ records, complete: true })
+    const repo = createQueryTranscriptRepository({ client, fetcher, transport: getRuntimeTransportIdentity(), generation: getRuntimeGeneration() })
+    bindTranscriptRepositoryInstance(repo)
+    repo.apply(scope, { type: 'materialize-snapshots', records })
+    try {
+      handleEvent(DIRECTORY, idleEvent, childStores, routingIndex)
+      await flushAsync()
+      await flushAsync()
+      expect(repo.getParts(scope, settledTail.id)).toEqual(records[0].parts)
+      handleEvent(DIRECTORY, idleEvent, childStores, routingIndex)
+      await vi.waitFor(() => expect(fetcher).toHaveBeenCalledTimes(2))
+      await flushAsync()
+      expect(repo.getParts(scope, settledTail.id)).toEqual(records[0].parts)
+    } finally {
+      unbindTranscriptRepository()
+      repo.destroy()
+      client.clear()
+    }
   })
 })

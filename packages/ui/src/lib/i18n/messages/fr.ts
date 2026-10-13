@@ -1786,6 +1786,8 @@ export const dict = {
   'chat.revert.toast.redo': 'Refait',
   'chat.revert.toast.restored': 'Restauré tous les messages',
   'chat.revert.toast.busy': 'Impossible d\'annuler pendant que la session est occupée',
+  'chat.revert.toast.failed': 'Impossible d’annuler le message',
+  'chat.revert.toast.messageMissing': 'Ce message n’existe plus. La conversation a été actualisée.',
   'chat.form.title': 'Formulaire',
   'chat.form.reply': 'Envoyer',
   'chat.form.cancel': 'Annuler',

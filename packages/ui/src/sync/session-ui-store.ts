@@ -226,12 +226,19 @@ function retainPendingUserMessageForSession(
   })
 }
 
-async function notifyRevertBusy(error: unknown): Promise<void> {
-  if (!isSessionRevertBusyError(error)) return
+async function notifyRevertFailure(error: unknown): Promise<void> {
   const { toast } = await import("sonner")
   const { useI18nStore, formatMessage } = await import("@/lib/i18n/store")
   const { dictionary } = useI18nStore.getState()
-  toast.error(formatMessage(dictionary, "chat.revert.toast.busy"))
+  const key = isSessionRevertBusyError(error)
+    ? "chat.revert.toast.busy"
+    : error instanceof Error && error.name === "SessionRevertMessageMissingRecoveredError"
+      ? "chat.revert.toast.messageMissing"
+      : "chat.revert.toast.failed"
+  toast.error(formatMessage(dictionary, key), {
+    id: "session-revert-error",
+    description: error && typeof error === "object" && "message" in error ? String(error.message) : String(error),
+  })
 }
 
 // ---------------------------------------------------------------------------
@@ -2464,12 +2471,12 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
   // revertToMessage — delegates to session-actions (single implementation)
   // ---------------------------------------------------------------------------
   revertToMessage: async (sessionId, messageId, options) => {
-    // Reverted UI is derived from session.revert + stored messages. Do not
-    // materialize a refetch here — that rewrites messageOrder by id.
+    // Successful stage is marker-only. The action owns targeted recovery for
+    // an authoritative MessageNotFoundError, preserving conversation order.
     try {
       await revertToMessageAction(sessionId, messageId, options?.directory)
     } catch (error) {
-      await notifyRevertBusy(error)
+      await notifyRevertFailure(error)
       throw error
     }
   },
@@ -2525,7 +2532,7 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
       try {
         await unrevertSession(sessionId)
       } catch (error) {
-        await notifyRevertBusy(error)
+        await notifyRevertFailure(error)
         throw error
       }
       const { toast } = await import("sonner")
@@ -2560,7 +2567,7 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
     try {
       await unrevertSessionAction(sessionId)
     } catch (error) {
-      await notifyRevertBusy(error)
+        await notifyRevertFailure(error)
       throw error
     }
     const { toast } = await import("sonner")

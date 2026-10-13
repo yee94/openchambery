@@ -1992,6 +1992,8 @@ export const dict: Record<I18nKey, string> = {
   'chat.revert.toast.redo': '已重做',
   'chat.revert.toast.restored': '已恢復全部訊息',
   'chat.revert.toast.busy': '工作階段進行中，無法復原',
+  'chat.revert.toast.failed': '復原訊息失敗',
+  'chat.revert.toast.messageMissing': '這則訊息已不存在，已重新整理對話。',
   'chat.form.title': '表單',
   'chat.form.reply': '提交',
   'chat.form.cancel': '取消',

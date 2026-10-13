@@ -41,6 +41,18 @@ let previousUI: ReturnType<typeof useUIStore.getState>;
 let previousFlags: ReturnType<typeof useFeatureFlagsStore.getState>;
 const apis = { runtime: { isVSCode: false, isDesktop: false }, files: {}, editor: {} } as RuntimeAPIs;
 
+test.each([true, false])('invisible Thought does not split adjacent tools (showReasoning=%s)', async (showReasoningTraces) => {
+    useUIStore.setState({ showReasoningTraces });
+    const row = assistant('tools-with-thought', '');
+    row.parts = [
+        { id: 'tool-one', type: 'tool', tool: 'read', state: { status: 'completed', input: { filePath: '/workspace/one.ts' }, output: 'one' } },
+        { id: 'thought', type: 'reasoning', text: showReasoningTraces ? '' : 'Hidden thought' },
+        { id: 'tool-two', type: 'tool', tool: 'read', state: { status: 'completed', input: { filePath: '/workspace/two.ts' }, output: 'two' } },
+    ].map(part => ({ ...part, messageID: row.info.id, sessionID })) as Part[];
+    await render([user, row], row.info.id);
+    expect(container.querySelectorAll('[data-component="context-tool-group"]')).toHaveLength(1);
+});
+
 beforeEach(async () => {
     previousUI = useUIStore.getState();
     previousFlags = useFeatureFlagsStore.getState();
@@ -111,7 +123,7 @@ test.each([false, true])('a new streamed assistant cannot remove displayed text 
     expect(container.textContent).toContain('SECOND_VISIBLE_PARAGRAPH');
 });
 
-test.each([false, true])('completion keeps earlier conclusions outside automatic folds (mobile=%s)', async (isMobile) => {
+test.each([false, true])('completion automatically folds process content but keeps the final answer (mobile=%s)', async (isMobile) => {
     useUIStore.setState({ isMobile });
     const first = assistant('assistant-1', 'FIRST_CONCLUSION', 'stop');
     await render([user, first], null);
@@ -120,8 +132,12 @@ test.each([false, true])('completion keeps earlier conclusions outside automatic
     await render([user, first, second], second.info.id);
     expect(container.textContent).toContain('FIRST_CONCLUSION');
     await render([user, first, assistant('assistant-2', 'SECOND_CONCLUSION', 'stop')], null);
-    expect(container.textContent).toContain('FIRST_CONCLUSION');
+    expect(container.textContent).not.toContain('FIRST_CONCLUSION');
     expect(container.textContent).toContain('SECOND_CONCLUSION');
+    await act(async () => container.querySelector<HTMLButtonElement>('[data-turn-id="user-1"] button[aria-expanded="false"]')!.click());
+    expect(container.textContent).toContain('FIRST_CONCLUSION');
+    await render([user, first, assistant('assistant-2', 'SECOND_CONCLUSION', 'stop')], null);
+    expect(container.textContent).toContain('FIRST_CONCLUSION');
 });
 
 test('tool arrival, step completion and failure preserve an already displayed partial answer', async () => {
@@ -138,6 +154,20 @@ test('tool arrival, step completion and failure preserve an already displayed pa
     expect(container.textContent).toContain('PARTIAL_ANSWER');
     await render([user, { ...withTool, info: { ...first.info, error: { name: 'UnknownError', data: { message: 'Interrupted test' } } } as Message }], null);
     expect(container.textContent).toContain('PARTIAL_ANSWER');
+});
+
+test('an explicit process expansion survives completion', async () => {
+    const first = assistant('assistant-1', 'PROCESS_NOTE', 'tool-calls');
+    const final = assistant('assistant-2', 'FINAL_REPLY', 'stop');
+    await render([user, first, final], null);
+    const toggle = () => container.querySelector<HTMLButtonElement>('[data-turn-id="user-1"] button[aria-expanded]')!;
+    await act(async () => toggle().click());
+    const continuation = assistant('assistant-3', 'CONTINUED_REPLY');
+    await render([user, first, final, continuation], continuation.info.id);
+    await render([user, first, final, assistant(continuation.info.id, 'CONTINUED_REPLY', 'stop')], null);
+    expect(toggle().getAttribute('aria-expanded')).toBe('true');
+    expect(container.textContent).toContain('PROCESS_NOTE');
+    expect(container.textContent).toContain('FINAL_REPLY');
 });
 
 test('intermediate narration stays before its tool and before the final answer throughout streaming', async () => {
@@ -159,6 +189,8 @@ test('intermediate narration stays before its tool and before the final answer t
     expectOrder(['BEFORE_FIRST_TOOL', '1 call', 'AFTER_FIRST_TOOL']);
     const final = assistant('assistant-3', 'FINAL_ANSWER', 'stop');
     await render([user, withTool, second, final], null);
+    expect(container.textContent).toContain('FINAL_ANSWER');
+    await act(async () => container.querySelector<HTMLButtonElement>('[data-turn-id="user-1"] button[aria-expanded="false"]')!.click());
     expectOrder(['BEFORE_FIRST_TOOL', '1 call', 'AFTER_FIRST_TOOL', 'FINAL_ANSWER']);
     await act(async () => container.querySelector<HTMLButtonElement>('[data-turn-id="user-1"] button[aria-expanded="true"]')!.click());
     expect(container.textContent).not.toContain('BEFORE_FIRST_TOOL');
@@ -241,6 +273,9 @@ test('earlier text parts in the final native message remain process content, not
         { id: 'last-text', messageID: first.info.id, sessionID, type: 'text', text: 'FINAL_ONLY' } as Part,
     ] };
     await render([user, final], null);
+    expect(container.textContent).not.toContain('INTERMEDIATE_EXPLANATION');
+    expect(container.textContent).toContain('FINAL_ONLY');
+    await act(async () => container.querySelector<HTMLButtonElement>('[data-turn-id="user-1"] button[aria-expanded="false"]')!.click());
     expect(container.textContent).toContain('INTERMEDIATE_EXPLANATION');
     expect(container.textContent).toContain('FINAL_ONLY');
     const fold = container.querySelector<HTMLButtonElement>('[data-turn-id="user-1"] button[aria-expanded="true"]');
@@ -281,7 +316,7 @@ test('completed text stays present at every DOM commit when the next user turn a
     } finally { observer.disconnect(); }
 });
 
-test.each(['sorted', 'live'] as const)('reasoning shown during streaming stays expanded through completion until the user collapses it (%s)', async (mode) => {
+test.each(['sorted', 'live'] as const)('completed reasoning follows the process fold in sorted mode and stays inline in live mode (%s)', async (mode) => {
     useUIStore.setState({ chatRenderMode: mode });
     const first = assistant('assistant-1', 'VISIBLE_ANSWER');
     const reasoning = { id: 'reasoning-1', messageID: first.info.id, sessionID, type: 'reasoning', text: `${'Reasoning context. '.repeat(10)}VISIBLE_REASONING_END` } as Part;
@@ -294,6 +329,12 @@ test.each(['sorted', 'live'] as const)('reasoning shown during streaming stays e
     const completed = { ...first, parts: [reasoning, ...answer], info: { ...first.info, finish: 'stop', time: { created: 2, completed: 3 } } as Message };
     await render([user, completed], null);
     await act(async () => { await new Promise(resolve => setTimeout(resolve, 300)); });
+    if (mode === 'sorted') {
+        expect(container.textContent).not.toContain('VISIBLE_REASONING_END');
+        expect(container.textContent).toContain('VISIBLE_ANSWER');
+        expect(container.querySelector('[data-turn-id="user-1"] button[aria-expanded="false"]')).not.toBeNull();
+        return;
+    }
     expect(container.textContent).toContain('VISIBLE_REASONING_END');
     const disclosure = container.querySelector<HTMLButtonElement>('[data-turn-id="user-1"] [aria-expanded="true"]');
     expect(disclosure).not.toBeNull();

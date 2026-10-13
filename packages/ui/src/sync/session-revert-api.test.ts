@@ -179,7 +179,8 @@ describe("ticket 09 source contracts", () => {
     const revertFn = actionsSource.slice(actionsSource.indexOf("export async function revertToMessage"))
     const revertBody = revertFn.slice(0, revertFn.indexOf("function applyMessageEditCommit"))
     expect(revertBody.includes("removeSessionMessageFromStore(")).toBe(false)
-    expect(revertBody.includes('type: "remove-message"')).toBe(false)
+    // A confirmed MessageNotFoundError may remove exactly the missing message.
+    expect(revertBody.slice(0, revertBody.indexOf("} catch (err)")).includes('type: "remove-message"')).toBe(false)
     expect(revertBody.includes("sdk().session.revert")).toBe(false)
   })
 

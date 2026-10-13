@@ -420,7 +420,7 @@ vi.mock("@/lib/runtime-fetch", () => ({
       }
       if (mocks.state.sessionRevertResult.error) {
         const status = mocks.state.sessionRevertResult.response?.status ?? 500
-        return new Response("rejected", { status })
+        return new Response(JSON.stringify(mocks.state.sessionRevertResult.error), { status })
       }
       const revert = (mocks.state.sessionRevertResult.data as { revert?: unknown } | undefined)?.revert
         ?? { messageID: body.messageID }
@@ -3128,6 +3128,90 @@ describe("revertToMessage passes session directory", () => {
     // First commit restores message; second commit rolls back previous draft.
     expect(draftCommits.length).toBeGreaterThanOrEqual(2)
     expect(draftCommits.at(-1)?.snapshot.text).toBe("previous draft")
+  })
+
+  test.each(["MessageNotFoundError", "SessionNotFoundError", "proxy", "refresh-failure", "partial-tail"])(
+    "reconciles only a confirmed missing message (%s)", async (kind) => {
+      const { QueryClient } = await import("@tanstack/react-query")
+      const { createQueryTranscriptRepository } = await import("./transcript-repository-query-adapter")
+      const { bindTranscriptRepositoryInstance, unbindTranscriptRepository } = await import("./transcript-repository-runtime")
+      const { setActionRefs, revertToMessage } = await import("./session-actions")
+      const session = { id: "session-a", time: { created: 1 } } as Session
+      const ghost = { id: "msg_ghost", sessionID: session.id, role: "user", time: { created: 2 } } as Message
+      const retained = { id: "msg_retained", sessionID: session.id, role: "user", time: { created: 1 } } as Message
+      const scope = { directory: "/test/project", sessionID: session.id }
+      const client = new QueryClient()
+      const fetcher = vi.fn(async () => {
+        if (kind === "refresh-failure") throw new Error("authority offline")
+        return { records: [{ info: retained, parts: [] }], complete: kind !== "partial-tail" }
+      })
+      const repo = createQueryTranscriptRepository({ client, fetcher })
+      repo.apply(scope, { type: "materialize-snapshots", records: (kind === "partial-tail" ? [ghost, retained] : [retained, ghost]).map((info) => ({ info, parts: [] })) })
+      const store = createStore({}, { session: [session] })
+      setActionRefs(mockSdk as unknown as OpencodeClient, createChildStores([[scope.directory, store]]), () => "/other")
+      bindTranscriptRepositoryInstance(repo)
+      mocks.sessionGetResult = session
+      mocks.sessionRevertResult = {
+        error: kind === "proxy" ? "Not found" : { _tag: kind === "refresh-failure" || kind === "partial-tail" ? "MessageNotFoundError" : kind, sessionID: session.id, messageID: ghost.id },
+        response: { status: 404 },
+      }
+      try {
+        const failure = await revertToMessage(session.id, ghost.id, { directory: scope.directory, draftKey: null }).catch((error: unknown) => error)
+        expect(failure).toBeInstanceOf(Error)
+        expect(store.getState().session[0].revert).toBeUndefined()
+        const missing = kind === "MessageNotFoundError" || kind === "refresh-failure" || kind === "partial-tail"
+        expect(fetcher).toHaveBeenCalledTimes(missing ? 1 : 0)
+        expect(repo.getTranscript(scope).messageOrder).toEqual(missing ? [retained.id] : [retained.id, ghost.id])
+        if (kind === "refresh-failure") {
+          expect(failure).toBeInstanceOf(AggregateError)
+          expect((failure as Error).message).toContain("authority offline")
+        }
+        if (kind === "MessageNotFoundError") expect((failure as Error).name).toBe("SessionRevertMessageMissingRecoveredError")
+      } finally {
+        unbindTranscriptRepository()
+        repo.destroy()
+        client.clear()
+        mocks.sessionGetResult = null
+      }
+    },
+  )
+
+  test.each([false, true])("confirmed commit repairs a failed local cut (refresh failure: %s)", async (refreshFails) => {
+    const { QueryClient } = await import("@tanstack/react-query")
+    const { createQueryTranscriptRepository } = await import("./transcript-repository-query-adapter")
+    const { bindTranscriptRepositoryInstance, unbindTranscriptRepository } = await import("./transcript-repository-runtime")
+    const { setActionRefs, commitStagedRevertBeforeSend } = await import("./session-actions")
+    const scope = { directory: "/test/project", sessionID: "session-a" }
+    const client = new QueryClient()
+    const fetcher = vi.fn(async () => {
+      if (refreshFails) throw new Error("authority offline")
+      return { records: [], complete: true }
+    })
+    const repo = createQueryTranscriptRepository({ client, fetcher })
+    const ghost = { id: "msg_ghost", sessionID: scope.sessionID, role: "user", time: { created: 2 } } as Message
+    repo.apply(scope, { type: "materialize-snapshots", records: [{ info: ghost, parts: [] }] })
+    const apply = repo.apply.bind(repo)
+    vi.spyOn(repo, "apply").mockImplementation((target, command) => {
+      if (command.type === "revert-committed") throw new Error("local cut failed")
+      return apply(target, command)
+    })
+    const store = createStore({}, { session: [{ id: scope.sessionID, revert: { messageID: ghost.id }, time: { created: 1 } } as Session] })
+    setActionRefs(mockSdk as unknown as OpencodeClient, createChildStores([[scope.directory, store]]), () => scope.directory)
+    bindTranscriptRepositoryInstance(repo)
+    try {
+      if (refreshFails) {
+        await expect(commitStagedRevertBeforeSend(scope.sessionID, scope.directory)).rejects.toThrow("Revert committed, but local synchronization failed")
+      } else {
+        await commitStagedRevertBeforeSend(scope.sessionID, scope.directory)
+      }
+      expect(fetcher).toHaveBeenCalledTimes(1)
+      expect(repo.getTranscript(scope).messageOrder).toEqual(refreshFails ? [ghost.id] : [])
+      expect(store.getState().session[0].revert).toBeUndefined()
+    } finally {
+      unbindTranscriptRepository()
+      repo.destroy()
+      client.clear()
+    }
   })
 })
 

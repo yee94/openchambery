@@ -1,6 +1,7 @@
 import React from 'react';
 import type { Message, Part } from '@/lib/opencode/v2-types';
 import { useEvent } from '@reactuses/core';
+import { toast } from 'sonner';
 import { useShallow } from 'zustand/react/shallow';
 
 import { MessageFreshnessDetector } from '@/lib/messageFreshness';
@@ -753,7 +754,7 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
         return true;
     }, [isUser, messageTextContent]);
 
-    const handleRevert = React.useCallback(async () => {
+    const handleRevert = useEvent(async () => {
         if (!sessionId || !message.info.id || pendingMessageActionRef.current) return;
         pendingMessageActionRef.current = 'revert';
         setPendingMessageAction('revert');
@@ -765,11 +766,19 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
                     directory: sessionSurface.directory ?? undefined,
                 });
             }
+        } catch (error) {
+            // The primary store reports its own errors; hosted surfaces delegate here.
+            if (sessionSurface.onRevertMessage) {
+                toast.error(t('chat.revert.toast.failed'), {
+                    id: 'session-revert-error',
+                    description: error && typeof error === 'object' && 'message' in error ? String(error.message) : String(error),
+                });
+            }
         } finally {
             pendingMessageActionRef.current = null;
             setPendingMessageAction(null);
         }
-    }, [sessionId, message.info.id, revertToMessage, sessionSurface]);
+    });
 
     const handleEdit = useEvent(() => {
         if (!sessionId || !message.info.id || pendingMessageActionRef.current) return;

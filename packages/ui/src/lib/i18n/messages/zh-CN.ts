@@ -1988,6 +1988,8 @@ export const dict: Record<I18nKey, string> = {
   'chat.revert.toast.redo': '已重做',
   'chat.revert.toast.restored': '已恢复全部消息',
   'chat.revert.toast.busy': '会话进行中，无法撤销',
+  'chat.revert.toast.failed': '撤销消息失败',
+  'chat.revert.toast.messageMissing': '这条消息已不存在，已刷新会话。',
   'chat.form.title': '表单',
   'chat.form.reply': '提交',
   'chat.form.cancel': '取消',

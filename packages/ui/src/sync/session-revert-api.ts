@@ -50,6 +50,16 @@ function throwHttp(label: string, status: number, detail?: string): never {
   const suffix = detail ? `: ${detail}` : ""
   const error = new Error(`${label} (${status})${suffix}`) as Error & { status?: number }
   error.status = status
+  if (status === 404 && detail) {
+    try {
+      const body: unknown = JSON.parse(detail)
+      if (record(body) && body._tag === "MessageNotFoundError") {
+        error.name = "MessageNotFoundError"
+      }
+    } catch {
+      // A proxy or plain-text 404 is not proof that a message was deleted.
+    }
+  }
   throw error
 }
 

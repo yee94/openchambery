@@ -936,6 +936,8 @@ export const dict: Record<I18nKey, string> = {
   'chat.revert.toast.redo': 'Ponowione',
   'chat.revert.toast.restored': 'Przywrócono wszystkie wiadomości',
   'chat.revert.toast.busy': 'Nie można cofnąć, gdy sesja jest zajęta',
+  'chat.revert.toast.failed': 'Nie udało się cofnąć wiadomości',
+  'chat.revert.toast.messageMissing': 'Ta wiadomość już nie istnieje. Rozmowa została odświeżona.',
   'chat.form.title': 'Formularz',
   'chat.form.reply': 'Wyślij',
   'chat.form.cancel': 'Anuluj',

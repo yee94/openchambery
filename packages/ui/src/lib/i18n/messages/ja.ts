@@ -2018,6 +2018,8 @@ export const dict: Record<I18nKey, string> = {
   'chat.revert.toast.redo': 'やり直しました',
   'chat.revert.toast.restored': 'すべてのメッセージを復元しました',
   'chat.revert.toast.busy': 'セッションの実行中は元に戻せません',
+  'chat.revert.toast.failed': 'メッセージを元に戻せませんでした',
+  'chat.revert.toast.messageMissing': 'このメッセージは存在しません。会話を再読み込みしました。',
   'chat.form.title': 'フォーム',
   'chat.form.reply': '送信',
   'chat.form.cancel': 'キャンセル',

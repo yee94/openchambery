@@ -724,7 +724,7 @@ const getTimelineEntryAnchorId = (entry: RenderEntry): string | null => {
     return resolveMessageRole(entry.message) === 'user' ? entry.message.info.id : null;
 };
 
-type TurnUiState = { isExpanded: boolean };
+type TurnUiState = { isExpanded: boolean; automatic?: boolean };
 
 /**
  * Pre-assistant compaction disclosure when sorted, compaction-kind, and no
@@ -959,11 +959,15 @@ const TurnBlock = React.memo(({
     });
     // Explicit per-turn toggle wins; otherwise live-active forces open and
     // settled turns follow activityRenderMode (auto-collapses when processing ends).
-    const isGroupExpandedByDefault = storedTurnUiState
+    const releaseAutomaticExpansion = storedTurnUiState?.automatic
+        && turn.completionDisposition === 'normal'
+        && turn.hasConfirmedFinalBody
+        && !(isLastTurn && sessionIsWorking);
+    const isGroupExpandedByDefault = storedTurnUiState && !releaseAutomaticExpansion
         ? storedTurnUiState.isExpanded
         : defaultExpandedForTurn;
     const handleToggleTurnGroup = useEvent(() => {
-        onToggleTurnGroup(turn.turnId, defaultExpandedForTurn);
+        onToggleTurnGroup(turn.turnId, isGroupExpandedByDefault);
     });
 
     const messageOrder = React.useMemo(() => {
@@ -2424,8 +2428,7 @@ const MessageList = React.forwardRef<MessageListHandle, MessageListProps>(({
     const toggleTurnGroup = useEvent((turnId: string, defaultExpanded: boolean) => {
         setTurnUiStates((previous) => {
             const next = new Map(previous);
-            const currentExpanded = previous.get(turnId)?.isExpanded ?? defaultExpanded;
-            next.set(turnId, { isExpanded: resolveToggledActivityExpanded(currentExpanded) });
+            next.set(turnId, { isExpanded: resolveToggledActivityExpanded(defaultExpanded) });
             return next;
         });
     });
@@ -2545,8 +2548,8 @@ const MessageList = React.forwardRef<MessageListHandle, MessageListProps>(({
         hasLiveTail: true,
         liveTailActive,
     });
-    // The committed live tail was shown expanded. Retain that disclosure state
-    // above virtualized rows so completion/new turns cannot silently fold it.
+    // Retain live expansion through step gaps and missing final content. Mark it
+    // automatic so a confirmed final answer can restore the configured fold.
     useIsomorphicLayoutEffect(() => {
         if (!liveTailActive) return;
         setTurnUiStates((previous) => {
@@ -2554,7 +2557,7 @@ const MessageList = React.forwardRef<MessageListHandle, MessageListProps>(({
             for (const turn of streamingTurns) {
                 if (turn.completionDisposition !== 'active' || turn.assistantMessages.length === 0 || previous.has(turn.turnId)) continue;
                 if (next === previous) next = new Map(previous);
-                next.set(turn.turnId, { isExpanded: true });
+                next.set(turn.turnId, { isExpanded: true, automatic: true });
             }
             return next;
         });

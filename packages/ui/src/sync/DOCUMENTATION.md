@@ -1,5 +1,9 @@
 # Sync architecture, event handling & store update rules
 
+## Viewed-session terminal reconciliation
+
+An idle/succeeded/failed/interrupted receipt for the viewed session requests an authoritative tail reconciliation regardless of the locally known assistant finish. A wholly missing final step cannot be detected from completion metadata on the preceding step. The materialization scheduler coalesces terminal receipts and drains them after any pre-terminal materialization; a receipt during reconciliation schedules another pass after that flight. Runtime/directory-store fences apply before each pass. Failures preserve the transcript and defer recovery until another terminal receipt or selection. Background sessions retain their bounded materialization policy. `sync-context.settle-repair.test.ts` covers absent final rows after both tool-calls and stop, overlapping reads, duplicate receipts and retry after failure.
+
 ## Consumed inbox transcript handoff
 
 Before `applySessionInboxEvent` retires a delivered queue chip, `session-inbox-transcript.ts` commits the known user payload through the native projection normalizer and repository SSE batch, using the inbox/message identity and delivery clock. Text and file resources become transcript content together. Already-materialized messages are not overwritten; duplicate deliveries do not append another row.
@@ -1717,7 +1721,7 @@ Session actions live in `session-actions.ts` and are the canonical place for SDK
 
 ### Session history mutation serialization (revert / unrevert)
 
-Revert visibility, the revert dock, user-message history, and slash undo/redo use transcript `messageOrder` (conversation position), not id lexicographic comparison. A missing revert target fails visible rather than hiding by id. `revertToMessage` / slash redo do not materialize a refetch into the live timeline. Editing a sent message may await per-message `materializeTranscriptMessage` only when an authored file part is slim or missing `url`, then restore from the re-read parts.
+Revert visibility, the revert dock, user-message history, and slash undo/redo use transcript `messageOrder` (conversation position), not id lexicographic comparison. A missing revert target fails visible rather than hiding by id. Successful `revertToMessage` / slash redo remain marker-only. A native stage `404 MessageNotFoundError` rolls back the marker/draft, reloads session metadata and reconciles the transcript through `refreshTranscriptFromAuthority`; the exact missing ID is removed even outside the fetched page. Other 404s do not authorize deletion. Refresh failure preserves unrelated history and reports both failures rather than claiming refresh succeeded. Commit publication failure awaits authority reconciliation before allowing the send to proceed. All recovery publication is runtime-fenced. Editing a sent message may await per-message `materializeTranscriptMessage` only when an authored file part is slim or missing `url`, then restore from the re-read parts.
 
 `revertToMessage`, `unrevertSession`, `commitStagedRevertBeforeSend`, and the complete `commitMessageEdit` transaction share `session-history-mutation-coordinator.ts`, keyed by `[transportIdentity, generation, directory, sessionId]`. Same-session mutations run in call order; different sessions remain parallel. Queued operations re-read state after the queue wait and validate the captured runtime after awaits. Failure releases the lane. `stageMessageEdit` only restores a draft; its optional `{ directory, draftKey }` and opaque CAS `rollback()` handle retain the existing draft-ownership contract. Cancel/blur/navigation before submission never mutates remote history.
 

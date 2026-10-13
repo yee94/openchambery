@@ -2000,6 +2000,8 @@ export const dict: Record<I18nKey, string> = {
   "chat.revert.toast.redo": "Refeito",
   "chat.revert.toast.restored": "Todas as mensagens restauradas",
   "chat.revert.toast.busy": "Não é possível reverter enquanto a sessão está ocupada",
+  "chat.revert.toast.failed": "Não foi possível reverter a mensagem",
+  "chat.revert.toast.messageMissing": "Esta mensagem não existe mais. A conversa foi atualizada.",
   "chat.form.title": "Formulário",
   "chat.form.reply": "Enviar",
   "chat.form.cancel": "Cancelar",

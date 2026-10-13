@@ -2023,6 +2023,8 @@ export const dict = {
   'chat.revert.toast.redo': 'Redone',
   'chat.revert.toast.restored': 'Restored all messages',
   'chat.revert.toast.busy': 'Cannot revert while the session is busy',
+  'chat.revert.toast.failed': 'Failed to revert the message',
+  'chat.revert.toast.messageMissing': 'This message no longer exists. The conversation has been refreshed.',
   'chat.form.title': 'Form',
   'chat.form.reply': 'Submit',
   'chat.form.cancel': 'Cancel',

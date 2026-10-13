@@ -414,12 +414,14 @@ type PendingSessionMaterialization = {
   directory: string
   enqueuedAt: number
   request: SessionMaterializationRequest
+  reconcileTailRequested: boolean
 }
 
 type SessionMaterializationRequest = {
   reason: SessionMaterializationReason
   messageID?: string
   partID?: string
+  reconcileTail?: boolean
 }
 
 const SESSION_MATERIALIZATION_COOLDOWN_MS = 5_000
@@ -473,7 +475,13 @@ function enqueueSessionMaterialization(
     || childStores.getChild(directory) !== capturedStore
   const k = materializationKey(directory, sessionID)
   const existing = pendingSessionMaterializations.get(k)
-  if (existing && Date.now() - existing.enqueuedAt < SESSION_MATERIALIZATION_COOLDOWN_MS) {
+  if (existing && (request.reconcileTail || Date.now() - existing.enqueuedAt < SESSION_MATERIALIZATION_COOLDOWN_MS)) {
+    if (request.reconcileTail) {
+      // A terminal receipt cannot be satisfied by a read started before it.
+      // Coalesce receipts, then reconcile after the current request completes.
+      existing.reconcileTailRequested = true
+      return
+    }
     // The cooldown suppresses recovery churn, but it must not suppress the
     // settle repair: a tail assistant with a server-stamped terminal finish
     // and no time.completed means the settle `message.updated` tick was lost
@@ -491,7 +499,7 @@ function enqueueSessionMaterialization(
     return
   }
 
-  const pending = { sessionID, directory, enqueuedAt: Date.now(), request }
+  const pending = { sessionID, directory, enqueuedAt: Date.now(), request, reconcileTailRequested: Boolean(request.reconcileTail) }
   pendingSessionMaterializations.set(k, pending)
 
   // Defer to next microtask so we don't hold up the current event batch
@@ -502,7 +510,9 @@ function enqueueSessionMaterialization(
       return
     }
     try {
-      const result = await materializeSessionFromServer(directory, sessionID, store, { ...request, isStale })
+      const result = request.reconcileTail
+        ? "skipped"
+        : await materializeSessionFromServer(directory, sessionID, store, { ...request, isStale })
       if (!isStale() && request.reason === "session-idle") {
         if (result === "ready") takeDeferredIdleTranscriptSettle(directory, sessionID)
         else deferIdleTranscriptSettle(directory, sessionID)
@@ -510,6 +520,17 @@ function enqueueSessionMaterialization(
     } catch {
       // Transient failure — next SSE event or reconnect will catch up.
     } finally {
+      // Unlike an ordinary materialize page, authority reconciliation cannot
+      // be discarded merely because another live part changed during the GET.
+      while (pending.reconcileTailRequested && !isStale()) {
+        pending.reconcileTailRequested = false
+        try {
+          await refreshTranscriptFromAuthority(directory, sessionID)
+          if (!isStale()) takeDeferredIdleTranscriptSettle(directory, sessionID)
+        } catch {
+          if (!isStale()) deferIdleTranscriptSettle(directory, sessionID)
+        }
+      }
       if (pendingSessionMaterializations.get(k) === pending) pendingSessionMaterializations.delete(k)
     }
   })
@@ -2570,7 +2591,10 @@ export function handleEvent(
       if (plan.action === "materialize-parent") {
         enqueueSessionMaterialization(resolvedDirectory, plan.sessionID, childStores, { reason: "child-session-idle" })
       } else if (plan.action === "materialize-now") {
-        enqueueSessionMaterialization(resolvedDirectory, plan.sessionID, childStores, { reason: "session-idle" })
+        enqueueSessionMaterialization(resolvedDirectory, plan.sessionID, childStores, {
+          reason: "session-idle",
+          reconcileTail: plan.sessionID === _activeSession && resolvedDirectory === _activeDirectory,
+        })
       } else if (plan.action === "defer-until-viewed") {
         deferIdleTranscriptSettle(resolvedDirectory, plan.sessionID)
       }

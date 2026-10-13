@@ -2000,6 +2000,8 @@ export const dict: Record<I18nKey, string> = {
   "chat.revert.toast.redo": "Повторено",
   "chat.revert.toast.restored": "Всі повідомлення відновлено",
   "chat.revert.toast.busy": "Не можна скасувати, поки сесія зайнята",
+  "chat.revert.toast.failed": "Не вдалося скасувати повідомлення",
+  "chat.revert.toast.messageMissing": "Цього повідомлення більше немає. Розмову оновлено.",
   "chat.form.title": "Форма",
   "chat.form.reply": "Надіслати",
   "chat.form.cancel": "Скасувати",
