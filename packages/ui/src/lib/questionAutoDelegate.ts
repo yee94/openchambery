@@ -1,7 +1,7 @@
 import { queryOptions, useQuery } from '@tanstack/react-query';
 import { useSyncExternalStore } from 'react';
 import { z } from 'zod';
-import type { QuestionAutoDelegateSnapshot } from '../../../web/server/lib/question-auto-delegate/core';
+import type { QuestionAutoDelegateSnapshot, QuestionAutoDelegateMutationResult } from '../../../web/server/lib/question-auto-delegate/core';
 import { runtimeFetch } from './runtime-fetch';
 import { queryClient } from './queryRuntime';
 import { getRuntimeGeneration, getRuntimeTransportIdentity, subscribeRuntimeEndpointChanged } from './runtime-switch';
@@ -78,3 +78,24 @@ export const refreshQuestionAutoDelegate = async () => {
   await queryClient.cancelQueries({ queryKey, exact: true }, { revert: false });
   await queryClient.invalidateQueries({ queryKey, exact: true });
 };
+
+export async function pauseQuestionOnInteraction(
+  identity: { requestID: string; sessionID: string; directory: string },
+): Promise<QuestionAutoDelegateMutationResult['outcome']> {
+  const runtime = capture();
+  const requestSequence = ++sequence;
+  const response = await runtimeFetch(`/api/question-auto-delegate/requests/${encodeURIComponent(identity.requestID)}/pause`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ sessionID: identity.sessionID, directory: identity.directory, reason: 'interaction' }),
+  });
+  const result = z.object({
+    outcome: z.enum(['ok', 'paused', 'delegated', 'submitted', 'claimed', 'uncertain', 'settled', 'not_found', 'disabled', 'error']),
+    snapshot: snapshotSchema,
+  }).parse(await response.json());
+  if (!current(runtime)) throw new Error('Runtime changed');
+  queryClient.setQueryData(key(runtime), (previous: QuestionDelegateData | undefined) =>
+    mergeQuestionDelegateData(previous, dataFrom(result.snapshot, requestSequence)));
+  void refreshQuestionAutoDelegate();
+  if (!response.ok && !['claimed', 'uncertain', 'not_found'].includes(result.outcome)) throw new Error(`Question pause: ${response.status}`);
+  return result.outcome;
+}

@@ -8,6 +8,7 @@ interface QuestionCardFrameProps {
   afterBody?: React.ReactNode;
   mobile?: boolean;
   questionCard?: boolean;
+  onInteraction?: React.ReactEventHandler<HTMLDivElement>;
 }
 
 /** Shared visual frame for transcript interactions, based on QuestionCard. */
@@ -18,6 +19,7 @@ export function QuestionCardFrame({
   afterBody,
   mobile = false,
   questionCard = false,
+  onInteraction,
 }: QuestionCardFrameProps) {
   return (
     <div className="group w-full pt-0 pb-2">
@@ -26,6 +28,12 @@ export function QuestionCardFrame({
           data-interaction-card
           data-question-card={questionCard ? '' : undefined}
           className="-mt-1 overflow-hidden rounded-xl border border-border/30 bg-muted/10"
+          onPointerDownCapture={onInteraction}
+          onClickCapture={onInteraction}
+          onKeyDownCapture={onInteraction}
+          onInputCapture={onInteraction}
+          onPasteCapture={onInteraction}
+          onCompositionStartCapture={onInteraction}
         >
           <div className={cn(
             'border-b border-border/20',

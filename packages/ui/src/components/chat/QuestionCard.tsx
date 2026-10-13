@@ -435,6 +435,7 @@ export const QuestionCard: React.FC<QuestionCardProps> = ({ question }) => {
           </div>
         </div>
       )}
+      onInteraction={delegation.interaction}
       afterBody={<QuestionAutoDelegateStatus delegation={delegation} />}
       footer={(
         <>

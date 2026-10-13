@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [2.0.8-beta.6] - 2026-10-13
+
+### 修复
+
+- 恢复问题卡片在用户点击选项、切换问题或输入答案时自动暂停托管倒计时，避免手动作答期间被自动代答；保持移除「暂停倒计时」「立即托管」按钮及暂停状态提示。
+
 ## [2.0.8-beta.5] - 2026-10-13
 
 ### 修复

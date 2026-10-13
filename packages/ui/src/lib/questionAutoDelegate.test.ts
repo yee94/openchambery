@@ -8,7 +8,7 @@ vi.mock('./runtime-switch', () => ({
   subscribeRuntimeEndpointChanged: () => () => {},
 }));
 import { queryClient } from './queryRuntime';
-import { ensureQuestionAutoDelegate, getQuestionAutoDelegateSnapshot, mergeQuestionDelegateData, questionAutoDelegateQueryOptions, refreshQuestionAutoDelegate, type QuestionDelegateData } from './questionAutoDelegate';
+import { ensureQuestionAutoDelegate, getQuestionAutoDelegateSnapshot, mergeQuestionDelegateData, pauseQuestionOnInteraction, questionAutoDelegateQueryOptions, refreshQuestionAutoDelegate, type QuestionDelegateData } from './questionAutoDelegate';
 
 function data(epoch = 'epoch-a', revision = 1, sequence = 1): QuestionDelegateData {
   return { receivedAt: 0, sequence, retiredEpochs: [], snapshot: {
@@ -38,6 +38,23 @@ describe('question auto-delegate authoritative query', () => {
     await expect(queryClient.fetchQuery({ ...questionAutoDelegateQueryOptions(), staleTime: 0, retry: false })).rejects.toThrow();
     expect(getQuestionAutoDelegateSnapshot()).toBe(before);
     expect(queryClient.getQueryState(questionAutoDelegateQueryOptions().queryKey)?.status).toBe('error');
+  });
+  test('interaction pause carries authoritative identity and accepts a claimed snapshot', async () => {
+    mocks.fetch.mockResolvedValue(Response.json({ outcome: 'claimed', snapshot: data('a', 3).snapshot }, { status: 409 }));
+    expect(await pauseQuestionOnInteraction({ requestID: 'q/1', sessionID: 'child', directory: '/child-project' })).toBe('claimed');
+    expect(mocks.fetch.mock.calls[0][0]).toBe('/api/question-auto-delegate/requests/q%2F1/pause');
+    expect(JSON.parse(mocks.fetch.mock.calls[0][1].body)).toEqual({ sessionID: 'child', directory: '/child-project', reason: 'interaction' });
+    expect(getQuestionAutoDelegateSnapshot()?.snapshot.revision).toBe(3);
+  });
+  test('runtime switch rejects late interaction pause results', async () => {
+    let resolve!: (response: Response) => void;
+    mocks.fetch.mockImplementation(() => new Promise<Response>((done) => { resolve = done; }));
+    const pending = pauseQuestionOnInteraction({ requestID: 'q', sessionID: 'child', directory: '/child' });
+    mocks.generation++;
+    mocks.transport = 'runtime-b';
+    resolve(Response.json({ outcome: 'paused', snapshot: data().snapshot }));
+    await expect(pending).rejects.toThrow('Runtime changed');
+    expect(getQuestionAutoDelegateSnapshot()).toBeUndefined();
   });
   test('runtime switch rejects late GET results', async () => {
     let resolve!: (response: Response) => void;

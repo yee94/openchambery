@@ -59,7 +59,13 @@ beforeEach(() => {
     requests: [{ requestID: 'q-1', sessionID: 'child', directory: '/child-project', questionCount: 2,
       state: 'counting', deadlineAt: 31000, pauseReason: null, submittedBy: null, resolution: null }],
   };
-  mocks.fetch.mockImplementation(async () => Response.json(snapshot));
+  mocks.fetch.mockImplementation(async (_path: string, init?: RequestInit) => {
+    if (init?.method === 'POST') {
+      snapshot = { ...snapshot, revision: snapshot.revision + 1, requests: [{ ...snapshot.requests[0], state: 'paused', deadlineAt: null, pauseReason: 'interaction' }] };
+      return Response.json({ outcome: 'paused', snapshot });
+    }
+    return Response.json(snapshot);
+  });
   host = document.createElement('div'); document.body.append(host); root = createRoot(host);
 });
 afterEach(async () => {
@@ -69,7 +75,7 @@ afterEach(async () => {
 const bar = () => host.querySelector<HTMLElement>('[data-question-delegate-bar]');
 
 describe('QuestionCard auto delegation', () => {
-  test('pointer down leaves countdown running without selecting, and the subsequent click selects exactly once', async () => {
+  test('pointer down pauses without selecting, and the subsequent click selects exactly once', async () => {
     await mount();
     const option = button('Option A');
     await act(async () => {
@@ -85,28 +91,32 @@ describe('QuestionCard auto delegation', () => {
     });
     await flush();
     expect(option.getAttribute('aria-pressed')).toBe('true');
-    expect(posts()).toHaveLength(0);
-    expect(bar()).toBeTruthy();
+    expect(posts()).toHaveLength(1);
+    expect(snapshot.requests[0].state).toBe('paused');
+    expect(bar()).toBeNull();
     await act(async () => { await vi.advanceTimersByTimeAsync(5000); });
-    expect(host.textContent).toContain('Model decides in 25s');
+    expect(host.textContent).not.toContain('Model decides');
   });
 
-  test('a server-paused question remains manually answerable without a pause control or placeholder', async () => {
+  test('a server-paused question remains manually answerable without pause controls or status text', async () => {
     snapshot = { ...snapshot, requests: [{ ...snapshot.requests[0], state: 'paused', deadlineAt: null, pauseReason: 'user' }] };
     await mount();
     await click('Option A');
-    expect(posts()).toHaveLength(0);
+    expect(posts()).toHaveLength(1);
+    expect(JSON.parse(posts()[0][1].body).reason).toBe('interaction');
     expect(host.querySelector('[data-question-delegation-controls]')).toBeNull();
     expect(button('Option A').getAttribute('aria-pressed')).toBe('true');
   });
 
-  test('keeps selected answers through a card remount while countdown continues', async () => {
+  test('keeps selected answers and interaction pause through a card remount', async () => {
     await mount();
     await click('Option A');
     expect(button('Option A').getAttribute('aria-pressed')).toBe('true');
     await act(async () => { root.render(<QuestionAutoDelegateNotifications />); });
     await mount();
     expect(host.textContent).not.toContain('Countdown paused');
+    expect(bar()).toBeNull();
+    expect(posts()).toHaveLength(1);
     expect(button('Option A').getAttribute('aria-pressed')).toBe('true');
     await click('Second');
     await click('Option B');
@@ -203,44 +213,50 @@ describe('QuestionCard auto delegation', () => {
     expect(bar()).toBeNull();
     expect(host.textContent).toContain('Automatic countdown is off');
   });
-  test('question interaction keeps the countdown running without a pause request', async () => {
+  test('question interaction stops the countdown immediately while pause is in flight', async () => {
+    mocks.fetch.mockImplementation(async (_path: string, init?: RequestInit) => {
+      if (init?.method === 'POST') return new Promise(() => {});
+      return Response.json(snapshot);
+    });
     await mount();
     expect(host.textContent).toContain('Model decides in 30s');
     await act(async () => { button('Option A').click(); });
-    expect(host.textContent).toContain('Model decides');
-    expect(bar()).toBeTruthy();
-    expect(posts()).toHaveLength(0);
+    expect(host.textContent).not.toContain('Model decides');
+    expect(bar()).toBeNull();
+    expect(posts()).toHaveLength(1);
     expect(host.textContent).not.toMatch(/Pausing countdown|Countdown paused/);
   });
-  test('answering before the snapshot arrives does not pause or reset the countdown', async () => {
+  test('answering before the snapshot arrives pauses using the question identity', async () => {
     mocks.fetch.mockImplementation(() => new Promise(() => {}));
     await act(async () => { root.render(<QuestionCard question={question} />); });
     await flush();
     expect(host.textContent).toContain('Model decides in 30s');
     await act(async () => { button('Option A').click(); });
     await flush();
-    expect(posts()).toHaveLength(0);
+    expect(posts()).toHaveLength(1);
+    expect(JSON.parse(posts()[0][1].body)).toEqual({ sessionID: 'child', directory: '', reason: 'interaction' });
     await act(async () => { await vi.advanceTimersByTimeAsync(5000); });
-    expect(host.textContent).toContain('Model decides in 25s');
-    expect(bar()).toBeTruthy();
+    expect(host.textContent).not.toContain('Model decides');
+    expect(bar()).toBeNull();
     expect(host.textContent).not.toContain('Countdown paused');
   });
   test('option and tab interactions preserve attribution and submit using the child identity', async () => {
     await mount();
     expect(host.textContent).toContain('From subagent');
     await click('Option A');
-    expect(posts()).toHaveLength(0);
+    expect(posts()).toHaveLength(1);
+    expect(JSON.parse(posts()[0][1].body)).toEqual({ sessionID: 'child', directory: '/child-project', reason: 'interaction' });
     expect(host.textContent).not.toContain('Countdown paused');
     await click('Second');
-    expect(posts()).toHaveLength(0);
+    expect(posts()).toHaveLength(1);
     await click('Option B');
     await click('Submit');
     expect(mocks.reply).toHaveBeenCalledWith('child', 'q-1', [['Option A'], ['Option B']], '/child-project');
   });
-  test('custom textarea keystrokes keep the countdown running', async () => {
+  test('custom textarea keystrokes preserve the interaction pause without duplicate requests', async () => {
     await mount();
     await click('Other…');
-    expect(posts()).toHaveLength(0);
+    expect(posts()).toHaveLength(1);
     expect(host.textContent).not.toContain('Countdown paused');
     const textarea = host.querySelector('textarea')!;
     await act(async () => {
@@ -253,14 +269,14 @@ describe('QuestionCard auto delegation', () => {
       textarea.dispatchEvent(new Event('input', { bubbles: true }));
     });
     await flush();
-    expect(posts()).toHaveLength(0);
+    expect(posts()).toHaveLength(1);
     await act(async () => { await vi.advanceTimersByTimeAsync(5000); });
-    expect(host.textContent).toContain('Model decides in 25s');
+    expect(host.textContent).not.toContain('Model decides');
     expect(textarea.value).toBe('ab');
     expect(host.textContent).not.toContain('Pausing countdown');
     expect(host.textContent).not.toContain('Countdown paused');
   });
-  test.each(['input', 'paste', 'compositionstart', 'keydown'])('%s and programmatic focus do not pause the countdown', async (type) => {
+  test.each(['input', 'paste', 'compositionstart', 'keydown'])('%s pauses while programmatic focus remains inert', async (type) => {
     await mount();
     const card = host.querySelector<HTMLElement>('[data-question-card]')!;
     const option = button('Option A');
@@ -270,14 +286,43 @@ describe('QuestionCard auto delegation', () => {
       card.dispatchEvent(type === 'keydown' ? new KeyboardEvent(type, { key: 'a', bubbles: true }) : new Event(type, { bubbles: true }));
     });
     await flush();
-    expect(posts()).toHaveLength(0);
-    expect(bar()).toBeTruthy();
+    expect(posts()).toHaveLength(1);
+    expect(bar()).toBeNull();
   });
-  test('switching question tabs keeps the countdown running', async () => {
+  test('switching question tabs pauses the countdown', async () => {
     await mount(); await click('Second');
-    expect(posts()).toHaveLength(0);
-    expect(bar()).toBeTruthy();
+    expect(posts()).toHaveLength(1);
+    expect(bar()).toBeNull();
     expect(host.textContent).toContain('Choose two');
+  });
+  test('failed interaction pause survives remount and requires an explicit retry', async () => {
+    await mount();
+    mocks.fetch.mockRejectedValueOnce(new Error('offline'));
+    await click('Option A');
+    expect(host.textContent).toContain('Pause failed');
+    expect(snapshot.requests[0].state).toBe('counting');
+    await act(async () => { root.render(<QuestionAutoDelegateNotifications />); });
+    await mount();
+    expect(host.textContent).toContain('Pause failed');
+    expect(posts()).toHaveLength(1);
+    await click('Retry');
+    expect(posts()).toHaveLength(2);
+    expect(snapshot.requests[0].state).toBe('paused');
+    expect(host.textContent).not.toMatch(/Pause failed|Countdown paused|Pause countdown|Delegate now/);
+    expect(button('Option A').getAttribute('aria-pressed')).toBe('true');
+  });
+  test('late question discovery retries an early not-found interaction pause', async () => {
+    const pending = snapshot.requests[0];
+    snapshot = { ...snapshot, requests: [] };
+    await mount();
+    mocks.fetch.mockImplementationOnce(async () => Response.json({ outcome: 'not_found', snapshot }));
+    await click('Option A');
+    expect(posts()).toHaveLength(1);
+    snapshot = { ...snapshot, revision: 2, requests: [pending] };
+    await publish();
+    expect(posts()).toHaveLength(2);
+    expect(snapshot.requests[0].state).toBe('paused');
+    expect(bar()).toBeNull();
   });
   test('automatic delegation confirms success only after an authoritative settled reply', async () => {
     await mount();

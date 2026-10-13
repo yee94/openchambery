@@ -3,10 +3,10 @@ import { useEvent, useInterval } from '@reactuses/core';
 import { Button } from '@/components/ui/button';
 import { toast } from '@/components/ui';
 import { useI18n } from '@/lib/i18n';
-import { refreshQuestionAutoDelegate, useQuestionAutoDelegate, type QuestionDelegateData } from '@/lib/questionAutoDelegate';
+import { getQuestionAutoDelegateSnapshot, pauseQuestionOnInteraction, refreshQuestionAutoDelegate, useQuestionAutoDelegate, type QuestionDelegateData } from '@/lib/questionAutoDelegate';
 import { getRuntimeGeneration } from '@/lib/runtime-switch';
 import type { QuestionRequest } from '@/types/question';
-import { discardQuestionDraft, useQuestionDraftStore } from './questionDraftStore';
+import { discardQuestionDraft, getQuestionDraft, updateQuestionDraft, useQuestionDraftStore } from './questionDraftStore';
 
 const DEFAULT_DELAY_MS = 30_000;
 
@@ -18,15 +18,54 @@ export function useQuestionDelegation(question: QuestionRequest) {
   const query = useQuestionAutoDelegate();
   const request = matchRequest(query.data?.snapshot.requests, question);
   const scope = `${getRuntimeGeneration()}:${question.sessionID}:${question.id}`;
+  const held = useQuestionDraftStore((state) => state.drafts[scope]?.interacted ?? false);
+  const pausePending = useQuestionDraftStore((state) => state.drafts[scope]?.pausePending ?? false);
+  const pauseFailed = useQuestionDraftStore((state) => state.drafts[scope]?.pauseFailed ?? false);
   const [claim, setClaim] = React.useState<{ scope: string; epoch?: string } | null>(null);
   const claimed = claim?.scope === scope && (!claim.epoch || claim.epoch === query.data?.snapshot.epoch);
   const awaitingClaim = claimed && (!request || !['submitting', 'uncertain', 'settled'].includes(request.state));
+  const pause = useEvent(async (retry = false) => {
+    const draft = getQuestionDraft(scope);
+    if (claimed || draft.pausePending || (!retry && draft.pauseFailed)) return;
+    const currentRequest = matchRequest(getQuestionAutoDelegateSnapshot()?.snapshot.requests, question);
+    if (currentRequest && ['submitting', 'uncertain', 'settled'].includes(currentRequest.state)) {
+      if (retry) void refreshQuestionAutoDelegate();
+      return;
+    }
+    const generation = getRuntimeGeneration();
+    updateQuestionDraft(scope, () => ({ interacted: true, pausePending: true, pauseFailed: false }));
+    try {
+      const outcome = await pauseQuestionOnInteraction({
+        requestID: question.id,
+        sessionID: currentRequest?.sessionID || question.sessionID,
+        directory: currentRequest?.directory || '',
+      });
+      if (outcome === 'error' || outcome === 'disabled') throw new Error('Question pause failed');
+    } catch {
+      if (generation === getRuntimeGeneration() && useQuestionDraftStore.getState().drafts[scope]) {
+        updateQuestionDraft(scope, () => ({ pauseFailed: true }));
+      }
+    } finally {
+      if (generation === getRuntimeGeneration() && useQuestionDraftStore.getState().drafts[scope]) {
+        updateQuestionDraft(scope, () => ({ pausePending: false }));
+      }
+    }
+  });
+  const interaction = useEvent((event: React.SyntheticEvent<HTMLElement>) => {
+    if ((event.target as Element).closest('[data-question-delegation-controls]')) return;
+    if (claimed || getQuestionDraft(scope).interacted) return;
+    void pause();
+  });
   const submissionClaimed = useEvent(async (submittedScope: string) => {
     if (submittedScope !== `${getRuntimeGeneration()}:${question.sessionID}:${question.id}`) return;
     setClaim({ scope, epoch: query.data?.snapshot.epoch });
     await refreshQuestionAutoDelegate();
   });
-  return { query, request, submissionClaimed, claimed, awaitingClaim, scope };
+  React.useEffect(() => {
+    if (!held || claimed || (request && request.state !== 'counting')) return;
+    void pause();
+  }, [held, claimed, request?.state, request?.requestID]);
+  return { query, request, submissionClaimed, claimed, awaitingClaim, scope, held, pausePending, pauseFailed, pause, interaction };
 }
 
 type Delegation = ReturnType<typeof useQuestionDelegation>;
@@ -59,7 +98,7 @@ function LiveCountdown({ data, deadlineAt, startedAt, delayMs }: {
 
 export function QuestionAutoDelegateStatus({ delegation }: { delegation: Delegation }) {
   const { t } = useI18n();
-  const { query, request, claimed, awaitingClaim, scope } = delegation;
+  const { query, request, claimed, awaitingClaim, scope, held, pausePending, pauseFailed, pause } = delegation;
   const startedAt = React.useRef(performance.now());
   const startedScope = React.useRef(scope);
   if (startedScope.current !== scope) {
@@ -67,7 +106,7 @@ export function QuestionAutoDelegateStatus({ delegation }: { delegation: Delegat
     startedAt.current = performance.now();
   }
   const enabled = query.data?.snapshot.enabled !== false;
-  const showCountdown = enabled && !awaitingClaim && (!request || request.state === 'counting');
+  const showCountdown = enabled && !awaitingClaim && !held && (!request || request.state === 'counting');
   const delayMs = query.data?.snapshot.delayMs ?? DEFAULT_DELAY_MS;
   const status = awaitingClaim ? 'chat.questionDelegate.uncertain'
     : request?.state === 'submitting' ? 'chat.questionDelegate.submitting'
@@ -77,17 +116,23 @@ export function QuestionAutoDelegateStatus({ delegation }: { delegation: Delegat
     : !enabled ? 'chat.questionDelegate.disabled'
     : request?.state === 'disabled' ? 'chat.questionDelegate.disabled'
     : 'chat.questionDelegate.settled';
-  if (request?.state === 'paused' && !awaitingClaim && !query.isError) return null;
+  const silentPause = !claimed && (request?.state === 'paused' || (held && (!request || request.state === 'counting')));
+  if (silentPause && !query.isError && !pauseFailed) return <div aria-hidden className="border-t border-transparent px-2 py-1.5">
+    <div className="flex flex-col gap-1">
+      <span className="typography-micro">&nbsp;</span>
+      <div className="h-1" />
+    </div>
+  </div>;
   return <div data-question-delegation-controls className="flex flex-col gap-1.5 border-t border-border/20 px-2 py-1.5">
-    {showCountdown ? <LiveCountdown data={query.data} deadlineAt={request?.deadlineAt ?? null} startedAt={startedAt.current} delayMs={delayMs} /> : request?.state !== 'paused' || awaitingClaim ? (
+    {showCountdown ? <LiveCountdown data={query.data} deadlineAt={request?.deadlineAt ?? null} startedAt={startedAt.current} delayMs={delayMs} /> : !silentPause ? (
       <div className="flex min-w-0 flex-1 flex-col gap-1">
         <span role="status" className="typography-micro text-muted-foreground">{t(status)}</span>
         <div aria-hidden className="h-1" />
       </div>
     ) : null}
-    {query.isError ? <div role="alert" className="typography-micro text-[var(--status-error)]">{t('chat.questionDelegate.loadFailed')}</div> : null}
-    {(query.isError || awaitingClaim) && <div className="flex min-h-6 flex-wrap items-center gap-x-2 gap-y-1">
-      <Button variant="ghost" size="xs" disabled={query.isFetching} onClick={() => void query.refetch()}>{t(claimed ? 'chat.questionDelegate.refreshStatus' : 'chat.questionDelegate.retry')}</Button>
+    {query.isError || pauseFailed ? <div role="alert" className="typography-micro text-[var(--status-error)]">{t(pauseFailed ? 'chat.questionDelegate.pauseFailed' : 'chat.questionDelegate.loadFailed')}</div> : null}
+    {(query.isError || pauseFailed || awaitingClaim) && <div className="flex min-h-6 flex-wrap items-center gap-x-2 gap-y-1">
+      <Button variant="ghost" size="xs" disabled={pausePending || query.isFetching} onClick={() => pauseFailed && !claimed ? void pause(true) : void query.refetch()}>{t(claimed ? 'chat.questionDelegate.refreshStatus' : 'chat.questionDelegate.retry')}</Button>
     </div>}
   </div>;
 }
