@@ -68,7 +68,7 @@ import {
     getShellBridgeAssistantDetails,
     type ShellBridgeDetails,
 } from './lib/shellBridge';
-import { dropLiveRevealJustificationParts, isAssistantMessageCompleted, resolveLiveRevealBodyMessageId, resolveVisibleSortedAssistants, withholdLiveRevealActivitySegments } from './lib/visibleSortedAssistants';
+import { isAssistantMessageCompleted, resolveVisibleSortedAssistants } from './lib/visibleSortedAssistants';
 import { isRestartNotice } from './message/assistantErrorPresentation';
 import {
     readUserMessageHeaderIdentity,
@@ -990,17 +990,6 @@ const TurnBlock = React.memo(({
         return null;
     }, [activeStreamingMessageId, turn.assistantMessages]);
 
-    // Text owns its message body throughout the turn. This deduplication only
-    // guards projections that also carry a justification for the same body.
-    const liveRevealBodyMessageId = React.useMemo(() => {
-        return resolveLiveRevealBodyMessageId({
-            chatRenderMode,
-            assistants: turn.assistantMessages,
-            streamingAssistantMessageId,
-            activeStreamingPhase,
-        });
-    }, [activeStreamingPhase, chatRenderMode, streamingAssistantMessageId, turn.assistantMessages]);
-
     const visibleAssistantMessages = React.useMemo(() => {
         if (chatRenderMode === 'live') {
             return turn.assistantMessages;
@@ -1035,18 +1024,14 @@ const TurnBlock = React.memo(({
         if (chatRenderMode !== 'sorted') {
             return turn.activityParts;
         }
-        const scoped = visibleActivityMessageIdSet.size === turn.assistantMessages.length
+        return visibleActivityMessageIdSet.size === turn.assistantMessages.length
             ? turn.activityParts
             : turn.activityParts.filter((activity) => visibleActivityMessageIdSet.has(activity.messageId));
-        return dropLiveRevealJustificationParts(scoped, liveRevealBodyMessageId);
-    }, [chatRenderMode, liveRevealBodyMessageId, visibleActivityMessageIdSet, turn.activityParts, turn.assistantMessages.length]);
+    }, [chatRenderMode, visibleActivityMessageIdSet, turn.activityParts, turn.assistantMessages.length]);
 
     const visibleActivitySegments = React.useMemo(() => {
         if (chatRenderMode !== 'sorted') {
             return turn.activitySegments;
-        }
-        if (liveRevealBodyMessageId) {
-            return withholdLiveRevealActivitySegments(turn.activitySegments, liveRevealBodyMessageId);
         }
         if (visibleActivityMessageIdSet.size === turn.assistantMessages.length) {
             return turn.activitySegments;
@@ -1070,7 +1055,7 @@ const TurnBlock = React.memo(({
                 };
             })
             .filter((segment): segment is NonNullable<typeof segment> => segment !== null);
-    }, [chatRenderMode, liveRevealBodyMessageId, visibleActivityMessageIdSet, turn.activitySegments, turn.assistantMessages.length]);
+    }, [chatRenderMode, visibleActivityMessageIdSet, turn.activitySegments, turn.assistantMessages.length]);
 
     const turnGroupingContextBase = React.useMemo(() => {
         const userCreatedAt = (turn.userMessage.info.time as { created?: number } | undefined)?.created;
@@ -2072,10 +2057,10 @@ const StreamingTailContent: React.FC<{
         return buildLiveStreamingEntry(newest, {
             activeStreamingMessageId,
             liveParts,
-            showTextJustificationActivity: false,
+            showTextJustificationActivity: chatRenderMode === 'sorted',
             showTurnChangedFiles,
         });
-    }, [activeStreamingMessageId, entries, newestIndex, liveParts, showTurnChangedFiles]);
+    }, [activeStreamingMessageId, chatRenderMode, entries, newestIndex, liveParts, showTurnChangedFiles]);
 
     return (
         <>
@@ -2218,7 +2203,7 @@ const LegendTimelineHost: React.FC<LegendTimelineHostProps> = ({
         const live = buildLiveStreamingEntry(newestTailEntry, {
             activeStreamingMessageId,
             liveParts,
-            showTextJustificationActivity: false,
+            showTextJustificationActivity: chatRenderMode === 'sorted',
             showTurnChangedFiles,
         });
         if (live === newestTailEntry) return tailEntries;
@@ -2227,6 +2212,7 @@ const LegendTimelineHost: React.FC<LegendTimelineHostProps> = ({
         return next;
     }, [
         activeStreamingMessageId,
+        chatRenderMode,
         liveParts,
         newestTailEntry,
         showTurnChangedFiles,
@@ -2553,9 +2539,8 @@ const MessageList = React.forwardRef<MessageListHandle, MessageListProps>(({
 
     const { projection, streamingTurns } = useTurnRecords(displayMessages, {
         sessionKey: domainSessionKey,
-        // Received text keeps its message body; a later summary must not move it
-        // into an automatically collapsed Activity disclosure.
-        showTextJustificationActivity: false,
+        // Activity is the original ordered prefix, never a regrouping by type.
+        showTextJustificationActivity: chatRenderMode === 'sorted',
         showTurnChangedFiles,
         hasLiveTail: true,
         liveTailActive,

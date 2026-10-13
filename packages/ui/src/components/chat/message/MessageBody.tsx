@@ -1812,9 +1812,9 @@ const AssistantMessageBody = React.memo(({
         && (hasAnchoredActivitySegments || isCompactionTurn)
         && Boolean(toggleActivityGroup);
 
-    // Received text stays in its message body, including intermediate and
-    // interrupted steps. Terminal-stop checks still own completion chrome,
-    // never body visibility. Compaction retains its explicit disclosure.
+    // The ordered projection owns intermediate text in Activity and leaves
+    // only trailing reply text inline. Completion controls chrome, never a
+    // second visibility filter. Compaction retains its explicit disclosure.
     const hasConfirmedStopFinish = hasConfirmedTerminalStop(messageFinish, visibleParts);
     const sortedFinalBodyReveal = {
         finish: messageFinish,

@@ -19,7 +19,6 @@ import type { Message, Part } from '@/lib/opencode/v2-types';
 
 import { projectTurnActivity } from './projectTurnActivity';
 import { projectTurnRecords } from './projectTurnRecords';
-import { projectTurnSummary } from './projectTurnSummary';
 import type { ChatMessageEntry } from './types';
 
 const sessionID = 'ses_1';
@@ -125,12 +124,9 @@ describe('turn completion disposition', () => {
         expect(dispositionOf(messages)).toBe('abnormal');
     });
 
-    test('a later open step does not change the earlier message\'s Activity rows', () => {
-        // `hasCanonicalStopSummary` used to require turn disposition === 'normal',
-        // and disposition comes from the *last* assistant. Appending the next step
-        // therefore re-classified a finished message's non-summary text, moving it
-        // between an Activity justification row and the message body — a host change,
-        // which unmounts the fold. Membership must be message-local.
+    test('a later open step keeps earlier summary text in its original Activity position', () => {
+        // An earlier stop cannot be extracted after a later step's activity:
+        // the original prefix must retain both its aside and its answer.
         const finished = assistantMessage({
             id: 'a1',
             parentID: 'u1',
@@ -145,18 +141,15 @@ describe('turn completion disposition', () => {
         const nextStepOpen = assistantMessage({ id: 'a2', parentID: 'u1', created: 3 });
 
         const rowsFor = (assistantMessages: ChatMessageEntry[]) => {
-            const summary = projectTurnSummary(assistantMessages);
             return projectTurnActivity({
                 turnId: 'u1',
                 assistantMessages,
-                summarySourceMessageId: summary.sourceMessageId,
-                summarySourcePartId: summary.sourcePartId,
                 showTextJustificationActivity: true,
             }).activityParts.map((activity) => activity.id);
         };
 
         expect(rowsFor([finished])).toEqual(['p_aside']);
-        expect(rowsFor([finished, nextStepOpen])).toEqual(['p_aside']);
+        expect(rowsFor([finished, nextStepOpen])).toEqual(['p_aside', 'p_summary']);
     });
 
     test('a queued user row does not settle the turn still streaming above it', () => {

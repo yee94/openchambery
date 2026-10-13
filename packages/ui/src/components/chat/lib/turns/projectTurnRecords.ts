@@ -281,8 +281,7 @@ const hydrateTurnRecord = (
     const activity = projectTurnActivity({
         turnId: turn.turnId,
         assistantMessages: turn.assistantMessages,
-        summarySourceMessageId: turn.summary.sourceMessageId,
-        summarySourcePartId: turn.summary.sourcePartId,
+        messages: turn.messages,
         showTextJustificationActivity: effectiveOptions.showTextJustificationActivity,
     });
     turn.activityParts = activity.activityParts;

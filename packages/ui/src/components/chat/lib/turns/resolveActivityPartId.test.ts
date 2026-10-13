@@ -35,9 +35,8 @@ describe('resolveActivityPartId', () => {
     });
 
     test('activity rows and the summary source agree on the same part id', () => {
-        // The summary source id is matched against activity row ids to decide
-        // whether a text part renders as a justification row or as the message
-        // body. Divergent ids moved that text between two hosts mid-turn.
+        // Summary metadata and the ordered Activity prefix retain source ids;
+        // the trailing text stays outside the process group.
         const text = { id: 'prt_text', type: 'text', text: 'final answer' } as Part;
         const providerExecutedTool = {
             ...toolPart('prt_tool'),
@@ -49,8 +48,6 @@ describe('resolveActivityPartId', () => {
         const activity = projectTurnActivity({
             turnId: 'user_1',
             assistantMessages: messages,
-            summarySourceMessageId: summary.sourceMessageId,
-            summarySourcePartId: summary.sourcePartId,
             showTextJustificationActivity: true,
         });
 

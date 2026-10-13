@@ -111,9 +111,8 @@ const isLiveStreamPhase = (streamPhase: unknown): boolean => (
  * derivation of the phase handed to `canRevealSortedFinalBody` /
  * `shouldStreamSortedFinalBody`: a `stop` finish or message completion snaps
  * to `completed`, otherwise the live channel phase with a `streaming`
- * fallback. Consumers must not re-derive it inline — drift between copies
- * makes the body reveal and the Activity dedup disagree, so the same text
- * duplicates or vanishes.
+ * fallback. This phase controls rendering cadence only; the ordered Activity
+ * projection owns text placement independently of the streaming pointer.
  */
 export const resolveSortedRevealStreamPhase = (input: {
     finish: unknown;
@@ -139,8 +138,8 @@ export type SortedFinalBodyRevealInput = {
 };
 
 /**
- * Received model text owns its message body in sorted mode too. Later steps,
- * tools, errors and completion cannot revoke content already shown to the user.
+ * Available model text must have a display owner. The ordered turn projection
+ * assigns Activity versus inline body; lifecycle cannot withdraw either copy.
  */
 export const canRevealSortedFinalBody = (input: SortedFinalBodyRevealInput): boolean => {
     return input.parts.some(isModelTextPart);

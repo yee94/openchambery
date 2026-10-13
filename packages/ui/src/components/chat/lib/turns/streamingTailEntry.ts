@@ -86,7 +86,11 @@ export const buildLiveStreamingEntry = <TEntry extends StreamingTailEntry>(
         return entry;
     }
 
-    const projection = projectTurnRecords([entry.turn.userMessage, ...assistantMessages], {
+    const assistantById = new Map(assistantMessages.map(message => [message.info.id, message]));
+    // Overlay by identity while keeping the complete original record order,
+    // including checkpoints and synthetic notices between assistant steps.
+    const messages = entry.turn.messages.map(record => assistantById.get(record.messageId) ?? record.message);
+    const projection = projectTurnRecords(messages, {
         showTextJustificationActivity: options.showTextJustificationActivity,
         showTurnChangedFiles: options.showTurnChangedFiles,
     });

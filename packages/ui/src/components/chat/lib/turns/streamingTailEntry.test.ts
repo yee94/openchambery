@@ -45,7 +45,10 @@ const turnEntry = (assistant: ChatMessageEntry): StreamingTailEntry => {
             userMessageId: 'user_1',
             userMessage: user,
             headerMessageId: assistant.info.id,
-            messages: [],
+            messages: [
+                { messageId: user.info.id, role: 'user', message: user, order: 0 },
+                { messageId: assistant.info.id, role: 'assistant', message: assistant, order: 1 },
+            ],
             assistantMessageIds: [assistant.info.id],
             assistantMessages: [assistant],
             activityParts: [],
@@ -171,4 +174,3 @@ describe('buildLiveStreamingEntry', () => {
     });
 
 });
-

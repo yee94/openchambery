@@ -1,8 +1,9 @@
-import { hasConfirmedTerminalStop } from './assistantMessageLifecycle';
+import { countContinuationToolParts, isModelTextPart } from './assistantMessageLifecycle';
 import type {
     ChatMessageEntry,
     TurnActivityGroup,
     TurnActivityRecord,
+    TurnMessageRecord,
     TurnPartRecord,
 } from './types';
 import { resolveActivityPartId } from './resolveActivityPartId';
@@ -28,11 +29,6 @@ const getPartText = (part: unknown): string | undefined => {
     return undefined;
 };
 
-const getMessageFinish = (message: ChatMessageEntry): string | undefined => {
-    const finish = (message.info as { finish?: unknown }).finish;
-    return typeof finish === 'string' ? finish : undefined;
-};
-
 const buildTurnPartRecord = (
     turnId: string,
     messageId: string,
@@ -52,8 +48,7 @@ const buildTurnPartRecord = (
 interface ProjectActivityInput {
     turnId: string;
     assistantMessages: ChatMessageEntry[];
-    summarySourceMessageId?: string;
-    summarySourcePartId?: string;
+    messages?: readonly TurnMessageRecord[];
     showTextJustificationActivity: boolean;
 }
 
@@ -66,6 +61,7 @@ interface ProjectActivityResult {
 
 export const projectTurnActivity = (input: ProjectActivityInput): ProjectActivityResult => {
     const activityParts: TurnActivityRecord[] = [];
+    const activityByMessage = new Map<string, TurnActivityRecord[]>();
     let hasTools = false;
     let hasReasoning = false;
 
@@ -82,43 +78,31 @@ export const projectTurnActivity = (input: ProjectActivityInput): ProjectActivit
         });
     });
 
-    // Canonical stop summary: the summary source must be a confirmed terminal
-    // stop message (finish === 'stop' with zero continuation tools, the runLoop
-    // exit rule). A stop that still carries continuation tools is a step
-    // boundary: its text stays in Activity justification instead of being
-    // promoted to the canonical body, and it must not fold other text away.
-    //
-    // The check is made on the summary source message itself rather than on the
-    // turn's disposition. Turn disposition is derived from the *last* assistant,
-    // so a multi-step step gap flipped it to normal and back and took Activity
-    // row membership with it — a text part moved between an Activity
-    // justification row and the message body, unmounting the fold. Row
-    // membership must depend only on facts local to the message that owns the
-    // part.
-    const hasCanonicalStopSummary = Boolean(input.summarySourceMessageId)
-        && Boolean(input.summarySourcePartId)
-        && input.assistantMessages.some((message) => (
-            message.info.id === input.summarySourceMessageId
-            && hasConfirmedTerminalStop(getMessageFinish(message), message.parts)
-        ));
+    // Only the trailing model text can sit after Activity without changing
+    // OpenCode's order. Earlier text parts remain at their original positions.
+    const lastMessage = input.assistantMessages.at(-1);
+    let bodyPartIndex = -1;
+    if (lastMessage && countContinuationToolParts(lastMessage.parts) === 0) {
+        for (let index = lastMessage.parts.length - 1; index >= 0; index -= 1) {
+            const part = lastMessage.parts[index];
+            if (isModelTextPart(part)) {
+                bodyPartIndex = index;
+                break;
+            } else if (part.type === 'tool' || part.type === 'reasoning' || part.type === 'file' || part.type === 'agent' || part.type === 'subtask') {
+                break;
+            }
+        }
+    }
 
     input.assistantMessages.forEach((message) => {
-        const finish = getMessageFinish(message);
-        const messageHasTool = message.parts.some((part) => part.type === 'tool');
-
+        const messageActivity: TurnActivityRecord[] = [];
         message.parts.forEach((part, partIndex) => {
             const isTool = part.type === 'tool';
 
             const text = part.type === 'reasoning' || part.type === 'text'
                 ? getPartText(part)
                 : undefined;
-            const partId = resolveActivityPartId(message.info.id, part, partIndex);
-
-            const isConfirmedSummaryText = part.type === 'text'
-                && typeof text === 'string'
-                && hasConfirmedTerminalStop(finish, message.parts)
-                && input.summarySourceMessageId === message.info.id
-                && input.summarySourcePartId === partId;
+            const isBodyText = message === lastMessage && partIndex === bodyPartIndex;
 
             let kind: TurnActivityRecord['kind'] | null = null;
             if (isTool) {
@@ -133,12 +117,7 @@ export const projectTurnActivity = (input: ProjectActivityInput): ProjectActivit
                 input.showTextJustificationActivity
                 && part.type === 'text'
                 && text
-                && !isConfirmedSummaryText
-                && (
-                    hasCanonicalStopSummary
-                    || messageHasTool
-                    || (typeof finish === 'string' && finish !== 'stop')
-                )
+                && !isBodyText
             ) {
                 kind = 'justification';
             }
@@ -147,37 +126,47 @@ export const projectTurnActivity = (input: ProjectActivityInput): ProjectActivit
                 return;
             }
 
-            activityParts.push({
+            const activity: TurnActivityRecord = {
                 ...buildTurnPartRecord(input.turnId, message.info.id, part, partIndex),
                 kind,
-            });
+            };
+            activityParts.push(activity);
+            messageActivity.push(activity);
         });
+        activityByMessage.set(message.info.id, messageActivity);
     });
 
     const activitySegments: TurnActivityGroup[] = [];
 
-    if (activityParts.length > 0) {
-        // Host the disclosure on the turn's first assistant, and identify the
-        // segment by the turn alone. Deriving either from "first message that
-        // currently has activity" made the host migrate mid-turn: one empty-parts
-        // frame moved the anchor to the next assistant, which changed the segment
-        // key *and* the owning ChatMessage, so the whole nested fold unmounted and
-        // remounted. Turn identity is the only stable host identity.
-        const anchorMessageId = input.assistantMessages[0]?.info.id;
-
-        if (anchorMessageId) {
-            activitySegments.push({
-                id: `${input.turnId}:activity`,
-                anchorMessageId,
-                afterToolPartId: null,
-                parts: activityParts,
-            });
+    // Consolidate adjacent assistants only. A checkpoint/notice is an order
+    // boundary: later activity cannot migrate to the turn's first assistant.
+    // Empty assistants still anchor their run so late parts cannot remount it.
+    const records = input.messages ?? input.assistantMessages.map(message => ({ role: 'assistant', messageId: message.info.id }));
+    let segment: TurnActivityGroup | undefined;
+    for (const record of records) {
+        if (record.role !== 'assistant') {
+            segment = undefined;
+            continue;
         }
+        if (!segment) {
+            segment = {
+                id: record.messageId === input.assistantMessages[0]?.info.id
+                    ? `${input.turnId}:activity`
+                    : `${input.turnId}:activity:${record.messageId}`,
+                anchorMessageId: record.messageId,
+                afterToolPartId: null,
+                parts: [],
+            };
+            activitySegments.push(segment);
+        }
+        segment.parts.push(...(activityByMessage.get(record.messageId) ?? []));
     }
 
+    const nonEmptySegments = activitySegments.filter(segment => segment.parts.length > 0);
+    if (nonEmptySegments.length === 1) nonEmptySegments[0].parts = activityParts;
     return {
         activityParts,
-        activitySegments,
+        activitySegments: nonEmptySegments,
         hasTools,
         hasReasoning,
     };
