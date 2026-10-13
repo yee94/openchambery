@@ -919,6 +919,7 @@ function applyV2LiveOverlay(draft: TranscriptEventDraft, event: Event): Director
   if (type === "session.tool.called") {
     return upsertToolPart(draft, sessionID, messageID, toolID, name, (part) => {
       const state = asRecord((part as { state?: unknown }).state) ?? {}
+      const started = readEventCreated(props)
       return {
         ...part,
         state: {
@@ -926,6 +927,7 @@ function applyV2LiveOverlay(draft: TranscriptEventDraft, event: Event): Director
           status: "pending",
           input: props.input ?? state.input ?? {},
           metadata: asRecord(state.metadata) ?? {},
+          ...(started !== undefined ? { time: { ...asRecord(state.time), start: started } } : {}),
         },
       } as Part
     }, bootstrap)
@@ -942,6 +944,7 @@ function applyV2LiveOverlay(draft: TranscriptEventDraft, event: Event): Director
   if (type === "session.tool.success") {
     return upsertToolPart(draft, sessionID, messageID, toolID, name, (part) => {
       const state = asRecord((part as { state?: unknown }).state) ?? {}
+      const completed = readEventCreated(props)
       return {
         ...part,
         state: {
@@ -950,6 +953,7 @@ function applyV2LiveOverlay(draft: TranscriptEventDraft, event: Event): Director
           input: state.input ?? props.input ?? {},
           output: toolOutput(props.content),
           metadata: asRecord(props.metadata) ?? asRecord(state.metadata) ?? {},
+          ...(completed !== undefined ? { time: { ...asRecord(state.time), end: completed } } : {}),
         },
       } as Part
     }, bootstrap)
@@ -957,6 +961,7 @@ function applyV2LiveOverlay(draft: TranscriptEventDraft, event: Event): Director
   if (type === "session.tool.failed") {
     return upsertToolPart(draft, sessionID, messageID, toolID, name, (part) => {
       const state = asRecord((part as { state?: unknown }).state) ?? {}
+      const completed = readEventCreated(props)
       const error = asRecord(props.error)
       return {
         ...part,
@@ -967,6 +972,7 @@ function applyV2LiveOverlay(draft: TranscriptEventDraft, event: Event): Director
           output: toolOutput(props.content),
           error: error ? asString(error.message) ?? asString(props.error) : asString(props.error),
           metadata: asRecord(props.metadata) ?? asRecord(state.metadata) ?? {},
+          ...(completed !== undefined ? { time: { ...asRecord(state.time), end: completed } } : {}),
         },
       } as Part
     }, bootstrap)

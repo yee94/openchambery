@@ -518,21 +518,26 @@ export const createSessionTitleRuntime = ({
 
     const meta = readTitleRefreshMeta(session);
 
-    // Lazy fork registration: when the fork's `session.created` event was lost
+    // Lazy fork registration: when the fork's creation event was lost
     // (SSE reconnect gap, server/OpenCode restart), the in-memory pending map
     // never learned about the fork. The first newly-created user message on a
-    // fork-titled session (message created after the fork, before any activity
-    // timestamp advanced past the fork) rebuilds that pending entry so the
-    // first admission can trigger the refresh. Idempotent: the normal
-    // session.created path already holds a pending entry, and once activity
-    // advances past the fork time later messages never re-register.
+    // fork-titled session rebuilds that pending entry so the first admission can
+    // trigger the refresh. Native forks use a session-scoped admission marker:
+    // the UI also advances activity for sidebar ordering before any message is
+    // sent. Legacy sessions without fork provenance retain the activity guard.
     const forkCreated = Number(session?.time?.created);
+    const nativeFork = typeof session.fork?.sessionID === 'string' && session.fork.sessionID.length > 0;
+    const forkFirstSendConsumed = meta.titleRefresh.forkFirstSendSessionID === sessionId;
+    if (forkFirstSendConsumed) forkFirstSendPending.delete(sessionId);
     if (
-      !forkFirstSendPending.has(sessionId)
+      !forkFirstSendConsumed
+      && !forkFirstSendPending.has(sessionId)
+      && !forkFirstRefreshes.has(sessionId)
+      && !inflight.has(sessionId)
       && isForkedSessionTitle(typeof session.title === 'string' ? session.title : '')
       && Number.isFinite(forkCreated)
       && createdAt > forkCreated
-      && !(Number(meta.titleRefresh.activityUpdatedAt) > forkCreated)
+      && (nativeFork || !(Number(meta.titleRefresh.activityUpdatedAt) > forkCreated))
     ) {
       forkFirstSendPending.set(sessionId, {
         createdAt: forkCreated,
@@ -543,6 +548,7 @@ export const createSessionTitleRuntime = ({
 
     // Recover first-send admission even when session.created was missed.
     // Use the admitted text: the message projection may not exist yet.
+    let admittedFork = false;
     if (initialRecord && !stopped && !inflight.has(sessionId) && !initialRefreshes.has(sessionId)
       && !forkFirstRefreshes.has(sessionId) && !session.parentID && !isSystemOwnedSession(session)) {
       const pendingFork = forkFirstSendPending.get(sessionId);
@@ -553,30 +559,41 @@ export const createSessionTitleRuntime = ({
         if (firstForkSend) {
           forkFirstSendPending.delete(sessionId);
           forkFirstRefreshes.add(sessionId);
+          admittedFork = true;
         } else {
           initialRefreshes.add(sessionId);
         }
         initialUserMessages.set(sessionId, initialRecord);
-        armTimer(sessionId, directory, 0);
+        if (!admittedFork) armTimer(sessionId, directory, 0);
       }
     }
 
     const previous = Number(meta.titleRefresh.activityUpdatedAt);
     const activityUpdatedAt = Number.isFinite(previous) ? Math.max(previous, createdAt) : createdAt;
-    if (activityUpdatedAt === previous) return;
-    await openCodeFetch(`/session/${encodeURIComponent(sessionId)}`, {
-      directory,
-      method: 'PATCH',
-      body: {
-        metadata: {
-          openchamber: {
-            titleRefresh: {
-              activityUpdatedAt,
+    if (activityUpdatedAt === previous && !admittedFork) return;
+    try {
+      await openCodeFetch(`/session/${encodeURIComponent(sessionId)}`, {
+        directory,
+        method: 'PATCH',
+        body: {
+          metadata: {
+            openchamber: {
+              titleRefresh: {
+                activityUpdatedAt,
+                ...(admittedFork ? { forkFirstSendSessionID: sessionId } : {}),
+              },
             },
           },
         },
-      },
-    });
+      });
+    } catch (error) {
+      if (admittedFork) {
+        forkFirstRefreshes.delete(sessionId);
+        initialUserMessages.delete(sessionId);
+      }
+      throw error;
+    }
+    if (admittedFork && !stopped) armTimer(sessionId, directory, 0);
   };
 
   // Declared early so generateTitle can re-arm when still inside the throttle window.
@@ -786,6 +803,16 @@ export const createSessionTitleRuntime = ({
       || payload?.type === 'openchamber:session-metadata') {
       const data = payload.data ?? payload.properties ?? {};
       sessionAccess?.reconcile?.(data.sessionID ?? data.info?.id ?? data.id, directoryHint);
+    }
+    if (payload?.type === 'session.forked') {
+      const data = payload.data ?? payload.properties ?? {};
+      if (typeof data.sessionID !== 'string' || !Number.isFinite(payload.created)) return;
+      forkFirstSendPending.set(data.sessionID, {
+        createdAt: payload.created,
+        directory: directoryHint,
+        hasNewUserMessage: false,
+      });
+      return;
     }
     const createdSession = extractCreatedSession(payload);
     if (createdSession) {

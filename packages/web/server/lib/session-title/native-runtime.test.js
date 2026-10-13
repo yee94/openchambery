@@ -243,6 +243,80 @@ it('uses the real v2 client and publishes the generated title without another se
   }
 });
 
+it.each([false, true].flatMap((missedEvent) =>
+  ['new-title', 'same-title', 'failure', 'metadata-retry'].map((result) => ({ missedEvent, result })),
+))('starts a promoted native fork once (fork event missed: $missedEvent, result: $result)', async ({ missedEvent, result }) => {
+  vi.useFakeTimers();
+  const session = {
+    id: 'ses_native_fork', title: 'Original (fork #1)',
+    fork: { sessionID: 'ses_source', boundary: { type: 'through', messageID: 'a_source' } },
+    time: { created: 100, updated: 100 },
+    metadata: { openchamber: {
+      titleAuthority: { sessionID: 'ses_source', title: 'Original', revision: 'source', source: 'manual' },
+      titleRefresh: { lastAutoTitle: 'Original', generatedAt: 50, forMessageID: 'a_source', activityUpdatedAt: 200, forkFirstSendSessionID: 'ses_source' },
+    } },
+  };
+  const generate = vi.fn(async () => {
+    if (result === 'failure') throw new Error('Summary unavailable');
+    return { text: result === 'same-title' ? session.title : 'Fork direction', providerID: 'test', modelID: 'test' };
+  });
+  let rejectAdmission = result === 'metadata-retry';
+  const createRuntime = () => createSessionTitleRuntime({
+    sessionAccess: {
+      get: async () => structuredClone(session),
+      messages: async () => [],
+      update: async (_id, _directory, patch) => {
+        if (rejectAdmission && patch.metadata?.openchamber?.titleRefresh?.forkFirstSendSessionID) {
+          rejectAdmission = false;
+          throw new Error('Metadata unavailable');
+        }
+        if (patch.metadata) session.metadata = mergeMetadataPatch(session.metadata, patch.metadata);
+        if (patch.title) session.title = patch.title;
+      },
+    },
+    getSmallModelService: async () => ({ generateSmallModelText: generate }),
+    isTitleRefreshEnabled: () => true,
+    now: () => 1000,
+  });
+  let runtime = createRuntime();
+  const forkEvent = { type: 'session.forked', created: 100, data: {
+    sessionID: session.id, parentID: 'ses_source', boundary: session.fork.boundary,
+  } };
+  try {
+    if (!missedEvent) runtime.processPayload(forkEvent);
+    await vi.runAllTimersAsync();
+    expect(generate).not.toHaveBeenCalled();
+    const firstAdmission = { type: 'session.inbox.enqueued', created: 300, data: {
+      sessionID: session.id, inboxID: 'u_first', item: { type: 'user', payload: { text: 'Implement the alternate direction' } },
+    } };
+    runtime.processPayload(firstAdmission);
+    runtime.processPayload({ type: 'session.execution.started', data: { sessionID: session.id } });
+    await vi.runAllTimersAsync();
+    if (result === 'metadata-retry') {
+      expect(generate).not.toHaveBeenCalled();
+      expect(session.metadata.openchamber.titleRefresh.forkFirstSendSessionID).toBe('ses_source');
+      runtime.processPayload(firstAdmission);
+      await vi.runAllTimersAsync();
+    }
+    expect(generate).toHaveBeenCalledTimes(1);
+    expect(generate.mock.calls[0][0].prompt).toContain('Implement the alternate direction');
+    expect(session.title).toBe(['new-title', 'metadata-retry'].includes(result) ? 'Fork direction' : 'Original (fork #1)');
+    expect(session.metadata.openchamber.titleRefresh.isGenerating).toBeUndefined();
+    expect(session.metadata.openchamber.titleRefresh.forkFirstSendSessionID).toBe(session.id);
+    if (result === 'failure') expect(session.metadata.openchamber.titleRefresh.lastError).toBe('Summary unavailable');
+    runtime.stop();
+    runtime = createRuntime();
+    runtime.processPayload(forkEvent);
+    runtime.processPayload({ type: 'session.inbox.enqueued', created: 400, data: {
+      sessionID: session.id, inboxID: 'u_second', item: { type: 'user', payload: { text: 'Follow up' } },
+    } });
+    await vi.runAllTimersAsync();
+    runtime.processPayload({ type: 'session.execution.succeeded', data: { sessionID: session.id } });
+    await vi.runAllTimersAsync();
+    expect(generate).toHaveBeenCalledTimes(1);
+  } finally { runtime.stop(); }
+});
+
 it.each(['new', 'missed-create', 'fork', 'missed-fork-create'].flatMap((scenario) =>
   ['text', 'text-and-file', 'file-only'].map((content) => ({ scenario, content })),
 ))('starts the first title before assistant completion ($scenario, $content)', async ({ scenario, content }) => {

@@ -55,13 +55,22 @@ extension-only VS Code retains the limitation below.
        immediately. The legacy first-idle edge remains a fallback when no
        admission was observed.
        A fork title (`(fork #n)`) refreshes on its first newly-admitted user
-       message, bypassing inherited title metadata and throttle without waiting
-       for the assistant. Legacy message-only events retain the idle fallback.
-     If the fork's `session.created` was lost (SSE reconnect gap, server or
-     OpenCode restart), the first newly-created user message lazily re-registers
-     the pending fork from the session read inside `recordUserActivity` (fork
-     title + message created after the fork + activity timestamp not yet past
-      the fork time), so the first-send refresh still fires.
+        message, bypassing inherited title metadata and throttle without waiting
+        for the assistant. Legacy message-only events retain the idle fallback.
+      Native OpenCode forks emit `session.forked`, not `session.created`; its
+      `data.sessionID` identifies the new fork and `data.parentID` is its source,
+      not a sub-agent relationship. The title watcher registers that event.
+      If the creation/fork event was missed, `recordUserActivity` recovers native
+      forks from `session.fork.sessionID` and the fork title. Sidebar promotion
+      also updates `activityUpdatedAt`, so that timestamp cannot prove a native
+      fork has already received a user message. Before starting the first-admission
+      model call, the watcher persists `titleRefresh.forkFirstSendSessionID` with
+      the target session ID. An inherited parent marker does not consume a child's
+      first send. A same-session marker prevents repeat generation on later sends
+      or replay after restart, even when the model failed or kept the fork title.
+      Failed marker persistence releases the pending generation reservation and
+      reports the error; a later admission can retry. Legacy sessions without
+      native fork provenance retain the activity-timestamp recovery guard.
      Ordinary later idle transitions do **not** arm another refresh. Any
       `busy`/`retry` status or a fresh user `message.updated` still clears an
         ordinary already-armed timer; admitted initial/fork-title and explicit

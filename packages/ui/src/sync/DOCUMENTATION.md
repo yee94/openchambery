@@ -60,6 +60,8 @@ An authoritative refresh repairs previously ID-sorted in-memory or durable-seede
 
 ## OpenCode 2 shell, form replies, and stream timing
 
+Tool execution timing is server-owned: native tool `time.ran` / `time.completed` project to `state.time.start` / `state.time.end`. Live `session.tool.called` and success/failure events use their envelope creation clocks for the same fields; progress preserves them. Missing clocks remain unknown, never the time a row mounts. Shell elapsed labels therefore survive session re-entry and freeze on authoritative completion. Regression coverage: `ToolPart.background.test.tsx` exercises GET projection, live events and real row remounts.
+
 ### Interrupt acknowledgement versus execution settlement
 
 `session-interrupt.ts` owns the bounded stop race: HTTP acknowledgement, a newly observed idle state, or a five-second unconfirmed outcome. It unsubscribes and aborts transport best-effort on settlement, even when a bridge ignores cancellation. `abortCurrentOperation` deduplicates simultaneous callers by captured directory store, session and runtime/execution generation. Failed/unconfirmed operations roll back only their matching queue-abort block and presentation, preserve execution authority, and show localized retry feedback. A replaced runtime/store or newer execution cannot receive a stale acknowledgement or rollback.

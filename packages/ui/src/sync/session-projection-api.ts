@@ -180,6 +180,7 @@ function toolPart(sessionID: string, messageID: string, tool: Record<string, unk
   const state = record(tool.state) ? tool.state : {}
   const status = asString(state.status) ?? "completed"
   const mappedStatus = status === "streaming" ? "pending" : status
+  const time = record(tool.time) ? tool.time : {}
   return {
     id,
     sessionID,
@@ -193,6 +194,10 @@ function toolPart(sessionID: string, messageID: string, tool: Record<string, unk
       output: toolOutput(state),
       error: record(state.error) ? asString(state.error.message) : asString(state.error),
       metadata: record(state.metadata) ? state.metadata : {},
+      time: {
+        ...(typeof time.ran === "number" && Number.isFinite(time.ran) ? { start: time.ran } : {}),
+        ...(typeof time.completed === "number" && Number.isFinite(time.completed) ? { end: time.completed } : {}),
+      },
     },
   }
 }

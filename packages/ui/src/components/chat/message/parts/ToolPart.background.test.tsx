@@ -28,10 +28,64 @@ vi.mock('@/components/code/WorkerHighlightedCode', () => ({ WorkerHighlightedCod
 vi.mock('@pierre/diffs/react', () => ({ PatchDiff: () => null }));
 
 import ToolPart from './ToolPart';
+import { normalizeSessionProjectionMessage } from '@/sync/session-projection-api';
+import { applyTranscriptDirectoryEvent, type TranscriptEventDraft } from '@/sync/transcript-event-reducer';
 
 let root: ReturnType<typeof createRoot> | undefined;
-afterEach(() => { act(() => root?.unmount()); document.body.innerHTML = ''; });
+afterEach(() => { act(() => root?.unmount()); document.body.innerHTML = ''; vi.restoreAllMocks(); });
 afterAll(() => { vi.unstubAllGlobals(); });
+
+test.each(['completed', 'error'])('tool elapsed time survives projection, remount and %s settlement', async (status) => {
+    live.store = createStore(() => ({ status: { type: 'busy' } as SessionStatus }));
+    live.messages = [];
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(11_000);
+    const project = (time: Record<string, number>, toolStatus = 'running') => {
+        const row = normalizeSessionProjectionMessage('ses_parent', {
+            id: 'msg_parent', type: 'assistant', time: { created: 500 },
+            content: [{ type: 'tool', id: 'tool-clock', name: 'shell', time,
+                state: { status: toolStatus, input: { command: 'pwd' }, metadata: {} } }],
+        })!;
+        return row.parts[0] as ToolPartType;
+    };
+    const host = document.createElement('div');
+    document.body.append(host);
+    root = createRoot(host);
+    const render = async (part: ToolPartType) => {
+        await act(async () => root!.render(<ToolPart part={part} isExpanded={false} onToggle={() => {}} isMobile={false} />));
+    };
+    await render(project({ created: 500, ran: 1_000 }));
+    expect(host.textContent).toContain('10.0s');
+    await act(async () => root!.render(null));
+    clock.mockReturnValue(16_000);
+    await render(project({ created: 500, ran: 1_000 }));
+    expect(host.textContent).toContain('15.0s');
+    await render(project({ created: 500, ran: 1_000, completed: 13_000 }, status));
+    expect(host.textContent).toContain('12.0s');
+});
+
+test.each(['session.tool.success', 'session.tool.failed'])('late live tool timing replaces missing timing and stays fixed after %s', async (terminalEvent) => {
+    live.store = createStore(() => ({ status: { type: 'busy' } as SessionStatus }));
+    live.messages = [];
+    vi.spyOn(Date, 'now').mockReturnValue(11_000);
+    const state: TranscriptEventDraft = { message: {}, part: {} };
+    const host = document.createElement('div');
+    document.body.append(host);
+    root = createRoot(host);
+    const event = async (type: string, eventCreated: number) => {
+        applyTranscriptDirectoryEvent(state, { type, properties: {
+            sessionID: 'ses_parent', assistantMessageID: 'msg_parent', id: 'tool-clock',
+            name: 'shell', input: { command: 'pwd' }, eventCreated,
+        } });
+        const part = state.part.msg_parent[0] as ToolPartType;
+        await act(async () => root!.render(<ToolPart part={part} isExpanded={false} onToggle={() => {}} isMobile={false} />));
+    };
+    await event('session.tool.input.started', 500);
+    expect(host.textContent).not.toMatch(/\d+\.\ds/);
+    await event('session.tool.called', 1_000);
+    expect(host.textContent).toContain('10.0s');
+    await event(terminalEvent, 9_000);
+    expect(host.textContent).toContain('8.0s');
+});
 
 test.each([false, true])('background child follows session status across repeated executions (mobile=%s)', async (isMobile) => {
     live.store = createStore(() => ({ status: { type: 'idle' } as SessionStatus }));

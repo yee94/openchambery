@@ -1992,62 +1992,8 @@ const ToolPartContent: React.FC<ToolPartProps> = ({
     const input = stateWithData.input;
     const time = stateWithData.time;
 
-    const [pinnedTime, setPinnedTime] = React.useState<{ start?: number; end?: number }>(() => ({
-        start: typeof time?.start === 'number' ? time.start : undefined,
-        end: typeof time?.end === 'number' ? time.end : undefined,
-    }));
-    const [localStartAt, setLocalStartAt] = React.useState<number | undefined>(undefined);
-    const [localFinalizedAt, setLocalFinalizedAt] = React.useState<number | undefined>(undefined);
-
-    React.useEffect(() => {
-        setPinnedTime({});
-        setLocalStartAt(undefined);
-        setLocalFinalizedAt(undefined);
-    }, [part.id]);
-
-    React.useEffect(() => {
-        if (isFinalized) {
-            return;
-        }
-        if (typeof time?.start === 'number') {
-            return;
-        }
-        setLocalStartAt((prev) => prev ?? Date.now());
-    }, [isFinalized, time?.start]);
-
-    React.useEffect(() => {
-        setPinnedTime((prev) => {
-            const next = { ...prev };
-            let changed = false;
-
-            if (typeof time?.start === 'number' && (typeof prev.start !== 'number' || time.start < prev.start)) {
-                next.start = time.start;
-                changed = true;
-            }
-
-            if (typeof time?.end === 'number' && (typeof prev.end !== 'number' || time.end > prev.end)) {
-                next.end = time.end;
-                changed = true;
-            }
-
-            return changed ? next : prev;
-        });
-    }, [time?.end, time?.start]);
-
-    const effectiveTimeStart = React.useMemo(() => {
-        // Once we captured a local start (during pending, before server sends time.start),
-        // always prefer it so the timer never jumps when server start arrives later.
-        if (typeof localStartAt === 'number') {
-            return localStartAt;
-        }
-        const candidates = [pinnedTime.start, time?.start].filter(
-            (value): value is number => typeof value === 'number'
-        );
-        if (candidates.length === 0) {
-            return undefined;
-        }
-        return Math.min(...candidates);
-    }, [localStartAt, pinnedTime.start, time?.start]);
+    // Execution timing belongs to the server and survives row/session remounts.
+    const effectiveTimeStart = typeof time?.start === 'number' && Number.isFinite(time.start) ? time.start : undefined;
 
     const taskOutputString = React.useMemo(() => {
         return typeof stateWithData.output === 'string' ? stateWithData.output : undefined;
@@ -2244,29 +2190,7 @@ const ToolPartContent: React.FC<ToolPartProps> = ({
         return buildTaskSummaryEntriesFromSession(childSessionMessages);
     }, [childSessionMessages, isTaskTool, taskSessionId]);
 
-    React.useEffect(() => {
-        if (typeof time?.end === 'number' || typeof pinnedTime.end === 'number') {
-            setLocalFinalizedAt(undefined);
-            return;
-        }
-
-        if (typeof effectiveTimeStart !== 'number') {
-            return;
-        }
-
-        if (!isFinalized) {
-            return;
-        }
-
-        setLocalFinalizedAt((prev) => prev ?? Date.now());
-    }, [
-        effectiveTimeStart,
-        isFinalized,
-        pinnedTime.end,
-        time?.end,
-    ]);
-
-    const effectiveTimeEnd = isFinalized ? (pinnedTime.end ?? time?.end ?? localFinalizedAt) : undefined;
+    const effectiveTimeEnd = isFinalized && typeof time?.end === 'number' && Number.isFinite(time.end) ? time.end : undefined;
     const isActive = !isFinalized && activeLatched;
     const suppressTaskLoading = shouldSuppressTaskLoading({
         isTaskTool,
@@ -2765,7 +2689,8 @@ const ToolPartContent: React.FC<ToolPartProps> = ({
                                     {taskTitle}
                                 </span>
                             )}
-                            {(normalizedPartTool === 'bash' || isShellTool) && typeof effectiveTimeStart === 'number' ? (
+                            {(normalizedPartTool === 'bash' || isShellTool) && typeof effectiveTimeStart === 'number'
+                                && (!isFinalized || typeof effectiveTimeEnd === 'number' || shellBackgroundRunning) ? (
                                 <span className={cn('flex-shrink-0 tabular-nums text-muted-foreground/80', TOOL_ROW_DESCRIPTION_CLASS)}>
                                     <LiveDuration
                                         start={effectiveTimeStart}
