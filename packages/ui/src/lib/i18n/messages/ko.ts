@@ -160,6 +160,7 @@ export const dict: Record<I18nKey, string> = {
   'mobile.tabs.assistant': '도우미',
   'mobile.tabs.scheduled': '작업',
   'mobile.tabs.settings': '설정',
+  'mobile.tabs.activity.loading': '진행 중',
   'mobile.surface.closeAria': '닫기',
   'mobile.select.sheetAria': '옵션 선택',
   'mobile.header.openMenuAria': '메뉴 열기',

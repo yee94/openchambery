@@ -160,6 +160,7 @@ export const dict: Record<I18nKey, string> = {
   'mobile.tabs.assistant': '助理',
   'mobile.tabs.scheduled': '計劃',
   'mobile.tabs.settings': '設定',
+  'mobile.tabs.activity.loading': '進行中',
   'mobile.surface.closeAria': '關閉',
   'mobile.select.sheetAria': '選擇選項',
   'mobile.header.openMenuAria': '開啟選單',

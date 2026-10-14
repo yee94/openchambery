@@ -6,7 +6,7 @@ import { subscribeOpenchamberEvents } from '@/lib/openchamberEvents';
 import { runtimeFetch } from '@/lib/runtime-fetch';
 import { getRuntimeGeneration, getRuntimeTransportIdentity } from '@/lib/runtime-switch';
 import { waitForSessionStartupBarrier } from '@/lib/session-startup-barrier';
-import { fetchGlobalScheduledTasks } from '@/lib/scheduledTasksApi';
+import { fetchGlobalScheduledTasks, type GlobalScheduledTasksResponse } from '@/lib/scheduledTasksApi';
 import { useI18nStore } from '@/lib/i18n/store';
 import { AssistantAPIError, AssistantShareOperationError, isAbortError, parseAssistantCapabilityDTO, parseAssistantContactCardAdmission, parseAssistantContactPage, parseAssistantContactPeerAdmission, parseAssistantDTO, parseAssistantHistoryPage, parseAssistantScheduledTasksPage, parseAssistantSnapshotDTO, parseCompactResponse, parseMessageAdmission, parseSessionBinding, parseShareOperation, type AssistantCapabilityDTO, type AssistantContactCardPart, type AssistantContactFilePart, type AssistantContactMessage, type AssistantContactPage, type AssistantContactPeerAdmission, type AssistantContactSessionCardPart, type AssistantDTO, type AssistantHistoryPage, type AssistantMode, type AssistantPart, type AssistantSnapshotDTO, type AssistantSource, type CompactResponse, type MessageAdmission, type SessionBinding, type ShareOperation } from './assistantDTO';
 import {
@@ -684,6 +684,29 @@ export const useGlobalScheduledTasksQuery = (enabled = true) => useQuery({
   ...globalScheduledTasksQueryOptions(),
   enabled,
 });
+const selectScheduledNavigationWorking = (snapshot: GlobalScheduledTasksResponse) => (
+  snapshot.tasks.some(({ task }) => task.state.lastStatus === 'running')
+);
+/** Sidebar and mobile dock share this observer. Failure keeps the last running snapshot. */
+export const useScheduledNavigationWorking = () => {
+  const transport = getRuntimeTransportIdentity();
+  const query = useQuery({
+    ...globalScheduledTasksQueryOptions(transport),
+    select: selectScheduledNavigationWorking,
+    staleTime: 0,
+    refetchInterval: (current) => (
+      current.state.data && selectScheduledNavigationWorking(current.state.data) ? 2_500 : 15_000
+    ),
+    refetchIntervalInBackground: false,
+  });
+  React.useEffect(() => subscribeOpenchamberEvents((event) => {
+    if (getRuntimeTransportIdentity() !== transport) return;
+    if (event.type === 'scheduled-task-ran' || event.type === 'event-stream-ready') {
+      void queryClient.invalidateQueries({ queryKey: globalScheduledTasksQueryOptions(transport).queryKey, exact: true });
+    }
+  }), [transport]);
+  return query.data === true;
+};
 const invalidateContact = (assistantID: string, transport = getRuntimeTransportIdentity()) => {
   void queryClient.invalidateQueries({
     queryKey: [transport, getRuntimeGeneration(), 'assistants', 'contact', assistantID],

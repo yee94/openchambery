@@ -48,7 +48,13 @@ export function useNativeIosTabBar(args: UseNativeIosTabBarArgs): NativeIosTabBa
   const overlayHiddenRef = useRef(false);
   const rejectedRef = useRef(false);
   const onTabChange = useEvent(args.onTabChange);
-  const tabsKey = JSON.stringify(args.tabs.map((tab) => [tab.id, tab.label, tab.badge ?? null]));
+  const tabsKey = JSON.stringify(args.tabs.map((tab) => [
+    tab.id,
+    tab.label,
+    tab.badge ?? null,
+    tab.activity === true,
+    tab.activity === true ? (tab.activityLabel ?? null) : null,
+  ]));
   const appearance = typeof document === 'undefined'
     ? 'dark'
     : nativeIosTabBarAppearanceFromRoot(document.documentElement);
@@ -107,7 +113,13 @@ export function useNativeIosTabBar(args: UseNativeIosTabBarArgs): NativeIosTabBa
     let cancelled = false;
     const plugin = getNativeIosTabBarPlugin();
     const state: NativeIosTabBarState = {
-      tabs: args.tabs.map((tab) => ({ id: tab.id, label: tab.label, badge: tab.badge ?? null })),
+      tabs: args.tabs.map((tab) => ({
+        id: tab.id,
+        label: tab.label,
+        badge: tab.badge ?? null,
+        activity: tab.activity === true,
+        activityLabel: tab.activity === true ? (tab.activityLabel ?? null) : null,
+      })),
       selectedTab: args.activeTab,
       appearance,
       accentColor,

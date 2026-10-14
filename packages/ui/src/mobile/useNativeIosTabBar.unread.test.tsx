@@ -21,7 +21,10 @@ import { useNativeIosTabBar } from './useNativeIosTabBar';
 const host = document.createElement('div');
 const root = createRoot(host);
 afterEach(async () => {
-  await act(async () => root.unmount()); host.remove();
+  if (host.isConnected) {
+    await act(async () => root.unmount());
+    host.remove();
+  }
   document.getElementById('mobile-overlay-root')?.remove();
 });
 
@@ -39,4 +42,27 @@ test('forwards unread badge updates and explicit clearing across the native brid
   await act(async () => root.render(<Dock badge={null} />));
   expect(plugin.present.mock.calls.at(-1)?.[0].tabs[0].badge).toBeNull();
   expect(plugin.present).toHaveBeenCalledTimes(3);
+});
+
+test('forwards a loading mark and clears it without leaving a count badge', async () => {
+  function Dock({ activity }: { activity: boolean }) {
+    const mode = useNativeIosTabBar({
+      visible: true,
+      activeTab: 'scheduled',
+      tabs: [{ id: 'scheduled', label: 'Schedule', badge: null, activity, activityLabel: activity ? 'In progress' : null }],
+      ariaLabel: 'Navigation',
+      onTabChange: () => undefined,
+    });
+    return <output>{mode}</output>;
+  }
+  const dockHost = document.createElement('div');
+  const dockRoot = createRoot(dockHost);
+  plugin.present.mockClear();
+  document.body.append(dockHost);
+  await act(async () => dockRoot.render(<Dock activity />));
+  expect(plugin.present.mock.calls.at(-1)?.[0].tabs[0]).toMatchObject({ badge: null, activity: true, activityLabel: 'In progress' });
+  await act(async () => dockRoot.render(<Dock activity={false} />));
+  expect(plugin.present.mock.calls.at(-1)?.[0].tabs[0]).toMatchObject({ badge: null, activity: false, activityLabel: null });
+  await act(async () => dockRoot.unmount());
+  dockHost.remove();
 });

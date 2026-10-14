@@ -22,7 +22,11 @@ vi.mock('@/sync/session-ui-store', async () => {
     setCurrentSession: async () => undefined,
   })) };
 });
-vi.mock('@/queries/assistantQueries', () => ({ useAssistantUnreadTotal: () => 0 }));
+vi.mock('@/queries/assistantQueries', () => ({
+  useAssistantUnreadTotal: () => 0,
+  useAssistantWorking: () => false,
+  useScheduledNavigationWorking: () => false,
+}));
 vi.mock('@/lib/iosNativeUi', () => ({ useIosNativeUiEnabled: () => false }));
 vi.mock('./useNativeIosTabBar', () => ({ useNativeIosTabBar: () => 'web' }));
 vi.mock('@/lib/native-ios-composer-session', () => ({

@@ -103,6 +103,7 @@ export const dict: Record<I18nKey, string> = {
   'mobile.tabs.assistant': '助手',
   'mobile.tabs.scheduled': '予定',
   'mobile.tabs.settings': '設定',
+  'mobile.tabs.activity.loading': '実行中',
   'mobile.menu.instances': 'インスタンス',
   'mobile.settings.switchInstance': 'インスタンスを切り替え',
   'mobile.connect.welcome.title': 'OpenChamber に接続',

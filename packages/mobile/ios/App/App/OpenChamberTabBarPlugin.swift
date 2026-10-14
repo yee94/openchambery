@@ -166,9 +166,33 @@ class OpenChamberTabBarPlugin: CAPPlugin, CAPBridgedPlugin, OpenChamberTabBarVie
                 label: label,
                 symbol: pair.0,
                 selectedSymbol: pair.1,
-                badge: parseBadge(object["badge"])
+                badge: parseBadge(object["badge"]),
+                activity: parseActivity(object["activity"]),
+                activityLabel: parseActivityLabel(object["activityLabel"])
             )
         }
+    }
+
+    /// UI contract: `badge` is a display string or null. `activity` is a loading badge,
+    /// sent only when `badge` is null. Native does not re-cap counts.
+    private static func parseActivity(_ value: Any?) -> Bool {
+        if let flag = value as? Bool { return flag }
+        if let number = value as? NSNumber { return number.boolValue }
+        return false
+    }
+
+    private static func parseActivityLabel(_ value: Any?) -> String? {
+        guard let value, !(value is NSNull) else { return nil }
+        let raw: String
+        if let string = value as? String {
+            raw = string
+        } else if let string = value as? NSString {
+            raw = string as String
+        } else {
+            return nil
+        }
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
     }
 
     /// UI contract: `badge` is already a display string (count or capped label) or null to clear.

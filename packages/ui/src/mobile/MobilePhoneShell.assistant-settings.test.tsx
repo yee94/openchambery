@@ -8,7 +8,11 @@ vi.mock('@/sync/session-ui-store', async () => {
   const { create } = await import('zustand');
   return { useSessionUIStore: create(() => ({ currentSessionId: null, getDirectoryForSession: () => null })) };
 });
-vi.mock('@/queries/assistantQueries', () => ({ useAssistantUnreadTotal: () => 0 }));
+vi.mock('@/queries/assistantQueries', () => ({
+  useAssistantUnreadTotal: () => 0,
+  useAssistantWorking: () => false,
+  useScheduledNavigationWorking: () => false,
+}));
 vi.mock('@/lib/iosNativeUi', () => ({ useIosNativeUiEnabled: () => false }));
 vi.mock('./useNativeIosTabBar', () => ({ useNativeIosTabBar: () => 'web' }));
 vi.mock('@/lib/native-ios-composer-session', () => ({ nativeIosComposerSession: { shutdown: () => undefined } }));

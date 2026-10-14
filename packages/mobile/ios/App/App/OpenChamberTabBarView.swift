@@ -12,6 +12,9 @@ struct OpenChamberTabBarItem {
     let selectedSymbol: String
     /// Display string from UI (`"4"`, `"99+"`). `nil` / empty clears `badgeValue`.
     let badge: String?
+    /// Spinner badge. UI sends this only when `badge` is nil.
+    let activity: Bool
+    let activityLabel: String?
 }
 
 /// Full-screen pass-through host for a chrome-only `UITabBarController`.
@@ -35,6 +38,7 @@ final class OpenChamberTabBarView: UIView, UITabBarControllerDelegate {
     let chromeController = OpenChamberTabBarChromeController()
 
     private var items: [OpenChamberTabBarItem] = []
+    private var activityBadges: [String: TabActivityBadge] = [:]
     private var selectedId = ""
     private var applying = false
     private var lastReportedHeight: CGFloat = -1
@@ -58,6 +62,7 @@ final class OpenChamberTabBarView: UIView, UITabBarControllerDelegate {
 
     override func layoutSubviews() {
         super.layoutSubviews()
+        layoutActivityBadges()
         reportHeightIfNeeded()
     }
 
@@ -102,9 +107,10 @@ final class OpenChamberTabBarView: UIView, UITabBarControllerDelegate {
             if items.map(\.id) != nextItems.map(\.id) || items.map(\.label) != nextItems.map(\.label) {
                 rebuild(items: nextItems)
             } else {
-                // Same tab structure: only push badgeValue updates (set / replace / clear).
+                // Same tab structure: push badge and loading updates without rebuilding chrome.
                 items = nextItems
                 applyBadges()
+                applyActivity()
             }
         }
         if let nextSelectedId, !nextSelectedId.isEmpty {
@@ -157,6 +163,7 @@ final class OpenChamberTabBarView: UIView, UITabBarControllerDelegate {
             return page
         }
         applySelectedItem()
+        applyActivity()
     }
 
     /// Apply UI-owned badge strings to existing items without rebuilding chrome.
@@ -165,6 +172,64 @@ final class OpenChamberTabBarView: UIView, UITabBarControllerDelegate {
         for (index, item) in items.enumerated() {
             guard index < viewControllers.count else { break }
             viewControllers[index].tabBarItem.badgeValue = Self.badgeValue(item.badge)
+        }
+    }
+
+    /// Loading occupies the same corner as a count badge and never stacks with it.
+    private func applyActivity() {
+        let live = Set(items.map(\.id))
+        for id in activityBadges.keys where !live.contains(id) {
+            activityBadges[id]?.removeFromSuperview()
+            activityBadges[id] = nil
+        }
+        guard let viewControllers = chromeController.viewControllers else { return }
+        for (index, item) in items.enumerated() {
+            let show = item.activity && (item.badge?.isEmpty ?? true)
+            let badge = activityBadge(for: item.id)
+            badge.isHidden = !show
+            if show {
+                badge.spinner.startAnimating()
+            } else {
+                badge.spinner.stopAnimating()
+            }
+            guard index < viewControllers.count else { continue }
+            viewControllers[index].tabBarItem.accessibilityValue = show ? item.activityLabel : nil
+        }
+        setNeedsLayout()
+    }
+
+    private func activityBadge(for id: String) -> TabActivityBadge {
+        if let existing = activityBadges[id] { return existing }
+        let badge = TabActivityBadge()
+        addSubview(badge)
+        activityBadges[id] = badge
+        return badge
+    }
+
+    private func layoutActivityBadges() {
+        let frames = tabButtonFrames()
+        for (index, item) in items.enumerated() {
+            guard let badge = activityBadges[item.id], !badge.isHidden, index < frames.count else { continue }
+            let frame = frames[index]
+            badge.bounds = CGRect(x: 0, y: 0, width: 18, height: 18)
+            badge.center = CGPoint(x: frame.midX + 14, y: frame.minY + 12)
+        }
+    }
+
+    private func tabButtonFrames() -> [CGRect] {
+        let tabBar = chromeController.tabBar
+        let buttons = tabBar.subviews
+            .filter { String(describing: type(of: $0)).contains("TabBarButton") && !$0.frame.isEmpty }
+            .sorted { $0.frame.minX < $1.frame.minX }
+        if buttons.count == items.count {
+            return buttons.map { $0.convert($0.bounds, to: self) }
+        }
+        let barFrame = tabBar.convert(tabBar.bounds, to: self)
+        guard barFrame.width > 0, !items.isEmpty else { return [] }
+        let width = barFrame.width / CGFloat(items.count)
+        let height = min(49, barFrame.height)
+        return items.indices.map { index in
+            CGRect(x: barFrame.minX + width * CGFloat(index), y: barFrame.minY, width: width, height: height)
         }
     }
 
@@ -213,6 +278,33 @@ final class OpenChamberTabBarView: UIView, UITabBarControllerDelegate {
         let b = CGFloat(value & 0xFF) / 255
         return UIColor(red: r, green: g, blue: b, alpha: 1)
     }
+}
+
+/// Inverse 18pt corner badge matching the web dock loading mark.
+private final class TabActivityBadge: UIView {
+    let spinner = UIActivityIndicatorView(style: .medium)
+
+    override init(frame: CGRect) {
+        super.init(frame: CGRect(x: 0, y: 0, width: 18, height: 18))
+        isUserInteractionEnabled = false
+        isAccessibilityElement = false
+        isHidden = true
+        backgroundColor = .label
+        layer.cornerRadius = 9
+        clipsToBounds = true
+        spinner.color = .systemBackground
+        spinner.hidesWhenStopped = true
+        spinner.transform = CGAffineTransform(scaleX: 0.55, y: 0.55)
+        spinner.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(spinner)
+        NSLayoutConstraint.activate([
+            spinner.centerXAnchor.constraint(equalTo: centerXAnchor),
+            spinner.centerYAnchor.constraint(equalTo: centerYAnchor),
+        ])
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
 }
 
 /// Keeps the controller view clear so the WebView remains visible.

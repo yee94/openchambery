@@ -161,6 +161,7 @@ export const dict: Record<I18nKey, string> = {
   'mobile.tabs.assistant': 'Agent',
   'mobile.tabs.scheduled': 'Zadania',
   'mobile.tabs.settings': 'Ustaw',
+  'mobile.tabs.activity.loading': 'W toku',
   'mobile.surface.closeAria': 'Zamknij',
   'mobile.select.sheetAria': 'Wybierz opcję',
   'mobile.header.openMenuAria': 'Otwórz menu',

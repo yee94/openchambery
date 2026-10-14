@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [2.0.9-beta.1] - 2026-10-14
+
+### 改进
+
+- 手机底部「助理」和「计划」在有进行中的任务时显示加载标记。有未读消息时只显示未读，两者不会同时出现。
+
 ## [2.0.8] - 2026-10-14
 
 ### 修复与改进

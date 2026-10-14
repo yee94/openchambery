@@ -22,6 +22,9 @@ export type NativeIosTabBarItem = {
   id: NativeIosTabId;
   label: string;
   badge?: string | null;
+  /** Spinner badge. UI sends this only when `badge` is null. */
+  activity?: boolean;
+  activityLabel?: string | null;
 };
 
 export type NativeIosTabBarState = {
@@ -107,7 +110,11 @@ export const nativeTabBarStatesEqual = (
   && left.accentColor === right.accentColor
   && left.tabs.length === right.tabs.length
   && left.tabs.every((tab, index) => (
-    tab.id === right.tabs[index]?.id && tab.label === right.tabs[index]?.label && tab.badge === right.tabs[index]?.badge
+    tab.id === right.tabs[index]?.id
+    && tab.label === right.tabs[index]?.label
+    && tab.badge === right.tabs[index]?.badge
+    && (tab.activity === true) === (right.tabs[index]?.activity === true)
+    && (tab.activity === true ? (tab.activityLabel ?? null) : null) === (right.tabs[index]?.activity === true ? (right.tabs[index]?.activityLabel ?? null) : null)
   ))
 );
 

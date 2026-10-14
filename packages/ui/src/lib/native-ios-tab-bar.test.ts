@@ -102,6 +102,18 @@ describe('native iOS tab bar contract', () => {
     )).toBe(false);
   });
 
+  test('loading activity changes trigger native dock updates and stay exclusive of a count', () => {
+    const loading = state({ tabs: [{ id: 'scheduled', label: 'Schedule', badge: null, activity: true, activityLabel: 'In progress' }] });
+    const idle = state({ tabs: [{ id: 'scheduled', label: 'Schedule', badge: null, activity: false, activityLabel: null }] });
+    expect(nativeTabBarStatesEqual(loading, idle)).toBe(false);
+    expect(resolveNativeIosTabBarSync({ visible: true, overlayHidden: false, lastState: idle, nextState: loading })).toEqual({ action: 'present' });
+    const idleWithStaleLabel = state({ tabs: [{ id: 'scheduled', label: 'Schedule', badge: null, activity: false, activityLabel: 'Ignored while idle' }] });
+    expect(nativeTabBarStatesEqual(idle, idleWithStaleLabel)).toBe(true);
+    expect(nativeTabBarStatesEqual(loading, state({
+      tabs: [{ id: 'scheduled', label: 'Schedule', badge: null, activity: true, activityLabel: '执行中' }],
+    }))).toBe(false);
+  });
+
   test('badge changes and clearing trigger native dock updates', () => {
     const unread = state({ tabs: [{ id: 'assistant', label: 'Agent', badge: '99+' }] });
     const read = state({ tabs: [{ id: 'assistant', label: 'Agent', badge: null }] });

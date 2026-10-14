@@ -160,6 +160,7 @@ export const dict = {
   'mobile.tabs.assistant': 'Agent',
   'mobile.tabs.scheduled': 'Schedule',
   'mobile.tabs.settings': 'Settings',
+  'mobile.tabs.activity.loading': 'In progress',
   'mobile.surface.closeAria': 'Close',
   'mobile.select.sheetAria': 'Select an option',
   'mobile.header.openMenuAria': 'Open menu',

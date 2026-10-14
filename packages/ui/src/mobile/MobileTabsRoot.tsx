@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { useAssistantUnreadTotal } from '@/queries/assistantQueries';
+import { useAssistantUnreadTotal, useAssistantWorking, useScheduledNavigationWorking } from '@/queries/assistantQueries';
 import { useEvent } from '@reactuses/core';
 
 import { Icon } from '@/components/icon/Icon';
@@ -11,6 +11,7 @@ import { nativeIosComposerSession } from '@/lib/native-ios-composer-session';
 import { cn } from '@/lib/utils';
 
 import { MobileTabBar } from './MobileTabBar';
+import { resolveMobileTabMark } from './mobileTabActivity';
 import { useMobileBackRoute } from './mobileBackNavigation';
 import type { MobileNavigationState } from './mobileNavigation';
 import { MOBILE_TABS, type MobileTabId } from './mobileTabs';
@@ -142,10 +143,26 @@ export function MobileTabsRoot({
   });
 
   const assistantUnreadCount = useAssistantUnreadTotal();
+  const assistantWorking = useAssistantWorking();
+  const scheduledWorking = useScheduledNavigationWorking();
+  const loadingLabel = t('mobile.tabs.activity.loading');
+  const assistantMark = resolveMobileTabMark({ unreadCount: assistantUnreadCount, working: assistantWorking });
+  const scheduledMark = resolveMobileTabMark({ unreadCount: 0, working: scheduledWorking });
   const nativeTabs = React.useMemo(
-    () => MOBILE_TABS.map((tab) => ({ id: tab.id, label: t(tab.labelKey),
-      badge: tab.id === 'assistant' && assistantUnreadCount > 0 ? (assistantUnreadCount > 99 ? '99+' : String(assistantUnreadCount)) : null })),
-    [t, assistantUnreadCount],
+    () => MOBILE_TABS.map((tab) => {
+      const loading = (tab.id === 'assistant' && assistantMark === 'loading')
+        || (tab.id === 'scheduled' && scheduledMark === 'loading');
+      return {
+        id: tab.id,
+        label: t(tab.labelKey),
+        badge: tab.id === 'assistant' && assistantMark === 'unread'
+          ? (assistantUnreadCount > 99 ? '99+' : String(assistantUnreadCount))
+          : null,
+        activity: loading,
+        activityLabel: loading ? loadingLabel : null,
+      };
+    }),
+    [t, assistantMark, scheduledMark, assistantUnreadCount, loadingLabel],
   );
   const nativeTabBarVisible = showTabBar && !tabBarCovered && !topSecondaryPage;
   const nativeTabBarMode = useNativeIosTabBar({
@@ -215,7 +232,10 @@ export function MobileTabsRoot({
           inert={topSecondaryPage || nativeTabBarAdopted ? true : undefined}
         >
           {showWebTabBar ? (
-            <MobileTabBar activeTab={selectedTab} onTabChange={handleTabChange} />
+            <MobileTabBar activeTab={selectedTab} onTabChange={handleTabChange} tabMarks={{
+              assistant: assistantMark === 'loading' ? 'loading' : null,
+              scheduled: scheduledMark === 'loading' ? 'loading' : null,
+            }} />
           ) : null}
         </div>
       ) : null}

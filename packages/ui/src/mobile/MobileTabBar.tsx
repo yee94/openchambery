@@ -5,6 +5,7 @@ import { Icon } from '@/components/icon/Icon';
 import { Button } from '@/components/ui/button';
 import { useI18n } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
+import { useAssistantUnreadTotal } from '@/queries/assistantQueries';
 
 import { MOBILE_TABS, type MobileTabId } from './mobileTabs';
 import { MobileFloatingBottomBar } from './MobileSurface';
@@ -13,14 +14,18 @@ export type MobileTabBarProps = {
   activeTab: MobileTabId;
   onTabChange: (tab: MobileTabId) => void;
   className?: string;
+  /** Loading marks already exclude tabs with unread. The bar re-checks assistant unread. */
+  tabMarks?: Partial<Record<MobileTabId, 'loading' | null>>;
 };
 
 /**
  * Floating glass capsule tab bar. Labels use dedicated short `mobile.tabs.*`
  * keys and equal flex slots so Latin/CJK/long locales stay within a phone width.
  */
-export function MobileTabBar({ activeTab, onTabChange, className }: MobileTabBarProps) {
+export function MobileTabBar({ activeTab, onTabChange, className, tabMarks }: MobileTabBarProps) {
   const { t } = useI18n();
+  const assistantUnread = useAssistantUnreadTotal();
+  const loadingLabel = t('mobile.tabs.activity.loading');
 
   const handleTabClick = useEvent((event: React.MouseEvent<HTMLButtonElement>) => {
     onTabChange(event.currentTarget.dataset.tab as MobileTabId);
@@ -52,6 +57,13 @@ export function MobileTabBar({ activeTab, onTabChange, className }: MobileTabBar
       {MOBILE_TABS.map((tab) => {
         const selected = tab.id === activeTab;
         const label = t(tab.labelKey);
+        const showAssistantUnread = tab.id === 'assistant' && assistantUnread > 0;
+        const showLoading = !showAssistantUnread && tabMarks?.[tab.id] === 'loading';
+        const markId = showAssistantUnread
+          ? 'mobile-tab-assistant-unread'
+          : showLoading
+            ? `mobile-tab-${tab.id}-activity`
+            : undefined;
 
         return (
           <Button
@@ -64,7 +76,7 @@ export function MobileTabBar({ activeTab, onTabChange, className }: MobileTabBar
             size="sm"
             aria-controls={`mobile-tabpanel-${tab.id}`}
             aria-label={label}
-            aria-describedby={tab.id === 'assistant' ? 'mobile-tab-assistant-unread' : undefined}
+            aria-describedby={markId}
             aria-selected={selected}
             tabIndex={selected ? 0 : -1}
             title={label}
@@ -90,12 +102,21 @@ export function MobileTabBar({ activeTab, onTabChange, className }: MobileTabBar
           >
             <span className="relative inline-flex shrink-0 overflow-visible">
               <Icon name={tab.icon} weight="medium" className="size-[23px] shrink-0" />
-              {tab.id === 'assistant' ? (
+              {markId ? (
                 <span
-                  id="mobile-tab-assistant-unread"
+                  id={markId}
+                  role={showLoading ? 'status' : undefined}
+                  aria-label={showLoading ? loadingLabel : undefined}
+                  data-mobile-tab-activity={showLoading ? 'loading' : undefined}
                   className="pointer-events-none absolute left-full -top-1 ml-0.5 inline-flex z-10"
                 >
-                  <AssistantNavigationUnreadBadge className="h-[18px] min-w-[18px] bg-foreground px-1 text-[11px] font-bold tracking-normal text-background shadow-none ring-2 ring-background" />
+                  {showAssistantUnread ? (
+                    <AssistantNavigationUnreadBadge className="h-[18px] min-w-[18px] bg-foreground px-1 text-[11px] font-bold tracking-normal text-background shadow-none ring-2 ring-background" />
+                  ) : (
+                    <span className="inline-flex size-[18px] items-center justify-center rounded-full bg-foreground text-background ring-2 ring-background">
+                      <Icon name="loader-4" className="size-3 animate-spin" />
+                    </span>
+                  )}
                 </span>
               ) : null}
             </span>
