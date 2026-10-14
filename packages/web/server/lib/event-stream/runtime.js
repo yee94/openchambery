@@ -25,7 +25,11 @@ export function createGlobalUiEventBroadcaster({
   wsClients,
   writeSseEvent,
 }) {
-  return (payload, options = {}) => {
+  const subscribers = new Set();
+  const broadcast = (payload, options = {}) => {
+    for (const emit of subscribers) {
+      try { emit(payload, options); } catch { /* Other streams remain independent. */ }
+    }
     const hasSseClients = sseClients.size > 0;
     const hasWsClients = wsClients.size > 0;
     if (!hasSseClients && !hasWsClients) {
@@ -53,6 +57,11 @@ export function createGlobalUiEventBroadcaster({
       }
     }
   };
+  broadcast.subscribe = (emit) => {
+    subscribers.add(emit);
+    return () => subscribers.delete(emit);
+  };
+  return broadcast;
 }
 
 export function createMessageStreamWsRuntime({

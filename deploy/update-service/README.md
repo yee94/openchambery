@@ -27,8 +27,13 @@ The release workflow updates `release-manifest.json` after GitHub publishes a
 **stable** release. Semver prereleases (`X.Y.Z-beta.N`, any version containing
 `-`) must never be written into this manifest: `write-release-manifest.mjs`
 skips them, and `release.yml` finalize-release skips the publish step for
-prereleases. Desktop `/desktop/latest*.yml` likewise proxies GitHub
-`/releases/latest`, which excludes prereleases. Every following Vercel
+prereleases. Desktop `/desktop/latest*.yml` is the electron-updater feed
+already installed by 2.0.0 and earlier. It reads the matching `full*.yml`
+from GitHub `/releases/latest` (which excludes prereleases) and falls back
+to `latest*.yml` only when that stable release has not published `full*.yml`
+yet. Relative installer URLs are rewritten to that same download directory,
+so those clients can install the latest stable shell and then use the shared
+OTA check. Every following Vercel
 deployment serves that published stable version. GitHub Actions needs
 repository `contents: write` permission for this manifest commit.
 
@@ -53,7 +58,10 @@ mobile clients call the public update API **directly** from the app process,
 preferring EdgeOne (`https://openchamber.xiaobe.top/v1/update/check`), then
 this Vercel endpoint, then GitHub Releases. Packaged Desktop builds on macOS,
 Windows, and Linux use the shared OTA decision endpoint below. `/desktop/`
-remains a legacy metadata proxy; new release CI no longer publishes YAML feeds.
+remains the legacy electron-updater feed: `latest.yml`, `latest-mac.yml`,
+`latest-linux.yml`, and `latest-linux-arm64.yml` are served from the stable
+GitHub Latest `full*.yml` counterparts. New release CI does not upload
+`latest*.yml`.
 
 `OPENCHAMBER_UPDATE_API_URL` remains available as a compatible JSON API
 override for Web, VS Code, and server-side package update checks.

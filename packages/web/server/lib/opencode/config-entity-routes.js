@@ -58,6 +58,57 @@ const composeV2ProviderCatalogSource = (providers, models, defaultModel) => {
 const createOpenCodeClient = ({ baseUrl, headers, fetch: fetchImpl }) =>
   OpenCode.make({ baseUrl, headers, fetch: fetchImpl });
 
+// OpenCode model.list gives up after 5s with this error while location plugins
+// are still booting. A relay connect can activate many locations at once, so
+// the active project's catalog request must wait instead of caching the miss.
+const PLUGIN_ACTIVATION_PENDING = 'did not finish activating';
+const PLUGIN_ACTIVATION_RETRY_DELAYS_MS = [1000, 2000, 4000];
+
+const defaultActivationWait = (ms) => new Promise((resolve) => {
+  setTimeout(resolve, ms);
+});
+
+const activationErrorText = (error) => {
+  const parts = [];
+  const visit = (value, depth) => {
+    if (depth > 4 || value == null) return;
+    if (typeof value === 'string') {
+      parts.push(value);
+      return;
+    }
+    if (typeof value !== 'object') return;
+    if (typeof value.message === 'string') parts.push(value.message);
+    if (typeof value.reason === 'string') parts.push(value.reason);
+    visit(value.cause, depth + 1);
+    visit(value.error, depth + 1);
+  };
+  visit(error, 0);
+  return parts.join(' ');
+};
+
+const isPluginActivationPendingError = (error) =>
+  activationErrorText(error).includes(PLUGIN_ACTIVATION_PENDING);
+
+const loadProviderCatalogUpstream = async (client, location, wait) => {
+  const delays = PLUGIN_ACTIVATION_RETRY_DELAYS_MS;
+  let lastError;
+  for (let attempt = 0; attempt <= delays.length; attempt += 1) {
+    try {
+      const [providersResult, modelsResult, defaultResult] = await Promise.all([
+        client.provider.list({ location }),
+        client.model.list({ location }),
+        client.model.default({ location }).catch(() => undefined),
+      ]);
+      return { providersResult, modelsResult, defaultResult };
+    } catch (error) {
+      lastError = error;
+      if (!isPluginActivationPendingError(error) || attempt === delays.length) throw error;
+      await wait(delays[attempt]);
+    }
+  }
+  throw lastError;
+};
+
 const MAX_GLOBAL_CONFIG_SIZE = 2 * 1024 * 1024;
 const GLOBAL_CONFIG_FILES = {
   opencode: ['opencode.jsonc', 'opencode.json'],
@@ -158,6 +209,7 @@ export const registerConfigEntityRoutes = (app, dependencies) => {
     updateMcpConfig,
     deleteMcpConfig,
     configDirectory = getGlobalConfigDirectory(),
+    waitForPluginActivation = defaultActivationWait,
   } = dependencies;
 
   app.get('/api/config/catalog/providers', async (req, res) => {
@@ -181,11 +233,11 @@ export const registerConfigEntityRoutes = (app, dependencies) => {
         fetch: (request, init) => fetch(request, { ...init, signal: AbortSignal.timeout(8_000) }),
       });
       const location = { directory };
-      const [providersResult, modelsResult, defaultResult] = await Promise.all([
-        client.provider.list({ location }),
-        client.model.list({ location }),
-        client.model.default({ location }).catch(() => undefined),
-      ]);
+      const { providersResult, modelsResult, defaultResult } = await loadProviderCatalogUpstream(
+        client,
+        location,
+        waitForPluginActivation,
+      );
       const source = composeV2ProviderCatalogSource(
         providersResult?.data,
         modelsResult?.data,

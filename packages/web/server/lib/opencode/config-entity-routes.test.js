@@ -338,6 +338,46 @@ describe('provider catalog route', () => {
     await request(failingApp).get('/api/config/catalog/providers').expect(502);
   });
 
+  it('retries model.list while location plugins are still activating', async () => {
+    const app = express();
+    const list = vi.fn()
+      .mockRejectedValueOnce(new Error('Location plugins did not finish activating'))
+      .mockResolvedValueOnce({ data: [{ id: 'gpt-5.4', providerID: 'openai', name: 'GPT 5.4' }] });
+    const wait = vi.fn(async () => undefined);
+    createOpencodeClient.mockReturnValue({
+      provider: { list: vi.fn(async () => ({ data: [{ id: 'openai', name: 'OpenAI' }] })) },
+      model: { list, default: vi.fn(async () => ({ data: null })) },
+    });
+    registerConfigEntityRoutes(app, {
+      ...createDependencies(vi.fn()),
+      waitForPluginActivation: wait,
+    });
+
+    const response = await request(app).get('/api/config/catalog/providers').expect(200);
+
+    expect(list).toHaveBeenCalledTimes(2);
+    expect(wait).toHaveBeenCalledWith(1000);
+    expect(response.body.providers[0].models['gpt-5.4'].id).toBe('gpt-5.4');
+  });
+
+  it('does not retry unrelated provider catalog failures', async () => {
+    const app = express();
+    const list = vi.fn(async () => { throw new Error('upstream unavailable'); });
+    const wait = vi.fn(async () => undefined);
+    createOpencodeClient.mockReturnValue({
+      provider: { list: list },
+      model: { list: vi.fn(async () => ({ data: [] })), default: vi.fn(async () => ({ data: null })) },
+    });
+    registerConfigEntityRoutes(app, {
+      ...createDependencies(vi.fn()),
+      waitForPluginActivation: wait,
+    });
+
+    await request(app).get('/api/config/catalog/providers').expect(502);
+    expect(list).toHaveBeenCalledTimes(1);
+    expect(wait).not.toHaveBeenCalled();
+  });
+
   it('returns 502 for SDK error envelopes that include data', async () => {
     const app = express();
     createOpencodeClient.mockReturnValue({

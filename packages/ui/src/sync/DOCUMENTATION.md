@@ -12,6 +12,11 @@ When enqueue was missed, the shared bounded exact-fill scheduler fetches that me
 
 ## Native session title events
 
+Project activity promotion consumes native execution, retry and step-start events
+alongside legacy status transitions. Only actual busy/retry/idle changes for a
+known visible conversation promote its project; duplicate events preserve later
+manual drags. Settings sync continues to preserve local manual order.
+
 Live session list equality includes the title-refresh presentation fields
 `isGenerating`, `lastError`, and `failedAt`. Metadata-only completion must release
 the sidebar title shimmer even when the title is unchanged and execution remains

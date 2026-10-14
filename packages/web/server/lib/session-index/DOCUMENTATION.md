@@ -83,6 +83,10 @@ completion events advance the separate `activity_updated_at` ordering field,
 while session status transitions update `status` and `status_changed_at`.
 Renderer event handling never performs these index writes and assistant
 streaming events never change session ordering.
+Native creation projects the event's session identity, location, parent, metadata
+and creation clock before the Host metadata overlay. User inbox enqueue advances
+activity; native execution/retry events update status, and successful completion
+advances activity. Shutdown interruption stays busy and does not advance activity.
 Repeated session summary events whose bounded root summary or child membership
 is unchanged leave directory recency and the public revision unchanged. Root
 events that remain outside the newest-20 bound follow the same no-op path.

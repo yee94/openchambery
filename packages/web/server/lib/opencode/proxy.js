@@ -274,6 +274,7 @@ export const registerOpenCodeProxy = (app, deps) => {
     // wired, fold its per-session metadata onto list/detail responses so
     // clients keep reading `session.metadata` where they always did.
     getStoredSessionMetadata = null,
+    subscribeGlobalUiEvent = null,
     /** Sync committed snapshot; null = not ready / unknown when store is wired. */
     getStoredSessionMetadataSync = null,
     /** Await Host metadata load before SSE fan-out (resolves ok/false, does not reject). */
@@ -587,6 +588,8 @@ export const registerOpenCodeProxy = (app, deps) => {
     let stallTimer = null;
     let connectTimedOut = false;
     let writeQueue = Promise.resolve(true);
+    let queuedBytes = 0;
+    let unsubscribeHostEvents = null;
     const sseBoundary = createSseBoundaryTracker();
     const requestUrl = typeof req.originalUrl === 'string' && req.originalUrl.length > 0
       ? req.originalUrl
@@ -599,9 +602,9 @@ export const registerOpenCodeProxy = (app, deps) => {
       ? createHostSessionSseFilter()
       : null;
     const outboundSseFilter = composeSseFilters(reasoningFilter, hostSessionFilter);
-    // Parse SSE blocks when any Host projection filter is active (reasoning
-    // strip and/or session archive authority). Otherwise byte-identical passthrough.
-    const sseSplitter = outboundSseFilter ? createSseBlockSplitter() : null;
+    // Host projections and injected events require complete SSE boundaries.
+    // Without either, retain byte-identical passthrough.
+    const sseSplitter = outboundSseFilter || subscribeGlobalUiEvent ? createSseBlockSplitter() : null;
 
     req.on('close', closeUpstream);
 
@@ -695,6 +698,14 @@ export const registerOpenCodeProxy = (app, deps) => {
       };
 
       const enqueueSseWrite = (value) => {
+        if (abortController.signal.aborted) return Promise.resolve(false);
+        const bytes = Buffer.byteLength(value);
+        if (queuedBytes + bytes > 2 * 1024 * 1024) {
+          closeUpstream();
+          res.destroy();
+          return Promise.resolve(false);
+        }
+        queuedBytes += bytes;
         writeQueue = writeQueue
           .catch(() => false)
           .then((canContinue) => {
@@ -702,10 +713,18 @@ export const registerOpenCodeProxy = (app, deps) => {
               return false;
             }
             return writeSseChunkWithBackpressure(res, value, abortController.signal);
-          });
+          }).finally(() => { queuedBytes -= bytes; });
         return writeQueue;
       };
 
+      if (subscribeGlobalUiEvent) {
+        unsubscribeHostEvents = subscribeGlobalUiEvent((payload, options = {}) => {
+          const envelope = { directory: options.directory || 'global', payload };
+          const block = `data: ${JSON.stringify(envelope)}\n\n`;
+          const filtered = outboundSseFilter ? filterSseBlock(block, outboundSseFilter) : block;
+          if (filtered) void enqueueSseWrite(filtered).catch(closeUpstream);
+        });
+      }
       scheduleHeartbeat();
 
       reader = upstream.body.getReader();
@@ -717,7 +736,7 @@ export const registerOpenCodeProxy = (app, deps) => {
         }
         if (value && value.length > 0) {
           resetStallTimer();
-          if (!outboundSseFilter || !sseSplitter) {
+          if (!sseSplitter) {
             // No Host projection: byte-identical passthrough.
             sseBoundary.observe(value);
             const canContinue = await enqueueSseWrite(value);
@@ -730,7 +749,7 @@ export const registerOpenCodeProxy = (app, deps) => {
             const blocks = sseSplitter.push(value);
             let canContinue = true;
             for (const block of blocks) {
-              const filtered = filterSseBlock(block, outboundSseFilter);
+              const filtered = outboundSseFilter ? filterSseBlock(block, outboundSseFilter) : `${block}\n\n`;
               if (!filtered) {
                 continue;
               }
@@ -745,9 +764,9 @@ export const registerOpenCodeProxy = (app, deps) => {
         }
       }
 
-      if (outboundSseFilter && sseSplitter) {
+      if (sseSplitter) {
         for (const block of sseSplitter.finish()) {
-          const filtered = filterSseBlock(block, outboundSseFilter);
+          const filtered = outboundSseFilter ? filterSseBlock(block, outboundSseFilter) : `${block}\n\n`;
           if (filtered) {
             sseBoundary.observe(filtered);
             await enqueueSseWrite(filtered);
@@ -755,6 +774,9 @@ export const registerOpenCodeProxy = (app, deps) => {
         }
       }
 
+      unsubscribeHostEvents?.();
+      unsubscribeHostEvents = null;
+      await writeQueue;
       res.end();
     } catch (error) {
       if (connectTimedOut && !res.headersSent) {
@@ -774,6 +796,7 @@ export const registerOpenCodeProxy = (app, deps) => {
         res.end();
       }
     } finally {
+      unsubscribeHostEvents?.();
       clearConnectTimer();
       clearStallTimer();
       outboundSseFilter?.dispose?.();

@@ -255,6 +255,16 @@ describe('createGlobalMessageStreamHub', () => {
     expect(received[0].runtimeIdentity.headers).toBeUndefined();
   });
 
+  it.each(['session.inbox.enqueued', 'session.inbox.delivered'])('confirms native %s using exact inbox identity and runtime authority', (type) => {
+    const runtimeKey = 'a'.repeat(64);
+    const service = { getAuthority: vi.fn(() => ({ authority: 'active', generation: 1 })), confirmByMessage: vi.fn() };
+    const event = { directory: '/repo', runtimeIdentity: { runtimeKey, generation: 1, token: `${runtimeKey}:1` }, payload: { type, data: { sessionID: 's', inboxID: 'msg_queued', item: { type: 'user' } } } };
+    expect(confirmMessageQueueEvent(service, event)).toBe(true);
+    expect(service.confirmByMessage).toHaveBeenCalledWith({ runtimeKey, directory: '/repo', sessionID: 's', messageID: 'msg_queued', source: 'event' });
+    service.getAuthority.mockReturnValue({ authority: 'shadow', generation: 2 });
+    expect(confirmMessageQueueEvent(service, event)).toBe(false);
+  });
+
   it('confirms late A and new B events through their own active runtime authorities', () => {
     const runtimeA = 'a'.repeat(64);
     const runtimeB = 'b'.repeat(64);

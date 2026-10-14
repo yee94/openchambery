@@ -65,6 +65,18 @@ function createSseResponse({ blocks = [], signal, holdOpen = false }) {
 }
 
 describe('event stream broadcaster', () => {
+  it('feeds proxy subscribers without notification clients and isolates closed streams', () => {
+    const broadcast = createGlobalUiEventBroadcaster({ sseClients: new Set(), wsClients: new Set(), writeSseEvent() {} });
+    const received = [];
+    const removeFailed = broadcast.subscribe(() => { throw new Error('closed'); });
+    const remove = broadcast.subscribe((payload, options) => received.push({ payload, options }));
+    const payload = { type: 'openchamber:session-metadata' };
+    broadcast(payload, { directory: '/repo' });
+    remove();
+    removeFailed();
+    broadcast(payload);
+    expect(received).toEqual([{ payload, options: { directory: '/repo' } }]);
+  });
   it('fans out synthetic events to SSE and WS clients', () => {
     const sseEvents = [];
     const wsPayloads = [];

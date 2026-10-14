@@ -36,9 +36,14 @@ export function confirmMessageQueueEvent(messageQueueService, event) {
 
     const payload = event?.payload?.payload ?? event?.payload;
     const directory = event?.directory;
-    const info = payload?.type === 'message.updated' && payload.properties?.info?.role === 'user'
-      ? payload.properties.info
-      : null;
+    const data = payload?.data ?? payload?.properties;
+    const info = payload?.type === 'session.inbox.enqueued' && data?.item?.type === 'user'
+      ? { sessionID: data.sessionID, id: data.inboxID }
+      : payload?.type === 'session.inbox.delivered'
+        ? { sessionID: data?.sessionID, id: data?.inboxID }
+        : payload?.type === 'message.updated' && payload.properties?.info?.role === 'user'
+          ? payload.properties.info
+          : null;
     if (!directory || !info?.sessionID || !info?.id) {
       return false;
     }

@@ -524,7 +524,30 @@ const questionAskedPayload = (sessionID = 'ses-goal') => ({
 const flushQuestionPause = () => new Promise((resolve) => setTimeout(resolve, 50));
 
 describe('session-goal runtime — pause for question', () => {
-  it('patches an active goal to paused without sending a continuation', async () => {
+  it('arms on native completion and cancels on native start, retry, question and shutdown', async () => {
+    vi.useFakeTimers();
+    const shouldKeepGoalActiveForQuestion = vi.fn(() => true);
+    const runtime = createSessionGoalRuntime({ buildOpenCodeUrl: (p) => `http://opencode${p}`, getOpenCodeAuthHeaders: () => ({}), idleQuietMs: 100, shouldKeepGoalActiveForQuestion });
+    try {
+      for (const [type, data] of [
+        ['session.execution.started', {}],
+        ['session.retry.scheduled', {}],
+        ['session.execution.interrupted', { reason: 'shutdown' }],
+        ['form.created', { form: { metadata: { kind: 'question' } } }],
+      ]) {
+        runtime.processPayload({ type: 'session.execution.succeeded', data: { sessionID: 's' } }, '/repo');
+        expect(vi.getTimerCount()).toBe(1);
+        runtime.processPayload({ type, data: { sessionID: 's', ...data } }, '/repo');
+        expect(vi.getTimerCount()).toBe(0);
+      }
+      runtime.processPayload({ type: 'session.execution.failed', data: { sessionID: 's' } }, '/repo');
+      expect(vi.getTimerCount()).toBe(1);
+      runtime.processPayload({ type: 'form.created', data: { sessionID: 's', form: { metadata: { kind: 'other' } } } }, '/repo');
+      expect(vi.getTimerCount()).toBe(1);
+      expect(shouldKeepGoalActiveForQuestion).toHaveBeenCalledTimes(1);
+    } finally { runtime.stop(); vi.useRealTimers(); }
+  });
+  it.each([false, true])('patches an active goal to paused without sending a continuation (native: %s)', async (native) => {
     const patches = [];
     const calls = { promptAsync: 0, abort: 0 };
     const session = buildSession('active');
@@ -552,7 +575,7 @@ describe('session-goal runtime — pause for question', () => {
 
     await withFetch(fetchImpl, async () => {
       const runtime = makeRuntime();
-      runtime.processPayload(questionAskedPayload(), '/repo');
+      runtime.processPayload(native ? { type: 'form.created', data: { form: { sessionID: 'ses-goal', metadata: { kind: 'question' } } } } : questionAskedPayload(), '/repo');
       await flushQuestionPause();
       expect(patches.length).toBe(1);
       expect(patches[0].metadata.openchamber.goal.status).toBe('paused');

@@ -1,4 +1,5 @@
-import { afterEach, describe, expect, it } from 'bun:test';
+import { afterEach, describe, expect, it } from 'vitest';
+import express from 'express';
 import { spawn, type ChildProcess } from 'node:child_process';
 import crypto from 'node:crypto';
 import { once } from 'node:events';
@@ -15,6 +16,8 @@ import { startRelayHost } from './host-client.js';
 import { exportPublicKeyJwk, generateEcdhKeyPair, importEcdhPrivateKey } from './e2ee.js';
 import { createRequestSecurityRuntime } from '../security/request-security.js';
 import { createUiAuth } from '../ui-auth/ui-auth.js';
+import { registerOpenCodeProxy } from '../opencode/proxy.js';
+import { createGlobalUiEventBroadcaster } from '../event-stream/runtime.js';
 
 const timeoutMs = 10_000;
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -145,10 +148,39 @@ const startOrigin = async () => {
   const uiAuth = createUiAuth({ requireClientAuth: true, clientAuthController });
   const requestSecurity = createRequestSecurityRuntime({ readSettingsFromDiskMigrated: async () => ({}) });
   const wss = new WebSocketServer({ noServer: true });
+  const proxy = express();
+  const broadcast = createGlobalUiEventBroadcaster({ sseClients: new Set(), wsClients: new Set(), writeSseEvent() {} });
+  let hostSubscriptions = 0;
+  registerOpenCodeProxy(proxy, {
+    fs: { promises: { realpath: async (value: string) => value } }, os: {}, path: {},
+    getRuntime: () => ({ isOpenCodeReady: true, openCodePort: 4096 }),
+    getOpenCodeAuthHeaders: () => ({}), ensureOpenCodeApiPrefix() {},
+    buildOpenCodeUrl: () => `http://127.0.0.1:${(server.address() as net.AddressInfo).port}/fixture-event`,
+    subscribeGlobalUiEvent: (emit: (payload: unknown, options: unknown) => void) => {
+      hostSubscriptions += 1;
+      const remove = broadcast.subscribe(emit);
+      let removed = false;
+      return () => { if (!removed) { removed = true; hostSubscriptions -= 1; remove(); } };
+    },
+  });
   const server = http.createServer((req, rawRes) => {
     void (async () => {
       const res = addResponseAdapter(rawRes);
       const pathname = new URL(req.url ?? '/', 'http://origin').pathname;
+      if (pathname === '/fixture-event') {
+        res.writeHead(200, { 'content-type': 'text/event-stream' });
+        res.write('data: {"type":"session.execution.started","data":{"sessionID":"ses_relay"}}\n\n');
+        await wait(70);
+        broadcast({ type: 'session.updated', properties: { info: { id: 'ses_relay', title: 'Relay title', time: { created: 1, updated: 2 } } } }, { directory: '/repo' });
+        broadcast({ type: 'openchamber:session-metadata', properties: { sessionID: 'ses_relay', metadata: { openchamber: { titleRefresh: { isGenerating: false } } } } }, { directory: '/repo' });
+        await wait(70);
+        res.end();
+        return;
+      }
+      if (pathname === '/api/event') {
+        await uiAuth.requireAuth(req, res, () => proxy(req, rawRes));
+        return;
+      }
       if (pathname === '/auth/url-token' && req.method === 'POST') {
         await uiAuth.handleUrlAuthToken(req, res);
         return;
@@ -200,7 +232,7 @@ const startOrigin = async () => {
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
   const port = (server.address() as net.AddressInfo).port;
   return {
-    port, bearerRequests, observedOrigins,
+    port, bearerRequests, observedOrigins, getHostSubscriptions: () => hostSubscriptions,
     stop: async () => {
       for (const client of wss.clients) client.terminate();
       for (const socket of sockets) socket.destroy();
@@ -271,6 +303,15 @@ describe('private relay compiled-process boundary', () => {
     }
     expect(chunks.length).toBeGreaterThan(1);
     expect(new TextDecoder().decode(Buffer.concat(chunks.map((chunk) => Buffer.from(chunk))))).toBe('data: one\n\ndata: two\n\ndata: three\n\n');
+
+    const denied = await client.fetch('/api/event');
+    expect(denied.status).toBe(401);
+    const hostEvents = await client.fetch('/api/event', { headers: { authorization: 'Bearer client-token' } });
+    expect(hostEvents.status).toBe(200);
+    const frames = (await hostEvents.text()).trim().split('\n\n').map((block) => JSON.parse(block.slice(6)));
+    expect(frames.map((frame) => (frame.payload ?? frame).type)).toEqual(['session.execution.started', 'session.updated', 'openchamber:session-metadata']);
+    expect(frames[1]).toMatchObject({ directory: '/repo', payload: { properties: { info: { title: 'Relay title' } } } });
+    await eventually(() => origin!.getHostSubscriptions() === 0, 'closed Relay SSE leaked Host subscriber');
 
     const tokenResponse = await client.fetch('/auth/url-token', { method: 'POST', headers: { authorization: 'Bearer client-token' } });
     const { token } = await tokenResponse.json() as { token: string };

@@ -3,9 +3,21 @@ const SESSION_STATE_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 const SESSION_ATTENTION_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 const SESSION_STATE_CLEANUP_INTERVAL_MS = 60 * 60 * 1000;
 
-const extractSessionStatusUpdate = (payload) => {
-  if (!payload || payload.type !== 'session.status') {
+export const extractSessionStatusUpdate = (payload) => {
+  if (!payload || typeof payload.type !== 'string') {
     return null;
+  }
+  let nativeType;
+  switch (payload.type) {
+    case 'session.execution.started': nativeType = 'busy'; break;
+    case 'session.retry.scheduled': nativeType = 'retry'; break;
+    case 'session.execution.succeeded':
+    case 'session.execution.failed':
+    case 'session.idle':
+    case 'session.error': nativeType = 'idle'; break;
+    case 'session.execution.interrupted':
+    case 'session.status': break;
+    default: return null;
   }
 
   // Accept both bridge/legacy `{ properties }` and native current `{ data }` shapes.
@@ -18,9 +30,10 @@ const extractSessionStatusUpdate = (payload) => {
     ? body.sessionID.trim()
     : (typeof body.sessionId === 'string' ? body.sessionId.trim() : '');
   // Canonical OpenCode schema uses properties.status.type. Keep legacy info.type fallback for compatibility.
-  const type = typeof status.type === 'string'
+  if (payload.type === 'session.execution.interrupted') nativeType = body.reason === 'shutdown' ? 'busy' : 'idle';
+  const type = nativeType ?? (typeof status.type === 'string'
     ? status.type.trim()
-    : (typeof info.type === 'string' ? info.type.trim() : '');
+    : (typeof info.type === 'string' ? info.type.trim() : ''));
 
   if (!sessionId || !type) {
     return null;
@@ -29,14 +42,15 @@ const extractSessionStatusUpdate = (payload) => {
   return {
     sessionId,
     type,
+    directory: body.directory ?? body.location?.directory ?? info.directory ?? payload.location?.directory,
     eventId: typeof payload.id === 'string' ? payload.id : '',
-    attempt: typeof status.attempt === 'number'
+    attempt: payload.type === 'session.retry.scheduled' ? body.attempt : typeof status.attempt === 'number'
       ? status.attempt
       : (typeof info.attempt === 'number' ? info.attempt : undefined),
-    message: typeof status.message === 'string'
+    message: payload.type === 'session.retry.scheduled' ? body.error?.message : typeof status.message === 'string'
       ? status.message
       : (typeof info.message === 'string' ? info.message : undefined),
-    next: typeof status.next === 'number'
+    next: payload.type === 'session.retry.scheduled' ? body.at : typeof status.next === 'number'
       ? status.next
       : (typeof info.next === 'number' ? info.next : undefined),
   };
@@ -325,7 +339,7 @@ export const createSessionRuntime = ({ writeSseEvent, getNotificationClients, br
       setSessionActivityPhase(activity.sessionId, activity.phase);
     }
 
-    if (payload && payload.type === 'session.status') {
+    if (payload) {
       const update = extractSessionStatusUpdate(payload);
       if (update) {
         updateSessionState(update.sessionId, update.type, update.eventId || `sse-${Date.now()}`, {

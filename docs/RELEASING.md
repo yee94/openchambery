@@ -140,7 +140,7 @@ npm 发布需要仓库 Secret `NPM_TOKEN`（对 `@openchambery` scope 有 publis
 
 **通道说明**
 
-- 桌面改用移动端同一份 `ota/channels/{beta,stable}.json` 和 `/v1/mobile/update/check`（`platform: desktop`）。OTA 不兼容时，按决策中的精确安装包版本读取 GitHub Release 下的 `full.yml` / `full-mac.yml` / `full-linux.yml` / `full-linux-arm64.yml`，在应用内下载全量安装包并重启安装，不跳转 GitHub。清单由 `write-installer-feed.mjs` 对完整产物计算 SHA-512。新发布不上传 `latest*.yml`；旧 `/desktop/` 路由仅为历史兼容。
+- 桌面改用移动端同一份 `ota/channels/{beta,stable}.json` 和 `/v1/mobile/update/check`（`platform: desktop`）。OTA 不兼容时，按决策中的精确安装包版本读取 GitHub Release 下的 `full.yml` / `full-mac.yml` / `full-linux.yml` / `full-linux-arm64.yml`，在应用内下载全量安装包并重启安装，不跳转 GitHub。清单由 `write-installer-feed.mjs` 对完整产物计算 SHA-512。新发布不上传 `latest*.yml`。已安装的 2.0.0 及更早客户端仍请求 `/desktop/latest*.yml`；更新服务把这些名字映射到 GitHub Latest 上的对应 `full*.yml`，并把相对安装包地址改写成 `releases/latest/download/`，这样它们能装上支持新协议的最新稳定壳。稳定客户端不会因此看到 prerelease。
 - Android 最新 APK 同样读 `/releases/latest`。
 - Web / VS Code / Capacitor 的 JSON 更新检查读 `release-manifest.json`（只应含最新稳定版）。
 - 用户从 Release 页**手动下载** beta 安装包不受影响；被隔离的只有稳定客户端自动更新。

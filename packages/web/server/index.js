@@ -63,7 +63,7 @@ import { createStaticRoutesRuntime } from './lib/opencode/static-routes-runtime.
 import { createSettingsRuntime } from './lib/opencode/settings-runtime.js';
 import { createOpenCodeResolutionRuntime } from './lib/opencode/opencode-resolution-runtime.js';
 import { createBootstrapRuntime } from './lib/opencode/bootstrap-runtime.js';
-import { createSessionRuntime } from './lib/opencode/session-runtime.js';
+import { createSessionRuntime, extractSessionStatusUpdate } from './lib/opencode/session-runtime.js';
 import { createOpenCodeWatcherRuntime } from './lib/opencode/watcher.js';
 import { createSessionTitleRuntime } from './lib/session-title/runtime.js';
 import { createTitleSessionAccess } from './lib/session-title/session-access.js';
@@ -1071,21 +1071,9 @@ const processForwardedEventPayload = (payload, emitSyntheticEvent) => {
 
   maybeCacheSessionInfoFromEvent(payload);
 
-  if (payload.type !== 'session.status') {
-    return;
-  }
-
-  const properties = payload.properties && typeof payload.properties === 'object' ? payload.properties : {};
-  const statusInfo = properties.status && typeof properties.status === 'object' ? properties.status : {};
-  const info = properties.info && typeof properties.info === 'object' ? properties.info : {};
-  const sessionId = typeof properties.sessionID === 'string' ? properties.sessionID.trim() : '';
-  const status = typeof statusInfo.type === 'string'
-    ? statusInfo.type.trim()
-    : (typeof info.type === 'string' ? info.type.trim() : '');
-
-  if (!sessionId || !status) {
-    return;
-  }
+  const update = extractSessionStatusUpdate(payload);
+  if (!update) return;
+  const { sessionId, type: status } = update;
 
   emitSyntheticEvent({
     type: 'openchamber:session-status',
@@ -1094,15 +1082,9 @@ const processForwardedEventPayload = (payload, emitSyntheticEvent) => {
       status,
       timestamp: Date.now(),
       metadata: {
-        attempt: typeof statusInfo.attempt === 'number'
-          ? statusInfo.attempt
-          : (typeof info.attempt === 'number' ? info.attempt : undefined),
-        message: typeof statusInfo.message === 'string'
-          ? statusInfo.message
-          : (typeof info.message === 'string' ? info.message : undefined),
-        next: typeof statusInfo.next === 'number'
-          ? statusInfo.next
-          : (typeof info.next === 'number' ? info.next : undefined),
+        attempt: update.attempt,
+        message: update.message,
+        next: update.next,
       },
       needsAttention: false,
     },
@@ -1162,6 +1144,7 @@ const serverUtilsRuntime = createServerUtilsRuntime({
   },
   getStoredSessionMetadata: () => sessionMetadataStore.getAll(),
   getStoredSessionMetadataSync: () => sessionMetadataStore.getSnapshotSync(),
+  subscribeGlobalUiEvent: broadcastGlobalUiEvent.subscribe,
   ensureSessionMetadataReady,
   onSessionDeleted: (sessionID) => {
     if (!sessionArchiveServiceRef) return sessionMetadataStore.removeSession(sessionID);
@@ -1704,8 +1687,7 @@ async function main(options = {}) {
     const payload = event?.payload?.payload ?? event?.payload;
     if (!payload || typeof payload !== 'object' || !messageQueueRuntime) return;
     confirmMessageQueueEvent(messageQueueService, event);
-    messageQueueRuntime.observeSessionEvent?.(event);
-    if (payload.type === 'session.status' || payload.type === 'session.idle' || payload.type === 'session.error') void messageQueueRuntime.wake();
+    if (messageQueueRuntime.observeSessionEvent?.(event)) void messageQueueRuntime.wake();
   });
   const unsubscribeScheduledTaskEvents = globalMessageStreamHub.subscribeEvent((event) => {
     scheduledTasksRuntime.observeSessionEvent?.(event);

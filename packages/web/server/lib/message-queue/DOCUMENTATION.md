@@ -53,6 +53,12 @@ OpenCode adapter (`@opencode/client` / v2) hardening:
 
 ## Confirmation and reconciliation
 
+Accepted runtime-scoped lifecycle observations wake the worker immediately,
+including native execution completion/failure/interruption. Shutdown interruption
+does not wake it; the existing polling and authoritative eligibility gates remain.
+Native inbox enqueue/delivery confirms exact message identity through the global
+hub, with query reconciliation retained for missed events.
+
 `confirmByMessage({ runtimeKey, directory, sessionID, messageID, source })` completes an attempt from a realtime or query event without a worker lease. Global event confirmation accepts current active and paused authority after validating its connection runtime identity; when the queue runtime is initialized after an existing global-stream connection, that connection late-binds its first available identity and keeps it fenced until reconnect. The service owns exact runtime, directory, session, and message matching. The completion tombstone serializes this event path with normal lease-fenced completion. Reconciliation uses an independent fenced claim, so concurrent workers and wakes issue one query for a due row. It stores start, absolute deadline, check count, and next check across restart. Unavailable checks preserve the count and use bounded exponential backoff; authoritative complete misses increment the count. The deadline or three misses resolves the row as unresolved. A client Remove may discard a sending or reconciling tracking row immediately; this is an explicit UI-authoritative cleanup and does not cancel an upstream request that already crossed the POST boundary.
 
 ## Receipts and mutations

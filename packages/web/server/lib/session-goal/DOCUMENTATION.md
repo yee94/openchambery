@@ -199,7 +199,7 @@ goal and its objective for retry.
 
 1. `createSessionGoalRuntime` subscribes to the global SSE hub (it needs
    the envelope's `directory`).
-2. `session.status: idle` arms a 15s per-session timer; `busy`/`retry` clears
+2. Native execution success/failure and `session.status: idle` arm a 15s per-session timer; native start/retry and `busy`/`retry` clear
    it. A `session.updated` carrying a fresh active goal (`turnsUsed === 0` or
    `statusReason === 'resumed'`) arms a kickoff timer — 3s for fresh goals,
    ~250ms for an explicit Resume so the nudge feels immediate — since setting
@@ -232,7 +232,7 @@ goal and its objective for retry.
       stop), with a tick-side safety net. Messages sent while paused leave
       the goal alone; Resume re-arms the loop, and resuming over an aborted
       tail skips the audit and goes straight to a continuation nudge;
-    - `question.asked` pauses an active goal (including when a child /
+     - Native `form.created` with `form.metadata.kind === 'question'` and `question.asked` pause an active goal (including when a child /
       sub-agent session asks — the parent session's goal is the one paused)
       but does NOT abort the current turn: aborting would kill the pending
       question. After the user answers, they Resume manually to re-arm

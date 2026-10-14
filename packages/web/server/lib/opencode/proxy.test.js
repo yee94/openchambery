@@ -1,5 +1,6 @@
 import express from 'express';
 import request from 'supertest';
+import { createGlobalUiEventBroadcaster } from '../event-stream/runtime.js';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
@@ -38,7 +39,7 @@ const readyRuntime = () => ({
   openCodeBaseUrl: 'http://127.0.0.1:4096',
 });
 
-const mountProxy = () => {
+const mountProxy = (options = {}) => {
   const app = express();
   // Fresh app each time — registerOpenCodeProxy guards on app setting.
   registerOpenCodeProxy(app, {
@@ -53,6 +54,7 @@ const mountProxy = () => {
     getOpenCodeAuthHeaders: () => ({}),
     buildOpenCodeUrl: (path) => `http://127.0.0.1:4096${path}`,
     ensureOpenCodeApiPrefix: () => {},
+    ...options,
   });
   return app;
 };
@@ -89,6 +91,38 @@ const sseBody = (blocks) => {
     async cancel() {},
   };
 };
+
+describe('Host events on proxied SSE', () => {
+  it.each(['/api/event', '/api/global/event'])('delivers Host updates between complete upstream frames on %s and unsubscribes', async (route) => {
+    const broadcast = createGlobalUiEventBroadcaster({ sseClients: new Set(), wsClients: new Set(), writeSseEvent() {} });
+    const unsubscribe = vi.fn();
+    const subscribeGlobalUiEvent = (emit) => {
+      const remove = broadcast.subscribe(emit);
+      return () => { remove(); unsubscribe(); };
+    };
+    const upstream = { type: 'session.execution.started', data: { sessionID: 's' } };
+    const title = { type: 'session.updated', properties: { info: { id: 's', title: 'Updated', time: { created: 1, updated: 2 } } } };
+    const metadata = { type: 'openchamber:session-metadata', properties: { sessionID: 's', metadata: { openchamber: { titleRefresh: { isGenerating: false } } } } };
+    const text = `data: ${JSON.stringify(upstream)}\n\n`;
+    let step = 0;
+    globalThis.fetch = vi.fn(async () => ({ status: 200, headers: new Headers({ 'content-type': 'text/event-stream' }), body: { getReader: () => ({
+      read: async () => {
+        step += 1;
+        if (step === 1) return { done: false, value: new TextEncoder().encode(text.slice(0, 18)) };
+        if (step === 2) {
+          broadcast(title, { directory: '/repo' });
+          broadcast(metadata, { directory: '/repo' });
+          return { done: false, value: new TextEncoder().encode(text.slice(18)) };
+        }
+        return { done: true };
+      }, cancel: async () => {}, releaseLock() {},
+    }) } }));
+    const response = await request(mountProxy({ subscribeGlobalUiEvent })).get(route).expect(200);
+    const events = response.text.trim().split('\n\n').map((block) => JSON.parse(block.slice(6)));
+    expect(events).toEqual([{ directory: '/repo', payload: title }, { directory: '/repo', payload: metadata }, upstream]);
+    expect(unsubscribe).toHaveBeenCalledTimes(1);
+  });
+});
 
 describe('createDirectoryQueryCanonicalizer', () => {
   it('canonicalizes directory query params and preserves other params', async () => {

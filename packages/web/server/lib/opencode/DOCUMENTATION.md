@@ -120,6 +120,7 @@ This module provides OpenCode server integration utilities for the web server ru
   attention; the runtime does not own process-global `v2.session.active`
   membership — that remains a UI-side authoritative pull fused with directory
   `/session/status`.
+- Native `session.execution.started/succeeded/failed/interrupted` and `session.retry.scheduled` feed the same status/activity/attention transitions. Shutdown interruption retains busy ownership; other terminal events settle idle. `extractSessionStatusUpdate` is shared by Host forwarding, index ingestion and Goal timer handling so retry metadata and shutdown semantics stay aligned.
 
 ## Public exports (opencode2-pin.js)
 - `PINNED_OPENCODE2_VERSION`: exact desktop/runtime pin (never 1.x).
@@ -328,6 +329,10 @@ It makes no model requests and never reads real user credentials.
 The provider catalog's optional `model.default` lookup may fail independently:
 available provider/model lists still return successfully without defaults.
 Failures of either required list still return HTTP 502 for the caller to retry.
+`model.list` can fail with `Location plugins did not finish activating` while a
+cold location (common after a relay client opens several projects at once) is
+still booting. The route retries that error at 1s/2s/4s before returning 502.
+Unrelated upstream failures are not retried.
 
 - `registerConfigEntityRoutes(app, dependencies)`: registers configuration entity routes:
   - `GET /api/config/catalog/providers` resolves the request project directory, composes official v2 `provider.list` + `model.list` (+ `model.default`), and returns schema version `1` with an allowlisted provider/model catalog. Catalog model ids and defaults use `ModelInfo.id` (the external generate/session id). `ModelInfo.modelID` is an internal field and is not the catalog key. The route is available through the shared web host used by Web, Electron, hosted mobile, and Capacitor mobile, before generic OpenCode proxy handling.

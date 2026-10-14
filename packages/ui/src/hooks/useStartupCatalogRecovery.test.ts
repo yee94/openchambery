@@ -13,6 +13,8 @@ describe('useStartupCatalogRecovery contract', () => {
     expect(source).not.toContain('staleTime: Infinity');
     expect(source).toContain('MAX_ATTEMPTS = 15');
     expect(source).toContain('INTERVAL_MS = 2000');
+    expect(source).toContain('SLOW_MAX_ATTEMPTS = 40');
+    expect(source).toContain('SLOW_INTERVAL_MS = 20000');
     // Immediate kick and interval share the same recovery entry.
     expect(source).toContain('void runRecovery()');
     expect(source).toContain('useInterval(runRecovery');

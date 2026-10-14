@@ -17,6 +17,7 @@
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
+import { extractSessionStatusUpdate } from '../opencode/session-runtime.js';
 
 import { makeOpenCodeV2Client } from '../opencode/v2-client.js';
 import { GOAL_OBJECTIVE_CHAR_LIMIT, readObjective } from './objectives.js';
@@ -196,22 +197,6 @@ const extractJsonObject = (value) => {
   return null;
 };
 
-const extractSessionStatus = (payload) => {
-  if (!payload || payload.type !== 'session.status') return null;
-  const properties = payload.properties && typeof payload.properties === 'object' ? payload.properties : {};
-  const status = properties.status && typeof properties.status === 'object' ? properties.status : {};
-  const info = properties.info && typeof properties.info === 'object' ? properties.info : {};
-  const sessionId = typeof properties.sessionID === 'string' ? properties.sessionID.trim() : '';
-  const type = typeof status.type === 'string'
-    ? status.type.trim()
-    : (typeof info.type === 'string' ? info.type.trim() : '');
-  if (!sessionId || !type) return null;
-  const directory = typeof properties.directory === 'string' && properties.directory
-    ? properties.directory
-    : (typeof info.directory === 'string' ? info.directory : '');
-  return { sessionId, type, directory };
-};
-
   // A user abort lands as an assistant message carrying MessageAbortedError.
   const extractAbortedAssistant = (payload) => {
     if (!payload || payload.type !== 'message.updated') return null;
@@ -242,9 +227,11 @@ const extractSessionStatus = (payload) => {
 
 // QuestionRequest shape: properties.sessionID, optional properties.directory.
 const extractQuestionAsked = (payload, directoryHint = '') => {
-  if (!payload || payload.type !== 'question.asked') return null;
-  const properties = payload.properties && typeof payload.properties === 'object' ? payload.properties : {};
-  const sessionId = typeof properties.sessionID === 'string' ? properties.sessionID.trim() : '';
+  if (!payload || (payload.type !== 'question.asked' && payload.type !== 'form.created')) return null;
+  const properties = payload.data ?? payload.properties ?? {};
+  if (payload.type === 'form.created' && properties.form?.metadata?.kind !== 'question') return null;
+  const rawSessionId = properties.sessionID ?? properties.form?.sessionID;
+  const sessionId = typeof rawSessionId === 'string' ? rawSessionId.trim() : '';
   if (!sessionId) return null;
   const directory = typeof properties.directory === 'string' && properties.directory
     ? properties.directory
@@ -2383,7 +2370,7 @@ export const createSessionGoalRuntime = ({
       return;
     }
 
-    const status = extractSessionStatus(payload);
+    const status = extractSessionStatusUpdate(payload);
     if (status) {
       if (status.type === 'idle') {
         // Authoritative idle after shutdown recovery reopens the continue gate.

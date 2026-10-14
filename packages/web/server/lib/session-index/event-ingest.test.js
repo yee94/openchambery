@@ -3,6 +3,26 @@ import { describe, expect, it, vi } from 'vitest';
 import { applySessionIndexEvent } from './event-ingest.js';
 
 describe('session index event ingest', () => {
+  it('ingests native creation, user input and lifecycle without treating shutdown as completion', () => {
+    const service = { upsertAndReportChange: vi.fn(() => true), touchActivity: vi.fn(() => true), updateStatus: vi.fn(() => true) };
+    const emit = (type, data = {}) => applySessionIndexEvent(service, { directory: '/repo', payload: { type, created: 20, data: { sessionID: 'ses_native', ...data } } }, 30);
+    expect(emit('session.created', { title: 'Native', parentID: 'parent', location: { directory: '/repo' }, metadata: { own: true } })).toBe(true);
+    expect(service.upsertAndReportChange).toHaveBeenCalledWith(expect.objectContaining({ id: 'ses_native', title: 'Native', parentID: 'parent', metadata: { own: true }, time: { created: 20, updated: 20 } }), 30, { preserveActivity: true });
+    emit('session.inbox.enqueued', { item: { type: 'user', time: { created: 15 } } });
+    expect(service.touchActivity).toHaveBeenLastCalledWith('ses_native', 15);
+    service.touchActivity.mockClear();
+    emit('session.inbox.enqueued', { item: { type: 'synthetic' } });
+    emit('session.execution.started');
+    expect(service.updateStatus).toHaveBeenLastCalledWith('ses_native', 'busy', 20);
+    emit('session.retry.scheduled');
+    expect(service.updateStatus).toHaveBeenLastCalledWith('ses_native', 'retry', 20);
+    emit('session.execution.interrupted', { reason: 'shutdown' });
+    expect(service.updateStatus).toHaveBeenLastCalledWith('ses_native', 'busy', 20);
+    expect(service.touchActivity).not.toHaveBeenCalled();
+    emit('session.execution.succeeded');
+    expect(service.updateStatus).toHaveBeenLastCalledWith('ses_native', 'idle', 20);
+    expect(service.touchActivity).toHaveBeenLastCalledWith('ses_native', 20);
+  });
   it('takes moved ownership from native data rather than the old event envelope directory', () => {
     const service = { move: vi.fn(() => true) };
     expect(applySessionIndexEvent(service, { directory: '/old', payload: {

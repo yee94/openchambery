@@ -28,6 +28,7 @@ export const createServerUtilsRuntime = (dependencies) => {
     getLoginShellPath,
     getStoredSessionMetadata = null,
     getStoredSessionMetadataSync = null,
+    subscribeGlobalUiEvent = null,
     ensureSessionMetadataReady = null,
     onSessionDeleted = null,
   } = dependencies;
@@ -245,6 +246,7 @@ export const createServerUtilsRuntime = (dependencies) => {
       onSessionTurnAdmission: options.onSessionTurnAdmission,
       getStoredSessionMetadata,
       getStoredSessionMetadataSync,
+      subscribeGlobalUiEvent,
       ensureSessionMetadataReady,
       onSessionDeleted,
     });

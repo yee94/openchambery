@@ -3,6 +3,20 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createSessionRuntime } from './session-runtime.js';
 
 describe('session runtime', () => {
+  it.each(['session.execution.succeeded', 'session.execution.failed', 'session.execution.interrupted'])('tracks native execution, retry, shutdown and %s settlement', (terminal) => {
+    const runtime = createSessionRuntime({ getNotificationClients: () => new Set(), writeSseEvent() {}, broadcastEvent() {} });
+    runtimes.push(runtime);
+    const emit = (type, data = {}) => runtime.processOpenCodeSsePayload({ type, data: { sessionID: 'native', ...data } });
+    emit('session.execution.started');
+    expect(runtime.getSessionActivitySnapshot().native.type).toBe('busy');
+    emit('session.retry.scheduled', { attempt: 2, at: 1234, error: { message: 'Retry later' } });
+    expect(runtime.getSessionStateSnapshot().native).toMatchObject({ status: 'retry', metadata: { attempt: 2, next: 1234, message: 'Retry later' } });
+    emit('session.execution.interrupted', { reason: 'shutdown' });
+    expect(runtime.getSessionStateSnapshot().native.status).toBe('busy');
+    emit(terminal, { reason: 'user' });
+    expect(runtime.getSessionStateSnapshot().native.status).toBe('idle');
+    expect(runtime.getSessionActivitySnapshot().native.type).toBe('cooldown');
+  });
   const runtimes = [];
 
   afterEach(() => {

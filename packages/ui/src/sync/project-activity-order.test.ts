@@ -22,7 +22,7 @@ describe('project drag and live activity ordering', () => {
     useGlobalSessionsStore.setState({ activeSessions: [], archivedSessions: [], sessionsByDirectory: new Map() });
   });
 
-  test.each([false, true])('promotes on transitions and preserves later drags on duplicate events (synced: %s)', (synced) => {
+  test.each([[false, false], [true, false], [false, true], [true, true]])('promotes on transitions and preserves later drags on duplicate events (synced: %s, native: %s)', (synced, native) => {
     const children = new ChildStoreManager();
     if (synced) children.ensureChild('/workspace/b', { bootstrap: false });
     const routing: Parameters<typeof handleEvent>[3] = {
@@ -32,7 +32,7 @@ describe('project drag and live activity ordering', () => {
       type: 'session.created', properties: { info: { id: 'session-b', title: 'Ordinary chat', directory: '/workspace/b', time: { created: 1, updated: 1 } } },
     } as Event, children, routing);
     const event = (type: 'busy' | 'idle'): Event => ({
-      id: `event-${type}`, type: 'session.status', properties: { sessionID: 'session-b', status: { type } },
+      id: `event-${type}`, type: native ? (type === 'busy' ? 'session.execution.started' : 'session.execution.succeeded') : 'session.status', properties: { sessionID: 'session-b', status: { type } },
     });
     useProjectsStore.getState().reorderProjectsById('c', 'a');
     expect(useProjectsStore.getState().manualProjectOrder).toEqual(['c', 'a', 'b']);

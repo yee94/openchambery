@@ -4,6 +4,7 @@ import {
   normalizeSessionEventType,
   resolveSessionDirectory,
 } from '../session-metadata/session-projection.js';
+import { extractSessionStatusUpdate } from '../opencode/session-runtime.js';
 
 const withDirectory = (session, directory) => {
   if (!session || typeof session !== 'object') return null;
@@ -55,7 +56,12 @@ export const applySessionIndexEvent = (service, event, observedAt = Date.now(), 
     // message.* and stay open.
     if (isHostReady && !isHostReady()) return false;
 
-    let session = withDirectory(extractSessionInfoFromPayload(payload), directory);
+    const data = payload.data ?? properties;
+    const created = baseType === 'session.created' && typeof data.sessionID === 'string'
+      && typeof payload.created === 'number' && typeof data.location?.directory === 'string'
+      ? { ...data, id: data.sessionID, time: { created: payload.created, updated: payload.created } }
+      : null;
+    let session = withDirectory(extractSessionInfoFromPayload(payload) ?? created, directory);
     if (!session) return false;
 
     if (projectSession) {
@@ -106,6 +112,22 @@ export const applySessionIndexEvent = (service, event, observedAt = Date.now(), 
     if (info.role !== 'user' || typeof info.sessionID !== 'string') return false;
     const activityAt = typeof info.time?.created === 'number' ? info.time.created : observedAt;
     return service.touchActivity(info.sessionID, activityAt);
+  }
+
+  if (baseType === 'session.inbox.enqueued') {
+    const data = payload.data ?? properties;
+    if (data.item?.type !== 'user' || typeof data.sessionID !== 'string') return false;
+    return service.touchActivity(data.sessionID, data.item.time?.created ?? payload.created ?? observedAt);
+  }
+
+  if (baseType.startsWith('session.execution.') || baseType === 'session.retry.scheduled') {
+    const update = extractSessionStatusUpdate({ ...payload, type: baseType });
+    if (!update) return false;
+    const at = typeof payload.created === 'number' ? payload.created : observedAt;
+    const activityChanged = baseType === 'session.execution.succeeded'
+      ? service.touchActivity(update.sessionId, at) : false;
+    const statusChanged = service.updateStatus(update.sessionId, update.type, at);
+    return activityChanged || statusChanged;
   }
 
   if (baseType === 'session.status') {
