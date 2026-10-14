@@ -32,6 +32,7 @@ export const PendingChangesBar: React.FC = React.memo(() => {
     const gitStatus = useGitStore((s) =>
         currentDirectory ? s.directories.get(currentDirectory)?.status ?? null : null,
     );
+    const fetchStatus = useGitStore((s) => s.fetchStatus);
     const mobileActions = useMobileAppActions();
 
     // Close popover when clicking outside
@@ -104,12 +105,22 @@ export const PendingChangesBar: React.FC = React.memo(() => {
         ? t('chat.pendingChanges.fileCountSingle', { count: fileCount })
         : t('chat.pendingChanges.fileCountPlural', { count: fileCount });
 
+    // Same background refresh as opening the changes/diff view: external commits
+    // often land without a local mutation hint, so expand must re-fetch. Keep the
+    // current summary on screen; do not flip the status loading flag.
+    const handleToggleExpanded = () => {
+        const nextExpanded = !isExpanded;
+        setIsExpanded(nextExpanded);
+        if (!nextExpanded || !currentDirectory || !runtime?.git) return;
+        void fetchStatus(currentDirectory, runtime.git, { silent: true });
+    };
+
     return (
         <div className="relative" ref={popoverRef}>
             <button
                 type="button"
                 className={cn(statusBarTriggerClassName, 'max-w-full text-left')}
-                onClick={() => setIsExpanded((value) => !value)}
+                onClick={handleToggleExpanded}
                 aria-expanded={isExpanded}
             >
                 <Icon name="file-edit" className={statusBarTriggerIconClassName} />

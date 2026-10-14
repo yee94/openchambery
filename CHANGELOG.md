@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [2.0.9-beta.2] - 2026-10-14
+
+### 修复
+
+- 展开输入框上方的工作区变更时，后台刷新 Git 状态。其他途径已经提交后，这里不再继续显示旧的变更；刷新过程不出现加载提示。
+
 ## [2.0.9-beta.1] - 2026-10-14
 
 ### 改进
