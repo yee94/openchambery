@@ -1,4 +1,4 @@
-import { afterEach, expect, it } from 'bun:test';
+import { afterEach, expect, it } from 'vitest';
 import crypto from 'node:crypto';
 import http from 'node:http';
 import net from 'node:net';
@@ -202,6 +202,38 @@ it('pauses the fast sender before the pair queue limit and keeps the pair up', a
   client.send(Buffer.alloc(20));
   await eventually(() => Boolean(clientSocket?._relayPaused));
   expect(relay.getSnapshot()).toMatchObject({ clients: 1, pairs: 1, reasons: { limited: 0 } });
+});
+
+it.each(['client', 'host-data'])('ignores buffered %s frames delivered while removing a paused pair', async (sourceRole) => {
+  let source;
+  let lateFrames = 0;
+  const relay = await start({ maxQueuedBytesPerConnection: 32 }, {
+    onSocketAccepted({ socket, role }) {
+      if (role === 'host-control') return;
+      if (role !== sourceRole) { socket.send = () => {}; return; }
+      source = socket;
+      const resume = socket.resume.bind(socket);
+      socket.resume = () => {
+        resume();
+        // Model buffered frames becoming readable when teardown resumes the source.
+        lateFrames += 1;
+        socket.emit('message', Buffer.alloc(20), true);
+      };
+    },
+  });
+  const host = identity(); const hostControl = await control(relay, host);
+  const id = await connected(relay, host, hostControl);
+  const client = sockets.at(-1);
+  const data = await open(hostUrl(relay, host, 'host-data', id));
+  const sender = sourceRole === 'client' ? client : data;
+  const receiver = sourceRole === 'client' ? data : client;
+  sender.send(Buffer.alloc(20));
+  await eventually(() => source._relayPaused);
+  receiver.terminate();
+  await eventually(() => relay.getSnapshot().clients === 0 && lateFrames > 0);
+  await nextMessage(hostControl);
+  await eventually(() => relay.getSnapshot().controls === 1 && relay.getSnapshot().sockets === 1);
+  expect(relay.getSnapshot()).toMatchObject({ clients: 0, pairs: 0, queuedBytes: 0, reasons: { limited: 0 } });
 });
 
 it('does not reap a sender paused for backpressure', async () => {

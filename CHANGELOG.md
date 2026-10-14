@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [2.0.9-beta.4] - 2026-10-14
+
+### 修复
+
+- 修复 Relay 在数据积压期间断连后队列额度持续残留，导致多次断连后无法正常连接、需要重启 Relay 才能恢复的问题。
+
 ## [2.0.9-beta.3] - 2026-10-14
 
 ### 修复

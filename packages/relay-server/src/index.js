@@ -236,6 +236,7 @@ export const createPrivateRelayServer = (options = {}) => {
     });
   };
   const enqueue = (host, entry, direction, data, binary) => {
+    if (hosts.get(host.serverId) !== host || host.clients.get(entry.id) !== entry) return;
     const payload = Buffer.from(data); const channel = entry[direction];
     if (payload.length > limits.maxFrameBytes || entry.queuedBytes + payload.length > limits.maxQueuedBytesPerConnection || counts.queuedBytes + payload.length > limits.maxGlobalQueuedBytes) { addReason('limited'); removeClient(host, entry, CLOSE.limit, 'queue limit'); return; }
     channel.queue.push({ data: payload, binary }); channel.bytes += payload.length; entry.queuedBytes += payload.length; counts.queuedBytes += payload.length;
