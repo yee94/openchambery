@@ -41,6 +41,7 @@ import { useChatSurfaceMode } from '@/components/chat/useChatSurfaceMode';
 import { isVSCodeRuntime } from '@/lib/desktop';
 import { Icon } from "@/components/icon/Icon";
 import { formatAbsoluteMessageTimestamp, formatTimestampForDisplay } from './timeFormat';
+import { useMessageTimeFocused } from './messageTimeFocus';
 import { canPresentAssistantTps, formatAssistantTps } from './assistantTps';
 import { ContextToolGroup } from './parts/ContextToolGroup';
 import { SkillToolGroup } from './parts/SkillToolGroup';
@@ -95,6 +96,26 @@ const MESSAGE_FOOTER_META_CLASS = `inline-flex ${MESSAGE_FOOTER_META_TEXT_CLASS}
 const MESSAGE_FOOTER_META_ICON_CLASS = 'size-3.5!';
 /** Message-action icons: medium stroke — PC + mobile 同一套. */
 const MESSAGE_ACTION_ICON_WEIGHT = 'medium' as const;
+
+/** Desktop hover; mobile only after the message row is tapped. */
+const AssistantAbsoluteTime = ({ messageId, label, focusReveal }: { messageId: string; label: string; focusReveal: boolean }) => {
+    const focused = useMessageTimeFocused(messageId, focusReveal);
+    return (
+        <span
+            className={cn(
+                MESSAGE_FOOTER_META_TEXT_CLASS,
+                'whitespace-nowrap',
+                focusReveal
+                    ? (focused ? 'inline-flex' : 'hidden')
+                    : 'hidden group-hover/message:inline-flex',
+            )}
+            data-message-time=""
+            data-message-time-visible={focusReveal ? (focused ? 'true' : 'false') : undefined}
+        >
+            {label}
+        </span>
+    );
+};
 
 const AssistantTpsMeta = ({ label }: { label: string }) => {
     const { t } = useI18n();
@@ -2443,16 +2464,11 @@ const AssistantMessageBody = React.memo(({
                                     </Tooltip>
                                 ) : null}
                                 {footerTimestamp ? (
-                                    <span
-                                        className={cn(
-                                            MESSAGE_FOOTER_META_TEXT_CLASS,
-                                            'whitespace-nowrap',
-                                            isMobile ? 'inline-flex' : 'hidden group-hover/message:inline-flex',
-                                        )}
-                                        data-message-time=""
-                                    >
-                                        {footerTimestamp}
-                                    </span>
+                                    <AssistantAbsoluteTime
+                                        messageId={messageId}
+                                        label={footerTimestamp}
+                                        focusReveal={isMobile}
+                                    />
                                 ) : null}
                             </div>
                         ) : null}

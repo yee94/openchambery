@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [2.0.9-beta.3] - 2026-10-14
+
+### 修复
+
+- 手机上消息的绝对时间不再一直显示。点一下该消息才出现，点到别处后收起。电脑上仍是悬停时显示。
+
 ## [2.0.9-beta.2] - 2026-10-14
 
 ### 修复

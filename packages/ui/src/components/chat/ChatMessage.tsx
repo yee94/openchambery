@@ -40,6 +40,7 @@ import { streamPerfCount } from '@/stores/utils/streamDebug';
 import { areOptionalRenderRelevantMessagesEqual, areRenderRelevantMessagesEqual, areRelevantTurnGroupingContextsEqual } from './message/renderCompare';
 import type { ReviewTransferDirection } from '@/lib/reviewFlow';
 import { getSessionSurfaceActionAvailability, useSessionSurface } from './SessionSurfaceContext';
+import { bindMessageTimeFocus } from './message/messageTimeFocus';
 
 const ToolOutputDialog = lazyWithChunkRecovery(() => import('./message/ToolOutputDialog'));
 
@@ -197,6 +198,28 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
     const sessionSurfaceActions = getSessionSurfaceActionAvailability(sessionSurface);
     const alwaysShowMessageActions = isMobile || isTablet;
     const messageContainerRef = React.useRef<HTMLDivElement | null>(null);
+    const timeFocusCleanupRef = React.useRef<(() => void) | null>(null);
+    const setMessageContainerRef = useEvent((node: HTMLDivElement | null) => {
+        messageContainerRef.current = node;
+        timeFocusCleanupRef.current?.();
+        timeFocusCleanupRef.current = null;
+        if (node && isMobile) {
+            timeFocusCleanupRef.current = bindMessageTimeFocus(node, message.info.id);
+        }
+    });
+
+    React.useEffect(() => {
+        const node = messageContainerRef.current;
+        timeFocusCleanupRef.current?.();
+        timeFocusCleanupRef.current = null;
+        if (node && isMobile) {
+            timeFocusCleanupRef.current = bindMessageTimeFocus(node, message.info.id);
+        }
+        return () => {
+            timeFocusCleanupRef.current?.();
+            timeFocusCleanupRef.current = null;
+        };
+    }, [isMobile, message.info.id]);
 
     const currentSessionId = useSessionUIStore((s) => s.currentSessionId);
 
@@ -1066,7 +1089,7 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
     const restartNotice = resolveRestartNotice(message.info, t);
     if (restartNotice) {
         return (
-            <div ref={messageContainerRef} className="chat-message-column py-1.5" id={`message-${message.info.id}`} data-message-id={message.info.id} data-restart-notice="">
+            <div ref={setMessageContainerRef} className="chat-message-column py-1.5" id={`message-${message.info.id}`} data-message-id={message.info.id} data-restart-notice="">
                 <ResponseStatusRow presentation={restartNotice} />
             </div>
         );
@@ -1108,7 +1131,7 @@ const ChatMessage: React.FC<ChatMessageProps> = ({
                 )}
                 id={`message-${message.info.id}`}
                 data-message-id={message.info.id}
-                ref={messageContainerRef}
+                ref={setMessageContainerRef}
             >
                 <div className="chat-message-column relative">
                     {isUser ? (
