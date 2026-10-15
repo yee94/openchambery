@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [2.0.9-beta.10] - 2026-10-15
+
+### 修复
+
+- 修复工作状态侧栏显示时运行状态行与正文错位的问题，统一状态行、正文和输入框的居中对齐规则，滚动条仍保留在画面最右侧。
+
 ## [2.0.9-beta.9] - 2026-10-15
 
 ### 修复
