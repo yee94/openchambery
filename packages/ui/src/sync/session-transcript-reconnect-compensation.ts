@@ -77,6 +77,7 @@ export function createTranscriptReconnectCompensationController(
   const scoped = (ref: TranscriptScope): TranscriptScope => ({ ...identity(), ...ref, directory: ref.directory.trim() })
   const keyOf = (scope: TranscriptScope) => JSON.stringify([scope.transport, scope.generation, scope.directory, scope.sessionID])
   let epoch = 0
+  let recoveryRevision = 0
   let destroyed = false
   const stale = new Set<string>()
   const checkedAt = new Map<string, number>()
@@ -104,17 +105,32 @@ export function createTranscriptReconnectCompensationController(
         try {
           // No anchor scan or destructive reset. Native GET + touched-id merge
           // keeps cached rows readable even when the network never answers.
-          const data = repository.hasSession?.(job.scope)
-            ? await repository.refreshFromAuthority(job.scope)
-            : await repository.ensureInitial(job.scope)
-          if (!current(job)) { job.resolve(null); return }
-          stale.delete(keyOf(job.scope))
-          checkedAt.set(keyOf(job.scope), now())
-          const tail = data.messagesByID[data.messageOrder.at(-1) ?? ""]
-          try {
-            await input.confirmSessionStatus?.(job.scope, { tailOpen: Boolean(tail?.role === "assistant" && isMessageSnapshotOpen(tail)) })
-          } catch { /* Status failure must not invalidate a complete transcript. */ }
-          job.resolve(data)
+          while (current(job)) {
+            const readRevision = recoveryRevision
+            let data: TranscriptData
+            try {
+              data = repository.hasSession?.(job.scope)
+                ? await repository.refreshFromAuthority(job.scope)
+                : await repository.ensureInitial(job.scope)
+            } catch (error) {
+              if (current(job) && readRevision !== recoveryRevision) continue
+              throw error
+            }
+            if (!current(job)) { job.resolve(null); return }
+            const tail = data.messagesByID[data.messageOrder.at(-1) ?? ""]
+            try {
+              await input.confirmSessionStatus?.(job.scope, { tailOpen: Boolean(tail?.role === "assistant" && isMessageSnapshotOpen(tail)) })
+            } catch { /* Status failure must not invalidate a complete transcript. */ }
+            if (!current(job)) { job.resolve(null); return }
+            // A ready edge during this read needs authority newer than the
+            // existing flight. Observers still share the whole drain promise.
+            if (readRevision !== recoveryRevision) continue
+            stale.delete(keyOf(job.scope))
+            checkedAt.set(keyOf(job.scope), now())
+            job.resolve(data)
+            return
+          }
+          job.resolve(null)
         } catch (error) {
           if (current(job)) {
             stale.add(keyOf(job.scope))
@@ -183,6 +199,7 @@ export function createTranscriptReconnectCompensationController(
     captureCheckpoints: () => { if (!destroyed) markStale() },
     onCompensation(trigger) {
       if (destroyed || !trigger.isReconnect || trigger.runtimeGeneration !== identity().generation) return
+      recoveryRevision += 1
       markStale()
       for (const ref of inventory().immediate) void enqueue(ref, true).catch(() => undefined)
     },

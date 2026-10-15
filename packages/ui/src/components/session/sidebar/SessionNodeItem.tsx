@@ -17,7 +17,6 @@ import type { ChildSessionExport } from '@/lib/exportSession';
 import {
   buildSessionMessageRecordsSnapshotFromSource,
   useDirectoryStore,
-  useLiveSessionStatus,
   useSessionActivity,
   useSessionPermissions,
   useSessionQuestions,
@@ -451,7 +450,6 @@ function SessionNodeItemComponent(props: Props): React.ReactNode {
       [session.id],
     ),
   );
-  const sessionStatus = useLiveSessionStatus(session.id);
   const hasSessionActivity = useSessionActivity(session.id);
   const sessionPermissions = useSessionPermissions(
     session.id,
@@ -737,8 +735,7 @@ function SessionNodeItemComponent(props: Props): React.ReactNode {
   });
 
   const handleRefreshTranscript = useEvent(() => {
-    const statusType = sessionStatus?.type ?? 'idle';
-    if (!sessionDirectory || isTranscriptRefreshing || statusType === 'busy' || statusType === 'retry') {
+    if (!sessionDirectory || isTranscriptRefreshing) {
       return;
     }
     setIsTranscriptRefreshing(true);
@@ -1105,7 +1102,7 @@ function SessionNodeItemComponent(props: Props): React.ReactNode {
         {t('sessions.sidebar.session.menu.exportMarkdown')}
       </Item>
       <Item
-        disabled={!sessionDirectory || sessionStatus?.type === 'busy' || sessionStatus?.type === 'retry' || isTranscriptRefreshing}
+        disabled={!sessionDirectory || isTranscriptRefreshing}
         onClick={() => { handleRefreshTranscript(); }}
         className="[&>svg]:mr-1"
       >

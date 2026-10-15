@@ -1246,16 +1246,25 @@ export function createEventPipeline(input: EventPipelineInput): EventPipeline {
     }
   })().finally(flushAll)
 
+  let wasHidden = false
   const onVisibility = () => {
     if (typeof document === "undefined") return
     if (document.visibilityState === "hidden") {
+      wasHidden = true
       // Capture recovery context while the last known event id is still
       // current so a later ready can compensate from the pre-hide tip.
       captureRecoveryContext("visibility_hidden")
       return
     }
     if (document.visibilityState !== "visible") return
-    if (Date.now() - lastEventAt < heartbeatTimeoutMs) return
+    if (wasHidden) {
+      wasHidden = false
+      // A reconnect while hidden may already have consumed the checkpoint.
+      captureRecoveryContext("visibility_hidden")
+    }
+    // A fresh transport heartbeat does not prove that hidden-page domain
+    // events were delivered. Drain the captured gap through a new ready edge.
+    if (!recoveryContext && Date.now() - lastEventAt < heartbeatTimeoutMs) return
     attempt?.abort()
   }
 

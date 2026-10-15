@@ -69,7 +69,7 @@ import { SessionStartupCoordinator } from '@/components/session/SessionStartupCo
 import { DirectoryExplorerDialog } from '@/components/session/DirectoryExplorerDialog';
 import { ScheduledTasksDialog, ScheduledTasksWorkspace } from '@/components/session/ScheduledTasksDialog';
 import { SettingsGroup } from '@/components/sections/shared/SettingsGroup';
-import { SyncProvider, useSessionContextUsage, useCurrentSessionEntity, useLiveSessionStatus, useParentSessionTarget, useSessionMessages } from '@/sync/sync-context';
+import { SyncProvider, useSessionContextUsage, useCurrentSessionEntity, useParentSessionTarget, useSessionMessages } from '@/sync/sync-context';
 import { useSync } from '@/sync/use-sync';
 
 import { SyncAppEffects } from './AppEffects';
@@ -2863,12 +2863,10 @@ const MobileShell: React.FC<{
   );
   const currentSessionDirectory = useSessionUIStore(currentSessionDirectorySelector);
   const parentSessionTarget = useParentSessionTarget(currentSessionId, currentSessionDirectory || currentDirectory || undefined);
-  const currentSessionStatus = useLiveSessionStatus(currentSessionId ?? '');
   useNativeLiveActivity();
-  const isSessionBusy = currentSessionStatus?.type === 'busy' || currentSessionStatus?.type === 'retry';
   const refreshCurrentTranscript = useEvent(() => {
     const sessionID = currentSessionId;
-    if (!sessionID || isTranscriptRefreshing || isSessionBusy) return;
+    if (!sessionID || isTranscriptRefreshing) return;
     const directory = currentSessionDirectory || currentDirectory || undefined;
 
     setIsTranscriptRefreshing(true);
@@ -3192,14 +3190,14 @@ const MobileShell: React.FC<{
           key: 'refresh-transcript',
           icon: 'refresh',
           label: t('sessions.sidebar.session.menu.refreshTranscript'),
-          disabled: isTranscriptRefreshing || isSessionBusy,
+          disabled: isTranscriptRefreshing,
           spinning: isTranscriptRefreshing,
           onSelect: refreshCurrentTranscript,
         });
       }
       return items;
     },
-    [currentSessionId, dirtyChangeCount, isIPad, isSessionBusy, isTranscriptRefreshing, openChangesSurface, openFilesSurface, openNewSessionDraft, openSettingsSurface, refreshCurrentTranscript, setActiveMainTab, showUpdateItem, t],
+    [currentSessionId, dirtyChangeCount, isIPad, isTranscriptRefreshing, openChangesSurface, openFilesSurface, openNewSessionDraft, openSettingsSurface, refreshCurrentTranscript, setActiveMainTab, showUpdateItem, t],
   );
 
   return (

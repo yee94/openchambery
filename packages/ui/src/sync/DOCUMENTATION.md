@@ -580,6 +580,8 @@ Selection's cold path enters `ensureTranscriptInitial`, sharing the repository's
 
 Hot ensure, explicit refresh, observe checks and reconnect use the same `refreshFromAuthority` touched-message reconciliation. Concurrent refreshes share one promise per runtime/directory/session/read epoch/projection revision. Unchanged message/part references survive; a failed fetch preserves the prior transcript. Repository disposal retires late refresh completions.
 
+Hidden-to-visible recovery drains its captured gap through a new stream-ready edge even when heartbeats are fresh: transport activity alone does not prove transcript completeness. A reconnect arriving during an older compensation read schedules a trailing read before the shared recovery promise settles. Directory reconnect recovery also uses the repository refresh flight rather than independently fetching/applying a recovery page. Regression coverage: `__tests__/event-pipeline-resume.test.js`, `session-transcript-reconnect-compensation.test.ts`, and `sync-context.reconnect-flight.test.ts`.
+
 Recovery marks cached scopes stale, prioritizes viewed/busy/observed sessions, and limits per-directory concurrency to two. It uses native projection through the repository, never Host anchor scans, continuation rounds or destructive recovery resets. Inactive scopes refresh on observation; successful observe checks have a 60-second throttle and failures remain retryable. A disjoint new tail retains cached older rows but adopts the new native cursor so the missing middle remains pageable. Gap pages insert chronologically among retained rows rather than ahead of the entire cache.
 
 Behavior tests: `session-actions.test.ts` (A→B→A), `transcript-repository-query-adapter.test.ts` (SSE races, shared refresh, disposal), `session-transcript-reconnect-compensation.test.ts` (native recovery scheduling), `session-transcript-long-gap.runtime.test.js` (100-message gap and cursor traversal).
@@ -1146,9 +1148,11 @@ both readers agree on when a frame may shrink.
    The chat load-error wall has no transcript to keep, so Retry calls
    `retryTranscriptInitial` (`destructiveReset` + fresh ensure) and the gate
    treats that click as `hydrating` until the reload settles.
-   Busy/retry refuse only when the child-store live status is busy/retry.
-   Sticky global fallback busy (missed idle, no mobile tray snapshot) must not
-   disable refresh. Send self-heal: if the event stream has been silent past
+    Manual refresh remains available during busy/retry, including stale local
+    status after a missed terminal event. Request-touched rows preserve live
+    SSE updates, failures retain content, and a successful pull reconciles
+    active status with runtime/store fences (`use-sync.refresh.test.tsx`).
+    Send self-heal: if the event stream has been silent past
    the stale threshold, `waitForConnectionOrThrow` reconnects before trusting
    `isConnected`; a hung prompt times out and requests the same reconnect so
    "Sending message" cannot stick forever.

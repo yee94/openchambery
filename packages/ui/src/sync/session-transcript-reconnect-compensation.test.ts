@@ -48,7 +48,7 @@ test("prioritizes viewed, busy and observed sessions without duplicates", () => 
   }).map((item) => item.sessionID)).toEqual(["child", "ses_a", "busy"])
 })
 
-test("first ready performs no gap fetch; repeated reconnect and observer share one native flight", async () => {
+test("first ready performs no gap fetch; observers share recovery with a trailing read for a newer reconnect", async () => {
   const flight = pending()
   const fetcher = vi.fn(() => flight.promise)
   const { repo, recovery, seed, reconnect } = setup(fetcher)
@@ -62,8 +62,24 @@ test("first ready performs no gap fetch; repeated reconnect and observer share o
   expect(repo.getTranscript(scope).messageOrder).toEqual(["msg_a"])
   flight.resolve({ records: [record(), record("msg_b")], complete: true })
   await observed
+  expect(fetcher).toHaveBeenCalledTimes(2)
   expect(repo.getTranscript(scope).messageOrder).toEqual(["msg_a", "msg_b"])
   expect(isTranscriptResyncInFlight(scope.sessionID, scope.directory)).toBe(false)
+})
+
+test.each([false, true])("a reconnect during a pre-gap read fetches the final answer (old read fails=%s)", async (fails) => {
+  const old = pending()
+  const fetcher = vi.fn().mockImplementationOnce(() => old.promise)
+    .mockResolvedValue({ records: [record(), record('msg_final')], complete: true })
+  const { repo, recovery, seed, reconnect } = setup(fetcher)
+  seed()
+  const observing = recovery.ensureOnObserve(scope)
+  reconnect()
+  if (fails) old.reject(new Error('old connection lost'))
+  else old.resolve({ records: [record()], complete: true })
+  await observing
+  expect(repo.getTranscript(scope).messageOrder).toEqual(['msg_a', 'msg_final'])
+  expect(fetcher).toHaveBeenCalledTimes(2)
 })
 
 test("failed recovery preserves cached rows and remains retryable on the next visit", async () => {

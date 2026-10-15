@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from 'bun:test';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createEventPipeline } from '../event-pipeline';
 
 const savedDocument = globalThis.document;
@@ -37,6 +37,39 @@ function createEventTarget(extras = {}) {
 }
 
 describe('createEventPipeline — system resume reconnect', () => {
+  it.each([false, true])('compensates a hidden-to-visible gap with fresh heartbeats (hidden reconnect=%s)', async (hiddenReconnect) => {
+    globalThis.document = createEventTarget({ visibilityState: 'visible' });
+    globalThis.window = createEventTarget({
+      location: { href: 'http://127.0.0.1:3000/', origin: 'http://127.0.0.1:3000' },
+    });
+    const triggers = [];
+    const sdk = { event: { subscribe: async ({ signal }) => (async function* () {
+      yield { payload: { type: 'session.status', properties: { sessionID: 's1', status: { type: 'busy' } } } };
+      await new Promise((resolve) => {
+        if (signal.aborted) resolve();
+        else signal.addEventListener('abort', resolve, { once: true });
+      });
+    })() } };
+    const pipeline = createEventPipeline({ sdk, transport: 'sse', heartbeatTimeoutMs: 60_000,
+      reconnectDelayMs: 0, onEvent: () => {}, onCompensation: (trigger) => triggers.push(trigger) });
+    try {
+      await vi.waitFor(() => expect(triggers).toHaveLength(1));
+      globalThis.document.visibilityState = 'hidden';
+      globalThis.document.dispatch('visibilitychange');
+      if (hiddenReconnect) {
+        pipeline.reconnect();
+        await vi.waitFor(() => expect(triggers).toHaveLength(2));
+      }
+      globalThis.document.visibilityState = 'visible';
+      globalThis.document.dispatch('visibilitychange');
+      await vi.waitFor(() => expect(triggers).toHaveLength(hiddenReconnect ? 3 : 2));
+      expect(triggers.at(-1).isReconnect).toBe(true);
+      expect(triggers.find(trigger => trigger.isReconnect).reason).toBe('visibility_hidden');
+    } finally {
+      pipeline.cleanup();
+    }
+  });
+
   it('reconnects immediately on openchamber:system-resume event', async () => {
     const winListeners = {};
     globalThis.document = {

@@ -1875,33 +1875,16 @@ export async function resyncDirectoryAfterReconnect(
       const statusBeforePull = stateBeforePull.session_status?.[sessionId]
       const statusObservedAtBeforePull = stateBeforePull.session_status_observed_at?.[sessionId]
       const isBodyStale = () => !isLiveRevisionCurrent(bodyRevision, getLiveRevision(sessionId))
-      const capturedRevision = bodyRevision
-
-      // Ticket 09: Query sole write for recovery body (raw transport → http-page).
-      // When a Query compensation controller is registered it may already own
-      // multi-page reconcile; this path still ensures a recovery tail page.
+      // Directory recovery and reconnect compensation share the repository
+      // flight and touched-row merge; independent reads could overwrite a
+      // newer compensation snapshot with an older recovery response.
       // Resync flight: this warm session's transcript is chasing the remote
       // tail here, so the sync hint must be in flight even with a transcript.
       beginTranscriptResync(directory, sessionId)
       try {
-        const page = await fetchProductionTranscriptTransportPage({
-          directory,
-          sessionID: sessionId,
-          limit: getInitialSessionTurnLimit(),
-          signal: AbortSignal.timeout(30_000),
-          purpose: "recovery",
-        })
-        if (isBodyStale()) return
-        const result = applyProductionHttpPage({
-          directory,
-          sessionID: sessionId,
-          purpose: "recovery",
-          page,
-          capturedLiveRevision: capturedRevision,
-          liveRevision: getLiveRevision(sessionId),
-          skipPartTypes: RECONNECT_SKIP_PARTS,
-        })
-        if (!result.applied) return
+        await refreshTranscriptFromAuthority(directory, sessionId)
+        if (recoveryGeneration !== getRuntimeGeneration() || recoveryTransport !== getRuntimeTransportIdentity()) return
+        if (locationBeforeRead !== movedSessionDirectory(sessionId)) return
 
         const transcript = requireTranscriptRepository().getTranscript(
           transcriptScope(directory, sessionId),

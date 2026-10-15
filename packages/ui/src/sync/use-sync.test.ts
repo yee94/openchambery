@@ -6,7 +6,6 @@ import {
   getConstrainedCacheStateAfterPrefetchEviction,
   shouldFetchSessionForRenderableSync,
   hasUserMessage,
-  isUserTranscriptRefreshBlocked,
   resolveSessionHistoryLoadPlan,
   SESSION_AUTHORITY_REVALIDATE_WINDOW_MS,
   syncMetaFromBoundary,
@@ -446,24 +445,5 @@ describe('enter-and-sync authority window', () => {
       generation: 1,
     })).toBe(false)
     clearSessionAuthorityRevalidateWindows()
-  })
-})
-
-describe('isUserTranscriptRefreshBlocked', () => {
-  test('refuses busy and retry so a user refresh cannot fight SSE', () => {
-    expect(isUserTranscriptRefreshBlocked('busy')).toBe(true)
-    expect(isUserTranscriptRefreshBlocked('retry')).toBe(true)
-  })
-
-  test('allows idle and unknown status', () => {
-    expect(isUserTranscriptRefreshBlocked('idle')).toBe(false)
-    expect(isUserTranscriptRefreshBlocked(undefined)).toBe(false)
-    expect(isUserTranscriptRefreshBlocked(null)).toBe(false)
-  })
-
-  test('unknown live status is not blocked even if a sticky global busy exists', () => {
-    // Refresh gates must read child-store live status only. A missed idle
-    // left in the global fallback must not disable the button.
-    expect(isUserTranscriptRefreshBlocked(undefined)).toBe(false)
   })
 })

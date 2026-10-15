@@ -8,13 +8,12 @@ const sourcePath = join(dirname(fileURLToPath(import.meta.url)), 'MobileApp.tsx'
 test('overflow refresh uses the authoritative user transcript path', async () => {
   const source = await readFile(sourcePath, 'utf8')
 
-  expect(source).toContain('useLiveSessionStatus(currentSessionId ?? \'\')')
   expect(source).not.toContain('useGlobalSessionStatus(currentSessionId')
   expect(source).toContain('const refreshCurrentTranscript = useEvent(() => {')
   expect(source).toContain('await sync.refreshSessionTranscript(sessionID, { directory })')
-  expect(source).toContain('if (!sessionID || isTranscriptRefreshing || isSessionBusy) return')
+   expect(source).toContain('if (!sessionID || isTranscriptRefreshing) return')
   expect(source).toContain("key: 'refresh-transcript'")
-  expect(source).toContain('disabled: isTranscriptRefreshing || isSessionBusy')
+   expect(source).toContain('disabled: isTranscriptRefreshing,')
     expect(source).toContain("t('sessions.sidebar.session.menu.refreshTranscript')")
     expect(source).toContain("t('sessions.sidebar.session.menu.refreshTranscriptSuccess')")
     expect(source).toContain("t('sessions.sidebar.session.menu.refreshTranscriptFailed')")

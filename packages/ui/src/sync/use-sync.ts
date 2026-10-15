@@ -1,4 +1,5 @@
 import { useCallback, useMemo } from "react"
+import { useEvent } from "@reactuses/core"
 import type { Message, Part } from '@/lib/opencode/v2-types'
 
 import { Binary } from "./binary"
@@ -25,7 +26,7 @@ import { sessionSyncCoordinator } from "./session-sync-coordinator"
 import { loadSessionChildrenOnDemand, mergeSessionChildren } from "./session-children"
 import { opencodeClient } from "@/lib/opencode/client"
 import { waitForSessionStartupBarrier } from "@/lib/session-startup-barrier"
-import { getRuntimeKey } from "@/lib/runtime-switch"
+import { getRuntimeKey, getRuntimeGeneration, getRuntimeTransportIdentity } from "@/lib/runtime-switch"
 import {
   SESSION_AUTHORITY_REVALIDATE_WINDOW_MS,
   isSessionAuthorityRevalidateFresh,
@@ -42,13 +43,6 @@ import { seedSessionTodosFromHydratedTranscript } from "./session-todo-projectio
 import { projectSession } from "./v2-runtime"
 
 const MAX_SEEN_DIRS = 30
-
-/** User refresh must not fight an in-flight SSE turn. */
-export function isUserTranscriptRefreshBlocked(
-  statusType: string | undefined | null,
-): boolean {
-  return statusType === "busy" || statusType === "retry"
-}
 
 // Shared across useSync() instances so cache eviction is based on app-level
 // session recency, not whichever component happened to call sync first.
@@ -515,34 +509,42 @@ export function useSync() {
 
   /**
    * User-triggered transcript refresh — fetch first, reconcile the tail on success.
-   * Failure keeps the prior transcript. Busy/retry refuses so SSE keeps the live turn.
+   * Failure keeps the prior transcript; request-touched rows preserve live SSE.
    */
-  const refreshSessionTranscript = useCallback(
+  const refreshSessionTranscript = useEvent(
     async (sessionID: string, options?: { directory?: string }) => {
       if (!sessionID) return
       await waitForSessionStartupBarrier()
       const targetDirectory = options?.directory ?? directory
       if (!targetDirectory || targetDirectory === "global") return
       const targetStore = childStores.ensureChild(targetDirectory, { bootstrap: false })
-      const liveType = targetStore.getState().session_status?.[sessionID]?.type
-      if (isUserTranscriptRefreshBlocked(liveType)) {
-        throw new Error("refresh transcript busy")
-      }
+      const generation = getRuntimeGeneration()
+      const transport = getRuntimeTransportIdentity()
+      const isStale = () => generation !== getRuntimeGeneration()
+        || transport !== getRuntimeTransportIdentity()
+        || childStores.ensureChild(targetDirectory, { bootstrap: false }) !== targetStore
+      const before = targetStore.getState()
       try {
         await refreshTranscriptFromAuthority(targetDirectory, sessionID)
+        if (isStale()) return
         seedSessionTodosFromHydratedTranscript({
           directory: targetDirectory,
           sessionID,
           store: targetStore,
         })
-      } catch (error) {
-        if (error instanceof Error && error.message === "refresh transcript busy") {
-          throw error
-        }
+        await reconcileActiveSessionStatusAfterMessagePull({
+          directory: targetDirectory,
+          sessionID,
+          store: targetStore,
+          statusBeforePull: before.session_status?.[sessionID],
+          statusObservedAtBeforePull: before.session_status_observed_at?.[sessionID],
+          hasMessages: (getTranscriptRepository()?.getTranscript(transcriptScope(targetDirectory, sessionID)).messageOrder.length ?? 0) > 0,
+          isStale,
+        })
+      } catch {
         throw new Error("refresh transcript failed")
       }
     },
-    [childStores, directory],
   )
 
   return useMemo(

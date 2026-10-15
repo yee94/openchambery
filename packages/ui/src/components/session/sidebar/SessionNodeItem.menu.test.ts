@@ -12,7 +12,7 @@ describe('SessionNodeItem session menu', () => {
   test('right-click menu exposes user transcript refresh', () => {
     expect(source).toContain("t('sessions.sidebar.session.menu.refreshTranscript')")
     expect(source).toContain('sync.refreshSessionTranscript')
-    expect(source).toContain('isStreaming || isTranscriptRefreshing')
+    expect(source).toContain('disabled={!sessionDirectory || isTranscriptRefreshing}')
   })
 
   test('shows session change counts next to the title when summary has them', () => {
