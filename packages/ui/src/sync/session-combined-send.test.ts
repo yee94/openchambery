@@ -1448,10 +1448,20 @@ describe('handleCombinedDraftSend', () => {
 })
 
 describe('staged message edits', () => {
-  function installRevert(sequence: string[], options?: { beforeStage?: () => void; failCommit?: boolean }) {
+  function installRevert(sequence: string[], options?: { beforeStage?: () => void; beforeWait?: () => void; failCommit?: boolean }) {
     const previous = globalThis.fetch
     globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = input instanceof Request ? input.url : String(input)
+      if (url.includes('/interrupt')) {
+        expect(new URL(url).searchParams.get('resume')).toBe('false')
+        sequence.push('interrupt')
+        return Response.json({ interrupted: true })
+      }
+      if (url.includes('/wait')) {
+        options?.beforeWait?.()
+        sequence.push('wait')
+        return new Response(null, { status: 204 })
+      }
       if (url.includes('/revert/stage')) {
         options?.beforeStage?.()
         const body = JSON.parse(input instanceof Request ? await input.clone().text() : String(init?.body))
@@ -1471,7 +1481,7 @@ describe('staged message edits', () => {
     }) as typeof fetch
   }
 
-  test('commit the edit only for a direct composer send', async () => {
+  test.each([undefined, 'queue'] as const)('commit an explicit replacement before send even with requested delivery=%s', async (delivery) => {
     const messages = {
       [SESSION_ID]: [
         { id: 'msg_2', sessionID: SESSION_ID, role: 'user', time: { created: 2 } },
@@ -1519,10 +1529,11 @@ describe('staged message edits', () => {
 
     await useSessionUIStore.getState().sendMessage('replacement', 'openai', 'gpt-4o', undefined, undefined, undefined, undefined, undefined, undefined, {
       commitStagedMessageEdit: true,
+      delivery,
     })
 
     // V2 commit must settle before replacement admission.
-    expect(sequence).toEqual(['send:programmatic', 'stage:msg_2', 'commit', 'send:replacement'])
+    expect(sequence).toEqual(['send:programmatic', 'interrupt', 'wait', 'stage:msg_2', 'commit', 'send:replacement'])
     expect(useSessionUIStore.getState().stagedMessageEdit).toBe(null)
     restoreMessages()
   })
@@ -1558,9 +1569,6 @@ describe('staged message edits', () => {
     const restoreMessages = installSessionMessagesMock(async () => ({
       data: messages[SESSION_ID].map((info) => ({ info, parts: parts[info.id as 'msg_2' | 'msg_3'] ?? [] })),
     }))
-    // Interrupt is now postSessionInterrupt; drive idle independently so revert
-    // still waits for the live status rather than the SDK abort mock.
-    setTimeout(() => { status = { type: 'idle' } }, 30)
     setActionRefs({
       session: {},
     } as any, childStores as any, () => PROJECT.path)
@@ -1572,7 +1580,10 @@ describe('staged message edits', () => {
     })
 
     const sequence: string[] = []
-    installRevert(sequence, { beforeStage: () => { expect(status.type).toBe('idle') } })
+    installRevert(sequence, {
+      beforeWait: () => { status = { type: 'idle' } },
+      beforeStage: () => { expect(status.type).toBe('idle') },
+    })
     opencodeClient.sendMessage = (async (params: { text: string }) => {
       sequence.push(`send:${params.text}`)
     }) as any
@@ -1581,7 +1592,7 @@ describe('staged message edits', () => {
       commitStagedMessageEdit: true,
     })
 
-    expect(sequence).toEqual(['stage:msg_2', 'commit', 'send:replacement'])
+    expect(sequence).toEqual(['interrupt', 'wait', 'stage:msg_2', 'commit', 'send:replacement'])
     expect(useSessionUIStore.getState().stagedMessageEdit).toBe(null)
     expect(useSessionUIStore.getState().messageEditCommitting).toBe(null)
     restoreMessages()
@@ -1648,7 +1659,7 @@ describe('staged message edits', () => {
     }
     expect(failed).toBeTruthy()
 
-    expect(sequence).toEqual(['stage:msg_2', 'commit', 'clear'])
+    expect(sequence).toEqual(['interrupt', 'wait', 'stage:msg_2', 'commit', 'clear'])
     expect(useSessionUIStore.getState().stagedMessageEdit).toEqual({ sessionId: SESSION_ID, messageId: 'msg_2' })
     expect(useSessionUIStore.getState().messageEditCommitting).toBe(null)
     expect(messages[SESSION_ID].map((message) => message.id)).toEqual(['msg_2', 'msg_3'])
@@ -1686,7 +1697,7 @@ describe('staged message edits', () => {
       'replacement draft', 'openai', 'gpt-4o', undefined, undefined, undefined, undefined, undefined, undefined,
       { commitStagedMessageEdit: true },
     )).rejects.toThrow('send rejected')
-    expect(sequence).toEqual(['stage:msg_2', 'commit', 'send'])
+    expect(sequence).toEqual(['interrupt', 'wait', 'stage:msg_2', 'commit', 'send'])
     expect(useSessionUIStore.getState().stagedMessageEdit).toBeNull()
     expect(useSessionUIStore.getState().messageEditCommitting).toBeNull()
     expect(useInputStore.getState().pendingInputText).toBe('replacement draft')

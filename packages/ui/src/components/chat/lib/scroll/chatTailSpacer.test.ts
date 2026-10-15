@@ -13,10 +13,12 @@ import {
  * `--oc-chat-foot-inset` chrome reservation. A mobile tail sized like a
  * scroll threshold rather than like empty space left a streaming reply
  * pressed against the queued-message strip with nothing to scroll up into.
+ * It also has to clear the 2.75rem composer fade, or the newest lines rest
+ * inside that mask.
  */
 describe('chat tail spacer', () => {
     test('the mobile tail is large enough to read as empty space', () => {
-        expect(CHAT_TAIL_SPACER_MOBILE_PX).toBeGreaterThanOrEqual(72);
+        expect(CHAT_TAIL_SPACER_MOBILE_PX).toBeGreaterThanOrEqual(128);
         expect(CHAT_TAIL_SPACER_MOBILE_HEIGHT).toBe(`${CHAT_TAIL_SPACER_MOBILE_PX}px`);
     });
 

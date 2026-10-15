@@ -26,7 +26,6 @@ import { createDraftAttachmentResourceAdapter } from '@/sync/draft-attachment-re
 import { buildQueueComposerRestoration, commitComposerRestoration } from '@/sync/message-composer-restoration';
 import type { AttachedFile } from '@/stores/types/sessionTypes';
 import * as sessionActions from '@/sync/session-actions';
-import { commitMessageEdit } from '@/sync/session-actions';
 import type { OptimisticSendTicket } from '@/sync/session-actions';
 import { promoteQueueHeadOnAbort } from '@/sync/queue-abort-optimistic';
 import {
@@ -2502,30 +2501,12 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
     const handleQueueMessage = useEvent(async () => {
         if (!surface.active) return;
         if (isSubmissionInFlight()) return;
-        // Commit the V2 history boundary before admitting the queued replacement.
-        // A failed commit keeps the draft available and blocks queue admission.
-        if (currentSessionId) {
+        // Sent-message replacement owns a direct submit, never queue admission.
+        if (surface.kind === 'primary' && currentSessionId) {
             const stagedBeforeQueue = useSessionUIStore.getState().stagedMessageEdit;
             if (stagedBeforeQueue && stagedBeforeQueue.sessionId === currentSessionId) {
-                if (useSessionUIStore.getState().messageEditCommitting) return;
-                const editRuntime = surfaceResources.captureRuntime();
-                const editDirectory = useSessionUIStore.getState().getDirectoryForSession(currentSessionId);
-                const isEditRuntimeCurrent = () => isQueueAdmissionRuntimeCurrent(editRuntime, surfaceResources.captureRuntime());
-                useSessionUIStore.getState().beginMessageEditCommit(stagedBeforeQueue.sessionId, stagedBeforeQueue.messageId);
-                try {
-                    await commitMessageEdit(stagedBeforeQueue.sessionId, stagedBeforeQueue.messageId, { directory: editDirectory ?? undefined });
-                } catch (error) {
-                    console.warn('[chat-input] staged-edit commit failed before queue admission', error);
-                    return;
-                } finally {
-                    if (isEditRuntimeCurrent()) {
-                        useSessionUIStore.getState().endMessageEditCommit(stagedBeforeQueue.sessionId, stagedBeforeQueue.messageId);
-                    }
-                }
-                if (!isEditRuntimeCurrent() || useSessionUIStore.getState().currentSessionId !== currentSessionId) return;
-                if (useSessionUIStore.getState().stagedMessageEdit === stagedBeforeQueue) {
-                    useSessionUIStore.getState().clearStagedMessageEdit(stagedBeforeQueue.sessionId);
-                }
+                await handleSubmitRef.current();
+                return;
             }
         }
         const inputSnapshot = getCurrentInputSnapshot();
@@ -2968,11 +2949,14 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
         if (isSubmissionInFlight()) return;
         const queuedOnly = options?.queuedOnly ?? false;
         const queuedMessageId = options?.queuedMessageId;
-        const steerAfterAdmit = options?.steerAfterAdmit === true
+        const stagedEditAtSubmit = useSessionUIStore.getState().stagedMessageEdit;
+        const replacingMessage = surface.kind === 'primary' && !queuedOnly
+            && Boolean(currentSessionId && stagedEditAtSubmit?.sessionId === currentSessionId);
+        const steerAfterAdmit = !replacingMessage && options?.steerAfterAdmit === true
             && sessionIsRunning
             && !autoReviewRunning
             && surface.kind === 'primary';
-        const requestedDelivery = steerAfterAdmit ? 'queue' : options?.delivery;
+        const requestedDelivery = replacingMessage ? 'steer' : steerAfterAdmit ? 'queue' : options?.delivery;
         const delivery = requestedDelivery === 'queue' && (sessionIsRunning || autoReviewRunning)
             ? 'queue'
             : requestedDelivery === 'steer' && sessionIsRunning ? 'steer' : undefined;
@@ -3021,7 +3005,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
             }
             return;
         }
-        const routeThroughQueue = !steerAfterAdmit && shouldRouteComposerThroughQueue({
+        const routeThroughQueue = !replacingMessage && !steerAfterAdmit && shouldRouteComposerThroughQueue({
             hasQueuedMessages, sessionIsRunning, autoReviewRunning, queuedOnly, delivery,
         });
         if (!queuedOnly && localCommand && localCommand !== 'model') {
@@ -3133,7 +3117,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
         // composer, and a cleared draft restored through recoverSubmission only
         // lands in the store on a later render, so the queue path would read an
         // empty composer and drop the message.
-        if (currentSessionId && !queuedOnly && !resourcePolicy && autoReviewRunning) {
+        if (currentSessionId && !queuedOnly && !resourcePolicy && !replacingMessage && autoReviewRunning) {
             endSubmissionFlight();
             queueMessageFromEvent();
             return;

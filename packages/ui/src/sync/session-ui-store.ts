@@ -2345,7 +2345,7 @@ export const useSessionUIStore = create<SessionUIState>()((set, get) => ({
         variant,
         inputMode,
         files,
-        delivery: options?.delivery,
+        delivery: pendingStagedEdit ? 'steer' : options?.delivery,
         messageID: options?.messageID,
         ticket: options?.ticket,
         preserveOptimisticOnAmbiguous: options?.preserveOptimisticOnAmbiguous,

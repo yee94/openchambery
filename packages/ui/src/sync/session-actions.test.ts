@@ -52,6 +52,7 @@ const mocks = vi.hoisted(() => {
     sessionForkResult: null as Session | null,
     clearAttachedFilesCalls: 0,
     abortReject: false,
+    editWaitHook: null as ((signal?: AbortSignal) => Promise<void>) | null,
     interruptGate: null as Promise<void> | null,
     abortResult: { data: true } as { data?: boolean; error?: unknown; response?: { status?: number } },
     abortBlockToken: 0,
@@ -153,6 +154,10 @@ const mocks = vi.hoisted(() => {
         if (state.abortReject) throw new Error("interrupt failed")
         state.onInterrupt?.()
         return { interrupted: state.questionInterruptResult }
+      }),
+      wait: vi.fn(async (params: Record<string, unknown>, options?: { signal?: AbortSignal }) => {
+        replyCalls.push({ method: "session.wait", params })
+        await state.editWaitHook?.(options?.signal)
       }),
     },
   }
@@ -714,6 +719,7 @@ describe("fetchMessagesForSession startup race", () => {
     replyCalls.length = 0
     mocks.hostTurnPageBehavior = { cursor: null, complete: true }
     mocks.state.abortReject = false
+    mocks.state.editWaitHook = null
     mocks.state.abortResult = { data: true }
     mocks.state.onInterrupt = null
     mocks.state.revertStageHook = null
@@ -3395,10 +3401,39 @@ describe("message edit staging", () => {
     const { sessionStore, commitMessageEdit, waitForSessionIdleForMessageEdit } = await editFixture()
     sessionStore.setState({ session_status: { "session-a": { type: "busy" } } })
     mocks.state.abortReject = true
-    await expect(commitMessageEdit("session-a", "msg_edit")).rejects.toThrow("abort failed")
+    await expect(commitMessageEdit("session-a", "msg_edit")).rejects.toThrow("interrupt failed")
+    mocks.state.editWaitHook = (signal) => new Promise((_, reject) => {
+      signal?.addEventListener("abort", () => reject(signal.reason), { once: true })
+    })
     await expect(waitForSessionIdleForMessageEdit("session-a", { timeoutMs: 0 })).rejects.toThrow("still busy")
-    expect(replyCalls.map((call) => call.method)).toEqual(["session.interrupt"])
+    expect(replyCalls.map((call) => call.method)).toEqual(["session.interrupt", "session.wait"])
     expect(sessionStore.getState().message["session-a"]).toHaveLength(3)
+    mocks.state.editWaitHook = null
+  })
+
+  test.each([undefined, { type: "idle" } as const, { type: "busy" } as const])("edit waits on server even with stale local status %j", async (status) => {
+    const { sessionStore, commitMessageEdit } = await editFixture()
+    sessionStore.setState({ session_status: status ? { "session-a": status } : {} })
+    let release!: () => void
+    mocks.state.editWaitHook = () => new Promise<void>((resolve) => { release = resolve })
+    const pending = commitMessageEdit("session-a", "msg_edit")
+    await vi.waitFor(() => expect(replyCalls.some((call) => call.method === "session.wait")).toBe(true))
+    expect(replyCalls.some((call) => call.method.startsWith("session.revert"))).toBe(false)
+    expect(replyCalls.find((call) => call.method === "session.interrupt")?.params).toEqual({ sessionID: "session-a", resume: false })
+    release()
+    await pending
+    expect(replyCalls.filter((call) => ["session.interrupt", "session.wait", "session.revert", "session.revert.commit"].includes(call.method)).map((call) => call.method))
+      .toEqual(["session.interrupt", "session.wait", "session.revert", "session.revert.commit"])
+    mocks.state.editWaitHook = null
+  })
+
+  test("server wait failure preserves history and blocks revert", async () => {
+    const { sessionStore, commitMessageEdit } = await editFixture()
+    mocks.state.editWaitHook = async () => { throw new Error("wait unavailable") }
+    await expect(commitMessageEdit("session-a", "msg_edit")).rejects.toThrow("wait unavailable")
+    expect(replyCalls.map((call) => call.method)).toEqual(["session.interrupt", "session.wait"])
+    expect(sessionStore.getState().message["session-a"]).toHaveLength(3)
+    mocks.state.editWaitHook = null
   })
 
   test("failed cleanup retains the staged boundary and a retry commits without deleting messages individually", async () => {
@@ -3432,7 +3467,7 @@ describe("message edit staging", () => {
       messageID: "msg_old", files: [{ file: "src/example.ts", status: "modified", additions: 1, deletions: 0, patch: "diff" }],
     } }] })
     await expect(commitMessageEdit("session-a", "msg_edit")).rejects.toThrow("unavailable")
-    expect(replyCalls).toEqual([])
+    expect(replyCalls.map((call) => call.method)).toEqual(["session.interrupt", "session.wait"])
     expect(sessionStore.getState().message["session-a"]).toHaveLength(3)
     expect(sessionStore.getState().session[0].revert?.messageID).toBe("msg_old")
   })
@@ -3521,7 +3556,7 @@ describe("message edit staging", () => {
 
     await expect(commitMessageEdit("session-a", "msg_2")).rejects.toThrow("commit rejected")
 
-    expect(replyCalls.map((call) => call.method)).toEqual(["session.revert", "session.revert.commit", "session.unrevert"])
+    expect(replyCalls.map((call) => call.method)).toEqual(["session.interrupt", "session.wait", "session.revert", "session.revert.commit", "session.unrevert"])
     expect(sessionStore.getState().session[0].revert).toBeUndefined()
     expect(sessionStore.getState().message["session-a"].map((message) => message.id)).toEqual(["msg_2", "msg_3", "msg_4"])
     expect(inputState.pendingInputText).toBe("previous draft")

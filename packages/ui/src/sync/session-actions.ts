@@ -2893,40 +2893,33 @@ export async function abortBusySessionForMessageEdit(
   options?: { directory?: string },
 ): Promise<void> {
   const directoryOverride = options?.directory
-  const { store, directory } = dirStoreForSession(sessionId, directoryOverride)
-  const status = store.getState().session_status[sessionId]
-  if (!status || status.type === "idle") return
-  await postSessionInterrupt({ sessionID: sessionId, directory })
+  const { directory } = dirStoreForSession(sessionId, directoryOverride)
+  await opencodeClient.getScopedSdkClient(directory ?? "").session.interrupt({ sessionID: sessionId, resume: false })
 }
 
 /**
- * Wait until the session reports idle (or has no status entry).
+ * Wait for authoritative server idle, regardless of delayed local status.
  * Used after interrupt so revert is not rejected with "Session is busy".
  * The composer keeps `messageEditCommitting` painted while this wait runs.
  */
 export async function waitForSessionIdleForMessageEdit(
   sessionId: string,
-  options?: { directory?: string; timeoutMs?: number; intervalMs?: number },
+  options?: { directory?: string; timeoutMs?: number },
 ): Promise<void> {
   const directoryOverride = options?.directory
   const timeoutMs = options?.timeoutMs ?? 15_000
-  const intervalMs = options?.intervalMs ?? 100
-  const { store } = dirStoreForSession(sessionId, directoryOverride)
-  const deadline = Date.now() + timeoutMs
+  const { directory } = dirStoreForSession(sessionId, directoryOverride)
   const transport = captureRuntimeTransport()
-
-  while (Date.now() < deadline) {
-    if (!isCurrentRuntimeTransport(transport)) {
-      throw new Error("Session history mutation aborted because the runtime changed")
-    }
-    const status = store.getState().session_status[sessionId]
-    if (!status || status.type === "idle") return
-    await new Promise<void>((resolve) => setTimeout(resolve, intervalMs))
+  const signal = AbortSignal.timeout(timeoutMs)
+  try {
+    await opencodeClient.getScopedSdkClient(directory ?? "").session.wait({ sessionID: sessionId }, { signal })
+  } catch (error) {
+    if (signal.aborted) throw new Error(`Session is still busy after waiting to edit: ${sessionId}`, { cause: error })
+    throw error
   }
-
-  const status = store.getState().session_status[sessionId]
-  if (!status || status.type === "idle") return
-  throw new Error(`Session is still busy after waiting to edit: ${sessionId}`)
+  if (!isCurrentRuntimeTransport(transport)) {
+    throw new Error("Session history mutation aborted because the runtime changed")
+  }
 }
 
 /**

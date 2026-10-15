@@ -1,7 +1,11 @@
 import { describe, expect, test } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { runInNewContext } from 'node:vm';
+import { ScriptTarget, transpileModule } from 'typescript';
 import { resolveStagedEditBlurDisarm } from './stagedMessageEditDisarm';
+import { resolveFollowUpEnterAction } from './followUpShortcut';
+import { shouldRouteComposerThroughQueue } from './queueAdmission';
 
 const chatInputSource = readFileSync(join(__dirname, 'ChatInput.tsx'), 'utf-8');
 
@@ -67,14 +71,11 @@ describe('ChatInput staged-edit wiring', () => {
         expect(settleHandler).toContain('endMessageEditCommit(');
     });
 
-    test('commits a staged edit before queue admission so a queued resend stays a replacement', () => {
+    test('delegates staged edits to direct submission before queue admission', () => {
         const queueStart = chatInputSource.indexOf('const handleQueueMessage = useEvent(async () => {');
         const queueHandler = chatInputSource.slice(queueStart, chatInputSource.indexOf('const inputSnapshot = getCurrentInputSnapshot();', queueStart));
-        expect(queueHandler).toContain('commitMessageEdit(');
-        expect(queueHandler).toContain('beginMessageEditCommit(');
-        expect(queueHandler).toContain('endMessageEditCommit(');
-        expect(queueHandler).toContain('clearStagedMessageEdit(');
-        expect(queueHandler).toContain('if (!isEditRuntimeCurrent() || useSessionUIStore.getState().currentSessionId !== currentSessionId) return;');
+        expect(queueHandler).toContain('await handleSubmitRef.current();');
+        expect(queueHandler).not.toContain('commitMessageEdit(');
     });
 
     test('defers the primary optimistic ticket until the staged edit is committed', () => {
@@ -88,5 +89,54 @@ describe('ChatInput staged-edit wiring', () => {
         expect(chatInputSource).toContain('active.closest(\'[data-composer-content="true"]\')');
         expect(chatInputSource).toContain('Date.now() < suppressComposerFocusUntilRef.current');
         expect(chatInputSource).not.toContain('active.closest(\'[data-chat-input="true"]\') || active.closest(\'[data-chat-input-footer');
+    });
+});
+
+describe('sent-message edit submission routing', () => {
+    // Execute the actual entry and submission routing with external resources stubbed.
+    // This catches a correct helper wired after queue routing or bypassed by Send.
+    const primaryStart = chatInputSource.indexOf('const handlePrimaryAction = useEvent(() => {');
+    const primary = chatInputSource.slice(primaryStart, chatInputSource.indexOf('\n    });', primaryStart) + 8);
+    const routingStart = chatInputSource.indexOf('const queuedOnly = options?.queuedOnly ?? false;');
+    const routing = chatInputSource.slice(routingStart, chatInputSource.indexOf('const queuedMessagesToSend =', routingStart));
+
+    async function submit(input: { editing: boolean; busy: boolean; queued: boolean; shortcut?: boolean; frozen?: boolean }) {
+        const sent: unknown[] = [];
+        let enqueued = 0;
+        const context = {
+            useEvent: (fn: unknown) => fn,
+            useSessionUIStore: { getState: () => ({ stagedMessageEdit: input.editing ? { sessionId: 'session-a', messageId: 'msg_1' } : null }) },
+            currentSessionId: 'session-a', surface: { kind: 'primary', deliveryTarget: { kind: 'primary' } },
+            sessionIsRunning: input.busy, autoReviewRunning: false, hasQueuedMessages: input.queued,
+            queueFrozen: input.frozen ?? false, serverQueue: { mode: 'server' }, inputMode: 'normal', followUpBehavior: 'queue',
+            getCurrentInputSnapshot: () => ({ message: 'edited', document: { text: 'edited', references: [] }, hasContent: true }),
+            getLocalChatCommand: () => null, claimedByEstablishingFollowUp: () => false, isSubmissionInFlight: () => false,
+            queueModeAllowsMutations: () => true, assistantQueueAdmissionAvailable: () => true,
+            resolveFollowUpEnterAction, shouldRouteComposerThroughQueue,
+            queueMessageFromEvent: () => { enqueued++; }, captureSubmission: () => null, attachedFiles: [],
+            serializeComposerDocument: () => ({ ok: true, text: 'edited', chunks: [], semantics: [] }),
+            preservesComposerResources: () => false,
+            record: (value: unknown) => { sent.push(value); }, shortcut: input.shortcut,
+        };
+        const code = `async function submit(options) { ${routing}\n record({ delivery, steerAfterAdmit }); }
+            const handleSubmitRef = { current: submit };
+            ${primary};
+            shortcut ? submit({ steerAfterAdmit: true }) : handlePrimaryAction();`;
+        await runInNewContext(transpileModule(code, { compilerOptions: { target: ScriptTarget.ESNext } }).outputText, context);
+        return { sent, enqueued };
+    }
+
+    test.each([false, true])('busy edit bypasses queue, including existing queue=%s', async (queued) => {
+        expect(await submit({ editing: true, busy: true, queued })).toEqual({ sent: [{ delivery: 'steer', steerAfterAdmit: false }], enqueued: 0 });
+    });
+    test('shortcut edit never queues before steering', async () => {
+        expect(await submit({ editing: true, busy: true, queued: true, shortcut: true })).toEqual({ sent: [{ delivery: 'steer', steerAfterAdmit: false }], enqueued: 0 });
+    });
+    test('frozen queue does not block replacement', async () => {
+        expect(await submit({ editing: true, busy: true, queued: true, frozen: true })).toEqual({ sent: [{ delivery: 'steer', steerAfterAdmit: false }], enqueued: 0 });
+    });
+    test('ordinary follow-ups retain native and existing queue behavior', async () => {
+        expect(await submit({ editing: false, busy: true, queued: false })).toEqual({ sent: [{ delivery: 'queue', steerAfterAdmit: false }], enqueued: 0 });
+        expect(await submit({ editing: false, busy: true, queued: true })).toEqual({ sent: [], enqueued: 1 });
     });
 });

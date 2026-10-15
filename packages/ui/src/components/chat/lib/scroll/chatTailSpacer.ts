@@ -26,8 +26,13 @@ export const CHAT_TAIL_SPACER_DESKTOP_HEIGHT = `${CHAT_TAIL_SPACER_DESKTOP_VH}vh
  * A phone gets a fixed height rather than the desktop fraction: the visual
  * viewport moves with the keyboard and the browser chrome, and a tail that
  * breathes with it changes the at-bottom band under the reader.
+ *
+ * The composer page-background fade (`.oc-mobile-composer::after`, 2.75rem)
+ * paints above the input and eats the bottom of this tail. 80px left the
+ * newest lines inside that mask once the queue or changes strip outgrew the
+ * fixed foot inset. Keep enough room that those lines sit clear of the fade.
  */
-export const CHAT_TAIL_SPACER_MOBILE_PX = 80;
+export const CHAT_TAIL_SPACER_MOBILE_PX = 144;
 
 export const CHAT_TAIL_SPACER_MOBILE_HEIGHT = `${CHAT_TAIL_SPACER_MOBILE_PX}px`;
 
