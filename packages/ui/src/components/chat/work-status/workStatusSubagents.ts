@@ -72,7 +72,7 @@ const readDescription = (...sources: unknown[]): string => {
  * metadata is only an older fallback, so a stale part id cannot merge the row
  * onto a different session than the one the tool row opens.
  */
-const readToolSessionId = (part: Part): string | undefined => {
+const readToolSessionId = (part: Extract<Part, { type: 'tool' }>): string | undefined => {
   const state = part.state;
   return readOptionalSessionId(state?.metadata)
     ?? readOptionalSessionId(state)

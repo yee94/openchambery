@@ -105,7 +105,7 @@ describe('detectMessageReferences', () => {
     });
 
     test('keeps a pasted absolute path with spaces highlighted after send', () => {
-        const path = '/Users/yee.wang/Library/Application Support/com.raycast.macos/clipboard/file-c54395b0a5721327283bbdaab7ce485d.png';
+        const path = '/Users/example/Library/Application Support/com.example.clipboard/clipboard/image.png';
         const prose = ' 我们的滚动条不能在这个位置';
         const text = `@${path}${prose}`;
         const parts = buildMessageReferenceParts(text, { allowPathHeuristics: true });

@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [2.0.9-beta.11] - 2026-10-15
+
+### 修复
+
+- 修复桌面端多开时点击任务完成通知打开错误实例的问题，通知现在定位到来源窗口；来源窗口关闭或切换实例后，不再误跳到其他实例。
+
 ## [2.0.9-beta.10] - 2026-10-15
 
 ### 修复

@@ -223,6 +223,7 @@ Use an explicit override when testing a different OpenCode CLI build or when a u
 - Floating Mini Chat windows.
 - Multiple native windows.
 - Native notifications.
+- Notification clicks target the originating window, with deduplication scoped to that window. In-process backend notifications target a local-runtime window, excluding relay hosts. Closed windows or windows whose shell runtime changed do not redirect old notifications to another instance.
 - One-click open/reveal/open-in-app actions.
 - Desktop host switcher and deep-link imports.
 - Local and remote instance handling.

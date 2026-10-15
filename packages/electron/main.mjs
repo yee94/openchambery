@@ -1346,12 +1346,13 @@ const isAnyWindowFocused = () =>
     (window) => !window.isDestroyed() && window.isFocused(),
   );
 
-const focusForegroundWindow = () => {
+const focusForegroundWindow = (preferredWindow) => {
   const windows = BrowserWindow.getAllWindows().filter((window) => !window.isDestroyed());
   if (windows.length === 0) return;
-  const target = state.mainWindow && !state.mainWindow.isDestroyed()
+  const target = preferredWindow !== undefined ? preferredWindow : state.mainWindow && !state.mainWindow.isDestroyed()
     ? state.mainWindow
     : windows.find((window) => window.isVisible()) || windows[0];
+  if (!target || target.isDestroyed()) return;
   // macOS: bring the app to foreground FIRST. When the window is minimized
   // to the Dock or hidden via Cmd+H, the app is in the background, and
   // subsequent window.show/restore/focus calls won't pull it forward
@@ -1380,9 +1381,10 @@ const getNativeNotificationClaimKey = (payload) => {
     .join('|');
 };
 
-const claimNativeNotification = (payload) => {
-  const key = getNativeNotificationClaimKey(payload);
-  if (!key) return true;
+const claimNativeNotification = (payload, owner) => {
+  const payloadKey = getNativeNotificationClaimKey(payload);
+  if (!payloadKey) return true;
+  const key = `${owner?.id ?? 'local'}:${payloadKey}`;
 
   const now = Date.now();
   for (const [claimKey, claimedAt] of nativeNotificationClaims) {
@@ -1400,8 +1402,15 @@ const claimNativeNotification = (payload) => {
   return true;
 };
 
-const maybeShowNativeNotification = (rawInput) => {
+const maybeShowNativeNotification = (rawInput, sourceWindow) => {
   const payload = normalizeNotificationInput(rawInput);
+  // In-process backend notifications belong to the local host, even when the
+  // main window is displaying a remote instance. IPC notifications own a window.
+  const owner = sourceWindow ?? BrowserWindow.getAllWindows().find((window) =>
+    !window.isDestroyed() && window.__ocMiniChat !== true
+    && !window.__ocRuntimeConfig?.relayHostId
+    && sameOrigin(window.__ocRuntimeConfig?.apiBaseUrl || state.localOrigin, state.sidecarUrl));
+  const ownerRuntime = owner?.__ocRuntimeConfig;
   const requireHidden = Boolean(payload.requireHidden ?? payload.require_hidden);
 
   if (requireHidden && isAnyWindowFocused()) {
@@ -1412,7 +1421,7 @@ const maybeShowNativeNotification = (rawInput) => {
     return;
   }
 
-  if (!claimNativeNotification(payload)) {
+  if (!claimNativeNotification(payload, owner)) {
     return;
   }
 
@@ -1441,11 +1450,15 @@ const maybeShowNativeNotification = (rawInput) => {
   const release = () => { activeNotifications.delete(notification); };
 
   notification.on('click', () => {
-    focusForegroundWindow();
+    if (!owner || owner.isDestroyed() || owner.__ocRuntimeConfig !== ownerRuntime) {
+      release();
+      return;
+    }
+    focusForegroundWindow(owner);
     if (assistantID) {
-      emitToAllWindows('openchamber:open-assistant', { assistantID });
+      emitToWindow(owner, 'openchamber:open-assistant', { assistantID });
     } else if (sessionId) {
-      emitToAllWindows('openchamber:open-session', { sessionId, directory });
+      emitToWindow(owner, 'openchamber:open-session', { sessionId, directory });
     }
     release();
   });
@@ -2045,8 +2058,8 @@ const emitToWindow = (browserWindow, event, detail) => {
   browserWindow.webContents.send('openchamber:emit', { event, detail });
 };
 
-// Single-main-window semantics: app-level events (deep links, notification
-// clicks, updater progress, SSH status, …) go to the main window only.
+// Single-main-window semantics: app-level events (deep links,
+// updater progress, SSH status, …) go to the main window only.
 // Additional windows may be attached to a different host instance — routing a
 // session/project open to every window would replay it against the wrong
 // server. Mini-chat windows are ephemeral and never inherit main status.
@@ -2644,7 +2657,7 @@ const createBrowserWindow = ({ label, restoreGeometry, url, runtimeConfig = {} }
 
   const browserWindow = new BrowserWindow(options);
   browserWindow.__ocLabel = label || nextWindowLabel();
-  browserWindow.__ocRuntimeConfig = { apiBaseUrl: desktopApiBaseUrl, clientToken: desktopClientToken, requestHeaders: desktopRequestHeaders };
+  browserWindow.__ocRuntimeConfig = { apiBaseUrl: desktopApiBaseUrl, clientToken: desktopClientToken, requestHeaders: desktopRequestHeaders, relayHostId: rendererRuntimeConfig.relayHostId };
   browserWindow.__ocInitScript = buildInitScript(desktopLocalOrigin, state.bootOutcome, desktopApiBaseUrl, desktopClientToken, desktopRequestHeaders);
   browserWindow.__ocTitleBarOverlayEnabled = titleBarOverlayEnabled;
 
@@ -3984,7 +3997,7 @@ const handleInvoke = async (browserWindow, command, args = {}) => {
     }
 
     case 'desktop_notify':
-      maybeShowNativeNotification(args);
+      maybeShowNativeNotification(args, browserWindow);
       return null;
 
     case 'desktop_tray_update':
