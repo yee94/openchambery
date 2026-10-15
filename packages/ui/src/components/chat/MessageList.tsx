@@ -1251,6 +1251,7 @@ const TurnBlock = React.memo(({
             assistantHeaderMessage={visibleAssistantMessages[0]}
             assistantHeaderIsInActiveTurn={visibleAssistantMessages[0]?.info.id === streamingAssistantMessageId}
             preserveActiveTurnGap={preserveActiveTurnGap}
+            showBackgroundWork={isLastTurn}
             stickyUserHeader={stickyUserHeader}
             renderMessage={renderMessage}
         />

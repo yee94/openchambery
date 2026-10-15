@@ -18,7 +18,8 @@ vi.mock('@/sync/transcript-repository-observers', async (original) => ({
     ...await original<typeof import('@/sync/transcript-repository-observers')>(),
     useTranscriptProjection: (_id: string, _directory: string, _store: unknown, project: (data: TranscriptData) => unknown) => project(fixture.data),
 }));
-import { BackgroundWorkHint } from './BackgroundWorkHint';
+import TurnItem from './components/TurnItem';
+import type { TurnRecord } from './lib/turns/types';
 
 let root: ReturnType<typeof createRoot> | undefined;
 afterEach(() => { act(() => root?.unmount()); document.body.innerHTML = ''; });
@@ -52,12 +53,23 @@ test('counts unique live background children after parent idle and follows cross
     const host = document.createElement('div');
     document.body.append(host);
     root = createRoot(host);
+    const turn = {
+        turnId: 'turn-parent',
+        userMessage: { info: { id: 'user', sessionID: 'parent', role: 'user', time: { created: 1 } }, parts: [], sourceDirectory: '/workspace' },
+        assistantMessages: [],
+        messages: [],
+    } as unknown as TurnRecord;
     await act(async () => root!.render(
         <context.Provider value={{ childStores, sdk: {}, directory: '/workspace' }}>
-            <BackgroundWorkHint sessionID="parent" directory="/workspace" />
+            <TurnItem turn={turn} activityExpanded={false} showCompactionStatus={false}
+                showBackgroundWork onToggleActivity={() => {}} renderMessage={() => null} />
         </context.Provider>,
     ));
     expect(host.textContent).toBe('2 个后台任务运行中');
+    const section = host.querySelector('[data-turn-id="turn-parent"]');
+    expect(section?.classList.contains('pb-8')).toBe(true);
+    expect(section?.querySelector('.group\\/message > [role="status"]')?.textContent).toBe('2 个后台任务运行中');
+    expect(host.querySelectorAll('[role="status"]')).toHaveLength(1);
     const renders = fixture.renders;
     await act(async () => children.setState((state) => ({ session_status: { ...state.session_status, unrelated: { type: 'busy' } } })));
     expect(fixture.renders).toBe(renders);

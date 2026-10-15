@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [2.0.9-beta.14] - 2026-10-15
+
+### 修复
+
+- 将「后台任务运行中」提示移入最后一轮回复的内部容器，避免被轮次底部留白隔开，保留原有轮次间距。
+
 ## [2.0.9-beta.13] - 2026-10-15
 
 ### 修复

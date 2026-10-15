@@ -8,6 +8,7 @@ import TurnActivity from './TurnActivity';
 import TurnAssistantBlock from './TurnAssistantBlock';
 import { isUserShellMessage } from '../lib/shellBridge';
 import { SessionErrorNotice } from '../SessionErrorNotice';
+import { BackgroundWorkHint } from '../BackgroundWorkHint';
 import { useSessionSurface } from '../SessionSurfaceContext';
 import { readUserMessageHeaderIdentity, resolvePendingAssistantHeader } from '../lib/pendingAssistantHeader';
 
@@ -24,6 +25,7 @@ interface TurnItemProps {
     assistantHeaderMessage?: ChatMessageEntry;
     assistantHeaderIsInActiveTurn?: boolean;
     preserveActiveTurnGap?: boolean;
+    showBackgroundWork?: boolean;
     onToggleActivity: () => void;
     stickyUserHeader?: boolean;
     renderMessage: (message: ChatMessageEntry, activityExpanded: boolean) => React.ReactNode;
@@ -38,6 +40,7 @@ const TurnItem: React.FC<TurnItemProps> = ({
     assistantHeaderMessage,
     assistantHeaderIsInActiveTurn = false,
     preserveActiveTurnGap = false,
+    showBackgroundWork = false,
     onToggleActivity,
     stickyUserHeader = true,
     renderMessage,
@@ -49,6 +52,7 @@ const TurnItem: React.FC<TurnItemProps> = ({
     // identity so the previous assistant stream does not remount.
     const hideUserMessage = turn.activityPresentationKind === 'compaction';
     const isShellTurn = isUserShellMessage(turn.userMessage);
+    const directory = turn.userMessage.sourceDirectory ?? surface.directory;
 
     return (
         <section
@@ -130,6 +134,9 @@ const TurnItem: React.FC<TurnItemProps> = ({
                         />
                     ) : undefined}
                 />
+            ) : null}
+            {showBackgroundWork && directory ? (
+                <BackgroundWorkHint sessionID={turn.userMessage.info.sessionID} directory={directory} />
             ) : null}
             </div>
         </section>
