@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [2.0.9-beta.9] - 2026-10-15
+
+### 修复
+
+- 修复工作状态侧栏显示时正文和输入框整体偏右的问题，恢复在侧栏左侧区域居中，聊天滚动条仍保留在画面最右侧。
+
 ## [2.0.9-beta.8] - 2026-10-15
 
 ### 改进

@@ -8,7 +8,8 @@ open right sidebar or context panel. The column overlays the transcript instead
 of shrinking it, and stays one scrollbar-lane left of the viewport edge. The
 chat scroller remains full width, so its scrollbar sits on the right edge of
 the screen rather than between the transcript and this column. Message and
-composer columns keep a right margin equal to the column plus that lane.
+composer columns stay centered within the remaining width, excluding the column
+and its scrollbar lane. Their maximum width is capped to that remaining space.
 
 Rows stay one line: project, current branch, secondary worktree name, and working
 tree changes. Every row shares the same leading-icon and text alignment; there

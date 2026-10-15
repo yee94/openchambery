@@ -712,7 +712,14 @@ svg.animate-spin {
    stays on the viewport's right edge. */
 .oc-chat-work-status-inline .chat-message-column,
 .oc-chat-work-status-inline .chat-input-column {
-  margin-right: var(--oc-work-status-reserve);
+  max-width: calc(100% - var(--oc-work-status-reserve));
+  margin-left: max(0px, calc((100% - var(--oc-work-status-reserve) - 800px) / 2));
+  margin-right: auto;
+}
+
+.wide-chat-layout .oc-chat-work-status-inline .chat-message-column,
+.wide-chat-layout .oc-chat-work-status-inline .chat-input-column {
+  margin-left: max(0px, calc((100% - var(--oc-work-status-reserve) - 64rem) / 2));
 }
 
 html:not(.dark) .chat-scroll {
