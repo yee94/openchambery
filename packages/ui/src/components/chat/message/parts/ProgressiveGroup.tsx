@@ -12,7 +12,8 @@ import { Text } from '@/components/ui/text';
 import { Icon } from "@/components/icon/Icon";
 import { getToolIcon } from './toolPresentation';
 import { resolveToolDisplayName } from '@/lib/toolHelpers';
-import { ContextToolGroup } from './ContextToolGroup';
+import { ContextToolGroup, ProcessDiffTotals } from './ContextToolGroup';
+import { aggregateToolPartLineDiffTotals } from './toolDiffUtils';
 import { SkillToolGroup } from './SkillToolGroup';
 import { collectConsecutiveProcessTools, hasProcessSuccessor } from './processToolGrouping';
 import { collectConsecutiveSkillTools, getSkillNameFromToolPart } from './skillToolGrouping';
@@ -1026,6 +1027,16 @@ const ProgressiveGroup: React.FC<ProgressiveGroupProps> = ({
             : isCompleted
                 ? t(isCompaction ? 'chat.activity.compactionCompleted' : 'chat.activity.completedStatus')
                 : t('chat.activity.title');
+    // Full part list, not rendered rows: a collapsed disclosure does not mount
+    // tool rows, and slim metadata already keeps additions/deletions.
+    const headerDiffTotals = React.useMemo(() => {
+        const toolParts: unknown[] = [];
+        for (const activity of parts) {
+            if (activity.kind === 'tool') toolParts.push(activity.part);
+        }
+        return aggregateToolPartLineDiffTotals(toolParts);
+    }, [parts]);
+    const hasHeaderDiff = headerDiffTotals.added > 0 || headerDiffTotals.removed > 0;
     const taskAvatarSeeds = React.useMemo(() => getTaskAvatarSeeds(parts), [parts]);
     const displayedTaskAvatarSeeds = isActive ? taskAvatarSeeds.active : taskAvatarSeeds.all;
     // Cap avatars so the collapsed header stays one line (text is already short).
@@ -1445,6 +1456,11 @@ const ProgressiveGroup: React.FC<ProgressiveGroupProps> = ({
                                         ? t('chat.activity.agentsWorking', { count: displayedTaskAvatarSeeds.length })
                                         : t('chat.activity.agentsInvolved', { count: displayedTaskAvatarSeeds.length })}
                                 </span>
+                            </span>
+                        ) : null}
+                        {hasHeaderDiff ? (
+                            <span data-activity-diff-totals="" className="inline-flex shrink-0">
+                                <ProcessDiffTotals added={headerDiffTotals.added} removed={headerDiffTotals.removed} />
                             </span>
                         ) : null}
                         {!disclosureLockedOpen ? (

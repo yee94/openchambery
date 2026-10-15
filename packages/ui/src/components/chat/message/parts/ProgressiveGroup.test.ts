@@ -225,6 +225,11 @@ describe('progressive activity presentation', () => {
         expect(activityStatusSource).not.toContain("t('chat.activity.completed', { duration: completedDuration })");
         expect(progressiveGroupSource).toContain('const activityDuration = !isActive');
         expect(activityHeaderSource).toContain('{activityStatusLabel}');
+        expect(activityHeaderSource).toContain('data-activity-diff-totals=""');
+        expect(activityHeaderSource).toContain('<ProcessDiffTotals added={headerDiffTotals.added} removed={headerDiffTotals.removed} />');
+        expect(progressiveGroupSource).toContain('aggregateToolPartLineDiffTotals(toolParts)');
+        expect(progressiveGroupSource).toContain("if (activity.kind === 'tool') toolParts.push(activity.part);");
+        expect(progressiveGroupSource).not.toContain('chat.activity.expandAriaWithDiff');
         expect(activityHeaderSource).toContain('className="typography-meta shrink-0 tabular-nums text-muted-foreground">{activityDuration}</span>');
         expect(activityHeaderSource.match(/typography-meta shrink-0 tabular-nums text-muted-foreground/g)).toHaveLength(1);
         expect(activityHeaderSource).not.toContain('{activeDuration}');

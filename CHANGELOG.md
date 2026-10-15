@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [2.0.9-beta.8] - 2026-10-15
+
+### 改进
+
+- 已处理的折叠头显示本组全部改动的 +N / -M，没有改动时不显示。
+
 ## [2.0.9-beta.7] - 2026-10-15
 
 ### 修复

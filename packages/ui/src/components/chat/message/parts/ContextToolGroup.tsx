@@ -17,7 +17,7 @@ import { getToolGroupExpandedListClass, getToolRowBlockClass, TOOL_ROW_INTERACTI
 
 const TOOL_ROW_TEXT_CLASS = '!text-[length:var(--text-meta)] !leading-5 sm:!leading-6 tracking-normal';
 
-const ProcessDiffTotals: React.FC<{ added: number; removed: number }> = ({ added, removed }) => {
+export const ProcessDiffTotals: React.FC<{ added: number; removed: number }> = ({ added, removed }) => {
     if (added <= 0 && removed <= 0) {
         return null;
     }
