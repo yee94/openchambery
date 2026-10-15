@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [2.0.9-beta.6] - 2026-10-15
+
+### 修复
+
+- 工作状态侧栏的子 Agent 显示会话标题，不再只显示 agent 名。同一子会话改标题或续聊后只保留一行。
+
 ## [2.0.9-beta.5] - 2026-10-15
 
 ### 修复

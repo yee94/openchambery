@@ -22,8 +22,16 @@ their counts; spaced, borderless agent rows do not repeat the status. Rows with 
 child session ID open that session in the context panel; unresolved rows remain
 disabled rather than guessing a navigation target. Faces come
 from loaded parent-transcript `task` / `subagent` tool parts and native `subtask`
-parts, seeded by part id, plus direct child sessions that those parts do not
-already link. A pending or running tool part is working. A busy or retrying
+parts, plus direct child sessions those parts do not already link. Identity is
+the child session id, not the tool part id or the title: continuing a subagent,
+or renaming its session, updates that one row instead of adding another. A part
+that has not published a session id yet stays on its own row. The label is the
+live child session title when OpenCode has one, otherwise the task description
+OpenCode uses as that title, otherwise the agent name. Titles come from
+`session.list` scoped to the parent (`workStatusChildren` query). A missing
+payload is a failure and leaves the previous titles in place; it does not clear
+the column. The query refreshes while the column is mounted so a rename shows
+up on the same row. A pending or running tool part is working. A busy or retrying
 child session stays working after its parent tool part completes. Completed
 faces stay in the disclosure. Hover and accessible labels identify each face. The column
 reads the transcript already loaded for the session and the displayed

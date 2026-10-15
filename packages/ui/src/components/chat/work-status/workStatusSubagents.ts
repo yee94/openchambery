@@ -1,5 +1,9 @@
 import type { Part } from '@/lib/opencode/v2-types';
-import { isTaskToolName, readTaskSessionIdFromRecord } from '@/components/chat/message/parts/taskToolModel';
+import {
+  isTaskToolName,
+  readTaskSessionIdFromOutput,
+  readTaskSessionIdFromRecord,
+} from '@/components/chat/message/parts/taskToolModel';
 
 export type WorkStatusSubagentPhase = 'working' | 'done';
 
@@ -16,7 +20,10 @@ export type WorkStatusSubagent = {
 export type TranscriptSubagentFace = {
   id: string;
   sessionID?: string;
+  /** Agent display name. Not the task title. */
   label: string;
+  /** OpenCode task description, which is the child session's initial title. */
+  description: string;
   running: boolean;
 };
 
@@ -49,6 +56,31 @@ const readOptionalSessionId = (value: unknown): string | undefined => {
   return sessionID || undefined;
 };
 
+const readDescription = (...sources: unknown[]): string => {
+  for (const source of sources) {
+    if (!source || typeof source !== 'object') continue;
+    const value = (source as Record<string, unknown>).description;
+    if (typeof value !== 'string') continue;
+    const trimmed = value.trim();
+    if (trimmed) return trimmed;
+  }
+  return '';
+};
+
+/**
+ * Same join as the transcript task row. Live `state.metadata` wins; part-level
+ * metadata is only an older fallback, so a stale part id cannot merge the row
+ * onto a different session than the one the tool row opens.
+ */
+const readToolSessionId = (part: Part): string | undefined => {
+  const state = part.state;
+  return readOptionalSessionId(state?.metadata)
+    ?? readOptionalSessionId(state)
+    ?? readOptionalSessionId(state?.input)
+    ?? readOptionalSessionId(part.metadata)
+    ?? readTaskSessionIdFromOutput(typeof state?.output === 'string' ? state.output : undefined);
+};
+
 const isRunningStatus = (status: unknown): boolean => status === 'pending' || status === 'running';
 
 /**
@@ -72,11 +104,9 @@ export const projectTranscriptSubagents = (data: {
         const state = part.state;
         faces.push({
           id: part.id,
-          sessionID: readOptionalSessionId(part.metadata)
-            ?? readOptionalSessionId(state)
-            ?? readOptionalSessionId(state?.metadata)
-            ?? readOptionalSessionId(state?.input),
+          sessionID: readToolSessionId(part),
           label: readAgentLabel(state?.input, part.metadata, state?.metadata),
+          description: readDescription(state?.input, part.metadata, state?.metadata),
           running: isRunningStatus(state?.status),
         });
         continue;
@@ -90,7 +120,8 @@ export const projectTranscriptSubagents = (data: {
       faces.push({
         id: part.id,
         sessionID: sessionID || undefined,
-        label: agent ? agent.charAt(0).toUpperCase() + agent.slice(1) : description,
+        label: agent ? agent.charAt(0).toUpperCase() + agent.slice(1) : '',
+        description,
         running: isRunningStatus(record.status),
       });
     }
@@ -108,15 +139,44 @@ export const transcriptSubagentsEqual = (
     const a = left[index];
     const b = right[index];
     if (!a || !b) return false;
-    if (a.id !== b.id || a.sessionID !== b.sessionID || a.label !== b.label || a.running !== b.running) return false;
+    if (
+      a.id !== b.id
+      || a.sessionID !== b.sessionID
+      || a.label !== b.label
+      || a.description !== b.description
+      || a.running !== b.running
+    ) return false;
   }
   return true;
 };
 
+type SubagentDraft = {
+  key: string;
+  sessionID?: string;
+  seed: string;
+  description: string;
+  agent: string;
+  childTitle: string;
+  working: boolean;
+};
+
+const displayLabel = (draft: SubagentDraft): string => draft.childTitle || draft.description || draft.agent;
+
+const toFace = (draft: SubagentDraft): WorkStatusSubagent => ({
+  key: draft.key,
+  sessionID: draft.sessionID,
+  seed: draft.seed,
+  label: displayLabel(draft),
+  phase: draft.working ? 'working' : 'done',
+});
+
 /**
- * One face per task/subtask, plus child sessions that are not already linked
- * by session id. A busy or retrying child keeps the face working after the
- * parent tool part has completed. Working faces stay ahead of completed ones.
+ * One face per effective child session id. Several task parts can continue
+ * the same session (including after a title change); those collapse here.
+ * A part that has not published a session id yet stays on its own row.
+ * Label prefers the live session title, then the task description OpenCode
+ * uses as that title, then the agent name. Working faces stay ahead of
+ * completed ones.
  */
 export const mergeWorkStatusSubagents = (
   tasks: readonly TranscriptSubagentFace[],
@@ -125,29 +185,58 @@ export const mergeWorkStatusSubagents = (
 ): WorkStatusSubagent[] => {
   const childById = new Map(children.map((child) => [child.id, child]));
   const linked = new Set<string>();
-  const faces: WorkStatusSubagent[] = [];
+  const drafts: SubagentDraft[] = [];
+  const indexBySession = new Map<string, number>();
+
+  const absorb = (draft: SubagentDraft) => {
+    const sessionID = draft.sessionID;
+    if (!sessionID) {
+      drafts.push(draft);
+      return;
+    }
+    linked.add(sessionID);
+    const index = indexBySession.get(sessionID);
+    if (index === undefined) {
+      indexBySession.set(sessionID, drafts.length);
+      drafts.push({ ...draft, key: sessionID, seed: sessionID, sessionID });
+      return;
+    }
+    const current = drafts[index];
+    if (!current) return;
+    drafts[index] = {
+      ...current,
+      description: current.description || draft.description,
+      agent: current.agent || draft.agent,
+      childTitle: draft.childTitle || current.childTitle,
+      working: current.working || draft.working,
+    };
+  };
+
   for (const task of tasks) {
-    if (task.sessionID) linked.add(task.sessionID);
     const child = task.sessionID ? childById.get(task.sessionID) : undefined;
-    const working = task.running || Boolean(child?.busy) || Boolean(task.sessionID && busyIds?.has(task.sessionID));
-    faces.push({
+    absorb({
       key: task.id,
       sessionID: task.sessionID,
       seed: task.id,
-      label: task.label || child?.title?.trim() || '',
-      phase: working ? 'working' : 'done',
+      description: task.description,
+      agent: task.label,
+      childTitle: child?.title?.trim() || '',
+      working: task.running || Boolean(child?.busy) || Boolean(task.sessionID && busyIds?.has(task.sessionID)),
     });
   }
   for (const child of children) {
     if (linked.has(child.id)) continue;
-    faces.push({
+    absorb({
       key: child.id,
       sessionID: child.id,
       seed: child.id,
-      label: child.title?.trim() || '',
-      phase: child.busy ? 'working' : 'done',
+      description: '',
+      agent: '',
+      childTitle: child.title?.trim() || '',
+      working: child.busy,
     });
   }
+  const faces = drafts.map(toFace);
   const working = faces.filter((face) => face.phase === 'working');
   const done = faces.filter((face) => face.phase === 'done');
   return working.length === 0 ? done : done.length === 0 ? working : [...working, ...done];

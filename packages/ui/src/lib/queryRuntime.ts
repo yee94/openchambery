@@ -66,6 +66,18 @@ export const queryKeys = {
   sessionTitleSearch: {
     query: (search: string, transport = getRuntimeTransportIdentity()): readonly [string, 'sessionTitleSearch', string] => [transport, 'sessionTitleSearch', search],
   },
+  workStatusChildren: {
+    list: (
+      directory: string | null | undefined,
+      sessionID: string,
+      transport = getRuntimeTransportIdentity(),
+    ): readonly [string, 'workStatusChildren', string | null, string] => [
+      transport,
+      'workStatusChildren',
+      normalizeQueryDirectory(directory),
+      sessionID,
+    ],
+  },
   sessionStatus: {
     snapshot: (directory: string, transport = getRuntimeTransportIdentity()): readonly [string, 'sessionStatus', 'snapshot', string | null] => [transport, 'sessionStatus', 'snapshot', normalizeQueryDirectory(directory)],
   },
