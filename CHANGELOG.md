@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [2.0.9-beta.16] - 2026-10-15
+
+### 修复
+
+- 修复问题卡片暂停自动托管后，「其他输入」下方仍保留空白占位的问题，恢复紧凑布局，并保留按住按钮期间的防错位处理。
+
 ## [2.0.9-beta.15] - 2026-10-15
 
 ### 改进
