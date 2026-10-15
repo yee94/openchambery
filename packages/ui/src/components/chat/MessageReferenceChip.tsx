@@ -47,7 +47,12 @@ export const MessageReferenceChip: React.FC<MessageReferenceChipProps> = ({
 
     const content = (
         <span
-            className={cn('whitespace-nowrap', decoration.className)}
+            className={cn(
+                // File paths can contain spaces and must wrap with the bubble.
+                // Other chips stay one line so short labels do not break mid-token.
+                decoration.kind === 'file' ? 'whitespace-pre-wrap break-words' : 'whitespace-nowrap',
+                decoration.className,
+            )}
             data-message-reference-kind={decoration.kind}
         >
             {iconName ? (

@@ -707,6 +707,14 @@ svg.animate-spin {
   scrollbar-gutter: stable both-edges;
 }
 
+/* Work-status column overlays the transcript. Keep message and composer
+   columns clear of it without shrinking the scroller, so the chat scrollbar
+   stays on the viewport's right edge. */
+.oc-chat-work-status-inline .chat-message-column,
+.oc-chat-work-status-inline .chat-input-column {
+  margin-right: var(--oc-work-status-reserve);
+}
+
 html:not(.dark) .chat-scroll {
   color-scheme: dark;
 }

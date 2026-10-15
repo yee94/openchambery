@@ -2,8 +2,9 @@ import React from 'react';
 import { ChatContainer } from '@/components/chat/ChatContainer';
 import { ChatErrorBoundary } from '@/components/chat/ChatErrorBoundary';
 import { WorkStatusPanel } from '@/components/chat/work-status/WorkStatusPanel';
-import { useWorkStatusVisibility } from '@/components/chat/work-status/useWorkStatusVisibility';
+import { useWorkStatusVisibility, WORK_STATUS_PANEL_WIDTH, WORK_STATUS_SCROLLBAR_LANE } from '@/components/chat/work-status/useWorkStatusVisibility';
 import { useEffectiveDirectory } from '@/hooks/useEffectiveDirectory';
+import { cn } from '@/lib/utils';
 import { isVSCodeRuntime } from '@/lib/desktop';
 import { useUIStore } from '@/stores/useUIStore';
 import { useSessionUIStore } from '@/sync/session-ui-store';
@@ -72,8 +73,11 @@ export const ChatView: React.FC<ChatViewProps> = ({ readOnly = false, active = t
     }, [fits, mountable, setWorkStatusPanelFits]);
 
     return (
-        <div className="relative flex h-full min-h-0 min-w-0">
-            <div className="min-h-0 min-w-0 flex-1">
+        <div
+            className={cn('relative h-full min-h-0 min-w-0', showInline && 'oc-chat-work-status-inline')}
+            style={showInline ? { ['--oc-work-status-reserve' as string]: `${WORK_STATUS_PANEL_WIDTH + WORK_STATUS_SCROLLBAR_LANE}px` } : undefined}
+        >
+            <div className="absolute inset-0 min-h-0 min-w-0">
                 <ChatErrorBoundary sessionId={errorSessionId || undefined}>
                     <ChatContainer readOnly={readOnly} active={active} explicitSession={selectionOverride ? { ...selectionOverride, active } : undefined} />
                 </ChatErrorBoundary>

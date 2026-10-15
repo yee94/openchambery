@@ -104,6 +104,36 @@ describe('detectMessageReferences', () => {
         ]);
     });
 
+    test('keeps a pasted absolute path with spaces highlighted after send', () => {
+        const path = '/Users/yee.wang/Library/Application Support/com.raycast.macos/clipboard/file-c54395b0a5721327283bbdaab7ce485d.png';
+        const prose = ' 我们的滚动条不能在这个位置';
+        const text = `@${path}${prose}`;
+        const parts = buildMessageReferenceParts(text, { allowPathHeuristics: true });
+        expect(parts?.map((part) => (
+            part.type === 'text' ? part.text : [part.decoration.kind, part.span.raw, part.decoration.path]
+        ))).toEqual([
+            ['file', `@${path}`, path],
+            prose,
+        ]);
+        expect(detectMessageReferences(`see @${path} next`, { allowPathHeuristics: true }).map((span) => span.raw)).toEqual([
+            `@${path}`,
+        ]);
+        expect(detectMessageReferences('@/release notes', { allowPathHeuristics: true }).every((span) => !span.raw.includes(' '))).toBe(true);
+        expect(detectMessageReferences('@src/a.ts please review', { allowPathHeuristics: true }).map((span) => span.raw)).toEqual([
+            '@src/a.ts',
+        ]);
+    });
+
+    test('highlights a confirmed file path that contains spaces', () => {
+        const path = 'docs/My Notes/spec.md';
+        const spans = detectMessageReferences(`see @${path} please`, {
+            filePaths: new Set([path]),
+        });
+        expect(spans.map((span) => [span.kind, span.raw])).toEqual([
+            ['file', `@${path}`],
+        ]);
+    });
+
     test('does not decorate npm scoped packages as file mentions', () => {
         const spans = detectMessageReferences('keep @tencent/agent-tracker-opencode-plugin and @src/a.ts', {
             allowPathHeuristics: true,

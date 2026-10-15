@@ -2,6 +2,13 @@ import type { Session } from '@/lib/opencode/v2-types';
 import type { ProjectFileSearchHit } from '@/lib/opencode/client';
 import { isNpmScopedPackageMention, rankFileMentionSearch, type FileMentionSearchHit } from '@/lib/search/fileMentionSearch';
 import { scoreTextAgainstQuery } from '@/lib/search/fuzzySearch';
+import {
+  findLongestConfirmedSpacedMention,
+  looksLikePastedFileReference,
+  readSpacedPastedFileMention,
+} from '@/lib/messages/references/spacedFileMention';
+
+export { looksLikePastedFileReference } from '@/lib/messages/references/spacedFileMention';
 
 export {
   isTestFileMentionPath,
@@ -16,29 +23,12 @@ export type FileMentionPathHit = ProjectFileSearchHit & {
   isDirectory?: boolean;
 };
 
-const FILE_EXTENSION_PATTERN = /\.[a-z0-9]{1,8}$/i;
 const MENTION_BOUNDARY_BEFORE = /(\s|\(|\)|\[|\]|\{|\}|"|'|`|,|\.|;|:)/;
 
 export const looksLikeFilePath = (mention: string): boolean => (
   !isNpmScopedPackageMention(mention)
   && (mention.includes('/') || mention.includes('\\') || mention.includes('.'))
 );
-
-export const looksLikePastedFileReference = (mention: string): boolean => {
-  if (!looksLikeFilePath(mention)) return false;
-  const normalized = mention.replace(/\\/g, '/');
-  if (normalized.endsWith('/')) return true;
-  const lastSegment = normalized.split('/').filter(Boolean).pop() ?? normalized;
-  return FILE_EXTENSION_PATTERN.test(lastSegment);
-};
-
-const isMultiSegmentAbsolutePath = (value: string): boolean => {
-  const normalized = value.replace(/\\/g, '/');
-  if (/^[A-Za-z]:\//.test(normalized)) return normalized.slice(3).includes('/');
-  if (normalized.startsWith('//')) return normalized.replace(/^\/+/, '').includes('/');
-  if (normalized.startsWith('/')) return normalized.slice(1).includes('/');
-  return false;
-};
 
 type ScannedAtMention = {
   value: string;
@@ -48,54 +38,9 @@ type ScannedAtMention = {
   highlightEnd: number;
 };
 
-const findLongestConfirmedSpacedMention = (
-  text: string,
-  at: number,
-  confirmedValues: ReadonlySet<string> | undefined,
-): ScannedAtMention | null => {
-  if (!confirmedValues || confirmedValues.size === 0 || text[at] !== '@') return null;
-  const rest = text.slice(at + 1);
-  let best: string | null = null;
-  for (const value of confirmedValues) {
-    if (!value || (!value.includes(' ') && !value.includes('\t'))) continue;
-    if (!rest.startsWith(value)) continue;
-    const next = text[at + 1 + value.length];
-    if (next !== undefined && !/\s/.test(next)) continue;
-    if (!best || value.length > best.length) best = value;
-  }
-  if (!best) return null;
-  const end = at + 1 + best.length;
-  return { value: best, end, highlightEnd: end };
-};
-
-/**
- * A pasted absolute path may contain spaces in the filename
- * (`/Users/.../今天我们穿越去哪？ - Slidev.pdf`). Extend only while the token
- * stays a multi-segment absolute path and stop at the first extension or
- * trailing slash, so following prose is not swallowed.
- */
-const readSpacedPastedFileMention = (text: string, at: number): ScannedAtMention | null => {
-  const rest = text.slice(at + 1);
-  const firstBreak = rest.search(/\s/);
-  const firstToken = firstBreak === -1 ? rest : rest.slice(0, firstBreak);
-  if (!firstToken || /[\r\n]/.test(firstToken) || !isMultiSegmentAbsolutePath(firstToken)) return null;
-
-  let end = at + 1 + firstToken.length;
-  let value = firstToken;
-  if (looksLikePastedFileReference(value)) return { value, end, highlightEnd: end };
-
-  while (end < text.length && /[ \t]/.test(text[end])) {
-    let next = end + 1;
-    while (next < text.length && !/\s/.test(text[next])) next += 1;
-    if (next === end + 1) break;
-    const extended = text.slice(at + 1, next);
-    if (extended.length > 4096) break;
-    value = extended;
-    end = next;
-    if (looksLikePastedFileReference(value)) return { value, end, highlightEnd: end };
-  }
-  return null;
-};
+const toScannedMention = (mention: { value: string; end: number } | null): ScannedAtMention | null => (
+  mention ? { value: mention.value, end: mention.end, highlightEnd: mention.end } : null
+);
 
 const readWhitespaceMention = (text: string, at: number): ScannedAtMention | null => {
   const match = /^([^\s]+)/.exec(text.slice(at + 1));
@@ -127,8 +72,8 @@ const scanAtMentions = (
       index = at + 1;
       continue;
     }
-    const token = findLongestConfirmedSpacedMention(text, at, confirmedValues)
-      ?? (allowSpacedPastedPaths ? readSpacedPastedFileMention(text, at) : null)
+    const token = toScannedMention(findLongestConfirmedSpacedMention(text, at, confirmedValues))
+      ?? (allowSpacedPastedPaths ? toScannedMention(readSpacedPastedFileMention(text, at)) : null)
       ?? readWhitespaceMention(text, at);
     if (!token) {
       index = at + 1;

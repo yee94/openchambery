@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [2.0.9-beta.7] - 2026-10-15
+
+### 修复
+
+- 粘贴带空格的绝对路径后，发送出去的消息会整段保持高亮，不再在第一个空格处断开。
+- 工作状态侧栏改为浮在对话上方，滚动条回到画面最右侧，不再夹在正文和侧栏之间。
+
 ## [2.0.9-beta.6] - 2026-10-15
 
 ### 修复

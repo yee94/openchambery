@@ -106,7 +106,11 @@ it('uses the current viewport on initial session entry and only shows inline at 
     await act(async () => root.render(<ChatView />));
     expect(host.querySelector('aside[aria-hidden="false"]')).toBeNull();
     await act(async () => resize(1440));
-    expect(host.querySelector<HTMLElement>('aside[aria-hidden="false"]')?.style.width).toBe('196px');
+    const inline = host.querySelector<HTMLElement>('aside[aria-hidden="false"]');
+    expect(inline?.style.width).toBe('196px');
+    expect(inline?.style.right).toBe('14px');
+    expect(inline?.className).toContain('absolute');
+    expect(host.querySelector('.absolute.inset-0')).not.toBeNull();
     expect(host.textContent).toContain('Project status');
     await act(async () => resize(1439));
     expect(host.querySelector('aside[aria-hidden="false"]')).toBeNull();

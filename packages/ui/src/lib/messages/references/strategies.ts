@@ -2,6 +2,7 @@ import { isNpmScopedPackageMention } from '@/lib/search/fileMentionSearch';
 import { DRAFT_COMPOSER_TRIGGER_ICON_SLOT, draftComposerSkillIdTokenPattern } from '@/sync/input-draft-types';
 import { stripComposerTriggerIconSlot } from '@/composer/inline-visual';
 import { buildAgentHref, buildSkillHref } from '@/lib/messages/inlineMessageLinks';
+import { findLongestConfirmedSpacedMention, readSpacedPastedFileMention } from './spacedFileMention';
 import type {
     MessageReferenceDecoration,
     MessageReferenceSpan,
@@ -321,6 +322,24 @@ export const mentionReferenceStrategy: MessageReferenceStrategy = {
             const start = match.index;
             if (!isBoundaryBefore(text, start)) continue;
             if (match[1].startsWith('session:')) continue;
+
+            // Same rule as composer paste: a confirmed or absolute path may contain spaces.
+            // Stop at the extension so following prose stays plain text.
+            const spaced = findLongestConfirmedSpacedMention(text, start, filePaths)
+                ?? (allowPathHeuristics ? readSpacedPastedFileMention(text, start) : null);
+            if (spaced && (spaced.value.includes(' ') || spaced.value.includes('\t'))) {
+                const raw = text.slice(start, spaced.end);
+                pushSpan(spans, {
+                    start,
+                    end: spaced.end,
+                    kind: 'file',
+                    raw,
+                    label: raw,
+                    payload: { kind: 'file', path: spaced.value },
+                });
+                MENTION_PATTERN.lastIndex = spaced.end;
+                continue;
+            }
 
             const mention = match[1].trim().replace(/[),.;:!?`"'>]+$/g, '');
             if (!mention) continue;

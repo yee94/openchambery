@@ -4,6 +4,12 @@ import { normalizeContextPanelDirectoryKey, useUIStore } from '@/stores/useUISto
 /** Fixed card width. It is not a docked pane, so it has no resizer. */
 export const WORK_STATUS_PANEL_WIDTH = 196;
 
+/**
+ * Lane kept clear at the viewport's right edge so the chat scrollbar stays
+ * on the screen edge instead of sitting between the transcript and this column.
+ */
+export const WORK_STATUS_SCROLLBAR_LANE = 14;
+
 /** Use the viewport breakpoint from the first render, before transcript layout. */
 const WORK_STATUS_MIN_WINDOW_WIDTH = 1440;
 

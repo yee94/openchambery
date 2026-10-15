@@ -4,7 +4,11 @@ A short column beside the transcript. It is not a card and not a context-panel
 surface. It occupies its final width as soon as a session is selected or the
 first-prompt draft enters its establishing/submitting transcript state. Message
 loading does not gate the column. Idle welcome drafts keep it hidden, as do an
-open right sidebar or context panel.
+open right sidebar or context panel. The column overlays the transcript instead
+of shrinking it, and stays one scrollbar-lane left of the viewport edge. The
+chat scroller remains full width, so its scrollbar sits on the right edge of
+the screen rather than between the transcript and this column. Message and
+composer columns keep a right margin equal to the column plus that lane.
 
 Rows stay one line: project, current branch, secondary worktree name, and working
 tree changes. Every row shares the same leading-icon and text alignment; there
@@ -59,7 +63,7 @@ Changes opens the Git sidebar. Branch does not navigate.
 Layout exclusion applies to both inline and overlay modes, scoped to the displayed
 directory, without mutating the saved visibility preference.
 
-Width is fixed at 196px. Inline display requires a window viewport of at least
+Width is fixed at 196px. Inline and overlay modes are both absolutely positioned; neither consumes flex width. Inline display requires a window viewport of at least
 1440px, evaluated on the first render with `useMediaQuery`; it does not wait for
 chat-area measurements. Inline width and margins do not animate, so entering
 chat and crossing the breakpoint do not repeatedly reflow the transcript.

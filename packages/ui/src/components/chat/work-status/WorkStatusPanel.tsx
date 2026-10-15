@@ -2,7 +2,7 @@ import React from 'react';
 import { useI18n } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
 import { useUIStore } from '@/stores/useUIStore';
-import { WORK_STATUS_PANEL_WIDTH } from './useWorkStatusVisibility';
+import { WORK_STATUS_PANEL_WIDTH, WORK_STATUS_SCROLLBAR_LANE } from './useWorkStatusVisibility';
 import { WorkStatusCompact } from './WorkStatusCompact';
 
 type Props = {
@@ -55,11 +55,13 @@ export const WorkStatusPanel: React.FC<Props> = ({ sessionId, directory, visible
       aria-hidden={!visible}
       inert={!visible}
       className={cn(
-        'relative my-2 flex max-h-[calc(100%-1rem)] shrink-0 flex-col self-start overflow-x-hidden overflow-y-auto bg-transparent',
-        overlay && 'absolute right-3 top-3 z-30 my-0 max-h-[calc(100%-1.5rem)] rounded-lg bg-[var(--surface-elevated)]/95 px-1 backdrop-blur-md',
-        !overlay && (visible ? 'mr-3' : 'mr-0'),
+        'absolute z-20 flex max-h-[calc(100%-1rem)] flex-col overflow-x-hidden overflow-y-auto scrollbar-hidden bg-transparent',
+        overlay
+          ? 'top-3 z-30 max-h-[calc(100%-1.5rem)] rounded-lg bg-[var(--surface-elevated)]/95 px-1 backdrop-blur-md'
+          : 'top-2',
       )}
       style={{
+        right: WORK_STATUS_SCROLLBAR_LANE,
         width: overlay || visible ? WORK_STATUS_PANEL_WIDTH : 0,
         opacity: visible ? 1 : 0,
         transform: visible ? 'none' : overlay ? 'translateY(-6px)' : 'translateX(24px)',
