@@ -2458,6 +2458,7 @@ export const dict: Record<I18nKey, string> = {
   'chat.sessionBackground.moving': '转移中…',
   'chat.sessionBackground.moveFailed': '无法将工作转到后台',
   'chat.sessionBackground.tasksRunning': '{count} 个后台任务运行中',
+  'chat.sessionBackground.outputTruncated': '仅显示输出的前 64 KiB。',
   'chat.messageBody.shellCommand.title': '命令结果',
   'chat.messageBody.shellCommand.hideOutput': '隐藏输出',
   'chat.messageBody.shellCommand.showOutput': '显示输出',

@@ -2491,6 +2491,7 @@ export const dict: Record<I18nKey, string> = {
   'chat.sessionBackground.moving': '移動中…',
   'chat.sessionBackground.moveFailed': 'バックグラウンドへ移せませんでした',
   'chat.sessionBackground.tasksRunning': 'バックグラウンドで {count} 件のタスクが実行中',
+  'chat.sessionBackground.outputTruncated': '出力の先頭 64 KiB を表示しています。',
   'chat.messageBody.shellCommand.title': 'シェル実行結果',
   'chat.messageBody.shellCommand.hideOutput': '出力を非表示',
   'chat.messageBody.shellCommand.showOutput': '出力を表示',

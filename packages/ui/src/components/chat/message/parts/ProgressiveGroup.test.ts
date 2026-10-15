@@ -236,9 +236,9 @@ describe('progressive activity presentation', () => {
         expect(activityHeaderSource).not.toContain('{completedDuration}');
         expect(progressiveGroupSource).toContain("'group/tool flex w-full min-w-0 flex-nowrap items-center text-left'");
         expect(activityHeaderSource).toContain("'inline-flex min-w-0 items-center overflow-clip'");
-        expect(activityHeaderSource).toContain("'inline-flex max-w-[min(14rem,55%)] shrink-0 items-center'");
+        expect(activityHeaderSource).toContain("'ml-auto inline-flex max-w-[min(14rem,55%)] shrink-0 items-center'");
         expect(activityHeaderSource).not.toContain('flex-1');
-        expect(activityHeaderSource).not.toContain('ml-auto');
+        expect(activityHeaderSource).toContain('ml-auto');
         expect(progressiveGroupSource).toContain("isMobile && 'pr-0'");
         expect(progressiveGroupSource.match(/aria-expanded=\{effectivelyExpanded\}/g)).toHaveLength(1);
         expect(progressiveGroupSource).toContain("? t('chat.activity.collapseAria')");
@@ -368,10 +368,10 @@ describe('progressive activity presentation', () => {
         expect(progressiveGroupSource).toContain("isMobile ? 'h-5 w-4' : 'h-6 w-3.5'");
         expect(progressiveGroupSource).toContain("isMobile ? 'typography-meta h-5' : 'typography-ui-label h-5 font-semibold'");
         expect(progressiveGroupSource).toContain('displayedTaskAvatarSeeds.slice(0, isMobile ? 2 : 3)');
-        // Agents and chevron follow the status/duration without a growing spacer.
+        // Agents and chevron align right, opposite the status/duration.
         // Mobile pr-0 flushes chevron; desktop keeps chip px-2 for symmetric hover wash.
         expect(progressiveGroupSource).toContain("isMobile && 'pr-0'");
-        expect(progressiveGroupSource).toContain("'inline-flex max-w-[min(14rem,55%)] shrink-0 items-center'");
+        expect(progressiveGroupSource).toContain("'ml-auto inline-flex max-w-[min(14rem,55%)] shrink-0 items-center'");
         expect(progressiveGroupSource).toContain("isMobile && '-mr-0.5'");
         expect(progressiveGroupSource).not.toContain('ring-foreground');
         expect(progressiveGroupSource).toContain("t('chat.activity.agentsWorking', { count: displayedTaskAvatarSeeds.length })");

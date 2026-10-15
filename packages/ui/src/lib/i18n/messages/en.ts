@@ -2493,6 +2493,7 @@ export const dict = {
   'chat.sessionBackground.moving': 'Moving…',
   'chat.sessionBackground.moveFailed': 'Could not move work to the background',
   'chat.sessionBackground.tasksRunning': '{count} background task(s) running',
+  'chat.sessionBackground.outputTruncated': 'Showing the first 64 KiB of output.',
   'chat.messageBody.shellCommand.title': 'Shell result',
   'chat.messageBody.shellCommand.hideOutput': 'Hide output',
   'chat.messageBody.shellCommand.showOutput': 'Show output',

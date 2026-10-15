@@ -36,7 +36,7 @@ Use this doc when you ask an agent to change tool/header/description behavior.
     `collectConsecutiveSkillTools` + `isSkillGroupTool`. A lone skill still uses the group header so adding the next name can flip-animate.
     Task and question stay individual rows. A lone process tool still uses the Used header so the next call cannot remount the wrapper.
   - Live Activity headers use S1 `LatticeOrb`; settled headers keep `stack` / `fold-vertical`.
-  - Activity headers retain a full-width hit target, but status, duration, agent summary, diff totals and chevron stay adjacent at the start instead of spreading to opposite edges.
+  - Activity headers retain a full-width hit target: status and duration stay at the start, while the agent summary, diff totals and chevron align to the right.
   - While `completionDisposition === 'active'`, the Activity disclosure is locked open:
     no collapse chevron/toggle, and the indent rail (`ml-2 pl-3` + connector line) is
     omitted so in-flight rows do not jump horizontally when the turn settles.

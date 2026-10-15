@@ -2458,6 +2458,7 @@ export const dict: Record<I18nKey, string> = {
   "chat.sessionBackground.moving": "Переміщення…",
   "chat.sessionBackground.moveFailed": "Не вдалося перемістити роботу у фон",
   "chat.sessionBackground.tasksRunning": "{count} фонове(-их) завдання(-ь)",
+  "chat.sessionBackground.outputTruncated": "Показано перші 64 КіБ виводу.",
   "chat.messageBody.shellCommand.title": "Результат команди оболонки",
   "chat.messageBody.shellCommand.hideOutput": "Приховати вивід",
   "chat.messageBody.shellCommand.showOutput": "Показати результат",

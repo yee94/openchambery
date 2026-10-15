@@ -2218,6 +2218,7 @@ export const dict = {
   'chat.sessionBackground.moving': 'Déplacement…',
   'chat.sessionBackground.moveFailed': 'Impossible de passer le travail en arrière-plan',
   'chat.sessionBackground.tasksRunning': '{count} tâche(s) en arrière-plan',
+  'chat.sessionBackground.outputTruncated': 'Affichage des 64 premiers Kio de la sortie.',
   'chat.messageBody.shellCommand.title': 'Résultat du shell',
   'chat.messageBody.shellCommand.hideOutput': 'Masquer la sortie',
   'chat.messageBody.shellCommand.showOutput': 'Afficher la sortie',

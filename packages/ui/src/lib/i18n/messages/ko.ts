@@ -2492,6 +2492,7 @@ export const dict: Record<I18nKey, string> = {
   'chat.sessionBackground.moving': '이동 중…',
   'chat.sessionBackground.moveFailed': '작업을 백그라운드로 옮기지 못했습니다',
   'chat.sessionBackground.tasksRunning': '백그라운드 작업 {count}개 실행 중',
+  'chat.sessionBackground.outputTruncated': '출력의 처음 64 KiB만 표시합니다.',
   'chat.messageBody.shellCommand.title': '셸 실행 결과',
   'chat.messageBody.shellCommand.hideOutput': '숨기기 출력',
   'chat.messageBody.shellCommand.showOutput': '표시 출력',

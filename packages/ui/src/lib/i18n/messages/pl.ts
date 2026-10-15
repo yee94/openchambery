@@ -1469,6 +1469,7 @@ export const dict: Record<I18nKey, string> = {
   'chat.sessionBackground.moving': 'Przenoszenie…',
   'chat.sessionBackground.moveFailed': 'Nie udało się przenieść pracy do tła',
   'chat.sessionBackground.tasksRunning': '{count} zadanie/zadań w tle',
+  'chat.sessionBackground.outputTruncated': 'Wyświetlono pierwsze 64 KiB wyniku.',
   'chat.reasoningTrace.thinking': 'Myślenie',
   'chat.reasoningTrace.justification': 'Uzasadnienie',
   'chat.reasoningTrace.expandAria': 'Rozwiń ślad rozumowania',

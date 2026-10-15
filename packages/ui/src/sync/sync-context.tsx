@@ -331,11 +331,14 @@ type LiveAggregateOptions = {
   enabled?: boolean
 }
 
-export function useRunningSessionCount(sessionIDs: readonly string[]): number {
-  const selector = React.useMemo(() => (states: State[]) => sessionIDs.reduce((count, id) => {
+const sameSessionIDs = (left: readonly string[], right: readonly string[]) =>
+  left.length === right.length && left.every((id, index) => id === right[index])
+
+export function useRunningSessions(sessionIDs: readonly string[]): readonly string[] {
+  const selector = React.useMemo(() => (states: State[]) => sessionIDs.filter((id) => {
     const type = findLiveSessionStatus(states, id)?.type
-    return count + Number(type === 'busy' || type === 'retry')
-  }, 0), [sessionIDs])
+    return type === 'busy' || type === 'retry'
+  }), [sessionIDs])
   const subscribe = React.useMemo(() => (childStores: ChildStoreManager, notify: () => void) => {
     if (sessionIDs.length === 0) return () => {}
     return childStores.subscribeAllSelected(
@@ -343,7 +346,7 @@ export function useRunningSessionCount(sessionIDs: readonly string[]): number {
       notify,
     )
   }, [sessionIDs])
-  return useLiveSyncSelector(selector, Object.is, subscribe)
+  return useLiveSyncSelector(selector, sameSessionIDs, subscribe)
 }
 
 /** Read all session statuses (for sidebar) */

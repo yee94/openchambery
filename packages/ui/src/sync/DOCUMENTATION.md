@@ -404,7 +404,7 @@ Current consumers:
 
 Cross-directory selectors subscribe to the narrow child-store field they aggregate. Session aggregation listens to `state.session`; per-session status listens only to that session's `state.session_status` entry. Unrelated streaming events such as `message.part.delta` must not trigger global session/status scans.
 
-`useRunningSessionCount` observes a caller-supplied unique ID set using the same live authority as the sidebar. It publishes only count changes, selects only those IDs in each child store, and makes no subscription for an empty set. Background-work footer candidates are transcript dispatch identities, while only live busy/retry entries contribute to their count.
+`useRunningSessions` observes a caller-supplied unique ID set using live child-store authority. It publishes only changes in running membership, selects only those IDs in each child store, and makes no subscription for an empty set. Background-task candidates are transcript dispatch identities; only live busy/retry children appear in their list. Membership (not merely count) must change when one child settles as another starts.
 
 Sessions titled `smartfetch-secondary` are temporary SmartFetch model calls. The
 directory event reducer never inserts them into live child-store session lists,

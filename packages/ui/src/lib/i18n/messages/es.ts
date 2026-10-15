@@ -2458,6 +2458,7 @@ export const dict: Record<I18nKey, string> = {
   "chat.sessionBackground.moving": "Moviendo…",
   "chat.sessionBackground.moveFailed": "No se pudo mover el trabajo a segundo plano",
   "chat.sessionBackground.tasksRunning": "{count} tarea(s) en segundo plano",
+  "chat.sessionBackground.outputTruncated": "Se muestran los primeros 64 KiB de la salida.",
   "chat.messageBody.shellCommand.title": "Resultado del shell",
   "chat.messageBody.shellCommand.hideOutput": "Ocultar salida",
   "chat.messageBody.shellCommand.showOutput": "Mostrar salida",

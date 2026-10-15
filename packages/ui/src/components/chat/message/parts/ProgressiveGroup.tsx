@@ -1368,7 +1368,7 @@ const ProgressiveGroup: React.FC<ProgressiveGroupProps> = ({
                         ref={activityHeaderRef}
                         type="button"
                         className={cn(
-                            // Full-width hit target with status and trailer grouped at the start.
+                            // Full-width hit target with status at the start and trailer at the end.
                             'group/tool flex w-full min-w-0 flex-nowrap items-center text-left',
                             isMobile ? 'gap-x-1' : 'gap-x-2',
                             // Locked-open live headers are not a disclosure control — drop chip hover/cursor.
@@ -1389,7 +1389,7 @@ const ProgressiveGroup: React.FC<ProgressiveGroupProps> = ({
                                 : t('chat.activity.expandAria')}
                     >
                     <span className={cn(
-                        // Keep the trailer adjacent to the status and duration.
+                        // Keep the status and duration together on the left.
                         // overflow-clip (not overflow-hidden): mobile.css rewrites
                         // .overflow-hidden → overflow-y:auto and shows an Android scrollbar.
                         'inline-flex min-w-0 items-center overflow-clip',
@@ -1426,9 +1426,9 @@ const ProgressiveGroup: React.FC<ProgressiveGroupProps> = ({
                             <span className="typography-meta shrink-0 tabular-nums text-muted-foreground">{activityDuration}</span>
                         ) : null}
                     </span>
-                    {/* Trailer: agents (optional) + chevron follow the duration. */}
+                    {/* Trailer: agents (optional), diff totals and chevron align right. */}
                     <span className={cn(
-                        'inline-flex max-w-[min(14rem,55%)] shrink-0 items-center',
+                        'ml-auto inline-flex max-w-[min(14rem,55%)] shrink-0 items-center',
                         isMobile ? 'gap-0.5' : 'gap-1',
                     )}>
                         {displayedTaskAvatarSeeds.length > 0 ? (
