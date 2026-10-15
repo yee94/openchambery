@@ -1,7 +1,7 @@
 import React from 'react';
 import { useEvent } from '@reactuses/core';
 import { useSessionUIStore } from '@/sync/session-ui-store';
-import { useAllSessionStatuses, useAllLiveSessions } from '@/sync/sync-context';
+import { useActiveSessionTreeIds, useAllLiveSessions } from '@/sync/sync-context';
 import { useAlwaysVisibleSessionIds } from '@/components/session/sidebar/hooks/useAlwaysVisibleSessionIds';
 import { selectVisibleSessions } from '@/components/session/sidebar/sessionNavigationModel';
 import {
@@ -626,7 +626,11 @@ export const MobileSessionStatusBar: React.FC<MobileSessionStatusBarProps> = ({
   const isMobile = useUIStore((state) => state.isMobile);
   const sessions = useAllProjectSessions();
   const currentSessionId = useSessionUIStore((state) => state.currentSessionId);
-  const sessionStatus = useAllSessionStatuses();
+  const activeSessionIds = useActiveSessionTreeIds();
+  const sessionStatus = React.useMemo(
+    () => Object.fromEntries([...activeSessionIds].map((id) => [id, { type: 'busy' }])),
+    [activeSessionIds],
+  );
   const setCurrentSession = useSessionUIStore((state) => state.setCurrentSession);
   const openNewSessionDraft = useSessionUIStore((state) => state.openNewSessionDraft);
   // Phone secondary stack owns draft presentation (ChatView selectionOverride

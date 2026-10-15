@@ -1368,7 +1368,7 @@ const ProgressiveGroup: React.FC<ProgressiveGroupProps> = ({
                         ref={activityHeaderRef}
                         type="button"
                         className={cn(
-                            // Full-width row: left grows (flex-1), right trailer stays at the trailing edge.
+                            // Full-width hit target with status and trailer grouped at the start.
                             'group/tool flex w-full min-w-0 flex-nowrap items-center text-left',
                             isMobile ? 'gap-x-1' : 'gap-x-2',
                             // Locked-open live headers are not a disclosure control — drop chip hover/cursor.
@@ -1389,10 +1389,10 @@ const ProgressiveGroup: React.FC<ProgressiveGroupProps> = ({
                                 : t('chat.activity.expandAria')}
                     >
                     <span className={cn(
-                        // flex-1 absorbs free space so the trailer is pushed to the row end.
+                        // Keep the trailer adjacent to the status and duration.
                         // overflow-clip (not overflow-hidden): mobile.css rewrites
                         // .overflow-hidden → overflow-y:auto and shows an Android scrollbar.
-                        'inline-flex min-w-0 flex-1 items-center overflow-clip',
+                        'inline-flex min-w-0 items-center overflow-clip',
                         isMobile ? 'gap-x-1' : 'gap-x-1.5',
                     )}>
                         <span
@@ -1426,9 +1426,9 @@ const ProgressiveGroup: React.FC<ProgressiveGroupProps> = ({
                             <span className="typography-meta shrink-0 tabular-nums text-muted-foreground">{activityDuration}</span>
                         ) : null}
                     </span>
-                    {/* Trailer: agents (optional) + chevron — always the rightmost content. */}
+                    {/* Trailer: agents (optional) + chevron follow the duration. */}
                     <span className={cn(
-                        'ml-auto inline-flex max-w-[min(14rem,55%)] shrink-0 items-center justify-end',
+                        'inline-flex max-w-[min(14rem,55%)] shrink-0 items-center',
                         isMobile ? 'gap-0.5' : 'gap-1',
                     )}>
                         {displayedTaskAvatarSeeds.length > 0 ? (

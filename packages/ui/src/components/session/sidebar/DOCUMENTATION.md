@@ -2,6 +2,7 @@
 
 ## Refactor result
 
+- Navigation loading includes live busy/retry descendants through `useSessionActivity`; a parent remains loading after its own reply completes while background subagents run. `useRunningSessionIds` uses the same shared tree projection for pinned/in-progress and always-visible rows. Execution and transcript refresh continue reading the parent's own status.
 - `SessionSidebar.tsx` now acts mainly as orchestration; core logic moved to focused hooks/components.
 - Sidebar is now a single multi-project tree: an optional pinned + in-progress
   top section, then projects, then worktrees/archived groups, then sessions.

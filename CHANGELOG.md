@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [2.0.9-beta.13] - 2026-10-15
+
+### 修复
+
+- 修复「已处理」折叠头中 Agent 信息与耗时间距过大的问题，Agent 信息、改动统计和展开箭头现在紧跟耗时显示。
+- 修复后台子 Agent 仍在运行时父会话提前停止显示加载状态的问题，侧栏和移动端会话列表持续显示运行中，直到相关任务结束。
+
 ## [2.0.9-beta.12] - 2026-10-15
 
 ### 改进

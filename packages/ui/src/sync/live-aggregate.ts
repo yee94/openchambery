@@ -183,11 +183,9 @@ export function aggregateLiveSessionStatuses(states: Iterable<LiveStateSlice>): 
   const candidates = new Map<string, StatusCandidate>()
 
   for (const state of states) {
+    const updatedById = new Map(state.session.map((session) => [session.id, getSessionUpdatedAt(session)]))
     for (const sessionId of Object.keys(state.session_status ?? {})) {
-      const next = getStatusCandidate(state, sessionId)
-      if (!next) {
-        continue
-      }
+      const next = { status: state.session_status[sessionId], sessionUpdatedAt: updatedById.get(sessionId) ?? -1 }
 
       const current = candidates.get(sessionId)
       if (shouldReplaceStatusCandidate(current, next)) {

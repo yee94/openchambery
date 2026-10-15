@@ -2,7 +2,7 @@ import type { PluginListenerHandle } from '@capacitor/core';
 import { useEvent } from '@reactuses/core';
 import { useEffect, useMemo, useRef } from 'react';
 
-import { collectRunningSessionIds } from '@/components/session/sidebar/hooks/useAlwaysVisibleSessionIds';
+import { collectRunningSessionIds } from '@/sync/session-activity';
 import { getRegisteredRuntimeAPIs } from '@/contexts/runtimeAPIRegistry';
 import {
   applyNativeLiveActivityTokenCommands,

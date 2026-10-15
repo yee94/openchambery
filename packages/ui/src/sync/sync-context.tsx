@@ -28,6 +28,7 @@ import {
 } from "./event-reducer"
 import { useGlobalSyncStore } from "./global-sync-store"
 import { ChildStoreManager, type DirectoryStore } from "./child-store"
+import { getSessionActivityReader } from './session-activity'
 import {
   aggregateLiveSessions,
   aggregateLiveSessionStatuses,
@@ -210,6 +211,27 @@ function useSyncSystem() {
   const ctx = useContext(SyncContext)
   if (!ctx) throw new Error("useSyncSystem must be used within <SyncProvider>")
   return ctx
+}
+
+const EMPTY_SESSION_ACTIVITY: ReadonlySet<string> = new Set()
+const subscribeNoActivity = () => () => {}
+const readNoActivity = () => EMPTY_SESSION_ACTIVITY
+
+export function useSessionActivity(sessionID: string): boolean {
+  const { childStores } = useSyncSystem()
+  const reader = getSessionActivityReader(childStores)
+  const read = React.useMemo(() => () => reader.read().has(sessionID), [reader, sessionID])
+  return React.useSyncExternalStore(reader.subscribe, read, read)
+}
+
+export function useActiveSessionTreeIds(enabled = true): ReadonlySet<string> {
+  const { childStores } = useSyncSystem()
+  const reader = getSessionActivityReader(childStores)
+  return React.useSyncExternalStore(
+    enabled ? reader.subscribe : subscribeNoActivity,
+    enabled ? reader.read : readNoActivity,
+    enabled ? reader.read : readNoActivity,
+  )
 }
 
 function getLiveStates(childStores: ChildStoreManager): State[] {

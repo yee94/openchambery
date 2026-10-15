@@ -8,6 +8,7 @@ vi.mock('@/sync/session-actions', () => ({ requestSessionSmartTitle: requestTitl
 vi.mock('@/sync/sync-context', () => ({
   useDirectoryStore: () => null,
   useLiveSessionStatus: () => ({ type: 'busy' }),
+  useSessionActivity: () => true,
   useSessionPermissions: () => [],
   useSessionQuestions: () => [],
 }));

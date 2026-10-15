@@ -1,5 +1,11 @@
 # Sync architecture, event handling & store update rules
 
+## Session-tree activity indicators
+
+`session-activity.ts` derives navigation loading from live busy/retry statuses of a session and its descendants, following OpenCode's root-tab family activity semantics. Parent execution may be idle while background descendants run; their live status keeps the parent's sidebar/mobile row and in-progress visibility active. Parent/child metadata only provides ancestry, never proof of running. Explicit child-store idle overrides global fallback activity. The raw session status, composer and queue gates remain session-local.
+
+One weakly keyed reader per runtime child-store manager shares the projection across rows. Only status/identity fields invalidate it; token/part updates do not scan the tree. Unchanged active sets preserve identity, row subscribers select one boolean, and the final unsubscription releases all observers. Bootstrap/reconnect snapshots, late parent metadata, cross-directory descendants and terminal events all derive through the same reader. Mounted lifecycle and isolation tests live in `session-activity.test.tsx`.
+
 ## Viewed-session terminal reconciliation
 
 An idle/succeeded/failed/interrupted receipt for the viewed session requests an authoritative tail reconciliation regardless of the locally known assistant finish. A wholly missing final step cannot be detected from completion metadata on the preceding step. The materialization scheduler coalesces terminal receipts and drains them after any pre-terminal materialization; a receipt during reconciliation schedules another pass after that flight. Runtime/directory-store fences apply before each pass. Failures preserve the transcript and defer recovery until another terminal receipt or selection. Background sessions retain their bounded materialization policy. `sync-context.settle-repair.test.ts` covers absent final rows after both tool-calls and stop, overlapping reads, duplicate receipts and retry after failure.

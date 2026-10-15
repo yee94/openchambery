@@ -1,29 +1,7 @@
 import React from 'react';
 
-import { useGlobalSessionStatusStore } from '@/sync/global-session-status';
 import { useSessionUIStore } from '@/sync/session-ui-store';
-import { useAllSessionStatuses } from '@/sync/sync-context';
-
-const EMPTY_STRING_SET: ReadonlySet<string> = new Set();
-const EMPTY_STATUS_BY_ID = new Map<string, { status: 'busy' | 'retry'; directory: string }>();
-
-/**
- * Collect busy/retry session ids from live statuses, plus fallback global-status
- * entries that are not already covered by a live child-store status.
- */
-export function collectRunningSessionIds(
-  liveStatuses: Record<string, { type: string }>,
-  fallbackStatusById: ReadonlyMap<string, unknown>,
-): Set<string> {
-  const ids = new Set<string>();
-  for (const [sessionId, status] of Object.entries(liveStatuses)) {
-    if (status.type === 'busy' || status.type === 'retry') ids.add(sessionId);
-  }
-  for (const sessionId of fallbackStatusById.keys()) {
-    if (liveStatuses[sessionId] === undefined) ids.add(sessionId);
-  }
-  return ids;
-}
+import { useActiveSessionTreeIds } from '@/sync/sync-context';
 
 /** Running ∪ optional current viewing session. */
 export function mergeAlwaysVisibleSessionIds(
@@ -47,18 +25,7 @@ type AlwaysVisibleOptions = RunningOptions & {
 };
 
 export function useRunningSessionIds(options?: RunningOptions): ReadonlySet<string> {
-  const enabled = options?.enabled ?? true;
-  const liveSessionStatuses = useAllSessionStatuses({ enabled });
-  const fallbackSessionStatuses = useGlobalSessionStatusStore((state) =>
-    enabled ? state.statusById : EMPTY_STATUS_BY_ID,
-  );
-
-  return React.useMemo(() => {
-    if (!enabled) {
-      return EMPTY_STRING_SET;
-    }
-    return collectRunningSessionIds(liveSessionStatuses, fallbackSessionStatuses);
-  }, [enabled, fallbackSessionStatuses, liveSessionStatuses]);
+  return useActiveSessionTreeIds(options?.enabled ?? true);
 }
 
 /**

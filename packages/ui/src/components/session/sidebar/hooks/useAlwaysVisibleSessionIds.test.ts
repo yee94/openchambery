@@ -1,9 +1,9 @@
 import { describe, expect, test } from 'bun:test';
 
 import {
-  collectRunningSessionIds,
   mergeAlwaysVisibleSessionIds,
 } from './useAlwaysVisibleSessionIds';
+import { collectRunningSessionIds } from '@/sync/session-activity';
 
 describe('collectRunningSessionIds', () => {
   test('collects busy and retry from live statuses', () => {

@@ -14,7 +14,7 @@ import {
 } from './MobileProjectsHome';
 
 vi.mock('@/sync/sync-context', () => ({
-  useLiveSessionStatus: () => undefined,
+  useSessionActivity: () => false,
   useSessionPermissions: () => [],
   useSessionQuestions: () => [],
 }));

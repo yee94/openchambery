@@ -235,8 +235,10 @@ describe('progressive activity presentation', () => {
         expect(activityHeaderSource).not.toContain('{activeDuration}');
         expect(activityHeaderSource).not.toContain('{completedDuration}');
         expect(progressiveGroupSource).toContain("'group/tool flex w-full min-w-0 flex-nowrap items-center text-left'");
-        expect(progressiveGroupSource).toContain("'inline-flex min-w-0 flex-1 items-center overflow-clip'");
-        expect(progressiveGroupSource).toContain("'ml-auto inline-flex max-w-[min(14rem,55%)] shrink-0 items-center justify-end'");
+        expect(activityHeaderSource).toContain("'inline-flex min-w-0 items-center overflow-clip'");
+        expect(activityHeaderSource).toContain("'inline-flex max-w-[min(14rem,55%)] shrink-0 items-center'");
+        expect(activityHeaderSource).not.toContain('flex-1');
+        expect(activityHeaderSource).not.toContain('ml-auto');
         expect(progressiveGroupSource).toContain("isMobile && 'pr-0'");
         expect(progressiveGroupSource.match(/aria-expanded=\{effectivelyExpanded\}/g)).toHaveLength(1);
         expect(progressiveGroupSource).toContain("? t('chat.activity.collapseAria')");
@@ -362,16 +364,14 @@ describe('progressive activity presentation', () => {
         expect(progressiveGroupSource).toContain('inline-flex shrink-0 items-center gap-0.5');
         expect(progressiveGroupSource).toContain('size-3.5 min-h-3.5 min-w-3.5 max-h-3.5 max-w-3.5');
         expect(progressiveGroupSource).toContain('flex-nowrap');
-        expect(progressiveGroupSource).toContain('flex-1');
-        expect(progressiveGroupSource).toContain('ml-auto');
         expect(progressiveGroupSource).toContain("'inline-flex flex-none items-center justify-center'");
         expect(progressiveGroupSource).toContain("isMobile ? 'h-5 w-4' : 'h-6 w-3.5'");
         expect(progressiveGroupSource).toContain("isMobile ? 'typography-meta h-5' : 'typography-ui-label h-5 font-semibold'");
         expect(progressiveGroupSource).toContain('displayedTaskAvatarSeeds.slice(0, isMobile ? 2 : 3)');
-        // Status/duration left (flex-1), agents+chevron trailer right (ml-auto).
+        // Agents and chevron follow the status/duration without a growing spacer.
         // Mobile pr-0 flushes chevron; desktop keeps chip px-2 for symmetric hover wash.
         expect(progressiveGroupSource).toContain("isMobile && 'pr-0'");
-        expect(progressiveGroupSource).toContain("'ml-auto inline-flex max-w-[min(14rem,55%)] shrink-0 items-center justify-end'");
+        expect(progressiveGroupSource).toContain("'inline-flex max-w-[min(14rem,55%)] shrink-0 items-center'");
         expect(progressiveGroupSource).toContain("isMobile && '-mr-0.5'");
         expect(progressiveGroupSource).not.toContain('ring-foreground');
         expect(progressiveGroupSource).toContain("t('chat.activity.agentsWorking', { count: displayedTaskAvatarSeeds.length })");

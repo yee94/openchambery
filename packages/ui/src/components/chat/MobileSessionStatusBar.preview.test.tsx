@@ -17,7 +17,7 @@ vi.mock('@/lib/runtime-fetch', () => ({
 vi.mock('@/sync/sync-context', async (importOriginal) => ({
   ...await importOriginal<typeof import('@/sync/sync-context')>(),
   useAllLiveSessions: () => liveSessions,
-  useAllSessionStatuses: () => statuses,
+  useActiveSessionTreeIds: () => activeIds,
 }));
 vi.mock('@/hooks/useRuntimeAPIs', () => ({ useRuntimeAPIs: () => runtime }));
 vi.mock('@/contexts/useThemeSystem', () => ({ useThemeSystem: () => ({ currentTheme: theme }) }));
@@ -36,8 +36,8 @@ vi.mock('./mobileSessionStatusBarList', async (importOriginal) => {
   return { ...original, buildMobileSessionStatusList: vi.fn(original.buildMobileSessionStatusList) };
 });
 
-const { liveSessions, statuses, pins, runtime, theme } = vi.hoisted(() => ({
-  liveSessions: [], statuses: {}, pins: new Set<string>(),
+const { liveSessions, activeIds, pins, runtime, theme } = vi.hoisted(() => ({
+  liveSessions: [], activeIds: new Set<string>(), pins: new Set<string>(),
   runtime: { git: { checkIsGitRepository: async () => false } },
   theme: { metadata: { variant: 'dark' }, colors: { surface: { foreground: 'white' } } },
 }));

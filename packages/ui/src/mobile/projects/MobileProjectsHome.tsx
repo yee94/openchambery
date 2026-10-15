@@ -18,7 +18,7 @@ import { renderHighlightedText } from '@/components/session/sidebar/utils';
 import { useI18n } from '@/lib/i18n';
 import { cn } from '@/lib/utils';
 import {
-  useLiveSessionStatus,
+  useSessionActivity,
   useSessionPermissions,
   useSessionQuestions,
 } from '@/sync/sync-context';
@@ -123,9 +123,7 @@ type SessionListProps = Pick<
 };
 
 function MobileLiveSessionRowImpl(props: MobileSessionRowProps) {
-  // Live child-store only — matches MobileSessionsSheet's useAllSessionStatuses
-  // so sticky global fallback busy cannot disagree with the recent-sessions list.
-  const status = useLiveSessionStatus(props.session.id);
+  const running = useSessionActivity(props.session.id);
   const permissions = useSessionPermissions(
     props.session.id,
     (props.session as MobileSessionTreeNode).directory,
@@ -139,7 +137,7 @@ function MobileLiveSessionRowImpl(props: MobileSessionRowProps) {
   const indicator = resolveMobileSessionIndicator({
     hasPendingQuestion: questions.length > 0,
     hasPendingPermission: permissions.length > 0,
-    running: status?.type === 'busy' || status?.type === 'retry',
+    running,
     unread: Boolean(props.session.unread),
   });
 

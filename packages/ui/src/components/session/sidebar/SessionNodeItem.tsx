@@ -18,6 +18,7 @@ import {
   buildSessionMessageRecordsSnapshotFromSource,
   useDirectoryStore,
   useLiveSessionStatus,
+  useSessionActivity,
   useSessionPermissions,
   useSessionQuestions,
 } from '@/sync/sync-context';
@@ -451,6 +452,7 @@ function SessionNodeItemComponent(props: Props): React.ReactNode {
     ),
   );
   const sessionStatus = useLiveSessionStatus(session.id);
+  const hasSessionActivity = useSessionActivity(session.id);
   const sessionPermissions = useSessionPermissions(
     session.id,
     sessionDirectory ?? undefined,
@@ -929,8 +931,7 @@ function SessionNodeItemComponent(props: Props): React.ReactNode {
     );
   }
 
-  const statusType = sessionStatus?.type ?? 'idle';
-  const isStreaming = statusType === 'busy' || statusType === 'retry';
+  const isStreaming = hasSessionActivity;
   const isTitleGenerating = pendingSmartTitle !== null || titleRefreshMetadata?.isGenerating === true;
   const pendingPermissionCount = sessionPermissions.length;
   // Pending ask-tool questions outrank the busy spinner: the session is
@@ -1104,7 +1105,7 @@ function SessionNodeItemComponent(props: Props): React.ReactNode {
         {t('sessions.sidebar.session.menu.exportMarkdown')}
       </Item>
       <Item
-        disabled={!sessionDirectory || isStreaming || isTranscriptRefreshing}
+        disabled={!sessionDirectory || sessionStatus?.type === 'busy' || sessionStatus?.type === 'retry' || isTranscriptRefreshing}
         onClick={() => { handleRefreshTranscript(); }}
         className="[&>svg]:mr-1"
       >
