@@ -81,7 +81,7 @@ describe('scheduled task run history store', () => {
     store.close();
   });
 
-  it('converges leftover running rows to error on open', () => {
+  it('preserves an attached running session across store reopen', () => {
     const dbPath = createTempDbPath();
     let now = 1_000;
     const first = createScheduledTaskRunHistoryStore({
@@ -101,14 +101,13 @@ describe('scheduled task run history store', () => {
     expect(listed.runs).toHaveLength(1);
     expect(listed.runs[0]).toMatchObject({
       id: 'orphan',
-      status: 'error',
+      status: 'running',
       sessionId: 'ses_orphan',
       startedAt: 500,
-      finishedAt: 2_500,
-      durationMs: 2_000,
+      finishedAt: null,
+      durationMs: null,
+      error: null,
     });
-    expect(typeof listed.runs[0].error).toBe('string');
-    expect(listed.runs[0].error.length).toBeGreaterThan(0);
 
     reopened.close();
   });
@@ -150,6 +149,33 @@ describe('scheduled task run history store', () => {
     store.close();
   });
 
+  it('repairs only legacy restart errors and guards recovery against a concurrent finish', () => {
+    const dbPath = createTempDbPath();
+    const first = createScheduledTaskRunHistoryStore({ dbPath });
+    for (const id of ['restart', 'real-error', 'success']) {
+      startSample(first, { id });
+      first.attachSession(id, `ses_${id}`);
+      first.finishRun(id, {
+        status: id === 'success' ? 'success' : 'error',
+        error: id === 'restart' ? 'Run interrupted by process restart' : 'provider failed',
+      });
+    }
+    first.close();
+    const store = createScheduledTaskRunHistoryStore({ dbPath });
+    try {
+      expect(store.listRunningRuns().runs).toMatchObject([{
+        id: 'restart', status: 'running', error: null, finishedAt: null, durationMs: null,
+      }]);
+      store.finishRun('restart', { status: 'success' });
+      expect(store.finishRun('restart', { status: 'error', onlyIfRunning: true })).toBeNull();
+      expect(store.listRuns().runs.find((run) => run.id === 'restart').status).toBe('success');
+      expect(store.listRuns().runs.find((run) => run.id === 'real-error').error).toBe('provider failed');
+      expect(store.listRunningRuns().runs).toEqual([]);
+    } finally {
+      store.close();
+    }
+  });
+
   it('rejects invalid list cursors', () => {
     const store = createScheduledTaskRunHistoryStore({ dbPath: createTempDbPath() });
     expect(() => store.listRuns({ before: 'not-a-cursor' })).toThrow(/cursor/i);
@@ -175,6 +201,7 @@ describe('scheduled task run history store', () => {
     );
 
     const second = createScheduledTaskRunHistoryStore({ dbPath });
+    expect(second.listRuns({}).runs[0].status).toBe('running');
     expect(() => startSample(second, { id: 'run-c', slotAt: 1_700_000_000_000 })).toThrow(
       /already claimed/,
     );

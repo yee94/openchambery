@@ -62,6 +62,7 @@ Dense UI that intentionally uses sub-36px controls **must opt out**. Tailwind `h
 | Surface | Selector | File |
 |---|---|---|
 | Tool expandable rows | `.oc-tool-row[role="button"]` | `mobile.css` |
+| Tool move-to-background action | `.oc-tool-row button[data-component="session-background-move"]` (content-height, no extra row height) | `mobile.css` |
 | Composer footer mobile actions | `.composer-mobile-actions button` | `mobile.css` |
 | Composer send + stop controls | `button[data-composer-send="true"]` / `button[data-composer-stop="true"]` | `mobile.css` |
 | Composer agent + model chips | `.composer-mobile-model-controls button` (locked to 26px so the revealed agent name stays vertically centered with the model chip) | `mobile.css` |

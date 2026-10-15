@@ -412,6 +412,23 @@ const snapshotSessionOutcome = async ({
 }) => {
   const requestOptions = signal ? { signal } : undefined;
 
+  if (typeof client?.session?.active === 'function') {
+    try {
+      const activeMap = await client.session.active(requestOptions);
+      if (!(activeMap && typeof activeMap === 'object' && !Array.isArray(activeMap))) {
+        // Malformed active payload is unknown — never idle-success.
+        return { outcome: 'busy' };
+      }
+      if (Object.prototype.hasOwnProperty.call(activeMap, sessionID)) {
+        return { outcome: 'busy' };
+      }
+    } catch (error) {
+      if (signal?.aborted) throw error;
+      // active failure = unknown; do not fall through to message.list success.
+      return { outcome: 'busy' };
+    }
+  }
+
   if (goalEnabled) {
     if (!isSessionGoalSupported()) {
       // Host goal state unavailable — do not promote assistant-tail idle to success.
@@ -462,23 +479,6 @@ const snapshotSessionOutcome = async ({
       }
     }
     return { outcome: 'busy' };
-  }
-
-  if (typeof client?.session?.active === 'function') {
-    try {
-      const activeMap = await client.session.active(requestOptions);
-      if (!(activeMap && typeof activeMap === 'object' && !Array.isArray(activeMap))) {
-        // Malformed active payload is unknown — never idle-success.
-        return { outcome: 'busy' };
-      }
-      if (Object.prototype.hasOwnProperty.call(activeMap, sessionID)) {
-        return { outcome: 'busy' };
-      }
-    } catch (error) {
-      if (signal?.aborted) throw error;
-      // active failure = unknown; do not fall through to message.list success.
-      return { outcome: 'busy' };
-    }
   }
 
   try {
@@ -570,6 +570,8 @@ export const createScheduledTasksRuntime = (deps) => {
   } = deps;
 
   let started = false;
+  let historyRecoveryController = null;
+  let historyRecoveryTimer = null;
   const tasksByProject = new Map();
   const projectPathByID = new Map();
   const timersByTaskKey = new Map();
@@ -1572,7 +1574,7 @@ export const createScheduledTasksRuntime = (deps) => {
 
       // History final status reflects the ultimate run outcome, including
       // state-persistence failures. A failed finalize leaves the row running
-      // so the next store open can converge it to error.
+      // so recovery can reconcile it against the session's actual outcome.
       const historyFinalize = finalizeRunHistory(runID, {
         status,
         finishedAt,
@@ -1685,12 +1687,73 @@ export const createScheduledTasksRuntime = (deps) => {
     return runTask(projectID, taskID, 'manual');
   };
 
+  const recoverRunHistory = async (controller, before = undefined) => {
+    if (controller.signal.aborted) return;
+    let nextCursor;
+    try {
+      const page = runHistoryStore.listRunningRuns({ before, limit: 20 });
+      nextCursor = page.nextCursor;
+      if (page.runs.length > 0) {
+        const client = makeOpenCodeV2Client({
+          baseUrl: buildOpenCodeUrl('/', '').replace(/\/$/, ''),
+          authHeaders: getOpenCodeAuthHeaders(),
+        });
+        const signal = AbortSignal.any([controller.signal, AbortSignal.timeout(10_000)]);
+        for (const run of page.runs) {
+          if (signal.aborted) break;
+          // A local execution owns its watchdog and finalization. Other Hosts
+          // may still own these rows too: only upstream terminal evidence wins.
+          if (!run.sessionId || runningTaskKeys.has(buildTaskKey(run.projectId, run.taskId))) continue;
+          try {
+            if (typeof client?.session?.active !== 'function') continue;
+            const metadata = typeof readSessionMetadata === 'function'
+              ? await readSessionMetadata(run.sessionId)
+              : null;
+            const snapshot = await snapshotSessionOutcome({
+              client,
+              sessionID: run.sessionId,
+              projectPath: run.directory,
+              goalEnabled: Boolean(extractGoalFromSession({ metadata })),
+              readSessionMetadata: typeof readSessionMetadata === 'function' ? async () => metadata : null,
+              signal,
+            });
+            if (signal.aborted || runningTaskKeys.has(buildTaskKey(run.projectId, run.taskId))) continue;
+            if (snapshot.outcome !== 'success' && snapshot.outcome !== 'error') continue;
+            const updated = runHistoryStore.finishRun(run.id, {
+              status: snapshot.outcome,
+              error: snapshot.error,
+              onlyIfRunning: true,
+            });
+            if (updated) emitContinuationStatus(run.projectId, run.taskId, run.sessionId, updated.status);
+          } catch (error) {
+            if (signal.aborted) break;
+            logger.warn?.('[ScheduledTasks] history recovery failed', { runID: run.id, error: safeErrorMessage(error) });
+          }
+        }
+      }
+    } catch (error) {
+      if (!controller.signal.aborted) {
+        logger.warn?.('[ScheduledTasks] history recovery failed', { error: safeErrorMessage(error) });
+      }
+    }
+    if (controller.signal.aborted) return;
+    historyRecoveryTimer = setTimeout(() => {
+      void recoverRunHistory(controller, nextCursor || undefined);
+    }, 5_000);
+    historyRecoveryTimer.unref?.();
+  };
+
   const start = async () => {
     if (started) {
       return;
     }
     started = true;
+    const controller = new AbortController();
+    historyRecoveryController = controller;
     await syncAllProjects();
+    if (!controller.signal.aborted && typeof runHistoryStore?.listRunningRuns === 'function') {
+      void recoverRunHistory(controller);
+    }
   };
 
   const stop = () => {
@@ -1698,6 +1761,10 @@ export const createScheduledTasksRuntime = (deps) => {
       return;
     }
     started = false;
+    historyRecoveryController?.abort();
+    historyRecoveryController = null;
+    clearTimeout(historyRecoveryTimer);
+    historyRecoveryTimer = null;
     for (const timer of timersByTaskKey.values()) {
       clearTimeout(timer);
     }

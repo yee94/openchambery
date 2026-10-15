@@ -50,6 +50,149 @@ const createRuntime = (updateScheduledTaskState, overrides = {}) => createSchedu
   ...overrides,
 });
 
+describe('scheduled-tasks history recovery', () => {
+  it('keeps live and unavailable sessions running after restart, then settles on real outcomes', async () => {
+    vi.useFakeTimers();
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'scheduled-recovery-'));
+    const dbPath = path.join(dir, 'runs.sqlite');
+    let store = createScheduledTaskRunHistoryStore({ dbPath });
+    for (const id of ['live', 'unavailable', 'failed']) {
+      store.startRun({ id, projectId: 'project-1', taskId: id, startedAt: Date.now() - 1000 });
+      store.attachSession(id, `ses_${id}`);
+    }
+    store.close();
+    store = createScheduledTaskRunHistoryStore({ dbPath });
+    let busy = true;
+    const messageList = vi.fn(async ({ sessionID }) => {
+      if (sessionID === 'ses_unavailable') throw new Error('offline');
+      return { data: [{ type: 'idle', outcome: sessionID === 'ses_failed' ? 'failed' : 'succeeded' }] };
+    });
+    makeOpenCodeV2Client.mockReturnValue({
+      session: { active: vi.fn(async () => busy ? { ses_live: {} } : {}) },
+      message: { list: messageList },
+    });
+    const runtime = createRuntime(vi.fn(async () => ({ task: null })), { runHistoryStore: store });
+    try {
+      await runtime.start();
+      await vi.advanceTimersByTimeAsync(0);
+      const runs = () => Object.fromEntries(store.listRuns().runs.map((run) => [run.id, run]));
+      expect(runs().live).toMatchObject({ status: 'running', error: null, finishedAt: null });
+      expect(runs().unavailable.status).toBe('running');
+      expect(runs().failed).toMatchObject({ status: 'error', error: 'session execution failed' });
+      expect(messageList.mock.calls.some(([args]) => args.sessionID === 'ses_live')).toBe(false);
+      busy = false;
+      await vi.advanceTimersByTimeAsync(5000);
+      expect(runs().live.status).toBe('success');
+      expect(runs().unavailable.status).toBe('running');
+      runtime.stop();
+      const calls = messageList.mock.calls.length;
+      await vi.advanceTimersByTimeAsync(10000);
+      expect(messageList).toHaveBeenCalledTimes(calls);
+    } finally {
+      runtime.stop();
+      store.close();
+      fs.rmSync(dir, { recursive: true, force: true });
+      vi.useRealTimers();
+    }
+  });
+
+  it('discards recovery results arriving after stop', async () => {
+    let resolveMessages;
+    const messages = new Promise((resolve) => { resolveMessages = resolve; });
+    const messageList = vi.fn(() => messages);
+    makeOpenCodeV2Client.mockReturnValue({
+      session: { active: vi.fn(async () => ({})) },
+      message: { list: messageList },
+    });
+    const store = {
+      listRunningRuns: vi.fn(() => ({ runs: [{ id: 'run', sessionId: 'ses', projectId: 'p', taskId: 't' }], nextCursor: null })),
+      finishRun: vi.fn(),
+    };
+    const runtime = createRuntime(vi.fn(async () => ({ task: null })), { runHistoryStore: store });
+    try {
+      await runtime.start();
+      await vi.waitFor(() => expect(messageList).toHaveBeenCalled());
+      runtime.stop();
+      resolveMessages({ data: [{ type: 'idle', outcome: 'succeeded' }] });
+      await new Promise((resolve) => setImmediate(resolve));
+      expect(store.finishRun).not.toHaveBeenCalled();
+    } finally {
+      runtime.stop();
+    }
+  });
+
+  it('pages recovery and retries unknown activity without reading stale terminal messages', async () => {
+    vi.useFakeTimers();
+    let unavailable = true;
+    const active = vi.fn(async () => {
+      if (unavailable) throw new Error('upstream unavailable');
+      return {};
+    });
+    const messageList = vi.fn(async () => ({ data: [{ type: 'idle', outcome: 'succeeded' }] }));
+    makeOpenCodeV2Client.mockReturnValue({ session: { active }, message: { list: messageList } });
+    const firstPage = Array.from({ length: 20 }, (_, i) => ({ id: `run-${i}`, sessionId: `ses_${i}`, projectId: 'p', taskId: `t-${i}` }));
+    const store = {
+      listRunningRuns: vi.fn(({ before }) => before
+        ? { runs: [{ id: 'last', sessionId: 'ses_last', projectId: 'p', taskId: 'last' }], nextCursor: null }
+        : { runs: firstPage, nextCursor: 'next-page' }),
+      finishRun: vi.fn(() => null),
+    };
+    const runtime = createRuntime(vi.fn(async () => ({ task: null })), { runHistoryStore: store });
+    try {
+      await runtime.start();
+      await vi.advanceTimersByTimeAsync(0);
+      expect(active).toHaveBeenCalledTimes(20);
+      expect(messageList).not.toHaveBeenCalled();
+      expect(store.finishRun).not.toHaveBeenCalled();
+      unavailable = false;
+      await vi.advanceTimersByTimeAsync(5000);
+      expect(store.listRunningRuns).toHaveBeenLastCalledWith({ before: 'next-page', limit: 20 });
+      expect(store.finishRun).toHaveBeenCalledWith('last', expect.objectContaining({ status: 'success', onlyIfRunning: true }));
+      await vi.advanceTimersByTimeAsync(5000);
+      expect(store.listRunningRuns).toHaveBeenLastCalledWith({ before: undefined, limit: 20 });
+      expect(store.finishRun).toHaveBeenCalledTimes(21);
+    } finally {
+      runtime.stop();
+      vi.useRealTimers();
+    }
+  });
+
+  it('waits for both live execution and the persisted goal before recovering success', async () => {
+    vi.useFakeTimers();
+    let busy = false;
+    let goalStatus = 'active';
+    const messageList = vi.fn(async () => ({ data: [{ type: 'idle', outcome: 'succeeded' }] }));
+    makeOpenCodeV2Client.mockReturnValue({
+      session: { active: vi.fn(async () => busy ? { ses_goal: {} } : {}) },
+      message: { list: messageList },
+    });
+    const store = {
+      listRunningRuns: vi.fn(() => ({ runs: [{ id: 'goal', sessionId: 'ses_goal', projectId: 'p', taskId: 't' }], nextCursor: null })),
+      finishRun: vi.fn(() => null),
+    };
+    const runtime = createRuntime(vi.fn(async () => ({ task: null })), {
+      runHistoryStore: store,
+      readSessionMetadata: vi.fn(async () => ({ openchamber: { goal: { status: goalStatus } } })),
+    });
+    try {
+      await runtime.start();
+      await vi.advanceTimersByTimeAsync(0);
+      expect(store.finishRun).not.toHaveBeenCalled();
+      goalStatus = 'complete';
+      busy = true;
+      await vi.advanceTimersByTimeAsync(5000);
+      expect(store.finishRun).not.toHaveBeenCalled();
+      busy = false;
+      await vi.advanceTimersByTimeAsync(5000);
+      expect(store.finishRun).toHaveBeenCalledWith('goal', expect.objectContaining({ status: 'success' }));
+      expect(messageList).not.toHaveBeenCalled();
+    } finally {
+      runtime.stop();
+      vi.useRealTimers();
+    }
+  });
+});
+
 describe('scheduled-tasks runtime helpers', () => {
   it('computes next daily run in timezone', () => {
     const nowUtc = Date.UTC(2025, 0, 1, 8, 0, 0);

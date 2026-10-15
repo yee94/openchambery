@@ -25,7 +25,8 @@ Server-owned scheduled task runtime and routes for OpenChamber-only automation.
 - `packages/web/server/lib/scheduled-tasks/run-history-store.js`
   - Independent SQLite file `scheduled-task-runs.sqlite` (WAL)
   - Keyset-paginated list of run records
-  - On open, converges leftover `running` rows to `error` with an interrupted message
+  - Preserves `running` rows on open; repairs legacy synthetic restart errors
+    with attached sessions back to pending reconciliation
   - Scheduled runs claim `(project_id, task_id, slot_at)` so multiple OpenChamber
     processes sharing a data dir cannot occupy the same fire slot
 
@@ -83,6 +84,7 @@ Dependencies include optional `runHistoryStore` with:
 - `startRun(record)`
 - `attachSession(runID, sessionID)`
 - `finishRun(runID, result)`
+- `listRunningRuns({ before?, limit? })` for bounded restart recovery
 
 ## Public exports (run-history-store.js)
 
@@ -91,7 +93,8 @@ Dependencies include optional `runHistoryStore` with:
   - `startRun(record)`
   - `attachSession(runID, sessionID)`
   - `finishRun(runID, result)`
-  - `listRuns({ before, limit, projectID?, taskID? })`
+   - `listRuns({ before, limit, projectID?, taskID? })`
+   - `listRunningRuns({ before?, limit? })`
   - `close()`
 
 ### Run record fields
@@ -129,14 +132,30 @@ Indexes support `started_at DESC, run_id DESC` listing with project/task filters
   `id, projectId, taskId, taskName, trigger, status, sessionId, directory, error, startedAt, finishedAt, durationMs`
   plus page fields `nextCursor, complete`.
 
-### Crash convergence
+### Restart recovery
 
-On store open, any leftover `status=running` row is rewritten to:
+Opening a store is not evidence that an OpenCode execution stopped: the shared
+runner or another Host may still be executing. Store open preserves running rows.
+For old records with an attached session and the exact synthetic error
+`Run interrupted by process restart`, it clears the artificial terminal fields
+and restores `running`. Real failures and successful history remain unchanged.
 
-- `status=error`
-- explicit interrupted error message
-- `finished_at=clock()`
-- `duration_ms` from `started_at`
+Runtime startup begins a non-overlapping recovery loop: one indexed keyset page
+of at most 20 running rows every five seconds, wrapping after the last page.
+Each pass has a ten-second upstream request deadline. It skips locally owned
+executions and rows without a session; missing session association is not proof
+of execution failure. Such rows remain unresolved rather than inventing a result.
+Recovery checks live `session.active` before examining terminal messages or Host
+goal state. Active, unavailable, malformed, and incomplete results remain pending.
+Only confirmed terminal evidence finalizes history, with duration through the
+time recovery observes completion. It neither dispatches a new prompt nor sends
+a second completion notification or overwrites task configuration/state.
+
+`finishRun(..., { onlyIfRunning: true })` conditionally writes recovery results,
+returning null if another writer already finalized the row. Recovery emits the
+existing task-run invalidation event only on a committed result. Stop aborts its
+requests and timer; late results from the stopped runtime cannot commit. Ordinary
+finalized history (including later chat continuation) is never reopened.
 
 ## Public exports (routes.js)
 
@@ -260,7 +279,7 @@ Every actual run (timer or manual):
     recorded reason). An already-attached `session_id` remains on the history
     row so the session stays openable from history. Task state persistence
     failures also finalize history as `error`. A failed history finalize
-    returns error and may leave a `running` row for next-start convergence.
+    returns error and may leave a `running` row for session-outcome recovery.
  10. `lastSessionId` is written on the task state whenever the run has a
      session (success or error). If the run has no session, omit
      `lastSessionId` from the patch so a previous value is preserved. Full
@@ -325,8 +344,8 @@ the session is attached.
   `throwIfAborted` gates stop goal PATCH / command / `session.prompt`.
 - Non-timeout failures: no timeout abort; no forced `session.interrupt` from the
   watchdog.
-- Runtime `stop()` clears timers, project-sync retries, and the queue only; it
-  does not abort in-flight run controllers.
+- Runtime `stop()` clears timers, project-sync retries, and the queue, and aborts
+  history-recovery reads. It does not abort in-flight run controllers.
 - Remaining non-cancellable edges: work already fully admitted and completed
   HTTP-wise before timeout cannot be rolled back by aborting the HTTP request
   alone; `session.interrupt` is the upstream stop for admitted command/prompt
@@ -336,7 +355,7 @@ the session is attached.
 
 ## Shutdown
 
-Graceful shutdown stops `scheduledTasksRuntime` (timers/queue only). It does
+Graceful shutdown stops `scheduledTasksRuntime` (timers/queue and history recovery). It does
 **not** close the process-lifetime `runHistoryStore` singleton: in-flight
 attach/finalize may still write after `stop()`, and
 `startWebUiServer().stop({ exitProcess: false })` must be able to restart in the

@@ -121,19 +121,17 @@ export const createScheduledTaskRunHistoryStore = ({ dbPath, clock = () => Date.
 
   const now = () => Math.trunc(clock());
 
-  const convergeInterruptedRuns = () => {
-    const finishedAt = now();
-    db.prepare(`
-      UPDATE scheduled_task_run
-      SET status = 'error',
-          error = ?,
-          finished_at = ?,
-          duration_ms = MAX(0, ? - started_at)
-      WHERE status = 'running'
-    `).run(INTERRUPTED_ERROR, finishedAt, finishedAt);
-  };
-
-  convergeInterruptedRuns();
+  // Opening a Host database says nothing about the independent session runner.
+  // Repair only the synthetic restart errors written by older Host versions.
+  db.prepare(`
+    UPDATE scheduled_task_run
+    SET status = 'running', error = NULL, finished_at = NULL, duration_ms = NULL
+    WHERE status = 'error' AND error = ? AND session_id IS NOT NULL
+  `).run(INTERRUPTED_ERROR);
+  db.exec(`
+    CREATE INDEX IF NOT EXISTS scheduled_task_run_running_started_desc
+      ON scheduled_task_run (started_at DESC, run_id DESC) WHERE status = 'running'
+  `);
 
   let closed = false;
   const assertOpen = () => {
@@ -206,6 +204,9 @@ export const createScheduledTaskRunHistoryStore = ({ dbPath, clock = () => Date.
     if (!row) {
       throw new Error('run not found');
     }
+    if (result.onlyIfRunning && row.status !== 'running') {
+      return null;
+    }
 
     const status = result.status === 'success' ? 'success' : 'error';
     const finishedAt = asFiniteInteger(result.finishedAt) ?? now();
@@ -216,20 +217,21 @@ export const createScheduledTaskRunHistoryStore = ({ dbPath, clock = () => Date.
       : null;
     const sessionId = asNonEmptyString(result.sessionId ?? result.sessionID) ?? row.session_id;
 
-    db.prepare(`
+    const updated = db.prepare(`
       UPDATE scheduled_task_run
       SET status = ?,
           session_id = ?,
           error = ?,
           finished_at = ?,
           duration_ms = ?
-      WHERE run_id = ?
-    `).run(status, sessionId, error, finishedAt, durationMs, id);
+      WHERE run_id = ? AND (? = 0 OR status = 'running')
+    `).run(status, sessionId, error, finishedAt, durationMs, id, result.onlyIfRunning ? 1 : 0);
+    if (updated.changes === 0) return null;
 
     return rowToDto(db.prepare('SELECT * FROM scheduled_task_run WHERE run_id = ?').get(id));
   };
 
-  const listRuns = ({ before, limit, projectID, taskID, projectId, taskId } = {}) => {
+  const listRuns = ({ before, limit, projectID, taskID, projectId, taskId } = {}, runningOnly = false) => {
     assertOpen();
     const cursor = decodeCursor(before);
     const resolvedLimit = (() => {
@@ -244,6 +246,9 @@ export const createScheduledTaskRunHistoryStore = ({ dbPath, clock = () => Date.
     })();
 
     const filters = [];
+    if (runningOnly) {
+      filters.push("status = 'running'");
+    }
     const params = [];
     const resolvedProjectID = asNonEmptyString(projectID ?? projectId);
     const resolvedTaskID = asNonEmptyString(taskID ?? taskId);
@@ -294,6 +299,7 @@ export const createScheduledTaskRunHistoryStore = ({ dbPath, clock = () => Date.
     attachSession,
     finishRun,
     listRuns,
+    listRunningRuns: (options) => listRuns(options, true),
     close,
   };
 };

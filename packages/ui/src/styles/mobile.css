@@ -2425,6 +2425,14 @@ button.oc-mobile-worktree-label-trigger:active,
     min-width: auto;
   }
 
+  /* Inline background actions must not add height to their tool row. */
+  :root.mobile-pointer:not(.desktop-runtime)
+    .oc-tool-row button[data-component="session-background-move"] {
+    height: auto;
+    min-height: 0 !important;
+    min-width: 0 !important;
+  }
+
   /* Composer footer action buttons (sessions / attach / auto-accept): hug the
      icon so the group stays tight. The container only renders in the mobile
      JSX, so no pointer/runtime gating is needed; !important overrides both the
