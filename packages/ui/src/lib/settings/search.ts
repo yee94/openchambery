@@ -448,6 +448,12 @@ const SETTINGS_SEARCH_ITEMS: readonly SettingsSearchItem[] = [
     keywords: ['summary', 'commit', 'session title', 'prompt', 'provider', 'custom api', 'base url', 'api token'],
   },
   {
+    id: 'summary-ai.test-connection',
+    page: 'summary-ai',
+    titleKey: 'settings.openchamber.defaults.summary.testConnection',
+    keywords: ['summary', 'connection', 'test', 'provider', 'api'],
+  },
+  {
     id: 'sessions.auto-cleanup',
     page: 'sessions',
     titleKey: 'settings.openchamber.sessionRetention.field.enableAutoCleanup',

@@ -68,7 +68,7 @@ runtime API.
   `POST /api/small-model/generate` (`{ prompt, system?, maxOutputTokens?,
   model?, directory?, preferredProviderID?, preferredModelID?,
   restrictToPreferredProvider?, purpose? }` → `{ text, providerID, modelID,
-  source }`), `POST /api/small-model/test` (custom OpenAI-compatible probe →
+  source }`), `POST /api/small-model/test` (Summary AI connection probe →
   `{ ok, code? }`), and `POST /api/small-model/custom-models` (best-effort
   `{baseURL}/models` suggestions → `{ models }`).
 - `custom-api.js` — custom Summary AI generation
@@ -130,9 +130,27 @@ same connected provider list as the chat model picker and Settings → Defaults
 `summaryCustomModelID` (legacy `summaryModelID` is still read when that field
 is absent). Custom mode is enabled only when base URL, model ID, and API token
 are all present. A custom token stays in the server settings file; settings
-read responses expose only `hasSummaryCustomAPIToken`. Settings can probe the
-custom API (`POST /api/small-model/test`) and load model suggestions from
+read responses expose only `hasSummaryCustomAPIToken`. Settings can probe
+either mode (`POST /api/small-model/test`) and load custom model suggestions from
 `{baseURL}/models` without blocking free-form entry.
+
+The test button uses the current form without saving it. `{ mode: 'provider',
+providerID, modelID }` probes the exact model through the same LLM gateway;
+empty IDs use OpenCode's default, never persisted Summary AI or small-model
+overrides. Success requires non-empty generated text. Provider failures return
+bounded codes (`no_provider`, `model`, `empty_response`, `generation_failed`)
+and a credential-redacted `message` with the provider's failure reason. Custom
+probe failures likewise include a redacted message and HTTP status when available.
+The UI retains the reason below the test button until the next test; it is not
+limited to a transient toast. Requests without `mode: 'provider'`
+retain the custom API probe contract. All shared UI runtimes use runtimeFetch
+against this authenticated Host route.
+
+Summary generation failures (session titles and commit summaries) emit
+`console.error('[small-model] summary generation failed:', ...)` with purpose,
+provider/model, status, error code, and redacted provider message. Prompt and
+response payloads are not logged. `error-details.js` owns bounded error text
+and credential redaction for diagnostics and connection-test responses.
 
 `summaryCommitPrompt` and `summarySessionTitlePrompt` replace the respective
 call's system prompt when non-empty. With no persisted provider choice (the

@@ -45,12 +45,12 @@ export function registerSmallModelRoutes(app, { getSmallModelService }) {
 
   app.post('/api/small-model/test', async (req, res) => {
     try {
-      const { testCustomApi } = await getSmallModelService();
-      const result = await testCustomApi(req.body || {});
+      const { testCustomApi, testProviderApi } = await getSmallModelService();
+      const body = req.body || {};
+      const result = await (body.mode === 'provider' ? testProviderApi(body) : testCustomApi(body));
       res.status(result.ok ? 200 : 400).json(result);
-    } catch (error) {
-      console.error('Small model custom API test failed:', error);
-      res.status(500).json({ ok: false, code: 'baseURL' });
+    } catch {
+      res.status(500).json({ ok: false, code: req.body?.mode === 'provider' ? 'generation_failed' : 'baseURL' });
     }
   });
 

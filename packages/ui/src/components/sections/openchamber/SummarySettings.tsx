@@ -77,6 +77,7 @@ export const SummarySettings: React.FC = () => {
   const [isLoading, setIsLoading] = React.useState(true);
   const [isSaving, setIsSaving] = React.useState(false);
   const [isTesting, setIsTesting] = React.useState(false);
+  const [testError, setTestError] = React.useState<string | null>(null);
   const editorExtensions = React.useMemo<Extension[]>(
     () => [createFlexokiCodeMirrorTheme(currentTheme, { syntaxColors: false })],
     [currentTheme],
@@ -170,18 +171,18 @@ export const SummarySettings: React.FC = () => {
     return null;
   };
 
-  const toastCustomError = (code: CustomTestCode) => {
-    if (code === 'token') toast.error(t('settings.openchamber.defaults.summary.testError.token'));
-    else if (code === 'model') toast.error(t('settings.openchamber.defaults.summary.testError.model'));
-    else if (code === 'baseURL') toast.error(t('settings.openchamber.defaults.summary.testError.baseUrl'));
-    else toast.error(t('settings.openchamber.defaults.summary.testError.incomplete'));
+  const customErrorMessage = (code: CustomTestCode) => {
+    if (code === 'token') return t('settings.openchamber.defaults.summary.testError.token');
+    if (code === 'model') return t('settings.openchamber.defaults.summary.testError.model');
+    if (code === 'baseURL') return t('settings.openchamber.defaults.summary.testError.baseUrl');
+    return t('settings.openchamber.defaults.summary.testError.incomplete');
   };
 
   const save = useEvent(async () => {
     if (summaryModelMode === 'custom') {
       const code = customValidationCode();
       if (code) {
-        toastCustomError(code);
+        toast.error(customErrorMessage(code));
         return;
       }
     }
@@ -226,9 +227,12 @@ export const SummarySettings: React.FC = () => {
   });
 
   const testConnection = useEvent(async () => {
-    const code = customValidationCode();
+    if (isTesting) return;
+    setTestError(null);
+    const mode = summaryModelMode;
+    const code = mode === 'custom' ? customValidationCode() : null;
     if (code) {
-      toastCustomError(code);
+      setTestError(customErrorMessage(code));
       return;
     }
     setIsTesting(true);
@@ -236,23 +240,39 @@ export const SummarySettings: React.FC = () => {
       const response = await runtimeFetch('/api/small-model/test', {
         method: 'POST',
         headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
-        body: JSON.stringify({
+        body: JSON.stringify(mode === 'provider' ? {
+          mode,
+          providerID: summaryProviderID,
+          modelID: summaryModelID,
+        } : {
           baseURL: summaryCustomBaseURL,
           modelID: summaryCustomModelID,
           ...(summaryCustomAPIToken.trim() ? { apiToken: summaryCustomAPIToken } : {}),
         }),
       });
-      const payload = await response.json().catch(() => null) as { ok?: unknown; code?: unknown } | null;
-      if (payload?.ok === true) {
+      const payload = await response.json().catch(() => null) as { ok?: unknown; code?: unknown; message?: unknown } | null;
+      if (response.ok && payload?.ok === true) {
         toast.success(t('settings.openchamber.defaults.summary.testConnectionOk'));
+        return;
+      }
+      if (mode === 'provider') {
+        const description = t('settings.openchamber.defaults.summary.testError.provider', {
+          code: typeof payload?.code === 'string' ? payload.code : 'generation_failed',
+        });
+        setTestError(typeof payload?.message === 'string' && payload.message.trim() ? `${description}\n${payload.message}` : description);
         return;
       }
       const failure = payload?.code === 'token' || payload?.code === 'model' || payload?.code === 'baseURL' || payload?.code === 'incomplete'
         ? payload.code
         : 'baseURL';
-      toastCustomError(failure);
+      const description = customErrorMessage(failure);
+      setTestError(typeof payload?.message === 'string' && payload.message.trim() ? `${description}\n${payload.message}` : description);
     } catch {
-      toastCustomError('baseURL');
+      if (mode === 'provider') {
+        setTestError(t('settings.openchamber.defaults.summary.testError.provider', { code: 'network_error' }));
+      } else {
+        setTestError(customErrorMessage('baseURL'));
+      }
     } finally {
       setIsTesting(false);
     }
@@ -264,7 +284,17 @@ export const SummarySettings: React.FC = () => {
     <div className="oc-settings-section-stack">
       <SettingsGroup
         label={t('settings.openchamber.defaults.summary.title')}
-        description={t('settings.openchamber.defaults.summary.description')}
+        description={(
+          <span className="flex flex-col gap-2">
+            <span className="flex flex-wrap items-center justify-between gap-2">
+              <span>{t('settings.openchamber.defaults.summary.description')}</span>
+              <Button data-settings-item="summary-ai.test-connection" variant="outline" size="sm" onClick={() => void testConnection()} disabled={isSaving || isTesting}>
+                {isTesting ? t('settings.openchamber.defaults.summary.testingConnection') : t('settings.openchamber.defaults.summary.testConnection')}
+              </Button>
+            </span>
+            {testError ? <span role="alert" className="whitespace-pre-wrap break-words text-[var(--status-error)]">{testError}</span> : null}
+          </span>
+        )}
       >
         <SettingsRow
           itemId="summary-ai.configuration"
@@ -327,11 +357,6 @@ export const SummarySettings: React.FC = () => {
                 <Input type="password" value={summaryCustomAPIToken} onChange={(event) => setSummaryCustomAPIToken(event.target.value)} placeholder={hasSummaryCustomAPIToken ? t('settings.openchamber.defaults.summary.apiTokenStored') : t('settings.openchamber.defaults.summary.apiTokenPlaceholder')} className="max-w-xl" />
                 {hasSummaryCustomAPIToken ? <Button variant="outline" size="sm" onClick={() => void clearToken()} disabled={isSaving}>{t('settings.openchamber.defaults.summary.clearToken')}</Button> : null}
               </div>
-            </SettingsRow>
-            <SettingsRow label={t('settings.openchamber.defaults.summary.testConnection')}>
-              <Button variant="outline" size="sm" onClick={() => void testConnection()} disabled={isSaving || isTesting}>
-                {isTesting ? t('settings.openchamber.defaults.summary.testingConnection') : t('settings.openchamber.defaults.summary.testConnection')}
-              </Button>
             </SettingsRow>
           </>
         )}

@@ -39,6 +39,14 @@ describe('classifyCustomSummaryApiFailure', () => {
 });
 
 describe('testCustomSummaryApi', () => {
+  it('retains provider rejection details but removes the configured token', async () => {
+    const result = await testCustomSummaryApi({
+      baseURL: 'https://api.example.test/v1', modelID: 'example-model', apiToken: 'example-credential',
+      fetchImpl: async () => Response.json({ error: { message: 'Quota exhausted for example-credential' } }, { status: 429 }),
+    });
+    expect(result).toMatchObject({ ok: false, message: 'HTTP 429: Quota exhausted for [REDACTED]' });
+  });
+
   it('returns incomplete when any of the custom triple is missing', async () => {
     expect(await testCustomSummaryApi({
       baseURL: 'https://api.example.test/v1',
@@ -53,7 +61,7 @@ describe('testCustomSummaryApi', () => {
       modelID: 'gpt-4.1-mini',
       apiToken: 'sk-test',
       fetchImpl,
-    })).toEqual({ ok: false, code: 'token' });
+    })).toEqual({ ok: false, code: 'token', message: 'HTTP 401: unauthorized' });
   });
 
   it('accepts an OpenAI-compatible chat completion payload', async () => {
@@ -75,7 +83,7 @@ describe('testCustomSummaryApi', () => {
       modelID: 'gpt-4.1-mini',
       apiToken: 'sk-test',
       fetchImpl,
-    })).toEqual({ ok: false, code: 'baseURL' });
+    })).toMatchObject({ ok: false, code: 'baseURL', message: expect.stringContaining('invalid OpenAI-compatible') });
   });
 });
 
@@ -148,7 +156,7 @@ describe('generateCustomSummaryText', () => {
   });
 
   it('surfaces HTTP failures, reasoning-only replies, and empty content as errors', async () => {
-    const input = { baseURL: 'https://summary.example.test/v1', apiToken: 't', modelID: 'm', prompt: 'p' };
+    const input = { baseURL: 'https://summary.example.test/v1', apiToken: 'test-api-token', modelID: 'm', prompt: 'p' };
     await expect(generateCustomSummaryText({
       ...input,
       fetchImpl: async () => new Response('rate limited', { status: 429 }),

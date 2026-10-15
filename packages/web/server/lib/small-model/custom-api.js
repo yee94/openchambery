@@ -1,3 +1,5 @@
+import { summaryErrorMessage } from './error-details.js';
+
 const TEST_TIMEOUT_MS = 15_000;
 const MODELS_TIMEOUT_MS = 8_000;
 const GENERATE_TIMEOUT_MS = 60_000;
@@ -54,6 +56,14 @@ const parseJson = (bodyText) => {
   }
 };
 
+const responseErrorMessage = (bodyText, fallback) => {
+  const payload = parseJson(bodyText);
+  if (typeof payload?.error?.message === 'string') return payload.error.message;
+  if (typeof payload?.error === 'string') return payload.error;
+  if (typeof payload?.message === 'string') return payload.message;
+  return (!payload && bodyText && !bodyText.trimStart().startsWith('<') ? bodyText : fallback) || 'Custom API request failed';
+};
+
 export async function testCustomSummaryApi({
   baseURL,
   modelID,
@@ -88,15 +98,16 @@ export async function testCustomSummaryApi({
       return {
         ok: false,
         code: classifyCustomSummaryApiFailure({ status: response.status, bodyText }),
+        message: summaryErrorMessage(`HTTP ${response.status}: ${responseErrorMessage(bodyText, response.statusText)}`, [trimmedToken]),
       };
     }
     const payload = parseJson(bodyText);
     if (!isRecord(payload) || !Array.isArray(payload.choices)) {
-      return { ok: false, code: 'baseURL' };
+      return { ok: false, code: 'baseURL', message: 'The endpoint returned an invalid OpenAI-compatible response.' };
     }
     return { ok: true };
   } catch (error) {
-    return { ok: false, code: classifyCustomSummaryApiFailure({ cause: error }) };
+    return { ok: false, code: classifyCustomSummaryApiFailure({ cause: error }), message: summaryErrorMessage(error, [trimmedToken]) };
   }
 }
 
@@ -137,8 +148,8 @@ export async function generateCustomSummaryText({
   });
   const bodyText = await response.text().catch(() => '');
   if (!response.ok) {
-    const snippet = bodyText ? `: ${bodyText.slice(0, 300)}` : '';
-    throw new Error(`Custom summary API request failed with ${response.status}${snippet}`);
+    const detail = responseErrorMessage(bodyText, response.statusText);
+    throw Object.assign(new Error(summaryErrorMessage(`Custom summary API request failed with ${response.status}: ${detail}`, [apiToken])), { statusCode: response.status });
   }
   const payload = parseJson(bodyText);
   const message = payload?.choices?.[0]?.message;

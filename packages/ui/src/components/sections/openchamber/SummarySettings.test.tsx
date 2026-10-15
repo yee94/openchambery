@@ -6,7 +6,11 @@ const mocks = vi.hoisted(() => ({
   fetch: vi.fn(),
   updateDesktopSettings: vi.fn(),
   modelSelectorProps: [] as Array<Record<string, unknown>>,
+  success: vi.fn(),
+  error: vi.fn(),
 }));
+
+vi.mock('@/components/ui', () => ({ toast: { success: mocks.success, error: mocks.error } }));
 
 vi.mock('@/lib/runtime-fetch', () => ({ runtimeFetch: mocks.fetch }));
 vi.mock('@/lib/persistence', () => ({ updateDesktopSettings: mocks.updateDesktopSettings }));
@@ -59,6 +63,8 @@ beforeEach(async () => {
     hasSummaryCustomAPIToken: true,
   };
   mocks.fetch.mockReset();
+  mocks.success.mockReset();
+  mocks.error.mockReset();
   mocks.updateDesktopSettings.mockReset();
   mocks.modelSelectorProps.length = 0;
   mocks.fetch.mockImplementation(async (path: string) => {
@@ -154,4 +160,46 @@ test('switching modes round-trips without losing custom or provider configuratio
   });
   await flush();
   expect(modelInput()?.value).toBe('kept-custom-model');
+});
+
+test('tests the current provider draft without saving and prevents duplicate pending requests', async () => {
+  await act(async () => providerRadio()?.click());
+  await act(async () => {
+    const change = mocks.modelSelectorProps.at(-1)?.onChange as (provider: string, model: string) => void;
+    change('draft-provider', 'draft-model');
+  });
+  let complete!: (response: Response) => void;
+  mocks.fetch.mockImplementationOnce(() => new Promise<Response>((resolve) => { complete = resolve; }));
+  const button = host.querySelector<HTMLButtonElement>('[data-settings-item="summary-ai.test-connection"]')!;
+  await act(async () => button.click());
+  expect(button.disabled).toBe(true);
+  expect(button.textContent).toBe('Testing…');
+  const call = mocks.fetch.mock.calls.at(-1)!;
+  expect(call[0]).toBe('/api/small-model/test');
+  expect(JSON.parse(call[1].body)).toEqual({ mode: 'provider', providerID: 'draft-provider', modelID: 'draft-model' });
+  expect(mocks.updateDesktopSettings).not.toHaveBeenCalled();
+  await act(async () => complete(Response.json({ ok: true })));
+  expect(mocks.success).toHaveBeenCalledWith('Model connection succeeded');
+  expect(button.disabled).toBe(false);
+});
+
+test('provider failures remain failures and re-enable retry', async () => {
+  await act(async () => providerRadio()?.click());
+  mocks.fetch.mockResolvedValueOnce(Response.json({ ok: false, code: 'no_provider', message: 'No connected provider for example/model' }, { status: 400 }));
+  const button = host.querySelector<HTMLButtonElement>('[data-settings-item="summary-ai.test-connection"]')!;
+  await act(async () => button.click());
+  expect(host.querySelector('[role="alert"]')?.textContent).toContain('No connected provider for example/model');
+  expect(mocks.success).not.toHaveBeenCalled();
+  expect(button.disabled).toBe(false);
+  mocks.fetch.mockResolvedValueOnce(Response.json({ ok: true }));
+  await act(async () => button.click());
+  expect(host.querySelector('[role="alert"]')).toBeNull();
+});
+
+test('custom mode retains its probe payload at the shared footer button', async () => {
+  mocks.fetch.mockResolvedValueOnce(Response.json({ ok: true }));
+  await act(async () => host.querySelector<HTMLButtonElement>('[data-settings-item="summary-ai.test-connection"]')!.click());
+  const call = mocks.fetch.mock.calls.at(-1)!;
+  expect(JSON.parse(call[1].body)).toEqual({ baseURL: 'https://api.example.test/v1', modelID: 'gpt-5.4-mini' });
+  expect(mocks.success).toHaveBeenCalled();
 });

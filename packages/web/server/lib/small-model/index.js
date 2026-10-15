@@ -7,6 +7,7 @@ import { createChatCompletion } from '../llm/completions.js';
 import { createModelCatalogLoader } from './catalog.js';
 import { resolveSmallModel, parseModelRef } from './resolve.js';
 import { generateCustomSummaryText, listCustomSummaryModels, testCustomSummaryApi } from './custom-api.js';
+import { summaryErrorMessage } from './error-details.js';
 
 const OPENCHAMBER_SETTINGS_FILE = path.join(
   process.env.OPENCHAMBER_DATA_DIR
@@ -162,6 +163,12 @@ export function createSmallModelService(dependencies) {
       clientFactory: openCodeClient,
       persistSessionMetadata,
       onSystemSessionPersisted,
+    }).catch((error) => {
+      const message = summaryErrorMessage(error);
+      throw Object.assign(new Error(message), {
+        code: error?.code, statusCode: error?.statusCode,
+        providerID: resolved.providerID, modelID: resolved.modelID,
+      });
     });
     const text = completion?.choices?.[0]?.message?.content;
     return {
@@ -196,6 +203,9 @@ export function createSmallModelService(dependencies) {
         prompt: clamped.prompt,
         system: effectiveSystem,
         maxOutputTokens,
+      }).catch((error) => {
+        const message = summaryErrorMessage(error, [custom.apiToken]);
+        throw Object.assign(new Error(message), { code: error?.code, statusCode: error?.statusCode });
       });
       return {
         text: text.trim(),
@@ -244,7 +254,20 @@ export function createSmallModelService(dependencies) {
     }
 
     if (SUMMARY_PURPOSES.has(purpose)) {
-      return generateSummaryText({ prompt: prompt.trim(), system, maxOutputTokens, directory, purpose });
+      try {
+        return await generateSummaryText({ prompt: prompt.trim(), system, maxOutputTokens, directory, purpose });
+      } catch (error) {
+        const settings = readSummarySettings();
+        console.error('[small-model] summary generation failed:', {
+          purpose,
+          providerID: error?.providerID || (settings?.mode === 'custom' ? 'custom' : settings?.providerID || 'default'),
+          modelID: error?.modelID || (settings?.mode === 'custom' ? settings?.custom?.modelID : settings?.modelID) || 'default',
+          code: error?.code,
+          status: error?.statusCode,
+          message: summaryErrorMessage(error, [settings?.custom?.apiToken]),
+        });
+        throw error;
+      }
     }
 
     const explicit = parseModelRef(model);
@@ -290,6 +313,22 @@ export function createSmallModelService(dependencies) {
     return testCustomSummaryApi(resolveCustomApiInput(body));
   }
 
+  async function testProviderApi(body = {}) {
+    const providerID = typeof body.providerID === 'string' ? body.providerID.trim() : '';
+    const modelID = typeof body.modelID === 'string' ? body.modelID.trim() : '';
+    if (Boolean(providerID) !== Boolean(modelID)) return { ok: false, code: 'model', message: 'Select both a provider and a model.' };
+    try {
+      const resolved = await resolveSummaryProviderModel({ providerID, modelID });
+      const result = await generateThroughGateway({ resolved, prompt: 'Reply with OK only.' });
+      return result.text ? { ok: true } : { ok: false, code: 'empty_response', message: 'The provider returned no assistant text.' };
+    } catch (error) {
+      const code = error?.code === 'no_provider' ? 'no_provider'
+        : error?.statusCode === 404 ? 'model'
+        : 'generation_failed';
+      return { ok: false, code, message: summaryErrorMessage(error) };
+    }
+  }
+
   async function listCustomModels(body) {
     const { baseURL, apiToken } = resolveCustomApiInput(body);
     return listCustomSummaryModels({ baseURL, apiToken });
@@ -311,6 +350,7 @@ export function createSmallModelService(dependencies) {
   return {
     generateSmallModelText,
     testCustomApi,
+    testProviderApi,
     listCustomModels,
     describeSmallModel,
   };
