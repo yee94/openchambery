@@ -49,6 +49,14 @@ fresh forever. Cold partial data remains provisional and usable; failed requests
 stay Query errors without manufacturing an empty successful result. Complete
 cached catalogs remain reusable, and failed refreshes retain them. Optional
 default-selection configuration is independent of provider/model list success.
+Provider, raw Agent, and settings-bootstrap Query attempts have a 30-second
+deadline covering headers and body consumption. The deadline rejects independently
+of transport abort support, so a healthy Relay socket with a stalled HTTP request
+cannot pin the shared flight and startup recovery indefinitely. Query retries and
+existing catalog recovery retain ownership; timeouts preserve previous complete
+data, and late responses cannot overwrite a recovered snapshot. Abandoning a
+directory activation before its Agent loader starts clears the reserved loading
+flag unless a newer Agent load has taken ownership.
 Plugin Settings page/sidebar observe `pluginQueries.ts`, including external
 plugin/config changes, while the legacy store mirrors explicit list loads for
 imperative selection/mutation callers. The store loader now shares Query IO.

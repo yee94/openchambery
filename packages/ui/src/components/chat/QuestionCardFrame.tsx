@@ -28,7 +28,6 @@ export function QuestionCardFrame({
           data-interaction-card
           data-question-card={questionCard ? '' : undefined}
           className="-mt-1 overflow-hidden rounded-xl border border-border/30 bg-muted/10"
-          onPointerDownCapture={onInteraction}
           onClickCapture={onInteraction}
           onKeyDownCapture={onInteraction}
           onInputCapture={onInteraction}

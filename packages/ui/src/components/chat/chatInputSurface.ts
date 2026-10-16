@@ -19,11 +19,26 @@ export type ChatInputSelection = {
     /** False while the surface is resolving the selected model's variants. */
     variantsReady?: boolean;
     ready: boolean;
+    /** Resource readiness overrides the combined gate when catalogs load independently. */
+    modelsReady?: boolean;
+    agentsReady?: boolean;
     loading?: boolean;
     error?: boolean;
   };
   change?: (selection: { providerID?: string; modelID?: string; agent?: string; variant?: string }) => Promise<void> | void;
   flush: () => Promise<void>;
+};
+
+export const resolveChatInputCatalogReadiness = (
+  catalog: ChatInputSelection['catalog'],
+  fallback: { modelsReady: boolean; agentsReady: boolean },
+): { modelsReady: boolean; agentsReady: boolean } => {
+  if (!catalog) return fallback;
+  const ready = catalog.ready && !catalog.loading;
+  return {
+    modelsReady: !catalog.error && (catalog.modelsReady ?? ready),
+    agentsReady: !catalog.error && (catalog.agentsReady ?? ready),
+  };
 };
 
 /** Provider catalogs expose variants as a Record. v2 ModelInfo uses `{ id }[]`; older callers may pass string[]. */

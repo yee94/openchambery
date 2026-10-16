@@ -56,7 +56,7 @@ import { useOpenCodeReadiness } from '@/hooks/useOpenCodeReadiness';
 import { eventMatchesShortcut, getEffectiveShortcutCombo, normalizeCombo } from '@/lib/shortcuts';
 import { markStartupTrace } from '@/lib/startupTrace';
 import { focusComposerTextarea, resolveComposerTextarea } from './composerFocus';
-import { resolveChatInputSelectionVariantOptions, resolveModelVariantKeys } from './chatInputSurface';
+import { resolveChatInputCatalogReadiness, resolveChatInputSelectionVariantOptions, resolveModelVariantKeys } from './chatInputSurface';
 
 type IconComponent = IconName;
 
@@ -68,6 +68,8 @@ export type ModelControlsCatalog = {
     variants?: readonly string[];
     variantsReady?: boolean;
     ready: boolean;
+    modelsReady?: boolean;
+    agentsReady?: boolean;
     loading?: boolean;
     error?: boolean;
 };
@@ -305,8 +307,12 @@ export const ModelControls: React.FC<ModelControlsProps> = ({
         state.agentConfigLoadingByDirectory[state.activeDirectoryKey] === true
     ));
     const selectionCatalog = selectionAdapter?.catalog;
-    const isModelControlReady = isReady && (selectionCatalog?.ready ?? !isProviderConfigLoading) && !selectionCatalog?.loading && !selectionCatalog?.error && !selectionAdapter?.disabled;
-    const isAgentControlReady = isReady && (selectionCatalog?.ready ?? !isAgentConfigLoading) && !selectionCatalog?.loading && !selectionCatalog?.error && !selectionAdapter?.disabled;
+    const catalogReadiness = resolveChatInputCatalogReadiness(selectionCatalog, {
+        modelsReady: !isProviderConfigLoading,
+        agentsReady: !isAgentConfigLoading,
+    });
+    const isModelControlReady = isReady && catalogReadiness.modelsReady && !selectionAdapter?.disabled;
+    const isAgentControlReady = isReady && catalogReadiness.agentsReady && !selectionAdapter?.disabled;
     const areModelControlsReady = isModelControlReady && isAgentControlReady;
     const storedProviders = useConfigStore((state) => state.providers);
     const providers = selectionCatalog?.providers ?? storedProviders;

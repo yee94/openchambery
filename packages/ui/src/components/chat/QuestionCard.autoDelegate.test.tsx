@@ -75,7 +75,37 @@ afterEach(async () => {
 const bar = () => host.querySelector<HTMLElement>('[data-question-delegate-bar]');
 
 describe('QuestionCard auto delegation', () => {
-  test('pointer down pauses without selecting, and the subsequent click selects exactly once', async () => {
+  test('allows changing a selected answer repeatedly after delegation is paused', async () => {
+    snapshot = { ...snapshot, requests: [{ ...snapshot.requests[0], state: 'paused', deadlineAt: null, pauseReason: 'interaction' }] };
+    await queryClient.fetchQuery(questionAutoDelegateQueryOptions());
+    await act(async () => {
+      root.render(<QuestionCard question={{ ...question, questions: [{
+        ...question.questions[0], options: [
+          { label: 'Option A', description: '' },
+          { label: 'Option B', description: '' },
+          { label: 'Option C', description: '' },
+        ],
+      }] }} />);
+    });
+    await flush();
+    for (const label of ['Option A', 'Option B', 'Option C', 'Option A']) {
+      const option = button(label);
+      await act(async () => {
+        option.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, pointerType: 'mouse' }));
+      });
+      await flush();
+      expect(button(label)).toBe(option);
+      await act(async () => {
+        option.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, pointerType: 'mouse' }));
+        option.click();
+      });
+      expect(option.getAttribute('aria-pressed')).toBe('true');
+      expect(host.querySelectorAll('[aria-pressed="true"]')).toHaveLength(1);
+    }
+    expect(posts()).toHaveLength(1);
+  });
+
+  test('pointer down keeps the countdown layout until the completed click pauses and selects exactly once', async () => {
     await mount();
     const option = button('Option A');
     await act(async () => {
@@ -83,6 +113,8 @@ describe('QuestionCard auto delegation', () => {
     });
     await flush();
     expect(host.textContent).not.toContain('Countdown paused');
+    expect(posts()).toHaveLength(0);
+    expect(bar()).not.toBeNull();
     expect(button('Option A')).toBe(option);
     expect(option.getAttribute('aria-pressed')).toBe('false');
     await act(async () => {
@@ -94,6 +126,7 @@ describe('QuestionCard auto delegation', () => {
     expect(posts()).toHaveLength(1);
     expect(snapshot.requests[0].state).toBe('paused');
     expect(bar()).toBeNull();
+    expect(host.querySelector('[data-question-card]')?.children).toHaveLength(3);
     await act(async () => { await vi.advanceTimersByTimeAsync(5000); });
     expect(host.textContent).not.toContain('Model decides');
   });
@@ -105,6 +138,7 @@ describe('QuestionCard auto delegation', () => {
     expect(posts()).toHaveLength(1);
     expect(JSON.parse(posts()[0][1].body).reason).toBe('interaction');
     expect(host.querySelector('[data-question-delegation-controls]')).toBeNull();
+    expect(host.querySelector('[data-question-card]')?.children).toHaveLength(3);
     expect(button('Option A').getAttribute('aria-pressed')).toBe('true');
   });
 

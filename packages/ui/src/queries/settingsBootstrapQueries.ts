@@ -3,6 +3,7 @@ import { runtimeFetch } from '@/lib/runtime-fetch';
 import { getRuntimeTransportIdentity } from '@/lib/runtime-switch';
 import type { SettingsBootstrap, SettingsBootstrapPatch } from './settingsBootstrapDto';
 import { parseSettingsBootstrap, parseSettingsBootstrapPatch } from './settingsBootstrapParser';
+import { withConfigQueryDeadline } from './configQueryDeadline';
 
 class SettingsBootstrapRequestError extends Error {
   constructor(readonly status: number) {
@@ -16,7 +17,7 @@ const settingsBootstrapQueryKey = (transport = getRuntimeTransportIdentity()) =>
 
 export const settingsBootstrapQueryOptions = (transport = getRuntimeTransportIdentity()) => ({
   queryKey: settingsBootstrapQueryKey(transport),
-  queryFn: async ({ signal }: { signal: AbortSignal }): Promise<SettingsBootstrap> => {
+  queryFn: ({ signal }: { signal: AbortSignal }): Promise<SettingsBootstrap> => withConfigQueryDeadline(signal, async (signal) => {
     const response = await runtimeFetch('/api/config/settings/bootstrap', {
       method: 'GET',
       headers: { Accept: 'application/json' },
@@ -26,7 +27,7 @@ export const settingsBootstrapQueryOptions = (transport = getRuntimeTransportIde
       throw new SettingsBootstrapRequestError(response.status);
     }
     return parseSettingsBootstrap(await response.json());
-  },
+  }),
   retry: (failureCount: number, error: unknown) => (
     !(error instanceof SettingsBootstrapRequestError && (error.status === 404 || error.status === 501))
     && failureCount < 1

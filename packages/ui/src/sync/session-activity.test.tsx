@@ -12,6 +12,7 @@ import type { Event } from './types';
 import { resyncDirectorySessionStatuses } from './session-status-reconciliation';
 import { QueryClient } from '@tanstack/react-query';
 import { collectDirectoryStatusRestoreSessionIds } from './reconnect-recovery';
+import { listInProgressHomeSessions } from '@/components/session/sidebar/pinnedSessions';
 
 vi.hoisted(() => {
   vi.stubGlobal('fetch', vi.fn(async () => Response.json({ home: '/workspace', data: [] })));
@@ -98,6 +99,10 @@ test('cross-directory nested children release ancestors only when the last live 
   };
   event('session.execution.started', 'grandchild');
   expect([...reader.read()].sort()).toEqual(['child', 'grandchild', 'root']);
+  const homeSessions = () => listInProgressHomeSessions(
+    [...parent.getState().session, ...tasks.getState().session], new Set(), reader.read(), {},
+  ).map((session) => session.id);
+  expect(homeSessions()).toEqual(['root']);
   event('session.execution.started', 'sibling');
   event('session.execution.succeeded', 'grandchild');
   expect([...reader.read()].sort()).toEqual(['root', 'sibling']);
@@ -105,6 +110,7 @@ test('cross-directory nested children release ancestors only when the last live 
   expect(reader.read().has('root')).toBe(true);
   event('session.execution.failed', 'sibling');
   expect(reader.read().size).toBe(0);
+  expect(homeSessions()).toEqual([]);
   event('session.execution.started', 'grandchild');
   event('session.execution.interrupted', 'grandchild', { reason: 'user' });
   expect(reader.read().size).toBe(0);

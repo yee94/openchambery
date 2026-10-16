@@ -1745,6 +1745,34 @@ describe('useConfigStore provider persistence', () => {
     expect(useConfigStore.getState().agentConfigLoadingByDirectory[OTHER_DIRECTORY]).toBe(false);
   });
 
+  test('transport generation change during activation cannot strand an agent loading flag before its loader starts', async () => {
+    const pendingProviders = deferred<{ providers: ReturnType<typeof providerResponse>[]; default: Record<string, string> }>();
+    getProvidersForConfigImpl = () => pendingProviders.promise;
+    const activation = useConfigStore.getState().activateDirectory(OTHER_DIRECTORY);
+    expect(useConfigStore.getState().agentConfigLoadingByDirectory[OTHER_DIRECTORY]).toBe(true);
+    runtimeGeneration += 1;
+    pendingProviders.resolve({ providers: [providerResponse('other')], default: {} });
+    await activation;
+    expect(listAgentsCalls).toBe(0);
+    expect(useConfigStore.getState().agentConfigLoadingByDirectory[OTHER_DIRECTORY]).toBe(false);
+  });
+
+  test('abandoned activation does not clear a newer in-flight agent load', async () => {
+    const pendingProviders = deferred<{ providers: ReturnType<typeof providerResponse>[]; default: Record<string, string> }>();
+    const pendingAgents = deferred<TestAgent[]>();
+    getProvidersForConfigImpl = () => pendingProviders.promise;
+    listAgentsImpl = () => pendingAgents.promise;
+    const activation = useConfigStore.getState().activateDirectory(OTHER_DIRECTORY);
+    runtimeGeneration += 1;
+    const agentLoad = useConfigStore.getState().loadAgents({ directory: OTHER_DIRECTORY });
+    pendingProviders.resolve({ providers: [providerResponse('other')], default: {} });
+    await activation;
+    expect(useConfigStore.getState().agentConfigLoadingByDirectory[OTHER_DIRECTORY]).toBe(true);
+    pendingAgents.resolve([testAgent('build')]);
+    await agentLoad;
+    expect(useConfigStore.getState().agentConfigLoadingByDirectory[OTHER_DIRECTORY]).toBe(false);
+  });
+
   test('directory activation keeps cached provider and agent controls ready during refresh', async () => {
     const pendingProviders = deferred<{ providers: ReturnType<typeof providerResponse>[]; default: Record<string, string> }>();
     const pendingAgents = deferred<TestAgent[]>();

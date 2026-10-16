@@ -6,6 +6,7 @@ import { runtimeFetch } from '@/lib/runtime-fetch';
 import { parseProviderCatalog } from '@/lib/configCatalogParser';
 import type { ProviderCatalog } from '@/types/configCatalog';
 import { parseModelIdentifier } from '@/lib/modelIdentifier';
+import { withConfigQueryDeadline } from './configQueryDeadline';
 
 // 空 catalog 绝不能永久 fresh：成功或失败后的空列表都必须在下一次
 // ensure/fetchQuery 时重新请求，避免 UI 被空 SWR 快照永久困住。
@@ -114,7 +115,7 @@ export const providerCatalogQueryOptions = (
   const normalizedDirectory = normalizeConfigCatalogDirectory(directory);
   return {
     queryKey: queryKeys.configCatalog.providers(normalizedDirectory, transport),
-    queryFn: async ({ signal }: { signal: AbortSignal }) => {
+    queryFn: ({ signal }: { signal: AbortSignal }) => withConfigQueryDeadline(signal, async (signal) => {
       const response = await runtimeFetch('/api/config/catalog/providers', {
         method: 'GET',
         headers: {
@@ -137,7 +138,7 @@ export const providerCatalogQueryOptions = (
         throw new Error('Partial provider catalog refresh retained the complete snapshot');
       }
       return catalog;
-    },
+    }),
     staleTime: catalogStaleTime(isProviderCatalogPopulated),
     gcTime: Infinity,
     retry: 2,
@@ -153,7 +154,7 @@ export const rawAgentsQueryOptions = (
   const normalizedDirectory = normalizeConfigCatalogDirectory(directory);
   return {
     queryKey: queryKeys.agents.raw(normalizedDirectory, transport),
-    queryFn: ({ signal }: { signal: AbortSignal }) => opencodeClient.listAgents(normalizedDirectory, signal),
+    queryFn: ({ signal }: { signal: AbortSignal }) => withConfigQueryDeadline(signal, (signal) => opencodeClient.listAgents(normalizedDirectory, signal)),
     staleTime: catalogStaleTime((data) => Array.isArray(data) && data.length > 0),
     gcTime: Infinity,
     retry: 2,

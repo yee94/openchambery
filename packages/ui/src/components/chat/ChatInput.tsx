@@ -1312,6 +1312,8 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
                 agents: primarySelectionAgents,
                 variants: primarySelectionVariants,
                 variantsReady: !primaryProviderConfigLoading,
+                modelsReady: !primaryProviderConfigLoading,
+                agentsReady: !primaryAgentConfigLoading,
                 ready: !primaryProviderConfigLoading && !primaryAgentConfigLoading,
                 loading: primaryProviderConfigLoading || primaryAgentConfigLoading,
             },

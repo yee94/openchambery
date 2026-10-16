@@ -129,7 +129,7 @@ Primary composer history parsing reads authoritative top-level `providerID` / `m
 
 `questionDraftStore.ts` owns in-memory answer drafts by runtime generation, session and request ID. Selection, custom text, active tab, interaction hold and pause-flight/error state survive QuestionCard remounts and snapshot changes. Each card subscribes only to its own selection/mode/completion fields; non-empty custom typing does not republish those fields. Successful reply/dismiss, authoritative settled snapshots and runtime changes release drafts; unmount and failed mutations do not. Drafts are not written to browser storage.
 
-Question cards have no manual-pause or immediate-delegation buttons. User pointer/click, keyboard, input, paste, composition and tab interactions immediately hold the local countdown and POST pause with `reason: interaction`; programmatic focus remains inert. Interaction before snapshot discovery uses the question identity, and `not_found` is retried when the counting request appears. Pending pauses are single-flight and failures require explicit retry. Pausing and paused states show no status text or controls; a blank aria-hidden status/progress footprint is displayed only while the card's group is active, preventing pointer-down from shifting a bottom-pinned card before pointer-up without leaving idle whitespace beneath the answers. Failure feedback and retry remain visible. Selection remains click-owned so a touch-scroll gesture does not answer a question.
+Question cards have no manual-pause or immediate-delegation buttons. Completed clicks, keyboard, input, paste, composition and tab interactions hold the local countdown and POST pause with `reason: interaction`; programmatic focus remains inert. Pointer-down alone does not pause: removing the countdown between pointer-down and pointer-up shifts bottom-pinned choices and loses clicks. Interaction before snapshot discovery uses the question identity, and `not_found` is retried when the counting request appears. Pending pauses are single-flight and failures require explicit retry. Pausing and paused states remove the entire status/progress region with no blank footprint, regardless of pointer active state. Failure feedback and retry remain visible. Selection remains click-owned so a touch-scroll gesture does not answer a question.
 
 Pending Question, Permission, and native Form interactions all render through
 `QuestionCardFrame`, the shared transcript presentation based on the existing
@@ -173,6 +173,11 @@ Sorted compaction turns use the turn-owned Activity visual language with a dedic
 Global keyboard shortcut dropdown gating distinguishes popup presence from inline listboxes. Select popups use `data-slot="select-content"`; the prompt navigator rail and Assistant list only own keys targeted inside their listbox. With Composer focus, the visible prompt rail allows double-Escape abort. An explicitly opened prompt navigator panel consumes the first Escape to close, then a fresh double Escape can abort. `useKeyboardShortcuts.escape.test.tsx` exercises the real shortcut Hook and prompt rail across a session switch.
 
 Desktop model/agent pickers cancel Base UI `trigger-hover` dismiss (`searchableSelectorDismiss.ts`): keyboard/imperative opens are not click-like, so filter typing that shrinks the list under the cursor (or IME candidate pointer leave) must not close the popup. Esc, outside press, item select, and controlled close still dismiss.
+
+Primary composer catalogs expose independent `modelsReady` / `agentsReady` gates.
+An Agent request or settings-default read cannot hide already-loaded model names,
+pickers, or variants. ModelControls honors those resource gates; surfaces without
+them retain their combined `ready` / `loading` contract and scoped error gate.
 
 ### Closed-work shells and bounded Intl formatters
 

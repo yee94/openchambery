@@ -23,8 +23,10 @@
   Top-section hover cards resolve project and branch from session ownership
   (`resolveTopSectionSecondaryMeta`) because pinned roots are omitted from the
   project-tree meta index.
-- The top section renders every pinned session plus unlabeled running and
-  top-level-unread rows, and supports header collapse. Its title becomes
+- The top section renders every pinned session plus unlabeled top-level running
+  and unread rows, and supports header collapse. Running descendants keep their
+  root conversation active through the shared activity projection, but are never
+  independently promoted here, including when their parent is missing. Its title becomes
   pinned/in-progress when the in-progress group is non-empty. Web, desktop,
   VS Code, and mobile home share this contract; VS Code still has no global
   pinned group but does show the in-progress rows in this top section.

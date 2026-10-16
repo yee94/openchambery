@@ -1,4 +1,5 @@
-import { beforeEach, describe, expect, mock, test } from 'bun:test';
+import { mock } from 'bun:test';
+import { beforeEach, describe, expect, test, vi } from 'vitest';
 
 let runtimeKey = 'runtime-a';
 let calls = 0;
@@ -82,6 +83,22 @@ describe('settingsBootstrapQueries', () => {
     expect(readSettingsBootstrapSnapshot('runtime-a')).toEqual({ schemaVersion: 1, defaultModel: 'provider/model', autoCreateWorktree: true });
     expect(readSettingsBootstrapSnapshot('runtime-b')).toEqual({ schemaVersion: 1, defaultAgent: 'agent-b' });
     expect(settingsBootstrapQueryOptions('runtime-a').queryKey).toEqual(['runtime-a', 'settings', 'bootstrap']);
+  });
+
+  test('a stalled settings bootstrap cannot block agent catalog readiness forever', async () => {
+    vi.useFakeTimers();
+    try {
+      resolveRequest = () => {};
+      const options = settingsBootstrapQueryOptions(runtimeKey);
+      const result = queryClient.fetchQuery({ ...options, retry: false }).catch((error) => error);
+      await vi.advanceTimersByTimeAsync(30_001);
+      expect(queryClient.getQueryState(options.queryKey)?.fetchStatus).toBe('idle');
+      expect(await result).toBeInstanceOf(Error);
+      expect(seenSignal?.aborted).toBe(true);
+    } finally {
+      queryClient.clear();
+      vi.useRealTimers();
+    }
   });
 
   test('瞬态失败重试一次并保留旧 cache', async () => {

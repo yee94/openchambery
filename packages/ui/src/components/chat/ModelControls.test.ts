@@ -1,5 +1,5 @@
-import { describe, expect, test } from 'bun:test';
-import { resolveChatInputSelectionVariantOptions, resolveModelVariantKeys, type ChatInputSelection } from './chatInputSurface';
+import { describe, expect, test } from 'vitest';
+import { resolveChatInputCatalogReadiness, resolveChatInputSelectionVariantOptions, resolveModelVariantKeys, type ChatInputSelection } from './chatInputSurface';
 import { shouldCancelSearchableSelectorHoverDismiss } from './searchableSelectorDismiss';
 
 const selection: ChatInputSelection['value'] = { providerID: 'workspace', modelID: 'model-a', agent: 'build', variant: 'high' };
@@ -23,6 +23,20 @@ describe('shouldCancelSearchableSelectorHoverDismiss', () => {
 });
 
 describe('ModelControls selection adapter variants', () => {
+    test('a pending agent catalog cannot hide already-loaded models and variants', () => {
+        const pendingAgents = { ...catalog, ready: false, loading: true, modelsReady: true, agentsReady: false };
+        expect(resolveChatInputCatalogReadiness(pendingAgents, { modelsReady: false, agentsReady: false })).toEqual({ modelsReady: true, agentsReady: false });
+        expect(resolveChatInputSelectionVariantOptions(selection, pendingAgents, 'workspace', 'model-a')).toEqual(['low', 'high']);
+        expect(resolveChatInputCatalogReadiness({ ...pendingAgents, modelsReady: false, agentsReady: true }, { modelsReady: true, agentsReady: true })).toEqual({ modelsReady: false, agentsReady: true });
+    });
+
+    test('secondary catalogs retain their own readiness and errors rather than borrowing global readiness', () => {
+        const fallback = { modelsReady: true, agentsReady: true };
+        expect(resolveChatInputCatalogReadiness({ ...catalog, ready: false, loading: true }, fallback)).toEqual({ modelsReady: false, agentsReady: false });
+        expect(resolveChatInputCatalogReadiness({ ...catalog, error: true, modelsReady: true, agentsReady: true }, fallback)).toEqual({ modelsReady: false, agentsReady: false });
+        expect(resolveChatInputCatalogReadiness(catalog, { modelsReady: false, agentsReady: false })).toEqual(fallback);
+    });
+
     test('reads variants only for the adapter selection', () => {
         expect(resolveChatInputSelectionVariantOptions(selection, catalog, 'workspace', 'model-a')).toEqual(['low', 'high']);
         expect(resolveChatInputSelectionVariantOptions(selection, catalog, 'global', 'model-a')).toEqual([]);

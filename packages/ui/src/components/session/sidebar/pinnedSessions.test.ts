@@ -77,18 +77,19 @@ describe('listInProgressHomeSessions', () => {
     expect(active.map((entry) => entry.id)).toEqual(['unread', 'running']);
   });
 
-  test('includes a running child even when the parent is idle', () => {
+  test('never promotes running children, including orphans, into home conversations', () => {
     const active = listInProgressHomeSessions(
       [
         detailedSession('parent', { updated: 10 }),
         detailedSession('child', { parentID: 'parent', updated: 11 }),
+        detailedSession('orphan', { parentID: 'missing', updated: 12 }),
       ],
       new Set(),
-      new Set(['child']),
+      new Set(['child', 'orphan']),
       {},
     );
 
-    expect(active.map((entry) => entry.id)).toEqual(['child']);
+    expect(active).toEqual([]);
   });
 });
 

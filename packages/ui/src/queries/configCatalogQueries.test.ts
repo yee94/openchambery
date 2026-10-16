@@ -1,5 +1,5 @@
 import { mock } from 'bun:test';
-import { beforeEach, describe, expect, test } from 'vitest';
+import { beforeEach, describe, expect, test, vi } from 'vitest';
 
 let runtimeKey = 'runtime-a';
 let agentCalls = 0;
@@ -115,6 +115,76 @@ describe('configCatalogQueries', () => {
       [{ name: 'runtime-a:/workspace/project' }],
       [{ name: 'runtime-a:/workspace/project' }],
     ]);
+  });
+
+  test.each(['providers', 'agents'] as const)('%s requests settle even when a live transport never responds or honors abort', async (kind) => {
+    vi.useFakeTimers();
+    try {
+      providerFetchImpl = () => new Promise(() => {});
+      const options = kind === 'providers'
+        ? providerCatalogQueryOptions('/workspace/stalled', runtimeKey)
+        : rawAgentsQueryOptions('/workspace/stalled', runtimeKey);
+      const result = queryClient.fetchQuery<unknown>({ ...options, retry: false }).catch((error) => error);
+      await vi.advanceTimersByTimeAsync(30_001);
+      expect(queryClient.getQueryState(options.queryKey)?.fetchStatus).toBe('idle');
+      expect(await result).toBeInstanceOf(Error);
+      expect((kind === 'providers' ? providerSignal : seenSignal)?.aborted).toBe(true);
+      expect(queryClient.getQueryData(options.queryKey)).toBeUndefined();
+    } finally {
+      queryClient.clear();
+      vi.useRealTimers();
+    }
+  });
+
+  test('timed-out provider refresh preserves the complete catalog and ignores a late body after recovery', async () => {
+    await ensureProviderCatalogQuery('/workspace/project', runtimeKey);
+    const options = providerCatalogQueryOptions('/workspace/project', runtimeKey);
+    const previous = queryClient.getQueryData(options.queryKey);
+    let releaseBody!: (body: string) => void;
+    providerFetchImpl = async () => new Response(new ReadableStream({
+      start(controller) {
+        releaseBody = (body) => {
+          controller.enqueue(new TextEncoder().encode(body));
+          controller.close();
+        };
+      },
+    }));
+    vi.useFakeTimers();
+    try {
+      const result = queryClient.fetchQuery({ ...options, staleTime: 0, retry: false }).catch((error) => error);
+      await vi.advanceTimersByTimeAsync(30_001);
+      expect(queryClient.getQueryState(options.queryKey)?.fetchStatus).toBe('idle');
+      expect(await result).toBeInstanceOf(Error);
+      expect(queryClient.getQueryData(options.queryKey)).toBe(previous);
+      providerFetchImpl = undefined;
+      providerPayload = { schemaVersion: 1, providers: [{ id: 'recovered', name: 'Recovered', models: {} }], default: {}, partial: false };
+      await queryClient.fetchQuery({ ...options, staleTime: 0, retry: false });
+      const recovered = queryClient.getQueryData(options.queryKey);
+      releaseBody(JSON.stringify({ schemaVersion: 1, providers: [], default: {}, partial: false }));
+      await vi.advanceTimersByTimeAsync(0);
+      expect(queryClient.getQueryData(options.queryKey)).toBe(recovered);
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      queryClient.clear();
+      vi.useRealTimers();
+    }
+  });
+
+  test('query cancellation aborts the catalog request and releases its deadline timer', async () => {
+    vi.useFakeTimers();
+    try {
+      providerFetchImpl = () => new Promise(() => {});
+      const options = providerCatalogQueryOptions('/workspace/cancelled', runtimeKey);
+      const result = queryClient.fetchQuery(options).catch((error) => error);
+      await queryClient.cancelQueries({ queryKey: options.queryKey });
+      await result;
+      expect(providerSignal?.aborted).toBe(true);
+      expect(vi.getTimerCount()).toBe(0);
+      expect(queryClient.getQueryData(options.queryKey)).toBeUndefined();
+    } finally {
+      queryClient.clear();
+      vi.useRealTimers();
+    }
   });
 
   test('fresh cache、精确失效和 transport/directory key 保持隔离', async () => {

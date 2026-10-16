@@ -117,12 +117,7 @@ export function QuestionAutoDelegateStatus({ delegation }: { delegation: Delegat
     : request?.state === 'disabled' ? 'chat.questionDelegate.disabled'
     : 'chat.questionDelegate.settled';
   const silentPause = !claimed && (request?.state === 'paused' || (held && (!request || request.state === 'counting')));
-  if (silentPause && !query.isError && !pauseFailed) return <div aria-hidden className="hidden border-t border-transparent px-2 py-1.5 group-active:block">
-    <div className="flex flex-col gap-1">
-      <span className="typography-micro">&nbsp;</span>
-      <div className="h-1" />
-    </div>
-  </div>;
+  if (silentPause && !query.isError && !pauseFailed) return null;
   return <div data-question-delegation-controls className="flex flex-col gap-1.5 border-t border-border/20 px-2 py-1.5">
     {showCountdown ? <LiveCountdown data={query.data} deadlineAt={request?.deadlineAt ?? null} startedAt={startedAt.current} delayMs={delayMs} /> : !silentPause ? (
       <div className="flex min-w-0 flex-1 flex-col gap-1">

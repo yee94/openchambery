@@ -28,7 +28,7 @@ const isSessionArchived = (session: Session): boolean => {
 };
 
 /**
- * Non-pinned home-attention rows: live busy/retry sessions, plus top-level
+ * Non-pinned home-attention rows: top-level live busy/retry sessions, plus
  * unread sessions (the blue completed-unread marker). Pinned ids stay in the
  * pinned group; archived sessions stay out of this ephemeral set.
  */
@@ -40,9 +40,9 @@ export const listInProgressHomeSessions = (
 ): Session[] => {
   const active: Session[] = [];
   for (const session of sessions) {
-    if (pinnedSessionIds.has(session.id) || isSessionArchived(session)) continue;
+    if (pinnedSessionIds.has(session.id) || isSessionArchived(session) || getSessionParentId(session)) continue;
     const running = runningSessionIds.has(session.id);
-    const unread = (unseenBySession[session.id] ?? 0) > 0 && !getSessionParentId(session);
+    const unread = (unseenBySession[session.id] ?? 0) > 0;
     if (!running && !unread) continue;
     active.push(session);
   }

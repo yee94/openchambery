@@ -1238,6 +1238,7 @@ export const useConfigStore = create<ConfigStore>()(
                         return;
                     }
                     const directoryKey = toDirectoryKey(configDirectory);
+                    const agentEpochBeforeActivation = _agentLoadEpochByDirectory[directoryKey];
                     let snapshotHadProviders = false;
                     let snapshotHadAgents = false;
                     let hadInMemoryDirectoryAgents = false;
@@ -1323,7 +1324,20 @@ export const useConfigStore = create<ConfigStore>()(
                         await get().loadProviders({ directory: fromDirectoryKey(directoryKey), source: options?.source ?? 'activateDirectory', forceRefresh: options?.refreshProviders });
                     }
 
-                    if (getRuntimeGeneration() !== generation || get().activeDirectoryKey !== directoryKey) return;
+                    if (getRuntimeGeneration() !== generation || get().activeDirectoryKey !== directoryKey) {
+                        // Activation advertised an agent load before awaiting providers.
+                        // If it is abandoned, no agent loader owns that flag's finally.
+                        // A newer actual load retains ownership of its own flag.
+                        if (_agentLoadEpochByDirectory[directoryKey] === agentEpochBeforeActivation) {
+                            set((state) => state.agentConfigLoadingByDirectory[directoryKey] === true ? {
+                                agentConfigLoadingByDirectory: {
+                                    ...state.agentConfigLoadingByDirectory,
+                                    [directoryKey]: false,
+                                },
+                            } : state);
+                        }
+                        return;
+                    }
                     if (!snapshotHadAgents) {
                         await get().loadAgents({ directory: fromDirectoryKey(directoryKey), source: 'activateDirectory' });
                     }
