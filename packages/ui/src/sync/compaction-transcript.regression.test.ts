@@ -1,10 +1,88 @@
 import { describe, expect, test } from 'vitest'
 import type { Event } from './types'
-import { mergeSessionTranscript, type SessionTranscriptData } from './transcript-merge'
-import { normalizeSessionProjectionMessage } from './session-projection-api'
+import { mergeSessionTranscript, shareSessionTranscriptData, type SessionTranscriptData } from './transcript-merge'
+import { normalizeSessionProjectionMessage, reconcileFetched } from './session-projection-api'
 import { normalizeOpenCodeEvent } from './opencode-event-normalizer'
+import { QueryClient } from '@tanstack/react-query'
+import { createQueryTranscriptRepository } from './transcript-repository-query-adapter'
 
 describe('native compaction transcript lifecycle', () => {
+  test.each(['missing', 'misplaced'] as const)('production authority refresh repairs a %s checkpoint across retained pages', async (state) => {
+    const scope = { directory: '/workspace', sessionID: 'ses_paged_compaction' }
+    const row = (id: string, type = 'assistant') => normalizeSessionProjectionMessage(scope.sessionID, {
+      id, type, time: { created: 10 }, content: [{ type: 'text', text: id }],
+      ...(type === 'compaction' ? { status: 'completed', reason: 'auto' } : {}),
+    })!
+    const older = row('msg_older')
+    const before = row('msg_before')
+    const checkpoint = row('msg_z_checkpoint', 'compaction')
+    const after = row('msg_a_after')
+    const latest = row('msg_latest')
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    const repo = createQueryTranscriptRepository({
+      client, transport: 'compaction-test', generation: 1,
+      probe: { getTransport: () => 'compaction-test', getGeneration: () => 1 },
+      fetcher: async () => ({ records: [before, checkpoint, after, latest], complete: false, cursor: 'older', turnCount: 0 }),
+    })
+    try {
+      repo.apply(scope, { type: 'http-page', purpose: 'initial', page: {
+        records: state === 'missing' ? [latest] : [latest, checkpoint], complete: false, cursor: 'before', turnCount: 0,
+      } })
+      repo.apply(scope, { type: 'http-page', purpose: 'prepend', page: { records: [older, before, after], complete: true, turnCount: 0 } })
+      const oldData = client.getQueriesData<SessionTranscriptData>({ queryKey: ['compaction-test', 1, 'session-transcript'] })[0]?.[1]
+      const retained = repo.getTranscript(scope).messagesByID[older.info.id]
+      await repo.refreshFromAuthority(scope)
+      expect(repo.getTranscript(scope).messageOrder).toEqual([older.info.id, before.info.id, checkpoint.info.id, after.info.id, latest.info.id])
+      const newData = client.getQueriesData<SessionTranscriptData>({ queryKey: ['compaction-test', 1, 'session-transcript'] })[0]?.[1]
+      expect(oldData).toBeDefined()
+      expect(newData).toBeDefined()
+      expect(shareSessionTranscriptData(oldData, newData, scope.sessionID)?.pages.flatMap(page => page.messageOrder))
+        .toEqual([older.info.id, before.info.id, checkpoint.info.id, after.info.id, latest.info.id])
+      expect(repo.getTranscript(scope).messagesByID[older.info.id]).toBe(retained)
+      await repo.refreshFromAuthority(scope)
+      expect(repo.getTranscript(scope).messageOrder).toEqual([older.info.id, before.info.id, checkpoint.info.id, after.info.id, latest.info.id])
+      expect(repo.getPagination(scope).boundary.kind).toBe('exhausted')
+    } finally {
+      repo.destroy()
+      client.clear()
+    }
+  })
+
+  test.each(['missing', 'misplaced'] as const)('authority refresh repairs a %s checkpoint through reconciliation and Query sharing', (state) => {
+    const sessionID = 'ses_refresh_order'
+    const before = normalizeSessionProjectionMessage(sessionID, { id: 'msg_before', type: 'assistant', time: { created: 1 }, content: [] })!
+    const checkpoint = normalizeSessionProjectionMessage(sessionID, { id: 'msg_checkpoint', type: 'compaction', time: { created: 2 }, status: 'completed', reason: 'auto' })!
+    const after = normalizeSessionProjectionMessage(sessionID, { id: 'msg_after', type: 'assistant', time: { created: 3 }, content: [] })!
+    const previous = state === 'missing' ? [before, after] : [before, after, checkpoint]
+    const initial = mergeSessionTranscript(undefined, sessionID, {
+      type: 'http-page', purpose: 'initial', page: { records: previous, complete: true, turnCount: 0 },
+    }).data!
+    const records = reconcileFetched({ fetched: [before, checkpoint, after], previous, completeTail: true })
+    const recovered = mergeSessionTranscript(initial, sessionID, {
+      type: 'http-page', purpose: 'reconcile-page', page: { records, complete: false, turnCount: 0 },
+    }).data!
+    const shared = shareSessionTranscriptData(initial, recovered, sessionID)
+    expect(shared?.pages.flatMap(page => page.messageOrder)).toEqual([before.info.id, checkpoint.info.id, after.info.id])
+  })
+
+  test.each(['initial', 'recovery', 'reconcile-page'] as const)('a recovered checkpoint keeps authority order across equal clocks (%s)', (purpose) => {
+    const sessionID = 'ses_checkpoint_order'
+    const row = (id: string, type: string) => normalizeSessionProjectionMessage(sessionID, {
+      id, type, time: { created: 10 },
+      ...(type === 'compaction' ? { status: 'completed', reason: 'auto' } : { content: [{ type: 'text', text: id }] }),
+    })!
+    const before = row('msg_before', 'assistant')
+    const checkpoint = row('msg_z_checkpoint', 'compaction')
+    const after = row('msg_a_after', 'assistant')
+    const initial = mergeSessionTranscript(undefined, sessionID, {
+      type: 'http-page', purpose: 'initial', page: { records: [before, after], complete: true, turnCount: 0 },
+    }).data
+    const recovered = mergeSessionTranscript(initial, sessionID, {
+      type: 'http-page', purpose, page: { records: [before, checkpoint, after], complete: true, turnCount: 0 },
+    }).data
+    expect(recovered?.pages.flatMap(page => page.messageOrder)).toEqual([before.info.id, checkpoint.info.id, after.info.id])
+  })
+
   test.each(['completed', 'failed'])('authoritative %s checkpoint releases the queue after a missed terminal event', async (status) => {
     const { rememberCompactionBarrierFromRecords, isCompactionBarrierActive, canPromoteInboxItem, resetSessionCompactionBarrier } = await import('./session-compaction-api')
     resetSessionCompactionBarrier()

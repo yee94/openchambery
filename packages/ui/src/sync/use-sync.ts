@@ -1,6 +1,6 @@
 import { useCallback, useMemo } from "react"
 import { useEvent } from "@reactuses/core"
-import type { Message, Part } from '@/lib/opencode/v2-types'
+import type { Message, Part, Session } from '@/lib/opencode/v2-types'
 
 import { Binary } from "./binary"
 import { retry } from "./retry"
@@ -26,7 +26,7 @@ import { sessionSyncCoordinator } from "./session-sync-coordinator"
 import { loadSessionChildrenOnDemand, mergeSessionChildren } from "./session-children"
 import { opencodeClient } from "@/lib/opencode/client"
 import { waitForSessionStartupBarrier } from "@/lib/session-startup-barrier"
-import { getRuntimeKey, getRuntimeGeneration, getRuntimeTransportIdentity } from "@/lib/runtime-switch"
+import { getRuntimeGeneration, getRuntimeTransportIdentity } from "@/lib/runtime-switch"
 import {
   SESSION_AUTHORITY_REVALIDATE_WINDOW_MS,
   isSessionAuthorityRevalidateFresh,
@@ -422,31 +422,55 @@ export function useSync() {
   // Ticket 09 batch 2: loadMore facade removed — Chat/Context call
   // fetchTranscriptPreviousPage / ensureTranscriptInitial directly.
 
-  const loadChildren = useCallback(
+  const loadChildren = useEvent(
     async (sessionID: string, directoryOverride?: string | null) => {
       const targetDirectory = directoryOverride || directory
       if (!sessionID || !targetDirectory) return
       const targetStore = childStores.ensureChild(targetDirectory, { bootstrap: false })
       const scopedClient = opencodeClient.getScopedSdkClient(targetDirectory)
+      const generation = getRuntimeGeneration()
+      const transport = getRuntimeTransportIdentity()
+      const isStale = () => generation !== getRuntimeGeneration()
+        || transport !== getRuntimeTransportIdentity()
+        || childStores.getChild(targetDirectory) !== targetStore
       const incoming = await loadSessionChildrenOnDemand({
-        runtimeKey: getRuntimeKey(),
+        transport,
+        generation,
         directory: targetDirectory,
         sessionID,
-        request: async () => {
-          const response = await scopedClient.session.list({
-            directory: targetDirectory,
-            parentID: sessionID,
-          })
-          return (response.data ?? []).map(projectSession)
+        request: async (signal) => {
+          const sessions: Session[] = []
+          const cursors = new Set<string>()
+          let cursor: string | undefined
+          do {
+            signal.throwIfAborted()
+            if (generation !== getRuntimeGeneration() || transport !== getRuntimeTransportIdentity()) {
+              throw new DOMException('Session children runtime changed', 'AbortError')
+            }
+            const response = await scopedClient.session.list(
+              cursor ? { cursor, limit: 50 } : { directory: targetDirectory, parentID: sessionID, limit: 50 },
+              { signal },
+            )
+            if (!Array.isArray(response?.data)) throw new Error('session.list children returned no data')
+            sessions.push(...response.data.map(projectSession))
+            if (response.data.length < 50) break
+            cursor = response.cursor?.next ?? undefined
+            if (!cursor || cursors.has(cursor)) throw new Error('session.list children pagination did not advance')
+            cursors.add(cursor)
+          } while (cursor)
+          return sessions
         },
+      }).catch((error: unknown) => {
+        if (isStale()) return null
+        throw error
       })
+      if (!incoming || isStale()) return
       targetStore.setState((state) => {
         const sessions = mergeSessionChildren(state.session, incoming, sessionID)
         if (sessions === state.session) return state
         return { session: sessions, limit: Math.max(state.limit, sessions.length) }
       })
     },
-    [childStores, directory],
   )
 
   const hasMore = useCallback(

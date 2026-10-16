@@ -236,6 +236,8 @@ export const createFeatureRoutesRuntime = (dependencies) => {
       runHistoryStore,
       getOpenChamberEventClients,
       writeSseEvent,
+      buildOpenCodeUrl,
+      getOpenCodeAuthHeaders,
     });
 
     registerScheduledTaskToolRoute(app, {

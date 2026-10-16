@@ -113,7 +113,12 @@
   update those rows, while config/path/session bootstrap remains owned by the
   active chat instead of fanning out across every visible sidebar directory.
   Selecting a session never fetches its children; child sessions are loaded only
-  when the user expands the parent tree control. Sessions with a `parentID` are
+   when the user expands the parent tree control. Every explicit expansion refreshes
+   that parent's children, even if some are already known from live events. Concurrent
+   loads coalesce through Query; the loader follows official `session.list` parent-filtered
+   pages until exhaustion. Mount, selection, restored expansion state and collapse do not
+   fetch children. Loading is shown on the chevron; failure preserves the tree and offers
+   retry by collapsing/re-expanding. Sessions with a `parentID` are
   never promoted to project roots — if the parent is missing, archived
   differently, system-owned (e.g. scheduled-task), or pinned-and-omitted, the
   child stays hidden instead of leaking into the main list.
@@ -142,7 +147,8 @@
   keep that same depth so worktree items align with surrounding project items. Subsession
   expand chevrons align to the folder-icon column and stay hidden until row hover (unless
   always-show-actions). They render only when the session has loaded children or the
-  persistent session index has confirmed that it has at least one child.
+   persistent session index has confirmed that it has at least one child. A live
+   snapshot that omits `hasChildren` retains the index's availability hint.
   Pinned rows stay flat: no subsession chevron and no nested children.
 - Session rows are single-line (no inline timestamp); details (title, relative time, folder/project,
   branch) open in an immediate floating hover card. Top-section (pinned / in-progress) rows

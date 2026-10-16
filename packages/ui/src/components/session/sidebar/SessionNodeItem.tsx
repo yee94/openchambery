@@ -441,6 +441,7 @@ function SessionNodeItemComponent(props: Props): React.ReactNode {
   const [exportDialogOpen, setExportDialogOpen] = React.useState(false);
   const [exportIncludeSubtasks, setExportIncludeSubtasks] = React.useState(true);
   const [isTranscriptRefreshing, setIsTranscriptRefreshing] = React.useState(false);
+  const [isLoadingChildren, setIsLoadingChildren] = React.useState(false);
 
   const menuInstanceKey = `${renderContext}:${archivedBucket ? 'archived' : 'active'}:${session.id}`;
   const isZombie = useViewportStore(
@@ -522,7 +523,8 @@ function SessionNodeItemComponent(props: Props): React.ReactNode {
     return () => window.clearTimeout(timeout);
   }, [pendingSmartTitle, sessionTitle]);
   const hasChildren = node.children.length > 0
-    || Boolean((resolvedSession as Session & { hasChildren?: boolean }).hasChildren);
+    || Boolean((resolvedSession as Session & { hasChildren?: boolean }).hasChildren
+      ?? (session as Session & { hasChildren?: boolean }).hasChildren);
   const isPinnedSession = pinnedSessionIds.has(session.id);
   // Per-render-context expansion key matches the format of menuInstanceKey.
   const expansionKey = menuInstanceKey;
@@ -853,6 +855,16 @@ function SessionNodeItemComponent(props: Props): React.ReactNode {
     mouseFocusedTitleRef.current = false;
   });
 
+  const toggleSubsessionTree = useEvent(() => {
+    if (!isExpanded && !isLoadingChildren) {
+      setIsLoadingChildren(true);
+      void sync.loadChildren(session.id, sessionDirectory)
+        .catch(() => toast.error(t('sessions.sidebar.session.subsessions.loadFailed')))
+        .finally(() => setIsLoadingChildren(false));
+    }
+    toggleParent(expansionKey);
+  });
+
   if (editingId === session.id) {
     const handleEnableSmartTitle = async () => {
       setPendingSmartTitle(sessionTitle);
@@ -999,18 +1011,14 @@ function SessionNodeItemComponent(props: Props): React.ReactNode {
   // (touch / alwaysShowActions keeps it visible).
   // Pinned rows stay flat — no expand chrome and no nested children (indent noise).
   const canExpandSubsessions = !isPinnedContext && !isSubtaskSession && hasChildren;
-  const hideChevronUntilHover = canExpandSubsessions && !alwaysShowActions;
+  const hideChevronUntilHover = canExpandSubsessions && !alwaysShowActions && !isLoadingChildren;
   const subsessionChevronLeft = getSidebarRowPaddingLeft(Math.max(0, depth - 1));
-  const toggleSubsessionTree = () => {
-    if (!isExpanded && node.children.length === 0) {
-      void sync.loadChildren(session.id, sessionDirectory).catch(() => undefined);
-    }
-    toggleParent(expansionKey);
-  };
   const subsessionChevron = canExpandSubsessions ? (
     <span
       role="button"
       tabIndex={0}
+      aria-expanded={isExpanded}
+      aria-busy={isLoadingChildren}
       onClick={(event) => {
         event.stopPropagation();
         // Blur pointer-click focus so hover-only chevron / row action chrome
@@ -1041,7 +1049,9 @@ function SessionNodeItemComponent(props: Props): React.ReactNode {
         ? t('sessions.sidebar.session.subsessions.collapse')
         : t('sessions.sidebar.session.subsessions.expand')}
     >
-      {isExpanded ? <Icon name="arrow-down-s" className="h-3 w-3" /> : <Icon name="arrow-right-s" className="h-3 w-3" />}
+      {isLoadingChildren
+        ? <SessionBusyIndicator size={12} />
+        : isExpanded ? <Icon name="arrow-down-s" className="h-3 w-3" /> : <Icon name="arrow-right-s" className="h-3 w-3" />}
     </span>
   ) : null;
 
@@ -1669,6 +1679,8 @@ const areSessionNodeItemPropsEqual = (prev: Props, next: Props): boolean => {
   if (prev.normalizedSessionSearchQuery !== next.normalizedSessionSearchQuery) return false;
   if (prev.notifyOnSubtasks !== next.notifyOnSubtasks) return false;
   if (prev.nodeStructureKey !== next.nodeStructureKey) return false;
+  if ((prev.node.session as Session & { hasChildren?: boolean }).hasChildren
+    !== (next.node.session as Session & { hasChildren?: boolean }).hasChildren) return false;
   if (getNodeSessionDirectory(prev.node) !== getNodeSessionDirectory(next.node)) return false;
   if (!isSecondaryMetaEqual(prev.secondaryMeta, next.secondaryMeta)) return false;
 

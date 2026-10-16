@@ -2445,6 +2445,25 @@ describe('mergeLiveSessionWithGlobalSession', () => {
 });
 
 describe('mergeLiveSessionCatalog', () => {
+  test('shows a refreshed catalog title before the cached directory session is revisited', () => {
+    const live = buildSession('https://live.example/s', {
+      title: 'Original', directory: '/repo/app', time: { created: 1, updated: 10 },
+    });
+    const global = { ...live, title: 'Renamed', time: { ...live.time, updated: 20 } };
+
+    expect(mergeLiveSessionCatalog([global], [live])[0]?.title).toBe('Renamed');
+    expect(live.title).toBe('Original');
+  });
+
+  test('keeps a newer live title when an older catalog snapshot arrives', () => {
+    const live = buildSession('https://live.example/s', {
+      title: 'Renamed', time: { created: 1, updated: 20 },
+    });
+    const global = { ...live, title: 'Original', time: { ...live.time, updated: 10 } };
+
+    expect(mergeLiveSessionCatalog([global], [live])[0]).toBe(live);
+  });
+
   test('prefers the live title over a stale global/index title', () => {
     const global = buildSession('https://global.example/s', {
       id: 'ses_restart',

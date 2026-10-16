@@ -657,6 +657,7 @@ export const dict: Record<I18nKey, string> = {
   "sessions.sidebar.session.status.questionRequired": "Потрібна відповідь",
   "sessions.sidebar.session.subsessions.collapse": "Згорнути підсесії",
   "sessions.sidebar.session.subsessions.expand": "Розгорнути підсесії",
+  "sessions.sidebar.session.subsessions.loadFailed": "Не вдалося завантажити підсесії. Згорніть і знову розгорніть, щоб повторити спробу.",
   "sessions.sidebar.dialogs.deleteSession.title": "Видалити сесія?",
   "sessions.sidebar.dialogs.archiveSession.title": "Архівувати сесія?",
   "sessions.sidebar.dialogs.deleteSession.withOneSubtask": "\"{sessionTitle}\" і його підзавдання {count} буде остаточно видалено.",

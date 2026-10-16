@@ -56,7 +56,8 @@ export const WorkStatusCompact: React.FC<Props> = ({ sessionId, directory }) => 
     { phase: 'working', labelKey: 'chat.workStatus.subagent.workingCount', items: subagents.filter((agent) => agent.phase === 'working') },
     { phase: 'done', labelKey: 'chat.workStatus.subagent.doneCount', items: subagents.filter((agent) => agent.phase === 'done') },
   ] as const;
-  const visibleSubagents = subagents.slice(0, 3);
+  const workingSubagents = subagentGroups[0].items;
+  const visibleSubagents = (workingSubagents.length > 0 ? workingSubagents : subagents).slice(0, 3);
   const [subagentsExpanded, setSubagentsExpanded] = React.useState(false);
   const subagentsListId = React.useId();
   const setRightSidebarOpen = useUIStore((state) => state.setRightSidebarOpen);

@@ -203,6 +203,74 @@ const normalizeSchedule = (value, existingSchedule) => {
   return { kind, cron, timezone };
 };
 
+export const SCHEDULE_CONFLICT_CODE = 'schedule_conflict';
+
+const scheduleConflict = () => {
+  const error = new Error('scheduled task changed before save');
+  error.statusCode = 409;
+  error.code = SCHEDULE_CONFLICT_CODE;
+  return error;
+};
+
+/**
+ * Decide whether a PUT must consult the connected catalog, using the same
+ * trim and default-enabled rules as storage. Network stays with the caller.
+ * `expected` is the snapshot the caller based that decision on; the upsert
+ * lock rejects a mismatch so a stale read cannot create or retarget a task.
+ */
+export const scheduledTaskWriteGuard = (existingTask, taskInput) => {
+  const execution = taskInput && typeof taskInput === 'object' ? taskInput.execution : null;
+  const providerID = asNonEmptyString(execution?.providerID);
+  const modelID = asNonEmptyString(execution?.modelID);
+  if (!providerID || !modelID) {
+    return { needsCatalog: false };
+  }
+
+  const exists = Boolean(existingTask);
+  const enabled = typeof taskInput.enabled === 'boolean'
+    ? taskInput.enabled
+    : (existingTask?.enabled ?? true);
+  const storedProviderID = existingTask?.execution?.providerID;
+  const storedModelID = existingTask?.execution?.modelID;
+  const modelChanged = !exists || storedProviderID !== providerID || storedModelID !== modelID;
+  const enabling = exists && existingTask.enabled !== true && enabled === true;
+
+  return {
+    needsCatalog: modelChanged || enabling,
+    providerID,
+    modelID,
+    enabled,
+    expected: exists
+      ? {
+          exists: true,
+          providerID: storedProviderID,
+          modelID: storedModelID,
+          enabled: existingTask.enabled === true,
+        }
+      : { exists: false },
+  };
+};
+
+const assertScheduledTaskExpected = (existingTask, expected) => {
+  if (!expected || typeof expected !== 'object') {
+    return;
+  }
+  const exists = Boolean(existingTask);
+  if (expected.exists !== exists) {
+    throw scheduleConflict();
+  }
+  if (!exists) {
+    return;
+  }
+  if (
+    expected.providerID !== existingTask.execution?.providerID
+    || expected.modelID !== existingTask.execution?.modelID
+    || expected.enabled !== existingTask.enabled
+  ) {
+    throw scheduleConflict();
+  }
+};
+
 const normalizeExecution = (value) => {
   if (!value || typeof value !== 'object') {
     throw new Error('execution is required');
@@ -475,7 +543,8 @@ export const createProjectConfigRuntime = (deps) => {
     return config.scheduledTasks;
   };
 
-  const upsertScheduledTask = async (projectID, taskInput) => {
+  const upsertScheduledTask = async (projectID, taskInput, options = undefined) => {
+    const expected = options && typeof options === 'object' ? options.expected : undefined;
     return withProjectWriteLock(projectID, async () => {
       const now = Date.now();
       const current = await readProjectConfigForMutation(projectID);
@@ -484,6 +553,7 @@ export const createProjectConfigRuntime = (deps) => {
         ? current.scheduledTasks.findIndex((task) => task.id === incomingID)
         : -1;
       const existingTask = existingIndex >= 0 ? current.scheduledTasks[existingIndex] : null;
+      assertScheduledTaskExpected(existingTask, expected);
 
       const normalizedTask = normalizeTaskForStorage(taskInput, {
         now,

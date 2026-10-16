@@ -97,7 +97,7 @@ describe('core-routes', () => {
 
     await request(app)
       .post('/api/opencode/retry')
-      .expect(200, { success: true });
+      .expect(200, { success: true, scope: 'process-ready' });
 
     expect(retryOpenCodeStartup).toHaveBeenCalledTimes(1);
   });
@@ -183,7 +183,7 @@ describe('core-routes', () => {
 
     await request(app)
       .post('/api/opencode/retry')
-      .expect(200, { success: true });
+      .expect(200, { success: true, scope: 'process-ready' });
     expect(retryOpenCodeStartup).toHaveBeenCalledTimes(1);
   });
 
@@ -205,8 +205,10 @@ describe('core-routes', () => {
       await request(app)
         .post('/api/opencode/retry')
         .expect(503, {
-          error: 'OpenCode CLI could not be resolved',
           success: false,
+          code: 'opencode_not_ready',
+          scope: 'process-ready',
+          error: 'OpenCode is not ready',
         });
     } finally {
       errorLog.mockRestore();

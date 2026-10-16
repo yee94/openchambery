@@ -36,7 +36,6 @@ function fixture() {
       await persist(id, decision.patch);
       return { committed: true, metadata };
     },
-    listSessionMetadata: async () => ({ ses_title: metadata }),
     publishSession: publish,
   });
   accesses.push(access);
@@ -59,6 +58,33 @@ it('publishes the full authoritative title row and clears Host loading without o
   expect(f.publish).toHaveBeenCalledWith(expect.objectContaining({
     id: 'ses_title', title: 'Updated title', directory: '/repo', metadata: f.metadata(),
   }), '/repo');
+});
+
+it('writes the generated title to OpenCode before reading and publishing the confirmed session', async () => {
+  const f = fixture();
+  f.session.title = 'Original title';
+  let finishWrite;
+  let startedWrite;
+  const writing = new Promise((resolve) => { startedWrite = resolve; });
+  const persisted = new Promise((resolve) => { finishWrite = resolve; });
+  api.session.update.mockImplementationOnce(async ({ title }) => {
+    startedWrite();
+    await persisted;
+    f.session.title = title;
+    f.session.time.updated = 30;
+  });
+
+  const completion = f.access.update('ses_title', '/repo', { title: 'Generated summary title' });
+  await writing;
+  expect(f.session.title).toBe('Original title');
+  expect(api.session.get).not.toHaveBeenCalled();
+  expect(f.publish).not.toHaveBeenCalled();
+
+  finishWrite();
+  const confirmed = await completion;
+  expect(f.session.title).toBe('Generated summary title');
+  expect(confirmed).toMatchObject({ title: 'Generated summary title', time: { updated: 30 } });
+  expect(f.publish).toHaveBeenCalledExactlyOnceWith(confirmed, '/repo');
 });
 
 it('projects only the bounded newest message page in conversation order', async () => {
@@ -85,7 +111,7 @@ it('publishes a full loading row before the new session exists in client catalog
   expect(api.session.update).not.toHaveBeenCalled();
 });
 
-it('retains durable intent and retries a failed upstream title write without publishing success', async () => {
+it('reports a failed upstream title write without projecting or retrying the failed choice', async () => {
   const f = fixture();
   api.session.update.mockRejectedValue(new Error('offline'));
   await expect(f.access.update('ses_title', '/repo', {
@@ -93,65 +119,43 @@ it('retains durable intent and retries a failed upstream title write without pub
   })).rejects.toThrow('offline');
   expect(f.metadata().openchamber.titleAuthority.title).toBe('Failed');
   expect(f.publish).not.toHaveBeenCalled();
-  api.session.update.mockImplementation(async ({ title }) => { f.session.title = title; });
   await vi.runAllTimersAsync();
-  expect(f.session.title).toBe('Failed');
+  expect(api.session.update).toHaveBeenCalledTimes(1);
+  expect((await f.access.get('ses_title')).title).toBe('Updated title');
 });
 
-it.each(['before', 'after', 'during'])('rectifies upstream title writes %s our write', async (timing) => {
+it('reads a later OpenCode rename without rewriting it to the previous summary', async () => {
   const f = fixture();
-  if (timing === 'before') f.session.title = 'Native';
   await f.access.update('ses_title', '/repo', { title: 'Ours' });
-  if (timing !== 'before') f.session.title = 'Native';
-  if (timing === 'during') {
-    api.session.update.mockImplementationOnce(async () => { f.session.title = 'Native again'; });
-  }
-  for (let i = 0; i < 100; i++) f.access.reconcile('ses_title');
+  f.session.title = 'Native';
+  expect((await f.access.get('ses_title')).title).toBe('Native');
   await vi.runAllTimersAsync();
-  expect(f.session.title).toBe('Ours');
-  expect(api.session.update.mock.calls.length).toBeLessThanOrEqual(3);
-  const writes = api.session.update.mock.calls.length;
-  f.access.reconcile('ses_title');
-  await vi.runAllTimersAsync();
-  expect(api.session.update).toHaveBeenCalledTimes(writes);
+  expect(f.session.title).toBe('Native');
+  expect(api.session.update).toHaveBeenCalledTimes(1);
 });
 
-it('rejects stale generation after a manual rename and repairs from the newest authority', async () => {
+it('rejects stale generation after a manual rename', async () => {
   const f = fixture();
   await f.access.update('ses_title', '/repo', { title: 'Summary' });
   const previous = f.metadata().openchamber.titleAuthority.revision;
   await f.persist('ses_title', { openchamber: { titleAuthority: {
     sessionID: 'ses_title', title: 'Manual', revision: 'manual-1', source: 'manual',
   } } });
+  await api.session.update({ sessionID: 'ses_title', title: 'Manual' });
   await f.access.update('ses_title', '/repo', { title: 'Late summary', expectedTitleRevision: previous });
   await vi.runAllTimersAsync();
   expect(f.session.title).toBe('Manual');
   expect(f.metadata().openchamber.titleAuthority.source).toBe('manual');
 });
 
-it('re-reads authority when manual rename lands during an upstream repair', async () => {
-  const f = fixture();
-  await f.access.update('ses_title', '/repo', { title: 'Summary' });
-  f.session.title = 'Native';
-  api.session.get.mockImplementationOnce(async () => {
-    await f.persist('ses_title', { openchamber: { titleAuthority: {
-      sessionID: 'ses_title', title: 'Manual', revision: 'manual-2', source: 'manual',
-    } } });
-    return structuredClone(f.session);
-  });
-  await vi.runAllTimersAsync();
-  expect(f.session.title).toBe('Manual');
-  expect(f.publish.mock.calls.at(-1)[0].title).toBe('Manual');
-});
-
-it('recovers missed rename events after reconnect without regenerating a title', async () => {
+it('ignores persisted title choices on a fresh access instance', async () => {
   const f = fixture();
   await f.persist('ses_title', { openchamber: { titleAuthority: {
     sessionID: 'ses_title', title: 'Durable', revision: 'saved', source: 'summary',
   } } });
-  await f.access.reconcileAll();
+  expect((await f.access.get('ses_title')).title).toBe('Updated title');
   await vi.runAllTimersAsync();
-  expect(f.session.title).toBe('Durable');
+  expect(api.session.update).not.toHaveBeenCalled();
 });
 
 it('does not adopt inherited fork authority or legacy lastAutoTitle as a lock', async () => {
@@ -160,7 +164,7 @@ it('does not adopt inherited fork authority or legacy lastAutoTitle as a lock', 
     titleRefresh: { lastAutoTitle: 'Old summary' },
     titleAuthority: { sessionID: 'ses_parent', title: 'Parent', revision: 'parent' },
   } });
-  f.access.reconcile('ses_title');
+  expect((await f.access.get('ses_title')).title).toBe('Updated title');
   await vi.runAllTimersAsync();
   expect(api.session.update).not.toHaveBeenCalled();
 });
@@ -174,30 +178,28 @@ it('does not write a title if durable authority persistence fails', async () => 
   expect(f.publish).not.toHaveBeenCalled();
 });
 
-it('stops repair after authoritative deletion', async () => {
+it('preserves authoritative deletion instead of serving a stored title', async () => {
   const f = fixture();
   await f.persist('ses_title', { openchamber: { titleAuthority: {
     sessionID: 'ses_title', title: 'Durable', revision: 'saved',
   } } });
   api.session.get.mockRejectedValue(Object.assign(new Error('deleted'), { status: 404 }));
-  f.access.reconcile('ses_title');
+  await expect(f.access.get('ses_title')).rejects.toThrow('deleted');
   await vi.runAllTimersAsync();
   expect(api.session.get).toHaveBeenCalledTimes(1);
   expect(api.session.update).not.toHaveBeenCalled();
 });
 
-it('backs off transient failures and cancels retry on stop', async () => {
+it('propagates failed authoritative reads without falling back to a stored title', async () => {
   const f = fixture();
   await f.persist('ses_title', { openchamber: { titleAuthority: {
     sessionID: 'ses_title', title: 'Durable', revision: 'saved',
   } } });
   api.session.get.mockRejectedValue(new Error('offline'));
-  f.access.reconcile('ses_title');
-  await vi.advanceTimersByTimeAsync(3000);
-  expect(api.session.get).toHaveBeenCalledTimes(3);
-  f.access.stop();
+  await expect(f.access.get('ses_title')).rejects.toThrow('offline');
   await vi.advanceTimersByTimeAsync(60_000);
-  expect(api.session.get).toHaveBeenCalledTimes(3);
+  expect(api.session.get).toHaveBeenCalledTimes(1);
+  expect(api.session.update).not.toHaveBeenCalled();
 });
 
 it('does not turn a failed or malformed message read into empty success', async () => {

@@ -54,7 +54,7 @@ beforeEach(() => {
     Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
     fixture.session.currentSessionId = null;
     Object.assign(fixture.session.newSessionDraft, { open: true, draftEstablishing: false, draftSubmitting: false, pendingUserMessage: null });
-    Object.assign(fixture.ui, { isMobile: false, isRightSidebarOpen: false, workStatusOverlayOpen: false });
+    Object.assign(fixture.ui, { isMobile: false, isRightSidebarOpen: false, workStatusOverlayOpen: false, contextPanelByDirectory: {} });
     fixture.transcript = [];
     fixture.paintedWidths = [];
     viewportWidth = 1600;
@@ -121,6 +121,26 @@ it('shows a selected session before its transcript loads, without a hidden first
     fixture.session.newSessionDraft.open = false;
     await act(async () => root.render(<ChatView />));
     expect(fixture.paintedWidths[0]).toBe('196px');
+});
+
+it.each([1600, 1200])('keeps the status column mounted when opening a subagent chat at %ipx', async (width) => {
+    fixture.session.currentSessionId = 'session';
+    fixture.session.newSessionDraft.open = false;
+    fixture.ui.workStatusOverlayOpen = true;
+    viewportWidth = width;
+    await act(async () => root.render(<ChatView />));
+    const column = host.querySelector('aside[aria-hidden="false"]');
+    expect(column).not.toBeNull();
+    fixture.ui.contextPanelByDirectory = {
+        '/repo': { isOpen: true, activeTabId: 'child', tabs: [{ id: 'child', mode: 'chat' }] },
+    };
+    await act(async () => root.render(<ChatView />));
+    expect(host.querySelector('aside[aria-hidden="false"]')).toBe(column);
+    fixture.ui.contextPanelByDirectory = {
+        '/repo': { isOpen: true, activeTabId: 'file', tabs: [{ id: 'file', mode: 'file' }] },
+    };
+    await act(async () => root.render(<ChatView />));
+    expect(host.querySelector('aside')).toBeNull();
 });
 
 it('retains manual overlay display below the breakpoint and excludes the right sidebar and mobile', async () => {

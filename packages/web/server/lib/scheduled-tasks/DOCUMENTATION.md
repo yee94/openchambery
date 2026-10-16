@@ -164,13 +164,16 @@ finalized history (including later chat continuation) is never reopened.
   - `GET /api/openchamber/scheduled-tasks`
   - `GET /api/openchamber/scheduled-task-runs`
   - `GET /api/projects/:projectId/scheduled-tasks`
-  - `PUT /api/projects/:projectId/scheduled-tasks`
+  - `PUT /api/projects/:projectId/scheduled-tasks` — body must be `{ task }`. A bare task, `{ tasks: [] }`, or `{ task: [] }` is HTTP 400 with `expected` describing that envelope. After the project and goal checks, creates, provider/model changes, and disabled→enabled transitions load the connected catalog for `project.path` through `loadConnectedCatalog` / `isConnectedModel` (`ModelInfo.id`, not the internal `modelID`). An unconnected model is HTTP 400 and is not written. Catalog failure is HTTP 503 and is not written. Renames and disables that keep the stored provider/model are allowed when the catalog is down. The route passes the pre-read existence, provider, model, and enabled snapshot into the project-config write lock; a mismatch is HTTP 409 and is not written. Scheduler sync failure does not roll back a committed write. `GET /api/config/catalog/providers` remains HTTP 502 when its upstream catalog fails.
   - `DELETE /api/projects/:projectId/scheduled-tasks/:taskId`
   - `POST /api/projects/:projectId/scheduled-tasks/:taskId/run`
   - `GET /api/openchamber/scheduled-tasks/status`
   - `GET /api/openchamber/events`
 
 Dependencies include optional `runHistoryStore` for the history list route.
+`buildOpenCodeUrl` and `getOpenCodeAuthHeaders` are read at request time to
+build the catalog client. Callers that do not pass an `expected` snapshot to
+`upsertScheduledTask` keep the previous unconditional write.
 
 ## Global task list contract
 
@@ -287,6 +290,57 @@ Every actual run (timer or manual):
      rewritten after finalize.
 
 SSE events keep the existing `openchamber:scheduled-task-ran` shape.
+
+### Session create delivery
+
+`session.create` is one shot unless the official client error proves the
+request never left this process. The only proven-unsent causes, walked on the
+SDK `cause` chain, are `ECONNREFUSED` with `syscall=connect` and `ENOTFOUND`
+with `syscall=getaddrinfo`. Those retry inside the same run and the same
+`slotAt`: the initial attempt plus three more, waiting 1s, 4s, then 10s.
+The create phase deadline is 45s and is also cut by the run watchdog. A later
+attempt is not started after either bound. Prompt and command are never
+retried.
+
+`session.create` is sent with `redirect: 'manual'`. A 3xx is not followed
+and is not retried: the first response may already have created the session,
+and a later `ECONNREFUSED` / `ENOTFOUND` on the redirect target is not proof
+the create was never sent. Outcome stays unknown. Prompt and command keep
+the platform redirect default; they are still not retried.
+
+A response, a reset after accept (`UND_ERR_SOCKET`), a timeout, HTTP 3xx /
+401 / 403 / 409 / 502 / 503 / 504, an abort, a decode failure, or a success body
+without `id` is not retried. HTTP 503, a missing session id, and a body `id`
+do not prove the session was not created. Those failures keep the error and
+say `creation outcome unknown`. They do not post a second create and do not
+prompt. Runtime-contract 409 is the existing gate (the private fetch is
+inside it) and is not retried.
+
+Each run passes its own `fetchImpl` to `makeOpenCodeV2Client`. Only that
+run's `session.create` attempt signal is tracked: `redirect: 'manual'` and
+failure capture apply to that signal, not to prompt or command. The fetch
+holds the attempt object captured before the request is awaited, so a body
+that arrives after the deadline stays on that attempt and is not read as the
+next attempt's error. A failed attempt is summarized from its own capture
+only. Failed responses are cloned with a byte and time bound; the original
+`Response` is what the SDK reads. Parse or capture failure does not replace
+the SDK error. The summary shared by history, task
+`lastError`, logs, and notifications is at most 300 characters and only
+keeps operation, HTTP status, message, code, and locally decided
+`retryable`. HTTP status wins over a body status. Bearer tokens, credential
+URLs, and token query values are redacted. Payloads, headers, and stacks are
+not stored. Assistant text still prefers a top-level `message` /
+`data.message`; `data.error.message` is used only when those are absent, and
+code/status are appended only when present. A message with no code/status is
+still redacted before the 300-character cut, including `Bearer` tokens,
+`password:value`, and JSON `"token":"..."` forms. The wording stays the
+message itself, not the HTTP summary template.
+
+This batch does not compensate a slot missed across restart, and it does not
+finalize a `running` history row that has no session. Another Host may still
+be queued and not have claimed the slot; writing a terminal row here could
+cancel that claim. One-time tasks still disable after a scheduled attempt,
+including a failed one. `stop()` still does not abort an in-flight run.
 
 ## Post-run continuation
 

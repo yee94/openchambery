@@ -12,6 +12,7 @@ import type { FilePart, Message, Part, ToolPart } from '@/lib/opencode/v2-types'
 
 import { runtimeFetch } from "../lib/runtime-fetch"
 import type { TranscriptTransportPage } from "./transcript-repository"
+import { mergeTranscriptOrder } from "./transcript-order"
 
 /** Official GUI first-paint page size. */
 export const SESSION_PROJECTION_PAGE_LIMIT = 20
@@ -721,21 +722,12 @@ export function reconcileFetched(input: ReconcileFetchedInput): ReconcileFetched
     else result.delete(id)
   }
 
-  const order: string[] = []
-  const seen = new Set<string>()
-  for (const record of previous) {
-    if (!result.has(record.info.id) || seen.has(record.info.id)) continue
-    order.push(record.info.id)
-    seen.add(record.info.id)
-  }
-  for (const record of fetched) {
-    if (!result.has(record.info.id) || seen.has(record.info.id)) continue
-    order.push(record.info.id)
-    seen.add(record.info.id)
-  }
-  for (const id of result.keys()) {
-    if (seen.has(id)) continue
-    order.push(id)
-  }
+  const previousIDs = previous.map(record => record.info.id).filter(id => result.has(id))
+  const fetchedIDs = fetched.map(record => record.info.id).filter(id => result.has(id))
+  // A disjoint incomplete tail retains the older local window before it.
+  const hasOverlap = fetchedIDs.some(id => live.has(id))
+  const order = !input.completeTail && !hasOverlap
+    ? [...new Set([...previousIDs, ...fetchedIDs])]
+    : mergeTranscriptOrder(previousIDs, fetchedIDs)
   return order.map((id) => result.get(id)!)
 }

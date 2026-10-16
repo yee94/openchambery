@@ -657,6 +657,7 @@ export const dict: Record<I18nKey, string> = {
   "sessions.sidebar.session.status.questionRequired": "Pergunta pendente",
   "sessions.sidebar.session.subsessions.collapse": "Recolher subsessões",
   "sessions.sidebar.session.subsessions.expand": "Expandir subsessões",
+  "sessions.sidebar.session.subsessions.loadFailed": "Não foi possível carregar as subsessões. Recolha e expanda novamente para tentar de novo.",
   "sessions.sidebar.dialogs.deleteSession.title": "Excluir sessão?",
   "sessions.sidebar.dialogs.archiveSession.title": "Arquivar sessão?",
   "sessions.sidebar.dialogs.deleteSession.withOneSubtask": "\"{sessionTitle}\" e sua {count} subtarefa serão excluídas permanentemente.",

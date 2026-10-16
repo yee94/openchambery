@@ -17,6 +17,7 @@ import {
   type SessionActiveSnapshotLoader,
 } from "@/queries/sessionActiveQueries"
 import type { DirectoryStore } from "./child-store"
+import { applyGlobalSessionActiveSnapshot } from "./global-session-status"
 
 /**
  * After an authoritative directory status snapshot is applied to a child store,
@@ -388,6 +389,9 @@ export async function resyncDirectorySessionStatuses(
   if (options.isStale?.()) return null
 
   const legacySnapshot = legacyObservation?.snapshot ?? null
+  if (activeResult?.state === "supported" && activeRequestedAt !== undefined) {
+    applyGlobalSessionActiveSnapshot(activeResult.membership, activeRequestedAt)
+  }
 
   // Both paths unusable → preserve prior status (do not advance snapshot_at).
   // Active supported with a failed legacy load still fuses (empty legacy map).

@@ -4,7 +4,8 @@ A short column beside the transcript. It is not a card and not a context-panel
 surface. It occupies its final width as soon as a session is selected or the
 first-prompt draft enters its establishing/submitting transcript state. Message
 loading does not gate the column. Idle welcome drafts keep it hidden, as do an
-open right sidebar or context panel. The column overlays the transcript instead
+open right sidebar or non-chat context panel. Opening a subagent chat keeps the
+column and its expanded agent list visible. The column overlays the transcript instead
 of shrinking it, and stays one scrollbar-lane left of the viewport edge. The
 chat scroller remains full width, so its scrollbar sits on the right edge of
 the screen rather than between the transcript and this column. Message and
@@ -21,7 +22,9 @@ on hover. Project, branch, worktree, and changes consume the shared `folder`,
 All four status-column icons use medium stroke without extra opacity reduction. Context usage, MCP,
 and skills are not shown here. Subagents use a collapsed disclosure row matching
 the chat activity header: up to three tightly stacked `AgentAvatar` faces, a
-localized nonzero working and completed counts, and a chevron. Expanding
+localized nonzero working and completed counts, and a chevron. While any agent
+is still working, that stack shows only working faces. After every agent is
+done, it shows the full set, still capped at three. Expanding
 groups agents by state, working first, omitting empty groups. Group headings show
 their counts; spaced, borderless agent rows do not repeat the status. Rows with an authoritative
 child session ID open that session in the context panel; unresolved rows remain

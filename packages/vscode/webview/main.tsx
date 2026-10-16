@@ -13,6 +13,8 @@ import {
   isSessionTurnChangesRoute,
 } from './sessionTurnChangesRoute';
 import { shouldSkipVSCodeNotificationSession } from './notificationSessionFilter';
+import { completionEvent, createFamilyCompletionGate } from '../../web/server/lib/notifications/family-completion-gate.js';
+import { subscribeRuntimeEndpointChanged } from '@openchamber/ui/lib/runtime-switch';
 import { applyQuestionAutoDelegateHostTip } from './questionAutoDelegateTip';
 import { getSettingsBridgeMessageType, isSettingsBootstrapRequest } from '../src/settings-bootstrap-runtime';
 import type { RuntimeAPIs } from '@openchamber/ui/lib/api/types';
@@ -1586,8 +1588,6 @@ onCommand('windowFocusChanged', (payload) => {
   }
 });
 
-const readyNotificationCooldowns = new Map<string, number>();
-const READY_NOTIFICATION_COOLDOWN_MS = 5000;
 const DEFAULT_NOTIFICATION_MESSAGE_MAX_LENGTH = 250;
 let notificationSettingsSyncPromise: Promise<void> | null = null;
 
@@ -1755,14 +1755,7 @@ const getNotificationDirectory = (payload: Record<string, unknown>): string | nu
   return getPayloadString(properties.directory ?? info?.directory) || null;
 };
 
-window.addEventListener('openchamber:vscode-notification-event', (event) => {
-  const detail = (event as CustomEvent<{ payload?: unknown }>).detail;
-  const payload = detail?.payload;
-  if (!payload || typeof payload !== 'object') {
-    return;
-  }
-
-  const record = payload as Record<string, unknown>;
+const deliverRuntimeNotification = (record: Record<string, unknown>, isCurrent = () => true) => {
   const type = getPayloadString(record.type);
   const properties = (record.properties ?? record) as Record<string, unknown>;
   const info = properties.info as Record<string, unknown> | undefined;
@@ -1771,7 +1764,7 @@ window.addEventListener('openchamber:vscode-notification-event', (event) => {
     return;
   }
 
-  Promise.all([
+  return Promise.all([
     import('@/stores/useUIStore'),
     import('@/stores/permissionStore'),
   ]).then(async ([{ useUIStore }, { usePermissionStore }]) => {
@@ -1810,10 +1803,7 @@ window.addEventListener('openchamber:vscode-notification-event', (event) => {
 
     if (isCompletion) {
       if (!settings.notifyOnCompletion) return;
-      const now = Date.now();
-      const lastAt = readyNotificationCooldowns.get(sessionId) ?? 0;
-      if (now - lastAt < READY_NOTIFICATION_COOLDOWN_MS) return;
-      readyNotificationCooldowns.set(sessionId, now);
+      if (!isCurrent()) return false;
       const template = getNotificationTemplate(settings, 'completion', { title: '{agent_name} is ready', message: '{model_name} completed the task' });
       const title = resolveTemplate(template.title, variables) || 'Agent is ready';
       const body = resolveTemplate(template.message, variables);
@@ -1823,7 +1813,7 @@ window.addEventListener('openchamber:vscode-notification-event', (event) => {
         sessionId,
         requireHidden,
       });
-      return;
+      return true;
     }
 
     if (isError) {
@@ -1867,6 +1857,40 @@ window.addEventListener('openchamber:vscode-notification-event', (event) => {
       });
     }
   });
+};
+
+const familyCompletion = createFamilyCompletionGate<Record<string, unknown>>({
+  loadActiveSessionIds: async () => {
+    const result = await opencodeClient.getSessionActive(AbortSignal.timeout(2000));
+    if (result.state !== 'supported') throw new Error('Session activity unavailable');
+    return Object.keys(result.membership);
+  },
+  loadParent: async (sessionID) => {
+    const session = await opencodeClient.getSdkClient().session.get({ sessionID }, { signal: AbortSignal.timeout(2000) });
+    if (session.id !== sessionID) throw new Error('Session ancestry unavailable');
+    return session.parentID ?? null;
+  },
+  onReady: async (record, isCurrent) => deliverRuntimeNotification(record, isCurrent),
+});
+const unsubscribeCompletionRuntime = subscribeRuntimeEndpointChanged(() => {
+  familyCompletion.reset();
+});
+window.addEventListener('beforeunload', () => {
+  unsubscribeCompletionRuntime();
+  familyCompletion.dispose();
+}, { once: true });
+window.addEventListener('openchamber:vscode-notification-event', (event) => {
+  const payload = (event as CustomEvent<{ payload?: unknown }>).detail?.payload;
+  if (!payload || typeof payload !== 'object') return;
+  const record = payload as Record<string, unknown>;
+  const boundary = completionEvent(record);
+  if (boundary) {
+    void familyCompletion.observe(boundary, record);
+    if (boundary.kind === 'complete') return;
+  }
+  if (record.type === 'question.asked' || record.type === 'permission.asked') {
+    void deliverRuntimeNotification(record);
+  }
 });
 
 // Listen for settings sync command from extension (broadcast to all VS Code webviews)

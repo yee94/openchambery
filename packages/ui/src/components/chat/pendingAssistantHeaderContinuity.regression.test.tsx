@@ -126,6 +126,7 @@ vi.mock('@/sync/sync-context', async () => {
     useDirectorySync: () => false,
     useSessionParts: () => [],
     useSessionErrorAt: () => mocks.errorAt,
+    useRunningDescendantCount: () => 0,
   };
 });
 

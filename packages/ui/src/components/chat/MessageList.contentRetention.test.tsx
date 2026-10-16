@@ -13,7 +13,8 @@ import { useFeatureFlagsStore } from '@/stores/useFeatureFlagsStore';
 import type { ChatMessageEntry } from './lib/turns/types';
 import type { Message, Part } from '@/lib/opencode/v2-types';
 import { getTranscriptRepository, unbindTranscriptRepository } from '@/sync/transcript-repository-runtime';
-import { normalizeSessionProjectionMessage } from '@/sync/session-projection-api';
+import { normalizeSessionProjectionMessage, reconcileFetched } from '@/sync/session-projection-api';
+import { mergeSessionTranscript, shareSessionTranscriptData } from '@/sync/transcript-merge';
 
 vi.hoisted(() => {
     vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
@@ -241,6 +242,38 @@ test('activity after a native compaction checkpoint cannot be merged ahead of it
     expect(divider).not.toBeNull();
     expect(afterText).toBeDefined();
     expect(Boolean(divider.compareDocumentPosition(afterText) & Node.DOCUMENT_POSITION_FOLLOWING)).toBe(true);
+});
+
+test.each([false, true])('sorted renders a recovered checkpoint between its original activity runs (mobile=%s)', async (isMobile) => {
+    useUIStore.setState({ isMobile });
+    const before = assistant('assistant-z', 'BEFORE_RECOVERED_CHECKPOINT', 'length');
+    const after = assistant('assistant-a', 'AFTER_RECOVERED_CHECKPOINT');
+    after.parts.push({ id: 'tool-recovered', messageID: after.info.id, sessionID, type: 'tool', tool: 'webfetch', callID: 'call-recovered',
+        state: { status: 'completed', input: { url: 'https://timeline.example/recovered' }, output: 'done', time: { start: 3, end: 4 } },
+    } as Part);
+    const checkpoint = normalizeSessionProjectionMessage(sessionID, {
+        id: 'checkpoint-recovered', type: 'compaction', time: { created: 2 }, status: 'completed', reason: 'auto',
+    })!;
+    const previous = [user, before, after];
+    const initial = mergeSessionTranscript(undefined, sessionID, {
+        type: 'http-page', purpose: 'initial', page: { records: previous, complete: true, turnCount: 1 },
+    }).data!;
+    await render(previous, after.info.id);
+    const recovered = mergeSessionTranscript(initial, sessionID, {
+        type: 'http-page', purpose: 'reconcile-page', page: {
+            records: reconcileFetched({ previous, fetched: [user, before, checkpoint, after], completeTail: true }),
+            complete: false, turnCount: 0,
+        },
+    }).data!;
+    const shared = shareSessionTranscriptData(initial, recovered, sessionID)!;
+    const records = shared.pages.flatMap(page => page.messageOrder.map(id => ({ info: page.messagesByID[id], parts: [...page.partsByMessageID[id]] })));
+    await render(records, after.info.id);
+    const divider = container.querySelector('[data-compaction-card]')!;
+    const text = (marker: string) => [...container.querySelectorAll('[data-message-text-export-source]')].find(node => node.textContent === marker)!;
+    expect(divider).not.toBeNull();
+    expect(text('BEFORE_RECOVERED_CHECKPOINT').compareDocumentPosition(divider) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(divider.compareDocumentPosition(text('AFTER_RECOVERED_CHECKPOINT')) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(container.querySelectorAll('[data-compaction-card]')).toHaveLength(1);
 });
 
 test('a live repository update keeps a checkpoint between the surrounding content', async () => {

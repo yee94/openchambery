@@ -459,6 +459,7 @@ export const dict = {
   'sessions.sidebar.session.status.questionRequired': 'Question en attente',
   'sessions.sidebar.session.subsessions.collapse': 'Réduire les sous-sessions',
   'sessions.sidebar.session.subsessions.expand': 'Développer les sous-sessions',
+  'sessions.sidebar.session.subsessions.loadFailed': 'Impossible de charger les sous-sessions. Réduisez puis développez pour réessayer.',
   'sessions.sidebar.dialogs.deleteSession.title': 'Supprimer la session ?',
   'sessions.sidebar.dialogs.archiveSession.title': 'Session d\'archivage ?',
   'sessions.sidebar.dialogs.deleteSession.withOneSubtask': '"{sessionTitle}" et sa sous-tâche {count} seront définitivement supprimées.',

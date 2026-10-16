@@ -128,10 +128,13 @@ import { toast } from "@/components/ui"
 import { appendNotification, clearSessionErrorNotifications } from "./notification-store"
 import { recordSessionError, summarizeOpenCodeError } from "./session-error-log"
 import {
+  applyGlobalSessionActiveSnapshot,
   applyGlobalSessionStatusEvent,
   applyGlobalSessionStatusSnapshot,
   useGlobalSessionStatusStore,
 } from "./global-session-status"
+import { fetchSessionActiveSnapshot } from "@/queries/sessionActiveQueries"
+import { mountSessionActivityIdentitySync } from "./session-activity-identity"
 import { applyWorktreeBootstrapStatusEvent } from "@/lib/worktrees/worktreeBootstrap"
 import type { State } from "./types"
 import type { SessionStatus } from '@/lib/opencode/v2-types'
@@ -221,6 +224,13 @@ export function useSessionActivity(sessionID: string): boolean {
   const { childStores } = useSyncSystem()
   const reader = getSessionActivityReader(childStores)
   const read = React.useMemo(() => () => reader.read().has(sessionID), [reader, sessionID])
+  return React.useSyncExternalStore(reader.subscribe, read, read)
+}
+
+export function useRunningDescendantCount(sessionID: string): number {
+  const { childStores } = useSyncSystem()
+  const reader = getSessionActivityReader(childStores)
+  const read = React.useMemo(() => () => reader.readDescendantCount(sessionID), [reader, sessionID])
   return React.useSyncExternalStore(reader.subscribe, read, read)
 }
 
@@ -3147,6 +3157,14 @@ export function SyncProvider(props: {
         noteStreamActivity(now)
       },
       onReconnect: () => {
+        // Match upstream: seed the complete process membership even before a
+        // directory or child-session catalog exists. Directory resyncs share
+        // this Query flight and still apply only their own known IDs.
+        void fetchSessionActiveSnapshot().then(({ result, requestedAt }) => {
+          if (result.state === 'supported') applyGlobalSessionActiveSnapshot(result.membership, requestedAt)
+        }).catch(() => {
+          // Failed authority leaves the last live state intact.
+        })
         configLiveRefresh.event('server.connected')
         useConfigStore.setState({
           isConnected: true,
@@ -3289,6 +3307,8 @@ export function SyncProvider(props: {
       clearInterval(interval)
     }
   }, [childStores, triggerDirectoryResync])
+
+  useEffect(() => mountSessionActivityIdentitySync(childStores), [childStores])
 
   // Ensure current directory's child store exists
   useEffect(() => {

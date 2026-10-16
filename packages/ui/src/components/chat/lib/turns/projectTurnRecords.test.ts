@@ -81,7 +81,7 @@ describe('projectTurnRecords', () => {
         expect(projection.indexes.messageToTurnId.has('a2')).toBe(false);
     });
 
-    test('attaches parentless v2 assistant messages to the preceding user turn by time order', () => {
+    test('attaches parentless v2 assistant messages to the preceding user turn', () => {
         const user1 = createMessageEntry({ id: 'u1', role: 'user', createdAt: 1 });
         const assistant1 = createMessageEntry({ id: 'a1', role: 'assistant', createdAt: 2, finish: 'error' });
         const user2 = createMessageEntry({ id: 'u2', role: 'user', createdAt: 3 });
@@ -93,6 +93,28 @@ describe('projectTurnRecords', () => {
         expect(projection.turns[0]?.assistantMessageIds).toEqual(['a1']);
         expect(projection.turns[1]?.assistantMessageIds).toEqual(['a2']);
         expect(projection.ungroupedMessageIds.size).toBe(0);
+    });
+
+    test.each([1, 2])('checkpoint and parentless replies keep source-order ownership when the next user clock is %s', (nextCreated) => {
+        const user = createMessageEntry({ id: 'u1', role: 'user', createdAt: 1 });
+        const before = createMessageEntry({ id: 'a1', role: 'assistant', createdAt: 2 });
+        const checkpoint: ChatMessageEntry = {
+            info: { id: 'c1', role: 'assistant', clientRole: 'compaction', time: { created: 2 } } as Message,
+            parts: [{ id: 'c1:compaction', type: 'compaction', status: 'completed', reason: 'auto' } as Part],
+        };
+        const after = createMessageEntry({ id: 'a2', role: 'assistant', createdAt: 2 });
+        const nextUser = createMessageEntry({ id: 'u2', role: 'user', createdAt: nextCreated });
+        const projection = projectTurnRecords([user, before, checkpoint, after, nextUser], { showTextJustificationActivity: true });
+        expect(projection.turns[0].messages.map(record => record.messageId)).toEqual(['u1', 'a1', 'c1', 'a2']);
+        expect(projection.turns[1].assistantMessageIds).toEqual([]);
+    });
+
+    test('a parentless assistant before the first loaded user stays ungrouped', () => {
+        const leading = createMessageEntry({ id: 'a0', role: 'assistant', createdAt: 2 });
+        const user = createMessageEntry({ id: 'u1', role: 'user', createdAt: 1 });
+        const projection = projectTurnRecords([leading, user]);
+        expect(projection.ungroupedMessageIds.has('a0')).toBe(true);
+        expect(projection.turns[0].assistantMessageIds).toEqual([]);
     });
 
     test('keeps v2 native synthetic notices inside the current turn instead of splitting it', () => {

@@ -14,14 +14,12 @@ describe('session projection event shapes', () => {
     sessionID: 'ses_owned', title: 'Chosen title', revision: 'r1', source: 'summary',
   } } };
 
-  it('keeps the owned title in snapshots and native rename events regardless of upstream clocks', () => {
+  it('preserves OpenCode titles despite an older persisted title choice', () => {
     const upstream = { id: 'ses_owned', title: 'Native title', time: { updated: 20 } };
-    expect(projectSessionWithHostMetadata(upstream, titleMetadata).title).toBe('Chosen title');
+    expect(projectSessionWithHostMetadata(upstream, titleMetadata).title).toBe('Native title');
     for (const created of [1, 20, 10000]) {
       const event = { type: 'session.renamed', created, data: { sessionID: 'ses_owned', title: 'Native title' } };
-      expect(projectSessionLifecyclePayload(event, () => titleMetadata)).toEqual({
-        ...event, data: { ...event.data, title: 'Chosen title' },
-      });
+      expect(projectSessionLifecyclePayload(event, () => titleMetadata)).toEqual(event);
       expect(event.data.title).toBe('Native title');
     }
     expect(projectSessionWithHostMetadata({ ...upstream, id: 'ses_fork' }, titleMetadata).title).toBe('Native title');
@@ -32,7 +30,7 @@ describe('session projection event shapes', () => {
       type: 'session.renamed', data: { sessionID: 'ses_owned', title: 'Native' },
     } };
     expect(projectSessionLifecyclePayload(payload, () => null, { hostReady: false })).toBeNull();
-    expect(projectSessionLifecyclePayload(payload, () => titleMetadata).payload.data.title).toBe('Chosen title');
+    expect(projectSessionLifecyclePayload(payload, () => titleMetadata).payload.data.title).toBe('Native');
   });
 
   it('ignores malformed or absent authority and rename identities', () => {

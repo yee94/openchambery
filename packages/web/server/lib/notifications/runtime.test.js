@@ -9,6 +9,7 @@ const defaultSettings = {
   nativeNotificationsEnabled: true,
 };
 
+const runtimes = [];
 const createRuntime = (overrides = {}) => {
   const emitDesktopNotification = vi.fn(() => true);
   const broadcastUiNotification = vi.fn();
@@ -31,8 +32,10 @@ const createRuntime = (overrides = {}) => {
     buildOpenCodeUrl: (path) => `http://opencode.test${path}`,
     getOpenCodeAuthHeaders: () => ({}),
     getIsWindowFocused: () => false,
+    loadActiveSessionIds: async () => [],
     ...overrides,
   });
+  runtimes.push(runtime);
   return {
     runtime,
     emitDesktopNotification,
@@ -49,8 +52,70 @@ const jsonResponse = (body, status = 200) => new Response(JSON.stringify(body), 
 });
 
 afterEach(() => {
+  runtimes.splice(0).forEach(runtime => runtime.dispose());
   vi.unstubAllGlobals();
   vi.useRealTimers();
+});
+
+describe('whole-task completion fanout', () => {
+  it('uses authoritative active membership to hold every channel until the last descendant stops', async () => {
+    let active = { child: { type: 'running' }, nested: { type: 'running' } };
+    const parents = { root: null, child: 'root', nested: 'child' };
+    vi.stubGlobal('fetch', vi.fn(async url => {
+      const path = new URL(url).pathname;
+      if (path.endsWith('/session/active')) return jsonResponse({ data: active });
+      const id = path.split('/').at(-1);
+      return jsonResponse({ data: { id, parentID: parents[id], title: id, metadata: {} } });
+    }));
+    const outlets = createRuntime({ loadActiveSessionIds: undefined });
+    const succeed = id => outlets.runtime.maybeSendPushForTrigger({ type: 'session.execution.succeeded', data: { sessionID: id } });
+    await succeed('root');
+    for (const outlet of ['emitDesktopNotification', 'broadcastUiNotification', 'sendPushToAllUiSessions', 'sendApnsToAllUiSessions', 'sendLiveActivityEnd']) {
+      expect(outlets[outlet]).not.toHaveBeenCalled();
+    }
+    active = { nested: { type: 'running' } };
+    await succeed('child');
+    expect(outlets.emitDesktopNotification).not.toHaveBeenCalled();
+    active = {};
+    await succeed('nested');
+    await succeed('root');
+    await outlets.runtime.maybeSendPushForTrigger({ type: 'session.idle', properties: { sessionID: 'root' } });
+    for (const outlet of ['emitDesktopNotification', 'broadcastUiNotification', 'sendPushToAllUiSessions', 'sendApnsToAllUiSessions', 'sendLiveActivityEnd']) {
+      expect(outlets[outlet]).toHaveBeenCalledTimes(1);
+    }
+    expect(outlets.emitDesktopNotification.mock.calls[0][0]).toMatchObject({ kind: 'ready', sessionId: 'root' });
+  });
+
+  it('does not treat an unavailable active endpoint as all tasks finished', async () => {
+    vi.useFakeTimers();
+    let failed = true;
+    vi.stubGlobal('fetch', vi.fn(async url => {
+      if (new URL(url).pathname.endsWith('/session/active')) return failed ? jsonResponse({}, 503) : jsonResponse({ data: {} });
+      return jsonResponse({ data: { id: 'root', title: 'Root', parentID: null } });
+    }));
+    const outlets = createRuntime({ loadActiveSessionIds: undefined });
+    await outlets.runtime.maybeSendPushForTrigger({ type: 'session.execution.succeeded', data: { sessionID: 'root' } });
+    expect(outlets.emitDesktopNotification).not.toHaveBeenCalled();
+    expect(outlets.sendLiveActivityEnd).not.toHaveBeenCalled();
+    failed = false;
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(outlets.emitDesktopNotification).toHaveBeenCalledTimes(1);
+  });
+
+  it('a parent restart during template enrichment prevents every old completion outlet', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse({ data: { id: 'root', parentID: null, title: 'Root' } })));
+    let resolveTemplate;
+    const buildTemplateVariables = vi.fn(() => new Promise(resolve => { resolveTemplate = resolve; }));
+    const outlets = createRuntime({ buildTemplateVariables });
+    const completed = outlets.runtime.maybeSendPushForTrigger({ type: 'session.execution.succeeded', data: { sessionID: 'root' } });
+    await vi.waitFor(() => expect(buildTemplateVariables).toHaveBeenCalledTimes(1));
+    const started = outlets.runtime.maybeSendPushForTrigger({ type: 'session.execution.started', data: { sessionID: 'root' } });
+    resolveTemplate({ session_name: 'Root' });
+    await Promise.all([completed, started]);
+    expect(outlets.emitDesktopNotification).not.toHaveBeenCalled();
+    expect(outlets.sendPushToAllUiSessions).not.toHaveBeenCalled();
+    expect(outlets.sendLiveActivityEnd).not.toHaveBeenCalled();
+  });
 });
 
 describe('notification trigger runtime smallModel suppression', () => {
@@ -560,14 +625,13 @@ describe('notification trigger live activity end', () => {
     }
   });
 
-  it('repeats terminal delivery on duplicate completion events', async () => {
+  it('delivers the Live Activity terminal only once for duplicate completion events', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => rootSessionResponse()));
     const { runtime, sendLiveActivityEnd } = createRuntime();
     await runtime.maybeSendPushForTrigger(completionPayload());
     await runtime.maybeSendPushForTrigger(completionPayload());
-    expect(sendLiveActivityEnd).toHaveBeenCalledTimes(2);
+    expect(sendLiveActivityEnd).toHaveBeenCalledTimes(1);
     expect(sendLiveActivityEnd).toHaveBeenNthCalledWith(1, { sessionId: 'ses_root', status: 'complete' });
-    expect(sendLiveActivityEnd).toHaveBeenNthCalledWith(2, { sessionId: 'ses_root', status: 'complete' });
   });
 });
 

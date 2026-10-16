@@ -27,6 +27,24 @@ const DEFAULT_OPENCODE_SERVE_PORT = 4096;
 // need enough time for clean flush; do not shorten globally for Quit latency).
 const OPENCODE_CHILD_SIGTERM_GRACE_MS = 2500;
 const OPENCODE_CHILD_SIGKILL_WAIT_MS = 1000;
+const PRIVATE_RECOVERY_BACKOFF_MS = [5_000, 10_000, 20_000, 40_000, 60_000];
+const PROCESS_READY_SCOPE = 'process-ready';
+
+// Client-visible diagnostics must not carry filesystem paths, captured
+// child output, or provider payloads. Short operator messages stay intact.
+const clientSafeOpenCodeError = (value, fallback = 'OpenCode is not ready') => {
+  const text = value instanceof Error ? value.message : String(value ?? '');
+  if (!text || text.length > 180) return fallback;
+  if (/[/\\]/.test(text) || /\bstderr\b|\bstdout\b|\bprovider\b/i.test(text)) return fallback;
+  return text;
+};
+
+const processReadyError = (code, message) => {
+  const error = new Error(message);
+  error.code = code;
+  error.scope = PROCESS_READY_SCOPE;
+  return error;
+};
 // Last-used directory plus recently opened projects — deeper tails are unlikely
 // to be the user's first click and just add background work.
 
@@ -103,17 +121,24 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
     }
   };
 
-  const hasChildProcessExited = (child) => !child || child.exitCode !== null || child.signalCode !== null;
+  // A live ChildProcess reports null. A legacy HMR wrapper omits the fields
+  // (undefined). Neither is evidence of exit; only a recorded code or signal is.
+  // Missing fields must fall through to a PID check, not a restart.
+  const hasChildProcessExited = (child) => {
+    if (!child) return true;
+    return child.exitCode != null || child.signalCode != null;
+  };
 
   const isManagedOpenCodeProcessAlive = () => {
     const child = state.openCodeProcess;
     if (!child || hasChildProcessExited(child)) return false;
-    if (!child.pid) return true;
+    const pid = Number(child.pid);
+    if (!Number.isInteger(pid) || pid <= 0) return false;
     try {
-      process.kill(child.pid, 0);
+      process.kill(pid, 0);
       return true;
-    } catch {
-      return false;
+    } catch (error) {
+      return error?.code === 'EPERM';
     }
   };
 
@@ -408,6 +433,14 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
     return {
       url,
       pid: child.pid || null,
+      // Live values from the real child. A plain {url,pid,close} snapshot made
+      // `undefined !== null` look like an exit and bypassed busy protection.
+      get exitCode() {
+        return child.exitCode;
+      },
+      get signalCode() {
+        return child.signalCode;
+      },
       async close() {
         await closeManagedOpenCodeChild(child);
       },
@@ -720,6 +753,7 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
       }
       sharedServiceAttached = true;
       state.isExternalOpenCode = true;
+      clearPrivateManagedRecovery();
       state.lastOpenCodeError = null;
       state.v1Migration = null;
       state.managedCapabilityIdentity = null;
@@ -730,6 +764,7 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
     } catch (error) {
       sharedServiceAttached = false;
       sharedServicePid = null;
+      clearPrivateManagedRecovery();
       state.openCodeBaseUrl = null;
       state.openCodePort = null;
       adoptOpenCodeServerPassword?.(null, null);
@@ -799,6 +834,11 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
       const managedEnv = managedCapabilitiesRuntime
         ? await managedCapabilitiesRuntime.prepareManagedChildEnv(childEnv)
         : childEnv;
+      // Last check before the child is created. A shutdown or superseded
+      // start that landed during prepare must not spawn, and must not retry.
+      if (state.isShuttingDown || (Number(state.runtimeContractGeneration) || 0) !== generationAtStart) {
+        throw processReadyError('opencode_shutting_down', 'OpenCode is shutting down');
+      }
       const serverInstance = await createManagedOpenCodeServerProcess({
         hostname: env.ENV_CONFIGURED_OPENCODE_HOSTNAME,
         port: spawnPort,
@@ -842,7 +882,7 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
       throw new Error('Server started but health check failed (timeout)');
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      state.lastOpenCodeError = message;
+      state.lastOpenCodeError = clientSafeOpenCodeError(message);
       state.openCodePort = null;
       // Keep revoked/pending contract — do not resurrect the prior permit.
       if ((Number(state.runtimeContractGeneration) || 0) === generationAtStart) {
@@ -853,18 +893,40 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
         );
       }
       syncToHmrState();
-      console.error(`Failed to start OpenCode: ${message}`);
+      console.error('Failed to start OpenCode');
       throw error;
     }
+  };
+
+  const discardManagedStart = async (started) => {
+    await started?.close?.().catch(() => {});
+    state.isOpenCodeReady = false;
+    if (!state.openCodeNotReadySince) state.openCodeNotReadySince = Date.now();
+    if (state.isShuttingDown) noteShutdown();
   };
 
   const startOpenCode = async () => {
     let lastError = null;
     for (let attempt = 1; attempt <= START_OPEN_CODE_MAX_ATTEMPTS; attempt += 1) {
+      if (state.isShuttingDown) {
+        noteShutdown();
+        throw processReadyError('opencode_shutting_down', 'OpenCode is shutting down');
+      }
       try {
-        return await startOpenCodeOnce();
+        const started = await startOpenCodeOnce();
+        if (state.isShuttingDown) {
+          await discardManagedStart(started);
+          throw processReadyError('opencode_shutting_down', 'OpenCode is shutting down');
+        }
+        return started;
       } catch (error) {
         lastError = error;
+        if (state.isShuttingDown || error?.code === 'opencode_shutting_down') {
+          noteShutdown();
+          throw error?.code === 'opencode_shutting_down'
+            ? error
+            : processReadyError('opencode_shutting_down', 'OpenCode is shutting down');
+        }
         if (error?.code === 'OPENCODE_BINARY_INVALID') {
           break;
         }
@@ -872,8 +934,7 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
           break;
         }
 
-        const message = error instanceof Error ? error.message : String(error);
-        console.warn(`[OpenCode] Managed server startup failed on attempt ${attempt}/${START_OPEN_CODE_MAX_ATTEMPTS}; retrying: ${message}`);
+        console.warn(`[OpenCode] Managed server startup failed on attempt ${attempt}/${START_OPEN_CODE_MAX_ATTEMPTS}; retrying`);
         state.openCodePort = null;
         state.isOpenCodeReady = false;
         state.openCodeNotReadySince = Date.now();
@@ -885,10 +946,106 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
     throw lastError;
   };
 
+  // Explicit private-managed recovery intent. Not inferred from !external:
+  // a missing handle without this flag must not spawn. Cleared on shutdown,
+  // stop, and ownership switch to external/shared. Lives beside the existing
+  // health-failure counters, not a parallel store.
+  let privateManagedRecovery = false;
+  let recoveryFailures = 0;
+  let nextRecoveryAt = 0;
+
+  const clearPrivateManagedRecovery = () => {
+    privateManagedRecovery = false;
+    recoveryFailures = 0;
+    nextRecoveryAt = 0;
+  };
+
+  let shutdownPermitRevoked = false;
+  const noteShutdown = () => {
+    clearPrivateManagedRecovery();
+    if (shutdownPermitRevoked) return;
+    shutdownPermitRevoked = true;
+    revokeRuntimeExecutionPermit('shutdown');
+  };
+
+  // Bootstrap and private recovery share one in-flight operation so retry,
+  // immediate, and periodic monitors cannot spawn a second round.
+  let lifecycleOperation = null;
+  const runLifecycleOperation = (fn) => {
+    if (lifecycleOperation) return lifecycleOperation;
+    const flight = Promise.resolve().then(fn).finally(() => {
+      if (lifecycleOperation === flight) lifecycleOperation = null;
+    });
+    lifecycleOperation = flight;
+    return flight;
+  };
+
+  const notePrivateManagedOwnership = () => {
+    if (state.isShuttingDown || state.isExternalOpenCode || sharedServiceAttached) return;
+    privateManagedRecovery = true;
+  };
+
+  // Adopt only an existing private handle (HMR restore). A missing handle
+  // does not create intent.
+  const adoptPrivateManagedHandle = () => {
+    if (privateManagedRecovery || state.isShuttingDown || state.isExternalOpenCode || sharedServiceAttached) return;
+    const pid = Number(state.openCodeProcess?.pid);
+    if (Number.isInteger(pid) && pid > 0) privateManagedRecovery = true;
+  };
+
+  const recoveryBackoffRemaining = () => Math.max(0, nextRecoveryAt - Date.now());
+
+  const armRecoveryHold = (failed) => {
+    const delay = PRIVATE_RECOVERY_BACKOFF_MS[Math.min(recoveryFailures, PRIVATE_RECOVERY_BACKOFF_MS.length - 1)];
+    if (failed) recoveryFailures += 1;
+    nextRecoveryAt = Date.now() + delay;
+  };
+
+  // Clear the hold only after it has elapsed and the same private process is
+  // still alive. A brief ready during the hold must not restart the storm.
+  const noteStableHealth = () => {
+    if (nextRecoveryAt === 0 && recoveryFailures === 0) return;
+    if (Date.now() < nextRecoveryAt) return;
+    if (!isManagedOpenCodeProcessAlive()) return;
+    recoveryFailures = 0;
+    nextRecoveryAt = 0;
+  };
+
   const restartOpenCode = async (options = {}) => {
-    if (state.isShuttingDown) return;
-    if (state.currentRestartPromise) {
+    if (state.isShuttingDown) {
+      noteShutdown();
+      return;
+    }
+    if (!options.binaryPath) {
+      if (lifecycleOperation) return lifecycleOperation;
+      return runLifecycleOperation(() => runRestartOpenCode(options));
+    }
+    // Each explicit binary target waits until the coordinator is idle, then
+    // takes it in the same turn. Two waiters must not merge into one flight.
+    for (;;) {
+      if (state.isShuttingDown) {
+        noteShutdown();
+        return;
+      }
+      if (!lifecycleOperation) {
+        return runLifecycleOperation(() => runRestartOpenCode(options));
+      }
+      const inFlight = lifecycleOperation;
+      await inFlight.catch(() => {});
+    }
+  };
+
+  const runRestartOpenCode = async (options = {}) => {
+    if (state.isShuttingDown) {
+      noteShutdown();
+      return;
+    }
+    if (state.currentRestartPromise && state.currentRestartPromise !== lifecycleOperation) {
       await state.currentRestartPromise;
+      if (state.isShuttingDown) {
+        noteShutdown();
+        return;
+      }
       if (!options.binaryPath) return;
     }
 
@@ -946,6 +1103,7 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
         return;
       }
 
+      notePrivateManagedOwnership();
       const portToRelease = state.openCodePort;
 
       if (state.openCodeProcess) {
@@ -960,10 +1118,18 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
         state.openCodeProcess = null;
         syncToHmrState();
       }
+      if (state.isShuttingDown || (Number(state.runtimeContractGeneration) || 0) !== restartGeneration) {
+        noteShutdown();
+        return;
+      }
 
       // Probe only: never mass-kill whoever holds the port (clients / external serve).
       if (!(await waitForPortRelease(portToRelease, 5000))) {
         console.warn(`Timed out waiting for OpenCode port ${portToRelease} to be released`);
+      }
+      if (state.isShuttingDown || (Number(state.runtimeContractGeneration) || 0) !== restartGeneration) {
+        if (state.isShuttingDown) noteShutdown();
+        return;
       }
 
       if (env.ENV_CONFIGURED_OPENCODE_PORT) {
@@ -982,7 +1148,23 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
       }
 
       state.lastOpenCodeError = null;
-      state.openCodeProcess = await startOpenCode();
+      const ownershipAtSpawn = {
+        external: state.isExternalOpenCode === true,
+        shared: sharedServiceAttached,
+      };
+      const started = await startOpenCode();
+      if (
+        state.isShuttingDown
+        || state.isExternalOpenCode !== ownershipAtSpawn.external
+        || sharedServiceAttached !== ownershipAtSpawn.shared
+      ) {
+        await started?.close?.().catch(() => {});
+        if (state.isShuttingDown) noteShutdown();
+        return;
+      }
+      state.openCodeProcess = started;
+      notePrivateManagedOwnership();
+      armRecoveryHold(false);
       syncToHmrState();
 
       if (state.expressApp) {
@@ -994,10 +1176,17 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
     try {
       await state.currentRestartPromise;
     } catch (error) {
-      console.error(`Failed to restart OpenCode: ${error.message}`);
-      state.lastOpenCodeError = error.message;
+      if (state.isShuttingDown || error?.code === 'opencode_shutting_down') {
+        noteShutdown();
+        return;
+      }
+      console.error('Failed to restart OpenCode');
+      state.lastOpenCodeError = clientSafeOpenCodeError(error);
       // External serve is read-only: never clear its port, flip ownership, or
       // spawn a managed replacement when a re-probe fails.
+      if (!state.isExternalOpenCode && !sharedServiceAttached && privateManagedRecovery) {
+        armRecoveryHold(true);
+      }
       if (!state.isExternalOpenCode) {
         if (!env.ENV_CONFIGURED_OPENCODE_PORT) {
           state.openCodePort = null;
@@ -1013,6 +1202,87 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
     }
   };
 
+  const captureReadinessScope = () => ({
+    generation: Number(state.runtimeContractGeneration) || 0,
+    port: state.openCodePort,
+    external: state.isExternalOpenCode === true,
+    shared: sharedServiceAttached,
+  });
+
+  const readinessScopeCurrent = (scope) => (
+    !state.isShuttingDown
+    && (Number(state.runtimeContractGeneration) || 0) === scope.generation
+    && state.openCodePort === scope.port
+    && (state.isExternalOpenCode === true) === scope.external
+    && sharedServiceAttached === scope.shared
+  );
+
+  const healthReadinessError = (healthResult) => new Error(
+    healthResult?.reason === 'auth-failed'
+      ? 'OpenCode health endpoint rejected authentication'
+      : 'OpenCode health endpoint returned unhealthy response',
+  );
+
+  /**
+   * One readiness attempt shared by wait and retry. Health, then V1 migration,
+   * then contract publish, under a single abort deadline so a hung migration
+   * cannot outrun HEALTH_CHECK_TIMEOUT_MS. Generation, port, ownership, and
+   * shutdown are pinned at the start of this call. A superseded attempt is
+   * discarded and does not publish.
+   */
+  const probeOpenCodeReadiness = async () => {
+    const scope = captureReadinessScope();
+    if (state.isShuttingDown || !scope.port) {
+      return { ready: false, stale: true, scope };
+    }
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), HEALTH_CHECK_TIMEOUT_MS);
+    try {
+      const healthResult = await fetchOpenCodeHealthResult(
+        (healthPath) => buildOpenCodeUrl(healthPath, ''),
+        controller.signal,
+      );
+      if (!readinessScopeCurrent(scope)) {
+        return { ready: false, stale: true, scope };
+      }
+      if (!healthResult.ok) {
+        refreshRuntimeContractFromProbe(healthResult, state.v1Migration, scope.generation);
+        return {
+          ready: false,
+          stale: false,
+          kind: 'health',
+          scope,
+          error: healthReadinessError(healthResult),
+        };
+      }
+
+      const gate = await probeV1MigrationGate(controller.signal);
+      if (!readinessScopeCurrent(scope)) {
+        return { ready: false, stale: true, scope };
+      }
+      refreshRuntimeContractFromProbe(healthResult, gate, scope.generation);
+      if (applyV1MigrationGate(gate)) {
+        // Re-publish contract after admitTranscript flips ready.
+        refreshRuntimeContractFromProbe(healthResult, gate, scope.generation);
+        return { ready: true, stale: false, kind: 'ready', scope };
+      }
+      return {
+        ready: false,
+        stale: false,
+        kind: 'migration',
+        scope,
+        error: new Error(gate.error || `V1 migration is ${gate.phase}`),
+      };
+    } catch (error) {
+      if (!readinessScopeCurrent(scope)) {
+        return { ready: false, stale: true, scope };
+      }
+      return { ready: false, stale: false, kind: 'thrown', scope, error };
+    } finally {
+      clearTimeout(timer);
+    }
+  };
+
   const waitForOpenCodeReady = async (timeoutMs = 20000, intervalMs = 400) => {
     if (!state.openCodePort) {
       throw new Error('OpenCode port is not available');
@@ -1023,57 +1293,37 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
     // Pin generation for this wait loop so a concurrent restart cannot have our
     // late probe overwrite the newer instance contract.
     const generationAtStart = Number(state.runtimeContractGeneration) || 0;
+    const scopeAtStart = captureReadinessScope();
+    const instanceChanged = () => new Error('OpenCode instance changed while waiting for ready');
 
     while (Date.now() < deadline) {
-      let timeout = null;
       try {
         if ((Number(state.runtimeContractGeneration) || 0) !== generationAtStart) {
-          throw new Error('OpenCode instance changed while waiting for ready');
+          throw instanceChanged();
         }
-        // One timer covers health + migration for this attempt. Clearing after
-        // health alone let a hung migration outrun HEALTH_CHECK_TIMEOUT_MS and
-        // the outer deadline when the probe never settled.
-        const controller = new AbortController();
-        timeout = setTimeout(() => controller.abort(), HEALTH_CHECK_TIMEOUT_MS);
-        const healthResult = await fetchOpenCodeHealthResult(
-          (healthPath) => buildOpenCodeUrl(healthPath, ''),
-          controller.signal
-        );
-
-        if (!healthResult.ok) {
-          refreshRuntimeContractFromProbe(healthResult, state.v1Migration, generationAtStart);
-          lastError = new Error(
-            healthResult.reason === 'auth-failed'
-              ? 'OpenCode health endpoint rejected authentication'
-              : 'OpenCode health endpoint returned unhealthy response',
-          );
-          await new Promise((resolve) => setTimeout(resolve, intervalMs));
-          continue;
+        const outcome = await probeOpenCodeReadiness();
+        // The await resumes in a later microtask. A restart can land after the
+        // helper's own scope check and before this continuation.
+        if (outcome.stale || !readinessScopeCurrent(outcome.scope)) {
+          throw instanceChanged();
         }
-
-        const gate = await probeV1MigrationGate(controller.signal);
-        refreshRuntimeContractFromProbe(healthResult, gate, generationAtStart);
-        if (applyV1MigrationGate(gate)) {
-          // Re-publish contract after admitTranscript flips ready.
-          refreshRuntimeContractFromProbe(healthResult, gate, generationAtStart);
+        if (outcome.ready) {
           state.lastOpenCodeError = null;
           return;
         }
-
-        lastError = new Error(gate.error || `V1 migration is ${gate.phase}`);
-        await new Promise((resolve) => setTimeout(resolve, intervalMs));
-        continue;
+        if (outcome.error) {
+          lastError = outcome.error;
+        }
       } catch (error) {
         lastError = error;
-      } finally {
-        if (timeout) {
-          clearTimeout(timeout);
-        }
       }
 
-      await new Promise((resolve) => setTimeout(resolve, intervalMs));
+      await delay(intervalMs);
     }
 
+    if (!readinessScopeCurrent(scopeAtStart)) {
+      throw lastError || instanceChanged();
+    }
     if (lastError) {
       state.lastOpenCodeError = lastError.message || String(lastError);
       throw lastError;
@@ -1198,6 +1448,7 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
         state.isOpenCodeReady = false;
         state.openCodeNotReadySince = Date.now();
         state.isExternalOpenCode = true;
+        clearPrivateManagedRecovery();
         state.lastOpenCodeError = null;
         state.v1Migration = null;
         syncToHmrState();
@@ -1211,7 +1462,9 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
         console.log(`[HMR] Reusing existing OpenCode process on port ${state.openCodePort}`);
       } else if (state.openCodeProcess && !state.isExternalOpenCode && await isOpenCodeProcessHealthy()) {
         console.log('[HMR] Restarting managed OpenCode because scheduled-task capability identity is stale');
-        await restartOpenCode();
+        // Already inside the coordinator. Call the inner restart so this
+        // bootstrap does not await its own lifecycleOperation.
+        await runRestartOpenCode();
       } else if (
         (env.ENV_EFFECTIVE_PORT || DEFAULT_OPENCODE_SERVE_PORT)
         && await probeExternalOpenCode(
@@ -1228,6 +1481,7 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
         state.isOpenCodeReady = false;
         state.openCodeNotReadySince = Date.now();
         state.isExternalOpenCode = true;
+        clearPrivateManagedRecovery();
         state.lastOpenCodeError = null;
         state.v1Migration = null;
         syncToHmrState();
@@ -1244,8 +1498,26 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
           syncToHmrState();
         }
 
+        if (state.isShuttingDown) {
+          noteShutdown();
+          return;
+        }
         state.lastOpenCodeError = null;
-        state.openCodeProcess = await startOpenCode();
+        const ownershipAtSpawn = {
+          external: state.isExternalOpenCode === true,
+          shared: sharedServiceAttached,
+        };
+        const started = await startOpenCode();
+        if (
+          state.isShuttingDown
+          || state.isExternalOpenCode !== ownershipAtSpawn.external
+          || sharedServiceAttached !== ownershipAtSpawn.shared
+        ) {
+          await discardManagedStart(started);
+          return;
+        }
+        state.openCodeProcess = started;
+        notePrivateManagedOwnership();
         syncToHmrState();
       }
       await waitForOpenCodePort();
@@ -1255,46 +1527,151 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
         console.error(`OpenCode readiness check failed: ${error.message}`);
       }
     } catch (error) {
-      console.error(`Failed to start OpenCode: ${error.message}`);
+      console.error('Failed to start OpenCode');
       console.log('Continuing without OpenCode integration...');
-      state.lastOpenCodeError = error.message;
+      state.lastOpenCodeError = clientSafeOpenCodeError(error);
     }
   };
 
   const bootstrapOpenCodeAtStartup = () => {
+    if (lifecycleOperation) return lifecycleOperation;
     if (!bootstrapOpenCodePromise) {
-      bootstrapOpenCodePromise = runBootstrapOpenCodeAtStartup().finally(() => {
+      bootstrapOpenCodePromise = runLifecycleOperation(runBootstrapOpenCodeAtStartup).finally(() => {
         bootstrapOpenCodePromise = null;
       });
     }
     return bootstrapOpenCodePromise;
   };
 
+  const probeProcessReady = async () => {
+    const outcome = await probeOpenCodeReadiness();
+    // Recheck after the await. A generation change in that microtask gap must
+    // not publish the helper's result or count as success.
+    if (outcome.stale || !readinessScopeCurrent(outcome.scope)) return false;
+    if (outcome.ready) return true;
+    // A failed or thrown probe revokes ready for the generation it captured.
+    // Migration denial already did that inside the shared probe.
+    if (outcome.kind === 'health' || outcome.kind === 'thrown') {
+      state.isOpenCodeReady = false;
+      if (!state.openCodeNotReadySince) state.openCodeNotReadySince = Date.now();
+    }
+    if (outcome.kind === 'thrown') {
+      refreshRuntimeContractFromProbe(
+        { ok: false, version: null, authenticated: null, healthOk: false },
+        state.v1Migration,
+        outcome.scope.generation,
+      );
+    }
+    return false;
+  };
+
   const retryOpenCodeStartup = () => {
     if (!retryOpenCodePromise) {
       retryOpenCodePromise = (async () => {
-        if (bootstrapOpenCodePromise) {
-          await bootstrapOpenCodePromise;
+        const generationAtStart = Number(state.runtimeContractGeneration) || 0;
+        if (state.isShuttingDown) {
+          noteShutdown();
+          throw processReadyError('opencode_shutting_down', 'OpenCode is shutting down');
         }
-        if (state.isOpenCodeReady) return;
+        if (lifecycleOperation) {
+          try { await lifecycleOperation; } catch { /* joined round owns the outcome */ }
+        }
+        if (state.isShuttingDown) {
+          noteShutdown();
+          throw processReadyError('opencode_shutting_down', 'OpenCode is shutting down');
+        }
+        if ((Number(state.runtimeContractGeneration) || 0) !== generationAtStart && !state.openCodePort) {
+          throw processReadyError('opencode_not_ready', 'OpenCode is not ready');
+        }
+
+        const ready = await probeProcessReady();
+        if (state.isShuttingDown) {
+          noteShutdown();
+          throw processReadyError('opencode_shutting_down', 'OpenCode is shutting down');
+        }
+        if (!ready && (Number(state.runtimeContractGeneration) || 0) !== generationAtStart) {
+          throw processReadyError('opencode_not_ready', 'OpenCode is not ready');
+        }
+        if (ready) {
+          noteStableHealth();
+          return { success: true, scope: PROCESS_READY_SCOPE };
+        }
+
+        if (isManagedOpenCodeProcessAlive()) {
+          throw processReadyError('opencode_not_ready', 'OpenCode is not ready');
+        }
+        if (privateManagedRecovery && recoveryBackoffRemaining() > 0) {
+          throw processReadyError('opencode_recovery_backoff', 'OpenCode recovery is cooling down');
+        }
+        if (state.isShuttingDown) {
+          noteShutdown();
+          throw processReadyError('opencode_shutting_down', 'OpenCode is shutting down');
+        }
+
+        // Already external: fresh probe only. Do not re-run ownership selection.
+        if (state.isExternalOpenCode && !sharedServiceAttached) {
+          throw processReadyError('opencode_not_ready', 'OpenCode is not ready');
+        }
+        if (sharedServiceAttached) {
+          try {
+            await restartOpenCode();
+          } catch {
+            throw processReadyError('opencode_not_ready', 'OpenCode is not ready');
+          }
+          if (state.isShuttingDown) {
+            noteShutdown();
+            throw processReadyError('opencode_shutting_down', 'OpenCode is shutting down');
+          }
+          if (!(await probeProcessReady())) {
+            throw processReadyError('opencode_not_ready', 'OpenCode is not ready');
+          }
+          return { success: true, scope: PROCESS_READY_SCOPE };
+        }
+        if (privateManagedRecovery) {
+          try {
+            await restartOpenCode();
+          } catch {
+            throw processReadyError('opencode_not_ready', 'OpenCode is not ready');
+          }
+          if (state.isShuttingDown) {
+            noteShutdown();
+            throw processReadyError('opencode_shutting_down', 'OpenCode is shutting down');
+          }
+          if (!(await probeProcessReady())) {
+            throw processReadyError('opencode_not_ready', 'OpenCode is not ready');
+          }
+          return { success: true, scope: PROCESS_READY_SCOPE };
+        }
 
         clearResolvedOpenCodeBinary();
         await applyOpencodeBinaryFromSettings({ strict: true });
+        if (state.isShuttingDown) {
+          noteShutdown();
+          throw processReadyError('opencode_shutting_down', 'OpenCode is shutting down');
+        }
         if (typeof ensurePinnedOpenCode2CliEnv === 'function') {
           await ensurePinnedOpenCode2CliEnv();
         }
         const resolved = ensureOpencodeCliEnv();
         if (!resolved) {
-          const error = new Error('OpenCode CLI could not be resolved');
+          const error = processReadyError('opencode_cli_missing', 'OpenCode CLI could not be resolved');
           state.lastOpenCodeError = error.message;
           state.openCodeNotReadySince = Date.now();
           throw error;
         }
 
+        notePrivateManagedOwnership();
         await bootstrapOpenCodeAtStartup();
-        if (!state.isOpenCodeReady) {
-          throw new Error(state.lastOpenCodeError || 'OpenCode failed to become ready');
+        if (state.isShuttingDown) {
+          noteShutdown();
+          throw processReadyError('opencode_shutting_down', 'OpenCode is shutting down');
         }
+        if (state.isOpenCodeReady === true || await probeProcessReady()) {
+          armRecoveryHold(false);
+          return { success: true, scope: PROCESS_READY_SCOPE };
+        }
+        if (privateManagedRecovery) armRecoveryHold(true);
+        throw processReadyError('opencode_not_ready', 'OpenCode is not ready');
       })().finally(() => {
         retryOpenCodePromise = null;
       });
@@ -1371,26 +1748,69 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
     return true;
   };
 
+  const recoverPrivateManaged = async (source) => {
+    if (state.isShuttingDown) {
+      noteShutdown();
+      return false;
+    }
+    if (!privateManagedRecovery || state.isExternalOpenCode || sharedServiceAttached) return false;
+    if (recoveryBackoffRemaining() > 0) return false;
+    if (state.currentRestartPromise) {
+      try {
+        await state.currentRestartPromise;
+      } catch {
+        // Joined attempt already armed the hold.
+      }
+      return false;
+    }
+    console.log(`[lifecycle] ${source} private managed recovery`);
+    try {
+      await restartOpenCode();
+      return true;
+    } catch {
+      return false;
+    }
+  };
+
   const runHealthCheckCycle = async (source) => {
+    if (state.isShuttingDown) {
+      noteShutdown();
+      return;
+    }
     // External serve is read-only mount: never restart or spawn a second copy
     // because the user's instance looks unhealthy from our probe. The shared
     // service is the exception: "restart" only re-runs `service start`.
-    if (state.isExternalOpenCode && !sharedServiceAttached) return;
-    if (!sharedServiceAttached && !state.openCodeProcess) return;
-    if (state.isShuttingDown || state.isRestartingOpenCode) return;
+    if (state.isExternalOpenCode && !sharedServiceAttached) {
+      clearPrivateManagedRecovery();
+      return;
+    }
+    if (sharedServiceAttached) clearPrivateManagedRecovery();
+    adoptPrivateManagedHandle();
+    // No handle and no explicit private-managed intent: do not spawn.
+    if (!sharedServiceAttached && !state.openCodeProcess && !privateManagedRecovery) return;
+    if (state.isRestartingOpenCode) return;
     if (healthCheckCyclePromise) return healthCheckCyclePromise;
 
     healthCheckCyclePromise = (async () => {
+      if (!sharedServiceAttached && !state.openCodeProcess) {
+        await recoverPrivateManaged(source);
+        return;
+      }
       const healthy = await probeOpenCodeHealth();
       if (!healthy) {
         const processAlive = sharedServiceAttached
           ? isProcessAlive(sharedServicePid)
           : isManagedOpenCodeProcessAlive();
         if (!processAlive) {
-          console.log(`[lifecycle] ${source} health check: OpenCode process exited, restarting...`);
           consecutiveHealthFailures = 0;
           lastHealthProbeResult = null;
-          await restartOpenCode();
+          if (sharedServiceAttached) {
+            console.log(`[lifecycle] ${source} health check: OpenCode process exited, restarting...`);
+            await restartOpenCode();
+            return;
+          }
+          console.log(`[lifecycle] ${source} health check: OpenCode process exited, recovering...`);
+          await recoverPrivateManaged(source);
           return;
         }
         consecutiveHealthFailures += 1;
@@ -1402,9 +1822,14 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
         console.log(`[lifecycle] ${source} health check failure threshold reached, restarting OpenCode...`);
         consecutiveHealthFailures = 0;
         lastHealthProbeResult = null;
-        await restartOpenCode();
+        if (sharedServiceAttached) {
+          await restartOpenCode();
+          return;
+        }
+        await recoverPrivateManaged(source);
       } else {
         resetHealthFailureState();
+        noteStableHealth();
         try {
           const gate = await probeV1MigrationGate(AbortSignal.timeout(HEALTH_CHECK_TIMEOUT_MS));
           applyV1MigrationGate(gate);
@@ -1422,7 +1847,7 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
     try {
       await runHealthCheckCycle('immediate');
     } catch (error) {
-      console.error(`[lifecycle] immediate health check error: ${error.message}`);
+      console.error(`[lifecycle] immediate health check error: ${error?.code || 'opencode_not_ready'}`);
     }
   };
 
@@ -1437,7 +1862,7 @@ export const createOpenCodeLifecycleRuntime = (deps) => {
       try {
         await runHealthCheckCycle('periodic');
       } catch (error) {
-        console.error(`Health check error: ${error.message}`);
+        console.error(`Health check error: ${error?.code || 'opencode_not_ready'}`);
       }
     }, effectiveIntervalMs);
   };

@@ -46,11 +46,10 @@ to match a narrower upstream metadata shape.
 
 ## Contracts
 
-- `openchamber.titleAuthority` is the durable OpenChamber title choice; see
-  `../session-title/DOCUMENTATION.md`. Projection applies a valid same-session
-  authority to list/detail, full session events, and native `session.renamed`
-  events (including replay). Inherited fork authority is ignored. Missing or
-  malformed authority preserves upstream titles and does not lock legacy rows.
+- OpenCode `session.title` owns title display. `openchamber.titleAuthority` is
+  retained only as a generation revision fence; see `../session-title/DOCUMENTATION.md`.
+  Projection never substitutes its stored title into list/detail or rename
+  events, including replay. Existing persisted records require no migration.
 
 - Writes are JSON Merge Patch (RFC 7386): nested objects merge key-by-key; `null` deletes a key.
 - Mutations are fully serialized (read-merge-write + persist) so concurrent writers cannot lose neighbors.

@@ -43,6 +43,7 @@ import { Icon } from "@/components/icon/Icon";
 import { formatAbsoluteMessageTimestamp, formatTimestampForDisplay } from './timeFormat';
 import { useMessageTimeFocused } from './messageTimeFocus';
 import { canPresentAssistantTps, formatAssistantTps } from './assistantTps';
+import { BackgroundActivityHint } from './BackgroundActivityHint';
 import { ContextToolGroup } from './parts/ContextToolGroup';
 import { SkillToolGroup } from './parts/SkillToolGroup';
 import { StaticToolRow } from './parts/ProgressiveGroup';
@@ -1860,6 +1861,7 @@ const AssistantMessageBody = React.memo(({
         && !hideCompactionBody
         && (hasTextContent || Boolean(errorMessage) || isMessageCompleted);
     const hasAuthoritativeChangesMarker = turnGroupingContext?.diffStats?.hasDiffs === true;
+    const showBackgroundActivity = turnGroupingContext?.isLatestTurn && sessionId && sessionSurface.active && !isMiniChatSurface;
     const shouldShowChangesPreview = !isMiniChatSurface
         && isLastAssistantInTurn
         && hasConfirmedStopFinish
@@ -2449,7 +2451,7 @@ const AssistantMessageBody = React.memo(({
                             {messageActionButtons}
                             {finalTurnActionButtons}
                         </div>
-                        {(assistantTpsText || turnDurationText || footerTimestamp) ? (
+                        {(assistantTpsText || turnDurationText || footerTimestamp || showBackgroundActivity) ? (
                             <div className={MESSAGE_FOOTER_META_GROUP_CLASS}>
                                 {assistantTpsText ? <AssistantTpsMeta label={assistantTpsText} /> : null}
                                 {turnDurationText ? (
@@ -2462,6 +2464,9 @@ const AssistantMessageBody = React.memo(({
                                         </TooltipTrigger>
                                         <TooltipContent>{turnDurationText}</TooltipContent>
                                     </Tooltip>
+                                ) : null}
+                                {showBackgroundActivity && sessionId ? (
+                                    <BackgroundActivityHint sessionId={sessionId} />
                                 ) : null}
                                 {footerTimestamp ? (
                                     <AssistantAbsoluteTime

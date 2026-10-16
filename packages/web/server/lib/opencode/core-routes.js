@@ -1141,7 +1141,7 @@ export const registerSettingsUtilityRoutes = (app, dependencies) => {
     } catch (error) {
       console.error('[Server] Failed to reload configuration:', error);
       res.status(500).json({
-        error: error.message || 'Failed to reload configuration',
+        error: 'Failed to reload configuration',
         success: false,
       });
     }
@@ -1150,12 +1150,21 @@ export const registerSettingsUtilityRoutes = (app, dependencies) => {
   app.post('/api/opencode/retry', async (_req, res) => {
     try {
       await retryOpenCodeStartup();
-      res.json({ success: true });
+      res.json({ success: true, scope: 'process-ready' });
     } catch (error) {
-      console.error('[Server] Failed to retry OpenCode startup:', error);
+      console.error('[Server] Failed to retry OpenCode startup');
+      const allowed = new Set([
+        'opencode_not_ready',
+        'opencode_recovery_backoff',
+        'opencode_shutting_down',
+        'opencode_cli_missing',
+      ]);
+      const code = allowed.has(error?.code) ? error.code : 'opencode_not_ready';
       res.status(503).json({
-        error: error instanceof Error ? error.message : 'Failed to retry OpenCode startup',
         success: false,
+        code,
+        scope: 'process-ready',
+        error: 'OpenCode is not ready',
       });
     }
   });

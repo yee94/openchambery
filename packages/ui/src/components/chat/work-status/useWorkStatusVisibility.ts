@@ -39,7 +39,7 @@ export const useWorkStatusVisibility = ({ isMobile, isVSCode, directory }: Optio
     const panel = directoryKey ? state.contextPanelByDirectory[directoryKey] : undefined;
     if (!panel?.isOpen) return false;
     const activeTab = panel.tabs.find((tab) => tab.id === panel.activeTabId) ?? panel.tabs[panel.tabs.length - 1] ?? null;
-    return Boolean(activeTab);
+    return Boolean(activeTab && activeTab.mode !== 'chat');
   });
   const panelEnabled = useUIStore((state) => state.workStatusPanelEnabled);
   const rightSidebarOpen = useUIStore((state) => state.isRightSidebarOpen);

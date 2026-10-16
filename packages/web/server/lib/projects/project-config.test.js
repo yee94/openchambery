@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import os from 'os';
 import path from 'path';
 import { mkdtemp, rm, readFile, writeFile } from 'fs/promises';
-import { createProjectConfigRuntime } from './project-config.js';
+import { SCHEDULE_CONFLICT_CODE, createProjectConfigRuntime, scheduledTaskWriteGuard } from './project-config.js';
 
 const createRuntime = async () => {
   const tempRoot = await mkdtemp(path.join(os.tmpdir(), 'oc-scheduled-project-config-'));
@@ -233,5 +233,93 @@ describe('project-config runtime', () => {
     } finally {
       await cleanup();
     }
+  });
+
+  it('recreates a deleted task when a stale upsert omits the existence condition', async () => {
+    const { runtime, cleanup } = await createRuntime();
+    try {
+      const body = {
+        id: 'task-fixed',
+        name: 'rename-me',
+        enabled: false,
+        schedule: { kind: 'daily', times: ['09:00'], timezone: 'UTC' },
+        execution: { prompt: 'stay', providerID: 'p', modelID: 'good' },
+      };
+      await runtime.upsertScheduledTask('proj', body);
+      const snapshot = (await runtime.listScheduledTasks('proj'))[0];
+      let releaseRead;
+      const seen = new Promise((resolve) => { releaseRead = resolve; });
+      const staleWrite = (async () => {
+        releaseRead();
+        await new Promise((resolve) => setTimeout(resolve, 20));
+        return runtime.upsertScheduledTask('proj', { ...body, name: 'renamed-after-delete' });
+      })();
+      await seen;
+      expect((await runtime.deleteScheduledTask('proj', snapshot.id)).deleted).toBe(true);
+      await expect(staleWrite).resolves.toMatchObject({ created: true });
+      await expect(runtime.listScheduledTasks('proj')).resolves.toHaveLength(1);
+    } finally {
+      await cleanup();
+    }
+  });
+
+  it('rejects a stale upsert inside the write lock when existence or model no longer match', async () => {
+    const { runtime, cleanup } = await createRuntime();
+    try {
+      const body = {
+        id: 'task-fixed',
+        name: 'keep',
+        enabled: false,
+        schedule: { kind: 'daily', times: ['09:00'], timezone: 'UTC' },
+        execution: { prompt: 'stay', providerID: 'p', modelID: 'good' },
+      };
+      await runtime.upsertScheduledTask('proj', body);
+      const snapshot = (await runtime.listScheduledTasks('proj'))[0];
+      const expected = {
+        exists: true,
+        providerID: snapshot.execution.providerID,
+        modelID: snapshot.execution.modelID,
+        enabled: snapshot.enabled,
+      };
+      await runtime.deleteScheduledTask('proj', snapshot.id);
+      await expect(runtime.upsertScheduledTask('proj', { ...body, name: 'should-not-recreate' }, { expected }))
+        .rejects.toMatchObject({ statusCode: 409, code: SCHEDULE_CONFLICT_CODE });
+      await expect(runtime.listScheduledTasks('proj')).resolves.toEqual([]);
+
+      await runtime.upsertScheduledTask('proj', body);
+      await runtime.upsertScheduledTask('proj', { ...body, execution: { ...body.execution, modelID: 'other' } });
+      await expect(runtime.upsertScheduledTask('proj', { ...body, name: 'stale-model' }, { expected }))
+        .rejects.toMatchObject({ code: SCHEDULE_CONFLICT_CODE });
+      const kept = await runtime.listScheduledTasks('proj');
+      expect(kept).toHaveLength(1);
+      expect(kept[0].execution.modelID).toBe('other');
+      expect(kept[0].name).toBe('keep');
+    } finally {
+      await cleanup();
+    }
+  });
+
+  it('matches storage trim and default enabled when deciding a catalog check', () => {
+    const existing = {
+      enabled: false,
+      execution: { providerID: 'p', modelID: 'good' },
+    };
+    expect(scheduledTaskWriteGuard(existing, {
+      name: 'Renamed',
+      execution: { providerID: ' p ', modelID: 'good' },
+    })).toMatchObject({
+      needsCatalog: false,
+      providerID: 'p',
+      modelID: 'good',
+      enabled: false,
+    });
+    expect(scheduledTaskWriteGuard(existing, {
+      enabled: true,
+      execution: { providerID: 'p', modelID: 'good' },
+    }).needsCatalog).toBe(true);
+    expect(scheduledTaskWriteGuard(null, {
+      execution: { providerID: 'p', modelID: 'good' },
+    })).toMatchObject({ needsCatalog: true, enabled: true, expected: { exists: false } });
+    expect(scheduledTaskWriteGuard(existing, { name: 'no-model' })).toEqual({ needsCatalog: false });
   });
 });

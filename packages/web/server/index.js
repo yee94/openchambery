@@ -759,7 +759,6 @@ const sessionTitleRuntime = createSessionTitleRuntime({
     getOpenCodeAuthHeaders,
     readSessionMetadata: (sessionID) => sessionMetadataStore.get(sessionID),
     mutateSessionMetadata: (sessionID, decide) => sessionMetadataStore.mutateSessionMetadata(sessionID, decide),
-    listSessionMetadata: () => sessionMetadataStore.getAll(),
     persistSessionMetadata: (sessionID, patch) => persistSessionMetadataToStore(sessionID, patch),
     publishSession: (session, directory) => {
       const payload = { type: 'session.updated', properties: { info: session, directory } };
@@ -2191,6 +2190,7 @@ async function main(options = {}) {
       }
       realtimeProxyRuntime.stop();
       liveActivityRefreshRuntime.dispose();
+      notificationTriggerRuntime.dispose();
       if (relayReconcileTimer) clearInterval(relayReconcileTimer);
       try {
         relayService.stop();

@@ -338,15 +338,18 @@ export const mergeLiveSessionWithGlobalSession = (
   globalSession: Session,
 ): Session => {
   const merged = mergeSessionDirectoryMetadata(liveSession, globalSession);
-  if (merged.share !== globalSession.share) {
-    return { ...merged, share: globalSession.share };
+  const liveUpdatedAt = liveSession.time?.updated ?? liveSession.time?.created ?? 0;
+  const globalUpdatedAt = globalSession.time?.updated ?? globalSession.time?.created ?? 0;
+  const title = globalUpdatedAt > liveUpdatedAt ? globalSession.title : merged.title;
+  if (merged.share !== globalSession.share || merged.title !== title) {
+    return { ...merged, title, share: globalSession.share };
   }
   return merged;
 };
 
 /**
  * Overlay bootstrapped live directory rows onto the global/index catalog.
- * Live titles, times, and directory metadata win per id; global share is kept.
+ * Newer titles win per id (live wins ties); live times/directory and global share are kept.
  * Sessions that exist only in one source are retained.
  */
 export const mergeLiveSessionCatalog = (

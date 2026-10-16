@@ -9,6 +9,11 @@ import {
 } from '../session-goal/capability.js';
 import { buildScheduledTaskMetadata } from '../session-metadata/system-session.js';
 import { SCHEDULED_SLOT_CLAIMED_CODE } from './run-history-store.js';
+import {
+  CREATE_PHASE_DEADLINE_MS,
+  createRunDeliveryFetch,
+  formatAssistantFailure,
+} from './create-delivery.js';
 
 const DEFAULT_GLOBAL_CONCURRENCY = 4;
 const DEFAULT_PROJECT_CONCURRENCY = 2;
@@ -273,14 +278,7 @@ const readMessageInfo = (entry) => {
   return entry;
 };
 
-const formatAssistantError = (error) => {
-  for (const value of [error?.message, error?.data?.message, error?.name, error?.type]) {
-    if (typeof value === 'string' && value.trim()) {
-      return value.trim();
-    }
-  }
-  return 'assistant error';
-};
+const formatAssistantError = (error) => formatAssistantFailure(error);
 
 const isAssistantMessage = (info) => (
   info
@@ -548,6 +546,8 @@ export const createScheduledTasksRuntime = (deps) => {
     maxGlobalConcurrency = DEFAULT_GLOBAL_CONCURRENCY,
     maxProjectConcurrency = DEFAULT_PROJECT_CONCURRENCY,
     maxRunDurationMs = DEFAULT_MAX_RUN_MS,
+    /** Create-phase cap. Clamped below 60s. Watchdog abort still wins. */
+    createPhaseDeadlineMs = CREATE_PHASE_DEADLINE_MS,
     /** Host store write: (sessionId, directory, goal) => Promise */
     persistSessionGoal = null,
     /** Host store write: (sessionId, patch) => Promise — required for sidebar isolation */
@@ -1176,11 +1176,12 @@ export const createScheduledTasksRuntime = (deps) => {
 
     const baseUrl = buildOpenCodeUrl('/', '').replace(/\/$/, '');
     const authHeaders = getOpenCodeAuthHeaders();
+    const delivery = createRunDeliveryFetch(fetch);
     const client = makeOpenCodeV2Client({
       baseUrl,
       authHeaders,
+      fetchImpl: delivery.fetchImpl,
     });
-    const requestOptions = signal ? { signal } : undefined;
 
     let sessionID;
     // Watchdog abort must fire session.interrupt even while awaiting
@@ -1210,13 +1211,16 @@ export const createScheduledTasksRuntime = (deps) => {
         runID,
         name: task.name,
       });
-      const session = await client.session.create(
-        buildSessionCreateInput(task, projectPath, title, isolationMetadata),
-        requestOptions,
-      );
+      const session = await delivery.createSession({
+        client,
+        input: buildSessionCreateInput(task, projectPath, title, isolationMetadata),
+        signal,
+        deadlineMs: createPhaseDeadlineMs,
+        sleep,
+      });
       sessionID = session?.id;
       if (!sessionID) {
-        throw new Error('failed to create session');
+        throw new Error('failed to create session; creation outcome unknown');
       }
       await persistScheduledTaskIsolation(sessionID, projectPath, isolationMetadata);
 

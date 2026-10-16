@@ -657,6 +657,7 @@ export const dict: Record<I18nKey, string> = {
   'sessions.sidebar.session.status.questionRequired': '질문 응답 필요',
   'sessions.sidebar.session.subsessions.collapse': '하위 세션 접기',
   'sessions.sidebar.session.subsessions.expand': '하위 세션 펼치기',
+  'sessions.sidebar.session.subsessions.loadFailed': '하위 세션을 불러오지 못했습니다. 접었다가 다시 펼쳐 재시도하세요.',
   'sessions.sidebar.dialogs.deleteSession.title': '세션 삭제?',
   'sessions.sidebar.dialogs.archiveSession.title': '세션 보관?',
   'sessions.sidebar.dialogs.deleteSession.withOneSubtask': '"{sessionTitle}" 및 하위 작업 {count}개가 영구 삭제됩니다.',

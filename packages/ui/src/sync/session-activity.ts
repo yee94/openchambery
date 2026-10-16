@@ -21,6 +21,7 @@ export function collectRunningSessionIds(
 // Presentation only: never write descendant activity into execution/send/queue status.
 function createSessionActivityReader(children: ChildStoreManager) {
   let snapshot: ReadonlySet<string> = new Set();
+  let descendantCounts = new Map<string, number>();
   let dirty = true;
   let cleanup: (() => void) | undefined;
   const listeners = new Set<() => void>();
@@ -40,13 +41,19 @@ function createSessionActivityReader(children: ChildStoreManager) {
     const statuses = aggregateLiveSessionStatuses(states);
     const active = collectRunningSessionIds(statuses, useGlobalSessionStatusStore.getState().statusById);
     const next = new Set<string>();
+    const nextCounts = new Map<string, number>();
     for (const id of active) {
+      const visited = new Set<string>();
       let ancestor: string | undefined = id;
-      while (ancestor && !next.has(ancestor)) {
+      while (ancestor && !visited.has(ancestor)) {
+        visited.add(ancestor);
         next.add(ancestor);
+        if (ancestor !== id) nextCounts.set(ancestor, (nextCounts.get(ancestor) ?? 0) + 1);
         ancestor = sessions.get(ancestor)?.parentID;
       }
     }
+    if (nextCounts.size !== descendantCounts.size
+      || [...nextCounts].some(([id, count]) => descendantCounts.get(id) !== count)) descendantCounts = nextCounts;
     if (next.size !== snapshot.size || [...next].some((id) => !snapshot.has(id))) snapshot = next;
     return snapshot;
   };
@@ -54,7 +61,8 @@ function createSessionActivityReader(children: ChildStoreManager) {
   const invalidate = () => {
     dirty = true;
     const before = snapshot;
-    if (read() !== before) for (const listener of listeners) listener();
+    const countsBefore = descendantCounts;
+    if (read() !== before || descendantCounts !== countsBefore) for (const listener of listeners) listener();
   };
   const subscribe = (listener: () => void) => {
     listeners.add(listener);
@@ -82,7 +90,11 @@ function createSessionActivityReader(children: ChildStoreManager) {
       }
     };
   };
-  return { read, subscribe };
+  const readDescendantCount = (sessionID: string) => {
+    read();
+    return descendantCounts.get(sessionID) ?? 0;
+  };
+  return { read, readDescendantCount, subscribe };
 }
 
 // One projection per runtime's child-store manager, not one tree scan per row.

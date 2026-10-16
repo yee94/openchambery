@@ -1,3 +1,6 @@
+import { OpenCode } from '@opencode/client';
+import { isConnectedModel, loadConnectedCatalog } from '../llm/catalog.js';
+import { SCHEDULE_CONFLICT_CODE, scheduledTaskWriteGuard } from '../projects/project-config.js';
 import {
   getSessionGoalCapability,
   isSessionGoalSupported,
@@ -31,6 +34,36 @@ const rejectUnsupportedGoalExecution = (taskInput) => {
 const parseProjectID = (req) => asNonEmptyString(req?.params?.projectId);
 const parseTaskID = (req) => asNonEmptyString(req?.params?.taskId);
 
+const isPlainObject = (value) => Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+
+export const SCHEDULED_TASK_BODY_EXPECTED = {
+  task: {
+    name: 'string',
+    enabled: 'boolean',
+    schedule: { kind: 'daily | weekly | once | cron' },
+    execution: {
+      prompt: 'string',
+      providerID: 'string',
+      modelID: 'string',
+    },
+  },
+};
+
+const taskEnvelopeError = (body) => {
+  if (!isPlainObject(body) || !isPlainObject(body.task)) {
+    return {
+      error: 'task payload is required',
+      expected: SCHEDULED_TASK_BODY_EXPECTED,
+    };
+  }
+  return null;
+};
+
+const catalogUnavailable = () => ({
+  status: 503,
+  body: { error: 'Connected catalog is unavailable' },
+});
+
 const parsePositiveLimit = (value) => {
   if (value == null || value === '') {
     return undefined;
@@ -61,6 +94,9 @@ export const registerScheduledTaskRoutes = (app, dependencies) => {
     runHistoryStore = null,
     getOpenChamberEventClients,
     writeSseEvent,
+    buildOpenCodeUrl,
+    getOpenCodeAuthHeaders,
+    loadCatalog = loadConnectedCatalog,
     scheduleSyncRetry = (retry) => {
       const timer = setTimeout(retry, 1_000);
       timer.unref?.();
@@ -91,6 +127,39 @@ export const registerScheduledTaskRoutes = (app, dependencies) => {
     const settings = await readSettingsFromDiskMigrated();
     const projects = sanitizeProjects(settings?.projects || []);
     return projects.find((project) => project.id === projectID) || null;
+  };
+
+  const readExistingTask = async (projectID, taskID) => {
+    const tasks = await projectConfigRuntime.listScheduledTasks(projectID);
+    if (!Array.isArray(tasks)) {
+      const error = new Error('Failed to read schedule');
+      error.statusCode = 500;
+      throw error;
+    }
+    return tasks.find((task) => task?.id === taskID) || null;
+  };
+
+  const verifyConnectedModel = async (project, guard) => {
+    const directory = typeof project?.path === 'string' ? project.path.trim() : '';
+    if (!directory) {
+      return catalogUnavailable();
+    }
+    try {
+      const client = OpenCode.make({
+        baseUrl: String(buildOpenCodeUrl('/', '') || '').replace(/\/$/, ''),
+        headers: getOpenCodeAuthHeaders(),
+      });
+      const catalog = await loadCatalog(client, { directory });
+      if (!isConnectedModel(catalog, guard.providerID, guard.modelID)) {
+        return {
+          status: 400,
+          body: { error: `execution model ${guard.providerID}/${guard.modelID} is not connected` },
+        };
+      }
+      return null;
+    } catch {
+      return catalogUnavailable();
+    }
   };
 
   app.get('/api/openchamber/scheduled-tasks', async (_req, res) => {
@@ -193,10 +262,11 @@ export const registerScheduledTaskRoutes = (app, dependencies) => {
       return res.status(400).json({ error: 'projectId is required' });
     }
 
-    const taskInput = req.body && typeof req.body === 'object' ? req.body.task : null;
-    if (!taskInput || typeof taskInput !== 'object') {
-      return res.status(400).json({ error: 'task payload is required' });
+    const envelopeError = taskEnvelopeError(req.body);
+    if (envelopeError) {
+      return res.status(400).json(envelopeError);
     }
+    const taskInput = req.body.task;
 
     try {
       const project = await findProjectByID(projectID);
@@ -209,7 +279,21 @@ export const registerScheduledTaskRoutes = (app, dependencies) => {
         return res.status(501).json(goalRefusal);
       }
 
-      const upserted = await projectConfigRuntime.upsertScheduledTask(projectID, taskInput);
+      const taskID = asNonEmptyString(taskInput.id);
+      const existingTask = taskID ? await readExistingTask(projectID, taskID) : null;
+      const guard = scheduledTaskWriteGuard(existingTask, taskInput);
+      if (guard.needsCatalog) {
+        const refusal = await verifyConnectedModel(project, guard);
+        if (refusal) {
+          return res.status(refusal.status).json(refusal.body);
+        }
+      }
+
+      const upserted = await projectConfigRuntime.upsertScheduledTask(
+        projectID,
+        taskInput,
+        guard.expected ? { expected: guard.expected } : undefined,
+      );
       const schedulerSynced = await syncAfterMutation(projectID);
 
       return res.json({
@@ -219,10 +303,23 @@ export const registerScheduledTaskRoutes = (app, dependencies) => {
         schedulerSynced,
       });
     } catch (error) {
+      if (error?.statusCode === 409 || error?.code === SCHEDULE_CONFLICT_CODE) {
+        return res.status(409).json({
+          error: error instanceof Error ? error.message : 'scheduled task changed before save',
+          code: SCHEDULE_CONFLICT_CODE,
+        });
+      }
+      if (error?.statusCode === 503) {
+        return res.status(503).json({
+          error: error instanceof Error ? error.message : 'Connected catalog is unavailable',
+        });
+      }
       const message = error instanceof Error ? error.message : 'Failed to save schedule';
-      const statusCode = message.toLowerCase().includes('required') || message.toLowerCase().includes('invalid')
-        ? 400
-        : 500;
+      const statusCode = error?.statusCode === 500
+        ? 500
+        : message.toLowerCase().includes('required') || message.toLowerCase().includes('invalid')
+          ? 400
+          : 500;
       if (statusCode === 500) {
         console.error('[ScheduledTasks] failed to save task:', error);
       }

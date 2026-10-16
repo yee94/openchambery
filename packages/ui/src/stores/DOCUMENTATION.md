@@ -55,6 +55,13 @@ imperative selection/mutation callers. The store loader now shares Query IO.
 
 ## Architecture
 
+Session list overlays choose the title from the snapshot with the newer
+`time.updated` (falling back to `time.created`); live directory rows win ties.
+A refreshed global/index title must not be masked by an older cached directory
+row until that session is selected. This shared merge applies to desktop sidebar,
+mobile lists and navigation; live directory metadata and global share precedence
+remain unchanged. Coverage lives in `useGlobalSessionsStore.test.ts`.
+
 There are multiple store categories in this directory.
 
 ### Feature cache / query stores

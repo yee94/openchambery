@@ -1,7 +1,10 @@
-import { describe, expect, test } from 'bun:test';
+import { afterEach, describe, expect, test } from 'vitest';
 import type { Session } from '@/lib/opencode/v2-types'
+import { queryClient } from '@/lib/queryRuntime';
 
 import { loadSessionChildrenOnDemand, mergeSessionChildren } from '../session-children';
+
+afterEach(() => queryClient.clear());
 
 const session = (id: string, parentID?: string): Session => ({
   id,
@@ -29,14 +32,21 @@ describe('mergeSessionChildren', () => {
     const existing = [session('ses_child', 'ses_parent'), session('ses_parent')];
     expect(mergeSessionChildren(existing, [session('ses_child', 'ses_parent')], 'ses_parent')).toBe(existing);
   });
+
+  test('deduplicates children repeated across pages', () => {
+    expect(mergeSessionChildren([session('ses_parent')], [
+      session('ses_child', 'ses_parent'), session('ses_child', 'ses_parent'),
+    ], 'ses_parent').map((item) => item.id)).toEqual(['ses_child', 'ses_parent']);
+  });
 });
 
 describe('loadSessionChildrenOnDemand', () => {
-  test('coalesces concurrent clicks and reuses a recent successful response', async () => {
+  test('coalesces concurrent clicks but refreshes on a later expansion', async () => {
     let calls = 0;
     let release: ((sessions: Session[]) => void) | undefined;
     const input = {
-      runtimeKey: 'runtime-coalesce',
+      transport: 'runtime-coalesce',
+      generation: 1,
       directory: '/repo',
       sessionID: 'ses_parent',
       request: () => {
@@ -52,14 +62,17 @@ describe('loadSessionChildrenOnDemand', () => {
     expect(calls).toBe(1);
     release?.([session('ses_child', 'ses_parent')]);
     expect(await first).toEqual(await second);
-    expect(await loadSessionChildrenOnDemand(input)).toEqual([session('ses_child', 'ses_parent')]);
-    expect(calls).toBe(1);
+    const next = loadSessionChildrenOnDemand(input);
+    expect(calls).toBe(2);
+    release?.([session('ses_new_child', 'ses_parent')]);
+    expect(await next).toEqual([session('ses_new_child', 'ses_parent')]);
   });
 
   test('does not cache a failed on-demand request', async () => {
     let calls = 0;
     const input = {
-      runtimeKey: 'runtime-retry',
+      transport: 'runtime-retry',
+      generation: 1,
       directory: '/repo',
       sessionID: 'ses_parent',
       request: async () => {

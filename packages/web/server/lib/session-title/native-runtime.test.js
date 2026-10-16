@@ -225,14 +225,15 @@ it('uses the real v2 client and publishes the generated title without another se
     expect(events.at(-1)).toMatchObject({ type: 'session', row: { title: 'Title refresh', directory: '/repo' } });
     expect(metadata.openchamber.titleRefresh.isGenerating).toBeUndefined();
     expect(requests).toContain('PATCH /api/session/ses_title');
+    const writes = requests.filter((request) => request.startsWith('PATCH')).length;
     session.title = 'Late native title';
     runtime.processPayload({ type: 'session.renamed', created: 2000, data: {
       sessionID: session.id, title: session.title,
     } });
     await vi.runAllTimersAsync();
-    expect(session.title).toBe('Title refresh');
-    expect(events.at(-1)).toMatchObject({ type: 'session', row: { title: 'Title refresh' } });
-    const writes = requests.filter((request) => request.startsWith('PATCH')).length;
+    expect(session.title).toBe('Late native title');
+    expect((await access.get(session.id)).title).toBe('Late native title');
+    expect(requests.filter((request) => request.startsWith('PATCH'))).toHaveLength(writes);
     runtime.processPayload({ type: 'session.renamed', created: 500, data: {
       sessionID: session.id, title: 'Replayed stale title',
     } });

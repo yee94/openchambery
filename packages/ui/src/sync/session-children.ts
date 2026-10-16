@@ -1,52 +1,26 @@
 import type { Session } from '@/lib/opencode/v2-types'
-
-const CHILDREN_CACHE_TTL_MS = 15_000;
-const CHILDREN_CACHE_MAX = 100;
-const inFlight = new Map<string, Promise<Session[]>>();
-const cache = new Map<string, { loadedAt: number; sessions: Session[] }>();
+import { queryOptions } from '@tanstack/react-query';
+import { queryClient } from '@/lib/queryRuntime';
+import { normalizeDirectoryKey } from '@/lib/pathNormalization';
 
 type LoadSessionChildrenInput = {
-  runtimeKey: string;
+  transport: string;
+  generation: number;
   directory: string;
   sessionID: string;
-  request: () => Promise<Session[]>;
-  now?: number;
+  request: (signal: AbortSignal) => Promise<Session[]>;
 };
 
-const loadKey = (input: Pick<LoadSessionChildrenInput, 'runtimeKey' | 'directory' | 'sessionID'>): string => (
-  `${input.runtimeKey}\n${input.directory}\n${input.sessionID}`
-);
+const sessionChildrenQueryOptions = (input: LoadSessionChildrenInput) => queryOptions({
+  queryKey: [input.transport, 'sessionChildren', input.generation, normalizeDirectoryKey(input.directory), input.sessionID],
+  queryFn: ({ signal }) => input.request(signal),
+  staleTime: 0,
+  gcTime: 60_000,
+  retry: false,
+});
 
 export const loadSessionChildrenOnDemand = (input: LoadSessionChildrenInput): Promise<Session[]> => {
-  const key = loadKey(input);
-  const now = input.now ?? Date.now();
-  const cached = cache.get(key);
-  if (cached && now - cached.loadedAt < CHILDREN_CACHE_TTL_MS) {
-    return Promise.resolve(cached.sessions);
-  }
-  const existing = inFlight.get(key);
-  if (existing) return existing;
-
-  const pending = input.request().then((sessions) => {
-    cache.delete(key);
-    while (cache.size >= CHILDREN_CACHE_MAX) {
-      const oldest = cache.keys().next().value;
-      if (typeof oldest !== 'string') break;
-      cache.delete(oldest);
-    }
-    cache.set(key, { loadedAt: Date.now(), sessions });
-    return sessions;
-  });
-  inFlight.set(key, pending);
-  pending.then(
-    () => {
-      if (inFlight.get(key) === pending) inFlight.delete(key);
-    },
-    () => {
-      if (inFlight.get(key) === pending) inFlight.delete(key);
-    },
-  );
-  return pending;
+  return queryClient.fetchQuery(sessionChildrenQueryOptions(input));
 };
 
 const compareSessionId = (left: Session, right: Session): number => (
@@ -59,11 +33,11 @@ export const mergeSessionChildren = (
   parentSessionId: string,
 ): Session[] => {
   const existingIds = new Set(existing.map((session) => session.id));
-  const additions = incoming.filter((session) => (
-    Boolean(session?.id)
-    && !existingIds.has(session.id)
-    && (session as Session & { parentID?: string | null }).parentID === parentSessionId
-  ));
+  const additions = incoming.filter((session) => {
+    if (!session?.id || existingIds.has(session.id) || session.parentID !== parentSessionId) return false;
+    existingIds.add(session.id);
+    return true;
+  });
   if (additions.length === 0) return existing;
   return [...existing, ...additions].sort(compareSessionId);
 };

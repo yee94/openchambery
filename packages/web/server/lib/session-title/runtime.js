@@ -46,8 +46,8 @@ const FORK_TITLE_RE = / \(fork #\d+\)$/;
 const MULTI_RUN_GROUP_SLUG = /^[a-z0-9](?:[a-z0-9-]{0,48}[a-z0-9])?$/;
 const MULTI_RUN_GROUP = /^g[1-9]\d*$/;
 
-// Generation switch (default on). Existing owned titles still reconcile when
-// generation is off; explicit smart-title requests also remain available.
+// Generation switch (default on). Explicit smart-title requests remain available
+// when background generation is off.
 const isSessionTitleRefreshEnabled = () => {
   try {
     const raw = fs.readFileSync(OPENCHAMBER_SETTINGS_FILE, 'utf8');
@@ -794,16 +794,6 @@ export const createSessionTitleRuntime = ({
   const processPayload = (payload, directoryHint = '') => {
     if (stopped) return;
     directoryHint = directoryHint || payload?.location?.directory || '';
-    if (payload?.type === 'server.connected') {
-      void sessionAccess?.reconcileAll?.().catch((error) => {
-        console.warn('[session-title] recovery failed:', error?.message || error);
-      });
-    }
-    if (payload?.type === 'session.renamed' || payload?.type === 'session.updated'
-      || payload?.type === 'openchamber:session-metadata') {
-      const data = payload.data ?? payload.properties ?? {};
-      sessionAccess?.reconcile?.(data.sessionID ?? data.info?.id ?? data.id, directoryHint);
-    }
     if (payload?.type === 'session.forked') {
       const data = payload.data ?? payload.properties ?? {};
       if (typeof data.sessionID !== 'string' || !Number.isFinite(payload.created)) return;

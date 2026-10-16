@@ -9,6 +9,9 @@ import { applyDirectoryEvent } from './event-reducer';
 import { applyGlobalSessionStatusSnapshot, useGlobalSessionStatusStore } from './global-session-status';
 import { useGlobalSessionsStore } from '@/stores/useGlobalSessionsStore';
 import type { Event } from './types';
+import { resyncDirectorySessionStatuses } from './session-status-reconciliation';
+import { QueryClient } from '@tanstack/react-query';
+import { collectDirectoryStatusRestoreSessionIds } from './reconnect-recovery';
 
 vi.hoisted(() => {
   vi.stubGlobal('fetch', vi.fn(async () => Response.json({ home: '/workspace', data: [] })));
@@ -55,6 +58,24 @@ test('a completed parent keeps its session loading while a background descendant
   await act(async () => store.setState({ session_status: { parent: { type: 'idle' }, child: { type: 'idle' } } }));
   expect(host.firstElementChild?.getAttribute('data-loading')).toBe('false');
   expect(unrelatedRenders).toBe(rendersBefore);
+});
+
+test.each([false, true])('reconnect retains active children before their details or catalog have loaded (previous idle=%s)', async (previousIdle) => {
+  const children = new ChildStoreManager();
+  const store = children.ensureChild('/workspace', { bootstrap: false });
+  store.setState({ session: [{ id: 'parent' }] as Session[], session_status: previousIdle ? { child: { type: 'idle' } } : {} });
+  const client = new QueryClient();
+  await resyncDirectorySessionStatuses('/workspace', store, collectDirectoryStatusRestoreSessionIds(store.getState()), {
+    queryClient: client,
+    loadActive: async () => ({ state: 'supported', membership: { child: { type: 'running' } } }),
+    loadSnapshot: async () => null,
+  });
+  // Identity arrives from the sidebar catalog, without opening the child transcript.
+  store.setState({ session: [{ id: 'parent' }, { id: 'child', parentID: 'parent' }] as Session[] });
+  const reader = getSessionActivityReader(children);
+  expect(reader.read().has('child')).toBe(true);
+  expect(reader.read().has('parent')).toBe(true);
+  client.clear();
 });
 
 test('cross-directory nested children release ancestors only when the last live execution ends', () => {

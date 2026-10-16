@@ -8,6 +8,8 @@ Reasoning projection supports native v2 list/context `{ data }` envelopes, assis
 
 Keep `bridge.ts` as a thin orchestration layer that delegates message handling to cohesive domain runtimes while preserving API behavior.
 
+The webview's ordinary completion notifications share the dependency-free `web/server/lib/notifications/family-completion-gate.js` with Host notifications. SDK `session.active` plus `session.get` ancestry must confirm the entire root family idle before delivery. Starts/terminal events drive the barrier; a bounded pending-only retry handles failed reads or missed events. The existing child/system-session suppression and notification settings apply at delivery. Runtime switches reset pending/dedup state, and webview unload disposes the barrier. See the Notifications module documentation for the complete contract.
+
 Hash-prefixed prompt text is literal. The snippet configuration bridge and local CRUD/expansion implementation have been removed, matching the shared composer and Web runtime.
 
 ## Runtime modules

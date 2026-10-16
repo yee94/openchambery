@@ -657,6 +657,7 @@ export const dict = {
   'sessions.sidebar.session.status.questionRequired': 'Question required',
   'sessions.sidebar.session.subsessions.collapse': 'Collapse subsessions',
   'sessions.sidebar.session.subsessions.expand': 'Expand subsessions',
+  'sessions.sidebar.session.subsessions.loadFailed': 'Could not load subsessions. Collapse and expand to retry.',
   'sessions.sidebar.dialogs.deleteSession.title': 'Delete session?',
   'sessions.sidebar.dialogs.archiveSession.title': 'Archive session?',
   'sessions.sidebar.dialogs.deleteSession.withOneSubtask': '"{sessionTitle}" and its {count} sub-task will be permanently deleted.',

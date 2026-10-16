@@ -1,4 +1,5 @@
 import { readNotificationSessionRecord } from './template-runtime.js';
+import { completionEvent, createFamilyCompletionGate } from './family-completion-gate.js';
 
 const trimmedText = (value) => (typeof value === 'string' && value.trim() ? value.trim() : '');
 
@@ -160,13 +161,11 @@ export const createNotificationTriggerRuntime = (deps) => {
     getIsWindowFocused = typeof cb === 'function' ? cb : null;
   };
 
-  const PUSH_READY_COOLDOWN_MS = 5000;
   const PUSH_QUESTION_DEBOUNCE_MS = 500;
   const PUSH_PERMISSION_DEBOUNCE_MS = 500;
   const pushQuestionDebounceTimers = new Map();
   const pushPermissionDebounceTimers = new Map();
   const notifiedPermissionRequests = new Set();
-  const lastReadyNotificationAt = new Map();
 
   const sessionMetaCache = new Map();
   const SESSION_META_CACHE_TTL_MS = 60 * 1000;
@@ -459,7 +458,7 @@ export const createNotificationTriggerRuntime = (deps) => {
     }
   };
 
-  const maybeSendPushForTrigger = async (payload) => {
+  const deliverTrigger = async (payload, isCurrent = () => true) => {
     if (!payload || typeof payload !== 'object') {
       return;
     }
@@ -488,7 +487,7 @@ export const createNotificationTriggerRuntime = (deps) => {
       if (reason === 'shutdown') return;
     }
     // v2 completion is session.execution.succeeded. session.idle is a deprecated
-    // fallback; the ready-notification cooldown below collapses the pair.
+    // fallback; the family completion gate collapses the pair.
     if ((
       payload.type === 'session.idle'
       || payload.type === 'session.execution.succeeded'
@@ -503,7 +502,7 @@ export const createNotificationTriggerRuntime = (deps) => {
         ? error.message
         : typeof error === 'string' ? error : '';
       const failed = payload.type === 'session.error' || payload.type === 'session.execution.failed';
-      await maybeSendPushForTrigger({
+      return deliverTrigger({
         ...payload,
         type: 'message.updated',
         properties: {
@@ -515,8 +514,7 @@ export const createNotificationTriggerRuntime = (deps) => {
             ...(errorText ? { parts: [{ type: 'text', text: errorText }] } : {}),
           },
         },
-      });
-      return;
+      }, isCurrent);
     }
 
     if (payload.type === 'message.updated') {
@@ -529,7 +527,7 @@ export const createNotificationTriggerRuntime = (deps) => {
       if (isAssistantTerminal && await shouldSkipSystemSessionNotification(sessionId, notificationDirectory)) {
         return;
       }
-      if (isAssistantTerminal) {
+      if (isAssistantTerminal && info.finish === 'error') {
         try {
           await sendLiveActivityEnd?.({
             sessionId,
@@ -556,13 +554,6 @@ export const createNotificationTriggerRuntime = (deps) => {
         if (settings.notificationMode !== 'always' && getIsWindowFocused?.()) {
           return;
         }
-
-        const now = Date.now();
-        const lastAt = lastReadyNotificationAt.get(sessionId) ?? 0;
-        if (now - lastAt < PUSH_READY_COOLDOWN_MS) {
-          return;
-        }
-        lastReadyNotificationAt.set(sessionId, now);
 
         let title = 'Task completed';
         let body = '';
@@ -596,6 +587,7 @@ export const createNotificationTriggerRuntime = (deps) => {
           if (!body) body = sessionName || 'Session';
         }
 
+        if (!isCurrent()) return false;
         if (settings.nativeNotificationsEnabled) {
           const notificationPayload = {
             title,
@@ -624,6 +616,7 @@ export const createNotificationTriggerRuntime = (deps) => {
           },
           { requireNoSse: true },
         );
+        return true;
       }
 
       return;
@@ -852,6 +845,54 @@ export const createNotificationTriggerRuntime = (deps) => {
     }
   };
 
+  const familyCompletion = createFamilyCompletionGate({
+    loadActiveSessionIds: deps.loadActiveSessionIds ?? (async () => {
+      const response = await fetch(buildOpenCodeUrl('/session/active', ''), {
+        headers: { Accept: 'application/json', ...getOpenCodeAuthHeaders() },
+        signal: AbortSignal.timeout(2000),
+      });
+      if (!response.ok) throw new Error('Session activity unavailable');
+      const body = await response.json();
+      const membership = body?.data ?? body;
+      if (!membership || typeof membership !== 'object' || Array.isArray(membership)
+        || Object.values(membership).some((entry) => entry?.type !== 'running')) {
+        throw new Error('Invalid session activity snapshot');
+      }
+      return Object.keys(membership);
+    }),
+    loadParent: async (id) => {
+      const cached = lookupSessionMetaAnyDirectory(id);
+      const meta = cached?.complete ? cached : await fetchSessionMeta(id);
+      if (!meta?.complete) throw new Error('Session ancestry unavailable');
+      return meta.parentID;
+    },
+    onReady: async (payload, isCurrent) => {
+      const sessionId = extractSessionIdFromPayload(payload);
+      const directory = extractDirectoryFromPayload(payload);
+      if (await shouldSkipSystemSessionNotification(sessionId, directory)) return;
+      if (!isCurrent()) return false;
+      const delivered = await deliverTrigger(payload, isCurrent);
+      if (delivered === false) return false;
+      if (!isCurrent()) return delivered === true;
+      try {
+        await sendLiveActivityEnd?.({ sessionId, status: 'complete' });
+      } catch (error) {
+        console.warn('[Live Activity] end failed:', error?.message ?? error);
+      }
+      return true;
+    },
+  });
+
+  const maybeSendPushForTrigger = async (payload) => {
+    maybeCacheSessionMetaFromPayload(payload);
+    const event = completionEvent(payload);
+    if (event) {
+      await familyCompletion.observe(event, payload);
+      if (event.kind === 'complete') return;
+    }
+    return deliverTrigger(payload);
+  };
+
   // Goal settle push: same fanout as the trigger paths (web-push with the
   // full text; APNs with the generic per-type title and the session name as
   // body, so the relay never sees content).
@@ -1003,6 +1044,13 @@ export const createNotificationTriggerRuntime = (deps) => {
 
   return {
     maybeSendPushForTrigger,
+    dispose: () => {
+      familyCompletion.dispose();
+      for (const timer of pushQuestionDebounceTimers.values()) clearTimeout(timer);
+      for (const entry of pushPermissionDebounceTimers.values()) clearTimeout(entry.timer);
+      pushQuestionDebounceTimers.clear();
+      pushPermissionDebounceTimers.clear();
+    },
     setAutoAcceptSession,
     setGetIsWindowFocused,
     setGetIsSessionAutoAccepting,

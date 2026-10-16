@@ -89,6 +89,10 @@ export function collectDirectoryStatusRestoreSessionIds(
   options?: ReconnectCandidateOptions & { extraSessionIds?: Iterable<string> },
 ): string[] {
   const ids = new Set(getReconnectCandidateSessionIds(state, options))
+  // A previously idle status is still a known directory-local identity. If
+  // its catalog row was evicted, restore it too so stale idle cannot mask the
+  // process-global active snapshot after reconnect.
+  for (const sessionId of Object.keys(state.session_status ?? {})) ids.add(sessionId)
   for (const session of state.session) {
     if (session?.id) ids.add(session.id)
   }

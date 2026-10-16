@@ -456,9 +456,12 @@ describe('OpenCode lifecycle', () => {
       return secondChild;
     });
 
-    const runtime = createRuntime();
+    const stateRef = {};
+    const runtime = createRuntime({}, stateRef);
 
     await expect(runtime.startOpenCode()).rejects.toThrow('OpenCode process exited before serving with signal SIGTERM. Binary used: opencode. No stdout/stderr captured');
+    expect(stateRef.current.lastOpenCodeError).toBe('OpenCode is not ready');
+    expect(String(stateRef.current.lastOpenCodeError)).not.toContain('stderr');
     expect(spawnMock).toHaveBeenCalledTimes(2);
   });
 
@@ -575,6 +578,80 @@ describe('OpenCode lifecycle', () => {
     expect(stateRef.current.openCodeBaseUrl).toBeNull();
     expect(stateRef.current.openCodeProcess?.pid).toBe(12345);
     await stateRef.current.openCodeProcess.close();
+  });
+
+  it('tracks the real child exit through the managed wrapper getters', async () => {
+    delete process.env.OPENCODE_BINARY;
+    const child = startListeningChild();
+    stubOpenCodeFetch();
+    const runtime = createRuntime();
+    const server = await runtime.startOpenCode();
+
+    expect(server.exitCode).toBeNull();
+    expect(server.signalCode).toBeNull();
+    child.exitCode = 0;
+    child.signalCode = null;
+    expect(server.exitCode).toBe(0);
+    child.exitCode = null;
+    child.signalCode = 'SIGTERM';
+    expect(server.signalCode).toBe('SIGTERM');
+
+    await server.close();
+  });
+
+  it('does not treat a legacy wrapper with missing exit fields as dead when the pid is alive', async () => {
+    const stateRef = {};
+    const runtime = createRuntime({ getActiveSessionCount: () => 1 }, stateRef);
+    stateRef.current.openCodeProcess = { pid: process.pid, async close() {} };
+    stateRef.current.openCodePort = 45678;
+    stateRef.current.isOpenCodeReady = true;
+    const fetchMock = stubOpenCodeFetch({ health: { healthy: false, version: '2.0.23' } });
+
+    await runtime.triggerHealthCheck();
+
+    expect(spawnMock).not.toHaveBeenCalled();
+    expect(stateRef.current.openCodeProcess.pid).toBe(process.pid);
+    expect(fetchMock).toHaveBeenCalled();
+  });
+
+  it('does not spawn from the monitor when there is no private recovery intent', async () => {
+    const runtime = createRuntime();
+    stubOpenCodeFetch();
+
+    await runtime.triggerHealthCheck();
+
+    expect(spawnMock).not.toHaveBeenCalled();
+  });
+
+  it('does not revive a private process after shutdown clears recovery intent', async () => {
+    const stateRef = {};
+    const runtime = createRuntime({}, stateRef);
+    stateRef.current.openCodeProcess = { pid: process.pid, async close() {} };
+    stateRef.current.openCodePort = 45678;
+    stateRef.current.isShuttingDown = true;
+    stubOpenCodeFetch({ health: { healthy: false, version: '2.0.23' } });
+
+    await runtime.triggerHealthCheck();
+    stateRef.current.isShuttingDown = false;
+    stateRef.current.openCodeProcess = null;
+    await runtime.triggerHealthCheck();
+
+    expect(spawnMock).not.toHaveBeenCalled();
+  });
+
+  it('probes health and migration on explicit retry even when already marked ready', async () => {
+    const stateRef = {};
+    const runtime = createRuntime({}, stateRef);
+    stateRef.current.openCodePort = 45678;
+    stateRef.current.isOpenCodeReady = true;
+    const fetchMock = stubOpenCodeFetch();
+
+    const result = await runtime.retryOpenCodeStartup();
+
+    expect(result).toEqual({ success: true, scope: 'process-ready' });
+    expect(spawnMock).not.toHaveBeenCalled();
+    expect(fetchMock.mock.calls.some((call) => String(call[0]).includes('/api/info'))).toBe(true);
+    expect(fetchMock.mock.calls.some((call) => String(call[0]).includes('/api/experimental/migration/v1'))).toBe(true);
   });
 
   it('re-resolves and starts OpenCode after the initial bootstrap failed', async () => {
@@ -1110,5 +1187,461 @@ describe('shared official OpenCode service', () => {
     expect(sharedService.start).not.toHaveBeenCalled();
     expect(runtime.isSharedOpenCodeService()).toBe(false);
     await stateRef.current.openCodeProcess?.close();
+  });
+
+  it('discards a late process-ready probe that crosses restart generation or shutdown', async () => {
+    const stateRef = {};
+    const runtime = createRuntime({}, stateRef);
+    stateRef.current.openCodePort = 45678;
+    stateRef.current.isOpenCodeReady = true;
+    stateRef.current.runtimeContractGeneration = 4;
+    stateRef.current.runtimeContract = { executionAllowed: true, instanceGeneration: 4 };
+    let releaseProbe;
+    const gate = new Promise((resolve) => { releaseProbe = resolve; });
+    vi.stubGlobal('fetch', vi.fn(async (url) => {
+      if (String(url).includes('/api/info')) {
+        await gate;
+        return jsonResponse(DEFAULT_V2_HEALTH);
+      }
+      return jsonResponse({ status: 'completed' });
+    }));
+    const pending = runtime.retryOpenCodeStartup();
+    await vi.waitFor(() => expect(releaseProbe).toBeTypeOf('function'));
+    stateRef.current.runtimeContractGeneration = 9;
+    stateRef.current.runtimeContract = { executionAllowed: false, instanceGeneration: 9, marker: 'newer' };
+    stateRef.current.isOpenCodeReady = false;
+    stateRef.current.isShuttingDown = true;
+    releaseProbe();
+
+    await expect(pending).rejects.toMatchObject({ code: 'opencode_shutting_down' });
+    expect(stateRef.current.isOpenCodeReady).toBe(false);
+    expect(stateRef.current.runtimeContract.executionAllowed).toBe(false);
+    expect(stateRef.current.runtimeContract.marker).not.toBe('published-by-stale-probe');
+    expect(spawnMock).not.toHaveBeenCalled();
+  });
+
+  // Admit writes isOpenCodeReady before the probe returns. Queue the generation
+  // bump there so it runs after the helper fulfills and before the caller resumes.
+  const bumpGenerationAfterAdmit = (state) => {
+    let ready = state.isOpenCodeReady === true;
+    let bumped = false;
+    Object.defineProperty(state, 'isOpenCodeReady', {
+      configurable: true,
+      enumerable: true,
+      get() { return ready; },
+      set(value) {
+        ready = value;
+        if (value !== true || bumped) return;
+        bumped = true;
+        queueMicrotask(() => {
+          state.runtimeContractGeneration = 9;
+          state.runtimeContract = { executionAllowed: false, instanceGeneration: 9, marker: 'newer' };
+          state.lastOpenCodeError = 'kept-for-new-generation';
+          ready = false;
+        });
+      },
+    });
+  };
+
+  it('does not apply a ready wait that resumes after its generation changed', async () => {
+    const stateRef = {};
+    const runtime = createRuntime({}, stateRef);
+    stateRef.current.openCodePort = 45678;
+    stateRef.current.runtimeContractGeneration = 4;
+    stateRef.current.lastOpenCodeError = 'previous';
+    stateRef.current.runtimeContract = { executionAllowed: true, instanceGeneration: 4 };
+    bumpGenerationAfterAdmit(stateRef.current);
+    vi.stubGlobal('fetch', vi.fn(async (url) => {
+      if (String(url).includes('/api/experimental/migration/v1')) {
+        return jsonResponse({ status: 'completed' });
+      }
+      return jsonResponse(DEFAULT_V2_HEALTH);
+    }));
+
+    await expect(runtime.waitForOpenCodeReady(200, 1)).rejects.toThrow(/instance changed/);
+    expect(stateRef.current.lastOpenCodeError).toBe('kept-for-new-generation');
+    expect(stateRef.current.runtimeContract).toMatchObject({
+      executionAllowed: false,
+      instanceGeneration: 9,
+      marker: 'newer',
+    });
+    expect(stateRef.current.isOpenCodeReady).toBe(false);
+  });
+
+  it('does not treat a ready retry as success when generation changes before resume', async () => {
+    const stateRef = {};
+    const runtime = createRuntime({}, stateRef);
+    stateRef.current.openCodePort = 45678;
+    stateRef.current.isExternalOpenCode = true;
+    stateRef.current.runtimeContractGeneration = 4;
+    stateRef.current.lastOpenCodeError = 'previous';
+    stateRef.current.runtimeContract = { executionAllowed: true, instanceGeneration: 4 };
+    bumpGenerationAfterAdmit(stateRef.current);
+    vi.stubGlobal('fetch', vi.fn(async (url) => {
+      if (String(url).includes('/api/experimental/migration/v1')) {
+        return jsonResponse({ status: 'completed' });
+      }
+      return jsonResponse(DEFAULT_V2_HEALTH);
+    }));
+
+    await expect(runtime.retryOpenCodeStartup()).rejects.toMatchObject({ code: 'opencode_not_ready' });
+    expect(stateRef.current.lastOpenCodeError).toBe('kept-for-new-generation');
+    expect(stateRef.current.runtimeContract.marker).toBe('newer');
+    expect(stateRef.current.runtimeContract.executionAllowed).toBe(false);
+    expect(stateRef.current.isOpenCodeReady).toBe(false);
+    expect(spawnMock).not.toHaveBeenCalled();
+  });
+
+  it('does not revoke a newer generation when a failed probe resumes late', async () => {
+    const stateRef = {};
+    const runtime = createRuntime({}, stateRef);
+    stateRef.current.openCodePort = 45678;
+    stateRef.current.isExternalOpenCode = true;
+    stateRef.current.isOpenCodeReady = true;
+    stateRef.current.openCodeNotReadySince = 0;
+    stateRef.current.runtimeContractGeneration = 4;
+    stateRef.current.lastOpenCodeError = 'kept-for-new-generation';
+    let contract = { executionAllowed: true, instanceGeneration: 4 };
+    let bumped = false;
+    Object.defineProperty(stateRef.current, 'runtimeContract', {
+      configurable: true,
+      enumerable: true,
+      get() { return contract; },
+      set(value) {
+        contract = value;
+        if (bumped) return;
+        bumped = true;
+        queueMicrotask(() => {
+          stateRef.current.runtimeContractGeneration = 9;
+          contract = { executionAllowed: true, instanceGeneration: 9, marker: 'newer' };
+          stateRef.current.isOpenCodeReady = true;
+          stateRef.current.openCodeNotReadySince = 0;
+          stateRef.current.lastOpenCodeError = 'kept-for-new-generation';
+        });
+      },
+    });
+    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse({ healthy: false, version: '2.0.23' })));
+
+    await expect(runtime.retryOpenCodeStartup()).rejects.toMatchObject({ code: 'opencode_not_ready' });
+    expect(stateRef.current.isOpenCodeReady).toBe(true);
+    expect(stateRef.current.openCodeNotReadySince).toBe(0);
+    expect(stateRef.current.lastOpenCodeError).toBe('kept-for-new-generation');
+    expect(stateRef.current.runtimeContract).toMatchObject({
+      executionAllowed: true,
+      instanceGeneration: 9,
+      marker: 'newer',
+    });
+    expect(spawnMock).not.toHaveBeenCalled();
+  });
+
+  it('revokes ready and the execution permit when a fresh probe fails or throws', async () => {
+    const stateRef = {};
+    const runtime = createRuntime({}, stateRef);
+    stateRef.current.openCodePort = 45678;
+    stateRef.current.isOpenCodeReady = true;
+    stateRef.current.runtimeContract = { executionAllowed: true, instanceGeneration: 1 };
+    stateRef.current.runtimeContractGeneration = 1;
+    stubOpenCodeFetch({ health: { healthy: false, version: '2.0.23' } });
+
+    await expect(runtime.retryOpenCodeStartup()).rejects.toBeTruthy();
+    expect(stateRef.current.isOpenCodeReady).toBe(false);
+    expect(stateRef.current.runtimeContract.executionAllowed).toBe(false);
+
+    stateRef.current.isOpenCodeReady = true;
+    stateRef.current.runtimeContractGeneration = 1;
+    stateRef.current.runtimeContract = { executionAllowed: true, instanceGeneration: 1 };
+    vi.stubGlobal('fetch', vi.fn(async () => { throw new Error('socket hang up'); }));
+    await expect(runtime.retryOpenCodeStartup()).rejects.toBeTruthy();
+    expect(stateRef.current.isOpenCodeReady).toBe(false);
+    expect(stateRef.current.runtimeContract.executionAllowed).toBe(false);
+  });
+
+  it('does not spawn a private server when an already-external retry is not ready', async () => {
+    const stateRef = {};
+    const runtime = createRuntime({}, stateRef);
+    stateRef.current.isExternalOpenCode = true;
+    stateRef.current.openCodePort = 45678;
+    stateRef.current.isOpenCodeReady = true;
+    stubOpenCodeFetch({ health: { healthy: false, version: '2.0.23' } });
+
+    await expect(runtime.retryOpenCodeStartup()).rejects.toMatchObject({ code: 'opencode_not_ready' });
+    expect(spawnMock).not.toHaveBeenCalled();
+    expect(stateRef.current.isExternalOpenCode).toBe(true);
+  });
+
+  it('runs retry, immediate, and periodic recovery as one spawn round', async () => {
+    delete process.env.OPENCODE_BINARY;
+    const child = startListeningChild();
+    const stateRef = {};
+    const runtime = createRuntime({
+      env: {
+        ENV_CONFIGURED_OPENCODE_PORT: 45678,
+        ENV_CONFIGURED_OPENCODE_HOST: null,
+        ENV_EFFECTIVE_PORT: null,
+        ENV_CONFIGURED_OPENCODE_HOSTNAME: '127.0.0.1',
+        ENV_SKIP_OPENCODE_START: false,
+      },
+    }, stateRef);
+    stubOpenCodeFetch();
+    await runtime.bootstrapOpenCodeAtStartup();
+    child.exitCode = 1;
+    spawnMock.mockClear();
+    stubOpenCodeFetch({ health: { healthy: false, version: '2.0.23' } });
+    let pending = 0;
+    let maxPending = 0;
+    spawnMock.mockImplementation(() => {
+      pending += 1;
+      maxPending = Math.max(maxPending, pending);
+      return createMockChild();
+    });
+
+    const retry = runtime.retryOpenCodeStartup();
+    const immediate = runtime.triggerHealthCheck();
+    runtime.startHealthMonitoring(1);
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    if (stateRef.current.healthCheckInterval) clearInterval(stateRef.current.healthCheckInterval);
+
+    expect(maxPending).toBe(1);
+    expect(spawnMock).toHaveBeenCalledTimes(1);
+    const hung = spawnMock.mock.results[0]?.value;
+    hung?.stdout?.emit('data', 'server listening on http://127.0.0.1:45678\n');
+    await Promise.allSettled([retry, immediate]);
+  });
+
+  it('does not spawn when shutdown begins during close or port release', async () => {
+    const stateRef = {};
+    const runtime = createRuntime({}, stateRef);
+    stateRef.current.openCodePort = 45678;
+    stateRef.current.openCodeProcess = {
+      pid: process.pid,
+      async close() { stateRef.current.isShuttingDown = true; },
+    };
+    spawnMock.mockImplementation(() => createMockChild());
+    await runtime.restartOpenCode();
+    expect(spawnMock).not.toHaveBeenCalled();
+
+    stateRef.current.isShuttingDown = false;
+    stateRef.current.openCodeProcess = null;
+    const holder = await import('node:net').then(({ createServer }) => new Promise((resolve, reject) => {
+      const server = createServer((socket) => {
+        stateRef.current.isShuttingDown = true;
+        socket.destroy();
+        server.close();
+      });
+      server.once('error', reject);
+      server.listen(45678, '127.0.0.1', () => resolve(server));
+    }));
+    try {
+      await runtime.restartOpenCode();
+      expect(spawnMock).not.toHaveBeenCalled();
+    } finally {
+      await new Promise((resolve) => holder.close(resolve));
+    }
+  });
+
+  it('closes only the local handle when shutdown lands before spawn publish', async () => {
+    delete process.env.OPENCODE_BINARY;
+    const child = createMockChild();
+    spawnMock.mockImplementation(() => {
+      queueMicrotask(() => {
+        child.stdout.emit('data', 'server listening on http://127.0.0.1:45678\n');
+      });
+      return child;
+    });
+    const stateRef = {};
+    const runtime = createRuntime({}, stateRef);
+    vi.stubGlobal('fetch', vi.fn(async () => {
+      stateRef.current.isShuttingDown = true;
+      return jsonResponse(DEFAULT_V2_HEALTH);
+    }));
+
+    await runtime.restartOpenCode();
+
+    expect(stateRef.current.openCodeProcess).toBeNull();
+    expect(child.kill).toHaveBeenCalled();
+  });
+
+  it('keeps backoff across a brief ready, lengthens the next failure, then resets after stable health', async () => {
+    delete process.env.OPENCODE_BINARY;
+    const child = startListeningChild();
+    const stateRef = {};
+    const runtime = createRuntime({
+      env: {
+        ENV_CONFIGURED_OPENCODE_PORT: 45678,
+        ENV_CONFIGURED_OPENCODE_HOST: null,
+        ENV_EFFECTIVE_PORT: null,
+        ENV_CONFIGURED_OPENCODE_HOSTNAME: '127.0.0.1',
+        ENV_SKIP_OPENCODE_START: false,
+      },
+    }, stateRef);
+    stubOpenCodeFetch();
+    await runtime.bootstrapOpenCodeAtStartup();
+    child.exitCode = 1;
+    spawnMock.mockImplementation(() => {
+      const failed = createMockChild();
+      queueMicrotask(() => failed.emit('exit', 1, null));
+      return failed;
+    });
+    const realNow = Date.now;
+    const origin = realNow();
+    const now = vi.spyOn(Date, 'now').mockImplementation(() => origin);
+    stubOpenCodeFetch({ health: { healthy: false, version: '2.0.23' } });
+
+    await runtime.triggerHealthCheck();
+    const failedRound = spawnMock.mock.calls.length;
+    expect(failedRound).toBeGreaterThan(0);
+    now.mockImplementation(() => origin + 1000);
+    stubOpenCodeFetch();
+    stateRef.current.openCodeProcess = { pid: process.pid, async close() {} };
+    stateRef.current.openCodePort = 45678;
+    await runtime.triggerHealthCheck();
+    expect(spawnMock.mock.calls.length).toBe(failedRound);
+
+    now.mockImplementation(() => origin + 5001);
+    stateRef.current.openCodeProcess = { pid: 999999, exitCode: 1, signalCode: null, async close() {} };
+    stubOpenCodeFetch({ health: { healthy: false, version: '2.0.23' } });
+    await runtime.triggerHealthCheck();
+    const secondRound = spawnMock.mock.calls.length;
+    expect(secondRound).toBeGreaterThan(failedRound);
+    now.mockImplementation(() => origin + 5001 + 9999);
+    await runtime.triggerHealthCheck();
+    expect(spawnMock.mock.calls.length).toBe(secondRound);
+    now.mockImplementation(() => origin + 5001 + 10001);
+    spawnMock.mockImplementation(() => {
+      const next = createMockChild();
+      queueMicrotask(() => next.stdout.emit('data', 'server listening on http://127.0.0.1:45678\n'));
+      return next;
+    });
+    stubOpenCodeFetch();
+    await runtime.triggerHealthCheck();
+    expect(stateRef.current.openCodeProcess?.pid).toBeTruthy();
+    now.mockImplementation(() => origin + 180_000);
+    stateRef.current.openCodeProcess = { pid: process.pid, exitCode: null, signalCode: null, async close() {} };
+    stateRef.current.openCodePort = 45678;
+    stubOpenCodeFetch();
+    await runtime.triggerHealthCheck();
+    now.mockImplementation(() => origin + 181_000);
+    spawnMock.mockClear();
+    stateRef.current.openCodeProcess = { pid: 999999, exitCode: 1, signalCode: null, async close() {} };
+    stubOpenCodeFetch({ health: { healthy: false, version: '2.0.23' } });
+    await runtime.triggerHealthCheck();
+    expect(spawnMock).toHaveBeenCalled();
+    now.mockRestore();
+  });
+
+  it('does not deadlock when bootstrap restarts a healthy child with a stale capability identity', async () => {
+    delete process.env.OPENCODE_BINARY;
+    const child = createMockChild();
+    child.pid = process.pid;
+    child.close = async () => { child.kill(); };
+    spawnMock.mockImplementation(() => {
+      const next = createMockChild();
+      queueMicrotask(() => next.stdout.emit('data', 'server listening on http://127.0.0.1:45678\n'));
+      return next;
+    });
+    const stateRef = {};
+    const runtime = createRuntime({
+      env: {
+        ENV_CONFIGURED_OPENCODE_PORT: 45678,
+        ENV_CONFIGURED_OPENCODE_HOST: null,
+        ENV_EFFECTIVE_PORT: null,
+        ENV_CONFIGURED_OPENCODE_HOSTNAME: '127.0.0.1',
+        ENV_SKIP_OPENCODE_START: false,
+      },
+      managedCapabilitiesRuntime: {
+        hasValidIdentity: () => false,
+        prepareManagedChildEnv: async (env) => env,
+        recordManagedChildPid: () => {},
+        getCapabilityIdentity: () => null,
+      },
+    }, stateRef);
+    stateRef.current.openCodeProcess = child;
+    stateRef.current.openCodePort = 45678;
+    stubOpenCodeFetch();
+
+    const outcome = await Promise.race([
+      runtime.bootstrapOpenCodeAtStartup().then(() => 'done'),
+      new Promise((resolve) => setTimeout(() => resolve('timeout'), 800)),
+    ]);
+
+    expect(outcome).toBe('done');
+    expect(spawnMock).toHaveBeenCalledTimes(1);
+    await stateRef.current.openCodeProcess?.close?.();
+  });
+
+  it('runs an explicit binary upgrade after the in-flight recovery instead of dropping it', async () => {
+    process.env.OPENCODE_BINARY = '/mock/opencode';
+    const sharedService = createSharedService();
+    const stateRef = {};
+    const runtime = createRuntime({ env: UNCONFIGURED_ENV, sharedService }, stateRef);
+    stubSharedFetch();
+    await runtime.bootstrapOpenCodeAtStartup();
+    expect(runtime.isSharedOpenCodeService()).toBe(true);
+    sharedService.start.mockClear();
+    let releaseProbe;
+    const gate = new Promise((resolve) => { releaseProbe = resolve; });
+    vi.stubGlobal('fetch', vi.fn(async (url) => {
+      await gate;
+      if (String(url).includes('/api/experimental/migration/v1')) return jsonResponse({ status: 'completed' });
+      return jsonResponse(DEFAULT_V2_HEALTH);
+    }));
+
+    const recovery = runtime.restartOpenCode();
+    await vi.waitFor(() => expect(releaseProbe).toBeTypeOf('function'));
+    const upgrade = runtime.restartOpenCode({ binaryPath: '/cache/upgrade-target' });
+    releaseProbe();
+    await recovery;
+    await upgrade;
+
+    expect(sharedService.start).toHaveBeenCalledWith(expect.objectContaining({
+      binary: '/cache/upgrade-target',
+      replace: true,
+    }));
+  });
+
+  it('runs both queued binary upgrades after the in-flight recovery', async () => {
+    process.env.OPENCODE_BINARY = '/mock/opencode';
+    const sharedService = createSharedService();
+    const stateRef = {};
+    const runtime = createRuntime({ env: UNCONFIGURED_ENV, sharedService }, stateRef);
+    stubSharedFetch();
+    await runtime.bootstrapOpenCodeAtStartup();
+    sharedService.start.mockClear();
+    let releaseProbe;
+    const gate = new Promise((resolve) => { releaseProbe = resolve; });
+    vi.stubGlobal('fetch', vi.fn(async (url) => {
+      await gate;
+      if (String(url).includes('/api/experimental/migration/v1')) return jsonResponse({ status: 'completed' });
+      return jsonResponse(DEFAULT_V2_HEALTH);
+    }));
+
+    const recovery = runtime.restartOpenCode();
+    await vi.waitFor(() => expect(releaseProbe).toBeTypeOf('function'));
+    const first = runtime.restartOpenCode({ binaryPath: '/cache/target-a' });
+    const second = runtime.restartOpenCode({ binaryPath: '/cache/target-b' });
+    releaseProbe();
+    await recovery;
+    await first;
+    await second;
+
+    expect(sharedService.start.mock.calls.map((call) => call[0].binary)).toEqual([
+      '/mock/opencode',
+      '/cache/target-a',
+      '/cache/target-b',
+    ]);
+  });
+
+  it('does not spawn a private server when shared retry ensure fails', async () => {
+    process.env.OPENCODE_BINARY = '/mock/opencode';
+    const sharedService = createSharedService();
+    const stateRef = {};
+    const runtime = createRuntime({ env: UNCONFIGURED_ENV, sharedService }, stateRef);
+    stubSharedFetch();
+    await runtime.bootstrapOpenCodeAtStartup();
+    expect(runtime.isSharedOpenCodeService()).toBe(true);
+    sharedService.start.mockRejectedValue(new Error('shared down'));
+    stubOpenCodeFetch({ health: { healthy: false, version: '2.0.23' } });
+    await expect(runtime.retryOpenCodeStartup()).rejects.toMatchObject({ code: 'opencode_not_ready' });
+    expect(spawnMock).not.toHaveBeenCalled();
   });
 });

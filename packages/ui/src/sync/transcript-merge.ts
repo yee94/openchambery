@@ -450,10 +450,10 @@ function rebuildFromReducedState(
     })
   }
 
-  // recovery / materialize / reconcile-page / overlapping initial: keep page
-  // layout, update messages in place. Recovery/materialize append new rows to
-  // the tail. Reconcile continuation windows and overlapping authority tails
-  // insert by (`time.created`, id) so an in-range row cannot land after newer ones.
+  // The flat reducer already owns conversation order (including HTTP neighbor
+  // anchors). Page ownership is storage layout, never a second ordering source.
+  // Put new rows on their next existing neighbor's page, or the tail when none
+  // remains, so flattening these buckets reproduces the reduced sequence.
   const owned = new Map<string, number>()
   previous.pages.forEach((prevPage, index) => {
     for (const id of prevPage.messageOrder) {
@@ -462,24 +462,15 @@ function rebuildFromReducedState(
   })
 
   const pageBuckets: Message[][] = previous.pages.map(() => [])
-  const unowned: Message[] = []
-  for (const message of nextMessages) {
-    const pageIndex = owned.get(message.id)
-    if (pageIndex === undefined) {
-      unowned.push(message)
-    } else {
-      pageBuckets[pageIndex]!.push(message)
-    }
+  let pageIndex = previous.pages.length - 1
+  for (let index = nextMessages.length - 1; index >= 0; index -= 1) {
+    const message = nextMessages[index]!
+    pageIndex = Math.min(pageIndex, owned.get(message.id) ?? pageIndex)
+    pageBuckets[pageIndex]!.push(message)
   }
 
   const nextPages = previous.pages.map((prevPage, index) => {
-    const bucket = pageBuckets[index] ?? []
-    if (index === previous.pages.length - 1 && unowned.length > 0) {
-      const merged = purpose === "reconcile-page" || purpose === "initial"
-        ? insertPageMessagesByCreated(bucket, unowned)
-        : [...bucket, ...unowned]
-      return sharePageMessages(prevPage, merged, nextPart, liveRevision)
-    }
+    const bucket = pageBuckets[index]!.reverse()
     return sharePageMessages(prevPage, bucket, nextPart, liveRevision)
   })
 
@@ -1659,22 +1650,26 @@ export function shareSessionTranscriptData(
   }  if (newData.pages.length === oldData.pages.length) {
     const shared = shareEqualLength(oldData, newData)
     if (shared === oldData) return oldData
-    // Same page count but different content. A Query tail refetch must go
-    // through insert-only materialize so a lagging snapshot cannot drop a
-    // live last turn. Reconcile / recovery already wrote the authoritative
-    // conversation order into `newData`; re-merging that page as materialize
-    // would append an older continuation window past a newer gap page.
-    if (isAuthoritativeSupersetTranscript(oldData, newData)) {
-      return shared
-    }
     // remove-message / message.removed keep remaining row refs. A lagging
     // Host tail rebuilds those objects, so it still falls through to
     // insert-only materialize and cannot drop live rows.
     if (isAuthoritativeSubsetTranscript(oldData, newData)) {
       return shared
     }
-    const incoming = newData.pages[newData.pages.length - 1]!
-    return mergeIncomingTail(oldData, incoming, sessionID) ?? shared
+    // A repaired checkpoint can move into an earlier page. Reconcile the whole
+    // incoming sequence, not just its tail, and let materialization preserve
+    // local-only/live rows. Clock/ID monotonicity cannot identify authority.
+    return mergeSessionTranscript(oldData, sessionID, {
+      type: "http-page",
+      purpose: "materialize",
+      page: {
+        records: newData.pages.flatMap(page => transportFromTranscriptPage(page).records),
+        cursor: newData.pages[0]?.cursor ?? undefined,
+        complete: newData.pages[0]?.complete ?? false,
+        turnCount: newData.pages.reduce((count, page) => count + page.turnCount, 0),
+      },
+      liveRevision: Math.max(...newData.pages.map(page => page.sync.liveRevision)),
+    }).data ?? shared
   }
   if (newData.pages.length === oldData.pages.length + 1) {
     // Prepend: first page is the new history window (may be empty after system
@@ -1730,35 +1725,6 @@ function isAuthoritativeSubsetTranscript(
   for (const id of nextIDs) {
     if (previousFlat.messagesByID[id] !== nextFlat.messagesByID[id]) return false
     if (previousFlat.partsByMessageID[id] !== nextFlat.partsByMessageID[id]) return false
-  }
-  return true
-}
-
-/**
- * True when `next` already contains every prior id and added rows sit in
- * (`time.created`, id) conversation order. That is the reconcile / recovery
- * writer contract — structuralSharing must not rewrite it as a lagging tail.
- */
-function isAuthoritativeSupersetTranscript(
-  previous: SessionTranscriptData,
-  next: SessionTranscriptData,
-): boolean {
-  const previousIDs = collectTranscriptMessageIDs(previous)
-  if (previousIDs.size === 0) return false
-  const nextIDs = collectTranscriptMessageIDs(next)
-  for (const id of previousIDs) {
-    if (!nextIDs.has(id)) return false
-  }
-  if (nextIDs.size <= previousIDs.size) return false
-
-  const nextFlat = projectFlatFromTranscriptData(next, "")
-  for (let index = 1; index < nextFlat.messageOrder.length; index += 1) {
-    const left = nextFlat.messagesByID[nextFlat.messageOrder[index - 1]!]
-    const right = nextFlat.messagesByID[nextFlat.messageOrder[index]!]
-    if (!left || !right) return false
-    if (compareTranscriptSortKey(transcriptSortKeyOf(left), transcriptSortKeyOf(right)) > 0) {
-      return false
-    }
   }
   return true
 }

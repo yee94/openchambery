@@ -617,6 +617,7 @@ describe('scheduled-tasks run history and session lifecycle', () => {
     expect(makeOpenCodeV2Client).toHaveBeenCalledWith({
       baseUrl: 'http://127.0.0.1:4096',
       authHeaders: {},
+      fetchImpl: expect.any(Function),
     });
     expect(client.create).toHaveBeenCalledWith(expect.objectContaining({
       location: { directory: '/tmp/project-1' },

@@ -8,6 +8,17 @@ Run [OpenCode](https://opencode.ai) in your browser. Install the `opencode` v2 C
 
 Full project overview, screenshots, and all features: [github.com/yee94/openchamber](https://github.com/yee94/openchamber)
 
+## Repository HMR development
+
+From the repository root, run `bun run dev:web:hmr` (or start it in tmux with
+`tmux new-session -s vite 'bun run dev:web:hmr'`). Open `http://127.0.0.1:5180`;
+the API listens on port 3902. The supervisor restarts a crashed Vite or API
+independently, with a 1–10 second backoff for repeated failures. On macOS it
+cleans up the failed process group before restarting, including descendants
+whose launcher has already exited. Ctrl-C stops both groups and cancels retries.
+Logs remain in the tmux pane. Restarting preserves Vite's dependency cache;
+`OPENCHAMBER_VITE_FORCE=1` remains an explicit cache-reset option.
+
 ## Install
 
 ```bash

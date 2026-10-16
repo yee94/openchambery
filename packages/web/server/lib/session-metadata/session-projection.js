@@ -165,10 +165,8 @@ export const projectSessionWithHostMetadata = (session, hostMetadata) => {
   else timeBase.archived = projectedArchived;
 
   const directory = resolveSessionDirectory(session);
-  const titleAuthority = readSessionTitleAuthority(session.id, metadata);
   const next = {
     ...session,
-    ...(titleAuthority ? { title: titleAuthority.title } : {}),
     metadata: Object.keys(metadata).length > 0 ? metadata : (session.metadata ?? metadata),
     time: timeBase,
     ...(directory ? { directory } : {}),
@@ -218,15 +216,6 @@ export const projectSessionWithStoredMap = (session, storedBySessionId) => {
 
 const projectLifecycleInner = (payload, readHostMetadata) => {
   const baseType = normalizeSessionEventType(payload.type);
-  if (baseType === 'session.renamed') {
-    const data = payload.data ?? payload.properties;
-    if (typeof data?.sessionID !== 'string') return payload;
-    const authority = readSessionTitleAuthority(data?.sessionID, readHostMetadata?.(data?.sessionID));
-    if (!authority || data.title === authority.title) return payload;
-    return payload.data
-      ? { ...payload, data: { ...data, title: authority.title } }
-      : { ...payload, properties: { ...data, title: authority.title } };
-  }
   if (baseType !== 'session.created' && baseType !== 'session.updated') return payload;
 
   const info = extractSessionInfoFromPayload(payload);

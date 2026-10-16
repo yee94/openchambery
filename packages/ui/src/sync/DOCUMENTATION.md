@@ -2,6 +2,12 @@
 
 ## Session-tree activity indicators
 
+`session-activity-identity.ts` hydrates missing identities for live active IDs and their ancestor chain using runtime/generation-scoped `sessionIdentity` queries (`session.get`, metadata only). Root index snapshots deliberately omit subagents, so retaining busy membership alone is insufficient to light up a parent. This provider-owned coordinator subscribes to live status and structural catalog changes, coalesces them, and runs at most two identity reads concurrently. It inserts confirmed identities into their authoritative directory store without bootstrapping that directory or loading messages; parent execution status is never rewritten. Failures keep live activity intact, isolate unrelated identities and use bounded query retry plus a retry cooldown. Runtime changes, provider disposal and newer live identities fence late results. `session-activity-identity.test.ts` covers the real cold-catalog case, nested ancestry, failure isolation and disposal.
+
+Stream-ready/reconnect seeds the complete process-global `session.active()` membership through the shared runtime/generation-scoped Query flight, independently of directory/catalog readiness. Directory status reconciliation also retains the full membership before projecting only directory-local IDs. Restore candidates include previously idle status keys even when their catalog rows have been evicted, so stale local idle cannot mask the new authority. Active IDs missing from the catalog stay in the global live-status map with an unknown directory until real identity/event data arrives; loading a subagent transcript is not required to discover its running state. Successful empty membership clears old global activity; failed/unsupported reads preserve it. Lifecycle events received during the request (including an idle event for an unseen session) supersede that snapshot, and older snapshots cannot replace a newer boundary. Local directory snapshots and execution gates retain their own scope.
+
+The shared activity reader also projects running descendant counts for the latest assistant footer. Each distinct busy/retrying descendant contributes once to each ancestor, excluding the ancestor's own execution. Counts update even when the active ancestor set is unchanged. The footer subscribes to one numeric value; all surfaces share the same runtime-scoped projection without additional polling or per-row tree scans.
+
 `session-activity.ts` derives navigation loading from live busy/retry statuses of a session and its descendants, following OpenCode's root-tab family activity semantics. Parent execution may be idle while background descendants run; their live status keeps the parent's sidebar/mobile row and in-progress visibility active. Parent/child metadata only provides ancestry, never proof of running. Explicit child-store idle overrides global fallback activity. The raw session status, composer and queue gates remain session-local.
 
 One weakly keyed reader per runtime child-store manager shares the projection across rows. Only status/identity fields invalidate it; token/part updates do not scan the tree. Unchanged active sets preserve identity, row subscribers select one boolean, and the final unsubscription releases all observers. Bootstrap/reconnect snapshots, late parent metadata, cross-directory descendants and terminal events all derive through the same reader. Mounted lifecycle and isolation tests live in `session-activity.test.tsx`.
@@ -29,9 +35,9 @@ the sidebar title shimmer even when the title is unchanged and execution remains
 busy. Recency ticks and unrelated metadata do not invalidate that list.
 
 OpenChamber manual rename first persists `openchamber.titleAuthority` with a new
-revision, then updates the official session title. Host projection and repair
-keep this choice above later native title events; in-flight summary generation
-cannot commit across a newer authority revision. Rename/smart-title metadata
+revision, then updates the official session title. This revision fences in-flight
+summary generation only: OpenCode `session.title` remains the display authority,
+and later native title events are never overwritten by the stored choice. Rename/smart-title metadata
 patches are narrow and never replay an old authority snapshot. See the Host
 `packages/web/server/lib/session-title/DOCUMENTATION.md` for convergence/failure
 and extension-only runtime boundaries.
@@ -68,6 +74,12 @@ An authoritative transcript tail reconciles the queue barrier from its latest co
 `buildSessionContextUsage` represents invalidated usage with `pending: true` (numeric fields are placeholders, not measured zero). All UI consumers use `useSessionContextUsage` / `useTranscriptContextUsage`, a repository selector that observes both messages and parts while publishing only changed usage fields. A part-only compaction completion updates the control; summary/text deltas do not rerender it. `ContextUsageDisplay` keeps the control visible with localized “Awaiting update”, neutral styling and no numeric ARIA value. Mobile maps pending usage to a `null` total (`0` means no baseline) and shows the pending label in its context panel. No estimation, polling or persisted fallback is introduced. Refresh/revisit derives the same state from authoritative projected compaction parts. Regression coverage includes `context-usage-display.test.tsx`, which mounts the controls against the Query-backed repository and real live-event reducer.
 
 ## Message content order
+
+Message sequence follows the native projection/event order as well. OpenCode core `session/projector.ts` stores each appended row at `event.durable.seq`; `session/store.ts` paginates by that sequence. `session/message-updater.ts` appends a compaction checkpoint on start and updates the same row on completion. Neither message IDs nor `time.created` provide an equivalent ordering contract.
+
+For overlapping windows, `transcript-order.ts` is shared by authority reconciliation and materialization: fetched IDs retain fetched order, repairing a previously misplaced checkpoint, while retained local-only rows keep a surviving neighbor. A local tail stays after its last shared neighbor, ahead of newly fetched trailing rows. Freshness/touched-row rules choose content independently of position. Disjoint windows still use the owning caller's placement policy; they cannot infer an exact cross-window sequence from IDs.
+
+InfiniteData rebuild preserves the flat reducer's sequence when distributing rows across retained pages. It must not append recovered checkpoints to the last page or sort them again by creation time/ID. Query structural sharing reconciles all incoming pages, including a repaired checkpoint moved into an earlier page; it never infers authority from clock/ID monotonicity. Existing pagination boundaries and unaffected row references remain intact. `compaction-transcript.regression.test.ts` covers missing/misplaced checkpoints, equal clocks with opposing IDs, retained-page recovery, repeated authority refresh and structural sharing; the mounted chat content-retention suite verifies the resulting sorted DOM order on desktop/mobile.
 
 Within a message, native `content[]` / projected `parts[]` order is authoritative. Part IDs are identity only: tool `call-*` IDs and generated `msg_*:text:N` / `reasoning:N` IDs cannot rank content. Production page loading, materialization, optimistic insertion, and both repository adapters preserve array order. Live updates and removals locate parts by identity, replace in place, and append newly observed parts; optimistic replacement keeps its slot. Partial materialization retains omitted live parts before their next surviving neighbor (or at the tail when none remains), without reordering the incoming snapshot. These shared rules apply to web, Electron, VS Code, hosted mobile, and Capacitor.
 
@@ -496,10 +508,18 @@ Sidebar directory refreshes are intentionally bounded snapshots, not full catalo
 - directory-sync bootstrap also loads only 20 root sessions; it no longer performs a 500-row full pagination pass or a 200-row mixed root/child prefetch
 - active requests coalesce by directory with bounded concurrency
 - active pagination stores a per-directory cursor; reaching the local Show more boundary requests and appends the next 20 roots
-- child sessions arrive through live `session.created` events. Historical
-  `session.children` recovery is requested only when the user selects that
-  parent session; the startup watchdog must not fan out one request per active
-  or persisted parent
+- child sessions arrive through live `session.created` events. Historical recovery
+  runs only on an explicit parent-tree expansion, via official `session.list` with
+  `parentID` and directory, following opaque next cursors in 50-row pages. Short raw
+  pages are exhausted even when OpenCode returns an end-anchor cursor. Already-known
+  children do not imply completeness. Query coalesces in-flight reads by transport,
+  generation, normalized directory and parent; reopening refreshes, without polling
+  or mount/selection prefetch. Page failures keep the previous tree, and runtime or
+  directory-store replacement fences late results. The startup watchdog must not
+  fan out one request per active or persisted parent.
+- Active identities missing from those bounded catalogs are the narrow exception:
+  the activity identity coordinator fetches only live IDs and missing ancestors,
+  never every historical child of each root.
 - `loadingDirectories` means no usable active snapshot; `refreshingDirectories` keeps stale rows visible
 - archived rows load only when the archived bucket is expanded
 - retention must wait for `hasLoadedFullCatalog` and use `ensureFullGlobalSessionsLoaded()`, never treat a bounded directory snapshot as authoritative for cleanup

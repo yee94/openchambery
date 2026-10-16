@@ -447,8 +447,11 @@ export const projectTurnRecords = (
         groupedMessageIds.add(message.info.id);
     });
 
+    let precedingTurn: TurnRecord | undefined;
     messages.forEach((message, index) => {
         const role = resolveMessageRole(message);
+        const userTurn = turnByUserId.get(message.info.id);
+        if (userTurn) precedingTurn = userTurn;
         const noticeOwner = noticeOwnerById.get(message.info.id);
         if (noticeOwner) {
             noticeOwner.messages.push(createTurnMessageRecord(message, index));
@@ -459,23 +462,9 @@ export const projectTurnRecords = (
         }
 
         const parentId = getMessageParentId(message);
-        let targetTurn = parentId ? turnByUserId.get(parentId) : undefined;
-        if (!targetTurn && !parentId) {
-            // v2 message records may not carry parentID at all; fall back to the
-            // most recent preceding user turn so assistant replies (including
-            // failed turns with no parts) still attach instead of being dropped.
-            // An explicit-but-unresolvable parentID keeps the old drop behavior:
-            // the parent user turn may simply not be loaded yet.
-            const createdAt = getMessageCreatedAt(message);
-            for (let turnIndex = turns.length - 1; turnIndex >= 0; turnIndex--) {
-                const candidate = turns[turnIndex];
-                const candidateCreated = getMessageCreatedAt(candidate.userMessage);
-                if (createdAt === undefined || candidateCreated === undefined || candidateCreated <= createdAt) {
-                    targetTurn = candidate;
-                    break;
-                }
-            }
-        }
+        // V2 has no parentID: transcript position, not a wall clock, determines
+        // its preceding user. Explicit legacy parents still resolve by identity.
+        const targetTurn = parentId ? turnByUserId.get(parentId) : precedingTurn;
         if (!targetTurn) {
             return;
         }
@@ -504,12 +493,8 @@ export const projectTurnRecords = (
             if (getMessageParentId(message)) {
                 return;
             }
-            // Parentless v2 assistants attach to a preceding user turn when one
-            // exists. If this page has no user turn at all (OpenCode 2 subagent
-            // sessions), there is nothing to wait for — keep them on the timeline.
-            if (turns.length > 0) {
-                return;
-            }
+            // A parentless leading assistant has no loaded preceding user; keep
+            // its content visible even when later user turns are in this page.
         }
         ungroupedMessageIds.add(message.info.id);
     });

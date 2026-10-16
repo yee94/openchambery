@@ -657,6 +657,7 @@ export const dict: Record<I18nKey, string> = {
   'sessions.sidebar.session.status.questionRequired': '質問への回答が必要です',
   'sessions.sidebar.session.subsessions.collapse': 'サブセッションを折りたたむ',
   'sessions.sidebar.session.subsessions.expand': 'サブセッションを展開',
+  'sessions.sidebar.session.subsessions.loadFailed': 'サブセッションを読み込めませんでした。折りたたんでから再度展開してください。',
   'sessions.sidebar.dialogs.deleteSession.title': 'セッションを削除しますか？',
   'sessions.sidebar.dialogs.archiveSession.title': 'セッションをアーカイブしますか？',
   'sessions.sidebar.dialogs.deleteSession.withOneSubtask': '「{sessionTitle}」と{count}件のサブタスクは完全に削除されます。',

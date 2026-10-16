@@ -24,27 +24,28 @@ function run(label, command, args, env = {}, options = {}) {
 
 function waitForExit(child, timeoutMs) {
   return new Promise((resolve) => {
-    if (!child || child.exitCode !== null || child.signalCode !== null) {
-      resolve();
-      return;
-    }
-
-    const onExit = () => {
-      clearTimeout(timer);
-      resolve();
+    const deadline = Date.now() + timeoutMs;
+    const check = () => {
+      if (!isChildTreeAlive(child) || Date.now() >= deadline) resolve();
+      else setTimeout(check, 50);
     };
-
-    const timer = setTimeout(() => {
-      child.off('exit', onExit);
-      resolve();
-    }, timeoutMs);
-
-    child.once('exit', onExit);
+    check();
   });
 }
 
+function isChildTreeAlive(child) {
+  if (!child?.pid) return false;
+  if (!useDetachedChildren) return child.exitCode === null && child.signalCode === null;
+  try {
+    process.kill(-child.pid, 0);
+    return true;
+  } catch (error) {
+    return error.code !== 'ESRCH';
+  }
+}
+
 function signalChild(child, signal) {
-  if (!child || child.exitCode !== null || child.signalCode !== null) {
+  if (!isChildTreeAlive(child)) {
     return;
   }
 
@@ -63,19 +64,19 @@ function signalChild(child, signal) {
 }
 
 async function stopChildTree(child) {
-  if (!child || child.exitCode !== null || child.signalCode !== null) {
+  if (!isChildTreeAlive(child)) {
     return;
   }
 
   signalChild(child, 'SIGINT');
   await waitForExit(child, 2500);
 
-  if (child.exitCode === null && child.signalCode === null) {
+  if (isChildTreeAlive(child)) {
     signalChild(child, 'SIGTERM');
     await waitForExit(child, 2500);
   }
 
-  if (child.exitCode === null && child.signalCode === null) {
+  if (isChildTreeAlive(child)) {
     signalChild(child, 'SIGKILL');
     await waitForExit(child, 1000);
   }
@@ -147,14 +148,14 @@ const apiEnv = {
   OPENCHAMBER_RUNTIME: 'web',
 };
 
-const api = run('api', 'bun', ['run', '--cwd', 'packages/web', 'dev:server:watch'], apiEnv);
+const startApi = () => run('api', 'bun', ['run', '--cwd', 'packages/web', 'dev:server:watch'], apiEnv);
 
 const viteArgs = ['x', 'vite', '--host', hmrHost, '--port', uiPort, '--strictPort'];
 if (forceViteOptimize) {
   viteArgs.splice(2, 0, '--force');
 }
 
-const vite = run(
+const startVite = () => run(
   'vite',
   'bun',
   viteArgs,
@@ -181,30 +182,41 @@ console.log(`[dev:web:hmr] Session index: ${hmrSessionIndexDbPath}`);
 console.log('[dev:web:hmr] IMPORTANT: open UI URL above for HMR; backend URL has no HMR');
 
 let shuttingDown = false;
+const services = [
+  { label: 'api', start: startApi, child: undefined, timer: undefined, failures: 0 },
+  { label: 'vite', start: startVite, child: undefined, timer: undefined, failures: 0 },
+];
 
 async function shutdown(exitCode = 0) {
   if (shuttingDown) return;
   shuttingDown = true;
-  await Promise.all([stopChildTree(api), stopChildTree(vite)]);
+  for (const service of services) clearTimeout(service.timer);
+  await Promise.all(services.map((service) => stopChildTree(service.child)));
   process.exit(exitCode);
 }
 
-function onChildExit(label) {
-  return (code, signal) => {
+function startService(service) {
+  if (shuttingDown) return;
+  const startedAt = Date.now();
+  const child = service.start();
+  service.child = child;
+  let handled = false;
+  const recover = async (reason) => {
+    if (handled || shuttingDown) return;
+    handled = true;
+    console.error(`[dev:web:hmr] ${service.label} exited (${reason}); cleaning up before restart`);
+    await stopChildTree(child);
     if (shuttingDown) return;
-
-    if (code !== 0 || signal) {
-      console.error(`[dev:web:hmr] ${label} exited unexpectedly (code=${code ?? 'null'} signal=${signal ?? 'none'})`);
-      shutdown(typeof code === 'number' ? code : 1).catch(() => process.exit(1));
-      return;
-    }
-
-    shutdown(0).catch(() => process.exit(1));
+    service.failures = Date.now() - startedAt >= 30_000 ? 0 : service.failures + 1;
+    const delay = Math.min(10_000, 1_000 * 2 ** Math.max(0, Math.min(service.failures - 1, 4)));
+    console.log(`[dev:web:hmr] restarting ${service.label} in ${delay}ms; other service stays running`);
+    service.timer = setTimeout(() => startService(service), delay);
   };
+  child.once('exit', (code, signal) => void recover(`code=${code ?? 'null'} signal=${signal ?? 'none'}`));
+  child.once('error', (error) => void recover(error.message));
 }
 
-api.on('exit', onChildExit('api'));
-vite.on('exit', onChildExit('vite'));
+for (const service of services) startService(service);
 
 process.on('SIGINT', () => {
   shutdown(130).catch(() => process.exit(130));

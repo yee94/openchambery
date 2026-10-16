@@ -52,6 +52,7 @@ describe('feature routes runtime composition', () => {
     const source = await fs.readFile(new URL('./feature-routes-runtime.js', import.meta.url), 'utf8');
     expect(source).toMatch(/const \{[\s\S]*runHistoryStore,[\s\S]*\} = routeDependencies;/);
     expect(source).toMatch(/registerScheduledTaskRoutes\(app, \{[\s\S]*runHistoryStore,/);
+    expect(source).toMatch(/registerScheduledTaskRoutes\(app, \{[\s\S]*buildOpenCodeUrl,[\s\S]*getOpenCodeAuthHeaders,/);
   });
 
   it('registers browser provider routes on the shared host before proxy composition', async () => {

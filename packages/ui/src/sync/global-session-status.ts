@@ -3,9 +3,10 @@ import type { Event } from '@/sync/types'
 
 import { normalizeProjectPath } from '@/lib/projectResolution';
 import { getRuntimeGeneration, getRuntimeTransportIdentity } from '@/lib/runtime-switch';
+import type { SessionActiveMembership } from '@/lib/opencode/client';
 
-// Live busy/retry status for sessions in directories WITHOUT a synced child
-// store. The global event stream (`/api/global/event/ws`) carries status
+// Live busy/retry status for all sessions, including IDs not yet in a catalog.
+// The global event stream (`/api/global/event/ws`) carries status
 // events for every directory, but the sync dispatcher can only apply them to
 // an existing child store — events for unopened directories used to be
 // dropped. They land here instead, so cross-project consumers (the macOS tray)
@@ -19,6 +20,20 @@ type ActiveStatusType = 'busy' | 'retry';
 let eventRuntime = '';
 const eventClocks = new Map<string, number>();
 const eventSequences = new Map<string, number>();
+const eventObservedAt = new Map<string, number>();
+let activeSnapshotAt = -Infinity;
+let activeSnapshotMembership: SessionActiveMembership | undefined;
+
+function ensureStatusRuntime(): void {
+  const runtime = `${getRuntimeTransportIdentity()}:${getRuntimeGeneration()}`;
+  if (eventRuntime === runtime) return;
+  eventRuntime = runtime;
+  eventClocks.clear();
+  eventSequences.clear();
+  eventObservedAt.clear();
+  activeSnapshotAt = -Infinity;
+  activeSnapshotMembership = undefined;
+}
 const statusEvents = new Set(['session.status', 'session.idle', 'session.error', 'session.step.started',
   'session.execution.started', 'session.execution.succeeded', 'session.execution.failed', 'session.execution.interrupted']);
 
@@ -69,8 +84,7 @@ export const applyGlobalSessionStatusEvent = (
   payload: Event,
 ): void => {
   if (statusEvents.has(payload.type)) {
-    const runtime = `${getRuntimeTransportIdentity()}:${getRuntimeGeneration()}`;
-    if (eventRuntime !== runtime) { eventRuntime = runtime; eventClocks.clear(); eventSequences.clear(); }
+    ensureStatusRuntime();
     const props = payload.properties as { sessionID?: string; eventCreated?: number; eventSequence?: number };
     if (props.sessionID && typeof props.eventSequence === 'number') {
       if (props.eventSequence <= (eventSequences.get(props.sessionID) ?? -1)) return;
@@ -80,6 +94,7 @@ export const applyGlobalSessionStatusEvent = (
       if (props.eventSequence === undefined && props.eventCreated < (eventClocks.get(props.sessionID) ?? 0)) return;
       eventClocks.set(props.sessionID, props.eventCreated);
     }
+    if (props.sessionID) eventObservedAt.set(props.sessionID, Date.now());
   }
   switch (payload.type) {
     case 'session.moved': {
@@ -128,6 +143,35 @@ export const applyGlobalSessionStatusEvent = (
       return;
   }
 };
+
+/** Keep the complete process-wide authority, including sessions not yet in any catalog. */
+export function applyGlobalSessionActiveSnapshot(membership: SessionActiveMembership, requestedAt: number): void {
+  ensureStatusRuntime();
+  if (requestedAt < activeSnapshotAt) return;
+  if (requestedAt === activeSnapshotAt && membership === activeSnapshotMembership) return;
+  activeSnapshotAt = requestedAt;
+  activeSnapshotMembership = membership;
+  useGlobalSessionStatusStore.setState((state) => {
+    const next = new Map(state.statusById);
+    let changed = false;
+    for (const id of new Set([...next.keys(), ...Object.keys(membership)])) {
+      // An idle event must also win when it removed an otherwise absent entry.
+      if ((eventObservedAt.get(id) ?? -Infinity) >= requestedAt) continue;
+      const current = next.get(id);
+      if (!Object.prototype.hasOwnProperty.call(membership, id)) {
+        changed = next.delete(id) || changed;
+      } else if (!current) {
+        // session.active has no directory field; never guess its location.
+        next.set(id, { status: 'busy', directory: '' });
+        changed = true;
+      }
+    }
+    return changed ? { statusById: next } : state;
+  });
+  for (const [id, observedAt] of eventObservedAt) {
+    if (observedAt < requestedAt) eventObservedAt.delete(id);
+  }
+}
 
 // One-shot path: an authoritative `/session/status?directory=X` snapshot used
 // on connect/reconnect. Entries missing from the snapshot are idle now — cleared

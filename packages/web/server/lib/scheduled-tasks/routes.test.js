@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import { registerScheduledTaskRoutes } from './routes.js';
+import { SCHEDULE_CONFLICT_CODE } from '../projects/project-config.js';
+import { SCHEDULED_TASK_BODY_EXPECTED, registerScheduledTaskRoutes } from './routes.js';
 
 const createRouteRegistry = () => {
   const routes = new Map();
@@ -58,14 +59,26 @@ const registerListRoute = ({ projects, listScheduledTasks, settings = { projects
   return getRoute('GET', '/api/openchamber/scheduled-tasks');
 };
 
-const registerMutationRoutes = ({ projectConfigRuntime, scheduledTasksRuntime, scheduleSyncRetry }) => {
+const registerMutationRoutes = ({
+  projectConfigRuntime,
+  scheduledTasksRuntime,
+  scheduleSyncRetry,
+  loadCatalog,
+  projects = [{ id: 'project-a', path: '/tmp/project-a' }],
+}) => {
   const { app, getRoute } = createRouteRegistry();
   registerScheduledTaskRoutes(app, {
-    readSettingsFromDiskMigrated: async () => ({ projects: [{ id: 'project-a' }] }),
-    sanitizeProjects: (projects) => projects,
+    readSettingsFromDiskMigrated: async () => ({ projects }),
+    sanitizeProjects: (value) => value,
     projectConfigRuntime,
     scheduledTasksRuntime,
     scheduleSyncRetry,
+    buildOpenCodeUrl: () => 'http://127.0.0.1:9',
+    getOpenCodeAuthHeaders: () => ({ authorization: 'Basic dGVzdA==' }),
+    loadCatalog: loadCatalog || (async (_client, options) => ({
+      directory: options?.directory,
+      models: [{ providerID: 'openai', modelID: 'gpt' }, { providerID: 'p', modelID: 'good' }],
+    })),
   });
   return {
     put: getRoute('PUT', '/api/projects/:projectId/scheduled-tasks'),
@@ -330,7 +343,7 @@ describe('scheduled task mutation routes', () => {
         return { task: savedTask, tasks: [savedTask], created: task.id !== 'existing-task' };
       }),
       deleteScheduledTask: vi.fn(async () => ({ deleted: true, tasks: [] })),
-      listScheduledTasks: vi.fn(),
+      listScheduledTasks: vi.fn(async () => []),
     };
     const scheduledTasksRuntime = {
       syncProject: vi.fn().mockRejectedValue(new Error('scheduler unavailable')),
@@ -353,7 +366,7 @@ describe('scheduled task mutation routes', () => {
     expect(deleted.statusCode).toBe(200);
     expect(deleted.body).toEqual({ tasks: [], schedulerSynced: false });
     expect(retry).toHaveBeenCalledTimes(3);
-    expect(projectConfigRuntime.listScheduledTasks).not.toHaveBeenCalled();
+    expect(projectConfigRuntime.listScheduledTasks).toHaveBeenCalledTimes(1);
 
     retry.mock.calls[0][0]();
     await Promise.resolve();
@@ -369,7 +382,7 @@ describe('scheduled task mutation routes', () => {
     const projectConfigRuntime = {
       upsertScheduledTask: vi.fn(async () => ({ task: savedTask, tasks: [savedTask], created: true })),
       deleteScheduledTask: vi.fn(),
-      listScheduledTasks: vi.fn(),
+      listScheduledTasks: vi.fn(async () => []),
     };
     const routes = registerMutationRoutes({
       projectConfigRuntime,
@@ -431,7 +444,7 @@ describe('scheduled task mutation routes', () => {
     const projectConfigRuntime = {
       upsertScheduledTask: vi.fn(async () => ({ task: savedTask, tasks: [savedTask], created: true })),
       deleteScheduledTask: vi.fn(),
-      listScheduledTasks: vi.fn(),
+      listScheduledTasks: vi.fn(async () => []),
     };
     const routes = registerMutationRoutes({
       projectConfigRuntime,
@@ -452,5 +465,201 @@ describe('scheduled task mutation routes', () => {
 
     expect(response.statusCode).toBe(200);
     expect(projectConfigRuntime.upsertScheduledTask).toHaveBeenCalledTimes(1);
+  });
+
+  it('rejects a missing task envelope with the expected shape and does not write', async () => {
+    const projectConfigRuntime = {
+      upsertScheduledTask: vi.fn(),
+      listScheduledTasks: vi.fn(),
+    };
+    const routes = registerMutationRoutes({
+      projectConfigRuntime,
+      scheduledTasksRuntime: { syncProject: vi.fn() },
+      scheduleSyncRetry: vi.fn(),
+    });
+    for (const body of [{ name: 'bare' }, { tasks: [] }, { task: [] }]) {
+      const response = createResponse();
+      await routes.put({ params: { projectId: 'project-a' }, body }, response);
+      expect(response.statusCode).toBe(400);
+      expect(response.body.error).toBe('task payload is required');
+      expect(response.body.expected).toEqual(SCHEDULED_TASK_BODY_EXPECTED);
+    }
+    expect(projectConfigRuntime.upsertScheduledTask).not.toHaveBeenCalled();
+    expect(projectConfigRuntime.listScheduledTasks).not.toHaveBeenCalled();
+  });
+
+  it('rejects an unconnected model and a catalog failure before writing', async () => {
+    const projectConfigRuntime = {
+      upsertScheduledTask: vi.fn(),
+      listScheduledTasks: vi.fn(async () => []),
+    };
+    const syncProject = vi.fn();
+    const missing = registerMutationRoutes({
+      projectConfigRuntime,
+      scheduledTasksRuntime: { syncProject },
+      scheduleSyncRetry: vi.fn(),
+      loadCatalog: async () => ({ models: [{ providerID: 'p', modelID: 'good' }] }),
+    });
+    const missingResponse = createResponse();
+    await missing.put({
+      params: { projectId: 'project-a' },
+      body: {
+        task: {
+          name: 'missing',
+          enabled: false,
+          execution: { prompt: 'x', providerID: 'p', modelID: 'nonexistent' },
+        },
+      },
+    }, missingResponse);
+    expect(missingResponse.statusCode).toBe(400);
+    expect(missingResponse.body.error).toContain('p/nonexistent');
+
+    const down = registerMutationRoutes({
+      projectConfigRuntime,
+      scheduledTasksRuntime: { syncProject },
+      scheduleSyncRetry: vi.fn(),
+      loadCatalog: async () => { throw new Error('upstream 503'); },
+    });
+    const downResponse = createResponse();
+    await down.put({
+      params: { projectId: 'project-a' },
+      body: {
+        task: {
+          name: 'down',
+          enabled: false,
+          execution: { prompt: 'x', providerID: 'p', modelID: 'good' },
+        },
+      },
+    }, downResponse);
+    expect(downResponse.statusCode).toBe(503);
+    expect(downResponse.body.error).toBe('Connected catalog is unavailable');
+    expect(projectConfigRuntime.upsertScheduledTask).not.toHaveBeenCalled();
+    expect(syncProject).not.toHaveBeenCalled();
+  });
+
+  it('allows rename and disable when the catalog is down, and rejects enable', async () => {
+    const existing = {
+      id: 'task-1',
+      name: 'Old',
+      enabled: false,
+      execution: { providerID: 'p', modelID: 'good', prompt: 'x' },
+    };
+    const projectConfigRuntime = {
+      upsertScheduledTask: vi.fn(async () => ({ task: existing, tasks: [existing], created: false })),
+      listScheduledTasks: vi.fn(async () => [existing]),
+    };
+    const loadCatalog = vi.fn(async () => { throw new Error('upstream 503'); });
+    const routes = registerMutationRoutes({
+      projectConfigRuntime,
+      scheduledTasksRuntime: { syncProject: vi.fn(async () => {}) },
+      scheduleSyncRetry: vi.fn(),
+      loadCatalog,
+    });
+    const task = {
+      id: 'task-1',
+      schedule: { kind: 'daily', times: ['09:00'], timezone: 'UTC' },
+      execution: { prompt: 'x', providerID: ' p ', modelID: 'good' },
+    };
+
+    const renamed = createResponse();
+    await routes.put({
+      params: { projectId: 'project-a' },
+      body: { task: { ...task, name: 'Renamed', enabled: false } },
+    }, renamed);
+    expect(renamed.statusCode).toBe(200);
+    expect(loadCatalog).not.toHaveBeenCalled();
+
+    const disabled = createResponse();
+    await routes.put({
+      params: { projectId: 'project-a' },
+      body: { task: { ...task, name: 'Old', enabled: false } },
+    }, disabled);
+    expect(disabled.statusCode).toBe(200);
+
+    const enabled = createResponse();
+    await routes.put({
+      params: { projectId: 'project-a' },
+      body: { task: { ...task, name: 'Old', enabled: true } },
+    }, enabled);
+    expect(enabled.statusCode).toBe(503);
+    expect(projectConfigRuntime.upsertScheduledTask).toHaveBeenCalledTimes(2);
+    expect(projectConfigRuntime.upsertScheduledTask.mock.calls[0][2]).toEqual({
+      expected: { exists: true, providerID: 'p', modelID: 'good', enabled: false },
+    });
+  });
+
+  it('disables an enabled task without a catalog request when the catalog is down', async () => {
+    const existing = {
+      id: 'task-armed',
+      name: 'Armed',
+      enabled: true,
+      execution: { providerID: 'p', modelID: 'good', prompt: 'x' },
+    };
+    const projectConfigRuntime = {
+      upsertScheduledTask: vi.fn(async (_projectID, input) => ({
+        task: { ...existing, name: input.name, enabled: input.enabled },
+        tasks: [{ ...existing, enabled: input.enabled }],
+        created: false,
+      })),
+      listScheduledTasks: vi.fn(async () => [existing]),
+    };
+    const loadCatalog = vi.fn(async () => { throw new Error('upstream 503'); });
+    const routes = registerMutationRoutes({
+      projectConfigRuntime,
+      scheduledTasksRuntime: { syncProject: vi.fn(async () => {}) },
+      scheduleSyncRetry: vi.fn(),
+      loadCatalog,
+    });
+
+    const response = createResponse();
+    await routes.put({
+      params: { projectId: 'project-a' },
+      body: {
+        task: {
+          id: 'task-armed',
+          name: 'Armed',
+          enabled: false,
+          schedule: { kind: 'once', date: '2099-01-01', time: '00:00', timezone: 'UTC' },
+          execution: { prompt: 'x', providerID: 'p', modelID: 'good' },
+        },
+      },
+    }, response);
+
+    expect(response.statusCode).toBe(200);
+    expect(response.body.task.enabled).toBe(false);
+    expect(loadCatalog).not.toHaveBeenCalled();
+    expect(projectConfigRuntime.upsertScheduledTask).toHaveBeenCalledWith('project-a', expect.objectContaining({
+      enabled: false,
+    }), {
+      expected: { exists: true, providerID: 'p', modelID: 'good', enabled: true },
+    });
+  });
+
+  it('maps a lock conflict to 409 and does not sync', async () => {
+    const conflict = new Error('scheduled task changed before save');
+    conflict.statusCode = 409;
+    conflict.code = SCHEDULE_CONFLICT_CODE;
+    const syncProject = vi.fn();
+    const routes = registerMutationRoutes({
+      projectConfigRuntime: {
+        upsertScheduledTask: vi.fn(async () => { throw conflict; }),
+        listScheduledTasks: vi.fn(async () => []),
+      },
+      scheduledTasksRuntime: { syncProject },
+      scheduleSyncRetry: vi.fn(),
+    });
+    const response = createResponse();
+    await routes.put({
+      params: { projectId: 'project-a' },
+      body: {
+        task: {
+          name: 'Create',
+          execution: { prompt: 'x', providerID: 'p', modelID: 'good' },
+        },
+      },
+    }, response);
+    expect(response.statusCode).toBe(409);
+    expect(response.body.code).toBe(SCHEDULE_CONFLICT_CODE);
+    expect(syncProject).not.toHaveBeenCalled();
   });
 });

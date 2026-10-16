@@ -97,8 +97,25 @@ it('renders a collapsed agent disclosure with stacked faces and expandable statu
   await act(async () => root.render(<WorkStatusCompact sessionId="s" directory="/repo" />));
   const stack = host.querySelector('[role="group"][aria-label="Subagents"]');
   expect(stack?.querySelectorAll('[data-agent-avatar]')).toHaveLength(3);
-  expect(stack?.querySelector('[aria-label="Explore"]')).not.toBeNull();
+  expect(stack?.querySelector('[aria-label="Explore"]')).toBeNull();
+  expect(stack?.querySelector('[aria-label="Live 0"]')).not.toBeNull();
+  expect(stack?.querySelector('[aria-label="Live 2"]')).not.toBeNull();
   expect(stack?.querySelector('.-ml-1')).not.toBeNull();
+  fixture.faces = [
+    { key: 'done-1', sessionID: 'child-1', seed: 'done-1', label: 'Explore', phase: 'done' },
+    { key: 'done-2', seed: 'done-2', label: 'Plan', phase: 'done' },
+    { key: 'live-only', seed: 'live-only', label: 'Only live', phase: 'working' },
+  ];
+  await act(async () => root.render(<WorkStatusCompact sessionId="s" directory="/repo" />));
+  expect(stack?.querySelectorAll('[data-agent-avatar]')).toHaveLength(1);
+  expect(stack?.querySelector('[aria-label="Only live"]')).not.toBeNull();
+  expect(stack?.querySelector('[aria-label="Explore"]')).toBeNull();
+  expect(stack?.querySelector('.-ml-1')).toBeNull();
+  fixture.faces = [
+    { key: 'done-1', sessionID: 'child-1', seed: 'done-1', label: 'Explore', phase: 'done' },
+    ...Array.from({ length: 3 }, (_, index) => ({ key: `live-${index}`, seed: `live-${index}`, label: `Live ${index}`, phase: 'working' as const })),
+  ];
+  await act(async () => root.render(<WorkStatusCompact sessionId="s" directory="/repo" />));
   expect(stack?.textContent).toContain('3 working·1 done');
   const disclosure = stack?.querySelector<HTMLButtonElement>('button[aria-expanded="false"]');
   expect(disclosure).not.toBeNull();
@@ -120,6 +137,8 @@ it('renders a collapsed agent disclosure with stacked faces and expandable statu
   fixture.faces = fixture.faces.map((face) => ({ ...face, phase: 'done' }));
   await act(async () => root.render(<WorkStatusCompact sessionId="s" directory="/repo" />));
   expect(disclosure?.textContent).toBe('4 done');
+  expect(disclosure?.querySelectorAll('[data-agent-avatar]')).toHaveLength(3);
+  expect(disclosure?.querySelector('[aria-label="Explore"]')).not.toBeNull();
   expect(stack?.querySelectorAll('section')).toHaveLength(1);
   expect(stack?.querySelector('section')?.getAttribute('aria-label')).toBe('4 done');
   fixture.faces = [];

@@ -1,4 +1,5 @@
 import type { Message, Part } from '@/lib/opencode/v2-types'
+import { mergeTranscriptOrder } from './transcript-order'
 
 import { isMessageSnapshotOpen, isSlimPart } from "./displayParts"
 import {
@@ -474,8 +475,8 @@ function fillMissingTerminalMessageFields(live: Message, snapshot: Message): Mes
 
 /**
  * Fold snapshot rows into live conversation order.
- * Known IDs stay where they are. New IDs insert after the previous snapshot
- * neighbor already in the live list. A snapshot that shares no IDs uses
+ * Snapshot order repairs overlapping rows; local-only rows retain their next
+ * surviving neighbor. A snapshot that shares no IDs uses
  * `unanchored` (prepend older history, append idle/queue tail, or insert by
  * Host `time.created` for reconcile continuation pages).
  */
@@ -495,27 +496,20 @@ function mergeMessagesInConversationOrder(
     merged.push(next)
   }
   const existingIDs = new Set(existing.map((message) => message.id))
-  const newcomers = snapshots.filter((message) => !existingIDs.has(message.id))
-  if (newcomers.length === 0) return changed ? merged : existing
-
   const anchored = snapshots.some((message) => existingIDs.has(message.id))
   if (!anchored) {
-    if (unanchored === "prepend") return [...newcomers, ...merged]
-    if (unanchored === "by-created") return insertMessagesByCreated(merged, newcomers)
-    return [...merged, ...newcomers]
+    if (unanchored === "prepend") return [...snapshots, ...merged]
+    if (unanchored === "by-created") return insertMessagesByCreated(merged, snapshots)
+    return [...merged, ...snapshots]
   }
 
-  let lastPlacedIndex = -1
-  for (const snapshot of snapshots) {
-    const index = merged.findIndex((message) => message.id === snapshot.id)
-    if (index >= 0) {
-      lastPlacedIndex = index
-      continue
-    }
-    lastPlacedIndex += 1
-    merged.splice(lastPlacedIndex, 0, snapshot)
-  }
-  return merged
+  const byID = new Map(snapshots.map(message => [message.id, message]))
+  for (const message of merged) byID.set(message.id, message)
+  const order = mergeTranscriptOrder(existing.map(message => message.id), snapshots.map(message => message.id))
+  const ordered = order.map(id => byID.get(id)!)
+  return !changed && ordered.length === existing.length && ordered.every((message, index) => message === existing[index])
+    ? existing
+    : ordered
 }
 
 /**
