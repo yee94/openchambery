@@ -18,6 +18,10 @@ import { createRequestSecurityRuntime } from '../security/request-security.js';
 import { createUiAuth } from '../ui-auth/ui-auth.js';
 import { registerOpenCodeProxy } from '../opencode/proxy.js';
 import { createGlobalUiEventBroadcaster } from '../event-stream/runtime.js';
+import { opencodeClient } from '../../../../ui/src/lib/opencode/client.ts';
+import { configureRuntimeUrlResolver, getRuntimeUrlResolver, setRuntimeUrlResolver } from '../../../../ui/src/lib/runtime-url.ts';
+import { setRuntimeBearerToken } from '../../../../ui/src/lib/runtime-auth.ts';
+import { adoptRelayTunnel, deactivateRelayTunnel } from '../../../../ui/src/lib/relay/runtime-tunnel.ts';
 
 const timeoutMs = 10_000;
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -192,6 +196,17 @@ const startOrigin = async () => {
         });
         return;
       }
+      if (pathname === '/api/agent' && req.method === 'GET') {
+        await uiAuth.requireAuth(req, res, () => {
+          const directory = new URL(req.url ?? '/', 'http://origin').searchParams.get('location[directory]');
+          if (directory !== '/remote/worktrees/project/feature' || !req.headers['x-openchamber-relay-connection']) {
+            res.status(404).json({ _tag: 'LocationNotFoundError', location: { directory }, message: `Location not found: ${directory}` });
+            return;
+          }
+          res.json({ location: { directory }, data: [{ id: 'build', name: 'Remote Build', mode: 'primary' }] });
+        });
+        return;
+      }
       if (pathname === '/api/e2e/sse' && req.method === 'GET') {
         await uiAuth.requireAuth(req, res, async () => {
           bearerRequests.push(String(req.headers.authorization ?? ''));
@@ -339,5 +354,20 @@ describe('private relay compiled-process boundary', () => {
     await eventually(() => host!.getStatus().state === 'connected' && client!.getStatus().state === 'connected', 'host and client did not reconnect after Relay restart');
     const recovered = await client.fetch('/api/e2e/http', { method: 'POST', headers: { authorization: 'Bearer client-token' }, body: 'recovered' });
     expect(await recovered.json()).toEqual({ body: 'recovered', hasRelayConnection: true });
+    const previousResolver = getRuntimeUrlResolver();
+    try {
+      configureRuntimeUrlResolver({ apiBaseUrl: 'http://127.0.0.1:1' });
+      opencodeClient.reconnectToRuntimeBaseUrl();
+      const sdk = opencodeClient.getSdkClient();
+      configureRuntimeUrlResolver({ apiBaseUrl: 'https://relay-runtime.example' });
+      setRuntimeBearerToken('client-token');
+      adoptRelayTunnel({ relayUrl: relay.url, serverId: identity.serverId, hostEncPubJwk: identity.hostEncPubJwk }, client);
+      const agents = await sdk.agent.list({ location: { directory: '/remote/worktrees/project/feature' } });
+      expect(agents.data[0].name).toBe('Remote Build');
+    } finally {
+      deactivateRelayTunnel();
+      setRuntimeBearerToken(null);
+      setRuntimeUrlResolver(previousResolver);
+    }
   });
 });

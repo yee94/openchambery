@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [2.0.9-beta.26] - 2026-10-16
+
+### 修复
+
+- 修复恢复远程连接或切换实例后，部分请求仍访问旧设备、绕过 Relay 的问题；远程 worktree 的 Agent 与配置请求现在始终使用当前连接，避免误报目录不存在并阻塞模型选择。
+
 ## [2.0.9-beta.25] - 2026-10-16
 
 ### 修复

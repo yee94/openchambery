@@ -305,7 +305,18 @@ const createRuntimeOpencodeClient = (config: { baseUrl: string; headers?: Header
   return withSessionMessageCompat(OpenCode.make({
     baseUrl: config.baseUrl,
     ...(config.headers ? { headers: config.headers } : {}),
-    fetch: runtimeFetch,
+    fetch: (input, init) => {
+      // SDK clients can outlive a Host/transport switch. Their absolute URLs
+      // still name the old Host; only the SDK owns the route, not its origin.
+      // Resolve at dispatch so these calls cannot bypass the active relay.
+      const url = new URL(input instanceof Request ? input.url : input.toString());
+      const path = `${url.pathname}${url.search}`;
+      if (input instanceof Request) {
+        const target = ensureAbsoluteBaseUrl(getRuntimeUrlResolver().api(path));
+        return runtimeFetch(new Request(target, input), init);
+      }
+      return runtimeFetch(path, init);
+    },
   }));
 };
 

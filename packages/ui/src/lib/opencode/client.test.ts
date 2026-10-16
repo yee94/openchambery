@@ -134,7 +134,7 @@ mock.module('@/contexts/runtimeAPIRegistry', () => ({
 
 mock.module('@/lib/runtime-url', () => ({
   getRuntimeUrlResolver: mock(() => ({
-    api: (path: string) => path === '/' ? (runtimeBase.replace(/\/api$/, '') || '/') : runtimeBase,
+    api: (path: string) => path === '/' ? (runtimeBase.replace(/\/api$/, '') || '/') : `${runtimeBase.replace(/\/api$/, '')}${path}`,
   })),
 }));
 
@@ -224,11 +224,37 @@ beforeEach(() => {
 });
 
 describe('opencodeClient v2 make()', () => {
-  test('constructs the promise client with origin baseUrl and runtimeFetch', () => {
-    const created = constructorConfigs[0] as { baseUrl: string; fetch?: unknown };
-    expect(created.fetch).toBe(runtimeFetchMock);
+  test('constructs the promise client with origin baseUrl and dispatch-time runtime routing', async () => {
+    const created = constructorConfigs[0] as { baseUrl: string; fetch: typeof fetch };
+    const controller = new AbortController();
+    const init = { method: 'GET', signal: controller.signal };
+    await created.fetch(new URL('https://previous.example/api/agent?location%5Bdirectory%5D=%2Fworktree'), init);
+    expect(runtimeFetchMock).toHaveBeenLastCalledWith('/api/agent?location%5Bdirectory%5D=%2Fworktree', init);
     expect(created.baseUrl === '/' || created.baseUrl.endsWith('/') || !created.baseUrl.endsWith('/api')).toBe(true);
     expect(created.baseUrl.endsWith('/api')).toBe(false);
+  });
+
+  test('rebases SDK Request inputs without losing their stream body or abort signal', async () => {
+    const created = constructorConfigs[0] as { fetch: typeof fetch };
+    runtimeBase = 'https://current.example/api';
+    const controller = new AbortController();
+    const request = new Request('https://previous.example/api/session', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-test-request': 'preserved' },
+      body: new ReadableStream({ start(stream) { stream.enqueue(new TextEncoder().encode('{"title":"remote"}')); stream.close(); } }),
+      signal: controller.signal,
+      duplex: 'half',
+    } as RequestInit);
+
+    await created.fetch(request);
+
+    const forwarded = healthFetchCalls.at(-1)?.[0] as Request;
+    expect(forwarded.url).toBe('https://current.example/api/session');
+    expect(forwarded.method).toBe('POST');
+    expect(forwarded.headers.get('x-test-request')).toBe('preserved');
+    expect(await forwarded.text()).toBe('{"title":"remote"}');
+    controller.abort();
+    expect(forwarded.signal.aborted).toBe(true);
   });
 });
 
