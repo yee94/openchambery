@@ -26,6 +26,7 @@ const click = (
 ): MouseEvent => {
   const event = new MouseEvent('click', {
     bubbles: true,
+    cancelable: true,
     button: 0,
     metaKey: modifiers?.metaKey,
     ctrlKey: modifiers?.ctrlKey,
@@ -43,6 +44,51 @@ afterEach(() => {
 });
 
 describe('handleMarkstreamPointerEvent', () => {
+  test.each(['docs/report.md', '/repo/docs/report.md', './README.md#L10'])('never navigates the document for an unannotated file link: %s', (href) => {
+    const root = document.createElement('div');
+    const anchor = document.createElement('a');
+    anchor.href = href;
+    anchor.innerHTML = '<strong>Report</strong>';
+    root.append(anchor);
+    const event = click(anchor.firstElementChild!, root);
+
+    handleMarkstreamPointerEvent(event, {});
+
+    expect(event.defaultPrevented).toBe(true);
+    expect(openExternalUrl).not.toHaveBeenCalled();
+  });
+
+  test('blocks an unresolved file link while reference detection is enabled', () => {
+    const root = document.createElement('div');
+    const anchor = document.createElement('a');
+    anchor.href = 'docs/report.md';
+    root.append(anchor);
+    const event = click(anchor, root);
+
+    handleMarkstreamPointerEvent(event, { fileReference: { effectiveDirectory: '/repo' } });
+
+    expect(event.defaultPrevented).toBe(true);
+    expect(openFileReferenceFromElement).not.toHaveBeenCalled();
+  });
+
+  test('opens a resolved file link without navigating the document', () => {
+    const root = document.createElement('div');
+    const token = document.createElement('span');
+    token.setAttribute('data-openchamber-file-link', 'true');
+    token.setAttribute('data-openchamber-file-ref', 'docs/report.md');
+    const anchor = document.createElement('a');
+    anchor.href = 'docs/report.md';
+    token.append(anchor);
+    root.append(token);
+    const event = click(anchor, root);
+    const fileReference = { effectiveDirectory: '/repo' };
+
+    handleMarkstreamPointerEvent(event, { fileReference });
+
+    expect(event.defaultPrevented).toBe(true);
+    expect(openFileReferenceFromElement).toHaveBeenCalledWith(token, fileReference);
+  });
+
   test('opens https links via in-app browser opener when directory is present', () => {
     const openInAppBrowser = vi.fn();
     const root = document.createElement('div');

@@ -1,5 +1,5 @@
 import { isExternalHttpUrl, openExternalUrl } from '@/lib/url';
-import { FILE_LINK_ATTR, FILE_LINK_SELECTOR } from '../fileReferenceDecorate';
+import { FILE_LINK_ATTR, FILE_LINK_SELECTOR, isLikelyFilePath } from '../fileReferenceDecorate';
 import {
   openFileReferenceFromElement,
   type OpenFileReferenceOptions,
@@ -81,6 +81,12 @@ export const handleMarkstreamPointerEvent = (
     return;
   }
   const href = anchor.getAttribute('href') ?? '';
+  // File probes only control whether a reference can open, never document navigation.
+  if (isLikelyFilePath(href)) {
+    event.preventDefault();
+    event.stopPropagation();
+    return;
+  }
   if (!isExternalHttpUrl(href)) {
     return;
   }

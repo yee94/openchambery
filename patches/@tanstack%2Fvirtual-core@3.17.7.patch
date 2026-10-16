@@ -1,7 +1,9 @@
 # OpenChamber patch: @tanstack/virtual-core@3.17.7
 #
-# What: clamp calculateRange scrollOffset to [0, totalSize - viewport] so
+# What: clamp calculateRange scrollOffset to [0, scrollMargin + totalSize - viewport] so
 # transient end-anchor adjustments cannot produce an out-of-bounds render range.
+# Ancestor-scrolled lists include scrollMargin in scrollOffset and item positions,
+# but getTotalSize excludes it. Keep the clamp in the ancestor's coordinates.
 #
 # Applied by: bun package.json "patchedDependencies" (install-time, not postinstall).
 #
@@ -19,7 +21,7 @@
            this.range = null;
            return null;
          }
-+        const maxScrollOffset = Math.max(this.getTotalSize() - outerSize, 0);
++        const maxScrollOffset = Math.max(this.options.scrollMargin + this.getTotalSize() - outerSize, 0);
 +        const effectiveScrollOffset = Math.min(Math.max(scrollOffset, 0), maxScrollOffset);
          this.range = calculateRangeImpl(
            measurements,
@@ -35,7 +37,7 @@
            this.range = null;
            return null;
          }
-+        const maxScrollOffset = Math.max(this.getTotalSize() - outerSize, 0);
++        const maxScrollOffset = Math.max(this.options.scrollMargin + this.getTotalSize() - outerSize, 0);
 +        const effectiveScrollOffset = Math.min(Math.max(scrollOffset, 0), maxScrollOffset);
          this.range = calculateRangeImpl(
            measurements,

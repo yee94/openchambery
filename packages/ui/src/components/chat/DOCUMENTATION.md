@@ -1,5 +1,9 @@
 # Chat components
 
+## Markdown file-link navigation
+
+Markstream's delegated primary-click handler prevents document navigation for file-path anchors even before existence probing has annotated them, when probing fails, or while file references are disabled during streaming. Confirmed references still use the shared file opener; unresolved references remain inert instead of replacing the client with a relative URL. HTTP(S) links retain their in-app browser behavior. Coverage: `markstream/markstreamInteractions.test.ts`.
+
 ## Revert failure feedback
 
 The primary session store reports every revert failure with a localized toast and the original diagnostic; a confirmed missing-message recovery only claims the conversation was refreshed after successful reconciliation. `ChatMessage` consumes the rejected promise and releases its pending action in `finally`. Hosted-surface callbacks report failures at that boundary. Busy errors retain their specific copy.
