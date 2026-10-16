@@ -109,12 +109,14 @@ describe('projectTurnRecords', () => {
         expect(projection.turns[1].assistantMessageIds).toEqual([]);
     });
 
-    test('a parentless assistant before the first loaded user stays ungrouped', () => {
+    test('a parentless assistant before the first loaded user owns a partial turn', () => {
         const leading = createMessageEntry({ id: 'a0', role: 'assistant', createdAt: 2 });
         const user = createMessageEntry({ id: 'u1', role: 'user', createdAt: 1 });
         const projection = projectTurnRecords([leading, user]);
-        expect(projection.ungroupedMessageIds.has('a0')).toBe(true);
-        expect(projection.turns[0].assistantMessageIds).toEqual([]);
+        expect(projection.ungroupedMessageIds.has('a0')).toBe(false);
+        expect(projection.turns[0].userMessage).toBeUndefined();
+        expect(projection.turns[0].assistantMessageIds).toEqual(['a0']);
+        expect(projection.turns[1].assistantMessageIds).toEqual([]);
     });
 
     test('keeps v2 native synthetic notices inside the current turn instead of splitting it', () => {
@@ -194,9 +196,10 @@ describe('projectTurnRecords', () => {
 
         const projection = projectTurnRecords([first, second]);
 
-        expect(projection.turns).toHaveLength(0);
-        expect(projection.ungroupedMessageIds.has('a1')).toBe(true);
-        expect(projection.ungroupedMessageIds.has('a2')).toBe(true);
+        expect(projection.turns).toHaveLength(1);
+        expect(projection.turns[0].userMessage).toBeUndefined();
+        expect(projection.turns[0].assistantMessageIds).toEqual(['a1', 'a2']);
+        expect(projection.ungroupedMessageIds.size).toBe(0);
     });
 
     test('keeps v2 compaction cards as ungrouped timeline entries', () => {

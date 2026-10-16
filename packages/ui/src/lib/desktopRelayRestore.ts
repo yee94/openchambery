@@ -8,7 +8,7 @@ import {
 } from '@/lib/desktopHosts';
 import { runtimeKeyForDesktopHost } from '@/lib/desktopHostSwitch';
 import { runtimeFetch } from '@/lib/runtime-fetch';
-import { getRuntimeKey, switchRuntimeEndpoint } from '@/lib/runtime-switch';
+import { getRuntimeGeneration, getRuntimeKey, switchRuntimeEndpoint } from '@/lib/runtime-switch';
 
 // Let the post-switch bootstrap traffic settle before the background refresh.
 const CANDIDATE_REFRESH_DELAY_MS = 5_000;
@@ -83,9 +83,12 @@ export const refreshDesktopHostCandidates = async (hostId: string): Promise<void
   // The candidates fetch rides the active runtime's transport — only meaningful
   // while this host IS the active runtime.
   if (getRuntimeKey() !== runtimeKey) return;
+  const generation = getRuntimeGeneration();
+  const isCurrent = () => getRuntimeKey() === runtimeKey && getRuntimeGeneration() === generation;
   candidateRefreshInFlight = true;
   try {
     const config = await desktopHostsGet().catch(() => null);
+    if (!isCurrent()) return;
     const host = config?.hosts.find((entry) => entry.id === hostId);
     if (!config || !host?.relay) return;
     const currentApiUrl = host.apiUrl ? normalizeHostUrl(host.apiUrl) : null;
@@ -94,6 +97,7 @@ export const refreshDesktopHostCandidates = async (hostId: string): Promise<void
     const response = await runtimeFetch('/api/client-auth/connection/candidates').catch(() => null);
     if (!response?.ok) return;
     const payload = await response.json().catch(() => null) as { serverId?: unknown; candidates?: unknown } | null;
+    if (!isCurrent()) return;
     // Identity gate: the refresh must come from the server this host entry is
     // pinned to; anything else (including old servers without serverId) is ignored.
     if (!payload || payload.serverId !== host.relay.serverId) return;
@@ -118,6 +122,7 @@ export const refreshDesktopHostCandidates = async (hostId: string): Promise<void
         initialHostChoiceCompleted: config.initialHostChoiceCompleted,
       }).catch(() => undefined);
     }
+    if (!isCurrent()) return;
 
     // We are on the relay for this host (the refresh call itself proves the
     // tunnel works) — only adopt the direct transport when the probe is a
@@ -130,7 +135,7 @@ export const refreshDesktopHostCandidates = async (hostId: string): Promise<void
       expectedServerId: host.relay.serverId,
     }).catch(() => ({ status: 'unreachable' as const, latencyMs: 0 }));
     if (!isDirectTransportUsable(probe.status)) return;
-    if (getRuntimeKey() !== runtimeKey) return; // user switched away meanwhile
+    if (!isCurrent()) return; // user switched away or replaced this transport meanwhile
     switchRuntimeEndpoint({
       apiBaseUrl: nextApiUrl,
       clientToken: host.clientToken || null,
@@ -164,8 +169,11 @@ export const scheduleDesktopHostCandidateRefresh = (hostId: string): void => {
  */
 export const restoreDesktopRelayRuntime = async (targetHostId?: string): Promise<void> => {
   if (!isElectronShell()) return;
+  const initialRuntimeKey = getRuntimeKey();
+  const initialGeneration = getRuntimeGeneration();
+  const canRestore = () => getRuntimeKey() === initialRuntimeKey && getRuntimeGeneration() === initialGeneration;
   const config = await desktopHostsGet().catch(() => null);
-  if (!config) return;
+  if (!config || !canRestore()) return;
   // An explicit target (a "new window for host X") wins over the default-host
   // relaunch logic.
   const hostId = targetHostId || (config.defaultHostId !== 'local' ? config.defaultHostId : null);
@@ -191,9 +199,8 @@ export const restoreDesktopRelayRuntime = async (targetHostId?: string): Promise
       runtimeKey,
       relay: host.relay ?? undefined,
     });
-    // On the relay because the stored direct address did not answer (yet) —
-    // ask the server for its current LAN address in the background and
-    // hot-switch back to direct if it simply moved (DHCP re-lease).
+    // Ask the connected Host for its current LAN address in a separate,
+    // identity-verified refresh; the losing startup probe cannot switch it.
     scheduleDesktopHostCandidateRefresh(host.id);
   };
 
@@ -206,8 +213,8 @@ export const restoreDesktopRelayRuntime = async (targetHostId?: string): Promise
   // Race the direct probe against a short headstart instead of serializing the
   // full probe timeout in front of the relay fallback: a live LAN answers well
   // inside the window (direct keeps priority); a dead one no longer delays
-  // startup — the relay takes over and a late direct success hot-switches back
-  // (stable runtimeKey → transport-only swap, same as the candidate refresh).
+  // startup. Once relay wins, discard the losing direct result, as mobile does.
+  // A later candidate refresh must independently verify identity and generation.
   // Direct adoption requires a USABLE probe: 'auth' (reachable but our token
   // is rejected) must keep the relay transport instead of stranding the
   // session on a direct leg that 401s everything.
@@ -224,6 +231,7 @@ export const restoreDesktopRelayRuntime = async (targetHostId?: string): Promise
     probePromise,
     new Promise<null>((resolve) => setTimeout(() => resolve(null), DIRECT_PROBE_HEADSTART_MS)),
   ]);
+  if (!canRestore()) return;
   if (winner) {
     if (probeUsable(winner)) {
       switchToDirect(directUrl);
@@ -233,12 +241,7 @@ export const restoreDesktopRelayRuntime = async (targetHostId?: string): Promise
     return;
   }
 
-  // Headstart expired: connect via relay now; adopt the direct transport if the
-  // still-running probe succeeds a moment later.
+  // Headstart expired: select relay once. The caught probePromise may finish,
+  // but no late callback may tear down the transport selected by this race.
   switchToRelay();
-  void probePromise.then((probe) => {
-    if (!probeUsable(probe)) return;
-    if (getRuntimeKey() !== runtimeKey) return; // user switched away meanwhile
-    switchToDirect(directUrl);
-  });
 };

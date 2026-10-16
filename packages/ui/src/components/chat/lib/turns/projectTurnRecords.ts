@@ -76,8 +76,8 @@ const createTurnMessageRecord = (message: ChatMessageEntry, order: number): Turn
     };
 };
 
-const buildTurnStreamState = (userMessage: ChatMessageEntry, assistantMessages: ChatMessageEntry[]): TurnStreamState => {
-    const startedAt = getMessageCreatedAt(userMessage);
+const buildTurnStreamState = (userMessage: ChatMessageEntry | undefined, assistantMessages: ChatMessageEntry[]): TurnStreamState => {
+    const startedAt = userMessage ? getMessageCreatedAt(userMessage) : undefined;
     let completedAt: number | undefined;
     let maxPartEndedAt: number | undefined;
     let isStreaming = false;
@@ -254,9 +254,9 @@ const hydrateTurnRecord = (
     effectiveOptions: ProjectTurnRecordsOptions,
 ): TurnRecord => {
     turn.summary = projectTurnSummary(turn.assistantMessages);
-    turn.summaryText = turn.summary.text ?? getUserSummaryBody(turn.userMessage);
-    turn.diffStats = projectTurnDiffStats(turn.userMessage);
-    turn.changedFiles = effectiveOptions.showTurnChangedFiles
+    turn.summaryText = turn.summary.text ?? (turn.userMessage ? getUserSummaryBody(turn.userMessage) : undefined);
+    turn.diffStats = turn.userMessage ? projectTurnDiffStats(turn.userMessage) : undefined;
+    turn.changedFiles = effectiveOptions.showTurnChangedFiles && turn.userMessage
         ? projectTurnChangedFiles(turn.userMessage)
         : undefined;
 
@@ -265,7 +265,7 @@ const hydrateTurnRecord = (
     // An automatic checkpoint after the last step is a continuation boundary,
     // not the terminal finish of the user's request. Live status still gates
     // the working presentation; a later assistant owns its own terminal result.
-    for (let index = turn.messages.length - 1; index > 0; index -= 1) {
+    for (let index = turn.messages.length - 1; index >= 0; index -= 1) {
         const record = turn.messages[index];
         if (record.role === 'assistant') break;
         if (record.role !== 'compaction') continue;
@@ -276,7 +276,7 @@ const hydrateTurnRecord = (
         }
         break;
     }
-    turn.activityPresentationKind = resolveTurnActivityPresentationKind(turn.userMessage);
+    turn.activityPresentationKind = turn.userMessage ? resolveTurnActivityPresentationKind(turn.userMessage) : 'default';
 
     const activity = projectTurnActivity({
         turnId: turn.turnId,
@@ -284,6 +284,19 @@ const hydrateTurnRecord = (
         messages: turn.messages,
         showTextJustificationActivity: effectiveOptions.showTextJustificationActivity,
     });
+    const previous = effectiveOptions.previousProjection?.indexes.turnById.get(turn.turnId);
+    if (previous) {
+        const previousSegments = new Map(previous.activitySegments.map((segment) => [segment.anchorMessageId, segment]));
+        for (const segment of activity.activitySegments) {
+            for (const part of segment.parts) {
+                const retained = previousSegments.get(part.messageId);
+                if (!retained) continue;
+                segment.id = retained.id;
+                segment.anchorMessageId = retained.anchorMessageId;
+                break;
+            }
+        }
+    }
     turn.activityParts = activity.activityParts;
     turn.activitySegments = activity.activitySegments;
     turn.hasTools = activity.hasTools;
@@ -408,7 +421,8 @@ export const projectTurnRecords = (
             groupedMessageIds.add(message.info.id);
             return;
         }
-        if (role !== 'user') {
+        const isLeadingAssistant = role === 'assistant' && turns.length === 0 && !getMessageParentId(message);
+        if (role !== 'user' && !isLeadingAssistant) {
             return;
         }
         if (turns.length > 0 && isNativeSyntheticNotice(message)) {
@@ -420,10 +434,10 @@ export const projectTurnRecords = (
         const turnId = message.info.id;
         const turn: TurnRecord = {
             turnId,
-            userMessageId: message.info.id,
-            userMessage: message,
+            userMessageId: isLeadingAssistant ? undefined : message.info.id,
+            userMessage: isLeadingAssistant ? undefined : message,
             headerMessageId: undefined,
-            messages: [createTurnMessageRecord(message, index)],
+            messages: isLeadingAssistant ? [] : [createTurnMessageRecord(message, index)],
             assistantMessageIds: [],
             assistantMessages: [],
             activityParts: [],
@@ -443,11 +457,13 @@ export const projectTurnRecords = (
             hasConfirmedFinalBody: false,
         };
         turns.push(turn);
-        turnByUserId.set(turn.userMessageId, turn);
-        groupedMessageIds.add(message.info.id);
+        if (turn.userMessageId) {
+            turnByUserId.set(turn.userMessageId, turn);
+            groupedMessageIds.add(message.info.id);
+        }
     });
 
-    let precedingTurn: TurnRecord | undefined;
+    let precedingTurn: TurnRecord | undefined = turns[0]?.userMessage ? undefined : turns[0];
     messages.forEach((message, index) => {
         const role = resolveMessageRole(message);
         const userTurn = turnByUserId.get(message.info.id);
@@ -478,6 +494,25 @@ export const projectTurnRecords = (
         groupedMessageIds.add(message.info.id);
     });
 
+    // A truncated leading turn acquires older siblings and eventually its user.
+    // Retain the mounted turn identity through that enrichment, not its old data.
+    const previousProjection = effectiveOptions.previousProjection;
+    if (previousProjection) {
+        for (const turn of turns) {
+            for (const message of turn.assistantMessages) {
+                const previousId = previousProjection.indexes.messageToTurnId.get(message.info.id);
+                const previous = previousId ? previousProjection.indexes.turnById.get(previousId) : undefined;
+                if (previous && (!previous.userMessage || previous.userMessageId === turn.userMessageId)) {
+                    turn.turnId = previous.turnId;
+                    if (previous.headerMessageId && turn.assistantMessageIds.includes(previous.headerMessageId)) {
+                        turn.headerMessageId = previous.headerMessageId;
+                    }
+                    break;
+                }
+            }
+        }
+    }
+
     const stableTurns = settleHistoricalActiveTurns(
         hydrateStableTurnRecords(turns, effectiveOptions),
     );
@@ -493,8 +528,7 @@ export const projectTurnRecords = (
             if (getMessageParentId(message)) {
                 return;
             }
-            // A parentless leading assistant has no loaded preceding user; keep
-            // its content visible even when later user turns are in this page.
+            // Native leading assistants already belong to the partial turn.
         }
         ungroupedMessageIds.add(message.info.id);
     });

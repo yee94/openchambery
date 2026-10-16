@@ -1034,22 +1034,21 @@ const probeHostWithTimeout = async (url, timeoutMs, clientToken = '', requestHea
   // Identity gate for learned/untrusted addresses: verify the UNAUTHENTICATED
   // /health identity before the token-carrying version fetch, so the bearer
   // token is never sent to a re-assigned address that now belongs to a
-  // different machine. Older servers omit serverId from /health; only an
-  // explicit mismatch rejects.
+  // different machine. Missing/failed identity is not proof of this Host:
+  // keep the pinned relay instead of adopting an unverified direct candidate.
   if (typeof expectedServerId === 'string' && expectedServerId.trim()) {
     const healthUrl = buildHealthUrl(url);
     if (healthUrl) {
       try {
-        const response = await fetch(healthUrl, { signal: AbortSignal.timeout(timeoutMs), headers: { Accept: 'application/json' } });
-        if (response.ok) {
-          const payload = await response.json().catch(() => null);
-          const reported = typeof payload?.serverId === 'string' ? payload.serverId.trim() : '';
-          if (reported && reported !== expectedServerId.trim()) {
-            return { status: 'wrong-service', latencyMs: Date.now() - started };
-          }
+        const response = await fetch(healthUrl, { signal: AbortSignal.timeout(timeoutMs), headers: { Accept: 'application/json' }, redirect: 'error' });
+        if (!response.ok) return { status: 'unreachable', latencyMs: Date.now() - started };
+        const payload = await response.json().catch(() => null);
+        const reported = typeof payload?.serverId === 'string' ? payload.serverId.trim() : '';
+        if (reported !== expectedServerId.trim()) {
+          return { status: 'wrong-service', latencyMs: Date.now() - started };
         }
       } catch {
-        // Unreachable/timeout surfaces in the version fetch below.
+        return { status: 'unreachable', latencyMs: Date.now() - started };
       }
     }
   }

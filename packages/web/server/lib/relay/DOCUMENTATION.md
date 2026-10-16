@@ -93,6 +93,8 @@ pinned relay identity, and verify `/health`'s `serverId` on a learned address
 **before** sending their bearer token to it — a re-assigned LAN address may now
 belong to a different machine.
 
+Desktop startup restore selects its transport once, like mobile: when Relay wins the headstart race, a late direct result is discarded. Startup restore and background candidate refresh also capture the runtime generation. A late IPC read or refresh probe cannot overwrite a subsequent instance/transport choice, including switching away and back to the same Host. Native direct probes require an exact health identity match; missing/failed identity retains the pinned Relay. `desktopRelayRouting.integration.test.ts` covers startup, remote windows, manual switching, candidate refresh, and late-probe races through the native probe, renderer runtime and real SDK; it asserts remote worktree Agent/Provider reads never reach the client's local HTTP service.
+
 ## Two implementations, kept in sync
 
 The E2EE and framing logic exists twice: TypeScript in `packages/ui/src/lib/relay/` (shared by the client and the normative reference) and a JavaScript mirror in this module (the host, which is plain JS ESM). They **must stay byte-compatible** — a client encrypted by one must decrypt on the other. A cross-compatibility test (`cross-compat.test.js`) imports the TS modules directly and exercises a full TS-client ↔ JS-host exchange. Any change to the wire format, frame codec, handshake, or batching must update both sides and keep that test green (`bunx vitest run --project @openchamber/web packages/web/server/lib/relay/cross-compat.test.js`). Compiled Host/Client e2e: `bunx vitest run --project @openchamber/web packages/web/server/lib/relay/relay-server.e2e.test.ts`.

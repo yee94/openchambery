@@ -44,11 +44,12 @@ const TurnItem: React.FC<TurnItemProps> = ({
 }) => {
     const isMobile = useUIStore((state) => state.isMobile);
     const surface = useSessionSurface();
-    const userMessageCreatedAt = (turn.userMessage.info.time as { created?: number } | undefined)?.created;
+    const userMessageCreatedAt = (turn.userMessage?.info.time as { created?: number } | undefined)?.created;
+    const sourceMessage = turn.userMessage ?? turn.assistantMessages[0];
     // Compact is a session command, not a user-authored bubble. Keep the turn
     // identity so the previous assistant stream does not remount.
     const hideUserMessage = turn.activityPresentationKind === 'compaction';
-    const isShellTurn = isUserShellMessage(turn.userMessage);
+    const isShellTurn = Boolean(turn.userMessage && isUserShellMessage(turn.userMessage));
 
     return (
         <section
@@ -56,9 +57,9 @@ const TurnItem: React.FC<TurnItemProps> = ({
             id={`turn-${turn.turnId}`}
             data-turn-id={turn.turnId}
             data-turn-activity-expanded={activityExpanded}
-            data-scroll-spy-id={turn.turnId}
+            data-scroll-spy-id={turn.userMessageId ?? turn.turnId}
         >
-            {hideUserMessage ? null : stickyUserHeader && !isShellTurn ? (
+            {!turn.userMessage || hideUserMessage ? null : stickyUserHeader && !isShellTurn ? (
                 <div className="sticky top-0 z-20 relative bg-[var(--surface-background)] [overflow-anchor:none]">
                     <div className="relative z-10">
                         {renderMessage(turn.userMessage, activityExpanded)}
@@ -115,16 +116,16 @@ const TurnItem: React.FC<TurnItemProps> = ({
                 activityExpanded={activityExpanded}
                 renderMessage={renderMessage}
             />
-            {showSessionError && surface.active && surface.capabilities.compose
-                && (!surface.sessionId || surface.sessionId === turn.userMessage.info.sessionID) ? (
+            {showSessionError && sourceMessage && surface.active && surface.capabilities.compose
+                && (!surface.sessionId || surface.sessionId === sourceMessage.info.sessionID) ? (
                 <SessionErrorNotice
-                    sessionId={turn.userMessage.info.sessionID}
-                    directory={turn.userMessage.sourceDirectory ?? surface.directory}
+                    sessionId={sourceMessage.info.sessionID}
+                    directory={sourceMessage.sourceDirectory ?? surface.directory}
                     hasInlineError={Boolean(turn.assistantMessages.at(-1)?.info.error)}
                     fallbackHeader={!isShellTurn && !pendingAssistantHeader && !assistantHeaderMessage ? (
                         <TurnAssistantHeader
                             userMessage={turn.userMessage}
-                            pendingPresentation={resolvePendingAssistantHeader(readUserMessageHeaderIdentity(turn.userMessage.info))}
+                            pendingPresentation={resolvePendingAssistantHeader(readUserMessageHeaderIdentity(sourceMessage.info))}
                             assistantIsInActiveTurn={false}
                             isMobile={isMobile}
                         />

@@ -17,7 +17,8 @@ afterAll(() => {
     if (!keepEvidence()) for (const dir of workDirs) rmSync(dir, { recursive: true, force: true });
 });
 
-test.skipIf(!resolveChrome()).each(['normal', 'delayed-resize', 'virtualize-transition', 'continued-drag', 'desktop-short'] as const)('history prepend keeps the reading row (%s)', async (scenario) => {
+test.skipIf(!resolveChrome()).each(['normal', 'delayed-resize', 'virtualize-transition', 'continued-drag', 'desktop-short', 'partial-turn', 'mobile-partial-turn'] as const)('history prepend keeps the reading row (%s)', async (scenario) => {
+    const partialTurn = scenario === 'partial-turn' || scenario === 'mobile-partial-turn';
     const work = mkdtempSync(join(evidenceRoot(), 'history-scroll-'));
     workDirs.push(work);
     await build({
@@ -32,7 +33,7 @@ test.skipIf(!resolveChrome()).each(['normal', 'delayed-resize', 'virtualize-tran
     const html = join(work, 'index.html');
     const css = await compileProductionCssAsync(join(here, '../..'));
     writeFileSync(html, `<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><style>${css}\nhtml,body,#root{margin:0;height:100%;overflow:hidden}</style></head><body><div id="root"></div><script>
-window.process={env:{NODE_ENV:'production'}};window.global=window;window.__OPENCHAMBER_SURFACE__='${scenario === 'desktop-short' ? 'web' : 'mobile'}';window.errors=[];window.resizeWarnings=0;
+window.process={env:{NODE_ENV:'production'}};window.global=window;window.__OPENCHAMBER_SURFACE__='${scenario === 'desktop-short' || scenario === 'partial-turn' ? 'web' : 'mobile'}';window.errors=[];window.resizeWarnings=0;
 window.addEventListener('error',e=>{
   if(e.message==='ResizeObserver loop completed with undelivered notifications.')window.resizeWarnings++;
   else window.errors.push(e.message);
@@ -66,8 +67,13 @@ window.addEventListener('error',e=>{
         await page.evaluate('window.historyScrollFixture.prepare()');
         const prepared = await page.evaluate<Sample>('window.historyScrollFixture.sample()');
         expect(prepared.loads).toBe(0);
-        if (scenario === 'desktop-short') {
-            expect(prepared.max).toBe(0);
+        if (partialTurn) {
+            expect(await page.evaluate('getComputedStyle(document.querySelector("[data-history-scroller]")).overflowY')).toBe('auto');
+            expect(await page.evaluate('document.body.textContent.includes("HIDDEN_PARTIAL_PROCESS")')).toBe(false);
+            await page.evaluate('void (window.retainedAnswer = document.querySelector(\'[data-message-id="partial-final"]\'))');
+        }
+        if (scenario === 'desktop-short' || scenario === 'partial-turn') {
+            if (scenario === 'desktop-short') expect(prepared.max).toBe(0);
             await page.send('Input.dispatchMouseEvent', { type: 'mouseWheel', x: 180, y: 400, deltaX: 0, deltaY: -100 });
         } else {
             await page.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: 180, y: 400 }] });
@@ -75,17 +81,23 @@ window.addEventListener('error',e=>{
         }
         await new Promise((resolve) => setTimeout(resolve, 1000));
         const before = await page.evaluate<Sample>('window.historyScrollFixture.sample()');
-        if (scenario !== 'desktop-short') await page.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+        if (scenario !== 'desktop-short' && scenario !== 'partial-turn') await page.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
         await new Promise((resolve) => setTimeout(resolve, 2500));
         const after = await page.evaluate<Sample>('window.historyScrollFixture.sample()');
         console.info('[history-scroll positions]', { before, after });
         expect(after.loads).toBe(1);
-        expect(after.max - prepared.max, 'the fetched history must actually be rendered').toBeGreaterThan(2000);
+        expect(after.max - prepared.max, 'the fetched history must actually be rendered').toBeGreaterThan(partialTurn ? 100 : 2000);
+        if (partialTurn) {
+            expect(await page.evaluate('document.querySelector(\'[data-message-id="partial-final"]\') === window.retainedAnswer')).toBe(true);
+            expect(await page.evaluate('getComputedStyle(document.querySelector("[data-history-scroller]")).overflowY')).toBe('auto');
+            expect(await page.evaluate('document.body.textContent.includes("HIDDEN_EARLIER_PROCESS")')).toBe(false);
+            expect(Math.abs(after.anchorTop! - after.anchorOffset! - after.fingerDelta), 'enriching the turn must preserve the answer reading position').toBeLessThan(scenario === 'partial-turn' ? 3 : 24);
+        }
         if (scenario !== 'desktop-short') expect(after.max - after.top).toBeGreaterThan(scenario === 'virtualize-transition' ? 100 : 1000);
         expect(after.anchorTop).not.toBeNull();
         expect(after.anchorTop!).toBeLessThan(after.viewportHeight);
         expect(after.anchorBottom!).toBeGreaterThan(0);
-        if (process.env.IOS_HISTORY_SIM === '1' && scenario !== 'desktop-short') {
+        if (process.env.IOS_HISTORY_SIM === '1' && scenario !== 'desktop-short' && scenario !== 'partial-turn') {
             const app = join(work, 'HistoryScroll.app');
             mkdirSync(app);
             const { stdout: sdk } = await exec('xcrun', ['--sdk', 'iphonesimulator', '--show-sdk-path']);
@@ -135,7 +147,7 @@ window.addEventListener('error',e=>{
             console.info('[iOS history evidence]', JSON.stringify({ firstLoaded: native.find((item) => item.loads), last }));
             expect(last.loads).toBe(1);
             const prepared = native.find((item) => item.prepared && item.loads === 0)!;
-            expect(last.max - prepared.max, 'iOS must render the fetched history after the gesture settles').toBeGreaterThan(2000);
+            expect(last.max - prepared.max, 'iOS must render the fetched history after the gesture settles').toBeGreaterThan(partialTurn ? 100 : 2000);
             expect(last.max - last.top, 'iOS must keep reading history rather than return to the live edge').toBeGreaterThan(scenario === 'virtualize-transition' ? 100 : 1000);
             expect(last.pinned).toBe(false);
             expect(last.anchorTop).not.toBeNull();

@@ -4,6 +4,7 @@ import type { DraftStarterRef } from '@/lib/draftStarters';
 import type { MobileKeyboardMode } from '@/lib/mobileKeyboardMode';
 import type { MobileUpdateDecision } from '@/lib/mobile-updates/types';
 import { getRuntimeApiBaseUrl, getRuntimeKey } from '@/lib/runtime-switch';
+import { isRelayModeActive } from '@/lib/relay/runtime-tunnel';
 import { getRegisteredRuntimeAPIs } from '@/contexts/runtimeAPIRegistry';
 
 export type UpdateInfo = {
@@ -466,7 +467,12 @@ export const isDesktopLocalOriginActive = (): boolean => {
   if (typeof window === 'undefined') return false;
   if (!isDesktopShell()) return false;
 
-  if (getRuntimeKey() === 'local') {
+  // Relay uses the shell's loopback as a virtual API address, not as identity.
+  // A saved remote Host must not gain local filesystem/cache behavior from it.
+  if (isRelayModeActive()) return false;
+  const runtimeKey = getRuntimeKey();
+  if (runtimeKey.startsWith('host:')) return false;
+  if (runtimeKey === 'local') {
     return true;
   }
 

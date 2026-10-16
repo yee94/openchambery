@@ -199,6 +199,57 @@ test('an explicit process expansion survives completion', async () => {
     expect(container.textContent).toContain('FINAL_REPLY');
 });
 
+test.each([false, true])('a paginated native turn folds before its user arrives and preserves the answer (mobile=%s)', async (isMobile) => {
+    useUIStore.setState({ isMobile });
+    const native = (id: string, text: string, finish: string) => {
+        const row = assistant(id, text, finish);
+        row.info = { ...row.info, parentID: undefined } as Message;
+        return row;
+    };
+    const process = native('page-process', 'PAGED_PROCESS_NOTE', 'tool-calls');
+    const final = native('page-final', 'PAGED_FINAL_ANSWER', 'stop');
+    await render([process, final], null);
+    expect(container.textContent).toContain('PAGED_FINAL_ANSWER');
+    expect(container.textContent).not.toContain('PAGED_PROCESS_NOTE');
+    expect(container.querySelectorAll('[data-turn-id]')).toHaveLength(1);
+    await act(async () => container.querySelector<HTMLButtonElement>('[data-turn-id] button[aria-expanded="false"]')!.click());
+    expect(container.textContent).toContain('PAGED_PROCESS_NOTE');
+    const answer = container.querySelector('[data-message-id="page-final"]');
+    await render([user, process, final], null);
+    expect(container.textContent).toContain('Keep my request visible.');
+    expect(container.textContent).toContain('PAGED_PROCESS_NOTE');
+    expect(container.querySelector('[data-message-id="page-final"]')).toBe(answer);
+});
+
+test('prepending several pages keeps the open Activity and final answer mounted across a checkpoint', async () => {
+    const native = (id: string, text: string, finish: string) => {
+        const row = assistant(id, text, finish);
+        row.info = { ...row.info, parentID: undefined } as Message;
+        return row;
+    };
+    const process = native('page-mid', 'MIDDLE_PROCESS', 'tool-calls');
+    const final = native('page-answer', 'VISIBLE_FINAL', 'stop');
+    await render([process, final], null);
+    const toggle = container.querySelector<HTMLButtonElement>('[data-turn-id] button[aria-expanded="false"]')!;
+    await act(async () => toggle.click());
+    const answer = container.querySelector('[data-message-id="page-answer"]');
+    const earlier = native('page-early', 'EARLIER_PROCESS', 'tool-calls');
+    await render([earlier, process, final], null);
+    expect(container.textContent).toContain('EARLIER_PROCESS');
+    expect(container.querySelector('[data-message-id="page-answer"]')).toBe(answer);
+    expect(toggle.isConnected).toBe(true);
+    const checkpoint = normalizeSessionProjectionMessage(sessionID, {
+        id: 'page-checkpoint', type: 'compaction', time: { created: 2 }, status: 'completed', reason: 'auto',
+    })!;
+    const beforeCheckpoint = native('page-before', 'BEFORE_CHECKPOINT', 'tool-calls');
+    await render([user, beforeCheckpoint, checkpoint, earlier, process, final], null);
+    expect(container.querySelector('[data-message-id="page-answer"]')).toBe(answer);
+    expect(toggle.isConnected).toBe(true);
+    expect(container.textContent).toContain('MIDDLE_PROCESS');
+    const divider = container.querySelector('[data-compaction-card]')!;
+    expect(divider.compareDocumentPosition(answer!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+});
+
 test('intermediate narration stays before its tool and before the final answer throughout streaming', async () => {
     const first = assistant('assistant-1', 'BEFORE_FIRST_TOOL');
     await render([user, first], first.info.id);

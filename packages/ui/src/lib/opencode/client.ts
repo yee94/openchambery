@@ -525,7 +525,7 @@ class OpencodeService {
   }
 
   getBaseUrl(): string {
-    return this.baseUrl;
+    return ensureAbsoluteBaseUrl(resolveRuntimeBaseUrl() || this.baseUrl);
   }
 
   reconnectToRuntimeBaseUrl(): void {
@@ -1053,7 +1053,7 @@ class OpencodeService {
         const body: Record<string, unknown> = { patch: patch.metadata };
         if (requestDirectory) body.directory = requestDirectory;
         const response = await runtimeFetch(
-          `${this.baseUrl}/openchamber/sessions/${encodeURIComponent(id)}/metadata`,
+          `/api/openchamber/sessions/${encodeURIComponent(id)}/metadata`,
           {
             method: 'PUT',
             headers: {
@@ -1097,7 +1097,7 @@ class OpencodeService {
         const body: Record<string, unknown> = { archivedAt };
         if (requestDirectory) body.directory = requestDirectory;
         const response = await runtimeFetch(
-          `${this.baseUrl}/openchamber/sessions/${encodeURIComponent(id)}/archive`,
+          `/api/openchamber/sessions/${encodeURIComponent(id)}/archive`,
           {
             method: 'PUT',
             headers: {
@@ -1175,7 +1175,7 @@ class OpencodeService {
     if (messageID) query.set('messageID', messageID);
     const queryString = query.toString();
     const response = await runtimeFetch(
-      `${this.baseUrl}/session/${encodeURIComponent(params.sessionID)}/diff${queryString ? `?${queryString}` : ''}`,
+      `/api/session/${encodeURIComponent(params.sessionID)}/diff${queryString ? `?${queryString}` : ''}`,
       { method: 'GET', headers: { Accept: 'application/json' }, signal: options?.signal },
     );
     if (!response.ok) {
@@ -2439,10 +2439,7 @@ class OpencodeService {
     const request = (async () => {
       let healthy = false;
       try {
-        const normalizedBase = this.baseUrl.endsWith('/') ? this.baseUrl.replace(/\/+$/, '') : this.baseUrl;
-        const healthUrl = normalizedBase === '/api' || normalizedBase.endsWith('/api')
-          ? '/api/opencode/health'
-          : `${normalizedBase}/opencode/health`;
+        const healthUrl = '/api/opencode/health';
         markStartupTrace('opencodeClient.checkHealth:url', { baseUrl: this.baseUrl, healthUrl });
         const timeout = createTimeoutSignal(OPENCODE_HEALTH_TIMEOUT_MS);
         const response = await runtimeFetch(healthUrl, { signal: timeout.signal }).finally(timeout.cleanup);
@@ -2496,7 +2493,7 @@ class OpencodeService {
       ...(options?.allowOutsideWorkspace ? { allowOutsideWorkspace: true } : {}),
     };
 
-    const response = await runtimeFetch(`${this.baseUrl}/fs/mkdir`, {
+    const response = await runtimeFetch('/api/fs/mkdir', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -2514,7 +2511,7 @@ class OpencodeService {
   }
 
   async cloneRepository(input: { remoteUrl: string; destinationPath: string; gitIdentityId?: string | null }): Promise<{ success: boolean; path: string; output?: string }> {
-    const response = await runtimeFetch(`${this.baseUrl}/fs/clone`, {
+    const response = await runtimeFetch('/api/fs/clone', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -2580,7 +2577,7 @@ class OpencodeService {
         params.set('respectGitignore', 'true');
       }
       const query = params.toString();
-      const response = await runtimeFetch(`${this.baseUrl}/fs/list${query ? `?${query}` : ''}`);
+      const response = await runtimeFetch(`/api/fs/list${query ? `?${query}` : ''}`);
       if (!response.ok) {
         const error = await response.json().catch(() => ({}));
         const message = typeof error.error === 'string' ? error.error : 'Failed to list directory';
@@ -2673,7 +2670,7 @@ class OpencodeService {
     }
 
     try {
-      const response = await runtimeFetch(`${this.baseUrl}/fs/home`, {
+      const response = await runtimeFetch('/api/fs/home', {
         method: 'GET',
         headers: {
           Accept: 'application/json'
@@ -2706,7 +2703,7 @@ class OpencodeService {
       return null;
     }
 
-    const url = `${this.baseUrl}/opencode/directory`;
+    const url = '/api/opencode/directory';
     console.log('[OpencodeClient] POST', url, 'with path:', directoryPath);
 
     try {

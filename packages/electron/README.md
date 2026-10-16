@@ -16,6 +16,10 @@ Packaged UI and local backend resources may be replaced by a verified desktop OT
 
 Desktop instance switches revalidate the target's authentication before committing the runtime endpoint. Direct probes verify service compatibility and `/auth/session` with the saved client credential; Relay probes verify `/auth/session` over the pinned E2EE tunnel and hand that authenticated tunnel to the runtime. Cached connected badges remain display snapshots. A direct authentication failure triggers Relay fallback when available; failed authentication on every candidate preserves the current instance and reports authentication required.
 
+For Relay-paired hosts, direct probes must first obtain an exact `/health.serverId` match without sending credentials. Missing identity, malformed JSON, redirects, failed health requests and mismatched computers cannot qualify as a usable direct transport; startup restore and background candidate refresh retain Relay instead. Explicit direct-only hosts keep their compatibility/authentication probe. This gate is installer-owned Electron main code, so a UI/backend OTA alone cannot update it.
+
+Renderer local-instance checks use the active Host/Relay identity before URL comparisons. A Relay virtual loopback origin never qualifies as the local machine. Remote windows do not inherit unscoped local storage through immutable preload URLs, and their transcript cache uses IndexedDB rather than the local-only HTTP/SQLite backend. OpenChamber filesystem and session-wrapper requests resolve route paths through the current runtime, alongside SDK calls, rather than retaining the startup HTTP origin.
+
 ## Shutdown Lifecycle
 
 When the shared OTA decision requires a new shell, `desktop-installer.mjs` uses `electron-updater` to download the complete installer in-app and calls `quitAndInstall` after the normal server shutdown. The generic feed is pinned to that exact GitHub release's `full*.yml`, never to a mutable latest feed. Beta eligibility and explicit stable downgrade permission come from the shared decision. Downloads do not install automatically on ordinary quit, and changing the selected update invalidates the install action.

@@ -17,7 +17,7 @@ import type { ChatMessageEntry } from './lib/turns/types';
 import type { Message, Part } from '@/lib/opencode/v2-types';
 
 const sessionID = 'history-scroll-fixture';
-const isMobile = new URLSearchParams(location.search).get('scenario') !== 'desktop-short';
+const isMobile = !['desktop-short', 'partial-turn'].includes(new URLSearchParams(location.search).get('scenario') ?? '');
 const makeRows = (start: number, count: number): ChatMessageEntry[] => Array.from({ length: count }, (_, index) => {
     const id = `message-${String(start + index).padStart(3, '0')}`;
     return {
@@ -26,11 +26,19 @@ const makeRows = (start: number, count: number): ChatMessageEntry[] => Array.fro
     };
 });
 const wait = (ms: number) => new Promise<void>((resolve) => window.setTimeout(resolve, ms));
+const partialAssistant = (id: string, text: string, finish: string): ChatMessageEntry => ({
+    info: { id, sessionID, role: 'assistant', time: { created: 20, completed: 21 }, finish } as Message,
+    parts: [{ id: `${id}-text`, messageID: id, sessionID, type: 'text', text } as Part],
+});
 
 export default function Fixture() {
     const scenario = new URLSearchParams(location.search).get('scenario');
     const delayedResize = scenario === 'delayed-resize';
-    const [rows, setRows] = React.useState(() => scenario === 'desktop-short'
+    const partial = scenario === 'partial-turn' || scenario === 'mobile-partial-turn';
+    const [rows, setRows] = React.useState(() => partial
+        ? [partialAssistant('partial-process', 'HIDDEN_PARTIAL_PROCESS', 'tool-calls'),
+            partialAssistant('partial-final', Array.from({ length: 40 }, (_, i) => `Answer paragraph ${i}. ${'Reading the final answer. '.repeat(8)}`).join('\n\n'), 'stop')]
+        : scenario === 'desktop-short'
         ? makeRows(20, 1).map((message) => ({ ...message, parts: message.parts.map((part) => (
             part.type === 'text' ? { ...part, text: 'Short initial transcript' } : part
         )) }))
@@ -75,7 +83,9 @@ export default function Fixture() {
         anchorOffset.current = anchor?.offsetTop ?? null;
         loadFingerY.current = fingerY.current;
         await wait(100);
-        const older = makeRows(0, 12);
+        const older = partial
+            ? [...makeRows(0, 1), partialAssistant('partial-older', 'HIDDEN_EARLIER_PROCESS', 'tool-calls')]
+            : makeRows(0, 12);
         setRows((current) => [...(delayedResize ? older.map((message) => ({
             ...message, parts: message.parts.map((part) => part.type === 'text' ? { ...part, text: 'Loading history body' } : part),
         })) : older), ...current]);
@@ -124,7 +134,8 @@ export default function Fixture() {
     </div>;
 }
 
-useUIStore.setState({ isMobile, chatRenderMode: 'live', activityRenderMode: 'summary' });
+const partialTurn = ['partial-turn', 'mobile-partial-turn'].includes(new URLSearchParams(location.search).get('scenario') ?? '');
+useUIStore.setState({ isMobile, chatRenderMode: partialTurn ? 'sorted' : 'live', activityRenderMode: partialTurn ? 'collapsed' : 'summary' });
 useFeatureFlagsStore.setState({ legendTimelineEnabled: false });
 createRoot(document.getElementById('root')!).render(
     <RuntimeAPIProvider apis={createWebAPIs()}><QueryClientProvider client={queryClient}><I18nProvider>

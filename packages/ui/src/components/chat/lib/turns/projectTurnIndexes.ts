@@ -12,19 +12,20 @@ export const projectTurnIndexes = (turns: TurnRecord[]): TurnProjectionResult =>
         const firstAssistantId = turn.assistantMessages[0]?.info.id;
         const lastAssistantId = turn.assistantMessages[turn.assistantMessages.length - 1]?.info.id;
 
-        messageToTurnId.set(turn.userMessageId, turn.turnId);
-        groupedMessageIds.add(turn.userMessageId);
-        messageMetaById.set(turn.userMessageId, {
-            turnId: turn.turnId,
-            messageId: turn.userMessageId,
-            userMessageId: turn.userMessageId,
-            isUserMessage: true,
-            isAssistantMessage: false,
-            isFirstAssistantInTurn: false,
-            isLastAssistantInTurn: false,
-            headerMessageId: turn.headerMessageId,
-        });
-
+        if (turn.userMessageId) {
+            messageToTurnId.set(turn.userMessageId, turn.turnId);
+            groupedMessageIds.add(turn.userMessageId);
+            messageMetaById.set(turn.userMessageId, {
+                turnId: turn.turnId,
+                messageId: turn.userMessageId,
+                userMessageId: turn.userMessageId,
+                isUserMessage: true,
+                isAssistantMessage: false,
+                isFirstAssistantInTurn: false,
+                isLastAssistantInTurn: false,
+                headerMessageId: turn.headerMessageId,
+            });
+        }
         turn.assistantMessageIds.forEach((assistantMessageId) => {
             messageToTurnId.set(assistantMessageId, turn.turnId);
             groupedMessageIds.add(assistantMessageId);
@@ -58,7 +59,7 @@ export const projectTurnIndexes = (turns: TurnRecord[]): TurnProjectionResult =>
     const lastTurn = turns.length > 0 ? turns[turns.length - 1] : null;
     const lastTurnMessageIds = new Set<string>();
     if (lastTurn) {
-        lastTurnMessageIds.add(lastTurn.userMessageId);
+        if (lastTurn.userMessageId) lastTurnMessageIds.add(lastTurn.userMessageId);
         lastTurn.messages.forEach((record) => {
             lastTurnMessageIds.add(record.messageId);
         });

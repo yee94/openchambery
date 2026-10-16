@@ -93,8 +93,9 @@ export type TurnActivityPresentationKind = 'default' | 'compaction';
 
 export interface TurnRecord {
     turnId: string;
-    userMessageId: string;
-    userMessage: ChatMessageEntry;
+    userMessageId?: string;
+    /** Absent when a cursor page begins inside a native assistant turn. */
+    userMessage?: ChatMessageEntry;
     headerMessageId?: string;
     messages: TurnMessageRecord[];
     assistantMessageIds: string[];
@@ -126,7 +127,7 @@ export interface TurnRecord {
 interface TurnMessageMeta {
     turnId: string;
     messageId: string;
-    userMessageId: string;
+    userMessageId?: string;
     isUserMessage: boolean;
     isAssistantMessage: boolean;
     isFirstAssistantInTurn: boolean;

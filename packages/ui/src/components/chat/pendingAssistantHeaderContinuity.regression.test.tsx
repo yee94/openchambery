@@ -569,7 +569,7 @@ describe('new conversation assistant header continuity', () => {
     expect(container.querySelectorAll('h3')).toHaveLength(1);
     const complete = shells.map((row, index) => ({ ...row, parts: [textPart(`restored ${index}`)] }));
     await renderMessages(complete, true);
-    expect(container.querySelectorAll('h3')).toHaveLength(4);
+    expect(container.querySelectorAll('h3')).toHaveLength(1);
     expect(container.querySelector('[data-assistant-content-loading]')).toBeNull();
     expect(container.querySelectorAll('[data-message-id="shell-3"]')).toHaveLength(1);
     const failed = { ...shells[3], info: { ...shells[3].info, error: { type: 'provider.auth', message: 'Authentication failed' } } };

@@ -33,6 +33,7 @@ afterEach(() => {
 
 test('a client created before desktop restore reads worktree agents from the current remote Host', async () => {
   configureRuntimeUrlResolver({ apiBaseUrl: 'https://remote.example' });
+  expect(opencodeClient.getBaseUrl()).toBe('https://remote.example/api');
   nativeFetch.mockImplementation(async (input: string | URL | Request, init?: RequestInit) => {
     const request = input instanceof Request ? input : new Request(input, init);
     if (new URL(request.url).origin === localOrigin) {
@@ -98,4 +99,39 @@ test('dispatch-time routing preserves SDK mutation bodies, headers and cancellat
   });
   expect(result.id).toBe('ses_remote');
   expect(nativeFetch).toHaveBeenCalledOnce();
+});
+
+test.each(['direct', 'relay'])('Host filesystem reads and writes use the active %s runtime before SDK reconnect', async (transport) => {
+  const requestedDirectory = `${directory}/${transport}`;
+  configureRuntimeUrlResolver({ apiBaseUrl: 'https://remote.example' });
+  const respond = async (input: string | URL | Request, init?: RequestInit) => {
+    const request = input instanceof Request ? input : new Request(input, init);
+    const url = new URL(request.url);
+    expect(url.origin).toBe('https://remote.example');
+    expect(request.headers.get('authorization')).toBe('Bearer test-remote-token');
+    if (url.pathname === '/api/fs/home') return Response.json({ home: '/remote/home' });
+    if (url.pathname === '/api/fs/list') {
+      expect(url.searchParams.get('path')).toBe(requestedDirectory);
+      return Response.json({ entries: [{ name: 'feature', path: requestedDirectory, isDirectory: true, isFile: false, isSymbolicLink: false }] });
+    }
+    expect(url.pathname).toBe('/api/fs/mkdir');
+    expect(request.method).toBe('POST');
+    expect(await request.json()).toEqual({ path: requestedDirectory });
+    return Response.json({ success: true, path: requestedDirectory });
+  };
+  nativeFetch.mockImplementation(respond);
+  const tunnelFetch = vi.fn((input: string | URL | Request, init?: RequestInit) => respond(
+    input instanceof Request ? input : new URL(input.toString(), 'https://remote.example'), init,
+  ));
+  if (transport === 'relay') {
+    adoptRelayTunnel({ relayUrl: 'wss://relay.example', serverId: 'remote-host', hostEncPubJwk: {} }, {
+      fetch: tunnelFetch, close: () => {}, getStatus: () => ({ state: 'connected' }), subscribeStatus: () => () => {},
+      openWebSocket: () => { throw new Error('unused'); },
+    });
+  }
+  expect(await opencodeClient.getFilesystemHome()).toBe('/remote/home');
+  expect(await opencodeClient.createDirectory(requestedDirectory)).toEqual({ success: true, path: requestedDirectory });
+  expect((await opencodeClient.listLocalDirectory(requestedDirectory))[0].path).toBe(requestedDirectory);
+  expect(nativeFetch).toHaveBeenCalledTimes(transport === 'direct' ? 3 : 0);
+  expect(tunnelFetch).toHaveBeenCalledTimes(transport === 'relay' ? 3 : 0);
 });

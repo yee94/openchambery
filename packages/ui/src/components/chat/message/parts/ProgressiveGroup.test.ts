@@ -270,7 +270,7 @@ describe('progressive activity presentation', () => {
         expect(messageListSource).toContain('return input.isLastTurn && input.sessionIsWorking;');
         expect(turnItemSource).toContain("const hideUserMessage = turn.activityPresentationKind === 'compaction'");
         // Shell turns skip sticky header; compaction still hides the user bubble.
-        expect(turnItemSource).toContain('{hideUserMessage ? null : stickyUserHeader && !isShellTurn ? (');
+        expect(turnItemSource).toContain('{!turn.userMessage || hideUserMessage ? null : stickyUserHeader && !isShellTurn ? (');
         expect(turnItemSource).toContain('{showCompactionStatus ? (');
         expect(turnItemSource).toContain('parts={[]}');
         expect(turnItemSource).toContain('activityPresentationKind="compaction"');

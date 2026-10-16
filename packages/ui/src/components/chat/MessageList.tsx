@@ -70,6 +70,7 @@ import {
 } from './lib/shellBridge';
 import { isAssistantMessageCompleted, resolveVisibleSortedAssistants } from './lib/visibleSortedAssistants';
 import { isRestartNotice } from './message/assistantErrorPresentation';
+import { extractTextContent, filterVisibleParts } from './message/partUtils';
 import {
     readUserMessageHeaderIdentity,
     resolvePendingAssistantHeader,
@@ -720,7 +721,7 @@ type RenderEntry =
     | { kind: 'turn'; key: string; turn: TurnRecord; isLastTurn: boolean };
 
 const getTimelineEntryAnchorId = (entry: RenderEntry): string | null => {
-    if (entry.kind === 'turn') return entry.turn.userMessage.info.id;
+    if (entry.kind === 'turn') return entry.turn.userMessage?.info.id ?? entry.turn.assistantMessages[0]?.info.id ?? entry.turn.turnId;
     return resolveMessageRole(entry.message) === 'user' ? entry.message.info.id : null;
 };
 
@@ -908,6 +909,13 @@ const TurnBlock = React.memo(({
     activeStreamingPhase,
     reviewTransferDirection,
 }: TurnBlockProps) => {
+    const showReasoningTraces = useUIStore((state) => state.showReasoningTraces);
+    const hasLeadingContent = React.useMemo(() => Boolean(turn.userMessage) || turn.assistantMessages.some((message) => (
+        Boolean(message.info.error) || filterVisibleParts(message.parts, { includeReasoning: showReasoningTraces }).some((part) => (
+            part.type === 'tool' || part.type === 'file'
+            || ((part.type === 'text' || part.type === 'reasoning') && extractTextContent(part).trim().length > 0)
+        ))
+    )), [turn.userMessage, turn.assistantMessages, showReasoningTraces]);
     const liveTurnLifecycleRef = React.useRef<string | null>(null);
     if (
         liveTurnLifecycleRef.current === turn.turnId
@@ -971,7 +979,7 @@ const TurnBlock = React.memo(({
     });
 
     const messageOrder = React.useMemo(() => {
-        const ordered = [turn.userMessage, ...turn.assistantMessages];
+        const ordered = turn.userMessage ? [turn.userMessage, ...turn.assistantMessages] : turn.assistantMessages;
         const lookup = new Map<string, number>();
         ordered.forEach((message, index) => {
             lookup.set(message.info.id, index);
@@ -1015,14 +1023,16 @@ const TurnBlock = React.memo(({
         return new Set(visibleAssistantMessages.map((assistant) => assistant.info.id));
     }, [visibleAssistantMessages]);
 
-    // Stable Activity mount point: always the first visible assistant.
+    // Stable Activity mount point: retain the first-painted assistant on prepend.
     // Jumping the owner to the streaming tail remounts the disclosure across
     // messages when the turn settles (last → first), which blanks tool rows for
     // a frame and can double-mount Activity while multi-step turns stream
     // (anchor on first + owner on last). Keep one durable host for the turn.
     const activityOwnerMessageId = React.useMemo(() => {
-        return visibleAssistantMessages[0]?.info.id;
-    }, [visibleAssistantMessages]);
+        return turn.headerMessageId && visibleAssistantIds.has(turn.headerMessageId)
+            ? turn.headerMessageId
+            : visibleAssistantMessages[0]?.info.id;
+    }, [turn.headerMessageId, visibleAssistantIds, visibleAssistantMessages]);
 
     const visibleActivityParts = React.useMemo(() => {
         if (chatRenderMode !== 'sorted') {
@@ -1062,10 +1072,10 @@ const TurnBlock = React.memo(({
     }, [chatRenderMode, visibleActivityMessageIdSet, turn.activitySegments, turn.assistantMessages.length]);
 
     const turnGroupingContextBase = React.useMemo(() => {
-        const userCreatedAt = (turn.userMessage.info.time as { created?: number } | undefined)?.created;
+        const userCreatedAt = (turn.userMessage?.info.time as { created?: number } | undefined)?.created;
         // OpenCode 1.4.0 moved variant from top-level to model.variant on UserMessage.
         // Prefer the new location, fall back to the legacy one for older servers.
-        const info = turn.userMessage.info as { variant?: unknown; model?: { variant?: unknown } } | undefined;
+        const info = turn.userMessage?.info as { variant?: unknown; model?: { variant?: unknown } } | undefined;
         const rawVariant = info?.model?.variant ?? info?.variant;
         const userMessageVariant = typeof rawVariant === 'string' && rawVariant.trim().length > 0
             ? rawVariant
@@ -1090,7 +1100,7 @@ const TurnBlock = React.memo(({
             userMessageCreatedAt: typeof userCreatedAt === 'number' ? userCreatedAt : undefined,
             userMessageVariant,
         };
-    }, [turn.activityPresentationKind, turn.assistantMessages, turn.changedFiles, turn.diffStats, turn.hasReasoning, turn.hasTools, turn.headerMessageId, turn.summaryText, turn.turnId, turn.userMessage.info, visibleActivityParts, visibleActivitySegments]);
+    }, [turn.activityPresentationKind, turn.assistantMessages, turn.changedFiles, turn.diffStats, turn.hasReasoning, turn.hasTools, turn.headerMessageId, turn.summaryText, turn.turnId, turn.userMessage?.info, visibleActivityParts, visibleActivitySegments]);
 
     // Called by `TurnAssistantBlock` during its render, so it must see this
     // render's values. Through `useEvent` it saw the previous render's, and a
@@ -1222,15 +1232,24 @@ const TurnBlock = React.memo(({
         if (!pendingHeaderStateRef.current.shown || turn.activityPresentationKind === 'compaction') {
             return null;
         }
-        return resolvePendingAssistantHeader(readUserMessageHeaderIdentity(turn.userMessage.info));
+        return turn.userMessage ? resolvePendingAssistantHeader(readUserMessageHeaderIdentity(turn.userMessage.info)) : null;
     }, [
         activeStreamingMessageId,
         isLastTurn,
         sessionIsWorking,
         turn.activityPresentationKind,
         turn.assistantMessages.length,
-        turn.userMessage.info,
+        turn.userMessage,
     ]);
+
+    if (!hasLeadingContent) {
+        const active = turn.assistantMessages.find((message) => message.info.id === activeStreamingMessageId);
+        return active ? <UngroupedMessageRow message={active}
+            onMessageContentChange={onMessageContentChange} getAnimationHandlers={getAnimationHandlers}
+            scrollToBottom={scrollToBottom} shouldAnimateUserMessage={shouldAnimateUserMessage}
+            onUserAnimationConsumed={onUserAnimationConsumed} activeStreamingMessageId={activeStreamingMessageId}
+            activeStreamingPhase={activeStreamingPhase} reviewTransferDirection={reviewTransferDirection} /> : null;
+    }
 
     return (
         <TurnItem
@@ -2714,7 +2733,7 @@ const MessageList = React.forwardRef<MessageListHandle, MessageListProps>(({
                 indexMap.set(entry.message.info.id, index);
                 return;
             }
-            indexMap.set(entry.turn.userMessage.info.id, index);
+            if (entry.turn.userMessage) indexMap.set(entry.turn.userMessage.info.id, index);
             entry.turn.assistantMessages.forEach((message) => {
                 indexMap.set(message.info.id, index);
             });

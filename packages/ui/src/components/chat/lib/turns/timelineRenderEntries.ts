@@ -14,7 +14,8 @@ type TimelineMessage = {
 
 type TimelineTurn<TMessage extends TimelineMessage> = {
     turnId: string;
-    userMessage: TMessage;
+    userMessage?: TMessage;
+    assistantMessages?: TMessage[];
 };
 
 export type TimelineRenderEntry<TMessage extends TimelineMessage, TTurn> =
@@ -66,7 +67,8 @@ const walkEntries = <TMessage extends TimelineMessage, TTurn extends TimelineTur
 ): TimelineRenderEntry<TMessage, TTurn>[] => {
     const turnByUserMessageId = new Map<string, TTurn>();
     for (const turn of turns) {
-        turnByUserMessageId.set(turn.userMessage.info.id, turn);
+        const first = turn.userMessage ?? turn.assistantMessages?.[0];
+        if (first) turnByUserMessageId.set(first.info.id, turn);
     }
 
     const ordered: TimelineRenderEntry<TMessage, TTurn>[] = [];

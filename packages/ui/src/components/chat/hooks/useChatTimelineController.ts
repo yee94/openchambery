@@ -489,11 +489,13 @@ const scheduleTouchCompensationSettle = (container: HTMLElement, state: TouchGes
 
 const applyDefeatingMomentumWrite = (container: HTMLElement, target: number) => {
     const generation = bumpMomentumWriteGeneration(container);
-    const previousOverflow = container.style.overflow;
+    const previousOverflowX = container.style.overflowX;
+    const previousOverflowY = container.style.overflowY;
     container.style.overflow = 'hidden';
     container.scrollTop = target;
     void container.scrollHeight;
-    container.style.overflow = previousOverflow;
+    container.style.overflowX = previousOverflowX;
+    container.style.overflowY = previousOverflowY;
     container.scrollTop = target;
 
     if (typeof window === 'undefined') return;

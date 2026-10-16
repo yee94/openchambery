@@ -49,6 +49,7 @@ mock.module('@/lib/runtime-fetch', () => ({
 
 mock.module('@/lib/runtime-switch', () => ({
   getRuntimeKey: () => activeRuntimeKey,
+  getRuntimeGeneration: () => 0,
   switchRuntimeEndpoint: (options: Record<string, unknown>) => {
     switches.push(options);
   },

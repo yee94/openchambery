@@ -28,7 +28,7 @@ const useStickyValue = <T,>(value: T | null | undefined): T | null | undefined =
 
 interface TurnAssistantHeaderProps {
     assistantMessage?: ChatMessageEntry;
-    userMessage: ChatMessageEntry;
+    userMessage?: ChatMessageEntry;
     pendingPresentation?: PendingAssistantHeaderPresentation | null;
     assistantIsInActiveTurn: boolean;
     isMobile: boolean;
@@ -46,7 +46,7 @@ const TurnAssistantHeader: React.FC<TurnAssistantHeaderProps> = ({
         providerId: state.currentProviderId,
         modelId: state.currentModelId,
     })));
-    const sessionId = assistantMessage?.info.sessionID ?? userMessage.info.sessionID;
+    const sessionId = assistantMessage?.info.sessionID ?? userMessage?.info.sessionID;
     const { currentContextAgent, savedSessionAgentSelection } = useContextStore(
         useShallow((state) => ({
             currentContextAgent: assistantIsInActiveTurn && sessionId
@@ -58,8 +58,8 @@ const TurnAssistantHeader: React.FC<TurnAssistantHeaderProps> = ({
         })),
     );
     const userIdentity = React.useMemo(
-        () => readUserMessageHeaderIdentity(userMessage.info),
-        [userMessage.info],
+        () => userMessage ? readUserMessageHeaderIdentity(userMessage.info) : null,
+        [userMessage],
     );
     const assistantIdentity = React.useMemo(
         () => (assistantMessage ? readUserMessageHeaderIdentity(assistantMessage.info) : null),

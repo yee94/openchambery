@@ -1,5 +1,5 @@
 import type { PersistStorage, StateStorage, StorageValue } from 'zustand/middleware';
-import { isDesktopLocalOriginActive } from '@/lib/desktop';
+import { isDesktopLocalOriginActive, isDesktopShell } from '@/lib/desktop';
 import { getRuntimeTransportIdentity } from '@/lib/runtime-switch';
 import { getSafeStorage } from '@/stores/utils/safeStorage';
 
@@ -52,6 +52,9 @@ export const isRuntimeScopedStorageEventKey = (
  */
 export const mayReadLegacyUnscopedStorage = (): boolean => {
   if (typeof window === 'undefined') return true;
+  // Preload globals can be immutable and keep the startup loopback after a
+  // Host switch. Only the live desktop runtime can authorize legacy fallback.
+  if (isDesktopShell()) return isDesktopLocalOriginActive();
   const api = (window as typeof window & { __OPENCHAMBER_API_BASE_URL__?: string }).__OPENCHAMBER_API_BASE_URL__;
   const local = (window as typeof window & { __OPENCHAMBER_LOCAL_ORIGIN__?: string }).__OPENCHAMBER_LOCAL_ORIGIN__;
   // Multi-host desktop signal: only same-origin API vs local origin may inherit

@@ -134,7 +134,9 @@ export const useTurnRecords = (
             options.showTurnChangedFiles,
         );
         const cached = getCachedProjectionByKey(cacheKey);
-        if (cached) {
+        // A different view may have reached this page with a different leading
+        // anchor. Never replace this mounted view's continuity with that cache.
+        if (cached && (!previousProjectionRef.current || cached === previousProjectionRef.current)) {
             previousProjectionRef.current = cached;
             return cached;
         }
