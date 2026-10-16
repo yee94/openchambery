@@ -6,6 +6,9 @@ import type { Session, SessionInfo } from '@/lib/opencode/v2-types';
 import { opencodeClient } from '@/lib/opencode/client';
 import { queryClient } from '@/lib/queryRuntime';
 import { INITIAL_STATE } from './types';
+import { aggregateLiveSessions } from './live-aggregate';
+import { buildSessionTree } from '@/components/session/sidebar/sessionTree';
+import { applyDirectoryEvent } from './event-reducer';
 
 const fixture = vi.hoisted(() => ({
   store: null as ReturnType<typeof makeStore> | null,
@@ -65,6 +68,27 @@ test('explicit expansion loads all child pages and respects the row directory', 
   expect(list).toHaveBeenCalledTimes(2);
   expect(list).toHaveBeenNthCalledWith(1, expect.objectContaining({ parentID: parent.id, directory: '/repo', limit: 50 }), expect.objectContaining({ signal: expect.any(AbortSignal) }));
   expect(list).toHaveBeenNthCalledWith(2, { cursor: 'page-2', limit: 50 }, expect.objectContaining({ signal: expect.any(AbortSignal) }));
+});
+
+test('loaded children reach the sidebar tree and survive live metadata updates without entering the root catalog', async () => {
+  list.mockResolvedValueOnce({ data: Array.from({ length: 10 }, (_, i) => child(i)), cursor: {} });
+  await sync.loadChildren(parent.id, '/repo');
+  const state = fixture.store!.getState();
+  const roots = () => buildSessionTree(aggregateLiveSessions([state], undefined, { includeChildren: true }));
+  expect(roots().map((node) => node.session.id)).toEqual([parent.id]);
+  expect(roots()[0].children).toHaveLength(10);
+  const loadedChild = state.session.find((session) => session.id === 'ses_child_0')!;
+  applyDirectoryEvent(state, { type: 'session.updated', properties: { info: { ...loadedChild, title: 'Updated child', time: { created: 1, updated: 2 } } } });
+  expect(roots()[0].children).toHaveLength(10);
+  expect(roots()[0].children.find((node) => node.session.id === loadedChild.id)?.session.title).toBe('Updated child');
+  expect(aggregateLiveSessions([state]).map((session) => session.id)).toEqual([parent.id]);
+  applyDirectoryEvent(state, { type: 'session.created', properties: { info: { ...loadedChild, id: 'ses_unloaded_child' } } });
+  expect(roots()[0].children).toHaveLength(10);
+  applyDirectoryEvent(state, { type: 'openchamber:session-metadata', properties: {
+    sessionID: loadedChild.id, metadata: { openchamber: { scheduledTask: { taskID: 'task_1' } } },
+  } });
+  expect(roots()[0].children).toHaveLength(9);
+  expect(roots()[0].children.some((node) => node.session.id === loadedChild.id)).toBe(false);
 });
 
 test('a later-page failure preserves the visible tree and can be retried', async () => {

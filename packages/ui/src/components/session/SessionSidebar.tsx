@@ -452,7 +452,7 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
   // Hidden surface: skip cross-directory live aggregate subscriptions so chat
   // streaming does not drive off-screen sidebar React work. Structural global
   // session lists still update (authoritative index / create-delete).
-  const liveSessions = useAllLiveSessions({ enabled: isVisible });
+  const liveSessions = useAllLiveSessions({ enabled: isVisible, includeChildren: true });
   // Viewing + running sessions stay in the visible window of already-loaded
   // lists (does not fetch more sessions from the server).
   const alwaysVisibleSessionIds = useAlwaysVisibleSessionIds({ enabled: isVisible });

@@ -1,5 +1,9 @@
 # Sync architecture, event handling & store update rules
 
+## Desktop notification navigation
+
+Electron owns notification window routing: renderer notifications return to their originating window, backend notifications target a local-runtime window, and closed or shell-runtime-switched owners reject stale clicks. `openSessionFromNotification.ts` opens the session on the receiving window's current runtime, preserving the directory hint; it must not switch remote direct/Relay windows to local. No delayed runtime-switch listener or timer is needed. Regression coverage: `openSessionFromNotification.test.ts` and `packages/electron/notification-routing.test.mjs`.
+
 ## Session-tree activity indicators
 
 `session-activity-identity.ts` hydrates missing identities for live active IDs and their ancestor chain using runtime/generation-scoped `sessionIdentity` queries (`session.get`, metadata only). Root index snapshots deliberately omit subagents, so retaining busy membership alone is insufficient to light up a parent. This provider-owned coordinator subscribes to live status and structural catalog changes, coalesces them, and runs at most two identity reads concurrently. It inserts confirmed identities into their authoritative directory store without bootstrapping that directory or loading messages; parent execution status is never rewritten. Failures keep live activity intact, isolate unrelated identities and use bounded query retry plus a retry cooldown. Runtime changes, provider disposal and newer live identities fence late results. `session-activity-identity.test.ts` covers the real cold-catalog case, nested ancestry, failure isolation and disposal.
@@ -436,7 +440,10 @@ System sessions are also hidden from ordinary active/archived lists by a
   `metadata.openchamber.smallModel.purpose`, or
   `metadata.openchamber.llm.purpose`. Sessions with a non-empty
   `parentID` are also excluded from the root catalog (`isVisibleGlobalSession`
-  and `aggregateLiveSessions`); they never promote to sidebar roots when the
+  and `aggregateLiveSessions` by default). The sidebar tree opts into
+  `useAllLiveSessions({ includeChildren: true })` so explicitly loaded children
+  survive aggregation and can attach to their parents. Title/system isolation
+  still applies, and the tree builder never promotes children to roots when the
   parent is missing, archived, or system-owned. Metadata is ownership/isolation;
   `time.archived` is archive state; reserved title tags additionally exclude
   background work from the ordinary catalog. Direct open by sessionID+directory is
@@ -444,8 +451,10 @@ System sessions are also hidden from ordinary active/archived lists by a
   entry points.
 
 Catalog visibility must not destroy live transcript caches. `session.created` /
-`session.updated` remove system, subagent, and archived sessions from the live
-directory list only; they do **not** call `dropSessionCaches` / Query
+`session.updated` remove system, unloaded subagent, and archived sessions from the live
+directory list only. Already-loaded child identities remain eligible for live
+updates, rename, and metadata patches so an expanded subtree does not disappear
+on its next event; unknown children are not inserted by these events. They do **not** call `dropSessionCaches` / Query
 `purgeSession` for those rows. `openchamber:session-metadata` replaces metadata
 on an already-known row and applies the same list-only hide when the committed
 patch makes the session system-owned (create-before-persist race). Wiping status on hide is reserved for temporary

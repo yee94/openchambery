@@ -55,6 +55,7 @@ export const isVisibleGlobalSession = (
         parentID?: string | null;
         metadata?: Session['metadata'] | Record<string, unknown> | null;
     },
+    options: { includeChildren?: boolean } = {},
 ): boolean => {
     if (session.title && HIDDEN_SESSION_TITLES.has(session.title)) return false;
     if (session.title && BACKGROUND_SESSION_TITLE.test(session.title)) return false;
@@ -62,7 +63,7 @@ export const isVisibleGlobalSession = (
     // load only when the user expands a parent tree node; promoting orphans
     // (parent archived, system-owned, or simply missing from this list) is how
     // scheduled-task subagents used to leak into the project list.
-    if (getSessionParentID(session)) return false;
+    if (!options.includeChildren && getSessionParentID(session)) return false;
     if (isSystemOwnedSession(session)) return false;
     return true;
 };

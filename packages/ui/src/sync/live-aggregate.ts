@@ -154,6 +154,7 @@ export const areStatusMapsEquivalent = (
 export function aggregateLiveSessions(
   states: Iterable<LiveStateSlice>,
   excludedSessionIds?: ReadonlySet<string>,
+  options: { includeChildren?: boolean } = {},
 ): Session[] {
   const sessionsById = new Map<string, Session>()
 
@@ -162,8 +163,7 @@ export function aggregateLiveSessions(
       if (
         !session?.id
         || excludedSessionIds?.has(session.id)
-        || session.parentID
-        || !isVisibleGlobalSession(session)
+        || !isVisibleGlobalSession(session, options)
       ) {
         continue
       }

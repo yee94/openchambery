@@ -404,6 +404,11 @@ List labels are a fetch hint, not the archive contract; this does not add
   `openchamber.assistant.assistantID`, `openchamber.scheduledTask.taskID`,
   `openchamber.smallModel.purpose`, or `openchamber.llm.purpose`;
   title prefixes are not ownership signals.
+  The sidebar tree explicitly opts into `includeChildren` for already-loaded live
+  identities. This skips only the parent-ID exclusion, retaining title/system
+  isolation. Global/root catalog callers keep the default exclusion. The tree
+  builder attaches children only under present, visible parents and never promotes
+  orphan children into roots; the option does not initiate any child requests.
 `fullCatalogSessionIds` and `fullCatalogGeneration` update only after
 one complete active+archived catalog result; retention cleanup consumes that snapshot.
 Directory refreshes preserve it, failed catalog loads preserve the prior snapshot,

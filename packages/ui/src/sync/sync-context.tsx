@@ -383,17 +383,18 @@ export function useAllSessionStatuses(options?: LiveAggregateOptions): Record<st
   )
 }
 
-export function useAllLiveSessions(options?: LiveAggregateOptions): Session[] {
+export function useAllLiveSessions(options?: LiveAggregateOptions & { includeChildren?: boolean }): Session[] {
   const enabled = options?.enabled ?? true
+  const includeChildren = options?.includeChildren ?? false
   const pendingDeletionIds = useGlobalSessionsStore((state) => state.pendingDeletionIds)
   return useLiveSyncSelector(
     useMemo(
       () => (states: State[]) => (
         enabled
-          ? aggregateLiveSessions(states, pendingDeletionIds)
+          ? aggregateLiveSessions(states, pendingDeletionIds, { includeChildren })
           : EMPTY_LIVE_SESSIONS
       ),
-      [enabled, pendingDeletionIds],
+      [enabled, includeChildren, pendingDeletionIds],
     ),
     areSessionListsEquivalent,
     useCallback(

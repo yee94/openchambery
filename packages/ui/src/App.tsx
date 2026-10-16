@@ -31,10 +31,7 @@ import {
 } from '@/lib/desktopBoot';
 import type { RecoveryVariant } from '@/components/onboarding/DesktopConnectionRecovery';
 import { useSessionUIStore } from '@/sync/session-ui-store';
-import {
-  disposePendingNotificationOpen,
-  openSessionFromNotification,
-} from '@/sync/openSessionFromNotification';
+import { openSessionFromNotification } from '@/sync/openSessionFromNotification';
 import { markSessionViewed } from '@/sync/notification-store';
 import { openAssistant } from '@/stores/useAssistantUIStore';
 import { useDirectoryStore } from '@/stores/useDirectoryStore';
@@ -670,7 +667,6 @@ function App({ apis }: AppProps) {
     window.addEventListener('openchamber:open-session', handler as EventListener);
     window.addEventListener('openchamber:open-assistant', openAssistantHandler as EventListener);
     return () => {
-      disposePendingNotificationOpen();
       window.removeEventListener('openchamber:open-session', handler as EventListener);
       window.removeEventListener('openchamber:open-assistant', openAssistantHandler as EventListener);
     };

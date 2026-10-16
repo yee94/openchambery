@@ -121,7 +121,12 @@
    retry by collapsing/re-expanding. Sessions with a `parentID` are
   never promoted to project roots — if the parent is missing, archived
   differently, system-owned (e.g. scheduled-task), or pinned-and-omitted, the
-  child stays hidden instead of leaking into the main list.
+   child stays hidden instead of leaking into the main list.
+   The sidebar's live aggregate uses `includeChildren: true`; the ordinary global
+   catalog remains root-only. This distinction is required between the on-demand
+   loader's directory-store commit and `buildSessionTree`, otherwise fetched
+   children are filtered out before they ever reach the expanded row. Loaded
+   child identities survive subsequent live updates while system isolation still applies.
 - Tray status is event-first. Its startup/reconnect compensation waits for an
   established OpenCode connection, coalesces overlapping refreshes, and queries
   at most two directories concurrently; the 30-second poll is only a missed-event

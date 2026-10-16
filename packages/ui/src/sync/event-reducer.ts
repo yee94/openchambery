@@ -367,10 +367,10 @@ export function applyDirectoryEvent(
       const info = stripSessionDiffSnapshots(rawInfo)
       const sessions = draft.session
       const result = Binary.search(sessions, info.id, (s) => s.id)
-      // Catalog hide ≠ message-cache lifetime. System/subagent/archived sessions
+      // Catalog hide ≠ message-cache lifetime. System/unloaded child sessions
       // stay off the live directory list but keep streaming caches while open.
       // Only temporary SmartFetch secondaries wipe caches when they leave the list.
-      if (!isVisibleGlobalSession(info)) {
+      if (!isVisibleGlobalSession(info, { includeChildren: result.found })) {
         return removeFromLiveDirectoryList(draft, info, result, callbacks?.onSetSessionTodo)
       }
       if (result.found && shouldSkipStaleSessionEvent(sessions[result.index], info)) {
@@ -394,7 +394,7 @@ export function applyDirectoryEvent(
       const current = draft.session[result.index]
       const next = applySessionRename(current, properties)
       if (next === current) return false
-      if (!isVisibleGlobalSession(next)) {
+      if (!isVisibleGlobalSession(next, { includeChildren: true })) {
         return removeFromLiveDirectoryList(draft, next, result, callbacks?.onSetSessionTodo)
       }
       draft.session[result.index] = next
@@ -416,13 +416,13 @@ export function applyDirectoryEvent(
       }
 
       // Sidebar/live-list hide only. Do not drop message/part/status for
-      // system-owned, subagent, or archived sessions — scheduled tasks and
+      // system-owned, unloaded child, or archived sessions — scheduled tasks and
       // assistants archive before/while prompting, and wiping caches is what
       // made in-progress viewing look nothing like a normal live session.
       {
         const archivedAt = info.time?.archived
         const isArchived = typeof archivedAt === "number" && Number.isFinite(archivedAt) && archivedAt > 0
-        if (!isVisibleGlobalSession(info) || isArchived) {
+        if (!isVisibleGlobalSession(info, { includeChildren: result.found }) || isArchived) {
           return removeFromLiveDirectoryList(draft, info, result, callbacks?.onSetSessionTodo)
         }
       }
@@ -452,7 +452,7 @@ export function applyDirectoryEvent(
         metadata: props.metadata,
       }
       sessions[result.index] = next
-      if (!isVisibleGlobalSession(next)) {
+      if (!isVisibleGlobalSession(next, { includeChildren: true })) {
         return removeFromLiveDirectoryList(draft, next, result, callbacks?.onSetSessionTodo)
       }
       return true

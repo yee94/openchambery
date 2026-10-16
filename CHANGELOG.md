@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [2.0.9-beta.22] - 2026-10-16
+
+### 修复
+
+- 修复 Electron 多窗口连接不同实例时，点击远程会话通知仍跳回本地的问题；现在在通知来源窗口的实例中打开会话。
+- 修复侧栏展开后子会话不显示、收到实时更新后消失的问题；已加载子会话保留在父会话下，普通会话列表继续隐藏子会话。
+
 ## [2.0.9-beta.21] - 2026-10-16
 
 ### 修复
