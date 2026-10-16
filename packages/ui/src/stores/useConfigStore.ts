@@ -1361,6 +1361,7 @@ export const useConfigStore = create<ConfigStore>()(
                     const source = options?.source ?? 'unknown';
                     const transport = getRuntimeTransportIdentity();
                     const generation = getRuntimeGeneration();
+                    bindCatalogTransportIdentity(transport);
                     const isCurrent = () => getRuntimeGeneration() === generation
                         && getRuntimeTransportIdentity() === transport
                         && get().catalogTransportIdentity === transport
@@ -1886,6 +1887,7 @@ export const useConfigStore = create<ConfigStore>()(
                     const source = options?.source ?? 'unknown';
                     const transport = getRuntimeTransportIdentity();
                     const generation = getRuntimeGeneration();
+                    bindCatalogTransportIdentity(transport);
                     const isCurrent = () => getRuntimeGeneration() === generation
                         && getRuntimeTransportIdentity() === transport
                         && get().catalogTransportIdentity === transport
@@ -3141,6 +3143,7 @@ export const useConfigStore = create<ConfigStore>()(
                     hydrateActiveDirectorySnapshot({
                         ...currentState,
                         ...sanitizePersistedCatalogState(persistedState),
+                        catalogTransportIdentity: getRuntimeTransportIdentity(),
                     }),
                 partialize: (state) => {
                     const serializeDirectorySnapshot = (
@@ -3207,6 +3210,21 @@ export const useConfigStore = create<ConfigStore>()(
          ),
     ),
 );
+
+// Startup may select Relay before App mounts its endpoint-change listener.
+// Bind at request start, never at completion: old generations/epochs must still
+// fail the commit guard. Rebinding alone must not persist old selections into
+// the newly selected runtime's storage partition.
+function bindCatalogTransportIdentity(transport: string): void {
+    if (useConfigStore.getState().catalogTransportIdentity === transport) return;
+    const storage = useConfigStore.persist.getOptions().storage;
+    useConfigStore.persist.setOptions({ storage: { getItem: () => null, setItem: () => {}, removeItem: () => {} } });
+    try {
+        useConfigStore.setState({ catalogTransportIdentity: transport });
+    } finally {
+        useConfigStore.persist.setOptions({ storage });
+    }
+}
 
 if (typeof window !== "undefined") {
     window.__zustand_config_store__ = useConfigStore;

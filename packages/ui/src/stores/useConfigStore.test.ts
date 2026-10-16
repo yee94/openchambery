@@ -2063,6 +2063,19 @@ describe('useConfigStore provider persistence', () => {
     expect(active.lastUserSelection).toEqual({ agentName: 'build', providerId: 'provider-0', modelId: 'model-0' });
   });
 
+  test('catalog loads recover when startup selected Relay before the App switch listener mounted', async () => {
+    useConfigStore.setState({ catalogTransportIdentity: 'direct:http://127.0.0.1:57123', activeDirectoryKey: DIRECTORY, providers: [], agents: [], directoryScoped: {} });
+    runtimeIdentity = 'relay:remote';
+    runtimeGeneration += 1;
+    liveProviderId = 'remote-provider';
+    liveAgents = [testAgent('remote-agent')];
+    await useConfigStore.getState().loadProviders({ directory: DIRECTORY });
+    await useConfigStore.getState().loadAgents({ directory: DIRECTORY });
+    expect(useConfigStore.getState().catalogTransportIdentity).toBe(runtimeIdentity);
+    expect(useConfigStore.getState().providers.map((entry) => entry.id)).toEqual(['remote-provider']);
+    expect(useConfigStore.getState().agents.map((entry) => entry.name)).toEqual(['remote-agent']);
+  });
+
   test('stale provider completion cannot revive catalog or loading after an A to B runtime switch', async () => {
     const pendingProviders = deferred<{ providers: ReturnType<typeof providerResponse>[]; default: Record<string, string> }>();
     getProvidersForConfigImpl = () => pendingProviders.promise;

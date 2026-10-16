@@ -272,6 +272,8 @@ runtime generation and transport identity before every commit, trace, error log,
 cleanup, so an earlier runtime lifetime cannot republish catalog state after a switch. Refresh
 failures retain the previous in-memory snapshot.
 
+Catalog loaders synchronously bind `catalogTransportIdentity` to the live transport at request start. They cannot depend on App's mounted endpoint listener: desktop restore can switch to Relay before that listener exists. This identity-only bind does not write persisted selections; hydration also uses the live fingerprint even when no saved envelope exists. Completion retains the generation, transport and load-epoch guards, so an old request cannot rebind the store or commit into a newer connection. Regression: `useConfigStore.test.ts` covers successful catalogs with a stale startup identity and stale completions across runtime switches.
+
 `catalogTransportIdentity` must equal `getRuntimeTransportIdentity()` — the
 `direct:` / `relay:` transport fingerprint — not `runtimeKey`. `runtimeKey` is the
 stable paired-device/instance id and stays the same across LAN⇄relay; Provider/Agent

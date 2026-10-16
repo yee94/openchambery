@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [2.0.9-beta.29] - 2026-10-16
+
+### 修复
+
+- 修复 Electron 启动恢复 Relay 后，Provider 与 Agent 查询成功却因配置 Store 保留旧连接身份而被丢弃、worktree 会话持续停在「选择模型」的问题；加载前同步当前连接身份，并保留过期请求隔离。
+
 ## [2.0.9-beta.28] - 2026-10-16
 
 ### 修复
