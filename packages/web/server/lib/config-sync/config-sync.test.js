@@ -198,6 +198,25 @@ describe('generational prepare backups', () => {
 });
 
 describe('remote inventory script', () => {
+  it('excludes .venv-asc from local and SSH inventory without excluding the skill itself', async () => {
+    const home = await makeTempDir();
+    for (const root of [path.join(home, '.agents'), path.join(home, '.config', 'opencode', 'skills')]) {
+      const skill = path.join(root, 'testflight-invite');
+      await fsp.mkdir(path.join(skill, '.venv-asc', 'lib'), { recursive: true });
+      await fsp.writeFile(path.join(skill, '.venv-asc', 'lib', 'binary.so'), 'x'.repeat(4096));
+      await fsp.writeFile(path.join(skill, 'SKILL.md'), 'keep');
+    }
+    const local = planOpenCodeConfigSync(home, { includeAuthFile: false });
+    expect(local.agentsRoot).toEqual({ fileCount: 1, bytes: 4 });
+    expect(local.directories.find((entry) => entry.path === 'skills')).toMatchObject({ fileCount: 1, bytes: 4 });
+    const stdout = execFileSync('sh', ['-c', buildRemoteSyncInventoryScript()], {
+      env: { ...process.env, HOME: home },
+    }).toString();
+    const inventory = JSON.parse(stdout.split('\n').find((line) => line.startsWith('SYNC_INVENTORY=')).slice('SYNC_INVENTORY='.length));
+    expect(inventory.agentsRoot).toEqual({ fileCount: 1, bytes: 4 });
+    expect(inventory.directories.find((entry) => entry.path === 'skills')).toMatchObject({ fileCount: 1, bytes: 4 });
+  });
+
   it('emits SYNC_INVENTORY as valid JSON with quoted path values (regression: bare quotes broke JSON.parse)', async () => {
     const home = await makeTempDir();
     const configDir = path.join(home, '.config', 'opencode');

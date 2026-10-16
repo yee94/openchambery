@@ -8,6 +8,7 @@ import {
   OPENCODE_CONFIG_SYNC_ALLOWLIST,
   OPENCODE_CONFIG_SYNC_BACKUP_DIR,
   OPENCODE_CONFIG_SYNC_BACKUP_GENERATIONS,
+  OPENCODE_CONFIG_SYNC_TAR_EXCLUDES,
 } from './constants.js';
 
 const shellQuote = (value) => `'${String(value).replace(/'/g, `'\\''`)}'`;
@@ -216,15 +217,15 @@ export const buildRemoteSyncInventoryScript = () => {
   for (const rel of dirPaths) {
     const quoted = shellQuote(rel);
     lines.push(`if [ -d "$CFG"/${quoted} ]; then`);
-    lines.push(`  COUNT="$(find "$CFG"/${quoted} -type f ! -path '*/node_modules/*' ! -name '*.backup' 2>/dev/null | wc -l | tr -d ' ')"`);
-    lines.push(`  BYTES="$(find "$CFG"/${quoted} -type f ! -path '*/node_modules/*' ! -name '*.backup' -exec wc -c {} + 2>/dev/null | awk 'END{print $1+0}')"`);
+    lines.push(`  COUNT="$(find "$CFG"/${quoted} -type f ! -path '*/node_modules/*' ! -path '*/.venv-asc/*' ! -name '*.backup' 2>/dev/null | wc -l | tr -d ' ')"`);
+    lines.push(`  BYTES="$(find "$CFG"/${quoted} -type f ! -path '*/node_modules/*' ! -path '*/.venv-asc/*' ! -name '*.backup' -exec wc -c {} + 2>/dev/null | awk 'END{print $1+0}')"`);
     lines.push(`  DIRS="$DIRS{\\"path\\":${jsonShellEscape(rel)},\\"fileCount\\":$COUNT,\\"bytes\\":$BYTES},"`);
     lines.push('fi');
   }
   lines.push('AGENTS="null"');
   lines.push('if [ -d "$HOME/.agents" ]; then');
-  lines.push("  ACOUNT=\"$(find \"$HOME/.agents\" -type f ! -path '*/node_modules/*' ! -name '*.backup' 2>/dev/null | wc -l | tr -d ' ')\"");
-  lines.push("  ABYTES=\"$(find \"$HOME/.agents\" -type f ! -path '*/node_modules/*' ! -name '*.backup' -exec wc -c {} + 2>/dev/null | awk 'END{print $1+0}')\"");
+  lines.push("  ACOUNT=\"$(find \"$HOME/.agents\" -type f ! -path '*/node_modules/*' ! -path '*/.venv-asc/*' ! -name '*.backup' 2>/dev/null | wc -l | tr -d ' ')\"");
+  lines.push("  ABYTES=\"$(find \"$HOME/.agents\" -type f ! -path '*/node_modules/*' ! -path '*/.venv-asc/*' ! -name '*.backup' -exec wc -c {} + 2>/dev/null | awk 'END{print $1+0}')\"");
   lines.push('  AGENTS="{\\"fileCount\\":$ACOUNT,\\"bytes\\":$ABYTES}"');
   lines.push('fi');
   lines.push('AUTH="null"');
@@ -255,13 +256,13 @@ export const buildRemoteConfigTarScript = (plan) => {
   return [
     'set -e',
     'CFG="$HOME/.config/opencode"',
-    `cd "$CFG" && tar -h -czf - ${quotedEntries}`,
+    `cd "$CFG" && tar ${OPENCODE_CONFIG_SYNC_TAR_EXCLUDES.map(shellQuote).join(' ')} -h -czf - ${quotedEntries}`,
   ].join('\n');
 };
 
 export const buildRemoteAgentsTarScript = () => [
   'set -e',
-  'cd "$HOME" && tar -h -czf - .agents',
+  `cd "$HOME" && tar ${OPENCODE_CONFIG_SYNC_TAR_EXCLUDES.map(shellQuote).join(' ')} -h -czf - .agents`,
 ].join('\n');
 
 export const buildRemoteAuthTarScript = () => [

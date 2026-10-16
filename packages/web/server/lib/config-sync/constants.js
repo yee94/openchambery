@@ -30,6 +30,9 @@ export const OPENCODE_AUTH_FILE_PROBE_MARKER = '__AUTH_FILE__';
 export const OPENCODE_CONFIG_SYNC_MAX_BYTES = 512 * 1024 * 1024;
 export const OPENCODE_CONFIG_SYNC_MAX_FILES = 20000;
 
+// Match walkAllowlistDirectory: omit dependencies and backup entries at every depth.
+export const OPENCODE_CONFIG_SYNC_TAR_EXCLUDES = ['--exclude=node_modules', '--exclude=*.backup', '--exclude=.venv-asc'];
+
 /** Generational backup retention per backup root (newest kept). */
 export const OPENCODE_CONFIG_SYNC_BACKUP_GENERATIONS = 5;
 

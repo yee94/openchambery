@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [2.0.9-beta.28] - 2026-10-16
+
+### 修复
+
+- 修复远程配置同步预览已排除依赖目录、实际压缩包却仍携带它们的问题；Relay、直连与 SSH 同步统一排除 `node_modules`、`.backup` 和 `.venv-asc`，显著减少技能包大小与同步等待时间。
+
 ## [2.0.9-beta.27] - 2026-10-16
 
 ### 修复

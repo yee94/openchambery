@@ -2,7 +2,6 @@ import fs from 'node:fs';
 import fsp from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { spawn } from 'node:child_process';
 
 import {
   OPENCODE_AGENTS_ROOT_PROBE_MARKER,
@@ -18,6 +17,7 @@ import {
 } from './local-backup.js';
 import { walkAllowlistDirectory } from './plan.js';
 import { sanitizeSyncRunIdForPath } from './scripts.js';
+import { collectLocalTarBuffer } from './tar.js';
 
 /**
  * In-process receiver for HTTP config-sync (direct/relay hosts).
@@ -211,28 +211,11 @@ export const createConfigSyncReceiver = (deps = {}) => {
     return { ok: true, kind, bytes: buffer.byteLength };
   };
 
-  const collectTarGz = (cwd, entries) => new Promise((resolve, reject) => {
-    if (!entries.length) {
-      resolve(Buffer.alloc(0));
-      return;
-    }
-    const child = spawn('tar', ['-h', '-czf', '-', '-C', cwd, ...entries], {
-      stdio: ['ignore', 'pipe', 'pipe'],
-      ...(process.platform === 'win32' ? { windowsHide: true } : {}),
-    });
-    const chunks = [];
-    let stderr = '';
-    child.stdout?.on('data', (chunk) => chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)));
-    child.stderr?.on('data', (chunk) => { stderr += chunk.toString(); });
-    child.on('error', reject);
-    child.on('close', (code) => {
-      if (code !== 0) {
-        reject(new Error((stderr || 'Local tar failed').trim()));
-        return;
-      }
-      resolve(Buffer.concat(chunks));
-    });
-  });
+  const collectTarGz = (cwd, entries) => entries.length
+    ? collectLocalTarBuffer(['-h', '-czf', '-', '-C', cwd, ...entries], {
+      windowsHide: process.platform === 'win32',
+    })
+    : Promise.resolve(Buffer.alloc(0));
 
   const download = async ({ kind }) => {
     const home = homedir();

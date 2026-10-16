@@ -41,6 +41,10 @@ Switching direction in the wizard **must** discard the previous preview and re-c
 ## Invariants
 
 - Plan is computed on the source filesystem/inventory snapshot; destination executors never re-walk the source.
+- All local, HTTP and SSH archive builders exclude `node_modules`, `.venv-asc` and `*.backup`
+  at every depth, including followed symlinks, matching the inventory walk. Keep
+  these exclusions in `OPENCODE_CONFIG_SYNC_TAR_EXCLUDES`; bypassing the shared
+  archive builder can silently transfer dependency trees omitted by the preview.
 - Managed SSH readiness is gated by `posixShell` (and `tarExtract` / `authFileWrite` as needed).
 - Prepare (remote or local) writes generational backups under `<backupRoot>/<syncRunId>/` and prunes older than `OPENCODE_CONFIG_SYNC_BACKUP_GENERATIONS`. Failed runs keep their scene until pruned.
 - Finalize confirms the run's backup directory exists.

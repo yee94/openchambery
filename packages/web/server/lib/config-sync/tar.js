@@ -1,4 +1,5 @@
 import { spawn } from 'node:child_process';
+import { OPENCODE_CONFIG_SYNC_TAR_EXCLUDES } from './constants.js';
 
 /**
  * Collect stdout from a local `tar …` into a Buffer.
@@ -11,7 +12,7 @@ import { spawn } from 'node:child_process';
  * @returns {Promise<Buffer>}
  */
 export const collectLocalTarBuffer = (tarArgs, spawnOptions = {}) => new Promise((resolve, reject) => {
-  const child = spawn('tar', tarArgs, {
+  const child = spawn('tar', [...OPENCODE_CONFIG_SYNC_TAR_EXCLUDES, ...tarArgs], {
     stdio: ['ignore', 'pipe', 'pipe'],
     ...(spawnOptions.windowsHide ? { windowsHide: true } : {}),
   });

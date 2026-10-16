@@ -37,7 +37,7 @@ export const walkAllowlistDirectory = (absPath, excludeNames, seenRealpaths) => 
   }
 
   for (const name of names) {
-    if (excludeNames.has(name) || name === 'node_modules') continue;
+    if (excludeNames.has(name) || name === 'node_modules' || name === '.venv-asc') continue;
     if (/\.backup$/.test(name)) continue;
     const childAbs = path.join(absPath, name);
     let st;
