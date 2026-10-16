@@ -1,4 +1,4 @@
-import { afterEach, expect, it } from 'bun:test';
+import { afterEach, expect, it } from 'vitest';
 import crypto from 'node:crypto';
 import http from 'node:http';
 
@@ -342,6 +342,26 @@ it('shares concurrent startup, rejects port conflicts, and restarts after stop',
   expect(server.address().port).toBeGreaterThan(0);
 });
 
+it('bounds unfinished Push requests and releases their slots when clients disconnect', async () => {
+  const { port } = await startPush({ limits: { maxInFlight: 1 } });
+  const slow = [];
+  try {
+    for (let index = 0; index < 2; index += 1) {
+      const req = http.request({ host: '127.0.0.1', port, path: '/v1/push/register-token', method: 'POST', headers: { 'content-length': '100' } });
+      req.on('error', () => {});
+      req.write('{');
+      slow.push(req);
+    }
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    const id = identity();
+    const body = registerBody(id, hexToken('bounded-http'));
+    expect(await request(port, '/v1/push/register-token', { method: 'POST', body })).toMatchObject({ status: 503 });
+    for (const req of slow) req.destroy();
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    expect(await request(port, '/v1/push/register-token', { method: 'POST', body })).toMatchObject({ status: 200 });
+  } finally { for (const req of slow) req.destroy(); }
+});
+
 it('waits for in-flight APNs before closing providers and keeps restart in-flight counts correct', async () => {
   let releaseSend;
   const held = new Promise((resolve) => { releaseSend = resolve; });
@@ -431,6 +451,7 @@ it('force-closes remaining connections after the stop deadline', async () => {
   const token = hexToken('deadline');
   expect((await request(port, '/v1/push/register-token', { method: 'POST', body: registerBody(id, token) })).status).toBe(200);
   const pending = request(port, '/v1/push/send', { method: 'POST', body: sendBody(id, [token]) });
+  pending.catch(() => {});
   const until = Date.now() + 1_000;
   while (Date.now() < until && server.getSnapshot().inFlight < 1) await new Promise((resolve) => setTimeout(resolve, 5));
   expect(server.getSnapshot().inFlight).toBe(1);

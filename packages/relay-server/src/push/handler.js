@@ -3,7 +3,7 @@ import { normalizePushRelayOptions, resolvePushRelayClientIp } from './config.js
 import { deriveServerId, verifyP1363 } from './crypto.js';
 import { createInFlightGate, createReplayGuard, createSlidingWindowLimiter, createWorkTracker } from './guard.js';
 import { JSON_BODY_BYTES, buildLiveActivityPayload, validateLiveActivityBody, validateLiveActivityRegisterBody, validateRegisterBody, validateSendBody } from './schema.js';
-import { createTokenStore } from './store.js';
+import { createCachedTokenStore } from './cached-store.js';
 
 const WINDOW_MS = 60_000;
 const STOP_DEADLINE_MS = 5_500;
@@ -25,8 +25,10 @@ const sendJson = (response, status, payload, method = 'GET') => {
 
 const readBody = (request, maxBytes) => new Promise((resolve, reject) => {
   let done = false;
-  const fail = (error) => { if (done) return; done = true; reject(error); };
-  const succeed = (value) => { if (done) return; done = true; resolve(value); };
+  const timer = setTimeout(() => { fail(new Error('body timeout')); request.destroy(); }, 5_000);
+  timer.unref?.();
+  const fail = (error) => { if (done) return; done = true; clearTimeout(timer); reject(error); };
+  const succeed = (value) => { if (done) return; done = true; clearTimeout(timer); resolve(value); };
   const tooLarge = () => {
     const error = new Error('payload too large');
     error.code = 'PAYLOAD_TOO_LARGE';
@@ -56,6 +58,7 @@ const readBody = (request, maxBytes) => new Promise((resolve, reject) => {
   request.on('data', onData);
   request.on('end', () => succeed(Buffer.concat(chunks)));
   request.on('error', fail);
+  request.once('aborted', () => fail(new Error('body aborted')));
 });
 
 export const createPushRelayHandler = (options = {}) => {
@@ -66,7 +69,7 @@ export const createPushRelayHandler = (options = {}) => {
   const resolveClientIp = config.resolveClientIp ?? ((request) => resolvePushRelayClientIp(request, config.trustProxy));
   const ownedStore = !config.store;
   const ownedApns = !config.apnsProvider;
-  const openStore = () => config.store ?? createTokenStore(config.databasePath);
+  const openStore = () => config.store ?? createCachedTokenStore(config.databasePath, { maxTokens: limits.maxTokens, maxPending: limits.maxInFlight });
   const openApns = () => config.apnsProvider ?? createApnsProvider({ ...config.apns, clock, http2: config.http2 });
   let store = openStore();
   let apns;
@@ -76,13 +79,18 @@ export const createPushRelayHandler = (options = {}) => {
     if (ownedStore) try { store.close(); } catch { /* ignore */ }
     throw error;
   }
-  const liveStore = () => {
-    if (!ownedStore) return store;
-    if (state === 'stopping') return store;
-    try { store.count(); return store; } catch {
-      store = createTokenStore(config.databasePath);
-      return store;
-    }
+  let mutationTail = Promise.resolve();
+  let mutations = 0;
+  const mutate = (run) => {
+    if (mutations >= limits.maxInFlight) return Promise.resolve({ status: 503, body: { error: 'busy' } });
+    mutations += 1;
+    const deadline = Date.now() + 2_000;
+    const result = mutationTail.then(() => {
+      if (state !== 'running' || Date.now() >= deadline) return { status: 503, body: { error: 'busy' } };
+      return run();
+    }).finally(() => { mutations -= 1; });
+    mutationTail = result.catch(() => {});
+    return result;
   };
   const replay = createReplayGuard({ replayMs: limits.replayMs, maxReplayEntries: limits.maxReplayEntries, now: () => clock.now() });
   const registerIpLimit = createSlidingWindowLimiter({ windowMs: WINDOW_MS, maxCount: limits.registerLimitPerMinute, maxEntries: limits.maxRateLimitEntries, now: () => clock.now() });
@@ -94,8 +102,9 @@ export const createPushRelayHandler = (options = {}) => {
   let stopPromise = null; let state = 'idle';
   const snapshot = () => {
     let tokenCount = 0;
-    try { tokenCount = store.count(); } catch { /* closed after stop */ }
-    return { state, tokenCount, inFlight: inFlight.active, replayEntries: replay.size, reasons: { ...reasons } };
+    let storeAvailable = false;
+    try { tokenCount = store.count(); storeAvailable = true; } catch { /* closed after stop */ }
+    return { state, tokenCount, storeAvailable, inFlight: inFlight.active, replayEntries: replay.size, reasons: { ...reasons } };
   };
 
   const authenticate = (jwk, message, signature, ts) => {
@@ -104,7 +113,7 @@ export const createPushRelayHandler = (options = {}) => {
     return null;
   };
 
-  const handleRegister = (parsed) => {
+  const handleRegister = (parsed) => mutate(async () => {
     const message = parsed.kind
       ? `${parsed.ts}.${parsed.token}.${parsed.platform}.${parsed.kind}`
       : `${parsed.ts}.${parsed.token}.${parsed.platform}`;
@@ -113,27 +122,27 @@ export const createPushRelayHandler = (options = {}) => {
     const serverId = deriveServerId(parsed.publicKeyJwk);
     const replayKey = `${parsed.kind ? 'register-live-activity' : 'register'}.${serverId}.${parsed.ts}.${parsed.sig.toString('base64url')}`;
     if (replay.has(replayKey)) return { status: 200, body: { ok: true } };
-    const tokens = liveStore();
+    const tokens = store;
     const existing = tokens.get(parsed.token);
     if (!existing && tokens.count() >= limits.maxTokens) { reasons.limited += 1; return { status: 429, body: { error: 'token_limit' } }; }
     if (!replay.remember(replayKey)) { reasons.limited += 1; return { status: 429, body: { error: 'rate_limited' } }; }
-    tokens.upsert(parsed.token, serverId, parsed.platform, clock.now());
+    try { await tokens.upsert(parsed.token, serverId, parsed.platform, clock.now()); } catch (error) { replay.forget(replayKey); throw error; }
     return { status: 200, body: { ok: true } };
-  };
+  });
 
-  const handleUnregisterLiveActivity = (parsed) => {
+  const handleUnregisterLiveActivity = (parsed) => mutate(async () => {
     const authError = authenticate(parsed.publicKeyJwk, `${parsed.ts}.${parsed.token}.${parsed.platform}.${parsed.kind}`, parsed.sig, parsed.ts);
     if (authError) return { status: 401, body: { error: authError } };
     const serverId = deriveServerId(parsed.publicKeyJwk);
     const replayKey = `unregister-live-activity.${serverId}.${parsed.ts}.${parsed.sig.toString('base64url')}`;
     if (replay.has(replayKey)) return { status: 200, body: { ok: true } };
-    const tokens = liveStore();
+    const tokens = store;
     const existing = tokens.get(parsed.token);
     if (existing && existing.serverId !== serverId) { reasons.authRejected += 1; return { status: 401, body: { error: 'invalid_signature' } }; }
     if (!replay.remember(replayKey)) { reasons.limited += 1; return { status: 429, body: { error: 'rate_limited' } }; }
-    if (existing) tokens.delete(parsed.token);
+    try { if (existing) await tokens.delete(parsed.token, existing); } catch (error) { replay.forget(replayKey); throw error; }
     return { status: 200, body: { ok: true } };
-  };
+  });
 
   const handleSend = async (parsed) => {
     const sorted = [...parsed.tokens].sort();
@@ -144,7 +153,7 @@ export const createPushRelayHandler = (options = {}) => {
     if (replay.has(replayKey)) { reasons.replayRejected += 1; return { status: 401, body: { error: 'replay' } }; }
     if (!replay.remember(replayKey)) { reasons.limited += 1; return { status: 429, body: { error: 'rate_limited' } }; }
     if (!sendServerLimit.allow(serverId)) { reasons.limited += 1; return { status: 429, body: { error: 'rate_limited' } }; }
-    const tokens = liveStore();
+    const tokens = store;
     const results = await Promise.all(parsed.uniqueTokens.map(async (token) => {
       const binding = tokens.get(token);
       if (!binding || binding.serverId !== serverId) return { token, ok: false };
@@ -153,7 +162,7 @@ export const createPushRelayHandler = (options = {}) => {
       try {
         const outcome = await apns.send({ token, env: parsed.env, payload: parsed.payload, collapseId: parsed.collapseId });
         if (outcome?.drop === true) {
-          tokens.delete(token);
+          await tokens.delete(token, binding);
           return { token, ok: false, drop: true };
         }
         return { token, ok: outcome?.ok === true };
@@ -184,7 +193,7 @@ export const createPushRelayHandler = (options = {}) => {
       staleDate: parsed.staleDate,
       timestamp: Math.floor(clock.now() / 1000),
     });
-    const tokens = liveStore();
+    const tokens = store;
     const results = await Promise.all(parsed.uniqueTokens.map(async (token) => {
       const binding = tokens.get(token);
       if (!binding || binding.serverId !== serverId) return { token, ok: false };
@@ -193,10 +202,10 @@ export const createPushRelayHandler = (options = {}) => {
       try {
         const outcome = await apns.send({ token, env: parsed.env, payload, pushType: 'liveactivity' });
         if (outcome?.drop === true) {
-          tokens.delete(token);
+          await tokens.delete(token, binding);
           return { token, ok: false, drop: true };
         }
-        if (outcome?.ok === true && parsed.event === 'end') tokens.delete(token);
+        if (outcome?.ok === true && parsed.event === 'end') await tokens.delete(token, binding);
         return { token, ok: outcome?.ok === true };
       } catch {
         return { token, ok: false };
@@ -229,6 +238,7 @@ export const createPushRelayHandler = (options = {}) => {
     const ip = resolveClientIp(request);
     const limiter = (isRegister || isRegisterLive || isUnregisterLive) ? registerIpLimit : sendIpLimit;
     if (!limiter.allow(ip)) { reasons.limited += 1; sendJson(response, 429, { error: 'rate_limited' }); return true; }
+    if (httpWork.active >= limits.maxInFlight * 2) { reasons.limited += 1; sendJson(response, 503, { error: 'busy' }); request.resume(); return true; }
     const endHttp = httpWork.begin();
     readBody(request, limits.jsonBodyBytes ?? JSON_BODY_BYTES).then(async (buffer) => {
       let body;
@@ -242,21 +252,25 @@ export const createPushRelayHandler = (options = {}) => {
         sendJson(response, 400, { error: parsed.error });
         return;
       }
-      const result = (isRegister || isRegisterLive) ? handleRegister(parsed.value)
-        : isUnregisterLive ? handleUnregisterLiveActivity(parsed.value)
+      await store.ready?.();
+      if (state !== 'running') { sendJson(response, 503, { error: 'unavailable' }); return; }
+      const result = (isRegister || isRegisterLive) ? await handleRegister(parsed.value)
+        : isUnregisterLive ? await handleUnregisterLiveActivity(parsed.value)
           : isLiveActivity ? await handleLiveActivity(parsed.value)
             : await handleSend(parsed.value);
       sendJson(response, result.status, result.body);
     }).catch((error) => {
       if (error?.code === 'PAYLOAD_TOO_LARGE') { reasons.policyRejected += 1; sendJson(response, 413, { error: 'payload_too_large' }); return; }
+      if (error?.code === 'PUSH_STORE_UNAVAILABLE' || error?.code === 'PUSH_STORE_BUSY') { sendJson(response, 503, { error: 'unavailable' }); return; }
       sendJson(response, 500, { error: 'internal' });
     }).finally(endHttp);
     return true;
   };
 
-  const activate = () => {
+  const activate = async () => {
     if (state === 'running') return;
-    liveStore();
+    if (ownedStore && state === 'stopped') store = openStore();
+    await store.ready?.();
     inFlight.reset();
     httpWork.reset();
     if (ownedApns && state === 'stopped') apns = openApns();
@@ -265,7 +279,7 @@ export const createPushRelayHandler = (options = {}) => {
 
   const deactivate = () => {
     if (stopPromise) return stopPromise;
-    if (state === 'idle' || state === 'stopped') { state = 'stopped'; return Promise.resolve(); }
+    if (state === 'idle' || state === 'stopped') { state = 'stopped'; return ownedStore ? Promise.resolve(store.close()) : Promise.resolve(); }
     state = 'stopping';
     stopPromise = Promise.resolve().then(async () => {
       inFlight.rejectWaiters();
@@ -284,7 +298,7 @@ export const createPushRelayHandler = (options = {}) => {
         if (deadlineTimer !== null) try { clock.clearTimeout(deadlineTimer); } catch { /* ignore */ }
       }
       try { apns.close?.(); } catch { /* ignore */ }
-      if (ownedStore) try { store.close(); } catch { /* ignore */ }
+      if (ownedStore) try { await store.close(); } catch { /* ignore */ }
       state = 'stopped';
       stopPromise = null;
     });

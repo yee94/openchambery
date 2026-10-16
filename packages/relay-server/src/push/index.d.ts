@@ -59,10 +59,11 @@ export interface PushTokenRecord {
 
 export interface PushTokenStore {
   get(token: string): PushTokenRecord | null;
-  upsert(token: string, serverId: string, platform: string, updatedAt: number): void;
-  delete(token: string): void;
+  upsert(token: string, serverId: string, platform: string, updatedAt: number): void | Promise<void>;
+  delete(token: string, expected?: PushTokenRecord): void | Promise<void>;
   count(): number;
-  close(): void;
+  close(): void | Promise<void>;
+  ready?(): Promise<void>;
 }
 
 export interface PushRelaySnapshotReasons {
@@ -75,6 +76,7 @@ export interface PushRelaySnapshotReasons {
 export interface PushRelaySnapshot {
   state: PushRelayState;
   tokenCount: number;
+  storeAvailable: boolean;
   inFlight: number;
   replayEntries: number;
   reasons: PushRelaySnapshotReasons;

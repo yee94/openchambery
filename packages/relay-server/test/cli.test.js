@@ -1,4 +1,4 @@
-import { afterEach, expect, it } from 'bun:test';
+import { afterEach, expect, it } from 'vitest';
 import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -75,6 +75,25 @@ it('keeps JSON output JSON-only and cleans signal listeners', async () => {
   const terminate = signals.get('SIGTERM'); const interrupt = signals.get('SIGINT');
   await terminate(); await interrupt();
   expect(stopped).toBe(1); expect(signals.size).toBe(0); expect(events).toEqual(['stop:complete', 'exit:0']);
+});
+
+it('closes both combined resources when asynchronous Push startup fails', async () => {
+  for (const args of [[], ['--quiet'], ['--json']]) {
+    const events = [];
+    const output = [];
+    const processLike = { env: {}, exitCode: 0, on() { throw new Error('must not install signals after failure'); } };
+    const result = await runRelayServerCli(args, {
+      process: processLike,
+      stdout: { write: (text) => output.push(text) },
+      stderr: { write: (text) => output.push(text) },
+      createPushMount: () => ({ requestHandler: () => false, start: async () => { throw new Error('push store unavailable'); }, stop: async () => { events.push('push'); } }),
+      start: async () => ({ stop: async () => { events.push('relay'); } }),
+    });
+    expect(result).toBe(1);
+    expect(processLike.exitCode).toBe(1);
+    expect(events).toEqual(['push', 'relay']);
+    if (args.includes('--json')) expect(JSON.parse(output.join('')).status).toBe('error');
+  }
 });
 
 it('renders help and version as one JSON object and reports errors deterministically', async () => {

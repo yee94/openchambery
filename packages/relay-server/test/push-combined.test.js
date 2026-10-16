@@ -1,6 +1,12 @@
-import { afterEach, expect, it } from 'bun:test';
+import { afterEach, expect, it } from 'vitest';
 import crypto from 'node:crypto';
 import http from 'node:http';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { once } from 'node:events';
+import { DatabaseSync } from 'node:sqlite';
+import { WebSocket } from 'ws';
 
 import { createPrivateRelayServer } from '../src/index.js';
 import { createCombinedPushMount } from '../src/push/combined.js';
@@ -102,4 +108,65 @@ it('serves push routes on the relay port without claiming relay health endpoints
   expect(await request(port, '/v1/push/nonexistent', { method: 'POST', body: {} })).toMatchObject({ status: 404 });
   expect(await request(port, '/healthz')).toMatchObject({ status: 200, body: '{"status":"ok"}' });
   expect(await request(port, '/v1/push/healthz')).toMatchObject({ status: 404 });
+});
+
+it('keeps authenticated relay pairing, forwarding and heartbeat responsive while push SQLite is locked', async () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'push-relay-lock-'));
+  const databasePath = path.join(directory, 'tokens.sqlite');
+  const mount = createCombinedPushMount(completeApnsEnv({ OPENCHAMBER_PUSH_RELAY_DATABASE_PATH: databasePath }), { apnsProvider: { send: async () => ({ ok: true }) } });
+  const relay = createPrivateRelayServer({ port: 0, host: '127.0.0.1', requestHandler: mount.requestHandler, limits: { heartbeatMs: 40 } });
+  const sockets = [];
+  let lock;
+  try {
+    await mount.start();
+    await relay.start();
+    const port = relay.address().port;
+    const id = identity();
+    const token = hexToken('locked');
+    const body = registerBody(id, token);
+    lock = new DatabaseSync(databasePath);
+    lock.exec('BEGIN IMMEDIATE');
+    let settled = false;
+    const registering = request(port, '/v1/push/register-token', { method: 'POST', body }).then((result) => { settled = true; return result; });
+    await new Promise((resolve) => setTimeout(resolve, 25));
+    const connect = async (role, connectionId) => {
+      const params = { v: '1', role, serverId: id.serverId };
+      if (role !== 'client') {
+        const ts = Date.now();
+        const { crv, kty, x, y } = id.publicJwk;
+        Object.assign(params, { ts, sig: id.sign(`${ts}.${id.serverId}.${role}.${connectionId ?? ''}`), pk: Buffer.from(JSON.stringify({ crv, kty, x, y })).toString('base64url') });
+        if (connectionId) params.connectionId = connectionId;
+      }
+      const socket = new WebSocket(`${relay.wsUrl}?${new URLSearchParams(params)}`);
+      sockets.push(socket);
+      const firstMessage = once(socket, 'message');
+      await once(socket, 'open');
+      return { socket, firstMessage };
+    };
+    const host = await connect('host-control');
+    await host.firstMessage;
+    const connected = once(host.socket, 'message');
+    const client = await connect('client');
+    const [{ connectionId }] = (await connected).map((buffer) => JSON.parse(buffer.toString()));
+    const data = await connect('host-data', connectionId);
+    client.socket.send('forward');
+    expect((await data.firstMessage)[0].toString()).toBe('forward');
+    data.socket.send('reply');
+    expect((await client.firstMessage)[0].toString()).toBe('reply');
+    await once(host.socket, 'ping');
+    expect(settled).toBe(false);
+    expect(await request(port, '/healthz')).toMatchObject({ status: 200 });
+    expect(await registering).toMatchObject({ status: 503 });
+    expect(mount.getSnapshot().tokenCount).toBe(0);
+    expect(relay.getSnapshot().reasons.heartbeatReaped).toBe(0);
+    lock.exec('ROLLBACK');
+    expect(await request(port, '/v1/push/register-token', { method: 'POST', body })).toMatchObject({ status: 200 });
+    expect(await request(port, '/v1/push/send', { method: 'POST', body: sendBody(id, [token]) })).toMatchObject({ status: 200, json: { results: [{ token, ok: true }] } });
+  } finally {
+    for (const socket of sockets) socket.terminate();
+    lock?.close();
+    await mount.stop();
+    await relay.stop();
+    fs.rmSync(directory, { recursive: true, force: true });
+  }
 });

@@ -47,6 +47,14 @@ When `openchamber-relay` sees any non-empty `OPENCHAMBER_PUSH_RELAY_APNS_*` vari
 
 Combined mode ignores `OPENCHAMBER_PUSH_RELAY_HOST` and `OPENCHAMBER_PUSH_RELAY_PORT`. Public `/healthz` and `/readyz` stay Layer 1. The standalone `openchamber-push-relay` entry is unchanged.
 
+Push token persistence is owned by `src/push/store-worker.js`; all SQLite initialization and writes run in a Worker thread, including in combined mode. `cached-store.js` loads existing bindings before Push becomes ready and owns a memory index bounded by `maxTokens`. Reads and snapshot counts do no database or Worker work. An existing database larger than the configured capacity fails initialization rather than silently dropping registrations. The schema and database path are unchanged; run one Push owner per file and do not mutate it externally while running.
+
+Push request bodies must complete within 5 seconds and the existing byte limit. Aborted uploads release their HTTP work slot, preventing disconnected or slow clients from permanently exhausting the bounded request capacity.
+
+Writes are serialized and acknowledged only after SQLite succeeds, then the memory index is updated. Failed writes leave the previous binding intact and registration retries remain possible. APNs completion deletes a binding only if it still matches the record observed before sending, so an old delivery cannot delete a newer registration. SQLite lock waits are capped at 250 ms in the Worker. Pending store writes and registration mutations are each capped at `maxInFlight`, with a 2-second queue deadline; a dispatched store operation must finish within its remaining 2-second store deadline. Push HTTP work is capped at twice `maxInFlight`. Saturation and unavailable storage return HTTP 503, without affecting Layer 1 routes.
+
+On Worker failure or write timeout, cached bindings are invalidated (never used for authorization while persistence is uncertain), pending writes fail, and the old Worker is terminated. A later Push request can reload the database after a 5-second cooldown; initialization has a 10-second deadline and waits for old-thread termination before creating a replacement. There is no background retry loop. `getSnapshot().storeAvailable` distinguishes unavailable storage from a successfully empty store. Push shutdown drains requests within the existing deadline before closing the Worker. This isolates SQLite blocking, not process-wide OOM, CPU exhaustion, or host failure.
+
 ```sh
 export OPENCHAMBER_PUSH_RELAY_APNS_KEY_ID='<apns-key-id>'
 export OPENCHAMBER_PUSH_RELAY_APNS_TEAM_ID='<apns-team-id>'

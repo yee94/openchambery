@@ -9,16 +9,16 @@ const SCHEMA = `CREATE TABLE IF NOT EXISTS push_tokens (
   updated_at INTEGER NOT NULL
 ) STRICT`;
 
-export const createTokenStore = (databasePath) => {
+export const createTokenStore = (databasePath, { busyTimeoutMs = 5_000 } = {}) => {
   if (typeof databasePath !== 'string' || databasePath.length === 0 || databasePath.includes('\0')) {
     throw new RangeError('invalid database path');
   }
   if (databasePath !== ':memory:') {
     fs.mkdirSync(path.dirname(path.resolve(databasePath)), { recursive: true });
   }
-  const db = new DatabaseSync(databasePath, { timeout: 5_000 });
+  const db = new DatabaseSync(databasePath, { timeout: busyTimeoutMs });
   db.exec('PRAGMA journal_mode = WAL');
-  db.exec('PRAGMA busy_timeout = 5000');
+  db.exec(`PRAGMA busy_timeout = ${busyTimeoutMs}`);
   db.exec(SCHEMA);
   const getStmt = db.prepare('SELECT server_id AS serverId, platform, updated_at AS updatedAt FROM push_tokens WHERE token = ?');
   const upsertStmt = db.prepare(`INSERT INTO push_tokens (token, server_id, platform, updated_at) VALUES (?, ?, ?, ?)
@@ -28,6 +28,12 @@ export const createTokenStore = (databasePath) => {
   let closed = false;
   const assertOpen = () => { if (closed) throw new Error('token store closed'); };
   return {
+    entries(maxTokens) {
+      assertOpen();
+      const rows = db.prepare('SELECT token, server_id AS serverId, platform, updated_at AS updatedAt FROM push_tokens LIMIT ?').all(maxTokens + 1);
+      if (rows.length > maxTokens) throw new Error('token capacity exceeded');
+      return rows;
+    },
     get(token) {
       assertOpen();
       const row = getStmt.get(token);

@@ -104,7 +104,13 @@ export const runRelayServerCli = async (argv, dependencies = {}) => {
     const mount = createPushMount(env, dependencies.pushMountDeps ?? {});
     if (mount) config.requestHandler = mount.requestHandler;
     const relay = await (dependencies.start ?? startPrivateRelayServer)(config);
-    if (mount) await mount.start();
+    if (mount) {
+      try { await mount.start(); } catch (error) {
+        await mount.stop();
+        await relay.stop();
+        throw error;
+      }
+    }
     const url = config.publicUrl ?? relay.wsUrl;
     respond(json ? { status: 'ok', url, host: config.host, port: relay.address?.()?.port ?? config.port, path: config.path, ...(mount ? { push: true } : {}) } : { message: `Relay listening at ${url}` });
     if (mount && !json) respond({ message: 'Push relay mounted at /v1/push/*' });

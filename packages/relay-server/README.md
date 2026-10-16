@@ -70,6 +70,8 @@ In combined mode:
 - `OPENCHAMBER_PUSH_RELAY_HOST` and `OPENCHAMBER_PUSH_RELAY_PORT` are ignored.
 - `openchamber-push-relay` is unchanged and remains the isolated two-process option.
 
+Both modes keep token lookups in a bounded memory index and persist changes in a SQLite Worker. Registration success still means the binding is persisted; the existing database is loaded on startup without migration. Database lock waits cannot block Relay's event loop. Bounded queues reject excess Push work with HTTP 503; Worker failure disables Push authorization until the database is reloaded after a cooldown. See `DOCUMENTATION.md` for limits and recovery behavior. This does not isolate whole-process or host failures.
+
 ```sh
 export OPENCHAMBER_PUSH_RELAY_APNS_KEY_ID='<apns-key-id>'
 export OPENCHAMBER_PUSH_RELAY_APNS_TEAM_ID='<apns-team-id>'

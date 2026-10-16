@@ -28,10 +28,11 @@ export const createPushRelayServer = (options = {}) => {
         cleanupStart();
         rejectStart(error);
       };
-      const ready = () => {
+      const ready = async () => {
         localServer.off('error', failStart);
         if (localGeneration !== generation || state !== 'starting') return;
-        handler.activate();
+        try { await handler.activate(); } catch (error) { failStart(error); await handler.deactivate(); return; }
+        if (localGeneration !== generation || state !== 'starting') { await handler.deactivate(); return; }
         state = 'running';
         resolve();
       };

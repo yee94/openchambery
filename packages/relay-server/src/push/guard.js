@@ -15,6 +15,7 @@ export const createReplayGuard = ({ replayMs, maxReplayEntries, now }) => {
       replay.set(key, now() + replayMs);
       return true;
     },
+    forget(key) { replay.delete(key); },
     clear() { replay.clear(); },
     get size() { return replay.size; },
   };
