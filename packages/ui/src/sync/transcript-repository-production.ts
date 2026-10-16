@@ -41,7 +41,7 @@ import {
   isAuthoredUserTurnRecord,
   normalizeSessionProjectionMessage,
 } from "./session-projection-api"
-import { rememberCompactionBarrierFromRecords } from "./session-compaction-api"
+import { rememberCompactionBarrierFromRecords, useSessionCompactionBarrierStore } from "./session-compaction-api"
 import {
   fetchExactSessionMessageRecord,
   findMissingAssistantParentUserIDs,
@@ -215,6 +215,8 @@ export async function fetchProductionTranscriptTransportPage(input: {
 async function fetchProductionTranscriptPageInternal(
   input: Parameters<typeof fetchProductionTranscriptTransportPage>[0],
 ): Promise<TranscriptTransportPage> {
+  const barrierSnapshot = useSessionCompactionBarrierStore.getState()
+  const runtimeGeneration = getRuntimeGeneration()
   const rawPurpose = input.before ? "prepend" : (input.purpose ?? "initial")
   const purpose: "initial" | "prepend" | "recovery" | "materialize" =
     rawPurpose === "prepend"
@@ -299,7 +301,11 @@ async function fetchProductionTranscriptPageInternal(
   }
 
   input.signal.throwIfAborted()
-  rememberCompactionBarrierFromRecords(input.sessionID, records)
+  if (!input.before
+    && getRuntimeGeneration() === runtimeGeneration
+    && useSessionCompactionBarrierStore.getState() === barrierSnapshot) {
+    rememberCompactionBarrierFromRecords(input.sessionID, records)
+  }
 
   return {
     records,

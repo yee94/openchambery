@@ -191,11 +191,12 @@ export function rememberCompactionBarrierFromRecords(
   sessionID: string,
   records: readonly { parts?: readonly unknown[] }[],
 ): void {
-  const running = records.some((record) => {
-    const card = (record.parts ?? []).find(isSessionCompactionCard)
-    return card?.status === "running"
-  })
-  if (running) setSessionCompactionBarrier(sessionID, true)
+  for (let index = records.length - 1; index >= 0; index -= 1) {
+    const card = (records[index]?.parts ?? []).find(isSessionCompactionCard)
+    if (!card) continue
+    setSessionCompactionBarrier(sessionID, card.status === "running")
+    return
+  }
 }
 
 export async function postSessionCompact(

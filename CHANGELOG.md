@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [2.0.9-beta.20] - 2026-10-16
+
+### 修复
+
+- 修复自动压缩完成后，排队消息仍显示「等待压缩完成」的问题；同步到完成状态后恢复「编辑」和「引导」操作。
+
 ## [2.0.9-beta.19] - 2026-10-16
 
 ### 修复

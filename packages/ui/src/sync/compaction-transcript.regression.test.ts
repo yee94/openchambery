@@ -5,6 +5,61 @@ import { normalizeSessionProjectionMessage } from './session-projection-api'
 import { normalizeOpenCodeEvent } from './opencode-event-normalizer'
 
 describe('native compaction transcript lifecycle', () => {
+  test.each(['completed', 'failed'])('authoritative %s checkpoint releases the queue after a missed terminal event', async (status) => {
+    const { rememberCompactionBarrierFromRecords, isCompactionBarrierActive, canPromoteInboxItem, resetSessionCompactionBarrier } = await import('./session-compaction-api')
+    resetSessionCompactionBarrier()
+    const sessionID = 'ses_queue_recovery'
+    const checkpoint = (status: string) => normalizeSessionProjectionMessage(sessionID, {
+      id: 'msg_checkpoint', type: 'compaction', status, reason: 'auto',
+      summary: '', time: { created: 10 },
+    })!
+    rememberCompactionBarrierFromRecords(sessionID, [checkpoint('running')])
+    expect(isCompactionBarrierActive(sessionID)).toBe(true)
+    rememberCompactionBarrierFromRecords(sessionID, [checkpoint(status)])
+    expect(isCompactionBarrierActive(sessionID)).toBe(false)
+    expect(canPromoteInboxItem({ sessionID })).toBe(true)
+  })
+
+  test.each(['recovery', 'prepend', 'new-start', 'late-running', 'failure'])(
+    'production authority recovery respects queue lifecycle: %s', async (scenario) => {
+      const { fetchProductionTranscriptTransportPage } = await import('./transcript-repository-production')
+      const { setSessionCompactionBarrier, isCompactionBarrierActive, resetSessionCompactionBarrier } = await import('./session-compaction-api')
+      const { configureRuntimeUrlResolver, getRuntimeUrlResolver, setRuntimeUrlResolver } = await import('../lib/runtime-url')
+      const originalFetch = globalThis.fetch
+      const resolver = getRuntimeUrlResolver()
+      const sessionID = 'ses_production_queue'
+      resetSessionCompactionBarrier()
+      configureRuntimeUrlResolver({ apiBaseUrl: 'http://127.0.0.1:57123' })
+      setSessionCompactionBarrier(sessionID, true)
+      globalThis.fetch = (async () => {
+        if (scenario === 'failure') return new Response('unavailable', { status: 503 })
+        if (scenario === 'new-start') setSessionCompactionBarrier(sessionID, true)
+        if (scenario === 'late-running') setSessionCompactionBarrier(sessionID, false)
+        return new Response(JSON.stringify({ data: [{
+          id: 'msg_checkpoint', type: 'compaction', reason: 'auto',
+          status: scenario === 'late-running' ? 'running' : 'completed',
+          summary: '', time: { created: 10 },
+        }] }), { status: 200, headers: { 'content-type': 'application/json' } })
+      }) as typeof fetch
+      try {
+        const request = fetchProductionTranscriptTransportPage({
+          directory: '/repo', sessionID, limit: 20,
+          ...(scenario === 'prepend' ? { before: 'older-cursor' } : {}),
+          signal: new AbortController().signal,
+        })
+        if (scenario === 'failure') await expect(request).rejects.toThrow()
+        else await request
+        expect(isCompactionBarrierActive(sessionID)).toBe(
+          scenario !== 'recovery' && scenario !== 'late-running',
+        )
+      } finally {
+        globalThis.fetch = originalFetch
+        setRuntimeUrlResolver(resolver)
+        resetSessionCompactionBarrier()
+      }
+    },
+  )
+
   test('publishes live updates and keeps successive checkpoints separate', () => {
     const sessionID = 'ses_compact'
     const old = normalizeSessionProjectionMessage(sessionID, {

@@ -57,6 +57,10 @@ Fork reads native `message.list` pages through the scoped client, independently 
 
 `summarizeOpenCodeError` preserves native `type` and valid HTTP `status` alongside its existing `name`/bounded `message` fields. The in-memory notification store carries those fields through to `SessionErrorNotice`; failures before an assistant row exists use the same localized error classification as transcript assistant failures. Step-failure SSE and compaction GET/SSE projection also preserve upstream HTTP status, so error details agree before and after reload. Do not flatten structured types into text or infer automatic retries from error codes. Live retry state remains authoritative for countdown/activity; historical interruption and restart notices never start a live spinner.
 
+## Queue recovery after compaction
+
+An authoritative transcript tail reconciles the queue barrier from its latest compaction checkpoint: running blocks promotion; completed or failed restores the ordinary queue actions even when the terminal live event was missed. No checkpoint means unknown and preserves the barrier. Older-history pagination never changes the live barrier. A read whose runtime generation or barrier-store snapshot changed while awaiting HTTP cannot overwrite newer live state. Coverage: `compaction-transcript.regression.test.ts`.
+
 ## Context usage after compaction
 
 `context-token-baseline.ts` owns the backward baseline scan for web/Electron headers, mini chat, VS Code and mobile. Running and failed compactions are skipped, including their request token counts; only a completed checkpoint invalidates the earlier window. A checkpoint with unavailable status is conservatively unknown. Compaction request tokens are never treated as the resulting context size. The next ordinary assistant with nonzero token usage replaces the pending baseline.
