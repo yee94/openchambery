@@ -316,11 +316,17 @@ export const useQuotaStore = create<QuotaStore>()(
         const requestGeneration = magpieGeneration;
         const sequence = ++magpieRequestSequence;
         try {
-          const { sources } = await queryClient.fetchQuery(magpieQuotaOptions(directory, manualURL, refresh));
+          const { sources, incomplete } = await queryClient.fetchQuery(magpieQuotaOptions(directory, manualURL, refresh));
           if (generation !== quotaRuntimeGeneration || requestGeneration !== magpieGeneration || sequence < magpieAppliedSequence || directory !== useDirectoryStore.getState().currentDirectory || manualURL !== get().magpieUsageUrl) return;
           magpieAppliedSequence = sequence;
           set((state) => {
             const failed = new Map(sources.filter((s) => s.error && !s.clearPrevious && s.results.length === 0).map((s) => [s.id, s.error]));
+            if (incomplete) {
+              const reported = new Set(sources.map((s) => s.id));
+              for (const result of state.results) {
+                if (result.sourceId && !reported.has(result.sourceId)) failed.set(result.sourceId, 'Magpie discovery is incomplete');
+              }
+            }
             const results = state.results.filter((r) => r?.providerId && (r.source !== 'magpie' || failed.has(r.sourceId ?? '')))
               .map((r) => r.source === 'magpie' && failed.has(r.sourceId ?? '') ? { ...r, ok: false, error: failed.get(r.sourceId ?? '') } : r);
             results.push(...sources.flatMap((s) => s.results));

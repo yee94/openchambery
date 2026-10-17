@@ -84,6 +84,7 @@
 }
 
 .oc-settings-group-card {
+  container: settings-card / inline-size;
   width: 100%;
   min-width: 0;
   overflow: hidden;
@@ -411,9 +412,62 @@
 }
 
 .oc-settings-workspace-desktop .oc-settings-detail-pane {
+  container: settings-detail / inline-size;
   display: flex;
   min-width: 0;
   background: var(--surface-background) !important;
+}
+
+.oc-settings-entity-list {
+  width: 19rem;
+  flex-shrink: 0;
+}
+
+.oc-settings-usage-results {
+  display: grid;
+  grid-template-columns: minmax(12rem, 16rem) minmax(0, 1fr);
+  align-items: start;
+  gap: var(--oc-settings-section-stack-gap);
+}
+
+.oc-settings-usage-detail > * {
+  height: auto;
+  overflow: visible;
+}
+
+@container settings-detail (max-width: 48rem) {
+  .oc-settings-entity-split {
+    flex-direction: column;
+  }
+
+  .oc-settings-entity-list {
+    width: 100%;
+    flex-basis: 38%;
+    border-right: 0;
+    border-bottom: 1px solid var(--oc-settings-group-border);
+    overflow: hidden;
+  }
+
+  .oc-settings-usage-results {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@container settings-card (max-width: 32rem) {
+  .oc-settings-workspace .oc-settings-split-row {
+    grid-template-columns: minmax(0, 1fr);
+    row-gap: 0.5rem;
+  }
+
+  .oc-settings-workspace .oc-settings-split-row-control {
+    width: 100%;
+    max-width: none;
+    justify-self: stretch;
+  }
+
+  .oc-settings-workspace .oc-settings-split-row:not(.oc-settings-split-row-stacked):has([role="checkbox"], input[type="checkbox"]) {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
 }
 
 .oc-settings-workspace-desktop .oc-settings-detail-pane > * {

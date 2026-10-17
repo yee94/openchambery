@@ -60,8 +60,6 @@ import type { GitHubAuthStatus } from '@/lib/api/types';
 import type { SessionContextUsage } from '@/stores/types/sessionTypes';
 import { DesktopHostSwitcherDialog } from '@/components/desktop/DesktopHostSwitcher';
 import { OpenInAppButton } from '@/components/desktop/OpenInAppButton';
-import { forceKillTerminal } from '@/lib/terminalApi';
-import { useTerminalStore } from '@/stores/useTerminalStore';
 import { ProjectActionsButton } from '@/components/layout/ProjectActionsButton';
 import { resolveServicesPanelIntent } from '@/components/layout/servicesPanelIntent';
 import { SessionSwitcherDropdown } from '@/components/session/SessionSwitcherDropdown';
@@ -261,7 +259,6 @@ type DesktopServicesMenuProps = {
   refreshCurrentInstanceLabel: () => Promise<void>;
   desktopServicesTab: 'instance' | 'usage' | 'mcp';
   setDesktopServicesTab: React.Dispatch<React.SetStateAction<'instance' | 'usage' | 'mcp'>>;
-  quotaResultsLength: number;
   fetchAllQuotas: () => Promise<unknown>;
   servicesTabItems: SortableTabsStripItem[];
   quotaLastUpdated: number | null;
@@ -275,9 +272,6 @@ type DesktopServicesMenuProps = {
   rateLimitGroups: RateLimitGroup[];
   expandedFamilies: Record<string, string[]>;
   toggleFamilyExpanded: (providerId: string, familyId: string) => void;
-  showDevShutdown: boolean;
-  isDevShutdownInFlight: boolean;
-  onDevShutdown: () => Promise<void>;
   remoteUpdateInfo: UpdateInfo | null;
   remoteUpdateChecking: boolean;
   remoteUpdateError: string | null;
@@ -296,7 +290,6 @@ const DesktopServicesMenu = React.memo(function DesktopServicesMenu({
   refreshCurrentInstanceLabel,
   desktopServicesTab,
   setDesktopServicesTab,
-  quotaResultsLength,
   fetchAllQuotas,
   servicesTabItems,
   quotaLastUpdated,
@@ -310,9 +303,6 @@ const DesktopServicesMenu = React.memo(function DesktopServicesMenu({
   rateLimitGroups,
   expandedFamilies,
   toggleFamilyExpanded,
-  showDevShutdown,
-  isDevShutdownInFlight,
-  onDevShutdown,
   remoteUpdateInfo,
   remoteUpdateChecking,
   remoteUpdateError,
@@ -329,7 +319,7 @@ const DesktopServicesMenu = React.memo(function DesktopServicesMenu({
         setIsDesktopServicesOpen(open);
         if (open) {
           void refreshCurrentInstanceLabel();
-          if (desktopServicesTab === 'usage' && quotaResultsLength === 0) {
+          if (desktopServicesTab === 'usage' && quotaLastUpdated === null) {
             void fetchAllQuotas();
           }
         }
@@ -360,7 +350,7 @@ const DesktopServicesMenu = React.memo(function DesktopServicesMenu({
               onSelect={(tabID) => {
                 const value = tabID as 'instance' | 'usage' | 'mcp';
                 setDesktopServicesTab(value);
-                if (value === 'usage' && quotaResultsLength === 0) {
+                if (value === 'usage' && quotaLastUpdated === null) {
                   void fetchAllQuotas();
                 }
               }}
@@ -473,7 +463,7 @@ const DesktopServicesMenu = React.memo(function DesktopServicesMenu({
                       <div className="space-y-3">
                         {group.entries.map(([label, window]) => {
                           const displayPercent = quotaDisplayMode === 'remaining' ? window.remainingPercent : window.usedPercent;
-                          const paceInfo = calculatePace(window.usedPercent, window.resetAt, window.windowSeconds, label);
+                          const paceInfo = window.disablePace ? null : calculatePace(window.usedPercent, window.resetAt, window.windowSeconds, label);
                           const expectedMarker = paceInfo?.dailyAllocationPercent != null
                             ? (quotaDisplayMode === 'remaining'
                                 ? 100 - calculateExpectedUsagePercent(paceInfo.elapsedRatio)
@@ -484,15 +474,15 @@ const DesktopServicesMenu = React.memo(function DesktopServicesMenu({
                           return (
                             <div key={`${group.providerId}-${label}`} className="flex flex-col gap-1.5">
                               <div className="flex min-w-0 items-center justify-between gap-3">
-                                <div className="min-w-0 flex items-center gap-2">
-                                  <span className="truncate typography-ui-label text-foreground">{formatWindowLabel(label)}</span>
+                                <div className="min-w-0 flex flex-1 flex-col gap-0.5">
+                                  <span className="typography-ui-label text-foreground break-words">{formatWindowLabel(window.label ?? label)}</span>
                                   {resetLabel ? (
-                                    <span className="truncate typography-micro text-muted-foreground">
+                                    <span className="typography-micro text-muted-foreground">
                                       {resetLabel}
                                     </span>
                                   ) : null}
                                 </div>
-                                <span className="typography-ui-label tabular-nums text-foreground">
+                                <span className="shrink-0 whitespace-nowrap typography-ui-label tabular-nums text-foreground">
                                   {metricLabel === '-' ? '' : metricLabel}
                                 </span>
                               </div>
@@ -566,21 +556,6 @@ const DesktopServicesMenu = React.memo(function DesktopServicesMenu({
           </div>
         ) : null}
 
-        {showDevShutdown ? (
-          <>
-            <div className="mx-4 my-2 border-t border-[var(--interactive-border)]" />
-            <div className="px-2 pb-2">
-              <DropdownMenuItem
-                disabled={isDevShutdownInFlight}
-                onSelect={() => {
-                  void onDevShutdown();
-                }}
-              >
-                {t('header.services.shutdownDev')}
-              </DropdownMenuItem>
-            </div>
-          </>
-        ) : null}
       </DropdownMenuContent>
     </DropdownMenu>
   );
@@ -697,7 +672,6 @@ export const Header: React.FC<HeaderProps> = ({
 
   const getCurrentModel = useConfigStore((state) => state.getCurrentModel);
   const runtimeApis = useRuntimeAPIs();
-  const [isDevShutdownInFlight, setIsDevShutdownInFlight] = React.useState(false);
 
   const isNewSessionDraftOpen = useSessionUIStore((state) => Boolean(state.newSessionDraft?.open));
   const currentSessionId = useSessionUIStore((state) => state.currentSessionId);
@@ -1598,63 +1572,6 @@ export const Header: React.FC<HeaderProps> = ({
     }));
   }, [servicesTabs]);
 
-  const showDevShutdown = React.useMemo(() => {
-    if (typeof window === 'undefined') return false;
-    if (isDesktopApp) return false;
-    if (isVSCode) return false;
-    const host = window.location.hostname;
-    return host === 'localhost' || host === '127.0.0.1' || host === '::1';
-  }, [isDesktopApp, isVSCode]);
-
-  const handleDevShutdown = React.useCallback(async () => {
-    if (isDevShutdownInFlight) return;
-    setIsDevShutdownInFlight(true);
-    setIsDesktopServicesOpen(false);
-
-    const previewUrls: string[] = [];
-    let shutdownRequested = false;
-    try {
-      try {
-        for (const [, dirState] of useTerminalStore.getState().sessions.entries()) {
-          for (const tab of dirState.tabs) {
-            if (tab.previewUrl) {
-              previewUrls.push(tab.previewUrl);
-            }
-          }
-        }
-      } catch {
-        // ignore
-      }
-
-      try {
-        // Ensure preview/dev terminals don't linger.
-        await forceKillTerminal({});
-      } catch {
-        // ignore
-      }
-
-      try {
-        const devRes = await runtimeFetch('/api/system/dev-shutdown', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ previewUrls }),
-        });
-        if (devRes.ok) {
-          shutdownRequested = true;
-        } else {
-          const shutdownRes = await runtimeFetch('/api/system/shutdown', { method: 'POST' });
-          shutdownRequested = shutdownRes.ok;
-        }
-      } catch {
-        // ignore
-      }
-    } finally {
-      if (!shutdownRequested) {
-        setIsDevShutdownInFlight(false);
-      }
-    }
-  }, [isDevShutdownInFlight, setIsDesktopServicesOpen]);
-
   const quotaDisplayTabs = React.useMemo(() => {
     return [
       { value: 'usage' as const, label: t('header.services.used') },
@@ -1691,14 +1608,14 @@ export const Header: React.FC<HeaderProps> = ({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [blurActiveElement, closeMobileHeaderPanels, isMobile, setActiveMainTab, tabs]);
 
-  const applyServicesPanelOpen = React.useCallback((tab: 'instance' | 'usage') => {
+  const applyServicesPanelOpen = useEvent((tab: 'instance' | 'usage') => {
     setDesktopServicesTab(tab);
     setIsDesktopServicesOpen(true);
     void refreshCurrentInstanceLabel();
-    if (tab === 'usage' && quotaResults.length === 0) {
+    if (tab === 'usage' && quotaLastUpdated === null) {
       void fetchAllQuotas();
     }
-  }, [fetchAllQuotas, quotaResults.length, refreshCurrentInstanceLabel]);
+  });
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -1735,7 +1652,7 @@ export const Header: React.FC<HeaderProps> = ({
         setDesktopServicesTab(nextTab);
         setIsDesktopServicesOpen(true);
         void refreshCurrentInstanceLabel();
-        if (nextTab === 'usage' && quotaResults.length === 0) {
+        if (nextTab === 'usage' && quotaLastUpdated === null) {
           void fetchAllQuotas();
         }
         return;
@@ -1768,7 +1685,7 @@ export const Header: React.FC<HeaderProps> = ({
     isDesktopServicesOpen,
     desktopServicesTab,
     servicesTabs,
-    quotaResults.length,
+    quotaLastUpdated,
     fetchAllQuotas,
     refreshCurrentInstanceLabel,
     applyServicesPanelOpen,
@@ -1928,7 +1845,6 @@ export const Header: React.FC<HeaderProps> = ({
         refreshCurrentInstanceLabel={refreshCurrentInstanceLabel}
         desktopServicesTab={desktopServicesTab}
         setDesktopServicesTab={setDesktopServicesTab}
-        quotaResultsLength={quotaResults.length}
         fetchAllQuotas={fetchAllQuotas}
         servicesTabItems={servicesTabItems}
         quotaLastUpdated={quotaLastUpdated}
@@ -1943,9 +1859,6 @@ export const Header: React.FC<HeaderProps> = ({
         rateLimitGroups={rateLimitGroups}
         expandedFamilies={expandedFamilies}
         toggleFamilyExpanded={toggleFamilyExpanded}
-        showDevShutdown={showDevShutdown}
-        isDevShutdownInFlight={isDevShutdownInFlight}
-        onDevShutdown={handleDevShutdown}
         remoteUpdateInfo={remoteUpdateInfo}
         remoteUpdateChecking={remoteUpdateChecking}
         remoteUpdateError={remoteUpdateError}
@@ -2200,7 +2113,7 @@ export const Header: React.FC<HeaderProps> = ({
                   }
                 }
                 setIsMobileRateLimitsOpen(open);
-                if (open && quotaResults.length === 0) {
+                if (open && quotaLastUpdated === null) {
                   fetchAllQuotas();
                 }
               }}
@@ -2240,7 +2153,7 @@ export const Header: React.FC<HeaderProps> = ({
                           onSelect={(tabID) => {
                             const value = tabID as 'usage' | 'mcp';
                             setMobileServicesTab(value);
-                            if (value === 'usage' && quotaResults.length === 0) {
+                            if (value === 'usage' && quotaLastUpdated === null) {
                               fetchAllQuotas();
                             }
                           }}
@@ -2355,7 +2268,7 @@ export const Header: React.FC<HeaderProps> = ({
                                   const displayPercent = quotaDisplayMode === 'remaining'
                                     ? window.remainingPercent
                                     : window.usedPercent;
-                                  const paceInfo = calculatePace(window.usedPercent, window.resetAt, window.windowSeconds, label);
+                                  const paceInfo = window.disablePace ? null : calculatePace(window.usedPercent, window.resetAt, window.windowSeconds, label);
                                   const expectedMarker = paceInfo?.dailyAllocationPercent != null
                                     ? (quotaDisplayMode === 'remaining'
                                         ? 100 - calculateExpectedUsagePercent(paceInfo.elapsedRatio)
@@ -2366,15 +2279,15 @@ export const Header: React.FC<HeaderProps> = ({
                                   return (
                                     <div key={`${group.providerId}-${label}`} className="flex flex-col gap-1.5">
                                       <div className="flex min-w-0 items-center justify-between gap-3">
-                                        <div className="min-w-0 flex items-center gap-2">
-                                          <span className="truncate typography-ui-label text-foreground">{formatWindowLabel(label)}</span>
+                                        <div className="min-w-0 flex flex-1 flex-col gap-0.5">
+                                          <span className="typography-ui-label text-foreground break-words">{formatWindowLabel(window.label ?? label)}</span>
                                           {resetLabel ? (
-                                            <span className="truncate typography-micro text-muted-foreground">
+                                            <span className="typography-micro text-muted-foreground">
                                               {resetLabel}
                                             </span>
                                           ) : null}
                                         </div>
-                                        <span className="typography-ui-label text-foreground tabular-nums">
+                                        <span className="shrink-0 whitespace-nowrap typography-ui-label text-foreground tabular-nums">
                                           {metricLabel === '-' ? '' : metricLabel}
                                         </span>
                                       </div>

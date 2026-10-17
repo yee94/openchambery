@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import { readOpenCodeCredentials, readOpenCodeProviderConfigs } from '../opencode/auth.js';
+import { discoverLocalMagpie } from './magpie-local.js';
 
 const record = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
 const text = (v) => typeof v === 'string' ? v : '';
@@ -76,8 +77,13 @@ async function getJSON(fetchImpl, url, headers, timeout, signal) {
 
 /** One aggregate request per distinct URL/credential scope, at most four in flight. No persistent credential cache. */
 export async function fetchMagpieQuotas({ directory, manualURL = '', refresh = false, signal,
-  loadProviders = readOpenCodeProviderConfigs, loadCredentials = readOpenCodeCredentials, fetchImpl = fetch } = {}) {
-  const [providers, credentials] = await Promise.all([loadProviders(directory), loadCredentials()]);
+  loadProviders = readOpenCodeProviderConfigs, loadCredentials = readOpenCodeCredentials,
+  discoverLocal = discoverLocalMagpie, fetchImpl = fetch } = {}) {
+  const [connections, local] = await Promise.all([
+    Promise.all([loadProviders(directory), loadCredentials()]).catch(() => null),
+    discoverLocal().catch(() => ({ urls: [], incomplete: true })),
+  ]);
+  const [providers, credentials] = connections ?? [{}, {}];
   const candidates = [];
   for (const [id, p] of Object.entries(providers)) {
     const raw = p.settings?.baseURL;
@@ -96,6 +102,13 @@ export async function fetchMagpieQuotas({ directory, manualURL = '', refresh = f
     const baseURL = magpieBaseURL(manualURL);
     candidates.push({ id: hash(`${baseURL}\nmanual`), name: 'Magpie', baseURL, explicit: true,
       headers: { Accept: 'application/json', ...(process.env.OPENCHAMBER_MAGPIE_API_KEY ? { Authorization: `Bearer ${process.env.OPENCHAMBER_MAGPIE_API_KEY}` } : {}) } });
+  }
+  for (const url of local.urls) {
+    let baseURL;
+    try { baseURL = magpieBaseURL(url); } catch { continue; }
+    if (candidates.some((candidate) => candidate.baseURL === baseURL)) continue;
+    candidates.push({ id: hash(`${baseURL}\nlocal`), name: 'Magpie', baseURL,
+      headers: { Accept: 'application/json' }, explicit: false, local: true });
   }
   const seen = new Set();
   const unique = candidates.filter((s) => {
@@ -131,7 +144,7 @@ export async function fetchMagpieQuotas({ directory, manualURL = '', refresh = f
           result.ok = false; result.error = refreshError;
           for (const account of result.usage.accounts) account.stale = true;
         }
-        sources[index] = { id: source.id, name: source.name, results, ...(refreshError ? { error: refreshError } : {}) };
+        sources[index] = { id: source.id, name: source.name, results, identified: true, ...(refreshError ? { error: refreshError } : {}) };
       } catch (error) {
         // Do not forward upstream response bodies, URLs, account errors or credentials.
         const known = error instanceof Error && /^(Magpie |Invalid Magpie |The endpoint)/.test(error.message);
@@ -142,5 +155,5 @@ export async function fetchMagpieQuotas({ directory, manualURL = '', refresh = f
       }
     }
   }));
-  return { sources };
+  return { sources, incomplete: !connections || local.incomplete };
 }

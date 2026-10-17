@@ -1,4 +1,5 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+vi.mock('./magpie-local.js', () => ({ discoverLocalMagpie: async () => ({ urls: [], incomplete: false }) }));
 import { fetchMagpieQuotas, magpieBaseURL, projectMagpieQuotas } from './magpie.js';
 
 const info = { name: 'magpie', version: '1', apis: ['/v1/magpie/quotas'] };
@@ -10,6 +11,31 @@ const report = { object: 'list', data: [
 const source = { id: 'instance', name: 'Gateway' };
 
 describe('Magpie discovery and quota adapter', () => {
+  it('silently connects a locally discovered gateway even when OpenCode discovery fails', async () => {
+    const calls = [];
+    const result = await fetchMagpieQuotas({
+      loadProviders: async () => { throw new Error('service unavailable'); }, loadCredentials: async () => ({}),
+      discoverLocal: async () => ({ urls: ['http://127.0.0.1:43210'], incomplete: false }),
+      fetchImpl: async (url, options) => {
+        calls.push(url);
+        expect(options.headers.Authorization).toBeUndefined();
+        return Response.json(url.includes('/magpie/quotas') ? report : info);
+      },
+    });
+    expect(result.incomplete).toBe(true);
+    expect(result.sources[0].results).toHaveLength(2);
+    expect(calls).toEqual(['http://127.0.0.1:43210/v1', 'http://127.0.0.1:43210/v1/magpie/quotas?kept=1']);
+  });
+  it('does not duplicate a configured gateway or accept another service at a saved local port', async () => {
+    const calls = [];
+    const result = await fetchMagpieQuotas({
+      loadProviders: async () => ({ custom: { settings: { baseURL: 'http://127.0.0.1:43210/v1' } } }), loadCredentials: async () => ({}),
+      discoverLocal: async () => ({ urls: ['http://127.0.0.1:43210', 'http://127.0.0.1:43211'], incomplete: false }),
+      fetchImpl: async (url) => { calls.push(url); return Response.json(url.includes(':43211') ? { name: 'other' } : url.includes('/magpie/quotas') ? report : info); },
+    });
+    expect(result.sources.flatMap((s) => s.results)).toHaveLength(2);
+    expect(calls.filter((url) => url.includes('/magpie/quotas'))).toHaveLength(1);
+  });
   it('preserves proxy prefixes and rejects credential-bearing URLs', () => {
     expect(magpieBaseURL('http://gateway.test:9876')).toBe('http://gateway.test:9876/v1');
     expect(magpieBaseURL('https://gateway.example/proxy/v1/')).toBe('https://gateway.example/proxy/v1');
@@ -71,7 +97,7 @@ describe('Magpie discovery and quota adapter', () => {
       fetchImpl: async (url) => url.endsWith('/quotas') ? new Response('secret', { status: 403 }) : Response.json(info),
     });
     expect(result.sources[0]).toMatchObject({ identified: true, error: 'Magpie quota access denied (check gateway key permissions)' });
-    await expect(fetchMagpieQuotas({ loadProviders: async () => { throw new Error('offline'); }, loadCredentials: async () => ({}) })).rejects.toThrow();
+    await expect(fetchMagpieQuotas({ loadProviders: async () => { throw new Error('offline'); }, loadCredentials: async () => ({}) })).resolves.toMatchObject({ incomplete: true });
   });
 
   it('bounds discovery concurrency and avoids quota fanout with 100 accounts', async () => {

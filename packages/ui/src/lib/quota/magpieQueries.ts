@@ -17,7 +17,7 @@ export const magpieQuotaOptions = (directory: string | null, manualURL = '', ref
   queryKey: queryKeys.scoped('magpie-quotas', directory, manualURL, refresh),
   staleTime: 0,
   retry: false,
-  queryFn: async ({ signal }): Promise<{ sources: MagpieSource[] }> => {
+  queryFn: async ({ signal }): Promise<{ sources: MagpieSource[]; incomplete?: boolean }> => {
     const response = await runtimeFetch('/api/quota/magpie', { signal, query: { ...(directory ? { directory } : {}), ...(refresh ? { refresh: '1' } : {}) } });
     if (!response.ok) throw new Error('Unable to discover Magpie quota sources');
     const data = await response.json();

@@ -85,13 +85,13 @@ export const SettingsSidebarItem: React.FC<SettingsSidebarItemProps> = ({
         >
           <div className="flex max-w-full min-w-0 items-center gap-1.5">
             {icon}
-            <span className="typography-ui-label font-normal truncate text-foreground">
+            <span className="typography-ui-label min-w-0 font-normal whitespace-normal [overflow-wrap:anywhere] text-foreground">
               {title}
             </span>
           </div>
 
           {metadata && (
-            <div className="max-w-full truncate typography-micro leading-tight text-muted-foreground/60">
+            <div className="max-w-full whitespace-normal [overflow-wrap:anywhere] typography-micro leading-tight text-muted-foreground/60">
               {metadata}
             </div>
           )}

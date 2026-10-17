@@ -14,6 +14,7 @@ import { useI18n } from '@/lib/i18n';
 
 interface UsageSidebarProps {
   onItemSelect?: () => void;
+  children?: React.ReactNode;
 }
 
 const getUsagePercent = (usage: { windows?: Record<string, { usedPercent: number | null }> } | null | undefined) => {
@@ -27,7 +28,7 @@ const getUsagePercent = (usage: { windows?: Record<string, { usedPercent: number
   return Math.max(...values);
 };
 
-export const UsageSidebar: React.FC<UsageSidebarProps> = ({ onItemSelect }) => {
+export const UsageSidebar: React.FC<UsageSidebarProps> = ({ onItemSelect, children }) => {
   const { t } = useI18n();
   const results = useQuotaStore((state) => state.results);
   const selectedProviderId = useQuotaStore((state) => state.selectedProviderId);
@@ -84,7 +85,7 @@ export const UsageSidebar: React.FC<UsageSidebarProps> = ({ onItemSelect }) => {
   }, [persistUsageSettings, setShowPredValues]);
 
   return (
-    <div className="oc-settings-page-content oc-settings-usage-sidebar h-full overflow-y-auto bg-background p-3">
+    <div className={cn('oc-settings-page-content h-full min-w-0 overflow-y-auto bg-background p-3', children ? 'oc-settings-usage-workspace' : 'oc-settings-usage-sidebar')}>
       <SettingsGroup>
         <SettingsRow label={t('settings.usage.sidebar.title')}>
           <Button
@@ -153,6 +154,7 @@ export const UsageSidebar: React.FC<UsageSidebarProps> = ({ onItemSelect }) => {
       </SettingsGroup>
 
       <MagpieConnection />
+      <div className={children ? 'oc-settings-usage-results' : undefined}>
       <SettingsGroup>
         {quotaProviders(results).map((provider) => {
           const result = results.find((entry) => entry?.providerId === provider.id);
@@ -198,6 +200,8 @@ export const UsageSidebar: React.FC<UsageSidebarProps> = ({ onItemSelect }) => {
           );
         })}
       </SettingsGroup>
+      {children && <div className="oc-settings-usage-detail min-w-0">{children}</div>}
+      </div>
     </div>
   );
 };

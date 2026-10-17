@@ -473,6 +473,14 @@ describe('QueuedMessageChips preview decoration', () => {
         expect(parts?.[1]).toEqual({ type: 'text', text: ' please review' });
     });
 
+    test('keeps uploaded image paths compact without attachment metadata', () => {
+        const parts = buildQueuedMessagePreviewParts('[/tmp/openchamber-prompt-test/image-1.png] review');
+        expect(parts?.[0]).toMatchObject({
+            type: 'reference',
+            decoration: { kind: 'image', label: 'image-1.png', icon: 'file-image' },
+        });
+    });
+
     test('decorates reserved-slot document citations with the attachment icon', () => {
         const text = `[${DRAFT_COMPOSER_TRIGGER_ICON_SLOT}openchamber-diagnostics.json] 你看一下日志`;
         const parts = buildQueuedMessagePreviewParts(text, {

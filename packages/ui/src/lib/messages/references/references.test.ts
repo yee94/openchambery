@@ -104,6 +104,19 @@ describe('detectMessageReferences', () => {
         ]);
     });
 
+    test('displays path-only image citations as short image labels without changing source text', () => {
+        for (const path of ['/tmp/openchamber-prompt-test/image-1.png', 'C:\\Temp\\openchamber-prompt-test\\image-1.png', '/tmp/My Images/image-1.png']) {
+            const text = `[${path}] please review`;
+            const parts = buildMessageReferenceParts(text);
+            expect(parts?.[0]).toMatchObject({
+                type: 'reference',
+                span: { raw: `[${path}]` },
+                decoration: { kind: 'image', label: 'image-1.png', icon: 'file-image' },
+            });
+            expect(parts?.[1]).toEqual({ type: 'text', text: ' please review' });
+        }
+    });
+
     test('keeps a pasted absolute path with spaces highlighted after send', () => {
         const path = '/Users/example/Library/Application Support/com.example.clipboard/clipboard/image.png';
         const prose = ' 我们的滚动条不能在这个位置';

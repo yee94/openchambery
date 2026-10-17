@@ -1651,18 +1651,22 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
       return <SettingsHome onOpen={openPage} />;
     }
 
+    if (settingsSlug === "usage") {
+      return <UsageSidebar><ErrorBoundary><UsagePage /></ErrorBoundary></UsageSidebar>;
+    }
+
     if (activePageMeta.kind === "split") {
       return (
-        <div className="flex h-full min-h-0 overflow-hidden">
+        <div className="oc-settings-entity-split flex h-full min-h-0 overflow-hidden">
           <div
             className={cn(
-              "w-[264px] min-w-[264px] border-r-[0.5px] border-border/40",
+              "oc-settings-entity-list min-h-0 border-r-[0.5px] border-border/40",
               runtimeCtx.isVSCode ? "bg-background" : "bg-sidebar",
             )}
           >
             <ErrorBoundary>{renderPageSidebar(settingsSlug, {})}</ErrorBoundary>
           </div>
-          <div className="flex-1 min-h-0 overflow-hidden bg-background">
+          <div className="flex-1 min-w-0 min-h-0 overflow-hidden bg-background">
             <ErrorBoundary>{renderPageContent(settingsSlug)}</ErrorBoundary>
           </div>
         </div>

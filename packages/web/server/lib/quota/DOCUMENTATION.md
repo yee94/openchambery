@@ -44,6 +44,18 @@ or ports. GET of the normalized versioned base must identify `name: magpie` and 
 Only the candidate's own configured authorization/API-key headers or selected API credential are sent.
 No port scan, local OpenCode config fallback, or persistent credential cache is used.
 
+`magpie-local.js` also reads same-host Magpie address hints: `MAGPIE_ADDR`, and `port` in
+`$XDG_CONFIG_HOME/magpie/settings.json` / `~/.config/magpie/settings.json`. Magpie's documented default
+port is tried only when its configuration directory exists. Every hint still passes the identity probe;
+there is no port scan, credential-file access, or configuration write. Local discovery works even if
+OpenCode connection discovery fails. Partial discovery is marked `incomplete` so UI reconciliation keeps
+unreported previous sources instead of treating them as authoritatively removed.
+
+Usage shows connection status by default; the optional address form is collapsed under “Connect another
+Magpie” and stacks its label, input and action in narrow sidebars. No manual configuration is required
+when Magpie runs beside the OpenChamber server. This does not discover a Magpie on the phone/browser's
+machine when connected to a different server.
+
 Settings → Usage also accepts `magpieUsageUrl`, an optional explicit gateway URL. Its optional remote
 key comes from the host environment's `OPENCHAMBER_MAGPIE_API_KEY`; no key is stored in UI settings.
 Magpie must allow quota access for remote keys. An identity/permission failure remains visible.
@@ -56,7 +68,10 @@ one request. Every gateway yields one aggregate read, not one read per account/p
 
 Each upstream provider gets a namespaced `magpie:<source>:<provider>` result, independent of built-ins.
 `usage.accounts` retains separate account windows, errors and reading timestamps. `usage.windows`
-is the account-labelled projection for existing header/mobile/tray consumers. Percentages, balance
+is the account-keyed projection for existing header/mobile/tray consumers. Compact surfaces display
+`window.label` rather than the account-bearing key; account detail remains on the full Usage page.
+Opening a usage menu checks the full refresh timestamp, not whether any results exist: a discovered
+Magpie snapshot must not suppress the initial built-in provider fetch. Percentages, balance
 labels, unlimited windows and absolute reset timestamps are preserved. Window duration remains unknown
 and pace prediction is disabled rather than inferred. Upstream error bodies are never returned.
 

@@ -22,6 +22,17 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllGlobals());
 
 describe('dynamic Magpie quota lifecycle', () => {
+  it('keeps previously discovered sources when only local discovery succeeds', async () => {
+    respond([source('remote')]);
+    await useQuotaStore.getState().fetchMagpieQuotas();
+    vi.stubGlobal('fetch', vi.fn(async () => Response.json({ sources: [source('local')], incomplete: true })));
+    await useQuotaStore.getState().fetchMagpieQuotas();
+    expect(useQuotaStore.getState().results.map((r) => r.providerId)).toEqual(['magpie:remote:claude', 'magpie:local:claude']);
+    expect(useQuotaStore.getState().results[0].error).toBe('Magpie discovery is incomplete');
+    respond([source('local')]);
+    await useQuotaStore.getState().fetchMagpieQuotas();
+    expect(useQuotaStore.getState().results.map((r) => r.providerId)).toEqual(['magpie:local:claude']);
+  });
   it('discovers separate providers and preserves built-in data and hidden selections', async () => {
     const builtin: ProviderResult = { ...quota('a'), source: undefined, sourceId: undefined, providerId: 'claude' };
     useQuotaStore.setState({ results: [builtin], magpieHiddenProviders: ['magpie:a:claude'] });

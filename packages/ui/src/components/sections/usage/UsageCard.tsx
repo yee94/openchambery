@@ -30,7 +30,13 @@ export const UsageCard: React.FC<UsageCardProps> = ({
   const [now, setNow] = React.useState(Date.now);
   useInterval(() => setNow(Date.now()), window.disablePace && window.resetAt ? 30000 : null);
   const minutes = window.resetAt ? Math.max(0, Math.ceil((window.resetAt - now) / 60000)) : null;
-  const countdown = minutes === null ? '' : new Intl.RelativeTimeFormat(locale, { numeric: 'always' }).format(minutes, 'minute');
+  const countdown = minutes === null ? '' : [
+    { unit: 'day', value: Math.floor(minutes / 1440) },
+    { unit: 'hour', value: Math.floor((minutes % 1440) / 60) },
+    { unit: 'minute', value: minutes % 60 },
+  ].filter(({ unit, value }) => value > 0 || (unit === 'minute' && minutes === 0))
+    .map(({ unit, value }) => new Intl.NumberFormat(locale, { style: 'unit', unit, unitDisplay: 'long' }).format(value))
+    .join(' ');
   const displayMode = useQuotaStore((state) => state.displayMode);
   const showPredValues = useQuotaStore((state) => state.showPredValues);
   const timeFormatPreference = useUIStore((state) => state.timeFormatPreference);

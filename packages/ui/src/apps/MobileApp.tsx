@@ -2244,7 +2244,7 @@ const MobileSessionMetadataButton = React.memo(function MobileSessionMetadataBut
         for (const [label, window] of Object.entries(result?.usage?.windows ?? {})) {
           rows.push({
             key: `window-${label}`,
-            label: formatWindowLabel(label),
+            label: formatWindowLabel(window.label ?? label),
             window,
           });
         }
@@ -2260,7 +2260,7 @@ const MobileSessionMetadataButton = React.memo(function MobileSessionMetadataBut
           const [label, window] = entries[0];
           rows.push({
             key: `model-${modelName}-${label}`,
-            label: formatWindowLabel(label),
+            label: formatWindowLabel(window.label ?? label),
             subtitle: getDisplayModelName(modelName),
             window,
           });

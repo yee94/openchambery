@@ -157,6 +157,14 @@ placement still follow this specification.
   root mobile dock.
 - Labels, controls, helper copy, borders, and gaps must remain identical across
   light, dark, and high-contrast themes by using semantic tokens.
+- Desktop split panes respond to the available detail-container width: below
+  48rem the collection sits above the editor with its own bounded scroll area.
+  Entity names wrap, and skill metadata occupies a separate line.
+- Usage configuration spans the full detail width above the provider list and
+  quota detail. Those results stack when the detail container is narrow.
+- Cards at or below 32rem stack field labels above controls; Boolean rows keep
+  their compact label/value layout. Container width, not viewport width,
+  determines whether a form has room for side-by-side columns.
 
 ## Forbidden legacy patterns
 

@@ -834,7 +834,7 @@ const VSCodeHeader: React.FC<VSCodeHeaderProps> = ({ title, showBack, onBack, on
       {showRateLimits && (
         <DropdownMenu
           onOpenChange={(open) => {
-            if (open && quotaResults.length === 0) {
+            if (open && quotaLastUpdated === null) {
               fetchAllQuotas();
             }
           }}
@@ -928,7 +928,7 @@ const VSCodeHeader: React.FC<VSCodeHeaderProps> = ({ title, showBack, onBack, on
                     const displayPercent = quotaDisplayMode === 'remaining'
                       ? window.remainingPercent
                       : window.usedPercent;
-                    const paceInfo = calculatePace(window.usedPercent, window.resetAt, window.windowSeconds, label);
+                    const paceInfo = window.disablePace ? null : calculatePace(window.usedPercent, window.resetAt, window.windowSeconds, label);
                     const expectedMarker = paceInfo?.dailyAllocationPercent != null
                       ? (quotaDisplayMode === 'remaining'
                           ? 100 - calculateExpectedUsagePercent(paceInfo.elapsedRatio)
@@ -943,8 +943,8 @@ const VSCodeHeader: React.FC<VSCodeHeaderProps> = ({ title, showBack, onBack, on
                     >
                       <span className="flex min-w-0 flex-1 flex-col gap-2">
                               <span className="flex min-w-0 items-center justify-between gap-3">
-                                <span className="truncate typography-micro text-muted-foreground">{formatWindowLabel(label)}</span>
-                                <span className="typography-ui-label text-foreground tabular-nums">
+                                <span className="min-w-0 break-words typography-micro text-muted-foreground">{formatWindowLabel(window.label ?? label)}</span>
+                                <span className="shrink-0 whitespace-nowrap typography-ui-label text-foreground tabular-nums">
                                   {metricLabel === '-' ? '' : metricLabel}
                                 </span>
                               </span>

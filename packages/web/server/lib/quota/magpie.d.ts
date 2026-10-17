@@ -4,4 +4,4 @@ export function fetchMagpieQuotas(options?: {
   manualURL?: string;
   refresh?: boolean;
   signal?: AbortSignal;
-}): Promise<{ sources: Array<{ id: string; name: string; results: unknown[]; error?: string; identified?: boolean; ignored?: boolean }> }>;
+}): Promise<{ sources: Array<{ id: string; name: string; results: unknown[]; error?: string; identified?: boolean; ignored?: boolean }>; incomplete: boolean }>;

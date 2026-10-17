@@ -268,7 +268,7 @@ export const PluginsSidebar: React.FC<PluginsSidebarProps> = ({
         key={entry.id}
         title={<span title={entry.spec}>{entry.spec}</span>}
         metadata={
-          <span className="flex min-w-0 items-center gap-1.5">
+          <span className="flex min-w-0 flex-wrap items-center gap-1.5">
             <PluginStatusBadge target={runtimeTargets.get(entry.id) ?? null} />
             <span>{entry.parsedKind === 'npm'
               ? t('settings.plugins.sidebar.kind.npm')
@@ -329,11 +329,11 @@ export const PluginsSidebar: React.FC<PluginsSidebarProps> = ({
     <SettingsGroup
       cardClassName={hideCard ? 'hidden' : undefined}
       label={(
-        <div className="flex items-center justify-between gap-4">
-          <span>
+        <div className="flex items-start justify-between gap-2">
+          <span className="min-w-0">
             {label}
             {updateCount > 0 && (
-              <span className="ml-2 text-[var(--status-success)]">
+              <span className="block text-[var(--status-success)]">
                 {t(
                   updateCount === 1
                     ? 'settings.plugins.sidebar.group.updatesAvailable_one'
@@ -352,7 +352,7 @@ export const PluginsSidebar: React.FC<PluginsSidebarProps> = ({
   );
 
   const pluginHeaderActions = (
-    <div className="flex items-center gap-1">
+    <div className="flex shrink-0 items-center gap-1">
       <Button
         type="button"
         variant="ghost"

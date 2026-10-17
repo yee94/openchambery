@@ -1,6 +1,9 @@
 export const settingsDict = {
   'settings.usage.magpie.url': '追加の Magpie URL',
-  'settings.usage.magpie.description': 'プロバイダー接続から Magpie を自動識別します。ゲートウェイ URL も追加でき、空にすると削除されます。リモート認証には設定済みのプロバイダーキー、この URL には OPENCHAMBER_MAGPIE_API_KEY を使用します。',
+  'settings.usage.magpie.description': 'このサーバーの Magpie を自動検出します。Magpie を起動して使用量を更新してください。設定は不要です。',
+  'settings.usage.magpie.connected': '接続済み · プロバイダー数：{count}',
+  'settings.usage.magpie.manual': '別の Magpie に接続…',
+  'settings.usage.magpie.unavailable': 'Magpie は一時的に利用できません。更新して再試行してください。',
   'settings.usage.magpie.cached': 'キャッシュされた値です。最新の使用枠データを待機しています',
   'settings.usage.magpie.save': '保存',
   'settings.remoteInstances.clientAuth.edit.title': 'デバイスを編集',

@@ -174,7 +174,7 @@ const buildUsage = (): TrayUsage => {
     const rows: TrayUsageRow[] = [];
     for (const [label, window] of Object.entries(result.usage?.windows ?? {})) {
       const percent = mode === 'remaining' ? window.remainingPercent : window.usedPercent;
-      rows.push({ label: formatWindowLabel(label), value: formatQuotaValueLabel(window.valueLabel, percent) });
+      rows.push({ label: formatWindowLabel(window.label ?? label), value: formatQuotaValueLabel(window.valueLabel, percent) });
     }
 
     const status = !result.ok && result.error

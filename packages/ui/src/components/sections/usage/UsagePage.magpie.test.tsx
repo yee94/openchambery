@@ -14,8 +14,25 @@ vi.mock('@/lib/i18n', () => ({ getCurrentIntlLocale: () => 'en-US', useI18n: () 
 vi.mock('@/components/ui/ProviderLogo', () => ({ ProviderLogo: () => null }));
 vi.mock('@/components/ui/ScrollableOverlay', () => ({ ScrollableOverlay: ({ children }: { children: React.ReactNode }) => <div>{children}</div> }));
 import { UsagePage } from './UsagePage';
+import { UsageCard } from './UsageCard';
 
 describe('Magpie account quota rendering', () => {
+  it.each([
+    [18277, '12 days 16 hours 37 minutes'],
+    [1440, '1 day'],
+    [61, '1 hour 1 minute'],
+    [0, '0 minutes'],
+  ])('formats %i minutes as a readable duration', (minutes, expected) => {
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(1800000000000);
+    try {
+      const window: UsageWindow = { usedPercent: 20, remainingPercent: 80,
+        resetAt: Date.now() + minutes * 60000, resetAfterSeconds: null, resetAtFormatted: null,
+        resetAfterFormatted: null, windowSeconds: null, disablePace: true };
+      expect(renderToStaticMarkup(<UsageCard title="daily" window={window} />)).toContain(`(${expected})`);
+    } finally {
+      clock.mockRestore();
+    }
+  });
   it('renders distinct accounts, every window, reset time, balance and cached errors without model-family heuristics', () => {
     const window: UsageWindow = { usedPercent: 20, remainingPercent: 80, resetAt: Date.parse('2026-10-19T12:34:00Z'),
       resetAfterSeconds: null, resetAtFormatted: null, resetAfterFormatted: null, windowSeconds: null, disablePace: true, valueLabel: '20 / 100', label: 'daily' };

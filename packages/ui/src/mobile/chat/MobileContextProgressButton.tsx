@@ -410,7 +410,7 @@ export function MobileContextProgressButton({
         for (const [label, window] of Object.entries(result?.usage?.windows ?? {})) {
           rows.push({
             key: `window-${label}`,
-            label: formatWindowLabel(label),
+            label: formatWindowLabel(window.label ?? label),
             window,
           });
         }
@@ -426,7 +426,7 @@ export function MobileContextProgressButton({
           const [label, window] = entries[0];
           rows.push({
             key: `model-${modelName}-${label}`,
-            label: formatWindowLabel(label),
+            label: formatWindowLabel(window.label ?? label),
             subtitle: getDisplayModelName(modelName),
             window,
           });

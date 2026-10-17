@@ -208,7 +208,8 @@ export const citationReferenceStrategy: MessageReferenceStrategy = {
                 cursor = end + 1;
                 continue;
             }
-            const label = context.citationDisplayNames?.get(key) ?? filename;
+            const label = context.citationDisplayNames?.get(key)
+                ?? (iconKind === 'image' ? filename.replaceAll('\\', '/').split('/').at(-1) || filename : filename);
 
             pushSpan(spans, {
                 start,

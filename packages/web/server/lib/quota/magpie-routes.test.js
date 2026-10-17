@@ -1,5 +1,6 @@
 import express from 'express';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+vi.mock('./magpie-local.js', () => ({ discoverLocalMagpie: async () => ({ urls: [], incomplete: false }) }));
 import { configureOpenCodeCredentials } from '../opencode/auth.js';
 import { registerQuotaRoutes } from './routes.js';
 

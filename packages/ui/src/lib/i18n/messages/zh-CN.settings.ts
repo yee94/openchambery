@@ -1,6 +1,9 @@
 export const settingsDict = {
   'settings.usage.magpie.url': '额外的 Magpie 地址',
-  'settings.usage.magpie.description': '自动从服务商连接识别 Magpie。也可填写网关地址，清空即可移除。远程鉴权使用已配置的服务商密钥；此地址使用 OPENCHAMBER_MAGPIE_API_KEY。',
+  'settings.usage.magpie.description': '自动发现当前服务器上的 Magpie。启动 Magpie 后刷新用量即可，无需配置。',
+  'settings.usage.magpie.connected': '已连接 · {count} 个服务商',
+  'settings.usage.magpie.manual': '连接其他 Magpie…',
+  'settings.usage.magpie.unavailable': 'Magpie 暂时不可用，可刷新重试。',
   'settings.usage.magpie.cached': '缓存读数，等待最新额度数据',
   'settings.usage.magpie.save': '保存',
   'settings.remoteInstances.clientAuth.edit.title': '编辑设备',
