@@ -573,6 +573,13 @@ const SETTINGS_SEARCH_ITEMS: readonly SettingsSearchItem[] = [
     keywords: ['ignored', 'files', 'gitignore'],
   },
   {
+    id: 'usage.magpie',
+    page: 'usage',
+    titleKey: 'settings.usage.magpie.url',
+    descriptionKey: 'settings.usage.magpie.description',
+    keywords: ['magpie', 'quota', 'gateway'],
+  },
+  {
     id: 'usage.header-menu',
     page: 'usage',
     titleKey: 'settings.usage.page.options.showInHeader',

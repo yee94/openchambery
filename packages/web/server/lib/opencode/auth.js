@@ -75,6 +75,28 @@ export async function getProviderAuth(providerId) {
   return (await readOpenCodeCredentials())[providerId] || null;
 }
 
+/** Host-only provider connection settings from the active service and location. */
+export async function readOpenCodeProviderConfigs(directory) {
+  try {
+    const entries = await currentClient().config.get(
+      directory ? { location: { directory } } : {},
+      { signal: AbortSignal.timeout(8000) },
+    );
+    if (!Array.isArray(entries)) throw credentialError();
+    const providers = Object.create(null);
+    for (const entry of entries) {
+      if (entry.type !== 'document') continue;
+      for (const [id, provider] of Object.entries(entry.info?.providers || {})) {
+        providers[id] = { ...providers[id], ...provider,
+          settings: { ...providers[id]?.settings, ...provider.settings } };
+      }
+    }
+    return providers;
+  } catch {
+    throw new Error('Unable to read OpenCode provider connections');
+  }
+}
+
 /** Disconnect every saved account for the provider, so deleting active cannot select another. */
 export async function removeProviderAuth(providerId) {
   if (typeof providerId !== 'string' || !providerId.trim()) throw new Error('Provider ID is required');

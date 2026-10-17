@@ -1,4 +1,5 @@
 export type QuotaProviderId =
+  | `magpie:${string}`
   | 'openai'
   | 'codex'
   | 'cursor'
@@ -27,6 +28,8 @@ export interface UsageWindow {
   resetAtFormatted: string | null;
   resetAfterFormatted: string | null;
   valueLabel?: string | null;
+  label?: string;
+  disablePace?: boolean;
 }
 
 export interface UsageWindows {
@@ -35,6 +38,18 @@ export interface UsageWindows {
 
 interface ProviderUsage extends UsageWindows {
   models?: Record<string, UsageWindows>;
+  accounts?: Array<UsageWindows & {
+    id: string;
+    name: string;
+    user: string;
+    plan: string;
+    kind: string;
+    from: string;
+    balance: string;
+    error?: string;
+    readAt: number | null;
+    stale: boolean;
+  }>;
 }
 
 export interface ProviderResult {
@@ -45,4 +60,7 @@ export interface ProviderResult {
   error?: string;
   usage: ProviderUsage | null;
   fetchedAt: number;
+  source?: 'magpie';
+  sourceId?: string;
+  upstreamProviderId?: string;
 }

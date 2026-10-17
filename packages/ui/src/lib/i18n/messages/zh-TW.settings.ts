@@ -1,4 +1,8 @@
 ﻿export const settingsDict = {
+  'settings.usage.magpie.url': '額外的 Magpie 位址',
+  'settings.usage.magpie.description': '自動從服務商連線識別 Magpie。也可填寫閘道位址，清空即可移除。遠端驗證使用已設定的服務商金鑰；此位址使用 OPENCHAMBER_MAGPIE_API_KEY。',
+  'settings.usage.magpie.cached': '快取讀數，等待最新額度資料',
+  'settings.usage.magpie.save': '儲存',
   'settings.remoteInstances.clientAuth.edit.title': '編輯裝置',
   'settings.remoteInstances.clientAuth.edit.action': '編輯',
   'settings.remoteInstances.clientAuth.edit.name': '裝置名稱',

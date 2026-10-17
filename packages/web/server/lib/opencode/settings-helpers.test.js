@@ -39,6 +39,16 @@ const createTestHelpersWithRealSanitizers = () => {
 };
 
 describe('settings helpers', () => {
+  it('round-trips Magpie settings, clears optional URLs and rejects credential-bearing URLs', () => {
+    const helpers = createTestHelpersWithRealSanitizers();
+    const input = { magpieUsageUrl: 'https://gateway.example/proxy/v1', magpieHiddenProviders: ['magpie:a:claude'] };
+    expect(helpers.formatSettingsResponse(helpers.sanitizeSettingsUpdate(input))).toMatchObject(input);
+    expect(helpers.sanitizeSettingsUpdate({ magpieUsageUrl: '' })).toMatchObject({ magpieUsageUrl: '' });
+    expect(helpers.sanitizeSettingsUpdate({ magpieUsageUrl: null })).not.toHaveProperty('magpieUsageUrl');
+    for (const magpieUsageUrl of ['file:///etc/passwd', 'https://user:secret@gateway.example', 'https://gateway.example?token=secret']) {
+      expect(() => helpers.sanitizeSettingsUpdate({ magpieUsageUrl })).toThrow();
+    }
+  });
   it('round-trips shared project sort modes and rejects malformed old values', () => {
     const helpers = createTestHelpers();
     for (const projectSortOrder of ['manual', 'a-z', 'z-a', 'date-added', 'recent']) {

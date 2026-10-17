@@ -1,4 +1,8 @@
 export const settingsDict = {
+  'settings.usage.magpie.url': '추가 Magpie URL',
+  'settings.usage.magpie.description': '공급자 연결에서 Magpie를 자동으로 식별합니다. 게이트웨이 URL을 추가하거나 비워서 제거할 수 있습니다. 원격 인증에는 설정된 공급자 키를, 이 URL에는 OPENCHAMBER_MAGPIE_API_KEY를 사용합니다.',
+  'settings.usage.magpie.cached': '캐시된 값입니다. 최신 할당량 데이터를 기다리는 중입니다',
+  'settings.usage.magpie.save': '저장',
   'settings.remoteInstances.clientAuth.edit.title': '기기 편집',
   'settings.remoteInstances.clientAuth.edit.action': '편집',
   'settings.remoteInstances.clientAuth.edit.name': '기기 이름',

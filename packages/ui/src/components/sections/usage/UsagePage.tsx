@@ -59,7 +59,7 @@ export const UsagePage: React.FC = () => {
   }, [loadSettings, fetchAllQuotas]);
 
   React.useEffect(() => {
-    if (selectedProviderId) {
+    if (selectedProviderId && (!selectedProviderId.startsWith('magpie:') || results.some((r) => r.providerId === selectedProviderId))) {
       return;
     }
     if (results.length === 0) {
@@ -72,7 +72,7 @@ export const UsagePage: React.FC = () => {
   const selectedResult = results.find((entry) => entry?.providerId === selectedProviderId) ?? null;
 
   const providerMeta = QUOTA_PROVIDERS.find((provider) => provider.id === selectedProviderId);
-  const providerName = providerMeta?.name ?? selectedProviderId ?? t('settings.usage.sidebar.title');
+  const providerName = selectedResult?.providerName ?? providerMeta?.name ?? selectedProviderId ?? t('settings.usage.sidebar.title');
   const usage = selectedResult?.usage;
   const showInDropdown = selectedProviderId ? dropdownProviderIds.includes(selectedProviderId) : false;
   const handleDropdownToggle = React.useCallback((enabled: boolean) => {
@@ -83,7 +83,7 @@ export const UsagePage: React.FC = () => {
       ? Array.from(new Set([...dropdownProviderIds, selectedProviderId]))
       : dropdownProviderIds.filter((id) => id !== selectedProviderId);
     setDropdownProviderIds(next);
-    void updateDesktopSettings({ usageDropdownProviders: next });
+    void updateDesktopSettings({ usageDropdownProviders: next, magpieHiddenProviders: useQuotaStore.getState().magpieHiddenProviders });
   }, [dropdownProviderIds, selectedProviderId, setDropdownProviderIds]);
 
   const providerModels = React.useMemo((): ModelInfo[] => {
@@ -240,7 +240,20 @@ export const UsagePage: React.FC = () => {
         )}
 
         {/* Overall Usage Windows */}
-        {usage?.windows && Object.keys(usage.windows).length > 0 && (
+        {usage?.accounts?.map((account, index) => (
+          <SettingsGroup key={`${account.id}:${index}`} label={account.name}>
+            <div className="oc-settings-group-row">
+              <p className="typography-meta text-muted-foreground break-words">{[account.user, account.plan, account.from].filter(Boolean).join(' · ')}</p>
+              {account.readAt && <p className="typography-meta text-muted-foreground">{t('settings.usage.page.header.lastUpdated', { time: formatTime(account.readAt, timeFormatPreference) })}</p>}
+              {account.stale && <p className="typography-meta text-muted-foreground">{t('settings.usage.magpie.cached')}</p>}
+              {account.error && <p className="typography-meta text-[var(--status-error)]">{t('settings.usage.page.state.refreshFailedTitle')}</p>}
+              <div className="divide-y divide-[var(--surface-subtle)]">
+                {Object.entries(account.windows).map(([key, window]) => <UsageCard key={key} title={window.label ?? key} window={window} />)}
+              </div>
+            </div>
+          </SettingsGroup>
+        ))}
+        {!usage?.accounts && usage?.windows && Object.keys(usage.windows).length > 0 && (
           <SettingsGroup>
             <div data-settings-item="usage.model-quotas" className="oc-settings-group-row">
               <div className="divide-y divide-[var(--surface-subtle)]">

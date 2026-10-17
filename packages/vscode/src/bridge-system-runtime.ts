@@ -6,6 +6,8 @@ import { randomUUID } from 'crypto';
 import { removeProviderConfig, getProviderSources } from './opencodeConfig';
 import { getProviderAuth, removeProviderAuth } from './opencodeAuth';
 import { fetchQuotaForProvider, listConfiguredQuotaProviders } from './quotaProviders';
+import { fetchMagpieQuotas } from '../../web/server/lib/quota/magpie.js';
+import { readSettings } from './bridge-settings-runtime';
 import { fetchOpenCodeGoUsage } from './opencodeGoQuota';
 import { credentialStatus, deleteCredential, importCursorCredential, normalizeCredential, readCredential, validateCredential, writeCredential, type ManagedProvider } from './quotaCredentials';
 import { getSessionActivitySnapshot } from './sessionActivityWatcher';
@@ -499,6 +501,18 @@ export async function handleSystemBridgeMessage(
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : String(error);
         return { id, type, success: false, error: errorMessage };
+      }
+    }
+
+    case 'api:quota:magpie': {
+      try {
+        const { directory, refresh } = (payload || {}) as { directory?: string; refresh?: boolean };
+        const settings = readSettings(ctx);
+        const data = await fetchMagpieQuotas({ directory: directory || ctx?.manager?.getWorkingDirectory(), refresh: refresh === true,
+          manualURL: typeof settings.magpieUsageUrl === 'string' ? settings.magpieUsageUrl : '' });
+        return { id, type, success: true, data };
+      } catch {
+        return { id, type, success: false, error: 'Unable to discover Magpie quota sources' };
       }
     }
 

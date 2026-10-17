@@ -3,6 +3,7 @@ import { deleteManagedCredential, getManagedCredentialStatus, normalizers, readM
 import { fetchOpenCodeGoUsage } from './providers/opencode-go.js';
 import { fetchOllamaCloudUsage } from './providers/ollama-cloud.js';
 import { importCursorCredential, validateCursorCredential } from './providers/cursor.js';
+import { fetchMagpieQuotas } from './magpie.js';
 
 const validators = {
   'opencode-go': fetchOpenCodeGoUsage,
@@ -24,7 +25,16 @@ const credentialError = (res, error) => res.status(400).json({
   error: error instanceof Error ? error.message : 'Credential validation failed',
 });
 
-export function registerQuotaRoutes(app, { getQuotaProviders }) {
+export function registerQuotaRoutes(app, { getQuotaProviders, readSettingsFromDisk = async () => ({}) }) {
+  app.get('/api/quota/magpie', async (req, res) => {
+    try {
+      const settings = await readSettingsFromDisk();
+      res.json(await fetchMagpieQuotas({ directory: typeof req.query.directory === 'string' ? req.query.directory : undefined,
+        manualURL: settings.magpieUsageUrl || '', refresh: req.query.refresh === '1' }));
+    } catch {
+      res.status(502).json({ error: 'Unable to discover Magpie quota sources' });
+    }
+  });
   app.get('/api/quota/providers', async (_req, res) => {
     try {
       const { listConfiguredQuotaProviders } = await getQuotaProviders();

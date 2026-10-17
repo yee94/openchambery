@@ -63,6 +63,13 @@ imperative selection/mutation callers. The store loader now shares Query IO.
 
 ## Architecture
 
+Quota Magpie discovery uses the host's aggregate endpoint and runtime/directory-scoped Query flights.
+The quota store mirrors its results for the existing header, tray, Settings and mobile consumers.
+Dynamic provider IDs are namespaced and have explicit account groups; they never overwrite built-ins.
+Scope generations reject late completions, failed refreshes retain prior readings, and authoritative
+empty responses remove missing providers. See the web quota module documentation for discovery,
+credentials, stale/error behavior and persisted visibility settings.
+
 Session list overlays choose the title from the snapshot with the newer
 `time.updated` (falling back to `time.created`); live directory rows win ties.
 A refreshed global/index title must not be masked by an older cached directory

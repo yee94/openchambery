@@ -1,4 +1,5 @@
 import type { QuotaProviderId } from '@/types';
+import type { ProviderResult } from '@/types';
 
 export interface QuotaProviderMeta {
   id: QuotaProviderId;
@@ -22,4 +23,9 @@ export const QUOTA_PROVIDERS: QuotaProviderMeta[] = [
   { id: 'wafer', name: 'Wafer.ai' },
   { id: 'opencode-go', name: 'OpenCode Go' },
   { id: 'xai', name: 'Grok' },
+];
+
+export const quotaProviders = (results: ProviderResult[]): QuotaProviderMeta[] => [
+  ...QUOTA_PROVIDERS,
+  ...results.filter((result) => result.source === 'magpie').map((result) => ({ id: result.providerId, name: result.providerName })),
 ];

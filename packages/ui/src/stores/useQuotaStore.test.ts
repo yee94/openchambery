@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import type { ProviderResult, QuotaProviderId } from '@/types';
 import { QUOTA_PROVIDERS } from '@/lib/quota';
 import { queryClient } from '@/lib/queryRuntime';
@@ -6,6 +6,7 @@ import { switchRuntimeEndpoint } from '@/lib/runtime-switch';
 import { resetQuotaStoreForRuntimeSwitch, useQuotaStore } from './useQuotaStore';
 
 const originalFetch = globalThis.fetch;
+vi.mock('@/stores/useDirectoryStore', () => ({ useDirectoryStore: Object.assign(() => null, { getState: () => ({ currentDirectory: null }) }) }));
 
 const result = (providerId: QuotaProviderId): ProviderResult => ({
   providerId,
@@ -23,6 +24,7 @@ const providerIdFromInput = (input: RequestInfo | URL): QuotaProviderId => {
 
 describe('useQuotaStore quota queries', () => {
   beforeEach(() => {
+    resetQuotaStoreForRuntimeSwitch();
     queryClient.clear();
     switchRuntimeEndpoint({ apiBaseUrl: 'https://quota-store.test' });
     useQuotaStore.setState({
@@ -69,12 +71,13 @@ describe('useQuotaStore quota queries', () => {
   test('only the latest overlapping refresh updates global completion state', async () => {
     const resolvers: Array<() => void> = [];
     const originalDateNow = Date.now;
-    let dateNowCalls = 0;
+    let completions = 0;
+    const unsubscribe = useQuotaStore.subscribe((state, previous) => { if (!state.isLoading && previous.isLoading) completions++; });
     globalThis.fetch = (input) => new Promise<Response>((resolve) => {
       const providerId = providerIdFromInput(input);
       resolvers.push(() => resolve(new Response(JSON.stringify(result(providerId)))));
     });
-    Date.now = () => ++dateNowCalls;
+    Date.now = () => 1234;
 
     try {
       const first = useQuotaStore.getState().fetchAllQuotas();
@@ -85,9 +88,12 @@ describe('useQuotaStore quota queries', () => {
 
       expect(useQuotaStore.getState().isLoading).toBe(false);
       expect(useQuotaStore.getState().lastUpdated).not.toBeNull();
-      expect(dateNowCalls).toBe(QUOTA_PROVIDERS.length + 1);
+      expect(useQuotaStore.getState().lastUpdated).toBe(1234);
+      expect(completions).toBe(1);
+      expect(resolvers).toHaveLength(QUOTA_PROVIDERS.length + 1);
     } finally {
       Date.now = originalDateNow;
+      unsubscribe();
     }
   });
 

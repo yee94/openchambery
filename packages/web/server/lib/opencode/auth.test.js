@@ -1,10 +1,21 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { configureOpenCodeCredentials, getProviderAuth, readOpenCodeCredentials, removeProviderAuth, openCodeCredentialSource } from './auth.js';
+import { configureOpenCodeCredentials, getProviderAuth, readOpenCodeCredentials, removeProviderAuth, openCodeCredentialSource, readOpenCodeProviderConfigs } from './auth.js';
 
 const key = (id, active, value = id) => ({ id, integrationID: 'openai', label: id, active, value: { type: 'key', key: value } });
 afterEach(() => { configureOpenCodeCredentials(null); vi.unstubAllGlobals(); });
 
 describe('authoritative host credential API', () => {
+  it('reads location-scoped provider settings and merges config layers without leaking SDK errors', async () => {
+    const get = vi.fn(async () => [
+      { type: 'document', info: { providers: { renamed: { name: 'Gateway', settings: { baseURL: 'https://gateway.example/v1', timeout: 1000 } } } } },
+      { type: 'document', info: { providers: { renamed: { settings: { timeout: 2000 } } } } },
+    ]);
+    configureOpenCodeCredentials(() => ({ config: { get } }));
+    await expect(readOpenCodeProviderConfigs('/project')).resolves.toEqual({ renamed: { name: 'Gateway', settings: { baseURL: 'https://gateway.example/v1', timeout: 2000 } } });
+    expect(get.mock.calls[0][0]).toEqual({ location: { directory: '/project' } });
+    get.mockRejectedValueOnce(new Error('private-token'));
+    await expect(readOpenCodeProviderConfigs('/project')).rejects.toThrow(/^Unable to read OpenCode provider connections$/);
+  });
   it('observes active account switching and logout without cached or legacy fallback', async () => {
     let entries = [key('old', true), key('new', false)];
     configureOpenCodeCredentials(() => ({ credential: { list: async () => entries } }));

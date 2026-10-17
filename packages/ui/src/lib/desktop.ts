@@ -114,6 +114,8 @@ export type DesktopSettings = {
   usageDisplayMode?: 'usage' | 'remaining';
   usageShowPredValues?: boolean;
   usageDropdownProviders?: string[];
+  magpieUsageUrl?: string;
+  magpieHiddenProviders?: string[];
   usageSelectedModels?: Record<string, string[]>;  // Map of providerId -> selected model names
   usageCollapsedFamilies?: Record<string, string[]>;  // Map of providerId -> collapsed family IDs (UsagePage)
   usageExpandedFamilies?: Record<string, string[]>;  // Map of providerId -> EXPANDED family IDs (header dropdown - inverted)

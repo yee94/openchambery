@@ -1,4 +1,8 @@
 export const settingsDict = {
+  'settings.usage.magpie.url': 'URL Magpie supplémentaire',
+  'settings.usage.magpie.description': 'Détection automatique de Magpie via les connexions des fournisseurs. Ajoutez une URL de passerelle ou videz le champ pour la retirer. L’authentification distante utilise la clé du fournisseur, ou OPENCHAMBER_MAGPIE_API_KEY pour cette URL.',
+  'settings.usage.magpie.cached': 'Valeur en cache ; en attente de données récentes',
+  'settings.usage.magpie.save': 'Enregistrer',
   'settings.remoteInstances.clientAuth.edit.title': 'Modifier l’appareil',
   'settings.remoteInstances.clientAuth.edit.action': 'Modifier',
   'settings.remoteInstances.clientAuth.edit.name': 'Nom de l’appareil',

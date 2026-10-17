@@ -1,4 +1,8 @@
 export const settingsDict = {
+  'settings.usage.magpie.url': '追加の Magpie URL',
+  'settings.usage.magpie.description': 'プロバイダー接続から Magpie を自動識別します。ゲートウェイ URL も追加でき、空にすると削除されます。リモート認証には設定済みのプロバイダーキー、この URL には OPENCHAMBER_MAGPIE_API_KEY を使用します。',
+  'settings.usage.magpie.cached': 'キャッシュされた値です。最新の使用枠データを待機しています',
+  'settings.usage.magpie.save': '保存',
   'settings.remoteInstances.clientAuth.edit.title': 'デバイスを編集',
   'settings.remoteInstances.clientAuth.edit.action': '編集',
   'settings.remoteInstances.clientAuth.edit.name': 'デバイス名',

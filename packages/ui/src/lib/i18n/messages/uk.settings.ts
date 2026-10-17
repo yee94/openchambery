@@ -1,4 +1,8 @@
 export const settingsDict = {
+  'settings.usage.magpie.url': 'Додаткова URL-адреса Magpie',
+  'settings.usage.magpie.description': 'Автоматично визначає Magpie за підключеннями постачальників. Додайте адресу шлюзу або очистьте поле, щоб видалити її. Віддалена автентифікація використовує ключ постачальника, а для цієї адреси — OPENCHAMBER_MAGPIE_API_KEY.',
+  'settings.usage.magpie.cached': 'Кешовані дані; очікування актуальних даних квоти',
+  'settings.usage.magpie.save': 'Зберегти',
   'settings.remoteInstances.clientAuth.edit.title': 'Редагувати пристрій',
   'settings.remoteInstances.clientAuth.edit.action': 'Редагувати',
   'settings.remoteInstances.clientAuth.edit.name': 'Назва пристрою',

@@ -1,4 +1,8 @@
 export const settingsDict = {
+  'settings.usage.magpie.url': 'Additional Magpie URL',
+  'settings.usage.magpie.description': 'Automatically identify Magpie from provider connections. Optionally add a gateway URL; clear it to remove. Remote authentication uses the configured provider key, or OPENCHAMBER_MAGPIE_API_KEY for this URL.',
+  'settings.usage.magpie.cached': 'Cached reading; awaiting fresh quota data',
+  'settings.usage.magpie.save': 'Save',
   'settings.remoteInstances.clientAuth.edit.title': 'Edit device',
   'settings.remoteInstances.clientAuth.edit.action': 'Edit',
   'settings.remoteInstances.clientAuth.edit.name': 'Device name',

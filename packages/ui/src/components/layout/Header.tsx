@@ -36,7 +36,7 @@ import { cn, hasModifier } from '@/lib/utils';
 import { McpDropdownContent } from '@/components/mcp/McpDropdown';
 import { McpIcon } from '@/components/icons/McpIcon';
 import { ProviderLogo } from '@/components/ui/ProviderLogo';
-import { formatQuotaValueLabel, formatQuotaResetLabel, formatWindowLabel, QUOTA_PROVIDERS, calculatePace, calculateExpectedUsagePercent } from '@/lib/quota';
+import { formatQuotaValueLabel, formatQuotaResetLabel, formatWindowLabel, quotaProviders, calculatePace, calculateExpectedUsagePercent } from '@/lib/quota';
 import { UsageProgressBar } from '@/components/sections/usage/UsageProgressBar';
 import { PaceIndicator } from '@/components/sections/usage/PaceIndicator';
 import { updateDesktopSettings } from '@/lib/persistence';
@@ -1001,7 +1001,7 @@ export const Header: React.FC<HeaderProps> = ({
   const rateLimitGroups = React.useMemo(() => {
     const groups: RateLimitGroup[] = [];
 
-    for (const provider of QUOTA_PROVIDERS) {
+    for (const provider of quotaProviders(quotaResults)) {
       if (!dropdownProviderIds.includes(provider.id)) {
         continue;
       }

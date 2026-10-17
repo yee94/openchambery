@@ -6,7 +6,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Icon } from "@/components/icon/Icon";
 import { cn } from '@/lib/utils';
 import { SettingsGroup, SettingsRow, SettingsToggleRow } from '@/components/sections/shared/SettingsGroup';
-import { QUOTA_PROVIDERS, resolveUsageTone } from '@/lib/quota';
+import { quotaProviders, resolveUsageTone } from '@/lib/quota';
+import { MagpieConnection } from './MagpieConnection';
 import { useQuotaStore } from '@/stores/useQuotaStore';
 import { updateDesktopSettings } from '@/lib/persistence';
 import { useI18n } from '@/lib/i18n';
@@ -151,8 +152,9 @@ export const UsageSidebar: React.FC<UsageSidebarProps> = ({ onItemSelect }) => {
         />
       </SettingsGroup>
 
+      <MagpieConnection />
       <SettingsGroup>
-        {QUOTA_PROVIDERS.map((provider) => {
+        {quotaProviders(results).map((provider) => {
           const result = results.find((entry) => entry?.providerId === provider.id);
           const percent = getUsagePercent(result?.usage);
           const tone = resolveUsageTone(percent);

@@ -34,6 +34,38 @@ These provider IDs are currently dispatchable via `fetchQuotaForProvider(provide
 | `opencode-go` | OpenCode Go | `providers/opencode-go.js` | Manual workspace ID and auth cookie stored under `~/.config/openchamber/quota/` |
 | `xai` | Grok | `providers/xai.js` | Grok Build CLI login state (`~/.grok/auth.json`; override via `GROK_HOME`, `GROK_AUTH_PATH`, or `OPENCHAMBER_GROK_AUTH_PATH`) |
 
+## Magpie aggregate source
+
+`magpie.js` owns `GET /api/quota/magpie?directory=...`; `refresh=1` requests a vendor refresh.
+The host reads the active OpenCode service's location-scoped `config.get()` documents and selected
+credentials. Configured `providers.*.settings.baseURL` values are candidates, regardless of their names
+or ports. GET of the normalized versioned base must identify `name: magpie` and advertise
+`/v1/magpie/quotas`. HTTP(S) proxy prefixes are retained; redirects and credential-bearing URLs are refused.
+Only the candidate's own configured authorization/API-key headers or selected API credential are sent.
+No port scan, local OpenCode config fallback, or persistent credential cache is used.
+
+Settings → Usage also accepts `magpieUsageUrl`, an optional explicit gateway URL. Its optional remote
+key comes from the host environment's `OPENCHAMBER_MAGPIE_API_KEY`; no key is stored in UI settings.
+Magpie must allow quota access for remote keys. An identity/permission failure remains visible.
+
+Opening uses `/v1/magpie/quotas?kept=1`; refresh uses `/v1/magpie/quotas`. A failed refresh may fall back
+to the kept snapshot with an explicit error/stale marker, never an invented fresh empty success.
+Authorization failures do not use the fallback and discard previously displayed scope data.
+Discovery runs at most four candidates concurrently and deduplicates URL plus credential scope within
+one request. Every gateway yields one aggregate read, not one read per account/provider.
+
+Each upstream provider gets a namespaced `magpie:<source>:<provider>` result, independent of built-ins.
+`usage.accounts` retains separate account windows, errors and reading timestamps. `usage.windows`
+is the account-labelled projection for existing header/mobile/tray consumers. Percentages, balance
+labels, unlimited windows and absolute reset timestamps are preserved. Window duration remains unknown
+and pace prediction is disabled rather than inferred. Upstream error bodies are never returned.
+
+The UI shares Query flights keyed by transport, directory, manual URL and refresh mode. Directory/runtime
+switches fence late completions. Failed sources retain previous readings with an error; complete empty
+sources remove their rows. `magpieHiddenProviders` preserves opt-outs while newly discovered providers
+are visible by default. Web/Electron/hosted-mobile/Capacitor use the host route; VS Code invokes the same
+module through `api:quota:magpie` and its current manager/credential resolver.
+
 ## Internal-only provider module
 - `providers/openai.js` exists for logic parity/reuse but is intentionally not registered for dispatcher ID routing.
 

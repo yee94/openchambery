@@ -396,6 +396,16 @@ export const createSettingsHelpers = (dependencies) => {
     if (typeof candidate.usageAutoRefresh === 'boolean') {
       result.usageAutoRefresh = candidate.usageAutoRefresh;
     }
+    if (typeof candidate.magpieUsageUrl === 'string') {
+      const value = candidate.magpieUsageUrl.trim();
+      if (!value) result.magpieUsageUrl = '';
+      else {
+        const url = new URL(value);
+        if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password || url.search || url.hash) throw new Error('Invalid Magpie URL');
+        result.magpieUsageUrl = url.href;
+      }
+    }
+    if (Array.isArray(candidate.magpieHiddenProviders)) result.magpieHiddenProviders = normalizeStringArray(candidate.magpieHiddenProviders).filter((id) => id.startsWith('magpie:'));
     if (typeof candidate.usageRefreshIntervalMs === 'number' && Number.isFinite(candidate.usageRefreshIntervalMs)) {
       result.usageRefreshIntervalMs = Math.max(30000, Math.min(300000, Math.round(candidate.usageRefreshIntervalMs)));
     }

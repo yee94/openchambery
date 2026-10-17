@@ -1,4 +1,8 @@
 export const settingsDict = {
+  'settings.usage.magpie.url': 'Dodatkowy adres URL Magpie',
+  'settings.usage.magpie.description': 'Automatycznie rozpoznaje Magpie na podstawie połączeń dostawców. Dodaj adres bramy lub wyczyść pole, aby go usunąć. Uwierzytelnianie zdalne używa klucza dostawcy, a dla tego adresu — OPENCHAMBER_MAGPIE_API_KEY.',
+  'settings.usage.magpie.cached': 'Odczyt z pamięci podręcznej; oczekiwanie na aktualne dane limitu',
+  'settings.usage.magpie.save': 'Zapisz',
   'settings.remoteInstances.clientAuth.edit.title': 'Edytuj urządzenie',
   'settings.remoteInstances.clientAuth.edit.action': 'Edytuj',
   'settings.remoteInstances.clientAuth.edit.name': 'Nazwa urządzenia',

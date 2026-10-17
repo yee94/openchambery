@@ -373,6 +373,14 @@ export const persistSettings = async (changes: Record<string, unknown>, ctx?: Br
   const restChanges = stripDerived({ ...(changes || {}) });
 
   const keysToClear = new Set<string>();
+  if (typeof restChanges.magpieUsageUrl === 'string') {
+    const value = restChanges.magpieUsageUrl.trim();
+    if (value) {
+      const url = new URL(value);
+      if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password || url.search || url.hash) throw new Error('Invalid Magpie URL');
+    }
+    restChanges.magpieUsageUrl = value;
+  } else delete restChanges.magpieUsageUrl;
 
   for (const key of ['defaultModel', 'defaultVariant', 'defaultAgent', 'defaultGitIdentityId', 'opencodeBinary', 'smallModelOverride']) {
     const value = restChanges[key];

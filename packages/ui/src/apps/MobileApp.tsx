@@ -46,7 +46,7 @@ import { MOBILE_SETTINGS_PAGE_SLUGS } from '@/lib/settings/metadata';
 import { getNativeIosComposerPlugin } from '@/lib/native-ios-composer';
 import { isIPadApp } from '@/lib/platform';
 import { resolveProjectForDirectory, resolveProjectForSessionDirectory } from '@/lib/projectResolution';
-import { formatQuotaResetLabel, formatQuotaValueLabel, formatWindowLabel, QUOTA_PROVIDERS } from '@/lib/quota';
+import { formatQuotaResetLabel, formatQuotaValueLabel, formatWindowLabel, quotaProviders } from '@/lib/quota';
 import { getDisplayModelName } from '@/lib/quota/model-families';
 import { getRuntimeApiBaseUrl, subscribeRuntimeEndpointChanged, switchRuntimeEndpoint } from '@/lib/runtime-switch';
 import { sessionEvents } from '@/lib/sessionEvents';
@@ -2234,7 +2234,7 @@ const MobileSessionMetadataButton = React.memo(function MobileSessionMetadataBut
 
   const usageGroups = React.useMemo<MobileUsageProviderGroup[]>(() => {
     const resultsByProvider = new Map(quotaResults.map((result) => [result?.providerId, result]));
-    return QUOTA_PROVIDERS
+    return quotaProviders(quotaResults)
       .filter((providerMeta) => dropdownProviderIds.includes(providerMeta.id))
       .filter((providerMeta) => resultsByProvider.get(providerMeta.id)?.configured === true)
       .map((providerMeta) => {

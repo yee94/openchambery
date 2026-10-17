@@ -1016,6 +1016,9 @@ const sanitizeWebSettings = (payload: unknown): DesktopSettings | null => {
     );
   }
 
+  if (typeof candidate.magpieUsageUrl === 'string') result.magpieUsageUrl = candidate.magpieUsageUrl;
+  if (Array.isArray(candidate.magpieHiddenProviders)) result.magpieHiddenProviders = candidate.magpieHiddenProviders.filter((id): id is string => typeof id === 'string' && id.startsWith('magpie:'));
+
   // Parse usageSelectedModels (Record<string, string[]>)
   if (candidate.usageSelectedModels && typeof candidate.usageSelectedModels === 'object') {
     const selectedModels: Record<string, string[]> = {};

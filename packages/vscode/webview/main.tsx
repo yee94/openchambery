@@ -1141,6 +1141,15 @@ const handleLocalApiRequest = async (input: RequestInfo | URL, url: URL, init: R
     return new Response(JSON.stringify(result), { status: 200, headers: { 'Content-Type': 'application/json' } });
   }
 
+  if (pathname === '/api/quota/magpie') {
+    try {
+      const data = await sendBridgeMessage('api:quota:magpie', { directory: url.searchParams.get('directory') || undefined, refresh: url.searchParams.get('refresh') === '1' });
+      return new Response(JSON.stringify(data), { status: 200, headers: { 'Content-Type': 'application/json' } });
+    } catch {
+      return new Response(JSON.stringify({ error: 'Unable to discover Magpie quota sources' }), { status: 502, headers: { 'Content-Type': 'application/json' } });
+    }
+  }
+
   if (pathname === '/api/quota/providers') {
     try {
       const data = await sendBridgeMessage('api:quota:providers');

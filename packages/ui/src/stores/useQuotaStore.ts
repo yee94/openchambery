@@ -9,13 +9,21 @@ import { getDefaultModels } from '@/lib/quota/model-families';
 import { updateDesktopSettings } from '@/lib/persistence';
 import { runtimeFetch } from '@/lib/runtime-fetch';
 import { fetchQuotaProvider, isProviderResult, queryClient, queryKeys } from '@/lib/queryRuntime';
+import { magpieQuotaOptions, type MagpieSource } from '@/lib/quota/magpieQueries';
+import { useDirectoryStore } from '@/stores/useDirectoryStore';
 
 const DEFAULT_REFRESH_INTERVAL_MS = 60000;
 let refreshGeneration = 0;
 let quotaRuntimeGeneration = 0;
+let magpieScope: string | undefined;
+let magpieGeneration = 0;
+let magpieRequestSequence = 0;
+let magpieAppliedSequence = 0;
 const providerFetchCounts = new Map<QuotaProviderId, number>();
 
 interface QuotaSettingsState {
+  magpieUsageUrl: string;
+  magpieHiddenProviders: string[];
   autoRefresh: boolean;
   refreshIntervalMs: number;
   displayMode: 'usage' | 'remaining';
@@ -26,6 +34,9 @@ interface QuotaSettingsState {
 }
 
 interface QuotaStore extends QuotaSettingsState {
+  magpieSources: MagpieSource[];
+  magpieError: string | null;
+  fetchMagpieQuotas: (refresh?: boolean) => Promise<void>;
   results: ProviderResult[];
   selectedProviderId: QuotaProviderId | null;
   isLoading: boolean;
@@ -68,7 +79,7 @@ const parseSettings = (data: Record<string, unknown> | null): QuotaSettingsState
     : null;
   const dropdownProviderIds = rawDropdownProviders
     ? rawDropdownProviders.filter((entry): entry is QuotaProviderId =>
-        typeof entry === 'string' && allProviderIds.includes(entry as QuotaProviderId)
+        typeof entry === 'string' && (entry.startsWith('magpie:') || allProviderIds.includes(entry as QuotaProviderId))
       )
     : allProviderIds;
 
@@ -95,6 +106,8 @@ const parseSettings = (data: Record<string, unknown> | null): QuotaSettingsState
   }
 
   return {
+    magpieUsageUrl: typeof data?.magpieUsageUrl === 'string' ? data.magpieUsageUrl : '',
+    magpieHiddenProviders: Array.isArray(data?.magpieHiddenProviders) ? data.magpieHiddenProviders.filter((id): id is string => typeof id === 'string' && id.startsWith('magpie:')) : [],
     autoRefresh,
     refreshIntervalMs,
     displayMode,
@@ -129,6 +142,8 @@ const loadSettingsFromRuntime = async (): Promise<QuotaSettingsState> => {
   }
 
   return {
+    magpieUsageUrl: '',
+    magpieHiddenProviders: [],
     autoRefresh: false,
     refreshIntervalMs: DEFAULT_REFRESH_INTERVAL_MS,
     displayMode: 'usage',
@@ -210,10 +225,16 @@ const refreshProviderQuota = async (
 };
 
 export const resetQuotaStoreForRuntimeSwitch = (): void => {
+  magpieScope = undefined;
+  magpieGeneration += 1;
   quotaRuntimeGeneration += 1;
   refreshGeneration += 1;
   providerFetchCounts.clear();
   useQuotaStore.setState({
+    magpieUsageUrl: '',
+    magpieHiddenProviders: [],
+    magpieSources: [],
+    magpieError: null,
     results: [],
     isLoading: false,
     isFetchingProvider: {},
@@ -225,6 +246,10 @@ export const resetQuotaStoreForRuntimeSwitch = (): void => {
 export const useQuotaStore = create<QuotaStore>()(
   devtools(
     (set, get) => ({
+      magpieSources: [],
+      magpieError: null,
+      magpieHiddenProviders: [],
+      magpieUsageUrl: '',
       results: [],
       selectedProviderId: null,
       isLoading: false,
@@ -240,9 +265,12 @@ export const useQuotaStore = create<QuotaStore>()(
       expandedFamilies: {},
 
       loadSettings: async () => {
+        const generation = quotaRuntimeGeneration;
         try {
           const settings = await loadSettingsFromRuntime();
-          set(settings);
+          if (generation !== quotaRuntimeGeneration) return;
+          set((state) => ({ ...settings, dropdownProviderIds: [...settings.dropdownProviderIds.filter((id) => !id.startsWith('magpie:')),
+            ...state.results.filter((r) => r.source === 'magpie' && !settings.magpieHiddenProviders.includes(r.providerId)).map((r) => r.providerId)] }));
         } catch (error) {
           console.warn('Failed to load usage settings:', error);
         }
@@ -252,7 +280,10 @@ export const useQuotaStore = create<QuotaStore>()(
         const generation = ++refreshGeneration;
         set({ isLoading: true, error: null });
         const providerIds = QUOTA_PROVIDERS.map((provider) => provider.id);
-        const outcomes = await Promise.all(providerIds.map((providerId) => refreshProviderQuota(providerId, set)));
+        const [outcomes] = await Promise.all([
+          Promise.all(providerIds.map((providerId) => refreshProviderQuota(providerId, set))),
+          get().fetchMagpieQuotas(true),
+        ]);
         if (generation === refreshGeneration) {
           const failed = outcomes.find((outcome): outcome is Extract<ProviderRefreshOutcome, { error: string }> => 'error' in outcome);
           const succeeded = outcomes.some((outcome) => 'result' in outcome);
@@ -265,9 +296,43 @@ export const useQuotaStore = create<QuotaStore>()(
       },
 
       fetchProviderQuota: async (providerId) => {
+        if (providerId.startsWith('magpie:')) return get().fetchMagpieQuotas(true);
         const outcome = await refreshProviderQuota(providerId, set);
         if (!('stale' in outcome)) {
           set({ error: 'error' in outcome ? outcome.error : null });
+        }
+      },
+
+      fetchMagpieQuotas: async (refresh = false) => {
+        const generation = quotaRuntimeGeneration;
+        const directory = useDirectoryStore.getState().currentDirectory;
+        const manualURL = get().magpieUsageUrl;
+        const scope = JSON.stringify([directory, manualURL]);
+        if (magpieScope !== scope) {
+          magpieScope = scope;
+          magpieGeneration += 1;
+          set((state) => ({ results: state.results.filter((r) => r?.source !== 'magpie'), magpieSources: [], magpieError: null }));
+        }
+        const requestGeneration = magpieGeneration;
+        const sequence = ++magpieRequestSequence;
+        try {
+          const { sources } = await queryClient.fetchQuery(magpieQuotaOptions(directory, manualURL, refresh));
+          if (generation !== quotaRuntimeGeneration || requestGeneration !== magpieGeneration || sequence < magpieAppliedSequence || directory !== useDirectoryStore.getState().currentDirectory || manualURL !== get().magpieUsageUrl) return;
+          magpieAppliedSequence = sequence;
+          set((state) => {
+            const failed = new Map(sources.filter((s) => s.error && !s.clearPrevious && s.results.length === 0).map((s) => [s.id, s.error]));
+            const results = state.results.filter((r) => r?.providerId && (r.source !== 'magpie' || failed.has(r.sourceId ?? '')))
+              .map((r) => r.source === 'magpie' && failed.has(r.sourceId ?? '') ? { ...r, ok: false, error: failed.get(r.sourceId ?? '') } : r);
+            results.push(...sources.flatMap((s) => s.results));
+            const dynamic = results.filter((r) => r.source === 'magpie').map((r) => r.providerId);
+            return { results, magpieSources: sources, magpieError: null,
+              dropdownProviderIds: [...state.dropdownProviderIds.filter((id) => !id.startsWith('magpie:')),
+                ...dynamic.filter((id) => !state.magpieHiddenProviders.includes(id))] };
+          });
+        } catch (error) {
+          if (generation !== quotaRuntimeGeneration || requestGeneration !== magpieGeneration || sequence < magpieAppliedSequence || directory !== useDirectoryStore.getState().currentDirectory || manualURL !== get().magpieUsageUrl) return;
+          magpieAppliedSequence = sequence;
+          set({ magpieError: error instanceof Error ? error.message : 'Unable to read Magpie quotas' });
         }
       },
 
@@ -279,7 +344,13 @@ export const useQuotaStore = create<QuotaStore>()(
       },
       setDisplayMode: (mode) => set({ displayMode: mode }),
       setShowPredValues: (enabled) => set({ showPredValues: enabled }),
-      setDropdownProviderIds: (providerIds) => set({ dropdownProviderIds: providerIds }),
+      setDropdownProviderIds: (providerIds) => {
+        const dynamic = get().results.filter((r) => r.source === 'magpie');
+        const visibleIds = new Set(dynamic.map((r) => r.providerId));
+        const hidden = [...get().magpieHiddenProviders.filter((id) => !visibleIds.has(id as QuotaProviderId)),
+          ...dynamic.filter((r) => !providerIds.includes(r.providerId)).map((r) => r.providerId)];
+        set({ dropdownProviderIds: providerIds, magpieHiddenProviders: hidden });
+      },
 
       setSelectedModels: (providerId, modelNames) => {
         set((state) => ({
@@ -343,6 +414,12 @@ export const useQuotaStore = create<QuotaStore>()(
 );
 
 export const useQuotaAutoRefresh = () => {
+  const directory = useDirectoryStore((state) => state.currentDirectory);
+  const magpieUsageUrl = useQuotaStore((state) => state.magpieUsageUrl);
+  const fetchMagpieQuotas = useQuotaStore((state) => state.fetchMagpieQuotas);
+  React.useEffect(() => {
+    void fetchMagpieQuotas();
+  }, [directory, magpieUsageUrl, fetchMagpieQuotas]);
   const autoRefresh = useQuotaStore((state) => state.autoRefresh);
   const refreshIntervalMs = useQuotaStore((state) => state.refreshIntervalMs);
   const fetchAllQuotas = useQuotaStore((state) => state.fetchAllQuotas);

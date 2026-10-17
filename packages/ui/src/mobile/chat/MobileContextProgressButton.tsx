@@ -11,7 +11,7 @@ import {
   formatQuotaResetLabel,
   formatQuotaValueLabel,
   formatWindowLabel,
-  QUOTA_PROVIDERS,
+  quotaProviders,
 } from '@/lib/quota';
 import { getDisplayModelName } from '@/lib/quota/model-families';
 import { sessionEvents } from '@/lib/sessionEvents';
@@ -400,7 +400,7 @@ export function MobileContextProgressButton({
 
   const usageGroups = React.useMemo<MobileUsageProviderGroup[]>(() => {
     const resultsByProvider = new Map(quotaResults.map((result) => [result?.providerId, result]));
-    return QUOTA_PROVIDERS
+    return quotaProviders(quotaResults)
       .filter((providerMeta) => dropdownProviderIds.includes(providerMeta.id))
       .filter((providerMeta) => resultsByProvider.get(providerMeta.id)?.configured === true)
       .map((providerMeta) => {

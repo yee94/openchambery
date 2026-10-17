@@ -428,7 +428,7 @@ export const createFeatureRoutesRuntime = (dependencies) => {
       getProfile,
     });
 
-    registerQuotaRoutes(app, { getQuotaProviders });
+    registerQuotaRoutes(app, { getQuotaProviders, readSettingsFromDisk });
     const getSmallModelService = routeGetSmallModelService
       || injectedGetSmallModelService
       || (async () => {
