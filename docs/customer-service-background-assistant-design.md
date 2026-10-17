@@ -1,6 +1,6 @@
 # 客服过程回复与后台任务：架构对比及演进方案
 
-调研日期：2026-10-17。状态：**供评审的方案，未实施代码改造**。
+调研日期：2026-10-17。状态：**P1（GUI Job）已在 BFF 落地**；其余阶段仍为方案，未实施。
 
 面向客服 Agent 与 OpenChamber 的架构、后端开发者，回答三个问题：过程回复应由谁生成；业务能力是否适合包装成 tool；怎样支持长任务执行期间继续接收用户指令。
 
@@ -15,7 +15,8 @@
 3. “完整上下文”应落实为**有来源、可读取的任务上下文**：派发时固定快照，后续条件通过显式指令补充，必要时按引用读取原始历史。每次复制整个主会话既不能保证最新，也不等于理解正确。
 4. “移入后台”应解除对话对同一任务的等待，而不是取消后重新提交。任务从创建时就有稳定 ID 和独立 owner；foreground/background 仅决定等待及结果投递方式。
 5. 客服当前的新消息策略是 latest-wins，会使旧 delivery 失去执行归属。要支持“查着订单，同时问退款规则”，必须将**对话消息的租约**与**业务任务的租约**分开。
-6. 优先验证已有 GUI 作业的后台跟踪。它已有远端 `runId`，但当前中断只停轮询、不取消远端。是否能补充条件、真正取消，仍取决于远端 API；本次代码不能证明这些能力存在。
+6. 后台能力抽象为独立的 **Job**，Subagent 只是其执行器之一；不复用 `Spawn.background` 作为后台任务基础，见 §8.3.1。
+7. 优先验证已有 GUI 作业的后台跟踪。它已有远端 `runId`，但当前中断只停轮询、不取消远端。是否能补充条件、真正取消，仍取决于远端 API；本次代码不能证明这些能力存在。
 
 OpenChamber 提供最接近的本地参考：Contact 接单、`assign_session` 派发、worker 独立运行、完成后重新唤醒 Contact。Muse/Grok Bot 的公开行为也支持持续任务与多轮对话，但没有公开证据证明它们使用了与我们相同的进度 Subagent。
 
@@ -322,6 +323,28 @@ interface TaskReceipt {
 
 这里的 `background` 是父执行生命周期内的并行子工作。它不等于“主对话已经结束，任务跨多轮继续”。目标方案在 BFF 任务运行时新建执行 owner，里面仍可使用现有子 Agent 和 Effect Scope；无需先修改 core drain 契约。
 
+### 8.3.1 决策声明：后台能力抽象为 Job，不复用 Subagent background
+
+**后台执行抽象为独立的 Job 能力。Subagent 只是 Job 的一种执行器，`Spawn.background` 不作为后台任务的实现基础。**
+
+| 维度 | `Spawn.background`（现有） | Job（目标） |
+| --- | --- | --- |
+| 生命周期 owner | 父 run；父结束 drain、abort/superseded 时 cancelAll | 会话级 Job 运行时；与对话轮次解耦 |
+| 新消息 | 父 run 被 superseded，子任务随之取消 | 不影响 Job，按 jobId 查询/补充/取消 |
+| 超时 | `timeoutMs` 到期即中断执行 | 等待预算与执行 deadline 分开；停止等待不停止执行 |
+| 身份与控制 | 只有 runId；仅支持按父 run `cancelAll` | 稳定 jobId；get / update / cancel / detach 按 id 寻址 |
+| 状态 | 进程内 `Map` 与事件 buffer，不可冷恢复 | TaskRecord 持久化、租约与 fencing，可 reattach |
+| 结果投递 | `spawn.completed` 只在父请求存活期间可见 | 终态事件持久化后再投递，可唤醒汇总轮次 |
+| 执行器 | 只能是 Agent loop | 子 Agent、远端 GUI 作业、MCP/业务作业；GUI 无需套一层 LLM |
+
+声明的边界：
+
+1. `Spawn.background` 保持现有语义，继续服务轮次内的短旁路（如 hint bridge），不扩展其生命周期、不改 core drain/cancelAll 契约。
+2. 不在业务 tool 的 call 内直接 `spawn({ background: true })` 充当后台任务；那只能得到“本轮内并行”，且会把父请求拖到子任务结束，新消息到达时任务仍会被取消。
+3. Job 执行器为子 Agent 时，在 Job 自己的 Scope 内调用 Spawn（前台模式），由 Job 而非对话 run 持有该 Scope。
+4. 命名使用 Job，避免与 core 已有的前台 `Task` tool（`packages/core/src/spawn/task.ts`）混淆；面向模型的工具名在实施时统一评审。
+5. 首期落点在 BFF 任务运行时；待第二个宿主（如 TUI、A2A）出现相同需求，再评估是否下沉为 yi-agent 扩展包。
+
 ### 8.4 状态、持久化与恢复
 
 任务执行状态与等待模式分开。`running` 任务既可有前台 waiter，也可无人等待；不为两种呈现方式各建一套任务记录。
@@ -442,10 +465,12 @@ sequenceDiagram
 | 阶段 | 交付 | 验收与退出条件 |
 | --- | --- | --- |
 | P0：基线 | 回放当前接话，统计误报、重复、取消后晚发和进度成本 | 确认现有 Subagent 的质量问题与多轮 ownership 问题各占多少 |
-| P1：单执行器试点 | GUI taskId、持久接纳、独立租约、显式后台、status/结果回收；继续复用进度生成器 | “查 A → 问别的问题 → A 完成通知”可复现；旧 delivery 结束不丢远端跟踪 |
+| P1：单执行器试点（2026-10-17 已落地） | 实际：GUI Job 的持久接纳、独立租约、同意图去重等待、前台等待可被新消息打断。无主动推送，不复用进度生成器。仅 GUI | 实际：下一条用户消息的 round.start suffix 交付；恢复按会话触发。旧 delivery 结束不丢已接纳的远端跟踪。原“完成即通知”未做 |
 | P2：任务化多轮 | 持久控制命令、任务定向、支持执行器的 steer/cancel、通知重评 | 更新条件有 applied ack；新消息不全局关通知；目标不明确会澄清 |
 | P3：前台可转后台 | 同一任务提交路径、可取消 waiter、短等待与 detach 竞态处理 | 转后台不二次 postRun、不重建任务、不重复完成回复 |
 | P4：扩展执行器 | 按真实需求接 MCP/业务子 Agent；可重用接口成熟后再考虑提包 | 每个适配器声明 attach/update/cancel/recover 能力和测试证据 |
+
+P1 已在 BFF 落地，小于本表原计划。无微信主动推送；完成结果在该会话下一条用户消息经 `round.start` suffix 交付。恢复由该会话下一轮 reconcile 触发，不是全局扫描。仅 GUI 执行器。文件与偏差见 §11.5。
 
 P1 对“不支持中途更新/取消”的执行器如实返回限制。持久接纳与恢复发现机制必须在承诺生产级后台前完成；只启动服务 Scope fiber 的实验版不能宣称具备重启恢复。
 
@@ -497,6 +522,36 @@ OpenChamber 目前仅作为参考，不需要为落地客服方案同时改其�
 观测指标包括：首个有效接话耗时、无新增事实消息占比、错误成功承诺、取消后晚发、提交到 applied 延迟、后台完成到告知延迟、重复外部提交、未知结果比例、每任务生成成本。P0 采集基线后再定阈值；关键正确性验收要求不能重复外部提交、不能将未确认取消说成成功。
 
 回滚按新任务入口切换，已有后台 task 继续由原 owner 跟踪至终态；不能关闭开关时直接丢弃在途任务。避免新旧执行路径同时成为同一任务的写入方。
+
+### 11.5 实施记录（2026-10-17）
+
+P1 落在 yi-agent BFF。core 与 pipeline/wire 未改。`gui_run` 的 toolCallId 提交去重仍在 `kfRecall` route claim；受理后 admit Job 并等待。
+
+| 路径 | 作用 |
+| --- | --- |
+| `app/wxaaiagentnodelogicsvr/src/service/yi/jobs/types.ts` | Job 契约：记录、租约、notice、`jobKey` |
+| `app/wxaaiagentnodelogicsvr/src/service/yi/jobs/store.ts` | 单会话聚合槽，CAS |
+| `app/wxaaiagentnodelogicsvr/src/service/yi/jobs/runtime.ts` | `makeJobRuntime` |
+| `app/wxaaiagentnodelogicsvr/src/service/yi/jobs/process.ts` | 进程级 Scope |
+| `app/wxaaiagentnodelogicsvr/src/server.ts` | 与 `startWechatKfExecutor` 并列启动，`WXA_WECHAT_RELAY_ENABLED==='1'` |
+| `app/wxaaiagentnodelogicsvr/src/service/yi/plugins/wechat/jobs/guiExecutor.ts` | 包装现有 `pollGuiRun`；无远端取消，中断只停跟踪 |
+| `app/wxaaiagentnodelogicsvr/src/service/yi/plugins/wechat/jobs/plugin.ts` | `wxaWechatJobsPlugin`：`round.start` suffix，`round.end` 标交付 |
+| `app/wxaaiagentnodelogicsvr/src/service/yi/sessions/wechatKf.ts` | 插件注册在 `wxaKfGuiPlugin` 之前 |
+
+与 §11.1 / §11.3 的偏差：
+
+| 计划 | 实际 |
+| --- | --- |
+| 完成后通知用户 | 无微信主动推送。`subscribe` 的 `job.progress` / `job.settled` 只留给以后的外层接入 |
+| 继续复用进度生成器 | 下一条用户消息的 `round.start` DynamicBlock suffix 列出 running 与 pending 结果，不写入历史。`round.end` reason=`completed` 把本轮注入结果标 delivered；`aborted` 保持 pending。至多一次 |
+| 全局可发现的恢复 | 该会话下一轮 reconcile。TTLData 无 scan。会话不再来消息则不跟踪，直到 7 天 TTL；远端 GUI 继续跑，结果不回收。重新接管后轮询预算从头计 |
+| `plugins/wechat/tasks/`、`persistence/` 任务仓储，以及 pipeline/wire 新通知入口 | 仅 GUI。落点是 `jobs/` 与 `plugins/wechat/jobs/`。pipeline/wire 未改 |
+| 显式 detach、更新、取消 | 新消息只停等待者。没有远端取消接口。P1 无 update/cancel |
+| 前台完成即工具终态 | 前台等待者先 acknowledge 再把结果交回模型。后台完成没有 `tool.completed`，Langfuse `onGuiCompleted` 不触发，也不发 weapp card |
+| 重启即可恢复 | 持久记录在。只用进程级 runtime，未启动时 `gui_run` 直接失败，没有会话级降级。不能把只启动 Scope fiber 说成全局重启恢复 |
+| GUI 状态权威迁到 TaskRecord | route 记录只保留按 toolCallId 的提交去重，不再写执行终态；执行状态与结果只在 Job 里 |
+
+同 appid+intent 已有 running Job 时等待该 Job，不第二次 POST。
 
 ## 12. 决策边界与剩余问题
 

@@ -2160,7 +2160,7 @@ export const dict: Record<I18nKey, string> = {
   'chat.chatInput.linked.pr.removeAria': '移除已关联的 Pull Request',
   'chat.chatInput.placeholder.shell': '输入 shell 命令...',
   'chat.chatInput.placeholder.chat': '输入消息，@ 添加引用，/ 选择命令，! 运行 Shell',
-  'chat.chatInput.placeholder.chatCompact': '输入消息…',
+  'chat.chatInput.placeholder.chatCompact': '输入消息',
   'chat.chatInput.placeholder.compactTap': '点击输入',
   'chat.chatInput.placeholder.selectSession': '选择或创建会话以开始聊天',
   'chat.chatInput.pastedTextReference': '已粘贴文本 #{index} · {count} 个字符',

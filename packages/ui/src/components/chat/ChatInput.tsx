@@ -1941,7 +1941,9 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
     const composerPlaceholder = currentSessionId || newSessionDraftOpen
         ? inputMode === 'shell'
             ? t('chat.chatInput.placeholder.shell')
-            : t('chat.chatInput.placeholder.chat')
+            : isMobile
+                ? t('chat.chatInput.placeholder.chatCompact')
+                : t('chat.chatInput.placeholder.chat')
         : t('chat.chatInput.placeholder.selectSession');
 
     const sendableAttachedFiles = attachedFiles;

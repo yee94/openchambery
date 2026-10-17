@@ -1935,7 +1935,7 @@ export const dict = {
   'chat.chatInput.linked.pr.removeAria': 'Supprimer la demande d\'extraction liée',
   'chat.chatInput.placeholder.shell': 'Entrez la commande shell...',
   'chat.chatInput.placeholder.chat': 'Écrivez un message, @ ajoute du contexte, / choisit une commande, ! lance le shell',
-  'chat.chatInput.placeholder.chatCompact': 'Écrivez un message…',
+  'chat.chatInput.placeholder.chatCompact': 'Écrivez un message',
   'chat.chatInput.placeholder.compactTap': 'Appuyez pour écrire',
   'chat.chatInput.placeholder.selectSession': 'Sélectionnez ou créez une session pour commencer à discuter',
   'chat.chatInput.pastedTextReference': 'Texte collé n°{index} · {count} caractères',

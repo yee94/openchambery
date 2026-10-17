@@ -22,7 +22,7 @@ MessageList distinguishes automatic live expansion from explicit user choices in
 
 `MessageList.contentRetention.test.tsx` mounts the real list, providers and Markdown renderer across sibling arrival, completion, delayed streaming status, live repository overlay, next-turn handoff and explicit collapse. It also asserts intermediate-text/tool/final order, native text/reasoning/tool sequences with reversed timestamps and IDs, checkpoint boundaries during live overlays, and separation of process text from the final answer. The runtime mounts before the list so the test subscribes to its real bound Query repository. `session-inbox-transcript.test.ts` covers consumed-input handoff at the real normalized event → Query repository boundary.
 
-ChatInput uses one mode-aware placeholder for desktop, mobile expanded/compact surfaces, and the native iOS composer. Width does not select alternate copy; chat mode retains the full reference, command, and Shell hints on every surface.
+ChatInput uses one mode-aware placeholder for desktop, mobile expanded/compact surfaces, and the native iOS composer. Desktop chat mode keeps the full reference, command, and Shell hints. Mobile chat mode uses the short enter-message placeholder so it stays on one line. Shell mode and the no-session prompt are unchanged on every surface.
 
 ## Mobile history gesture budget
 

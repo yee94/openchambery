@@ -2164,7 +2164,7 @@ export const dict: Record<I18nKey, string> = {
   'chat.chatInput.linked.pr.removeAria': '移除已關聯的 Pull Request',
   'chat.chatInput.placeholder.shell': '輸入 shell 命令...',
   'chat.chatInput.placeholder.chat': '輸入訊息，@ 加入引用，/ 選擇命令，! 執行 Shell',
-  'chat.chatInput.placeholder.chatCompact': '輸入訊息…',
+  'chat.chatInput.placeholder.chatCompact': '輸入訊息',
   'chat.chatInput.placeholder.compactTap': '點一下輸入',
   'chat.chatInput.placeholder.selectSession': '選擇或建立會話以開始聊天',
   'chat.chatInput.pastedTextReference': '已貼上文字 #{index} · {count} 個字元',

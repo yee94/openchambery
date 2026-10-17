@@ -2194,7 +2194,7 @@ export const dict: Record<I18nKey, string> = {
   'chat.chatInput.linked.pr.removeAria': '연결된 PR 제거',
   'chat.chatInput.placeholder.shell': '셸 명령 입력…',
   'chat.chatInput.placeholder.chat': '메시지 입력, @ 참조 추가, / 명령 선택, ! 셸 실행',
-  'chat.chatInput.placeholder.chatCompact': '메시지 입력…',
+  'chat.chatInput.placeholder.chatCompact': '메시지 입력',
   'chat.chatInput.placeholder.compactTap': '탭하여 입력',
   'chat.chatInput.placeholder.selectSession': '채팅을 시작할 세션을 선택하거나 새로 만드세요',
   'chat.chatInput.pastedTextReference': '붙여넣은 텍스트 #{index} · {count}자',

@@ -2172,7 +2172,7 @@ export const dict: Record<I18nKey, string> = {
   "chat.chatInput.linked.pr.removeAria": "Eliminar PR vinculada",
   "chat.chatInput.placeholder.shell": "Escribe un comando de shell...",
   "chat.chatInput.placeholder.chat": "Escribe un mensaje, @ añade contexto, / elige un comando, ! ejecuta el shell",
-  "chat.chatInput.placeholder.chatCompact": "Escribe un mensaje…",
+  "chat.chatInput.placeholder.chatCompact": "Escribe un mensaje",
   "chat.chatInput.placeholder.compactTap": "Toca para escribir",
   "chat.chatInput.placeholder.selectSession": "Selecciona o crea una sesión para comenzar a chatear",
   "chat.chatInput.pastedTextReference": "Texto pegado #{index} · {count} caracteres",

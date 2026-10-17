@@ -2190,7 +2190,7 @@ export const dict: Record<I18nKey, string> = {
   'chat.chatInput.linked.pr.removeAria': 'リンクされたプルリクエストを削除',
   'chat.chatInput.placeholder.shell': 'シェルコマンドを入力...',
   'chat.chatInput.placeholder.chat': 'メッセージを入力、@で参照を追加、/でコマンドを選択、!でシェルを実行',
-  'chat.chatInput.placeholder.chatCompact': 'メッセージを入力…',
+  'chat.chatInput.placeholder.chatCompact': 'メッセージを入力',
   'chat.chatInput.placeholder.compactTap': 'タップして入力',
   'chat.chatInput.placeholder.selectSession': 'セッションを選択または作成してチャットを開始',
   'chat.chatInput.pastedTextReference': '貼り付けテキスト #{index} · {count} 文字',

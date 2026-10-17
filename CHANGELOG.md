@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [2.0.10-beta.2] - 2026-10-17
+
+### 修复
+
+- 移动端聊天输入框占位文案精简为一行「输入消息」，桌面端仍保留引用、命令和 Shell 提示。
+
 ## [2.0.10-beta.1] - 2026-10-17
 
 ### 修复

@@ -1392,7 +1392,7 @@ export const dict: Record<I18nKey, string> = {
   'chat.chatInput.permissionAutoAccept.off': 'Permission auto-accept: off',
   'chat.chatInput.permissionAutoAccept.on': 'Permission auto-accept: on',
   'chat.chatInput.placeholder.chat': 'Napisz wiadomość, @ dodaj kontekst, / wybierz polecenie, ! uruchom powłokę',
-  'chat.chatInput.placeholder.chatCompact': 'Napisz wiadomość…',
+  'chat.chatInput.placeholder.chatCompact': 'Napisz wiadomość',
   'chat.chatInput.placeholder.compactTap': 'Dotknij, aby pisać',
   'chat.chatInput.placeholder.selectSession': 'Wybierz lub utwórz sesję, aby zacząć czatować',
   'chat.chatInput.pastedTextReference': 'Wklejony tekst #{index} · {count} znaków',

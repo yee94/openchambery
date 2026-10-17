@@ -2195,7 +2195,7 @@ export const dict = {
   'chat.chatInput.linked.pr.removeAria': 'Remove linked pull request',
   'chat.chatInput.placeholder.shell': 'Enter shell command...',
   'chat.chatInput.placeholder.chat': 'Write a message, @ add context, / choose a command, ! run shell',
-  'chat.chatInput.placeholder.chatCompact': 'Write a message…',
+  'chat.chatInput.placeholder.chatCompact': 'Write a message',
   'chat.chatInput.placeholder.compactTap': 'Tap to type',
   'chat.chatInput.placeholder.selectSession': 'Select or create a session to start chatting',
   'chat.chatInput.pastedTextReference': 'Pasted text #{index} · {count} characters',
