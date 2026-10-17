@@ -465,7 +465,7 @@ sequenceDiagram
 | 阶段 | 交付 | 验收与退出条件 |
 | --- | --- | --- |
 | P0：基线 | 回放当前接话，统计误报、重复、取消后晚发和进度成本 | 确认现有 Subagent 的质量问题与多轮 ownership 问题各占多少 |
-| P1：单执行器试点（2026-10-17 已落地） | 实际：GUI Job 的持久接纳、独立租约、同意图去重等待、前台等待可被新消息打断。无主动推送，不复用进度生成器。仅 GUI | 实际：下一条用户消息的 round.start suffix 交付；恢复按会话触发。旧 delivery 结束不丢已接纳的远端跟踪。原“完成即通知”未做 |
+| P1：单执行器试点（2026-10-17 已落地） | 实际：GUI Job 的持久接纳、独立租约、按 jobId 显式接续、同 appid 串行拒绝、前台等待可被新消息打断。无主动推送，不复用进度生成器。仅 GUI | 实际：下一条用户消息的 round.start suffix 交付；恢复按会话触发。旧 delivery 结束不丢已接纳的远端跟踪。原“完成即通知”未做 |
 | P2：任务化多轮 | 持久控制命令、任务定向、支持执行器的 steer/cancel、通知重评 | 更新条件有 applied ack；新消息不全局关通知；目标不明确会澄清 |
 | P3：前台可转后台 | 同一任务提交路径、可取消 waiter、短等待与 detach 竞态处理 | 转后台不二次 postRun、不重建任务、不重复完成回复 |
 | P4：扩展执行器 | 按真实需求接 MCP/业务子 Agent；可重用接口成熟后再考虑提包 | 每个适配器声明 attach/update/cancel/recover 能力和测试证据 |
@@ -551,7 +551,7 @@ P1 落在 yi-agent BFF。core 与 pipeline/wire 未改。`gui_run` 的 toolCallI
 | 重启即可恢复 | 持久记录在。只用进程级 runtime，未启动时 `gui_run` 直接失败，没有会话级降级。不能把只启动 Scope fiber 说成全局重启恢复 |
 | GUI 状态权威迁到 TaskRecord | route 记录只保留按 toolCallId 的提交去重，不再写执行终态；执行状态与结果只在 Job 里 |
 
-同 appid+intent 已有 running Job 时等待该 Job，不第二次 POST。
+任务只按 jobId 寻址，不按 intent 文本判断同一任务。round.start 注入的任务行带 jobId；`gui_run` 带 jobId 时接续等待该 Job，不第二次 POST。同 appid 已有 running Job 时，不带 jobId 的提交被拒绝并返回 jobId（同设备 GUI 串行）。
 
 ## 12. 决策边界与剩余问题
 

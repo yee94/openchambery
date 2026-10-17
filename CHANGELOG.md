@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [2.0.10-beta.3] - 2026-10-17
+
+### 改进
+
+- 聊天消息导航浮层改为紧凑的无边框列表，缩小字号、行距和留白，减少背景色块，仅为悬停项保留淡底色。
+
 ## [2.0.10-beta.2] - 2026-10-17
 
 ### 修复

@@ -47,10 +47,9 @@ const TICK_FOCUS_WIDTH_PX = 20;
 // interactive so imprecise gutter hits can be corrected inside the list.
 // Rows are fixed-pitch and fit up to two preview lines; short prompts just
 // center vertically. Fixed pitch keeps the glide/virtualization math simple.
-// Each row renders as a bordered card inset within its pitch slot so
-// neighbouring prompts read as separate items instead of one text run.
-const PANEL_ROW_HEIGHT_PX = 54;
-const PANEL_ROW_INSET_Y_PX = 4;
+// Compact rows share the panel surface; only the highlighted row gets a fill.
+const PANEL_ROW_HEIGHT_PX = 38;
+const PANEL_ROW_INSET_Y_PX = 2;
 const PANEL_MAX_ROWS = 8;
 const PANEL_SCROLL_MARGIN_ROWS = 2;
 const PANEL_HIDE_DELAY_MS = 160;
@@ -619,8 +618,8 @@ export function PromptNavigatorRail({
                             ref={panelRef}
                             className={cn(
                                 'pointer-events-auto absolute right-full top-1/2 z-30 mr-3 -translate-y-1/2',
-                                'w-[min(20rem,calc(100vw-6rem))] overflow-hidden rounded-xl',
-                                'border border-[var(--interactive-border)]/60 bg-[var(--surface-elevated)] py-1 shadow-md',
+                                'w-[min(18rem,calc(100vw-6rem))] overflow-hidden rounded-lg',
+                                'bg-[var(--surface-elevated)] py-1 shadow-sm',
                             )}
                             onMouseEnter={cancelScheduledHide}
                             onMouseLeave={scheduleHide}
@@ -655,7 +654,7 @@ export function PromptNavigatorRail({
                                                 aria-selected={isHighlighted}
                                                 aria-current={isActive ? 'true' : undefined}
                                                 title={isActive ? currentPromptLabel : undefined}
-                                                className="absolute inset-x-0 cursor-pointer px-1.5"
+                                                className="absolute inset-x-0 cursor-pointer px-1"
                                                 style={{
                                                     top: `${index * PANEL_ROW_HEIGHT_PX + PANEL_ROW_INSET_Y_PX}px`,
                                                     height: `${PANEL_ROW_HEIGHT_PX - PANEL_ROW_INSET_Y_PX * 2}px`,
@@ -671,21 +670,17 @@ export function PromptNavigatorRail({
                                             >
                                                 <div
                                                     className={cn(
-                                                        'flex h-full items-center rounded-lg border px-2 transition-colors',
-                                                        isActive
-                                                            ? 'border-transparent bg-[var(--interactive-selection)]'
-                                                            : isHighlighted
-                                                                ? 'border-[var(--interactive-border)]/60 bg-[var(--interactive-hover)]'
-                                                                : 'border-[var(--interactive-border)]/40',
+                                                        'flex h-full items-center rounded px-2 transition-colors',
+                                                        isHighlighted ? 'bg-[var(--interactive-hover)]' : undefined,
                                                     )}
                                                 >
                                                     <span
                                                         className={cn(
                                                             // Fill both clamp lines to the edge instead of
                                                             // leaving a ragged gap before a long next word.
-                                                            'min-w-0 flex-1 line-clamp-2 [overflow-wrap:anywhere] text-[length:calc(var(--text-meta)-0.0625rem)] leading-snug',
+                                                            'min-w-0 flex-1 line-clamp-2 [overflow-wrap:anywhere] text-[length:calc(var(--text-meta)-0.125rem)] leading-tight',
                                                             isActive
-                                                                ? 'text-[var(--interactive-selectionForeground)]'
+                                                                ? 'font-medium text-[var(--surface-foreground)]'
                                                                 : 'text-[var(--surface-mutedForeground)]',
                                                         )}
                                                     >
