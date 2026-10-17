@@ -11,7 +11,6 @@ import { SettingsPageLayout } from '@/components/sections/shared/SettingsPageLay
 import { RegistryBanner } from './RegistryBanner';
 import { PluginStatusBanner } from './PluginStatusBanner';
 import { configEntryRuntimeTarget, pluginFileRuntimeTarget } from './pluginLoadState';
-import { isV1IncompatiblePlugin } from '@/lib/plugin-v1-compatibility';
 import { SettingsGroup } from '@/components/sections/shared/SettingsGroup';
 import {
   usePluginsStore,
@@ -210,9 +209,9 @@ export const PluginsPage: React.FC = () => {
     return (
       <SettingsPageLayout>
         <div>
-          <div className="flex items-center gap-2 min-w-0">
-            <h2 className="typography-ui-header font-semibold text-foreground truncate">
-              {t('settings.plugins.page.header.entry')}
+          <div className="flex flex-wrap items-center gap-2 min-w-0">
+            <h2 className="typography-ui-header font-semibold text-foreground break-all">
+              {selectedEntry.spec}
             </h2>
             <ScopeBadge
               scope={selectedEntry.scope}
@@ -227,23 +226,13 @@ export const PluginsPage: React.FC = () => {
 
         <PluginStatusBanner target={selectedEntryTarget} name={selectedEntry.spec} />
 
-        {isV1IncompatiblePlugin(selectedEntry) ? (
-          <div className="rounded-md border border-[var(--status-warning)] bg-card p-3">
-            <p className="typography-label text-[var(--status-warning)]">
-              {t('settings.plugins.registry.banner.v1Incompatible.title')}
-            </p>
-            <p className="typography-micro text-muted-foreground mt-0.5">
-              {t('settings.plugins.registry.banner.v1Incompatible.description')}
-            </p>
-          </div>
-        ) : null}
-
         <RegistryBanner entryId={selectedEntry.id} spec={selectedEntry.spec} />
 
         <div data-settings-item="plugins.spec">
           <SettingsGroup label={t('settings.plugins.page.field.spec')} cardClassName="p-3">
             <Input
               value={draft.spec}
+              aria-label={t('settings.plugins.page.field.spec')}
               onChange={(e) =>
                 setDraft({ ...draft, spec: e.target.value })
               }
@@ -263,12 +252,14 @@ export const PluginsPage: React.FC = () => {
             <Textarea
               embedded
               value={draft.optionsJson}
+              aria-label={t('settings.plugins.page.field.options')}
+              aria-invalid={!optionsValid}
               onChange={(e) =>
                 setDraft({ ...draft, optionsJson: e.target.value })
               }
-              rows={10}
+              rows={6}
               className={cn(
-                'font-mono typography-meta min-h-[200px]',
+                'font-mono typography-meta min-h-[144px] resize-y',
                 !optionsValid && 'border-[var(--status-error-border)]',
               )}
               spellCheck={false}
@@ -340,8 +331,8 @@ export const PluginsPage: React.FC = () => {
       <SettingsPageLayout>
         <div>
           <div className="flex items-center gap-2 min-w-0 flex-wrap">
-            <h2 className="typography-ui-header font-semibold text-foreground truncate">
-              {t('settings.plugins.page.header.file')}
+            <h2 className="typography-ui-header font-semibold text-foreground break-all">
+              {selectedFile.fileName}
             </h2>
             <ScopeBadge
               scope={selectedFile.scope}
@@ -351,36 +342,17 @@ export const PluginsPage: React.FC = () => {
                   : t('settings.plugins.sidebar.group.userFiles')
               }
             />
-            <span
-              className={cn(
-                'typography-micro font-mono rounded-full px-2 py-0.5',
-                'bg-[var(--surface-elevated)] text-foreground',
-                'border border-[var(--interactive-border)]',
-              )}
-            >
-              {selectedFile.fileName}
-            </span>
           </div>
         </div>
 
         <PluginStatusBanner target={selectedFileTarget} name={selectedFile.fileName} />
-
-        {isV1IncompatiblePlugin(selectedFile) ? (
-          <div className="rounded-md border border-[var(--status-warning)] bg-card p-3">
-            <p className="typography-label text-[var(--status-warning)]">
-              {t('settings.plugins.registry.banner.v1Incompatible.title')}
-            </p>
-            <p className="typography-micro text-muted-foreground mt-0.5">
-              {t('settings.plugins.registry.banner.v1Incompatible.description')}
-            </p>
-          </div>
-        ) : null}
 
         <div data-settings-item="plugins.content">
           <SettingsGroup label={t('settings.plugins.page.field.content')} cardClassName="p-3">
             <Textarea
               embedded
               value={draft.content}
+              aria-label={t('settings.plugins.page.field.content')}
               onChange={(e) =>
                 setDraft({ ...draft, content: e.target.value })
               }

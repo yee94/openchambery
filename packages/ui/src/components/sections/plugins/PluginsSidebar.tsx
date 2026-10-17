@@ -20,7 +20,6 @@ import {
   resolveUpdateFlag,
   type PluginRuntimeTarget,
 } from './pluginLoadState';
-import { isV1IncompatiblePlugin } from '@/lib/plugin-v1-compatibility';
 import { toast } from '@/components/ui';
 import { Icon } from '@/components/icon/Icon';
 import type { IconName } from '@/components/icon/icons';
@@ -267,25 +266,15 @@ export const PluginsSidebar: React.FC<PluginsSidebarProps> = ({
     return (
       <SettingsSidebarItem
         key={entry.id}
-        title={
+        title={<span title={entry.spec}>{entry.spec}</span>}
+        metadata={
           <span className="flex min-w-0 items-center gap-1.5">
-            <span className="min-w-0 flex-1 truncate">{entry.spec}</span>
             <PluginStatusBadge target={runtimeTargets.get(entry.id) ?? null} />
-            {isV1IncompatiblePlugin(entry) ? (
-              <span
-                className="typography-micro shrink-0 rounded-full border border-[var(--status-warning)] px-1.5 py-0.5 text-[var(--status-warning)]"
-                title={t('settings.plugins.compatibility.v1Incompatible.tooltip')}
-              >
-                {t('settings.plugins.compatibility.v1Incompatible')}
-              </span>
-            ) : null}
+            <span>{entry.parsedKind === 'npm'
+              ? t('settings.plugins.sidebar.kind.npm')
+              : t('settings.plugins.sidebar.kind.path')}</span>
             <RegistryBadge info={info} />
           </span>
-        }
-        metadata={
-          entry.parsedKind === 'npm'
-            ? t('settings.plugins.sidebar.kind.npm')
-            : t('settings.plugins.sidebar.kind.path')
         }
         selected={selectedId === entry.id}
         onSelect={() => handleSelect(entry.id)}
@@ -303,21 +292,13 @@ export const PluginsSidebar: React.FC<PluginsSidebarProps> = ({
   const renderFile = (file: PluginFile) => (
     <SettingsSidebarItem
       key={file.id}
-      title={
+      title={<span title={file.fileName}>{file.fileName}</span>}
+      metadata={
         <span className="flex min-w-0 items-center gap-1.5">
-          <span className="min-w-0 flex-1 truncate">{file.fileName}</span>
           <PluginStatusBadge target={runtimeTargets.get(file.id) ?? null} />
-          {isV1IncompatiblePlugin(file) ? (
-            <span
-              className="typography-micro shrink-0 rounded-full border border-[var(--status-warning)] px-1.5 py-0.5 text-[var(--status-warning)]"
-              title={t('settings.plugins.compatibility.v1Incompatible.tooltip')}
-            >
-              {t('settings.plugins.compatibility.v1Incompatible')}
-            </span>
-          ) : null}
+          <span>{t('settings.plugins.sidebar.kind.file')}</span>
         </span>
       }
-      metadata={t('settings.plugins.sidebar.kind.file')}
       selected={selectedId === file.id}
       onSelect={() => handleSelect(file.id)}
       icon={

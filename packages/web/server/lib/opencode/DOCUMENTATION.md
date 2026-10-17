@@ -4,6 +4,7 @@
 This module provides OpenCode server integration utilities for the web server runtime, including configuration management and provider authentication.
 
 ## Entrypoints and structure
+- `plugins.js`: config entries and plugin-directory files are inventory, not compatibility checks. They do not synthesize `compatibility` or `compatible` fields; Settings uses the OpenCode runtime inventory for actual load status and errors.
 - `session-directory-runtime.js`: Host-side physical directory identity for session index/list/detail/live projection. Uses a runtime-scoped, bounded 256-entry cache (60s success / 5s failed resolution), cleared when the upstream URL changes. Local directory lists use the upstream project identity and physical-directory filtering to include legacy symlink sessions without mixing worktrees. One request reads one page and preserves opaque cursors; consumers must follow continuations even after filtered-empty pages. Non-loopback upstreams keep their own path namespace.
 - `packages/web/server/lib/opencode/index.js`: public entrypoint (currently baseline placeholder).
 - `packages/web/server/lib/opencode/auth.js`: host-only authoritative provider credential API reads and deletion.

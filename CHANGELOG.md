@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [2.0.10-beta.7] - 2026-10-17
+
+### 修复
+
+- 移除插件设置中将所有插件一律标记为「与 OpenCode 2 不兼容」的误判，保留运行时实际加载状态与错误信息。
+
+### 改进
+
+- 插件列表将名称与状态分行显示，避免状态标签挤占名称；详情页展示完整插件名称，并缩小 JSON 选项编辑区的默认高度。
+
 ## [2.0.10-beta.6] - 2026-10-17
 
 ### 修复

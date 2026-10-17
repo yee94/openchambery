@@ -1,5 +1,7 @@
 # 客服过程回复与后台任务：架构对比及演进方案
 
+> 2026-10-17 最新修订：GUI 已从 core Job 移出，改为 `gui:create({appid,intent})` 返回 jobId 并写入消息，插件经 `llm.call` 的 `ops.skip` 自动衔接 `gui:watch({jobId})`。watch 在当前工具调用内等待，新消息中断本地轮询后，下一轮直接 watch 原 jobId，不重复创建。下文关于 GUI resume Job 的实施描述为此前方案，已被本修订替代；core Job 与 Subagent background 保留。
+
 调研日期：2026-10-17。状态：**P1（GUI Job）已落地，Job 为 core 的 run 级能力**；其余阶段仍为方案，未实施。
 
 面向客服 Agent 与 OpenChamber 的架构、后端开发者，回答三个问题：过程回复应由谁生成；业务能力是否适合包装成 tool；怎样支持长任务执行期间继续接收用户指令。

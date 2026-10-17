@@ -140,16 +140,22 @@ describe('opencode plugins data layer', () => {
     ]);
   });
 
-  test('lists V1 plugins as incompatible instead of a silent load failure', () => {
+  test('does not infer compatibility from configured plugin entries', () => {
     writeJson(userConfigPath, { plugin: ['oh-my-opencode'] });
     const entries = plugins.listPluginEntries(projectDir);
     expect(entries).toEqual([
       expect.objectContaining({
         spec: 'oh-my-opencode',
-        compatibility: 'v1-incompatible',
-        compatible: false,
       }),
     ]);
+  });
+
+  test('configured plugins have no synthetic compatibility verdict', () => {
+    writeJson(userConfigPath, { plugin: ['@scope/plugin@2.0.0', './plugin.js'] });
+    for (const entry of plugins.listPluginEntries(projectDir)) {
+      expect(entry).not.toHaveProperty('compatibility');
+      expect(entry).not.toHaveProperty('compatible');
+    }
   });
 
   test('encodes and decodes ids', () => {
@@ -162,6 +168,8 @@ describe('opencode plugins data layer', () => {
     const file = plugins.listPluginDirFiles(projectDir).find((candidate) => candidate.fileName === 'my-plugin.ts');
 
     expect(file).toEqual(expect.objectContaining({ fileName: 'my-plugin.ts', scope: 'project', kind: 'file' }));
+    expect(file).not.toHaveProperty('compatibility');
+    expect(file).not.toHaveProperty('compatible');
     expect(plugins.readPluginDirFile(file.id, projectDir)).toEqual({ fileName: 'my-plugin.ts', scope: 'project', content: 'export default {}' });
     plugins.deletePluginDirFile(file.id, projectDir);
     expect(plugins.listPluginDirFiles(projectDir).filter((candidate) => candidate.scope === 'project')).toEqual([]);
