@@ -212,6 +212,7 @@ ipcRenderer.on('openchamber:emit', (_evt, payload) => {
 
   if (event === 'openchamber:vibrancy-ready') {
     setVibrancyReady(payload.detail?.ready === true);
+    document.documentElement?.toggleAttribute('data-oc-vibrancy-suppressed', payload.detail?.suppressed === true);
   }
 
   dispatchNativeEvent(event, payload.detail);

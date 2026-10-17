@@ -2087,8 +2087,12 @@ const emitToAllWindows = (event, detail) => {
 // Apply vibrancy to a live, on-screen window. Done after show (not in the
 // BrowserWindow constructor) because macOS otherwise leaves the material
 // uncomposited on a cold launch until the window gets a state change.
+const hasMultipleAppWindows = () => BrowserWindow.getAllWindows()
+  .filter((window) => !window.isDestroyed() && window.__ocLabel).length > 1;
+
 const applyMacVibrancy = (browserWindow) => {
   if (process.platform !== 'darwin' || !browserWindow || browserWindow.isDestroyed()) return;
+  if (!browserWindow.__ocUseVibrancy || hasMultipleAppWindows()) return;
   try {
     browserWindow.setVibrancy('sidebar');
   } catch {}
@@ -2096,7 +2100,11 @@ const applyMacVibrancy = (browserWindow) => {
 
 const setMacVibrancyReady = (browserWindow, ready) => {
   if (process.platform !== 'darwin' || !browserWindow || browserWindow.isDestroyed()) return;
-  emitToWindow(browserWindow, 'openchamber:vibrancy-ready', { ready });
+  const suppressed = hasMultipleAppWindows();
+  emitToWindow(browserWindow, 'openchamber:vibrancy-ready', {
+    ready: ready && browserWindow.__ocUseVibrancy && !suppressed,
+    suppressed,
+  });
 };
 
 const scheduleMacVibrancyReady = (browserWindow, delayMs = 160) => {
@@ -2119,6 +2127,38 @@ const presentBrowserWindow = (browserWindow, { useVibrancy = false } = {}) => {
     applyMacVibrancy(browserWindow);
     scheduleMacVibrancyReady(browserWindow, 180);
   }
+};
+
+const syncMacWindowVibrancy = () => {
+  if (process.platform !== 'darwin') return;
+  const suppressed = hasMultipleAppWindows();
+  for (const window of BrowserWindow.getAllWindows()) {
+    if (window.isDestroyed() || !window.__ocLabel) continue;
+    if (!suppressed && window.__ocThemeSource) {
+      nativeTheme.themeSource = window.__ocThemeSource;
+    }
+    setMacVibrancyReady(window, false);
+    if (suppressed) {
+      try {
+        window.setVibrancy(null);
+      } catch (error) {
+        log.warn('[electron] failed to disable multi-window vibrancy', error);
+      }
+    } else if (window.__ocUseVibrancy && window.isVisible() && !window.isMinimized()) {
+      applyMacVibrancy(window);
+      scheduleMacVibrancyReady(window);
+    }
+  }
+};
+
+const trackMacWindowVibrancy = (browserWindow, useVibrancy) => {
+  if (process.platform !== 'darwin') return;
+  browserWindow.__ocUseVibrancy = useVibrancy;
+  browserWindow.on('closed', syncMacWindowVibrancy);
+  browserWindow.on('show', syncMacWindowVibrancy);
+  browserWindow.on('restore', syncMacWindowVibrancy);
+  browserWindow.webContents.on('dom-ready', syncMacWindowVibrancy);
+  syncMacWindowVibrancy();
 };
 
 
@@ -2656,6 +2696,7 @@ const createBrowserWindow = ({ label, restoreGeometry, url, runtimeConfig = {} }
 
   const browserWindow = new BrowserWindow(options);
   browserWindow.__ocLabel = label || nextWindowLabel();
+  trackMacWindowVibrancy(browserWindow, useVibrancy);
   browserWindow.__ocRuntimeConfig = { apiBaseUrl: desktopApiBaseUrl, clientToken: desktopClientToken, requestHeaders: desktopRequestHeaders, relayHostId: rendererRuntimeConfig.relayHostId };
   browserWindow.__ocInitScript = buildInitScript(desktopLocalOrigin, state.bootOutcome, desktopApiBaseUrl, desktopClientToken, desktopRequestHeaders);
   browserWindow.__ocTitleBarOverlayEnabled = titleBarOverlayEnabled;
@@ -3082,6 +3123,7 @@ const createMiniChatWindow = async ({ mode, sessionId = '', directory = '', proj
     },
   });
   browserWindow.__ocLabel = nextWindowLabel();
+  trackMacWindowVibrancy(browserWindow, useVibrancy);
   browserWindow.__ocRuntimeConfig = effectiveRuntimeConfig;
   browserWindow.__ocInitScript = buildInitScript(desktopLocalOrigin, state.bootOutcome, desktopApiBaseUrl, desktopClientToken, desktopRequestHeaders);
   browserWindow.__ocMiniChat = true;
@@ -4285,6 +4327,7 @@ const handleInvoke = async (browserWindow, command, args = {}) => {
       } else {
         nativeTheme.themeSource = 'system';
       }
+      browserWindow.__ocThemeSource = nativeTheme.themeSource;
       if (canUseTitleBarOverlay(browserWindow)) {
         const useDark = nativeTheme.shouldUseDarkColors;
         browserWindow.setTitleBarOverlay({

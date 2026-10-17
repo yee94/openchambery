@@ -5,7 +5,8 @@ import { Icon } from '@/components/icon/Icon';
 import { useI18n } from '@/lib/i18n';
 import { useUIStore } from '@/stores/useUIStore';
 import { cn } from '@/lib/utils';
-import { getMessagePreview } from '../lib/messagePreview';
+import { buildCitationIconsFromParts, detectMessageReferences } from '@/lib/messages/references';
+import { getFullText } from '../lib/messagePreview';
 
 type PromptEntry = {
     turnId: string;
@@ -26,11 +27,11 @@ const PREVIEW_MAX_CHARS = 160;
 // The whole gutter is one hover/click target: the cursor's vertical position
 // maps to the nearest tick, so tick density never demands pointer precision.
 // When the centered message column extends under the full-width gutter (narrow
-// windows), the hit zone shrinks so it can't swallow clicks on the right edge
-// of user bubbles (expand/collapse).
+// windows), the hit zone shrinks so it can't swallow clicks on the left edge
+// of the message column.
 const GUTTER_WIDTH_PX = 28;
 const GUTTER_NARROW_WIDTH_PX = 12;
-const GUTTER_RIGHT_OFFSET_PX = 6;
+const GUTTER_LEFT_OFFSET_PX = 6;
 // The rail shows at most a window of ticks; hovering the gutter edges
 // carousels the window through the rest of the prompts.
 const MAX_VISIBLE_TICKS = 30;
@@ -48,8 +49,8 @@ const TICK_FOCUS_WIDTH_PX = 20;
 // Rows are fixed-pitch and fit up to two preview lines; short prompts just
 // center vertically. Fixed pitch keeps the glide/virtualization math simple.
 // Compact rows share the panel surface; only the highlighted row gets a fill.
-const PANEL_ROW_HEIGHT_PX = 38;
-const PANEL_ROW_INSET_Y_PX = 2;
+const PANEL_ROW_HEIGHT_PX = 48;
+const PANEL_ROW_INSET_Y_PX = 4;
 const PANEL_MAX_ROWS = 8;
 const PANEL_SCROLL_MARGIN_ROWS = 2;
 const PANEL_HIDE_DELAY_MS = 160;
@@ -60,9 +61,19 @@ const buildPromptEntries = (
 ): PromptEntry[] => {
     return turnIds.map((turnId) => {
         const parts = previewsByTurnId.get(turnId) ?? [];
+        const text = getFullText(parts);
+        const references = detectMessageReferences(text, { citationIcons: buildCitationIconsFromParts(parts) });
+        const segments: string[] = [];
+        let cursor = 0;
+        for (const reference of references) {
+            segments.push(text.slice(cursor, reference.start));
+            cursor = reference.end;
+        }
+        segments.push(text.slice(cursor));
+        const preview = segments.join(' ').replace(/\s+/g, ' ').trim();
         return {
             turnId,
-            preview: getMessagePreview(parts, PREVIEW_MAX_CHARS),
+            preview: preview.length > PREVIEW_MAX_CHARS ? `${preview.slice(0, PREVIEW_MAX_CHARS)}…` : preview,
         };
     });
 };
@@ -103,7 +114,7 @@ export function PromptNavigatorRail({
     const [isNarrowGutter, setIsNarrowGutter] = React.useState(false);
 
     // Shrink the hit zone whenever the message column reaches under the
-    // full-width gutter, so bubble clicks (expand/collapse) stay clickable.
+    // full-width gutter, so message controls stay clickable.
     React.useEffect(() => {
         const container = navRef.current?.parentElement;
         if (!container || typeof ResizeObserver === 'undefined') {
@@ -117,8 +128,8 @@ export function PromptNavigatorRail({
             }
             const containerRect = container.getBoundingClientRect();
             const columnRect = column.getBoundingClientRect();
-            const fullGutterLeft = containerRect.right - GUTTER_RIGHT_OFFSET_PX - GUTTER_WIDTH_PX;
-            setIsNarrowGutter(columnRect.right > fullGutterLeft);
+            const fullGutterRight = containerRect.left + GUTTER_LEFT_OFFSET_PX + GUTTER_WIDTH_PX;
+            setIsNarrowGutter(columnRect.left < fullGutterRight);
         };
         measure();
         const observer = new ResizeObserver(measure);
@@ -516,17 +527,17 @@ export function PromptNavigatorRail({
         <nav
             ref={navRef}
             aria-label={t('chat.promptNavigator.aria')}
-            className="pointer-events-none absolute right-1.5 top-1/2 z-20 -translate-y-1/2"
+            className="pointer-events-none absolute left-1.5 top-1/2 z-20 -translate-y-1/2"
         >
-            <div className="pointer-events-auto flex flex-col items-end">
+            <div className="pointer-events-auto flex flex-col items-start">
                 {canLoadEarlier ? (
                     <button
                         type="button"
                         tabIndex={-1}
                         className={cn(
                             // Nudge so the icon centers over the tick column
-                            // (ticks sit at right-1 with a 10px base width).
-                            '-mr-px mb-1.5 flex size-5 shrink-0 items-center justify-center rounded-full',
+                            // (ticks sit at left-1 with a 10px base width).
+                            '-ml-px mb-1.5 flex size-5 shrink-0 items-center justify-center rounded-full',
                             'text-[var(--surface-mutedForeground)] transition-colors',
                             'hover:bg-[var(--interactive-hover)]/60 hover:text-[var(--surface-foreground)]',
                             isLoadingOlder ? 'cursor-wait opacity-70' : undefined,
@@ -593,7 +604,7 @@ export function PromptNavigatorRail({
                                         aria-selected={isHighlighted}
                                         aria-current={isActive ? 'true' : undefined}
                                         aria-label={prompt.preview.trim() || emptyPreviewLabel}
-                                        className="pointer-events-none absolute right-1 flex items-center justify-end"
+                                        className="pointer-events-none absolute left-1 flex items-center justify-start"
                                         style={{ top: `${index * TICK_PITCH_PX}px`, height: `${TICK_PITCH_PX}px` }}
                                     >
                                         <span
@@ -617,9 +628,9 @@ export function PromptNavigatorRail({
                         <div
                             ref={panelRef}
                             className={cn(
-                                'pointer-events-auto absolute right-full top-1/2 z-30 mr-3 -translate-y-1/2',
+                                'pointer-events-auto absolute left-full top-1/2 z-30 ml-3 -translate-y-1/2',
                                 'w-[min(18rem,calc(100vw-6rem))] overflow-hidden rounded-lg',
-                                'bg-[var(--surface-elevated)] py-1 shadow-sm',
+                                'bg-[var(--surface-elevated)] py-2 shadow-sm',
                             )}
                             onMouseEnter={cancelScheduledHide}
                             onMouseLeave={scheduleHide}
@@ -654,7 +665,7 @@ export function PromptNavigatorRail({
                                                 aria-selected={isHighlighted}
                                                 aria-current={isActive ? 'true' : undefined}
                                                 title={isActive ? currentPromptLabel : undefined}
-                                                className="absolute inset-x-0 cursor-pointer px-1"
+                                                className="absolute inset-x-0 cursor-pointer px-1.5"
                                                 style={{
                                                     top: `${index * PANEL_ROW_HEIGHT_PX + PANEL_ROW_INSET_Y_PX}px`,
                                                     height: `${PANEL_ROW_HEIGHT_PX - PANEL_ROW_INSET_Y_PX * 2}px`,
@@ -678,9 +689,9 @@ export function PromptNavigatorRail({
                                                         className={cn(
                                                             // Fill both clamp lines to the edge instead of
                                                             // leaving a ragged gap before a long next word.
-                                                            'min-w-0 flex-1 line-clamp-2 [overflow-wrap:anywhere] text-[length:calc(var(--text-meta)-0.125rem)] leading-tight',
+                                                            'min-w-0 flex-1 line-clamp-2 [overflow-wrap:anywhere] text-[length:calc(var(--text-meta)-0.125rem)] leading-[1.45]',
                                                             isActive
-                                                                ? 'font-medium text-[var(--surface-foreground)]'
+                                                                ? 'text-[var(--surface-foreground)]'
                                                                 : 'text-[var(--surface-mutedForeground)]',
                                                         )}
                                                     >
