@@ -36,6 +36,35 @@ const createRuntime = async (overrides = {}) => {
 };
 
 describe('settings runtime', () => {
+  it('notifies other clients only after project order commits and never on failed writes', async () => {
+    let tips = 0;
+    let fail = false;
+    const { runtime, cleanup } = await createRuntime({
+      mergePersistedSettings: (current, changes) => ({ ...current, ...changes }),
+      onProjectOrderChanged: () => { tips += 1; },
+      fsPromises: {
+        ...fsPromises,
+        rename: async (...args) => {
+          if (fail) throw new Error('write failed');
+          return fsPromises.rename(...args);
+        },
+      },
+    });
+    try {
+      await runtime.persistSettings({ projectSortOrder: 'recent' });
+      expect(tips).toBe(1);
+      expect((await runtime.readSettingsFromDisk()).projectSortOrder).toBe('recent');
+      await runtime.persistSettings({ projectSortOrder: 'recent', themeId: 'dark' });
+      expect(tips).toBe(1);
+      fail = true;
+      await expect(runtime.persistSettings({ projectSortOrder: 'manual' })).rejects.toThrow('write failed');
+      expect(tips).toBe(1);
+      expect((await runtime.readSettingsFromDisk()).projectSortOrder).toBe('recent');
+      fail = false;
+      await runtime.persistSettings({ projects: [] });
+      expect(tips).toBe(2);
+    } finally { await cleanup(); }
+  });
   it('repairs existing project casing, migrates project data, and persists new paths canonically', async () => {
     const normalization = createSettingsNormalizationRuntime({
       os, path, processLike: process,

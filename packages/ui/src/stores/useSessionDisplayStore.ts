@@ -2,6 +2,9 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { createInstanceScopedJSONStorage } from '@/lib/instanceScopedStorage';
 import { isRuntimeInstanceChange, subscribeRuntimeEndpointChanged } from '@/lib/runtime-switch';
+import { updateDesktopSettings } from '@/lib/persistence';
+import type { DesktopSettings } from '@/lib/desktop';
+import { getRegisteredRuntimeAPIs } from '@/contexts/runtimeAPIRegistry';
 
 type SessionDisplayMode = 'default' | 'minimal';
 
@@ -12,6 +15,7 @@ type SessionDisplayStore = {
   projectSortOrder: ProjectSortOrder;
   setDisplayMode: (mode: SessionDisplayMode) => void;
   setProjectSortOrder: (order: ProjectSortOrder) => void;
+  synchronizeFromSettings: (settings: Pick<DesktopSettings, 'projectSortOrder'>) => void;
 };
 
 export const useSessionDisplayStore = create<SessionDisplayStore>()(
@@ -20,7 +24,15 @@ export const useSessionDisplayStore = create<SessionDisplayStore>()(
       displayMode: 'minimal',
       projectSortOrder: 'manual',
       setDisplayMode: (mode) => set({ displayMode: mode }),
-      setProjectSortOrder: (order) => set({ projectSortOrder: order }),
+      setProjectSortOrder: (order) => {
+        set({ projectSortOrder: order });
+        if (!getRegisteredRuntimeAPIs()?.runtime.isVSCode) void updateDesktopSettings({ projectSortOrder: order });
+      },
+      synchronizeFromSettings: (settings) => {
+        if (getRegisteredRuntimeAPIs()?.runtime.isVSCode) return;
+        const order = settings.projectSortOrder;
+        set({ projectSortOrder: order && ['manual', 'a-z', 'z-a', 'date-added', 'recent'].includes(order) ? order : 'manual' });
+      },
     }),
     {
       name: 'session-display-mode',
@@ -54,6 +66,10 @@ export const useSessionDisplayStore = create<SessionDisplayStore>()(
 );
 
 if (typeof window !== 'undefined') {
+  window.addEventListener('openchamber:settings-synced', (event: Event) => {
+    const settings = (event as CustomEvent<DesktopSettings>).detail;
+    if (settings) useSessionDisplayStore.getState().synchronizeFromSettings(settings);
+  });
   subscribeRuntimeEndpointChanged((detail) => {
     if (!isRuntimeInstanceChange(detail)) return;
     void useSessionDisplayStore.persist.rehydrate();

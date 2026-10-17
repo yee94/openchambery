@@ -1,5 +1,6 @@
 /* eslint-disable react-refresh/only-export-components */
 import React, { createContext, useContext, useEffect, useRef, useCallback, useMemo } from "react"
+import { mountProjectOrderSync } from './project-order-sync'
 import type { Message, Part } from '@/lib/opencode/v2-types'
 import type { Event } from '@/sync/types'
 
@@ -2880,6 +2881,7 @@ export function SyncProvider(props: {
   // 403. With the origin allowlisted, mobile uses the same transport
   // selection as everywhere else ('auto' falls back to SSE on WS failure).
   const messageStreamTransport = useConfigStore((state) => state.settingsMessageStreamTransport)
+  useEffect(() => mountProjectOrderSync(), [])
   const childStoresRef = useRef<ChildStoreManager | null>(null)
   if (!childStoresRef.current) childStoresRef.current = new ChildStoreManager()
   const childStores = childStoresRef.current

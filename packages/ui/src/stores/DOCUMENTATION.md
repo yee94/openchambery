@@ -368,9 +368,10 @@ still pins after a successful send or a live session status transition while
 preserving the remaining relative order. Duplicate status events preserve a
 later drag; child-store status supplies the baseline for synced directories,
 and the global live status map covers unopened directories.
-`synchronizeFromSettings` adopts the incoming registry and drops
-removed ids from the local manual order, but does not rebase that drag order
-onto the server projects array.
+`synchronizeFromSettings` adopts the incoming registry and rebases the cached
+manual order onto that authoritative array, even when only the cached manual
+order differs. Missing projects preserve the cache; explicit empty projects
+clear it. Local manual order is startup continuity, not a per-device override.
 
 `useSessionDisplayStore` (`projectSortOrder`) and `useMobileSessionTreeStore`
 use the same instance-scoped persist helper and rehydrate when `runtimeKey`
@@ -379,6 +380,14 @@ session folders, and settings mirrors in `persistence.ts` follow the
 same instance key. Theme/brand remain transport-scoped
 (`runtimeScopedStorage.ts`) because packaged multi-window shares an origin
 across different API hosts.
+
+Project sort mode is persisted in Host settings (`projectSortOrder`), with
+`manual` as the default for older Hosts. `SyncProvider` mounts
+`project-order-sync.ts`: initial GET, project-order tips and stream reconnects
+refresh the transport-scoped Query snapshot. It waits for local settings writes,
+coalesces tips during reads, rejects stale runtime/generation completions, and
+preserves selection during remote reorders. Failed reads retain prior state.
+VS Code retains workspace-owned registry/order and local sort preferences.
 
 `useWorktreeOrderStore.ts` persists worktree display order and pending write
 intent in runtime-scoped partitions. Server revision maps stay transient because

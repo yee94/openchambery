@@ -31,7 +31,16 @@ When enqueue was missed, the shared bounded exact-fill scheduler fetches that me
 Project activity promotion consumes native execution, retry and step-start events
 alongside legacy status transitions. Only actual busy/retry/idle changes for a
 known visible conversation promote its project; duplicate events preserve later
-manual drags. Settings sync continues to preserve local manual order.
+manual drags. Settings sync adopts the Host registry order on every client.
+
+`project-order-sync.ts` owns project ordering catch-up for shared Host clients.
+It subscribes before the initial GET, coalesces `project-order-changed` tips and
+stream-ready reconnects, and waits for pending local settings writes before
+reading. Queries use current runtime transport identity; generation checks
+reject late results after switching away and back. A local edit during a read
+forces another read after the write settles. Failures preserve cached ordering;
+successful empty lists clear it. Remote order changes do not change the selected
+project. VS Code keeps its workspace registry.
 
 Live session list equality includes the title-refresh presentation fields
 `isGenerating`, `lastError`, and `failedAt`. Metadata-only completion must release

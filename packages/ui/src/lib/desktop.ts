@@ -75,6 +75,7 @@ export type DesktopSettings = {
   desktopMinimizeToTrayEnabled?: boolean;
   desktopUiPassword?: string;
   projects?: ProjectEntry[];
+  projectSortOrder?: 'manual' | 'a-z' | 'z-a' | 'date-added' | 'recent';
   activeProjectId?: string;
   securityScopedBookmarks?: string[];
   pinnedDirectories?: string[];

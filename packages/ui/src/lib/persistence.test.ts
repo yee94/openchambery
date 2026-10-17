@@ -1,4 +1,4 @@
-import { afterAll, beforeEach, describe, expect, test } from 'bun:test';
+import { afterAll, beforeEach, describe, expect, test } from 'vitest';
 
 import type { RuntimeAPIs, SettingsPayload } from '@/lib/api/types';
 import { registerRuntimeAPIs } from '@/contexts/runtimeAPIRegistry';
@@ -6,7 +6,8 @@ import { startModelPrefsAutoSave } from '@/lib/modelPrefsAutoSave';
 import { queryClient } from '@/lib/queryRuntime';
 import { patchSettingsBootstrapSnapshot, readSettingsBootstrapSnapshot } from '@/queries/settingsBootstrapQueries';
 import { useUIStore } from '@/stores/useUIStore';
-import { applyPersistedHomeDirectoryToWindow, invalidateSettingsCache, syncDesktopSettings, updateDesktopSettings } from './persistence';
+import { applyPersistedHomeDirectoryToWindow, invalidateSettingsCache, syncDesktopSettings, updateDesktopSettings, waitForPendingSettingsUpdates } from './persistence';
+import { getRuntimeTransportIdentity } from './runtime-switch';
 
 type TestWindow = {
   __OPENCHAMBER_HOME__?: string;
@@ -135,6 +136,7 @@ describe('updateDesktopSettings', () => {
     let saveStarted = false;
     let saveFinished = false;
     let updateResolved = false;
+    let orderReadAllowed = false;
 
     registerSettingsSave(async () => {
       saveStarted = true;
@@ -146,6 +148,9 @@ describe('updateDesktopSettings', () => {
     const update = updateDesktopSettings({
       skillCatalogs: [{ id: 'custom:test', label: 'Test', source: 'owner/repo' }],
     });
+    const waitForOrderRead = waitForPendingSettingsUpdates(getRuntimeTransportIdentity()).then(() => {
+      orderReadAllowed = true;
+    });
     update.then(() => {
       updateResolved = true;
     }).catch(() => {
@@ -155,6 +160,7 @@ describe('updateDesktopSettings', () => {
     await delay(50);
     expect(saveStarted).toBe(false);
     expect(updateResolved).toBe(false);
+    expect(orderReadAllowed).toBe(false);
 
     await delay(200);
     expect(saveStarted).toBe(true);
@@ -162,6 +168,8 @@ describe('updateDesktopSettings', () => {
     expect(updateResolved).toBe(false);
 
     await update;
+    await waitForOrderRead;
+    expect(orderReadAllowed).toBe(true);
     expect(saveFinished).toBe(true);
     expect(updateResolved).toBe(true);
   });

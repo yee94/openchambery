@@ -929,6 +929,7 @@ export const useProjectsStore = create<ProjectsStore>()(
       if (isVSCodeProjectsRuntime) {
         return;
       }
+      if (!Array.isArray(settings.projects)) return;
       const incomingProjects = sanitizeProjects(settings.projects ?? []);
       const incomingActive = typeof settings.activeProjectId === 'string' && settings.activeProjectId.trim()
         ? settings.activeProjectId.trim()
@@ -936,42 +937,21 @@ export const useProjectsStore = create<ProjectsStore>()(
 
       const current = get();
 
-      // Race guard: settings load can return empty projects during app
-      // rebuild/reinstall or an incomplete settings read. Don't clobber
-      // a populated cache with empty — the sidebar would go blank and
-      // localStorage would be overwritten, losing the list entirely.
-      if (incomingProjects.length === 0 && current.projects.length > 0) {
-        if (incomingActive !== current.activeProjectId) {
-          // Active project may still be valid within the cached list.
-          const activeExists = incomingActive
-            ? current.projects.some((project) => project.id === incomingActive)
-            : true;
-          if (activeExists) {
-            set({ activeProjectId: incomingActive });
-            cacheProjects(current.projects, incomingActive);
-            persistManualProjectOrder(get().manualProjectOrder);
-          }
-        }
-        return;
-      }
-
       const projectsChanged = JSON.stringify(current.projects) !== JSON.stringify(incomingProjects);
       const activeChanged = current.activeProjectId !== incomingActive;
+      const serverOrder = incomingProjects.map((project) => project.id);
+      const orderChanged = JSON.stringify(current.manualProjectOrder) !== JSON.stringify(serverOrder);
 
-      if (!projectsChanged && !activeChanged) {
+      if (!projectsChanged && !activeChanged && !orderChanged) {
         return;
       }
 
-      const incomingIds = new Set(incomingProjects.map((p) => p.id));
-      // Keep the local drag order across settings sync. Registry membership may
-      // change (add/remove/rename), and activity promotions rewrite server
-      // projects order, but neither should reset a user-set manual order.
-      const cleanedOrder = get().manualProjectOrder.filter((id) => incomingIds.has(id));
-      set({ projects: incomingProjects, activeProjectId: incomingActive, manualProjectOrder: cleanedOrder });
+      // Local order is a startup cache; the host registry is shared authority.
+      set({ projects: projectsChanged ? incomingProjects : current.projects, activeProjectId: incomingActive, manualProjectOrder: serverOrder });
       cacheProjects(incomingProjects, incomingActive);
-      persistManualProjectOrder(cleanedOrder);
+      persistManualProjectOrder(serverOrder);
 
-      if (incomingActive) {
+      if (incomingActive && activeChanged) {
         const activeProject = incomingProjects.find((project) => project.id === incomingActive);
         if (activeProject) {
           opencodeClient.setDirectory(activeProject.path);

@@ -17,6 +17,8 @@ import {
 } from '@/stores/useGlobalSessionsStore';
 import { useMobileSessionTreeStore } from '@/stores/useMobileSessionTreeStore';
 import { useProjectsStore } from '@/stores/useProjectsStore';
+import { useSessionDisplayStore } from '@/stores/useSessionDisplayStore';
+import { sortProjectEntries } from '@/lib/projectOrder';
 import { getSessionActivityUpdatedAt } from '@/lib/sessionActivity';
 import { usePinnedSessionIds } from '@/queries/sessionIndexPinQueries';
 import { orderWorktrees, useWorktreeOrderStore } from '@/stores/useWorktreeOrderStore';
@@ -199,7 +201,9 @@ export function useMobileProjectsHomeModel(): MobileProjectsHomeModel {
   const liveSessions = useAllLiveSessions();
   const globalActiveSessions = useGlobalSessionsStore((state) => state.activeSessions);
   const activePaginationByDirectory = useGlobalSessionsStore((state) => state.activePaginationByDirectory);
-  const projects = useProjectsStore((state) => state.projects);
+  const registryProjects = useProjectsStore((state) => state.projects);
+  const projectSortOrder = useSessionDisplayStore((state) => state.projectSortOrder);
+  const projects = React.useMemo(() => sortProjectEntries(registryProjects, projectSortOrder), [registryProjects, projectSortOrder]);
   const activeProjectId = useProjectsStore((state) => state.activeProjectId);
   const currentDirectory = useDirectoryStore((state) => state.currentDirectory);
   const currentSessionId = useSessionUIStore((state) => state.currentSessionId);

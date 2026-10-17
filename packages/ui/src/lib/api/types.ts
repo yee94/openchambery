@@ -651,6 +651,7 @@ export interface SettingsPayload {
   homeDirectory?: string;
   opencodeBinary?: string;
   projects?: ProjectEntry[];
+  projectSortOrder?: 'manual' | 'a-z' | 'z-a' | 'date-added' | 'recent';
   activeProjectId?: string;
   securityScopedBookmarks?: string[];
   pinnedDirectories?: string[];

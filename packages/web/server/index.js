@@ -339,6 +339,10 @@ const settingsRuntime = createSettingsRuntime({
   normalizeStringArray,
   formatSettingsResponse,
   resolveDirectoryCandidate,
+  onProjectOrderChanged: () => createOpenChamberEventBroadcaster({
+    getOpenChamberEventClients: () => uiOpenChamberEventClients,
+    writeSseEvent,
+  })({ type: 'openchamber:project-order-changed', properties: { occurredAt: Date.now() } }),
 });
 
 const readSettingsFromDiskMigrated = (...args) => settingsRuntime.readSettingsFromDiskMigrated(...args);

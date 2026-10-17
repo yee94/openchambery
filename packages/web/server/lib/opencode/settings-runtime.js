@@ -61,6 +61,7 @@ export const createSettingsRuntime = (deps) => {
      */
     getRunExclusivePersist,
     runExclusivePersist: initialRunExclusivePersist,
+    onProjectOrderChanged,
   } = deps;
 
   let persistSettingsLock = Promise.resolve();
@@ -899,6 +900,10 @@ export const createSettingsRuntime = (deps) => {
     }
 
     await writeSettingsToDiskUnlocked(next);
+    if (JSON.stringify(current.projects) !== JSON.stringify(next.projects)
+      || current.projectSortOrder !== next.projectSortOrder) {
+      onProjectOrderChanged?.();
+    }
     return formatSettingsResponse(next);
   });
 

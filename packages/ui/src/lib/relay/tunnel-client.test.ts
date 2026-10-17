@@ -737,11 +737,16 @@ describe('createRelayTunnelClient', () => {
         type: 'openchamber:assistants-changed',
         properties: { revision: 3, occurredAt: 100 },
       });
+      eventsFixture.pushEvent({
+        type: 'openchamber:project-order-changed',
+        properties: { occurredAt: 101 },
+      });
       await wait(40);
 
       expect(received).toEqual([
         { type: 'event-stream-ready' },
         { type: 'assistants-changed', revision: 3, occurredAt: 100 },
+        { type: 'project-order-changed', occurredAt: 101 },
       ]);
       expect(getLatestOpenchamberEventRevision('assistants-changed')).toBe(3);
       // Still one wire + one long-open events stream (no remount/reconnect).

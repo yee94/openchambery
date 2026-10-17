@@ -825,6 +825,9 @@ const sanitizeWebSettings = (payload: unknown): DesktopSettings | null => {
   }
 
   const projects = sanitizeProjects(candidate.projects);
+  if (['manual', 'a-z', 'z-a', 'date-added', 'recent'].includes(candidate.projectSortOrder as string)) {
+    result.projectSortOrder = candidate.projectSortOrder as DesktopSettings['projectSortOrder'];
+  }
   if (projects) {
     result.projects = projects;
   }
@@ -1468,6 +1471,13 @@ let _pendingSettingsTransport: string | null = null;
 let _settingsFlushTimer: ReturnType<typeof setTimeout> | null = null;
 let _settingsFlushWaiters: Array<() => void> = [];
 const SETTINGS_DEBOUNCE_MS = 200;
+const settingsWrites = new Map<string, Set<Promise<void>>>();
+
+export const waitForPendingSettingsUpdates = async (transport: string): Promise<void> => {
+  while (settingsWrites.get(transport)?.size) {
+    await Promise.all([...settingsWrites.get(transport)!]);
+  }
+};
 
 const _flushSettingsUpdate = async (): Promise<void> => {
   const changes = _pendingSettingsChanges;
@@ -1585,8 +1595,16 @@ export const updateDesktopSettings = async (changes: Partial<DesktopSettings>): 
   const flushed = new Promise<void>((resolve) => {
     _settingsFlushWaiters.push(resolve);
   });
+  const writes = settingsWrites.get(transport) ?? new Set<Promise<void>>();
+  settingsWrites.set(transport, writes);
+  writes.add(flushed);
   _settingsFlushTimer = setTimeout(() => void _flushSettingsUpdate(), SETTINGS_DEBOUNCE_MS);
-  return flushed;
+  try {
+    await flushed;
+  } finally {
+    writes.delete(flushed);
+    if (writes.size === 0 && settingsWrites.get(transport) === writes) settingsWrites.delete(transport);
+  }
 };
 
 export const initializeAppearancePreferences = async (): Promise<void> => {

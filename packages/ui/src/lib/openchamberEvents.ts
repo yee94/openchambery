@@ -69,6 +69,7 @@ export type ContactTurnEndEvent = {
   occurredAt: number;
 };
 export type OpenChamberEvent =
+  | { type: 'project-order-changed'; occurredAt: number }
   | ScheduledTaskRanEvent
   | EventStreamReadyEvent
   | WorktreeTopologyChangedEvent
@@ -241,6 +242,12 @@ export const parseOpenchamberEventEnvelope = (envelope: { type: string; properti
     if (typeof revision !== 'number' || !Number.isSafeInteger(revision) || revision < 0) return null;
     if (typeof occurredAt !== 'number' || !Number.isFinite(occurredAt)) return null;
     return { type: 'message-queue-changed', revision, occurredAt };
+  }
+
+  if (envelope.type === 'openchamber:project-order-changed') {
+    const occurredAt = parsed?.occurredAt;
+    if (typeof occurredAt !== 'number' || !Number.isFinite(occurredAt)) return null;
+    return { type: 'project-order-changed', occurredAt };
   }
 
   if (envelope.type === 'openchamber:assistants-changed') {

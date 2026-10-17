@@ -39,6 +39,16 @@ const createTestHelpersWithRealSanitizers = () => {
 };
 
 describe('settings helpers', () => {
+  it('round-trips shared project sort modes and rejects malformed old values', () => {
+    const helpers = createTestHelpers();
+    for (const projectSortOrder of ['manual', 'a-z', 'z-a', 'date-added', 'recent']) {
+      const saved = helpers.sanitizeSettingsUpdate({ projectSortOrder });
+      expect(helpers.formatSettingsResponse(saved).projectSortOrder).toBe(projectSortOrder);
+    }
+    for (const projectSortOrder of [undefined, null, 'unknown', {}, []]) {
+      expect(helpers.sanitizeSettingsUpdate({ projectSortOrder })).not.toHaveProperty('projectSortOrder');
+    }
+  });
   it('persists summary AI configuration while withholding its API token from responses', () => {
     const helpers = createTestHelpers();
     const settings = helpers.sanitizeSettingsUpdate({

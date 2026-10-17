@@ -263,6 +263,9 @@ export const createSettingsHelpers = (dependencies) => {
         result.projects = projects;
       }
     }
+    if (['manual', 'a-z', 'z-a', 'date-added', 'recent'].includes(candidate.projectSortOrder)) {
+      result.projectSortOrder = candidate.projectSortOrder;
+    }
     if (typeof candidate.activeProjectId === 'string' && candidate.activeProjectId.length > 0) {
       result.activeProjectId = candidate.activeProjectId;
     }

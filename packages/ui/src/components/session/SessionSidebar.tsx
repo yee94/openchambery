@@ -17,6 +17,7 @@ import { openAssistant } from '@/stores/useAssistantUIStore';
 import { useAlwaysVisibleSessionIds, useRunningSessionIds } from './sidebar/hooks/useAlwaysVisibleSessionIds';
 import { useDirectoryStore } from '@/stores/useDirectoryStore';
 import { useProjectsStore } from '@/stores/useProjectsStore';
+import { sortProjectEntries } from '@/lib/projectOrder';
 import { useUIStore } from '@/stores/useUIStore';
 import { sessionEvents } from '@/lib/sessionEvents';
 import { getDeferredSafeStorage } from '@/stores/utils/safeStorage';
@@ -1533,45 +1534,10 @@ export const SessionSidebar: React.FC<SessionSidebarProps> = ({
   }
 
   const projectSortOrder = useSessionDisplayStore((state) => state.projectSortOrder);
-  const manualProjectOrder = useProjectsStore((state) => state.manualProjectOrder);
-
-  const sortedProjects = React.useMemo(() => {
-    const list = [...normalizedProjects];
-
-    switch (projectSortOrder) {
-      case 'a-z':
-        list.sort((a, b) => {
-          const aLabel = (a.label || a.path).toLowerCase();
-          const bLabel = (b.label || b.path).toLowerCase();
-          return aLabel.localeCompare(bLabel);
-        });
-        break;
-      case 'z-a':
-        list.sort((a, b) => {
-          const aLabel = (a.label || a.path).toLowerCase();
-          const bLabel = (b.label || b.path).toLowerCase();
-          return bLabel.localeCompare(aLabel);
-        });
-        break;
-      case 'date-added':
-        list.sort((a, b) => (b.addedAt ?? 0) - (a.addedAt ?? 0));
-        break;
-      case 'recent':
-        list.sort((a, b) => (b.lastOpenedAt ?? 0) - (a.lastOpenedAt ?? 0));
-        break;
-      case 'manual': {
-        const orderMap = new Map(manualProjectOrder.map((id, i) => [id, i]));
-        list.sort((a, b) => {
-          const ai = orderMap.get(a.id) ?? Infinity;
-          const bi = orderMap.get(b.id) ?? Infinity;
-          return ai - bi;
-        });
-        break;
-      }
-    }
-
-    return list;
-  }, [normalizedProjects, projectSortOrder, manualProjectOrder]);
+  const sortedProjects = React.useMemo(
+    () => sortProjectEntries(normalizedProjects, projectSortOrder),
+    [normalizedProjects, projectSortOrder],
+  );
 
   const {
     projectSections,

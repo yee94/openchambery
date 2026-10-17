@@ -139,7 +139,7 @@ describe('useProjectsStore instance-scoped order', () => {
 });
 
 describe('useProjectsStore synchronizeFromSettings', () => {
-  test('keeps the local manual order when the server only reorders projects', () => {
+  test('adopts server order over the local manual order on another client', () => {
     const alpha = createProjectIdFromPath('/workspace/alpha');
     const beta = createProjectIdFromPath('/workspace/beta');
     const gamma = createProjectIdFromPath('/workspace/gamma');
@@ -162,7 +162,7 @@ describe('useProjectsStore synchronizeFromSettings', () => {
     });
 
     expect(useProjectsStore.getState().projects.map((project) => project.id)).toEqual([gamma, alpha, beta]);
-    expect(useProjectsStore.getState().manualProjectOrder).toEqual([alpha, beta, gamma]);
+    expect(useProjectsStore.getState().manualProjectOrder).toEqual([gamma, alpha, beta]);
   });
 
   test('drops removed project ids from manual order without reordering survivors', () => {
@@ -189,7 +189,7 @@ describe('useProjectsStore synchronizeFromSettings', () => {
     expect(useProjectsStore.getState().manualProjectOrder).toEqual([alpha, beta]);
   });
 
-  test('keeps the local manual order when only the active project changed', () => {
+  test('repairs stale manual order even when the registry and active project are unchanged', () => {
     const alpha = createProjectIdFromPath('/workspace/alpha');
     const beta = createProjectIdFromPath('/workspace/beta');
     const projects = [
@@ -202,11 +202,11 @@ describe('useProjectsStore synchronizeFromSettings', () => {
       manualProjectOrder: [beta, alpha],
     });
 
-    useProjectsStore.getState().synchronizeFromSettings({ projects });
+    useProjectsStore.getState().synchronizeFromSettings({ projects, activeProjectId: alpha });
 
     expect(useProjectsStore.getState().projects.map((project) => project.id)).toEqual([alpha, beta]);
-    expect(useProjectsStore.getState().manualProjectOrder).toEqual([beta, alpha]);
-    expect(useProjectsStore.getState().activeProjectId).toBeNull();
+    expect(useProjectsStore.getState().manualProjectOrder).toEqual([alpha, beta]);
+    expect(useProjectsStore.getState().activeProjectId).toBe(alpha);
   });
 });
 
