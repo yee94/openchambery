@@ -447,6 +447,7 @@ describe('new conversation assistant header continuity', () => {
     };
     await renderTranscript();
     expect(container.querySelector('[data-compaction-card] button')).toBeNull();
+    expect(container.querySelector('[data-turn-id="user-1"]')?.classList.contains('pb-1')).toBe(true);
     await send('session.compaction.delta', { text: 'Objective' });
     const toggle = container.querySelector<HTMLButtonElement>('[data-compaction-card] button')!;
     await act(async () => toggle.click());
@@ -461,6 +462,8 @@ describe('new conversation assistant header continuity', () => {
     await send('session.compaction.ended', { reason: 'auto', text: `${summary}\nFinal summary`, recent: '' });
     expect(container.textContent).toContain(`${summary}\nFinal summary`);
     expect(container.querySelector('[data-compaction-card]')?.getAttribute('data-compaction-status')).toBe('completed');
+    expect(container.querySelector('[data-turn-id="user-1"]')?.classList.contains('pb-1')).toBe(true);
+    expect(container.querySelector('[data-compaction-card]')?.closest('[data-message-id]')?.classList.contains('pb-8')).toBe(false);
     expect(container.querySelector('[data-compaction-card] button')).toBe(toggle);
     expect(toggle.getAttribute('aria-expanded')).toBe('true');
   });
@@ -484,6 +487,41 @@ describe('new conversation assistant header continuity', () => {
     await act(async () => container.querySelector<HTMLButtonElement>('[data-compaction-card] button')!.click());
     await renderMessages(messages, false, null, 'other-session');
     expect(container.querySelector('[data-compaction-card] button')?.getAttribute('aria-expanded')).toBe('false');
+  });
+
+  test.each([
+    [false, 'live'], [true, 'live'], [false, 'sorted'], [true, 'sorted'],
+  ] as const)('keeps manual compaction inside the live turn gap (mobile=%s, mode=%s)', async (mobile, mode) => {
+    mocks.uiState.isMobile = mobile;
+    mocks.uiState.chatRenderMode = mode;
+    const user = userMessage();
+    const answer = assistantMessage({ completed: true });
+    await renderMessages([user, answer], false);
+    const turn = () => container.querySelector('[data-turn-id="user-1"]')!;
+    expect(turn().classList.contains('pb-8')).toBe(true);
+    const checkpoint = normalizeSessionProjectionMessage(sessionID, {
+      id: 'compact-running-gap', type: 'compaction', time: { created: 3 }, status: 'running', reason: 'manual',
+      summary: '',
+    })!;
+    const messages = [user, answer, checkpoint];
+    await renderMessages(messages, true);
+    const row = () => container.querySelector('[data-compaction-card]')?.closest('[data-message-id]');
+    expect(row()?.closest('section')).toBe(turn());
+    expect(turn().classList.contains('pb-1')).toBe(true);
+    await renderMessages([...messages], false);
+    expect(turn().classList.contains('pb-1')).toBe(true);
+    const completed = normalizeSessionProjectionMessage(sessionID, {
+      id: 'compact-running-gap', type: 'compaction', time: { created: 3 }, status: 'completed', reason: 'manual',
+      summary: 'Finished summary',
+    })!;
+    await renderMessages([user, answer, completed], false);
+    expect(turn().classList.contains('pb-1')).toBe(true);
+    expect(row()!.className).not.toContain('pb-8');
+    const nextUser = userMessage();
+    nextUser.info = { ...nextUser.info, id: 'user-2', time: { created: 20 } };
+    await renderMessages([user, answer, completed, nextUser], true);
+    expect(turn().classList.contains('pb-8')).toBe(true);
+    expect(row()!.className).not.toContain('pb-8');
   });
 
   test('prepending history does not spend the live-tail budget or move its mounted turns', async () => {

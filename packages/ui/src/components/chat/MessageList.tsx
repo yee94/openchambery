@@ -924,8 +924,7 @@ const TurnBlock = React.memo(({
     ) {
         liveTurnLifecycleRef.current = null;
     } else if (
-        turn.completionDisposition === 'active'
-        && isLastTurn
+        isLastTurn
         && sessionIsWorking
     ) {
         liveTurnLifecycleRef.current = turn.turnId;

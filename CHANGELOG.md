@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [2.0.10-beta.8] - 2026-10-18
+
+### 修复
+
+- 修复对话压缩期间底部出现过大空白的问题，压缩状态与当前回合保持紧凑间距，后续回合仍保留正常分隔。
+
 ## [2.0.10-beta.7] - 2026-10-17
 
 ### 修复
