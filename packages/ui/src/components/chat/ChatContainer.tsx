@@ -52,6 +52,7 @@ import { isSessionRetryAction, resolveRetryActionCopy } from '@/sync/session-ret
 import { StatusRowContainer } from './StatusRowContainer';
 import ScrollToBottomButton from './components/ScrollToBottomButton';
 import { PromptNavigatorRail } from './components/PromptNavigatorRail';
+import { getFullText } from './lib/messagePreview';
 import { ScrollShadow } from '@/components/ui/ScrollShadow';
 import { useFeatureFlagsStore } from '@/stores/useFeatureFlagsStore';
 import { useChatAutoFollow, type AnimationHandlers, type ContentChangeReason } from '@/hooks/useChatAutoFollow';
@@ -484,6 +485,30 @@ const ChatViewport = React.memo(({
         () => turnIds.filter((id) => promptPreviewsByTurnId.has(id)),
         [promptPreviewsByTurnId, turnIds],
     );
+    const promptMessageOwnersRef = React.useRef<ReadonlyMap<string, string>>(new Map());
+    const promptConversationPreviews = React.useMemo(() => {
+        const owners = new Map<string, string>();
+        const replies = new Map<string, string>();
+        let currentPrompt: string | undefined;
+        for (const message of renderedMessages) {
+            if (message.info.role === 'user') {
+                if (promptPreviewsByTurnId.has(message.info.id)) currentPrompt = message.info.id;
+                if (currentPrompt) owners.set(message.info.id, currentPrompt);
+                continue;
+            }
+            const parentId = message.info.parentID;
+            const owner = parentId ? owners.get(parentId) : currentPrompt;
+            if (!owner) continue;
+            owners.set(message.info.id, owner);
+            const text = getFullText(message.parts).trim();
+            if (text) replies.set(owner, text.slice(0, 600));
+        }
+        const previous = promptMessageOwnersRef.current;
+        if (previous.size !== owners.size || [...owners].some(([id, owner]) => previous.get(id) !== owner)) {
+            promptMessageOwnersRef.current = owners;
+        }
+        return { owners: promptMessageOwnersRef.current, replies };
+    }, [promptPreviewsByTurnId, renderedMessages]);
     // If the viewport sits in a filtered-out (synthetic) turn, treat the
     // nearest preceding real prompt as active so the rail doesn't jump.
     const railActiveTurnId = React.useMemo(() => {
@@ -599,6 +624,9 @@ const ChatViewport = React.memo(({
                         <PromptNavigatorRail
                             turnIds={promptTurnIds}
                             previewsByTurnId={promptPreviewsByTurnId}
+                            scrollRef={scrollRef}
+                            turnByMessageId={promptConversationPreviews.owners}
+                            repliesByTurnId={promptConversationPreviews.replies}
                             activeTurnId={railActiveTurnId}
                             onSelectTurn={onSelectTurn}
                             canLoadEarlier={canLoadEarlierPrompts}
@@ -717,6 +745,9 @@ const ChatViewport = React.memo(({
                     <PromptNavigatorRail
                         turnIds={promptTurnIds}
                         previewsByTurnId={promptPreviewsByTurnId}
+                        scrollRef={scrollRef}
+                        turnByMessageId={promptConversationPreviews.owners}
+                        repliesByTurnId={promptConversationPreviews.replies}
                         activeTurnId={railActiveTurnId}
                         onSelectTurn={onSelectTurn}
                         canLoadEarlier={canLoadEarlierPrompts}

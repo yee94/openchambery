@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [2.0.10-beta.5] - 2026-10-17
+
+### 改进
+
+- 聊天导航同时高亮当前视口内的所有回合，包括仅显示 AI 回复的回合。
+- 导航悬停预览改为单轮用户问题与 AI 回复摘要，移除多项列表和阴影，统一使用主题配色与文字层级。
+
 ## [2.0.10-beta.4] - 2026-10-17
 
 ### 修复

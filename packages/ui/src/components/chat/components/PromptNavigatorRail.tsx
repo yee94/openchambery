@@ -7,6 +7,7 @@ import { useUIStore } from '@/stores/useUIStore';
 import { cn } from '@/lib/utils';
 import { buildCitationIconsFromParts, detectMessageReferences } from '@/lib/messages/references';
 import { getFullText } from '../lib/messagePreview';
+import { useVisiblePromptTurns } from '../hooks/useVisiblePromptTurns';
 
 type PromptEntry = {
     turnId: string;
@@ -17,6 +18,9 @@ type PromptNavigatorRailProps = {
     turnIds: string[];
     previewsByTurnId: Map<string, Part[]>;
     activeTurnId: string | null;
+    scrollRef?: React.RefObject<HTMLDivElement | null>;
+    turnByMessageId?: ReadonlyMap<string, string>;
+    repliesByTurnId?: ReadonlyMap<string, string>;
     onSelectTurn: (turnId: string) => void;
     canLoadEarlier: boolean;
     isLoadingOlder: boolean;
@@ -43,16 +47,7 @@ const TICK_OVERSCAN = 4;
 const TICK_BASE_WIDTH_PX = 10;
 const TICK_ACTIVE_WIDTH_PX = 14;
 const TICK_FOCUS_WIDTH_PX = 20;
-// The hover preview is a scrolling mini-list of all prompts: the highlighted
-// row stays centered while the list glides, and the panel itself is
-// interactive so imprecise gutter hits can be corrected inside the list.
-// Rows are fixed-pitch and fit up to two preview lines; short prompts just
-// center vertically. Fixed pitch keeps the glide/virtualization math simple.
-// Compact rows share the panel surface; only the highlighted row gets a fill.
-const PANEL_ROW_HEIGHT_PX = 48;
-const PANEL_ROW_INSET_Y_PX = 4;
-const PANEL_MAX_ROWS = 8;
-const PANEL_SCROLL_MARGIN_ROWS = 2;
+const PANEL_WHEEL_STEP_PX = 48;
 const PANEL_HIDE_DELAY_MS = 160;
 
 const buildPromptEntries = (
@@ -99,12 +94,16 @@ export function PromptNavigatorRail({
     turnIds,
     previewsByTurnId,
     activeTurnId,
+    scrollRef,
+    turnByMessageId,
+    repliesByTurnId,
     onSelectTurn,
     canLoadEarlier,
     isLoadingOlder,
     onLoadEarlier,
 }: PromptNavigatorRailProps) {
     const { t } = useI18n();
+    const visibleTurnIds = useVisiblePromptTurns(scrollRef, turnByMessageId);
     const isKeyboardNavOpen = useUIStore((state) => state.isPromptNavigatorPanelOpen);
     const setPromptNavigatorPanelOpen = useUIStore((state) => state.setPromptNavigatorPanelOpen);
     const gutterRef = React.useRef<HTMLDivElement | null>(null);
@@ -150,7 +149,6 @@ export function PromptNavigatorRail({
     const hasMoreBelow = windowEnd < prompts.length;
 
     const emptyPreviewLabel = t('chat.timeline.noTextContent');
-    const currentPromptLabel = t('chat.promptNavigator.currentPrompt');
     const loadMoreLabel = t('chat.promptNavigator.loadMore');
 
     const activeIndex = React.useMemo(() => {
@@ -447,11 +445,11 @@ export function PromptNavigatorRail({
             event.preventDefault();
             event.stopPropagation();
             wheelRemainderRef.current += event.deltaY;
-            const steps = Math.trunc(wheelRemainderRef.current / PANEL_ROW_HEIGHT_PX);
+            const steps = Math.trunc(wheelRemainderRef.current / PANEL_WHEEL_STEP_PX);
             if (steps === 0) {
                 return;
             }
-            wheelRemainderRef.current -= steps * PANEL_ROW_HEIGHT_PX;
+            wheelRemainderRef.current -= steps * PANEL_WHEEL_STEP_PX;
             const current = highlightedIndexRef.current;
             if (current === null) {
                 return;
@@ -467,49 +465,7 @@ export function PromptNavigatorRail({
     }, [ensureWindowContains, isPanelVisible]);
 
     const highlightedPrompt = highlightedIndex !== null ? prompts[highlightedIndex] : undefined;
-    // Panel list geometry: centered on the highlight when the panel opens,
-    // then a dead zone — the list only glides when the highlighted row gets
-    // within one row of the window edge, so small pointer moves don't scroll.
-    const panelVisibleRows = Math.min(prompts.length, PANEL_MAX_ROWS);
-    const panelHeight = panelVisibleRows * PANEL_ROW_HEIGHT_PX;
-    const panelMaxOffset = prompts.length * PANEL_ROW_HEIGHT_PX - panelHeight;
-    const clampPanelOffset = (offset: number) => Math.max(0, Math.min(panelMaxOffset, offset));
-    const panelOffsetRef = React.useRef<number | null>(null);
-    let panelScrollOffset = 0;
-    if (highlightedIndex === null) {
-        panelOffsetRef.current = null;
-    } else if (panelOffsetRef.current === null) {
-        panelScrollOffset = clampPanelOffset(
-            highlightedIndex * PANEL_ROW_HEIGHT_PX - (panelHeight - PANEL_ROW_HEIGHT_PX) / 2,
-        );
-        panelOffsetRef.current = panelScrollOffset;
-    } else {
-        let offset = panelOffsetRef.current;
-        // Keep two rows of context visible above and below the highlight —
-        // the dead zone is the middle third of the window, so the list glides
-        // noticeably before the highlight reaches the edge but small pointer
-        // moves around the center don't scroll.
-        const highestAllowed = (highlightedIndex - PANEL_SCROLL_MARGIN_ROWS) * PANEL_ROW_HEIGHT_PX;
-        const lowestAllowed =
-            (highlightedIndex + 1 + PANEL_SCROLL_MARGIN_ROWS) * PANEL_ROW_HEIGHT_PX - panelHeight;
-        if (offset > highestAllowed) {
-            offset = highestAllowed;
-        } else if (offset < lowestAllowed) {
-            offset = lowestAllowed;
-        }
-        panelScrollOffset = clampPanelOffset(offset);
-        panelOffsetRef.current = panelScrollOffset;
-    }
-    // Only rows near the visible window are rendered; extra rows slide in
-    // under the mask during the glide instead of popping in at the edges.
-    const panelFirstVisibleRow = Math.floor(panelScrollOffset / PANEL_ROW_HEIGHT_PX);
-    const panelSliceStart = Math.max(0, panelFirstVisibleRow - TICK_OVERSCAN);
-    const panelSliceEnd = Math.min(prompts.length, panelFirstVisibleRow + panelVisibleRows + TICK_OVERSCAN);
-    const panelClippedAbove = panelScrollOffset > 0;
-    const panelClippedBelow = panelScrollOffset < panelMaxOffset;
-    const panelMask = panelClippedAbove || panelClippedBelow
-        ? `linear-gradient(to bottom, ${panelClippedAbove ? 'transparent, black 10%' : 'black'}, ${panelClippedBelow ? 'black 90%, transparent' : 'black'})`
-        : undefined;
+    const replyPreview = highlightedPrompt ? repliesByTurnId?.get(highlightedPrompt.turnId) : undefined;
     // Overscan a few ticks beyond the window so they slide in under the
     // gradient mask instead of popping into existence at the edges.
     const overscanStart = Math.max(0, clampedWindowStart - TICK_OVERSCAN);
@@ -592,7 +548,7 @@ export function PromptNavigatorRail({
                         >
                             {visiblePrompts.map((prompt, slot) => {
                                 const index = overscanStart + slot;
-                                const isActive = prompt.turnId === activeTurnId;
+                                const isActive = visibleTurnIds.has(prompt.turnId);
                                 const isHighlighted = highlightedIndex === index;
                                 const tickWidth = resolveTickWidth(index, highlightedIndex, isActive);
 
@@ -628,81 +584,27 @@ export function PromptNavigatorRail({
                         <div
                             ref={panelRef}
                             className={cn(
-                                'pointer-events-auto absolute left-full top-1/2 z-30 ml-3 -translate-y-1/2',
-                                'w-[min(18rem,calc(100vw-6rem))] overflow-hidden rounded-lg',
-                                'bg-[var(--surface-elevated)] py-2 shadow-sm',
+                                'pointer-events-auto absolute left-full z-30 ml-3 -translate-y-1/2',
+                                'w-[min(20rem,calc(100vw-6rem))] overflow-hidden rounded-xl',
+                                'bg-[var(--surface-elevated)] p-3 typography-meta',
                             )}
+                            style={{ top: `${(highlightedIndex - clampedWindowStart + 0.5) * TICK_PITCH_PX}px` }}
                             onMouseEnter={cancelScheduledHide}
                             onMouseLeave={scheduleHide}
                             onMouseMove={(event) => event.stopPropagation()}
-                            onClick={(event) => event.stopPropagation()}
+                            onClick={(event) => {
+                                event.stopPropagation();
+                                handleSelect(highlightedIndex);
+                            }}
                         >
-                            <div
-                                className="relative overflow-hidden"
-                                style={{
-                                    height: `${panelVisibleRows * PANEL_ROW_HEIGHT_PX}px`,
-                                    maskImage: panelMask,
-                                    WebkitMaskImage: panelMask,
-                                }}
-                            >
-                                {/* The list glides so the highlighted row stays
-                                    centered while scrubbing the rail. */}
-                                <div
-                                    className="absolute inset-x-0 top-0 transition-transform duration-200 ease-out"
-                                    style={{
-                                        height: `${prompts.length * PANEL_ROW_HEIGHT_PX}px`,
-                                        transform: `translateY(-${panelScrollOffset}px)`,
-                                    }}
-                                >
-                                    {prompts.slice(panelSliceStart, panelSliceEnd).map((prompt, slot) => {
-                                        const index = panelSliceStart + slot;
-                                        const isActive = prompt.turnId === activeTurnId;
-                                        const isHighlighted = highlightedIndex === index;
-                                        return (
-                                            <div
-                                                key={prompt.turnId}
-                                                role="option"
-                                                aria-selected={isHighlighted}
-                                                aria-current={isActive ? 'true' : undefined}
-                                                title={isActive ? currentPromptLabel : undefined}
-                                                className="absolute inset-x-0 cursor-pointer px-1.5"
-                                                style={{
-                                                    top: `${index * PANEL_ROW_HEIGHT_PX + PANEL_ROW_INSET_Y_PX}px`,
-                                                    height: `${PANEL_ROW_HEIGHT_PX - PANEL_ROW_INSET_Y_PX * 2}px`,
-                                                }}
-                                                onMouseMove={() => {
-                                                    cancelScheduledHide();
-                                                    if (highlightedIndexRef.current !== index) {
-                                                        ensureWindowContains(index);
-                                                        setHighlightedIndex(index);
-                                                    }
-                                                }}
-                                                onClick={() => handleSelect(index)}
-                                            >
-                                                <div
-                                                    className={cn(
-                                                        'flex h-full items-center rounded px-2 transition-colors',
-                                                        isHighlighted ? 'bg-[var(--interactive-hover)]' : undefined,
-                                                    )}
-                                                >
-                                                    <span
-                                                        className={cn(
-                                                            // Fill both clamp lines to the edge instead of
-                                                            // leaving a ragged gap before a long next word.
-                                                            'min-w-0 flex-1 line-clamp-2 [overflow-wrap:anywhere] text-[length:calc(var(--text-meta)-0.125rem)] leading-[1.45]',
-                                                            isActive
-                                                                ? 'text-[var(--surface-foreground)]'
-                                                                : 'text-[var(--surface-mutedForeground)]',
-                                                        )}
-                                                    >
-                                                        {prompt.preview.trim() || emptyPreviewLabel}
-                                                    </span>
-                                                </div>
-                                            </div>
-                                        );
-                                    })}
-                                </div>
-                            </div>
+                            <p className="truncate font-medium leading-relaxed text-[var(--surface-foreground)]">
+                                {highlightedPrompt.preview || emptyPreviewLabel}
+                            </p>
+                            {replyPreview ? (
+                                <p className="mt-2 line-clamp-4 whitespace-pre-line [overflow-wrap:anywhere] leading-relaxed text-[var(--surface-mutedForeground)]">
+                                    {replyPreview}
+                                </p>
+                            ) : null}
                         </div>
                     ) : null}
                 </div>

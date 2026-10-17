@@ -1,5 +1,11 @@
 # Chat components
 
+## Prompt navigator
+
+The left-side rail highlights every prompt whose turn or message intersects the chat viewport, including a turn where only its assistant reply remains visible. `useVisiblePromptTurns` observes mounted transcript nodes with the chat scroller as its intersection root; virtual row additions, removals, and identity changes update registrations. Stable message ownership avoids reconnecting observers on text deltas, and unchanged visible sets retain their reference. Keyboard navigation's single active turn does not determine viewport highlighting.
+
+Hover/focus shows one shadow-free, theme-token conversation preview beside the corresponding tick: a single-line user question and up to four lines of assistant text. User reference chips are removed before truncation. Replies follow message order and explicit parent ownership when provided; tool and reasoning parts are excluded. The rail retains click/keyboard navigation and wheel scrubbing without rendering a prompt list. Coverage: `components/PromptNavigatorRail.test.tsx` and `hooks/useKeyboardShortcuts.escape.test.tsx`.
+
 ## Markdown file-link navigation
 
 Markstream's delegated primary-click handler prevents document navigation for file-path anchors even before existence probing has annotated them, when probing fails, or while file references are disabled during streaming. Explicit file anchors use the shared file opener even if a background probe failed; disabled references remain inert. Mobile consumes file-open requests in its preview surface, and image links use the shared image preview. File probes carry the session directory, cache by runtime/directory/path, and reject failures without caching them as missing files. HTTP(S) links retain their in-app browser behavior. Coverage: `markstream/markstreamInteractions.test.ts`, `markstream/markstreamFileReferences.test.tsx`, and `fileReferenceActions.test.ts`.
