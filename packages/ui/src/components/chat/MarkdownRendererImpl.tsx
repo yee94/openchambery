@@ -593,6 +593,8 @@ const useFileReferenceInteractions = ({
             candidate.setAttribute('role', 'button');
             candidate.setAttribute('tabindex', '0');
           }
+        }).catch(() => {
+          // Failed probes must not be remembered as authoritative missing files.
         });
       }
     };

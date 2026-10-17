@@ -58,7 +58,7 @@ describe('handleMarkstreamPointerEvent', () => {
     expect(openExternalUrl).not.toHaveBeenCalled();
   });
 
-  test('blocks an unresolved file link while reference detection is enabled', () => {
+  test('opens explicit file links even before the background probe succeeds', () => {
     const root = document.createElement('div');
     const anchor = document.createElement('a');
     anchor.href = 'docs/report.md';
@@ -68,7 +68,7 @@ describe('handleMarkstreamPointerEvent', () => {
     handleMarkstreamPointerEvent(event, { fileReference: { effectiveDirectory: '/repo' } });
 
     expect(event.defaultPrevented).toBe(true);
-    expect(openFileReferenceFromElement).not.toHaveBeenCalled();
+    expect(openFileReferenceFromElement).toHaveBeenCalledWith(anchor, { effectiveDirectory: '/repo' });
   });
 
   test('opens a resolved file link without navigating the document', () => {

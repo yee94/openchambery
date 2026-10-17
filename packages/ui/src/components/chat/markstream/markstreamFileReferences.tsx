@@ -6,6 +6,7 @@ import {
   type NodeComponentProps,
 } from 'markstream-react';
 import type { EditorAPI } from '@/lib/api/types';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { isMobileSurfaceRuntime } from '@/lib/runtimeSurface';
 import { isLikelyFilePath } from '../fileReferenceDecorate';
 import {
@@ -89,7 +90,7 @@ const FileReferenceToken: React.FC<{
   }
 
   const [info, setInfo] = React.useState<FileReferenceInfo | null>(
-    resolved ? peekFileReferenceInfo(resolved.resolvedPath) ?? null : null,
+    resolved ? peekFileReferenceInfo(resolved.resolvedPath, ctx.effectiveDirectory) ?? null : null,
   );
 
   const resolvedPath = resolved?.resolvedPath;
@@ -102,6 +103,8 @@ const FileReferenceToken: React.FC<{
       if (!cancelled) {
         setInfo(next);
       }
+    }).catch(() => {
+      // A failed background probe leaves the explicit link available for preview.
     });
     return () => {
       cancelled = true;
@@ -177,16 +180,23 @@ export function MarkstreamLinkNode(props: React.ComponentProps<typeof LinkNode>)
   const ctx = React.useContext(MarkstreamFileReferenceContext);
   const href = props.node.href ?? '';
   const fileHref = ctx.enabled && isLikelyFilePath(href);
+  const link = <LinkNode {...props} showTooltip={false} />;
+  const content = ctx.isMobileSurface || props.showTooltip === false ? link : (
+    <Tooltip>
+      <TooltipTrigger asChild><span>{link}</span></TooltipTrigger>
+      <TooltipContent>{props.node.title || href}</TooltipContent>
+    </Tooltip>
+  );
 
   return (
     <MarkstreamFileReferenceContext.Provider value={{ ...ctx, insideLink: true }}>
       {fileHref
         ? (
           <FileReferenceToken raw={href}>
-            <LinkNode {...props} />
+            {content}
           </FileReferenceToken>
         )
-        : <LinkNode {...props} />}
+        : content}
     </MarkstreamFileReferenceContext.Provider>
   );
 }

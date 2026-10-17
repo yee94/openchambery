@@ -42,6 +42,7 @@ vi.mock('@/stores/useUIStore', () => ({
 import {
   getFileReferenceInfo,
   getResolvedReference,
+  probeFileReference,
   openFileReference,
   resetFileReferenceStatCacheForTests,
   shouldOfferFileReference,
@@ -97,6 +98,34 @@ describe('fileReferenceActions', () => {
     expect(shouldOfferFileReference('/tmp/notes.bin', { exists: true, isBinary: true }, true)).toBe(false);
     expect(shouldOfferFileReference('/tmp/photo.png', { exists: true, isBinary: true }, true)).toBe(true);
     expect(shouldOfferFileReference('/tmp/report.html', { exists: true, isBinary: false }, true)).toBe(true);
+  });
+
+  test('probes in the session workspace rather than the host active project', async () => {
+    runtimeFetchMock.mockResolvedValue({ ok: true, json: async () => ({ exists: true, isBinary: false }) });
+    await probeFileReference('/repo/docs/report.md', '/repo');
+    const [url, options] = runtimeFetchMock.mock.calls[0];
+    const params = new URL(url, 'https://example.com').searchParams;
+    expect(params.get('directory') ?? options.query?.directory).toBe('/repo');
+  });
+
+  test('a failed probe can recover instead of caching a missing file', async () => {
+    runtimeFetchMock.mockRejectedValueOnce(new Error('Relay disconnected'));
+    await expect(probeFileReference('/repo/docs/report.md', '/repo')).rejects.toThrow('Relay disconnected');
+    runtimeFetchMock.mockResolvedValue({ ok: true, json: async () => ({ exists: true, isBinary: false }) });
+    await expect(probeFileReference('/repo/docs/report.md', '/repo')).resolves.toEqual({ exists: true, isBinary: false });
+    expect(runtimeFetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  test('accepts the server stat payload without an exists field', async () => {
+    runtimeFetchMock.mockResolvedValue({ ok: true, json: async () => ({ isFile: true, size: 42, isBinary: false }) });
+    await expect(probeFileReference('/repo/docs/report.md', '/repo')).resolves.toEqual({ exists: true, isBinary: false });
+  });
+
+  test('workspace rejection does not poison probes in another directory', async () => {
+    runtimeFetchMock.mockResolvedValueOnce({ ok: false, status: 400 });
+    await expect(probeFileReference('/repo/docs/report.md', '/other')).rejects.toThrow('400');
+    runtimeFetchMock.mockResolvedValue({ ok: true, json: async () => ({ isFile: true, isBinary: false }) });
+    await expect(probeFileReference('/repo/docs/report.md', '/repo')).resolves.toEqual({ exists: true, isBinary: false });
   });
 
   test('opens image paths through the shared image preview', async () => {

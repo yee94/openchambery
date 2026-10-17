@@ -85,6 +85,9 @@ export const handleMarkstreamPointerEvent = (
   if (isLikelyFilePath(href)) {
     event.preventDefault();
     event.stopPropagation();
+    if (options.fileReference) {
+      void openFileReferenceFromElement(anchor, options.fileReference);
+    }
     return;
   }
   if (!isExternalHttpUrl(href)) {

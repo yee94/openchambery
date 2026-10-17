@@ -2,7 +2,9 @@
 
 ## Markdown file-link navigation
 
-Markstream's delegated primary-click handler prevents document navigation for file-path anchors even before existence probing has annotated them, when probing fails, or while file references are disabled during streaming. Confirmed references still use the shared file opener; unresolved references remain inert instead of replacing the client with a relative URL. HTTP(S) links retain their in-app browser behavior. Coverage: `markstream/markstreamInteractions.test.ts`.
+Markstream's delegated primary-click handler prevents document navigation for file-path anchors even before existence probing has annotated them, when probing fails, or while file references are disabled during streaming. Explicit file anchors use the shared file opener even if a background probe failed; disabled references remain inert. Mobile consumes file-open requests in its preview surface, and image links use the shared image preview. File probes carry the session directory, cache by runtime/directory/path, and reject failures without caching them as missing files. HTTP(S) links retain their in-app browser behavior. Coverage: `markstream/markstreamInteractions.test.ts`, `markstream/markstreamFileReferences.test.tsx`, and `fileReferenceActions.test.ts`.
+
+Markstream links disable the library's global hover tooltip. Desktop uses the shared component-owned Tooltip so unmount removes its portal; mobile omits hover popups to avoid touch-generated mouse events leaving a detached bubble after navigation.
 
 ## Revert failure feedback
 

@@ -1,4 +1,5 @@
 import { runtimeFetch } from '@/lib/runtime-fetch';
+import { getRuntimeTransportIdentity } from '@/lib/runtime-switch';
 import type { EditorAPI } from '@/lib/api/types';
 import {
   isDesktopBinaryPath,
@@ -42,6 +43,8 @@ const VSCODE_FILE_REFERENCE_LINK_LIMIT = 40;
 
 const FILE_REFERENCE_STAT_CACHE = new Map<string, Promise<FileReferenceInfo>>();
 const FILE_REFERENCE_INFO_SNAPSHOT = new Map<string, FileReferenceInfo>();
+const fileReferenceCacheKey = (path: string, directory: string): string =>
+  JSON.stringify([getRuntimeTransportIdentity(), directory, path]);
 let activeFileReferenceStatCount = 0;
 const pendingFileReferenceStats: Array<() => void> = [];
 
@@ -74,12 +77,12 @@ const storeStatRequest = (normalizedPath: string, request: Promise<FileReference
   FILE_REFERENCE_STAT_CACHE.set(normalizedPath, request);
 };
 
-export const peekFileReferenceInfo = (resolvedPath: string): FileReferenceInfo | undefined => {
+export const peekFileReferenceInfo = (resolvedPath: string, effectiveDirectory = ''): FileReferenceInfo | undefined => {
   const normalizedPath = normalizeReferencePath(resolvedPath);
   if (!normalizedPath) {
     return undefined;
   }
-  return FILE_REFERENCE_INFO_SNAPSHOT.get(normalizedPath);
+  return FILE_REFERENCE_INFO_SNAPSHOT.get(fileReferenceCacheKey(normalizedPath, effectiveDirectory));
 };
 
 export const extractPathCandidateFromElement = (element: HTMLElement): string => {
@@ -115,42 +118,46 @@ export const getResolvedReference = (
   };
 };
 
-export const getFileReferenceInfo = (resolvedPath: string): Promise<FileReferenceInfo> => {
+export const getFileReferenceInfo = (resolvedPath: string, effectiveDirectory = ''): Promise<FileReferenceInfo> => {
   const normalizedPath = normalizeReferencePath(resolvedPath);
   if (!normalizedPath) {
     return Promise.resolve({ exists: false, isBinary: false });
   }
 
-  const cached = FILE_REFERENCE_STAT_CACHE.get(normalizedPath);
+  const cacheKey = fileReferenceCacheKey(normalizedPath, effectiveDirectory);
+  const cached = FILE_REFERENCE_STAT_CACHE.get(cacheKey);
   if (cached) {
-    FILE_REFERENCE_STAT_CACHE.delete(normalizedPath);
-    FILE_REFERENCE_STAT_CACHE.set(normalizedPath, cached);
+    FILE_REFERENCE_STAT_CACHE.delete(cacheKey);
+    FILE_REFERENCE_STAT_CACHE.set(cacheKey, cached);
     return cached;
   }
 
-  const request = new Promise<FileReferenceInfo>((resolve) => {
+  const request = new Promise<FileReferenceInfo>((resolve, reject) => {
     const run = () => {
       activeFileReferenceStatCount += 1;
       void runtimeFetch(`/api/fs/stat?path=${encodeURIComponent(normalizedPath)}&optional=true`, {
         method: 'GET',
         cache: 'no-store',
+        ...(effectiveDirectory ? { query: { directory: effectiveDirectory } } : {}),
       })
         .then(async (response) => {
           if (!response.ok) {
-            const missing = { exists: false, isBinary: false };
-            rememberFileReferenceInfo(normalizedPath, missing);
-            resolve(missing);
-            return;
+            throw new Error(`File reference probe failed (${response.status})`);
           }
-          const payload = await response.json().catch(() => null) as { exists?: unknown; isBinary?: unknown } | null;
-          const info = { exists: payload?.exists !== false, isBinary: payload?.isBinary === true };
-          rememberFileReferenceInfo(normalizedPath, info);
+          const payload = await response.json() as { exists?: unknown; isFile?: unknown; isBinary?: unknown } | null;
+          if (!payload || (typeof payload.exists !== 'boolean' && payload.isFile !== true)) {
+            throw new Error('Invalid file reference probe response');
+          }
+          const info = { exists: payload.exists !== false, isBinary: payload.isBinary === true };
+          rememberFileReferenceInfo(cacheKey, info);
           resolve(info);
         })
-        .catch(() => {
-          const missing = { exists: false, isBinary: false };
-          rememberFileReferenceInfo(normalizedPath, missing);
-          resolve(missing);
+        .catch((error: unknown) => {
+          if (FILE_REFERENCE_STAT_CACHE.get(cacheKey) === request) {
+            FILE_REFERENCE_STAT_CACHE.delete(cacheKey);
+            FILE_REFERENCE_INFO_SNAPSHOT.delete(cacheKey);
+          }
+          reject(error);
         })
         .finally(() => {
           activeFileReferenceStatCount = Math.max(0, activeFileReferenceStatCount - 1);
@@ -166,7 +173,7 @@ export const getFileReferenceInfo = (resolvedPath: string): Promise<FileReferenc
     pendingFileReferenceStats.push(run);
   });
 
-  storeStatRequest(normalizedPath, request);
+  storeStatRequest(cacheKey, request);
   return request;
 };
 
@@ -178,7 +185,7 @@ export const probeFileReference = (
     && isDesktopLocalOriginActive()
     && !isFilePathWithinDirectory(resolvedPath, effectiveDirectory);
   if (!canGrantOutsideFile) {
-    return getFileReferenceInfo(resolvedPath);
+    return getFileReferenceInfo(resolvedPath, effectiveDirectory);
   }
 
   const normalizedPath = normalizeReferencePath(resolvedPath);
@@ -186,19 +193,20 @@ export const probeFileReference = (
     return Promise.resolve({ exists: false, isBinary: false });
   }
 
-  const cached = FILE_REFERENCE_STAT_CACHE.get(normalizedPath);
+  const cacheKey = fileReferenceCacheKey(normalizedPath, effectiveDirectory);
+  const cached = FILE_REFERENCE_STAT_CACHE.get(cacheKey);
   if (cached) {
-    FILE_REFERENCE_STAT_CACHE.delete(normalizedPath);
-    FILE_REFERENCE_STAT_CACHE.set(normalizedPath, cached);
+    FILE_REFERENCE_STAT_CACHE.delete(cacheKey);
+    FILE_REFERENCE_STAT_CACHE.set(cacheKey, cached);
     return cached;
   }
 
   const request = isDesktopBinaryPath(resolvedPath).then((isBinary) => {
     const info = { exists: true, isBinary: isBinary === true };
-    rememberFileReferenceInfo(normalizedPath, info);
+    rememberFileReferenceInfo(cacheKey, info);
     return info;
   });
-  storeStatRequest(normalizedPath, request);
+  storeStatRequest(cacheKey, request);
   return request;
 };
 
