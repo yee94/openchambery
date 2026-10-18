@@ -434,12 +434,6 @@ export function ScheduledTasksWorkspace({
   const projectById = React.useMemo(() => new Map(projects.map((project) => [project.id, project])), [projects]);
 
   React.useEffect(() => {
-    if (tasksQuery.error) {
-      toast.error(tasksQuery.error instanceof Error ? tasksQuery.error.message : t('sessions.scheduledTasks.dialog.toast.loadFailed'));
-    }
-  }, [tasksQuery.error, t]);
-
-  React.useEffect(() => {
     let timeoutID: ReturnType<typeof setTimeout> | null = null;
     const unsubscribe = subscribeOpenchamberEvents((event) => {
       if (event.type !== 'scheduled-task-ran' && event.type !== 'event-stream-ready') {
@@ -1382,7 +1376,7 @@ export function ScheduledTasksWorkspace({
             <div className="flex items-center gap-2 px-4 py-3 typography-meta text-muted-foreground">
               <Icon name="loader-4" className="h-4 w-4 animate-spin" /> {t('sessions.scheduledTasks.dialog.loading')}
             </div>
-          ) : tasksQuery.error ? (
+          ) : tasksQuery.error && !tasksQuery.data ? (
             <div className="rounded-xl border border-dashed border-border p-4 typography-meta text-muted-foreground">
               {tasksQuery.error instanceof Error ? tasksQuery.error.message : t('sessions.scheduledTasks.dialog.toast.loadFailed')}
             </div>

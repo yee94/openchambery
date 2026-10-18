@@ -12,6 +12,9 @@ The server's new `event-stream-ready` triggers authoritative GET refreshes for
 the scheduled navigation badge and the workspace task/history queries. Workspace
 keys follow the current transport rather than the module's initial runtime.
 Failed refreshes retain prior data; only successful snapshots settle indicators.
+Scheduled workspace query failures do not emit toasts: background reconnects keep
+the cached task list visible, while an initial load failure remains inline. Explicit
+task mutation failures still report through their action feedback.
 `ScheduledNavigationRecovery.test.tsx` covers a mounted badge with the real shared
 SSE consumer, a missed completion and fresh heartbeat across resume paths.
 
