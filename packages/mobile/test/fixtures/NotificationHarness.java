@@ -30,6 +30,17 @@ public class NotificationHarness {
             check(reconnect.failed(true, 0) == 300000);
             for (int i = 0; i < 100; i++) check(reconnect.failed(false, 0) <= 300000);
             check(reconnect.failed(false, 30000) == 2000);
+            check(NotificationFailure.http(404, true) == NotificationFailure.ENDPOINT);
+            check(NotificationFailure.http(404, false) != NotificationFailure.ENDPOINT);
+            check(NotificationFailure.http(401, true) == NotificationFailure.AUTH);
+            check(NotificationFailure.http(403, true) == NotificationFailure.AUTH);
+            check(NotificationFailure.http(200, true) == NotificationFailure.RESPONSE);
+            check(NotificationFailure.http(503, true) == NotificationFailure.SERVER);
+            check(NotificationFailure.http(429, true) == NotificationFailure.SERVER);
+            check(NotificationFailure.http(408, true) == NotificationFailure.NETWORK);
+            check(NotificationFailure.relayClose(4010) == NotificationFailure.AUTH);
+            check(NotificationFailure.relayClose(4029).permanent);
+            check(!NotificationFailure.relayClose(1006).permanent);
             System.out.println("PASS parser/backoff");
             return;
         }

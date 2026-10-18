@@ -12,7 +12,7 @@ const source = path.resolve(here, '../android/app/src/main/java/com/openchamber/
 let classes;
 beforeAll(() => {
   classes = mkdtempSync(path.join(tmpdir(), 'oc-native-notifications-'));
-  execFileSync('javac', ['-d', classes, ...['NotificationRelayCrypto', 'NotificationSseParser', 'NotificationReconnect'].map((name) => path.join(source, `${name}.java`)), path.join(here, 'fixtures/NotificationHarness.java')]);
+  execFileSync('javac', ['-d', classes, ...['NotificationRelayCrypto', 'NotificationSseParser', 'NotificationReconnect', 'NotificationFailure'].map((name) => path.join(source, `${name}.java`)), path.join(here, 'fixtures/NotificationHarness.java')]);
 });
 afterAll(() => { if (classes) rmSync(classes, { recursive: true, force: true }); });
 

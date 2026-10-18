@@ -2,8 +2,15 @@ import type { I18nKey } from './en';
 import { settingsDict } from './zh-TW.settings';
 
 export const dict: Record<I18nKey, string> = {
-  'mobile.notifications.service': '背景通知',
-  'mobile.notifications.unavailable': '通知暫時無法使用，請開啟應用程式檢查權限和伺服器連線。',
+  'mobile.notifications.service': '背景工作通知服務',
+  'mobile.notifications.connected': '保持連線，以便應用程式切換至背景後接收工作通知。',
+  'mobile.notifications.unavailable': '背景通知啟動失敗，請重新開啟應用程式後重試。',
+  'mobile.notifications.auth': '通知連線驗證失敗或無權存取，請重新連線或配對此伺服器。',
+  'mobile.notifications.endpoint': '找不到通知介面，請更新並重新啟動電腦端 OpenChamber；若已更新，請檢查代理路徑。',
+  'mobile.notifications.response': '伺服器未傳回有效的通知串流，請檢查電腦端版本和代理設定。',
+  'mobile.notifications.server': '伺服器暫時無法使用或忙碌，正在自動重試。',
+  'mobile.notifications.relay': '中繼連線暫時無法使用，請確認電腦端 OpenChamber 在線；正在自動重試。',
+  'mobile.notifications.identity': '伺服器身分與已配對裝置不符，請重新連線或配對。',
   'mobile.notifications.gap': '斷線期間可能遺漏了部分通知，請開啟應用程式查看工作結果。',
   'chat.chatInput.stopUnconfirmed': '尚未確認停止，請重試。',
   'chat.response.rateLimit': '已觸發供應商請求頻率限制',

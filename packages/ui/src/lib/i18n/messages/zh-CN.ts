@@ -2,8 +2,15 @@ import type { I18nKey } from './en';
 import { settingsDict } from './zh-CN.settings';
 
 export const dict: Record<I18nKey, string> = {
-  'mobile.notifications.service': '后台通知',
-  'mobile.notifications.unavailable': '通知暂不可用，请打开应用检查权限和服务器连接。',
+  'mobile.notifications.service': '后台任务通知服务',
+  'mobile.notifications.connected': '保持连接，以便应用退到后台后接收任务通知。',
+  'mobile.notifications.unavailable': '后台通知启动失败，请重新打开应用后重试。',
+  'mobile.notifications.auth': '通知连接认证失败或无权访问，请重新连接或配对此服务器。',
+  'mobile.notifications.endpoint': '找不到通知接口，请更新并重启电脑端 OpenChamber；若已更新，请检查代理路径。',
+  'mobile.notifications.response': '服务器未返回有效的通知流，请检查电脑端版本和代理配置。',
+  'mobile.notifications.server': '服务器暂时不可用或繁忙，正在自动重试。',
+  'mobile.notifications.relay': '中继连接暂不可用，请确认电脑端 OpenChamber 在线；正在自动重试。',
+  'mobile.notifications.identity': '服务器身份与已配对设备不符，请重新连接或配对。',
   'mobile.notifications.gap': '断线期间可能遗漏了部分通知，请打开应用查看任务结果。',
   'chat.chatInput.stopUnconfirmed': '尚未确认停止，请重试。',
   'chat.response.rateLimit': '已触发提供商请求频率限制',

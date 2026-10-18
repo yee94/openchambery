@@ -2,8 +2,15 @@ import type { I18nKey } from './en';
 import { settingsDict } from './pt-BR.settings';
 
 export const dict: Record<I18nKey, string> = {
-  'mobile.notifications.service': 'Notificações em segundo plano',
-  'mobile.notifications.unavailable': 'Notificações indisponíveis. Abra o aplicativo para verificar as permissões e a conexão com o servidor.',
+  'mobile.notifications.service': 'Serviço de notificações de tarefas em segundo plano',
+  'mobile.notifications.connected': 'Mantendo a conexão para receber notificações de tarefas enquanto o aplicativo está em segundo plano.',
+  'mobile.notifications.unavailable': 'Não foi possível iniciar as notificações em segundo plano. Reabra o aplicativo e tente novamente.',
+  'mobile.notifications.auth': 'O acesso às notificações foi negado. Reconecte ou emparelhe este servidor novamente.',
+  'mobile.notifications.endpoint': 'Endpoint de notificações não encontrado. Atualize e reinicie o OpenChamber no computador; se já estiver atualizado, confira o caminho do proxy.',
+  'mobile.notifications.response': 'O servidor não retornou um fluxo de notificações válido. Confira a versão do aplicativo no computador e a configuração do proxy.',
+  'mobile.notifications.server': 'O servidor está temporariamente indisponível ou ocupado. Uma nova tentativa será feita automaticamente.',
+  'mobile.notifications.relay': 'A conexão de retransmissão está indisponível. Verifique se o OpenChamber no computador está online; uma nova tentativa será feita automaticamente.',
+  'mobile.notifications.identity': 'A identidade do servidor não corresponde ao dispositivo emparelhado. Reconecte ou emparelhe novamente.',
   'mobile.notifications.gap': 'Algumas notificações podem ter sido perdidas durante a desconexão. Abra o aplicativo para conferir os resultados das tarefas.',
   'chat.chatInput.stopUnconfirmed': 'A interrupção ainda não foi confirmada. Tente novamente.',
   'chat.response.rateLimit': 'Limite de frequência de solicitações do provedor atingido',
