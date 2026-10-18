@@ -165,9 +165,10 @@ placement still follow this specification.
 - Cards at or below 32rem stack field labels above controls; Boolean rows keep
   their compact label/value layout. Container width, not viewport width,
   determines whether a form has room for side-by-side columns.
-- About rows keep content-sized labels and right-aligned values on one line
-  at every width. Update actions use the full row width without a value-column
-  cap; feedback sits above the full-width update button.
+- About version and export rows keep content-sized labels and right-aligned
+  values on one line at every width. Action containers use the full row width
+  without a value-column cap; buttons stay content-sized and right-aligned.
+  Boolean rows retain the shared SettingsToggleRow layout.
 - Scheduled-task entity editors keep compact label/value rows on one line at
   narrow widths. Cron previews and preset collections use full-width detail
   rows; an empty task title shows a red bottom border for required validation.

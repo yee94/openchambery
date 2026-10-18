@@ -281,7 +281,7 @@ export const AboutSettings: React.FC<AboutSettingsProps> = ({ initialUpdateDialo
             </span>
           </SettingsRow>
           <SettingsRow className="oc-settings-split-row-stacked" copyClassName="hidden">
-            <div className="flex w-full flex-col items-end gap-2">
+            <div className="flex w-full flex-wrap items-center justify-end gap-2">
               <Button asChild variant="outline" size="sm" className="whitespace-nowrap" data-settings-item="about.feedback">
                 <a href={GITHUB_ISSUES_URL} target="_blank" rel="noopener noreferrer">
                   <Icon name="question" className="size-4" />
@@ -293,7 +293,7 @@ export const AboutSettings: React.FC<AboutSettingsProps> = ({ initialUpdateDialo
                 type="button"
                 variant="default"
                 size="sm"
-                className="w-full whitespace-nowrap"
+                className="whitespace-nowrap"
                 onClick={() => setUpdateDialogOpen(true)}
                 data-settings-item="about.check-updates"
               >
@@ -309,7 +309,7 @@ export const AboutSettings: React.FC<AboutSettingsProps> = ({ initialUpdateDialo
                 type="button"
                 variant="outline"
                 size="sm"
-                className="w-full whitespace-nowrap"
+                className="whitespace-nowrap"
                 onClick={() => updateStore.checkForUpdates()}
                 data-settings-item="about.check-updates"
                 disabled={isChecking}
