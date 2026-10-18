@@ -3320,6 +3320,16 @@ export async function forkSession(sessionId: string, operationId: number, messag
       return false
     }
 
+    if (forkedSession.title?.startsWith('[Scheduled]')) {
+      forkedSession = await opencodeClient.updateSession(forkedSession.id, {
+        title: forkedSession.title.replace(/^\[Scheduled\]\s*/, ''),
+      }, directory)
+      if (!isCurrentFork()) {
+        if (activeForkCopy?.operationId === operationId) activeForkCopy = null
+        return false
+      }
+    }
+
     // Sidebar + route first: the loading shell binds to this id so the source
     // chat is operable again if the user navigates back during reset/load.
     const current = store.getState()

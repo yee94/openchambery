@@ -1859,6 +1859,7 @@ async function main(options = {}) {
     persistSettings,
     normalizeTunnelSessionTtlMs,
     authorizeManagedOpenCodeBridgeRequest: managedCapabilitiesRuntime.authorizeManagedOpenCodeBridgeRequest,
+    getScheduledTaskSkillAuthHeaders: () => openCodeLifecycleRuntime.isSharedOpenCodeService() ? getOpenCodeAuthHeaders() : {},
     sayTTSCapability,
     ensurePushInitialized,
     ensureGlobalWatcherStarted,

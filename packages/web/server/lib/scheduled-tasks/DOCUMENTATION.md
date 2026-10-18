@@ -10,6 +10,53 @@ Server-owned scheduled task runtime and routes for OpenChamber-only automation.
 - This module is OpenChamber feature logic; it is intentionally separate from OpenCode proxy/runtime internals.
 - Prompt and goal execution preserve hash-prefixed text literally; no snippet discovery or expansion occurs before dispatch.
 
+## Built-in new-session skill
+
+`session-skill.js` intercepts new `POST /api/session` admissions on a Host using
+the local official shared OpenCode service. It preserves the official `{ data }`
+HTTP envelope and uses the official client to create the session and put one
+`openchamber.scheduled-task` instruction entry. This is an on-demand built-in
+workflow, not a globally installed native `skill` registration: the entry names
+one `describe` command; its result supplies `SESSION_SKILL.md` and bound
+create/list commands. No repository/global OpenCode files are modified. Existing
+sessions and sessions created directly in OpenCode are not enrolled.
+
+The self-contained helper is published atomically into a content-addressed Host
+data directory, including for packaged/OTA backends. The Host runs the exact
+helper's `check` before installing the instruction. It reads the existing shared
+service registration credential internally; no password/token is placed in
+instructions, arguments, task JSON or tool output. Browser/password/client auth
+continues to protect session creation. The reserved bridge accepts only local,
+non-browser POSTs with the current shared-service Basic credential, and then
+checks the authoritative session's Host binding. That credential does not grant
+access through ordinary UI routes. Credentials are re-read on every invocation.
+
+The bridge resolves project ownership from `session.location.directory`, not
+model-supplied IDs or shell cwd. Create defaults come from the current session
+model/agent, then its location's model default. The bridge dispatches into the
+same project CRUD router as the UI, retaining catalog checks, write guards and
+scheduler sync semantics. The create-only flag prevents replacing an existing
+ID. Unknown writes report the generated ID for read-back and are never retried;
+`schedulerSynced:false` remains committed success.
+
+Failed capability preparation fails admission visibly. A confirmed newly created
+session is removed on failure; if removal cannot be confirmed (or the caller
+provided an explicit session ID), the response includes the retained session ID.
+No unrelated session is removed. Registration/auth problems are detected before
+the model can be offered a non-working entry.
+
+Web, Electron, hosted-mobile and Capacitor clients share this Host path. Electron
+uses its executable in `ELECTRON_RUN_AS_NODE` mode; the helper lives outside the
+application archive. Windows command descriptions use a hidden PowerShell
+wrapper. External/cross-machine OpenCode and VS Code's extension-owned server
+do not receive this local capability; private managed mode retains its existing
+managed-plugin path. Fork/import and existing sessions are not retrofitted.
+The Host must remain running to serve the skill and schedule tasks.
+
+`session-skill.test.js` covers real password-enabled Host auth, the advertised
+subprocess commands, durable task read-back, project isolation, caller-independent
+model defaults, denied origins/credentials, preflight failures and rollback.
+
 ## Files
 
 - `packages/web/server/lib/scheduled-tasks/runtime.js`
@@ -55,6 +102,7 @@ Server-owned scheduled task runtime and routes for OpenChamber-only automation.
   - Returns persisted mutations with `schedulerSynced`; failed scheduler syncs
     schedule one bounded retry without including task prompts in logs
   - Exports `registerScheduledTaskToolRoute(app, dependencies)`
+  - Shares `selectScheduledTaskProject()` with the new-session bridge.
 
 - `packages/web/server/lib/scheduled-tasks/managed-tool-contract.js`
   - Exports `MANAGED_SCHEDULED_TASK_TOOL_PATH`
