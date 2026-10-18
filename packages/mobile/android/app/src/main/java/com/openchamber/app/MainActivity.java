@@ -30,6 +30,7 @@ public class MainActivity extends BridgeActivity {
         registerPlugin(OpenChamberVirtualAssetPlugin.class);
         registerPlugin(OpenChamberMediaPlugin.class);
         registerPlugin(OpenChamberPhysicalScalePlugin.class);
+        registerPlugin(OpenChamberNotificationsPlugin.class);
         super.onCreate(savedInstanceState);
         dispatchShare(getIntent());
         // After the Keyboard plugin installs its root animation callback, remove

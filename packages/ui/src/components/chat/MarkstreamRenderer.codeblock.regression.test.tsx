@@ -28,7 +28,6 @@ vi.mock('@/stores/useUIStore', () => {
   const state = {
     codeBlockLineWrap: false,
     setCodeBlockLineWrap: () => undefined,
-    mermaidRenderingMode: 'svg' as const,
     openContextPreview: () => undefined,
   };
   return {
@@ -201,7 +200,15 @@ describe('MarkstreamRenderer fenced code blocks (OpenChamber chrome)', () => {
     const block = container.querySelector('[data-markdown="mermaid-block"]');
     expect(block).toBeTruthy();
     expect(block?.getAttribute('data-md-source')).toContain('flowchart LR');
+    expect(block?.getAttribute('data-mermaid-render')).toBe('svg');
+    expect(block?.querySelector('svg.pele-flowchart')).not.toBeNull();
     expect(container.querySelector('[data-component="markdown-code"]')).toBeNull();
+  });
+
+  test('renders Pele chart types through the same Markdown path', async () => {
+    await render({ content: '```mermaid\npie\n "完成" : 42\n "待办" : 12\n```' });
+    await flush(200);
+    expect(container.querySelector('[data-markdown="mermaid-block"] svg.pele-pie')).not.toBeNull();
   });
 
   test('uses OpenChamber markdown-code chrome, not markstream default toolbar, and keeps source text', async () => {

@@ -4,6 +4,7 @@ import { getRegisteredRuntimeAPIs } from '@/contexts/runtimeAPIRegistry';
 import { useI18nStore } from '@/lib/i18n';
 import { getClientPlatform } from '@/lib/platform';
 import { useUIStore } from '@/stores/useUIStore';
+import { canUseAndroidNotifications } from '@/lib/native-android-notifications';
 
 /**
  * Registers the native iOS/Android device token with the connected server so the app can
@@ -24,6 +25,7 @@ import { useUIStore } from '@/stores/useUIStore';
 // returns the right token per platform. The token is sent to the server tagged with its platform
 // so the relay routes it to APNs vs FCM.
 const isNativePushPlatform = (): boolean => {
+  if (canUseAndroidNotifications()) return false;
   if (typeof window === 'undefined') return false;
   const capacitor = (window as typeof window & { Capacitor?: { getPlatform?: () => string } }).Capacitor;
   const platform = capacitor?.getPlatform?.();

@@ -142,6 +142,15 @@ export const createNotificationTriggerRuntime = (deps) => {
   // Visibility on any other client never suppresses delivery — every subscribed
   // surface gets the push.
   const fanoutPush = (payload, options = {}) => Promise.all([
+    Promise.resolve().then(() => deps.sendNativeNotification?.({
+      title: payload.title,
+      body: payload.body,
+      tag: payload.tag,
+      kind: payload.data?.type,
+      sessionId: payload.data?.sessionId,
+      assistantID: payload.data?.assistantID,
+      requireHidden: true,
+    })).catch(() => { console.warn('[Native notifications] fanout failed'); }),
     Promise.resolve(sendPushToAllUiSessions?.(payload, options)).catch((error) => {
       console.warn('[Push] web-push fanout failed:', error?.message ?? error);
     }),
@@ -551,10 +560,6 @@ export const createNotificationTriggerRuntime = (deps) => {
           return;
         }
 
-        if (settings.notificationMode !== 'always' && getIsWindowFocused?.()) {
-          return;
-        }
-
         let title = 'Task completed';
         let body = '';
         let sessionName = '';
@@ -588,7 +593,7 @@ export const createNotificationTriggerRuntime = (deps) => {
         }
 
         if (!isCurrent()) return false;
-        if (settings.nativeNotificationsEnabled) {
+        if (settings.nativeNotificationsEnabled && (settings.notificationMode === 'always' || !getIsWindowFocused?.())) {
           const notificationPayload = {
             title,
             body,
@@ -653,10 +658,6 @@ export const createNotificationTriggerRuntime = (deps) => {
           return;
         }
 
-        if (settings.notificationMode !== 'always' && getIsWindowFocused?.()) {
-          return;
-        }
-
         const prompt = readNotificationEventFields(payload);
         const header = prompt.header;
         const questionText = prompt.questionText;
@@ -683,7 +684,7 @@ export const createNotificationTriggerRuntime = (deps) => {
           if (!body) body = sessionName || 'Session';
         }
 
-        if (settings.nativeNotificationsEnabled) {
+        if (settings.nativeNotificationsEnabled && (settings.notificationMode === 'always' || !getIsWindowFocused?.())) {
           const notificationPayload = {
             kind: 'question',
             title,
@@ -776,10 +777,6 @@ export const createNotificationTriggerRuntime = (deps) => {
           return;
         }
 
-        if (settings.notificationMode !== 'always' && getIsWindowFocused?.()) {
-          return;
-        }
-
         const sessionTitle = payload.properties?.sessionTitle ?? payload.data?.sessionTitle;
         const permissionText = typeof permission === 'string' && permission.length > 0 ? permission : '';
         const detail = permissionFields.message;
@@ -807,7 +804,7 @@ export const createNotificationTriggerRuntime = (deps) => {
           if (!body) body = sessionName || fallbackMessage || 'Session';
         }
 
-        if (settings.nativeNotificationsEnabled) {
+        if (settings.nativeNotificationsEnabled && (settings.notificationMode === 'always' || !getIsWindowFocused?.())) {
           const notificationPayload = {
             kind: 'permission',
             title,
@@ -883,12 +880,36 @@ export const createNotificationTriggerRuntime = (deps) => {
     },
   });
 
+  const nativeFailures = new Map();
   const maybeSendPushForTrigger = async (payload) => {
     maybeCacheSessionMetaFromPayload(payload);
     const event = completionEvent(payload);
     if (event) {
+      if (event.kind === 'running' || payload.type === 'session.deleted') nativeFailures.delete(event.sessionId);
       await familyCompletion.observe(event, payload);
       if (event.kind === 'complete') return;
+      const failed = payload.type === 'session.execution.failed' || payload.type === 'session.error'
+        || (payload.type === 'message.updated' && payload.properties?.info?.finish === 'error');
+      if (failed && !nativeFailures.has(event.sessionId)) {
+        const marker = {};
+        nativeFailures.set(event.sessionId, marker);
+        if (nativeFailures.size > 1024) nativeFailures.delete(nativeFailures.keys().next().value);
+        try {
+          const settings = await readSettingsFromDisk();
+          const directory = extractDirectoryFromPayload(payload);
+          if (settings.notifyOnCompletion !== false && !await shouldSkipSystemSessionNotification(event.sessionId, directory)) {
+            const variables = await buildTemplateVariables(payload, event.sessionId);
+            const body = await resolvePushSessionName(variables, event.sessionId, directory);
+            if (nativeFailures.get(event.sessionId) === marker) await deps.sendNativeNotification?.({
+              title: 'Task failed', body, tag: `error-${event.sessionId}`, kind: 'error',
+              sessionId: event.sessionId, directory, requireHidden: true,
+            });
+          }
+        } catch {
+          if (nativeFailures.get(event.sessionId) === marker) nativeFailures.delete(event.sessionId);
+          console.warn('[Native notifications] failure alert unavailable');
+        }
+      }
     }
     return deliverTrigger(payload);
   };
@@ -1046,6 +1067,7 @@ export const createNotificationTriggerRuntime = (deps) => {
     maybeSendPushForTrigger,
     dispose: () => {
       familyCompletion.dispose();
+      nativeFailures.clear();
       for (const timer of pushQuestionDebounceTimers.values()) clearTimeout(timer);
       for (const entry of pushPermissionDebounceTimers.values()) clearTimeout(entry.timer);
       pushQuestionDebounceTimers.clear();

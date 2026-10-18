@@ -39,6 +39,14 @@ const createTestHelpersWithRealSanitizers = () => {
 };
 
 describe('settings helpers', () => {
+  it('ignores retired Mermaid rendering modes in updates and stored settings', () => {
+    const helpers = createTestHelpers();
+    for (const mermaidRenderingMode of ['ascii', 'svg', null, {}, 'invalid']) {
+      expect(helpers.sanitizeSettingsUpdate({ mermaidRenderingMode, userMessageRenderingMode: 'plain' }))
+        .toEqual({ userMessageRenderingMode: 'plain' });
+      expect(helpers.formatSettingsResponse({ mermaidRenderingMode })).not.toHaveProperty('mermaidRenderingMode');
+    }
+  });
   it('round-trips Magpie settings, clears optional URLs and rejects credential-bearing URLs', () => {
     const helpers = createTestHelpersWithRealSanitizers();
     const input = { magpieUsageUrl: 'https://gateway.example/proxy/v1', magpieHiddenProviders: ['magpie:a:claude'] };

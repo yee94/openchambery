@@ -2,6 +2,9 @@ import type { I18nKey } from './en';
 import { settingsDict } from './pl.settings';
 
 export const dict: Record<I18nKey, string> = {
+  'mobile.notifications.service': 'Powiadomienia w tle',
+  'mobile.notifications.unavailable': 'Powiadomienia są niedostępne. Otwórz aplikację, aby sprawdzić uprawnienia i połączenie z serwerem.',
+  'mobile.notifications.gap': 'Podczas rozłączenia mogły zostać pominięte niektóre powiadomienia. Otwórz aplikację, aby sprawdzić wyniki zadań.',
   'chat.chatInput.stopUnconfirmed': 'Zatrzymanie nie zostało jeszcze potwierdzone. Spróbuj ponownie.',
   'chat.response.rateLimit': 'Osiągnięto limit częstotliwości żądań dostawcy',
   'chat.response.auth': 'Uwierzytelnianie dostawcy nie powiodło się. Zaloguj się ponownie i spróbuj jeszcze raz.',

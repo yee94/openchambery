@@ -55,6 +55,7 @@ export const registerNotificationRoutes = (app, dependencies) => {
     isUiVisible,
     getUiNotificationClients,
     writeSseEvent,
+    connectNativeNotifications,
     getSessionActivitySnapshot,
     getSessionStateSnapshot,
     getSessionAttentionSnapshot,
@@ -267,6 +268,22 @@ export const registerNotificationRoutes = (app, dependencies) => {
       ok: true,
       visible: isUiVisible(uiToken),
     });
+  });
+
+  app.get('/api/notifications/native-stream', async (req, res) => {
+    const uiToken = uiAuthController?.ensureSessionToken
+      ? await uiAuthController.ensureSessionToken(req, res)
+      : getUiSessionTokenFromRequest(req);
+    if (!uiToken) {
+      if (!res.headersSent) res.status(401).json({ error: 'UI session missing' });
+      return;
+    }
+    if (!connectNativeNotifications) return res.status(503).json({ error: 'Notifications unavailable' });
+    await ensureSessionWatcher();
+    const authorize = req.headers.authorization && uiAuthController?.resolveAuthContext
+      ? async () => Boolean(await uiAuthController.resolveAuthContext(req, res, { allowClientAuth: true, allowUrlToken: false }))
+      : undefined;
+    connectNativeNotifications(req, res, authorize);
   });
 
   app.get('/api/notifications/stream', async (req, res) => {

@@ -227,19 +227,6 @@ const DIFF_LAYOUT_OPTIONS: Option<'dynamic' | 'inline' | 'side-by-side'>[] = [
     },
 ];
 
-const MERMAID_RENDERING_OPTIONS: Option<'svg' | 'ascii'>[] = [
-    {
-        id: 'svg',
-        labelKey: 'settings.openchamber.visual.option.mermaidRendering.svg.label',
-        descriptionKey: 'settings.openchamber.visual.option.mermaidRendering.svg.description',
-    },
-    {
-        id: 'ascii',
-        labelKey: 'settings.openchamber.visual.option.mermaidRendering.ascii.label',
-        descriptionKey: 'settings.openchamber.visual.option.mermaidRendering.ascii.description',
-    },
-];
-
 const DEFAULT_PWA_INSTALL_NAME = 'OpenChamber - AI Coding Assistant';
 const PWA_ORIENTATION_OPTIONS: Option<'system' | 'portrait' | 'landscape'>[] = [
     {
@@ -388,7 +375,7 @@ const normalizeUserMessageRenderingMode = (mode: unknown): 'markdown' | 'plain' 
     return mode === 'markdown' ? 'markdown' : 'plain';
 };
 
-type VisibleSetting = 'questionAutoDelegate' | 'sessionAssist' | 'sessionGoal' | 'theme' | 'sidebarBrand' | 'pwaInstallName' | 'pwaOrientation' | 'mobileKeyboardMode' | 'timeFormat' | 'weekStart' | 'iosNativeUi' | 'fontSize' | 'codeFontSize' | 'terminalFontSize' | 'editorFontSize' | 'spacing' | 'inputBarOffset' | 'mermaidRendering' | 'userMessageRendering' | 'chatRenderMode' | 'messageTransport' | 'activityRenderMode' | 'collapsibleUserMessages' | 'stickyUserHeader' | 'promptNavigatorEnabled' | 'wideChatLayout' | 'codeBlockLineWrap' | 'splitAssistantMessageActions' | 'showAssistantTps' | 'subagentReadOnlyBanner' | 'diffLayout' | 'mobileStatusBar' | 'dotfiles' | 'fileViewerPreview' | 'reasoning' | 'showToolFileIcons' | 'showTurnChangedFiles' | 'showSubagentTaskDetails' | 'expandedTools' | 'followUpBehavior' | 'terminalQuickKeys' | 'fileEditorKeymap' | 'persistDraft' | 'inputSpellcheck' | 'reportUsage' | 'expandedEditorToolbar';
+type VisibleSetting = 'questionAutoDelegate' | 'sessionAssist' | 'sessionGoal' | 'theme' | 'sidebarBrand' | 'pwaInstallName' | 'pwaOrientation' | 'mobileKeyboardMode' | 'timeFormat' | 'weekStart' | 'iosNativeUi' | 'fontSize' | 'codeFontSize' | 'terminalFontSize' | 'editorFontSize' | 'spacing' | 'inputBarOffset' | 'userMessageRendering' | 'chatRenderMode' | 'messageTransport' | 'activityRenderMode' | 'collapsibleUserMessages' | 'stickyUserHeader' | 'promptNavigatorEnabled' | 'wideChatLayout' | 'codeBlockLineWrap' | 'splitAssistantMessageActions' | 'showAssistantTps' | 'subagentReadOnlyBanner' | 'diffLayout' | 'mobileStatusBar' | 'dotfiles' | 'fileViewerPreview' | 'reasoning' | 'showToolFileIcons' | 'showTurnChangedFiles' | 'showSubagentTaskDetails' | 'expandedTools' | 'followUpBehavior' | 'terminalQuickKeys' | 'fileEditorKeymap' | 'persistDraft' | 'inputSpellcheck' | 'reportUsage' | 'expandedEditorToolbar';
 
 interface OpenChamberVisualSettingsProps {
     /** Which settings to show. If undefined, shows all. */
@@ -417,8 +404,6 @@ export const OpenChamberVisualSettings: React.FC<OpenChamberVisualSettingsProps>
     const collapsibleThinkingBlocks = useUIStore(state => state.collapsibleThinkingBlocks);
     const setCollapsibleThinkingBlocks = useUIStore(state => state.setCollapsibleThinkingBlocks);
 
-    const mermaidRenderingMode = useUIStore(state => state.mermaidRenderingMode);
-    const setMermaidRenderingMode = useUIStore(state => state.setMermaidRenderingMode);
     const userMessageRenderingMode = useUIStore(state => state.userMessageRenderingMode);
     const setUserMessageRenderingMode = useUIStore(state => state.setUserMessageRenderingMode);
     const collapsibleUserMessages = useUIStore(state => state.collapsibleUserMessages);
@@ -647,11 +632,6 @@ export const OpenChamberVisualSettings: React.FC<OpenChamberVisualSettingsProps>
         void updateDesktopSettings({ activityRenderMode: mode });
     }, [setActivityRenderMode]);
 
-    const handleMermaidRenderingModeChange = React.useCallback((mode: 'svg' | 'ascii') => {
-        setMermaidRenderingMode(mode);
-        void updateDesktopSettings({ mermaidRenderingMode: mode });
-    }, [setMermaidRenderingMode]);
-
     const handleShowToolFileIconsChange = React.useCallback((enabled: boolean) => {
         setShowToolFileIcons(enabled);
         void updateDesktopSettings({ showToolFileIcons: enabled });
@@ -746,8 +726,7 @@ export const OpenChamberVisualSettings: React.FC<OpenChamberVisualSettingsProps>
         : (shouldShow('theme') || shouldShow('sidebarBrand') || shouldShow('pwaInstallName') || shouldShow('pwaOrientation') || shouldShow('mobileKeyboardMode') || shouldShow('timeFormat') || shouldShow('weekStart') || showIosNativeUiSetting);
     const hasLayoutSettings = shouldShow('fontSize') || shouldShow('codeFontSize') || shouldShow('terminalFontSize') || shouldShow('editorFontSize') || shouldShow('spacing') || shouldShow('inputBarOffset');
     const hasNavigationSettings = (shouldShow('terminalQuickKeys') && !isMobile) || shouldShow('fileEditorKeymap') || shouldShow('expandedEditorToolbar');
-    const hasBehaviorSettings = shouldShow('mermaidRendering')
-        || shouldShow('questionAutoDelegate')
+    const hasBehaviorSettings = shouldShow('questionAutoDelegate')
         || shouldShow('userMessageRendering')
         || shouldShow('chatRenderMode')
         || shouldShow('messageTransport')
@@ -1697,7 +1676,7 @@ export const OpenChamberVisualSettings: React.FC<OpenChamberVisualSettingsProps>
                 {hasBehaviorSettings && (
                     <div className="oc-settings-section-stack">
 
-                                                        {(shouldShow('userMessageRendering') || shouldShow('mermaidRendering') || shouldShow('chatRenderMode') || shouldShow('messageTransport') || (shouldShow('activityRenderMode') && chatRenderMode === 'sorted') || (shouldShow('diffLayout') && !isVSCode) || shouldShow('followUpBehavior')) && (
+                                                        {(shouldShow('userMessageRendering') || shouldShow('chatRenderMode') || shouldShow('messageTransport') || (shouldShow('activityRenderMode') && chatRenderMode === 'sorted') || (shouldShow('diffLayout') && !isVSCode) || shouldShow('followUpBehavior')) && (
                                 <div className="grid w-full grid-cols-1 gap-y-[var(--oc-settings-section-stack-gap)]">
                                     {shouldShow('chatRenderMode') && (
                                         <ResponsiveSettingsGroup
@@ -1888,29 +1867,6 @@ export const OpenChamberVisualSettings: React.FC<OpenChamberVisualSettingsProps>
                                                             onSelect={() => handleUserMessageRenderingModeChange(option.id)}
                                                             label={tUnsafe(option.labelKey)}
                                                             ariaLabel={t('settings.openchamber.visual.field.userMessageRenderingAria', { option: tUnsafe(option.labelKey) })}
-                                                        />
-                                                    );
-                                                })}
-                                            </div>
-                                        </ResponsiveSettingsGroup>
-                                    )}
-
-                                    {shouldShow('mermaidRendering') && (
-                                        <ResponsiveSettingsGroup
-                                            isMobile={isMobile}
-                                            label={t('settings.openchamber.visual.section.mermaidRendering')}
-                                            className="w-full"
-                                        >
-                                            <div role="radiogroup" aria-label={t('settings.openchamber.visual.section.mermaidRenderingAria')}>
-                                                {MERMAID_RENDERING_OPTIONS.map((option) => {
-                                                    const selected = mermaidRenderingMode === option.id;
-                                                    return (
-                                                        <SettingsRadioOption
-                                                            key={option.id}
-                                                            selected={selected}
-                                                            onSelect={() => handleMermaidRenderingModeChange(option.id)}
-                                                            label={tUnsafe(option.labelKey)}
-                                                            ariaLabel={t('settings.openchamber.visual.field.mermaidRenderingAria', { option: tUnsafe(option.labelKey) })}
                                                         />
                                                     );
                                                 })}

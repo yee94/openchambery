@@ -40,7 +40,7 @@ function interceptedFenceIndexKey(language: string, code: string): string {
  * markstream-react resolves mermaid / d2 / infographic before the code_block
  * override and renders its own diagram nodes. Those need optional peers we do
  * not install. Send them through MarkdownRendererImpl instead: mermaid still
- * becomes a beautiful-mermaid diagram; d2 and infographic stay code cards,
+ * becomes a Pele diagram; d2 and infographic stay code cards,
  * matching the previous renderer. The library calls this without indexKey.
  */
 export function MarkstreamInterceptedFenceNode(props: MarkstreamCodeBlockProps) {

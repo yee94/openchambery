@@ -2,6 +2,9 @@ import type { I18nKey } from './en';
 import { settingsDict } from './ja.settings';
 
 export const dict: Record<I18nKey, string> = {
+  'mobile.notifications.service': 'バックグラウンド通知',
+  'mobile.notifications.unavailable': '通知を利用できません。アプリを開いて権限とサーバー接続を確認してください。',
+  'mobile.notifications.gap': '切断中に一部の通知を受信できなかった可能性があります。アプリでタスクの結果を確認してください。',
   'chat.chatInput.stopUnconfirmed': '停止をまだ確認できていません。もう一度お試しください。',
   'chat.response.rateLimit': 'プロバイダーのリクエスト頻度制限に達しました',
   'chat.response.auth': 'プロバイダーの認証に失敗しました。再度ログインしてお試しください。',

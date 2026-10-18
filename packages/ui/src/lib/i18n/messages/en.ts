@@ -1,6 +1,9 @@
 import { settingsDict } from './en.settings';
 
 export const dict = {
+  'mobile.notifications.service': 'Background notifications',
+  'mobile.notifications.unavailable': 'Notifications unavailable. Open the app to check permissions and the server connection.',
+  'mobile.notifications.gap': 'Some notifications may have been missed while disconnected. Open the app to check task results.',
   'chat.chatInput.stopUnconfirmed': 'Stop is not confirmed yet. Please try again.',
   'chat.response.rateLimit': 'Provider rate limit reached',
   'chat.response.auth': 'Provider authentication failed. Sign in again and retry.',

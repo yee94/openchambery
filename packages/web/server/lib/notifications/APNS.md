@@ -197,7 +197,10 @@ the banner reads like a normal contact. To hide even that from Apple would requi
 **encrypted payload** (`mutable-content` + a Notification Service Extension that decrypts
 on-device with a key never sent to the relay) — not implemented.
 
-## Android (FCM) note
+## Android notification delivery
 
-The Android equivalent is **FCM** (not implemented): the same relay would forward to FCM with a
-server key, and the client would register an FCM token (same store/routes + signing).
+FCM delivery is not implemented. Current Android shells use `OpenChamberNotificationService`,
+a native foreground service subscribing to the Host's authenticated notification-only SSE
+over direct HTTP or the existing E2EE relay. It emits local Android notifications without
+Firebase or manufacturer push accounts. See `packages/mobile/README.md` → Native Android
+Background Notifications for permission, reconnect, replay and process-lifetime limits.

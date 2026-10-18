@@ -1,5 +1,9 @@
 # Sync architecture, event handling & store update rules
 
+## Native Android notification ownership
+
+`apps/useAndroidNotifications.ts` controls an Android-only native foreground service through `lib/native-android-notifications.ts`. It observes the existing notification toggle, runtime-endpoint changes and auth generations, not live session stores. Temporary UI SSE disconnects never stop the native receiver. Endpoint/auth changes immediately stop the old credentials and fence delayed config reads; auth invalidation cannot restart the old connection. Native receives only notification events from the selected Host (direct or native E2EE relay), handles replay/backoff and local alerts, and keeps working while WebView JS is suspended. The normal global event pipeline remains the UI's sync owner. See `packages/mobile/README.md` for runtime limitations and verification.
+
 ## Scheduled-task foreground compensation
 
 The shared `openchamberEvents` transport reconnects after a hidden→visible gap,

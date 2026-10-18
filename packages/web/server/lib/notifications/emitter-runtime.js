@@ -1,3 +1,5 @@
+import { createNativeNotificationStream } from './native-stream.js';
+
 // Align with relay-server per-connection queue cap (2 MiB).
 export const SSE_CLIENT_MAX_BUFFERED_BYTES = 2 * 1024 * 1024;
 
@@ -37,6 +39,7 @@ const destroySseClientForBackpressure = (res) => {
 };
 
 export const createNotificationEmitterRuntime = (dependencies) => {
+  const nativeStream = createNativeNotificationStream();
   const {
     process,
     getDesktopNotifyEnabled,
@@ -178,6 +181,8 @@ export const createNotificationEmitterRuntime = (dependencies) => {
   };
 
   return {
+    connectNativeNotifications: nativeStream.connect,
+    publishNativeNotification: nativeStream.publish,
     writeSseEvent,
     emitDesktopNotification,
     broadcastUiNotification,

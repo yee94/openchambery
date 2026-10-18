@@ -2,6 +2,9 @@ import type { I18nKey } from './en';
 import { settingsDict } from './ko.settings';
 
 export const dict: Record<I18nKey, string> = {
+  'mobile.notifications.service': '백그라운드 알림',
+  'mobile.notifications.unavailable': '알림을 사용할 수 없습니다. 앱을 열어 권한과 서버 연결을 확인하세요.',
+  'mobile.notifications.gap': '연결이 끊긴 동안 일부 알림을 놓쳤을 수 있습니다. 앱에서 작업 결과를 확인하세요.',
   'chat.chatInput.stopUnconfirmed': '아직 중지가 확인되지 않았습니다. 다시 시도해 주세요.',
   'chat.response.rateLimit': '공급자 요청 빈도 제한에 도달했습니다',
   'chat.response.auth': '공급자 인증에 실패했습니다. 다시 로그인한 후 재시도하세요.',

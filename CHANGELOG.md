@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [2.0.11-beta.15] - 2026-10-19
+
+### 新增
+
+- Android 支持独立于聊天页面的原生后台通知连接，接收当前服务器的任务完成、失败、提问、权限请求和助理消息；支持直连与加密 Relay 回退、断线重连及短时通知补收。需更新 Android 安装包和 Host 服务。
+
+### 改进
+
+- Mermaid 图表统一使用 Pele 渲染，扩展支持的图表类型，保留主题适配、缩放、源码复制及 SVG 下载；移除 ASCII 渲染选项并自动清理旧设置。
+
 ## [2.0.11-beta.14] - 2026-10-18
 
 ### 修复

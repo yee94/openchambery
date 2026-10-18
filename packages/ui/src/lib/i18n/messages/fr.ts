@@ -1,6 +1,9 @@
 import { settingsDict } from './fr.settings';
 
 export const dict = {
+  'mobile.notifications.service': 'Notifications en arrière-plan',
+  'mobile.notifications.unavailable': 'Notifications indisponibles. Ouvrez l’application pour vérifier les autorisations et la connexion au serveur.',
+  'mobile.notifications.gap': 'Certaines notifications ont pu être manquées pendant la déconnexion. Ouvrez l’application pour consulter les résultats des tâches.',
   'chat.chatInput.stopUnconfirmed': 'L’arrêt n’est pas encore confirmé. Veuillez réessayer.',
   'chat.response.rateLimit': 'Limite de requêtes du fournisseur atteinte',
   'chat.response.auth': 'Échec de l’authentification du fournisseur. Reconnectez-vous et réessayez.',

@@ -247,7 +247,7 @@ describe('mermaidViewer', () => {
   });
 
   test('viewer signature distinguishes render mode flips and missing SVGs', () => {
-    expect(getMermaidViewerSignature({ renderMode: 'ascii' })).toBe('ascii:no-svg');
+    expect(getMermaidViewerSignature({ renderMode: 'source' })).toBe('source:no-svg');
     expect(getMermaidViewerSignature({ renderMode: 'svg' })).toBe('svg:no-svg');
   });
 

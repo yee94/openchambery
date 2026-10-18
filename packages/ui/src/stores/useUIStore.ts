@@ -22,7 +22,6 @@ export type MainTab = 'chat' | 'git' | 'diff' | 'terminal' | 'files' | 'diagram'
 export type PendingDiffScope = 'working' | 'staged' | 'turn';
 export type RightSidebarTab = 'git' | 'files' | 'browser';
 export type ContextPanelMode = 'diff' | 'file-diff' | 'file' | 'context' | 'chat' | 'preview' | 'browser' | 'btw';
-export type MermaidRenderingMode = 'svg' | 'ascii';
 export type UserMessageRenderingMode = 'markdown' | 'plain';
 type SelectorOpenOptions = { instant?: boolean };
 export type ChatRenderMode = 'sorted' | 'live';
@@ -869,7 +868,6 @@ interface UIStore {
   timeFormatPreference: TimeFormatPreference;
   weekStartPreference: WeekStartPreference;
   desktopWindowControlsPosition: DesktopWindowControlsPosition;
-  mermaidRenderingMode: MermaidRenderingMode;
   userMessageRenderingMode: UserMessageRenderingMode;
   collapsibleUserMessages: boolean;
   stickyUserHeader: boolean;
@@ -1056,7 +1054,6 @@ interface UIStore {
   setTimeFormatPreference: (value: TimeFormatPreference) => void;
   setWeekStartPreference: (value: WeekStartPreference) => void;
   setDesktopWindowControlsPosition: (value: DesktopWindowControlsPosition) => void;
-  setMermaidRenderingMode: (value: MermaidRenderingMode) => void;
   setUserMessageRenderingMode: (value: UserMessageRenderingMode) => void;
   setCollapsibleUserMessages: (value: boolean) => void;
   setStickyUserHeader: (value: boolean) => void;
@@ -1234,7 +1231,6 @@ export const useUIStore = create<UIStore>()(
         timeFormatPreference: 'auto',
         weekStartPreference: 'auto',
         desktopWindowControlsPosition: 'auto',
-        mermaidRenderingMode: 'svg',
         userMessageRenderingMode: 'markdown',
         collapsibleUserMessages: true,
         stickyUserHeader: false,
@@ -2705,9 +2701,6 @@ export const useUIStore = create<UIStore>()(
         setDesktopWindowControlsPosition: (value) => {
           set({ desktopWindowControlsPosition: value });
         },
-        setMermaidRenderingMode: (value) => {
-          set({ mermaidRenderingMode: value });
-        },
         setUserMessageRenderingMode: (value) => {
           set({ userMessageRenderingMode: value });
         },
@@ -2837,12 +2830,13 @@ export const useUIStore = create<UIStore>()(
       {
         name: 'ui-store',
         storage: createDeferredSafeJSONStorage(),
-        version: 13,
+        version: 14,
         migrate: (persistedState, version) => {
           if (!persistedState || typeof persistedState !== 'object') {
             return persistedState;
           }
           const state = persistedState as Record<string, unknown>;
+          delete state.mermaidRenderingMode;
 
           // v11 -> v12: one-shot upgrade of legacy compact-chat defaults.
           migrateCompactChatDefaultsForPersistVersion(state, version);
@@ -3035,7 +3029,6 @@ export const useUIStore = create<UIStore>()(
           timeFormatPreference: state.timeFormatPreference,
           weekStartPreference: state.weekStartPreference,
           desktopWindowControlsPosition: state.desktopWindowControlsPosition,
-          mermaidRenderingMode: state.mermaidRenderingMode,
           userMessageRenderingMode: state.userMessageRenderingMode,
           collapsibleUserMessages: state.collapsibleUserMessages,
           stickyUserHeader: state.stickyUserHeader,

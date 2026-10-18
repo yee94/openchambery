@@ -2,6 +2,9 @@ import type { I18nKey } from './en';
 import { settingsDict } from './zh-CN.settings';
 
 export const dict: Record<I18nKey, string> = {
+  'mobile.notifications.service': '后台通知',
+  'mobile.notifications.unavailable': '通知暂不可用，请打开应用检查权限和服务器连接。',
+  'mobile.notifications.gap': '断线期间可能遗漏了部分通知，请打开应用查看任务结果。',
   'chat.chatInput.stopUnconfirmed': '尚未确认停止，请重试。',
   'chat.response.rateLimit': '已触发提供商请求频率限制',
   'chat.response.auth': '提供商身份验证失败，请重新登录后重试。',

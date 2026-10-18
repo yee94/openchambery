@@ -11,7 +11,7 @@ import { markdownHeightCacheKey, recallMarkdownHeight } from './markdown/markdow
 
 // Thin lazy wrapper around the MarkdownRenderer implementation.
 // The full implementation (marked + Shiki highlighting + KaTeX + morphdom
-// DOM morphing, plus beautiful-mermaid) is loaded on demand, keeping the
+// DOM morphing, plus Pele) is loaded on demand, keeping the
 // initial bundle lean.
 
 const MarkdownRendererLazy = lazyWithChunkRecovery(() =>
