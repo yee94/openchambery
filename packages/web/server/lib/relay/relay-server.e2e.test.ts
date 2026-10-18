@@ -22,8 +22,12 @@ import { opencodeClient } from '../../../../ui/src/lib/opencode/client.ts';
 import { configureRuntimeUrlResolver, getRuntimeUrlResolver, setRuntimeUrlResolver } from '../../../../ui/src/lib/runtime-url.ts';
 import { setRuntimeBearerToken } from '../../../../ui/src/lib/runtime-auth.ts';
 import { adoptRelayTunnel, deactivateRelayTunnel } from '../../../../ui/src/lib/relay/runtime-tunnel.ts';
+import { acquireRuntimeImage } from '../../../../ui/src/lib/runtime-image-cache.ts';
+import { NATIVE_RELAY_ASSET_BRIDGE_KEY } from '../../../../ui/src/lib/relay/native-asset-bridge.ts';
+import { resetRelayImageStreamForTests } from '../../../../ui/src/lib/relay/relay-image-stream.ts';
 
 const timeoutMs = 10_000;
+const previewPng = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aD1sAAAAASUVORK5CYII=', 'base64');
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 const eventually = async (predicate: () => boolean | Promise<boolean>, message: string, timeout = timeoutMs) => {
@@ -207,6 +211,17 @@ const startOrigin = async () => {
         });
         return;
       }
+      if (pathname === '/api/fs/raw' && req.method === 'GET') {
+        await uiAuth.requireAuth(req, res, () => {
+          const filePath = new URL(req.url ?? '/', 'http://origin').searchParams.get('path');
+          if (filePath !== '/remote/icons-zoom.png' || !req.headers['x-openchamber-relay-connection']) {
+            res.status(404).end(); return;
+          }
+          res.writeHead(200, { 'content-type': 'image/png' });
+          res.end(previewPng);
+        });
+        return;
+      }
       if (pathname === '/api/e2e/sse' && req.method === 'GET') {
         await uiAuth.requireAuth(req, res, async () => {
           bearerRequests.push(String(req.headers.authorization ?? ''));
@@ -364,7 +379,27 @@ describe('private relay compiled-process boundary', () => {
       adoptRelayTunnel({ relayUrl: relay.url, serverId: identity.serverId, hostEncPubJwk: identity.hostEncPubJwk }, client);
       const agents = await sdk.agent.list({ location: { directory: '/remote/worktrees/project/feature' } });
       expect(agents.data[0].name).toBe('Remote Build');
+      const received: Uint8Array[] = [];
+      let ended = false;
+      let released = false;
+      Object.assign(globalThis, { [NATIVE_RELAY_ASSET_BRIDGE_KEY]: {
+        openAsset: async ({ assetId }: { assetId: string }) => ({ assetId, url: `openchamber-asset://v/${assetId}` }),
+        writeChunk: async (_id: string, bytes: Uint8Array) => { received.push(bytes.slice()); },
+        endAsset: async () => { ended = true; },
+        abortAsset: async () => {},
+        releaseAsset: async () => { released = true; },
+      } });
+      const deniedImage = await client.fetch('/api/fs/raw?path=%2Fremote%2Ficons-zoom.png');
+      expect(deniedImage.status).toBe(401);
+      const image = await acquireRuntimeImage('/remote/icons-zoom.png', new AbortController().signal, 'preview');
+      expect(image.url).toMatch(/^openchamber-asset:\/\/v\//);
+      await eventually(() => ended, 'relay image did not finish writing to native bridge');
+      expect(Buffer.concat(received)).toEqual(previewPng);
+      image.release();
+      await eventually(() => released, 'native image lease was not released');
     } finally {
+      resetRelayImageStreamForTests();
+      Reflect.deleteProperty(globalThis, NATIVE_RELAY_ASSET_BRIDGE_KEY);
       deactivateRelayTunnel();
       setRuntimeBearerToken(null);
       setRuntimeUrlResolver(previousResolver);

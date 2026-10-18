@@ -11,6 +11,7 @@ import { ScrollShadow } from '@/components/ui/ScrollShadow';
 import { Icon } from '@/components/icon/Icon';
 import { FileTypeIcon } from '@/components/icons/FileTypeIcon';
 import { SimpleMarkdownRenderer } from '@/components/chat/MarkdownRenderer';
+import { useResolvedImageResource } from '@/components/chat/imageSource';
 import type { ToolPopupContent } from '@/components/chat/message/types';
 import { TextSelectionMenu } from '@/components/chat/message/TextSelectionMenu';
 import { PIERRE_RUNTIME_BASE_CSS } from '@/components/views/PierreDiffViewer';
@@ -28,7 +29,7 @@ import type { FileSearchResult } from '@/lib/api/types';
 import { getRuntimeUrlResolver } from '@/lib/runtime-url';
 import { acquireRuntimeUrlAuthToken, refreshRuntimeUrlAuthToken, subscribeRuntimeUrlAuthToken } from '@/lib/runtime-auth';
 import { runtimeFetch } from '@/lib/runtime-fetch';
-import { getRuntimeApiBaseUrl, getRuntimeTransportIdentity } from '@/lib/runtime-switch';
+import { getRuntimeApiBaseUrl } from '@/lib/runtime-switch';
 import { isRelayModeActive } from '@/lib/relay/runtime-tunnel';
 import { useFileContentQuery, useFileDirectoryQuery, useFileSearchQuery, useFileStatWatcher } from '@/queries/fileQueries';
 import { cn } from '@/lib/utils';
@@ -80,13 +81,6 @@ const formatFileSize = (size?: number): string => {
     value /= 1024;
   }
   return '';
-};
-
-const getImageSrc = (path: string): string => {
-  if (path.toLowerCase().endsWith('.svg')) {
-    return '';
-  }
-  return getRuntimeUrlResolver().authenticatedAsset('/api/fs/raw', { path });
 };
 
 const isMarkdownFile = (path: string): boolean => /\.(md|mdx|markdown)$/i.test(path);
@@ -535,102 +529,27 @@ const MobileFileDetail: React.FC<{
   // selected inside the file preview, including PierreFile's shadow DOM.
   const contentContainerRef = React.useRef<HTMLDivElement>(null);
   const imagePath = isImageFile(path) && !path.toLowerCase().endsWith('.svg') ? path : '';
-  const runtimeTransportIdentity = getRuntimeTransportIdentity();
-  const relayImageKey = imagePath && isRelayModeActive()
-    ? `${runtimeTransportIdentity}|${imagePath}`
-    : '';
-  const imageAuthKey = imagePath && !relayImageKey
-    ? `${runtimeTransportIdentity}|${imagePath}`
-    : '';
-  const [imageAuthReadyKey, setImageAuthReadyKey] = React.useState('');
-  const [relayImageSrc, setRelayImageSrc] = React.useState('');
-  const [relayImageError, setRelayImageError] = React.useState<string | null>(null);
-  const [isRelayImageLoading, setRelayImageLoading] = React.useState(false);
+  const imageResource = useResolvedImageResource(imagePath, getParentDirectory(path) ?? '', 'preview');
+  const [failedImageSrc, setFailedImageSrc] = React.useState('');
   const [imagePopup, setImagePopup] = React.useState<ToolPopupContent>({
     open: false,
     title: '',
     content: '',
   });
 
-  React.useEffect(() => {
-    if (!imageAuthKey) {
-      setImageAuthReadyKey('');
-      return;
-    }
-
-    let cancelled = false;
-    setImageAuthReadyKey('');
-    void refreshRuntimeUrlAuthToken(getRuntimeApiBaseUrl())
-      .then((token) => {
-        if (!cancelled && token) setImageAuthReadyKey(imageAuthKey);
-      })
-      .catch(() => {});
-
-    return () => {
-      cancelled = true;
-    };
-  }, [imageAuthKey]);
-
-  React.useEffect(() => {
-    if (!relayImageKey) {
-      setRelayImageSrc('');
-      setRelayImageError(null);
-      setRelayImageLoading(false);
-      return;
-    }
-
-    let cancelled = false;
-    let objectUrl = '';
-    setRelayImageSrc('');
-    setRelayImageError(null);
-    setRelayImageLoading(true);
-
-    void runtimeFetch('/api/fs/raw', { query: { path: imagePath } })
-      .then(async (response) => {
-        if (!response.ok) {
-          throw new Error(t('filesView.error.readFileFailed'));
-        }
-        return response.blob();
-      })
-      .then((blob) => {
-        objectUrl = URL.createObjectURL(blob);
-        if (cancelled) {
-          URL.revokeObjectURL(objectUrl);
-          return;
-        }
-        setRelayImageSrc(objectUrl);
-      })
-      .catch((fetchError: unknown) => {
-        if (!cancelled) {
-          setRelayImageError(fetchError instanceof Error ? fetchError.message : t('filesView.error.readFileFailed'));
-        }
-      })
-      .finally(() => {
-        if (!cancelled) {
-          setRelayImageLoading(false);
-        }
-      });
-
-    return () => {
-      cancelled = true;
-      if (objectUrl) {
-        URL.revokeObjectURL(objectUrl);
-      }
-    };
-  }, [imagePath, relayImageKey, t]);
-
-  const imageAuthLoading = Boolean(imageAuthKey && imageAuthReadyKey !== imageAuthKey);
-  const imageSrc = relayImageKey ? relayImageSrc : imageAuthLoading ? '' : getImageSrc(path);
-  const imageError = error ?? relayImageError;
+  const imageSrc = imageResource.source;
   const imageFilename = getNameFromPath(path);
   const imageDataUrl = isImageFile(path)
     ? `data:${getImageMimeType(path)};utf8,${encodeURIComponent(content)}`
     : '';
   const previewImageSrc = imageSrc || (isImageFile(path) && content ? imageDataUrl : '');
+  const imageError = error ?? imageResource.error
+    ?? (previewImageSrc && failedImageSrc === previewImageSrc ? t('filesView.error.readFileFailed') : null);
+  const handleImageError = useEvent(() => setFailedImageSrc(previewImageSrc));
 
   const openImagePreview = useEvent(() => {
-    // Prefer the filesystem path so the shared viewer can resolve/save via runtime stream;
-    // fall back to the already-materialized display URL (relay blob / data URL).
+    // One-use native streams cannot serve a second reader. Pass the source path
+    // so fullscreen acquires its own stream (desktop disk leases remain shared).
     const url = imagePath || previewImageSrc;
     if (!url) return;
     setImagePopup({
@@ -767,7 +686,7 @@ const MobileFileDetail: React.FC<{
           htmlFullscreen && typeof document !== 'undefined'
             ? createPortal(htmlViewer, document.body)
             : htmlViewer
-        ) : isLoading || imageAuthLoading || isRelayImageLoading ? (
+        ) : isLoading || imageResource.loading ? (
           <MobileFilesState loading message={t('filesView.state.loading')} />
         ) : imageError ? (
           <MobileFilesState message={imageError} />
@@ -783,7 +702,8 @@ const MobileFileDetail: React.FC<{
                 src={previewImageSrc}
                 alt={imageFilename}
                 className="mx-auto max-h-full max-w-full rounded-lg object-contain"
-                draggable={false}
+                 draggable={false}
+                 onError={handleImageError}
               />
             </button>
           </ScrollShadow>

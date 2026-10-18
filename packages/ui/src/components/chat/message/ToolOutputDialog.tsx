@@ -35,7 +35,7 @@ import { useEffectiveDirectory } from '@/hooks/useEffectiveDirectory';
 import { useMobileBackRoute } from '@/mobile/mobileBackNavigation';
 import { blobFromImageElement } from '../imageSave';
 import { openImageSaveActions } from '../imageSaveActionsBus';
-import { useResolvedImageSource } from '../imageSource';
+import { useResolvedImageResource } from '../imageSource';
 import {
     IMAGE_VIEWER_MAX_SCALE,
     IMAGE_VIEWER_TAP_MOVE_THRESHOLD,
@@ -440,7 +440,12 @@ const ImagePreviewDialog: React.FC<{
     }, [gallery, popup.image?.index, popup.image?.url, popup.open]);
 
     const currentImage = gallery[currentIndex] ?? gallery[0] ?? popup.image;
-    const displayImageSource = useResolvedImageSource(currentImage?.url ?? '', effectiveDirectory);
+    const imageResource = useResolvedImageResource(currentImage?.url ?? '', effectiveDirectory, 'preview');
+    const displayImageSource = imageResource.source;
+    const imageDisplayKey = `${imageResource.key}\n${displayImageSource}`;
+    const [failedImageKey, setFailedImageKey] = React.useState('');
+    const hasImageError = Boolean(imageResource.error || failedImageKey === imageDisplayKey);
+    const handleImageError = useEvent(() => setFailedImageKey(imageDisplayKey));
     const imageAccessibleLabel = currentImage?.filename || popup.title;
     const hasMultipleImages = gallery.length > 1;
 
@@ -931,7 +936,7 @@ const ImagePreviewDialog: React.FC<{
                 onPointerCancel={(event) => finishPointer(event, true)}
                 onLostPointerCapture={(event) => finishPointer(event, true)}
             >
-                {!imageLoaded && (
+                {!imageLoaded && !hasImageError && (
                     <div className="pointer-events-none absolute inset-0 flex items-center justify-center" role="status">
                         <span className="flex items-center gap-2 typography-ui-label opacity-70">
                             <Icon name="loader-4" className="size-4 animate-spin" />
@@ -939,7 +944,11 @@ const ImagePreviewDialog: React.FC<{
                         </span>
                     </div>
                 )}
-                <img
+                {hasImageError ? (
+                    <p role="status" className="px-6 text-center typography-ui-label">
+                        {t('filesView.error.readFileFailed')}
+                    </p>
+                ) : <img
                     ref={imageRef}
                     src={displayImageSource || undefined}
                     alt={imageAccessibleLabel ?? ''}
@@ -951,7 +960,8 @@ const ImagePreviewDialog: React.FC<{
                     loading="lazy"
                     draggable={false}
                     onLoad={handleImageLoad}
-                />
+                    onError={handleImageError}
+                />}
             </div>
 
             <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10 flex justify-center px-2 pb-[max(0.5rem,env(safe-area-inset-bottom))]">
