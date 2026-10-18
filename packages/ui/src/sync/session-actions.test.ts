@@ -2061,7 +2061,7 @@ describe("updateSessionTitle live state", () => {
     const intentCall = replyCalls.find((call) => call.method === "session.update" && call.params.metadata)
     expect(intentCall?.params.metadata).toMatchObject({ openchamber: { titleAuthority: {
       sessionID: "session-a", title: "New Title", source: "manual", revision: expect.any(String),
-    } } })
+    }, titleRefresh: { isGenerating: null, requestedAt: null, lastError: null, failedAt: null } } })
     expect(updateCall?.params.directory).toBe("/test/project")
     expect(globalUpsertedSessions).toEqual([updatedSession])
     expect(sessionStore.getState().session[0].title).toBe("New Title")
@@ -2083,7 +2083,7 @@ describe("requestSessionSmartTitle", () => {
       time: { created: 1, updated: 1 },
       metadata: {
         openchamber: {
-          titleRefresh: { lastAutoTitle: "prior" },
+          titleRefresh: { lastAutoTitle: "prior", isGenerating: true, requestedAt: 1 },
         },
       },
     } as unknown as Session
@@ -2115,6 +2115,9 @@ describe("requestSessionSmartTitle", () => {
     expect(updateCall?.params.sessionID).toBe("session-a")
     expect(updateCall?.params.directory).toBe("/test/project")
     expect(updateCall?.params.title).toBe(undefined)
+    expect(updateCall?.params.metadata).toMatchObject({ openchamber: { titleRefresh: {
+      isGenerating: null, lastError: null, failedAt: null,
+    } } })
     const titleRefresh = (
       updateCall?.params.metadata as {
         openchamber?: { titleRefresh?: { lastAutoTitle?: string; requestedAt?: number } }

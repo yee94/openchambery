@@ -61,6 +61,9 @@ Live session list equality includes the title-refresh presentation fields
 `isGenerating`, `lastError`, and `failedAt`. Metadata-only completion must release
 the sidebar title shimmer even when the title is unchanged and execution remains
 busy. Recency ticks and unrelated metadata do not invalidate that list.
+Manual rename explicitly clears title-refresh loading, pending requests and errors.
+Smart-title retry clears stale loading/errors with merge-patch nulls while writing
+the new request, so an old persisted loading flag cannot block admission.
 
 OpenChamber manual rename first persists `openchamber.titleAuthority` with a new
 revision, then updates the official session title. This revision fences in-flight

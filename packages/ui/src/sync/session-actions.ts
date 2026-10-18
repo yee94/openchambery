@@ -1393,6 +1393,10 @@ export async function updateSessionTitle(sessionId: string, title: string): Prom
         titleAuthority: { sessionID: sessionId, title, revision: createUuid(), source: "manual" },
         titleRefresh: {
           activityUpdatedAt,
+          isGenerating: null,
+          requestedAt: null,
+          lastError: null,
+          failedAt: null,
         },
       },
     },
@@ -1426,6 +1430,9 @@ export async function requestSessionSmartTitle(sessionId: string): Promise<void>
         titleRefresh: {
           ...(lastAutoTitle ? { lastAutoTitle } : {}),
           requestedAt: Date.now(),
+          isGenerating: null,
+          lastError: null,
+          failedAt: null,
         },
       },
     },
