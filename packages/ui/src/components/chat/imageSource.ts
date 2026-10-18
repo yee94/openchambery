@@ -1,5 +1,5 @@
 import React from 'react';
-import { acquireRuntimeImage } from '@/lib/runtime-image-cache';
+import { acquireRuntimeImage, type RuntimeImageIntent } from '@/lib/runtime-image-cache';
 import { getRuntimeAuthGeneration, subscribeRuntimeAuthGeneration } from '@/lib/runtime-auth';
 import { getRuntimeTransportIdentity, subscribeRuntimeEndpointChanged } from '@/lib/runtime-switch';
 import { isAbsoluteFilePath, normalizeFilePath, toAbsoluteFilePath } from '@/lib/path-utils';
@@ -147,7 +147,8 @@ export const useRuntimeTransportIdentity = (): string => React.useSyncExternalSt
 /**
  * Local file paths and file:// URLs cannot be assigned to img.src under web /
  * packaged desktop (openchamber-ui://) or Capacitor origins. Hook consumers use
- * leased native disk assets; runtimes without that capability keep a placeholder.
+ * leased native disk assets for inline loads. Explicit previews can also use the
+ * one-use native stream (or an object URL in browser-only runtimes).
  */
 export const needsRuntimeImageStream = (
   resolved: ReturnType<typeof resolveImageSource>,
@@ -162,7 +163,7 @@ const subscribeImageAuth = (onStoreChange: () => void): (() => void) => (
   subscribeRuntimeAuthGeneration(() => onStoreChange())
 );
 
-export const useResolvedImageSource = (source: string, effectiveDirectory: string): string => {
+export const useResolvedImageResource = (source: string, effectiveDirectory: string, intent: RuntimeImageIntent = 'inline') => {
   const authGeneration = React.useSyncExternalStore(subscribeImageAuth, getRuntimeAuthGeneration, getRuntimeAuthGeneration);
   const transportIdentity = React.useSyncExternalStore(
     subscribeTransport,
@@ -174,39 +175,52 @@ export const useResolvedImageSource = (source: string, effectiveDirectory: strin
     [effectiveDirectory, source],
   );
   const usesRuntimeFileSource = needsRuntimeImageStream(resolved);
-  const resolutionKey = `${transportIdentity}\n${authGeneration}\n${effectiveDirectory}\n${source}`;
+  const resolutionKey = `${transportIdentity}\n${authGeneration}\n${effectiveDirectory}\n${source}\n${intent}`;
   const immediateSource = usesRuntimeFileSource ? '' : resolved.source;
+  const immediateLoading = usesRuntimeFileSource;
   const [display, setDisplay] = React.useState({
     key: resolutionKey,
     source: immediateSource,
+    loading: immediateLoading,
+    error: null as string | null,
   });
 
   React.useEffect(() => {
     if (!usesRuntimeFileSource || !needsRuntimeImageStream(resolved)) {
-      setDisplay({ key: resolutionKey, source: resolved.source });
+      setDisplay({ key: resolutionKey, source: resolved.source, loading: false, error: null });
       return;
     }
 
-    setDisplay({ key: resolutionKey, source: '' });
+    setDisplay({ key: resolutionKey, source: '', loading: true, error: null });
 
     const controller = new AbortController();
     let release: (() => void) | undefined;
-    void acquireRuntimeImage(resolved.path, controller.signal)
+    void acquireRuntimeImage(resolved.path, controller.signal, intent)
       .then((lease) => {
         if (controller.signal.aborted || getRuntimeTransportIdentity() !== transportIdentity) {
           lease.release();
           return;
         }
         release = lease.release;
-        setDisplay({ key: resolutionKey, source: lease.url });
+        setDisplay({ key: resolutionKey, source: lease.url, loading: false, error: null });
       })
-      .catch(() => undefined);
+      .catch((error: unknown) => {
+        if (!controller.signal.aborted) {
+          setDisplay({ key: resolutionKey, source: '', loading: false, error: error instanceof Error ? error.message : 'Image source request failed' });
+        }
+      });
 
     return () => {
       controller.abort();
       release?.();
     };
-  }, [resolutionKey, resolved, transportIdentity, usesRuntimeFileSource]);
+  }, [resolutionKey, resolved, transportIdentity, usesRuntimeFileSource, intent]);
 
-  return display.key === resolutionKey ? display.source : immediateSource;
+  return display.key === resolutionKey
+    ? display
+    : { key: resolutionKey, source: immediateSource, loading: immediateLoading, error: null };
 };
+
+export const useResolvedImageSource = (source: string, effectiveDirectory: string, intent: RuntimeImageIntent = 'inline'): string => (
+  useResolvedImageResource(source, effectiveDirectory, intent).source
+);

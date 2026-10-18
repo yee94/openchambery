@@ -6,7 +6,9 @@ import { getRuntimeAuthGeneration, getRuntimeBearerTokenSync, subscribeRuntimeAu
 import { runtimeFetch } from './runtime-fetch';
 import { normalizeFilePath } from './path-utils';
 import { getNativeImageCacheBridge } from './relay/native-asset-bridge';
+import { releaseRelayImageDisplayUrl, streamRelayImageDisplayUrl } from './relay/relay-image-stream';
 
+export type RuntimeImageIntent = 'inline' | 'preview';
 type RuntimeImageLease = { url: string; release: () => void };
 type Resource = { url: string; release: () => Promise<void> };
 type Flight = { refs: number; controller: AbortController; promise: Promise<Resource>; resource?: Resource };
@@ -26,11 +28,40 @@ export const clearRuntimeImageCacheLeases = (): void => {
   for (const [key, flight] of flights) dispose(key, flight);
 };
 
-/** Version-checked, single-flight native resources. Unmount releases a lease, not disk bytes. */
-export const acquireRuntimeImage = (path: string, signal: AbortSignal): Promise<RuntimeImageLease> => {
+const acquirePreviewStream = async (path: string, signal: AbortSignal): Promise<RuntimeImageLease> => {
+  const controller = new AbortController();
+  const abort = () => controller.abort();
+  signal.addEventListener('abort', abort, { once: true });
+  const generation = getRuntimeGeneration();
+  const auth = getRuntimeAuthGeneration();
+  let url = '';
+  let released = false;
+  const release = () => {
+    if (released) return;
+    released = true;
+    signal.removeEventListener('abort', abort);
+    controller.abort();
+    if (url) releaseRelayImageDisplayUrl(url);
+  };
+  try {
+    url = await streamRelayImageDisplayUrl(path, controller.signal);
+    if (signal.aborted || generation !== getRuntimeGeneration() || auth !== getRuntimeAuthGeneration()) {
+      throw new DOMException('Image request superseded', 'AbortError');
+    }
+    return { url, release };
+  } catch (error) {
+    release();
+    throw error;
+  }
+};
+
+/** Inline loads require native disk caching. Explicit previews may use the existing one-use native stream. */
+export const acquireRuntimeImage = (path: string, signal: AbortSignal, intent: RuntimeImageIntent = 'inline'): Promise<RuntimeImageLease> => {
   if (signal.aborted) return Promise.reject(new DOMException('Aborted', 'AbortError'));
   const bridge = getNativeImageCacheBridge();
-  if (!bridge) return Promise.resolve({ url: '', release: () => {} });
+  if (!bridge) return intent === 'preview'
+    ? acquirePreviewStream(path, signal)
+    : Promise.resolve({ url: '', release: () => {} });
   if (!subscribed) {
     subscribed = true;
     subscribeRuntimeEndpointChanged(clearRuntimeImageCacheLeases);

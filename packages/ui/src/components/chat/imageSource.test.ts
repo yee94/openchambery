@@ -133,7 +133,7 @@ describe('image source contracts', () => {
     expect(helperSource).toContain('needsRuntimeImageStream(resolved)');
     expect(helperSource).toContain('const usesRuntimeFileSource = needsRuntimeImageStream(resolved)');
     expect(helperSource).toContain('controller.abort()');
-    expect(helperSource).toContain('acquireRuntimeImage(resolved.path, controller.signal)');
+    expect(helperSource).toContain('acquireRuntimeImage(resolved.path, controller.signal, intent)');
     expect(helperSource).toContain('lease.release()');
   });
 
@@ -225,7 +225,8 @@ describe('image source contracts', () => {
     expect(attachmentSource).toContain("import { useResolvedImageSource,");
     expect(attachmentSource).toContain('source={file.url}');
     expect(attachmentSource).toContain('url: file.url');
-    expect(dialogSource).toContain("import { useResolvedImageSource } from '../imageSource'");
+    expect(dialogSource).toContain("import { useResolvedImageResource } from '../imageSource'");
+    expect(dialogSource).toContain("effectiveDirectory, 'preview'");
     expect(dialogSource).toContain('src={displayImageSource || undefined}');
   });
 

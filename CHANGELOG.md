@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [2.0.11-beta.7] - 2026-10-18
+
+### 修复
+
+- 修复移动端通过 Relay 打开文件图片和全屏预览时图片加载失败的问题，统一复用原生图片通道；主动预览不再受桌面缓存能力限制。
+- 图片请求或解码失败时显示错误提示，关闭预览时取消请求并释放资源。
+
 ## [2.0.11-beta.6] - 2026-10-18
 
 ### 修复
