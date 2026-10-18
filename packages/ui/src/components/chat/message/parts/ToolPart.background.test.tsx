@@ -63,6 +63,33 @@ test.each(['completed', 'error'])('tool elapsed time survives projection, remoun
     expect(host.textContent).toContain('12.0s');
 });
 
+test.each([
+    [59_000, '59.0s'],
+    [60_000, '1.0m'],
+    [301_000, '5.0m'],
+    [825_000, '13.8m'],
+    [7_200_000, '120.0m'],
+] as const)('shell duration displays %s ms without a cap', async (elapsed, expected) => {
+    live.store = createStore(() => ({ status: { type: 'busy' } as SessionStatus }));
+    live.messages = [];
+    vi.spyOn(Date, 'now').mockReturnValue(1_000 + elapsed);
+    const host = document.createElement('div');
+    document.body.append(host);
+    root = createRoot(host);
+    for (const status of ['running', 'completed'] as const) {
+        const part = {
+            id: 'tool-clock', sessionID: 'ses_parent', messageID: 'msg_parent',
+            type: 'tool', tool: 'shell', callID: 'call-clock',
+            state: {
+                status, input: { command: 'pwd' }, metadata: {}, output: '', title: 'Shell',
+                time: { start: 1_000, ...(status === 'completed' ? { end: 1_000 + elapsed } : {}) },
+            },
+        } as ToolPartType;
+        await act(async () => root!.render(<ToolPart part={part} isExpanded={false} onToggle={() => {}} isMobile />));
+        expect(host.textContent).toContain(expected);
+    }
+});
+
 test.each(['session.tool.success', 'session.tool.failed'])('late live tool timing replaces missing timing and stays fixed after %s', async (terminalEvent) => {
     live.store = createStore(() => ({ status: { type: 'busy' } as SessionStatus }));
     live.messages = [];

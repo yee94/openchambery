@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [2.0.11-beta.6] - 2026-10-18
+
+### 修复
+
+- 修复命令运行计时停在 300 秒的问题，移除显示上限；满一分钟后自动以分钟显示，保留一位小数。
+
 ## [2.0.11-beta.5] - 2026-10-18
 
 ### 改进

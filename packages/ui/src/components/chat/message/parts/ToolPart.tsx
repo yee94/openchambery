@@ -260,7 +260,6 @@ const normalizeToolName = (toolName: string | undefined | null): string => {
     return last;
 };
 
-const MAX_DURATION_MS = 5 * 60 * 1000; // 5 minutes cap
 const GIT_REFRESH_MUTATING_TOOLS = new Set([
     'bash',
     'edit',
@@ -286,8 +285,12 @@ const isWriteLikeNavTool = (toolName: string): boolean => (
 );
 
 const formatDuration = (start: number, end?: number, now: number = Date.now()) => {
-    const duration = Math.min(Math.max(0, (end ?? now) - start), MAX_DURATION_MS);
+    const duration = Math.max(0, (end ?? now) - start);
     const seconds = duration / 1000;
+
+    if (seconds >= 60) {
+        return `${(seconds / 60).toFixed(1)}m`;
+    }
 
     const displaySeconds = seconds < 0.05 && end !== undefined ? 0.1 : seconds;
     return `${displaySeconds.toFixed(1)}s`;
