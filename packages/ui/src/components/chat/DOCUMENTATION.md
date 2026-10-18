@@ -1,5 +1,9 @@
 # Chat components
 
+## Composer pointer focus boundary
+
+`composerFocus.preventComposerActionPointerFocus` owns the mobile form's capture policy. Toolbar actions inside the actual composer DOM prevent default focus and mark the composer gesture; the textarea and attachment controls retain their existing exceptions. React portal events still traverse the parent form, so the handler must check `currentTarget.contains(target)` before applying this policy. Model/agent pickers and other portaled dialogs own their inputs independently: do not cancel their pointerdown or compensate with manual pointerup focus. `MobileWindowMotion.focus.test.tsx` exercises this production handler with the real portaled picker, including toolbar prevention and search permission.
+
 ## Clipboard images
 
 ChatInput prioritizes image bytes from clipboard files/items over accompanying file paths (including clipboard-manager and Electron native paths). Path-only plain text accompanying an image is omitted; accompanying prose is retained. Files take precedence over item representations, with a single preferred PNG/WebP/JPEG/GIF item when macOS exposes format twins. Without image bytes, existing file-reference paste behavior applies; no local path is fetched from a potentially remote runtime. Coverage: `ChatInput.paste.test.ts` executes the production paste callback with controlled clipboard payloads.

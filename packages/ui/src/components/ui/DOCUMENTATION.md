@@ -65,6 +65,8 @@ Both the popup and backdrop are Electron `app-region-no-drag` regions. Portal re
 
 ### Settings picker focus verification
 
+Chat-hosted pickers additionally exercise the production composer pointer capture policy: only DOM-contained toolbar actions may prevent default focus. A portaled search input must keep its pointerdown uncancelled even though React capture propagates to ChatInput. Page/sheet/dialog-only hosts cannot establish this contract.
+
 `MobileWindowMotion.focus.test.tsx` mounts the real model picker, resizable sheet, and Base UI Dialog in happy-dom and checks `document.activeElement` after search activation across page, parent-sheet, and dialog hosts. Touch-order cases additionally require that `pointerup` does not focus early, before the browser's compatibility `mousedown` default action. Real Chromium touch dispatch with a focus-driven keyboard inset reproduces the pre-fix sequence `pointerup → focusin(INPUT) → mousedown(DIV) → focusout(INPUT)`; happy-dom alone does not perform geometry hit-testing or native mouse defaults.
 
 `MobileWindowMotion.android-focus.test.tsx` mounts the exported production `useNativeMobileChrome` hook with the real model panel and sheet. Capacitor SDK calls and unrelated startup server requests are mocked at their boundaries. Native `oc:ime-state` payloads exercise both open and already-closed keyboard paths: settings/search fields retain DOM focus, keyboard geometry clears, and composer dismissal still blurs its own text field. The test also covers input touch jitter and native-close ordering. Run from the repository root:

@@ -103,6 +103,35 @@ test('inline browser images without native support do not auto-download Blob byt
   expect(state.fetch).not.toHaveBeenCalled();
   expect(URL.createObjectURL).not.toHaveBeenCalled();
 });
+
+test('distinct session image paths keep distinct bytes through concurrent loading and component reuse', async () => {
+  const bodies = new Map([
+    ['/workspace/session-a/theme.png', new Uint8Array([11, 12, 13])],
+    ['/workspace/session-b/theme.png', new Uint8Array([21, 22, 23])],
+  ]);
+  state.fetch.mockImplementation(async (_route: string, options: { query: { path: string } }) =>
+    new Response(bodies.get(options.query.path), { headers: { 'content-type': 'image/png' } }));
+  const renderImages = (paths: string[]) => <>{paths.map((src, index) => (
+    <MarkstreamImageNode key={index} node={{ type: 'image', src, alt: src, title: null, raw: `![](${src})` }} />
+  ))}</>;
+  const assertDistinctBodies = () => {
+    const images = [...host.querySelectorAll('img')];
+    expect(new Set(images.map((image) => image.src)).size).toBe(2);
+    for (const image of images) {
+      const id = image.src.split('/').pop();
+      const writes = state.write.mock.calls.filter(([assetId]) => assetId === id);
+      expect(writes).toHaveLength(1);
+      expect(Array.from(writes[0][1] as Uint8Array)).toEqual(Array.from(bodies.get(image.alt)!));
+    }
+  };
+  const paths = [...bodies.keys()];
+  await act(async () => root.render(renderImages(paths)));
+  assertDistinctBodies();
+  await act(async () => root.render(renderImages(paths.reverse())));
+  assertDistinctBodies();
+  expect(state.fetch).toHaveBeenCalledTimes(4);
+  expect(state.release).toHaveBeenCalledTimes(2);
+});
 afterEach(async () => {
   await act(async () => root.unmount()); host.remove(); resetRelayImageStreamForTests();
   vi.restoreAllMocks(); vi.clearAllMocks();

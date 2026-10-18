@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [2.0.11-beta.14] - 2026-10-18
+
+### 修复
+
+- 修复移动端会话中模型选择浮层的搜索框无法聚焦的问题，聊天输入框的工具栏事件拦截不再影响模型、Agent 等浮层中的输入控件。
+
 ## [2.0.11-beta.13] - 2026-10-18
 
 ### 修复
