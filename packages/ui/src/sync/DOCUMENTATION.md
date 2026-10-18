@@ -87,6 +87,11 @@ Verified against client/schema **2.0.23**. Ingress maps `session.retry.scheduled
 
 Fork reads native `message.list` pages through the scoped client, independently of the filtered/rendered window. `before` is exclusive: explicit assistant forks retain subsequent steps and context through the native idle boundary, excluding later compaction/turns; live `/fork` retains its latest user and context carriers before execution. Shell is a separate input boundary. Missing targets, failed/stationary pages and switched runtime/directory fail explicitly. Native records preserve attachments, skills and synthetic/system context on the server; selected-message composer restoration fetches missing/exact attachment bodies. Copied-event suppression uses exact ID membership, never ID order. Focused tests: `session-retry-lifecycle`, `WorkingPlaceholder.retry`, `session-status-snapshot`, `session-move`, `session-fork-boundary`, and the fork cases in `session-actions`.
 
+User forks of scheduled-task conversations persist a title without the leading
+`[Scheduled]` tag before entering the sidebar, preserving the task name and native
+fork suffix. The source task conversation stays isolated. Rename failure fails
+the fork-opening flow rather than reporting a hidden fork as successfully opened.
+
 ## Structured execution error presentation
 
 `summarizeOpenCodeError` preserves native `type` and valid HTTP `status` alongside its existing `name`/bounded `message` fields. The in-memory notification store carries those fields through to `SessionErrorNotice`; failures before an assistant row exists use the same localized error classification as transcript assistant failures. Step-failure SSE and compaction GET/SSE projection also preserve upstream HTTP status, so error details agree before and after reload. Do not flatten structured types into text or infer automatic retries from error codes. Live retry state remains authoritative for countdown/activity; historical interruption and restart notices never start a live spinner.

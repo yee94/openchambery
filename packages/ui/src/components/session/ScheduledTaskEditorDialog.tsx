@@ -658,7 +658,7 @@ const CronScheduleSection: React.FC<{
         <FieldLabel htmlFor="sched-cron" required>{t('sessions.scheduledTasks.editor.cronExpression.label')}</FieldLabel>
         <div
           data-settings-value={groupedPanel ? '' : undefined}
-          className={cn(groupedPanel && 'oc-settings-split-row-control flex-col items-end')}
+          className={cn('min-w-0', groupedPanel && 'oc-settings-split-row-control flex-wrap')}
         >
           <Input
             id="sched-cron"
@@ -671,7 +671,7 @@ const CronScheduleSection: React.FC<{
             className={cn('w-full font-mono', groupedPanel && 'min-w-[140px] text-right')}
           />
           {cronValidation && !cronValidation.valid && cronExpression.trim() ? (
-            <span className="typography-micro text-destructive">
+            <span className="w-full typography-micro text-right text-destructive">
               {t('sessions.scheduledTasks.editor.validation.cronInvalid')}
             </span>
           ) : null}
@@ -679,36 +679,38 @@ const CronScheduleSection: React.FC<{
       </div>
 
       {nextRuns.length > 0 ? (
-        <div className={cn('flex flex-col gap-1', groupedPanel && rowClassName)}>
+        <div className={cn('flex flex-col gap-1', groupedPanel && [rowClassName, 'oc-scheduled-task-detail-row'])}>
           <span className="typography-meta text-muted-foreground">{t('sessions.scheduledTasks.editor.cronExpression.nextRuns')}</span>
           <span
             data-settings-value={groupedPanel ? '' : undefined}
-            className={cn('typography-micro text-foreground', groupedPanel && 'oc-settings-split-row-control text-right')}
+            className="flex min-w-0 flex-wrap gap-x-4 gap-y-1 typography-micro text-muted-foreground"
           >
-            {nextRuns.map(formatNextRun).join(', ')}
+            {nextRuns.map((date) => <span key={date.toISOString()} className="whitespace-nowrap tabular-nums">{formatNextRun(date)}</span>)}
           </span>
         </div>
       ) : null}
 
-      <div className={cn('flex flex-col gap-1', groupedPanel && [rowClassName, 'items-start'])}>
+      <div className={cn('flex flex-col gap-1', groupedPanel && [rowClassName, 'oc-scheduled-task-detail-row'])}>
         <span className="typography-meta text-muted-foreground">{t('sessions.scheduledTasks.editor.cronExpression.examples')}</span>
         <div
           data-settings-value={groupedPanel ? '' : undefined}
-          className={cn('flex flex-wrap gap-1.5', groupedPanel && 'oc-settings-split-row-control justify-end')}
+          className="flex min-w-0 flex-wrap gap-1.5"
         >
           {CRON_EXAMPLES.map((example) => (
-            <button
+            <Button
               key={example.expression}
               type="button"
-              className="inline-flex items-center gap-1.5 rounded-md border border-border px-2 py-1 typography-micro text-foreground hover:bg-interactive-hover"
+              variant="chip"
+              size="xs"
+              aria-pressed={cronExpression.trim() === example.expression}
+              title={example.expression}
               onClick={() => setDraft((prev) => ({
                 ...prev,
                 schedule: { ...prev.schedule, cronExpression: example.expression },
               }))}
             >
-              <span className="font-mono">{example.expression}</span>
-              <span className="text-muted-foreground">{t(example.labelKey as Parameters<typeof t>[0])}</span>
-            </button>
+              {t(example.labelKey as Parameters<typeof t>[0])}
+            </Button>
           ))}
         </div>
       </div>
@@ -1221,7 +1223,9 @@ export function ScheduledTaskEditorDialog(props: {
           onChange={(event) => setDraft((prev) => ({ ...prev, name: event.target.value }))}
           placeholder={t('sessions.scheduledTasks.editor.taskName.placeholder')}
           maxLength={80}
-          className="w-full"
+          required
+          aria-invalid={!draft.name.trim()}
+          className="oc-scheduled-task-title w-full"
         />
       </div>
 
@@ -1843,7 +1847,9 @@ export function ScheduledTaskEditorDialog(props: {
             placeholder={t('sessions.scheduledTasks.editor.taskName.placeholder')}
             aria-label={t('sessions.scheduledTasks.editor.taskName.label')}
             maxLength={80}
-            className="mt-1 !h-9 !min-h-9 border-0 bg-transparent px-0 text-lg font-semibold shadow-none ring-0 hover:!bg-transparent focus:!bg-transparent focus:ring-0"
+            required
+            aria-invalid={!draft.name.trim()}
+            className="oc-scheduled-task-title mt-1 !h-9 !min-h-9 border-0 bg-transparent px-0 text-lg font-semibold shadow-none ring-0 hover:!bg-transparent focus:!bg-transparent focus:ring-0"
           />
         </header>
         <ScrollShadow className="min-h-0 flex-1 overflow-auto [scrollbar-gutter:stable]" size={64} hideTopShadow>
@@ -1913,7 +1919,9 @@ export function ScheduledTaskEditorDialog(props: {
               placeholder={t('sessions.scheduledTasks.editor.taskName.placeholder')}
               aria-label={t('sessions.scheduledTasks.editor.taskName.label')}
               maxLength={80}
-              className="oc-mobile-detail-editor-title min-w-0 flex-1 !h-auto min-h-0 border-0 bg-transparent px-0 py-0 text-xl font-semibold shadow-none ring-0 hover:!bg-transparent focus:!bg-transparent focus:ring-0"
+              required
+              aria-invalid={!draft.name.trim()}
+              className="oc-scheduled-task-title oc-mobile-detail-editor-title min-w-0 flex-1 !h-auto min-h-0 border-0 bg-transparent px-0 py-0 text-xl font-semibold shadow-none ring-0 hover:!bg-transparent focus:!bg-transparent focus:ring-0"
             />
             <Switch
               checked={draft.enabled}

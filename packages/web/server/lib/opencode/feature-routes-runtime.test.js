@@ -51,8 +51,8 @@ describe('feature routes runtime composition', () => {
   it('injects the scheduled-task run history store into scheduled task routes', async () => {
     const source = await fs.readFile(new URL('./feature-routes-runtime.js', import.meta.url), 'utf8');
     expect(source).toMatch(/const \{[\s\S]*runHistoryStore,[\s\S]*\} = routeDependencies;/);
-    expect(source).toMatch(/registerScheduledTaskRoutes\(app, \{[\s\S]*runHistoryStore,/);
-    expect(source).toMatch(/registerScheduledTaskRoutes\(app, \{[\s\S]*buildOpenCodeUrl,[\s\S]*getOpenCodeAuthHeaders,/);
+    expect(source).toMatch(/registerScheduledTaskRoutes\(scheduledTaskRouter, \{[\s\S]*runHistoryStore,/);
+    expect(source).toMatch(/registerScheduledTaskRoutes\(scheduledTaskRouter, \{[\s\S]*buildOpenCodeUrl,[\s\S]*getOpenCodeAuthHeaders,/);
   });
 
   it('registers browser provider routes on the shared host before proxy composition', async () => {

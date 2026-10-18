@@ -1725,6 +1725,24 @@ describe("forkSession input restoration", () => {
     expect(inputState.pendingInputText).toBe("existing draft")
   })
 
+  test("persists a visible title before opening a scheduled-task fork", async () => {
+    const sourceSession = { id: "session-a", title: "[Scheduled] Morning Sync", time: { created: 1 } } as Session
+    mocks.sessionForkResult = { id: "forked-session", title: "[Scheduled] Morning Sync (fork #1)", time: { created: 2 } } as Session
+    mocks.sessionUpdateResult = { data: { ...mocks.sessionForkResult, title: "Morning Sync (fork #1)" } }
+    const sessionStore = createStore({}, { session: [sourceSession], session_status: { "session-a": { type: "idle" } } })
+    const childStores = createChildStores([["/test/project", sessionStore]])
+    const { forkSession, setActionRefs } = await import("./session-actions")
+    setActionRefs(mockSdk as unknown as OpencodeClient, childStores, () => "/current/project")
+
+    await expect(forkSession("session-a", 1)).resolves.toBe(true)
+
+    expect(replyCalls.find((call) => call.method === "session.update")?.params).toMatchObject({
+      sessionID: "forked-session", title: "Morning Sync (fork #1)", directory: "/test/project",
+    })
+    expect(sessionStore.getState().session.find((session) => session.id === "forked-session")?.title).toBe("Morning Sync (fork #1)")
+    expect(sourceSession.title).toBe("[Scheduled] Morning Sync")
+  })
+
   test("copies the full history when the session status entry is missing", async () => {
     const sourceSession = { id: "session-a", title: "Source", time: { created: 1 } } as Session
     const firstUser = { id: "message-a", sessionID: "session-a", role: "user", time: { created: 1 } } as Message

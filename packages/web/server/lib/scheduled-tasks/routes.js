@@ -281,6 +281,9 @@ export const registerScheduledTaskRoutes = (app, dependencies) => {
 
       const taskID = asNonEmptyString(taskInput.id);
       const existingTask = taskID ? await readExistingTask(projectID, taskID) : null;
+      if (req.scheduledTaskCreateOnly === true && existingTask) {
+        return res.status(409).json({ error: 'Task already exists', code: SCHEDULE_CONFLICT_CODE });
+      }
       const guard = scheduledTaskWriteGuard(existingTask, taskInput);
       if (guard.needsCatalog) {
         const refusal = await verifyConnectedModel(project, guard);

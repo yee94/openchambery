@@ -470,6 +470,34 @@
   }
 }
 
+.oc-scheduled-task-form.oc-settings-workspace .oc-settings-split-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  column-gap: 1rem;
+}
+
+.oc-scheduled-task-form .oc-settings-split-row > :first-child {
+  white-space: nowrap;
+}
+
+.oc-scheduled-task-form.oc-settings-workspace .oc-settings-split-row-control {
+  width: 100%;
+  max-width: none;
+  min-width: 0;
+}
+
+.oc-scheduled-task-form.oc-settings-workspace .oc-scheduled-task-detail-row {
+  grid-template-columns: minmax(0, 1fr);
+  row-gap: 0.5rem;
+}
+
+.oc-scheduled-task-title[aria-invalid="true"] {
+  border-bottom: 1px solid var(--status-error) !important;
+  border-radius: 0;
+  box-shadow: none !important;
+}
+
 .oc-settings-workspace-desktop .oc-settings-detail-pane > * {
   min-width: 0;
   min-height: 0;

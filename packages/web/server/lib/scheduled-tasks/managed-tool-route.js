@@ -102,7 +102,7 @@ const userDefaultsForMessage = (messages, messageID) => {
 
 const lexicalPath = (path, value) => typeof value === 'string' && value.trim() ? path.resolve(value.trim()) : null;
 
-const selectProject = async (path, validateDirectoryPath, projects, sessionDirectory, rawDirectories) => {
+export const selectScheduledTaskProject = async (path, validateDirectoryPath, projects, sessionDirectory, rawDirectories) => {
   const candidates = await Promise.all(projects
     .filter((project) => typeof project?.id === 'string' && typeof project?.path === 'string')
     .map(async (project) => {
@@ -227,7 +227,7 @@ export const registerScheduledTaskToolRoute = (app, dependencies) => {
 
       const settings = await readSettingsFromDiskMigrated();
       const projects = sanitizeProjects(settings?.projects || []);
-      const project = await selectProject(path, validateDirectoryPath, Array.isArray(projects) ? projects : [], sessionDirectory, [context.directory, session.directory, context.worktree]);
+      const project = await selectScheduledTaskProject(path, validateDirectoryPath, Array.isArray(projects) ? projects : [], sessionDirectory, [context.directory, session.directory, context.worktree]);
       if (!project) return res.status(404).json({ error: 'Configure a project containing this session directory before managing schedules' });
 
       const messages = await fetchOpenCodeJson({

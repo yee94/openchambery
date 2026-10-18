@@ -217,6 +217,18 @@ This module provides OpenCode server integration utilities for the web server ru
 - `bootstrap-runtime.js` forwards managed bridge authorization to the API auth gate. The reserved bridge path accepts only the current managed-child capability and returns HTTP 403 before UI, tunnel, or client authentication for every other request. `feature-routes-runtime.js` registers the managed scheduled-task bridge before generic OpenCode proxy composition.
 - Capability resources use an application-version and source-content SHA-256 fingerprint directory. The bridge token is a managed OpenCode process capability: every plugin loaded into that process belongs to the trusted-code boundary. External OpenCode receives no managed capability injection or bridge authorization.
 
+### Shared-service new-session skill
+
+`scheduled-tasks/session-skill.js` adds the built-in scheduling entry only to
+new sessions admitted through the Host while using the official shared service.
+It uses the V2 per-session instructions API rather than global config/plugin
+injection. The helper's real authenticated `check` runs before instruction
+installation. `bootstrap-runtime.js` supplies a live shared-service credential
+getter to the reserved skill bridge auth gate; this never bypasses ordinary UI
+auth for other routes. See `scheduled-tasks/DOCUMENTATION.md` for ownership,
+preflight, rollback and runtime coverage. The old managed-child bridge remains
+separate.
+
 ## Public exports (env-config.js)
 - `resolveOpenCodeEnvConfig(options?)`: resolves and validates OpenCode host/port/hostname environment configuration.
 - `OPENCODE_HOST` still requires an explicit port; HTTP `:80` and HTTPS `:443` retain their effective port even when URL normalization removes it. Host precedence, IPv6 and path/query/hash validation are unchanged.

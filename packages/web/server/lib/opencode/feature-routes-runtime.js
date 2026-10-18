@@ -16,6 +16,7 @@ import { registerSettingsUtilityRoutes } from './core-routes.js';
 import { registerProjectIconRoutes } from './project-icon-routes.js';
 import { registerScheduledTaskRoutes } from '../scheduled-tasks/routes.js';
 import { registerScheduledTaskToolRoute } from '../scheduled-tasks/managed-tool-route.js';
+import { registerScheduledTaskSessionSkill } from '../scheduled-tasks/session-skill.js';
 import { registerConversationRoutes } from '../conversations/routes.js';
 import { registerSessionTurnPageRoutes } from '../session-turn-pages/routes.js';
 import { registerAssistantRoutes } from '../assistants/routes.js';
@@ -228,7 +229,8 @@ export const createFeatureRoutesRuntime = (dependencies) => {
       resolveGitBinaryForSpawn,
     });
 
-    registerScheduledTaskRoutes(app, {
+    const scheduledTaskRouter = express.Router();
+    registerScheduledTaskRoutes(scheduledTaskRouter, {
       readSettingsFromDiskMigrated,
       sanitizeProjects,
       projectConfigRuntime,
@@ -239,6 +241,14 @@ export const createFeatureRoutesRuntime = (dependencies) => {
       buildOpenCodeUrl,
       getOpenCodeAuthHeaders,
     });
+
+    registerScheduledTaskSessionSkill(app, {
+      express, openchamberDataDir, buildOpenCodeUrl, getOpenCodeAuthHeaders,
+      getIsSharedOpenCodeService, waitForOpenCodeReady, getRuntimeContract,
+      readSettingsFromDiskMigrated, sanitizeProjects, validateDirectoryPath,
+      scheduledTaskRouter,
+    });
+    app.use(scheduledTaskRouter);
 
     registerScheduledTaskToolRoute(app, {
       express,
