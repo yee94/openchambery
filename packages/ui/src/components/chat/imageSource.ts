@@ -147,8 +147,8 @@ export const useRuntimeTransportIdentity = (): string => React.useSyncExternalSt
 /**
  * Local file paths and file:// URLs cannot be assigned to img.src under web /
  * packaged desktop (openchamber-ui://) or Capacitor origins. Hook consumers use
- * leased native disk assets for inline loads. Explicit previews can also use the
- * one-use native stream (or an object URL in browser-only runtimes).
+ * leased native disk assets or one-use native streams for inline loads and
+ * previews. Only explicit previews use object URLs in browser-only runtimes.
  */
 export const needsRuntimeImageStream = (
   resolved: ReturnType<typeof resolveImageSource>,

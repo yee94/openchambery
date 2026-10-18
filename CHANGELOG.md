@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [2.0.11-beta.12] - 2026-10-18
+
+### 修复
+
+- 修复移动端会话正文图片显示裂图、但点击预览正常的问题：正文图片可直接复用原生图片流，不再要求桌面磁盘缓存能力，支持局域网和 Relay 连接。
+
 ## [2.0.11-beta.11] - 2026-10-18
 
 ### 修复
