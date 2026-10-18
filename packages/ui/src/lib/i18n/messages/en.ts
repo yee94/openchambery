@@ -1,8 +1,15 @@
 import { settingsDict } from './en.settings';
 
 export const dict = {
-  'mobile.notifications.service': 'Background notifications',
-  'mobile.notifications.unavailable': 'Notifications unavailable. Open the app to check permissions and the server connection.',
+  'mobile.notifications.service': 'Background task notification service',
+  'mobile.notifications.connected': 'Keeping the connection open to receive task notifications while the app is in the background.',
+  'mobile.notifications.unavailable': 'Background notifications could not start. Reopen the app and try again.',
+  'mobile.notifications.auth': 'Notification access was denied. Reconnect or pair this server again.',
+  'mobile.notifications.endpoint': 'Notification endpoint not found. Update and restart OpenChamber on your computer; if already updated, check the proxy path.',
+  'mobile.notifications.response': 'The server did not return a valid notification stream. Check the computer app version and proxy configuration.',
+  'mobile.notifications.server': 'The server is temporarily unavailable or busy. Retrying automatically.',
+  'mobile.notifications.relay': 'The relay connection is unavailable. Check that OpenChamber on your computer is online; retrying automatically.',
+  'mobile.notifications.identity': 'The server identity does not match the paired device. Reconnect or pair again.',
   'mobile.notifications.gap': 'Some notifications may have been missed while disconnected. Open the app to check task results.',
   'chat.chatInput.stopUnconfirmed': 'Stop is not confirmed yet. Please try again.',
   'chat.response.rateLimit': 'Provider rate limit reached',

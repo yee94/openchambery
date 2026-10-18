@@ -8,6 +8,8 @@ The renderer retains a 100-entry / 8 MiB LRU keyed by resolved theme colors, loc
 
 Use `render()`, not `mount()`: `mermaidViewer.ts` remains the sole pan/zoom/resize owner. Layout is independent of container width and automatic direction switching is disabled, keeping cache geometry stable across inline/fullscreen and mobile views. `decorate.ts` scopes accessibility IDs per displayed instance, while the original SVG is retained for unzoomed downloads. Coverage: `mermaidRender.test.ts`, `mermaidViewer.test.ts`, and `useUIStore.mermaidMigration.test.ts`.
 
+`ToolOutputDialog` presents Mermaid on a viewport-filling opaque canvas with safe-area-aware controls, independent of diagram aspect ratio. The existing viewer fits the diagram and owns pan/zoom. Mermaid and image previews register overlay routes with the mobile Back coordinator so system/gesture/history Back dismisses the preview before the underlying page. Image pointer-dismissal guards never block explicit Back. Coverage: `ToolOutputDialog.preview.test.tsx`.
+
 ## Composer pointer focus boundary
 
 `composerFocus.preventComposerActionPointerFocus` owns the mobile form's capture policy. Toolbar actions inside the actual composer DOM prevent default focus and mark the composer gesture; the textarea and attachment controls retain their existing exceptions. React portal events still traverse the parent form, so the handler must check `currentTarget.contains(target)` before applying this policy. Model/agent pickers and other portaled dialogs own their inputs independently: do not cancel their pointerdown or compensate with manual pointerup focus. `MobileWindowMotion.focus.test.tsx` exercises this production handler with the real portaled picker, including toolbar prevention and search permission.

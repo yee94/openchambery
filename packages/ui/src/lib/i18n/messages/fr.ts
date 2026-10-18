@@ -1,8 +1,15 @@
 import { settingsDict } from './fr.settings';
 
 export const dict = {
-  'mobile.notifications.service': 'Notifications en arrière-plan',
-  'mobile.notifications.unavailable': 'Notifications indisponibles. Ouvrez l’application pour vérifier les autorisations et la connexion au serveur.',
+  'mobile.notifications.service': 'Service de notifications des tâches en arrière-plan',
+  'mobile.notifications.connected': 'Connexion maintenue pour recevoir les notifications des tâches lorsque l’application est en arrière-plan.',
+  'mobile.notifications.unavailable': 'Impossible de démarrer les notifications en arrière-plan. Rouvrez l’application et réessayez.',
+  'mobile.notifications.auth': 'Accès aux notifications refusé. Reconnectez ou associez à nouveau ce serveur.',
+  'mobile.notifications.endpoint': 'Point d’accès aux notifications introuvable. Mettez à jour et redémarrez OpenChamber sur votre ordinateur ; sinon, vérifiez le chemin du proxy.',
+  'mobile.notifications.response': 'Le serveur n’a pas renvoyé de flux de notifications valide. Vérifiez la version de l’application sur l’ordinateur et la configuration du proxy.',
+  'mobile.notifications.server': 'Le serveur est temporairement indisponible ou occupé. Nouvelle tentative automatique.',
+  'mobile.notifications.relay': 'La connexion au relais est indisponible. Vérifiez qu’OpenChamber est en ligne sur votre ordinateur ; nouvelle tentative automatique.',
+  'mobile.notifications.identity': 'L’identité du serveur ne correspond pas à l’appareil associé. Reconnectez-le ou associez-le à nouveau.',
   'mobile.notifications.gap': 'Certaines notifications ont pu être manquées pendant la déconnexion. Ouvrez l’application pour consulter les résultats des tâches.',
   'chat.chatInput.stopUnconfirmed': 'L’arrêt n’est pas encore confirmé. Veuillez réessayer.',
   'chat.response.rateLimit': 'Limite de requêtes du fournisseur atteinte',

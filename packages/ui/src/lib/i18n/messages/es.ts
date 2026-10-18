@@ -2,8 +2,15 @@ import type { I18nKey } from './en';
 import { settingsDict } from './es.settings';
 
 export const dict: Record<I18nKey, string> = {
-  'mobile.notifications.service': 'Notificaciones en segundo plano',
-  'mobile.notifications.unavailable': 'Notificaciones no disponibles. Abre la aplicación para comprobar los permisos y la conexión al servidor.',
+  'mobile.notifications.service': 'Servicio de notificaciones de tareas en segundo plano',
+  'mobile.notifications.connected': 'Se mantiene la conexión para recibir notificaciones de tareas mientras la aplicación está en segundo plano.',
+  'mobile.notifications.unavailable': 'No se pudieron iniciar las notificaciones en segundo plano. Vuelve a abrir la aplicación e inténtalo de nuevo.',
+  'mobile.notifications.auth': 'Se denegó el acceso a las notificaciones. Vuelve a conectar o emparejar este servidor.',
+  'mobile.notifications.endpoint': 'No se encuentra el punto de acceso a notificaciones. Actualiza y reinicia OpenChamber en el ordenador; si ya está actualizado, revisa la ruta del proxy.',
+  'mobile.notifications.response': 'El servidor no devolvió un flujo de notificaciones válido. Comprueba la versión de la aplicación del ordenador y la configuración del proxy.',
+  'mobile.notifications.server': 'El servidor no está disponible temporalmente o está ocupado. Se reintentará automáticamente.',
+  'mobile.notifications.relay': 'La conexión de retransmisión no está disponible. Comprueba que OpenChamber esté conectado en tu ordenador; se reintentará automáticamente.',
+  'mobile.notifications.identity': 'La identidad del servidor no coincide con el dispositivo emparejado. Vuelve a conectar o emparejar.',
   'mobile.notifications.gap': 'Es posible que se hayan perdido notificaciones durante la desconexión. Abre la aplicación para consultar los resultados de las tareas.',
   'chat.chatInput.stopUnconfirmed': 'La detención aún no está confirmada. Inténtalo de nuevo.',
   'chat.response.rateLimit': 'Se alcanzó el límite de solicitudes del proveedor',

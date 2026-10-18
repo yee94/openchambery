@@ -2,8 +2,15 @@ import type { I18nKey } from './en';
 import { settingsDict } from './ja.settings';
 
 export const dict: Record<I18nKey, string> = {
-  'mobile.notifications.service': 'バックグラウンド通知',
-  'mobile.notifications.unavailable': '通知を利用できません。アプリを開いて権限とサーバー接続を確認してください。',
+  'mobile.notifications.service': 'バックグラウンドタスク通知サービス',
+  'mobile.notifications.connected': 'アプリがバックグラウンドでもタスクの通知を受信できるよう、接続を維持しています。',
+  'mobile.notifications.unavailable': 'バックグラウンド通知を開始できませんでした。アプリを開き直して再試行してください。',
+  'mobile.notifications.auth': '通知へのアクセスが拒否されました。サーバーに再接続するか、再度ペアリングしてください。',
+  'mobile.notifications.endpoint': '通知の接続先が見つかりません。パソコンの OpenChamber を更新して再起動してください。更新済みの場合はプロキシのパスを確認してください。',
+  'mobile.notifications.response': 'サーバーから有効な通知ストリームが返されませんでした。パソコンのアプリのバージョンとプロキシ設定を確認してください。',
+  'mobile.notifications.server': 'サーバーが一時的に利用できないか、混雑しています。自動的に再試行します。',
+  'mobile.notifications.relay': '中継接続を利用できません。パソコンの OpenChamber がオンラインか確認してください。自動的に再試行します。',
+  'mobile.notifications.identity': 'サーバーの識別情報がペアリング済みの端末と一致しません。再接続または再ペアリングしてください。',
   'mobile.notifications.gap': '切断中に一部の通知を受信できなかった可能性があります。アプリでタスクの結果を確認してください。',
   'chat.chatInput.stopUnconfirmed': '停止をまだ確認できていません。もう一度お試しください。',
   'chat.response.rateLimit': 'プロバイダーのリクエスト頻度制限に達しました',

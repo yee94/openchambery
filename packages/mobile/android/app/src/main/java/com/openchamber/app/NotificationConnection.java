@@ -23,7 +23,7 @@ final class NotificationConnection implements AutoCloseable {
     static final String PATH = "/api/notifications/native-stream";
     interface Listener {
         void event(String id, JSONObject event);
-        void failed(boolean permanent);
+        void failed(NotificationFailure failure);
     }
     private final AtomicBoolean closed = new AtomicBoolean();
     private final Listener listener;
@@ -58,16 +58,17 @@ final class NotificationConnection implements AutoCloseable {
         call = client.newCall(new Request.Builder().url(HttpUrl.get(baseUrl).resolve("/health")).build());
         call.timeout().timeout(8, java.util.concurrent.TimeUnit.SECONDS);
         call.enqueue(new Callback() {
-            @Override public void onFailure(Call ignored, java.io.IOException error) { fail(false); }
+            @Override public void onFailure(Call ignored, java.io.IOException error) { fail(NotificationFailure.NETWORK); }
             @Override public void onResponse(Call ignored, Response response) {
                 try (Response owned = response) {
                     if (closed.get()) return;
-                    if (owned.code() != 200 || owned.body() == null) { fail(false); return; }
-                    if (owned.body().source().request(8193)) { fail(false); return; }
+                    if (owned.code() != 200) { fail(NotificationFailure.http(owned.code(), false)); return; }
+                    if (owned.body() == null || owned.body().source().request(8193)) { fail(NotificationFailure.RESPONSE); return; }
                     String body = owned.body().source().readUtf8();
-                    if (!serverId.equals(new JSONObject(body).optString("serverId"))) { fail(true); return; }
+                    if (!serverId.equals(new JSONObject(body).optString("serverId"))) { fail(NotificationFailure.IDENTITY); return; }
                     openDirect(client, baseUrl);
-                } catch (Exception ignoredError) { fail(false); }
+                } catch (java.io.IOException error) { fail(NotificationFailure.NETWORK); }
+                catch (Exception error) { fail(NotificationFailure.RESPONSE); }
             }
         });
     }
@@ -83,11 +84,11 @@ final class NotificationConnection implements AutoCloseable {
         }
         call = client.newCall(request.build());
         call.enqueue(new Callback() {
-            @Override public void onFailure(Call ignored, java.io.IOException error) { fail(false); }
+            @Override public void onFailure(Call ignored, java.io.IOException error) { fail(NotificationFailure.NETWORK); }
             @Override public void onResponse(Call ignored, Response response) {
                 try (Response owned = response) {
                     if (!validResponse(owned.code(), owned.header("Content-Type", ""))) return;
-                    if (owned.body() == null) { fail(false); return; }
+                    if (owned.body() == null) { fail(NotificationFailure.RESPONSE); return; }
                     byte[] buffer = new byte[4096];
                     InputStream input = owned.body().byteStream();
                     int count;
@@ -95,8 +96,9 @@ final class NotificationConnection implements AutoCloseable {
                         lastReceived = android.os.SystemClock.elapsedRealtime();
                         parser.accept(Arrays.copyOf(buffer, count));
                     }
-                    fail(false);
-                } catch (Exception error) { fail(false); }
+                    fail(NotificationFailure.NETWORK);
+                } catch (java.io.IOException error) { fail(NotificationFailure.NETWORK); }
+                catch (Exception error) { fail(NotificationFailure.RESPONSE); }
             }
         });
     }
@@ -140,7 +142,7 @@ final class NotificationConnection implements AutoCloseable {
                     JSONObject head = new JSONObject().put("method", "GET").put("path", PATH).put("query", "").put("headers", headers);
                     send(ws, 1, 1, head.toString().getBytes(StandardCharsets.UTF_8));
                     send(ws, 4, 1, new byte[0]);
-                } catch (Exception error) { fail(false); }
+                } catch (Exception error) { fail(NotificationFailure.RESPONSE); }
             }
             @Override public void onMessage(WebSocket ws, ByteString bytes) {
                 if (closed.get()) return;
@@ -163,14 +165,14 @@ final class NotificationConnection implements AutoCloseable {
                         // HTTP body fragments are one byte stream, not JSON messages.
                         parser.accept(payload);
                     } else if (type == 4 || type == 5) {
-                        fail(false);
+                        fail(NotificationFailure.RELAY);
                     } else throw new IllegalArgumentException("Unexpected frame");
-                } catch (Exception error) { fail(false); }
+                } catch (Exception error) { fail(NotificationFailure.RESPONSE); }
             }
-            @Override public void onClosed(WebSocket ws, int code, String reason) { fail(code == 4010 || code == 4029); }
-            @Override public void onClosing(WebSocket ws, int code, String reason) { ws.close(code, null); fail(code == 4010 || code == 4029); }
+            @Override public void onClosed(WebSocket ws, int code, String reason) { fail(NotificationFailure.relayClose(code)); }
+            @Override public void onClosing(WebSocket ws, int code, String reason) { ws.close(code, null); fail(NotificationFailure.relayClose(code)); }
             @Override public void onFailure(WebSocket ws, Throwable error, Response response) {
-                fail(response != null && permanentStatus(response.code()));
+                fail(response == null ? NotificationFailure.RELAY : NotificationFailure.http(response.code(), false));
             }
         });
         if (closed.get()) socket.cancel();
@@ -181,18 +183,17 @@ final class NotificationConnection implements AutoCloseable {
         if (!ws.send(ByteString.of(crypto.encrypt(frame)))) throw new IllegalStateException("Closed stream");
     }
 
-    private static boolean permanentStatus(int status) { return status >= 400 && status < 500 && status != 408 && status != 429; }
     private boolean validResponse(int status, String contentType) {
         if (status != 200 || !contentType.toLowerCase(java.util.Locale.ROOT).startsWith("text/event-stream")) {
-            fail(permanentStatus(status) || status == 200);
+            fail(NotificationFailure.http(status, true));
             return false;
         }
         return true;
     }
-    private void fail(boolean permanent) {
+    private void fail(NotificationFailure failure) {
         if (!closed.compareAndSet(false, true)) return;
         cancel();
-        listener.failed(permanent);
+        listener.failed(failure);
     }
     private void cancel() {
         if (call != null) call.cancel();

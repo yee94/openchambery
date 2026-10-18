@@ -45,7 +45,7 @@ public class OpenChamberNotificationService extends Service {
     private final Runnable watchdog = new Runnable() {
         @Override public void run() {
             if (destroyed) return;
-            if (connection != null && SystemClock.elapsedRealtime() - connection.lastReceived > 90_000) failed(false);
+            if (connection != null && SystemClock.elapsedRealtime() - connection.lastReceived > 90_000) failed(NotificationFailure.NETWORK);
             main.postDelayed(this, 30_000);
         }
     };
@@ -54,7 +54,7 @@ public class OpenChamberNotificationService extends Service {
             main.post(() -> { if (!destroyed && connection == null) { main.removeCallbacks(reconnect); connect(); } });
         }
         @Override public void onLost(Network network) {
-            main.post(() -> { if (!destroyed && !online()) failed(false); });
+            main.post(() -> { if (!destroyed && !online()) failed(NotificationFailure.NETWORK); });
         }
     };
 
@@ -147,21 +147,21 @@ public class OpenChamberNotificationService extends Service {
                                 if (!event.optBoolean("requireHidden") || !appVisible) showAlert(event, id);
                             } else return;
                             cursor = id;
-                        } catch (Exception ignored) { failed(false); }
+                        } catch (Exception ignored) { failed(NotificationFailure.INITIALIZATION); }
                     });
                 }
-                @Override public void failed(boolean permanent) {
-                    main.post(() -> { if (!destroyed && attempt == generation) OpenChamberNotificationService.this.failed(permanent); });
+                @Override public void failed(NotificationFailure failure) {
+                    main.post(() -> { if (!destroyed && attempt == generation) OpenChamberNotificationService.this.failed(failure); });
                 }
             });
-        } catch (Exception ignored) { failed(true); }
+        } catch (Exception ignored) { failed(NotificationFailure.INITIALIZATION); }
     }
-    private void failed(boolean permanent) {
+    private void failed(NotificationFailure failure) {
         if (destroyed || config == null) return;
         long healthyMillis = readyAt == 0 ? 0 : SystemClock.elapsedRealtime() - readyAt;
         cancelConnection();
-        setState(permanent ? "unavailable" : "reconnecting");
-        long delay = backoff.failed(permanent, healthyMillis);
+        setState(failure.label);
+        long delay = backoff.failed(failure.permanent, healthyMillis);
         // A known paired relay remains reachable when the phone leaves the LAN.
         if (!useRelay && config != null && config.optJSONObject("relay") != null) { useRelay = true; delay = 0; }
         // Small jitter avoids synchronized retries across devices. No wake locks or alarms.

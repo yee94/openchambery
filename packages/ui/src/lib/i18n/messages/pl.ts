@@ -2,8 +2,15 @@ import type { I18nKey } from './en';
 import { settingsDict } from './pl.settings';
 
 export const dict: Record<I18nKey, string> = {
-  'mobile.notifications.service': 'Powiadomienia w tle',
-  'mobile.notifications.unavailable': 'Powiadomienia są niedostępne. Otwórz aplikację, aby sprawdzić uprawnienia i połączenie z serwerem.',
+  'mobile.notifications.service': 'Usługa powiadomień o zadaniach w tle',
+  'mobile.notifications.connected': 'Połączenie jest utrzymywane, aby odbierać powiadomienia o zadaniach, gdy aplikacja działa w tle.',
+  'mobile.notifications.unavailable': 'Nie udało się uruchomić powiadomień w tle. Otwórz ponownie aplikację i spróbuj jeszcze raz.',
+  'mobile.notifications.auth': 'Odmówiono dostępu do powiadomień. Połącz się ponownie lub ponownie sparuj serwer.',
+  'mobile.notifications.endpoint': 'Nie znaleziono punktu dostępu do powiadomień. Zaktualizuj i uruchom ponownie OpenChamber na komputerze; jeśli jest aktualny, sprawdź ścieżkę proxy.',
+  'mobile.notifications.response': 'Serwer nie zwrócił prawidłowego strumienia powiadomień. Sprawdź wersję aplikacji na komputerze i konfigurację proxy.',
+  'mobile.notifications.server': 'Serwer jest tymczasowo niedostępny lub zajęty. Próba zostanie ponowiona automatycznie.',
+  'mobile.notifications.relay': 'Połączenie z przekaźnikiem jest niedostępne. Sprawdź, czy OpenChamber na komputerze jest online; próba zostanie ponowiona automatycznie.',
+  'mobile.notifications.identity': 'Tożsamość serwera nie odpowiada sparowanemu urządzeniu. Połącz się ponownie lub ponownie je sparuj.',
   'mobile.notifications.gap': 'Podczas rozłączenia mogły zostać pominięte niektóre powiadomienia. Otwórz aplikację, aby sprawdzić wyniki zadań.',
   'chat.chatInput.stopUnconfirmed': 'Zatrzymanie nie zostało jeszcze potwierdzone. Spróbuj ponownie.',
   'chat.response.rateLimit': 'Osiągnięto limit częstotliwości żądań dostawcy',

@@ -15,12 +15,18 @@ export function useAndroidNotifications(): void {
   const service = t('mobile.notifications.service');
   const alerts = t('settings.page.notifications.title');
   const connecting = t('mobile.connect.connecting');
-  const connected = t('mobile.instances.status.connected');
+  const connected = t('mobile.notifications.connected');
   const reconnecting = t('layout.browserProvider.status.reconnecting');
   const unavailable = t('mobile.notifications.unavailable');
   const gap = t('mobile.notifications.gap');
   const denied = t('settings.notifications.page.toast.permissionDenied.title');
   const error = t('settings.notifications.page.template.defaults.error.title');
+  const auth = t('mobile.notifications.auth');
+  const endpoint = t('mobile.notifications.endpoint');
+  const response = t('mobile.notifications.response');
+  const server = t('mobile.notifications.server');
+  const relay = t('mobile.notifications.relay');
+  const identity = t('mobile.notifications.identity');
 
   useEffect(() => {
     if (!canUseAndroidNotifications()) return;
@@ -33,7 +39,7 @@ export function useAndroidNotifications(): void {
     };
     const controller = createAndroidNotificationController({
       plugin: androidNotifications,
-      resolveConfig: () => resolveAndroidNotificationConfig({ service, alerts, connecting, connected, reconnecting, unavailable, gap, error }),
+      resolveConfig: () => resolveAndroidNotificationConfig({ service, alerts, connecting, connected, reconnecting, unavailable, gap, error, auth, endpoint, response, server, relay, identity }),
       onState: (state) => { if (state === 'denied' || state === 'unavailable') warn(state === 'denied' ? denied : unavailable); },
       onError: () => warn(unavailable),
     });
@@ -44,5 +50,5 @@ export function useAndroidNotifications(): void {
     });
     void controller.refresh();
     return () => { unsubscribeEndpoint(); unsubscribeAuth(); controller.dispose(); };
-  }, [enabled, service, alerts, connecting, connected, reconnecting, unavailable, gap, denied, error]);
+  }, [enabled, service, alerts, connecting, connected, reconnecting, unavailable, gap, denied, error, auth, endpoint, response, server, relay, identity]);
 }

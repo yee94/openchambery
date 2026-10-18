@@ -2,8 +2,15 @@ import type { I18nKey } from './en';
 import { settingsDict } from './ko.settings';
 
 export const dict: Record<I18nKey, string> = {
-  'mobile.notifications.service': '백그라운드 알림',
-  'mobile.notifications.unavailable': '알림을 사용할 수 없습니다. 앱을 열어 권한과 서버 연결을 확인하세요.',
+  'mobile.notifications.service': '백그라운드 작업 알림 서비스',
+  'mobile.notifications.connected': '앱이 백그라운드에 있을 때도 작업 알림을 받을 수 있도록 연결을 유지합니다.',
+  'mobile.notifications.unavailable': '백그라운드 알림을 시작하지 못했습니다. 앱을 다시 열고 재시도하세요.',
+  'mobile.notifications.auth': '알림 접근이 거부되었습니다. 서버에 다시 연결하거나 다시 페어링하세요.',
+  'mobile.notifications.endpoint': '알림 엔드포인트를 찾을 수 없습니다. 컴퓨터의 OpenChamber를 업데이트하고 다시 시작하세요. 이미 업데이트했다면 프록시 경로를 확인하세요.',
+  'mobile.notifications.response': '서버가 유효한 알림 스트림을 반환하지 않았습니다. 컴퓨터 앱 버전과 프록시 설정을 확인하세요.',
+  'mobile.notifications.server': '서버를 일시적으로 사용할 수 없거나 서버가 혼잡합니다. 자동으로 재시도합니다.',
+  'mobile.notifications.relay': '중계 연결을 사용할 수 없습니다. 컴퓨터의 OpenChamber가 온라인인지 확인하세요. 자동으로 재시도합니다.',
+  'mobile.notifications.identity': '서버 식별 정보가 페어링된 기기와 일치하지 않습니다. 다시 연결하거나 페어링하세요.',
   'mobile.notifications.gap': '연결이 끊긴 동안 일부 알림을 놓쳤을 수 있습니다. 앱에서 작업 결과를 확인하세요.',
   'chat.chatInput.stopUnconfirmed': '아직 중지가 확인되지 않았습니다. 다시 시도해 주세요.',
   'chat.response.rateLimit': '공급자 요청 빈도 제한에 도달했습니다',
