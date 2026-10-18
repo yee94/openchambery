@@ -23,6 +23,13 @@ and title updates, a bounded `message.list({ order: 'desc' })` page projected in
 chronological transcript records, and Host metadata reads/merge patches.
 Only changed `titleRefresh` fields are persisted. Transient fields are removed
 with RFC 7386 `null`, so `isGenerating` and `requestedAt` cannot survive a clear.
+Manual rename clears loading, pending requests, and old errors; a new smart-title
+request clears stale loading/errors before admission. Model generation has a
+120-second deadline, releasing loading and the in-flight slot even if the model
+never settles. Late timed-out results cannot write titles. A request received
+during generation is retained and runs after that attempt settles; the obsolete
+attempt does not commit its title or consume the newer request. Cleanup writes
+the narrow metadata patch directly rather than depending on another session GET.
 Unrelated goal, archive, and ownership metadata is never replaced by a title read.
 
 After a successful title write or generation-state change, an authoritative full session row is published

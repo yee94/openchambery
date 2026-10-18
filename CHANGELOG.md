@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [2.0.11-beta.9] - 2026-10-18
+
+### 修复
+
+- 修复会话智能标题在模型无响应或超时后持续加载的问题；手动改名和再次智能命名会清理旧状态，超时任务的迟到结果不再覆盖标题。
+
 ## [2.0.11-beta.8] - 2026-10-18
 
 ### 新增

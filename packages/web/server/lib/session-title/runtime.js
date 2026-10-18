@@ -27,6 +27,7 @@ export const TITLE_QUIET_MS = 15_000;
 export const TITLE_THROTTLE_MS = 5 * 60_000;
 /** Fetch enough recent messages to find a subject anchor around the title window. */
 const TRANSCRIPT_MESSAGE_LIMIT = 16;
+const GENERATION_TIMEOUT_MS = 120_000;
 /** Latest user/assistant turns used for title generation. */
 const TRANSCRIPT_MAX_TURNS = 5;
 const TRANSCRIPT_USER_CHAR_LIMIT = 2_000;
@@ -470,19 +471,16 @@ export const createSessionTitleRuntime = ({
   };
 
   const clearTitleGenerationState = async (sessionId, directory) => {
-    const session = await openCodeFetch(`/session/${encodeURIComponent(sessionId)}`, { directory })
-      .catch(() => null);
-    if (!session || typeof session !== 'object') return;
-
-    const meta = readTitleRefreshMeta(session);
-    if (meta.titleRefresh.isGenerating !== true) return;
     await openCodeFetch(`/session/${encodeURIComponent(sessionId)}`, {
       directory,
       method: 'PATCH',
       body: {
         metadata: {
           openchamber: {
-            titleRefresh: { isGenerating: null, requestedAt: null },
+            titleRefresh: {
+              isGenerating: null,
+              ...(forcedRefreshes.has(sessionId) ? {} : { requestedAt: null }),
+            },
           },
         },
       },
@@ -690,8 +688,9 @@ export const createSessionTitleRuntime = ({
     }).catch((error) => {
       console.warn('[session-title] failed to set generation state:', error?.message || error);
     });
+    let generationTimer;
     try {
-      generated = await generateSmallModelText({
+      generated = await Promise.race([generateSmallModelText({
         // Background feature: use the configured or displayed default Summary
         // AI model, while arbitrary small-model fallbacks stay on the session
         // provider.
@@ -703,7 +702,10 @@ export const createSessionTitleRuntime = ({
         directory,
         preferredProviderID: typeof lastAssistantInfo?.providerID === 'string' ? lastAssistantInfo.providerID : undefined,
         preferredModelID: typeof lastAssistantInfo?.modelID === 'string' ? lastAssistantInfo.modelID : undefined,
-      });
+      }), new Promise((_, reject) => {
+        generationTimer = setTimeout(() => reject(new Error('Title generation timed out')), GENERATION_TIMEOUT_MS);
+        generationTimer.unref?.();
+      })]);
     } catch (error) {
       if (Number(error?.statusCode) !== 404) {
         console.warn('[session-title] generation failed:', error?.message || error);
@@ -713,13 +715,14 @@ export const createSessionTitleRuntime = ({
       });
       return;
     } finally {
+      clearTimeout(generationTimer);
       await clearTitleGenerationState(sessionId, directory).catch((error) => {
         console.warn('[session-title] failed to clear generation state:', error?.message || error);
       });
     }
 
     const nextTitle = cleanGeneratedTitle(generated?.text);
-    if (!nextTitle || stopped) return;
+    if (!nextTitle || stopped || forcedRefreshes.has(sessionId)) return;
 
     // Re-check before write: user may have renamed, or a new message arrived.
     const freshSession = await openCodeFetch(`/session/${encodeURIComponent(sessionId)}`, { directory })
@@ -785,6 +788,7 @@ export const createSessionTitleRuntime = ({
         })
         .finally(() => {
           inflight.delete(sessionId);
+          if (!stopped && forcedRefreshes.has(sessionId)) armTimer(sessionId, directory, 0);
         });
     }, wait);
     if (typeof timer?.unref === 'function') timer.unref();
