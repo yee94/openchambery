@@ -191,7 +191,7 @@ const QueuedMessageChip = memo(({ message, server, frozen, hasDispatchLock, pend
                 // items-baseline keeps chip labels on the same line as plain text
                 // ("hey") / "+N files". MessageReferenceChip exposes its label baseline
                 // (icon is a separate 1em well), matching sent-message rendering.
-                'flex min-w-0 flex-1 items-baseline overflow-hidden whitespace-nowrap text-foreground',
+                'flex min-w-0 flex-1 items-baseline overflow-hidden whitespace-nowrap text-foreground [&>[data-message-reference-kind]]:min-w-0 [&>[data-message-reference-kind]]:truncate',
                 isMobile ? 'text-xs leading-5' : 'typography-ui-label leading-5',
             )}>
                 {previewParts ? previewParts.map((part, index) => (

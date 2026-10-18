@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [2.0.11-beta.5] - 2026-10-18
+
+### 改进
+
+- Electron 聊天图片和预览复用原生磁盘缓存，减少切换会话后的重复下载；按文件版本校验，闲置缓存按容量淘汰。
+- 未具备原生图片缓存能力的客户端保留本地路径图片占位，不再自动下载并转换为 Blob。
+- 队列消息中的长引用文本支持截断，避免挤占内容区域。
+
 ## [2.0.11-beta.4] - 2026-10-18
 
 ### 修复

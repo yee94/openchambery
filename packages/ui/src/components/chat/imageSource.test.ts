@@ -133,8 +133,8 @@ describe('image source contracts', () => {
     expect(helperSource).toContain('needsRuntimeImageStream(resolved)');
     expect(helperSource).toContain('const usesRuntimeFileSource = needsRuntimeImageStream(resolved)');
     expect(helperSource).toContain('controller.abort()');
-    expect(helperSource).toContain('releaseRuntimeImageObjectUrl(objectUrl)');
-    expect(helperSource).toContain('releaseRuntimeImageObjectUrl(nextObjectUrl)');
+    expect(helperSource).toContain('acquireRuntimeImage(resolved.path, controller.signal)');
+    expect(helperSource).toContain('lease.release()');
   });
 
   test('streams runtime-file Markdown images on every transport and keeps http(s)/data direct', () => {

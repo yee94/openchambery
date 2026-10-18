@@ -1,4 +1,6 @@
 import React from 'react';
+import { acquireRuntimeImage } from '@/lib/runtime-image-cache';
+import { getRuntimeAuthGeneration, subscribeRuntimeAuthGeneration } from '@/lib/runtime-auth';
 import { getRuntimeTransportIdentity, subscribeRuntimeEndpointChanged } from '@/lib/runtime-switch';
 import { isAbsoluteFilePath, normalizeFilePath, toAbsoluteFilePath } from '@/lib/path-utils';
 import {
@@ -144,8 +146,8 @@ export const useRuntimeTransportIdentity = (): string => React.useSyncExternalSt
 
 /**
  * Local file paths and file:// URLs cannot be assigned to img.src under web /
- * packaged desktop (openchamber-ui://) or Capacitor origins. Always materialize
- * them through the runtime file stream (blob URL or openchamber-asset://).
+ * packaged desktop (openchamber-ui://) or Capacitor origins. Hook consumers use
+ * leased native disk assets; runtimes without that capability keep a placeholder.
  */
 export const needsRuntimeImageStream = (
   resolved: ReturnType<typeof resolveImageSource>,
@@ -156,8 +158,12 @@ export const needsRuntimeImageStream = (
 const subscribeTransport = (onStoreChange: () => void): (() => void) => (
   subscribeRuntimeEndpointChanged(() => onStoreChange())
 );
+const subscribeImageAuth = (onStoreChange: () => void): (() => void) => (
+  subscribeRuntimeAuthGeneration(() => onStoreChange())
+);
 
 export const useResolvedImageSource = (source: string, effectiveDirectory: string): string => {
+  const authGeneration = React.useSyncExternalStore(subscribeImageAuth, getRuntimeAuthGeneration, getRuntimeAuthGeneration);
   const transportIdentity = React.useSyncExternalStore(
     subscribeTransport,
     getRuntimeTransportIdentity,
@@ -168,7 +174,7 @@ export const useResolvedImageSource = (source: string, effectiveDirectory: strin
     [effectiveDirectory, source],
   );
   const usesRuntimeFileSource = needsRuntimeImageStream(resolved);
-  const resolutionKey = `${transportIdentity}\n${effectiveDirectory}\n${source}`;
+  const resolutionKey = `${transportIdentity}\n${authGeneration}\n${effectiveDirectory}\n${source}`;
   const immediateSource = usesRuntimeFileSource ? '' : resolved.source;
   const [display, setDisplay] = React.useState({
     key: resolutionKey,
@@ -184,23 +190,21 @@ export const useResolvedImageSource = (source: string, effectiveDirectory: strin
     setDisplay({ key: resolutionKey, source: '' });
 
     const controller = new AbortController();
-    let objectUrl = '';
-    void fetchRuntimeImageObjectUrl(resolved.path, controller.signal)
-      .then((nextObjectUrl) => {
+    let release: (() => void) | undefined;
+    void acquireRuntimeImage(resolved.path, controller.signal)
+      .then((lease) => {
         if (controller.signal.aborted || getRuntimeTransportIdentity() !== transportIdentity) {
-          releaseRuntimeImageObjectUrl(nextObjectUrl);
+          lease.release();
           return;
         }
-        objectUrl = nextObjectUrl;
-        setDisplay({ key: resolutionKey, source: nextObjectUrl });
+        release = lease.release;
+        setDisplay({ key: resolutionKey, source: lease.url });
       })
       .catch(() => undefined);
 
     return () => {
       controller.abort();
-      if (objectUrl) {
-        releaseRuntimeImageObjectUrl(objectUrl);
-      }
+      release?.();
     };
   }, [resolutionKey, resolved, transportIdentity, usesRuntimeFileSource]);
 

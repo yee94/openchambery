@@ -229,6 +229,13 @@ const virtualAssetApi = isLocalPage
     }
   : undefined;
 
+const imageCacheApi = isLocalPage ? {
+  acquire: (input) => ipcRenderer.invoke('openchamber:image-cache:acquire', input),
+  append: (leaseId, chunk) => ipcRenderer.invoke('openchamber:image-cache:append', { leaseId, chunk }),
+  commit: (leaseId, mime) => ipcRenderer.invoke('openchamber:image-cache:commit', { leaseId, mime }),
+  release: (leaseId) => ipcRenderer.invoke('openchamber:image-cache:release', { leaseId }),
+} : undefined;
+
 // Preview loopback gateway — local packaged/HMR UI only. Unauthenticated
 // 127.0.0.1 front door; owner renderer runtimeFetchs / openRuntimeWebSockets
 // /api/preview/proxy/* (HTTP + HMR WS). Not on COMMANDS_SAFE_FOR_REMOTE.
@@ -274,6 +281,7 @@ contextBridge.exposeInMainWorld('__OPENCHAMBER_DESKTOP__', {
   // Opaque virtual image stream for relay/host-backed images. URL scheme is
   // openchamber-asset://stream/<assetId> — never host paths or credentials.
   virtualAsset: virtualAssetApi,
+  imageCache: imageCacheApi,
   // Relay Preview iframe origin (http://127.0.0.1:<ephemeral>). Local page only.
   previewGateway: previewGatewayApi,
 });

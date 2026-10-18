@@ -85,10 +85,10 @@ describe('Markstream nested legacy code card Chromium styles', () => {
       }
       expect(await page.evaluate('typeof window.markstreamStyleReplay')).toBe('function');
       const imageResult = await page.evaluate<{ loaded: boolean; source: string; openedSource: string }>('window.markstreamImageReplay()');
-      expect(imageResult.loaded).toBe(true);
-      expect(imageResult.source).toMatch(/^blob:/);
+      expect(imageResult.loaded).toBe(false);
+      expect(imageResult.source).toBeNull();
       expect(imageResult.openedSource).toBe('/workspace/photo.png');
-      expect(imageRequests).toEqual(['/workspace/photo.png']);
+      expect(imageRequests).toEqual([]);
       const evidence: Record<string, unknown> = {};
       for (const dark of [false, true]) {
         const mode = dark ? 'dark' : 'light';

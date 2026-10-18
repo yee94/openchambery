@@ -13,6 +13,12 @@ vi.mock('@/contexts/useThemeSystem', () => ({ useOptionalThemeSystem: () => unde
 vi.mock('@/lib/relay/relay-image-stream', () => ({
   streamRelayImageDisplayUrl: streamImage, releaseRelayImageDisplayUrl: releaseImage,
 }));
+vi.mock('@/lib/runtime-image-cache', () => ({
+  acquireRuntimeImage: async (path: string, signal: AbortSignal) => {
+    const url = await streamImage(path, signal);
+    return { url, release: () => releaseImage(url) };
+  },
+}));
 vi.mock('@/lib/runtime-switch', () => ({
   getRuntimeTransportIdentity: () => transport.identity,
   subscribeRuntimeEndpointChanged: () => () => {},

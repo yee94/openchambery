@@ -250,3 +250,20 @@ export const resolveNativeRelayAssetBridge = async (): Promise<NativeRelayAssetB
 export const resetNativeRelayAssetBridgeCacheForTests = (): void => {
   capacitorPluginPromise = null;
 };
+
+type NativeImageCacheBridge = {
+  acquire: (input: { key: string; size: number }) => Promise<{ leaseId: string; url: string; hit: boolean }>;
+  append: (leaseId: string, chunk: Uint8Array) => Promise<void>;
+  commit: (leaseId: string, mime: string) => Promise<void>;
+  release: (leaseId: string) => Promise<void>;
+};
+
+/** Optional installer-owned capability. Old shells and browser-only runtimes return null. */
+export const getNativeImageCacheBridge = (): NativeImageCacheBridge | null => {
+  if (typeof window === 'undefined') return null;
+  const api = (window as unknown as {
+    __OPENCHAMBER_DESKTOP__?: { imageCache?: NativeImageCacheBridge };
+  }).__OPENCHAMBER_DESKTOP__?.imageCache;
+  return api && isFunction(api.acquire) && isFunction(api.append) && isFunction(api.commit) && isFunction(api.release)
+    ? api : null;
+};

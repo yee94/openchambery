@@ -48,6 +48,7 @@ import {
   ASSET_SCHEME_PRIVILEGES,
   createVirtualAssetRegistry,
 } from './virtual-asset-protocol.mjs';
+import { createImageDiskCache } from './image-disk-cache.mjs';
 import { createPreviewLoopbackGateway } from './preview-loopback-gateway.mjs';
 
 const execFileAsync = promisify(execFile);
@@ -1244,9 +1245,12 @@ const registerPackagedUiProtocol = () => {
 // returns a ReadableStream. Separate scheme from openchamber-ui so the static
 // UI handler is untouched. Local-page IPC only (see isLocalSender gates below).
 const virtualAssetRegistry = createVirtualAssetRegistry();
+const imageDiskCache = createImageDiskCache({ directory: path.join(app.getPath('userData'), 'image-cache-v1') });
 
 const registerVirtualAssetProtocol = () => {
-  protocol.handle(ASSET_PROTOCOL, (request) => virtualAssetRegistry.handleRequest(request));
+  protocol.handle(ASSET_PROTOCOL, (request) => new URL(request.url).hostname === 'cache'
+    ? imageDiskCache.handleRequest(request)
+    : virtualAssetRegistry.handleRequest(request));
 };
 
 // Preview loopback gateway (Relay + Electron): unauthenticated 127.0.0.1 front
@@ -5261,6 +5265,34 @@ ipcMain.handle('openchamber:asset:create', async (event, payload) => {
   return virtualAssetRegistry.create({
     mimeType: payload?.mimeType,
   });
+});
+
+const imageCacheOwners = new WeakSet();
+ipcMain.handle('openchamber:image-cache:acquire', async (event, payload) => {
+  requireLocalAssetSender(event, 'image-cache:acquire');
+  const owner = event.sender;
+  if (!imageCacheOwners.has(owner)) {
+    imageCacheOwners.add(owner);
+    const ownerId = owner.id;
+    const release = () => { void imageDiskCache.releaseOwner(ownerId).catch(() => {}); };
+    owner.once('destroyed', release);
+    owner.on('did-start-navigation', (_event, _url, isInPlace, isMainFrame) => {
+      if (isMainFrame && !isInPlace) release();
+    });
+  }
+  return imageDiskCache.acquire(owner.id, payload || {});
+});
+ipcMain.handle('openchamber:image-cache:append', (event, payload) => {
+  requireLocalAssetSender(event, 'image-cache:append');
+  return imageDiskCache.append(event.sender.id, payload?.leaseId, payload?.chunk);
+});
+ipcMain.handle('openchamber:image-cache:commit', (event, payload) => {
+  requireLocalAssetSender(event, 'image-cache:commit');
+  return imageDiskCache.commit(event.sender.id, payload?.leaseId, payload?.mime);
+});
+ipcMain.handle('openchamber:image-cache:release', (event, payload) => {
+  requireLocalAssetSender(event, 'image-cache:release');
+  return imageDiskCache.release(event.sender.id, payload?.leaseId);
 });
 
 ipcMain.handle('openchamber:asset:push', async (event, payload) => {
