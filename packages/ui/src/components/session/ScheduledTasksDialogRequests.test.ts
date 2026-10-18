@@ -12,7 +12,7 @@ describe('ScheduledTasksDialog queries', () => {
     expect(content.match(/useQuery\(\{/g)).toHaveLength(1);
     expect(content.match(/export function ScheduledTasksWorkspace/g)).toHaveLength(1);
     expect(content).toContain('useMutation({');
-    expect(content).toContain('tasksQuery.error ? (');
+    expect(content).toContain('tasksQuery.error && !tasksQuery.data ? (');
   });
 
   test('uses the global endpoint and preserves unrelated project records after project mutations', async () => {

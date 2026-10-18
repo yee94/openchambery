@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [2.0.11-beta.13] - 2026-10-18
+
+### 修复
+
+- 修复计划页从后台返回时弹出 Relay 断连错误的问题；自动重连期间保留已加载的任务列表，连接恢复后自动刷新。
+
 ## [2.0.11-beta.12] - 2026-10-18
 
 ### 修复
