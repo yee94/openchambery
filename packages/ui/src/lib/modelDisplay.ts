@@ -231,9 +231,9 @@ export const humanizeModelId = (modelId: string | null | undefined): string => {
 
 /**
  * Catalog labels that are still slug/id-shaped (e.g. "DeepSeek-V4-Flash").
- * Prefer humanizing the model id instead of showing these raw — otherwise the
- * same model renders as "DeepSeek-V4-Flash" when the catalog name is present
- * and "DeepSeek V4 Flash" when the UI falls back to the id.
+ * Prefer humanizing the label itself over showing it raw — otherwise the same
+ * model renders as "DeepSeek-V4-Flash" when the catalog name is present and
+ * "DeepSeek V4 Flash" when the UI falls back to the id.
  */
 const isSlugStyleLabel = (value: string): boolean => {
   return !/\s/.test(value) && /[-_]/.test(value);
@@ -252,14 +252,17 @@ export const getModelDisplayName = (
     return truncate(name, options.maxLength);
   }
 
-  // Slug-style names or missing names → humanize the id (usually lowercase and
-  // brand-token friendly). Fall back to humanizing the slug name when no id.
-  if (modelId) {
-    return truncate(humanizeModelId(modelId), options.maxLength);
-  }
-
+  // Slug-style names are plausible model names, so humanize the name itself and
+  // let the catalog label keep winning. Reading the id instead would surface a
+  // provider or routing prefix that is not part of the model's name: Magpie's
+  // `group/auto-deepseek-v4-1-flash` would read "Auto DeepSeek V4.1 Flash".
   if (name) {
     return truncate(humanizeModelId(name.toLowerCase()), options.maxLength);
+  }
+
+  // Only a model with no name at all falls back to its id.
+  if (modelId) {
+    return truncate(humanizeModelId(modelId), options.maxLength);
   }
 
   return options.fallbackLabel ?? '';
