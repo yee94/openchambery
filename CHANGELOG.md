@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [2.0.11-beta.19] - 2026-10-19
+
+### 改进
+
+- 更新消息列表滚动引擎，纳入动态行高、底部跟随和 iOS 惯性滚动的上游修复，改善长会话浏览与滚动定位稳定性。
+
 ## [2.0.11-beta.18] - 2026-10-19
 
 ### 修复

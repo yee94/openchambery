@@ -1,6 +1,6 @@
 {
   "name": "openchamber-monorepo",
-  "version": "2.0.11-beta.18",
+  "version": "2.0.11-beta.19",
   "description": "OpenChamber monorepo workspace for web, ui, and desktop runtimes",
   "private": true,
   "type": "module",
@@ -188,7 +188,6 @@
     "vitest": "^4.1.11"
   },
   "patchedDependencies": {
-    "@tanstack/virtual-core@3.17.7": "patches/@tanstack%2Fvirtual-core@3.17.7.patch",
     "ghostty-web@0.4.0": "patches/ghostty-web@0.4.0.patch"
   }
 }
