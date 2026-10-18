@@ -26,6 +26,9 @@ const LOGO_ALIAS = new Map<string, string>([
     ['evrocai', 'evroc'],
     ['ollama-cloud', 'ollama'],
     ['opencode-go', 'opencode'],
+    ['grok', 'xai'],
+    ['supergrok', 'xai'],
+    ['zcode', 'zai-coding-plan'],
     ['wafer-ai', 'wafer.ai'],
     ['wafer', 'wafer.ai'],
 ]);
@@ -40,7 +43,13 @@ const normalizeProviderId = (providerId: string | null | undefined) => {
 };
 
 const buildLogoCandidates = (providerId: string | null | undefined) => {
-    const normalized = normalizeProviderId(providerId);
+    let brandId = providerId;
+    const magpie = providerId?.match(/^magpie:[^:]+:(.+)$/i);
+    if (magpie) {
+        try { brandId = decodeURIComponent(magpie[1]); }
+        catch { return []; }
+    }
+    const normalized = normalizeProviderId(brandId);
     if (!normalized) {
         return [] as string[];
     }
@@ -49,6 +58,11 @@ const buildLogoCandidates = (providerId: string | null | undefined) => {
     const primary = compact.split(/[/:]/)[0] || compact;
     const candidates = [LOGO_ALIAS.get(compact), LOGO_ALIAS.get(primary), compact, primary]
         .filter((value): value is string => Boolean(value && value.length > 0));
+
+    for (const keyword of normalized.split(/[^a-z0-9]+/)) {
+        const brand = LOGO_ALIAS.get(keyword) ?? keyword;
+        if (LOCAL_PROVIDER_LOGO_MAP.has(brand)) candidates.push(brand);
+    }
 
     return [...new Set(candidates)];
 };

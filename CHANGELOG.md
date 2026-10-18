@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [2.0.10-beta.12] - 2026-10-18
+
+### 修复
+
+- 修复 Magpie 用量面板显示通用图标的问题，按真实服务商品牌及关键词匹配 Cursor、Grok、Codex、ZCode、WorkBuddy 和 OpenCode Go 的 Logo。
+- 新增基于 WorkBuddy 官方图形制作的透明底黑白 SVG，适配浅色和深色主题。
+
 ## [2.0.10-beta.11] - 2026-10-18
 
 ### 修复
