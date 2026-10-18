@@ -391,12 +391,17 @@ describe('private relay compiled-process boundary', () => {
       } });
       const deniedImage = await client.fetch('/api/fs/raw?path=%2Fremote%2Ficons-zoom.png');
       expect(deniedImage.status).toBe(401);
-      const image = await acquireRuntimeImage('/remote/icons-zoom.png', new AbortController().signal, 'preview');
-      expect(image.url).toMatch(/^openchamber-asset:\/\/v\//);
-      await eventually(() => ended, 'relay image did not finish writing to native bridge');
-      expect(Buffer.concat(received)).toEqual(previewPng);
-      image.release();
-      await eventually(() => released, 'native image lease was not released');
+      for (const intent of ['inline', 'preview'] as const) {
+        received.length = 0;
+        ended = false;
+        released = false;
+        const image = await acquireRuntimeImage('/remote/icons-zoom.png', new AbortController().signal, intent);
+        expect(image.url).toMatch(/^openchamber-asset:\/\/v\//);
+        await eventually(() => ended, 'relay image did not finish writing to native bridge');
+        expect(Buffer.concat(received)).toEqual(previewPng);
+        image.release();
+        await eventually(() => released, 'native image lease was not released');
+      }
     } finally {
       resetRelayImageStreamForTests();
       Reflect.deleteProperty(globalThis, NATIVE_RELAY_ASSET_BRIDGE_KEY);

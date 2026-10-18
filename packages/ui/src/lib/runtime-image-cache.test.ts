@@ -3,7 +3,7 @@ const state = vi.hoisted(() => ({
   acquire: vi.fn(), append: vi.fn(), commit: vi.fn(), release: vi.fn(), stat: vi.fn(), fetch: vi.fn(),
   transport: 'direct:host-a', generation: 0, supported: true,
 }));
-vi.mock('./relay/native-asset-bridge', () => ({ getNativeImageCacheBridge: () => state.supported ? state : null }));
+vi.mock('./relay/native-asset-bridge', () => ({ getNativeImageCacheBridge: () => state.supported ? state : null, resolveNativeRelayAssetBridge: async () => null }));
 vi.mock('@/contexts/runtimeAPIRegistry', () => ({ getRegisteredRuntimeAPIs: () => ({ files: { statFile: state.stat } }) }));
 vi.mock('@/queries/fileQueries', () => ({ fileStatQueryOptions: () => ({ queryFn: state.stat }) }));
 vi.mock('@/lib/queryRuntime', () => ({ queryClient: { fetchQuery: ({ queryFn }: { queryFn: () => unknown }) => queryFn() } }));

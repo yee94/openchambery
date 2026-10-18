@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import { MobileFilesSurface } from './MobileFilesSurface';
 import { resetRelayImageStreamForTests } from '@/lib/relay/relay-image-stream';
+import { MarkstreamImageNode } from '@/components/chat/markstream/markstreamImage';
 
 const state = vi.hoisted(() => ({
   fetch: vi.fn(), open: vi.fn(), write: vi.fn(), end: vi.fn(), release: vi.fn(), abort: vi.fn(),
@@ -35,6 +36,8 @@ vi.mock('@/stores/useUIStore', () => ({ useUIStore: (select: (s: unknown) => unk
 vi.mock('@/lib/i18n', () => ({ useI18n: () => ({ t: state.t }) }));
 vi.mock('@/components/ui', () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 vi.mock('@/components/chat/message/TextSelectionMenu', () => ({ TextSelectionMenu: () => null }));
+vi.mock('@/components/chat/markstream/markstreamCodeBlock', () => ({ MarkstreamCodeBlockNode: () => null }));
+vi.mock('@/components/chat/markstream/markstreamHostContext', () => ({ useMarkstreamHostContext: () => ({ onShowPopup: state.showPopup }) }));
 vi.mock('@/components/views/PierreDiffViewer', () => ({ PIERRE_RUNTIME_BASE_CSS: '' }));
 vi.mock('@pierre/diffs/react', () => ({ File: () => null }));
 vi.mock('@/contexts/useThemeSystem', () => ({ useThemeSystem: () => ({ currentTheme: { metadata: { variant: 'light' } }, availableThemes: [] }) }));
@@ -84,6 +87,21 @@ test('an explicit browser-only preview can fall back to an object URL', async ()
   await act(async () => root.render(<MobileFilesSurface initialFilePath="/workspace/photo.png" directFilePreview hideFileHeader />));
   expect(host.querySelector('img')?.getAttribute('src')).toBe('blob:wrong-path');
   expect(URL.createObjectURL).toHaveBeenCalledTimes(1);
+});
+test('session inline Markdown images use mobile native streams and release on unmount', async () => {
+  await act(async () => root.render(<MarkstreamImageNode node={{ type: 'image', src: '/workspace/theme.png', alt: 'theme', title: null, raw: '![theme](/workspace/theme.png)' }} />));
+  expect(host.querySelector('img')?.getAttribute('src')).toMatch(/^openchamber-asset:\/\//);
+  expect(state.fetch).toHaveBeenCalledTimes(1);
+  expect(URL.createObjectURL).not.toHaveBeenCalled();
+  await act(async () => root.render(null));
+  expect(state.release).toHaveBeenCalledTimes(1);
+});
+
+test('inline browser images without native support do not auto-download Blob bytes', async () => {
+  state.native = false;
+  await act(async () => root.render(<MarkstreamImageNode node={{ type: 'image', src: '/workspace/theme.png', alt: 'theme', title: null, raw: '![theme](/workspace/theme.png)' }} />));
+  expect(state.fetch).not.toHaveBeenCalled();
+  expect(URL.createObjectURL).not.toHaveBeenCalled();
 });
 afterEach(async () => {
   await act(async () => root.unmount()); host.remove(); resetRelayImageStreamForTests();
