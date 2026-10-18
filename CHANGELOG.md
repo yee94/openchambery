@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [2.0.11-beta.4] - 2026-10-18
+
+### 修复
+
+- 延续会话加载期间的输入框光标修复：桌面、展开输入框和移动端在历史加载完成、失败重试及滚动控件出现时，保持正在输入的文字与选区。
+
 ## [2.0.11-beta.3] - 2026-10-18
 
 ### 修复

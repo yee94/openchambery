@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url';
 import React, { act } from 'react';
 import { createRoot } from 'react-dom/client';
 import ts from 'typescript';
-import { afterEach, describe, expect, test } from 'vitest';
+import { afterEach, beforeEach, describe, expect, test } from 'vitest';
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
 
@@ -44,11 +44,14 @@ const createRender = new Function(...bindings, `${compiled}\nreturn renderBranch
 const Empty = () => null;
 const Composer = () => <textarea defaultValue="loading draft" autoFocus />;
 const host = document.createElement('div');
-document.body.append(host);
-let root = createRoot(host);
+let root: ReturnType<typeof createRoot>;
+beforeEach(() => {
+    document.body.append(host);
+    root = createRoot(host);
+});
 afterEach(async () => {
     await act(async () => root.unmount());
-    root = createRoot(host);
+    host.remove();
 });
 
 const render = async (overrides: Record<string, unknown>) => {
@@ -71,13 +74,17 @@ const render = async (overrides: Record<string, unknown>) => {
 };
 
 describe('session loading composer continuity', () => {
-    test.each([false, true])('preserves typing and selection when history arrives (mobile=%s)', async (isMobile) => {
-        await render({ isMobile, isSessionHydrating: true });
+    test.each([
+        { isMobile: false, isDesktopExpandedInput: false },
+        { isMobile: true, isDesktopExpandedInput: false },
+        { isMobile: false, isDesktopExpandedInput: true },
+    ])('preserves typing and selection when history arrives ($isMobile, $isDesktopExpandedInput)', async (layout) => {
+        await render({ ...layout, isSessionHydrating: true });
         const textarea = host.querySelector('textarea')!;
         textarea.value = 'already typing during loading';
         textarea.focus();
         textarea.setSelectionRange(8, 14, 'backward');
-        await render({ isMobile });
+        await render(layout);
         expect(host.querySelector('textarea')).toBe(textarea);
         expect(document.activeElement).toBe(textarea);
         expect(textarea.value).toBe('already typing during loading');
@@ -100,5 +107,17 @@ describe('session loading composer continuity', () => {
             expect(textarea.value).toBe('unsent text');
             expect(textarea.selectionStart).toBe(3);
         }
+    });
+
+    test('keeps a collapsed caret when scroll controls and warnings appear', async () => {
+        await render({ isSessionHydrating: true });
+        const textarea = host.querySelector('textarea')!;
+        textarea.value = 'before after';
+        textarea.setSelectionRange(7, 7);
+        await render({ warning: 'partial history', timelineController: { historySignals: {}, showScrollToBottom: true } });
+        expect(host.querySelector('textarea')).toBe(textarea);
+        expect([textarea.selectionStart, textarea.selectionEnd]).toEqual([7, 7]);
+        textarea.setRangeText('inserted ', textarea.selectionStart, textarea.selectionEnd, 'end');
+        expect(textarea.value).toBe('before inserted after');
     });
 });
