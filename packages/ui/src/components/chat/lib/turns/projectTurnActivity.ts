@@ -9,6 +9,7 @@ import type {
 import { resolveActivityPartId } from './resolveActivityPartId';
 import { hasUserDisplayableParts } from '../../message/normalizeUserDisplayParts';
 import { isRestartNotice } from '../../message/assistantErrorPresentation';
+import { hasVisibleText } from '../../message/partUtils';
 
 const getPartEndTime = (part: unknown): number | undefined => {
     const stateEnd = (part as { state?: { time?: { end?: unknown } } }).state?.time?.end;
@@ -21,11 +22,11 @@ const getPartEndTime = (part: unknown): number | undefined => {
 
 const getPartText = (part: unknown): string | undefined => {
     const text = (part as { text?: unknown }).text;
-    if (typeof text === 'string' && text.trim().length > 0) {
+    if (typeof text === 'string' && hasVisibleText(text)) {
         return text;
     }
     const content = (part as { content?: unknown }).content;
-    if (typeof content === 'string' && content.trim().length > 0) {
+    if (typeof content === 'string' && hasVisibleText(content)) {
         return content;
     }
     return undefined;

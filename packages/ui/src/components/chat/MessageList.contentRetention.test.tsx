@@ -82,6 +82,22 @@ test.each([
     expect(container.querySelectorAll('[data-component="context-tool-group"]')).toHaveLength(1);
 });
 
+test.each(['sorted', 'live'] as const)('zero-width provider text does not paint a blank paragraph or split tools (%s)', async (chatRenderMode) => {
+    useUIStore.setState({ chatRenderMode, showReasoningTraces: false, isMobile: true });
+    const row = normalizeSessionProjectionMessage(sessionID, {
+        id: 'zero-width-step', type: 'assistant', time: { created: 2 },
+        content: [
+            { type: 'tool', id: 'search', name: 'grep', state: { status: 'completed', input: { pattern: 'focus' }, content: [] } },
+            { type: 'text', text: '\u200b' },
+            { type: 'reasoning', text: 'Hidden thought' },
+            { type: 'tool', id: 'read', name: 'read', state: { status: 'running', input: { filePath: '/workspace/picker.tsx' } } },
+        ],
+    })!;
+    await render([user, row], row.info.id);
+    expect(container.textContent).not.toContain('\u200b');
+    expect(container.querySelectorAll('[data-component="context-tool-group"]')).toHaveLength(1);
+});
+
 beforeEach(async () => {
     previousUI = useUIStore.getState();
     previousFlags = useFeatureFlagsStore.getState();

@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [2.0.10-beta.13] - 2026-10-18
+
+### 修复
+
+- 修复移动端计划任务、设置和聊天中的模型搜索框在键盘弹出后立即失焦、键盘收起的问题。
+- 修复 DeepSeek 等模型返回零宽字符时出现空白段落、打断连续工具分组的问题，统一正文显示与回复完成判定。
+
 ## [2.0.10-beta.12] - 2026-10-18
 
 ### 修复

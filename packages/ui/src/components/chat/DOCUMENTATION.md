@@ -22,6 +22,8 @@ The primary session store reports every revert failure with a localized toast an
 
 ## Received-content continuity
 
+Text containing only whitespace and zero-width formatting placeholders (including DeepSeek's U+200B) is not visible body content. `partUtils.hasVisibleText` is shared by display filtering, Activity projection and final-body confirmation, so these parts neither paint blank paragraphs nor divide consecutive process tools. Visible text retains its original formatting characters; source records are never rewritten.
+
 OpenCode message order and each message's `content[]` / normalized `parts[]` order are the only display order. Sorted mode consolidates adjacent items; it never sorts by timestamp, id, kind, finish or a preferred summary. `projectTurnActivity` walks that sequence once, retaining intermediate text, reasoning and tools in an ordered Activity prefix. Only the trailing model text of the last assistant without continuation tools is left inline after the prefix; earlier text is not concatenated into the final answer. The snapshot, classic live tail and Legend live tail all consume this same partition, with no separate live-reveal filter.
 
 Checkpoints and visible synthetic notices break assistant runs. Hidden native instruction records do not: their user-bubble visibility is checked before ending the segment, matching OpenCode's graphical timeline policy for hidden notices. Each display-adjacent run retains its first-painted assistant Activity anchor as older siblings arrive; nothing crosses a visible notice. Live repository overlays replace assistants by identity in the complete `turn.messages` sequence, preserving every intervening record. Terminal-stop detection owns completion chrome, never content order.

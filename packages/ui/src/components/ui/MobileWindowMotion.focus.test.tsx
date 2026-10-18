@@ -60,6 +60,26 @@ async function tap(element: HTMLElement) {
 }
 
 describe('mobile model picker focus through Settings hosts', () => {
+  test.each(['page', 'sheet', 'dialog'] as const)('does not move the IME surface before native touch focus in %s', async (kind) => {
+    await act(async () => root.render(<I18nProvider><Host kind={kind} /></I18nProvider>));
+    await tap(document.querySelector<HTMLElement>('[data-testid="model-trigger"]')!);
+    const input = document.querySelector<HTMLInputElement>('#mobile-overlay-root input')!;
+    // Touch focus is a mousedown default action, after pointerup. Moving the
+    // keyboard-inset sheet sooner retargets that mousedown and blurs the input.
+    await act(async () => {
+      input.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, pointerType: 'touch' }));
+      input.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, pointerType: 'touch' }));
+    });
+    expect(document.activeElement).not.toBe(input);
+    await act(async () => {
+      input.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+      input.focus();
+      input.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
+      input.click();
+    });
+    expect(document.activeElement).toBe(input);
+  });
+
   test.each(['page', 'sheet', 'dialog'] as const)('keeps tapped search focused in %s', async (kind) => {
     await act(async () => root.render(<I18nProvider><Host kind={kind} /></I18nProvider>));
     await tap(document.querySelector<HTMLElement>('[data-testid="model-trigger"]')!);

@@ -1,4 +1,5 @@
 import type { Part } from '@/lib/opencode/v2-types';
+import { hasVisibleText } from '../../message/partUtils';
 
 /**
  * Assistant-message lifecycle predicates, mirroring the OpenCode runLoop exit
@@ -79,7 +80,7 @@ export const isModelTextPart = (part: Part): boolean => {
         return false;
     }
     const text = (part as { text?: unknown }).text;
-    return typeof text === 'string' && text.trim().length > 0;
+    return typeof text === 'string' && hasVisibleText(text);
 };
 
 /**

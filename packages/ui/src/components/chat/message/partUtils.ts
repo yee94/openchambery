@@ -20,12 +20,16 @@ export const extractTextContent = (part: Part): string => {
     return partWithText.content || partWithText.value || '';
 };
 
+// Provider placeholders (notably U+200B) must not paint paragraphs or split tool runs.
+// Only test visibility: embedded joiners and word breaks in real text stay untouched.
+export const hasVisibleText = (text: string): boolean => /[^\s\u200B-\u200D\u2060\uFEFF]/u.test(text);
+
 export const isEmptyTextPart = (part: Part): boolean => {
     if (part.type !== 'text') {
         return false;
     }
     const text = extractTextContent(part);
-    return !text || text.trim().length === 0;
+    return !hasVisibleText(text);
 };
 
 type PartWithSynthetic = Part & { synthetic?: boolean };
@@ -49,6 +53,9 @@ export const filterVisibleParts = (parts: Part[], options: VisibleFilterOptions 
         const isSynthetic = Boolean(partWithSynthetic.synthetic);
 
         if (part.type === 'text') {
+            if (isEmptyTextPart(part)) {
+                return false;
+            }
             const text = extractTextContent(part);
             if (text.includes('<system-reminder>') && stripSystemReminders(text).length === 0) {
                 return false;
