@@ -1,5 +1,20 @@
 # Sync architecture, event handling & store update rules
 
+## Scheduled-task foreground compensation
+
+The shared `openchamberEvents` transport reconnects after a hidden→visible gap,
+persisted pageshow, or system resume, even when a recent heartbeat arrived.
+Heartbeats do not prove delivery of domain events during suspension. Recovery
+signals in the same turn share one connection attempt; the last unsubscribe
+removes lifecycle listeners and fences queued recovery. Online interrupts a
+pending reconnect backoff. Existing runtime-attempt guards reject old frames.
+The server's new `event-stream-ready` triggers authoritative GET refreshes for
+the scheduled navigation badge and the workspace task/history queries. Workspace
+keys follow the current transport rather than the module's initial runtime.
+Failed refreshes retain prior data; only successful snapshots settle indicators.
+`ScheduledNavigationRecovery.test.tsx` covers a mounted badge with the real shared
+SSE consumer, a missed completion and fresh heartbeat across resume paths.
+
 ## Desktop notification navigation
 
 Electron owns notification window routing: renderer notifications return to their originating window, backend notifications target a local-runtime window, and closed or shell-runtime-switched owners reject stale clicks. `openSessionFromNotification.ts` opens the session on the receiving window's current runtime, preserving the directory hint; it must not switch remote direct/Relay windows to local. No delayed runtime-switch listener or timer is needed. Regression coverage: `openSessionFromNotification.test.ts` and `packages/electron/notification-routing.test.mjs`.

@@ -94,6 +94,7 @@ let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 let heartbeatTimer: ReturnType<typeof setTimeout> | null = null;
 let reconnectAttempt = 0;
 let runtimeChangeUnsubscribe: (() => void) | null = null;
+let lifecycleUnsubscribe: (() => void) | null = null;
 const listeners = new Set<Listener>();
 /** In-memory latest tip per revision domain — closes GET→subscribe gaps. Not persisted. */
 const latestRevisionByDomain = new Map<OpenchamberRevisionEventType, number>();
@@ -394,9 +395,61 @@ const cleanupRuntimeChangeSubscription = () => {
   runtimeChangeUnsubscribe = null;
 };
 
+const ensureLifecycleSubscription = () => {
+  if (lifecycleUnsubscribe || typeof window === 'undefined') return;
+  const target = window;
+  const doc = typeof document === 'undefined' ? undefined : document;
+  let wasHidden = doc?.visibilityState === 'hidden';
+  let disposed = false;
+  let queued = false;
+  const recover = () => {
+    if (disposed || queued) return;
+    queued = true;
+    queueMicrotask(() => {
+      queued = false;
+      if (disposed || listeners.size === 0) return;
+      // Heartbeats prove transport liveness, not delivery of domain events
+      // while suspended. A new server-ready edge triggers authoritative GETs.
+      if (reconnectTimer) {
+        clearTimeout(reconnectTimer);
+        reconnectTimer = null;
+      }
+      cleanupAttempt();
+      connect();
+    });
+  };
+  const onVisibility = () => {
+    if (doc?.visibilityState === 'hidden') {
+      wasHidden = true;
+    } else if (doc?.visibilityState === 'visible' && wasHidden) {
+      wasHidden = false;
+      recover();
+    }
+  };
+  const onPageShow = (event: PageTransitionEvent) => {
+    if (event.persisted) recover();
+  };
+  const onOnline = () => {
+    if (!attempt || reconnectTimer) recover();
+  };
+  doc?.addEventListener('visibilitychange', onVisibility);
+  target.addEventListener('pageshow', onPageShow);
+  target.addEventListener('openchamber:system-resume', recover);
+  target.addEventListener('online', onOnline);
+  lifecycleUnsubscribe = () => {
+    disposed = true;
+    doc?.removeEventListener('visibilitychange', onVisibility);
+    target.removeEventListener('pageshow', onPageShow);
+    target.removeEventListener('openchamber:system-resume', recover);
+    target.removeEventListener('online', onOnline);
+    lifecycleUnsubscribe = null;
+  };
+};
+
 export const subscribeOpenchamberEvents = (listener: Listener): (() => void) => {
   listeners.add(listener);
   ensureRuntimeChangeSubscription();
+  ensureLifecycleSubscription();
   connect();
 
   return () => {
@@ -413,6 +466,7 @@ export const subscribeOpenchamberEvents = (listener: Listener): (() => void) => 
       reconnectAttempt = 0;
       cleanupAttempt();
       cleanupRuntimeChangeSubscription();
+      lifecycleUnsubscribe?.();
     }
   };
 };

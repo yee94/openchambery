@@ -225,8 +225,6 @@ const toneStyle = (tone: StatusTone): React.CSSProperties => {
 type TaskIdentity = { projectId: string; taskId: string };
 
 const taskIdentityKey = ({ projectId, taskId }: TaskIdentity) => `${projectId}:${taskId}`;
-const globalScheduledTasksQueryKey = queryKeys.scoped('scheduled-tasks');
-const globalScheduledTaskRunsQueryKey = queryKeys.scoped('scheduled-task-runs');
 
 let mobileCloseRequest: (() => boolean) | null = null;
 
@@ -294,6 +292,9 @@ export function ScheduledTasksWorkspace({
   onEditorActiveChange?: (active: boolean) => void;
 } = {}) {
   const { t } = useI18n();
+  const transport = queryKeys.runtime()[0];
+  const globalScheduledTasksQueryKey = React.useMemo(() => [transport, 'scheduled-tasks'] as const, [transport]);
+  const globalScheduledTaskRunsQueryKey = React.useMemo(() => [transport, 'scheduled-task-runs'] as const, [transport]);
   const reduceMotion = useReducedMotion();
   const isMobile = useUIStore((state) => state.isMobile);
   const setMainTabGuard = useUIStore((state) => state.setMainTabGuard);
@@ -441,7 +442,7 @@ export function ScheduledTasksWorkspace({
   React.useEffect(() => {
     let timeoutID: ReturnType<typeof setTimeout> | null = null;
     const unsubscribe = subscribeOpenchamberEvents((event) => {
-      if (event.type !== 'scheduled-task-ran') {
+      if (event.type !== 'scheduled-task-ran' && event.type !== 'event-stream-ready') {
         return;
       }
       if (timeoutID) {
@@ -458,7 +459,7 @@ export function ScheduledTasksWorkspace({
       }
       unsubscribe();
     };
-  }, []);
+  }, [globalScheduledTasksQueryKey, globalScheduledTaskRunsQueryKey]);
 
   React.useEffect(() => {
     if (editorMode === 'edit' && selectedTaskIdentity && !selectedTaskEntry && tasksQuery.isSuccess) {

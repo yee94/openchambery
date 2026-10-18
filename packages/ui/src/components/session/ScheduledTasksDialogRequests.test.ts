@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url';
 describe('ScheduledTasksDialog queries', () => {
   test('keeps one global query and one scheduled-task business UI', async () => {
     const content = await readFile(join(dirname(fileURLToPath(import.meta.url)), 'ScheduledTasksDialog.tsx'), 'utf8');
-    expect(content).toContain("const globalScheduledTasksQueryKey = queryKeys.scoped('scheduled-tasks')");
+    expect(content).toContain("React.useMemo(() => [transport, 'scheduled-tasks'] as const, [transport])");
     expect(content).toContain('queryKey: globalScheduledTasksQueryKey');
     expect(content).toContain('queryFn: fetchGlobalScheduledTasks');
     expect(content.match(/useQuery\(\{/g)).toHaveLength(1);
@@ -50,6 +50,7 @@ describe('ScheduledTasksDialog queries', () => {
     expect(content).toContain('key={identityKey}');
     expect(content).toContain('projectId: projectID, task');
     expect(content).toContain("event.type !== 'scheduled-task-ran'");
+    expect(content).toContain("event.type !== 'event-stream-ready'");
     expect(content).toContain("t('sessions.scheduledTasks.workspace.partialLoadWarning')");
     expect(content).toContain('setSelectedTaskIdentity({ projectId: projectID, taskId: nextSelectedTask.id })');
   });
@@ -57,7 +58,7 @@ describe('ScheduledTasksDialog queries', () => {
   test('loads run history incrementally and invalidates its exact query on run events', async () => {
     const content = await readFile(join(dirname(fileURLToPath(import.meta.url)), 'ScheduledTasksDialog.tsx'), 'utf8');
     expect(content).toContain('useInfiniteQuery({');
-    expect(content).toContain("const globalScheduledTaskRunsQueryKey = queryKeys.scoped('scheduled-task-runs')");
+    expect(content).toContain("React.useMemo(() => [transport, 'scheduled-task-runs'] as const, [transport])");
     expect(content).toContain("enabled: open && workspaceView === 'history'");
     expect(content).toContain('initialPageParam: undefined as string | undefined');
     expect(content).toContain('getNextPageParam: (lastPage) => lastPage.complete ? undefined : lastPage.nextCursor ?? undefined');
