@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [2.0.11-beta.3] - 2026-10-18
+
+### 修复
+
+- 修复聊天 Markdown 中本地路径图片未经过内部代理、在本机直连、局域网和 Relay 下加载失败的问题。
+- 恢复聊天图片的点击预览，加载失败时保留可点击入口，并支持 Enter 和空格键打开预览。
+- 修复会话历史加载、失败重试与空历史切换时输入框被重新挂载的问题，保留正在输入的文字、焦点和选区。
+
 ## [2.0.11-beta.2] - 2026-10-18
 
 ### 修复

@@ -168,4 +168,22 @@ const streamReplay = async () => {
   return { initialTextMatches, stable, height, heights, closed: Boolean(document.querySelector('pre.shiki')) };
 };
 
-Object.assign(window, { markstreamStyleReplay: replay, markstreamScrollReplay: scrollReplay, markstreamStreamReplay: streamReplay });
+const imageReplay = async () => {
+  let openedSource: string | undefined;
+  flushSync(() => root.render(
+    <I18nProvider>
+      <MarkstreamRenderer content="![runtime photo](/workspace/photo.png)" messageId="runtime-image"
+        enableFileReferences={false} onShowPopup={(popup) => { openedSource = popup.image?.url; }} />
+    </I18nProvider>,
+  ));
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    const image = document.querySelector('img');
+    if (image?.naturalWidth) break;
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+  const image = document.querySelector('img');
+  image?.click();
+  return { loaded: Boolean(image?.naturalWidth), source: image?.getAttribute('src'), openedSource };
+};
+
+Object.assign(window, { markstreamStyleReplay: replay, markstreamScrollReplay: scrollReplay, markstreamStreamReplay: streamReplay, markstreamImageReplay: imageReplay });

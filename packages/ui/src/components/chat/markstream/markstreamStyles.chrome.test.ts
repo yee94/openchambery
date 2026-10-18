@@ -54,7 +54,15 @@ describe('Markstream nested legacy code card Chromium styles', () => {
       </head><body><div id="root"></div><script>window.process={env:{NODE_ENV:'production'}};window.global=window;</script>
       <script src="/fixture.js"></script></body></html>`);
     // Serve generated worker assets over HTTP so the actual Shiki worker can run.
+    const imageRequests: string[] = [];
     const server = createServer((request, response) => {
+      const url = new URL(request.url ?? '/', 'http://fixture');
+      if (url.pathname === '/api/fs/raw') {
+        imageRequests.push(url.searchParams.get('path') ?? '');
+        response.setHeader('Content-Type', 'image/png');
+        response.end(Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aD1sAAAAASUVORK5CYII=', 'base64'));
+        return;
+      }
       const path = resolve(work, `.${new URL(request.url ?? '/', 'http://fixture').pathname}`);
       if (!path.startsWith(`${work}${sep}`)) { response.writeHead(403).end(); return; }
       try {
@@ -76,6 +84,11 @@ describe('Markstream nested legacy code card Chromium styles', () => {
         await new Promise((done) => setTimeout(done, 50));
       }
       expect(await page.evaluate('typeof window.markstreamStyleReplay')).toBe('function');
+      const imageResult = await page.evaluate<{ loaded: boolean; source: string; openedSource: string }>('window.markstreamImageReplay()');
+      expect(imageResult.loaded).toBe(true);
+      expect(imageResult.source).toMatch(/^blob:/);
+      expect(imageResult.openedSource).toBe('/workspace/photo.png');
+      expect(imageRequests).toEqual(['/workspace/photo.png']);
       const evidence: Record<string, unknown> = {};
       for (const dark of [false, true]) {
         const mode = dark ? 'dark' : 'light';

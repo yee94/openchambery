@@ -5,6 +5,7 @@ import {
   type NodeComponentProps,
 } from 'markstream-react';
 import { MarkstreamCodeBlockNode, MarkstreamInterceptedFenceNode } from './markstreamCodeBlock';
+import { MarkstreamImageNode } from './markstreamImage';
 import {
   MarkstreamInlineCodeNode,
   MarkstreamLinkNode,
@@ -72,6 +73,7 @@ export const ensureMarkstreamCustomComponents = (): void => {
     text: MarkstreamTextMapEntry,
     inline_code: MarkstreamInlineCodeNode,
     link: MarkstreamLinkNode,
+    image: MarkstreamImageNode,
     code_block: withMarkstreamComponentDisplay(MarkstreamCodeBlockNode, 'block'),
     // Language keys, not AST types. Resolved before code_block. mermaid is drawn
     // by MarkdownRendererImpl; d2 / infographic have no OpenChamber renderer and

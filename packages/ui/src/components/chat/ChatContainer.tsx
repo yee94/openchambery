@@ -1749,6 +1749,7 @@ const ChatContainerContent: React.FC<ChatContainerContentProps> = ({
             ? null
             : (
                 <ChatInput
+                    key="composer-input"
                     surface={composerSurface}
                     scrollToBottom={scrollViewportOnSend}
                     showScrollToBottom={isMobile && timelineController.showScrollToBottom}
@@ -2243,6 +2244,7 @@ const ChatContainerContent: React.FC<ChatContainerContentProps> = ({
 					) : null}
 				</div>
 				<div
+					key="composer-foot"
 					className={cn(
 						'relative z-10',
 						isMobile && 'oc-mobile-composer-foot',
@@ -2300,6 +2302,7 @@ const ChatContainerContent: React.FC<ChatContainerContentProps> = ({
                     </div>
                 </div>
                 <div
+                    key="composer-foot"
                     className={cn(
                         'relative z-10',
                         isMobile && 'oc-mobile-composer-foot oc-mobile-composer-foot--overlay',
@@ -2337,6 +2340,7 @@ const ChatContainerContent: React.FC<ChatContainerContentProps> = ({
                     ) : null}
                 </div>
                 <div
+                    key="composer-foot"
                     className={cn(
                         'relative z-10',
                         isMobile && 'oc-mobile-composer-foot',
@@ -2402,6 +2406,7 @@ const ChatContainerContent: React.FC<ChatContainerContentProps> = ({
             />
 
             <div
+                key="composer-foot"
                 className={cn(
                     'relative z-10',
                     isMobile && 'oc-mobile-composer-foot oc-mobile-composer-foot--overlay',
