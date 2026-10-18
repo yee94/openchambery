@@ -654,7 +654,7 @@ export const createProjectConfigRuntime = (deps) => {
     });
   };
 
-  const updateScheduledTaskState = async (projectID, taskID, statePatch) => {
+  const updateScheduledTaskState = async (projectID, taskID, statePatch, { expectedState } = {}) => {
     return withProjectWriteLock(projectID, async () => {
       const normalizedTaskID = asNonEmptyString(taskID);
       if (!normalizedTaskID) {
@@ -669,6 +669,9 @@ export const createProjectConfigRuntime = (deps) => {
 
       const currentTask = current.scheduledTasks[taskIndex];
       const patchObject = statePatch && typeof statePatch === 'object' ? statePatch : {};
+      if (expectedState && Object.entries(expectedState).some(([key, value]) => currentTask.state?.[key] !== value)) {
+        return { task: null, tasks: current.scheduledTasks };
+      }
       const nextTask = {
         ...currentTask,
         state: normalizeState(

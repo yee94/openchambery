@@ -197,7 +197,29 @@ Recovery checks live `session.active` before examining terminal messages or Host
 goal state. Active, unavailable, malformed, and incomplete results remain pending.
 Only confirmed terminal evidence finalizes history, with duration through the
 time recovery observes completion. It neither dispatches a new prompt nor sends
-a second completion notification or overwrites task configuration/state.
+a second completion notification.
+
+The same loop independently visits at most 20 configured tasks per pass, wrapping
+through the catalog, to reconcile persisted `lastStatus: running`. History and
+task state are separate stores: a successful history row does not guarantee that
+the task snapshot was finalized, and completed history no longer appears in the
+running-history scan. The latest indexed history row may supply the session only
+when its `startedAt` matches the task's `lastRunAt`; a different run is never used.
+Without a history row, an existing last-session binding can be checked directly.
+Live activity is checked before terminal messages/goal state, so old successful
+history cannot hide a still-running continuation. Both success and error settle
+task activity; failed/unknown/incomplete reads preserve it and retry later.
+
+Task reconciliation has its own ten-second request deadline and skips local
+executions. Stop and in-memory identity changes fence late reads. The project
+write lock checks `updateScheduledTaskState(..., { expectedState })` against the
+captured run/session/status/update timestamp before committing, so a newer run or
+edit wins. Unconditional callers keep their existing behavior. Recovery changes
+only status/error/session binding, retaining schedule, enabled state, last-run
+time and duration; it emits the existing invalidation event on commit. Historical
+continuation events use the same guarded terminal writes and settle failures as
+well as successes. Regression tests cover already-finished history, restart,
+busy/failed/incomplete authority, stop/new-run races, and bounded partial recovery.
 
 `finishRun(..., { onlyIfRunning: true })` conditionally writes recovery results,
 returning null if another writer already finalized the row. Recovery emits the
