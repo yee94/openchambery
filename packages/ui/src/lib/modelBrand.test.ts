@@ -26,6 +26,18 @@ describe('modelBrand', () => {
     expect(resolveModelBrand('kimi-k2', 'moonshot')).toBe('kimi');
     expect(resolveModelBrand('grok-4-1-fast', 'xai')).toBe('grok');
     expect(resolveModelBrand('minimax-m1', 'minimax')).toBe('minimax');
+    expect(resolveModelBrand('mimo-v2.6-pro-rl', 'aggregator')).toBe('mimo');
+    expect(resolveModelBrand('MiMo V2.6 Flash RL', 'aggregator')).toBe('mimo');
+    expect(resolveModelBrand('mimo-v2.6-flash-rl')).toBe('mimo');
+  });
+
+  test('keeps mimo and minimax apart', () => {
+    // `mimo` is Xiaomi's model, `minimax` another vendor; neither may borrow the
+    // other's brand or logo.
+    expect(resolveModelBrand('mimo-v2.6-pro-rl', 'minimax')).toBe('mimo');
+    expect(resolveModelBrand('minimax-m3', 'mimo')).toBe('minimax');
+    expect(getModelBrandLogoCandidates(resolveModelBrand('mimo-v2.6-pro-rl'))).toEqual(['mimo']);
+    expect(getModelBrandLogoCandidates(resolveModelBrand('minimax-m3'))).toEqual(['minimax']);
   });
 
   test('maps openai o-series models to gpt brand', () => {
@@ -50,6 +62,7 @@ describe('modelBrand', () => {
     expect(getModelBrandLogoCandidates('hy')).toEqual(['hunyuan', 'hy']);
     expect(getModelBrandLogoCandidates('glm')).toEqual(['zai-coding-plan', 'zhipuai-coding-plan', 'glm']);
     expect(getModelBrandLogoCandidates('kimi')).toEqual(['kimi']);
+    expect(getModelBrandLogoCandidates('mimo')).toEqual(['mimo']);
     expect(getModelBrandLogoCandidates('qwen')).toEqual(['qwen']);
     expect(getModelBrandLogoCandidates('llama')).toEqual([]);
   });
