@@ -147,6 +147,7 @@ const ContextPanelSessionTranscriptContent: React.FC<ContextPanelSessionTranscri
     const [legendFollowReleased, setLegendFollowReleased] = React.useState(false);
     const [timelineHistoryAnchorToken, setTimelineHistoryAnchorToken] = React.useState(0);
     const { scrollRef, notifyContentChange, getAnimationHandlers, goToBottom, restoreSnapshot, showScrollButton } = useChatAutoFollow({
+        scrollControllerRef: messageListRef,
         // The legend timeline owns its scroll position. Leaving auto-follow on
         // would put two writers on one container.
         enabled: active && !legendTimelineEnabled,
@@ -166,7 +167,6 @@ const ContextPanelSessionTranscriptContent: React.FC<ContextPanelSessionTranscri
     });
     const resumeToLatest = useEvent((mode: 'instant' | 'smooth' = 'instant') => {
         setLegendFollowReleased(false);
-        messageListRef.current?.scrollToBottom();
         goToBottom(mode);
     });
     const handleLegendUpwardIntent = useEvent(() => {

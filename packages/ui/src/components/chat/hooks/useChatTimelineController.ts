@@ -1,6 +1,6 @@
 import React from 'react';
 import { useMutation } from '@tanstack/react-query';
-import { useEvent, useEventListener, useIsomorphicLayoutEffect, useUnmount } from '@reactuses/core';
+import { useEvent, useEventListener, useInterval, useIsomorphicLayoutEffect, useUnmount } from '@reactuses/core';
 
 import type { ChatMessageEntry } from '../lib/turns/types';
 import type { MessageListHandle } from '../MessageList';
@@ -405,6 +405,7 @@ type PendingTouchCompensation = {
 
 type TouchGestureState = {
     touches: number;
+    lastScrollAt: number;
     pending: PendingTouchCompensation | null;
     settleScheduled: boolean;
 };
@@ -433,6 +434,7 @@ export const resetTouchGestureTracking = (container: HTMLElement) => {
     const state = touchGestureStates.get(container);
     if (state) {
         state.touches = 0;
+        state.lastScrollAt = -Infinity;
         state.pending = null;
         state.settleScheduled = false;
     }
@@ -453,7 +455,7 @@ const resolveTouchGestureState = (container: HTMLElement): TouchGestureState => 
     const existing = touchGestureStates.get(container);
     if (existing) return existing;
 
-    const state: TouchGestureState = { touches: 0, pending: null, settleScheduled: false };
+    const state: TouchGestureState = { touches: 0, lastScrollAt: -Infinity, pending: null, settleScheduled: false };
     container.addEventListener('touchstart', () => {
         state.touches += 1;
     }, { passive: true });
@@ -465,6 +467,7 @@ const resolveTouchGestureState = (container: HTMLElement): TouchGestureState => 
     };
     container.addEventListener('touchend', release, { passive: true });
     container.addEventListener('touchcancel', release, { passive: true });
+    container.addEventListener('scroll', () => { state.lastScrollAt = performance.now(); }, { passive: true });
     touchGestureStates.set(container, state);
     return state;
 };
@@ -837,7 +840,24 @@ export const useChatTimelineController = ({
         resolvePendingScrollRequest(false);
     });
 
-    const renderedMessages = messages;
+    // A partial turn may live entirely in the non-virtual tail, outside the
+    // history list's prepend staging. Do not insert its older prefix under a
+    // finger: iOS ignores the compensating scrollTop until lift-off.
+    const displayedHistoryRef = React.useRef({ scope: historyScope, messages });
+    const displayedHistory = displayedHistoryRef.current;
+    const gesture = scrollRef.current ? touchGestureStates.get(scrollRef.current) : undefined;
+    const holdNonVirtualPrepend = displayedHistory.scope === historyScope
+        && displayedHistory.messages !== messages
+        && isMobileSurfaceRuntime()
+        && !messageListRef.current?.isHistoryVirtualized()
+        && hasInsertedBeforeKnownOldest(displayedHistory.messages[0]?.info?.id ?? null, messages[0]?.info?.id ?? null, messages)
+        && Boolean(gesture && (gesture.touches > 0 || performance.now() - gesture.lastScrollAt < 160));
+    const renderedMessages = holdNonVirtualPrepend ? displayedHistory.messages : messages;
+    useIsomorphicLayoutEffect(() => {
+        displayedHistoryRef.current = { scope: historyScope, messages: renderedMessages };
+    }, [historyScope, renderedMessages]);
+    const [, checkHistoryGesture] = React.useReducer((tick: number) => tick + 1, 0);
+    useInterval(checkHistoryGesture, holdNonVirtualPrepend ? 50 : null);
 
     useIsomorphicLayoutEffect(() => {
         resolvePendingRenderWaiters();
@@ -892,6 +912,17 @@ export const useChatTimelineController = ({
         newestId: string | null;
         scrollHeight: number;
     } | null>(null);
+
+    useIsomorphicLayoutEffect(() => {
+        if (!holdNonVirtualPrepend || !scrollRef.current) return;
+        // The fetch transaction may finish before the gesture. Seed the old
+        // geometry now so later adoption cannot treat the entire list as growth.
+        prependTrackingRef.current = {
+            oldestId: renderedMessages[0]?.info?.id ?? null,
+            newestId: renderedMessages.at(-1)?.info?.id ?? null,
+            scrollHeight: scrollRef.current.scrollHeight,
+        };
+    }, [holdNonVirtualPrepend, renderedMessages, scrollRef]);
 
     useIsomorphicLayoutEffect(() => {
         if (!isMobileSurfaceRuntime()) return;
@@ -1656,9 +1687,7 @@ export const useChatTimelineController = ({
         setPendingRevealWork(false);
         isLoadingOlderRef.current = false;
         setIsLoadingOlder(false);
-        // The legend list owns the scroll position; auto-follow's goToBottom
-        // is a no-op there (`enabled: false`). The handle talks to the list.
-        messageListRef.current?.scrollToBottom();
+        // Auto-follow resumes policy and delegates the write to the active list.
         goToBottom('smooth');
     });
 
@@ -1666,7 +1695,6 @@ export const useChatTimelineController = ({
         setPendingRevealWork(false);
         isLoadingOlderRef.current = false;
         setIsLoadingOlder(false);
-        messageListRef.current?.scrollToBottom();
         goToBottom('instant');
     });
 

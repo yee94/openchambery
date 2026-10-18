@@ -44,6 +44,7 @@ export default function Fixture() {
         )) }))
         : makeRows(20, scenario === 'virtualize-transition' ? 4 : 12));
     const [token, setToken] = React.useState(0);
+    const [tailHeight, setTailHeight] = React.useState(0);
     const listRef = React.useRef<MessageListHandle | null>(null);
     const upwardRef = React.useRef<() => void>(() => undefined);
     const loads = React.useRef(0);
@@ -53,6 +54,7 @@ export default function Fixture() {
     const fingerY = React.useRef(0);
     const loadFingerY = React.useRef(0);
     const auto = useChatAutoFollow({
+        scrollControllerRef: listRef,
         currentSessionId: sessionID, sessionMessageCount: rows.length, sessionIsWorking: false, isMobile,
         onUpwardUserIntent: useEvent(() => upwardRef.current()),
     });
@@ -105,6 +107,7 @@ export default function Fixture() {
         onWillLoadEarlier: useEvent(() => setToken((value) => value + 1)),
     });
     upwardRef.current = timeline.handleHistoryUpwardIntent;
+    const { resumeToBottomInstant } = timeline;
     React.useEffect(() => {
         const api = {
             prepare: async () => {
@@ -115,6 +118,8 @@ export default function Fixture() {
                 prepared.current = true;
             },
             sample,
+            resume: () => resumeToBottomInstant(),
+            grow: () => setTailHeight((height) => height + 300),
         };
         Object.assign(window, { historyScrollFixture: api });
         if (!new URLSearchParams(location.search).has('native')) return;
@@ -123,14 +128,16 @@ export default function Fixture() {
         }, 200);
         const prepareTimer = window.setTimeout(() => void api.prepare(), 2000);
         return () => { window.clearInterval(timer); window.clearTimeout(prepareTimer); };
-    }, [releaseAutoFollow, scrollRef, sample, scenario]);
+    }, [releaseAutoFollow, scrollRef, sample, scenario, resumeToBottomInstant]);
     return <div ref={auto.scrollRef} data-history-scroller="true" onScroll={timeline.handleHistoryScroll}
         style={{ height: '100dvh', overflowY: 'auto', overflowAnchor: 'none' }}>
-        <MessageList ref={listRef} sessionKey={sessionID} virtualizerKey={sessionID} directory="/fixture"
+        <div><MessageList ref={listRef} sessionKey={sessionID} virtualizerKey={sessionID} directory="/fixture"
             messages={timeline.renderedMessages} scrollRef={auto.scrollRef} isLoadingOlder={timeline.isLoadingOlder}
             sessionIsWorking={false} onMessageContentChange={auto.notifyContentChange}
             getAnimationHandlers={auto.getAnimationHandlers} enableSendPark={false}
             timelineHistoryAnchorToken={token} />
+            <div data-live-tail-growth style={{ height: tailHeight }} />
+        </div>
     </div>;
 }
 

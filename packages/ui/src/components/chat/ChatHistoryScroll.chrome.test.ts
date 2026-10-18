@@ -64,6 +64,8 @@ window.addEventListener('error',e=>{
         await new Promise((resolve) => setTimeout(resolve, 1500));
         expect(await page.evaluate('window.errors')).toEqual([]);
         expect((await page.evaluate<Sample>('window.historyScrollFixture.sample()')).loads).toBe(0);
+        const opened = await page.evaluate<Sample>('window.historyScrollFixture.sample()');
+        expect(Math.abs(opened.max - opened.top), 'cold open must reach the bottom without an out-of-range initial offset').toBeLessThan(3);
         await page.evaluate('window.historyScrollFixture.prepare()');
         const prepared = await page.evaluate<Sample>('window.historyScrollFixture.sample()');
         expect(prepared.loads).toBe(0);
@@ -97,6 +99,26 @@ window.addEventListener('error',e=>{
         expect(after.anchorTop).not.toBeNull();
         expect(after.anchorTop!).toBeLessThan(after.viewportHeight);
         expect(after.anchorBottom!).toBeGreaterThan(0);
+        if (scenario === 'normal') {
+            await page.evaluate('window.historyScrollFixture.resume()');
+            await new Promise((resolve) => setTimeout(resolve, 700));
+            const bottom = await page.evaluate<Sample>('window.historyScrollFixture.sample()');
+            expect(Math.abs(bottom.max - bottom.top), 'jump must land at the live edge').toBeLessThan(3);
+            await page.evaluate('window.historyScrollFixture.grow()');
+            await new Promise((resolve) => setTimeout(resolve, 700));
+            const grown = await page.evaluate<Sample>('window.historyScrollFixture.sample()');
+            expect(grown.max).toBeGreaterThan(bottom.max);
+            expect(Math.abs(grown.max - grown.top), 'late growth must retain the bottom pin').toBeLessThan(3);
+            await page.send('Input.dispatchMouseEvent', { type: 'mouseWheel', x: 180, y: 400, deltaX: 0, deltaY: -400 });
+            await new Promise((resolve) => setTimeout(resolve, 400));
+            const released = await page.evaluate<Sample>('window.historyScrollFixture.sample()');
+            expect(released.pinned).toBe(false);
+            await page.evaluate('window.historyScrollFixture.grow()');
+            await new Promise((resolve) => setTimeout(resolve, 700));
+            const reading = await page.evaluate<Sample>('window.historyScrollFixture.sample()');
+            expect(Math.abs(reading.top - released.top), 'growth must not pull the reader back after a wheel release').toBeLessThan(3);
+            expect(reading.pinned).toBe(false);
+        }
         if (process.env.IOS_HISTORY_SIM === '1' && scenario !== 'desktop-short' && scenario !== 'partial-turn') {
             const app = join(work, 'HistoryScroll.app');
             mkdirSync(app);
@@ -135,6 +157,7 @@ window.addEventListener('error',e=>{
                 await new Promise((resolve) => setTimeout(resolve, 60));
             }
             if (scenario !== 'normal') {
+                writeFileSync(join(work, 'ios-held-samples.json'), JSON.stringify(samples.filter((item) => item.run === run), null, 2));
                 expect(held?.loads).toBe(1);
                 expect(held?.anchorTop).not.toBeNull();
                 expect(Math.abs(held!.anchorTop! - held!.anchorOffset! - held!.fingerDelta), 'loading must not move the reading row under a held finger').toBeLessThan(24);

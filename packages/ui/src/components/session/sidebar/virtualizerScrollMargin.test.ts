@@ -19,13 +19,13 @@ describe('virtualizer range clamp coordinates', () => {
     expect(virtualizer.calculateRange()?.startIndex).toBe(35);
   });
 
-  test('still fills the viewport during transient end-anchor overscroll', () => {
+  test('fills the last viewport when initialized at a bounded end offset', () => {
     const virtualizer = new Virtualizer<HTMLElement, HTMLElement>({
       count: 52,
       getScrollElement: () => null,
       estimateSize: () => 36,
       initialRect: { width: 260, height: 600 },
-      initialOffset: 10000,
+      initialOffset: 52 * 36 - 600,
       scrollToFn: () => {},
       observeElementRect: () => {},
       observeElementOffset: () => {},

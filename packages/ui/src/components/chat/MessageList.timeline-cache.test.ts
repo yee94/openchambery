@@ -501,21 +501,25 @@ describe('column-width virtualizer invalidation', () => {
 describe('history virtualizer frame vs live tail', () => {
     test('reserves unrendered range with padding and minHeight instead of a fixed height box', () => {
         expect(resolveTanstackHistoryFrameStyle(0, 0, 0)).toEqual({
+            marginTop: 0,
             paddingTop: 0,
             paddingBottom: 0,
             minHeight: 0,
         });
         expect(resolveTanstackHistoryFrameStyle(1000, 2500, 5000)).toEqual({
+            marginTop: 0,
             paddingTop: 1000,
             paddingBottom: 2500,
             minHeight: 5000,
         });
         expect(resolveTanstackHistoryFrameStyle(4000, 5000, 5000)).toEqual({
+            marginTop: 0,
             paddingTop: 4000,
             paddingBottom: 0,
             minHeight: 5000,
         });
         expect(resolveTanstackHistoryFrameStyle(-10, 800, 500)).toEqual({
+            marginTop: -10,
             paddingTop: 0,
             paddingBottom: 0,
             minHeight: 500,
