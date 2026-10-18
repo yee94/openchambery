@@ -27,6 +27,18 @@ describe('modelDisplay', () => {
     expect(getModelDisplayName({ name: 'DeepSeek-V4-Flash' })).toBe('DeepSeek V4 Flash');
   });
 
+  test('prefers a slug-style catalog name over an id that carries a prefix', () => {
+    // A catalog may pair a slug-style name with an id whose prefix is internal
+    // routing or provider vocabulary. Reading the id would show "Auto …" and
+    // split "v4.1" into "V4 1", neither of which is part of the model's name.
+    expect(getModelDisplayName({
+      id: 'group/auto-deepseek-v4-1-flash',
+      name: 'Deepseek-V4.1-Flash',
+    })).toBe('DeepSeek V4.1 Flash');
+    // The id is still the source when a model has no name at all.
+    expect(getModelDisplayName({ id: 'group/auto-kimi-k3' })).toBe('Auto Kimi K3');
+  });
+
   test('falls back to a human-readable explicit model id when provider data is unavailable', () => {
     expect(getProviderModelDisplayName(undefined, 'claude-sonnet-4-5')).toBe('Claude Sonnet 4.5');
   });
