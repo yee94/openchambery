@@ -266,7 +266,7 @@ export const AboutSettings: React.FC<AboutSettingsProps> = ({ initialUpdateDialo
           <h2 className="mt-4 typography-ui-header font-semibold text-foreground">OpenChamber</h2>
         </div>
 
-        <SettingsGroup>
+        <SettingsGroup className="oc-settings-about">
           <SettingsRow label={t('settings.openchamber.about.field.clientVersion')}>
             <span className="typography-ui-label font-mono text-foreground text-right">{currentVersionLabel}</span>
           </SettingsRow>
@@ -281,7 +281,7 @@ export const AboutSettings: React.FC<AboutSettingsProps> = ({ initialUpdateDialo
             </span>
           </SettingsRow>
           <SettingsRow className="oc-settings-split-row-stacked" copyClassName="hidden">
-            <div className="flex flex-wrap items-center justify-end gap-2">
+            <div className="flex w-full flex-col items-end gap-2">
               <Button asChild variant="outline" size="sm" className="whitespace-nowrap" data-settings-item="about.feedback">
                 <a href={GITHUB_ISSUES_URL} target="_blank" rel="noopener noreferrer">
                   <Icon name="question" className="size-4" />
@@ -293,7 +293,7 @@ export const AboutSettings: React.FC<AboutSettingsProps> = ({ initialUpdateDialo
                 type="button"
                 variant="default"
                 size="sm"
-                className="whitespace-nowrap"
+                className="w-full whitespace-nowrap"
                 onClick={() => setUpdateDialogOpen(true)}
                 data-settings-item="about.check-updates"
               >
@@ -309,7 +309,7 @@ export const AboutSettings: React.FC<AboutSettingsProps> = ({ initialUpdateDialo
                 type="button"
                 variant="outline"
                 size="sm"
-                className="whitespace-nowrap"
+                className="w-full whitespace-nowrap"
                 onClick={() => updateStore.checkForUpdates()}
                 data-settings-item="about.check-updates"
                 disabled={isChecking}

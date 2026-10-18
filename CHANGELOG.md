@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [2.0.11-beta.16] - 2026-10-19
+
+### 修复
+
+- 修复“关于”页在窄屏下将版本信息、导出日志标签与内容拆成两行的问题；更新按钮使用完整行宽，避免长版本号导致按钮文字换行。
+
 ## [2.0.11-beta.15] - 2026-10-19
 
 ### 新增
