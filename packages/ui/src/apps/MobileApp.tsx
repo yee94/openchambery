@@ -114,6 +114,7 @@ import { useMobilePressHaptics, useStreamingHaptics } from '@/hooks/streamingHap
 import { startPerfDiagnosticsController } from '@/sync/perf-diagnostics';
 import { useNativePushRegistration } from './useNativePushRegistration';
 import { useNativeLiveActivity } from './useNativeLiveActivity';
+import { useAndroidNotifications } from './useAndroidNotifications';
 import { MobileShareBridge } from './MobileShareBridge';
 import { handlePendingNativeAssistantOpen } from './nativeAssistantShortcut';
 
@@ -4202,12 +4203,10 @@ export function MobileApp({ apis }: MobileAppProps) {
   usePushVisibilityBeacon({ enabled: true });
   useWindowTitle();
   useRouter();
-  // APNs is the only notification channel on the native app (background-capable,
-  // focus-suppressed server-side via the visibility beacon). Local notifications are
-  // intentionally disabled — they can't tell foreground from background in a WKWebView
-  // (document.hasFocus() is unreliable) and leaked while the app was open; the in-app SSE
-  // notification dispatch is no-op'd for native in renderMobileApp.
+  // iOS uses APNs. Android owns a notification-only native foreground service;
+  // neither platform relies on WebView focus or the renderer for background delivery.
   useNativePushRegistration({ enabled: isNativeMobileApp && isConnected });
+  useAndroidNotifications();
   const fontsReady = useFontsReady();
 
   // `isConnected` is a LIVE flag that flips false on every transient SSE/WS drop and

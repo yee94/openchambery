@@ -1633,7 +1633,7 @@ html:not(.dark) .chat-scroll {
   cursor: grabbing;
 }
 
-[data-markdown="mermaid-block"] [data-markdown="mermaid-ascii"] {
+[data-markdown="mermaid-block"] [data-markdown="mermaid-source"] {
   margin: 0;
   white-space: pre;
   width: max-content;
@@ -1707,7 +1707,7 @@ html:not(.dark) .chat-scroll {
 
 .markdown-mermaid-fullscreen
   [data-markdown="mermaid-block"]
-  [data-markdown="mermaid-ascii"] {
+  [data-markdown="mermaid-source"] {
   margin: 0;
   white-space: pre;
   width: max-content;

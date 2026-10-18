@@ -1,6 +1,6 @@
 import React from 'react';
 import morphdom from 'morphdom';
-import { renderMermaidASCII, renderMermaidSVG } from 'beautiful-mermaid';
+import { renderMermaidDiagram } from './markdown/mermaidRender';
 import type { Part } from '@/lib/opencode/v2-types';
 import { useEvent, useEventListener, useResizeObserver } from '@reactuses/core';
 import { cn } from '@/lib/utils';
@@ -40,7 +40,6 @@ import {
 } from './markdown/decorate';
 import { createMermaidViewerRegistry, MERMAID_BLOCK_SELECTOR, shouldRefreshMermaidViewers } from './markdown/mermaidViewer';
 import { scheduleAfterPaintTask } from '@/lib/afterPaintTaskQueue';
-import { DualLimitLru } from '@/lib/dualLimitLru';
 import { resolveStreamingRenderCadence } from './streamingRenderCadence';
 import { createMobileLongPressController } from '@/components/ui/mobileLongPress';
 import { openImageSaveActions } from './imageSaveActionsBus';
@@ -879,39 +878,6 @@ const usePacedText = (content: string, streaming: boolean, textPaceMs: number): 
   return content.slice(0, Math.min(shown, content.length));
 };
 
-// Mermaid layout is expensive; `decorate` would otherwise re-render every
-// diagram on every paced-stream step (~40/sec). Memoize by theme+mode+source
-// so a stable diagram is laid out once and served from cache thereafter.
-const MERMAID_RENDER_CACHE_MAX = 100;
-const MERMAID_RENDER_CACHE_MAX_BYTES = 8 * 1024 * 1024;
-const MERMAID_RENDER_CACHE = new DualLimitLru<string, MermaidRender>({
-  maxEntries: MERMAID_RENDER_CACHE_MAX,
-  maxBytes: MERMAID_RENDER_CACHE_MAX_BYTES,
-});
-
-const cachedMermaidRender = (key: string, compute: () => MermaidRender): MermaidRender => {
-  const existing = MERMAID_RENDER_CACHE.get(key);
-  if (existing) {
-    return existing;
-  }
-  const value = compute();
-  const payloadBytes = ((value.svg?.length ?? 0) + (value.ascii?.length ?? 0)) * 2;
-  MERMAID_RENDER_CACHE.set(key, value, key.length * 2 + payloadBytes);
-  return value;
-};
-
-const mermaidColorsFromTheme = (theme: Theme) => ({
-  bg: theme.colors.surface.elevated,
-  fg: theme.colors.surface.foreground,
-  line: theme.colors.interactive.border,
-  accent: theme.colors.primary.base,
-  muted: theme.colors.surface.mutedForeground,
-  surface: theme.colors.surface.muted,
-  border: theme.colors.interactive.border,
-  transparent: true,
-  font: 'system-ui, sans-serif',
-});
-
 const useDecorateContext = (
   currentTheme: Theme,
   deferCodeLineNumberSync: boolean,
@@ -943,18 +909,8 @@ const useDecorateContext = (
   });
 
   return React.useMemo<DecorateContext>(() => {
-    const colors = mermaidColorsFromTheme(currentTheme);
-    const mode = useUIStore.getState().mermaidRenderingMode;
-    const themeId = currentTheme.metadata?.id ?? 'theme';
     const renderMermaid = (source: string): MermaidRender =>
-      cachedMermaidRender(`${themeId}:${mode}:${source}`, () => {
-        try {
-          if (mode === 'ascii') return { ascii: renderMermaidASCII(source) };
-          return { svg: renderMermaidSVG(source, colors) };
-        } catch {
-          return {};
-        }
-      });
+      renderMermaidDiagram(source, currentTheme);
     return {
       labels,
       mermaidControls,

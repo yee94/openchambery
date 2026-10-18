@@ -2,6 +2,9 @@ import type { I18nKey } from './en';
 import { settingsDict } from './es.settings';
 
 export const dict: Record<I18nKey, string> = {
+  'mobile.notifications.service': 'Notificaciones en segundo plano',
+  'mobile.notifications.unavailable': 'Notificaciones no disponibles. Abre la aplicación para comprobar los permisos y la conexión al servidor.',
+  'mobile.notifications.gap': 'Es posible que se hayan perdido notificaciones durante la desconexión. Abre la aplicación para consultar los resultados de las tareas.',
   'chat.chatInput.stopUnconfirmed': 'La detención aún no está confirmada. Inténtalo de nuevo.',
   'chat.response.rateLimit': 'Se alcanzó el límite de solicitudes del proveedor',
   'chat.response.auth': 'Falló la autenticación del proveedor. Inicia sesión de nuevo y reintenta.',

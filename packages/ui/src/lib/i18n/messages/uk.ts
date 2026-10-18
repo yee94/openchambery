@@ -2,6 +2,9 @@ import type { I18nKey } from './en';
 import { settingsDict } from './uk.settings';
 
 export const dict: Record<I18nKey, string> = {
+  'mobile.notifications.service': 'Фонові сповіщення',
+  'mobile.notifications.unavailable': 'Сповіщення недоступні. Відкрийте застосунок, щоб перевірити дозволи та з’єднання із сервером.',
+  'mobile.notifications.gap': 'Під час відключення деякі сповіщення могли бути пропущені. Відкрийте застосунок, щоб переглянути результати завдань.',
   'chat.chatInput.stopUnconfirmed': 'Зупинку ще не підтверджено. Спробуйте ще раз.',
   'chat.response.rateLimit': 'Досягнуто обмеження частоти запитів провайдера',
   'chat.response.auth': 'Помилка автентифікації провайдера. Увійдіть знову та повторіть спробу.',

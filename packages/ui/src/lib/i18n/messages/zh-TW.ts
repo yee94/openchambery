@@ -2,6 +2,9 @@ import type { I18nKey } from './en';
 import { settingsDict } from './zh-TW.settings';
 
 export const dict: Record<I18nKey, string> = {
+  'mobile.notifications.service': '背景通知',
+  'mobile.notifications.unavailable': '通知暫時無法使用，請開啟應用程式檢查權限和伺服器連線。',
+  'mobile.notifications.gap': '斷線期間可能遺漏了部分通知，請開啟應用程式查看工作結果。',
   'chat.chatInput.stopUnconfirmed': '尚未確認停止，請重試。',
   'chat.response.rateLimit': '已觸發供應商請求頻率限制',
   'chat.response.auth': '供應商身分驗證失敗，請重新登入後重試。',

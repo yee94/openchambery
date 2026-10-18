@@ -599,12 +599,6 @@ export const createSettingsHelpers = (dependencies) => {
         result.activityRenderMode = mode;
       }
     }
-    if (typeof candidate.mermaidRenderingMode === 'string') {
-      const mode = candidate.mermaidRenderingMode.trim();
-      if (mode === 'svg' || mode === 'ascii') {
-        result.mermaidRenderingMode = mode;
-      }
-    }
     if (typeof candidate.userMessageRenderingMode === 'string') {
       const mode = candidate.userMessageRenderingMode.trim();
       if (mode === 'markdown' || mode === 'plain') {

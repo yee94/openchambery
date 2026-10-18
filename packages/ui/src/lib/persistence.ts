@@ -604,12 +604,6 @@ const applyDesktopUiPreferences = (settings: DesktopSettings) => {
       store.setActivityRenderMode(settings.activityRenderMode);
     }
   }
-  if (typeof settings.mermaidRenderingMode === 'string'
-    && (settings.mermaidRenderingMode === 'svg' || settings.mermaidRenderingMode === 'ascii')) {
-    if (settings.mermaidRenderingMode !== store.mermaidRenderingMode) {
-      store.setMermaidRenderingMode(settings.mermaidRenderingMode);
-    }
-  }
   if (typeof settings.userMessageRenderingMode === 'string'
     && (settings.userMessageRenderingMode === 'markdown' || settings.userMessageRenderingMode === 'plain')) {
     if (settings.userMessageRenderingMode !== store.userMessageRenderingMode) {
@@ -1163,10 +1157,6 @@ const sanitizeWebSettings = (payload: unknown): DesktopSettings | null => {
   if (typeof candidate.activityRenderMode === 'string'
     && (candidate.activityRenderMode === 'collapsed' || candidate.activityRenderMode === 'summary')) {
     result.activityRenderMode = candidate.activityRenderMode;
-  }
-  if (typeof candidate.mermaidRenderingMode === 'string'
-    && (candidate.mermaidRenderingMode === 'svg' || candidate.mermaidRenderingMode === 'ascii')) {
-    result.mermaidRenderingMode = candidate.mermaidRenderingMode;
   }
   if (typeof candidate.userMessageRenderingMode === 'string'
     && (candidate.userMessageRenderingMode === 'markdown' || candidate.userMessageRenderingMode === 'plain')) {

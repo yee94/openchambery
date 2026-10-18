@@ -678,7 +678,6 @@ export interface SettingsPayload {
   chatRenderMode?: 'sorted' | 'live';
   messageStreamTransport?: 'auto' | 'ws' | 'sse';
   activityRenderMode?: 'collapsed' | 'summary';
-  mermaidRenderingMode?: 'svg' | 'ascii';
   showSplitAssistantMessageActions?: boolean;
   showAssistantTps?: boolean;
   fontSize?: number;

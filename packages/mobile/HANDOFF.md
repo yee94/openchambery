@@ -93,7 +93,7 @@ iOS Simulator helpers: `mobile:sim:{boot,install,launch,run,serve,list,kill}` (s
 - **Secure storage** — `@aparajita/capacitor-secure-storage` for connection tokens.
 - **Deep links** — `openchamber://` URL scheme; a reusable intent vocabulary (`apps/deepLinks.ts`)
   used by notification taps, widgets, and Control Center. Cold-launch intents are stashed.
-- **Push notifications** — iOS APNs + Android FCM (see below). Every subscribed device receives
+- **Push notifications** — iOS APNs + Android native foreground notification stream (see below). Every subscribed device receives
   the push; another client's visibility does not suppress delivery.
 - **iOS widgets + Control Center + Notification Service Extension** — WidgetKit extension
   (`OpenChamberWidget`), a Control Center control, and an NSE (`OpenChamberNotificationService`)
@@ -114,10 +114,8 @@ iOS Simulator helpers: `mobile:sim:{boot,install,launch,run,serve,list,kill}` (s
 
 ## Push / notifications architecture
 
-- Registration: on launch the app registers a device token — **iOS → APNs, Android → FCM** — and
-  sends it to the connected server tagged with `platform` (`ios`/`android`).
-- The server forwards notification-worthy events to a signed **relay**; the relay routes each token
-  to APNs or FCM by its bound platform. The app itself only needs to obtain and register the token.
+- iOS registers an APNs device token with the connected server; the signed Push Relay delivers it to APNs.
+- Android shells with `OpenChamberNotifications` use a native foreground service and authenticated notification-only SSE, either directly or through the existing E2EE relay. They do not register FCM tokens. Legacy Firebase build configuration remains, but the Push Relay has no FCM sender. See `README.md` → Native Android Background Notifications for lifecycle, replay and upgrade requirements.
 - Each client still reports foreground visibility + its platform, but that heartbeat is not a
   push gate: native and web-push always fan out. iOS still suppresses the foreground banner.
 - Foreground behavior: iOS suppresses the banner via `presentationOptions: []`; the web/PWA service

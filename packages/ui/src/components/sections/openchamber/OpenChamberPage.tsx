@@ -188,7 +188,6 @@ const ChatSectionContent: React.FC = () => {
         "activityRenderMode",
         "expandedTools",
         "userMessageRendering",
-        "mermaidRendering",
         "diffLayout",
         "followUpBehavior",
         "sessionGoal",

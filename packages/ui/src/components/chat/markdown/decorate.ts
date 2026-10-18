@@ -10,7 +10,7 @@ import { wrapMarkdownFileReferenceTokens } from '../fileReferenceDecorate';
 // Shared decoration context
 // ---------------------------------------------------------------------------
 
-export type MermaidRender = { svg?: string; ascii?: string };
+export type MermaidRender = { svg?: string };
 
 export type DecorateLabels = {
   copy: string;
@@ -38,7 +38,7 @@ export type DecorateContext = {
   codeBlockLineWrap: boolean;
   deferCodeLineNumberSync?: boolean;
   onToggleCodeBlockLineWrap?: () => void;
-  // Renders a mermaid block source to svg/ascii using current theme colors.
+  // Renders a Mermaid block source to SVG using current theme colors.
   renderMermaid: (source: string) => MermaidRender;
   onPreviewLoopback?: (url: string) => void;
   imageTransportIdentity: string;
@@ -426,6 +426,8 @@ const decorateTables = (root: HTMLElement): void => {
 // Mermaid: replace ```mermaid code fences with rendered diagram blocks
 // ---------------------------------------------------------------------------
 
+let mermaidInstance = 0;
+
 const decorateMermaid = (root: HTMLElement, ctx: DecorateContext): void => {
   const codes = root.querySelectorAll<HTMLElement>('pre > code.language-mermaid');
   for (const code of Array.from(codes)) {
@@ -454,6 +456,16 @@ const decorateMermaid = (root: HTMLElement, ctx: DecorateContext): void => {
       svgHost.setAttribute('data-markdown', 'mermaid');
       svgHost.setAttribute('data-md-original-svg', rendered.svg);
       svgHost.innerHTML = rendered.svg;
+      // Cached SVGs may appear in multiple messages and the fullscreen dialog.
+      const svg = svgHost.querySelector('svg');
+      const instance = ++mermaidInstance;
+      for (const [selector, attribute] of [['title[id]', 'aria-labelledby'], ['desc[id]', 'aria-describedby']]) {
+        const label = svg?.querySelector(selector);
+        if (label) {
+          label.id = `oc-mermaid-${instance}-${label.localName}`;
+          svg?.setAttribute(attribute, label.id);
+        }
+      }
       viewport.appendChild(svgHost);
       scroll.appendChild(viewport);
       if (ctx.mermaidControls.showPanZoomControls) {
@@ -472,14 +484,14 @@ const decorateMermaid = (root: HTMLElement, ctx: DecorateContext): void => {
         toolbar.appendChild(download);
       }
     } else {
-      block.setAttribute('data-mermaid-render', 'ascii');
-      const asciiPre = document.createElement('pre');
-      asciiPre.setAttribute('data-markdown', 'mermaid-ascii');
-      asciiPre.textContent = rendered.ascii || source;
-      scroll.appendChild(asciiPre);
+      block.setAttribute('data-mermaid-render', 'source');
+      const sourcePre = document.createElement('pre');
+      sourcePre.setAttribute('data-markdown', 'mermaid-source');
+      sourcePre.textContent = source;
+      scroll.appendChild(sourcePre);
       if (ctx.mermaidControls.copy) {
         const copy = makeIconButton('copy', ctx.labels.copyDiagram, 'mermaid-copy');
-        copy.setAttribute('data-md-source', rendered.ascii || source);
+        copy.setAttribute('data-md-source', source);
         toolbar.appendChild(copy);
       }
     }

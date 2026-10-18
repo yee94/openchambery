@@ -28,6 +28,7 @@ Host side (`packages/web/server/lib/relay/`):
 - `e2ee.js`, `tunnel-codec.js` — host-side (JS) mirrors of the shared crypto and framing (see "Two implementations" below).
 
 Client side (`packages/ui/src/lib/relay/`):
+- Android background notifications additionally have a narrow native initiator in `packages/mobile/android/app/src/main/java/com/openchamber/app/NotificationConnection.java` and `NotificationRelayCrypto.java`. It opens only the authenticated notification SSE route, advertises `batch: false`, and uses the unchanged v1 crypto/frame contract. The connection is independent of the WebView so its suspension does not end notification delivery. Protocol/crypto changes must preserve this consumer; `packages/mobile/test/native-notifications.test.mjs` executes Java↔JS-host crypto interoperability and replay/tamper rejection.
 - `protocol.ts` — the shared contract: constants, frame types, message shapes. The normative source both implementations follow.
 - `crypto.ts`, `handshake.ts` — the E2EE primitives and handshake state machines (initiator + responder).
 - `tunnel-codec.ts` — Layer 3 frame codec, fragmentation, and outbound frame batching.

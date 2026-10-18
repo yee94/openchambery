@@ -58,6 +58,43 @@ afterEach(() => {
 });
 
 describe('whole-task completion fanout', () => {
+  it('delivers native notifications while the originating desktop is focused, without a duplicate desktop alert', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse({ id: 'root', title: 'Remote task', parentID: null })));
+    const sendNativeNotification = vi.fn();
+    const { runtime, emitDesktopNotification } = createRuntime({
+      sendNativeNotification,
+      getIsWindowFocused: () => true,
+      readSettingsFromDisk: async () => ({ ...defaultSettings, notificationMode: 'hidden' }),
+    });
+    await runtime.maybeSendPushForTrigger({ type: 'session.execution.succeeded', data: { sessionID: 'root' } });
+    expect(sendNativeNotification).toHaveBeenCalledWith(expect.objectContaining({ kind: 'ready', sessionId: 'root' }));
+    expect(emitDesktopNotification).not.toHaveBeenCalled();
+  });
+
+  it('uses the same native stream for scheduled tasks, assistant messages and goal notifications', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse({ id: 'root', title: 'Goal', parentID: null })));
+    const sendNativeNotification = vi.fn();
+    const { runtime } = createRuntime({ sendNativeNotification });
+    await runtime.sendScheduledTaskRunNotification({ projectID: 'project', taskID: 'task', taskName: 'Nightly', reason: 'schedule', status: 'success' });
+    await runtime.sendContactTurnNotification({ assistantID: 'assistant', name: 'Assistant', body: 'Done' });
+    await runtime.sendGoalSettlePush({ sessionId: 'root', status: 'complete', title: 'Goal completed', body: 'Done' });
+    expect(sendNativeNotification.mock.calls.map(([event]) => event.kind)).toEqual(['task_complete', 'contact', 'goal_complete']);
+  });
+
+  it('deduplicates native task failures until a new execution starts', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse({ id: 'root', title: 'Task', parentID: null })));
+    const sendNativeNotification = vi.fn();
+    const { runtime } = createRuntime({ sendNativeNotification });
+    const failure = { type: 'session.execution.failed', data: { sessionID: 'root', error: { message: 'Failed' } } };
+    await runtime.maybeSendPushForTrigger(failure);
+    await runtime.maybeSendPushForTrigger(failure);
+    expect(sendNativeNotification).toHaveBeenCalledOnce();
+    expect(sendNativeNotification).toHaveBeenCalledWith(expect.objectContaining({ kind: 'error', sessionId: 'root' }));
+    await runtime.maybeSendPushForTrigger({ type: 'session.execution.started', data: { sessionID: 'root' } });
+    await runtime.maybeSendPushForTrigger(failure);
+    expect(sendNativeNotification).toHaveBeenCalledTimes(2);
+  });
+
   it('uses authoritative active membership to hold every channel until the last descendant stops', async () => {
     let active = { child: { type: 'running' }, nested: { type: 'running' } };
     const parents = { root: null, child: 'root', nested: 'child' };

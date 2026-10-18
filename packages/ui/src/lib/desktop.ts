@@ -172,7 +172,6 @@ export type DesktopSettings = {
   chatRenderMode?: 'sorted' | 'live';
   messageStreamTransport?: 'auto' | 'ws' | 'sse';
   activityRenderMode?: 'collapsed' | 'summary';
-  mermaidRenderingMode?: 'svg' | 'ascii';
   userMessageRenderingMode?: 'markdown' | 'plain';
   collapsibleUserMessages?: boolean;
   stickyUserHeader?: boolean;
