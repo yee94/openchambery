@@ -1,5 +1,9 @@
 # Chat components
 
+## Clipboard images
+
+ChatInput prioritizes image bytes from clipboard files/items over accompanying file paths (including clipboard-manager and Electron native paths). Path-only plain text accompanying an image is omitted; accompanying prose is retained. Files take precedence over item representations, with a single preferred PNG/WebP/JPEG/GIF item when macOS exposes format twins. Without image bytes, existing file-reference paste behavior applies; no local path is fetched from a potentially remote runtime. Coverage: `ChatInput.paste.test.ts` executes the production paste callback with controlled clipboard payloads.
+
 ## Prompt navigator
 
 The left-side rail highlights every prompt whose turn or message intersects the chat viewport, including a turn where only its assistant reply remains visible. `useVisiblePromptTurns` observes mounted transcript nodes with the chat scroller as its intersection root; virtual row additions, removals, and identity changes update registrations. Stable message ownership avoids reconnecting observers on text deltas, and unchanged visible sets retain their reference. Keyboard navigation's single active turn does not determine viewport highlighting.

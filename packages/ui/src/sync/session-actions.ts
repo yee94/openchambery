@@ -1558,6 +1558,8 @@ export type OptimisticSendTicket = {
   readonly transport: RuntimeTransportCapture
 }
 
+const deferredRevertSendPaints = new WeakMap<OptimisticSendTicket, () => void>()
+
 export type BeginOptimisticSendInput = {
   sessionId: string
   /** Raw authored text for temporary display (and text-part fallback). */
@@ -1579,8 +1581,8 @@ export type BeginOptimisticSendInput = {
 
 /**
  * Synchronously paint the optimistic user row + sending status before any
- * await. Call from ChatInput before the first async boundary so the list and
- * pending-send UI update immediately.
+ * await, unless an undo boundary must commit first. Call from ChatInput before
+ * the first async boundary so pending-send UI updates immediately.
  */
 export function beginOptimisticSend(input: BeginOptimisticSendInput): OptimisticSendTicket {
   if (!_optimisticAdd || !_optimisticRemove) {
@@ -1602,31 +1604,39 @@ export function beginOptimisticSend(input: BeginOptimisticSendInput): Optimistic
     // can show "sending message" for every runtime while the request is in flight,
     // and so MessageList can latch `anchoring-new-turn` on that same insert.
     useSessionUIStore.getState().markMessageSending?.(input.sessionId, messageID)
-    markPendingUserSendAnimation(input.sessionId)
+    const paint = () => {
+      assertCurrentSendTarget(capture, transport)
+      markPendingUserSendAnimation(input.sessionId)
+      optimisticInsertUserMessage({
+        sessionId: input.sessionId,
+        messageID,
+        content: input.content,
+        providerID: input.providerID,
+        modelID: input.modelID,
+        agent: input.agent,
+        variant: input.variant,
+        directory: targetDirectory,
+        files: input.files,
+        parts: input.parts,
+      })
+      input.onOptimisticInsert?.()
+    }
 
-    // Paint the user bubble + busy status immediately. Connection recovery may
-    // take up to CONNECTION_GRACE_MS; the list must not wait on that.
-    optimisticInsertUserMessage({
-      sessionId: input.sessionId,
-      messageID,
-      content: input.content,
-      providerID: input.providerID,
-      modelID: input.modelID,
-      agent: input.agent,
-      variant: input.variant,
-      directory: targetDirectory,
-      files: input.files,
-      parts: input.parts,
-    })
-    input.onOptimisticInsert?.()
-
-    return {
+    const ticket: OptimisticSendTicket = {
       messageID,
       sessionId: input.sessionId,
       directory: targetDirectory,
       capture,
       transport,
     }
+    // Undo commit truncates the old tail, including any newly appended local
+    // row. Admit this send only after that boundary has been committed.
+    if (capture.store.getState().session?.find((session) => session.id === input.sessionId)?.revert) {
+      deferredRevertSendPaints.set(ticket, paint)
+    } else {
+      paint()
+    }
+    return ticket
   } catch (error) {
     if (error instanceof SendDispatchError) throw error
     throw new SendDispatchError(
@@ -1675,14 +1685,15 @@ function rollbackOptimisticSendState(ticket: OptimisticSendTicket): void {
  * so a newer pending send is preserved).
  */
 export function rollbackOptimisticSend(ticket: OptimisticSendTicket): void {
+  deferredRevertSendPaints.delete(ticket)
   rollbackOptimisticSendState(ticket)
   useSessionUIStore.getState().clearMessageSending?.(ticket.sessionId, ticket.messageID)
 }
 
 /**
  * Settle a previously begun ticket: connection grace wait, SDK dispatch, send
- * confirmation, and ambiguous-dispatch confirmation / rollback. Never re-inserts
- * the optimistic row — the ticket already owns that paint.
+ * confirmation, and ambiguous-dispatch confirmation / rollback. Undo-delayed
+ * tickets paint after history commit; ordinary tickets already own that paint.
  */
 export async function settleOptimisticSend(input: {
   ticket: OptimisticSendTicket
@@ -1701,6 +1712,13 @@ export async function settleOptimisticSend(input: {
   const { capture, transport, messageID, sessionId, directory: targetDirectory } = ticket
   let transportEntered = false
   try {
+    const deferredPaint = deferredRevertSendPaints.get(ticket)
+    if (deferredPaint) {
+      assertCurrentSendTarget(capture, transport)
+      await commitStagedRevertBeforeSend(sessionId, targetDirectory)
+      deferredPaint()
+      deferredRevertSendPaints.delete(ticket)
+    }
     await waitForConnectionOrThrow()
     assertCurrentSendTarget(capture, transport)
     transportEntered = true
@@ -1740,6 +1758,7 @@ export async function settleOptimisticSend(input: {
     rollbackOptimisticSendState(ticket)
     throw dispatchError
   } finally {
+    deferredRevertSendPaints.delete(ticket)
     // Clear only this messageID so a concurrent newer pending send is preserved.
     useSessionUIStore.getState().clearMessageSending?.(sessionId, messageID)
   }

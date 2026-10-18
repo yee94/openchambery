@@ -1807,6 +1807,8 @@ Interrupt/idle/stage failures preserve the draft and transcript. An existing sta
 
 Query transcript repositories deduplicate HTTP/SSE commit acknowledgements using at most 256 receipts keyed by transport/generation/directory/session/boundary, purged with the generation or repository. This prevents a duplicate echo from invoking missing-boundary recovery and clearing a replacement in an incomplete history window. Conversation order, not message-ID rank, governs the store-adapter fallback too.
 
+Ordinary sends after undo also defer optimistic transcript admission until the staged revert commits. `beginOptimisticSend` captures the ticket and marks sending immediately; `settleOptimisticSend` commits the boundary before painting that ticket, so the local history cut cannot consume the new user row. Failed commits block dispatch and retain the old history; ordinary sends without a revert still paint synchronously before connection recovery.
+
 Rules:
 
 1. If an action mutates session list membership or visible session metadata, update `useGlobalSessionsStore` there.

@@ -5192,9 +5192,27 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
         });
     }, [adjustTextareaHeight, detachAttachmentsMissingCitations, message, replaceWithConfirmedFileMentions, setMentionQuery, setShowFileMention, updateAutocompleteState]);
 
-    const handlePaste = React.useCallback(async (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
+    const handlePaste = useEvent(async (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
+        // Prefer clipboard.files; only fall back to items. Reading both often
+        // yields the same image twice (or png+tiff twins) with different name/size
+        // keys, which then becomes two attachments for one paste.
+        const filesFromClipboard = Array.from(e.clipboardData.files || [])
+            .filter((file) => file.type.startsWith('image/'));
+        const filesFromItems = Array.from(e.clipboardData.items || [])
+            .filter((item) => item.kind === 'file' && item.type.startsWith('image/'))
+            .map((item) => item.getAsFile())
+            .filter((file): file is File => Boolean(file));
+        // macOS often exposes the same screenshot as image/png + image/tiff via items.
+        // When we only have items, keep a single preferred representation.
+        const imageFiles = filesFromClipboard.length > 0
+            ? filesFromClipboard
+            : (() => {
+                if (filesFromItems.length <= 1) return filesFromItems;
+                const preferred = filesFromItems.find((file) => /image\/(png|webp|jpe?g|gif)/i.test(file.type));
+                return preferred ? [preferred] : [filesFromItems[0]];
+            })();
         const pastedFilePaths = collectFilePathsFromTransfer(e.clipboardData);
-        if (pastedFilePaths.length > 0 && (currentSessionId || newSessionDraftOpen)) {
+        if (imageFiles.length === 0 && pastedFilePaths.length > 0 && (currentSessionId || newSessionDraftOpen)) {
             e.preventDefault();
             addDroppedPathsAsMentions(pastedFilePaths);
             return;
@@ -5202,7 +5220,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
 
         // Pasting a URL over a selection wraps it as a markdown link:
         // [selected text](pasted url).
-        if (inputMode === 'normal' && (currentSessionId || newSessionDraftOpen)) {
+        if (imageFiles.length === 0 && inputMode === 'normal' && (currentSessionId || newSessionDraftOpen)) {
             const ta = textareaRef.current;
             const selStart = ta?.selectionStart ?? -1;
             const selEnd = ta?.selectionEnd ?? -1;
@@ -5234,25 +5252,11 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
             }
         }
 
-        // Prefer clipboard.files; only fall back to items. Reading both often
-        // yields the same image twice (or png+tiff twins) with different name/size
-        // keys, which then becomes two attachments for one paste.
-        const filesFromClipboard = Array.from(e.clipboardData.files || [])
-            .filter((file) => file.type.startsWith('image/'));
-        const filesFromItems = Array.from(e.clipboardData.items || [])
-            .filter((item) => item.kind === 'file' && item.type.startsWith('image/'))
-            .map((item) => item.getAsFile())
-            .filter((file): file is File => Boolean(file));
-        // macOS often exposes the same screenshot as image/png + image/tiff via items.
-        // When we only have items, keep a single preferred representation.
-        const imageFiles = filesFromClipboard.length > 0
-            ? filesFromClipboard
-            : (() => {
-                if (filesFromItems.length <= 1) return filesFromItems;
-                const preferred = filesFromItems.find((file) => /image\/(png|webp|jpe?g|gif)/i.test(file.type));
-                return preferred ? [preferred] : [filesFromItems[0]];
-            })();
-        const pastedText = e.clipboardData.getData('text');
+        const clipboardText = e.clipboardData.getData('text');
+        // Clipboard managers can expose the image's backing path as plain text too.
+        const pastedText = imageFiles.length > 0 && pastedFilePaths.includes(
+            normalizeFileDropPath(clipboardText.trim().replace(/^(['"])(.*)\1$/, '$2')),
+        ) ? '' : clipboardText;
         if (imageFiles.length === 0) {
             if (inputMode === 'normal' && canCompactPastedText(getDocument(), pastedText)) {
                 e.preventDefault();
@@ -5362,7 +5366,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
                 pendingPastedAttachmentFilenamesRef.current.delete(filename);
             }
         }
-    }, [surfaceResources, addDroppedPathsAsMentions, attachedFiles, adjustTextareaHeight, currentSessionId, getDocument, inputMode, insertReference, markFileMentionPasteSuppression, message, newSessionDraftOpen, insertTextAtSelection, t, updateAutocompleteState, commitBrowserTextChange, applyProgrammaticEdit, detachAttachmentsMissingCitations]);
+    });
 
     /**
      * Copy/cut emit semantic plain text (no reserved icon em-spaces) so pasting

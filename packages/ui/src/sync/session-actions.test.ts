@@ -2567,6 +2567,49 @@ describe("optimisticSend target directory", () => {
     expect(typeof targetStore.getState().session_status_observed_at["session-missing"]).toBe("number")
   })
 
+  test.each(["route", "direct", "rejected"])("undo then send retains the new user row after the revert commit (%s)", async (mode) => {
+    const { QueryClient } = await import("@tanstack/react-query")
+    const { createQueryTranscriptRepository } = await import("./transcript-repository-query-adapter")
+    const { bindTranscriptRepositoryInstance, unbindTranscriptRepository } = await import("./transcript-repository-runtime")
+    const { beginOptimisticSend, commitStagedRevertBeforeSend, settleOptimisticSend, setActionRefs, setOptimisticRefs } = await import("./session-actions")
+    const scope = { directory: "/test/project", sessionID: "session-undo-send" }
+    const old = { id: "msg_old", sessionID: scope.sessionID, role: "user", time: { created: 1 } } as Message
+    const store = createStore({}, { session: [{ id: scope.sessionID, revert: { messageID: old.id }, time: { created: 1 } } as Session] })
+    const client = new QueryClient()
+    const repo = createQueryTranscriptRepository({ client, fetcher: async () => ({ records: [], complete: true }) })
+    repo.apply(scope, { type: "materialize-snapshots", records: [{ info: old, parts: [] }] })
+    setActionRefs(mockSdk as unknown as OpencodeClient, createChildStores([[scope.directory, store]]), () => scope.directory)
+    bindTranscriptRepositoryInstance(repo)
+    setOptimisticRefs((input) => {
+      repo.apply(scope, { type: "materialize-snapshots", records: [{ info: input.message, parts: input.parts }] })
+    }, () => {})
+    try {
+      const ticket = beginOptimisticSend({ sessionId: scope.sessionID, directory: scope.directory, content: "new message", providerID: "provider", modelID: "model", messageID: "msg_new" })
+      expect(repo.getTranscript(scope).messageOrder).toEqual([old.id])
+      if (mode === "rejected") {
+        mocks.state.revertCommitHook = async () => { throw new Error("commit rejected") }
+        const send = vi.fn(async () => {})
+        await expect(settleOptimisticSend({ ticket, send })).rejects.toThrow("commit rejected")
+        expect(send).not.toHaveBeenCalled()
+        expect(repo.getTranscript(scope).messageOrder).toEqual([old.id])
+        expect(store.getState().session[0].revert?.messageID).toBe(old.id)
+        return
+      }
+      if (mode === "route") await commitStagedRevertBeforeSend(scope.sessionID, scope.directory)
+      await settleOptimisticSend({ ticket, send: async () => {
+        expect(repo.getTranscript(scope).messageOrder).toEqual(["msg_new"])
+        expect(repo.getParts(scope, "msg_new").some((part) => part.type === "text" && part.text === "new message")).toBe(true)
+      } })
+      repo.apply(scope, { type: "revert-committed", to: old.id })
+      expect(repo.getTranscript(scope).messageOrder).toEqual(["msg_new"])
+    } finally {
+      mocks.state.revertCommitHook = null
+      unbindTranscriptRepository()
+      repo.destroy()
+      client.clear()
+    }
+  })
+
   test("beginOptimisticSend paints the optimistic row and sending status before settle", async () => {
     const targetStore = createStore({})
     const childStores = createChildStores([["/target/project", targetStore]])
@@ -4514,7 +4557,7 @@ describe("ensureSentUserMessagePresence", () => {
   test("treats a part-less row as absent and recovers it", async () => {
     const messageID = "msg_partless"
     const store = createStore({}, {
-      message: { "session-a": [{ id: messageID, role: "user", sessionID: "session-a" } as unknown as Message] },
+      message: { "session-a": [userRecord(messageID).info as Message] },
     })
     const childStores = createChildStores([["/test/project", store]])
     mocks.sessionMessagesResult = { data: [userRecord(messageID)] }
