@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [2.0.11-beta.18] - 2026-10-19
+
+### 修复
+
+- 修复“关于”页 Beta 更新渠道和诊断日志复选框的位置异常，恢复左侧文字、右侧勾选布局；检查更新与一键更新按钮恢复按内容宽度居右显示。
+
 ## [2.0.11-beta.17] - 2026-10-19
 
 ### 改进

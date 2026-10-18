@@ -470,23 +470,23 @@
   }
 }
 
-.oc-settings-about .oc-settings-split-row {
+.oc-settings-about .oc-settings-split-row:not([role="button"]) {
   display: flex;
   flex-wrap: nowrap;
   justify-content: space-between;
   gap: var(--oc-settings-row-gap);
 }
 
-.oc-settings-about .oc-settings-split-row-copy {
+.oc-settings-about .oc-settings-split-row:not([role="button"]) > .oc-settings-split-row-copy {
   max-width: none;
   flex: 0 1 auto;
 }
 
-.oc-settings-about .oc-settings-split-row-copy > .typography-ui-label {
+.oc-settings-about .oc-settings-split-row:not([role="button"]) > .oc-settings-split-row-copy > .typography-ui-label {
   white-space: nowrap;
 }
 
-.oc-settings-workspace .oc-settings-about .oc-settings-split-row-control {
+.oc-settings-workspace .oc-settings-about .oc-settings-split-row:not([role="button"]) > .oc-settings-split-row-control {
   width: auto;
   max-width: none;
   flex: 1 0 auto;
