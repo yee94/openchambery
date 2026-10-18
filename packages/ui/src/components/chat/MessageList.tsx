@@ -308,6 +308,7 @@ export const shouldInvalidateVirtualizerMeasurementsOnColumnResize = (
  * push the tail down instead.
  */
 export type TanstackHistoryFrameStyle = {
+    marginTop: number;
     paddingTop: number;
     paddingBottom: number;
     minHeight: number;
@@ -323,6 +324,7 @@ export const resolveTanstackHistoryFrameStyle = (
     const end = Number.isFinite(lastEnd) ? Math.max(top, lastEnd) : top;
     const total = Number.isFinite(totalSize) ? Math.max(0, totalSize) : 0;
     return {
+        marginTop: Number.isFinite(startOffset) ? Math.min(0, startOffset) : 0,
         paddingTop: top,
         paddingBottom: Math.max(0, total - end),
         minHeight: total,
@@ -707,7 +709,8 @@ export interface MessageListHandle {
     holdViewportAnchor: (anchor: { messageId: string; offsetTop: number }) => void;
     cancelViewportAnchorHold: () => void;
     isHistoryVirtualized: () => boolean;
-    scrollToBottom: () => void;
+    scrollToBottom: (options?: { behavior?: ScrollBehavior; reveal?: boolean }) => boolean;
+    cancelScroll: () => void;
 }
 
 type RenderEntry =
@@ -1680,7 +1683,14 @@ const StaticHistoryList = React.memo(({ entries, historyAnchorToken, engine, con
         followOnAppend: true,
         scrollEndThreshold: TANSTACK_AT_END_THRESHOLD_PX,
         initialOffset: () => {
-            if (mountedVirtualizedRef.current) return Number.MAX_SAFE_INTEGER;
+            if (mountedVirtualizedRef.current) {
+                const estimate = estimatedEntrySizeRef.current;
+                const total = (measurementSeedRef.current ?? []).reduce(
+                    (size, item) => size + (item.index < renderEntries.length ? item.size - estimate : 0),
+                    renderEntries.length * estimate,
+                );
+                return Math.max(0, total - (scrollRef?.current?.clientHeight ?? 0));
+            }
             return scrollRef?.current?.scrollTop ?? 0;
         },
         initialMeasurementsCache: measurementSeedRef.current,
@@ -1756,7 +1766,7 @@ const StaticHistoryList = React.memo(({ entries, historyAnchorToken, engine, con
                 - container.getBoundingClientRect().top
                 - anchor.offsetTop;
             if (Math.abs(delta) > 0.5) {
-                container.scrollTop += delta;
+                tanstackVirtualizer.scrollToOffset(container.scrollTop + delta, { behavior: 'auto' });
             }
             virtualizationTransitionAnchorRef.current = null;
             return;
@@ -1952,11 +1962,14 @@ const StaticHistoryList = React.memo(({ entries, historyAnchorToken, engine, con
         return (
             <div
                 ref={sizeContainerRef}
-                className="relative w-full"
+                className="relative flow-root w-full"
                 style={{ minHeight: historyFrameStyle.minHeight }}
             >
                 <div
                     style={{
+                        // Core 3.19 holds unwritable corrections by exposing negative
+                        // row starts. Preserve that shift without a transform (sticky headers).
+                        marginTop: historyFrameStyle.marginTop,
                         paddingTop: historyFrameStyle.paddingTop,
                         paddingBottom: historyFrameStyle.paddingBottom,
                     }}
@@ -3004,8 +3017,12 @@ const MessageList = React.forwardRef<MessageListHandle, MessageListProps>(({
                 return applyAnchor();
             },
 
-            scrollToBottom: () => {
-                setPinRevealGeneration((current) => current + 1);
+            cancelScroll: () => {
+                cancelViewportAnchorHold();
+                tanstackVirtualizerRef.current?.cancelScroll();
+            },
+            scrollToBottom: ({ behavior = 'auto', reveal = true } = {}) => {
+                if (reveal) setPinRevealGeneration((current) => current + 1);
                 if (legendTimelineEnabled) {
                     // The parked user row is the live edge. Do not drop the
                     // reserved hole — scrollToEnd would travel through the
@@ -3016,18 +3033,16 @@ const MessageList = React.forwardRef<MessageListHandle, MessageListProps>(({
                             offset: parkOffset,
                             animated: false,
                         });
-                        return;
+                        return true;
                     }
                     legendListRef.current?.scrollToEnd({ animated: false });
-                    return;
+                    return true;
                 }
                 if (shouldVirtualizeHistory && historyEntries.length > 0 && tanstackVirtualizerRef.current) {
-                    tanstackVirtualizerRef.current.scrollToEnd();
-                    return;
+                    tanstackVirtualizerRef.current.scrollToEnd({ behavior });
+                    return true;
                 }
-                const container = resolveScrollContainer();
-                if (!container) return;
-                container.scrollTop = container.scrollHeight;
+                return false;
             },
         };
 

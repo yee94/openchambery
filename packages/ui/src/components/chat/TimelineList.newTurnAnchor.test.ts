@@ -114,7 +114,7 @@ describe('TimelineList new-turn anchor contracts', () => {
     });
 
     test('jump-to-latest keeps the reserved hole and returns to the parked edge', () => {
-        const handle = messageListSource.indexOf('scrollToBottom: () => {');
+        const handle = messageListSource.indexOf('scrollToBottom: ({ behavior');
         expect(handle).toBeGreaterThan(-1);
         const body = messageListSource.slice(handle, handle + 900);
         expect(body).toContain('readTimelineParkEndOffset(resolveScrollContainer())');

@@ -1501,6 +1501,7 @@ const ChatContainerContent: React.FC<ChatContainerContentProps> = ({
         isFollowingProgrammatically,
         showScrollButton,
     } = useChatAutoFollow({
+        scrollControllerRef: messageListRef,
         // The legend timeline owns its scroll position. Leaving auto-follow on
         // would put two writers on one container: its pin/force-bottom writes
         // and the list's end maintenance would each correct the other.
@@ -1670,9 +1671,7 @@ const ChatContainerContent: React.FC<ChatContainerContentProps> = ({
     });
     const resumeToLatestInstant = useEvent(() => {
         setLegendFollowReleased(false);
-        // Auto-follow is disabled on the legend path, so goToBottom is a
-        // no-op there. The list handle talks to LegendList.scrollToEnd.
-        messageListRef.current?.scrollToBottom();
+        // goToBottom resumes follow policy and delegates to the active list.
         goToBottom('instant');
     });
     // Send always re-engages follow so a just-sent turn can park near the top

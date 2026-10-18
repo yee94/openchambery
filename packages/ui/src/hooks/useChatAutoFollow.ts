@@ -54,6 +54,10 @@ export interface AnimationHandlers {
 
 interface UseChatAutoFollowOptions {
     enabled?: boolean;
+    scrollControllerRef?: React.RefObject<{
+        scrollToBottom: (options?: { behavior?: ScrollBehavior; reveal?: boolean }) => boolean;
+        cancelScroll: () => void;
+    } | null>;
     currentSessionId: string | null;
     viewportKey?: string;
     sessionMessageCount: number;
@@ -92,10 +96,9 @@ export interface UseChatAutoFollowResult {
 //     idle sessions. History load must not strand a bottom-pinned viewport
 //     mid-timeline. User wheel/touch/key gestures release immediately and are
 //     never fought.
-//   • Following the bottom is INSTANT — `scrollTop = scrollHeight` inside the
-//     content ResizeObserver, which fires after layout and before paint. There
-//     is NO easing loop and NO settle burst, so there are never two writers
-//     racing for `scrollTop` (the root cause of the old jiggle/double-scroll).
+//   • Following the bottom is INSTANT. The active virtual list owns the write;
+//     normal-flow transcripts fall back to `scrollTop = scrollHeight`. Policy
+//     and content observers stay here, without a competing virtual-list watchdog.
 //   • A short-lived "auto" marker (position + 1500ms) lets the scroll handler
 //     distinguish our own programmatic writes from genuine user scrolling, so
 //     a scroll event that lands at our just-written bottom never trips a false
@@ -188,6 +191,7 @@ const isNearBottomOf = (geometry: ScrollGeometry, isMobile: boolean): boolean =>
 
 export const useChatAutoFollow = ({
     enabled = true,
+    scrollControllerRef,
     currentSessionId,
     viewportKey,
     sessionMessageCount,
@@ -395,14 +399,21 @@ export const useChatAutoFollow = ({
         if (!el) return;
 
         cancelForcedBottom();
+        if (scrollControllerRef?.current?.scrollToBottom({ behavior: 'auto', reveal: false })) {
+            markAuto(el);
+            updateOverflowAndButton();
+            return;
+        }
         const generation = forceBottomGenerationRef.current;
-        const previousOverflow = el.style.overflow;
+        const previousOverflowX = el.style.overflowX;
+        const previousOverflowY = el.style.overflowY;
         const previousScrollBehavior = el.style.scrollBehavior;
         el.style.scrollBehavior = 'auto';
         el.style.overflow = 'hidden';
         el.scrollTop = el.scrollHeight;
         void el.scrollHeight;
-        el.style.overflow = previousOverflow;
+        el.style.overflowX = previousOverflowX;
+        el.style.overflowY = previousOverflowY;
         el.style.scrollBehavior = previousScrollBehavior;
 
         const pin = () => {
@@ -442,6 +453,7 @@ export const useChatAutoFollow = ({
         const el = scrollRef.current;
         if (!el) return;
         markAuto(el);
+        if (scrollControllerRef?.current?.scrollToBottom({ behavior, reveal: false })) return;
         if (behavior === 'smooth') {
             el.scrollTo({ top: el.scrollHeight, behavior });
             return;
@@ -494,6 +506,13 @@ export const useChatAutoFollow = ({
         historyViewportPreservationRef.current = false;
         setStateValue('following');
         endEntryStick();
+        cancelForcedBottom();
+        if (scrollControllerRef?.current?.scrollToBottom({ behavior: mode === 'smooth' ? 'smooth' : 'auto' })) {
+            const el = scrollRef.current;
+            if (el) markAuto(el);
+            updateOverflowAndButton();
+            return;
+        }
         if (mode === 'instant') {
             forceBottomDefeatingMomentum();
             return;
@@ -513,6 +532,7 @@ export const useChatAutoFollow = ({
 
     const releaseAutoFollow = useEvent(() => {
         cancelForcedBottom();
+        scrollControllerRef?.current?.cancelScroll();
         endEntryStick();
         setStateValue('released');
         updateOverflowAndButton();
@@ -536,6 +556,7 @@ export const useChatAutoFollow = ({
         // The session-open grace absorbs the leftover list-row tap on iOS.
         if (isWithinSessionOpenPinGrace(now(), sessionOpenPinGraceUntilRef.current)) return;
         cancelForcedBottom();
+        scrollControllerRef?.current?.cancelScroll();
         endEntryStick();
         stop();
     });
