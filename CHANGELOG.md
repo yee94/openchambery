@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [2.0.11-beta.10] - 2026-10-18
+
+### 新增
+
+- 为 Xiaomi MiMo 模型添加品牌识别与图标，并与 MiniMax 正确区分。
+
+### 修复
+
+- 修复模型显示名称被内部路由前缀替代、版本号被拆分的问题，优先使用模型目录提供的名称。
+
 ## [2.0.11-beta.9] - 2026-10-18
 
 ### 修复
