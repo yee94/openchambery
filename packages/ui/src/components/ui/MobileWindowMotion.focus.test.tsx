@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { MobileModelPickerPanel } from '../model-picker/MobileModelPickerPanel';
 import { MobileResizableSheet } from './MobileResizableSheet';
 import { I18nProvider } from '@/lib/i18n';
+import { preventComposerActionPointerFocus } from '../chat/composerFocus';
 
 let root: Root;
 let container: HTMLDivElement;
@@ -40,8 +41,13 @@ function Picker() {
   </>;
 }
 
-function Host({ kind, modal = true }: { kind: 'page' | 'sheet' | 'dialog'; modal?: boolean }) {
-  const [open, setOpen] = React.useState(true);
+function Host({ kind, modal = true }: { kind: 'page' | 'sheet' | 'dialog' | 'composer'; modal?: boolean }) {
+    const [open, setOpen] = React.useState(true);
+    // happy-dom proxies form elements with a different identity from parentNode;
+    // use a DOM host with working contains() for the shared production capture.
+    if (kind === 'composer') return <div onPointerDownCapture={(event) => preventComposerActionPointerFocus(event, () => undefined)}>
+      <textarea data-chat-input="true" /><Picker />
+    </div>;
   if (kind === 'page') return <Picker />;
   if (kind === 'sheet') return <MobileResizableSheet id="settings" open={open} onOpenChange={setOpen}
     ariaLabel="Settings" closeAriaLabel="Close settings" resizeAriaLabel="Resize settings"><Picker /></MobileResizableSheet>;
@@ -60,7 +66,22 @@ async function tap(element: HTMLElement) {
 }
 
 describe('mobile model picker focus through Settings hosts', () => {
-  test.each(['page', 'sheet', 'dialog'] as const)('does not move the IME surface before native touch focus in %s', async (kind) => {
+  test('composer capture permits native focus in a portaled picker while guarding its own toolbar', async () => {
+    await act(async () => root.render(<I18nProvider><Host kind="composer" /></I18nProvider>));
+    const trigger = document.querySelector<HTMLElement>('[data-testid="model-trigger"]')!;
+    const toolbarPress = new PointerEvent('pointerdown', { bubbles: true, cancelable: true, pointerType: 'touch' });
+    await act(async () => trigger.dispatchEvent(toolbarPress));
+    expect(toolbarPress.defaultPrevented).toBe(true);
+    await act(async () => trigger.click());
+    const input = document.querySelector<HTMLInputElement>('#mobile-overlay-root input')!;
+    const searchPress = new PointerEvent('pointerdown', { bubbles: true, cancelable: true, pointerType: 'touch' });
+    await act(async () => input.dispatchEvent(searchPress));
+    expect(searchPress.defaultPrevented).toBe(false);
+    await act(async () => input.focus());
+    expect(document.activeElement).toBe(input);
+  });
+
+  test.each(['page', 'sheet', 'dialog', 'composer'] as const)('does not move the IME surface before native touch focus in %s', async (kind) => {
     await act(async () => root.render(<I18nProvider><Host kind={kind} /></I18nProvider>));
     await tap(document.querySelector<HTMLElement>('[data-testid="model-trigger"]')!);
     const input = document.querySelector<HTMLInputElement>('#mobile-overlay-root input')!;
@@ -80,7 +101,7 @@ describe('mobile model picker focus through Settings hosts', () => {
     expect(document.activeElement).toBe(input);
   });
 
-  test.each(['page', 'sheet', 'dialog'] as const)('keeps tapped search focused in %s', async (kind) => {
+  test.each(['page', 'sheet', 'dialog', 'composer'] as const)('keeps tapped search focused in %s', async (kind) => {
     await act(async () => root.render(<I18nProvider><Host kind={kind} /></I18nProvider>));
     await tap(document.querySelector<HTMLElement>('[data-testid="model-trigger"]')!);
     const input = document.querySelector<HTMLInputElement>('#mobile-overlay-root input')!;

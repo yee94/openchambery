@@ -136,7 +136,7 @@ import {
     type MentionRange,
 } from './composerHighlight';
 import { ComposerTriggerIconMark } from './ComposerTriggerIconMark';
-import { focusComposerTextarea, resolveComposerTextarea, shouldApplyComposerDomCorrection } from './composerFocus';
+import { focusComposerTextarea, preventComposerActionPointerFocus, resolveComposerTextarea, shouldApplyComposerDomCorrection } from './composerFocus';
 import { highlightFencedCode } from './composerCodeHighlight';
 import {
     assignImageAttachmentFilenames,
@@ -7209,20 +7209,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
             onSubmit={(e) => { e.preventDefault(); handlePrimaryAction(); }}
             onPointerDownCapture={(event) => {
                 if (!isMobile) return;
-                const target = event.target;
-                if (!(target instanceof Element)) return;
-                // Only the textarea (and its highlight overlay) may claim focus /
-                // expand the composer. Footer chrome (attach, agent, model, send, …)
-                // is an explicit action — preventDefault so the browser never
-                // focuses the field as a side effect of the tap.
-                if (target.closest('textarea[data-chat-input="true"]')) return;
-                if (target.closest('[data-chat-prompt-attachments="true"]')) return;
-                const action = target.closest(
-                    'button, [role="button"], a, label, input, select, [data-composer-action="true"], [data-chat-input-footer="true"]',
-                );
-                if (!action) return;
-                markComposerActionGesture();
-                event.preventDefault();
+                preventComposerActionPointerFocus(event, markComposerActionGesture);
             }}
             className={cn(
                 "relative w-full pt-0 pb-4",
