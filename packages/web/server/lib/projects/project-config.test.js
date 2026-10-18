@@ -21,6 +21,27 @@ const createRuntime = async () => {
 };
 
 describe('project-config runtime', () => {
+  it('guards recovery writes against a newer run inside the project write lock', async () => {
+    const { runtime, cleanup } = await createRuntime();
+    try {
+      const { task } = await runtime.upsertScheduledTask('p', {
+        name: 'Task', enabled: true,
+        schedule: { kind: 'daily', time: '09:00', timezone: 'UTC' },
+        execution: { prompt: 'run', providerID: 'openai', modelID: 'gpt-4.1' },
+      });
+      const first = await runtime.updateScheduledTaskState('p', task.id, { lastStatus: 'running', lastRunAt: 10, lastSessionId: 'old' });
+      const expectedState = first.task.state;
+      await runtime.updateScheduledTaskState('p', task.id, { lastStatus: 'running', lastRunAt: 20, lastSessionId: 'new' });
+      const rejected = await runtime.updateScheduledTaskState('p', task.id, { lastStatus: 'success' }, { expectedState });
+      expect(rejected.task).toBeNull();
+      expect((await runtime.listScheduledTasks('p'))[0].state).toMatchObject({ lastStatus: 'running', lastRunAt: 20, lastSessionId: 'new' });
+      const accepted = await runtime.updateScheduledTaskState('p', task.id, { lastStatus: 'success' }, { expectedState: rejected.tasks[0].state });
+      expect(accepted.task.state.lastStatus).toBe('success');
+    } finally {
+      await cleanup();
+    }
+  });
+
   it('creates and persists a scheduled task', async () => {
     const { runtime, cleanup } = await createRuntime();
     try {

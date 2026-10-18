@@ -572,6 +572,7 @@ export const createScheduledTasksRuntime = (deps) => {
   let started = false;
   let historyRecoveryController = null;
   let historyRecoveryTimer = null;
+  let taskRecoveryCursor = null;
   const tasksByProject = new Map();
   const projectPathByID = new Map();
   const timersByTaskKey = new Map();
@@ -1691,11 +1692,80 @@ export const createScheduledTasksRuntime = (deps) => {
     return runTask(projectID, taskID, 'manual');
   };
 
+  const taskStateFence = (task) => ({
+    lastRunAt: task.state?.lastRunAt,
+    lastSessionId: task.state?.lastSessionId,
+    lastStatus: task.state?.lastStatus,
+    updatedAt: task.state?.updatedAt,
+  });
+
+  function* recoveryTasks() {
+    for (const [projectID, tasks] of tasksByProject) {
+      for (const task of tasks.values()) yield { projectID, taskID: task.id };
+    }
+  }
+
+  const recoverTaskStates = async (controller) => {
+    taskRecoveryCursor ??= recoveryTasks();
+    const signal = AbortSignal.any([controller.signal, AbortSignal.timeout(10_000)]);
+    let client;
+    for (let count = 0; count < 20 && !signal.aborted; count += 1) {
+      const entry = taskRecoveryCursor.next();
+      if (entry.done) {
+        taskRecoveryCursor = null;
+        break;
+      }
+      const { projectID, taskID } = entry.value;
+      const task = tasksByProject.get(projectID)?.get(taskID);
+      const taskKey = buildTaskKey(projectID, taskID);
+      if (task?.state?.lastStatus !== 'running' || runningTaskKeys.has(taskKey)) continue;
+      const expectedState = taskStateFence(task);
+      try {
+        // History and task configuration are separate durable stores. Even a
+        // completed history row may leave a running task snapshot after restart.
+        const run = runHistoryStore?.listRuns?.({ projectID, taskID, limit: 1 }).runs[0];
+        if (run && run.startedAt !== task.state.lastRunAt) continue;
+        const sessionID = run ? run.sessionId : task.state.lastSessionId;
+        if (!sessionID) continue;
+        client ??= makeOpenCodeV2Client({
+          baseUrl: buildOpenCodeUrl('/', '').replace(/\/$/, ''),
+          authHeaders: getOpenCodeAuthHeaders(),
+        });
+        if (typeof client?.session?.active !== 'function') continue;
+        const snapshot = await snapshotSessionOutcome({
+          client,
+          sessionID,
+          projectPath: projectPathByID.get(projectID),
+          goalEnabled: Boolean(task.execution?.goalEnabled),
+          readSessionMetadata,
+          signal,
+        });
+        if (signal.aborted || runningTaskKeys.has(taskKey) || tasksByProject.get(projectID)?.get(taskID) !== task) continue;
+        if (snapshot.outcome !== 'success' && snapshot.outcome !== 'error') continue;
+        const result = await projectConfigRuntime.updateScheduledTaskState(projectID, taskID, {
+          lastStatus: snapshot.outcome,
+          lastError: snapshot.outcome === 'error' ? snapshot.error : undefined,
+          lastSessionId: sessionID,
+        }, { expectedState });
+        if (signal.aborted) continue;
+        if (!result.task) {
+          const current = result.tasks?.find((item) => item.id === taskID);
+          if (current) updateInMemoryTask(projectID, current);
+          continue;
+        }
+        updateInMemoryTask(projectID, result.task);
+        emitContinuationStatus(projectID, taskID, sessionID, snapshot.outcome);
+      } catch (error) {
+        if (!signal.aborted) logger.warn?.('[ScheduledTasks] task state recovery failed', { projectID, taskID, error: safeErrorMessage(error) });
+      }
+    }
+  };
+
   const recoverRunHistory = async (controller, before = undefined) => {
     if (controller.signal.aborted) return;
     let nextCursor;
     try {
-      const page = runHistoryStore.listRunningRuns({ before, limit: 20 });
+      const page = runHistoryStore?.listRunningRuns?.({ before, limit: 20 }) ?? { runs: [], nextCursor: null };
       nextCursor = page.nextCursor;
       if (page.runs.length > 0) {
         const client = makeOpenCodeV2Client({
@@ -1741,6 +1811,8 @@ export const createScheduledTasksRuntime = (deps) => {
       }
     }
     if (controller.signal.aborted) return;
+    await recoverTaskStates(controller);
+    if (controller.signal.aborted) return;
     historyRecoveryTimer = setTimeout(() => {
       void recoverRunHistory(controller, nextCursor || undefined);
     }, 5_000);
@@ -1755,7 +1827,7 @@ export const createScheduledTasksRuntime = (deps) => {
     const controller = new AbortController();
     historyRecoveryController = controller;
     await syncAllProjects();
-    if (!controller.signal.aborted && typeof runHistoryStore?.listRunningRuns === 'function') {
+    if (!controller.signal.aborted) {
       void recoverRunHistory(controller);
     }
   };
@@ -1769,6 +1841,7 @@ export const createScheduledTasksRuntime = (deps) => {
     historyRecoveryController = null;
     clearTimeout(historyRecoveryTimer);
     historyRecoveryTimer = null;
+    taskRecoveryCursor = null;
     for (const timer of timersByTaskKey.values()) {
       clearTimeout(timer);
     }
@@ -1878,7 +1951,7 @@ export const createScheduledTasksRuntime = (deps) => {
       goalEnabled: Boolean(task.execution?.goalEnabled),
       readSessionMetadata,
     });
-    if (snapshot.outcome !== 'success') {
+    if (snapshot.outcome !== 'success' && snapshot.outcome !== 'error') {
       return;
     }
 
@@ -1886,22 +1959,23 @@ export const createScheduledTasksRuntime = (deps) => {
       return;
     }
     const latest = tasksByProject.get(projectID)?.get(taskID);
+    if (latest !== task) return;
     const latestStatus = latest?.state?.lastStatus;
     if (latestStatus !== 'error' && latestStatus !== 'running') {
       return;
     }
 
     const stateResult = await projectConfigRuntime.updateScheduledTaskState(projectID, taskID, {
-      lastStatus: 'success',
-      lastError: undefined,
+      lastStatus: snapshot.outcome,
+      lastError: snapshot.outcome === 'error' ? snapshot.error : undefined,
       lastSessionId: sessionID,
       updatedAt: Date.now(),
-    });
+    }, { expectedState: taskStateFence(task) });
     if (stateResult.task) {
       updateInMemoryTask(projectID, stateResult.task);
     }
 
-    emitContinuationStatus(projectID, taskID, sessionID, 'success');
+    if (stateResult.task) emitContinuationStatus(projectID, taskID, sessionID, snapshot.outcome);
   };
 
   const observeSessionEvent = (event) => {

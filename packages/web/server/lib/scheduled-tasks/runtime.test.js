@@ -51,6 +51,131 @@ const createRuntime = (updateScheduledTaskState, overrides = {}) => createSchedu
 });
 
 describe('scheduled-tasks history recovery', () => {
+  it.each(['success', 'error', 'busy', 'unavailable', 'incomplete', 'restarted'])('repairs a running task snapshot with %s authority independently of history recovery', async (outcome) => {
+    vi.useFakeTimers();
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'scheduled-state-recovery-'));
+    const store = createScheduledTaskRunHistoryStore({ dbPath: path.join(dir, 'runs.sqlite') });
+    const startedAt = Date.now() - 60_000;
+    store.startRun({ id: 'run', projectId: 'project-1', taskId: 'task-1', startedAt });
+    store.attachSession('run', 'ses_finished');
+    if (outcome !== 'restarted') store.finishRun('run', { status: 'success' });
+    let task = { ...scheduledTask, state: { ...scheduledTask.state, lastStatus: 'running', lastRunAt: startedAt } };
+    let probe = outcome;
+    const active = vi.fn(async () => {
+      if (probe === 'unavailable') throw new Error('offline');
+      return probe === 'busy' ? { ses_finished: {} } : {};
+    });
+    const list = vi.fn(async () => ({ data: probe === 'incomplete'
+      ? [{ type: 'user', id: 'pending' }]
+      : [{ type: 'idle', outcome: probe === 'error' ? 'failed' : 'succeeded' }] }));
+    makeOpenCodeV2Client.mockReturnValue({ session: { active }, message: { list } });
+    const runtime = createRuntime(null, {
+      runHistoryStore: store,
+      projectConfigRuntime: {
+        listScheduledTasks: vi.fn(async () => [task]),
+        updateScheduledTaskState: vi.fn(async (_project, _id, patch) => {
+          task = { ...task, state: { ...task.state, ...patch } };
+          return { task };
+        }),
+      },
+    });
+    try {
+      await runtime.start();
+      await vi.advanceTimersByTimeAsync(0);
+      expect(store.listRuns().runs[0].status).toBe('success');
+      if (['busy', 'unavailable', 'incomplete'].includes(outcome)) {
+        expect(task.state.lastStatus).toBe('running');
+        if (outcome !== 'incomplete') expect(list).not.toHaveBeenCalled();
+        probe = 'success';
+        await vi.advanceTimersByTimeAsync(5000);
+      }
+      expect(task.state.lastStatus).toBe(outcome === 'error' ? 'error' : 'success');
+      expect(task.state.lastSessionId).toBe('ses_finished');
+      expect(task.state.lastRunAt).toBe(startedAt);
+      expect(store.listRuns().runs[0].status).toBe('success');
+    } finally {
+      runtime.stop();
+      store.close();
+      fs.rmSync(dir, { recursive: true, force: true });
+      vi.useRealTimers();
+    }
+  });
+
+  it.each(['stop', 'new-run', 'different-history', 'unattached-history'])('does not apply task recovery after %s', async (race) => {
+    vi.useFakeTimers();
+    let resolveMessages;
+    const messageList = vi.fn(() => new Promise((resolve) => { resolveMessages = resolve; }));
+    makeOpenCodeV2Client.mockReturnValue({ session: { active: vi.fn(async () => ({})) }, message: { list: messageList } });
+    let task = { ...scheduledTask, state: { ...scheduledTask.state, lastStatus: 'running', lastRunAt: 10, lastSessionId: 'old' } };
+    const update = vi.fn(async (_project, _id, patch) => {
+      task = { ...task, state: { ...task.state, ...patch } };
+      return { task };
+    });
+    const runtime = createRuntime(update, {
+      projectConfigRuntime: { listScheduledTasks: vi.fn(async () => [task]), updateScheduledTaskState: update },
+      runHistoryStore: {
+        listRunningRuns: () => ({ runs: [], nextCursor: null }),
+        listRuns: () => ({ runs: [{ startedAt: race === 'different-history' ? 20 : 10, sessionId: race === 'unattached-history' ? null : 'old' }] }),
+      },
+    });
+    try {
+      await runtime.start();
+      await vi.advanceTimersByTimeAsync(0);
+      if (race === 'different-history' || race === 'unattached-history') {
+        expect(messageList).not.toHaveBeenCalled();
+      } else {
+        expect(messageList).toHaveBeenCalledTimes(1);
+        if (race === 'stop') runtime.stop();
+        if (race === 'new-run') {
+          task = { ...task, state: { ...task.state, lastRunAt: 20, lastSessionId: 'new' } };
+          await runtime.syncProject('project-1');
+        }
+        resolveMessages({ data: [{ type: 'idle', outcome: 'succeeded' }] });
+        await vi.advanceTimersByTimeAsync(0);
+      }
+      expect(task.state.lastStatus).toBe('running');
+      expect(update.mock.calls.some(([, , patch]) => patch.lastStatus === 'success')).toBe(false);
+    } finally {
+      runtime.stop();
+      vi.useRealTimers();
+    }
+  });
+
+  it('bounds task recovery to twenty candidates per pass and isolates failed sessions', async () => {
+    vi.useFakeTimers();
+    const tasks = Array.from({ length: 25 }, (_, i) => ({
+      ...scheduledTask, id: `task-${i}`, state: { ...scheduledTask.state, lastStatus: 'running', lastSessionId: `ses_${i}` },
+    }));
+    const list = vi.fn(async ({ sessionID }) => {
+      if (sessionID === 'ses_0') throw new Error('offline');
+      return { data: [{ type: 'idle', outcome: 'succeeded' }] };
+    });
+    makeOpenCodeV2Client.mockReturnValue({ session: { active: vi.fn(async () => ({})) }, message: { list } });
+    const runtime = createRuntime(null, {
+      projectConfigRuntime: {
+        listScheduledTasks: async () => tasks,
+        updateScheduledTaskState: async (_project, id, patch) => {
+          const task = tasks.find((item) => item.id === id);
+          task.state = { ...task.state, ...patch };
+          return { task };
+        },
+      },
+    });
+    try {
+      await runtime.start();
+      await vi.advanceTimersByTimeAsync(0);
+      expect(list).toHaveBeenCalledTimes(20);
+      expect(tasks.filter((task) => task.state.lastStatus === 'success')).toHaveLength(19);
+      await vi.advanceTimersByTimeAsync(5000);
+      expect(list).toHaveBeenCalledTimes(25);
+      expect(tasks.filter((task) => task.state.lastStatus === 'success')).toHaveLength(24);
+      expect(tasks[0].state.lastStatus).toBe('running');
+    } finally {
+      runtime.stop();
+      vi.useRealTimers();
+    }
+  });
+
   it('keeps live and unavailable sessions running after restart, then settles on real outcomes', async () => {
     vi.useFakeTimers();
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'scheduled-recovery-'));
@@ -1683,7 +1808,7 @@ describe('scheduled-tasks run history and session lifecycle', () => {
     expect(Object.hasOwn(finalPatch, 'lastSessionId')).toBe(false);
   });
 
-  it('marks lastStatus running when a history session continues, then success on idle', async () => {
+  it.each(['success', 'error'])('marks lastStatus running when a history session continues, then %s on idle', async (outcome) => {
     const history = createHistoryStore();
     const client = createSuccessfulClient({ settlement: 'assistant-error' });
     const fetchMock = vi.fn(async (url) => {
@@ -1731,7 +1856,7 @@ describe('scheduled-tasks run history and session lifecycle', () => {
     }));
 
     client.messageList.mockImplementation(async () => ({
-      data: [completedAssistant('msg_ok')],
+      data: outcome === 'success' ? [completedAssistant('msg_ok')] : [{ type: 'idle', outcome: 'failed' }],
     }));
 
     await runtime.observeSessionEvent({
@@ -1742,7 +1867,7 @@ describe('scheduled-tasks run history and session lifecycle', () => {
     });
 
     expect(updateScheduledTaskState.mock.calls.at(-1)[2]).toEqual(expect.objectContaining({
-      lastStatus: 'success',
+      lastStatus: outcome,
       lastSessionId: 'ses_1',
     }));
     expect(history.finishRun).toHaveBeenCalledTimes(1);
