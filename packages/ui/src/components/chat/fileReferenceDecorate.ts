@@ -32,6 +32,14 @@ export const isLikelyFilePath = (value: string): boolean => {
   return isLikelyFileReferencePath(parsed.path);
 };
 
+export const isLocalPathHref = (value: string): boolean => {
+  const href = value.trim();
+  if (!href || href.startsWith('#') || href.startsWith('?') || href.startsWith('//')) return false;
+  if (/^[A-Za-z]:[\\/]/.test(href) || /^file:/i.test(href)) return true;
+  if (isLikelyFilePath(href) && /:\d+(?:-\d+|:\d+)?$/.test(href)) return true;
+  return !/^[A-Za-z][A-Za-z0-9+.-]*:/.test(href);
+};
+
 const findTextPosition = (textNodes: Text[], targetOffset: number): { node: Text; offset: number } | null => {
   let currentOffset = 0;
 

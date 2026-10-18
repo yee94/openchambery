@@ -59,6 +59,7 @@ import {
   BLOCK_PATH_TOKEN_SELECTOR,
   FILE_LINK_SELECTOR,
   copyPreservedFileLinkAttributes,
+  isLocalPathHref,
 } from './fileReferenceDecorate';
 
 const useCurrentMermaidTheme = () => {
@@ -111,6 +112,11 @@ const useExternalLinkInteractions = ({
     }
 
     const href = anchor.getAttribute('href') ?? '';
+    if (isLocalPathHref(href)) {
+      event.preventDefault();
+      event.stopPropagation();
+      return;
+    }
     if (!isExternalHttpUrl(href)) {
       return;
     }
@@ -118,7 +124,7 @@ const useExternalLinkInteractions = ({
     event.preventDefault();
     event.stopPropagation();
     const directory = (effectiveDirectory || '').trim();
-    if (directory && openInAppBrowser) {
+    if (!isMobileSurfaceRuntime() && directory && openInAppBrowser) {
       openInAppBrowser(directory, href);
       return;
     }

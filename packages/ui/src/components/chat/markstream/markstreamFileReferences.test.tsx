@@ -46,6 +46,17 @@ test('a failed relay probe does not block mobile markdown preview navigation', a
   expect(openContextFile).toHaveBeenCalledWith('/repo', '/repo/docs/report.md');
 });
 
+test.each(['mobile', 'desktop'] as const)('directory anchors cannot reload the %s application', async (surface) => {
+  window.__OPENCHAMBER_SURFACE__ = surface;
+  for (const path of ['/repo/src/', '/repo/src', './src/', 'packages/ui', '/']) {
+    const link = await renderLink(path);
+    const event = new MouseEvent('click', { bubbles: true, cancelable: true });
+    await act(async () => link.dispatchEvent(event));
+    expect(event.defaultPrevented).toBe(true);
+  }
+  expect(openContextFile).not.toHaveBeenCalled();
+});
+
 test('image file links still open the image preview after a failed probe', async () => {
   const showPopup = vi.fn();
   const link = await renderLink('/repo/docs/image.png', showPopup);

@@ -39,11 +39,51 @@ const click = (
 };
 
 afterEach(() => {
+  delete window.__OPENCHAMBER_SURFACE__;
   openExternalUrl.mockClear();
   openFileReferenceFromElement.mockClear();
 });
 
 describe('handleMarkstreamPointerEvent', () => {
+  test.each(['/repo/src/', '/repo/src', './src/', '../', 'src', 'packages/ui', '/', 'C:\\repo\\src\\'])('directory link never navigates or reloads the app: %s', (href) => {
+    const root = document.createElement('div');
+    const anchor = document.createElement('a');
+    anchor.setAttribute('href', href);
+    anchor.innerHTML = '<strong>Directory</strong>';
+    root.append(anchor);
+    const event = click(anchor.firstElementChild!, root);
+
+    handleMarkstreamPointerEvent(event, {});
+
+    expect(event.defaultPrevented).toBe(true);
+    expect(openExternalUrl).not.toHaveBeenCalled();
+  });
+  test.each(['#section', '?view=details', 'mailto:dev@example.com', 'https://example.com/'])('does not classify browser URLs as directory links: %s', (href) => {
+    const root = document.createElement('div');
+    const anchor = document.createElement('a');
+    anchor.setAttribute('href', href);
+    root.append(anchor);
+    const event = click(anchor, root);
+    handleMarkstreamPointerEvent(event, {});
+    expect(openFileReferenceFromElement).not.toHaveBeenCalled();
+    if (!href.startsWith('https:')) expect(event.defaultPrevented).toBe(false);
+  });
+  test('opens mobile http links in the browser instead of the desktop context panel', () => {
+    window.__OPENCHAMBER_SURFACE__ = 'mobile';
+    const openInAppBrowser = vi.fn();
+    const root = document.createElement('div');
+    const anchor = document.createElement('a');
+    anchor.href = 'https://example.com/actions';
+    root.append(anchor);
+
+    handleMarkstreamPointerEvent(click(anchor, root), {
+      effectiveDirectory: '/repo',
+      openInAppBrowser,
+    });
+
+    expect(openExternalUrl).toHaveBeenCalledWith('https://example.com/actions');
+    expect(openInAppBrowser).not.toHaveBeenCalled();
+  });
   test.each(['docs/report.md', '/repo/docs/report.md', './README.md#L10'])('never navigates the document for an unannotated file link: %s', (href) => {
     const root = document.createElement('div');
     const anchor = document.createElement('a');

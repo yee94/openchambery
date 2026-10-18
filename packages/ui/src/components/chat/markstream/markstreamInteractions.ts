@@ -1,5 +1,6 @@
 import { isExternalHttpUrl, openExternalUrl } from '@/lib/url';
-import { FILE_LINK_ATTR, FILE_LINK_SELECTOR, isLikelyFilePath } from '../fileReferenceDecorate';
+import { isMobileSurfaceRuntime } from '@/lib/runtimeSurface';
+import { FILE_LINK_ATTR, FILE_LINK_SELECTOR, isLikelyFilePath, isLocalPathHref } from '../fileReferenceDecorate';
 import {
   openFileReferenceFromElement,
   type OpenFileReferenceOptions,
@@ -82,10 +83,10 @@ export const handleMarkstreamPointerEvent = (
   }
   const href = anchor.getAttribute('href') ?? '';
   // File probes only control whether a reference can open, never document navigation.
-  if (isLikelyFilePath(href)) {
+  if (isLocalPathHref(href)) {
     event.preventDefault();
     event.stopPropagation();
-    if (options.fileReference) {
+    if (options.fileReference && isLikelyFilePath(href)) {
       void openFileReferenceFromElement(anchor, options.fileReference);
     }
     return;
@@ -96,7 +97,7 @@ export const handleMarkstreamPointerEvent = (
   event.preventDefault();
   event.stopPropagation();
   const directory = (options.effectiveDirectory || '').trim();
-  if (directory && options.openInAppBrowser) {
+  if (!isMobileSurfaceRuntime() && directory && options.openInAppBrowser) {
     options.openInAppBrowser(directory, href);
     return;
   }

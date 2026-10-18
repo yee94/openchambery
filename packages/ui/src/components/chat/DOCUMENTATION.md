@@ -8,7 +8,11 @@ Hover/focus shows one shadow-free, theme-token conversation preview beside the c
 
 ## Markdown file-link navigation
 
-Markstream's delegated primary-click handler prevents document navigation for file-path anchors even before existence probing has annotated them, when probing fails, or while file references are disabled during streaming. Explicit file anchors use the shared file opener even if a background probe failed; disabled references remain inert. Mobile consumes file-open requests in its preview surface, and image links use the shared image preview. File probes carry the session directory, cache by runtime/directory/path, and reject failures without caching them as missing files. HTTP(S) links retain their in-app browser behavior. Coverage: `markstream/markstreamInteractions.test.ts`, `markstream/markstreamFileReferences.test.tsx`, and `fileReferenceActions.test.ts`.
+Primary HTTP(S) link clicks open the context Browser panel on desktop and hand off to the browser on mobile surfaces. Both Markdown renderers use this routing. Android uses the existing `OpenChamberExternalBrowser` native bridge; hosted H5 and iOS retain their window browser handoff.
+
+Both renderers suppress document navigation for local-path anchors, including extensionless directories, root and parent paths. Directory links remain inert instead of navigating the application to a filesystem path and reloading it. Navigation suppression does not depend on successful file probing or file-name extension detection.
+
+Markstream's delegated primary-click handler prevents document navigation for file-path anchors even before existence probing has annotated them, when probing fails, or while file references are disabled during streaming. Explicit file anchors use the shared file opener even if a background probe failed; disabled references remain inert. Mobile consumes file-open requests in its preview surface, and image links use the shared image preview. File probes carry the session directory, cache by runtime/directory/path, and reject failures without caching them as missing files. HTTP(S) links follow the runtime routing above. Coverage: `markstream/markstreamInteractions.test.ts`, `markstream/markstreamFileReferences.test.tsx`, and `fileReferenceActions.test.ts`.
 
 Markstream links disable the library's global hover tooltip. Desktop uses the shared component-owned Tooltip so unmount removes its portal; mobile omits hover popups to avoid touch-generated mouse events leaving a detached bubble after navigation.
 

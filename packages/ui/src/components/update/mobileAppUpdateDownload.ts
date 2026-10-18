@@ -1,10 +1,7 @@
-import { Capacitor, registerPlugin } from '@capacitor/core';
+import { Capacitor } from '@capacitor/core';
 
 import { openExternalUrl } from '@/lib/url';
-
-type OpenChamberExternalBrowserPlugin = {
-  open(options: { url: string }): Promise<void>;
-};
+import { OpenChamberExternalBrowser } from '@/lib/native-external-browser';
 
 type MobileAppUpdateDownloadDependencies = {
   getPlatform: () => string;
@@ -12,8 +9,6 @@ type MobileAppUpdateDownloadDependencies = {
   openInSystemBrowser: (options: { url: string }) => Promise<void>;
   openExternal: (url: string) => Promise<boolean>;
 };
-
-const OpenChamberExternalBrowser = registerPlugin<OpenChamberExternalBrowserPlugin>('OpenChamberExternalBrowser');
 
 const defaultDependencies: MobileAppUpdateDownloadDependencies = {
   getPlatform: () => Capacitor.getPlatform(),

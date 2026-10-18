@@ -1,4 +1,6 @@
+import { Capacitor } from '@capacitor/core';
 import { getRegisteredRuntimeAPIs } from '@/contexts/runtimeAPIRegistry';
+import { OpenChamberExternalBrowser } from '@/lib/native-external-browser';
 
 type DesktopBridgeGlobal = {
   openExternal?: (url: string) => Promise<unknown>;
@@ -108,6 +110,16 @@ export const openExternalUrl = async (url: string): Promise<boolean> => {
   }
 
   const normalizedTarget = parsed.toString();
+
+  if (Capacitor.getPlatform() === 'android') {
+    if (!Capacitor.isPluginAvailable('OpenChamberExternalBrowser')) return false;
+    try {
+      await OpenChamberExternalBrowser.open({ url: normalizedTarget });
+      return true;
+    } catch {
+      return false;
+    }
+  }
 
   const runtimeApis = getRegisteredRuntimeAPIs();
   if (runtimeApis?.runtime?.isVSCode && runtimeApis.vscode?.openExternalUrl) {
