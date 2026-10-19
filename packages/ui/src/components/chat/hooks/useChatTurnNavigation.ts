@@ -66,6 +66,15 @@ const setHash = (hash: string | null): void => {
     const nextHash = hash ? `#${hash}` : '';
     const nextUrl = `${window.location.pathname}${window.location.search}${nextHash}`;
     window.history.replaceState(window.history.state, '', nextUrl);
+    if (hash) {
+        window.dispatchEvent(new HashChangeEvent('hashchange'));
+    }
+};
+
+/** Point the open chat at a message. The timeline applies `#message-<id>` once the turn exists. */
+export const focusChatMessage = (messageId: string): void => {
+    if (!messageId) return;
+    setHash(`message-${messageId}`);
 };
 
 interface UseChatTurnNavigationOptions {

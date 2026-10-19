@@ -9,6 +9,7 @@ import {
   TRANSCRIPT_CACHE_INDEX_TABLE,
   TRANSCRIPT_CACHE_SCHEMA_VERSION,
   createTranscriptCacheService,
+  projectContentSearchText,
 } from './service.js';
 
 const require = createRequire(import.meta.url);
@@ -339,5 +340,127 @@ describe('transcript cache storage', () => {
     reopened.close();
     services.pop();
     expect(inspectTables(dbPath)).toMatchObject({ indexCount: 1, contentCount: 1 });
+  });
+
+  it('finds a constraint in the middle of a settled user message', () => {
+    const { service } = createService();
+    writeUser(
+      service,
+      'msg_prompt',
+      10,
+      'Please refactor the sync loop. The retry budget stays at three attempts. Then update the docs.',
+    );
+
+    expect(service.searchContent(SCOPE, 'retry budget')).toEqual({
+      hits: [{
+        sessionID: 'ses_1',
+        messageID: 'msg_prompt',
+        role: 'user',
+        createdAt: 10,
+        snippet: 'Please refactor the sync loop. The retry budget stays at three attempts. Then update the docs.',
+      }],
+    });
+  });
+
+  it('indexes the head and tail of a settled assistant reply and drops tool output and reasoning', () => {
+    const { service } = createService();
+    const head = 'H'.repeat(1024);
+    const middle = 'MIDDLE-SECRET-NOT-INDEXED';
+    const tail = 'T'.repeat(1024);
+    const body = `${head}${middle}${tail}`;
+    service.upsertSettled(
+      SCOPE,
+      assistantInfo('msg_reply', 20, { finish: 'stop' }),
+      [
+        { id: 'reason', messageID: 'msg_reply', sessionID: SCOPE.sessionID, type: 'reasoning', text: 'hidden-chain-of-thought' },
+        { id: 'tool', messageID: 'msg_reply', sessionID: SCOPE.sessionID, type: 'tool', text: 'tool-dump-should-not-match' },
+        { id: 'text', messageID: 'msg_reply', sessionID: SCOPE.sessionID, type: 'text', text: body },
+      ],
+    );
+
+    const found = service.searchContent(SCOPE, 'HHHH');
+    expect(found.hits).toHaveLength(1);
+    expect(found.hits[0]).toMatchObject({
+      sessionID: 'ses_1',
+      messageID: 'msg_reply',
+      role: 'assistant',
+      createdAt: 20,
+    });
+    expect(found.hits[0].snippet.startsWith('H')).toBe(true);
+    expect(service.searchContent(SCOPE, 'TTTT').hits).toHaveLength(1);
+    expect(service.searchContent(SCOPE, 'MIDDLE-SECRET-NOT-INDEXED').hits).toEqual([]);
+    expect(service.searchContent(SCOPE, 'hidden-chain-of-thought').hits).toEqual([]);
+    expect(service.searchContent(SCOPE, 'tool-dump-should-not-match').hits).toEqual([]);
+  });
+
+  it('skips an open assistant turn and indexes it once the turn settles', () => {
+    const { service } = createService();
+    const open = service.upsertSettled(
+      SCOPE,
+      assistantInfo('msg_live', 30),
+      [textPart('live', 'msg_live', 'still streaming the answer')],
+    );
+    expect(open).toMatchObject({ status: 'skipped', reason: 'not-settled' });
+    expect(service.searchContent(SCOPE, 'streaming').hits).toEqual([]);
+
+    service.upsertSettled(
+      SCOPE,
+      assistantInfo('msg_live', 30, { finish: 'stop' }),
+      [textPart('live', 'msg_live', 'still streaming the answer')],
+    );
+    expect(service.searchContent(SCOPE, 'streaming').hits).toHaveLength(1);
+  });
+
+  it('replaces indexed text when the same message is edited and drops it when the message or session is removed', () => {
+    const { service } = createService();
+    writeUser(service, 'msg_edit', 40, 'use the old retry budget');
+    writeUser(service, 'msg_edit', 40, 'use the new connection pool');
+    expect(service.searchContent(SCOPE, 'retry budget').hits).toEqual([]);
+    expect(service.searchContent(SCOPE, 'connection pool').hits).toHaveLength(1);
+
+    service.removeMessage(SCOPE, 'msg_edit');
+    expect(service.searchContent(SCOPE, 'connection pool').hits).toEqual([]);
+
+    writeUser(service, 'msg_keep', 50, 'keep the session note');
+    service.clearSession(SCOPE);
+    expect(service.searchContent(SCOPE, 'session note').hits).toEqual([]);
+  });
+
+  it('returns no hits for a blank query, requires every term, and matches a Chinese substring', () => {
+    const { service } = createService();
+    writeUser(service, 'msg_zh', 60, '重试次数保持三次，连接池单独调');
+    expect(service.searchContent(SCOPE, '   ').hits).toEqual([]);
+    expect(service.searchContent(SCOPE, '重试 连接池').hits).toHaveLength(1);
+    expect(service.searchContent(SCOPE, '重试 不存在').hits).toEqual([]);
+    expect(service.searchContent(SCOPE, '次数').hits[0].snippet).toContain('重试次数');
+  });
+
+  it('rebuilds settled messages from the last seven days and skips older rows', () => {
+    const { service, dbPath } = createService();
+    const now = Date.now();
+    const week = 7 * 24 * 60 * 60 * 1000;
+    writeUser(service, 'msg_recent', now - 2 * 24 * 60 * 60 * 1000, 'recent retry budget');
+    writeUser(service, 'msg_old', now - 10 * 24 * 60 * 60 * 1000, 'ancient retry budget');
+    const raw = new Database(dbPath);
+    raw.exec('DELETE FROM transcript_content_search');
+    raw.close();
+    expect(service.searchContent(SCOPE, 'retry budget').hits).toEqual([]);
+
+    const result = service.rebuildContentSince(now - week);
+    expect(result).toMatchObject({ scanned: 1, indexed: 1 });
+    expect(service.searchContent(SCOPE, 'recent retry').hits.map((hit) => hit.messageID)).toEqual(['msg_recent']);
+    expect(service.searchContent(SCOPE, 'ancient retry').hits).toEqual([]);
+  });
+
+  it('keeps a long assistant projection to the opening and closing edges', () => {
+    const head = `HEAD-${'a'.repeat(1019)}`;
+    const tail = `${'z'.repeat(1019)}-TAIL`;
+    const text = `${head}${'m'.repeat(500)}${tail}`;
+    expect(head).toHaveLength(1024);
+    expect(tail).toHaveLength(1024);
+    expect(projectContentSearchText(
+      { role: 'assistant' },
+      [{ type: 'text', text }],
+    )).toBe(`${head}\n${tail}`);
   });
 });

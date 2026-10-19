@@ -35,10 +35,38 @@ service `close()`s the SQLite connection on shutdown.
 
 Public service surface: `readSession`, `readMessage`, `upsertSettled`,
 `removeMessage`, `clearSession`, `clearGeneration`, `clearAll`, `evictToBytes`,
-`close`. `clearAll()` wipes every scope in one transaction by deleting the
-index; FK cascade empties the content table. The cache remains writable
-afterwards. This is the privacy-clear path for the current Electron local
-runtime and does not touch OpenCode history.
+`searchContent`, `close`. `clearAll()` wipes every scope in one transaction by
+deleting the index; FK cascade empties the content table. The same transaction
+deletes content-search rows. The cache remains writable afterwards. This is
+the privacy-clear path for the current Electron local runtime and does not
+touch OpenCode history.
+
+## Content search
+
+When the cache is enabled, settled writes also project a searchable excerpt
+into `transcript_content_search` and its FTS5 trigram index. The index is not
+an authority and is rebuilt from scratch when its own schema version changes;
+that rebuild does not drop transcript cache rows.
+
+Projection rules:
+
+- `user` messages index every non-empty `text` part, uncapped.
+- Settled `assistant` messages index `text` parts only, capped at 2048
+  characters (first 1024 and last 1024 when longer).
+- Reasoning, tool, file, and other non-text parts are dropped. Other roles
+  and whitespace-only text are not inserted. Open assistant turns stay
+  unindexed until they settle.
+- Replacing a message replaces its excerpt. Message, session, generation,
+  cache-wide, and eviction deletes remove the matching excerpts in the same
+  transaction.
+
+Startup calls `rebuildContentSince(now - 7 days)` once, off the request path. It projects settled rows already in this cache and does not read OpenCode. Messages older than seven days, or never written into the cache, stay unsearchable until a later settled write.
+
+`searchContent({ transport, generation, directory }, query, { limit })` is
+directory-wide. It does not take a session id. Terms split on whitespace are
+AND-ed. An empty query returns `{ hits: [] }`. Each hit is
+`{ sessionID, messageID, role, createdAt, snippet }`. The default limit is 30
+and the cap is 50.
 
 ## HTTP routes
 
@@ -49,6 +77,7 @@ proxy, on the existing UI-password / CORS path. Prefix:
 
 | Method | Path | Action |
 |---|---|---|
+| `GET` | `/search` | Directory-wide content search (`transport`, `generation`, `directory`, `q`, optional `limit`). Returns `{ available, hits }`. Does not require `sessionID`. |
 | `GET` | `/session` | Read a scoped timeline (`transport`, `generation`, `directory`, `sessionID` query). Optional `includeReasoning=false` (strict) strips `type=reasoning` parts on the response only. |
 | `GET` | `/message` | Read one message (scope query + `messageID`). Same `includeReasoning` projection as session read. |
 | `PUT` | `/message` | Upsert a settled message (`{ scope, info, parts }`) |

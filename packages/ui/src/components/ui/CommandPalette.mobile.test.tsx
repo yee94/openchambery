@@ -42,6 +42,14 @@ vi.mock('@/stores/useFileSearchStore', async () => {
 vi.mock('@/queries/sessionTitleSearchQueries', () => ({
   sessionTitleSearchQueryOptions: (query: string) => ({ queryKey: ['search', query], queryFn: () => searchSessions(query) }),
 }));
+vi.mock('@/queries/sessionContentSearchQueries', () => ({
+  sessionContentSearchQueryOptions: () => ({ queryKey: ['content-search'], queryFn: async () => [], enabled: false }),
+}));
+vi.mock('@/lib/runtime-switch', () => ({
+  getRuntimeTransportIdentity: () => 'test',
+  getRuntimeGeneration: () => 1,
+}));
+vi.mock('@/components/chat/hooks/useChatTurnNavigation', () => ({ focusChatMessage: vi.fn() }));
 
 import { CommandPalette } from './CommandPalette';
 import { useUIStore } from '@/stores/useUIStore';

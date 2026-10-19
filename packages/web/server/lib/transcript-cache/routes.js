@@ -11,6 +11,7 @@ import {
   parseTranscriptCacheGeneration,
   parseTranscriptCacheMessageID,
   parseTranscriptCacheScope,
+  parseContentSearchScope,
   parseTranscriptCacheUpsert,
 } from './service.js';
 
@@ -58,6 +59,19 @@ const scopeFromQuery = (query = {}) => parseTranscriptCacheScope({
 const scopeFromBody = (body) => parseTranscriptCacheScope(body?.scope ?? body);
 
 export const registerTranscriptCacheRoutes = (app, { transcriptCacheService } = {}) => {
+  app.get(`${TRANSCRIPT_CACHE_ROUTE_PREFIX}/search`, rejectPreviewProxyCredential((req, res) => {
+    if (!transcriptCacheService) return unsupported(res);
+    try {
+      const { scope, query, limit } = parseContentSearchScope(req.query ?? {});
+      res.json({
+        available: true,
+        ...transcriptCacheService.searchContent(scope, query, limit === undefined ? {} : { limit }),
+      });
+    } catch (error) {
+      sendError(res, error);
+    }
+  }));
+
   app.get(`${TRANSCRIPT_CACHE_ROUTE_PREFIX}/session`, rejectPreviewProxyCredential((req, res) => {
     if (!transcriptCacheService) return unsupported(res);
     try {

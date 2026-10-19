@@ -12,6 +12,7 @@ import { isCapacitorApp } from "@/lib/platform"
 
 import { createHttpTranscriptDurableStore } from "./transcript-durable-store-http"
 import { createIndexedDBTranscriptDurableStore } from "./transcript-durable-store-indexeddb"
+import { createTranscriptContentSearchStore } from "./transcript-content-search"
 import type {
   TranscriptDurableGeneration,
   TranscriptDurableScope,
@@ -28,6 +29,7 @@ export type TranscriptDurableRuntimeDeps = {
   isCapacitorApp?: () => boolean
   createHttpStore?: () => TranscriptDurableStore
   createIndexedDBStore?: () => TranscriptDurableStore
+  createContentSearchStore?: () => TranscriptDurableStore
 }
 
 /**
@@ -107,4 +109,5 @@ export async function clearCurrentRuntimeTranscriptCache(
   deps: TranscriptDurableRuntimeDeps = {},
 ): Promise<void> {
   await createRuntimeTranscriptDurableStore(deps).clearAll()
+  await (deps.createContentSearchStore ?? createTranscriptContentSearchStore)().clearAll()
 }

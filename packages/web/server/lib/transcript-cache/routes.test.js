@@ -275,4 +275,42 @@ describe('transcript cache routes', () => {
       errorLog.mockRestore();
     }
   });
+
+  it('searches projected content inside the requested scope and rejects a blank scope', async () => {
+    const { app, route } = registry();
+    const searchContent = vi.fn(() => ({
+      hits: [{
+        sessionID: 'ses_1',
+        messageID: 'msg_prompt',
+        role: 'user',
+        createdAt: 10,
+        snippet: 'retry budget stays at three',
+      }],
+    }));
+    registerTranscriptCacheRoutes(app, { transcriptCacheService: { searchContent } });
+
+    const found = await invoke(route('GET', `${prefix}/search`), {
+      query: { ...SCOPE, generation: '1', q: 'retry budget', limit: '10' },
+    });
+    expect(found.statusCode).toBe(200);
+    expect(found.body).toEqual({
+      available: true,
+      hits: [{
+        sessionID: 'ses_1',
+        messageID: 'msg_prompt',
+        role: 'user',
+        createdAt: 10,
+        snippet: 'retry budget stays at three',
+      }],
+    });
+    expect(searchContent).toHaveBeenCalledWith(
+      { transport: 'local', generation: 1, directory: '/workspace' },
+      'retry budget',
+      { limit: 10 },
+    );
+
+    const missingScope = await invoke(route('GET', `${prefix}/search`), { query: { q: 'retry' } });
+    expect(missingScope.statusCode).toBe(400);
+    expect(searchContent).toHaveBeenCalledTimes(1);
+  });
 });

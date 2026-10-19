@@ -1921,11 +1921,13 @@ describe("Query repository durable cache wiring", () => {
     }
     setIncludeReasoningProjection(false)
     try {
+      const contentSearchStore = createMemoryTranscriptDurableStore()
       const repo = createQueryTranscriptRepository({
         client,
         transport: TRANSPORT,
         generation: GENERATION,
         durableStore,
+        contentSearchStore,
         fetcher: async () =>
           transportPage(
             [{ info: userMessage("msg_net"), parts: [textPart("p_net", "msg_net", "live")] }],
@@ -1941,6 +1943,7 @@ describe("Query repository durable cache wiring", () => {
       expect(repo.getTranscript(scope).messageOrder).toEqual(["msg_net"])
       await new Promise((resolve) => setTimeout(resolve, 20))
       expect(upsertCalls).toBe(0)
+      expect((await contentSearchStore.readMessage(durableScope, "msg_net"))?.parts[0]?.text).toBe("live")
       // Prior full durable row still present for re-open seed.
       expect((await inner.readMessage(durableScope, "msg_r"))?.parts.some((p) => p.type === "reasoning")).toBe(true)
       repo.destroy()
