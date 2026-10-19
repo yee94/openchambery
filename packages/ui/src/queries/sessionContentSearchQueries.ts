@@ -3,7 +3,6 @@ import { queryOptions } from '@tanstack/react-query';
 import { runtimeFetch } from '@/lib/runtime-fetch';
 import { queryKeys } from '@/lib/queryRuntime';
 import { getRuntimeGeneration, getRuntimeTransportIdentity } from '@/lib/runtime-switch';
-import { searchIndexedDBTranscriptContent } from '@/sync/transcript-content-search';
 
 export const SESSION_CONTENT_SEARCH_LIMIT = 30;
 
@@ -14,6 +13,7 @@ export type SessionContentSearchHit = {
   createdAt: number;
   snippet: string;
   directory: string;
+  title?: string;
 };
 
 export type SessionContentSearchScope = {
@@ -49,9 +49,8 @@ const isHit = (value: unknown, directory: string): value is SessionContentSearch
 };
 
 /**
- * Directory-wide search of projected conversation text. A disabled transcript
- * cache (501) is an empty result. Any other failure throws so callers do not
- * treat a broken index as "nothing matched".
+ * Host-owned global search. Runtime transport supplies host identity; callers
+ * never narrow results to whichever project happens to be selected in the UI.
  */
 export const searchSessionContent = async (input: {
   scope: SessionContentSearchScope;
@@ -63,17 +62,13 @@ export const searchSessionContent = async (input: {
   const query = input.query.trim();
   if (!query) return [];
   const fetch = input.fetch ?? runtimeFetch;
-  const response = await fetch('/api/openchamber/transcript-cache/search', {
+  const response = await fetch('/api/openchamber/content-search', {
     query: {
-      transport: input.scope.transport,
-      generation: String(input.scope.generation),
-      directory: input.scope.directory,
       q: query,
       limit: String(input.limit ?? SESSION_CONTENT_SEARCH_LIMIT),
     },
     signal: input.signal,
   });
-  if (response.status === 501) return [];
   if (!response.ok) {
     throw new Error(`session content search failed (${response.status})`);
   }
@@ -82,7 +77,7 @@ export const searchSessionContent = async (input: {
     throw new Error('session content search returned no hits');
   }
   return payload.hits.flatMap((hit) => (
-    isHit(hit, input.scope.directory) ? [{ ...hit, directory: input.scope.directory }] : []
+    isHit(hit, typeof hit?.directory === 'string' ? hit.directory : '') ? [hit] : []
   ));
 };
 
@@ -94,12 +89,12 @@ export const sessionContentSearchQueryOptions = (
   const scope = options.scope;
   const transport = scope?.transport ?? getRuntimeTransportIdentity();
   const generation = scope?.generation ?? getRuntimeGeneration();
-  const directory = scope?.directory ?? '';
-  const searchContent = options.searchContent ?? searchIndexedDBTranscriptContent;
+  const directory = '';
+  const searchContent = options.searchContent ?? searchSessionContent;
 
   return queryOptions({
     queryKey: queryKeys.sessionContentSearch.query(search, directory, generation, transport),
-    enabled: search.length > 0 && directory.length > 0,
+    enabled: search.length > 0 && scope !== null,
     queryFn: ({ signal }) => {
       if (!scope) return [];
       return searchContent({
@@ -110,6 +105,18 @@ export const sessionContentSearchQueryOptions = (
       });
     },
     staleTime: 0,
+    refetchInterval: 3000,
     retry: 1,
   });
 };
+
+export const sessionContentIndexStatusOptions = () => queryOptions({
+  queryKey: [getRuntimeTransportIdentity(), 'contentSearchStatus', getRuntimeGeneration()],
+  queryFn: async ({ signal }) => {
+    const response = await runtimeFetch('/api/openchamber/content-search', { signal });
+    if (!response.ok) throw new Error(`Content index unavailable (${response.status})`);
+    return (await response.json() as { index: { phase: string; total: number; completed: number; failed: number; messages: number } }).index;
+  },
+  refetchInterval: 3000,
+  staleTime: 0,
+});

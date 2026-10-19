@@ -67,6 +67,7 @@ import { createSessionRuntime, extractSessionStatusUpdate } from './lib/opencode
 import { createOpenCodeWatcherRuntime } from './lib/opencode/watcher.js';
 import { createSessionTitleRuntime } from './lib/session-title/runtime.js';
 import { createTitleSessionAccess } from './lib/session-title/session-access.js';
+import { createGlobalContentSearch } from './lib/content-search/index.js';
 import { createSessionIndexService } from './lib/session-index/service.js';
 import { createSessionIndexSyncRuntime } from './lib/session-index/sync-runtime.js';
 import { createSessionDirectoryRuntime } from './lib/opencode/session-directory-runtime.js';
@@ -1592,6 +1593,12 @@ async function main(options = {}) {
     resolveDirectory: indexSessionDirectories.resolveDirectory,
   });
   sessionIndexServiceRef = sessionIndexService;
+  const contentSearch = createGlobalContentSearch({
+    dataDir: path.dirname(resolveSessionIndexDbPath({ sessionIndexDbPath }, OPENCHAMBER_DATA_DIR)),
+    getRuntimeKey: () => sessionIndexService.getRuntimeKey(),
+    buildOpenCodeUrl, getOpenCodeAuthHeaders, waitForReady: waitForOpenCodeReady,
+  });
+  const unsubscribeContentSearch = globalMessageStreamHub.subscribeEvent((event) => contentSearch.runtime.observe(event));
   const transcriptCacheService = createTranscriptCacheService({
     dbPath: resolveTranscriptCacheDbPath({ transcriptCacheDbPath: options.transcriptCacheDbPath }),
   });
@@ -1896,6 +1903,7 @@ async function main(options = {}) {
     // Production snapshot/lookup filter: committed Host archive authority.
     getCommittedHostMetadata: async () => sessionMetadataStore.getAll(),
     transcriptCacheService,
+    contentSearch,
   });
   if (transcriptCacheService && typeof transcriptCacheService.rebuildContentSince === 'function') {
     const weekAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
@@ -2189,6 +2197,8 @@ async function main(options = {}) {
       sessionTitleRuntime.stop();
       try {
         unsubscribeSessionIndexEvents();
+        unsubscribeContentSearch();
+        await contentSearch.close();
         unsubscribeMessageQueueEvents();
         unsubscribeScheduledTaskEvents();
         sessionIndexSyncRuntime?.stop();

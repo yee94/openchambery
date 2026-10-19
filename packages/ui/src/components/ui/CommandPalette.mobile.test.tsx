@@ -11,7 +11,7 @@ vi.mock('@/lib/i18n', () => ({ useI18n: () => ({ t: (key: string) => key }) }));
 vi.mock('@/components/ui', () => ({ toast: { error: vi.fn() } }));
 vi.mock('@/lib/worktreeSessionCreator', () => ({ createWorktreeSession: vi.fn() }));
 vi.mock('@/lib/terminalTabShortcuts', () => ({ openAndCreateTerminalTab: vi.fn() }));
-vi.mock('@/hooks/useEffectiveDirectory', () => ({ useEffectiveDirectory: () => null }));
+vi.mock('@/hooks/useEffectiveDirectory', () => ({ useEffectiveDirectory: () => '/project' }));
 vi.mock('@/hooks/useRuntimeAPIs', () => ({ useRuntimeAPIs: () => ({ files: {} }) }));
 vi.mock('@/sync/session-ui-store', async () => {
   const { create } = await import('zustand');
@@ -43,7 +43,10 @@ vi.mock('@/queries/sessionTitleSearchQueries', () => ({
   sessionTitleSearchQueryOptions: (query: string) => ({ queryKey: ['search', query], queryFn: () => searchSessions(query) }),
 }));
 vi.mock('@/queries/sessionContentSearchQueries', () => ({
-  sessionContentSearchQueryOptions: () => ({ queryKey: ['content-search'], queryFn: async () => [], enabled: false }),
+  sessionContentIndexStatusOptions: () => ({ queryKey: ['content-status'], queryFn: async () => ({ phase: 'ready', total: 1, completed: 1, messages: 1 }) }),
+  sessionContentSearchQueryOptions: () => ({ queryKey: ['content-search'], queryFn: async () => [{
+    sessionID: 'session-1', messageID: 'message-1', directory: '/project', role: 'user', createdAt: 1, snippet: 'matching body result',
+  }], enabled: false }),
 }));
 vi.mock('@/lib/runtime-switch', () => ({
   getRuntimeTransportIdentity: () => 'test',
@@ -85,5 +88,48 @@ test('page presentation has a focused search header and results without dialog c
     await act(async () => { root.unmount(); useUIStore.getState().setCommandPaletteOpen(false); });
     client.clear();
     host.remove();
+  }
+});
+
+test('previews five titles before body hits, expands explicitly and resets for the next query', async () => {
+  searchSessions.mockResolvedValue(Array.from({ length: 30 }, (_, i) => ({
+    id: `session-${i}`, title: `matching conversation ${i}`, time: { updated: i },
+  })));
+  const host = document.createElement('div');
+  document.body.append(host);
+  const root = createRoot(host);
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  useUIStore.getState().setCommandPaletteOpen(true);
+  const type = async (value: string) => {
+    const input = host.querySelector<HTMLInputElement>('input')!;
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, value);
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 350)); });
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 0)); });
+  };
+  try {
+    await act(async () => root.render(<QueryClientProvider client={client}><CommandPalette presentation="page" /></QueryClientProvider>));
+    await type('matching');
+    expect(host.querySelectorAll('[cmdk-item][data-value^="session:"]')).toHaveLength(5);
+    expect(host.querySelectorAll('[cmdk-item][data-value^="message:"]')).toHaveLength(1);
+    expect(host.querySelector('[data-value="more:sessions"]')).not.toBeNull();
+    await act(async () => host.querySelector('input')!.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true })));
+    await act(async () => {
+      client.setQueryData(['content-search'], [{ sessionID: 'new', messageID: 'new', directory: '/other', role: 'user', createdAt: 2, snippet: 'new background result' }]);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    expect(host.textContent).toContain('matching body result');
+    expect(host.textContent).not.toContain('new background result');
+    await act(async () => (host.querySelector('[data-value="more:sessions"]') as HTMLElement).click());
+    expect(host.querySelectorAll('[cmdk-item][data-value^="session:"]')).toHaveLength(30);
+    await type('conversation');
+    expect(host.querySelectorAll('[cmdk-item][data-value^="session:"]')).toHaveLength(5);
+    await type('matching');
+    expect(host.querySelectorAll('[cmdk-item][data-value^="session:"]')).toHaveLength(5);
+  } finally {
+    await act(async () => { root.unmount(); useUIStore.getState().setCommandPaletteOpen(false); });
+    client.clear(); host.remove();
   }
 });

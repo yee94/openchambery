@@ -68,6 +68,7 @@ export const createBootstrapRuntime = (dependencies) => {
       sessionIndexSyncRuntime,
       getCommittedHostMetadata = null,
       transcriptCacheService,
+      contentSearch,
     } = options;
 
     const uiAuthController = createUiAuth({
@@ -163,6 +164,7 @@ export const createBootstrapRuntime = (dependencies) => {
       sessionIndexSyncRuntime,
       getCommittedHostMetadata,
       transcriptCacheService,
+      contentSearch,
       express,
     });
 

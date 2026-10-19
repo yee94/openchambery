@@ -45,7 +45,7 @@ import { useMobileAppActions } from '@/apps/mobileAppContext';
 import { useMobileNavigationStore } from '@/mobile/useMobileNavigationStore';
 import { resolveProjectForSessionDirectory } from '@/lib/projectResolution';
 import { sessionTitleSearchQueryOptions } from '@/queries/sessionTitleSearchQueries';
-import { sessionContentSearchQueryOptions, type SessionContentSearchHit } from '@/queries/sessionContentSearchQueries';
+import { sessionContentSearchQueryOptions, sessionContentIndexStatusOptions, type SessionContentSearchHit } from '@/queries/sessionContentSearchQueries';
 import { focusChatMessage } from '@/components/chat/hooks/useChatTurnNavigation';
 import { getRuntimeGeneration, getRuntimeTransportIdentity } from '@/lib/runtime-switch';
 import { consumeMatchingPress, markMatchingPress } from './matchingPress';
@@ -177,6 +177,7 @@ export const CommandPalette: React.FC<{ presentation?: 'dialog' | 'page'; onBack
   );
 
   const [query, setQuery] = React.useState('');
+  const [expandedSearchGroups, setExpandedSearchGroups] = React.useState<{ query: string; groups: string[] }>({ query: '', groups: [] });
   const debouncedQuery = useDebouncedValue(query, 200);
   const trimmedQuery = debouncedQuery.trim();
   const liveTrimmed = query.trim();
@@ -186,6 +187,7 @@ export const CommandPalette: React.FC<{ presentation?: 'dialog' | 'page'; onBack
   React.useEffect(() => {
     if (isCommandPaletteOpen) {
       setQuery('');
+      setExpandedSearchGroups({ query: '', groups: [] });
       setRetainResults(true);
     }
   }, [isCommandPaletteOpen]);
@@ -446,16 +448,17 @@ export const CommandPalette: React.FC<{ presentation?: 'dialog' | 'page'; onBack
     ...sessionTitleSearchQueryOptions(trimmedQuery),
     enabled: (isCommandPaletteOpen || retainResults) && (trimmedQuery.length > 0 || presentation === 'page'),
   });
-  const contentScope = React.useMemo(() => (
-    currentRoot
-      ? { transport: getRuntimeTransportIdentity(), generation: getRuntimeGeneration(), directory: currentRoot }
-      : null
-  ), [currentRoot, isCommandPaletteOpen]);
+  const contentScope = { transport: getRuntimeTransportIdentity(), generation: getRuntimeGeneration(), directory: '' };
+  const navigationKey = JSON.stringify([contentScope.transport, contentScope.generation, currentRoot, liveTrimmed, isCommandPaletteOpen]);
+  const [navigationSnapshot, setNavigationSnapshot] = React.useState<{ key: string; hits: SessionContentSearchHit[]; sessions: Session[] } | null>(null);
+  const frozenResults = navigationSnapshot?.key === navigationKey ? navigationSnapshot : null;
+  if (navigationSnapshot && !frozenResults) setNavigationSnapshot(null);
+  const contentIndex = useQuery({ ...sessionContentIndexStatusOptions(), enabled: isCommandPaletteOpen || retainResults });
   const contentSearchQuery = useQuery({
     ...sessionContentSearchQueryOptions(trimmedQuery, { scope: contentScope }),
     enabled: (isCommandPaletteOpen || retainResults) && trimmedQuery.length > 0 && contentScope !== null,
   });
-  const contentHits: SessionContentSearchHit[] = contentSearchQuery.isSuccess ? contentSearchQuery.data ?? [] : [];
+  const contentHits: SessionContentSearchHit[] = frozenResults?.hits ?? contentSearchQuery.data ?? [];
   const contentSearchFailed = hasQuery && liveTrimmed === trimmedQuery && contentSearchQuery.isError;
   const titleSearchReady = hasQuery && liveTrimmed === trimmedQuery && titleSearchQuery.isSuccess;
   const titleSearchFailed = (hasQuery || presentation === 'page') && liveTrimmed === trimmedQuery && titleSearchQuery.isError;
@@ -468,6 +471,7 @@ export const CommandPalette: React.FC<{ presentation?: 'dialog' | 'page'; onBack
   }, [titleSearchFailed, sortedActiveSessions, liveTrimmed]);
 
   const visibleTitleSessions = React.useMemo(() => {
+    if (frozenResults) return frozenResults.sessions;
     if (!hasQuery) {
       if (presentation === 'page' && !trimmedQuery && titleSearchQuery.isSuccess) return titleSearchQuery.data;
       return sortedActiveSessions.slice(0, presentation === 'page' ? 30 : 9);
@@ -484,6 +488,7 @@ export const CommandPalette: React.FC<{ presentation?: 'dialog' | 'page'; onBack
     titleSearchQuery.isSuccess,
     presentation,
     trimmedQuery,
+    frozenResults,
   ]);
 
   const scoredFiles = React.useMemo(() => {
@@ -510,11 +515,26 @@ export const CommandPalette: React.FC<{ presentation?: 'dialog' | 'page'; onBack
     });
   }, [projects, liveTrimmed, hasQuery]);
 
-  const visibleCommands = scoredCommands.map((x) => x.item);
-  const visibleSettings = scoredSettings.map((x) => x.item);
-  const visibleSessions = visibleTitleSessions;
-  const visibleFiles = hasQuery ? scoredFiles.map((x) => x.item) : [];
-  const visibleProjects = hasQuery ? scoredProjects.map((x) => x.item) : [];
+  const expansionKey = JSON.stringify([currentRoot, liveTrimmed]);
+  const expandedGroups = expandedSearchGroups.query === expansionKey ? expandedSearchGroups.groups : [];
+  const previewGroup = <T,>(group: string, items: T[]): T[] => (
+    hasQuery && !expandedGroups.includes(group) ? items.slice(0, 5) : items
+  );
+  const visibleCommands = previewGroup('commands', scoredCommands.map((x) => x.item));
+  const visibleSettings = previewGroup('settings', scoredSettings.map((x) => x.item));
+  const visibleSessions = previewGroup('sessions', visibleTitleSessions);
+  const visibleFiles = hasQuery ? previewGroup('files', scoredFiles.map((x) => x.item)) : [];
+  const visibleProjects = hasQuery ? previewGroup('projects', scoredProjects.map((x) => x.item)) : [];
+  const visibleContentHits = previewGroup('messages', contentHits);
+  const groupFooter = (group: string, total: number, visible: number) => total > visible ? (
+    <CommandItem
+      value={`more:${group}`}
+      onSelect={() => setExpandedSearchGroups({ query: expansionKey, groups: [...expandedGroups, group] })}
+      className={`${ITEM_CLASS} text-muted-foreground`}
+    >
+      {t('commandPalette.group.showMore', { count: total - visible })}
+    </CommandItem>
+  ) : null;
 
   const groupOrder = React.useMemo<('commands' | 'settings' | 'sessions' | 'messages' | 'files' | 'projects')[]>(() => {
     if (!hasQuery) return ['sessions', 'commands'];
@@ -547,7 +567,7 @@ export const CommandPalette: React.FC<{ presentation?: 'dialog' | 'page'; onBack
       ?? visibleTitleSessions.find((session) => session.id === hit.sessionID);
     const session = known ?? {
       id: hit.sessionID,
-      title: '',
+      title: hit.title ?? '',
       directory: hit.directory,
       location: { directory: hit.directory },
     } as Session;
@@ -587,6 +607,9 @@ export const CommandPalette: React.FC<{ presentation?: 'dialog' | 'page'; onBack
 
   const handleNumberShortcut = useEvent((event: React.KeyboardEvent) => {
     if (swallowUnsettled(event)) return;
+    if (!frozenResults && !event.nativeEvent.isComposing && ['ArrowDown', 'ArrowUp', 'Enter'].includes(event.key)) {
+      setNavigationSnapshot({ key: navigationKey, hits: contentHits, sessions: visibleTitleSessions });
+    }
     if (isMobile || event.nativeEvent.isComposing || event.altKey || event.shiftKey) return;
     if (mac ? (!event.metaKey || event.ctrlKey) : (!event.ctrlKey || event.metaKey)) return;
     if (!/^[1-9]$/.test(event.key)) return;
@@ -625,7 +648,11 @@ export const CommandPalette: React.FC<{ presentation?: 'dialog' | 'page'; onBack
       autoCorrect="off"
       spellCheck={false}
       value={query}
-      onValueChange={setQuery}
+      onValueChange={(value) => {
+        setNavigationSnapshot(null);
+        setQuery(value);
+        setExpandedSearchGroups({ query: '', groups: [] });
+      }}
       placeholder={t('commandPalette.input.placeholder')}
     />
   );
@@ -659,7 +686,13 @@ export const CommandPalette: React.FC<{ presentation?: 'dialog' | 'page'; onBack
             />
           ) : searchInput}
           <CommandList aria-label={t('commandPalette.title')} className="overscroll-contain p-1.5">
-            {visibleSessions.length === 0 && resultsSettled ? <div className="px-2.5 pb-2 pt-3 typography-meta text-muted-foreground">{t('layout.mainTab.chat')}</div> : null}
+            <div className="px-3 py-2 typography-meta text-muted-foreground" aria-live="polite">
+              {contentIndex.isError || contentIndex.data?.phase === 'error' || contentIndex.data?.phase === 'partial'
+                ? t('commandPalette.index.partial')
+                : contentIndex.data?.phase === 'ready'
+                  ? t('commandPalette.index.ready', { count: contentIndex.data.messages })
+                  : t('commandPalette.index.progress', { completed: contentIndex.data?.completed ?? 0, total: contentIndex.data?.total ?? 0 })}
+            </div>
             {resultsSettled && !fileSearchFailed && !titleSearchFailed && !contentSearchFailed && sessionsStatus !== 'loading' && sessionsStatus !== 'error' ? (
               <CommandEmpty className="py-10 text-center typography-meta text-muted-foreground">
                 {t('commandPalette.empty.noResults')}
@@ -687,6 +720,7 @@ export const CommandPalette: React.FC<{ presentation?: 'dialog' | 'page'; onBack
                         />
                       </CommandItem>
                     ))}
+                    {groupFooter('commands', scoredCommands.length, visibleCommands.length)}
                   </CommandGroup>
                 );
               }
@@ -703,6 +737,7 @@ export const CommandPalette: React.FC<{ presentation?: 'dialog' | 'page'; onBack
                         <CommandPaletteResult title={cmd.title} />
                       </CommandItem>
                     ))}
+                    {groupFooter('settings', scoredSettings.length, visibleSettings.length)}
                   </CommandGroup>
                 );
               }
@@ -728,15 +763,16 @@ export const CommandPalette: React.FC<{ presentation?: 'dialog' | 'page'; onBack
                         </CommandItem>
                       );
                     })}
+                    {groupFooter('sessions', visibleTitleSessions.length, visibleSessions.length)}
                   </CommandGroup>
                 );
               }
               if (groupKey === 'messages' && contentHits.length > 0) {
                 return (
                   <CommandGroup key="messages" heading={t('commandPalette.group.messages')} className={GROUP_CLASS}>
-                    {contentHits.map((hit) => {
+                    {visibleContentHits.map((hit) => {
                       const known = activeSessions.find((session) => session.id === hit.sessionID);
-                      const title = known?.title || t('commandPalette.session.untitled');
+                      const title = hit.title || known?.title || t('commandPalette.session.untitled');
                       return (
                         <CommandItem
                           key={`message:${hit.sessionID}:${hit.messageID}`}
@@ -753,6 +789,7 @@ export const CommandPalette: React.FC<{ presentation?: 'dialog' | 'page'; onBack
                         </CommandItem>
                       );
                     })}
+                    {groupFooter('messages', contentHits.length, visibleContentHits.length)}
                   </CommandGroup>
                 );
               }
@@ -779,6 +816,7 @@ export const CommandPalette: React.FC<{ presentation?: 'dialog' | 'page'; onBack
                         </CommandItem>
                       );
                     })}
+                    {groupFooter('files', scoredFiles.length, visibleFiles.length)}
                   </CommandGroup>
                 );
               }
@@ -798,6 +836,7 @@ export const CommandPalette: React.FC<{ presentation?: 'dialog' | 'page'; onBack
                         </CommandItem>
                       );
                     })}
+                    {groupFooter('projects', scoredProjects.length, visibleProjects.length)}
                   </CommandGroup>
                 );
               }

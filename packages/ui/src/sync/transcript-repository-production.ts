@@ -54,7 +54,6 @@ import { getInitialSessionTurnLimit, getHistorySessionTurnLimit } from "./sessio
 import type { ChildStoreManager } from "./child-store"
 import type { TranscriptDurableStore } from "./transcript-durable-store"
 import { createRuntimeTranscriptDurableStore } from "./transcript-durable-store-runtime"
-import { createTranscriptContentSearchStore } from "./transcript-content-search"
 import { raceWithSessionTurnPageTimeout, SESSION_TURN_PAGE_TIMEOUT_MS } from "./session-turn-page-api"
 
 function normalizeParts(parts: Part[]): Part[] {
@@ -370,7 +369,6 @@ export function mountProductionTranscriptStack(
     initialLimit: getInitialSessionTurnLimit(),
     historyLimit: getHistorySessionTurnLimit(),
     durableStore: input.durableStore ?? createRuntimeTranscriptDurableStore(),
-    contentSearchStore: createTranscriptContentSearchStore(),
   })
 
   const compensation = createTranscriptReconnectCompensationController({
