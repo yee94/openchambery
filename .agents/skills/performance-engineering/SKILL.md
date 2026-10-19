@@ -1,6 +1,6 @@
 ---
 name: performance-engineering
-description: Use when implementing or reviewing code on interaction, render, event, polling, synchronization, list-processing, store-selector, cache, indexing, or high-volume data paths; when users report lag, freezes, jank, high CPU, memory growth, slow startup, or performance regressions; and before accepting memoization or caching as a fix for repeated work.
+description: Use when changing composer input, draft subscriptions, autocomplete, or adjacent controls; implementing or reviewing interaction, render, event, polling, synchronization, list-processing, store-selector, cache, indexing, or high-volume data paths; diagnosing lag, freezes, jank, high CPU/memory or slow startup; and before accepting memoization or caching as a fix for repeated work.
 ---
 
 # Performance Engineering
@@ -24,6 +24,8 @@ Define before editing:
 | Semantics | Ordering, ownership, freshness, failure, and partial-data invariants |
 
 Do not optimize against a toy fixture when the report provides production scale.
+
+For Composer input, draft subscriptions, autocomplete, adjacent controls, or shared-store changes that can invalidate them, read `packages/ui/src/composer/DOCUMENTATION.md#input-responsiveness-contract` before editing. Apply its operation-count guards and browser measurement gate even when the task is a feature rather than a reported performance bug.
 
 ## Workflow
 

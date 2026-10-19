@@ -1,5 +1,27 @@
 # Composer module
 
+## Input responsiveness contract
+
+Typing is the highest-priority interactive path. This contract applies to primary/new-session and secondary composers, their pickers/toolbars, draft subscriptions, autocomplete, and shared state that can invalidate them. Regressions block acceptance of the affected change.
+
+### Work ownership
+
+- Keep text echo, caret/selection and IME composition immediate. Defer ancillary work, never the authoritative input value. Preserve paste, undo/redo, references, send snapshots and draft durability semantics.
+- Per-keystroke work is bounded by the edited document and active suggestions, not total projects, sessions, branches, models, agents or transcript history. Subscribe to the current draft's exact fields; unrelated entity updates must not fan out into composer work.
+- Closed pickers perform **zero catalog enumeration and zero row/label construction** during typing, including after opening and closing once. Render expensive children as components inside the popup/sheet presence boundary. JSX `.map()` arguments execute in the parent even when a portal eventually returns `null`; CSS hiding and memoizing the outer popup do not establish this boundary. Let the existing presence owner retain rows through exit animation.
+- Keep network waits, synchronous storage writes, global catalog scans and transcript recomputation off the text-echo path. Coalesce ancillary persistence/derived work through its existing owner; retain explicit flush-on-send and lifecycle guarantees.
+
+### Acceptance gate
+
+1. Run the owning behavior tests and `components/chat/composerClosedPickers.test.tsx` for input/adjacent-control changes. Its 300-entry catalogs and repeated closed/open/closed renders are the minimum scale guard; use the larger reported scale when available. Extend operation-count coverage at the real call site for each new source of work. A component render count alone does not detect selectors or JSX construction performed upstream.
+2. Exercise continuous typing, deletion, Chinese IME composition, paste, undo/redo and autocomplete for changed editing behavior. Check first entry and typing after picker dismissal. For store/subscription changes, also exercise concurrent streaming and unrelated-session updates. Verify text, selection and focus as well as timing.
+3. Measure at least 50 input events per relevant browser scenario on a recorded device/browser/build and dataset. Record median, P95 and maximum synchronous input-processing time separately from input-to-next-paint latency. Budget: synchronous input processing **P95 ≤ 16ms**, with **no input-attributable main-thread task ≥ 50ms**. Measure input-to-paint for scheduling/layout regressions; passing handler timing alone does not prove visible responsiveness. Compare before/after under the same configuration, separating profiler/development overhead from production behavior.
+4. Use deterministic operation counts in unit tests rather than machine-dependent millisecond assertions. Browser measurements cover the timing budget; a production build, type check or happy-dom run alone cannot satisfy it. Report untested runtimes and any missing evidence explicitly; an unmet budget remains unresolved, not an accepted tradeoff for an ancillary feature.
+
+The closed-project/branch regression and its implementation boundary are documented in `../components/chat/DOCUMENTATION.md#composer-closed-picker-work`. This is the canonical input-performance contract; other guides link here instead of defining competing budgets.
+
+## Document and delivery ownership
+
 Prompt attachment delivery is owned by `lib/opencode/client.ts`: non-images become synthetic text path references, never native `files` that OpenCode eagerly reads into context. Reference instructions have explicit `<system-reminder>` / `</system-reminder>` boundaries, matching OpenCode V2 editor context. The shared `wrapSystemReminder` / `stripSystemReminders` contract keeps them hidden after V2 flattens text parts and loses per-part `synthetic`; authored mentions and subsequent authored text remain visible. JSON-quoted attachment names/paths escape `<` so filenames cannot terminate the block. Only images with a verified size at or below 20 MiB remain native attachments; oversized or unknown-size images become references too. The shared builder covers ordinary/queued sends, first-message creation, additional parts, and command sends. Inline data/blob attachments are uploaded through `runtimeFetch` to the active host's temporary directory before references are emitted; relay/browser/mobile clients reference the returned host path, not a client path. Existing host `file://` references need no upload. Runtime switches during upload/stat discard the send. Upload/inspection failures remain failures rather than fabricated usable paths.
 
 `skill-attachments.ts` converts canonical `[skill:id]` tokens in non-synthetic send text into deduplicated native V2 prompt attachments. Both existing-session sends (steer/queue) and combined first-message sends use it. Canonical text remains intact for history and draft restoration. Catalog `name` is the path-derived skill ID, not frontmatter display text; leading legacy `/id` invocations are resolved against the installed catalog before canonicalization.

@@ -78,6 +78,7 @@ Release artifacts and repository links use `yee94/openchamber`. Electron is the 
 
 ## Session Index and Performance Invariants
 
+- Composer responsiveness is a release-blocking invariant. Changes to input handlers, draft subscriptions, autocomplete, adjacent controls, or their shared stores must load `performance-engineering` and follow the input budget and verification contract in `packages/ui/src/composer/DOCUMENTATION.md#input-responsiveness-contract`.
 - The runtime session index is SQLite-backed and owns durable cold-start session summaries.
 - The server-owned refresh scheduler performs bounded directory refreshes; session content, child-session, and message mutations preempt index refresh work.
 - Sidebar list ownership remains index-driven. Display snapshots stay bounded, while catalog-wide cleanup uses the authoritative full catalog.
@@ -113,7 +114,7 @@ Project skills live under `.agents/skills/*/SKILL.md`. Before editing, load ever
 | Shared UI data access, React Hooks, `@tanstack/react-query`, query keys/cache/invalidation, `@reactuses/core`, browser Hooks, OpenCode SDK, `RuntimeAPIs`, runtime fetch/auth/URLs, bridges/proxies, runtime switching, or server API routes | `ui-api-decoupling` |
 | Electron main/preload, IPC, native UI, updater, deep links, SSH, packaging, or child processes | `desktop-shell` |
 | Session sync, bootstrap/reconnect, reducers, polling, optimistic state, queues, live status, reconciliation, or directory-scoped caches | `sync-state-invariants` |
-| Render/store/event hot paths, large lists, caching/indexing, high CPU/memory, lag, jank, freezes, or performance regressions | `performance-engineering` |
+| Composer input/adjacent controls, render/store/event hot paths, large lists, caching/indexing, high CPU/memory, lag, jank, freezes, or performance regressions | `performance-engineering` |
 | WebSocket, SSE, streaming transport, runtime transport internals, or private relay | `relay-transport` |
 | UI components, styling, colors, buttons, or icons | `theme-system` |
 | User-facing or accessible UI text, labels, aria, toasts, dialogs, or navigation copy | `locale-ui-patterns` |

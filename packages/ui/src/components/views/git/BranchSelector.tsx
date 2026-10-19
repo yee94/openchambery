@@ -67,6 +67,66 @@ interface BranchSelectorProps {
   presentation?: 'dropdown' | 'mobile-sheet';
 }
 
+function BranchList({ branches, search, local, currentBranch, branchInfo, onCheckout }: {
+  branches: string[];
+  search: string;
+  local?: boolean;
+  currentBranch?: string | null;
+  branchInfo?: Record<string, BranchInfo>;
+  onCheckout: (branch: string) => void;
+}) {
+  const { t } = useI18n();
+  const term = search.trim();
+  const filtered = term ? scoreByFuzzyQuery(branches, term, (branch) => branch).map((entry) => entry.item) : branches;
+  return (
+    <CommandGroup heading={t(local ? 'gitView.branch.localBranches' : 'gitView.branch.remoteBranches')}>
+      {filtered.map((branch) => (
+        <CommandItem key={`${local ? 'local' : 'remote'}-${branch}`} onSelect={() => onCheckout(branch)}>
+          {local ? (
+            <span className="flex flex-1 flex-col">
+              <span className="typography-ui-label text-foreground">{branch}</span>
+              {(branchInfo?.[branch]?.ahead || branchInfo?.[branch]?.behind) && (
+                <span className="typography-micro text-muted-foreground">
+                  {branchInfo[branch].ahead || 0} ahead ·{' '}
+                  {branchInfo[branch].behind || 0} behind
+                </span>
+              )}
+            </span>
+          ) : <span className="typography-ui-label text-foreground">{branch}</span>}
+          {local && currentBranch === branch && (
+            <span className="typography-micro text-primary">{t('gitView.branch.currentBadge')}</span>
+          )}
+        </CommandItem>
+      ))}
+      {filtered.length === 0 && (
+        <CommandItem disabled className="justify-center">
+          <span className="typography-meta text-muted-foreground">
+            {t(local ? 'gitView.branch.noLocalBranches' : 'gitView.branch.noRemoteBranches')}
+          </span>
+        </CommandItem>
+      )}
+    </CommandGroup>
+  );
+}
+
+function WorktreeItems({ options, selectedDirectory, onSelect }: {
+  options: BranchSelectorWorktreeOption[];
+  selectedDirectory: string | null;
+  onSelect: (directory: string) => void;
+}) {
+  const { t } = useI18n();
+  return options.map((option) => (
+    <CommandItem key={`worktree-${option.value}`} onSelect={() => onSelect(option.value)}>
+      <span className="truncate typography-ui-label text-foreground">
+        {option.pending ? '⏳ ' : ''}{option.label}
+      </span>
+      {selectedDirectory === option.value ? (
+        <span className="typography-micro text-primary">{t('gitView.branch.currentBadge')}</span>
+      ) : null}
+    </CommandItem>
+  ));
+}
+
 const sanitizeBranchNameInput = (value: string): string => {
   return value
     .trim()
@@ -132,18 +192,6 @@ export const BranchSelector: React.FC<BranchSelectorProps> = ({
     () => sanitizeBranchNameInput(newBranchName),
     [newBranchName]
   );
-
-  const filteredLocal = React.useMemo(() => {
-    const term = search.trim();
-    if (!term) return localBranches;
-    return scoreByFuzzyQuery(localBranches, term, (branch) => branch).map((entry) => entry.item);
-  }, [search, localBranches]);
-
-  const filteredRemote = React.useMemo(() => {
-    const term = search.trim();
-    if (!term) return remoteBranches;
-    return scoreByFuzzyQuery(remoteBranches, term, (branch) => branch).map((entry) => entry.item);
-  }, [search, remoteBranches]);
 
   const filteredWorktrees = React.useMemo(() => {
     const term = search.trim();
@@ -380,56 +428,11 @@ export const BranchSelector: React.FC<BranchSelectorProps> = ({
 
             <CommandSeparator />
 
-            <CommandGroup heading={t('gitView.branch.localBranches')}>
-              {filteredLocal.map((branch) => (
-                <CommandItem
-                  key={`local-${branch}`}
-                  onSelect={() => handleCheckout(branch)}
-                >
-                  <span className="flex flex-1 flex-col">
-                    <span className="typography-ui-label text-foreground">
-                      {branch}
-                    </span>
-                    {(branchInfo?.[branch]?.ahead || branchInfo?.[branch]?.behind) && (
-                      <span className="typography-micro text-muted-foreground">
-                        {branchInfo[branch].ahead || 0} ahead ·{' '}
-                        {branchInfo[branch].behind || 0} behind
-                      </span>
-                    )}
-                  </span>
-                  {currentBranch === branch && (
-                    <span className="typography-micro text-primary">{t('gitView.branch.currentBadge')}</span>
-                  )}
-                </CommandItem>
-              ))}
-              {filteredLocal.length === 0 && (
-                <CommandItem disabled className="justify-center">
-                  <span className="typography-meta text-muted-foreground">
-                    {t('gitView.branch.noLocalBranches')}
-                  </span>
-                </CommandItem>
-              )}
-            </CommandGroup>
+            <BranchList branches={localBranches} search={search} local currentBranch={currentBranch} branchInfo={branchInfo} onCheckout={handleCheckout} />
 
             <CommandSeparator />
 
-            <CommandGroup heading={t('gitView.branch.remoteBranches')}>
-              {filteredRemote.map((branch) => (
-                <CommandItem
-                  key={`remote-${branch}`}
-                  onSelect={() => handleCheckout(branch)}
-                >
-                  <span className="typography-ui-label text-foreground">{branch}</span>
-                </CommandItem>
-              ))}
-              {filteredRemote.length === 0 && (
-                <CommandItem disabled className="justify-center">
-                  <span className="typography-meta text-muted-foreground">
-                    {t('gitView.branch.noRemoteBranches')}
-                  </span>
-                </CommandItem>
-              )}
-            </CommandGroup>
+            <BranchList branches={remoteBranches} search={search} onCheckout={handleCheckout} />
 
             {showWorktreeSection ? (
               <>
@@ -464,19 +467,7 @@ export const BranchSelector: React.FC<BranchSelectorProps> = ({
                       ) : null}
                     </CommandItem>
                   ) : null}
-                  {filteredWorktrees.map((option) => (
-                    <CommandItem
-                      key={`worktree-${option.value}`}
-                      onSelect={() => handleSelectDirectory(option.value)}
-                    >
-                      <span className="truncate typography-ui-label text-foreground">
-                        {option.pending ? '⏳ ' : ''}{option.label}
-                      </span>
-                      {selectedDirectory === option.value ? (
-                        <span className="typography-micro text-primary">{t('gitView.branch.currentBadge')}</span>
-                      ) : null}
-                    </CommandItem>
-                  ))}
+                  <WorktreeItems options={filteredWorktrees} selectedDirectory={selectedDirectory} onSelect={handleSelectDirectory} />
                 </CommandGroup>
               </>
             ) : null}
