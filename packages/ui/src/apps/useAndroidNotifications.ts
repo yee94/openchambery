@@ -11,7 +11,7 @@ import { useUIStore } from '@/stores/useUIStore';
 
 export function useAndroidNotifications(): void {
   const enabled = useUIStore((state) => state.nativeNotificationsEnabled);
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   const service = t('mobile.notifications.service');
   const alerts = t('settings.page.notifications.title');
   const connecting = t('mobile.connect.connecting');
@@ -39,7 +39,7 @@ export function useAndroidNotifications(): void {
     };
     const controller = createAndroidNotificationController({
       plugin: androidNotifications,
-      resolveConfig: () => resolveAndroidNotificationConfig({ service, alerts, connecting, connected, reconnecting, unavailable, gap, error, auth, endpoint, response, server, relay, identity }),
+      resolveConfig: () => resolveAndroidNotificationConfig({ service, alerts, connecting, connected, reconnecting, unavailable, gap, error, auth, endpoint, response, server, relay, identity }, locale),
       onState: (state) => { if (state === 'denied' || state === 'unavailable') warn(state === 'denied' ? denied : unavailable); },
       onError: () => warn(unavailable),
     });
@@ -50,5 +50,5 @@ export function useAndroidNotifications(): void {
     });
     void controller.refresh();
     return () => { unsubscribeEndpoint(); unsubscribeAuth(); controller.dispose(); };
-  }, [enabled, service, alerts, connecting, connected, reconnecting, unavailable, gap, denied, error, auth, endpoint, response, server, relay, identity]);
+  }, [enabled, locale, service, alerts, connecting, connected, reconnecting, unavailable, gap, denied, error, auth, endpoint, response, server, relay, identity]);
 }

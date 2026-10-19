@@ -23,12 +23,13 @@ export const canUseAndroidNotifications = (): boolean => Capacitor.getPlatform()
   && Capacitor.isPluginAvailable('OpenChamberNotifications');
 
 /** Snapshot current runtime credentials in memory only; the controller fences async endpoint changes. */
-export async function resolveAndroidNotificationConfig(labels: Record<string, string>): Promise<AndroidNotificationConfig | null> {
+export async function resolveAndroidNotificationConfig(labels: Record<string, string>, locale: string): Promise<AndroidNotificationConfig | null> {
   const runtimeKey = getRuntimeKey();
   const activeRelay = getActiveRelayDescriptor();
   const baseUrl = activeRelay ? '' : getRuntimeApiBaseUrl();
   if (!activeRelay && !/^https?:\/\//.test(baseUrl)) return null;
   const headers = await buildRuntimeAuthHeaders();
+  headers.set('Accept-Language', locale);
   const saved = (await loadMobileConnections()).find((entry) => mobileConnectionKey(entry) === runtimeKey);
   const candidate = saved?.candidates.find((entry) => entry.kind === 'relay');
   const relay = activeRelay ?? (candidate?.kind === 'relay' ? candidate.relay : undefined);

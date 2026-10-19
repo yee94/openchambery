@@ -61,12 +61,13 @@ it('carries notification SSE and its replay cursor through the real encrypted tu
     expect(ready).toContain('"type":"ready"');
     const cursor = ready.match(/id: ([^\n]+)/)[1];
     await reader.cancel();
-    stream.publish({ title: 'Task completed', sessionId: 'root' });
-    const resumed = await tunnel.fetch('/api/notifications/native-stream', { headers: { Authorization: 'Bearer fixture-token', 'Last-Event-ID': cursor } });
+    stream.publish({ title: 'Needs your answer', kind: 'question', body: '测试会话', sessionId: 'root' });
+    const resumed = await tunnel.fetch('/api/notifications/native-stream', { headers: { Authorization: 'Bearer fixture-token', 'Last-Event-ID': cursor, 'Accept-Language': 'zh-CN' } });
     const resumedReader = resumed.body.getReader();
     let text = '';
     while (!text.includes('"type":"ready"')) text += new TextDecoder().decode((await resumedReader.read()).value);
-    expect(text).toContain('"title":"Task completed"');
+    expect(text).toContain('"title":"需要你回答"');
+    expect(text).toContain('"body":"测试会话"');
     expect(text).toContain('"gap":false');
     await resumedReader.cancel();
   } finally {

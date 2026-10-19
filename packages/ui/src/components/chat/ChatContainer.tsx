@@ -410,10 +410,10 @@ const ChatViewport = React.memo(({
     ) : null;
     // Keep the mobile status slot stable while scroll-triggered history loads.
     const mobileLoadOlderControl = isMobile && reserveMobileHistorySlot ? (
-        <div className={cn('flex justify-center pt-3 pb-1', !loadOlderBusy && 'invisible')} aria-hidden={!loadOlderBusy}>
+        <div className={cn('flex justify-center pt-3 pb-4', !loadOlderBusy && 'invisible')} aria-hidden={!loadOlderBusy}>
             <span
                 role="status"
-                className="flex items-center gap-1.5 text-[var(--surface-mutedForeground)]"
+                className="flex items-center gap-1.5 text-[var(--surface-mutedForeground)] opacity-60"
                 aria-busy={loadOlderBusy}
             >
                 <Icon name="loader-4" className="size-3.5 animate-spin" aria-hidden="true" />

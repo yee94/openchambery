@@ -62,7 +62,8 @@ describe('native Android notification ownership', () => {
     const relay = { relayUrl: 'wss://relay.example.test/ws', serverId: 'server', hostEncPubJwk: {} };
     vi.mocked(loadMobileConnections).mockResolvedValue([{ id: 'one', label: 'One', lastUsedAt: 0, candidates: [{ kind: 'relay', relay }] }]);
     vi.mocked(mobileConnectionKey).mockReturnValue('paired');
-    const result = await resolveAndroidNotificationConfig({ service: 'Notifications' });
+    const result = await resolveAndroidNotificationConfig({ service: 'Notifications' }, 'zh-CN');
+    expect(new Headers(result?.headers).get('accept-language')).toBe('zh-CN');
     expect(result).toMatchObject({ runtimeKey: 'paired', relay, preferRelay: false, baseUrl: 'http://example.test' });
     expect(new Headers(result?.headers).get('authorization')).toBe('Bearer fixture-token');
   });
