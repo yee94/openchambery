@@ -17,7 +17,7 @@ afterAll(() => {
     if (!keepEvidence()) for (const dir of workDirs) rmSync(dir, { recursive: true, force: true });
 });
 
-test.skipIf(!resolveChrome()).each(['normal', 'delayed-resize', 'virtualize-transition', 'continued-drag', 'desktop-short', 'partial-turn', 'mobile-partial-turn', 'fast-entry', 'fast-entry-desktop-wheel', 'fast-entry-desktop-key'] as const)('history prepend keeps the reading row (%s)', async (scenario) => {
+test.skipIf(!resolveChrome()).each(['normal', 'delayed-resize', 'virtualize-transition', 'continued-drag', 'desktop-short', 'partial-turn', 'mobile-partial-turn', 'fast-entry', 'fast-entry-desktop-wheel', 'fast-entry-desktop-key', 'compact-prepend', 'compact-prepend-desktop', 'turn-prepend', 'turn-prepend-desktop'] as const)('history prepend keeps the reading row (%s)', async (scenario) => {
     const fastEntry = scenario.startsWith('fast-entry');
     const desktop = scenario.includes('desktop') || scenario === 'partial-turn';
     const width = desktop ? 1200 : 402;
@@ -90,7 +90,7 @@ window.addEventListener('error',e=>{
             await page.send('Input.dispatchMouseEvent', { type: 'mouseWheel', x: 500, y: 400, deltaX: 0, deltaY: -900 });
             await page.evaluate('window.firstHistoryWheel');
             expect((await page.evaluate<Sample>('window.historyScrollFixture.sample()')).pinned).toBe(false);
-        } else if (scenario === 'desktop-short' || scenario === 'partial-turn') {
+        } else if (desktop) {
             if (scenario === 'desktop-short') expect(prepared.max).toBe(0);
             await page.send('Input.dispatchMouseEvent', { type: 'mouseWheel', x: 180, y: 400, deltaX: 0, deltaY: -100 });
         } else if (fastEntry) {
@@ -106,7 +106,7 @@ window.addEventListener('error',e=>{
         }
         await new Promise((resolve) => setTimeout(resolve, 1000));
         const before = await page.evaluate<Sample>('window.historyScrollFixture.sample()');
-        if (!fastEntry && scenario !== 'desktop-short' && scenario !== 'partial-turn') await page.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+        if (!fastEntry && !desktop) await page.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
         await new Promise((resolve) => setTimeout(resolve, 2500));
         const after = await page.evaluate<Sample>('window.historyScrollFixture.sample()');
         console.info('[history-scroll positions]', { before, after });

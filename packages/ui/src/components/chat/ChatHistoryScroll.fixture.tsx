@@ -31,10 +31,16 @@ const partialAssistant = (id: string, text: string, finish: string): ChatMessage
     info: { id, sessionID, role: 'assistant', time: { created: 20, completed: 21 }, finish } as Message,
     parts: [{ id: `${id}-text`, messageID: id, sessionID, type: 'text', text } as Part],
 });
+const makeTurns = (start: number, count: number): ChatMessageEntry[] => makeRows(start, count).flatMap((message, index) => [
+    { ...message, parts: message.parts.map((part) => part.type === 'text' ? { ...part, text: `Question ${start + index}` } : part) },
+    partialAssistant(`answer-${start + index}`, Array.from({ length: 12 }, (_, line) => `Paragraph ${line}. ${'Historical assistant response. '.repeat(8)}`).join('\n\n'), 'stop'),
+]);
 
 export default function Fixture() {
     const scenario = new URLSearchParams(location.search).get('scenario');
     const delayedResize = scenario === 'delayed-resize';
+    const compactPrepend = scenario?.startsWith('compact-prepend');
+    const turnPrepend = scenario?.startsWith('turn-prepend');
     const partial = scenario === 'partial-turn' || scenario === 'mobile-partial-turn';
     const [rows, setRows] = React.useState(() => partial
         ? [partialAssistant('partial-process', 'HIDDEN_PARTIAL_PROCESS', 'tool-calls'),
@@ -43,7 +49,8 @@ export default function Fixture() {
         ? makeRows(20, 1).map((message) => ({ ...message, parts: message.parts.map((part) => (
             part.type === 'text' ? { ...part, text: 'Short initial transcript' } : part
         )) }))
-        : makeRows(20, scenario === 'virtualize-transition' ? 4 : scenario?.startsWith('fast-entry') ? 8 : 12));
+        : turnPrepend ? makeTurns(100, 12)
+        : makeRows(compactPrepend ? 100 : 20, scenario === 'virtualize-transition' ? 4 : scenario?.startsWith('fast-entry') ? 8 : 12));
     const [token, setToken] = React.useState(0);
     const [tailHeight, setTailHeight] = React.useState(0);
     const listRef = React.useRef<MessageListHandle | null>(null);
@@ -60,6 +67,10 @@ export default function Fixture() {
         onUpwardUserIntent: useEvent(() => upwardRef.current()),
     });
     const { releaseAutoFollow, restoreSnapshot, scrollRef } = auto;
+    React.useEffect(() => {
+        const frame = requestAnimationFrame(() => { void restoreSnapshot(); });
+        return () => cancelAnimationFrame(frame);
+    }, [restoreSnapshot]);
     useEventListener('touchmove', useEvent((event: TouchEvent) => {
         fingerY.current = event.touches.item(0)?.clientY ?? fingerY.current;
     }), scrollRef, { capture: true, passive: true });
@@ -88,13 +99,17 @@ export default function Fixture() {
         await wait(100);
         const older = partial
             ? [...makeRows(0, 1), partialAssistant('partial-older', 'HIDDEN_EARLIER_PROCESS', 'tool-calls')]
-            : makeRows(0, 12);
+            : turnPrepend ? makeTurns(0, 12)
+            : makeRows(0, compactPrepend ? 60 : 12).map((message) => compactPrepend
+                ? { ...message, parts: message.parts.map((part) => part.type === 'text' ? { ...part, text: 'Earlier short message' } : part) }
+                : message);
         setRows((current) => [...(delayedResize ? older.map((message) => ({
             ...message, parts: message.parts.map((part) => part.type === 'text' ? { ...part, text: 'Loading history body' } : part),
         })) : older), ...current]);
         if (delayedResize) {
-            await wait(350);
-            setRows((current) => [...older, ...current.slice(12)]);
+            window.setTimeout(() => {
+                setRows((current) => [...older, ...current.slice(12)]);
+            }, 350);
         }
     });
     const timeline = useChatTimelineController({
@@ -148,7 +163,7 @@ export default function Fixture() {
 }
 
 const partialTurn = ['partial-turn', 'mobile-partial-turn'].includes(new URLSearchParams(location.search).get('scenario') ?? '');
-useUIStore.setState({ isMobile, chatRenderMode: partialTurn ? 'sorted' : 'live', activityRenderMode: partialTurn ? 'collapsed' : 'summary' });
+useUIStore.setState({ isMobile, chatRenderMode: partialTurn || fixtureScenario.startsWith('turn-prepend') ? 'sorted' : 'live', activityRenderMode: partialTurn || fixtureScenario.startsWith('turn-prepend') ? 'collapsed' : 'summary' });
 useFeatureFlagsStore.setState({ legendTimelineEnabled: false });
 createRoot(document.getElementById('root')!).render(
     <RuntimeAPIProvider apis={createWebAPIs()}><QueryClientProvider client={queryClient}><I18nProvider>
