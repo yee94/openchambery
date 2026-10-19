@@ -4,6 +4,13 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [2.1.2-beta.4] - 2026-10-19
+
+### 改进
+
+- 提供跨项目的最近 7 天会话正文搜索，支持未打开会话的历史回填、后台新消息索引、关键词高亮与消息定位。
+- 搜索结果按分组预览并支持展开，键盘导航期间保持结果稳定。
+
 ## [2.1.2-beta.3] - 2026-10-19
 
 ### 修复
