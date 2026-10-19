@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [2.1.1-beta.2] - 2026-10-19
+
+### 改进
+
+- 为 Meta Muse 系列模型（包括 Spark、Wonder）补齐品牌识别与黑白矢量图标，并为 Llama 模型复用 Meta 图标，适配浅色与深色主题。
+
 ## [2.1.1-beta.1] - 2026-10-19
 
 ### 修复

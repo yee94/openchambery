@@ -29,6 +29,9 @@ describe('modelBrand', () => {
     expect(resolveModelBrand('mimo-v2.6-pro-rl', 'aggregator')).toBe('mimo');
     expect(resolveModelBrand('MiMo V2.6 Flash RL', 'aggregator')).toBe('mimo');
     expect(resolveModelBrand('mimo-v2.6-flash-rl')).toBe('mimo');
+    expect(resolveModelBrand('muse-spark', 'openrouter')).toBe('muse');
+    expect(resolveModelBrand('meta/muse-spark', 'openrouter')).toBe('muse');
+    expect(resolveModelBrand('Meta Muse Spark')).toBe('muse');
   });
 
   test('keeps mimo and minimax apart', () => {
@@ -64,7 +67,8 @@ describe('modelBrand', () => {
     expect(getModelBrandLogoCandidates('kimi')).toEqual(['kimi']);
     expect(getModelBrandLogoCandidates('mimo')).toEqual(['mimo']);
     expect(getModelBrandLogoCandidates('qwen')).toEqual(['qwen']);
-    expect(getModelBrandLogoCandidates('llama')).toEqual([]);
+    expect(getModelBrandLogoCandidates('llama')).toEqual(['meta']);
+    expect(getModelBrandLogoCandidates('muse')).toEqual(['meta']);
   });
 
   test('resolves glm from z.ai coding plan provider id', () => {
