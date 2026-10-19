@@ -135,6 +135,8 @@ type TimelineHarnessProps = HarnessState & {
     onApi: (api: UseChatTimelineControllerResult) => void;
 };
 
+const ignoreScrollToBottom = () => undefined;
+
 const TimelineHarness: React.FC<TimelineHarnessProps> = ({
     showScroller = true,
     sessionId,
@@ -163,7 +165,7 @@ const TimelineHarness: React.FC<TimelineHarnessProps> = ({
         scrollRef,
         messageListRef,
         loadMoreMessages,
-        goToBottom: () => undefined,
+        goToBottom: ignoreScrollToBottom,
         releaseAutoFollow: () => undefined,
         beginHistoryViewportPreservation: () => undefined,
         endHistoryViewportPreservation: () => undefined,
@@ -295,6 +297,32 @@ beforeEach(() => {
 });
 
 describe('history failure feedback with production toast store', () => {
+    test.each([0, 180])('first fast history load preserves the live viewport with %spx actual growth', async (growth) => {
+        runtimeSurface.mobileProbe = true;
+        let finishLoad: (() => void) | undefined;
+        const load = vi.fn(() => new Promise<void>((resolve) => { finishLoad = resolve; }));
+        const handle = await mountController({
+            isMobile: true,
+            loadMoreMessages: load,
+            geometry: { scrollHeight: 1226, clientHeight: 765, scrollTop: 300 },
+        });
+        let flight: Promise<void> | undefined;
+        await act(async () => { flight = handle.api!.loadEarlier({ userInitiated: true, singlePage: true }); });
+        expect(load).toHaveBeenCalledTimes(1);
+        // Momentum reaches the top before the response. The first page can
+        // contain only hidden records, changing the oldest ID without layout growth.
+        handle.geometry.scrollTop = 0;
+        handle.geometry.scrollHeight += growth;
+        await handle.setState({
+            isPinned: false,
+            messages: [message('msg_0'), ...handle.state.messages],
+            historyMeta: { ...handle.state.historyMeta, complete: true, canLoadEarlier: false },
+        });
+        const restoredTop = handle.scrollRef.current!.scrollTop;
+        await act(async () => { finishLoad?.(); await flight; });
+        expect(restoredTop).toBe(growth);
+    });
+
     test.each([-39, 80])('staged mobile prepend excludes %spx of pre-adoption body resize', async (resize) => {
         runtimeSurface.mobileProbe = true;
         let bodyHeight = 1228;
@@ -696,7 +724,7 @@ describe('useChatTimelineController mobile history boundary', () => {
         client.clear();
     });
 
-    test('non-virtual mobile explicit load preserves its anchor through delayed DOM hydration before paint', async () => {
+    test.each([false, true])('non-virtual mobile hydration preserves idle anchors without fighting a held gesture (held=%s)', async (held) => {
         runtimeSurface.mobileProbe = true;
         let settle!: () => void;
         const handle = await mountController({
@@ -723,14 +751,15 @@ describe('useChatTimelineController mobile history boundary', () => {
         await waitMs(700);
         // A nested markdown commit has no new message array: only the DOM
         // keeper can bridge the interval before the virtualizer measures it.
+        if (held) container.dispatchEvent(new Event('touchstart'));
         contentOffset += 132.5;
         anchor.textContent = 'hydrated markdown';
         await waitMs(0);
-        expect(anchor.getBoundingClientRect().top).toBe(20);
-        expect(container.scrollTop).toBe(132.5);
+        expect(anchor.getBoundingClientRect().top).toBe(held ? 152.5 : 20);
+        expect(container.scrollTop).toBe(held ? 0 : 132.5);
         await handle.setState({ historyMeta: { limit: 6, complete: true, canLoadEarlier: false, loading: false } });
         await act(async () => { settle(); await flight; });
-        expect(anchor.getBoundingClientRect().top).toBe(20);
+        expect(anchor.getBoundingClientRect().top).toBe(held ? 152.5 : 20);
     });
 
     test.each([false, true])('first send with an exhausted native short page never loads older (mobile=%s)', async (isMobile) => {

@@ -1565,9 +1565,12 @@ both readers agree on when a frame may shrink.
   length or collapsed tail through insert-only `materialize` so a lagging Host
   snapshot cannot replace a live last turn the stream already admitted, while
   still filling `finish` / `time.completed` / `error` the live row is missing.
-  A same-length **ref-stable subset** (`remove-message` / `message.removed`)
-  is kept: remaining message/part objects are the prior refs, so it is not a
-  rebuilt lagging tail.
+   A **ref-stable subset** (`remove-message` / `message.removed` / revert commit)
+   is kept even when a commit collapses multiple pages: remaining message/part
+   objects are the prior refs, so it is not a rebuilt lagging tail. An empty cut
+   has no remaining refs and must advance the existing live revision; raw HTTP
+   pages start at zero and cannot authorize that clear. Revert regression tests
+   load through `ensureInitial` so the real Query structural-sharing path runs.
   Events missed during a suspend with no SSE delivery
   remain covered by reconnect compensation + viewed-session recovery.
   A lost settle tick — tail assistant with a server-stamped terminal finish

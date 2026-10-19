@@ -864,6 +864,22 @@ describe("mergeSessionTranscript", () => {
     expect((flat.partsByMessageID["msg_4"]?.[0] as { text?: string })?.text).toBe("just finished")
   })
 
+  test("empty raw HTTP tails cannot clear live rows but an empty revert commit can", () => {
+    const live = mergeSessionTranscript(undefined, SESSION, {
+      type: "http-page",
+      purpose: "initial",
+      page: page([{ info: userMessage("msg_1"), parts: [textPart("p1", "msg_1", "old")] }], { complete: true }),
+    }).data!
+    const emptyHttp = mergeSessionTranscript(undefined, SESSION, {
+      type: "http-page",
+      purpose: "initial",
+      page: page([], { complete: true }),
+    }).data!
+    expect(projectFlatFromTranscriptData(shareSessionTranscriptData(live, emptyHttp, SESSION), SESSION).messageOrder).toEqual(["msg_1"])
+    const committed = mergeSessionTranscript(live, SESSION, { type: "revert-committed", to: "msg_1" }).data!
+    expect(projectFlatFromTranscriptData(shareSessionTranscriptData(live, committed, SESSION), SESSION).messageOrder).toEqual([])
+  })
+
   test("shareSessionTranscriptData keeps a ref-stable remove-message subset", () => {
     const live = mergeSessionTranscript(undefined, SESSION, {
       type: "http-page",
