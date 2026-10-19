@@ -1,12 +1,13 @@
 import { useQuery, type QueryClient } from '@tanstack/react-query';
-import type { Agent, Provider } from '@/lib/opencode/v2-types';
+import type { Agent } from '@/lib/opencode/v2-types';
+import type { ConfigCatalogProvider } from '@/types/configCatalog';
 import { opencodeClient } from '@/lib/opencode/client';
 import { queryClient, queryKeys } from '@/lib/queryRuntime';
 import { runtimeFetch } from '@/lib/runtime-fetch';
 import { getRuntimeTransportIdentity } from '@/lib/runtime-switch';
 import { useProjectsStore } from '@/stores/useProjectsStore';
 import { resolveConfigQueryDirectory as resolveDirectory } from './commandQueries';
-import { rawAgentsQueryOptions } from './configCatalogQueries';
+import { providerCatalogQueryOptions, rawAgentsQueryOptions } from './configCatalogQueries';
 
 export { resolveConfigQueryDirectory } from './commandQueries';
 
@@ -25,7 +26,7 @@ export type AgentWithExtras = Agent & {
   disabledOverride?: boolean;
 };
 
-export type ProviderWithModelList = Omit<Provider, 'models'> & { models: Array<NonNullable<Provider['models']>[string]> };
+export type ProviderWithModelList = Omit<ConfigCatalogProvider, 'models'> & { models: Array<ConfigCatalogProvider['models'][string]> };
 
 const normalizeDirectory = (directory: string | null | undefined): string | null => directory?.trim() || null;
 
@@ -123,9 +124,9 @@ export const providerQueryOptions = (
   const normalizedDirectory = normalizeDirectory(directory);
   return {
     queryKey: providerQueryKey(normalizedDirectory, transport),
-    queryFn: async (): Promise<ProviderWithModelList[]> => {
-      const result = await opencodeClient.getProvidersForConfig(normalizedDirectory);
-      return (Array.isArray(result.providers) ? result.providers : []).map((provider) => ({
+    queryFn: async ({ signal }: { signal: AbortSignal }): Promise<ProviderWithModelList[]> => {
+      const result = await providerCatalogQueryOptions(normalizedDirectory, transport).queryFn({ signal });
+      return result.providers.map((provider) => ({
         ...provider,
         models: Object.values(provider.models ?? {}),
       }));
