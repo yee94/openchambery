@@ -13,10 +13,14 @@ let metadataImpl: () => Promise<Response> = async () => new Response(JSON.string
 mock.module('@/lib/opencode/client', () => ({ opencodeClient: {
   getDirectory: () => '/fallback/project',
   listAgents: async (directory?: string | null) => { listCalls += 1; listedDirectories.push(directory); return listImpl(); },
-  getProvidersForConfig: async (directory?: string | null) => { providerDirectories.push(directory); return { providers: [{ id: 'provider', models: { model: { id: 'model' } } }], default: {} }; },
+  getProvidersForConfig: async (directory?: string | null) => { providerDirectories.push(directory); return { providers: [{ id: 'provider', name: 'Provider' }], default: {} }; },
 } }));
 mock.module('@/stores/useProjectsStore', () => ({ useProjectsStore: Object.assign(() => null, { getState: () => ({ getActiveProject: () => ({ path: activeProjectPath }) }) }) }));
 mock.module('@/lib/runtime-fetch', () => ({ runtimeFetch: async (path: string, init?: RequestInit) => {
+  if (path === '/api/config/catalog/providers') {
+    providerDirectories.push(new Headers(init?.headers).get('x-opencode-directory'));
+    return new Response(JSON.stringify({ schemaVersion: 1, providers: [{ id: 'provider', name: 'Provider', models: { model: { id: 'model', name: 'Catalog model', variants: { high: {} } } } }], default: {}, partial: false }));
+  }
   metadataCalls += 1;
   metadataRequest = { path, init };
   return metadataImpl();
@@ -108,5 +112,13 @@ describe('agentQueries', () => {
     ]);
     expect(listedDirectories).toEqual([null]);
     expect(providerDirectories).toEqual([null]);
+  });
+
+  test('includes models outside favorites and recents from the scoped complete catalog', async () => {
+    const providers = await refreshProvidersQuery(queryClient, '/managed/assistant', runtimeKey);
+    expect(providers[0]?.models).toEqual([
+      expect.objectContaining({ id: 'model', name: 'Catalog model', variants: { high: {} } }),
+    ]);
+    expect(providerDirectories).toEqual(['/managed/assistant']);
   });
 });
