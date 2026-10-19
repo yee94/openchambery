@@ -194,6 +194,19 @@ describe('MarkstreamRenderer fenced code blocks (OpenChamber chrome)', () => {
     expect(container.querySelector('.katex, .math-inline')).toBeNull();
   });
 
+  test('keeps currency literal when later code spans contain dollar templates', async () => {
+    const paragraphs = [
+      '不是插件丢的，是插件故意不报，Magpie 把同一批调用重复计了。',
+      '差的那 623 条 astra 里，607 条（$165.46 / ¥1107）ID 都带 `_数字` 后缀。OpenCode fork 时会把父会话已完成的历史原样复制到新会话，只把消息 ID 改成 `${forkEventID}_${seq}`，token 和完成时间都不变（`opencode/packages/core/src/session/projector.ts:218`）。插件在 fork 边界后只报新调用（`plugin-opencode/src/opencode2-events.ts:236`），因为原调用在父会话里已经报过一次，今天对上的 1830 条就是证据，金额和 Runmark 完全一致的 $464.92。我也按 seq+token+完成时间回对过，这些副本在父会话里都有一模一样的原消息。',
+      'Magpie 读 DB 时没做这层排除。OpenCode 自己的统计是排除 fork 前消息的（`opencode/packages/core/src/session/stats.ts:100`），Magpie 的 `internal/sessions/opencode.go:512` 把 fork 会话里的消息全算了。今天还是链式 fork：`ses_eb008…` 01:12 fork 出 `ses_eb000…`，12:56 又 fork 出 `ses_ead7…`，同一批历史能被计两到三次。几个会话的切换点也正好卡在 fork 创建时间，比如 `ses_ead452…` 13:55 建会话，13:57 之后的就全对上了。',
+      '插件真有问题的是剩下 16 条（$1.78）：`session.step.failed` 那条分支把 token 硬编码成 0（`opencode2-events.ts:291`），失败/中断那轮上游其实带了 tokens 和 cost，被扔掉了。金额小，要修就修这里。Magpie 那边要对齐 OpenCode 自己的口径，给 fork 会话加上 `time_created >= session.time_created` 的过滤。',
+    ];
+    await render({ content: paragraphs.join('\n\n') });
+    await flush(200);
+    for (const paragraph of paragraphs) expect(container.textContent).toContain(paragraph.replaceAll('`', ''));
+    expect(container.querySelector('.katex, .math-inline')).toBeNull();
+  });
+
   test.each(['$I_m$', '$2\\pi$', '$3x$', '$$E=mc^2$$', '\\(x+1\\)'])('preserves explicit math %s beside currency', async (formula) => {
     await render({ content: `Cost $50, formula ${formula}.` });
     await flush(200);

@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [2.1.2-beta.1] - 2026-10-19
+
+### 修复
+
+- 修复聊天正文中金额与行内代码混排时被误识别为数学公式的问题：金额不再与代码片段中的 `${...}` 配对，含中文文字或标点的金额文本保持原样显示。
+
 ## [2.1.1-beta.2] - 2026-10-19
 
 ### 改进
