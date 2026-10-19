@@ -1,4 +1,7 @@
 import { randomUUID } from 'node:crypto';
+import { normalizeApnsLocale, resolveApnsTitle } from './apns-titles.js';
+
+const SCENARIO_KINDS = new Set(['ready', 'error', 'question', 'permission', 'goal_complete', 'goal_blocked', 'goal_budget', 'task_complete', 'task_error', 'update']);
 
 // A small, process-local replay window. No transcript content or credentials are persisted.
 export const createNativeNotificationStream = ({ now = Date.now, maxEntries = 128, ttlMs = 15 * 60_000 } = {}) => {
@@ -6,14 +9,21 @@ export const createNativeNotificationStream = ({ now = Date.now, maxEntries = 12
   let sequence = 0;
   const history = [];
   const clients = new Set();
+  const locales = new WeakMap();
   const cursor = () => `${epoch}:${sequence}`;
   const prune = () => {
     while (history.length && (history.length > maxEntries || history[0].at < now() - ttlMs)) history.shift();
   };
   const write = (res, entry) => {
     if (res.destroyed || res.writableEnded) return;
+    let data = entry.data;
+    // Translate built-in scenario titles per subscriber, never user content or contact names.
+    if (data.type === 'notification' && SCENARIO_KINDS.has(data.kind)
+      && (data.title === resolveApnsTitle(data.kind, 'en') || (data.kind === 'error' && data.title === 'Task failed'))) {
+      data = { ...data, title: resolveApnsTitle(data.kind, locales.get(res)) };
+    }
     // Disconnect a slow consumer; its last processed cursor recovers retained events.
-    if (!res.write(`id: ${entry.id}\ndata: ${JSON.stringify(entry.data)}\n\n`)) res.destroy();
+    if (!res.write(`id: ${entry.id}\ndata: ${JSON.stringify(data)}\n\n`)) res.destroy();
     else res.flush?.();
   };
   const publish = (payload) => {
@@ -32,6 +42,7 @@ export const createNativeNotificationStream = ({ now = Date.now, maxEntries = 12
     }
   };
   const connect = (req, res, authorize) => {
+    locales.set(res, normalizeApnsLocale(req.headers['accept-language']));
     res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
     res.setHeader('Cache-Control', 'no-cache, no-transform');
     res.setHeader('X-Accel-Buffering', 'no');

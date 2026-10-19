@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [2.0.11-beta.25] - 2026-10-19
+
+### 修复
+
+- 修复 Android 任务通知默认标题未跟随 App 语言、出现中英文混用的问题；实时通知与断线补收均按设备当前 App 语言显示，保留会话名、自定义标题和助理名称。
+
+### 改进
+
+- 调整移动端历史消息加载提示的间距与透明度，降低视觉干扰。
+
 ## [2.0.11-beta.24] - 2026-10-19
 
 ### 修复

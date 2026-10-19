@@ -20,6 +20,35 @@ const response = () => {
 const events = (res) => res.chunks.filter((chunk) => chunk.startsWith('id:')).map((chunk) => ({
   id: chunk.split('\n')[0].slice(4), data: JSON.parse(chunk.split('\n')[1].slice(6)),
 }));
+it('localizes standard titles per subscriber and replay while preserving session names and custom titles', () => {
+  const stream = createNativeNotificationStream();
+  const zh = response();
+  const en = response();
+  stream.connect({ headers: { 'accept-language': 'zh-CN' } }, zh);
+  stream.connect({ headers: { 'accept-language': 'en' } }, en);
+  const cursor = events(zh)[0].id;
+  stream.publish({ title: 'Needs your answer', body: 'messagelist库', kind: 'question' });
+  expect(events(zh).at(-1).data).toMatchObject({ title: '需要你回答', body: 'messagelist库' });
+  expect(events(en).at(-1).data.title).toBe('Needs your answer');
+  const replay = response();
+  stream.connect({ headers: { 'accept-language': 'zh-CN', 'last-event-id': cursor } }, replay);
+  expect(events(replay)[0].data.title).toBe('需要你回答');
+  stream.publish({ title: '自定义标题', body: '原始正文', kind: 'question' });
+  expect(events(zh).at(-1).data.title).toBe('自定义标题');
+  stream.publish({ title: 'Needs your answer', kind: 'contact' });
+  expect(events(zh).at(-1).data.title).toBe('Needs your answer');
+  for (const [kind, title, translated] of [
+    ['ready', 'Task completed', '任务已完成'],
+    ['permission', 'Needs permission', '需要你授权'],
+    ['error', 'Task failed', '出现错误'],
+    ['goal_complete', 'Goal completed', '目标已完成'],
+    ['task_complete', 'Scheduled task completed', '定时任务已完成'],
+    ['task_error', 'Scheduled task failed', '定时任务失败'],
+  ]) {
+    stream.publish({ kind, title });
+    expect(events(zh).at(-1).data.title).toBe(translated);
+  }
+});
 afterEach(() => { responses.splice(0).forEach((res) => res.destroy()); vi.useRealTimers(); });
 
 it('replays a missed first notification from the initial ready cursor and does not replay acknowledged events', () => {
