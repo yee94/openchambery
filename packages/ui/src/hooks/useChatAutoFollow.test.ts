@@ -93,6 +93,65 @@ describe('virtual list scroll ownership', () => {
 });
 
 describe('primary transcript reading ownership', () => {
+    test.each(['anchor-correction', 'short-measurement-frame'] as const)('history completion does not reacquire follow from a %s', async (geometryChange) => {
+        vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
+        const host = document.createElement('div');
+        document.body.appendChild(host);
+        const root = createRoot(host);
+        let api!: UseChatAutoFollowResult;
+        let top = 100;
+        let height = 900;
+        let writes = 0;
+        function Harness() {
+            api = useChatAutoFollow({ currentSessionId: null, sessionMessageCount: 24, sessionIsWorking: false, isMobile: false });
+            return React.createElement('div', { ref: (element: HTMLDivElement | null) => {
+                api.scrollRef.current = element;
+                if (!element) return;
+                Object.defineProperties(element, {
+                    scrollTop: { configurable: true, get: () => top, set: (value: number) => { top = Math.min(value, height - 300); writes++; } },
+                    scrollHeight: { configurable: true, get: () => height },
+                    clientHeight: { configurable: true, get: () => 300 },
+                });
+            } }, React.createElement('div'));
+        }
+        try {
+            await act(async () => root.render(React.createElement(Harness)));
+            await act(async () => {
+                api.beginHistoryViewportPreservation();
+                top = 100;
+                api.scrollRef.current!.dispatchEvent(new Event('scroll'));
+                api.endHistoryViewportPreservation();
+            });
+            await act(async () => {
+                api.scrollRef.current!.dispatchEvent(new WheelEvent('wheel', { deltaY: 100 }));
+                top = 200;
+                api.scrollRef.current!.dispatchEvent(new Event('scroll'));
+                api.scrollRef.current!.dispatchEvent(new Event('scrollend'));
+            });
+            writes = 0;
+            await act(async () => {
+                height = geometryChange === 'short-measurement-frame' ? 300 : 600;
+                top = height - 300;
+                api.scrollRef.current!.dispatchEvent(new Event('scroll'));
+            });
+            const readingTop = top;
+            await act(async () => { height = 1800; api.notifyContentChange('structural'); });
+            expect({ state: api.state, top, writes }).toEqual({ state: 'released', top: readingTop, writes: 0 });
+            await act(async () => {
+                api.scrollRef.current!.dispatchEvent(new WheelEvent('wheel', { deltaY: 500 }));
+                top = 800;
+                api.scrollRef.current!.dispatchEvent(new Event('scroll'));
+                top = 1500;
+                api.scrollRef.current!.dispatchEvent(new Event('scroll'));
+            });
+            expect(api.state).toBe('following');
+        } finally {
+            await act(async () => root.unmount());
+            host.remove();
+            vi.unstubAllGlobals();
+        }
+    });
+
     test.each(['small-scroll', 'released-at-edge', 'released-stationary', 'cumulative-touch', 'horizontal-touch', 'content-shrink', 'bottom-bounce'] as const)('%s preserves reading/follow ownership through content growth', async (scenario) => {
         let clock = 10000;
         vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
@@ -151,6 +210,7 @@ describe('primary transcript reading ownership', () => {
                 ? { top: 660, writes: 1, state: 'following' }
                 : { top: readingTop, writes: 0, state: 'released' });
             await act(async () => {
+                element.dispatchEvent(new WheelEvent('wheel', { deltaY: 100 }));
                 top = 660;
                 element.dispatchEvent(new Event('scroll'));
             });

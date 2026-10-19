@@ -8,6 +8,7 @@ import {
     TOUCH_FINGER_DOWN_THRESHOLD,
     isReleaseKey,
     nestedScrollableCanConsumeUp,
+    nestedScrollableCanConsumeDown,
 } from '@/hooks/lib/chatUpwardIntent';
 import { useViewportStore, type SessionMemoryState } from '@/sync/viewport-store';
 
@@ -248,6 +249,8 @@ export const useChatAutoFollow = ({
     const keyboardOpenRef = React.useRef(false);
     const keyboardExpandFreezeTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
     const sessionOpenPinGraceUntilRef = React.useRef(0);
+    const downwardUserIntentRef = React.useRef(false);
+    const scrollbarPointerRef = React.useRef<{ id: number; y: number } | null>(null);
     const touchPositionRef = React.useRef<{ x: number; y: number; dx: number; dy: number } | null>(null);
 
     const armSessionOpenPinGrace = useEvent(() => {
@@ -498,7 +501,6 @@ export const useChatAutoFollow = ({
         if (!el) return;
         const box = geometry ?? readScrollGeometry(el);
         if (!canScrollGeometry(box)) {
-            setStateValue('following');
             return;
         }
         if (stateRef.current === 'released') return;
@@ -508,6 +510,7 @@ export const useChatAutoFollow = ({
 
     // ── public scroll API (mapped onto the primitives) ───────────────────────
     const goToBottom = useEvent((mode: 'instant' | 'smooth' = 'instant') => {
+        downwardUserIntentRef.current = false;
         historyViewportPreservationRef.current = false;
         setStateValue('following');
         endEntryStick();
@@ -536,6 +539,7 @@ export const useChatAutoFollow = ({
     });
 
     const releaseAutoFollow = useEvent(() => {
+        downwardUserIntentRef.current = false;
         cancelForcedBottom();
         scrollControllerRef?.current?.cancelScroll();
         endEntryStick();
@@ -560,6 +564,7 @@ export const useChatAutoFollow = ({
         // window immediately so we never fight the user's read position.
         // The session-open grace absorbs the leftover list-row tap on iOS.
         if (isWithinSessionOpenPinGrace(now(), sessionOpenPinGraceUntilRef.current)) return;
+        downwardUserIntentRef.current = false;
         cancelForcedBottom();
         scrollControllerRef?.current?.cancelScroll();
         endEntryStick();
@@ -677,6 +682,8 @@ export const useChatAutoFollow = ({
         cancelForcedBottom();
         armSessionOpenPinGrace();
         lastViewportIdentityRef.current = identity;
+        downwardUserIntentRef.current = false;
+        scrollbarPointerRef.current = null;
         autoRef.current = null;
         lastScrollTopRef.current = 0;
         endEntryStick();
@@ -744,12 +751,11 @@ export const useChatAutoFollow = ({
         }
 
         if (!canScrollGeometry(geometry)) {
-            setStateValue('following');
             return;
         }
 
-        // Downward arrival in the bottom band resumes following. A stationary
-        // event at the edge preserves an already released reading position.
+        // A downward user arrival resumes following. Prepend/measurement writes
+        // can also move down into this band; geometry alone cannot claim ownership.
         if (isNearBottomOf(geometry, isMobileRef.current)) {
             // Clamp the baseline so content shrink and rubber-band settlement
             // preserve following while upward travel takes reading ownership.
@@ -759,8 +765,9 @@ export const useChatAutoFollow = ({
                 queueSave();
                 return;
             }
-            if (scrollingDown || stateRef.current === 'following') {
+            if (stateRef.current === 'following' || (scrollingDown && downwardUserIntentRef.current)) {
                 setStateValue('following');
+                downwardUserIntentRef.current = false;
             }
             queueSave();
             return;
@@ -782,7 +789,7 @@ export const useChatAutoFollow = ({
         }
 
         // Genuine user scroll away from the bottom.
-        releaseFromUserIntent();
+        if (stateRef.current === 'following' || !scrollingDown) releaseFromUserIntent();
         queueSave();
     });
 
@@ -796,12 +803,17 @@ export const useChatAutoFollow = ({
     const handleWheel = useEvent((event: WheelEvent) => {
         const container = scrollRef.current;
         if (!container) return;
+        if (event.deltaY > 0) {
+            if (!nestedScrollableCanConsumeDown(container, event.target)) downwardUserIntentRef.current = true;
+            return;
+        }
         if (event.deltaY >= 0) return;
         if (nestedScrollableCanConsumeUp(container, event.target)) return;
         notifyUpwardUserIntent();
     });
 
     const handleTouchStart = useEvent((event: TouchEvent) => {
+        downwardUserIntentRef.current = false;
         const touch = event.touches.item(0);
         touchPositionRef.current = touch ? { x: touch.clientX, y: touch.clientY, dx: 0, dy: 0 } : null;
     });
@@ -820,8 +832,13 @@ export const useChatAutoFollow = ({
         const dx = (reversed ? 0 : previous.dx) + touch.clientX - previous.x;
         const dy = (reversed ? 0 : previous.dy) + stepY;
         touchPositionRef.current = { x: touch.clientX, y: touch.clientY, dx, dy };
-        if (dy <= 0 || Math.abs(dx) >= dy) return;
+        if (Math.abs(dx) >= Math.abs(dy)) return;
         if (!container) return;
+        if (dy < -TOUCH_FINGER_DOWN_THRESHOLD) {
+            if (!nestedScrollableCanConsumeDown(container, event.target)) downwardUserIntentRef.current = true;
+            return;
+        }
+        if (dy <= 0) return;
         if (nestedScrollableCanConsumeUp(container, event.target)) {
             touchPositionRef.current.dx = 0;
             touchPositionRef.current.dy = 0;
@@ -836,6 +853,15 @@ export const useChatAutoFollow = ({
     });
 
     const handleKeyDown = useEvent((event: KeyboardEvent) => {
+        const target = event.target;
+        if (event.defaultPrevented || (target instanceof HTMLElement
+            && (target.isContentEditable || target.closest('input, textarea, select')))) return;
+        if (!event.altKey && !event.ctrlKey && !event.metaKey
+            && ['ArrowDown', 'PageDown', 'End'].includes(event.key)) {
+            const container = scrollRef.current;
+            if (container && !nestedScrollableCanConsumeDown(container, target)) downwardUserIntentRef.current = true;
+            return;
+        }
         if (!isReleaseKey(event)) return;
         notifyUpwardUserIntent();
     });
@@ -845,8 +871,19 @@ export const useChatAutoFollow = ({
         if (!(target instanceof Element)) return;
         if (!target.closest('[data-overlay-scrollbar-thumb]')) return;
         // Scrollbar drag releases follow but is not an upward-intent load signal.
+        sessionOpenPinGraceUntilRef.current = 0;
         releaseFromUserIntent();
+        scrollbarPointerRef.current = { id: event.pointerId, y: event.clientY };
     });
+
+    const handleScrollbarPointerMove = useEvent((event: PointerEvent) => {
+        const pointer = scrollbarPointerRef.current;
+        if (!pointer || pointer.id !== event.pointerId) return;
+        if (event.clientY !== pointer.y) downwardUserIntentRef.current = event.clientY > pointer.y;
+        pointer.y = event.clientY;
+    });
+    const handleScrollbarPointerEnd = useEvent(() => { scrollbarPointerRef.current = null; });
+    const handleScrollEnd = useEvent(() => { downwardUserIntentRef.current = false; });
 
     // Target is the real attach/detach condition; handlers are useEvent so they
     // must not appear in effect-style rebind deps (useEventListener already
@@ -857,12 +894,16 @@ export const useChatAutoFollow = ({
     const scrollListenerTarget = enabled && containerEl ? containerEl : noEventTarget;
     const passiveScrollOptions = React.useMemo(() => ({ passive: true } as const), []);
     useEventListener('scroll', handleScrollEvent, scrollListenerTarget, passiveScrollOptions);
+    useEventListener('scrollend', handleScrollEnd, scrollListenerTarget, passiveScrollOptions);
     useEventListener('wheel', handleWheel, scrollListenerTarget, passiveScrollOptions);
     useEventListener('touchstart', handleTouchStart, scrollListenerTarget, passiveScrollOptions);
     useEventListener('touchmove', handleTouchMove, scrollListenerTarget, passiveScrollOptions);
     useEventListener('touchend', handleTouchEnd, scrollListenerTarget, passiveScrollOptions);
     useEventListener('touchcancel', handleTouchEnd, scrollListenerTarget, passiveScrollOptions);
     useEventListener('keydown', handleKeyDown, scrollListenerTarget);
+    useEventListener('pointermove', handleScrollbarPointerMove, enabled && typeof window !== 'undefined' ? window : noEventTarget, true);
+    useEventListener('pointerup', handleScrollbarPointerEnd, enabled && typeof window !== 'undefined' ? window : noEventTarget, true);
+    useEventListener('pointercancel', handleScrollbarPointerEnd, enabled && typeof window !== 'undefined' ? window : noEventTarget, true);
     useEventListener(
         'pointerdown',
         handlePointerDownIntent,
@@ -899,7 +940,6 @@ export const useChatAutoFollow = ({
         }
         const geometry = readScrollGeometry(el);
         if (!canScrollGeometry(geometry)) {
-            setStateValue('following');
             updateOverflowAndButton(geometry);
             return;
         }

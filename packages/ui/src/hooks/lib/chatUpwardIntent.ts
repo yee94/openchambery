@@ -33,7 +33,7 @@ export const isReleaseKey = (event: KeyboardEvent): boolean => {
 // Wheel/touch upward intent must not fire while a nested scroller inside the
 // chat root can still consume the gesture. Walk ancestors from event.target to
 // (but not including) root; geometry alone — no selectors, no getComputedStyle.
-export const nestedScrollableCanConsumeUp = (root: HTMLElement, target: EventTarget | null): boolean => {
+const nestedScrollableCanConsume = (root: HTMLElement, target: EventTarget | null, direction: 'up' | 'down'): boolean => {
     let node: Element | null = target instanceof Element
         ? target
         : target instanceof Node
@@ -41,7 +41,8 @@ export const nestedScrollableCanConsumeUp = (root: HTMLElement, target: EventTar
             : null;
     while (node && node !== root) {
         if (node instanceof HTMLElement) {
-            if (node.scrollTop > 0 && node.scrollHeight > node.clientHeight + 1) {
+            const max = node.scrollHeight - node.clientHeight;
+            if (max > 1 && (direction === 'up' ? node.scrollTop > 0 : node.scrollTop < max - 1)) {
                 return true;
             }
         }
@@ -49,6 +50,14 @@ export const nestedScrollableCanConsumeUp = (root: HTMLElement, target: EventTar
     }
     return false;
 };
+
+export const nestedScrollableCanConsumeUp = (root: HTMLElement, target: EventTarget | null): boolean => (
+    nestedScrollableCanConsume(root, target, 'up')
+);
+
+export const nestedScrollableCanConsumeDown = (root: HTMLElement, target: EventTarget | null): boolean => (
+    nestedScrollableCanConsume(root, target, 'down')
+);
 
 type UseHistoryUpwardIntentOptions = {
     scrollRef: React.RefObject<HTMLElement | null>;
