@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [2.0.11-beta.23] - 2026-10-19
+
+### 修复
+
+- 修复桌面短会话首次上滚加载历史时，Markdown 后续渲染改变消息高度导致阅读位置跳动的问题；位置恢复后的滚动回调不再覆盖阅读锚点，仍保留用户主动滚动的优先权。
+
 ## [2.0.11-beta.22] - 2026-10-19
 
 ### 修复

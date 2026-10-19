@@ -1074,6 +1074,9 @@ export const useChatTimelineController = ({
             if (!restoredAnchor && heightDelta > 0) {
                 container.scrollTop = snap.top + heightDelta;
             }
+            // Hand the committed position to the hydration keeper before its
+            // mutation microtask or this write's scroll event can arrive.
+            historyAnchorKeeperRef.current?.rebase();
             updateTracking(measuredHeight);
             return;
         }
