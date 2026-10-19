@@ -73,6 +73,16 @@ describe('matchDollarMath', () => {
     });
   });
 
+  test('does not pair a currency opener across an inline code span', () => {
+    expect(matchDollarMath('$165.46 / ¥1107）ID 都带 `_数字` 后缀。只把消息 ID 改成 `${forkEventID}_${seq}`，金额是 $464.92。')).toBeUndefined();
+    expect(matchDollarMath('$50 and `code $x$` end')).toBeUndefined();
+  });
+
+  test('does not pair currency amounts glued to CJK prose', () => {
+    expect(matchDollarMath('$165，不是$200')).toBeUndefined();
+    expect(matchDollarMath('$165.46 / ¥1107，共$200')).toBeUndefined();
+  });
+
   test('skips an escaped dollar inside the formula', () => {
     expect(matchDollarMath('$a\\$b$')).toEqual({ raw: '$a\\$b$', text: 'a\\$b', display: false });
   });
@@ -113,6 +123,14 @@ describe('dollar math through marked', () => {
     expect(html).toContain('katex');
     expect(html).toContain('$50');
     expect(html).not.toContain('$I_m$');
+  });
+
+  test('leaves currency before a code span containing a dollar template as text', () => {
+    const html = parseDollars('607 条（$165.46 / ¥1107）ID 都带 `_数字` 后缀，只把消息 ID 改成 `${forkEventID}_${seq}`，金额是 $464.92。');
+    expect(html).not.toContain('katex');
+    expect(html).toContain('$165.46');
+    expect(html).toContain('$464.92');
+    expect(html).toContain('<code>${forkEventID}_${seq}</code>');
   });
 
   test('does not parse math inside a code span', () => {

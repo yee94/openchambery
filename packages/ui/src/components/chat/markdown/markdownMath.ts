@@ -21,18 +21,20 @@ const isDigit = (ch: string | undefined): boolean => (
   ch !== undefined && ch >= '0' && ch <= '9'
 );
 
-// TeX / operator marks that a digit-leading span is actually math (`$2\pi$`,
-// `$1+x$`) rather than money. Letters do not count: `$72M` and `$3x$` both
-// have them.
-const isMathMeta = (ch: string): boolean => (
-  ch === '\\' || ch === '^' || ch === '_' || ch === '{' || ch === '}'
-  || ch === '=' || ch === '+' || ch === '*' || ch === '/' || ch === '-'
-);
-
-const containsMathMeta = (text: string): boolean => {
+// CJK characters and CJK / fullwidth punctuation inside a candidate span
+// are prose, not TeX: Chinese currency amounts are often glued to the
+// surrounding text without spaces (`$165，不是$200`), so the space-based
+// prose check below cannot catch them. Explicit formulas in chat are ASCII
+// (letter names, TeX commands); a literal CJK span is a sentence fragment.
+const hasCjkProse = (text: string): boolean => {
   for (let index = 0; index < text.length; index += 1) {
-    const ch = text[index];
-    if (ch !== undefined && isMathMeta(ch)) return true;
+    const code = text.charCodeAt(index);
+    if (
+      (code >= 0x2e80 && code <= 0x9fff)
+      || (code >= 0x3000 && code <= 0x303f)
+      || (code >= 0xf900 && code <= 0xfaff)
+      || (code >= 0xff00 && code <= 0xffef)
+    ) return true;
   }
   return false;
 };
@@ -80,6 +82,12 @@ export const matchDollarMath = (src: string): DollarMathMatch | undefined => {
       index += 1;
       continue;
     }
+    // An inline code span between the dollars is prose structure, not TeX:
+    // abort this opener so the code span is tokenized as code and any later
+    // real formula can still match on its own. Otherwise a currency amount
+    // would pair with the `$` of a `${template}` inside backticks and
+    // swallow the sentence (and the code ticks) into KaTeX.
+    if (ch === '`') return undefined;
     if (ch !== '$') continue;
     // Display delimiter inside an inline attempt — this opener is not `$...$`.
     if (src[index + 1] === '$') return undefined;
@@ -89,8 +97,12 @@ export const matchDollarMath = (src: string): DollarMathMatch | undefined => {
     if (isDigit(src[index + 1])) continue;
     if (index === 1) return undefined;
     const text = src.slice(1, index);
-    // `$72M". US$ 680`: digit-leading, no TeX, quote/space in the body.
-    if (isDigit(src[1]) && !containsMathMeta(text) && hasProseNoise(text)) {
+    if (hasCjkProse(text)) return undefined;
+    // Digit-leading span with quote/space in the body is a money amount
+    // followed by prose (`$72M". US$ 680`, `$165.46 / ¥1107，共$200`), even
+    // when the prose contains an operator like `/` or `+`. Spaceless
+    // digit-leading formulas (`$2\pi$`, `$1+x$`, `$3x$`) still pair.
+    if (isDigit(src[1]) && hasProseNoise(text)) {
       return undefined;
     }
     return { raw: src.slice(0, index + 1), text, display: false };
