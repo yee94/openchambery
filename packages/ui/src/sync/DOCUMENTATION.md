@@ -1,5 +1,11 @@
 # Sync architecture, event handling & store update rules
 
+## Local content search
+
+`transcript-content-search.ts` owns a separate, device-local IndexedDB excerpt cache on all UI runtimes. The repository feeds confirmed user text and settled assistant text through the existing serialized durable queue, independently of reasoning visibility. Synthetic, ignored, slim, reasoning and tool parts are excluded; assistant excerpts retain at most 2048 characters from the opening and closing edges. This cache never substitutes for full transcript hydration. Its LRU budget is 32 MiB, and session/message removal, revert and user cache-clear remove the corresponding excerpts. Provider teardown preserves excerpts; runtime generations isolate them and LRU bounds retained old scopes. Successful writes invalidate matching content-search queries.
+
+Search reads the same excerpt cache with a readonly transaction, scoped by transport, generation and directory. It sorts lightweight metadata newest-first, reads one excerpt at a time, stops at the result limit and checks cancellation between reads. It currently scans local excerpts rather than using an inverted index; query cost grows with the retained directory corpus. No full tool output is copied or read by this search path. Historical messages become searchable when authoritative transcript pages are materialized; this does not yet fetch seven days of unvisited OpenCode history.
+
 ## Native Android notification ownership
 
 `apps/useAndroidNotifications.ts` controls an Android-only native foreground service through `lib/native-android-notifications.ts`. It observes the existing notification toggle, runtime-endpoint changes and auth generations, not live session stores. Temporary UI SSE disconnects never stop the native receiver. Endpoint/auth changes immediately stop the old credentials and fence delayed config reads; auth invalidation cannot restart the old connection. Native receives only notification events from the selected Host (direct or native E2EE relay), handles replay/backoff and local alerts, and keeps working while WebView JS is suspended. The normal global event pipeline remains the UI's sync owner. See `packages/mobile/README.md` for runtime limitations and verification.

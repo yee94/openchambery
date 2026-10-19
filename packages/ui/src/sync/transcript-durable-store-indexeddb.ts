@@ -74,7 +74,7 @@ export type TranscriptDurableStoreTransaction = {
 }
 
 export type TranscriptDurableStoreDriver = {
-  transaction: <T>(action: (transaction: TranscriptDurableStoreTransaction) => Promise<T>) => Promise<T>
+  transaction: <T>(action: (transaction: TranscriptDurableStoreTransaction) => Promise<T>, mode?: IDBTransactionMode) => Promise<T>
   destroy: () => Promise<void>
 }
 
@@ -259,9 +259,9 @@ const deleteDatabase = (databaseName: string): Promise<void> =>
 export const createIndexedDBTranscriptDurableDriver = (
   databaseName = DATABASE_NAME,
 ): TranscriptDurableStoreDriver => ({
-  transaction: async <T>(action: (transaction: TranscriptDurableStoreTransaction) => Promise<T>) => {
+  transaction: async <T>(action: (transaction: TranscriptDurableStoreTransaction) => Promise<T>, mode: IDBTransactionMode = "readwrite") => {
     const database = await openDatabase(databaseName)
-    const transaction = database.transaction([INDEX_STORE, CONTENT_STORE], "readwrite")
+    const transaction = database.transaction([INDEX_STORE, CONTENT_STORE], mode)
     const indexes = transaction.objectStore(INDEX_STORE)
     const contents = transaction.objectStore(CONTENT_STORE)
     const wrap = <V>(request: IDBRequest<V>): Promise<V> => wrapRequest(request, transaction)

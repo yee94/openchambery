@@ -1897,6 +1897,19 @@ async function main(options = {}) {
     getCommittedHostMetadata: async () => sessionMetadataStore.getAll(),
     transcriptCacheService,
   });
+  if (transcriptCacheService && typeof transcriptCacheService.rebuildContentSince === 'function') {
+    const weekAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
+    setTimeout(() => {
+      try {
+        const rebuilt = transcriptCacheService.rebuildContentSince(weekAgo);
+        if (rebuilt.indexed > 0) {
+          console.info(`[transcript-cache] rebuilt ${rebuilt.indexed} searchable messages from the last 7 days`);
+        }
+      } catch (error) {
+        console.warn('[transcript-cache] content rebuild failed');
+      }
+    }, 0);
+  }
   uiAuthController = bootstrapResult.uiAuthController;
   realtimeProxyRuntime = attachRealtimeProxy({
     app,

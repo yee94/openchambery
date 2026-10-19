@@ -45,6 +45,9 @@ import { useMobileAppActions } from '@/apps/mobileAppContext';
 import { useMobileNavigationStore } from '@/mobile/useMobileNavigationStore';
 import { resolveProjectForSessionDirectory } from '@/lib/projectResolution';
 import { sessionTitleSearchQueryOptions } from '@/queries/sessionTitleSearchQueries';
+import { sessionContentSearchQueryOptions, type SessionContentSearchHit } from '@/queries/sessionContentSearchQueries';
+import { focusChatMessage } from '@/components/chat/hooks/useChatTurnNavigation';
+import { getRuntimeGeneration, getRuntimeTransportIdentity } from '@/lib/runtime-switch';
 import { consumeMatchingPress, markMatchingPress } from './matchingPress';
 import { MobileDetailNavigation } from '@/mobile/MobileDetailNavigation';
 
@@ -94,15 +97,19 @@ const ITEM_CLASS = 'min-h-9 gap-2 rounded-lg px-3 py-2 typography-meta';
 const GROUP_CLASS =
   'py-0 [&_[cmdk-group-heading]]:px-2.5 [&_[cmdk-group-heading]]:pb-2 [&_[cmdk-group-heading]]:pt-3 [&_[cmdk-group-heading]]:font-normal [&_[cmdk-group-heading]]:text-muted-foreground';
 
-function highlightedTitle(title: string, query: string): React.ReactNode {
-  const terms = query.toLowerCase().split(/\s+/).filter(Boolean);
-  if (!terms.length) return title;
+const SEARCH_MARK_CLASS = 'rounded-[3px] bg-[color-mix(in_srgb,var(--primary-base)_28%,transparent)] px-0.5 font-[inherit] text-foreground';
+
+/** Cherry-style mark: every whitespace term, case-insensitive, on the text that is actually shown. */
+function highlightSearchText(text: string, query: string): React.ReactNode {
+  const terms = query.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  if (!terms.length || !text) return text;
   const escaped = terms.map((term) => term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
-  return title.split(new RegExp(`(${escaped.join('|')})`, 'gi')).map((part, index) =>
+  const pattern = new RegExp(`(${escaped.join('|')})`, 'gi');
+  return text.split(pattern).map((part, index) => (
     terms.includes(part.toLowerCase())
-      ? <mark key={index} className="bg-transparent font-[inherit] text-[var(--primary-base)]">{part}</mark>
-      : part,
-  );
+      ? <mark key={index} className={SEARCH_MARK_CLASS}>{part}</mark>
+      : <span key={index}>{part}</span>
+  ));
 }
 
 const normalizePath = (value: string): string => {
@@ -439,6 +446,17 @@ export const CommandPalette: React.FC<{ presentation?: 'dialog' | 'page'; onBack
     ...sessionTitleSearchQueryOptions(trimmedQuery),
     enabled: (isCommandPaletteOpen || retainResults) && (trimmedQuery.length > 0 || presentation === 'page'),
   });
+  const contentScope = React.useMemo(() => (
+    currentRoot
+      ? { transport: getRuntimeTransportIdentity(), generation: getRuntimeGeneration(), directory: currentRoot }
+      : null
+  ), [currentRoot, isCommandPaletteOpen]);
+  const contentSearchQuery = useQuery({
+    ...sessionContentSearchQueryOptions(trimmedQuery, { scope: contentScope }),
+    enabled: (isCommandPaletteOpen || retainResults) && trimmedQuery.length > 0 && contentScope !== null,
+  });
+  const contentHits: SessionContentSearchHit[] = contentSearchQuery.isSuccess ? contentSearchQuery.data ?? [] : [];
+  const contentSearchFailed = hasQuery && liveTrimmed === trimmedQuery && contentSearchQuery.isError;
   const titleSearchReady = hasQuery && liveTrimmed === trimmedQuery && titleSearchQuery.isSuccess;
   const titleSearchFailed = (hasQuery || presentation === 'page') && liveTrimmed === trimmedQuery && titleSearchQuery.isError;
   const localTitleMatches = React.useMemo(() => {
@@ -498,7 +516,7 @@ export const CommandPalette: React.FC<{ presentation?: 'dialog' | 'page'; onBack
   const visibleFiles = hasQuery ? scoredFiles.map((x) => x.item) : [];
   const visibleProjects = hasQuery ? scoredProjects.map((x) => x.item) : [];
 
-  const groupOrder = React.useMemo<('commands' | 'settings' | 'sessions' | 'files' | 'projects')[]>(() => {
+  const groupOrder = React.useMemo<('commands' | 'settings' | 'sessions' | 'messages' | 'files' | 'projects')[]>(() => {
     if (!hasQuery) return ['sessions', 'commands'];
     const best = (arr: { score: number }[]): number => (arr.length ? arr[0].score : Infinity);
     const groups: { key: 'commands' | 'settings' | 'files' | 'projects'; score: number }[] = [
@@ -508,10 +526,10 @@ export const CommandPalette: React.FC<{ presentation?: 'dialog' | 'page'; onBack
       { key: 'projects', score: best(scoredProjects) },
     ];
     groups.sort((a, b) => a.score - b.score);
-    return ['sessions', ...groups.map((group) => group.key)];
+    return ['sessions', 'messages', ...groups.map((group) => group.key)];
   }, [hasQuery, scoredCommands, scoredSettings, scoredFiles, scoredProjects]);
 
-  const handleOpenSession = useEvent((session: Session) => {
+  const handleOpenSession = useEvent((session: Session, messageID?: string) => {
     close();
     setActiveMainTab('chat');
     setSessionSwitcherOpen(false);
@@ -521,6 +539,19 @@ export const CommandPalette: React.FC<{ presentation?: 'dialog' | 'page'; onBack
     } else {
       void setCurrentSession(session.id, directory);
     }
+    if (messageID) focusChatMessage(messageID);
+  });
+
+  const handleOpenContentHit = useEvent((hit: SessionContentSearchHit) => {
+    const known = sortedActiveSessions.find((session) => session.id === hit.sessionID)
+      ?? visibleTitleSessions.find((session) => session.id === hit.sessionID);
+    const session = known ?? {
+      id: hit.sessionID,
+      title: '',
+      directory: hit.directory,
+      location: { directory: hit.directory },
+    } as Session;
+    handleOpenSession(session, hit.messageID);
   });
 
   const handleOpenFile = useEvent(async (filePath: string) => {
@@ -545,13 +576,23 @@ export const CommandPalette: React.FC<{ presentation?: 'dialog' | 'page'; onBack
   const shortcut = (actionId: string) =>
     formatShortcutForDisplay(getEffectiveShortcutCombo(actionId, shortcutOverrides));
 
+  const swallowUnsettled = (event: React.KeyboardEvent) => {
+    if (!resultsSettled && (event.key === 'Enter' || event.key === 'ArrowDown' || event.key === 'ArrowUp')) {
+      event.preventDefault();
+      event.stopPropagation();
+      return true;
+    }
+    return false;
+  };
+
   const handleNumberShortcut = useEvent((event: React.KeyboardEvent) => {
+    if (swallowUnsettled(event)) return;
     if (isMobile || event.nativeEvent.isComposing || event.altKey || event.shiftKey) return;
     if (mac ? (!event.metaKey || event.ctrlKey) : (!event.ctrlKey || event.metaKey)) return;
     if (!/^[1-9]$/.test(event.key)) return;
     event.preventDefault();
     event.stopPropagation();
-    if (event.repeat) return;
+    if (event.repeat || !resultsSettled) return;
     const session = visibleSessions[Number(event.key) - 1];
     if (session) handleOpenSession(session);
   });
@@ -562,9 +603,16 @@ export const CommandPalette: React.FC<{ presentation?: 'dialog' | 'page'; onBack
     return project?.label || (project?.path || directory).split('/').pop() || '';
   };
 
-  const waitingForFiles = hasQuery && Boolean(currentRoot) && (liveTrimmed !== trimmedQuery || isFileSearchStale);
   const fileSearchFailed = hasQuery && liveTrimmed === trimmedQuery && Boolean(fileSearchKey) && fileErrorKey === fileSearchKey;
-  const waitingForTitles = (hasQuery || presentation === 'page') && (liveTrimmed !== trimmedQuery || (titleSearchQuery.isFetching && !titleSearchQuery.isSuccess));
+  const remoteResultsPending = hasQuery && (
+    liveTrimmed !== trimmedQuery
+    || (Boolean(currentRoot) && isFileSearchStale)
+    || (titleSearchQuery.isFetching && !titleSearchQuery.isSuccess)
+    || (contentScope !== null && contentSearchQuery.isFetching && !contentSearchQuery.isSuccess)
+  );
+  const [committedQuery, setCommittedQuery] = React.useState(trimmedQuery);
+  if (!remoteResultsPending && committedQuery !== trimmedQuery) setCommittedQuery(trimmedQuery);
+  const resultsSettled = !hasQuery || (committedQuery === trimmedQuery && !remoteResultsPending);
 
   const searchInput = (
     <CommandInput
@@ -611,14 +659,14 @@ export const CommandPalette: React.FC<{ presentation?: 'dialog' | 'page'; onBack
             />
           ) : searchInput}
           <CommandList aria-label={t('commandPalette.title')} className="overscroll-contain p-1.5">
-            {visibleSessions.length === 0 ? <div className="px-2.5 pb-2 pt-3 typography-meta text-muted-foreground">{t('layout.mainTab.chat')}</div> : null}
-            {!waitingForFiles && !waitingForTitles && !fileSearchFailed && !titleSearchFailed && sessionsStatus !== 'loading' && sessionsStatus !== 'error' ? (
+            {visibleSessions.length === 0 && resultsSettled ? <div className="px-2.5 pb-2 pt-3 typography-meta text-muted-foreground">{t('layout.mainTab.chat')}</div> : null}
+            {resultsSettled && !fileSearchFailed && !titleSearchFailed && !contentSearchFailed && sessionsStatus !== 'loading' && sessionsStatus !== 'error' ? (
               <CommandEmpty className="py-10 text-center typography-meta text-muted-foreground">
                 {t('commandPalette.empty.noResults')}
               </CommandEmpty>
             ) : null}
 
-            {groupOrder.map((groupKey) => {
+            {resultsSettled ? groupOrder.map((groupKey) => {
               if (groupKey === 'commands' && visibleCommands.length > 0) {
                 return (
                   <CommandGroup key="commands" heading={t('settings.page.commands.title')} className={GROUP_CLASS}>
@@ -673,10 +721,35 @@ export const CommandPalette: React.FC<{ presentation?: 'dialog' | 'page'; onBack
                           aria-keyshortcuts={!isMobile && index < 9 ? `${mac ? 'Meta' : 'Control'}+${index + 1}` : undefined}
                         >
                           <div className="flex min-w-0 items-center gap-3">
-                            <span className="min-w-0 flex-1 truncate typography-ui-label text-foreground" title={title}>{highlightedTitle(title, liveTrimmed)}</span>
+                            <span className="min-w-0 flex-1 truncate typography-ui-label text-foreground" title={title}>{highlightSearchText(title, liveTrimmed)}</span>
                             <span className="max-w-[28%] shrink-0 truncate typography-meta text-muted-foreground" title={project}>{project}</span>
                             {!isMobile && index < 9 ? <Kbd className="h-5 min-w-8 shrink-0 rounded-full border-0 bg-interactive-selection px-2 text-muted-foreground shadow-none">{mac ? '⌘' : 'Ctrl+'}{index + 1}</Kbd> : null}
                           </div>
+                        </CommandItem>
+                      );
+                    })}
+                  </CommandGroup>
+                );
+              }
+              if (groupKey === 'messages' && contentHits.length > 0) {
+                return (
+                  <CommandGroup key="messages" heading={t('commandPalette.group.messages')} className={GROUP_CLASS}>
+                    {contentHits.map((hit) => {
+                      const known = activeSessions.find((session) => session.id === hit.sessionID);
+                      const title = known?.title || t('commandPalette.session.untitled');
+                      return (
+                        <CommandItem
+                          key={`message:${hit.sessionID}:${hit.messageID}`}
+                          value={`message:${hit.sessionID}:${hit.messageID}`}
+                          onSelect={() => handleOpenContentHit(hit)}
+                          className="flex-col items-stretch gap-0.5 rounded-lg px-3 py-2"
+                        >
+                          <span className="truncate typography-meta text-muted-foreground" title={title}>{highlightSearchText(title, liveTrimmed)}</span>
+                          <span className="line-clamp-2 typography-ui-label text-foreground">
+                            <span className="font-medium text-muted-foreground">{t(hit.role === 'user' ? 'commandPalette.message.user' : 'commandPalette.message.assistant')}</span>
+                            <span className="text-muted-foreground">: </span>
+                            {highlightSearchText(hit.snippet, liveTrimmed)}
+                          </span>
                         </CommandItem>
                       );
                     })}
@@ -700,8 +773,8 @@ export const CommandPalette: React.FC<{ presentation?: 'dialog' | 'page'; onBack
                           className={ITEM_CLASS}
                         >
                           <CommandPaletteResult
-                            title={highlightedTitle(file.name, liveTrimmed)}
-                            description={display !== file.name ? highlightedTitle(display, liveTrimmed) : undefined}
+                            title={highlightSearchText(file.name, liveTrimmed)}
+                            description={display !== file.name ? highlightSearchText(display, liveTrimmed) : undefined}
                           />
                         </CommandItem>
                       );
@@ -721,7 +794,7 @@ export const CommandPalette: React.FC<{ presentation?: 'dialog' | 'page'; onBack
                           onSelect={() => handleOpenProject(project.id, project.path)}
                           className={ITEM_CLASS}
                         >
-                          <CommandPaletteResult title={highlightedTitle(displayName, liveTrimmed)} />
+                          <CommandPaletteResult title={highlightSearchText(displayName, liveTrimmed)} />
                         </CommandItem>
                       );
                     })}
@@ -729,18 +802,15 @@ export const CommandPalette: React.FC<{ presentation?: 'dialog' | 'page'; onBack
                 );
               }
               return null;
-            })}
+            }) : (
+              <div role="status" className="px-3 py-10 text-center typography-meta text-muted-foreground">{t('common.loading')}</div>
+            )}
 
-            {sessionsStatus === 'loading' ? <div role="status" className="px-3 py-4 text-center typography-meta text-muted-foreground">{t('common.loading')}</div> : null}
-            {sessionsStatus === 'error' ? <div role="alert" className="px-3 py-4 typography-meta text-[var(--status-error)]">{t('commandPalette.error.sessions')}</div> : null}
-            {titleSearchFailed ? <div role="alert" className="px-3 py-4 typography-meta text-[var(--status-error)]">{t('commandPalette.error.sessions')}</div> : null}
-            {waitingForTitles ? <div role="status" className="px-3 py-4 text-center typography-meta text-muted-foreground">{t('common.loading')}</div> : null}
-            {waitingForFiles ? (
-              <div role="status" className="px-3 py-4 typography-meta text-muted-foreground">
-                {t('commandPalette.empty.searchingFiles')}
-              </div>
-            ) : null}
-            {fileSearchFailed ? <div role="alert" className="px-3 py-4 typography-meta text-[var(--status-error)]">{t('mobile.files.error.listFailed')}</div> : null}
+            {resultsSettled && sessionsStatus === 'loading' ? <div role="status" className="px-3 py-4 text-center typography-meta text-muted-foreground">{t('common.loading')}</div> : null}
+            {resultsSettled && sessionsStatus === 'error' ? <div role="alert" className="px-3 py-4 typography-meta text-[var(--status-error)]">{t('commandPalette.error.sessions')}</div> : null}
+            {resultsSettled && titleSearchFailed ? <div role="alert" className="px-3 py-4 typography-meta text-[var(--status-error)]">{t('commandPalette.error.sessions')}</div> : null}
+            {resultsSettled && contentSearchFailed ? <div role="alert" className="px-3 py-4 typography-meta text-[var(--status-error)]">{t('commandPalette.error.messages')}</div> : null}
+            {resultsSettled && fileSearchFailed ? <div role="alert" className="px-3 py-4 typography-meta text-[var(--status-error)]">{t('mobile.files.error.listFailed')}</div> : null}
           </CommandList>
         </Command>
   );

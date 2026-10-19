@@ -144,6 +144,7 @@ export type TranscriptQueryAdapterDeps = {
    * network path unchanged; durable data is only a first-paint continuity source.
    */
   durableStore?: TranscriptDurableStore
+  contentSearchStore?: TranscriptDurableStore
   /** Override the platform durable byte budget after a successful persist. */
   getDurableByteBudget?: () => number
   /**
@@ -393,6 +394,9 @@ export function createQueryTranscriptRepository(
       getProtectScopes: () => activeRegistry.listRetained().map(toTranscriptDurableScope),
       getByteBudget: deps.getDurableByteBudget,
     })
+    : undefined
+  const contentSearchQueue = deps.contentSearchStore
+    ? createTranscriptDurableQueryQueue(deps.contentSearchStore, { getByteBudget: () => 32 * 1024 * 1024 })
     : undefined
   /**
    * Authority-tail flight started after a durable first paint. Observer status
@@ -808,11 +812,12 @@ export function createQueryTranscriptRepository(
     identity: ReturnType<typeof resolveScopeIdentity>,
     info: Message,
     parts: readonly Part[] | undefined,
+    queue = durableQueue,
   ) => {
-    if (!durableQueue) return
+    if (!queue) return
     // Closed projection must never write filtered snapshots as full durable rows.
-    if (!getIncludeReasoningProjection()) return
-    void durableQueue.persistSettled(toTranscriptDurableScope(identity), info, parts ?? [])
+    if (queue === durableQueue && !getIncludeReasoningProjection()) return
+    void queue.persistSettled(toTranscriptDurableScope(identity), info, parts ?? [])
   }
 
   const scheduleDurableAfterApply = (
@@ -820,19 +825,20 @@ export function createQueryTranscriptRepository(
     identity: ReturnType<typeof resolveScopeIdentity>,
     command: TranscriptCommand,
     result: TranscriptCommandResult,
+    queue = durableQueue,
   ) => {
-    if (!durableQueue || suppressDurableWrite > 0) return
+    if (!queue || (queue === durableQueue && suppressDurableWrite > 0)) return
     // Bypass durable writes while reasoning is projected off so filtered Query
     // snapshots never replace full on-disk records used on re-open.
-    if (!getIncludeReasoningProjection()) return
+    if (queue === durableQueue && !getIncludeReasoningProjection()) return
     if (!result.applied || !result.changed) return
     const durableScope = toTranscriptDurableScope(identity)
     if (command.type === "remove-message") {
-      void durableQueue.removeMessage(durableScope, command.messageID)
+      void queue.removeMessage(durableScope, command.messageID)
       return
     }
     if (command.type === "reset" || command.type === "revert-committed") {
-      void durableQueue.clearSession(durableScope)
+      void queue.clearSession(durableScope)
       if (command.type === "reset" && command.page) {
         const transcript = projectTranscript(scope)
         for (const record of command.page.records) {
@@ -841,6 +847,7 @@ export function createQueryTranscriptRepository(
             identity,
             info,
             transcript.partsByMessageID[record.info.id] ?? record.parts,
+            queue,
           )
         }
       } else if (command.type === "revert-committed") {
@@ -849,7 +856,7 @@ export function createQueryTranscriptRepository(
         for (const id of transcript.messageOrder) {
           const info = transcript.messagesByID[id]
           if (!info) continue
-          persistSettledRecord(identity, info, transcript.partsByMessageID[id])
+          persistSettledRecord(identity, info, transcript.partsByMessageID[id], queue)
         }
       }
       return
@@ -867,13 +874,13 @@ export function createQueryTranscriptRepository(
       for (const event of events) {
         const action = transcriptDurableSseAction(event)
         if (action.action === "remove") {
-          void durableQueue.removeMessage(durableScope, action.messageID)
+          void queue.removeMessage(durableScope, action.messageID)
           continue
         }
         if (action.action === "skip") continue
         const info = transcript.messagesByID[action.messageID]
         if (!info) continue
-        persistSettledRecord(identity, info, transcript.partsByMessageID[action.messageID])
+        persistSettledRecord(identity, info, transcript.partsByMessageID[action.messageID], queue)
       }
       return
     }
@@ -883,8 +890,17 @@ export function createQueryTranscriptRepository(
       for (const record of records) {
         const info = transcript.messagesByID[record.info.id]
         if (!info) continue
-        persistSettledRecord(identity, info, transcript.partsByMessageID[record.info.id])
+        persistSettledRecord(identity, info, transcript.partsByMessageID[record.info.id], queue)
       }
+    }
+  }
+
+  const indexLoadedSearchTranscript = (scope: TranscriptScope, identity: ReturnType<typeof resolveScopeIdentity>) => {
+    if (!contentSearchQueue || !liveIdentityMatches(identity)) return
+    const transcript = projectTranscript(scope)
+    for (const id of transcript.messageOrder) {
+      const info = transcript.messagesByID[id]
+      if (info) persistSettledRecord(identity, info, transcript.partsByMessageID[id], contentSearchQueue)
     }
   }
 
@@ -1600,6 +1616,7 @@ export function createQueryTranscriptRepository(
       }
       })()
       scheduleDurableAfterApply(scope, identity, command, result)
+      if (contentSearchQueue) scheduleDurableAfterApply(scope, identity, command, result, contentSearchQueue)
       if (result.applied) {
         // Lazy suppliers: disabled / SSE noise / unchanged batches never project.
         recordTranscriptCommandDiagnostics({
@@ -1715,6 +1732,7 @@ export function createQueryTranscriptRepository(
       if (needsAuthorityTail(scope) && readData(scope) !== undefined) {
         const startedAt = Date.now()
         const transcript = await runAuthorityInitial(scope, captured)
+        indexLoadedSearchTranscript(scope, captured)
         recordTranscriptDiagnostics(snapshotTranscriptDiagnostics({
           kind: "ensure-initial",
           sessionID: captured.sessionID,
@@ -1743,6 +1761,7 @@ export function createQueryTranscriptRepository(
       ) {
         const startedAt = Date.now()
         const transcript = await runAuthorityHotRevalidate(scope, captured)
+        indexLoadedSearchTranscript(scope, captured)
         recordTranscriptDiagnostics(snapshotTranscriptDiagnostics({
           kind: "ensure-initial",
           sessionID: captured.sessionID,
@@ -1807,6 +1826,7 @@ export function createQueryTranscriptRepository(
       cacheBudget.noteScopeObserved(toCacheScope(scope))
       enforceBudgetAfterWrite(scope)
       const transcript = repository.getTranscript(scope)
+      indexLoadedSearchTranscript(scope, captured)
       recordTranscriptDiagnostics(snapshotTranscriptDiagnostics({
         kind: "ensure-initial",
         sessionID: captured.sessionID,
@@ -1846,6 +1866,7 @@ export function createQueryTranscriptRepository(
         // Active transcript retains all pages; enforce only bounds inactive peers.
         enforceBudgetAfterWrite(scope)
         const transcript = repository.getTranscript(scope)
+        indexLoadedSearchTranscript(scope, captured)
         recordTranscriptDiagnostics(snapshotTranscriptDiagnostics({
           kind: "http-page",
           sessionID: captured.sessionID,
@@ -2036,6 +2057,7 @@ export function createQueryTranscriptRepository(
     },
 
     async destructiveReset(scope) {
+      await contentSearchQueue?.clearSession(toTranscriptDurableScope(resolveScopeIdentity(scope, deps)))
       const resetDiffBefore = tryCaptureTranscriptCanonicalSnapshot(() =>
         repository.getTranscript(scope),
       )

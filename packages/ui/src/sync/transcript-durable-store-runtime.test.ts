@@ -162,6 +162,7 @@ describe("runtime transcript durable store selection", () => {
 
     const webHttp = spyStore("web-http")
     const webIdb = spyStore("web-idb")
+    const search = spyStore("search")
     await webIdb.inner.upsertSettled(SCOPE, info, parts)
     await clearCurrentRuntimeTranscriptCache({
       isDesktopShell: () => false,
@@ -170,8 +171,10 @@ describe("runtime transcript durable store selection", () => {
       isCapacitorApp: () => false,
       createHttpStore: () => webHttp.store,
       createIndexedDBStore: () => webIdb.store,
+      createContentSearchStore: () => search.store,
     })
     expect(webIdb.calls).toContain("web-idb:clearAll")
+    expect(search.calls).toContain("search:clearAll")
     expect(webHttp.calls).not.toContain("web-http:clearAll")
     expect((await webIdb.inner.readSession(SCOPE)).records).toEqual([])
   })
