@@ -10,6 +10,10 @@ Use `render()`, not `mount()`: `mermaidViewer.ts` remains the sole pan/zoom/resi
 
 `ToolOutputDialog` presents Mermaid on a viewport-filling opaque canvas with safe-area-aware controls, independent of diagram aspect ratio. The existing viewer fits the diagram and owns pan/zoom. Mermaid and image previews register overlay routes with the mobile Back coordinator so system/gesture/history Back dismisses the preview before the underlying page. Image pointer-dismissal guards never block explicit Back. Coverage: `ToolOutputDialog.preview.test.tsx`.
 
+## Composer closed-picker work
+
+Project and branch picker catalogs are rendered by leaf components inside the existing popup/sheet presence boundary (`DraftProjectItems`, `BranchList`, `WorktreeItems`). Composer typing must not filter or construct closed project/branch rows in the parent render: hiding a portal does not defer evaluation of inline JSX array maps. The popup remains mounted through its normal exit lifecycle, so list content survives closing animations without an extra presence flag or cache. `composerClosedPickers.test.tsx` covers repeated closed renders, first opening, selection and closing again with 300-entry catalogs on desktop and mobile presentations.
+
 ## Composer pointer focus boundary
 
 `composerFocus.preventComposerActionPointerFocus` owns the mobile form's capture policy. Toolbar actions inside the actual composer DOM prevent default focus and mark the composer gesture; the textarea and attachment controls retain their existing exceptions. React portal events still traverse the parent form, so the handler must check `currentTarget.contains(target)` before applying this policy. Model/agent pickers and other portaled dialogs own their inputs independently: do not cancel their pointerdown or compensate with manual pointerup focus. `MobileWindowMotion.focus.test.tsx` exercises this production handler with the real portaled picker, including toolbar prevention and search permission.

@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [2.0.11-beta.27] - 2026-10-19
+
+### 修复
+
+- 修复聊天输入时反复构造已关闭的项目、分支选择菜单导致的卡顿，减少连续输入的主线程开销，兼顾桌面和移动端。
+
 ## [2.0.11-beta.26] - 2026-10-19
 
 ### 修复

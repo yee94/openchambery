@@ -597,6 +597,36 @@ RevertedMessageDock.displayName = 'RevertedMessageDock';
 // and mobile bottom sheet) for actions beyond direct file attach.
 const ATTACHMENT_EXPANSION_MENU_ENABLED = false;
 
+// Keep catalog enumeration inside the popup's presence boundary, not on each keystroke.
+function DraftProjectItems({ projects, query, renderLabel, onSelect, selectedId }: {
+    projects: ReturnType<typeof useProjectsStore.getState>['projects'];
+    query: string;
+    renderLabel: (project: ReturnType<typeof useProjectsStore.getState>['projects'][number]) => React.ReactNode;
+    onSelect?: (id: string) => void;
+    selectedId?: string;
+}) {
+    return projects.filter((project) => (
+        matchesModelSearch(getProjectDisplayLabel(project), query)
+        || matchesModelSearch(project.path, query)
+    )).map((project) => onSelect ? (
+        <button
+            key={project.id}
+            type="button"
+            className="flex w-full cursor-pointer items-center gap-2 rounded-lg px-2 py-2.5 text-left typography-ui-label hover:bg-[var(--interactive-hover)]"
+            onClick={() => onSelect(project.id)}
+        >
+            <span className="min-w-0 flex-1">{renderLabel(project)}</span>
+            {project.id === selectedId ? (
+                <Icon name="check" className="h-4 w-4 flex-shrink-0 text-muted-foreground" />
+            ) : null}
+        </button>
+    ) : (
+        <SelectItem key={project.id} value={project.id} className="max-w-[24rem] truncate">
+            {renderLabel(project)}
+        </SelectItem>
+    ));
+}
+
 type ComposerAttachmentControlsProps = {
     isVSCode: boolean;
     footerIconButtonClass: string;
@@ -7479,14 +7509,7 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
                                         placeholder={t('chat.chatInput.draftPicker.searchProjects')}
                                         className="mb-1 h-8 min-w-56"
                                     />
-                                    {projects.filter((project) => (
-                                        matchesModelSearch(getProjectDisplayLabel(project), desktopDraftProjectQuery)
-                                        || matchesModelSearch(project.path, desktopDraftProjectQuery)
-                                    )).map((project) => (
-                                        <SelectItem key={project.id} value={project.id} className="max-w-[24rem] truncate">
-                                            {renderProjectLabelWithIcon(project)}
-                                        </SelectItem>
-                                    ))}
+                                    <DraftProjectItems projects={projects} query={desktopDraftProjectQuery} renderLabel={renderProjectLabelWithIcon} />
                                     {/* Fixed footer action: replace the removed sidebar "add project" toolbar button. */}
                                     <SelectSeparator />
                                     <button
@@ -8086,27 +8109,16 @@ const ChatInputRuntime: React.FC<ChatInputProps> = ({
                     </div>
                     <ScrollableOverlay outerClassName="min-h-0 flex-1" disableHorizontal>
                         <div className="flex flex-col px-3 pb-2">
-                            {projects
-                                .filter((project) => {
-                                    return matchesModelSearch(getProjectDisplayLabel(project), mobileDraftPickerQuery)
-                                        || matchesModelSearch(project.path, mobileDraftPickerQuery);
-                                })
-                                .map((project) => (
-                                    <button
-                                        key={project.id}
-                                        type="button"
-                                        className="flex w-full cursor-pointer items-center gap-2 rounded-lg px-2 py-2.5 text-left typography-ui-label hover:bg-[var(--interactive-hover)]"
-                                        onClick={() => {
-                                            handleDraftProjectChange(project.id);
-                                            setMobileDraftPicker(null);
-                                        }}
-                                    >
-                                        <span className="min-w-0 flex-1">{renderProjectLabelWithIcon(project)}</span>
-                                        {project.id === selectedDraftProject.id ? (
-                                            <Icon name="check" className="h-4 w-4 flex-shrink-0 text-muted-foreground" />
-                                        ) : null}
-                                    </button>
-                                ))}
+                            <DraftProjectItems
+                                projects={projects}
+                                query={mobileDraftPickerQuery}
+                                renderLabel={renderProjectLabelWithIcon}
+                                selectedId={selectedDraftProject.id}
+                                onSelect={(id) => {
+                                    handleDraftProjectChange(id);
+                                    setMobileDraftPicker(null);
+                                }}
+                            />
                         </div>
                     </ScrollableOverlay>
                     {/* Fixed footer action: replace the removed sidebar "add project" toolbar button. */}
