@@ -182,6 +182,51 @@ describe('MarkstreamRenderer fenced code blocks (OpenChamber chrome)', () => {
     return codeText();
   };
 
+  test.each([false, true])('keeps dollar currency in prose (streaming=%s)', async (isStreaming) => {
+    const paragraphs = [
+      '你说得对。实时汇率大约是 6.69，不是我上次推出来的 8.4。$495 就是 ¥3312，Magpie 缓存里的汇率也是 6.69274。',
+      '上次把 Usage 页的 ¥4446 除错了分母。那个 ¥4446 是按 6.69 乘出来的，背后大约是 $664，不是 Sessions 统计里的 $530。Sessions 那条把 gpt-6-astra 超过 27.2 万的阶梯剥掉了，按基础价只剩 $530，乘 6.69 只有 ¥3545，不是你看到的 4000 多。',
+      '所以同样用现在的汇率，Runmark 对齐到北京时间今天是 $495 / ¥3312，Magpie Usage 页是 $664 / ¥4446。差的大约 $169 / ¥1100 是真差距：Magpie 从会话文件多算了 Runmark 没入库的调用，而且按每轮上下文把长上下文的 cache 算成 $2/M 而不是 $1/M。不是汇率把数字撑大的。',
+    ];
+    await render({ content: paragraphs.join('\n\n'), isStreaming });
+    await flush(200);
+    for (const paragraph of paragraphs) expect(container.textContent).toContain(paragraph);
+    expect(container.querySelector('.katex, .math-inline')).toBeNull();
+  });
+
+  test.each(['$I_m$', '$2\\pi$', '$3x$', '$$E=mc^2$$', '\\(x+1\\)'])('preserves explicit math %s beside currency', async (formula) => {
+    await render({ content: `Cost $50, formula ${formula}.` });
+    await flush(200);
+    expect(container.textContent).toContain('Cost $50, formula');
+    expect(container.querySelector('.katex')).not.toBeNull();
+  });
+
+  test.each(['$$\nx+1\n$$', '\\[\nx+1\n\\]'])('preserves block math %s', async (formula) => {
+    await render({ content: `Cost $50.\n\n${formula}` });
+    await flush(200);
+    expect(container.textContent).toContain('Cost $50.');
+    expect(container.querySelector('.katex')).not.toBeNull();
+  });
+
+  test('preserves escaped dollars and code spans', async () => {
+    await render({ content: 'Price \\$50 and `$I_m$` with **bold**.' });
+    await flush(200);
+    expect(container.textContent).toContain('Price $50 and $I_m$ with bold.');
+    expect(container.querySelector('strong')?.textContent).toBe('bold');
+    expect(container.querySelector('.katex')).toBeNull();
+  });
+
+  test('keeps incomplete inline math literal until its closing delimiter arrives', async () => {
+    await render({ content: 'Price $50, formula $x+1', isStreaming: true });
+    await flush(200);
+    expect(container.textContent).toContain('Price $50, formula $x+1');
+    expect(container.querySelector('.katex')).toBeNull();
+    await render({ content: 'Price $50, formula $x+1$', isStreaming: false });
+    await flush(200);
+    expect(container.textContent).toContain('Price $50, formula');
+    expect(container.querySelector('.katex')).not.toBeNull();
+  });
+
   test.each(['d2', 'infographic'])('%s fences stay OpenChamber code cards, not library diagram shells', async (language) => {
     const fence = ['```' + language, 'x -> y', '```'].join('\n');
     await render({ content: fence });

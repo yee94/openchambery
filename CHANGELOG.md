@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [2.1.1-beta.1] - 2026-10-19
+
+### 修复
+
+- 修复聊天正文中的美元金额被误识别为数学公式，导致美元符号消失、文字变斜体和空格丢失的问题；流式与完整消息均保留正常金额文本，并继续支持显式数学公式。
+
 ## [2.1.0] - 2026-10-19
 
 ### 新增

@@ -1,5 +1,9 @@
 # Chat components
 
+## Markdown math delimiters
+
+Markstream's `customMarkdownIt` adapter replaces its permissive inline math rule with the shared `markdownMath.matchDollarMath` pairing used by the legacy renderer. Dollar currency in prose must remain literal in both streaming and completed messages. Explicit `$...$`, `$$...$$`, and `\(...\)` inline formulas remain supported; incomplete inline formulas stay literal until their closing delimiter arrives. Block math remains owned by Markstream's block rules. Code spans and escaped dollar signs follow the normal Markdown tokenizer. Coverage: `MarkstreamRenderer.codeblock.regression.test.tsx` and `markdown/markdownMath.test.ts`.
+
 ## Mermaid diagrams
 
 `markdown/mermaidRender.ts` owns synchronous Pele SVG rendering for both Markdown paths, tool previews and fullscreen diagrams across all runtimes. There is no ASCII mode or renderer selector. UI-store v14 drops the obsolete `mermaidRenderingMode`; host/client settings sanitizers ignore old values.
