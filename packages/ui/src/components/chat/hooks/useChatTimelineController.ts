@@ -857,7 +857,6 @@ export const useChatTimelineController = ({
         displayedHistoryRef.current = { scope: historyScope, messages: renderedMessages };
     }, [historyScope, renderedMessages]);
     const [, checkHistoryGesture] = React.useReducer((tick: number) => tick + 1, 0);
-    useInterval(checkHistoryGesture, holdNonVirtualPrepend ? 50 : null);
 
     useIsomorphicLayoutEffect(() => {
         resolvePendingRenderWaiters();
@@ -913,24 +912,44 @@ export const useChatTimelineController = ({
         scrollHeight: number;
     } | null>(null);
 
-    useIsomorphicLayoutEffect(() => {
-        if (!holdNonVirtualPrepend || !scrollRef.current) return;
-        // The fetch transaction may finish before the gesture. Seed the old
-        // geometry now so later adoption cannot treat the entire list as growth.
+    useInterval(useEvent(() => {
+        const container = scrollRef.current;
+        if (!container || !holdNonVirtualPrepend) return;
+        // Sample the still-displayed DOM immediately before allowing adoption.
+        // Markdown can resize during the hold without changing renderedMessages;
+        // a fetch-time height would mix that resize into the prepend delta.
+        const height = container.scrollHeight;
         prependTrackingRef.current = {
             oldestId: renderedMessages[0]?.info?.id ?? null,
             newestId: renderedMessages.at(-1)?.info?.id ?? null,
-            scrollHeight: scrollRef.current.scrollHeight,
+            scrollHeight: height,
         };
-    }, [holdNonVirtualPrepend, renderedMessages, scrollRef]);
+        const snap = prePrependScrollRef.current;
+        if (snap) {
+            prePrependScrollRef.current = {
+                ...snap,
+                height,
+                top: container.scrollTop,
+                anchor: captureViewportAnchor(),
+            };
+        }
+        checkHistoryGesture();
+    }), holdNonVirtualPrepend ? 50 : null);
 
+    const trackedHistoryScrollerRef = React.useRef<{ container: HTMLElement; scope: typeof historyScope } | null>(null);
     useIsomorphicLayoutEffect(() => {
         if (!isMobileSurfaceRuntime()) return;
         const container = scrollRef.current;
-        if (!container) return;
+        if (!container) {
+            trackedHistoryScrollerRef.current = null;
+            return;
+        }
+        const tracked = trackedHistoryScrollerRef.current;
+        if (tracked?.container === container && tracked.scope === historyScope) return;
         attachTouchGestureTracking(container);
         resetTouchGestureTracking(container);
-    }, [historyScope, scrollRef]);
+        trackedHistoryScrollerRef.current = { container, scope: historyScope };
+    });
 
     useIsomorphicLayoutEffect(() => {
         stopKeeper();
