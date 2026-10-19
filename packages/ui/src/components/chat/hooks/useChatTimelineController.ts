@@ -378,16 +378,9 @@ export const shouldHoldHistoryViewportAnchor = (_input: {
     heldForMessages: readonly unknown[] | null;
 }): boolean => false;
 
-// iOS WKWebView ignores programmatic scrollTop writes while a touch drag or
-// momentum (fling) scroll is active: the native scroll animation keeps running
-// and overwrites the value on the next frame. The mobile history threshold is
-// large enough that the prepend commit almost always lands mid-fling, so a
-// plain `container.scrollTop = target` never sticks. Toggling overflow kills
-// the native scroll synchronously (pre-paint, invisible inside a layout
-// effect); a short post-paint watchdog re-asserts the target if residual
-// momentum still drags the viewport upward.
-const MOMENTUM_WATCHDOG_FRAMES = 20;
-const MOMENTUM_WATCHDOG_TOLERANCE_PX = 4;
+// Mobile prepends normally adopt after the gesture quiet window. The one-shot
+// overflow toggle also handles partial-turn growth that bypasses staging on
+// WKWebView. Once committed, compensation must not reclaim subsequent scrolls.
 // While the user's finger is DOWN, the same overflow toggle is fatal to the
 // gesture itself: WKWebView latches the pan to the scroll container, and the
 // synchronous overflow flip breaks that latch — the page stops following the
@@ -410,22 +403,15 @@ type TouchGestureState = {
     settleScheduled: boolean;
 };
 
-type MomentumWriteControl = {
-    generation: number;
-};
-
 const touchGestureStates = new WeakMap<HTMLElement, TouchGestureState>();
-const momentumWriteControls = new WeakMap<HTMLElement, MomentumWriteControl>();
 
-const bumpMomentumWriteGeneration = (container: HTMLElement): number => {
-    const control = momentumWriteControls.get(container) ?? { generation: 0 };
-    control.generation += 1;
-    momentumWriteControls.set(container, control);
-    return control.generation;
+const isHistoryGestureActive = (container: HTMLElement | null): boolean => {
+    const gesture = container ? touchGestureStates.get(container) : undefined;
+    return Boolean(gesture && (gesture.touches > 0 || performance.now() - gesture.lastScrollAt < 160));
 };
 
 /**
- * Drop leftover touch-defer state and cancel in-flight momentum watchdogs.
+ * Drop leftover touch-defer state.
  * Session switches reuse the same scroll element; a pending lift-off write
  * from the previous session (or the opening tap) must not yank the new
  * transcript to a stale mid-timeline target.
@@ -438,7 +424,6 @@ export const resetTouchGestureTracking = (container: HTMLElement) => {
         state.pending = null;
         state.settleScheduled = false;
     }
-    bumpMomentumWriteGeneration(container);
 };
 
 /**
@@ -491,7 +476,6 @@ const scheduleTouchCompensationSettle = (container: HTMLElement, state: TouchGes
 };
 
 const applyDefeatingMomentumWrite = (container: HTMLElement, target: number) => {
-    const generation = bumpMomentumWriteGeneration(container);
     const previousOverflowX = container.style.overflowX;
     const previousOverflowY = container.style.overflowY;
     container.style.overflow = 'hidden';
@@ -500,33 +484,6 @@ const applyDefeatingMomentumWrite = (container: HTMLElement, target: number) => 
     container.style.overflowX = previousOverflowX;
     container.style.overflowY = previousOverflowY;
     container.scrollTop = target;
-
-    if (typeof window === 'undefined') return;
-    let cancelled = false;
-    let frames = 0;
-    const cancelOnUserTouch = () => {
-        cancelled = true;
-    };
-    container.addEventListener('touchstart', cancelOnUserTouch, { passive: true, once: true });
-    const watch = () => {
-        if (cancelled) return;
-        if ((momentumWriteControls.get(container)?.generation ?? 0) !== generation) {
-            container.removeEventListener('touchstart', cancelOnUserTouch);
-            return;
-        }
-        // Only correct upward drift (residual momentum). Downward movement or
-        // content growth above the viewport must not be fought here.
-        if (container.scrollTop < target - MOMENTUM_WATCHDOG_TOLERANCE_PX) {
-            container.scrollTop = target;
-        }
-        frames += 1;
-        if (frames < MOMENTUM_WATCHDOG_FRAMES) {
-            window.requestAnimationFrame(watch);
-        } else {
-            container.removeEventListener('touchstart', cancelOnUserTouch);
-        }
-    };
-    window.requestAnimationFrame(watch);
 };
 
 /**
@@ -845,13 +802,12 @@ export const useChatTimelineController = ({
     // finger: iOS ignores the compensating scrollTop until lift-off.
     const displayedHistoryRef = React.useRef({ scope: historyScope, messages });
     const displayedHistory = displayedHistoryRef.current;
-    const gesture = scrollRef.current ? touchGestureStates.get(scrollRef.current) : undefined;
     const holdNonVirtualPrepend = displayedHistory.scope === historyScope
         && displayedHistory.messages !== messages
         && isMobileSurfaceRuntime()
         && !messageListRef.current?.isHistoryVirtualized()
         && hasInsertedBeforeKnownOldest(displayedHistory.messages[0]?.info?.id ?? null, messages[0]?.info?.id ?? null, messages)
-        && Boolean(gesture && (gesture.touches > 0 || performance.now() - gesture.lastScrollAt < 160));
+        && isHistoryGestureActive(scrollRef.current);
     const renderedMessages = holdNonVirtualPrepend ? displayedHistory.messages : messages;
     useIsomorphicLayoutEffect(() => {
         displayedHistoryRef.current = { scope: historyScope, messages: renderedMessages };
@@ -896,6 +852,7 @@ export const useChatTimelineController = ({
             container,
             anchor,
             pending: true,
+            isUserScrolling: isMobileSurfaceRuntime() ? () => isHistoryGestureActive(container) : undefined,
         });
         return historyAnchorKeeperRef.current;
     });
@@ -909,7 +866,7 @@ export const useChatTimelineController = ({
     const prependTrackingRef = React.useRef<{
         oldestId: string | null;
         newestId: string | null;
-        scrollHeight: number;
+        scrollHeight: number | null;
     } | null>(null);
 
     useInterval(useEvent(() => {
@@ -1018,7 +975,7 @@ export const useChatTimelineController = ({
                 newestId: currentNewestId,
                 scrollHeight: scrollHeight
                     ?? prependTrackingRef.current?.scrollHeight
-                    ?? 0,
+                    ?? null,
             };
         };
 
@@ -1109,7 +1066,7 @@ export const useChatTimelineController = ({
             // exact height the non-virtualized prepend added above, with no
             // intermediate frame for auto-follow to fight.
             const measuredHeight = container.scrollHeight;
-            const delta = measuredHeight - prev.scrollHeight;
+            const delta = prev.scrollHeight === null ? 0 : measuredHeight - prev.scrollHeight;
             if (delta > 0) {
                 const target = container.scrollTop + delta;
                 if (isMobileSurfaceRuntime()) {
@@ -1297,6 +1254,14 @@ export const useChatTimelineController = ({
                     newestId: beforeMessages[beforeMessages.length - 1]?.info?.id ?? null,
                 };
                 prePrependScrollRef.current = armedSnapshot;
+                // Momentum can invalidate the absolute snapshot before the page
+                // arrives. Its relative fallback still needs the pre-fetch height,
+                // including when the page adds only hidden records and no pixels.
+                prependTrackingRef.current = {
+                    oldestId: armedSnapshot.oldestId,
+                    newestId: armedSnapshot.newestId,
+                    scrollHeight: armedSnapshot.height,
+                };
                 armedKeeper = startKeeper() ?? null;
             }
 

@@ -1647,7 +1647,8 @@ export function shareSessionTranscriptData(
   if (!newData) return oldData
   if (!oldData || oldData.pages.length === 0) {
     return freezeSessionTranscriptData(newData)
-  }  if (newData.pages.length === oldData.pages.length) {
+  }
+  if (newData.pages.length === oldData.pages.length) {
     const shared = shareEqualLength(oldData, newData)
     if (shared === oldData) return oldData
     // remove-message / message.removed keep remaining row refs. A lagging
@@ -1688,6 +1689,10 @@ export function shareSessionTranscriptData(
     return merged.data
   }
   if (newData.pages.length === 1 && oldData.pages.length > 1) {
+    // Revert commits collapse pages too; preserve the authoritative cut.
+    if (isAuthoritativeSubsetTranscript(oldData, newData)) {
+      return freezeSessionTranscriptData(newData)
+    }
     // Query refetch collapsed InfiniteData to a single tail. Keep live
     // messages the snapshot omitted (including the just-finished turn).
     const incoming = newData.pages[0]!
@@ -1716,7 +1721,13 @@ function isAuthoritativeSubsetTranscript(
 ): boolean {
   const previousIDs = collectTranscriptMessageIDs(previous)
   const nextIDs = collectTranscriptMessageIDs(next)
-  if (nextIDs.size === 0 || nextIDs.size >= previousIDs.size) return false
+  if (nextIDs.size >= previousIDs.size) return false
+  if (nextIDs.size === 0) {
+    // Empty has no row references to prove a local removal. Revert/remove
+    // reducers advance the live revision; raw HTTP pages start at zero.
+    const previousRevision = Math.max(0, ...previous.pages.map(page => page.sync.liveRevision))
+    return next.pages.some(page => page.sync.liveRevision > previousRevision)
+  }
   for (const id of nextIDs) {
     if (!previousIDs.has(id)) return false
   }

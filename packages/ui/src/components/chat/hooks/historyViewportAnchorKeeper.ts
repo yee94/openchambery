@@ -7,7 +7,7 @@
  * if scrollTop changed since the last keeper write/rebase, correct() rebases
  * and skips compensation so a mutation microtask cannot roll back the user.
  *
- * Pure DOM module. Callers gate mobile / virtualized paths.
+ * Pure DOM module. Callers gate virtualized paths and supply mobile gesture state.
  */
 
 export interface HistoryViewportAnchor {
@@ -84,6 +84,8 @@ export const createHistoryViewportAnchorKeeper = (input: {
     maxLifetimeMs?: number;
     /** Request ownership keeps the anchor alive while awaiting the prepend. */
     pending?: boolean;
+    /** The owning controller supplies live touch/momentum state when applicable. */
+    isUserScrolling?: () => boolean;
 }): HistoryViewportAnchorKeeper => {
     const {
         container,
@@ -101,6 +103,7 @@ export const createHistoryViewportAnchorKeeper = (input: {
     let quiesceTimer: ReturnType<typeof setTimeout> | null = null;
     let maxLifetimeTimer: ReturnType<typeof setTimeout> | null = null;
     let microtaskScheduled = false;
+    let needsGestureRebase = false;
     /** Last scrollTop observed after our own write or an accepted rebase. */
     let lastKnownScrollTop = container.scrollTop;
 
@@ -156,10 +159,19 @@ export const createHistoryViewportAnchorKeeper = (input: {
         anchor.messageId = live.messageId;
         anchor.offsetTop = live.offsetTop;
         lastKnownScrollTop = container.scrollTop;
+        needsGestureRebase = false;
     };
 
     const correct = () => {
         if (disposed) return;
+        if (input.isUserScrolling?.()) {
+            needsGestureRebase = true;
+            return;
+        }
+        if (needsGestureRebase) {
+            rebase();
+            return;
+        }
 
         // External scrollTop write landed before this mutation microtask
         // (user scroll / virtualizer). Accept reality — never correct against
@@ -209,7 +221,9 @@ export const createHistoryViewportAnchorKeeper = (input: {
     const onScroll = () => {
         // Our own correction's delayed scroll event is not new user intent.
         // Hydration may already have moved the anchor since that write.
-        if (Math.abs(container.scrollTop - lastKnownScrollTop) > CORRECT_EPSILON_PX) {
+        if (input.isUserScrolling?.()) {
+            needsGestureRebase = true;
+        } else if (needsGestureRebase || Math.abs(container.scrollTop - lastKnownScrollTop) > CORRECT_EPSILON_PX) {
             rebase();
         }
         // Scrolling means the keeper is still needed: later hydration /

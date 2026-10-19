@@ -562,6 +562,19 @@ describe('setScrollTopDefeatingMomentum touch-aware compensation', () => {
         container.remove();
     });
 
+    test('a completed compensation does not reclaim later scroll movement', async () => {
+        const container = makeContainer();
+        container.scrollTop = 100;
+        setScrollTopDefeatingMomentum(container, 300, 200);
+        expect(container.scrollTop).toBe(300);
+        // Native momentum or another owner may move the viewport without a
+        // fresh touchstart. The completed prepend must not pin its old target.
+        container.scrollTop = 250;
+        await flushFrame();
+        expect(container.scrollTop).toBe(250);
+        container.remove();
+    });
+
     test('touch active: defers the write, applies at lift-off anchored to the live position', async () => {
         const container = makeContainer();
         container.scrollTop = 500;

@@ -3054,6 +3054,30 @@ describe("remote revert.committed retires late reads (ticket 08)", () => {
     repo.destroy()
   })
 
+  test.each(["entire-session", "paged-tail"])("loaded Query applies revert without restoring removed history (%s)", async (mode) => {
+    const repo = createQueryTranscriptRepository({
+      client, transport: TRANSPORT, generation: GENERATION,
+      probe: { getTransport: () => TRANSPORT, getGeneration: () => GENERATION },
+      fetcher: async ({ before }) => before
+        ? transportPage(olderRecords, { complete: true })
+        : transportPage(tailRecords, mode === "paged-tail" ? { cursor: "older", complete: false } : { complete: true }),
+    })
+    try {
+      await repo.ensureInitial(scope)
+      if (mode === "paged-tail") await repo.fetchPreviousPage(scope)
+      repo.apply(scope, remoteRevert("msg_u3"))
+      const retained = mode === "paged-tail" ? ["msg_u1", "msg_a1"] : []
+      expect(repo.getTranscript(scope).messageOrder).toEqual(retained)
+      repo.apply(scope, { type: "optimistic-add", message: userMessage("msg_replacement", 5), parts: [textPart("p_new", "msg_replacement")] })
+      expect(repo.getTranscript(scope).messageOrder).toEqual([...retained, "msg_replacement"])
+      repo.apply(scope, { type: "revert-committed", to: "msg_u3" })
+      expect(repo.getTranscript(scope).messageOrder).toEqual([...retained, "msg_replacement"])
+    } finally {
+      repo.destroy()
+      client.clear()
+    }
+  })
+
   test("late older page released after another client's revert keeps the revert result", async () => {
     let releaseOlder: ((page: TranscriptTransportPage) => void) | undefined
     let olderCalls = 0

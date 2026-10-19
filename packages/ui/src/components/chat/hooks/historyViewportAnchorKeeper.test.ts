@@ -104,6 +104,39 @@ describe('createHistoryViewportAnchorKeeper', () => {
         document.body.innerHTML = '';
     });
 
+    test('active gestures skip layout reads and writes, then rebase before idle correction resumes', async () => {
+        let scrolling = true;
+        const options = {
+            container,
+            anchor: { messageId: 'msg-b', offsetTop: 80 },
+            isUserScrolling: () => scrolling,
+            pending: true,
+        };
+        const keeper = createHistoryViewportAnchorKeeper(options);
+        const readLayout = vi.mocked(Element.prototype.getBoundingClientRect);
+        readLayout.mockClear();
+        setRect(msgB, { top: 53, height: 100 });
+        aboveSpacer.style.height = '73px';
+        await vi.advanceTimersByTimeAsync(0);
+        await flushMicrotasks();
+        expect(container.scrollTop).toBe(200);
+        container.scrollTop = 150;
+        container.dispatchEvent(new Event('scroll'));
+        expect(readLayout).not.toHaveBeenCalled();
+        scrolling = false;
+        setRect(msgB, { top: 103, height: 100 });
+        aboveSpacer.style.height = '74px';
+        await vi.advanceTimersByTimeAsync(0);
+        await flushMicrotasks();
+        expect(container.scrollTop).toBe(150);
+        setRect(msgB, { top: 128, height: 100 });
+        aboveSpacer.style.height = '99px';
+        await vi.advanceTimersByTimeAsync(0);
+        await flushMicrotasks();
+        expect(container.scrollTop).toBe(175);
+        keeper.dispose();
+    });
+
     test('pending request outlives idle limits, then settlement restores bounded retirement', async () => {
         const keeper = createHistoryViewportAnchorKeeper({
             container,
