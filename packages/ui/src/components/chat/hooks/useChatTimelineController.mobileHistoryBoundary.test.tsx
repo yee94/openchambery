@@ -55,7 +55,7 @@ vi.mock('@/sync/transcript-repository-runtime', () => ({
     }),
 }));
 
-import { HISTORY_STALL_COOLDOWN_MS, useChatTimelineController } from './useChatTimelineController';
+import { HISTORY_STALL_COOLDOWN_MS, setScrollTopDefeatingMomentum, useChatTimelineController } from './useChatTimelineController';
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -119,6 +119,7 @@ const waitMs = async (ms: number) => {
 };
 
 type HarnessState = {
+    showScroller?: boolean;
     sessionId: string;
     isMobile: boolean;
     isPinned: boolean;
@@ -135,6 +136,7 @@ type TimelineHarnessProps = HarnessState & {
 };
 
 const TimelineHarness: React.FC<TimelineHarnessProps> = ({
+    showScroller = true,
     sessionId,
     isMobile,
     isPinned,
@@ -170,11 +172,11 @@ const TimelineHarness: React.FC<TimelineHarnessProps> = ({
         isMobile,
     });
     onApi(api);
-    return (
+    return showScroller ? (
         <div data-testid="timeline-scroll" ref={bindScrollNode}>
             <div data-testid="timeline-scroll-inner" />
         </div>
-    );
+    ) : null;
 };
 
 type Mounted = {
@@ -193,6 +195,7 @@ type Mounted = {
 const mounted: Mounted[] = [];
 
 const mountController = async (input: {
+    showScroller?: boolean;
     isMobile: boolean;
     isPinned?: boolean;
     historyMeta?: SessionHistoryMeta;
@@ -216,6 +219,7 @@ const mountController = async (input: {
         client,
         scrollRef,
         state: {
+            showScroller: input.showScroller,
             sessionId: SESSION_ID,
             isMobile: input.isMobile,
             isPinned: input.isPinned ?? true,
@@ -291,6 +295,52 @@ beforeEach(() => {
 });
 
 describe('history failure feedback with production toast store', () => {
+    test.each([-39, 80])('staged mobile prepend excludes %spx of pre-adoption body resize', async (resize) => {
+        runtimeSurface.mobileProbe = true;
+        let bodyHeight = 1228;
+        const mountedController: { current?: Mounted } = {};
+        const geometry = {
+            get scrollHeight() { return bodyHeight + ((mountedController.current?.api?.renderedMessages.length ?? 2) > 2 ? 104 : 0); },
+            clientHeight: 844,
+            scrollTop: 14.5,
+        };
+        const handle = await mountController({
+            isMobile: true,
+            isPinned: false,
+            loadMoreMessages: vi.fn(async () => undefined),
+            geometry,
+        });
+        mountedController.current = handle;
+        const container = handle.scrollRef.current!;
+        container.dispatchEvent(new Event('touchstart'));
+        await handle.setState({ messages: [message('msg_0'), ...handle.state.messages] });
+        expect(handle.api!.renderedMessages).toHaveLength(2);
+        // Nested Markdown hydration changes layout without a transcript update.
+        bodyHeight += resize;
+        container.dispatchEvent(new Event('touchend'));
+        await waitMs(80);
+        expect(handle.api!.renderedMessages).toHaveLength(3);
+        expect(container.scrollTop).toBe(118.5);
+    });
+
+    test('tracks the first touch when the transcript scroller mounts after loading', async () => {
+        runtimeSurface.mobileProbe = true;
+        const handle = await mountController({
+            showScroller: false,
+            isMobile: true,
+            isPinned: false,
+            loadMoreMessages: vi.fn(async () => undefined),
+            geometry: { scrollHeight: 1200, clientHeight: 400, scrollTop: 150 },
+        });
+        expect(handle.scrollRef.current).toBeNull();
+        await handle.setState({ showScroller: true });
+        const container = handle.scrollRef.current!;
+        container.dispatchEvent(new Event('touchstart'));
+        await handle.setState({ isPinned: true });
+        setScrollTopDefeatingMomentum(container, 250, 100);
+        expect(container.scrollTop, 'a held first gesture must defer compensation').toBe(150);
+    });
+
     test.each([true, false])('initial history stays idle until upward intent (mobile=%s)', async (isMobile) => {
         const load = vi.fn(async () => undefined);
         const handle = await mountController({ isMobile, loadMoreMessages: load });
