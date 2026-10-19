@@ -207,7 +207,11 @@ export const createHistoryViewportAnchorKeeper = (input: {
     };
 
     const onScroll = () => {
-        rebase();
+        // Our own correction's delayed scroll event is not new user intent.
+        // Hydration may already have moved the anchor since that write.
+        if (Math.abs(container.scrollTop - lastKnownScrollTop) > CORRECT_EPSILON_PX) {
+            rebase();
+        }
         // Scrolling means the keeper is still needed: later hydration /
         // materialization batches keep landing while the user reads history.
         // Rebase first (accept the new position), then stay armed for the

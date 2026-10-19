@@ -156,6 +156,27 @@ describe('createHistoryViewportAnchorKeeper', () => {
         keeper.dispose();
     });
 
+    test('a prepend scroll read-back must not accept a later hydration shift as user movement', async () => {
+        const keeper = createHistoryViewportAnchorKeeper({
+            container,
+            anchor: { messageId: 'msg-b', offsetTop: 80 },
+            pending: true,
+        });
+
+        // The controller has restored the keyed anchor after inserting history.
+        container.scrollTop = 881;
+        keeper.rebase();
+
+        // Markdown shrinks above the reader before that write's scroll event.
+        setRect(msgB, { top: 56, height: 100 });
+        aboveSpacer.style.height = '76px';
+        container.dispatchEvent(new Event('scroll'));
+        await flushMicrotasks();
+
+        expect(container.scrollTop).toBe(857);
+        keeper.dispose();
+    });
+
     test('grows content below the anchor → no compensation', async () => {
         const keeper = createHistoryViewportAnchorKeeper({
             container,
