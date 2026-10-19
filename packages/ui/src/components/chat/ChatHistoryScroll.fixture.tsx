@@ -17,7 +17,8 @@ import type { ChatMessageEntry } from './lib/turns/types';
 import type { Message, Part } from '@/lib/opencode/v2-types';
 
 const sessionID = 'history-scroll-fixture';
-const isMobile = !['desktop-short', 'partial-turn'].includes(new URLSearchParams(location.search).get('scenario') ?? '');
+const fixtureScenario = new URLSearchParams(location.search).get('scenario') ?? '';
+const isMobile = !fixtureScenario.includes('desktop') && fixtureScenario !== 'partial-turn';
 const makeRows = (start: number, count: number): ChatMessageEntry[] => Array.from({ length: count }, (_, index) => {
     const id = `message-${String(start + index).padStart(3, '0')}`;
     return {
@@ -42,7 +43,7 @@ export default function Fixture() {
         ? makeRows(20, 1).map((message) => ({ ...message, parts: message.parts.map((part) => (
             part.type === 'text' ? { ...part, text: 'Short initial transcript' } : part
         )) }))
-        : makeRows(20, scenario === 'virtualize-transition' ? 4 : 12));
+        : makeRows(20, scenario === 'virtualize-transition' ? 4 : scenario?.startsWith('fast-entry') ? 8 : 12));
     const [token, setToken] = React.useState(0);
     const [tailHeight, setTailHeight] = React.useState(0);
     const listRef = React.useRef<MessageListHandle | null>(null);
@@ -58,7 +59,7 @@ export default function Fixture() {
         currentSessionId: sessionID, sessionMessageCount: rows.length, sessionIsWorking: false, isMobile,
         onUpwardUserIntent: useEvent(() => upwardRef.current()),
     });
-    const { releaseAutoFollow, scrollRef } = auto;
+    const { releaseAutoFollow, restoreSnapshot, scrollRef } = auto;
     useEventListener('touchmove', useEvent((event: TouchEvent) => {
         fingerY.current = event.touches.item(0)?.clientY ?? fingerY.current;
     }), scrollRef, { capture: true, passive: true });
@@ -111,6 +112,11 @@ export default function Fixture() {
     React.useEffect(() => {
         const api = {
             prepare: async () => {
+                if (scenario?.startsWith('fast-entry')) {
+                    await restoreSnapshot();
+                    prepared.current = true;
+                    return;
+                }
                 releaseAutoFollow();
                 await wait(50);
                 scrollRef.current!.scrollTop = scenario === 'virtualize-transition' ? 100 : 800;
@@ -128,7 +134,7 @@ export default function Fixture() {
         }, 200);
         const prepareTimer = window.setTimeout(() => void api.prepare(), 2000);
         return () => { window.clearInterval(timer); window.clearTimeout(prepareTimer); };
-    }, [releaseAutoFollow, scrollRef, sample, scenario, resumeToBottomInstant]);
+    }, [releaseAutoFollow, restoreSnapshot, scrollRef, sample, scenario, resumeToBottomInstant]);
     return <div ref={auto.scrollRef} data-history-scroller="true" onScroll={timeline.handleHistoryScroll}
         style={{ height: '100dvh', overflowY: 'auto', overflowAnchor: 'none' }}>
         <div><MessageList ref={listRef} sessionKey={sessionID} virtualizerKey={sessionID} directory="/fixture"
