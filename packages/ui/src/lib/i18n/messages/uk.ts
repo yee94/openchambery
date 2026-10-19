@@ -2,6 +2,9 @@ import type { I18nKey } from './en';
 import { settingsDict } from './uk.settings';
 
 export const dict: Record<I18nKey, string> = {
+  'commandPalette.index.progress': 'Індексування останніх 7 днів усіх проєктів: {completed}/{total} розмов',
+  'commandPalette.index.ready': 'Усі проєкти · останні 7 днів · проіндексовано {count} повідомлень',
+  'commandPalette.index.partial': 'Частину історії не вдалося проіндексувати. Показано доступні результати; автоматична повторна спроба.',
   'mobile.notifications.service': 'Служба фонових сповіщень про завдання',
   'mobile.notifications.connected': 'З’єднання підтримується для отримання сповіщень про завдання, коли застосунок працює у фоновому режимі.',
   'mobile.notifications.unavailable': 'Не вдалося запустити фонові сповіщення. Відкрийте застосунок повторно та спробуйте ще раз.',
@@ -2481,6 +2484,7 @@ export const dict: Record<I18nKey, string> = {
   "commandPalette.input.placeholder": "Пошук файлів, сесій, команд...",
   "commandPalette.error.messages": "Не вдалося завантажити пошук повідомлень. Інші результати досі показано.",
   "commandPalette.group.messages": "Повідомлення",
+  "commandPalette.group.showMore": "Показати ще {count}",
   "commandPalette.message.user": "Ви",
   "commandPalette.message.assistant": "Асистент",
   "commandPalette.empty.noResults": "Результатів не знайдено.",

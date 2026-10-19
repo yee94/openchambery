@@ -1,5 +1,6 @@
 import { registerSessionIndexRoutes } from '../session-index/routes.js';
 import { registerTranscriptCacheRoutes } from '../transcript-cache/routes.js';
+import { registerContentSearchRoutes } from '../content-search/routes.js';
 import { registerConfigSyncRoutes } from '../config-sync/routes.js';
 
 export const registerOpenChamberRoutes = (app, dependencies) => {
@@ -26,6 +27,7 @@ export const registerOpenChamberRoutes = (app, dependencies) => {
     getCommittedHostMetadata,
   });
   registerTranscriptCacheRoutes(app, { transcriptCacheService });
+  registerContentSearchRoutes(app, { contentSearch: dependencies.contentSearch });
   registerConfigSyncRoutes(app, { express });
 
   app.get('/api/openchamber/update-check', async (req, res) => {

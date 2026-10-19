@@ -30,6 +30,8 @@ describe('searchSessionContent', () => {
         role: 'user',
         createdAt: 10,
         snippet: 'retry budget stays at three',
+        directory: '/other-project',
+        title: 'Unvisited conversation',
       }],
     }));
 
@@ -39,11 +41,8 @@ describe('searchSessionContent', () => {
       fetch,
     });
 
-    expect(fetch).toHaveBeenCalledWith('/api/openchamber/transcript-cache/search', {
+    expect(fetch).toHaveBeenCalledWith('/api/openchamber/content-search', {
       query: {
-        transport: 'runtime-a',
-        generation: '3',
-        directory: '/repo',
         q: 'retry budget',
         limit: String(SESSION_CONTENT_SEARCH_LIMIT),
       },
@@ -55,13 +54,14 @@ describe('searchSessionContent', () => {
       role: 'user',
       createdAt: 10,
       snippet: 'retry budget stays at three',
-      directory: '/repo',
+      directory: '/other-project',
+      title: 'Unvisited conversation',
     }]);
   });
 
-  test('treats a disabled cache as no hits and throws when the index fails', async () => {
+  test('throws when the global index is unavailable rather than claiming no hits', async () => {
     const disabled = vi.fn(async () => jsonResponse(501, { error: 'unavailable' }));
-    await expect(searchSessionContent({ scope, query: 'budget', fetch: disabled })).resolves.toEqual([]);
+    await expect(searchSessionContent({ scope, query: 'budget', fetch: disabled })).rejects.toThrow('501');
 
     const failed = vi.fn(async () => jsonResponse(500, { error: 'boom' }));
     await expect(searchSessionContent({ scope, query: 'budget', fetch: failed })).rejects.toThrow('500');
@@ -84,7 +84,7 @@ describe('sessionContentSearchQueryOptions', () => {
 
     expect(options.enabled).toBe(true);
     expect(options.queryKey).toEqual(
-      queryKeys.sessionContentSearch.query('retry budget', '/repo', 3, 'runtime-a'),
+      queryKeys.sessionContentSearch.query('retry budget', '', 3, 'runtime-a'),
     );
     const signal = new AbortController().signal;
     await options.queryFn?.({ signal } as never);

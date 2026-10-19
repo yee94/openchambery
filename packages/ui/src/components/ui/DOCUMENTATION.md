@@ -59,6 +59,10 @@ The flow-mobile Settings root and its push-detail surface both use
 
 ## Dialog Surfaces
 
+Global content search refreshes from the Host while open. The first navigation key snapshots title and message rows for the current query and runtime so background indexing cannot move keyboard targets. Editing the query or reopening the palette releases that snapshot. Failed content refreshes retain the last successful results and expose the error separately.
+
+Global search previews at most five rows per non-empty result group while a query is present. Each overflowing group offers a keyboard-selectable “Show more” row; explicit expansion is scoped to the current query and directory and resets when the palette is reopened. Desktop numeric session shortcuts follow only the visible session rows. Title results therefore cannot consume the entire initial list ahead of message excerpts. Empty groups render no heading. The empty-query recent-session view retains its existing limit.
+
 `DialogContent` owns both the popup surface and its backdrop. Feature-specific dialog treatments pass popup styling through `className` and backdrop styling through `overlayClassName`; this keeps blur and dimming local to the owning dialog without changing every modal surface.
 
 Both the popup and backdrop are Electron `app-region-no-drag` regions. Portal rendering and z-index alone do not exclude the underlying window drag region; dialogs opened over draggable startup/upgrade screens must retain pointer interaction across the entire popup and backdrop.

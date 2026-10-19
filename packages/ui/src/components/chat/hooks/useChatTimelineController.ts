@@ -1625,6 +1625,7 @@ export const useChatTimelineController = ({
         }
     });
 
+    const messageRevealTargetRef = React.useRef<string | null>(null);
     const scrollToMessage = useEvent(async (
         messageId: string,
         options?: { behavior?: ScrollBehavior },
@@ -1632,6 +1633,11 @@ export const useChatTimelineController = ({
         if (!messageId || !sessionIdRef.current) {
             return false;
         }
+
+        const revealKey = `${sessionIdRef.current}:${messageId}`;
+        if (messageRevealTargetRef.current === revealKey) return false;
+        messageRevealTargetRef.current = revealKey;
+        const targetSession = sessionIdRef.current;
 
         releaseAutoFollow();
         setPendingRevealWork(true);
@@ -1641,6 +1647,14 @@ export const useChatTimelineController = ({
                 return false;
             }
 
+            while (!turnModelRef.current.messageToTurnId.has(messageId) && historySignalsRef.current.hasMoreAboveTurns) {
+                if (sessionIdRef.current !== targetSession || messageRevealTargetRef.current !== revealKey) return false;
+                const oldest = messagesRef.current[0]?.info.id;
+                await loadEarlier({ userInitiated: true, singlePage: true });
+                await waitForNextRenderCommitOrTimeout();
+                if (messagesRef.current[0]?.info.id === oldest) break;
+            }
+            if (sessionIdRef.current !== targetSession || messageRevealTargetRef.current !== revealKey) return false;
             const turnId = turnModelRef.current.messageToTurnId.get(messageId);
             const turnIndex = turnModelRef.current.messageToTurnIndex.get(messageId);
 
@@ -1666,11 +1680,13 @@ export const useChatTimelineController = ({
 
             return false;
         } finally {
+            if (messageRevealTargetRef.current === revealKey) messageRevealTargetRef.current = null;
             setPendingRevealWork(false);
         }
     });
 
     const resumeToBottom = useEvent(async () => {
+        messageRevealTargetRef.current = null;
         setPendingRevealWork(false);
         isLoadingOlderRef.current = false;
         setIsLoadingOlder(false);

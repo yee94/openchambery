@@ -1,10 +1,10 @@
 # Sync architecture, event handling & store update rules
 
-## Local content search
+## Global content search
 
-`transcript-content-search.ts` owns a separate, device-local IndexedDB excerpt cache on all UI runtimes. The repository feeds confirmed user text and settled assistant text through the existing serialized durable queue, independently of reasoning visibility. Synthetic, ignored, slim, reasoning and tool parts are excluded; assistant excerpts retain at most 2048 characters from the opening and closing edges. This cache never substitutes for full transcript hydration. Its LRU budget is 32 MiB, and session/message removal, revert and user cache-clear remove the corresponding excerpts. Provider teardown preserves excerpts; runtime generations isolate them and LRU bounds retained old scopes. Successful writes invalidate matching content-search queries.
+The Host now owns the production index; see `packages/web/server/lib/content-search/DOCUMENTATION.md`. Search calls `/api/openchamber/content-search` without a directory restriction and receives session titles and directories from the server. Opening a conversation is not required. The palette displays seven-day coverage, indexing progress and partial failures, and refreshes queries while open to discover background writes. Runtime-scoped Query keys prevent cross-host result reuse.
 
-Search reads the same excerpt cache with a readonly transaction, scoped by transport, generation and directory. It sorts lightweight metadata newest-first, reads one excerpt at a time, stops at the result limit and checks cancellation between reads. It currently scans local excerpts rather than using an inverted index; query cost grows with the retained directory corpus. No full tool output is copied or read by this search path. Historical messages become searchable when authoritative transcript pages are materialized; this does not yet fetch seven days of unvisited OpenCode history.
+The earlier `transcript-content-search.ts` IndexedDB projection is retained only for legacy cache cleanup and adapter contract tests; production no longer writes or queries it. Full transcript persistence keeps its existing reasoning-visibility gate. Message-hash navigation loads earlier pages when a global hit lies outside the loaded tail, stops on session changes or lack of pagination progress, and then reveals the matching message.
 
 ## Native Android notification ownership
 

@@ -196,6 +196,18 @@ type Mounted = {
 
 const mounted: Mounted[] = [];
 
+test('search navigation requests older history and stops when pagination makes no progress', async () => {
+    const load = vi.fn(async () => undefined);
+    const handle = await mountController({ isMobile: true, loadMoreMessages: load,
+        geometry: { scrollHeight: 4000, clientHeight: 400, scrollTop: 3000 } });
+    load.mockClear();
+    let revealed = true;
+    await act(async () => { revealed = await handle.api!.scrollToMessage('unloaded-search-hit'); });
+    expect(load).toHaveBeenCalledWith(SESSION_ID, 'up');
+    expect(load).toHaveBeenCalledTimes(1);
+    expect(revealed).toBe(false);
+});
+
 const mountController = async (input: {
     showScroller?: boolean;
     isMobile: boolean;
