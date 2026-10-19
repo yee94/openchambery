@@ -19,6 +19,7 @@ import {
   type MarkstreamMarkdownVariant,
 } from './markstream/markstreamHostContext';
 import { MARKSTREAM_CHAT_STREAM_PERFORMANCE } from './markstream/markstreamPerformance';
+import { matchDollarMath } from './markdown/markdownMath';
 import type { ToolPopupContent } from './message/types';
 import './markstream/markstreamTheme.css';
 
@@ -26,6 +27,25 @@ import './markstream/markstreamTheme.css';
 ensureMarkstreamCustomComponents();
 
 type MarkdownVariant = MarkstreamMarkdownVariant;
+
+const currencySafeMarkdown: NonNullable<React.ComponentProps<typeof MarkdownRender>['customMarkdownIt']> = (md) => {
+  md.inline.ruler.at('math', (state, silent) => {
+    const source = state.src.slice(state.pos);
+    const dollar = matchDollarMath(source);
+    const parenthesized = source.startsWith('\\(') ? /^\\\(([\s\S]+?)\\\)/.exec(source) : null;
+    const raw = dollar?.raw ?? parenthesized?.[0];
+    const text = dollar?.text ?? parenthesized?.[1];
+    if (!raw || !text) return false;
+    if (!silent) {
+      const token = state.push('math_inline', 'math', 0);
+      token.content = text;
+      token.markup = dollar ? (dollar.display ? '$$' : '$') : '\\(\\)';
+    }
+    state.pos += raw.length;
+    return true;
+  });
+  return md;
+};
 
 interface MarkstreamRendererProps {
   content: string;
@@ -148,6 +168,7 @@ const MarkstreamRendererImpl: React.FC<MarkstreamRendererProps> = ({
         >
           <MarkdownRender
             content={content}
+            customMarkdownIt={currencySafeMarkdown}
             customId={customId}
             final={!isStreaming}
             isDark={isDark}
