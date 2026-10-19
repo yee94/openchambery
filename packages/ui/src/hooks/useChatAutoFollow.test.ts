@@ -165,6 +165,81 @@ describe('primary transcript reading ownership', () => {
 });
 
 describe('session-open pin grace', () => {
+    test.each(['touch', 'wheel', 'key', 'late-restore', 'inherited-touch'] as const)('%s immediately after entry preserves the correct viewport owner through late history growth', async (gesture) => {
+        vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
+        let clock = 10000;
+        const time = vi.spyOn(performance, 'now').mockImplementation(() => clock);
+        const host = document.createElement('div');
+        document.body.appendChild(host);
+        const root = createRoot(host);
+        let api!: UseChatAutoFollowResult;
+        let top = 600;
+        let height = 900;
+        let writes = 0;
+        const controller = { current: {
+            scrollToBottom: vi.fn(() => { top = height - 300; writes++; return true; }),
+            cancelScroll: vi.fn(),
+        } };
+        function Harness() {
+            api = useChatAutoFollow({ currentSessionId: 'rapid-entry', sessionMessageCount: 12,
+                sessionIsWorking: false, isMobile: true, scrollControllerRef: controller });
+            return React.createElement('div', { ref: (element: HTMLDivElement | null) => {
+                api.scrollRef.current = element;
+                if (!element) return;
+                Object.defineProperties(element, {
+                    scrollTop: { configurable: true, get: () => top, set: (value: number) => { top = value; writes++; } },
+                    scrollHeight: { configurable: true, get: () => height },
+                    clientHeight: { configurable: true, get: () => 300 },
+                });
+            } }, React.createElement('div'));
+        }
+        try {
+            await act(async () => root.render(React.createElement(Harness)));
+            if (gesture === 'inherited-touch') {
+                await act(async () => {
+                    const event = new Event('touchstart');
+                    Object.defineProperty(event, 'touches', { value: { item: () => ({ clientX: 100, clientY: 100 }) } });
+                    api.scrollRef.current!.dispatchEvent(event);
+                });
+            }
+            await act(async () => { await api.restoreSnapshot(); });
+            writes = 0;
+            clock += 50;
+            await act(async () => {
+                if (gesture === 'wheel') {
+                    api.scrollRef.current!.dispatchEvent(new WheelEvent('wheel', { deltaY: -100 }));
+                } else if (gesture === 'key') {
+                    api.scrollRef.current!.dispatchEvent(new KeyboardEvent('keydown', { key: 'PageUp' }));
+                } else {
+                    for (const [type, y] of [['touchstart', 100], ['touchmove', 180]] as const) {
+                        if (gesture === 'inherited-touch' && type === 'touchstart') continue;
+                        const event = new Event(type);
+                        Object.defineProperty(event, 'touches', { value: { item: () => ({ clientX: 100, clientY: y }) } });
+                        api.scrollRef.current!.dispatchEvent(event);
+                    }
+                }
+                if (gesture !== 'inherited-touch') {
+                    expect(controller.current.cancelScroll, 'the gesture must cancel the entry scroll before content grows').toHaveBeenCalled();
+                }
+                top = 520;
+                api.scrollRef.current!.dispatchEvent(new Event('scroll'));
+                height += 300;
+                api.notifyContentChange('structural');
+            });
+            if (gesture === 'late-restore') await act(async () => { await api.restoreSnapshot(); });
+            expect(api.state).toBe(gesture === 'inherited-touch' ? 'following' : 'released');
+            expect(top).toBe(gesture === 'inherited-touch' ? 900 : 520);
+            expect(writes).toBe(gesture === 'inherited-touch' ? 1 : 0);
+            if (gesture === 'inherited-touch') expect(controller.current.cancelScroll).not.toHaveBeenCalled();
+            else expect(controller.current.cancelScroll).toHaveBeenCalled();
+        } finally {
+            await act(async () => root.unmount());
+            host.remove();
+            time.mockRestore();
+            vi.unstubAllGlobals();
+        }
+    });
+
     test('ignores leftover gestures until the grace expires', () => {
         expect(isWithinSessionOpenPinGrace(100, 550)).toBe(true);
         expect(isWithinSessionOpenPinGrace(550, 550)).toBe(false);

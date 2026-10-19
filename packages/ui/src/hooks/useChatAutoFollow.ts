@@ -9,7 +9,7 @@ import {
     isReleaseKey,
     nestedScrollableCanConsumeUp,
 } from '@/hooks/lib/chatUpwardIntent';
-import { getViewportSessionMemory, useViewportStore, type SessionMemoryState } from '@/sync/viewport-store';
+import { useViewportStore, type SessionMemoryState } from '@/sync/viewport-store';
 
 type AutoFollowState = 'following' | 'released';
 
@@ -143,6 +143,8 @@ const FORCE_BOTTOM_TOLERANCE_PX = 2;
 // trip releaseFromUserIntent / cancel the force-bottom watchdog — the pin
 // flashed at the latest message, then hydration grew rows above an already
 // released viewport and stranded the user mid-timeline.
+// This grace covers inherited events only; a new directional drag/wheel/key
+// releases immediately. Entry clears the previous touch's tracking baseline.
 export const SESSION_OPEN_PIN_GRACE_MS = 450;
 
 export const isWithinSessionOpenPinGrace = (nowMs: number, graceUntilMs: number): boolean => (
@@ -246,9 +248,12 @@ export const useChatAutoFollow = ({
     const keyboardOpenRef = React.useRef(false);
     const keyboardExpandFreezeTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
     const sessionOpenPinGraceUntilRef = React.useRef(0);
+    const touchPositionRef = React.useRef<{ x: number; y: number; dx: number; dy: number } | null>(null);
 
     const armSessionOpenPinGrace = useEvent(() => {
         sessionOpenPinGraceUntilRef.current = now() + SESSION_OPEN_PIN_GRACE_MS;
+        // Only a touchstart observed after entry may claim a new gesture.
+        touchPositionRef.current = null;
     });
 
     // Last observed scrollTop, used to derive scroll DIRECTION in the scroll
@@ -564,6 +569,9 @@ export const useChatAutoFollow = ({
     // After release, notify desktop history loading. Scrollbar pointer uses
     // releaseFromUserIntent only — it must not fire this callback.
     const notifyUpwardUserIntent = useEvent(() => {
+        // Wheel/key input and a directional drag with its own touchstart are
+        // explicit user intent, even inside the opening-tap grace window.
+        sessionOpenPinGraceUntilRef.current = 0;
         releaseFromUserIntent();
         onUpwardUserIntentRef.current?.();
     });
@@ -619,9 +627,10 @@ export const useChatAutoFollow = ({
 
     const restoreSnapshot = useEvent(async (identity = currentViewportIdentityRef.current): Promise<boolean> => {
         if (!identity.sessionId) return false;
+        // Late hydration/attach retries cannot reclaim a viewport the user
+        // already released in this identity. Explicit jumps use goToBottom.
+        if (stateRef.current === 'released' && isSameViewportIdentity(identity, lastViewportIdentityRef.current)) return false;
         historyViewportPreservationRef.current = false;
-        const snapshot = getViewportSessionMemory(identity.sessionId, identity.viewportKey);
-
         const container = scrollRef.current;
         if (!container) {
             // ChatViewport not mounted yet (e.g., session still hydrating).
@@ -631,7 +640,6 @@ export const useChatAutoFollow = ({
             return false;
         }
         pendingInitialRestoreRef.current = null;
-        lastScrollTopRef.current = snapshot?.scrollPosition?.scrollTop ?? 0;
 
         // Always return to the bottom on session switch. The content
         // ResizeObserver re-pins instantly as late
@@ -646,6 +654,10 @@ export const useChatAutoFollow = ({
         } else {
             scrollToBottom(true);
         }
+        // Entry always targets the live edge, not the saved reading position.
+        // A first upward scroll must compare against this DOM position rather
+        // than an old/zero snapshot and masquerade as a downward arrival.
+        lastScrollTopRef.current = container.scrollTop;
         // Hold the bottom across late async growth (e.g. task/subagent child
         // session data landing a beat after entry) until content quiesces or the
         // user scrolls.
@@ -770,7 +782,7 @@ export const useChatAutoFollow = ({
         }
 
         // Genuine user scroll away from the bottom.
-        stop(geometry);
+        releaseFromUserIntent();
         queueSave();
     });
 
@@ -780,8 +792,6 @@ export const useChatAutoFollow = ({
         if (!enabled || !containerEl) return;
         lastScrollTopRef.current = containerEl.scrollTop;
     }, [containerEl, enabled]);
-
-    const touchPositionRef = React.useRef<{ x: number; y: number; dx: number; dy: number } | null>(null);
 
     const handleWheel = useEvent((event: WheelEvent) => {
         const container = scrollRef.current;
