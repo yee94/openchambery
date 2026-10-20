@@ -778,6 +778,7 @@ interface UIStore {
 
   // Settings IA (new shell)
   settingsPage: string;
+  devicePairingRequested: boolean;
   settingsHasOpenedOnce: boolean;
   settingsProjectsSelectedId: string | null;
   settingsRemoteInstancesSelectedId: string | null;
@@ -1147,6 +1148,7 @@ export const useUIStore = create<UIStore>()(
         isAgentSelectorInstant: false,
         sidebarSection: 'sessions',
         settingsPage: 'home',
+        devicePairingRequested: false,
         settingsHasOpenedOnce: false,
         settingsProjectsSelectedId: null,
         settingsRemoteInstancesSelectedId: null,

@@ -1845,7 +1845,7 @@ async function main(options = {}) {
       }
     },
     getPairingTransports: async (req) => {
-      const transports = resolvePairingTransports(req);
+      const transports = { ...resolvePairingTransports(req), serverName: os.hostname() };
       if (!relayServiceInstance || !transports.relayAvailable) return transports;
       const relay = await relayServiceInstance.getStatus();
       return {

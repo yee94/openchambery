@@ -802,17 +802,21 @@ export const registerAuthAndAccessRoutes = (app, dependencies) => {
 
   app.get('/api/client-auth/clients', async (req, res, next) => {
     await runWithClientManagementAuth(req, res, next, async (authContext) => {
+      const connectedIds = uiAuthController.getConnectedClientIds?.() ?? new Set();
+      const withPresence = (client) => ({ ...client, connected: !client.revokedAt
+        && (!client.expiresAt || Date.parse(client.expiresAt) > Date.now())
+        && connectedIds.has(client.id) });
       if (authContext.type === 'client') {
         const client = await clientRecordFromAuthContext(authContext);
         // Operator clients (local desktop shell, paired desktops) manage the
         // whole device fleet; every other client token is scoped to its own
         // record.
         if (!canManageRemoteClients(client)) {
-          return res.json({ clients: client ? [client] : [] });
+          return res.json({ clients: client ? [withPresence(client)] : [] });
         }
       }
       const clients = await remoteClientAuthRuntime.listClients();
-      res.json({ clients });
+      res.json({ clients: clients.map(withPresence) });
     });
   });
 
