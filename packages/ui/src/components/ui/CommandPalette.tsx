@@ -458,7 +458,10 @@ export const CommandPalette: React.FC<{ presentation?: 'dialog' | 'page'; onBack
     ...sessionContentSearchQueryOptions(trimmedQuery, { scope: contentScope }),
     enabled: (isCommandPaletteOpen || retainResults) && trimmedQuery.length > 0 && contentScope !== null,
   });
-  const contentHits: SessionContentSearchHit[] = frozenResults?.hits ?? contentSearchQuery.data ?? [];
+  const contentHits = React.useMemo<SessionContentSearchHit[]>(
+    () => frozenResults?.hits ?? contentSearchQuery.data ?? [],
+    [frozenResults, contentSearchQuery.data],
+  );
   const contentSearchFailed = hasQuery && liveTrimmed === trimmedQuery && contentSearchQuery.isError;
   const titleSearchReady = hasQuery && liveTrimmed === trimmedQuery && titleSearchQuery.isSuccess;
   const titleSearchFailed = (hasQuery || presentation === 'page') && liveTrimmed === trimmedQuery && titleSearchQuery.isError;
@@ -522,10 +525,32 @@ export const CommandPalette: React.FC<{ presentation?: 'dialog' | 'page'; onBack
   );
   const visibleCommands = previewGroup('commands', scoredCommands.map((x) => x.item));
   const visibleSettings = previewGroup('settings', scoredSettings.map((x) => x.item));
-  const visibleSessions = previewGroup('sessions', visibleTitleSessions);
+  const conversationResults = React.useMemo(() => {
+    const hitsBySession = new Map<string, SessionContentSearchHit[]>();
+    for (const hit of contentHits) {
+      const hits = hitsBySession.get(hit.sessionID) ?? [];
+      hits.push(hit);
+      hitsBySession.set(hit.sessionID, hits);
+    }
+    const rows: { session: Session; hit?: SessionContentSearchHit }[] = [];
+    const known = new Map(activeSessions.map((session) => [session.id, session]));
+    for (const session of visibleTitleSessions) {
+      const hits = hitsBySession.get(session.id);
+      if (hits) {
+        for (const hit of hits) rows.push({ session, hit });
+        hitsBySession.delete(session.id);
+      } else rows.push({ session });
+    }
+    for (const hits of hitsBySession.values()) {
+      for (const hit of hits) rows.push({ session: known.get(hit.sessionID) ?? {
+        id: hit.sessionID, title: hit.title ?? '', directory: hit.directory, location: { directory: hit.directory },
+      } as Session, hit });
+    }
+    return rows;
+  }, [visibleTitleSessions, contentHits, activeSessions]);
+  const visibleConversations = previewGroup('sessions', conversationResults);
   const visibleFiles = hasQuery ? previewGroup('files', scoredFiles.map((x) => x.item)) : [];
   const visibleProjects = hasQuery ? previewGroup('projects', scoredProjects.map((x) => x.item)) : [];
-  const visibleContentHits = previewGroup('messages', contentHits);
   const groupFooter = (group: string, total: number, visible: number) => total > visible ? (
     <CommandItem
       value={`more:${group}`}
@@ -536,7 +561,7 @@ export const CommandPalette: React.FC<{ presentation?: 'dialog' | 'page'; onBack
     </CommandItem>
   ) : null;
 
-  const groupOrder = React.useMemo<('commands' | 'settings' | 'sessions' | 'messages' | 'files' | 'projects')[]>(() => {
+  const groupOrder = React.useMemo<('commands' | 'settings' | 'sessions' | 'files' | 'projects')[]>(() => {
     if (!hasQuery) return ['sessions', 'commands'];
     const best = (arr: { score: number }[]): number => (arr.length ? arr[0].score : Infinity);
     const groups: { key: 'commands' | 'settings' | 'files' | 'projects'; score: number }[] = [
@@ -546,7 +571,7 @@ export const CommandPalette: React.FC<{ presentation?: 'dialog' | 'page'; onBack
       { key: 'projects', score: best(scoredProjects) },
     ];
     groups.sort((a, b) => a.score - b.score);
-    return ['sessions', 'messages', ...groups.map((group) => group.key)];
+    return ['sessions', ...groups.map((group) => group.key)];
   }, [hasQuery, scoredCommands, scoredSettings, scoredFiles, scoredProjects]);
 
   const handleOpenSession = useEvent((session: Session, messageID?: string) => {
@@ -616,8 +641,9 @@ export const CommandPalette: React.FC<{ presentation?: 'dialog' | 'page'; onBack
     event.preventDefault();
     event.stopPropagation();
     if (event.repeat || !resultsSettled) return;
-    const session = visibleSessions[Number(event.key) - 1];
-    if (session) handleOpenSession(session);
+    const result = visibleConversations[Number(event.key) - 1];
+    if (result?.hit) handleOpenContentHit(result.hit);
+    else if (result) handleOpenSession(result.session);
   });
 
   const projectForSession = (session: Session) => {
@@ -640,7 +666,7 @@ export const CommandPalette: React.FC<{ presentation?: 'dialog' | 'page'; onBack
   const searchInput = (
     <CommandInput
       ref={inputRef}
-      variant={presentation === 'page' ? 'mobileGlass' : 'default'}
+      variant={isMobile ? 'mobileGlass' : 'default'}
       className="font-normal"
       aria-label={t('commandPalette.title')}
       inputMode="search"
@@ -678,7 +704,7 @@ export const CommandPalette: React.FC<{ presentation?: 'dialog' | 'page'; onBack
           }}
           className="max-h-full min-h-0 rounded-[inherit] bg-transparent [&_[cmdk-group]]:px-0 [&_[cmdk-item][data-selected=true]]:!bg-[color-mix(in_srgb,var(--interactive-selection)_40%,transparent)] [&_[cmdk-item]:hover]:!bg-[color-mix(in_srgb,var(--interactive-selection)_40%,transparent)]"
         >
-          {presentation === 'page' ? (
+          {isMobile ? (
             <MobileDetailNavigation
               title={searchInput}
               backAriaLabel={t('header.actions.backAria')}
@@ -711,7 +737,7 @@ export const CommandPalette: React.FC<{ presentation?: 'dialog' | 'page'; onBack
                         className={ITEM_CLASS}
                       >
                         <CommandPaletteResult
-                          title={cmd.title}
+                          title={highlightSearchText(cmd.title, liveTrimmed)}
                           trailing={!isMobile && cmd.shortcutId ? (
                             <Kbd className="h-3.5 min-w-0 shrink-0 rounded-full border-0 bg-[color-mix(in_srgb,var(--surface-foreground)_6%,transparent)] px-1.5 font-sans text-[10px] font-medium tracking-tight text-muted-foreground/65 shadow-none">
                               {shortcut(cmd.shortcutId)}
@@ -734,24 +760,24 @@ export const CommandPalette: React.FC<{ presentation?: 'dialog' | 'page'; onBack
                         onSelect={cmd.onSelect}
                         className={ITEM_CLASS}
                       >
-                        <CommandPaletteResult title={cmd.title} />
+                        <CommandPaletteResult title={highlightSearchText(cmd.title, liveTrimmed)} />
                       </CommandItem>
                     ))}
                     {groupFooter('settings', scoredSettings.length, visibleSettings.length)}
                   </CommandGroup>
                 );
               }
-              if (groupKey === 'sessions' && visibleSessions.length > 0) {
+              if (groupKey === 'sessions' && visibleConversations.length > 0) {
                 return (
                   <CommandGroup key="sessions" heading={t('layout.mainTab.chat')} className={GROUP_CLASS}>
-                    {visibleSessions.map((session, index) => {
-                      const title = session.title || t('commandPalette.session.untitled');
+                    {visibleConversations.map(({ session, hit }, index) => {
+                      const title = hit?.title || session.title || t('commandPalette.session.untitled');
                       const project = projectForSession(session);
                       return (
                         <CommandItem
-                          key={session.id}
-                          value={`session:${session.id}`}
-                          onSelect={() => handleOpenSession(session)}
+                          key={hit ? `message:${session.id}:${hit.messageID}` : `session:${session.id}`}
+                          value={hit ? `message:${session.id}:${hit.messageID}` : `session:${session.id}`}
+                          onSelect={() => hit ? handleOpenContentHit(hit) : handleOpenSession(session)}
                           className="flex-col items-stretch gap-1 rounded-lg px-3 py-2"
                           aria-keyshortcuts={!isMobile && index < 9 ? `${mac ? 'Meta' : 'Control'}+${index + 1}` : undefined}
                         >
@@ -760,36 +786,16 @@ export const CommandPalette: React.FC<{ presentation?: 'dialog' | 'page'; onBack
                             <span className="max-w-[28%] shrink-0 truncate typography-meta text-muted-foreground" title={project}>{project}</span>
                             {!isMobile && index < 9 ? <Kbd className="h-5 min-w-8 shrink-0 rounded-full border-0 bg-interactive-selection px-2 text-muted-foreground shadow-none">{mac ? '⌘' : 'Ctrl+'}{index + 1}</Kbd> : null}
                           </div>
+                          {hit ? (
+                            <span className="line-clamp-3 whitespace-pre-wrap break-words typography-ui-label text-muted-foreground">
+                              <span className="font-medium">{t(hit.role === 'user' ? 'commandPalette.message.user' : 'commandPalette.message.assistant')}: </span>
+                              {highlightSearchText(hit.snippet, liveTrimmed)}
+                            </span>
+                          ) : null}
                         </CommandItem>
                       );
                     })}
-                    {groupFooter('sessions', visibleTitleSessions.length, visibleSessions.length)}
-                  </CommandGroup>
-                );
-              }
-              if (groupKey === 'messages' && contentHits.length > 0) {
-                return (
-                  <CommandGroup key="messages" heading={t('commandPalette.group.messages')} className={GROUP_CLASS}>
-                    {visibleContentHits.map((hit) => {
-                      const known = activeSessions.find((session) => session.id === hit.sessionID);
-                      const title = hit.title || known?.title || t('commandPalette.session.untitled');
-                      return (
-                        <CommandItem
-                          key={`message:${hit.sessionID}:${hit.messageID}`}
-                          value={`message:${hit.sessionID}:${hit.messageID}`}
-                          onSelect={() => handleOpenContentHit(hit)}
-                          className="flex-col items-stretch gap-0.5 rounded-lg px-3 py-2"
-                        >
-                          <span className="truncate typography-meta text-muted-foreground" title={title}>{highlightSearchText(title, liveTrimmed)}</span>
-                          <span className="line-clamp-2 typography-ui-label text-foreground">
-                            <span className="font-medium text-muted-foreground">{t(hit.role === 'user' ? 'commandPalette.message.user' : 'commandPalette.message.assistant')}</span>
-                            <span className="text-muted-foreground">: </span>
-                            {highlightSearchText(hit.snippet, liveTrimmed)}
-                          </span>
-                        </CommandItem>
-                      );
-                    })}
-                    {groupFooter('messages', contentHits.length, visibleContentHits.length)}
+                    {groupFooter('sessions', conversationResults.length, visibleConversations.length)}
                   </CommandGroup>
                 );
               }
@@ -870,10 +876,12 @@ export const CommandPalette: React.FC<{ presentation?: 'dialog' | 'page'; onBack
         data-global-search="true"
         data-mobile={isMobile}
         data-page-scroll-lock="true"
-        className="oc-global-search oc-mobile-overlay-surface oc-mobile-overlay-surface--translucent oc-composer-autocomplete-surface fixed left-1/2 top-[12vh] z-50 w-[min(40rem,calc(100vw-1.5rem))] max-w-none -translate-x-1/2 translate-y-0 gap-0 overflow-hidden rounded-3xl border-0 p-0"
+        className={isMobile
+          ? 'oc-global-search-page oc-global-search-mobile fixed inset-0 z-50 m-0 flex max-w-none translate-x-0 translate-y-0 flex-col gap-0 overflow-hidden rounded-none border-0 bg-background p-0'
+          : 'oc-global-search oc-mobile-overlay-surface oc-mobile-overlay-surface--translucent oc-composer-autocomplete-surface fixed left-1/2 top-[10vh] z-50 w-[min(56rem,calc(100vw-3rem))] max-w-none -translate-x-1/2 translate-y-0 gap-0 overflow-hidden rounded-3xl border-0 p-0'}
         containerClassName="block p-0"
         overlayClassName="bg-transparent dark:bg-transparent"
-        showCloseButton={isMobile}
+        showCloseButton={false}
       >
         <DialogHeader className="sr-only">
           <DialogTitle>{t('commandPalette.title')}</DialogTitle>

@@ -7,6 +7,14 @@
   padding-bottom: var(--oc-safe-area-bottom, env(safe-area-inset-bottom, 0px));
 }
 
+.oc-global-search-mobile {
+  width: 100vw;
+  top: var(--search-viewport-top, 0px);
+  height: var(--search-viewport-height, 100dvh);
+  max-height: none;
+  background: var(--surface-background);
+}
+
 .oc-global-search-page > [cmdk-root] {
   border-radius: 0;
 }
