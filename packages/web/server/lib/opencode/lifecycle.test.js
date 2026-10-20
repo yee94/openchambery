@@ -15,6 +15,7 @@ const { RUNTIME_CONTRACT_MIN_VERIFIED } = await import('./runtime-contract.js');
 
 const originalOpencodeBinary = process.env.OPENCODE_BINARY;
 const originalPath = process.env.PATH;
+const originalBackgroundSubagents = process.env.OPENCODE_EXPERIMENTAL_BACKGROUND_SUBAGENTS;
 
 afterEach(() => {
   spawnMock.mockReset();
@@ -24,6 +25,12 @@ afterEach(() => {
     process.env.OPENCODE_BINARY = originalOpencodeBinary;
   } else {
     delete process.env.OPENCODE_BINARY;
+  }
+
+  if (typeof originalBackgroundSubagents === 'string') {
+    process.env.OPENCODE_EXPERIMENTAL_BACKGROUND_SUBAGENTS = originalBackgroundSubagents;
+  } else {
+    delete process.env.OPENCODE_EXPERIMENTAL_BACKGROUND_SUBAGENTS;
   }
 
   if (typeof originalPath === 'string') {
@@ -391,6 +398,44 @@ describe('OpenCode lifecycle', () => {
     expect(managedCapabilitiesRuntime.prepareManagedChildEnv).toHaveBeenCalledTimes(1);
     expect(managedCapabilitiesRuntime.recordManagedChildPid).toHaveBeenCalledWith(12345);
     expect(spawnMock.mock.calls[0][2].env.OPENCHAMBER_SCHEDULED_TASK_BRIDGE_TOKEN).toBe('rotated');
+    await server.close();
+  });
+
+  it('enables background subagents by default for managed OpenCode', async () => {
+    delete process.env.OPENCODE_EXPERIMENTAL_BACKGROUND_SUBAGENTS;
+    const child = createMockChild();
+    spawnMock.mockImplementationOnce(() => {
+      queueMicrotask(() => {
+        child.stdout.emit('data', 'opencode server listening on http://127.0.0.1:45678\n');
+      });
+      return child;
+    });
+
+    const runtime = createRuntime();
+    const server = await runtime.startOpenCode();
+    const [, , options] = spawnMock.mock.calls[0];
+
+    expect(options.env.OPENCODE_EXPERIMENTAL_BACKGROUND_SUBAGENTS).toBe('true');
+
+    await server.close();
+  });
+
+  it('preserves an explicit background subagents flag from the user environment', async () => {
+    process.env.OPENCODE_EXPERIMENTAL_BACKGROUND_SUBAGENTS = 'false';
+    const child = createMockChild();
+    spawnMock.mockImplementationOnce(() => {
+      queueMicrotask(() => {
+        child.stdout.emit('data', 'opencode server listening on http://127.0.0.1:45678\n');
+      });
+      return child;
+    });
+
+    const runtime = createRuntime();
+    const server = await runtime.startOpenCode();
+    const [, , options] = spawnMock.mock.calls[0];
+
+    expect(options.env.OPENCODE_EXPERIMENTAL_BACKGROUND_SUBAGENTS).toBe('false');
+
     await server.close();
   });
 
