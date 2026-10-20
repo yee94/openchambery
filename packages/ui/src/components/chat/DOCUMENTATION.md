@@ -39,7 +39,11 @@ context identity stays stable across token updates. Disable, navigation and
 runtime changes stop speech and clear the queue. Backgrounding stops playback
 and releases the screen lock; foregrounding reacquires while still enabled.
 `useMessageTTS` shares voice settings, unlocks mobile audio on the menu gesture,
-and fences late summaries/playback callbacks after cancellation. Native mobile
+and fences late summaries/playback callbacks after cancellation. Message read-aloud
+has one active owner per UI instance, shared by manual and automatic reading across
+sessions. A new request stops the previous owner before preparing its text; unmounting
+the owning message stops playback, while removing an inactive message cannot cancel
+the new owner. Native mobile
 uses `OpenChamberScreenAwake`; browsers use Screen Wake Lock and show a localized
 warning when unavailable. Native support requires a new iOS/Android binary.
 
