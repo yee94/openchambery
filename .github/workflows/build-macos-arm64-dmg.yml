@@ -15,11 +15,19 @@ on:
         description: Git ref to build (branch, tag, or sha)
         required: false
         default: ""
+      runner:
+        description: Build runner
+        required: false
+        type: choice
+        options:
+          - github-hosted
+          - self-hosted
+        default: self-hosted
 
 jobs:
   build-macos-dmg-arm64-electron:
-    name: Build Electron DMG (arm64, macos-26)
-    runs-on: macos-26
+    name: Build Electron DMG (arm64, ${{ inputs.runner }})
+    runs-on: ${{ inputs.runner == 'github-hosted' && 'macos-26' || fromJSON('["self-hosted","macOS","ARM64","openchamber-macos"]') }}
     steps:
       - name: Checkout
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
